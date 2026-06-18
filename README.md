@@ -22,3 +22,20 @@ Crea `oxidian/.env.cosmos.local` a partir de
 
 La documentacion operativa esta en `oxidian/OPERACIONES.md` y
 `oxidian/COSMOS_DEPLOY.md`.
+
+## Actualizaciones de produccion
+
+Cada `push` a `main` ejecuta el workflow `CI`. El servidor consulta GitHub
+periodicamente y solo despliega commits cuyo CI haya finalizado correctamente.
+Antes de reconstruir los contenedores crea un backup y, si los healthchecks
+fallan, vuelve al commit anterior.
+
+El servidor no expone SSH ni Docker a GitHub Actions. La instalacion se realiza
+una vez desde el clon de produccion:
+
+```bash
+bash scripts/install-auto-deploy.sh
+```
+
+El estado y los logs se guardan en
+`~/.local/state/oxidian-deploy/`.
