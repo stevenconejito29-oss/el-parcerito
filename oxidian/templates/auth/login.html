@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Acceso empleados — {{ brand.nombre }}{% endblock %}
+{% block content %}
+<div class="min-h-[60vh] flex items-center justify-center py-8">
+  <div class="w-full max-w-sm">
+
+    <div class="text-center mb-7">
+      {% if brand.logo_url %}
+      <img src="{{ brand.logo_url }}" alt="logo" class="w-16 h-16 rounded-2xl object-cover mx-auto mb-3" style="border:2px solid rgba(255,171,0,.3)">
+      {% else %}
+      <div class="text-6xl mb-3">🍽️</div>
+      {% endif %}
+      <h1 class="text-2xl font-extrabold text-white">Acceso interno</h1>
+      <p class="text-sm mt-1" style="color:var(--col-muted)">{{ brand.nombre }} · Panel de empleados</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="mb-4 space-y-2">
+      {% for category, msg in messages %}
+      <div class="ox-toast ox-toast-{{ category if category in ('success','danger','warning','info') else 'info' }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <div class="ox-card p-6">
+      <form method="POST" class="space-y-4" data-ox-validate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="ox-field">
+          <label class="ox-label">Correo electrónico</label>
+          <input type="email" name="email" placeholder="empleado@empresa.com" required
+                 class="ox-input" data-ox-required autocomplete="email">
+          <small class="ox-error">Introduce un email válido.</small>
+        </div>
+
+        <div class="ox-field">
+          <label class="ox-label">Contraseña</label>
+          <input type="password" name="password" placeholder="••••••••" required
+                 class="ox-input" data-ox-required autocomplete="current-password">
+          <small class="ox-error">Este campo es obligatorio.</small>
+        </div>
+
+        <button type="submit"
+                class="w-full font-extrabold py-3 rounded-xl text-base transition"
+                style="background:linear-gradient(135deg,#FFAB00,#FF8C00);color:#000;box-shadow:0 6px 20px rgba(255,171,0,.3)">
+          Entrar →
+        </button>
+      </form>
+    </div>
+
+    <p class="text-xs text-center mt-5" style="color:var(--col-faint)">
+      ¿Quieres hacer un pedido? <a href="{{ url_for('public.index') }}" style="color:#FFAB00">Ver la tienda →</a>
+    </p>
+
+  </div>
+</div>
+{% endblock %}

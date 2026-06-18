@@ -1,0 +1,78 @@
+{% extends "admin_base.html" %}
+{% block title %}Cliente — {{ cliente.nombre }}{% endblock %}
+{% block content %}
+{% set ganados = puntos_log|selectattr('tipo','equalto','ganado')|sum(attribute='cantidad') %}
+{% set canjeados = puntos_log|selectattr('tipo','equalto','canjeado')|sum(attribute='cantidad') %}
+
+<div class="flex items-start justify-between gap-3 flex-wrap mb-5">
+  <div>
+    <h1 class="text-2xl font-black text-white">{{ cliente.nombre }}</h1>
+    <p class="text-sm mt-1" style="color:var(--col-muted)">{{ cliente.email }}{% if cliente.telefono %} · {{ cliente.telefono }}{% endif %}</p>
+  </div>
+  <a href="{{ url_for('admin.usuarios') }}" class="ox-btn-secondary">Volver a clientes</a>
+</div>
+
+<div class="points-kpis">
+  <div class="points-kpi"><span>Saldo actual</span><strong>{{ cliente.puntos }}</strong><small>puntos</small></div>
+  <div class="points-kpi"><span>Total gastado</span><strong>€{{ "%.2f"|format(total_gastado) }}</strong><small>pedidos no cancelados</small></div>
+  <div class="points-kpi"><span>Movimientos</span><strong>{{ puntos_log|length }}</strong><small>historial de puntos</small></div>
+</div>
+
+<div class="points-layout">
+  <section class="points-panel">
+    <h2>Pedidos</h2>
+    <div class="points-list">
+      {% for p in pedidos %}
+      <article class="points-order">
+        <div>
+          <strong>{{ p.numero_pedido }}</strong>
+          <p>{{ p.creado_en.strftime('%d/%m/%Y %H:%M') }} · {{ p.origen }} · {{ p.metodo_pago or '—' }}</p>
+        </div>
+        <span class="points-state state-{{ p.estado }}">{{ p.estado }}</span>
+        <b>€{{ "%.2f"|format(p.total) }}</b>
+      </article>
+      {% else %}
+      <div class="points-empty">Este cliente aun no tiene pedidos.</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <aside class="points-panel">
+    <h2>Puntos</h2>
+    <div class="points-summary">
+      <div><span>Ganados</span><strong class="in">+{{ ganados or 0 }}</strong></div>
+      <div><span>Canjeados</span><strong class="out">{{ canjeados or 0 }}</strong></div>
+    </div>
+    <div class="points-log">
+      {% for m in puntos_log %}
+      <article>
+        <span class="{{ 'in' if m.cantidad > 0 else 'out' }}">{{ '+' if m.cantidad > 0 else '' }}{{ m.cantidad }}</span>
+        <div>
+          <strong>{{ m.tipo }}</strong>
+          <p>{{ m.descripcion or 'Movimiento de puntos' }} · {{ m.creado_en.strftime('%d/%m/%Y') }}</p>
+        </div>
+      </article>
+      {% else %}
+      <div class="points-empty">Sin movimientos de puntos.</div>
+      {% endfor %}
+    </div>
+  </aside>
+</div>
+
+<style>
+.points-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.75rem;margin-bottom:1rem}
+.points-kpi,.points-panel{background:var(--col-surface);border:1px solid var(--col-border);border-radius:14px;padding:1rem}
+.points-kpi span,.points-kpi small{display:block;color:var(--col-muted);font-size:.75rem;text-transform:uppercase;font-weight:900}
+.points-kpi strong{display:block;font-size:2rem;color:#FFAB00;font-weight:950;line-height:1.1;margin:.25rem 0}
+.points-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:1rem}
+.points-panel h2{font-weight:950;color:#fff;margin-bottom:.75rem}
+.points-list,.points-log{display:grid;gap:.5rem}
+.points-order{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:.75rem;background:rgba(255,255,255,.035);border:1px solid var(--col-border);border-radius:10px;padding:.75rem}
+.points-order strong{color:#FFAB00;font-family:ui-monospace,SFMono-Regular,monospace}.points-order p,.points-log p{color:var(--col-muted);font-size:.76rem}
+.points-order b{color:#fff}.points-state{font-size:.68rem;font-weight:950;text-transform:uppercase;border-radius:999px;padding:.2rem .55rem;background:var(--col-elevated);color:#fff}
+.points-summary{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem}.points-summary div{background:rgba(255,255,255,.035);border:1px solid var(--col-border);border-radius:10px;padding:.75rem}.points-summary span{display:block;color:var(--col-muted);font-size:.72rem}.points-summary strong{font-size:1.3rem}
+.points-log article{display:flex;gap:.65rem;border-bottom:1px solid rgba(255,255,255,.05);padding:.6rem 0}.points-log article>span{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:950;min-width:3.2rem}.points-log strong{color:#fff;text-transform:capitalize}
+.in{color:#5EF097}.out{color:#FF7A7A}.points-empty{border:1px dashed var(--col-border);border-radius:10px;padding:1.5rem;text-align:center;color:var(--col-muted)}
+@media(max-width:900px){.points-layout{grid-template-columns:1fr}.points-order{grid-template-columns:1fr auto}.points-order b{grid-column:1 / -1;text-align:right}}
+</style>
+{% endblock %}

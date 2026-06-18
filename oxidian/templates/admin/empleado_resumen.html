@@ -1,0 +1,141 @@
+{% extends "admin_base.html" %}
+{% block title %}Resumen — {{ empleado.nombre }}{% endblock %}
+{% block content %}
+
+<div class="mb-5 flex items-center justify-between gap-3 flex-wrap">
+  <div>
+    <h1 class="text-2xl font-black text-white">💼 {{ empleado.nombre }}</h1>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">
+      {{ empleado.rol }} · {{ empleado.email }}
+      {% if empleado.puesto_trabajo %} · {{ empleado.puesto_trabajo }}{% endif %}
+    </p>
+  </div>
+  <a href="{{ url_for('admin.pagos_staff') }}"
+     class="text-xs px-3 py-1 rounded bg-zinc-700 text-white hover:bg-zinc-600">
+    ← Volver a Pagos & Liquidaciones
+  </a>
+</div>
+
+<form method="GET" class="ox-card p-4 mb-5 flex flex-wrap gap-3 items-end">
+  <div class="ox-field">
+    <label class="ox-label">Desde</label>
+    <input type="date" name="fecha_inicio" value="{{ fecha_inicio.strftime('%Y-%m-%d') }}" class="ox-input">
+  </div>
+  <div class="ox-field">
+    <label class="ox-label">Hasta</label>
+    <input type="date" name="fecha_fin" value="{{ fecha_fin.strftime('%Y-%m-%d') }}" class="ox-input">
+  </div>
+  <button type="submit" class="ox-btn-primary">Aplicar</button>
+</form>
+
+<!-- KPIs financieros -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+  <div class="ox-card p-4">
+    <p class="text-xs uppercase" style="color:var(--col-muted)">Devengado</p>
+    <p class="text-2xl font-black text-green-400">€{{ "%.2f"|format(total_devengado) }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">salario + comisión + bonus</p>
+  </div>
+  <div class="ox-card p-4">
+    <p class="text-xs uppercase" style="color:var(--col-muted)">Descontado</p>
+    <p class="text-2xl font-black text-yellow-400">€{{ "%.2f"|format(total_descontado) }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">adelantos + descuentos</p>
+  </div>
+  <div class="ox-card p-4">
+    <p class="text-xs uppercase" style="color:var(--col-muted)">Neto a pagar</p>
+    <p class="text-2xl font-black" style="color:var(--col-gold)">€{{ "%.2f"|format(neto_a_pagar) }}</p>
+  </div>
+  <div class="ox-card p-4">
+    <p class="text-xs uppercase" style="color:var(--col-muted)">Pendiente</p>
+    <p class="text-2xl font-black text-red-400">€{{ "%.2f"|format(pendiente) }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">de €{{ "%.2f"|format(neto_a_pagar) }} totales</p>
+  </div>
+</div>
+
+<!-- Desglose por tipo -->
+<div class="ox-card p-4 mb-5">
+  <h2 class="text-sm font-bold text-white mb-3">📊 Desglose por concepto</h2>
+  <table class="w-full text-sm">
+    <thead class="text-xs uppercase" style="color:var(--col-muted)">
+      <tr><th class="text-left py-2">Concepto</th><th class="text-right">Importe</th></tr>
+    </thead>
+    <tbody>
+      <tr class="border-t border-zinc-800">
+        <td class="py-2">💰 Salario fijo</td>
+        <td class="text-right text-white font-mono">€{{ "%.2f"|format(por_tipo.salario) }}</td>
+      </tr>
+      <tr class="border-t border-zinc-800">
+        <td class="py-2">🛵 Comisiones por entrega</td>
+        <td class="text-right text-white font-mono">€{{ "%.2f"|format(por_tipo.comision) }}</td>
+      </tr>
+      <tr class="border-t border-zinc-800">
+        <td class="py-2">⭐ Bonus</td>
+        <td class="text-right text-white font-mono">€{{ "%.2f"|format(por_tipo.bonus) }}</td>
+      </tr>
+      <tr class="border-t border-zinc-800">
+        <td class="py-2 text-yellow-400">↓ Adelantos</td>
+        <td class="text-right text-yellow-400 font-mono">−€{{ "%.2f"|format(por_tipo.adelanto) }}</td>
+      </tr>
+      <tr class="border-t border-zinc-800">
+        <td class="py-2 text-yellow-400">↓ Descuentos</td>
+        <td class="text-right text-yellow-400 font-mono">−€{{ "%.2f"|format(por_tipo.descuento) }}</td>
+      </tr>
+      <tr class="border-t-2 border-zinc-700">
+        <td class="py-2 font-bold text-white">Neto a pagar</td>
+        <td class="text-right font-bold font-mono" style="color:var(--col-gold)">
+          €{{ "%.2f"|format(neto_a_pagar) }}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{% if empleado.rol == 'repartidor' %}
+<div class="ox-card p-4 mb-5">
+  <h2 class="text-sm font-bold text-white mb-2">🛵 Entregas en el período</h2>
+  <p class="text-sm" style="color:var(--col-muted)">
+    Total entregado: <strong class="text-white">{{ entregas|length }} pedido(s)</strong>
+    · Recaudado en efectivo: <strong class="text-white">€{{ "%.2f"|format(recaudado_efectivo) }}</strong>
+  </p>
+  <p class="text-xs mt-1" style="color:var(--col-muted)">
+    Si el repartidor cobra Bizum o tarjeta, el dinero entra directo al negocio.
+    En efectivo, debe entregar el importe al cierre de caja.
+  </p>
+</div>
+{% endif %}
+
+<!-- Movimientos detallados -->
+<details class="ox-card p-4" open>
+  <summary class="font-bold text-white cursor-pointer">📋 Movimientos detallados ({{ pagos|length }})</summary>
+  {% if pagos %}
+  <table class="w-full text-sm mt-3">
+    <thead class="text-xs uppercase" style="color:var(--col-muted)">
+      <tr>
+        <th class="text-left py-2">Fecha</th>
+        <th class="text-left">Tipo</th>
+        <th class="text-left">Concepto</th>
+        <th class="text-right">Importe</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in pagos %}
+      <tr class="border-t border-zinc-800">
+        <td class="py-2">{{ p.creado_en.strftime('%d/%m %H:%M') if p.creado_en else '—' }}</td>
+        <td>{{ p.tipo }}</td>
+        <td class="text-xs">{{ p.concepto or '—' }}{% if p.pedido_id %} · #{{ p.pedido_id }}{% endif %}</td>
+        <td class="text-right font-mono {% if p.tipo in ['adelanto','descuento'] %}text-yellow-400{% else %}text-white{% endif %}">
+          {% if p.tipo in ['adelanto','descuento'] %}−{% endif %}€{{ "%.2f"|format(p.monto|float) }}
+        </td>
+        <td class="text-xs">
+          {% if p.pagado %}<span class="text-green-400">✓ pagado</span>{% else %}<span class="text-red-400">pendiente</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-gray-400 mt-2">Sin movimientos en este período.</p>
+  {% endif %}
+</details>
+
+{% endblock %}

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Verificación en dos pasos — {{ brand.nombre }}{% endblock %}
+{% block content %}
+<div class="min-h-[60vh] flex items-center justify-center py-8">
+  <div class="w-full max-w-md">
+
+    <div class="text-center mb-7">
+      <div class="text-6xl mb-3">🔐</div>
+      <h1 class="text-2xl font-extrabold text-white">Verificación en dos pasos</h1>
+      <p class="text-sm mt-1" style="color:var(--col-muted)">
+        Una capa extra de seguridad para tu cuenta.
+      </p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="mb-4 space-y-2">
+      {% for category, msg in messages %}
+      <div class="ox-toast ox-toast-{{ category if category in ('success','danger','warning','info') else 'info' }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    {% if already_enabled %}
+    <div class="ox-card p-6 space-y-4">
+      <p class="text-white">
+        ✅ La verificación en dos pasos está <strong>activa</strong> en tu cuenta.
+      </p>
+      <p class="text-sm" style="color:var(--col-muted)">
+        Para desactivarla necesitas confirmar tu contraseña y un código actual de
+        tu app de autenticación.
+      </p>
+
+      <details class="mt-4">
+        <summary class="cursor-pointer text-sm" style="color:var(--col-gold)">
+          ⚠️ Desactivar MFA
+        </summary>
+        <form method="POST" action="{{ url_for('auth.mfa_disable') }}" class="space-y-3 mt-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="block">
+            <span class="text-xs uppercase font-bold" style="color:var(--col-muted)">Contraseña</span>
+            <input type="password" name="password" required
+                   class="w-full mt-1 px-3 py-2 rounded bg-zinc-800 text-white">
+          </label>
+          <label class="block">
+            <span class="text-xs uppercase font-bold" style="color:var(--col-muted)">Código actual (6 dígitos)</span>
+            <input type="text" name="code" inputmode="numeric" autocomplete="off"
+                   pattern="\d{6}" maxlength="6" required
+                   class="w-full mt-1 px-3 py-2 rounded bg-zinc-800 text-white text-center tracking-widest font-mono">
+          </label>
+          <button type="submit"
+                  class="w-full px-4 py-2 rounded font-bold text-sm"
+                  style="background:#dc2626; color:#fff">
+            Desactivar MFA
+          </button>
+        </form>
+      </details>
+    </div>
+    {% else %}
+    <div class="ox-card p-6 space-y-5">
+      <ol class="text-sm space-y-2" style="color:var(--col-muted)">
+        <li><strong style="color:var(--col-text)">1.</strong> Abre Google Authenticator, Authy, 1Password u otra app TOTP.</li>
+        <li><strong style="color:var(--col-text)">2.</strong> Escanea el código QR o introduce el secreto manual.</li>
+        <li><strong style="color:var(--col-text)">3.</strong> Confirma el código de 6 dígitos que muestre la app.</li>
+      </ol>
+
+      <div class="flex justify-center bg-white rounded-xl p-4">
+        {{ qr_svg|safe }}
+      </div>
+
+      <details>
+        <summary class="cursor-pointer text-xs" style="color:var(--col-muted)">
+          ¿No puedes escanear? Introduce el secreto manualmente
+        </summary>
+        <code class="block mt-2 p-2 rounded bg-zinc-800 text-xs text-white break-all font-mono">{{ secret }}</code>
+      </details>
+
+      <form method="POST" class="space-y-3 mt-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="block">
+          <span class="text-xs uppercase font-bold" style="color:var(--col-muted)">Código actual (6 dígitos)</span>
+          <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+                 pattern="\d{6}" maxlength="6" required autofocus
+                 class="w-full mt-1 px-3 py-3 rounded-xl bg-zinc-800 text-white text-2xl text-center tracking-[0.4em] font-mono"
+                 placeholder="••••••">
+        </label>
+        <button type="submit"
+                class="w-full px-4 py-3 rounded-xl font-bold"
+                style="background:var(--col-gold); color:#000">
+          Activar verificación en dos pasos
+        </button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,694 @@
+{% extends "admin_base.html" %}
+{% block title %}Crear combo — {{ brand.nombre }}{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/combo-builder.css', v=asset_version) }}">
+{% endblock %}
+{% block content %}
+
+<form method="POST" action="{{ url_for('admin.nuevo_combo') }}" enctype="multipart/form-data"
+      id="bundle-form" class="bundle-page" novalidate>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tipo_producto" value="combo">
+  <div id="bundle-serial" hidden></div>
+
+  <header class="bundle-head">
+    <div class="bundle-head-copy">
+      <a href="{{ url_for('admin.productos') }}#combos" class="bundle-back" aria-label="Volver a combos">‹</a>
+      <div>
+        <p class="bundle-eyebrow">Constructor visual</p>
+        <h1>Crear un combo</h1>
+        <p>Arma el contenido como lo verá el cliente: incluidos, elecciones y precio.</p>
+      </div>
+    </div>
+    <div class="bundle-health" id="bundle-health">
+      <span></span>
+      <strong>Falta contenido</strong>
+    </div>
+  </header>
+
+  <nav class="bundle-mobile-tabs" aria-label="Áreas del constructor">
+    <button type="button" data-bundle-tab="catalog" onclick="bundleMobileTab('catalog')">Catálogo</button>
+    <button type="button" class="active" data-bundle-tab="recipe" onclick="bundleMobileTab('recipe')">Composición <b id="mobile-count">0</b></button>
+    <button type="button" data-bundle-tab="summary" onclick="bundleMobileTab('summary')">Precio</button>
+  </nav>
+
+  <section class="bundle-identity">
+    <div class="bundle-identity-main">
+      <label class="bundle-field bundle-name-field">
+        <span>Nombre del combo *</span>
+        <input type="text" name="nombre" id="bundle-name" maxlength="120" required
+               placeholder="Ej. Combo Arepa Completo" oninput="bundleUpdate()">
+      </label>
+      <label class="bundle-field">
+        <span>Categoría</span>
+        <select name="categoria_id">
+          <option value="">Sin categoría</option>
+          {% for cat in categorias %}<option value="{{ cat.id }}">{{ cat.nombre }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="bundle-field">
+        <span>Canal preparación</span>
+        <select name="canal_preparacion">
+          <option value="cocina">🍳 Cocina</option>
+          <option value="almacen">📦 Almacén</option>
+        </select>
+      </label>
+      <label class="bundle-field">
+        <span>Origen del combo *</span>
+        <select name="proveedor_despachador_id" id="bundle-origin"
+                onchange="bundleOriginChanged()" required>
+          <option value="">Stock nuestro (combo propio)</option>
+          {% for prov in proveedores|default([]) %}
+          <option value="{{ prov.id }}">{{ prov.nombre }}</option>
+          {% endfor %}
+        </select>
+        <small class="bundle-hint">
+          El catálogo de componentes se filtra según el origen elegido. Los
+          combos solo pueden mezclar productos del mismo stock — propio o de
+          un mismo bar.
+        </small>
+      </label>
+      <label class="bundle-field">
+        <span>Entrega</span>
+        <select name="tipo_entrega" id="bundle-delivery" onchange="bundleDelivery()">
+          <option value="inmediato">Preparación inmediata</option>
+          <option value="programado">Entrega en fecha fija</option>
+        </select>
+      </label>
+      <label class="bundle-field" id="bundle-date-wrap" hidden>
+        <span>Fecha de entrega *</span>
+        <input type="date" name="fecha_llegada" id="bundle-date">
+      </label>
+      <label class="bundle-field bundle-description">
+        <span>Descripción para el menú</span>
+        <textarea name="descripcion" rows="2" maxlength="600"
+                  placeholder="Explica qué incluye y por qué merece la pena."></textarea>
+      </label>
+      <label class="bundle-field">
+        <span>Origen o estilo</span>
+        <input type="text" name="origen_pais" maxlength="80" placeholder="Colombia, Venezuela...">
+      </label>
+    </div>
+    <div class="bundle-image">
+      <div class="bundle-image-preview" id="bundle-image-preview">COMBO</div>
+      <div>
+        <label class="bundle-upload">
+          <span>Subir imagen</span>
+          <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp"
+                 onchange="bundleFilePreview(this)" hidden>
+        </label>
+        <input type="url" name="imagen_url" placeholder="o URL de imagen"
+               oninput="bundleUrlPreview(this.value)">
+      </div>
+    </div>
+  </section>
+
+  <div class="bundle-builder">
+    <aside class="bundle-catalog bundle-mobile-panel" data-bundle-panel="catalog">
+      <div class="bundle-panel-head">
+        <div>
+          <span class="bundle-panel-step">1</span>
+          <div><h2>Productos</h2><p>Añade al bloque seleccionado</p></div>
+        </div>
+      </div>
+      <div class="bundle-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input type="search" id="bundle-search" placeholder="Buscar producto" autocomplete="off"
+               oninput="bundleFilterCatalog()">
+      </div>
+      <div class="bundle-categories" id="bundle-categories">
+        <button type="button" class="active" data-category="" onclick="bundleCategory(this)">Todos</button>
+        {% for cat in categorias %}
+        <button type="button" data-category="{{ cat.id }}" onclick="bundleCategory(this)">{{ cat.nombre }}</button>
+        {% endfor %}
+      </div>
+      <div class="bundle-active-target" id="bundle-active-target">
+        <span>Destino</span>
+        <strong>Selecciona antes un bloque en Composición</strong>
+      </div>
+      <div class="bundle-product-grid" id="bundle-product-grid">
+        {% for p in productos_simples %}
+        <button type="button" class="bundle-product"
+                data-product-id="{{ p.id }}"
+                data-name="{{ (p.nombre ~ ' ' ~ p.admin_nombre_operativo)|lower }}"
+                data-category="{{ p.categoria_id or '' }}"
+                data-origen-default="{{ p.proveedor_despachador_id or 'propio' }}"
+                onclick="bundleAddProduct({{ p.id }})">
+          <span class="bundle-product-image">
+            {% if p.imagen_url %}
+            <img src="{{ p.imagen_url|upload_url }}" alt="" loading="lazy">
+            {% else %}
+            <b>{{ p.nombre[:1]|upper }}</b>
+            {% endif %}
+            <i>+</i>
+          </span>
+          <span class="bundle-product-copy">
+            <strong>{{ p.nombre }}</strong>
+            <small>#{{ p.id }} · {{ p.origen_operativo_label }} · {{ p.canal_preparacion or 'cocina' }}</small>
+            <b>€{{ "%.2f"|format(p.precio_final) }}</b>
+          </span>
+        </button>
+        {% endfor %}
+      </div>
+      <p class="bundle-no-results" id="bundle-no-results" hidden>No hay productos con ese filtro.</p>
+    </aside>
+
+    <main class="bundle-recipe bundle-mobile-panel mobile-active" data-bundle-panel="recipe">
+      <div class="bundle-panel-head recipe-head">
+        <div>
+          <span class="bundle-panel-step">2</span>
+          <div><h2>Composición</h2><p>Organiza los pasos que verá el cliente</p></div>
+        </div>
+        <div class="bundle-add-section">
+          <button type="button" onclick="bundleAddSection('fixed')">+ Incluido</button>
+          <button type="button" class="choice" onclick="bundleAddSection('choice')">+ Elección</button>
+        </div>
+      </div>
+
+      <div class="bundle-presets">
+        <button type="button" onclick="bundlePreset('classic')"><b>Clásico</b><span>Principal + acompañante + bebida</span></button>
+        <button type="button" onclick="bundlePreset('fixed')"><b>Menú cerrado</b><span>Todo incluido, sin elecciones</span></button>
+        <button type="button" onclick="bundlePreset('share')"><b>Para compartir</b><span>Base fija + varias elecciones</span></button>
+        <button type="button" class="clear" onclick="bundlePreset('clear')" title="Vaciar composición">×</button>
+      </div>
+
+      <div class="bundle-empty" id="bundle-empty">
+        <div class="bundle-empty-visual">
+          <span></span><span></span><span></span>
+        </div>
+        <h3>Empieza por la estructura</h3>
+        <p>Usa una plantilla o crea un bloque incluido o de elección.</p>
+        <button type="button" onclick="bundlePreset('classic')">Usar combo clásico</button>
+      </div>
+
+      <div class="bundle-sections" id="bundle-sections"></div>
+      <div class="bundle-errors" id="bundle-errors" hidden></div>
+    </main>
+
+    <aside class="bundle-summary bundle-mobile-panel" data-bundle-panel="summary">
+      <div class="bundle-preview">
+        <div class="bundle-preview-top">
+          <span>Vista del cliente</span>
+          <b id="preview-badge">Precio fijo</b>
+        </div>
+        <div class="bundle-preview-product">
+          <div class="bundle-preview-thumb" id="preview-thumb">COMBO</div>
+          <div><h3 id="preview-name">Nuevo combo</h3><p id="preview-description">Configura el contenido del combo.</p></div>
+        </div>
+        <div class="bundle-preview-flow" id="preview-flow"></div>
+      </div>
+
+      <section class="bundle-price">
+        <div class="bundle-panel-head compact">
+          <div>
+            <span class="bundle-panel-step">3</span>
+            <div><h2>Precio</h2><p>Define cómo se calcula</p></div>
+          </div>
+        </div>
+        <div class="bundle-price-toggle">
+          <label>
+            <input type="radio" name="combo_precio_modo" value="fijo" checked onchange="bundlePricing()">
+            <span>Fijo</span>
+          </label>
+          <label>
+            <input type="radio" name="combo_precio_modo" value="descuento_porcentaje" onchange="bundlePricing()">
+            <span>% descuento</span>
+          </label>
+        </div>
+        <label class="bundle-price-input" id="bundle-fixed-price">
+          <span>Precio final</span>
+          <div><b>€</b><input type="number" name="precio" id="bundle-price" min="0.01" step="0.01"
+                             placeholder="0.00" required oninput="bundleUpdate()"></div>
+        </label>
+        <label class="bundle-price-input" id="bundle-discount-price" hidden>
+          <span>Descuento sobre componentes</span>
+          <div><input type="number" name="combo_descuento_pct" id="bundle-discount" min="0"
+                      max="{{ combo_limits.max_discount_pct }}" step="0.1" placeholder="10"
+                      oninput="bundleUpdate()"><b>%</b></div>
+        </label>
+        <div class="bundle-totals">
+          <p><span>Valor de productos</span><b id="total-base">€0.00</b></p>
+          <p><span>Precio del combo</span><b id="total-final">€0.00</b></p>
+          <p class="saving"><span>Ahorro del cliente</span><b id="total-saving">€0.00</b></p>
+        </div>
+      </section>
+
+      <details class="bundle-options">
+        <summary>Publicación y puntos</summary>
+        <div>
+          <label><input type="checkbox" name="stock_mostrar_en_web"> Mostrar stock en el menú</label>
+          <label><input type="checkbox" name="canjeable_con_puntos" id="bundle-points"
+                        onchange="bundlePoints()"> Permitir canje con puntos</label>
+          <label class="bundle-points-input" id="bundle-points-wrap" hidden>
+            <span>Puntos requeridos</span>
+            <input type="number" name="puntos_para_canje" min="1" placeholder="500">
+          </label>
+          <label class="bundle-cost-input">
+            <span>Costo interno</span>
+            <input type="number" name="precio_costo" min="0" step="0.01" placeholder="0.00">
+          </label>
+        </div>
+      </details>
+
+      <button type="submit" class="bundle-submit" id="bundle-submit">
+        <span>Crear combo</span>
+        <b id="submit-price">€0.00</b>
+      </button>
+      <p class="bundle-submit-note">Se guardarán ficha, bloques, opciones y precio en una sola operación.</p>
+    </aside>
+  </div>
+</form>
+
+{% endblock %}
+{% block scripts %}
+
+<script>
+const BUNDLE_PRODUCTS = [{% for p in productos_simples %}{
+  id:{{ p.id }},
+  name:{{ p.nombre|tojson }},
+  price:{{ p.precio_final|float }},
+  categoryId:{{ p.categoria_id or 'null' }},
+  category:{{ (p.categoria.nombre if p.categoria else 'Sin categoría')|tojson }},
+  origin:{{ p.origen_operativo_label|tojson }},
+  channel:{{ (p.canal_preparacion or 'cocina')|tojson }},
+  stock:{{ p.stock_total|int }},
+  image:{{ (p.imagen_url|upload_url if p.imagen_url else '')|tojson }}
+}{% if not loop.last %},{% endif %}{% endfor %}];
+const BUNDLE_LIMITS = {
+  maxQty:{{ combo_limits.max_qty|int }},
+  maxSelections:{{ combo_limits.max_selections|int }},
+  minComponents:{{ combo_limits.min_components|int }},
+  maxComponents:{{ combo_limits.max_components|int }},
+  maxDiscount:{{ combo_limits.max_discount_pct|float }}
+};
+
+// Disponibilidad de productos por origen (propio + cada bar):
+// {"propio":[id,id,...], "<bar_id>":[id,...]}. El selector "Origen del combo"
+// filtra la grid según esto para no permitir mezclar stocks distintos.
+const BUNDLE_AVAILABILITY = {{ (disponibilidad_por_origen|default({}))|tojson }};
+
+function bundleCurrentOrigin(){
+  const el = document.getElementById('bundle-origin');
+  if(!el) return 'propio';
+  return el.value && el.value.trim() ? el.value.trim() : 'propio';
+}
+
+function bundleAllowedIds(){
+  const key = bundleCurrentOrigin();
+  const ids = BUNDLE_AVAILABILITY && BUNDLE_AVAILABILITY[key];
+  return new Set((ids || []).map(String));
+}
+
+function bundleOriginChanged(){
+  const allowed = bundleAllowedIds();
+  let visibles = 0;
+  document.querySelectorAll('.bundle-product').forEach(card => {
+    const id = String(card.dataset.productId);
+    const ok = allowed.has(id);
+    card.hidden = !ok;
+    card.classList.toggle('is-disabled', !ok);
+    if(ok) visibles++;
+  });
+  const noRes = document.getElementById('bundle-no-results');
+  if(noRes){
+    noRes.hidden = visibles > 0;
+    noRes.textContent = visibles > 0
+      ? 'No hay productos con ese filtro.'
+      : 'Este origen no tiene productos registrados todavía. Añádelos desde el panel de Proveedores antes de armar el combo.';
+  }
+  // Avisar al usuario si en su receta ya añadió componentes que ya no son válidos
+  if(typeof bundleSections !== 'undefined' && Array.isArray(bundleSections)){
+    const invalidos = [];
+    bundleSections.forEach(section => (section.items||[]).forEach(item => {
+      if(!allowed.has(String(item.productId))){
+        invalidos.push(item.name || ('#' + item.productId));
+      }
+    }));
+    if(invalidos.length && typeof window.alert === 'function'){
+      window.alert(
+        'Aviso: los siguientes componentes ya no son válidos para el origen '
+        + 'elegido y deberás quitarlos antes de guardar:\n\n - '
+        + invalidos.join('\n - ')
+      );
+    }
+  }
+}
+
+let bundleSections = [];
+let bundleSectionSeq = 0;
+let bundleActiveSection = null;
+let bundleCatalogCategory = '';
+
+function bundleMoney(value){ return `€${(Number(value)||0).toFixed(2)}`; }
+function bundleProduct(id){ return BUNDLE_PRODUCTS.find(product => String(product.id) === String(id)); }
+function bundleEscape(value){
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[char]));
+}
+
+function bundleMobileTab(tab, shouldScroll=true){
+  document.querySelectorAll('[data-bundle-tab]').forEach(button => button.classList.toggle('active', button.dataset.bundleTab === tab));
+  document.querySelectorAll('[data-bundle-panel]').forEach(panel => panel.classList.toggle('mobile-active', panel.dataset.bundlePanel === tab));
+  if(shouldScroll){
+    window.scrollTo({top:document.querySelector('.bundle-builder').offsetTop - 112, behavior:'smooth'});
+  }
+}
+
+function bundleDelivery(){
+  const programmed = document.getElementById('bundle-delivery').value === 'programado';
+  const wrap = document.getElementById('bundle-date-wrap');
+  const input = document.getElementById('bundle-date');
+  wrap.hidden = !programmed;
+  input.required = programmed;
+}
+
+function bundleFilePreview(input){
+  const file = input.files?.[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = event => bundleSetImage(event.target.result);
+  reader.readAsDataURL(file);
+}
+function bundleUrlPreview(url){ if(url.trim()) bundleSetImage(url.trim()); }
+function bundleSetImage(url){
+  document.getElementById('bundle-image-preview').innerHTML = `<img src="${bundleEscape(url)}" alt="">`;
+  document.getElementById('preview-thumb').innerHTML = `<img src="${bundleEscape(url)}" alt="">`;
+}
+
+function bundleCategory(button){
+  bundleCatalogCategory = button.dataset.category || '';
+  document.querySelectorAll('#bundle-categories button').forEach(item => item.classList.toggle('active', item === button));
+  bundleFilterCatalog();
+}
+function bundleFilterCatalog(){
+  const term = document.getElementById('bundle-search').value.trim().toLowerCase();
+  let visible = 0;
+  document.querySelectorAll('.bundle-product').forEach(card => {
+    const show = (!term || card.dataset.name.includes(term)) &&
+      (!bundleCatalogCategory || card.dataset.category === bundleCatalogCategory);
+    card.hidden = !show;
+    if(show) visible += 1;
+  });
+  document.getElementById('bundle-no-results').hidden = visible > 0;
+}
+
+function bundleAddSection(type, name='', maxSelections=1){
+  if(bundleSections.length >= BUNDLE_LIMITS.maxComponents) return;
+  const id = ++bundleSectionSeq;
+  bundleSections.push({
+    id,
+    type,
+    name:name || (type === 'fixed' ? 'Incluido en el combo' : 'Elige una opción'),
+    maxSelections:Math.max(1, Math.min(BUNDLE_LIMITS.maxSelections, Number(maxSelections)||1)),
+    items:[]
+  });
+  bundleActiveSection = id;
+  bundleRender();
+}
+
+function bundlePreset(kind){
+  if(kind === 'clear'){
+    if(bundleSections.length && !confirm('¿Vaciar toda la composición del combo?')) return;
+    bundleSections=[]; bundleActiveSection=null; bundleRender(); return;
+  }
+  if(bundleSections.length && !confirm('La plantilla reemplazará la composición actual. ¿Continuar?')) return;
+  bundleSections=[]; bundleActiveSection=null;
+  if(kind === 'classic'){
+    bundleAddSection('choice','Elige tu principal',1);
+    bundleAddSection('choice','Elige tu acompañamiento',1);
+    bundleAddSection('choice','Elige tu bebida',1);
+  } else if(kind === 'fixed'){
+    bundleAddSection('fixed','Todo incluido',1);
+  } else if(kind === 'share'){
+    bundleAddSection('fixed','Base para compartir',1);
+    bundleAddSection('choice','Elige 2 acompañamientos',2);
+    bundleAddSection('choice','Elige las bebidas',2);
+  }
+  bundleActiveSection = bundleSections[0]?.id || null;
+  bundleRender();
+}
+
+function bundleSelectSection(id){ bundleActiveSection=Number(id); bundleRender(); }
+function bundleRemoveSection(id){
+  const section = bundleSections.find(item => item.id === Number(id));
+  if(section?.items.length && !confirm(`¿Eliminar "${section.name}" y sus productos?`)) return;
+  bundleSections = bundleSections.filter(item => item.id !== Number(id));
+  if(bundleActiveSection === Number(id)) bundleActiveSection = bundleSections[0]?.id || null;
+  bundleRender();
+}
+function bundleMoveSection(id, direction){
+  const index = bundleSections.findIndex(item => item.id === Number(id));
+  const next = index + direction;
+  if(index < 0 || next < 0 || next >= bundleSections.length) return;
+  [bundleSections[index],bundleSections[next]]=[bundleSections[next],bundleSections[index]];
+  bundleRender();
+}
+function bundleRenameSection(id, value){
+  const section=bundleSections.find(item=>item.id===Number(id));
+  if(section) section.name=value;
+  bundleUpdate();
+}
+function bundleSetMax(id, value){
+  const section=bundleSections.find(item=>item.id===Number(id));
+  if(!section) return;
+  section.maxSelections=Math.max(1,Math.min(BUNDLE_LIMITS.maxSelections,Number(value)||1));
+  if(section.items.filter(item=>item.isDefault).length > section.maxSelections){
+    let kept=0;
+    section.items.forEach(item=>{ if(item.isDefault){ kept++; item.isDefault=kept<=section.maxSelections; }});
+  }
+  bundleRender();
+}
+
+function bundleAddProduct(productId){
+  const section = bundleSections.find(item => item.id === bundleActiveSection);
+  const product = bundleProduct(productId);
+  if(!section){
+    bundleAddSection('fixed','Incluido en el combo',1);
+    return bundleAddProduct(productId);
+  }
+  if(bundleSections.reduce((sum,item)=>sum+item.items.length,0) >= BUNDLE_LIMITS.maxComponents){
+    bundleShowErrors([`El límite configurado es de ${BUNDLE_LIMITS.maxComponents} productos por combo.`]);
+    return;
+  }
+  if(section.items.some(item=>item.productId===Number(productId))) return;
+  section.items.push({
+    productId:Number(productId),
+    qty:1,
+    extra:0,
+    isDefault:section.type==='choice' && section.items.length < section.maxSelections,
+    note:''
+  });
+  bundleRender();
+  if(navigator.vibrate) navigator.vibrate(10);
+}
+function bundleRemoveProduct(sectionId, productId){
+  const section=bundleSections.find(item=>item.id===Number(sectionId));
+  if(!section) return;
+  section.items=section.items.filter(item=>item.productId!==Number(productId));
+  bundleRender();
+}
+function bundleQty(sectionId,productId,delta){
+  const item=bundleFindItem(sectionId,productId); if(!item) return;
+  item.qty=Math.max(1,Math.min(BUNDLE_LIMITS.maxQty,item.qty+delta)); bundleRender();
+}
+function bundleSetExtra(sectionId,productId,value){
+  const item=bundleFindItem(sectionId,productId); if(!item) return;
+  item.extra=Math.max(0,Number(value)||0); bundleUpdate();
+}
+function bundleSetDefault(sectionId,productId,checked){
+  const section=bundleSections.find(item=>item.id===Number(sectionId)); if(!section) return;
+  const item=section.items.find(entry=>entry.productId===Number(productId)); if(!item) return;
+  if(checked && section.items.filter(entry=>entry.isDefault).length >= section.maxSelections){
+    section.items.filter(entry=>entry.isDefault).slice(0,1).forEach(entry=>entry.isDefault=false);
+  }
+  item.isDefault=checked; bundleRender();
+}
+function bundleSetNote(sectionId,productId,value){
+  const item=bundleFindItem(sectionId,productId); if(item) item.note=value.slice(0,300);
+}
+function bundleFindItem(sectionId,productId){
+  return bundleSections.find(item=>item.id===Number(sectionId))?.items.find(item=>item.productId===Number(productId));
+}
+
+function bundleEstimateBase(){
+  let total=0;
+  bundleSections.forEach(section=>{
+    if(section.type==='fixed'){
+      section.items.forEach(item=>{ const product=bundleProduct(item.productId); if(product) total+=product.price*item.qty; });
+      return;
+    }
+    const defaults=section.items.filter(item=>item.isDefault).slice(0,section.maxSelections);
+    if(defaults.length){
+      defaults.forEach(item=>{ const product=bundleProduct(item.productId); if(product) total+=product.price; });
+    } else {
+      const prices=section.items.map(item=>bundleProduct(item.productId)?.price).filter(value=>Number.isFinite(value));
+      prices.sort((a,b)=>a-b);
+      total+=prices.slice(0,Math.min(section.maxSelections,prices.length)).reduce((sum,value)=>sum+value,0);
+    }
+  });
+  return Math.round(total*100)/100;
+}
+function bundlePricing(){
+  const discount=bundleIsDiscount();
+  document.getElementById('bundle-fixed-price').hidden=discount;
+  document.getElementById('bundle-discount-price').hidden=!discount;
+  document.getElementById('bundle-price').required=!discount;
+  document.getElementById('preview-badge').textContent=discount?'Descuento porcentual':'Precio fijo';
+  bundleUpdate();
+}
+function bundleIsDiscount(){
+  return document.querySelector('input[name="combo_precio_modo"]:checked')?.value==='descuento_porcentaje';
+}
+function bundlePoints(){
+  document.getElementById('bundle-points-wrap').hidden=!document.getElementById('bundle-points').checked;
+}
+
+function bundleRender(){
+  const wrap=document.getElementById('bundle-sections');
+  const empty=document.getElementById('bundle-empty');
+  empty.hidden=bundleSections.length>0;
+  wrap.innerHTML=bundleSections.map((section,index)=>{
+    const active=section.id===bundleActiveSection;
+    const itemRows=section.items.map(item=>{
+      const product=bundleProduct(item.productId); if(!product) return '';
+      return `<div class="bundle-line">
+        <div class="bundle-line-image">${product.image?`<img src="${bundleEscape(product.image)}" alt="">`:bundleEscape(product.name.slice(0,1))}</div>
+        <div class="bundle-line-copy"><strong>${bundleEscape(product.name)}</strong><small>#${product.id} · ${bundleEscape(product.origin)} · ${bundleEscape(product.channel)} · ${bundleMoney(product.price)}</small></div>
+        <button type="button" class="bundle-line-remove" onclick="bundleRemoveProduct(${section.id},${product.id})" aria-label="Quitar ${bundleEscape(product.name)}">×</button>
+        <div class="bundle-line-controls">
+          ${section.type==='fixed'?`<div class="bundle-qty"><button type="button" onclick="bundleQty(${section.id},${product.id},-1)">−</button><input value="${item.qty}" readonly aria-label="Cantidad"><button type="button" onclick="bundleQty(${section.id},${product.id},1)">+</button></div>`:
+          `<label class="bundle-extra"><span>Suplemento</span><div><b>€</b><input type="number" value="${Number(item.extra||0).toFixed(2)}" min="0" step="0.01" onchange="bundleSetExtra(${section.id},${product.id},this.value)"></div></label>
+           <label class="bundle-default"><input type="checkbox" ${item.isDefault?'checked':''} onchange="bundleSetDefault(${section.id},${product.id},this.checked)"> Predeterminada</label>`}
+        </div>
+        <label class="bundle-line-note"><input type="text" value="${bundleEscape(item.note)}" maxlength="300" placeholder="Nota opcional para cocina" oninput="bundleSetNote(${section.id},${product.id},this.value)"></label>
+      </div>`;
+    }).join('');
+    return `<article class="bundle-section ${section.type==='choice'?'choice':''} ${active?'active':''}" onclick="bundleSelectSection(${section.id})">
+      <header class="bundle-section-head">
+        <span class="bundle-grip">${index+1}</span>
+        <div class="bundle-section-title">
+          <span class="bundle-section-type">${section.type==='fixed'?'Incluido':'Elección'}</span>
+          <input value="${bundleEscape(section.name)}" maxlength="80" onclick="event.stopPropagation()" oninput="bundleRenameSection(${section.id},this.value)">
+        </div>
+        ${section.type==='choice'?`<label class="bundle-select-count">Elige <input type="number" min="1" max="${BUNDLE_LIMITS.maxSelections}" value="${section.maxSelections}" onclick="event.stopPropagation()" onchange="bundleSetMax(${section.id},this.value)"></label>`:'<span></span>'}
+        <div class="bundle-section-actions">
+          <button type="button" onclick="event.stopPropagation();bundleMoveSection(${section.id},-1)" title="Subir">↑</button>
+          <button type="button" onclick="event.stopPropagation();bundleMoveSection(${section.id},1)" title="Bajar">↓</button>
+          <button type="button" onclick="event.stopPropagation();bundleRemoveSection(${section.id})" title="Eliminar">×</button>
+        </div>
+      </header>
+      <div class="bundle-section-body">${itemRows||'<div class="bundle-section-empty">Selecciona productos del catálogo para añadirlos aquí.</div>'}</div>
+      <footer class="bundle-section-footer"><span>${section.items.length} producto${section.items.length===1?'':'s'} ${active?'· bloque seleccionado':''}</span><button type="button" onclick="event.stopPropagation();bundleSelectSection(${section.id});bundleMobileTab('catalog')">+ Añadir productos</button></footer>
+    </article>`;
+  }).join('');
+  bundleUpdate();
+}
+
+function bundleUpdate(){
+  const totalItems=bundleSections.reduce((sum,section)=>sum+section.items.length,0);
+  const active=bundleSections.find(section=>section.id===bundleActiveSection);
+  document.getElementById('bundle-active-target').querySelector('strong').textContent=
+    active?`${active.type==='fixed'?'Incluido':'Elección'} · ${active.name}`:'Primero crea o selecciona un bloque';
+  document.getElementById('mobile-count').textContent=totalItems;
+  document.querySelectorAll('.bundle-product').forEach(card=>{
+    const added=active?.items.some(item=>item.productId===Number(card.dataset.productId));
+    card.classList.toggle('is-added',Boolean(added));
+    const icon=card.querySelector('.bundle-product-image i'); if(icon) icon.textContent=added?'✓':'+';
+  });
+
+  const base=bundleEstimateBase();
+  let final=Number(document.getElementById('bundle-price').value)||0;
+  if(bundleIsDiscount()){
+    const pct=Math.max(0,Math.min(BUNDLE_LIMITS.maxDiscount,Number(document.getElementById('bundle-discount').value)||0));
+    final=base>0?Math.max(.01,Math.round(base*(1-pct/100)*100)/100):0;
+    if(final>0) document.getElementById('bundle-price').value=final.toFixed(2);
+  }
+  document.getElementById('total-base').textContent=bundleMoney(base);
+  document.getElementById('total-final').textContent=bundleMoney(final);
+  document.getElementById('total-saving').textContent=bundleMoney(Math.max(0,base-final));
+  document.getElementById('submit-price').textContent=bundleMoney(final);
+  document.getElementById('preview-name').textContent=document.getElementById('bundle-name').value.trim()||'Nuevo combo';
+  document.getElementById('preview-description').textContent=
+    document.querySelector('textarea[name=descripcion]').value.trim()||'Configura el contenido del combo.';
+  document.getElementById('preview-flow').innerHTML=bundleSections.map(section=>{
+    const names=section.items.map(item=>bundleProduct(item.productId)?.name).filter(Boolean);
+    return `<div class="bundle-preview-block"><p><span>${bundleEscape(section.name||'Sin nombre')}</span><span>${section.type==='fixed'?'Incluido':`Elige ${section.maxSelections}`}</span></p><small>${bundleEscape(names.join(' · ')||'Sin productos')}</small></div>`;
+  }).join('');
+  const validStructure=bundleSections.length>0 && totalItems>=BUNDLE_LIMITS.minComponents &&
+    bundleSections.every(section=>section.items.length && section.name.trim() &&
+      (section.type==='fixed'||section.maxSelections<=section.items.length));
+  const health=document.getElementById('bundle-health');
+  health.classList.toggle('ready',validStructure);
+  health.querySelector('strong').textContent=validStructure?'Composición lista':'Falta contenido';
+}
+
+function bundleValidate(){
+  const errors=[];
+  const totalItems=bundleSections.reduce((sum,section)=>sum+section.items.length,0);
+  if(!document.getElementById('bundle-name').value.trim()) errors.push('Escribe el nombre del combo.');
+  if(document.getElementById('bundle-delivery').value==='programado'&&!document.getElementById('bundle-date').value) errors.push('Selecciona la fecha fija de entrega.');
+  if(!bundleSections.length) errors.push('Crea al menos un bloque de contenido.');
+  if(totalItems<BUNDLE_LIMITS.minComponents) errors.push(`Añade al menos ${BUNDLE_LIMITS.minComponents} producto al combo.`);
+  if(totalItems>BUNDLE_LIMITS.maxComponents) errors.push(`El combo no puede superar ${BUNDLE_LIMITS.maxComponents} productos.`);
+  bundleSections.forEach(section=>{
+    if(!section.name.trim()) errors.push('Todos los bloques necesitan un nombre.');
+    if(!section.items.length) errors.push(`"${section.name||'Bloque'}" no tiene productos.`);
+    if(section.type==='choice'&&section.maxSelections>section.items.length) errors.push(`"${section.name}" pide elegir ${section.maxSelections}, pero solo tiene ${section.items.length} opciones.`);
+  });
+  if(bundleIsDiscount()){
+    const discount=Number(document.getElementById('bundle-discount').value);
+    if(bundleEstimateBase()<=0) errors.push('El descuento necesita productos con precio.');
+    if(discount<0||discount>BUNDLE_LIMITS.maxDiscount) errors.push(`El descuento debe estar entre 0 y ${BUNDLE_LIMITS.maxDiscount}%.`);
+  } else if(Number(document.getElementById('bundle-price').value)<=0) errors.push('Indica un precio fijo mayor que cero.');
+  if(document.getElementById('bundle-points').checked&&bundleSections.some(section=>section.type==='choice')) errors.push('Un combo personalizable no puede canjearse directamente con puntos.');
+  bundleShowErrors([...new Set(errors)]);
+  return errors.length===0;
+}
+function bundleShowErrors(errors){
+  const box=document.getElementById('bundle-errors');
+  box.hidden=!errors.length;
+  box.innerHTML=errors.map(error=>`<p>• ${bundleEscape(error)}</p>`).join('');
+}
+
+function bundleSerialize(){
+  const serial=document.getElementById('bundle-serial'); serial.innerHTML='';
+  const add=(name,value)=>{ const input=document.createElement('input'); input.type='hidden'; input.name=name; input.value=value; serial.appendChild(input); };
+  bundleSections.forEach((section,index)=>{
+    const uid=`bundle-${section.id}`;
+    add('combo_group_uid',uid); add('combo_group_name',section.name.trim());
+    add('combo_group_type',section.type==='choice'?'sel':'fijo');
+    add('combo_group_max_sel',section.type==='choice'?section.maxSelections:1);
+    add('combo_group_order',index);
+    section.items.forEach(item=>{
+      add('comp_group_uid',uid); add('comp_prod_id',item.productId);
+      add('comp_cantidad',section.type==='fixed'?item.qty:1);
+      add('comp_tipo',section.type==='choice'?'sel':'fijo');
+      add('comp_grupo',section.type==='choice'?section.name.trim():'');
+      add('comp_max_sel',section.type==='choice'?section.maxSelections:1);
+      add('comp_precio_extra',section.type==='choice'?item.extra:0);
+      add('comp_default',section.type==='choice'&&item.isDefault?'1':'0');
+      add('comp_notas_preparacion',item.note||'');
+    });
+  });
+}
+
+document.getElementById('bundle-form').addEventListener('submit',event=>{
+  if(!bundleValidate()){
+    event.preventDefault();
+    bundleMobileTab('recipe');
+    document.getElementById('bundle-errors').scrollIntoView({behavior:'smooth',block:'center'});
+    return;
+  }
+  bundleSerialize();
+  const button=document.getElementById('bundle-submit');
+  button.disabled=true; button.querySelector('span').textContent='Creando combo...';
+});
+document.querySelector('textarea[name=descripcion]').addEventListener('input',bundleUpdate);
+bundleDelivery();
+bundlePricing();
+bundleRender();
+bundleOriginChanged();
+bundleMobileTab('recipe', false);
+</script>
+{% endblock %}

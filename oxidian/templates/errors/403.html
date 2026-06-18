@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Acceso denegado — {{ brand.nombre }}{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto text-center py-16 px-4">
+  <div class="text-8xl mb-4">🔒</div>
+  <h1 class="text-5xl font-black mb-2" style="color:var(--brand-secondary,#CE1126)">403</h1>
+  <h2 class="text-xl font-bold mb-3" style="color:var(--col-text)">Acceso restringido</h2>
+  <p class="mb-8" style="color:var(--col-muted)">No tienes permisos para acceder a esta sección.</p>
+  <a href="{{ url_for('public.index') }}"
+     class="inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-base"
+     style="background:linear-gradient(135deg,var(--brand-primary,#FCD116),color-mix(in srgb,var(--brand-primary,#FCD116) 80%,#000));color:#18120A">
+    🏠 Ir al inicio
+  </a>
+</div>
+{% endblock %}

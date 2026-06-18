@@ -1,0 +1,158 @@
+{% extends "admin_base.html" %}
+{% block title %}Reseñas — Admin{% endblock %}
+{% block content %}
+
+<div class="flex gap-2 mb-4 flex-wrap">
+  <a href="{{ url_for('admin.cupones') }}" class="ox-btn-secondary" style="font-size:.8rem">🎟️ Cupones</a>
+  <a href="{{ url_for('admin.afiliados') }}" class="ox-btn-secondary" style="font-size:.8rem">🤝 Afiliados</a>
+  <a href="{{ url_for('admin.resenas') }}" class="ox-btn-secondary" style="font-size:.8rem">⭐ Reseñas</a>
+  <a href="{{ url_for('marketing.puntos') }}" class="ox-btn-secondary" style="font-size:.8rem">💎 Puntos</a>
+  <a href="{{ url_for('marketing.campanas') }}" class="ox-btn-secondary" style="font-size:.8rem">📲 Campañas</a>
+  <a href="{{ url_for('admin.menu_config') }}" class="ox-btn-secondary" style="font-size:.8rem">🎨 Banners</a>
+</div>
+
+<div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-black text-white">💬 Moderación de Reseñas</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Aprueba reseñas para que sean visibles en la tienda pública</p>
+  </div>
+  <div class="flex gap-3">
+    <div class="ox-card px-4 py-2 text-center" style="border-color:rgba(255,171,0,.3)">
+      <p class="text-xl font-black" style="color:#FFAB00">{{ pendientes|length }}</p>
+      <p class="text-xs" style="color:var(--col-muted)">Pendientes</p>
+    </div>
+    <div class="ox-card px-4 py-2 text-center" style="border-color:rgba(94,240,151,.2)">
+      <p class="text-xl font-black" style="color:#5EF097">{{ aprobadas|length }}</p>
+      <p class="text-xs" style="color:var(--col-muted)">Aprobadas</p>
+    </div>
+  </div>
+</div>
+
+{# ── PENDIENTES ── #}
+<div class="flex items-center gap-2 mb-3">
+  <h2 class="font-black text-white">⏳ Pendientes de moderación</h2>
+  {% if pendientes %}
+  <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:rgba(255,171,0,.12);color:#FFAB00;border:1px solid rgba(255,171,0,.2)">{{ pendientes|length }}</span>
+  {% endif %}
+</div>
+
+{% if pendientes %}
+<div class="space-y-3 mb-8">
+  {% for r in pendientes %}
+  <div class="ox-card p-4" style="border-left:3px solid rgba(255,171,0,.5)">
+    <div class="flex items-start justify-between gap-4 flex-wrap">
+      <div class="flex-1 min-w-0">
+        {# Estrellas + origen #}
+        <div class="flex items-center gap-2 mb-2 flex-wrap">
+          <span class="text-lg tracking-tight" style="color:#FFAB00">
+            {% for i in range(r.calificacion) %}★{% endfor %}<span style="color:rgba(255,255,255,.18)">{% for i in range(5 - r.calificacion) %}★{% endfor %}</span>
+          </span>
+          <span class="text-xs font-bold" style="color:#FFAB00">{{ r.calificacion }}/5</span>
+          <span class="text-xs px-2 py-0.5 rounded-full" style="background:rgba(10,132,255,.1);color:#5AC8FA;border:1px solid rgba(10,132,255,.18)">
+            {{ '🖥️ Presencial' if (r.pedido and r.pedido.origen == 'presencial') else '🌐 Web' }}
+          </span>
+        </div>
+
+        {# Comentario #}
+        <p class="text-sm mb-2" style="color:var(--col-text)">
+          {% if r.comentario %}
+            "{{ r.comentario }}"
+          {% else %}
+            <span class="italic" style="color:var(--col-faint)">Sin comentario</span>
+          {% endif %}
+        </p>
+
+        {# Meta #}
+        <div class="flex flex-wrap gap-3 text-xs" style="color:var(--col-muted)">
+          <span>👤 {{ r.cliente.nombre if r.cliente else 'Cliente invitado' }}</span>
+          {% if r.pedido %}<span>📦 {{ r.pedido.numero_pedido }}</span>{% endif %}
+          <span>🍽️ {{ r.producto.nombre if r.producto else '—' }}</span>
+          <span>📅 {{ r.creado_en.strftime('%d/%m/%Y %H:%M') }}</span>
+        </div>
+      </div>
+
+      {# Acciones #}
+      <div class="flex flex-col gap-2 flex-shrink-0">
+        <form method="POST" action="{{ url_for('admin.aprobar_resena', review_id=r.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="ox-btn-sm-ok">✅ Aprobar</button>
+        </form>
+        <form method="POST" action="{{ url_for('admin.eliminar_resena', review_id=r.id) }}"
+              onsubmit="return confirm('¿Eliminar esta reseña definitivamente?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="ox-btn-sm-del">🗑️ Rechazar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="ox-card p-6 text-center mb-8" style="border-style:dashed">
+  <p class="text-2xl mb-2">✅</p>
+  <p class="font-bold text-white">Sin pendientes</p>
+  <p class="text-sm mt-1" style="color:var(--col-muted)">No hay reseñas esperando moderación.</p>
+</div>
+{% endif %}
+
+{# ── APROBADAS ── #}
+<div class="flex items-center gap-2 mb-3">
+  <h2 class="font-black text-white">✅ Aprobadas y visibles en tienda</h2>
+  {% if aprobadas %}
+  <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:rgba(94,240,151,.1);color:#5EF097;border:1px solid rgba(94,240,151,.18)">{{ aprobadas|length }}</span>
+  {% endif %}
+</div>
+
+{% if aprobadas %}
+<div class="ox-card overflow-hidden">
+  {% for r in aprobadas %}
+  <div class="p-3 {% if not loop.last %}border-b{% endif %}" style="border-color:var(--col-border)">
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-sm" style="color:#FFAB00">
+            {% for i in range(r.calificacion) %}★{% endfor %}<span style="color:rgba(255,255,255,.18)">{% for i in range(5 - r.calificacion) %}★{% endfor %}</span>
+          </span>
+          <span class="text-xs font-bold" style="color:var(--col-muted)">{{ r.calificacion }}/5</span>
+        </div>
+        <p class="text-sm" style="color:var(--col-text)">{{ r.comentario or '—' }}</p>
+        <p class="text-xs mt-1" style="color:var(--col-faint)">
+          {{ r.cliente.nombre if r.cliente else 'Cliente' }}
+          {% if r.producto %} · {{ r.producto.nombre }}{% endif %}
+          · {{ r.creado_en.strftime('%d/%m/%Y') }}
+        </p>
+      </div>
+      <form method="POST" action="{{ url_for('admin.eliminar_resena', review_id=r.id) }}"
+            onsubmit="return confirm('¿Quitar esta reseña de la tienda?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="text-xs px-3 py-1.5 rounded-lg transition" style="color:var(--col-faint);background:rgba(255,59,48,.06);border:1px solid rgba(255,59,48,.12)">
+          ✕ Quitar
+        </button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="ox-card p-6 text-center" style="border-style:dashed">
+  <p style="color:var(--col-faint)">Aún no hay reseñas aprobadas.</p>
+</div>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<style>
+.ox-btn-sm-ok {
+  white-space: nowrap; font-size: .75rem; font-weight: 700;
+  padding: .4rem .85rem; border-radius: .6rem; border: 1px solid rgba(94,240,151,.25);
+  background: rgba(94,240,151,.1); color: #5EF097; cursor: pointer; transition: background .15s;
+}
+.ox-btn-sm-ok:hover { background: rgba(94,240,151,.2); }
+.ox-btn-sm-del {
+  white-space: nowrap; font-size: .75rem; font-weight: 700;
+  padding: .4rem .85rem; border-radius: .6rem; border: 1px solid rgba(255,59,48,.2);
+  background: rgba(255,59,48,.08); color: #FF6B6B; cursor: pointer; transition: background .15s;
+}
+.ox-btn-sm-del:hover { background: rgba(255,59,48,.16); }
+</style>
+{% endblock %}

@@ -1,0 +1,328 @@
+{% extends "admin_base.html" %}
+{% block title %}Afiliados — {{ brand.nombre }}{% endblock %}
+{% block content %}
+
+<div class="flex gap-2 mb-4 flex-wrap">
+  <a href="{{ url_for('admin.cupones') }}" class="ox-btn-secondary" style="font-size:.8rem">🎟️ Cupones</a>
+  <a href="{{ url_for('admin.afiliados') }}" class="ox-btn-secondary" style="font-size:.8rem">🤝 Afiliados</a>
+  <a href="{{ url_for('admin.resenas') }}" class="ox-btn-secondary" style="font-size:.8rem">⭐ Reseñas</a>
+  <a href="{{ url_for('marketing.puntos') }}" class="ox-btn-secondary" style="font-size:.8rem">💎 Puntos</a>
+  <a href="{{ url_for('marketing.campanas') }}" class="ox-btn-secondary" style="font-size:.8rem">📲 Campañas</a>
+  <a href="{{ url_for('admin.menu_config') }}" class="ox-btn-secondary" style="font-size:.8rem">🎨 Banners</a>
+</div>
+
+<div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-black text-white">🤝 Afiliados</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Códigos de referido con descuento para el cliente y comisión para el afiliado</p>
+  </div>
+  <button onclick="toggleForm('form-nuevo')"
+          class="text-sm font-bold px-4 py-2 rounded-xl" style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
+    + Nuevo código
+  </button>
+</div>
+
+{# ── FORM NUEVO ── #}
+<div id="form-nuevo" class="hidden mb-5">
+<div class="ox-card p-5">
+  <h2 class="font-black text-white mb-4">➕ Crear código de afiliado</h2>
+  <form method="POST" action="{{ url_for('admin.crear_afiliado') }}" data-ox-validate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid md:grid-cols-3 gap-4">
+      <div>
+        <label class="af-label">Código *</label>
+        <input type="text" name="codigo" required placeholder="AMIGO20" data-ox-required
+               class="af-input" style="text-transform:uppercase;font-weight:900;letter-spacing:.1em">
+        <p class="text-xs mt-1" style="color:var(--col-faint)">Mayúsculas, sin espacios</p>
+      </div>
+      <div class="md:col-span-2">
+        <label class="af-label">Descripción</label>
+        <input type="text" name="descripcion" placeholder="Código para influencer / staff / cliente VIP..."
+               class="af-input">
+      </div>
+      <div>
+        <label class="af-label">Tipo</label>
+        <select name="tipo" class="af-select">
+          <option value="externo">🌐 Externo (influencer, cliente)</option>
+          <option value="staff">👤 Staff del negocio</option>
+        </select>
+      </div>
+      <div>
+        <label class="af-label">Asignar a (opcional)</label>
+        <select name="user_id" class="af-select">
+          <option value="">— Sin usuario asignado —</option>
+          {% for u in staff_users %}
+          <option value="{{ u.id }}">{{ u.nombre }} ({{ u.rol }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div></div>
+
+      {# Descuento para el cliente #}
+      <div class="md:col-span-3">
+        <p class="text-xs font-bold mb-2 uppercase tracking-wide" style="color:#5AC8FA">💙 Descuento para el CLIENTE al usar el código</p>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="af-label">Tipo de descuento</label>
+            <select name="descuento_tipo" class="af-select">
+              <option value="">Sin descuento</option>
+              <option value="porcentaje">% Porcentaje</option>
+              <option value="monto_fijo">€ Monto fijo</option>
+            </select>
+          </div>
+          <div>
+            <label class="af-label">Valor</label>
+            <input type="number" name="descuento_valor" step="0.01" min="0" value="0" class="af-input">
+          </div>
+        </div>
+      </div>
+
+      {# Comisión para el afiliado #}
+      <div class="md:col-span-3">
+        <p class="text-xs font-bold mb-2 uppercase tracking-wide" style="color:#5EF097">💚 Comisión para el AFILIADO por cada pedido</p>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="af-label">Tipo de comisión</label>
+            <select name="comision_tipo" class="af-select">
+              <option value="">Sin comisión</option>
+              <option value="porcentaje">% del pedido</option>
+              <option value="monto_fijo">€ por pedido</option>
+            </select>
+          </div>
+          <div>
+            <label class="af-label">Valor</label>
+            <input type="number" name="comision_valor" step="0.01" min="0" value="0" class="af-input">
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label class="af-label">Usos máximos</label>
+        <input type="number" name="usos_maximos" min="1" placeholder="Sin límite" class="af-input">
+      </div>
+      <div>
+        <label class="af-label">Válido desde</label>
+        <input type="date" name="fecha_inicio" class="af-input">
+      </div>
+      <div>
+        <label class="af-label">Válido hasta</label>
+        <input type="date" name="fecha_fin" class="af-input">
+      </div>
+    </div>
+    <div class="flex gap-3 mt-5">
+      <button type="submit" class="px-6 py-2 font-bold rounded-xl text-black"
+              style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Crear código</button>
+      <button type="button" onclick="toggleForm('form-nuevo')"
+              class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
+    </div>
+  </form>
+</div>
+</div>
+
+{# ── LISTA ── #}
+{% if not codigos %}
+<div class="ox-card p-10 text-center">
+  <p class="text-4xl mb-3">🤝</p>
+  <p class="font-bold text-white">Sin códigos de afiliado</p>
+  <p class="text-sm mt-1" style="color:var(--col-muted)">Crea códigos para que influencers o staff puedan referir clientes</p>
+</div>
+{% else %}
+<div class="space-y-3">
+  {% for c in codigos %}
+  <div class="ox-card p-4 {{ '' if c.activo else 'opacity-60' }}">
+    <div class="flex items-center gap-4 flex-wrap">
+
+      {# Código badge #}
+      <div class="af-code-badge {{ 'af-badge-active' if c.activo else 'af-badge-inactive' }}">
+        {{ c.codigo }}
+      </div>
+
+      {# Info #}
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap mb-1">
+          <p class="font-bold text-white">{{ c.descripcion or c.codigo }}</p>
+          <span class="af-tag af-tag-{{ c.tipo }}">{{ '👤 Staff' if c.tipo == 'staff' else '🌐 Externo' }}</span>
+          {% if not c.activo %}<span class="af-tag" style="background:rgba(255,59,48,.1);color:#FF6B6B;border-color:rgba(255,59,48,.2)">Inactivo</span>{% endif %}
+        </div>
+        <div class="flex gap-4 flex-wrap text-xs" style="color:var(--col-faint)">
+          {% if c.afiliado %}<span>👤 {{ c.afiliado.nombre }}</span>{% endif %}
+          {% if c.descuento_tipo %}
+          <span style="color:#5AC8FA">💙 Cliente: {{ c.descuento_valor }}{{ '%' if c.descuento_tipo == 'porcentaje' else '€' }}</span>
+          {% endif %}
+          {% if c.comision_tipo %}
+          <span style="color:#5EF097">💚 Afiliado: {{ c.comision_valor }}{{ '%' if c.comision_tipo == 'porcentaje' else '€' }}</span>
+          {% endif %}
+          <span>Usos: {{ c.usos_actuales }}{% if c.usos_maximos %}/{{ c.usos_maximos }}{% endif %}</span>
+          {% if c.fecha_fin %}<span>Hasta {{ c.fecha_fin.strftime('%d/%m/%Y') }}</span>{% endif %}
+        </div>
+      </div>
+
+      {# Acciones #}
+      <div class="flex items-center gap-2 flex-shrink-0 flex-wrap">
+        <a href="{{ url_for('admin.usos_afiliado', codigo_id=c.id) }}"
+           class="af-btn">📊 Usos</a>
+        <form method="POST" action="{{ url_for('admin.pagar_comisiones_afiliado', codigo_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="af-btn af-btn-success"
+                  onclick="return confirm('¿Marcar como pagadas todas las comisiones pendientes de {{ c.codigo }}?')">
+            💸 Pagar
+          </button>
+        </form>
+        <form method="POST" action="{{ url_for('admin.toggle_afiliado', codigo_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="af-btn {{ 'af-btn-danger' if c.activo else 'af-btn-success' }}">
+            {{ '⏸ Pausar' if c.activo else '▶ Activar' }}
+          </button>
+        </form>
+        <button type="button"
+                onclick="abrirEditarAfiliado({{ c.id }}, {{ c.codigo|tojson }}, {{ (c.descripcion or '')|tojson }}, {{ c.tipo|tojson }}, {{ (c.user_id or '')|tojson }}, {{ (c.descuento_tipo or '')|tojson }}, {{ (c.descuento_valor or 0)|tojson }}, {{ (c.comision_tipo or '')|tojson }}, {{ (c.comision_valor or 0)|tojson }}, {{ (c.usos_maximos or '')|tojson }}, {{ (c.fecha_inicio.isoformat() if c.fecha_inicio else '')|tojson }}, {{ (c.fecha_fin.isoformat() if c.fecha_fin else '')|tojson }})"
+                class="af-btn">✏️ Editar</button>
+        {% if not c.usos_actuales %}
+        <form method="POST" action="{{ url_for('admin.eliminar_afiliado', codigo_id=c.id) }}"
+              onsubmit="return confirm('¿Eliminar el código {{ c.codigo }}? Esta acción no se puede deshacer.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="af-btn af-btn-danger">🗑️</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ── MODAL EDITAR AFILIADO ── #}
+<div id="modal-editar-af" class="hidden fixed inset-0 z-50 flex items-start justify-center pt-10 pb-10 overflow-y-auto"
+     style="background:rgba(0,0,0,.75)" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="ox-card p-5 w-full max-w-xl mx-4 shadow-2xl" onclick="event.stopPropagation()">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="font-black text-white">✏️ Editar: <span id="af-edit-titulo" class="text-yellow-400 font-mono"></span></h2>
+      <button onclick="document.getElementById('modal-editar-af').classList.add('hidden')"
+              class="w-8 h-8 rounded-lg flex items-center justify-center text-xl"
+              style="background:var(--col-elevated);color:var(--col-muted);border:1px solid var(--col-border)">&times;</button>
+    </div>
+    <form id="form-editar-af" method="POST" action="" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="md:col-span-2">
+          <label class="af-label">Descripción</label>
+          <input type="text" name="descripcion" id="af-edit-desc" placeholder="Descripción del código" class="af-input">
+        </div>
+        <div>
+          <label class="af-label">Tipo</label>
+          <select name="tipo" id="af-edit-tipo" class="af-select">
+            <option value="externo">🌐 Externo</option>
+            <option value="staff">👤 Staff</option>
+          </select>
+        </div>
+        <div>
+          <label class="af-label">Asignar a (opcional)</label>
+          <select name="user_id" id="af-edit-user" class="af-select">
+            <option value="">— Sin usuario —</option>
+            {% for u in staff_users %}
+            <option value="{{ u.id }}">{{ u.nombre }} ({{ u.rol }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="af-label">Tipo descuento cliente</label>
+          <select name="descuento_tipo" id="af-edit-desc-tipo" class="af-select">
+            <option value="">Sin descuento</option>
+            <option value="porcentaje">% Porcentaje</option>
+            <option value="monto_fijo">€ Monto fijo</option>
+          </select>
+        </div>
+        <div>
+          <label class="af-label">Valor descuento</label>
+          <input type="number" name="descuento_valor" id="af-edit-desc-val" step="0.01" min="0" class="af-input">
+        </div>
+        <div>
+          <label class="af-label">Tipo comisión afiliado</label>
+          <select name="comision_tipo" id="af-edit-com-tipo" class="af-select">
+            <option value="">Sin comisión</option>
+            <option value="porcentaje">% del pedido</option>
+            <option value="monto_fijo">€ por pedido</option>
+          </select>
+        </div>
+        <div>
+          <label class="af-label">Valor comisión</label>
+          <input type="number" name="comision_valor" id="af-edit-com-val" step="0.01" min="0" class="af-input">
+        </div>
+        <div>
+          <label class="af-label">Usos máximos</label>
+          <input type="number" name="usos_maximos" id="af-edit-usos" min="1" placeholder="Sin límite" class="af-input">
+        </div>
+        <div></div>
+        <div>
+          <label class="af-label">Válido desde</label>
+          <input type="date" name="fecha_inicio" id="af-edit-fi" class="af-input">
+        </div>
+        <div>
+          <label class="af-label">Válido hasta</label>
+          <input type="date" name="fecha_fin" id="af-edit-ff" class="af-input">
+        </div>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="submit" class="ox-btn-primary flex-1">💾 Guardar cambios</button>
+        <button type="button" onclick="document.getElementById('modal-editar-af').classList.add('hidden')"
+                class="ox-btn-ghost px-5">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<style>
+.af-label { font-size:.72rem; font-weight:700; color:var(--col-muted); display:block; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.04em; }
+.af-input {
+  width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border);
+  border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem;
+  transition:border-color .15s;
+}
+.af-input:focus { outline:none; border-color:rgba(255,171,0,.5); }
+.af-select {
+  width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border);
+  border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem;
+}
+.af-code-badge {
+  font-family:monospace; font-size:1rem; font-weight:900; letter-spacing:.08em;
+  padding:.4rem .9rem; border-radius:.65rem; flex-shrink:0;
+}
+.af-badge-active { background:rgba(255,171,0,.15); color:#FFAB00; border:1.5px solid rgba(255,171,0,.3); }
+.af-badge-inactive { background:var(--col-elevated); color:var(--col-muted); border:1.5px solid var(--col-border); }
+.af-tag {
+  font-size:.68rem; font-weight:700; padding:2px 8px; border-radius:999px;
+  border:1px solid var(--col-border); color:var(--col-muted); background:var(--col-elevated);
+}
+.af-tag-staff { background:rgba(10,132,255,.1); color:#5AC8FA; border-color:rgba(10,132,255,.2); }
+.af-tag-externo { background:rgba(168,85,247,.1); color:#C084FC; border-color:rgba(168,85,247,.2); }
+.af-btn {
+  font-size:.72rem; font-weight:700; padding:.3rem .65rem; border-radius:.5rem;
+  background:var(--col-elevated); border:1px solid var(--col-border); color:var(--col-muted);
+  cursor:pointer; transition:all .15s; text-decoration:none; white-space:nowrap; display:inline-block;
+}
+.af-btn:hover { background:rgba(255,255,255,.08); color:#fff; }
+.af-btn-success { background:rgba(52,199,89,.1); border-color:rgba(52,199,89,.25); color:#5EF097; }
+.af-btn-danger  { background:rgba(255,59,48,.1); border-color:rgba(255,59,48,.2); color:#FF6B6B; }
+</style>
+<script>
+function toggleForm(id) { document.getElementById(id).classList.toggle('hidden'); }
+
+function abrirEditarAfiliado(id, codigo, desc, tipo, userId, descTipo, descVal, comTipo, comVal, usosMax, fi, ff) {
+  document.getElementById('af-edit-titulo').textContent = codigo;
+  document.getElementById('af-edit-desc').value = desc || '';
+  document.getElementById('af-edit-tipo').value = tipo || 'externo';
+  document.getElementById('af-edit-user').value = userId || '';
+  document.getElementById('af-edit-desc-tipo').value = descTipo || '';
+  document.getElementById('af-edit-desc-val').value = descVal || 0;
+  document.getElementById('af-edit-com-tipo').value = comTipo || '';
+  document.getElementById('af-edit-com-val').value = comVal || 0;
+  document.getElementById('af-edit-usos').value = usosMax || '';
+  document.getElementById('af-edit-fi').value = fi || '';
+  document.getElementById('af-edit-ff').value = ff || '';
+  document.getElementById('form-editar-af').action = `/admin/afiliados/${id}/editar`;
+  document.getElementById('modal-editar-af').classList.remove('hidden');
+}
+</script>
+{% endblock %}

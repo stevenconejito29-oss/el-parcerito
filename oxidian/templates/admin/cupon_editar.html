@@ -1,0 +1,55 @@
+{% extends "admin_base.html" %}
+{% block title %}Editar cupón{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-5">
+  <a href="{{ url_for('admin.cupones') }}" class="ox-btn-ghost text-sm">← Volver</a>
+  <div>
+    <h1 class="text-xl font-extrabold text-white">Editar cupón {{ cupon.codigo }}</h1>
+    <p class="text-xs" style="color:var(--col-muted)">Ajusta reglas, vigencia y límite de usos</p>
+  </div>
+</div>
+
+<form method="POST" action="{{ url_for('admin.editar_cupon', cupon_id=cupon.id) }}" class="ox-card p-5 max-w-3xl">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="ox-field">
+      <label class="ox-label">Tipo</label>
+      <select name="tipo" class="ox-input">
+        <option value="porcentaje" {% if cupon.tipo == 'porcentaje' %}selected{% endif %}>Porcentaje</option>
+        <option value="monto_fijo" {% if cupon.tipo == 'monto_fijo' %}selected{% endif %}>Monto fijo</option>
+        <option value="envio_gratis" {% if cupon.tipo == 'envio_gratis' %}selected{% endif %}>Envío gratis</option>
+      </select>
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Valor</label>
+      <input type="number" name="valor" step="0.01" min="0" value="{{ cupon.valor }}" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Mínimo de pedido</label>
+      <input type="number" name="minimo_pedido" step="0.01" min="0" value="{{ cupon.minimo_pedido }}" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Usos máximos</label>
+      <input type="number" name="usos_maximos" min="1" value="{{ cupon.usos_maximos or '' }}" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Válido desde</label>
+      <input type="date" name="fecha_inicio" value="{{ cupon.fecha_inicio.strftime('%Y-%m-%d') if cupon.fecha_inicio else '' }}" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Válido hasta</label>
+      <input type="date" name="fecha_fin" value="{{ cupon.fecha_fin.strftime('%Y-%m-%d') if cupon.fecha_fin else '' }}" class="ox-input">
+    </div>
+    <div class="ox-field md:col-span-2">
+      <label class="ox-label">Descripción interna</label>
+      <input type="text" name="descripcion" value="{{ cupon.descripcion or '' }}" class="ox-input">
+    </div>
+  </div>
+  <div class="flex gap-3 mt-5">
+    <button type="submit" class="ox-btn-primary">Guardar cambios</button>
+    <a href="{{ url_for('admin.cupones') }}" class="ox-btn-ghost">Cancelar</a>
+  </div>
+</form>
+
+{% endblock %}

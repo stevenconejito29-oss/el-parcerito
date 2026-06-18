@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel — Bot WhatsApp</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+      width: 100%;
+      max-width: 480px;
+    }
+    .logo {
+      width: 44px; height: 44px;
+      background: #25d366;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+    header h1 { font-size: 20px; font-weight: 600; }
+    header small { display: block; font-size: 12px; color: #8b949e; margin-top: 2px; }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 480px;
+      margin-bottom: 16px;
+    }
+
+    /* ── QR section ── */
+    #qr-section { text-align: center; }
+    #qr-section h2 { font-size: 16px; color: #8b949e; margin-bottom: 6px; }
+    #qr-section p  { font-size: 13px; color: #6e7681; margin-bottom: 20px; line-height: 1.5; }
+    #qr-img {
+      width: 220px; height: 220px;
+      border-radius: 12px;
+      border: 3px solid #25d366;
+      background: #fff;
+    }
+    .pulse-ring {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #f0883e;
+      animation: pulse 1.4s infinite;
+      margin-right: 6px;
+    }
+    @keyframes pulse {
+      0%   { box-shadow: 0 0 0 0 rgba(240,136,62,.6); }
+      70%  { box-shadow: 0 0 0 8px rgba(240,136,62,0); }
+      100% { box-shadow: 0 0 0 0 rgba(240,136,62,0); }
+    }
+    #qr-waiting {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #8b949e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── Status section ── */
+    #status-section { display: none; }
+    .connected-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #0d2e1e;
+      border: 1px solid #25d366;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+    }
+    .dot-green {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #25d366;
+      box-shadow: 0 0 0 3px rgba(37,211,102,.25);
+      flex-shrink: 0;
+    }
+    .connected-badge span { font-size: 14px; font-weight: 600; color: #25d366; }
+
+    .checklist { list-style: none; }
+    .checklist li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid #21262d;
+      font-size: 14px;
+    }
+    .checklist li:last-child { border-bottom: none; }
+    .check-icon {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: #0d2e1e;
+      border: 1.5px solid #25d366;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px;
+      color: #25d366;
+      flex-shrink: 0;
+    }
+
+    /* ── Stats ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .stat-card {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .stat-card .label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: .5px; }
+    .stat-card .value { font-size: 24px; font-weight: 700; color: #e6edf3; margin-top: 4px; }
+    .stat-card .sublabel { font-size: 11px; color: #6e7681; margin-top: 2px; }
+
+    /* ── Connecting / loading ── */
+    #loading-section { text-align: center; padding: 40px 0; color: #8b949e; font-size: 14px; }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid #30363d;
+      border-top-color: #25d366;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .refresh-note {
+      font-size: 11px;
+      color: #6e7681;
+      text-align: center;
+      margin-top: 8px;
+    }
+
+    #negocio-name { font-weight: 600; color: #e6edf3; }
+
+    /* ── AI card ── */
+    .provider-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .provider-row label {
+      font-size: 12px;
+      color: #8b949e;
+    }
+    #ai-provider {
+      background: #0d1117;
+      border: 1.5px solid #30363d;
+      color: #e6edf3;
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 13px;
+    }
+    #provider-feedback { margin-top: 8px; font-size: 12px; min-height: 16px; }
+
+    /* ── Gemini card ── */
+    .gemini-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .gemini-header h3 { font-size: 14px; color: #8b949e; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 10px; border-radius: 20px;
+      font-size: 12px; font-weight: 600;
+    }
+    .badge-green  { background: #0d2e1e; color: #25d366; border: 1px solid #25d366; }
+    .badge-yellow { background: #2a1f00; color: #d29922; border: 1px solid #d29922; }
+    .badge-red    { background: #2d1a1a; color: #f85149; border: 1px solid #f85149; }
+    .badge-grey   { background: #161b22; color: #6e7681; border: 1px solid #30363d; }
+    .badge-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+    }
+    #gemini-quota-banner {
+      display: none;
+      background: #2a1f00;
+      border: 1px solid #d29922;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+      font-size: 13px;
+      color: #d29922;
+      line-height: 1.6;
+    }
+    .gemini-key-row {
+      display: flex; gap: 8px; margin-top: 12px;
+    }
+    #gemini-key-input {
+      flex: 1;
+      background: #0d1117;
+      border: 1.5px solid #30363d;
+      border-radius: 8px;
+      padding: 9px 13px;
+      color: #e6edf3;
+      font-size: 13px;
+      font-family: monospace;
+      outline: none;
+      transition: border-color .2s;
+    }
+    #gemini-key-input:focus { border-color: #388bfd; }
+    #gemini-key-input.error { border-color: #f85149; }
+    .btn-primary {
+      background: #238636; color: #fff; border: none;
+      border-radius: 8px; padding: 9px 16px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      white-space: nowrap; transition: background .2s;
+    }
+    .btn-primary:hover { background: #2ea043; }
+    .btn-primary:disabled { opacity: .5; cursor: default; }
+    .btn-ghost {
+      background: transparent; color: #6e7681; border: 1px solid #30363d;
+      border-radius: 8px; padding: 9px 14px;
+      font-size: 13px; cursor: pointer; transition: color .2s, border-color .2s;
+    }
+    .btn-ghost:hover { color: #f85149; border-color: #f85149; }
+    #gemini-feedback {
+      margin-top: 8px; font-size: 12px; min-height: 16px;
+    }
+    .ok   { color: #25d366; }
+    .err  { color: #f85149; }
+    .gemini-hint {
+      margin-top: 10px; font-size: 11px; color: #6e7681;
+    }
+    .gemini-hint a { color: #388bfd; text-decoration: none; }
+    .gemini-hint a:hover { text-decoration: underline; }
+
+    /* ── Bot controls ── */
+    .bot-controls { margin-top: 16px; }
+    .bot-controls h3 { font-size: 14px; color: #8b949e; margin-bottom: 10px; }
+    .bot-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn-danger {
+      background: #da3633; color: #fff; border: none;
+      border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer;
+    }
+    .btn-danger:hover { background: #f85149; }
+    .btn-warn {
+      background: #9e6a03; color: #fff; border: none;
+      border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer;
+    }
+    .btn-warn:hover { background: #bf8700; }
+    #bot-controls-feedback { margin-top: 8px; font-size: 12px; min-height: 16px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🤖</div>
+  <div>
+    <h1>Panel de Control</h1>
+    <small id="negocio-name">Cargando...</small>
+  </div>
+</header>
+
+<!-- Loading -->
+<div class="card" id="loading-section">
+  <div class="spinner"></div>
+  Conectando con el servidor...
+</div>
+
+<!-- QR Section -->
+<div class="card" id="qr-section" style="display:none">
+  <h2>Conectar WhatsApp</h2>
+  <p>Abre WhatsApp en tu teléfono<br>
+     Ve a <strong>Dispositivos vinculados → Vincular un dispositivo</strong><br>
+     y escanea el código QR.</p>
+  <img id="qr-img" src="" alt="QR Code">
+  <div id="qr-waiting">
+    <span class="pulse-ring"></span> Esperando escaneo...
+  </div>
+
+</div>
+
+<!-- Bot Controls (siempre visible) -->
+<div class="card" id="bot-controls-card">
+  <div class="bot-controls" style="margin-top:0">
+    <h3>⚙️ Control del bot</h3>
+    <div class="bot-actions">
+      <button class="btn-primary" id="btn-bot-on">Encender bot</button>
+      <button class="btn-danger" id="btn-bot-off">Apagar bot</button>
+      <button class="btn-warn" id="btn-bot-reset">Reset WhatsApp</button>
+    </div>
+    <div id="bot-controls-feedback"></div>
+  </div>
+</div>
+
+<!-- Status Section (connected) -->
+<div class="card" id="status-section">
+  <div class="connected-badge">
+    <div class="dot-green"></div>
+    <span>WhatsApp conectado</span>
+  </div>
+  <ul class="checklist">
+    <li><div class="check-icon">✓</div> Servidor activo</li>
+    <li><div class="check-icon">✓</div> WhatsApp vinculado</li>
+    <li><div class="check-icon">✓</div> Bot respondiendo mensajes</li>
+    <li id="check-lastmsg"><div class="check-icon">✓</div> Último mensaje: —</li>
+  </ul>
+</div>
+
+<!-- AI Card -->
+<div class="card" id="gemini-card">
+  <div class="gemini-header">
+    <h3>🤖 Inteligencia Artificial</h3>
+    <span class="badge badge-grey" id="gemini-badge">
+      <span class="badge-dot"></span>
+      <span id="gemini-badge-txt">cargando…</span>
+    </span>
+  </div>
+
+  <div class="provider-row">
+    <label for="ai-provider">Proveedor activo</label>
+    <select id="ai-provider">
+      <option value="groq">Groq</option>
+      <option value="gemini">Gemini</option>
+    </select>
+  </div>
+  <div id="provider-feedback"></div>
+
+  <!-- Alerta de cuota agotada -->
+  <div id="gemini-quota-banner"></div>
+
+  <!-- Input key -->
+  <div class="gemini-key-row">
+    <input
+      type="password"
+      id="gemini-key-input"
+      placeholder="Pega aquí tu API key de Gemini…"
+      autocomplete="off"
+      spellcheck="false"
+    >
+    <button class="btn-primary" id="gemini-save-btn">Guardar</button>
+    <button class="btn-ghost"   id="gemini-del-btn"  style="display:none" title="Eliminar key">🗑</button>
+  </div>
+  <div id="gemini-feedback"></div>
+  <p class="gemini-hint" id="gemini-hint">
+    Key gratuita en
+    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a>
+    · Plan free: 1.500 req/día · 15 req/min
+  </p>
+</div>
+
+<!-- Stats -->
+<div class="card" id="stats-section" style="display:none">
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="label">Pedidos hoy</div>
+      <div class="value" id="stat-today">—</div>
+      <div class="sublabel">pedidos</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total pedidos</div>
+      <div class="value" id="stat-total">—</div>
+      <div class="sublabel">acumulados</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Sesiones activas</div>
+      <div class="value" id="stat-sessions">—</div>
+      <div class="sublabel">clientes</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Uptime</div>
+      <div class="value" id="stat-uptime">—</div>
+      <div class="sublabel">activo</div>
+    </div>
+  </div>
+</div>
+
+<div class="refresh-note" id="refresh-note" style="display:none">Actualización automática cada 3 segundos</div>
+
+<script>
+  /* ── Panel key (autenticación) ── */
+  function getPanelKey() {
+    let k = localStorage.getItem('panel_key') || '';
+    if (!k) {
+      k = prompt('Introduce la clave del panel (OXIDIAN_KEY del .env):') || '';
+      if (k) localStorage.setItem('panel_key', k);
+    }
+    return k;
+  }
+  function panelHeaders() {
+    return { 'Content-Type': 'application/json', 'X-Panel-Key': getPanelKey() };
+  }
+  function panelFetch(url, opts = {}) {
+    opts.headers = { ...(opts.headers || {}), 'X-Panel-Key': getPanelKey() };
+    if (!opts.headers['Content-Type']) opts.headers['Content-Type'] = 'application/json';
+    return fetch(url, opts);
+  }
+
+  /* ── Helpers ── */
+  function fmtUptime(secs) {
+    if (secs < 60)   return secs + 's';
+    if (secs < 3600) return Math.floor(secs / 60) + 'm';
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    return `${h}h ${m}m`;
+  }
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function getProviderLabel(provider) {
+    return provider === 'groq' ? 'Groq' : 'Gemini';
+  }
+
+  function getProviderEndpoint(provider) {
+    return provider === 'groq' ? '/api/groq-key' : '/api/gemini-key';
+  }
+
+  function getProviderHelp(provider) {
+    if (provider === 'groq') {
+      return 'Key en https://console.groq.com/keys';
+    }
+    return 'Key gratuita en https://aistudio.google.com/app/apikey';
+  }
+
+  /* ── AI badge ── */
+  function updateGeminiBadge(ai) {
+    const providerName = (ai.apiTypeSelected || 'groq').toLowerCase();
+    const providerData = ai[providerName] || {};
+    const quotaData = ai.quota || { exhausted: false };
+    const badge   = document.getElementById('gemini-badge');
+    const badgeTxt = document.getElementById('gemini-badge-txt');
+    const banner  = document.getElementById('gemini-quota-banner');
+    const delBtn  = document.getElementById('gemini-del-btn');
+    const input   = document.getElementById('gemini-key-input');
+    const hint    = document.getElementById('gemini-hint');
+    const saveBtn = document.getElementById('gemini-save-btn');
+    const providerSelect = document.getElementById('ai-provider');
+
+    providerSelect.value = providerName;
+    input.placeholder = `Pega aquí tu API key de ${getProviderLabel(providerName)}…`;
+    saveBtn.textContent = `Guardar ${getProviderLabel(providerName)}`;
+    if (hint) hint.innerHTML = getProviderHelp(providerName);
+
+    badge.className = 'badge ';
+    banner.style.display = 'none';
+
+    if (!providerData.hasKey) {
+      badge.className += 'badge-grey';
+      badgeTxt.textContent = `${getProviderLabel(providerName)} sin key`;
+      delBtn.style.display = 'none';
+    } else if (quotaData.exhausted) {
+      badge.className += 'badge-yellow';
+      const tipo = quotaData.type === 'daily' ? 'Cuota diaria agotada' : 'Límite de minuto';
+      badgeTxt.textContent = tipo;
+      delBtn.style.display = 'inline-flex';
+      // Banner con countdown
+      const resetIn = quotaData.resetIn || '?';
+      const tipoDesc = quotaData.type === 'daily'
+        ? `Has alcanzado el límite diario de ${getProviderLabel(providerName)}.`
+        : `Has alcanzado el límite por minuto de ${getProviderLabel(providerName)}.`;
+      banner.innerHTML =
+        `⚠️ <strong>Cuota agotada</strong> — ${tipoDesc}<br>` +
+        `⏳ Se recupera automáticamente en aprox. <strong>${resetIn}</strong>.<br>` +
+        `Mientras tanto el bot sigue activo usando el sistema de keywords.`;
+      banner.style.display = 'block';
+    } else if (providerData.activo) {
+      badge.className += 'badge-green';
+      badgeTxt.textContent = `${getProviderLabel(providerName)} activo`;
+      delBtn.style.display = 'inline-flex';
+    } else {
+      // Tiene key pero no inicializó (raro)
+      badge.className += 'badge-red';
+      badgeTxt.textContent = `Error de key (${getProviderLabel(providerName)})`;
+      delBtn.style.display = 'inline-flex';
+    }
+  }
+
+  /* ── Fetch status ── */
+  async function fetchStatus() {
+    try {
+      const res  = await fetch('/api/status');
+      const data = await res.json();
+
+      document.getElementById('negocio-name').textContent = data.negocio || 'Bot WhatsApp';
+      document.getElementById('loading-section').style.display = 'none';
+      document.getElementById('refresh-note').style.display    = 'block';
+      document.getElementById('stats-section').style.display   = 'block';
+
+      document.getElementById('stat-today').textContent    = data.pedidosHoy    ?? '—';
+      document.getElementById('stat-total').textContent    = data.totalPedidos   ?? '—';
+      document.getElementById('stat-sessions').textContent = data.activeSessions ?? '—';
+      document.getElementById('stat-uptime').textContent   = fmtUptime(data.uptime || 0);
+
+      if (data.connected) {
+        document.getElementById('qr-section').style.display     = 'none';
+        document.getElementById('status-section').style.display = 'block';
+        document.getElementById('check-lastmsg').innerHTML =
+          `<div class="check-icon">✓</div> Último mensaje: ${fmtDate(data.lastMsg)}`;
+      } else if (data.qrDataUrl) {
+        document.getElementById('qr-section').style.display     = 'block';
+        document.getElementById('status-section').style.display = 'none';
+        document.getElementById('qr-img').src = data.qrDataUrl;
+      } else {
+        document.getElementById('qr-section').style.display     = 'none';
+        document.getElementById('status-section').style.display = 'none';
+        document.getElementById('loading-section').style.display = 'block';
+        document.getElementById('loading-section').innerHTML =
+          '<div class="spinner"></div>Generando código QR...';
+      }
+
+      if (data.ai) {
+        data.ai.apiTypeSelected = data.apiTypeSelected || 'groq';
+        updateGeminiBadge(data.ai);
+      }
+
+    } catch {
+      document.getElementById('loading-section').style.display = 'block';
+      document.getElementById('loading-section').innerHTML =
+        '<div class="spinner"></div>No se puede conectar al servidor...';
+    }
+  }
+
+  /* ── Guardar key ── */
+  document.getElementById('gemini-save-btn').addEventListener('click', async () => {
+    const input    = document.getElementById('gemini-key-input');
+    const feedback = document.getElementById('gemini-feedback');
+    const btn      = document.getElementById('gemini-save-btn');
+    const key      = input.value.trim();
+
+    input.classList.remove('error');
+    feedback.textContent = '';
+
+    if (!key) {
+      input.classList.add('error');
+      feedback.innerHTML = '<span class="err">Pega una API key válida primero.</span>';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+
+    try {
+      const provider = document.getElementById('ai-provider').value;
+      const r   = await panelFetch(getProviderEndpoint(provider), {
+        method: 'POST',
+        body: JSON.stringify({ key }),
+      });
+      const data = await r.json();
+      if (data.ok) {
+        feedback.innerHTML = `<span class="ok">✓ Key guardada y ${getProviderLabel(provider)} activado.</span>`;
+        input.value = '';
+        await fetchStatus();
+      } else {
+        input.classList.add('error');
+        feedback.innerHTML = `<span class="err">❌ ${data.error || 'Error al guardar.'}</span>`;
+      }
+    } catch {
+      feedback.innerHTML = '<span class="err">❌ Sin conexión con el servidor.</span>';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Guardar';
+    }
+  });
+
+  /* ── Eliminar key ── */
+  document.getElementById('gemini-del-btn').addEventListener('click', async () => {
+    const feedback = document.getElementById('gemini-feedback');
+    const provider = document.getElementById('ai-provider').value;
+    if (!confirm(`¿Eliminar la API key de ${getProviderLabel(provider)}? El bot usará keywords como fallback.`)) return;
+    try {
+      await panelFetch(getProviderEndpoint(provider), { method: 'DELETE' });
+      feedback.innerHTML = `<span class="ok">Key de ${getProviderLabel(provider)} eliminada. El bot usa keywords.</span>`;
+      await fetchStatus();
+    } catch {
+      feedback.innerHTML = '<span class="err">❌ Error al eliminar.</span>';
+    }
+  });
+
+  /* ── Enter en el input ── */
+  document.getElementById('gemini-key-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('gemini-save-btn').click();
+  });
+
+  document.getElementById('ai-provider').addEventListener('change', async e => {
+    const provider = e.target.value;
+    const feedback = document.getElementById('provider-feedback');
+    feedback.innerHTML = '';
+    try {
+      const r = await panelFetch('/api/ai/provider', {
+        method: 'POST',
+        body: JSON.stringify({ provider }),
+      });
+      const data = await r.json();
+      if (!data.ok) {
+        feedback.innerHTML = `<span class="err">❌ ${data.error || 'No se pudo cambiar proveedor'}</span>`;
+        return;
+      }
+      feedback.innerHTML = `<span class="ok">✓ Proveedor activo: ${data.provider.toUpperCase()}</span>`;
+      await fetchStatus();
+      document.getElementById('gemini-feedback').innerHTML = '';
+    } catch {
+      feedback.innerHTML = '<span class="err">❌ Error de conexión al cambiar proveedor.</span>';
+    }
+  });
+
+  async function setBotPower(enabled) {
+    const fb = document.getElementById('bot-controls-feedback');
+    fb.innerHTML = 'Procesando…';
+    try {
+      const r = await panelFetch('/api/bot/power', {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || 'error');
+      fb.innerHTML = `<span class="ok">✓ Bot ${enabled ? 'encendido' : 'apagado'}.</span>`;
+      await fetchStatus();
+    } catch {
+      fb.innerHTML = '<span class="err">❌ No se pudo cambiar estado del bot.</span>';
+    }
+  }
+
+  async function resetBotSession() {
+    const fb = document.getElementById('bot-controls-feedback');
+    if (!confirm('¿Resetear la sesión de WhatsApp? Se regenerará el QR.')) return;
+    fb.innerHTML = 'Reseteando…';
+    try {
+      const r = await panelFetch('/api/bot/reset', {
+        method: 'POST',
+        body: JSON.stringify({ full: false }),
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.message || 'error');
+      fb.innerHTML = '<span class="ok">✓ Reset lanzado. Espera nuevo QR.</span>';
+      await fetchStatus();
+    } catch {
+      fb.innerHTML = '<span class="err">❌ No se pudo resetear el bot.</span>';
+    }
+  }
+
+  document.getElementById('btn-bot-on').addEventListener('click', () => setBotPower(true));
+  document.getElementById('btn-bot-off').addEventListener('click', () => setBotPower(false));
+  document.getElementById('btn-bot-reset').addEventListener('click', resetBotSession);
+
+  fetchStatus();
+  setInterval(fetchStatus, 3000);
+</script>
+</body>
+</html>

@@ -1,0 +1,271 @@
+{% extends "admin_base.html" %}
+{% block title %}Almacén — Cola de Pedidos{% endblock %}
+{% block content %}
+
+<div class="work-area">
+<section class="work-hero">
+  <div>
+    <span class="work-eyebrow">📦 Almacén / Stock</span>
+    <h1 class="work-title">Cola de Pedidos de Almacén</h1>
+    <p class="work-subtitle">Bebidas, envasados y productos de stock. Toma, empaca y despacha.</p>
+  </div>
+  <div class="work-actions-top">
+    <form method="POST" action="{{ url_for('staff.toggle_disponible') }}" class="js-availability-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="work-btn {% if disponible %}work-btn-success{% else %}work-btn-ghost{% endif %}">
+        <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
+        {% if disponible %}Online{% else %}Ponerme online{% endif %}
+      </button>
+    </form>
+    <span class="work-pill">Refresco <strong id="refresh-countdown">30s</strong></span>
+  </div>
+</section>
+
+<!-- Tarjeta empleado -->
+<div class="work-employee-card">
+  <div class="work-employee-avatar">{{ current_user.nombre[0].upper() }}</div>
+  <div class="work-employee-info">
+    <p class="work-employee-name">{{ current_user.nombre }}</p>
+    <p class="work-employee-role">📦 Staff Almacén
+      {% if current_user.puesto_trabajo %} · {{ current_user.puesto_trabajo }}{% endif %}
+    </p>
+  </div>
+  <div class="work-employee-status">
+    <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
+    <span>{% if disponible %}Online{% else %}Offline{% endif %}</span>
+  </div>
+</div>
+
+{% if not disponible and current_user.rol not in ('admin','super_admin') %}
+<div class="work-panel work-status-panel mb-4">
+  <p class="font-bold text-warning">Estás offline para nuevos pedidos</p>
+  <p class="text-sm mt-1 text-muted">Puedes terminar pedidos ya asignados, pero no recibirás pedidos nuevos hasta ponerte online.</p>
+</div>
+{% endif %}
+
+{% if companeros %}
+<div class="work-team" aria-label="Compañeros activos">
+  {% for c in companeros %}
+  <span class="work-chip">
+    <span class="work-dot {% if c.disponible_para_pedidos %}is-on{% endif %}"></span>
+    <span class="font-semibold">{{ c.nombre }}</span>
+    <span class="work-muted-text">·
+      {% if c.rol == 'admin' %}Admin
+      {% elif c.rol == 'staff' %}Staff
+      {% else %}{{ c.rol }}{% endif %}
+    </span>
+    {% if c.disponible_para_pedidos %}
+    <span class="work-money">· {{ c.pedidos_activos_como_preparador() }} pedido{{ 's' if c.pedidos_activos_como_preparador() != 1 else '' }}</span>
+    {% else %}
+    <span class="work-muted-text">· offline</span>
+    {% endif %}
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- KPIs -->
+<div class="work-kpis">
+  <div class="work-panel work-kpi">
+    <span>Pendientes</span>
+    <strong>{{ pendientes|length }}</strong>
+    <small>Esperan toma o empaque</small>
+  </div>
+  <div class="work-panel work-kpi">
+    <span>Empacando</span>
+    <strong>{{ empacando|length }}</strong>
+    <small>En proceso hasta despacho</small>
+  </div>
+</div>
+
+<div class="work-board">
+
+<!-- ── PENDIENTES ── -->
+<section class="work-lane">
+  <div class="work-lane-head">
+    <div>
+      <h2 class="work-lane-title">Pendientes</h2>
+      <p class="work-lane-sub">Pedidos de almacén que esperan responsable o inicio de empaque.</p>
+    </div>
+    <span class="work-count">{{ pendientes|length }}</span>
+  </div>
+  <div class="work-list">
+
+  {% for pedido in pendientes %}
+  <article class="work-card is-warn" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+    <div class="work-order-head">
+      <div>
+        <span class="work-order-code">{{ pedido.numero_pedido }}</span>
+        <span class="work-chip {% if pedido.origen == 'presencial' %}is-presencial{% elif pedido.origen == 'whatsapp' %}is-whatsapp{% else %}is-web{% endif %}">
+          {% if pedido.origen == 'presencial' %}🖥 Tienda
+          {% elif pedido.origen == 'whatsapp' %}📱 WhatsApp
+          {% else %}🌐 Web{% endif %}
+        </span>
+        <span class="work-chip" style="background:rgba(43,147,72,.12);color:#2b9348;border-color:rgba(43,147,72,.3)">📦 Almacén</span>
+      </div>
+      <div class="work-time-stack">
+        <span class="work-time">{{ pedido.creado_en.strftime('%H:%M') }}</span>
+        <span class="work-elapsed"></span>
+      </div>
+    </div>
+
+    <p class="work-client">{{ pedido.cliente.nombre if pedido.cliente else '—' }}</p>
+    <div class="mt-2 flex flex-wrap gap-2">
+      {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
+      {% if pedido.preparador_id and pedido.preparador_id != current_user.id %}
+        <span class="work-badge-assigned">Asignado a {{ pedido.preparador.nombre }}</span>
+      {% endif %}
+    </div>
+
+    <div class="work-items">
+      {% for item in pedido.items %}
+      <div class="work-item">{% include "_order_item_combo.html" %}</div>
+      {% endfor %}
+    </div>
+
+    {% if pedido.notas %}
+    <div class="work-note">Nota: {{ pedido.notas }}</div>
+    {% endif %}
+
+    <div class="work-action-row work-cta-group">
+      {% if not pedido.preparador_id %}
+      <form method="POST" action="{{ url_for('staff.tomar_pedido', pedido_id=pedido.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="work-btn work-btn-ghost full-width">Tomar</button>
+      </form>
+      {% endif %}
+      <form method="POST" action="{{ url_for('staff.empacar_pedido', pedido_id=pedido.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="work-btn work-btn-primary full-width">Empacar</button>
+      </form>
+    </div>
+  </article>
+  {% else %}
+  <div class="work-empty">
+    <p class="text-sm">Sin pedidos pendientes de almacén.</p>
+  </div>
+  {% endfor %}
+  </div>
+</section>
+
+<!-- ── EMPACANDO ── -->
+<section class="work-lane">
+  <div class="work-lane-head">
+    <div>
+      <h2 class="work-lane-title">Empacando</h2>
+      <p class="work-lane-sub">Pedidos en proceso — marca como listo cuando estén cerrados y listos para recoger.</p>
+    </div>
+    <span class="work-count">{{ empacando|length }}</span>
+  </div>
+  <div class="work-list">
+
+  {% for pedido in empacando %}
+  <article class="work-card work-card--tight is-info" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+    <div class="work-order-head">
+      <span class="work-order-code is-info">{{ pedido.numero_pedido }}</span>
+      <div class="work-time-stack">
+        <span class="work-time">{{ pedido.creado_en.strftime('%H:%M') }}</span>
+        <span class="work-elapsed"></span>
+      </div>
+    </div>
+
+    <p class="work-client">{{ pedido.cliente.nombre if pedido.cliente else '—' }}</p>
+    <div class="mt-2 flex flex-wrap gap-2">
+      {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
+      {% if pedido.preparador_id and pedido.preparador_id != current_user.id %}
+        <span class="work-badge-assigned">Asignado a {{ pedido.preparador.nombre }}</span>
+      {% endif %}
+    </div>
+
+    <div class="work-items">
+      {% for item in pedido.items %}
+      <div class="work-item">{% include "_order_item_combo.html" %}</div>
+      {% endfor %}
+    </div>
+
+    {% if pedido.notas %}
+    <div class="work-note">Nota: {{ pedido.notas }}</div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('staff.marcar_listo', pedido_id=pedido.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="work-btn work-btn-success full-width">Listo para despacho</button>
+    </form>
+  </article>
+  {% else %}
+  <div class="work-empty">
+    <p class="text-sm">Nada empacando ahora.</p>
+  </div>
+  {% endfor %}
+  </div>
+</section>
+
+</div>
+</div>
+
+<style>
+.work-employee-card {
+  display:flex; align-items:center; gap:1rem; padding:.85rem 1rem;
+  background:var(--col-surface); border:1px solid var(--col-border);
+  border-radius:1rem; margin-bottom:1rem;
+}
+.work-employee-avatar {
+  width:44px; height:44px; border-radius:12px;
+  background:linear-gradient(135deg,rgba(43,147,72,.25),rgba(0,180,80,.15));
+  color:#2b9348; font-size:1.2rem; font-weight:900;
+  display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; border:1.5px solid rgba(43,147,72,.3);
+}
+.work-employee-info { flex:1; min-width:0; }
+.work-employee-name { font-weight:800; font-size:.92rem; color:var(--col-text); }
+.work-employee-role { font-size:.75rem; color:var(--col-muted); margin-top:.1rem; }
+.work-employee-status { display:flex; align-items:center; gap:.4rem; font-size:.78rem; color:var(--col-muted); flex-shrink:0; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function actualizarUrgencia() {
+  document.querySelectorAll('[data-created]').forEach(card => {
+    const created = new Date(card.dataset.created);
+    const mins = Math.floor((Date.now() - created) / 60000);
+    const el = card.querySelector('.work-elapsed');
+    if (!el) return;
+    el.className = 'work-elapsed';
+    card.classList.remove('is-aging', 'is-late');
+    if (mins < 1) {
+      el.textContent = 'ahora'; el.classList.add('is-fresh');
+    } else if (mins < 10) {
+      el.textContent = `hace ${mins}m`; el.classList.add('is-fresh');
+    } else if (mins < 20) {
+      el.textContent = `hace ${mins}m ⚠`; el.classList.add('is-aging'); card.classList.add('is-aging');
+    } else {
+      el.textContent = `hace ${mins}m 🔴`; el.classList.add('is-late'); card.classList.add('is-late');
+    }
+  });
+}
+actualizarUrgencia();
+setInterval(actualizarUrgencia, 60000);
+
+let countdown = 30;
+const el = document.getElementById('refresh-countdown');
+const timer = setInterval(() => {
+  countdown--;
+  if (el) el.textContent = countdown + 's';
+  if (countdown <= 0) { clearInterval(timer); location.reload(); }
+}, 1000);
+
+setInterval(() => { fetch('/api/ping', {method:'POST'}).catch(()=>{}); }, 90000);
+
+document.querySelectorAll('.js-availability-form').forEach(form => {
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    try {
+      const r = await fetch(form.action, {method:'POST', body:fd});
+      if (r.ok) location.reload(); else form.submit();
+    } catch (_) { form.submit(); }
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,596 @@
+{% extends "admin_base.html" %}
+{% block title %}Dashboard — {{ brand.nombre }}{% endblock %}
+{% block content %}
+
+<div class="work-area admin-dashboard-board">
+<section class="work-hero">
+  <div>
+    <span class="work-eyebrow">Panel de mando</span>
+    <h1 class="work-title">Dashboard operativo</h1>
+    <p class="work-subtitle">Lectura rápida de cola, pagos, equipo y alertas para que el admin pueda decidir sin saltar entre pantallas.</p>
+  </div>
+  <div class="work-actions-top">
+    <a href="{{ url_for('admin.cola') }}" class="work-btn work-btn-primary">Cola y equipo</a>
+    <a href="{{ url_for('admin.pedidos') }}" class="work-btn work-btn-ghost">Pedidos</a>
+  </div>
+</section>
+
+{# ── KPI BAR ──────────────────────────────────────────────────────── #}
+<div class="dash-kpi-bar">
+  <div class="dash-kpi {{ 'dash-kpi-urgent' if pendientes > 0 else '' }}">
+    <p class="dash-kpi-num">{{ pendientes }}</p>
+    <p class="dash-kpi-lbl">🔴 Pendientes</p>
+  </div>
+  <div class="dash-kpi {{ 'dash-kpi-prep' if pedidos_armando|length > 0 else '' }}">
+    <p class="dash-kpi-num">{{ pedidos_armando|length }}</p>
+    <p class="dash-kpi-lbl">🔵 Preparando</p>
+  </div>
+  <div class="dash-kpi {{ 'dash-kpi-ready' if pedidos_listos|length > 0 else '' }}">
+    <p class="dash-kpi-num">{{ pedidos_listos|length }}</p>
+    <p class="dash-kpi-lbl">🟢 Listos</p>
+  </div>
+  <div class="dash-kpi {{ 'dash-kpi-route' if pedidos_en_ruta|length > 0 else '' }}">
+    <p class="dash-kpi-num">{{ pedidos_en_ruta|length }}</p>
+    <p class="dash-kpi-lbl">🟣 En ruta</p>
+  </div>
+  <div class="dash-kpi dash-kpi-divider"></div>
+  <div class="dash-kpi">
+    <p class="dash-kpi-num">{{ pedidos_hoy }}</p>
+    <p class="dash-kpi-lbl">📦 Hoy total</p>
+  </div>
+  <div class="dash-kpi">
+    <p class="dash-kpi-num" style="color:#5EF097">€{{ "%.0f"|format(ingresos_hoy) }}</p>
+    <p class="dash-kpi-lbl">💰 Ingresos</p>
+  </div>
+  <div class="dash-kpi {{ 'dash-kpi-warn' if alertas_stock > 0 else '' }}">
+    <p class="dash-kpi-num">{{ alertas_stock }}</p>
+    <p class="dash-kpi-lbl">⚠️ Stock bajo</p>
+  </div>
+  <div class="dash-kpi {{ 'dash-kpi-warn' if pagos_digitales_pendientes > 0 else '' }}">
+    <p class="dash-kpi-num">{{ pagos_digitales_pendientes }}</p>
+    <p class="dash-kpi-lbl">📲 Bizum cobrar</p>
+  </div>
+  <a href="{{ url_for('admin.cola') }}" class="dash-kpi {{ 'dash-kpi-urgent' if pedidos_sin_asignar > 0 else '' }}" style="text-decoration:none">
+    <p class="dash-kpi-num">{{ pedidos_sin_asignar }}</p>
+    <p class="dash-kpi-lbl">👥 Sin asignar</p>
+  </a>
+</div>
+
+{% if pedidos_sin_asignar > 0 %}
+<div class="work-panel p-4 mb-4" style="border-color:rgba(255,107,107,.32);background:rgba(255,107,107,.08)">
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+    <div>
+      <p class="font-black" style="color:#FFD1CC">Hay pedidos sin responsable operativo</p>
+      <p class="text-sm" style="color:var(--work-muted)">
+        Cocina/preparación: {{ pedidos_sin_preparador }} · Reparto: {{ pedidos_sin_repartidor }}.
+        Revisa empleados online o asigna manualmente desde Cola y equipo.
+      </p>
+    </div>
+    <a href="{{ url_for('admin.cola') }}" class="work-btn work-btn-danger">Resolver cola</a>
+  </div>
+</div>
+{% endif %}
+
+{# ── LAYOUT DOS COLUMNAS ─────────────────────────────────────────── #}
+<div class="dash-body">
+
+  {# ═══════════════════════════════════
+     COLUMNA IZQUIERDA — Cola operacional
+     ═══════════════════════════════════ #}
+  <div class="dash-col-main">
+
+    {# ── NUEVOS PEDIDOS (PENDIENTES) ── #}
+    <div class="dash-section">
+      <div class="dash-section-header dash-header-pending">
+        <span>🔴</span>
+        <h2 class="dash-section-title">Nuevos pedidos</h2>
+        <span class="dash-section-count">{{ pedidos_pendientes|length }}</span>
+        <a href="{{ url_for('admin.pedidos', estado='pendiente') }}" class="dash-section-link">Ver todos</a>
+      </div>
+      <div class="dash-cards" id="zone-pending">
+        {% for p in pedidos_pendientes %}
+        <div class="dash-order-card dash-card-pending" id="card-{{ p.id }}">
+          <div class="dash-card-head">
+            <div class="dash-card-num">
+              <span class="dash-order-id">#{{ p.numero_pedido[-6:] }}</span>
+              <span class="dash-order-origin dash-origin-{{ p.origen }}">{{ {'online':'🌐','presencial':'🖥️','whatsapp':'📱'}.get(p.origen,'📦') }} {{ p.origen }}</span>
+            </div>
+            <div class="dash-card-time" title="{{ p.creado_en.strftime('%H:%M:%S') }}">
+              {{ p.creado_en | time_ago }}
+            </div>
+          </div>
+
+          {% if p.cliente %}
+          <div class="dash-card-client">
+            <span>👤</span>
+            <span class="dash-client-name">{{ p.cliente.nombre }}</span>
+            {% if p.cliente.telefono %}<span class="dash-client-tel">{{ p.cliente.telefono }}</span>{% endif %}
+          </div>
+          {% endif %}
+
+          {% if p.direccion_entrega %}
+          <div class="dash-card-address">📍 {{ p.direccion_entrega[:60] }}{% if p.direccion_entrega|length > 60 %}…{% endif %}</div>
+          {% endif %}
+
+          <div class="dash-card-items">
+            {% for item in p.items.all()[:4] %}
+            <div class="dash-item-row">
+              <span class="dash-item-qty">{{ item.cantidad }}×</span>
+              <span class="dash-item-name">{{ item.display_nombre }}</span>
+              <span class="dash-item-price">€{{ "%.2f"|format(item.subtotal) }}</span>
+            </div>
+            {% endfor %}
+            {% if p.items.count() > 4 %}
+            <div class="dash-item-more">+{{ p.items.count() - 4 }} más</div>
+            {% endif %}
+          </div>
+
+          {% if p.notas %}
+          <div class="dash-card-notes">📝 {{ p.notas[:80] }}{% if p.notas|length > 80 %}…{% endif %}</div>
+          {% endif %}
+
+          <div class="dash-card-footer">
+            <span class="dash-card-total">€{{ "%.2f"|format(p.total) }}</span>
+            <span class="dash-pay-badge dash-pay-{{ p.metodo_pago }}">
+              {{ '💵' if p.metodo_pago == 'efectivo' else '📲' }} {{ p.metodo_pago|capitalize }}
+            </span>
+            <div class="dash-card-actions">
+              {% if not p.preparador_id %}
+              <form method="POST" action="{{ url_for('admin.asignar_pedido', pedido_id=p.id) }}" class="dash-assign-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <select name="preparador_id" class="dash-select-mini" onchange="this.form.submit()">
+                  <option value="">Asignar cocina…</option>
+                  {% for prep in preparadores %}
+                  <option value="{{ prep.id }}" {% if prep.en_linea %}class="text-green-400"{% endif %}>
+                    {{ '●' if prep.en_linea else '○' }} {{ prep.nombre }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </form>
+              {% else %}
+              <span class="dash-assigned">
+                👨‍🍳 {{ p.preparador.nombre if p.preparador else '—' }}
+              </span>
+              {% endif %}
+              <a href="{{ url_for('admin.pedidos') }}?id={{ p.id }}" class="dash-btn-sm dash-btn-view">Ver</a>
+              <form method="POST" action="{{ url_for('admin.cancelar_pedido', pedido_id=p.id) }}"
+                    onsubmit="return confirm('¿Cancelar pedido {{ p.numero_pedido }}?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="dash-btn-sm dash-btn-cancel">Cancelar</button>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="dash-empty-zone">
+          <span class="text-2xl">✅</span>
+          <p>Sin pedidos pendientes</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# ── EN PREPARACIÓN ── #}
+    {% if pedidos_armando %}
+    <div class="dash-section">
+      <div class="dash-section-header dash-header-prep">
+        <span>🔵</span>
+        <h2 class="dash-section-title">En preparación</h2>
+        <span class="dash-section-count">{{ pedidos_armando|length }}</span>
+      </div>
+      <div class="dash-cards">
+        {% for p in pedidos_armando %}
+        <div class="dash-order-card dash-card-prep">
+          <div class="dash-card-head">
+            <span class="dash-order-id">#{{ p.numero_pedido[-6:] }}</span>
+            <span class="dash-card-time">{{ p.creado_en | time_ago }}</span>
+          </div>
+          {% if p.cliente %}
+          <div class="dash-card-client"><span>👤</span><span>{{ p.cliente.nombre }}</span></div>
+          {% endif %}
+          <div class="dash-card-items">
+            {% for item in p.items.all()[:3] %}
+            <div class="dash-item-row">
+              <span class="dash-item-qty">{{ item.cantidad }}×</span>
+              <span class="dash-item-name">{{ item.display_nombre }}</span>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="dash-card-footer">
+            <span class="dash-assigned">👨‍🍳 {{ p.preparador.nombre if p.preparador else 'Sin asignar' }}</span>
+            <span class="dash-card-total">€{{ "%.2f"|format(p.total) }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── LISTOS PARA REPARTIR ── #}
+    {% if pedidos_listos %}
+    <div class="dash-section">
+      <div class="dash-section-header dash-header-ready">
+        <span>🟢</span>
+        <h2 class="dash-section-title">Listos — esperando repartidor</h2>
+        <span class="dash-section-count">{{ pedidos_listos|length }}</span>
+      </div>
+      <div class="dash-cards">
+        {% for p in pedidos_listos %}
+        <div class="dash-order-card dash-card-ready">
+          <div class="dash-card-head">
+            <span class="dash-order-id">#{{ p.numero_pedido[-6:] }}</span>
+            <span class="dash-card-time">{{ p.creado_en | time_ago }}</span>
+          </div>
+          {% if p.cliente %}
+          <div class="dash-card-client"><span>👤</span><span>{{ p.cliente.nombre }}</span></div>
+          {% endif %}
+          {% if p.direccion_entrega %}
+          <div class="dash-card-address">📍 {{ p.direccion_entrega[:50] }}{% if p.direccion_entrega|length > 50 %}…{% endif %}</div>
+          {% endif %}
+          <div class="dash-card-footer">
+            {% if not p.repartidor_id %}
+            <form method="POST" action="{{ url_for('admin.asignar_pedido', pedido_id=p.id) }}" class="dash-assign-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <select name="repartidor_id" class="dash-select-mini" onchange="this.form.submit()">
+                <option value="">Asignar repartidor…</option>
+                {% for rep in repartidores %}
+                <option value="{{ rep.id }}">{{ '●' if rep.en_linea else '○' }} {{ rep.nombre }}</option>
+                {% endfor %}
+              </select>
+            </form>
+            {% else %}
+            <span class="dash-assigned">🚴 {{ p.repartidor.nombre if p.repartidor else '—' }}</span>
+            {% endif %}
+            <span class="dash-card-total">€{{ "%.2f"|format(p.total) }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── EN RUTA ── #}
+    {% if pedidos_en_ruta %}
+    <div class="dash-section">
+      <div class="dash-section-header dash-header-route">
+        <span>🟣</span>
+        <h2 class="dash-section-title">En ruta</h2>
+        <span class="dash-section-count">{{ pedidos_en_ruta|length }}</span>
+      </div>
+      <div class="dash-cards">
+        {% for p in pedidos_en_ruta %}
+        <div class="dash-order-card dash-card-route">
+          <div class="dash-card-head">
+            <span class="dash-order-id">#{{ p.numero_pedido[-6:] }}</span>
+            <span class="dash-card-time">{{ p.creado_en | time_ago }}</span>
+          </div>
+          {% if p.cliente %}
+          <div class="dash-card-client"><span>👤</span><span>{{ p.cliente.nombre }}</span>{% if p.cliente.telefono %}<span class="dash-client-tel">{{ p.cliente.telefono }}</span>{% endif %}</div>
+          {% endif %}
+          {% if p.direccion_entrega %}
+          <div class="dash-card-address">📍 {{ p.direccion_entrega[:60] }}{% if p.direccion_entrega|length > 60 %}…{% endif %}</div>
+          {% endif %}
+          <div class="dash-card-footer">
+            <span class="dash-assigned">🚴 {{ p.repartidor.nombre if p.repartidor else '—' }}</span>
+            <span class="dash-card-total">€{{ "%.2f"|format(p.total) }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+  </div>{# /col-main #}
+
+  {# ═══════════════════════════════════
+     COLUMNA DERECHA — Equipo + alertas
+     ═══════════════════════════════════ #}
+  <div class="dash-col-side">
+
+    {# ── ACCIONES RÁPIDAS ── #}
+    <div class="dash-side-card">
+      <p class="dash-side-title">⚡ Acciones rápidas</p>
+      <div class="dash-quick-grid">
+        <a href="{{ url_for('pos.venta') }}" class="dash-quick-btn" style="background:rgba(255,171,0,.15);border-color:rgba(255,171,0,.3);color:#FFAB00">
+          🖥️ POS
+        </a>
+        <a href="{{ url_for('admin.pedidos') }}" class="dash-quick-btn" style="background:rgba(10,132,255,.1);border-color:rgba(10,132,255,.25);color:#5AC8FA">
+          📦 Pedidos
+        </a>
+        <a href="{{ url_for('admin.stock') }}" class="dash-quick-btn {{ 'dash-quick-urgent' if alertas_stock > 0 else '' }}">
+          🧊 Stock{% if alertas_stock > 0 %} <span class="dash-badge-num">{{ alertas_stock }}</span>{% endif %}
+        </a>
+        <a href="{{ url_for('admin.pagos_pendientes_digital') }}" class="dash-quick-btn {{ 'dash-quick-urgent' if pagos_digitales_pendientes > 0 else '' }}">
+          📲 Cobros Bizum{% if pagos_digitales_pendientes > 0 %} <span class="dash-badge-num">{{ pagos_digitales_pendientes }}</span>{% endif %}
+        </a>
+        <a href="{{ url_for('admin.productos') }}" class="dash-quick-btn">
+          🛍️ Productos
+        </a>
+        <a href="{{ url_for('admin.caja') }}" class="dash-quick-btn">
+          💰 Caja
+        </a>
+      </div>
+    </div>
+
+    {# ── EQUIPO EN LÍNEA ── #}
+    <div class="dash-side-card">
+      <p class="dash-side-title">👥 Equipo ahora</p>
+      {% set roles_info = [
+        ('cocina',      '🍳', 'Cocina'),
+        ('preparacion', '📦', 'Preparación'),
+        ('repartidor',  '🚴', 'Repartidores'),
+      ] %}
+      {% for rol_key, icon, label in roles_info %}
+      {% set miembros = cola.get(rol_key, []) %}
+      {% if miembros %}
+      <div class="dash-team-group">
+        <p class="dash-team-role">{{ icon }} {{ label }}</p>
+        {% for m in miembros %}
+        <div class="dash-team-member">
+          <div class="dash-team-dot {% if m.get('en_linea') %}dash-dot-online{% elif m.conectado %}dash-dot-active{% else %}dash-dot-off{% endif %}"></div>
+          <span class="dash-team-name">{{ m.nombre }}</span>
+          <div class="dash-team-meta">
+            {% if m.get('en_linea') %}
+              <span class="dash-tag-online">Online</span>
+              {% if m.carga_preparador is not none and m.carga_preparador > 0 %}
+                <span class="dash-tag-load">{{ m.carga_preparador }} pedidos</span>
+              {% endif %}
+              {% if m.carga_repartidor is not none and m.carga_repartidor > 0 %}
+                <span class="dash-tag-load">{{ m.carga_repartidor }} en ruta</span>
+              {% endif %}
+            {% elif m.conectado %}
+              <span class="dash-tag-active">Activo</span>
+            {% else %}
+              <span class="dash-tag-off">{{ m.minutos_inactivo }}m</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+
+    {# ── ENTREGADOS HOY ── #}
+    {% if entregados_hoy %}
+    <div class="dash-side-card">
+      <p class="dash-side-title">✅ Últimos entregados</p>
+      {% for p in entregados_hoy %}
+      <div class="dash-delivered-row">
+        <span class="dash-delivered-id">#{{ p.numero_pedido[-5:] }}</span>
+        <span class="dash-delivered-client">{{ p.cliente.nombre if p.cliente else '—' }}</span>
+        <span class="dash-delivered-amt">€{{ "%.2f"|format(p.total) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# ── RESUMEN FINANCIERO HOY ── #}
+    <div class="dash-side-card">
+      <p class="dash-side-title">📊 Hoy</p>
+      <div class="dash-fin-row">
+        <span style="color:var(--col-muted)">Ingresos</span>
+        <span style="color:#5EF097;font-weight:800">€{{ "%.2f"|format(ingresos_hoy) }}</span>
+      </div>
+      <div class="dash-fin-row">
+        <span style="color:var(--col-muted)">Egresos</span>
+        <span style="color:#FF6B6B;font-weight:800">€{{ "%.2f"|format(egresos_hoy) }}</span>
+      </div>
+      <div class="dash-fin-row" style="border-top:1px solid var(--col-border);margin-top:.35rem;padding-top:.5rem">
+        <span style="font-weight:700;color:#fff">Saldo neto</span>
+        <span class="dash-saldo {{ 'text-green-400' if saldo_hoy >= 0 else 'text-red-400' }}" style="font-weight:900;font-size:1.1rem">
+          €{{ "%.2f"|format(saldo_hoy) }}
+        </span>
+      </div>
+      <a href="{{ url_for('admin.caja') }}" class="dash-link-small">Ver detalle de caja →</a>
+    </div>
+
+  </div>{# /col-side #}
+</div>{# /dash-body #}
+</div>
+
+{% endblock %}
+{% block scripts %}
+<style>
+/* ═══ DASHBOARD OPERACIONAL ═══ */
+.dash-kpi-bar {
+  display: flex; align-items: center; gap: .35rem;
+  background: var(--col-surface); border: 1px solid var(--col-border);
+  border-radius: .875rem; padding: .5rem .75rem;
+  margin-bottom: 1rem; overflow-x: auto; scrollbar-width: none; flex-wrap: wrap;
+}
+.dash-kpi-bar::-webkit-scrollbar { display: none; }
+.dash-kpi {
+  text-align: center; padding: .3rem .65rem;
+  flex-shrink: 0; border-radius: .5rem; min-width: 68px;
+}
+.dash-kpi-divider { width: 1px; height: 36px; background: var(--col-border); padding: 0; min-width: 1px; }
+.dash-kpi-num { font-size: 1.4rem; font-weight: 900; color: var(--col-text); line-height: 1.1; }
+.dash-kpi-lbl { font-size: .6rem; font-weight: 600; color: var(--col-faint); margin-top: .1rem; white-space: nowrap; }
+.dash-kpi-urgent { background: rgba(255,59,48,.08); } .dash-kpi-urgent .dash-kpi-num { color: #FF6B6B; }
+.dash-kpi-prep    { background: rgba(10,132,255,.08); } .dash-kpi-prep .dash-kpi-num    { color: #5AC8FA; }
+.dash-kpi-ready   { background: rgba(52,199,89,.08);  } .dash-kpi-ready .dash-kpi-num   { color: #5EF097; }
+.dash-kpi-route   { background: rgba(168,85,247,.08); } .dash-kpi-route .dash-kpi-num   { color: #C084FC; }
+.dash-kpi-warn    { background: rgba(255,171,0,.08);  } .dash-kpi-warn .dash-kpi-num    { color: #FFAB00; }
+
+/* Layout */
+.dash-body { display: grid; grid-template-columns: 1fr 300px; gap: 1rem; align-items: start; }
+@media (max-width: 900px) { .dash-body { grid-template-columns: 1fr; } }
+
+/* Secciones de cola */
+.dash-section { margin-bottom: 1rem; }
+.dash-section-header {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .5rem .75rem; border-radius: .75rem .75rem 0 0;
+  margin-bottom: 0;
+}
+.dash-header-pending { background: rgba(255,59,48,.1);  border: 1px solid rgba(255,59,48,.2); border-bottom: none; }
+.dash-header-prep    { background: rgba(10,132,255,.1); border: 1px solid rgba(10,132,255,.2); border-bottom: none; }
+.dash-header-ready   { background: rgba(52,199,89,.1);  border: 1px solid rgba(52,199,89,.2); border-bottom: none; }
+.dash-header-route   { background: rgba(168,85,247,.1); border: 1px solid rgba(168,85,247,.2); border-bottom: none; }
+.dash-section-title { font-size: .85rem; font-weight: 800; color: #fff; flex: 1; }
+.dash-section-count {
+  font-size: .7rem; font-weight: 900; min-width: 22px; height: 22px;
+  border-radius: 999px; display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.15); color: #fff; padding: 0 6px;
+}
+.dash-section-link { font-size: .7rem; color: rgba(255,255,255,.5); text-decoration: none; }
+.dash-section-link:hover { color: #fff; }
+
+/* Tarjetas de pedido */
+.dash-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .6rem;
+  padding: .65rem; border-radius: 0 0 .75rem .75rem; border: 1px solid;
+}
+.dash-header-pending + .dash-cards { border-color: rgba(255,59,48,.2); background: rgba(255,59,48,.03); }
+.dash-header-prep    + .dash-cards { border-color: rgba(10,132,255,.2); background: rgba(10,132,255,.03); }
+.dash-header-ready   + .dash-cards { border-color: rgba(52,199,89,.2);  background: rgba(52,199,89,.03); }
+.dash-header-route   + .dash-cards { border-color: rgba(168,85,247,.2); background: rgba(168,85,247,.03); }
+
+.dash-order-card {
+  background: var(--col-surface); border: 1px solid var(--col-border);
+  border-radius: .875rem; padding: .75rem; display: flex; flex-direction: column; gap: .35rem;
+  transition: box-shadow .2s;
+}
+.dash-order-card:hover { box-shadow: 0 4px 18px rgba(0,0,0,.4); }
+.dash-card-pending { border-left: 3px solid #FF6B6B; }
+.dash-card-prep    { border-left: 3px solid #5AC8FA; }
+.dash-card-ready   { border-left: 3px solid #5EF097; }
+.dash-card-route   { border-left: 3px solid #C084FC; }
+
+.dash-card-head { display: flex; align-items: center; gap: .4rem; justify-content: space-between; }
+.dash-order-id { font-size: .88rem; font-weight: 900; color: #fff; font-family: monospace; }
+.dash-order-origin {
+  font-size: .6rem; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+}
+.dash-origin-online    { background: rgba(10,132,255,.15); color: #5AC8FA; }
+.dash-origin-presencial{ background: rgba(255,171,0,.15);  color: #FFAB00; }
+.dash-origin-whatsapp  { background: rgba(52,199,89,.15);  color: #5EF097; }
+.dash-card-time { font-size: .65rem; color: var(--col-faint); white-space: nowrap; }
+
+.dash-card-client { display: flex; align-items: center; gap: .3rem; font-size: .78rem; }
+.dash-client-name { font-weight: 700; color: var(--col-text); }
+.dash-client-tel { font-size: .68rem; color: var(--col-muted); }
+.dash-card-address { font-size: .7rem; color: var(--col-muted); line-height: 1.3; }
+
+.dash-card-items { display: flex; flex-direction: column; gap: .15rem; }
+.dash-item-row {
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .75rem; padding: .15rem 0; border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.dash-item-qty { font-weight: 900; color: #FFAB00; min-width: 22px; font-size: .78rem; }
+.dash-item-name { flex: 1; color: var(--col-text); }
+.dash-item-price { color: var(--col-muted); font-size: .72rem; }
+.dash-item-more { font-size: .68rem; color: var(--col-faint); text-align: center; padding: .1rem; }
+.dash-card-notes { font-size: .7rem; color: #FFB340; background: rgba(255,171,0,.06); border-radius: .4rem; padding: .25rem .5rem; }
+
+.dash-card-footer { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-top: .2rem; }
+.dash-card-total { font-size: .9rem; font-weight: 900; color: #FFAB00; }
+.dash-pay-badge {
+  font-size: .62rem; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+}
+.dash-pay-efectivo { background: rgba(52,199,89,.1); color: #5EF097; border: 1px solid rgba(52,199,89,.2); }
+.dash-pay-bizum { background: rgba(168,85,247,.1); color: #C084FC; border: 1px solid rgba(168,85,247,.2); }
+.dash-card-actions { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; margin-left: auto; }
+
+.dash-assign-form select { }
+.dash-select-mini {
+  font-size: .72rem; padding: .25rem .55rem; background: var(--col-elevated);
+  border: 1px solid var(--col-border-2); border-radius: .5rem; color: var(--col-text);
+  cursor: pointer; max-width: 140px;
+}
+.dash-assigned { font-size: .72rem; color: var(--col-muted); }
+.dash-btn-sm {
+  font-size: .68rem; font-weight: 700; padding: .25rem .6rem;
+  border-radius: .4rem; border: none; cursor: pointer; text-decoration: none;
+  display: inline-flex; align-items: center; transition: background .15s;
+}
+.dash-btn-view { background: rgba(255,171,0,.12); color: #FFAB00; border: 1px solid rgba(255,171,0,.2); }
+.dash-btn-view:hover { background: rgba(255,171,0,.22); }
+.dash-btn-cancel { background: rgba(255,59,48,.1); color: #FF6B6B; border: 1px solid rgba(255,59,48,.2); }
+.dash-btn-cancel:hover { background: rgba(255,59,48,.2); }
+.dash-empty-zone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: .5rem; padding: 1.5rem; color: var(--col-faint); font-size: .82rem;
+  border-radius: .75rem; border: 1px dashed var(--col-border);
+}
+
+/* Columna lateral */
+.dash-col-side { display: flex; flex-direction: column; gap: .75rem; position: sticky; top: 1rem; }
+.dash-side-card {
+  background: var(--col-surface); border: 1px solid var(--col-border);
+  border-radius: .875rem; padding: .85rem;
+}
+.dash-side-title { font-size: .78rem; font-weight: 800; color: var(--col-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .6rem; }
+
+.dash-quick-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: .4rem; }
+.dash-quick-btn {
+  display: flex; align-items: center; justify-content: center; gap: .35rem;
+  font-size: .78rem; font-weight: 700; padding: .55rem .5rem;
+  border-radius: .65rem; border: 1px solid var(--col-border);
+  background: var(--col-elevated); color: var(--col-muted);
+  text-decoration: none; transition: background .15s, border-color .15s, color .15s;
+  white-space: nowrap;
+}
+.dash-quick-btn:hover { border-color: rgba(255,171,0,.35); color: #FFAB00; }
+.dash-quick-urgent { background: rgba(255,59,48,.08)!important; border-color: rgba(255,59,48,.25)!important; color: #FF6B6B!important; }
+.dash-badge-num {
+  background: #FF3B30; color: #fff; font-size: .55rem; font-weight: 900;
+  padding: 0 4px; border-radius: 999px; min-width: 16px; height: 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* Equipo */
+.dash-team-group { margin-bottom: .65rem; }
+.dash-team-role { font-size: .68rem; font-weight: 700; color: var(--col-faint); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .3rem; }
+.dash-team-member {
+  display: flex; align-items: center; gap: .45rem;
+  padding: .3rem 0; border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.dash-team-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
+.dash-dot-online { background: #5EF097; box-shadow: 0 0 6px #5EF097; }
+.dash-dot-active { background: #FFAB00; }
+.dash-dot-off    { background: #444; }
+.dash-team-name { font-size: .78rem; color: var(--col-text); flex: 1; }
+.dash-team-meta { display: flex; align-items: center; gap: .25rem; }
+.dash-tag-online { font-size: .58rem; font-weight: 700; background: rgba(94,240,151,.12); color: #5EF097; border-radius: 999px; padding: 1px 6px; }
+.dash-tag-active { font-size: .58rem; font-weight: 700; background: rgba(255,171,0,.1); color: #FFAB00; border-radius: 999px; padding: 1px 6px; }
+.dash-tag-off    { font-size: .58rem; color: var(--col-faint); }
+.dash-tag-load   { font-size: .58rem; background: rgba(10,132,255,.1); color: #5AC8FA; border-radius: 999px; padding: 1px 5px; }
+
+/* Entregados */
+.dash-delivered-row {
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .78rem; padding: .25rem 0;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.dash-delivered-id { font-family: monospace; font-weight: 700; color: #5EF097; font-size: .75rem; }
+.dash-delivered-client { flex: 1; color: var(--col-muted); }
+.dash-delivered-amt { font-weight: 800; color: #FFAB00; }
+
+/* Finanzas lateral */
+.dash-fin-row { display: flex; justify-content: space-between; align-items: center; font-size: .82rem; padding: .2rem 0; }
+.dash-link-small { display: block; font-size: .68rem; color: var(--col-faint); margin-top: .5rem; text-decoration: none; }
+.dash-link-small:hover { color: var(--col-muted); }
+</style>
+
+<script>
+// Auto-refresh cada 30 segundos (dashboard operacional)
+let refreshTimer = setTimeout(() => window.location.reload(), 30000);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { clearTimeout(refreshTimer); }
+  else { refreshTimer = setTimeout(() => window.location.reload(), 30000); }
+});
+
+// Ping presencia
+setInterval(() => fetch('/api/ping', {method:'POST'}).catch(()=>{}), 90000);
+
+// Mostrar tiempo relativo de los pedidos
+function timeAgo(dateStr) {
+  const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (diff < 60) return diff + 's';
+  if (diff < 3600) return Math.floor(diff/60) + 'min';
+  return Math.floor(diff/3600) + 'h';
+}
+</script>
+{% endblock %}

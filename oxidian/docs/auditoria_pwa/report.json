@@ -1,0 +1,170 @@
+{
+  "generatedAt": "2026-06-16T14:16:37.055Z",
+  "baseUrl": "http://127.0.0.1:5070",
+  "views": [
+    {
+      "name": "android-menu",
+      "status": 200,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "title": "El Parcerito de Carmona — Pide online",
+      "horizontalOverflow": false,
+      "scrollWidth": 390,
+      "viewportWidth": 390,
+      "products": 7,
+      "visibleProducts": 7,
+      "smallTargets": [],
+      "serviceWorkerControlled": true,
+      "standalone": false
+    },
+    {
+      "name": "iphone-pwa",
+      "status": 200,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "title": "El Parcerito de Carmona — Pide online",
+      "horizontalOverflow": false,
+      "scrollWidth": 393,
+      "viewportWidth": 393,
+      "products": 7,
+      "visibleProducts": 7,
+      "smallTargets": [],
+      "serviceWorkerControlled": true,
+      "standalone": true
+    },
+    {
+      "name": "desktop-menu",
+      "status": 200,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "title": "El Parcerito de Carmona — Pide online",
+      "horizontalOverflow": false,
+      "scrollWidth": 1440,
+      "viewportWidth": 1440,
+      "products": 7,
+      "visibleProducts": 7,
+      "smallTargets": [],
+      "serviceWorkerControlled": true,
+      "standalone": false
+    }
+  ],
+  "manifest": {
+    "status": 200,
+    "contentType": "application/manifest+json",
+    "data": {
+      "name": "El Parcerito de Carmona",
+      "short_name": "El Parcerito",
+      "description": "Menu online, carrito, puntos y seguimiento de pedidos.",
+      "start_url": "/?source=pwa",
+      "scope": "/",
+      "display": "standalone",
+      "display_override": [
+        "standalone",
+        "minimal-ui",
+        "browser"
+      ],
+      "background_color": "#FFFDF8",
+      "theme_color": "#D9961A",
+      "orientation": "portrait-primary",
+      "lang": "es",
+      "dir": "ltr",
+      "categories": [
+        "food",
+        "shopping"
+      ],
+      "id": "oxidian-menu",
+      "icons": [
+        {
+          "src": "/static/pwa-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png",
+          "purpose": "any"
+        },
+        {
+          "src": "/static/pwa-icon-512.png",
+          "sizes": "512x512",
+          "type": "image/png",
+          "purpose": "any"
+        },
+        {
+          "src": "/static/pwa-icon-512-maskable.png",
+          "sizes": "512x512",
+          "type": "image/png",
+          "purpose": "maskable"
+        },
+        {
+          "src": "/static/pwa-icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml",
+          "purpose": "any"
+        }
+      ],
+      "shortcuts": [
+        {
+          "name": "Ver menu",
+          "short_name": "Menu",
+          "description": "Explora el catalogo",
+          "url": "/",
+          "icons": [
+            {
+              "src": "/static/pwa-icon-192.png",
+              "sizes": "192x192"
+            }
+          ]
+        },
+        {
+          "name": "Mi carrito",
+          "short_name": "Carrito",
+          "description": "Ver pedido actual",
+          "url": "/carrito",
+          "icons": [
+            {
+              "src": "/static/pwa-icon-192.png",
+              "sizes": "192x192"
+            }
+          ]
+        },
+        {
+          "name": "Mis puntos",
+          "short_name": "Puntos",
+          "description": "Club de fidelizacion",
+          "url": "/club",
+          "icons": [
+            {
+              "src": "/static/pwa-icon-192.png",
+              "sizes": "192x192"
+            }
+          ]
+        }
+      ],
+      "screenshots": [
+        {
+          "src": "/static/pwa-screenshot-mobile.png",
+          "sizes": "390x844",
+          "type": "image/png",
+          "form_factor": "narrow",
+          "label": "El Parcerito de Carmona — Menu online"
+        },
+        {
+          "src": "/static/pwa-screenshot-wide.png",
+          "sizes": "1280x720",
+          "type": "image/png",
+          "form_factor": "wide",
+          "label": "El Parcerito de Carmona — Pedidos y seguimiento"
+        }
+      ],
+      "prefer_related_applications": false,
+      "edge_side_panel": {
+        "preferred_width": 400
+      }
+    }
+  },
+  "offline": {
+    "error": null,
+    "result": {
+      "title": "El Parcerito de Carmona — Pide online",
+      "bodyText": "El Parcerito de Carmona\n\nComida latina hecha al momento\n\n🛒\n↗\nCOMIDA LATINA HECHA AL MOMENTO\nEl Parcerito de Carmona\nComida latina hecha al momento\n\nRestaurante latino de cocina casera en Carmona, Sevilla\n\nVer menú completo\n🥟\n~30 min\nDelivery\nAbierto\nRecomendado para ti\n1 anuncio\nOFERTA DESTACADA\n[",
+      "controlled": true
+    }
+  }
+}

@@ -1,0 +1,164 @@
+{% extends "admin_base.html" %}
+{% block title %}Categorías{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-black text-white">🏷️ Categorías</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Organiza el catálogo por secciones</p>
+  </div>
+  <button onclick="document.getElementById('form-nueva').classList.toggle('hidden')"
+          class="text-sm font-bold px-4 py-2 rounded-xl"
+          style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
+    + Nueva categoría
+  </button>
+</div>
+
+{# ── FORM NUEVA ── #}
+<div id="form-nueva" class="hidden mb-5">
+<div class="ox-card p-5">
+  <h2 class="font-black text-white mb-4">✨ Nueva categoría</h2>
+  <form method="POST" action="{{ url_for('admin.crear_categoria') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div>
+        <label class="cat-label">Nombre *</label>
+        <input type="text" name="nombre" required placeholder="Ej: Empanadas, Bebidas..." class="cat-input">
+      </div>
+      <div>
+        <label class="cat-label">Descripción</label>
+        <input type="text" name="descripcion" placeholder="Breve descripción opcional" class="cat-input">
+      </div>
+      <div>
+        <label class="cat-label">Posición en el menú (0 = primera)</label>
+        <input type="number" name="orden" value="0" class="cat-input" placeholder="0">
+        <p class="text-xs mt-1" style="color:var(--col-faint)">Número menor = aparece antes en la tienda</p>
+      </div>
+      <div class="flex items-center">
+        <label class="cat-check" style="accent-color:#5EF097"><input type="checkbox" name="activo" value="1" checked style="accent-color:#5EF097"> Visible en menú (activa)</label>
+      </div>
+      <div class="col-span-2">
+        <label class="cat-label">Imagen de categoría</label>
+        <div class="flex gap-3 items-start">
+          <div class="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center text-2xl"
+               style="background:var(--col-elevated);border:1.5px solid var(--col-border)" id="cat-img-preview-new">🏷️</div>
+          <div class="flex-1 space-y-2">
+            <label class="flex items-center gap-2 cursor-pointer rounded-lg px-3 py-2 text-sm transition"
+                   style="background:var(--col-elevated);border:1.5px dashed var(--col-border);color:var(--col-muted)">
+              <span>📤</span><span>Subir imagen (jpg/png/webp)</span>
+              <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="hidden"
+                     onchange="previewCatImg(this, 'cat-img-preview-new')">
+            </label>
+            <input type="url" name="imagen_url" placeholder="O pegar URL de imagen..."
+                   class="w-full text-xs" style="padding:.5rem .75rem;background:var(--col-elevated);border:1.5px solid var(--col-border);border-radius:.65rem;color:#fff">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="flex gap-3">
+      <button type="submit" class="px-6 py-2 font-bold rounded-xl text-black"
+              style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Crear</button>
+      <button type="button" onclick="document.getElementById('form-nueva').classList.add('hidden')"
+              class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
+    </div>
+  </form>
+</div>
+</div>
+
+{# ── LISTA ── #}
+{% if not categorias %}
+<div class="ox-card p-10 text-center">
+  <p class="text-4xl mb-3">🏷️</p>
+  <p class="font-bold text-white">Sin categorías creadas</p>
+  <p class="text-sm mt-1" style="color:var(--col-muted)">Las categorías organizan el menú en secciones</p>
+</div>
+{% else %}
+<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+  {% for cat in categorias %}
+  <div class="ox-card p-4 {{ '' if cat.activo else 'cat-off' }}">
+    <div class="flex items-center gap-3 mb-3">
+      {# Imagen #}
+      <div class="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center text-xl"
+           style="background:var(--col-elevated);border:1px solid var(--col-border)">
+        {% if cat.imagen_url %}
+          {% set src = cat.imagen_url|upload_url %}
+          <img src="{{ src }}" alt="{{ cat.nombre }}" class="w-full h-full object-cover">
+        {% else %}🏷️{% endif %}
+      </div>
+      <div class="flex-1 min-w-0">
+        <p class="font-bold text-white truncate">{{ cat.nombre }}</p>
+        {% if not cat.activo %}<span class="cat-status">Oculta</span>{% endif %}
+        {% if cat.descripcion %}<p class="text-xs truncate" style="color:var(--col-muted)">{{ cat.descripcion }}</p>{% endif %}
+        <p class="text-xs mt-0.5" style="color:var(--col-faint)">
+          {{ cat.productos.filter_by(activo=True).count() if cat.productos else 0 }} productos activos
+        </p>
+      </div>
+    </div>
+
+    {# Edit inline #}
+    <details class="mb-2">
+      <summary class="text-xs font-bold cursor-pointer px-2 py-1 rounded-lg" style="background:rgba(90,170,255,.1);color:#60AAFF;list-style:none">
+        ✏️ Edición rápida
+      </summary>
+      <form method="POST" action="{{ url_for('admin.editar_categoria', cat_id=cat.id) }}"
+            enctype="multipart/form-data" class="mt-2 space-y-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="text" name="nombre" value="{{ cat.nombre }}" required class="cat-input">
+        <input type="text" name="descripcion" value="{{ cat.descripcion or '' }}" placeholder="Descripción" class="cat-input">
+        <input type="number" name="orden" value="{{ cat.orden or 0 }}" class="cat-input" placeholder="Orden">
+        <label class="cat-check"><input type="checkbox" name="activo" value="1" {% if cat.activo %}checked{% endif %}> Visible en menú</label>
+        <label class="flex items-center gap-2 cursor-pointer rounded-lg px-2 py-1.5 text-xs"
+               style="background:var(--col-elevated);border:1px dashed var(--col-border);color:var(--col-muted)">
+          📤 Nueva imagen
+          <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="hidden">
+        </label>
+        <input type="url" name="imagen_url" value="{{ cat.imagen_url or '' }}" placeholder="URL imagen"
+               class="cat-input text-xs">
+        <button type="submit" class="w-full py-1.5 rounded-lg text-xs font-bold"
+                style="background:rgba(90,170,255,.15);color:#60AAFF;border:1px solid rgba(90,170,255,.25)">
+          Guardar cambios
+        </button>
+      </form>
+    </details>
+
+    {# Eliminar #}
+    <form method="POST" action="{{ url_for('admin.toggle_categoria', cat_id=cat.id) }}" class="mb-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="w-full py-1.5 rounded-lg text-xs font-bold transition"
+              style="background:rgba(90,170,255,.08);color:#7CC7FF;border:1px solid rgba(90,170,255,.18)">
+        {{ 'Ocultar del menú' if cat.activo else 'Mostrar en menú' }}
+      </button>
+    </form>
+    <form method="POST" action="{{ url_for('admin.eliminar_categoria', cat_id=cat.id) }}"
+          onsubmit="return confirm('¿Eliminar categoría {{ cat.nombre }}?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="w-full py-1.5 rounded-lg text-xs font-bold transition"
+              style="background:rgba(255,59,48,.07);color:#FF6B6B;border:1px solid rgba(255,59,48,.15)">
+        🗑️ Eliminar
+      </button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<style>
+.cat-label { font-size:.72rem; font-weight:700; color:var(--col-muted); display:block; margin-bottom:.25rem; text-transform:uppercase; letter-spacing:.04em; }
+.cat-input { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem; }
+.cat-input:focus { outline:none; border-color:rgba(255,171,0,.5); }
+.cat-check { display:flex; align-items:center; gap:.45rem; color:var(--col-muted); font-weight:800; font-size:.85rem; text-transform:none; letter-spacing:0; }
+.cat-off { opacity:.68; border-style:dashed; }
+.cat-status { display:inline-flex; margin-top:.15rem; font-size:.65rem; font-weight:900; color:#FFB340; background:rgba(255,179,64,.12); border:1px solid rgba(255,179,64,.24); border-radius:999px; padding:.1rem .45rem; }
+</style>
+<script>
+function previewCatImg(input, previewId) {
+  const el = document.getElementById(previewId);
+  if (!el || !input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = e => { el.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`; };
+  reader.readAsDataURL(input.files[0]);
+}
+</script>
+{% endblock %}

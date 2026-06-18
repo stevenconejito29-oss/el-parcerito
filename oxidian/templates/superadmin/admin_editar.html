@@ -1,0 +1,38 @@
+{% extends "admin_base.html" %}
+{% block title %}Editar administrador{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-5">
+  <a href="{{ url_for('superadmin.admins') }}" class="ox-btn-ghost text-sm">← Volver</a>
+  <div>
+    <h1 class="text-xl font-extrabold text-white">Editar administrador</h1>
+    <p class="text-xs" style="color:var(--col-muted)">{{ admin_user.email }}</p>
+  </div>
+</div>
+
+<form method="POST" action="{{ url_for('superadmin.editar_admin', user_id=admin_user.id) }}" class="ox-card p-5 max-w-2xl">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="ox-field md:col-span-2">
+      <label class="ox-label">Nombre</label>
+      <input type="text" name="nombre" value="{{ admin_user.nombre }}" required class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Rol</label>
+      <select name="rol" class="ox-input">
+        <option value="admin" {% if admin_user.rol == 'admin' %}selected{% endif %}>Admin</option>
+        <option value="super_admin" {% if admin_user.rol == 'super_admin' %}selected{% endif %}>Super admin</option>
+      </select>
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Nueva contraseña</label>
+      <input type="password" name="password" placeholder="Dejar vacío para conservar la actual" class="ox-input">
+    </div>
+  </div>
+  <div class="flex gap-3 mt-5">
+    <button type="submit" class="ox-btn-primary">Guardar cambios</button>
+    <a href="{{ url_for('superadmin.admins') }}" class="ox-btn-ghost">Cancelar</a>
+  </div>
+</form>
+
+{% endblock %}

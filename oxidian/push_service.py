@@ -1,0 +1,197 @@
+"""
+Servicio de Web Push Notifications para Oxidian.
+
+Flujo:
+  1. El frontend suscribe al usuario con la clave pública VAPID.
+  2. La suscripción (endpoint + keys) se guarda en PushSubscription.
+  3. Desde el backend se llama a send_push(...) con un mensaje JSON.
+  4. El service worker muestra la notificación al usuario.
+
+Estrategia de targeting:
+  - notify_admin()   → todos los usuarios con rol admin/super_admin
+  - notify_user()    → suscripciones de un user_id específico
+  - notify_roles()   → todos los usuarios con los roles indicados
+"""
+from __future__ import annotations
+import json
+import logging
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+# ── VAPID keys (se leen de SiteConfig en tiempo de ejecución) ──────────────
+
+def _get_vapid_keys() -> tuple[str, str]:
+    """Devuelve (public_key, private_key) desde SiteConfig."""
+    try:
+        from models import SiteConfig
+        pub  = SiteConfig.get("VAPID_PUBLIC_KEY",  "")
+        priv = SiteConfig.get("VAPID_PRIVATE_KEY", "")
+        if pub and priv:
+            return pub, priv
+    except Exception:
+        logger.exception("No se pudieron leer claves VAPID desde SiteConfig")
+    return "", ""
+
+
+def get_vapid_public_key() -> str:
+    pub, _ = _get_vapid_keys()
+    return pub
+
+
+# ── Envío de una notificación push a una suscripción ──────────────────────
+
+def _send_one_result(sub_row, payload: dict, vapid_claims: dict, priv_key: str) -> tuple[bool, bool, str | None]:
+    """Envia push a una suscripcion. Devuelve (ok, expirada, error)."""
+    from pywebpush import webpush, WebPushException
+    try:
+        webpush(
+            subscription_info={
+                "endpoint": sub_row.endpoint,
+                "keys": {"p256dh": sub_row.p256dh, "auth": sub_row.auth},
+            },
+            data=json.dumps(payload),
+            vapid_private_key=priv_key,
+            vapid_claims=vapid_claims,
+        )
+        return True, False, None
+    except WebPushException as e:
+        code = e.response.status_code if e.response is not None else 0
+        if code in (404, 410):
+            return False, True, f"push_expired:{code}"
+        logger.warning("WebPush error %s para endpoint %s: %s", code, sub_row.endpoint[:40], e)
+        return False, False, f"webpush_error:{code or 'unknown'}"
+    except Exception as e:
+        logger.warning("Error de red enviando push: %s", e)
+        return False, False, str(e)
+
+
+def _send_one(sub_row, payload: dict, vapid_claims: dict, priv_key: str) -> bool:
+    """Compatibilidad: True si enviada o si la suscripcion debe descartarse."""
+    ok, expired, _ = _send_one_result(sub_row, payload, vapid_claims, priv_key)
+    return ok or expired
+
+
+def _dispatch(subscriptions, payload: dict) -> None:
+    """Encola push persistente para que lo procese el worker de outbox."""
+    if not subscriptions:
+        return
+    from extensions import db
+    from models import NotificationOutbox
+
+    for sub in subscriptions:
+        job_payload = {
+            "subscription_id": sub.id,
+            "payload": payload,
+        }
+        db.session.add(NotificationOutbox(
+            canal="push",
+            evento="web_push",
+            destinatario=str(sub.id),
+            payload_json=json.dumps(job_payload, ensure_ascii=False, default=str),
+            user_id=sub.user_id,
+            max_intentos=3,
+        ))
+    db.session.commit()
+
+
+def send_push_outbox_payload(payload: dict) -> tuple[bool, str | None]:
+    """Procesa un job `canal=push` desde notification_outbox."""
+    from extensions import db
+    from models import PushSubscription
+
+    subscription_id = payload.get("subscription_id")
+    push_payload = payload.get("payload") or {}
+    if not subscription_id or not push_payload:
+        return False, "push_payload_invalido"
+
+    sub = db.session.get(PushSubscription, int(subscription_id))
+    if not sub or not sub.activo:
+        return True, None
+
+    pub, priv = _get_vapid_keys()
+    if not pub or not priv:
+        return False, "vapid_no_configurado"
+
+    ok, expired, error = _send_one_result(
+        sub,
+        push_payload,
+        vapid_claims={"sub": "mailto:info@oxidian.app"},
+        priv_key=priv,
+    )
+    if expired:
+        sub.activo = False
+        logger.info("Push expirada, marcando inactiva: id=%s", sub.id)
+        return True, None
+    return ok, error
+
+
+# ── API pública del servicio ──────────────────────────────────────────────
+
+def notify_roles(roles: list[str], title: str, body: str, url: str = "/",
+                 icon: Optional[str] = None, badge: Optional[str] = None) -> None:
+    """Envía notificación push a todos los usuarios con los roles indicados."""
+    from models import PushSubscription, User
+    subs = PushSubscription.query.filter(
+        PushSubscription.activo.is_(True),
+        PushSubscription.usuario.has(User.rol.in_(roles)),
+    ).all()
+    if not subs:
+        return
+    payload = _build_payload(title, body, url, icon, badge)
+    _dispatch(subs, payload)
+
+
+def notify_user(user_id: int, title: str, body: str, url: str = "/",
+                icon: Optional[str] = None, badge: Optional[str] = None) -> None:
+    """Envía notificación push a todas las suscripciones activas de un usuario."""
+    from models import PushSubscription
+    subs = PushSubscription.query.filter_by(user_id=user_id, activo=True).all()
+    if not subs:
+        return
+    payload = _build_payload(title, body, url, icon, badge)
+    _dispatch(subs, payload)
+
+
+def notify_new_order(pedido) -> None:
+    """Alerta a admins cuando llega un pedido nuevo."""
+    num = pedido.numero_pedido
+    origen_label = {"online": "Web", "whatsapp": "WhatsApp", "presencial": "POS"}.get(
+        pedido.origen, pedido.origen.capitalize()
+    )
+    total = f"€{float(pedido.total):.2f}" if pedido.total else ""
+    notify_roles(
+        ["admin", "super_admin"],
+        title=f"🔔 Nuevo pedido {origen_label}",
+        body=f"#{num} · {total} · {pedido.metodo_pago.capitalize()}",
+        url="/admin/pedidos",
+    )
+
+
+def notify_order_state(pedido) -> None:
+    """Notifica al cliente del cambio de estado de su pedido."""
+    if not pedido.cliente_id:
+        return
+    msgs = {
+        "armando":   ("🍳 Preparando tu pedido", f"#{pedido.numero_pedido} está siendo preparado."),
+        "listo":     ("✅ Pedido listo", f"#{pedido.numero_pedido} está listo para salir."),
+        "en_ruta":   ("🚴 En camino", f"Tu pedido #{pedido.numero_pedido} viene de camino."),
+        "entregado": ("🎉 Pedido entregado", f"#{pedido.numero_pedido} ha sido entregado. ¡Buen provecho!"),
+        "cancelado": ("❌ Pedido cancelado", f"#{pedido.numero_pedido} ha sido cancelado."),
+    }
+    entry = msgs.get(pedido.estado)
+    if not entry:
+        return
+    title, body = entry
+    notify_user(pedido.cliente_id, title, body, url=f"/perfil")
+
+
+def _build_payload(title, body, url, icon=None, badge=None) -> dict:
+    return {
+        "title": title,
+        "body": body,
+        "url": url,
+        "icon": icon or "/static/pwa-icon-192.png",
+        "badge": badge or "/static/favicon-32.png",
+        "timestamp": int(__import__("time").time() * 1000),
+    }

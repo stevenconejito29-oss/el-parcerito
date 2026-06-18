@@ -1,0 +1,257 @@
+# ════════════════════════════════════════════════════════════════════
+# OXIDIAN — Cosmos OS deployment
+#
+# Cómo importar en Cosmos:
+#   Panel Cosmos → Market / Compose → Import → pegar este archivo
+#
+# Variables requeridas (definir en Cosmos → Secrets o en .env):
+#   SECRET_KEY, SEED_PASSWORD, ADMIN_EMAIL, SUPERADMIN_EMAIL
+#   OXIDIAN_DB_PASSWORD, EVOLUTION_DB_PASSWORD
+#   EVOLUTION_API_KEY, BOT_API_KEY, BOT_PANEL_KEY
+#   OWNER_NUMBER, SUPERADMINS
+#   OXIDIAN_PUBLIC_URL, TIENDA_URL (tu dominio con https://)
+# ════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── Base de datos Oxidian ──────────────────────────────────────────
+  oxidian-db:
+    image: postgres:15-alpine
+    container_name: oxidian-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: oxidian
+      POSTGRES_PASSWORD: ${OXIDIAN_DB_PASSWORD:?define OXIDIAN_DB_PASSWORD}
+      POSTGRES_DB: oxidian
+    volumes:
+      - oxidian_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oxidian -d oxidian"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    labels:
+      cosmos-persistent: "true"
+
+  # ── Oxidian (Flask + Gunicorn) ────────────────────────────────────
+  oxidian:
+    image: oxidian:latest
+    container_name: oxidian
+    build:
+      context: ..
+      dockerfile: oxidian/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      oxidian-db:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      FLASK_ENV: production
+      SECRET_KEY: ${SECRET_KEY:?define SECRET_KEY}
+      DATABASE_URL: postgresql://oxidian:${OXIDIAN_DB_PASSWORD:?define OXIDIAN_DB_PASSWORD}@oxidian-db:5432/oxidian
+      OXIDIAN_DB_USER: oxidian
+      OXIDIAN_DB_PASSWORD: ${OXIDIAN_DB_PASSWORD:?define OXIDIAN_DB_PASSWORD}
+      OXIDIAN_DB_NAME: oxidian
+      EVOLUTION_DB_USER: evolution
+      EVOLUTION_DB_PASSWORD: ${EVOLUTION_DB_PASSWORD:?define EVOLUTION_DB_PASSWORD}
+      EVOLUTION_DB_NAME: evolution
+      SEED_PASSWORD: ${SEED_PASSWORD:?define SEED_PASSWORD}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@mi-dominio.com}
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-superadmin@mi-dominio.com}
+      OXIDIAN_MFA_ENFORCED: "${OXIDIAN_MFA_ENFORCED:-1}"
+      BOT_API_URL: http://127.0.0.1:3000
+      BOT_OXIDIAN_URL: http://127.0.0.1:5000
+      BOT_API_KEY: ${BOT_API_KEY:?define BOT_API_KEY}
+      BOT_PANEL_KEY: ${BOT_PANEL_KEY:?define BOT_PANEL_KEY}
+      OXIDIAN_KEY: ${BOT_API_KEY:?define BOT_API_KEY}
+      BOT_ALLOW_ORDER_CREATE: ${BOT_ALLOW_ORDER_CREATE:-0}
+      BOT_PUBLIC_URL: ${BOT_PUBLIC_URL:-}
+      OXIDIAN_URL: http://127.0.0.1:5000
+      OXIDIAN_PUBLIC_URL: ${OXIDIAN_PUBLIC_URL:?define OXIDIAN_PUBLIC_URL}
+      TIENDA_URL: ${TIENDA_URL:?define TIENDA_URL}
+      RUN_CHATBOT: "1"
+      RUN_OUTBOX_WORKER: "1"
+      OUTBOX_LIMIT: ${OUTBOX_LIMIT:-50}
+      OUTBOX_INTERVAL_SECONDS: ${OUTBOX_INTERVAL_SECONDS:-60}
+      REDIS_URL: redis://oxidian-redis:6379/0
+      NODE_ENV: production
+      PORT: "3000"
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?define EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-oxidian}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?define WEBHOOK_SECRET}
+      NOMBRE_NEGOCIO: ${NOMBRE_NEGOCIO:-Oxidian}
+      TELEFONO_NEGOCIO: ${TELEFONO_NEGOCIO:-}
+      DIRECCION_NEGOCIO: ${DIRECCION_NEGOCIO:-Carmona, Sevilla}
+      CIUDAD_NEGOCIO: ${CIUDAD_NEGOCIO:-Carmona}
+      PROVINCIA_NEGOCIO: ${PROVINCIA_NEGOCIO:-Sevilla}
+      RADIO_ENTREGA_KM: ${RADIO_ENTREGA_KM:-2}
+      VALIDAR_RADIO_ENTREGA: ${VALIDAR_RADIO_ENTREGA:-1}
+      BLOQUEAR_DIRECCION_NO_VERIFICADA: ${BLOQUEAR_DIRECCION_NO_VERIFICADA:-1}
+      SIMULATE_EVO_SEND: ${SIMULATE_EVO_SEND:-0}
+      SEED_SHOWCASE_CATALOG: "0"
+      OXIDIAN_MINIMAL_USERS: ${OXIDIAN_MINIMAL_USERS:-1}
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-1}"
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-3}
+      WEB_THREADS: ${WEB_THREADS:-2}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+      TRUST_PROXY_HEADERS: "1"
+      TZ: ${TZ:-Europe/Madrid}
+      OWNER_NUMBER: ${OWNER_NUMBER:?define OWNER_NUMBER sin +, por ejemplo 34XXXXXXXXX}
+      SUPERADMINS: ${SUPERADMINS:?define SUPERADMINS sin +, separados por coma}
+      DB_DIR: /app/bot-data
+    volumes:
+      - oxidian_images:/app/images
+      - chatbot_data:/app/bot-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      # Cosmos routing
+      cosmos-force-network-secured: "true"
+      cosmos-service-name: "oxidian"
+      cosmos-icon: "https://raw.githubusercontent.com/cosmos-cloud/cosmos-server/main/static/imgs/cosmos.png"
+      # Si usas la red de Cosmos para HTTPS automático:
+      # cosmos-network: "cosmos-network"
+
+  # ── Redis Oxidian (rate limiting / estado efímero escalable) ─────
+  oxidian-redis:
+    image: redis:7-alpine
+    container_name: oxidian-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - oxidian_redis_data:/data
+
+  # ── Redis Cache (para Evolution API) ─────────────────────────────
+  evolution-redis:
+    image: redis:7-alpine
+    container_name: evolution-redis
+    restart: unless-stopped
+    volumes:
+      - evolution_redis_data:/data
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+
+  # ── Base de datos Evolution ───────────────────────────────────────
+  evolution-db:
+    image: postgres:15-alpine
+    container_name: evolution-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD:?define EVOLUTION_DB_PASSWORD}
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Evolution API (WhatsApp) ──────────────────────────────────────
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: evolution-api
+    restart: unless-stopped
+    depends_on:
+      evolution-db:
+        condition: service_healthy
+      evolution-redis:
+        condition: service_started
+    environment:
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?define EVOLUTION_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${EVOLUTION_DB_PASSWORD:?define EVOLUTION_DB_PASSWORD}@evolution-db:5432/evolution?schema=public
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379/6
+      CACHE_REDIS_TTL: "604800"
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CONFIG_SESSION_PHONE_VERSION: ${CONFIG_SESSION_PHONE_VERSION:-2.3000.1030415680}
+      DOCKER_ENV: "true"
+      TZ: ${TZ:-Europe/Madrid}
+
+  # ── Gateway de dominio único ─────────────────────────────────────
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: oxidian-gateway
+    restart: unless-stopped
+    depends_on:
+      oxidian:
+        condition: service_healthy
+      evolution-api:
+        condition: service_started
+    volumes:
+      - ./nginx.single-domain.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "${PUBLIC_PORT:-8088}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/gateway-health | grep -q ok"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    labels:
+      cosmos-force-network-secured: "true"
+      cosmos-service-name: "oxidian"
+      cosmos-icon: "https://raw.githubusercontent.com/cosmos-cloud/cosmos-server/main/static/imgs/cosmos.png"
+
+  # ── Cloudflare Tunnel (HTTPS público sin abrir puertos del router) ─
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: oxidian-cloudflared
+    restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_healthy
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ${CLOUDFLARED_CONFIG_DIR:-/home/panzeta/.cloudflared}:/etc/cloudflared:ro
+
+  # ── Setup automático de Evolution ────────────────────────────────
+  evolution-setup:
+    image: curlimages/curl:8.11.1
+    container_name: evolution-setup
+    restart: "no"
+    depends_on:
+      - evolution-api
+      - oxidian
+    environment:
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?define EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-oxidian}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?define WEBHOOK_SECRET}
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        echo "Esperando Evolution API..."
+        for i in $(seq 1 90); do
+          if curl -fsS http://evolution-api:8080/ >/dev/null 2>&1; then break; fi
+          sleep 2
+        done
+        echo "Creando instancia $$EVOLUTION_INSTANCE..."
+        curl -sS -X POST http://evolution-api:8080/instance/create \
+          -H "Content-Type: application/json" \
+          -H "apikey: $$EVOLUTION_API_KEY" \
+          -d "{\"instanceName\":\"$$EVOLUTION_INSTANCE\",\"integration\":\"WHATSAPP-BAILEYS\",\"qrcode\":true}" || true
+        echo "Configurando webhook..."
+        curl -sS -X POST "http://evolution-api:8080/webhook/set/$$EVOLUTION_INSTANCE" \
+          -H "Content-Type: application/json" \
+          -H "apikey: $$EVOLUTION_API_KEY" \
+          -d "{\"webhook\":{\"enabled\":true,\"url\":\"http://oxidian:5000/webhook/evolution\",\"headers\":{\"X-Webhook-Secret\":\"$$WEBHOOK_SECRET\"},\"byEvents\":false,\"base64\":true,\"events\":[\"MESSAGES_UPSERT\",\"CONNECTION_UPDATE\",\"QRCODE_UPDATED\"]}}" || true
+        echo "Setup completado"
+
+volumes:
+  oxidian_db_data:
+  oxidian_images:
+  oxidian_redis_data:
+  evolution_db_data:
+  evolution_redis_data:
+  chatbot_data:

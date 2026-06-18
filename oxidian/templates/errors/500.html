@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Error del servidor — {{ brand.nombre }}{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto text-center py-16 px-4">
+  <div class="text-8xl mb-4">😬</div>
+  <h1 class="text-5xl font-black mb-2" style="color:var(--brand-secondary,#CE1126)">500</h1>
+  <h2 class="text-xl font-bold mb-3" style="color:var(--col-text)">Algo salió mal en la cocina</h2>
+  <p class="mb-6" style="color:var(--col-muted)">Hubo un error interno. Ya estamos trabajando para solucionarlo.</p>
+  {% if brand.telefono %}
+  <p class="mb-8 text-sm" style="color:var(--col-muted)">
+    Si tienes urgencia, contáctanos por WhatsApp:
+    <a href="https://wa.me/{{ brand.telefono|replace(' ','')|replace('+','') }}"
+       class="font-bold" style="color:var(--brand-primary,#FCD116)">{{ brand.telefono }}</a>
+  </p>
+  {% endif %}
+  <a href="{{ url_for('public.index') }}"
+     class="inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-base"
+     style="background:linear-gradient(135deg,var(--brand-primary,#FCD116),color-mix(in srgb,var(--brand-primary,#FCD116) 80%,#000));color:#18120A">
+    🏠 Volver al inicio
+  </a>
+</div>
+{% endblock %}

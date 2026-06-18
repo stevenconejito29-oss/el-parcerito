@@ -1,0 +1,119 @@
+{% extends "admin_base.html" %}
+{% block title %}Pagos Pendientes — Admin{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-bold text-white">Cobros Bizum Pendientes</h1>
+    <p class="text-xs mt-1" style="color:var(--col-faint)">Pedidos con Bizum manual: admin puede confirmar antes, o reparto al entregar</p>
+  </div>
+  <div class="ox-card px-4 py-2 text-center">
+    <p class="text-lg font-bold" style="color:#5EF097">{{ confirmados_hoy }}</p>
+    <p class="text-xs" style="color:var(--col-muted)">Confirmados hoy</p>
+  </div>
+</div>
+
+{% set bizum_numero = bizum_tel or '' %}
+<div class="ox-card p-4 mb-5" style="border-left:3px solid rgba(192,132,252,.4)">
+  <p class="font-semibold mb-1" style="color:#C084FC">📱 Datos de pago Bizum</p>
+  {% if bizum_numero %}
+  <p class="font-bold text-white mb-0.5">Número Bizum del negocio: <span style="color:#C084FC">{{ bizum_numero }}</span></p>
+  {% endif %}
+  <p class="text-sm" style="color:var(--col-muted)">El pedido no se bloquea por Bizum. Si el cliente paga antes, confirma aquí; si no, el repartidor lo verificará antes de entregar.</p>
+  {% if not bizum_numero %}
+  <p class="mt-1 text-xs" style="color:#FFB340">⚠️ Configura el teléfono del negocio en <a href="{{ url_for('superadmin.config') }}" style="color:#FFAB00;text-decoration:underline">Configuración del sistema</a> para mostrárselo a los clientes.</p>
+  {% endif %}
+</div>
+
+{% if pendientes %}
+<div class="space-y-4">
+  {% for p in pendientes %}
+  <div class="ox-card p-5" style="border-left:3px solid rgba(255,171,0,.3)">
+    <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
+
+      <div class="flex-1">
+        <div class="flex items-center gap-3 mb-2 flex-wrap">
+          <span class="font-mono font-bold text-lg" style="color:#FFAB00">{{ p.numero_pedido }}</span>
+          <span class="text-xs px-2 py-0.5 rounded-full font-bold"
+            style="{% if p.estado == 'pendiente' %}background:rgba(255,171,0,.12);color:#FFAB00;border:1px solid rgba(255,171,0,.25)
+            {% elif p.estado == 'armando' %}background:rgba(90,200,250,.1);color:#5AC8FA;border:1px solid rgba(90,200,250,.2)
+            {% else %}background:var(--col-elevated);color:var(--col-muted);border:1px solid var(--col-border){% endif %}">
+            {{ p.estado }}
+          </span>
+          <span class="text-xs" style="color:var(--col-faint)">{{ p.creado_en.strftime('%d/%m/%Y %H:%M') }}</span>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-3 text-sm">
+          <div>
+            <p class="text-xs mb-0.5" style="color:var(--col-muted)">Cliente</p>
+            <p class="font-medium text-white">{{ p.cliente.nombre }}</p>
+            {% if p.cliente.telefono %}
+            <p class="text-xs" style="color:var(--col-faint)">📞 {{ p.cliente.telefono }}</p>
+            {% endif %}
+          </div>
+          <div>
+            <p class="text-xs mb-0.5" style="color:var(--col-muted)">Dirección</p>
+            <p class="text-sm" style="color:var(--col-text)">{{ p.direccion_entrega or '—' }}</p>
+          </div>
+        </div>
+
+        <div class="mt-3">
+          <p class="text-xs mb-1" style="color:var(--col-muted)">Productos</p>
+          <ul class="text-sm space-y-0.5">
+            {% for item in p.items %}
+            <li class="flex justify-between" style="color:var(--col-text)">
+              <span>{{ item.display_nombre }} × {{ item.cantidad }}</span>
+              <span style="color:#FFAB00">€{{ "%.2f"|format(item.subtotal) }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        {% if p.notas %}
+        <p class="mt-2 text-xs" style="color:#FFAB00">📝 {{ p.notas }}</p>
+        {% endif %}
+      </div>
+
+      <div class="md:w-56 flex-shrink-0">
+        <div class="ox-card p-4 text-center mb-3" style="background:rgba(255,171,0,.06);border-color:rgba(255,171,0,.2)">
+          <p class="text-xs mb-1" style="color:var(--col-muted)">Importe a cobrar</p>
+          <p class="text-3xl font-bold" style="color:#FFAB00">€{{ "%.2f"|format(p.total) }}</p>
+          <p class="text-xs mt-1" style="color:#FFAB00">Cobro pendiente</p>
+        </div>
+
+        <form method="POST" action="{{ url_for('admin.confirmar_pago_digital', pedido_id=p.id) }}" class="mb-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit"
+                  onclick="return confirm('¿Confirmas que recibiste el pago de €{{ '%.2f'|format(p.total) }}?')"
+                  class="ox-btn-primary w-full py-2.5 font-bold text-sm">
+            ✓ Bizum recibido ahora
+          </button>
+        </form>
+
+        <form method="POST" action="{{ url_for('admin.rechazar_pago_digital', pedido_id=p.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="text" name="motivo" placeholder="Motivo (opcional)"
+                 class="ox-input text-xs mb-1">
+          <button type="submit"
+                  onclick="return confirm('¿Cancelar el pedido por incidencia de pago?')"
+                  class="ox-btn-ghost w-full py-1.5 text-xs font-bold"
+                  style="color:#FF6B6B;border-color:rgba(255,107,107,.3)">
+            ✗ Incidencia / Cancelar
+          </button>
+        </form>
+      </div>
+
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="text-center py-16" style="color:var(--col-faint)">
+  <p class="text-4xl mb-3">✅</p>
+  <p class="font-medium text-white">No hay cobros Bizum pendientes.</p>
+  <p class="text-sm mt-1">Los cobros manuales están al día o se verificarán en reparto.</p>
+</div>
+{% endif %}
+
+{% endblock %}

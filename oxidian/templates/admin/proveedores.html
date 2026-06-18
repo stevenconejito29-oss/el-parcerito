@@ -1,0 +1,109 @@
+{% extends "admin_base.html" %}
+{% block title %}Proveedores{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+  <div>
+    <h1 class="text-2xl font-black text-white">🏪 Proveedores (restaurantes)</h1>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">
+      Cada proveedor es un restaurante externo que prepara y despacha combos
+      bajo nuestra marca. Tiene su propio stock por SKU.
+    </p>
+  </div>
+</div>
+
+<!-- Alta rápida -->
+<details class="ox-card p-4 mb-5">
+  <summary class="cursor-pointer font-bold text-white">➕ Nuevo proveedor</summary>
+  <form method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+    <input type="hidden" name="accion" value="crear">
+    <label class="text-xs">Nombre comercial *
+      <input name="nombre" required class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+    </label>
+    <label class="text-xs">Razón social
+      <input name="razon_social" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+    </label>
+    <label class="text-xs">📱 WhatsApp directo del bar
+      <input name="telefono" placeholder="+34 600 000 000"
+             class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+      <small class="block mt-1" style="color:var(--col-muted)">
+        El chatbot redirige al cliente a este número cuando un pedido del bar
+        ya no se puede cancelar automáticamente. Incluye prefijo internacional.
+      </small>
+    </label>
+    <label class="text-xs">Email
+      <input type="email" name="email" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+    </label>
+    <label class="text-xs md:col-span-2">Dirección
+      <input name="direccion" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+    </label>
+    <label class="text-xs">Horario (texto libre)
+      <input name="horario" placeholder="Ej. L-V 9–22, S-D 11–23" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+    </label>
+    <label class="text-xs">⏰ Hora apertura (filtra catálogo)
+      <input type="time" name="hora_apertura" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+    </label>
+    <label class="text-xs">⏰ Hora cierre
+      <input type="time" name="hora_cierre" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+    </label>
+    <label class="text-xs md:col-span-2">Modelo de acuerdo
+      <select name="modelo_acuerdo" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+        <option value="stock_proveedor" selected>A — El bar pone el stock (le pagamos precio_costo, nuestro margen = PVP − coste)</option>
+        <option value="stock_propio_bar">B — Nosotros ponemos el stock (le pagamos comisión% del PVP por preparar)</option>
+      </select>
+    </label>
+    <label class="text-xs">Comisión % <span class="opacity-60">(solo modo B)</span>
+      <input type="number" step="0.01" min="0" max="100" name="comision_pct" value="0" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+    </label>
+    <label class="text-xs md:col-span-2">IBAN
+      <input name="iban" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+    </label>
+    <label class="text-xs md:col-span-2">Notas
+      <textarea name="notas" rows="2" class="w-full px-3 py-2 rounded bg-zinc-800 text-white"></textarea>
+    </label>
+    <div class="md:col-span-2 text-right">
+      <button type="submit" class="px-4 py-2 rounded font-bold" style="background:var(--col-gold); color:#000">
+        Crear proveedor
+      </button>
+    </div>
+  </form>
+</details>
+
+<!-- Listado -->
+{% if not proveedores %}
+<div class="ox-card p-6 text-center">
+  <p class="text-gray-400">Aún no hay proveedores registrados.</p>
+</div>
+{% else %}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+  {% for prov in proveedores %}
+  <div class="ox-card p-4 {% if not prov.activo %}opacity-60{% endif %}">
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <h3 class="text-lg font-bold text-white">
+        {{ prov.nombre }}
+        {% if not prov.activo %}<span class="text-xs text-red-400">(inactivo)</span>{% endif %}
+      </h3>
+      <a href="{{ url_for('admin.editar_proveedor', proveedor_id=prov.id) }}"
+         class="text-xs px-2 py-1 rounded bg-zinc-700 text-white hover:bg-zinc-600">Editar</a>
+    </div>
+    <ul class="text-xs space-y-1" style="color:var(--col-muted)">
+      {% if prov.telefono %}<li>📞 {{ prov.telefono }}</li>{% endif %}
+      {% if prov.email %}<li>✉️ {{ prov.email }}</li>{% endif %}
+      {% if prov.direccion %}<li>📍 {{ prov.direccion }}</li>{% endif %}
+      {% if prov.horario %}<li>⏰ {{ prov.horario }}</li>{% endif %}
+      <li>
+        🤝
+        {% if prov.modelo_acuerdo == 'stock_propio_bar' %}
+          Modo B — fee {{ "%.2f"|format(prov.comision_pct|float) }}% del PVP
+        {% else %}
+          Modo A — bar pone stock
+        {% endif %}
+      </li>
+      <li>📦 {{ prov.skus.count() }} SKU(s) · {{ prov.operadores.count() }} operador(es)</li>
+    </ul>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}

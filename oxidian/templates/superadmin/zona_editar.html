@@ -1,0 +1,87 @@
+{% extends "admin_base.html" %}
+{% block title %}Editar zona{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-5">
+  <a href="{{ url_for('superadmin.zonas') }}" class="ox-btn-ghost text-sm">← Volver</a>
+  <div>
+    <h1 class="text-xl font-extrabold text-white">Editar zona de entrega</h1>
+    <p class="text-xs" style="color:var(--col-muted)">Precios, tiempos y cobertura</p>
+  </div>
+</div>
+
+<form method="POST" action="{{ url_for('superadmin.editar_zona', zona_id=zona.id) }}" class="ox-card p-5 max-w-3xl">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="ox-field">
+      <label class="ox-label">Nombre</label>
+      <input type="text" name="nombre" value="{{ zona.nombre }}" required class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Ámbito</label>
+      <select name="es_epicentro" class="ox-input">
+        <option value="1" {% if zona.es_epicentro %}selected{% endif %}>Epicentro</option>
+        <option value="0" {% if not zona.es_epicentro %}selected{% endif %}>Periferia</option>
+      </select>
+    </div>
+    <div class="ox-field md:col-span-2">
+      <label class="ox-label">Descripción</label>
+      <input type="text" name="descripcion" value="{{ zona.descripcion or '' }}" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Precio de envío</label>
+      <input type="number" name="precio_envio" value="{{ zona.precio_envio }}" step="0.01" min="0" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Tiempo estimado en minutos</label>
+      <input type="number" name="tiempo_estimado_min" value="{{ zona.tiempo_estimado_min }}" min="1" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Gratis desde</label>
+      <input type="number" name="gratis_desde" value="{{ zona.gratis_desde or '' }}" step="0.01" min="0" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Orden</label>
+      <input type="number" name="orden" value="{{ zona.orden }}" class="ox-input">
+    </div>
+  </div>
+
+  <details class="mt-5 ox-card p-4" {% if zona.tiene_geo %}open{% endif %}>
+    <summary class="cursor-pointer font-bold text-white">
+      🗺️ Cobertura geográfica
+      {% if zona.tiene_geo %}<span class="text-xs text-green-400 ml-2">activa</span>{% endif %}
+    </summary>
+    <p class="text-xs mt-2 mb-3" style="color:var(--col-muted)">
+      Si configuras los tres campos, el checkout asignará automáticamente esta
+      zona a clientes cuya dirección esté dentro del radio. Déjalos en blanco
+      para mantener el comportamiento legacy (asignación por orden).
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div class="ox-field">
+        <label class="ox-label">Centro lat</label>
+        <input type="number" name="centro_lat" step="0.000001" min="-90" max="90"
+               value="{{ zona.centro_lat or '' }}" class="ox-input"
+               placeholder="37.4698">
+      </div>
+      <div class="ox-field">
+        <label class="ox-label">Centro lng</label>
+        <input type="number" name="centro_lng" step="0.000001" min="-180" max="180"
+               value="{{ zona.centro_lng or '' }}" class="ox-input"
+               placeholder="-5.6435">
+      </div>
+      <div class="ox-field">
+        <label class="ox-label">Radio (km)</label>
+        <input type="number" name="radio_km" step="0.1" min="0" max="200"
+               value="{{ zona.radio_km or '' }}" class="ox-input"
+               placeholder="5">
+      </div>
+    </div>
+  </details>
+
+  <div class="flex gap-3 mt-5">
+    <button type="submit" class="ox-btn-primary">Guardar cambios</button>
+    <a href="{{ url_for('superadmin.zonas') }}" class="ox-btn-ghost">Cancelar</a>
+  </div>
+</form>
+
+{% endblock %}

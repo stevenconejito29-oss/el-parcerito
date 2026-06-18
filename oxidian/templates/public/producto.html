@@ -1,0 +1,1055 @@
+{% extends "base.html" %}
+{% block title %}{{ producto.nombre }} — {{ brand.nombre }}{% endblock %}
+{% block content %}
+
+{# ── IMAGEN HERO (full-width mobile) ── #}
+<div class="pd-hero-img" id="pd-hero">
+  {% if producto.imagen_url %}
+    {% set src = producto.imagen_url|upload_url %}
+    <img src="{{ src }}" alt="{{ producto.nombre }}" class="pd-hero-img-el"
+         onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <div class="pd-hero-fallback" style="display:none">
+      {% if producto.es_combo %}🎁
+      {% elif producto.categoria and 'beb' in producto.categoria.nombre|lower %}🥤
+      {% elif producto.categoria and 'arepa' in producto.categoria.nombre|lower %}🫓
+      {% else %}🥟{% endif %}
+    </div>
+  {% else %}
+    <div class="pd-hero-fallback">
+      {% if producto.es_combo %}🎁
+      {% elif producto.categoria and 'beb' in producto.categoria.nombre|lower %}🥤
+      {% elif producto.categoria and 'arepa' in producto.categoria.nombre|lower %}🫓
+      {% else %}🥟{% endif %}
+    </div>
+  {% endif %}
+
+  {# Botón volver flotante #}
+  <a href="{{ url_for('public.index') }}" class="pd-back-btn" aria-label="Volver al menú">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+  </a>
+
+  {# Badges flotantes #}
+  <div class="pd-hero-badges">
+    {% if producto.es_combo %}
+    <span class="pd-badge pd-badge-combo">🎁 Combo</span>
+    {% endif %}
+    {% if producto.tipo_entrega in ('programado','encargo') %}
+    <span class="pd-badge pd-badge-encargo">📆 Fecha fija{% if producto.fecha_llegada %}: {{ producto.fecha_llegada.strftime('%d/%m') }}{% endif %}</span>
+    {% endif %}
+    {% if producto.canjeable_con_puntos %}
+    <span class="pd-badge pd-badge-puntos">⭐ Canjeable</span>
+    {% endif %}
+    {% if producto.origen_pais %}
+    <span class="pd-badge pd-badge-origin">
+      {{ producto.origen_pais }}
+    </span>
+    {% endif %}
+  </div>
+</div>
+
+{# ── TARJETA INFO ── #}
+<div class="pd-card">
+
+  {# ── Nombre + categoría + rating ── #}
+  <div class="pd-name-row">
+    <div class="pd-name-col">
+      {% if producto.categoria %}<p class="pd-cat-label">{{ producto.categoria.nombre }}</p>{% endif %}
+      <h1 class="pd-title">{{ producto.nombre }}</h1>
+    </div>
+    {% if producto.rating_promedio %}
+    <div class="pd-rating-pill">
+      <span class="pd-rating-star">★</span>
+      <span class="pd-rating-val">{{ "%.1f"|format(producto.rating_promedio) }}</span>
+      <span class="pd-rating-count">({{ reviews|length }})</span>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if producto.descripcion %}
+  <p class="pd-desc">{{ producto.descripcion }}</p>
+  {% endif %}
+
+  {# ── Precio ── #}
+  <div class="pd-price-row">
+    <span class="pd-price" id="pd-unit-price">€{{ "%.2f"|format(producto.precio_final) }}</span>
+    {% if producto.es_combo and producto.combo_precio_modo_normalizado == 'descuento_porcentaje' and producto.combo_descuento_pct_float > 0 %}
+    <span class="pd-combo-price-note">
+      {{ "%.0f"|format(producto.combo_descuento_pct_float) }}% dto sobre tu selección
+      {% if producto.combo_precio_base|float > producto.precio_final|float %}
+      <span>Antes €{{ "%.2f"|format(producto.combo_precio_base) }}</span>
+      {% endif %}
+    </span>
+    {% elif producto.es_combo %}
+    <span class="pd-combo-price-note">Precio fijo del combo</span>
+    {% endif %}
+  </div>
+
+  {# ── Puntos canjeables ── #}
+  {% if producto.canjeable_con_puntos and producto.puntos_para_canje %}
+  <div class="pd-info-box pd-box-puntos">
+    <span class="pd-box-icon">⭐</span>
+    <div>
+      <p class="pd-box-title">{{ producto.puntos_para_canje }} puntos para canjear</p>
+      <p class="pd-box-sub">Puedes desbloquearlo gratis desde el carrito si tienes suficientes puntos acumulados</p>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Información alimentaria ── #}
+  <div class="pd-info-box pd-box-alerg">
+    <div class="pd-box-alerg-inner">
+      <p class="pd-box-label">Información alimentaria</p>
+      {% if producto.es_hipoalergenico %}
+      <div class="pd-tag-hipo">🌿 Hipoalergénico — apto para todos</div>
+      {% endif %}
+      {% set iconos = producto.alergenos_iconos %}
+      {% if iconos %}
+      <p class="pd-alerg-title">⚠️ Contiene:</p>
+      <div class="pd-alerg-chips">
+        {% for code, icon, label in iconos %}
+        <span class="pd-alerg-chip">{{ icon }} {{ label }}</span>
+        {% endfor %}
+      </div>
+      {% elif not producto.es_hipoalergenico %}
+      <p class="pd-no-alerg">Alérgenos no informados. Consulta al negocio si tienes alergias o intolerancias.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Combo contenido ── #}
+  {% if producto.es_combo %}
+  <div class="pd-info-box pd-box-combo">
+    <div class="pd-combo-head">
+      <div>
+        <p class="pd-box-title">Arma tu combo</p>
+        <p class="pd-box-sub">Elige paso a paso. Lo incluido siempre sale; para cada sección elige tu opción y tu pedido llegará exactamente como lo pides.</p>
+      </div>
+      {% if producto.tipo_entrega == 'inmediato' %}
+      <span class="pd-combo-stock">{{ producto.combo_stock_total }} disponible{{ 's' if producto.combo_stock_total != 1 }}</span>
+      {% endif %}
+    </div>
+
+    {% if combo_items %}
+    {% set fijos = combo_items|selectattr('es_seleccionable','equalto',False)|list %}
+    {% set seleccionables = combo_items|selectattr('es_seleccionable')|list %}
+    {% set grupos = seleccionables|map(attribute='grupo_display')|unique|list %}
+
+    {# ── BASE FIJA ── siempre incluida, sin elección #}
+    {% if fijos %}
+    <div class="pd-cstep pd-cstep-f">
+      <div class="pd-cstep-hd">
+        <span class="pd-cstep-num pd-cstep-num-f">✓</span>
+        <div class="pd-cstep-meta">
+          <p class="pd-cstep-ttl">Paso 1 · Base incluida</p>
+          <p class="pd-cstep-sub">Siempre sale con el combo — no necesitas elegir</p>
+        </div>
+        <span class="pd-cstep-badge pd-cstep-done">{{ fijos|length }} producto{{ 's' if fijos|length != 1 }}</span>
+      </div>
+      <div class="pd-cstep-body">
+        {% for item in fijos %}
+        <div class="pd-combo-item">
+          <div class="pd-combo-thumb">
+            {% if item.componente.imagen_url %}
+              {% set comp_src = item.componente.imagen_url|upload_url %}
+              <img src="{{ comp_src }}" alt="{{ item.componente.nombre }}">
+            {% else %}
+              <span>{% if item.componente.categoria and 'beb' in item.componente.categoria.nombre|lower %}🥤{% elif item.componente.categoria and 'arepa' in item.componente.categoria.nombre|lower %}🫓{% elif item.componente.categoria and 'dulce' in item.componente.categoria.nombre|lower %}🍮{% else %}🥟{% endif %}</span>
+            {% endif %}
+          </div>
+          <span class="pd-combo-qty">{{ item.cantidad }}×</span>
+          <div class="pd-combo-item-info">
+            <p class="pd-combo-item-name">{{ item.componente.nombre }}</p>
+            {% if item.componente.descripcion %}
+            <p class="pd-combo-item-desc">{{ item.componente.descripcion[:80] }}</p>
+            {% endif %}
+            {% set al = item.componente.alergenos_iconos %}
+            {% if al %}
+            <p class="pd-combo-item-alerg">⚠️ {% for c,i,l in al %}{{ i }}{{ loop.last and '' or ' ' }}{% endfor %}</p>
+            {% elif item.componente.es_hipoalergenico %}
+            <p class="pd-combo-item-hipo">🌿 Sin alérgenos</p>
+            {% endif %}
+          </div>
+          <span class="pd-combo-tag pd-combo-tag-inc">Incluido</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── SECCIONES DE ELECCIÓN — cliente elige en cada una ── #}
+    {% for grupo in grupos %}
+    {% set opts = seleccionables|selectattr('grupo_display','equalto',grupo)|list %}
+    {% set max_sel = opts[0].max_selecciones if opts else 1 %}
+    {% set group_key = (grupo or 'Seleccion').replace(' ', '_') %}
+    <div class="pd-cstep pd-cstep-s pd-combo-grupo" data-max-sel="{{ max_sel }}" data-grupo-nombre="{{ grupo or 'Seleccion' }}">
+      <div class="pd-cstep-hd">
+        <span class="pd-cstep-num pd-cstep-num-s">{{ loop.index }}</span>
+        <div class="pd-cstep-meta">
+          <p class="pd-cstep-ttl">Paso {{ loop.index + (1 if fijos else 0) }} · {{ grupo or 'Elige una opción' }}</p>
+          <p class="pd-cstep-sub">{% if max_sel == 1 %}Elige 1 opción{% else %}Elige hasta {{ max_sel }} de {{ opts|length }}{% endif %}</p>
+        </div>
+        <span class="pd-cstep-badge pd-cstep-pending" id="pdst-{{ group_key }}">Pendiente</span>
+      </div>
+      {% if max_sel > 1 %}
+      <p class="pd-combo-group-note pd-cstep-note">Puedes seleccionar hasta {{ max_sel }} opciones en total para esta sección.</p>
+      {% endif %}
+      <div class="pd-cstep-body">
+        {% for item in opts %}
+        {% set opt_agotada = (not item.activo) or (not item.componente.activo) or (not item.componente.visible_ahora) or (item.componente.tipo_entrega == 'inmediato' and item.componente.stock_total < item.cantidad) %}
+        <label class="pd-combo-opcion {% if opt_agotada %}pd-combo-opcion-disabled{% endif %}">
+          {% if max_sel == 1 %}
+          <input type="radio" name="combo_item_{{ group_key }}"
+                 value="{{ item.id }}" class="pd-combo-input combo-sel-radio combo-item-choice" required
+                 data-base-price="{{ (item.componente.precio_final|float) * (item.cantidad|int) }}"
+                 data-extra="{{ item.precio_extra|float }}"
+                 form="pd-add-form"
+                 {% if item.es_predeterminado and not opt_agotada %}checked{% endif %}
+                 {% if opt_agotada %}disabled{% endif %}>
+          {% else %}
+          <div class="pd-combo-qty-selector">
+            <button type="button" class="pd-combo-qty-control" data-action="decrement" data-item-id="{{ item.id }}" data-group="{{ group_key }}" aria-label="Menos" {% if opt_agotada %}disabled{% endif %}>−</button>
+            <input type="number" name="combo_item_qty_{{ item.id }}" value="{{ 1 if item.es_predeterminado and not opt_agotada else 0 }}" min="0" max="{{ max_sel }}"
+                   class="pd-combo-qty-input combo-sel-qty"
+                   data-group="{{ group_key }}" data-max="{{ max_sel }}"
+                   data-base-price="{{ (item.componente.precio_final|float) * (item.cantidad|int) }}"
+                   data-extra="{{ item.precio_extra|float }}"
+                   form="pd-add-form"
+                   aria-label="Cantidad de {{ item.componente.nombre }}"
+                   {% if opt_agotada %}disabled{% endif %}>
+            <button type="button" class="pd-combo-qty-control" data-action="increment" data-item-id="{{ item.id }}" data-group="{{ group_key }}" aria-label="Más" {% if opt_agotada %}disabled{% endif %}>＋</button>
+          </div>
+          {% endif %}
+          <span class="pd-combo-opt-thumb">
+            {% if item.componente.imagen_url %}
+              {% set opt_src = item.componente.imagen_url|upload_url %}
+              <img src="{{ opt_src }}" alt="{{ item.componente.nombre }}">
+            {% else %}
+              <span>{% if item.componente.categoria and 'beb' in item.componente.categoria.nombre|lower %}🥤{% elif item.componente.categoria and 'arepa' in item.componente.categoria.nombre|lower %}🫓{% elif item.componente.categoria and 'dulce' in item.componente.categoria.nombre|lower %}🍮{% else %}🥟{% endif %}</span>
+            {% endif %}
+          </span>
+          <span class="pd-combo-opt-body">
+            <span class="pd-combo-opt-name">{{ item.componente.nombre }}</span>
+            {% if item.es_predeterminado %}<span class="pd-combo-opt-desc" style="color:#5EF097;font-weight:900">Recomendada</span>{% endif %}
+            {% if item.precio_extra and item.precio_extra > 0 %}<span class="pd-combo-opt-desc" style="color:#FFAB00;font-weight:900">+€{{ "%.2f"|format(item.precio_extra) }}</span>{% endif %}
+            {% if item.componente.descripcion %}
+            <span class="pd-combo-opt-desc">{{ item.componente.descripcion[:70] }}</span>
+            {% endif %}
+          </span>
+          {% set al = item.componente.alergenos_iconos %}
+          {% if al %}<span class="pd-combo-opt-alerg">⚠️{% for c,i,l in al %} {{ i }}{% endfor %}</span>{% endif %}
+          {% if opt_agotada %}<span class="pd-combo-opt-sold">Agotado</span>{% endif %}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
+    {% if not fijos and not seleccionables %}
+    <p class="pd-no-alerg">Contenido disponible en el local.</p>
+    {% endif %}
+    <p class="pd-combo-footnote">* Sujeto a disponibilidad del día.</p>
+    {% else %}
+    <p class="pd-no-alerg">Contenido del combo disponible en el local.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ── Programado ── #}
+  {% if producto.tipo_entrega in ('programado','encargo') %}
+  <div class="pd-info-box pd-box-encargo">
+    <span class="pd-box-icon">📆</span>
+    <div>
+      <p class="pd-box-title" style="color:#7CC7FF">Producto con fecha fija</p>
+      <p class="pd-box-sub">
+        {% if producto.fecha_llegada %}
+        Se prepara para entregar el {{ producto.fecha_llegada.strftime('%d/%m/%Y') }}. Haz este pedido separado del delivery inmediato.
+        {% else %}
+        Se prepara bajo una fecha definida por el negocio. Haz este pedido separado del delivery inmediato.
+        {% endif %}
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Agotado ── #}
+  {% if not producto.disponible_para_venta() %}
+  <div class="pd-info-box pd-box-sold">
+    <span class="pd-box-icon">😔</span>
+    <div>
+      <p class="pd-box-title" style="color:#FF6B6B">Agotado momentáneamente</p>
+      <p class="pd-box-sub">Vuelve pronto o consulta por WhatsApp.</p>
+    </div>
+  </div>
+  {% endif %}
+
+</div>{# /pd-card #}
+
+{# ── RESEÑAS ── #}
+{% if reviews %}
+<section class="pd-section">
+  <h2 class="pd-section-title">💬 Reseñas</h2>
+  <div class="pd-reviews-grid">
+    {% for r in reviews %}
+    <div class="pd-review">
+      <div class="pd-review-head">
+        <div class="pd-avatar">{{ r.cliente.nombre[0].upper() if r.cliente else '?' }}</div>
+        <div class="pd-review-meta">
+          <p class="pd-review-name">{{ r.cliente.nombre if r.cliente else 'Cliente' }}</p>
+          <p class="pd-review-date">{{ r.creado_en.strftime('%d/%m/%Y') }}</p>
+        </div>
+        <div class="pd-review-stars">
+          {% for i in range(r.calificacion) %}★{% endfor %}<span class="pd-review-stars-empty">{% for i in range(5-r.calificacion) %}★{% endfor %}</span>
+        </div>
+      </div>
+      {% if r.comentario %}<p class="pd-review-text">"{{ r.comentario }}"</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{# ── Espacio para el bottom bar fijo en mobile ── #}
+{% if producto.disponible_para_venta() %}
+<div class="pd-bottom-spacer"></div>
+
+{# ── BARRA INFERIOR FIJA (mobile) ── #}
+<div class="pd-add-bar" id="pd-add-bar">
+  <form method="POST" action="{{ url_for('public.agregar_carrito', producto_id=producto.id) }}"
+        id="pd-add-form" class="pd-add-bar-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    {% if producto.es_combo and combo_items %}
+    {% set tiene_seleccionables = combo_items|selectattr('es_seleccionable')|list %}
+    {% if not tiene_seleccionables %}
+    <input type="hidden" name="notas_personalizacion" id="combo-sel-notes-bar" value="">
+    {% else %}
+    <input type="hidden" name="notas_personalizacion" id="combo-sel-notes">
+    {% endif %}
+    {% endif %}
+
+    <div class="pd-qty-ctrl" id="pd-qty-ctrl">
+      <button type="button" class="pd-qty-btn" onclick="pdQty(-1)" aria-label="Menos">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      {% set qty_stock_max = producto.combo_stock_total if producto.es_combo else (producto.stock_total if producto.tipo_entrega == 'inmediato' else cart_max_qty) %}
+      {% set qty_form_max = cart_max_qty if cart_max_qty < qty_stock_max else qty_stock_max %}
+      <input type="number" name="cantidad" id="pd-qty" value="1" min="1"
+             max="{{ qty_form_max }}"
+             class="pd-qty-input" readonly>
+      <button type="button" class="pd-qty-btn" onclick="pdQty(1)" aria-label="Más">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+
+    <button type="submit" class="pd-add-btn" id="pd-add-btn">
+      {% if producto.es_combo %}Añadir combo{% elif producto.tipo_entrega in ('programado','encargo') %}Reservar fecha fija{% else %}Añadir{% endif %} · €{{ "%.2f"|format(producto.precio_final) }}
+    </button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+/* ═══════════════════════════════════════════════════
+   PRODUCTO DETALLE — Oxidian · Mobile-first
+═══════════════════════════════════════════════════ */
+:root {
+  --flag-yellow: #E8B26C;
+  --flag-blue:   #6B3D8A;
+  --flag-red:    #D65A2A;
+}
+
+/* ── Resetear el padding del main para que la imagen llegue a los bordes ── */
+main { padding-top: 0 !important; }
+
+/* ── Hero image ── */
+.pd-hero-img {
+  position: relative;
+  width: calc(100% + 1.5rem);
+  margin-left: -0.75rem;
+  margin-right: -0.75rem;
+  background: var(--col-elevated, #1C1408);
+  aspect-ratio: 4/3;
+  max-height: 340px;
+  overflow: hidden;
+}
+.pd-hero-img::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 46%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.48));
+  z-index: 1;
+}
+@media (min-width: 640px) {
+  .pd-hero-img {
+    width: calc(100% + 2rem); margin-left: -1rem; margin-right: -1rem;
+    border-radius: 0 0 1.5rem 1.5rem;
+    max-height: 400px;
+  }
+}
+@media (min-width: 1024px) {
+  main { padding-top: 1.5rem !important; }
+  .pd-hero-img {
+    width: 100%; margin-left: 0; margin-right: 0;
+    border-radius: 1.5rem;
+    max-height: 460px;
+  }
+}
+.pd-hero-img-el { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pd-hero-fallback {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center; font-size: 6rem;
+  background: linear-gradient(135deg, var(--col-elevated, #1C1408), var(--col-bg, #0D0A08));
+}
+
+/* ── Back button flotante ── */
+.pd-back-btn {
+  position: absolute; top: max(env(safe-area-inset-top, 12px), 12px); left: 14px;
+  width: 42px; height: 42px; border-radius: 999px;
+  background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; text-decoration: none;
+  z-index: 4;
+  -webkit-tap-highlight-color: transparent; transition: background .15s;
+}
+.pd-back-btn:hover { background: rgba(0,0,0,.75); }
+
+/* ── Hero badges ── */
+.pd-hero-badges {
+  position: absolute; bottom: 12px; left: 12px;
+  display: flex; flex-wrap: wrap; gap: .35rem;
+  align-items: flex-end;
+  max-width: calc(100% - 24px);
+  z-index: 3;
+}
+.pd-badge {
+  display: inline-flex; align-items: center; justify-content: center; gap: .24rem;
+  font-size: .65rem; font-weight: 900;
+  line-height: 1.15;
+  padding: 4px 9px; border-radius: 999px;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 4px 14px rgba(0,0,0,.2);
+  white-space: nowrap;
+}
+.pd-badge-promo   { background: var(--flag-red); color: #fff; }
+.pd-badge-combo   { background: var(--flag-blue); color: #fff; }
+.pd-badge-encargo { background: rgba(255,149,0,.9); color: #fff; }
+.pd-badge-puntos  { background: rgba(168,85,247,.85); color: #fff; }
+.pd-badge-origin  { background: rgba(0,0,0,.65); color: #fff; }
+
+/* ── Card principal ── */
+.pd-card {
+  background: var(--col-surface); border: 1px solid var(--col-border);
+  border-radius: 1.25rem 1.25rem 1.5rem 1.5rem;
+  padding: 1.1rem 1rem 1.5rem;
+  margin-top: -1.25rem;
+  position: relative; z-index: 2;
+  box-shadow: 0 -8px 24px rgba(38,25,12,.08);
+}
+@media (min-width: 1024px) {
+  .pd-card { margin-top: .85rem; border-radius: 1.25rem; }
+}
+
+/* ── Nombre + rating ── */
+.pd-name-row {
+  display: flex; align-items: flex-start; gap: .75rem;
+  justify-content: space-between; margin-bottom: .4rem;
+}
+.pd-name-col { flex: 1; min-width: 0; }
+.pd-cat-label { font-size: .72rem; font-weight: 700; color: var(--col-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .2rem; }
+.pd-title { font-size: clamp(1.3rem, 5vw, 1.85rem); font-weight: 900; color: var(--col-text); line-height: 1.15; }
+.pd-rating-pill {
+  flex-shrink: 0; display: flex; align-items: center; gap: .3rem;
+  background: rgba(252,209,22,.1); border: 1px solid rgba(252,209,22,.22);
+  border-radius: 999px; padding: .3rem .65rem;
+}
+.pd-rating-star { color: var(--flag-yellow); font-size: .9rem; }
+.pd-rating-val  { font-size: .82rem; font-weight: 900; color: var(--flag-yellow); }
+.pd-rating-count { font-size: .68rem; color: var(--col-muted); }
+
+.pd-desc { font-size: .88rem; color: var(--col-muted); line-height: 1.55; margin-bottom: .9rem; }
+
+/* ── Precio ── */
+.pd-price-row {
+  display: flex; align-items: baseline; gap: .65rem; flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.pd-price { font-size: 1.9rem; font-weight: 900; color: var(--flag-yellow); }
+.pd-price-old { font-size: .95rem; color: var(--col-faint); text-decoration: line-through; }
+.pd-price-badge { background: var(--flag-red); color: #fff; font-size: .7rem; font-weight: 900; padding: 2px 8px; border-radius: 999px; }
+.pd-combo-price-note {
+  display:inline-flex;align-items:center;gap:.35rem;flex-wrap:wrap;
+  font-size:.74rem;font-weight:850;color:#5EF097;
+}
+.pd-combo-price-note span { color:var(--col-faint);text-decoration:line-through; }
+
+/* ── Info boxes ── */
+.pd-info-box {
+  display: flex; align-items: flex-start; gap: .75rem;
+  border-radius: 1rem; padding: .85rem .9rem; margin-bottom: .85rem;
+}
+.pd-box-icon { font-size: 1.35rem; flex-shrink: 0; margin-top: .05rem; }
+.pd-box-title { font-size: .88rem; font-weight: 800; color: var(--col-text); margin-bottom: .15rem; }
+.pd-box-sub   { font-size: .75rem; color: var(--col-muted); line-height: 1.4; }
+.pd-box-label { font-size: .72rem; font-weight: 700; color: var(--col-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .5rem; }
+
+.pd-box-puntos { background: rgba(168,85,247,.07); border: 1px solid rgba(168,85,247,.2); }
+.pd-box-alerg  { background: var(--col-surface); border: 1px solid var(--col-border); padding: .85rem; }
+.pd-box-alerg-inner { width: 100%; }
+.pd-box-combo  {
+  background: linear-gradient(180deg, #F4F8FF, #FFFFFF);
+  border: 1px solid rgba(0,48,135,.16);
+  flex-direction: column;
+  gap: .7rem;
+}
+.pd-box-encargo { background: rgba(255,149,0,.07); border: 1px solid rgba(255,149,0,.2); }
+.pd-box-sold   { background: rgba(255,59,48,.07); border: 1px solid rgba(255,59,48,.2); }
+
+.pd-tag-hipo {
+  display: inline-flex; align-items: center;
+  font-size: .82rem; font-weight: 700; color: #5EF097;
+  background: rgba(94,240,151,.1); border: 1px solid rgba(94,240,151,.2);
+  border-radius: .5rem; padding: .3rem .7rem; margin-bottom: .5rem;
+}
+.pd-alerg-title { font-size: .75rem; font-weight: 700; color: #FFB340; margin-bottom: .4rem; }
+.pd-alerg-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.pd-alerg-chip {
+  display: flex; align-items: center; gap: .25rem;
+  font-size: .78rem; font-weight: 700; color: #FFB340;
+  background: rgba(255,140,0,.1); border: 1px solid rgba(255,140,0,.22);
+  border-radius: .5rem; padding: .25rem .6rem;
+}
+.pd-no-alerg { font-size: .75rem; color: var(--col-faint); }
+
+/* ── Combo items ── */
+.pd-combo-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem;
+  width: 100%;
+}
+.pd-combo-stock {
+  flex-shrink: 0; font-size: .68rem; font-weight: 900; color: #217A55;
+  background: rgba(33,122,85,.10); border: 1px solid rgba(33,122,85,.20);
+  border-radius: 999px; padding: .2rem .55rem;
+}
+.pd-combo-item {
+  display: flex; align-items: center; gap: .65rem;
+  background: #FFFFFF;
+  border: 1px solid rgba(31,22,12,.10);
+  border-radius: .85rem;
+  padding: .6rem .75rem;
+  width: 100%;
+  box-shadow: 0 8px 18px rgba(31,22,12,.05);
+}
+.pd-combo-thumb {
+  width: 46px; height: 46px; border-radius: .625rem; overflow: hidden;
+  flex-shrink: 0; background: var(--col-elevated);
+  display: flex; align-items: center; justify-content: center; font-size: 1.4rem;
+}
+.pd-combo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.pd-combo-qty { font-size: .95rem; font-weight: 950; color: var(--brand-secondary); min-width: 26px; flex-shrink: 0; }
+.pd-combo-item-info { flex: 1; min-width: 0; }
+.pd-combo-item-name { font-size: .87rem; font-weight: 700; color: var(--col-text); }
+.pd-combo-item-desc { font-size: .68rem; color: var(--col-muted); line-height: 1.35; margin-top: .1rem; }
+.pd-combo-item-alerg { font-size: .67rem; color: #FFB340; margin-top: .1rem; }
+.pd-combo-item-hipo  { font-size: .67rem; color: #5EF097; margin-top: .1rem; }
+.pd-combo-tag {
+  flex-shrink: 0; font-size: .62rem; font-weight: 800;
+  border-radius: 999px; padding: .18rem .55rem;
+}
+.pd-combo-tag-inc { background: #FFF1DD; color: #7A2B14; }
+
+/* ── Combo step-cards (secciones) ── */
+.pd-cstep {
+  width: 100%;
+  border-radius: 1rem;
+  border: 1.5px solid;
+  overflow: hidden;
+}
+.pd-cstep-f {
+  border-color: rgba(255,171,0,.3);
+}
+.pd-cstep-s {
+  border-color: rgba(0,48,135,.16);
+  background: #FFFFFF;
+  box-shadow: 0 8px 20px rgba(31,22,12,.05);
+}
+.pd-cstep-s.pd-combo-group-invalid {
+  border-color: rgba(255,59,48,.4) !important;
+}
+.pd-cstep-hd {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .65rem .85rem;
+}
+.pd-cstep-f .pd-cstep-hd {
+  background: rgba(255,171,0,.09);
+  border-bottom: 1px solid rgba(255,171,0,.18);
+}
+.pd-cstep-s .pd-cstep-hd {
+  background: #F4F7FF;
+  border-bottom: 1px solid rgba(0,48,135,.1);
+}
+.pd-cstep-num {
+  width: 28px; height: 28px;
+  border-radius: 999px;
+  display: grid; place-items: center;
+  font-size: .82rem; font-weight: 950;
+  flex-shrink: 0;
+}
+.pd-cstep-num-f { background: #FFF1DD; color: #7A2B14; border: 1px solid rgba(122,43,20,.2); }
+.pd-cstep-num-s { background: var(--brand-accent, #003087); color: #fff; }
+.pd-cstep-meta { flex: 1; min-width: 0; }
+.pd-cstep-ttl { font-size: .88rem; font-weight: 950; color: var(--col-text); }
+.pd-cstep-sub { font-size: .68rem; color: var(--col-muted); margin-top: .05rem; line-height: 1.3; }
+.pd-cstep-badge {
+  flex-shrink: 0; font-size: .62rem; font-weight: 900;
+  border-radius: 999px; padding: .18rem .55rem; white-space: nowrap;
+}
+.pd-cstep-done    { background: #DDFCE9; color: #217A55; border: 1px solid rgba(33,122,85,.25); }
+.pd-cstep-pending { background: #FFF1DD; color: #7A2B14; border: 1px solid rgba(122,43,20,.15); }
+.pd-cstep-ready   { background: #DDFCE9; color: #217A55; border: 1px solid rgba(33,122,85,.25); }
+.pd-cstep-body {
+  padding: .6rem .75rem;
+  display: flex; flex-direction: column; gap: .45rem;
+}
+.pd-cstep-note {
+  margin: 0 .85rem .3rem;
+  font-size: .74rem; color: var(--col-muted);
+}
+
+/* ── Combo grupos (seleccionables) — mantener para compatibilidad JS ── */
+.pd-combo-grupo {
+  /* now styled via pd-cstep-s */
+}
+.pd-combo-opcion {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .65rem .5rem; border-radius: .75rem;
+  border: 1px solid transparent;
+  margin-bottom: .25rem; min-height: 52px;
+  cursor: pointer; transition: background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.pd-combo-opcion:last-child { margin-bottom: 0; }
+.pd-combo-opcion:hover { background: #FFF8EA; }
+.pd-combo-opcion:has(input:checked) {
+  background: #FFF4DC;
+  border-color: rgba(214,90,42,.18);
+  box-shadow: inset 0 0 0 1px rgba(214,90,42,.06);
+}
+.pd-combo-input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--brand-secondary); cursor: pointer; }
+.pd-combo-opt-thumb {
+  width: 44px; height: 44px; border-radius: .625rem; overflow: hidden;
+  flex-shrink: 0; background: var(--col-elevated);
+  display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+}
+.pd-combo-opt-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.pd-combo-opt-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .08rem; }
+.pd-combo-opt-name { font-size: .85rem; font-weight: 700; color: var(--col-text); }
+.pd-combo-opt-desc { font-size: .68rem; color: var(--col-muted); line-height: 1.3; }
+.pd-combo-opt-alerg { font-size: .65rem; color: #FFB340; flex-shrink: 0; }
+.pd-combo-opt-sold {
+  font-size: .62rem; font-weight: 900; color: #FF6B6B;
+  background: rgba(255,59,48,.12); border: 1px solid rgba(255,59,48,.22);
+  border-radius: 999px; padding: .1rem .4rem; flex-shrink: 0;
+}
+.pd-combo-group-note {
+  font-size: .78rem; color: var(--col-muted); margin: .45rem 0 0.75rem; line-height: 1.45;
+}
+.pd-combo-qty-selector {
+  display: inline-flex; align-items: center; gap: .3rem; margin-right: .8rem;
+}
+.pd-combo-qty-input {
+  width: 56px; min-height: 36px; text-align: center; border: 1px solid var(--col-border);
+  border-radius: .65rem; background: var(--col-surface); color: var(--col-text); padding: .35rem .45rem;
+}
+.pd-combo-qty-control {
+  width: 34px; min-height: 34px; border: none; border-radius: .65rem;
+  background: var(--flag-red); color: #FFFFFF; font-size: 1.05rem;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.pd-combo-qty-control:hover { background: #B30E20; }
+.pd-combo-qty-control:disabled,
+.pd-combo-qty-input:disabled { opacity:.45; cursor:not-allowed; }
+.pd-combo-group-invalid { border-color: rgba(255,59,48,.35) !important; }
+.pd-combo-opcion-disabled { opacity: .45; cursor: not-allowed !important; }
+.pd-combo-footnote { font-size: .67rem; color: var(--col-faint); margin-top: .4rem; width: 100%; }
+
+/* ── Reseñas ── */
+.pd-section { margin-top: 1.5rem; margin-bottom: .5rem; }
+.pd-section-title { font-size: 1.05rem; font-weight: 900; color: var(--col-text); margin-bottom: .9rem; }
+.pd-reviews-grid { display: grid; gap: .75rem; }
+@media(min-width:640px) { .pd-reviews-grid { grid-template-columns: repeat(2,1fr); } }
+.pd-review {
+  background: var(--col-surface); border: 1px solid var(--col-border);
+  border-radius: 1rem; padding: .9rem;
+}
+.pd-review-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; }
+.pd-avatar {
+  width: 34px; height: 34px; border-radius: 999px; flex-shrink: 0;
+  background: rgba(252,209,22,.15); color: var(--flag-yellow);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .88rem; font-weight: 900;
+}
+.pd-review-meta { flex: 1; min-width: 0; }
+.pd-review-name { font-size: .85rem; font-weight: 700; color: var(--col-text); }
+.pd-review-date { font-size: .7rem; color: var(--col-faint); }
+.pd-review-stars { color: var(--flag-yellow); font-size: .88rem; }
+.pd-review-stars-empty { color: var(--col-faint); }
+.pd-review-text { font-size: .83rem; color: var(--col-muted); font-style: italic; line-height: 1.45; }
+
+/* ── Barra inferior fija ── */
+.pd-bottom-spacer { height: calc(76px + env(safe-area-inset-bottom, 0px)); }
+.pd-add-bar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 80;
+  background: rgba(13,10,8,.97);
+  border-top: 1px solid var(--col-border);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom, 0px));
+}
+.pd-add-bar-form { display: flex; align-items: center; gap: .75rem; max-width: 680px; margin: 0 auto; }
+.pd-qty-ctrl {
+  display: flex; align-items: center; overflow: hidden;
+  background: rgba(255,200,120,.07); border: 1.5px solid var(--col-border);
+  border-radius: .75rem; flex-shrink: 0;
+}
+.pd-qty-btn {
+  min-width: 46px; min-height: 46px; border: none; background: transparent;
+  color: var(--col-text); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background .15s; flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.pd-qty-btn:hover  { background: rgba(252,209,22,.15); color: var(--flag-yellow); }
+.pd-qty-btn:active { background: rgba(252,209,22,.25); transform: scale(.92); }
+.pd-qty-input {
+  width: 52px; min-height: 46px; background: transparent; border: none; outline: none;
+  text-align: center; font-size: .95rem; font-weight: 900;
+  color: var(--col-text); padding: 0 .3rem; box-shadow: none !important;
+}
+.pd-add-btn {
+  flex: 1; min-height: 52px;
+  background: linear-gradient(135deg, var(--flag-yellow), color-mix(in srgb, var(--flag-yellow) 80%, #000));
+  color: #1B0A00; font-weight: 900; font-size: .95rem;
+  border: none; border-radius: .875rem; cursor: pointer;
+  box-shadow: 0 6px 22px rgba(252,209,22,.32);
+  transition: filter .15s, transform .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.pd-add-btn:hover { filter: brightness(1.07); }
+.pd-add-btn:active { transform: scale(.97); }
+
+/* ── Desktop: mostrar form en línea (sin barra flotante) ── */
+@media (min-width: 1024px) {
+  .pd-add-bar {
+    position: static;
+    background: none; border: none; padding: 0; backdrop-filter: none;
+    margin-top: 1rem;
+  }
+  .pd-add-bar-form {
+    background: var(--col-surface); border: 1.5px solid var(--col-border);
+    border-radius: 1rem; padding: .85rem 1rem;
+  }
+  .pd-bottom-spacer { height: 0; }
+}
+
+/* ── Padding seguro ── */
+@media (max-width: 1023px) {
+  .pd-section { margin-bottom: 1rem; }
+}
+@media (max-width: 767px) {
+  .pd-hero-img {
+    max-height: 300px;
+  }
+  .pd-hero-badges {
+    left: 10px;
+    right: 10px;
+    bottom: 18px;
+    max-width: calc(100% - 20px);
+  }
+  .pd-badge {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pd-card {
+    padding: 1rem .85rem 1.25rem;
+    border-radius: 1rem 1rem 1.25rem 1.25rem;
+  }
+  .pd-name-row,
+  .pd-combo-head,
+  .pd-combo-grupo-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .pd-title,
+  .pd-desc,
+  .pd-box-title,
+  .pd-box-sub,
+  .pd-combo-item-name,
+  .pd-combo-item-desc,
+  .pd-combo-opt-name,
+  .pd-combo-opt-desc,
+  .pd-review-name,
+  .pd-review-text {
+    overflow-wrap: anywhere;
+  }
+  .pd-price {
+    font-size: 1.65rem;
+  }
+  .pd-info-box {
+    padding: .78rem;
+    border-radius: .9rem;
+  }
+  .pd-combo-item {
+    display: grid;
+    grid-template-columns: 42px auto minmax(0, 1fr);
+    gap: .5rem;
+    align-items: center;
+    padding: .58rem;
+  }
+  .pd-combo-tag {
+    grid-column: 1 / -1;
+    width: fit-content;
+    max-width: 100%;
+  }
+  .pd-combo-opcion {
+    display: grid;
+    grid-template-columns: 18px 42px minmax(0, 1fr);
+    gap: .5rem;
+    align-items: center;
+    padding: .55rem .35rem;
+  }
+  .pd-combo-opt-alerg,
+  .pd-combo-opt-sold {
+    grid-column: 3 / 4;
+    width: fit-content;
+    max-width: 100%;
+  }
+  .pd-add-bar {
+    z-index: 95;
+    padding: .65rem .75rem calc(.65rem + env(safe-area-inset-bottom, 0px));
+  }
+  .pd-add-bar-form {
+    gap: .5rem;
+  }
+  .pd-qty-btn {
+    min-width: 38px;
+    min-height: 44px;
+  }
+  .pd-qty-input {
+    width: 42px;
+    min-height: 44px;
+  }
+  .pd-add-btn {
+    min-width: 0;
+    font-size: .86rem;
+    padding: 0 .65rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 360px) {
+  .pd-add-bar-form {
+    gap: .4rem;
+  }
+  .pd-qty-btn {
+    min-width: 34px;
+  }
+  .pd-qty-input {
+    width: 36px;
+  }
+  .pd-add-btn {
+    font-size: .8rem;
+  }
+}
+</style>
+
+<script>
+const PD_BASE_PRICE = {{ producto.precio_final|float }};
+const PD_COMBO_MODE = {{ (producto.combo_precio_modo_normalizado if producto.es_combo else 'fijo')|tojson }};
+const PD_COMBO_DISCOUNT = {{ producto.combo_descuento_pct_float if producto.es_combo else 0 }};
+const PD_COMBO_FIXED_BASE = {{ combo_fixed_base|default(0)|float }};
+const PD_ADD_LABEL = {{ ('Añadir combo' if producto.es_combo else ('Reservar fecha fija' if producto.tipo_entrega in ('programado','encargo') else 'Añadir'))|tojson }};
+
+function pdCurrentUnitPrice() {
+  if (!{{ producto.es_combo|lower }}) return PD_BASE_PRICE;
+  let extras = 0;
+  let selectedBase = PD_COMBO_FIXED_BASE;
+  document.querySelectorAll('.combo-sel-radio:checked').forEach(input => {
+    selectedBase += Number(input.dataset.basePrice || 0);
+    extras += Number(input.dataset.extra || 0);
+  });
+  document.querySelectorAll('.combo-sel-qty').forEach(input => {
+    const qty = Math.max(0, Number.parseInt(input.value || '0', 10) || 0);
+    selectedBase += Number(input.dataset.basePrice || 0) * qty;
+    extras += Number(input.dataset.extra || 0) * qty;
+  });
+  if (PD_COMBO_MODE === 'descuento_porcentaje') {
+    return Math.max(.01, selectedBase * (1 - PD_COMBO_DISCOUNT / 100)) + extras;
+  }
+  return PD_BASE_PRICE + extras;
+}
+
+function pdRenderPrice() {
+  const unit = Math.round(pdCurrentUnitPrice() * 100) / 100;
+  const qty = Math.max(1, Number.parseInt(document.getElementById('pd-qty')?.value || '1', 10) || 1);
+  const total = Math.round(unit * qty * 100) / 100;
+  const price = document.getElementById('pd-unit-price');
+  const button = document.getElementById('pd-add-btn');
+  if (price) price.textContent = `€${unit.toFixed(2)}`;
+  if (button) button.textContent = `${PD_ADD_LABEL} · €${total.toFixed(2)}`;
+}
+
+function pdQty(d) {
+  const i = document.getElementById('pd-qty');
+  if (!i) return;
+  let v = parseInt(i.value) + d;
+  i.value = Math.max(parseInt(i.min) || 1, Math.min(parseInt(i.max) || 999, v));
+  pdRenderPrice();
+}
+
+function pdComboUpdateBadges() {
+  document.querySelectorAll('.pd-combo-grupo').forEach(group => {
+    const groupKey = (group.dataset.grupoNombre || '').replace(/ /g, '_');
+    const badge    = document.getElementById(`pdst-${groupKey}`);
+    if (!badge) return;
+    const maxSel    = parseInt(group.dataset.maxSel || '1', 10);
+    const radios    = group.querySelectorAll('.combo-sel-radio');
+    const qtyInputs = group.querySelectorAll('.combo-sel-qty');
+    let current = 0;
+    if (radios.length) {
+      current = group.querySelector('.combo-sel-radio:checked') ? 1 : 0;
+    } else {
+      current = Array.from(qtyInputs).reduce((s, el) => s + (parseInt(el.value) || 0), 0);
+    }
+    if (current >= maxSel) {
+      badge.textContent = '✓ Listo';
+      badge.className   = 'pd-cstep-badge pd-cstep-ready';
+    } else if (current > 0) {
+      badge.textContent = `${current} / ${maxSel}`;
+      badge.className   = 'pd-cstep-badge pd-cstep-pending';
+    } else {
+      badge.textContent = 'Pendiente';
+      badge.className   = 'pd-cstep-badge pd-cstep-pending';
+    }
+  });
+}
+
+function pdComboGroupTotalsValid() {
+  let valid = true;
+  document.querySelectorAll('.pd-combo-grupo').forEach(group => {
+    const max = parseInt(group.dataset.maxSel || '1', 10);
+    const qtyInputs = group.querySelectorAll('.combo-sel-qty');
+    const radioInputs = group.querySelectorAll('.combo-sel-radio');
+
+    // Radios (max == 1 groups)
+    if (radioInputs.length) {
+      const hasAvailable = Array.from(radioInputs).some(r => !r.disabled);
+      const checked = group.querySelector('.combo-sel-radio:checked');
+      const groupInvalid = hasAvailable && !checked;
+      group.classList.toggle('pd-combo-group-invalid', groupInvalid);
+      if (groupInvalid) valid = false;
+      return;
+    }
+
+    // Quantity-based groups (max > 1)
+    if (!qtyInputs.length) return;
+    const total = Array.from(qtyInputs).reduce((sum, input) => sum + (parseInt(input.value) || 0), 0);
+    const hasOptions = qtyInputs.length > 0;
+    const groupInvalid = (hasOptions && total === 0) || total > max;
+    group.classList.toggle('pd-combo-group-invalid', groupInvalid);
+    if (groupInvalid) valid = false;
+  });
+  pdComboUpdateBadges();
+  return valid;
+}
+
+function pdComboUpdateQty(button) {
+  if (button.disabled) return;
+  const action = button.dataset.action;
+  const itemId = button.dataset.itemId;
+  const input = document.querySelector(`input[name="combo_item_qty_${button.dataset.itemId}"]`);
+  if (!input) return;
+  const max = parseInt(input.dataset.max || '1', 10);
+  const group = button.closest('.pd-combo-grupo');
+  const currentGroupTotal = group
+    ? Array.from(group.querySelectorAll('.combo-sel-qty')).reduce((sum, el) => sum + (parseInt(el.value) || 0), 0)
+    : 0;
+  let value = parseInt(input.value || '0') || 0;
+  if (action === 'increment' && currentGroupTotal >= max) {
+    pdComboGroupTotalsValid();
+    return;
+  }
+  value = action === 'increment' ? value + 1 : value - 1;
+  value = Math.max(0, Math.min(max, value));
+  input.value = value;
+  pdComboGroupTotalsValid();
+  pdRenderPrice();
+}
+
+document.querySelectorAll('.pd-combo-qty-control').forEach(btn => {
+  btn.addEventListener('click', () => pdComboUpdateQty(btn));
+});
+document.querySelectorAll('.combo-sel-qty').forEach(input => {
+  input.addEventListener('input', () => {
+    const max = parseInt(input.dataset.max || '1', 10);
+    input.value = Math.max(0, Math.min(max, parseInt(input.value || '0') || 0));
+    pdComboGroupTotalsValid();
+    pdRenderPrice();
+  });
+});
+
+// Auto-seleccionar primer radio disponible en cada grupo al cargar
+document.querySelectorAll('.pd-combo-grupo').forEach(group => {
+  const radios = group.querySelectorAll('.combo-sel-radio:not(:disabled)');
+  if (radios.length && !group.querySelector('.combo-sel-radio:checked')) {
+    radios[0].checked = true;
+  }
+});
+// Inicializar badges de estado
+pdComboUpdateBadges();
+// Actualizar badge al cambiar radio
+document.querySelectorAll('.combo-sel-radio').forEach(radio => {
+  radio.addEventListener('change', () => {
+    pdComboUpdateBadges();
+    pdRenderPrice();
+  });
+});
+pdRenderPrice();
+
+// Capturar selecciones del combo como notas antes del submit
+void document.getElementById('pd-add-form')?.addEventListener('submit', function(e) {
+  const notasEl = document.getElementById('combo-sel-notes');
+  if (!notasEl) return;
+  const sels = [];
+  // Radios (max_sel == 1)
+  document.querySelectorAll('.combo-item-choice:checked').forEach(input => {
+    const grupo = input.closest('.pd-combo-grupo')?.dataset.grupoNombre || '';
+    const label = input.closest('label')?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
+    if (label) sels.push(`${grupo}: ${label}`);
+  });
+  // Qty (max_sel > 1)
+  document.querySelectorAll('.combo-sel-qty').forEach(input => {
+    const qty = parseInt(input.value) || 0;
+    if (qty <= 0) return;
+    const grupo = input.closest('.pd-combo-grupo')?.dataset.grupoNombre || '';
+    const label = input.closest('label')?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
+    if (label) sels.push(`${grupo}: ${label}${qty > 1 ? ` ×${qty}` : ''}`);
+  });
+  notasEl.value = sels.join(' | ');
+  if (!pdComboGroupTotalsValid()) {
+    e.preventDefault();
+    const firstInvalid = document.querySelector('.pd-combo-group-invalid');
+    firstInvalid?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    firstInvalid?.querySelector('input:not(:disabled)')?.focus();
+  }
+});
+</script>
+{% endblock %}

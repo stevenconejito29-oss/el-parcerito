@@ -1,0 +1,221 @@
+{# Partial reutilizable: formulario de producto (crear y editar) #}
+{# Se espera que el form padre tenga el csrf_token y el action correctos #}
+<div class="fp-product-grid grid grid-cols-1 md:grid-cols-2 gap-3">
+
+  <!-- Nombre -->
+  <div class="fp-span-full col-span-2">
+    <label class="fp-label">Nombre del producto *</label>
+    <input type="text" name="nombre" required placeholder="Ej: Empanada de pollo" class="fp-input">
+  </div>
+
+  <!-- Descripción -->
+  <div class="fp-span-full col-span-2">
+    <label class="fp-label">Descripción</label>
+    <textarea name="descripcion" rows="2" placeholder="Descripción breve para la web" class="fp-input resize-none"></textarea>
+  </div>
+
+  <!-- Precios -->
+  <div>
+    <label class="fp-label">Precio de venta (€) *</label>
+    <input type="number" name="precio" step="0.01" min="0" required placeholder="0.00" class="fp-input">
+  </div>
+  <div>
+    <label class="fp-label">Precio de costo (€)</label>
+    <input type="number" name="precio_costo" step="0.01" min="0" placeholder="0.00" class="fp-input">
+  </div>
+
+  <!-- Categoría y origen -->
+  <div>
+    <label class="fp-label">Categoría</label>
+    <select name="categoria_id" class="fp-input">
+      <option value="">Sin categoría</option>
+      {% for cat in categorias %}
+      <option value="{{ cat.id }}">{{ cat.nombre }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="fp-label">País de origen</label>
+    <input type="text" name="origen_pais" placeholder="Ej: Venezuela, Colombia..." class="fp-input">
+  </div>
+  <div class="fp-span-full col-span-2 fp-section">
+    <label class="fp-section-title">Origen operativo</label>
+    <p class="text-xs text-gray-500 mb-2">
+      Si lo despacha un bar/proveedor externo, el stock se toma de Proveedores,
+      no del almacén propio.
+    </p>
+    <select name="proveedor_despachador_id" class="fp-input">
+      <option value="">Stock propio / tienda</option>
+      {% for prov in proveedores|default([]) %}
+      <option value="{{ prov.id }}">{{ prov.nombre }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <!-- Imagen del producto -->
+  <div class="fp-span-full col-span-2">
+    <label class="fp-label">Imagen del producto</label>
+    <div class="fp-image-row flex gap-3 items-start">
+      <div id="img-preview-wrap" class="flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden flex items-center justify-center text-2xl"
+           style="background:var(--col-elevated);border:1.5px solid var(--col-border)">
+        <img id="img-preview" src="" class="w-full h-full object-cover hidden">
+        <span id="img-placeholder">🍽️</span>
+      </div>
+      <div class="flex-1 space-y-2">
+        <label class="flex items-center gap-2 cursor-pointer rounded-xl px-3 py-2 text-sm transition"
+               style="background:var(--col-elevated);border:1.5px dashed var(--col-border);color:var(--col-muted)">
+          <span>📤</span>
+          <span class="upload-label">Subir imagen (jpg, png, webp — máx 10MB)</span>
+          <input type="file" id="file-imagen" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="hidden"
+                 onchange="previewImagen(this)">
+        </label>
+        <input type="url" name="imagen_url" id="input-imagen-url"
+               placeholder="O pega una URL externa: https://..."
+               class="fp-input text-xs"
+               oninput="previewFromUrl(this.value)">
+        <p class="text-xs" style="color:var(--col-faint)">Archivo → se guarda en servidor; URL → referencia externa.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CANAL DE PREPARACIÓN ── -->
+  <div class="fp-span-full col-span-2 fp-section">
+    <label class="fp-section-title">Canal de preparación</label>
+    <p class="text-xs text-gray-500 mb-2">Define quién prepara este producto. Afecta qué cola de trabajo lo ve y si el carrito permite mezclarlo.</p>
+    <div class="flex gap-4 flex-wrap text-sm">
+      <label class="fp-radio-label">
+        <input type="radio" name="canal_preparacion" value="cocina" checked
+               style="accent-color:#e85d04"> 🍳 Cocina — requiere elaboración
+      </label>
+      <label class="fp-radio-label">
+        <input type="radio" name="canal_preparacion" value="almacen"
+               style="accent-color:#2b9348"> 📦 Almacén — solo empacar y entregar
+      </label>
+    </div>
+  </div>
+
+  <!-- ── TIPO DE ENTREGA ── -->
+  <div class="fp-span-full col-span-2 fp-section">
+    <label class="fp-section-title">Tipo de entrega</label>
+    <div class="flex gap-4 flex-wrap text-sm">
+      <label class="fp-radio-label">
+        <input type="radio" name="tipo_entrega" value="inmediato" checked
+               style="accent-color:#FFAB00"> ⚡ Inmediato
+      </label>
+      <label class="fp-radio-label">
+        <input type="radio" name="tipo_entrega" value="programado"
+               style="accent-color:#FFAB00"> 📆 Programado
+      </label>
+    </div>
+  </div>
+
+  <!-- Fecha de llegada (solo programado) -->
+  <div class="campo-fecha-llegada hidden">
+    <label class="fp-label">Fecha de llegada</label>
+    <input type="date" name="fecha_llegada" class="fp-input">
+  </div>
+
+  <!-- ── VISIBILIDAD HORARIA ── -->
+  <div class="fp-span-full col-span-2 fp-section">
+    <label class="fp-section-title">Horario de visibilidad <span class="fp-section-note">dejar vacío = siempre visible</span></label>
+    <div class="fp-two-col grid grid-cols-2 gap-3">
+      <div>
+        <label class="fp-label">Hora inicio</label>
+        <input type="time" name="hora_inicio_visibilidad" class="fp-input">
+      </div>
+      <div>
+        <label class="fp-label">Hora fin</label>
+        <input type="time" name="hora_fin_visibilidad" class="fp-input">
+      </div>
+    </div>
+    <div class="mt-2">
+      <label class="fp-label">Días de la semana <span class="fp-section-note">sin marcar = todos los días</span></label>
+      <div class="flex gap-2 flex-wrap">
+        {% for i, dia in [('0','Lun'),('1','Mar'),('2','Mié'),('3','Jue'),('4','Vie'),('5','Sáb'),('6','Dom')] %}
+        <label class="fp-day-btn">
+          <input type="checkbox" name="dias_semana" value="{{ i }}" style="accent-color:#FFAB00"> {{ dia }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── OPCIONES ── -->
+  <div class="fp-span-full col-span-2 fp-section">
+    <label class="fp-section-title">Opciones</label>
+    <div class="flex items-center gap-4 flex-wrap">
+      <label class="fp-check-label">
+        <input type="checkbox" name="stock_mostrar_en_web" style="accent-color:#5AC8FA"> 👁 Mostrar stock en web
+      </label>
+      <span class="fp-section-note">Los combos se crean y estructuran desde el constructor de combos.</span>
+    </div>
+  </div>
+
+  <!-- ── CANJE CON PUNTOS ── -->
+  <div class="fp-span-full col-span-2 fp-section">
+    <label class="fp-section-title">Club de Puntos</label>
+    <label class="fp-check-label">
+      <input type="checkbox" name="canjeable_con_puntos" style="accent-color:#C084FC">
+      ⭐ Canjeable con puntos
+    </label>
+    <div class="campo-puntos-canje hidden mt-3">
+      <label class="fp-label">Puntos necesarios para canjear</label>
+      <input type="number" name="puntos_para_canje" min="1" placeholder="500"
+             class="fp-input" style="max-width:10rem">
+    </div>
+  </div>
+
+  <!-- ── ALÉRGENOS EU ── -->
+  <div class="fp-span-full col-span-2 fp-section">
+    <label class="fp-section-title">Alérgenos EU (14 obligatorios)</label>
+    <label class="fp-check-label mb-3 px-3 py-2 rounded-xl"
+           style="background:rgba(39,174,116,.08);border:1px solid rgba(39,174,116,.2)">
+      <input type="checkbox" name="es_hipoalergenico" id="cb-hipo" style="accent-color:#5EF097"
+             onchange="toggleHipo(this.checked)">
+      <span style="color:#27AE74">🌿 Apto para todos — sin alérgenos relevantes</span>
+    </label>
+    <div id="bloque-alergenos" class="fp-allergen-grid grid grid-cols-5 sm:grid-cols-7 gap-1.5">
+      {% for code, icon, label in ALERGENOS_EU %}
+      <label class="alergen-btn flex flex-col items-center gap-0.5 p-1.5 rounded-xl cursor-pointer select-none transition"
+             style="background:var(--col-elevated);border:1.5px solid var(--col-border)"
+             data-code="{{ code }}" title="{{ label }}">
+        <input type="checkbox" name="alergenos" value="{{ code }}" class="sr-only alergen-cb">
+        <span class="text-xl leading-none">{{ icon }}</span>
+        <span class="text-center leading-tight fp-label" style="margin:0;text-transform:none;letter-spacing:0">{{ label }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Atributos JSON avanzado -->
+  <div class="fp-span-full col-span-2">
+    <details class="mt-1">
+      <summary class="text-xs cursor-pointer" style="color:var(--col-faint)">Atributos avanzados (JSON)</summary>
+      <textarea name="atributos_json" placeholder='{"sku":"ABC","peso_kg":0.5}'
+                class="mt-2 fp-input font-mono text-xs h-20 resize-none"></textarea>
+    </details>
+  </div>
+
+</div>
+
+<style>
+.fp-label { font-size:.72rem; font-weight:700; color:var(--col-muted); display:block; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.04em; }
+.fp-input { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:var(--col-text); font-size:.88rem; transition:border-color .15s; }
+.fp-input:focus { outline:none; border-color:var(--col-gold); box-shadow:0 0 0 3px rgba(252,209,22,.12); }
+.fp-section { border-top:1px solid var(--col-border); padding-top:.85rem; margin-top:.25rem; }
+.fp-section-title { font-size:.78rem; font-weight:800; color:var(--col-text); display:block; margin-bottom:.6rem; }
+.fp-section-note { font-size:.72rem; font-weight:400; color:var(--col-muted); margin-left:.4rem; text-transform:none; letter-spacing:0; }
+.fp-radio-label { display:flex; align-items:center; gap:.4rem; font-size:.85rem; cursor:pointer; color:var(--col-text); }
+.fp-check-label { display:flex; align-items:center; gap:.5rem; font-size:.85rem; cursor:pointer; color:var(--col-text); }
+.fp-day-btn { display:flex; align-items:center; gap:.3rem; font-size:.78rem; cursor:pointer; padding:.3rem .55rem; border-radius:.5rem; border:1px solid var(--col-border); background:var(--col-elevated); color:var(--col-muted); }
+.fp-day-btn:hover { border-color:var(--col-gold); color:var(--col-text); }
+@media (max-width: 640px) {
+  .fp-product-grid { grid-template-columns:minmax(0,1fr)!important; }
+  .fp-product-grid > *, .fp-span-full { grid-column:1 / -1!important; min-width:0; }
+  .fp-two-col { grid-template-columns:minmax(0,1fr)!important; }
+  .fp-image-row { flex-direction:column; }
+  .fp-image-row > .flex-1 { width:100%; min-width:0; }
+  .fp-allergen-grid { grid-template-columns:repeat(3,minmax(0,1fr))!important; }
+  .fp-label, .upload-label { overflow-wrap:anywhere; }
+}
+</style>

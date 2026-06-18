@@ -1,0 +1,380 @@
+{% extends "admin_base.html" %}
+{% block title %}Chatbot — Super Admin{% endblock %}
+{% block content %}
+<div class="sa-chatbot-page">
+
+{# ── HEADER ── #}
+<div class="flex items-start justify-between gap-4 mb-5 flex-wrap">
+  <div>
+    <h1 class="text-2xl font-black text-white">💬 Chatbot WhatsApp</h1>
+    <p class="text-sm mt-1" style="color:var(--col-muted)">Gestiona la conexión, estado, QR y configuración técnica del bot.</p>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    <form method="POST" action="{{ url_for('superadmin.sincronizar_chatbot') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="ox-btn-primary text-sm" type="submit">🔄 Sincronizar credenciales</button>
+    </form>
+    <form method="POST" action="{{ url_for('superadmin.sincronizar_chatbot_catalogo') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="ox-btn-ghost text-sm" type="submit">📦 Sincronizar catálogo</button>
+    </form>
+  </div>
+</div>
+
+{# ── SECCIÓN 1: CONEXIÓN Y QR ── #}
+<div class="cb-section-label">1 · Estado de conexión y QR</div>
+<div class="grid xl:grid-cols-2 gap-4 mb-2">
+
+  {# Estado #}
+  <div class="ox-card p-4">
+    <h2 class="cb-section-title mb-4">📡 Estado del sistema</h2>
+
+    {# Evolution #}
+    <div class="cb-group mb-4">
+      <p class="cb-group-label">Evolution API</p>
+      <div class="cb-status-row">
+        <span class="chat-dot {{ 'on' if evolution_status.ok else 'off' }}"></span>
+        <span class="font-semibold" style="color:{{ '#5EF097' if evolution_status.ok else '#FF6B6B' }}">
+          {{ 'Disponible' if evolution_status.ok else 'Sin conexión' }}
+        </span>
+        <span class="cb-meta">{{ evolution_status.url or evolution_api_url or 'sin configurar' }}</span>
+      </div>
+      {% if not evolution_status.ok %}
+      <p class="text-xs mt-1" style="color:#FF6B6B">{{ evolution_status.error or 'Evolution no responde' }}</p>
+      {% endif %}
+    </div>
+
+    {# WhatsApp + Bot #}
+    {% if status.ok %}
+    <div class="cb-group mb-4">
+      <p class="cb-group-label">WhatsApp & Bot</p>
+      <div class="cb-status-row">
+        <span class="chat-dot {{ 'on' if status.connected else 'off' }}"></span>
+        <span class="font-semibold" style="color:{{ '#5EF097' if status.connected else '#FF6B6B' }}">
+          {{ 'WhatsApp conectado' if status.connected else 'Sin conectar' }}
+        </span>
+      </div>
+      <div class="cb-meta-grid mt-2">
+        <span class="cb-meta-key">Bot</span>
+        <span class="cb-meta-val" style="color:{{ '#5EF097' if status.botEnabled else '#FFAB00' }}">
+          {{ 'Activo' if status.botEnabled else 'Pausado' }}
+        </span>
+        <span class="cb-meta-key">Instancia</span>
+        <span class="cb-meta-val">{{ status.instance or evolution_instance or '—' }}</span>
+        <span class="cb-meta-key">Estado Evolution</span>
+        <span class="cb-meta-val">{{ status.evolution_state or '—' }}</span>
+        <span class="cb-meta-key">Motor IA</span>
+        <span class="cb-meta-val">{{ status.apiTypeSelected or status.apiType or '—' }}</span>
+      </div>
+    </div>
+
+    {# Métricas #}
+    <div class="cb-group mb-4">
+      <p class="cb-group-label">Métricas del día</p>
+      <div class="grid grid-cols-2 gap-2">
+        <div class="cb-metric">
+          <span class="cb-metric-val">{{ status.activeSessions or 0 }}</span>
+          <span class="cb-metric-label">Sesiones activas</span>
+        </div>
+        <div class="cb-metric">
+          <span class="cb-metric-val">{{ status.pedidosHoy or 0 }}</span>
+          <span class="cb-metric-label">Pedidos hoy</span>
+        </div>
+      </div>
+    </div>
+
+    {# Controles #}
+    <div class="flex gap-2 flex-wrap">
+      <form method="POST" action="{{ url_for('superadmin.chatbot_power') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="enabled" value="{{ '0' if status.botEnabled else '1' }}">
+        <button class="{{ 'ox-btn-ghost' if status.botEnabled else 'ox-btn-primary' }} text-sm" type="submit">
+          {{ '⏸ Pausar bot' if status.botEnabled else '▶ Activar bot' }}
+        </button>
+      </form>
+      <form method="POST" action="{{ url_for('superadmin.chatbot_reset') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="ox-btn-ghost text-sm" type="submit">🔁 Reiniciar sesión</button>
+      </form>
+    </div>
+
+    {% else %}
+    <div class="cb-group">
+      <p class="text-sm" style="color:#FF6B6B">⚠️ No se pudo leer el bot: {{ status.error or 'sin respuesta' }}</p>
+      <p class="text-xs mt-2" style="color:var(--col-muted)">Verifica que Evolution API esté levantado y las credenciales estén guardadas.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {# QR #}
+  <div class="ox-card p-4 flex flex-col">
+    <h2 class="cb-section-title mb-4">📲 QR de conexión WhatsApp</h2>
+    <div class="flex-1 flex flex-col items-center justify-center">
+      {% if status.qrDataUrl %}
+        <img src="{{ status.qrDataUrl }}" alt="QR WhatsApp" class="chat-qr mb-3">
+        <p class="text-sm text-center font-semibold" style="color:#5EF097">Escanea desde WhatsApp Business</p>
+        <p class="text-xs mt-1 text-center" style="color:var(--col-muted)">Abre WhatsApp → ⋮ → Dispositivos vinculados → Vincular dispositivo</p>
+      {% elif status.connected %}
+        <div class="chat-empty-ok">✓ Conectado</div>
+        <p class="text-xs mt-3 text-center" style="color:var(--col-muted)">La sesión está activa. No se necesita QR.</p>
+      {% else %}
+        <div class="chat-empty">Sin QR disponible</div>
+        <p class="text-xs mt-3 text-center" style="color:var(--col-muted)">
+          Activa el bot y pulsa «Reiniciar sesión» para generar el QR.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ── SECCIÓN 2: PRUEBA Y REFERENCIA ── #}
+<div class="cb-section-label mt-5">2 · Prueba, comandos y flujo del cliente</div>
+<div class="grid xl:grid-cols-3 gap-4 mb-2">
+
+  {# Prueba de envío #}
+  <div class="ox-card p-4">
+    <h2 class="cb-section-title mb-3">🧪 Prueba de envío</h2>
+    <form method="POST" action="{{ url_for('superadmin.chatbot_test_whatsapp') }}" class="space-y-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label class="chat-label">Teléfono</label>
+        <input name="telefono" class="chat-input" placeholder="+34 600 000 000"
+               value="{{ request.form.get('telefono','') }}" autocomplete="tel">
+        <p class="chat-help">Con prefijo internacional para verificar el envío.</p>
+      </div>
+      <div>
+        <label class="chat-label">Mensaje</label>
+        <textarea name="mensaje" rows="3" class="chat-input">{{ request.form.get('mensaje','') or 'Prueba de WhatsApp desde Oxidian.' }}</textarea>
+      </div>
+      <button class="ox-btn-primary w-full text-sm" type="submit">📤 Enviar prueba</button>
+    </form>
+  </div>
+
+  {# Comandos de modo #}
+  <div class="ox-card p-4">
+    <h2 class="cb-section-title mb-3">🎭 Comandos de modo</h2>
+    <p class="text-sm mb-3" style="color:var(--col-muted)">
+      Desde un número admin escribe estos comandos para cambiar de modo sin perder permisos:
+    </p>
+    <div class="space-y-2 mb-4">
+      <div class="cb-cmd-row">
+        <code class="cb-cmd">cliente</code>
+        <span class="text-xs" style="color:var(--col-muted)">Simula el menú público</span>
+      </div>
+      <div class="cb-cmd-row">
+        <code class="cb-cmd">admin</code>
+        <span class="text-xs" style="color:var(--col-muted)">Vuelve al panel admin</span>
+      </div>
+    </div>
+    <div class="p-3 rounded-lg text-xs" style="background:rgba(255,171,0,.06);border:1px solid rgba(255,171,0,.15);color:rgba(255,171,0,.9)">
+      💡 Úsalo para validar el menú y el flujo de pedido tal como lo ve el cliente.
+    </div>
+  </div>
+
+  {# Menú del cliente #}
+  <div class="ox-card p-4">
+    <h2 class="cb-section-title mb-3">📋 Menú que ve el cliente</h2>
+    <ol class="chat-menu-list space-y-1.5">
+      <li class="flex items-center gap-2"><span class="cb-num">1</span>Ver menú y combos</li>
+      <li class="flex items-center gap-2"><span class="cb-num">2</span>Estado de mi pedido</li>
+      <li class="flex items-center gap-2"><span class="cb-num">3</span>Mis puntos</li>
+      <li class="flex items-center gap-2"><span class="cb-num">4</span>Cobertura de delivery</li>
+      <li class="flex items-center gap-2"><span class="cb-num">5</span>Abrir tienda online</li>
+      <li class="flex items-center gap-2"><span class="cb-num">6</span>Horarios y contacto</li>
+      <li class="flex items-center gap-2"><span class="cb-num">7</span>Hablar con una persona</li>
+    </ol>
+  </div>
+</div>
+
+{# ── SECCIÓN 3: CHECKLIST ── #}
+<div class="cb-section-label mt-5">3 · Checklist operativo</div>
+<div class="ox-card p-4 mb-5">
+  <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="cb-check-item">
+      <span class="cb-check-icon">📦</span>
+      <div>
+        <p class="font-semibold text-sm text-white">Catálogo sincronizado</p>
+        <p class="text-xs mt-0.5" style="color:var(--col-muted)">Para menú y combos en WhatsApp</p>
+      </div>
+    </div>
+    <div class="cb-check-item">
+      <span class="cb-check-icon">📍</span>
+      <div>
+        <p class="font-semibold text-sm text-white">Radio de entrega</p>
+        <p class="text-xs mt-0.5" style="color:var(--col-muted)">Configurado en variables globales</p>
+      </div>
+    </div>
+    <div class="cb-check-item">
+      <span class="cb-check-icon">🔔</span>
+      <div>
+        <p class="font-semibold text-sm text-white">Notificaciones de pedido</p>
+        <p class="text-xs mt-0.5" style="color:var(--col-muted)">Estados notificando por WhatsApp</p>
+      </div>
+    </div>
+    <div class="cb-check-item">
+      <span class="cb-check-icon">✅</span>
+      <div>
+        <p class="font-semibold text-sm text-white">Evolution sin errores</p>
+        <p class="text-xs mt-0.5" style="color:var(--col-muted)">Conectado y sin errores recientes</p>
+      </div>
+    </div>
+  </div>
+  <div class="flex flex-wrap gap-2 mt-4 pt-3" style="border-top:1px solid var(--col-border)">
+    <a href="{{ url_for('superadmin.config') }}" class="ox-btn-ghost text-sm">⚙️ Variables globales</a>
+    <a href="{{ url_for('admin.notificaciones') }}" class="ox-btn-ghost text-sm">🔔 Notificaciones</a>
+  </div>
+</div>
+
+{# ── SECCIÓN 4: CONFIG TÉCNICA ── #}
+<div class="cb-section-label">4 · Configuración técnica</div>
+<details class="ox-card p-5 chat-config-details mb-5">
+  <summary class="chat-config-summary">
+    <div>
+      <strong>URLs, credenciales e instancia</strong>
+      <small>Parámetros internos — no exponer al equipo</small>
+    </div>
+    <span class="chat-config-chevron">⌄</span>
+  </summary>
+  <form method="POST" action="{{ url_for('superadmin.guardar_chatbot') }}" class="grid lg:grid-cols-2 gap-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div>
+      <label class="chat-label">URL interna del bot</label>
+      <input name="bot_api_url" value="{{ bot_api_url }}" class="chat-input" placeholder="http://127.0.0.1:3000">
+      <p class="chat-help">Oxidian usará esta URL para enviar mensajes y administrar el bot.</p>
+    </div>
+    <div>
+      <label class="chat-label">URL pública/local de Oxidian</label>
+      <input name="oxidian_public_url" value="{{ oxidian_public_url }}" class="chat-input" placeholder="http://192.168.1.50:5000">
+      <p class="chat-help">URL que verá el cliente en enlaces de WhatsApp.</p>
+    </div>
+    <div>
+      <label class="chat-label">URL interna de Evolution</label>
+      <input name="evolution_api_url" value="{{ evolution_api_url }}" class="chat-input" placeholder="http://localhost:8080">
+      <p class="chat-help">Servicio técnico de WhatsApp. No se expone al cliente.</p>
+    </div>
+    <div>
+      <label class="chat-label">Instancia Evolution</label>
+      <input name="evolution_instance" value="{{ evolution_instance }}" class="chat-input" placeholder="oxidian">
+      <p class="chat-help">Nombre de la sesión de WhatsApp que conecta con el QR.</p>
+    </div>
+    <div>
+      <label class="chat-label">URL de tienda para WhatsApp</label>
+      <input name="tienda_url" value="{{ tienda_url }}" class="chat-input" placeholder="http://192.168.1.50:5000">
+      <p class="chat-help">Enlace que recibe el cliente para abrir la tienda.</p>
+    </div>
+    <div>
+      <label class="chat-label">Administradores adicionales</label>
+      <textarea name="bot_admin_numbers" rows="3" class="chat-input"
+                placeholder="34600000001, 34600000002">{{ bot_admin_numbers }}</textarea>
+      <p class="chat-help">Uno por línea o separados por coma. Cada número atiende un chat a la vez; los demás clientes quedan en cola.</p>
+    </div>
+
+    {% if status.ok and status.admins %}
+    <div class="lg:col-span-2 p-3 rounded-lg text-xs"
+         style="background:rgba(94,240,151,.06);border:1px solid rgba(94,240,151,.15);color:var(--col-muted)">
+      <strong style="color:#5EF097">{{ status.admins.configured|length }}</strong>
+      números autorizados en el bot.
+      Los números definidos por entorno y el owner no se pueden eliminar desde este panel.
+    </div>
+    {% endif %}
+
+    <div class="p-3 rounded-lg text-xs lg:col-span-2" style="background:rgba(255,59,48,.06);border:1px solid rgba(255,59,48,.15);color:#FF6B6B">
+      🔐 Los campos de contraseña de abajo reemplazan la clave actual. Deja vacío para conservar la existente.
+    </div>
+
+    <div>
+      <label class="chat-label">BOT_API_KEY</label>
+      <input type="password" name="bot_api_key" value="" class="chat-input" autocomplete="new-password" placeholder="Dejar vacío para conservar">
+      <p class="chat-help">Mínimo 16 caracteres.</p>
+    </div>
+    <div>
+      <label class="chat-label">BOT_PANEL_KEY</label>
+      <input type="password" name="bot_panel_key" value="" class="chat-input" autocomplete="new-password" placeholder="Dejar vacío para conservar">
+      <p class="chat-help">Clave administrativa del panel. Mínimo 16 caracteres.</p>
+    </div>
+    <div>
+      <label class="chat-label">EVOLUTION_API_KEY</label>
+      <input type="password" name="evolution_api_key" value="" class="chat-input" autocomplete="new-password" placeholder="Dejar vacío para conservar">
+      <p class="chat-help">Clave interna para Evolution. Mínimo 16 caracteres.</p>
+    </div>
+    <div>
+      <label class="chat-label">WEBHOOK_SECRET</label>
+      <input type="password" name="webhook_secret" value="" class="chat-input" autocomplete="new-password" placeholder="Dejar vacío para conservar">
+      <p class="chat-help">Protege el webhook Evolution → Oxidian → Bot. Mínimo 32 caracteres.</p>
+    </div>
+
+    <div class="lg:col-span-2 flex flex-wrap gap-2 pt-2" style="border-top:1px solid var(--col-border)">
+      <button class="ox-btn-primary text-sm" type="submit">💾 Guardar y conectar</button>
+      <a href="{{ url_for('superadmin.config') }}" class="ox-btn-ghost text-sm">Ver variables globales</a>
+    </div>
+  </form>
+</details>
+
+</div>
+
+{% endblock %}
+{% block scripts %}
+<style>
+/* ── labels de sección ── */
+.cb-section-label {
+  font-size:.68rem; font-weight:900; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--col-muted); margin-bottom:.65rem; padding-left:.1rem;
+  border-left:2px solid #FFAB00; padding-left:.55rem;
+}
+.cb-section-title { font-size:.95rem; font-weight:800; color:#fff; }
+
+/* ── grupo dentro de la card de estado ── */
+.cb-group { padding:.75rem; border-radius:.6rem; background:rgba(255,255,255,.03); border:1px solid var(--col-border); }
+.cb-group-label { font-size:.65rem; font-weight:900; text-transform:uppercase; letter-spacing:.06em; color:var(--col-faint); margin-bottom:.55rem; }
+.cb-status-row { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; font-size:.88rem; }
+.cb-meta { font-size:.72rem; color:var(--col-muted); margin-left:auto; }
+
+/* ── meta grid ── */
+.cb-meta-grid { display:grid; grid-template-columns:auto 1fr; gap:.2rem .75rem; font-size:.78rem; }
+.cb-meta-key { color:var(--col-faint); }
+.cb-meta-val { color:var(--col-muted); }
+
+/* ── métricas ── */
+.cb-metric { padding:.6rem; border-radius:.5rem; text-align:center; background:rgba(255,255,255,.03); border:1px solid var(--col-border); }
+.cb-metric-val { display:block; font-size:1.4rem; font-weight:900; color:#FFAB00; }
+.cb-metric-label { display:block; font-size:.68rem; color:var(--col-muted); margin-top:.1rem; }
+
+/* ── comandos ── */
+.cb-cmd-row { display:flex; align-items:center; gap:.75rem; }
+.cb-cmd { padding:.3rem .65rem; border-radius:.5rem; font-size:.88rem; font-weight:900; background:var(--col-elevated); border:1px solid var(--col-border); color:#FFAB00; font-family:monospace; }
+.cb-num { display:inline-flex; align-items:center; justify-content:center; width:1.4rem; height:1.4rem; border-radius:999px; background:rgba(255,171,0,.15); color:#FFAB00; font-size:.65rem; font-weight:900; flex-shrink:0; }
+
+/* ── checklist ── */
+.cb-check-item { display:flex; align-items:flex-start; gap:.75rem; padding:.75rem; border-radius:.6rem; background:rgba(255,255,255,.025); border:1px solid var(--col-border); }
+.cb-check-icon { font-size:1.2rem; flex-shrink:0; margin-top:.05rem; }
+
+/* ── existing chat styles ── */
+.chat-label { display:block; font-size:.72rem; font-weight:800; text-transform:uppercase; color:var(--col-muted); margin-bottom:.35rem; }
+.chat-input { width:100%; border:1px solid var(--col-border); background:var(--col-elevated); color:var(--col-text); border-radius:8px; padding:.7rem .8rem; font-size:.9rem; }
+.chat-input:focus { outline:none; border-color:rgba(255,171,0,.5); box-shadow:0 0 0 3px rgba(255,171,0,.08); }
+.chat-help { margin-top:.35rem; font-size:.75rem; color:var(--col-faint); }
+.chat-dot { display:inline-block; width:.65rem; height:.65rem; border-radius:999px; margin-right:.1rem; }
+.chat-dot.on  { background:#5EF097; box-shadow:0 0 0 4px rgba(94,240,151,.16); }
+.chat-dot.off { background:#FF6B6B; box-shadow:0 0 0 4px rgba(255,107,107,.14); }
+.chat-qr { width:100%; max-width:240px; border-radius:8px; background:white; padding:.5rem; }
+.chat-empty, .chat-empty-ok { min-height:180px; border:1px dashed var(--col-border); border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:900; color:var(--col-muted); font-size:.95rem; }
+.chat-empty-ok { color:#5EF097; border-color:rgba(94,240,151,.3); }
+.chat-menu-list { padding-left:0; list-style:none; color:var(--col-muted); font-size:.88rem; }
+.chat-config-summary { display:flex; align-items:center; justify-content:space-between; gap:.75rem; cursor:pointer; list-style:none; }
+.chat-config-summary::-webkit-details-marker { display:none; }
+.chat-config-summary strong, .chat-config-summary small { display:block; }
+.chat-config-summary strong { color:var(--col-text); font-size:.95rem; }
+.chat-config-summary small { color:var(--col-muted); font-size:.74rem; margin-top:.12rem; }
+.chat-config-chevron { color:#FFAB00; font-size:1.2rem; transition:transform .18s; flex-shrink:0; }
+.chat-config-details[open] .chat-config-chevron { transform:rotate(180deg); }
+.chat-config-details form { margin-top:1rem; padding-top:1rem; border-top:1px solid var(--col-border); }
+.sa-chatbot-page .ox-card { overflow:hidden; }
+
+@media (max-width: 760px) {
+  .sa-chatbot-page .ox-card { padding:1rem !important; }
+  .chat-empty, .chat-empty-ok { min-height:120px; }
+  .cb-meta-grid { font-size:.75rem; }
+}
+</style>
+{% endblock %}

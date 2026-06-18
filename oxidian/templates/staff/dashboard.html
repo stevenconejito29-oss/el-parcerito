@@ -1,0 +1,33 @@
+{% extends "admin_base.html" %}
+{% block title %}Staff — Panel{% endblock %}
+{% block content %}
+<div class="ox-card p-5 mb-4">
+  <h1 class="text-3xl font-extrabold mb-2">👷 Panel de Staff</h1>
+  <p class="text-sm text-gray-300">Gestión interna ágil para mantener una operación de nivel franquicia.</p>
+</div>
+
+<div class="grid md:grid-cols-3 gap-3 mb-4">
+  <div class="ox-card p-3 ox-kpi">
+    <p class="text-sm text-gray-400">Productos activos</p>
+    <p class="text-xl font-bold text-yellow-400">{{ total_productos }}</p>
+  </div>
+  <div class="ox-card p-3 ox-kpi">
+    <p class="text-sm text-gray-400">Lotes en inventario</p>
+    <p class="text-xl font-bold text-yellow-400">{{ total_lotes }}</p>
+  </div>
+  <a href="{{ url_for('staff.pedidos') }}" class="ox-card p-3 ox-kpi" style="border-color:rgba(43,147,72,.35);text-decoration:none">
+    <p class="text-sm" style="color:#2b9348">📦 Pedidos de almacén</p>
+    <p class="text-xl font-bold" style="color:#2b9348">{{ pedidos_pendientes }}</p>
+    <p class="text-xs text-gray-500">pendientes ahora</p>
+  </a>
+</div>
+
+<div class="flex gap-3 flex-wrap">
+  <a href="{{ url_for('staff.pedidos') }}" class="ox-btn-primary">
+    Cola de pedidos almacén
+  </a>
+  <a href="{{ url_for('staff.inventario') }}" class="ox-btn-ghost">
+    Inventario / Stock
+  </a>
+</div>
+{% endblock %}

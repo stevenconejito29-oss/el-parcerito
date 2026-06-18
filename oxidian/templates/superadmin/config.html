@@ -1,0 +1,233 @@
+{% extends "admin_base.html" %}
+{% block title %}Centro de configuración{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/superadmin-config.css', v=asset_version) }}">
+{% endblock %}
+{% block content %}
+{% macro cfg_input(key, label, type='text', placeholder='', help='', min='', max='', step='') -%}
+<label class="cfg-field">
+  <span>{{ label }}</span>
+  <input type="hidden" name="config_key" value="{{ key }}">
+  <input type="{{ type }}" name="{{ key }}" value="{{ config_map.get(key, '') }}"
+         placeholder="{{ placeholder }}" {% if min != '' %}min="{{ min }}"{% endif %}
+         {% if max != '' %}max="{{ max }}"{% endif %} {% if step != '' %}step="{{ step }}"{% endif %}>
+  {% if help %}<small>{{ help }}</small>{% endif %}
+</label>
+{%- endmacro %}
+{% macro cfg_textarea(key, label, placeholder='', help='', rows=3) -%}
+<label class="cfg-field cfg-field--full">
+  <span>{{ label }}</span>
+  <input type="hidden" name="config_key" value="{{ key }}">
+  <textarea name="{{ key }}" rows="{{ rows }}" placeholder="{{ placeholder }}">{{ config_map.get(key, '') }}</textarea>
+  {% if help %}<small>{{ help }}</small>{% endif %}
+</label>
+{%- endmacro %}
+{% macro cfg_select(key, label, options, help='') -%}
+<label class="cfg-field">
+  <span>{{ label }}</span>
+  <input type="hidden" name="config_key" value="{{ key }}">
+  <select name="{{ key }}">
+    {% for value, text in options %}
+    <option value="{{ value }}" {% if config_map.get(key, '') == value %}selected{% endif %}>{{ text }}</option>
+    {% endfor %}
+  </select>
+  {% if help %}<small>{{ help }}</small>{% endif %}
+</label>
+{%- endmacro %}
+
+<div class="cfg-page">
+  <header class="cfg-header">
+    <div>
+      <p class="cfg-eyebrow">Superadministración</p>
+      <h1>Centro de configuración</h1>
+      <p>Controla la tienda, entregas, fidelización y conexiones desde un único lugar.</p>
+    </div>
+    <div class="cfg-header-actions">
+      <a href="{{ url_for('superadmin.zonas') }}" class="ox-btn-secondary">📍 Zonas</a>
+      <a href="{{ url_for('superadmin.chatbot') }}" class="ox-btn-secondary">💬 Chatbot</a>
+      <a href="{{ url_for('public.index') }}" target="_blank" class="ox-btn-ghost">Ver tienda</a>
+    </div>
+  </header>
+
+  <nav class="cfg-nav" aria-label="Secciones de configuración">
+    <a href="#tienda">Tienda</a>
+    <a href="#operacion">Operación</a>
+    <a href="#entregas">Entregas</a>
+    <a href="#puntos">Puntos</a>
+    <a href="#integraciones">Integraciones</a>
+    <a href="#avanzado">Avanzado</a>
+  </nav>
+
+  <section class="cfg-status-grid">
+    <a href="{{ url_for('admin.menu_config') }}"><span>Página pública</span><strong>Banners y contenido</strong><small>Editar inicio, menú y checkout</small></a>
+    <a href="{{ url_for('superadmin.zonas') }}"><span>Reparto</span><strong>{{ zonas|selectattr('activo')|list|length }} zonas activas</strong><small>Precios, cobertura y tiempos</small></a>
+    <a href="{{ url_for('superadmin.chatbot') }}"><span>WhatsApp</span><strong>Chatbot y Evolution</strong><small>Estado, QR y sincronización</small></a>
+    <a href="{{ url_for('marketing.puntos') }}"><span>Fidelización</span><strong>Productos y puntos</strong><small>Canjes y movimientos</small></a>
+  </section>
+
+  <form id="tienda" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="section" value="tienda">
+    <div class="cfg-section-head"><div><span>1</span><h2>Marca y tienda</h2><p>Información visible para clientes y apariencia general.</p></div><button type="submit">Guardar tienda</button></div>
+    <div class="cfg-grid">
+      {{ cfg_input('NOMBRE_NEGOCIO', 'Nombre comercial', placeholder='Mi restaurante') }}
+      {{ cfg_input('SLOGAN_NEGOCIO', 'Eslogan / tagline', placeholder='Comida latina hecha al momento', help='Aparece en la cabecera y el pie de página') }}
+      {{ cfg_input('DESCRIPCION_NEGOCIO', 'Descripción breve', placeholder='Comida casera con sabor a hogar', help='Descripción SEO y pie de página') }}
+      {{ cfg_input('TELEFONO_NEGOCIO', 'WhatsApp / teléfono', type='tel', placeholder='+34 600 000 000') }}
+      {{ cfg_input('DIRECCION_NEGOCIO', 'Dirección del local', placeholder='Calle y número') }}
+      {{ cfg_input('CIUDAD_NEGOCIO', 'Ciudad', placeholder='Carmona, Sevilla') }}
+      {{ cfg_input('TIENDA_URL', 'URL pública de la tienda', type='url', placeholder='https://midominio.com') }}
+      {{ cfg_input('OXIDIAN_PUBLIC_URL', 'URL pública del aplicativo', type='url', placeholder='https://midominio.com') }}
+    </div>
+    <div class="cfg-brand-row">
+      <div class="cfg-media-control">
+        <div id="logo-preview-wrap" class="cfg-media-preview">{% if config_map.get('LOGO_URL') %}<img src="{{ config_map.get('LOGO_URL') }}" alt="Logo">{% else %}<span>Logo</span>{% endif %}</div>
+        <div>
+          <strong>Logo del negocio</strong>
+          <label class="cfg-upload">Subir imagen<input type="file" accept=".jpg,.jpeg,.png,.webp" onchange="uploadBrand(this,'logo')"></label>
+          <input type="hidden" name="config_key" value="LOGO_URL">
+          <input type="url" name="LOGO_URL" id="logo-url-input" value="{{ config_map.get('LOGO_URL','') }}" placeholder="URL del logo">
+        </div>
+      </div>
+      <div class="cfg-media-control">
+        <div id="icon-preview-wrap" class="cfg-media-preview small">{% if config_map.get('APP_ICON_URL') %}<img src="{{ config_map.get('APP_ICON_URL') }}" alt="Icono">{% else %}<span>App</span>{% endif %}</div>
+        <div>
+          <strong>Icono PWA</strong>
+          <label class="cfg-upload">Subir icono<input type="file" accept=".jpg,.jpeg,.png,.webp" onchange="uploadBrand(this,'icon')"></label>
+          <input type="hidden" name="config_key" value="APP_ICON_URL">
+          <input type="url" name="APP_ICON_URL" id="icon-url-input" value="{{ config_map.get('APP_ICON_URL','') }}" placeholder="URL del icono">
+        </div>
+      </div>
+      <div class="cfg-media-control cfg-media-control--wide">
+        <div id="hero-preview-wrap" class="cfg-media-preview wide">{% if config_map.get('HERO_IMAGE_URL') %}<img src="{{ config_map.get('HERO_IMAGE_URL') }}" alt="Hero">{% else %}<span>Cabecera</span>{% endif %}</div>
+        <div>
+          <strong>Imagen de cabecera</strong>
+          <small style="display:block;margin:.2rem 0 .5rem;color:var(--col-muted)">Se muestra como fondo del banner principal de la tienda. Recomendado: 1600×900 px.</small>
+          <label class="cfg-upload">Subir imagen<input type="file" accept=".jpg,.jpeg,.png,.webp" onchange="uploadBrand(this,'hero')"></label>
+          <input type="hidden" name="config_key" value="HERO_IMAGE_URL">
+          <input type="url" name="HERO_IMAGE_URL" id="hero-url-input" value="{{ config_map.get('HERO_IMAGE_URL','') }}" placeholder="URL de la imagen de cabecera">
+        </div>
+      </div>
+    </div>
+    <div class="cfg-colors">
+      {% for key, label, fallback in [('COLOR_PRIMARIO','Principal','#D9961A'),('COLOR_SECUNDARIO','Secundario','#CE1126'),('COLOR_ACENTO','Acento','#003087')] %}
+      <label><span>{{ label }}</span><input type="hidden" name="config_key" value="{{ key }}"><input type="color" name="{{ key }}" value="{{ config_map.get(key, fallback) }}"></label>
+      {% endfor %}
+    </div>
+  </form>
+
+  <form id="operacion" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="operacion">
+    <div class="cfg-section-head"><div><span>2</span><h2>Operación de la tienda</h2><p>Horario y cierre manual para incidencias.</p></div><button type="submit">Guardar operación</button></div>
+    <div class="cfg-grid three">
+      {{ cfg_input('HORARIO_APERTURA', 'Hora de apertura', type='time') }}
+      {{ cfg_input('HORARIO_CIERRE', 'Hora de cierre', type='time') }}
+      {{ cfg_select('TIENDA_FORZAR_CERRADA', 'Estado manual', [('0','Seguir horario normal'),('1','Cerrar tienda ahora')], 'El cierre manual bloquea nuevos pedidos.') }}
+    </div>
+    <div class="cfg-grid one">
+      {{ cfg_textarea('TIENDA_MENSAJE_CIERRE', 'Mensaje de cierre', placeholder='Estamos cerrados. Abrimos mañana a las 9:00. ¡Gracias!', help='Se muestra en el carrito y el checkout cuando la tienda está cerrada o fuera de horario.', rows=2) }}
+    </div>
+  </form>
+
+  <section id="entregas" class="cfg-section">
+    <div class="cfg-section-head"><div><span>3</span><h2>Entregas y cobertura</h2><p>El precio de cada zona aparece en carrito y genera la liquidación del repartidor.</p></div><a href="{{ url_for('superadmin.zonas') }}">Gestionar zonas</a></div>
+    <div class="cfg-zone-list">
+      {% for zona in zonas %}
+      <a href="{{ url_for('superadmin.editar_zona', zona_id=zona.id) }}">
+        <div><strong>{{ zona.nombre }}</strong><small>{{ zona.tiempo_estimado_min }} min · {{ 'Activa' if zona.activo else 'Inactiva' }}</small></div>
+        <div><b>€{{ '%.2f'|format(zona.precio_envio) }}</b><small>{% if zona.gratis_desde %}Gratis desde €{{ '%.2f'|format(zona.gratis_desde) }}{% else %}Sin envío gratis{% endif %}</small></div>
+      </a>
+      {% else %}<p class="cfg-empty">No hay zonas. Crea una antes de habilitar reparto.</p>{% endfor %}
+    </div>
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="entregas">
+      <div class="cfg-grid">
+        {{ cfg_select('VALIDAR_RADIO_ENTREGA', 'Validar distancia', [('1','Sí, comprobar radio'),('0','No comprobar distancia')]) }}
+        {{ cfg_select('BLOQUEAR_DIRECCION_NO_VERIFICADA', 'Dirección no verificable', [('1','Bloquear pedido'),('0','Aceptar con advertencia')]) }}
+        {{ cfg_input('RADIO_ENTREGA_KM', 'Radio máximo (km)', type='number', min='0.5', max='50', step='0.5') }}
+        {{ cfg_input('CENTRO_LAT', 'Latitud del local', type='number', step='0.000001') }}
+        {{ cfg_input('CENTRO_LON', 'Longitud del local', type='number', step='0.000001') }}
+      </div>
+      <button type="submit" class="cfg-save-bottom">Guardar cobertura</button>
+    </form>
+  </section>
+
+  <form id="puntos" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="puntos">
+    <div class="cfg-section-head"><div><span>4</span><h2>Club de puntos</h2><p>Reglas globales. Los productos canjeables se gestionan en Marketing.</p></div><button type="submit">Guardar puntos</button></div>
+    <div class="cfg-grid">
+      {{ cfg_input('PUNTOS_POR_EURO', 'Puntos ganados por euro', type='number', min='1', max='100000') }}
+      {{ cfg_input('PUNTOS_CANJE_RATIO', 'Puntos equivalentes a 1 €', type='number', min='1', max='100000') }}
+    </div>
+    <a href="{{ url_for('marketing.puntos') }}" class="cfg-inline-link">Configurar productos canjeables</a>
+  </form>
+
+  <form id="integraciones" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="integraciones">
+    <div class="cfg-section-head"><div><span>5</span><h2>Conexiones internas</h2><p>Direcciones usadas entre Oxidian, chatbot y Evolution.</p></div><button type="submit">Guardar conexiones</button></div>
+    <div class="cfg-grid">
+      {{ cfg_input('BOT_API_URL', 'URL interna del chatbot', type='url') }}
+      {{ cfg_input('BOT_OXIDIAN_URL', 'Oxidian visto desde el bot', type='url') }}
+      {{ cfg_input('EVOLUTION_API_URL', 'URL interna de Evolution', type='url') }}
+      {{ cfg_input('EVOLUTION_INSTANCE', 'Instancia de WhatsApp') }}
+    </div>
+    <div class="cfg-secret-row">
+      <div><span>API key del bot</span><code>{{ ('••••••••' ~ config_map.get('BOT_API_KEY','')[-4:]) if config_map.get('BOT_API_KEY') else 'No configurada' }}</code></div>
+      <button type="submit" formaction="{{ url_for('superadmin.regenerar_api_key') }}">Regenerar clave</button>
+    </div>
+  </form>
+
+  <details id="avanzado" class="cfg-section cfg-advanced">
+    <summary><span>6</span><div><h2>Configuración avanzada</h2><p>Límites técnicos y edición manual. Úsala solo cuando sea necesario.</p></div></summary>
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="avanzado">
+      <div class="cfg-grid">
+        {{ cfg_input('CART_MAX_QTY', 'Máximo por producto', type='number', min='1', max='999') }}
+        {{ cfg_input('COMBO_MIN_COMPONENTS', 'Mínimo componentes combo', type='number', min='1', max='100') }}
+        {{ cfg_input('COMBO_MAX_COMPONENTS', 'Máximo componentes combo', type='number', min='1', max='200') }}
+        {{ cfg_input('COMBO_MAX_QTY_COMPONENT', 'Máxima cantidad por componente', type='number', min='1', max='999') }}
+        {{ cfg_input('COMBO_MAX_SELECTIONS_GROUP', 'Máximas elecciones por grupo', type='number', min='1', max='100') }}
+        {{ cfg_input('COMBO_MAX_DISCOUNT_PCT', 'Descuento máximo combo (%)', type='number', min='0', max='100', step='0.1') }}
+      </div>
+      <button type="submit" class="cfg-save-bottom">Guardar límites</button>
+    </form>
+    <form method="POST" action="{{ url_for('superadmin.seed_config') }}" class="cfg-danger-row">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div><strong>Completar ajustes faltantes</strong><small>No reemplaza valores existentes.</small></div>
+      <button type="submit">Cargar valores predeterminados</button>
+    </form>
+  </details>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function uploadBrand(input, type){
+  const file=input.files?.[0]; if(!file)return;
+  const endpoints={logo:'/uploads/logo',icon:'/uploads/icon',hero:'/uploads/hero'};
+  const endpoint=endpoints[type]||('/uploads/'+type);
+  const fd=new FormData();fd.append('imagen',file);fd.append('csrf_token','{{ csrf_token() }}');
+  input.disabled=true;
+  try{
+    const response=await fetch(endpoint,{method:'POST',body:fd});
+    const data=await response.json();
+    if(!response.ok||!data.ok)throw new Error(data.error||'No se pudo subir');
+    const urlInput=document.getElementById(type+'-url-input');
+    const preview=document.getElementById(type+'-preview-wrap');
+    urlInput.value=data.url;preview.innerHTML='<img src="'+data.url+'" alt="">';
+  }catch(error){alert(error.message)}finally{input.disabled=false}
+}
+function cfgShowMobileSection(id){
+  if(!window.matchMedia('(max-width:760px)').matches)return;
+  document.querySelectorAll('.cfg-section').forEach(section=>section.classList.toggle('cfg-active',section.id===id));
+  document.querySelectorAll('.cfg-nav a').forEach(link=>link.classList.toggle('active',link.getAttribute('href')==='#'+id));
+}
+document.querySelectorAll('.cfg-nav a').forEach(link=>link.addEventListener('click',event=>{
+  if(!window.matchMedia('(max-width:760px)').matches)return;
+  event.preventDefault();cfgShowMobileSection(link.getAttribute('href').slice(1));window.scrollTo({top:document.querySelector('.cfg-nav').offsetTop-55,behavior:'smooth'});
+}));
+if(window.matchMedia('(max-width:760px)').matches){
+  cfgShowMobileSection(new URLSearchParams(location.search).get('section')||location.hash.slice(1)||'tienda');
+}
+</script>
+{% endblock %}

@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: oxidian
+      POSTGRES_PASSWORD: oxidian
+      POSTGRES_DB: oxidian
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oxidian -d oxidian"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_APP: app.py
+      FLASK_ENV: development
+      DATABASE_URL: postgresql://oxidian:oxidian@postgres:5432/oxidian
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: >
+      bash -c "
+        python -m pip install -q -r requirements.txt 2>/dev/null || true &&
+        python -m flask db upgrade 2>/dev/null || true &&
+        python -m flask run --host 0.0.0.0 --port 5000
+      "
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

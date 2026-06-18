@@ -1,0 +1,669 @@
+{% extends "admin_base.html" %}
+{% block title %}{{ combo.nombre }} — Combo{% endblock %}
+
+{% set fijos  = componentes|selectattr('es_seleccionable','equalto',False)|list %}
+{% set selecs = componentes|selectattr('es_seleccionable')|list %}
+{% set grupos = selecs|map(attribute='grupo_display')|unique|list %}
+{% set ns = namespace(suma=0.0) %}
+{% for ci in fijos %}{% set ns.suma = ns.suma + (ci.componente.precio_final|float * ci.cantidad) %}{% endfor %}
+{% set combo_base   = combo.calcular_precio_base_componentes(componentes)|float %}
+{% set combo_precio = combo.precio|float %}
+{% set ahorro       = [combo_base - combo_precio, 0]|max %}
+{% set pct_ahorro   = ((ahorro / combo_base * 100)|round(1)) if combo_base > 0 else 0 %}
+
+{% block content %}
+
+{# ── Header ── #}
+<div class="cd-head">
+  <a href="{{ url_for('admin.productos') }}#combos" class="cd-back">← Combos</a>
+  <div class="cd-head-info">
+    <h1>{{ combo.nombre }}</h1>
+    <p>
+      <span class="cd-badge-combo">Combo</span>
+      {{ componentes|length }} componente{{ 's' if componentes|length != 1 else '' }}
+      · Stock estimado: <strong class="cd-stock">{{ combo.combo_stock_total }}</strong>
+    </p>
+  </div>
+  <a href="{{ url_for('admin.editar_producto', producto_id=combo.id) }}" class="cd-edit-link">✏ Editar ficha</a>
+</div>
+
+<div class="cd-layout">
+
+  {# ══ COLUMNA PRINCIPAL ══ #}
+  <div class="cd-main">
+
+    {# ── TARJETA: Precio ── #}
+    <div class="cd-card" style="border-left:3px solid #FFAB00">
+      <h2 class="cd-card-ttl">Precio del combo</h2>
+      <div class="cd-price-stats">
+        <div class="cd-stat cd-stat-amber">
+          <p>Suma individual</p>
+          <strong>{{ "€%.2f"|format(combo_base) if combo_base > 0 else "—" }}</strong>
+          <small>base estimada</small>
+        </div>
+        <div class="cd-stat cd-stat-green">
+          <p>Precio combo</p>
+          <strong>{{ "€%.2f"|format(combo_precio) }}</strong>
+          <small>cobrado al cliente</small>
+        </div>
+        <div class="cd-stat {% if ahorro > 0 %}cd-stat-blue{% else %}cd-stat-muted{% endif %}">
+          <p>Ahorro cliente</p>
+          <strong>{% if ahorro > 0 %}−{{ pct_ahorro }}%{% else %}—{% endif %}</strong>
+          <small>{% if ahorro > 0 %}€{{ "%.2f"|format(ahorro) }}{% else %}sin descuento{% endif %}</small>
+        </div>
+      </div>
+      <form method="POST" action="{{ url_for('admin.actualizar_precio_combo', producto_id=combo.id) }}" class="cd-price-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="cd-price-modes">
+          <label class="cd-mode">
+            <input type="radio" name="combo_precio_modo" value="fijo"
+                   {% if combo.combo_precio_modo_normalizado == 'fijo' %}checked{% endif %}
+                   onchange="cdPricingMode()">
+            <span>Precio fijo</span>
+          </label>
+          <label class="cd-mode">
+            <input type="radio" name="combo_precio_modo" value="descuento_porcentaje"
+                   {% if combo.combo_precio_modo_normalizado == 'descuento_porcentaje' %}checked{% endif %}
+                   onchange="cdPricingMode()">
+            <span>% descuento</span>
+          </label>
+        </div>
+        <div class="cd-price-inputs">
+          <div id="cd-fijo-blk">
+            <label class="cd-label">Precio final (€)</label>
+            <input type="number" id="cd-inp-precio" name="precio" value="{{ "%.2f"|format(combo_precio) }}"
+                   step="0.01" min="0.01" class="cd-input" oninput="cdCalcDesc(this.value)">
+          </div>
+          <div id="cd-desc-blk">
+            <label class="cd-label">Descuento (%)</label>
+            <div class="cd-discount-row">
+              <input type="number" id="cd-inp-pct" name="combo_descuento_pct"
+                     value="{{ '%.1f'|format(combo.combo_descuento_pct_float) if combo.combo_descuento_pct_float else '' }}"
+                     step="0.1" min="0" max="{{ combo_limits.max_discount_pct }}" class="cd-input"
+                     placeholder="{{ pct_ahorro }}" oninput="cdCalcPrice(this.value)"
+                     {% if combo_base == 0 %}disabled title="Añade componentes con precio primero"{% endif %}>
+              <span class="cd-pct-sym">%</span>
+            </div>
+            {% if combo_base > 0 %}
+            <p class="cd-hint">Base: €{{ "%.2f"|format(combo_base) }}</p>
+            {% else %}
+            <p class="cd-hint">Añade componentes para usar este modo.</p>
+            {% endif %}
+          </div>
+        </div>
+        <button type="submit" class="cd-save-btn">Guardar precio</button>
+      </form>
+    </div>
+
+    {# ── TARJETA: Secciones ── #}
+    <div class="cd-card" style="border-left:3px solid #C084FC">
+      <div class="cd-sec-title-row">
+        <h2 class="cd-card-ttl" style="margin-bottom:0">
+          Secciones del combo
+          <span class="cd-comp-count">{{ componentes|length }} componente{{ 's' if componentes|length != 1 else '' }}</span>
+        </h2>
+        <button type="button" class="cd-add-top-btn" onclick="cdOpenPicker(null,'fijo','','1')">📌 + Incluido</button>
+        <button type="button" class="cd-add-top-btn cd-add-top-sel" onclick="cdOpenPicker(null,'sel','',1)">🔄 + Elección</button>
+      </div>
+
+      {% if not componentes %}
+      <div class="cd-empty-state">
+        <p class="cd-empty-icon">📦</p>
+        <p>Sin componentes todavía.</p>
+        <p class="cd-empty-hint">Usa los botones "📌 + Incluido" o "🔄 + Elección" para empezar.</p>
+      </div>
+
+      {% else %}
+
+      {# ── SECCIÓN FIJA ── #}
+      {% if fijos %}
+      <div class="cd-section cd-section-f">
+        <div class="cd-section-hd">
+          <span class="cd-step-badge cd-step-badge-f">1</span>
+          <span class="cd-sec-badge cd-sec-badge-f">📌 Incluido siempre</span>
+          <span class="cd-sec-hint">{{ fijos|length }} producto{{ 's' if fijos|length != 1 else '' }} · el cliente no elige</span>
+          <button type="button" class="cd-sec-add-inline" onclick="cdOpenPicker(null,'fijo','',1)">+ Producto</button>
+        </div>
+        <div class="cd-sec-rows">
+          {% for item in fijos %}
+          <div class="cd-item-row cd-item-f">
+            <div class="cd-item-price">
+              <span>€{{ "%.2f"|format(item.componente.precio_final) }}</span>
+              <small>c/u</small>
+            </div>
+            <div class="cd-item-info">
+              <strong>{{ item.componente.nombre }}</strong>
+              {% if item.notas_preparacion %}<small class="cd-alergeno">Cocina: {{ item.notas_preparacion }}</small>{% endif %}
+              {% if item.componente.alergenos_info %}
+              <small class="cd-alergeno">⚠ {{ item.componente.alergenos_info }}</small>
+              {% endif %}
+            </div>
+            <form method="POST" action="{{ url_for('admin.editar_cantidad_combo', producto_id=combo.id, item_id=item.id) }}" class="cd-qty-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="button" onclick="cdStepQty(this,-1)" class="cd-qty-btn">−</button>
+              <input type="number" name="cantidad" value="{{ item.cantidad }}" min="1" max="{{ combo_limits.max_qty }}" class="cd-qty-inp">
+              <button type="button" onclick="cdStepQty(this,+1)" class="cd-qty-btn">+</button>
+              <button type="submit" class="cd-qty-save" title="Guardar cantidad">✓</button>
+            </form>
+            <div class="cd-item-total">
+              <span>€{{ "%.2f"|format(item.componente.precio_final * item.cantidad) }}</span>
+              <small>×{{ item.cantidad }}</small>
+            </div>
+            <form method="POST" action="{{ url_for('admin.quitar_componente_combo', producto_id=combo.id, item_id=item.id) }}" class="cd-del-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="cd-del-btn" onclick="return confirm('¿Quitar {{ item.componente.nombre|replace("'","") }}?')">×</button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+        {% if ns.suma > 0 %}
+        <div class="cd-sec-footer">
+          <span>Subtotal base fija:</span>
+          <strong>€{{ "%.2f"|format(ns.suma) }}</strong>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {# ── SECCIONES DE ELECCIÓN ── #}
+      {% for grupo in grupos %}
+      {% set items_g = selecs|selectattr('grupo_display','equalto',grupo)|list %}
+      {% set max_sel = items_g[0].max_selecciones if items_g else 1 %}
+      {% set max_allowed = [combo_limits.max_selections, items_g|length]|min %}
+      {% set step_num = loop.index + (1 if fijos else 0) %}
+
+      <div class="cd-section cd-section-s">
+        <div class="cd-section-hd">
+          <span class="cd-step-badge cd-step-badge-s">{{ step_num }}</span>
+          <span class="cd-sec-badge cd-sec-badge-s">🔄 {{ grupo or 'Sin nombre' }}</span>
+          <div class="cd-sec-hint-row">
+            <span class="cd-sec-hint">El cliente elige <strong style="color:#C084FC">{{ max_sel }}</strong> de {{ items_g|length }} opción{{ 'es' if items_g|length != 1 else '' }}</span>
+            <form method="POST" action="{{ url_for('admin.editar_grupo_combo', producto_id=combo.id) }}" class="cd-maxsel-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="grupo_nombre" value="{{ grupo }}">
+              <label class="cd-maxsel-label">Elige
+                <input type="number" name="max_selecciones" value="{{ max_sel }}" min="1" max="{{ max_allowed }}" class="cd-maxsel-inp">
+              </label>
+              <button type="submit" class="cd-maxsel-save" title="Guardar">✓</button>
+            </form>
+          </div>
+          <button type="button" class="cd-sec-add-inline cd-sec-add-sel"
+                  onclick="cdOpenPicker(null,'sel','{{ grupo }}',{{ max_sel }})">+ Opción</button>
+        </div>
+        <div class="cd-sec-rows">
+          {% for item in items_g %}
+          <div class="cd-item-row cd-item-s">
+            <div class="cd-item-price"><span>€{{ "%.2f"|format(item.componente.precio_final) }}</span></div>
+            <div class="cd-item-info">
+              <strong>{{ item.componente.nombre }}</strong>
+              {% if item.notas_preparacion %}<small class="cd-alergeno">Cocina: {{ item.notas_preparacion }}</small>{% endif %}
+            </div>
+            {% if item.es_predeterminado %}<span class="cd-opt-tag">recomendada</span>{% endif %}
+            {% if item.precio_extra and item.precio_extra > 0 %}<span class="cd-opt-tag">+€{{ "%.2f"|format(item.precio_extra) }}</span>{% endif %}
+            <span class="cd-opt-tag">opción</span>
+            <form method="POST" action="{{ url_for('admin.quitar_componente_combo', producto_id=combo.id, item_id=item.id) }}" class="cd-del-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="cd-del-btn" onclick="return confirm('¿Quitar {{ item.componente.nombre|replace("'","") }}?')">×</button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+
+      {% endif %}
+    </div>
+
+  </div>{# /cd-main #}
+
+  {# ══ SIDEBAR ══ #}
+  <div class="cd-side">
+
+    {# ── VISTA PREVIA ── #}
+    <div class="cd-card cd-preview-card">
+      <h3 class="cd-side-ttl">Vista previa del cliente</h3>
+      <div class="cd-preview-box">
+        <p class="cd-preview-name">{{ combo.nombre }}</p>
+        <div class="cd-preview-price">
+          <strong>€{{ "%.2f"|format(combo_precio) }}</strong>
+          {% if ahorro > 0 %}
+          <span class="cd-prev-orig">€{{ "%.2f"|format(combo_base) }}</span>
+          <span class="cd-prev-pct">−{{ pct_ahorro }}%</span>
+          {% endif %}
+        </div>
+        {% if componentes %}
+        <div class="cd-preview-secs">
+          {% if fijos %}
+          <div class="cd-prev-sec">
+            <p class="cd-prev-sec-ttl">📌 Siempre incluido:</p>
+            {% for ci in fijos %}
+            <span class="cd-prev-item">✓ {{ ci.cantidad }}× {{ ci.componente.nombre }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% for grp in grupos %}
+          {% set igs = selecs|selectattr('grupo_display','equalto',grp)|list %}
+          {% set mx  = igs[0].max_selecciones if igs else 1 %}
+          <div class="cd-prev-sec">
+            <p class="cd-prev-sec-ttl" style="color:#C084FC">🔄 {{ grp }} (elige {{ mx }}):</p>
+            {% for opt in igs %}
+            <span class="cd-prev-item cd-prev-opt">{{ opt.componente.nombre }}</span>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="cd-preview-empty">Añade componentes para ver la vista previa.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── GUÍA ── #}
+    <div class="cd-guide">
+      <div class="cd-guide-item">
+        <span class="cd-guide-icon">📌</span>
+        <div><p>Incluido</p><small>Siempre sale con el combo. El cliente no elige.</small></div>
+      </div>
+      <div class="cd-guide-item">
+        <span class="cd-guide-icon">🔄</span>
+        <div><p>Sección de elección</p><small>El cliente elige N opciones del grupo al pedir.</small></div>
+      </div>
+    </div>
+
+  </div>{# /cd-side #}
+</div>
+
+{# ══ MODAL PICKER ══ #}
+<div id="cd-picker" class="cd-picker-ov" style="display:none" onclick="cdPickerBg(event)">
+  <div class="cd-picker-box" onclick="event.stopPropagation()">
+    <div class="cd-picker-top">
+      <div>
+        <p class="cd-picker-ttl" id="cd-picker-ttl">Añadir producto</p>
+        <p class="cd-picker-hint" id="cd-picker-hint"></p>
+      </div>
+      <button type="button" class="cd-picker-x" onclick="cdClosePicker()">✕</button>
+    </div>
+
+    {# Contexto de la sección (para elección) #}
+    <div id="cd-picker-ctx" class="cd-picker-ctx" style="display:none">
+      <div class="cd-picker-ctx-row">
+        <label class="cd-picker-ctx-lbl">Sección de elección</label>
+        <div class="cd-picker-ctx-chips" id="cd-picker-chips"></div>
+        <input type="text" id="cd-picker-grupo" class="cd-picker-ctx-inp"
+               placeholder="Nombre: Bebida, Salsa, Principal...">
+      </div>
+      <div class="cd-picker-ctx-row">
+        <label class="cd-picker-ctx-lbl">El cliente elige</label>
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <button type="button" class="cd-step-btn" onclick="cdStepMaxSel(-1)">−</button>
+          <input type="number" id="cd-picker-maxsel" value="1" min="1" max="{{ combo_limits.max_selections }}" class="cd-picker-maxsel-inp">
+          <button type="button" class="cd-step-btn" onclick="cdStepMaxSel(1)">+</button>
+          <span style="color:var(--col-muted);font-size:.8rem">opción(es)</span>
+        </div>
+      </div>
+    </div>
+    {# Cantidad (para incluido) #}
+    <div id="cd-picker-qty-ctx" class="cd-picker-ctx">
+      <div class="cd-picker-ctx-row">
+        <label class="cd-picker-ctx-lbl">Cantidad</label>
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <button type="button" class="cd-step-btn" onclick="cdStepPickerQty(-1)">−</button>
+          <input type="number" id="cd-picker-qty" value="1" min="1" max="{{ combo_limits.max_qty }}" class="cd-picker-maxsel-inp">
+          <button type="button" class="cd-step-btn" onclick="cdStepPickerQty(1)">+</button>
+        </div>
+      </div>
+    </div>
+    <div id="cd-picker-option-extra" class="cd-picker-ctx">
+      <div class="cd-picker-ctx-row">
+        <label class="cd-picker-ctx-lbl">Suplemento</label>
+        <input type="number" id="cd-picker-extra" value="0.00" min="0" step="0.01" class="cd-picker-ctx-inp" style="max-width:120px">
+        <label class="cd-chip" style="display:flex;align-items:center;gap:.35rem">
+          <input type="checkbox" id="cd-picker-default" style="accent-color:#C084FC"> Recomendada
+        </label>
+      </div>
+    </div>
+    <div class="cd-picker-ctx">
+      <div class="cd-picker-ctx-row">
+        <label class="cd-picker-ctx-lbl">Nota cocina</label>
+        <input type="text" id="cd-picker-note" maxlength="300" class="cd-picker-ctx-inp" placeholder="Ej: servir aparte, bebida fría...">
+      </div>
+    </div>
+
+    <input type="search" id="cd-picker-q" class="cd-picker-search" placeholder="Buscar producto..."
+           oninput="cdPickerFilter(this.value)" autocomplete="off">
+    <div id="cd-picker-list" class="cd-picker-list">
+      {% for p in productos_simples %}
+      {% if p.id != combo.id %}
+      <button type="button" class="cd-picker-item"
+              data-pid="{{ p.id }}" data-name="{{ (p.nombre ~ ' ' ~ p.admin_nombre_operativo)|lower }}"
+              onclick="cdPickerSelect({{ p.id }})">
+        <span class="cd-picker-item-name">{{ p.nombre }}</span>
+        <span class="cd-picker-item-price">
+          #{{ p.id }} · {{ p.origen_operativo_label }} · {{ p.canal_preparacion or 'cocina' }} · €{{ "%.2f"|format(p.precio_final) }}
+        </span>
+      </button>
+      {% endif %}
+      {% endfor %}
+    </div>
+
+    {# Form oculto que se envía al seleccionar #}
+    <form id="cd-add-form" method="POST"
+          action="{{ url_for('admin.agregar_componente_combo', producto_id=combo.id) }}"
+          style="display:none">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="producto_id" id="cd-hid-prod">
+      <input type="hidden" name="es_seleccionable" id="cd-hid-sel">
+      <input type="hidden" name="cantidad" id="cd-hid-cant">
+      <input type="hidden" name="grupo_seleccion" id="cd-hid-grupo">
+      <input type="hidden" name="max_selecciones" id="cd-hid-maxsel">
+      <input type="hidden" name="precio_extra" id="cd-hid-extra">
+      <input type="hidden" name="es_predeterminado" id="cd-hid-default">
+      <input type="hidden" name="notas_preparacion" id="cd-hid-note">
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<style>
+/* ── Layout ── */
+.cd-head{display:flex;align-items:center;gap:.85rem;margin-bottom:1.25rem;flex-wrap:wrap}
+.cd-back{color:var(--col-muted);background:var(--col-elevated);border:1px solid var(--col-border);padding:.48rem .72rem;border-radius:.65rem;font-size:.8rem;font-weight:900;text-decoration:none;white-space:nowrap}
+.cd-head-info{flex:1;min-width:0}
+.cd-head-info h1{color:var(--col-text);font-size:1.35rem;font-weight:950;line-height:1.15}
+.cd-head-info p{color:var(--col-muted);font-size:.8rem;margin-top:.15rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.cd-badge-combo{background:rgba(255,171,0,.18);color:#FFAB00;font-size:.68rem;font-weight:900;padding:.18rem .5rem;border-radius:999px;border:1px solid rgba(255,171,0,.3)}
+.cd-stock{color:#5EF097}
+.cd-edit-link{color:var(--col-muted);background:var(--col-elevated);border:1px solid var(--col-border);padding:.42rem .65rem;border-radius:.65rem;font-size:.78rem;font-weight:800;text-decoration:none;white-space:nowrap}
+.cd-layout{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:1.1rem;align-items:start}
+.cd-main{display:flex;flex-direction:column;gap:1rem;min-width:0}
+.cd-side{display:flex;flex-direction:column;gap:1rem;position:sticky;top:74px;min-width:0}
+
+/* ── Cards ── */
+.cd-card{background:var(--col-surface);border:1px solid var(--col-border);border-radius:.75rem;padding:1rem;min-width:0}
+.cd-card-ttl{color:var(--col-text);font-size:.98rem;font-weight:950;margin-bottom:.9rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem}
+.cd-comp-count{font-size:.75rem;font-weight:800;color:var(--col-muted);background:var(--col-elevated);border:1px solid var(--col-border);padding:.2rem .55rem;border-radius:999px}
+.cd-sec-title-row{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;margin-bottom:.85rem}
+.cd-add-top-btn{font-size:.75rem;font-weight:900;padding:.35rem .65rem;border-radius:.55rem;cursor:pointer;white-space:nowrap;border:1px solid rgba(255,171,0,.35);background:rgba(255,171,0,.1);color:#FFAB00}
+.cd-add-top-sel{border-color:rgba(192,132,252,.35);background:rgba(192,132,252,.1);color:#C084FC}
+
+/* ── Price stats ── */
+.cd-price-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.65rem;margin-bottom:1rem}
+.cd-stat{border-radius:.7rem;padding:.75rem .8rem;text-align:center}
+.cd-stat p{font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.35rem}
+.cd-stat strong{font-size:1.25rem;font-weight:950;display:block;line-height:1}
+.cd-stat small{font-size:.65rem;margin-top:.3rem;display:block;opacity:.7}
+.cd-stat-amber{background:rgba(255,171,0,.07);border:1px solid rgba(255,171,0,.15);color:#FFAB00}
+.cd-stat-green{background:rgba(52,199,89,.07);border:1px solid rgba(52,199,89,.15);color:#5EF097}
+.cd-stat-blue{background:rgba(0,122,255,.07);border:1px solid rgba(0,122,255,.15);color:#5AC8FA}
+.cd-stat-muted{background:var(--col-elevated);border:1px solid var(--col-border);color:var(--col-faint)}
+.cd-price-form{display:flex;flex-direction:column;gap:.75rem}
+.cd-price-modes{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}
+.cd-mode{display:flex;align-items:center;gap:.45rem;border:1px solid var(--col-border);background:var(--col-elevated);border-radius:.65rem;padding:.55rem .65rem;font-size:.8rem;font-weight:900;color:var(--col-muted);cursor:pointer;transition:all .15s}
+.cd-mode:has(input:checked){color:#5EF097;border-color:rgba(94,240,151,.4);background:rgba(94,240,151,.08)}
+.cd-price-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;align-items:end}
+.cd-label{font-size:.68rem;font-weight:900;color:var(--col-muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:.3rem}
+.cd-input{width:100%;background:var(--col-elevated);border:1.5px solid var(--col-border);border-radius:.65rem;padding:.5rem .7rem;color:var(--col-text);font-size:.88rem;outline:none;transition:border-color .15s}
+.cd-input:focus{border-color:rgba(255,171,0,.5)}
+.cd-discount-row{display:flex;align-items:center;gap:.4rem}
+.cd-pct-sym{color:var(--col-muted);font-weight:900;font-size:.88rem}
+.cd-hint{font-size:.7rem;color:var(--col-faint);margin-top:.3rem}
+.cd-save-btn{align-self:flex-start;background:linear-gradient(135deg,#5EF097,#34C759);color:#000;font-size:.82rem;font-weight:900;padding:.55rem 1.1rem;border:none;border-radius:.65rem;cursor:pointer}
+
+/* ── Section cards ── */
+.cd-section{border-radius:.7rem;border:1.5px solid var(--col-border);overflow:hidden;margin-bottom:.65rem}
+.cd-section:last-child{margin-bottom:0}
+.cd-section-f{border-color:rgba(255,171,0,.35)}
+.cd-section-s{border-color:rgba(192,132,252,.35)}
+.cd-section-hd{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem;padding:.65rem .85rem}
+.cd-section-f .cd-section-hd{background:rgba(255,171,0,.07)}
+.cd-section-s .cd-section-hd{background:rgba(192,132,252,.07)}
+
+.cd-step-badge{width:24px;height:24px;border-radius:999px;display:grid;place-items:center;font-size:.74rem;font-weight:950;flex-shrink:0}
+.cd-step-badge-f{background:#FFAB00;color:#1B0A00}
+.cd-step-badge-s{background:#C084FC;color:#fff}
+
+.cd-sec-badge{font-size:.72rem;font-weight:900;padding:.22rem .55rem;border-radius:999px;white-space:nowrap;flex-shrink:0}
+.cd-sec-badge-f{background:rgba(255,171,0,.18);color:#FFAB00;border:1px solid rgba(255,171,0,.3)}
+.cd-sec-badge-s{background:rgba(192,132,252,.18);color:#C084FC;border:1px solid rgba(192,132,252,.3)}
+.cd-sec-hint{color:var(--col-muted);font-size:.74rem;flex:1;min-width:0}
+.cd-sec-hint-row{display:flex;align-items:center;gap:.5rem;flex:1;min-width:0;flex-wrap:wrap}
+.cd-sec-add-inline{font-size:.72rem;font-weight:900;padding:.28rem .55rem;border-radius:.45rem;cursor:pointer;white-space:nowrap;margin-left:auto;flex-shrink:0;border:1px solid rgba(255,171,0,.3);background:rgba(255,171,0,.09);color:#FFAB00}
+.cd-sec-add-sel{border-color:rgba(192,132,252,.3);background:rgba(192,132,252,.09);color:#C084FC}
+.cd-sec-footer{display:flex;justify-content:flex-end;padding:.5rem .85rem;gap:.5rem;font-size:.78rem;border-top:1px solid rgba(255,171,0,.15)}
+.cd-sec-footer span{color:var(--col-muted);font-weight:800}
+.cd-sec-footer strong{color:#FFAB00;font-weight:950}
+
+/* ── maxsel form ── */
+.cd-maxsel-form{display:flex;align-items:center;gap:.35rem}
+.cd-maxsel-label{display:flex;align-items:center;gap:.3rem;font-size:.74rem;font-weight:900;color:var(--col-muted);white-space:nowrap}
+.cd-maxsel-inp{width:42px;text-align:center;background:var(--col-elevated);border:1px solid var(--col-border);border-radius:.45rem;color:var(--col-text);padding:.25rem;font-size:.82rem;font-weight:900;outline:none}
+.cd-maxsel-inp:focus{border-color:#C084FC}
+.cd-maxsel-save{font-size:.72rem;font-weight:900;padding:.28rem .5rem;border-radius:.45rem;border:1px solid rgba(192,132,252,.3);background:rgba(192,132,252,.1);color:#C084FC;cursor:pointer}
+
+/* ── Item rows ── */
+.cd-sec-rows{padding:.5rem .85rem;display:flex;flex-direction:column;gap:.4rem}
+.cd-item-row{display:flex;align-items:center;gap:.55rem;border-radius:.6rem;padding:.5rem .65rem}
+.cd-item-f{background:var(--col-elevated);border:1px solid rgba(255,171,0,.12)}
+.cd-item-s{background:rgba(192,132,252,.04);border:1px solid rgba(192,132,252,.12)}
+.cd-item-price{flex-shrink:0;width:60px;text-align:right}
+.cd-item-price span{color:#FFAB00;font-size:.8rem;font-weight:900}
+.cd-item-price small,.cd-item-total small{color:var(--col-faint);font-size:.65rem;display:block}
+.cd-item-info{flex:1;min-width:0}
+.cd-item-info strong{font-size:.85rem;font-weight:800;color:var(--col-text);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cd-alergeno{color:#FFB340;font-size:.68rem;display:block;margin-top:.1rem}
+.cd-item-total{flex-shrink:0;width:58px;text-align:right}
+.cd-item-total span{color:#FFAB00;font-size:.8rem;font-weight:900}
+.cd-opt-tag{font-size:.68rem;font-weight:900;color:#C084FC;background:rgba(192,132,252,.12);padding:.18rem .45rem;border-radius:999px;white-space:nowrap;flex-shrink:0}
+.cd-qty-form{display:flex;align-items:center;gap:.25rem;flex-shrink:0}
+.cd-qty-btn{width:28px;height:28px;border-radius:.45rem;border:1px solid var(--col-border);background:var(--col-surface);color:var(--col-muted);font-weight:950;cursor:pointer;display:grid;place-items:center;font-size:.85rem}
+.cd-qty-btn:hover{border-color:#FFAB00;color:#FFAB00}
+.cd-qty-inp{width:40px;text-align:center;background:var(--col-surface);border:1px solid var(--col-border);border-radius:.45rem;color:#fff;padding:.25rem .1rem;font-size:.8rem;font-weight:900;outline:none}
+.cd-qty-save{font-size:.7rem;font-weight:900;padding:.25rem .45rem;border-radius:.45rem;border:1px solid rgba(255,171,0,.3);background:rgba(255,171,0,.1);color:#FFAB00;cursor:pointer;flex-shrink:0}
+.cd-del-form{flex-shrink:0}
+.cd-del-btn{width:28px;height:28px;border-radius:.45rem;border:1px solid rgba(255,59,48,.2);background:rgba(255,59,48,.07);color:#FF6B6B;cursor:pointer;display:grid;place-items:center;font-size:.9rem}
+
+/* ── Empty state ── */
+.cd-empty-state{text-align:center;padding:2.5rem 1rem;margin:.5rem 0}
+.cd-empty-icon{font-size:2.5rem;margin-bottom:.5rem}
+.cd-empty-state p{color:var(--col-muted);font-size:.88rem;margin-bottom:.25rem}
+.cd-empty-hint{color:var(--col-faint);font-size:.78rem}
+
+/* ── Preview ── */
+.cd-side-ttl{color:var(--col-text);font-size:.92rem;font-weight:950;margin-bottom:.8rem}
+.cd-preview-card{background:linear-gradient(145deg,rgba(192,132,252,.06),rgba(255,171,0,.04))}
+.cd-preview-box{padding:.5rem 0}
+.cd-preview-name{color:var(--col-text);font-size:.95rem;font-weight:950;margin-bottom:.4rem}
+.cd-preview-price{display:flex;align-items:baseline;gap:.5rem;margin-bottom:.75rem}
+.cd-preview-price strong{color:#5EF097;font-size:1.2rem;font-weight:950}
+.cd-prev-orig{color:var(--col-faint);font-size:.8rem;text-decoration:line-through}
+.cd-prev-pct{font-size:.72rem;font-weight:900;background:rgba(94,240,151,.15);color:#5EF097;border-radius:999px;padding:.18rem .45rem}
+.cd-preview-secs{display:flex;flex-direction:column;gap:.6rem}
+.cd-prev-sec-ttl{font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em;color:var(--col-muted);margin-bottom:.28rem}
+.cd-prev-item{display:block;font-size:.78rem;color:var(--col-text);padding:.15rem 0}
+.cd-prev-opt{color:var(--col-muted)}
+.cd-preview-empty{color:var(--col-faint);font-size:.78rem;font-style:italic}
+
+/* ── Guide ── */
+.cd-guide{display:flex;flex-direction:column;gap:.5rem}
+.cd-guide-item{display:flex;gap:.55rem;align-items:flex-start;background:var(--col-elevated);border:1px solid var(--col-border);border-radius:.65rem;padding:.6rem}
+.cd-guide-icon{font-size:1.1rem;flex-shrink:0;margin-top:.05rem}
+.cd-guide-item p{color:var(--col-text);font-size:.8rem;font-weight:900;margin-bottom:.1rem}
+.cd-guide-item small{color:var(--col-muted);font-size:.72rem;line-height:1.35}
+
+/* ── Modal picker ── */
+.cd-picker-ov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(4px)}
+.cd-picker-box{background:var(--col-surface);border:1px solid var(--col-border);border-radius:.9rem;width:100%;max-width:500px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.55)}
+.cd-picker-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;padding:.85rem 1rem .65rem}
+.cd-picker-ttl{color:var(--col-text);font-size:.95rem;font-weight:950}
+.cd-picker-hint{color:var(--col-muted);font-size:.76rem;margin-top:.1rem;line-height:1.35}
+.cd-picker-x{width:32px;height:32px;border-radius:.5rem;border:1px solid var(--col-border);background:var(--col-elevated);color:var(--col-muted);cursor:pointer;display:grid;place-items:center;font-size:.9rem;flex-shrink:0}
+.cd-picker-ctx{border-top:1px solid var(--col-border);padding:.6rem 1rem;display:flex;flex-direction:column;gap:.5rem;background:var(--col-elevated)}
+.cd-picker-ctx-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.cd-picker-ctx-lbl{font-size:.7rem;font-weight:900;color:var(--col-muted);text-transform:uppercase;white-space:nowrap;min-width:80px}
+.cd-picker-ctx-inp{flex:1;min-width:140px;background:var(--col-surface);border:1.5px solid rgba(192,132,252,.4);border-radius:.55rem;padding:.4rem .65rem;color:var(--col-text);font-size:.84rem;outline:none}
+.cd-picker-ctx-inp:focus{border-color:#C084FC}
+.cd-picker-ctx-chips{display:flex;flex-wrap:wrap;gap:.3rem}
+.cd-chip{font-size:.72rem;font-weight:900;padding:.22rem .5rem;border-radius:999px;border:1px solid rgba(192,132,252,.3);background:rgba(192,132,252,.1);color:#C084FC;cursor:pointer}
+.cd-picker-maxsel-inp{width:48px;text-align:center;background:var(--col-surface);border:1.5px solid var(--col-border);border-radius:.5rem;color:var(--col-text);padding:.35rem .2rem;font-size:.88rem;font-weight:900;outline:none}
+.cd-step-btn{width:28px;height:28px;border-radius:.45rem;border:1px solid var(--col-border);background:var(--col-surface);color:var(--col-muted);font-weight:950;cursor:pointer;display:grid;place-items:center}
+.cd-step-btn:hover{border-color:#FFAB00;color:#FFAB00}
+.cd-picker-search{margin:0 1rem .5rem;background:var(--col-elevated);border:1.5px solid var(--col-border);border-radius:.65rem;padding:.55rem .75rem;color:var(--col-text);font-size:.88rem;outline:none}
+.cd-picker-search:focus{border-color:#FFAB00}
+.cd-picker-list{overflow:auto;padding:.1rem .6rem .75rem;display:flex;flex-direction:column;gap:.3rem}
+.cd-picker-item{display:flex;justify-content:space-between;align-items:center;gap:.65rem;text-align:left;background:var(--col-elevated);border:1px solid var(--col-border);border-radius:.6rem;padding:.55rem .75rem;cursor:pointer;transition:background .12s,border-color .12s}
+.cd-picker-item:hover{background:rgba(255,171,0,.08);border-color:rgba(255,171,0,.25)}
+.cd-picker-item-name{color:var(--col-text);font-size:.85rem;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cd-picker-item-price{color:#FFAB00;font-size:.82rem;font-weight:900;white-space:nowrap}
+.cd-picker-empty-msg{color:var(--col-faint);font-size:.8rem;text-align:center;padding:1.5rem}
+
+/* ── Responsive ── */
+@media(max-width:960px){.cd-layout{grid-template-columns:1fr}.cd-side{position:static}}
+@media(max-width:600px){
+  .cd-price-stats{grid-template-columns:1fr 1fr}
+  .cd-price-stats .cd-stat:last-child{grid-column:span 2}
+  .cd-price-inputs,.cd-price-modes{grid-template-columns:1fr}
+  .cd-item-row{flex-wrap:wrap}
+  .cd-qty-form{order:3;width:100%;margin-top:.3rem}
+  .cd-del-form{margin-left:auto}
+  .cd-sec-hint-row{width:100%}
+}
+</style>
+
+<script>
+const CD_BASE = {{ combo_base|float|tojson }};
+const CD_LIMS = {maxQty:{{ combo_limits.max_qty }},maxSel:{{ combo_limits.max_selections }},maxDisc:{{ combo_limits.max_discount_pct }}};
+const CD_GRUPOS_EXISTENTES = {{ grupos|tojson }};
+
+let cdPickCtx = {type:'fijo', grupo:'', maxSel:1};
+
+/* ── Pricing mode ── */
+function cdPricingMode() {
+  const disc = document.querySelector('input[name="combo_precio_modo"]:checked')?.value === 'descuento_porcentaje';
+  document.getElementById('cd-fijo-blk').style.display = disc ? 'none' : '';
+  document.getElementById('cd-desc-blk').style.display = disc ? '' : 'none';
+  if (disc) cdCalcPrice(document.getElementById('cd-inp-pct').value || 0);
+}
+function cdCalcDesc(precio) {
+  if (CD_BASE <= 0) return;
+  const pct = Math.max(0, Math.min(CD_LIMS.maxDisc, (1 - parseFloat(precio)/CD_BASE)*100));
+  document.getElementById('cd-inp-pct').value = isFinite(pct) ? pct.toFixed(1) : '';
+}
+function cdCalcPrice(pct) {
+  if (CD_BASE <= 0) return;
+  const p = Math.max(0, Math.min(CD_LIMS.maxDisc, parseFloat(pct)||0));
+  document.getElementById('cd-inp-precio').value = Math.max(0.01, CD_BASE*(1-p/100)).toFixed(2);
+}
+
+/* ── Qty step ── */
+function cdStepQty(btn, delta) {
+  const inp = btn.parentElement.querySelector('input[type=number]');
+  if (!inp) return;
+  inp.value = Math.max(parseInt(inp.min||1), Math.min(parseInt(inp.max||CD_LIMS.maxQty), (parseInt(inp.value)||1)+delta));
+}
+function cdStepMaxSel(delta) {
+  const inp = document.getElementById('cd-picker-maxsel');
+  inp.value = Math.max(1, Math.min(CD_LIMS.maxSel, (parseInt(inp.value)||1)+delta));
+}
+function cdStepPickerQty(delta) {
+  const inp = document.getElementById('cd-picker-qty');
+  inp.value = Math.max(1, Math.min(CD_LIMS.maxQty, (parseInt(inp.value)||1)+delta));
+}
+
+/* ── Picker ── */
+function cdOpenPicker(pid, type, grupo, maxSel) {
+  cdPickCtx = {type, grupo: grupo||'', maxSel: parseInt(maxSel)||1};
+  const isFijo = type === 'fijo';
+
+  document.getElementById('cd-picker-ttl').textContent = isFijo ? 'Añadir producto incluido' : `Añadir opción a "${grupo||'nueva sección'}"`;
+  document.getElementById('cd-picker-hint').textContent = isFijo
+    ? 'Este producto siempre estará incluido. Define la cantidad.'
+    : 'El cliente podrá elegir este producto en la sección.';
+
+  document.getElementById('cd-picker-ctx').style.display     = isFijo ? 'none' : '';
+  document.getElementById('cd-picker-qty-ctx').style.display = isFijo ? '' : 'none';
+  document.getElementById('cd-picker-option-extra').style.display = isFijo ? 'none' : '';
+
+  if (!isFijo) {
+    document.getElementById('cd-picker-grupo').value = grupo || '';
+    document.getElementById('cd-picker-maxsel').value = maxSel || 1;
+    // Render chips for existing groups
+    const chips = document.getElementById('cd-picker-chips');
+    chips.innerHTML = '';
+    CD_GRUPOS_EXISTENTES.forEach(g => {
+      const chip = document.createElement('button');
+      chip.type = 'button'; chip.className = 'cd-chip'; chip.textContent = g;
+      chip.onclick = () => { document.getElementById('cd-picker-grupo').value = g; };
+      chips.appendChild(chip);
+    });
+  } else {
+    document.getElementById('cd-picker-qty').value = 1;
+  }
+  document.getElementById('cd-picker-extra').value = '0.00';
+  document.getElementById('cd-picker-default').checked = false;
+  document.getElementById('cd-picker-note').value = '';
+
+  const q = document.getElementById('cd-picker-q');
+  q.value = '';
+  cdPickerFilter('');
+  document.getElementById('cd-picker').style.display = 'flex';
+  setTimeout(() => q.focus(), 80);
+}
+
+function cdClosePicker() {
+  document.getElementById('cd-picker').style.display = 'none';
+}
+function cdPickerBg(e) {
+  if (e.target === document.getElementById('cd-picker')) cdClosePicker();
+}
+
+function cdPickerFilter(q) {
+  const term = q.trim().toLowerCase();
+  let hasVisible = false;
+  document.querySelectorAll('.cd-picker-item').forEach(btn => {
+    const match = !term || btn.dataset.name.includes(term);
+    btn.style.display = match ? '' : 'none';
+    if (match) hasVisible = true;
+  });
+  let emptyEl = document.getElementById('cd-picker-no-results');
+  if (!hasVisible) {
+    if (!emptyEl) {
+      emptyEl = document.createElement('p');
+      emptyEl.id = 'cd-picker-no-results';
+      emptyEl.className = 'cd-picker-empty-msg';
+      emptyEl.textContent = 'Sin resultados';
+      document.getElementById('cd-picker-list').appendChild(emptyEl);
+    }
+    emptyEl.style.display = '';
+  } else if (emptyEl) { emptyEl.style.display = 'none'; }
+}
+
+function cdPickerSelect(pid) {
+  const isFijo = cdPickCtx.type === 'fijo';
+  const grupo = isFijo ? '' : (document.getElementById('cd-picker-grupo')?.value?.trim() || cdPickCtx.grupo || '');
+  const maxSel = isFijo ? 1 : (parseInt(document.getElementById('cd-picker-maxsel')?.value)||1);
+  const qty = isFijo ? (parseInt(document.getElementById('cd-picker-qty')?.value)||1) : 1;
+  const extra = isFijo ? 0 : Math.max(0, parseFloat(document.getElementById('cd-picker-extra')?.value || 0) || 0);
+
+  if (!isFijo && !grupo) {
+    document.getElementById('cd-picker-grupo')?.classList.add('cd-picker-ctx-inp--err');
+    document.getElementById('cd-picker-grupo')?.focus();
+    return;
+  }
+
+  document.getElementById('cd-hid-prod').value    = pid;
+  document.getElementById('cd-hid-sel').value     = isFijo ? '' : '1';
+  document.getElementById('cd-hid-cant').value    = qty;
+  document.getElementById('cd-hid-grupo').value   = grupo;
+  document.getElementById('cd-hid-maxsel').value  = maxSel;
+  document.getElementById('cd-hid-extra').value   = extra.toFixed(2);
+  document.getElementById('cd-hid-default').value = (!isFijo && document.getElementById('cd-picker-default')?.checked) ? '1' : '';
+  document.getElementById('cd-hid-note').value    = document.getElementById('cd-picker-note')?.value || '';
+  document.getElementById('cd-add-form').submit();
+}
+
+/* ── Init ── */
+cdPricingMode();
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cdClosePicker(); });
+</script>
+{% endblock %}

@@ -1,0 +1,213 @@
+{% extends "admin_base.html" %}
+{% block title %}Puntos de Clientes{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-6">
+  <a href="{{ url_for('marketing.dashboard') }}" class="ox-btn-ghost text-sm">← Volver</a>
+  <div>
+    <h1 class="text-xl font-extrabold text-white">💎 Sistema de Puntos</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Estadísticas, ajustes manuales y movimientos del programa de fidelización</p>
+  </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+  <div class="ox-toast ox-toast-{{ 'success' if cat == 'success' else 'danger' if cat == 'danger' else 'info' }} mb-4">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+{# ── KPIs ── #}
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+  <div class="ox-card p-5 text-center">
+    <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:var(--col-muted)">Puntos emitidos</p>
+    <p class="text-3xl font-black text-white">{{ puntos_emitidos | default(0) | int }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-faint)">Histórico total</p>
+  </div>
+  <div class="ox-card p-5 text-center">
+    <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:var(--col-muted)">Puntos canjeados</p>
+    <p class="text-3xl font-black" style="color:#FF9500">{{ puntos_canjeados | default(0) | int }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-faint)">Descuentos aplicados</p>
+  </div>
+  <div class="ox-card p-5 text-center">
+    <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:var(--col-muted)">En circulación</p>
+    <p class="text-3xl font-black" style="color:#5EF097">{{ puntos_circulacion | default(0) | int }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-faint)">Clientes activos</p>
+  </div>
+</div>
+
+<div class="ox-card p-5 mb-6" id="catalogo-canje">
+  <div class="flex items-start justify-between gap-3 mb-4 flex-wrap">
+    <div>
+      <h2 class="font-bold text-white">Catálogo de canjes</h2>
+      <p class="text-xs mt-1" style="color:var(--col-muted)">Activa un producto y define sus puntos. El cliente lo verá automáticamente en carrito y checkout cuando tenga saldo suficiente.</p>
+    </div>
+    <span class="text-xs font-bold" style="color:#C084FC">{{ productos_canjeables|length }} activos</span>
+  </div>
+  <div class="adm-redeem-toolbar">
+    <input type="search" id="redeem-search" placeholder="Buscar producto" oninput="filterRedeemProducts(this.value)">
+    <button type="button" id="redeem-active-filter" onclick="toggleRedeemActive()">Mostrar solo activos</button>
+  </div>
+  <div class="adm-redeem-list" id="redeem-list">
+    {% for p in productos %}
+    <form method="POST" action="{{ url_for('marketing.configurar_producto_puntos', producto_id=p.id) }}"
+          class="adm-redeem-row" data-name="{{ p.nombre|lower }}" data-active="{{ '1' if p.canjeable_con_puntos else '0' }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="adm-redeem-product">
+        {% if p.imagen_url %}<img src="{{ p.imagen_url|upload_url }}" alt="">{% else %}<span>Producto</span>{% endif %}
+        <div><strong>{{ p.nombre }}</strong><small>€{{ "%.2f"|format(p.precio_final) }} · {{ 'Combo' if p.es_combo else (p.categoria.nombre if p.categoria else 'Producto') }}</small></div>
+      </div>
+      <label class="adm-toggle">
+        <input type="checkbox" name="canjeable" value="1" {% if p.canjeable_con_puntos %}checked{% endif %}>
+        <span>Canjeable</span>
+      </label>
+      <label class="adm-points-input">
+        <span>Puntos</span>
+        <input type="number" name="puntos_para_canje" min="1" value="{{ p.puntos_para_canje or '' }}" placeholder="500">
+      </label>
+      <button type="submit">Guardar</button>
+    </form>
+    {% else %}
+    <p class="text-sm py-6 text-center" style="color:var(--col-muted)">Crea productos activos para configurar canjes.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-5 mb-6">
+
+  {# ── AJUSTE MANUAL ── #}
+  <div class="ox-card p-5">
+    <h2 class="font-bold text-white mb-4 flex items-center gap-2">
+      <span class="text-lg">✏️</span> Ajuste manual de puntos
+    </h2>
+    <form method="POST" action="{{ url_for('marketing.ajustar_puntos') }}" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="ox-field">
+        <label class="ox-label">Cliente</label>
+        <select name="cliente_id" required class="ox-input">
+          <option value="">— seleccionar cliente —</option>
+          {% for c in clientes %}
+          <option value="{{ c.id }}">{{ c.nombre }} · {{ c.puntos }} pts</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="ox-field">
+          <label class="ox-label">Cantidad</label>
+          <input type="number" name="cantidad" required class="ox-input"
+                 placeholder="+50 o -20">
+          <p class="text-xs mt-1" style="color:var(--col-faint)">+ sumar · − restar</p>
+        </div>
+        <div class="ox-field">
+          <label class="ox-label">Descripción</label>
+          <input type="text" name="descripcion" class="ox-input" value="Ajuste manual">
+        </div>
+      </div>
+      <button type="submit" class="ox-btn-primary w-full">Aplicar ajuste</button>
+    </form>
+  </div>
+
+  {# ── TOP 10 CLIENTES ── #}
+  <div class="ox-card p-5">
+    <h2 class="font-bold text-white mb-4 flex items-center gap-2">
+      <span class="text-lg">🏆</span> Top 10 clientes
+    </h2>
+    {% if top_clientes %}
+    <div class="space-y-2">
+      {% for c in top_clientes %}
+      <div class="flex items-center justify-between p-2 rounded-lg" style="background:var(--col-elevated)">
+        <div class="flex items-center gap-3">
+          <span class="text-xs font-black w-5 text-center" style="color:var(--col-muted)">{{ loop.index }}</span>
+          <div>
+            <p class="text-sm font-semibold text-white">{{ c.nombre }}</p>
+            <p class="text-xs" style="color:var(--col-faint)">{{ c.email }}</p>
+          </div>
+        </div>
+        <span class="text-sm font-black px-3 py-1 rounded-full"
+              style="background:rgba(168,85,247,.15);color:#C084FC;border:1px solid rgba(168,85,247,.25)">
+          {{ c.puntos }} pts
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-8" style="color:var(--col-faint)">
+      <p class="text-2xl mb-2">🎯</p>
+      <p class="text-sm">Sin clientes con puntos aún</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── ÚLTIMOS MOVIMIENTOS ── #}
+<div class="ox-card p-5">
+  <h2 class="font-bold text-white mb-4 flex items-center gap-2">
+    <span class="text-lg">📋</span> Últimos 50 movimientos
+  </h2>
+  {% if ultimos_movs %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr style="border-bottom:1px solid var(--col-border)">
+          <th class="text-left py-2 px-3 text-xs font-bold uppercase tracking-wide" style="color:var(--col-muted)">Cliente</th>
+          <th class="text-left py-2 px-3 text-xs font-bold uppercase tracking-wide" style="color:var(--col-muted)">Tipo</th>
+          <th class="text-right py-2 px-3 text-xs font-bold uppercase tracking-wide" style="color:var(--col-muted)">Cantidad</th>
+          <th class="text-left py-2 px-3 text-xs font-bold uppercase tracking-wide hidden md:table-cell" style="color:var(--col-muted)">Descripción</th>
+          <th class="text-left py-2 px-3 text-xs font-bold uppercase tracking-wide hidden sm:table-cell" style="color:var(--col-muted)">Fecha</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in ultimos_movs %}
+        <tr style="border-bottom:1px solid rgba(255,255,255,.04)" class="hover:bg-white/2 transition-colors">
+          <td class="py-2 px-3 font-semibold text-white">{{ m.cliente.nombre if m.cliente else '—' }}</td>
+          <td class="py-2 px-3">
+            {% if m.tipo == 'ganado' %}
+              <span class="text-xs px-2 py-0.5 rounded-full font-bold"
+                    style="background:rgba(94,240,151,.12);color:#5EF097;border:1px solid rgba(94,240,151,.2)">+ganados</span>
+            {% elif m.tipo == 'canjeado' %}
+              <span class="text-xs px-2 py-0.5 rounded-full font-bold"
+                    style="background:rgba(255,149,0,.12);color:#FF9500;border:1px solid rgba(255,149,0,.2)">−canjeados</span>
+            {% else %}
+              <span class="text-xs px-2 py-0.5 rounded-full font-bold"
+                    style="background:rgba(255,255,255,.08);color:var(--col-muted)">{{ m.tipo }}</span>
+            {% endif %}
+          </td>
+          <td class="py-2 px-3 text-right font-black"
+              style="color:{{ '#5EF097' if m.cantidad > 0 else '#FF6B6B' }}">
+            {{ '+' if m.cantidad > 0 else '' }}{{ m.cantidad }}
+          </td>
+          <td class="py-2 px-3 hidden md:table-cell" style="color:var(--col-muted)">{{ m.descripcion or '—' }}</td>
+          <td class="py-2 px-3 hidden sm:table-cell text-xs" style="color:var(--col-faint)">
+            {{ m.creado_en.strftime('%d/%m/%Y %H:%M') }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-8" style="color:var(--col-faint)">
+    <p class="text-2xl mb-2">📊</p>
+    <p class="text-sm">Sin movimientos registrados</p>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+let redeemOnlyActive=false;
+function filterRedeemProducts(value){
+  const q=(value||'').trim().toLowerCase();
+  document.querySelectorAll('#redeem-list .adm-redeem-row').forEach(row=>{
+    row.hidden=(q&&!row.dataset.name.includes(q))||(redeemOnlyActive&&row.dataset.active!=='1');
+  });
+}
+function toggleRedeemActive(){
+  redeemOnlyActive=!redeemOnlyActive;
+  const button=document.getElementById('redeem-active-filter');
+  button.classList.toggle('active',redeemOnlyActive);
+  button.textContent=redeemOnlyActive?'Mostrar todos':'Mostrar solo activos';
+  filterRedeemProducts(document.getElementById('redeem-search').value);
+}
+</script>
+{% endblock %}

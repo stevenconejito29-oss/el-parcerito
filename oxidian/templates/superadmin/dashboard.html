@@ -1,0 +1,245 @@
+{% extends "admin_base.html" %}
+{% block title %}Super Admin — Panel de control{% endblock %}
+{% block content %}
+
+<div class="sa-wrap">
+
+{# ── CABECERA ── #}
+<div class="sa-header">
+  <div>
+    <p class="sa-eyebrow">Super Administración</p>
+    <h1 class="sa-title">Panel de control</h1>
+  </div>
+  <div class="sa-header-actions">
+    <a href="{{ url_for('admin.dashboard') }}" class="ox-btn-ghost text-sm">Panel Admin →</a>
+    <a href="{{ url_for('public.index') }}" class="ox-btn-ghost text-sm" target="_blank">Ver tienda</a>
+  </div>
+</div>
+
+{# ── KPIs PRINCIPALES ── #}
+<div class="sa-kpi-row">
+  <div class="sa-kpi sa-kpi-green">
+    <span class="sa-kpi-icon">💰</span>
+    <p class="sa-kpi-val">€{{ "%.2f"|format(ventas_hoy) }}</p>
+    <p class="sa-kpi-lbl">Ventas hoy</p>
+    <p class="sa-kpi-sub">Ayer: €{{ "%.2f"|format(ventas_ayer) }}</p>
+  </div>
+  <div class="sa-kpi {{ 'sa-kpi-amber' if pagos_pendientes > 0 else 'sa-kpi-neutral' }}">
+    <span class="sa-kpi-icon">💸</span>
+    <p class="sa-kpi-val">€{{ "%.2f"|format(pagos_pendientes) }}</p>
+    <p class="sa-kpi-lbl">Pagos equipo pendientes</p>
+    <p class="sa-kpi-sub">{{ 'Revisar en Pagos equipo' if pagos_pendientes > 0 else 'Al día ✓' }}</p>
+  </div>
+  <a href="{{ url_for('admin.cola') }}" class="sa-kpi {{ 'sa-kpi-red' if pedidos_sin_asignar > 0 else 'sa-kpi-neutral' }}" style="text-decoration:none">
+    <span class="sa-kpi-icon">⚡</span>
+    <p class="sa-kpi-val">{{ pedidos_sin_asignar }}</p>
+    <p class="sa-kpi-lbl">Pedidos sin asignar</p>
+    <p class="sa-kpi-sub">Cocina {{ pedidos_sin_preparador }} · Reparto {{ pedidos_sin_repartidor }}</p>
+  </a>
+  <div class="sa-kpi {{ 'sa-kpi-green' if saldo_total >= 0 else 'sa-kpi-red' }}">
+    <span class="sa-kpi-icon">📊</span>
+    <p class="sa-kpi-val">€{{ "%.0f"|format(saldo_total) }}</p>
+    <p class="sa-kpi-lbl">Saldo histórico</p>
+    <p class="sa-kpi-sub">{{ total_clientes }} clientes · {{ total_staff }} staff</p>
+  </div>
+</div>
+
+{# ── ACCESOS RÁPIDOS ── #}
+<div class="sa-section-label">Accesos rápidos</div>
+<div class="sa-quick-grid">
+  <a href="{{ url_for('superadmin.config') }}" class="sa-quick">
+    <span class="sa-quick-icon">⚙️</span>
+    <p class="sa-quick-name">Configuración</p>
+    <p class="sa-quick-sub">Marca, tienda, integraciones</p>
+  </a>
+  <a href="{{ url_for('superadmin.admins') }}" class="sa-quick">
+    <span class="sa-quick-icon">👑</span>
+    <p class="sa-quick-name">Admins & Permisos</p>
+    <p class="sa-quick-sub">Crea y gestiona admins</p>
+  </a>
+  <a href="{{ url_for('superadmin.zonas') }}" class="sa-quick">
+    <span class="sa-quick-icon">📍</span>
+    <p class="sa-quick-name">Zonas de entrega</p>
+    <p class="sa-quick-sub">Precios y cobertura</p>
+  </a>
+  <a href="{{ url_for('superadmin.pl') }}" class="sa-quick">
+    <span class="sa-quick-icon">📈</span>
+    <p class="sa-quick-name">P&L / Finanzas</p>
+    <p class="sa-quick-sub">Pérdidas y ganancias</p>
+  </a>
+  <a href="{{ url_for('superadmin.chatbot') }}" class="sa-quick">
+    <span class="sa-quick-icon">💬</span>
+    <p class="sa-quick-name">Chatbot WhatsApp</p>
+    <p class="sa-quick-sub">Estado, QR y configuración</p>
+  </a>
+  <a href="{{ url_for('superadmin.audit') }}" class="sa-quick">
+    <span class="sa-quick-icon">🔍</span>
+    <p class="sa-quick-name">Auditoría</p>
+    <p class="sa-quick-sub">Registro de cambios</p>
+  </a>
+</div>
+
+{# ── ESTADO OPERATIVO ── #}
+<div class="sa-section-label">Estado del sistema</div>
+<div class="sa-status-row">
+
+  {# Chatbot #}
+  <div class="sa-status-card">
+    <div class="sa-status-head">
+      <span class="sa-status-dot {{ 'sa-dot-on' if bot_status.ok and bot_status.connected else 'sa-dot-off' }}"></span>
+      <h3 class="sa-status-title">Chatbot WhatsApp</h3>
+      <a href="{{ url_for('superadmin.chatbot') }}" class="sa-status-link">Gestionar →</a>
+    </div>
+    {% if bot_status.ok %}
+      <p class="sa-status-val">
+        {{ 'Conectado' if bot_status.connected else 'Sin conectar' }} ·
+        Bot <span style="color:{{ '#5EF097' if bot_status.botEnabled else '#FFAB00' }}">{{ 'activo' if bot_status.botEnabled else 'pausado' }}</span>
+      </p>
+      <p class="sa-status-meta">Sesiones: {{ bot_status.activeSessions or 0 }} · Pedidos hoy: {{ bot_status.pedidosHoy or 0 }}</p>
+      {% if bot_status.qrDataUrl %}
+      <div class="mt-2">
+        <p class="text-xs font-bold mb-1" style="color:#FFAB00">⚠️ QR pendiente de escanear</p>
+        <img src="{{ bot_status.qrDataUrl }}" alt="QR"
+             class="rounded-lg block" style="width:120px;background:#fff;padding:.3rem">
+      </div>
+      {% endif %}
+      <div class="sa-status-actions">
+        <form method="POST" action="{{ url_for('superadmin.chatbot_power') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="enabled" value="{{ '0' if bot_status.botEnabled else '1' }}">
+          <button class="sa-mini-btn" type="submit">{{ '⏸ Pausar' if bot_status.botEnabled else '▶ Activar' }}</button>
+        </form>
+        <form method="POST" action="{{ url_for('superadmin.chatbot_reset') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="sa-mini-btn" type="submit">🔄 Reiniciar</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="sa-status-val" style="color:#FF6B6B">Bot no disponible</p>
+      <p class="sa-status-meta">{{ bot_status.error or 'Sin respuesta del servicio' }}</p>
+    {% endif %}
+  </div>
+
+  {# Marca #}
+  <div class="sa-status-card">
+    <div class="sa-status-head">
+      <span class="sa-status-dot sa-dot-neutral"></span>
+      <h3 class="sa-status-title">Marca & Tienda</h3>
+      <a href="{{ url_for('superadmin.config') }}" class="sa-status-link">Editar →</a>
+    </div>
+    <div class="flex items-center gap-3 mt-2">
+      {% if brand_config.logo_url %}
+      <img src="{{ brand_config.logo_url }}" alt="logo"
+           class="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+           style="border:1px solid var(--col-border)">
+      {% else %}
+      <div class="w-10 h-10 rounded-lg flex items-center justify-center text-xl flex-shrink-0"
+           style="background:var(--col-elevated);border:1px solid var(--col-border)">🥟</div>
+      {% endif %}
+      <div>
+        <p class="font-bold text-white text-sm">{{ brand_config.nombre or '(sin nombre)' }}</p>
+        <p class="sa-status-meta mt-0.5">{{ brand_config.telefono or 'Sin teléfono' }}</p>
+      </div>
+    </div>
+    <div class="flex gap-2 mt-3">
+      {% for color in [brand_config.color_primario, brand_config.color_secundario, brand_config.color_acento] %}
+      <div class="w-6 h-6 rounded-md flex-shrink-0" style="background:{{ color }};border:1px solid rgba(255,255,255,.15)"></div>
+      {% endfor %}
+      <span class="text-xs self-center" style="color:var(--col-faint)">Colores de marca</span>
+    </div>
+  </div>
+
+  {# Puntos #}
+  <div class="sa-status-card">
+    <div class="sa-status-head">
+      <span class="sa-status-dot sa-dot-neutral" style="background:#a78bfa;box-shadow:0 0 0 4px rgba(167,139,250,.12)"></span>
+      <h3 class="sa-status-title">Puntos & Fidelización</h3>
+      <a href="{{ url_for('marketing.puntos') }}" class="sa-status-link">Ver detalle →</a>
+    </div>
+    <div class="sa-points-row">
+      <div><p class="sa-points-val">{{ puntos_emitidos }}</p><p class="sa-status-meta">Emitidos</p></div>
+      <div><p class="sa-points-val" style="color:#FFAB00">{{ puntos_canjeados }}</p><p class="sa-status-meta">Canjeados</p></div>
+      <div><p class="sa-points-val" style="color:#a78bfa">{{ clientes_con_puntos }}</p><p class="sa-status-meta">Clientes activos</p></div>
+    </div>
+  </div>
+
+</div>
+
+{% if config.get('ALLOW_DEMO_RESET') %}
+<details class="ox-card p-4 mt-5" style="border-color:rgba(255,59,48,.2)">
+  <summary class="font-bold text-white cursor-pointer flex items-center gap-2 select-none text-sm">
+    <span class="text-red-400">⚠️</span> Herramientas de mantenimiento
+  </summary>
+  <div class="mt-3 flex flex-wrap gap-2">
+    <form method="POST" action="{{ url_for('superadmin.reset_demo') }}"
+          onsubmit="var v=prompt('Escribe RESET para confirmar:');if(v!=='RESET'){alert('Cancelado.');return false;}this.querySelector('[name=confirmacion]').value=v;return true;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="confirmacion" value="">
+      <button type="submit" class="text-xs px-3 py-1.5 rounded-lg font-semibold"
+              style="background:rgba(255,59,48,.1);color:#FF6B6B;border:1px solid rgba(255,59,48,.2)">
+        🗑️ Reiniciar datos demo
+      </button>
+    </form>
+  </div>
+</details>
+{% endif %}
+
+</div>
+
+<style>
+.sa-wrap { max-width:1100px; }
+.sa-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
+.sa-eyebrow { font-size:.68rem; font-weight:900; text-transform:uppercase; letter-spacing:.07em; color:rgba(192,132,252,.7); margin-bottom:.2rem; }
+.sa-title { font-size:1.6rem; font-weight:950; color:#fff; }
+.sa-header-actions { display:flex; gap:.5rem; flex-wrap:wrap; }
+
+/* KPIs */
+.sa-kpi-row { display:grid; grid-template-columns:repeat(4,1fr); gap:.75rem; margin-bottom:1.5rem; }
+@media(max-width:760px){.sa-kpi-row{grid-template-columns:1fr 1fr;}}
+@media(max-width:420px){.sa-kpi-row{grid-template-columns:1fr;}}
+.sa-kpi { background:var(--col-surface); border:1px solid var(--col-border); border-radius:.9rem; padding:1rem 1.1rem; }
+.sa-kpi-green { border-color:rgba(94,240,151,.2); background:rgba(94,240,151,.04); }
+.sa-kpi-red   { border-color:rgba(255,107,107,.25); background:rgba(255,107,107,.04); }
+.sa-kpi-amber { border-color:rgba(255,171,0,.25); background:rgba(255,171,0,.04); }
+.sa-kpi-neutral { border-color:var(--col-border); }
+.sa-kpi-icon { font-size:1.2rem; display:block; margin-bottom:.3rem; }
+.sa-kpi-val  { font-size:1.55rem; font-weight:950; color:#fff; }
+.sa-kpi-green .sa-kpi-val { color:#5EF097; }
+.sa-kpi-red   .sa-kpi-val { color:#FF6B6B; }
+.sa-kpi-amber .sa-kpi-val { color:#FFAB00; }
+.sa-kpi-lbl  { font-size:.72rem; font-weight:700; color:var(--col-muted); margin-top:.15rem; }
+.sa-kpi-sub  { font-size:.65rem; color:var(--col-faint); margin-top:.2rem; }
+
+/* Quick access */
+.sa-section-label { font-size:.68rem; font-weight:900; text-transform:uppercase; letter-spacing:.06em; color:var(--col-muted); margin-bottom:.6rem; margin-top:1.5rem; }
+.sa-quick-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:.65rem; margin-bottom:1.5rem; }
+@media(max-width:600px){.sa-quick-grid{grid-template-columns:1fr 1fr;}}
+.sa-quick { display:block; text-decoration:none; background:var(--col-surface); border:1px solid var(--col-border); border-radius:.85rem; padding:.9rem 1rem; transition:border-color .15s,background .15s; }
+.sa-quick:hover { background:var(--col-elevated); border-color:rgba(255,171,0,.3); }
+.sa-quick-icon { font-size:1.4rem; display:block; margin-bottom:.35rem; }
+.sa-quick-name { font-size:.85rem; font-weight:800; color:#fff; }
+.sa-quick-sub  { font-size:.7rem; color:var(--col-muted); margin-top:.15rem; }
+
+/* Status cards */
+.sa-status-row { display:grid; grid-template-columns:repeat(3,1fr); gap:.75rem; }
+@media(max-width:760px){.sa-status-row{grid-template-columns:1fr;}}
+.sa-status-card { background:var(--col-surface); border:1px solid var(--col-border); border-radius:.875rem; padding:1rem 1.1rem; }
+.sa-status-head { display:flex; align-items:center; gap:.55rem; margin-bottom:.6rem; }
+.sa-status-dot  { width:.6rem; height:.6rem; border-radius:999px; flex-shrink:0; }
+.sa-dot-on      { background:#5EF097; box-shadow:0 0 0 4px rgba(94,240,151,.14); }
+.sa-dot-off     { background:#FF6B6B; box-shadow:0 0 0 4px rgba(255,107,107,.12); }
+.sa-dot-neutral { background:rgba(255,255,255,.3); }
+.sa-status-title{ font-size:.8rem; font-weight:800; color:#fff; flex:1; }
+.sa-status-link { font-size:.7rem; color:var(--col-gold,#FFAB00); text-decoration:none; white-space:nowrap; }
+.sa-status-val  { font-size:.82rem; font-weight:600; color:var(--col-text); }
+.sa-status-meta { font-size:.68rem; color:var(--col-faint); margin-top:.15rem; }
+.sa-status-actions { display:flex; gap:.4rem; margin-top:.75rem; flex-wrap:wrap; }
+.sa-mini-btn { font-size:.72rem; font-weight:700; padding:.35rem .7rem; border-radius:.5rem; border:1px solid var(--col-border); background:var(--col-elevated); color:var(--col-text); cursor:pointer; }
+.sa-mini-btn:hover { border-color:rgba(255,171,0,.3); }
+
+/* Points */
+.sa-points-row { display:flex; gap:1.2rem; margin-top:.75rem; flex-wrap:wrap; }
+.sa-points-val  { font-size:1.2rem; font-weight:900; color:#fff; }
+</style>
+
+{% endblock %}

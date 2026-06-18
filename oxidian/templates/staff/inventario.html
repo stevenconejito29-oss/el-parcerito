@@ -1,0 +1,142 @@
+{% extends "admin_base.html" %}
+{% block title %}Inventario{% endblock %}
+{% block content %}
+
+{% set alertas = lotes|selectattr('esta_en_alerta')|list %}
+{% set caducados = lotes|selectattr('esta_caducado')|list %}
+
+<div class="work-area staff-board">
+
+{% if caducados %}
+<div style="background:rgba(239,68,68,.12);border:1.5px solid rgba(239,68,68,.35);border-radius:14px;padding:.85rem 1rem;margin-bottom:1.25rem;display:flex;align-items:center;gap:.75rem">
+  <span style="font-size:1.4rem">🚨</span>
+  <div>
+    <p style="color:#FCA5A5;font-weight:900;font-size:.92rem">{{ caducados|length }} lote{{ 's' if caducados|length != 1 else '' }} CADUCADO{{ 'S' if caducados|length != 1 else '' }} — retirar de inmediato</p>
+    <p style="color:#F87171;font-size:.78rem;margin-top:.2rem">
+      {% for l in caducados %}{{ l.producto.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<section class="work-hero">
+  <div>
+    <span class="work-eyebrow">Control de stock</span>
+    <h1 class="work-title">Inventario</h1>
+    <p class="work-subtitle">Registra entradas, vigila caducidades y mantén trazabilidad por lote antes de que afecte la venta.</p>
+  </div>
+  <div class="work-actions-top">
+    <span class="work-pill">{{ lotes|length }} lotes</span>
+    <span class="work-pill {% if alertas %}is-on{% endif %}">{{ alertas|length }} alertas</span>
+  </div>
+</section>
+
+<div class="work-kpis">
+  <div class="work-panel work-kpi">
+    <span>Lotes activos</span>
+    <strong>{{ lotes|length }}</strong>
+    <small>Registros disponibles</small>
+  </div>
+  <div class="work-panel work-kpi">
+    <span>Por revisar</span>
+    <strong>{{ alertas|length }}</strong>
+    <small>Próximos a caducar</small>
+  </div>
+  <div class="work-panel work-kpi">
+    <span>Caducados</span>
+    <strong>{{ caducados|length }}</strong>
+    <small>Retirar de operación</small>
+  </div>
+</div>
+
+<!-- Registrar entrada -->
+<div class="work-panel mb-5">
+  <div class="px-4 py-3 border-b border-white/8 flex items-center gap-2">
+    <span style="font-size:1.1rem">📦</span>
+    <p class="font-bold text-gray-200">Registrar entrada de stock</p>
+  </div>
+  <div class="px-4 pb-4 pt-4">
+    <form method="POST" action="{{ url_for('staff.registrar_entrada') }}" class="grid gap-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="work-form-grid">
+        <div>
+          <label class="ox-label">Producto *</label>
+          <select name="producto_id" required class="ox-select">
+            <option value="">Selecciona…</option>
+            {% for p in productos %}<option value="{{ p.id }}">{{ p.nombre }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="ox-label">Cantidad *</label>
+          <input type="number" name="cantidad" min="1" placeholder="0" required class="ox-input">
+        </div>
+      </div>
+      <div class="work-form-grid">
+        <div>
+          <label class="ox-label">Nº Lote</label>
+          <input type="text" name="lote" placeholder="LOT-001" class="ox-input">
+        </div>
+        <div>
+          <label class="ox-label">Fecha caducidad</label>
+          <input type="date" name="fecha_caducidad" class="ox-input">
+        </div>
+      </div>
+      <div>
+        <label class="ox-label">Ubicación</label>
+        <input type="text" name="ubicacion" placeholder="ej. Nevera 1" class="ox-input">
+      </div>
+      <button type="submit" class="work-btn work-btn-primary">Registrar entrada</button>
+    </form>
+  </div>
+</div>
+
+<!-- Tabla inventario -->
+<div class="work-panel work-table-card">
+  <div class="p-3 border-b border-white/8 flex items-center justify-between">
+    <p class="text-sm font-bold text-gray-300">Stock actual</p>
+  </div>
+  {% if lotes %}
+  <div class="ox-table-wrap">
+    <table class="ox-table">
+      <thead>
+        <tr>
+          <th>Producto</th>
+          <th>Cant.</th>
+          <th>Lote</th>
+          <th>Caducidad</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for lote in lotes %}
+        <tr class="{% if lote.esta_caducado %}bg-red-900/20{% elif lote.esta_en_alerta %}bg-yellow-900/12{% endif %}">
+          <td class="font-medium {% if lote.esta_caducado %}text-red-300{% endif %}">
+            {{ lote.producto.nombre }}
+            {% if lote.esta_caducado %}<span style="font-size:.7rem;font-weight:900;color:#FCA5A5;display:block">⛔ RETIRAR</span>{% endif %}
+          </td>
+          <td class="text-center font-bold text-white">{{ lote.cantidad }}</td>
+          <td class="text-gray-500 text-xs">{{ lote.lote or '—' }}</td>
+          <td class="text-xs {% if lote.esta_caducado %}text-red-400 font-bold{% elif lote.esta_en_alerta %}text-yellow-400 font-bold{% endif %}">
+            {{ lote.fecha_caducidad.strftime('%d/%m/%Y') if lote.fecha_caducidad else '—' }}
+          </td>
+          <td>
+            {% if lote.esta_caducado %}
+              <span class="ox-badge ox-badge-hot" style="font-size:.75rem">🚨 CADUCADO</span>
+            {% elif lote.esta_en_alerta %}
+              <span style="color:#FFAB00;font-size:.78rem;font-weight:900">⚠ {{ lote.dias_para_caducar }}d</span>
+            {% else %}
+              <span style="color:#5EF097;font-size:.78rem;font-weight:900">✓ OK</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="work-empty">Sin lotes de stock registrados.</p>
+  {% endif %}
+</div>
+</div>
+
+{% endblock %}

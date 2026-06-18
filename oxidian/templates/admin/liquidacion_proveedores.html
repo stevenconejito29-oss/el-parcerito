@@ -1,0 +1,157 @@
+{% extends "admin_base.html" %}
+{% block title %}Liquidación de Proveedores{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+  <div>
+    <h1 class="text-2xl font-black text-white">💸 Liquidación de Proveedores</h1>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">Calcula automáticamente lo que debes a cada bar por el período seleccionado.</p>
+  </div>
+</div>
+
+<!-- Selector de fechas -->
+<form method="GET" class="ox-card p-4 mb-5 flex flex-wrap gap-3 items-end">
+  <div>
+    <label class="liq-label">Fecha inicio</label>
+    <input type="date" name="fecha_inicio" value="{{ fecha_inicio.strftime('%Y-%m-%d') }}" class="liq-input">
+  </div>
+  <div>
+    <label class="liq-label">Fecha fin</label>
+    <input type="date" name="fecha_fin" value="{{ fecha_fin.strftime('%Y-%m-%d') }}" class="liq-input">
+  </div>
+  <button type="submit" class="ox-btn-primary">Calcular</button>
+</form>
+
+<!-- Resumen ejecutivo -->
+<div class="grid md:grid-cols-3 gap-3 mb-5">
+  <div class="ox-card p-4 text-center">
+    <p class="text-xs font-bold uppercase" style="color:var(--col-muted)">Ingresos brutos</p>
+    <p class="text-2xl font-black text-yellow-400">€{{ "%.2f"|format(total_ingresos|float) }}</p>
+    <p class="text-xs" style="color:var(--col-muted)">Total pedidos entregados en período</p>
+  </div>
+  <div class="ox-card p-4 text-center" style="border-color:rgba(239,68,68,.3)">
+    <p class="text-xs font-bold uppercase" style="color:var(--col-muted)">Costo proveedores</p>
+    <p class="text-2xl font-black text-red-400">€{{ "%.2f"|format(total_costo_proveedores|float) }}</p>
+    <p class="text-xs" style="color:var(--col-muted)">Total a pagar a bares</p>
+  </div>
+  <div class="ox-card p-4 text-center" style="border-color:rgba(43,147,72,.3)">
+    <p class="text-xs font-bold uppercase" style="color:var(--col-muted)">Margen bruto estimado</p>
+    <p class="text-2xl font-black" style="color:#2b9348">€{{ "%.2f"|format(margen_neto|float) }}</p>
+    <p class="text-xs" style="color:var(--col-muted)">Ingresos − coste proveedores (sin nóminas)</p>
+  </div>
+</div>
+
+{% if not por_proveedor %}
+<div class="ox-card p-6 text-center">
+  <p class="text-gray-400">No hay pedidos con productos de proveedor en este período.</p>
+  <p class="text-xs mt-1" style="color:var(--col-muted)">Asegúrate de que los productos tengan un proveedor asignado y precio de costo.</p>
+</div>
+{% else %}
+
+<!-- Detalle por proveedor -->
+{% for prov_id, bucket in por_proveedor.items() %}
+<div class="ox-card mb-4">
+  <div class="flex items-center justify-between p-4 border-b" style="border-color:var(--col-border)">
+    <div>
+      <p class="font-black text-white text-lg">
+        {{ bucket.proveedor.nombre if bucket.proveedor else 'Proveedor #' ~ prov_id }}
+      </p>
+      {% if bucket.proveedor and bucket.proveedor.email %}
+      <p class="text-xs" style="color:var(--col-muted)">{{ bucket.proveedor.email }}</p>
+      {% endif %}
+    </div>
+    <div class="text-right">
+      <p class="text-xs font-bold uppercase" style="color:var(--col-muted)">Total a pagar</p>
+      <p class="text-2xl font-black text-red-400">€{{ "%.2f"|format(bucket.total|float) }}</p>
+    </div>
+  </div>
+
+  <!-- Tabla de líneas -->
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs uppercase font-bold" style="color:var(--col-muted)">
+          <th class="p-3 text-left">Pedido</th>
+          <th class="p-3 text-left">Producto</th>
+          <th class="p-3 text-right">Cant.</th>
+          <th class="p-3 text-right">Costo unit.</th>
+          <th class="p-3 text-right">Subtotal</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for linea in bucket.lineas %}
+        <tr style="border-top:1px solid var(--col-border)">
+          <td class="p-3 font-mono text-xs" style="color:var(--col-muted)">{{ linea.pedido.numero_pedido }}</td>
+          <td class="p-3 font-semibold">{{ linea.nombre }}</td>
+          <td class="p-3 text-right">{{ linea.cantidad }}</td>
+          <td class="p-3 text-right" style="color:var(--col-muted)">€{{ "%.2f"|format(linea.costo_unit|float) }}</td>
+          <td class="p-3 text-right font-bold">€{{ "%.2f"|format(linea.subtotal|float) }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="p-3 text-center" style="color:var(--col-muted)">Sin líneas con costo registrado.</td></tr>
+      {% endfor %}
+      {% if bucket.sin_costo %}
+        {% for sc in bucket.sin_costo %}
+        <tr style="border-top:1px solid var(--col-border);background:rgba(251,191,36,.04)">
+          <td class="p-3 font-mono text-xs" style="color:var(--col-muted)">{{ sc.pedido.numero_pedido }}</td>
+          <td class="p-3" style="color:#f59e0b">⚠ {{ sc.nombre }}</td>
+          <td class="p-3 text-right">{{ sc.cantidad }}</td>
+          <td colspan="2" class="p-3 text-right text-xs" style="color:#f59e0b">Sin precio de costo — revisar producto</td>
+        </tr>
+        {% endfor %}
+      {% endif %}
+      </tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--col-border);background:var(--col-elevated)">
+          <td colspan="4" class="p-3 font-black text-right">TOTAL A PAGAR</td>
+          <td class="p-3 text-right font-black text-red-400">€{{ "%.2f"|format(bucket.total|float) }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <!-- Botón rápido de registro de pago -->
+  <div class="p-4 border-t" style="border-color:var(--col-border)">
+    <form method="POST" class="flex flex-wrap gap-3 items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="accion" value="registrar_liquidacion">
+      <input type="hidden" name="fecha_inicio" value="{{ fecha_inicio.strftime('%Y-%m-%d') }}">
+      <input type="hidden" name="fecha_fin"    value="{{ fecha_fin.strftime('%Y-%m-%d') }}">
+      <input type="hidden" name="prov_liquidar_id" value="{{ prov_id }}">
+      <div>
+        <label class="liq-label">Monto a registrar (€)</label>
+        <input type="number" name="prov_liquidar_monto" step="0.01" min="0.01"
+               value="{{ "%.2f"|format(bucket.total|float) }}" class="liq-input" style="max-width:8rem">
+      </div>
+      <div class="flex-1">
+        <label class="liq-label">Concepto</label>
+        <input type="text" name="prov_liquidar_concepto"
+               value="Liquidación {{ fecha_inicio.strftime('%d/%m') }}–{{ fecha_fin.strftime('%d/%m/%Y') }}"
+               class="liq-input">
+      </div>
+      <button type="submit" class="ox-btn-primary">Registrar pago</button>
+    </form>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if proveedores_activos %}
+<div class="ox-card mt-5">
+  <div class="p-4 border-b" style="border-color:var(--col-border)">
+    <h2 class="font-black text-white">📋 Liquidaciones registradas (todos los períodos)</h2>
+  </div>
+  <div class="overflow-x-auto">
+    <p class="p-4 text-sm" style="color:var(--col-muted)">
+      Consulta el historial completo en
+      <a href="{{ url_for('admin.pagos_staff', tipo='liquidacion_proveedor') }}" style="color:var(--col-gold)">Pagos equipo → Liquidaciones bar</a>.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<style>
+.liq-label { display:block; font-size:.7rem; font-weight:800; text-transform:uppercase; color:var(--col-muted); margin-bottom:.3rem; }
+.liq-input { background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:var(--col-text); font-size:.88rem; }
+</style>
+{% endblock %}

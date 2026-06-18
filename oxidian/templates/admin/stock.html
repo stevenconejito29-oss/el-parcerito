@@ -1,0 +1,129 @@
+{% extends "admin_base.html" %}
+{% block title %}Stock — Admin{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-black text-white">📦 Stock</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Control por producto, lote, caducidad y ubicación</p>
+  </div>
+</div>
+
+<div class="grid md:grid-cols-3 gap-3 mb-5">
+  {% set total_unidades = lotes|sum(attribute='cantidad') %}
+  {% set lotes_alerta = lotes|selectattr('esta_en_alerta')|list %}
+  {% set lotes_caducados = lotes|selectattr('esta_caducado')|list %}
+  <div class="ox-kpi">
+    <p class="ox-kpi-label">Unidades totales</p>
+    <p class="ox-kpi-value">{{ total_unidades }}</p>
+  </div>
+  <div class="ox-kpi ox-kpi-yellow">
+    <p class="ox-kpi-label">Lotes por vencer</p>
+    <p class="ox-kpi-value">{{ lotes_alerta|length }}</p>
+  </div>
+  <div class="ox-kpi ox-kpi-red">
+    <p class="ox-kpi-label">Lotes caducados</p>
+    <p class="ox-kpi-value">{{ lotes_caducados|length }}</p>
+  </div>
+</div>
+
+<div class="ox-card p-4 mb-5">
+  <h2 class="font-black text-white mb-1">➕ Registrar entrada de stock</h2>
+  <p class="text-xs mb-4" style="color:var(--col-muted)">Registra un lote por producto. El sistema descuenta primero los lotes con caducidad más cercana (FEFO).</p>
+  <form method="POST" action="{{ url_for('admin.agregar_stock') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+      <div class="sm:col-span-2 lg:col-span-1">
+        <label class="st-label">Producto *</label>
+        <select name="producto_id" required class="st-input">
+          <option value="">— Seleccionar producto —</option>
+          {% for p in productos %}
+          <option value="{{ p.id }}">{{ p.nombre }} ({{ p.stock_total }} uds)</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="st-label">Cantidad *</label>
+        <input type="number" name="cantidad" min="1" required placeholder="Ej: 50" class="st-input">
+      </div>
+      <div>
+        <label class="st-label">Nº Lote</label>
+        <input type="text" name="lote" placeholder="Ej: MAY-01" class="st-input">
+      </div>
+      <div>
+        <label class="st-label">Fecha caducidad</label>
+        <input type="date" name="fecha_caducidad" class="st-input">
+      </div>
+      <div>
+        <label class="st-label">Ubicación</label>
+        <input type="text" name="ubicacion" placeholder="Ej: Nevera, Almacén..." class="st-input">
+      </div>
+      <div>
+        <label class="st-label">Días alerta previa</label>
+        <input type="number" name="alerta_dias" min="1" value="{{ alertas_dias }}" class="st-input">
+        <p class="text-xs mt-1" style="color:var(--col-faint)">Avisa {{ alertas_dias }} días antes de caducar</p>
+      </div>
+    </div>
+    <button type="submit" class="ox-btn-primary text-sm">✓ Guardar entrada</button>
+  </form>
+</div>
+
+<div class="ox-card overflow-hidden">
+  <div class="p-4 border-b" style="border-color:var(--col-border)">
+    <h2 class="font-black text-white">Lotes activos</h2>
+    <p class="text-xs" style="color:var(--col-muted)">Ajustar a 0 equivale a retirar o agotar un lote.</p>
+  </div>
+  <div class="ox-table-wrap">
+    <table class="ox-table">
+      <thead>
+        <tr>
+          <th>Producto</th>
+          <th>Lote</th>
+          <th class="text-right">Cantidad</th>
+          <th>Caducidad</th>
+          <th>Ubicación</th>
+          <th>Estado</th>
+          <th>Ajuste</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for lote in lotes %}
+      <tr>
+        <td>
+          <p class="font-semibold text-white">{{ lote.producto.nombre }}</p>
+          <p class="text-xs" style="color:var(--col-faint)">Total producto: {{ lote.producto.stock_total }}</p>
+        </td>
+        <td class="font-mono text-xs">{{ lote.lote or '—' }}</td>
+        <td class="text-right font-bold">{{ lote.cantidad }}</td>
+        <td>{% if lote.fecha_caducidad %}{{ lote.fecha_caducidad.strftime('%d/%m/%Y') }}{% else %}Sin fecha{% endif %}</td>
+        <td>{{ lote.ubicacion or '—' }}</td>
+        <td>
+          {% if lote.esta_caducado %}<span class="st-badge st-bad">Caducado</span>
+          {% elif lote.esta_en_alerta %}<span class="st-badge st-warn">Vence en {{ lote.dias_para_caducar }}d</span>
+          {% else %}<span class="st-badge st-ok">OK</span>{% endif %}
+        </td>
+        <td>
+          <form method="POST" action="{{ url_for('admin.ajustar_stock', lote_id=lote.id) }}" class="flex gap-1">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="number" name="cantidad" value="{{ lote.cantidad }}" min="0" class="st-input" style="width:80px">
+            <button type="submit" class="px-2 rounded-lg text-xs font-bold" style="background:var(--col-elevated);border:1px solid var(--col-border)">OK</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-center py-8" style="color:var(--col-muted)">Sin lotes registrados.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<style>
+.st-label { font-size:.72rem; font-weight:700; color:var(--col-muted); display:block; margin-bottom:.25rem; text-transform:uppercase; letter-spacing:.04em; }
+.st-input { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem; }
+.st-badge { font-size:.7rem; font-weight:800; padding:.2rem .5rem; border-radius:999px; }
+.st-ok { background:rgba(52,199,89,.1); color:#5EF097; }
+.st-warn { background:rgba(255,171,0,.12); color:#FFAB00; }
+.st-bad { background:rgba(255,59,48,.12); color:#FF6B6B; }
+</style>
+{% endblock %}

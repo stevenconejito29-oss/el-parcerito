@@ -1,0 +1,94 @@
+{% extends "admin_base.html" %}
+{% block title %}Precios — {{ producto.nombre }}{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-5">
+  <a href="{{ url_for('admin.productos') }}" class="text-sm font-bold px-3 py-1.5 rounded-lg"
+     style="background:var(--col-elevated);border:1px solid var(--col-border);color:var(--col-muted)">← Productos</a>
+  <div>
+    <h1 class="text-xl font-black text-white">💰 {{ producto.nombre }}</h1>
+    <p class="text-xs" style="color:var(--col-muted)">Historial de precios y cambio directo</p>
+  </div>
+</div>
+
+<div class="grid md:grid-cols-2 gap-5 mb-5">
+  {# Precio actual #}
+  <div class="ox-kpi ox-kpi-gold">
+    <p class="ox-kpi-label">Precio actual</p>
+    <p class="ox-kpi-value">€{{ "%.2f"|format(producto.precio) }}</p>
+  </div>
+
+  {# Formulario cambiar precio #}
+  <div class="ox-card p-4">
+    <h2 class="font-black text-white text-sm mb-3">📝 Cambiar precio</h2>
+    <form method="POST" action="{{ url_for('admin.cambiar_precio', producto_id=producto.id) }}"
+          class="space-y-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label class="block text-xs font-bold mb-1" style="color:var(--col-muted)">Nuevo precio (€)</label>
+        <input type="number" name="precio" step="0.01" min="0"
+               value="{{ producto.precio|float }}" required
+               class="w-full" style="background:var(--col-elevated);border:1.5px solid var(--col-border);border-radius:.65rem;padding:.5rem .75rem;color:#fff">
+      </div>
+      <div>
+        <label class="block text-xs font-bold mb-1" style="color:var(--col-muted)">Motivo (opcional)</label>
+        <input type="text" name="motivo" placeholder="Ej: Ajuste de temporada, nuevo proveedor..."
+               class="w-full" style="background:var(--col-elevated);border:1.5px solid var(--col-border);border-radius:.65rem;padding:.5rem .75rem;color:#fff">
+      </div>
+      <button type="submit" class="w-full py-2.5 rounded-xl font-bold text-black text-sm"
+              style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">
+        ✓ Actualizar precio
+      </button>
+    </form>
+  </div>
+</div>
+
+{# Historial #}
+<div class="ox-card overflow-hidden">
+  <div class="p-4 border-b" style="border-color:var(--col-border)">
+    <h2 class="font-black text-white text-sm">🕐 Historial de cambios</h2>
+  </div>
+  {% if historial %}
+  <div class="ox-table-wrap">
+    <table class="ox-table">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th class="text-right">Anterior</th>
+          <th class="text-right">Nuevo</th>
+          <th class="hidden md:table-cell">Cambio</th>
+          <th class="hidden md:table-cell">Por</th>
+          <th class="hidden lg:table-cell">Motivo</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for h in historial %}
+      {% set diff = (h.precio_nuevo|float - (h.precio_anterior|float if h.precio_anterior else 0)) %}
+      <tr>
+        <td class="text-xs" style="color:var(--col-muted)">{{ h.cambiado_en.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td class="text-right font-mono text-sm" style="color:var(--col-faint)">
+          {% if h.precio_anterior %}€{{ "%.2f"|format(h.precio_anterior) }}{% else %}—{% endif %}
+        </td>
+        <td class="text-right font-mono font-bold text-sm" style="color:#FFAB00">€{{ "%.2f"|format(h.precio_nuevo) }}</td>
+        <td class="hidden md:table-cell text-sm font-bold {{ 'text-green-400' if diff > 0 else 'text-red-400' }}">
+          {% if diff > 0 %}+{% endif %}€{{ "%.2f"|format(diff) }}
+          <span class="text-xs font-normal" style="color:var(--col-faint)">
+            ({% if h.precio_anterior %}{{ "%.1f"|format(diff / h.precio_anterior|float * 100) }}%{% endif %})
+          </span>
+        </td>
+        <td class="hidden md:table-cell text-sm" style="color:var(--col-muted)">{{ h.usuario.nombre if h.usuario else '—' }}</td>
+        <td class="hidden lg:table-cell text-xs" style="color:var(--col-faint)">{{ h.motivo or '—' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="p-10 text-center" style="color:var(--col-faint)">
+    <p class="text-3xl mb-2">📋</p>
+    <p>Sin cambios de precio registrados aún</p>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

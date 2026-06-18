@@ -1,0 +1,1089 @@
+{% extends "base.html" %}
+{% block title %}Confirmar Pedido — {{ brand.nombre }}{% endblock %}
+{% block content %}
+
+{% if not brand.tienda_abierta %}
+<div class="rounded-xl p-4 mb-4 flex items-center gap-3"
+     style="background:rgba(255,59,48,.1);border:1.5px solid rgba(255,59,48,.3)">
+  <span style="font-size:1.4rem;flex-shrink:0">🔒</span>
+  <div>
+    <p class="font-bold text-sm" style="color:#FF6B6B">La tienda está cerrada</p>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">
+      {% if brand.tienda_mensaje_cierre %}
+      {{ brand.tienda_mensaje_cierre }}
+      {% else %}
+      Horario: {{ brand.horario_apertura }} – {{ brand.horario_cierre }}.
+      Tu pedido no se podrá enviar hasta que abramos.
+      {% endif %}
+    </p>
+  </div>
+</div>
+{% endif %}
+<div class="checkout-head flex items-center gap-3 mb-5">
+  <a href="{{ url_for('public.ver_carrito') }}"
+     class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition"
+     style="background:var(--col-surface);border:1px solid var(--col-border);color:var(--col-muted)">←</a>
+  <div>
+    <h1 class="text-xl font-black" style="color:var(--col-text)">Confirmar Pedido</h1>
+    <p class="text-xs" style="color:var(--col-muted)">{{ items|length }} producto{{ 's' if items|length != 1 else '' }} · €{{ "%.2f"|format(subtotal) }}</p>
+  </div>
+</div>
+
+<div class="checkout-layout grid md:grid-cols-5 gap-5"
+     data-subtotal-base="{{ subtotal }}"
+     data-points-ratio="{{ puntos_ratio|int }}"
+     data-customer-phone="{{ current_user.telefono if current_user.is_authenticated and current_user.rol == 'cliente' else '' }}">
+
+<!-- ── RESUMEN (derecha desktop, abajo mobile) ── -->
+<div class="md:col-span-2 order-2 md:order-2 md:sticky md:top-20 md:self-start">
+  <details open class="ox-card mb-4">
+    <summary class="p-4 cursor-pointer font-bold text-sm flex items-center justify-between select-none">
+      <span>📋 Resumen del pedido</span>
+      <span class="text-yellow-400 font-extrabold">€{{ "%.2f"|format(subtotal) }}</span>
+    </summary>
+    <div class="px-4 pb-4 border-t" style="border-color:var(--col-border)">
+      <ul class="space-y-2 pt-3">
+        {% for item in items %}
+        <li class="flex items-start justify-between gap-2 text-sm">
+          <div class="min-w-0">
+            <span class="font-semibold">{{ item.producto.nombre }}</span>
+            <span class="ml-1" style="color:var(--col-muted)">× {{ item.cantidad }}</span>
+            {% if item.producto.tipo_entrega in ('programado','encargo') %}
+              <span class="ml-1 text-xs px-1.5 py-0.5 rounded" style="background:rgba(10,132,255,.15);color:#7CC7FF">
+                fecha fija{% if item.producto.fecha_llegada %}: {{ item.producto.fecha_llegada.strftime('%d/%m') }}{% endif %}
+              </span>
+            {% endif %}
+            {% if item.combo_resumen %}
+              <p class="text-xs mt-0.5" style="color:#C084FC">{{ item.combo_resumen }}</p>
+            {% endif %}
+            {% set al_icons = item.producto.alergenos_iconos %}
+            {% if al_icons %}
+              <p class="text-xs mt-0.5" style="color:#FFB340">⚠️ {% for c,i,l in al_icons %}<span title="{{ l }}">{{ i }}</span> {% endfor %}</p>
+            {% elif item.producto.es_hipoalergenico %}
+              <p class="text-xs mt-0.5" style="color:#5EF097">🌿 Sin alérgenos</p>
+            {% endif %}
+          </div>
+          <span class="font-bold flex-shrink-0" style="color:#FFAB00">€{{ "%.2f"|format(item.subtotal) }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      <div class="border-t mt-3 pt-3 space-y-1 text-sm" style="border-color:var(--col-border)">
+        <div class="flex justify-between"><span style="color:var(--col-muted)">Subtotal</span><span>€{{ "%.2f"|format(subtotal) }}</span></div>
+        <div id="resumen_descuento" class="flex justify-between hidden"><span style="color:var(--col-muted)">Cupón</span><span style="color:#5EF097" id="resumen_desc_val">—</span></div>
+        <div id="resumen_envio" class="flex justify-between hidden"><span style="color:var(--col-muted)">Envío</span><span id="resumen_envio_val">—</span></div>
+        <div class="flex justify-between pt-2 mt-2 border-t font-black" style="border-color:var(--col-border)">
+          <span>Total estimado</span><span id="resumen_total_val" style="color:#FFAB00">€{{ "%.2f"|format(subtotal) }}</span>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <!-- Aviso alérgenos -->
+  <div class="text-xs p-3 rounded-xl" style="background:rgba(255,171,0,.08);border:1px solid rgba(255,171,0,.2);color:rgba(255,171,0,.9)">
+    ⚠️ Consulta alérgenos antes de confirmar. Si tienes intolerancias, indícalo en las notas.
+  </div>
+
+  {% if checkout_items %}
+  <div class="checkout-content-list">
+    {% for item in checkout_items %}
+      {% if item.tipo == 'banner' and item.imagen_url %}
+      <a class="checkout-content-banner" href="{{ item.enlace_url or '#form-checkout' }}"
+         {% if item.enlace_url and item.enlace_url.startswith('http') %}target="_blank" rel="noopener"{% endif %}>
+        <img src="{{ item.imagen_url|upload_url }}" alt="{{ item.titulo or 'Anuncio' }}">
+        <span>{% if item.titulo %}<strong>{{ item.titulo }}</strong>{% endif %}{% if item.contenido %}<small>{{ item.contenido }}</small>{% endif %}</span>
+      </a>
+      {% elif item.tipo == 'producto_destacado' and item.producto %}
+      <a class="checkout-content-product" href="{{ url_for('public.producto_detalle', producto_id=item.producto_id) }}">
+        {% if item.producto.imagen_url %}<img src="{{ item.producto.imagen_url|upload_url }}" alt="">{% endif %}
+        <span><small>También puedes añadir</small><strong>{{ item.titulo or item.producto.nombre }}</strong><b>€{{ "%.2f"|format(item.producto.precio_final) }}</b></span>
+      </a>
+      {% elif item.tipo == 'seccion' and item.categoria %}
+      <a class="checkout-content-notice" href="{{ url_for('public.index', categoria=item.categoria_id) }}#catalogo">
+        <strong>{{ item.titulo or item.categoria.nombre }}</strong>
+        <span>{{ item.contenido or 'Ver esta sección del menú' }}</span>
+      </a>
+      {% else %}
+      <div class="checkout-content-notice">
+        {% if item.titulo %}<strong>{{ item.titulo }}</strong>{% endif %}
+        {% if item.contenido %}<span>{{ item.contenido }}</span>{% endif %}
+        {% if item.enlace_url %}<a href="{{ item.enlace_url }}" {% if item.enlace_url.startswith('http') %}target="_blank" rel="noopener"{% endif %}>Ver más</a>{% endif %}
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="mt-4 ox-card p-4 checkout-rewards-summary" id="rewards-summary" hidden>
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <h3 class="text-sm font-black">Recompensas aplicadas</h3>
+        <p class="text-xs mt-1" id="rewards-summary-text" style="color:var(--col-muted)">Sin puntos aplicados</p>
+      </div>
+      <span class="checkout-reward-pill" id="rewards-summary-pill">0 pts</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── FORMULARIO (der / abajo mobile) ── -->
+<form method="POST" class="md:col-span-3 order-1 md:order-1 space-y-4" id="form-checkout">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="cupon_id" id="cupon_id_input">
+  <input type="hidden" name="cupon_codigo" id="cupon_codigo_input">
+  <input type="hidden" name="producto_canje_id" id="canje_hidden">
+  <input type="hidden" name="puntos_usar" id="puntos_usar_input" value="0">
+
+  <!-- ① IDENTIFICACIÓN POR TELÉFONO -->
+  {% if not current_user.is_authenticated %}
+  <div class="ox-card p-4 checkout-step">
+    <h2 class="text-sm font-extrabold mb-3 flex items-center gap-2">
+      <span class="w-6 h-6 rounded-full text-xs font-black flex items-center justify-center" style="background:#FFAB00;color:#000">1</span>
+      📱 Tu número de teléfono
+    </h2>
+    <p class="text-xs mb-3" style="color:var(--col-muted)">Nos identificamos por teléfono — no hace falta crear cuenta</p>
+    <div class="flex gap-2">
+      <div class="flex-1">
+        <input type="tel" name="telefono_invitado" id="tel_input"
+               placeholder="{{ brand.telefono[:3] if (brand.telefono and brand.telefono.startswith('+')) else '+34' }} 6XX XXX XXX"
+               class="w-full" inputmode="tel" autocomplete="tel" required
+               oninput="buscarClientePorTelefono(this.value)">
+      </div>
+    </div>
+    <div id="tel_status" class="text-xs mt-2 hidden"></div>
+    <div class="text-xs mt-2" style="color:var(--col-faint)">Tus datos se guardan en este dispositivo para la próxima vez.</div>
+    <div class="mt-3">
+      <label class="ox-label">Tu nombre</label>
+      <input type="text" name="nombre_invitado" id="nombre_invitado"
+             placeholder="¿Cómo te llamamos?" autocomplete="name" required>
+    </div>
+  </div>
+  {% else %}
+  <div class="ox-card p-4 flex items-center gap-3 checkout-step">
+    <div class="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black" style="background:rgba(255,171,0,.15);color:#FFAB00">
+      {{ current_user.nombre[0].upper() }}
+    </div>
+    <div>
+      <p class="font-bold text-sm">{{ current_user.nombre }}</p>
+      <p class="text-xs" style="color:var(--col-muted)">{{ current_user.telefono or current_user.email }}</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ② DIRECCIÓN -->
+  <div class="ox-card p-4 checkout-step">
+    <h2 class="text-sm font-extrabold mb-3 flex items-center gap-2">
+      <span class="w-6 h-6 rounded-full text-xs font-black flex items-center justify-center" style="background:#FFAB00;color:#000">{% if not current_user.is_authenticated %}2{% else %}1{% endif %}</span>
+      📍 Dirección de entrega
+    </h2>
+    <textarea name="direccion" required rows="2"
+              placeholder="Calle, número, piso… Ej: Calle Real 5, Carmona"
+              id="direccion_input">{{ current_user.direccion if current_user.is_authenticated else '' }}</textarea>
+    <div id="dir-feedback" class="mt-2 text-xs hidden" style="min-height:1.2em"></div>
+  </div>
+
+  <!-- ENTREGA (auto-seleccionada por el sistema según dirección) -->
+  {% if zonas %}
+  {% set z = zonas[0] %}
+  <div class="ox-card p-4 checkout-step">
+    <div class="flex items-center justify-between p-3 rounded-xl js-zona-item"
+         data-precio="{{ z.precio_envio }}" data-gratis-desde="{{ z.gratis_desde or '' }}"
+         style="background:var(--col-elevated);border:1.5px solid rgba(255,171,0,.25)">
+      <div class="flex items-center gap-2.5">
+        <span class="text-lg">🚚</span>
+        <div>
+          <p class="font-bold text-sm">Entrega a domicilio · Carmona</p>
+          <p class="text-xs" style="color:var(--col-muted)">~{{ z.tiempo_estimado_min }} min estimado
+            {% if z.gratis_desde %}· Gratis desde €{{ "%.0f"|format(z.gratis_desde) }}{% endif %}
+          </p>
+        </div>
+      </div>
+      <span class="font-extrabold text-sm" style="color:#FFAB00">
+        {% if z.precio_envio > 0 %}+€{{ "%.2f"|format(z.precio_envio) }}{% else %}Gratis{% endif %}
+      </span>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ③ MÉTODO DE PAGO -->
+  <div class="ox-card p-4 checkout-step">
+    <h2 class="text-sm font-extrabold mb-3 flex items-center gap-2">
+      <span class="w-6 h-6 rounded-full text-xs font-black flex items-center justify-center" style="background:#FFAB00;color:#000">{% if not current_user.is_authenticated %}3{% else %}2{% endif %}</span>
+      💳 Método de pago
+    </h2>
+    <div class="grid grid-cols-2 gap-2 mb-3">
+      <label class="flex items-center gap-2.5 p-3 rounded-xl cursor-pointer checkout-pay-label checkout-choice" style="background:var(--col-elevated);border:1.5px solid var(--col-border)">
+        <input type="radio" name="metodo_pago" value="efectivo" checked class="accent-yellow-500" onchange="toggleBizumInfo(false)">
+        <span class="font-bold text-sm">💵 Efectivo</span>
+      </label>
+      <label class="flex items-center gap-2.5 p-3 rounded-xl cursor-pointer checkout-pay-label checkout-choice" style="background:var(--col-elevated);border:1.5px solid var(--col-border)">
+        <input type="radio" name="metodo_pago" value="bizum" class="accent-yellow-500" onchange="toggleBizumInfo(true)">
+        <span class="font-bold text-sm">📱 Bizum</span>
+      </label>
+    </div>
+    <div id="bizum-instructions" class="hidden p-3 rounded-xl text-sm" style="background:rgba(168,85,247,.08);border:1px solid rgba(168,85,247,.25);color:#C084FC">
+      <p class="font-bold mb-1">📲 Bizum al recibir:</p>
+      <ol class="space-y-1 text-xs list-decimal list-inside" style="color:rgba(192,132,252,.85)">
+        <li>Tu pedido se prepara sin esperar el pago por adelantado.</li>
+        <li>Cuando llegue el repartidor, envía el importe exacto al número <strong id="bizum-numero" style="color:#C084FC">cargando...</strong>.</li>
+        <li>El repartidor verificará el Bizum recibido y luego pedirá el código de entrega.</li>
+      </ol>
+      <p class="text-xs mt-2 opacity-75">No compartas el código de entrega hasta tener tu pedido delante.</p>
+    </div>
+  </div>
+
+  <!-- ⑤ CUPÓN + AFILIADO -->
+  <div class="ox-card p-4 space-y-3 checkout-step">
+    <h2 class="text-sm font-extrabold flex items-center gap-2">
+      <span class="text-base">🎟️</span> Descuentos
+    </h2>
+    <div>
+      <label class="ox-label">Cupón de descuento</label>
+      <div class="flex gap-2">
+        <input type="text" id="cupon_input" placeholder="Ej: BIENVENIDA" class="flex-1" style="text-transform:uppercase">
+        <button type="button" onclick="validarCupon()"
+                class="ox-btn-ghost flex-shrink-0">Aplicar</button>
+      </div>
+      <p id="cupon_msg" class="text-xs mt-1.5 hidden"></p>
+    </div>
+    <div>
+      <label class="ox-label">Código de referido / afiliado</label>
+      <div class="flex gap-2">
+        <input type="text" id="afiliado_input" name="codigo_afiliado" placeholder="Ej: AMIGO20"
+               class="flex-1" style="text-transform:uppercase">
+        <button type="button" onclick="validarAfiliado()"
+                class="ox-btn-ghost flex-shrink-0">Aplicar</button>
+      </div>
+      <p id="afiliado_msg" class="text-xs mt-1.5 hidden"></p>
+    </div>
+  </div>
+
+  <!-- ⑥ PUNTOS (identidad por WhatsApp, sin cuenta) -->
+  <div class="ox-card p-4 checkout-step checkout-rewards-card" id="puntos-section">
+    <h2 class="text-sm font-extrabold mb-1 flex items-center gap-2">
+      <span class="text-base">⭐</span>
+      Tus puntos de fidelidad
+    </h2>
+    <p class="text-xs mb-3" style="color:var(--col-muted)">
+      Cada pedido acumula puntos canjeables por descuentos o productos gratis. Sin registro, solo con tu WhatsApp.
+    </p>
+    <div id="puntos-no-phone" class="checkout-points-hint">
+      <span>📱</span>
+      <p>Rellena tu número de WhatsApp arriba para consultar y usar tus puntos.</p>
+    </div>
+    <div id="puntos-tel-block" class="checkout-rewards-empty hidden">
+      <span>📱</span>
+      <div class="min-w-0">
+        <p>WhatsApp listo. Consulta tu saldo o usa tus puntos en este pedido.</p>
+        <div class="checkout-rewards-actions">
+          <button type="button" onclick="consultarSaldoPuntos()" class="ox-btn-ghost">Recibir saldo por WhatsApp</button>
+          <button type="button" onclick="solicitarCodigoPuntosTel()" class="ox-btn-secondary">Usar mis puntos</button>
+        </div>
+        <p id="puntos_action_msg" class="checkout-inline-status" role="status"></p>
+      </div>
+    </div>
+    <div id="puntos-verificando" class="checkout-otp-box hidden">
+      <p class="text-xs mb-2" style="color:#003087">Introduce el código de 6 dígitos enviado a tu WhatsApp.</p>
+      <div class="flex gap-2">
+        <input type="text" id="cod_puntos_input" placeholder="000000" maxlength="6"
+               inputmode="numeric" autocomplete="one-time-code"
+               class="flex-1 text-center text-lg font-mono tracking-widest">
+        <button type="button" onclick="verificarCodigoPuntos()" class="ox-btn-secondary flex-shrink-0">Verificar</button>
+      </div>
+      <p id="puntos_cod_msg" class="text-xs mt-2 hidden"></p>
+    </div>
+    <div id="checkout-rewards-panel" class="checkout-rewards-panel hidden"></div>
+  </div>
+
+  <!-- ⑦ NOTAS -->
+  <div class="ox-card p-4 checkout-step">
+    <label class="text-sm font-extrabold mb-2 block flex items-center gap-2">
+      <span class="text-base">📝</span> Notas adicionales
+    </label>
+    <textarea name="notas" rows="2" placeholder="Alergias, instrucciones especiales, referencia de entrega..."></textarea>
+  </div>
+
+  <!-- TOTAL Y CONFIRMAR -->
+  <div class="ox-card p-4 checkout-submit-card">
+    <div class="text-xs mb-3 p-3 rounded-lg" style="background:rgba(255,255,255,.04);color:var(--col-muted)">
+      Al confirmar aceptas las condiciones de compra y el tratamiento de datos según RGPD.
+    </div>
+    <button type="submit" class="ox-btn-primary w-full text-base" id="btn-confirmar">
+      ✓ Confirmar Pedido
+    </button>
+  </div>
+</form>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.checkout-head {
+  background: #fffdf8;
+  border: 1px solid rgba(52,37,22,.1);
+  border-radius: 1rem;
+  padding: .75rem;
+  box-shadow: 0 8px 24px rgba(38,25,12,.06);
+}
+.checkout-layout .ox-card,
+.checkout-layout details.ox-card {
+  background: #fffdf8;
+  border-color: rgba(52,37,22,.11);
+  box-shadow: 0 8px 26px rgba(38,25,12,.06);
+}
+.checkout-step h2 {
+  color: #18120A;
+}
+.checkout-step input,
+.checkout-step textarea,
+.checkout-step select {
+  background: #fff !important;
+  border-color: rgba(52,37,22,.15) !important;
+  color: #18120A !important;
+  border-radius: .85rem !important;
+}
+.checkout-step input:focus,
+.checkout-step textarea:focus,
+.checkout-step select:focus {
+  border-color: #D9961A !important;
+  box-shadow: 0 0 0 3px rgba(217,150,26,.16) !important;
+}
+.checkout-choice {
+  background: #fff !important;
+  border-color: rgba(52,37,22,.12) !important;
+  box-shadow: 0 2px 8px rgba(38,25,12,.04);
+}
+.checkout-choice:has(input:checked) {
+  background: rgba(217,150,26,.12) !important;
+  border-color: rgba(217,150,26,.55) !important;
+  box-shadow: 0 0 0 3px rgba(217,150,26,.1);
+}
+.checkout-pay-label {
+  min-height: 58px;
+}
+#bizum-instructions {
+  background: #F3F7FF !important;
+  border-color: rgba(0,48,135,.16) !important;
+  color: #003087 !important;
+}
+#bizum-instructions ol,
+#bizum-instructions p,
+#bizum-numero {
+  color: #003087 !important;
+}
+.checkout-submit-card {
+  background: rgba(255,253,248,.98) !important;
+  border-color: rgba(217,150,26,.22) !important;
+}
+#btn-confirmar {
+  min-height: 54px;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, #D9961A, #E8B84A) !important;
+  color: #1B0A00 !important;
+  font-weight: 950;
+}
+.checkout-rewards-card {
+  border-color: rgba(217,150,26,.18) !important;
+}
+.checkout-rewards-empty {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .8rem;
+  border-radius: .9rem;
+  background: #fff8ea;
+  border: 1px dashed rgba(217,150,26,.28);
+  color: #6B5A4E;
+  font-size: .82rem;
+}
+.checkout-rewards-panel {
+  margin-top: .9rem;
+  display: grid;
+  gap: .85rem;
+}
+.checkout-rewards-panel.hidden {
+  display: none;
+}
+.checkout-points-balance {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .7rem;
+  align-items: center;
+  padding: .85rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, #fff8ea, #fff);
+  border: 1px solid rgba(217,150,26,.2);
+}
+.checkout-points-value {
+  width: 54px;
+  height: 54px;
+  border-radius: 1rem;
+  display: grid;
+  place-items: center;
+  background: #D9961A;
+  color: #1B0A00;
+  font-weight: 950;
+  line-height: 1;
+}
+.checkout-points-slider {
+  width: 100%;
+  accent-color: #D9961A;
+}
+.checkout-redeem-grid {
+  display: grid;
+  gap: .55rem;
+}
+.checkout-redeem-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .65rem;
+  padding: .7rem;
+  border: 1px solid rgba(52,37,22,.12);
+  border-radius: .9rem;
+  background: #fff;
+  cursor: pointer;
+}
+.checkout-redeem-option:has(input:checked) {
+  border-color: rgba(217,150,26,.65);
+  box-shadow: 0 0 0 3px rgba(217,150,26,.12);
+}
+.checkout-redeem-name {
+  font-weight: 850;
+  color: #18120A;
+  font-size: .88rem;
+  overflow-wrap: anywhere;
+}
+.checkout-redeem-meta {
+  font-size: .72rem;
+  color: #6B5A4E;
+}
+.checkout-reward-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  padding: .28rem .55rem;
+  border-radius: 999px;
+  background: rgba(217,150,26,.13);
+  color: #805300;
+  font-size: .74rem;
+  font-weight: 900;
+}
+.checkout-otp-box {
+  padding: .8rem;
+  border-radius: .95rem;
+  background: #F3F7FF;
+  border: 1px solid rgba(0,48,135,.15);
+}
+.checkout-rewards-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.65rem}
+.checkout-rewards-actions button{min-height:42px;padding:.55rem .7rem;font-size:.75rem}
+.hidden { display: none !important; }
+.checkout-points-hint {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .75rem .9rem;
+  border-radius: .9rem;
+  background: rgba(255,171,0,.06);
+  border: 1px dashed rgba(255,171,0,.25);
+  color: var(--col-muted);
+  font-size: .8rem;
+}
+.checkout-points-hint.hidden { display: none !important; }
+.checkout-inline-status {
+  display: block;
+  font-size: .75rem;
+  min-height: 1.2em;
+  margin-top: .4rem;
+  transition: color .2s;
+}
+.checkout-inline-status:empty { display: none; }
+.checkout-inline-status.is-loading { color: #FFAB00; }
+.checkout-inline-status.is-ok { color: #5EF097; }
+.checkout-inline-status.is-error { color: #FF6B6B; }
+.checkout-rewards-summary {
+  border-color: rgba(217,150,26,.22) !important;
+  background: rgba(255,253,248,.98) !important;
+}
+@media (max-width: 767px) {
+  .checkout-head {
+    margin-bottom: 1rem;
+  }
+  .ox-card,
+  details.ox-card {
+    border-radius: 1rem;
+  }
+  .checkout-layout {
+    gap: .9rem;
+  }
+  .checkout-step {
+    padding: .9rem !important;
+  }
+  .checkout-step h2 {
+    margin-bottom: .7rem;
+  }
+  details.ox-card summary {
+    gap: .75rem;
+  }
+  details.ox-card li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  details.ox-card li > div,
+  details.ox-card li span {
+    min-width: 0;
+  }
+  #form-checkout {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+  #form-checkout .flex.gap-2,
+  #form-checkout .flex.gap-3 {
+    min-width: 0;
+  }
+  #form-checkout input,
+  #form-checkout textarea,
+  #form-checkout select {
+    min-width: 0;
+  }
+  #form-checkout .ox-btn-ghost,
+  #form-checkout .ox-btn-secondary {
+    white-space: normal;
+    text-align: center;
+  }
+  .checkout-submit-card {
+    margin-bottom: .5rem;
+    box-shadow: 0 10px 28px rgba(38,25,12,.08) !important;
+  }
+  .checkout-pay-label {
+    min-width: 0;
+  }
+  .checkout-pay-label span {
+    overflow-wrap: anywhere;
+  }
+  .checkout-redeem-option {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .checkout-redeem-option .checkout-reward-pill {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+@media (max-width: 430px) {
+  #form-checkout .grid.grid-cols-2 {
+    grid-template-columns: 1fr;
+  }
+  #form-checkout .flex.gap-2:has(#cupon_input) {
+    flex-direction: column;
+  }
+  #form-checkout .flex.gap-2:has(#afiliado_input) {
+    flex-direction: column;
+  }
+  #form-checkout .flex.gap-2:has(#cod_puntos_input) {
+    flex-direction: column;
+  }
+  #form-checkout .ox-btn-ghost,
+  #form-checkout .ox-btn-secondary {
+    width: 100%;
+  }
+  #form-checkout .flex.gap-2:has(#cupon_input) > *,
+  #form-checkout .flex.gap-2:has(#afiliado_input) > *,
+  #form-checkout .flex.gap-2:has(#cod_puntos_input) > * {
+    width: 100%;
+  }
+}
+</style>
+<script>
+const CHECKOUT_ROOT = document.querySelector('[data-subtotal-base]');
+const SUBTOTAL_BASE = parseFloat(CHECKOUT_ROOT?.dataset.subtotalBase || 0);
+const POINTS_RATIO = Math.max(1, parseInt(CHECKOUT_ROOT?.dataset.pointsRatio || 100));
+const CHECKOUT_CSRF = document.querySelector('#form-checkout input[name="csrf_token"]')?.value || '';
+let puntosVerificados = 0;
+let descuentoCupon = 0;
+let descuentoPuntos = 0;
+let descuentoAfiliado = 0;
+let envioActual = 0;
+let rewardsState = { telefono: '', puntos: 0, canjeables: [], productoId: '', verified: false };
+
+function normalizarTelefono(tel) {
+  let value = String(tel || '').trim().replace(/[^\d+]/g, '');
+  if ((value.match(/\+/g) || []).length > 1) value = value.replace(/\+/g, '');
+  if (value.includes('+') && !value.startsWith('+')) value = value.replace(/\+/g, '');
+  return value.slice(0, 20);
+}
+
+function checkoutPhone() {
+  return normalizarTelefono(
+    document.getElementById('tel_input')?.value
+    || CHECKOUT_ROOT?.dataset.customerPhone
+    || ''
+  );
+}
+
+function checkoutJsonPost(url, body) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CHECKOUT_CSRF },
+    body: JSON.stringify(body || {}),
+  });
+}
+
+function actualizarTotalEstimado() {
+  const total = Math.max(
+    SUBTOTAL_BASE - descuentoCupon - descuentoPuntos - descuentoAfiliado + envioActual,
+    0.01
+  );
+  const el = document.getElementById('resumen_total_val');
+  if (el) el.textContent = `€${total.toFixed(2)}`;
+}
+
+function isReadyForRewards() {
+  {% if current_user.is_authenticated and current_user.rol == 'cliente' %}
+  return true;
+  {% else %}
+  const hasPhone = checkoutPhone().replace(/\D/g, '').length >= 7;
+  return hasPhone;
+  {% endif %}
+}
+
+function updateRewardsVisibility() {
+  const noPhone = document.getElementById('puntos-no-phone');
+  const telBlock = document.getElementById('puntos-tel-block');
+  if (!noPhone || !telBlock) return;
+  const ready = isReadyForRewards();
+  noPhone.classList.toggle('hidden', ready);
+  // Only show tel-block if phone ready AND not already in OTP/verified state
+  const otpBox = document.getElementById('puntos-verificando');
+  const panel = document.getElementById('checkout-rewards-panel');
+  const alreadyActive = (otpBox && !otpBox.classList.contains('hidden'))
+                     || (panel && !panel.classList.contains('hidden'));
+  if (!alreadyActive) {
+    telBlock.classList.toggle('hidden', !ready);
+  }
+}
+
+function renderRewardsPanel(data = {}, verified = false) {
+  const panel = document.getElementById('checkout-rewards-panel');
+  if (!panel) return;
+  rewardsState.puntos = parseInt(data.puntos_totales ?? data.puntos ?? 0);
+  rewardsState.canjeables = Array.isArray(data.canjeables) ? data.canjeables : [];
+  rewardsState.verified = verified;
+  puntosVerificados = 0;
+  descuentoPuntos = 0;
+  document.getElementById('puntos_usar_input').value = '0';
+  document.getElementById('canje_hidden').value = '';
+  rewardsState.productoId = '';
+
+  const maxDiscountPts = Math.min(rewardsState.puntos, Math.floor(SUBTOTAL_BASE * POINTS_RATIO));
+  const canjeHtml = rewardsState.canjeables.length
+    ? rewardsState.canjeables.map(p => `
+      <label class="checkout-redeem-option">
+        <input type="radio" name="reward_product_choice" value="${p.id}" onchange="setRewardProduct('${p.id}')">
+        <div>
+          <p class="checkout-redeem-name">${escapeHtml(p.nombre)}</p>
+          <p class="checkout-redeem-meta">${escapeHtml(p.categoria || p.origen || 'Producto de regalo')} · se añadirá gratis al pedido</p>
+        </div>
+        <span class="checkout-reward-pill">${p.puntos} pts</span>
+      </label>`).join('')
+    : `<div class="checkout-rewards-empty"><span>🎁</span><p>Aún no alcanzas un producto de regalo${data.proximo_canje ? `; el próximo es ${escapeHtml(data.proximo_canje.nombre)} por ${data.proximo_canje.puntos} pts.` : '.'}</p></div>`;
+
+  panel.innerHTML = `
+    <div class="checkout-points-balance">
+      <div class="checkout-points-value">${rewardsState.puntos}</div>
+      <div>
+        <p class="font-black text-sm">Tienes ${rewardsState.puntos} puntos</p>
+        <p class="text-xs" style="color:var(--col-muted)">Equivalen hasta a €${(rewardsState.puntos / POINTS_RATIO).toFixed(2)} de descuento.</p>
+      </div>
+    </div>
+    <div>
+      <div class="flex items-center justify-between mb-2">
+        <label class="ox-label mb-0">Descuento en este pedido</label>
+        <strong id="puntos_discount_label" style="color:#805300">0 pts = €0.00</strong>
+      </div>
+      <input type="range" id="puntos_slider" min="0" max="${maxDiscountPts}" step="10" value="0" class="checkout-points-slider" oninput="actualizarPuntos(this.value)">
+    </div>
+    <div>
+      <p class="ox-label">Producto gratis con puntos</p>
+      <p class="checkout-redeem-help">Elige uno. Aparecerá separado en el pedido para preparación y reparto.</p>
+      <div class="checkout-redeem-grid">
+        <label class="checkout-redeem-option">
+          <input type="radio" name="reward_product_choice" value="" checked onchange="setRewardProduct('')">
+          <div><p class="checkout-redeem-name">No canjear producto</p><p class="checkout-redeem-meta">Usar solo descuento o guardar puntos</p></div>
+          <span class="checkout-reward-pill">0 pts</span>
+        </label>
+        ${canjeHtml}
+      </div>
+    </div>
+    <div class="checkout-rewards-empty" style="border-style:solid;background:#F0FFF7">
+      <span>✓</span><p>WhatsApp verificado. Elige cómo usar tus puntos y confirma el pedido.</p>
+    </div>`;
+  panel.classList.remove('hidden');
+  const telBlock = document.getElementById('puntos-tel-block');
+  if (telBlock) telBlock.classList.add('hidden');
+  updateRewardsSummary();
+}
+
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+}
+
+function setRewardProduct(id) {
+  rewardsState.productoId = id || '';
+  const product = rewardsState.canjeables.find(p => String(p.id) === String(rewardsState.productoId));
+  const slider = document.getElementById('puntos_slider');
+  if (slider) {
+    const maxByCart = Math.floor(SUBTOTAL_BASE * POINTS_RATIO);
+    const maxAfterProduct = Math.max(0, rewardsState.puntos - (product ? parseInt(product.puntos || 0) : 0));
+    slider.max = Math.min(maxByCart, maxAfterProduct);
+    if (parseInt(slider.value || 0) > parseInt(slider.max || 0)) {
+      slider.value = slider.max;
+      actualizarPuntos(slider.value);
+    }
+  }
+  document.getElementById('canje_hidden').value = rewardsState.verified ? rewardsState.productoId : '';
+  document.querySelectorAll('.checkout-redeem-option').forEach(option => {
+    const input = option.querySelector('input[name="reward_product_choice"]');
+    option.classList.toggle('is-selected', Boolean(input?.checked));
+  });
+  updateRewardsSummary();
+}
+
+function updateRewardsSummary() {
+  const summary = document.getElementById('rewards-summary');
+  const text = document.getElementById('rewards-summary-text');
+  const pill = document.getElementById('rewards-summary-pill');
+  if (!summary || !text || !pill) return;
+  const ptsDiscount = parseInt(document.getElementById('puntos_usar_input')?.value || 0);
+  const product = rewardsState.canjeables.find(p => String(p.id) === String(rewardsState.productoId));
+  if (ptsDiscount <= 0 && !product) {
+    summary.hidden = true;
+    return;
+  }
+  summary.hidden = false;
+  const bits = [];
+  if (ptsDiscount > 0) bits.push(`descuento de €${(ptsDiscount / POINTS_RATIO).toFixed(2)}`);
+  if (product) bits.push(`regalo: ${product.nombre}`);
+  text.textContent = rewardsState.verified ? `Aplicado: ${bits.join(' + ')}` : `Pendiente de código: ${bits.join(' + ')}`;
+  pill.textContent = `${ptsDiscount + (product ? parseInt(product.puntos || 0) : 0)} pts`;
+}
+
+// Auto-verificar puntos para clientes autenticados (sin OTP)
+async function autoVerificarPuntosAutenticado() {
+  try {
+    const r = await checkoutJsonPost('/puntos/auth-verificar', {});
+    const d = await r.json();
+    if (d.ok) {
+      rewardsState.verified = true;
+      const block = document.getElementById('puntos-tel-block');
+      if (block) block.classList.add('hidden');
+      renderRewardsPanel(d, true);
+    }
+  } catch (e) { /* continuar sin auto-verificar */ }
+}
+
+// Buscar cliente por teléfono
+let telTimer = null;
+function buscarClientePorTelefono(tel) {
+  clearTimeout(telTimer);
+  const st = document.getElementById('tel_status');
+  const telNormalizado = normalizarTelefono(tel);
+  if (!telNormalizado || telNormalizado.replace(/\D/g,'').length < 7) { st && st.classList.add('hidden'); return; }
+  telTimer = setTimeout(async () => {
+    try {
+      const r = await fetch(`/api/public/cliente?telefono=${encodeURIComponent(telNormalizado)}`);
+      const d = await r.json();
+      if (st) {
+        if (d.ok) {
+          st.textContent = '✓ Usaremos este WhatsApp para identificar tus puntos y avisarte del pedido.';
+          st.style.color = '#5EF097';
+          st.classList.remove('hidden');
+          rewardsState.telefono = d.telefono || telNormalizado;
+        }
+      }
+    } catch(e) {}
+  }, 800);
+}
+
+function attachRewardsVisibilityHandlers() {
+  const dirInput = document.getElementById('direccion_input');
+  if (dirInput) {
+    dirInput.addEventListener('input', updateRewardsVisibility);
+    dirInput.addEventListener('blur', () => { updateRewardsVisibility(); saveGuestCheckoutData(); });
+  }
+  const telInput = document.getElementById('tel_input');
+  if (telInput) {
+    telInput.addEventListener('input', updateRewardsVisibility);
+    telInput.addEventListener('blur', () => { updateRewardsVisibility(); saveGuestCheckoutData(); });
+  }
+  const nombreInput = document.getElementById('nombre_invitado');
+  if (nombreInput) {
+    nombreInput.addEventListener('blur', saveGuestCheckoutData);
+  }
+  updateRewardsVisibility();
+}
+
+function saveGuestCheckoutData() {
+  const tel = document.getElementById('tel_input')?.value.trim();
+  const nombre = document.getElementById('nombre_invitado')?.value.trim();
+  const direccion = document.getElementById('direccion_input')?.value.trim();
+  if (!tel) return;
+  const data = { telefono: tel, nombre: nombre, direccion: direccion };
+  localStorage.setItem('oxCheckoutGuest', JSON.stringify(data));
+}
+
+function loadGuestCheckoutData() {
+  try {
+    const stored = localStorage.getItem('oxCheckoutGuest');
+    if (!stored) return;
+    const data = JSON.parse(stored);
+    const telInput = document.getElementById('tel_input');
+    const nombreInput = document.getElementById('nombre_invitado');
+    const direccionInput = document.getElementById('direccion_input');
+    if (telInput && !telInput.value.trim() && data.telefono) {
+      telInput.value = data.telefono;
+      buscarClientePorTelefono(data.telefono);
+    }
+    if (nombreInput && !nombreInput.value.trim() && data.nombre) {
+      nombreInput.value = data.nombre;
+    }
+    if (direccionInput && !direccionInput.value.trim() && data.direccion) {
+      direccionInput.value = data.direccion;
+      setTimeout(() => window.checkCheckoutAddress?.(data.direccion), 400);
+    }
+  } catch (err) {
+    console.warn('No se pudo cargar datos de checkout', err);
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  attachRewardsVisibilityHandlers();
+  loadGuestCheckoutData();
+  {% if current_user.is_authenticated and current_user.rol == 'cliente' and (current_user.puntos or 0) > 0 %}
+  autoVerificarPuntosAutenticado();
+  {% endif %}
+});
+
+// Validar cupón
+async function validarCupon() {
+  const codigo = document.getElementById('cupon_input').value.trim().toUpperCase();
+  if (!codigo) return;
+  const r = await checkoutJsonPost('/carrito/cupon', {codigo, subtotal: SUBTOTAL_BASE});
+  const d = await r.json();
+  const msg = document.getElementById('cupon_msg');
+  msg.classList.remove('hidden');
+  if (d.ok) {
+    msg.textContent = `✓ ${d.descripcion} — -€${parseFloat(d.descuento).toFixed(2)}`;
+    msg.style.color = '#5EF097';
+    document.getElementById('cupon_id_input').value = d.cupon_id;
+    document.getElementById('cupon_codigo_input').value = codigo;
+    descuentoCupon = parseFloat(d.descuento) || 0;
+    const el = document.getElementById('resumen_descuento');
+    if (el) { el.classList.remove('hidden'); document.getElementById('resumen_desc_val').textContent = `-€${parseFloat(d.descuento).toFixed(2)}`; }
+    actualizarTotalEstimado();
+  } else {
+    msg.textContent = `✗ ${d.msg}`;
+    msg.style.color = '#FFB3B0';
+    descuentoCupon = 0;
+    document.getElementById('cupon_id_input').value = '';
+    document.getElementById('cupon_codigo_input').value = '';
+    actualizarTotalEstimado();
+  }
+}
+
+async function validarAfiliado() {
+  const codigo = document.getElementById('afiliado_input').value.trim().toUpperCase();
+  const msg = document.getElementById('afiliado_msg');
+  if (!codigo) return;
+  msg.classList.remove('hidden');
+  msg.textContent = '⏳ Verificando...';
+  msg.style.color = 'var(--col-muted)';
+  const r = await checkoutJsonPost('/carrito/afiliado', {codigo, subtotal: SUBTOTAL_BASE});
+  const d = await r.json();
+  if (d.ok) {
+    let txt = `✓ ${d.descripcion}`;
+    if (d.descuento > 0) txt += ` — -€${parseFloat(d.descuento).toFixed(2)}`;
+    msg.textContent = txt;
+    msg.style.color = '#5EF097';
+    document.getElementById('afiliado_input').value = d.codigo;
+    descuentoAfiliado = parseFloat(d.descuento) || 0;
+  } else {
+    msg.textContent = `✗ ${d.msg}`;
+    msg.style.color = '#FFB3B0';
+    descuentoAfiliado = 0;
+  }
+  actualizarTotalEstimado();
+}
+
+// Zona de entrega
+function _updateZonaSummary(precio, gratisDesde) {
+  const el = document.getElementById('resumen_envio');
+  envioActual = gratisDesde && SUBTOTAL_BASE >= gratisDesde ? 0 : precio;
+  if (el) {
+    el.classList.remove('hidden');
+    document.getElementById('resumen_envio_val').textContent = envioActual > 0 ? `+€${envioActual.toFixed(2)}` : 'Gratis';
+  }
+  actualizarTotalEstimado();
+}
+// Zona auto-seleccionada — disparar precio de envío al cargar
+(function() {
+  const item = document.querySelector('.js-zona-item');
+  if (item) _updateZonaSummary(
+    parseFloat(item.dataset.precio || 0),
+    parseFloat(item.dataset.gratisDesde || 0)
+  );
+})();
+
+async function consultarSaldoPuntos() {
+  const tel = checkoutPhone();
+  if (!tel) return;
+  const msg = document.getElementById('puntos_action_msg');
+  if (msg) {
+    msg.textContent = 'Enviando el saldo a tu WhatsApp...';
+    msg.className = 'checkout-inline-status is-loading';
+  }
+  const r = await checkoutJsonPost('/puntos/consultar-saldo', {telefono: tel});
+  const d = await r.json();
+  if (msg) {
+    msg.textContent = d.msg || 'Revisa tu WhatsApp.';
+    msg.className = `checkout-inline-status ${r.ok && d.ok ? 'is-ok' : 'is-error'}`;
+  }
+}
+
+// Puntos — solicitar código al WhatsApp que identifica al cliente
+async function solicitarCodigoPuntosTel() {
+  const t = checkoutPhone();
+  if (!t) return;
+  const msg = document.getElementById('puntos_action_msg');
+  if (msg) {
+    msg.textContent = 'Enviando código de verificación...';
+    msg.className = 'checkout-inline-status is-loading';
+  }
+  const r = await checkoutJsonPost('/puntos/solicitar-codigo', {telefono:t});
+  const d = await r.json();
+  if (d.ok) {
+    const box = document.getElementById('puntos-verificando');
+    if (box) box.classList.remove('hidden');
+    if (msg) {
+      msg.textContent = d.msg || 'Código enviado. Revisa tu WhatsApp.';
+      msg.className = 'checkout-inline-status is-ok';
+    }
+    document.getElementById('cod_puntos_input')?.focus();
+  } else if (msg) {
+    msg.textContent = d.msg || 'No se pudo enviar el código.';
+    msg.className = 'checkout-inline-status is-error';
+  }
+}
+
+// Puntos — verificar código
+async function verificarCodigoPuntos() {
+  const codigo = document.getElementById('cod_puntos_input')?.value?.trim();
+  const t = checkoutPhone();
+  if (!codigo) return;
+  const body = {codigo, puntos: 0, producto_canje_id: null};
+  if (t) body.telefono = t;
+  const r = await checkoutJsonPost('/puntos/verificar-codigo', body);
+  const d = await r.json();
+  const msg = document.getElementById('puntos_cod_msg');
+  if (d.ok) {
+    puntosVerificados = d.puntos_verificados;
+    rewardsState.verified = true;
+    document.getElementById('puntos-verificando')?.classList.add('hidden');
+    rewardsState.telefono = t;
+    renderRewardsPanel(d, true);
+    updateRewardsSummary();
+  } else {
+    if (msg) { msg.textContent = d.msg; msg.style.color = '#FFB3B0'; msg.classList.remove('hidden'); }
+  }
+}
+
+// Actualizar puntos seleccionados
+function actualizarPuntos(val) {
+  const safeVal = parseInt(val || 0);
+  descuentoPuntos = (parseInt(val || 0) / POINTS_RATIO);
+  const label = document.getElementById('puntos_discount_label');
+  if (label) label.textContent = `${safeVal} pts = €${descuentoPuntos.toFixed(2)}`;
+  document.getElementById('puntos_usar_input').value = safeVal;
+  document.getElementById('canje_hidden').value = rewardsState.productoId || '';
+  updateRewardsSummary();
+  actualizarTotalEstimado();
+}
+
+// Enter en cupón
+document.getElementById('cupon_input')?.addEventListener('keydown', e => { if(e.key==='Enter'){e.preventDefault();validarCupon();} });
+
+// Bizum info
+function toggleBizumInfo(show) {
+  const el = document.getElementById('bizum-instructions');
+  if (show) {
+    el.classList.remove('hidden');
+    fetch('/api/config-publica').then(r => r.json()).then(d => {
+      const tel = document.getElementById('bizum-numero');
+      if (tel) tel.textContent = d.telefono || 'ver con el negocio';
+    }).catch(() => {});
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
+document.getElementById('form-checkout')?.addEventListener('submit', e => {
+  const btn = document.getElementById('btn-confirmar');
+  const tel = document.getElementById('tel_input');
+  if (tel) tel.value = normalizarTelefono(tel.value);
+  saveGuestCheckoutData();
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Procesando pedido...';
+  }
+});
+actualizarTotalEstimado();
+
+// ── Validación de dirección en tiempo real ────────────────────
+(function () {
+  const dirInput = document.getElementById('direccion_input');
+  const fb = document.getElementById('dir-feedback');
+  if (!dirInput || !fb) return;
+
+  let _lastDir = '';
+  let _checking = false;
+
+  function showFeedback(text, color) {
+    const span = document.createElement('span');
+    span.style.color = color;
+    span.textContent = text;
+    fb.replaceChildren(span);
+    fb.classList.remove('hidden');
+  }
+
+  async function checkAddress(dir) {
+    if (!dir || dir.length < 4 || dir === _lastDir || _checking) return;
+    _lastDir = dir;
+    _checking = true;
+    showFeedback('⏳ Verificando cobertura…', 'var(--col-muted)');
+    try {
+      const r = await fetch('/api/check-address', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CHECKOUT_CSRF },
+        body: JSON.stringify({ direccion: dir }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        const dist = d.distancia_km !== null ? ` · ${d.distancia_km} km del local` : '';
+        showFeedback(`✓ Dentro del área de cobertura${dist}`, '#5EF097');
+      } else {
+        showFeedback(`✗ ${d.mensaje}`, '#FF6B6B');
+      }
+    } catch {
+      showFeedback('⚠️ No pudimos verificar la ubicación ahora', 'var(--col-muted)');
+    } finally {
+      _checking = false;
+    }
+  }
+  window.checkCheckoutAddress = checkAddress;
+
+  dirInput.addEventListener('blur', () => checkAddress(dirInput.value.trim()));
+  // Si hay dirección pre-cargada (cliente logueado), verificar al cargar la página
+  if (dirInput.value.trim().length >= 4) {
+    setTimeout(() => checkAddress(dirInput.value.trim()), 800);
+  }
+})();
+</script>
+{% endblock %}

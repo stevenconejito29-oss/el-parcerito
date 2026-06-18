@@ -1,0 +1,195 @@
+{% extends "admin_base.html" %}
+{% block title %}Campañas WhatsApp{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-xl font-extrabold text-white flex items-center gap-2">📲 Campañas de Marketing</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Mensajes masivos a clientes vía WhatsApp</p>
+  </div>
+  <button onclick="document.getElementById('modal-nueva').classList.remove('hidden')"
+          class="ox-btn-primary text-sm">
+    + Nueva campaña
+  </button>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+  <div class="ox-toast ox-toast-{{ 'success' if cat == 'success' else 'danger' if cat == 'danger' else 'info' }} mb-4">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+{# ── STATS ── #}
+<div class="grid grid-cols-3 gap-4 mb-6">
+  {% set total = campanas|length %}
+  {% set enviadas = campanas|selectattr('estado', 'equalto', 'enviado')|list|length %}
+  {% set borradores = campanas|selectattr('estado', 'equalto', 'borrador')|list|length %}
+  <div class="ox-card p-4 text-center">
+    <p class="text-2xl font-black" style="color:var(--col-primary)">{{ total }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">Total campañas</p>
+  </div>
+  <div class="ox-card p-4 text-center">
+    <p class="text-2xl font-black" style="color:#5EF097">{{ enviadas }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">Enviadas</p>
+  </div>
+  <div class="ox-card p-4 text-center">
+    <p class="text-2xl font-black" style="color:#FF9500">{{ borradores }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">Borradores</p>
+  </div>
+</div>
+
+{# ── LISTA DE CAMPAÑAS ── #}
+{% if campanas %}
+<div class="ox-card overflow-hidden">
+  {% for c in campanas %}
+  <div class="p-4 {% if not loop.last %}border-b{% endif %}"
+       style="border-color:var(--col-border);
+       {% if c.estado == 'enviado' %}background:rgba(94,240,151,.04){% elif c.estado == 'error' %}background:rgba(255,107,107,.04){% elif c.estado == 'enviando' %}background:rgba(96,165,250,.04){% endif %}">
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-1 flex-wrap">
+          <span class="font-bold text-white text-sm">{{ c.titulo }}</span>
+          {% if c.estado == 'enviado' %}
+            <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:rgba(94,240,151,.12);color:#5EF097;border:1px solid rgba(94,240,151,.2)">✓ encolado</span>
+          {% elif c.estado == 'enviando' %}
+            <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:rgba(96,165,250,.12);color:#60A5FA;border:1px solid rgba(96,165,250,.2)">⏳ enviando</span>
+          {% elif c.estado == 'error' %}
+            <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:rgba(255,107,107,.12);color:#FF6B6B;border:1px solid rgba(255,107,107,.2)">✗ error</span>
+          {% else %}
+            <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:rgba(255,255,255,.07);color:var(--col-muted)">borrador</span>
+          {% endif %}
+        </div>
+        <p class="text-sm truncate max-w-xl mb-2" style="color:var(--col-muted)">{{ c.mensaje }}</p>
+        <div class="flex flex-wrap gap-3 text-xs" style="color:var(--col-faint)">
+          <span>🎯 {{ c.filtro_audiencia }}</span>
+          {% if c.zona %}<span>📍 {{ c.zona.nombre }}</span>{% endif %}
+          <span>📅 {{ c.creado_en.strftime('%d/%m/%Y %H:%M') }}</span>
+          {% if c.enviados %}<span>✉️ {{ c.enviados }} encolados</span>{% endif %}
+        </div>
+        {% if c.error_detalle %}
+        <p class="text-xs mt-1" style="color:#FF6B6B">⚠️ {{ c.error_detalle }}</p>
+        {% endif %}
+      </div>
+
+      <div class="flex flex-col gap-2 flex-shrink-0">
+        {% if c.estado in ('borrador', 'error') %}
+        <form method="POST" action="{{ url_for('marketing.enviar_campana', campana_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit"
+                  onclick="return confirm('¿Enviar esta campaña a todos los clientes del filtro?')"
+                  class="ox-btn-primary text-xs">
+            🚀 Enviar
+          </button>
+        </form>
+        <form method="POST" action="{{ url_for('marketing.eliminar_campana', campana_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit"
+                  onclick="return confirm('¿Eliminar esta campaña?')"
+                  class="ox-btn-ghost text-xs" style="color:#FF6B6B">
+            🗑️ Borrar
+          </button>
+        </form>
+        {% elif c.estado == 'enviando' %}
+        <span class="text-xs px-3 py-2" style="color:#60A5FA">Enviando...</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="ox-card p-12 text-center">
+  <p class="text-4xl mb-3">📣</p>
+  <p class="font-semibold text-white mb-1">Sin campañas todavía</p>
+  <p class="text-sm mb-4" style="color:var(--col-faint)">Crea tu primera campaña masiva de WhatsApp</p>
+  <button onclick="document.getElementById('modal-nueva').classList.remove('hidden')"
+          class="ox-btn-primary text-sm">
+    + Crear primera campaña
+  </button>
+</div>
+{% endif %}
+
+{# ── MODAL NUEVA CAMPAÑA ── #}
+<div id="modal-nueva" class="hidden fixed inset-0 z-50 flex items-start justify-center pt-10 pb-10 overflow-y-auto"
+     style="background:rgba(0,0,0,.7)" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="ox-card p-6 w-full max-w-lg mx-4 shadow-2xl" onclick="event.stopPropagation()">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="font-extrabold text-white text-lg">📲 Nueva Campaña</h2>
+      <button onclick="document.getElementById('modal-nueva').classList.add('hidden')"
+              class="ox-btn-ghost px-2 py-1 text-lg leading-none">&times;</button>
+    </div>
+    <form method="POST" action="{{ url_for('marketing.crear_campana') }}" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="ox-field">
+        <label class="ox-label">Título de la campaña (interno)</label>
+        <input type="text" name="titulo" required placeholder="Ej: Promo fin de semana mayo" class="ox-input">
+      </div>
+
+      <div class="ox-field">
+        <label class="ox-label">Mensaje WhatsApp</label>
+        <textarea name="mensaje" required rows="5" id="camp-mensaje"
+                  placeholder="Escribe el mensaje que recibirán los clientes...&#10;Usa *negrita* y emojis para más engagement 🎉"
+                  class="ox-input" style="resize:vertical;font-size:.88rem"
+                  oninput="campContador(this)"></textarea>
+        <div class="flex items-center justify-between mt-1">
+          <p class="text-xs" style="color:var(--col-faint)">Usa *negrita*, _cursiva_ y emojis. Sin links largos.</p>
+          <span id="camp-chars" class="text-xs font-bold" style="color:var(--col-muted)">0 / 1024</span>
+        </div>
+        <div id="camp-preview" class="hidden mt-2 p-3 rounded-lg text-sm" style="background:rgba(37,211,102,.06);border:1px solid rgba(37,211,102,.15);color:#5EF097;white-space:pre-wrap;word-break:break-word"></div>
+      </div>
+
+      <div class="ox-field">
+        <label class="ox-label">Audiencia</label>
+        <select name="filtro_audiencia" id="sel-filtro" class="ox-input"
+                onchange="document.getElementById('div-zona').classList.toggle('hidden', this.value !== 'por_zona')">
+          <option value="todos">Todos los clientes</option>
+          <option value="con_puntos">Solo clientes con puntos</option>
+          <option value="sin_compra_30">Sin compra en 30 días</option>
+          <option value="por_zona">Por zona de entrega</option>
+        </select>
+      </div>
+
+      <div id="div-zona" class="hidden ox-field">
+        <label class="ox-label">Zona</label>
+        <select name="zona_id" class="ox-input">
+          <option value="">— Seleccionar zona —</option>
+          {% for z in zonas %}
+          <option value="{{ z.id }}">{{ z.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="p-3 rounded-lg text-xs" style="background:rgba(255,149,0,.08);border:1px solid rgba(255,149,0,.2);color:#FF9500">
+        ⚠️ La campaña se guarda como borrador. Deberás pulsar «Enviar» para despacharla. Revisa el mensaje antes de enviar.
+      </div>
+
+      <button type="submit" class="ox-btn-primary w-full">
+        💾 Guardar borrador
+      </button>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function campContador(ta) {
+  const len = ta.value.length;
+  const counter = document.getElementById('camp-chars');
+  const preview = document.getElementById('camp-preview');
+  if (counter) {
+    counter.textContent = `${len} / 1024`;
+    counter.style.color = len > 900 ? '#FF6B6B' : len > 600 ? '#FFAB00' : 'var(--col-muted)';
+  }
+  if (preview) {
+    if (len > 0) {
+      preview.classList.remove('hidden');
+      preview.textContent = ta.value.substring(0, 200) + (len > 200 ? '...' : '');
+    } else {
+      preview.classList.add('hidden');
+    }
+  }
+}
+</script>
+{% endblock %}

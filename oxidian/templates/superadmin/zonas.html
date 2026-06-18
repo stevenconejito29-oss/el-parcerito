@@ -1,0 +1,155 @@
+{% extends "admin_base.html" %}
+{% block title %}Zonas de Entrega — Super Admin{% endblock %}
+{% block content %}
+{% macro csrf_field() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
+
+<div class="flex items-center gap-3 mb-6">
+  <a href="{{ url_for('superadmin.dashboard') }}" class="ox-btn-ghost text-sm">← Volver</a>
+  <div>
+    <h1 class="text-xl font-extrabold text-white">📍 Zonas de Entrega</h1>
+    <p class="text-xs text-gray-400 mt-0.5">Carmona — configura precios, tiempos y cobertura</p>
+  </div>
+</div>
+
+{# ── INFO GEO-VALIDACIÓN ── #}
+<div class="text-xs p-3 rounded-xl flex items-start gap-2 mb-5"
+     style="background:rgba(255,171,0,.06);border:1px solid rgba(255,171,0,.15);color:rgba(255,171,0,.8)">
+  <span>📍</span>
+  <div>
+    El radio de entrega se configura en
+    <a href="{{ url_for('superadmin.config') }}" class="underline font-semibold">⚙️ Configuración → Radio de Entrega</a>.
+    Las zonas aquí definen el precio de envío según el área elegida por el cliente al hacer el pedido.
+  </div>
+</div>
+
+{# ── CREAR ZONA ── #}
+<details class="ox-card p-5 mb-5" id="form-crear">
+  <summary class="font-bold text-white cursor-pointer flex items-center gap-2 select-none">
+    <span class="text-green-400">＋</span> Nueva zona de entrega
+  </summary>
+  <form method="POST" action="{{ url_for('superadmin.crear_zona') }}" class="mt-4 grid sm:grid-cols-2 gap-3">
+    {{ csrf_field() }}
+    <div class="ox-field">
+      <label class="ox-label">Nombre *</label>
+      <input type="text" name="nombre" required class="ox-input" placeholder="Ej: Centro de Carmona">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Descripción</label>
+      <input type="text" name="descripcion" class="ox-input" placeholder="Zona casco histórico, etc.">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Precio de envío (€)</label>
+      <input type="number" name="precio_envio" step="0.01" min="0" value="0" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Tiempo estimado (min)</label>
+      <input type="number" name="tiempo_estimado_min" min="1" value="25" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Envío gratis desde (€) — dejar vacío si no aplica</label>
+      <input type="number" name="gratis_desde" step="0.01" min="0" class="ox-input" placeholder="Ej: 25">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Orden en lista</label>
+      <input type="number" name="orden" value="0" class="ox-input">
+    </div>
+    <div class="ox-field sm:col-span-2">
+      <label class="ox-label">Ámbito</label>
+      <select name="es_epicentro" class="ox-input">
+        <option value="1">Epicentro / Centro urbano Carmona</option>
+        <option value="0">Zona periférica / Urbanización</option>
+      </select>
+    </div>
+    <div class="sm:col-span-2">
+      <button type="submit" class="ox-btn-primary">Crear zona</button>
+    </div>
+  </form>
+</details>
+
+{# ── ZONAS EXISTENTES ── #}
+{% if zonas %}
+<div class="space-y-3">
+  {% for z in zonas %}
+  <div class="ox-card p-4 {% if not z.activo %}opacity-50{% endif %}">
+    <div class="flex items-start justify-between gap-3 mb-3">
+      <div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <h3 class="font-bold text-white">{{ z.nombre }}</h3>
+          <span class="text-xs px-2 py-0.5 rounded-full font-semibold
+            {{ 'bg-blue-500/20 text-blue-300 border border-blue-500/30' if z.es_epicentro else 'bg-orange-500/20 text-orange-300 border border-orange-500/30' }}">
+            {{ 'Epicentro' if z.es_epicentro else 'Periferia' }}
+          </span>
+          {% if not z.activo %}
+          <span class="text-xs px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/25 font-semibold">Inactivo</span>
+          {% endif %}
+        </div>
+        {% if z.descripcion %}<p class="text-xs text-gray-500 mt-0.5">{{ z.descripcion }}</p>{% endif %}
+        <div class="flex gap-3 mt-1 text-xs text-gray-400">
+          <span>💰 Envío: €{{ "%.2f"|format(z.precio_envio) }}</span>
+          <span>⏱ {{ z.tiempo_estimado_min }} min</span>
+          {% if z.gratis_desde %}<span class="text-green-400">🎁 Gratis desde €{{ "%.2f"|format(z.gratis_desde) }}</span>{% endif %}
+        </div>
+      </div>
+      <form method="POST" action="{{ url_for('superadmin.toggle_zona', zona_id=z.id) }}">
+        {{ csrf_field() }}
+        <button type="submit" class="text-xs px-3 py-1.5 rounded-lg font-semibold transition
+          {{ 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20' if z.activo else 'bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20' }}">
+          {{ 'Desactivar' if z.activo else 'Activar' }}
+        </button>
+      </form>
+    </div>
+
+    <details>
+      <summary class="text-xs cursor-pointer select-none font-semibold" style="color:var(--col-muted)">✏️ Editar zona</summary>
+      <form method="POST" action="{{ url_for('superadmin.editar_zona', zona_id=z.id) }}" class="mt-3 grid sm:grid-cols-3 gap-2">
+        {{ csrf_field() }}
+        <div class="ox-field">
+          <label class="ox-label">Nombre</label>
+          <input type="text" name="nombre" value="{{ z.nombre }}" required class="ox-input">
+        </div>
+        <div class="ox-field">
+          <label class="ox-label">Descripción</label>
+          <input type="text" name="descripcion" value="{{ z.descripcion or '' }}" class="ox-input">
+        </div>
+        <div class="ox-field">
+          <label class="ox-label">Ámbito</label>
+          <select name="es_epicentro" class="ox-input">
+            <option value="1" {% if z.es_epicentro %}selected{% endif %}>Epicentro</option>
+            <option value="0" {% if not z.es_epicentro %}selected{% endif %}>Periferia</option>
+          </select>
+        </div>
+        <div class="ox-field">
+          <label class="ox-label">Precio envío (€)</label>
+          <input type="number" name="precio_envio" value="{{ z.precio_envio }}" step="0.01" min="0" class="ox-input">
+        </div>
+        <div class="ox-field">
+          <label class="ox-label">Tiempo estimado (min)</label>
+          <input type="number" name="tiempo_estimado_min" value="{{ z.tiempo_estimado_min }}" min="1" class="ox-input">
+        </div>
+        <div class="ox-field">
+          <label class="ox-label">Gratis desde (€)</label>
+          <input type="number" name="gratis_desde" value="{{ z.gratis_desde or '' }}" step="0.01" min="0" class="ox-input" placeholder="—">
+        </div>
+        <div class="ox-field">
+          <label class="ox-label">Orden</label>
+          <input type="number" name="orden" value="{{ z.orden }}" class="ox-input">
+        </div>
+        <div class="sm:col-span-2 flex items-end">
+          <button type="submit" class="ox-btn-primary text-sm">Guardar cambios</button>
+        </div>
+      </form>
+    </details>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="ox-card text-center py-12">
+  <p class="text-4xl mb-3">📍</p>
+  <p class="font-bold text-gray-400">Sin zonas de entrega configuradas</p>
+  <p class="text-sm text-gray-600 mt-1 mb-4">Crea la primera zona con el formulario de arriba</p>
+</div>
+{% endif %}
+
+{% endblock %}

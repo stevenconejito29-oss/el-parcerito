@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+  {# PWA & Mobile #}
+  <meta name="theme-color" content="{{ brand.color_primario }}" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1B1F24" media="(prefers-color-scheme: dark)">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="{{ brand.nombre }}">
+  <meta name="application-name" content="{{ brand.nombre }}">
+  <meta name="format-detection" content="telephone=no">
+
+  {# SEO básico #}
+  <meta name="description" content="{{ brand.nombre }}{% if brand.slogan %} — {{ brand.slogan }}{% elif brand.descripcion %} — {{ brand.descripcion }}{% else %} — Pide tu pedido online con entrega rápida.{% endif %}">
+  <meta name="robots" content="index, follow">
+
+  {# Icons — usa APP_ICON_URL si está configurado, si no los estáticos #}
+  {% set _app_icon = brand.app_icon_url if brand.app_icon_url is defined and brand.app_icon_url else (brand.logo_url if brand.logo_url is defined and brand.logo_url else '') %}
+  <link rel="apple-touch-icon" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png') }}">
+  <link rel="icon" type="image/png" sizes="64x64" href="{{ _app_icon or url_for('static', filename='favicon-64.png') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ _app_icon or url_for('static', filename='favicon-32.png') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ _app_icon or url_for('static', filename='pwa-icon.svg') }}">
+
+  <link rel="manifest" href="{{ url_for('web_manifest') }}">
+
+  {# Tipografía — Inter (cuerpo) carga rápida con display=swap #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
+
+  <title>{% block title %}{{ brand.nombre }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.generated.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian.css', v=asset_version) }}">
+  <style>
+    :root {
+      --brand-primary:   {{ brand.color_primario }};
+      --brand-secondary: {{ brand.color_secundario }};
+      --brand-accent:    {{ brand.color_acento }};
+      --col-gold: {{ brand.color_primario }};
+    }
+    /* Usar colores de marca en botones principales */
+    .ox-btn-primary { background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 75%, #000)); }
+    .ox-btn-cart    { background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 80%, #000)); }
+  </style>
+  {% block styles %}{% endblock %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
+</head>
+<body class="ox-body ox-body-public ox-has-bottom-nav min-h-screen">
+
+{# ── HEADER PÚBLICO ── #}
+<header class="ox-header-public">
+  <div class="max-w-screen-xl mx-auto px-3 py-2 flex items-center justify-between gap-2">
+    <a href="{{ url_for('public.index') }}" class="flex items-center gap-3 min-w-0">
+      {% if brand.logo_url %}
+        <img src="{{ brand.logo_url }}" alt="logo" class="ox-public-logo w-12 h-12 object-cover flex-shrink-0">
+      {% else %}
+        <div class="ox-public-logo ox-public-logo-fallback w-12 h-12 flex items-center justify-center text-2xl flex-shrink-0">🥟</div>
+      {% endif %}
+      <div class="min-w-0">
+        <p class="ox-public-brand text-sm font-black leading-tight truncate">{{ brand.nombre }}</p>
+        {% if brand.slogan %}
+          <p class="ox-public-address text-[10px] leading-none truncate italic opacity-70">{{ brand.slogan }}</p>
+        {% else %}
+          <p class="ox-public-address text-[10px] leading-none truncate">📍 {{ brand.direccion }}</p>
+        {% endif %}
+      </div>
+    </a>
+    <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-bold"
+           style="{{ 'background:rgba(0,200,83,.12);color:#5EF097;border:1px solid rgba(0,200,83,.25)' if brand.tienda_abierta else 'background:rgba(255,59,48,.12);color:#FFB3B0;border:1px solid rgba(255,59,48,.25)' }}">
+        <span class="w-1.5 h-1.5 rounded-full {% if brand.tienda_abierta %}bg-green-400{% else %}bg-red-400{% endif %}"
+              {% if brand.tienda_abierta %}style="animation:pulse 2s infinite"{% endif %}></span>
+        <span class="hidden sm:inline">{{ 'Abierto' if brand.tienda_abierta else 'Cerrado' }}</span>
+      </div>
+      <a href="{{ url_for('public.ver_carrito') }}"
+         class="ox-header-cart relative flex items-center justify-center w-10 h-10 flex-shrink-0">
+        <span class="text-lg">🛒</span>
+        {% set n = session.get('carrito', {})|length %}
+        {% if n > 0 %}
+        <span data-cart-badge class="absolute -top-1.5 -right-1.5 text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center" style="background:#FF3B30;color:#fff">{{ n }}</span>
+        {% endif %}
+      </a>
+      {% if current_user.is_authenticated and current_user.rol != 'cliente' %}
+        <form method="post" action="{{ url_for('auth.logout') }}" class="inline-flex">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" title="Cerrar sesión" class="flex items-center justify-center w-8 h-8 rounded-lg" style="background:rgba(206,17,38,.08);color:rgba(206,17,38,.7);border:1px solid rgba(206,17,38,.15)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('auth.login') }}" class="ox-employee-login" title="Ingreso empleados">
+          <span class="ox-employee-login-icon">↗</span>
+          <span class="ox-employee-login-text">Empleados</span>
+        </a>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+{# Flash messages #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<div class="ox-toast-wrap" id="ox-toasts">
+  {% for category, msg in messages %}
+  <div class="ox-toast ox-toast-{{ category if category in ('success','danger','warning','info') else 'info' }}">{{ msg }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endwith %}
+
+<main class="max-w-screen-xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="ep-footer">
+  <div class="ep-footer-stripe"></div>
+  <div class="ep-footer-body">
+    <div class="ep-footer-inner">
+
+      {# — Columna marca — #}
+      <div>
+        {% if brand.logo_url %}
+          <img src="{{ brand.logo_url }}" alt="{{ brand.nombre }}" class="ep-footer-logo">
+        {% else %}
+          <div class="ep-footer-logo-fb">🥟</div>
+        {% endif %}
+        <h3 class="ep-footer-brand-name">{{ brand.nombre }}</h3>
+        {% if brand.slogan %}<p class="ep-footer-slogan">"{{ brand.slogan }}"</p>{% endif %}
+        <div class="ep-footer-contact">
+          {% if brand.direccion %}<p>📍 {{ brand.direccion }}</p>{% endif %}
+          {% if brand.telefono %}<p>📱 {{ brand.telefono }}</p>{% endif %}
+          <p>🕐 {{ brand.horario_apertura }} – {{ brand.horario_cierre }}</p>
+          <span class="ep-footer-status-pill {{ 'open' if brand.tienda_abierta else 'closed' }}">
+            {{ '🟢 Abierto ahora' if brand.tienda_abierta else '🔴 Cerrado ahora' }}
+          </span>
+        </div>
+      </div>
+
+      {# — Columna navegación — #}
+      <div>
+        <h4 class="ep-footer-heading">Explorar</h4>
+        <ul class="ep-footer-links">
+          <li><a href="{{ url_for('public.index') }}">🍽️ Menú completo</a></li>
+          <li><a href="{{ url_for('public.ver_carrito') }}">🛒 Mi carrito</a></li>
+          <li><a href="{{ url_for('public.club') }}">⭐ Programa de puntos</a></li>
+          {% if current_user.is_authenticated and current_user.rol == 'cliente' %}
+          <li><a href="{{ url_for('public.perfil') }}">👤 Mi perfil</a></li>
+          {% endif %}
+        </ul>
+      </div>
+
+      {# — Columna contacto — #}
+      <div>
+        <h4 class="ep-footer-heading">Atención al cliente</h4>
+        {% if brand.telefono %}
+        <a href="{{ url_for('public.whatsapp') }}" class="ep-footer-wa-btn" target="_blank" rel="noopener">
+          <span>💬</span> Escríbenos por WhatsApp
+        </a>
+        {% endif %}
+        <p class="ep-footer-note">Seguimiento de pedidos, consulta de puntos y atención en tiempo real.</p>
+        <p class="ep-footer-legal">Información sobre alérgenos disponible bajo solicitud.<br>RGPD · LSSI-CE · RDL 1/2007</p>
+      </div>
+
+    </div>
+  </div>
+  <div class="ep-footer-bar">
+    <div class="ep-footer-bar-inner">
+      <p>© {{ brand.nombre }} · Todos los derechos reservados</p>
+      {% if brand.descripcion %}<p class="ep-footer-bar-tagline">{{ brand.descripcion }}</p>{% endif %}
+    </div>
+  </div>
+</footer>
+
+<div class="ox-pwa-sheet" id="ox-pwa-sheet" hidden>
+  <div class="ox-pwa-card">
+    <button type="button" class="ox-pwa-close" data-pwa-dismiss aria-label="Cerrar">×</button>
+    <div class="ox-pwa-icon">
+      {% if _app_icon %}
+        <img src="{{ _app_icon }}" alt="{{ brand.nombre }} icon">
+      {% else %}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m8 22 4-10 4 10"/></svg>
+      {% endif %}
+    </div>
+    <div class="ox-pwa-copy">
+      <p class="ox-pwa-title">{{ brand.nombre }}</p>
+      <p class="ox-pwa-text">Añadir a pantalla de inicio para acceso rápido, sin navegador.</p>
+    </div>
+    <button type="button" class="ox-pwa-action" data-pwa-install>
+      <span class="ox-install-text">Instalar</span>
+    </button>
+  </div>
+</div>
+
+{# ── WhatsApp FAB (escritorio + tablet) ── #}
+{% if brand.telefono %}
+<button type="button"
+   class="ox-whatsapp-fab"
+   data-info-open
+   aria-haspopup="dialog"
+   aria-controls="ox-info-sheet"
+   aria-label="Información y ayuda">
+  <span class="ox-whatsapp-fab-icon">💬</span>
+  <span class="ox-whatsapp-fab-text">Info & Ayuda</span>
+</button>
+{% endif %}
+
+{# ── PANEL DE INFORMACIÓN (siempre disponible) ── #}
+<div class="ox-info-sheet" id="ox-info-sheet" hidden>
+  <button type="button" class="ox-info-backdrop" data-info-close aria-label="Cerrar"></button>
+  <section class="ox-info-panel" role="dialog" aria-modal="true" aria-labelledby="ox-info-title">
+    <div class="ox-info-handle" aria-hidden="true"></div>
+
+    {# Cabecera #}
+    <div class="ox-info-head">
+      <div class="ox-info-head-brand">
+        {% if brand.logo_url %}
+          <img src="{{ brand.logo_url }}" alt="{{ brand.nombre }}" class="ox-info-logo">
+        {% else %}
+          <div class="ox-info-logo-fb">🥟</div>
+        {% endif %}
+        <div>
+          <h2 id="ox-info-title">{{ brand.nombre }}</h2>
+          <span class="ox-info-status-pill {% if brand.tienda_abierta %}open{% else %}closed{% endif %}">
+            <span class="ox-info-dot"></span>
+            {{ 'Abierto ahora' if brand.tienda_abierta else 'Cerrado ahora' }}
+          </span>
+        </div>
+      </div>
+      <button type="button" class="ox-info-close" data-info-close aria-label="Cerrar">×</button>
+    </div>
+
+    {# Info del negocio #}
+    <div class="ox-info-body">
+      <div class="ox-info-rows">
+        {% if brand.direccion %}
+        <div class="ox-info-row">
+          <span class="ox-info-row-icon">📍</span>
+          <div>
+            <p class="ox-info-row-label">Dirección</p>
+            <p class="ox-info-row-val">{{ brand.direccion }}</p>
+          </div>
+        </div>
+        {% endif %}
+        <div class="ox-info-row">
+          <span class="ox-info-row-icon">🕐</span>
+          <div>
+            <p class="ox-info-row-label">Horario</p>
+            <p class="ox-info-row-val">{{ brand.horario_apertura }} – {{ brand.horario_cierre }}</p>
+          </div>
+        </div>
+        {% if brand.telefono %}
+        <div class="ox-info-row">
+          <span class="ox-info-row-icon">📱</span>
+          <div>
+            <p class="ox-info-row-label">Teléfono</p>
+            <p class="ox-info-row-val">{{ brand.telefono }}</p>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      {# WhatsApp actions #}
+      {% if brand.telefono %}
+      <div class="ox-info-section-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Contactar por WhatsApp
+      </div>
+      <div class="ox-wa-actions">
+        <a href="{{ url_for('public.whatsapp', text='Hola, quiero consultar el estado de mi pedido.') }}" target="_blank" rel="noopener">
+          <span class="ox-wa-action-icon">📦</span>
+          <span><strong>Estado de mi pedido</strong><small>Consulta con tu número de pedido</small></span>
+          <span class="ox-wa-arrow">›</span>
+        </a>
+        <a href="{{ url_for('public.whatsapp', text='Hola, quiero consultar mis puntos y recompensas.') }}" target="_blank" rel="noopener">
+          <span class="ox-wa-action-icon">★</span>
+          <span><strong>Mis puntos</strong><small>Saldo y productos para canje</small></span>
+          <span class="ox-wa-arrow">›</span>
+        </a>
+        <a href="{{ url_for('public.whatsapp', text='Hola, quiero saber zonas de cobertura, precio de envío y horarios.') }}" target="_blank" rel="noopener">
+          <span class="ox-wa-action-icon">🛵</span>
+          <span><strong>Cobertura y envío</strong><small>Zona, distancia y disponibilidad</small></span>
+          <span class="ox-wa-arrow">›</span>
+        </a>
+        <a href="{{ url_for('public.whatsapp', text='Hola, necesito ayuda.') }}" target="_blank" rel="noopener">
+          <span class="ox-wa-action-icon">💬</span>
+          <span><strong>Otra consulta</strong><small>Habla directamente con el equipo</small></span>
+          <span class="ox-wa-arrow">›</span>
+        </a>
+      </div>
+      {% endif %}
+
+      {# Push notification prompt (solo para clientes logueados) #}
+      {% if current_user.is_authenticated and current_user.rol == 'cliente' %}
+      <div id="ox-push-prompt" class="ox-push-prompt" hidden>
+        <span class="ox-push-prompt-icon">🔔</span>
+        <div class="ox-push-prompt-copy">
+          <strong>Notificaciones del pedido</strong>
+          <small>Aviso cuando tu pedido salga y llegue</small>
+        </div>
+        <button type="button" class="ox-push-prompt-btn" onclick="oxActivarPush(this)">Activar</button>
+      </div>
+      {% endif %}
+
+      {# Links útiles #}
+      <div class="ox-info-links">
+        <a href="{{ url_for('public.index') }}" data-info-close>🍽️ Ver menú</a>
+        <a href="{{ url_for('public.ver_carrito') }}" data-info-close>🛒 Mi carrito</a>
+        <a href="{{ url_for('public.club') }}" data-info-close>⭐ Mis puntos</a>
+      </div>
+    </div>
+  </section>
+</div>
+
+<nav class="ox-bottom-nav md:hidden">
+  <a href="{{ url_for('public.index') }}" class="{{ 'active' if request.endpoint == 'public.index' else '' }}">
+    <span class="ox-bnav-icon">🏠</span><span>Inicio</span>
+  </a>
+  <a href="{{ url_for('public.index') }}?q=" class="{{ 'active' if request.endpoint == 'public.index' and request.args.get('q') is not none else '' }}">
+    <span class="ox-bnav-icon">🔍</span><span>Buscar</span>
+  </a>
+  <button type="button" data-info-open aria-haspopup="dialog" aria-controls="ox-info-sheet"
+          class="{{ 'active' if request.endpoint in ('public.index',) and False else '' }}">
+    <span class="ox-bnav-icon">ℹ️</span><span>Info</span>
+  </button>
+  <a href="{{ url_for('public.ver_carrito') }}" class="{{ 'active' if request.endpoint == 'public.ver_carrito' else '' }}">
+    <div class="ox-bnav-wrap">
+      <span class="ox-bnav-icon">🛒</span>
+      {% set n = session.get('carrito', {})|length %}
+      {% if n > 0 %}<span class="ox-bnav-badge">{{ n }}</span>{% endif %}
+    </div>
+    <span>Carrito</span>
+  </a>
+</nav>
+
+<script>
+setTimeout(() => {
+  document.querySelectorAll('.ox-toast').forEach((el, i) => {
+    setTimeout(() => {
+      el.style.transition = 'opacity .25s, transform .25s';
+      el.style.opacity = '0'; el.style.transform = 'translateY(-6px)';
+      setTimeout(() => el.remove(), 280);
+    }, 4000 + i * 400);
+  });
+}, 200);
+
+const infoSheet = document.getElementById('ox-info-sheet');
+const openInfoSheet = () => {
+  if (!infoSheet) return;
+  infoSheet.hidden = false;
+  document.body.classList.add('ox-modal-open');
+  requestAnimationFrame(() => infoSheet.classList.add('is-open'));
+  infoSheet.querySelector('.ox-info-close')?.focus();
+};
+const closeInfoSheet = () => {
+  if (!infoSheet) return;
+  infoSheet.classList.remove('is-open');
+  document.body.classList.remove('ox-modal-open');
+  window.setTimeout(() => { infoSheet.hidden = true; }, 180);
+};
+document.querySelectorAll('[data-info-open]').forEach(btn => btn.addEventListener('click', openInfoSheet));
+document.querySelectorAll('[data-info-close]').forEach(btn => btn.addEventListener('click', closeInfoSheet));
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && infoSheet && !infoSheet.hidden) closeInfoSheet();
+});
+
+document.querySelectorAll('form[data-ox-validate]').forEach(form => {
+  const fields = form.querySelectorAll('[data-ox-required]');
+  const mark = el => { const ok = !!String(el.value||'').trim(); el.classList.toggle('is-invalid',!ok); el.closest('.ox-field')?.classList.toggle('has-error',!ok); return ok; };
+  fields.forEach(el => el.addEventListener('blur', () => mark(el)));
+  form.addEventListener('submit', e => { let v=true; fields.forEach(el=>{if(!mark(el))v=false;}); if(!v)e.preventDefault(); });
+});
+
+let oxDeferredInstallPrompt = null;
+const oxInstallButtons = () => document.querySelectorAll('[data-pwa-install]');
+const oxIsStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+const oxPwaSheet = () => document.getElementById('ox-pwa-sheet');
+const oxCanSuggestInstall = () => {
+  if (oxIsStandalone()) return false;
+  if (localStorage.getItem('oxPwaInstalled') === '1') return false;
+  const dismissed = parseInt(localStorage.getItem('oxPwaDismissedAt') || '0', 10);
+  if (dismissed && (Date.now() - dismissed) < 7 * 86400 * 1000) return false;
+  return true;
+};
+function oxHideInstallButtons() {
+  oxInstallButtons().forEach(btn => {
+    btn.hidden = true;
+    btn.classList.add('ox-pwa-installed');
+  });
+  document.body.classList.remove('ox-install-visible');
+  oxPwaSheet()?.setAttribute('hidden', '');
+}
+function oxShowInstallButtons() {
+  if (oxIsStandalone() || localStorage.getItem('oxPwaInstalled') === '1') {
+    oxHideInstallButtons();
+    return;
+  }
+  oxInstallButtons().forEach(btn => {
+    btn.hidden = false;
+    btn.classList.remove('ox-pwa-installed');
+  });
+  document.body.classList.add('ox-install-visible');
+}
+function oxShowInstallSheet(auto = false) {
+  if (!oxCanSuggestInstall()) return;
+  const sheet = oxPwaSheet();
+  if (!sheet) return;
+  sheet.hidden = false;
+  if (auto) sheet.classList.add('is-soft');
+}
+function oxDismissInstallSheet() {
+  localStorage.setItem('oxPwaDismissedAt', Date.now().toString());
+  oxPwaSheet()?.setAttribute('hidden', '');
+}
+function oxSetInstallState(label, disabled = false) {
+  oxInstallButtons().forEach(btn => {
+    btn.disabled = disabled;
+    const text = btn.querySelector('.ox-install-text') || btn.querySelector('span:last-child');
+    if (text) text.textContent = label;
+  });
+}
+oxShowInstallButtons();
+if (/iphone|ipad|ipod/i.test(navigator.userAgent) && oxCanSuggestInstall()) {
+  window.addEventListener('load', () => {
+    setTimeout(() => oxShowInstallSheet(true), 2200);
+  }, { once: true });
+}
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  oxDeferredInstallPrompt = event;
+  oxShowInstallButtons();
+  oxSetInstallState('Instalar', false);
+  setTimeout(() => oxShowInstallSheet(true), 1800);
+});
+window.addEventListener('appinstalled', () => {
+  oxDeferredInstallPrompt = null;
+  localStorage.setItem('oxPwaInstalled', '1');
+  oxHideInstallButtons();
+});
+oxInstallButtons().forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (oxIsStandalone()) {
+      localStorage.setItem('oxPwaInstalled', '1');
+      oxHideInstallButtons();
+      return;
+    }
+    if (!oxDeferredInstallPrompt) {
+      oxShowInstallSheet();
+      if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+        alert('En iPhone: toca Compartir y luego "Añadir a pantalla de inicio".');
+      }
+      return;
+    }
+    oxDeferredInstallPrompt.prompt();
+    await oxDeferredInstallPrompt.userChoice;
+    oxDeferredInstallPrompt = null;
+    oxDismissInstallSheet();
+  });
+});
+document.querySelectorAll('[data-pwa-dismiss]').forEach(btn => {
+  btn.addEventListener('click', oxDismissInstallSheet);
+});
+if ('serviceWorker' in navigator) {
+  const oxEnsureSwUpdate = async (reg) => {
+    try {
+      await reg.update();
+      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+    } catch (e) {}
+  };
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).then(reg => {
+      oxEnsureSwUpdate(reg);
+      reg.addEventListener('updatefound', () => {
+        const worker = reg.installing;
+        worker?.addEventListener('statechange', () => {
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+            worker.postMessage({ type: 'SKIP_WAITING' });
+          }
+        });
+      });
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') oxEnsureSwUpdate(reg);
+      });
+      setInterval(() => oxEnsureSwUpdate(reg), 5 * 60 * 1000);
+      // ── Suscripción push para clientes logueados ──
+      {% if current_user.is_authenticated and current_user.rol == 'cliente' %}
+      oxSubscribePush(reg);
+      {% endif %}
+    }).catch(() => {});
+  });
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!sessionStorage.getItem('oxSwReloaded')) {
+      sessionStorage.setItem('oxSwReloaded', '1');
+      location.reload();
+    }
+  });
+}
+
+// ── Web Push: suscribir al usuario ────────────────────────────────────────
+async function oxSubscribePush(registration) {
+  if (!('PushManager' in window)) return;
+  if (Notification.permission === 'denied') return;
+  // No pedir permiso automáticamente la primera vez; esperar gesto del usuario
+  if (Notification.permission !== 'granted') return;
+  try {
+    const keyResp = await fetch('/api/push/vapid-key');
+    if (!keyResp.ok) return;
+    const { public_key } = await keyResp.json();
+    if (!public_key) return;
+    const sub = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: _urlB64ToUint8Array(public_key),
+    });
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': '{{ csrf_token() }}',
+      },
+      body: JSON.stringify(sub.toJSON()),
+    });
+  } catch (e) { /* push no disponible */ }
+}
+
+function _urlB64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+// ── Pedir permiso push (llamado desde un botón visible) ───────────────────
+window.oxRequestPushPermission = async function() {
+  if (!('Notification' in window)) return false;
+  const perm = await Notification.requestPermission();
+  if (perm === 'granted') {
+    const reg = await navigator.serviceWorker.ready;
+    await oxSubscribePush(reg);
+    return true;
+  }
+  return false;
+};
+
+// ── Activar notificaciones desde el prompt ───────────────────────────────
+window.oxActivarPush = async function(btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  const ok = await window.oxRequestPushPermission();
+  if (ok) {
+    document.getElementById('ox-push-prompt')?.remove();
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Activar';
+  }
+};
+
+// ── Mostrar push prompt si el permiso es 'default' ───────────────────────
+(function () {
+  const el = document.getElementById('ox-push-prompt');
+  if (!el) return;
+  if (!('Notification' in window) || Notification.permission !== 'default') { el.remove(); return; }
+  // Mostrar tras 6 s, bien separado del install prompt (1.8 s) para no solapar
+  setTimeout(() => { el.hidden = false; }, 6000);
+})();
+
+// ── App Badge: refleja el número de productos en carrito ─────────────────
+(function () {
+  if (!('setAppBadge' in navigator)) return;
+  const n = {{ session.get('carrito', {})|length }};
+  try {
+    if (n > 0) navigator.setAppBadge(n);
+    else navigator.clearAppBadge();
+  } catch (_) {}
+})();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

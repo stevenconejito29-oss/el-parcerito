@@ -1,0 +1,19 @@
+# Secretos y config local — NUNCA committear
+.env
+.env.local
+.env.production
+
+# Dependencias
+node_modules/
+npm-debug.log*
+
+# Base de datos del bot (runtime)
+*.db
+*.db-wal
+*.db-shm
+/db/
+
+# macOS / IDE
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,347 @@
+{% extends "admin_base.html" %}
+{% block title %}Pagos Equipo{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-black text-white">💸 Pagos al Equipo</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Salarios, comisiones y bonificaciones</p>
+  </div>
+  <div class="flex gap-2 flex-wrap">
+    <a href="{{ url_for('admin.liquidacion_proveedores') }}" class="ox-btn-secondary">🧾 Liquidar proveedores</a>
+    <button onclick="window.print()" class="ox-btn-secondary">🖨️ Imprimir resumen</button>
+  </div>
+</div>
+
+{# ── KPIs ── #}
+<div class="grid grid-cols-2 gap-4 mb-5">
+  <div class="ox-kpi ox-kpi-red">
+    <p class="ox-kpi-label">Pendiente de pago</p>
+    <p class="ox-kpi-value">€{{ "%.2f"|format(total_pendiente) }}</p>
+  </div>
+  <div class="ox-kpi ox-kpi-green">
+    <p class="ox-kpi-label">Pagado (filtro actual)</p>
+    <p class="ox-kpi-value">€{{ "%.2f"|format(total_pagado) }}</p>
+  </div>
+</div>
+
+{% if resumen_repartidores %}
+<div class="ox-card p-4 mb-5">
+  <div class="flex items-center justify-between gap-3 mb-3">
+    <div>
+      <h2 class="font-black text-white">🚴 Recaudo de repartidores</h2>
+      <p class="text-xs" style="color:var(--col-muted)">Efectivo cobrado, reparto generado por zona y liquidación pendiente.</p>
+    </div>
+  </div>
+  <div class="ox-table-wrap">
+    <div class="delivery-summary-mobile">
+      {% for r in resumen_repartidores %}
+      <article>
+        <div>
+          <strong>
+            <a href="{{ url_for('admin.empleado_resumen', user_id=r.repartidor.id) }}"
+               style="color:var(--col-gold)">{{ r.repartidor.nombre }} →</a>
+          </strong>
+          <span>{{ r.entregas }} entregas</span>
+        </div>
+        <dl>
+          <div><dt>Efectivo</dt><dd>€{{ "%.2f"|format(r.recaudado) }}</dd></div>
+          <div><dt>Repartos</dt><dd>€{{ "%.2f"|format(r.reparto_generado) }}</dd></div>
+          <div><dt>Pendiente</dt><dd>€{{ "%.2f"|format(r.comision_pendiente) }}</dd></div>
+          <div><dt>Debe entregar</dt><dd>€{{ "%.2f"|format(r.saldo_a_entregar) }}</dd></div>
+        </dl>
+      </article>
+      {% endfor %}
+    </div>
+    <table class="ox-table delivery-summary-table">
+      <thead>
+        <tr>
+          <th>Repartidor</th>
+          <th class="text-right">Entregas</th>
+          <th class="text-right">Efectivo cobrado</th>
+          <th class="text-right">Repartos generados</th>
+          <th class="text-right">Pendiente de liquidar</th>
+          <th class="text-right">Debe entregar</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in resumen_repartidores %}
+        <tr>
+          <td class="font-semibold text-white">{{ r.repartidor.nombre }}</td>
+          <td class="text-right">{{ r.entregas }}</td>
+          <td class="text-right font-mono font-bold" style="color:#FFAB00">€{{ "%.2f"|format(r.recaudado) }}</td>
+          <td class="text-right font-mono font-bold" style="color:#5AC8FA">€{{ "%.2f"|format(r.reparto_generado) }}</td>
+          <td class="text-right font-mono font-bold" style="color:#C084FC">€{{ "%.2f"|format(r.comision_pendiente) }}</td>
+          <td class="text-right font-mono font-bold" style="color:#5EF097">€{{ "%.2f"|format(r.saldo_a_entregar) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── ACCIONES ── #}
+<div class="grid md:grid-cols-2 gap-4 mb-5">
+
+  {# Comisiones repartidores (AUTO) #}
+  <div class="ox-card p-4">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="text-xl">🚴</span>
+      <div>
+        <p class="font-black text-sm text-white">Comisiones repartidores</p>
+        <p class="text-xs" style="color:var(--col-muted)">Una liquidación por pedido según el envío cobrado</p>
+      </div>
+      <span class="ml-auto text-xs px-2 py-0.5 rounded-full font-bold"
+            style="background:rgba(94,240,151,.12);color:#5EF097;border:1px solid rgba(94,240,151,.2)">AUTO</span>
+    </div>
+    <form method="POST" action="{{ url_for('admin.generar_comisiones_repartidores') }}" class="space-y-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="ps-label">Desde</label>
+          <input type="date" name="periodo_inicio" required class="ps-input">
+        </div>
+        <div>
+          <label class="ps-label">Hasta</label>
+          <input type="date" name="periodo_fin" required class="ps-input">
+        </div>
+      </div>
+      <button type="submit" class="w-full py-2 rounded-xl font-bold text-sm"
+              style="background:rgba(94,240,151,.12);border:1px solid rgba(94,240,151,.25);color:#5EF097">
+        ⚡ Calcular y generar
+      </button>
+    </form>
+  </div>
+
+  {# Salarios (AUTO) #}
+  <div class="ox-card p-4">
+    <div class="flex items-center gap-2 mb-3">
+      <span class="text-xl">📅</span>
+      <div>
+        <p class="font-black text-sm text-white">Salarios del período</p>
+        <p class="text-xs" style="color:var(--col-muted)">Genera salario base para todo el equipo</p>
+      </div>
+      <span class="ml-auto text-xs px-2 py-0.5 rounded-full font-bold"
+            style="background:rgba(59,130,246,.12);color:#93C5FD;border:1px solid rgba(59,130,246,.2)">AUTO</span>
+    </div>
+    <form method="POST" action="{{ url_for('admin.generar_salarios') }}" class="space-y-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="ps-label">Desde</label>
+          <input type="date" name="periodo_inicio" required class="ps-input">
+        </div>
+        <div>
+          <label class="ps-label">Hasta</label>
+          <input type="date" name="periodo_fin" required class="ps-input">
+        </div>
+      </div>
+      <button type="submit" class="w-full py-2 rounded-xl font-bold text-sm"
+              style="background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.25);color:#93C5FD">
+        📄 Generar salarios
+      </button>
+    </form>
+  </div>
+
+</div>
+
+{# Registro manual #}
+<details class="ox-card p-4 mb-5">
+  <summary class="cursor-pointer font-bold text-sm text-white flex items-center gap-2">
+    <span>✏️ Registro manual</span>
+    <span class="text-xs px-2 py-0.5 rounded-full"
+          style="background:rgba(255,171,0,.12);color:#FFAB00;border:1px solid rgba(255,171,0,.2)">Bonus · Adelanto · Descuento</span>
+  </summary>
+  <form method="POST" action="{{ url_for('admin.crear_pago_staff') }}" class="grid md:grid-cols-3 gap-3 mt-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div>
+      <label class="ps-label">Empleado *</label>
+      <select name="user_id" required class="ps-input">
+        <option value="">— Seleccionar —</option>
+        {% for emp in empleados %}
+        <option value="{{ emp.id }}">[{{ emp.rol }}] {{ emp.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="ps-label">Tipo *</label>
+      <select name="tipo" required class="ps-input">
+        <option value="salario">Salario</option>
+        <option value="comision">Comisión</option>
+        <option value="bonus">Bonus</option>
+        <option value="adelanto">Adelanto</option>
+        <option value="descuento">Descuento</option>
+      </select>
+    </div>
+    <div>
+      <label class="ps-label">Monto (€) *</label>
+      <input type="number" name="monto" step="0.01" min="0.01" required placeholder="0.00" class="ps-input">
+    </div>
+    <div class="md:col-span-3">
+      <label class="ps-label">Concepto</label>
+      <input type="text" name="concepto" placeholder="Descripción del pago..." class="ps-input">
+    </div>
+    <div>
+      <label class="ps-label">Período inicio</label>
+      <input type="date" name="periodo_inicio" class="ps-input">
+    </div>
+    <div>
+      <label class="ps-label">Período fin</label>
+      <input type="date" name="periodo_fin" class="ps-input">
+    </div>
+    <div class="flex items-end">
+      <button type="submit" class="w-full py-2.5 rounded-xl font-bold text-black text-sm"
+              style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Crear registro</button>
+    </div>
+  </form>
+</details>
+
+{# ── FILTROS ── #}
+{% if user_id_f %}
+<p class="mb-2">
+  <a href="{{ url_for('admin.empleado_resumen', user_id=user_id_f) }}"
+     class="text-sm" style="color:var(--col-gold)">
+    💼 Ver resumen financiero completo del empleado →
+  </a>
+</p>
+{% endif %}
+<form method="GET" class="flex gap-2 mb-4 flex-wrap">
+  <select name="user_id" class="ps-input" style="width:auto">
+    <option value="">Todos los empleados</option>
+    {% for emp in empleados %}
+    <option value="{{ emp.id }}" {% if user_id_f == emp.id %}selected{% endif %}>[{{ emp.rol }}] {{ emp.nombre }}</option>
+    {% endfor %}
+  </select>
+  <select name="tipo" class="ps-input" style="width:auto">
+    <option value="">Todos los tipos</option>
+    <option value="salario"               {% if tipo_f == 'salario' %}selected{% endif %}>💼 Salario</option>
+    <option value="comision"              {% if tipo_f == 'comision' %}selected{% endif %}>🚴 Comisión</option>
+    <option value="bonus"                 {% if tipo_f == 'bonus' %}selected{% endif %}>🎁 Bonus</option>
+    <option value="adelanto"              {% if tipo_f == 'adelanto' %}selected{% endif %}>⏩ Adelanto</option>
+    <option value="descuento"             {% if tipo_f == 'descuento' %}selected{% endif %}>➖ Descuento</option>
+    <option value="liquidacion_proveedor" {% if tipo_f == 'liquidacion_proveedor' %}selected{% endif %}>🧾 Liquidación bar</option>
+  </select>
+  <select name="pagado" class="ps-input" style="width:auto">
+    <option value="">Todos</option>
+    <option value="0" {% if pagado_f == '0' %}selected{% endif %}>Pendientes</option>
+    <option value="1" {% if pagado_f == '1' %}selected{% endif %}>Pagados</option>
+  </select>
+  <button type="submit" class="px-4 py-2 rounded-xl text-sm font-bold" style="background:var(--col-elevated);color:var(--col-muted);border:1px solid var(--col-border)">Filtrar</button>
+</form>
+
+{# ── TABLA ── #}
+{% if pagos %}
+<form method="POST" action="{{ url_for('admin.pagar_seleccion') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="flex items-center justify-between mb-2">
+    <p class="text-sm" style="color:var(--col-muted)">{{ pagos|length }} registros</p>
+    <button type="submit" class="px-4 py-2 rounded-xl text-sm font-bold transition"
+            style="background:rgba(94,240,151,.12);color:#5EF097;border:1px solid rgba(94,240,151,.25)"
+            onclick="return confirm('¿Pagar todos los seleccionados?')">
+      ✓ Pagar seleccionados
+    </button>
+  </div>
+  <div class="ox-card overflow-hidden">
+    <div class="ox-table-wrap">
+      <table class="ox-table">
+        <thead>
+          <tr>
+            <th class="w-6"><input type="checkbox" id="sel_all" onclick="toggleAll(this)" style="accent-color:#FFAB00"></th>
+            <th>Empleado</th>
+            <th>Tipo</th>
+            <th class="text-right">Monto</th>
+            <th class="hidden md:table-cell">Período</th>
+            <th class="hidden md:table-cell">Concepto</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for p in pagos %}
+        <tr class="{{ 'opacity-60' if p.pagado }}">
+          <td>
+            {% if not p.pagado %}
+            <input type="checkbox" name="pago_ids" value="{{ p.id }}" style="accent-color:#FFAB00">
+            {% endif %}
+          </td>
+          <td>
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ox-avatar-{{ p.empleado.rol }}">
+                {{ p.empleado.nombre[0].upper() }}
+              </div>
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-white truncate">{{ p.empleado.nombre }}</p>
+                <p class="text-xs" style="color:var(--col-faint)">{{ p.empleado.rol }}</p>
+              </div>
+            </div>
+          </td>
+          <td>
+            {% set _tc = {'salario':'#93C5FD','comision':'#C084FC','bonus':'#5EF097','adelanto':'#FFAB00','descuento':'#FF6B6B','liquidacion_proveedor':'#FB923C'} %}
+            <span class="text-xs font-bold px-2 py-0.5 rounded-full"
+                  style="background:rgba(255,255,255,.06);color:{{ _tc.get(p.tipo,'var(--col-muted)') }}">
+              {{ {'salario':'💼 Salario','comision':'🚴 Comisión','bonus':'🎁 Bonus','adelanto':'⏩ Adelanto','descuento':'➖ Descuento','liquidacion_proveedor':'🧾 Liq. bar'}.get(p.tipo, p.tipo) }}
+            </span>
+          </td>
+          <td class="text-right font-mono font-bold" style="color:{{ '#FF6B6B' if p.tipo == 'descuento' else '#FFAB00' }}">
+            {% if p.tipo == 'descuento' %}-{% endif %}€{{ "%.2f"|format(p.monto) }}
+          </td>
+          <td class="hidden md:table-cell text-xs" style="color:var(--col-faint)">
+            {% if p.periodo_inicio %}{{ p.periodo_inicio.strftime('%d/%m') }}–{{ p.periodo_fin.strftime('%d/%m/%y') if p.periodo_fin else '?' }}{% else %}—{% endif %}
+          </td>
+          <td class="hidden md:table-cell text-xs truncate max-w-xs" style="color:var(--col-muted)">{{ p.concepto or '—' }}</td>
+          <td>
+            {% if p.pagado %}
+            <span class="text-xs font-bold" style="color:#5EF097">✓ Pagado{% if p.fecha_pago %} {{ p.fecha_pago.strftime('%d/%m') }}{% endif %}</span>
+            {% else %}
+            <span class="text-xs font-bold" style="color:#FF6B6B">⏳ Pendiente</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if not p.pagado %}
+            <form method="POST" action="{{ url_for('admin.marcar_pago_pagado', pago_id=p.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="text-xs px-2 py-1 rounded-lg font-bold"
+                      style="background:rgba(94,240,151,.1);color:#5EF097;border:1px solid rgba(94,240,151,.2)">Pagar</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</form>
+{% else %}
+<div class="ox-card p-10 text-center">
+  <p class="text-4xl mb-3">💸</p>
+  <p class="font-bold text-white">Sin registros de pago</p>
+  <p class="text-sm mt-1" style="color:var(--col-muted)">Genera salarios o registra pagos manualmente</p>
+</div>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<style>
+.ps-label { font-size:.72rem; font-weight:700; color:var(--col-muted); display:block; margin-bottom:.25rem; text-transform:uppercase; letter-spacing:.04em; }
+.ps-input { background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem; width:100%; }
+.ps-input:focus { outline:none; border-color:rgba(255,171,0,.5); }
+.delivery-summary-mobile{display:none}
+@media(max-width:700px){
+  .delivery-summary-table{display:none}
+  .delivery-summary-mobile{display:grid;gap:.6rem}
+  .delivery-summary-mobile article{padding:.75rem;border:1px solid var(--col-border);border-radius:7px;background:var(--col-elevated)}
+  .delivery-summary-mobile article>div{display:flex;justify-content:space-between;gap:.5rem}.delivery-summary-mobile article>div span{font-size:.7rem;color:var(--col-muted)}
+  .delivery-summary-mobile dl{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.65rem}
+  .delivery-summary-mobile dl>div{padding:.5rem;background:var(--col-surface);border-radius:6px}
+  .delivery-summary-mobile dt{font-size:.62rem;color:var(--col-muted);text-transform:uppercase;font-weight:800}
+  .delivery-summary-mobile dd{font-size:.85rem;font-weight:900;color:var(--col-text);margin-top:.1rem}
+}
+</style>
+<script>
+function toggleAll(cb) {
+  document.querySelectorAll('input[name="pago_ids"]').forEach(c => c.checked = cb.checked);
+}
+</script>
+{% endblock %}

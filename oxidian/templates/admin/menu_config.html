@@ -1,0 +1,320 @@
+{% extends "admin_base.html" %}
+{% block title %}Banners & Menú Web — {{ brand.nombre }}{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-menu-config.css', v=asset_version) }}">
+{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-black text-white">🎨 Banners & Menú Web</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Configura los banners, destacados y secciones de la tienda online</p>
+  </div>
+  <button onclick="document.getElementById('form-nuevo').classList.toggle('hidden')"
+          class="text-sm font-bold px-4 py-2 rounded-xl" style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
+    + Nuevo elemento
+  </button>
+</div>
+
+<div class="mc-destination-guide">
+  <div><strong>Inicio</strong><span>Promociones y destacados antes del catálogo.</span></div>
+  <div><strong>Menú</strong><span>Contenido integrado junto a productos y categorías.</span></div>
+  <div><strong>Checkout</strong><span>Avisos visibles antes de confirmar el pedido.</span></div>
+  <a href="{{ url_for('public.index') }}" target="_blank">Abrir vista pública</a>
+</div>
+
+{# ── FILTRO PÁGINA ── #}
+<div class="flex gap-2 mb-4">
+  {% for pag_key, pag_lbl in [('', '🌐 Todos'), ('home', '🏠 Inicio'), ('menu', '📋 Menú'), ('checkout', '🛒 Checkout')] %}
+  <a href="?pagina={{ pag_key }}"
+     class="text-xs font-bold px-3 py-1.5 rounded-lg transition {{ 'mc-tab-active' if pagina == pag_key else 'mc-tab' }}">
+    {{ pag_lbl }}
+  </a>
+  {% endfor %}
+</div>
+
+{# ── FORM NUEVO ── #}
+<div id="form-nuevo" class="hidden mb-5">
+<div class="ox-card p-5">
+  <h2 class="font-black text-white mb-4">✨ Crear elemento</h2>
+  <form method="POST" action="{{ url_for('admin.crear_menu_config') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <label class="mc-label">Tipo de elemento</label>
+        <select name="tipo" class="mc-select" id="tipo-nuevo" onchange="actualizarTipo(this.value, 'nuevo')">
+          <option value="banner">🖼️ Banner (imagen)</option>
+          <option value="producto_destacado">⭐ Producto destacado</option>
+          <option value="texto_promo">📝 Texto promocional</option>
+          <option value="seccion">📂 Sección de categoría</option>
+        </select>
+      </div>
+      <div>
+        <label class="mc-label">Página donde aparece</label>
+        <select name="pagina" class="mc-select" id="pagina-nuevo" onchange="actualizarVistaPrevia()">
+          <option value="home" {% if pagina == 'home' %}selected{% endif %}>🏠 Inicio</option>
+          <option value="menu" {% if pagina == 'menu' %}selected{% endif %}>📋 Menú</option>
+          <option value="checkout" {% if pagina == 'checkout' %}selected{% endif %}>🛒 Checkout</option>
+        </select>
+      </div>
+      <div class="md:col-span-2">
+        <label class="mc-label">Título</label>
+        <input type="text" name="titulo" placeholder="Título visible en la tienda..." class="mc-input">
+      </div>
+      <div class="md:col-span-2">
+        <label class="mc-label">Contenido / Descripción</label>
+        <textarea name="contenido" rows="2" placeholder="Texto secundario, slogan, descripción..." class="mc-input"></textarea>
+      </div>
+      <div id="nuevo-campo-imagen">
+        <label class="mc-label">Imagen del banner</label>
+        <div id="nuevo-img-preview" class="w-full h-24 rounded-xl overflow-hidden mb-2 hidden">
+          <img id="nuevo-img-preview-img" src="" class="w-full h-full object-cover">
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer rounded-xl px-3 py-2.5 mb-2 transition"
+               style="background:var(--col-elevated);border:1.5px dashed var(--col-border);color:var(--col-muted);font-size:.82rem">
+          📤 Subir imagen (jpg/png/webp — recomendado 16:9)
+          <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="hidden"
+                 onchange="previewBannerImg(this,'nuevo-img-preview','nuevo-img-preview-img')">
+        </label>
+        <input type="url" name="imagen_url" placeholder="O pegar URL de imagen: https://..." class="mc-input">
+      </div>
+      <div>
+        <label class="mc-label">URL de enlace (opcional)</label>
+        <input type="text" name="enlace_url" placeholder="https://... o /producto/123" class="mc-input">
+      </div>
+      <div id="nuevo-campo-categoria" class="hidden">
+        <label class="mc-label">Categoría</label>
+        <select name="categoria_id" class="mc-select">
+          <option value="">— Todas —</option>
+          {% for c in categorias %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
+        </select>
+      </div>
+      <div id="nuevo-campo-producto" class="hidden">
+        <label class="mc-label">Producto</label>
+        <select name="producto_id" class="mc-select">
+          <option value="">— Seleccionar —</option>
+          {% for p in productos %}<option value="{{ p.id }}">{{ p.nombre }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="mc-label">Orden (menor número = aparece antes)</label>
+        <input type="number" name="orden" value="0" min="0" class="mc-input">
+      </div>
+    </div>
+    <div class="mc-live-preview" id="mc-live-preview" aria-live="polite">
+      <span class="mc-live-preview-label">Vista previa aproximada</span>
+      <div id="mc-live-preview-content"></div>
+    </div>
+    <div class="flex gap-3 mt-5">
+      <button type="submit" class="px-6 py-2 font-bold rounded-xl text-black"
+              style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Crear</button>
+      <button type="button" onclick="document.getElementById('form-nuevo').classList.add('hidden')"
+              class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
+    </div>
+  </form>
+</div>
+</div>
+
+{# ── LISTA ── #}
+{% if not items %}
+<div class="ox-card p-10 text-center">
+  <p class="text-4xl mb-3">🎨</p>
+  <p class="font-bold text-white">Sin elementos configurados</p>
+  <p class="text-sm mt-1" style="color:var(--col-muted)">Añade banners y destacados para personalizar la tienda</p>
+</div>
+{% else %}
+
+{# Agrupar por página #}
+{% set paginas_labels = {'home': '🏠 Inicio', 'menu': '📋 Menú', 'checkout': '🛒 Checkout'} %}
+{% set paginas_vistas = [] %}
+{% for item in items %}
+  {% if item.pagina not in paginas_vistas %}
+    {% if not paginas_vistas.append(item.pagina) %}{% endif %}
+    <div class="mb-6">
+      <h2 class="text-sm font-bold mb-3 flex items-center gap-2" style="color:var(--col-muted)">
+        <span>{{ paginas_labels.get(item.pagina, item.pagina) }}</span>
+        <span class="flex-1 h-px" style="background:var(--col-border)"></span>
+      </h2>
+      <div class="space-y-2">
+  {% endif %}
+
+  <div class="ox-card p-3 flex items-center gap-4 {{ '' if item.activo else 'opacity-50' }}">
+
+    {# Preview imagen #}
+    <div class="mc-preview-img flex-shrink-0">
+      {% if item.imagen_url %}
+        <img src="{{ item.imagen_url|upload_url }}"
+             alt="{{ item.titulo or '' }}" class="w-full h-full object-cover rounded-lg">
+      {% else %}
+        <div class="w-full h-full flex items-center justify-center text-2xl rounded-lg" style="background:var(--col-elevated)">
+          {{ '🖼️' if item.tipo == 'banner' else ('⭐' if item.tipo == 'producto_destacado' else ('📝' if item.tipo == 'texto_promo' else '📂')) }}
+        </div>
+      {% endif %}
+    </div>
+
+    {# Info #}
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2 mb-0.5">
+        <span class="mc-tipo-badge mc-tipo-{{ item.tipo }}">{{ {'banner':'Banner','producto_destacado':'Destacado','texto_promo':'Texto','seccion':'Sección'}.get(item.tipo, item.tipo) }}</span>
+        {% if not item.activo %}<span class="text-xs" style="color:#FF6B6B">Inactivo</span>{% endif %}
+        <span class="text-xs" style="color:var(--col-faint)">Orden: {{ item.orden }}</span>
+      </div>
+      <p class="font-bold text-white text-sm">{{ item.titulo or '(sin título)' }}</p>
+      {% if item.contenido %}<p class="text-xs truncate" style="color:var(--col-muted)">{{ item.contenido[:80] }}</p>{% endif %}
+      {% if item.enlace_url %}<p class="text-xs" style="color:#5AC8FA">🔗 {{ item.enlace_url[:50] }}</p>{% endif %}
+      {% if item.categoria %}<p class="text-xs" style="color:var(--col-faint)">📂 {{ item.categoria.nombre }}</p>{% endif %}
+      {% if item.producto %}<p class="text-xs" style="color:var(--col-faint)">📦 {{ item.producto.nombre }}</p>{% endif %}
+    </div>
+
+    {# Acciones #}
+    <div class="flex items-center gap-1.5 flex-shrink-0">
+      <button type="button" onclick="toggleEdit('mc-edit-{{ item.id }}')"
+              class="mc-btn mc-btn-edit" title="Editar">✏️</button>
+      <form method="POST" action="{{ url_for('admin.toggle_menu_config', item_id=item.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="mc-btn {{ 'mc-btn-off' if item.activo else 'mc-btn-on' }}" title="{{ 'Desactivar' if item.activo else 'Activar' }}">
+          {{ '⏸' if item.activo else '▶' }}
+        </button>
+      </form>
+      <form method="POST" action="{{ url_for('admin.eliminar_menu_config', item_id=item.id) }}"
+            onsubmit="return confirm('¿Eliminar este elemento?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="mc-btn mc-btn-del">🗑️</button>
+      </form>
+    </div>
+  </div>
+
+  {# Form edición inline #}
+  <div id="mc-edit-{{ item.id }}" class="hidden ox-card p-4 mt-1 mb-2" style="border-color:rgba(255,171,0,.2)">
+    <p class="text-xs font-bold text-white mb-3">✏️ Editar: {{ item.titulo or item.tipo }}</p>
+    <form method="POST" action="{{ url_for('admin.editar_menu_config', item_id=item.id) }}"
+          enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="grid md:grid-cols-2 gap-3">
+        <div>
+          <label class="mc-label">Tipo de elemento</label>
+          <select name="tipo" class="mc-select" onchange="actualizarTipo(this.value, 'edit-{{ item.id }}')">
+            <option value="banner" {% if item.tipo == 'banner' %}selected{% endif %}>🖼️ Banner</option>
+            <option value="producto_destacado" {% if item.tipo == 'producto_destacado' %}selected{% endif %}>⭐ Producto destacado</option>
+            <option value="texto_promo" {% if item.tipo == 'texto_promo' %}selected{% endif %}>📝 Texto promocional</option>
+            <option value="seccion" {% if item.tipo == 'seccion' %}selected{% endif %}>📂 Sección de categoría</option>
+          </select>
+        </div>
+        <div>
+          <label class="mc-label">Página</label>
+          <select name="pagina" class="mc-select">
+            <option value="home" {% if item.pagina == 'home' %}selected{% endif %}>🏠 Inicio</option>
+            <option value="menu" {% if item.pagina == 'menu' %}selected{% endif %}>📋 Menú público</option>
+            <option value="checkout" {% if item.pagina == 'checkout' %}selected{% endif %}>🛒 Checkout</option>
+          </select>
+        </div>
+        <div>
+          <label class="mc-label">Título</label>
+          <input type="text" name="titulo" value="{{ item.titulo or '' }}" class="mc-input">
+        </div>
+        <div>
+          <label class="mc-label">URL enlace (opcional)</label>
+          <input type="text" name="enlace_url" value="{{ item.enlace_url or '' }}" class="mc-input">
+        </div>
+        <div class="md:col-span-2">
+          <label class="mc-label">Contenido / Descripción</label>
+          <textarea name="contenido" rows="2" class="mc-input">{{ item.contenido or '' }}</textarea>
+        </div>
+        <div class="md:col-span-2">
+          <label class="mc-label">Imagen</label>
+          {% if item.imagen_url %}
+          <div class="w-full h-20 rounded-xl overflow-hidden mb-2">
+            <img src="{{ item.imagen_url|upload_url }}"
+                 class="w-full h-full object-cover">
+          </div>
+          {% endif %}
+          <label class="flex items-center gap-2 cursor-pointer rounded-xl px-3 py-2 mb-2 text-sm"
+                 style="background:var(--col-elevated);border:1.5px dashed var(--col-border);color:var(--col-muted)">
+            📤 Reemplazar imagen
+            <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="hidden">
+          </label>
+          <input type="url" name="imagen_url" value="{{ item.imagen_url or '' }}"
+                 placeholder="O pegar URL de imagen..." class="mc-input">
+        </div>
+        <div>
+          <label class="mc-label">Orden (posición)</label>
+          <input type="number" name="orden" value="{{ item.orden }}" min="0" class="mc-input">
+        </div>
+        <div id="edit-{{ item.id }}-campo-categoria" class="{{ '' if item.tipo == 'seccion' else 'hidden' }}">
+          <label class="mc-label">Categoría</label>
+          <select name="categoria_id" class="mc-select">
+            <option value="">— Seleccionar —</option>
+            {% for c in categorias %}<option value="{{ c.id }}" {% if item.categoria_id == c.id %}selected{% endif %}>{{ c.nombre }}</option>{% endfor %}
+          </select>
+        </div>
+        <div id="edit-{{ item.id }}-campo-producto" class="{{ '' if item.tipo == 'producto_destacado' else 'hidden' }}">
+          <label class="mc-label">Producto destacado</label>
+          <select name="producto_id" class="mc-select">
+            <option value="">— Seleccionar —</option>
+            {% for p in productos %}<option value="{{ p.id }}" {% if item.producto_id == p.id %}selected{% endif %}>{{ p.nombre }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button type="submit" class="px-5 py-2 font-bold rounded-xl text-black text-sm"
+                style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Guardar</button>
+        <button type="button" onclick="toggleEdit('mc-edit-{{ item.id }}')"
+                class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
+      </div>
+    </form>
+  </div>
+
+{% if loop.last or loop.nextitem is defined and loop.nextitem.pagina != item.pagina %}
+      </div>
+    </div>
+{% endif %}
+{% endfor %}
+
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+function toggleEdit(id) { document.getElementById(id).classList.toggle('hidden'); }
+function actualizarTipo(tipo, ctx) {
+  const catField = document.getElementById(ctx + '-campo-categoria');
+  const prodField = document.getElementById(ctx + '-campo-producto');
+  const imgField = document.getElementById(ctx + '-campo-imagen');
+  if (catField) catField.classList.toggle('hidden', tipo !== 'seccion');
+  if (prodField) prodField.classList.toggle('hidden', tipo !== 'producto_destacado');
+  if (imgField) imgField.classList.toggle('hidden', tipo !== 'banner');
+  if (ctx === 'nuevo') actualizarVistaPrevia();
+}
+function previewBannerImg(input, wrapId, imgId) {
+  const wrap = document.getElementById(wrapId);
+  const img  = document.getElementById(imgId);
+  if (!input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    if (img)  { img.src = e.target.result; }
+    if (wrap) wrap.classList.remove('hidden');
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+function escapePreview(value) {
+  return String(value || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+}
+function actualizarVistaPrevia() {
+  const form = document.querySelector('#form-nuevo form');
+  const target = document.getElementById('mc-live-preview-content');
+  if (!form || !target) return;
+  const tipo = form.elements.tipo.value;
+  const pagina = form.elements.pagina.value;
+  const titulo = escapePreview(form.elements.titulo.value || 'Título del elemento');
+  const contenido = escapePreview(form.elements.contenido.value || 'Descripción visible para el cliente.');
+  const label = {banner:'Banner',producto_destacado:'Producto destacado',texto_promo:'Aviso',seccion:'Sección'}[tipo] || tipo;
+  target.innerHTML = `<article class="mc-preview-card mc-preview-${tipo}">
+    <small>${label} · ${pagina}</small><strong>${titulo}</strong><span>${contenido}</span>
+  </article>`;
+}
+document.querySelectorAll('#form-nuevo input,#form-nuevo textarea,#form-nuevo select').forEach(el => {
+  el.addEventListener('input', actualizarVistaPrevia);
+});
+actualizarVistaPrevia();
+</script>
+{% endblock %}

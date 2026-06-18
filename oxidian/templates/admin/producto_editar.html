@@ -1,0 +1,181 @@
+{% extends "admin_base.html" %}
+{% block title %}Editar {{ producto.nombre }} — Admin{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+  <div>
+    <a href="{{ url_for('admin.productos') }}{% if producto.es_combo %}#combos{% endif %}" class="text-xs" style="color:var(--col-muted)">← Volver a productos</a>
+    <h1 class="text-2xl font-black text-white mt-1">
+      {{ '🎁 Editar combo' if producto.es_combo else '🛍️ Editar producto' }}
+    </h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Modifica datos, precios, visibilidad, imagen, puntos y alérgenos.</p>
+  </div>
+  {% if producto.es_combo %}
+  <a href="{{ url_for('admin.gestionar_combo', producto_id=producto.id) }}" class="ox-btn-primary text-sm">Gestionar componentes</a>
+  {% endif %}
+</div>
+
+<form method="POST" action="{{ url_for('admin.editar_producto', producto_id=producto.id) }}" enctype="multipart/form-data" class="grid lg:grid-cols-3 gap-5">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% if producto.es_combo %}<input type="hidden" name="es_combo" value="1">{% endif %}
+
+  <section class="lg:col-span-2 ox-card p-5 space-y-4">
+    <div class="grid md:grid-cols-2 gap-3">
+      <div class="md:col-span-2">
+        <label class="edit-label">Nombre *</label>
+        <input name="nombre" required value="{{ producto.nombre }}" class="edit-input">
+      </div>
+      <div class="md:col-span-2">
+        <label class="edit-label">Descripción</label>
+        <textarea name="descripcion" rows="3" class="edit-input">{{ producto.descripcion or '' }}</textarea>
+      </div>
+      <div>
+        <label class="edit-label">Precio de venta (€) *</label>
+        <input type="number" name="precio" step="0.01" min="0" required value="{{ '%.2f'|format(producto.precio|float) }}" class="edit-input">
+      </div>
+      <div>
+        <label class="edit-label">Precio de costo (€)</label>
+        <input type="number" name="precio_costo" step="0.01" min="0" value="{{ '%.2f'|format(producto.precio_costo|float) if producto.precio_costo else '' }}" class="edit-input">
+      </div>
+      <div>
+        <label class="edit-label">Categoría</label>
+        <select name="categoria_id" class="edit-input">
+          <option value="">Sin categoría</option>
+          {% for cat in categorias %}
+          <option value="{{ cat.id }}" {% if producto.categoria_id == cat.id %}selected{% endif %}>{{ cat.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="edit-label">País de origen</label>
+        <input name="origen_pais" value="{{ producto.origen_pais or '' }}" class="edit-input">
+      </div>
+      <div>
+        <label class="edit-label">Tipo de producto</label>
+        <select name="tipo_producto" class="edit-input">
+          {% for val, label in [('simple','Simple'),('pesable','Pesable'),('combo','Combo'),('servicio','Servicio'),('materia_prima','Materia prima')] %}
+          <option value="{{ val }}" {% if (producto.tipo_producto or 'simple') == val or (producto.es_combo and val == 'combo') %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="edit-label">Estado</label>
+        <label class="edit-check"><input type="checkbox" name="activo" {% if producto.activo %}checked{% endif %}> Activo en tienda</label>
+      </div>
+      <div>
+        <label class="edit-label">Origen operativo</label>
+        <select name="proveedor_despachador_id" class="edit-input">
+          <option value="">Stock propio / tienda</option>
+          {% for prov in proveedores %}
+          <option value="{{ prov.id }}" {% if producto.proveedor_despachador_id == prov.id %}selected{% endif %}>{{ prov.nombre }}</option>
+          {% endfor %}
+        </select>
+        <p class="text-xs mt-1" style="color:var(--col-muted)">Si eliges proveedor, el producto sale de su inventario y se enruta a su panel.</p>
+      </div>
+    </div>
+
+    <div class="edit-block">
+      <h2 class="edit-title">Entrega y visibilidad</h2>
+      <div class="mb-3">
+        <p class="text-xs text-gray-500 mb-1 font-semibold uppercase tracking-wide">Canal de preparación</p>
+        <div class="flex flex-wrap gap-3 text-sm">
+          {% set canal_actual = producto.canal_preparacion or 'cocina' %}
+          {% for val, label in [('cocina','🍳 Cocina'),('almacen','📦 Almacén')] %}
+          <label class="edit-chip"><input type="radio" name="canal_preparacion" value="{{ val }}" {% if canal_actual == val %}checked{% endif %}> {{ label }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-3 text-sm">
+        {% set tipo_actual = 'programado' if producto.tipo_entrega == 'encargo' else (producto.tipo_entrega or 'inmediato') %}
+        {% for val, label in [('inmediato','Inmediato'),('programado','Programado')] %}
+        <label class="edit-chip"><input type="radio" name="tipo_entrega" value="{{ val }}" {% if tipo_actual == val %}checked{% endif %}> {{ label }}</label>
+        {% endfor %}
+      </div>
+      <div class="grid md:grid-cols-2 gap-3 mt-3">
+        <div>
+          <label class="edit-label">Fecha de llegada</label>
+          <input type="date" name="fecha_llegada" value="{{ producto.fecha_llegada.strftime('%Y-%m-%d') if producto.fecha_llegada else '' }}" class="edit-input">
+        </div>
+        <div>
+          <label class="edit-label">Hora inicio visible</label>
+          <input type="time" name="hora_inicio_visibilidad" value="{{ producto.hora_inicio_visibilidad.strftime('%H:%M') if producto.hora_inicio_visibilidad else '' }}" class="edit-input">
+        </div>
+        <div>
+          <label class="edit-label">Hora fin visible</label>
+          <input type="time" name="hora_fin_visibilidad" value="{{ producto.hora_fin_visibilidad.strftime('%H:%M') if producto.hora_fin_visibilidad else '' }}" class="edit-input">
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2 mt-3">
+        {% for i, dia in [(0,'Lun'),(1,'Mar'),(2,'Mié'),(3,'Jue'),(4,'Vie'),(5,'Sáb'),(6,'Dom')] %}
+        <label class="edit-chip"><input type="checkbox" name="dias_semana" value="{{ i }}" {% if i in dias_activos %}checked{% endif %}> {{ dia }}</label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="edit-block">
+      <h2 class="edit-title">Puntos y alérgenos</h2>
+      <div class="grid md:grid-cols-2 gap-3">
+        <label class="edit-check"><input type="checkbox" name="stock_mostrar_en_web" {% if producto.stock_mostrar_en_web %}checked{% endif %}> Mostrar stock en web</label>
+        <div>
+          <label class="edit-label">Puntos para canje</label>
+          <input type="number" name="puntos_para_canje" min="1" value="{{ producto.puntos_para_canje or '' }}" class="edit-input">
+          <label class="edit-check mt-2"><input type="checkbox" name="canjeable_con_puntos" {% if producto.canjeable_con_puntos %}checked{% endif %}> Canjeable con puntos</label>
+        </div>
+      </div>
+      <label class="edit-check mt-3"><input type="checkbox" name="es_hipoalergenico" {% if producto.es_hipoalergenico %}checked{% endif %}> Sin alérgenos relevantes</label>
+      <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 gap-2 mt-3">
+        {% for code, icon, label in ALERGENOS_EU %}
+        <label class="edit-allergen">
+          <input type="checkbox" name="alergenos" value="{{ code }}" {% if code in alergenos_activos %}checked{% endif %}>
+          <span>{{ icon }}</span>
+          <small>{{ label }}</small>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <aside class="ox-card p-5 space-y-4">
+    <div>
+      <h2 class="edit-title">Imagen</h2>
+      <div class="edit-img">
+        {% if producto.imagen_url %}
+        <img src="{{ producto.imagen_url|upload_url }}" alt="{{ producto.nombre }}">
+        {% else %}
+        <span>🍽️</span>
+        {% endif %}
+      </div>
+      <label class="edit-label mt-3">Subir imagen nueva</label>
+      <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="edit-input">
+      <label class="edit-label mt-3">URL de imagen</label>
+      <input type="url" name="imagen_url" value="{{ producto.imagen_url if producto.imagen_url and producto.imagen_url.startswith('http') else '' }}" class="edit-input">
+    </div>
+
+    <div>
+      <label class="edit-label">Motivo cambio de precio</label>
+      <input name="motivo_precio" class="edit-input" placeholder="Opcional">
+    </div>
+
+    <div>
+      <label class="edit-label">Atributos avanzados JSON</label>
+      <textarea name="atributos_json" rows="5" class="edit-input font-mono text-xs">{{ producto.atributos_json or '' }}</textarea>
+    </div>
+
+    <button type="submit" class="ox-btn-primary w-full">Guardar cambios</button>
+    <a href="{{ url_for('admin.productos') }}{% if producto.es_combo %}#combos{% endif %}" class="ox-btn-ghost w-full text-center">Cancelar</a>
+  </aside>
+</form>
+
+<style>
+.edit-label { display:block; font-size:.72rem; font-weight:800; text-transform:uppercase; color:var(--col-muted); margin-bottom:.35rem; }
+.edit-input { width:100%; border:1px solid var(--col-border); background:var(--col-elevated); color:white; border-radius:8px; padding:.65rem .75rem; font-size:.9rem; }
+.edit-block { border-top:1px solid var(--col-border); padding-top:1rem; }
+.edit-title { font-weight:900; color:white; margin-bottom:.75rem; }
+.edit-check, .edit-chip { display:flex; align-items:center; gap:.45rem; color:var(--col-text); font-size:.9rem; }
+.edit-chip { background:var(--col-elevated); border:1px solid var(--col-border); border-radius:8px; padding:.5rem .7rem; }
+.edit-allergen { display:flex; flex-direction:column; align-items:center; gap:.2rem; padding:.45rem; border-radius:8px; border:1px solid var(--col-border); background:var(--col-elevated); cursor:pointer; }
+.edit-allergen span { font-size:1.25rem; }
+.edit-allergen small { font-size:.62rem; color:var(--col-muted); text-align:center; line-height:1.1; }
+.edit-img { aspect-ratio:1/1; border-radius:8px; background:var(--col-elevated); border:1px solid var(--col-border); display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:3rem; }
+.edit-img img { width:100%; height:100%; object-fit:cover; }
+</style>
+{% endblock %}

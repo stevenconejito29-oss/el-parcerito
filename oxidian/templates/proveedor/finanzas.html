@@ -1,0 +1,123 @@
+{% extends "admin_base.html" %}
+{% block title %}Finanzas — {{ bar.nombre if bar else 'Resumen global' }}{% endblock %}
+{% block content %}
+
+<div class="mb-5">
+  <h1 class="text-2xl font-black text-white">💰 Finanzas del bar</h1>
+  <p class="text-xs mt-1" style="color:var(--col-muted)">
+    {% if bar %}
+      <strong>{{ bar.nombre }}</strong> · Modelo: <strong>{{ modelo }}</strong>
+      {% if modelo == 'stock_propio_bar' %}({{ '%.2f'|format(comision_pct|float) }}% por preparar){% endif %}
+    {% else %}
+      Vista global (admin) — usa el panel `/admin/liquidacion-proveedores` para liquidaciones por proveedor.
+    {% endif %}
+  </p>
+</div>
+
+<form method="GET" class="ox-card p-4 mb-5 flex flex-wrap gap-3 items-end">
+  <div class="ox-field">
+    <label class="ox-label">Desde</label>
+    <input type="date" name="fecha_inicio" value="{{ fecha_inicio.strftime('%Y-%m-%d') }}" class="ox-input">
+  </div>
+  <div class="ox-field">
+    <label class="ox-label">Hasta</label>
+    <input type="date" name="fecha_fin" value="{{ fecha_fin.strftime('%Y-%m-%d') }}" class="ox-input">
+  </div>
+  <button type="submit" class="ox-btn-primary">Aplicar</button>
+</form>
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+  <div class="ox-card p-4">
+    <p class="text-xs uppercase" style="color:var(--col-muted)">Vendido (entregado)</p>
+    <p class="text-2xl font-black text-green-400">€{{ "%.2f"|format(pvp_vendido|float) }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">{{ vendidos|length }} pedido(s)</p>
+  </div>
+  <div class="ox-card p-4">
+    <p class="text-xs uppercase" style="color:var(--col-muted)">Cancelado</p>
+    <p class="text-2xl font-black text-yellow-400">€{{ "%.2f"|format(pvp_cancelado|float) }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">{{ cancelados|length }} pedido(s)</p>
+  </div>
+  <div class="ox-card p-4">
+    <p class="text-xs uppercase" style="color:var(--col-muted)">Extraviado</p>
+    <p class="text-2xl font-black text-red-400">€{{ "%.2f"|format(pvp_extraviado|float) }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">{{ extraviados|length }} pedido(s)</p>
+  </div>
+  <div class="ox-card p-4">
+    <p class="text-xs uppercase" style="color:var(--col-muted)">A pagar al bar</p>
+    <p class="text-2xl font-black" style="color:var(--col-gold)">€{{ "%.2f"|format(a_pagar_bar|float) }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">{{ formula }}</p>
+  </div>
+</div>
+
+<div class="ox-card p-4 mb-5">
+  <h3 class="text-sm font-bold text-white mb-2">💼 Reparto del dinero (período)</h3>
+  <table class="w-full text-sm">
+    <tr class="border-b border-zinc-800">
+      <td class="py-2">PVP cobrado al cliente (vendido)</td>
+      <td class="text-right text-white font-mono">€{{ "%.2f"|format(pvp_vendido|float) }}</td>
+    </tr>
+    <tr class="border-b border-zinc-800">
+      <td class="py-2">Coste registrado por el bar</td>
+      <td class="text-right text-white font-mono">€{{ "%.2f"|format(coste_bar_vendido|float) }}</td>
+    </tr>
+    <tr class="border-b border-zinc-800">
+      <td class="py-2"><strong>Para el bar</strong></td>
+      <td class="text-right text-yellow-400 font-mono">€{{ "%.2f"|format(a_pagar_bar|float) }}</td>
+    </tr>
+    <tr>
+      <td class="py-2"><strong>Para el marketplace (El Parcerito)</strong></td>
+      <td class="text-right text-green-400 font-mono">€{{ "%.2f"|format(ingreso_marketplace|float) }}</td>
+    </tr>
+  </table>
+  <p class="text-xs mt-3" style="color:var(--col-muted)">
+    Extraviados y cancelados <strong>no entran</strong> en lo que se paga al bar.
+  </p>
+</div>
+
+{% if vendidos %}
+<details class="ox-card p-4 mb-3" open>
+  <summary class="cursor-pointer font-bold text-white">✅ Pedidos vendidos ({{ vendidos|length }})</summary>
+  <table class="w-full text-sm mt-3">
+    <thead class="text-xs uppercase" style="color:var(--col-muted)">
+      <tr><th class="text-left py-1">Pedido</th><th class="text-right">PVP</th><th class="text-right">Coste bar</th></tr>
+    </thead>
+    <tbody>
+      {% for v in vendidos %}
+      <tr class="border-t border-zinc-800">
+        <td class="py-1">{{ v.pedido.numero_pedido }} · {{ v.pedido.creado_en.strftime('%d/%m %H:%M') if v.pedido.creado_en else '' }}</td>
+        <td class="text-right text-white font-mono">€{{ "%.2f"|format(v.total|float) }}</td>
+        <td class="text-right text-white font-mono">€{{ "%.2f"|format(v.coste_bar|float) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+
+{% if cancelados %}
+<details class="ox-card p-4 mb-3">
+  <summary class="cursor-pointer font-bold text-white">⚠️ Cancelados ({{ cancelados|length }})</summary>
+  <ul class="text-sm mt-3 space-y-1">
+    {% for c in cancelados %}
+    <li class="border-t border-zinc-800 py-1">
+      {{ c.pedido.numero_pedido }} — €{{ "%.2f"|format(c.total|float) }}
+    </li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+
+{% if extraviados %}
+<details class="ox-card p-4 mb-3" open>
+  <summary class="cursor-pointer font-bold text-red-400">🚨 Extraviados ({{ extraviados|length }})</summary>
+  <ul class="text-sm mt-3 space-y-1">
+    {% for e in extraviados %}
+    <li class="border-t border-zinc-800 py-1">
+      {{ e.pedido.numero_pedido }} — €{{ "%.2f"|format(e.total|float) }} (coste perdido: €{{ "%.2f"|format(e.coste_bar|float) }})
+    </li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,123 @@
+{% extends "admin_base.html" %}
+{% block title %}Features de {{ admin_user.nombre }} — SuperAdmin{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-5 flex-wrap">
+  <a href="{{ url_for('superadmin.admins') }}" class="ox-btn-ghost text-sm">← Admins</a>
+  <div>
+    <h1 class="text-xl font-black text-white">
+      ⚡ Módulos de acceso
+      <span style="color:#FFAB00">{{ admin_user.nombre }}</span>
+    </h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Activa los módulos a los que puede acceder este administrador</p>
+  </div>
+</div>
+
+{% if admin_user.rol == 'super_admin' %}
+<div class="ox-card p-4" style="border-left:3px solid rgba(192,132,252,.5)">
+  <div class="flex items-start gap-3">
+    <span class="text-xl">👑</span>
+    <div class="text-sm">
+      <strong style="color:#C084FC">Super Admin — acceso total</strong>
+      <p class="mt-1" style="color:var(--col-muted)">
+        Los módulos no aplican a este rol. Un Super Admin puede acceder a todas las funciones del sistema por defecto.
+      </p>
+    </div>
+  </div>
+</div>
+
+{% else %}
+
+{# ── KPIs ── #}
+<div class="grid grid-cols-3 gap-3 mb-5">
+  {% set n_activos = features.values()|selectattr('activo')|list|length %}
+  {% set n_total = all_features|length %}
+  <div class="ox-card p-4 text-center">
+    <p class="text-2xl font-black" style="color:#5EF097">{{ n_activos }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">Módulos activos</p>
+  </div>
+  <div class="ox-card p-4 text-center">
+    <p class="text-2xl font-black" style="color:var(--col-muted)">{{ n_total - n_activos }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">Sin activar</p>
+  </div>
+  <div class="ox-card p-4 text-center">
+    <p class="text-sm font-black" style="color:{{ '#5EF097' if admin_user.activo else '#FF6B6B' }}">
+      {{ '● Activo' if admin_user.activo else '○ Inactivo' }}
+    </p>
+    <p class="text-xs mt-1 truncate" style="color:var(--col-faint)">{{ admin_user.email }}</p>
+  </div>
+</div>
+
+{# ── Warning if zero ── #}
+{% if n_activos == 0 %}
+<div class="ox-card p-4 mb-4" style="border-left:3px solid rgba(255,59,48,.5)">
+  <div class="flex items-center gap-3">
+    <span class="text-xl">⚠️</span>
+    <p class="text-sm" style="color:#FF6B6B">
+      Este admin no tiene ningún módulo activado. No podrá ver nada del panel hasta que actives al menos uno.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('superadmin.guardar_features', user_id=admin_user.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="grid md:grid-cols-2 gap-3 mb-5">
+    {% for feat in all_features %}
+    {% set af = features.get(feat) %}
+    {% set esta_activo = af.activo if af else False %}
+    <label class="feat-toggle {{ 'feat-on' if esta_activo else 'feat-off' }}">
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <input type="checkbox" name="features" value="{{ feat }}"
+               {% if esta_activo %}checked{% endif %}
+               class="w-4 h-4 flex-shrink-0" style="accent-color:#5EF097">
+        <div class="min-w-0">
+          <p class="text-sm font-bold text-white truncate">{{ feature_labels.get(feat, feat) }}</p>
+          <p class="text-xs font-mono truncate" style="color:var(--col-faint)">{{ feat }}</p>
+        </div>
+      </div>
+      <span class="feat-pill {{ 'feat-pill-on' if esta_activo else 'feat-pill-off' }}">
+        {{ 'ON' if esta_activo else 'OFF' }}
+      </span>
+    </label>
+    {% endfor %}
+  </div>
+
+  <div class="flex gap-3 flex-wrap">
+    <button type="submit" class="ox-btn-primary flex-1 py-3 font-black">
+      💾 Guardar configuración
+    </button>
+    <form method="POST" action="{{ url_for('superadmin.activar_todos_features', user_id=admin_user.id) }}" class="flex-shrink-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="ox-btn-ghost py-3 px-5"
+              style="color:#5EF097;border-color:rgba(94,240,151,.3)">
+        ✓ Activar todos
+      </button>
+    </form>
+    <a href="{{ url_for('superadmin.admins') }}" class="ox-btn-ghost py-3 px-5">
+      Cancelar
+    </a>
+  </div>
+</form>
+
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<style>
+.feat-toggle {
+  display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+  padding:.85rem 1rem; border-radius:.75rem; cursor:pointer; transition:all .15s;
+  border:1.5px solid var(--col-border); background:var(--col-surface);
+}
+.feat-toggle:hover { background:var(--col-elevated); }
+.feat-on  { background:rgba(94,240,151,.05) !important; border-color:rgba(94,240,151,.25) !important; }
+.feat-off { opacity:.85; }
+.feat-pill {
+  font-size:.65rem; font-weight:900; padding:.2rem .55rem; border-radius:999px;
+  white-space:nowrap; flex-shrink:0;
+}
+.feat-pill-on  { background:rgba(94,240,151,.15); color:#5EF097; border:1px solid rgba(94,240,151,.25); }
+.feat-pill-off { background:rgba(255,255,255,.07); color:var(--col-faint); border:1px solid var(--col-border); }
+</style>
+{% endblock %}

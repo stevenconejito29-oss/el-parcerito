@@ -1,0 +1,16 @@
+{
+  "name": "oxidian-bot",
+  "version": "3.0.0",
+  "description": "Bot WhatsApp de Oxidian — Evolution API",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev":   "node --watch bot.js",
+    "test":  "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.9.0",
+    "dotenv":         "^17.4.2",
+    "express":        "^4.22.1"
+  }
+}

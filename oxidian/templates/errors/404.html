@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Página no encontrada — {{ brand.nombre }}{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto text-center py-16 px-4">
+  <div class="text-8xl mb-4" style="animation:float 3s ease-in-out infinite">🥟</div>
+  <h1 class="text-5xl font-black mb-2" style="color:var(--brand-primary,#FCD116)">404</h1>
+  <h2 class="text-xl font-bold mb-3" style="color:var(--col-text)">Esta página se perdió en el camino</h2>
+  <p class="mb-8" style="color:var(--col-muted)">La página que buscas no existe o fue movida. Pero nuestro menú sí está aquí.</p>
+  <a href="{{ url_for('public.index') }}"
+     class="inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-base"
+     style="background:linear-gradient(135deg,var(--brand-primary,#FCD116),color-mix(in srgb,var(--brand-primary,#FCD116) 80%,#000));color:#18120A;box-shadow:0 4px 18px rgba(252,209,22,.25)">
+    🛒 Ver el menú
+  </a>
+</div>
+<style>
+@keyframes float { 0%,100%{transform:translateY(0) rotate(-5deg)} 50%{transform:translateY(-16px) rotate(5deg)} }
+</style>
+{% endblock %}

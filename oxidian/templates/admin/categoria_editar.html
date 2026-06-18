@@ -1,0 +1,41 @@
+{% extends "admin_base.html" %}
+{% block title %}Editar categoría{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-5">
+  <a href="{{ url_for('admin.categorias') }}" class="ox-btn-ghost text-sm">← Volver</a>
+  <div>
+    <h1 class="text-xl font-extrabold text-white">Editar categoría</h1>
+    <p class="text-xs" style="color:var(--col-muted)">Nombre, descripción e imagen de la sección</p>
+  </div>
+</div>
+
+<form method="POST" action="{{ url_for('admin.editar_categoria', cat_id=cat.id) }}" enctype="multipart/form-data" class="ox-card p-5 max-w-3xl">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="ox-field">
+      <label class="ox-label">Nombre</label>
+      <input type="text" name="nombre" value="{{ cat.nombre }}" required class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Descripción</label>
+      <input type="text" name="descripcion" value="{{ cat.descripcion or '' }}" class="ox-input">
+    </div>
+    <div class="ox-field md:col-span-2">
+      <label class="ox-label">Imagen</label>
+      {% if cat.imagen_url %}
+      <div class="w-24 h-24 rounded-xl overflow-hidden mb-2" style="border:1px solid var(--col-border)">
+        <img src="{{ cat.imagen_url|upload_url }}" class="w-full h-full object-cover" alt="">
+      </div>
+      {% endif %}
+      <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="ox-input mb-2">
+      <input type="url" name="imagen_url" value="{{ cat.imagen_url or '' }}" placeholder="O pega una URL de imagen" class="ox-input">
+    </div>
+  </div>
+  <div class="flex gap-3 mt-5">
+    <button type="submit" class="ox-btn-primary">Guardar cambios</button>
+    <a href="{{ url_for('admin.categorias') }}" class="ox-btn-ghost">Cancelar</a>
+  </div>
+</form>
+
+{% endblock %}

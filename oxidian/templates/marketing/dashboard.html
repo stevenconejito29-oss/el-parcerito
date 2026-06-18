@@ -1,0 +1,116 @@
+{% extends "admin_base.html" %}
+{% block title %}Marketing — Dashboard{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-6">
+  <a href="{{ url_for('admin.dashboard') }}" class="ox-btn-ghost text-sm">← Volver</a>
+  <div>
+    <h1 class="text-xl font-extrabold text-white">📣 Panel de Marketing</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Fidelización, campañas y visibilidad del negocio</p>
+  </div>
+</div>
+
+{# ── KPIs ── #}
+<div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+  <div class="ox-card p-4">
+    <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:var(--col-muted)">Nuevos clientes (7 días)</p>
+    <p class="text-3xl font-black" style="color:#60A5FA">{{ nuevos_semana }}</p>
+    <p class="text-xs mt-1" style="color:var(--col-faint)">Semana anterior: {{ nuevos_semana_ant }}</p>
+  </div>
+  <div class="ox-card p-4">
+    <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:var(--col-muted)">Puntos en circulación</p>
+    <p class="text-3xl font-black" style="color:var(--col-primary)">{{ puntos_circulacion }}</p>
+    <a href="{{ url_for('marketing.puntos') }}" class="text-xs mt-1 block" style="color:var(--col-primary)">Gestionar →</a>
+  </div>
+  <div class="ox-card p-4">
+    <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:var(--col-muted)">Cupones activos</p>
+    <p class="text-3xl font-black" style="color:#5EF097">{{ cupones_activos }}</p>
+    <a href="{{ url_for('admin.cupones') }}" class="text-xs mt-1 block" style="color:#5EF097">Ver →</a>
+  </div>
+  <div class="ox-card p-4">
+    <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:var(--col-muted)">Afiliados activos</p>
+    <p class="text-3xl font-black" style="color:#C084FC">{{ afiliados_activos }}</p>
+    <a href="{{ url_for('admin.afiliados') }}" class="text-xs mt-1 block" style="color:#C084FC">Ver →</a>
+  </div>
+</div>
+
+{# ── MÓDULOS ── #}
+<p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--col-muted)">Módulos</p>
+<div class="grid md:grid-cols-3 gap-3 mb-6">
+  <a href="{{ url_for('marketing.puntos') }}"
+     class="ox-card p-4 flex items-center gap-3 hover:border-yellow-500/50 transition-colors group">
+    <span class="text-2xl group-hover:scale-110 transition-transform">⭐</span>
+    <div>
+      <p class="font-semibold text-sm text-white">Programa de puntos</p>
+      <p class="text-xs" style="color:var(--col-faint)">Gestionar puntos de clientes</p>
+    </div>
+  </a>
+  <a href="{{ url_for('admin.afiliados') }}"
+     class="ox-card p-4 flex items-center gap-3 hover:border-purple-500/50 transition-colors group">
+    <span class="text-2xl group-hover:scale-110 transition-transform">🤝</span>
+    <div>
+      <p class="font-semibold text-sm text-white">Códigos de afiliado</p>
+      <p class="text-xs" style="color:var(--col-faint)">Comisiones por referidos</p>
+    </div>
+  </a>
+  <a href="{{ url_for('admin.menu_config') }}"
+     class="ox-card p-4 flex items-center gap-3 hover:border-blue-500/50 transition-colors group">
+    <span class="text-2xl group-hover:scale-110 transition-transform">🎨</span>
+    <div>
+      <p class="font-semibold text-sm text-white">Config del menú</p>
+      <p class="text-xs" style="color:var(--col-faint)">Banners y productos destacados</p>
+    </div>
+  </a>
+  <a href="{{ url_for('admin.cupones') }}"
+     class="ox-card p-4 flex items-center gap-3 hover:border-green-500/50 transition-colors group">
+    <span class="text-2xl group-hover:scale-110 transition-transform">🎟️</span>
+    <div>
+      <p class="font-semibold text-sm text-white">Cupones de descuento</p>
+      <p class="text-xs" style="color:var(--col-faint)">Códigos de descuento</p>
+    </div>
+  </a>
+  <a href="{{ url_for('marketing.campanas') }}"
+     class="ox-card p-4 flex items-center gap-3 hover:border-cyan-500/50 transition-colors group">
+    <span class="text-2xl group-hover:scale-110 transition-transform">📲</span>
+    <div>
+      <p class="font-semibold text-sm text-white">Campañas WhatsApp</p>
+      <p class="text-xs" style="color:var(--col-faint)">Mensajes masivos a clientes</p>
+    </div>
+  </a>
+</div>
+
+{# ── TOP CUPONES / AFILIADOS ── #}
+<div class="grid md:grid-cols-2 gap-4">
+  <div class="ox-card p-4">
+    <h3 class="text-sm font-bold mb-3 text-white">🎟️ Top cupones más usados</h3>
+    {% if top_cupones %}
+    <div class="space-y-2">
+      {% for c in top_cupones %}
+      <div class="flex justify-between items-center text-sm">
+        <span class="font-mono font-bold" style="color:var(--col-primary)">{{ c.codigo }}</span>
+        <span class="text-xs px-2 py-0.5 rounded-full" style="background:rgba(255,255,255,.07);color:var(--col-muted)">{{ c.usos_actuales }} usos</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-xs" style="color:var(--col-faint)">Sin datos todavía</p>
+    {% endif %}
+  </div>
+  <div class="ox-card p-4">
+    <h3 class="text-sm font-bold mb-3 text-white">🤝 Top afiliados</h3>
+    {% if top_afiliados %}
+    <div class="space-y-2">
+      {% for a in top_afiliados %}
+      <div class="flex justify-between items-center text-sm">
+        <span class="font-mono font-bold" style="color:#C084FC">{{ a.codigo }}</span>
+        <span class="text-xs px-2 py-0.5 rounded-full" style="background:rgba(255,255,255,.07);color:var(--col-muted)">{{ a.usos_actuales }} usos</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-xs" style="color:var(--col-faint)">Sin datos todavía</p>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

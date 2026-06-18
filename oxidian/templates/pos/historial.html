@@ -1,0 +1,109 @@
+{% extends "admin_base.html" %}
+{% block title %}Historial POS{% endblock %}
+{% block content %}
+
+<div class="flex justify-between items-center mb-4 flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-bold text-white">Historial de Ventas Presenciales</h1>
+  </div>
+  <a href="{{ url_for('pos.venta') }}" class="ox-btn-primary px-4 py-2 font-bold text-sm">
+    Nueva Venta
+  </a>
+</div>
+
+{# ── TARJETAS MÓVIL ── #}
+<div class="md:hidden space-y-3">
+  {% for v in ventas %}
+  <div class="ox-card p-3">
+    <div class="flex justify-between items-start mb-2">
+      <span class="font-mono text-xs" style="color:#FFAB00">{{ v.numero_pedido }}</span>
+      <span class="text-xs font-semibold capitalize"
+            style="color:{{ '#FF6B6B' if v.estado == 'cancelado' else '#5EF097' }}">
+        {{ v.estado }}
+      </span>
+    </div>
+    <div class="flex justify-between items-center mb-2">
+      <span class="text-sm font-semibold text-white">{{ v.cliente.nombre }}</span>
+      <span class="text-lg font-bold" style="color:#FFAB00">€{{ "%.2f"|format(v.total) }}</span>
+    </div>
+    <div class="flex gap-3 text-xs mb-3" style="color:var(--col-faint)">
+      <span>{{ v.creado_en.strftime('%d/%m %H:%M') }}</span>
+      <span>{{ v.metodo_pago }}</span>
+      {% if v.cajero %}<span>{{ v.cajero.nombre }}</span>{% endif %}
+    </div>
+    <div class="flex gap-2">
+      <a href="{{ url_for('pos.ticket', pedido_id=v.id) }}" target="_blank"
+         class="ox-btn-ghost flex-1 text-center text-xs py-1.5" style="color:#5AC8FA;border-color:rgba(90,200,250,.3)">
+        🧾 Ticket
+      </a>
+      {% if v.estado != 'cancelado' %}
+      <form method="POST" action="{{ url_for('pos.devolver_venta', pedido_id=v.id) }}" class="flex-1"
+            onsubmit="return confirm('¿Devolver esta venta?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="motivo" value="Devolución manual">
+        <button type="submit" class="ox-btn-ghost w-full text-xs py-1.5"
+                style="color:#FF6B6B;border-color:rgba(255,107,107,.3)">
+          ↩ Devolver
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p class="text-center py-8" style="color:var(--col-faint)">Sin ventas presenciales.</p>
+  {% endfor %}
+</div>
+
+{# ── TABLA ESCRITORIO ── #}
+<div class="hidden md:block ox-card overflow-hidden">
+  <div class="ox-table-wrap">
+    <table class="ox-table">
+      <thead>
+        <tr>
+          <th>Pedido</th>
+          <th>Hora</th>
+          <th>Cliente</th>
+          <th>Cajero</th>
+          <th>Pago</th>
+          <th class="text-right">Total</th>
+          <th class="text-center">Estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for v in ventas %}
+      <tr>
+        <td class="font-mono whitespace-nowrap" style="color:#FFAB00">{{ v.numero_pedido }}</td>
+        <td class="text-center text-xs whitespace-nowrap" style="color:var(--col-faint)">{{ v.creado_en.strftime('%d/%m %H:%M') }}</td>
+        <td class="text-center text-sm whitespace-nowrap text-white">{{ v.cliente.nombre }}</td>
+        <td class="text-center text-xs whitespace-nowrap" style="color:var(--col-muted)">{{ v.cajero.nombre if v.cajero else '—' }}</td>
+        <td class="text-center text-xs whitespace-nowrap" style="color:var(--col-text)">{{ v.metodo_pago }}</td>
+        <td class="text-right font-mono whitespace-nowrap" style="color:#FFAB00">€{{ "%.2f"|format(v.total) }}</td>
+        <td class="text-center text-xs whitespace-nowrap font-semibold capitalize"
+            style="color:{{ '#FF6B6B' if v.estado == 'cancelado' else '#5EF097' }}">
+          {{ v.estado }}
+        </td>
+        <td class="text-right whitespace-nowrap">
+          <div class="flex justify-end gap-2 items-center">
+            <a href="{{ url_for('pos.ticket', pedido_id=v.id) }}" target="_blank"
+               class="text-xs" style="color:#5AC8FA">Ticket</a>
+            {% if v.estado != 'cancelado' %}
+            <form method="POST" action="{{ url_for('pos.devolver_venta', pedido_id=v.id) }}" class="inline"
+                  onsubmit="return confirm('¿Devolver esta venta?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="motivo" value="Devolución manual">
+              <button type="submit" class="text-xs" style="color:#FF6B6B">Devolver</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="text-center py-8" style="color:var(--col-faint)">Sin ventas presenciales.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

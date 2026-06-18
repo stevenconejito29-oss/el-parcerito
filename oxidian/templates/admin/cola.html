@@ -1,0 +1,165 @@
+{% extends "admin_base.html" %}
+{% block title %}Cola y equipo{% endblock %}
+{% block content %}
+{% set total_sin_asignar = sin_asignar|length %}
+{% set total_sin_repartidor = sin_repartidor|length %}
+
+<div class="work-area admin-queue-board">
+<section class="work-hero">
+  <div>
+    <span class="work-eyebrow">Centro operativo</span>
+    <h1 class="work-title">Cola y equipo</h1>
+    <p class="work-subtitle">Detecta bloqueos, asigna responsables y equilibra la carga de cocina, preparación y reparto.</p>
+  </div>
+  <div class="work-actions-top">
+    <a href="{{ url_for('admin.pedidos') }}" class="work-btn work-btn-ghost">Ver pedidos</a>
+  </div>
+</section>
+
+<div class="queue-kpis">
+  <div class="queue-kpi {{ 'warn' if total_sin_asignar else '' }}">
+    <span>Preparacion</span>
+    <strong>{{ total_sin_asignar }}</strong>
+    <small>sin responsable</small>
+  </div>
+  <div class="queue-kpi {{ 'warn' if total_sin_repartidor else '' }}">
+    <span>Reparto</span>
+    <strong>{{ total_sin_repartidor }}</strong>
+    <small>listos sin ruta</small>
+  </div>
+  <div class="queue-kpi">
+    <span>Equipo</span>
+    <strong>{{ cola.values()|map('length')|sum }}</strong>
+    <small>usuarios operativos</small>
+  </div>
+</div>
+
+<div class="queue-layout">
+  <section class="queue-main">
+    <div class="queue-section">
+      <div class="queue-section-head">
+        <div>
+          <h2>Pedidos sin preparador</h2>
+          <p>Asignar a cocina/preparacion o admin disponible.</p>
+        </div>
+        <span>{{ total_sin_asignar }}</span>
+      </div>
+      <div class="queue-list">
+        {% for pedido in sin_asignar %}
+        <article class="queue-order">
+          <div>
+            <strong>{{ pedido.numero_pedido }}</strong>
+            <p>{{ pedido.cliente.nombre if pedido.cliente else 'Cliente' }} · {{ pedido.creado_en.strftime('%H:%M') }} · €{{ "%.2f"|format(pedido.total) }}</p>
+          </div>
+          <form method="POST" action="{{ url_for('admin.reasignar_pedido', pedido_id=pedido.id) }}" class="queue-assign">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="campo" value="preparador_id">
+            <select name="user_id">
+              <option value="">Elegir responsable</option>
+              {% set candidatos = cola.get('staff', []) if pedido.es_pedido_almacen else cola.get('cocina', []) + cola.get('preparacion', []) %}
+              {% for u in candidatos %}
+              <option value="{{ u.id }}">{{ '●' if u.conectado else '○' }} {{ u.nombre }}{% if u.carga_preparador is not none %} · {{ u.carga_preparador }}{% endif %}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">Asignar</button>
+          </form>
+        </article>
+        {% else %}
+        <div class="queue-empty">Todo lo pendiente tiene responsable.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="queue-section">
+      <div class="queue-section-head route">
+        <div>
+          <h2>Listos sin repartidor</h2>
+          <p>Pedidos preparados que necesitan salida.</p>
+        </div>
+        <span>{{ total_sin_repartidor }}</span>
+      </div>
+      <div class="queue-list">
+        {% for pedido in sin_repartidor %}
+        <article class="queue-order">
+          <div>
+            <strong>{{ pedido.numero_pedido }}</strong>
+            <p>{{ pedido.cliente.nombre if pedido.cliente else 'Cliente' }}{% if pedido.direccion_entrega %} · {{ pedido.direccion_entrega[:42] }}{% endif %}</p>
+          </div>
+          <form method="POST" action="{{ url_for('admin.reasignar_pedido', pedido_id=pedido.id) }}" class="queue-assign">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="campo" value="repartidor_id">
+            <select name="user_id">
+              <option value="">Elegir repartidor</option>
+              {% for u in cola.get('repartidor', []) %}
+              <option value="{{ u.id }}">{{ '●' if u.conectado else '○' }} {{ u.nombre }}{% if u.carga_repartidor is not none %} · {{ u.carga_repartidor }}{% endif %}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">Asignar</button>
+          </form>
+        </article>
+        {% else %}
+        <div class="queue-empty">No hay pedidos esperando repartidor.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <aside class="queue-team">
+    <h2>Equipo operativo</h2>
+    {% for rol, miembros in cola.items() %}
+    {% if miembros %}
+    <div class="queue-role">
+      <h3>{{ rol|replace('_',' ') }}</h3>
+      {% for m in miembros %}
+      <div class="queue-member">
+        <span class="queue-dot {{ 'on' if m.conectado else '' }}"></span>
+        <div>
+          <strong>{{ m.nombre }}</strong>
+          <p>
+            {% if m.conectado %}activo ahora{% else %}{{ m.minutos_inactivo }} min sin actividad{% endif %}
+            {% if m.carga_preparador is not none %} · prep {{ m.carga_preparador }}{% endif %}
+            {% if m.carga_repartidor is not none %} · ruta {{ m.carga_repartidor }}{% endif %}
+          </p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+  </aside>
+</div>
+</div>
+
+<style>
+.queue-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.75rem;margin-bottom:1rem}
+.queue-kpi{background:var(--col-surface);border:1px solid var(--col-border);border-radius:12px;padding:1rem}
+.queue-kpi span,.queue-kpi small{display:block;color:var(--col-muted);font-size:.75rem;font-weight:800;text-transform:uppercase}
+.queue-kpi strong{display:block;color:#fff;font-size:2rem;line-height:1;font-weight:950;margin:.25rem 0}
+.queue-kpi.warn{border-color:rgba(255,179,64,.35);box-shadow:0 0 0 1px rgba(255,179,64,.08)}
+.queue-kpi.warn strong{color:#FFB340}
+.queue-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:1rem}
+.queue-main{display:grid;gap:1rem}
+.queue-section,.queue-team{background:var(--col-surface);border:1px solid var(--col-border);border-radius:14px;padding:1rem}
+.queue-section-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.75rem;border-left:4px solid #FFB340;padding-left:.8rem}
+.queue-section-head.route{border-left-color:#5AC8FA}
+.queue-section-head h2,.queue-team h2{font-size:1rem;font-weight:950;color:#fff}
+.queue-section-head p{font-size:.78rem;color:var(--col-muted)}
+.queue-section-head span{min-width:2.2rem;height:2.2rem;border-radius:999px;background:var(--col-elevated);display:flex;align-items:center;justify-content:center;font-weight:950;color:#fff}
+.queue-list{display:grid;gap:.55rem}
+.queue-order{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:center;background:rgba(255,255,255,.035);border:1px solid var(--col-border);border-radius:10px;padding:.75rem}
+.queue-order strong{color:#FFAB00;font-family:ui-monospace,SFMono-Regular,monospace}
+.queue-order p{font-size:.78rem;color:var(--col-muted);margin-top:.15rem}
+.queue-assign{display:flex;gap:.45rem;align-items:center}
+.queue-assign select{min-width:190px;border-radius:8px;padding:.5rem .7rem}
+.queue-assign button{border-radius:8px;background:#FFAB00;color:#321800;font-weight:950;padding:.55rem .8rem}
+.queue-empty{padding:1.4rem;text-align:center;color:var(--col-muted);border:1px dashed var(--col-border);border-radius:10px}
+.queue-role{margin-top:1rem}
+.queue-role h3{font-size:.72rem;text-transform:uppercase;color:var(--col-muted);font-weight:950;margin-bottom:.4rem}
+.queue-member{display:flex;gap:.65rem;align-items:center;padding:.55rem 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.queue-member strong{color:#fff;font-size:.88rem}
+.queue-member p{color:var(--col-muted);font-size:.72rem}
+.queue-dot{width:.65rem;height:.65rem;border-radius:999px;background:#5C4A40;flex-shrink:0}
+.queue-dot.on{background:#5EF097;box-shadow:0 0 0 4px rgba(94,240,151,.14)}
+@media(max-width:900px){.queue-layout{grid-template-columns:1fr}.queue-order{grid-template-columns:1fr}.queue-assign{width:100%}.queue-assign select{min-width:0;flex:1}}
+</style>
+{% endblock %}

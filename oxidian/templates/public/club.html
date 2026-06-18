@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}Club de Fidelidad — {{ brand.nombre }}{% endblock %}
+{% block content %}
+
+<div class="club-wrap">
+
+  {# ── TARJETA SALDO ── #}
+  <div class="club-hero">
+    <div class="club-hero-bg"></div>
+    <div class="club-hero-inner">
+      <div class="club-hero-icon">⭐</div>
+      <div>
+        <p class="club-hero-label">Mis puntos</p>
+        <p class="club-hero-pts">{{ puntos }}</p>
+        <p class="club-hero-val">≈ €{{ "%.2f"|format(valor_euros) }} de descuento</p>
+      </div>
+    </div>
+    <div class="club-hero-stats">
+      <div class="club-stat">
+        <span class="club-stat-v">{{ ratio }}</span>
+        <span class="club-stat-l">pts = €1</span>
+      </div>
+      <div class="club-stat-sep"></div>
+      <div class="club-stat">
+        <span class="club-stat-v">{{ canjeables|length }}</span>
+        <span class="club-stat-l">canjeables</span>
+      </div>
+      <div class="club-stat-sep"></div>
+      <div class="club-stat">
+        <span class="club-stat-v">{{ historial|length }}</span>
+        <span class="club-stat-l">movimientos</span>
+      </div>
+    </div>
+  </div>
+
+  {# ── CÓMO GANAR PUNTOS ── #}
+  <div class="ox-card p-4 mb-4">
+    <h2 class="club-section-title">¿Cómo ganar puntos?</h2>
+    <div class="club-how-grid">
+      <div class="club-how-item">
+        <span class="club-how-icon">🛍️</span>
+        <div>
+          <p class="club-how-title">Haz pedidos</p>
+          <p class="club-how-desc">Gana puntos automáticamente en cada compra completada.</p>
+        </div>
+      </div>
+      <div class="club-how-item">
+        <span class="club-how-icon">⭐</span>
+        <div>
+          <p class="club-how-title">Deja reseñas</p>
+          <p class="club-how-desc">Puntúa tus pedidos entregados y acumula puntos extra.</p>
+        </div>
+      </div>
+      <div class="club-how-item">
+        <span class="club-how-icon">🎁</span>
+        <div>
+          <p class="club-how-title">Canjea productos</p>
+          <p class="club-how-desc">Usa tus puntos en el carrito para obtener productos gratis.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── PRÓXIMO CANJE ── #}
+  {% if proximo %}
+  <div class="ox-card p-4 mb-4">
+    <h2 class="club-section-title">Próximo canje</h2>
+    {% set falta = (proximo.puntos_para_canje or 0) - puntos %}
+    {% set pct = ((puntos / proximo.puntos_para_canje * 100) | round(0)) if proximo.puntos_para_canje else 100 %}
+    <div class="club-next-row">
+      <div class="club-next-img">
+        {% if proximo.imagen_url %}
+        <img src="{{ proximo.imagen_url|upload_url }}" alt="{{ proximo.nombre }}">
+        {% else %}<span>🥟</span>{% endif %}
+      </div>
+      <div class="club-next-info">
+        <p class="club-next-name">{{ proximo.nombre }}</p>
+        <div class="club-progress-bar">
+          <div class="club-progress-fill" style="width:{{ [pct,100]|min }}%"></div>
+        </div>
+        <p class="club-next-meta">{{ puntos }} / {{ proximo.puntos_para_canje }} pts
+          <span style="color:var(--col-muted)">— faltan {{ falta }} puntos</span>
+        </p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── PRODUCTOS CANJEABLES ── #}
+  {% if canjeables %}
+  <div class="ox-card p-4 mb-4">
+    <h2 class="club-section-title">Puedes canjear ahora 🎉</h2>
+    <div class="club-canje-grid">
+      {% for p in canjeables %}
+      <a href="{{ url_for('public.ver_carrito') }}" class="club-canje-card">
+        <div class="club-canje-img">
+          {% if p.imagen_url %}<img src="{{ p.imagen_url|upload_url }}" alt="{{ p.nombre }}">
+          {% else %}<span>🥟</span>{% endif %}
+        </div>
+        <p class="club-canje-name">{{ p.nombre }}</p>
+        <span class="club-canje-pts">⭐ {{ p.puntos_para_canje }} pts</span>
+      </a>
+      {% endfor %}
+    </div>
+    <p class="text-xs mt-3" style="color:var(--col-muted)">Añade productos al carrito y aplica tus puntos en el checkout.</p>
+  </div>
+  {% elif not proximo %}
+  <div class="ox-card p-4 mb-4 text-center">
+    <p class="text-3xl mb-2">🌟</p>
+    <p class="font-bold" style="color:var(--col-text)">Sigue acumulando puntos</p>
+    <p class="text-sm mt-1" style="color:var(--col-muted)">Haz más pedidos y canjea productos gratis.</p>
+    <a href="{{ url_for('public.index') }}" class="ox-btn-primary inline-flex mt-3">Ver menú →</a>
+  </div>
+  {% endif %}
+
+  {# ── HISTORIAL ── #}
+  <h2 class="club-section-title" style="padding:0 .05rem .5rem">Historial de puntos</h2>
+  <div class="ox-card overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b" style="border-color:var(--col-border)">
+          <th class="text-left p-3 text-xs font-black" style="color:var(--col-muted)">Fecha</th>
+          <th class="text-left p-3 text-xs font-black" style="color:var(--col-muted)">Descripción</th>
+          <th class="text-right p-3 text-xs font-black" style="color:var(--col-muted)">Puntos</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for log in historial %}
+      <tr class="border-b" style="border-color:var(--col-border)">
+        <td class="p-3 text-xs" style="color:var(--col-faint);white-space:nowrap">{{ log.creado_en.strftime('%d/%m/%Y') }}</td>
+        <td class="p-3 text-sm" style="color:var(--col-muted)">{{ log.descripcion }}</td>
+        <td class="p-3 text-right font-bold font-mono {% if log.cantidad > 0 %}text-green-400{% else %}text-red-400{% endif %}">
+          {% if log.cantidad > 0 %}+{% endif %}{{ log.cantidad }}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-center p-8" style="color:var(--col-muted)">Sin movimientos aún. ¡Haz tu primer pedido!</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+{% endblock %}
+{% block scripts %}
+<style>
+.club-wrap { max-width: 600px; margin: 0 auto; }
+.club-hero {
+  position: relative; overflow: hidden;
+  border-radius: 1.25rem; padding: 1.5rem;
+  background: linear-gradient(135deg, #1B0A00, #060E20);
+  border: 1px solid rgba(255,255,255,.08);
+  margin-bottom: 1rem;
+}
+.club-hero-bg {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 70% at 0% 0%, rgba(252,209,22,.2), transparent 55%),
+    radial-gradient(ellipse 50% 60% at 100% 100%, rgba(0,48,135,.25), transparent 55%);
+}
+.club-hero-inner {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; gap: 1.1rem; margin-bottom: 1.1rem;
+}
+.club-hero-icon { font-size: 3rem; filter: drop-shadow(0 4px 14px rgba(252,209,22,.45)); }
+.club-hero-label { font-size: .75rem; font-weight: 700; color: rgba(255,255,255,.55); text-transform: uppercase; letter-spacing: .06em; }
+.club-hero-pts { font-size: 3rem; font-weight: 950; color: #FCD116; line-height: 1; letter-spacing: -.04em; }
+.club-hero-val { font-size: .8rem; font-weight: 600; color: rgba(255,255,255,.6); margin-top: .2rem; }
+.club-hero-stats {
+  position: relative; z-index: 1;
+  display: flex; align-items: center;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+  border-radius: .75rem; padding: .65rem .9rem; gap: .8rem;
+}
+.club-stat { display: flex; flex-direction: column; align-items: center; gap: .1rem; flex: 1; }
+.club-stat-v { font-size: 1.1rem; font-weight: 950; color: #fff; }
+.club-stat-l { font-size: .62rem; font-weight: 700; color: rgba(255,255,255,.45); text-transform: uppercase; }
+.club-stat-sep { width: 1px; height: 32px; background: rgba(255,255,255,.1); flex-shrink: 0; }
+.club-section-title { font-size: .85rem; font-weight: 900; color: var(--col-text); margin-bottom: .8rem; }
+.club-how-grid { display: grid; gap: .75rem; }
+.club-how-item { display: flex; align-items: flex-start; gap: .85rem; }
+.club-how-icon { font-size: 1.5rem; flex-shrink: 0; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; background: var(--col-elevated); border-radius: .65rem; }
+.club-how-title { font-size: .88rem; font-weight: 800; color: var(--col-text); }
+.club-how-desc { font-size: .75rem; color: var(--col-muted); margin-top: .1rem; }
+.club-next-row { display: flex; align-items: center; gap: 1rem; }
+.club-next-img { width: 56px; height: 56px; border-radius: .75rem; overflow: hidden; background: var(--col-elevated); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 1.75rem; }
+.club-next-img img { width: 100%; height: 100%; object-fit: cover; }
+.club-next-info { flex: 1; min-width: 0; }
+.club-next-name { font-size: .9rem; font-weight: 800; color: var(--col-text); margin-bottom: .45rem; }
+.club-progress-bar { height: 8px; border-radius: 999px; background: var(--col-elevated); overflow: hidden; margin-bottom: .35rem; }
+.club-progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #FCD116, #FF8C00); transition: width .6s ease; }
+.club-next-meta { font-size: .75rem; color: var(--col-muted); }
+.club-canje-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: .65rem; }
+.club-canje-card {
+  display: flex; flex-direction: column; align-items: center; gap: .4rem;
+  padding: .75rem .5rem; border-radius: .85rem;
+  background: rgba(252,209,22,.06); border: 1.5px solid rgba(252,209,22,.2);
+  text-decoration: none; text-align: center;
+  transition: background .15s, transform .15s;
+}
+.club-canje-card:hover { background: rgba(252,209,22,.1); transform: translateY(-2px); }
+.club-canje-img { width: 52px; height: 52px; border-radius: .65rem; overflow: hidden; background: var(--col-elevated); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+.club-canje-img img { width: 100%; height: 100%; object-fit: cover; }
+.club-canje-name { font-size: .75rem; font-weight: 800; color: var(--col-text); line-height: 1.2; }
+.club-canje-pts { font-size: .65rem; font-weight: 900; color: #FFAB00; background: rgba(255,171,0,.1); border-radius: 999px; padding: .15rem .42rem; }
+</style>
+{% endblock %}

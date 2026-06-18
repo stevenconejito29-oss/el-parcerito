@@ -1,0 +1,727 @@
+{% extends "base.html" %}
+{% block title %}{{ brand.nombre }} — Pide online{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-menu.css', v=asset_version) }}">
+{% endblock %}
+
+{% block content %}
+{# ── Macros ── #}
+{% macro img_url(url) -%}
+  {{- url|upload_url -}}
+{%- endmacro %}
+{% macro cat_emoji(n) -%}
+  {%- set nl = n|lower -%}
+  {%- if 'empanada' in nl or 'frito' in nl or 'snack' in nl or 'buñuelo' in nl or 'tequeño' in nl -%}🥟
+  {%- elif 'arepa' in nl or 'plato' in nl or 'bandeja' in nl -%}🫓
+  {%- elif 'bebida' in nl or 'refresco' in nl or 'jugo' in nl or 'agua' in nl -%}🥤
+  {%- elif 'dulce' in nl or 'postre' in nl or 'torta' in nl -%}🍮
+  {%- elif 'combo' in nl or 'pack' in nl -%}🎁
+  {%- elif 'sopa' in nl or 'caldo' in nl -%}🍲
+  {%- else -%}🍽️{%- endif -%}
+{%- endmacro %}
+
+{# ══════════════════════════════════════════
+   HERO
+══════════════════════════════════════════ #}
+{% set hero_candidates = productos|selectattr('imagen_url')|list %}
+{% set _hero_fallback_url = (hero_candidates|first).imagen_url|upload_url if hero_candidates else '' %}
+{% set hero_bg = brand.hero_image_url if brand.hero_image_url else _hero_fallback_url %}
+<section class="ep-hero {% if hero_bg %}ep-hero-photo{% endif %}"
+         {% if hero_bg %}style="--ep-hero-image:url('{{ hero_bg }}')"{% endif %}>
+  <div class="ep-hero-inner">
+    <div class="ep-hero-text">
+      {% if brand.slogan %}<div class="ep-hero-label"><span></span> {{ brand.slogan }}</div>{% endif %}
+      <h1 class="ep-hero-title">{{ brand.nombre }}{% if brand.slogan %}<br><span class="ep-brand-word">{{ brand.slogan }}</span>{% elif brand.descripcion %}<br><span class="ep-brand-word">{{ brand.descripcion }}</span>{% endif %}</h1>
+      {% if brand.descripcion %}<p class="ep-hero-sub">{{ brand.descripcion }}</p>{% elif brand.ciudad %}<p class="ep-hero-sub">{{ brand.ciudad }}</p>{% elif brand.direccion %}<p class="ep-hero-sub">{{ brand.direccion.split(',')[0] }}</p>{% endif %}
+      <a href="#catalogo" class="ep-hero-cta">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12l7 7 7-7"/></svg>
+        Ver menú completo
+      </a>
+    </div>
+    {% if not hero_product %}<div class="ep-hero-emoji" aria-hidden="true">🥟</div>{% endif %}
+  </div>
+  <div class="ep-trust">
+    <div class="ep-trust-item">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span>~{{ zona_principal.tiempo_estimado_min if zona_principal else 25 }} min</span>
+    </div>
+    <div class="ep-trust-sep"></div>
+    <div class="ep-trust-item">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12V22H4V12"/><path d="M22 7H2v5h20V7z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+      {% if zona_principal and zona_principal.gratis_desde %}<span>Gratis +€{{ "%.0f"|format(zona_principal.gratis_desde) }}</span>
+      {% elif zona_principal and zona_principal.precio_envio == 0 %}<span>Envío gratis</span>
+      {% else %}<span>Delivery</span>{% endif %}
+    </div>
+    <div class="ep-trust-sep"></div>
+    <div class="ep-trust-item">
+      <span class="ep-status-dot {% if brand.tienda_abierta %}ep-open{% else %}ep-closed{% endif %}"></span>
+      <span>{{ 'Abierto' if brand.tienda_abierta else 'Cerrado' }}</span>
+    </div>
+  </div>
+</section>
+
+{# ══════════════════════════════════════════
+   BANNERS (MenuConfig tipo=banner)
+══════════════════════════════════════════ #}
+{% set home_config = menu_items|selectattr('pagina','equalto','home')|list %}
+{% set catalog_config = menu_items|selectattr('pagina','equalto','menu')|list %}
+{% set banners = home_config|selectattr('tipo','equalto','banner')|selectattr('imagen_url')|list %}
+{% if banners %}
+<section class="ep-banner-section" aria-label="Banners del menú">
+  <div class="ep-banner-head">
+    <span>Recomendado para ti</span>
+    <small>{{ banners|length }} anuncio{{ 's' if banners|length != 1 }}</small>
+  </div>
+<div class="ep-banners" id="ep-banners">
+  {% for b in banners %}
+  <a class="ep-banner-slide" {% if b.enlace_url %}href="{{ b.enlace_url }}"{% else %}href="#catalogo"{% endif %}
+     {% if b.enlace_url and b.enlace_url.startswith('http') %}target="_blank" rel="noopener"{% endif %}>
+    <img src="{{ b.imagen_url|upload_url }}" alt="{{ b.titulo or '' }}" loading="lazy"
+         onerror="this.parentElement.style.display='none'">
+    <span class="ep-banner-shade"></span>
+    {% if b.titulo or b.contenido %}
+    <span class="ep-banner-copy">
+      <span class="ep-banner-tag">Oferta destacada</span>
+      {% if b.titulo %}<strong>{{ b.titulo }}</strong>{% endif %}
+      {% if b.contenido %}<small>{{ b.contenido }}</small>{% endif %}
+      <span class="ep-banner-cta">Ver ahora</span>
+    </span>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+</section>
+{% endif %}
+
+{# Destacados de MenuConfig (tipo=producto_destacado) mostrados como tarjetas #}
+{% set dest_mc = home_config|selectattr('tipo','equalto','producto_destacado')|list %}
+{% if dest_mc %}
+<section class="ep-mc-destacados-wrap" aria-label="Recomendaciones">
+  <div class="ep-mini-head">
+    <strong>También te puede gustar</strong>
+    <span>{{ dest_mc|length }} recomendado{{ 's' if dest_mc|length != 1 }}</span>
+  </div>
+<div class="ep-mc-destacados">
+  {% for mc in dest_mc %}
+  {% if mc.producto %}
+  <a href="{{ url_for('public.producto_detalle', producto_id=mc.producto_id) }}" class="ep-mc-dest-card">
+    <span class="ep-mc-dest-img">
+      {% if mc.producto.imagen_url %}
+        <img src="{{ img_url(mc.producto.imagen_url) }}" alt="{{ mc.producto.nombre }}" loading="lazy">
+      {% else %}
+        <span>{% if mc.producto.es_combo %}🎁{% elif mc.producto.categoria and 'beb' in mc.producto.categoria.nombre|lower %}🥤{% else %}🥟{% endif %}</span>
+      {% endif %}
+    </span>
+    <span class="ep-mc-dest-info">
+      {% if mc.titulo %}<span class="ep-mc-dest-title">{{ mc.titulo }}</span>{% endif %}
+      <span class="ep-mc-dest-name">{{ mc.producto.nombre }}</span>
+      <span class="ep-mc-dest-price">€{{ "%.2f"|format(mc.producto.precio_final) }}</span>
+    </span>
+  </a>
+  {% endif %}
+  {% endfor %}
+</div>
+</section>
+{% endif %}
+
+{% set promos_mc = home_config|selectattr('tipo','equalto','texto_promo')|list %}
+{% if promos_mc %}
+<section class="ep-promo-strip" aria-label="Información de la tienda">
+  {% for item in promos_mc %}
+  <div>
+    {% if item.titulo %}<strong>{{ item.titulo }}</strong>{% endif %}
+    {% if item.contenido %}<span>{{ item.contenido }}</span>{% endif %}
+    {% if item.enlace_url %}<a href="{{ item.enlace_url }}"
+      {% if item.enlace_url.startswith('http') %}target="_blank" rel="noopener"{% endif %}>Ver más</a>{% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% set sections_mc = home_config|selectattr('tipo','equalto','seccion')|list %}
+{% if sections_mc %}
+<nav class="ep-config-sections" aria-label="Secciones destacadas">
+  {% for item in sections_mc %}
+  {% if item.categoria %}
+  <a href="{{ url_for('public.index', categoria=item.categoria_id) }}#catalogo">
+    <strong>{{ item.titulo or item.categoria.nombre }}</strong>
+    {% if item.contenido %}<small>{{ item.contenido }}</small>{% endif %}
+  </a>
+  {% endif %}
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if catalog_config %}
+<section class="ep-menu-config" aria-label="Contenido destacado del menú">
+  {% for item in catalog_config %}
+    {% if item.tipo == 'texto_promo' %}
+    <div class="ep-menu-config-message">
+      <div>{% if item.titulo %}<strong>{{ item.titulo }}</strong>{% endif %}{% if item.contenido %}<span>{{ item.contenido }}</span>{% endif %}</div>
+      {% if item.enlace_url %}<a href="{{ item.enlace_url }}"
+        {% if item.enlace_url.startswith('http') %}target="_blank" rel="noopener"{% endif %}>Ver</a>{% endif %}
+    </div>
+    {% elif item.tipo == 'seccion' and item.categoria %}
+    <a class="ep-menu-config-category" href="{{ url_for('public.index', categoria=item.categoria_id) }}#catalogo">
+      <span>{{ item.titulo or item.categoria.nombre }}</span><small>{{ item.contenido or 'Ver categoría' }}</small>
+    </a>
+    {% elif item.tipo == 'producto_destacado' and item.producto %}
+    <a class="ep-menu-config-product" href="{{ url_for('public.producto_detalle', producto_id=item.producto_id) }}">
+      {% if item.producto.imagen_url %}<img src="{{ item.producto.imagen_url|upload_url }}" alt="">{% endif %}
+      <div><small>Recomendado</small><strong>{{ item.titulo or item.producto.nombre }}</strong><span>€{{ "%.2f"|format(item.producto.precio_final) }}</span></div>
+    </a>
+    {% elif item.tipo == 'banner' and item.imagen_url %}
+    <a class="ep-menu-config-banner" href="{{ item.enlace_url or '#catalogo' }}"
+       {% if item.enlace_url and item.enlace_url.startswith('http') %}target="_blank" rel="noopener"{% endif %}>
+      <img src="{{ item.imagen_url|upload_url }}" alt="{{ item.titulo or '' }}">
+      {% if item.titulo %}<strong>{{ item.titulo }}</strong>{% endif %}
+    </a>
+    {% endif %}
+  {% endfor %}
+</section>
+{% endif %}
+
+{# ══════════════════════════════════════════
+   BÚSQUEDA
+══════════════════════════════════════════ #}
+<form method="GET" action="{{ url_for('public.index') }}" class="ep-search-wrap">
+  {% if categoria_activa %}<input type="hidden" name="categoria" value="{{ categoria_activa }}">{% endif %}
+  <div class="ep-search-box">
+    <svg class="ep-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="search" name="q" value="{{ busqueda or '' }}" placeholder="Busca platos, bebidas o combos" class="ep-search-input" autocomplete="off" aria-label="Buscar productos">
+    {% if busqueda %}<a href="{{ url_for('public.index') }}" class="ep-search-clear" aria-label="Limpiar">✕</a>{% endif %}
+    <button type="submit" class="ep-search-submit" aria-label="Buscar">Buscar</button>
+  </div>
+  {% if busqueda %}
+  <p class="ep-search-state">Mostrando resultados para <strong>{{ busqueda }}</strong></p>
+  {% endif %}
+</form>
+
+{# ══════════════════════════════════════════
+   DESTACADOS — scroll horizontal
+══════════════════════════════════════════ #}
+{# ══════════════════════════════════════════
+   CATEGORÍAS — STICKY
+══════════════════════════════════════════ #}
+<div class="ep-cats-wrapper" id="cats-wrapper">
+  <div class="ep-cats" id="cats-bar" role="navigation" aria-label="Categorías">
+    <a href="{{ url_for('public.index') }}{% if busqueda %}?q={{ busqueda }}{% endif %}"
+       class="ep-cat {% if not categoria_activa %}ep-cat-on{% endif %}">
+      <span class="ep-cat-icon">🌎</span><span>Todo</span>
+    </a>
+    {% for cat in categorias %}
+    {% set cat_count = productos|selectattr('categoria_id','equalto',cat.id)|list|length %}
+    <a href="{{ url_for('public.index', categoria=cat.id) }}{% if busqueda %}&q={{ busqueda }}{% endif %}"
+       class="ep-cat {% if categoria_activa == cat.id %}ep-cat-on{% endif %}">
+      {% if cat.imagen_url %}
+        <img src="{{ img_url(cat.imagen_url) }}" alt="{{ cat.nombre }}" class="ep-cat-img" loading="lazy">
+      {% else %}
+        <span class="ep-cat-icon">{{ cat_emoji(cat.nombre) }}</span>
+      {% endif %}
+      <span class="ep-cat-label">{{ cat.nombre }}</span>
+      {% if cat_count > 0 %}<span class="ep-cat-count">{{ cat_count }}</span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{# ══════════════════════════════════════════
+   CATÁLOGO — GRID DE TARJETAS
+══════════════════════════════════════════ #}
+<section id="catalogo" class="ep-section">
+  {% if not busqueda and not categoria_activa %}
+  <div class="ep-section-head">
+    <h2 class="ep-section-title">🍽️ Nuestro menú</h2>
+    <span class="ep-pill-count">{{ productos|length }} productos</span>
+  </div>
+  {% elif busqueda %}
+  <div class="ep-section-head">
+    <h2 class="ep-section-title">Resultados para "{{ busqueda }}"</h2>
+    <a href="{{ url_for('public.index') }}" class="ep-pill-count ep-link-reset">✕ Limpiar</a>
+  </div>
+  {% endif %}
+
+  {% if productos %}
+
+  {% if categoria_activa or busqueda %}
+    {# Vista filtrada: un solo grid con todos los resultados #}
+    <div class="ep-cat-section">
+      <div class="ep-grid">
+        {% for p in productos %}{% include "public/_product_card.html" %}{% endfor %}
+      </div>
+    </div>
+
+  {% else %}
+    {# Vista completa: combos primero, luego el resto #}
+    {% set combos = productos|selectattr('es_combo')|list %}
+    {% set resto  = productos|rejectattr('es_combo')|list %}
+
+    {% if combos %}
+    <div class="ep-cat-section">
+      <h3 class="ep-cat-title">🎁 Combos especiales</h3>
+      <div class="ep-grid">
+        {% for p in combos %}{% include "public/_product_card.html" %}{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if resto %}
+    {% if combos %}<div class="ep-divider"></div>{% endif %}
+    <div class="ep-cat-section">
+      {% if combos %}<h3 class="ep-cat-title">🍽️ Todos los productos</h3>{% endif %}
+      <div class="ep-grid">
+        {% for p in resto %}{% include "public/_product_card.html" %}{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  {% endif %}
+
+  {% else %}
+  <div class="ep-empty">
+    <span class="ep-empty-icon">{% if busqueda %}🔍{% else %}🍽️{% endif %}</span>
+    <p class="ep-empty-title">{% if busqueda %}Sin resultados para "{{ busqueda }}"{% else %}No hay productos disponibles{% endif %}</p>
+    {% if busqueda %}
+    <a href="{{ url_for('public.index') }}" class="ep-btn-primary ep-empty-action">← Ver todo el menú</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+{# ══════════════════════════════════════════
+   RESEÑAS
+══════════════════════════════════════════ #}
+{% if resenas_recientes %}
+<section class="ep-section">
+  <div class="ep-section-head">
+    <h2 class="ep-section-title">💬 Lo que dicen nuestros clientes</h2>
+    <span class="ep-pill-count">{{ resenas_recientes|length }} reseñas</span>
+  </div>
+  <div class="ep-reviews-grid">
+    {% for r in resenas_recientes %}
+    <div class="ep-review">
+      <div class="ep-review-head">
+        <div class="ep-review-avatar">{{ r.cliente.nombre[0].upper() if r.cliente else '?' }}</div>
+        <div class="ep-review-meta">
+          <p class="ep-review-name">{{ r.cliente.nombre if r.cliente else 'Cliente' }}</p>
+          {% if r.producto %}<p class="ep-review-product">{{ r.producto.nombre }}</p>{% endif %}
+        </div>
+        <div class="ep-review-stars">
+          {% for i in range(r.calificacion) %}★{% endfor %}<span class="ep-review-stars-muted">{% for i in range(5-r.calificacion) %}★{% endfor %}</span>
+        </div>
+      </div>
+      {% if r.comentario %}<p class="ep-review-text">"{{ r.comentario|truncate(120) }}"</p>{% endif %}
+      <p class="ep-review-date">{{ r.creado_en.strftime('%d/%m/%Y') }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{# ══════════════════════════════════════════
+   POR QUÉ ELEGIRNOS
+══════════════════════════════════════════ #}
+<section class="ep-section ep-why-section">
+  <div class="ep-why-grid">
+    <div class="ep-why-item"><span class="ep-why-icon">🥟</span><div><p class="ep-why-title">100% Auténtico</p><p class="ep-why-desc">Recetas originales</p></div></div>
+    <div class="ep-why-item"><span class="ep-why-icon">🚴</span><div><p class="ep-why-title">Delivery ~{{ zona_principal.tiempo_estimado_min if zona_principal else 25 }} min</p><p class="ep-why-desc">Rápido y en tu puerta</p></div></div>
+    <div class="ep-why-item"><span class="ep-why-icon">⭐</span><div><p class="ep-why-title">Gana puntos</p><p class="ep-why-desc">Canjéalos por productos</p></div></div>
+    <div class="ep-why-item"><span class="ep-why-icon">📱</span><div><p class="ep-why-title">WhatsApp</p><p class="ep-why-desc">Consultas y seguimiento</p></div></div>
+  </div>
+</section>
+
+{# ══════════════════════════════════════════
+   CARRITO FLOTANTE (mobile)
+══════════════════════════════════════════ #}
+{% set n_cart = session.get('carrito', {})|length %}
+{% if n_cart > 0 %}
+<div class="ep-float-cart" id="ep-float-cart">
+  <a href="{{ url_for('public.ver_carrito') }}" class="ep-float-inner">
+    <span class="ep-float-count">{{ n_cart }}</span>
+    <span class="ep-float-label">Ver carrito</span>
+    <span class="ep-float-total">€{{ "%.2f"|format(carrito_subtotal) }}</span>
+  </a>
+</div>
+{% endif %}
+
+{# ══════════════════════════════════════════
+   MODAL QUICK-ADD
+══════════════════════════════════════════ #}
+<div id="ep-modal" class="ep-modal-overlay" onclick="if(event.target===this)closeModal()" role="dialog" aria-modal="true" hidden>
+  <div class="ep-modal-panel" tabindex="-1">
+
+    {# Imagen #}
+    <div class="ep-modal-img-wrap" id="ep-modal-img-wrap">
+      <img id="ep-modal-img" src="" alt="" class="ep-modal-img">
+      <div id="ep-modal-img-fb" class="ep-modal-img-fb">🥟</div>
+      <button class="ep-modal-close" onclick="closeModal()" aria-label="Cerrar">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+      <span id="ep-modal-badge" class="ep-modal-badge is-hidden"></span>
+    </div>
+
+    <div class="ep-modal-body">
+      <div class="ep-modal-name-row">
+        <div class="ep-modal-name-copy">
+          <p id="ep-modal-cat" class="ep-modal-cat"></p>
+          <h2 id="ep-modal-name" class="ep-modal-name"></h2>
+        </div>
+        <div id="ep-modal-rating-wrap" class="ep-modal-rating-pill hidden">
+          ★ <span id="ep-modal-rating"></span>
+        </div>
+      </div>
+
+      <p id="ep-modal-desc" class="ep-modal-desc"></p>
+
+      {# Combo preview en el modal #}
+      <div id="ep-modal-combo-info" class="ep-modal-combo-info hidden">
+        <p class="ep-modal-combo-title">🎁 Este combo incluye:</p>
+        <div id="ep-modal-combo-list" class="ep-modal-combo-list"></div>
+      </div>
+
+      {# Stock urgente #}
+      <div id="ep-modal-stock" class="ep-modal-stock hidden"></div>
+
+      {# Alérgenos #}
+      <div id="ep-modal-alerg" class="ep-modal-alerg hidden">
+        <p class="ep-modal-alerg-ttl">⚠️ Contiene:</p>
+        <div id="ep-modal-alerg-list" class="ep-modal-alerg-chips"></div>
+      </div>
+      <div id="ep-modal-hipo" class="ep-modal-hipo hidden">🌿 Sin alérgenos — apto para todos</div>
+
+      {# Precio #}
+      <div class="ep-modal-price-row">
+        <span id="ep-modal-price" class="ep-modal-price"></span>
+        <span id="ep-modal-price-old" class="ep-modal-price-old hidden"></span>
+      </div>
+
+      {# Acciones — add directo #}
+      <form id="ep-modal-form" method="POST" action="" class="hidden">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="cantidad" id="ep-modal-qty-val" value="1">
+        <div class="ep-modal-actions">
+          <div class="ep-modal-qty-ctrl">
+            <button type="button" class="ep-modal-qty-btn" onclick="modalQty(-1)">−</button>
+            <span class="ep-modal-qty-display" id="ep-modal-qty-disp">1</span>
+            <button type="button" class="ep-modal-qty-btn" onclick="modalQty(1)">+</button>
+          </div>
+          <button type="submit" class="ep-modal-add-btn">
+            🛒 Añadir al carrito
+          </button>
+        </div>
+      </form>
+
+      {# Redirect button (combos / programados) #}
+      <a id="ep-modal-detail-btn" href="#" class="ep-modal-detail-btn">
+        Ver opciones y personalizar →
+      </a>
+    </div>
+  </div>
+</div>
+
+{# ── JSON de productos para el modal ── #}
+<script id="ep-data" type="application/json">
+{
+{% for p in productos %}
+  "{{ p.id }}": {
+    "id": {{ p.id }},
+    "nombre": {{ p.nombre|tojson }},
+    "descripcion": {{ (p.descripcion or '')|tojson }},
+    "precio_final": {{ p.precio_final|float if p.precio_final is not none else 0 }},
+    "precio": {{ p.precio|float if p.precio is not none else 0 }},
+    "es_combo": {{ 'true' if p.es_combo else 'false' }},
+    "combo_precio_modo": {{ (p.combo_precio_modo_normalizado if p.es_combo else '')|tojson }},
+    "combo_descuento_pct": {{ p.combo_descuento_pct_float if p.es_combo else 0 }},
+    "combo_precio_base": {{ p.combo_precio_base|float if p.es_combo else 0 }},
+    "tipo_entrega": {{ p.tipo_entrega|tojson }},
+    "imagen_url": {{ (p.imagen_url|upload_url)|tojson }},
+    "stock": {{ p.stock_total }},
+    "stock_mostrar": {{ 'true' if p.stock_mostrar_en_web else 'false' }},
+    "disponible_directo": {{ 'true' if p.disponible_para_venta() and p.tipo_entrega == 'inmediato' and not p.es_combo else 'false' }},
+    "es_hipo": {{ 'true' if p.es_hipoalergenico else 'false' }},
+    "alergenos": {{ p.alergenos_iconos|list|tojson }},
+    "categoria": {{ (p.categoria.nombre if p.categoria else '')|tojson }},
+    "rating": {{ p.rating_promedio|float }},
+    "url": {{ url_for('public.producto_detalle', producto_id=p.id)|tojson }},
+    "add_url": {{ url_for('public.agregar_carrito', producto_id=p.id)|tojson }},
+    "combo_preview": [{% if p.es_combo %}{% for ci in p.combo_items.all()[:5] %}{{ {"nombre": ci.componente.nombre, "qty": ci.cantidad, "sel": ci.es_seleccionable, "grupo": ci.grupo_display, "extra": ci.precio_extra_float}|tojson }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %}]
+  }{% if not loop.last %},{% endif %}
+{% else %}
+  "__empty": true
+{% endfor %}
+}
+</script>
+{% endblock %}
+
+{% block scripts %}
+
+<script>
+const EP_DATA = JSON.parse(document.getElementById('ep-data')?.textContent || '{}');
+const EP_CART_MAX_QTY = {{ cart_max_qty|default(99)|int }};
+let _modalQty = 1;
+let _closeTimer = null;
+
+/* ── Cerrar modal al restaurar desde bfcache (botón Atrás del navegador) ── */
+window.addEventListener('pageshow', e => { if (e.persisted) closeModal(); });
+
+/* ── Añadir al carrito vía fetch ── */
+document.getElementById('ep-modal-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const btn  = form.querySelector('.ep-modal-add-btn');
+  if (!btn || btn.disabled) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="ep-btn-spin"></span>';
+  if (navigator.vibrate) navigator.vibrate(12);
+
+  try {
+    const res  = await fetch(form.action, {
+      method: 'POST',
+      headers: { 'X-Ajax': '1' },
+      body: new FormData(form),
+    });
+    const data = await res.json().catch(() => null);
+
+    if (data?.ok) {
+      closeModal();
+      _epToast('✓ Añadido al carrito');
+      _epBadgeInc();
+    } else if (data?.msg) {
+      /* bloqueo de stock, familia, etc. — cerrar modal y mostrar aviso */
+      closeModal();
+      _epToast('⚠ ' + data.msg, 'warn');
+    } else {
+      /* respuesta inesperada — caer al submit tradicional */
+      form.submit();
+    }
+  } catch { form.submit(); }
+  finally {
+    btn.disabled = false;
+    btn.innerHTML = '🛒 Añadir al carrito';
+  }
+});
+
+function _epBadgeInc() {
+  const badge = document.querySelector('[data-cart-badge]');
+  if (badge) {
+    badge.textContent = parseInt(badge.textContent || '0') + 1;
+  } else {
+    const cartLink = document.querySelector('.ox-header-cart');
+    if (cartLink) {
+      const s = document.createElement('span');
+      s.setAttribute('data-cart-badge', '');
+      s.className = 'absolute -top-1.5 -right-1.5 text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center';
+      s.style.cssText = 'background:#FF3B30;color:#fff';
+      s.textContent = '1';
+      cartLink.appendChild(s);
+    }
+  }
+}
+
+function _epToast(msg, type) {
+  const t = Object.assign(document.createElement('div'), {
+    className: 'ep-toast' + (type === 'warn' ? ' ep-toast--warn' : ''),
+    textContent: msg,
+  });
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('is-on'));
+  const dur = type === 'warn' ? 3800 : 2200;
+  setTimeout(() => { t.classList.remove('is-on'); setTimeout(() => t.remove(), 340); }, dur);
+}
+
+function openModal(id) {
+  const d = EP_DATA[String(id)];
+  if (!d) return;
+
+  /* Cancel any in-progress close animation so the modal re-opens cleanly */
+  if (_closeTimer) {
+    clearTimeout(_closeTimer);
+    _closeTimer = null;
+    const _m = document.getElementById('ep-modal');
+    if (_m) { _m.classList.remove('ep-modal--closing'); _m.removeAttribute('hidden'); }
+  }
+
+  const modal  = document.getElementById('ep-modal');
+  const imgEl  = document.getElementById('ep-modal-img');
+  const fbEl   = document.getElementById('ep-modal-img-fb');
+
+  // Imagen
+  if (d.imagen_url) {
+    imgEl.src = d.imagen_url;
+    imgEl.style.display = 'block'; fbEl.style.display = 'none';
+    imgEl.onerror = () => { imgEl.style.display = 'none'; fbEl.style.display = 'flex'; fbEl.textContent = d.es_combo ? '🎁' : '🥟'; };
+  } else {
+    imgEl.style.display = 'none'; fbEl.style.display = 'flex';
+    fbEl.textContent = d.es_combo ? '🎁' : (d.tipo_entrega === 'bebida' ? '🥤' : '🥟');
+  }
+
+  document.getElementById('ep-modal-cat').textContent  = d.categoria || '';
+  document.getElementById('ep-modal-name').textContent = d.nombre;
+  document.getElementById('ep-modal-desc').textContent = d.descripcion || '';
+
+  // Rating
+  const rw = document.getElementById('ep-modal-rating-wrap');
+  const rv = document.getElementById('ep-modal-rating');
+  if (d.rating > 0) { rv.textContent = d.rating.toFixed(1); rw.classList.remove('hidden'); }
+  else rw.classList.add('hidden');
+
+  // Precio
+  document.getElementById('ep-modal-price').textContent = `€${d.precio_final.toFixed(2)}`;
+  const oldP = document.getElementById('ep-modal-price-old');
+  oldP.classList.add('hidden');
+
+  // Badge descuento
+  const bdg = document.getElementById('ep-modal-badge');
+  bdg.style.display = 'none';
+
+  // Stock
+  const stEl = document.getElementById('ep-modal-stock');
+  if (d.stock_mostrar && d.stock > 0 && d.stock <= 15) {
+    stEl.textContent = d.stock <= 5 ? `🔥 ¡Solo quedan ${d.stock}!` : `⏳ Quedan ${d.stock} unidades`;
+    stEl.classList.remove('hidden');
+  } else stEl.classList.add('hidden');
+
+  // Alérgenos
+  const hipEl  = document.getElementById('ep-modal-hipo');
+  const algEl  = document.getElementById('ep-modal-alerg');
+  const algLst = document.getElementById('ep-modal-alerg-list');
+  if (d.es_hipo) { hipEl.classList.remove('hidden'); algEl.classList.add('hidden'); }
+  else if (d.alergenos?.length) {
+    hipEl.classList.add('hidden');
+    algLst.replaceChildren();
+    d.alergenos.forEach(([, icon, label]) => {
+      const chip = document.createElement('span');
+      chip.className = 'ep-alerg-chip';
+      chip.textContent = `${icon} ${label}`;
+      algLst.appendChild(chip);
+    });
+    algEl.classList.remove('hidden');
+  } else { hipEl.classList.add('hidden'); algEl.classList.add('hidden'); }
+
+  // Combo preview en modal
+  const comboWrap = document.getElementById('ep-modal-combo-info');
+  const comboList = document.getElementById('ep-modal-combo-list');
+  if (d.es_combo && d.combo_preview?.length) {
+    comboList.replaceChildren();
+    d.combo_preview.forEach(ci => {
+      const row = document.createElement('div');
+      row.className = 'ep-modal-combo-item';
+      const qty = document.createElement('span');
+      qty.className = 'ep-modal-combo-item-qty';
+      qty.textContent = `${ci.qty}×`;
+      row.appendChild(qty);
+      const name = document.createElement('span');
+      name.className = 'ep-modal-combo-item-name';
+      name.textContent = ci.nombre || '';
+      row.appendChild(name);
+      if (ci.extra && Number(ci.extra) > 0) {
+        const extra = document.createElement('span');
+        extra.className = 'ep-modal-combo-item-sel';
+        extra.textContent = `+€${Number(ci.extra).toFixed(2)}`;
+        row.appendChild(extra);
+      }
+      const tag = document.createElement('span');
+      tag.className = ci.sel ? 'ep-modal-combo-item-sel' : 'ep-modal-combo-item-fix';
+      tag.textContent = ci.sel ? 'A elegir' : 'Incluido';
+      row.appendChild(tag);
+      comboList.appendChild(row);
+    });
+    comboWrap.classList.remove('hidden');
+  } else {
+    comboWrap.classList.add('hidden');
+  }
+
+  // Qty reset
+  _modalQty = 1;
+  document.getElementById('ep-modal-qty-disp').textContent = '1';
+  document.getElementById('ep-modal-qty-val').value = '1';
+
+  // Botones
+  const form    = document.getElementById('ep-modal-form');
+  const detBtn  = document.getElementById('ep-modal-detail-btn');
+  detBtn.href   = d.url;
+  /* Cerrar siempre el modal antes de navegar — fixes combo "modal stays open" */
+  detBtn.onclick = () => closeModal();
+  if (d.disponible_directo) {
+    form.action = d.add_url;
+    form.classList.remove('hidden');
+    detBtn.textContent = 'Ver detalles completos →';
+  } else {
+    form.classList.add('hidden');
+    detBtn.textContent = d.es_combo ? '🎁 Elegir opciones del combo →' : 'Ver detalles →';
+  }
+
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  document.body.classList.add('ox-modal-open');
+  modal.removeAttribute('hidden');
+}
+
+function closeModal() {
+  const modal = document.getElementById('ep-modal');
+  if (!modal || modal.hidden) return;
+  modal.classList.add('ep-modal--closing');
+  document.body.style.overflow = '';
+  document.body.classList.remove('ox-modal-open');
+  _closeTimer = setTimeout(() => {
+    modal.style.display = 'none';
+    modal.setAttribute('hidden', '');
+    modal.classList.remove('ep-modal--closing');
+    _closeTimer = null;
+  }, 220);
+}
+
+function modalQty(delta) {
+  _modalQty = Math.max(1, Math.min(EP_CART_MAX_QTY, _modalQty + delta));
+  document.getElementById('ep-modal-qty-disp').textContent = _modalQty;
+  document.getElementById('ep-modal-qty-val').value = _modalQty;
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+/* ── Auto-scroll al pill activo de categorías ── */
+(function() {
+  const active = document.querySelector('.ep-cat-on');
+  if (!active) return;
+  requestAnimationFrame(() => {
+    active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  });
+})();
+
+/* ── Scroll-reveal con IntersectionObserver ── */
+(function () {
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const showAll = () => document.querySelectorAll('.ep-grid .ep-card').forEach(c => c.classList.add('ep-vis'));
+  if (reduced || !('IntersectionObserver' in window)) { showAll(); return; }
+
+  const obs = new IntersectionObserver(entries => {
+    let idx = 0;
+    entries.filter(e => e.isIntersecting).forEach(entry => {
+      const el = entry.target;
+      el.style.transitionDelay = (idx * 0.055) + 's';
+      el.classList.add('ep-vis');
+      obs.unobserve(el);
+      idx++;
+    });
+  }, { threshold: 0.05, rootMargin: '0px 0px -28px 0px' });
+
+  document.querySelectorAll('.ep-grid .ep-card').forEach(c => obs.observe(c));
+})();
+
+/* ── Parallax en hero foto ── */
+(function () {
+  const hero = document.querySelector('.ep-hero-photo');
+  if (!hero || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let tick = false;
+  window.addEventListener('scroll', () => {
+    if (tick) return;
+    tick = true;
+    requestAnimationFrame(() => {
+      const s = window.scrollY;
+      if (s < 700) hero.style.backgroundPositionY = 'calc(35% + ' + (s * 0.24) + 'px)';
+      tick = false;
+    });
+  }, { passive: true });
+})();
+</script>
+{% endblock %}

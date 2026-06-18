@@ -1,0 +1,276 @@
+{% extends "admin_base.html" %}
+{% block title %}Cupones — {{ brand.nombre }}{% endblock %}
+{% block content %}
+
+<!-- Marketing hub nav -->
+<div class="flex gap-2 mb-4 flex-wrap">
+  <a href="{{ url_for('admin.cupones') }}" class="ox-btn-secondary" style="font-size:.8rem">🎟️ Cupones</a>
+  <a href="{{ url_for('admin.afiliados') }}" class="ox-btn-secondary" style="font-size:.8rem">🤝 Afiliados</a>
+  <a href="{{ url_for('admin.resenas') }}" class="ox-btn-secondary" style="font-size:.8rem">⭐ Reseñas</a>
+  <a href="{{ url_for('marketing.puntos') }}" class="ox-btn-secondary" style="font-size:.8rem">💎 Puntos</a>
+  <a href="{{ url_for('marketing.campanas') }}" class="ox-btn-secondary" style="font-size:.8rem">📲 Campañas</a>
+  <a href="{{ url_for('admin.menu_config') }}" class="ox-btn-secondary" style="font-size:.8rem">🎨 Banners</a>
+</div>
+
+<div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-black text-white">🎟️ Cupones de descuento</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Códigos que los clientes introducen en el carrito para obtener descuento</p>
+  </div>
+  <button onclick="document.getElementById('form-nuevo').classList.toggle('hidden')"
+          class="text-sm font-bold px-4 py-2 rounded-xl" style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
+    + Nuevo cupón
+  </button>
+</div>
+
+{# ── FORM NUEVO ── #}
+<div id="form-nuevo" class="hidden mb-5">
+<div class="ox-card p-5">
+  <h2 class="font-black text-white mb-4">✨ Crear cupón</h2>
+  <form method="POST" action="{{ url_for('admin.crear_cupon') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid md:grid-cols-3 gap-4">
+      <div>
+        <label class="cup-label">Código del cupón *</label>
+        <input type="text" name="codigo" required placeholder="VERANO20"
+               class="cup-input" style="text-transform:uppercase;font-weight:900;letter-spacing:.08em;font-size:1rem">
+      </div>
+      <div>
+        <label class="cup-label">Tipo *</label>
+        <select name="tipo" required class="cup-select" id="tipo-cupon" onchange="actualizarTipoCupon()">
+          <option value="porcentaje">% Porcentaje</option>
+          <option value="monto_fijo">€ Monto fijo</option>
+          <option value="envio_gratis">🚚 Envío gratis</option>
+        </select>
+      </div>
+      <div id="campo-valor-cupon">
+        <label class="cup-label">Valor *</label>
+        <div class="relative">
+          <input type="number" name="valor" step="0.01" min="0" value="10" required class="cup-input">
+          <span id="cupon-sufijo" class="absolute right-3 top-1/2 -translate-y-1/2 font-bold text-sm" style="color:var(--col-muted)">%</span>
+        </div>
+      </div>
+      <div>
+        <label class="cup-label">Mínimo de pedido (€)</label>
+        <input type="number" name="minimo_pedido" step="0.01" min="0" value="0" placeholder="0 = sin mínimo" class="cup-input">
+      </div>
+      <div>
+        <label class="cup-label">Usos máximos totales</label>
+        <input type="number" name="usos_maximos" min="1" placeholder="Vacío = ilimitado" class="cup-input">
+        <p class="text-xs mt-1" style="color:var(--col-faint)">Cuántas veces se puede usar en total (entre todos los clientes)</p>
+      </div>
+      <div>
+        <label class="cup-label">Descripción interna (solo para el equipo)</label>
+        <input type="text" name="descripcion" placeholder="Ej: Campaña verano 2026, solo redes..." class="cup-input">
+      </div>
+      <div>
+        <label class="cup-label">Válido desde</label>
+        <input type="date" name="fecha_inicio" class="cup-input">
+      </div>
+      <div>
+        <label class="cup-label">Válido hasta</label>
+        <input type="date" name="fecha_fin" class="cup-input">
+      </div>
+    </div>
+    <div class="flex gap-3 mt-5">
+      <button type="submit" class="px-6 py-2 font-bold rounded-xl text-black"
+              style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Crear cupón</button>
+      <button type="button" onclick="document.getElementById('form-nuevo').classList.add('hidden')"
+              class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
+    </div>
+  </form>
+</div>
+</div>
+
+{# ── LISTA ── #}
+{% if not cupones %}
+<div class="ox-card p-10 text-center">
+  <p class="text-4xl mb-3">🎟️</p>
+  <p class="font-bold text-white">Sin cupones creados</p>
+  <p class="text-sm mt-1" style="color:var(--col-muted)">Crea cupones para ofrecer descuentos especiales a tus clientes</p>
+</div>
+{% else %}
+<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+  {% for c in cupones %}
+  {% set valido, msg = c.es_valido() %}
+  <div class="ox-card p-4 {{ '' if c.activo else 'opacity-60' }}"
+       style="{{ 'border-left:3px solid rgba(255,171,0,.5)' if c.activo and valido else 'border-left:3px solid rgba(100,100,100,.3)' }}">
+
+    {# Código #}
+    <div class="flex items-center justify-between mb-2">
+      <span class="font-mono font-black text-lg" style="color:#FFAB00;letter-spacing:.06em">{{ c.codigo }}</span>
+      <div class="flex items-center gap-1">
+        {% if c.activo and valido %}
+        <span class="cup-badge cup-badge-active">Activo</span>
+        {% elif not c.activo %}
+        <span class="cup-badge cup-badge-off">Inactivo</span>
+        {% else %}
+        <span class="cup-badge cup-badge-warn">{{ msg }}</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Valor destacado #}
+    <div class="cup-valor-box">
+      {% if c.tipo == 'porcentaje' %}
+        <span class="cup-valor">-{{ c.valor|int }}%</span>
+        <span class="cup-valor-lbl">descuento</span>
+      {% elif c.tipo == 'monto_fijo' %}
+        <span class="cup-valor">-€{{ "%.2f"|format(c.valor) }}</span>
+        <span class="cup-valor-lbl">descuento fijo</span>
+      {% else %}
+        <span class="cup-valor">🚚</span>
+        <span class="cup-valor-lbl">envío gratis</span>
+      {% endif %}
+    </div>
+
+    {# Info #}
+    <div class="space-y-1 text-xs mt-2" style="color:var(--col-muted)">
+      {% if c.descripcion %}<p>{{ c.descripcion }}</p>{% endif %}
+      {% if c.minimo_pedido|float > 0 %}<p>Mín. pedido: €{{ "%.2f"|format(c.minimo_pedido) }}</p>{% endif %}
+      <div class="flex justify-between">
+        <span>Usos: <strong style="color:#fff">{{ c.usos_actuales }}/{{ c.usos_maximos or '∞' }}</strong></span>
+        {% if c.fecha_fin %}<span>Hasta {{ c.fecha_fin.strftime('%d/%m/%Y') }}</span>{% endif %}
+      </div>
+      {% if c.usos_maximos %}
+      <div class="cup-progress-bar">
+        <div class="cup-progress-fill" style="width:{{ [c.usos_actuales / c.usos_maximos * 100, 100]|min|int }}%"></div>
+      </div>
+      {% endif %}
+    </div>
+
+    {# Acciones #}
+    <div class="flex gap-1.5 mt-3">
+      <form method="POST" action="{{ url_for('admin.toggle_cupon', cupon_id=c.id) }}" class="flex-1">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="cup-toggle-btn w-full {{ 'cup-toggle-off' if c.activo else 'cup-toggle-on' }}">
+          {{ '⏸ Desactivar' if c.activo else '▶ Activar' }}
+        </button>
+      </form>
+      <a href="{{ url_for('admin.editar_cupon', cupon_id=c.id) }}"
+         class="px-3 py-1.5 rounded-lg text-xs font-bold transition"
+         style="background:rgba(90,170,255,.1);color:#60AAFF;border:1px solid rgba(90,170,255,.2)">✏️</a>
+      {% if not c.usos_actuales or c.usos_actuales == 0 %}
+      <form method="POST" action="{{ url_for('admin.eliminar_cupon', cupon_id=c.id) }}"
+            onsubmit="return confirm('¿Eliminar cupón {{ c.codigo }}? Esta acción no se puede deshacer.')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="px-3 py-1.5 rounded-lg text-xs font-bold transition"
+                style="background:rgba(255,59,48,.08);color:#FF6B6B;border:1px solid rgba(255,59,48,.15)">🗑️</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ── MODAL EDITAR CUPÓN ── -->
+<div id="modal-editar-cupon" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+  <div class="ox-card rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="font-black text-white">✏️ Editar cupón <span id="edit-cupon-codigo" class="font-mono" style="color:#FFAB00"></span></h2>
+      <button onclick="document.getElementById('modal-editar-cupon').classList.add('hidden')" class="text-2xl" style="color:var(--col-muted)">&times;</button>
+    </div>
+    <form id="form-editar-cupon" method="POST" action="">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <label class="cup-label">Tipo</label>
+          <select name="tipo" id="edit-tipo" class="cup-select" onchange="actualizarTipoEditar()">
+            <option value="porcentaje">% Porcentaje</option>
+            <option value="monto_fijo">€ Monto fijo</option>
+            <option value="envio_gratis">🚚 Envío gratis</option>
+          </select>
+        </div>
+        <div id="edit-campo-valor">
+          <label class="cup-label">Valor</label>
+          <div class="relative">
+            <input type="number" name="valor" id="edit-valor" step="0.01" min="0" class="cup-input">
+            <span id="edit-sufijo" class="absolute right-3 top-1/2 -translate-y-1/2 font-bold text-sm" style="color:var(--col-muted)">%</span>
+          </div>
+        </div>
+        <div>
+          <label class="cup-label">Mínimo de pedido (€)</label>
+          <input type="number" name="minimo_pedido" id="edit-minimo" step="0.01" min="0" class="cup-input">
+        </div>
+        <div>
+          <label class="cup-label">Usos máximos</label>
+          <input type="number" name="usos_maximos" id="edit-usos-max" min="1" placeholder="Sin límite" class="cup-input">
+        </div>
+        <div>
+          <label class="cup-label">Válido desde</label>
+          <input type="date" name="fecha_inicio" id="edit-fecha-inicio" class="cup-input">
+        </div>
+        <div>
+          <label class="cup-label">Válido hasta</label>
+          <input type="date" name="fecha_fin" id="edit-fecha-fin" class="cup-input">
+        </div>
+        <div class="col-span-2">
+          <label class="cup-label">Descripción interna</label>
+          <input type="text" name="descripcion" id="edit-descripcion" placeholder="Nota interna" class="cup-input">
+        </div>
+      </div>
+      <div class="flex gap-3 mt-5">
+        <button type="submit" class="flex-1 px-5 py-2 font-bold rounded-xl text-black"
+                style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Guardar cambios</button>
+        <button type="button" onclick="document.getElementById('modal-editar-cupon').classList.add('hidden')"
+                class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<style>
+.cup-label { font-size:.72rem; font-weight:700; color:var(--col-muted); display:block; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.04em; }
+.cup-input { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem; transition:border-color .15s; }
+.cup-input:focus { outline:none; border-color:rgba(255,171,0,.5); }
+.cup-select { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem; }
+.cup-badge { font-size:.65rem; font-weight:700; padding:2px 8px; border-radius:999px; }
+.cup-badge-active { background:rgba(52,199,89,.12); color:#5EF097; border:1px solid rgba(52,199,89,.2); }
+.cup-badge-off    { background:rgba(100,100,100,.12); color:var(--col-muted); border:1px solid var(--col-border); }
+.cup-badge-warn   { background:rgba(255,171,0,.12); color:#FFAB00; border:1px solid rgba(255,171,0,.2); }
+.cup-valor-box { text-align:center; padding:.5rem; background:rgba(255,171,0,.06); border-radius:.65rem; margin:.5rem 0; }
+.cup-valor { font-size:1.6rem; font-weight:900; color:#FFAB00; display:block; line-height:1; }
+.cup-valor-lbl { font-size:.68rem; color:var(--col-muted); }
+.cup-progress-bar { height:4px; background:rgba(255,255,255,.08); border-radius:2px; margin-top:.3rem; }
+.cup-progress-fill { height:100%; background:#FFAB00; border-radius:2px; }
+.cup-toggle-btn { width:100%; padding:.4rem; border-radius:.6rem; font-size:.78rem; font-weight:700; border:none; cursor:pointer; transition:all .15s; }
+.cup-toggle-off { background:rgba(255,59,48,.1); color:#FF6B6B; border:1px solid rgba(255,59,48,.2); }
+.cup-toggle-off:hover { background:rgba(255,59,48,.2); }
+.cup-toggle-on { background:rgba(52,199,89,.1); color:#5EF097; border:1px solid rgba(52,199,89,.2); }
+.cup-toggle-on:hover { background:rgba(52,199,89,.2); }
+</style>
+<script>
+function actualizarTipoCupon() {
+  const tipo = document.getElementById('tipo-cupon').value;
+  const campo = document.getElementById('campo-valor-cupon');
+  const suf = document.getElementById('cupon-sufijo');
+  if (tipo === 'envio_gratis') { campo.style.opacity = '.4'; }
+  else { campo.style.opacity = '1'; if (suf) suf.textContent = tipo === 'porcentaje' ? '%' : '€'; }
+}
+
+function abrirEditarCupon(id, data) {
+  document.getElementById('edit-cupon-codigo').textContent = data.codigo;
+  document.getElementById('form-editar-cupon').action = `/admin/cupones/${id}/editar`;
+  document.getElementById('edit-tipo').value = data.tipo || 'porcentaje';
+  document.getElementById('edit-valor').value = data.valor || 0;
+  document.getElementById('edit-minimo').value = data.minimo_pedido || 0;
+  document.getElementById('edit-usos-max').value = data.usos_maximos || '';
+  document.getElementById('edit-fecha-inicio').value = data.fecha_inicio || '';
+  document.getElementById('edit-fecha-fin').value = data.fecha_fin || '';
+  document.getElementById('edit-descripcion').value = data.descripcion || '';
+  actualizarTipoEditar();
+  document.getElementById('modal-editar-cupon').classList.remove('hidden');
+}
+
+function actualizarTipoEditar() {
+  const tipo = document.getElementById('edit-tipo').value;
+  const campo = document.getElementById('edit-campo-valor');
+  const suf = document.getElementById('edit-sufijo');
+  if (tipo === 'envio_gratis') { campo.style.opacity = '.4'; }
+  else { campo.style.opacity = '1'; if (suf) suf.textContent = tipo === 'porcentaje' ? '%' : '€'; }
+}
+</script>
+{% endblock %}

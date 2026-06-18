@@ -1,0 +1,671 @@
+{% extends "admin_base.html" %}
+{% block title %}Productos & Combos — Admin{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-black text-white">🛍️ Productos & Combos</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Gestiona el catálogo de productos y los combos disponibles</p>
+  </div>
+  <div class="flex gap-2">
+    <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
+            class="text-sm font-bold px-4 py-2 rounded-xl" style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
+      + Nuevo producto
+    </button>
+    <a href="{{ url_for('admin.nuevo_combo') }}" class="text-sm font-bold px-4 py-2 rounded-lg"
+       style="background:rgba(10,132,255,.15);border:1px solid rgba(10,132,255,.3);color:#5AC8FA">
+      + Construir combo
+    </a>
+  </div>
+</div>
+
+<div class="adm-kpis">
+  <div><span>Catálogo</span><strong>{{ resumen.total }}</strong></div>
+  <div><span>Activos</span><strong>{{ resumen.activos }}</strong></div>
+  <div><span>Combos</span><strong>{{ resumen.combos }}</strong></div>
+  <div><span>Canjeables</span><strong>{{ resumen.canjeables }}</strong></div>
+</div>
+
+<form method="GET" class="adm-toolbar">
+  <input type="search" name="q" value="{{ q }}" placeholder="Buscar producto o descripción">
+  <select name="categoria_id">
+    <option value="">Todas las categorías</option>
+    {% for c in categorias %}<option value="{{ c.id }}" {% if categoria_id == c.id %}selected{% endif %}>{{ c.nombre }}</option>{% endfor %}
+  </select>
+  <select name="tipo">
+    <option value="">Productos y combos</option>
+    <option value="producto" {% if tipo == 'producto' %}selected{% endif %}>Solo productos</option>
+    <option value="combo" {% if tipo == 'combo' %}selected{% endif %}>Solo combos</option>
+  </select>
+  <select name="estado">
+    <option value="">Cualquier estado</option>
+    <option value="activo" {% if estado == 'activo' %}selected{% endif %}>Activos</option>
+    <option value="inactivo" {% if estado == 'inactivo' %}selected{% endif %}>Inactivos</option>
+  </select>
+  <button type="submit">Filtrar</button>
+  {% if q or categoria_id or tipo or estado %}<a href="{{ url_for('admin.productos') }}">Limpiar</a>{% endif %}
+</form>
+
+{# ── TABS ── #}
+<div class="flex gap-2 mb-4" id="tabs-productos">
+  <button onclick="mostrarTab('productos')" id="tab-productos"
+          class="px-4 py-2 rounded-xl text-sm font-bold tab-active">
+    🥟 Productos ({{ productos|selectattr('es_combo','equalto',false)|list|length }})
+  </button>
+  <button onclick="mostrarTab('combos')" id="tab-combos"
+          class="px-4 py-2 rounded-xl text-sm font-bold tab-inactive">
+    🎁 Combos ({{ productos|selectattr('es_combo')|list|length }})
+  </button>
+</div>
+
+{# ── TAB PRODUCTOS ── #}
+<div id="section-productos">
+<div class="admin-products-mobile md:hidden space-y-3">
+  {% for p in productos if not p.es_combo %}
+  <article class="admin-product-card">
+    <div class="admin-product-card-main">
+      {% if p.imagen_url %}
+        <img src="{{ p.imagen_url|upload_url }}" class="admin-product-thumb" alt="{{ p.nombre }}">
+      {% else %}
+        <div class="admin-product-thumb admin-product-thumb-empty">🍽️</div>
+      {% endif %}
+      <div class="min-w-0 flex-1">
+        <div class="admin-product-name">{{ p.nombre }}</div>
+        <div class="admin-product-meta">
+          <span>{{ p.categoria.nombre if p.categoria else 'Sin categoría' }}</span>
+          <span>•</span>
+          {% if p.tipo_entrega in ('programado', 'encargo') %}
+            <span>Llega {{ p.fecha_llegada.strftime('%d/%m') if p.fecha_llegada else 'sin fecha' }}</span>
+          {% else %}
+            <span>Inmediato</span>
+          {% endif %}
+        </div>
+        <div class="admin-product-badges">
+          <span class="admin-product-badge {{ 'badge-provider' if p.proveedor_despachador_id else 'badge-stock' }}">{{ p.origen_operativo_label }}</span>
+          <span class="admin-product-badge badge-channel">{{ p.canal_preparacion or 'cocina' }}</span>
+          {% if p.canjeable_con_puntos %}<span class="admin-product-badge badge-points">Puntos</span>{% endif %}
+          {% if p.es_hipoalergenico %}<span class="admin-product-badge badge-hipo">Hipo</span>{% endif %}
+          <span class="admin-product-badge {{ 'badge-active' if p.activo else 'badge-inactive' }}">{{ 'Activo' if p.activo else 'Inactivo' }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="admin-product-card-stats">
+      <div><span>Precio</span><strong>€{{ "%.2f"|format(p.precio) }}</strong></div>
+      <div><span>Stock</span><strong>{% if p.usa_stock_propio %}{{ p.stock_total }}{% else %}Proveedor{% endif %}</strong></div>
+      <div><span>Visible</span><strong>{% if p.hora_inicio_visibilidad %}{{ p.hora_inicio_visibilidad.strftime('%H:%M') }}{% else %}Siempre{% endif %}</strong></div>
+    </div>
+    <div class="admin-product-actions">
+      <a href="{{ url_for('admin.editar_producto', producto_id=p.id) }}">Editar</a>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+<!-- ── TABLA ─────────────────────────────────────────────────────────── -->
+<div class="hidden md:block ox-card overflow-hidden mt-3">
+<div class="ox-table-wrap">
+<table class="ox-table">
+  <thead>
+    <tr>
+      <th class="text-left">Nombre</th>
+      <th>Categoría</th>
+      <th>Entrega</th>
+      <th>Precio</th>
+      <th>Stock</th>
+      <th>Visibilidad</th>
+      <th>Estado</th>
+      <th>Acciones</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in productos if not p.es_combo %}
+  <tr>
+    <td class="py-2 max-w-xs">
+      <div class="flex items-center gap-2.5">
+        {% if p.imagen_url %}
+          <img src="{{ p.imagen_url|upload_url }}"
+               class="w-10 h-10 rounded-xl object-cover flex-shrink-0">
+        {% else %}
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+               style="background:var(--col-elevated);border:1px solid var(--col-border)">🍽️</div>
+        {% endif %}
+        <div class="min-w-0">
+          <p class="font-semibold text-white truncate">{{ p.nombre }}</p>
+          <div class="flex gap-1 mt-0.5 flex-wrap">
+            <span class="text-xs px-1.5 rounded-full font-bold"
+                  style="{{ 'color:#FB923C;background:rgba(251,146,60,.12)' if p.proveedor_despachador_id else 'color:#5EF097;background:rgba(94,240,151,.1)' }}">
+              {{ p.origen_operativo_label }}
+            </span>
+            <span class="text-xs px-1.5 rounded-full font-bold" style="color:#5AC8FA;background:rgba(90,200,250,.1)">{{ p.canal_preparacion or 'cocina' }}</span>
+            {% if p.canjeable_con_puntos %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:#C084FC;background:rgba(192,132,252,.12)">⭐ Puntos</span>{% endif %}
+            {% if p.es_hipoalergenico %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:#5EF097;background:rgba(94,240,151,.1)">🌿 Hipo</span>{% endif %}
+          </div>
+        </div>
+      </div>
+    </td>
+    <td class="text-center text-sm" style="color:var(--col-muted)">{{ p.categoria.nombre if p.categoria else '—' }}</td>
+    <td class="text-center">
+      {% if p.tipo_entrega in ('programado', 'encargo') %}
+        <span class="text-xs font-bold px-2 py-0.5 rounded-full" style="color:#5AC8FA;background:rgba(90,200,250,.1)">📅 {{ p.fecha_llegada.strftime('%d/%m') if p.fecha_llegada else 'Sin fecha' }}</span>
+      {% else %}
+        <span class="text-xs font-bold px-2 py-0.5 rounded-full" style="color:#5EF097;background:rgba(94,240,151,.08)">⚡ Inmediato</span>
+      {% endif %}
+    </td>
+    <td class="text-center font-mono font-bold" style="color:#FFAB00">
+      €{{ "%.2f"|format(p.precio) }}
+    </td>
+    <td class="text-center font-mono font-bold"
+        style="color:{{ '#FF6B6B' if p.stock_total <= 5 else ('#FFAB00' if p.stock_total <= 20 else 'var(--col-text)') }}">
+      {% if p.usa_stock_propio %}
+        {{ p.stock_total }}
+      {% else %}
+        <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="color:#FB923C;background:rgba(251,146,60,.1);border:1px solid rgba(251,146,60,.18)">Proveedor</span>
+      {% endif %}
+      {% if p.stock_mostrar_en_web %}<span class="text-xs ml-1" style="color:var(--col-faint)" title="Visible en web">👁</span>{% endif %}
+    </td>
+    <td class="text-center text-xs" style="color:var(--col-muted)">
+      {% if p.hora_inicio_visibilidad %}
+        {{ p.hora_inicio_visibilidad.strftime('%H:%M') }}–{{ p.hora_fin_visibilidad.strftime('%H:%M') if p.hora_fin_visibilidad else '?' }}
+      {% else %}
+        Siempre
+      {% endif %}
+    </td>
+    <td class="text-center">
+      <span class="text-xs px-2 py-0.5 rounded-full font-bold"
+            style="{{ 'background:rgba(94,240,151,.12);color:#5EF097;border:1px solid rgba(94,240,151,.2)' if p.activo else 'background:rgba(255,107,107,.1);color:#FF6B6B;border:1px solid rgba(255,107,107,.2)' }}">
+        {{ 'Activo' if p.activo else 'Inactivo' }}
+      </span>
+    </td>
+    <td class="text-center">
+      <div class="flex items-center justify-center gap-1">
+        <a href="{{ url_for('admin.editar_producto', producto_id=p.id) }}"
+           class="text-xs px-2 py-1 rounded-lg font-bold"
+           style="background:rgba(255,171,0,.1);color:#FFAB00;border:1px solid rgba(255,171,0,.2)">
+          ✏️ Editar
+        </a>
+        {% if p.es_combo %}
+        <a href="{{ url_for('admin.gestionar_combo', producto_id=p.id) }}"
+           class="text-xs px-2 py-1 rounded-lg font-bold"
+           style="background:rgba(90,200,250,.1);color:#5AC8FA;border:1px solid rgba(90,200,250,.2)">
+          🧩 Items
+        </a>
+        {% endif %}
+      </div>
+    </td>
+  </tr>
+  <!-- datos para JS -->
+  <script>window._prod_{{ p.id }} = {{ {
+    'id': p.id, 'nombre': p.nombre, 'descripcion': p.descripcion or '',
+    'precio': p.precio|float, 'precio_costo': p.precio_costo|float if p.precio_costo else '',
+    'categoria_id': p.categoria_id or '', 'origen_pais': p.origen_pais or '',
+    'tipo_producto': p.tipo_producto or 'simple', 'imagen_url': p.imagen_url or '',
+    'atributos_json': p.atributos_json or '',
+    'es_combo': p.es_combo, 'activo': p.activo,
+    'canal_preparacion': p.canal_preparacion or 'cocina',
+    'proveedor_despachador_id': p.proveedor_despachador_id or '',
+    'tipo_entrega': p.tipo_entrega or 'inmediato',
+    'fecha_llegada': p.fecha_llegada.strftime('%Y-%m-%d') if p.fecha_llegada else '',
+    'dias_anticipacion_encargo': p.dias_anticipacion_encargo or 1,
+    'hora_inicio': p.hora_inicio_visibilidad.strftime('%H:%M') if p.hora_inicio_visibilidad else '',
+    'hora_fin': p.hora_fin_visibilidad.strftime('%H:%M') if p.hora_fin_visibilidad else '',
+    'dias_semana': p.dias_semana_json or '[]',
+    'stock_mostrar_en_web': p.stock_mostrar_en_web,
+    'canjeable_con_puntos': p.canjeable_con_puntos,
+    'puntos_para_canje': p.puntos_para_canje or '',
+    'es_hipoalergenico': p.es_hipoalergenico,
+    'alergenos_json': p.alergenos_json or '[]',
+  }|tojson }};</script>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+</div>
+
+<!-- ── MODAL NUEVO ─────────────────────────────────────────────────── -->
+<div id="modal-nuevo" class="hidden fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-3 md:pt-6 md:pb-6"
+     style="background:rgba(27,22,15,.55);backdrop-filter:blur(8px)">
+  <div class="admin-modal-panel rounded-2xl p-4 md:p-6 w-full max-w-2xl md:mx-4" style="background:var(--col-surface);border:1px solid var(--col-border);box-shadow:var(--shadow-lg)">
+    <div class="flex justify-between items-center mb-4">
+      <div>
+        <h2 class="text-lg font-bold" style="color:var(--col-text)">🛍️ Nuevo Producto</h2>
+        <p class="text-xs" style="color:var(--col-muted)">Rellena los datos del producto</p>
+      </div>
+      <button onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
+              class="w-8 h-8 rounded-lg flex items-center justify-center text-xl transition"
+              style="background:var(--col-elevated);color:var(--col-muted);border:1px solid var(--col-border)">&times;</button>
+    </div>
+    <form method="POST" action="{{ url_for('admin.crear_producto') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% include "admin/_form_producto.html" %}
+      <div class="admin-modal-actions flex gap-3 mt-5">
+        <button type="submit" class="flex-1 font-bold py-2.5 rounded-xl text-sm"
+                style="background:linear-gradient(135deg,#FFAB00,#FF8C00);color:#000;box-shadow:0 4px 14px rgba(255,171,0,.3)">
+          Crear producto →
+        </button>
+        <button type="button" onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
+                class="px-4 py-2.5 rounded-xl text-sm font-semibold"
+                style="background:var(--col-elevated);border:1px solid var(--col-border);color:var(--col-muted)">
+          Cancelar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── MODAL EDITAR ────────────────────────────────────────────────── -->
+<div id="modal-editar" class="hidden fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-3 md:pt-6 md:pb-6"
+     style="background:rgba(27,22,15,.55);backdrop-filter:blur(8px)">
+  <div class="admin-modal-panel rounded-2xl p-4 md:p-6 w-full max-w-2xl md:mx-4" style="background:var(--col-surface);border:1px solid var(--col-border);box-shadow:var(--shadow-lg)">
+    <div class="flex justify-between items-center mb-4">
+      <div>
+        <h2 class="text-lg font-bold" style="color:var(--col-text)">✏️ Editar: <span id="editar-titulo"></span></h2>
+        <p class="text-xs" style="color:var(--col-muted)">Modifica nombre, precio, imagen, visibilidad y más</p>
+      </div>
+      <button onclick="document.getElementById('modal-editar').classList.add('hidden')"
+              class="w-8 h-8 rounded-lg flex items-center justify-center text-xl transition"
+              style="background:var(--col-elevated);color:var(--col-muted);border:1px solid var(--col-border)">&times;</button>
+    </div>
+    <form id="form-editar" method="POST" action="" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% include "admin/_form_producto.html" %}
+      <div class="mt-4 pt-4" style="border-top:1px solid var(--col-border)">
+        <label class="flex items-center gap-2 text-sm cursor-pointer mb-3" style="color:var(--col-text)">
+          <input type="checkbox" name="activo" id="edit_activo" style="accent-color:#5EF097"> ✅ Activo (visible en tienda)
+        </label>
+        <div>
+          <label class="fp-label">Motivo del cambio de precio</label>
+          <input type="text" name="motivo_precio" placeholder="Opcional — se registra en el historial de precios" class="fp-input">
+        </div>
+      </div>
+      <div class="admin-modal-actions flex gap-3 mt-4">
+        <button type="submit" class="flex-1 font-bold py-2.5 rounded-xl text-sm"
+                style="background:linear-gradient(135deg,#FFAB00,#FF8C00);color:#000;box-shadow:0 4px 14px rgba(255,171,0,.3)">
+          Guardar cambios →
+        </button>
+        <button type="button" onclick="document.getElementById('modal-editar').classList.add('hidden')"
+                class="px-4 py-2.5 rounded-xl text-sm font-semibold"
+                style="background:var(--col-elevated);border:1px solid var(--col-border);color:var(--col-muted)">
+          Cancelar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── NUEVA CATEGORÍA ── -->
+<details class="mt-4 rounded-xl p-3" style="background:var(--col-elevated);border:1px solid var(--col-border)">
+  <summary class="cursor-pointer text-sm font-bold" style="color:var(--col-muted)">+ Nueva categoría</summary>
+  <form method="POST" action="{{ url_for('admin.crear_categoria') }}" class="admin-inline-form flex gap-2 mt-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="text" name="nombre" placeholder="Ej: Sopas & Cremas" required
+           class="flex-1 rounded-lg px-3 py-2 text-sm" style="background:var(--col-surface);border:1px solid var(--col-border);color:#fff">
+    <button type="submit" class="px-4 py-2 rounded-lg text-sm font-bold" style="background:#FFAB00;color:#000">Crear</button>
+  </form>
+</details>
+
+</div>{# /section-productos #}
+
+{# ══════════════════════════════════
+   TAB COMBOS
+   ══════════════════════════════════ #}
+<div id="section-combos" class="hidden">
+  <div class="mb-4 p-4 rounded-xl text-sm" style="background:rgba(10,132,255,.07);border:1px solid rgba(10,132,255,.15)">
+    <p class="font-bold" style="color:#5AC8FA">¿Qué es un combo?</p>
+    <p style="color:var(--col-muted)">Un combo es un conjunto de productos vendidos juntos a precio especial.
+    El cliente lo ve como un único producto en el menú, pero internamente descuenta stock de sus componentes.
+    Puedes crear componentes fijos y grupos seleccionables para que el cliente elija opciones al pedir.</p>
+  </div>
+
+  {% set combos_list = productos|selectattr('es_combo')|list %}
+  {% if not combos_list %}
+  <div class="ox-card p-10 text-center">
+    <p class="text-4xl mb-3">🎁</p>
+    <p class="font-bold text-white">Sin combos creados</p>
+    <p class="text-sm mt-1" style="color:var(--col-muted)">Los combos permiten vender grupos de productos a precio especial</p>
+    <a href="{{ url_for('admin.nuevo_combo') }}"
+       class="inline-block mt-4 px-5 py-2 rounded-lg text-sm font-bold text-black" style="background:#FFAB00">
+      + Construir primer combo
+    </a>
+  </div>
+  {% else %}
+  <div class="grid md:grid-cols-2 gap-4">
+    {% for combo in combos_list %}
+    {% set combo_items = combo.combo_items.all() %}
+    <script>window._prod_{{ combo.id }} = {{ {
+      'id': combo.id, 'nombre': combo.nombre, 'descripcion': combo.descripcion or '',
+      'precio': combo.precio|float, 'precio_costo': combo.precio_costo|float if combo.precio_costo else '',
+      'categoria_id': combo.categoria_id or '', 'origen_pais': combo.origen_pais or '',
+      'tipo_producto': combo.tipo_producto or 'combo', 'imagen_url': combo.imagen_url or '',
+      'atributos_json': combo.atributos_json or '',
+      'es_combo': combo.es_combo, 'activo': combo.activo,
+      'canal_preparacion': combo.canal_preparacion or 'cocina',
+      'proveedor_despachador_id': combo.proveedor_despachador_id or '',
+      'tipo_entrega': combo.tipo_entrega or 'inmediato',
+      'fecha_llegada': combo.fecha_llegada.strftime('%Y-%m-%d') if combo.fecha_llegada else '',
+      'dias_anticipacion_encargo': combo.dias_anticipacion_encargo or 1,
+      'hora_inicio': combo.hora_inicio_visibilidad.strftime('%H:%M') if combo.hora_inicio_visibilidad else '',
+      'hora_fin': combo.hora_fin_visibilidad.strftime('%H:%M') if combo.hora_fin_visibilidad else '',
+      'dias_semana': combo.dias_semana_json or '[]',
+      'stock_mostrar_en_web': combo.stock_mostrar_en_web,
+      'canjeable_con_puntos': combo.canjeable_con_puntos,
+      'puntos_para_canje': combo.puntos_para_canje or '',
+      'es_hipoalergenico': combo.es_hipoalergenico,
+      'alergenos_json': combo.alergenos_json or '[]',
+    }|tojson }};</script>
+    <div class="ox-card p-4">
+      <div class="flex items-start gap-3">
+        <div class="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0" style="background:rgba(10,132,255,.1)">
+          {% if combo.imagen_url %}
+          <img src="{{ combo.imagen_url|upload_url }}"
+               class="w-full h-full object-cover">
+          {% else %}
+          <div class="w-full h-full flex items-center justify-center text-2xl">🎁</div>
+          {% endif %}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1">
+            <p class="font-bold text-white">{{ combo.nombre }}</p>
+            {% if not combo.activo %}<span class="text-xs px-2 py-0.5 rounded-full" style="background:rgba(255,59,48,.1);color:#FF6B6B">Inactivo</span>{% endif %}
+          </div>
+          <p class="text-lg font-black" style="color:#FFAB00">€{{ "%.2f"|format(combo.precio_final) }}</p>
+          {% if combo.descripcion %}<p class="text-xs mt-1" style="color:var(--col-muted)">{{ combo.descripcion[:80] }}</p>{% endif %}
+        </div>
+      </div>
+
+      {# Componentes #}
+      <div class="mt-3">
+        <p class="text-xs font-bold mb-2" style="color:var(--col-muted)">INCLUYE:</p>
+        {% if combo_items %}
+        <div class="space-y-1.5">
+          {% for ci in combo_items %}
+          <div class="flex items-center gap-2 text-sm">
+            <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0"
+                  style="background:rgba(10,132,255,.15);color:#5AC8FA">{{ ci.cantidad }}×</span>
+            <span style="color:var(--col-text)">{{ ci.componente.nombre }}</span>
+            <span class="ml-auto text-xs" style="color:var(--col-faint)">€{{ "%.2f"|format(ci.componente.precio_final) }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-xs" style="color:#FFB340">⚠️ Sin componentes — añádelos desde la página de gestión del combo</p>
+        {% endif %}
+      </div>
+
+      {# Acciones #}
+      <div class="flex gap-2 mt-3">
+        <a href="{{ url_for('admin.editar_producto', producto_id=combo.id) }}"
+           class="flex-1 text-xs font-bold py-1.5 rounded-lg text-center" style="background:rgba(255,171,0,.1);border:1px solid rgba(255,171,0,.2);color:#FFAB00">
+          ✏️ Editar
+        </a>
+        <a href="{{ url_for('admin.gestionar_combo', producto_id=combo.id) }}"
+           class="flex-1 text-xs font-bold py-1.5 rounded-lg text-center" style="background:rgba(10,132,255,.1);border:1px solid rgba(10,132,255,.2);color:#5AC8FA">
+          🧩 Gestionar componentes
+        </a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<style>
+.tab-active   { background:rgba(255,171,0,.15); border:1.5px solid rgba(255,171,0,.35); color:#FFAB00; }
+.tab-inactive { background:var(--col-elevated); border:1.5px solid var(--col-border); color:var(--col-muted); cursor:pointer; transition:all .15s; }
+.tab-inactive:hover { color:#fff; border-color:rgba(255,255,255,.15); }
+.prod-label { font-size:.72rem; font-weight:700; color:var(--col-muted); display:block; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.04em; }
+.prod-input { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem; transition:border-color .15s; resize:vertical; }
+.prod-input:focus { outline:none; border-color:rgba(255,171,0,.5); }
+.prod-select { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem; }
+.admin-product-card { background:var(--col-surface); border:1px solid var(--col-border); border-radius:.85rem; padding:.75rem; box-shadow:0 8px 22px rgba(0,0,0,.16); }
+.admin-product-card-main { display:flex; gap:.7rem; align-items:flex-start; }
+.admin-product-thumb { width:52px; height:52px; border-radius:.65rem; object-fit:cover; flex-shrink:0; background:var(--col-elevated); border:1px solid rgba(255,255,255,.08); }
+.admin-product-thumb-empty { display:flex; align-items:center; justify-content:center; font-size:1.25rem; }
+.admin-product-name { color:var(--col-text); font-size:.98rem; font-weight:900; line-height:1.15; overflow-wrap:anywhere; }
+.admin-product-meta { margin-top:.25rem; display:flex; flex-wrap:wrap; gap:.25rem; color:var(--col-muted); font-size:.72rem; line-height:1.25; }
+.admin-product-badges { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.45rem; }
+.admin-product-badge { border-radius:999px; padding:.14rem .45rem; font-size:.62rem; font-weight:900; text-transform:uppercase; letter-spacing:.02em; }
+.badge-stock { background:rgba(16,185,129,.14); color:#A7F3D0; }
+.badge-provider { background:rgba(251,146,60,.16); color:#FDBA74; }
+.badge-channel { background:rgba(90,200,250,.14); color:#BAE6FD; }
+.badge-points { background:rgba(168,85,247,.16); color:#C084FC; }
+.badge-hipo { background:rgba(16,185,129,.14); color:#6EE7B7; }
+.badge-active { background:rgba(34,197,94,.14); color:#86EFAC; }
+.badge-inactive { background:rgba(239,68,68,.14); color:#FCA5A5; }
+.admin-product-card-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.45rem; margin-top:.75rem; }
+.admin-product-card-stats div { background:var(--col-elevated); border:1px solid rgba(255,255,255,.06); border-radius:.65rem; padding:.45rem; min-width:0; }
+.admin-product-card-stats span { display:block; color:var(--col-faint); font-size:.62rem; font-weight:800; text-transform:uppercase; }
+.admin-product-card-stats strong { display:block; color:#FFAB00; font-size:.86rem; line-height:1.2; overflow-wrap:anywhere; }
+.admin-product-actions { margin-top:.75rem; display:flex; }
+.admin-product-actions a { flex:1; text-align:center; border-radius:.65rem; border:1px solid rgba(255,171,0,.34); color:#FFAB00; background:rgba(255,171,0,.08); font-size:.78rem; font-weight:900; padding:.5rem .75rem; }
+@media (max-width: 640px) {
+  #tabs-productos { overflow-x:auto; padding-bottom:.15rem; }
+  #tabs-productos button { flex:0 0 auto; white-space:nowrap; }
+  .admin-modal-panel { max-width:100%; border-radius:1rem; }
+  .admin-modal-actions { flex-direction:column; }
+  .admin-modal-actions > * { width:100%; text-align:center; }
+  .admin-inline-form { flex-direction:column; }
+  .admin-combo-price-grid { grid-template-columns:minmax(0,1fr)!important; }
+}
+</style>
+<script>
+function mostrarTab(tab) {
+  document.getElementById('section-productos').classList.toggle('hidden', tab !== 'productos');
+  document.getElementById('section-combos').classList.toggle('hidden', tab !== 'combos');
+  document.getElementById('tab-productos').className = 'px-4 py-2 rounded-xl text-sm font-bold ' + (tab === 'productos' ? 'tab-active' : 'tab-inactive');
+  document.getElementById('tab-combos').className = 'px-4 py-2 rounded-xl text-sm font-bold ' + (tab === 'combos' ? 'tab-active' : 'tab-inactive');
+}
+// Mostrar tab de combos si viene desde URL con #combos
+if (window.location.hash === '#combos') mostrarTab('combos');
+
+const CATEGORIAS = [{% for cat in categorias %}{ id: {{ cat.id }}, nombre: "{{ cat.nombre }}" },{% endfor %}];
+const DIAS_SEMANA = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+function abrirEditar(id) {
+  const d = window[`_prod_${id}`];
+  if (!d) return;
+
+  const f = document.getElementById('form-editar');
+  f.action = `/admin/productos/${id}/editar`;
+  document.getElementById('editar-titulo').textContent = d.nombre;
+
+  // Rellenar campos comunes
+  ['nombre','descripcion','precio','precio_costo','origen_pais','tipo_producto',
+   'imagen_url','tipo_entrega','fecha_llegada','dias_anticipacion_encargo',
+   'hora_inicio_visibilidad','hora_fin_visibilidad','puntos_para_canje',
+   'atributos_json'
+  ].forEach(k => {
+    const el = f.querySelector(`[name="${k}"]`);
+    if (el) el.value = d[k] || '';
+  });
+  f.querySelectorAll('[name="tipo_entrega"]').forEach(radio => {
+    radio.checked = radio.value === (d.tipo_entrega || 'inmediato');
+  });
+  f.querySelectorAll('[name="canal_preparacion"]').forEach(radio => {
+    radio.checked = radio.value === (d.canal_preparacion || 'cocina');
+  });
+
+  // Alérgenos
+  let alergs = [];
+  try { alergs = JSON.parse(d.alergenos_json || '[]'); } catch(e) {}
+  f.querySelectorAll('[name="alergenos"]').forEach(cb => {
+    cb.checked = alergs.includes(cb.value);
+    cb.closest('.alergen-btn')?.classList.toggle('alergen-active', alergs.includes(cb.value));
+  });
+
+  // Horario
+  if (f.querySelector('[name="hora_inicio_visibilidad"]')) f.querySelector('[name="hora_inicio_visibilidad"]').value = d.hora_inicio;
+  if (f.querySelector('[name="hora_fin_visibilidad"]')) f.querySelector('[name="hora_fin_visibilidad"]').value = d.hora_fin;
+
+  // Checkboxes simples
+  const checks = { es_combo: d.es_combo,
+                   stock_mostrar_en_web: d.stock_mostrar_en_web, canjeable_con_puntos: d.canjeable_con_puntos,
+                   es_hipoalergenico: d.es_hipoalergenico };
+  Object.entries(checks).forEach(([k, v]) => {
+    const el = f.querySelector(`[name="${k}"]`); if (el) el.checked = !!v;
+  });
+  const comboCheck = f.querySelector('[name="es_combo"]');
+  if (comboCheck) {
+    comboCheck.checked = !!d.es_combo;
+  }
+  document.getElementById('edit_activo').checked = d.activo;
+
+  // Hipoalergénico toggle
+  const cbHipo = f.querySelector('[name="es_hipoalergenico"]');
+  if (cbHipo) toggleHipo(cbHipo.checked);
+
+  // Categoría
+  const selCat = f.querySelector('[name="categoria_id"]');
+  if (selCat) selCat.value = d.categoria_id;
+  const selProveedor = f.querySelector('[name="proveedor_despachador_id"]');
+  if (selProveedor) selProveedor.value = d.proveedor_despachador_id || '';
+
+  // Días de semana
+  let diasActivos = [];
+  try { diasActivos = JSON.parse(d.dias_semana); } catch(e) {}
+  f.querySelectorAll('[name="dias_semana"]').forEach(cb => {
+    cb.checked = diasActivos.includes(parseInt(cb.value));
+  });
+
+  // Mostrar/ocultar campos condicionales
+  toggleCamposEntrega(f, d.tipo_entrega);
+  toggleCamposPuntos(f, d.canjeable_con_puntos);
+
+  document.getElementById('modal-editar').classList.remove('hidden');
+}
+
+function toggleCamposEntrega(form, tipo) {
+  const divFecha = form.querySelector('.campo-fecha-llegada');
+  const divAnticipacion = form.querySelector('.campo-anticipacion');
+  if (divFecha) divFecha.classList.toggle('hidden', tipo !== 'programado');
+  if (divAnticipacion) divAnticipacion.classList.add('hidden');
+}
+
+function toggleCamposPuntos(form, activo) {
+  const div = form.querySelector('.campo-puntos-canje');
+  if (div) div.classList.toggle('hidden', !activo);
+}
+
+// Evento tipo_entrega
+document.addEventListener('change', e => {
+  if (e.target.name === 'tipo_entrega') {
+    const form = e.target.closest('form');
+    toggleCamposEntrega(form, e.target.value);
+  }
+  if (e.target.name === 'canjeable_con_puntos') {
+    const form = e.target.closest('form');
+    toggleCamposPuntos(form, e.target.checked);
+  }
+});
+
+// ── Preview de imagen ────────────────────────────────────────────────────────
+function previewImagen(input) {
+  const form   = input.closest('form');
+  const img    = form.querySelector('#img-preview');
+  const holder = form.querySelector('#img-placeholder');
+  if (!img || !input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    img.src = e.target.result;
+    img.classList.remove('hidden');
+    if (holder) holder.classList.add('hidden');
+    // Limpiar URL manual si se sube archivo
+    const urlInput = form.querySelector('#input-imagen-url');
+    if (urlInput) urlInput.value = '';
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+function previewFromUrl(url) {
+  // Busca el preview del form activo
+  const modal = document.querySelector('#modal-nuevo:not(.hidden), #modal-editar:not(.hidden)');
+  if (!modal) return;
+  const img    = modal.querySelector('#img-preview');
+  const holder = modal.querySelector('#img-placeholder');
+  if (!img) return;
+  if (url && url.startsWith('http')) {
+    img.src = url;
+    img.classList.remove('hidden');
+    if (holder) holder.classList.add('hidden');
+  } else {
+    img.src = '';
+    img.classList.add('hidden');
+    if (holder) holder.classList.remove('hidden');
+  }
+}
+
+// ── Upload de imagen al servidor (AJAX) ──────────────────────────────────────
+// Se llama desde los botones "Guardar" de los formularios antes de hacer submit
+let _pendingUploadProductoId = null;
+
+async function uploadImagenProducto(productoId, fileInput) {
+  if (!fileInput?.files?.length) return null;
+  const fd = new FormData();
+  fd.append('imagen', fileInput.files[0]);
+  const csrfMeta = document.querySelector('[name=csrf_token]');
+  const headers = {};
+  if (csrfMeta) headers['X-CSRFToken'] = csrfMeta.value;
+  try {
+    const r = await fetch(`/uploads/producto/${productoId}`, { method: 'POST', headers, body: fd });
+    const d = await r.json();
+    if (d.ok) return d.ruta;
+  } catch(e) { console.error('Upload error:', e); }
+  return null;
+}
+
+// Interceptar submit del formulario de edición para subir imagen primero
+document.getElementById('form-editar').addEventListener('submit', async function(e) {
+  const fileInput = this.querySelector('#file-imagen');
+  const urlInput  = this.querySelector('#input-imagen-url');
+  if (fileInput?.files?.length && _pendingUploadProductoId) {
+    e.preventDefault();
+    const ruta = await uploadImagenProducto(_pendingUploadProductoId, fileInput);
+    if (ruta && urlInput) urlInput.value = ruta;
+    this.submit();
+  }
+});
+
+// Guardar el ID del producto que se está editando
+const _origAbrirEditar = abrirEditar;
+function abrirEditar(id) {
+  _pendingUploadProductoId = id;
+  _origAbrirEditar(id);
+  // Restaurar preview de imagen si el producto tiene una
+  const d = window[`_prod_${id}`];
+  if (!d) return;
+  const modal = document.getElementById('modal-editar');
+  const img = modal.querySelector('#img-preview');
+  const holder = modal.querySelector('#img-placeholder');
+  const urlInput = modal.querySelector('#input-imagen-url');
+  const imgUrl = d.imagen_url || '';
+  if (imgUrl && img) {
+    const src = imgUrl.startsWith('http') || imgUrl.startsWith('/') ? imgUrl : '/uploads/' + imgUrl;
+    img.src = src;
+    img.classList.remove('hidden');
+    if (holder) holder.classList.add('hidden');
+    if (urlInput && imgUrl.startsWith('http')) urlInput.value = imgUrl;
+  }
+}
+
+// ── Alérgenos: toggle visual ────────────────────────────────────────────────
+document.addEventListener('change', e => {
+  if (e.target.classList.contains('alergen-cb')) {
+    e.target.closest('.alergen-btn')?.classList.toggle('alergen-active', e.target.checked);
+  }
+});
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.alergen-btn');
+  if (btn) {
+    const cb = btn.querySelector('.alergen-cb');
+    if (cb) { cb.checked = !cb.checked; btn.classList.toggle('alergen-active', cb.checked); }
+  }
+});
+function toggleHipo(checked) {
+  const bloque = document.getElementById('bloque-alergenos');
+  if (bloque) bloque.style.opacity = checked ? '.35' : '1';
+}
+</script>
+<style>
+.alergen-btn { cursor:pointer; transition:all .15s; }
+.alergen-btn:hover { border-color:rgba(255,171,0,.4)!important; }
+.alergen-active { background:rgba(255,100,30,.12)!important; border-color:rgba(255,140,0,.5)!important; }
+.alergen-active span:last-child { color:#FFB340!important; }
+</style>
+{% endblock %}

@@ -1,0 +1,163 @@
+{% extends "admin_base.html" %}
+{% block title %}WhatsApp Bot — Admin{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-white">Panel WhatsApp Bot</h1>
+  <button onclick="actualizarEstado()" class="ox-btn-ghost text-sm">🔄 Actualizar</button>
+</div>
+
+<div class="grid md:grid-cols-2 gap-6">
+
+  <div>
+    <div class="ox-card p-5 mb-4">
+      <div class="flex items-center gap-3 mb-4">
+        <span id="dot-estado" class="w-3 h-3 rounded-full" style="background:var(--col-border)"></span>
+        <span id="txt-estado" class="font-semibold" style="color:var(--col-muted)">Sin verificar</span>
+      </div>
+      <div id="info-conectado" class="hidden space-y-1.5 text-sm">
+        <div class="flex justify-between"><span style="color:var(--col-faint)">Uptime</span><span id="val-uptime" class="text-white">—</span></div>
+        <div class="flex justify-between"><span style="color:var(--col-faint)">Pedidos hoy</span><span id="val-pedidos" style="color:#FFAB00">—</span></div>
+        <div class="flex justify-between"><span style="color:var(--col-faint)">Sesiones activas</span><span id="val-sesiones" class="text-white">—</span></div>
+        <div class="flex justify-between"><span style="color:var(--col-faint)">Motor IA</span><span id="val-ia" class="text-white">—</span></div>
+        <div class="flex justify-between"><span style="color:var(--col-faint)">Modo pánico</span><span id="val-panico" class="text-white">—</span></div>
+      </div>
+      <div id="info-desconectado" class="text-sm" style="color:var(--col-faint)">
+        <p>El bot no está corriendo. Ábrelo en una terminal con el comando de abajo.</p>
+      </div>
+    </div>
+
+    <div id="div-qr" class="hidden ox-card p-5 text-center mb-4" style="border-color:rgba(255,171,0,.3)">
+      <p class="font-semibold mb-3" style="color:#FFAB00">📱 Escanea para conectar WhatsApp</p>
+      <img id="qr-img" src="" alt="QR WhatsApp" class="mx-auto rounded-lg max-w-xs">
+    </div>
+
+    <div class="ox-card p-4">
+      <p class="text-xs mb-1" style="color:var(--col-faint)">API Key (Oxidian ↔ Bot)</p>
+      <code class="text-xs break-all" style="color:#5EF097">{{ bot_api_key or '⚠️ No configurada — SuperAdmin → Config' }}</code>
+    </div>
+  </div>
+
+  <div class="space-y-4">
+    <div class="ox-card p-5">
+      <h2 class="font-semibold mb-3 text-white">Cómo encender el bot</h2>
+      <p class="text-xs mb-3" style="color:var(--col-faint)">Abre una terminal y ejecuta:</p>
+      <div class="rounded-lg p-3 font-mono text-sm mb-2 select-all"
+           style="background:rgba(0,0,0,.3);color:#5EF097;border:1px solid var(--col-border)">
+        docker compose --env-file .env.cosmos.local -f docker-compose.cosmos-local.yml up -d evolution-api chatbot evolution-setup
+      </div>
+      <p class="text-xs" style="color:var(--col-faint)">Si la sesión está guardada se reconecta sin escanear QR. Si no, aparecerá el QR aquí arriba en segundos.</p>
+    </div>
+
+    <div class="ox-card p-5">
+      <h2 class="font-semibold mb-3 text-white">Endpoints disponibles (requieren API key)</h2>
+      <div class="space-y-0.5 text-xs">
+        {% for method, ruta, desc in [
+          ('GET',  '/api/bot/catalogo/completo',  'Catálogo con badges y promos'),
+          ('GET',  '/api/bot/zonas',              'Zonas de entrega'),
+          ('GET',  '/api/bot/cliente?telefono=',  'Buscar cliente por teléfono'),
+          ('POST', '/api/bot/cliente/registrar',  'Registrar nuevo cliente'),
+          ('GET',  '/api/bot/puntos?telefono=',   'Puntos del cliente'),
+          ('POST', '/api/bot/validar-cupon',      'Validar cupón o código afiliado'),
+          ('GET',  '/api/bot/pedido/estado',      'Consultar estado de pedido'),
+          ('GET',  '/api/bot/asistente',          'Contrato de menú cliente/admin'),
+        ] %}
+        <div class="flex gap-2 py-0.5 border-b" style="border-color:var(--col-border)">
+          <span class="w-10 flex-shrink-0 font-bold"
+                style="color:{{ '#FFAB00' if method == 'POST' else '#5AC8FA' }}">{{ method }}</span>
+          <span class="flex-1" style="color:var(--col-muted)">{{ ruta }}</span>
+          <span style="color:var(--col-faint)">{{ desc }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CONFIGURED_BOT_URL = '{{ bot_public_url or bot_api_url }}';
+const BOT_URL = (() => {
+  try {
+    if ((CONFIGURED_BOT_URL || '').startsWith('/')) {
+      return location.origin + CONFIGURED_BOT_URL.replace(/\/$/, '');
+    }
+    const url = new URL(CONFIGURED_BOT_URL || `${location.protocol}//${location.hostname}:3000`);
+    const internalDockerHost = !url.hostname.includes('.') && !['localhost', '127.0.0.1'].includes(url.hostname);
+    const localHostFromRemoteDevice = ['localhost', '127.0.0.1'].includes(url.hostname) && !['localhost', '127.0.0.1'].includes(location.hostname);
+    if ((internalDockerHost || localHostFromRemoteDevice) && url.hostname !== location.hostname) {
+      url.hostname = location.hostname;
+    }
+    return url.origin;
+  } catch {
+    return `${location.protocol}//${location.hostname}:3000`;
+  }
+})();
+
+function formatUptime(s) {
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s/60) + 'm';
+  return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+}
+
+async function actualizarEstado() {
+  const dot    = document.getElementById('dot-estado');
+  const txt    = document.getElementById('txt-estado');
+  const info   = document.getElementById('info-conectado');
+  const descon = document.getElementById('info-desconectado');
+  const divQr  = document.getElementById('div-qr');
+
+  try {
+    const r = await fetch(BOT_URL + '/api/status', { signal: AbortSignal.timeout(4000) });
+    const d = await r.json();
+
+    if (d.connected) {
+      dot.style.background = '#5EF097';
+      txt.textContent = '✅ Bot conectado y activo';
+      txt.style.color = '#5EF097';
+      info.classList.remove('hidden');
+      descon.classList.add('hidden');
+      divQr.classList.add('hidden');
+      document.getElementById('val-uptime').textContent   = formatUptime(d.uptime || 0);
+      document.getElementById('val-pedidos').textContent  = d.pedidosHoy ?? '0';
+      document.getElementById('val-sesiones').textContent = d.activeSessions ?? '0';
+      document.getElementById('val-panico').textContent   = d.panicMode ? '🔴 ACTIVO' : '🟢 Normal';
+      const ia = d.ai;
+      if (ia) {
+        const motor = ia.groq?.activo ? 'Groq ✓' : (ia.gemini?.activo ? 'Gemini ✓' : 'Keywords (sin IA)');
+        document.getElementById('val-ia').textContent = motor + (ia.quota?.exhausted ? ' — cuota agotada' : '');
+      }
+    } else if (d.qrDataUrl) {
+      dot.style.background = '#FFAB00';
+      dot.style.animation = 'pulse 1s infinite';
+      txt.textContent = '📱 Esperando escaneo de QR';
+      txt.style.color = '#FFAB00';
+      info.classList.add('hidden');
+      descon.classList.add('hidden');
+      divQr.classList.remove('hidden');
+      document.getElementById('qr-img').src = d.qrDataUrl;
+    } else {
+      dot.style.background = '#FFAB00';
+      txt.textContent = '⏳ Bot iniciando...';
+      txt.style.color = '#FFAB00';
+    }
+  } catch(e) {
+    dot.style.background = '#FF6B6B';
+    txt.textContent = '🔴 Bot apagado';
+    txt.style.color = '#FF6B6B';
+    info.classList.add('hidden');
+    descon.classList.remove('hidden');
+  }
+}
+
+let oxWhatsappPolling = null;
+document.querySelector('button[onclick="actualizarEstado()"]')?.addEventListener('click', () => {
+  if (!oxWhatsappPolling) {
+    oxWhatsappPolling = setInterval(actualizarEstado, 8000);
+  }
+});
+</script>
+{% endblock %}

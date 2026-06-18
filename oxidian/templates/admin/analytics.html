@@ -1,0 +1,288 @@
+{% extends "admin_base.html" %}
+{% block title %}Analytics — {{ brand.nombre }}{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-black text-white">📊 Analytics & P&L</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">Rendimiento financiero · pedidos entregados en el período</p>
+  </div>
+  <form method="GET" class="flex items-center gap-2 flex-wrap">
+    <input type="date" name="fecha_ini" value="{{ fecha_ini }}"
+           class="text-sm rounded-lg px-3 py-1.5" style="background:var(--col-elevated);border:1px solid var(--col-border);color:#fff">
+    <span class="text-xs" style="color:var(--col-muted)">→</span>
+    <input type="date" name="fecha_fin" value="{{ fecha_fin }}"
+           class="text-sm rounded-lg px-3 py-1.5" style="background:var(--col-elevated);border:1px solid var(--col-border);color:#fff">
+    <button type="submit" class="text-sm font-bold px-4 py-1.5 rounded-lg"
+            style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
+      Calcular
+    </button>
+  </form>
+</div>
+
+{# ── KPIs ── #}
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+  <div class="an-kpi an-kpi-green">
+    <p class="an-kpi-val">€{{ "%.2f"|format(pl.ventas_brutas) }}</p>
+    <p class="an-kpi-lbl">💰 Ventas brutas</p>
+    <p class="an-kpi-sub">{{ pl.total_pedidos }} pedidos</p>
+  </div>
+  <div class="an-kpi an-kpi-blue">
+    <p class="an-kpi-val">€{{ "%.2f"|format(pl.margen_bruto) }}</p>
+    <p class="an-kpi-lbl">📦 Margen bruto</p>
+    <p class="an-kpi-sub">{{ pl.margen_bruto_pct }}% s/ventas</p>
+  </div>
+  <div class="an-kpi {{ 'an-kpi-green' if pl.resultado >= 0 else 'an-kpi-red' }}">
+    <p class="an-kpi-val">€{{ "%.2f"|format(pl.resultado) }}</p>
+    <p class="an-kpi-lbl">📈 Resultado</p>
+    <p class="an-kpi-sub">{{ pl.resultado_pct }}% s/ventas</p>
+  </div>
+  <div class="an-kpi an-kpi-yellow">
+    <p class="an-kpi-val">€{{ "%.2f"|format(pl.ticket_medio) }}</p>
+    <p class="an-kpi-lbl">🎫 Ticket medio</p>
+    <p class="an-kpi-sub">{{ pl.pedidos_cancelados }} cancelados</p>
+  </div>
+</div>
+
+{# ── Cascada P&L ── #}
+<div class="ox-card p-4 mb-5">
+  <h2 class="font-black text-white mb-4">📉 Cascada financiera</h2>
+  <div class="an-cascade">
+    <div class="an-cas-row">
+      <span class="an-cas-label">Ventas brutas</span>
+      <span class="an-cas-val" style="color:#5EF097">€{{ "%.2f"|format(pl.ventas_brutas) }}</span>
+    </div>
+    {% if pl.descuentos_concedidos > 0 %}
+    <div class="an-cas-row an-cas-sub">
+      <span class="an-cas-label">− Descuentos</span>
+      <span class="an-cas-val" style="color:#FFB340">− €{{ "%.2f"|format(pl.descuentos_concedidos) }}</span>
+    </div>
+    <div class="an-cas-row an-cas-result">
+      <span class="an-cas-label">= Ingresos netos</span>
+      <span class="an-cas-val" style="color:#5EF097">€{{ "%.2f"|format(pl.ingresos_netos) }}</span>
+    </div>
+    {% endif %}
+    <div class="an-cas-row an-cas-sub">
+      <span class="an-cas-label">− Coste de productos (COGS)</span>
+      <span class="an-cas-val" style="color:#FF9F0A">− €{{ "%.2f"|format(pl.cogs) }}</span>
+    </div>
+    <div class="an-cas-row an-cas-result">
+      <span class="an-cas-label">= Margen bruto <span class="an-cas-pct">{{ pl.margen_bruto_pct }}%</span></span>
+      <span class="an-cas-val" style="color:{{ '#5EF097' if pl.margen_bruto >= 0 else '#FF6B6B' }}">€{{ "%.2f"|format(pl.margen_bruto) }}</span>
+    </div>
+    {% if pl.nominas > 0 %}
+    <div class="an-cas-row an-cas-sub">
+      <span class="an-cas-label">− Nóminas y bonos (pagados)</span>
+      <span class="an-cas-val" style="color:#FF6B6B">− €{{ "%.2f"|format(pl.nominas) }}</span>
+    </div>
+    {% endif %}
+    {% if pl.comisiones_repartidor > 0 %}
+    <div class="an-cas-row an-cas-sub">
+      <span class="an-cas-label">− Comisiones repartidores</span>
+      <span class="an-cas-val" style="color:#FF6B6B">− €{{ "%.2f"|format(pl.comisiones_repartidor) }}</span>
+    </div>
+    {% endif %}
+    {% if pl.gastos_caja > 0 %}
+    <div class="an-cas-row an-cas-sub">
+      <span class="an-cas-label">− Gastos operativos (caja)</span>
+      <span class="an-cas-val" style="color:#FF6B6B">− €{{ "%.2f"|format(pl.gastos_caja) }}</span>
+    </div>
+    {% endif %}
+    {% if pl.otros_ingresos_caja > 0 %}
+    <div class="an-cas-row an-cas-sub">
+      <span class="an-cas-label">+ Otros ingresos (caja)</span>
+      <span class="an-cas-val" style="color:#5EF097">+ €{{ "%.2f"|format(pl.otros_ingresos_caja) }}</span>
+    </div>
+    {% endif %}
+    <div class="an-cas-row an-cas-total">
+      <span class="an-cas-label">= Resultado estimado <span class="an-cas-pct">{{ pl.resultado_pct }}%</span></span>
+      <span class="an-cas-val text-lg" style="color:{{ '#5EF097' if pl.resultado >= 0 else '#FF6B6B' }}">
+        {{ '+' if pl.resultado >= 0 else '' }}€{{ "%.2f"|format(pl.resultado) }}
+      </span>
+    </div>
+  </div>
+</div>
+
+{# ── Canales + Top productos ── #}
+<div class="grid md:grid-cols-2 gap-5 mb-5">
+
+  <div class="an-chart-card">
+    <h3 class="an-chart-title">🌐 Ventas por canal</h3>
+    {% set total_canales = pl.ventas_online + pl.ventas_presencial + pl.ventas_whatsapp %}
+    <div class="space-y-3">
+      {% for label, val, color in [
+        ('Online (web)',    pl.ventas_online,     '#5AC8FA'),
+        ('Presencial',      pl.ventas_presencial, '#FFAB00'),
+        ('WhatsApp',        pl.ventas_whatsapp,   '#25D366'),
+      ] %}
+      {% if val > 0 or total_canales == 0 %}
+      {% set pct = ((val / total_canales * 100)|round(1)) if total_canales > 0 else 0 %}
+      <div>
+        <div class="flex justify-between text-sm mb-1">
+          <span style="color:var(--col-muted)">{{ label }}</span>
+          <span class="font-bold" style="color:{{ color }}">€{{ "%.2f"|format(val) }}</span>
+        </div>
+        <div class="w-full rounded-full h-1.5" style="background:rgba(255,255,255,.08)">
+          <div class="h-1.5 rounded-full" style="width:{{ pct }}%;background:{{ color }}"></div>
+        </div>
+        <p class="text-[11px] mt-0.5" style="color:var(--col-faint)">{{ pct }}%</p>
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="an-chart-card">
+    <h3 class="an-chart-title">🏆 Top 5 productos</h3>
+    {% if top_prods %}
+    {% set max_uds = top_prods[0].total_vendido if top_prods else 1 %}
+    <div class="space-y-2">
+      {% for r in top_prods[:5] %}
+      {% set pct = ((r.total_vendido / max_uds * 100)|round(0)|int) %}
+      <div>
+        <div class="flex justify-between text-sm mb-1">
+          <span class="font-semibold text-white truncate max-w-[65%]">{{ r.producto.nombre }}</span>
+          <span style="color:#FFAB00">{{ r.total_vendido }} uds</span>
+        </div>
+        <div class="w-full rounded-full h-1.5" style="background:rgba(255,255,255,.08)">
+          <div class="h-1.5 rounded-full" style="width:{{ pct }}%;background:#FFAB00"></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-sm text-center py-6" style="color:var(--col-faint)">Sin datos en este período</p>
+    {% endif %}
+  </div>
+
+</div>
+
+{# ── Tendencia diaria ── #}
+{% if labels_dias|length > 1 %}
+<div class="an-chart-card mb-5">
+  <h3 class="an-chart-title">📈 Tendencia de ventas</h3>
+  <div style="height:220px;position:relative">
+    <canvas id="chartTendencia"></canvas>
+  </div>
+</div>
+{% endif %}
+
+{# ── Categorías ── #}
+{% if por_categoria %}
+<div class="ox-card p-4">
+  <h2 class="font-black text-white mb-4">🏷️ Ventas por categoría</h2>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead><tr class="border-b" style="border-color:var(--col-border)">
+        <th class="text-left py-2 px-3 font-semibold text-xs" style="color:var(--col-muted)">Categoría</th>
+        <th class="text-right py-2 px-3 font-semibold text-xs" style="color:var(--col-muted)">Uds.</th>
+        <th class="text-right py-2 px-3 font-semibold text-xs" style="color:var(--col-muted)">Ingresos</th>
+      </tr></thead>
+      <tbody>
+        {% for row in por_categoria %}
+        <tr class="border-b" style="border-color:var(--col-border)">
+          <td class="py-2 px-3 font-medium text-white">{{ row.categoria }}</td>
+          <td class="py-2 px-3 text-right" style="color:var(--col-muted)">{{ row.unidades }}</td>
+          <td class="py-2 px-3 text-right font-bold" style="color:#FFAB00">€{{ "%.2f"|format(row.ventas) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script
+  src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
+  integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
+  crossorigin="anonymous"></script>
+<style>
+.an-kpi { border-radius:.875rem; padding:1rem 1.25rem; border:1px solid var(--col-border); }
+.an-kpi-green { background:rgba(52,199,89,.08); border-color:rgba(52,199,89,.2); }
+.an-kpi-red   { background:rgba(255,59,48,.08); border-color:rgba(255,59,48,.2); }
+.an-kpi-yellow{ background:rgba(255,171,0,.08); border-color:rgba(255,171,0,.2); }
+.an-kpi-blue  { background:rgba(90,200,250,.08); border-color:rgba(90,200,250,.2); }
+.an-kpi-val   { font-size:1.5rem; font-weight:900; color:#fff; }
+.an-kpi-green .an-kpi-val { color:#5EF097; }
+.an-kpi-red   .an-kpi-val { color:#FF6B6B; }
+.an-kpi-yellow .an-kpi-val{ color:#FFAB00; }
+.an-kpi-blue   .an-kpi-val{ color:#5AC8FA; }
+.an-kpi-lbl  { font-size:.72rem; font-weight:700; color:var(--col-muted); margin-top:.2rem; }
+.an-kpi-sub  { font-size:.68rem; color:var(--col-faint); margin-top:.15rem; }
+
+.an-chart-card {
+  background:var(--col-surface); border:1px solid var(--col-border);
+  border-radius:.875rem; padding:1.1rem;
+}
+.an-chart-title { font-size:.82rem; font-weight:800; color:#fff; margin-bottom:.75rem; }
+
+/* Cascada P&L */
+.an-cascade { display:flex; flex-direction:column; gap:.15rem; }
+.an-cas-row  { display:flex; justify-content:space-between; align-items:center;
+               padding:.45rem .75rem; border-radius:.5rem; font-size:.85rem; }
+.an-cas-sub  { background:rgba(255,255,255,.02); }
+.an-cas-sub .an-cas-label { color:var(--col-muted); padding-left:1rem; }
+.an-cas-result { background:rgba(255,255,255,.04); margin-top:.25rem; }
+.an-cas-result .an-cas-label { font-weight:700; color:#fff; }
+.an-cas-total { background:rgba(255,171,0,.06); border:1px solid rgba(255,171,0,.15);
+                margin-top:.5rem; }
+.an-cas-total .an-cas-label { font-weight:900; color:#fff; }
+.an-cas-val  { font-weight:700; white-space:nowrap; }
+.an-cas-pct  { font-size:.7rem; font-weight:600; color:var(--col-muted);
+               background:rgba(255,255,255,.06); border-radius:.35rem;
+               padding:.1rem .4rem; margin-left:.4rem; }
+</style>
+
+{% if labels_dias|length > 1 %}
+<script>
+new Chart(document.getElementById('chartTendencia'), {
+  type: 'line',
+  data: {
+    labels: {{ labels_dias|tojson }},
+    datasets: [
+      {
+        label: 'Ventas (€)',
+        data: {{ data_totales|tojson }},
+        borderColor: '#FFAB00',
+        backgroundColor: 'rgba(255,171,0,.1)',
+        fill: true, tension: 0.4,
+        pointRadius: {{ '3' if labels_dias|length < 15 else '0' }},
+        pointHoverRadius: 5, borderWidth: 2,
+        yAxisID: 'y',
+      },
+      {
+        label: 'Pedidos',
+        data: {{ data_pedidos|tojson }},
+        borderColor: '#5AC8FA',
+        backgroundColor: 'rgba(90,200,250,.06)',
+        fill: true, tension: 0.4,
+        pointRadius: {{ '3' if labels_dias|length < 15 else '0' }},
+        pointHoverRadius: 5, borderWidth: 1.5,
+        borderDash: [4,2],
+        yAxisID: 'y1',
+      }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { labels: { color: 'rgba(255,255,255,.6)', font: { size: 11 } } },
+      tooltip: {
+        backgroundColor: '#1A1410', borderColor: 'rgba(255,171,0,.2)', borderWidth: 1,
+        titleColor: '#FFAB00', bodyColor: '#FFF3E8',
+      }
+    },
+    scales: {
+      x: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: 'rgba(255,255,255,.5)', font: { size: 10 }, maxTicksLimit: 14 } },
+      y:  { position:'left',  grid:{ color:'rgba(255,255,255,.04)' }, ticks:{ color:'#FFAB00', callback: v => '€'+v } },
+      y1: { position:'right', grid:{ drawOnChartArea:false }, ticks:{ color:'#5AC8FA', stepSize:1 } }
+    }
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

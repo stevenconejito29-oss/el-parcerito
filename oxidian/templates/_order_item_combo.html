@@ -1,0 +1,117 @@
+{% set item_meta  = item.get_metadata() %}
+{% set prod_meta  = item_meta.get('producto') or {} %}
+{% set combo_meta = item_meta.get('combo') or {} %}
+{% set fijos_meta = combo_meta.get('componentes') or [] %}
+{% set sels_meta  = combo_meta.get('selecciones')  or [] %}
+{# Origen real del item (modelo nuevo): proveedor_despachador del producto vivo,
+   con fallback al snapshot por si fue editado después. #}
+{% set root_proveedor_id = prod_meta.get('proveedor_despachador_id') if prod_meta else none %}
+{% if root_proveedor_id is none and item.producto %}
+  {% set root_proveedor_id = item.producto.proveedor_despachador_id %}
+{% endif %}
+{% set root_proveedor_nombre = prod_meta.get('proveedor_despachador_nombre') %}
+{% if not root_proveedor_nombre and item.producto and item.producto.proveedor_despachador %}
+  {% set root_proveedor_nombre = item.producto.proveedor_despachador.nombre %}
+{% endif %}
+{% set root_canal = item.display_canal_preparacion or 'cocina' %}
+
+{# ── Nombre + cantidad + badges ── #}
+<div class="work-item-main">
+  <span>
+	    {{ item.display_nombre }}
+	    {% if item.es_canje_puntos %}<em class="work-reward-badge">Canje con puntos</em>{% endif %}
+	    {% if item.display_es_combo %}<em class="work-combo-badge">Combo</em>{% endif %}
+	    {% if item.display_tipo_entrega in ('programado','encargo') %}<em class="work-combo-badge work-badge-prog">Fecha fija</em>{% endif %}
+	    {% if root_proveedor_id %}
+	    <em class="work-origin-badge work-origin-provider">🏪 {% if root_proveedor_nombre %}{{ root_proveedor_nombre }}{% else %}Bar externo{% endif %}</em>
+	    {% elif root_canal == 'almacen' %}
+	    <em class="work-origin-badge work-origin-stock">Stock propio</em>
+	    {% else %}
+	    <em class="work-origin-badge work-origin-kitchen">Cocina</em>
+	    {% endif %}
+	  </span>
+	  <span class="work-qty">× {{ item.cantidad }}</span>
+	</div>
+
+{% if item.es_canje_puntos %}
+<div class="work-reward-note">
+  Producto gratuito · {{ item.reward_metadata.get('puntos', 0) }} puntos canjeados
+</div>
+{% endif %}
+
+{# ── Notas del cliente ── #}
+{% if item.notas %}
+<div class="work-note" style="margin:.35rem 0;font-size:.8rem;padding:.5rem .65rem">⚠ {{ item.notas }}</div>
+{% endif %}
+
+{# ── Desglose del combo: secciones estructuradas ── #}
+{% if item.display_es_combo and (fijos_meta or sels_meta) %}
+<div class="work-combo-breakdown">
+
+  {# BASE FIJA: siempre preparar #}
+  {% if fijos_meta %}
+  <div class="work-combo-sec work-sec-fixed">
+    <div class="work-sec-hd">
+      <span class="work-sec-icon">📌</span>
+      <strong>Paso 1 · Base fija</strong>
+      <span class="work-sec-sub">preparar siempre</span>
+    </div>
+    <div class="work-sec-items">
+      {% for comp in fijos_meta %}
+	      <span class="work-sec-item work-item-fixed">
+	        <span class="work-item-qty">{{ comp.get('cantidad', 1) }}×</span>
+	        {{ comp.get('nombre', 'Componente') }}
+	        {% if comp.get('proveedor_id') %}
+	        <em class="work-origin-badge work-origin-provider">Proveedor{% if comp.get('proveedor_nombre') %}: {{ comp.get('proveedor_nombre') }}{% endif %}</em>
+	        {% elif comp.get('canal_preparacion', 'cocina') == 'almacen' %}
+	        <em class="work-origin-badge work-origin-stock">Stock</em>
+	        {% else %}
+	        <em class="work-origin-badge work-origin-kitchen">Cocina</em>
+	        {% endif %}
+	      </span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ELECCIONES DEL CLIENTE: una sección por grupo #}
+  {% for grupo in sels_meta %}
+  {% set opciones = grupo.get('opciones') or [] %}
+  <div class="work-combo-sec work-sec-choice">
+    <div class="work-sec-hd">
+      <span class="work-sec-icon">🔄</span>
+      <strong>Paso {{ loop.index + (1 if fijos_meta else 0) }} · {{ grupo.get('grupo', 'Elección') }}</strong>
+      <span class="work-sec-sub">cliente eligió</span>
+    </div>
+    <div class="work-sec-items">
+      {% for op in opciones %}
+      <span class="work-sec-item work-item-choice">
+	        <span class="work-item-qty">{{ op.get('cantidad', op.get('qty', 1)) }}×</span>
+	        {{ op.get('nombre', 'Opción') }}
+	        {% if op.get('extra_total') and op.get('extra_total') > 0 %}<em class="work-combo-badge">+€{{ "%.2f"|format(op.get('extra_total')) }}</em>{% endif %}
+	        {% if op.get('proveedor_id') %}
+	        <em class="work-origin-badge work-origin-provider">Proveedor{% if op.get('proveedor_nombre') %}: {{ op.get('proveedor_nombre') }}{% endif %}</em>
+	        {% elif op.get('canal_preparacion', 'cocina') == 'almacen' %}
+	        <em class="work-origin-badge work-origin-stock">Stock</em>
+	        {% else %}
+	        <em class="work-origin-badge work-origin-kitchen">Cocina</em>
+	        {% endif %}
+	      </span>
+      {% if op.get('notas_preparacion') %}
+      <span class="work-sec-item work-item-choice">Nota: {{ op.get('notas_preparacion') }}</span>
+      {% endif %}
+      {% endfor %}
+      {% if not opciones %}
+      <span class="work-sec-item work-item-empty">Sin selección registrada</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+</div>
+{% elif item.display_es_combo %}
+{# Combo sin metadata (pedido por POS o sin selecciones guardadas) #}
+<div class="work-combo-breakdown work-combo-simple">
+  <span class="work-combo-simple-note">Contenido definido en cocina</span>
+</div>
+{% endif %}

@@ -1,0 +1,144 @@
+{% extends "admin_base.html" %}
+{% block title %}Caja — Admin{% endblock %}
+{% block content %}
+{% set neto_class = 'ok' if saldo >= 0 else 'bad' %}
+
+<div class="flex items-start justify-between gap-3 flex-wrap mb-5">
+  <div>
+    <h1 class="text-2xl font-black text-white">Caja</h1>
+    <p class="text-sm mt-1" style="color:var(--col-muted)">Ingresos, egresos, movimientos manuales y exportacion.</p>
+  </div>
+  <div class="flex gap-2 flex-wrap">
+    <a href="{{ url_for('admin.analytics') }}" class="ox-btn-secondary">📊 Analytics</a>
+    <button onclick="window.print()" class="ox-btn-secondary">🖨️ Imprimir</button>
+    <a href="{{ url_for('admin.exportar_caja', fecha_ini=fecha_ini, fecha_fin=fecha_fin, categoria=categoria_f) }}" class="ox-btn-secondary">📥 Exportar CSV</a>
+  </div>
+</div>
+
+<form method="GET" class="cash-filters">
+  <div>
+    <label>Desde</label>
+    <input type="date" name="fecha_ini" value="{{ fecha_ini }}">
+  </div>
+  <div>
+    <label>Hasta</label>
+    <input type="date" name="fecha_fin" value="{{ fecha_fin }}">
+  </div>
+  <div>
+    <label>Categoria</label>
+    <select name="categoria">
+      <option value="">Todas</option>
+      {% for cat in ['venta_online','venta_presencial','venta_whatsapp','pago_staff','compra_insumos','gasto_operativo','adelanto','general'] %}
+      <option value="{{ cat }}" {% if categoria_f == cat %}selected{% endif %}>{{ cat.replace('_',' ') }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit">Filtrar</button>
+</form>
+
+<div class="cash-kpis">
+  <div class="cash-kpi income"><span>Ingresos</span><strong>€{{ "%.2f"|format(ingresos) }}</strong></div>
+  <div class="cash-kpi expense"><span>Egresos</span><strong>€{{ "%.2f"|format(egresos) }}</strong></div>
+  <div class="cash-kpi {{ neto_class }}"><span>Saldo</span><strong>€{{ "%.2f"|format(saldo) }}</strong></div>
+</div>
+
+<div class="cash-layout">
+  <section class="cash-panel">
+    <h2>Registrar movimiento</h2>
+    <form method="POST" action="{{ url_for('admin.registrar_movimiento') }}" class="cash-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="cash-segment">
+        <label><input type="radio" name="tipo" value="ingreso" checked> Ingreso</label>
+        <label><input type="radio" name="tipo" value="egreso"> Egreso</label>
+      </div>
+      <div class="grid md:grid-cols-2 gap-3">
+        <div>
+          <label>Importe</label>
+          <input type="number" name="monto" step="0.01" min="0.01" placeholder="0.00" required>
+        </div>
+        <div>
+          <label>Categoria</label>
+          <select name="categoria">
+            {% for cat in ['general','compra_insumos','gasto_operativo','adelanto'] %}
+            <option value="{{ cat }}">{{ cat.replace('_',' ') }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label>Concepto</label>
+        <input type="text" name="concepto" placeholder="Ej: compra de insumos, ajuste de caja..." required>
+      </div>
+      <button type="submit" class="cash-submit">Registrar movimiento</button>
+    </form>
+
+    {% if por_categoria %}
+    <div class="cash-breakdown">
+      <h2>Desglose</h2>
+      {% for cat, vals in por_categoria.items() %}
+      <div class="cash-break-row">
+        <span>{{ cat.replace('_',' ') }}</span>
+        <strong>
+          {% if vals.ingreso %}<b class="in">+€{{ "%.2f"|format(vals.ingreso) }}</b>{% endif %}
+          {% if vals.egreso %}<b class="out">-€{{ "%.2f"|format(vals.egreso) }}</b>{% endif %}
+        </strong>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="cash-panel cash-table-panel">
+    <div class="cash-table-head">
+      <h2>Movimientos</h2>
+      <span>{{ movimientos|length }} registros</span>
+    </div>
+    <div class="cash-table">
+      {% for m in movimientos %}
+      <article class="cash-row">
+        <div>
+          <strong>{{ m.concepto }}</strong>
+          <p>{{ m.fecha.strftime('%d/%m/%Y %H:%M') }} · {{ m.categoria.replace('_',' ') }}</p>
+        </div>
+        <span class="cash-type {{ m.tipo }}">{{ m.tipo }}</span>
+        <b class="{{ 'in' if m.tipo == 'ingreso' else 'out' }}">{{ '+' if m.tipo == 'ingreso' else '-' }}€{{ "%.2f"|format(m.monto) }}</b>
+      </article>
+      {% else %}
+      <div class="cash-empty">Sin movimientos en este rango.</div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<style>
+.cash-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;align-items:end;background:var(--col-surface);border:1px solid var(--col-border);border-radius:14px;padding:1rem;margin-bottom:1rem}
+.cash-filters label,.cash-form label{font-size:.7rem;text-transform:uppercase;color:var(--col-muted);font-weight:900;margin-bottom:.25rem}
+.cash-filters button,.cash-submit{background:#FFAB00;color:#321800;border-radius:10px;font-weight:950;padding:.75rem 1rem}
+.cash-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem;margin-bottom:1rem}
+.cash-kpi{background:var(--col-surface);border:1px solid var(--col-border);border-radius:14px;padding:1rem}
+.cash-kpi span{display:block;color:var(--col-muted);font-size:.75rem;text-transform:uppercase;font-weight:900}
+.cash-kpi strong{display:block;font-size:2rem;font-weight:950;color:#fff;line-height:1.1;margin-top:.3rem}
+.cash-kpi.income strong,.cash-row .in{color:#5EF097}
+.cash-kpi.expense strong,.cash-row .out{color:#FF7A7A}
+.cash-kpi.ok strong{color:#FFAB00}.cash-kpi.bad strong{color:#FF7A7A}
+.cash-layout{display:grid;grid-template-columns:360px minmax(0,1fr);gap:1rem}
+.cash-panel{background:var(--col-surface);border:1px solid var(--col-border);border-radius:14px;padding:1rem}
+.cash-panel h2{font-weight:950;color:#fff;margin-bottom:.75rem}
+.cash-form{display:grid;gap:.85rem}
+.cash-segment{display:grid;grid-template-columns:1fr 1fr;gap:.4rem;background:var(--col-elevated);border-radius:10px;padding:.35rem}
+.cash-segment label{margin:0;display:flex;align-items:center;justify-content:center;gap:.4rem;border-radius:8px;padding:.55rem;color:#fff;background:rgba(255,255,255,.035)}
+.cash-breakdown{margin-top:1.2rem;border-top:1px solid var(--col-border);padding-top:1rem}
+.cash-break-row{display:flex;justify-content:space-between;gap:.8rem;padding:.55rem 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.85rem}
+.cash-break-row span{color:var(--col-muted)}.cash-break-row b{margin-left:.35rem}
+.cash-table-head{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.cash-table-head span{color:var(--col-muted);font-size:.8rem;font-weight:800}
+.cash-table{display:grid;gap:.5rem}
+.cash-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:.8rem;align-items:center;background:rgba(255,255,255,.035);border:1px solid var(--col-border);border-radius:10px;padding:.75rem}
+.cash-row strong{color:#fff}.cash-row p{color:var(--col-muted);font-size:.76rem;margin-top:.15rem}
+.cash-row>b{font-family:ui-monospace,SFMono-Regular,monospace}
+.cash-type{font-size:.68rem;text-transform:uppercase;font-weight:950;border-radius:999px;padding:.2rem .55rem}
+.cash-type.ingreso{background:rgba(94,240,151,.12);color:#5EF097}.cash-type.egreso{background:rgba(255,122,122,.12);color:#FF7A7A}
+.cash-empty{text-align:center;color:var(--col-muted);border:1px dashed var(--col-border);border-radius:10px;padding:2rem}
+@media(max-width:900px){.cash-filters,.cash-kpis,.cash-layout{grid-template-columns:1fr}.cash-row{grid-template-columns:1fr auto}.cash-row>b{grid-column:1 / -1;text-align:right}}
+</style>
+{% endblock %}

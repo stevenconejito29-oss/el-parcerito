@@ -1,0 +1,199 @@
+services:
+  oxidian-db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${OXIDIAN_DB_USER:-oxidian}
+      POSTGRES_PASSWORD: ${OXIDIAN_DB_PASSWORD:?define OXIDIAN_DB_PASSWORD}
+      POSTGRES_DB: ${OXIDIAN_DB_NAME:-oxidian}
+    volumes:
+      - oxidian_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${OXIDIAN_DB_USER:-oxidian} -d ${OXIDIAN_DB_NAME:-oxidian}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  oxidian:
+    build:
+      context: ..
+      dockerfile: oxidian/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      oxidian-db:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      FLASK_ENV: production
+      SECRET_KEY: ${SECRET_KEY:?define SECRET_KEY}
+      DATABASE_URL: postgresql://${OXIDIAN_DB_USER:-oxidian}:${OXIDIAN_DB_PASSWORD:?define OXIDIAN_DB_PASSWORD}@oxidian-db:5432/${OXIDIAN_DB_NAME:-oxidian}
+      OXIDIAN_DB_USER: ${OXIDIAN_DB_USER:-oxidian}
+      OXIDIAN_DB_PASSWORD: ${OXIDIAN_DB_PASSWORD:?define OXIDIAN_DB_PASSWORD}
+      OXIDIAN_DB_NAME: ${OXIDIAN_DB_NAME:-oxidian}
+      EVOLUTION_DB_USER: ${EVOLUTION_DB_USER:-evolution}
+      EVOLUTION_DB_PASSWORD: ${EVOLUTION_DB_PASSWORD:?define EVOLUTION_DB_PASSWORD}
+      EVOLUTION_DB_NAME: ${EVOLUTION_DB_NAME:-evolution}
+      SEED_PASSWORD: ${SEED_PASSWORD:-oxidian-local-2026}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@oxidian.local}
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-superadmin@oxidian.local}
+      BOT_API_URL: http://127.0.0.1:3000
+      BOT_OXIDIAN_URL: http://127.0.0.1:5000
+      BOT_PUBLIC_URL: ${BOT_PUBLIC_URL:-}
+      BOT_API_KEY: ${BOT_API_KEY:?define BOT_API_KEY}
+      OXIDIAN_KEY: ${BOT_API_KEY:?define BOT_API_KEY}
+      BOT_PANEL_KEY: ${BOT_PANEL_KEY:?define BOT_PANEL_KEY}
+      BOT_ALLOW_ORDER_CREATE: ${BOT_ALLOW_ORDER_CREATE:-0}
+      OXIDIAN_PUBLIC_URL: ${OXIDIAN_PUBLIC_URL:-http://localhost:5070}
+      OXIDIAN_URL: http://127.0.0.1:5000
+      TIENDA_URL: ${TIENDA_URL:-http://localhost:5070}
+      RUN_CHATBOT: "1"
+      RUN_OUTBOX_WORKER: "1"
+      OUTBOX_LIMIT: ${OUTBOX_LIMIT:-25}
+      OUTBOX_INTERVAL_SECONDS: ${OUTBOX_INTERVAL_SECONDS:-30}
+      REDIS_URL: redis://oxidian-redis:6379/0
+      NODE_ENV: production
+      PORT: 3000
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?define EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-oxidian}
+      SIMULATE_EVO_SEND: ${SIMULATE_EVO_SEND:-1}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-local-dev-webhook-secret-change-me-32chars}
+      NOMBRE_NEGOCIO: ${NOMBRE_NEGOCIO:-Oxidian}
+      TELEFONO_NEGOCIO: ${TELEFONO_NEGOCIO:-}
+      DIRECCION_NEGOCIO: ${DIRECCION_NEGOCIO:-Carmona, Sevilla}
+      SEED_SHOWCASE_CATALOG: ${SEED_SHOWCASE_CATALOG:-0}
+      OXIDIAN_MINIMAL_USERS: ${OXIDIAN_MINIMAL_USERS:-0}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      WEB_THREADS: ${WEB_THREADS:-2}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+      TRUST_PROXY_HEADERS: "1"
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-0}
+      OXIDIAN_MFA_ENFORCED: ${OXIDIAN_MFA_ENFORCED:-1}
+      OWNER_NUMBER: ${OWNER_NUMBER:?define OWNER_NUMBER sin +, por ejemplo 34XXXXXXXXX}
+      SUPERADMINS: ${SUPERADMINS:?define SUPERADMINS sin +, separados por coma}
+      DB_DIR: /app/bot-data
+    expose:
+      - "5000"
+      - "3000"
+    volumes:
+      - oxidian_images:/app/images
+      - chatbot_data:/app/bot-data
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport urllib.request\nurllib.request.urlopen('http://127.0.0.1:5000/', timeout=3).read(1)\nPY"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+
+  oxidian-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - oxidian_redis_data:/data
+
+  evolution-db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${EVOLUTION_DB_USER:-evolution}
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD:?define EVOLUTION_DB_PASSWORD}
+      POSTGRES_DB: ${EVOLUTION_DB_NAME:-evolution}
+    volumes:
+      - evolution_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${EVOLUTION_DB_USER:-evolution} -d ${EVOLUTION_DB_NAME:-evolution}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  evolution-api:
+    image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:v2.3.7}
+    restart: unless-stopped
+    depends_on:
+      evolution-db:
+        condition: service_healthy
+      evolution-redis:
+        condition: service_started
+    environment:
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?define EVOLUTION_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${EVOLUTION_DB_USER:-evolution}:${EVOLUTION_DB_PASSWORD:?define EVOLUTION_DB_PASSWORD}@evolution-db:5432/${EVOLUTION_DB_NAME:-evolution}?schema=public
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379/6
+      CACHE_REDIS_TTL: "604800"
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CONFIG_SESSION_PHONE_VERSION: ${CONFIG_SESSION_PHONE_VERSION:-2.3000.1030415680}
+      DOCKER_ENV: "true"
+      TZ: ${TZ:-Europe/Madrid}
+    expose:
+      - "8080"
+
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      oxidian:
+        condition: service_healthy
+      evolution-api:
+        condition: service_started
+    ports:
+      - "${PUBLIC_PORT:-5070}:80"
+    volumes:
+      - ./nginx.single-domain.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/gateway-health | grep -q ok"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  evolution-setup:
+    image: curlimages/curl:8.11.1
+    restart: "no"
+    depends_on:
+      evolution-api:
+        condition: service_started
+      oxidian:
+        condition: service_healthy
+    environment:
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?define EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-oxidian}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-local-dev-webhook-secret-change-me-32chars}
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        echo "Esperando Evolution API..."
+        for i in $$(seq 1 60); do
+          if curl -fsS http://evolution-api:8080/ >/dev/null; then break; fi
+          sleep 2
+        done
+        echo "Creando instancia $$EVOLUTION_INSTANCE si no existe..."
+        curl -sS -X POST http://evolution-api:8080/instance/create \
+          -H "Content-Type: application/json" \
+          -H "apikey: $$EVOLUTION_API_KEY" \
+          -d "{\"instanceName\":\"$$EVOLUTION_INSTANCE\",\"integration\":\"WHATSAPP-BAILEYS\",\"qrcode\":true}" || true
+        echo "Configurando webhook hacia chatbot..."
+        curl -sS -X POST "http://evolution-api:8080/webhook/set/$$EVOLUTION_INSTANCE" \
+          -H "Content-Type: application/json" \
+          -H "apikey: $$EVOLUTION_API_KEY" \
+          -d "{\"webhook\":{\"enabled\":true,\"url\":\"http://oxidian:5000/webhook/evolution\",\"headers\":{\"X-Webhook-Secret\":\"$$WEBHOOK_SECRET\"},\"byEvents\":false,\"base64\":true,\"events\":[\"MESSAGES_UPSERT\",\"CONNECTION_UPDATE\",\"QRCODE_UPDATED\"]}}"
+        echo "Evolution setup OK"
+
+  evolution-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - evolution_redis_data:/data
+
+volumes:
+  oxidian_db_data:
+  oxidian_images:
+  oxidian_redis_data:
+  evolution_db_data:
+  evolution_redis_data:
+  chatbot_data:

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Consultar puntos — {{ brand.nombre }}{% endblock %}
+{% block content %}
+<section class="points-lookup">
+  <a href="{{ url_for('public.index') }}" class="points-lookup-back">← Volver al menú</a>
+  <div class="points-lookup-hero">
+    <span>⭐</span>
+    <div>
+      <p class="points-lookup-kicker">Club de clientes</p>
+      <h1>Consulta tus puntos</h1>
+      <p>Tu número de WhatsApp es tu identificación. No necesitas cuenta ni contraseña.</p>
+    </div>
+  </div>
+
+  <form id="points-lookup-form" class="points-lookup-card">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="points-phone">Número de WhatsApp</label>
+    <input id="points-phone" type="tel" inputmode="tel" autocomplete="tel"
+           placeholder="+34 6XX XXX XXX" required>
+    <button type="submit">Enviar mi saldo por WhatsApp</button>
+    <p id="points-lookup-status" role="status"></p>
+  </form>
+
+  <div class="points-lookup-note">
+    <strong>¿Quieres usarlos?</strong>
+    <p>Arma tu pedido normalmente. En la confirmación verificaremos este mismo WhatsApp y podrás elegir descuento o producto de regalo.</p>
+    <a href="{{ url_for('public.index') }}">Ver productos</a>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('points-lookup-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const phone = document.getElementById('points-phone').value.trim();
+  const status = document.getElementById('points-lookup-status');
+  const csrf = event.currentTarget.querySelector('[name=csrf_token]').value;
+  status.textContent = 'Enviando consulta...';
+  try {
+    const response = await fetch('/puntos/consultar-saldo', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-CSRFToken':csrf},
+      body: JSON.stringify({telefono: phone}),
+    });
+    const data = await response.json();
+    status.textContent = data.msg || 'Revisa tu WhatsApp.';
+  } catch (_error) {
+    status.textContent = 'No pudimos enviar la consulta. Inténtalo de nuevo.';
+  }
+});
+</script>
+{% endblock %}

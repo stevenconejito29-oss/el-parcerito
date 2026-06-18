@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ticket {{ pedido.numero_pedido }}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Space Mono', 'Courier New', monospace;
+      max-width: 320px;
+      margin: 0 auto;
+      padding: 16px 12px;
+      font-size: 12px;
+      background: #fff;
+      color: #111;
+    }
+    .center { text-align: center; }
+    .right { text-align: right; }
+    .bold { font-weight: 700; }
+    .big { font-size: 18px; font-weight: 700; }
+    .medium { font-size: 14px; font-weight: 700; }
+    .small { font-size: 10px; }
+    .muted { color: #666; }
+    .dashed { border-top: 1px dashed #999; margin: 8px 0; }
+    .solid { border-top: 2px solid #111; margin: 8px 0; }
+    .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 2px 0; }
+    .row-item { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; }
+    .flex-1 { flex: 1; }
+    .logo-block { margin-bottom: 12px; }
+    .brand-name { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+    .brand-sub { font-size: 10px; color: #555; margin-top: 2px; }
+    .order-num { font-size: 15px; font-weight: 700; background: #111; color: #fff; padding: 4px 12px; display: inline-block; border-radius: 4px; margin: 4px 0; }
+    .type-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; border: 1.5px solid #111; padding: 2px 8px; display: inline-block; border-radius: 3px; margin: 4px 0; }
+    .item-name { flex: 1; }
+    .item-qty { color: #555; font-size: 11px; white-space: nowrap; }
+    .item-price { font-weight: 700; white-space: nowrap; }
+    .total-row { font-size: 15px; font-weight: 700; }
+    .points-block { background: #f5f5f5; border: 1px dashed #ccc; padding: 6px 10px; border-radius: 4px; margin: 6px 0; text-align: center; }
+    .btn-print { display: block; width: 100%; margin-top: 16px; padding: 12px; background: #111; color: #fff; border: none; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; border-radius: 6px; }
+    @media print {
+      .btn-print, .no-print { display: none !important; }
+      body { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- CABECERA -->
+<div class="logo-block center">
+  <div class="brand-name">🥟 {{ brand.nombre }}</div>
+  {% if brand.ciudad %}<div class="brand-sub">{{ brand.ciudad }}</div>{% endif %}
+  {% if brand.direccion %}<div class="brand-sub">{{ brand.direccion }}</div>{% endif %}
+  {% if brand.telefono %}<div class="brand-sub">{{ brand.telefono }}</div>{% endif %}
+</div>
+
+<div class="dashed"></div>
+
+<!-- TIPO DE PEDIDO -->
+<div class="center">
+  {% if pedido.origen == 'presencial' %}
+  <span class="type-badge">🖥️ Venta en Tienda</span>
+  {% elif pedido.origen == 'whatsapp' %}
+  <span class="type-badge">📱 Pedido WhatsApp</span>
+  {% else %}
+  <span class="type-badge">🌐 Pedido Online</span>
+  {% endif %}
+</div>
+
+<div class="dashed"></div>
+
+<!-- NÚMERO DE PEDIDO -->
+<div class="center">
+  <p class="small muted">Pedido</p>
+  <div class="order-num">{{ pedido.numero_pedido }}</div>
+  <p class="small muted">{{ pedido.creado_en.strftime('%d/%m/%Y   %H:%M') }}</p>
+  {% if pedido.cajero %}<p class="small muted">Atendido por: {{ pedido.cajero.nombre }}</p>{% endif %}
+</div>
+
+<div class="dashed"></div>
+
+<!-- CLIENTE -->
+{% if pedido.cliente %}
+<div>
+  <div class="row"><span class="muted">Cliente</span><span class="bold">{{ pedido.cliente.nombre }}</span></div>
+  {% if pedido.cliente.telefono %}
+  <div class="row"><span class="muted">Tel</span><span>{{ pedido.cliente.telefono }}</span></div>
+  {% endif %}
+  {% if pedido.origen != 'presencial' and pedido.direccion_entrega %}
+  <div class="row"><span class="muted">Entrega</span><span class="flex-1 right">{{ pedido.direccion_entrega }}</span></div>
+  {% endif %}
+  {% if pedido.zona %}<div class="row"><span class="muted">Zona</span><span>{{ pedido.zona.nombre }}</span></div>{% endif %}
+</div>
+<div class="dashed"></div>
+{% endif %}
+
+<!-- ITEMS -->
+<div>
+  {% for item in pedido.items %}
+  {% set item_meta = item.get_metadata() %}
+  {% set combo_meta = (item_meta.get('combo') or {}) if item_meta else {} %}
+  <div class="row-item">
+    <div class="item-name">
+      {{ item.producto.nombre[:26] }}{% if item.producto.nombre|length > 26 %}…{% endif %}{% if item.display_es_combo %} <span style="font-size:9px;opacity:.6">COMBO</span>{% endif %}
+    </div>
+    <div class="item-qty">×{{ item.cantidad }}</div>
+    <div class="item-price">€{{ "%.2f"|format(item.subtotal) }}</div>
+  </div>
+  <div class="small muted" style="padding:0 0 2px 0">  @€{{ "%.2f"|format(item.precio_unit) }}/ud</div>
+  {% if item.notas %}<div class="small muted" style="padding:0 0 2px 0">  Nota: {{ item.notas }}</div>{% endif %}
+  {% if item.display_es_combo and (combo_meta.get('componentes') or combo_meta.get('selecciones')) %}
+  <div style="font-size:10px;color:#555;padding:1px 0 5px 6px;line-height:1.7">
+    {% if combo_meta.get('componentes') %}
+    <div>Incl: {% for comp in combo_meta.get('componentes') %}{{ comp.get('cantidad',1) }}× {{ comp.get('nombre','?') }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+    {% endif %}
+    {% for grupo in combo_meta.get('selecciones') or [] %}
+    <div>{{ grupo.get('grupo','?') }}: {% for op in grupo.get('opciones') or [] %}{{ op.get('cantidad', op.get('qty',1)) }}× {{ op.get('nombre','?') }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>
+
+<div class="solid"></div>
+
+<!-- TOTALES -->
+<div>
+  <div class="row"><span>Subtotal</span><span>€{{ "%.2f"|format(pedido.subtotal) }}</span></div>
+
+  {% if pedido.descuento and pedido.descuento > 0 %}
+  <div class="row"><span>Descuento</span><span>- €{{ "%.2f"|format(pedido.descuento) }}</span></div>
+  {% endif %}
+
+  {# Envío real cobrado: total - subtotal + descuento. 0 si cupón envio_gratis fue aplicado. #}
+  {% set envio_real = (pedido.total - pedido.subtotal + (pedido.descuento or 0)) | round(2) %}
+  {% if pedido.zona and envio_real > 0.001 %}
+  <div class="row"><span>Envío{% if pedido.zona %} — {{ pedido.zona.nombre }}{% endif %}</span><span>€{{ "%.2f"|format(envio_real) }}</span></div>
+  {% elif pedido.zona and envio_real <= 0.001 and pedido.zona.precio_envio > 0 %}
+  <div class="row"><span>Envío</span><span class="bold" style="color:green">GRATIS</span></div>
+  {% endif %}
+  {# Puntos usados como descuento #}
+  {% if pedido.puntos_usados and pedido.puntos_usados > 0 %}
+  <div class="row small"><span class="muted">Puntos usados ({{ pedido.puntos_usados }} pts)</span><span>- €{{ "%.2f"|format(pedido.puntos_usados / 100) }}</span></div>
+  {% endif %}
+  {# Cupón aplicado #}
+  {% if pedido.cupon %}<div class="row small"><span class="muted">Cupón: {{ pedido.cupon.codigo }}</span><span>✓</span></div>{% endif %}
+
+  <div class="dashed"></div>
+  <div class="row total-row">
+    <span>TOTAL</span>
+    <span>€{{ "%.2f"|format(pedido.total) }}</span>
+  </div>
+  <div class="row small">
+    <span class="muted">Método de pago</span>
+    <span class="bold">{{ pedido.metodo_pago | capitalize }}</span>
+  </div>
+  {% if pedido.metodo_pago == 'bizum' %}
+  <div class="row small">
+    <span class="muted">Estado pago</span>
+    <span class="bold" style="color:{% if pedido.pago_confirmado %}green{% else %}orange{% endif %}">
+      {% if pedido.pago_confirmado %}✓ Confirmado{% else %}⏳ Pendiente{% endif %}
+    </span>
+  </div>
+  {% endif %}
+</div>
+
+<!-- PUNTOS GANADOS -->
+{% if pedido.puntos_ganados and pedido.puntos_ganados > 0 %}
+<div class="dashed"></div>
+<div class="points-block">
+  <div class="bold">⭐ +{{ pedido.puntos_ganados }} puntos Club</div>
+  <div class="small muted">Acumulados en tu cuenta</div>
+</div>
+{% endif %}
+
+<!-- NOTAS -->
+{% if pedido.notas %}
+<div class="dashed"></div>
+<div class="small"><span class="bold">Notas: </span>{{ pedido.notas }}</div>
+{% endif %}
+
+<div class="dashed"></div>
+
+<!-- CIERRE -->
+<div class="center">
+  <div class="medium">¡Gracias por tu compra!</div>
+  <div class="small muted" style="margin-top:4px">{{ brand.nombre }}{% if brand.ciudad %} · {{ brand.ciudad }}{% endif %}</div>
+  <div class="small muted">{{ pedido.creado_en.strftime('%d/%m/%Y %H:%M') }}</div>
+  {% if brand.telefono %}<div class="small muted">{{ brand.telefono }}</div>{% endif %}
+</div>
+
+<div class="dashed"></div>
+
+<!-- CÓDIGO QR / REFERENCIA -->
+<div class="center small muted">
+  <div>Ref: {{ pedido.numero_pedido }}</div>
+  <div style="margin-top:4px;font-size:9px">Cumplimiento RGPD · LSSI-CE · RDL 1/2007</div>
+</div>
+
+<!-- BOTÓN IMPRIMIR -->
+<button class="btn-print no-print" onclick="window.print()">
+  🖨️ Imprimir Ticket
+</button>
+
+<script>
+  // Auto-print si viene con ?autoprint=1
+  if (window.location.search.includes('autoprint=1')) {
+    setTimeout(() => window.print(), 400);
+  }
+</script>
+</body>
+</html>

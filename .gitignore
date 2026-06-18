@@ -1,0 +1,45 @@
+# Secrets and local configuration
+**/.env
+**/.env.local
+**/.env.production
+**/.env.cosmos.local
+**/secrets/
+**/*.key
+**/*.pem
+**/*.p12
+
+# Runtime data and backups
+**/backups/
+**/instance/
+**/images/
+**/db/
+**/*.db
+**/*.db-*
+**/*.sqlite
+**/*.sqlite3
+**/*.dump
+**/*.sql
+**/*.log
+
+# Dependencies and generated files
+**/.venv/
+**/venv/
+**/node_modules/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.coverage
+**/htmlcov/
+**/test-results/
+**/playwright-report/
+
+# Editor and operating-system files
+**/.DS_Store
+**/.idea/
+**/.vscode/
+**/*.swp
+**/*.swo
+
+# Local exports
+*.zip
+texto arrastrado.txt

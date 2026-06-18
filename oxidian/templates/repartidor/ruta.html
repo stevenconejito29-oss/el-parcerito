@@ -1,0 +1,570 @@
+{% extends "admin_base.html" %}
+{% block title %}Mi Ruta — Repartidor{% endblock %}
+{% block styles %}
+<style>
+.work-employee-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .85rem 1rem;
+  background: var(--col-surface);
+  border: 1px solid var(--col-border);
+  border-radius: 1rem;
+  margin-bottom: 1rem;
+}
+.work-employee-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(90,200,250,.2), rgba(0,120,200,.1));
+  color: #5AC8FA;
+  font-size: 1.2rem;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1.5px solid rgba(90,200,250,.3);
+}
+.work-employee-info { flex: 1; min-width: 0; }
+.work-employee-name { font-weight: 800; font-size: .92rem; color: var(--col-text); }
+.work-employee-role { font-size: .75rem; color: var(--col-muted); margin-top: .1rem; }
+.work-employee-status {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .78rem;
+  color: var(--col-muted);
+  flex-shrink: 0;
+}
+</style>
+{% endblock %}
+{% block content %}
+
+<div class="work-area route-board">
+<section class="work-hero">
+  <div>
+    <span class="work-eyebrow">Reparto activo</span>
+    <h1 class="work-title">Mi Ruta</h1>
+    <p class="work-subtitle">Recoge, navega y confirma entregas con cobro verificado.</p>
+  </div>
+  <div class="work-actions-top">
+    <form method="POST" action="{{ url_for('repartidor.toggle_disponible') }}" class="js-availability-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="work-btn {% if disponible %}work-btn-success{% else %}work-btn-ghost{% endif %}">
+        <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
+        {% if disponible %}Online{% else %}Ponerme online{% endif %}
+      </button>
+    </form>
+    <a href="{{ url_for('repartidor.mis_comisiones') }}"
+       class="work-btn work-btn-ghost">
+      Mis comisiones
+    </a>
+  </div>
+</section>
+
+<!-- Tarjeta de empleado -->
+<div class="work-employee-card">
+  <div class="work-employee-avatar">{{ current_user.nombre[0].upper() }}</div>
+  <div class="work-employee-info">
+    <p class="work-employee-name">{{ current_user.nombre }}</p>
+    <p class="work-employee-role">
+      {% if current_user.rol == 'repartidor' %}🛵 Repartidor
+      {% elif current_user.rol == 'admin' %}🔧 Admin
+      {% else %}👑 Super Admin{% endif %}
+      {% if current_user.puesto_trabajo %} · {{ current_user.puesto_trabajo }}{% endif %}
+      {% if current_user.tarifa_entrega and current_user.tarifa_entrega > 0 %} · €{{ "%.2f"|format(current_user.tarifa_entrega) }}/entrega{% endif %}
+    </p>
+  </div>
+  <div class="work-employee-status">
+    <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
+    <span>{% if disponible %}Online{% else %}Offline{% endif %}</span>
+  </div>
+</div>
+
+{% if not disponible and current_user.rol not in ('admin','super_admin') %}
+<div class="work-panel work-status-panel mb-4">
+  <p class="font-bold text-warning">Estás offline para nuevos repartos</p>
+  <p class="text-sm mt-1 text-muted">Puedes cerrar entregas ya asignadas, pero no recibirás ni tomarás pedidos nuevos hasta ponerte online.</p>
+</div>
+{% endif %}
+
+<!-- Compañeros conectados -->
+{% if companeros %}
+<div class="work-team" aria-label="Repartidores conectados">
+  {% for c in companeros %}
+  <span class="work-chip">
+    <span class="work-dot {% if c.disponible_para_pedidos %}is-on{% endif %}"></span>
+    <span class="font-semibold">{{ c.nombre }}</span>
+    <span class="work-muted-text">·
+      {% if c.rol == 'repartidor' %}Repartidor
+      {% elif c.rol == 'admin' %}Admin
+      {% else %}{{ c.rol }}{% endif %}
+    </span>
+    {% if c.disponible_para_pedidos %}
+    <span class="work-info-text">· {{ c.pedidos_activos_como_repartidor() }} en ruta</span>
+    {% elif c.en_linea %}
+    <span class="work-muted-text">· sin actividad</span>
+    {% else %}
+    <span class="work-muted-text">· offline</span>
+    {% endif %}
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Contadores rápidos -->
+<div class="work-kpis">
+  <div class="work-panel work-kpi">
+    <span>Listos para recoger</span>
+    <strong>{{ listos_count }}</strong>
+    <small>Pedidos listos para salir</small>
+  </div>
+  <div class="work-panel work-kpi">
+    <span>En ruta ahora</span>
+    <strong>{{ en_ruta|length }}</strong>
+    <small>Pedidos en viaje</small>
+  </div>
+</div>
+
+<div class="work-board">
+
+  <!-- ── LISTOS PARA RECOGER ──────────────── -->
+  <section class="work-lane">
+    <div class="work-lane-head">
+      <div>
+        <h2 class="work-lane-title">Listos para salir</h2>
+        <p class="work-lane-sub">Toma el pedido y abre ruta antes de salir.</p>
+      </div>
+      <span class="work-count">{{ listos_count }}</span>
+    </div>
+    <div class="work-list">
+
+    {% for group in listos_grouped %}
+      <div class="work-zone-header mb-4">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="text-sm text-muted">Zona</p>
+            <h3 class="text-lg font-semibold">{{ group.zona_nombre }}</h3>
+          </div>
+          <span class="work-chip">{{ group.count }} pedido{{ 's' if group.count != 1 else '' }}</span>
+        </div>
+      </div>
+
+      {% for pedido in group.pedidos %}
+      {%- set _cp = namespace(has_items=false, has_almacen=false, has_cocina=false, bares=[], bares_info=[]) -%}
+      {%- for _it in pedido.items -%}
+        {%- set _cp.has_items = true -%}
+        {%- set _meta = _it.get_metadata() -%}
+        {%- set _prod = _meta.get('producto') or {} -%}
+        {# Origen real (modelo nuevo): proveedor_despachador del producto vivo,
+           con fallback al snapshot por si fue editado #}
+        {%- set _bar_id = _prod.get('proveedor_despachador_id') -%}
+        {%- if _bar_id is none and _it.producto -%}{%- set _bar_id = _it.producto.proveedor_despachador_id -%}{%- endif -%}
+        {%- set _bar = _it.producto.proveedor_despachador if (_it.producto and _it.producto.proveedor_despachador) else none -%}
+        {%- if _bar_id and _bar -%}
+          {%- if _bar.id not in _cp.bares -%}
+            {%- set _ = _cp.bares.append(_bar.id) -%}
+            {%- set _ = _cp.bares_info.append({'nombre': _bar.nombre, 'direccion': _bar.direccion, 'telefono': _bar.telefono}) -%}
+          {%- endif -%}
+        {%- elif (_it.display_canal_preparacion or 'cocina') == 'almacen' -%}
+          {%- set _cp.has_almacen = true -%}
+        {%- else -%}
+          {%- set _cp.has_cocina = true -%}
+        {%- endif -%}
+      {%- endfor -%}
+      <article class="work-card work-card--tight is-success">
+        <div class="work-order-head">
+          <div>
+            <span class="work-order-code is-success">{{ pedido.numero_pedido }}</span>
+            <span class="work-chip">{{ pedido.origen }}</span>
+            {%- if _cp.has_items -%}
+            {%- if _cp.has_almacen -%}
+            <span class="work-chip" style="background:rgba(43,147,72,.12);color:#2b9348;border-color:rgba(43,147,72,.3)">📦 Almacén</span>
+            {%- endif -%}
+            {%- if _cp.has_cocina -%}
+            <span class="work-chip" style="background:rgba(232,93,4,.1);color:#e85d04;border-color:rgba(232,93,4,.25)">🍳 Cocina</span>
+            {%- endif -%}
+            {%- for _bar_info in _cp.bares_info -%}
+            <span class="work-chip" style="background:rgba(251,146,60,.12);color:#fb923c;border-color:rgba(251,146,60,.28)">🏪 {{ _bar_info.nombre }}</span>
+            {%- endfor -%}
+            {%- endif -%}
+          </div>
+          <span class="work-time">{{ pedido.creado_en.strftime('%H:%M') }}</span>
+        </div>
+        <div class="mt-2 flex flex-wrap gap-2">
+          {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
+          {% if pedido.repartidor_id %}<span class="work-badge-assigned">Asignado</span>{% endif %}
+        </div>
+        {%- if _cp.bares_info -%}
+        {# Punto de recogida — crítico para el repartidor cuando hay bares involucrados #}
+        <div class="work-pickup mt-2 p-2 rounded" style="background:rgba(251,146,60,.08); border:1px solid rgba(251,146,60,.3)">
+          <p class="text-xs font-bold" style="color:#fb923c">📍 Punto(s) de recogida:</p>
+          {% for _bar_info in _cp.bares_info %}
+          <p class="text-xs mt-1" style="color:#fff">
+            <strong>🏪 {{ _bar_info.nombre }}</strong>
+            {% if _bar_info.direccion %} · {{ _bar_info.direccion }}{% endif %}
+            {% if _bar_info.telefono %}
+            · <a href="tel:{{ _bar_info.telefono }}" style="color:var(--col-gold)">📞 {{ _bar_info.telefono }}</a>
+            {% endif %}
+          </p>
+          {% endfor %}
+        </div>
+        {%- endif -%}
+
+      <!-- Cliente + Pago visible desde el inicio -->
+      <div class="work-client-payment mt-1">
+        <p class="work-client">{{ pedido.cliente.nombre }}</p>
+        <div class="work-payment">
+          <span class="work-chip work-payment-method {% if pedido.metodo_pago == 'bizum' %}is-presencial{% endif %}">
+            {% if pedido.metodo_pago == 'bizum' %}📱 Bizum{% else %}💵 Efectivo{% endif %}
+          </span>
+          <span class="work-money work-payment-total">€{{ "%.2f"|format(pedido.total) }}</span>
+        </div>
+      </div>
+
+      <!-- Notas PRIMERO — instrucciones de entrega -->
+      {% if pedido.notas %}
+      <div class="work-note mt-2">⚠ {{ pedido.notas }}</div>
+      {% endif %}
+
+      <!-- Dirección + GPS -->
+      {% if pedido.direccion_entrega %}
+      <div class="work-box mt-2">
+        <p class="work-address">
+          <span class="work-address-label">Entregar en:</span>
+          <span>{{ pedido.direccion_entrega }}</span>
+        </p>
+        <div class="flex gap-2 mt-2">
+          <a href="https://www.google.com/maps/dir/?api=1&destination={{ (pedido.direccion_entrega + ", " + brand.ciudad) | urlencode }}"
+             target="_blank" rel="noopener"
+             class="work-btn work-btn-info flex-1">
+            Abrir GPS
+          </a>
+          <a href="https://waze.com/ul?q={{ (pedido.direccion_entrega + ', ' + brand.ciudad) | urlencode }}"
+             target="_blank" rel="noopener"
+             class="work-btn work-btn-ghost">
+            Waze
+          </a>
+          <button onclick='copiarDireccion({{ pedido.direccion_entrega | tojson }})'
+                  class="work-btn work-btn-ghost">
+            Copiar
+          </button>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Productos -->
+      <div class="work-items mt-2">
+        {% for item in pedido.items %}
+        <div class="work-item">
+          {% include "_order_item_combo.html" %}
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Teléfono -->
+      {% if pedido.cliente.telefono %}
+      <div class="flex gap-2 mt-2">
+        <a href="tel:{{ pedido.cliente.telefono }}"
+           class="work-btn work-btn-ghost flex-1">
+          📞 {{ pedido.cliente.telefono }}
+        </a>
+        <a href="https://wa.me/{{ pedido.cliente.telefono | replace(' ', '') | replace('+', '') | replace('-', '') }}" target="_blank"
+           class="work-btn work-btn-ghost flex-1">
+          WhatsApp
+        </a>
+      </div>
+      {% endif %}
+
+      <!-- Botones de acción -->
+      <div class="work-action-row work-cta-group mt-3">
+        {% if not pedido.repartidor_id %}
+        <form method="POST" action="{{ url_for('repartidor.tomar_pedido', pedido_id=pedido.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="work-btn work-btn-ghost full-width">Tomar pedido</button>
+        </form>
+        {% endif %}
+        <form method="POST" action="{{ url_for('repartidor.salir_entregar', pedido_id=pedido.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="work-btn work-btn-info full-width">Salir a entregar</button>
+        </form>
+      </div>
+    </article>
+    {% endfor %}
+    {% else %}
+    <div class="work-empty">
+      <p class="text-sm">No hay pedidos listos ahora.</p>
+    </div>
+    {% endfor %}
+    </div>
+  </section>
+
+  <!-- ── EN RUTA ────────────────────────────── -->
+  <section class="work-lane">
+    <div class="work-lane-head">
+      <div>
+        <h2 class="work-lane-title">En ruta</h2>
+        <p class="work-lane-sub">Confirma código y cobro antes de cerrar.</p>
+      </div>
+      <span class="work-count">{{ en_ruta|length }}</span>
+    </div>
+    <div class="work-list">
+
+    {% for pedido in en_ruta %}
+    {%- set _cp2 = namespace(has_items=false, has_almacen=false, has_cocina=false, bares=[], bares_info=[]) -%}
+    {%- for _it in pedido.items -%}
+      {%- set _cp2.has_items = true -%}
+      {%- set _meta = _it.get_metadata() -%}
+      {%- set _prod = _meta.get('producto') or {} -%}
+      {%- set _bar_id = _prod.get('proveedor_despachador_id') -%}
+      {%- if _bar_id is none and _it.producto -%}{%- set _bar_id = _it.producto.proveedor_despachador_id -%}{%- endif -%}
+      {%- set _bar = _it.producto.proveedor_despachador if (_it.producto and _it.producto.proveedor_despachador) else none -%}
+      {%- if _bar_id and _bar -%}
+        {%- if _bar.id not in _cp2.bares -%}
+          {%- set _ = _cp2.bares.append(_bar.id) -%}
+          {%- set _ = _cp2.bares_info.append({'nombre': _bar.nombre, 'direccion': _bar.direccion, 'telefono': _bar.telefono}) -%}
+        {%- endif -%}
+      {%- elif (_it.display_canal_preparacion or 'cocina') == 'almacen' -%}
+        {%- set _cp2.has_almacen = true -%}
+      {%- else -%}
+        {%- set _cp2.has_cocina = true -%}
+      {%- endif -%}
+    {%- endfor -%}
+    <article class="work-card work-card--tight is-info">
+      <div class="work-order-head">
+        <div class="flex items-center gap-2">
+          <span class="work-order-code is-info">{{ pedido.numero_pedido }}</span>
+          {%- if _cp2.has_items -%}
+	          {%- if _cp2.has_almacen -%}
+	          <span class="work-chip" style="background:rgba(43,147,72,.12);color:#2b9348;border-color:rgba(43,147,72,.3)">📦 Almacén</span>
+	          {%- endif -%}
+	          {%- if _cp2.has_cocina -%}
+	          <span class="work-chip" style="background:rgba(232,93,4,.1);color:#e85d04;border-color:rgba(232,93,4,.25)">🍳 Cocina</span>
+	          {%- endif -%}
+	          {%- for _bar_info in _cp2.bares_info -%}
+	          <span class="work-chip" style="background:rgba(251,146,60,.12);color:#fb923c;border-color:rgba(251,146,60,.28)">🏪 {{ _bar_info.nombre }}</span>
+	          {%- endfor -%}
+	          {%- endif -%}
+        </div>
+        <span class="work-time">{{ pedido.creado_en.strftime('%H:%M') }}</span>
+      </div>
+      {%- if _cp2.bares_info -%}
+      <div class="work-pickup mt-2 p-2 rounded" style="background:rgba(251,146,60,.08); border:1px solid rgba(251,146,60,.3)">
+        <p class="text-xs font-bold" style="color:#fb923c">📍 Recogida:</p>
+        {% for _bar_info in _cp2.bares_info %}
+        <p class="text-xs mt-1" style="color:#fff">
+          <strong>🏪 {{ _bar_info.nombre }}</strong>
+          {% if _bar_info.direccion %} · {{ _bar_info.direccion }}{% endif %}
+          {% if _bar_info.telefono %}
+          · <a href="tel:{{ _bar_info.telefono }}" style="color:var(--col-gold)">📞 {{ _bar_info.telefono }}</a>
+          {% endif %}
+        </p>
+        {% endfor %}
+      </div>
+      {%- endif -%}
+
+      <!-- Cliente + Cobro bien visible -->
+      <div class="work-client-payment mt-1">
+        <p class="work-client">{{ pedido.cliente.nombre }}</p>
+        <div class="work-payment">
+          <span class="work-chip work-payment-method {% if pedido.metodo_pago == 'bizum' %}is-presencial{% endif %}">
+            {% if pedido.metodo_pago == 'bizum' %}📱 Bizum{% else %}💵 Efectivo{% endif %}
+          </span>
+          <span class="work-money work-payment-total">€{{ "%.2f"|format(pedido.total) }}</span>
+        </div>
+      </div>
+
+      <div class="mt-2 flex flex-wrap gap-2">
+        {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
+        {% if pedido.repartidor_id %}
+        <span class="work-badge-assigned">Asignado</span>
+        {% else %}
+        <span class="work-chip is-presencial">Sin repartidor · puedes recuperarlo</span>
+        {% endif %}
+      </div>
+
+      <!-- Notas PRIMERO -->
+      {% if pedido.notas %}
+      <div class="work-note mt-2">⚠ {{ pedido.notas }}</div>
+      {% endif %}
+
+      <!-- Dirección + GPS -->
+      {% if pedido.direccion_entrega %}
+      <div class="work-box mt-2">
+        <p class="work-address">
+          <span class="work-address-label is-info">Entregar en:</span>
+          <span>{{ pedido.direccion_entrega }}</span>
+        </p>
+        <div class="flex gap-2 mt-2">
+          <a href="https://www.google.com/maps/dir/?api=1&destination={{ (pedido.direccion_entrega + ", " + brand.ciudad) | urlencode }}"
+             target="_blank" rel="noopener"
+             class="work-btn work-btn-info flex-1">
+            Navegar ahora
+          </a>
+          <a href="https://waze.com/ul?q={{ (pedido.direccion_entrega + ', ' + brand.ciudad) | urlencode }}"
+             target="_blank" rel="noopener"
+             class="work-btn work-btn-ghost">
+            Waze
+          </a>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Productos -->
+      <div class="work-items mt-2">
+        {% for item in pedido.items %}
+        <div class="work-item">
+          {% include "_order_item_combo.html" %}
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Teléfono -->
+      {% if pedido.cliente.telefono %}
+      <div class="flex gap-2 mt-2">
+        <a href="tel:{{ pedido.cliente.telefono }}"
+           class="work-btn work-btn-ghost flex-1">
+          📞 {{ pedido.cliente.telefono }}
+        </a>
+        <a href="https://wa.me/{{ pedido.cliente.telefono | replace(' ', '') | replace('+', '') | replace('-', '') }}" target="_blank"
+           class="work-btn work-btn-ghost flex-1">
+          WhatsApp
+        </a>
+      </div>
+      {% endif %}
+
+      <div class="work-panel mb-3 mt-3" style="border-left:3px solid rgba(90,200,250,.45)">
+        <p class="work-confirm-label">1. Código al llegar</p>
+        {% if pedido.id in codigo_enviado_ids %}
+        <p class="work-confirm-note">Código enviado al cliente. Puedes reenviarlo si el cliente no lo encuentra.</p>
+        {% else %}
+        <p class="work-confirm-note">Pulsa este botón solo cuando estés con el cliente. No entregues sin código correcto.</p>
+        {% endif %}
+        <form method="POST" action="{{ url_for('repartidor.enviar_codigo_entrega', pedido_id=pedido.id) }}" class="mt-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="work-btn {% if pedido.id in codigo_enviado_ids %}work-btn-ghost{% else %}work-btn-info{% endif %} full-width">
+            {% if pedido.id in codigo_enviado_ids %}Reenviar código{% else %}Enviar código al cliente ahora{% endif %}
+          </button>
+        </form>
+      </div>
+
+      <!-- Formulario de confirmación de entrega -->
+      <form method="POST" action="{{ url_for('repartidor.confirmar_entrega', pedido_id=pedido.id) }}" class="mt-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        {% if pedido.codigo_confirmacion %}
+        {% if pedido.intentos_codigo >= 3 %}
+        <div class="work-panel work-panel--locked mb-3">
+          <p class="work-confirm-label" style="color:#ef4444">Código bloqueado</p>
+          <p class="work-confirm-note">Se agotaron los 3 intentos. Contacta al admin para regenerar el código antes de entregar.</p>
+          <input type="hidden" name="codigo_confirmacion" value="">
+        </div>
+        {% else %}
+        <div class="mb-3">
+          <label class="work-code-label">3. Código de confirmación del cliente</label>
+          <p class="work-code-help">Pide el código que se envió al llegar. Verifica pedido, cliente y cobro antes de entregarlo.</p>
+          <input type="text" name="codigo_confirmacion"
+                 required maxlength="8" inputmode="numeric"
+                 placeholder="_ _ _ _ _ _"
+                 class="work-code-input"
+                 autocomplete="off">
+          {% if pedido.intentos_codigo > 0 %}
+          <p class="work-code-attempts">{{ 3 - pedido.intentos_codigo }} intento(s) restante(s)</p>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% endif %}
+
+        {% if pedido.metodo_pago == 'bizum' %}
+        {% if pedido.pago_confirmado %}
+        <div class="work-panel work-panel--bizum mb-3">
+          <p class="work-confirm-label">2. Bizum ya confirmado</p>
+          <p class="work-confirm-note">Importe: <strong class="work-confirm-amount">€{{ "%.2f"|format(pedido.total) }}</strong></p>
+          <p class="work-confirm-note">
+            Pago verificado{% if pedido.confirmador_pago %} por {{ pedido.confirmador_pago.nombre }}{% endif %}.
+          </p>
+        </div>
+        {% else %}
+        <div class="work-panel work-panel--bizum mb-3">
+          <p class="work-confirm-label">2. Confirmar Bizum recibido</p>
+          <p class="work-confirm-note">Importe exacto: <strong class="work-confirm-amount">€{{ "%.2f"|format(pedido.total) }}</strong></p>
+          <p class="work-confirm-note">Comprueba la recepción en la app/cuenta del negocio o con una confirmación fiable. No aceptes solicitudes de cobro inversas.</p>
+          <label class="mt-2 flex items-start gap-2 text-sm font-bold" style="color:var(--col-text)">
+            <input type="checkbox" name="bizum_recibido" required class="accent-green-500 w-4 h-4 mt-0.5">
+            <span>Confirmo que el Bizum fue recibido antes de entregar.</span>
+          </label>
+          <input type="text" name="bizum_referencia"
+                 placeholder="Referencia opcional: hora, nombre o últimos dígitos"
+                 class="ox-input text-sm mt-2">
+        </div>
+        {% endif %}
+        {% else %}
+        <label class="work-panel work-panel--cash-confirm mb-3">
+          <input type="checkbox" name="cobro_recibido" required class="accent-green-500 w-4 h-4">
+          <span>2. Confirmo cobro en efectivo: <strong class="work-confirm-amount">€{{ "%.2f"|format(pedido.total) }}</strong>. Dinero contado y cambio entregado si aplica.</span>
+        </label>
+        {% endif %}
+
+        <button type="submit" class="work-btn work-btn-success full-width">Confirmar entrega y cobro</button>
+      </form>
+    </article>
+    {% else %}
+    <div class="work-empty">
+      <p class="text-sm">Nada en ruta ahora.</p>
+    </div>
+    {% endfor %}
+    </div>
+  </section>
+
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copiarDireccion(dir) {
+  navigator.clipboard.writeText(dir).then(() => {
+    const toast = document.createElement('div');
+    toast.textContent = '📋 Dirección copiada';
+    toast.style.cssText = 'position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:#374151;color:#f3f4f6;padding:.5rem 1rem;border-radius:.75rem;font-size:.85rem;z-index:9999;animation:fadeIn .2s ease';
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
+  }).catch(() => {
+    prompt('Copia esta dirección:', dir);
+  });
+}
+
+  // Auto-refresh cada 25 segundos, sin interrumpir formularios de entrega.
+  setTimeout(() => {
+    const active = document.activeElement;
+    const isEditing = active && active.matches('input, select, textarea');
+    const dirtyDelivery = [...document.querySelectorAll('form[action*="confirmar"]')]
+      .some(form => [...form.elements].some(el => {
+        if (el.type === 'checkbox') return el.checked;
+        if (['text', 'number', 'tel', 'search'].includes(el.type)) return (el.value || '').trim();
+        return false;
+      }));
+    if (!isEditing && !dirtyDelivery) location.reload();
+  }, 25000);
+
+// Ping presencia cada 90s
+setInterval(() => {
+  fetch('/api/ping', {method: 'POST'}).catch(() => {});
+}, 90000);
+
+document.querySelectorAll('.js-availability-form').forEach(form => {
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    try {
+      const r = await fetch(form.action, { method: 'POST', body: fd });
+      if (r.ok) location.reload();
+      else form.submit();
+    } catch (_) {
+      form.submit();
+    }
+  });
+});
+</script>
+{% endblock %}

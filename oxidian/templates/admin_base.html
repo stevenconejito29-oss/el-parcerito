@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#15181D">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{ brand.nombre }} Panel">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='pwa-icon.svg') }}">
+  <title>{% block title %}Panel — {{ brand.nombre }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.generated.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian.css', v=asset_version) }}">
+  <style>
+    :root{--brand-primary:#D9961A;--brand-secondary:#344054;--brand-accent:#2F9E6D;}
+    .sb-alert { color: var(--col-primary, #D9961A) !important; }
+    .sb-alert:hover { background: rgba(217,150,26,.12) !important; }
+    .ox-sidebar { background: linear-gradient(180deg, #090b10, #131a2c); }
+    .ox-topbar { background: rgba(15,23,42,.94); border-bottom: 1px solid rgba(255,255,255,.08); }
+    .ox-sb-item, .ox-sb-footer .ox-sb-item { transition: background .2s, color .2s; }
+    .ox-sb-item:hover, .ox-sb-item.active { background: rgba(252,209,22,.12); color: #fff; }
+    .ox-sb-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg, var(--brand-primary), var(--brand-secondary)); border-radius: 999px 0 0 999px; }
+    .ox-sb-item { position: relative; overflow: hidden; }
+    .ox-sb-toggle-btn.online { background: linear-gradient(135deg, #4ade80, #22c55e); color: #fff; }
+    .ox-sb-toggle-btn.offline { background: linear-gradient(135deg, #f87171, #ef4444); color: #fff; }
+    .ox-sb-toggle-dot { box-shadow: 0 0 0 4px rgba(255,255,255,.14); }
+  </style>
+  {% block styles %}{% endblock %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
+</head>
+{% set rol = current_user.rol if current_user.is_authenticated else '' %}
+<body class="ox-body ox-body-admin">
+<div class="ox-admin-layout">
+
+  <aside class="ox-sidebar" id="ox-sidebar">
+    <div class="ox-sb-brand">
+      {% if brand.logo_url %}<img src="{{ brand.logo_url }}" class="ox-sb-logo" style="object-fit:cover;border-radius:.5rem" alt="logo">
+      {% else %}<div class="ox-sb-logo">🥟</div>{% endif %}
+      <div style="flex:1;min-width:0">
+        <p class="ox-sb-brand-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ brand.nombre }}</p>
+        <p class="ox-sb-brand-sub">Gestión operativa</p>
+      </div>
+      <button id="btn-close-sb" onclick="sidebarClose()" class="ox-sb-toggle" style="display:none;flex-shrink:0">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <div class="ox-sb-user">
+      <div class="ox-sb-user-row">
+        <div class="ox-sb-avatar ox-avatar-{{ rol }}">{{ current_user.nombre[0].upper() if current_user.is_authenticated else '?' }}</div>
+        <div style="flex:1;min-width:0">
+          <p class="ox-sb-uname" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ current_user.nombre }}</p>
+          <p class="ox-sb-urole">{{ rol | replace('_',' ') | capitalize }}</p>
+        </div>
+      </div>
+      {% if rol in ('cocina','preparacion','repartidor') %}
+      {% set _turl = url_for('preparador.toggle_disponible') if rol in ('cocina','preparacion') else url_for('repartidor.toggle_disponible') %}
+      <button id="btn-disponible" onclick="toggleDisponible('{{ _turl }}')" class="ox-sb-toggle-btn {{ 'online' if current_user.en_linea else 'offline' }}">
+        <span class="ox-sb-toggle-dot" id="dot-disponible"></span>
+        <span id="txt-disponible">{{ 'Online' if current_user.en_linea else 'Offline' }}</span>
+      </button>
+      {% endif %}
+    </div>
+
+    <nav class="ox-sb-nav" id="sb-nav">
+      {% if rol in ('super_admin', 'admin') %}
+      {# ── ADMIN & SUPER ADMIN — menú unificado ── #}
+      <div class="ox-sb-section">
+        <span class="ox-sb-section-label">⚡ Operaciones</span>
+        <a href="{{ url_for('admin.dashboard') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏠</span>Dashboard</a>
+        <a href="{{ url_for('admin.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📋</span>Pedidos</a>
+        <a href="{{ url_for('pos.venta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖥️</span>Punto de venta</a>
+      </div>
+      <div class="ox-sb-divider"></div>
+      <div class="ox-sb-section">
+        <span class="ox-sb-section-label">🛍️ Catálogo</span>
+        <a href="{{ url_for('admin.productos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🥟</span>Productos</a>
+        <a href="{{ url_for('admin.categorias') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏷️</span>Categorías</a>
+        <a href="{{ url_for('admin.stock') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Stock</a>
+        <a href="{{ url_for('admin.proveedores') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏪</span>Proveedores</a>
+      </div>
+      <div class="ox-sb-divider"></div>
+      <div class="ox-sb-section">
+        <span class="ox-sb-section-label">💰 Finanzas</span>
+        <a href="{{ url_for('admin.caja') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Caja & Analytics</a>
+        <a href="{{ url_for('admin.pagos_staff') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💸</span>Pagos & Liquidaciones</a>
+      </div>
+      <div class="ox-sb-divider"></div>
+      <div class="ox-sb-section">
+        <span class="ox-sb-section-label">🔧 Gestión</span>
+        <a href="{{ url_for('admin.usuarios') }}" class="ox-sb-item"><span class="ox-sb-item-icon">👤</span>Usuarios & Equipo</a>
+        <a href="{{ url_for('admin.cupones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎟️</span>Marketing</a>
+      </div>
+
+      {% if rol == 'super_admin' %}
+      <div class="ox-sb-divider"></div>
+      <div class="ox-sb-section">
+        <span class="ox-sb-section-label" style="color:rgba(192,132,252,.7)">👑 Super Admin</span>
+        <a href="{{ url_for('superadmin.dashboard') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎛️</span>Panel SA</a>
+        <a href="{{ url_for('superadmin.config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">⚙️</span>Configuración</a>
+        <a href="{{ url_for('superadmin.pl') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📈</span>P&L · Finanzas</a>
+        <a href="{{ url_for('superadmin.admins') }}" class="ox-sb-item"><span class="ox-sb-item-icon">👑</span>Admins & Permisos</a>
+      </div>
+      {% endif %}
+
+      {% elif rol == 'cocina' %}
+      <div class="ox-sb-section">
+        <span class="ox-sb-section-label">Mi turno</span>
+        <a href="{{ url_for('preparador.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🍳</span>Cola de cocina</a>
+      </div>
+
+      {% elif rol == 'preparacion' %}
+      <div class="ox-sb-section">
+        <span class="ox-sb-section-label">Mi turno</span>
+        <a href="{{ url_for('preparador.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Pedidos por fecha</a>
+      </div>
+
+      {% elif rol == 'repartidor' %}
+      <div class="ox-sb-section">
+        <span class="ox-sb-section-label">Mi ruta</span>
+        <a href="{{ url_for('repartidor.ruta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🚴</span>Pedidos a entregar</a>
+        <a href="{{ url_for('repartidor.mis_comisiones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Mis comisiones</a>
+      </div>
+
+      {% elif rol == 'staff' %}
+      <div class="ox-sb-section">
+        <span class="ox-sb-section-label">Mi trabajo</span>
+        <a href="{{ url_for('staff.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🧺</span>Pedidos de almacén</a>
+        <a href="{{ url_for('staff.inventario') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Inventario</a>
+        <a href="{{ url_for('pos.venta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖥️</span>Punto de venta</a>
+      </div>
+
+      {% elif rol == 'proveedor' %}
+      <div class="ox-sb-section">
+        <span class="ox-sb-section-label">Mi cocina</span>
+        <a href="{{ url_for('proveedor.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🍳</span>Pedidos a preparar</a>
+        <a href="{{ url_for('proveedor.inventario') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Mi inventario</a>
+        <a href="{{ url_for('proveedor.incidencias') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📨</span>Incidencias</a>
+        <a href="{{ url_for('proveedor.finanzas') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Finanzas</a>
+      </div>
+
+      {% elif rol == 'marketing' %}
+      <div class="ox-sb-section">
+        <span class="ox-sb-section-label">Marketing</span>
+        <a href="{{ url_for('marketing.dashboard') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📣</span>Panel marketing</a>
+        <a href="{{ url_for('marketing.campanas') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📲</span>Campañas</a>
+        <a href="{{ url_for('marketing.puntos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💎</span>Puntos</a>
+        <a href="{{ url_for('admin.cupones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎟️</span>Cupones</a>
+        <a href="{{ url_for('admin.afiliados') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤝</span>Afiliados</a>
+        <a href="{{ url_for('admin.menu_config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎨</span>Menú público</a>
+      </div>
+      {% endif %}
+    </nav>
+
+    <div class="ox-sb-footer">
+      <form method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="ox-sb-item w-full text-left" style="color:rgba(255,100,80,.65)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Cerrar sesión
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <div class="ox-sidebar-overlay" id="ox-overlay" onclick="sidebarClose()"></div>
+
+  <div class="ox-admin-content">
+    <div class="ox-topbar">
+      <button class="ox-sb-toggle" onclick="sidebarOpen()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <span class="ox-topbar-mark">●</span>
+      <span class="ox-topbar-title">{{ brand.nombre }}</span>
+      <span class="ml-auto text-xs px-2 py-1 rounded font-semibold ox-topbar-role">{{ rol | replace('_',' ') | capitalize }}</span>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="ox-toast-wrap" id="ox-toasts">
+      {% for category, msg in messages %}
+      <div class="ox-toast ox-toast-{{ category if category in ('success','danger','warning','info') else 'info' }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <div class="ox-page">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+{# Banner de permiso push — solo visible si Notification.permission === 'default' #}
+<div id="ox-push-banner" style="display:none;position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);z-index:580;
+     background:#1B1F24;border:1px solid rgba(255,244,226,.18);border-radius:1rem;
+     padding:.75rem 1rem;gap:.75rem;align-items:center;max-width:min(92vw,420px);
+     box-shadow:0 14px 36px rgba(0,0,0,.35)">
+  <span style="font-size:1.3rem;flex-shrink:0">🔔</span>
+  <div style="flex:1;min-width:0">
+    <p style="font-size:.82rem;font-weight:800;color:#F7F4EE;line-height:1.2">Activar notificaciones</p>
+    <p style="font-size:.72rem;color:#A99B89;margin-top:.1rem">Recibe alertas de nuevos pedidos al instante.</p>
+  </div>
+  <button onclick="oxEnablePush()" style="min-height:44px;padding:.5rem .9rem;border-radius:.65rem;border:none;
+          background:linear-gradient(135deg,#D9961A,#E9BE68);color:#1B0A00;font-weight:800;font-size:.8rem;
+          cursor:pointer;white-space:nowrap;flex-shrink:0">Activar</button>
+  <button onclick="this.closest('#ox-push-banner').style.display='none'" style="width:44px;height:44px;
+          border-radius:999px;border:1px solid rgba(255,244,226,.15);background:transparent;
+          color:#A99B89;font-size:1rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">×</button>
+</div>
+
+<script>
+setTimeout(() => {
+  document.querySelectorAll('.ox-toast').forEach((el,i) => {
+    setTimeout(() => { el.style.transition='opacity .25s,transform .25s'; el.style.opacity='0'; el.style.transform='translateY(-6px)'; setTimeout(() => el.remove(), 280); }, 4000 + i * 400);
+  });
+}, 200);
+
+function sidebarOpen() {
+  document.getElementById('ox-sidebar').classList.add('sb-open');
+  document.getElementById('ox-overlay').classList.add('active');
+  const cl=document.getElementById('btn-close-sb'); if(cl)cl.style.display='flex';
+  document.body.style.overflow='hidden';
+}
+function sidebarClose() {
+  document.getElementById('ox-sidebar').classList.remove('sb-open');
+  document.getElementById('ox-overlay').classList.remove('active');
+  const cl=document.getElementById('btn-close-sb'); if(cl)cl.style.display='none';
+  document.body.style.overflow='';
+}
+(function(){
+  const path = window.location.pathname;
+  let activeEl = null;
+  document.querySelectorAll('#sb-nav .ox-sb-item').forEach(a => {
+    const href = a.getAttribute('href');
+    if (!href || href==='/' || a.getAttribute('target')==='_blank') return;
+    if (path===href || (href.length>3 && path.startsWith(href))) {
+      a.classList.add('active');
+      activeEl = a;
+    }
+  });
+  if (activeEl) {
+    const nav = document.getElementById('sb-nav');
+    if (nav) {
+      const navRect = nav.getBoundingClientRect();
+      const itemRect = activeEl.getBoundingClientRect();
+      const itemTopRel = itemRect.top - navRect.top + nav.scrollTop;
+      const targetScroll = itemTopRel - nav.clientHeight / 2 + activeEl.offsetHeight / 2;
+      if (targetScroll > 0) nav.scrollTop = targetScroll;
+    }
+  }
+})();
+function toggleDisponible(url) {
+  const btn=document.getElementById('btn-disponible'), txt=document.getElementById('txt-disponible');
+  if(!btn) return; btn.disabled=true;
+  fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':'{{ csrf_token() }}'}})
+  .then(r=>r.json()).then(d=>{
+    const on=d.en_linea;
+    btn.className='ox-sb-toggle-btn '+(on?'online':'offline');
+    if(txt) txt.textContent=on?'Online':'Offline';
+  }).catch(()=>{}).finally(()=>{btn.disabled=false;});
+}
+document.querySelectorAll('form[data-ox-validate]').forEach(form=>{
+  const fields=form.querySelectorAll('[data-ox-required]');
+  const mark=el=>{const ok=!!String(el.value||'').trim();el.classList.toggle('is-invalid',!ok);el.closest('.ox-field')?.classList.toggle('has-error',!ok);return ok;};
+  fields.forEach(el=>el.addEventListener('blur',()=>mark(el)));
+  form.addEventListener('submit',e=>{let v=true;fields.forEach(el=>{if(!mark(el))v=false;});if(!v)e.preventDefault();});
+});
+
+// ── Web Push para staff/admin ─────────────────────────────────────────────
+(async function() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  if (Notification.permission === 'denied') return;
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    const ensureUpdate = async () => {
+      try {
+        await reg.update();
+        if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      } catch (e) {}
+    };
+
+    await ensureUpdate();
+    reg.addEventListener('updatefound', () => {
+      const worker = reg.installing;
+      worker?.addEventListener('statechange', () => {
+        if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+          worker.postMessage({ type: 'SKIP_WAITING' });
+        }
+      });
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') ensureUpdate();
+    });
+    setInterval(ensureUpdate, 5 * 60 * 1000);
+
+    if (Notification.permission !== 'granted') {
+      // Mostrar banner de permiso discreto si no ha decidido aún
+      if (Notification.permission === 'default') {
+        const banner = document.getElementById('ox-push-banner');
+        if (banner) banner.style.display = 'flex';
+      }
+      return;
+    }
+    await _oxAdminSubscribePush(reg);
+  } catch(e) {}
+})();
+
+async function _oxAdminSubscribePush(reg) {
+  try {
+    const kr = await fetch('/api/push/vapid-key');
+    if (!kr.ok) return;
+    const { public_key } = await kr.json();
+    if (!public_key) return;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: _urlB64ToUint8Array(public_key),
+    });
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': '{{ csrf_token() }}',
+      },
+      body: JSON.stringify(sub.toJSON()),
+    });
+    const banner = document.getElementById('ox-push-banner');
+    if (banner) banner.style.display = 'none';
+  } catch(e) {}
+}
+
+window.oxEnablePush = async function() {
+  if (!('Notification' in window)) return;
+  const perm = await Notification.requestPermission();
+  if (perm === 'granted') {
+    const reg = await navigator.serviceWorker.ready;
+    await _oxAdminSubscribePush(reg);
+  } else {
+    const banner = document.getElementById('ox-push-banner');
+    if (banner) banner.style.display = 'none';
+  }
+};
+
+function _urlB64ToUint8Array(b64) {
+  const padding = '='.repeat((4 - b64.length % 4) % 4);
+  const base64 = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

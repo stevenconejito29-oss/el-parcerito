@@ -1,0 +1,140 @@
+{% extends "admin_base.html" %}
+{% block title %}Comisiones — {{ codigo.codigo }}{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-6 flex-wrap">
+  <a href="{{ url_for('admin.afiliados') }}" class="ox-btn-ghost text-sm">← Afiliados</a>
+  <h1 class="text-xl font-bold text-white">
+    <span class="font-mono" style="color:#C084FC">{{ codigo.codigo }}</span>
+    <span class="ml-2 text-sm font-normal" style="color:var(--col-muted)">{{ codigo.descripcion or '' }}</span>
+  </h1>
+</div>
+
+<div class="grid grid-cols-3 gap-4 mb-6">
+  <div class="ox-card p-4 text-center">
+    <p class="text-xs mb-1" style="color:var(--col-muted)">Total comisiones</p>
+    <p class="text-2xl font-bold" style="color:#C084FC">€{{ "%.2f"|format(total_comisiones) }}</p>
+  </div>
+  <div class="ox-card p-4 text-center">
+    <p class="text-xs mb-1" style="color:var(--col-muted)">Pendiente de pago</p>
+    <p class="text-2xl font-bold" style="color:#FFAB00">€{{ "%.2f"|format(pendiente) }}</p>
+  </div>
+  <div class="ox-card p-4 text-center">
+    <p class="text-xs mb-1" style="color:var(--col-muted)">Usos totales</p>
+    <p class="text-2xl font-bold" style="color:#5AC8FA">{{ usos|length }}</p>
+  </div>
+</div>
+
+{% if pendiente > 0 %}
+<form method="POST" action="{{ url_for('admin.pagar_comisiones_afiliado', codigo_id=codigo.id) }}" class="mb-5">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit"
+          class="ox-btn-ghost px-5 py-2.5 font-bold text-sm"
+          style="color:#C084FC;border-color:rgba(192,132,252,.4)"
+          onclick="return confirm('¿Marcar todas las comisiones pendientes (€{{ "%.2f"|format(pendiente) }}) como pagadas?')">
+    ✓ Pagar todas las pendientes (€{{ "%.2f"|format(pendiente) }})
+  </button>
+</form>
+{% endif %}
+
+{% if usos %}
+
+{# ── TARJETAS MÓVIL ── #}
+<div class="md:hidden space-y-3">
+  {% for u in usos %}
+  <div class="ox-card p-4">
+    <div class="flex justify-between items-start mb-2">
+      <span class="font-mono text-xs" style="color:var(--col-text)">
+        {{ u.pedido.numero_pedido if u.pedido else '#' + u.pedido_id|string }}
+      </span>
+      {% if u.comision_pagada %}
+      <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:rgba(94,240,151,.1);color:#5EF097;border:1px solid rgba(94,240,151,.2)">Pagada</span>
+      {% else %}
+      <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:rgba(255,171,0,.1);color:#FFAB00;border:1px solid rgba(255,171,0,.2)">Pendiente</span>
+      {% endif %}
+    </div>
+    <p class="text-sm font-semibold text-white mb-2">{{ u.cliente.nombre if u.cliente else '—' }}</p>
+    <div class="flex justify-between items-center text-sm mb-3">
+      <div>
+        <span class="text-xs" style="color:var(--col-faint)">Descuento cliente: </span>
+        <span class="font-mono" style="color:#5EF097">-€{{ "%.2f"|format(u.descuento_aplicado) }}</span>
+      </div>
+      <div>
+        <span class="text-xs" style="color:var(--col-faint)">Comisión: </span>
+        <span class="font-mono font-bold" style="color:#C084FC">€{{ "%.2f"|format(u.comision_generada) }}</span>
+      </div>
+    </div>
+    <div class="flex justify-between items-center">
+      <span class="text-xs" style="color:var(--col-faint)">{{ u.creado_en.strftime('%d/%m/%Y') }}</span>
+      {% if not u.comision_pagada %}
+      <form method="POST" action="{{ url_for('admin.pagar_comision_individual', uso_id=u.id) }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="text-xs px-3 py-1.5 rounded-lg"
+                style="background:rgba(192,132,252,.1);color:#C084FC;border:1px solid rgba(192,132,252,.3)">
+          Pagar
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ── TABLA ESCRITORIO ── #}
+<div class="hidden md:block ox-card overflow-hidden">
+  <div class="ox-table-wrap">
+    <table class="ox-table">
+      <thead>
+        <tr>
+          <th>Pedido</th>
+          <th>Cliente</th>
+          <th class="text-right">Descuento cliente</th>
+          <th class="text-right">Comisión</th>
+          <th class="text-center">Estado</th>
+          <th>Fecha</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usos %}
+        <tr>
+          <td class="font-mono text-xs whitespace-nowrap" style="color:var(--col-text)">
+            {{ u.pedido.numero_pedido if u.pedido else '#' + u.pedido_id|string }}
+          </td>
+          <td class="whitespace-nowrap" style="color:var(--col-text)">{{ u.cliente.nombre if u.cliente else '—' }}</td>
+          <td class="text-right font-mono whitespace-nowrap" style="color:#5EF097">-€{{ "%.2f"|format(u.descuento_aplicado) }}</td>
+          <td class="text-right font-mono font-bold whitespace-nowrap" style="color:#C084FC">€{{ "%.2f"|format(u.comision_generada) }}</td>
+          <td class="text-center whitespace-nowrap">
+            {% if u.comision_pagada %}
+            <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:rgba(94,240,151,.1);color:#5EF097;border:1px solid rgba(94,240,151,.2)">Pagada</span>
+            {% else %}
+            <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:rgba(255,171,0,.1);color:#FFAB00;border:1px solid rgba(255,171,0,.2)">Pendiente</span>
+            {% endif %}
+          </td>
+          <td class="text-xs whitespace-nowrap" style="color:var(--col-faint)">{{ u.creado_en.strftime('%d/%m/%Y') }}</td>
+          <td>
+            {% if not u.comision_pagada %}
+            <form method="POST" action="{{ url_for('admin.pagar_comision_individual', uso_id=u.id) }}" class="inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="text-xs px-2 py-1 rounded-lg"
+                      style="background:rgba(192,132,252,.1);color:#C084FC;border:1px solid rgba(192,132,252,.3)">
+                Pagar
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% else %}
+<div class="ox-card p-12 text-center" style="color:var(--col-faint)">
+  <p class="text-4xl mb-3">🤝</p>
+  <p>Sin usos registrados aún para este código.</p>
+</div>
+{% endif %}
+
+{% endblock %}

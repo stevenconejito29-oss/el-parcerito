@@ -1,0 +1,177 @@
+{% extends "admin_base.html" %}
+{% block title %}Pedidos — Admin{% endblock %}
+{% block content %}
+
+{% set activos = pedidos|rejectattr('estado','in',['entregado','cancelado'])|list %}
+{% set pendientes_pago = pedidos|selectattr('metodo_pago','equalto','bizum')|rejectattr('pago_confirmado')|rejectattr('estado','in',['entregado','cancelado'])|list %}
+
+<div class="work-area admin-orders-board">
+<section class="work-hero">
+  <div>
+    <span class="work-eyebrow">Gestión diaria</span>
+    <h1 class="work-title">Pedidos</h1>
+    <p class="work-subtitle">Vista para preparar, asignar, avanzar y desbloquear la operación sin perder contexto del cliente.</p>
+  </div>
+  <div class="work-actions-top">
+    <a href="{{ url_for('admin.cola') }}" class="work-btn work-btn-primary">Ver cola de trabajo</a>
+  </div>
+</section>
+
+<div class="work-kpis">
+  <div class="work-panel work-kpi"><span>Mostrados</span><strong>{{ pedidos|length }}</strong><small>Según filtros</small></div>
+  <div class="work-panel work-kpi"><span>Activos</span><strong style="color:var(--work-info)">{{ activos|length }}</strong><small>Requieren seguimiento</small></div>
+  <div class="work-panel work-kpi"><span>Bizum por cobrar</span><strong>{{ pendientes_pago|length }}</strong><small>No bloquea preparación</small></div>
+  <div class="work-panel work-kpi"><span>Total visible</span><strong>€{{ "%.2f"|format(pedidos|sum(attribute='total')) }}</strong><small>Importe filtrado</small></div>
+</div>
+
+<div class="ox-card p-3 mb-4">
+  <div class="flex items-center justify-between gap-3 flex-wrap">
+  <div class="flex gap-2 flex-wrap text-xs">
+    <a href="{{ url_for('admin.pedidos') }}" class="ord-filter {{ 'active' if not request.args.get('estado') and not request.args.get('origen') and not request.args.get('epicentro') else '' }}">Todos</a>
+    {% for estado in ['pendiente','armando','listo','en_ruta','entregado','cancelado'] %}
+    <a href="{{ url_for('admin.pedidos', estado=estado) }}" class="ord-filter {{ 'active' if request.args.get('estado') == estado else '' }}">{{ estado }}</a>
+    {% endfor %}
+    <span class="w-px self-stretch" style="background:var(--col-border)"></span>
+    <a href="{{ url_for('admin.pedidos', origen='online') }}" class="ord-filter {{ 'active' if request.args.get('origen') == 'online' else '' }}">Web</a>
+    <a href="{{ url_for('admin.pedidos', origen='whatsapp') }}" class="ord-filter {{ 'active' if request.args.get('origen') == 'whatsapp' else '' }}">WhatsApp</a>
+    <a href="{{ url_for('admin.pedidos', origen='presencial') }}" class="ord-filter {{ 'active' if request.args.get('origen') == 'presencial' else '' }}">POS</a>
+    <a href="{{ url_for('admin.pedidos', epicentro='1') }}" class="ord-filter {{ 'active' if request.args.get('epicentro') == '1' else '' }}">Epicentro</a>
+    <a href="{{ url_for('admin.pedidos', epicentro='0') }}" class="ord-filter {{ 'active' if request.args.get('epicentro') == '0' else '' }}">Fuera</a>
+  </div>
+  <form method="GET" action="{{ url_for('admin.pedidos') }}" class="ord-search">
+    <input type="number" name="id" placeholder="ID pedido" value="{{ request.args.get('id','') }}">
+    <button type="submit">Buscar</button>
+  </form>
+  </div>
+</div>
+
+<div class="space-y-3">
+{% for pedido in pedidos %}
+<div class="ox-card order-card order-{{ pedido.estado }}">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="font-mono font-black" style="color:#FFAB00">{{ pedido.numero_pedido }}</span>
+        <span class="ord-state">{{ pedido.estado }}</span>
+        {% if pedido.estado == 'pendiente' %}<span class="ord-next">Siguiente: preparar</span>{% endif %}
+        {% if pedido.estado == 'armando' %}<span class="ord-next">Siguiente: listo</span>{% endif %}
+        {% if pedido.estado == 'listo' %}<span class="ord-next">Siguiente: ruta</span>{% endif %}
+        {% if pedido.estado == 'en_ruta' %}<span class="ord-next">Siguiente: entregar</span>{% endif %}
+        <span class="ord-chip">{{ pedido.origen }}</span>
+        {% if pedido.origen != 'presencial' %}<span class="ord-chip">{{ 'epicentro' if pedido.es_entrega_epicentro else 'fuera' }}</span>{% endif %}
+        {% if pedido.metodo_pago == 'bizum' and not pedido.pago_confirmado and pedido.estado not in ('entregado','cancelado') %}
+        <span class="ord-chip warn">Bizum por cobrar</span>
+        {% elif pedido.pago_confirmado %}
+        <span class="ord-chip">Cobro confirmado</span>
+        {% endif %}
+      </div>
+      <p class="text-sm mt-1" style="color:var(--col-muted)">{{ pedido.cliente.nombre }} · {{ pedido.creado_en.strftime('%d/%m/%Y %H:%M') }}</p>
+      <p class="text-xs mt-1" style="color:var(--col-faint)">
+        Pago: {{ pedido.metodo_pago or '—' }}{% if pedido.pago_confirmado and pedido.pago_confirmado_en %} · Cobrado {{ pedido.pago_confirmado_en.strftime('%d/%m %H:%M') }}{% endif %}{% if pedido.zona %} · Zona: {{ pedido.zona.nombre }}{% endif %}
+        {% if pedido.preparador %} · Prep: {{ pedido.preparador.nombre }}{% endif %}
+        {% if pedido.repartidor %} · Reparto: {{ pedido.repartidor.nombre }}{% endif %}
+      </p>
+    </div>
+    <div class="text-right">
+      <p class="text-xl font-black" style="color:#FFAB00">€{{ "%.2f"|format(pedido.total) }}</p>
+      {% if pedido.descuento %}<p class="text-xs" style="color:#5EF097">-€{{ "%.2f"|format(pedido.descuento) }} desc.</p>{% endif %}
+    </div>
+  </div>
+
+  <div class="order-items-grid mt-3">
+    {% for item in pedido.items %}
+    <div class="order-item">
+      <div class="order-item-img">
+        {% if item.display_imagen_url %}
+        {% set src = item.display_imagen_url|upload_url %}
+        <img src="{{ src }}" alt="{{ item.display_nombre }}">
+        {% else %}
+        <span>{{ 'Combo' if item.display_es_combo else 'Item' }}</span>
+        {% endif %}
+      </div>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-bold text-white truncate">{{ item.display_nombre }} × {{ item.cantidad }}</p>
+        {% if item.notas %}<p class="text-xs mt-0.5" style="color:#C084FC">{{ item.notas }}</p>{% endif %}
+        {% if item.display_categoria or item.display_origen_pais %}
+        <p class="text-[11px] mt-0.5" style="color:var(--col-faint)">
+          {{ item.display_categoria or 'Sin categoría' }}{% if item.display_origen_pais %} · {{ item.display_origen_pais }}{% endif %}
+        </p>
+        {% endif %}
+        <p class="text-xs" style="color:var(--col-faint)">€{{ "%.2f"|format(item.subtotal) }}</p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="flex items-center justify-between gap-3 mt-3 flex-wrap">
+    <form method="POST" action="{{ url_for('admin.asignar_pedido', pedido_id=pedido.id) }}" class="flex gap-2 flex-wrap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <select name="preparador_id" class="ord-select">
+        <option value="">Preparador</option>
+        {% for u in preparadores %}
+        <option value="{{ u.id }}" {% if pedido.preparador_id == u.id %}selected{% endif %}>{{ u.nombre }} · {{ u.pedidos_activos_como_preparador() }} activos</option>
+        {% endfor %}
+      </select>
+      <select name="repartidor_id" class="ord-select">
+        <option value="">Repartidor</option>
+        {% for u in repartidores %}
+        <option value="{{ u.id }}" {% if pedido.repartidor_id == u.id %}selected{% endif %}>{{ u.nombre }} · {{ u.pedidos_activos_como_repartidor() }} activos</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="ord-btn">Asignar</button>
+    </form>
+
+    <div class="flex gap-2">
+      {% if pedido.estado not in ('entregado','cancelado') %}
+      <form method="POST" action="{{ url_for('admin.avanzar_pedido_admin', pedido_id=pedido.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="ord-btn success">Avanzar</button>
+      </form>
+      {% if pedido.estado == 'en_ruta' and pedido.intentos_codigo >= 3 %}
+      <form method="POST" action="{{ url_for('admin.reset_codigo_confirmacion', pedido_id=pedido.id) }}" title="Regenerar código de entrega (agotó 3 intentos)">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="ord-btn">🔑 Reset código</button>
+      </form>
+      {% endif %}
+      <form method="POST" action="{{ url_for('admin.cancelar_pedido', pedido_id=pedido.id) }}" onsubmit="return confirm('¿Cancelar pedido {{ pedido.numero_pedido }}?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="ord-btn danger">Cancelar</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="ox-card p-8 text-center" style="color:var(--col-muted)">No hay pedidos con estos filtros.</div>
+{% endfor %}
+</div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<style>
+.ord-filter { padding:.35rem .7rem; border-radius:.55rem; background:var(--col-elevated); border:1px solid var(--col-border); color:var(--col-muted); font-weight:800; text-decoration:none; }
+.ord-filter.active, .ord-filter:hover { background:rgba(255,171,0,.14); border-color:rgba(255,171,0,.28); color:#FFAB00; }
+.ord-search{display:flex;gap:.4rem;align-items:center}
+.ord-search input{width:8rem;padding:.35rem .55rem;border-radius:.55rem;font-size:.8rem!important}
+.ord-search button{border-radius:.55rem;background:#FFAB00;color:#321800;font-weight:950;padding:.42rem .7rem;font-size:.75rem}
+.order-card { padding:1rem; border-left:3px solid var(--col-border); }
+.order-pendiente { border-left-color:#FFB340; }
+.order-armando { border-left-color:#5AC8FA; }
+.order-listo { border-left-color:#C084FC; }
+.order-en_ruta { border-left-color:#5EF097; }
+.order-cancelado { opacity:.62; }
+.ord-state, .ord-chip { font-size:.68rem; font-weight:900; padding:.15rem .5rem; border-radius:999px; text-transform:uppercase; background:var(--col-elevated); border:1px solid var(--col-border); color:var(--col-muted); }
+.ord-state { color:#fff; }
+.ord-next { font-size:.68rem; font-weight:900; padding:.15rem .5rem; border-radius:999px; background:rgba(90,200,250,.12); border:1px solid rgba(90,200,250,.22); color:#7CC7FF; }
+.ord-chip.warn { background:rgba(255,179,64,.12); border-color:rgba(255,179,64,.25); color:#FFB340; }
+.order-items-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:.5rem; }
+.order-item { display:flex; align-items:center; gap:.6rem; background:rgba(255,255,255,.035); border:1px solid var(--col-border); border-radius:.65rem; padding:.45rem; }
+.order-item-img { width:42px; height:42px; border-radius:.55rem; overflow:hidden; background:var(--col-elevated); display:flex; align-items:center; justify-content:center; color:var(--col-faint); font-size:.6rem; font-weight:900; flex-shrink:0; }
+.order-item-img img { width:100%; height:100%; object-fit:cover; }
+.ord-select { background:var(--col-elevated); border:1px solid var(--col-border); border-radius:.55rem; color:#fff; padding:.38rem .55rem; font-size:.75rem; min-width:170px; }
+.ord-btn { background:var(--col-elevated); border:1px solid var(--col-border); color:var(--col-muted); border-radius:.55rem; padding:.38rem .75rem; font-size:.75rem; font-weight:900; }
+.ord-btn.success { background:rgba(52,199,89,.12); border-color:rgba(52,199,89,.28); color:#5EF097; }
+.ord-btn.danger { background:rgba(255,59,48,.1); border-color:rgba(255,59,48,.22); color:#FF6B6B; }
+</style>
+{% endblock %}

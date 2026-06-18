@@ -1,0 +1,242 @@
+{% extends "admin_base.html" %}
+{% block title %}P&L — Finanzas{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-5">
+  <a href="{{ url_for('superadmin.dashboard') }}" class="ox-btn-ghost text-sm">← Volver</a>
+  <div>
+    <h1 class="text-xl font-extrabold text-white">📊 Pérdidas y Ganancias</h1>
+    <p class="text-xs mt-0.5" style="color:var(--col-muted)">{{ fecha_ini }} → {{ fecha_fin }}</p>
+  </div>
+</div>
+
+{# ── Filtro ── #}
+<form method="GET" class="ox-card p-4 mb-5 flex flex-wrap gap-3 items-end">
+  <div class="ox-field flex-1 min-w-36">
+    <label class="ox-label">Desde</label>
+    <input type="date" name="fecha_ini" value="{{ fecha_ini }}" class="ox-input">
+  </div>
+  <div class="ox-field flex-1 min-w-36">
+    <label class="ox-label">Hasta</label>
+    <input type="date" name="fecha_fin" value="{{ fecha_fin }}" class="ox-input">
+  </div>
+  <button type="submit" class="ox-btn-primary">Calcular</button>
+</form>
+
+{# ── KPIs ── #}
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+  <div class="pl-kpi" style="border-color:rgba(94,240,151,.2)">
+    <p class="pl-kpi-lbl">Ventas brutas</p>
+    <p class="pl-kpi-val" style="color:#5EF097">€{{ "%.2f"|format(ventas_brutas) }}</p>
+    <p class="pl-kpi-sub">{{ total_pedidos }} pedidos entregados</p>
+  </div>
+  <div class="pl-kpi" style="border-color:rgba(90,200,250,.2)">
+    <p class="pl-kpi-lbl">Margen bruto</p>
+    <p class="pl-kpi-val" style="color:#5AC8FA">€{{ "%.2f"|format(margen_bruto) }}</p>
+    <p class="pl-kpi-sub">{{ margen_bruto_pct }}% s/ventas</p>
+  </div>
+  <div class="pl-kpi" style="border-color:{{ 'rgba(94,240,151,.2)' if resultado >= 0 else 'rgba(255,59,48,.2)' }}">
+    <p class="pl-kpi-lbl">Resultado</p>
+    <p class="pl-kpi-val" style="color:{{ '#5EF097' if resultado >= 0 else '#FF6B6B' }}">
+      {{ '+' if resultado >= 0 else '' }}€{{ "%.2f"|format(resultado) }}
+    </p>
+    <p class="pl-kpi-sub">{{ resultado_pct }}% s/ventas</p>
+  </div>
+  <div class="pl-kpi" style="border-color:rgba(255,171,0,.2)">
+    <p class="pl-kpi-lbl">Ticket medio</p>
+    <p class="pl-kpi-val" style="color:#FFAB00">€{{ "%.2f"|format(ticket_medio) }}</p>
+    <p class="pl-kpi-sub">promedio por pedido</p>
+  </div>
+</div>
+
+{# ── Cascada P&L ── #}
+<div class="ox-card p-5 mb-5">
+  <h2 class="font-black text-white mb-4">📉 Cascada financiera</h2>
+  <div class="pl-cascade">
+
+    <div class="pl-cas-row">
+      <span>Ventas brutas</span>
+      <span style="color:#5EF097">€{{ "%.2f"|format(ventas_brutas) }}</span>
+    </div>
+
+    {% if descuentos > 0 %}
+    <div class="pl-cas-row pl-cas-sub">
+      <span>− Descuentos concedidos</span>
+      <span style="color:#FFB340">− €{{ "%.2f"|format(descuentos) }}</span>
+    </div>
+    <div class="pl-cas-row pl-cas-mid">
+      <span>= Ingresos netos</span>
+      <span style="color:#5EF097">€{{ "%.2f"|format(ingresos_netos) }}</span>
+    </div>
+    {% endif %}
+
+    <div class="pl-cas-row pl-cas-sub">
+      <span>− Coste de productos (COGS)</span>
+      <span style="color:#FF9F0A">− €{{ "%.2f"|format(cogs) }}</span>
+    </div>
+    <div class="pl-cas-row pl-cas-mid">
+      <span>= Margen bruto
+        <span class="pl-pct">{{ margen_bruto_pct }}%</span>
+      </span>
+      <span style="color:{{ '#5EF097' if margen_bruto >= 0 else '#FF6B6B' }}">€{{ "%.2f"|format(margen_bruto) }}</span>
+    </div>
+
+    {% if nominas > 0 %}
+    <div class="pl-cas-row pl-cas-sub">
+      <span>− Nóminas y bonos (pagados)</span>
+      <span style="color:#FF6B6B">− €{{ "%.2f"|format(nominas) }}</span>
+    </div>
+    {% endif %}
+    {% if comisiones > 0 %}
+    <div class="pl-cas-row pl-cas-sub">
+      <span>− Comisiones repartidores</span>
+      <span style="color:#FF6B6B">− €{{ "%.2f"|format(comisiones) }}</span>
+    </div>
+    {% endif %}
+    {% if gastos_caja > 0 %}
+    <div class="pl-cas-row pl-cas-sub">
+      <span>− Gastos operativos (caja manual)</span>
+      <span style="color:#FF6B6B">− €{{ "%.2f"|format(gastos_caja) }}</span>
+    </div>
+    {% endif %}
+    {% if otros_ingresos_caja > 0 %}
+    <div class="pl-cas-row pl-cas-sub">
+      <span>+ Otros ingresos (caja manual)</span>
+      <span style="color:#5EF097">+ €{{ "%.2f"|format(otros_ingresos_caja) }}</span>
+    </div>
+    {% endif %}
+
+    <div class="pl-cas-row pl-cas-total">
+      <span>= Resultado estimado
+        <span class="pl-pct">{{ resultado_pct }}%</span>
+      </span>
+      <span style="color:{{ '#5EF097' if resultado >= 0 else '#FF6B6B' }}">
+        {{ '+' if resultado >= 0 else '' }}€{{ "%.2f"|format(resultado) }}
+      </span>
+    </div>
+
+  </div>
+</div>
+
+<div class="grid md:grid-cols-2 gap-5 mb-5">
+
+  {# ── Canales ── #}
+  <div class="ox-card p-4">
+    <h2 class="font-bold text-white mb-4">🌐 Ventas por canal</h2>
+    {% set total_c = ventas_online + ventas_presencial + ventas_whatsapp %}
+    <div class="space-y-3">
+      {% for label, val, color in [
+        ('Online (web)',  ventas_online,     '#5AC8FA'),
+        ('Presencial',    ventas_presencial, '#FFAB00'),
+        ('WhatsApp',      ventas_whatsapp,   '#25D366'),
+      ] %}
+      {% if val > 0 %}
+      {% set pct = ((val / total_c * 100)|round(1)) if total_c > 0 else 0 %}
+      <div>
+        <div class="flex justify-between text-sm mb-1">
+          <span style="color:var(--col-muted)">{{ label }}</span>
+          <span class="font-bold" style="color:{{ color }}">€{{ "%.2f"|format(val) }}</span>
+        </div>
+        <div class="w-full rounded-full h-1.5" style="background:rgba(255,255,255,.08)">
+          <div class="h-1.5 rounded-full" style="width:{{ pct }}%;background:{{ color }}"></div>
+        </div>
+        <p class="text-[11px] mt-0.5" style="color:var(--col-faint)">{{ pct }}%</p>
+      </div>
+      {% endif %}
+      {% endfor %}
+      {% if total_c == 0 %}
+      <p class="text-sm text-center py-4" style="color:var(--col-faint)">Sin ventas en este período</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Caja por categoría ── #}
+  <div class="ox-card p-4">
+    <h2 class="font-bold text-white mb-4">🗂️ Movimientos de caja por categoría</h2>
+    {% if por_categoria %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead><tr class="border-b" style="border-color:var(--col-border)">
+          <th class="text-left py-2 px-2 text-xs font-semibold" style="color:var(--col-muted)">Categoría</th>
+          <th class="text-right py-2 px-2 text-xs font-semibold" style="color:#5EF097">Ingr.</th>
+          <th class="text-right py-2 px-2 text-xs font-semibold" style="color:#FF6B6B">Egr.</th>
+        </tr></thead>
+        <tbody>
+          {% for cat, datos in por_categoria.items() %}
+          <tr class="border-b" style="border-color:var(--col-border)">
+            <td class="py-1.5 px-2 font-medium text-white">{{ cat.replace('_',' ') | capitalize }}</td>
+            <td class="py-1.5 px-2 text-right text-xs" style="color:#5EF097">
+              {% if datos.ingreso > 0 %}€{{ "%.2f"|format(datos.ingreso) }}{% else %}—{% endif %}
+            </td>
+            <td class="py-1.5 px-2 text-right text-xs" style="color:#FF6B6B">
+              {% if datos.egreso > 0 %}€{{ "%.2f"|format(datos.egreso) }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-center py-6" style="color:var(--col-faint)">Sin movimientos de caja en este período</p>
+    {% endif %}
+  </div>
+
+</div>
+
+{# ── Pagos pendientes al equipo ── #}
+{% if pagos_pendientes_equipo %}
+<div class="ox-card p-4" style="border-color:rgba(255,171,0,.2)">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="font-bold text-white">⚠️ Pagos pendientes al equipo</h2>
+    <a href="{{ url_for('admin.pagos_staff') }}" class="text-xs" style="color:#FFAB00">Gestionar →</a>
+  </div>
+  {% set total_pend = pagos_pendientes_equipo | sum(attribute='monto') %}
+  <div class="text-xs px-3 py-2 rounded-lg mb-3 flex justify-between"
+       style="background:rgba(255,171,0,.08);border:1px solid rgba(255,171,0,.15)">
+    <span style="color:rgba(255,171,0,.8)">Total adeudado al equipo</span>
+    <span class="font-black" style="color:#FFAB00">€{{ "%.2f"|format(total_pend) }}</span>
+  </div>
+  <div>
+    {% for pago in pagos_pendientes_equipo[:8] %}
+    <div class="flex items-center justify-between py-2 border-b text-sm" style="border-color:var(--col-border)">
+      <div>
+        <span class="font-semibold text-white">{{ pago.empleado.nombre if pago.empleado else '—' }}</span>
+        <span class="ml-2 text-xs px-1.5 py-0.5 rounded font-semibold"
+              style="background:rgba(255,171,0,.1);color:#FFAB00">{{ pago.tipo }}</span>
+        {% if pago.concepto %}<span class="text-xs ml-1" style="color:var(--col-faint)">{{ pago.concepto }}</span>{% endif %}
+      </div>
+      <span class="font-bold" style="color:#FFAB00">€{{ "%.2f"|format(pago.monto) }}</span>
+    </div>
+    {% endfor %}
+    {% if pagos_pendientes_equipo|length > 8 %}
+    <p class="text-xs pt-2" style="color:var(--col-faint)">+{{ pagos_pendientes_equipo|length - 8 }} más pendientes</p>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="ox-card p-4 text-center" style="border-color:rgba(94,240,151,.15)">
+  <span class="text-2xl">✅</span>
+  <p class="text-sm font-semibold mt-1" style="color:#5EF097">Equipo al día — sin pagos pendientes</p>
+</div>
+{% endif %}
+
+<style>
+.pl-kpi { background:var(--col-surface); border:1px solid var(--col-border); border-radius:.875rem; padding:1rem 1.25rem; }
+.pl-kpi-lbl { font-size:.7rem; font-weight:700; text-transform:uppercase; color:var(--col-muted); margin-bottom:.3rem; }
+.pl-kpi-val { font-size:1.4rem; font-weight:900; }
+.pl-kpi-sub { font-size:.68rem; color:var(--col-faint); margin-top:.2rem; }
+
+.pl-cascade { display:flex; flex-direction:column; gap:.15rem; }
+.pl-cas-row  { display:flex; justify-content:space-between; align-items:center;
+               padding:.5rem .75rem; border-radius:.5rem; font-size:.85rem; font-weight:600; color:var(--col-text); }
+.pl-cas-sub  { background:rgba(255,255,255,.025); }
+.pl-cas-sub span:first-child { color:var(--col-muted); font-weight:400; padding-left:1rem; }
+.pl-cas-mid  { background:rgba(255,255,255,.05); margin-top:.2rem; }
+.pl-cas-mid span:first-child { font-weight:700; color:#fff; }
+.pl-cas-total { background:rgba(255,171,0,.07); border:1px solid rgba(255,171,0,.18); margin-top:.5rem; }
+.pl-cas-total span:first-child { font-weight:900; color:#fff; }
+.pl-pct { font-size:.68rem; font-weight:600; color:var(--col-muted);
+          background:rgba(255,255,255,.07); border-radius:.35rem; padding:.1rem .4rem; margin-left:.35rem; }
+</style>
+
+{% endblock %}

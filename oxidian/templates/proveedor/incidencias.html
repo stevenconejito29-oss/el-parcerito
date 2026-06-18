@@ -1,0 +1,63 @@
+{% extends "admin_base.html" %}
+{% block title %}Incidencias — pedidos{% endblock %}
+{% block content %}
+
+<div class="mb-5">
+  <h1 class="text-2xl font-black text-white">📨 Incidencias de clientes</h1>
+  <p class="text-xs mt-1" style="color:var(--col-muted)">
+    Mensajes que los clientes han enviado desde el chatbot reportando alguna
+    novedad sobre sus pedidos. Aparecen aquí porque el pedido lo despacha
+    {% if es_admin %}nuestro stock o{% endif %} tu bar.
+  </p>
+</div>
+
+{% if not incidencias %}
+<div class="ox-card p-6 text-center">
+  <p class="text-gray-400">No hay incidencias pendientes. 🎉</p>
+</div>
+{% else %}
+<div class="grid grid-cols-1 gap-3">
+  {% for ev in incidencias %}
+  {% set atendida = ev.id in atendidas_ids %}
+  <div class="ox-card p-4 {% if atendida %}opacity-60{% endif %}">
+    <div class="flex justify-between items-start gap-3 mb-2">
+      <div>
+        <h3 class="text-base font-bold text-white">
+          Pedido {{ ev.pedido.numero_pedido if ev.pedido else '—' }}
+          {% if atendida %}<span class="text-xs text-green-400 ml-2">✓ atendida</span>{% endif %}
+        </h3>
+        <p class="text-xs mt-1" style="color:var(--col-muted)">
+          {{ ev.creado_en.strftime('%d/%m/%Y %H:%M') if ev.creado_en else '' }}
+          {% if ev.pedido and ev.pedido.cliente %}
+            · Cliente: {{ ev.pedido.cliente.nombre or ev.pedido.cliente.telefono or '—' }}
+          {% endif %}
+          · Estado del pedido: <strong>{{ ev.pedido.estado if ev.pedido else '?' }}</strong>
+        </p>
+      </div>
+      {% if not atendida %}
+      <form method="POST" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="accion" value="marcar_atendida">
+        <input type="hidden" name="evento_id" value="{{ ev.id }}">
+        <button type="submit"
+                class="px-3 py-1 rounded text-xs font-bold"
+                style="background:var(--col-gold); color:#000">
+          marcar atendida
+        </button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="bg-zinc-800 rounded p-3 text-sm text-white whitespace-pre-wrap">{{ ev.detalle or '(sin texto)' }}</div>
+    {% if ev.pedido %}
+    <div class="text-xs mt-2" style="color:var(--col-muted)">
+      <a href="{{ url_for('proveedor.pedidos') }}#{{ ev.pedido.id }}" style="color:var(--col-gold)">
+        Ver detalle del pedido →
+      </a>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "admin_base.html" %}
+{% block title %}Editar elemento web{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-5">
+  <a href="{{ url_for('admin.menu_config') }}" class="ox-btn-ghost text-sm">← Volver</a>
+  <div>
+    <h1 class="text-xl font-extrabold text-white">Editar elemento de página</h1>
+    <p class="text-xs" style="color:var(--col-muted)">Banners, destacados, textos y secciones del menú público</p>
+  </div>
+</div>
+
+<form method="POST" action="{{ url_for('admin.editar_menu_config', item_id=item.id) }}" enctype="multipart/form-data" class="ox-card p-5 max-w-4xl">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="ox-field">
+      <label class="ox-label">Tipo</label>
+      <select name="tipo" class="ox-input">
+        <option value="banner" {% if item.tipo == 'banner' %}selected{% endif %}>Banner</option>
+        <option value="producto_destacado" {% if item.tipo == 'producto_destacado' %}selected{% endif %}>Producto destacado</option>
+        <option value="texto_promo" {% if item.tipo == 'texto_promo' %}selected{% endif %}>Texto promocional</option>
+        <option value="seccion" {% if item.tipo == 'seccion' %}selected{% endif %}>Sección de categoría</option>
+      </select>
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Página</label>
+      <select name="pagina" class="ox-input">
+        <option value="home" {% if item.pagina == 'home' %}selected{% endif %}>Inicio</option>
+        <option value="menu" {% if item.pagina == 'menu' %}selected{% endif %}>Menú público</option>
+        <option value="checkout" {% if item.pagina == 'checkout' %}selected{% endif %}>Checkout</option>
+      </select>
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Título</label>
+      <input type="text" name="titulo" value="{{ item.titulo or '' }}" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">URL enlace</label>
+      <input type="text" name="enlace_url" value="{{ item.enlace_url or '' }}" class="ox-input">
+    </div>
+    <div class="ox-field md:col-span-2">
+      <label class="ox-label">Contenido</label>
+      <textarea name="contenido" rows="3" class="ox-input">{{ item.contenido or '' }}</textarea>
+    </div>
+    <div class="ox-field md:col-span-2">
+      <label class="ox-label">Imagen</label>
+      {% if item.imagen_url %}
+      <div class="h-32 rounded-xl overflow-hidden mb-2" style="border:1px solid var(--col-border)">
+        <img src="{{ item.imagen_url|upload_url }}" class="w-full h-full object-cover" alt="">
+      </div>
+      {% endif %}
+      <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="ox-input mb-2">
+      <input type="url" name="imagen_url" value="{{ item.imagen_url or '' }}" placeholder="O pega una URL de imagen" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Orden</label>
+      <input type="number" name="orden" value="{{ item.orden }}" min="0" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Categoría para sección</label>
+      <select name="categoria_id" class="ox-input">
+        <option value="">Sin categoría</option>
+        {% for cat in categorias %}
+        <option value="{{ cat.id }}" {% if item.categoria_id == cat.id %}selected{% endif %}>{{ cat.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Producto destacado</label>
+      <select name="producto_id" class="ox-input">
+        <option value="">Sin producto</option>
+        {% for producto in productos %}
+        <option value="{{ producto.id }}" {% if item.producto_id == producto.id %}selected{% endif %}>{{ producto.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="flex gap-3 mt-5">
+    <button type="submit" class="ox-btn-primary">Guardar cambios</button>
+    <a href="{{ url_for('admin.menu_config') }}" class="ox-btn-ghost">Cancelar</a>
+  </div>
+</form>
+
+{% endblock %}

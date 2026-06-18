@@ -1,0 +1,65 @@
+{% extends "admin_base.html" %}
+{% block title %}Editar usuario{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-5">
+  <a href="{{ url_for('admin.usuarios') }}" class="ox-btn-ghost text-sm">← Volver</a>
+  <div>
+    <h1 class="text-xl font-extrabold text-white">Editar usuario</h1>
+    <p class="text-xs" style="color:var(--col-muted)">{{ usuario.email }}</p>
+  </div>
+</div>
+
+<form method="POST" action="{{ url_for('admin.editar_usuario', user_id=usuario.id) }}" class="ox-card p-5 max-w-3xl">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="ox-field md:col-span-2">
+      <label class="ox-label">Nombre</label>
+      <input type="text" name="nombre" value="{{ usuario.nombre }}" required class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Rol</label>
+      <select name="rol" class="ox-input">
+        {% for rol in roles_validos %}
+        <option value="{{ rol }}" {% if usuario.rol == rol %}selected{% endif %}>
+          {% if rol == 'cocina' %}🍳 Cocina
+          {% elif rol == 'preparacion' %}📦 Encargos
+          {% elif rol == 'repartidor' %}🛵 Repartidor
+          {% elif rol == 'staff' %}📦 Empaque / almacén
+          {% elif rol == 'proveedor' %}🏪 Proveedor
+          {% elif rol == 'cliente' %}👤 Cliente
+          {% elif rol == 'admin' %}🔧 Admin
+          {% elif rol == 'super_admin' %}👑 Super Admin
+          {% else %}{{ rol|replace('_', ' ')|title }}{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Teléfono</label>
+      <input type="tel" name="telefono" value="{{ usuario.telefono or '' }}" class="ox-input">
+    </div>
+    <div class="ox-field md:col-span-2">
+      <label class="ox-label">Puesto de trabajo</label>
+      <input type="text" name="puesto_trabajo" value="{{ usuario.puesto_trabajo or '' }}" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Salario base mensual</label>
+      <input type="number" name="salario_base" step="0.01" min="0" value="{{ usuario.salario_base or 0 }}" class="ox-input">
+    </div>
+    <div class="ox-field">
+      <label class="ox-label">Tarifa por entrega</label>
+      <input type="number" name="tarifa_entrega" step="0.01" min="0" value="{{ usuario.tarifa_entrega or 0 }}" class="ox-input">
+    </div>
+    <div class="ox-field md:col-span-2">
+      <label class="ox-label">Nueva contraseña</label>
+      <input type="password" name="password" placeholder="Dejar vacío para conservar la actual" class="ox-input">
+    </div>
+  </div>
+  <div class="flex gap-3 mt-5">
+    <button type="submit" class="ox-btn-primary">Guardar cambios</button>
+    <a href="{{ url_for('admin.usuarios') }}" class="ox-btn-ghost">Cancelar</a>
+  </div>
+</form>
+
+{% endblock %}
