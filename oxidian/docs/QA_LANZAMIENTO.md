@@ -15,7 +15,7 @@ Este checklist acompana la fase 10. La suite automatizada cubre los flujos de ne
 - `curl -I https://DOMINIO/` y comprobar CSP, HSTS, `nosniff`, COOP, Referrer-Policy y Permissions-Policy.
 - `curl -I https://DOMINIO/sw.js` y comprobar `Cache-Control: no-store` y `Service-Worker-Allowed: /`.
 - Validar `/manifest.webmanifest`: MIME correcto, iconos 192/512/maskable, screenshots y `scope=/`.
-- Recorrido HTTP autenticado por roles: cliente, super admin, preparacion y repartidor.
+- Recorrido HTTP autenticado por roles internos: super admin, preparacion y repartidor.
 - Integridad ORM: ninguna tabla o columna de negocio fuera de los modelos, salvo `schema_migrations`.
 - El predeploy debe confirmar que no existen nombres de endpoint Flask duplicados dentro de un blueprint.
 
@@ -37,7 +37,7 @@ Este checklist acompana la fase 10. La suite automatizada cubre los flujos de ne
 
 ## Checklist manual antes de abrir ventas
 
-- Desktop: menu, producto, carrito, checkout, pedido confirmado y perfil.
+- Desktop: menu, producto, carrito, checkout y pedido confirmado por token.
 - Android real: menu, modal quick-add, carrito, checkout y confirmacion.
 - iOS real: menu, modal quick-add, carrito, checkout y confirmacion.
 - PWA: instalación Android, instrucciones iOS, actualización de versión y fallback offline sin datos personales.

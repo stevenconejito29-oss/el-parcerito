@@ -22,7 +22,7 @@ Definicion de terminado del proyecto:
 Objetivo: que el cliente pueda comprar desde menu publico con carrito, modales, checkout y pedido confirmado sin bugs bloqueantes.
 
 Alcance:
-- Home/menu publico, producto detalle, modal quick-add, carrito, puntos en carrito, checkout, pedido confirmado y perfil basico del cliente.
+- Home/menu publico, producto detalle, modal quick-add, carrito, puntos por WhatsApp, checkout y pedido confirmado por token.
 - Guardado correcto de cliente invitado o logueado.
 - Guardado correcto de pedido, items, direccion, zona, metodo de pago, notas, cupones y puntos.
 
@@ -100,7 +100,7 @@ Verificacion:
 Objetivo: que todo pedido llegue completo a operaciones y avance por estados sin perder informacion.
 
 Alcance:
-- Pedidos admin, cola, preparador, repartidor, confirmacion de entrega, perfil cliente y reseñas.
+- Pedidos admin, cola, preparador, repartidor y confirmacion de entrega.
 
 Criterios de aceptacion:
 - Pedido online/bot/POS crea items y totales correctos.
@@ -382,7 +382,7 @@ Verificacion:
 - `./venv/bin/pytest -q` -> 205 passed.
 
 Checklist manual pendiente de firma:
-- Desktop real: menu -> carrito -> checkout -> pedido confirmado -> perfil -> resena.
+- Desktop real: menu -> carrito -> checkout -> pedido confirmado.
 - Android real: menu, modal quick-add, carrito, checkout y confirmacion.
 - iOS real: menu, modal quick-add, carrito, checkout y confirmacion.
 - Bot WhatsApp real: catalogo, creacion de pedido, notificaciones de estado y broadcast.

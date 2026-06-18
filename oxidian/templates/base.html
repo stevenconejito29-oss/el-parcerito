@@ -84,7 +84,7 @@
         <span data-cart-badge class="absolute -top-1.5 -right-1.5 text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center" style="background:#FF3B30;color:#fff">{{ n }}</span>
         {% endif %}
       </a>
-      {% if current_user.is_authenticated and current_user.rol != 'cliente' %}
+      {% if current_user.is_authenticated %}
         <form method="post" action="{{ url_for('auth.logout') }}" class="inline-flex">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" title="Cerrar sesión" class="flex items-center justify-center w-8 h-8 rounded-lg" style="background:rgba(206,17,38,.08);color:rgba(206,17,38,.7);border:1px solid rgba(206,17,38,.15)">
@@ -147,9 +147,6 @@
           <li><a href="{{ url_for('public.index') }}">🍽️ Menú completo</a></li>
           <li><a href="{{ url_for('public.ver_carrito') }}">🛒 Mi carrito</a></li>
           <li><a href="{{ url_for('public.club') }}">⭐ Programa de puntos</a></li>
-          {% if current_user.is_authenticated and current_user.rol == 'cliente' %}
-          <li><a href="{{ url_for('public.perfil') }}">👤 Mi perfil</a></li>
-          {% endif %}
         </ul>
       </div>
 
@@ -290,18 +287,6 @@
           <span><strong>Otra consulta</strong><small>Habla directamente con el equipo</small></span>
           <span class="ox-wa-arrow">›</span>
         </a>
-      </div>
-      {% endif %}
-
-      {# Push notification prompt (solo para clientes logueados) #}
-      {% if current_user.is_authenticated and current_user.rol == 'cliente' %}
-      <div id="ox-push-prompt" class="ox-push-prompt" hidden>
-        <span class="ox-push-prompt-icon">🔔</span>
-        <div class="ox-push-prompt-copy">
-          <strong>Notificaciones del pedido</strong>
-          <small>Aviso cuando tu pedido salga y llegue</small>
-        </div>
-        <button type="button" class="ox-push-prompt-btn" onclick="oxActivarPush(this)">Activar</button>
       </div>
       {% endif %}
 
@@ -486,10 +471,6 @@ if ('serviceWorker' in navigator) {
         if (document.visibilityState === 'visible') oxEnsureSwUpdate(reg);
       });
       setInterval(() => oxEnsureSwUpdate(reg), 5 * 60 * 1000);
-      // ── Suscripción push para clientes logueados ──
-      {% if current_user.is_authenticated and current_user.rol == 'cliente' %}
-      oxSubscribePush(reg);
-      {% endif %}
     }).catch(() => {});
   });
   navigator.serviceWorker.addEventListener('controllerchange', () => {

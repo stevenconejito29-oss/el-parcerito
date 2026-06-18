@@ -15,7 +15,7 @@ from sqlalchemy.orm import joinedload
 import csv, io
 
 from extensions import db, get_or_404
-from models import (User, Product, Categoria, Stock, Order, OrderItem, Review,
+from models import (ROLES_AUTENTICABLES, User, Product, Categoria, Stock, Order, OrderItem, Review,
                     Coupon, ComboGroup, ComboItem, Caja, PointsLog, StaffPayment,
                     AffiliateCode, AffiliateUse, MenuConfig,
                     PriceHistory, SiteConfig, AuditLog,
@@ -46,7 +46,7 @@ from phone_utils import normalizar_telefono_cliente
 admin_bp = Blueprint("admin", __name__)
 
 _ROLES_ADMIN = {"admin", "super_admin"}
-_ROLES_USUARIO_BASE = ["preparacion", "repartidor", "proveedor", "cliente"]
+_ROLES_USUARIO_BASE = ["preparacion", "repartidor", "proveedor"]
 _ROLES_USUARIO_SUPERADMIN = _ROLES_USUARIO_BASE + ["admin", "super_admin"]
 
 _ESTADOS_PEDIDO_VALIDOS = {"pendiente", "armando", "listo", "en_ruta", "entregado", "cancelado"}
@@ -3129,7 +3129,7 @@ def usuarios():
     q = (request.args.get("q") or "").strip()
     rol = (request.args.get("rol") or "").strip()
     estado = (request.args.get("estado") or "").strip()
-    query = User.query
+    query = User.query.filter(User.rol.in_(ROLES_AUTENTICABLES))
     if q:
         query = query.filter(or_(User.nombre.ilike(f"%{q}%"),
                                  User.email.ilike(f"%{q}%"),
@@ -3213,6 +3213,8 @@ def crear_usuario():
 @admin_required
 def editar_usuario(user_id):
     u = get_or_404(User, user_id)
+    if not u.puede_iniciar_sesion:
+        abort(404)
     roles_validos = _roles_editables_usuario()
     if request.method == "GET":
         return render_template("admin/usuario_editar.html", usuario=u, roles_validos=roles_validos)
@@ -3271,6 +3273,8 @@ def editar_usuario(user_id):
 @admin_required
 def toggle_usuario(user_id):
     u = get_or_404(User, user_id)
+    if not u.puede_iniciar_sesion:
+        abort(404)
     if u.id == current_user.id:
         flash("No puedes desactivarte a ti mismo.", "warning")
         return redirect(url_for("admin.usuarios"))

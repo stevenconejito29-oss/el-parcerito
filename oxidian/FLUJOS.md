@@ -34,8 +34,8 @@ Cliente web/móvil
        │
        ▼
 Flask (puerto 5000)
-  ├── /public/*         → catálogo, carrito, checkout, perfil
-  ├── /auth/*           → login, logout, registro (solo admin puede crear cuentas)
+  ├── /public/*         → catálogo, carrito, checkout y puntos por WhatsApp
+  ├── /auth/*           → login/logout exclusivo para personal interno
   ├── /admin/*          → panel admin (roles: admin, super_admin)
   ├── /superadmin/*     → configuración, P&L, auditoría (solo super_admin)
   ├── /marketing/*      → campañas, puntos, afiliados (roles: marketing, admin, super_admin)
@@ -68,7 +68,7 @@ Imágenes compartidas:     /images/{productos,logo,categorias,banners}/
 | `preparacion` | Pedidos de productos tipo "encargo"/"programado" | `/preparador/pedidos` |
 | `repartidor` | Cola de reparto | `/repartidor/ruta` |
 | `staff` | Inventario físico, POS | `/staff/inventario` |
-| `cliente` | Catálogo, carrito, perfil | `/` |
+| `cliente` | Registro comercial interno; no inicia sesión | — |
 
 ### Login
 ```
@@ -81,8 +81,8 @@ POST /auth/login
 
 ### Creación de usuarios
 - `super_admin` crea desde `/superadmin/admins/crear` (roles: admin, super_admin)
-- `admin/super_admin` crea desde `/admin/usuarios/crear` (roles: marketing, staff, cocina, preparacion, repartidor, cliente; super_admin también admin/super_admin)
-- Invitados se crean automáticamente en checkout (rol=cliente, password aleatorio)
+- `admin/super_admin` crea cuentas laborales desde `/admin/usuarios/crear`
+- El checkout y el bot crean registros internos `rol=cliente`, identificados por teléfono y sin acceso al login
 - Bot crea clientes en `/api/bot/cliente/registrar`
 
 **Reglas de seguridad:**

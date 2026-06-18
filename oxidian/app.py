@@ -108,7 +108,7 @@ def create_app(env="default"):
         except (TypeError, ValueError):
             return None
         user = db.session.get(User, ident)
-        return user if user and user.activo else None
+        return user if user and user.puede_iniciar_sesion else None
 
     @app.before_request
     def log_request_start():

@@ -28,10 +28,16 @@ def utcnow():
 #  - preparacion: prepara stock propio (cocina + almacén unificados).
 #  - repartidor: entrega los pedidos.
 #  - proveedor: operador de un bar despachador (varios bares posibles).
-#  - cliente: comprador final.
+#  - cliente: identidad comercial interna para pedidos, puntos y marketing.
+#    No es una cuenta autenticable ni dispone de panel público.
 # Los valores "cocina" y "staff" están deprecados como rol; nada nuevo los
 # escribe, pero la columna users.rol los acepta para no romper datos viejos.
 ROLES = ["super_admin", "admin", "preparacion", "repartidor", "proveedor", "cliente"]
+ROLES_AUTENTICABLES = frozenset({
+    "super_admin", "admin", "preparacion", "repartidor", "proveedor",
+    # Compatibilidad temporal con cuentas operativas antiguas.
+    "cocina", "staff",
+})
 ROLES_LEGACY_PREPARACION = {"cocina", "staff"}
 METODOS_PAGO_VALIDOS = ("efectivo", "bizum")
 
@@ -136,6 +142,10 @@ class User(UserMixin, db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    @property
+    def puede_iniciar_sesion(self):
+        return self.activo and self.rol in ROLES_AUTENTICABLES
 
     # ── Presencia ──
     def marcar_activo(self):

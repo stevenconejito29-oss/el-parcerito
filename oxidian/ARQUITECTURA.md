@@ -16,12 +16,12 @@ oxidian/
 │
 ├── routes/
 │   ├── __init__.py
-│   ├── public.py                 # Catálogo, carrito, reseñas, puntos
+│   ├── public.py                 # Catálogo, carrito, checkout y puntos por WhatsApp
 │   ├── admin.py                  # Dashboard, caja, stock, cupones
 │   ├── staff.py                  # Inventario básico
 │   ├── preparador.py             # Vista de pedidos a armar
 │   ├── repartidor.py             # Vista de ruta y entrega
-│   └── auth.py                   # Login, logout, registro
+│   └── auth.py                   # Login/logout exclusivo para empleados
 │
 ├── templates/
 │   ├── base.html                 # Layout base (dark mode, Tailwind)
@@ -31,8 +31,7 @@ oxidian/
 │   │   ├── carrito.html          # Carrito de compras
 │   │   ├── checkout.html         # Paso de confirmación y pago
 │   │   ├── pedido_confirmado.html
-│   │   ├── perfil.html           # Mi cuenta + historial
-│   │   └── club.html             # Club de Clientes (puntos)
+│   │   └── puntos_consulta.html  # Consulta privada de puntos por WhatsApp
 │   ├── admin/
 │   │   ├── dashboard.html        # Resumen general
 │   │   ├── caja.html             # Control de entradas/salidas
@@ -49,8 +48,7 @@ oxidian/
 │   ├── repartidor/
 │   │   └── ruta.html             # Lista de entregas del día
 │   └── auth/
-│       ├── login.html
-│       └── registro.html
+│       └── login.html            # Acceso interno de empleados
 │
 └── static/
     ├── css/
@@ -246,22 +244,19 @@ oxidian/
 
 ---
 
-### FLUJO 1 — Registro y Login (Público)
+### FLUJO 1 — Login interno de empleados
 
 ```
-[Landing /]
-    └─→ [Registro /registro]
-            ├─ Formulario: nombre, email, password, teléfono, dirección
-            ├─ Se crea user con rol=cliente y puntos=0
-            └─→ Redirect a /perfil
-
-[Login /login]
+[Login /auth/login]
     ├─ Email + Password → verificar hash bcrypt
+    ├─ Rechaza registros rol=cliente
     ├─ Si rol=admin      → redirect /admin/dashboard
-    ├─ Si rol=preparador → redirect /preparador/pedidos
+    ├─ Si rol=preparacion → redirect /preparador/pedidos
     ├─ Si rol=repartidor → redirect /repartidor/ruta
-    ├─ Si rol=staff      → redirect /staff/inventario
-    └─ Si rol=cliente    → redirect /
+    └─ Si rol=proveedor  → redirect /proveedor/pedidos
+
+Los clientes no crean cuenta ni inician sesión. El teléfono identifica
+internamente pedidos, puntos y comunicaciones.
 ```
 
 ---
@@ -283,7 +278,7 @@ oxidian/
     ├─ Campo "Usar puntos" → descuento por puntos del club
     ├─ Resumen: subtotal, descuento, total
     └─→ [/checkout — Confirmación]
-            ├─ Dirección de entrega (pre-rellena con la del perfil)
+            ├─ Nombre, teléfono y dirección recordados en el dispositivo
             ├─ Método de pago
             ├─ Notas adicionales
             ├─ Confirmar pedido
@@ -302,11 +297,10 @@ oxidian/
 ### FLUJO 3 — Club de Clientes (Puntos)
 
 ```
-[/club — Mi Club]
-    ├─ Saldo de puntos actual
-    ├─ Historial de ganados / canjeados (tabla points_log)
-    ├─ Tabla de beneficios: X puntos = Y€ de descuento
-    └─ Los puntos se aplican en /carrito al elegir "Usar puntos"
+[/club — Consulta privada]
+    ├─ El cliente introduce su WhatsApp
+    ├─ El saldo se envía al propio número, no se revela en el navegador
+    └─ Para canjear en carrito/checkout se exige un código OTP por WhatsApp
 
 Reglas de puntos (configurables en config.py):
     - 1 punto por cada €1 gastado
@@ -320,8 +314,8 @@ Reglas de puntos (configurables en config.py):
 
 ```
 Después de entrega (estado=entregado):
-    ├─ Cliente ve en /perfil el botón "Dejar reseña" por pedido
-    ├─ Formulario: calificación 1-5 + comentario
+    ├─ El chatbot puede solicitar la valoración al cliente
+    ├─ Se asocia al pedido y al teléfono registrado
     ├─ Se guarda con aprobada=False
     └─ Admin aprueba/rechaza en /admin/productos → pestaña Reseñas
 

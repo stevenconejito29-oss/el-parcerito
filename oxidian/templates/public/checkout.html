@@ -32,7 +32,7 @@
 <div class="checkout-layout grid md:grid-cols-5 gap-5"
      data-subtotal-base="{{ subtotal }}"
      data-points-ratio="{{ puntos_ratio|int }}"
-     data-customer-phone="{{ current_user.telefono if current_user.is_authenticated and current_user.rol == 'cliente' else '' }}">
+     data-customer-phone="">
 
 <!-- ── RESUMEN (derecha desktop, abajo mobile) ── -->
 <div class="md:col-span-2 order-2 md:order-2 md:sticky md:top-20 md:self-start">
@@ -133,7 +133,6 @@
   <input type="hidden" name="puntos_usar" id="puntos_usar_input" value="0">
 
   <!-- ① IDENTIFICACIÓN POR TELÉFONO -->
-  {% if not current_user.is_authenticated %}
   <div class="ox-card p-4 checkout-step">
     <h2 class="text-sm font-extrabold mb-3 flex items-center gap-2">
       <span class="w-6 h-6 rounded-full text-xs font-black flex items-center justify-center" style="background:#FFAB00;color:#000">1</span>
@@ -156,27 +155,16 @@
              placeholder="¿Cómo te llamamos?" autocomplete="name" required>
     </div>
   </div>
-  {% else %}
-  <div class="ox-card p-4 flex items-center gap-3 checkout-step">
-    <div class="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black" style="background:rgba(255,171,0,.15);color:#FFAB00">
-      {{ current_user.nombre[0].upper() }}
-    </div>
-    <div>
-      <p class="font-bold text-sm">{{ current_user.nombre }}</p>
-      <p class="text-xs" style="color:var(--col-muted)">{{ current_user.telefono or current_user.email }}</p>
-    </div>
-  </div>
-  {% endif %}
 
   <!-- ② DIRECCIÓN -->
   <div class="ox-card p-4 checkout-step">
     <h2 class="text-sm font-extrabold mb-3 flex items-center gap-2">
-      <span class="w-6 h-6 rounded-full text-xs font-black flex items-center justify-center" style="background:#FFAB00;color:#000">{% if not current_user.is_authenticated %}2{% else %}1{% endif %}</span>
+      <span class="w-6 h-6 rounded-full text-xs font-black flex items-center justify-center" style="background:#FFAB00;color:#000">2</span>
       📍 Dirección de entrega
     </h2>
     <textarea name="direccion" required rows="2"
               placeholder="Calle, número, piso… Ej: Calle Real 5, Carmona"
-              id="direccion_input">{{ current_user.direccion if current_user.is_authenticated else '' }}</textarea>
+              id="direccion_input"></textarea>
     <div id="dir-feedback" class="mt-2 text-xs hidden" style="min-height:1.2em"></div>
   </div>
 
@@ -206,7 +194,7 @@
   <!-- ③ MÉTODO DE PAGO -->
   <div class="ox-card p-4 checkout-step">
     <h2 class="text-sm font-extrabold mb-3 flex items-center gap-2">
-      <span class="w-6 h-6 rounded-full text-xs font-black flex items-center justify-center" style="background:#FFAB00;color:#000">{% if not current_user.is_authenticated %}3{% else %}2{% endif %}</span>
+      <span class="w-6 h-6 rounded-full text-xs font-black flex items-center justify-center" style="background:#FFAB00;color:#000">3</span>
       💳 Método de pago
     </h2>
     <div class="grid grid-cols-2 gap-2 mb-3">
@@ -637,12 +625,8 @@ function actualizarTotalEstimado() {
 }
 
 function isReadyForRewards() {
-  {% if current_user.is_authenticated and current_user.rol == 'cliente' %}
-  return true;
-  {% else %}
   const hasPhone = checkoutPhone().replace(/\D/g, '').length >= 7;
   return hasPhone;
-  {% endif %}
 }
 
 function updateRewardsVisibility() {
@@ -766,20 +750,6 @@ function updateRewardsSummary() {
   pill.textContent = `${ptsDiscount + (product ? parseInt(product.puntos || 0) : 0)} pts`;
 }
 
-// Auto-verificar puntos para clientes autenticados (sin OTP)
-async function autoVerificarPuntosAutenticado() {
-  try {
-    const r = await checkoutJsonPost('/puntos/auth-verificar', {});
-    const d = await r.json();
-    if (d.ok) {
-      rewardsState.verified = true;
-      const block = document.getElementById('puntos-tel-block');
-      if (block) block.classList.add('hidden');
-      renderRewardsPanel(d, true);
-    }
-  } catch (e) { /* continuar sin auto-verificar */ }
-}
-
 // Buscar cliente por teléfono
 let telTimer = null;
 function buscarClientePorTelefono(tel) {
@@ -857,9 +827,6 @@ function loadGuestCheckoutData() {
 window.addEventListener('DOMContentLoaded', () => {
   attachRewardsVisibilityHandlers();
   loadGuestCheckoutData();
-  {% if current_user.is_authenticated and current_user.rol == 'cliente' and (current_user.puntos or 0) > 0 %}
-  autoVerificarPuntosAutenticado();
-  {% endif %}
 });
 
 // Validar cupón

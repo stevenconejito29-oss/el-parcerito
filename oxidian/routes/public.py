@@ -7,11 +7,11 @@ from urllib.parse import quote
 from datetime import datetime
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session
-from flask_login import login_required, current_user
+from flask_login import current_user
 from flask import current_app
 from sqlalchemy.orm import joinedload
 from extensions import db, get_or_404, limiter, csrf
-from models import (Product, Categoria, Order, OrderItem, Review, Coupon, PointsLog,
+from models import (Product, Categoria, Order, OrderItem, Review, Coupon,
                      ComboItem, SiteConfig,
                      ZonaEntrega, MenuConfig, User, normalizar_metodo_pago,
                      AffiliateCode, IdempotencyKey, metadata_componente_combo,
@@ -440,8 +440,6 @@ def ver_carrito():
     puntos_sesion = session.get("cart_puntos", {})
     puntos_verificados = int(puntos_sesion.get("puntos_totales", 0) or 0)
     puntos_visibles = puntos_verificados
-    if not puntos_visibles and current_user.is_authenticated and current_user.rol == "cliente":
-        puntos_visibles = int(current_user.puntos or 0)
     todos_canjeables = [
         p for p in Product.query.filter_by(canjeable_con_puntos=True, activo=True)
         .filter(Product.puntos_para_canje.isnot(None))
@@ -494,8 +492,6 @@ def set_producto_canje():
         puntos_disponibles = 0
         if cart_puntos.get("cliente_id"):
             puntos_disponibles = int(cart_puntos.get("puntos_totales") or 0)
-        elif current_user.is_authenticated and current_user.rol == "cliente":
-            puntos_disponibles = int(current_user.puntos or 0)
         if int(producto.puntos_para_canje or 0) > puntos_disponibles:
             return jsonify({"ok": False, "msg": "No tienes puntos suficientes para este producto"}), 400
         session["cart_producto_canje_id"] = prod_id
@@ -610,16 +606,12 @@ def validar_afiliado():
 def solicitar_codigo_puntos():
     """Envía un código al WhatsApp que identifica al cliente."""
     data = request.get_json(silent=True) or {}
-
-    if not current_user.is_authenticated or current_user.rol != "cliente":
-        telefono = data.get("telefono", "").strip()
-        if not telefono:
-            return jsonify({"ok": False, "msg": "Indica tu número de teléfono"})
-        cliente, _ = _find_cliente_by_phone(telefono)
-        if not cliente:
-            return jsonify({"ok": False, "msg": "Este número todavía no tiene puntos acumulados."})
-    else:
-        cliente = current_user
+    telefono = data.get("telefono", "").strip()
+    if not telefono:
+        return jsonify({"ok": False, "msg": "Indica tu número de teléfono"})
+    cliente, _ = _find_cliente_by_phone(telefono)
+    if not cliente:
+        return jsonify({"ok": False, "msg": "Este número todavía no tiene puntos acumulados."})
 
     if not cliente.telefono:
         return jsonify({"ok": False, "msg": "No tienes teléfono registrado"})
@@ -643,9 +635,7 @@ def verificar_codigo_puntos():
     except (ValueError, TypeError):
         puntos_usar = 0
 
-    if current_user.is_authenticated and current_user.rol == "cliente":
-        cliente = current_user
-    elif telefono:
+    if telefono:
         cliente, _ = _find_cliente_by_phone(telefono)
     else:
         return jsonify({"ok": False, "msg": "Teléfono requerido"})
@@ -697,34 +687,14 @@ def verificar_codigo_puntos():
                     "msg": "✓ WhatsApp verificado", "puntos_totales": cliente.puntos, **payload})
 
 
-@public_bp.route("/puntos/auth-verificar", methods=["POST"])
-@login_required
-@limiter.limit("20 per minute") if limiter else (lambda f: f)
-def auth_verificar_puntos():
-    """Verifica puntos para clientes ya autenticados (sin OTP)."""
-    if not current_user.is_authenticated or current_user.rol != "cliente":
-        return jsonify({"ok": False, "msg": "Solo disponible para clientes"})
-    cliente = current_user
-    if not int(cliente.puntos or 0) > 0:
-        return jsonify({"ok": False, "msg": "Sin puntos disponibles"})
-    session["cart_puntos"] = {
-        "cliente_id": cliente.id,
-        "telefono": cliente.telefono or "",
-        "puntos_usados": 0,
-        "descuento": 0,
-        "puntos_totales": int(cliente.puntos),
-        "verificado": True,
-    }
-    session.modified = True
-    payload = _canjeables_payload(cliente)
-    return jsonify({"ok": True, "puntos_verificados": 0, "descuento": 0,
-                    "msg": "✓ Sesión verificada", "puntos_totales": int(cliente.puntos), **payload})
-
-
 # ─── CHECKOUT ────────────────────────────────
 
 @public_bp.route("/checkout", methods=["GET", "POST"])
 def checkout():
+    if current_user.is_authenticated:
+        flash("Las cuentas internas no compran desde la tienda pública. Usa el módulo POS.", "warning")
+        return redirect(url_for("public.index"))
+
     carrito = _get_carrito()
     if not carrito:
         flash("Tu carrito está vacío.", "warning")
@@ -764,12 +734,10 @@ def checkout():
     # Los productos son inmediatos o programados; no se solicita fecha manual de encargo.
     tiene_encargos = False
 
-    # Puntos del cliente — prioridad: sesión del carrito, luego usuario logueado
+    # Los puntos solo se habilitan después de verificar el WhatsApp en esta sesión.
     cart_puntos_sesion = session.get("cart_puntos", {})
     if cart_puntos_sesion:
         puntos_cliente = cart_puntos_sesion.get("puntos_totales", 0)
-    elif current_user.is_authenticated and current_user.rol == "cliente":
-        puntos_cliente = current_user.puntos
     else:
         puntos_cliente = 0
 
@@ -784,9 +752,8 @@ def checkout():
         # Evita que un double-click o un retry del cliente cree dos pedidos.
         # Si la misma combinación (user/telefono + body) llegó hace <30 s,
         # devolvemos el pedido ya creado en vez de duplicarlo.
-        user_id_idem = current_user.id if current_user.is_authenticated else None
-        auto_seed = str(user_id_idem) if user_id_idem else (
-            (request.form.get("telefono") or "") + ":" + (request.remote_addr or "")
+        auto_seed = (
+            (request.form.get("telefono_invitado") or "") + ":" + (request.remote_addr or "")
         )
         idem_key = request_idempotency_key("checkout_web", auto_seed=auto_seed)
         body_h = request_body_hash()
@@ -851,10 +818,9 @@ def checkout():
                     )
                     return redirect(url_for("public.ver_carrito"))
         # Validar teléfono de invitado (mínimo 7, máximo 20 dígitos/caracteres)
-        if not current_user.is_authenticated and telefono_invitado:
-            if not telefono_valido(telefono_invitado):
-                flash("Teléfono inválido. Usa formato internacional (+34 600 000 000).", "danger")
-                return redirect(url_for("public.checkout"))
+        if telefono_invitado and not telefono_valido(telefono_invitado):
+            flash("Teléfono inválido. Usa formato internacional (+34 600 000 000).", "danger")
+            return redirect(url_for("public.checkout"))
 
         if not zonas:
             flash("No hay zonas de entrega activas. Contacta con el negocio.", "danger")
@@ -1148,9 +1114,6 @@ def checkout():
 @public_bp.route("/pedido/<int:pedido_id>/confirmado")
 def pedido_confirmado(pedido_id):
     pedido = get_or_404(Order, pedido_id)
-    if current_user.is_authenticated and pedido.cliente_id == current_user.id:
-        return render_template("public/pedido_confirmado.html", pedido=pedido)
-
     token = request.args.get("token", "") or session.get("last_guest_order_token", "")
     guest_tokens = session.get("guest_order_tokens", {})
     expected = guest_tokens.get(str(pedido_id))
@@ -1160,115 +1123,12 @@ def pedido_confirmado(pedido_id):
     return render_template("public/pedido_confirmado.html", pedido=pedido)
 
 
-# ─── PERFIL ──────────────────────────────────
-
-@public_bp.route("/perfil")
-@login_required
-def perfil():
-    pedidos = Order.query.filter_by(cliente_id=current_user.id)\
-                         .order_by(Order.creado_en.desc()).all()
-    pedido_ids = [p.id for p in pedidos]
-    reviewed_items = set()
-    if pedido_ids:
-        reviewed_items = {
-            f"{r.pedido_id}:{r.producto_id}"
-            for r in Review.query.filter(Review.cliente_id == current_user.id,
-                                          Review.pedido_id.in_(pedido_ids)).all()
-        }
-    return render_template("public/perfil.html", pedidos=pedidos, reviewed_items=reviewed_items)
-
-
 # ─── CLUB DE CLIENTES ────────────────────────
-
-@public_bp.route("/perfil/editar", methods=["POST"])
-@login_required
-def editar_perfil():
-    nombre = request.form.get("nombre", "").strip()[:100]
-    telefono = _normalize_phone(request.form.get("telefono", ""))
-    direccion = request.form.get("direccion", "").strip()[:200]
-    if not nombre:
-        flash("El nombre no puede estar vacío.", "danger")
-        return redirect(url_for("public.perfil"))
-    current_user.nombre = nombre
-    if telefono:
-        current_user.telefono = telefono
-    if direccion:
-        current_user.direccion = direccion
-    try:
-        db.session.commit()
-        flash("Perfil actualizado.", "success")
-    except Exception as exc:
-        db.session.rollback()
-        flash(f"Error al actualizar perfil: {exc}", "danger")
-    return redirect(url_for("public.perfil"))
 
 
 @public_bp.route("/club")
 def club():
-    if not current_user.is_authenticated or current_user.rol != "cliente":
-        return render_template("public/puntos_consulta.html")
-    historial = PointsLog.query.filter_by(cliente_id=current_user.id)\
-                               .order_by(PointsLog.creado_en.desc()).all()
-    puntos = max(0, int(current_user.puntos or 0))
-    cfg = get_puntos_config()
-    ratio = max(1, int(cfg["ratio"]))
-    canjeables = [
-        p for p in Product.query.filter_by(activo=True, canjeable_con_puntos=True)
-        .filter(Product.puntos_para_canje.isnot(None))
-        .order_by(Product.puntos_para_canje.asc()).all()
-        if p.canje_directo_disponible()
-    ]
-    proximo = next((p for p in canjeables if (p.puntos_para_canje or 0) > puntos), None)
-    ya_canjeables = [p for p in canjeables if (p.puntos_para_canje or 0) <= puntos]
-    return render_template("public/club.html",
-                           historial=historial,
-                           puntos=puntos,
-                           ratio=ratio,
-                           valor_euros=round(puntos / ratio, 2),
-                           canjeables=ya_canjeables,
-                           proximo=proximo)
-
-
-# ─── RESEÑAS ─────────────────────────────────
-
-@public_bp.route("/resena/<int:pedido_id>/<int:producto_id>", methods=["GET", "POST"])
-@login_required
-def dejar_resena(pedido_id, producto_id):
-    pedido = get_or_404(Order, pedido_id)
-    if pedido.cliente_id != current_user.id or pedido.estado != "entregado":
-        flash("Solo puedes reseñar pedidos entregados.", "warning")
-        return redirect(url_for("public.perfil"))
-
-    from models import OrderItem
-    if not OrderItem.query.filter_by(pedido_id=pedido_id, producto_id=producto_id).first():
-        flash("Producto no encontrado en este pedido.", "warning")
-        return redirect(url_for("public.perfil"))
-
-    if Review.query.filter_by(pedido_id=pedido_id, producto_id=producto_id,
-                               cliente_id=current_user.id).first():
-        flash("Ya dejaste una reseña para este producto.", "info")
-        return redirect(url_for("public.perfil"))
-
-    if request.method == "POST":
-        try:
-            calificacion = max(1, min(5, int(request.form.get("calificacion", 5))))
-        except (ValueError, TypeError):
-            calificacion = 5
-        comentario = request.form.get("comentario", "").strip()
-        review = Review(producto_id=producto_id, cliente_id=current_user.id,
-                        pedido_id=pedido_id, calificacion=calificacion,
-                        comentario=comentario)
-        db.session.add(review)
-        try:
-            db.session.commit()
-            flash("Reseña enviada, pendiente de aprobación.", "success")
-        except Exception as exc:
-            db.session.rollback()
-            flash(f"Error al guardar la reseña: {exc}", "danger")
-        return redirect(url_for("public.perfil"))
-
-    producto = get_or_404(Product, producto_id)
-    return render_template("public/resena_form.html", pedido=pedido, producto=producto)
+    return render_template("public/puntos_consulta.html")
 
 
 # ─── HELPERS ─────────────────────────────────
@@ -1573,16 +1433,9 @@ def _build_items_from_carrito(carrito):
 def _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion):
     """
     Identifica al cliente por teléfono (identificador principal).
-    Si está logueado (cualquier rol), usa su cuenta.
-    Si no: busca por teléfono, si existe lo devuelve, si no crea cuenta mínima.
+    Busca el registro interno por teléfono o crea uno nuevo. Estos registros
+    no son cuentas autenticables y no tienen panel público.
     """
-    if current_user.is_authenticated:
-        if current_user.rol != "cliente":
-            raise ValueError("Usa una cuenta de cliente o el módulo POS para registrar la compra.")
-        if direccion and direccion != current_user.direccion:
-            current_user.direccion = direccion
-        return current_user
-
     if not telefono_invitado:
         return None
 
@@ -1596,8 +1449,8 @@ def _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion):
             and verificacion.get("cliente_id") == invitado.id
         ):
             raise ValueError(
-                "Ese teléfono ya pertenece a una cuenta. "
-                "Inicia sesión o verifica el WhatsApp antes de continuar."
+                "Ese teléfono ya tiene historial. "
+                "Verifica el código enviado por WhatsApp antes de continuar."
             )
         # Actualizar dirección si se proveyó nueva
         if direccion and direccion != invitado.direccion:

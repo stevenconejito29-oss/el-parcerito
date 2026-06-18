@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from urllib.parse import urlparse
 from flask_login import login_user, logout_user, login_required, current_user
 from extensions import limiter, db
-from models import User
+from models import ROLES_AUTENTICABLES, User
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -12,7 +12,6 @@ REDIRECT_POR_ROL = {
     "preparacion":  "preparador.pedidos",
     "repartidor":   "repartidor.ruta",
     "proveedor":    "proveedor.pedidos",
-    "cliente":      "public.index",
     # Aliases retro-compatibles para usuarios con valores antiguos en BD.
     "cocina":       "preparador.pedidos",
     "staff":        "preparador.pedidos",
@@ -35,9 +34,13 @@ def login():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
-        user = User.query.filter_by(email=email, activo=True).first()
+        user = User.query.filter(
+            User.email == email,
+            User.activo == True,
+            User.rol.in_(ROLES_AUTENTICABLES),
+        ).first()
 
-        if user and user.check_password(password):
+        if user and user.puede_iniciar_sesion and user.check_password(password):
             # Si el user tiene MFA activo: NO completar login todavía. Guardamos
             # un "intent" en la sesión y le pedimos el código TOTP.
             if user.mfa_enabled and user.mfa_secret:
@@ -64,7 +67,7 @@ def mfa_challenge():
     if not pending_id:
         return redirect(url_for("auth.login"))
     user = db.session.get(User, pending_id)
-    if not user or not user.activo or not user.mfa_enabled or not user.mfa_secret:
+    if not user or not user.puede_iniciar_sesion or not user.mfa_enabled or not user.mfa_secret:
         session.pop("mfa_pending_user_id", None)
         session.pop("mfa_pending_next", None)
         return redirect(url_for("auth.login"))
@@ -81,12 +84,6 @@ def mfa_challenge():
         flash("Código incorrecto. Intenta de nuevo.", "danger")
 
     return render_template("auth/mfa_challenge.html")
-
-
-@auth_bp.route("/registro")
-def registro():
-    from flask import abort as _abort
-    _abort(404)
 
 
 @auth_bp.route("/logout", methods=["POST"])
@@ -174,6 +171,8 @@ def mfa_disable():
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 def _complete_login(user):
+    if not user.puede_iniciar_sesion:
+        raise ValueError("El usuario no pertenece a un rol interno autenticable.")
     session.permanent = True
     login_user(user, remember=False)
     session["mfa_v"] = int(user.mfa_session_version or 0)
@@ -197,7 +196,7 @@ def _qr_svg_inline(data):
 
 
 def _redirect_rol(rol):
-    destino = REDIRECT_POR_ROL.get(rol, "public.index")
+    destino = REDIRECT_POR_ROL.get(rol, "auth.login")
     return redirect(url_for(destino))
 
 

@@ -36,7 +36,7 @@
 
 {# ── RESUMEN POR ROL ── #}
 <div class="grid grid-cols-4 md:grid-cols-7 gap-2 mb-5">
-  {% set rol_icons = {'super_admin':'👑','admin':'🔧','staff':'📦','cocina':'🍳','preparacion':'🗓️','repartidor':'🛵','proveedor':'🏪','cliente':'👤'} %}
+  {% set rol_icons = {'super_admin':'👑','admin':'🔧','staff':'📦','cocina':'🍳','preparacion':'🗓️','repartidor':'🛵','proveedor':'🏪'} %}
   {% set rol_counts = {} %}
   {% for u in users %}{% set _ = rol_counts.update({u.rol: (rol_counts.get(u.rol, 0) + 1)}) %}{% endfor %}
   {% for rol, icon in rol_icons.items() %}
@@ -127,7 +127,7 @@
         </td>
         <td class="user-role">
           <span class="ox-role-badge ox-role-{{ u.rol }}">
-            {{ {'super_admin':'👑 Super','admin':'🔧 Admin','staff':'📦 Empaque / almacén','cocina':'🍳 Cocina','preparacion':'🗓️ Encargos','repartidor':'🛵 Repartidor','proveedor':'🏪 Proveedor','cliente':'👤 Cliente'}.get(u.rol, u.rol) }}
+            {{ {'super_admin':'👑 Super','admin':'🔧 Admin','staff':'📦 Empaque / almacén','cocina':'🍳 Cocina','preparacion':'🗓️ Encargos','repartidor':'🛵 Repartidor','proveedor':'🏪 Proveedor'}.get(u.rol, u.rol) }}
           </span>
         </td>
         <td class="hidden md:table-cell text-xs" style="color:var(--col-muted)">
@@ -217,7 +217,6 @@
             <option value="repartidor">🛵 Repartidor</option>
             <option value="staff">📦 Empaque / almacén</option>
             <option value="proveedor">🏪 Proveedor</option>
-            <option value="cliente">👤 Cliente</option>
             {% if current_user.rol == 'super_admin' %}
             <option value="admin">🔧 Admin</option>
             {% endif %}
@@ -271,7 +270,6 @@
             <option value="repartidor">🛵 Repartidor</option>
             <option value="staff">📦 Empaque / almacén</option>
             <option value="proveedor">🏪 Proveedor</option>
-            <option value="cliente">👤 Cliente</option>
             {% if current_user.rol == 'super_admin' %}
             <option value="admin">🔧 Admin</option>
             {% endif %}
