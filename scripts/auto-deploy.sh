@@ -5,7 +5,7 @@ set -uo pipefail
 
 REPO_URL="${OXIDIAN_REPO_URL:-https://github.com/stevenconejito29-oss/el-parcerito.git}"
 REPO_SLUG="${OXIDIAN_REPO_SLUG:-stevenconejito29-oss/el-parcerito}"
-DEPLOY_DIR="${OXIDIAN_DEPLOY_DIR:-/opt/el-parcerito}"
+DEPLOY_DIR="${OXIDIAN_DEPLOY_DIR:-/opt/oxidian-workspace/el-parcerito}"
 ENV_FILE="${OXIDIAN_ENV_FILE:-$DEPLOY_DIR/oxidian/.env.cosmos.local}"
 COMPOSE_FILE="$DEPLOY_DIR/oxidian/cosmos-compose.yml"
 STATE_DIR="${OXIDIAN_DEPLOY_STATE_DIR:-$HOME/.local/state/oxidian-deploy}"

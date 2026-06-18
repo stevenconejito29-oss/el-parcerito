@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-DEPLOY_DIR="${OXIDIAN_DEPLOY_DIR:-/opt/el-parcerito}"
+DEPLOY_DIR="${OXIDIAN_DEPLOY_DIR:-/opt/oxidian-workspace/el-parcerito}"
 STATE_DIR="${OXIDIAN_DEPLOY_STATE_DIR:-$HOME/.local/state/oxidian-deploy}"
 SOURCE="$DEPLOY_DIR/scripts/auto-deploy.sh"
 TARGET="$STATE_DIR/auto-deploy.sh"
