@@ -1323,14 +1323,14 @@ function businessName() { return String(cfg('business_name', NEGOCIO) || NEGOCIO
 
 function menuPrincipal() {
   return (
-    `🍽️ *${businessName()}*\n` +
-    `¡Hola! ¿Qué se te antoja hoy? 😊\n\n` +
-    `1️⃣  🛒 Ver el menú y los combos\n` +
+    `💬 *Asistente de ${businessName()}*\n\n` +
+    `Puedo ayudarte sin tomar pedidos por WhatsApp:\n\n` +
+    `1️⃣  🌐 Abrir la tienda online\n` +
     `2️⃣  📋 Consultar o cancelar mi pedido\n` +
     `3️⃣  ⭐ Mis puntos de fidelidad\n` +
     `4️⃣  🗺️ Saber si llegamos a tu zona\n` +
-    `5️⃣  🌐 Abrir la tienda online\n` +
-    `6️⃣  🕐 Horario, dirección y contacto\n` +
+    `5️⃣  🕐 Horario, dirección y contacto\n` +
+    `6️⃣  💳 Pagos y código de entrega\n` +
     `7️⃣  💬 Hablar con una persona\n\n` +
     `_Puedes responder con el número o decírmelo con tus palabras_\n` +
     `_(por ejemplo: «mi pedido», «cancelar», «menú», «agente»…)_`
@@ -1339,7 +1339,7 @@ function menuPrincipal() {
 
 function adminMenu() {
   return (
-    `🔐 *Panel Admin — ${businessName()}*\n\n` +
+    `🔐 *Panel Super Admin — ${businessName()}*\n\n` +
     `1️⃣  Estado del bot y WhatsApp\n` +
     `2️⃣  Abrir / cerrar tienda\n` +
     `3️⃣  Productos y precios\n` +
@@ -1371,6 +1371,7 @@ function adminProductsMenu() {
     `1️⃣ Buscar producto por nombre o ID\n` +
     `2️⃣ Cambiar precio\n` +
     `3️⃣ Activar / desactivar producto\n\n` +
+    `Los productos nuevos y combos solo se crean desde el panel web de Super Admin.\n\n` +
     `_0 · volver al menú principal_`
   );
 }
@@ -1511,7 +1512,7 @@ async function identificarBarOperador(clientJid) {
     const data = await oxidianGet(`/bar/identify?telefono=${encodeURIComponent(phone)}`);
     return (data && data.ok && data.es_bar) ? data.bar : null;
   } catch (_) {
-    return null;
+    return undefined;
   }
 }
 
@@ -1522,7 +1523,7 @@ function barMenu(bar) {
     `1️⃣  📋 Ver mis pedidos pendientes\n` +
     `2️⃣  ✅ Marcar un pedido como preparado\n` +
     `3️⃣  📨 Ver incidencias de clientes\n` +
-    `4️⃣  🌐 Abrir mi inventario en la web\n` +
+    `4️⃣  📦 Abrir mi inventario y stock en la web\n` +
     `5️⃣  💬 Contactar con el administrador general\n\n` +
     `_Responde con el número o con palabras (pedidos, preparado, incidencias…)_`
   );
@@ -1611,6 +1612,9 @@ async function handleBarMenu(jid, ses, lower, rawText) {
   }
 
   if (opcion === '2') {
+    if (/\d/.test(rawText)) {
+      return handleBarMarcarPreparado(jid, ses, rawText);
+    }
     setSesion(jid, { ...ses, estado: 'bar_preparar_pide_id' });
     return sendText(jid,
       `✅ *Marcar pedido como preparado*\n\n` +
@@ -1776,6 +1780,26 @@ async function _handleMessage(jid, text, pushName) {
     return handleAdminChat(jid, ses, text);
   }
 
+  // Resolver el operador de bar antes de comandos como menu, hola o cancelar.
+  // La autorización se revalida en Oxidian; la sesión local solo conserva UI.
+  if (!isOwner) {
+    const bar = await identificarBarOperador(jid);
+    if (bar) {
+      if (ses.role !== 'bar' || !ses.bar_id || Number(ses.bar_id) !== Number(bar.id)) {
+        return startBarMenu(jid, bar, ses?.nombre || pushName || null);
+      }
+      if (['menu', 'menú', 'inicio', 'hola', 'hi', 'start', '0'].includes(lower)) {
+        return startBarMenu(jid, bar, ses.nombre || pushName || null);
+      }
+      return handleBarMenu(jid, ses, lower, text);
+    }
+    // Un teléfono que dejó de ser operador no debe conservar privilegios.
+    if (bar === null && ses.role === 'bar') {
+      resetSesion(jid, ses.nombre, 'client');
+      return startClientMenu(jid, ses.nombre || pushName || null);
+    }
+  }
+
   // ── Comandos globales (siempre activos) ────────────────────────────────
   if (['cliente', 'modo cliente', 'modo-cliente', 'client'].includes(lower)) {
     deleteHandoff(jid);
@@ -1789,7 +1813,7 @@ async function _handleMessage(jid, text, pushName) {
     return true;
   }
 
-  if (['menu', 'inicio', 'hola', 'hi', 'start', '0'].includes(lower)) {
+  if (['inicio', 'hola', 'hi', 'start', '0'].includes(lower)) {
     if (isOwner && !isAdminClientMode(jid, ses)) {
       return startAdminMenu(jid, ses.nombre);
     }
@@ -1812,24 +1836,14 @@ async function _handleMessage(jid, text, pushName) {
 
   if (!ses || !ses.estado || ses.estado === 'idle') {
     if (isOwner) return startAdminMenu(jid, ses?.nombre || pushName || null);
-    // Si el remitente es operador de un bar (su número está en
-    // proveedores.telefono), arrancamos su menú propio en vez del cliente.
-    const bar = await identificarBarOperador(jid);
-    if (bar) {
-      return startBarMenu(jid, bar, ses?.nombre || pushName || null);
-    }
-    if (!isOwner && /^[1-7]$/.test(lower)) {
+    const intent = detectClientIntent(text);
+    if (intent) {
       ses.role = 'client';
       ses.estado = 'main_menu';
       saveSesion(ses);
-      return handleMainMenu(jid, ses, lower);
+      return handleMainMenu(jid, ses, intent);
     }
     return startClientMenu(jid, ses?.nombre || pushName || null);
-  }
-
-  // Si la sesión es 'bar', enrutamos a su handler propio
-  if (ses && ses.role === 'bar') {
-    return handleBarMenu(jid, ses, lower, text);
   }
 
   if (lower === 'salir' || (isOwner && !isAdminClientMode(jid, ses) && lower === 'cancelar')) {
@@ -2204,32 +2218,51 @@ function clientHelpText() {
 // errores de tipeo comunes y formas naturales del español de Andalucía/LATAM.
 const CLIENT_INTENT_KEYWORDS = {
   '1': ['menu', 'menú', 'carta', 'cartas', 'comida', 'que tienen', 'que tenes',
-        'que hay', 'productos', 'catalogo', 'catálogo', 'platos', 'arepas',
-        'combos', 'que venden', 'que ofrecen', 'precio', 'precios'],
+        'que hay', 'productos', 'catalogo', 'catálogo', 'platos', 'combos',
+        'que venden', 'que ofrecen', 'precio', 'precios', 'comprar', 'pedir',
+        'hacer pedido', 'hacer un pedido', 'realizar pedido', 'tienda',
+        'tienda online', 'web', 'pagina', 'página', 'enlace', 'link'],
   '2': ['pedido', 'pedidos', 'mi pedido', 'mis pedidos', 'estado', 'orden',
         'donde esta mi pedido', 'donde está mi pedido', 'seguimiento',
         'rastreo', 'cancelar', 'cancela', 'anular', 'anular pedido',
-        'ya llega', 'cuanto falta', 'cuánto falta', 'donde anda'],
+        'ya llega', 'cuanto falta', 'cuánto falta', 'donde anda',
+        'no ha llegado', 'no me llego', 'no me llegó', 'demora', 'tarda',
+        'retraso', 'retrasado', 'recibi', 'recibí', 'confirmacion',
+        'confirmación', 'numero de pedido', 'número de pedido'],
   '3': ['puntos', 'club', 'fidelidad', 'descuento', 'descuentos', 'recompensa',
         'recompensas', 'mis puntos', 'cuantos puntos', 'cuántos puntos',
-        'beneficios'],
+        'beneficios', 'saldo', 'canjear', 'canje', 'regalo', 'premio'],
   '4': ['cobertura', 'reparten', 'llegan', 'zona', 'zonas', 'direccion',
         'dirección', 'envian', 'envían', 'reparto', 'delivery', 'a donde',
-        'llegais', 'llegáis', 'envio', 'envío'],
-  '5': ['tienda', 'tienda online', 'comprar', 'pedir', 'hacer pedido',
-        'hacer un pedido', 'realizar pedido', 'web', 'online', 'pagina',
-        'página', 'sitio'],
-  '6': ['horario', 'horarios', 'abierto', 'cerrado', 'donde estan',
+        'llegais', 'llegáis', 'envio', 'envío', 'domicilio', 'a mi casa',
+        'mi barrio', 'mi calle', 'hasta aqui', 'hasta aquí'],
+  '5': ['horario', 'horarios', 'abierto', 'cerrado', 'donde estan',
         'dónde están', 'donde están', 'donde estais', 'telefono',
         'teléfono', 'contacto', 'numero', 'número', 'info',
-        'información', 'informacion', 'ubicacion', 'ubicación'],
+        'información', 'informacion', 'ubicacion', 'ubicación', 'direccion del local',
+        'dirección del local', 'cuando abren', 'cuando cierran', 'hoy abren',
+        'a que hora', 'abren hoy', 'cierran hoy'],
+  '6': ['pago', 'pagar', 'pagado', 'bizum', 'efectivo', 'dinero', 'cobrar',
+        'cobro', 'codigo de entrega', 'código de entrega', 'codigo entrega',
+        'pin de entrega', 'clave de entrega', 'comprobante', 'transferencia'],
   '7': ['agente', 'humano', 'persona', 'ayuda', 'ayudar', 'hablar', 'soporte',
         'asistencia', 'atencion', 'atención', 'reclamo', 'reclamacion',
-        'reclamación', 'queja', 'problema'],
+        'reclamación', 'queja', 'problema', 'asesor', 'operador', 'encargado',
+        'administrador', 'no entiendo', 'urgente', 'error'],
 };
 
+function normalizeIntentText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[¿?¡!.,;:()[\]{}"'`´]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function detectClientIntent(text) {
-  const normalized = String(text || '').toLowerCase().trim();
+  const normalized = normalizeIntentText(text);
   if (!normalized) return null;
   // Match prioritario: opción numérica.
   if (/^[1-7]$/.test(normalized)) return normalized;
@@ -2243,11 +2276,12 @@ function detectClientIntent(text) {
   for (const [opt, keywords] of Object.entries(CLIENT_INTENT_KEYWORDS)) {
     let score = 0;
     for (const kw of keywords) {
-      if (kw.length <= 4) {
+      const keyword = normalizeIntentText(kw);
+      if (keyword.length <= 4) {
         // Palabras cortas: exigir match como palabra entera para no romper.
-        const re = new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\b`, 'i');
+        const re = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\b`, 'i');
         if (re.test(normalized)) score += 2;
-      } else if (normalized.includes(kw)) {
+      } else if (normalized.includes(keyword)) {
         score += 3;
       }
     }
@@ -2267,17 +2301,12 @@ async function handleMainMenu(jid, ses, opcion) {
   const tiendaUrl = getTiendaUrl();
   switch (opcion) {
     case '1': {
-      try {
-        const catalogo = await catalogPreviewText();
-        return sendText(jid,
-          `🍽️ *Menú y combos disponibles*\n\n` +
-          `${catalogo}\n\n` +
-          `📱 Fotos, opciones de combos y pedido directo:\n👉 ${tiendaUrl}\n\n` +
-          `_Escribe *menu* para volver al inicio._`
-        );
-      } catch {
-        return sendText(jid, `No pude leer el catálogo ahora mismo. Puedes verlo aquí:\n👉 ${tiendaUrl}\n\n_Escribe *menu* para volver._`);
-      }
+      return sendText(jid,
+        `🌐 *Tienda online de ${businessName()}*\n\n` +
+        `Para evitar precios, stock u opciones desactualizadas, el chatbot no muestra productos ni recibe pedidos.\n\n` +
+        `Consulta el menú vigente y haz tu pedido aquí:\n👉 ${tiendaUrl}\n\n` +
+        `_Escribe *menu* para volver al inicio._`
+      );
     }
     case '2': {
       setClientState(ses, 'espera_numero_pedido');
@@ -2326,14 +2355,6 @@ async function handleMainMenu(jid, ses, opcion) {
       );
     }
     case '5': {
-      return sendText(jid,
-        `🌐 *Tienda online — ${businessName()}*\n\n` +
-        `👉 ${tiendaUrl}\n\n` +
-        `Catálogo completo, precios actualizados y pago seguro.\n\n` +
-        `¿Necesitas ayuda con el pedido? Escribe *7* y te atendemos. 😊`
-      );
-    }
-    case '6': {
       try {
         const data = await oxidianGet('/negocio');
         if (data.ok) {
@@ -2349,6 +2370,15 @@ async function handleMainMenu(jid, ses, opcion) {
       } catch {}
       return sendText(jid, `ℹ️ Información no disponible ahora mismo.\n\n🌐 Tienda: ${tiendaUrl}\n\n_Escribe *menu* para volver._`);
     }
+    case '6':
+      return sendText(jid,
+        `💳 *Pagos y entrega*\n\n` +
+        `El método de pago se elige al confirmar el pedido en la tienda online.\n` +
+        `Si pagas por Bizum, el repartidor debe verificarlo antes de entregar.\n` +
+        `El código de entrega solo debes comunicarlo cuando tengas el pedido delante.\n\n` +
+        `Si tienes un cobro dudoso o un problema con el código, escribe *AGENTE*.\n\n` +
+        `_Escribe *menu* para volver._`
+      );
     case '7': {
       if (isAdminJid(jid)) {
         return sendText(jid, `Estás en modo prueba de cliente desde un número admin.\n\nEscribe *admin* para volver al panel o *menu* para reiniciar.\n\n${menuPrincipal()}`);
@@ -3401,13 +3431,27 @@ app.post('/webhook/evolution', (req, res) => {
 });
 
 // Health check
-app.get('/health', (req, res) => {
-  res.json({
-    ok: true,
+app.get('/health', async (req, res) => {
+  let evolutionState = 'unreachable';
+  try {
+    const response = await fetch(
+      `${getEvolutionUrl()}/instance/connectionState/${getEvolutionInstance()}`,
+      {
+        headers: { apikey: getEvolutionKey() },
+        signal: AbortSignal.timeout(2500),
+      },
+    );
+    const data = await response.json().catch(() => ({}));
+    evolutionState = data.instance?.state || data.state || (response.ok ? 'unknown' : 'error');
+  } catch {}
+  const operational = evolutionState === 'open' || SIMULATE_EVO_SEND;
+  res.status(operational ? 200 : 503).json({
+    ok: operational,
     service: 'chatbot',
     engine: 'evolution-api',
-    evolution_url: EVO_URL,
-    instance: EVO_INSTANCE,
+    evolution_state: evolutionState,
+    connected: evolutionState === 'open',
+    instance: getEvolutionInstance(),
     simulate_send: SIMULATE_EVO_SEND,
     ts: new Date().toISOString(),
   });
@@ -3782,6 +3826,8 @@ module.exports = {
     closeHumanChatByClient,
     createHandoffRequest,
     deliverQueuedTranscript,
+    detectBarIntent,
+    detectClientIntent,
     drainInboundMessages,
     extractText,
     getHandoff,
@@ -3792,6 +3838,9 @@ module.exports = {
     queueAssignedHandoffMessage,
     queueHandoffMessage,
     getSesion,
+    menuPrincipal,
+    adminMenu,
+    barMenu,
     saveSesion,
     setAdminState,
     splitTextForSend,

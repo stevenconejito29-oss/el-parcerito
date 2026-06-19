@@ -14,7 +14,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import config
 from extensions import db, login_manager, csrf, limiter
-from flask_login import current_user
+from flask_login import current_user, login_required
 
 
 def _to_bool(val, default=False):
@@ -237,6 +237,40 @@ def create_app(env="default"):
         response.headers["Expires"] = "0"
         return response
 
+    @app.route("/manifest-staff.webmanifest")
+    @login_required
+    def staff_web_manifest():
+        from store_config import get_store_profile
+
+        profile = get_store_profile()
+        starts = {
+            "super_admin": "/superadmin/dashboard",
+            "admin": "/admin/dashboard",
+            "preparacion": "/preparador/pedidos",
+            "cocina": "/preparador/pedidos",
+            "staff": "/staff/",
+            "proveedor": "/proveedor/pedidos",
+            "repartidor": "/repartidor/ruta",
+        }
+        icon = profile["app_icon_url"] or "/static/pwa-icon-192.png"
+        manifest = {
+            "name": f"{profile['nombre']} · Trabajo",
+            "short_name": f"{profile['nombre'][:10]} Staff",
+            "description": "Espacio de trabajo operativo por rol.",
+            "id": f"oxidian-staff-{current_user.rol}",
+            "start_url": starts.get(current_user.rol, "/auth/login"),
+            "scope": "/",
+            "display": "standalone",
+            "background_color": "#111827",
+            "theme_color": profile["color_primario"],
+            "orientation": "portrait-primary",
+            "icons": [{"src": icon, "sizes": "any", "purpose": "any maskable"}],
+        }
+        return app.response_class(
+            json.dumps(manifest, ensure_ascii=False),
+            mimetype="application/manifest+json",
+        )
+
     @app.route("/health/live")
     def health_live():
         return {"status": "ok"}, 200
@@ -251,6 +285,31 @@ def create_app(env="default"):
             db.session.rollback()
             app.logger.exception("health_check: DB no disponible")
             return {"status": "error", "db": "unreachable"}, 503
+
+    @app.route("/health/integrations")
+    def health_integrations():
+        """Diagnóstico separado: una caída de WhatsApp no tumba la tienda web."""
+        from models import SiteConfig
+        import requests
+
+        result = {"status": "ok", "bot": "unreachable", "evolution": "unreachable"}
+        bot_url = SiteConfig.get("BOT_API_URL", os.environ.get("BOT_API_URL", "")).rstrip("/")
+        evolution_url = SiteConfig.get(
+            "EVOLUTION_API_URL", os.environ.get("EVOLUTION_API_URL", "")
+        ).rstrip("/")
+        try:
+            response = requests.get(f"{bot_url}/health", timeout=3)
+            result["bot"] = "ok" if response.ok else "degraded"
+        except requests.RequestException:
+            result["bot"] = "unreachable"
+        try:
+            response = requests.get(evolution_url, timeout=3)
+            result["evolution"] = "ok" if response.ok else "degraded"
+        except requests.RequestException:
+            result["evolution"] = "unreachable"
+        if "unreachable" in (result["bot"], result["evolution"]):
+            result["status"] = "degraded"
+        return result, 200
 
     @app.route("/webhook/evolution", methods=["POST"])
     @csrf.exempt
@@ -432,6 +491,19 @@ def create_app(env="default"):
             }
         }
 
+    @app.context_processor
+    def inject_admin_feature_access():
+        def has_admin_feature(feature):
+            if not current_user.is_authenticated:
+                return False
+            if current_user.rol == "super_admin":
+                return True
+            if current_user.rol != "admin":
+                return False
+            from models import AdminFeature
+            return AdminFeature.tiene_acceso(current_user.id, feature)
+        return {"has_admin_feature": has_admin_feature}
+
     # Blueprints
     from routes.auth import auth_bp
     from routes.public import public_bp
@@ -490,8 +562,9 @@ def create_app(env="default"):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        geolocation = "(self)" if request.path.startswith("/repartidor/") else "()"
         response.headers["Permissions-Policy"] = (
-            "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+            f"camera=(), geolocation={geolocation}, microphone=(), payment=(), usb=()"
         )
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Origin-Agent-Cluster"] = "?1"

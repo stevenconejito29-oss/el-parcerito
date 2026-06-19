@@ -43,7 +43,6 @@ CLAVES_DEFAULT = [
     ("BOT_API_URL",            _eget("BOT_API_URL",    "http://127.0.0.1:3000"),  "URL interna del bot"),
     ("BOT_PANEL_KEY",          _eget("BOT_PANEL_KEY"),              "Clave de panel para administrar el bot desde Oxidian"),
     ("BOT_ADMIN_NUMBERS",      "",                                  "Números adicionales autorizados para administrar el chatbot"),
-    ("BOT_ALLOW_ORDER_CREATE", _eget("BOT_ALLOW_ORDER_CREATE", "0"), "Permitir crear pedidos desde chatbot (1/0)"),
     ("BOT_OXIDIAN_URL",        _eget("BOT_OXIDIAN_URL", "http://127.0.0.1:5000"), "URL interna que usa el bot para llamar a Oxidian"),
     ("OXIDIAN_PUBLIC_URL",     _eget("OXIDIAN_PUBLIC_URL"),         "URL pública/local de Oxidian para clientes y enlaces"),
     ("EVOLUTION_API_URL",      _eget("EVOLUTION_API_URL", "http://evolution-api:8080"), "URL interna de Evolution API"),
@@ -144,7 +143,7 @@ def _validar_config_value(clave, valor):
     if len(valor) > 500:
         return False, clave, valor, "El valor no puede superar 500 caracteres."
 
-    if clave in {"VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA", "TIENDA_FORZAR_CERRADA", "BOT_ALLOW_ORDER_CREATE", "BIZUM_HABILITADO", "EFECTIVO_HABILITADO"}:
+    if clave in {"VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA", "TIENDA_FORZAR_CERRADA", "BIZUM_HABILITADO", "EFECTIVO_HABILITADO"}:
         if valor not in {"0", "1"}:
             return False, clave, valor, "Este ajuste solo acepta 0 o 1."
         return True, clave, valor, None

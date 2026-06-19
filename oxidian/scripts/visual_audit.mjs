@@ -5,7 +5,7 @@ import { chromium } from 'playwright-core';
 const ROOT = process.cwd();
 const BASE_URL = process.env.VISUAL_BASE_URL || 'http://127.0.0.1:5070';
 const OUTPUT_ROOT = process.env.VISUAL_OUTPUT_ROOT
-  || '/home/panzeta/Vídeos/juni/pantallazos_actuales';
+  || path.join(ROOT, 'docs', 'auditoria_roles');
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, '-');
 const OUTPUT_DIR = path.join(OUTPUT_ROOT, RUN_ID);
 const ENV = loadEnv(path.join(ROOT, '.env.cosmos.local'));
@@ -39,24 +39,40 @@ try {
   await capturePublic(publicPage);
 
   const superPage = await createPage();
-  await login(superPage, ENV.SUPERADMIN_EMAIL || 'carmocream15@gmail.com');
+  await login(
+    superPage,
+    process.env.VISUAL_SUPERADMIN_EMAIL || ENV.SUPERADMIN_EMAIL || 'carmocream15@gmail.com',
+    process.env.VISUAL_SUPERADMIN_PASSWORD || PASSWORD,
+  );
   await captureSuperadmin(superPage);
 
   const prepPage = await createPage();
-  await login(prepPage, 'preparacion@oxidian.com');
+  await login(
+    prepPage,
+    process.env.VISUAL_PREPARACION_EMAIL || 'preparacion@oxidian.com',
+    process.env.VISUAL_PREPARACION_PASSWORD || PASSWORD,
+  );
   await captureRole(prepPage, [
     ['preparacion-pedidos', '/preparador/pedidos'],
   ]);
 
   const deliveryPage = await createPage();
-  await login(deliveryPage, 'repartidor@oxidian.com');
+  await login(
+    deliveryPage,
+    process.env.VISUAL_REPARTIDOR_EMAIL || 'repartidor@oxidian.com',
+    process.env.VISUAL_REPARTIDOR_PASSWORD || PASSWORD,
+  );
   await captureRole(deliveryPage, [
     ['repartidor-ruta', '/repartidor/ruta'],
     ['repartidor-comisiones', '/repartidor/mis-comisiones'],
   ]);
 
   const providerPage = await createPage();
-  await login(providerPage, 'qa-visual-provider@oxidian.local');
+  await login(
+    providerPage,
+    process.env.VISUAL_PROVEEDOR_EMAIL || 'qa-visual-provider@oxidian.local',
+    process.env.VISUAL_PROVEEDOR_PASSWORD || PASSWORD,
+  );
   await captureRole(providerPage, [
     ['proveedor-pedidos', '/proveedor/pedidos'],
     ['proveedor-inventario', '/proveedor/inventario'],
@@ -88,15 +104,15 @@ async function createPage() {
     hasTouch: true,
     locale: 'es-ES',
     colorScheme: 'light',
-    serviceWorkers: 'block',
+    serviceWorkers: 'allow',
   });
   return context.newPage();
 }
 
-async function login(page, email) {
+async function login(page, email, password) {
   await page.goto(`${BASE_URL}/auth/login`, { waitUntil: 'domcontentloaded' });
   await page.locator('input[name="email"]').fill(email);
-  await page.locator('input[name="password"]').fill(PASSWORD);
+  await page.locator('input[name="password"]').fill(password);
   await Promise.all([
     page.waitForLoadState('domcontentloaded'),
     page.locator('button[type="submit"]').click(),

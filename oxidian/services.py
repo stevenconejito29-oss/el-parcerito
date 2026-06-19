@@ -286,6 +286,18 @@ def es_pedido_solo_bar(pedido: Order) -> bool:
     return True
 
 
+def lineas_preparacion_interna(pedido: Order) -> list:
+    """Items que realmente corresponden a cocina/almacén propios."""
+    if not pedido:
+        return []
+    lineas = []
+    for item in pedido.items:
+        snapshot = _snapshot_producto_item(item)
+        if not _coalesce_proveedor_id(snapshot, item):
+            lineas.append(item)
+    return lineas
+
+
 def _almacen_mixto_preparado(pedido: Order) -> bool:
     evento = OrderEvent.query.filter(
         OrderEvent.pedido_id == pedido.id,

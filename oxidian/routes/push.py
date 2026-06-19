@@ -6,7 +6,7 @@ Rutas Web Push — suscripción, baja y clave pública VAPID.
   POST /api/push/unsubscribe   → elimina una suscripción
   POST /api/push/test          → envía notificación de prueba (solo admin)
 """
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
 from extensions import db
 from models import PushSubscription, utcnow
@@ -25,7 +25,6 @@ def vapid_key():
 
 
 @push_bp.route("/subscribe", methods=["POST"])
-@login_required
 def subscribe():
     """Registra o actualiza la suscripción push del usuario actual."""
     data = request.get_json(silent=True) or {}
@@ -36,13 +35,16 @@ def subscribe():
     if not endpoint or not p256dh or not auth_key:
         return jsonify({"ok": False, "error": "Suscripción incompleta"}), 400
 
+    user_id = current_user.id if current_user.is_authenticated else session.get("push_cliente_id")
+    if not user_id:
+        return jsonify({"ok": False, "error": "Completa un pedido antes de activar avisos"}), 403
     ua = request.headers.get("User-Agent", "")[:300]
-    rol = current_user.rol if current_user.is_authenticated else None
+    rol = current_user.rol if current_user.is_authenticated else "cliente"
 
     # Upsert: si el endpoint ya existe, actualizar keys y user
     sub = PushSubscription.query.filter_by(endpoint=endpoint).first()
     if sub:
-        sub.user_id  = current_user.id
+        sub.user_id  = user_id
         sub.p256dh   = p256dh
         sub.auth     = auth_key
         sub.rol      = rol
@@ -50,7 +52,7 @@ def subscribe():
         sub.ultimo_uso = utcnow()
     else:
         sub = PushSubscription(
-            user_id=current_user.id,
+            user_id=user_id,
             endpoint=endpoint,
             p256dh=p256dh,
             auth=auth_key,
@@ -64,14 +66,14 @@ def subscribe():
 
 
 @push_bp.route("/unsubscribe", methods=["POST"])
-@login_required
 def unsubscribe():
     """Elimina la suscripción del endpoint enviado."""
     data = request.get_json(silent=True) or {}
     endpoint = data.get("endpoint", "").strip()
-    if endpoint:
+    user_id = current_user.id if current_user.is_authenticated else session.get("push_cliente_id")
+    if endpoint and user_id:
         PushSubscription.query.filter_by(
-            endpoint=endpoint, user_id=current_user.id
+            endpoint=endpoint, user_id=user_id
         ).delete()
         db.session.commit()
     return jsonify({"ok": True})

@@ -111,6 +111,7 @@
         Preparado y Empaquetado ✓
       </button>
     </form>
+    {% if pedido.estados_proveedor|length == 1 and es_pedido_solo_bar(pedido) %}
     <details class="mt-2">
       <summary class="text-xs cursor-pointer" style="color:var(--col-muted)">⚠️ Reportar pedido extraviado / perdido</summary>
       <form method="POST"
@@ -125,6 +126,7 @@
         </button>
       </form>
     </details>
+    {% endif %}
     {% endif %}
   </article>
   {% endif %}

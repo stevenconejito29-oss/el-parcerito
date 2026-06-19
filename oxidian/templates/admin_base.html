@@ -9,6 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="{{ brand.nombre }} Panel">
   <meta name="robots" content="noindex, nofollow">
+  <link rel="manifest" href="{{ url_for('staff_web_manifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='pwa-icon.svg') }}">
   <title>{% block title %}Panel — {{ brand.nombre }}{% endblock %}</title>
@@ -72,27 +73,27 @@
         <span class="ox-sb-section-label">⚡ Operaciones</span>
         <a href="{{ url_for('admin.dashboard') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏠</span>Dashboard</a>
         <a href="{{ url_for('admin.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📋</span>Pedidos</a>
-        <a href="{{ url_for('pos.venta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖥️</span>Punto de venta</a>
+        {% if has_admin_feature('pos') %}<a href="{{ url_for('pos.venta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖥️</span>Punto de venta</a>{% endif %}
       </div>
       <div class="ox-sb-divider"></div>
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">🛍️ Catálogo</span>
-        <a href="{{ url_for('admin.productos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🥟</span>Productos</a>
+        {% if has_admin_feature('productos') %}<a href="{{ url_for('admin.productos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🥟</span>Productos</a>
         <a href="{{ url_for('admin.categorias') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏷️</span>Categorías</a>
-        <a href="{{ url_for('admin.stock') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Stock</a>
-        <a href="{{ url_for('admin.proveedores') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏪</span>Proveedores</a>
+        <a href="{{ url_for('admin.proveedores') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏪</span>Proveedores</a>{% endif %}
+        {% if has_admin_feature('stock') %}<a href="{{ url_for('admin.stock') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Stock</a>{% endif %}
       </div>
       <div class="ox-sb-divider"></div>
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">💰 Finanzas</span>
-        <a href="{{ url_for('admin.caja') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Caja & Analytics</a>
-        <a href="{{ url_for('admin.pagos_staff') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💸</span>Pagos & Liquidaciones</a>
+        {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.caja') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Caja & Analytics</a>{% endif %}
+        {% if has_admin_feature('staff_pagos') %}<a href="{{ url_for('admin.pagos_staff') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💸</span>Pagos & Liquidaciones</a>{% endif %}
       </div>
       <div class="ox-sb-divider"></div>
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">🔧 Gestión</span>
         <a href="{{ url_for('admin.usuarios') }}" class="ox-sb-item"><span class="ox-sb-item-icon">👤</span>Usuarios & Equipo</a>
-        <a href="{{ url_for('admin.cupones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎟️</span>Marketing</a>
+        {% if has_admin_feature('cupones') or has_admin_feature('marketing') %}<a href="{{ url_for('admin.cupones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎟️</span>Marketing</a>{% endif %}
       </div>
 
       {% if rol == 'super_admin' %}

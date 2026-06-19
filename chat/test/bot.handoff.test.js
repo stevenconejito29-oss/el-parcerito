@@ -24,6 +24,8 @@ const {
   closeHumanChatByClient,
   createHandoffRequest,
   deliverQueuedTranscript,
+  detectBarIntent,
+  detectClientIntent,
   drainInboundMessages,
   extractText,
   getHandoff,
@@ -35,6 +37,9 @@ const {
   queueHandoffMessage,
   releaseHumanChat,
   saveSesion,
+  menuPrincipal,
+  adminMenu,
+  barMenu,
 } = _test;
 
 const adminA = '34600000001@s.whatsapp.net';
@@ -90,6 +95,51 @@ test('la sesión conserva el bar entre mensajes', () => {
   assert.equal(session.role, 'bar');
   assert.equal(session.bar_id, 17);
   assert.equal(session.bar_nombre, 'Bar Norte');
+});
+
+test('los tres menús están separados por rol', () => {
+  const clientMenu = menuPrincipal();
+  const globalMenu = adminMenu();
+  const providerMenu = barMenu({ nombre: 'Bar Norte' });
+
+  assert.match(clientMenu, /Asistente de/);
+  assert.match(clientMenu, /sin tomar pedidos por WhatsApp/i);
+  assert.doesNotMatch(clientMenu, /Productos y precios/);
+  assert.match(globalMenu, /Panel Super Admin/);
+  assert.match(globalMenu, /Productos y precios/);
+  assert.match(providerMenu, /Panel de Bar Norte/);
+  assert.match(providerMenu, /Marcar un pedido como preparado/);
+  assert.doesNotMatch(providerMenu, /Clientes y puntos/);
+});
+
+test('el cliente se dirige a la web y no recibe catálogo por WhatsApp', () => {
+  const menu = menuPrincipal();
+  assert.match(menu, /Abrir la tienda online/);
+  assert.doesNotMatch(menu, /Ver el menú y los combos/);
+  assert.doesNotMatch(menu, /precio/i);
+});
+
+test('reconoce frases naturales del cliente antes del menú genérico', () => {
+  const cases = [
+    ['quiero hacer un pedido', '1'],
+    ['donde está mi pedido y cuanto falta', '2'],
+    ['como puedo canjear mis recompensas', '3'],
+    ['hacen domicilio hasta mi barrio', '4'],
+    ['a qué hora cierran hoy', '5'],
+    ['tengo un problema con el código de entrega', '6'],
+    ['necesito hablar con un asesor', '7'],
+  ];
+  for (const [phrase, expected] of cases) {
+    assert.equal(detectClientIntent(phrase), expected, phrase);
+  }
+});
+
+test('el menú del bar reconoce sus funciones y preparado con número', () => {
+  assert.equal(detectBarIntent('ver pedidos pendientes'), '1');
+  assert.equal(detectBarIntent('PREPARADO 1024'), '2');
+  assert.equal(detectBarIntent('incidencias'), '3');
+  assert.equal(detectBarIntent('ajustar stock'), '4');
+  assert.equal(detectBarIntent('hablar con administrador'), '5');
 });
 
 test('un administrador no puede reclamar dos clientes activos', () => {

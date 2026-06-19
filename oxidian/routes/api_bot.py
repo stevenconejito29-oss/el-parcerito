@@ -124,8 +124,8 @@ def _json_bool(value):
 
 
 def _bot_order_create_enabled():
-    """La compra por chatbot es opt-in: por defecto el cliente solo consulta y pide humano."""
-    return _config_bool("BOT_ALLOW_ORDER_CREATE", "0")
+    """Los pedidos se crean exclusivamente en la tienda web o POS."""
+    return False
 
 
 def _combo_order_payload(producto, seleccion_item_ids):

@@ -157,7 +157,7 @@
   <div class="work-lane-head">
     <div>
       <h2 class="work-lane-title">Pendientes</h2>
-      <p class="work-lane-sub">Pedidos que esperan responsable o arranque.</p>
+      <p class="work-lane-sub">Preparación propia inmediata que espera responsable o arranque.</p>
     </div>
     <span class="work-count">{{ pendientes|length }}</span>
   </div>
@@ -195,7 +195,7 @@
 
       <div class="work-items">
 
-        {% for item in pedido.items %}
+        {% for item in lineas_preparacion_interna(pedido) %}
         <div class="work-item">
           {% include "_order_item_combo.html" %}
         </div>
@@ -273,7 +273,7 @@
         {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
       </div>
       <div class="work-items">
-        {% for item in pedido.items %}
+        {% for item in lineas_preparacion_interna(pedido) %}
         <div class="work-item">{% include "_order_item_combo.html" %}</div>
         {% endfor %}
       </div>
@@ -333,7 +333,7 @@
       </div>
 
       <div class="work-items">
-        {% for item in pedido.items %}
+        {% for item in lineas_preparacion_interna(pedido) %}
         <div class="work-item">
           {% include "_order_item_combo.html" %}
         </div>

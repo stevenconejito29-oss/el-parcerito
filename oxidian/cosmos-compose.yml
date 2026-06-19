@@ -180,6 +180,15 @@ services:
       CONFIG_SESSION_PHONE_VERSION: ${CONFIG_SESSION_PHONE_VERSION:-2.3000.1030415680}
       DOCKER_ENV: "true"
       TZ: ${TZ:-Europe/Madrid}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   # ── Gateway de dominio único ─────────────────────────────────────
   gateway:
@@ -190,7 +199,7 @@ services:
       oxidian:
         condition: service_healthy
       evolution-api:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./nginx.single-domain.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
@@ -223,8 +232,10 @@ services:
     container_name: evolution-setup
     restart: "no"
     depends_on:
-      - evolution-api
-      - oxidian
+      evolution-api:
+        condition: service_healthy
+      oxidian:
+        condition: service_healthy
     environment:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?define EVOLUTION_API_KEY}
       EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-oxidian}
@@ -235,20 +246,24 @@ services:
       - |
         set -eu
         echo "Esperando Evolution API..."
+        ready=0
         for i in $(seq 1 90); do
-          if curl -fsS http://evolution-api:8080/ >/dev/null 2>&1; then break; fi
+          if curl -fsS http://evolution-api:8080/ >/dev/null 2>&1; then ready=1; break; fi
           sleep 2
         done
+        [ "$$ready" = 1 ] || { echo "Evolution no quedó disponible"; exit 1; }
         echo "Creando instancia $$EVOLUTION_INSTANCE..."
         curl -sS -X POST http://evolution-api:8080/instance/create \
           -H "Content-Type: application/json" \
           -H "apikey: $$EVOLUTION_API_KEY" \
           -d "{\"instanceName\":\"$$EVOLUTION_INSTANCE\",\"integration\":\"WHATSAPP-BAILEYS\",\"qrcode\":true}" || true
+        curl -fsS http://evolution-api:8080/instance/fetchInstances \
+          -H "apikey: $$EVOLUTION_API_KEY" | grep -q "$$EVOLUTION_INSTANCE"
         echo "Configurando webhook..."
-        curl -sS -X POST "http://evolution-api:8080/webhook/set/$$EVOLUTION_INSTANCE" \
+        curl -fsS -X POST "http://evolution-api:8080/webhook/set/$$EVOLUTION_INSTANCE" \
           -H "Content-Type: application/json" \
           -H "apikey: $$EVOLUTION_API_KEY" \
-          -d "{\"webhook\":{\"enabled\":true,\"url\":\"http://oxidian:5000/webhook/evolution\",\"headers\":{\"X-Webhook-Secret\":\"$$WEBHOOK_SECRET\"},\"byEvents\":false,\"base64\":true,\"events\":[\"MESSAGES_UPSERT\",\"CONNECTION_UPDATE\",\"QRCODE_UPDATED\"]}}" || true
+          -d "{\"webhook\":{\"enabled\":true,\"url\":\"http://oxidian:5000/webhook/evolution\",\"headers\":{\"X-Webhook-Secret\":\"$$WEBHOOK_SECRET\"},\"byEvents\":false,\"base64\":true,\"events\":[\"MESSAGES_UPSERT\",\"CONNECTION_UPDATE\",\"QRCODE_UPDATED\"]}}"
         echo "Setup completado"
 
 volumes:

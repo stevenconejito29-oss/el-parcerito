@@ -113,10 +113,12 @@ def send_push_outbox_payload(payload: dict) -> tuple[bool, str | None]:
     if not pub or not priv:
         return False, "vapid_no_configurado"
 
+    from store_config import get_store_value
+    email = get_store_value("EMAIL_CONTACTO") or "admin@example.invalid"
     ok, expired, error = _send_one_result(
         sub,
         push_payload,
-        vapid_claims={"sub": "mailto:info@oxidian.app"},
+        vapid_claims={"sub": f"mailto:{email}"},
         priv_key=priv,
     )
     if expired:
@@ -183,15 +185,16 @@ def notify_order_state(pedido) -> None:
     if not entry:
         return
     title, body = entry
-    notify_user(pedido.cliente_id, title, body, url=f"/perfil")
+    notify_user(pedido.cliente_id, title, body, url="/")
 
 
 def _build_payload(title, body, url, icon=None, badge=None) -> dict:
+    from store_config import get_store_value
     return {
         "title": title,
         "body": body,
         "url": url,
-        "icon": icon or "/static/pwa-icon-192.png",
+        "icon": icon or get_store_value("APP_ICON_URL") or "/static/pwa-icon-192.png",
         "badge": badge or "/static/favicon-32.png",
         "timestamp": int(__import__("time").time() * 1000),
     }

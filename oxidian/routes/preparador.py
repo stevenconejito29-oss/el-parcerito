@@ -6,7 +6,7 @@ from extensions import db, get_or_404
 from models import Order, OrderEvent, User
 from services import (avanzar_estado_pedido, distribuir_repartidor,
                       redistribuir_pendientes_sin_asignar,
-                      sincronizar_proveedores_pedido)
+                      sincronizar_proveedores_pedido, lineas_preparacion_interna)
 
 preparador_bp = Blueprint("preparador", __name__)
 logger = logging.getLogger(__name__)
@@ -187,7 +187,8 @@ def pedidos():
                            companeros=companeros,
                            disponible=disponible,
                            modo_operativo=modo_operativo,
-                           almacen_listo=almacen_listo)
+                           almacen_listo=almacen_listo,
+                           lineas_preparacion_interna=lineas_preparacion_interna)
 
 
 @preparador_bp.route("/pedidos/<int:pedido_id>/tomar", methods=["POST"])

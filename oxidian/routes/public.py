@@ -1177,6 +1177,7 @@ def checkout():
         session["guest_order_tokens"] = guest_tokens
         session["last_guest_order_id"] = pedido.id
         session["last_guest_order_token"] = token
+        session["push_cliente_id"] = cliente.id
 
         # La notificación queda en la misma transacción del pedido.
         enviar_whatsapp_estado(pedido)

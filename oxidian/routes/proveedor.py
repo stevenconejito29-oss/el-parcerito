@@ -77,6 +77,7 @@ def pedidos():
         armando=armando,
         prov_id=prov_id,
         lineas_proveedor_pedido=lineas_proveedor_pedido,
+        es_pedido_solo_bar=es_pedido_solo_bar,
         proveedores=(
             Proveedor.query.filter_by(activo=True).order_by(Proveedor.nombre).all()
             if not prov_id else []
@@ -358,6 +359,12 @@ def marcar_extraviado(pedido_id):
         ).first()
         if not ops:
             flash("Este pedido no es de tu bar.", "danger")
+            return redirect(url_for("proveedor.pedidos"))
+        if not es_pedido_solo_bar(pedido) or len(pedido.estados_proveedor) != 1:
+            flash(
+                "En pedidos mixtos reporta la incidencia; solo administración puede cancelar el pedido completo.",
+                "danger",
+            )
             return redirect(url_for("proveedor.pedidos"))
     if pedido.estado in ("entregado", "cancelado"):
         flash(f"El pedido {pedido.numero_pedido} ya estaba en estado {pedido.estado}.", "warning")
