@@ -5,13 +5,23 @@ from __future__ import annotations
 
 import json
 import sys
+import uuid
+from decimal import Decimal
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app import create_app
-from models import Product
+from extensions import db
+from models import (
+    Order,
+    OrderItem,
+    Product,
+    User,
+    metadata_item_pedido,
+)
+from services import es_pedido_solo_bar, sincronizar_proveedores_pedido
 
 
 def by_code(code):
@@ -88,12 +98,64 @@ def main():
         ).get_json()
         assert payload["ok"] is False
 
+        customer = User(
+            nombre="Cliente smoke origen",
+            email=f"smoke-origin-{uuid.uuid4().hex}@test.invalid",
+            rol="cliente",
+            activo=True,
+        )
+        customer.set_password(uuid.uuid4().hex)
+        db.session.add(customer)
+        db.session.flush()
+        routing = {}
+        for code, expected_provider in (
+            ("empanada-own", None),
+            ("burger-north", burger_north.proveedor_despachador_id),
+            ("perro-south", perro_south.proveedor_despachador_id),
+        ):
+            product = by_code(code)
+            order = Order(
+                numero_pedido=f"Q{uuid.uuid4().hex[:12].upper()}",
+                cliente_id=customer.id,
+                estado="pendiente",
+                origen="online",
+                subtotal=Decimal(str(product.precio_final)),
+                descuento=Decimal("0"),
+                total=Decimal(str(product.precio_final)),
+                metodo_pago="efectivo",
+                direccion_entrega="Calle Smoke 1, Carmona",
+            )
+            db.session.add(order)
+            db.session.flush()
+            db.session.add(OrderItem(
+                pedido_id=order.id,
+                producto_id=product.id,
+                cantidad=1,
+                precio_unit=Decimal(str(product.precio_final)),
+                subtotal=Decimal(str(product.precio_final)),
+                metadata_json=json.dumps(
+                    metadata_item_pedido(product),
+                    ensure_ascii=False,
+                ),
+            ))
+            db.session.flush()
+            sincronizar_proveedores_pedido(order)
+            db.session.flush()
+            providers = {state.proveedor_id for state in order.estados_proveedor}
+            expected = {expected_provider} if expected_provider else set()
+            assert providers == expected
+            assert es_pedido_solo_bar(order) is bool(expected_provider)
+            routing[code] = sorted(providers)
+        db.session.rollback()
+
         print(json.dumps({
             "menu_arepa_cards": 1,
             "menu_cola_cards": 1,
             "variant_switched_to": arepa_north.id,
             "cross_provider_rejected": True,
             "cross_combo_rejected": True,
+            "order_routing": routing,
+            "transient_orders_rolled_back": True,
         }, ensure_ascii=False))
 
 
