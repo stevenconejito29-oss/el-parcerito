@@ -27,6 +27,10 @@ def main():
     with app.app_context():
         arepa_own = by_code("arepa-own")
         arepa_north = by_code("arepa-north")
+        arepa_south = by_code("arepa-south")
+        cola_own = by_code("cola-own")
+        cola_north = by_code("cola-north")
+        cola_south = by_code("cola-south")
         burger_north = by_code("burger-north")
         perro_south = by_code("perro-south")
         combo_own = by_code("combo-own")
@@ -36,8 +40,12 @@ def main():
         menu = client.get("/")
         assert menu.status_code == 200
         html = menu.get_data(as_text=True)
-        assert html.count("Arepa clásica QA") == 1, "Arepa repetida en menú"
-        assert html.count("Cola 330 ml QA") == 1, "Cola repetida en menú"
+        assert f'href="/producto/{arepa_own.id}"' in html
+        assert f'href="/producto/{arepa_north.id}"' not in html
+        assert f'href="/producto/{arepa_south.id}"' not in html
+        assert f'href="/producto/{cola_own.id}"' in html
+        assert f'href="/producto/{cola_north.id}"' not in html
+        assert f'href="/producto/{cola_south.id}"' not in html
 
         response = client.post(
             f"/carrito/agregar/{burger_north.id}",
