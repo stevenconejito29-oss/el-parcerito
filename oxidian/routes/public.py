@@ -121,6 +121,49 @@ def _canjeables_payload(cliente):
     }
 
 
+def _variantes_catalogo_unificadas(productos, origen_preferido=None):
+    """Muestra una variante vendible por clave sin cruzar inventarios.
+
+    La consulta ya viene ordenada con stock propio primero y proveedores
+    después. Conservamos la primera variante disponible de cada grupo; el
+    carrito recibe su ID concreto y todo el pedido queda ligado a ese origen.
+    """
+    grupos = {}
+    for producto in productos:
+        grupos.setdefault(producto.clave_catalogo, []).append(producto)
+    elegidos = []
+    for variantes in grupos.values():
+        preferida = next(
+            (p for p in variantes if p.origen_operativo_key == origen_preferido),
+            None,
+        )
+        elegidos.append(preferida or variantes[0])
+    return elegidos
+
+
+def _variante_para_origen(producto, origen):
+    if not origen or producto.origen_operativo_key == origen:
+        return producto
+    candidates = Product.query.filter_by(activo=True).all()
+    for candidate in candidates:
+        if (
+            candidate.clave_catalogo == producto.clave_catalogo
+            and candidate.origen_operativo_key == origen
+            and candidate.visible_ahora
+            and candidate.disponible_para_venta()
+            and (
+                not candidate.proveedor_despachador_id
+                or (
+                    candidate.proveedor_despachador
+                    and candidate.proveedor_despachador.activo
+                    and candidate.proveedor_despachador.esta_abierto_ahora
+                )
+            )
+        ):
+            return candidate
+    return None
+
+
 # ─── CATÁLOGO ────────────────────────────────
 
 @public_bp.route("/")
@@ -167,6 +210,10 @@ def index():
             p.nombre,
         ),
     )
+    carrito = session.get("carrito", {})
+    origenes_carrito = _cart_origins(carrito)
+    origen_preferido = next(iter(origenes_carrito), None) if len(origenes_carrito) == 1 else None
+    productos = _variantes_catalogo_unificadas(productos, origen_preferido)
 
     menu_items = MenuConfig.query.filter(
         MenuConfig.pagina.in_(["home", "menu"]),
@@ -188,7 +235,6 @@ def index():
         .order_by(ZonaEntrega.orden, ZonaEntrega.nombre).first()
 
     # Subtotal del carrito para el botón flotante
-    carrito = session.get("carrito", {})
     _, carrito_subtotal = _build_items_from_carrito(carrito)
 
     return render_template("public/index.html",
@@ -227,6 +273,21 @@ def whatsapp():
 def producto_detalle(producto_id):
     from models import ComboItem
     producto = get_or_404(Product, producto_id)
+    if (
+        not producto.activo
+        or not producto.visible_ahora
+        or not producto.disponible_para_venta()
+        or (
+            producto.proveedor_despachador_id
+            and (
+                not producto.proveedor_despachador
+                or not producto.proveedor_despachador.activo
+                or not producto.proveedor_despachador.esta_abierto_ahora
+            )
+        )
+    ):
+        flash("Este producto no está disponible ahora.", "warning")
+        return redirect(url_for("public.index"))
     reviews = Review.query.filter_by(producto_id=producto_id, aprobada=True).all()
     combo_items = ComboItem.query.filter_by(combo_id=producto_id)\
         .order_by(ComboItem.orden.asc(), ComboItem.id.asc()).all() if producto.es_combo else []
@@ -289,9 +350,28 @@ def _cart_prep_families(carrito, exclude_key=None):
     productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all()
     return {_prep_family(p) for p in productos}
 
+def _cart_origins(carrito, exclude_key=None):
+    if not carrito:
+        return set()
+    ids = [
+        int(pid) for pid in carrito.keys()
+        if str(pid) != str(exclude_key) and str(pid).isdigit()
+    ]
+    if not ids:
+        return set()
+    productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all()
+    return {p.origen_operativo_key for p in productos}
+
 
 def _items_delivery_families(items):
     return {_delivery_family(item["producto"]) for item in items if item.get("producto")}
+
+
+def _items_origins(items):
+    return {
+        item["producto"].origen_operativo_key
+        for item in items if item.get("producto")
+    }
 
 
 @public_bp.route("/carrito/agregar/<int:producto_id>", methods=["POST"])
@@ -307,12 +387,27 @@ def agregar_carrito(producto_id):
     producto = get_or_404(Product, producto_id)
     if not producto.activo or not producto.visible_ahora:
         return _err("Este producto no está disponible ahora.")
+    if producto.proveedor_despachador_id and (
+        not producto.proveedor_despachador
+        or not producto.proveedor_despachador.activo
+        or not producto.proveedor_despachador.esta_abierto_ahora
+    ):
+        return _err("El establecimiento que prepara este producto está cerrado ahora.")
     cart_max_qty = _cart_max_qty()
     try:
         cantidad = max(1, min(cart_max_qty, int(request.form.get("cantidad", 1))))
     except (ValueError, TypeError):
         cantidad = 1
     carrito = _get_carrito()
+    origenes_actuales = _cart_origins(carrito)
+    if len(origenes_actuales) == 1 and producto.origen_operativo_key not in origenes_actuales:
+        producto = _variante_para_origen(producto, next(iter(origenes_actuales)))
+        if not producto:
+            return _err(
+                "Este producto no está disponible en el establecimiento de tu pedido actual. "
+                "Finaliza ese pedido antes de cambiar de origen."
+            )
+        producto_id = producto.id
     key = str(producto_id)
 
     # Bloqueo 1: no mezclar inmediato con programado
@@ -336,6 +431,13 @@ def agregar_carrito(producto_id):
         return _err(
             "Los productos de cocina se preparan al momento y requieren un pedido independiente. "
             "Finaliza primero tu pedido de almacén."
+        )
+
+    origenes_actuales = _cart_origins(carrito, exclude_key=key)
+    if origenes_actuales and producto.origen_operativo_key not in origenes_actuales:
+        return _err(
+            "Cada pedido debe salir completo de un solo establecimiento. "
+            "Finaliza este pedido antes de añadir productos de otro origen."
         )
 
     nueva_cantidad_total = int(carrito.get(key, 0) or 0) + cantidad
@@ -728,6 +830,13 @@ def checkout():
             "warning",
         )
         return redirect(url_for("public.ver_carrito"))
+    if len(_items_origins(items)) > 1:
+        flash(
+            "Tu carrito mezcla productos de distintos establecimientos. "
+            "Sepáralos en pedidos independientes.",
+            "warning",
+        )
+        return redirect(url_for("public.ver_carrito"))
     zonas = ZonaEntrega.query.filter_by(activo=True)\
         .order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
 
@@ -1071,7 +1180,7 @@ def checkout():
             response_status=302,
             response_body=json.dumps({"order_id": pedido.id, "numero": pedido.numero_pedido}),
             order_id=pedido.id,
-            user_id=user_id_idem,
+            user_id=None,
             expira_en=_utcnow() + IDEMPOTENCY_TTL,
         ))
 

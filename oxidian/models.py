@@ -549,6 +549,22 @@ class Product(db.Model):
         return "Stock propio"
 
     @property
+    def origen_operativo_key(self):
+        return (
+            f"proveedor:{self.proveedor_despachador_id}"
+            if self.proveedor_despachador_id else "propio"
+        )
+
+    @property
+    def stock_operativo_total(self):
+        if self.es_combo:
+            return self._combo_proveedor_stock_total() if self.proveedor_despachador_id else self.combo_stock_total
+        if self.proveedor_despachador_id:
+            fila = self._proveedor_producto_fila(for_update=False)
+            return int(fila.stock or 0) if fila and fila.activo else 0
+        return self.stock_total
+
+    @property
     def admin_nombre_operativo(self):
         return f"{self.nombre} · #{self.id} · {self.origen_operativo_label}"
 
@@ -602,6 +618,10 @@ class Product(db.Model):
         return min(capacidades) if capacidades else 999999
 
     def disponible_para_venta(self, cantidad=1):
+        if self.proveedor_despachador_id and (
+            not self.proveedor_despachador or not self.proveedor_despachador.activo
+        ):
+            return False
         if self.es_combo:
             componentes = list(self.combo_items)
             if not componentes:
@@ -785,7 +805,13 @@ class Product(db.Model):
 
         for producto_id, requerido in requeridos.items():
             producto = db.session.get(Product, producto_id)
-            if not producto or not producto.usa_stock_propio:
+            if not producto:
+                raise ValueError(f"Componente inválido en combo '{self.nombre}'")
+            if producto.proveedor_despachador_id:
+                raise ValueError(
+                    f"El combo propio '{self.nombre}' no puede usar el componente externo '{producto.nombre}'"
+                )
+            if not producto.usa_stock_propio:
                 continue
             if int(producto.stock_total or 0) < requerido:
                 raise ValueError(f"Stock insuficiente para '{producto.nombre}'")
@@ -1021,6 +1047,17 @@ class Product(db.Model):
     def set_atributos(self, data: dict):
         self.atributos_json = json.dumps(data, ensure_ascii=False) if data else None
 
+    @property
+    def clave_catalogo(self):
+        """Agrupa variantes equivalentes sin mezclar sus inventarios.
+
+        Dos productos solo comparten tarjeta pública cuando el administrador
+        les asigna expresamente el mismo ``catalog_key`` en atributos. Cada
+        variante conserva su ID y, por tanto, su origen operativo real.
+        """
+        key = str(self.get_atributos().get("catalog_key") or "").strip().lower()
+        return f"catalog:{key}" if key else f"product:{self.id}"
+
     def descontar_stock(self, cantidad):
         """Descuenta stock FIFO por fecha de caducidad (más próxima primero).
         Usa SELECT FOR UPDATE en PostgreSQL para evitar race conditions bajo carga concurrente."""
@@ -1188,6 +1225,11 @@ class Product(db.Model):
                 raise ValueError(f"Componente inactivo en combo '{self.nombre}'")
             if not item.componente:
                 raise ValueError(f"Componente inválido en combo '{self.nombre}'")
+            if item.componente.proveedor_despachador_id:
+                raise ValueError(
+                    f"El combo propio '{self.nombre}' no puede usar el componente externo "
+                    f"'{item.componente.nombre}'"
+                )
             if not item.componente.usa_stock_propio:
                 continue
             requeridos[item.producto_id] = requeridos.get(item.producto_id, 0) + item.cantidad * cantidad

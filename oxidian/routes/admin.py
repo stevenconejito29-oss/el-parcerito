@@ -1438,7 +1438,11 @@ def editar_proveedor(proveedor_id):
 @admin_required
 def stock():
     lotes = Stock.query.join(Product).order_by(Stock.fecha_caducidad.asc().nullslast()).all()
-    productos = Product.query.filter_by(activo=True).order_by(Product.nombre).all()
+    productos = Product.query.filter(
+        Product.activo.is_(True),
+        Product.es_combo.is_(False),
+        Product.proveedor_despachador_id.is_(None),
+    ).order_by(Product.nombre).all()
     return render_template("admin/stock.html",
                            lotes=lotes, productos=productos,
                            alertas_dias=current_app.config["ALERTA_CADUCIDAD_DIAS"])
@@ -1449,7 +1453,12 @@ def stock():
 def agregar_stock():
     producto_id = request.form.get("producto_id", type=int)
     cantidad = request.form.get("cantidad", type=int)
-    if not producto_id or not db.session.get(Product, producto_id):
+    producto = db.session.get(Product, producto_id) if producto_id else None
+    if (
+        not producto
+        or producto.es_combo
+        or producto.proveedor_despachador_id is not None
+    ):
         flash("Producto inválido.", "danger")
         return redirect(url_for("admin.stock"))
     if cantidad is None or cantidad <= 0:
@@ -1732,6 +1741,30 @@ def _mensaje_componentes_faltantes_proveedor(faltantes):
     return (
         "El proveedor despachador no tiene estos SKUs activos en su inventario: "
         f"{nombres}. Agregalos primero en Proveedores."
+    )
+
+def _componentes_externos_en_combo_propio(producto_ids):
+    ids = []
+    for raw in producto_ids or []:
+        try:
+            pid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if pid > 0 and pid not in ids:
+            ids.append(pid)
+    if not ids:
+        return []
+    return Product.query.filter(
+        Product.id.in_(ids),
+        Product.proveedor_despachador_id.isnot(None),
+    ).order_by(Product.nombre.asc()).all()
+
+
+def _mensaje_componentes_externos_combo_propio(componentes):
+    nombres = ", ".join(p.admin_nombre_operativo for p in componentes)
+    return (
+        "Un combo de stock propio no puede usar componentes despachados por un bar: "
+        f"{nombres}."
     )
 
 
@@ -2182,6 +2215,19 @@ def nuevo_combo():
                 proveedores=proveedores,
                 combo_limits=combo_limits,
             )
+    else:
+        externos = _componentes_externos_en_combo_propio(prod_ids)
+        if externos:
+            db.session.rollback()
+            flash(_mensaje_componentes_externos_combo_propio(externos), "danger")
+            return render_template(
+                "admin/nuevo_combo.html",
+                categorias=categorias,
+                productos_simples=productos_simples,
+                proveedores=proveedores,
+                combo_limits=combo_limits,
+                disponibilidad_por_origen=disponibilidad_por_origen,
+            )
 
     # ── Procesar componentes ──
     componentes_para_agregar = []
@@ -2513,21 +2559,26 @@ def editar_producto(producto_id):
     if p.es_combo:
         campos["es_combo"] = True
         campos["tipo_producto"] = "combo"
+        componentes_ids = [
+            item.producto_id for item in ComboItem.query.filter_by(combo_id=p.id).all()
+        ]
         if campos.get("canjeable_con_puntos") and ComboItem.query.filter_by(
             combo_id=p.id, es_seleccionable=True
         ).first():
             flash("Los combos con grupos seleccionables no pueden marcarse como canje directo con puntos.", "danger")
             return redirect(url_for("admin.productos"))
         if campos.get("proveedor_despachador_id"):
-            componentes_ids = [
-                item.producto_id for item in ComboItem.query.filter_by(combo_id=p.id).all()
-            ]
             faltantes = _componentes_faltantes_proveedor(
                 campos["proveedor_despachador_id"],
                 componentes_ids,
             )
             if faltantes:
                 flash(_mensaje_componentes_faltantes_proveedor(faltantes), "danger")
+                return redirect(url_for("admin.productos"))
+        else:
+            externos = _componentes_externos_en_combo_propio(componentes_ids)
+            if externos:
+                flash(_mensaje_componentes_externos_combo_propio(externos), "danger")
                 return redirect(url_for("admin.productos"))
     precio_anterior = float(p.precio)
     for attr, val in campos.items():
@@ -2610,6 +2661,9 @@ def agregar_componente_combo(producto_id):
         if faltantes:
             flash(_mensaje_componentes_faltantes_proveedor(faltantes), "danger")
             return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
+    elif componente.proveedor_despachador_id:
+        flash(_mensaje_componentes_externos_combo_propio([componente]), "danger")
+        return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
     es_seleccionable = bool(request.form.get("es_seleccionable"))
     grupo_seleccion = request.form.get("grupo_seleccion", "").strip() or None
     max_selecciones = request.form.get("max_selecciones", 1, type=int) or 1

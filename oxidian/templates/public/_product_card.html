@@ -28,8 +28,8 @@
       <span class="ep-cbadge ep-cbadge-encargo">📆 Fecha fija{% if p.fecha_llegada %}: {{ p.fecha_llegada.strftime('%d/%m') }}{% endif %}</span>
       {% endif %}
       {% if p.canjeable_con_puntos %}<span class="ep-cbadge ep-cbadge-puntos">⭐</span>{% endif %}
-      {% if p.stock_mostrar_en_web and p.stock_total <= 5 and p.stock_total > 0 %}
-      <span class="ep-cbadge ep-cbadge-urgente">⚡ Quedan {{ p.stock_total }}</span>
+      {% if p.stock_mostrar_en_web and p.stock_operativo_total <= 5 and p.stock_operativo_total > 0 %}
+      <span class="ep-cbadge ep-cbadge-urgente">⚡ Quedan {{ p.stock_operativo_total }}</span>
       {% endif %}
     </div>
     {% if _qty_cart > 0 %}

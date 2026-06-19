@@ -196,12 +196,37 @@ def _combo_order_payload(producto, seleccion_item_ids):
 
 
 def _producto_disponible_para_bot(producto):
+    if not producto:
+        return False
+    proveedor_ok = (
+        not producto.proveedor_despachador_id
+        or (
+            producto.proveedor_despachador
+            and producto.proveedor_despachador.activo
+            and producto.proveedor_despachador.esta_abierto_ahora
+        )
+    )
     return bool(
         producto
         and producto.activo
         and producto.visible_ahora
+        and proveedor_ok
         and producto.disponible_para_venta()
     )
+
+def _catalogo_unificado_para_bot():
+    candidatos = Product.query.filter_by(activo=True).all()
+    candidatos.sort(key=lambda p: (
+        0 if p.es_combo else 1,
+        0 if not p.proveedor_despachador_id else 1,
+        p.nombre,
+        p.id,
+    ))
+    productos_por_clave = {}
+    for producto in candidatos:
+        if _producto_disponible_para_bot(producto):
+            productos_por_clave.setdefault(producto.clave_catalogo, producto)
+    return list(productos_por_clave.values())
 
 
 def _motivos_no_disponible(producto):
@@ -260,7 +285,7 @@ def _producto_catalogo_payload(producto, incluir_diagnostico=False):
         "atributos": producto.get_atributos() if hasattr(producto, "get_atributos") else {},
         "categoria_id": producto.categoria_id,
         "categoria_nombre": producto.categoria.nombre if producto.categoria else "",
-        "stock_disponible": producto.stock_total,
+        "stock_disponible": producto.stock_operativo_total,
         "stock_mostrar_en_web": bool(producto.stock_mostrar_en_web),
         "imagen_url": producto.imagen_url or "",
         "canjeable_con_puntos": bool(producto.canjeable_con_puntos),
@@ -376,7 +401,7 @@ def catalogo():
     try:
         nombre_negocio = SiteConfig.get("NOMBRE_NEGOCIO", "Oxidian")
         categorias = Categoria.query.filter_by(activo=True).all()
-        productos = Product.query.filter_by(activo=True).all()
+        productos = _catalogo_unificado_para_bot()
         return jsonify({
             "ok": True,
             "negocio": nombre_negocio,
@@ -771,6 +796,19 @@ def crear_pedido():
                 "ok": False,
                 "code": "MIXED_PREPARATION_CHANNELS",
                 "error": "No mezcles productos de cocina y almacén en el mismo pedido.",
+            }), 400
+        origenes = {
+            item["producto"].origen_operativo_key
+            for item in items_procesados
+        }
+        if len(origenes) > 1:
+            return jsonify({
+                "ok": False,
+                "code": "MIXED_FULFILLMENT_ORIGINS",
+                "error": (
+                    "Cada pedido debe salir completo de un solo establecimiento. "
+                    "Crea un pedido independiente para cada origen."
+                ),
             }), 400
 
         if producto_canje_id:
@@ -1405,8 +1443,7 @@ def catalogo_completo():
     El bot usa esto para mostrar información precisa al cliente.
     """
     try:
-        productos = Product.query.filter_by(activo=True).all()
-        visibles  = [p for p in productos if _producto_disponible_para_bot(p)]
+        visibles = _catalogo_unificado_para_bot()
         return jsonify({
             "ok": True,
             "total": len(visibles),
@@ -1419,7 +1456,7 @@ def catalogo_completo():
                     "tipo_entrega":          p.tipo_entrega or "inmediato",
                     "fecha_llegada":         p.fecha_llegada.isoformat() if p.fecha_llegada else None,
                     "categoria":             p.categoria.nombre if p.categoria else "",
-                    "stock":                 p.combo_stock_total if p.es_combo else p.stock_total,
+                    "stock":                 p.stock_operativo_total,
                     "es_combo":              bool(p.es_combo),
                     "combo_items": [
                         {
