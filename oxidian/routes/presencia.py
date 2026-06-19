@@ -8,10 +8,15 @@ presencia_bp = Blueprint("presencia", __name__)
 @presencia_bp.route("/config-publica", methods=["GET"])
 def config_publica():
     """Configuración pública (sin auth) para widgets del frontend."""
-    from models import SiteConfig
+    from store_config import get_store_profile
+    profile = get_store_profile()
     return jsonify({
-        "telefono": SiteConfig.get("TELEFONO_NEGOCIO", ""),
-        "nombre": SiteConfig.get("NOMBRE_NEGOCIO", ""),
+        "telefono": profile["telefono"],
+        "nombre": profile["nombre"],
+        "bizum_telefono": profile["bizum_telefono"],
+        "bizum_habilitado": profile["bizum_habilitado"],
+        "efectivo_habilitado": profile["efectivo_habilitado"],
+        "ciudad": profile["ciudad"],
     })
 
 

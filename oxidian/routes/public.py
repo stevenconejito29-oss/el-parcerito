@@ -23,6 +23,7 @@ from services import (distribuir_pedido,
                        asignar_zona_por_direccion,
                        registrar_uso_afiliado, get_puntos_config,
                        registrar_pedido_creado, sincronizar_proveedores_pedido,
+                       encolar_notificaciones_proveedores_pedido,
                        tienda_abierta_en_horario)
 from pricing_service import calcular_precio
 from loyalty_service import (
@@ -258,7 +259,7 @@ def whatsapp():
         flash("WhatsApp no esta configurado todavia.", "warning")
         return redirect(url_for("public.index"))
 
-    nombre = SiteConfig.get("NOMBRE_NEGOCIO", "") or "Oxidian"
+    nombre = SiteConfig.get("NOMBRE_NEGOCIO", "") or "Mi tienda"
     public_url = (
         SiteConfig.get("TIENDA_URL", "")
         or SiteConfig.get("OXIDIAN_PUBLIC_URL", "")
@@ -895,6 +896,13 @@ def checkout():
 
         direccion = request.form.get("direccion", "").strip()
         metodo_pago = normalizar_metodo_pago(request.form.get("metodo_pago"))
+        if metodo_pago == "efectivo" and SiteConfig.get("EFECTIVO_HABILITADO", "1") != "1":
+            flash("El pago en efectivo no está habilitado.", "danger")
+            return redirect(url_for("public.checkout"))
+        if metodo_pago == "bizum":
+            if SiteConfig.get("BIZUM_HABILITADO", "1") != "1" or not SiteConfig.get("BIZUM_TELEFONO", ""):
+                flash("El pago mediante Bizum no está habilitado.", "danger")
+                return redirect(url_for("public.checkout"))
         notas = request.form.get("notas", "").strip()[:1000]
         # Agregar personalizaciones de combos a las notas
         notas_combo = session.get("notas_combo", {})
@@ -928,7 +936,7 @@ def checkout():
                     return redirect(url_for("public.ver_carrito"))
         # Validar teléfono de invitado (mínimo 7, máximo 20 dígitos/caracteres)
         if telefono_invitado and not telefono_valido(telefono_invitado):
-            flash("Teléfono inválido. Usa formato internacional (+34 600 000 000).", "danger")
+            flash("Teléfono inválido. Usa el prefijo internacional de tu país.", "danger")
             return redirect(url_for("public.checkout"))
 
         if not zonas:
@@ -1151,6 +1159,8 @@ def checkout():
             return redirect(url_for("public.ver_carrito"))
         db.session.flush()
         sincronizar_proveedores_pedido(pedido)
+        db.session.flush()
+        encolar_notificaciones_proveedores_pedido(pedido)
 
         # Los puntos se otorgan al entregar (repartidor.confirmar_entrega → award_points_on_delivery)
         # No se suman aquí para evitar que pedidos cancelados o no entregados acumulen puntos

@@ -3180,6 +3180,7 @@ def eliminar_resena(review_id):
 @admin_bp.route("/usuarios")
 @admin_required
 def usuarios():
+    from models import Proveedor
     q = (request.args.get("q") or "").strip()
     rol = (request.args.get("rol") or "").strip()
     estado = (request.args.get("estado") or "").strip()
@@ -3195,8 +3196,10 @@ def usuarios():
     elif estado == "inactivo":
         query = query.filter(User.activo == False)
     users = query.order_by(User.rol, User.nombre).all()
+    proveedores = Proveedor.query.filter_by(activo=True).order_by(Proveedor.nombre).all()
     return render_template("admin/usuarios.html", users=users, q=q, rol_f=rol,
-                           estado_f=estado, roles_validos=_roles_editables_usuario())
+                           estado_f=estado, roles_validos=_roles_editables_usuario(),
+                           proveedores=proveedores)
 
 
 @admin_bp.route("/usuarios/crear", methods=["POST"])
@@ -3228,6 +3231,13 @@ def crear_usuario():
     if rol not in roles_validos:
         flash("Rol no válido o sin permisos suficientes para asignarlo.", "danger")
         return redirect(url_for("admin.usuarios"))
+    proveedor_id = request.form.get("proveedor_id", type=int) if rol == "proveedor" else None
+    if rol == "proveedor":
+        from models import Proveedor
+        proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
+        if not proveedor or not proveedor.activo:
+            flash("Selecciona el bar que administrará este usuario.", "danger")
+            return redirect(url_for("admin.usuarios"))
 
     try:
         salario_base = float(request.form.get("salario_base", 0) or 0)
@@ -3244,6 +3254,7 @@ def crear_usuario():
         puesto_trabajo=request.form.get("puesto_trabajo", "").strip() or None,
         salario_base=salario_base,
         tarifa_entrega=tarifa_entrega,
+        proveedor_id=proveedor_id,
     )
     u.set_password(password)
     db.session.add(u)
@@ -3266,12 +3277,15 @@ def crear_usuario():
 @admin_bp.route("/usuarios/<int:user_id>/editar", methods=["GET", "POST"])
 @admin_required
 def editar_usuario(user_id):
+    from models import Proveedor
     u = get_or_404(User, user_id)
     if not u.puede_iniciar_sesion:
         abort(404)
     roles_validos = _roles_editables_usuario()
     if request.method == "GET":
-        return render_template("admin/usuario_editar.html", usuario=u, roles_validos=roles_validos)
+        proveedores = Proveedor.query.filter_by(activo=True).order_by(Proveedor.nombre).all()
+        return render_template("admin/usuario_editar.html", usuario=u, roles_validos=roles_validos,
+                               proveedores=proveedores)
 
     u.nombre = request.form.get("nombre", u.nombre).strip()
     nuevo_rol = request.form.get("rol")
@@ -3283,6 +3297,15 @@ def editar_usuario(user_id):
             flash("Solo un super admin puede asignar el rol de administrador.", "danger")
             return redirect(url_for("admin.usuarios"))
         u.rol = nuevo_rol
+    if u.rol == "proveedor":
+        proveedor_id = request.form.get("proveedor_id", type=int)
+        proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
+        if not proveedor or not proveedor.activo:
+            flash("Selecciona el bar que administrará este usuario.", "danger")
+            return redirect(url_for("admin.editar_usuario", user_id=u.id))
+        u.proveedor_id = proveedor.id
+    else:
+        u.proveedor_id = None
     u.puesto_trabajo = request.form.get("puesto_trabajo", u.puesto_trabajo or "").strip() or None
     telefono_form = normalizar_telefono_cliente(
         request.form.get("telefono", u.telefono or "")

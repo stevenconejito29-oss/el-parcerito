@@ -20,7 +20,7 @@ const OXIDIAN_KEY    = process.env.OXIDIAN_KEY         || '';
 const BOT_PANEL_KEY  = process.env.BOT_PANEL_KEY       || '';
 const TIENDA_URL     = (process.env.TIENDA_URL         || OXIDIAN_URL).replace(/\/$/, '');
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET      || '';
-const NEGOCIO        = process.env.NEGOCIO             || 'Oxidian';
+const NEGOCIO        = process.env.NEGOCIO || process.env.NOMBRE_NEGOCIO || 'Mi tienda';
 const OWNER_NUMBER   = (process.env.OWNER_NUMBER       || '').replace(/\D/g, '');
 const SUPERADMINS_RAW = process.env.SUPERADMINS || '';
 const SUPERADMINS = SUPERADMINS_RAW.split(',').map(s => String(s||'').replace(/\D/g, '')).filter(Boolean);
@@ -95,7 +95,12 @@ function requireApiKey(req, res, opts = {}) {
 function normalizePhone(value) {
   let digits = String(value || '').replace(/\D/g, '');
   if (digits.startsWith('00')) digits = digits.slice(2);
-  if (digits.length === 9 && /^[6789]/.test(digits)) digits = `34${digits}`;
+  const countryCode = String(
+    cfg('whatsapp_country_code', process.env.WHATSAPP_COUNTRY_CODE || ''),
+  ).replace(/\D/g, '');
+  if (countryCode && digits.length <= 10 && !digits.startsWith(countryCode)) {
+    digits = `${countryCode}${digits}`;
+  }
   return digits;
 }
 
@@ -173,6 +178,8 @@ db.exec(`
     carrito    TEXT DEFAULT '[]',
     pending_json TEXT DEFAULT '{}',
     zona_id    INTEGER,
+    bar_id     INTEGER,
+    bar_nombre TEXT,
     active_client_jid TEXT,
     updated_at INTEGER DEFAULT (unixepoch())
   );
@@ -273,6 +280,8 @@ db.transaction(() => {
   `ALTER TABLE sessions ADD COLUMN nombre TEXT`,
   `ALTER TABLE sessions ADD COLUMN role TEXT DEFAULT 'client'`,
   `ALTER TABLE sessions ADD COLUMN zona_id INTEGER`,
+  `ALTER TABLE sessions ADD COLUMN bar_id INTEGER`,
+  `ALTER TABLE sessions ADD COLUMN bar_nombre TEXT`,
   `ALTER TABLE sessions ADD COLUMN active_client_jid TEXT`,
   `ALTER TABLE sessions ADD COLUMN pending_json TEXT DEFAULT '{}'`,
   `ALTER TABLE productos_cache ADD COLUMN es_combo INTEGER DEFAULT 0`,
@@ -1196,14 +1205,26 @@ async function syncZonas() {
   }
 }
 
+async function syncBusiness() {
+  try {
+    const data = await oxidianGet('/negocio');
+    if (!data?.ok) return;
+    setCfg('business_name', data.nombre || NEGOCIO);
+    setCfg('whatsapp_country_code', data.whatsapp_country_code || '');
+  } catch (e) {
+    log('warn', 'business_sync_fail', String(e));
+  }
+}
+
 // ─── SESIONES ─────────────────────────────────────────────────────────────────
 const _sesGet = db.prepare(`SELECT * FROM sessions WHERE jid = ?`);
 const _sesUps = db.prepare(`
-  INSERT INTO sessions (jid, nombre, role, estado, carrito, pending_json, zona_id, active_client_jid, updated_at)
-  VALUES (?,?,?,?,?,?,?,?,unixepoch())
+  INSERT INTO sessions (jid, nombre, role, estado, carrito, pending_json, zona_id, bar_id, bar_nombre, active_client_jid, updated_at)
+  VALUES (?,?,?,?,?,?,?,?,?,?,unixepoch())
   ON CONFLICT(jid) DO UPDATE SET
     nombre=excluded.nombre, role=excluded.role, estado=excluded.estado,
     carrito=excluded.carrito, pending_json=excluded.pending_json, zona_id=excluded.zona_id,
+    bar_id=excluded.bar_id, bar_nombre=excluded.bar_nombre,
     active_client_jid=excluded.active_client_jid, updated_at=unixepoch()
 `);
 
@@ -1220,7 +1241,7 @@ function getSesion(jid) {
     if (role === 'admin') {
       const active = db.prepare(`SELECT client_jid FROM handoffs WHERE admin_jid = ? LIMIT 1`).get(jid);
       if (active) {
-        _sesUps.run(jid, row.nombre, role, 'admin_chat', '[]', '{}', null, active.client_jid);
+        _sesUps.run(jid, row.nombre, role, 'admin_chat', '[]', '{}', null, null, null, active.client_jid);
         return {
           jid,
           nombre: row.nombre,
@@ -1233,7 +1254,7 @@ function getSesion(jid) {
         };
       }
     }
-    _sesUps.run(jid, row.nombre, role, 'idle', '[]', '{}', null, null);
+    _sesUps.run(jid, row.nombre, role, 'idle', '[]', '{}', null, null, null, null);
     return { jid, nombre: row.nombre, role, estado: 'idle', carrito: [], pending: {}, zona_id: null, active_client_jid: null };
   }
   return {
@@ -1254,13 +1275,15 @@ function saveSesion(ses) {
     JSON.stringify(ses.carrito || []),
     JSON.stringify(ses.pending || {}),
     ses.zona_id ?? null,
+    ses.bar_id ?? null,
+    ses.bar_nombre || null,
     ses.active_client_jid || null,
   );
 }
 
 function resetSesion(jid, nombre = null, role = null) {
   const resolvedRole = role || (isAdminJid(jid) ? 'admin' : 'client');
-  _sesUps.run(jid, nombre, resolvedRole, 'idle', '[]', '{}', null, null);
+  _sesUps.run(jid, nombre, resolvedRole, 'idle', '[]', '{}', null, null, null, null);
 }
 
 // ─── HELPERS DE TEXTO ─────────────────────────────────────────────────────────
@@ -1296,10 +1319,11 @@ function extractText(msg) {
 }
 
 function formatPrecio(n) { return `€${parseFloat(n).toFixed(2)}`; }
+function businessName() { return String(cfg('business_name', NEGOCIO) || NEGOCIO).trim(); }
 
 function menuPrincipal() {
   return (
-    `🍽️ *${NEGOCIO}*\n` +
+    `🍽️ *${businessName()}*\n` +
     `¡Hola! ¿Qué se te antoja hoy? 😊\n\n` +
     `1️⃣  🛒 Ver el menú y los combos\n` +
     `2️⃣  📋 Consultar o cancelar mi pedido\n` +
@@ -1315,7 +1339,7 @@ function menuPrincipal() {
 
 function adminMenu() {
   return (
-    `🔐 *Panel Admin — ${NEGOCIO}*\n\n` +
+    `🔐 *Panel Admin — ${businessName()}*\n\n` +
     `1️⃣  Estado del bot y WhatsApp\n` +
     `2️⃣  Abrir / cerrar tienda\n` +
     `3️⃣  Productos y precios\n` +
@@ -2297,13 +2321,13 @@ async function handleMainMenu(jid, ses, opcion) {
       return sendText(jid,
         `🗺️ *¿Llegamos a tu zona?*\n\n` +
         `Escribe tu dirección completa y la verificamos ahora mismo.\n\n` +
-        `📍 Ejemplo: Calle Real 12, Carmona, Sevilla\n\n` +
+        `📍 Ejemplo: Calle Mayor 12, piso 2\n\n` +
         `_Nota: solo la uso para verificar cobertura, no la guardo._`
       );
     }
     case '5': {
       return sendText(jid,
-        `🌐 *Tienda online — ${NEGOCIO}*\n\n` +
+        `🌐 *Tienda online — ${businessName()}*\n\n` +
         `👉 ${tiendaUrl}\n\n` +
         `Catálogo completo, precios actualizados y pago seguro.\n\n` +
         `¿Necesitas ayuda con el pedido? Escribe *7* y te atendemos. 😊`
@@ -2314,7 +2338,7 @@ async function handleMainMenu(jid, ses, opcion) {
         const data = await oxidianGet('/negocio');
         if (data.ok) {
           return sendText(jid,
-            `ℹ️ *${data.nombre || NEGOCIO}*\n\n` +
+            `ℹ️ *${data.nombre || businessName()}*\n\n` +
             `🕐 Horario: ${data.horario_apertura || '09:00'} – ${data.horario_cierre || '22:30'}\n` +
             `📍 Dirección: ${data.direccion || 'No configurada'}\n` +
             `📞 Teléfono: ${data.telefono || 'No configurado'}\n\n` +
@@ -2539,7 +2563,7 @@ async function handleCoberturaDelivery(jid, ses, direccion) {
   if (clean.length < 6) {
     return sendText(jid,
       `Necesito una dirección un poco más completa para verificarla. 📍\n\n` +
-      `Ejemplo: Calle Real 12, Carmona, Sevilla\n\n` +
+      `Ejemplo: Calle Mayor 12, piso 2\n\n` +
       `${menuPrincipal()}`
     );
   }
@@ -3730,8 +3754,10 @@ function startServer() {
         await syncCatalogo().catch(() => {});
       }
       await syncZonas().catch(() => {});
+      await syncBusiness().catch(() => {});
     }, 3000);
     setInterval(() => syncCatalogo().catch(() => {}), 5 * 60_000);
+    setInterval(() => syncBusiness().catch(() => {}), 5 * 60_000);
     setInterval(() => retryPendingHandoffMessages().catch(
       error => log('warn', 'handoff_retry_fail', String(error))
     ), 15_000);
@@ -3765,6 +3791,8 @@ module.exports = {
     persistInboundMessages,
     queueAssignedHandoffMessage,
     queueHandoffMessage,
+    getSesion,
+    saveSesion,
     setAdminState,
     splitTextForSend,
   },

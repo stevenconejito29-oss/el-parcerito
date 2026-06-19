@@ -9,7 +9,7 @@
   <a href="{{ url_for('superadmin.dashboard') }}" class="ox-btn-ghost text-sm">← Volver</a>
   <div>
     <h1 class="text-xl font-extrabold text-white">📍 Zonas de Entrega</h1>
-    <p class="text-xs text-gray-400 mt-0.5">Carmona — configura precios, tiempos y cobertura</p>
+    <p class="text-xs text-gray-400 mt-0.5">{{ brand.ciudad or 'Tu área de reparto' }} — configura precios, tiempos y cobertura</p>
   </div>
 </div>
 
@@ -33,7 +33,7 @@
     {{ csrf_field() }}
     <div class="ox-field">
       <label class="ox-label">Nombre *</label>
-      <input type="text" name="nombre" required class="ox-input" placeholder="Ej: Centro de Carmona">
+      <input type="text" name="nombre" required class="ox-input" placeholder="Ej: Centro">
     </div>
     <div class="ox-field">
       <label class="ox-label">Descripción</label>
@@ -58,7 +58,7 @@
     <div class="ox-field sm:col-span-2">
       <label class="ox-label">Ámbito</label>
       <select name="es_epicentro" class="ox-input">
-        <option value="1">Epicentro / Centro urbano Carmona</option>
+        <option value="1">Epicentro / Centro urbano</option>
         <option value="0">Zona periférica / Urbanización</option>
       </select>
     </div>

@@ -39,6 +39,15 @@
       <input type="tel" name="telefono" value="{{ usuario.telefono or '' }}" class="ox-input">
     </div>
     <div class="ox-field md:col-span-2">
+      <label class="ox-label">Bar administrado</label>
+      <select name="proveedor_id" class="ox-input">
+        <option value="">Selecciona un bar si el rol es Proveedor</option>
+        {% for proveedor in proveedores %}
+        <option value="{{ proveedor.id }}" {% if usuario.proveedor_id == proveedor.id %}selected{% endif %}>{{ proveedor.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="ox-field md:col-span-2">
       <label class="ox-label">Puesto de trabajo</label>
       <input type="text" name="puesto_trabajo" value="{{ usuario.puesto_trabajo or '' }}" class="ox-input">
     </div>

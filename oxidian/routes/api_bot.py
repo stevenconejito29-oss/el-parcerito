@@ -26,7 +26,8 @@ from services import (distribuir_pedido, registrar_uso_afiliado,
                       get_puntos_config, enviar_whatsapp_estado, mensaje_estado_pedido,
                       registrar_pedido_creado, encolar_whatsapp_generico,
                       validar_radio_entrega, tienda_abierta_en_horario,
-                      cancelar_pedido_operativo)
+                      cancelar_pedido_operativo, lineas_proveedor_pedido,
+                      encolar_notificaciones_proveedores_pedido)
 from pricing_service import calcular_precio
 from loyalty_service import aplicar_canje_en_pedido, bloquear_cliente_puntos, solicitar_codigo
 from phone_utils import normalizar_telefono_cliente, telefono_valido
@@ -321,7 +322,7 @@ def _pedido_bot_payload(pedido):
         pid = _coalesce_proveedor_id(snapshot, item)
         proveedor_ids.add(pid)  # incluye None si hay items propios
     bar_contacto = None
-    nombre_general = SiteConfig.get("NOMBRE_NEGOCIO", "El Parcerito")
+    nombre_general = SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda")
     telefono_general = SiteConfig.get("TELEFONO_NEGOCIO", "")
 
     def _contacto_general():
@@ -399,7 +400,7 @@ def _pedido_bot_payload(pedido):
 @bot_required
 def catalogo():
     try:
-        nombre_negocio = SiteConfig.get("NOMBRE_NEGOCIO", "Oxidian")
+        nombre_negocio = SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda")
         categorias = Categoria.query.filter_by(activo=True).all()
         productos = _catalogo_unificado_para_bot()
         return jsonify({
@@ -976,6 +977,8 @@ def crear_pedido():
         db.session.flush()
         from services import sincronizar_proveedores_pedido
         sincronizar_proveedores_pedido(pedido)
+        db.session.flush()
+        encolar_notificaciones_proveedores_pedido(pedido)
 
         distribuir_pedido(pedido)
 
@@ -1035,32 +1038,45 @@ def _normalizar_tel_match(telefono_raw):
     return digits, plus
 
 
+def _operador_bar_por_telefono(telefono_raw):
+    """Resuelve autorización de bar desde un usuario proveedor activo."""
+    telefono = normalizar_telefono_cliente(telefono_raw)
+    if not telefono:
+        return None, None
+    operador = (
+        User.query
+        .filter_by(
+            telefono_normalizado=telefono,
+            rol="proveedor",
+            activo=True,
+        )
+        .first()
+    )
+    if not operador or not operador.proveedor or not operador.proveedor.activo:
+        return None, None
+    return operador, operador.proveedor
+
+
 @api_bot_bp.route("/bar/identify")
 @bot_required
 def identify_bar():
     """Indica si un número de WhatsApp pertenece al operador de un bar activo.
 
-    El bot usa este endpoint cuando recibe el primer mensaje: si el remitente
-    es operador de un bar, se le presenta el menú del bar en vez del menú del
-    cliente. Match exacto contra `Proveedor.telefono` (cualquier formato)."""
-    from models import Proveedor as _Prov
+    La identidad privilegiada pertenece a un User proveedor activo y vinculado;
+    Proveedor.telefono queda reservado como contacto público."""
     telefono = (request.args.get("telefono") or "").strip()
-    digits, plus = _normalizar_tel_match(telefono)
-    if not digits:
-        return jsonify({"ok": True, "es_bar": False})
-    bares = _Prov.query.filter_by(activo=True).filter(_Prov.telefono.isnot(None)).all()
-    for bar in bares:
-        b_digits, _ = _normalizar_tel_match(bar.telefono)
-        if b_digits and b_digits == digits:
-            return jsonify({
-                "ok": True,
-                "es_bar": True,
-                "bar": {
-                    "id": bar.id,
-                    "nombre": bar.nombre,
-                    "telefono": bar.telefono,
-                },
-            })
+    operador, bar = _operador_bar_por_telefono(telefono)
+    if bar:
+        return jsonify({
+            "ok": True,
+            "es_bar": True,
+            "bar": {
+                "id": bar.id,
+                "nombre": bar.nombre,
+                "operador_id": operador.id,
+                "operador_nombre": operador.nombre,
+            },
+        })
     return jsonify({"ok": True, "es_bar": False})
 
 
@@ -1068,16 +1084,9 @@ def identify_bar():
 @bot_required
 def bar_pedidos_activos():
     """Pedidos pendientes del bar identificado por su teléfono operador."""
-    from models import Proveedor as _Prov
-    digits, _ = _normalizar_tel_match(request.args.get("telefono") or "")
-    if not digits:
+    operador, bar = _operador_bar_por_telefono(request.args.get("telefono") or "")
+    if not request.args.get("telefono"):
         return jsonify({"ok": False, "error": "telefono requerido"}), 400
-    bar = None
-    for prov in _Prov.query.filter_by(activo=True).filter(_Prov.telefono.isnot(None)).all():
-        b_digits, _2 = _normalizar_tel_match(prov.telefono)
-        if b_digits == digits:
-            bar = prov
-            break
     if not bar:
         return jsonify({"ok": False, "error": "No eres operador de ningún bar"}), 403
 
@@ -1101,9 +1110,10 @@ def bar_pedidos_activos():
             "estado": p.estado,
             "total": float(p.total or 0),
             "items": [{
-                "nombre": oi.producto.nombre if oi.producto else f"Producto #{oi.producto_id}",
-                "cantidad": oi.cantidad,
-            } for oi in p.items],
+                "nombre": linea["nombre"],
+                "cantidad": linea["cantidad"],
+                "componentes": linea["componentes"],
+            } for linea in lineas_proveedor_pedido(p, bar.id)],
         } for p in pedidos],
     })
 
@@ -1112,17 +1122,11 @@ def bar_pedidos_activos():
 @bot_required
 def bar_marcar_preparado(pedido_id):
     """El operador del bar marca un pedido como preparado desde WhatsApp."""
-    from models import Proveedor as _Prov
     data = request.get_json(silent=True) or {}
-    digits, _ = _normalizar_tel_match(data.get("telefono") or request.args.get("telefono") or "")
-    if not digits:
+    telefono = data.get("telefono") or request.args.get("telefono") or ""
+    operador, bar = _operador_bar_por_telefono(telefono)
+    if not telefono:
         return jsonify({"ok": False, "error": "telefono requerido"}), 400
-    bar = None
-    for prov in _Prov.query.filter_by(activo=True).filter(_Prov.telefono.isnot(None)).all():
-        b_digits, _2 = _normalizar_tel_match(prov.telefono)
-        if b_digits == digits:
-            bar = prov
-            break
     if not bar:
         return jsonify({"ok": False, "error": "No autorizado"}), 403
 
@@ -1144,7 +1148,7 @@ def bar_marcar_preparado(pedido_id):
     registrar_evento_pedido(
         pedido,
         "proveedor_preparado",
-        actor_id=None,
+        actor_id=operador.id,
         estado_anterior=pedido.estado,
         estado_nuevo=pedido.estado,
         canal="bot_bar",
@@ -1173,16 +1177,11 @@ def bar_marcar_preparado(pedido_id):
 @bot_required
 def bar_incidencias():
     """Incidencias abiertas de los pedidos del bar."""
-    from models import Proveedor as _Prov, OrderEvent
-    digits, _ = _normalizar_tel_match(request.args.get("telefono") or "")
-    if not digits:
+    from models import OrderEvent
+    telefono = request.args.get("telefono") or ""
+    operador, bar = _operador_bar_por_telefono(telefono)
+    if not telefono:
         return jsonify({"ok": False, "error": "telefono requerido"}), 400
-    bar = None
-    for prov in _Prov.query.filter_by(activo=True).filter(_Prov.telefono.isnot(None)).all():
-        b_digits, _2 = _normalizar_tel_match(prov.telefono)
-        if b_digits == digits:
-            bar = prov
-            break
     if not bar:
         return jsonify({"ok": False, "error": "No autorizado"}), 403
 
@@ -1643,7 +1642,7 @@ def cobertura_delivery():
             "validacion_activa": _config_bool("VALIDAR_RADIO_ENTREGA", "1"),
             "bloqueo_no_verificada": _config_bool("BLOQUEAR_DIRECCION_NO_VERIFICADA", "1"),
             "radio_km": SiteConfig.get("RADIO_ENTREGA_KM", "5"),
-            "ciudad": SiteConfig.get("CIUDAD_NEGOCIO", "Carmona"),
+            "ciudad": SiteConfig.get("CIUDAD_NEGOCIO", ""),
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -1656,7 +1655,7 @@ def cobertura_delivery():
 def asistente_bot():
     """Contrato compacto para el bot: opciones, endpoints y textos base."""
     try:
-        nombre = SiteConfig.get("NOMBRE_NEGOCIO", "Oxidian")
+        nombre = SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda")
         tienda_url = SiteConfig.get("TIENDA_URL", "") or SiteConfig.get("OXIDIAN_PUBLIC_URL", "")
         telefono = SiteConfig.get("TELEFONO_NEGOCIO", "")
         return jsonify({
@@ -1704,7 +1703,7 @@ def menu_flow():
     El bot Node.js usa esto para construir los menús paso a paso.
     """
     try:
-        nombre = SiteConfig.get("NOMBRE_NEGOCIO", "Oxidian")
+        nombre = SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda")
         telefono_negocio = SiteConfig.get("TELEFONO_NEGOCIO", "")
         horario_ap = SiteConfig.get("HORARIO_APERTURA", "09:00")
         horario_ci = SiteConfig.get("HORARIO_CIERRE", "22:30")
@@ -2183,9 +2182,11 @@ def info_negocio():
         is_open    = tienda_abierta_en_horario(apertura, cierre, ahora=ahora_str, forzada_cerrada=forzada)
         return jsonify({
             "ok": True,
-            "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "Oxidian"),
+            "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda"),
             "direccion": SiteConfig.get("DIRECCION_NEGOCIO", ""),
             "telefono": SiteConfig.get("TELEFONO_NEGOCIO", ""),
+            "whatsapp_country_code": SiteConfig.get("WHATSAPP_COUNTRY_CODE", ""),
+            "ciudad": SiteConfig.get("CIUDAD_NEGOCIO", ""),
             "horario_apertura": apertura,
             "horario_cierre": cierre,
             "is_open": is_open,

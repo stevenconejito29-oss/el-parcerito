@@ -27,8 +27,8 @@
       <input name="telefono" placeholder="+34 600 000 000"
              class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
       <small class="block mt-1" style="color:var(--col-muted)">
-        El chatbot redirige al cliente a este número cuando un pedido del bar
-        ya no se puede cancelar automáticamente. Incluye prefijo internacional.
+        Contacto público al que el chatbot puede derivar clientes. Los números
+        con acceso operativo se crean en Usuarios con rol Proveedor y este bar.
       </small>
     </label>
     <label class="text-xs">Email
@@ -88,6 +88,7 @@
     </div>
     <ul class="text-xs space-y-1" style="color:var(--col-muted)">
       {% if prov.telefono %}<li>📞 {{ prov.telefono }}</li>{% endif %}
+      <li>🔐 {{ prov.operadores.filter_by(activo=True).count() }} administrador(es) con acceso al chatbot</li>
       {% if prov.email %}<li>✉️ {{ prov.email }}</li>{% endif %}
       {% if prov.direccion %}<li>📍 {{ prov.direccion }}</li>{% endif %}
       {% if prov.horario %}<li>⏰ {{ prov.horario }}</li>{% endif %}

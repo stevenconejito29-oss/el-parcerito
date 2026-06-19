@@ -84,7 +84,7 @@
       <b>{{ 'Activo' if u.activo else 'Inactivo' }}</b>
     </div>
     <div class="users-mobile-actions">
-      <button type="button" onclick='abrirEditar({{ u.id }}, {{ {"nombre": u.nombre, "rol": u.rol, "telefono": u.telefono or "", "puesto_trabajo": u.puesto_trabajo or "", "salario_base": u.salario_base or "", "tarifa_entrega": u.tarifa_entrega or ""}|tojson }})'>Editar</button>
+      <button type="button" onclick='abrirEditar({{ u.id }}, {{ {"nombre": u.nombre, "rol": u.rol, "telefono": u.telefono or "", "proveedor_id": u.proveedor_id or "", "puesto_trabajo": u.puesto_trabajo or "", "salario_base": u.salario_base or "", "tarifa_entrega": u.tarifa_entrega or ""}|tojson }})'>Editar</button>
       {% if u.rol == 'repartidor' %}<a href="{{ url_for('admin.pagos_staff', user_id=u.id) }}">Pagos</a>{% endif %}
       {% if current_user.rol == 'super_admin' and u.rol == 'admin' %}<a href="{{ url_for('superadmin.admin_features', user_id=u.id) }}">Permisos</a>{% endif %}
       {% if u.id != current_user.id %}
@@ -152,7 +152,7 @@
         <td class="user-actions">
           <div class="flex items-center justify-center gap-1">
             <button type="button"
-                    onclick='abrirEditar({{ u.id }}, {{ {"nombre": u.nombre, "rol": u.rol, "telefono": u.telefono or "", "puesto_trabajo": u.puesto_trabajo or "", "salario_base": u.salario_base or "", "tarifa_entrega": u.tarifa_entrega or ""} | tojson }})'
+                    onclick='abrirEditar({{ u.id }}, {{ {"nombre": u.nombre, "rol": u.rol, "telefono": u.telefono or "", "proveedor_id": u.proveedor_id or "", "puesto_trabajo": u.puesto_trabajo or "", "salario_base": u.salario_base or "", "tarifa_entrega": u.tarifa_entrega or ""} | tojson }})'
                     class="text-xs px-2 py-1 rounded-lg transition"
                     title="Editar usuario"
                     style="background:rgba(90,170,255,.1);color:#60AAFF;border:1px solid rgba(90,170,255,.2)">✏️</button>
@@ -226,6 +226,13 @@
           <label class="usr-label">Teléfono</label>
           <input type="tel" name="telefono" placeholder="612 345 678" class="usr-input">
         </div>
+        <div class="col-span-2 role-provider-field" hidden>
+          <label class="usr-label">Bar administrado</label>
+          <select name="proveedor_id" class="usr-input">
+            <option value="">Selecciona un bar</option>
+            {% for proveedor in proveedores %}<option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>{% endfor %}
+          </select>
+        </div>
         <div class="col-span-2 role-staff-field">
           <label class="usr-label">Puesto de trabajo</label>
           <input type="text" name="puesto_trabajo" placeholder="Ej: Cocinero, Empacador, Cajero..." class="usr-input">
@@ -279,6 +286,13 @@
           <label class="usr-label">Teléfono</label>
           <input type="tel" name="telefono" id="edit-tel" class="usr-input">
         </div>
+        <div class="col-span-2 role-provider-field" hidden>
+          <label class="usr-label">Bar administrado</label>
+          <select name="proveedor_id" id="edit-proveedor" class="usr-input">
+            <option value="">Selecciona un bar</option>
+            {% for proveedor in proveedores %}<option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>{% endfor %}
+          </select>
+        </div>
         <div class="col-span-2 role-staff-field">
           <label class="usr-label">Puesto de trabajo</label>
           <input type="text" name="puesto_trabajo" id="edit-puesto" class="usr-input">
@@ -327,6 +341,7 @@
 const STAFF_ROLES=new Set(['staff','cocina','preparacion','repartidor']);
 function actualizarCamposRol(form,rol){
   form.querySelectorAll('.role-staff-field').forEach(field=>field.hidden=!STAFF_ROLES.has(rol));
+  form.querySelectorAll('.role-provider-field').forEach(field=>field.hidden=rol!=='proveedor');
 }
 function abrirEditar(id, data) {
   const form = document.getElementById('form-editar-usuario');
@@ -335,6 +350,7 @@ function abrirEditar(id, data) {
   document.getElementById('edit-nombre').value = data.nombre;
   document.getElementById('edit-rol').value = data.rol;
   document.getElementById('edit-tel').value = data.telefono;
+  document.getElementById('edit-proveedor').value = data.proveedor_id || '';
   document.getElementById('edit-puesto').value = data.puesto_trabajo;
   document.getElementById('edit-salario').value = data.salario_base;
   form.querySelector('input[name="nueva_password"]').value = '';

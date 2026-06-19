@@ -14,11 +14,17 @@ def normalizar_telefono_cliente(value: str | None, country_code: str | None = No
     if digits.startswith("00"):
         digits = digits[2:]
     if not raw.startswith("+") and not raw.startswith("00"):
-        prefix = re.sub(
-            r"\D",
-            "",
-            country_code or os.environ.get("WHATSAPP_COUNTRY_CODE", "34"),
-        )
+        configured_code = country_code
+        if configured_code is None:
+            configured_code = os.environ.get("WHATSAPP_COUNTRY_CODE", "")
+            try:
+                from flask import has_app_context
+                if has_app_context():
+                    from models import SiteConfig
+                    configured_code = SiteConfig.get("WHATSAPP_COUNTRY_CODE", configured_code)
+            except (ImportError, RuntimeError):
+                pass
+        prefix = re.sub(r"\D", "", configured_code or "")
         if prefix and len(digits) <= 10 and not digits.startswith(prefix):
             digits = f"{prefix}{digits}"
     return f"+{digits[:19]}"

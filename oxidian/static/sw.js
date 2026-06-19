@@ -64,7 +64,7 @@ function offlineResponse() {
     `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#D9961A">
-<title>Sin conexión — Oxidian</title>
+<title>Sin conexión</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,sans-serif;background:#FFFDF8;color:#18120A;
@@ -158,10 +158,10 @@ self.addEventListener("push", event => {
 
   let payload;
   try { payload = event.data.json(); }
-  catch { payload = { title: "Oxidian", body: event.data.text() }; }
+  catch { payload = { title: "Mi tienda", body: event.data.text() }; }
 
   const {
-    title  = "Oxidian",
+    title  = "Mi tienda",
     body   = "",
     icon   = "/static/pwa-icon-192.png",
     badge  = "/static/favicon-32.png",

@@ -27,12 +27,14 @@ const {
   drainInboundMessages,
   extractText,
   getHandoff,
+  getSesion,
   handleAdminTakeWait,
   handleEvolutionEvent,
   persistInboundMessages,
   queueAssignedHandoffMessage,
   queueHandoffMessage,
   releaseHumanChat,
+  saveSesion,
 } = _test;
 
 const adminA = '34600000001@s.whatsapp.net';
@@ -68,6 +70,26 @@ test.beforeEach(clearState);
 test.after(() => {
   db.close();
   fs.rmSync(dbDir, { recursive: true, force: true });
+});
+
+test('la sesión conserva el bar entre mensajes', () => {
+  saveSesion({
+    jid: clientA,
+    nombre: 'Operador Norte',
+    role: 'bar',
+    estado: 'bar_menu',
+    carrito: [],
+    pending: {},
+    zona_id: null,
+    bar_id: 17,
+    bar_nombre: 'Bar Norte',
+    active_client_jid: null,
+  });
+
+  const session = getSesion(clientA);
+  assert.equal(session.role, 'bar');
+  assert.equal(session.bar_id, 17);
+  assert.equal(session.bar_nombre, 'Bar Norte');
 });
 
 test('un administrador no puede reclamar dos clientes activos', () => {

@@ -184,9 +184,11 @@ def create_app(env="default"):
     @app.route("/manifest.webmanifest")
     def web_manifest():
         from models import SiteConfig
+        from store_config import get_store_profile
 
-        nombre = SiteConfig.get("NOMBRE_NEGOCIO", _env_default("NOMBRE_NEGOCIO", "Oxidian"))
-        short_name = (nombre[:12] or "Oxidian").strip()
+        profile = get_store_profile()
+        nombre = profile["nombre"]
+        short_name = (nombre[:12] or "Mi tienda").strip()
         manifest = {
             "name": nombre,
             "short_name": short_name,
@@ -215,12 +217,17 @@ def create_app(env="default"):
             "prefer_related_applications": False,
             "edge_side_panel": {"preferred_width": 400},
         }
-        manifest["icons"].extend([
-            {"src": "/static/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-            {"src": "/static/pwa-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-            {"src": "/static/pwa-icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
-            {"src": "/static/pwa-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
-        ])
+        if profile["app_icon_url"]:
+            manifest["icons"].append({
+                "src": profile["app_icon_url"], "sizes": "any", "purpose": "any maskable",
+            })
+        else:
+            manifest["icons"].extend([
+                {"src": "/static/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                {"src": "/static/pwa-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                {"src": "/static/pwa-icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+                {"src": "/static/pwa-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
+            ])
         response = app.response_class(
             json.dumps(manifest, ensure_ascii=False),
             mimetype="application/manifest+json",
@@ -346,7 +353,9 @@ def create_app(env="default"):
         if not hasattr(g, "_brand_cache"):
             _BRAND_KEYS = {
                 "NOMBRE_NEGOCIO", "LOGO_URL", "TELEFONO_NEGOCIO",
-                "DIRECCION_NEGOCIO", "CIUDAD_NEGOCIO",
+                "DIRECCION_NEGOCIO", "CIUDAD_NEGOCIO", "PROVINCIA_NEGOCIO",
+                "PAIS_NEGOCIO", "EMAIL_CONTACTO", "BIZUM_TELEFONO",
+                "BIZUM_HABILITADO", "EFECTIVO_HABILITADO",
                 "COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO",
                 "HORARIO_APERTURA", "HORARIO_CIERRE", "TIENDA_FORZAR_CERRADA",
                 "TIENDA_MENSAJE_CIERRE",
@@ -363,13 +372,17 @@ def create_app(env="default"):
         cfg = g._brand_cache
         def _c(k, default=""): return cfg.get(k) or default
 
-        nombre      = _c("NOMBRE_NEGOCIO", _env_default("NOMBRE_NEGOCIO", "Oxidian"))
+        nombre      = _c("NOMBRE_NEGOCIO", _env_default("NOMBRE_NEGOCIO", "Mi tienda"))
         logo_url     = _c("LOGO_URL")
         app_icon_url = _c("APP_ICON_URL")
         hero_image_url = _c("HERO_IMAGE_URL")
         telefono  = _c("TELEFONO_NEGOCIO") or _env_default("OWNER_NUMBER", "")
         direccion = _c("DIRECCION_NEGOCIO", _env_default("DIRECCION_NEGOCIO", ""))
         ciudad    = _c("CIUDAD_NEGOCIO") or (direccion.split(",")[0].strip() if direccion else "")
+        provincia = _c("PROVINCIA_NEGOCIO")
+        pais = _c("PAIS_NEGOCIO")
+        email = _c("EMAIL_CONTACTO")
+        bizum_telefono = _c("BIZUM_TELEFONO")
 
         color_primario   = _c("COLOR_PRIMARIO",   _env_default("COLOR_PRIMARIO", "#FCD116"))
         color_secundario = _c("COLOR_SECUNDARIO", _env_default("COLOR_SECUNDARIO", "#CE1126"))
@@ -401,6 +414,12 @@ def create_app(env="default"):
                 "telefono": telefono,
                 "direccion": direccion,
                 "ciudad": ciudad,
+                "provincia": provincia,
+                "pais": pais,
+                "email": email,
+                "bizum_telefono": bizum_telefono,
+                "bizum_habilitado": _to_bool(_c("BIZUM_HABILITADO", "1"), True),
+                "efectivo_habilitado": _to_bool(_c("EFECTIVO_HABILITADO", "1"), True),
                 "slogan": slogan,
                 "descripcion": descripcion,
                 "color_primario": color_primario,
@@ -588,8 +607,8 @@ def _seed_admin():
         ("COMBO_MAX_SELECTIONS_GROUP", "10",                  "Máximo de selecciones permitidas por grupo elegible"),
         ("COMBO_MAX_DISCOUNT_PCT", "50",                      "Descuento porcentual máximo permitido para combos"),
         ("ALERTA_CADUCIDAD_DIAS", "7",                        "Dias antes de caducidad para alerta"),
-        ("NOMBRE_NEGOCIO",        _env_default("NOMBRE_NEGOCIO", "Oxidian"), "Nombre del negocio"),
-        ("DIRECCION_NEGOCIO",     _env_default("DIRECCION_NEGOCIO", "Carmona, Sevilla"), "Direccion del local"),
+        ("NOMBRE_NEGOCIO",        _env_default("NOMBRE_NEGOCIO", "Mi tienda"), "Nombre del negocio"),
+        ("DIRECCION_NEGOCIO",     _env_default("DIRECCION_NEGOCIO", ""), "Direccion del local"),
         ("TELEFONO_NEGOCIO",      _env_default("TELEFONO_NEGOCIO", ""),      "Telefono de contacto"),
         ("BOT_API_KEY",           _env_default("BOT_API_KEY", str(uuid.uuid4())), "API key compartida entre Oxidian y el bot"),
         ("BOT_API_URL",           _env_default("BOT_API_URL", "http://127.0.0.1:3000"), "URL interna del bot WhatsApp"),
@@ -610,11 +629,18 @@ def _seed_admin():
         ("HORARIO_CIERRE",        _env_default("HORARIO_CIERRE", "22:30"),   "Hora de cierre tienda (HH:MM)"),
         ("TIENDA_FORZAR_CERRADA", "0",                        "Forzar tienda cerrada (1/0)"),
         # Geo-validación de radio de entrega
-        ("CIUDAD_NEGOCIO",                    _env_default("CIUDAD_NEGOCIO", "Carmona"),  "Ciudad del negocio (para geocodificación de direcciones)"),
-        ("PROVINCIA_NEGOCIO",                 _env_default("PROVINCIA_NEGOCIO", "Sevilla"), "Provincia del negocio (para geocodificación estructurada)"),
-        ("CENTRO_LAT",                        _env_default("CENTRO_LAT", "37.4698"),      "Latitud del centro de reparto"),
-        ("CENTRO_LON",                        _env_default("CENTRO_LON", "-5.6435"),      "Longitud del centro de reparto"),
-        ("RADIO_ENTREGA_KM",                  _env_default("RADIO_ENTREGA_KM", "2"),      "Radio máximo de entrega en km desde el centro"),
+        ("CIUDAD_NEGOCIO",                    _env_default("CIUDAD_NEGOCIO", ""),  "Ciudad del negocio (para geocodificación de direcciones)"),
+        ("PROVINCIA_NEGOCIO",                 _env_default("PROVINCIA_NEGOCIO", ""), "Provincia del negocio (para geocodificación estructurada)"),
+        ("PAIS_NEGOCIO",                      _env_default("PAIS_NEGOCIO", ""), "País del negocio"),
+        ("PAIS_CODIGO_ISO",                   _env_default("PAIS_CODIGO_ISO", ""), "Código ISO del país"),
+        ("EMAIL_CONTACTO",                    _env_default("EMAIL_CONTACTO", ""), "Correo público de contacto"),
+        ("WHATSAPP_COUNTRY_CODE",             _env_default("WHATSAPP_COUNTRY_CODE", ""), "Prefijo telefónico internacional"),
+        ("BIZUM_TELEFONO",                    _env_default("BIZUM_TELEFONO", ""), "Número que recibe Bizum"),
+        ("BIZUM_HABILITADO",                  "1", "Permitir Bizum"),
+        ("EFECTIVO_HABILITADO",               "1", "Permitir efectivo"),
+        ("CENTRO_LAT",                        _env_default("CENTRO_LAT", ""),      "Latitud del centro de reparto"),
+        ("CENTRO_LON",                        _env_default("CENTRO_LON", ""),      "Longitud del centro de reparto"),
+        ("RADIO_ENTREGA_KM",                  _env_default("RADIO_ENTREGA_KM", "5"),      "Radio máximo de entrega en km desde el centro"),
         ("VALIDAR_RADIO_ENTREGA",             "1",          "Activar validación de radio de entrega (1/0)"),
         ("BLOQUEAR_DIRECCION_NO_VERIFICADA",  "1",          "Bloquear pedido si no se puede geocodificar la dirección (1/0)"),
     ]
@@ -694,7 +720,7 @@ def _seed_operational_basics():
 
     if not minimal_users and not ZonaEntrega.query.first():
         db.session.add(ZonaEntrega(
-            nombre="Carmona Centro",
+            nombre="Zona principal",
             descripcion="Zona principal de entrega",
             es_epicentro=True,
             activo=True,

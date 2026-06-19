@@ -110,9 +110,10 @@ def mfa_setup():
     if request.method == "GET":
         secret = pyotp.random_base32()
         session["mfa_setup_secret"] = secret
+        from store_config import get_store_value
         otpauth_url = pyotp.totp.TOTP(secret).provisioning_uri(
             name=current_user.email,
-            issuer_name="Oxidian — El Parcerito",
+            issuer_name=get_store_value("NOMBRE_NEGOCIO"),
         )
         qr_svg = _qr_svg_inline(otpauth_url)
         return render_template(

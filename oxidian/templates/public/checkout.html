@@ -163,7 +163,7 @@
       📍 Dirección de entrega
     </h2>
     <textarea name="direccion" required rows="2"
-              placeholder="Calle, número, piso… Ej: Calle Real 5, Carmona"
+              placeholder="Calle, número, piso{% if brand.ciudad %} · {{ brand.ciudad }}{% endif %}"
               id="direccion_input"></textarea>
     <div id="dir-feedback" class="mt-2 text-xs hidden" style="min-height:1.2em"></div>
   </div>
@@ -178,7 +178,7 @@
       <div class="flex items-center gap-2.5">
         <span class="text-lg">🚚</span>
         <div>
-          <p class="font-bold text-sm">Entrega a domicilio · Carmona</p>
+          <p class="font-bold text-sm">Entrega a domicilio{% if brand.ciudad %} · {{ brand.ciudad }}{% endif %}</p>
           <p class="text-xs" style="color:var(--col-muted)">~{{ z.tiempo_estimado_min }} min estimado
             {% if z.gratis_desde %}· Gratis desde €{{ "%.0f"|format(z.gratis_desde) }}{% endif %}
           </p>
@@ -198,14 +198,18 @@
       💳 Método de pago
     </h2>
     <div class="grid grid-cols-2 gap-2 mb-3">
+      {% if brand.efectivo_habilitado %}
       <label class="flex items-center gap-2.5 p-3 rounded-xl cursor-pointer checkout-pay-label checkout-choice" style="background:var(--col-elevated);border:1.5px solid var(--col-border)">
         <input type="radio" name="metodo_pago" value="efectivo" checked class="accent-yellow-500" onchange="toggleBizumInfo(false)">
         <span class="font-bold text-sm">💵 Efectivo</span>
       </label>
+      {% endif %}
+      {% if brand.bizum_habilitado and brand.bizum_telefono %}
       <label class="flex items-center gap-2.5 p-3 rounded-xl cursor-pointer checkout-pay-label checkout-choice" style="background:var(--col-elevated);border:1.5px solid var(--col-border)">
-        <input type="radio" name="metodo_pago" value="bizum" class="accent-yellow-500" onchange="toggleBizumInfo(true)">
+        <input type="radio" name="metodo_pago" value="bizum" {% if not brand.efectivo_habilitado %}checked{% endif %} class="accent-yellow-500" onchange="toggleBizumInfo(true)">
         <span class="font-bold text-sm">📱 Bizum</span>
       </label>
+      {% endif %}
     </div>
     <div id="bizum-instructions" class="hidden p-3 rounded-xl text-sm" style="background:rgba(168,85,247,.08);border:1px solid rgba(168,85,247,.25);color:#C084FC">
       <p class="font-bold mb-1">📲 Bizum al recibir:</p>
@@ -984,7 +988,7 @@ function toggleBizumInfo(show) {
     el.classList.remove('hidden');
     fetch('/api/config-publica').then(r => r.json()).then(d => {
       const tel = document.getElementById('bizum-numero');
-      if (tel) tel.textContent = d.telefono || 'ver con el negocio';
+      if (tel) tel.textContent = d.bizum_telefono || 'ver con el negocio';
     }).catch(() => {});
   } else {
     el.classList.add('hidden');
@@ -1002,6 +1006,8 @@ document.getElementById('form-checkout')?.addEventListener('submit', e => {
   }
 });
 actualizarTotalEstimado();
+const metodoInicial = document.querySelector('input[name="metodo_pago"]:checked');
+if (metodoInicial?.value === 'bizum') toggleBizumInfo(true);
 
 // ── Validación de dirección en tiempo real ────────────────────
 (function () {

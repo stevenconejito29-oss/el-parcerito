@@ -30,7 +30,15 @@ CLAVES_DEFAULT = [
     ("HERO_IMAGE_URL",         "",                                  "Imagen de cabecera de la tienda (URL o ruta de subida)"),
     ("DIRECCION_NEGOCIO",      _eget("DIRECCION_NEGOCIO"),          "Dirección del local"),
     ("CIUDAD_NEGOCIO",         _eget("CIUDAD_NEGOCIO"),             "Ciudad (para geocodificación)"),
+    ("PROVINCIA_NEGOCIO",      _eget("PROVINCIA_NEGOCIO"),          "Provincia o región"),
+    ("PAIS_NEGOCIO",           _eget("PAIS_NEGOCIO"),               "País del negocio"),
+    ("PAIS_CODIGO_ISO",        _eget("PAIS_CODIGO_ISO"),            "Código ISO de país para geocodificación"),
     ("TELEFONO_NEGOCIO",       _eget("TELEFONO_NEGOCIO"),           "Teléfono de contacto"),
+    ("EMAIL_CONTACTO",         _eget("EMAIL_CONTACTO"),              "Correo público de contacto"),
+    ("WHATSAPP_COUNTRY_CODE",  _eget("WHATSAPP_COUNTRY_CODE"),       "Prefijo telefónico internacional"),
+    ("BIZUM_TELEFONO",         _eget("BIZUM_TELEFONO"),              "Número que recibe pagos Bizum"),
+    ("BIZUM_HABILITADO",       "1",                                  "Permitir pagos mediante Bizum"),
+    ("EFECTIVO_HABILITADO",    "1",                                  "Permitir pagos en efectivo"),
     ("BOT_API_KEY",            _eget("BOT_API_KEY"),                "Clave API para el bot de WhatsApp"),
     ("BOT_API_URL",            _eget("BOT_API_URL",    "http://127.0.0.1:3000"),  "URL interna del bot"),
     ("BOT_PANEL_KEY",          _eget("BOT_PANEL_KEY"),              "Clave de panel para administrar el bot desde Oxidian"),
@@ -136,7 +144,7 @@ def _validar_config_value(clave, valor):
     if len(valor) > 500:
         return False, clave, valor, "El valor no puede superar 500 caracteres."
 
-    if clave in {"VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA", "TIENDA_FORZAR_CERRADA", "BOT_ALLOW_ORDER_CREATE"}:
+    if clave in {"VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA", "TIENDA_FORZAR_CERRADA", "BOT_ALLOW_ORDER_CREATE", "BIZUM_HABILITADO", "EFECTIVO_HABILITADO"}:
         if valor not in {"0", "1"}:
             return False, clave, valor, "Este ajuste solo acepta 0 o 1."
         return True, clave, valor, None
@@ -186,6 +194,8 @@ def _validar_config_value(clave, valor):
         return True, clave, f"{numero:g}", None
 
     if clave == "CENTRO_LAT":
+        if not valor:
+            return True, clave, "", None
         try:
             numero = float(valor)
         except (TypeError, ValueError):
@@ -195,6 +205,8 @@ def _validar_config_value(clave, valor):
         return True, clave, f"{numero:.6f}".rstrip("0").rstrip("."), None
 
     if clave == "CENTRO_LON":
+        if not valor:
+            return True, clave, "", None
         try:
             numero = float(valor)
         except (TypeError, ValueError):
@@ -227,11 +239,23 @@ def _validar_config_value(clave, valor):
             return False, clave, valor, "La clave debe tener al menos 8 caracteres."
         return True, clave, valor, None
 
-    if clave == "TELEFONO_NEGOCIO":
+    if clave in {"TELEFONO_NEGOCIO", "BIZUM_TELEFONO"}:
         phone = _normalizar_telefono(valor)
         if valor and not re.fullmatch(r"\+?\d{7,20}", phone):
             return False, clave, valor, "El teléfono debe tener entre 7 y 20 dígitos."
         return True, clave, phone, None
+
+    if clave == "WHATSAPP_COUNTRY_CODE":
+        digits = re.sub(r"\D+", "", valor)
+        if valor and not re.fullmatch(r"\d{1,4}", digits):
+            return False, clave, valor, "El prefijo debe tener entre 1 y 4 dígitos."
+        return True, clave, digits, None
+
+    if clave == "PAIS_CODIGO_ISO":
+        code = valor.lower()
+        if code and not re.fullmatch(r"[a-z]{2}", code):
+            return False, clave, valor, "Usa el código ISO de dos letras, por ejemplo es, co o mx."
+        return True, clave, code, None
 
     if clave == "BOT_ADMIN_NUMBERS":
         numeros, invalidos = _normalizar_lista_telefonos(valor)
@@ -802,6 +826,27 @@ def guardar_config_seccion():
     if errores:
         flash("No se guardó la sección. " + " ".join(errores), "danger")
         return redirect(url_for("superadmin.config", section=request.form.get("section", "")))
+    cambios_map = dict(cambios)
+    if cambios_map.get("EFECTIVO_HABILITADO") == "0" and cambios_map.get("BIZUM_HABILITADO") == "0":
+        flash("Debe quedar habilitado al menos un método de pago.", "danger")
+        return redirect(url_for("superadmin.config", section=request.form.get("section", "")))
+    if "BOT_ADMIN_NUMBERS" in cambios_map:
+        numeros = set(filter(None, cambios_map["BOT_ADMIN_NUMBERS"].split(",")))
+        operadores = (
+            User.query
+            .filter(User.rol == "proveedor", User.activo == True, User.telefono_normalizado.isnot(None))
+            .all()
+        )
+        conflictos = {
+            re.sub(r"\D+", "", operador.telefono_normalizado or "")
+            for operador in operadores
+        } & numeros
+        if conflictos:
+            flash(
+                "Un teléfono de proveedor no puede ser también administrador global del chatbot.",
+                "danger",
+            )
+            return redirect(url_for("superadmin.config", section=request.form.get("section", "")))
     if not cambios:
         flash("No había ajustes para guardar.", "info")
         return redirect(url_for("superadmin.config"))

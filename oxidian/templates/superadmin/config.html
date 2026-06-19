@@ -75,7 +75,13 @@
       {{ cfg_input('DESCRIPCION_NEGOCIO', 'Descripción breve', placeholder='Comida casera con sabor a hogar', help='Descripción SEO y pie de página') }}
       {{ cfg_input('TELEFONO_NEGOCIO', 'WhatsApp / teléfono', type='tel', placeholder='+34 600 000 000') }}
       {{ cfg_input('DIRECCION_NEGOCIO', 'Dirección del local', placeholder='Calle y número') }}
-      {{ cfg_input('CIUDAD_NEGOCIO', 'Ciudad', placeholder='Carmona, Sevilla') }}
+      {{ cfg_input('CIUDAD_NEGOCIO', 'Ciudad', placeholder='Ciudad') }}
+      {{ cfg_input('PROVINCIA_NEGOCIO', 'Provincia / región', placeholder='Provincia o región') }}
+      {{ cfg_input('PAIS_NEGOCIO', 'País', placeholder='País') }}
+      {{ cfg_input('PAIS_CODIGO_ISO', 'Código ISO del país', placeholder='es', help='Dos letras; restringe la geocodificación al país correcto.') }}
+      {{ cfg_input('WHATSAPP_COUNTRY_CODE', 'Prefijo telefónico', placeholder='34', help='Sin +. Se aplica a números locales de clientes y empleados.') }}
+      {{ cfg_input('EMAIL_CONTACTO', 'Correo de contacto', type='email', placeholder='contacto@midominio.com') }}
+      {{ cfg_input('BIZUM_TELEFONO', 'Número Bizum', type='tel', placeholder='+34 600 000 000', help='Puede ser distinto del WhatsApp general.') }}
       {{ cfg_input('TIENDA_URL', 'URL pública de la tienda', type='url', placeholder='https://midominio.com') }}
       {{ cfg_input('OXIDIAN_PUBLIC_URL', 'URL pública del aplicativo', type='url', placeholder='https://midominio.com') }}
     </div>
@@ -126,6 +132,10 @@
     </div>
     <div class="cfg-grid one">
       {{ cfg_textarea('TIENDA_MENSAJE_CIERRE', 'Mensaje de cierre', placeholder='Estamos cerrados. Abrimos mañana a las 9:00. ¡Gracias!', help='Se muestra en el carrito y el checkout cuando la tienda está cerrada o fuera de horario.', rows=2) }}
+    </div>
+    <div class="cfg-grid">
+      {{ cfg_select('EFECTIVO_HABILITADO', 'Pago en efectivo', [('1','Habilitado'),('0','Deshabilitado')]) }}
+      {{ cfg_select('BIZUM_HABILITADO', 'Pago mediante Bizum', [('1','Habilitado'),('0','Deshabilitado')], 'Requiere configurar el número Bizum en Marca y tienda.') }}
     </div>
   </form>
 

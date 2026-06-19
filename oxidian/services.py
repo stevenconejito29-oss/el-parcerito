@@ -192,6 +192,54 @@ def lineas_proveedor_pedido(pedido: Order, proveedor_id: int | None = None) -> l
     return lineas
 
 
+def encolar_notificaciones_proveedores_pedido(pedido: Order) -> int:
+    """Avisa a cada operador WhatsApp solo sobre las líneas de su bar."""
+    from models import NotificationOutbox, OrderProviderStatus, User
+
+    if not pedido or not pedido.id:
+        return 0
+    creadas = 0
+    estados = OrderProviderStatus.query.filter_by(pedido_id=pedido.id).all()
+    for estado in estados:
+        lineas = lineas_proveedor_pedido(pedido, estado.proveedor_id)
+        if not lineas:
+            continue
+        detalle = "\n".join(
+            f"• {linea['cantidad']}× {linea['nombre']}"
+            for linea in lineas
+        )
+        operadores = (
+            User.query
+            .filter_by(rol="proveedor", proveedor_id=estado.proveedor_id, activo=True)
+            .filter(User.telefono_normalizado.isnot(None))
+            .all()
+        )
+        for operador in operadores:
+            evento = f"provider_order_{estado.proveedor_id}"
+            ya_existe = NotificationOutbox.query.filter_by(
+                canal="whatsapp",
+                evento=evento,
+                pedido_id=pedido.id,
+                user_id=operador.id,
+            ).first()
+            if ya_existe:
+                continue
+            mensaje = (
+                f"🏪 Nuevo pedido {pedido.numero_pedido} para tu bar.\n\n"
+                f"{detalle}\n\n"
+                "Responde *menu* para abrir el panel del bar."
+            )
+            if encolar_whatsapp_generico(
+                operador.telefono_normalizado,
+                mensaje,
+                evento=evento,
+                pedido_id=pedido.id,
+                user_id=operador.id,
+            ):
+                creadas += 1
+    return creadas
+
+
 def avanzar_estado_pedido(
     pedido: Order,
     actor_id: int | None = None,
@@ -447,18 +495,21 @@ def geocodificar_direccion(direccion: str, ciudad: str = "") -> tuple[float, flo
         import requests as _req
         from models import SiteConfig
 
-        ciudad = (ciudad or SiteConfig.get("CIUDAD_NEGOCIO", "Carmona")).strip()
+        ciudad = (ciudad or SiteConfig.get("CIUDAD_NEGOCIO", "")).strip()
         direccion = (direccion or "").strip()
-        provincia  = SiteConfig.get("PROVINCIA_NEGOCIO", "Sevilla")
-        nombre_neg = SiteConfig.get("NOMBRE_NEGOCIO", "Oxidian")
+        provincia = SiteConfig.get("PROVINCIA_NEGOCIO", "")
+        pais = SiteConfig.get("PAIS_NEGOCIO", "")
+        pais_iso = SiteConfig.get("PAIS_CODIGO_ISO", "").lower()
+        nombre_neg = SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda")
         user_agent = f"{nombre_neg.replace(' ', '')}/1.0"
 
         try:
-            centro_lat = float(SiteConfig.get("CENTRO_LAT", "37.4698"))
-            centro_lon = float(SiteConfig.get("CENTRO_LON", "-5.6435"))
-            radio_km   = float(SiteConfig.get("RADIO_ENTREGA_KM", "2"))
+            centro_lat = float(SiteConfig.get("CENTRO_LAT", ""))
+            centro_lon = float(SiteConfig.get("CENTRO_LON", ""))
+            radio_km = float(SiteConfig.get("RADIO_ENTREGA_KM", "5"))
         except (ValueError, TypeError):
-            centro_lat, centro_lon, radio_km = 37.4698, -5.6435, 2.0
+            centro_lat = centro_lon = None
+            radio_km = 5.0
 
         # Extraer solo el segmento de calle — descartar cualquier ciudad que el cliente
         # haya escrito después de la primera coma (ej: "Calle Real 5, Madrid").
@@ -481,10 +532,12 @@ def geocodificar_direccion(direccion: str, ciudad: str = "") -> tuple[float, flo
                 return coords
 
         def _get(params):
+            query_params = {**params, "format": "json", "limit": 1, "addressdetails": 1}
+            if pais_iso:
+                query_params["countrycodes"] = pais_iso
             resp = _req.get(
                 "https://nominatim.openstreetmap.org/search",
-                params={**params, "format": "json", "limit": 1,
-                        "addressdetails": 1, "countrycodes": "es"},
+                params=query_params,
                 headers={"User-Agent": user_agent},
                 timeout=5,
             )
@@ -492,7 +545,14 @@ def geocodificar_direccion(direccion: str, ciudad: str = "") -> tuple[float, flo
             return resp.json() if resp.ok else []
 
         # ── Paso 1: búsqueda estructurada (más precisa) ──────────────────────
-        hits = _get({"street": calle, "city": ciudad, "state": provincia, "country": "España"})
+        structured = {"street": calle}
+        if ciudad:
+            structured["city"] = ciudad
+        if provincia:
+            structured["state"] = provincia
+        if pais:
+            structured["country"] = pais
+        hits = _get(structured)
         if hits and _tiene_calle_nominatim(hits[0]):
             coords = float(hits[0]["lat"]), float(hits[0]["lon"])
             _geocode_cache[cache_key] = (coords, time.time())
@@ -502,6 +562,8 @@ def geocodificar_direccion(direccion: str, ciudad: str = "") -> tuple[float, flo
         # ── Paso 2: búsqueda libre ACOTADA al bbox del radio de entrega ──────
         # bounded=1 impide que Nominatim devuelva resultados fuera del viewbox,
         # por lo que no importa si el cliente escribió "Madrid" en la dirección.
+        if centro_lat is None or centro_lon is None:
+            return None
         deg_lat = radio_km / 111.0 * 1.5   # margen 50 % sobre el radio
         deg_lon = radio_km / (111.0 * math.cos(math.radians(centro_lat))) * 1.5
         viewbox = (
@@ -546,7 +608,7 @@ def asignar_zona_por_direccion(direccion: str, zonas):
         return activas[0] if activas else None
 
     from models import SiteConfig
-    ciudad = SiteConfig.get("CIUDAD_NEGOCIO", "Carmona")
+    ciudad = SiteConfig.get("CIUDAD_NEGOCIO", "")
     coords = geocodificar_direccion(direccion or "", ciudad=ciudad) if direccion else None
     if coords is None:
         return None
@@ -581,13 +643,17 @@ def validar_radio_entrega(direccion: str) -> dict:
         }
 
     try:
-        centro_lat = float(SiteConfig.get("CENTRO_LAT", "37.4698"))
-        centro_lon = float(SiteConfig.get("CENTRO_LON", "-5.6435"))
+        centro_lat = float(SiteConfig.get("CENTRO_LAT", ""))
+        centro_lon = float(SiteConfig.get("CENTRO_LON", ""))
         radio_km   = float(SiteConfig.get("RADIO_ENTREGA_KM", "5"))
     except (ValueError, TypeError):
-        return {"ok": True, "distancia_km": None, "mensaje": ""}
+        return {
+            "ok": False,
+            "distancia_km": None,
+            "mensaje": "La cobertura todavía no está configurada. Contacta con el negocio.",
+        }
 
-    ciudad = SiteConfig.get("CIUDAD_NEGOCIO", "Carmona")
+    ciudad = SiteConfig.get("CIUDAD_NEGOCIO", "")
     coords = geocodificar_direccion(direccion, ciudad=ciudad)
     if coords is None:
         if _to_bool_service(SiteConfig.get("BLOQUEAR_DIRECCION_NO_VERIFICADA", "1")):
@@ -595,9 +661,9 @@ def validar_radio_entrega(direccion: str) -> dict:
                 "ok": False,
                 "distancia_km": None,
                 "mensaje": (
-                    f"No encontramos esa dirección en {ciudad}. "
+                    f"No encontramos esa dirección{f' en {ciudad}' if ciudad else ''}. "
                     "Escribe la calle y número tal como aparece en el callejero, "
-                    "p. ej. «Calle Real 5» o «Avda. de la Constitución 3»."
+                    "por ejemplo «Calle Mayor 5»."
                 ),
             }
         logger.warning("No se pudo geocodificar '%s'. Pedido aceptado con advertencia.", direccion)
@@ -611,7 +677,8 @@ def validar_radio_entrega(direccion: str) -> dict:
             "ok": False,
             "distancia_km": round(distancia, 2),
             "mensaje": (
-                f"Lo sentimos, tu dirección queda fuera de nuestra zona de reparto en {ciudad} "
+                f"Lo sentimos, tu dirección queda fuera de nuestra zona de reparto"
+                f"{f' en {ciudad}' if ciudad else ''} "
                 f"({distancia:.1f} km del centro). Solo entregamos dentro del radio configurado."
             ),
         }
