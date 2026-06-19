@@ -32,6 +32,7 @@
 **/htmlcov/
 **/test-results/
 **/playwright-report/
+oxidian/docs/auditoria_roles/
 
 # Editor and operating-system files
 **/.DS_Store
