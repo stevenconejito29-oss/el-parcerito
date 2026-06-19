@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { chromium } from 'playwright-core';
 
 const ROOT = process.cwd();
@@ -13,7 +14,14 @@ const PASSWORD = process.env.VISUAL_PASSWORD || ENV.SEED_PASSWORD;
 const BROWSER = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
   || '/home/panzeta/.cache/ms-playwright/chromium-1169/chrome-linux/chrome';
 
-if (!PASSWORD) throw new Error('Falta SEED_PASSWORD o VISUAL_PASSWORD.');
+if (!PASSWORD && ![
+  'VISUAL_SUPERADMIN_PASSWORD',
+  'VISUAL_PREPARACION_PASSWORD',
+  'VISUAL_REPARTIDOR_PASSWORD',
+  'VISUAL_PROVEEDOR_PASSWORD',
+].every((key) => process.env[key])) {
+  throw new Error('Faltan contraseñas para la auditoría visual.');
+}
 if (!fs.existsSync(BROWSER)) throw new Error(`No se encontró Chromium en ${BROWSER}`);
 
 for (const folder of ['vistas', 'modales', 'formularios', 'flujos']) {
@@ -32,51 +40,49 @@ const browser = await chromium.launch({
   executablePath: BROWSER,
   headless: true,
   args: ['--no-sandbox', '--disable-dev-shm-usage'],
+  proxy: process.env.VISUAL_PROXY ? { server: process.env.VISUAL_PROXY } : undefined,
 });
 
 try {
-  const publicPage = await createPage();
-  await capturePublic(publicPage);
+  if (process.env.VISUAL_SKIP_PUBLIC !== '1') {
+    const publicPage = await createPage();
+    await capturePublic(publicPage);
+    await publicPage.context().close();
+  }
 
-  const superPage = await createPage();
-  await login(
-    superPage,
+  await captureAuthenticatedRole(
+    'superadmin',
     process.env.VISUAL_SUPERADMIN_EMAIL || ENV.SUPERADMIN_EMAIL || 'carmocream15@gmail.com',
     process.env.VISUAL_SUPERADMIN_PASSWORD || PASSWORD,
+    captureSuperadmin,
+    process.env.VISUAL_SUPERADMIN_TOTP_SECRET || '',
   );
-  await captureSuperadmin(superPage);
-
-  const prepPage = await createPage();
-  await login(
-    prepPage,
+  await captureAuthenticatedRole(
+    'preparacion',
     process.env.VISUAL_PREPARACION_EMAIL || 'preparacion@oxidian.com',
     process.env.VISUAL_PREPARACION_PASSWORD || PASSWORD,
+    (page) => captureRole(page, [['preparacion-pedidos', '/preparador/pedidos']]),
   );
-  await captureRole(prepPage, [
-    ['preparacion-pedidos', '/preparador/pedidos'],
-  ]);
-
-  const deliveryPage = await createPage();
-  await login(
-    deliveryPage,
+  await captureAuthenticatedRole(
+    'repartidor',
     process.env.VISUAL_REPARTIDOR_EMAIL || 'repartidor@oxidian.com',
     process.env.VISUAL_REPARTIDOR_PASSWORD || PASSWORD,
+    (page) => captureRole(page, [
+      ['repartidor-ruta', '/repartidor/ruta'],
+      ['repartidor-comisiones', '/repartidor/mis-comisiones'],
+    ]),
   );
-  await captureRole(deliveryPage, [
-    ['repartidor-ruta', '/repartidor/ruta'],
-    ['repartidor-comisiones', '/repartidor/mis-comisiones'],
-  ]);
-
-  const providerPage = await createPage();
-  await login(
-    providerPage,
+  await captureAuthenticatedRole(
+    'proveedor',
     process.env.VISUAL_PROVEEDOR_EMAIL || 'qa-visual-provider@oxidian.local',
     process.env.VISUAL_PROVEEDOR_PASSWORD || PASSWORD,
+    (page) => captureRole(page, [
+      ['proveedor-pedidos', '/proveedor/pedidos'],
+      ['proveedor-inventario', '/proveedor/inventario'],
+      ['proveedor-incidencias', '/proveedor/incidencias'],
+      ['proveedor-finanzas', '/proveedor/finanzas'],
+    ]),
   );
-  await captureRole(providerPage, [
-    ['proveedor-pedidos', '/proveedor/pedidos'],
-    ['proveedor-inventario', '/proveedor/inventario'],
-  ]);
 } finally {
   await browser.close();
 }
@@ -109,7 +115,27 @@ async function createPage() {
   return context.newPage();
 }
 
-async function login(page, email, password) {
+async function captureAuthenticatedRole(role, email, password, capture, totpSecret = '') {
+  const page = await createPage();
+  try {
+    await login(page, email, password, totpSecret);
+    await capture(page);
+  } catch (error) {
+    report.captures.push({
+      name: `${role}-login`,
+      route: '/auth/login',
+      folder: 'formularios',
+      ok: false,
+      error: error.message,
+      finalUrl: page.url(),
+    });
+    console.error(`✗ ${role}-login: ${error.message}`);
+  } finally {
+    await page.context().close();
+  }
+}
+
+async function login(page, email, password, totpSecret = '') {
   await page.goto(`${BASE_URL}/auth/login`, { waitUntil: 'domcontentloaded' });
   await page.locator('input[name="email"]').fill(email);
   await page.locator('input[name="password"]').fill(password);
@@ -118,9 +144,33 @@ async function login(page, email, password) {
     page.locator('button[type="submit"]').click(),
   ]);
   await settle(page);
+  if (page.url().includes('/auth/login/mfa') && totpSecret) {
+    await page.locator('input[name="code"]').fill(totp(totpSecret));
+    await Promise.all([
+      page.waitForLoadState('domcontentloaded'),
+      page.locator('button[type="submit"]').click(),
+    ]);
+    await settle(page);
+  }
   if (page.url().includes('/auth/login')) {
     throw new Error(`No se pudo iniciar sesión con ${email}`);
   }
+}
+
+function totp(secret) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const char of secret.replace(/=+$/g, '').toUpperCase()) {
+    const index = alphabet.indexOf(char);
+    if (index >= 0) bits += index.toString(2).padStart(5, '0');
+  }
+  const key = Buffer.from((bits.match(/.{8}/g) || []).map((byte) => parseInt(byte, 2)));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 1000 / 30)));
+  const digest = crypto.createHmac('sha1', key).update(counter).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const code = ((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000);
+  return String(code).padStart(6, '0');
 }
 
 async function capturePublic(page) {

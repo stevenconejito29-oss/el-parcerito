@@ -14,6 +14,7 @@ const browser = await chromium.launch({
   executablePath: browserPath,
   headless: true,
   args: ['--no-sandbox', '--disable-dev-shm-usage'],
+  proxy: process.env.PWA_AUDIT_PROXY ? { server: process.env.PWA_AUDIT_PROXY } : undefined,
 });
 
 const report = {

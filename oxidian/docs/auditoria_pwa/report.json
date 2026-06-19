@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-06-16T14:16:37.055Z",
-  "baseUrl": "http://127.0.0.1:5070",
+  "generatedAt": "2026-06-19T17:15:01.911Z",
+  "baseUrl": "https://elparcerito.com",
   "views": [
     {
       "name": "android-menu",
@@ -11,8 +11,8 @@
       "horizontalOverflow": false,
       "scrollWidth": 390,
       "viewportWidth": 390,
-      "products": 7,
-      "visibleProducts": 7,
+      "products": 9,
+      "visibleProducts": 9,
       "smallTargets": [],
       "serviceWorkerControlled": true,
       "standalone": false
@@ -26,8 +26,8 @@
       "horizontalOverflow": false,
       "scrollWidth": 393,
       "viewportWidth": 393,
-      "products": 7,
-      "visibleProducts": 7,
+      "products": 9,
+      "visibleProducts": 9,
       "smallTargets": [],
       "serviceWorkerControlled": true,
       "standalone": true
@@ -41,8 +41,8 @@
       "horizontalOverflow": false,
       "scrollWidth": 1440,
       "viewportWidth": 1440,
-      "products": 7,
-      "visibleProducts": 7,
+      "products": 9,
+      "visibleProducts": 9,
       "smallTargets": [],
       "serviceWorkerControlled": true,
       "standalone": false
@@ -64,7 +64,7 @@
         "browser"
       ],
       "background_color": "#FFFDF8",
-      "theme_color": "#D9961A",
+      "theme_color": "#E8B26C",
       "orientation": "portrait-primary",
       "lang": "es",
       "dir": "ltr",
@@ -163,7 +163,7 @@
     "error": null,
     "result": {
       "title": "El Parcerito de Carmona — Pide online",
-      "bodyText": "El Parcerito de Carmona\n\nComida latina hecha al momento\n\n🛒\n↗\nCOMIDA LATINA HECHA AL MOMENTO\nEl Parcerito de Carmona\nComida latina hecha al momento\n\nRestaurante latino de cocina casera en Carmona, Sevilla\n\nVer menú completo\n🥟\n~30 min\nDelivery\nAbierto\nRecomendado para ti\n1 anuncio\nOFERTA DESTACADA\n[",
+      "bodyText": "🥟\n\nEl Parcerito de Carmona\n\n📍 Carmona, Sevilla\n\n🛒\n↗\nEl Parcerito de Carmona\n\nCarmona\n\nVer menú completo\n🥟\n~35 min\nGratis +€25\nAbierto\nBuscar\n🌎\nTodo\n🍽️\nComidas QA\n4\n🥤\nBebidas QA\n1\n🎁\nCombos QA\n3\n🍽️\nEncargos QA\n1\n🍽️ Nuestro menú\n9 productos\n🎁 COMBOS ESPECIALES\n🎁 COMBO\nCOMBO PERSONALIZABLE\n\n",
       "controlled": true
     }
   }
