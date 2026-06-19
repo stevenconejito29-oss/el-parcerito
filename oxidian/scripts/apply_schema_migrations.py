@@ -25,6 +25,7 @@ from models import (
     OrderProviderStatus,
     Proveedor,
     ProveedorProducto,
+    User,
 )
 
 
@@ -549,6 +550,26 @@ def _migrate_proveedor_horario():
         db.session.execute(text("ALTER TABLE proveedores ADD COLUMN hora_cierre TIME"))
 
 
+def _migrate_provider_operator_phones():
+    """Conserva acceso legacy solo cuando el enlace proveedor-operador es inequívoco."""
+    if not inspect(db.engine).has_table("proveedores"):
+        return
+    for proveedor in Proveedor.query.filter(Proveedor.telefono.isnot(None)).all():
+        operadores = (
+            User.query
+            .filter_by(rol="proveedor", proveedor_id=proveedor.id, activo=True)
+            .filter(User.telefono_normalizado.is_(None))
+            .all()
+        )
+        if len(operadores) != 1:
+            continue
+        from phone_utils import normalizar_telefono_cliente
+        canonical = normalizar_telefono_cliente(proveedor.telefono)
+        if not canonical or User.query.filter_by(telefono_normalizado=canonical).first():
+            continue
+        operadores[0].telefono = canonical
+
+
 def _migrate_zonas_geo():
     """Añade centro_lat/centro_lng/radio_km a zonas_entrega."""
     inspector = inspect(db.engine)
@@ -679,6 +700,11 @@ MIGRATIONS = [
         "id": "20260618_01_proveedor_horario",
         "description": "Añadir hora_apertura/hora_cierre a proveedores para filtrar catálogo fuera de horario",
         "fn": _migrate_proveedor_horario,
+    },
+    {
+        "id": "20260619_01_provider_operator_phones",
+        "description": "Migrar el teléfono legacy del bar a su único operador inequívoco",
+        "fn": _migrate_provider_operator_phones,
     },
 ]
 
