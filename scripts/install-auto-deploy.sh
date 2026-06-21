@@ -30,7 +30,7 @@ Description=Despliegue automatico de Oxidian desde GitHub
 
 [Service]
 Type=oneshot
-ExecStart=$TARGET
+ExecStart=/usr/bin/sg docker -c $TARGET
 EOF
 
 cat >"$TIMER_FILE" <<EOF
