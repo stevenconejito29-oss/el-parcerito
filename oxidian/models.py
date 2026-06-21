@@ -22,23 +22,23 @@ def utcnow():
 # USUARIOS
 # ─────────────────────────────────────────────
 
-# Roles del sistema (post-consolidación 2026-06-17):
+# Roles operativos del sistema:
 #  - super_admin: configuración global, integraciones, único con MFA forzado.
 #  - admin: operación diaria (productos, caja, pedidos, marketing).
-#  - preparacion: prepara stock propio (cocina + almacén unificados).
+#  - cocina: prepara pedidos inmediatos de stock propio.
+#  - preparacion: prepara pedidos programados o con fecha de entrega.
 #  - repartidor: entrega los pedidos.
 #  - proveedor: operador de un bar despachador (varios bares posibles).
 #  - cliente: identidad comercial interna para pedidos, puntos y marketing.
 #    No es una cuenta autenticable ni dispone de panel público.
-# Los valores "cocina" y "staff" están deprecados como rol; nada nuevo los
-# escribe, pero la columna users.rol los acepta para no romper datos viejos.
-ROLES = ["super_admin", "admin", "preparacion", "repartidor", "proveedor", "cliente"]
+# "staff" se conserva únicamente para cuentas históricas.
+ROLES = ["super_admin", "admin", "cocina", "preparacion", "repartidor", "proveedor", "cliente"]
 ROLES_AUTENTICABLES = frozenset({
     "super_admin", "admin", "preparacion", "repartidor", "proveedor",
     # Compatibilidad temporal con cuentas operativas antiguas.
     "cocina", "staff",
 })
-ROLES_LEGACY_PREPARACION = {"cocina", "staff"}
+ROLES_LEGACY_PREPARACION = {"staff"}
 METODOS_PAGO_VALIDOS = ("efectivo", "bizum")
 
 # Modelo de acuerdo con un proveedor (restaurante despachador):
@@ -523,13 +523,62 @@ class Product(db.Model):
 
     @property
     def stock_total(self):
+        """Stock propio vendible; los lotes ya caducados no cuentan."""
         try:
             val = db.session.query(db.func.coalesce(db.func.sum(Stock.cantidad), 0))\
-                         .filter_by(producto_id=self.id).scalar()
+                         .filter(Stock.producto_id == self.id)\
+                         .filter(
+                             db.or_(
+                                 Stock.fecha_caducidad.is_(None),
+                                 Stock.fecha_caducidad >= date.today(),
+                             )
+                         ).scalar()
             return int(val or 0)
         except Exception:
             # Ante errores transitorios de consulta, devolver 0 como fallback.
             return 0
+
+    @staticmethod
+    def _parse_origen_key(origen):
+        if origen == "propio":
+            return "propio", None
+        if isinstance(origen, int):
+            return f"proveedor:{origen}", origen
+        raw = str(origen or "").strip().lower()
+        if raw.startswith("proveedor:"):
+            try:
+                proveedor_id = int(raw.split(":", 1)[1])
+            except (TypeError, ValueError):
+                pass
+            else:
+                if proveedor_id > 0:
+                    return f"proveedor:{proveedor_id}", proveedor_id
+        raise ValueError("Origen inválido; usa 'propio' o 'proveedor:<id>'")
+
+    def _resolver_origen(self, origen=None):
+        if origen is None:
+            origen = (
+                f"proveedor:{self.proveedor_despachador_id}"
+                if self.proveedor_despachador_id else "propio"
+            )
+        return self._parse_origen_key(origen)
+
+    def pertenece_a_origen(self, origen=None):
+        """Indica si el producto se puede operar desde el origen indicado."""
+        key, proveedor_id = self._resolver_origen(origen)
+        if self.es_combo:
+            return key == self.origen_operativo_key
+        if proveedor_id is None:
+            if Stock.query.filter_by(producto_id=self.id).first():
+                return True
+            return not ProveedorProducto.query.filter_by(
+                producto_id=self.id,
+                activo=True,
+            ).first()
+        return self._proveedor_producto_fila(
+            proveedor_id=proveedor_id,
+            for_update=False,
+        ) is not None
 
     @property
     def usa_stock_propio(self):
@@ -557,31 +606,50 @@ class Product(db.Model):
 
     @property
     def stock_operativo_total(self):
+        return self.stock_para_origen()
+
+    def stock_para_origen(self, origen=None):
+        """Stock vendible en una ubicación concreta."""
+        key, proveedor_id = self._resolver_origen(origen)
         if self.es_combo:
-            return self._combo_proveedor_stock_total() if self.proveedor_despachador_id else self.combo_stock_total
-        if self.proveedor_despachador_id:
-            fila = self._proveedor_producto_fila(for_update=False)
+            if key != self.origen_operativo_key:
+                return 0
+            return self._combo_stock_total_origen(key)
+        if proveedor_id is not None:
+            fila = self._proveedor_producto_fila(
+                proveedor_id=proveedor_id,
+                for_update=False,
+            )
             return int(fila.stock or 0) if fila and fila.activo else 0
         return self.stock_total
+
+    def stock_total_en_origen(self, origen):
+        return self.stock_para_origen(origen)
+
+    def stock_en_origen(self, origen):
+        return self.stock_para_origen(origen)
 
     @property
     def admin_nombre_operativo(self):
         return f"{self.nombre} · #{self.id} · {self.origen_operativo_label}"
 
     @staticmethod
-    def _capacidad_combo_item(item):
+    def _capacidad_combo_item(item, origen="propio"):
         componente = item.componente
         if not componente or not componente.activo or item.cantidad <= 0:
             return 0
-        if not componente.usa_stock_propio:
+        if (componente.tipo_entrega or "inmediato") != "inmediato":
             return None
-        return componente.stock_total // item.cantidad
+        return componente.stock_para_origen(origen) // item.cantidad
 
     @property
     def combo_stock_total(self):
         """Disponibilidad estimada de un combo según el stock de sus componentes."""
+        return self._combo_stock_total_origen("propio")
+
+    def _combo_stock_total_origen(self, origen):
         if not self.es_combo:
-            return self.stock_total
+            return self.stock_para_origen(origen)
 
         componentes = list(self.combo_items)
         if not componentes:
@@ -595,14 +663,14 @@ class Product(db.Model):
             if item.es_seleccionable:
                 grupos.setdefault(item.grupo_seleccion or "Seleccion", []).append(item)
                 continue
-            capacidad = self._capacidad_combo_item(item)
+            capacidad = self._capacidad_combo_item(item, origen)
             if capacidad is not None:
                 capacidades.append(capacidad)
 
         for opciones in grupos.values():
             max_sel = max(1, opciones[0].max_selecciones or 1)
             capacidades_opciones = [
-                self._capacidad_combo_item(item)
+                self._capacidad_combo_item(item, origen)
                 for item in opciones
                 if item.activo
             ]
@@ -617,33 +685,34 @@ class Product(db.Model):
 
         return min(capacidades) if capacidades else 999999
 
-    def disponible_para_venta(self, cantidad=1):
-        if self.proveedor_despachador_id and (
-            not self.proveedor_despachador or not self.proveedor_despachador.activo
-        ):
+    def disponible_para_venta(self, cantidad=1, origen=None):
+        key, proveedor_id = self._resolver_origen(origen)
+        if not self.pertenece_a_origen(key):
             return False
+        if proveedor_id is not None:
+            proveedor = db.session.get(Proveedor, proveedor_id)
+            if not proveedor or not proveedor.activo:
+                return False
         if self.es_combo:
             componentes = list(self.combo_items)
             if not componentes:
                 return False
             if self.tipo_entrega != "inmediato":
                 return True
-            if self.proveedor_despachador_id:
-                # Disponibilidad = mínimo stock de proveedor por componente requerido
-                return self._combo_proveedor_stock_total() >= cantidad
-            return self.combo_stock_total >= cantidad
+            return self._combo_stock_total_origen(key) >= cantidad
         if self.tipo_entrega != "inmediato":
             return True
-        if self.proveedor_despachador_id:
-            fila = self._proveedor_producto_fila(for_update=False)
-            return bool(fila and int(fila.stock or 0) >= int(cantidad or 1))
-        return self.stock_total >= cantidad
+        return self.stock_para_origen(key) >= int(cantidad or 1)
 
-    def _proveedor_producto_fila(self, for_update=False):
-        if not self.proveedor_despachador_id:
+    def disponible_para_venta_en_origen(self, origen, cantidad=1):
+        return self.disponible_para_venta(cantidad, origen=origen)
+
+    def _proveedor_producto_fila(self, proveedor_id=None, for_update=False):
+        proveedor_id = proveedor_id or self.proveedor_despachador_id
+        if not proveedor_id:
             return None
         query = ProveedorProducto.query.filter_by(
-            proveedor_id=self.proveedor_despachador_id,
+            proveedor_id=proveedor_id,
             producto_id=self.id,
             activo=True,
         )
@@ -655,39 +724,11 @@ class Product(db.Model):
         """Disponibilidad de un combo despachado por un proveedor según su stock."""
         if not self.proveedor_despachador_id:
             return 0
-        componentes = [item for item in self.combo_items if item.activo and item.componente]
-        if not componentes:
-            return 0
-        producto_ids = list({item.producto_id for item in componentes})
-        filas = ProveedorProducto.query.filter(
-            ProveedorProducto.proveedor_id == self.proveedor_despachador_id,
-            ProveedorProducto.producto_id.in_(producto_ids),
-            ProveedorProducto.activo.is_(True),
-        ).all()
-        por_producto = {fila.producto_id: fila.stock for fila in filas}
-        capacidades = []
-        grupos = {}
-        for item in componentes:
-            if item.es_seleccionable:
-                grupos.setdefault(item.grupo_seleccion or "Seleccion", []).append(item)
-                continue
-            stock = por_producto.get(item.producto_id, 0)
-            req = max(1, item.cantidad or 1)
-            capacidades.append(stock // req)
+        return self._combo_stock_total_origen(
+            f"proveedor:{self.proveedor_despachador_id}"
+        )
 
-        for opciones in grupos.values():
-            max_sel = max(1, opciones[0].max_selecciones or 1)
-            disponibles = []
-            for item in opciones:
-                stock = por_producto.get(item.producto_id, 0)
-                req = max(1, item.cantidad or 1)
-                disponibles.append(stock // req)
-            capacidad_grupo = sum(v for v in disponibles if v > 0)
-            capacidades.append(capacidad_grupo // max_sel if capacidad_grupo > 0 else 0)
-
-        return min(capacidades) if capacidades else 0
-
-    def combo_item_stock_disponible(self, item, cantidad=1):
+    def combo_item_stock_disponible(self, item, cantidad=1, origen=None):
         """Stock del componente dentro del origen operativo real del combo."""
         if not item or not item.activo:
             return False
@@ -695,18 +736,12 @@ class Product(db.Model):
         if not componente or not componente.activo or not componente.visible_ahora:
             return False
         requerido = max(1, int(item.cantidad or 1)) * max(1, int(cantidad or 1))
-        if self.es_combo and self.proveedor_despachador_id:
-            fila = ProveedorProducto.query.filter_by(
-                proveedor_id=self.proveedor_despachador_id,
-                producto_id=item.producto_id,
-                activo=True,
-            ).first()
-            return bool(fila and int(fila.stock or 0) >= requerido)
         if (componente.tipo_entrega or "inmediato") != "inmediato":
             return True
-        if not componente.usa_stock_propio:
-            return True
-        return int(componente.stock_total or 0) >= requerido
+        key, _proveedor_id = self._resolver_origen(origen)
+        if self.es_combo and key != self.origen_operativo_key:
+            return False
+        return componente.stock_para_origen(key) >= requerido
 
     @staticmethod
     def _normalizar_seleccion_combo(seleccion_item_ids):
@@ -769,12 +804,20 @@ class Product(db.Model):
             seleccionados.extend(elegidos)
         return seleccionados
 
-    def validar_stock_combo_seleccion(self, cantidad=1, seleccion_item_ids=None):
+    def validar_stock_combo_seleccion(
+        self,
+        cantidad=1,
+        seleccion_item_ids=None,
+        origen=None,
+    ):
         """Valida stock exacto de un combo según sus opciones y su origen operativo."""
         if not self.es_combo:
-            if not self.disponible_para_venta(cantidad):
+            if not self.disponible_para_venta(cantidad, origen=origen):
                 raise ValueError(f"Stock insuficiente para '{self.nombre}'")
             return True
+        key, proveedor_id = self._resolver_origen(origen)
+        if key != self.origen_operativo_key:
+            raise ValueError(f"El combo '{self.nombre}' no pertenece al origen '{key}'")
         cantidad = max(1, int(cantidad or 1))
         requeridos = {}
         for item in self._combo_items_para_seleccion(seleccion_item_ids):
@@ -785,9 +828,9 @@ class Product(db.Model):
         if not requeridos:
             return True
 
-        if self.proveedor_despachador_id:
+        if proveedor_id is not None:
             filas = ProveedorProducto.query.filter(
-                ProveedorProducto.proveedor_id == self.proveedor_despachador_id,
+                ProveedorProducto.proveedor_id == proveedor_id,
                 ProveedorProducto.producto_id.in_(list(requeridos.keys())),
                 ProveedorProducto.activo.is_(True),
             ).all()
@@ -807,11 +850,7 @@ class Product(db.Model):
             producto = db.session.get(Product, producto_id)
             if not producto:
                 raise ValueError(f"Componente inválido en combo '{self.nombre}'")
-            if producto.proveedor_despachador_id:
-                raise ValueError(
-                    f"El combo propio '{self.nombre}' no puede usar el componente externo '{producto.nombre}'"
-                )
-            if not producto.usa_stock_propio:
+            if (producto.tipo_entrega or "inmediato") != "inmediato":
                 continue
             if int(producto.stock_total or 0) < requerido:
                 raise ValueError(f"Stock insuficiente para '{producto.nombre}'")
@@ -1058,25 +1097,38 @@ class Product(db.Model):
         key = str(self.get_atributos().get("catalog_key") or "").strip().lower()
         return f"catalog:{key}" if key else f"product:{self.id}"
 
-    def descontar_stock(self, cantidad):
-        """Descuenta stock FIFO por fecha de caducidad (más próxima primero).
+    def descontar_stock(self, cantidad, origen=None):
+        """Descuenta stock FEFO por fecha de caducidad (más próxima primero).
         Usa SELECT FOR UPDATE en PostgreSQL para evitar race conditions bajo carga concurrente."""
         if cantidad <= 0:
             raise ValueError("La cantidad a descontar debe ser mayor que 0")
-        if self.proveedor_despachador_id and not self.es_combo:
-            fila = self._proveedor_producto_fila(for_update=True)
+        key, proveedor_id = self._resolver_origen(origen)
+        if self.es_combo:
+            self.descontar_stock_combo(cantidad, origen=key)
+            return
+        if proveedor_id is not None:
+            fila = self._proveedor_producto_fila(
+                proveedor_id=proveedor_id,
+                for_update=True,
+            )
             if not fila:
                 raise ValueError(f"El proveedor no tiene registrado '{self.nombre}' en su inventario")
             if int(fila.stock or 0) < cantidad:
                 raise ValueError(f"Stock insuficiente del proveedor para '{self.nombre}'")
             fila.stock -= cantidad
             return
-        if not self.usa_stock_propio:
+        if (self.tipo_entrega or "inmediato") != "inmediato":
             return
         pendiente = cantidad
         # with_for_update() bloquea las filas en PostgreSQL hasta el commit.
         lotes = Stock.query.filter_by(producto_id=self.id)\
                            .filter(Stock.cantidad > 0)\
+                           .filter(
+                               db.or_(
+                                   Stock.fecha_caducidad.is_(None),
+                                   Stock.fecha_caducidad >= date.today(),
+                               )
+                           )\
                            .order_by(Stock.fecha_caducidad.asc().nullslast(), Stock.fecha_entrada.asc())\
                            .with_for_update()\
                            .all()
@@ -1090,6 +1142,20 @@ class Product(db.Model):
             usar = min(lote.cantidad, pendiente)
             lote.cantidad -= usar
             pendiente -= usar
+
+    def descontar_stock_en_origen(
+        self,
+        origen,
+        cantidad,
+        seleccion_item_ids=None,
+    ):
+        if self.es_combo:
+            return self.descontar_stock_combo(
+                cantidad,
+                seleccion_item_ids=seleccion_item_ids,
+                origen=origen,
+            )
+        return self.descontar_stock(cantidad, origen=origen)
 
     def restaurar_stock(self, cantidad):
         """Devuelve unidades al lote más reciente; crea lote básico si no existe."""
@@ -1141,7 +1207,12 @@ class Product(db.Model):
         else:
             db.session.add(Stock(producto_id=self.id, cantidad=cantidad))
 
-    def descontar_stock_combo(self, cantidad, seleccion_item_ids=None):
+    def descontar_stock_combo(
+        self,
+        cantidad,
+        seleccion_item_ids=None,
+        origen=None,
+    ):
         """Descuenta stock de componentes fijos y seleccionados de un combo.
 
         Si el combo tiene `proveedor_despachador_id`, descuenta del stock que el
@@ -1150,10 +1221,17 @@ class Product(db.Model):
         if cantidad <= 0:
             raise ValueError("La cantidad a descontar debe ser mayor que 0")
         if not self.es_combo:
-            self.descontar_stock(cantidad)
+            self.descontar_stock(cantidad, origen=origen)
             return
-        if self.proveedor_despachador_id:
-            self._descontar_stock_combo_proveedor(cantidad, seleccion_item_ids)
+        key, proveedor_id = self._resolver_origen(origen)
+        if key != self.origen_operativo_key:
+            raise ValueError(f"El combo '{self.nombre}' no pertenece al origen '{key}'")
+        if proveedor_id is not None:
+            self._descontar_stock_combo_proveedor(
+                cantidad,
+                seleccion_item_ids,
+                proveedor_id=proveedor_id,
+            )
             return
 
         componentes = list(self.combo_items)
@@ -1207,8 +1285,8 @@ class Product(db.Model):
                     if (
                         item.activo and item.componente
                         and (
-                            not item.componente.usa_stock_propio
-                            or item.componente.stock_total >= item.cantidad * cantidad
+                            (item.componente.tipo_entrega or "inmediato") != "inmediato"
+                            or item.componente.stock_para_origen(key) >= item.cantidad * cantidad
                         )
                     )
                 ][:max_sel]
@@ -1225,12 +1303,7 @@ class Product(db.Model):
                 raise ValueError(f"Componente inactivo en combo '{self.nombre}'")
             if not item.componente:
                 raise ValueError(f"Componente inválido en combo '{self.nombre}'")
-            if item.componente.proveedor_despachador_id:
-                raise ValueError(
-                    f"El combo propio '{self.nombre}' no puede usar el componente externo "
-                    f"'{item.componente.nombre}'"
-                )
-            if not item.componente.usa_stock_propio:
+            if (item.componente.tipo_entrega or "inmediato") != "inmediato":
                 continue
             requeridos[item.producto_id] = requeridos.get(item.producto_id, 0) + item.cantidad * cantidad
 
@@ -1245,14 +1318,22 @@ class Product(db.Model):
                 raise ValueError(f"Stock insuficiente para '{nombre}'")
 
         for producto_id, requerido in requeridos.items():
-            db.session.get(Product, producto_id).descontar_stock(requerido)
+            db.session.get(Product, producto_id).descontar_stock(
+                requerido,
+                origen=key,
+            )
 
-    def _descontar_stock_combo_proveedor(self, cantidad, seleccion_item_ids):
+    def _descontar_stock_combo_proveedor(
+        self,
+        cantidad,
+        seleccion_item_ids,
+        proveedor_id=None,
+    ):
         """Descuenta del stock del proveedor despachador en proveedor_productos.
 
         Resuelve las opciones del combo igual que el flujo propio (default por
         es_predeterminado u orden) y aplica un descuento atómico por SKU."""
-        proveedor_id = self.proveedor_despachador_id
+        proveedor_id = proveedor_id or self.proveedor_despachador_id
         if not proveedor_id:
             raise ValueError(f"El combo '{self.nombre}' no tiene proveedor despachador")
 
@@ -2047,10 +2128,23 @@ class NotificationOutbox(db.Model):
             return {}
 
 
-def snapshot_producto_para_pedido(producto):
+def snapshot_producto_para_pedido(producto, origen_operativo=None):
     """Crea una foto estable del producto para trazabilidad de pedidos."""
     if not producto:
         return {}
+    origen_key, proveedor_id = producto._resolver_origen(origen_operativo)
+    proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
+    proveedor_snapshot = (
+        {
+            "id": proveedor.id,
+            "nombre": proveedor.nombre,
+            "direccion": proveedor.direccion,
+            "telefono": proveedor.telefono,
+            "modelo": proveedor.modelo_acuerdo,
+            "comision": float(proveedor.comision_pct or 0),
+        }
+        if proveedor else None
+    )
     return {
         "id": producto.id,
         "nombre": producto.nombre,
@@ -2071,23 +2165,27 @@ def snapshot_producto_para_pedido(producto):
         "fecha_llegada": producto.fecha_llegada.isoformat() if producto.fecha_llegada else None,
         "dias_anticipacion_encargo": int(producto.dias_anticipacion_encargo or 0),
         "canal_preparacion": producto.canal_preparacion or "cocina",
+        "origen_operativo_key": origen_key,
+        "origen_operativo": "proveedor" if proveedor_id else "propio",
         # LEGACY: proveedor_id (FK users) — retenido para no romper trazabilidad antigua.
         "proveedor_id": producto.proveedor_id,
-        # Despachador externo (FK proveedores), para producto simple o combo.
-        "proveedor_despachador_id": producto.proveedor_despachador_id,
-        "proveedor_despachador_nombre": (
-            producto.proveedor_despachador.nombre
-            if producto.proveedor_despachador else None
+        # El despachador se congela desde el origen explícito. En simples el
+        # Product maestro ya no lleva proveedor_despachador_id.
+        "proveedor_despachador_id": proveedor_id,
+        "proveedor_despachador_nombre": proveedor.nombre if proveedor else None,
+        "proveedor_despachador_direccion": proveedor.direccion if proveedor else None,
+        "proveedor_despachador_telefono": proveedor.telefono if proveedor else None,
+        "proveedor_despachador_modelo": proveedor.modelo_acuerdo if proveedor else None,
+        "proveedor_despachador_comision": (
+            float(proveedor.comision_pct or 0) if proveedor else None
         ),
+        "proveedor_snapshot": proveedor_snapshot,
+        "proveedor_despachador": proveedor_snapshot,
         # Congelamos modelo de acuerdo y comisión al crear el pedido para que
         # cambios futuros no rompan liquidaciones de pedidos pasados.
-        "proveedor_modelo_acuerdo": (
-            producto.proveedor_despachador.modelo_acuerdo
-            if producto.proveedor_despachador else None
-        ),
+        "proveedor_modelo_acuerdo": proveedor.modelo_acuerdo if proveedor else None,
         "proveedor_comision_pct": (
-            float(producto.proveedor_despachador.comision_pct or 0)
-            if producto.proveedor_despachador else None
+            float(proveedor.comision_pct or 0) if proveedor else None
         ),
         "stock_mostrar_en_web": bool(producto.stock_mostrar_en_web),
         "canjeable_con_puntos": bool(producto.canjeable_con_puntos),
@@ -2139,10 +2237,13 @@ def metadata_componente_combo(combo_item, proveedor_despachador_id=None):
     return snapshot
 
 
-def metadata_item_pedido(producto, metadata=None):
+def metadata_item_pedido(producto, metadata=None, origen_operativo=None):
     """Fusiona metadata de combo/flujo con snapshot estable del producto."""
     data = dict(metadata or {})
-    data["producto"] = snapshot_producto_para_pedido(producto)
+    data["producto"] = snapshot_producto_para_pedido(
+        producto,
+        origen_operativo=origen_operativo,
+    )
     return data
 
 

@@ -1,29 +1,39 @@
 {% extends "admin_base.html" %}
-{% block title %}Usuarios & Staff{% endblock %}
+{% block title %}Usuarios y equipo{% endblock %}
 {% block content %}
 
-<div class="flex gap-2 mb-4 flex-wrap">
-  <a href="{{ url_for('admin.cola') }}" class="ox-btn-secondary" style="font-size:.8rem">🔄 Cola & equipo</a>
-  <a href="{{ url_for('admin.notificaciones') }}" class="ox-btn-secondary" style="font-size:.8rem">📨 Notificaciones</a>
-</div>
+{% set role_labels = {
+  'super_admin': 'Superadmin',
+  'admin': 'Administrador',
+  'cocina': 'Cocina (pedidos inmediatos)',
+  'preparacion': 'Preparacion (pedidos con fecha)',
+  'repartidor': 'Repartidor',
+  'proveedor': 'Proveedor',
+  'staff': 'Staff (legado)'
+} %}
 
-<div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+<div class="flex items-start justify-between gap-3 mb-5 flex-wrap">
   <div>
-    <h1 class="text-2xl font-black text-white">👥 Usuarios & Staff</h1>
-    <p class="text-xs mt-0.5" style="color:var(--col-muted)">{{ users|length }} cuentas totales</p>
+    <h1 class="text-2xl font-black text-white">Usuarios y equipo</h1>
+    <p class="text-sm mt-1" style="color:var(--col-muted)">
+      Cuentas internas con acceso al sistema. Los clientes no se crean desde este panel.
+    </p>
   </div>
-  <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
-          class="text-sm font-bold px-4 py-2 rounded-xl"
-          style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
-    + Nuevo usuario
+  <button type="button" class="ox-btn-primary" onclick="document.getElementById('nuevo-usuario').showModal()">
+    Nuevo usuario
   </button>
 </div>
 
 <form method="GET" class="adm-toolbar">
-  <input type="search" name="q" value="{{ q }}" placeholder="Buscar nombre, email o teléfono">
+  <input type="search" name="q" value="{{ q }}" placeholder="Nombre, email o telefono">
   <select name="rol">
     <option value="">Todos los roles</option>
-    {% for r in roles_validos %}<option value="{{ r }}" {% if rol_f == r %}selected{% endif %}>{{ r|replace('_', ' ')|title }}</option>{% endfor %}
+    {% for rol in roles_validos %}
+    <option value="{{ rol }}" {% if rol_f == rol %}selected{% endif %}>{{ role_labels.get(rol, rol) }}</option>
+    {% endfor %}
+    {% for rol in roles_legacy|sort %}
+    <option value="{{ rol }}" {% if rol_f == rol %}selected{% endif %}>{{ role_labels.get(rol, rol) }}</option>
+    {% endfor %}
   </select>
   <select name="estado">
     <option value="">Cualquier estado</option>
@@ -34,345 +44,200 @@
   {% if q or rol_f or estado_f %}<a href="{{ url_for('admin.usuarios') }}">Limpiar</a>{% endif %}
 </form>
 
-{# ── RESUMEN POR ROL ── #}
-<div class="grid grid-cols-4 md:grid-cols-7 gap-2 mb-5">
-  {% set rol_icons = {'super_admin':'👑','admin':'🔧','staff':'📦','cocina':'🍳','preparacion':'🗓️','repartidor':'🛵','proveedor':'🏪'} %}
-  {% set rol_counts = {} %}
-  {% for u in users %}{% set _ = rol_counts.update({u.rol: (rol_counts.get(u.rol, 0) + 1)}) %}{% endfor %}
-  {% for rol, icon in rol_icons.items() %}
-  {% set cnt = rol_counts.get(rol, 0) %}
-  {% if cnt > 0 %}
-  <button onclick="filtrarRol('{{ rol }}')"
-          class="rol-filter-btn flex flex-col items-center gap-0.5 p-2 rounded-xl transition text-center"
-          data-rol="{{ rol }}"
-          style="background:var(--col-elevated);border:1.5px solid var(--col-border)">
-    <span class="text-lg leading-none">{{ icon }}</span>
-    <span class="text-xs font-bold" style="color:var(--col-text)">{{ cnt }}</span>
-    <span style="font-size:.55rem;color:var(--col-faint)">
-      {% if rol == 'cocina' %}Cocina
-      {% elif rol == 'preparacion' %}Encargos
-      {% elif rol == 'staff' %}Empaque
-      {% elif rol == 'proveedor' %}Proveedor
-      {% elif rol == 'super_admin' %}Super Admin
-      {% else %}{{ rol|replace('_',' ') }}{% endif %}
-    </span>
-  </button>
-  {% endif %}
-  {% endfor %}
-  <button onclick="filtrarRol('')"
-          class="rol-filter-btn flex flex-col items-center gap-0.5 p-2 rounded-xl transition text-center"
-          data-rol=""
-          style="background:rgba(255,171,0,.12);border:1.5px solid rgba(255,171,0,.3)">
-    <span class="text-lg leading-none">🌐</span>
-    <span class="text-xs font-bold" style="color:#FFAB00">{{ users|length }}</span>
-    <span style="font-size:.55rem;color:var(--col-faint)">todos</span>
-  </button>
-</div>
-
-{# ── TABLA DE USUARIOS ── #}
-<div class="users-mobile-list">
-  {% for u in users %}
-  <article data-rol="{{ u.rol }}" class="user-mobile-card">
-    <div class="users-mobile-head">
-      <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black ox-avatar-{{ u.rol }}">{{ u.nombre[0].upper() }}</div>
-      <div><strong>{{ u.nombre }}</strong><small>{{ u.email }}</small></div>
-      <span class="ox-role-badge ox-role-{{ u.rol }}">{{ u.rol|replace('_',' ') }}</span>
-    </div>
-    <div class="users-mobile-meta">
-      {% if u.telefono %}<span>{{ u.telefono }}</span>{% endif %}
-      {% if u.puesto_trabajo %}<span>{{ u.puesto_trabajo }}</span>{% endif %}
-      <b>{{ 'Activo' if u.activo else 'Inactivo' }}</b>
-    </div>
-    <div class="users-mobile-actions">
-      <button type="button" onclick='abrirEditar({{ u.id }}, {{ {"nombre": u.nombre, "rol": u.rol, "telefono": u.telefono or "", "proveedor_id": u.proveedor_id or "", "puesto_trabajo": u.puesto_trabajo or "", "salario_base": u.salario_base or "", "tarifa_entrega": u.tarifa_entrega or ""}|tojson }})'>Editar</button>
-      {% if u.rol == 'repartidor' %}<a href="{{ url_for('admin.pagos_staff', user_id=u.id) }}">Pagos</a>{% endif %}
-      {% if current_user.rol == 'super_admin' and u.rol == 'admin' %}<a href="{{ url_for('superadmin.admin_features', user_id=u.id) }}">Permisos</a>{% endif %}
-      {% if u.id != current_user.id %}
-      <form method="POST" action="{{ url_for('admin.toggle_usuario', user_id=u.id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit">{{ 'Desactivar' if u.activo else 'Activar' }}</button>
-      </form>
-      {% endif %}
-    </div>
-  </article>
-  {% endfor %}
-</div>
-<div class="ox-card overflow-hidden users-desktop-table">
+<div class="ox-card overflow-hidden usr-desktop-table">
   <div class="ox-table-wrap">
-    <table class="ox-table" id="tabla-usuarios">
+    <table class="ox-table">
       <thead>
         <tr>
-          <th>Usuario</th>
+          <th>Cuenta</th>
           <th>Rol</th>
-          <th class="hidden md:table-cell">Contacto</th>
-          <th class="hidden md:table-cell">Puesto</th>
-          <th class="hidden lg:table-cell text-right">Salario</th>
+          <th>Asignacion</th>
           <th class="text-center">Estado</th>
-          <th class="text-center">Acciones</th>
+          <th class="text-right">Acciones</th>
         </tr>
       </thead>
       <tbody>
       {% for u in users %}
-      <tr class="user-row" data-rol="{{ u.rol }}">
-        <td class="user-main">
-          <div class="flex items-center gap-2.5">
-            <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ox-avatar-{{ u.rol }}">
-              {{ u.nombre[0].upper() }}
-            </div>
-            <div class="min-w-0">
-              <p class="font-bold text-sm text-white truncate">{{ u.nombre }}</p>
-              <p class="text-xs truncate" style="color:var(--col-faint)">{{ u.email }}</p>
-            </div>
-          </div>
-        </td>
-        <td class="user-role">
-          <span class="ox-role-badge ox-role-{{ u.rol }}">
-            {{ {'super_admin':'👑 Super','admin':'🔧 Admin','staff':'📦 Empaque / almacén','cocina':'🍳 Cocina','preparacion':'🗓️ Encargos','repartidor':'🛵 Repartidor','proveedor':'🏪 Proveedor'}.get(u.rol, u.rol) }}
-          </span>
-        </td>
-        <td class="hidden md:table-cell text-xs" style="color:var(--col-muted)">
-          {% if u.telefono %}📱 {{ u.telefono }}{% else %}—{% endif %}
-        </td>
-        <td class="hidden md:table-cell text-xs" style="color:var(--col-muted)">{{ u.puesto_trabajo or '—' }}</td>
-        <td class="hidden lg:table-cell text-right text-sm">
-          {% if u.salario_base %}
-          <span style="color:#5EF097">€{{ "%.0f"|format(u.salario_base) }}/mes</span>
-          {% else %}—{% endif %}
-        </td>
-        <td class="text-center user-state">
-          <div class="flex items-center justify-center gap-1.5">
-            {% if u.activo %}
-            <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background:#5EF097{% if u.esta_conectado %};box-shadow:0 0 0 3px rgba(94,240,151,.25){% endif %}"></span>
-            <span class="text-xs" style="color:#5EF097">Activo</span>
+        <tr>
+          <td>
+            <strong class="block text-white">{{ u.nombre }}</strong>
+            <span class="text-xs" style="color:var(--col-muted)">{{ u.email }}</span>
+            {% if u.telefono %}<span class="block text-xs" style="color:var(--col-faint)">{{ u.telefono }}</span>{% endif %}
+          </td>
+          <td>
+            <span class="ox-role-badge ox-role-{{ u.rol }}">{{ role_labels.get(u.rol, u.rol) }}</span>
+          </td>
+          <td class="text-sm" style="color:var(--col-muted)">
+            {% if u.rol == 'proveedor' %}
+              {{ u.proveedor.nombre if u.proveedor else 'Proveedor sin asignar' }}
             {% else %}
-            <span class="text-xs" style="color:var(--col-faint)">Inactivo</span>
+              {{ u.puesto_trabajo or 'Sin puesto indicado' }}
             {% endif %}
-          </div>
-        </td>
-        <td class="user-actions">
-          <div class="flex items-center justify-center gap-1">
-            <button type="button"
-                    onclick='abrirEditar({{ u.id }}, {{ {"nombre": u.nombre, "rol": u.rol, "telefono": u.telefono or "", "proveedor_id": u.proveedor_id or "", "puesto_trabajo": u.puesto_trabajo or "", "salario_base": u.salario_base or "", "tarifa_entrega": u.tarifa_entrega or ""} | tojson }})'
-                    class="text-xs px-2 py-1 rounded-lg transition"
-                    title="Editar usuario"
-                    style="background:rgba(90,170,255,.1);color:#60AAFF;border:1px solid rgba(90,170,255,.2)">✏️</button>
-            {% if u.rol == 'repartidor' %}
-            <a href="{{ url_for('admin.pagos_staff') }}?user_id={{ u.id }}"
-               title="Ver pagos" class="text-xs px-2 py-1 rounded-lg" style="background:rgba(168,85,247,.1);color:#C084FC;border:1px solid rgba(168,85,247,.2)">💸</a>
-            {% endif %}
-            {% if current_user.rol == 'super_admin' and u.rol == 'admin' %}
-            <a href="{{ url_for('superadmin.admin_features', user_id=u.id) }}"
-               class="text-xs px-2 py-1 rounded-lg" title="Permisos y módulos"
-               style="background:rgba(255,171,0,.1);color:#FFAB00;border:1px solid rgba(255,171,0,.2)">🔐</a>
-            {% endif %}
-            {% if u.id != current_user.id %}
-            <form method="POST" action="{{ url_for('admin.toggle_usuario', user_id=u.id) }}" class="inline">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="text-xs px-2 py-1 rounded-lg"
-                      style="{% if u.activo %}background:rgba(255,59,48,.08);color:#FF6B6B;border:1px solid rgba(255,59,48,.15){% else %}background:rgba(52,199,89,.08);color:#5EF097;border:1px solid rgba(52,199,89,.15){% endif %}">
-                {{ '⏸' if u.activo else '▶' }}
-              </button>
-            </form>
-            {% endif %}
-          </div>
-        </td>
-      </tr>
+          </td>
+          <td class="text-center">
+            <span class="usr-state {{ 'is-active' if u.activo else 'is-inactive' }}">
+              {{ 'Activo' if u.activo else 'Inactivo' }}
+            </span>
+          </td>
+          <td>
+            <div class="usr-actions">
+              {% if current_user.rol == 'super_admin' or u.rol not in ('admin', 'super_admin') %}
+              <a href="{{ url_for('admin.editar_usuario', user_id=u.id) }}" class="ox-btn-secondary">Editar</a>
+              {% endif %}
+              {% if u.id != current_user.id and (current_user.rol == 'super_admin' or u.rol not in ('admin', 'super_admin')) %}
+              <form method="POST" action="{{ url_for('admin.toggle_usuario', user_id=u.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="ox-btn-ghost">{{ 'Desactivar' if u.activo else 'Activar' }}</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="text-center py-8" style="color:var(--col-muted)">No hay cuentas con esos filtros.</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
-{# ── MODAL NUEVO USUARIO ── #}
-<div id="modal-nuevo" class="hidden fixed inset-0 z-50 flex items-start justify-center overflow-y-auto pt-10 pb-10"
-     style="background:rgba(0,0,0,.75)" onclick="if(event.target===this)this.classList.add('hidden')">
-  <div class="ox-card p-6 w-full max-w-lg mx-4 shadow-2xl" onclick="event.stopPropagation()">
-    <div class="flex justify-between items-center mb-4">
-      <h2 class="text-lg font-black text-white">✨ Nuevo usuario</h2>
-      <button onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
-              class="w-8 h-8 rounded-lg flex items-center justify-center text-xl"
-              style="background:var(--col-elevated);color:var(--col-muted);border:1px solid var(--col-border)">&times;</button>
+<div class="usr-mobile-list">
+  {% for u in users %}
+  <article class="ox-card usr-mobile-card">
+    <div class="usr-mobile-head">
+      <div class="min-w-0">
+        <strong class="block text-white">{{ u.nombre }}</strong>
+        <span class="usr-mobile-email">{{ u.email }}</span>
+      </div>
+      <span class="usr-state {{ 'is-active' if u.activo else 'is-inactive' }}">
+        {{ 'Activo' if u.activo else 'Inactivo' }}
+      </span>
     </div>
-    <form method="POST" action="{{ url_for('admin.crear_usuario') }}" class="space-y-3">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="grid grid-cols-2 gap-3">
-        <div class="col-span-2">
-          <label class="usr-label">Nombre completo *</label>
-          <input type="text" name="nombre" required placeholder="Ej: Juan García" class="usr-input">
-        </div>
-        <div class="staff-field">
-          <label class="usr-label">Email *</label>
-          <input type="email" name="email" required placeholder="correo@ejemplo.com" class="usr-input">
-        </div>
-        <div class="staff-field">
-          <label class="usr-label">Contraseña *</label>
-          <input type="password" name="password" required placeholder="••••••••"
-                 autocomplete="new-password" class="usr-input">
-        </div>
-        <div>
-          <label class="usr-label">Rol *</label>
-          <select name="rol" class="usr-input" onchange="actualizarCamposRol(this.closest('form'),this.value)">
-            <option value="cocina">🍳 Cocina</option>
-            <option value="preparacion">🗓️ Encargos</option>
-            <option value="repartidor">🛵 Repartidor</option>
-            <option value="staff">📦 Empaque / almacén</option>
-            <option value="proveedor">🏪 Proveedor</option>
-            {% if current_user.rol == 'super_admin' %}
-            <option value="admin">🔧 Admin</option>
-            {% endif %}
-          </select>
-        </div>
-        <div>
-          <label class="usr-label">Teléfono</label>
-          <input type="tel" name="telefono" placeholder="612 345 678" class="usr-input">
-        </div>
-        <div class="col-span-2 role-provider-field" hidden>
-          <label class="usr-label">Bar administrado</label>
-          <select name="proveedor_id" class="usr-input">
-            <option value="">Selecciona un bar</option>
-            {% for proveedor in proveedores %}<option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>{% endfor %}
-          </select>
-        </div>
-        <div class="col-span-2 role-staff-field">
-          <label class="usr-label">Puesto de trabajo</label>
-          <input type="text" name="puesto_trabajo" placeholder="Ej: Cocinero, Empacador, Cajero..." class="usr-input">
-        </div>
-        <div class="role-staff-field">
-          <label class="usr-label">Salario base (€/mes)</label>
-          <input type="number" name="salario_base" step="0.01" min="0" placeholder="0.00" class="usr-input">
-        </div>
-      </div>
-      <div class="flex gap-3 pt-2">
-        <button type="submit" class="flex-1 py-2.5 font-bold rounded-xl text-black"
-                style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Crear usuario</button>
-        <button type="button" onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
-                class="px-5 py-2.5 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
-      </div>
-    </form>
-  </div>
+    <div class="usr-mobile-meta">
+      <span class="ox-role-badge ox-role-{{ u.rol }}">{{ role_labels.get(u.rol, u.rol) }}</span>
+      {% if u.telefono %}<span>{{ u.telefono }}</span>{% endif %}
+    </div>
+    <div class="usr-mobile-assignment">
+      <small>Asignación</small>
+      <strong>
+        {% if u.rol == 'proveedor' %}
+          {{ u.proveedor.nombre if u.proveedor else 'Proveedor sin asignar' }}
+        {% else %}
+          {{ u.puesto_trabajo or 'Sin puesto indicado' }}
+        {% endif %}
+      </strong>
+    </div>
+    <div class="usr-actions">
+      {% if current_user.rol == 'super_admin' or u.rol not in ('admin', 'super_admin') %}
+      <a href="{{ url_for('admin.editar_usuario', user_id=u.id) }}" class="ox-btn-secondary">Editar cuenta</a>
+      {% endif %}
+      {% if u.id != current_user.id and (current_user.rol == 'super_admin' or u.rol not in ('admin', 'super_admin')) %}
+      <form method="POST" action="{{ url_for('admin.toggle_usuario', user_id=u.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="ox-btn-ghost">{{ 'Desactivar' if u.activo else 'Activar' }}</button>
+      </form>
+      {% endif %}
+    </div>
+  </article>
+  {% else %}
+  <div class="ox-card p-5 text-center" style="color:var(--col-muted)">No hay cuentas con esos filtros.</div>
+  {% endfor %}
 </div>
 
-{# ── MODAL EDITAR USUARIO ── #}
-<div id="modal-editar" class="hidden fixed inset-0 z-50 flex items-start justify-center overflow-y-auto pt-10 pb-10"
-     style="background:rgba(0,0,0,.75)" onclick="if(event.target===this)this.classList.add('hidden')">
-  <div class="ox-card p-6 w-full max-w-lg mx-4 shadow-2xl" onclick="event.stopPropagation()">
-    <div class="flex justify-between items-center mb-4">
-      <h2 class="text-lg font-black text-white">✏️ Editar: <span id="edit-nombre-title" style="color:#FFAB00"></span></h2>
-      <button onclick="document.getElementById('modal-editar').classList.add('hidden')"
-              class="w-8 h-8 rounded-lg flex items-center justify-center text-xl"
-              style="background:var(--col-elevated);color:var(--col-muted);border:1px solid var(--col-border)">&times;</button>
+<dialog id="nuevo-usuario" class="usr-dialog">
+  <form method="POST" action="{{ url_for('admin.crear_usuario') }}" class="ox-card p-5">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="flex items-center justify-between gap-3 mb-4">
+      <div>
+        <h2 class="text-lg font-black text-white">Nueva cuenta interna</h2>
+        <p class="text-xs" style="color:var(--col-muted)">Puede haber varias cuentas con el mismo rol.</p>
+      </div>
+      <button type="button" class="ox-btn-ghost" onclick="this.closest('dialog').close()">Cerrar</button>
     </div>
-    <form id="form-editar-usuario" method="POST" action="" class="space-y-3">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="grid grid-cols-2 gap-3">
-        <div class="col-span-2">
-          <label class="usr-label">Nombre</label>
-          <input type="text" name="nombre" id="edit-nombre" required class="usr-input">
-        </div>
-        <div class="staff-field">
-          <label class="usr-label">Rol</label>
-          <select name="rol" id="edit-rol" class="usr-input" onchange="actualizarCamposRol(this.closest('form'),this.value)">
-            <option value="cocina">🍳 Cocina</option>
-            <option value="preparacion">🗓️ Encargos</option>
-            <option value="repartidor">🛵 Repartidor</option>
-            <option value="staff">📦 Empaque / almacén</option>
-            <option value="proveedor">🏪 Proveedor</option>
-            {% if current_user.rol == 'super_admin' %}
-            <option value="admin">🔧 Admin</option>
-            {% endif %}
-          </select>
-        </div>
-        <div class="staff-field">
-          <label class="usr-label">Teléfono</label>
-          <input type="tel" name="telefono" id="edit-tel" class="usr-input">
-        </div>
-        <div class="col-span-2 role-provider-field" hidden>
-          <label class="usr-label">Bar administrado</label>
-          <select name="proveedor_id" id="edit-proveedor" class="usr-input">
-            <option value="">Selecciona un bar</option>
-            {% for proveedor in proveedores %}<option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>{% endfor %}
-          </select>
-        </div>
-        <div class="col-span-2 role-staff-field">
-          <label class="usr-label">Puesto de trabajo</label>
-          <input type="text" name="puesto_trabajo" id="edit-puesto" class="usr-input">
-        </div>
-        <div class="role-staff-field">
-          <label class="usr-label">Salario base (€/mes)</label>
-          <input type="number" name="salario_base" id="edit-salario" step="0.01" min="0" class="usr-input">
-        </div>
-        <div class="col-span-2">
-          <label class="usr-label">Nueva contraseña <span style="color:var(--col-faint)">(dejar vacío = sin cambios)</span></label>
-          <input type="password" name="nueva_password" placeholder="Dejar vacío para no cambiar"
-                 autocomplete="off" class="usr-input">
-        </div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div class="ox-field">
+        <label class="ox-label">Nombre *</label>
+        <input class="ox-input" name="nombre" required autocomplete="name">
       </div>
-      <div class="flex gap-3 pt-2">
-        <button type="submit" class="flex-1 py-2.5 font-bold rounded-xl text-black"
-                style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Guardar cambios</button>
-        <button type="button" onclick="document.getElementById('modal-editar').classList.add('hidden')"
-                class="px-5 py-2.5 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
+      <div class="ox-field">
+        <label class="ox-label">Email *</label>
+        <input class="ox-input" type="email" name="email" required autocomplete="email">
       </div>
-    </form>
-  </div>
-</div>
+      <div class="ox-field">
+        <label class="ox-label">Contrasena *</label>
+        <input class="ox-input" type="password" name="password" minlength="6" required autocomplete="new-password">
+      </div>
+      <div class="ox-field">
+        <label class="ox-label">Rol *</label>
+        <select class="ox-input" name="rol" data-role-select>
+          {% for rol in roles_validos %}
+          <option value="{{ rol }}">{{ role_labels.get(rol, rol) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="ox-field">
+        <label class="ox-label">Telefono</label>
+        <input class="ox-input" type="tel" name="telefono" autocomplete="tel">
+      </div>
+      <div class="ox-field">
+        <label class="ox-label">Puesto de trabajo</label>
+        <input class="ox-input" name="puesto_trabajo">
+      </div>
+      <div class="ox-field md:col-span-2" data-provider-field hidden>
+        <label class="ox-label">Proveedor *</label>
+        <select class="ox-input" name="proveedor_id">
+          <option value="">Selecciona un proveedor activo</option>
+          {% for proveedor in proveedores %}<option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="ox-field">
+        <label class="ox-label">Salario base mensual</label>
+        <input class="ox-input" type="number" name="salario_base" min="0" step="0.01" value="0">
+      </div>
+      <div class="ox-field">
+        <label class="ox-label">Tarifa por entrega</label>
+        <input class="ox-input" type="number" name="tarifa_entrega" min="0" step="0.01" value="0">
+      </div>
+    </div>
+    <div class="flex justify-end gap-3 mt-5">
+      <button type="button" class="ox-btn-ghost" onclick="this.closest('dialog').close()">Cancelar</button>
+      <button type="submit" class="ox-btn-primary">Crear usuario</button>
+    </div>
+  </form>
+</dialog>
 
 {% endblock %}
 {% block scripts %}
 <style>
-.usr-label { font-size:.72rem; font-weight:700; color:var(--col-muted); display:block; margin-bottom:.25rem; text-transform:uppercase; letter-spacing:.04em; }
-.usr-input { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.55rem .75rem; color:#fff; font-size:.88rem; }
-.usr-input:focus { outline:none; border-color:rgba(255,171,0,.5); }
-.rol-filter-btn { transition: all .15s; }
-.rol-filter-btn.active { border-color: rgba(255,171,0,.5) !important; background: rgba(255,171,0,.12) !important; }
-.users-mobile-list{display:none}
+.usr-actions{display:flex;justify-content:flex-end;gap:.4rem;align-items:center;flex-wrap:wrap}.usr-actions form{margin:0}
+.usr-state{display:inline-flex;padding:.25rem .55rem;border-radius:999px;font-size:.7rem;font-weight:800}.usr-state.is-active{color:#5EF097;background:rgba(52,199,89,.1)}.usr-state.is-inactive{color:var(--col-muted);background:var(--col-elevated)}
+.usr-dialog{width:min(94vw,720px);padding:0;border:0;background:transparent;color:inherit}.usr-dialog::backdrop{background:rgba(0,0,0,.78)}
+.usr-mobile-list{display:none}
 @media(max-width:767px){
-  .users-desktop-table{display:none}
-  .users-mobile-list{display:grid;gap:.65rem}
-  .users-mobile-list article{padding:.8rem;border:1px solid var(--col-border);border-radius:8px;background:var(--col-surface)}
-  .users-mobile-head{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:.6rem;align-items:center}
-  .users-mobile-head strong,.users-mobile-head small{display:block}.users-mobile-head strong{font-size:.86rem}.users-mobile-head small{font-size:.68rem;color:var(--col-muted);overflow-wrap:anywhere}
-  .users-mobile-head>.ox-role-badge{font-size:.58rem}
-  .users-mobile-meta{display:flex;flex-wrap:wrap;gap:.35rem;margin:.65rem 0}.users-mobile-meta span,.users-mobile-meta b{padding:.25rem .45rem;border-radius:5px;background:var(--col-elevated);font-size:.65rem}.users-mobile-meta b{color:var(--col-green)}
-  .users-mobile-actions{display:flex;gap:.4rem;flex-wrap:wrap}.users-mobile-actions button,.users-mobile-actions a{min-height:36px;padding:.45rem .7rem;border:1px solid var(--col-border);border-radius:6px;background:var(--col-elevated);color:var(--col-text);font-size:.7rem;font-weight:800;text-decoration:none}.users-mobile-actions form{display:inline}
+  .usr-desktop-table{display:none}
+  .usr-mobile-list{display:grid;gap:.75rem}
+  .usr-mobile-card{padding:1rem;min-width:0}
+  .usr-mobile-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem}
+  .usr-mobile-email{display:block;color:var(--col-muted);font-size:.78rem;overflow-wrap:anywhere}
+  .usr-mobile-meta{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-top:.7rem;color:var(--col-muted);font-size:.76rem}
+  .usr-mobile-assignment{display:flex;flex-direction:column;gap:.15rem;margin-top:.8rem;padding:.7rem;border-radius:.7rem;background:var(--col-elevated)}
+  .usr-mobile-assignment small{color:var(--col-muted);font-size:.68rem;text-transform:uppercase;font-weight:800}
+  .usr-mobile-assignment strong{font-size:.82rem;color:var(--col-text)}
+  .usr-actions{justify-content:stretch;margin-top:.8rem}
+  .usr-actions a,.usr-actions form,.usr-actions button{flex:1;width:100%;text-align:center}
 }
 </style>
 <script>
-const STAFF_ROLES=new Set(['staff','cocina','preparacion','repartidor']);
-function actualizarCamposRol(form,rol){
-  form.querySelectorAll('.role-staff-field').forEach(field=>field.hidden=!STAFF_ROLES.has(rol));
-  form.querySelectorAll('.role-provider-field').forEach(field=>field.hidden=rol!=='proveedor');
-}
-function abrirEditar(id, data) {
-  const form = document.getElementById('form-editar-usuario');
-  document.getElementById('edit-nombre-title').textContent = data.nombre;
-  form.action = `/admin/usuarios/${id}/editar`;
-  document.getElementById('edit-nombre').value = data.nombre;
-  document.getElementById('edit-rol').value = data.rol;
-  document.getElementById('edit-tel').value = data.telefono;
-  document.getElementById('edit-proveedor').value = data.proveedor_id || '';
-  document.getElementById('edit-puesto').value = data.puesto_trabajo;
-  document.getElementById('edit-salario').value = data.salario_base;
-  form.querySelector('input[name="nueva_password"]').value = '';
-  actualizarCamposRol(form,data.rol);
-  document.getElementById('modal-editar').classList.remove('hidden');
-}
-
-let rolActivo = '';
-function filtrarRol(rol) {
-  rolActivo = rol;
-  document.querySelectorAll('.user-row').forEach(row => {
-    row.style.display = (!rol || row.dataset.rol === rol) ? '' : 'none';
-  });
-  document.querySelectorAll('.user-mobile-card').forEach(card => {
-    card.hidden = Boolean(rol && card.dataset.rol !== rol);
-  });
-  document.querySelectorAll('.rol-filter-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.rol === rol);
-  });
-}
-// Activar "todos" al inicio
-document.querySelector('[data-rol=""]')?.classList.add('active');
-document.querySelectorAll('form select[name="rol"]').forEach(select=>actualizarCamposRol(select.closest('form'),select.value));
+document.querySelectorAll('[data-role-select]').forEach((select) => {
+  const sync = () => {
+    const field = select.closest('form').querySelector('[data-provider-field]');
+    const provider = field.querySelector('select');
+    const visible = select.value === 'proveedor';
+    field.hidden = !visible;
+    provider.required = visible;
+  };
+  select.addEventListener('change', sync);
+  sync();
+});
 </script>
 {% endblock %}

@@ -2,32 +2,51 @@
 {% block title %}Mi inventario — {{ proveedor.nombre }}{% endblock %}
 {% block content %}
 
-<div class="mb-5">
-  <h1 class="text-2xl font-black text-white">📦 Inventario de {{ proveedor.nombre }}</h1>
-  <p class="text-xs mt-1" style="color:var(--col-muted)">
-    Ajusta el stock y el precio de coste de los SKUs que tu restaurante despacha.
-    El admin es quien añade o quita SKUs del inventario.
-  </p>
+{% set stock_total = namespace(value=0, agotados=0) %}
+{% for sku in skus %}
+  {% set stock_total.value = stock_total.value + (sku.stock or 0) %}
+  {% if (sku.stock or 0) == 0 %}{% set stock_total.agotados = stock_total.agotados + 1 %}{% endif %}
+{% endfor %}
+
+<header class="prov-page-head prov-detail-head">
+  <div>
+    <span class="prov-eyebrow">Aliado #{{ proveedor.id }}</span>
+    <h1>Inventario de {{ proveedor.nombre }}</h1>
+    <p>Actualiza las unidades disponibles y el coste unitario. Administración gestiona qué productos tienes asignados.</p>
+  </div>
+  <div class="prov-card-actions">
+    <span class="prov-status {{ 'is-active' if proveedor.activo else 'is-inactive' }}">{{ 'Activo' if proveedor.activo else 'Inactivo' }}</span>
+    <a href="{{ url_for('public.menu_bar', proveedor_id=proveedor.id) }}" class="prov-btn prov-btn-secondary" target="_blank" rel="noopener">Ver mi sección pública</a>
+  </div>
+</header>
+
+<div class="prov-kpis prov-kpis-compact">
+  <div><span>Productos</span><strong>{{ skus|length }}</strong><small>SKUs asignados</small></div>
+  <div><span>Stock total</span><strong>{{ stock_total.value }}</strong><small>unidades</small></div>
+  <div><span>Agotados</span><strong class="{{ 'prov-danger' if stock_total.agotados else '' }}">{{ stock_total.agotados }}</strong><small>requieren revisión</small></div>
 </div>
 
+{% if not proveedor.activo %}
+<aside class="prov-alert-panel"><strong>Proveedor inactivo</strong><p>Tu sección pública no está disponible aunque haya productos con stock.</p></aside>
+{% endif %}
+
 {% if not skus %}
-<div class="ox-card p-6 text-center">
-  <p class="text-gray-400">Aún no tienes SKUs asignados.</p>
-  <p class="text-xs mt-1" style="color:var(--col-muted)">
-    Pide al admin que registre productos para tu restaurante desde el panel de Proveedores.
-  </p>
+<div class="ox-card prov-empty">
+  <strong>Aún no tienes productos asignados</strong>
+  <p>Pide a administración que registre productos para este aliado desde el panel de Proveedores.</p>
 </div>
 {% else %}
 <div class="prov-stock-list">
   {% for s in skus %}
   <form method="POST" class="prov-stock-card">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="accion" value="actualizar_sku">
     <input type="hidden" name="fila_id" value="{{ s.id }}">
     <div class="prov-stock-main">
-      <div>
+      <div class="prov-stock-name">
         <span class="prov-stock-label">Producto</span>
         <strong>{{ s.producto.nombre }}</strong>
-        <small>{{ 'Visible en tienda' if s.producto.activo else 'Inactivo en tienda' }}</small>
+        <small>Producto #{{ s.producto.id }} · {{ 'Visible en tienda' if s.producto.activo else 'Inactivo en tienda' }}</small>
       </div>
       <span class="prov-stock-chip {{ 'is-low' if (s.stock or 0) <= 3 else '' }}">
         {{ s.stock }} uds
@@ -45,100 +64,15 @@
                placeholder="—">
       </label>
     </div>
-    <button type="submit" class="prov-stock-save">Guardar cambios</button>
+    {% if (s.stock or 0) == 0 %}
+    <p class="prov-stock-warning">Sin unidades: este producto no puede venderse desde tu sección.</p>
+    {% elif s.precio_costo is none and proveedor.modelo_acuerdo == 'stock_proveedor' %}
+    <p class="prov-stock-warning">Falta el coste unitario usado para la liquidación.</p>
+    {% endif %}
+    <button type="submit" class="prov-stock-save">Guardar {{ s.producto.nombre }}</button>
   </form>
   {% endfor %}
 </div>
 {% endif %}
-
-<style>
-.prov-stock-list {
-  display: grid;
-  gap: .8rem;
-}
-.prov-stock-card {
-  background: var(--col-surface);
-  border: 1px solid var(--col-border);
-  border-radius: 1rem;
-  padding: .95rem;
-  box-shadow: 0 10px 28px rgba(0,0,0,.12);
-}
-.prov-stock-main {
-  display: flex;
-  justify-content: space-between;
-  gap: .75rem;
-  align-items: flex-start;
-}
-.prov-stock-label {
-  display: block;
-  color: var(--col-muted);
-  font-size: .68rem;
-  font-weight: 900;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  margin-bottom: .18rem;
-}
-.prov-stock-main strong {
-  display: block;
-  color: var(--col-text);
-  font-size: 1rem;
-  line-height: 1.15;
-  overflow-wrap: anywhere;
-}
-.prov-stock-main small {
-  display: block;
-  color: var(--col-muted);
-  font-size: .75rem;
-  margin-top: .2rem;
-}
-.prov-stock-chip {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  padding: .25rem .55rem;
-  background: rgba(94,240,151,.12);
-  color: #5EF097;
-  font-size: .75rem;
-  font-weight: 900;
-}
-.prov-stock-chip.is-low {
-  background: rgba(255,179,64,.14);
-  color: #FFB340;
-}
-.prov-stock-fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: .65rem;
-  margin-top: .85rem;
-}
-.prov-stock-fields span {
-  display: block;
-  color: var(--col-muted);
-  font-size: .68rem;
-  font-weight: 800;
-  margin-bottom: .25rem;
-}
-.prov-stock-fields input {
-  width: 100%;
-  border: 1px solid var(--col-border);
-  border-radius: .75rem;
-  background: var(--col-elevated);
-  color: var(--col-text);
-  padding: .7rem .75rem;
-  text-align: right;
-  font-weight: 800;
-}
-.prov-stock-save {
-  width: 100%;
-  margin-top: .85rem;
-  border-radius: .85rem;
-  padding: .78rem 1rem;
-  background: var(--col-gold);
-  color: #111;
-  font-weight: 950;
-}
-@media (max-width: 420px) {
-  .prov-stock-fields { grid-template-columns: minmax(0, 1fr); }
-}
-</style>
 
 {% endblock %}

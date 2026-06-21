@@ -5,11 +5,19 @@
 <div class="work-area">
 <section class="work-hero">
   <div>
-    <span class="work-eyebrow">🍳 Panel del Bar</span>
+    <span class="work-eyebrow">Panel del aliado{% if current_user.proveedor %} · #{{ current_user.proveedor.id }}{% endif %}</span>
     <h1 class="work-title">Pedidos a Preparar</h1>
-    <p class="work-subtitle">Solo verás los productos que te corresponde cocinar. Marca cada pedido cuando esté listo.</p>
+    <p class="work-subtitle">
+      {% if current_user.proveedor %}<strong>{{ current_user.proveedor.nombre }}</strong> · {% endif %}
+      Solo verás los productos que te corresponde preparar. Marca cada pedido cuando esté listo.
+    </p>
   </div>
-  <span class="work-pill">Refresco <strong id="refresh-countdown">60s</strong></span>
+  <div class="prov-card-actions">
+    {% if current_user.proveedor %}
+    <a href="{{ url_for('public.menu_bar', proveedor_id=current_user.proveedor.id) }}" class="prov-btn prov-btn-secondary" target="_blank" rel="noopener">Ver sección pública</a>
+    {% endif %}
+    <span class="work-pill">Refresco <strong id="refresh-countdown">60s</strong></span>
+  </div>
 </section>
 
 <!-- KPIs -->

@@ -65,26 +65,46 @@
     <a href="{{ url_for('marketing.puntos') }}"><span>Fidelización</span><strong>Productos y puntos</strong><small>Canjes y movimientos</small></a>
   </section>
 
-  <form id="tienda" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="section" value="tienda">
-    <div class="cfg-section-head"><div><span>1</span><h2>Marca y tienda</h2><p>Información visible para clientes y apariencia general.</p></div><button type="submit">Guardar tienda</button></div>
+  <section id="tienda" class="cfg-section">
+    <div class="cfg-section-head"><div><span>1</span><h2>Marca y tienda</h2><p>Cada tarjeta se guarda de forma independiente.</p></div></div>
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="section" value="tienda-identidad">
+      <h3>Identidad y contacto</h3>
     <div class="cfg-grid">
       {{ cfg_input('NOMBRE_NEGOCIO', 'Nombre comercial', placeholder='Mi restaurante') }}
       {{ cfg_input('SLOGAN_NEGOCIO', 'Eslogan / tagline', placeholder='Comida latina hecha al momento', help='Aparece en la cabecera y el pie de página') }}
       {{ cfg_input('DESCRIPCION_NEGOCIO', 'Descripción breve', placeholder='Comida casera con sabor a hogar', help='Descripción SEO y pie de página') }}
       {{ cfg_input('TELEFONO_NEGOCIO', 'WhatsApp / teléfono', type='tel', placeholder='+34 600 000 000') }}
+      {{ cfg_input('WHATSAPP_COUNTRY_CODE', 'Prefijo telefónico', placeholder='34', help='Sin +. Se aplica a números locales de clientes y empleados.') }}
+      {{ cfg_input('EMAIL_CONTACTO', 'Correo de contacto', type='email', placeholder='contacto@midominio.com') }}
+      {{ cfg_input('BIZUM_TELEFONO', 'Número Bizum', type='tel', placeholder='+34 600 000 000', help='Puede ser distinto del WhatsApp general.') }}
+    </div>
+      <button type="submit" class="cfg-save-bottom">Guardar identidad y contacto</button>
+    </form>
+
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="section" value="tienda-ubicacion">
+      <h3>Ubicación</h3>
+      <div class="cfg-grid">
       {{ cfg_input('DIRECCION_NEGOCIO', 'Dirección del local', placeholder='Calle y número') }}
       {{ cfg_input('CIUDAD_NEGOCIO', 'Ciudad', placeholder='Ciudad') }}
       {{ cfg_input('PROVINCIA_NEGOCIO', 'Provincia / región', placeholder='Provincia o región') }}
       {{ cfg_input('PAIS_NEGOCIO', 'País', placeholder='País') }}
       {{ cfg_input('PAIS_CODIGO_ISO', 'Código ISO del país', placeholder='es', help='Dos letras; restringe la geocodificación al país correcto.') }}
-      {{ cfg_input('WHATSAPP_COUNTRY_CODE', 'Prefijo telefónico', placeholder='34', help='Sin +. Se aplica a números locales de clientes y empleados.') }}
-      {{ cfg_input('EMAIL_CONTACTO', 'Correo de contacto', type='email', placeholder='contacto@midominio.com') }}
-      {{ cfg_input('BIZUM_TELEFONO', 'Número Bizum', type='tel', placeholder='+34 600 000 000', help='Puede ser distinto del WhatsApp general.') }}
+      </div>
+      <button type="submit" class="cfg-save-bottom">Guardar ubicación</button>
+    </form>
+
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="section" value="tienda-imagen">
+      <h3>Enlaces e imágenes</h3>
+      <div class="cfg-grid">
       {{ cfg_input('TIENDA_URL', 'URL pública de la tienda', type='url', placeholder='https://midominio.com') }}
       {{ cfg_input('OXIDIAN_PUBLIC_URL', 'URL pública del aplicativo', type='url', placeholder='https://midominio.com') }}
-    </div>
+      </div>
     <div class="cfg-brand-row">
       <div class="cfg-media-control">
         <div id="logo-preview-wrap" class="cfg-media-preview">{% if config_map.get('LOGO_URL') %}<img src="{{ config_map.get('LOGO_URL') }}" alt="Logo">{% else %}<span>Logo</span>{% endif %}</div>
@@ -115,16 +135,27 @@
         </div>
       </div>
     </div>
+      <button type="submit" class="cfg-save-bottom">Guardar enlaces e imágenes</button>
+    </form>
+
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="section" value="tienda-colores">
+      <h3>Paleta de marca</h3>
     <div class="cfg-colors">
       {% for key, label, fallback in [('COLOR_PRIMARIO','Principal','#D9961A'),('COLOR_SECUNDARIO','Secundario','#CE1126'),('COLOR_ACENTO','Acento','#003087')] %}
       <label><span>{{ label }}</span><input type="hidden" name="config_key" value="{{ key }}"><input type="color" name="{{ key }}" value="{{ config_map.get(key, fallback) }}"></label>
       {% endfor %}
     </div>
-  </form>
+      <button type="submit" class="cfg-save-bottom">Guardar colores</button>
+    </form>
+  </section>
 
-  <form id="operacion" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="operacion">
-    <div class="cfg-section-head"><div><span>2</span><h2>Operación de la tienda</h2><p>Horario y cierre manual para incidencias.</p></div><button type="submit">Guardar operación</button></div>
+  <section id="operacion" class="cfg-section">
+    <div class="cfg-section-head"><div><span>2</span><h2>Operación de la tienda</h2><p>Horario, cierre manual y métodos de pago.</p></div></div>
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="operacion-horario">
+      <h3>Horario y cierre</h3>
     <div class="cfg-grid three">
       {{ cfg_input('HORARIO_APERTURA', 'Hora de apertura', type='time') }}
       {{ cfg_input('HORARIO_CIERRE', 'Hora de cierre', type='time') }}
@@ -133,11 +164,18 @@
     <div class="cfg-grid one">
       {{ cfg_textarea('TIENDA_MENSAJE_CIERRE', 'Mensaje de cierre', placeholder='Estamos cerrados. Abrimos mañana a las 9:00. ¡Gracias!', help='Se muestra en el carrito y el checkout cuando la tienda está cerrada o fuera de horario.', rows=2) }}
     </div>
+      <button type="submit" class="cfg-save-bottom">Guardar horario</button>
+    </form>
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="operacion-pagos">
+      <h3>Métodos de pago</h3>
     <div class="cfg-grid">
       {{ cfg_select('EFECTIVO_HABILITADO', 'Pago en efectivo', [('1','Habilitado'),('0','Deshabilitado')]) }}
       {{ cfg_select('BIZUM_HABILITADO', 'Pago mediante Bizum', [('1','Habilitado'),('0','Deshabilitado')], 'Requiere configurar el número Bizum en Marca y tienda.') }}
     </div>
-  </form>
+      <button type="submit" class="cfg-save-bottom">Guardar métodos de pago</button>
+    </form>
+  </section>
 
   <section id="entregas" class="cfg-section">
     <div class="cfg-section-head"><div><span>3</span><h2>Entregas y cobertura</h2><p>El precio de cada zona aparece en carrito y genera la liquidación del repartidor.</p></div><a href="{{ url_for('superadmin.zonas') }}">Gestionar zonas</a></div>

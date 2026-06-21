@@ -11,7 +11,7 @@ from flask import Blueprint, send_from_directory, request, jsonify, abort
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from extensions import db, get_or_404
-from models import Product, SiteConfig, Categoria
+from models import AdminFeature, Product, SiteConfig, Categoria
 
 try:
     from PIL import Image
@@ -176,6 +176,11 @@ def serve_image(subcarpeta, filename):
 @uploads_bp.route("/uploads/producto/<int:producto_id>", methods=["POST"])
 @admin_required_upload
 def subir_imagen_producto(producto_id):
+    if (
+        current_user.rol == "admin"
+        and not AdminFeature.tiene_acceso(current_user.id, "productos")
+    ):
+        return jsonify({"ok": False, "error": "Sin acceso al módulo productos"}), 403
     producto = get_or_404(Product, producto_id)
 
     if "imagen" not in request.files:

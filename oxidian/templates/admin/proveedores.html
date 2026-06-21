@@ -2,107 +2,189 @@
 {% block title %}Proveedores{% endblock %}
 {% block content %}
 
-<div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+{% set total_activos = proveedores|selectattr('activo')|list|length %}
+<header class="prov-page-head">
   <div>
-    <h1 class="text-2xl font-black text-white">🏪 Proveedores (restaurantes)</h1>
-    <p class="text-xs mt-1" style="color:var(--col-muted)">
-      Cada proveedor es un restaurante externo que prepara y despacha combos
-      bajo nuestra marca. Tiene su propio stock por SKU.
-    </p>
+    <span class="prov-eyebrow">Red de aliados</span>
+    <h1>Proveedores</h1>
+    <p>Identidad comercial, operación, catálogo y condiciones económicas en un solo lugar.</p>
   </div>
-</div>
+  <div class="prov-head-stats" aria-label="Resumen de proveedores">
+    <span><strong>{{ proveedores|length }}</strong> registrados</span>
+    <span><strong>{{ total_activos }}</strong> activos</span>
+  </div>
+</header>
 
-<!-- Alta rápida -->
-<details class="ox-card p-4 mb-5">
-  <summary class="cursor-pointer font-bold text-white">➕ Nuevo proveedor</summary>
-  <form method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+<details class="ox-card prov-create">
+  <summary>
+    <span>
+      <strong>Nuevo proveedor</strong>
+      <small>Registra el aliado y completa después su inventario y operadores.</small>
+    </span>
+    <span class="prov-summary-action">Abrir formulario</span>
+  </summary>
+  <form method="POST" class="prov-form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="accion" value="crear">
-    <label class="text-xs">Nombre comercial *
-      <input name="nombre" required class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-    </label>
-    <label class="text-xs">Razón social
-      <input name="razon_social" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-    </label>
-    <label class="text-xs">📱 WhatsApp directo del bar
-      <input name="telefono" placeholder="+34 600 000 000"
-             class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-      <small class="block mt-1" style="color:var(--col-muted)">
-        Contacto público al que el chatbot puede derivar clientes. Los números
-        con acceso operativo se crean en Usuarios con rol Proveedor y este bar.
-      </small>
-    </label>
-    <label class="text-xs">Email
-      <input type="email" name="email" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-    </label>
-    <label class="text-xs md:col-span-2">Dirección
-      <input name="direccion" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-    </label>
-    <label class="text-xs">Horario (texto libre)
-      <input name="horario" placeholder="Ej. L-V 9–22, S-D 11–23" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-    </label>
-    <label class="text-xs">⏰ Hora apertura (filtra catálogo)
-      <input type="time" name="hora_apertura" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-    </label>
-    <label class="text-xs">⏰ Hora cierre
-      <input type="time" name="hora_cierre" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-    </label>
-    <label class="text-xs md:col-span-2">Modelo de acuerdo
-      <select name="modelo_acuerdo" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-        <option value="stock_proveedor" selected>A — El bar pone el stock (le pagamos precio_costo, nuestro margen = PVP − coste)</option>
-        <option value="stock_propio_bar">B — Nosotros ponemos el stock (le pagamos comisión% del PVP por preparar)</option>
-      </select>
-    </label>
-    <label class="text-xs">Comisión % <span class="opacity-60">(solo modo B)</span>
-      <input type="number" step="0.01" min="0" max="100" name="comision_pct" value="0" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-    </label>
-    <label class="text-xs md:col-span-2">IBAN
-      <input name="iban" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-    </label>
-    <label class="text-xs md:col-span-2">Notas
-      <textarea name="notas" rows="2" class="w-full px-3 py-2 rounded bg-zinc-800 text-white"></textarea>
-    </label>
-    <div class="md:col-span-2 text-right">
-      <button type="submit" class="px-4 py-2 rounded font-bold" style="background:var(--col-gold); color:#000">
-        Crear proveedor
-      </button>
+
+    <fieldset class="prov-form-section">
+      <legend>Identidad del aliado</legend>
+      <label class="prov-field">Nombre comercial *
+        <input name="nombre" required autocomplete="organization" placeholder="Nombre visible para clientes">
+      </label>
+      <label class="prov-field">Razón social
+        <input name="razon_social" autocomplete="organization">
+      </label>
+      <label class="prov-field prov-span-2">Dirección
+        <input name="direccion" autocomplete="street-address">
+      </label>
+    </fieldset>
+
+    <fieldset class="prov-form-section">
+      <legend>Contacto comercial</legend>
+      <p class="prov-section-help">Estos datos son de atención y gestión comercial. No conceden acceso al chatbot.</p>
+      <label class="prov-field">WhatsApp o teléfono
+        <input type="tel" name="telefono" autocomplete="tel" placeholder="+34 600 000 000">
+      </label>
+      <label class="prov-field">Email
+        <input type="email" name="email" autocomplete="email">
+      </label>
+      <div class="prov-inline-note prov-span-2">
+        Los operadores del chatbot se crean aparte en Usuarios, con rol Proveedor y este aliado asignado.
+      </div>
+    </fieldset>
+
+    <fieldset class="prov-form-section">
+      <legend>Horario del escaparate</legend>
+      <label class="prov-field prov-span-2">Descripción para el equipo
+        <input name="horario" placeholder="Ej. L-V 09:00-22:00; S-D 11:00-23:00">
+      </label>
+      <label class="prov-field">Apertura
+        <input type="time" name="hora_apertura">
+      </label>
+      <label class="prov-field">Cierre
+        <input type="time" name="hora_cierre">
+      </label>
+      <p class="prov-section-help prov-span-2">Las horas controlan la disponibilidad pública. Sin ambas, el catálogo se considera abierto 24 horas.</p>
+    </fieldset>
+
+    <fieldset class="prov-form-section">
+      <legend>Modelo financiero</legend>
+      <label class="prov-field prov-span-2">Acuerdo
+        <select name="modelo_acuerdo">
+          <option value="stock_proveedor" selected>El proveedor pone el stock: se liquida el coste registrado</option>
+          <option value="stock_propio_bar">La plataforma pone el stock: se liquida una comisión del PVP</option>
+        </select>
+      </label>
+      <label class="prov-field">Comisión % <span>(solo segundo modelo)</span>
+        <input type="number" step="0.01" min="0" max="100" name="comision_pct" value="0" inputmode="decimal">
+      </label>
+      <label class="prov-field">IBAN
+        <input name="iban" autocomplete="off" placeholder="ES00 0000 0000 0000 0000 0000">
+      </label>
+      <label class="prov-field prov-span-2">Notas internas
+        <textarea name="notas" rows="3"></textarea>
+      </label>
+    </fieldset>
+
+    <div class="prov-form-actions">
+      <button type="submit" class="prov-btn prov-btn-primary">Crear proveedor</button>
     </div>
   </form>
 </details>
 
-<!-- Listado -->
 {% if not proveedores %}
-<div class="ox-card p-6 text-center">
-  <p class="text-gray-400">Aún no hay proveedores registrados.</p>
+<div class="ox-card prov-empty">
+  <strong>No hay proveedores registrados</strong>
+  <p>Abre el formulario superior para crear el primer aliado.</p>
 </div>
 {% else %}
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+<div class="prov-directory">
   {% for prov in proveedores %}
-  <div class="ox-card p-4 {% if not prov.activo %}opacity-60{% endif %}">
-    <div class="flex items-center justify-between gap-2 mb-2">
-      <h3 class="text-lg font-bold text-white">
-        {{ prov.nombre }}
-        {% if not prov.activo %}<span class="text-xs text-red-400">(inactivo)</span>{% endif %}
-      </h3>
-      <a href="{{ url_for('admin.editar_proveedor', proveedor_id=prov.id) }}"
-         class="text-xs px-2 py-1 rounded bg-zinc-700 text-white hover:bg-zinc-600">Editar</a>
+  {% set sku_count = prov.skus.count() %}
+  {% set stock_total = namespace(value=0, agotados=0) %}
+  {% for sku in prov.skus.all() %}
+    {% set stock_total.value = stock_total.value + (sku.stock or 0) %}
+    {% if (sku.stock or 0) == 0 %}{% set stock_total.agotados = stock_total.agotados + 1 %}{% endif %}
+  {% endfor %}
+  {% set op_count = prov.operadores.count() %}
+  {% set active_op_count = prov.operadores.filter_by(activo=True).count() %}
+  <article class="ox-card prov-card {% if not prov.activo %}is-inactive{% endif %}">
+    <div class="prov-card-head">
+      <div class="prov-identity">
+        <span class="prov-avatar" aria-hidden="true">{{ prov.nombre[:1]|upper }}</span>
+        <div>
+          <div class="prov-title-row">
+            <h2>{{ prov.nombre }}</h2>
+            <span class="prov-status {{ 'is-active' if prov.activo else 'is-inactive' }}">
+              {{ 'Activo' if prov.activo else 'Inactivo' }}
+            </span>
+          </div>
+          <p>ID de aliado <strong>#{{ prov.id }}</strong>{% if prov.razon_social %} · {{ prov.razon_social }}{% endif %}</p>
+        </div>
+      </div>
+      <div class="prov-card-actions">
+        <a href="{{ url_for('public.menu_bar', proveedor_id=prov.id) }}" class="prov-btn prov-btn-secondary" target="_blank" rel="noopener">Ver sección pública</a>
+        <a href="{{ url_for('admin.editar_proveedor', proveedor_id=prov.id) }}" class="prov-btn prov-btn-primary">Gestionar</a>
+      </div>
     </div>
-    <ul class="text-xs space-y-1" style="color:var(--col-muted)">
-      {% if prov.telefono %}<li>📞 {{ prov.telefono }}</li>{% endif %}
-      <li>🔐 {{ prov.operadores.filter_by(activo=True).count() }} administrador(es) con acceso al chatbot</li>
-      {% if prov.email %}<li>✉️ {{ prov.email }}</li>{% endif %}
-      {% if prov.direccion %}<li>📍 {{ prov.direccion }}</li>{% endif %}
-      {% if prov.horario %}<li>⏰ {{ prov.horario }}</li>{% endif %}
-      <li>
-        🤝
-        {% if prov.modelo_acuerdo == 'stock_propio_bar' %}
-          Modo B — fee {{ "%.2f"|format(prov.comision_pct|float) }}% del PVP
-        {% else %}
-          Modo A — bar pone stock
-        {% endif %}
-      </li>
-      <li>📦 {{ prov.skus.count() }} SKU(s) · {{ prov.operadores.count() }} operador(es)</li>
-    </ul>
-  </div>
+
+    {% if not prov.activo or not active_op_count or not sku_count or not prov.telefono or not (prov.hora_apertura and prov.hora_cierre) %}
+    <div class="prov-warnings" aria-label="Advertencias de configuración">
+      {% if not prov.activo %}<span class="is-danger">No aparece en la tienda pública</span>{% endif %}
+      {% if not active_op_count %}<span>Sin operador activo para el chatbot</span>{% endif %}
+      {% if not sku_count %}<span>Sin productos asignados</span>{% endif %}
+      {% if not prov.telefono %}<span>Sin contacto comercial</span>{% endif %}
+      {% if not (prov.hora_apertura and prov.hora_cierre) %}<span>Horario público 24 h</span>{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="prov-card-grid">
+      <section>
+        <h3>Contacto comercial</h3>
+        <dl class="prov-facts">
+          <div><dt>Teléfono</dt><dd>{{ prov.telefono or 'Sin registrar' }}</dd></div>
+          <div><dt>Email</dt><dd>{{ prov.email or 'Sin registrar' }}</dd></div>
+          <div><dt>Dirección</dt><dd>{{ prov.direccion or 'Sin registrar' }}</dd></div>
+        </dl>
+      </section>
+      <section>
+        <h3>Operación chatbot</h3>
+        <dl class="prov-facts">
+          <div><dt>Operadores activos</dt><dd>{{ active_op_count }} de {{ op_count }}</dd></div>
+          <div><dt>Horario público</dt><dd>
+            {% if prov.hora_apertura and prov.hora_cierre %}
+              {{ prov.hora_apertura.strftime('%H:%M') }}-{{ prov.hora_cierre.strftime('%H:%M') }}
+            {% else %}24 horas{% endif %}
+          </dd></div>
+          <div><dt>Estado ahora</dt><dd class="{{ 'prov-ok' if prov.activo and prov.esta_abierto_ahora else 'prov-danger' }}">
+            {% if not prov.activo %}Desactivado{% elif prov.esta_abierto_ahora %}Abierto{% else %}Fuera de horario{% endif %}
+          </dd></div>
+        </dl>
+      </section>
+      <section>
+        <h3>Productos y stock</h3>
+        <dl class="prov-facts">
+          <div><dt>SKUs</dt><dd>{{ sku_count }}</dd></div>
+          <div><dt>Unidades</dt><dd>{{ stock_total.value }}</dd></div>
+          <div><dt>Agotados</dt><dd class="{{ 'prov-danger' if stock_total.agotados else '' }}">{{ stock_total.agotados }}</dd></div>
+        </dl>
+      </section>
+      <section>
+        <h3>Modelo financiero</h3>
+        <dl class="prov-facts">
+          {% if prov.modelo_acuerdo == 'stock_propio_bar' %}
+          <div><dt>Stock</dt><dd>Lo aporta la plataforma</dd></div>
+          <div><dt>Liquidación</dt><dd>{{ "%.2f"|format(prov.comision_pct|float) }}% del PVP</dd></div>
+          {% else %}
+          <div><dt>Stock</dt><dd>Lo aporta el proveedor</dd></div>
+          <div><dt>Liquidación</dt><dd>Coste por unidad</dd></div>
+          {% endif %}
+          <div><dt>Datos bancarios</dt><dd>{{ 'Registrados' if prov.iban else 'Pendientes' }}</dd></div>
+        </dl>
+      </section>
+    </div>
+  </article>
   {% endfor %}
 </div>
 {% endif %}

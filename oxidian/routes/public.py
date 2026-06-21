@@ -3,6 +3,7 @@ import os
 import uuid
 import random
 import re
+import inspect
 from urllib.parse import quote
 from datetime import datetime
 
@@ -13,7 +14,7 @@ from sqlalchemy.orm import joinedload
 from extensions import db, get_or_404, limiter, csrf
 from models import (Product, Categoria, Order, OrderItem, Review, Coupon,
                      ComboItem, SiteConfig,
-                     ZonaEntrega, MenuConfig, User, normalizar_metodo_pago,
+                     ZonaEntrega, MenuConfig, User, Proveedor, normalizar_metodo_pago,
                      AffiliateCode, IdempotencyKey, metadata_componente_combo,
                      metadata_item_pedido, utcnow as _utcnow)
 from idempotency import (request_idempotency_key, request_body_hash,
@@ -89,17 +90,123 @@ def _find_cliente_by_phone(raw, allow_fuzzy=True):
     return cliente, telefono
 
 
-def _canjeables_payload(cliente):
+def _normalizar_origen(raw):
+    origen = str(raw or "").strip().lower()
+    if origen == "propio":
+        return origen
+    match = re.fullmatch(r"proveedor:(\d+)", origen)
+    if match:
+        return f"proveedor:{int(match.group(1))}"
+    return None
+
+
+def _proveedor_id_origen(origen):
+    origen = _normalizar_origen(origen)
+    if not origen or origen == "propio":
+        return None
+    return int(origen.split(":", 1)[1])
+
+
+def _establecimiento_para_origen(origen):
+    origen = _normalizar_origen(origen)
+    proveedor_id = _proveedor_id_origen(origen)
+    if proveedor_id:
+        proveedor = db.session.get(Proveedor, proveedor_id)
+        if not proveedor:
+            return None
+        return {
+            "origen": origen,
+            "nombre": proveedor.nombre,
+            "abierto": bool(proveedor.activo and proveedor.esta_abierto_ahora),
+            "url": url_for("public.menu_bar", proveedor_id=proveedor.id),
+        }
+    if origen == "propio":
+        return {
+            "origen": origen,
+            "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "") or "Tienda principal",
+            "abierto": True,
+            "url": url_for("public.index"),
+        }
+    return None
+
+
+def _producto_disponible_en_origen(producto, origen, cantidad=1):
+    return bool(
+        producto
+        and producto.activo
+        and producto.visible_ahora
+        and producto.pertenece_a_origen(origen)
+        and producto.disponible_para_venta_en_origen(origen, cantidad)
+    )
+
+
+def _stock_en_origen(producto, origen):
+    return producto.stock_en_origen(origen)
+
+
+def _producto_canjeable_en_origen(producto, origen, cantidad=1):
+    if (
+        not producto
+        or not producto.activo
+        or not producto.canjeable_con_puntos
+        or not producto.puntos_para_canje
+        or not producto.visible_ahora
+    ):
+        return False
+    if producto.es_combo and any(item.es_seleccionable for item in producto.combo_items):
+        return False
+    return _producto_disponible_en_origen(producto, origen, cantidad)
+
+
+def _metadata_item_con_origen(producto, metadata, origen):
+    """Congela el origen aunque la firma nueva de models aún no esté integrada."""
+    params = inspect.signature(metadata_item_pedido).parameters
+    if "origen_operativo" in params:
+        return metadata_item_pedido(
+            producto,
+            metadata,
+            origen_operativo=origen,
+        )
+    data = metadata_item_pedido(producto, metadata)
+    snapshot = data.setdefault("producto", {})
+    snapshot["origen_operativo_key"] = origen
+    snapshot["origen_operativo"] = "propio" if origen == "propio" else "proveedor"
+    snapshot["proveedor_despachador_id"] = _proveedor_id_origen(origen)
+    return data
+
+
+def _descontar_stock_en_origen(producto, origen, cantidad, seleccion_item_ids=None):
+    method = producto.descontar_stock_en_origen
+    params = inspect.signature(method).parameters
+    if producto.es_combo and seleccion_item_ids is not None:
+        if "seleccion_item_ids" in params:
+            return method(
+                origen,
+                cantidad,
+                seleccion_item_ids=seleccion_item_ids,
+            )
+        if len(params) >= 3:
+            return method(origen, cantidad, seleccion_item_ids)
+    return method(origen, cantidad)
+
+
+def _canjeables_payload(cliente, origen=None):
     puntos = max(0, int(cliente.puntos or 0)) if cliente else 0
     cfg = get_puntos_config()
     ratio = max(1, int(cfg["ratio"]))
+    origen = _normalizar_origen(origen)
     base_q = Product.query.filter_by(activo=True, canjeable_con_puntos=True)\
                           .filter(Product.puntos_para_canje.isnot(None))\
                           .filter(Product.precio.isnot(None), Product.precio > 0)\
                           .order_by(Product.puntos_para_canje.asc(), Product.nombre.asc())
     candidatos = base_q.all()
-    canjeables = [p for p in candidatos if p.canje_directo_disponible() and (p.puntos_para_canje or 0) <= puntos] if puntos > 0 else []
-    proximo = next((p for p in candidatos if p.canje_directo_disponible() and (p.puntos_para_canje or 0) > puntos), None)
+    candidatos = [
+        p for p in candidatos
+        if origen
+        and _producto_canjeable_en_origen(p, origen)
+    ]
+    canjeables = [p for p in candidatos if (p.puntos_para_canje or 0) <= puntos] if puntos > 0 else []
+    proximo = next((p for p in candidatos if (p.puntos_para_canje or 0) > puntos), None)
 
     def _prod(p):
         return {
@@ -123,52 +230,27 @@ def _canjeables_payload(cliente):
 
 
 def _variantes_catalogo_unificadas(productos, origen_preferido=None):
-    """Muestra una variante vendible por clave sin cruzar inventarios.
-
-    La consulta ya viene ordenada con stock propio primero y proveedores
-    después. Conservamos la primera variante disponible de cada grupo; el
-    carrito recibe su ID concreto y todo el pedido queda ligado a ese origen.
-    """
-    grupos = {}
-    for producto in productos:
-        grupos.setdefault(producto.clave_catalogo, []).append(producto)
-    elegidos = []
-    for variantes in grupos.values():
-        preferida = next(
-            (p for p in variantes if p.origen_operativo_key == origen_preferido),
-            None,
-        )
-        elegidos.append(preferida or variantes[0])
-    return elegidos
-
-
-def _variante_para_origen(producto, origen):
-    if not origen or producto.origen_operativo_key == origen:
-        return producto
-    candidates = Product.query.filter_by(activo=True).all()
-    for candidate in candidates:
-        if (
-            candidate.clave_catalogo == producto.clave_catalogo
-            and candidate.origen_operativo_key == origen
-            and candidate.visible_ahora
-            and candidate.disponible_para_venta()
-            and (
-                not candidate.proveedor_despachador_id
-                or (
-                    candidate.proveedor_despachador
-                    and candidate.proveedor_despachador.activo
-                    and candidate.proveedor_despachador.esta_abierto_ahora
-                )
-            )
-        ):
-            return candidate
-    return None
+    """Compatibilidad para scripts antiguos: ya no colapsa ni sustituye variantes."""
+    return list(productos)
 
 
 # ─── CATÁLOGO ────────────────────────────────
 
 @public_bp.route("/")
 def index():
+    return _render_catalogo("propio")
+
+
+@public_bp.route("/bar/<int:proveedor_id>")
+def menu_bar(proveedor_id):
+    proveedor = get_or_404(Proveedor, proveedor_id)
+    if not proveedor.activo:
+        flash("Este establecimiento no está disponible.", "warning")
+        return redirect(url_for("public.index"))
+    return _render_catalogo(f"proveedor:{proveedor.id}", proveedor=proveedor)
+
+
+def _render_catalogo(origen, proveedor=None):
     categorias = Categoria.query.filter_by(activo=True).all()
     categoria_id = request.args.get("categoria", type=int)
     busqueda = request.args.get("q", "").strip()
@@ -182,39 +264,20 @@ def index():
         if busqueda_q:
             query = query.filter(Product.nombre.ilike(f"%{busqueda_q}%"))
 
-    # La visibilidad horaria depende de propiedades de negocio calculadas en Python.
     todos = query.all()
     productos_vis = [
         p for p in todos
-        if p.visible_ahora
-        and p.disponible_para_venta()
-        # Si el producto lo despacha un bar, el bar debe estar abierto AHORA.
-        # Productos propios no se filtran por esta regla (siempre disponibles).
-        and (
-            not p.proveedor_despachador_id
-            or (p.proveedor_despachador and p.proveedor_despachador.esta_abierto_ahora)
-        )
+        if _producto_disponible_en_origen(p, origen)
     ]
-    # Orden del catálogo público:
-    #   1. Combos primero (más visibles)
-    #   2. Productos propios antes que los exclusivos de un bar
-    #      (regla de negocio: damos prioridad a nuestro stock cuando ambos
-    #       están disponibles, pero el cliente ve UN solo catálogo unificado)
-    #   3. Por orden de categoría
-    #   4. Por nombre
     productos = sorted(
         productos_vis,
         key=lambda p: (
             0 if p.es_combo else 1,
-            0 if not p.proveedor_despachador_id else 1,
             p.categoria.orden if p.categoria else 99,
             p.nombre,
         ),
     )
     carrito = session.get("carrito", {})
-    origenes_carrito = _cart_origins(carrito)
-    origen_preferido = next(iter(origenes_carrito), None) if len(origenes_carrito) == 1 else None
-    productos = _variantes_catalogo_unificadas(productos, origen_preferido)
 
     menu_items = MenuConfig.query.filter(
         MenuConfig.pagina.in_(["home", "menu"]),
@@ -227,7 +290,8 @@ def index():
             item.producto
             and item.producto.activo
             and item.producto.visible_ahora
-            and item.producto.disponible_para_venta()
+            and item.producto.pertenece_a_origen(origen)
+            and item.producto.disponible_para_venta_en_origen(origen)
         )
     ]
     todas_resenas = Review.query.filter_by(aprobada=True).all()
@@ -237,6 +301,13 @@ def index():
 
     # Subtotal del carrito para el botón flotante
     _, carrito_subtotal = _build_items_from_carrito(carrito)
+    bares = Proveedor.query.filter_by(activo=True).order_by(Proveedor.nombre.asc()).all()
+    establecimiento = {
+        "origen": origen,
+        "nombre": proveedor.nombre if proveedor else (SiteConfig.get("NOMBRE_NEGOCIO", "") or "Tienda principal"),
+        "abierto": proveedor.esta_abierto_ahora if proveedor else True,
+        "url": url_for("public.menu_bar", proveedor_id=proveedor.id) if proveedor else url_for("public.index"),
+    }
 
     return render_template("public/index.html",
                            productos=productos, categorias=categorias,
@@ -246,8 +317,14 @@ def index():
                            resenas_recientes=resenas_recientes,
                            zona_principal=zona_principal,
                            carrito=carrito,
+                           carrito_origen=_carrito_origen(carrito),
                            carrito_subtotal=round(carrito_subtotal, 2),
-                           cart_max_qty=_cart_max_qty())
+                           cart_max_qty=_cart_max_qty(),
+                           origen_actual=origen,
+                           establecimiento=establecimiento,
+                           bares=bares,
+                           proveedor_actual=proveedor,
+                           stock_en_origen=_stock_en_origen)
 
 
 @public_bp.route("/whatsapp")
@@ -274,20 +351,16 @@ def whatsapp():
 def producto_detalle(producto_id):
     from models import ComboItem
     producto = get_or_404(Product, producto_id)
+    origen = _normalizar_origen(request.args.get("origen")) or producto.origen_operativo_key
+    proveedor_id = _proveedor_id_origen(origen)
+    proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
     if (
-        not producto.activo
-        or not producto.visible_ahora
-        or not producto.disponible_para_venta()
-        or (
-            producto.proveedor_despachador_id
-            and (
-                not producto.proveedor_despachador
-                or not producto.proveedor_despachador.activo
-                or not producto.proveedor_despachador.esta_abierto_ahora
-            )
-        )
+        not _producto_disponible_en_origen(producto, origen)
+        or (proveedor_id and (not proveedor or not proveedor.activo))
     ):
         flash("Este producto no está disponible ahora.", "warning")
+        if proveedor and proveedor.activo:
+            return redirect(url_for("public.menu_bar", proveedor_id=proveedor.id))
         return redirect(url_for("public.index"))
     reviews = Review.query.filter_by(producto_id=producto_id, aprobada=True).all()
     combo_items = ComboItem.query.filter_by(combo_id=producto_id)\
@@ -300,7 +373,15 @@ def producto_detalle(producto_id):
     return render_template("public/producto.html",
                            producto=producto, reviews=reviews, combo_items=combo_items,
                            combo_fixed_base=round(combo_fixed_base, 2),
-                           cart_max_qty=_cart_max_qty())
+                           cart_max_qty=_cart_max_qty(),
+                           origen_actual=origen,
+                           establecimiento_nombre=proveedor.nombre if proveedor else (
+                               SiteConfig.get("NOMBRE_NEGOCIO", "") or "Tienda principal"
+                           ),
+                           establecimiento_abierto=proveedor.esta_abierto_ahora if proveedor else True,
+                           volver_url=url_for("public.menu_bar", proveedor_id=proveedor.id)
+                           if proveedor else url_for("public.index"),
+                           stock_en_origen=_stock_en_origen)
 
 
 # ─── CARRITO (sesión Flask) ──────────────────
@@ -310,6 +391,39 @@ def _get_carrito():
 
 def _save_carrito(carrito):
     session["carrito"] = carrito
+    if not carrito:
+        session.pop("carrito_origen", None)
+        session.pop("cart_puntos", None)
+        session.pop("cart_producto_canje_id", None)
+    session.modified = True
+
+
+def _carrito_origen(carrito=None):
+    carrito = _get_carrito() if carrito is None else carrito
+    origen = _normalizar_origen(session.get("carrito_origen"))
+    if origen or not carrito:
+        return origen
+
+    # Compatibilidad para sesiones creadas antes de que el origen fuera explícito.
+    origenes = _cart_origins(carrito)
+    if len(origenes) == 1:
+        origen = next(iter(origenes))
+        session["carrito_origen"] = origen
+        session.modified = True
+        return origen
+    return None
+
+
+def _set_carrito_origen(origen):
+    origen = _normalizar_origen(origen)
+    anterior = _normalizar_origen(session.get("carrito_origen"))
+    if anterior != origen:
+        session.pop("cart_puntos", None)
+        session.pop("cart_producto_canje_id", None)
+    if origen:
+        session["carrito_origen"] = origen
+    else:
+        session.pop("carrito_origen", None)
     session.modified = True
 
 
@@ -386,12 +500,15 @@ def agregar_carrito(producto_id):
         return redirect(request.referrer or url_for("public.index"))
 
     producto = get_or_404(Product, producto_id)
-    if not producto.activo or not producto.visible_ahora:
+    origen_solicitado = _normalizar_origen(request.form.get("origen"))
+    if not origen_solicitado:
+        origen_solicitado = producto.origen_operativo_key
+    proveedor_id = _proveedor_id_origen(origen_solicitado)
+    proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
+    if not _producto_disponible_en_origen(producto, origen_solicitado):
         return _err("Este producto no está disponible ahora.")
-    if producto.proveedor_despachador_id and (
-        not producto.proveedor_despachador
-        or not producto.proveedor_despachador.activo
-        or not producto.proveedor_despachador.esta_abierto_ahora
+    if proveedor_id and (
+        not proveedor or not proveedor.activo or not proveedor.esta_abierto_ahora
     ):
         return _err("El establecimiento que prepara este producto está cerrado ahora.")
     cart_max_qty = _cart_max_qty()
@@ -400,15 +517,12 @@ def agregar_carrito(producto_id):
     except (ValueError, TypeError):
         cantidad = 1
     carrito = _get_carrito()
-    origenes_actuales = _cart_origins(carrito)
-    if len(origenes_actuales) == 1 and producto.origen_operativo_key not in origenes_actuales:
-        producto = _variante_para_origen(producto, next(iter(origenes_actuales)))
-        if not producto:
-            return _err(
-                "Este producto no está disponible en el establecimiento de tu pedido actual. "
-                "Finaliza ese pedido antes de cambiar de origen."
-            )
-        producto_id = producto.id
+    origen_carrito = _carrito_origen(carrito)
+    if origen_carrito and origen_solicitado != origen_carrito:
+        return _err(
+            "Tu carrito pertenece a otro establecimiento. "
+            "Finaliza o vacía ese pedido antes de cambiar de tienda."
+        )
     key = str(producto_id)
 
     # Bloqueo 1: no mezclar inmediato con programado
@@ -434,39 +548,47 @@ def agregar_carrito(producto_id):
             "Finaliza primero tu pedido de almacén."
         )
 
-    origenes_actuales = _cart_origins(carrito, exclude_key=key)
-    if origenes_actuales and producto.origen_operativo_key not in origenes_actuales:
-        return _err(
-            "Cada pedido debe salir completo de un solo establecimiento. "
-            "Finaliza este pedido antes de añadir productos de otro origen."
-        )
-
     nueva_cantidad_total = int(carrito.get(key, 0) or 0) + cantidad
     if nueva_cantidad_total > cart_max_qty:
         return _err(f"No puedes añadir más de {cart_max_qty} unidades por producto.")
-    if not producto.disponible_para_venta(nueva_cantidad_total):
+    if not producto.disponible_para_venta_en_origen(origen_solicitado, nueva_cantidad_total):
         return _err("No hay stock suficiente para esa cantidad.")
     if producto.es_combo:
-        seleccion, error = _parse_combo_selection(producto, request.form, nueva_cantidad_total)
+        seleccion, error = _parse_combo_selection(
+            producto,
+            request.form,
+            nueva_cantidad_total,
+            origen_solicitado,
+        )
         if error:
             if _ajax:
                 return jsonify({"ok": False, "msg": error}), 200
             flash(error, "danger")
-            return redirect(request.referrer or url_for("public.producto_detalle", producto_id=producto_id))
+            return redirect(request.referrer or url_for(
+                "public.producto_detalle",
+                producto_id=producto_id,
+                origen=origen_solicitado,
+            ))
         try:
             producto.validar_stock_combo_seleccion(
                 nueva_cantidad_total,
                 _combo_selection_ids_from_saved(seleccion),
+                origen=origen_solicitado,
             )
         except ValueError as exc:
             if _ajax:
                 return jsonify({"ok": False, "msg": str(exc)}), 200
             flash(str(exc), "danger")
-            return redirect(request.referrer or url_for("public.producto_detalle", producto_id=producto_id))
+            return redirect(request.referrer or url_for(
+                "public.producto_detalle",
+                producto_id=producto_id,
+                origen=origen_solicitado,
+            ))
         selecciones_combo = session.get("combo_selecciones", {})
         selecciones_combo[key] = seleccion
         session["combo_selecciones"] = selecciones_combo
     carrito[key] = nueva_cantidad_total
+    _set_carrito_origen(origen_solicitado)
     _save_carrito(carrito)
     notas_personalizacion = request.form.get("notas_personalizacion", "").strip()
     if notas_personalizacion:
@@ -483,6 +605,7 @@ def agregar_carrito(producto_id):
 @public_bp.route("/carrito/actualizar", methods=["POST"])
 def actualizar_carrito():
     carrito = _get_carrito()
+    origen = _carrito_origen(carrito)
     selecciones_combo = session.get("combo_selecciones", {})
     notas_combo = session.get("notas_combo", {})
     cart_max_qty = _cart_max_qty()
@@ -497,7 +620,7 @@ def actualizar_carrito():
             notas_combo.pop(key, None)
         else:
             producto = db.session.get(Product, int(key)) if str(key).isdigit() else None
-            if not producto or not producto.activo or not producto.visible_ahora:
+            if not _producto_disponible_en_origen(producto, origen):
                 del carrito[key]
                 selecciones_combo.pop(key, None)
                 notas_combo.pop(key, None)
@@ -507,8 +630,9 @@ def actualizar_carrito():
                     producto.validar_stock_combo_seleccion(
                         nueva_cantidad,
                         _combo_selection_ids_from_saved(selecciones_combo.get(key, {})),
+                        origen=origen,
                     )
-                elif not producto.disponible_para_venta(nueva_cantidad):
+                elif not producto.disponible_para_venta_en_origen(origen, nueva_cantidad):
                     raise ValueError(f"No hay stock suficiente para {producto.nombre}.")
             except ValueError as exc:
                 flash(str(exc), "warning")
@@ -539,15 +663,19 @@ def eliminar_carrito(producto_id):
 @public_bp.route("/carrito")
 def ver_carrito():
     carrito = _get_carrito()
+    origen = _carrito_origen(carrito)
     items, subtotal = _build_items_from_carrito(carrito)
     puntos_sesion = session.get("cart_puntos", {})
+    if puntos_sesion.get("origen") != origen:
+        puntos_sesion = {}
     puntos_verificados = int(puntos_sesion.get("puntos_totales", 0) or 0)
     puntos_visibles = puntos_verificados
     todos_canjeables = [
         p for p in Product.query.filter_by(canjeable_con_puntos=True, activo=True)
         .filter(Product.puntos_para_canje.isnot(None))
         .order_by(Product.puntos_para_canje.asc(), Product.nombre.asc()).all()
-        if p.canje_directo_disponible()
+        if _producto_canjeable_en_origen(p, origen)
+        and origen
     ]
     descuento_puntos = puntos_sesion.get("descuento", 0.0)
     puntos_cfg = get_puntos_config()
@@ -568,7 +696,9 @@ def ver_carrito():
                            puntos_visibles=puntos_visibles,
                            zona_principal=zona_principal,
                            radio_entrega_km=radio_entrega_km,
-                           cart_max_qty=cart_max_qty)
+                           cart_max_qty=cart_max_qty,
+                           origen_actual=origen,
+                           establecimiento=_establecimiento_para_origen(origen))
 
 
 @public_bp.route("/carrito/canjear-puntos-quitar", methods=["POST"])
@@ -589,11 +719,16 @@ def set_producto_canje():
         except (ValueError, TypeError):
             return jsonify({"ok": False, "msg": "producto_id inválido"}), 400
         producto = db.session.get(Product, prod_id)
-        if not producto or not producto.canje_directo_disponible():
+        origen = _carrito_origen()
+        if (
+            not producto
+            or not origen
+            or not _producto_canjeable_en_origen(producto, origen)
+        ):
             return jsonify({"ok": False, "msg": "Producto no canjeable"}), 400
         cart_puntos = session.get("cart_puntos") or {}
         puntos_disponibles = 0
-        if cart_puntos.get("cliente_id"):
+        if cart_puntos.get("cliente_id") and cart_puntos.get("origen") == origen:
             puntos_disponibles = int(cart_puntos.get("puntos_totales") or 0)
         if int(producto.puntos_para_canje or 0) > puntos_disponibles:
             return jsonify({"ok": False, "msg": "No tienes puntos suficientes para este producto"}), 400
@@ -754,6 +889,9 @@ def verificar_codigo_puntos():
     db.session.commit()
 
     ratio = max(1, get_puntos_config()["ratio"])
+    origen = _carrito_origen()
+    if not origen:
+        return jsonify({"ok": False, "msg": "El carrito no tiene un establecimiento válido"})
     _, subtotal = _build_items_from_carrito(_get_carrito())
     max_puntos_por_carrito = int(max(subtotal, 0) * ratio)
     puntos_usar = min(max(puntos_usar, 0), cliente.puntos, max_puntos_por_carrito)
@@ -766,7 +904,10 @@ def verificar_codigo_puntos():
     descuento = round(puntos_usar / ratio, 2)
     if producto_canje_id:
         producto_canje = db.session.get(Product, producto_canje_id)
-        if not producto_canje or not producto_canje.canje_directo_disponible():
+        if (
+            not producto_canje
+            or not _producto_canjeable_en_origen(producto_canje, origen)
+        ):
             return jsonify({"ok": False, "msg": "Producto de canje no válido"})
         if puntos_usar + int(producto_canje.puntos_para_canje or 0) > int(cliente.puntos or 0):
             return jsonify({"ok": False, "msg": "Los puntos no alcanzan para descuento y producto a la vez"})
@@ -782,10 +923,11 @@ def verificar_codigo_puntos():
         "descuento": descuento,
         "puntos_totales": cliente.puntos,
         "verificado": True,
+        "origen": origen,
     }
     session.modified = True
 
-    payload = _canjeables_payload(cliente)
+    payload = _canjeables_payload(cliente, origen)
     return jsonify({"ok": True, "puntos_verificados": puntos_usar, "descuento": descuento,
                     "msg": "✓ WhatsApp verificado", "puntos_totales": cliente.puntos, **payload})
 
@@ -802,6 +944,19 @@ def checkout():
     if not carrito:
         flash("Tu carrito está vacío.", "warning")
         return redirect(url_for("public.ver_carrito"))
+
+    origen = _carrito_origen(carrito)
+    establecimiento = _establecimiento_para_origen(origen)
+    if not origen or not establecimiento:
+        flash("El carrito no tiene un establecimiento válido. Vacíalo y vuelve a elegir la tienda.", "warning")
+        return redirect(url_for("public.ver_carrito"))
+    proveedor_id = _proveedor_id_origen(origen)
+    proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
+    if proveedor_id and (
+        not proveedor or not proveedor.activo or not proveedor.esta_abierto_ahora
+    ):
+        flash("El establecimiento de este pedido está cerrado o ya no está activo.", "warning")
+        return redirect(establecimiento["url"])
 
     items, subtotal = _build_items_from_carrito(carrito)
     if not items:
@@ -831,12 +986,8 @@ def checkout():
             "warning",
         )
         return redirect(url_for("public.ver_carrito"))
-    if len(_items_origins(items)) > 1:
-        flash(
-            "Tu carrito mezcla productos de distintos establecimientos. "
-            "Sepáralos en pedidos independientes.",
-            "warning",
-        )
+    if any(not item["producto"].pertenece_a_origen(origen) for item in items):
+        flash("Hay productos que no pertenecen al establecimiento del carrito.", "warning")
         return redirect(url_for("public.ver_carrito"))
     zonas = ZonaEntrega.query.filter_by(activo=True)\
         .order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
@@ -846,7 +997,7 @@ def checkout():
 
     # Los puntos solo se habilitan después de verificar el WhatsApp en esta sesión.
     cart_puntos_sesion = session.get("cart_puntos", {})
-    if cart_puntos_sesion:
+    if cart_puntos_sesion.get("origen") == origen:
         puntos_cliente = cart_puntos_sesion.get("puntos_totales", 0)
     else:
         puntos_cliente = 0
@@ -854,8 +1005,18 @@ def checkout():
     canjeables = [
         p for p in Product.query.filter_by(canjeable_con_puntos=True, activo=True)
         .filter(Product.puntos_para_canje <= puntos_cliente).all()
-        if p.canje_directo_disponible()
+        if _producto_canjeable_en_origen(p, origen)
     ] if puntos_cliente > 0 else []
+    canjeables_data = [
+        {
+            "id": p.id,
+            "nombre": p.nombre,
+            "puntos": int(p.puntos_para_canje or 0),
+            "categoria": p.categoria.nombre if p.categoria else "",
+            "origen": p.origen_pais or "",
+        }
+        for p in canjeables
+    ]
 
     if request.method == "POST":
         # ── Idempotency guard ──────────────────────────────────────
@@ -893,6 +1054,11 @@ def checkout():
             _mensaje = (_cfg.get("TIENDA_MENSAJE_CIERRE") or "").strip()
             flash(_mensaje or f"La tienda está cerrada ahora. Horario: {_apertura}–{_cierre}.", "warning")
             return redirect(url_for("public.checkout"))
+        if proveedor_id:
+            proveedor = db.session.get(Proveedor, proveedor_id)
+            if not proveedor or not proveedor.activo or not proveedor.esta_abierto_ahora:
+                flash("El bar cerró antes de confirmar el pedido. Tu carrito se conserva.", "warning")
+                return redirect(establecimiento["url"])
 
         direccion = request.form.get("direccion", "").strip()
         metodo_pago = normalizar_metodo_pago(request.form.get("metodo_pago"))
@@ -926,6 +1092,12 @@ def checkout():
                 return redirect(url_for("public.checkout"))
         for item in items:
             producto = item["producto"]
+            if not _producto_disponible_en_origen(producto, origen, item["cantidad"]):
+                flash(
+                    f"'{producto.nombre}' ya no está disponible en {establecimiento['nombre']}.",
+                    "danger",
+                )
+                return redirect(url_for("public.ver_carrito"))
             if _delivery_family(producto) == "programado":
                 if not producto.fecha_llegada or producto.fecha_llegada < datetime.now().date():
                     flash(
@@ -1022,7 +1194,8 @@ def checkout():
         puntos_a_canjear = 0
         cart_puntos = session.get("cart_puntos", {})
         if (cart_puntos and cart_puntos.get("cliente_id") == cliente.id
-                and cart_puntos.get("verificado")):
+                and cart_puntos.get("verificado")
+                and cart_puntos.get("origen") == origen):
             pts = min(max(0, int(request.form.get("puntos_usar", 0) or 0)), cliente.puntos)
             puntos_a_canjear = pts
 
@@ -1032,10 +1205,14 @@ def checkout():
         producto_canje = db.session.get(Product, producto_canje_id) if producto_canje_id else None
         if producto_canje_id:
             if (not cart_puntos or cart_puntos.get("cliente_id") != cliente.id
-                    or not cart_puntos.get("verificado")):
+                    or not cart_puntos.get("verificado")
+                    or cart_puntos.get("origen") != origen):
                 flash("Verifica tu WhatsApp antes de canjear productos con puntos.", "danger")
                 return redirect(url_for("public.checkout"))
-            if not producto_canje or not producto_canje.canje_directo_disponible():
+            if (
+                not producto_canje
+                or not _producto_canjeable_en_origen(producto_canje, origen)
+            ):
                 flash("Producto de canje no válido.", "danger")
                 return redirect(url_for("public.checkout"))
             puntos_producto = int(producto_canje.puntos_para_canje or 0)
@@ -1127,19 +1304,22 @@ def checkout():
                     subtotal=round(precio_venta * item["cantidad"], 2),
                     notas=item.get("combo_resumen"),
                     metadata_json=json.dumps(
-                        metadata_item_pedido(item["producto"], item.get("metadata") or {}),
+                        _metadata_item_con_origen(
+                            item["producto"],
+                            item.get("metadata") or {},
+                            origen,
+                        ),
                         ensure_ascii=False,
                     ),
                 )
                 db.session.add(oi)
                 if item["producto"].tipo_entrega == "inmediato":
-                    if item["producto"].es_combo:
-                        item["producto"].descontar_stock_combo(
-                            item["cantidad"],
-                            item.get("combo_seleccion_ids") or [],
-                        )
-                    else:
-                        item["producto"].descontar_stock(item["cantidad"])
+                    _descontar_stock_en_origen(
+                        item["producto"],
+                        origen,
+                        item["cantidad"],
+                        item.get("combo_seleccion_ids") or [],
+                    )
         except ValueError as exc:
             db.session.rollback()
             flash(str(exc), "danger")
@@ -1152,6 +1332,7 @@ def checkout():
                 cliente, pedido,
                 puntos_usar=puntos_a_canjear,
                 producto_canje_id=producto_canje_id,
+                origen_operativo=origen,
             )
         except ValueError as exc:
             db.session.rollback()
@@ -1208,6 +1389,7 @@ def checkout():
         session.pop("cart_producto_canje_id", None)
         session.pop("notas_combo", None)
         session.pop("combo_selecciones", None)
+        session.pop("carrito_origen", None)
 
         # Notificación push: alertar a admins del nuevo pedido
         try:
@@ -1228,7 +1410,13 @@ def checkout():
                            zonas=zonas,
                            tiene_encargos=tiene_encargos,
                            canjeables=canjeables,
-                           checkout_items=checkout_items)
+                           checkout_items=checkout_items,
+                           origen_actual=origen,
+                           establecimiento=establecimiento,
+                           puntos_sesion=cart_puntos_sesion
+                           if cart_puntos_sesion.get("origen") == origen else {},
+                           canjeables_data=canjeables_data,
+                           producto_canje_seleccionado=session.get("cart_producto_canje_id"))
 
 
 @public_bp.route("/pedido/<int:pedido_id>/confirmado")
@@ -1253,7 +1441,7 @@ def club():
 
 # ─── HELPERS ─────────────────────────────────
 
-def _parse_combo_selection(producto, form, cantidad=1):
+def _parse_combo_selection(producto, form, cantidad=1, origen=None):
     if not producto.es_combo:
         return {}, None
 
@@ -1269,7 +1457,7 @@ def _parse_combo_selection(producto, form, cantidad=1):
         field_template = f"combo_item_{(grupo or 'Seleccion').replace(' ', '_')}"
         max_sel = max(1, opciones[0].max_selecciones or 1)
         def _item_disponible(item):
-            return producto.combo_item_stock_disponible(item, cantidad)
+            return producto.combo_item_stock_disponible(item, cantidad, origen=origen)
 
         validos = {item.id for item in opciones if _item_disponible(item)}
 
@@ -1507,6 +1695,9 @@ def _build_items_from_carrito(carrito):
         return [], 0.0
 
     productos_map = {p.id: p for p in Product.query.filter(Product.id.in_(ids)).all()}
+    origen = _carrito_origen(carrito)
+    if not origen:
+        return [], 0.0
 
     items = []
     subtotal = 0.0
@@ -1518,9 +1709,7 @@ def _build_items_from_carrito(carrito):
         except (ValueError, TypeError):
             continue
         p = productos_map.get(pid)
-        if not p or not p.activo:
-            continue
-        if not p.visible_ahora:
+        if not _producto_disponible_en_origen(p, origen, qty):
             continue
         combo_items = ComboItem.query.filter_by(combo_id=p.id)\
             .order_by(ComboItem.orden.asc(), ComboItem.id.asc()).all() if p.es_combo else []
@@ -1529,8 +1718,8 @@ def _build_items_from_carrito(carrito):
         )
         try:
             if p.es_combo:
-                p.validar_stock_combo_seleccion(qty, seleccion_ids)
-            elif not p.disponible_para_venta(qty):
+                p.validar_stock_combo_seleccion(qty, seleccion_ids, origen=origen)
+            elif not p.disponible_para_venta_en_origen(origen, qty):
                 raise ValueError("stock")
         except ValueError:
             continue

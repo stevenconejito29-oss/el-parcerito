@@ -1,184 +1,216 @@
 {% extends "admin_base.html" %}
-{% block title %}Editar proveedor — {{ proveedor.nombre }}{% endblock %}
+{% block title %}Proveedor #{{ proveedor.id }} · {{ proveedor.nombre }}{% endblock %}
 {% block content %}
 
-<div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+{% set ops = proveedor.operadores.all() %}
+{% set active_ops = proveedor.operadores.filter_by(activo=True).count() %}
+{% set stock_total = namespace(value=0, agotados=0) %}
+{% for sku in skus %}
+  {% set stock_total.value = stock_total.value + (sku.stock or 0) %}
+  {% if (sku.stock or 0) == 0 %}{% set stock_total.agotados = stock_total.agotados + 1 %}{% endif %}
+{% endfor %}
+
+<header class="prov-page-head prov-detail-head">
   <div>
-    <h1 class="text-2xl font-black text-white">🏪 {{ proveedor.nombre }}</h1>
-    <p class="text-xs mt-1" style="color:var(--col-muted)">
-      <a href="{{ url_for('admin.proveedores') }}" style="color:var(--col-gold)">← Volver al listado</a>
-    </p>
+    <a href="{{ url_for('admin.proveedores') }}" class="prov-back">Volver a proveedores</a>
+    <span class="prov-eyebrow">Aliado #{{ proveedor.id }}</span>
+    <h1>{{ proveedor.nombre }}</h1>
+    <p>{{ proveedor.razon_social or 'Sin razón social registrada' }}</p>
   </div>
+  <div class="prov-card-actions">
+    <span class="prov-status {{ 'is-active' if proveedor.activo else 'is-inactive' }}">
+      {{ 'Activo' if proveedor.activo else 'Inactivo' }}
+    </span>
+    <a href="{{ url_for('public.menu_bar', proveedor_id=proveedor.id) }}" class="prov-btn prov-btn-secondary" target="_blank" rel="noopener">Abrir sección pública</a>
+  </div>
+</header>
+
+<div class="prov-kpis" aria-label="Resumen del proveedor">
+  <div><span>Productos</span><strong>{{ skus|length }}</strong><small>{{ stock_total.agotados }} agotados</small></div>
+  <div><span>Stock total</span><strong>{{ stock_total.value }}</strong><small>unidades disponibles</small></div>
+  <div><span>Operadores</span><strong>{{ active_ops }}</strong><small>{{ ops|length }} vinculados</small></div>
+  <div><span>Horario</span><strong class="prov-kpi-text">
+    {% if proveedor.hora_apertura and proveedor.hora_cierre %}
+      {{ proveedor.hora_apertura.strftime('%H:%M') }}-{{ proveedor.hora_cierre.strftime('%H:%M') }}
+    {% else %}24 horas{% endif %}
+  </strong><small>{{ 'Abierto ahora' if proveedor.activo and proveedor.esta_abierto_ahora else 'No disponible ahora' }}</small></div>
 </div>
 
-<!-- Datos generales -->
-<form method="POST" class="ox-card p-5 mb-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+{% if not proveedor.activo or not active_ops or not skus or not proveedor.telefono or not proveedor.iban %}
+<aside class="prov-alert-panel">
+  <strong>Revisión recomendada</strong>
+  <div class="prov-warnings">
+    {% if not proveedor.activo %}<span class="is-danger">El escaparate público está desactivado</span>{% endif %}
+    {% if not active_ops %}<span>No hay operadores activos para gestionar el chatbot</span>{% endif %}
+    {% if not skus %}<span>No hay productos asignados al inventario</span>{% endif %}
+    {% if not proveedor.telefono %}<span>Falta el contacto comercial</span>{% endif %}
+    {% if not proveedor.iban %}<span>Faltan datos bancarios para liquidaciones</span>{% endif %}
+  </div>
+</aside>
+{% endif %}
+
+<form method="POST" class="prov-editor">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="accion" value="actualizar">
-  <label class="text-xs">Nombre comercial *
-    <input name="nombre" required value="{{ proveedor.nombre }}" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-  </label>
-  <label class="text-xs">Razón social
-    <input name="razon_social" value="{{ proveedor.razon_social or '' }}" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-  </label>
-  <label class="text-xs">📱 WhatsApp directo del bar
-    <input name="telefono" value="{{ proveedor.telefono or '' }}"
-           placeholder="+34 600 000 000"
-           class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-    <small class="block mt-1" style="color:var(--col-muted)">
-      Contacto público para clientes. Configura administradores del menú
-      operativo en Usuarios, con rol Proveedor y este bar seleccionado.
-    </small>
-  </label>
-  <label class="text-xs">Email
-    <input type="email" name="email" value="{{ proveedor.email or '' }}" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-  </label>
-  <label class="text-xs md:col-span-2">Dirección
-    <input name="direccion" value="{{ proveedor.direccion or '' }}" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-  </label>
-  <label class="text-xs">Horario (texto libre)
-    <input name="horario" value="{{ proveedor.horario or '' }}" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-  </label>
-  <label class="text-xs">⏰ Hora apertura
-    <input type="time" name="hora_apertura"
-           value="{{ proveedor.hora_apertura.strftime('%H:%M') if proveedor.hora_apertura else '' }}"
-           class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-  </label>
-  <label class="text-xs">⏰ Hora cierre
-    <input type="time" name="hora_cierre"
-           value="{{ proveedor.hora_cierre.strftime('%H:%M') if proveedor.hora_cierre else '' }}"
-           class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-  </label>
-  <p class="text-xs md:col-span-2" style="color:var(--col-muted)">
-    Si configuras horario, los productos del bar dejan de aparecer en el menú
-    público fuera de él. Déjalo vacío para que esté operativo 24h.
-  </p>
-  <label class="text-xs md:col-span-2">Modelo de acuerdo
-    <select name="modelo_acuerdo" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-      <option value="stock_proveedor" {% if proveedor.modelo_acuerdo == 'stock_proveedor' %}selected{% endif %}>
-        A — El bar pone el stock (le pagamos precio_costo; margen = PVP − coste)
-      </option>
-      <option value="stock_propio_bar" {% if proveedor.modelo_acuerdo == 'stock_propio_bar' %}selected{% endif %}>
-        B — Nosotros ponemos el stock (le pagamos comisión% del PVP por preparar)
-      </option>
-    </select>
-    <small class="block mt-1" style="color:var(--col-muted)">
-      Cambiar el modelo solo afecta a pedidos futuros: los pasados se liquidan
-      con el modelo congelado en su snapshot.
-    </small>
-  </label>
-  <label class="text-xs">Comisión % <span class="opacity-60">(solo modo B)</span>
-    <input type="number" step="0.01" min="0" max="100" name="comision_pct"
-           value="{{ "%.2f"|format(proveedor.comision_pct|float) }}"
-           class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-  </label>
-  <label class="text-xs md:col-span-2">IBAN
-    <input name="iban" value="{{ proveedor.iban or '' }}" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-  </label>
-  <label class="text-xs md:col-span-2">Notas
-    <textarea name="notas" rows="2" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">{{ proveedor.notas or '' }}</textarea>
-  </label>
-  <label class="text-xs md:col-span-2 flex items-center gap-2">
-    <input type="checkbox" name="activo" {% if proveedor.activo %}checked{% endif %}>
-    <span>Proveedor activo</span>
-  </label>
-  <div class="md:col-span-2 text-right">
-    <button type="submit" class="px-4 py-2 rounded font-bold" style="background:var(--col-gold); color:#000">
-      Guardar cambios
-    </button>
+
+  <fieldset class="ox-card prov-form-section">
+    <legend>Identidad del aliado</legend>
+    <label class="prov-field">Nombre comercial *
+      <input name="nombre" required value="{{ proveedor.nombre }}" autocomplete="organization">
+    </label>
+    <label class="prov-field">Razón social
+      <input name="razon_social" value="{{ proveedor.razon_social or '' }}" autocomplete="organization">
+    </label>
+    <label class="prov-field prov-span-2">Dirección
+      <input name="direccion" value="{{ proveedor.direccion or '' }}" autocomplete="street-address">
+    </label>
+    <label class="prov-toggle prov-span-2">
+      <input type="checkbox" name="activo" {% if proveedor.activo %}checked{% endif %}>
+      <span><strong>Proveedor activo</strong><small>Permite mostrar su catálogo en `/bar/{{ proveedor.id }}` cuando esté dentro de horario.</small></span>
+    </label>
+  </fieldset>
+
+  <fieldset class="ox-card prov-form-section">
+    <legend>Contacto comercial</legend>
+    <p class="prov-section-help">Canales de atención y relación con el aliado. No son credenciales del chatbot.</p>
+    <label class="prov-field">WhatsApp o teléfono
+      <input type="tel" name="telefono" value="{{ proveedor.telefono or '' }}" autocomplete="tel" placeholder="+34 600 000 000">
+    </label>
+    <label class="prov-field">Email
+      <input type="email" name="email" value="{{ proveedor.email or '' }}" autocomplete="email">
+    </label>
+    <div class="prov-inline-note prov-span-2">
+      El acceso operativo se gestiona en Usuarios. Actualmente hay <strong>{{ active_ops }}</strong> operador(es) activo(s).
+    </div>
+  </fieldset>
+
+  <fieldset class="ox-card prov-form-section">
+    <legend>Horario y disponibilidad</legend>
+    <label class="prov-field prov-span-2">Horario descriptivo
+      <input name="horario" value="{{ proveedor.horario or '' }}" placeholder="Ej. L-V 09:00-22:00; S-D 11:00-23:00">
+    </label>
+    <label class="prov-field">Apertura
+      <input type="time" name="hora_apertura" value="{{ proveedor.hora_apertura.strftime('%H:%M') if proveedor.hora_apertura else '' }}">
+    </label>
+    <label class="prov-field">Cierre
+      <input type="time" name="hora_cierre" value="{{ proveedor.hora_cierre.strftime('%H:%M') if proveedor.hora_cierre else '' }}">
+    </label>
+    <p class="prov-section-help prov-span-2">Configura ambas horas. Si falta una, el escaparate se considera abierto 24 horas. Se admiten horarios que cruzan medianoche.</p>
+  </fieldset>
+
+  <fieldset class="ox-card prov-form-section">
+    <legend>Modelo financiero</legend>
+    <label class="prov-field prov-span-2">Acuerdo
+      <select name="modelo_acuerdo">
+        <option value="stock_proveedor" {% if proveedor.modelo_acuerdo == 'stock_proveedor' %}selected{% endif %}>El proveedor pone el stock: se liquida el coste registrado</option>
+        <option value="stock_propio_bar" {% if proveedor.modelo_acuerdo == 'stock_propio_bar' %}selected{% endif %}>La plataforma pone el stock: se liquida una comisión del PVP</option>
+      </select>
+      <small>El cambio afecta a pedidos futuros; los anteriores conservan las condiciones de su snapshot.</small>
+    </label>
+    <label class="prov-field">Comisión % <span>(solo segundo modelo)</span>
+      <input type="number" step="0.01" min="0" max="100" name="comision_pct" value="{{ "%.2f"|format(proveedor.comision_pct|float) }}" inputmode="decimal">
+    </label>
+    <label class="prov-field">IBAN
+      <input name="iban" value="{{ proveedor.iban or '' }}" autocomplete="off">
+    </label>
+    <label class="prov-field prov-span-2">Notas internas
+      <textarea name="notas" rows="4">{{ proveedor.notas or '' }}</textarea>
+    </label>
+  </fieldset>
+
+  <div class="prov-sticky-actions">
+    <span>Guardando identidad, contacto, horario y acuerdo.</span>
+    <button type="submit" class="prov-btn prov-btn-primary">Guardar cambios</button>
   </div>
 </form>
 
-<!-- Inventario -->
-<div class="ox-card p-5 mb-5">
-  <h2 class="text-xl font-bold text-white mb-3">📦 Inventario del proveedor</h2>
-  <p class="text-xs mb-3" style="color:var(--col-muted)">
-    SKUs que este proveedor stockea, con su precio de coste y unidades disponibles.
-  </p>
+<section class="ox-card prov-management">
+  <div class="prov-section-head">
+    <div>
+      <span class="prov-eyebrow">Catálogo del aliado</span>
+      <h2>Productos y stock</h2>
+      <p>El stock controla la venta pública. El coste se usa en liquidaciones cuando el proveedor aporta el producto.</p>
+    </div>
+    <span class="prov-status">{{ skus|length }} SKU</span>
+  </div>
 
   {% if skus %}
-  <table class="w-full text-sm mb-4">
-    <thead class="text-xs uppercase" style="color:var(--col-muted)">
-      <tr>
-        <th class="text-left py-2">Producto</th>
-        <th class="text-right">Stock</th>
-        <th class="text-right">Coste (€)</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for s in skus %}
-      <tr class="border-t border-zinc-800">
-        <td class="py-2 text-white">{{ s.producto.nombre }}</td>
-        <td class="text-right text-white">{{ s.stock }}</td>
-        <td class="text-right text-white">
-          {% if s.precio_costo is not none %}{{ "%.2f"|format(s.precio_costo|float) }}{% else %}—{% endif %}
-        </td>
-        <td class="text-right">
-          <form method="POST" class="inline" onsubmit="return confirm('¿Borrar este SKU del inventario?')">
-            <input type="hidden" name="accion" value="borrar_sku">
-            <input type="hidden" name="fila_id" value="{{ s.id }}">
-            <button type="submit" class="text-xs text-red-400 hover:underline">borrar</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="prov-sku-list">
+    {% for s in skus %}
+    <article class="prov-sku-row {% if not s.activo or not s.producto.activo %}is-muted{% endif %}">
+      <div class="prov-sku-name">
+        <strong>{{ s.producto.nombre }}</strong>
+        <small>Producto #{{ s.producto.id }}{% if not s.producto.activo %} · inactivo en catálogo{% endif %}</small>
+      </div>
+      <div><span>Stock</span><strong class="{{ 'prov-danger' if (s.stock or 0) == 0 else '' }}">{{ s.stock }} uds</strong></div>
+      <div><span>Coste unitario</span><strong>{% if s.precio_costo is not none %}{{ "%.2f"|format(s.precio_costo|float) }} €{% else %}Pendiente{% endif %}</strong></div>
+      <form method="POST" onsubmit="return confirm('¿Borrar este SKU del inventario?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="accion" value="borrar_sku">
+        <input type="hidden" name="fila_id" value="{{ s.id }}">
+        <button type="submit" class="prov-btn prov-btn-danger">Quitar</button>
+      </form>
+    </article>
+    {% endfor %}
+  </div>
   {% else %}
-  <p class="text-gray-400 mb-4">Este proveedor todavía no tiene SKUs registrados.</p>
+  <div class="prov-empty">
+    <strong>Sin productos asignados</strong>
+    <p>Añade un producto del catálogo maestro para habilitar stock propio de este proveedor.</p>
+  </div>
   {% endif %}
 
-  <!-- Añadir SKU -->
   {% if productos_no_registrados %}
-  <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-2 items-end pt-3 border-t border-zinc-800">
+  <form method="POST" class="prov-add-sku">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="accion" value="agregar_sku">
-    <label class="text-xs md:col-span-2">Producto
-      <select name="producto_id" required class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
-        <option value="">Selecciona…</option>
+    <label class="prov-field prov-product-select">Producto
+      <select name="producto_id" required>
+        <option value="">Selecciona un producto</option>
         {% for p in productos_no_registrados %}
-        <option value="{{ p.id }}">{{ p.nombre }}</option>
+        <option value="{{ p.id }}">#{{ p.id }} · {{ p.nombre }}</option>
         {% endfor %}
       </select>
     </label>
-    <label class="text-xs">Stock
-      <input type="number" min="0" name="stock" value="0" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+    <label class="prov-field">Stock inicial
+      <input type="number" min="0" name="stock" value="0" required inputmode="numeric">
     </label>
-    <label class="text-xs">Coste (€)
-      <input type="number" step="0.01" min="0" name="precio_costo" class="w-full px-3 py-2 rounded bg-zinc-800 text-white">
+    <label class="prov-field">Coste unitario (€)
+      <input type="number" step="0.01" min="0" name="precio_costo" inputmode="decimal">
     </label>
-    <div class="md:col-span-4 text-right">
-      <button type="submit" class="px-3 py-1 rounded font-bold text-sm" style="background:var(--col-gold); color:#000">
-        Añadir SKU
-      </button>
-    </div>
+    <button type="submit" class="prov-btn prov-btn-primary">Añadir producto</button>
   </form>
   {% else %}
-  <p class="text-xs italic" style="color:var(--col-muted)">
-    El proveedor ya tiene todos los SKUs simples del catálogo.
-  </p>
+  <p class="prov-section-help">Todos los productos simples disponibles ya están asignados.</p>
   {% endif %}
-</div>
+</section>
 
-<!-- Operadores -->
-<div class="ox-card p-5">
-  <h2 class="text-xl font-bold text-white mb-3">👤 Operadores</h2>
-  <p class="text-xs mb-3" style="color:var(--col-muted)">
-    Usuarios con rol <code>proveedor</code> enlazados a este restaurante.
-    El enlace se hace desde Usuarios → editar → seleccionar proveedor.
-  </p>
-  {% set ops = proveedor.operadores.all() %}
+<section class="ox-card prov-management">
+  <div class="prov-section-head">
+    <div>
+      <span class="prov-eyebrow">Acceso operativo</span>
+      <h2>Operadores del chatbot</h2>
+      <p>Usuarios que pueden consultar pedidos y confirmar la preparación de este aliado.</p>
+    </div>
+    <span class="prov-status {{ 'is-active' if active_ops else 'is-inactive' }}">{{ active_ops }} activos</span>
+  </div>
+
   {% if ops %}
-  <ul class="text-sm space-y-1">
+  <div class="prov-operator-list">
     {% for u in ops %}
-    <li class="text-white">
-      {{ u.nombre }} · {{ u.email }}
-      {% if not u.activo %}<span class="text-xs text-red-400 ml-2">(inactivo)</span>{% endif %}
-    </li>
+    <div>
+      <span class="prov-avatar" aria-hidden="true">{{ u.nombre[:1]|upper }}</span>
+      <span><strong>{{ u.nombre }}</strong><small>{{ u.email }}</small></span>
+      <span class="prov-status {{ 'is-active' if u.activo else 'is-inactive' }}">{{ 'Activo' if u.activo else 'Inactivo' }}</span>
+    </div>
     {% endfor %}
-  </ul>
+  </div>
   {% else %}
-  <p class="text-gray-400">No hay operadores. Crea un usuario con rol "proveedor" y enlázalo a este restaurante.</p>
+  <div class="prov-empty">
+    <strong>Sin operadores vinculados</strong>
+    <p>Crea o edita un usuario con rol Proveedor y asígnale el aliado #{{ proveedor.id }}.</p>
+  </div>
   {% endif %}
-</div>
+</section>
 
 {% endblock %}

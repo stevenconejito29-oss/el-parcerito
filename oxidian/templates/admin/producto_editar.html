@@ -61,6 +61,7 @@
         <label class="edit-label">Estado</label>
         <label class="edit-check"><input type="checkbox" name="activo" {% if producto.activo %}checked{% endif %}> Activo en tienda</label>
       </div>
+      {% if producto.es_combo %}
       <div>
         <label class="edit-label">Origen operativo</label>
         <select name="proveedor_despachador_id" class="edit-input">
@@ -69,8 +70,9 @@
           <option value="{{ prov.id }}" {% if producto.proveedor_despachador_id == prov.id %}selected{% endif %}>{{ prov.nombre }}</option>
           {% endfor %}
         </select>
-        <p class="text-xs mt-1" style="color:var(--col-muted)">Si eliges proveedor, el producto sale de su inventario y se enruta a su panel.</p>
+        <p class="text-xs mt-1" style="color:var(--col-muted)">El combo usa exclusivamente los SKU asignados a ese proveedor.</p>
       </div>
+      {% endif %}
     </div>
 
     <div class="edit-block">

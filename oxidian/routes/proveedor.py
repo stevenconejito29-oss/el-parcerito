@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal, InvalidOperation
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from functools import wraps
@@ -36,6 +37,36 @@ def _proveedor_id_efectivo():
     if current_user.rol in ("admin", "super_admin") and not current_user.proveedor_id:
         return None
     return current_user.proveedor_id
+
+
+def _decimal_no_negativo(valor, campo, *, opcional=False):
+    raw = "" if valor is None else str(valor).strip()
+    if not raw:
+        if opcional:
+            return None
+        raise ValueError(f"{campo} es obligatorio.")
+    try:
+        numero = Decimal(raw)
+    except (InvalidOperation, ValueError):
+        raise ValueError(f"{campo} debe ser un número válido.")
+    if not numero.is_finite() or numero < 0:
+        raise ValueError(f"{campo} debe ser mayor o igual que 0.")
+    return numero
+
+
+def _entero_no_negativo(valor, campo):
+    raw = "" if valor is None else str(valor).strip()
+    if not raw:
+        raise ValueError(f"{campo} es obligatorio.")
+    try:
+        numero = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{campo} debe ser un número entero válido.")
+    if str(numero) != raw and raw not in {f"+{numero}", f"-{abs(numero)}"}:
+        raise ValueError(f"{campo} debe ser un número entero válido.")
+    if numero < 0:
+        raise ValueError(f"{campo} debe ser mayor o igual que 0.")
+    return numero
 
 
 def _notificar_preparador(pedido, titulo, mensaje):
@@ -493,18 +524,33 @@ def inventario():
         accion = request.form.get("accion", "actualizar_sku")
         if accion == "actualizar_sku":
             fila_id = request.form.get("fila_id", type=int)
-            stock = request.form.get("stock", type=int)
-            precio_costo = request.form.get("precio_costo")
-            fila = db.session.get(ProveedorProducto, fila_id) if fila_id else None
+            fila = (
+                ProveedorProducto.query
+                .filter_by(id=fila_id, proveedor_id=prov_id)
+                .with_for_update()
+                .first()
+                if fila_id else None
+            )
             if not fila or fila.proveedor_id != prov_id:
                 flash("SKU no encontrado en tu inventario.", "danger")
                 return redirect(url_for("proveedor.inventario"))
-            if stock is not None and stock >= 0:
-                fila.stock = stock
             try:
-                fila.precio_costo = float(precio_costo) if precio_costo else None
-            except (TypeError, ValueError):
-                fila.precio_costo = None
+                stock = _entero_no_negativo(request.form.get("stock"), "El stock")
+                precio_costo = _decimal_no_negativo(
+                    request.form.get("precio_costo"),
+                    "El coste",
+                    opcional=True,
+                )
+            except ValueError as exc:
+                db.session.rollback()
+                flash(str(exc), "danger")
+                return redirect(url_for("proveedor.inventario"))
+            if fila.producto.es_combo or fila.producto.proveedor_despachador_id is not None:
+                db.session.rollback()
+                flash("El inventario del proveedor solo admite productos simples del catálogo maestro.", "danger")
+                return redirect(url_for("proveedor.inventario"))
+            fila.stock = stock
+            fila.precio_costo = precio_costo
             try:
                 db.session.commit()
                 flash(f"«{fila.producto.nombre}» actualizado.", "success")
@@ -517,6 +563,10 @@ def inventario():
         ProveedorProducto.query
         .filter_by(proveedor_id=prov_id)
         .join(Product, ProveedorProducto.producto_id == Product.id)
+        .filter(
+            Product.es_combo.is_(False),
+            Product.proveedor_despachador_id.is_(None),
+        )
         .order_by(Product.nombre)
         .all()
     )

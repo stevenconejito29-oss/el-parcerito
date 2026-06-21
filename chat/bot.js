@@ -217,8 +217,15 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS handoffs (
     client_jid TEXT PRIMARY KEY,
     admin_jid  TEXT,
+    scope TEXT NOT NULL DEFAULT 'global',
     requested_at INTEGER DEFAULT (unixepoch()),
     assigned_at INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS handoff_agents (
+    agent_jid TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    updated_at INTEGER DEFAULT (unixepoch()),
+    PRIMARY KEY (agent_jid, scope)
   );
   CREATE TABLE IF NOT EXISTS handoff_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -287,6 +294,7 @@ db.transaction(() => {
   `ALTER TABLE productos_cache ADD COLUMN es_combo INTEGER DEFAULT 0`,
   `ALTER TABLE productos_cache ADD COLUMN combo_items_json TEXT`,
   `ALTER TABLE handoffs ADD COLUMN assigned_at INTEGER`,
+  `ALTER TABLE handoffs ADD COLUMN scope TEXT NOT NULL DEFAULT 'global'`,
   `ALTER TABLE handoff_messages ADD COLUMN delivery_cursor INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE handoff_messages ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE handoff_messages ADD COLUMN next_attempt_at INTEGER`,
@@ -433,6 +441,13 @@ function isAdminJid(jid) {
   return isAdminPhone(phoneFromJid(jid));
 }
 
+function isHandoffAgentJid(jid) {
+  if (isAdminJid(jid)) return true;
+  return Boolean(db.prepare(`
+    SELECT 1 FROM handoff_agents WHERE agent_jid=? LIMIT 1
+  `).get(jid));
+}
+
 function normalizeJid(value) {
   const phone = normalizePhone(value);
   return phone ? `${phone}@s.whatsapp.net` : '';
@@ -443,10 +458,10 @@ function sanitizeRuntimeState() {
     const rows = db.prepare(`SELECT client_jid, admin_jid FROM handoffs`).all();
     let removed = 0;
     for (const row of rows) {
-      if (isAdminJid(row.client_jid)) {
+      if (isHandoffAgentJid(row.client_jid)) {
         db.prepare(`DELETE FROM handoffs WHERE client_jid = ?`).run(row.client_jid);
         removed++;
-      } else if (row.admin_jid && !isAdminJid(row.admin_jid)) {
+      } else if (row.admin_jid && !isHandoffAgentJid(row.admin_jid)) {
         db.prepare(`UPDATE handoffs SET admin_jid = NULL WHERE client_jid = ?`).run(row.client_jid);
         removed++;
       }
@@ -468,12 +483,22 @@ function sanitizeRuntimeState() {
 function getHandoff(clientJid) {
   return db.prepare(`SELECT * FROM handoffs WHERE client_jid = ?`).get(clientJid) || null;
 }
-function listPendingHandoffs() {
-  return db.prepare(`SELECT client_jid, admin_jid, requested_at FROM handoffs WHERE admin_jid IS NULL ORDER BY requested_at ASC`).all()
-    .filter(h => !isAdminJid(h.client_jid));
+function agentCanHandle(adminJid, handoff) {
+  if (!handoff) return false;
+  if (handoff.scope === 'global' && isAdminJid(adminJid)) return true;
+  return Boolean(db.prepare(`
+    SELECT 1 FROM handoff_agents WHERE agent_jid=? AND scope=? LIMIT 1
+  `).get(adminJid, handoff.scope));
+}
+function listPendingHandoffs(adminJid = null) {
+  return db.prepare(`
+    SELECT client_jid, admin_jid, scope, requested_at
+    FROM handoffs WHERE admin_jid IS NULL ORDER BY requested_at ASC
+  `).all().filter(h => !isAdminJid(h.client_jid) && (!adminJid || agentCanHandle(adminJid, h)));
 }
 function assignHandoff(clientJid, adminJid) {
-  if (isAdminJid(clientJid) || !isAdminJid(adminJid)) return { changes: 0 };
+  const handoff = getHandoff(clientJid);
+  if (isHandoffAgentJid(clientJid) || !agentCanHandle(adminJid, handoff)) return { changes: 0 };
   if (adminHasActiveChat(adminJid)) return { changes: 0 };
   try {
     return db.prepare(`
@@ -489,10 +514,30 @@ function assignHandoff(clientJid, adminJid) {
     throw error;
   }
 }
-function createHandoffRequest(clientJid) {
-  if (isAdminJid(clientJid)) return false;
+function registerHandoffAgents(scope, phones) {
+  const cleanScope = String(scope || 'global');
+  const jids = uniquePhones(phones).map(phone => `${phone}@s.whatsapp.net`);
+  db.transaction(() => {
+    db.prepare(`DELETE FROM handoff_agents WHERE scope=?`).run(cleanScope);
+    const insert = db.prepare(`
+      INSERT OR REPLACE INTO handoff_agents (agent_jid, scope, updated_at)
+      VALUES (?, ?, unixepoch())
+    `);
+    for (const jid of jids) insert.run(jid, cleanScope);
+  })();
+  return jids;
+}
+function createHandoffRequest(clientJid, routing = {}) {
+  if (isHandoffAgentJid(clientJid)) return false;
+  const scope = String(routing.scope || 'global');
+  registerHandoffAgents(scope, routing.agents || []);
   try {
-    db.prepare(`INSERT OR IGNORE INTO handoffs (client_jid, admin_jid) VALUES (?,NULL)`).run(clientJid);
+    db.prepare(`
+      INSERT INTO handoffs (client_jid, admin_jid, scope)
+      VALUES (?, NULL, ?)
+      ON CONFLICT(client_jid) DO UPDATE SET scope=excluded.scope
+      WHERE handoffs.admin_jid IS NULL
+    `).run(clientJid, scope);
     return true;
   } catch { return false; }
 }
@@ -590,10 +635,16 @@ function isAdminAvailable(adminJid) {
   `).get(adminJid)?.available === 1;
 }
 
-function availableAdminJids() {
+function availableAdminJids(handoff) {
   const cutoff = Math.floor(Date.now() / 1000) - ADMIN_ACTIVE_WINDOW_SEC;
-  return adminPhones()
-    .map(phone => `${phone}@s.whatsapp.net`)
+  const configured = db.prepare(`
+    SELECT agent_jid FROM handoff_agents WHERE scope=?
+  `).all(handoff?.scope || 'global').map(row => row.agent_jid);
+  const candidates = handoff?.scope === 'global'
+    ? [...adminPhones().map(phone => `${phone}@s.whatsapp.net`), ...configured]
+    : configured;
+  return [...new Set(candidates)]
+    .filter(jid => agentCanHandle(jid, handoff))
     .filter(jid => {
       if (adminHasActiveChat(jid)) return false;
       if (!isAdminAvailable(jid)) return false;
@@ -654,7 +705,7 @@ function splitTextForSend(text, maxLength) {
 async function autoAssignPendingHandoff(clientJid) {
   const handoff = getHandoff(clientJid);
   if (!handoff || handoff.admin_jid) return handoff?.admin_jid || null;
-  const adminJid = availableAdminJids()[0];
+  const adminJid = availableAdminJids(handoff)[0];
   if (!adminJid) return null;
   const adminSession = getSesion(adminJid);
   const claimed = await takeHandoff(adminJid, adminSession, clientJid, { automatic: true });
@@ -662,12 +713,22 @@ async function autoAssignPendingHandoff(clientJid) {
 }
 
 async function notifyAdminsHandoffQueued(clientJid) {
+  const handoff = getHandoff(clientJid);
+  if (!handoff) return;
   const message =
     `📨 *Cliente en espera*\n` +
     `${phoneFromJid(clientJid)} necesita atención humana.\n\n` +
     `Escribe *!take ${phoneFromJid(clientJid)}* para tomar el chat.`;
-  for (const phone of adminPhones()) {
-    sendText(`${phone}@s.whatsapp.net`, message).catch(() => {});
+  const targets = handoff.scope === 'global'
+    ? [
+        ...adminPhones().map(phone => `${phone}@s.whatsapp.net`),
+        ...db.prepare(`SELECT agent_jid FROM handoff_agents WHERE scope='global'`).all()
+          .map(row => row.agent_jid),
+      ]
+    : db.prepare(`SELECT agent_jid FROM handoff_agents WHERE scope=?`).all(handoff.scope)
+      .map(row => row.agent_jid);
+  for (const jid of new Set(targets)) {
+    sendText(jid, message).catch(() => {});
   }
 }
 
@@ -717,25 +778,12 @@ async function iniciarReporteNovedad(clientJid, ses, rawTexto) {
       log('warn', 'reporte_incidencia_falla', `${pedidoId}: ${msg}`);
       return sendText(clientJid, `No pude registrar tu incidencia ahora (${msg}). Por favor, escribe *AGENTE* y te ayudamos.`);
     }
-    // Tras registrar, intentamos saber quién despacha el pedido para ofrecer
-    // contacto directo si es de un bar. Si es propio, solo confirmamos.
-    let contactoExtra = '';
-    try {
-      const det = await oxidianGet(`/pedido/${pedidoId}`);
-      const c = det?.pedido?.bar_contacto;
-      if (c && c.tipo === 'bar' && c.whatsapp_url) {
-        contactoExtra =
-          `\n\n📞 Si quieres conversarlo directamente con quien lo prepara, ` +
-          `escríbeles aquí:\n${c.whatsapp_url}`;
-      }
-    } catch (_) {}
     return sendText(
       clientJid,
       `✅ *Incidencia registrada*\n\n` +
       `Pedido: *${resp.pedido || '#' + pedidoId}*\n` +
       `Tu mensaje: «${texto}»\n\n` +
       `El equipo responsable la verá en su panel.` +
-      contactoExtra +
       `\n\nSi necesitas hablar ya, escribe *AGENTE*.`,
     );
   } catch (error) {
@@ -745,40 +793,23 @@ async function iniciarReporteNovedad(clientJid, ses, rawTexto) {
 }
 
 
-async function derivarSegunUltimoPedido(clientJid) {
-  // Devuelve true si ya envió la derivación al cliente (no hace falta handoff
-  // general). Buscamos un pedido activo despachado por un bar activo con
-  // WhatsApp configurado. Si el cliente tiene varios pedidos, priorizamos
-  // los del bar (más urgentes operacionalmente) sobre los propios.
+async function resolveHandoffDestination(clientJid) {
   try {
     const phone = phoneFromJid(clientJid);
-    const data = await oxidianGet(`/pedidos?telefono=${phone}&estados=pendiente,armando,listo,en_ruta&limit=5`);
-    const lista = (data && data.ok && Array.isArray(data.pedidos)) ? data.pedidos : [];
-    if (!lista.length) return false;
-    // Orden: pedidos con bar_contacto.tipo='bar' y whatsapp_url primero;
-    // dentro de cada grupo, por fecha más reciente.
-    const candidato = lista.find(p =>
-      p.bar_contacto && p.bar_contacto.tipo === 'bar' && p.bar_contacto.whatsapp_url
-    );
-    if (!candidato) return false;
-    const contacto = candidato.bar_contacto;
-    await sendText(
-      clientJid,
-      `📞 *Te conecto con quien prepara tu pedido*\n\n` +
-      `Tu pedido *${candidato.numero}* lo despacha *${contacto.nombre}*. Para resolver dudas o coordinar la entrega, escríbeles directamente aquí:\n` +
-      `${contacto.whatsapp_url}\n\n` +
-      `Si necesitas algo distinto, escribe *menu* para volver.`,
-    );
-    return true;
+    const data = await oxidianGet(`/handoff/destination?telefono=${encodeURIComponent(phone)}`);
+    if (data?.ok && Array.isArray(data.agents)) {
+      return { scope: data.scope || 'global', agents: data.agents };
+    }
   } catch (error) {
-    log('warn', 'derivar_bar_fallo', error?.message || String(error));
-    return false;
+    log('warn', 'handoff_destination_fail', error?.message || String(error));
   }
+  return { scope: 'global', agents: adminPhones() };
 }
 
 
 async function requestHumanSupport(clientJid, initialText = '') {
-  createHandoffRequest(clientJid);
+  const routing = await resolveHandoffDestination(clientJid);
+  createHandoffRequest(clientJid, routing);
   if (initialText) queueHandoffMessage(clientJid, 'client', initialText);
   const assignedAdmin = await autoAssignPendingHandoff(clientJid);
   if (assignedAdmin) return true;
@@ -864,7 +895,7 @@ function closeHumanChatByClient(clientJid) {
 }
 
 async function takeNextQueuedHandoff(adminJid) {
-  const waiting = listPendingHandoffs()[0];
+  const waiting = listPendingHandoffs(adminJid)[0];
   if (!waiting) return false;
   return takeHandoff(adminJid, getSesion(adminJid), waiting.client_jid, { automatic: true });
 }
@@ -1717,6 +1748,7 @@ async function _handleMessage(jid, text, pushName) {
 
   const lower = text.toLowerCase().trim();
   const isOwner = isAdminJid(jid);
+  const isAgent = isHandoffAgentJid(jid);
 
   if (!isBotEnabled() && !isOwner) {
     const handoff = getHandoff(jid);
@@ -1763,7 +1795,7 @@ async function _handleMessage(jid, text, pushName) {
   }
 
   // Durante un handoff, cada mensaje del admin pertenece al chat hasta cerrarlo.
-  if (isOwner && ses.estado === 'admin_chat') {
+  if (isAgent && ses.estado === 'admin_chat') {
     if (['!release', '/soltar chat', '/soltar'].includes(lower)) {
       const released = await releaseHumanChat(jid, ses.active_client_jid);
       return released
@@ -1778,6 +1810,10 @@ async function _handleMessage(jid, text, pushName) {
         : sendText(jid, `No tienes un chat activo.\n\n${adminMenu()}`);
     }
     return handleAdminChat(jid, ses, text);
+  }
+
+  if (isAgent && lower.startsWith('!')) {
+    return handleAdminCmd(jid, text);
   }
 
   // Resolver el operador de bar antes de comandos como menu, hola o cancelar.
@@ -1988,6 +2024,10 @@ async function handleAdminChat(jid, ses, text) {
 async function handleAdminCmd(jid, text) {
   const cmd = text.slice(1).trim();
   const lowerCmd = cmd.toLowerCase();
+  const providerCommands = /^(?:take\s+\S+|release(?:\s+\S+)?|disponible|ausente)$/;
+  if (!isAdminJid(jid) && !providerCommands.test(lowerCmd)) {
+    return sendText(jid, 'Como operador solo puedes usar !take, !release, !disponible y !ausente.');
+  }
 
   if (lowerCmd === 'status') {
     const sesiones = db.prepare(`SELECT COUNT(*) as c FROM sessions`).get().c;
@@ -2021,6 +2061,9 @@ async function handleAdminCmd(jid, text) {
   }
 
   if (lowerCmd.startsWith('send ')) {
+    if (!isAdminJid(jid)) {
+      return sendText(jid, 'Ese comando está reservado al equipo global.');
+    }
     if (!canRunAdminAction(jid, 'manual_send', 5000)) {
       return sendText(jid, 'Espera unos segundos antes de enviar otro mensaje manual.');
     }
@@ -2082,7 +2125,7 @@ async function handleAdminCmd(jid, text) {
     ses.estado = 'admin_menu';
     saveSesion(ses);
     setAdminAvailability(jid, true);
-    const waiting = listPendingHandoffs()[0];
+    const waiting = listPendingHandoffs(jid)[0];
     if (waiting) return takeHandoff(jid, ses, waiting.client_jid, { automatic: true });
     return sendText(jid, '✅ Estás disponible. Te asignaré el próximo cliente automáticamente.');
   }
@@ -2109,7 +2152,7 @@ function clearAdminChatForClient(clientJid) {
 }
 
 async function takeHandoff(adminJid, ses, clientJid, options = {}) {
-  if (!clientJid || isAdminJid(clientJid)) {
+  if (!clientJid || isHandoffAgentJid(clientJid)) {
     await sendText(adminJid, 'No puedo tomar como cliente un número administrativo.');
     return false;
   }
@@ -2125,6 +2168,10 @@ async function takeHandoff(adminJid, ses, clientJid, options = {}) {
     createHandoffRequest(clientJid);
   } else if (existing.admin_jid && existing.admin_jid !== adminJid) {
     await sendText(adminJid, 'Ese cliente ya está siendo atendido por otro administrador.');
+    return false;
+  }
+  if (!agentCanHandle(adminJid, getHandoff(clientJid))) {
+    await sendText(adminJid, 'Ese chat pertenece a otro equipo de atención.');
     return false;
   }
   if (!getHandoff(clientJid)?.admin_jid) {
@@ -2146,7 +2193,7 @@ async function takeHandoff(adminJid, ses, clientJid, options = {}) {
 }
 
 async function handleMessage(jid, text, pushName) {
-  const admin = isAdminJid(jid);
+  const admin = isHandoffAgentJid(jid);
   if (!inboundAllowed(jid, admin)) return false;
   const adminSession = admin ? getSesion(jid) : null;
   const handoff = admin
@@ -2383,12 +2430,6 @@ async function handleMainMenu(jid, ses, opcion) {
       if (isAdminJid(jid)) {
         return sendText(jid, `Estás en modo prueba de cliente desde un número admin.\n\nEscribe *admin* para volver al panel o *menu* para reiniciar.\n\n${menuPrincipal()}`);
       }
-      // Si el cliente tiene un pedido reciente despachado por un bar,
-      // lo derivamos directamente al WhatsApp de ese bar — más rápido y
-      // específico que la cola general. Si el pedido es propio o no hay,
-      // cae al handoff estándar.
-      const derivado = await derivarSegunUltimoPedido(jid);
-      if (derivado) return;
       return requestHumanSupport(jid);
     }
     default: {
@@ -2428,20 +2469,6 @@ async function iniciarCancelacionPedido(jid, ses, identifier = '') {
 
     if (pedido.estado !== 'pendiente') {
       setClientState(ses, 'main_menu');
-      // El pedido ya está más allá de "recibido". Para cancelar tiene que
-      // hablar con quien lo prepara: el bar (si el pedido es de un bar) o
-      // nuestro equipo (si es propio). Le damos el contacto directo en lugar
-      // de meterlo en cola de soporte.
-      const contacto = pedido.bar_contacto || null;
-      if (contacto && contacto.whatsapp_url) {
-        await sendText(
-          jid,
-          `El pedido *${pedido.numero}* ya está en *${pedido.estado_label || pedido.estado}* y no puedo cancelarlo automáticamente.\n\n` +
-          `Contacta directamente con *${contacto.nombre}* para cancelar o resolverlo:\n` +
-          `${contacto.whatsapp_url}`,
-        );
-        return;
-      }
       await sendText(
         jid,
         `El pedido *${pedido.numero}* ya está en *${pedido.estado_label || pedido.estado}* y no puedo cancelarlo automáticamente. Te conectaré con el equipo.`,
@@ -2451,14 +2478,6 @@ async function iniciarCancelacionPedido(jid, ses, identifier = '') {
 
     if (pedido.metodo_pago === 'bizum' && pedido.pago_confirmado) {
       setClientState(ses, 'main_menu');
-      const contacto = pedido.bar_contacto || null;
-      if (contacto && contacto.whatsapp_url) {
-        await sendText(
-          jid,
-          `El Bizum del pedido *${pedido.numero}* ya fue confirmado. Contacta directamente con *${contacto.nombre}* para gestionar la devolución:\n${contacto.whatsapp_url}`,
-        );
-        return;
-      }
       await sendText(jid, `El pago del pedido *${pedido.numero}* ya fue confirmado. Un agente debe gestionar la cancelación y posible devolución.`);
       return requestHumanSupport(jid, `Necesito cancelar el pedido ${pedido.numero}; el Bizum ya está confirmado.`);
     }
@@ -2515,22 +2534,6 @@ async function confirmarCancelacionPedido(jid, ses, answer) {
   } catch (error) {
     setClientState(ses, 'main_menu');
     if (error.data?.requiere_agente) {
-      // Antes de mandar al cliente a la cola general, intentamos derivar
-      // directamente al WhatsApp del bar si el pedido lo despacha uno activo.
-      let contacto = null;
-      try {
-        const det = await oxidianGet(`/pedido/${pending.pedido_id}`);
-        contacto = det?.pedido?.bar_contacto || null;
-      } catch (_) {}
-      if (contacto && contacto.tipo === 'bar' && contacto.whatsapp_url) {
-        await sendText(
-          jid,
-          `${error.message}\n\n` +
-          `El pedido *${pending.numero}* lo despacha *${contacto.nombre}*. ` +
-          `Escríbeles directamente para resolverlo:\n${contacto.whatsapp_url}`,
-        );
-        return;
-      }
       await sendText(jid, `${error.message}\n\nTe conectaré con el equipo para revisarlo.`);
       return requestHumanSupport(jid, `No pude cancelar automáticamente el pedido ${pending.numero}: ${error.message}`);
     }

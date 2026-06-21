@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Confirmar Pedido — {{ brand.nombre }}{% endblock %}
 {% block content %}
+<div class="ep-origin-current ep-origin-current--checkout">
+  <span>Pedido preparado por</span>
+  <strong>{{ establecimiento.nombre }}</strong>
+</div>
 
 {% if not brand.tienda_abierta %}
 <div class="rounded-xl p-4 mb-4 flex items-center gap-3"
@@ -32,7 +36,7 @@
 <div class="checkout-layout grid md:grid-cols-5 gap-5"
      data-subtotal-base="{{ subtotal }}"
      data-points-ratio="{{ puntos_ratio|int }}"
-     data-customer-phone="">
+     data-customer-phone="{{ puntos_sesion.get('telefono', '') }}">
 
 <!-- ── RESUMEN (derecha desktop, abajo mobile) ── -->
 <div class="md:col-span-2 order-2 md:order-2 md:sticky md:top-20 md:self-start">
@@ -93,12 +97,12 @@
         <span>{% if item.titulo %}<strong>{{ item.titulo }}</strong>{% endif %}{% if item.contenido %}<small>{{ item.contenido }}</small>{% endif %}</span>
       </a>
       {% elif item.tipo == 'producto_destacado' and item.producto %}
-      <a class="checkout-content-product" href="{{ url_for('public.producto_detalle', producto_id=item.producto_id) }}">
+      <a class="checkout-content-product" href="{{ url_for('public.producto_detalle', producto_id=item.producto_id, origen=origen_actual) }}">
         {% if item.producto.imagen_url %}<img src="{{ item.producto.imagen_url|upload_url }}" alt="">{% endif %}
         <span><small>También puedes añadir</small><strong>{{ item.titulo or item.producto.nombre }}</strong><b>€{{ "%.2f"|format(item.producto.precio_final) }}</b></span>
       </a>
       {% elif item.tipo == 'seccion' and item.categoria %}
-      <a class="checkout-content-notice" href="{{ url_for('public.index', categoria=item.categoria_id) }}#catalogo">
+      <a class="checkout-content-notice" href="{{ establecimiento.url }}?categoria={{ item.categoria_id }}#catalogo">
         <strong>{{ item.titulo or item.categoria.nombre }}</strong>
         <span>{{ item.contenido or 'Ver esta sección del menú' }}</span>
       </a>
@@ -595,6 +599,12 @@ let descuentoPuntos = 0;
 let descuentoAfiliado = 0;
 let envioActual = 0;
 let rewardsState = { telefono: '', puntos: 0, canjeables: [], productoId: '', verified: false };
+const INITIAL_REWARDS = {
+  verified: {{ 'true' if puntos_sesion.get('verificado') else 'false' }},
+  puntos_totales: {{ puntos_sesion.get('puntos_totales', 0)|int }},
+  canjeables: {{ canjeables_data|tojson }},
+  producto_id: {{ (producto_canje_seleccionado or '')|tojson }},
+};
 
 function normalizarTelefono(tel) {
   let value = String(tel || '').trim().replace(/[^\d+]/g, '');
@@ -728,6 +738,11 @@ function setRewardProduct(id) {
     }
   }
   document.getElementById('canje_hidden').value = rewardsState.verified ? rewardsState.productoId : '';
+  if (rewardsState.verified) {
+    checkoutJsonPost('/carrito/set-producto-canje', {
+      producto_id: rewardsState.productoId || null,
+    }).catch(() => {});
+  }
   document.querySelectorAll('.checkout-redeem-option').forEach(option => {
     const input = option.querySelector('input[name="reward_product_choice"]');
     option.classList.toggle('is-selected', Boolean(input?.checked));
@@ -1008,6 +1023,17 @@ document.getElementById('form-checkout')?.addEventListener('submit', e => {
 actualizarTotalEstimado();
 const metodoInicial = document.querySelector('input[name="metodo_pago"]:checked');
 if (metodoInicial?.value === 'bizum') toggleBizumInfo(true);
+if (INITIAL_REWARDS.verified) {
+  renderRewardsPanel(INITIAL_REWARDS, true);
+  const initialId = String(INITIAL_REWARDS.producto_id || '');
+  const initialInput = document.querySelector(
+    `input[name="reward_product_choice"][value="${CSS.escape(initialId)}"]`
+  );
+  if (initialInput) {
+    initialInput.checked = true;
+    setRewardProduct(initialId);
+  }
+}
 
 // ── Validación de dirección en tiempo real ────────────────────
 (function () {

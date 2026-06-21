@@ -83,6 +83,8 @@ def notificar_bot_sync():
 # ─── AUTH ─────────────────────────────────────
 
 def _get_api_key():
+    if current_app.config.get("TESTING"):
+        return current_app.config.get("BOT_API_KEY", "")
     # ENV siempre gana: permite sincronizar la key sin tocar la BD
     key = os.environ.get("BOT_API_KEY", "").strip()
     if not key:
@@ -310,10 +312,7 @@ def _producto_catalogo_payload(producto, incluir_diagnostico=False):
 
 
 def _pedido_bot_payload(pedido):
-    # Si todos los items van al mismo bar, devolvemos su contacto para que el
-    # bot pueda derivar al cliente directamente cuando el pedido ya no es
-    # cancelable. Si el pedido es propio o mixto, devolvemos el número
-    # general del negocio.
+    # Identifica el responsable operativo sin exponer teléfonos privados.
     from services import _coalesce_proveedor_id, _snapshot_producto_item
     from models import Proveedor as _Prov
     proveedor_ids = set()
@@ -323,13 +322,11 @@ def _pedido_bot_payload(pedido):
         proveedor_ids.add(pid)  # incluye None si hay items propios
     bar_contacto = None
     nombre_general = SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda")
-    telefono_general = SiteConfig.get("TELEFONO_NEGOCIO", "")
 
     def _contacto_general():
         return {
             "tipo": "propio",
             "nombre": nombre_general,
-            "telefono": telefono_general,
         }
 
     if proveedor_ids == {None} or None in proveedor_ids:
@@ -337,10 +334,9 @@ def _pedido_bot_payload(pedido):
     elif len(proveedor_ids) == 1:
         from models import ProveedorProducto as _ProvProd
         prov = db.session.get(_Prov, next(iter(proveedor_ids)))
-        # Solo derivamos al bar si: está activo, tiene teléfono propio y al
-        # menos un SKU activo. Si falta cualquiera de las tres, devolvemos el
-        # número general — no exponemos al cliente a un bar inerte.
-        bar_activo = bool(prov and prov.activo and prov.telefono)
+        # El contacto se resuelve mediante User.proveedor_id en el endpoint de
+        # handoff; Proveedor.telefono nunca se entrega al cliente.
+        bar_activo = bool(prov and prov.activo)
         if bar_activo:
             tiene_skus = _ProvProd.query.filter_by(
                 proveedor_id=prov.id, activo=True
@@ -351,14 +347,9 @@ def _pedido_bot_payload(pedido):
                 "tipo": "bar",
                 "id": prov.id,
                 "nombre": prov.nombre,
-                "telefono": prov.telefono,
             }
         else:
             bar_contacto = _contacto_general()
-
-    if bar_contacto and bar_contacto.get("telefono"):
-        tel_clean = "".join(c for c in bar_contacto["telefono"] if c.isdigit())
-        bar_contacto["whatsapp_url"] = f"https://wa.me/{tel_clean}" if tel_clean else None
 
     return {
         "id": pedido.id,
@@ -1055,6 +1046,101 @@ def _operador_bar_por_telefono(telefono_raw):
     if not operador or not operador.proveedor or not operador.proveedor.activo:
         return None, None
     return operador, operador.proveedor
+
+
+ESTADOS_PEDIDO_ACTIVO_HANDOFF = ("pendiente", "armando", "listo", "en_ruta")
+
+
+def _telefonos_usuarios_handoff(query):
+    telefonos = []
+    vistos = set()
+    for usuario in query.order_by(User.id.asc()).all():
+        telefono = normalizar_telefono_cliente(usuario.telefono_normalizado or usuario.telefono)
+        if telefono and telefono_valido(telefono) and telefono not in vistos:
+            vistos.add(telefono)
+            telefonos.append("".join(c for c in telefono if c.isdigit()))
+    return telefonos
+
+
+def _proveedor_congelado_pedido(pedido):
+    """Devuelve el proveedor solo si todo el pedido pertenece al mismo tercero."""
+    from services import _coalesce_proveedor_id, _snapshot_producto_item
+
+    proveedor_ids = {
+        _coalesce_proveedor_id(_snapshot_producto_item(item), item)
+        for item in pedido.items
+    }
+    proveedor_ids.discard(None)
+    if len(proveedor_ids) != 1:
+        return None
+
+    proveedor_id = next(iter(proveedor_ids))
+    # Si alguna línea es propia, el soporte corresponde al equipo global.
+    if any(
+        _coalesce_proveedor_id(_snapshot_producto_item(item), item) is None
+        for item in pedido.items
+    ):
+        return None
+    return proveedor_id
+
+
+def _destino_handoff_cliente(telefono_raw):
+    cliente, telefono = _cliente_por_telefono(telefono_raw)
+    pedido = None
+    proveedor_id = None
+    if cliente:
+        pedido = (
+            Order.query
+            .filter(
+                Order.cliente_id == cliente.id,
+                Order.estado.in_(ESTADOS_PEDIDO_ACTIVO_HANDOFF),
+            )
+            .order_by(Order.creado_en.desc(), Order.id.desc())
+            .first()
+        )
+        if pedido:
+            proveedor_id = _proveedor_congelado_pedido(pedido)
+
+    if proveedor_id:
+        agentes = _telefonos_usuarios_handoff(
+            User.query.filter_by(
+                rol="proveedor",
+                proveedor_id=proveedor_id,
+                activo=True,
+            )
+        )
+        if agentes:
+            return {
+                "scope": f"provider:{proveedor_id}",
+                "provider_id": proveedor_id,
+                "order_id": pedido.id,
+                "order_number": pedido.numero_pedido,
+                "agents": agentes,
+            }
+
+    agentes = _telefonos_usuarios_handoff(
+        User.query.filter_by(rol="super_admin", activo=True)
+    )
+    return {
+        "scope": "global",
+        "provider_id": None,
+        "order_id": pedido.id if pedido else None,
+        "order_number": pedido.numero_pedido if pedido else None,
+        "agents": agentes,
+        "phone": telefono,
+    }
+
+
+@api_bot_bp.route("/handoff/destination")
+@bot_required
+def handoff_destination():
+    """Resuelve agentes internos sin exponer teléfonos al cliente."""
+    telefono = (request.args.get("telefono") or "").strip()
+    if not telefono:
+        return jsonify({"ok": False, "error": "telefono requerido"}), 400
+    destino = _destino_handoff_cliente(telefono)
+    destino.pop("phone", None)
+    return jsonify({"ok": True, **destino})
 
 
 @api_bot_bp.route("/bar/identify")

@@ -79,8 +79,12 @@ def _coalesce_proveedor_id(snapshot: dict, item) -> int | None:
     (`Product.proveedor_despachador_id`). Aplica tanto a SKUs sueltos como a
     combos: si el campo está informado, el bar es quien despacha el item.
     Devuelve None para pedidos legacy con snapshot sin equivalente."""
-    raw = snapshot.get("proveedor_despachador_id") if isinstance(snapshot, dict) else None
-    if raw is None and item is not None and item.producto:
+    snapshot_tiene_origen = (
+        isinstance(snapshot, dict)
+        and "proveedor_despachador_id" in snapshot
+    )
+    raw = snapshot.get("proveedor_despachador_id") if snapshot_tiene_origen else None
+    if not snapshot_tiene_origen and item is not None and item.producto:
         raw = item.producto.proveedor_despachador_id
     try:
         return int(raw) if raw is not None else None
@@ -365,11 +369,17 @@ def reasignar_responsable_pedido(
         if not asignado or not asignado.activo:
             raise ValueError("Usuario no encontrado o inactivo.")
         if campo == "preparador_id":
-            roles_permitidos = {"staff"} if _canal_pedido(pedido) == "almacen" else {
-                "cocina", "preparacion"
-            }
+            roles_permitidos = (
+                {"preparacion", "staff"}
+                if _canal_pedido(pedido) == "almacen"
+                else {"cocina", "preparacion"}
+            )
             if asignado.rol not in roles_permitidos:
-                destino = "empaque/almacén" if "staff" in roles_permitidos else "cocina o preparación"
+                destino = (
+                    "preparación o empaque/almacén"
+                    if _canal_pedido(pedido) == "almacen"
+                    else "cocina o preparación"
+                )
                 raise ValueError(f"Este pedido debe asignarse al equipo de {destino}.")
         elif asignado.rol != "repartidor":
             raise ValueError("El usuario seleccionado no tiene rol de repartidor.")
@@ -812,7 +822,10 @@ def distribuir_pedido(pedido: Order) -> User | None:
     canal = _canal_pedido(pedido)
     if canal == "almacen":
         candidatos = _candidatos_disponibles(
-            User.query.filter_by(rol="staff", activo=True).all()
+            User.query.filter(
+                User.rol.in_(("preparacion", "staff")),
+                User.activo.is_(True),
+            ).all()
         )
         if not candidatos:
             admins = User.query.filter_by(rol="admin", activo=True).all()

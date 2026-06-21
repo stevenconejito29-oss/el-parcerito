@@ -24,7 +24,7 @@
   {% endif %}
 
   {# Botón volver flotante #}
-  <a href="{{ url_for('public.index') }}" class="pd-back-btn" aria-label="Volver al menú">
+  <a href="{{ volver_url }}" class="pd-back-btn" aria-label="Volver al menú">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
   </a>
 
@@ -49,6 +49,16 @@
 
 {# ── TARJETA INFO ── #}
 <div class="pd-card">
+  <div class="ep-origin-current ep-origin-current--detail">
+    <span>Preparado por</span>
+    <strong>{{ establecimiento_nombre }}</strong>
+  </div>
+  {% if not establecimiento_abierto %}
+  <div class="pd-info-box pd-box-encargo">
+    <strong>Este establecimiento está cerrado ahora.</strong>
+    <span>Consulta el menú y vuelve durante su horario para añadir productos.</span>
+  </div>
+  {% endif %}
 
   {# ── Nombre + categoría + rating ── #}
   <div class="pd-name-row">
@@ -125,7 +135,8 @@
         <p class="pd-box-sub">Elige paso a paso. Lo incluido siempre sale; para cada sección elige tu opción y tu pedido llegará exactamente como lo pides.</p>
       </div>
       {% if producto.tipo_entrega == 'inmediato' %}
-      <span class="pd-combo-stock">{{ producto.combo_stock_total }} disponible{{ 's' if producto.combo_stock_total != 1 }}</span>
+      {% set combo_stock = stock_en_origen(producto, origen_actual) %}
+      <span class="pd-combo-stock">{{ combo_stock }} disponible{{ 's' if combo_stock != 1 }}</span>
       {% endif %}
     </div>
 
@@ -195,7 +206,7 @@
       {% endif %}
       <div class="pd-cstep-body">
         {% for item in opts %}
-        {% set opt_agotada = (not item.activo) or (not item.componente.activo) or (not item.componente.visible_ahora) or (item.componente.tipo_entrega == 'inmediato' and item.componente.stock_total < item.cantidad) %}
+        {% set opt_agotada = (not item.activo) or (not item.componente.activo) or (not item.componente.visible_ahora) or (item.componente.tipo_entrega == 'inmediato' and stock_en_origen(item.componente, origen_actual) < item.cantidad) %}
         <label class="pd-combo-opcion {% if opt_agotada %}pd-combo-opcion-disabled{% endif %}">
           {% if max_sel == 1 %}
           <input type="radio" name="combo_item_{{ group_key }}"
@@ -272,7 +283,9 @@
   {% endif %}
 
   {# ── Agotado ── #}
-  {% if not producto.disponible_para_venta() %}
+  {% if not establecimiento_abierto %}
+  <div class="pd-stock-alert pd-stock-out">Establecimiento cerrado</div>
+  {% elif not producto.disponible_para_venta_en_origen(origen_actual) %}
   <div class="pd-info-box pd-box-sold">
     <span class="pd-box-icon">😔</span>
     <div>
@@ -309,7 +322,7 @@
 {% endif %}
 
 {# ── Espacio para el bottom bar fijo en mobile ── #}
-{% if producto.disponible_para_venta() %}
+{% if establecimiento_abierto and producto.disponible_para_venta_en_origen(origen_actual) %}
 <div class="pd-bottom-spacer"></div>
 
 {# ── BARRA INFERIOR FIJA (mobile) ── #}
@@ -317,6 +330,7 @@
   <form method="POST" action="{{ url_for('public.agregar_carrito', producto_id=producto.id) }}"
         id="pd-add-form" class="pd-add-bar-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="origen" value="{{ origen_actual }}">
 
     {% if producto.es_combo and combo_items %}
     {% set tiene_seleccionables = combo_items|selectattr('es_seleccionable')|list %}
@@ -331,7 +345,7 @@
       <button type="button" class="pd-qty-btn" onclick="pdQty(-1)" aria-label="Menos">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
-      {% set qty_stock_max = producto.combo_stock_total if producto.es_combo else (producto.stock_total if producto.tipo_entrega == 'inmediato' else cart_max_qty) %}
+      {% set qty_stock_max = stock_en_origen(producto, origen_actual) if producto.tipo_entrega == 'inmediato' else cart_max_qty %}
       {% set qty_form_max = cart_max_qty if cart_max_qty < qty_stock_max else qty_stock_max %}
       <input type="number" name="cantidad" id="pd-qty" value="1" min="1"
              max="{{ qty_form_max }}"

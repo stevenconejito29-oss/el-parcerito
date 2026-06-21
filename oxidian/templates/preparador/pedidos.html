@@ -50,7 +50,6 @@
   <div>
     <span class="work-eyebrow">
       {% if current_user.rol == 'cocina' %}Reparto / Delivery inmediato
-      {% elif current_user.rol == 'preparacion' and modo_operativo == 'unificado' %}Encargos y despacho
       {% elif current_user.rol == 'preparacion' %}Encargos programados
       {% else %}Operación de pedidos{% endif %}
     </span>
@@ -61,7 +60,6 @@
     </h1>
     <p class="work-subtitle">
       {% if current_user.rol == 'cocina' %}Prepara y despacha pedidos de delivery inmediato. Toma responsabilidad y marca listo cuando salga perfecto.
-      {% elif current_user.rol == 'preparacion' and modo_operativo == 'unificado' %}Gestiona encargos e inmediatos mientras no haya operador de delivery activo.
       {% elif current_user.rol == 'preparacion' %}Control de encargos y pedidos programados con foco en orden, tiempos y salida a despacho.
       {% else %}Vista operativa de pedidos para resolver bloqueos rápidamente.{% endif %}
     </p>

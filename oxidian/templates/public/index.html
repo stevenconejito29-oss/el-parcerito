@@ -19,6 +19,39 @@
   {%- elif 'sopa' in nl or 'caldo' in nl -%}🍲
   {%- else -%}🍽️{%- endif -%}
 {%- endmacro %}
+{% macro storefront_url(categoria=None, q=None) -%}
+  {%- if proveedor_actual -%}
+    {{- url_for('public.menu_bar', proveedor_id=proveedor_actual.id, categoria=categoria, q=q) -}}
+  {%- else -%}
+    {{- url_for('public.index', categoria=categoria, q=q) -}}
+  {%- endif -%}
+{%- endmacro %}
+
+<section class="ep-origin-panel" aria-label="Elegir establecimiento">
+  <div class="ep-origin-current">
+    <span>Estás viendo</span>
+    <strong>{{ establecimiento.nombre }}</strong>
+    <small class="{{ 'is-open' if establecimiento.abierto else 'is-closed' }}">
+      {{ 'Abierto ahora' if establecimiento.abierto else 'Cerrado ahora' }}
+    </small>
+  </div>
+  {% if carrito and carrito_origen and carrito_origen != origen_actual %}
+  <div class="ep-origin-cart-note">
+    Tu carrito pertenece a otro establecimiento. Puedes verlo, pero no se mezclarán productos.
+    <a href="{{ url_for('public.ver_carrito') }}">Ver carrito</a>
+  </div>
+  {% endif %}
+  <nav class="ep-origin-list" aria-label="Tiendas y bares">
+    <a href="{{ url_for('public.index') }}" class="{{ 'is-active' if origen_actual == 'propio' }}">Tienda principal</a>
+    {% for bar in bares %}
+    <a href="{{ url_for('public.menu_bar', proveedor_id=bar.id) }}"
+       class="{{ 'is-active' if proveedor_actual and proveedor_actual.id == bar.id }}">
+      {{ bar.nombre }}
+      <small>{{ 'Abierto' if bar.esta_abierto_ahora else 'Cerrado' }}</small>
+    </a>
+    {% endfor %}
+  </nav>
+</section>
 
 {# ══════════════════════════════════════════
    HERO
@@ -104,7 +137,7 @@
 <div class="ep-mc-destacados">
   {% for mc in dest_mc %}
   {% if mc.producto %}
-  <a href="{{ url_for('public.producto_detalle', producto_id=mc.producto_id) }}" class="ep-mc-dest-card">
+  <a href="{{ url_for('public.producto_detalle', producto_id=mc.producto_id, origen=origen_actual) }}" class="ep-mc-dest-card">
     <span class="ep-mc-dest-img">
       {% if mc.producto.imagen_url %}
         <img src="{{ img_url(mc.producto.imagen_url) }}" alt="{{ mc.producto.nombre }}" loading="lazy">
@@ -143,7 +176,7 @@
 <nav class="ep-config-sections" aria-label="Secciones destacadas">
   {% for item in sections_mc %}
   {% if item.categoria %}
-  <a href="{{ url_for('public.index', categoria=item.categoria_id) }}#catalogo">
+  <a href="{{ storefront_url(item.categoria_id) }}#catalogo">
     <strong>{{ item.titulo or item.categoria.nombre }}</strong>
     {% if item.contenido %}<small>{{ item.contenido }}</small>{% endif %}
   </a>
@@ -162,11 +195,11 @@
         {% if item.enlace_url.startswith('http') %}target="_blank" rel="noopener"{% endif %}>Ver</a>{% endif %}
     </div>
     {% elif item.tipo == 'seccion' and item.categoria %}
-    <a class="ep-menu-config-category" href="{{ url_for('public.index', categoria=item.categoria_id) }}#catalogo">
+    <a class="ep-menu-config-category" href="{{ storefront_url(item.categoria_id) }}#catalogo">
       <span>{{ item.titulo or item.categoria.nombre }}</span><small>{{ item.contenido or 'Ver categoría' }}</small>
     </a>
     {% elif item.tipo == 'producto_destacado' and item.producto %}
-    <a class="ep-menu-config-product" href="{{ url_for('public.producto_detalle', producto_id=item.producto_id) }}">
+    <a class="ep-menu-config-product" href="{{ url_for('public.producto_detalle', producto_id=item.producto_id, origen=origen_actual) }}">
       {% if item.producto.imagen_url %}<img src="{{ item.producto.imagen_url|upload_url }}" alt="">{% endif %}
       <div><small>Recomendado</small><strong>{{ item.titulo or item.producto.nombre }}</strong><span>€{{ "%.2f"|format(item.producto.precio_final) }}</span></div>
     </a>
@@ -184,12 +217,12 @@
 {# ══════════════════════════════════════════
    BÚSQUEDA
 ══════════════════════════════════════════ #}
-<form method="GET" action="{{ url_for('public.index') }}" class="ep-search-wrap">
+<form method="GET" action="{{ establecimiento.url }}" class="ep-search-wrap">
   {% if categoria_activa %}<input type="hidden" name="categoria" value="{{ categoria_activa }}">{% endif %}
   <div class="ep-search-box">
     <svg class="ep-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     <input type="search" name="q" value="{{ busqueda or '' }}" placeholder="Busca platos, bebidas o combos" class="ep-search-input" autocomplete="off" aria-label="Buscar productos">
-    {% if busqueda %}<a href="{{ url_for('public.index') }}" class="ep-search-clear" aria-label="Limpiar">✕</a>{% endif %}
+    {% if busqueda %}<a href="{{ storefront_url() }}" class="ep-search-clear" aria-label="Limpiar">✕</a>{% endif %}
     <button type="submit" class="ep-search-submit" aria-label="Buscar">Buscar</button>
   </div>
   {% if busqueda %}
@@ -205,13 +238,13 @@
 ══════════════════════════════════════════ #}
 <div class="ep-cats-wrapper" id="cats-wrapper">
   <div class="ep-cats" id="cats-bar" role="navigation" aria-label="Categorías">
-    <a href="{{ url_for('public.index') }}{% if busqueda %}?q={{ busqueda }}{% endif %}"
+    <a href="{{ storefront_url(q=busqueda or None) }}"
        class="ep-cat {% if not categoria_activa %}ep-cat-on{% endif %}">
       <span class="ep-cat-icon">🌎</span><span>Todo</span>
     </a>
     {% for cat in categorias %}
     {% set cat_count = productos|selectattr('categoria_id','equalto',cat.id)|list|length %}
-    <a href="{{ url_for('public.index', categoria=cat.id) }}{% if busqueda %}&q={{ busqueda }}{% endif %}"
+    <a href="{{ storefront_url(cat.id, busqueda or None) }}"
        class="ep-cat {% if categoria_activa == cat.id %}ep-cat-on{% endif %}">
       {% if cat.imagen_url %}
         <img src="{{ img_url(cat.imagen_url) }}" alt="{{ cat.nombre }}" class="ep-cat-img" loading="lazy">
@@ -237,7 +270,7 @@
   {% elif busqueda %}
   <div class="ep-section-head">
     <h2 class="ep-section-title">Resultados para "{{ busqueda }}"</h2>
-    <a href="{{ url_for('public.index') }}" class="ep-pill-count ep-link-reset">✕ Limpiar</a>
+    <a href="{{ storefront_url() }}" class="ep-pill-count ep-link-reset">✕ Limpiar</a>
   </div>
   {% endif %}
 
@@ -281,7 +314,7 @@
     <span class="ep-empty-icon">{% if busqueda %}🔍{% else %}🍽️{% endif %}</span>
     <p class="ep-empty-title">{% if busqueda %}Sin resultados para "{{ busqueda }}"{% else %}No hay productos disponibles{% endif %}</p>
     {% if busqueda %}
-    <a href="{{ url_for('public.index') }}" class="ep-btn-primary ep-empty-action">← Ver todo el menú</a>
+    <a href="{{ storefront_url() }}" class="ep-btn-primary ep-empty-action">← Ver todo el menú</a>
     {% endif %}
   </div>
   {% endif %}
@@ -397,6 +430,7 @@
       {# Acciones — add directo #}
       <form id="ep-modal-form" method="POST" action="" class="hidden">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="origen" value="{{ origen_actual }}">
         <input type="hidden" name="cantidad" id="ep-modal-qty-val" value="1">
         <div class="ep-modal-actions">
           <div class="ep-modal-qty-ctrl">
@@ -434,14 +468,14 @@
     "combo_precio_base": {{ p.combo_precio_base|float if p.es_combo else 0 }},
     "tipo_entrega": {{ p.tipo_entrega|tojson }},
     "imagen_url": {{ (p.imagen_url|upload_url)|tojson }},
-    "stock": {{ p.stock_total }},
+    "stock": {{ stock_en_origen(p, origen_actual) }},
     "stock_mostrar": {{ 'true' if p.stock_mostrar_en_web else 'false' }},
-    "disponible_directo": {{ 'true' if p.disponible_para_venta() and p.tipo_entrega == 'inmediato' and not p.es_combo else 'false' }},
+    "disponible_directo": {{ 'true' if establecimiento.abierto and p.disponible_para_venta_en_origen(origen_actual) and p.tipo_entrega == 'inmediato' and not p.es_combo else 'false' }},
     "es_hipo": {{ 'true' if p.es_hipoalergenico else 'false' }},
     "alergenos": {{ p.alergenos_iconos|list|tojson }},
     "categoria": {{ (p.categoria.nombre if p.categoria else '')|tojson }},
     "rating": {{ p.rating_promedio|float }},
-    "url": {{ url_for('public.producto_detalle', producto_id=p.id)|tojson }},
+    "url": {{ url_for('public.producto_detalle', producto_id=p.id, origen=origen_actual)|tojson }},
     "add_url": {{ url_for('public.agregar_carrito', producto_id=p.id)|tojson }},
     "combo_preview": [{% if p.es_combo %}{% for ci in p.combo_items.all()[:5] %}{{ {"nombre": ci.componente.nombre, "qty": ci.cantidad, "sel": ci.es_seleccionable, "grupo": ci.grupo_display, "extra": ci.precio_extra_float}|tojson }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %}]
   }{% if not loop.last %},{% endif %}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke test for the seeded multi-origin catalog without persisting orders."""
+"""Smoke test del catálogo maestro con inventario aislado por ubicación."""
 
 from __future__ import annotations
 
@@ -14,13 +14,7 @@ sys.path.insert(0, str(ROOT))
 
 from app import create_app
 from extensions import db
-from models import (
-    Order,
-    OrderItem,
-    Product,
-    User,
-    metadata_item_pedido,
-)
+from models import Order, OrderItem, Product, User, metadata_item_pedido
 from services import es_pedido_solo_bar, sincronizar_proveedores_pedido
 
 
@@ -35,49 +29,52 @@ def main():
     app = create_app("production")
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
-        arepa_own = by_code("arepa-own")
-        arepa_north = by_code("arepa-north")
-        arepa_south = by_code("arepa-south")
-        cola_own = by_code("cola-own")
-        cola_north = by_code("cola-north")
-        cola_south = by_code("cola-south")
-        burger_north = by_code("burger-north")
-        perro_south = by_code("perro-south")
+        arepa = by_code("arepa-own")
+        cola = by_code("cola-own")
+        burger = by_code("burger-north")
+        perro = by_code("perro-south")
         combo_own = by_code("combo-own")
         combo_north = by_code("combo-north")
+        combo_south = by_code("combo-south")
+        north_id = combo_north.proveedor_despachador_id
+        south_id = combo_south.proveedor_despachador_id
+        assert north_id and south_id and north_id != south_id
 
         client = app.test_client()
-        menu = client.get("/")
-        assert menu.status_code == 200
-        html = menu.get_data(as_text=True)
-        assert f'href="/producto/{arepa_own.id}"' in html
-        assert f'href="/producto/{arepa_north.id}"' not in html
-        assert f'href="/producto/{arepa_south.id}"' not in html
-        assert f'href="/producto/{cola_own.id}"' in html
-        assert f'href="/producto/{cola_north.id}"' not in html
-        assert f'href="/producto/{cola_south.id}"' not in html
+        own_menu = client.get("/")
+        assert own_menu.status_code == 200
+        own_html = own_menu.get_data(as_text=True)
+        assert f"/producto/{arepa.id}" in own_html
+        assert f"/producto/{cola.id}" in own_html
+        assert f"/producto/{burger.id}" not in own_html
+
+        north_menu = client.get(f"/bar/{north_id}")
+        assert north_menu.status_code == 200
+        north_html = north_menu.get_data(as_text=True)
+        assert f"/producto/{arepa.id}" in north_html
+        assert f"/producto/{cola.id}" in north_html
+        assert f"/producto/{burger.id}" in north_html
+        assert f"/producto/{perro.id}" not in north_html
 
         response = client.post(
-            f"/carrito/agregar/{burger_north.id}",
-            data={"cantidad": "1"},
+            f"/carrito/agregar/{burger.id}",
+            data={"cantidad": "1", "origen": f"proveedor:{north_id}"},
             headers={"X-Ajax": "1"},
         )
         assert response.get_json()["ok"] is True
-
         response = client.post(
-            f"/carrito/agregar/{arepa_own.id}",
-            data={"cantidad": "1"},
+            f"/carrito/agregar/{arepa.id}",
+            data={"cantidad": "1", "origen": f"proveedor:{north_id}"},
             headers={"X-Ajax": "1"},
         )
         assert response.get_json()["ok"] is True
         with client.session_transaction() as session:
-            cart = session["carrito"]
-            assert str(arepa_north.id) in cart
-            assert str(arepa_own.id) not in cart
+            assert session["carrito_origen"] == f"proveedor:{north_id}"
+            assert str(arepa.id) in session["carrito"]
 
         response = client.post(
-            f"/carrito/agregar/{perro_south.id}",
-            data={"cantidad": "1"},
+            f"/carrito/agregar/{perro.id}",
+            data={"cantidad": "1", "origen": f"proveedor:{south_id}"},
             headers={"X-Ajax": "1"},
         )
         payload = response.get_json()
@@ -88,12 +85,12 @@ def main():
             session.clear()
         assert client.post(
             f"/carrito/agregar/{combo_own.id}",
-            data={"cantidad": "1"},
+            data={"cantidad": "1", "origen": "propio"},
             headers={"X-Ajax": "1"},
         ).get_json()["ok"] is True
         payload = client.post(
             f"/carrito/agregar/{combo_north.id}",
-            data={"cantidad": "1"},
+            data={"cantidad": "1", "origen": f"proveedor:{north_id}"},
             headers={"X-Ajax": "1"},
         ).get_json()
         assert payload["ok"] is False
@@ -108,10 +105,10 @@ def main():
         db.session.add(customer)
         db.session.flush()
         routing = {}
-        for code, expected_provider in (
-            ("empanada-own", None),
-            ("burger-north", burger_north.proveedor_despachador_id),
-            ("perro-south", perro_south.proveedor_despachador_id),
+        for code, origin, expected_provider in (
+            ("empanada-own", "propio", None),
+            ("burger-north", f"proveedor:{north_id}", north_id),
+            ("perro-south", f"proveedor:{south_id}", south_id),
         ):
             product = by_code(code)
             order = Order(
@@ -134,7 +131,7 @@ def main():
                 precio_unit=Decimal(str(product.precio_final)),
                 subtotal=Decimal(str(product.precio_final)),
                 metadata_json=json.dumps(
-                    metadata_item_pedido(product),
+                    metadata_item_pedido(product, origen_operativo=origin),
                     ensure_ascii=False,
                 ),
             ))
@@ -149,9 +146,8 @@ def main():
         db.session.rollback()
 
         print(json.dumps({
-            "menu_arepa_cards": 1,
-            "menu_cola_cards": 1,
-            "variant_switched_to": arepa_north.id,
+            "own_menu_products": [arepa.id, cola.id],
+            "north_menu_shared_product": arepa.id,
             "cross_provider_rejected": True,
             "cross_combo_rejected": True,
             "order_routing": routing,

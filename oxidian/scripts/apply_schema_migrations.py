@@ -18,13 +18,16 @@ from sqlalchemy import inspect, text
 from app import create_app
 from extensions import db
 from models import (
+    ComboItem,
     ComboGroup,
     IdempotencyKey,
     NotificationOutbox,
     OrderEvent,
     OrderProviderStatus,
+    Product,
     Proveedor,
     ProveedorProducto,
+    Stock,
     User,
 )
 
@@ -604,6 +607,152 @@ def _migrate_user_mfa():
         ))
 
 
+def _catalog_key(product):
+    if product.es_combo:
+        return None
+    key = str(product.get_atributos().get("catalog_key") or "").strip().lower()
+    return key or None
+
+
+def _ensure_simple_provider_mapping(product):
+    proveedor_id = product.proveedor_despachador_id
+    if product.es_combo or not proveedor_id:
+        return
+    row = ProveedorProducto.query.filter_by(
+        proveedor_id=proveedor_id,
+        producto_id=product.id,
+    ).first()
+    if row:
+        row.activo = True
+        return
+    db.session.add(ProveedorProducto(
+        proveedor_id=proveedor_id,
+        producto_id=product.id,
+        stock=0,
+        precio_costo=product.precio_costo,
+        activo=True,
+    ))
+
+
+def _merge_provider_mappings(canonical, duplicate):
+    rows = ProveedorProducto.query.filter_by(producto_id=duplicate.id).all()
+    for source in rows:
+        target = ProveedorProducto.query.filter_by(
+            proveedor_id=source.proveedor_id,
+            producto_id=canonical.id,
+        ).first()
+        if target:
+            target.stock = int(target.stock or 0) + int(source.stock or 0)
+            target.activo = bool(target.activo or source.activo)
+            if target.precio_costo is None:
+                target.precio_costo = source.precio_costo
+            db.session.delete(source)
+        else:
+            source.producto_id = canonical.id
+
+
+def _consolidate_simple_catalog_variants():
+    """Convierte variantes por origen en un producto maestro por catalog_key."""
+    products = Product.query.filter(Product.es_combo.is_(False)).order_by(Product.id).all()
+    for product in products:
+        _ensure_simple_provider_mapping(product)
+    db.session.flush()
+
+    groups = {}
+    for product in products:
+        key = _catalog_key(product)
+        if key:
+            groups.setdefault(key, []).append(product)
+
+    for variants in groups.values():
+        active_variants = [product for product in variants if product.activo]
+        already_consolidated = (
+            len(active_variants) == 1
+            and all(product.proveedor_despachador_id is None for product in variants)
+        )
+        canonical = (
+            active_variants[0]
+            if already_consolidated
+            else min(
+                variants,
+                key=lambda product: (
+                    product.proveedor_despachador_id is not None,
+                    not bool(product.activo),
+                    product.id,
+                ),
+            )
+        )
+        canonical.activo = any(product.activo for product in variants)
+        for duplicate in variants:
+            if duplicate.id == canonical.id:
+                continue
+            _merge_provider_mappings(canonical, duplicate)
+            for stock_row in Stock.query.filter_by(producto_id=duplicate.id).all():
+                stock_row.producto_id = canonical.id
+            for combo_item in ComboItem.query.filter_by(producto_id=duplicate.id).all():
+                combo_item.producto_id = canonical.id
+            duplicate.activo = False
+            duplicate.proveedor_despachador_id = None
+        canonical.proveedor_despachador_id = None
+
+    # Los simples sin catalog_key también pasan a ser catálogo maestro. Su
+    # pertenencia al bar queda representada exclusivamente por el mapping.
+    for product in products:
+        product.proveedor_despachador_id = None
+
+
+def _add_postgresql_check_if_safe(table, name, expression, invalid_where):
+    if db.engine.dialect.name != "postgresql":
+        return
+    inspector = inspect(db.engine)
+    if not inspector.has_table(table):
+        return
+    exists = db.session.execute(text("""
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = :name
+          AND conrelid = to_regclass(:table)
+    """), {"name": name, "table": table}).first()
+    if exists:
+        return
+    invalid = db.session.execute(text(
+        f"SELECT 1 FROM {table} WHERE {invalid_where} LIMIT 1"
+    )).first()
+    if invalid:
+        return
+    db.session.execute(text(
+        f"ALTER TABLE {table} ADD CONSTRAINT {name} CHECK ({expression})"
+    ))
+
+
+def _migrate_master_catalog_inventory():
+    _consolidate_simple_catalog_variants()
+    _add_postgresql_check_if_safe(
+        "stock",
+        "ck_stock_cantidad_nonnegative",
+        "cantidad >= 0",
+        "cantidad < 0",
+    )
+    _add_postgresql_check_if_safe(
+        "proveedor_productos",
+        "ck_proveedor_productos_stock_nonnegative",
+        "stock >= 0",
+        "stock < 0",
+    )
+    _add_postgresql_check_if_safe(
+        "proveedores",
+        "ck_proveedores_comision_pct_range",
+        "comision_pct >= 0 AND comision_pct <= 100",
+        "comision_pct < 0 OR comision_pct > 100",
+    )
+    _add_postgresql_check_if_safe(
+        "combo_items",
+        "ck_combo_items_cantidad_positive",
+        "cantidad > 0",
+        "cantidad <= 0",
+    )
+
+
 MIGRATIONS = [
     {
         "id": "20260526_01_order_events_notification_outbox",
@@ -705,6 +854,14 @@ MIGRATIONS = [
         "id": "20260619_01_provider_operator_phones",
         "description": "Migrar el teléfono legacy del bar a su único operador inequívoco",
         "fn": _migrate_provider_operator_phones,
+    },
+    {
+        "id": "20260620_01_master_catalog_location_inventory",
+        "description": (
+            "Consolidar productos simples por catalog_key, mover stock por ubicación "
+            "y proteger cantidades y comisiones con CHECK constraints"
+        ),
+        "fn": _migrate_master_catalog_inventory,
     },
 ]
 

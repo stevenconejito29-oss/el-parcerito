@@ -11,7 +11,7 @@ from services import (avanzar_estado_pedido, distribuir_repartidor,
 preparador_bp = Blueprint("preparador", __name__)
 logger = logging.getLogger(__name__)
 
-ROLES_PREPARADOR = {"admin", "super_admin", "preparacion"}
+ROLES_PREPARADOR = {"admin", "super_admin", "cocina", "preparacion"}
 
 
 def _es_admin_operativo():
@@ -32,6 +32,13 @@ def _requiere_disponible_para_nuevo_trabajo():
     return True
 
 
+def _es_encargo(pedido):
+    return any(
+        item.display_tipo_entrega in ("programado", "encargo")
+        for item in pedido.items
+    )
+
+
 def _puede_operar_pedido(pedido):
     # Pedidos 100% del bar no aparecen en la cola del preparador interno:
     # el bar los prepara y nuestro personal solo gestiona el reparto.
@@ -45,10 +52,12 @@ def _puede_operar_pedido(pedido):
         return False
     if _es_admin_operativo() or pedido.preparador_id == current_user.id:
         return True
-    # Rol unificado: 'preparacion' ve todos los pedidos propios sin distinguir
-    # entre inmediatos y programados (antes había 'cocina' + 'preparacion').
+    if pedido.preparador_id is not None:
+        return False
+    if current_user.rol == "cocina":
+        return not _es_encargo(pedido)
     if current_user.rol == "preparacion":
-        return True
+        return _es_encargo(pedido)
     return False
 
 
@@ -133,9 +142,11 @@ def toggle_disponible():
 @preparador_required
 def pedidos():
     disponible = _esta_disponible()
-    # Tras la consolidación de roles, siempre operamos en modo unificado:
-    # un único rol "preparacion" cubre cocina + almacén.
-    modo_operativo = "unificado"
+    modo_operativo = (
+        "inmediato" if current_user.rol == "cocina"
+        else "programado" if current_user.rol == "preparacion"
+        else "completo"
+    )
     if _es_admin_operativo():
         pendientes = Order.query.filter_by(estado="pendiente").order_by(Order.creado_en).all()
         armando = Order.query.filter_by(estado="armando").order_by(Order.creado_en).all()
@@ -153,7 +164,7 @@ def pedidos():
         ).order_by(Order.creado_en).all()
 
     companeros = User.query.filter(
-        User.rol.in_(["preparacion", "admin"]),
+        User.rol.in_(["cocina", "preparacion", "admin"]),
         User.activo == True,
         User.id != current_user.id
     ).all()
@@ -165,12 +176,6 @@ def pedidos():
         for pedido in pendientes + armando
         if _es_pedido_mixto(pedido)
     }
-
-    def _es_encargo(pedido):
-        return any(
-            i.display_tipo_entrega in ("programado", "encargo")
-            for i in pedido.items
-        )
 
     pendientes_encargo  = sorted([p for p in pendientes if _es_encargo(p)],
                                   key=lambda p: min(

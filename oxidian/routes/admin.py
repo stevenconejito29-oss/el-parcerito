@@ -2,14 +2,14 @@ import ipaddress
 import json
 import uuid
 from collections import defaultdict
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from urllib.parse import urlparse
 from flask import Blueprint, render_template, request, redirect, url_for, flash, make_response, abort
 from flask_login import login_required, current_user
 from functools import wraps
 from datetime import datetime, date, timedelta
 from flask import current_app
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 import csv, io
@@ -46,8 +46,9 @@ from phone_utils import normalizar_telefono_cliente
 admin_bp = Blueprint("admin", __name__)
 
 _ROLES_ADMIN = {"admin", "super_admin"}
-_ROLES_USUARIO_BASE = ["preparacion", "repartidor", "proveedor"]
+_ROLES_USUARIO_BASE = ["cocina", "preparacion", "repartidor", "proveedor"]
 _ROLES_USUARIO_SUPERADMIN = _ROLES_USUARIO_BASE + ["admin", "super_admin"]
+_ROLES_USUARIO_LEGACY = {"staff"}
 
 _ESTADOS_PEDIDO_VALIDOS = {"pendiente", "armando", "listo", "en_ruta", "entregado", "cancelado"}
 _ORIGENES_PEDIDO_VALIDOS = {"online", "web", "presencial", "whatsapp", "pos", "telefono"}
@@ -94,6 +95,8 @@ _FEATURE_URL_MAP = {
     "/admin/analytics":    "reportes",
     "/admin/notificaciones": "whatsapp",
     "/admin/productos":    "productos",
+    "/admin/proveedores":  "productos",
+    "/admin/combos":       "productos",
     "/admin/categorias":   "productos",
     "/admin/cupones":      "cupones",
     "/admin/afiliados":    "marketing",
@@ -149,11 +152,109 @@ def _parse_date_strict(valor: str):
         raise ValueError(f"Fecha inválida: {valor!r}. Usa formato YYYY-MM-DD.")
 
 
+def _parse_decimal_no_negativo(valor, campo, *, opcional=False):
+    raw = "" if valor is None else str(valor).strip()
+    if not raw:
+        if opcional:
+            return None
+        raise ValueError(f"{campo} es obligatorio.")
+    try:
+        numero = Decimal(raw)
+    except (InvalidOperation, ValueError):
+        raise ValueError(f"{campo} debe ser un número válido.")
+    if not numero.is_finite() or numero < 0:
+        raise ValueError(f"{campo} debe ser mayor o igual que 0.")
+    return numero
+
+
+def _parse_entero_no_negativo(valor, campo):
+    raw = "" if valor is None else str(valor).strip()
+    if not raw:
+        raise ValueError(f"{campo} es obligatorio.")
+    try:
+        numero = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{campo} debe ser un número entero válido.")
+    if str(numero) != raw and raw not in {f"+{numero}", f"-{abs(numero)}"}:
+        raise ValueError(f"{campo} debe ser un número entero válido.")
+    if numero < 0:
+        raise ValueError(f"{campo} debe ser mayor o igual que 0.")
+    return numero
+
+
+def _parse_acuerdo_proveedor(form):
+    from models import MODELOS_ACUERDO_PROVEEDOR
+
+    modelo = (form.get("modelo_acuerdo") or "").strip()
+    if modelo not in MODELOS_ACUERDO_PROVEEDOR:
+        raise ValueError("El modelo de acuerdo seleccionado no es válido.")
+    comision = _parse_decimal_no_negativo(
+        form.get("comision_pct"),
+        "La comisión",
+    )
+    if comision > 100:
+        raise ValueError("La comisión debe estar entre 0 y 100.")
+    return modelo, comision
+
+
 def _roles_editables_usuario():
     """Roles que el usuario actual puede asignar desde el panel admin."""
     if current_user.rol == "super_admin":
         return list(_ROLES_USUARIO_SUPERADMIN)
     return list(_ROLES_USUARIO_BASE)
+
+
+def _es_cuenta_gestionable(usuario):
+    return usuario.rol in ROLES_AUTENTICABLES
+
+
+def _puede_gestionar_cuenta(usuario):
+    if current_user.rol == "super_admin":
+        return True
+    return usuario.rol not in _ROLES_ADMIN
+
+
+def _es_ultimo_superadmin_activo(usuario):
+    if usuario.rol != "super_admin" or not usuario.activo:
+        return False
+    return User.query.filter_by(rol="super_admin", activo=True).count() <= 1
+
+
+def _referencias_usuario(usuario_id):
+    """Devuelve tablas/columnas que conservan una FK histórica al usuario."""
+    referencias = []
+    for tabla in User.metadata.sorted_tables:
+        if tabla is User.__table__:
+            continue
+        for columna in tabla.columns:
+            if not any(
+                fk.column.table is User.__table__ and fk.column.name == "id"
+                for fk in columna.foreign_keys
+            ):
+                continue
+            existe = db.session.execute(
+                select(columna).where(columna == usuario_id).limit(1)
+            ).first()
+            if existe:
+                referencias.append(f"{tabla.name}.{columna.name}")
+    return referencias
+
+
+def _anonimizar_usuario(usuario):
+    usuario.nombre = f"Usuario eliminado #{usuario.id}"
+    usuario.email = f"eliminado-{usuario.id}@usuarios.invalid"
+    usuario.telefono = None
+    usuario.direccion = None
+    usuario.puesto_trabajo = "Cuenta eliminada"
+    usuario.salario_base = 0
+    usuario.tarifa_entrega = 0
+    usuario.proveedor_id = None
+    usuario.activo = False
+    usuario.en_linea = False
+    usuario.mfa_secret = None
+    usuario.mfa_enabled = False
+    usuario.mfa_session_version = (usuario.mfa_session_version or 0) + 1
+    usuario.set_password(uuid.uuid4().hex)
 
 
 def admin_required(f):
@@ -216,7 +317,7 @@ def dashboard():
 
     # Preparadores y repartidores para asignación manual
     preparadores = User.query.filter(
-        User.rol.in_(["preparacion"]),
+        User.rol.in_(["cocina", "preparacion"]),
         User.activo == True
     ).all()
     repartidores = User.query.filter_by(rol="repartidor", activo=True).all()
@@ -344,7 +445,7 @@ def pedidos():
         query = query.filter_by(es_entrega_epicentro=False)
     todos = query.all()
     preparadores = User.query.filter(
-        User.rol.in_(["preparacion"]), User.activo == True
+        User.rol.in_(["cocina", "preparacion"]), User.activo == True
     ).all()
     repartidores = User.query.filter_by(rol="repartidor", activo=True).all()
     return render_template("admin/pedidos.html",
@@ -684,7 +785,7 @@ def exportar_caja():
 @admin_required
 def pagos_staff():
     empleados = User.query.filter(
-        User.rol.in_(["preparacion", "repartidor"]),
+        User.rol.in_(["cocina", "preparacion", "repartidor"]),
         User.activo == True
     ).order_by(User.rol, User.nombre).all()
 
@@ -934,7 +1035,7 @@ def generar_salarios():
         return redirect(url_for("admin.pagos_staff"))
 
     empleados = User.query.filter(
-        User.rol.in_(["preparacion", "repartidor"]),
+        User.rol.in_(["cocina", "preparacion", "repartidor"]),
         User.activo == True,
         User.salario_base > 0
     ).all()
@@ -1288,10 +1389,11 @@ def proveedores():
             if not nombre:
                 flash("El nombre es obligatorio.", "danger")
                 return redirect(url_for("admin.proveedores"))
-            from models import MODELOS_ACUERDO_PROVEEDOR
-            modelo = request.form.get("modelo_acuerdo", "stock_proveedor")
-            if modelo not in MODELOS_ACUERDO_PROVEEDOR:
-                modelo = "stock_proveedor"
+            try:
+                modelo, comision = _parse_acuerdo_proveedor(request.form)
+            except ValueError as exc:
+                flash(str(exc), "danger")
+                return redirect(url_for("admin.proveedores"))
             prov = _Prov(
                 nombre=nombre,
                 razon_social=request.form.get("razon_social", "").strip() or None,
@@ -1302,7 +1404,7 @@ def proveedores():
                 hora_apertura=_parse_time_form(request.form.get("hora_apertura")),
                 hora_cierre=_parse_time_form(request.form.get("hora_cierre")),
                 modelo_acuerdo=modelo,
-                comision_pct=request.form.get("comision_pct", type=float) or 0,
+                comision_pct=comision,
                 iban=request.form.get("iban", "").strip() or None,
                 notas=request.form.get("notas", "").strip() or None,
                 activo=True,
@@ -1339,6 +1441,11 @@ def editar_proveedor(proveedor_id):
             if not nombre:
                 flash("El nombre es obligatorio.", "danger")
                 return redirect(url_for("admin.editar_proveedor", proveedor_id=proveedor_id))
+            try:
+                modelo, comision = _parse_acuerdo_proveedor(request.form)
+            except ValueError as exc:
+                flash(str(exc), "danger")
+                return redirect(url_for("admin.editar_proveedor", proveedor_id=proveedor_id))
             prov.nombre = nombre
             prov.razon_social = request.form.get("razon_social", "").strip() or None
             prov.direccion = request.form.get("direccion", "").strip() or None
@@ -1347,11 +1454,8 @@ def editar_proveedor(proveedor_id):
             prov.horario = request.form.get("horario", "").strip() or None
             prov.hora_apertura = _parse_time_form(request.form.get("hora_apertura"))
             prov.hora_cierre = _parse_time_form(request.form.get("hora_cierre"))
-            from models import MODELOS_ACUERDO_PROVEEDOR
-            modelo = request.form.get("modelo_acuerdo", prov.modelo_acuerdo)
-            if modelo in MODELOS_ACUERDO_PROVEEDOR:
-                prov.modelo_acuerdo = modelo
-            prov.comision_pct = request.form.get("comision_pct", type=float) or 0
+            prov.modelo_acuerdo = modelo
+            prov.comision_pct = comision
             prov.iban = request.form.get("iban", "").strip() or None
             prov.notas = request.form.get("notas", "").strip() or None
             prov.activo = bool(request.form.get("activo"))
@@ -1365,14 +1469,27 @@ def editar_proveedor(proveedor_id):
 
         if accion == "agregar_sku":
             producto_id = request.form.get("producto_id", type=int)
-            stock = request.form.get("stock", type=int) or 0
-            precio_costo = request.form.get("precio_costo")
             if not producto_id:
                 flash("Selecciona un producto.", "danger")
                 return redirect(url_for("admin.editar_proveedor", proveedor_id=proveedor_id))
             producto = db.session.get(_Product, producto_id)
-            if not producto:
-                flash("Producto no encontrado.", "danger")
+            if (
+                not producto
+                or not producto.activo
+                or producto.es_combo
+                or producto.proveedor_despachador_id is not None
+            ):
+                flash("Solo puedes asignar productos simples activos del catálogo maestro.", "danger")
+                return redirect(url_for("admin.editar_proveedor", proveedor_id=proveedor_id))
+            try:
+                stock = _parse_entero_no_negativo(request.form.get("stock"), "El stock")
+                precio_costo = _parse_decimal_no_negativo(
+                    request.form.get("precio_costo"),
+                    "El coste",
+                    opcional=True,
+                )
+            except ValueError as exc:
+                flash(str(exc), "danger")
                 return redirect(url_for("admin.editar_proveedor", proveedor_id=proveedor_id))
             existente = _ProvProd.query.filter_by(
                 proveedor_id=prov.id, producto_id=producto_id
@@ -1384,7 +1501,7 @@ def editar_proveedor(proveedor_id):
                     proveedor_id=prov.id,
                     producto_id=producto_id,
                     stock=stock,
-                    precio_costo=float(precio_costo) if precio_costo else None,
+                    precio_costo=precio_costo,
                     activo=True,
                 ))
                 try:
@@ -1399,6 +1516,25 @@ def editar_proveedor(proveedor_id):
             fila_id = request.form.get("fila_id", type=int)
             fila = db.session.get(_ProvProd, fila_id) if fila_id else None
             if fila and fila.proveedor_id == prov.id:
+                combo_activo = (
+                    ComboItem.query
+                    .join(Product, ComboItem.combo_id == Product.id)
+                    .filter(
+                        ComboItem.producto_id == fila.producto_id,
+                        ComboItem.activo.is_(True),
+                        Product.es_combo.is_(True),
+                        Product.activo.is_(True),
+                        Product.proveedor_despachador_id == prov.id,
+                    )
+                    .first()
+                )
+                if combo_activo:
+                    flash(
+                        f"No puedes borrar «{fila.producto.nombre}»: participa en el combo activo "
+                        f"«{combo_activo.combo.nombre}» de este proveedor.",
+                        "danger",
+                    )
+                    return redirect(url_for("admin.editar_proveedor", proveedor_id=proveedor_id))
                 db.session.delete(fila)
                 try:
                     db.session.commit()
@@ -1419,7 +1555,11 @@ def editar_proveedor(proveedor_id):
     ya_id = {s.producto_id for s in skus}
     productos_no_registrados = (
         _Product.query
-        .filter(_Product.activo.is_(True), _Product.es_combo.is_(False))
+        .filter(
+            _Product.activo.is_(True),
+            _Product.es_combo.is_(False),
+            _Product.proveedor_despachador_id.is_(None),
+        )
         .filter(~_Product.id.in_(ya_id) if ya_id else True)
         .order_by(_Product.nombre)
         .all()
@@ -1647,31 +1787,15 @@ def _parsear_campos_producto(form):
 
     es_combo = bool(form.get("es_combo"))
     proveedor_despachador_id = form.get("proveedor_despachador_id", type=int) or None
-    # El despachador aplica tanto a SKUs sueltos como a combos:
-    #   - SKU suelto con despachador → ese bar prepara y despacha el producto;
-    #     consume de su stock en proveedor_productos.
-    #   - Combo con despachador → cada componente del combo se sirve desde el
-    #     stock de ese mismo bar, no se mezcla con stock propio (validado más
-    #     abajo en nuevo_combo/gestionar_combo).
+    if proveedor_despachador_id and not es_combo:
+        return None, (
+            "El proveedor despachador solo se configura en combos. "
+            "Asigna productos simples a bares desde Proveedores."
+        )
     if proveedor_despachador_id:
-        from models import Proveedor as _Proveedor, ProveedorProducto as _ProvProd
+        from models import Proveedor as _Proveedor
         if not _Proveedor.query.filter_by(id=proveedor_despachador_id, activo=True).first():
             return None, "El proveedor despachador seleccionado no existe o está inactivo."
-        # Para un suelto, el SKU debe estar registrado en el inventario del
-        # bar (combos se validan aparte porque su id aún no existe aquí).
-        if not es_combo:
-            producto_id_actual = form.get("_producto_id", type=int) or None
-            if producto_id_actual:
-                fila = _ProvProd.query.filter_by(
-                    proveedor_id=proveedor_despachador_id,
-                    producto_id=producto_id_actual,
-                    activo=True,
-                ).first()
-                if not fila:
-                    return None, (
-                        "El proveedor seleccionado no tiene este producto en su inventario. "
-                        "Añádelo desde el panel de Proveedores antes de asignarlo aquí."
-                    )
 
     return {
         "nombre":                    nombre,
@@ -1766,30 +1890,6 @@ def _mensaje_componentes_externos_combo_propio(componentes):
         "Un combo de stock propio no puede usar componentes despachados por un bar: "
         f"{nombres}."
     )
-
-
-def _asegurar_sku_simple_en_proveedor(producto):
-    """Registra el producto simple como SKU del proveedor con stock inicial 0."""
-    if not producto or producto.es_combo or not producto.proveedor_despachador_id:
-        return
-    from models import ProveedorProducto as _ProveedorProducto
-
-    fila = _ProveedorProducto.query.filter_by(
-        proveedor_id=producto.proveedor_despachador_id,
-        producto_id=producto.id,
-    ).first()
-    if fila:
-        fila.activo = True
-        if fila.precio_costo is None and producto.precio_costo is not None:
-            fila.precio_costo = producto.precio_costo
-        return
-    db.session.add(_ProveedorProducto(
-        proveedor_id=producto.proveedor_despachador_id,
-        producto_id=producto.id,
-        stock=0,
-        precio_costo=producto.precio_costo,
-        activo=True,
-    ))
 
 
 def _guardar_imagen_producto_desde_request(files):
@@ -1965,6 +2065,21 @@ def _recalcular_precio_combo_si_descuento(combo):
         combo.precio = _precio_descuento_combo(base, combo.combo_descuento_pct_float)
 
 
+def _payload_estructura_combo(items):
+    return [
+        {
+            "producto_id": item.producto_id,
+            "cantidad": item.cantidad,
+            "es_seleccionable": item.es_seleccionable,
+            "grupo_seleccion": item.grupo_display if item.es_seleccionable else None,
+            "max_selecciones": item.max_selecciones or 1,
+            "es_predeterminado": item.es_predeterminado,
+        }
+        for item in items
+        if item.activo
+    ]
+
+
 def _validar_campos_componente_combo(es_seleccionable, grupo_seleccion, max_selecciones, cantidad):
     """
     Valida los campos de un componente usando validadores robustos.
@@ -2072,7 +2187,9 @@ def _combo_groups_payload_from_form(form):
 @admin_bp.route("/productos/crear", methods=["POST"])
 @admin_required
 def crear_producto():
-    campos, error = _parsear_campos_producto(request.form)
+    form_producto = request.form.copy()
+    form_producto["es_combo"] = ""
+    campos, error = _parsear_campos_producto(form_producto)
     if error:
         flash(error, "danger")
         return redirect(url_for("admin.productos"))
@@ -2085,7 +2202,6 @@ def crear_producto():
     db.session.add(p)
     try:
         db.session.flush()
-        _asegurar_sku_simple_en_proveedor(p)
         db.session.commit()
     except Exception as exc:
         db.session.rollback()
@@ -2129,6 +2245,7 @@ def nuevo_combo():
     # Parsear campos básicos del combo. En modo descuento el precio final se calcula
     # despues de validar componentes, por eso usamos un precio temporal valido.
     form_producto = request.form.copy()
+    form_producto["es_combo"] = "1"
     if (form_producto.get("combo_precio_modo") or "").strip().lower() == "descuento_porcentaje":
         try:
             precio_tmp = float(form_producto.get("precio") or 0)
@@ -2540,8 +2657,6 @@ def editar_producto(producto_id):
                                dias_activos=dias_activos,
                                alergenos_activos=alergenos_activos,
                                proveedores=proveedores)
-    # Inyectamos el ID actual para que el parser pueda validar que el SKU
-    # esté registrado en el inventario del proveedor (solo aplica a sueltos).
     form_con_id = request.form.copy()
     form_con_id["_producto_id"] = str(producto_id)
     campos, error = _parsear_campos_producto(form_con_id)
@@ -2580,6 +2695,8 @@ def editar_producto(producto_id):
             if externos:
                 flash(_mensaje_componentes_externos_combo_propio(externos), "danger")
                 return redirect(url_for("admin.productos"))
+    else:
+        campos["proveedor_despachador_id"] = None
     precio_anterior = float(p.precio)
     for attr, val in campos.items():
         setattr(p, attr, val)
@@ -2603,7 +2720,6 @@ def editar_producto(producto_id):
             motivo=request.form.get("motivo_precio", ""),
         ))
     try:
-        _asegurar_sku_simple_en_proveedor(p)
         db.session.commit()
     except Exception as exc:
         db.session.rollback()
@@ -2778,6 +2894,17 @@ def quitar_componente_combo(producto_id, item_id):
         flash("Operación no permitida.", "danger")
         return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
     combo = db.session.get(Product, producto_id)
+    restantes = _payload_estructura_combo(
+        ComboItem.query.filter(
+            ComboItem.combo_id == producto_id,
+            ComboItem.id != item.id,
+            ComboItem.activo.is_(True),
+        ).all()
+    )
+    es_valido, error = validate_combo_structure(restantes, producto_id)
+    if not es_valido:
+        flash(f"No se puede quitar el componente: {error}", "danger")
+        return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
     group = item.grupo
     db.session.delete(item)
     try:
@@ -3199,7 +3326,8 @@ def usuarios():
     proveedores = Proveedor.query.filter_by(activo=True).order_by(Proveedor.nombre).all()
     return render_template("admin/usuarios.html", users=users, q=q, rol_f=rol,
                            estado_f=estado, roles_validos=_roles_editables_usuario(),
-                           proveedores=proveedores)
+                           proveedores=proveedores,
+                           roles_legacy=_ROLES_USUARIO_LEGACY)
 
 
 @admin_bp.route("/usuarios/crear", methods=["POST"])
@@ -3240,11 +3368,15 @@ def crear_usuario():
             return redirect(url_for("admin.usuarios"))
 
     try:
-        salario_base = float(request.form.get("salario_base", 0) or 0)
-        tarifa_entrega = float(request.form.get("tarifa_entrega", 0) or 0)
-    except (ValueError, TypeError):
-        salario_base = 0.0
-        tarifa_entrega = 0.0
+        salario_base = _parse_decimal_no_negativo(
+            request.form.get("salario_base") or "0", "El salario base"
+        )
+        tarifa_entrega = _parse_decimal_no_negativo(
+            request.form.get("tarifa_entrega") or "0", "La tarifa por entrega"
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("admin.usuarios"))
 
     u = User(
         nombre=nombre,
@@ -3279,36 +3411,44 @@ def crear_usuario():
 def editar_usuario(user_id):
     from models import Proveedor
     u = get_or_404(User, user_id)
-    if not u.puede_iniciar_sesion:
+    if not _es_cuenta_gestionable(u):
         abort(404)
+    if not _puede_gestionar_cuenta(u):
+        abort(403)
     roles_validos = _roles_editables_usuario()
     if request.method == "GET":
-        proveedores = Proveedor.query.filter_by(activo=True).order_by(Proveedor.nombre).all()
+        proveedores = Proveedor.query.filter(
+            or_(Proveedor.activo.is_(True), Proveedor.id == u.proveedor_id)
+        ).order_by(Proveedor.nombre).all()
         return render_template("admin/usuario_editar.html", usuario=u, roles_validos=roles_validos,
                                proveedores=proveedores)
 
-    u.nombre = request.form.get("nombre", u.nombre).strip()
-    nuevo_rol = request.form.get("rol")
-    if nuevo_rol in roles_validos:
-        if current_user.rol != "super_admin" and u.rol in ("admin", "super_admin"):
-            flash("Solo un super admin puede cambiar el rol de otro administrador.", "danger")
-            return redirect(url_for("admin.usuarios"))
-        if nuevo_rol in ("admin", "super_admin") and current_user.rol != "super_admin":
-            flash("Solo un super admin puede asignar el rol de administrador.", "danger")
-            return redirect(url_for("admin.usuarios"))
-        u.rol = nuevo_rol
-    if u.rol == "proveedor":
+    nombre = request.form.get("nombre", "").strip()
+    email = request.form.get("email", "").strip().lower()
+    nuevo_rol = request.form.get("rol", "").strip()
+    if not nombre or not email:
+        flash("Nombre y email son obligatorios.", "danger")
+        return redirect(url_for("admin.editar_usuario", user_id=u.id))
+    if nuevo_rol not in roles_validos:
+        flash("Rol no válido o sin permisos suficientes para asignarlo.", "danger")
+        return redirect(url_for("admin.editar_usuario", user_id=u.id))
+    if u.id == current_user.id and nuevo_rol != u.rol:
+        flash("No puedes cambiar tu propio rol.", "warning")
+        return redirect(url_for("admin.editar_usuario", user_id=u.id))
+    if u.rol == "super_admin" and nuevo_rol != "super_admin" and _es_ultimo_superadmin_activo(u):
+        flash("No puedes cambiar el rol del último superadmin activo.", "danger")
+        return redirect(url_for("admin.editar_usuario", user_id=u.id))
+
+    proveedor_id = None
+    if nuevo_rol == "proveedor":
         proveedor_id = request.form.get("proveedor_id", type=int)
         proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
         if not proveedor or not proveedor.activo:
             flash("Selecciona el bar que administrará este usuario.", "danger")
             return redirect(url_for("admin.editar_usuario", user_id=u.id))
-        u.proveedor_id = proveedor.id
-    else:
-        u.proveedor_id = None
-    u.puesto_trabajo = request.form.get("puesto_trabajo", u.puesto_trabajo or "").strip() or None
+
     telefono_form = normalizar_telefono_cliente(
-        request.form.get("telefono", u.telefono or "")
+        request.form.get("telefono", "")
     ) or None
     if telefono_form:
         duplicado = (
@@ -3319,18 +3459,33 @@ def editar_usuario(user_id):
         if duplicado:
             flash("Ese teléfono ya identifica a otra persona.", "warning")
             return redirect(url_for("admin.editar_usuario", user_id=u.id))
-    u.telefono = telefono_form
+
     try:
-        u.salario_base = float(request.form.get("salario_base", u.salario_base) or 0)
-        u.tarifa_entrega = float(request.form.get("tarifa_entrega", u.tarifa_entrega) or 0)
-    except (ValueError, TypeError):
-        pass  # conservar valores anteriores si el input es inválido
+        salario_base = _parse_decimal_no_negativo(
+            request.form.get("salario_base") or "0", "El salario base"
+        )
+        tarifa_entrega = _parse_decimal_no_negativo(
+            request.form.get("tarifa_entrega") or "0", "La tarifa por entrega"
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("admin.editar_usuario", user_id=u.id))
+
     nueva_pw = request.form.get("nueva_password", request.form.get("password", "")).strip()
     if nueva_pw:
         if len(nueva_pw) < 6:
             flash("La contraseña debe tener al menos 6 caracteres.", "danger")
-            return redirect(url_for("admin.usuarios"))
+            return redirect(url_for("admin.editar_usuario", user_id=u.id))
         u.set_password(nueva_pw)
+
+    u.nombre = nombre
+    u.email = email
+    u.rol = nuevo_rol
+    u.proveedor_id = proveedor_id
+    u.telefono = telefono_form
+    u.puesto_trabajo = request.form.get("puesto_trabajo", "").strip() or None
+    u.salario_base = salario_base
+    u.tarifa_entrega = tarifa_entrega
     AuditLog.registrar(current_user.id, "editar_usuario", "user",
                        u.id, ip=request.remote_addr)
     try:
@@ -3350,20 +3505,80 @@ def editar_usuario(user_id):
 @admin_required
 def toggle_usuario(user_id):
     u = get_or_404(User, user_id)
-    if not u.puede_iniciar_sesion:
+    if not _es_cuenta_gestionable(u):
         abort(404)
+    if not _puede_gestionar_cuenta(u):
+        abort(403)
     if u.id == current_user.id:
         flash("No puedes desactivarte a ti mismo.", "warning")
         return redirect(url_for("admin.usuarios"))
-    if u.rol in ("admin", "super_admin") and current_user.rol != "super_admin":
-        flash("Solo un super admin puede desactivar a otros administradores.", "danger")
+    if u.activo and _es_ultimo_superadmin_activo(u):
+        flash("No puedes desactivar el último superadmin activo.", "danger")
         return redirect(url_for("admin.usuarios"))
     u.activo = not u.activo
+    if not u.activo:
+        u.en_linea = False
+        u.mfa_session_version = (u.mfa_session_version or 0) + 1
+    AuditLog.registrar(
+        current_user.id,
+        "activar_usuario" if u.activo else "desactivar_usuario",
+        "user",
+        u.id,
+        ip=request.remote_addr,
+    )
     try:
         db.session.commit()
-    except Exception as exc:
+        flash(f"Usuario {'activado' if u.activo else 'desactivado'}.", "success")
+    except Exception:
         db.session.rollback()
-        flash(f"Error: {exc}", "danger")
+        current_app.logger.exception("Error al cambiar estado de usuario")
+        flash("No se pudo cambiar el estado del usuario.", "danger")
+    return redirect(url_for("admin.usuarios"))
+
+
+@admin_bp.route("/usuarios/<int:user_id>/eliminar", methods=["POST"])
+@admin_required
+def eliminar_usuario(user_id):
+    u = get_or_404(User, user_id)
+    if not _es_cuenta_gestionable(u):
+        abort(404)
+    if not _puede_gestionar_cuenta(u):
+        abort(403)
+    if u.id == current_user.id:
+        flash("Nunca puedes eliminar tu propia cuenta.", "warning")
+        return redirect(url_for("admin.usuarios"))
+    if _es_ultimo_superadmin_activo(u):
+        flash("No puedes eliminar el último superadmin activo.", "danger")
+        return redirect(url_for("admin.usuarios"))
+    if request.form.get("confirmacion", "").strip().upper() != "ELIMINAR":
+        flash("Escribe ELIMINAR para confirmar la operación.", "warning")
+        return redirect(url_for("admin.editar_usuario", user_id=u.id))
+
+    referencias = _referencias_usuario(u.id)
+    nombre = u.nombre
+    if referencias:
+        _anonimizar_usuario(u)
+        accion = "anonimizar_usuario"
+        mensaje = (
+            f"{nombre} tenía historial asociado: la cuenta fue desactivada y anonimizada."
+        )
+        detalle = ", ".join(referencias)
+    else:
+        db.session.delete(u)
+        accion = "eliminar_usuario"
+        mensaje = f"Usuario {nombre} eliminado definitivamente."
+        detalle = None
+    AuditLog.registrar(
+        current_user.id, accion, "user", user_id, detalle=detalle,
+        ip=request.remote_addr,
+    )
+    try:
+        db.session.commit()
+        flash(mensaje, "success")
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Error al eliminar usuario")
+        flash("No se pudo eliminar el usuario.", "danger")
     return redirect(url_for("admin.usuarios"))
 
 
@@ -3510,7 +3725,7 @@ def _count_alertas_stock():
 def afiliados():
     codigos = AffiliateCode.query.order_by(AffiliateCode.creado_en.desc()).all()
     staff_users = User.query.filter(
-        User.rol.in_(["preparacion", "repartidor"]),
+        User.rol.in_(["cocina", "preparacion", "repartidor"]),
         User.activo == True
     ).order_by(User.nombre).all()
     return render_template("admin/afiliados.html", codigos=codigos, staff_users=staff_users)

@@ -46,6 +46,7 @@ const adminA = '34600000001@s.whatsapp.net';
 const adminB = '34600000002@s.whatsapp.net';
 const clientA = '34610000001@s.whatsapp.net';
 const clientB = '34610000002@s.whatsapp.net';
+const providerAgent = '34620000001@s.whatsapp.net';
 
 function clearState() {
   db.exec(`
@@ -54,6 +55,7 @@ function clearState() {
     DELETE FROM sessions;
     DELETE FROM inbound_messages;
     DELETE FROM logs;
+    DELETE FROM handoff_agents;
   `);
 }
 
@@ -149,6 +151,33 @@ test('un administrador no puede reclamar dos clientes activos', () => {
   assert.equal(assignHandoff(clientA, adminA).changes, 1);
   assert.equal(assignHandoff(clientB, adminA).changes, 0);
   assert.equal(getHandoff(clientA).admin_jid, adminA);
+  assert.equal(getHandoff(clientB).admin_jid, null);
+});
+
+test('un handoff de proveedor solo puede tomarlo un operador de ese proveedor', () => {
+  createHandoffRequest(clientA, {
+    scope: 'provider:17',
+    agents: ['34620000001'],
+  });
+
+  assert.equal(assignHandoff(clientA, adminA).changes, 0);
+  assert.equal(assignHandoff(clientA, providerAgent).changes, 1);
+  assert.equal(getHandoff(clientA).scope, 'provider:17');
+  assert.equal(getHandoff(clientA).admin_jid, providerAgent);
+});
+
+test('los operadores de proveedores distintos quedan aislados', () => {
+  createHandoffRequest(clientA, {
+    scope: 'provider:17',
+    agents: ['34620000001'],
+  });
+  createHandoffRequest(clientB, {
+    scope: 'provider:18',
+    agents: ['34620000002'],
+  });
+
+  assert.equal(assignHandoff(clientB, providerAgent).changes, 0);
+  assert.equal(assignHandoff(clientA, providerAgent).changes, 1);
   assert.equal(getHandoff(clientB).admin_jid, null);
 });
 

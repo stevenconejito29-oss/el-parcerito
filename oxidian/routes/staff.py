@@ -14,8 +14,8 @@ from services import (
 staff_bp = Blueprint("staff", __name__)
 logger = logging.getLogger(__name__)
 
-# Tras la consolidación de roles, "staff" ya no existe como rol propio.
-# El panel /staff/* lo opera el rol unificado "preparacion" (cubre cocina + almacén).
+# "staff" ya no se crea como rol. El panel /staff/* queda para preparación
+# programada y almacén; cocina opera los pedidos inmediatos en /preparador/*.
 ROLES_STAFF = {"admin", "super_admin", "preparacion"}
 
 
@@ -357,7 +357,11 @@ def toggle_disponible():
 @staff_bp.route("/inventario")
 @staff_required
 def inventario():
-    productos = Product.query.filter_by(activo=True).order_by(Product.nombre).all()
+    productos = Product.query.filter(
+        Product.activo.is_(True),
+        Product.es_combo.is_(False),
+        Product.proveedor_despachador_id.is_(None),
+    ).order_by(Product.nombre).all()
     lotes = Stock.query.order_by(Stock.fecha_caducidad.asc()).all()
     return render_template("staff/inventario.html", productos=productos, lotes=lotes)
 
@@ -375,8 +379,14 @@ def registrar_entrada():
         flash("Datos inválidos.", "danger")
         return redirect(url_for("staff.inventario"))
 
-    if not Product.query.filter_by(id=producto_id, activo=True).first():
-        flash("Producto no encontrado o inactivo.", "danger")
+    producto = db.session.get(Product, producto_id)
+    if (
+        not producto
+        or not producto.activo
+        or producto.es_combo
+        or producto.proveedor_despachador_id is not None
+    ):
+        flash("Solo puedes registrar stock de productos simples del catálogo propio.", "danger")
         return redirect(url_for("staff.inventario"))
 
     caducidad_date = None

@@ -82,16 +82,70 @@ FEATURE_LABELS = {
 _CONFIG_KEY_RE = re.compile(r"^[A-Z0-9_]{2,50}$")
 _HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_PHONE_INPUT_RE = re.compile(r"^\+?[\d\s().-]+$")
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+CONFIG_SECTION_KEYS = {
+    "tienda-identidad": {
+        "NOMBRE_NEGOCIO", "SLOGAN_NEGOCIO", "DESCRIPCION_NEGOCIO",
+        "TELEFONO_NEGOCIO", "EMAIL_CONTACTO", "BIZUM_TELEFONO",
+        "WHATSAPP_COUNTRY_CODE",
+    },
+    "tienda-ubicacion": {
+        "DIRECCION_NEGOCIO", "CIUDAD_NEGOCIO", "PROVINCIA_NEGOCIO",
+        "PAIS_NEGOCIO", "PAIS_CODIGO_ISO",
+    },
+    "tienda-imagen": {
+        "TIENDA_URL", "OXIDIAN_PUBLIC_URL", "LOGO_URL", "APP_ICON_URL",
+        "HERO_IMAGE_URL",
+    },
+    "tienda-colores": {
+        "COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO",
+    },
+    "operacion-horario": {
+        "HORARIO_APERTURA", "HORARIO_CIERRE", "TIENDA_FORZAR_CERRADA",
+        "TIENDA_MENSAJE_CIERRE",
+    },
+    "operacion-pagos": {"EFECTIVO_HABILITADO", "BIZUM_HABILITADO"},
+    "entregas": {
+        "VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA",
+        "RADIO_ENTREGA_KM", "CENTRO_LAT", "CENTRO_LON",
+    },
+    "puntos": {"PUNTOS_POR_EURO", "PUNTOS_CANJE_RATIO"},
+    "integraciones": {
+        "BOT_API_URL", "BOT_OXIDIAN_URL", "EVOLUTION_API_URL",
+        "EVOLUTION_INSTANCE",
+    },
+    "avanzado": {
+        "CART_MAX_QTY", "COMBO_MIN_COMPONENTS", "COMBO_MAX_COMPONENTS",
+        "COMBO_MAX_QTY_COMPONENT", "COMBO_MAX_SELECTIONS_GROUP",
+        "COMBO_MAX_DISCOUNT_PCT",
+    },
+}
+
+CONFIG_SECTION_PARENT = {
+    section: section.split("-", 1)[0]
+    for section in CONFIG_SECTION_KEYS
+}
 
 
 def _valid_url(value, required=False, allow_internal=True):
     value = (value or "").strip().rstrip("/")
     if not value:
         return (not required), value
-    parsed = urlparse(value)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+    if any(char.isspace() for char in value):
         return False, value
-    if not allow_internal and "." not in parsed.hostname and parsed.hostname not in ("localhost",):
+    try:
+        parsed = urlparse(value)
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError:
+        return False, value
+    if parsed.scheme not in ("http", "https") or not hostname:
+        return False, value
+    if parsed.username or parsed.password:
+        return False, value
+    if not allow_internal and "." not in hostname and hostname not in ("localhost",):
         return False, value
     return True, value
 
@@ -109,6 +163,8 @@ def nuevo_combo():
 def _normalizar_telefono(value):
     raw = (value or "").strip()
     if not raw:
+        return ""
+    if not _PHONE_INPUT_RE.fullmatch(raw) or raw.count("+") > 1 or ("+" in raw and not raw.startswith("+")):
         return ""
     digits = re.sub(r"\D+", "", raw)
     if not digits:
@@ -226,11 +282,11 @@ def _validar_config_value(clave, valor):
 
     if clave in {
         "TIENDA_URL", "BOT_API_URL", "OXIDIAN_PUBLIC_URL", "LOGO_URL",
-        "APP_ICON_URL", "EVOLUTION_API_URL", "BOT_OXIDIAN_URL",
+        "APP_ICON_URL", "HERO_IMAGE_URL", "EVOLUTION_API_URL", "BOT_OXIDIAN_URL",
     }:
         ok, normalized = _valid_url(valor, required=False)
         if not ok:
-            return False, clave, valor, "La URL debe empezar por http:// o https://."
+            return False, clave, valor, "La URL debe ser http:// o https://, sin espacios ni credenciales."
         return True, clave, normalized, None
 
     if clave in {"BOT_API_KEY", "BOT_PANEL_KEY"}:
@@ -240,15 +296,20 @@ def _validar_config_value(clave, valor):
 
     if clave in {"TELEFONO_NEGOCIO", "BIZUM_TELEFONO"}:
         phone = _normalizar_telefono(valor)
-        if valor and not re.fullmatch(r"\+?\d{7,20}", phone):
-            return False, clave, valor, "El teléfono debe tener entre 7 y 20 dígitos."
+        if valor and not re.fullmatch(r"\d{7,15}", phone):
+            return False, clave, valor, "El teléfono debe tener entre 7 y 15 dígitos y solo signos telefónicos válidos."
         return True, clave, phone, None
 
     if clave == "WHATSAPP_COUNTRY_CODE":
+        if valor and not re.fullmatch(r"\+?\d{1,4}", valor):
+            return False, clave, valor, "El prefijo debe contener solo entre 1 y 4 dígitos."
         digits = re.sub(r"\D+", "", valor)
-        if valor and not re.fullmatch(r"\d{1,4}", digits):
-            return False, clave, valor, "El prefijo debe tener entre 1 y 4 dígitos."
         return True, clave, digits, None
+
+    if clave == "EMAIL_CONTACTO":
+        if valor and (len(valor) > 254 or not _EMAIL_RE.fullmatch(valor)):
+            return False, clave, valor, "El correo de contacto no tiene un formato válido."
+        return True, clave, valor.lower(), None
 
     if clave == "PAIS_CODIGO_ISO":
         code = valor.lower()
@@ -263,6 +324,34 @@ def _validar_config_value(clave, valor):
         return True, clave, ",".join(numeros), None
 
     return True, clave, valor, None
+
+
+def _config_section_submission(form):
+    """Valida solo los campos declarados y presentes de una tarjeta."""
+    section = (form.get("section") or "").strip()
+    allowed = CONFIG_SECTION_KEYS.get(section)
+    if allowed is None:
+        return section, [], ["Sección de configuración desconocida."]
+
+    requested = form.getlist("config_key")
+    if len(requested) != len(set(requested)):
+        return section, [], ["La solicitud contiene campos duplicados."]
+
+    changes = []
+    errors = []
+    for key in requested:
+        if key not in allowed:
+            errors.append(f"{key}: no pertenece a esta sección.")
+            continue
+        if key not in form:
+            errors.append(f"{key}: el campo no fue enviado.")
+            continue
+        ok, normalized_key, value, error = _validar_config_value(key, form.get(key))
+        if ok:
+            changes.append((normalized_key, value))
+        else:
+            errors.append(f"{key}: {error}")
+    return section, changes, errors
 
 
 def _parse_zona_form(form, zona=None):
@@ -802,53 +891,52 @@ def guardar_config():
 @superadmin_bp.route("/config/guardar-seccion", methods=["POST"])
 @superadmin_required
 def guardar_config_seccion():
-    """Guarda un bloque de configuración completo en una sola transacción."""
+    """Guarda únicamente los campos presentes de una tarjeta."""
     defaults = {clave: desc for clave, _, desc in CLAVES_DEFAULT}
-    claves_extra = {
-        "COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO", "LOGO_URL",
-        "APP_ICON_URL", "CENTRO_LAT", "CENTRO_LON", "TIENDA_FORZAR_CERRADA",
-    }
-    permitidas = set(defaults) | claves_extra
-    cambios = []
-    errores = []
-    for clave in request.form.getlist("config_key"):
-        if clave not in permitidas:
-            errores.append(f"Ajuste no permitido: {clave}")
-            continue
-        ok, clave_norm, valor, error = _validar_config_value(
-            clave, request.form.get(clave, "")
-        )
-        if not ok:
-            errores.append(f"{clave}: {error}")
-        else:
-            cambios.append((clave_norm, valor))
+    default_values = {clave: valor for clave, valor, _ in CLAVES_DEFAULT}
+    section, cambios, errores = _config_section_submission(request.form)
+    parent_section = CONFIG_SECTION_PARENT.get(section, "tienda")
     if errores:
-        flash("No se guardó la sección. " + " ".join(errores), "danger")
-        return redirect(url_for("superadmin.config", section=request.form.get("section", "")))
-    cambios_map = dict(cambios)
-    if cambios_map.get("EFECTIVO_HABILITADO") == "0" and cambios_map.get("BIZUM_HABILITADO") == "0":
+        flash("No se guardó esta tarjeta: " + " ".join(errores), "danger")
+        return redirect(url_for("superadmin.config", section=parent_section))
+
+    raw_actuales = {
+        key: SiteConfig.get(key)
+        for key in CONFIG_SECTION_KEYS.get(section, ())
+    }
+    actuales = {
+        key: value if value is not None else default_values.get(key, "")
+        for key, value in raw_actuales.items()
+    }
+    propuestos = actuales | dict(cambios)
+
+    if (
+        section == "operacion-pagos"
+        and propuestos.get("EFECTIVO_HABILITADO", "1") == "0"
+        and propuestos.get("BIZUM_HABILITADO", "1") == "0"
+    ):
         flash("Debe quedar habilitado al menos un método de pago.", "danger")
-        return redirect(url_for("superadmin.config", section=request.form.get("section", "")))
-    if "BOT_ADMIN_NUMBERS" in cambios_map:
-        numeros = set(filter(None, cambios_map["BOT_ADMIN_NUMBERS"].split(",")))
-        operadores = (
-            User.query
-            .filter(User.rol == "proveedor", User.activo == True, User.telefono_normalizado.isnot(None))
-            .all()
-        )
-        conflictos = {
-            re.sub(r"\D+", "", operador.telefono_normalizado or "")
-            for operador in operadores
-        } & numeros
-        if conflictos:
-            flash(
-                "Un teléfono de proveedor no puede ser también administrador global del chatbot.",
-                "danger",
-            )
-            return redirect(url_for("superadmin.config", section=request.form.get("section", "")))
+        return redirect(url_for("superadmin.config", section=parent_section))
+    if (
+        section == "operacion-horario"
+        and propuestos.get("HORARIO_APERTURA")
+        and propuestos.get("HORARIO_APERTURA") == propuestos.get("HORARIO_CIERRE")
+    ):
+        flash("La hora de apertura y la de cierre no pueden ser iguales.", "danger")
+        return redirect(url_for("superadmin.config", section=parent_section))
     if not cambios:
-        flash("No había ajustes para guardar.", "info")
-        return redirect(url_for("superadmin.config"))
+        flash("Esta tarjeta no contenía campos para guardar.", "info")
+        return redirect(url_for("superadmin.config", section=parent_section))
+
+    cambios = [
+        (clave, valor)
+        for clave, valor in cambios
+        if raw_actuales.get(clave) != valor
+    ]
+    if not cambios:
+        flash("Sin cambios: la configuración ya estaba actualizada.", "info")
+        return redirect(url_for("superadmin.config", section=parent_section))
+
     try:
         for clave, valor in cambios:
             SiteConfig.set(
@@ -861,11 +949,12 @@ def guardar_config_seccion():
             ip=request.remote_addr,
         )
         db.session.commit()
-        flash(f"Sección guardada correctamente ({len(cambios)} ajustes).", "success")
+        nombres = ", ".join(clave for clave, _ in cambios)
+        flash(f"Tarjeta guardada ({len(cambios)}): {nombres}.", "success")
     except Exception as exc:
         db.session.rollback()
-        flash(f"No se pudo guardar la sección: {exc}", "danger")
-    return redirect(url_for("superadmin.config", section=request.form.get("section", "")))
+        flash(f"No se pudo guardar esta tarjeta: {exc}", "danger")
+    return redirect(url_for("superadmin.config", section=parent_section))
 
 
 @superadmin_bp.route("/config/seed", methods=["POST"])

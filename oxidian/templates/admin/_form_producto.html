@@ -38,20 +38,6 @@
     <label class="fp-label">País de origen</label>
     <input type="text" name="origen_pais" placeholder="Ej: Venezuela, Colombia..." class="fp-input">
   </div>
-  <div class="fp-span-full col-span-2 fp-section">
-    <label class="fp-section-title">Origen operativo</label>
-    <p class="text-xs text-gray-500 mb-2">
-      Si lo despacha un bar/proveedor externo, el stock se toma de Proveedores,
-      no del almacén propio.
-    </p>
-    <select name="proveedor_despachador_id" class="fp-input">
-      <option value="">Stock propio / tienda</option>
-      {% for prov in proveedores|default([]) %}
-      <option value="{{ prov.id }}">{{ prov.nombre }}</option>
-      {% endfor %}
-    </select>
-  </div>
-
   <!-- Imagen del producto -->
   <div class="fp-span-full col-span-2">
     <label class="fp-label">Imagen del producto</label>

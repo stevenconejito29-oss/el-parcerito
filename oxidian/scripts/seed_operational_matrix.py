@@ -30,9 +30,6 @@ from models import (
     User,
     ZonaEntrega,
 )
-from routes.public import _variantes_catalogo_unificadas
-
-
 MATRIX_VERSION = "operational-v1"
 CREDENTIALS_FILE = Path(os.environ.get(
     "MATRIX_CREDENTIALS_FILE",
@@ -110,7 +107,7 @@ def _product(
     row.canal_preparacion = channel
     row.tipo_entrega = delivery
     row.fecha_llegada = date.today() + timedelta(days=2) if delivery == "programado" else None
-    row.proveedor_despachador_id = provider.id if provider else None
+    row.proveedor_despachador_id = None
     row.activo = True
     row.stock_mostrar_en_web = True
     row.canjeable_con_puntos = bool(redeem_points)
@@ -216,11 +213,7 @@ def seed():
     products = {}
     definitions = (
         ("arepa-own", "Arepa clásica QA", "comidas", 5.50, 2.00, "arepa-classic", "Stock propio", None, "cocina", "inmediato", 450, 30),
-        ("arepa-north", "Arepa clásica QA", "comidas", 5.50, 2.20, "arepa-classic", "Bar Norte QA", north, "cocina", "inmediato", None, 18),
-        ("arepa-south", "Arepa clásica QA", "comidas", 5.50, 2.10, "arepa-classic", "Bar Sur QA", south, "cocina", "inmediato", None, 16),
         ("cola-own", "Cola 330 ml QA", "bebidas", 2.00, 0.70, "cola-330", "Stock propio", None, "almacen", "inmediato", 180, 40),
-        ("cola-north", "Cola 330 ml QA", "bebidas", 2.00, 0.75, "cola-330", "Bar Norte QA", north, "almacen", "inmediato", None, 24),
-        ("cola-south", "Cola 330 ml QA", "bebidas", 2.00, 0.72, "cola-330", "Bar Sur QA", south, "almacen", "inmediato", None, 22),
         ("empanada-own", "Empanada de la casa QA", "comidas", 3.00, 1.10, "empanada-house", "Stock propio", None, "cocina", "inmediato", None, 35),
         ("burger-north", "Burger Norte QA", "comidas", 9.50, 4.10, "burger-north", "Bar Norte QA", north, "cocina", "inmediato", None, 15),
         ("perro-south", "Perro Sur QA", "comidas", 8.90, 3.80, "perro-south", "Bar Sur QA", south, "cocina", "inmediato", None, 14),
@@ -239,6 +232,17 @@ def seed():
             else:
                 _own_stock(product, stock)
 
+    _provider_stock(north, products["arepa-own"], 18, 2.20)
+    _provider_stock(south, products["arepa-own"], 16, 2.10)
+    _provider_stock(north, products["cola-own"], 24, 0.75)
+    _provider_stock(south, products["cola-own"], 22, 0.72)
+
+    for legacy_code in ("arepa-north", "arepa-south", "cola-north", "cola-south"):
+        legacy = _find_product(legacy_code)
+        if legacy:
+            legacy.activo = False
+            legacy.proveedor_despachador_id = None
+
     combos = {
         "combo-own": _combo(
             "combo-own", "Combo Casa QA", categories["combos"], 7.90,
@@ -248,13 +252,13 @@ def seed():
         "combo-north": _combo(
             "combo-north", "Combo Norte QA", categories["combos"], 10.90,
             "Bar Norte QA",
-            [(products["burger-north"], 1), (products["cola-north"], 1)],
+            [(products["burger-north"], 1), (products["cola-own"], 1)],
             provider=north,
         ),
         "combo-south": _combo(
             "combo-south", "Combo Sur QA", categories["combos"], 10.40,
             "Bar Sur QA",
-            [(products["perro-south"], 1), (products["cola-south"], 1)],
+            [(products["perro-south"], 1), (products["cola-own"], 1)],
             provider=south,
         ),
     }
@@ -300,18 +304,15 @@ def verify():
     ]
     assert matrix_products, "La matriz no contiene productos"
 
-    visible = [product for product in matrix_products if product.disponible_para_venta()]
-    visible.sort(key=lambda p: (
-        0 if p.es_combo else 1,
-        0 if not p.proveedor_despachador_id else 1,
-        p.nombre,
-        p.id,
-    ))
-    unified = _variantes_catalogo_unificadas(visible)
-    keys = [product.clave_catalogo for product in unified]
+    propios = [
+        product for product in matrix_products
+        if product.pertenece_a_origen("propio")
+        and product.disponible_para_venta_en_origen("propio")
+    ]
+    keys = [product.clave_catalogo for product in propios]
     assert len(keys) == len(set(keys)), "El catálogo mantiene claves repetidas"
-    assert sum(p.nombre == "Arepa clásica QA" for p in unified) == 1
-    assert sum(p.nombre == "Cola 330 ml QA" for p in unified) == 1
+    assert sum(p.nombre == "Arepa clásica QA" for p in propios) == 1
+    assert sum(p.nombre == "Cola 330 ml QA" for p in propios) == 1
 
     for combo in [p for p in matrix_products if p.es_combo]:
         for item in combo.combo_items:
@@ -326,20 +327,23 @@ def verify():
                 assert not item.componente.proveedor_despachador_id, (
                     f"{combo.nombre} incluye componente externo"
                 )
-        combo.validar_stock_combo_seleccion(1)
+        combo.validar_stock_combo_seleccion(
+            1,
+            origen=combo.origen_operativo_key,
+        )
 
     own = _find_product("cola-own")
-    north = _find_product("cola-north")
-    south = _find_product("cola-south")
-    own_before = own.stock_operativo_total
-    north_before = north.stock_operativo_total
-    south_before = south.stock_operativo_total
-    own.descontar_stock(1)
-    north.descontar_stock(1)
+    north_provider = Proveedor.query.filter_by(nombre="Bar Norte QA").one()
+    south_provider = Proveedor.query.filter_by(nombre="Bar Sur QA").one()
+    own_before = own.stock_en_origen("propio")
+    north_before = own.stock_en_origen(f"proveedor:{north_provider.id}")
+    south_before = own.stock_en_origen(f"proveedor:{south_provider.id}")
+    own.descontar_stock_en_origen("propio", 1)
+    own.descontar_stock_en_origen(f"proveedor:{north_provider.id}", 1)
     db.session.flush()
-    assert own.stock_operativo_total == own_before - 1
-    assert north.stock_operativo_total == north_before - 1
-    assert south.stock_operativo_total == south_before
+    assert own.stock_en_origen("propio") == own_before - 1
+    assert own.stock_en_origen(f"proveedor:{north_provider.id}") == north_before - 1
+    assert own.stock_en_origen(f"proveedor:{south_provider.id}") == south_before
     db.session.rollback()
 
     expected_roles = {"super_admin", "admin", "preparacion", "repartidor", "proveedor"}
@@ -351,7 +355,7 @@ def verify():
 
     return {
         "matrix_products": len(matrix_products),
-        "public_cards": len(unified),
+        "public_cards": len(propios),
         "providers": Proveedor.query.filter(Proveedor.nombre.in_(["Bar Norte QA", "Bar Sur QA"])).count(),
         "qa_accounts": User.query.filter(User.email.like("qa.%@elparcerito.local")).count(),
         "credentials_file": str(CREDENTIALS_FILE),

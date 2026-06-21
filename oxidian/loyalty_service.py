@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import inspect
 from decimal import Decimal
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,7 @@ def aplicar_canje_en_pedido(
     *,
     puntos_usar: int = 0,
     producto_canje_id: int | None = None,
+    origen_operativo: str | None = None,
 ) -> dict:
     """
     Aplica el canje de puntos al crear un pedido. ÚNICO punto donde se descuentan.
@@ -130,6 +132,7 @@ def aplicar_canje_en_pedido(
         pedido           — Order ya persistido (tiene .id)
         puntos_usar      — puntos a convertir en descuento (puede ser 0)
         producto_canje_id — ID de producto a añadir gratis (puede ser None)
+        origen_operativo  — inventario del establecimiento del pedido
 
     Retorna dict con puntos_descontados, producto_canje.
     """
@@ -179,15 +182,31 @@ def aplicar_canje_en_pedido(
     # 4b. Producto gratuito por canje
     if producto_canje_id:
         prod = db.session.get(Product, producto_canje_id)
+        origen_canje = origen_operativo or (prod.origen_operativo_key if prod else None)
         puntos_producto = int(prod.puntos_para_canje or 0) if prod else 0
-        if prod and prod.canje_directo_disponible() and puntos_producto <= cliente.puntos:
+        producto_valido = bool(
+            prod
+            and origen_canje
+            and prod.activo
+            and prod.canjeable_con_puntos
+            and prod.puntos_para_canje
+            and prod.visible_ahora
+            and not (
+                prod.es_combo
+                and any(item.es_seleccionable for item in prod.combo_items)
+            )
+            and prod.pertenece_a_origen(origen_canje)
+            and prod.disponible_para_venta_en_origen(origen_canje)
+        )
+        if not producto_valido:
+            raise ValueError("El producto de canje no está disponible en el origen del pedido")
+        if puntos_producto > cliente.puntos:
+            raise ValueError("Puntos insuficientes para el producto de canje")
+        if producto_valido:
             try:
                 cliente.canjear_puntos(puntos_producto, pedido_id=pedido.id)
                 if prod.tipo_entrega == "inmediato":
-                    if prod.es_combo:
-                        prod.descontar_stock_combo(1)
-                    else:
-                        prod.descontar_stock(1)
+                    prod.descontar_stock_en_origen(origen_canje, 1)
                 pedido.puntos_usados = int(pedido.puntos_usados or 0) + puntos_producto
                 extra_metadata = {
                     "reward": {
@@ -211,6 +230,25 @@ def aplicar_canje_en_pedido(
                         ],
                         "selecciones": [],
                     }
+                metadata_params = inspect.signature(metadata_item_pedido).parameters
+                if "origen_operativo" in metadata_params:
+                    item_metadata = metadata_item_pedido(
+                        prod,
+                        extra_metadata,
+                        origen_operativo=origen_canje,
+                    )
+                else:
+                    item_metadata = metadata_item_pedido(prod, extra_metadata)
+                    snapshot = item_metadata.setdefault("producto", {})
+                    snapshot["origen_operativo_key"] = origen_canje
+                    snapshot["origen_operativo"] = (
+                        "propio" if origen_canje == "propio" else "proveedor"
+                    )
+                    snapshot["proveedor_despachador_id"] = (
+                        int(origen_canje.split(":", 1)[1])
+                        if origen_canje.startswith("proveedor:")
+                        else None
+                    )
                 item_canje = OrderItem(
                     pedido_id=pedido.id,
                     producto_id=prod.id,
@@ -218,7 +256,7 @@ def aplicar_canje_en_pedido(
                     precio_unit=0,
                     subtotal=0,
                     metadata_json=json.dumps(
-                        metadata_item_pedido(prod, extra_metadata),
+                        item_metadata,
                         ensure_ascii=False,
                     ),
                 )

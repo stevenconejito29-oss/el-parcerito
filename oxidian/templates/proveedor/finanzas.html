@@ -2,17 +2,24 @@
 {% block title %}Finanzas — {{ bar.nombre if bar else 'Resumen global' }}{% endblock %}
 {% block content %}
 
-<div class="mb-5">
-  <h1 class="text-2xl font-black text-white">💰 Finanzas del bar</h1>
-  <p class="text-xs mt-1" style="color:var(--col-muted)">
+<header class="prov-page-head prov-detail-head">
+  <div>
+    <span class="prov-eyebrow">{% if bar %}Aliado #{{ bar.id }}{% else %}Administración{% endif %}</span>
+    <h1>Finanzas del proveedor</h1>
+    <p>
     {% if bar %}
-      <strong>{{ bar.nombre }}</strong> · Modelo: <strong>{{ modelo }}</strong>
-      {% if modelo == 'stock_propio_bar' %}({{ '%.2f'|format(comision_pct|float) }}% por preparar){% endif %}
+      <strong>{{ bar.nombre }}</strong> ·
+      {% if modelo == 'stock_propio_bar' %}Comisión del {{ '%.2f'|format(comision_pct|float) }}% del PVP
+      {% else %}Liquidación por coste registrado{% endif %}
     {% else %}
-      Vista global (admin) — usa el panel `/admin/liquidacion-proveedores` para liquidaciones por proveedor.
+      Vista global. Usa Liquidación de proveedores para el desglose por aliado.
     {% endif %}
-  </p>
-</div>
+    </p>
+  </div>
+  {% if bar %}
+  <a href="{{ url_for('public.menu_bar', proveedor_id=bar.id) }}" class="prov-btn prov-btn-secondary" target="_blank" rel="noopener">Ver sección pública</a>
+  {% endif %}
+</header>
 
 <form method="GET" class="ox-card p-4 mb-5 flex flex-wrap gap-3 items-end">
   <div class="ox-field">
