@@ -117,6 +117,8 @@ if deploy_revision; then
 fi
 
 log "ERROR: $target_sha no quedo saludable; restaurando codigo $current_sha."
+compose ps || true
+compose logs --no-color --tail 200 oxidian || true
 git reset --hard "$current_sha"
 if deploy_revision; then
     printf '%s\n' "$current_sha" >"$DEPLOYED_FILE"
