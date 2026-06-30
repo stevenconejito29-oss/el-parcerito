@@ -23,10 +23,29 @@ TS="$(date +%Y%m%d-%H%M%S)"
 DEST="$OXIDIAN_BACKUP_DIR/$TS"
 LOG="$OXIDIAN_BACKUP_DIR/backup.log"
 
-OXIDIAN_DB_CONTAINER="${OXIDIAN_DB_CONTAINER:-oxidian-db}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="${OXIDIAN_DEPLOY_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+COMPOSE_FILE="${OXIDIAN_COMPOSE_FILE:-$DEPLOY_DIR/oxidian/cosmos-compose.yml}"
+ENV_FILE="${OXIDIAN_ENV_FILE:-$DEPLOY_DIR/oxidian/.env.cosmos.local}"
+
+compose() {
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
+service_container() {
+    local service="$1" fallback="$2" container_id
+    container_id="$(compose ps -q "$service" 2>/dev/null | head -n 1)"
+    if [ -n "$container_id" ]; then
+        printf '%s\n' "$container_id"
+    else
+        printf '%s\n' "$fallback"
+    fi
+}
+
+OXIDIAN_DB_CONTAINER="${OXIDIAN_DB_CONTAINER:-$(service_container oxidian-db oxidian-db)}"
 OXIDIAN_DB_USER="${OXIDIAN_DB_USER:-oxidian}"
 OXIDIAN_DB_NAME="${OXIDIAN_DB_NAME:-oxidian}"
-EVOLUTION_DB_CONTAINER="${EVOLUTION_DB_CONTAINER:-evolution-db}"
+EVOLUTION_DB_CONTAINER="${EVOLUTION_DB_CONTAINER:-$(service_container evolution-db evolution-db)}"
 EVOLUTION_DB_USER="${EVOLUTION_DB_USER:-evolution}"
 EVOLUTION_DB_NAME="${EVOLUTION_DB_NAME:-evolution}"
 

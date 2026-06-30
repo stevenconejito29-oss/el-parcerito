@@ -42,13 +42,16 @@ ci_conclusion() {
 }
 
 wait_healthy() {
-    local attempt app gateway database
+    local attempt app gateway database app_id gateway_id database_id
     for attempt in $(seq 1 90); do
-        app="$(docker inspect -f '{{.State.Health.Status}}' oxidian 2>/dev/null || true)"
-        gateway="$(docker inspect -f '{{.State.Health.Status}}' oxidian-gateway 2>/dev/null || true)"
-        database="$(docker inspect -f '{{.State.Health.Status}}' oxidian-db 2>/dev/null || true)"
+        app_id="$(compose ps -q oxidian 2>/dev/null | head -n 1)"
+        gateway_id="$(compose ps -q gateway 2>/dev/null | head -n 1)"
+        database_id="$(compose ps -q oxidian-db 2>/dev/null | head -n 1)"
+        app="$(docker inspect -f '{{.State.Health.Status}}' "$app_id" 2>/dev/null || true)"
+        gateway="$(docker inspect -f '{{.State.Health.Status}}' "$gateway_id" 2>/dev/null || true)"
+        database="$(docker inspect -f '{{.State.Health.Status}}' "$database_id" 2>/dev/null || true)"
         if [ "$app" = "healthy" ] && [ "$gateway" = "healthy" ] && [ "$database" = "healthy" ]; then
-            docker exec oxidian curl -fsS --max-time 10 http://127.0.0.1:5000/health >/dev/null
+            compose exec -T oxidian curl -fsS --max-time 10 http://127.0.0.1:5000/health >/dev/null
             return $?
         fi
         sleep 2
