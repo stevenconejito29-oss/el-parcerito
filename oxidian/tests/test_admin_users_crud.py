@@ -110,7 +110,7 @@ class AdminUsersCrudTest(unittest.TestCase):
         )
         self.assertIsNone(User.query.filter_by(email="salary@test.invalid").first())
 
-    def test_provider_role_requires_active_provider(self):
+    def test_legacy_provider_role_is_always_rejected(self):
         self.client.post(
             "/admin/usuarios/crear",
             data={
@@ -135,8 +135,7 @@ class AdminUsersCrudTest(unittest.TestCase):
                 "proveedor_id": str(provider.id),
             },
         )
-        operator = User.query.filter_by(email="operador@test.invalid").one()
-        self.assertEqual(operator.proveedor_id, provider.id)
+        self.assertIsNone(User.query.filter_by(email="operador@test.invalid").first())
 
     def test_inactive_account_can_be_fully_edited(self):
         user = self._user(

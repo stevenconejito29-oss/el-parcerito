@@ -13,7 +13,7 @@ from flask import current_app
 from sqlalchemy.orm import joinedload
 from extensions import db, get_or_404, limiter, csrf
 from models import (Product, Categoria, Order, OrderItem, Review, Coupon,
-                     ComboItem, SiteConfig,
+                     ComboItem, ProductExtraGroup, ProductExtraOption, SiteConfig,
                      ZonaEntrega, MenuConfig, User, Proveedor, normalizar_metodo_pago,
                      AffiliateCode, IdempotencyKey, metadata_componente_combo,
                      metadata_item_pedido, utcnow as _utcnow)
@@ -34,6 +34,7 @@ from loyalty_service import (
     solicitar_codigo,
 )
 from phone_utils import normalizar_telefono_cliente, telefono_valido
+from store_config import get_store_features, get_service_commission, is_service_mode
 
 public_bp = Blueprint("public", __name__)
 
@@ -94,9 +95,6 @@ def _normalizar_origen(raw):
     origen = str(raw or "").strip().lower()
     if origen == "propio":
         return origen
-    match = re.fullmatch(r"proveedor:(\d+)", origen)
-    if match:
-        return f"proveedor:{int(match.group(1))}"
     return None
 
 
@@ -131,6 +129,10 @@ def _establecimiento_para_origen(origen):
 
 
 def _producto_disponible_en_origen(producto, origen, cantidad=1):
+    if producto and _delivery_family(producto) == "programado" and not _feature_enabled("pedidos_programados"):
+        return False
+    if producto and not _fulfillment_options([producto]):
+        return False
     return bool(
         producto
         and producto.activo
@@ -145,6 +147,8 @@ def _stock_en_origen(producto, origen):
 
 
 def _producto_canjeable_en_origen(producto, origen, cantidad=1):
+    if not _feature_enabled("puntos"):
+        return False
     if (
         not producto
         or not producto.activo
@@ -156,6 +160,61 @@ def _producto_canjeable_en_origen(producto, origen, cantidad=1):
     if producto.es_combo and any(item.es_seleccionable for item in producto.combo_items):
         return False
     return _producto_disponible_en_origen(producto, origen, cantidad)
+
+
+def _feature_enabled(name):
+    return bool(get_store_features().get(name))
+
+
+def _product_fulfillment_modes(producto):
+    mode = (getattr(producto, "modalidad_entrega", None) or "ambas").strip().lower()
+    if mode == "delivery":
+        return {"delivery"}
+    if mode == "recogida":
+        return {"recogida"}
+    return {"delivery", "recogida"}
+
+
+def _fulfillment_options(productos=None):
+    features = get_store_features()
+    allowed = set()
+    if features["delivery"]:
+        allowed.add("delivery")
+    if features["recogida"]:
+        allowed.add("recogida")
+    for producto in (productos or []):
+        allowed &= _product_fulfillment_modes(producto)
+    return [mode for mode in ("delivery", "recogida") if mode in allowed]
+
+
+def _fulfillment_from_request(default=None, options=None):
+    options = list(options if options is not None else _fulfillment_options())
+    if not options:
+        return None
+    requested = (request.form.get("tipo_entrega_cliente") or default or options[0]).strip().lower()
+    if requested not in options:
+        requested = options[0]
+    return requested
+
+
+def _establecimiento_abierto_checkout(origen, proveedor=None):
+    proveedor_id = _proveedor_id_origen(origen)
+    if proveedor_id:
+        proveedor = proveedor or db.session.get(Proveedor, proveedor_id)
+        return bool(proveedor and proveedor.activo and proveedor.esta_abierto_ahora), (
+            "El establecimiento de este pedido está cerrado o ya no está activo."
+        )
+    cfg = {r.clave: r.valor for r in SiteConfig.query.filter(
+        SiteConfig.clave.in_(["HORARIO_APERTURA", "HORARIO_CIERRE", "TIENDA_FORZAR_CERRADA", "TIENDA_MENSAJE_CIERRE"])
+    ).all()}
+    apertura = cfg.get("HORARIO_APERTURA", "09:00")
+    cierre = cfg.get("HORARIO_CIERRE", "22:30")
+    forzada = str(cfg.get("TIENDA_FORZAR_CERRADA", "0")).lower() in ("1", "true", "yes", "on")
+    ahora = datetime.now().strftime("%H:%M")
+    if tienda_abierta_en_horario(apertura, cierre, ahora, forzada):
+        return True, ""
+    mensaje = (cfg.get("TIENDA_MENSAJE_CIERRE") or "").strip()
+    return False, mensaje or f"La tienda está cerrada ahora. Horario: {apertura}–{cierre}."
 
 
 def _metadata_item_con_origen(producto, metadata, origen):
@@ -243,11 +302,8 @@ def index():
 
 @public_bp.route("/bar/<int:proveedor_id>")
 def menu_bar(proveedor_id):
-    proveedor = get_or_404(Proveedor, proveedor_id)
-    if not proveedor.activo:
-        flash("Este establecimiento no está disponible.", "warning")
-        return redirect(url_for("public.index"))
-    return _render_catalogo(f"proveedor:{proveedor.id}", proveedor=proveedor)
+    flash("Esta tienda funciona como un único establecimiento.", "info")
+    return redirect(url_for("public.index"))
 
 
 def _render_catalogo(origen, proveedor=None):
@@ -255,20 +311,28 @@ def _render_catalogo(origen, proveedor=None):
     categoria_id = request.args.get("categoria", type=int)
     busqueda = request.args.get("q", "").strip()
 
-    query = Product.query.filter_by(activo=True)
-    if categoria_id:
-        query = query.filter_by(categoria_id=categoria_id)
+    base_query = Product.query.filter_by(activo=True)
     if busqueda:
         # Eliminar wildcards de LIKE para evitar escaneos no intencionados
         busqueda_q = re.sub(r"[%_\\]", "", busqueda)
         if busqueda_q:
-            query = query.filter(Product.nombre.ilike(f"%{busqueda_q}%"))
+            base_query = base_query.filter(Product.nombre.ilike(f"%{busqueda_q}%"))
 
-    todos = query.all()
-    productos_vis = [
+    todos = base_query.all()
+    productos_catalogo = [
         p for p in todos
         if _producto_disponible_en_origen(p, origen)
     ]
+    categoria_counts = {}
+    for producto in productos_catalogo:
+        if producto.categoria_id:
+            categoria_counts[producto.categoria_id] = categoria_counts.get(producto.categoria_id, 0) + 1
+    categorias_con_productos = set(categoria_counts)
+    categorias = [c for c in categorias if c.id in categorias_con_productos]
+
+    # Se entrega el catálogo completo para cambiar de categoría sin recargar.
+    # El filtro inicial y los cambios posteriores se aplican en el navegador.
+    productos_vis = productos_catalogo
     productos = sorted(
         productos_vis,
         key=lambda p: (
@@ -301,16 +365,17 @@ def _render_catalogo(origen, proveedor=None):
 
     # Subtotal del carrito para el botón flotante
     _, carrito_subtotal = _build_items_from_carrito(carrito)
-    bares = Proveedor.query.filter_by(activo=True).order_by(Proveedor.nombre.asc()).all()
+    bares = []
     establecimiento = {
         "origen": origen,
         "nombre": proveedor.nombre if proveedor else (SiteConfig.get("NOMBRE_NEGOCIO", "") or "Tienda principal"),
         "abierto": proveedor.esta_abierto_ahora if proveedor else True,
-        "url": url_for("public.menu_bar", proveedor_id=proveedor.id) if proveedor else url_for("public.index"),
+        "url": url_for("public.index"),
     }
 
     return render_template("public/index.html",
                            productos=productos, categorias=categorias,
+                           categoria_counts=categoria_counts,
                            categoria_activa=categoria_id,
                            busqueda=busqueda,
                            menu_items=menu_items,
@@ -351,7 +416,10 @@ def whatsapp():
 def producto_detalle(producto_id):
     from models import ComboItem
     producto = get_or_404(Product, producto_id)
-    origen = _normalizar_origen(request.args.get("origen")) or producto.origen_operativo_key
+    origen = _normalizar_origen(request.args.get("origen")) or "propio"
+    if is_service_mode() and origen != "propio":
+        flash("Este producto no pertenece al catálogo principal de esta tienda.", "warning")
+        return redirect(url_for("public.index"))
     proveedor_id = _proveedor_id_origen(origen)
     proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
     if (
@@ -370,8 +438,11 @@ def producto_detalle(producto_id):
         for item in combo_items
         if not item.es_seleccionable and item.componente
     )
+    extra_groups = ProductExtraGroup.query.filter_by(producto_id=producto.id, activo=True)\
+        .order_by(ProductExtraGroup.orden, ProductExtraGroup.id).all()
     return render_template("public/producto.html",
                            producto=producto, reviews=reviews, combo_items=combo_items,
+                           extra_groups=extra_groups,
                            combo_fixed_base=round(combo_fixed_base, 2),
                            cart_max_qty=_cart_max_qty(),
                            origen_actual=origen,
@@ -395,6 +466,8 @@ def _save_carrito(carrito):
         session.pop("carrito_origen", None)
         session.pop("cart_puntos", None)
         session.pop("cart_producto_canje_id", None)
+        session.pop("combo_selecciones", None)
+        session.pop("extras_selecciones", None)
     session.modified = True
 
 
@@ -465,6 +538,13 @@ def _cart_prep_families(carrito, exclude_key=None):
     productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all()
     return {_prep_family(p) for p in productos}
 
+
+def _cart_fulfillment_options(carrito, exclude_key=None):
+    ids = [int(pid) for pid in (carrito or {})
+           if str(pid) != str(exclude_key) and str(pid).isdigit()]
+    productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all() if ids else []
+    return _fulfillment_options(productos)
+
 def _cart_origins(carrito, exclude_key=None):
     if not carrito:
         return set()
@@ -502,7 +582,7 @@ def agregar_carrito(producto_id):
     producto = get_or_404(Product, producto_id)
     origen_solicitado = _normalizar_origen(request.form.get("origen"))
     if not origen_solicitado:
-        origen_solicitado = producto.origen_operativo_key
+        origen_solicitado = "propio"
     proveedor_id = _proveedor_id_origen(origen_solicitado)
     proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
     if not _producto_disponible_en_origen(producto, origen_solicitado):
@@ -548,6 +628,16 @@ def agregar_carrito(producto_id):
             "Finaliza primero tu pedido de almacén."
         )
 
+    opciones_actuales = set(_cart_fulfillment_options(carrito, exclude_key=key))
+    opciones_producto = set(_fulfillment_options([producto]))
+    if not opciones_producto:
+        return _err("Este producto no tiene una modalidad de entrega habilitada ahora.")
+    if opciones_actuales and not (opciones_actuales & opciones_producto):
+        return _err(
+            "Este producto no admite la misma modalidad que el resto del carrito. "
+            "Haz un pedido para delivery y otro para recogida."
+        )
+
     nueva_cantidad_total = int(carrito.get(key, 0) or 0) + cantidad
     if nueva_cantidad_total > cart_max_qty:
         return _err(f"No puedes añadir más de {cart_max_qty} unidades por producto.")
@@ -587,6 +677,18 @@ def agregar_carrito(producto_id):
         selecciones_combo = session.get("combo_selecciones", {})
         selecciones_combo[key] = seleccion
         session["combo_selecciones"] = selecciones_combo
+    extras, extras_error = _parse_product_extras(producto, request.form)
+    if extras_error:
+        return _err(extras_error, "danger")
+    extras_guardados = session.get("extras_selecciones", {})
+    anterior = extras_guardados.get(key, {})
+    if carrito.get(key) and anterior != extras:
+        return _err("Este producto ya está en el carrito con otros extras. Elimínalo para cambiar su configuración.")
+    if extras:
+        extras_guardados[key] = extras
+    else:
+        extras_guardados.pop(key, None)
+    session["extras_selecciones"] = extras_guardados
     carrito[key] = nueva_cantidad_total
     _set_carrito_origen(origen_solicitado)
     _save_carrito(carrito)
@@ -617,6 +719,9 @@ def actualizar_carrito():
         if nueva_cantidad <= 0:
             del carrito[key]
             selecciones_combo.pop(key, None)
+            extras = session.get("extras_selecciones", {})
+            extras.pop(key, None)
+            session["extras_selecciones"] = extras
             notas_combo.pop(key, None)
         else:
             producto = db.session.get(Product, int(key)) if str(key).isdigit() else None
@@ -653,6 +758,9 @@ def eliminar_carrito(producto_id):
     selecciones_combo = session.get("combo_selecciones", {})
     notas_combo = session.get("notas_combo", {})
     selecciones_combo.pop(key, None)
+    extras = session.get("extras_selecciones", {})
+    extras.pop(key, None)
+    session["extras_selecciones"] = extras
     notas_combo.pop(key, None)
     session["combo_selecciones"] = selecciones_combo
     session["notas_combo"] = notas_combo
@@ -670,13 +778,18 @@ def ver_carrito():
         puntos_sesion = {}
     puntos_verificados = int(puntos_sesion.get("puntos_totales", 0) or 0)
     puntos_visibles = puntos_verificados
+    puntos_habilitados = _feature_enabled("puntos")
+    if not puntos_habilitados:
+        puntos_sesion = {}
+        puntos_verificados = 0
+        puntos_visibles = 0
     todos_canjeables = [
         p for p in Product.query.filter_by(canjeable_con_puntos=True, activo=True)
         .filter(Product.puntos_para_canje.isnot(None))
         .order_by(Product.puntos_para_canje.asc(), Product.nombre.asc()).all()
         if _producto_canjeable_en_origen(p, origen)
         and origen
-    ]
+    ] if puntos_habilitados else []
     descuento_puntos = puntos_sesion.get("descuento", 0.0)
     puntos_cfg = get_puntos_config()
     zona_principal = ZonaEntrega.query.filter_by(activo=True)\
@@ -686,6 +799,7 @@ def ver_carrito():
     except (TypeError, ValueError):
         radio_entrega_km = 5.0
     cart_max_qty = _cart_max_qty()
+    fulfillment_options = _fulfillment_options([item["producto"] for item in items])
     return render_template("public/carrito.html",
                            items=items, subtotal=subtotal,
                            canjeables=todos_canjeables,
@@ -694,8 +808,10 @@ def ver_carrito():
                            puntos_ratio=puntos_cfg["ratio"],
                            puntos_por_euro=puntos_cfg["por_euro"],
                            puntos_visibles=puntos_visibles,
+                           puntos_habilitados=puntos_habilitados,
                            zona_principal=zona_principal,
                            radio_entrega_km=radio_entrega_km,
+                           fulfillment_options=fulfillment_options,
                            cart_max_qty=cart_max_qty,
                            origen_actual=origen,
                            establecimiento=_establecimiento_para_origen(origen))
@@ -711,6 +827,8 @@ def quitar_puntos_carrito():
 
 @public_bp.route("/carrito/set-producto-canje", methods=["POST"])
 def set_producto_canje():
+    if not _feature_enabled("puntos"):
+        return jsonify({"ok": False, "msg": "El club de puntos no está habilitado"}), 403
     data = request.get_json(silent=True) or {}
     prod_id = data.get("producto_id")
     if prod_id:
@@ -757,6 +875,8 @@ def buscar_cliente_publico():
 @limiter.limit("3 per minute") if limiter else (lambda f: f)
 def consultar_saldo_puntos():
     """Envía el saldo al número consultado sin revelarlo en el navegador."""
+    if not _feature_enabled("puntos"):
+        return _json_no_store({"ok": False, "msg": "El club de puntos no está habilitado"}, 403)
     data = request.get_json(silent=True) or {}
     cliente, _ = _find_cliente_by_phone(data.get("telefono", ""), allow_fuzzy=False)
     if cliente:
@@ -790,6 +910,17 @@ def api_check_address():
     if len(direccion) > 220:
         return jsonify({"ok": False, "distancia_km": None, "mensaje": "Dirección demasiado larga"}), 400
     resultado = validar_radio_entrega(direccion)
+    if resultado.get("ok"):
+        zonas = ZonaEntrega.query.filter_by(activo=True).order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
+        zona = asignar_zona_por_direccion(direccion, zonas) if zonas else None
+        if zona:
+            resultado["zona"] = {
+                "id": zona.id,
+                "nombre": zona.nombre,
+                "precio_envio": float(zona.precio_envio or 0),
+                "gratis_desde": float(zona.gratis_desde) if zona.gratis_desde is not None else None,
+                "tiempo_estimado_min": zona.tiempo_estimado_min,
+            }
     return jsonify(resultado)
 
 
@@ -843,21 +974,21 @@ def validar_afiliado():
 @limiter.limit("5 per minute") if limiter else (lambda f: f)
 def solicitar_codigo_puntos():
     """Envía un código al WhatsApp que identifica al cliente."""
+    if not _feature_enabled("puntos"):
+        return jsonify({"ok": False, "msg": "El club de puntos no está habilitado"}), 403
     data = request.get_json(silent=True) or {}
     telefono = data.get("telefono", "").strip()
     if not telefono:
         return jsonify({"ok": False, "msg": "Indica tu número de teléfono"})
     cliente, _ = _find_cliente_by_phone(telefono)
-    if not cliente:
-        return jsonify({"ok": False, "msg": "Este número todavía no tiene puntos acumulados."})
-
-    if not cliente.telefono:
-        return jsonify({"ok": False, "msg": "No tienes teléfono registrado"})
+    respuesta_neutra = "Si el número está registrado, recibirá un código por WhatsApp."
+    if not cliente or not cliente.telefono:
+        return _json_no_store({"ok": True, "msg": respuesta_neutra})
 
     resultado = solicitar_codigo(cliente, permitir_sin_puntos=True)
     return jsonify({
         "ok": bool(resultado.get("ok")),
-        "msg": resultado.get("msg", "Revisa tu WhatsApp."),
+        "msg": respuesta_neutra,
     })
 
 
@@ -865,6 +996,8 @@ def solicitar_codigo_puntos():
 @limiter.limit("10 per minute") if limiter else (lambda f: f)
 def verificar_codigo_puntos():
     """Verifica el código de puntos."""
+    if not _feature_enabled("puntos"):
+        return jsonify({"ok": False, "msg": "El club de puntos no está habilitado"}), 403
     data = request.get_json(silent=True) or {}
     telefono = data.get("telefono", "").strip()
     codigo = data.get("codigo", "").strip()
@@ -963,6 +1096,7 @@ def checkout():
         flash("Los productos del carrito ya no están disponibles.", "warning")
         session.pop("carrito", None)
         session.pop("combo_selecciones", None)
+        session.pop("extras_selecciones", None)
         return redirect(url_for("public.index"))
     if len(items) != len(carrito):
         flash(
@@ -989,6 +1123,15 @@ def checkout():
     if any(not item["producto"].pertenece_a_origen(origen) for item in items):
         flash("Hay productos que no pertenecen al establecimiento del carrito.", "warning")
         return redirect(url_for("public.ver_carrito"))
+    fulfillment_options = _fulfillment_options([item["producto"] for item in items])
+    if not fulfillment_options:
+        flash(
+            "Los productos del carrito no comparten una modalidad válida. "
+            "Separa los productos de delivery y recogida.",
+            "warning",
+        )
+        return redirect(url_for("public.ver_carrito"))
+    fulfillment_default = "delivery" if "delivery" in fulfillment_options else fulfillment_options[0]
     zonas = ZonaEntrega.query.filter_by(activo=True)\
         .order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
 
@@ -996,7 +1139,8 @@ def checkout():
     tiene_encargos = False
 
     # Los puntos solo se habilitan después de verificar el WhatsApp en esta sesión.
-    cart_puntos_sesion = session.get("cart_puntos", {})
+    puntos_habilitados = _feature_enabled("puntos")
+    cart_puntos_sesion = session.get("cart_puntos", {}) if puntos_habilitados else {}
     if cart_puntos_sesion.get("origen") == origen:
         puntos_cliente = cart_puntos_sesion.get("puntos_totales", 0)
     else:
@@ -1006,7 +1150,7 @@ def checkout():
         p for p in Product.query.filter_by(canjeable_con_puntos=True, activo=True)
         .filter(Product.puntos_para_canje <= puntos_cliente).all()
         if _producto_canjeable_en_origen(p, origen)
-    ] if puntos_cliente > 0 else []
+    ] if puntos_habilitados and puntos_cliente > 0 else []
     canjeables_data = [
         {
             "id": p.id,
@@ -1038,21 +1182,28 @@ def checkout():
                 )
                 return redirect(url_for("public.ver_carrito"))
             if prev.order_id:
+                try:
+                    cached = json.loads(prev.response_body or "{}")
+                except (TypeError, json.JSONDecodeError):
+                    cached = {}
+                token = cached.get("token")
+                if token:
+                    guest_tokens = session.get("guest_order_tokens", {})
+                    guest_tokens[str(prev.order_id)] = token
+                    session["guest_order_tokens"] = guest_tokens
+                    session["last_guest_order_id"] = prev.order_id
+                    session["last_guest_order_token"] = token
+                    session.modified = True
                 flash("Este pedido ya se había procesado. Te lo mostramos aquí.", "info")
-                return redirect(url_for("public.pedido_confirmado", pedido_id=prev.order_id))
+                confirm_args = {"pedido_id": prev.order_id}
+                if token:
+                    confirm_args["token"] = token
+                return redirect(url_for("public.pedido_confirmado", **confirm_args))
 
-        # Bloquear pedidos cuando la tienda está cerrada
-        _cfg = {r.clave: r.valor for r in SiteConfig.query.filter(
-            SiteConfig.clave.in_(["HORARIO_APERTURA", "HORARIO_CIERRE", "TIENDA_FORZAR_CERRADA", "TIENDA_MENSAJE_CIERRE"])
-        ).all()}
-        _apertura = _cfg.get("HORARIO_APERTURA", "09:00")
-        _cierre   = _cfg.get("HORARIO_CIERRE",   "22:30")
-        _forzada  = _cfg.get("TIENDA_FORZAR_CERRADA", "0") in ("1", "true", "yes")
-        _ahora    = datetime.now().strftime("%H:%M")
         _skip_val = current_app.config.get("SKIP_DELIVERY_VALIDATION", False)
-        if not _skip_val and not tienda_abierta_en_horario(_apertura, _cierre, _ahora, _forzada):
-            _mensaje = (_cfg.get("TIENDA_MENSAJE_CIERRE") or "").strip()
-            flash(_mensaje or f"La tienda está cerrada ahora. Horario: {_apertura}–{_cierre}.", "warning")
+        abierto, msg_cierre = _establecimiento_abierto_checkout(origen, proveedor)
+        if not _skip_val and not abierto:
+            flash(msg_cierre, "warning")
             return redirect(url_for("public.checkout"))
         if proveedor_id:
             proveedor = db.session.get(Proveedor, proveedor_id)
@@ -1060,7 +1211,13 @@ def checkout():
                 flash("El bar cerró antes de confirmar el pedido. Tu carrito se conserva.", "warning")
                 return redirect(establecimiento["url"])
 
+        tipo_entrega_cliente = _fulfillment_from_request(fulfillment_default, fulfillment_options)
+        if not tipo_entrega_cliente:
+            flash("La modalidad seleccionada ya no está disponible.", "danger")
+            return redirect(url_for("public.ver_carrito"))
         direccion = request.form.get("direccion", "").strip()
+        if tipo_entrega_cliente == "recogida":
+            direccion = ""
         metodo_pago = normalizar_metodo_pago(request.form.get("metodo_pago"))
         if metodo_pago == "efectivo" and SiteConfig.get("EFECTIVO_HABILITADO", "1") != "1":
             flash("El pago en efectivo no está habilitado.", "danger")
@@ -1092,6 +1249,12 @@ def checkout():
                 return redirect(url_for("public.checkout"))
         for item in items:
             producto = item["producto"]
+            if tipo_entrega_cliente not in _product_fulfillment_modes(producto):
+                flash(f"'{producto.nombre}' no admite esta modalidad de entrega.", "danger")
+                return redirect(url_for("public.ver_carrito"))
+            if _delivery_family(producto) == "programado" and not _feature_enabled("pedidos_programados"):
+                flash("Los pedidos por fecha se han desactivado. Retira esos productos del carrito.", "warning")
+                return redirect(url_for("public.ver_carrito"))
             if not _producto_disponible_en_origen(producto, origen, item["cantidad"]):
                 flash(
                     f"'{producto.nombre}' ya no está disponible en {establecimiento['nombre']}.",
@@ -1111,15 +1274,15 @@ def checkout():
             flash("Teléfono inválido. Usa el prefijo internacional de tu país.", "danger")
             return redirect(url_for("public.checkout"))
 
-        if not zonas:
+        if tipo_entrega_cliente == "delivery" and not zonas:
             flash("No hay zonas de entrega activas. Contacta con el negocio.", "danger")
             return redirect(url_for("public.checkout"))
 
         # Dirección obligatoria y dentro del área de cobertura
-        if not direccion and not _skip_val:
+        if tipo_entrega_cliente == "delivery" and not direccion and not _skip_val:
             flash("Indica la dirección de entrega.", "danger")
             return redirect(url_for("public.checkout"))
-        if direccion:
+        if tipo_entrega_cliente == "delivery" and direccion:
             geo = validar_radio_entrega(direccion)
             if not geo["ok"]:
                 if _skip_val and geo.get("distancia_km") is None:
@@ -1131,19 +1294,19 @@ def checkout():
         # Asignación de zona: la decide el servidor matcheando coordenadas. Si
         # alguna zona tiene geodata configurada, intentamos cuadrar al cliente
         # ahí; si ninguna zona tiene geodata, se usa el legacy zonas[0].
-        zona_asignada = asignar_zona_por_direccion(direccion, zonas) if direccion else None
+        zona_asignada = asignar_zona_por_direccion(direccion, zonas) if tipo_entrega_cliente == "delivery" and direccion else None
         if zona_asignada:
             zona_id = zona_asignada.id
         else:
             cualquier_geo = any(z.tiene_geo for z in zonas if z.activo)
-            if cualquier_geo and not _skip_val:
+            if tipo_entrega_cliente == "delivery" and cualquier_geo and not _skip_val:
                 flash(
                     "Tu dirección está fuera de todas nuestras zonas de cobertura. "
                     "Comprueba la dirección o contacta con el negocio.",
                     "danger",
                 )
                 return redirect(url_for("public.checkout"))
-            zona_id = zonas[0].id
+            zona_id = zonas[0].id if tipo_entrega_cliente == "delivery" and zonas else None
 
         # ── Resolver cliente ────────────────────────────────────────────
         try:
@@ -1159,7 +1322,7 @@ def checkout():
         # ── Resolver zona ────────────────────────────────────────────────
         zona = None
         es_entrega_epicentro = True
-        if zona_id:
+        if tipo_entrega_cliente == "delivery" and zona_id:
             zona = db.session.get(ZonaEntrega, zona_id)
             if not zona or not zona.activo:
                 flash("Zona de entrega no válida.", "danger")
@@ -1193,7 +1356,7 @@ def checkout():
         puntos_por_euro = puntos_cfg["por_euro"]
         puntos_a_canjear = 0
         cart_puntos = session.get("cart_puntos", {})
-        if (cart_puntos and cart_puntos.get("cliente_id") == cliente.id
+        if (puntos_habilitados and cart_puntos and cart_puntos.get("cliente_id") == cliente.id
                 and cart_puntos.get("verificado")
                 and cart_puntos.get("origen") == origen):
             pts = min(max(0, int(request.form.get("puntos_usar", 0) or 0)), cliente.puntos)
@@ -1204,6 +1367,9 @@ def checkout():
             producto_canje_id = session.get("cart_producto_canje_id")
         producto_canje = db.session.get(Product, producto_canje_id) if producto_canje_id else None
         if producto_canje_id:
+            if not puntos_habilitados:
+                flash("El club de puntos no está habilitado en esta tienda.", "danger")
+                return redirect(url_for("public.checkout"))
             if (not cart_puntos or cart_puntos.get("cliente_id") != cliente.id
                     or not cart_puntos.get("verificado")
                     or cart_puntos.get("origen") != origen):
@@ -1235,6 +1401,9 @@ def checkout():
                     "danger",
                 )
                 return redirect(url_for("public.checkout"))
+            if tipo_entrega_cliente not in _product_fulfillment_modes(producto_canje):
+                flash("El producto de canje no admite la modalidad elegida.", "danger")
+                return redirect(url_for("public.checkout"))
 
         # ── Motor de pricing único ───────────────────────────────────────
         try:
@@ -1255,7 +1424,8 @@ def checkout():
         descuento_afiliado = precio.descuento_afiliado
         total              = precio.total
         puntos_a_canjear   = precio.puntos_usados
-        puntos_ganados     = int(total * puntos_por_euro)
+        puntos_ganados     = int(total * puntos_por_euro) if puntos_habilitados else 0
+        service_fee = get_service_commission(total)
 
         # Registrar uso del cupón — envio_gratis aplica aunque descuento_cupon sea 0
         if cupon:
@@ -1273,10 +1443,14 @@ def checkout():
             subtotal=subtotal,
             descuento=descuento,
             total=total,
+            service_commission_pct=service_fee["pct"],
+            service_commission_amount=service_fee["amount"],
+            merchant_net_amount=service_fee["merchant_net"],
             cupon_id=cupon.id if cupon else None,
             puntos_usados=0,
             puntos_ganados=puntos_ganados,
             metodo_pago=metodo_pago,
+            tipo_entrega_cliente=tipo_entrega_cliente,
             direccion_entrega=direccion,
             notas=notas,
             zona_id=zona.id if zona else None,
@@ -1290,7 +1464,10 @@ def checkout():
             actor_id=cliente.id,
             canal="web",
             detalle="checkout web",
-            metadata={"zona_id": zona.id if zona else None},
+            metadata={
+                "zona_id": zona.id if zona else None,
+                "tipo_entrega_cliente": tipo_entrega_cliente,
+            },
         )
 
         try:
@@ -1370,7 +1547,7 @@ def checkout():
             key=idem_key,
             request_hash=body_h,
             response_status=302,
-            response_body=json.dumps({"order_id": pedido.id, "numero": pedido.numero_pedido}),
+            response_body=json.dumps({"order_id": pedido.id, "numero": pedido.numero_pedido, "token": token}),
             order_id=pedido.id,
             user_id=None,
             expira_en=_utcnow() + IDEMPOTENCY_TTL,
@@ -1410,6 +1587,9 @@ def checkout():
                            zonas=zonas,
                            tiene_encargos=tiene_encargos,
                            canjeables=canjeables,
+                           puntos_habilitados=puntos_habilitados,
+                           fulfillment_options=fulfillment_options,
+                           fulfillment_default=fulfillment_default,
                            checkout_items=checkout_items,
                            origen_actual=origen,
                            establecimiento=establecimiento,
@@ -1436,6 +1616,9 @@ def pedido_confirmado(pedido_id):
 
 @public_bp.route("/club")
 def club():
+    if not _feature_enabled("puntos"):
+        flash("El club de puntos no está habilitado en esta tienda.", "info")
+        return redirect(url_for("public.index"))
     return render_template("public/puntos_consulta.html")
 
 
@@ -1516,6 +1699,57 @@ def _parse_combo_selection(producto, form, cantidad=1, origen=None):
 
 def _combo_group_key(grupo):
     return "".join(ch if ch.isalnum() else "_" for ch in (grupo or "Seleccion")).strip("_") or "Seleccion"
+
+
+def _parse_product_extras(producto, form):
+    groups = ProductExtraGroup.query.filter_by(producto_id=producto.id, activo=True).all()
+    selected = {}
+    for group in groups:
+        total = 0
+        for option in group.opciones.filter_by(activo=True).all():
+            try:
+                qty = int(form.get(f"extra_qty_{option.id}", 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0
+            if qty < 0 or qty > option.max_cantidad:
+                return {}, f"Cantidad inválida para «{option.nombre}»."
+            if qty:
+                selected[str(option.id)] = qty
+                total += qty
+        if total < group.min_selecciones:
+            return {}, f"Elige al menos {group.min_selecciones} opción(es) en «{group.nombre}»."
+        if total > group.max_selecciones:
+            return {}, f"Puedes elegir hasta {group.max_selecciones} opción(es) en «{group.nombre}»."
+    return selected, None
+
+
+def _product_extras_payload(producto, selected):
+    selected = selected if isinstance(selected, dict) else {}
+    option_ids = []
+    for raw, qty in selected.items():
+        try:
+            if int(qty) > 0:
+                option_ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    options = ProductExtraOption.query.join(ProductExtraGroup).filter(
+        ProductExtraOption.id.in_(option_ids), ProductExtraOption.activo.is_(True),
+        ProductExtraGroup.producto_id == producto.id, ProductExtraGroup.activo.is_(True),
+    ).all() if option_ids else []
+    by_id = {o.id: o for o in options}
+    rows, total = [], 0.0
+    for raw, raw_qty in selected.items():
+        try:
+            option, qty = by_id.get(int(raw)), int(raw_qty)
+        except (TypeError, ValueError):
+            continue
+        if not option or qty < 1 or qty > option.max_cantidad:
+            continue
+        amount = round(option.precio_float * qty, 2)
+        total += amount
+        rows.append({"id": option.id, "grupo": option.grupo.nombre, "nombre": option.nombre,
+                     "cantidad": qty, "precio_unit": option.precio_float, "subtotal": amount})
+    return rows, round(total, 2)
 
 
 def _combo_selection_ids_from_saved(seleccion_guardada):
@@ -1702,6 +1936,7 @@ def _build_items_from_carrito(carrito):
     items = []
     subtotal = 0.0
     selecciones_combo = session.get("combo_selecciones", {})
+    extras_selecciones = session.get("extras_selecciones", {})
     for producto_id_str, cantidad in carrito.items():
         try:
             pid = int(producto_id_str)
@@ -1716,6 +1951,9 @@ def _build_items_from_carrito(carrito):
         seleccion_ids, combo_resumen, metadata = _combo_selection_payload(
             p, selecciones_combo.get(producto_id_str, {})
         )
+        extras_rows, extras_unit = _product_extras_payload(p, extras_selecciones.get(producto_id_str, {}))
+        if extras_rows:
+            metadata["extras"] = {"total_unitario": extras_unit, "opciones": extras_rows}
         try:
             if p.es_combo:
                 p.validar_stock_combo_seleccion(qty, seleccion_ids, origen=origen)
@@ -1724,7 +1962,7 @@ def _build_items_from_carrito(carrito):
         except ValueError:
             continue
         extra_unit = float((metadata.get("combo") or {}).get("extras_total") or 0) if p.es_combo else 0.0
-        precio = float(p.precio_combo_para_seleccion(seleccion_ids)) if p.es_combo else float(p.precio_final or 0)
+        precio = (float(p.precio_combo_para_seleccion(seleccion_ids)) if p.es_combo else float(p.precio_final or 0)) + extras_unit
         precio = round(precio, 2)
         item_total = round(precio * qty, 2)
         subtotal += item_total
@@ -1735,6 +1973,7 @@ def _build_items_from_carrito(carrito):
                       "combo_display_items": _combo_display_items(combo_items, metadata),
                       "combo_seleccion_ids": seleccion_ids,
                       "combo_resumen": combo_resumen,
+                      "extras": extras_rows,
                       "metadata": metadata})
     return items, round(subtotal, 2)
 
@@ -1752,15 +1991,6 @@ def _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion):
     invitado, telefono_normalizado = _find_cliente_by_phone(telefono_invitado)
     telefono_invitado = telefono_normalizado or telefono_invitado
     if invitado:
-        verificacion = session.get("cart_puntos") or {}
-        if not (
-            verificacion.get("verificado")
-            and verificacion.get("cliente_id") == invitado.id
-        ):
-            raise ValueError(
-                "Ese teléfono ya tiene historial. "
-                "Verifica el código enviado por WhatsApp antes de continuar."
-            )
         # Actualizar dirección si se proveyó nueva
         if direccion and direccion != invitado.direccion:
             invitado.direccion = direccion

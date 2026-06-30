@@ -10,6 +10,21 @@
   </div>
 </div>
 
+{% if brand.modo_tienda == 'bar_servicio' %}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+  <div class="pl-kpi" style="border-color:color-mix(in srgb,var(--brand-primary) 35%,transparent)">
+    <p class="pl-kpi-lbl">Tu comisión del servicio</p>
+    <p class="pl-kpi-val" style="color:var(--brand-primary)">€{{ "%.2f"|format(service_commission) }}</p>
+    <p class="pl-kpi-sub">Suma congelada de pedidos entregados</p>
+  </div>
+  <div class="pl-kpi" style="border-color:color-mix(in srgb,var(--brand-accent) 35%,transparent)">
+    <p class="pl-kpi-lbl">Neto del restaurante</p>
+    <p class="pl-kpi-val" style="color:var(--brand-accent)">€{{ "%.2f"|format(merchant_net) }}</p>
+    <p class="pl-kpi-sub">Ventas entregadas menos tu comisión</p>
+  </div>
+</div>
+{% endif %}
+
 {# ── Filtro ── #}
 <form method="GET" class="ox-card p-4 mb-5 flex flex-wrap gap-3 items-end">
   <div class="ox-field flex-1 min-w-36">

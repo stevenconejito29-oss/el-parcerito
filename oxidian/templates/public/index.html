@@ -20,11 +20,7 @@
   {%- else -%}🍽️{%- endif -%}
 {%- endmacro %}
 {% macro storefront_url(categoria=None, q=None) -%}
-  {%- if proveedor_actual -%}
-    {{- url_for('public.menu_bar', proveedor_id=proveedor_actual.id, categoria=categoria, q=q) -}}
-  {%- else -%}
-    {{- url_for('public.index', categoria=categoria, q=q) -}}
-  {%- endif -%}
+  {{- url_for('public.index', categoria=categoria, q=q) -}}
 {%- endmacro %}
 
 <section class="ep-origin-panel" aria-label="Elegir establecimiento">
@@ -41,15 +37,8 @@
     <a href="{{ url_for('public.ver_carrito') }}">Ver carrito</a>
   </div>
   {% endif %}
-  <nav class="ep-origin-list" aria-label="Tiendas y bares">
+  <nav class="ep-origin-list" aria-label="Tienda">
     <a href="{{ url_for('public.index') }}" class="{{ 'is-active' if origen_actual == 'propio' }}">Tienda principal</a>
-    {% for bar in bares %}
-    <a href="{{ url_for('public.menu_bar', proveedor_id=bar.id) }}"
-       class="{{ 'is-active' if proveedor_actual and proveedor_actual.id == bar.id }}">
-      {{ bar.nombre }}
-      <small>{{ 'Abierto' if bar.esta_abierto_ahora else 'Cerrado' }}</small>
-    </a>
-    {% endfor %}
   </nav>
 </section>
 
@@ -74,16 +63,20 @@
     {% if not hero_product %}<div class="ep-hero-emoji" aria-hidden="true">🥟</div>{% endif %}
   </div>
   <div class="ep-trust">
+    {% if brand.delivery %}
     <div class="ep-trust-item">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
       <span>~{{ zona_principal.tiempo_estimado_min if zona_principal else 25 }} min</span>
     </div>
     <div class="ep-trust-sep"></div>
+    {% endif %}
     <div class="ep-trust-item">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 12V22H4V12"/><path d="M22 7H2v5h20V7z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
-      {% if zona_principal and zona_principal.gratis_desde %}<span>Gratis +€{{ "%.0f"|format(zona_principal.gratis_desde) }}</span>
-      {% elif zona_principal and zona_principal.precio_envio == 0 %}<span>Envío gratis</span>
-      {% else %}<span>Delivery</span>{% endif %}
+      {% if brand.delivery and zona_principal and zona_principal.gratis_desde %}<span>Gratis +€{{ "%.0f"|format(zona_principal.gratis_desde) }}</span>
+      {% elif brand.delivery and zona_principal and zona_principal.precio_envio == 0 %}<span>Envío gratis</span>
+      {% elif brand.delivery and brand.recogida %}<span>Delivery o recogida</span>
+      {% elif brand.delivery %}<span>Delivery</span>
+      {% else %}<span>Recogida en local</span>{% endif %}
     </div>
     <div class="ep-trust-sep"></div>
     <div class="ep-trust-item">
@@ -239,13 +232,13 @@
 <div class="ep-cats-wrapper" id="cats-wrapper">
   <div class="ep-cats" id="cats-bar" role="navigation" aria-label="Categorías">
     <a href="{{ storefront_url(q=busqueda or None) }}"
-       class="ep-cat {% if not categoria_activa %}ep-cat-on{% endif %}">
+       data-category="" class="ep-cat {% if not categoria_activa %}ep-cat-on{% endif %}">
       <span class="ep-cat-icon">🌎</span><span>Todo</span>
     </a>
     {% for cat in categorias %}
-    {% set cat_count = productos|selectattr('categoria_id','equalto',cat.id)|list|length %}
+    {% set cat_count = categoria_counts.get(cat.id, 0) if categoria_counts is defined else productos|selectattr('categoria_id','equalto',cat.id)|list|length %}
     <a href="{{ storefront_url(cat.id, busqueda or None) }}"
-       class="ep-cat {% if categoria_activa == cat.id %}ep-cat-on{% endif %}">
+       data-category="{{ cat.id }}" class="ep-cat {% if categoria_activa == cat.id %}ep-cat-on{% endif %}">
       {% if cat.imagen_url %}
         <img src="{{ img_url(cat.imagen_url) }}" alt="{{ cat.nombre }}" class="ep-cat-img" loading="lazy">
       {% else %}
@@ -355,9 +348,9 @@
 ══════════════════════════════════════════ #}
 <section class="ep-section ep-why-section">
   <div class="ep-why-grid">
-    <div class="ep-why-item"><span class="ep-why-icon">🥟</span><div><p class="ep-why-title">100% Auténtico</p><p class="ep-why-desc">Recetas originales</p></div></div>
-    <div class="ep-why-item"><span class="ep-why-icon">🚴</span><div><p class="ep-why-title">Delivery ~{{ zona_principal.tiempo_estimado_min if zona_principal else 25 }} min</p><p class="ep-why-desc">Rápido y en tu puerta</p></div></div>
-    <div class="ep-why-item"><span class="ep-why-icon">⭐</span><div><p class="ep-why-title">Gana puntos</p><p class="ep-why-desc">Canjéalos por productos</p></div></div>
+    {% if brand.descripcion %}<div class="ep-why-item"><span class="ep-why-icon">✓</span><div><p class="ep-why-title">Nuestra tienda</p><p class="ep-why-desc">{{ brand.descripcion }}</p></div></div>{% endif %}
+    {% if brand.delivery %}<div class="ep-why-item"><span class="ep-why-icon">🚴</span><div><p class="ep-why-title">Delivery ~{{ zona_principal.tiempo_estimado_min if zona_principal else 25 }} min</p><p class="ep-why-desc">Rápido y en tu puerta</p></div></div>{% endif %}
+    {% if brand.puntos %}<div class="ep-why-item"><span class="ep-why-icon">⭐</span><div><p class="ep-why-title">Gana puntos</p><p class="ep-why-desc">Canjéalos por productos</p></div></div>{% endif %}
     <div class="ep-why-item"><span class="ep-why-icon">📱</span><div><p class="ep-why-title">WhatsApp</p><p class="ep-why-desc">Consultas y seguimiento</p></div></div>
   </div>
 </section>
@@ -470,7 +463,7 @@
     "imagen_url": {{ (p.imagen_url|upload_url)|tojson }},
     "stock": {{ stock_en_origen(p, origen_actual) }},
     "stock_mostrar": {{ 'true' if p.stock_mostrar_en_web else 'false' }},
-    "disponible_directo": {{ 'true' if establecimiento.abierto and p.disponible_para_venta_en_origen(origen_actual) and p.tipo_entrega == 'inmediato' and not p.es_combo else 'false' }},
+    "disponible_directo": {{ 'true' if establecimiento.abierto and p.disponible_para_venta_en_origen(origen_actual) and p.tipo_entrega == 'inmediato' and not p.es_combo and p.extra_groups.filter_by(activo=True).count() == 0 else 'false' }},
     "es_hipo": {{ 'true' if p.es_hipoalergenico else 'false' }},
     "alergenos": {{ p.alergenos_iconos|list|tojson }},
     "categoria": {{ (p.categoria.nombre if p.categoria else '')|tojson }},
@@ -493,6 +486,31 @@ const EP_DATA = JSON.parse(document.getElementById('ep-data')?.textContent || '{
 const EP_CART_MAX_QTY = {{ cart_max_qty|default(99)|int }};
 let _modalQty = 1;
 let _closeTimer = null;
+
+function epFilterCategory(categoryId, updateUrl = true) {
+  const value = String(categoryId || '');
+  let visible = 0;
+  document.querySelectorAll('.ep-card[data-category-id]').forEach(card => {
+    const show = !value || card.dataset.categoryId === value;
+    card.hidden = !show;
+    if (show) visible += 1;
+  });
+  document.querySelectorAll('.ep-cat[data-category]').forEach(link => link.classList.toggle('ep-cat-on', link.dataset.category === value));
+  document.querySelectorAll('.ep-cat-section').forEach(section => {
+    section.hidden = !section.querySelector('.ep-card:not([hidden])');
+  });
+  document.querySelector('.ep-pill-count')?.replaceChildren(document.createTextNode(`${visible} productos`));
+  if (updateUrl) {
+    const url = new URL(location.href);
+    if (value) url.searchParams.set('categoria', value); else url.searchParams.delete('categoria');
+    history.pushState({ category: value }, '', url);
+  }
+}
+document.querySelectorAll('.ep-cat[data-category]').forEach(link => link.addEventListener('click', event => {
+  event.preventDefault(); epFilterCategory(link.dataset.category); document.getElementById('catalogo')?.scrollIntoView({behavior:'smooth', block:'start'});
+}));
+window.addEventListener('popstate', () => epFilterCategory(new URL(location.href).searchParams.get('categoria'), false));
+epFilterCategory({{ (categoria_activa|string if categoria_activa else '')|tojson }}, false);
 
 /* ── Cerrar modal al restaurar desde bfcache (botón Atrás del navegador) ── */
 window.addEventListener('pageshow', e => { if (e.persisted) closeModal(); });
@@ -566,6 +584,8 @@ function _epToast(msg, type) {
 function openModal(id) {
   const d = EP_DATA[String(id)];
   if (!d) return;
+  const rating = Number(d.rating || 0);
+  const precioFinal = Number(d.precio_final ?? d.precio ?? 0);
 
   /* Cancel any in-progress close animation so the modal re-opens cleanly */
   if (_closeTimer) {
@@ -596,11 +616,11 @@ function openModal(id) {
   // Rating
   const rw = document.getElementById('ep-modal-rating-wrap');
   const rv = document.getElementById('ep-modal-rating');
-  if (d.rating > 0) { rv.textContent = d.rating.toFixed(1); rw.classList.remove('hidden'); }
+  if (rating > 0) { rv.textContent = rating.toFixed(1); rw.classList.remove('hidden'); }
   else rw.classList.add('hidden');
 
   // Precio
-  document.getElementById('ep-modal-price').textContent = `€${d.precio_final.toFixed(2)}`;
+  document.getElementById('ep-modal-price').textContent = `€${precioFinal.toFixed(2)}`;
   const oldP = document.getElementById('ep-modal-price-old');
   oldP.classList.add('hidden');
 

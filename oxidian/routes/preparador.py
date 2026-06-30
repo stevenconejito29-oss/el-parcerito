@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from functools import wraps
 import logging
 from extensions import db, get_or_404
-from models import Order, OrderEvent, User
+from models import Order, OrderEvent, User, utcnow as _utcnow
 from services import (avanzar_estado_pedido, distribuir_repartidor,
                       redistribuir_pendientes_sin_asignar,
                       sincronizar_proveedores_pedido, lineas_preparacion_interna)
@@ -12,6 +12,19 @@ preparador_bp = Blueprint("preparador", __name__)
 logger = logging.getLogger(__name__)
 
 ROLES_PREPARADOR = {"admin", "super_admin", "cocina", "preparacion"}
+
+
+@preparador_bp.before_request
+def exigir_modulo_del_rol():
+    from store_config import get_store_features
+
+    if (
+        current_user.is_authenticated
+        and current_user.rol == "preparacion"
+        and not get_store_features()["pedidos_programados"]
+    ):
+        flash("Los pedidos por fecha están desactivados para esta tienda.", "info")
+        return redirect(url_for("public.index"))
 
 
 def _es_admin_operativo():
@@ -37,6 +50,16 @@ def _es_encargo(pedido):
         item.display_tipo_entrega in ("programado", "encargo")
         for item in pedido.items
     )
+
+
+def _fecha_encargo(pedido):
+    fechas = [item.display_fecha_entrega for item in pedido.items if item.display_fecha_entrega]
+    return min(fechas) if fechas else None
+
+
+def _encargo_disponible_para_preparar(pedido):
+    fecha = _fecha_encargo(pedido)
+    return not fecha or fecha <= _utcnow().date()
 
 
 def _puede_operar_pedido(pedido):
@@ -169,7 +192,11 @@ def pedidos():
         User.id != current_user.id
     ).all()
 
-    pendientes = [p for p in pendientes if _puede_operar_pedido(p)]
+    pendientes = [
+        p for p in pendientes
+        if _puede_operar_pedido(p)
+        and (not _es_encargo(p) or _encargo_disponible_para_preparar(p))
+    ]
     armando = [p for p in armando if _puede_operar_pedido(p)]
     almacen_listo = {
         pedido.id: _almacen_listo(pedido)
@@ -232,6 +259,9 @@ def empezar_armar(pedido_id):
     if not _puede_operar_pedido(pedido):
         flash("Este pedido corresponde a otro equipo de preparación.", "danger")
         return redirect(url_for("preparador.pedidos"))
+    if _es_encargo(pedido) and not _encargo_disponible_para_preparar(pedido):
+        flash(f"Este encargo está reservado para el {_fecha_encargo(pedido).strftime('%d/%m/%Y')}.", "warning")
+        return redirect(url_for("preparador.pedidos"))
     if not pedido.preparador_id and not _requiere_disponible_para_nuevo_trabajo():
         return redirect(url_for("preparador.pedidos"))
     if not _es_admin_operativo() and pedido.preparador_id and pedido.preparador_id != current_user.id:
@@ -276,7 +306,7 @@ def marcar_listo(pedido_id):
             canal="preparador",
             validar_operativa=True,
         )
-        distribuir_repartidor(pedido)
+        repartidor = distribuir_repartidor(pedido)
         from services import enviar_whatsapp_estado
         enviar_whatsapp_estado(pedido)
         db.session.commit()
@@ -287,9 +317,15 @@ def marcar_listo(pedido_id):
     try:
         from push_service import notify_order_state, notify_roles
         notify_order_state(pedido)
-        notify_roles(["repartidor"], "📦 Pedido listo para recoger",
-                     f"#{pedido.numero_pedido} está listo.", url="/repartidor/ruta")
+        if pedido.requiere_reparto:
+            notify_roles(["repartidor"], "📦 Pedido listo para recoger",
+                         f"#{pedido.numero_pedido} está listo.", url="/repartidor/ruta")
     except Exception:
         logger.exception("No se pudo enviar push al marcar listo pedido %s", pedido.id)
-    flash(f"Pedido {pedido.numero_pedido} listo. Repartidor asignado automáticamente.", "success")
+    if not pedido.requiere_reparto:
+        flash(f"Pedido {pedido.numero_pedido} listo para recogida en local.", "success")
+    elif repartidor:
+        flash(f"Pedido {pedido.numero_pedido} listo. Repartidor asignado automáticamente.", "success")
+    else:
+        flash(f"Pedido {pedido.numero_pedido} listo, pendiente de repartidor disponible.", "warning")
     return redirect(url_for("preparador.pedidos"))

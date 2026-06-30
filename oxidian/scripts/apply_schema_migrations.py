@@ -25,6 +25,8 @@ from models import (
     OrderEvent,
     OrderProviderStatus,
     Product,
+    ProductExtraGroup,
+    ProductExtraOption,
     Proveedor,
     ProveedorProducto,
     Stock,
@@ -150,6 +152,17 @@ def _migrate_products_combo_pricing():
     for column_name, ddl in column_sql.items():
         if column_name not in existing:
             db.session.execute(text(ddl))
+
+
+def _migrate_product_fulfillment_mode():
+    inspector = inspect(db.engine)
+    if not inspector.has_table("products"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("products")}
+    if "modalidad_entrega" not in existing:
+        db.session.execute(text(
+            "ALTER TABLE products ADD COLUMN modalidad_entrega VARCHAR(20) NOT NULL DEFAULT 'ambas'"
+        ))
 
 
 def _migrate_combo_groups_structure():
@@ -733,6 +746,20 @@ def _migrate_master_catalog_inventory():
         "cantidad >= 0",
         "cantidad < 0",
     )
+
+
+def _migrate_order_fulfillment_mode_and_staff_role():
+    inspector = inspect(db.engine)
+    if inspector.has_table("orders"):
+        existing = {col["name"] for col in inspector.get_columns("orders")}
+        if "tipo_entrega_cliente" not in existing:
+            db.session.execute(text(
+                "ALTER TABLE orders ADD COLUMN tipo_entrega_cliente VARCHAR(20) NOT NULL DEFAULT 'delivery'"
+            ))
+    if inspector.has_table("users"):
+        db.session.execute(text(
+            "UPDATE users SET rol = 'preparacion' WHERE rol = 'staff'"
+        ))
     _add_postgresql_check_if_safe(
         "proveedor_productos",
         "ck_proveedor_productos_stock_nonnegative",
@@ -751,6 +778,26 @@ def _migrate_master_catalog_inventory():
         "cantidad > 0",
         "cantidad <= 0",
     )
+
+
+def _migrate_service_commission_snapshots():
+    inspector = inspect(db.engine)
+    if not inspector.has_table("orders"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("orders")}
+    columns = {
+        "service_commission_pct": "NUMERIC(5, 2) NOT NULL DEFAULT 0",
+        "service_commission_amount": "NUMERIC(10, 2) NOT NULL DEFAULT 0",
+        "merchant_net_amount": "NUMERIC(10, 2) NOT NULL DEFAULT 0",
+    }
+    for name, definition in columns.items():
+        if name not in existing:
+            db.session.execute(text(f"ALTER TABLE orders ADD COLUMN {name} {definition}"))
+    db.session.execute(text(
+        "UPDATE orders SET merchant_net_amount = COALESCE(total, 0) "
+        "WHERE merchant_net_amount = 0 AND COALESCE(total, 0) <> 0 "
+        "AND service_commission_amount = 0"
+    ))
 
 
 MIGRATIONS = [
@@ -862,6 +909,26 @@ MIGRATIONS = [
             "y proteger cantidades y comisiones con CHECK constraints"
         ),
         "fn": _migrate_master_catalog_inventory,
+    },
+    {
+        "id": "20260626_01_fulfillment_mode_and_staff_cleanup",
+        "description": "Añadir tipo_entrega_cliente a pedidos y migrar rol staff legacy a preparacion",
+        "fn": _migrate_order_fulfillment_mode_and_staff_role,
+    },
+    {
+        "id": "20260629_01_service_commission_snapshots",
+        "description": "Congelar comisión white-label y neto del restaurante por pedido",
+        "fn": _migrate_service_commission_snapshots,
+    },
+    {
+        "id": "20260630_01_product_extras",
+        "description": "Crear grupos y opciones de extras configurables por producto",
+        "tables": [ProductExtraGroup.__table__, ProductExtraOption.__table__],
+    },
+    {
+        "id": "20260630_02_product_fulfillment_mode",
+        "description": "Añadir modalidad delivery, recogida o ambas por producto",
+        "fn": _migrate_product_fulfillment_mode,
     },
 ]
 

@@ -11,10 +11,7 @@ REDIRECT_POR_ROL = {
     "admin":        "admin.dashboard",
     "preparacion":  "preparador.pedidos",
     "repartidor":   "repartidor.ruta",
-    "proveedor":    "proveedor.pedidos",
-    # Aliases retro-compatibles para usuarios con valores antiguos en BD.
     "cocina":       "preparador.pedidos",
-    "staff":        "preparador.pedidos",
 }
 
 # Roles a los que SIEMPRE se les obliga a tener MFA activo. El primer GET a

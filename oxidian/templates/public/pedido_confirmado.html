@@ -159,7 +159,7 @@
     <p class="font-black mb-2" style="color:#C084FC">📱 Pago con Bizum</p>
     <p class="text-sm" style="color:var(--col-muted)">
       El repartidor confirmará el pago al entregar tu pedido y después te pedirá el código de entrega.
-      {% if brand.telefono %}Ten listo <strong style="color:var(--col-text)">{{ brand.telefono }}</strong> para el Bizum.{% endif %}
+      {% if brand.bizum_telefono %}Envía el Bizum a <strong style="color:var(--col-text)">{{ brand.bizum_telefono }}</strong>.{% endif %}
     </p>
   </div>
   {% endif %}

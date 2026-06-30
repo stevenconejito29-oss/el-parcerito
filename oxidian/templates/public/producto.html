@@ -78,6 +78,10 @@
   {% if producto.descripcion %}
   <p class="pd-desc">{{ producto.descripcion }}</p>
   {% endif %}
+  <div class="pd-info-box" style="border-color:color-mix(in srgb,var(--brand-primary) 30%,var(--col-border))">
+    <span class="pd-box-icon">{% if producto.modalidad_entrega == 'delivery' %}🚴{% elif producto.modalidad_entrega == 'recogida' %}🏪{% else %}↔{% endif %}</span>
+    <div><p class="pd-box-title">{% if producto.modalidad_entrega == 'delivery' %}Disponible solo con delivery{% elif producto.modalidad_entrega == 'recogida' %}Disponible solo para recoger{% else %}Disponible con delivery o recogida{% endif %}</p></div>
+  </div>
 
   {# ── Precio ── #}
   <div class="pd-price-row">
@@ -125,6 +129,21 @@
       {% endif %}
     </div>
   </div>
+
+  {% if extra_groups %}
+  <section class="pd-extras" aria-labelledby="pd-extras-title">
+    <h2 id="pd-extras-title">Personaliza tu pedido</h2>
+    <p>Los suplementos se calculan por cada unidad del producto.</p>
+    {% for group in extra_groups %}
+    <fieldset class="pd-extra-group" data-min="{{ group.min_selecciones }}" data-max="{{ group.max_selecciones }}">
+      <legend>{{ group.nombre }} <small>{% if group.min_selecciones %}Elige de {{ group.min_selecciones }} a {{ group.max_selecciones }}{% else %}Opcional · máximo {{ group.max_selecciones }}{% endif %}</small></legend>
+      {% if group.descripcion %}<p>{{ group.descripcion }}</p>{% endif %}
+      {% for option in group.opciones.filter_by(activo=True).all() %}
+      <label class="pd-extra-option"><span><strong>{{ option.nombre }}</strong>{% if option.precio_float %}<small>+€{{ '%.2f'|format(option.precio_float) }}</small>{% else %}<small>Sin coste</small>{% endif %}</span><input form="pd-add-form" type="number" inputmode="numeric" name="extra_qty_{{ option.id }}" value="0" min="0" max="{{ option.max_cantidad }}" aria-label="Cantidad de {{ option.nombre }}"></label>
+      {% endfor %}
+    </fieldset>{% endfor %}
+  </section>
+  {% endif %}
 
   {# ── Combo contenido ── #}
   {% if producto.es_combo %}
@@ -366,6 +385,10 @@
 
 {% block scripts %}
 <style>
+.pd-extras{margin:1rem 0;padding:1rem;border:1px solid color-mix(in srgb,var(--brand-primary) 36%,#ddd);border-radius:1rem;background:var(--col-surface);box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.pd-extras h2{font-size:1.05rem;font-weight:950;color:var(--col-text)}.pd-extras>p,.pd-extra-group>p{font-size:.76rem;color:var(--col-muted)}
+.pd-extra-group{margin-top:.8rem;padding:.7rem;border:1px solid var(--col-border);border-radius:.8rem}.pd-extra-group legend{padding:0 .35rem;font-weight:900;color:var(--col-text)}.pd-extra-group legend small{display:block;font-size:.65rem;color:var(--col-muted)}
+.pd-extra-option{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.65rem;margin:.35rem 0;border-radius:.7rem;background:var(--col-elevated);border:1px solid var(--col-border)}.pd-extra-option span{display:flex;flex-direction:column}.pd-extra-option small{color:var(--brand-primary);font-weight:800}.pd-extra-option input{width:56px;min-height:44px;text-align:center;border:1px solid var(--col-border-2);border-radius:.65rem;background:var(--col-surface);color:var(--col-text);font-weight:900}
 /* ═══════════════════════════════════════════════════
    PRODUCTO DETALLE — Oxidian · Mobile-first
 ═══════════════════════════════════════════════════ */

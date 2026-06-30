@@ -16,6 +16,8 @@ const BROWSER = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
 
 if (!PASSWORD && ![
   'VISUAL_SUPERADMIN_PASSWORD',
+  'VISUAL_ADMIN_PASSWORD',
+  'VISUAL_COCINA_PASSWORD',
   'VISUAL_PREPARACION_PASSWORD',
   'VISUAL_REPARTIDOR_PASSWORD',
   'VISUAL_PROVEEDOR_PASSWORD',
@@ -58,6 +60,24 @@ try {
     process.env.VISUAL_SUPERADMIN_TOTP_SECRET || '',
   );
   await captureAuthenticatedRole(
+    'admin',
+    process.env.VISUAL_ADMIN_EMAIL || ENV.ADMIN_EMAIL || 'admin@oxidian.com',
+    process.env.VISUAL_ADMIN_PASSWORD || PASSWORD,
+    (page) => captureRole(page, [
+      ['admin-real-dashboard', '/admin/dashboard'],
+      ['admin-real-cola', '/admin/cola'],
+      ['admin-real-pedidos', '/admin/pedidos'],
+    ]),
+    process.env.VISUAL_ADMIN_TOTP_SECRET || '',
+  );
+  await captureAuthenticatedRole(
+    'cocina',
+    process.env.VISUAL_COCINA_EMAIL || 'cocina@oxidian.com',
+    process.env.VISUAL_COCINA_PASSWORD || PASSWORD,
+    captureCocina,
+    process.env.VISUAL_COCINA_TOTP_SECRET || '',
+  );
+  await captureAuthenticatedRole(
     'preparacion',
     process.env.VISUAL_PREPARACION_EMAIL || 'preparacion@oxidian.com',
     process.env.VISUAL_PREPARACION_PASSWORD || PASSWORD,
@@ -70,17 +90,6 @@ try {
     (page) => captureRole(page, [
       ['repartidor-ruta', '/repartidor/ruta'],
       ['repartidor-comisiones', '/repartidor/mis-comisiones'],
-    ]),
-  );
-  await captureAuthenticatedRole(
-    'proveedor',
-    process.env.VISUAL_PROVEEDOR_EMAIL || 'qa-visual-provider@oxidian.local',
-    process.env.VISUAL_PROVEEDOR_PASSWORD || PASSWORD,
-    (page) => captureRole(page, [
-      ['proveedor-pedidos', '/proveedor/pedidos'],
-      ['proveedor-inventario', '/proveedor/inventario'],
-      ['proveedor-incidencias', '/proveedor/incidencias'],
-      ['proveedor-finanzas', '/proveedor/finanzas'],
     ]),
   );
 } finally {
@@ -195,14 +204,20 @@ async function capturePublic(page) {
     });
   }, false);
 
-  await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' }).catch((error) => {
+    if (!String(error?.message || error).includes('interrupted by another navigation')) {
+      throw error;
+    }
+  });
   await settle(page);
   const productId = await page.evaluate(() => {
     const entries = Object.entries(EP_DATA || {});
-    const first = entries.find(([, value]) => value && value.disponible !== false) || entries[0];
+    const first = entries.find(([, value]) => (
+      value && value.disponible !== false && value.disponible_directo === true
+    )) || entries.find(([, value]) => value && value.disponible !== false) || entries[0];
     if (!first) return null;
     openModal(first[0]);
-    return first[0];
+    return first[1]?.disponible_directo === true ? first[0] : null;
   });
   if (productId) {
     const addButton = page.locator('#ep-modal-form button[type="submit"]').first();
@@ -217,6 +232,7 @@ async function capturePublic(page) {
   await snap(page, 'carrito-con-producto', '/carrito', 'flujos');
   await snap(page, 'checkout-datos-pedido', '/checkout', 'flujos');
   await snap(page, 'checkout-puntos-whatsapp', '/checkout', 'flujos', async () => {
+    if (!page.url().includes('/checkout')) return;
     const phone = page.locator('#tel_input');
     await phone.fill('699 111 222');
     await phone.dispatchEvent('input');
@@ -268,8 +284,6 @@ async function captureSuperadmin(page) {
     ['superadmin-auditoria', '/superadmin/audit'],
     ['staff-panel', '/staff/'],
     ['staff-inventario', '/staff/inventario'],
-    ['proveedor-pedidos-admin', '/proveedor/pedidos'],
-    ['admin-proveedores', '/admin/proveedores'],
   ];
   await captureRole(page, views);
 
@@ -355,6 +369,12 @@ async function captureSuperadmin(page) {
   }, false);
 }
 
+async function captureCocina(page) {
+  await snap(page, 'cocina-pedidos', '/preparador/pedidos', 'vistas');
+  await page.setViewportSize({ width: 851, height: 393 });
+  await snap(page, 'cocina-pedidos-horizontal', '/preparador/pedidos', 'vistas');
+}
+
 async function captureRole(page, views) {
   for (const [name, route] of views) {
     await snap(page, name, route, 'vistas');
@@ -383,7 +403,9 @@ async function snap(page, name, route, folder, prepare = null, fullPage = true) 
     ok: false,
     status: null,
     finalUrl: null,
+    viewport: page.viewportSize(),
     horizontalOverflow: false,
+    unexpectedAuthRedirect: false,
     consoleErrors: errors,
     failedRequests,
   };
@@ -400,6 +422,10 @@ async function snap(page, name, route, folder, prepare = null, fullPage = true) 
       await settle(page);
     }
     entry.finalUrl = page.url();
+    entry.unexpectedAuthRedirect = isAuthRoute(entry.finalUrl) && !isAuthRoute(route);
+    if (entry.unexpectedAuthRedirect) {
+      throw new Error(`Redirección inesperada de ${route} a ${new URL(entry.finalUrl).pathname}`);
+    }
     const dimensions = await page.evaluate(() => ({
       clientWidth: document.documentElement.clientWidth,
       scrollWidth: document.documentElement.scrollWidth,
@@ -428,6 +454,13 @@ async function snap(page, name, route, folder, prepare = null, fullPage = true) 
     report.captures.push(entry);
     console.log(`${entry.ok ? '✓' : '✗'} ${name}${entry.horizontalOverflow ? ' [overflow]' : ''}`);
   }
+}
+
+function isAuthRoute(value) {
+  const pathname = value.startsWith('http') ? new URL(value).pathname : value;
+  return pathname === '/auth/login'
+    || pathname.startsWith('/auth/login/')
+    || pathname.includes('/mfa');
 }
 
 async function reveal(page, selector) {
@@ -476,7 +509,7 @@ function buildReadme(data) {
     `Origen: ${data.baseUrl}`,
     `Viewport móvil: ${data.viewport.width} x ${data.viewport.height}`,
     '',
-    'Cada captura fue generada navegando la aplicación real. `audit.json` contiene estado HTTP, URL final, errores de navegador y control de desbordamiento horizontal.',
+    'Cada captura fue generada navegando la aplicación real. `audit.json` contiene estado HTTP, URL final, viewport, errores de navegador, control de desbordamiento horizontal y redirecciones inesperadas a login/MFA.',
     '',
   ];
   for (const [folder, items] of Object.entries(grouped)) {

@@ -31,15 +31,15 @@ class AdminHardeningTest(unittest.TestCase):
                         "comision_pct": value,
                     }))
 
-    def test_simple_product_cannot_set_dispatch_provider(self):
+    def test_legacy_dispatch_provider_is_ignored(self):
         fields, error = _parsear_campos_producto(MultiDict({
             "nombre": "Producto simple",
             "precio": "5.00",
             "proveedor_despachador_id": "7",
         }))
 
-        self.assertIsNone(fields)
-        self.assertIn("solo se configura en combos", error)
+        self.assertIsNone(error)
+        self.assertIsNone(fields["proveedor_despachador_id"])
 
     def test_provider_inventory_numbers_are_strict_and_nonnegative(self):
         self.assertEqual(_entero_no_negativo("0", "Stock"), 0)
@@ -73,8 +73,8 @@ class AdminHardeningTest(unittest.TestCase):
         self.assertFalse(valid)
         self.assertIn("solo tiene 1 opción", error)
 
-    def test_product_feature_covers_providers_and_combo_builder(self):
-        self.assertEqual(_FEATURE_URL_MAP["/admin/proveedores"], "productos")
+    def test_product_feature_covers_combo_builder_but_not_legacy_providers(self):
+        self.assertNotIn("/admin/proveedores", _FEATURE_URL_MAP)
         self.assertEqual(_FEATURE_URL_MAP["/admin/combos"], "productos")
 
     def test_admin_and_provider_post_forms_include_csrf(self):

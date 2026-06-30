@@ -314,7 +314,7 @@ def marcar_listo(pedido_id):
         return redirect(url_for("staff.pedidos"))
     try:
         avanzar_estado_pedido(pedido, actor_id=current_user.id, canal="staff")
-        distribuir_repartidor(pedido)
+        repartidor = distribuir_repartidor(pedido)
         from services import enviar_whatsapp_estado
         enviar_whatsapp_estado(pedido)
         db.session.commit()
@@ -325,11 +325,17 @@ def marcar_listo(pedido_id):
     try:
         from push_service import notify_order_state, notify_roles
         notify_order_state(pedido)
-        notify_roles(["repartidor"], "📦 Pedido listo para recoger",
-                     f"#{pedido.numero_pedido} empacado y listo.", url="/repartidor/ruta")
+        if pedido.requiere_reparto:
+            notify_roles(["repartidor"], "📦 Pedido listo para recoger",
+                         f"#{pedido.numero_pedido} empacado y listo.", url="/repartidor/ruta")
     except Exception:
         logger.exception("No se pudo enviar push al marcar listo pedido %s", pedido.id)
-    flash(f"Pedido {pedido.numero_pedido} listo para despacho.", "success")
+    if not pedido.requiere_reparto:
+        flash(f"Pedido {pedido.numero_pedido} listo para recogida.", "success")
+    elif repartidor:
+        flash(f"Pedido {pedido.numero_pedido} listo para despacho.", "success")
+    else:
+        flash(f"Pedido {pedido.numero_pedido} listo, pendiente de repartidor disponible.", "warning")
     return redirect(url_for("staff.pedidos"))
 
 

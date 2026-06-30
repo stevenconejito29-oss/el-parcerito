@@ -15,7 +15,7 @@
   <meta name="format-detection" content="telephone=no">
 
   {# SEO básico #}
-  <meta name="description" content="{{ brand.nombre }}{% if brand.slogan %} — {{ brand.slogan }}{% elif brand.descripcion %} — {{ brand.descripcion }}{% else %} — Pide tu pedido online con entrega rápida.{% endif %}">
+  <meta name="description" content="{{ brand.nombre }}{% if brand.slogan %} — {{ brand.slogan }}{% elif brand.descripcion %} — {{ brand.descripcion }}{% elif brand.delivery %} — Haz tu pedido online con entrega o recogida.{% else %} — Haz tu pedido online para recoger.{% endif %}">
   <meta name="robots" content="index, follow">
 
   {# Icons — usa APP_ICON_URL si está configurado, si no los estáticos #}
@@ -40,16 +40,18 @@
       --brand-primary:   {{ brand.color_primario }};
       --brand-secondary: {{ brand.color_secundario }};
       --brand-accent:    {{ brand.color_acento }};
+      --brand-on-primary: {{ brand.on_primario }};
       --col-gold: {{ brand.color_primario }};
     }
     /* Usar colores de marca en botones principales */
-    .ox-btn-primary { background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 75%, #000)); }
-    .ox-btn-cart    { background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 80%, #000)); }
+    .ox-btn-primary { background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 75%, #000)); color:var(--brand-on-primary); }
+    .ox-btn-cart    { background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 80%, #000)); color:var(--brand-on-primary); }
   </style>
   {% block styles %}{% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
 </head>
-<body class="ox-body ox-body-public ox-has-bottom-nav min-h-screen">
+<body class="ox-body ox-body-public ox-has-bottom-nav min-h-screen"
+      style="--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-accent:{{ brand.color_acento }};--col-gold:{{ brand.color_primario }};">
 
 {# ── HEADER PÚBLICO ── #}
 <header class="ox-header-public">
@@ -146,7 +148,7 @@
         <ul class="ep-footer-links">
           <li><a href="{{ url_for('public.index') }}">🍽️ Menú completo</a></li>
           <li><a href="{{ url_for('public.ver_carrito') }}">🛒 Mi carrito</a></li>
-          <li><a href="{{ url_for('public.club') }}">⭐ Programa de puntos</a></li>
+          {% if brand.puntos %}<li><a href="{{ url_for('public.club') }}">⭐ Programa de puntos</a></li>{% endif %}
         </ul>
       </div>
 
@@ -158,7 +160,7 @@
           <span>💬</span> Escríbenos por WhatsApp
         </a>
         {% endif %}
-        <p class="ep-footer-note">Seguimiento de pedidos, consulta de puntos y atención en tiempo real.</p>
+        <p class="ep-footer-note">Seguimiento de pedidos{% if brand.puntos %}, consulta de puntos{% endif %} y atención en tiempo real.</p>
         <p class="ep-footer-legal">Información sobre alérgenos disponible bajo solicitud.<br>RGPD · LSSI-CE · RDL 1/2007</p>
       </div>
 
@@ -272,16 +274,16 @@
           <span><strong>Estado de mi pedido</strong><small>Consulta con tu número de pedido</small></span>
           <span class="ox-wa-arrow">›</span>
         </a>
-        <a href="{{ url_for('public.whatsapp', text='Hola, quiero consultar mis puntos y recompensas.') }}" target="_blank" rel="noopener">
+        {% if brand.puntos %}<a href="{{ url_for('public.whatsapp', text='Hola, quiero consultar mis puntos y recompensas.') }}" target="_blank" rel="noopener">
           <span class="ox-wa-action-icon">★</span>
           <span><strong>Mis puntos</strong><small>Saldo y productos para canje</small></span>
           <span class="ox-wa-arrow">›</span>
-        </a>
-        <a href="{{ url_for('public.whatsapp', text='Hola, quiero saber zonas de cobertura, precio de envío y horarios.') }}" target="_blank" rel="noopener">
+        </a>{% endif %}
+        {% if brand.delivery %}<a href="{{ url_for('public.whatsapp', text='Hola, quiero saber zonas de cobertura, precio de envío y horarios.') }}" target="_blank" rel="noopener">
           <span class="ox-wa-action-icon">🛵</span>
           <span><strong>Cobertura y envío</strong><small>Zona, distancia y disponibilidad</small></span>
           <span class="ox-wa-arrow">›</span>
-        </a>
+        </a>{% endif %}
         <a href="{{ url_for('public.whatsapp', text='Hola, necesito ayuda.') }}" target="_blank" rel="noopener">
           <span class="ox-wa-action-icon">💬</span>
           <span><strong>Otra consulta</strong><small>Habla directamente con el equipo</small></span>
@@ -294,7 +296,7 @@
       <div class="ox-info-links">
         <a href="{{ url_for('public.index') }}" data-info-close>🍽️ Ver menú</a>
         <a href="{{ url_for('public.ver_carrito') }}" data-info-close>🛒 Mi carrito</a>
-        <a href="{{ url_for('public.club') }}" data-info-close>⭐ Mis puntos</a>
+        {% if brand.puntos %}<a href="{{ url_for('public.club') }}" data-info-close>⭐ Mis puntos</a>{% endif %}
       </div>
     </div>
   </section>
@@ -409,6 +411,9 @@ function oxSetInstallState(label, disabled = false) {
 }
 oxShowInstallButtons();
 if (/iphone|ipad|ipod/i.test(navigator.userAgent) && oxCanSuggestInstall()) {
+  const installCopy = document.querySelector('.ox-pwa-text');
+  if (installCopy) installCopy.textContent = 'En Safari, toca Compartir y luego “Añadir a pantalla de inicio”.';
+  oxSetInstallState('Ver cómo', false);
   window.addEventListener('load', () => {
     setTimeout(() => oxShowInstallSheet(true), 2200);
   }, { once: true });
@@ -434,9 +439,6 @@ oxInstallButtons().forEach(btn => {
     }
     if (!oxDeferredInstallPrompt) {
       oxShowInstallSheet();
-      if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
-        alert('En iPhone: toca Compartir y luego "Añadir a pantalla de inicio".');
-      }
       return;
     }
     oxDeferredInstallPrompt.prompt();

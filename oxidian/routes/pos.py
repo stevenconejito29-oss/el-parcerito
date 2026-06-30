@@ -1,6 +1,6 @@
 """
 POS — Punto de Venta Presencial
-Permite al admin/staff registrar ventas físicas sin pasar por el checkout online.
+Permite al admin registrar ventas físicas sin pasar por el checkout online.
 Flujo: seleccionar productos → descuento manual → cobrar → registra Order + Caja.
 """
 import json
@@ -23,7 +23,7 @@ from pricing_service import calcular_precio
 
 pos_bp = Blueprint("pos", __name__)
 
-ROLES_POS = {"admin", "super_admin", "staff"}
+ROLES_POS = {"admin", "super_admin"}
 
 
 def _pos_max_qty():
@@ -321,6 +321,11 @@ def cobrar():
         p = db.session.get(Product, pid)
         if not p or not p.activo:
             return jsonify({"ok": False, "msg": f"Producto {pid} no disponible"}), 400
+        if (p.modalidad_entrega or "ambas") == "delivery":
+            return jsonify({
+                "ok": False,
+                "msg": f"'{p.nombre}' es exclusivo de delivery y no puede cerrarse como venta presencial.",
+            }), 400
         if _producto_requiere_flujo_operativo(p):
             return jsonify({
                 "ok": False,
@@ -378,6 +383,9 @@ def cobrar():
     total = precio.total
     descuento_total = precio.descuento_total
 
+    from store_config import get_service_commission
+    service_fee = get_service_commission(total)
+
     # Crear pedido
     pedido = Order(
         numero_pedido=Order.generar_numero("presencial"),
@@ -387,6 +395,9 @@ def cobrar():
         subtotal=subtotal,
         descuento=descuento_total,
         total=total,
+        service_commission_pct=service_fee["pct"],
+        service_commission_amount=service_fee["amount"],
+        merchant_net_amount=service_fee["merchant_net"],
         cupon_id=cupon.id if cupon else None,
         metodo_pago=metodo_pago,
         direccion_entrega="Tienda física",
@@ -394,6 +405,7 @@ def cobrar():
         es_entrega_epicentro=True,
         cajero_id=current_user.id,
         entregado_en=utcnow(),
+        tipo_entrega_cliente="recogida",
     )
     db.session.add(pedido)
     db.session.flush()

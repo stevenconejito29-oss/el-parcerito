@@ -16,7 +16,7 @@ import csv, io
 
 from extensions import db, get_or_404
 from models import (ROLES_AUTENTICABLES, User, Product, Categoria, Stock, Order, OrderItem, Review,
-                    Coupon, ComboGroup, ComboItem, Caja, PointsLog, StaffPayment,
+                    Coupon, ComboGroup, ComboItem, ProductExtraGroup, ProductExtraOption, Caja, PointsLog, StaffPayment,
                     AffiliateCode, AffiliateUse, MenuConfig,
                     PriceHistory, SiteConfig, AuditLog,
                     AdminFeature, NotificationOutbox, normalizar_metodo_pago, utcnow)
@@ -38,7 +38,8 @@ from services import (estado_cola, registrar_egreso, registrar_ingreso,
                       distribuir_pedido, distribuir_repartidor, generar_comision_entrega,
                       solicitar_resena_pedido, avanzar_estado_pedido,
                       cancelar_pedido_operativo, registrar_pago_pedido,
-                      registrar_ingreso_pedido, procesar_notificaciones_pendientes)
+                      registrar_ingreso_pedido, procesar_notificaciones_pendientes,
+                      registrar_evento_pedido, award_points_on_delivery)
 from services import reasignar_responsable_pedido
 from routes.uploads import _save_image, _borrar_imagen
 from phone_utils import normalizar_telefono_cliente
@@ -46,7 +47,7 @@ from phone_utils import normalizar_telefono_cliente
 admin_bp = Blueprint("admin", __name__)
 
 _ROLES_ADMIN = {"admin", "super_admin"}
-_ROLES_USUARIO_BASE = ["cocina", "preparacion", "repartidor", "proveedor"]
+_ROLES_USUARIO_BASE = ["cocina", "preparacion", "repartidor"]
 _ROLES_USUARIO_SUPERADMIN = _ROLES_USUARIO_BASE + ["admin", "super_admin"]
 _ROLES_USUARIO_LEGACY = {"staff"}
 
@@ -91,11 +92,10 @@ _FEATURE_URL_MAP = {
     "/admin/caja":         "caja",
     "/admin/stock":        "stock",
     "/admin/pagos-staff":  "staff_pagos",
-    "/admin/liquidacion-proveedores": "staff_pagos",
     "/admin/analytics":    "reportes",
     "/admin/notificaciones": "whatsapp",
+    "/admin/usuarios":     "usuarios",
     "/admin/productos":    "productos",
-    "/admin/proveedores":  "productos",
     "/admin/combos":       "productos",
     "/admin/categorias":   "productos",
     "/admin/cupones":      "cupones",
@@ -115,6 +115,9 @@ def verificar_feature_acceso():
     """
     if not current_user.is_authenticated:
         return
+    if request.path.startswith("/admin/proveedores") or request.path.startswith("/admin/liquidacion-proveedores"):
+        flash("El flujo de proveedores externos está desactivado en esta versión.", "info")
+        return redirect(url_for("admin.dashboard"))
     if current_user.rol == "super_admin":
         return
     if current_user.rol != "admin":
@@ -532,14 +535,41 @@ def avanzar_pedido_admin(pedido_id):
         return redirect(url_for("admin.pedidos"))
     try:
         pedir_resena = False
-        avanzar_estado_pedido(
-            pedido,
-            actor_id=current_user.id,
-            canal="admin",
-            validar_operativa=True,
-        )
+        if pedido.estado == "listo" and not pedido.requiere_reparto:
+            if pedido.metodo_pago == "bizum" and not pedido.pago_confirmado:
+                raise ValueError("Confirma primero el Bizum antes de entregar el pedido para recoger.")
+            estado_anterior = pedido.estado
+            pedido.estado = "entregado"
+            pedido.entregado_en = utcnow()
+            registrar_evento_pedido(
+                pedido,
+                "recogida_entregada",
+                actor_id=current_user.id,
+                estado_anterior=estado_anterior,
+                estado_nuevo="entregado",
+                canal="admin_recogida",
+                detalle="Pedido entregado en el local",
+            )
+            if not pedido.pago_confirmado:
+                registrar_pago_pedido(
+                    pedido,
+                    actor_id=current_user.id,
+                    canal="admin_recogida",
+                    detalle="Cobro confirmado al recoger",
+                )
+            registrar_ingreso_pedido(pedido, registrado_por=current_user.id)
+            award_points_on_delivery(pedido)
+            pedir_resena = True
+        else:
+            avanzar_estado_pedido(
+                pedido,
+                actor_id=current_user.id,
+                canal="admin",
+                validar_operativa=True,
+            )
         if pedido.estado == "listo":
-            distribuir_repartidor(pedido)
+            if pedido.requiere_reparto:
+                distribuir_repartidor(pedido)
         AuditLog.registrar(current_user.id, "avanzar_pedido", "order",
                            pedido.id, detalle=pedido.estado, ip=request.remote_addr)
         enviar_whatsapp_estado(pedido)
@@ -1680,8 +1710,6 @@ def productos():
         query = query.filter(Product.es_combo == True)
     prods = query.order_by(Product.nombre).all()
     categorias = Categoria.query.filter_by(activo=True).order_by(Categoria.nombre).all()
-    from models import Proveedor as _ProveedorList
-    proveedores = _ProveedorList.query.filter_by(activo=True).order_by(_ProveedorList.nombre).all()
     resumen = {
         "total": Product.query.count(),
         "activos": Product.query.filter_by(activo=True).count(),
@@ -1689,7 +1717,7 @@ def productos():
         "canjeables": Product.query.filter_by(canjeable_con_puntos=True, activo=True).count(),
     }
     return render_template("admin/productos.html", productos=prods, categorias=categorias,
-                           proveedores=proveedores,
+                           proveedores=[],
                            resumen=resumen, q=q, categoria_id=categoria_id,
                            estado=estado, tipo=tipo)
 
@@ -1772,6 +1800,9 @@ def _parsear_campos_producto(form):
         return None, "Indica la fecha de llegada para productos programados."
     if tipo_entrega == "programado" and fecha_llegada < date.today():
         return None, "La fecha de llegada no puede estar en el pasado."
+    modalidad_entrega = (form.get("modalidad_entrega") or "ambas").strip().lower()
+    if modalidad_entrega not in {"ambas", "delivery", "recogida"}:
+        return None, "La modalidad debe ser delivery, recogida o ambas."
 
     hora_inicio = parse_time(form.get("hora_inicio_visibilidad"))
     hora_fin = parse_time(form.get("hora_fin_visibilidad"))
@@ -1786,16 +1817,7 @@ def _parsear_campos_producto(form):
     alergenos = [] if es_hipoalergenico else form.getlist("alergenos")
 
     es_combo = bool(form.get("es_combo"))
-    proveedor_despachador_id = form.get("proveedor_despachador_id", type=int) or None
-    if proveedor_despachador_id and not es_combo:
-        return None, (
-            "El proveedor despachador solo se configura en combos. "
-            "Asigna productos simples a bares desde Proveedores."
-        )
-    if proveedor_despachador_id:
-        from models import Proveedor as _Proveedor
-        if not _Proveedor.query.filter_by(id=proveedor_despachador_id, activo=True).first():
-            return None, "El proveedor despachador seleccionado no existe o está inactivo."
+    proveedor_despachador_id = None
 
     return {
         "nombre":                    nombre,
@@ -1812,6 +1834,7 @@ def _parsear_campos_producto(form):
         "imagen_url":                _normalizar_imagen_url(form.get("imagen_url")),
         # tipo entrega
         "tipo_entrega":              tipo_entrega,
+        "modalidad_entrega":         modalidad_entrega,
         "fecha_llegada":             fecha_llegada if tipo_entrega == "programado" else None,
         "dias_anticipacion_encargo": 1,
         # visibilidad horaria
@@ -1932,37 +1955,18 @@ def _combo_limits_payload():
 
 
 def _disponibilidad_productos_por_origen():
-    """Mapa producto-origen para el constructor de combos.
+    """Mapa de productos disponibles para combos del flujo vigente.
 
-    Devuelve `{"propio": [ids], "<proveedor_id>": [ids], ...}`:
-      - "propio"    → SKUs activos cuyo `proveedor_despachador_id` está vacío
-                      (los gestionamos nosotros desde Stock propio).
-      - "<bar_id>"  → SKUs activos registrados en `proveedor_productos[bar]`
-                      (el bar puede usarlos para armar sus combos).
-
-    El frontend usa este mapa para mostrar SOLO los productos válidos según
-    el despachador elegido y evitar mezclar stock de origenes distintos.
+    El sistema actual opera como tienda única: propia o servicio para un único
+    negocio. Por eso el constructor de combos solo puede usar stock propio.
     """
-    from models import ProveedorProducto as _ProvProd
-
     propios = [
         pid for pid, in db.session.query(Product.id)
         .filter(Product.activo.is_(True), Product.es_combo.is_(False))
         .filter(Product.proveedor_despachador_id.is_(None))
         .all()
     ]
-    por_bar: dict[str, list[int]] = {}
-    filas = (
-        db.session.query(_ProvProd.proveedor_id, _ProvProd.producto_id)
-        .join(Product, Product.id == _ProvProd.producto_id)
-        .filter(_ProvProd.activo.is_(True))
-        .filter(Product.activo.is_(True), Product.es_combo.is_(False))
-        .all()
-    )
-    for prov_id, prod_id in filas:
-        por_bar.setdefault(str(prov_id), []).append(prod_id)
-
-    return {"propio": propios, **por_bar}
+    return {"propio": propios}
 
 
 def _money(value):
@@ -2222,11 +2226,9 @@ def nuevo_combo():
     categorias = Categoria.query.filter_by(activo=True).order_by(Categoria.nombre).all()
     productos_simples = (
         Product.query.filter_by(activo=True, es_combo=False)
+        .filter(Product.proveedor_despachador_id.is_(None))
         .order_by(Product.nombre).all()
     )
-    from models import Proveedor as _ProveedorList
-    proveedores = _ProveedorList.query.filter_by(activo=True).order_by(_ProveedorList.nombre).all()
-
     disponibilidad_por_origen = _disponibilidad_productos_por_origen()
     combo_limits = _combo_limits_payload()
 
@@ -2235,7 +2237,7 @@ def nuevo_combo():
             "admin/nuevo_combo.html",
             categorias=categorias,
             productos_simples=productos_simples,
-            proveedores=proveedores,
+            proveedores=[],
             combo_limits=combo_limits,
             disponibilidad_por_origen=disponibilidad_por_origen,
         )
@@ -2260,7 +2262,7 @@ def nuevo_combo():
             "admin/nuevo_combo.html",
             categorias=categorias,
             productos_simples=productos_simples,
-            proveedores=proveedores,
+            proveedores=[],
             combo_limits=combo_limits,
             disponibilidad_por_origen=disponibilidad_por_origen,
         )
@@ -2307,44 +2309,23 @@ def nuevo_combo():
             "admin/nuevo_combo.html",
             categorias=categorias,
             productos_simples=productos_simples,
-            proveedores=proveedores,
+            proveedores=[],
             combo_limits=combo_limits,
             disponibilidad_por_origen=disponibilidad_por_origen,
         )
 
-    # ── Validar coherencia de proveedor despachador ──
-    # Si el combo se despacha por un proveedor, TODOS sus componentes (no
-    # seleccionables o seleccionables) deben existir en proveedor_productos
-    # de ese proveedor con activo=True. No se permite mezclar SKUs propios
-    # con SKUs externos en el mismo combo.
-    if campos.get("proveedor_despachador_id"):
-        faltantes = _componentes_faltantes_proveedor(
-            campos["proveedor_despachador_id"],
-            prod_ids,
+    externos = _componentes_externos_en_combo_propio(prod_ids)
+    if externos:
+        db.session.rollback()
+        flash(_mensaje_componentes_externos_combo_propio(externos), "danger")
+        return render_template(
+            "admin/nuevo_combo.html",
+            categorias=categorias,
+            productos_simples=productos_simples,
+            proveedores=[],
+            combo_limits=combo_limits,
+            disponibilidad_por_origen=disponibilidad_por_origen,
         )
-        if faltantes:
-            db.session.rollback()
-            flash(_mensaje_componentes_faltantes_proveedor(faltantes), "danger")
-            return render_template(
-                "admin/nuevo_combo.html",
-                categorias=categorias,
-                productos_simples=productos_simples,
-                proveedores=proveedores,
-                combo_limits=combo_limits,
-            )
-    else:
-        externos = _componentes_externos_en_combo_propio(prod_ids)
-        if externos:
-            db.session.rollback()
-            flash(_mensaje_componentes_externos_combo_propio(externos), "danger")
-            return render_template(
-                "admin/nuevo_combo.html",
-                categorias=categorias,
-                productos_simples=productos_simples,
-                proveedores=proveedores,
-                combo_limits=combo_limits,
-                disponibilidad_por_origen=disponibilidad_por_origen,
-            )
 
     # ── Procesar componentes ──
     componentes_para_agregar = []
@@ -2390,7 +2371,7 @@ def nuevo_combo():
                 "admin/nuevo_combo.html",
                 categorias=categorias,
                 productos_simples=productos_simples,
-                proveedores=proveedores,
+                proveedores=[],
                 combo_limits=combo_limits,
             )
         es_default = (defaults[i] if i < len(defaults) else "").strip().lower() in ("1", "true", "on", "si", "sí")
@@ -2405,7 +2386,7 @@ def nuevo_combo():
                 "admin/nuevo_combo.html",
                 categorias=categorias,
                 productos_simples=productos_simples,
-                proveedores=proveedores,
+                proveedores=[],
                 combo_limits=combo_limits,
             )
 
@@ -2419,7 +2400,7 @@ def nuevo_combo():
                     "admin/nuevo_combo.html",
                     categorias=categorias,
                     productos_simples=productos_simples,
-                    proveedores=proveedores,
+                    proveedores=[],
                     combo_limits=combo_limits,
                 )
 
@@ -2431,7 +2412,7 @@ def nuevo_combo():
                     "admin/nuevo_combo.html",
                     categorias=categorias,
                     productos_simples=productos_simples,
-                    proveedores=proveedores,
+                    proveedores=[],
                     combo_limits=combo_limits,
                 )
 
@@ -2444,7 +2425,7 @@ def nuevo_combo():
                 "admin/nuevo_combo.html",
                 categorias=categorias,
                 productos_simples=productos_simples,
-                proveedores=proveedores,
+                proveedores=[],
                 combo_limits=combo_limits,
             )
 
@@ -2464,7 +2445,7 @@ def nuevo_combo():
                     "admin/nuevo_combo.html",
                     categorias=categorias,
                     productos_simples=productos_simples,
-                    proveedores=proveedores,
+                    proveedores=[],
                     combo_limits=combo_limits,
                 )
             componentes_seleccionables[grupo_key].add(producto.id)
@@ -2479,7 +2460,7 @@ def nuevo_combo():
                     "admin/nuevo_combo.html",
                     categorias=categorias,
                     productos_simples=productos_simples,
-                    proveedores=proveedores,
+                    proveedores=[],
                     combo_limits=combo_limits,
                 )
             componentes_fijos.add(producto.id)
@@ -2512,7 +2493,7 @@ def nuevo_combo():
             "admin/nuevo_combo.html",
             categorias=categorias,
             productos_simples=productos_simples,
-            proveedores=proveedores,
+            proveedores=[],
             combo_limits=combo_limits,
             disponibilidad_por_origen=disponibilidad_por_origen,
         )
@@ -2528,7 +2509,7 @@ def nuevo_combo():
             "admin/nuevo_combo.html",
             categorias=categorias,
             productos_simples=productos_simples,
-            proveedores=proveedores,
+            proveedores=[],
             combo_limits=combo_limits,
             disponibilidad_por_origen=disponibilidad_por_origen,
         )
@@ -2541,7 +2522,7 @@ def nuevo_combo():
             "admin/nuevo_combo.html",
             categorias=categorias,
             productos_simples=productos_simples,
-            proveedores=proveedores,
+            proveedores=[],
             combo_limits=combo_limits,
             disponibilidad_por_origen=disponibilidad_por_origen,
         )
@@ -2557,7 +2538,7 @@ def nuevo_combo():
             "admin/nuevo_combo.html",
             categorias=categorias,
             productos_simples=productos_simples,
-            proveedores=proveedores,
+            proveedores=[],
             combo_limits=combo_limits,
             disponibilidad_por_origen=disponibilidad_por_origen,
         )
@@ -2575,7 +2556,7 @@ def nuevo_combo():
             "admin/nuevo_combo.html",
             categorias=categorias,
             productos_simples=productos_simples,
-            proveedores=proveedores,
+            proveedores=[],
             combo_limits=combo_limits,
             disponibilidad_por_origen=disponibilidad_por_origen,
         )
@@ -2649,14 +2630,12 @@ def editar_producto(producto_id):
             alergenos_activos = json.loads(p.alergenos_json or "[]")
         except (json.JSONDecodeError, TypeError):
             alergenos_activos = []
-        from models import Proveedor as _ProveedorList
-        proveedores = _ProveedorList.query.filter_by(activo=True).order_by(_ProveedorList.nombre).all()
         return render_template("admin/producto_editar.html",
                                producto=p,
                                categorias=categorias,
                                dias_activos=dias_activos,
                                alergenos_activos=alergenos_activos,
-                               proveedores=proveedores)
+                               proveedores=[])
     form_con_id = request.form.copy()
     form_con_id["_producto_id"] = str(producto_id)
     campos, error = _parsear_campos_producto(form_con_id)
@@ -2674,6 +2653,7 @@ def editar_producto(producto_id):
     if p.es_combo:
         campos["es_combo"] = True
         campos["tipo_producto"] = "combo"
+        campos["proveedor_despachador_id"] = None
         componentes_ids = [
             item.producto_id for item in ComboItem.query.filter_by(combo_id=p.id).all()
         ]
@@ -2682,19 +2662,10 @@ def editar_producto(producto_id):
         ).first():
             flash("Los combos con grupos seleccionables no pueden marcarse como canje directo con puntos.", "danger")
             return redirect(url_for("admin.productos"))
-        if campos.get("proveedor_despachador_id"):
-            faltantes = _componentes_faltantes_proveedor(
-                campos["proveedor_despachador_id"],
-                componentes_ids,
-            )
-            if faltantes:
-                flash(_mensaje_componentes_faltantes_proveedor(faltantes), "danger")
-                return redirect(url_for("admin.productos"))
-        else:
-            externos = _componentes_externos_en_combo_propio(componentes_ids)
-            if externos:
-                flash(_mensaje_componentes_externos_combo_propio(externos), "danger")
-                return redirect(url_for("admin.productos"))
+        externos = _componentes_externos_en_combo_propio(componentes_ids)
+        if externos:
+            flash(_mensaje_componentes_externos_combo_propio(externos), "danger")
+            return redirect(url_for("admin.productos"))
     else:
         campos["proveedor_despachador_id"] = None
     precio_anterior = float(p.precio)
@@ -2730,6 +2701,52 @@ def editar_producto(producto_id):
     return redirect(url_for("admin.productos"))
 
 
+@admin_bp.route("/productos/<int:producto_id>/extras", methods=["GET", "POST"])
+@admin_required
+def gestionar_extras(producto_id):
+    producto = get_or_404(Product, producto_id)
+    if request.method == "POST":
+        action = request.form.get("action")
+        try:
+            if action == "add_group":
+                nombre = (request.form.get("nombre") or "").strip()[:80]
+                minimo = max(0, int(request.form.get("min_selecciones", 0) or 0))
+                maximo = min(20, max(1, int(request.form.get("max_selecciones", 1) or 1)))
+                if not nombre or minimo > maximo:
+                    raise ValueError("Revisa el nombre y el rango de selecciones.")
+                db.session.add(ProductExtraGroup(producto_id=producto.id, nombre=nombre,
+                    descripcion=(request.form.get("descripcion") or "").strip()[:240] or None,
+                    min_selecciones=minimo, max_selecciones=maximo,
+                    orden=producto.extra_groups.count() * 10))
+            elif action == "add_option":
+                group = ProductExtraGroup.query.filter_by(id=request.form.get("grupo_id", type=int), producto_id=producto.id).first()
+                nombre = (request.form.get("nombre") or "").strip()[:100]
+                precio = _money(request.form.get("precio") or 0)
+                max_qty = min(20, max(1, int(request.form.get("max_cantidad", 1) or 1)))
+                if not group or not nombre or precio < 0:
+                    raise ValueError("Opción de extra inválida.")
+                db.session.add(ProductExtraOption(grupo_id=group.id, nombre=nombre, precio=precio,
+                    max_cantidad=max_qty, orden=group.opciones.count() * 10))
+            elif action == "delete_option":
+                option = ProductExtraOption.query.join(ProductExtraGroup).filter(
+                    ProductExtraOption.id == request.form.get("option_id", type=int),
+                    ProductExtraGroup.producto_id == producto.id).first()
+                if option: db.session.delete(option)
+            elif action == "delete_group":
+                group = ProductExtraGroup.query.filter_by(id=request.form.get("grupo_id", type=int), producto_id=producto.id).first()
+                if group: db.session.delete(group)
+            else:
+                raise ValueError("Acción no válida.")
+            db.session.commit()
+            flash("Extras actualizados.", "success")
+        except (ValueError, TypeError, InvalidOperation) as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+        return redirect(url_for("admin.gestionar_extras", producto_id=producto.id))
+    groups = ProductExtraGroup.query.filter_by(producto_id=producto.id).order_by(ProductExtraGroup.orden, ProductExtraGroup.id).all()
+    return render_template("admin/producto_extras.html", producto=producto, groups=groups)
+
+
 # ─── COMBOS ──────────────────────────────────
 
 @admin_bp.route("/productos/<int:producto_id>/combo", methods=["GET"])
@@ -2743,7 +2760,12 @@ def gestionar_combo(producto_id):
     componentes = ComboItem.query.filter_by(combo_id=producto_id).all()
     combo_groups = ComboGroup.query.filter_by(combo_id=producto_id)\
         .order_by(ComboGroup.orden.asc(), ComboGroup.id.asc()).all()
-    productos_simples = Product.query.filter_by(activo=True, es_combo=False).order_by(Product.nombre).all()
+    productos_simples = (
+        Product.query.filter_by(activo=True, es_combo=False)
+        .filter(Product.proveedor_despachador_id.is_(None))
+        .order_by(Product.nombre)
+        .all()
+    )
 
     combo_limits = _combo_limits_payload()
 
@@ -2761,6 +2783,9 @@ def agregar_componente_combo(producto_id):
     combo = get_or_404(Product, producto_id)
     if not combo.es_combo:
         return redirect(url_for("admin.productos"))
+    if combo.proveedor_despachador_id:
+        combo.proveedor_despachador_id = None
+        db.session.flush()
     combo_limits = _combo_limits_payload()
     comp_id = request.form.get("producto_id", type=int)
     cantidad = request.form.get("cantidad", 1, type=int)
@@ -2769,15 +2794,7 @@ def agregar_componente_combo(producto_id):
     if comp_error:
         flash(comp_error, "danger")
         return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
-    if combo.proveedor_despachador_id:
-        faltantes = _componentes_faltantes_proveedor(
-            combo.proveedor_despachador_id,
-            [componente.id],
-        )
-        if faltantes:
-            flash(_mensaje_componentes_faltantes_proveedor(faltantes), "danger")
-            return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
-    elif componente.proveedor_despachador_id:
+    if componente.proveedor_despachador_id:
         flash(_mensaje_componentes_externos_combo_propio([componente]), "danger")
         return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
     es_seleccionable = bool(request.form.get("es_seleccionable"))
@@ -3307,7 +3324,6 @@ def eliminar_resena(review_id):
 @admin_bp.route("/usuarios")
 @admin_required
 def usuarios():
-    from models import Proveedor
     q = (request.args.get("q") or "").strip()
     rol = (request.args.get("rol") or "").strip()
     estado = (request.args.get("estado") or "").strip()
@@ -3323,10 +3339,9 @@ def usuarios():
     elif estado == "inactivo":
         query = query.filter(User.activo == False)
     users = query.order_by(User.rol, User.nombre).all()
-    proveedores = Proveedor.query.filter_by(activo=True).order_by(Proveedor.nombre).all()
     return render_template("admin/usuarios.html", users=users, q=q, rol_f=rol,
                            estado_f=estado, roles_validos=_roles_editables_usuario(),
-                           proveedores=proveedores,
+                           proveedores=[],
                            roles_legacy=_ROLES_USUARIO_LEGACY)
 
 
@@ -3359,14 +3374,6 @@ def crear_usuario():
     if rol not in roles_validos:
         flash("Rol no válido o sin permisos suficientes para asignarlo.", "danger")
         return redirect(url_for("admin.usuarios"))
-    proveedor_id = request.form.get("proveedor_id", type=int) if rol == "proveedor" else None
-    if rol == "proveedor":
-        from models import Proveedor
-        proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
-        if not proveedor or not proveedor.activo:
-            flash("Selecciona el bar que administrará este usuario.", "danger")
-            return redirect(url_for("admin.usuarios"))
-
     try:
         salario_base = _parse_decimal_no_negativo(
             request.form.get("salario_base") or "0", "El salario base"
@@ -3386,7 +3393,7 @@ def crear_usuario():
         puesto_trabajo=request.form.get("puesto_trabajo", "").strip() or None,
         salario_base=salario_base,
         tarifa_entrega=tarifa_entrega,
-        proveedor_id=proveedor_id,
+        proveedor_id=None,
     )
     u.set_password(password)
     db.session.add(u)
@@ -3409,7 +3416,6 @@ def crear_usuario():
 @admin_bp.route("/usuarios/<int:user_id>/editar", methods=["GET", "POST"])
 @admin_required
 def editar_usuario(user_id):
-    from models import Proveedor
     u = get_or_404(User, user_id)
     if not _es_cuenta_gestionable(u):
         abort(404)
@@ -3417,11 +3423,8 @@ def editar_usuario(user_id):
         abort(403)
     roles_validos = _roles_editables_usuario()
     if request.method == "GET":
-        proveedores = Proveedor.query.filter(
-            or_(Proveedor.activo.is_(True), Proveedor.id == u.proveedor_id)
-        ).order_by(Proveedor.nombre).all()
         return render_template("admin/usuario_editar.html", usuario=u, roles_validos=roles_validos,
-                               proveedores=proveedores)
+                               proveedores=[])
 
     nombre = request.form.get("nombre", "").strip()
     email = request.form.get("email", "").strip().lower()
@@ -3438,14 +3441,6 @@ def editar_usuario(user_id):
     if u.rol == "super_admin" and nuevo_rol != "super_admin" and _es_ultimo_superadmin_activo(u):
         flash("No puedes cambiar el rol del último superadmin activo.", "danger")
         return redirect(url_for("admin.editar_usuario", user_id=u.id))
-
-    proveedor_id = None
-    if nuevo_rol == "proveedor":
-        proveedor_id = request.form.get("proveedor_id", type=int)
-        proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
-        if not proveedor or not proveedor.activo:
-            flash("Selecciona el bar que administrará este usuario.", "danger")
-            return redirect(url_for("admin.editar_usuario", user_id=u.id))
 
     telefono_form = normalizar_telefono_cliente(
         request.form.get("telefono", "")
@@ -3481,7 +3476,7 @@ def editar_usuario(user_id):
     u.nombre = nombre
     u.email = email
     u.rol = nuevo_rol
-    u.proveedor_id = proveedor_id
+    u.proveedor_id = None
     u.telefono = telefono_form
     u.puesto_trabajo = request.form.get("puesto_trabajo", "").strip() or None
     u.salario_base = salario_base

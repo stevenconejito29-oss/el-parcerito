@@ -12,6 +12,7 @@
   {% if producto.es_combo %}
   <a href="{{ url_for('admin.gestionar_combo', producto_id=producto.id) }}" class="ox-btn-primary text-sm">Gestionar componentes</a>
   {% endif %}
+  <a href="{{ url_for('admin.gestionar_extras', producto_id=producto.id) }}" class="ox-btn-primary text-sm">Ingredientes extra</a>
 </div>
 
 <form method="POST" action="{{ url_for('admin.editar_producto', producto_id=producto.id) }}" enctype="multipart/form-data" class="grid lg:grid-cols-3 gap-5">
@@ -62,16 +63,7 @@
         <label class="edit-check"><input type="checkbox" name="activo" {% if producto.activo %}checked{% endif %}> Activo en tienda</label>
       </div>
       {% if producto.es_combo %}
-      <div>
-        <label class="edit-label">Origen operativo</label>
-        <select name="proveedor_despachador_id" class="edit-input">
-          <option value="">Stock propio / tienda</option>
-          {% for prov in proveedores %}
-          <option value="{{ prov.id }}" {% if producto.proveedor_despachador_id == prov.id %}selected{% endif %}>{{ prov.nombre }}</option>
-          {% endfor %}
-        </select>
-        <p class="text-xs mt-1" style="color:var(--col-muted)">El combo usa exclusivamente los SKU asignados a ese proveedor.</p>
-      </div>
+      <input type="hidden" name="proveedor_despachador_id" value="">
       {% endif %}
     </div>
 
@@ -91,6 +83,15 @@
         {% for val, label in [('inmediato','Inmediato'),('programado','Programado')] %}
         <label class="edit-chip"><input type="radio" name="tipo_entrega" value="{{ val }}" {% if tipo_actual == val %}checked{% endif %}> {{ label }}</label>
         {% endfor %}
+      </div>
+      <div class="mt-3">
+        <p class="text-xs text-gray-500 mb-1 font-semibold uppercase tracking-wide">Modalidad disponible</p>
+        <div class="flex flex-wrap gap-3 text-sm">
+          {% set modalidad_actual = producto.modalidad_entrega or 'ambas' %}
+          {% for val, label in [('ambas','Delivery o recogida'),('delivery','Solo delivery'),('recogida','Solo recogida')] %}
+          <label class="edit-chip"><input type="radio" name="modalidad_entrega" value="{{ val }}" {% if modalidad_actual == val %}checked{% endif %}> {{ label }}</label>
+          {% endfor %}
+        </div>
       </div>
       <div class="grid md:grid-cols-2 gap-3 mt-3">
         <div>

@@ -46,7 +46,6 @@ const adminA = '34600000001@s.whatsapp.net';
 const adminB = '34600000002@s.whatsapp.net';
 const clientA = '34610000001@s.whatsapp.net';
 const clientB = '34610000002@s.whatsapp.net';
-const providerAgent = '34620000001@s.whatsapp.net';
 
 function clearState() {
   db.exec(`
@@ -55,7 +54,6 @@ function clearState() {
     DELETE FROM sessions;
     DELETE FROM inbound_messages;
     DELETE FROM logs;
-    DELETE FROM handoff_agents;
   `);
 }
 
@@ -79,7 +77,7 @@ test.after(() => {
   fs.rmSync(dbDir, { recursive: true, force: true });
 });
 
-test('la sesión conserva el bar entre mensajes', () => {
+test('la sesión legacy de bar conserva datos si existe en base', () => {
   saveSesion({
     jid: clientA,
     nombre: 'Operador Norte',
@@ -99,19 +97,15 @@ test('la sesión conserva el bar entre mensajes', () => {
   assert.equal(session.bar_nombre, 'Bar Norte');
 });
 
-test('los tres menús están separados por rol', () => {
+test('los menús públicos y admin están separados por rol', () => {
   const clientMenu = menuPrincipal();
   const globalMenu = adminMenu();
-  const providerMenu = barMenu({ nombre: 'Bar Norte' });
 
   assert.match(clientMenu, /Asistente de/);
   assert.match(clientMenu, /sin tomar pedidos por WhatsApp/i);
   assert.doesNotMatch(clientMenu, /Productos y precios/);
   assert.match(globalMenu, /Panel Super Admin/);
   assert.match(globalMenu, /Productos y precios/);
-  assert.match(providerMenu, /Panel de Bar Norte/);
-  assert.match(providerMenu, /Marcar un pedido como preparado/);
-  assert.doesNotMatch(providerMenu, /Clientes y puntos/);
 });
 
 test('el cliente se dirige a la web y no recibe catálogo por WhatsApp', () => {
@@ -136,7 +130,7 @@ test('reconoce frases naturales del cliente antes del menú genérico', () => {
   }
 });
 
-test('el menú del bar reconoce sus funciones y preparado con número', () => {
+test('el detector legacy del bar reconoce sus funciones si una sesión antigua lo usa', () => {
   assert.equal(detectBarIntent('ver pedidos pendientes'), '1');
   assert.equal(detectBarIntent('PREPARADO 1024'), '2');
   assert.equal(detectBarIntent('incidencias'), '3');
@@ -154,31 +148,26 @@ test('un administrador no puede reclamar dos clientes activos', () => {
   assert.equal(getHandoff(clientB).admin_jid, null);
 });
 
-test('un handoff de proveedor solo puede tomarlo un operador de ese proveedor', () => {
+test('un handoff con scope proveedor se normaliza a soporte global', () => {
   createHandoffRequest(clientA, {
     scope: 'provider:17',
     agents: ['34620000001'],
   });
 
-  assert.equal(assignHandoff(clientA, adminA).changes, 0);
-  assert.equal(assignHandoff(clientA, providerAgent).changes, 1);
-  assert.equal(getHandoff(clientA).scope, 'provider:17');
-  assert.equal(getHandoff(clientA).admin_jid, providerAgent);
+  assert.equal(getHandoff(clientA).scope, 'global');
+  assert.equal(getHandoff(clientA).agents_json, '[]');
+  assert.equal(assignHandoff(clientA, adminA).changes, 1);
+  assert.equal(getHandoff(clientA).admin_jid, adminA);
 });
 
-test('los operadores de proveedores distintos quedan aislados', () => {
+test('los agentes externos no pueden tomar chats si no son administradores configurados', () => {
   createHandoffRequest(clientA, {
     scope: 'provider:17',
     agents: ['34620000001'],
   });
-  createHandoffRequest(clientB, {
-    scope: 'provider:18',
-    agents: ['34620000002'],
-  });
 
-  assert.equal(assignHandoff(clientB, providerAgent).changes, 0);
-  assert.equal(assignHandoff(clientA, providerAgent).changes, 1);
-  assert.equal(getHandoff(clientB).admin_jid, null);
+  assert.equal(assignHandoff(clientA, '34620000001@s.whatsapp.net').changes, 0);
+  assert.equal(getHandoff(clientA).admin_jid, null);
 });
 
 test('encolar exige que la asignacion siga vigente', () => {

@@ -80,7 +80,7 @@
           {% endif %}
         </div>
         <div class="admin-product-badges">
-          <span class="admin-product-badge {{ 'badge-provider' if p.proveedor_despachador_id else 'badge-stock' }}">{{ p.origen_operativo_label }}</span>
+          <span class="admin-product-badge badge-stock">Stock propio</span>
           <span class="admin-product-badge badge-channel">{{ p.canal_preparacion or 'cocina' }}</span>
           {% if p.canjeable_con_puntos %}<span class="admin-product-badge badge-points">Puntos</span>{% endif %}
           {% if p.es_hipoalergenico %}<span class="admin-product-badge badge-hipo">Hipo</span>{% endif %}
@@ -90,7 +90,7 @@
     </div>
     <div class="admin-product-card-stats">
       <div><span>Precio</span><strong>€{{ "%.2f"|format(p.precio) }}</strong></div>
-      <div><span>Stock</span><strong>{% if p.usa_stock_propio %}{{ p.stock_total }}{% else %}Proveedor{% endif %}</strong></div>
+      <div><span>Stock</span><strong>{{ p.stock_total }}</strong></div>
       <div><span>Visible</span><strong>{% if p.hora_inicio_visibilidad %}{{ p.hora_inicio_visibilidad.strftime('%H:%M') }}{% else %}Siempre{% endif %}</strong></div>
     </div>
     <div class="admin-product-actions">
@@ -130,10 +130,7 @@
         <div class="min-w-0">
           <p class="font-semibold text-white truncate">{{ p.nombre }}</p>
           <div class="flex gap-1 mt-0.5 flex-wrap">
-            <span class="text-xs px-1.5 rounded-full font-bold"
-                  style="{{ 'color:#FB923C;background:rgba(251,146,60,.12)' if p.proveedor_despachador_id else 'color:#5EF097;background:rgba(94,240,151,.1)' }}">
-              {{ p.origen_operativo_label }}
-            </span>
+            <span class="text-xs px-1.5 rounded-full font-bold" style="color:#5EF097;background:rgba(94,240,151,.1)">Stock propio</span>
             <span class="text-xs px-1.5 rounded-full font-bold" style="color:#5AC8FA;background:rgba(90,200,250,.1)">{{ p.canal_preparacion or 'cocina' }}</span>
             {% if p.canjeable_con_puntos %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:#C084FC;background:rgba(192,132,252,.12)">⭐ Puntos</span>{% endif %}
             {% if p.es_hipoalergenico %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:#5EF097;background:rgba(94,240,151,.1)">🌿 Hipo</span>{% endif %}
@@ -154,11 +151,7 @@
     </td>
     <td class="text-center font-mono font-bold"
         style="color:{{ '#FF6B6B' if p.stock_total <= 5 else ('#FFAB00' if p.stock_total <= 20 else 'var(--col-text)') }}">
-      {% if p.usa_stock_propio %}
-        {{ p.stock_total }}
-      {% else %}
-        <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="color:#FB923C;background:rgba(251,146,60,.1);border:1px solid rgba(251,146,60,.18)">Proveedor</span>
-      {% endif %}
+      {{ p.stock_total }}
       {% if p.stock_mostrar_en_web %}<span class="text-xs ml-1" style="color:var(--col-faint)" title="Visible en web">👁</span>{% endif %}
     </td>
     <td class="text-center text-xs" style="color:var(--col-muted)">
@@ -200,7 +193,7 @@
     'atributos_json': p.atributos_json or '',
     'es_combo': p.es_combo, 'activo': p.activo,
     'canal_preparacion': p.canal_preparacion or 'cocina',
-    'proveedor_despachador_id': p.proveedor_despachador_id or '',
+    'proveedor_despachador_id': '',
     'tipo_entrega': p.tipo_entrega or 'inmediato',
     'fecha_llegada': p.fecha_llegada.strftime('%Y-%m-%d') if p.fecha_llegada else '',
     'dias_anticipacion_encargo': p.dias_anticipacion_encargo or 1,
@@ -337,7 +330,7 @@
       'atributos_json': combo.atributos_json or '',
       'es_combo': combo.es_combo, 'activo': combo.activo,
       'canal_preparacion': combo.canal_preparacion or 'cocina',
-      'proveedor_despachador_id': combo.proveedor_despachador_id or '',
+      'proveedor_despachador_id': '',
       'tipo_entrega': combo.tipo_entrega or 'inmediato',
       'fecha_llegada': combo.fecha_llegada.strftime('%Y-%m-%d') if combo.fecha_llegada else '',
       'dias_anticipacion_encargo': combo.dias_anticipacion_encargo or 1,
@@ -423,7 +416,6 @@
 .admin-product-badges { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.45rem; }
 .admin-product-badge { border-radius:999px; padding:.14rem .45rem; font-size:.62rem; font-weight:900; text-transform:uppercase; letter-spacing:.02em; }
 .badge-stock { background:rgba(16,185,129,.14); color:#A7F3D0; }
-.badge-provider { background:rgba(251,146,60,.16); color:#FDBA74; }
 .badge-channel { background:rgba(90,200,250,.14); color:#BAE6FD; }
 .badge-points { background:rgba(168,85,247,.16); color:#C084FC; }
 .badge-hipo { background:rgba(16,185,129,.14); color:#6EE7B7; }

@@ -125,7 +125,9 @@
       {% if pedido.estado not in ('entregado','cancelado') %}
       <form method="POST" action="{{ url_for('admin.avanzar_pedido_admin', pedido_id=pedido.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="ord-btn success">Avanzar</button>
+        <button type="submit" class="ord-btn success">
+          {% if pedido.estado == 'listo' and not pedido.requiere_reparto %}Entregar recogida{% else %}Avanzar{% endif %}
+        </button>
       </form>
       {% if pedido.estado == 'en_ruta' and pedido.intentos_codigo >= 3 %}
       <form method="POST" action="{{ url_for('admin.reset_codigo_confirmacion', pedido_id=pedido.id) }}" title="Regenerar código de entrega (agotó 3 intentos)">

@@ -1,12 +1,13 @@
 {# ── Tarjeta de producto — KFC/BK grid style ── #}
 {# Variable esperada: p (Product) #}
 {% set _qty_cart = (carrito.get(p.id|string, 0) if carrito is defined and carrito_origen == origen_actual else 0)|int %}
-<div class="ep-card {% if p.es_combo %}ep-card-combo{% endif %} {% if _qty_cart > 0 %}ep-card-in-cart{% endif %}">
+{% set _has_extras = p.extra_groups.filter_by(activo=True).count() > 0 %}
+<div class="ep-card {% if p.es_combo %}ep-card-combo{% endif %} {% if _qty_cart > 0 %}ep-card-in-cart{% endif %}" data-category-id="{{ p.categoria_id or '' }}">
 
   {# ── Imagen ── #}
   <a class="ep-card-img"
      href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=origen_actual) }}"
-     onclick="{% if establecimiento.abierto and p.tipo_entrega == 'inmediato' and not p.es_combo and p.disponible_para_venta_en_origen(origen_actual) %}event.preventDefault();openModal({{ p.id }}){% endif %}"
+     onclick="{% if establecimiento.abierto and p.tipo_entrega == 'inmediato' and not p.es_combo and not _has_extras and p.disponible_para_venta_en_origen(origen_actual) %}event.preventDefault();openModal({{ p.id }}){% endif %}"
      tabindex="-1" aria-hidden="true">
     {% if p.imagen_url %}
       {% set _src = p.imagen_url|upload_url %}
@@ -23,6 +24,8 @@
 
     {# Badges sobre imagen #}
     <div class="ep-card-badges">
+      {% if p.modalidad_entrega == 'delivery' %}<span class="ep-cbadge ep-cbadge-encargo">Solo delivery</span>{% endif %}
+      {% if p.modalidad_entrega == 'recogida' %}<span class="ep-cbadge ep-cbadge-encargo">Solo recogida</span>{% endif %}
       {% if p.es_combo %}<span class="ep-cbadge ep-cbadge-combo">🎁 COMBO</span>{% endif %}
       {% if p.tipo_entrega in ('programado','encargo') %}
       <span class="ep-cbadge ep-cbadge-encargo">📆 Fecha fija{% if p.fecha_llegada %}: {{ p.fecha_llegada.strftime('%d/%m') }}{% endif %}</span>
@@ -123,9 +126,9 @@
         <span class="ep-btn-sold">Cerrado</span>
       {% elif not p.disponible_para_venta_en_origen(origen_actual) %}
         <span class="ep-btn-sold">Agotado</span>
-      {% elif p.tipo_entrega in ('encargo','programado') or p.es_combo %}
+      {% elif p.tipo_entrega in ('encargo','programado') or p.es_combo or _has_extras %}
         <a href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=origen_actual) }}" class="ep-btn-detail">
-          {% if p.es_combo %}Personalizar{% else %}Ver fecha{% endif %}
+          {% if p.es_combo or _has_extras %}Personalizar{% else %}Ver fecha{% endif %}
         </a>
       {% else %}
         <button type="button" class="ep-btn-add" aria-label="Añadir {{ p.nombre }}"

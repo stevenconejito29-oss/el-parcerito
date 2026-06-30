@@ -7,8 +7,7 @@
   'admin': 'Administrador',
   'cocina': 'Cocina (pedidos inmediatos)',
   'preparacion': 'Preparacion (pedidos con fecha)',
-  'repartidor': 'Repartidor',
-  'proveedor': 'Proveedor'
+  'repartidor': 'Repartidor'
 } %}
 
 <div class="flex items-center gap-3 mb-5">
@@ -44,17 +43,6 @@
     <div class="ox-field">
       <label class="ox-label">Telefono</label>
       <input class="ox-input" type="tel" name="telefono" value="{{ usuario.telefono or '' }}">
-    </div>
-    <div class="ox-field md:col-span-2" id="provider-field">
-      <label class="ox-label">Proveedor *</label>
-      <select class="ox-input" name="proveedor_id" id="provider-select">
-        <option value="">Selecciona un proveedor activo</option>
-        {% for proveedor in proveedores %}
-        <option value="{{ proveedor.id }}" {% if usuario.proveedor_id == proveedor.id %}selected{% endif %}>
-          {{ proveedor.nombre }}{% if not proveedor.activo %} (inactivo){% endif %}
-        </option>
-        {% endfor %}
-      </select>
     </div>
     <div class="ox-field md:col-span-2">
       <label class="ox-label">Puesto de trabajo</label>
@@ -98,18 +86,4 @@
 </section>
 {% endif %}
 
-{% endblock %}
-{% block scripts %}
-<script>
-const role = document.getElementById('edit-role');
-const providerField = document.getElementById('provider-field');
-const providerSelect = document.getElementById('provider-select');
-function syncProvider() {
-  const visible = role.value === 'proveedor';
-  providerField.hidden = !visible;
-  providerSelect.required = visible;
-}
-role.addEventListener('change', syncProvider);
-syncProvider();
-</script>
 {% endblock %}

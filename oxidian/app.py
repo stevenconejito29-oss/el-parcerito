@@ -37,6 +37,9 @@ def _asset_version(app):
     for relative_path in (
         "css/tailwind.generated.css",
         "css/oxidian.css",
+        "css/storefront-menu.css",
+        "css/storefront-cart.css",
+        "css/oxidian-ui.css",
         "js/carrito.js",
         "sw.js",
     ):
@@ -189,10 +192,25 @@ def create_app(env="default"):
         profile = get_store_profile()
         nombre = profile["nombre"]
         short_name = (nombre[:12] or "Mi tienda").strip()
+        capabilities = []
+        if profile["delivery"]:
+            capabilities.append("entrega a domicilio")
+        if profile["recogida"]:
+            capabilities.append("recogida en local")
+        if profile["pedidos_programados"]:
+            capabilities.append("pedidos por fecha")
+        description = f"Menu online y carrito con {', '.join(capabilities)}."
+        shortcuts = [
+            {"name": "Ver menu", "short_name": "Menu", "description": "Explora el catalogo", "url": "/", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]},
+            {"name": "Mi carrito", "short_name": "Carrito", "description": "Ver pedido actual", "url": "/carrito", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]},
+        ]
+        if profile["puntos"]:
+            shortcuts.append({"name": "Mis puntos", "short_name": "Puntos", "description": "Club de fidelizacion", "url": "/club", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]})
+
         manifest = {
             "name": nombre,
             "short_name": short_name,
-            "description": "Menu online, carrito, puntos y seguimiento de pedidos.",
+            "description": description,
             "start_url": "/?source=pwa",
             "scope": "/",
             "display": "standalone",
@@ -205,11 +223,7 @@ def create_app(env="default"):
             "categories": ["food", "shopping"],
             "id": "oxidian-menu",
             "icons": [],
-            "shortcuts": [
-                {"name": "Ver menu",   "short_name": "Menu",    "description": "Explora el catalogo",    "url": "/",        "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]},
-                {"name": "Mi carrito", "short_name": "Carrito", "description": "Ver pedido actual",    "url": "/carrito", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]},
-                {"name": "Mis puntos", "short_name": "Puntos",  "description": "Club de fidelizacion", "url": "/club",    "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]},
-            ],
+            "shortcuts": shortcuts,
             "screenshots": [
                 {"src": "/static/pwa-screenshot-mobile.png", "sizes": "390x844", "type": "image/png", "form_factor": "narrow", "label": f"{nombre} — Menu online"},
                 {"src": "/static/pwa-screenshot-wide.png", "sizes": "1280x720", "type": "image/png", "form_factor": "wide", "label": f"{nombre} — Pedidos y seguimiento"},
@@ -249,8 +263,8 @@ def create_app(env="default"):
             "preparacion": "/preparador/pedidos",
             "cocina": "/preparador/pedidos",
             "staff": "/staff/",
-            "proveedor": "/proveedor/pedidos",
             "repartidor": "/repartidor/ruta",
+            "marketing": "/marketing/",
         }
         icon = profile["app_icon_url"] or "/static/pwa-icon-192.png"
         manifest = {
@@ -299,7 +313,9 @@ def create_app(env="default"):
         ).rstrip("/")
         try:
             response = requests.get(f"{bot_url}/health", timeout=3)
-            result["bot"] = "ok" if response.ok else "degraded"
+            bot_health = response.json() if response.ok else {}
+            result["bot"] = "ok" if response.ok and bot_health.get("whatsapp_connected") is not False else "degraded"
+            result["whatsapp"] = bot_health.get("evolution_state", "unknown")
         except requests.RequestException:
             result["bot"] = "unreachable"
         try:
@@ -307,7 +323,7 @@ def create_app(env="default"):
             result["evolution"] = "ok" if response.ok else "degraded"
         except requests.RequestException:
             result["evolution"] = "unreachable"
-        if "unreachable" in (result["bot"], result["evolution"]):
+        if result["bot"] != "ok" or result["evolution"] != "ok":
             result["status"] = "degraded"
         return result, 200
 
@@ -415,6 +431,8 @@ def create_app(env="default"):
                 "DIRECCION_NEGOCIO", "CIUDAD_NEGOCIO", "PROVINCIA_NEGOCIO",
                 "PAIS_NEGOCIO", "EMAIL_CONTACTO", "BIZUM_TELEFONO",
                 "BIZUM_HABILITADO", "EFECTIVO_HABILITADO",
+                "MODO_TIENDA", "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
+                "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
                 "COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO",
                 "HORARIO_APERTURA", "HORARIO_CIERRE", "TIENDA_FORZAR_CERRADA",
                 "TIENDA_MENSAJE_CIERRE",
@@ -446,11 +464,28 @@ def create_app(env="default"):
         color_primario   = _c("COLOR_PRIMARIO",   _env_default("COLOR_PRIMARIO", "#FCD116"))
         color_secundario = _c("COLOR_SECUNDARIO", _env_default("COLOR_SECUNDARIO", "#CE1126"))
         color_acento     = _c("COLOR_ACENTO",     _env_default("COLOR_ACENTO", "#003087"))
+        def _on_color(value):
+            raw = str(value or "").lstrip("#")
+            if len(raw) != 6:
+                return "#FFFFFF"
+            try:
+                r, gr, b = (int(raw[i:i + 2], 16) for i in (0, 2, 4))
+            except ValueError:
+                return "#FFFFFF"
+            luminance = (0.2126 * r + 0.7152 * gr + 0.0722 * b) / 255
+            return "#18120A" if luminance > 0.58 else "#FFFFFF"
 
         horario_apertura      = _c("HORARIO_APERTURA", _env_default("HORARIO_APERTURA", "09:00"))
         horario_cierre        = _c("HORARIO_CIERRE",   _env_default("HORARIO_CIERRE", "22:30"))
         tienda_mensaje_cierre = _c("TIENDA_MENSAJE_CIERRE", "")
         tienda_forzada_cerrada = _to_bool(_c("TIENDA_FORZAR_CERRADA", "0"), False)
+        modo_tienda = (_c("MODO_TIENDA", "propia") or "propia").strip().lower()
+        if modo_tienda not in {"propia", "bar_servicio"}:
+            modo_tienda = "propia"
+        feature_delivery = _to_bool(_c("FEATURE_DELIVERY", "1"), True)
+        feature_recogida = _to_bool(_c("FEATURE_RECOGIDA", "1"), True)
+        if not feature_delivery and not feature_recogida:
+            feature_recogida = True
 
         ahora = datetime.now().strftime("%H:%M")
         from services import tienda_abierta_en_horario
@@ -479,9 +514,15 @@ def create_app(env="default"):
                 "bizum_telefono": bizum_telefono,
                 "bizum_habilitado": _to_bool(_c("BIZUM_HABILITADO", "1"), True),
                 "efectivo_habilitado": _to_bool(_c("EFECTIVO_HABILITADO", "1"), True),
+                "modo_tienda": modo_tienda,
+                "delivery": feature_delivery,
+                "recogida": feature_recogida,
+                "pedidos_programados": _to_bool(_c("FEATURE_PEDIDOS_PROGRAMADOS", "1"), True),
+                "puntos": _to_bool(_c("FEATURE_PUNTOS", "1"), True),
                 "slogan": slogan,
                 "descripcion": descripcion,
                 "color_primario": color_primario,
+                "on_primario": _on_color(color_primario),
                 "color_secundario": color_secundario,
                 "color_acento": color_acento,
                 "horario_apertura": horario_apertura,
@@ -681,6 +722,8 @@ def _seed_admin():
         ("COMBO_MAX_DISCOUNT_PCT", "50",                      "Descuento porcentual máximo permitido para combos"),
         ("ALERTA_CADUCIDAD_DIAS", "7",                        "Dias antes de caducidad para alerta"),
         ("NOMBRE_NEGOCIO",        _env_default("NOMBRE_NEGOCIO", "Mi tienda"), "Nombre del negocio"),
+        ("SLOGAN_NEGOCIO",        _env_default("SLOGAN_NEGOCIO", ""), "Eslogan del negocio"),
+        ("DESCRIPCION_NEGOCIO",   _env_default("DESCRIPCION_NEGOCIO", ""), "Descripción pública del negocio"),
         ("DIRECCION_NEGOCIO",     _env_default("DIRECCION_NEGOCIO", ""), "Direccion del local"),
         ("TELEFONO_NEGOCIO",      _env_default("TELEFONO_NEGOCIO", ""),      "Telefono de contacto"),
         ("BOT_API_KEY",           _env_default("BOT_API_KEY", str(uuid.uuid4())), "API key compartida entre Oxidian y el bot"),
@@ -694,6 +737,8 @@ def _seed_admin():
         ("WEBHOOK_SECRET",        _env_default("WEBHOOK_SECRET", ""), "Secreto webhook Evolution -> Oxidian"),
         ("BOT_EMAIL_DOMAIN",      "wa.internal",              "Dominio para emails auto-generados de clientes WhatsApp"),
         ("LOGO_URL",              _env_default("LOGO_URL", ""),              "URL del logo del negocio"),
+        ("APP_ICON_URL",          _env_default("APP_ICON_URL", ""),          "Icono instalable de la PWA"),
+        ("HERO_IMAGE_URL",        _env_default("HERO_IMAGE_URL", ""),        "Imagen principal del menú público"),
         ("TIENDA_URL",            _env_default("TIENDA_URL", ""),            "URL de la tienda web para pedidos (mostrado en WhatsApp)"),
         ("COLOR_PRIMARIO",        _env_default("COLOR_PRIMARIO", "#E8B26C"), "Color principal de marca"),
         ("COLOR_SECUNDARIO",      _env_default("COLOR_SECUNDARIO", "#D65A2A"), "Color secundario de marca"),
@@ -711,6 +756,12 @@ def _seed_admin():
         ("BIZUM_TELEFONO",                    _env_default("BIZUM_TELEFONO", ""), "Número que recibe Bizum"),
         ("BIZUM_HABILITADO",                  "1", "Permitir Bizum"),
         ("EFECTIVO_HABILITADO",               "1", "Permitir efectivo"),
+        ("MODO_TIENDA",                       "propia", "Modo comercial: propia o bar_servicio"),
+        ("FEATURE_DELIVERY",                  "1", "Permitir pedidos a domicilio"),
+        ("FEATURE_RECOGIDA",                  "1", "Permitir pedidos para recoger"),
+        ("FEATURE_PEDIDOS_PROGRAMADOS",       "1", "Permitir productos/pedidos con fecha de entrega"),
+        ("FEATURE_PUNTOS",                    "1", "Activar club de puntos y canjes"),
+        ("SERVICE_COMMISSION_PCT",            "0", "Porcentaje ganado por venta en modo servicio"),
         ("CENTRO_LAT",                        _env_default("CENTRO_LAT", ""),      "Latitud del centro de reparto"),
         ("CENTRO_LON",                        _env_default("CENTRO_LON", ""),      "Longitud del centro de reparto"),
         ("RADIO_ENTREGA_KM",                  _env_default("RADIO_ENTREGA_KM", "5"),      "Radio máximo de entrega en km desde el centro"),
@@ -744,7 +795,6 @@ def _seed_operational_basics():
         staff_users = [
             {"nombre": "Chef Carlos", "email": "cocina@oxidian.com", "rol": "cocina", "puesto_trabajo": "Cocina"},
             {"nombre": "Prep María", "email": "preparacion@oxidian.com", "rol": "preparacion", "puesto_trabajo": "Preparación"},
-            {"nombre": "Ana Staff", "email": "staff@oxidian.com", "rol": "staff", "puesto_trabajo": "Caja e inventario"},
             {"nombre": "Pedro Delivery", "email": "repartidor@oxidian.com", "rol": "repartidor", "puesto_trabajo": "Reparto", "tarifa_entrega": 2.5},
         ]
     for payload in staff_users:
@@ -835,7 +885,6 @@ def _seed_demo_data():
     demo_users = [
         {"nombre": "Chef Carlos",    "email": "cocina@oxidian.com",       "rol": "cocina",      "puesto_trabajo": "Jefe de Cocina"},
         {"nombre": "Prep María",     "email": "preparacion@oxidian.com",  "rol": "preparacion", "puesto_trabajo": "Gestión Encargos"},
-        {"nombre": "Ana Staff",      "email": "staff@oxidian.com",        "rol": "staff",       "puesto_trabajo": "Inventario & Caja"},
         {"nombre": "Pedro Delivery", "email": "repartidor@oxidian.com",   "rol": "repartidor",  "tarifa_entrega": 2.5},
         {"nombre": "Laura Sánchez",  "email": "cliente@oxidian.com",      "rol": "cliente",     "telefono": "600000001", "puntos": 250},
         {"nombre": "Carlos Reyes",   "email": "cliente2@oxidian.com",     "rol": "cliente",     "telefono": "600000002", "puntos": 80},

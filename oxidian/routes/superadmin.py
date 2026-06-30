@@ -39,6 +39,12 @@ CLAVES_DEFAULT = [
     ("BIZUM_TELEFONO",         _eget("BIZUM_TELEFONO"),              "Número que recibe pagos Bizum"),
     ("BIZUM_HABILITADO",       "1",                                  "Permitir pagos mediante Bizum"),
     ("EFECTIVO_HABILITADO",    "1",                                  "Permitir pagos en efectivo"),
+    ("MODO_TIENDA",            "propia",                             "Modo comercial de la instalación"),
+    ("FEATURE_DELIVERY",       "1",                                  "Permitir pedidos a domicilio"),
+    ("FEATURE_RECOGIDA",       "1",                                  "Permitir pedidos para recoger"),
+    ("FEATURE_PEDIDOS_PROGRAMADOS", "1",                              "Permitir productos/pedidos con fecha de entrega"),
+    ("FEATURE_PUNTOS",         "1",                                  "Activar club de puntos y canjes"),
+    ("SERVICE_COMMISSION_PCT", "0",                                  "Porcentaje ganado por venta en modo servicio"),
     ("BOT_API_KEY",            _eget("BOT_API_KEY"),                "Clave API para el bot de WhatsApp"),
     ("BOT_API_URL",            _eget("BOT_API_URL",    "http://127.0.0.1:3000"),  "URL interna del bot"),
     ("BOT_PANEL_KEY",          _eget("BOT_PANEL_KEY"),              "Clave de panel para administrar el bot desde Oxidian"),
@@ -77,6 +83,7 @@ FEATURE_LABELS = {
     "marketing":   "📣 Marketing y promos",
     "pos":         "🖥️ Punto de venta (POS)",
     "whatsapp":    "💬 WhatsApp y campañas",
+    "usuarios":    "👤 Usuarios y equipo",
 }
 
 _CONFIG_KEY_RE = re.compile(r"^[A-Z0-9_]{2,50}$")
@@ -107,6 +114,11 @@ CONFIG_SECTION_KEYS = {
         "TIENDA_MENSAJE_CIERRE",
     },
     "operacion-pagos": {"EFECTIVO_HABILITADO", "BIZUM_HABILITADO"},
+    "operacion-modo": {
+        "MODO_TIENDA", "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
+        "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
+        "SERVICE_COMMISSION_PCT",
+    },
     "entregas": {
         "VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA",
         "RADIO_ENTREGA_KM", "CENTRO_LAT", "CENTRO_LON",
@@ -199,9 +211,19 @@ def _validar_config_value(clave, valor):
     if len(valor) > 500:
         return False, clave, valor, "El valor no puede superar 500 caracteres."
 
-    if clave in {"VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA", "TIENDA_FORZAR_CERRADA", "BIZUM_HABILITADO", "EFECTIVO_HABILITADO"}:
+    if clave in {
+        "VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA",
+        "TIENDA_FORZAR_CERRADA", "BIZUM_HABILITADO", "EFECTIVO_HABILITADO",
+        "FEATURE_DELIVERY", "FEATURE_RECOGIDA", "FEATURE_PEDIDOS_PROGRAMADOS",
+        "FEATURE_PUNTOS",
+    }:
         if valor not in {"0", "1"}:
             return False, clave, valor, "Este ajuste solo acepta 0 o 1."
+        return True, clave, valor, None
+
+    if clave == "MODO_TIENDA":
+        if valor not in {"propia", "bar_servicio"}:
+            return False, clave, valor, "Modo de tienda no válido."
         return True, clave, valor, None
 
     if clave in {"PUNTOS_POR_EURO", "PUNTOS_CANJE_RATIO", "ALERTA_CADUCIDAD_DIAS"}:
@@ -230,13 +252,15 @@ def _validar_config_value(clave, valor):
             return False, clave, valor, f"El número debe estar entre {min_val} y {max_val}."
         return True, clave, str(numero), None
 
-    if clave == "COMBO_MAX_DISCOUNT_PCT":
+    if clave in {"COMBO_MAX_DISCOUNT_PCT", "SERVICE_COMMISSION_PCT"}:
         try:
             numero = float(valor)
         except (TypeError, ValueError):
-            return False, clave, valor, "El descuento máximo debe ser numérico."
+            label = "La comisión" if clave == "SERVICE_COMMISSION_PCT" else "El descuento máximo"
+            return False, clave, valor, f"{label} debe ser numérico."
         if numero < 0 or numero > 100:
-            return False, clave, valor, "El descuento máximo debe estar entre 0 y 100."
+            label = "La comisión" if clave == "SERVICE_COMMISSION_PCT" else "El descuento máximo"
+            return False, clave, valor, f"{label} debe estar entre 0 y 100."
         return True, clave, f"{numero:g}", None
 
     if clave == "RADIO_ENTREGA_KM":
@@ -918,6 +942,13 @@ def guardar_config_seccion():
         flash("Debe quedar habilitado al menos un método de pago.", "danger")
         return redirect(url_for("superadmin.config", section=parent_section))
     if (
+        section == "operacion-modo"
+        and propuestos.get("FEATURE_DELIVERY", "1") == "0"
+        and propuestos.get("FEATURE_RECOGIDA", "1") == "0"
+    ):
+        flash("Debe quedar habilitado delivery o recogida.", "danger")
+        return redirect(url_for("superadmin.config", section=parent_section))
+    if (
         section == "operacion-horario"
         and propuestos.get("HORARIO_APERTURA")
         and propuestos.get("HORARIO_APERTURA") == propuestos.get("HORARIO_CIERRE")
@@ -1278,6 +1309,8 @@ def pl():
                            margen_bruto_pct=datos["margen_bruto_pct"],
                            nominas=datos["nominas"],
                            comisiones=datos["comisiones_repartidor"],
+                           service_commission=datos["service_commission"],
+                           merchant_net=datos["merchant_net"],
                            gastos_caja=datos["gastos_caja"],
                            otros_ingresos_caja=datos["otros_ingresos_caja"],
                            resultado=datos["resultado"],

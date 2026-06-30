@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.generated.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian.css', v=asset_version) }}">
   <style>
-    :root{--brand-primary:#D9961A;--brand-secondary:#344054;--brand-accent:#2F9E6D;}
+    :root{--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-accent:{{ brand.color_acento }};}
     .sb-alert { color: var(--col-primary, #D9961A) !important; }
     .sb-alert:hover { background: rgba(217,150,26,.12) !important; }
     .ox-sidebar { background: linear-gradient(180deg, #090b10, #131a2c); }
@@ -33,7 +33,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
 </head>
 {% set rol = current_user.rol if current_user.is_authenticated else '' %}
-<body class="ox-body ox-body-admin">
+<body class="ox-body ox-body-admin"
+      style="--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-accent:{{ brand.color_acento }};--col-gold:{{ brand.color_primario }};">
 <div class="ox-admin-layout">
 
   <aside class="ox-sidebar" id="ox-sidebar">
@@ -72,6 +73,7 @@
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">⚡ Operaciones</span>
         <a href="{{ url_for('admin.dashboard') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏠</span>Dashboard</a>
+        <a href="{{ url_for('admin.cola') }}" class="ox-sb-item"><span class="ox-sb-item-icon">⚡</span>Cola de trabajo</a>
         <a href="{{ url_for('admin.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📋</span>Pedidos</a>
         {% if has_admin_feature('pos') %}<a href="{{ url_for('pos.venta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖥️</span>Punto de venta</a>{% endif %}
       </div>
@@ -80,7 +82,7 @@
         <span class="ox-sb-section-label">🛍️ Catálogo</span>
         {% if has_admin_feature('productos') %}<a href="{{ url_for('admin.productos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🥟</span>Productos</a>
         <a href="{{ url_for('admin.categorias') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏷️</span>Categorías</a>
-        <a href="{{ url_for('admin.proveedores') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏪</span>Proveedores</a>{% endif %}
+        {% endif %}
         {% if has_admin_feature('stock') %}<a href="{{ url_for('admin.stock') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Stock</a>{% endif %}
       </div>
       <div class="ox-sb-divider"></div>
@@ -92,8 +94,9 @@
       <div class="ox-sb-divider"></div>
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">🔧 Gestión</span>
-        <a href="{{ url_for('admin.usuarios') }}" class="ox-sb-item"><span class="ox-sb-item-icon">👤</span>Usuarios & Equipo</a>
+        {% if has_admin_feature('usuarios') %}<a href="{{ url_for('admin.usuarios') }}" class="ox-sb-item"><span class="ox-sb-item-icon">👤</span>Usuarios & Equipo</a>{% endif %}
         {% if has_admin_feature('cupones') or has_admin_feature('marketing') %}<a href="{{ url_for('admin.cupones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎟️</span>Marketing</a>{% endif %}
+        {% if has_admin_feature('marketing') %}<a href="{{ url_for('admin.menu_config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖼️</span>Banners & Home</a>{% endif %}
       </div>
 
       {% if rol == 'super_admin' %}
@@ -102,6 +105,9 @@
         <span class="ox-sb-section-label" style="color:rgba(192,132,252,.7)">👑 Super Admin</span>
         <a href="{{ url_for('superadmin.dashboard') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎛️</span>Panel SA</a>
         <a href="{{ url_for('superadmin.config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">⚙️</span>Configuración</a>
+        <a href="{{ url_for('superadmin.chatbot') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💬</span>Chatbot</a>
+        {% if brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📍</span>Zonas</a>{% endif %}
+        <a href="{{ url_for('superadmin.audit') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🧾</span>Auditoría</a>
         <a href="{{ url_for('superadmin.pl') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📈</span>P&L · Finanzas</a>
         <a href="{{ url_for('superadmin.admins') }}" class="ox-sb-item"><span class="ox-sb-item-icon">👑</span>Admins & Permisos</a>
       </div>
@@ -132,15 +138,6 @@
         <a href="{{ url_for('staff.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🧺</span>Pedidos de almacén</a>
         <a href="{{ url_for('staff.inventario') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Inventario</a>
         <a href="{{ url_for('pos.venta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖥️</span>Punto de venta</a>
-      </div>
-
-      {% elif rol == 'proveedor' %}
-      <div class="ox-sb-section">
-        <span class="ox-sb-section-label">Mi cocina</span>
-        <a href="{{ url_for('proveedor.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🍳</span>Pedidos a preparar</a>
-        <a href="{{ url_for('proveedor.inventario') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Mi inventario</a>
-        <a href="{{ url_for('proveedor.incidencias') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📨</span>Incidencias</a>
-        <a href="{{ url_for('proveedor.finanzas') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Finanzas</a>
       </div>
 
       {% elif rol == 'marketing' %}

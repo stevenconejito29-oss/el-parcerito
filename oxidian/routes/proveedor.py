@@ -13,8 +13,14 @@ from services import (lineas_proveedor_pedido, registrar_evento_pedido,
 proveedor_bp = Blueprint("proveedor", __name__)
 logger = logging.getLogger(__name__)
 
-ROLES_PROVEEDOR = {"proveedor", "admin", "super_admin"}
+ROLES_PROVEEDOR = {"admin", "super_admin"}
 _ESTADOS_ACTIVOS = ("pendiente", "armando")
+
+
+@proveedor_bp.before_request
+def proveedor_flow_disabled():
+    flash("El flujo proveedor/bar externo está desactivado. Usa el panel Admin de la tienda.", "info")
+    return redirect(url_for("admin.dashboard"))
 
 
 def proveedor_required(f):
@@ -23,6 +29,9 @@ def proveedor_required(f):
     def decorated(*args, **kwargs):
         if current_user.rol not in ROLES_PROVEEDOR:
             flash("Acceso restringido.", "danger")
+            return redirect(url_for("public.index"))
+        if current_user.rol == "proveedor" and not current_user.proveedor_id:
+            flash("Tu cuenta de proveedor no está enlazada a ningún bar.", "warning")
             return redirect(url_for("public.index"))
         return f(*args, **kwargs)
     return decorated
@@ -180,15 +189,19 @@ def marcar_preparado(pedido_id):
         )
         pedido.estado = "listo"
         try:
-            distribuir_repartidor(pedido)
+            repartidor = distribuir_repartidor(pedido)
         except Exception:
+            repartidor = None
             logger.exception("No se pudo asignar repartidor automático al pedido %s", pedido.id)
     try:
         db.session.commit()
         try:
             from push_service import notify_roles
+            roles_destino = ["cocina", "preparacion"]
+            if pedido.requiere_reparto:
+                roles_destino.append("repartidor")
             notify_roles(
-                ["preparacion"],
+                roles_destino,
                 "Proveedor listo",
                 f"El proveedor confirmó su parte del pedido #{pedido.numero_pedido}.",
                 url="/preparador/pedidos",
@@ -396,6 +409,9 @@ def marcar_extraviado(pedido_id):
                 "En pedidos mixtos reporta la incidencia; solo administración puede cancelar el pedido completo.",
                 "danger",
             )
+            return redirect(url_for("proveedor.pedidos"))
+        if pedido.estado not in ("pendiente", "armando"):
+            flash("Solo puedes reportar extravío antes de que el pedido esté listo o en ruta.", "danger")
             return redirect(url_for("proveedor.pedidos"))
     if pedido.estado in ("entregado", "cancelado"):
         flash(f"El pedido {pedido.numero_pedido} ya estaba en estado {pedido.estado}.", "warning")

@@ -10,8 +10,7 @@ from routes.public import public_bp
 class EmployeeAuthBoundaryTest(unittest.TestCase):
     def test_only_internal_roles_are_authenticable(self):
         expected = {
-            "super_admin", "admin", "preparacion", "repartidor", "proveedor",
-            "cocina", "staff",
+            "super_admin", "admin", "preparacion", "repartidor", "cocina",
         }
         self.assertEqual(set(ROLES_AUTENTICABLES), expected)
 

@@ -21,6 +21,17 @@ from services import (
 repartidor_bp = Blueprint("repartidor", __name__)
 logger = logging.getLogger(__name__)
 
+
+@repartidor_bp.before_request
+def exigir_delivery_habilitado():
+    from store_config import get_store_features
+
+    if not get_store_features()["delivery"]:
+        flash("El módulo de delivery está desactivado para esta tienda.", "info")
+        if current_user.is_authenticated and current_user.rol in ("admin", "super_admin"):
+            return redirect(url_for("admin.dashboard"))
+        return redirect(url_for("public.index"))
+
 ROLES_REPARTIDOR = {"admin", "super_admin", "repartidor"}
 
 
@@ -131,15 +142,19 @@ def ruta():
     disponible = _esta_disponible()
     _eager_zona = joinedload(Order.zona)
     if _es_admin_operativo():
-        listos = Order.query.options(_eager_zona).filter_by(estado="listo").order_by(Order.creado_en).all()
-        en_ruta = Order.query.options(_eager_zona).filter_by(estado="en_ruta").order_by(Order.creado_en).all()
+        listos = Order.query.options(_eager_zona).filter_by(
+            estado="listo", tipo_entrega_cliente="delivery"
+        ).order_by(Order.creado_en).all()
+        en_ruta = Order.query.options(_eager_zona).filter_by(
+            estado="en_ruta", tipo_entrega_cliente="delivery"
+        ).order_by(Order.creado_en).all()
     else:
         if disponible:
             listos_propios = Order.query.options(_eager_zona).filter_by(
-                estado="listo", repartidor_id=current_user.id
+                estado="listo", repartidor_id=current_user.id, tipo_entrega_cliente="delivery"
             ).order_by(Order.creado_en).all()
             sin_asignar = Order.query.options(_eager_zona).filter_by(
-                estado="listo", repartidor_id=None
+                estado="listo", repartidor_id=None, tipo_entrega_cliente="delivery"
             ).order_by(Order.creado_en).all()
             listos = listos_propios + sin_asignar
         else:
@@ -148,6 +163,7 @@ def ruta():
         filtros_en_ruta = [
             Order.estado == "en_ruta",
             Order.repartidor_id == current_user.id,
+            Order.tipo_entrega_cliente == "delivery",
         ]
         if disponible:
             filtros_en_ruta = [
@@ -156,6 +172,7 @@ def ruta():
                     Order.repartidor_id == current_user.id,
                     Order.repartidor_id.is_(None),
                 ),
+                Order.tipo_entrega_cliente == "delivery",
             ]
         en_ruta = Order.query.options(_eager_zona).filter(
             *filtros_en_ruta
@@ -189,6 +206,9 @@ def tomar_pedido(pedido_id):
     if pedido.estado != "listo":
         flash("El pedido no está disponible.", "warning")
         return redirect(url_for("repartidor.ruta"))
+    if not pedido.requiere_reparto:
+        flash("Este pedido es para recoger; no requiere repartidor.", "warning")
+        return redirect(url_for("repartidor.ruta"))
     if not pedido.repartidor_id and not _requiere_disponible_para_nuevo_trabajo():
         return redirect(url_for("repartidor.ruta"))
     if pedido.repartidor_id and pedido.repartidor_id != current_user.id and not _es_admin_operativo():
@@ -206,6 +226,9 @@ def salir_entregar(pedido_id):
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
     if pedido.estado != "listo":
         flash("El pedido no está listo para despachar.", "warning")
+        return redirect(url_for("repartidor.ruta"))
+    if not pedido.requiere_reparto:
+        flash("Este pedido es para recoger; no se despacha por delivery.", "warning")
         return redirect(url_for("repartidor.ruta"))
     if not _es_admin_operativo() and pedido.repartidor_id not in (None, current_user.id):
         flash("Este pedido no está asignado a ti.", "danger")
@@ -249,6 +272,9 @@ def enviar_codigo_entrega(pedido_id):
     if pedido.estado != "en_ruta":
         flash("El código solo se envía cuando el pedido está en ruta.", "warning")
         return redirect(url_for("repartidor.ruta"))
+    if not pedido.requiere_reparto:
+        flash("Este pedido es para recoger; no usa código de reparto.", "warning")
+        return redirect(url_for("repartidor.ruta"))
     if not _es_admin_operativo() and pedido.repartidor_id not in (None, current_user.id):
         flash("Este pedido no está asignado a ti.", "danger")
         return redirect(url_for("repartidor.ruta"))
@@ -284,6 +310,9 @@ def confirmar_entrega(pedido_id):
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
     if pedido.estado != "en_ruta":
         flash("El pedido no está en ruta.", "warning")
+        return redirect(url_for("repartidor.ruta"))
+    if not pedido.requiere_reparto:
+        flash("Este pedido es para recoger; debe cerrarse desde operación.", "warning")
         return redirect(url_for("repartidor.ruta"))
     if not _es_admin_operativo() and pedido.repartidor_id not in (None, current_user.id):
         flash("Este pedido no está asignado a ti.", "danger")

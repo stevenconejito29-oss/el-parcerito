@@ -271,7 +271,7 @@ def avanzar_estado_pedido(
 def _canales_preparacion_pedido(pedido: Order) -> set[str]:
     return {
         (item.display_canal_preparacion or "cocina").strip().lower()
-        for item in pedido.items
+        for item in lineas_preparacion_interna(pedido)
     }
 
 
@@ -332,7 +332,10 @@ def validar_avance_operativo(pedido: Order) -> None:
         )
         raise ValueError(f"Falta confirmación de proveedor: {nombres}.")
 
-    canales = _canales_preparacion_pedido(pedido)
+    canales = {
+        (item.display_canal_preparacion or "cocina").strip().lower()
+        for item in lineas_preparacion_interna(pedido)
+    }
     if "almacen" in canales and "cocina" in canales and not _almacen_mixto_preparado(pedido):
         raise ValueError("Falta la confirmación de empaque de almacén.")
 
@@ -369,11 +372,7 @@ def reasignar_responsable_pedido(
         if not asignado or not asignado.activo:
             raise ValueError("Usuario no encontrado o inactivo.")
         if campo == "preparador_id":
-            roles_permitidos = (
-                {"preparacion", "staff"}
-                if _canal_pedido(pedido) == "almacen"
-                else {"cocina", "preparacion"}
-            )
+            roles_permitidos = {"preparacion"} if _canal_pedido(pedido) == "almacen" else {"cocina", "preparacion"}
             if asignado.rol not in roles_permitidos:
                 destino = (
                     "preparación o empaque/almacén"
@@ -823,7 +822,7 @@ def distribuir_pedido(pedido: Order) -> User | None:
     if canal == "almacen":
         candidatos = _candidatos_disponibles(
             User.query.filter(
-                User.rol.in_(("preparacion", "staff")),
+                User.rol == "preparacion",
                 User.activo.is_(True),
             ).all()
         )
@@ -878,6 +877,8 @@ def distribuir_repartidor(pedido: Order) -> User | None:
     Asigna al repartidor disponible con menos carga cuando el pedido pasa a 'listo'.
     Solo usa repartidores con disponibilidad manual activa y presencia reciente.
     """
+    if not getattr(pedido, "requiere_reparto", True):
+        return None
     if pedido.repartidor_id:
         return db.session.get(User, pedido.repartidor_id)
 
@@ -902,6 +903,7 @@ def redistribuir_listos_sin_repartidor() -> int:
     pedidos = Order.query.filter_by(
         estado="listo",
         repartidor_id=None,
+        tipo_entrega_cliente="delivery",
     ).order_by(Order.creado_en).with_for_update(skip_locked=True).all()
     asignados = 0
     for pedido in pedidos:
@@ -1205,6 +1207,12 @@ def calcular_pl(fecha_ini, fecha_fin):
     descuentos = db.session.query(func.sum(Order.descuento)).filter(
         Order.entregado_en >= fi, Order.entregado_en < ff, Order.estado == "entregado"
     ).scalar() or 0
+    service_commission = db.session.query(func.sum(Order.service_commission_amount)).filter(
+        Order.entregado_en >= fi, Order.entregado_en < ff, Order.estado == "entregado"
+    ).scalar() or 0
+    merchant_net = db.session.query(func.sum(Order.merchant_net_amount)).filter(
+        Order.entregado_en >= fi, Order.entregado_en < ff, Order.estado == "entregado"
+    ).scalar() or 0
 
     # Order.total ya contiene descuentos y envío: es el importe realmente
     # cobrado. Los descuentos se muestran aparte, sin restarlos dos veces.
@@ -1277,6 +1285,8 @@ def calcular_pl(fecha_ini, fecha_fin):
         "margen_bruto_pct": margen_bruto_pct,
         "nominas": float(nominas),
         "comisiones_repartidor": float(comisiones),
+        "service_commission": float(service_commission),
+        "merchant_net": float(merchant_net),
         "gastos_caja": float(gastos_caja),
         "otros_ingresos_caja": float(otros_ingresos_caja),
         "resultado": resultado,

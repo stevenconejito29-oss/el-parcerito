@@ -981,7 +981,6 @@ body.ox-body-public {
   --col-faint:    #B79D8B;
   --col-border:   rgba(255,194,0,.12);
   --col-border-2: rgba(255,194,0,.18);
-  --brand-accent: #27AE74;
   --shadow-sm:    0 1px 4px rgba(0,0,0,.07);
   --shadow-md:    0 4px 18px rgba(0,0,0,.09), 0 1px 3px rgba(0,0,0,.05);
   --shadow-lg:    0 8px 32px rgba(0,0,0,.11), 0 2px 8px rgba(0,0,0,.06);
@@ -1248,9 +1247,6 @@ body.ox-body-public .ox-status-cancelado { background: rgba(100,80,70,.08); colo
 
 body.ox-body-public,
 body.ox-body-admin {
-  --brand-primary: #FCD116;
-  --brand-secondary: #CE1126;
-  --brand-accent: #003087;
   --col-bg:       var(--col-bone);
   --col-surface:  #FFFFFF;
   --col-elevated: #FFFDF8;
@@ -6244,6 +6240,23 @@ body.ox-body-admin .work-btn-success {
   color: #FFFFFF !important;
 }
 
+body.ox-body-admin .work-btn:disabled {
+  background: #D8DDE2 !important;
+  border-color: #C5CBD2 !important;
+  color: #5D6873 !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+body.ox-body-admin .work-action-help {
+  margin-top: .45rem;
+  color: #6B4C12;
+  font-size: .75rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
 body.ox-body-admin .work-btn-ghost {
   background: #FFFFFF !important;
   border-color: #CBD2DA !important;
@@ -6310,6 +6323,35 @@ body.ox-body-admin :is(input,select,textarea,button,a,summary):focus-visible {
 }
 
 @media (max-width: 767px) {
+  body.ox-body-admin {
+    --sb-item-h: 44px;
+  }
+
+  body.ox-body-admin :is(
+    .ox-sb-toggle,
+    .ox-sb-toggle-btn,
+    .ox-sb-item,
+    .ox-btn-primary,
+    .ox-btn-secondary,
+    .ox-btn-ghost,
+    .ox-btn-danger,
+    .work-btn,
+    .ord-btn,
+    .pos-top-btn,
+    .pos-pay-btn,
+    button,
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select,
+    textarea,
+    summary
+  ) {
+    min-height: 44px;
+  }
+
+  body.ox-body-admin .ox-sb-toggle {
+    min-width: 44px;
+  }
+
   body.ox-body-public main {
     padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)) !important;
   }
@@ -6445,6 +6487,7 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
 .ep-origin-current > a { color: var(--brand-primary, #9a6500); font-size: .76rem; font-weight: 800; margin-left: auto; }
 .ep-origin-list { display: flex; gap: .5rem; overflow-x: auto; padding-bottom: .2rem; }
 .ep-origin-list a {
+  min-height: 44px;
   background: var(--col-surface, #fff);
   border: 1px solid var(--col-border, rgba(0,0,0,.1));
   border-radius: 999px;

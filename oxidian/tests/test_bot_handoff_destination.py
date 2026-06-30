@@ -5,7 +5,7 @@ from decimal import Decimal
 from flask import Flask
 
 from extensions import db
-from models import Order, OrderItem, Product, Proveedor, User
+from models import Order, OrderItem, Product, User
 from routes.api_bot import api_bot_bp
 
 
@@ -39,30 +39,16 @@ class BotHandoffDestinationTest(unittest.TestCase):
             rol="super_admin",
             activo=True,
         )
-        self.provider = Proveedor(
-            nombre="Proveedor",
-            telefono="+34999999999",
-            activo=True,
-        )
         self.customer.set_password("test-only-password")
         self.superadmin.set_password("test-only-password")
-        db.session.add_all([self.customer, self.superadmin, self.provider])
+        db.session.add_all([self.customer, self.superadmin])
         db.session.flush()
-        self.operator = User(
-            nombre="Operador",
-            email="operador@test.invalid",
-            telefono="+34600000002",
-            rol="proveedor",
-            proveedor_id=self.provider.id,
-            activo=True,
-        )
-        self.operator.set_password("test-only-password")
         self.product = Product(
             nombre="Producto",
             precio=Decimal("10.00"),
             activo=True,
         )
-        db.session.add_all([self.operator, self.product])
+        db.session.add(self.product)
         db.session.commit()
 
     def tearDown(self):
@@ -110,16 +96,16 @@ class BotHandoffDestinationTest(unittest.TestCase):
     def test_requires_bot_authentication(self):
         self.assertEqual(self._get(authenticated=False).status_code, 401)
 
-    def test_provider_order_uses_linked_user_phone_not_public_contact(self):
-        order = self._order(self.provider.id)
+    def test_legacy_provider_metadata_still_uses_global_superadmins(self):
+        order = self._order(17)
 
         payload = self._get().get_json()
 
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["scope"], f"provider:{self.provider.id}")
+        self.assertEqual(payload["scope"], "global")
+        self.assertIsNone(payload["provider_id"])
         self.assertEqual(payload["order_id"], order.id)
-        self.assertEqual(payload["agents"], ["34600000002"])
-        self.assertNotIn("34999999999", payload["agents"])
+        self.assertEqual(payload["agents"], ["34600000001"])
 
     def test_own_order_uses_global_superadmins(self):
         self._order(None)
@@ -129,17 +115,6 @@ class BotHandoffDestinationTest(unittest.TestCase):
         self.assertEqual(payload["scope"], "global")
         self.assertIsNone(payload["provider_id"])
         self.assertEqual(payload["agents"], ["34600000001"])
-
-    def test_provider_without_active_operator_falls_back_global(self):
-        self.operator.activo = False
-        db.session.commit()
-        self._order(self.provider.id)
-
-        payload = self._get().get_json()
-
-        self.assertEqual(payload["scope"], "global")
-        self.assertEqual(payload["agents"], ["34600000001"])
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -53,21 +53,7 @@
           <option value="almacen">📦 Almacén</option>
         </select>
       </label>
-      <label class="bundle-field">
-        <span>Origen del combo *</span>
-        <select name="proveedor_despachador_id" id="bundle-origin"
-                onchange="bundleOriginChanged()" required>
-          <option value="">Stock nuestro (combo propio)</option>
-          {% for prov in proveedores|default([]) %}
-          <option value="{{ prov.id }}">{{ prov.nombre }}</option>
-          {% endfor %}
-        </select>
-        <small class="bundle-hint">
-          El catálogo de componentes se filtra según el origen elegido. Los
-          combos solo pueden mezclar productos del mismo stock — propio o de
-          un mismo bar.
-        </small>
-      </label>
+      <input type="hidden" name="proveedor_despachador_id" id="bundle-origin" value="">
       <label class="bundle-field">
         <span>Entrega</span>
         <select name="tipo_entrega" id="bundle-delivery" onchange="bundleDelivery()">
@@ -78,6 +64,14 @@
       <label class="bundle-field" id="bundle-date-wrap" hidden>
         <span>Fecha de entrega *</span>
         <input type="date" name="fecha_llegada" id="bundle-date">
+      </label>
+      <label class="bundle-field">
+        <span>Modalidad para el cliente</span>
+        <select name="modalidad_entrega">
+          <option value="ambas">Delivery o recogida</option>
+          <option value="delivery">Solo delivery</option>
+          <option value="recogida">Solo recogida</option>
+        </select>
       </label>
       <label class="bundle-field bundle-description">
         <span>Descripción para el menú</span>
@@ -132,7 +126,6 @@
                 data-product-id="{{ p.id }}"
                 data-name="{{ (p.nombre ~ ' ' ~ p.admin_nombre_operativo)|lower }}"
                 data-category="{{ p.categoria_id or '' }}"
-                data-origen-default="{{ p.proveedor_despachador_id or 'propio' }}"
                 onclick="bundleAddProduct({{ p.id }})">
           <span class="bundle-product-image">
             {% if p.imagen_url %}
@@ -144,7 +137,7 @@
           </span>
           <span class="bundle-product-copy">
             <strong>{{ p.nombre }}</strong>
-            <small>#{{ p.id }} · {{ p.origen_operativo_label }} · {{ p.canal_preparacion or 'cocina' }}</small>
+            <small>#{{ p.id }} · Stock propio · {{ p.canal_preparacion or 'cocina' }}</small>
             <b>€{{ "%.2f"|format(p.precio_final) }}</b>
           </span>
         </button>
@@ -269,7 +262,7 @@ const BUNDLE_PRODUCTS = [{% for p in productos_simples %}{
   price:{{ p.precio_final|float }},
   categoryId:{{ p.categoria_id or 'null' }},
   category:{{ (p.categoria.nombre if p.categoria else 'Sin categoría')|tojson }},
-  origin:{{ p.origen_operativo_label|tojson }},
+  origin:"Stock propio",
   channel:{{ (p.canal_preparacion or 'cocina')|tojson }},
   stock:{{ p.stock_total|int }},
   image:{{ (p.imagen_url|upload_url if p.imagen_url else '')|tojson }}
@@ -282,9 +275,7 @@ const BUNDLE_LIMITS = {
   maxDiscount:{{ combo_limits.max_discount_pct|float }}
 };
 
-// Disponibilidad de productos por origen (propio + cada bar):
-// {"propio":[id,id,...], "<bar_id>":[id,...]}. El selector "Origen del combo"
-// filtra la grid según esto para no permitir mezclar stocks distintos.
+// Disponibilidad de productos para combos de la tienda única.
 const BUNDLE_AVAILABILITY = {{ (disponibilidad_por_origen|default({}))|tojson }};
 
 function bundleCurrentOrigin(){
@@ -314,7 +305,7 @@ function bundleOriginChanged(){
     noRes.hidden = visibles > 0;
     noRes.textContent = visibles > 0
       ? 'No hay productos con ese filtro.'
-      : 'Este origen no tiene productos registrados todavía. Añádelos desde el panel de Proveedores antes de armar el combo.';
+      : 'No hay productos propios disponibles para armar el combo.';
   }
   // Avisar al usuario si en su receta ya añadió componentes que ya no son válidos
   if(typeof bundleSections !== 'undefined' && Array.isArray(bundleSections)){
@@ -326,8 +317,7 @@ function bundleOriginChanged(){
     }));
     if(invalidos.length && typeof window.alert === 'function'){
       window.alert(
-        'Aviso: los siguientes componentes ya no son válidos para el origen '
-        + 'elegido y deberás quitarlos antes de guardar:\n\n - '
+        'Aviso: los siguientes componentes ya no son válidos y deberás quitarlos antes de guardar:\n\n - '
         + invalidos.join('\n - ')
       );
     }

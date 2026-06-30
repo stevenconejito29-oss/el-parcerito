@@ -242,7 +242,7 @@
   <div class="work-list">
   {% for pedido in pendientes_encargo %}
   {%- set _ns = namespace(fecha_ent=none) -%}
-  {%- for _it in pedido.items -%}{%- if _it.producto and _it.producto.fecha_llegada and not _ns.fecha_ent -%}{%- set _ns.fecha_ent = _it.producto.fecha_llegada -%}{%- endif -%}{%- endfor -%}
+  {%- for _it in pedido.items -%}{%- if _it.display_fecha_entrega and (_ns.fecha_ent is none or _it.display_fecha_entrega < _ns.fecha_ent) -%}{%- set _ns.fecha_ent = _it.display_fecha_entrega -%}{%- endif -%}{%- endfor -%}
   {%- set fecha_ent = _ns.fecha_ent -%}
   <article class="work-card is-warn" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}"
            style="border-left:3px solid rgba(168,85,247,.5)">
@@ -328,6 +328,13 @@
         {% elif pedido.proveedores_pendientes %}
         <span class="work-badge-assigned">Bar pendiente</span>
         {% endif %}
+        {% if pedido.id in almacen_listo %}
+          {% if almacen_listo[pedido.id] %}
+          <span class="work-badge-prov-ready">✓ Almacén listo</span>
+          {% else %}
+          <span class="work-badge-assigned">Almacén pendiente</span>
+          {% endif %}
+        {% endif %}
       </div>
 
       <div class="work-items">
@@ -344,7 +351,17 @@
 
       <form method="POST" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="work-btn work-btn-success full-width">Listo para despacho</button>
+        {% set esperando_almacen = pedido.id in almacen_listo and not almacen_listo[pedido.id] %}
+        <button type="submit"
+                class="work-btn work-btn-success full-width"
+                {% if esperando_almacen %}disabled aria-describedby="almacen-pendiente-{{ pedido.id }}"{% endif %}>
+          {% if esperando_almacen %}Esperando a almacén{% else %}Listo para despacho{% endif %}
+        </button>
+        {% if esperando_almacen %}
+        <p id="almacen-pendiente-{{ pedido.id }}" class="work-action-help" role="status">
+          Este pedido es mixto. Podrás marcarlo listo cuando almacén termine su parte.
+        </p>
+        {% endif %}
       </form>
   </article>
   {% else %}

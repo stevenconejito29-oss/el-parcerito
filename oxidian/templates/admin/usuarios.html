@@ -8,7 +8,6 @@
   'cocina': 'Cocina (pedidos inmediatos)',
   'preparacion': 'Preparacion (pedidos con fecha)',
   'repartidor': 'Repartidor',
-  'proveedor': 'Proveedor',
   'staff': 'Staff (legado)'
 } %}
 
@@ -68,11 +67,7 @@
             <span class="ox-role-badge ox-role-{{ u.rol }}">{{ role_labels.get(u.rol, u.rol) }}</span>
           </td>
           <td class="text-sm" style="color:var(--col-muted)">
-            {% if u.rol == 'proveedor' %}
-              {{ u.proveedor.nombre if u.proveedor else 'Proveedor sin asignar' }}
-            {% else %}
-              {{ u.puesto_trabajo or 'Sin puesto indicado' }}
-            {% endif %}
+            {{ u.puesto_trabajo or 'Sin puesto indicado' }}
           </td>
           <td class="text-center">
             <span class="usr-state {{ 'is-active' if u.activo else 'is-inactive' }}">
@@ -120,11 +115,7 @@
     <div class="usr-mobile-assignment">
       <small>Asignación</small>
       <strong>
-        {% if u.rol == 'proveedor' %}
-          {{ u.proveedor.nombre if u.proveedor else 'Proveedor sin asignar' }}
-        {% else %}
-          {{ u.puesto_trabajo or 'Sin puesto indicado' }}
-        {% endif %}
+        {{ u.puesto_trabajo or 'Sin puesto indicado' }}
       </strong>
     </div>
     <div class="usr-actions">
@@ -183,13 +174,6 @@
         <label class="ox-label">Puesto de trabajo</label>
         <input class="ox-input" name="puesto_trabajo">
       </div>
-      <div class="ox-field md:col-span-2" data-provider-field hidden>
-        <label class="ox-label">Proveedor *</label>
-        <select class="ox-input" name="proveedor_id">
-          <option value="">Selecciona un proveedor activo</option>
-          {% for proveedor in proveedores %}<option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>{% endfor %}
-        </select>
-      </div>
       <div class="ox-field">
         <label class="ox-label">Salario base mensual</label>
         <input class="ox-input" type="number" name="salario_base" min="0" step="0.01" value="0">
@@ -227,17 +211,4 @@
   .usr-actions a,.usr-actions form,.usr-actions button{flex:1;width:100%;text-align:center}
 }
 </style>
-<script>
-document.querySelectorAll('[data-role-select]').forEach((select) => {
-  const sync = () => {
-    const field = select.closest('form').querySelector('[data-provider-field]');
-    const provider = field.querySelector('select');
-    const visible = select.value === 'proveedor';
-    field.hidden = !visible;
-    provider.required = visible;
-  };
-  select.addEventListener('change', sync);
-  sync();
-});
-</script>
 {% endblock %}

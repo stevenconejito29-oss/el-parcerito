@@ -28,25 +28,18 @@ def utcnow():
 #  - cocina: prepara pedidos inmediatos de stock propio.
 #  - preparacion: prepara pedidos programados o con fecha de entrega.
 #  - repartidor: entrega los pedidos.
-#  - proveedor: operador de un bar despachador (varios bares posibles).
 #  - cliente: identidad comercial interna para pedidos, puntos y marketing.
 #    No es una cuenta autenticable ni dispone de panel público.
-# "staff" se conserva únicamente para cuentas históricas.
-ROLES = ["super_admin", "admin", "cocina", "preparacion", "repartidor", "proveedor", "cliente"]
+ROLES = ["super_admin", "admin", "cocina", "preparacion", "repartidor", "cliente"]
 ROLES_AUTENTICABLES = frozenset({
-    "super_admin", "admin", "preparacion", "repartidor", "proveedor",
-    # Compatibilidad temporal con cuentas operativas antiguas.
-    "cocina", "staff",
+    "super_admin", "admin", "preparacion", "repartidor", "cocina",
 })
 ROLES_LEGACY_PREPARACION = {"staff"}
 METODOS_PAGO_VALIDOS = ("efectivo", "bizum")
 
-# Modelo de acuerdo con un proveedor (restaurante despachador):
-#   stock_proveedor  → el bar pone, repone y cobra precio_costo por unidad.
-#                      Nuestro margen = PVP − precio_costo.
-#   stock_propio_bar → nosotros ponemos el stock físicamente en el bar y le
-#                      pagamos comision_pct% del PVP por cada combo despachado
-#                      como fee de preparación.
+# LEGACY: modelo de acuerdo del flujo multi-proveedor/bar aliado.
+# El flujo operativo vigente no usa proveedores como rol ni como origen público;
+# se conserva para leer datos históricos hasta una migración de limpieza.
 MODELOS_ACUERDO_PROVEEDOR = ("stock_proveedor", "stock_propio_bar")
 
 # 14 alérgenos de declaración obligatoria según Reglamento UE 1169/2011
@@ -74,7 +67,7 @@ TIPOS_ENTREGA = ["inmediato", "programado"]
 ADMIN_FEATURES = [
     "caja", "productos", "stock", "cupones",
     "staff_pagos", "reportes", "zonas", "auditoria",
-    "marketing", "pos", "whatsapp"
+    "marketing", "pos", "whatsapp", "usuarios"
 ]
 
 
@@ -115,8 +108,8 @@ class User(UserMixin, db.Model):
     salario_base = db.Column(db.Numeric(10, 2), default=0)       # salario mensual fijo
     tarifa_entrega = db.Column(db.Numeric(10, 2), default=0)     # comisión por pedido entregado
 
-    # Operador de proveedor (solo users con rol='proveedor')
-    # Si está informado, este user inicia sesión como personal del restaurante de ese proveedor.
+    # LEGACY: vínculo antiguo con proveedor/bar aliado. No se usa para login ni
+    # permisos del flujo vigente.
     proveedor_id = db.Column(db.Integer, db.ForeignKey("proveedores.id"), nullable=True)
 
     # Relaciones
@@ -482,6 +475,9 @@ class Product(db.Model):
     # inmediato = se prepara y envía al momento
     # programado = llegará en una fecha futura y se puede reservar
     tipo_entrega = db.Column(db.String(20), default="inmediato")
+    # Modalidad logística: ambas | delivery | recogida. Independiente de
+    # inmediato/programado, que describe cuándo se prepara.
+    modalidad_entrega = db.Column(db.String(20), nullable=False, default="ambas", server_default="ambas")
     fecha_llegada = db.Column(db.Date)          # solo tipo=programado
     dias_anticipacion_encargo = db.Column(db.Integer, default=1)  # legado: mantener compatibilidad con datos antiguos
 
@@ -519,6 +515,10 @@ class Product(db.Model):
         order_by="ComboGroup.orden.asc(), ComboGroup.id.asc()",
     )
     combo_items = db.relationship("ComboItem", foreign_keys="ComboItem.combo_id", backref="combo", lazy="dynamic")
+    extra_groups = db.relationship(
+        "ProductExtraGroup", backref="producto", lazy="dynamic",
+        cascade="all, delete-orphan", order_by="ProductExtraGroup.orden.asc(), ProductExtraGroup.id.asc()",
+    )
     order_items = db.relationship("OrderItem", backref="producto", lazy="dynamic")
 
     @property
@@ -1596,6 +1596,52 @@ class ComboItem(db.Model):
             return 0.0
 
 
+class ProductExtraGroup(db.Model):
+    """Regla de personalización de un producto (salsas, queso, toppings...)."""
+    __tablename__ = "product_extra_groups"
+
+    id = db.Column(db.Integer, primary_key=True)
+    producto_id = db.Column(db.Integer, db.ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    nombre = db.Column(db.String(80), nullable=False)
+    descripcion = db.Column(db.String(240))
+    min_selecciones = db.Column(db.Integer, nullable=False, default=0)
+    max_selecciones = db.Column(db.Integer, nullable=False, default=1)
+    orden = db.Column(db.Integer, nullable=False, default=0)
+    activo = db.Column(db.Boolean, nullable=False, default=True)
+    opciones = db.relationship(
+        "ProductExtraOption", backref="grupo", lazy="dynamic",
+        cascade="all, delete-orphan", order_by="ProductExtraOption.orden.asc(), ProductExtraOption.id.asc()",
+    )
+
+    __table_args__ = (
+        db.CheckConstraint("min_selecciones >= 0", name="ck_extra_group_min"),
+        db.CheckConstraint("max_selecciones >= min_selecciones", name="ck_extra_group_range"),
+        db.Index("ix_product_extra_groups_product", "producto_id", "orden"),
+    )
+
+
+class ProductExtraOption(db.Model):
+    __tablename__ = "product_extra_options"
+
+    id = db.Column(db.Integer, primary_key=True)
+    grupo_id = db.Column(db.Integer, db.ForeignKey("product_extra_groups.id", ondelete="CASCADE"), nullable=False)
+    nombre = db.Column(db.String(100), nullable=False)
+    precio = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    max_cantidad = db.Column(db.Integer, nullable=False, default=1)
+    orden = db.Column(db.Integer, nullable=False, default=0)
+    activo = db.Column(db.Boolean, nullable=False, default=True)
+
+    __table_args__ = (
+        db.CheckConstraint("precio >= 0", name="ck_extra_option_price"),
+        db.CheckConstraint("max_cantidad >= 1", name="ck_extra_option_max_qty"),
+        db.Index("ix_product_extra_options_group", "grupo_id", "orden"),
+    )
+
+    @property
+    def precio_float(self):
+        return float(self.precio or 0)
+
+
 # ─────────────────────────────────────────────
 # STOCK
 # ─────────────────────────────────────────────
@@ -1654,10 +1700,14 @@ class Order(db.Model):
     subtotal = db.Column(db.Numeric(10, 2), nullable=False)
     descuento = db.Column(db.Numeric(10, 2), default=0)
     total = db.Column(db.Numeric(10, 2), nullable=False)
+    service_commission_pct = db.Column(db.Numeric(5, 2), default=0, server_default="0", nullable=False)
+    service_commission_amount = db.Column(db.Numeric(10, 2), default=0, server_default="0", nullable=False)
+    merchant_net_amount = db.Column(db.Numeric(10, 2), default=0, server_default="0", nullable=False)
     cupon_id = db.Column(db.Integer, db.ForeignKey("coupons.id"))
     puntos_usados = db.Column(db.Integer, default=0)
     puntos_ganados = db.Column(db.Integer, default=0)
     metodo_pago = db.Column(db.String(30))
+    tipo_entrega_cliente = db.Column(db.String(20), default="delivery", server_default="delivery", nullable=False)
     direccion_entrega = db.Column(db.Text)
     notas = db.Column(db.Text)
 
@@ -1764,6 +1814,10 @@ class Order(db.Model):
     @property
     def tiene_proveedores(self):
         return bool(self.estados_proveedor)
+
+    @property
+    def requiere_reparto(self):
+        return (self.tipo_entrega_cliente or "delivery") == "delivery"
 
     @property
     def proveedores_listos(self):
@@ -2162,6 +2216,7 @@ def snapshot_producto_para_pedido(producto, origen_operativo=None):
         "combo_precio_base": float(producto.combo_precio_base or 0) if producto.es_combo else 0,
         "tipo_producto": producto.tipo_producto or "simple",
         "tipo_entrega": producto.tipo_entrega or "inmediato",
+        "modalidad_entrega": producto.modalidad_entrega or "ambas",
         "fecha_llegada": producto.fecha_llegada.isoformat() if producto.fecha_llegada else None,
         "dias_anticipacion_encargo": int(producto.dias_anticipacion_encargo or 0),
         "canal_preparacion": producto.canal_preparacion or "cocina",
@@ -2223,6 +2278,9 @@ def metadata_componente_combo(combo_item, proveedor_despachador_id=None):
         "tipo_entrega": (
             componente.tipo_entrega if componente else "inmediato"
         ) or "inmediato",
+        "modalidad_entrega": (
+            componente.modalidad_entrega if componente else "ambas"
+        ) or "ambas",
         "proveedor_despachador_id": proveedor_despachador_id,
         "origen_operativo": "proveedor" if proveedor_despachador_id else "propio",
         "precio_costo_congelado": None,

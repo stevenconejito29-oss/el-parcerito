@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, date
 from flask import Blueprint, jsonify, request, current_app
 from extensions import db, get_or_404
 from models import (User, Product, Categoria, Order, OrderItem, OrderProviderStatus,
+                    ProveedorProducto,
                     Coupon, ComboItem,
                     AffiliateCode, ZonaEntrega,
                     PointsLog, SiteConfig, IdempotencyKey, normalizar_metodo_pago,
@@ -31,6 +32,7 @@ from services import (distribuir_pedido, registrar_uso_afiliado,
 from pricing_service import calcular_precio
 from loyalty_service import aplicar_canje_en_pedido, bloquear_cliente_puntos, solicitar_codigo
 from phone_utils import normalizar_telefono_cliente, telefono_valido
+from store_config import get_service_commission, get_store_features, is_service_mode
 
 api_bot_bp = Blueprint("api_bot", __name__)
 logger = logging.getLogger(__name__)
@@ -54,6 +56,13 @@ def _delivery_family(producto):
 
 def _prep_family(producto):
     return (getattr(producto, "canal_preparacion", None) or "cocina").strip().lower()
+
+
+def _product_fulfillment_modes(producto):
+    mode = (getattr(producto, "modalidad_entrega", None) or "ambas").strip().lower()
+    if mode == "delivery": return {"delivery"}
+    if mode == "recogida": return {"recogida"}
+    return {"delivery", "recogida"}
 
 
 def notificar_bot_sync():
@@ -130,6 +139,50 @@ def _bot_order_create_enabled():
     return False
 
 
+@api_bot_bp.route("/ai/config")
+@bot_required
+def ai_config():
+    """Configuración opcional del asistente; desactivada sin clave explícita."""
+    provider = (SiteConfig.get("BOT_AI_PROVIDER", "") or "").strip().lower()
+    api_key = SiteConfig.get("BOT_AI_API_KEY", "") or ""
+    enabled = _config_bool("BOT_AI_ENABLED") and provider in {"openai", "groq"} and bool(api_key)
+    return jsonify({
+        "ok": True, "habilitado": enabled, "proveedor": provider,
+        "api_key": api_key if enabled else "",
+        "modelo": SiteConfig.get("BOT_AI_MODEL", "") or "",
+        "temperature": 0.2, "max_tokens": 220,
+        "reglas_extra": SiteConfig.get("BOT_AI_RULES", "") or "",
+    })
+
+
+@api_bot_bp.route("/security/admin-pin-hash")
+@bot_required
+def admin_pin_hash():
+    """Sincroniza únicamente el hash; nunca expone un PIN en texto claro."""
+    return jsonify({"ok": True, "hash": SiteConfig.get("BOT_ADMIN_PIN_HASH", "") or ""})
+
+
+@api_bot_bp.route("/branding")
+@bot_required
+def branding():
+    features = get_store_features()
+    return jsonify({
+        "ok": True,
+        "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda"),
+        "slogan": SiteConfig.get("SLOGAN_NEGOCIO", ""),
+        "descripcion": SiteConfig.get("DESCRIPCION_NEGOCIO", ""),
+        "telefono": SiteConfig.get("TELEFONO_NEGOCIO", ""),
+        "direccion": SiteConfig.get("DIRECCION_NEGOCIO", ""),
+        "ciudad": SiteConfig.get("CIUDAD_NEGOCIO", ""),
+        "tenant_mode": features["modo_tienda"],
+        "suspended": str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).lower() in {"1", "true", "yes", "on"},
+        "delivery_enabled": features["delivery"],
+        "pickup_enabled": features["recogida"],
+        "scheduled_enabled": features["pedidos_programados"],
+        "points_enabled": features["puntos"],
+    })
+
+
 def _combo_order_payload(producto, seleccion_item_ids):
     if not producto.es_combo:
         return "", {}
@@ -201,19 +254,11 @@ def _combo_order_payload(producto, seleccion_item_ids):
 def _producto_disponible_para_bot(producto):
     if not producto:
         return False
-    proveedor_ok = (
-        not producto.proveedor_despachador_id
-        or (
-            producto.proveedor_despachador
-            and producto.proveedor_despachador.activo
-            and producto.proveedor_despachador.esta_abierto_ahora
-        )
-    )
     return bool(
         producto
         and producto.activo
         and producto.visible_ahora
-        and proveedor_ok
+        and not producto.proveedor_despachador_id
         and producto.disponible_para_venta()
     )
 
@@ -277,6 +322,7 @@ def _producto_catalogo_payload(producto, incluir_diagnostico=False):
         "precio_costo": float(producto.precio_costo) if producto.precio_costo is not None else None,
         "tipo_producto": getattr(producto, "tipo_producto", None) or "simple",
         "tipo_entrega": getattr(producto, "tipo_entrega", None) or "inmediato",
+        "modalidad_entrega": getattr(producto, "modalidad_entrega", None) or "ambas",
         "fecha_llegada": producto.fecha_llegada.isoformat() if producto.fecha_llegada else None,
         "dias_anticipacion_encargo": producto.dias_anticipacion_encargo,
         "es_combo": bool(producto.es_combo),
@@ -882,6 +928,7 @@ def crear_pedido():
         costo_envio = precio.costo_envio
         puntos_a_canjear = precio.puntos_usados
         puntos_ganados = int(total * puntos_por_euro)
+        service_fee = get_service_commission(total)
 
         # Registrar uso del cupón (incluye envio_gratis donde descuento_cupon puede ser 0)
         if cupon_obj:
@@ -899,6 +946,9 @@ def crear_pedido():
             subtotal=subtotal,
             descuento=precio.descuento_total,
             total=total,
+            service_commission_pct=service_fee["pct"],
+            service_commission_amount=service_fee["amount"],
+            merchant_net_amount=service_fee["merchant_net"],
             cupon_id=cupon_obj.id if cupon_obj else None,
             puntos_usados=0,
             puntos_ganados=puntos_ganados,
@@ -1029,23 +1079,9 @@ def _normalizar_tel_match(telefono_raw):
     return digits, plus
 
 
-def _operador_bar_por_telefono(telefono_raw):
-    """Resuelve autorización de bar desde un usuario proveedor activo."""
-    telefono = normalizar_telefono_cliente(telefono_raw)
-    if not telefono:
-        return None, None
-    operador = (
-        User.query
-        .filter_by(
-            telefono_normalizado=telefono,
-            rol="proveedor",
-            activo=True,
-        )
-        .first()
-    )
-    if not operador or not operador.proveedor or not operador.proveedor.activo:
-        return None, None
-    return operador, operador.proveedor
+def _operador_bar_por_telefono(_telefono_raw):
+    """LEGACY desactivado: no existe rol proveedor/bar en el flujo vigente."""
+    return None, None
 
 
 ESTADOS_PEDIDO_ACTIVO_HANDOFF = ("pendiente", "armando", "listo", "en_ruta")
@@ -1087,7 +1123,6 @@ def _proveedor_congelado_pedido(pedido):
 def _destino_handoff_cliente(telefono_raw):
     cliente, telefono = _cliente_por_telefono(telefono_raw)
     pedido = None
-    proveedor_id = None
     if cliente:
         pedido = (
             Order.query
@@ -1098,25 +1133,6 @@ def _destino_handoff_cliente(telefono_raw):
             .order_by(Order.creado_en.desc(), Order.id.desc())
             .first()
         )
-        if pedido:
-            proveedor_id = _proveedor_congelado_pedido(pedido)
-
-    if proveedor_id:
-        agentes = _telefonos_usuarios_handoff(
-            User.query.filter_by(
-                rol="proveedor",
-                proveedor_id=proveedor_id,
-                activo=True,
-            )
-        )
-        if agentes:
-            return {
-                "scope": f"provider:{proveedor_id}",
-                "provider_id": proveedor_id,
-                "order_id": pedido.id,
-                "order_number": pedido.numero_pedido,
-                "agents": agentes,
-            }
 
     agentes = _telefonos_usuarios_handoff(
         User.query.filter_by(rol="super_admin", activo=True)
@@ -1146,24 +1162,8 @@ def handoff_destination():
 @api_bot_bp.route("/bar/identify")
 @bot_required
 def identify_bar():
-    """Indica si un número de WhatsApp pertenece al operador de un bar activo.
-
-    La identidad privilegiada pertenece a un User proveedor activo y vinculado;
-    Proveedor.telefono queda reservado como contacto público."""
-    telefono = (request.args.get("telefono") or "").strip()
-    operador, bar = _operador_bar_por_telefono(telefono)
-    if bar:
-        return jsonify({
-            "ok": True,
-            "es_bar": True,
-            "bar": {
-                "id": bar.id,
-                "nombre": bar.nombre,
-                "operador_id": operador.id,
-                "operador_nombre": operador.nombre,
-            },
-        })
-    return jsonify({"ok": True, "es_bar": False})
+    """El menú bar/proveedor del bot queda desactivado en tienda única."""
+    return jsonify({"ok": True, "es_bar": False, "bar": None})
 
 
 @api_bot_bp.route("/bar/pedidos")
@@ -1204,6 +1204,132 @@ def bar_pedidos_activos():
     })
 
 
+@api_bot_bp.route("/bar/sku-list")
+@bot_required
+def bar_sku_list():
+    """Inventario operativo del bar identificado por su operador WhatsApp."""
+    telefono = request.args.get("telefono") or ""
+    operador, bar = _operador_bar_por_telefono(telefono)
+    if not telefono:
+        return jsonify({"ok": False, "error": "telefono requerido"}), 400
+    if not bar:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+
+    filas = (
+        ProveedorProducto.query
+        .join(Product, Product.id == ProveedorProducto.producto_id)
+        .filter(ProveedorProducto.proveedor_id == bar.id)
+        .order_by(Product.nombre.asc(), ProveedorProducto.id.asc())
+        .limit(200)
+        .all()
+    )
+    return jsonify({
+        "ok": True,
+        "bar": {"id": bar.id, "nombre": bar.nombre},
+        "items": [{
+            "pp_id": fila.id,
+            "producto_id": fila.producto_id,
+            "nombre": fila.producto.nombre if fila.producto else f"Producto #{fila.producto_id}",
+            "precio": float(fila.producto.precio_final if fila.producto else 0),
+            "precio_costo": float(fila.precio_costo or 0),
+            "stock": int(fila.stock or 0),
+            "activo": bool(fila.activo),
+            "agotado": (not fila.activo) or int(fila.stock or 0) <= 0,
+        } for fila in filas],
+    })
+
+
+@api_bot_bp.route("/bar/estado-tienda", methods=["POST"])
+@bot_required
+def bar_estado_tienda():
+    """Permite al operador activar/desactivar temporalmente su sección."""
+    data = request.get_json(silent=True) or {}
+    telefono = data.get("telefono") or request.args.get("telefono") or ""
+    operador, bar = _operador_bar_por_telefono(telefono)
+    if not telefono:
+        return jsonify({"ok": False, "error": "telefono requerido"}), 400
+    if not bar:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+
+    abierta = data.get("abierta", None)
+    if abierta is not None:
+        bar.activo = _json_bool(abierta)
+        db.session.commit()
+    return jsonify({
+        "ok": True,
+        "bar": {"id": bar.id, "nombre": bar.nombre},
+        "abierta": bool(bar.activo and bar.esta_abierto_ahora),
+        "activo": bool(bar.activo),
+        "modo": "manual" if abierta is not None else "auto",
+    })
+
+
+@api_bot_bp.route("/bar/producto/<int:pp_id>/agotado", methods=["POST"])
+@bot_required
+def bar_producto_agotado(pp_id):
+    """Marca un SKU del bar como agotado/disponible sin tocar stock propio."""
+    data = request.get_json(silent=True) or {}
+    telefono = data.get("telefono") or request.args.get("telefono") or ""
+    operador, bar = _operador_bar_por_telefono(telefono)
+    if not telefono:
+        return jsonify({"ok": False, "error": "telefono requerido"}), 400
+    if not bar:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+
+    fila = ProveedorProducto.query.filter_by(id=pp_id, proveedor_id=bar.id).with_for_update().first()
+    if not fila:
+        return jsonify({"ok": False, "error": "SKU no pertenece a tu bar"}), 404
+
+    agotado = _json_bool(data.get("agotado", True))
+    stock_raw = data.get("stock", None)
+    stock_nuevo = None
+    if stock_raw is not None:
+        try:
+            stock_nuevo = max(0, int(stock_raw))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "stock inválido"}), 400
+
+    if agotado:
+        fila.stock = 0
+        fila.activo = False
+    else:
+        fila.activo = True
+        fila.stock = stock_nuevo if stock_nuevo is not None else max(1, int(fila.stock or 0))
+    db.session.commit()
+    return jsonify({
+        "ok": True,
+        "producto": {
+            "pp_id": fila.id,
+            "producto_id": fila.producto_id,
+            "nombre": fila.producto.nombre if fila.producto else f"Producto #{fila.producto_id}",
+            "stock": int(fila.stock or 0),
+            "activo": bool(fila.activo),
+            "agotado": (not fila.activo) or int(fila.stock or 0) <= 0,
+        },
+    })
+
+
+@api_bot_bp.route("/bar/producto/<int:pp_id>/precio", methods=["POST"])
+@bot_required
+def bar_producto_precio(pp_id):
+    """El modelo actual no tiene precio de venta por bar; no mutamos Product global."""
+    data = request.get_json(silent=True) or {}
+    telefono = data.get("telefono") or request.args.get("telefono") or ""
+    operador, bar = _operador_bar_por_telefono(telefono)
+    if not telefono:
+        return jsonify({"ok": False, "error": "telefono requerido"}), 400
+    if not bar:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    fila = ProveedorProducto.query.filter_by(id=pp_id, proveedor_id=bar.id).first()
+    if not fila:
+        return jsonify({"ok": False, "error": "SKU no pertenece a tu bar"}), 404
+    return jsonify({
+        "ok": False,
+        "code": "PRICE_OVERRIDE_UNSUPPORTED",
+        "error": "El precio de venta es global; debe cambiarse desde productos por superadmin.",
+    }), 409
+
+
 @api_bot_bp.route("/bar/pedido/<int:pedido_id>/preparado", methods=["POST"])
 @bot_required
 def bar_marcar_preparado(pedido_id):
@@ -1217,6 +1343,8 @@ def bar_marcar_preparado(pedido_id):
         return jsonify({"ok": False, "error": "No autorizado"}), 403
 
     pedido = get_or_404(Order, pedido_id)
+    if pedido.estado not in ("pendiente", "armando", "listo"):
+        return jsonify({"ok": False, "error": "El pedido ya está cerrado"}), 409
     estado = OrderProviderStatus.query.filter_by(
         pedido_id=pedido.id, proveedor_id=bar.id
     ).with_for_update().first()
@@ -1312,6 +1440,9 @@ def bar_incidencias():
 def estado_pedido(pedido_id):
     try:
         pedido = get_or_404(Order, pedido_id)
+        cliente, _ = _cliente_por_telefono(request.args.get("telefono") or "")
+        if not cliente or cliente.id != pedido.cliente_id:
+            return jsonify({"ok": False, "error": "No autorizado"}), 403
         return jsonify({"ok": True, "pedido": _pedido_bot_payload(pedido)})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -1332,6 +1463,9 @@ def reportar_incidencia(pedido_id):
         if len(texto) > 2000:
             texto = texto[:2000]
         telefono = (data.get("telefono") or "").strip() or None
+        cliente, _ = _cliente_por_telefono(telefono or "")
+        if not cliente or cliente.id != pedido.cliente_id:
+            return jsonify({"ok": False, "error": "No autorizado"}), 403
 
         from services import registrar_evento_pedido
         registrar_evento_pedido(
@@ -1539,6 +1673,7 @@ def catalogo_completo():
                     "descripcion":           p.descripcion or "",
                     "precio":                float(p.precio_final),
                     "tipo_entrega":          p.tipo_entrega or "inmediato",
+                    "modalidad_entrega":     p.modalidad_entrega or "ambas",
                     "fecha_llegada":         p.fecha_llegada.isoformat() if p.fecha_llegada else None,
                     "categoria":             p.categoria.nombre if p.categoria else "",
                     "stock":                 p.stock_operativo_total,
@@ -1584,6 +1719,7 @@ def promociones():
             "precio_base": float(producto.combo_precio_base or 0),
             "descuento_porcentaje": float(producto.combo_descuento_pct or 0),
             "tipo_entrega": producto.tipo_entrega or "inmediato",
+            "modalidad_entrega": producto.modalidad_entrega or "ambas",
             "categoria": producto.categoria.nombre if producto.categoria else "",
         }
         for producto in productos
@@ -1953,6 +2089,7 @@ def catalogo_por_categoria(categoria_id):
                     "precio": float(p.precio),
                     "origen_pais": p.origen_pais or "",
                     "tipo_entrega": p.tipo_entrega or "inmediato",
+                    "modalidad_entrega": p.modalidad_entrega or "ambas",
                     "stock": p.stock_total,
                     "canjeable_con_puntos": bool(p.canjeable_con_puntos),
                     "puntos_para_canje": p.puntos_para_canje or 0,
@@ -2345,6 +2482,7 @@ def _producto_admin_payload(producto):
         "activo": bool(producto.activo),
         "es_combo": bool(producto.es_combo),
         "tipo_entrega": producto.tipo_entrega or "inmediato",
+        "modalidad_entrega": producto.modalidad_entrega or "ambas",
         "categoria": producto.categoria.nombre if producto.categoria else "",
         "stock": int(producto.combo_stock_total if producto.es_combo else producto.stock_total),
     }

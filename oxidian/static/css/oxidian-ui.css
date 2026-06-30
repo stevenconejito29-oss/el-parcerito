@@ -99,6 +99,13 @@ body.ox-modal-open .ox-pwa-sheet {
   display: none !important;
 }
 
+/* Legibilidad y áreas seguras para iOS, Android e in-app browsers. */
+html{background:var(--col-bg,#111);scroll-padding-top:calc(76px + env(safe-area-inset-top,0px))}
+body.ox-body-public{padding-top:env(safe-area-inset-top,0px);min-height:100dvh;overflow-x:clip}
+.ox-header-public{border-bottom:1px solid color-mix(in srgb,var(--brand-primary) 28%,transparent);box-shadow:0 5px 22px rgba(0,0,0,.24)}
+button,a,input,select,textarea{touch-action:manipulation}.ep-card,.ox-card{outline:1px solid color-mix(in srgb,var(--brand-primary) 16%,var(--col-border));box-shadow:0 7px 22px rgba(0,0,0,.18)}
+@media(max-width:480px){.ox-header-public>div{padding-left:max(.75rem,env(safe-area-inset-left));padding-right:max(.75rem,env(safe-area-inset-right))}.ep-card{border-radius:1rem}.ep-grid{gap:.75rem}.ox-bottom-nav{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}}
+
 .ox-body-public :is(.ep-card, .ep-cart-item, .ep-cart-card) {
   transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
 }
