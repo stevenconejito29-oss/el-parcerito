@@ -503,9 +503,20 @@ def _delivery_family(producto):
     return "programado" if tipo in ("programado", "encargo") else "inmediato"
 
 
-def _prep_family(producto):
-    """Canal de preparación: 'cocina' | 'almacen'."""
-    return (getattr(producto, "canal_preparacion", None) or "cocina").strip().lower()
+def _order_group(producto):
+    """Grupo configurable que determina qué productos comparten pedido."""
+    key = getattr(producto, "grupo_pedido_key", None)
+    if key:
+        return key
+    value = " ".join(str(getattr(producto, "grupo_pedido", None) or "").split()).casefold()
+    return value or "__general__"
+
+
+def _order_group_label(producto):
+    label = getattr(producto, "grupo_pedido_label", None)
+    if label:
+        return label
+    return " ".join(str(getattr(producto, "grupo_pedido", None) or "").split()) or "Pedido general"
 
 
 def _cart_delivery_families(carrito, exclude_key=None):
@@ -525,16 +536,11 @@ def _cart_delivery_families(carrito, exclude_key=None):
     return {_delivery_family(p) for p in productos}
 
 
-def _cart_prep_families(carrito, exclude_key=None):
-    """Devuelve el conjunto de canales de preparación en el carrito actual."""
-    if not carrito:
-        return set()
-    ids = [int(pid) for pid in carrito.keys()
+def _cart_order_groups(carrito, exclude_key=None):
+    ids = [int(pid) for pid in (carrito or {})
            if str(pid) != str(exclude_key) and str(pid).isdigit()]
-    if not ids:
-        return set()
-    productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all()
-    return {_prep_family(p) for p in productos}
+    productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all() if ids else []
+    return {_order_group(p): _order_group_label(p) for p in productos}
 
 
 def _cart_fulfillment_options(carrito, exclude_key=None):
@@ -558,13 +564,6 @@ def _cart_origins(carrito, exclude_key=None):
 
 def _items_delivery_families(items):
     return {_delivery_family(item["producto"]) for item in items if item.get("producto")}
-
-
-def _items_origins(items):
-    return {
-        item["producto"].origen_operativo_key
-        for item in items if item.get("producto")
-    }
 
 
 @public_bp.route("/carrito/agregar/<int:producto_id>", methods=["POST"])
@@ -606,30 +605,37 @@ def agregar_carrito(producto_id):
     # Bloqueo 1: no mezclar inmediato con programado
     familias_actuales = _cart_delivery_families(carrito, exclude_key=key)
     familia_producto = _delivery_family(producto)
+    if len(familias_actuales) > 1:
+        return _err("El carrito quedó incompatible por un cambio de fecha. Retira un producto antes de continuar.")
     if familias_actuales and familia_producto not in familias_actuales:
         return _err(
             "Para evitar errores de preparación y despacho, haz pedidos separados: "
             "uno para delivery inmediato y otro para productos con fecha fija."
         )
 
-    # Bloqueo 2: no mezclar productos de cocina con productos de almacén
-    canales_actuales = _cart_prep_families(carrito, exclude_key=key)
-    canal_producto = _prep_family(producto)
-    if canales_actuales and canal_producto not in canales_actuales:
-        if canal_producto == "almacen":
-            return _err(
-                "Las bebidas y productos envasados requieren un pedido independiente. "
-                "Finaliza tu pedido actual y luego añade estos productos."
-            )
+    # Bloqueo 2: grupos de pedido configurables. Cocina y almacén sí pueden
+    # colaborar en un pedido mixto; solo se separan productos marcados por negocio.
+    grupos_actuales = _cart_order_groups(carrito, exclude_key=key)
+    grupo_producto = _order_group(producto)
+    if len(grupos_actuales) > 1:
+        return _err("El carrito contiene grupos incompatibles. Retira un producto antes de continuar.")
+    if grupos_actuales and grupo_producto not in grupos_actuales:
+        grupo_actual = next(iter(grupos_actuales.values()))
         return _err(
-            "Los productos de cocina se preparan al momento y requieren un pedido independiente. "
-            "Finaliza primero tu pedido de almacén."
+            f"'{producto.nombre}' pertenece a «{_order_group_label(producto)}» y "
+            f"no puede combinarse con «{grupo_actual}». Haz pedidos separados."
         )
 
     opciones_actuales = set(_cart_fulfillment_options(carrito, exclude_key=key))
+    hay_otros_productos = any(
+        str(pid) != key and str(pid).isdigit() and int(qty or 0) > 0
+        for pid, qty in carrito.items()
+    )
     opciones_producto = set(_fulfillment_options([producto]))
     if not opciones_producto:
         return _err("Este producto no tiene una modalidad de entrega habilitada ahora.")
+    if hay_otros_productos and not opciones_actuales:
+        return _err("El carrito no comparte una modalidad de entrega válida. Retira un producto antes de continuar.")
     if opciones_actuales and not (opciones_actuales & opciones_producto):
         return _err(
             "Este producto no admite la misma modalidad que el resto del carrito. "
@@ -781,12 +787,21 @@ def ver_carrito():
         puntos_sesion = {}
         puntos_verificados = 0
         puntos_visibles = 0
+    cart_productos = [item["producto"] for item in items if item.get("producto")]
+    cart_grupos = {_order_group(producto) for producto in cart_productos}
+    cart_familias = {_delivery_family(producto) for producto in cart_productos}
     todos_canjeables = [
         p for p in Product.query.filter_by(canjeable_con_puntos=True, activo=True)
         .filter(Product.puntos_para_canje.isnot(None))
         .order_by(Product.puntos_para_canje.asc(), Product.nombre.asc()).all()
         if _producto_canjeable_en_origen(p, origen)
         and origen
+        and len(cart_grupos) <= 1
+        and len(cart_familias) <= 1
+        and (not cart_productos or bool(_fulfillment_options(cart_productos)))
+        and (not cart_grupos or _order_group(p) in cart_grupos)
+        and (not cart_familias or _delivery_family(p) in cart_familias)
+        and bool(_fulfillment_options(cart_productos + [p]))
     ] if puntos_habilitados else []
     descuento_puntos = puntos_sesion.get("descuento", 0.0)
     puntos_cfg = get_puntos_config()
@@ -797,7 +812,18 @@ def ver_carrito():
     except (TypeError, ValueError):
         radio_entrega_km = 5.0
     cart_max_qty = _cart_max_qty()
-    fulfillment_options = _fulfillment_options([item["producto"] for item in items])
+    fulfillment_options = _fulfillment_options(cart_productos)
+    grupos_pedido = {
+        _order_group(item["producto"]): _order_group_label(item["producto"])
+        for item in items if item.get("producto")
+    }
+    cart_issue = None
+    if len(_items_delivery_families(items)) > 1:
+        cart_issue = "El carrito mezcla productos inmediatos y con fecha fija. Sepáralos en dos pedidos."
+    elif len(grupos_pedido) > 1:
+        cart_issue = "Estos grupos requieren pedidos separados: " + ", ".join(grupos_pedido.values()) + "."
+    elif items and not fulfillment_options:
+        cart_issue = "Los productos no comparten una modalidad disponible de delivery o recogida."
     return render_template("public/carrito.html",
                            items=items, subtotal=subtotal,
                            canjeables=todos_canjeables,
@@ -810,6 +836,7 @@ def ver_carrito():
                            zona_principal=zona_principal,
                            radio_entrega_km=radio_entrega_km,
                            fulfillment_options=fulfillment_options,
+                           cart_issue=cart_issue,
                            cart_max_qty=cart_max_qty,
                            origen_actual=origen,
                            establecimiento=_establecimiento_para_origen(origen))
@@ -1110,11 +1137,14 @@ def checkout():
             "warning",
         )
         return redirect(url_for("public.ver_carrito"))
-    canales_prep = {_prep_family(item["producto"]) for item in items if item.get("producto")}
-    if len(canales_prep) > 1:
+    grupos_pedido = {
+        _order_group(item["producto"]): _order_group_label(item["producto"])
+        for item in items if item.get("producto")
+    }
+    if len(grupos_pedido) > 1:
         flash(
-            "Tu carrito mezcla productos de cocina con productos de almacén. "
-            "Haz pedidos separados para garantizar calidad.",
+            "Los productos pertenecen a grupos de pedido incompatibles: "
+            f"{', '.join(grupos_pedido.values())}. Haz pedidos separados.",
             "warning",
         )
         return redirect(url_for("public.ver_carrito"))
@@ -1384,18 +1414,16 @@ def checkout():
                 flash("Tus puntos no alcanzan para el descuento y el producto elegido a la vez.", "danger")
                 return redirect(url_for("public.checkout"))
             familias_entrega = _items_delivery_families(items)
-            canales_preparacion = {
-                _prep_family(item["producto"]) for item in items if item.get("producto")
-            }
+            grupos_pedido = {_order_group(item["producto"]) for item in items if item.get("producto")}
             if (
                 familias_entrega
                 and _delivery_family(producto_canje) not in familias_entrega
             ) or (
-                canales_preparacion
-                and _prep_family(producto_canje) not in canales_preparacion
+                grupos_pedido
+                and _order_group(producto_canje) not in grupos_pedido
             ):
                 flash(
-                    "El producto de canje requiere un pedido separado por su preparación.",
+                    "El producto de canje requiere un pedido separado por su grupo o fecha de entrega.",
                     "danger",
                 )
                 return redirect(url_for("public.checkout"))

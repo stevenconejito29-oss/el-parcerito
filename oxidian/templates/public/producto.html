@@ -78,6 +78,15 @@
     <span class="pd-box-icon">{% if producto.modalidad_entrega == 'delivery' %}🚴{% elif producto.modalidad_entrega == 'recogida' %}🏪{% else %}↔{% endif %}</span>
     <div><p class="pd-box-title">{% if producto.modalidad_entrega == 'delivery' %}Disponible solo con delivery{% elif producto.modalidad_entrega == 'recogida' %}Disponible solo para recoger{% else %}Disponible con delivery o recogida{% endif %}</p></div>
   </div>
+  {% if producto.grupo_pedido %}
+  <div class="pd-info-box pd-box-encargo">
+    <span class="pd-box-icon">↔</span>
+    <div>
+      <p class="pd-box-title">Grupo de pedido: {{ producto.grupo_pedido }}</p>
+      <p class="pd-box-sub">Solo puede combinarse con productos que tengan este mismo grupo.</p>
+    </div>
+  </div>
+  {% endif %}
 
   {# ── Precio ── #}
   <div class="pd-price-row">

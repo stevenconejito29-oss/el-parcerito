@@ -118,6 +118,7 @@
             <p class="cr-item-note cr-item-note--gold">{{ item.combo_resumen }}</p>
             {% endif %}
             {% if item.extras %}<p class="cr-item-note cr-item-note--gold">Extras: {% for extra in item.extras %}{{ extra.cantidad }}× {{ extra.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+            {% if item.producto.grupo_pedido %}<p class="cr-item-note cr-item-note--gold">Pedido: {{ item.producto.grupo_pedido }}</p>{% endif %}
 
             {# Alérgenos y origen #}
             <div class="cr-item-tags">
@@ -324,10 +325,15 @@
         <span class="cr-total-label">Total estimado</span>
         <span class="cr-total-val" id="total-estimado">€{{ "%.2f"|format(subtotal - descuento_puntos) }}</span>
       </div>
+      {% if cart_issue %}
+      <div class="cr-compat-warning" role="alert">{{ cart_issue }}</div>
+      <button type="button" class="cr-cta cr-cta--disabled" disabled>Revisa los productos incompatibles</button>
+      {% else %}
       <a href="{{ url_for('public.checkout') }}" class="cr-cta" id="btn-checkout">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         {{ 'Elegir entrega o recogida' if fulfillment_options|length > 1 else ('Continuar con entrega' if 'delivery' in fulfillment_options else 'Continuar para recoger') }}
       </a>
+      {% endif %}
       <a href="{{ url_for('public.index') }}" class="cr-continue">← Seguir comprando</a>
     </div>
 

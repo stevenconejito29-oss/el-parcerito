@@ -190,6 +190,12 @@
 }
 .cr-item-note       { font-size: .68rem; color: var(--col-muted); margin-bottom: .18rem; line-height: 1.4; }
 .cr-item-note--gold { color: rgba(255,194,0,.8); }
+.cr-compat-warning {
+  margin-bottom:.65rem; padding:.75rem .85rem; border-radius:.75rem;
+  border:1px solid rgba(255,179,64,.4); background:rgba(255,179,64,.1);
+  color:#ffd59a; font-size:.78rem; font-weight:750; line-height:1.4;
+}
+.cr-cta--disabled { opacity:.5; cursor:not-allowed; filter:grayscale(.4); }
 
 /* ── Combo expandible ── */
 .cr-combo { margin-bottom: .32rem; }

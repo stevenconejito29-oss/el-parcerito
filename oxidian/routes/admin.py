@@ -1827,6 +1827,9 @@ def _parsear_campos_producto(form):
     requeridas = {"delivery", "recogida"} if modalidad_entrega == "ambas" else {modalidad_entrega}
     if not (requeridas & permitidas):
         return None, "La modalidad del producto pertenece a un módulo desactivado."
+    grupo_pedido = " ".join((form.get("grupo_pedido") or "").strip().split())
+    if len(grupo_pedido) > 80:
+        return None, "El grupo de pedido no puede superar 80 caracteres."
 
     hora_inicio = parse_time(form.get("hora_inicio_visibilidad"))
     hora_fin = parse_time(form.get("hora_fin_visibilidad"))
@@ -1859,6 +1862,7 @@ def _parsear_campos_producto(form):
         # tipo entrega
         "tipo_entrega":              tipo_entrega,
         "modalidad_entrega":         modalidad_entrega,
+        "grupo_pedido":              grupo_pedido or None,
         "fecha_llegada":             fecha_llegada if tipo_entrega == "programado" else None,
         "dias_anticipacion_encargo": 1,
         # visibilidad horaria

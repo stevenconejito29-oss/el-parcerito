@@ -67,7 +67,7 @@
   <!-- ── CANAL DE PREPARACIÓN ── -->
   <div class="fp-span-full col-span-2 fp-section">
     <label class="fp-section-title">Canal de preparación</label>
-    <p class="text-xs text-gray-500 mb-2">Define quién prepara este producto. Afecta qué cola de trabajo lo ve y si el carrito permite mezclarlo.</p>
+    <p class="text-xs text-gray-500 mb-2">Define qué mesa de trabajo prepara este producto. No determina por sí solo si puede compartir pedido.</p>
     <div class="flex gap-4 flex-wrap text-sm">
       <label class="fp-radio-label">
         <input type="radio" name="canal_preparacion" value="cocina" checked
@@ -103,6 +103,13 @@
       {% if brand.delivery %}<label class="fp-radio-label"><input type="radio" name="modalidad_entrega" value="delivery" {% if not brand.recogida %}checked{% endif %}> Solo delivery</label>{% endif %}
       {% if brand.recogida %}<label class="fp-radio-label"><input type="radio" name="modalidad_entrega" value="recogida" {% if not brand.delivery %}checked{% endif %}> Solo recogida</label>{% endif %}
     </div>
+  </div>
+
+  <div class="fp-span-full col-span-2 fp-section">
+    <label class="fp-section-title">Grupo de pedido</label>
+    <input type="text" name="grupo_pedido" maxlength="80" class="fp-input"
+           placeholder="Vacío = pedido general; ejemplo: Cadena de frío">
+    <p class="text-xs text-gray-500 mt-2">Productos con grupos diferentes no pueden combinarse. Usa el mismo nombre en los productos que sí deben viajar juntos.</p>
   </div>
 
   <!-- Fecha de llegada (solo programado) -->

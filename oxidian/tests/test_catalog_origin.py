@@ -8,6 +8,8 @@ from routes.public import (
     _descontar_stock_en_origen,
     _metadata_item_con_origen,
     _normalizar_origen,
+    _order_group,
+    _order_group_label,
     _fulfillment_options,
     _product_fulfillment_modes,
     _producto_disponible_en_origen,
@@ -139,6 +141,17 @@ class CatalogOriginTest(unittest.TestCase):
 
         with patch("routes.public.get_store_features", return_value={"delivery": False, "recogida": True}):
             self.assertEqual(_fulfillment_options([SimpleNamespace(modalidad_entrega="ambas")]), ["recogida"])
+
+    def test_order_groups_are_configurable_and_case_insensitive(self):
+        general = SimpleNamespace(grupo_pedido=None)
+        cold_a = SimpleNamespace(grupo_pedido="Cadena de frío")
+        cold_b = SimpleNamespace(grupo_pedido="  CADENA   DE FRÍO ")
+        hot = SimpleNamespace(grupo_pedido="Entrega caliente")
+
+        self.assertEqual(_order_group(general), "__general__")
+        self.assertEqual(_order_group(cold_a), _order_group(cold_b))
+        self.assertNotEqual(_order_group(cold_a), _order_group(hot))
+        self.assertEqual(_order_group_label(cold_b), "CADENA DE FRÍO")
 
 
 if __name__ == "__main__":

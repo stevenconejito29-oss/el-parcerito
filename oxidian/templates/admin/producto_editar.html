@@ -95,6 +95,12 @@
           {% endfor %}
         </div>
       </div>
+      <div class="mt-3">
+        <label class="edit-label">Grupo de pedido</label>
+        <input name="grupo_pedido" maxlength="80" value="{{ producto.grupo_pedido or '' }}" class="edit-input"
+               placeholder="Vacío = pedido general; ejemplo: Cadena de frío">
+        <p class="text-xs mt-1" style="color:var(--col-muted)">Solo comparte carrito con productos del mismo grupo. El canal de preparación puede ser distinto.</p>
+      </div>
       <div class="grid md:grid-cols-2 gap-3 mt-3">
         <div>
           <label class="edit-label">Fecha de llegada</label>

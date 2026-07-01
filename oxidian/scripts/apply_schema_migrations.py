@@ -165,6 +165,17 @@ def _migrate_product_fulfillment_mode():
         ))
 
 
+def _migrate_product_order_group():
+    inspector = inspect(db.engine)
+    if not inspector.has_table("products"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("products")}
+    if "grupo_pedido" not in existing:
+        db.session.execute(text(
+            "ALTER TABLE products ADD COLUMN grupo_pedido VARCHAR(80)"
+        ))
+
+
 def _migrate_combo_groups_structure():
     inspector = inspect(db.engine)
     if not inspector.has_table("products"):
@@ -929,6 +940,11 @@ MIGRATIONS = [
         "id": "20260630_02_product_fulfillment_mode",
         "description": "Añadir modalidad delivery, recogida o ambas por producto",
         "fn": _migrate_product_fulfillment_mode,
+    },
+    {
+        "id": "20260701_01_product_order_group",
+        "description": "Añadir grupo configurable de compatibilidad por producto",
+        "fn": _migrate_product_order_group,
     },
 ]
 

@@ -132,6 +132,7 @@
           <div class="flex gap-1 mt-0.5 flex-wrap">
             <span class="text-xs px-1.5 rounded-full font-bold" style="color:#5EF097;background:rgba(94,240,151,.1)">Stock propio</span>
             <span class="text-xs px-1.5 rounded-full font-bold" style="color:#5AC8FA;background:rgba(90,200,250,.1)">{{ p.canal_preparacion or 'cocina' }}</span>
+            {% if p.grupo_pedido %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:#FFD59A;background:rgba(255,179,64,.12)">Pedido: {{ p.grupo_pedido }}</span>{% endif %}
             {% if p.canjeable_con_puntos %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:#C084FC;background:rgba(192,132,252,.12)">⭐ Puntos</span>{% endif %}
             {% if p.es_hipoalergenico %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:#5EF097;background:rgba(94,240,151,.1)">🌿 Hipo</span>{% endif %}
           </div>
@@ -195,6 +196,8 @@
     'canal_preparacion': p.canal_preparacion or 'cocina',
     'proveedor_despachador_id': '',
     'tipo_entrega': p.tipo_entrega or 'inmediato',
+    'modalidad_entrega': p.modalidad_entrega or 'ambas',
+    'grupo_pedido': p.grupo_pedido or '',
     'fecha_llegada': p.fecha_llegada.strftime('%Y-%m-%d') if p.fecha_llegada else '',
     'dias_anticipacion_encargo': p.dias_anticipacion_encargo or 1,
     'hora_inicio': p.hora_inicio_visibilidad.strftime('%H:%M') if p.hora_inicio_visibilidad else '',
@@ -462,7 +465,7 @@ function abrirEditar(id) {
   ['nombre','descripcion','precio','precio_costo','origen_pais','tipo_producto',
    'imagen_url','tipo_entrega','fecha_llegada','dias_anticipacion_encargo',
    'hora_inicio_visibilidad','hora_fin_visibilidad','puntos_para_canje',
-   'atributos_json'
+   'atributos_json','grupo_pedido'
   ].forEach(k => {
     const el = f.querySelector(`[name="${k}"]`);
     if (el) el.value = d[k] || '';
@@ -472,6 +475,9 @@ function abrirEditar(id) {
   });
   f.querySelectorAll('[name="canal_preparacion"]').forEach(radio => {
     radio.checked = radio.value === (d.canal_preparacion || 'cocina');
+  });
+  f.querySelectorAll('[name="modalidad_entrega"]').forEach(radio => {
+    radio.checked = radio.value === (d.modalidad_entrega || 'ambas');
   });
 
   // Alérgenos

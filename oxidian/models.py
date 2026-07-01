@@ -478,6 +478,9 @@ class Product(db.Model):
     # Modalidad logística: ambas | delivery | recogida. Independiente de
     # inmediato/programado, que describe cuándo se prepara.
     modalidad_entrega = db.Column(db.String(20), nullable=False, default="ambas", server_default="ambas")
+    # Productos con grupos distintos requieren pedidos separados. NULL/vacío
+    # representa el flujo general y evita acoplar esta regla a categorías.
+    grupo_pedido = db.Column(db.String(80), nullable=True)
     fecha_llegada = db.Column(db.Date)          # solo tipo=programado
     dias_anticipacion_encargo = db.Column(db.Integer, default=1)  # legado: mantener compatibilidad con datos antiguos
 
@@ -1085,6 +1088,16 @@ class Product(db.Model):
 
     def set_atributos(self, data: dict):
         self.atributos_json = json.dumps(data, ensure_ascii=False) if data else None
+
+    @property
+    def grupo_pedido_key(self):
+        """Clave canónica para comparar compatibilidad sin depender de mayúsculas."""
+        value = " ".join(str(self.grupo_pedido or "").split()).casefold()
+        return value or "__general__"
+
+    @property
+    def grupo_pedido_label(self):
+        return " ".join(str(self.grupo_pedido or "").split()) or "Pedido general"
 
     @property
     def clave_catalogo(self):
@@ -2186,6 +2199,7 @@ def snapshot_producto_para_pedido(producto, origen_operativo=None):
     """Crea una foto estable del producto para trazabilidad de pedidos."""
     if not producto:
         return {}
+
     origen_key, proveedor_id = producto._resolver_origen(origen_operativo)
     proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
     proveedor_snapshot = (
@@ -2217,6 +2231,7 @@ def snapshot_producto_para_pedido(producto, origen_operativo=None):
         "tipo_producto": producto.tipo_producto or "simple",
         "tipo_entrega": producto.tipo_entrega or "inmediato",
         "modalidad_entrega": producto.modalidad_entrega or "ambas",
+        "grupo_pedido": producto.grupo_pedido,
         "fecha_llegada": producto.fecha_llegada.isoformat() if producto.fecha_llegada else None,
         "dias_anticipacion_encargo": int(producto.dias_anticipacion_encargo or 0),
         "canal_preparacion": producto.canal_preparacion or "cocina",

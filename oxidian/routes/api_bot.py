@@ -56,8 +56,12 @@ def _delivery_family(producto):
     return "programado" if tipo in ("programado", "encargo") else "inmediato"
 
 
-def _prep_family(producto):
-    return (getattr(producto, "canal_preparacion", None) or "cocina").strip().lower()
+def _order_group(producto):
+    key = getattr(producto, "grupo_pedido_key", None)
+    if key:
+        return key
+    value = " ".join(str(getattr(producto, "grupo_pedido", None) or "").split()).casefold()
+    return value or "__general__"
 
 
 def _product_fulfillment_modes(producto):
@@ -823,6 +827,13 @@ def crear_pedido():
                 "code": "BOT_ORDER_CREATE_DISABLED",
                 "error": "La creación de pedidos por chatbot está desactivada. Usa la tienda online.",
             }), 403
+        features = get_store_features()
+        if not features["delivery"]:
+            return jsonify({
+                "ok": False,
+                "code": "DELIVERY_DISABLED",
+                "error": "El delivery está desactivado para esta tienda.",
+            }), 403
 
         # ── Idempotency guard ────────────────────────────────────
         # El bot DEBE enviar Idempotency-Key (UUID por intento). Si no la envía,
@@ -912,6 +923,18 @@ def crear_pedido():
             p = db.session.get(Product, pid)
             if not p or not p.activo:
                 return jsonify({"ok": False, "error": f"Producto {pid} no disponible"}), 400
+            if "delivery" not in _product_fulfillment_modes(p):
+                return jsonify({
+                    "ok": False,
+                    "code": "PRODUCT_NOT_FOR_DELIVERY",
+                    "error": f"'{p.nombre}' solo está disponible para recogida.",
+                }), 400
+            if _delivery_family(p) == "programado" and not features["pedidos_programados"]:
+                return jsonify({
+                    "ok": False,
+                    "code": "SCHEDULED_ORDERS_DISABLED",
+                    "error": "Los pedidos por fecha están desactivados.",
+                }), 403
             if p.tipo_entrega == "inmediato" and not p.disponible_para_venta(cantidad):
                 return jsonify({"ok": False, "error": f"Stock insuficiente para '{p.nombre}'"}), 400
             if p.tipo_entrega in ("programado", "encargo"):
@@ -963,12 +986,12 @@ def crear_pedido():
                     "Crea un pedido para cada flujo."
                 ),
             }), 400
-        familias_preparacion = {_prep_family(item["producto"]) for item in items_procesados}
-        if len(familias_preparacion) > 1:
+        grupos_pedido = {_order_group(item["producto"]) for item in items_procesados}
+        if len(grupos_pedido) > 1:
             return jsonify({
                 "ok": False,
-                "code": "MIXED_PREPARATION_CHANNELS",
-                "error": "No mezcles productos de cocina y almacén en el mismo pedido.",
+                "code": "MIXED_ORDER_GROUPS",
+                "error": "Los productos seleccionados requieren pedidos separados.",
             }), 400
         origenes = {
             item["producto"].origen_operativo_key
