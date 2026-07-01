@@ -311,9 +311,9 @@
     <div class="lg:col-span-2" style="border-top:1px solid var(--col-border); padding-top:1rem; margin-top:.75rem">
       <h3 class="cb-section-title" style="font-size:1rem; margin-bottom:.4rem">🧠 Asistente IA del chatbot</h3>
       <p class="chat-help" style="margin-bottom:.9rem">
-        El bot solo da <strong>información</strong> (menú, horario, cobertura, estado del pedido). Para pedir,
-        siempre redirige a la tienda. La IA es solo fallback cuando las FAQs no aciertan — cacheado por
-        similitud para ahorrar tokens.
+        El bot solo da <strong>información</strong> (horario, cobertura, estado del pedido y enlace a la tienda).
+        Para pedir, siempre redirige a la web. La IA solo interviene cuando las FAQs y los filtros locales
+        no resuelven el mensaje.
       </p>
     </div>
 
@@ -333,10 +333,10 @@
       <label class="chat-label">Proveedor IA</label>
       <select name="bot_ai_provider" class="chat-input">
         <option value="">— ninguno —</option>
-        <option value="groq" {% if bot_ai_provider == 'groq' %}selected{% endif %}>Groq (gratis hasta cierto límite)</option>
+        <option value="groq" {% if bot_ai_provider == 'groq' %}selected{% endif %}>Groq</option>
         <option value="openai" {% if bot_ai_provider == 'openai' %}selected{% endif %}>OpenAI</option>
       </select>
-      <p class="chat-help">Groq es la opción más barata para empezar.</p>
+      <p class="chat-help">Selecciona el proveedor correspondiente a tu API key.</p>
     </div>
 
     <div>
@@ -347,8 +347,8 @@
 
     <div>
       <label class="chat-label">Modelo</label>
-      <input name="bot_ai_model" value="{{ bot_ai_model }}" class="chat-input" placeholder="llama-3.1-8b-instant">
-      <p class="chat-help">Por defecto sugerido: Groq → llama-3.1-8b-instant · OpenAI → gpt-4o-mini.</p>
+      <input name="bot_ai_model" value="{{ bot_ai_model }}" class="chat-input" placeholder="Modelo habilitado en tu proveedor">
+      <p class="chat-help">Usa el identificador exacto del modelo disponible en tu cuenta.</p>
     </div>
 
     <div class="lg:col-span-2">
