@@ -1,0 +1,422 @@
+/* Public header v4: a compact restaurant sign, not a floating template card. */
+body.ox-body-public {
+  --hdr-ink: #171714;
+  --hdr-ink-soft: #24241f;
+  --hdr-paper: #fffdf8;
+  --hdr-muted: #b8b8ad;
+  --hdr-line: rgba(255,255,255,.13);
+  scroll-padding-top: calc(84px + env(safe-area-inset-top, 0px));
+}
+
+body.ox-body-public .ox-header-public {
+  position: sticky !important;
+  inset: 0 0 auto !important;
+  z-index: 90 !important;
+  display: block !important;
+  width: 100% !important;
+  padding: env(safe-area-inset-top, 0px) 0 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: var(--hdr-ink) !important;
+  box-shadow: 0 10px 28px rgba(24,19,13,.18) !important;
+  overflow: visible !important;
+  isolation: isolate;
+}
+
+body.ox-body-public .ox-header-public::before,
+body.ox-body-public .ox-header-public::after {
+  content: none !important;
+}
+
+body.ox-body-public .ox-header-stripe {
+  position: absolute;
+  inset: env(safe-area-inset-top, 0px) 0 auto;
+  height: 4px !important;
+  min-height: 4px !important;
+  padding: 0 !important;
+  display: grid;
+  grid-template-columns: 38% 24% 38%;
+  overflow: hidden;
+  pointer-events: none;
+}
+body.ox-body-public .ox-header-stripe span:nth-child(1) { background: var(--brand-primary); }
+body.ox-body-public .ox-header-stripe span:nth-child(2) { background: var(--brand-accent); }
+body.ox-body-public .ox-header-stripe span:nth-child(3) { background: var(--brand-secondary); }
+
+body.ox-body-public .ox-public-header-inner {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: min(100%, 1280px) !important;
+  min-height: 76px !important;
+  margin: 0 auto !important;
+  padding: 12px 18px 10px !important;
+  gap: 18px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background:
+    linear-gradient(105deg, color-mix(in srgb, var(--brand-primary) 9%, transparent), transparent 36%),
+    var(--hdr-ink) !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  transition: min-height .24s ease, padding .24s ease !important;
+}
+
+body.ox-body-public .ox-public-header-inner::before {
+  content: "" !important;
+  position: absolute;
+  inset: auto 18px 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--brand-primary), rgba(255,255,255,.16) 28%, rgba(255,255,255,.06) 72%, var(--brand-secondary));
+  opacity: .72;
+  pointer-events: none;
+}
+body.ox-body-public .ox-public-header-inner::after { content: none !important; }
+
+body.ox-body-public .ox-public-identity {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  min-width: 0 !important;
+  max-width: min(620px, 62vw);
+  gap: 13px !important;
+  padding: 0 !important;
+  color: #fff !important;
+  text-decoration: none !important;
+  border-radius: 0 !important;
+}
+
+body.ox-body-public .ox-public-logo-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  flex: 0 0 50px;
+  padding: 3px;
+  background: var(--hdr-paper);
+  border: 1px solid rgba(255,255,255,.72);
+  border-radius: 10px 10px 3px 10px;
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--brand-primary) 72%, #000);
+  transform: translateY(-1px);
+  transition: transform .22s ease, box-shadow .22s ease;
+}
+body.ox-body-public .ox-public-identity:hover .ox-public-logo-frame {
+  transform: translate(1px, 0);
+  box-shadow: 2px 2px 0 color-mix(in srgb, var(--brand-primary) 72%, #000);
+}
+
+body.ox-body-public .ox-public-logo {
+  display: grid !important;
+  place-items: center;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border: 0 !important;
+  border-radius: 7px 7px 2px 7px !important;
+  background: #f4efe3;
+  color: #1b1914;
+  font-size: 1.45rem;
+}
+
+body.ox-body-public .ox-public-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+body.ox-body-public .ox-public-meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+body.ox-body-public .ox-public-kicker {
+  color: color-mix(in srgb, var(--brand-primary) 82%, #fff) !important;
+  font-size: .6rem !important;
+  font-weight: 900 !important;
+  line-height: 1.1 !important;
+  letter-spacing: .16em !important;
+  text-transform: uppercase !important;
+  white-space: nowrap;
+}
+body.ox-body-public .ox-public-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #d7d7cf;
+  font-size: .59rem;
+  font-weight: 800;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+body.ox-body-public .ox-public-status > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff5b55;
+  box-shadow: 0 0 0 3px rgba(255,91,85,.13);
+}
+body.ox-body-public .ox-public-status.is-open > span {
+  background: #45d47d;
+  box-shadow: 0 0 0 3px rgba(69,212,125,.13);
+}
+body.ox-body-public .ox-public-brand {
+  display: block !important;
+  overflow: hidden;
+  color: #fff !important;
+  font-size: clamp(.98rem, 1.7vw, 1.2rem) !important;
+  font-weight: 880 !important;
+  line-height: 1.12 !important;
+  letter-spacing: -.025em !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: none !important;
+}
+body.ox-body-public .ox-public-address {
+  display: block !important;
+  overflow: hidden;
+  color: var(--hdr-muted) !important;
+  font-size: .64rem !important;
+  font-style: normal !important;
+  font-weight: 560 !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0 !important;
+  opacity: 1 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.ox-body-public .ox-public-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  flex: 0 0 auto;
+  gap: 8px !important;
+}
+
+body.ox-body-public .ox-header-app,
+body.ox-body-public .ox-employee-login {
+  position: relative;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid var(--hdr-line) !important;
+  border-radius: 9px 9px 3px 9px !important;
+  background: rgba(255,255,255,.055) !important;
+  color: #efefe9 !important;
+  font-size: .69rem;
+  font-weight: 820;
+  text-decoration: none !important;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background .18s ease, border-color .18s ease, transform .18s ease !important;
+}
+body.ox-body-public .ox-header-app svg,
+body.ox-body-public .ox-employee-login svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+body.ox-body-public .ox-header-app:hover,
+body.ox-body-public .ox-employee-login:hover {
+  border-color: color-mix(in srgb, var(--brand-primary) 58%, transparent) !important;
+  background: color-mix(in srgb, var(--brand-primary) 13%, #24241f) !important;
+  transform: translateY(-1px);
+}
+body.ox-body-public .ox-header-app[hidden] { display: none !important; }
+
+body.ox-body-public .ox-header-cart {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  min-width: 144px !important;
+  min-height: 48px !important;
+  gap: 9px !important;
+  padding: 6px 14px 6px 8px !important;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 70%, #fff) !important;
+  border-radius: 13px 4px 13px 13px !important;
+  background: var(--brand-primary) !important;
+  color: var(--brand-on-primary, #171714) !important;
+  text-decoration: none !important;
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--brand-primary) 55%, #000) !important;
+  overflow: visible !important;
+  transition: transform .18s ease, box-shadow .18s ease, filter .18s ease !important;
+}
+body.ox-body-public .ox-header-cart:hover {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 color-mix(in srgb, var(--brand-primary) 55%, #000) !important;
+  filter: brightness(1.05);
+}
+body.ox-body-public .ox-header-cart.is-pressed,
+body.ox-body-public .ox-header-app.is-pressed,
+body.ox-body-public .ox-employee-login.is-pressed { transform: translateY(1px) scale(.97) !important; }
+body.ox-body-public .ox-header-cart-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 9px 3px 9px 9px;
+  background: color-mix(in srgb, var(--brand-on-primary, #171714) 10%, transparent);
+}
+body.ox-body-public .ox-header-cart-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+body.ox-body-public .ox-header-cart-copy {
+  display: grid;
+  line-height: 1.02;
+  text-align: left;
+}
+body.ox-body-public .ox-header-cart-copy small {
+  font-size: .56rem;
+  font-weight: 780;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  opacity: .72;
+}
+body.ox-body-public .ox-header-cart-copy strong { font-size: .72rem; font-weight: 920; }
+body.ox-body-public .ox-header-cart-count {
+  position: absolute !important;
+  top: -8px !important;
+  right: -8px !important;
+  display: grid !important;
+  place-items: center !important;
+  min-width: 24px !important;
+  height: 24px !important;
+  padding: 0 6px !important;
+  border: 3px solid var(--hdr-ink) !important;
+  border-radius: 999px !important;
+  background: var(--brand-secondary) !important;
+  color: #fff !important;
+  font-size: .64rem !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  box-shadow: 0 3px 9px rgba(0,0,0,.32) !important;
+}
+body.ox-body-public .ox-header-cart-count.is-bumping { animation: ox-cart-count-bump .46s cubic-bezier(.2,.9,.25,1.5); }
+@keyframes ox-cart-count-bump { 50% { transform: translateY(-3px) scale(1.28) rotate(5deg); } }
+
+body.ox-body-public .ox-public-actions form { display: inline-flex; }
+body.ox-body-public .ox-public-actions form button {
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 9px 9px 3px 9px !important;
+}
+
+body.ox-body-public .ox-hdr-progress {
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  z-index: 3;
+  width: 0;
+  height: 2px;
+  min-height: 2px !important;
+  padding: 0 !important;
+  background: linear-gradient(90deg, var(--brand-primary), var(--brand-accent), var(--brand-secondary));
+  pointer-events: none;
+  transition: width .08s linear;
+}
+
+body.ox-body-public .ox-header-public.is-scrolled {
+  box-shadow: 0 8px 24px rgba(24,19,13,.26) !important;
+}
+body.ox-body-public .ox-header-public.is-scrolled .ox-public-header-inner {
+  min-height: 62px !important;
+  padding-top: 7px !important;
+  padding-bottom: 7px !important;
+}
+body.ox-body-public .ox-header-public.is-scrolled .ox-public-logo-frame {
+  width: 42px;
+  height: 42px;
+  flex-basis: 42px;
+}
+body.ox-body-public .ox-header-public.is-scrolled .ox-public-address { display: none !important; }
+
+@media (max-width: 760px) {
+  body.ox-body-public { scroll-padding-top: calc(70px + env(safe-area-inset-top, 0px)); }
+  body.ox-body-public .ox-public-header-inner {
+    min-height: 68px !important;
+    padding: 9px 10px 7px !important;
+    gap: 7px !important;
+  }
+  body.ox-body-public .ox-public-header-inner::before { inset-inline: 10px; }
+  body.ox-body-public .ox-public-identity { max-width: calc(100% - 98px); gap: 9px !important; }
+  body.ox-body-public .ox-public-logo-frame {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+    box-shadow: 3px 3px 0 color-mix(in srgb, var(--brand-primary) 72%, #000);
+  }
+  body.ox-body-public .ox-public-meta { gap: 7px; }
+  body.ox-body-public .ox-public-kicker { font-size: .5rem !important; letter-spacing: .12em !important; }
+  body.ox-body-public .ox-public-status { font-size: .52rem; }
+  body.ox-body-public .ox-public-brand { font-size: .92rem !important; }
+  body.ox-body-public .ox-public-address { max-width: 190px; font-size: .57rem !important; }
+  body.ox-body-public .ox-public-actions { gap: 6px !important; }
+  body.ox-body-public .ox-header-app { display: none !important; }
+  body.ox-body-public .ox-header-cart {
+    min-width: 50px !important;
+    width: 50px !important;
+    min-height: 48px !important;
+    padding: 6px !important;
+    justify-content: center !important;
+  }
+  body.ox-body-public .ox-header-cart-copy { display: none; }
+  body.ox-body-public .ox-header-cart-icon { width: 34px; height: 34px; }
+  body.ox-body-public .ox-employee-login {
+    width: 38px;
+    min-width: 38px;
+    min-height: 42px;
+    padding: 0;
+  }
+  body.ox-body-public .ox-employee-login-text { display: none; }
+}
+
+@media (max-width: 390px) {
+  body.ox-body-public .ox-public-identity { max-width: calc(100% - 92px); }
+  body.ox-body-public .ox-public-status { display: none; }
+  body.ox-body-public .ox-public-address { max-width: 150px; }
+  body.ox-body-public .ox-header-cart { width: 48px !important; min-width: 48px !important; }
+  body.ox-body-public .ox-employee-login { width: 36px; min-width: 36px; }
+}
+
+@media (max-width: 340px) {
+  body.ox-body-public .ox-public-address { display: none !important; }
+  body.ox-body-public .ox-public-logo-frame { width: 40px; height: 40px; flex-basis: 40px; }
+  body.ox-body-public .ox-public-brand { font-size: .82rem !important; }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  body.ox-body-public .ox-public-header-inner { min-height: 56px !important; padding-block: 6px !important; }
+  body.ox-body-public .ox-public-logo-frame { width: 40px; height: 40px; flex-basis: 40px; }
+  body.ox-body-public .ox-public-address { display: none !important; }
+  body.ox-body-public .ox-header-cart { min-height: 42px !important; }
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  body.ox-body-public .ox-header-app { display: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.ox-body-public .ox-public-header-inner,
+  body.ox-body-public .ox-public-logo-frame,
+  body.ox-body-public .ox-header-cart,
+  body.ox-body-public .ox-header-app,
+  body.ox-body-public .ox-employee-login,
+  body.ox-body-public .ox-hdr-progress { transition: none !important; }
+  body.ox-body-public .ox-header-cart-count.is-bumping { animation: none !important; }
+}

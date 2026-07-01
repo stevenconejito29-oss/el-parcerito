@@ -1,12 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════
-   Oxidian — Service Worker v13
+   Oxidian — Service Worker v15
    • Assets propios CSS/JS/IMG: cache-first + actualización en segundo plano
    • HTML público y datos de sesión: network-only
    • API / Admin       : Network-only (nunca cachear dinámico)
    • Push Notifications: Muestra notificaciones + abre URL al click
    ═══════════════════════════════════════════════════════════════ */
 
-const CACHE_STATIC = "ox-static-v13";
+const CACHE_STATIC = "ox-static-v15";
 const CACHE_PREFIX = "ox-";
 
 const PRECACHE = [
@@ -15,10 +15,12 @@ const PRECACHE = [
   "/static/css/oxidian-ui.css",
   "/static/css/storefront-menu.css",
   "/static/css/storefront-cart.css",
+  "/static/css/header-modern.css",
   "/static/css/tailwind.generated.css",
   "/static/js/carrito.js",
   "/static/js/storefront-viewport.js",
   "/static/js/storefront-toast.js",
+  "/static/js/header-modern.js",
   "/static/pwa-icon.svg",
   "/static/pwa-icon-192.png",
   "/static/pwa-icon-512.png",

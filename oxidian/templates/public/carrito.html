@@ -12,10 +12,11 @@
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
   </a>
   <div class="cr-header-info">
+    <span class="cr-eyebrow">REVISA TU PEDIDO</span>
     <h1 class="cr-title">Tu carrito</h1>
     {% if items %}<p class="cr-subtitle">{{ items|length }} producto{{ 's' if items|length != 1 }}</p>{% endif %}
   </div>
-  {% if items %}<span class="cr-badge">{{ items|length }}</span>{% endif %}
+  {% if items %}<span class="cr-badge" aria-label="{{ items|length }} productos">{{ items|length }}</span>{% endif %}
 </div>
 
 {% if items %}
@@ -161,9 +162,9 @@
           <button type="submit" class="cr-remove"
                   title="Quitar del carrito"
                   formmethod="POST"
-                  formaction="{{ url_for('public.eliminar_carrito', producto_id=item.producto.id) }}"
-                  aria-label="Eliminar {{ item.producto.nombre }}">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            formaction="{{ url_for('public.eliminar_carrito', producto_id=item.producto.id) }}"
+            aria-label="Eliminar {{ item.producto.nombre }}">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>
           </button>
         </div>
         {% endfor %}

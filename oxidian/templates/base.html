@@ -4,28 +4,55 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
-  {# PWA & Mobile #}
+  {# PWA & Mobile — theme-color coordinado con el pill flotante del header #}
   <meta name="theme-color" content="{{ brand.color_primario }}" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1B1F24" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#0F0906" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="dark light">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  {# black-translucent: la barra de estado iOS se fusiona con nuestro header con blur #}
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="{{ brand.nombre }}">
   <meta name="application-name" content="{{ brand.nombre }}">
   <meta name="format-detection" content="telephone=no">
+  <meta name="msapplication-tap-highlight" content="no">
+  <meta name="msapplication-TileColor" content="{{ brand.color_primario }}">
+  <meta name="msapplication-navbutton-color" content="{{ brand.color_primario }}">
 
   {# SEO básico #}
   <meta name="description" content="{{ brand.nombre }}{% if brand.slogan %} — {{ brand.slogan }}{% elif brand.descripcion %} — {{ brand.descripcion }}{% elif brand.delivery %} — Haz tu pedido online con entrega o recogida.{% else %} — Haz tu pedido online para recoger.{% endif %}">
   <meta name="robots" content="index, follow">
+  {# Open Graph — cuando se comparte por WhatsApp / redes sale la card bonita #}
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{ brand.nombre }}{% if brand.slogan %} — {{ brand.slogan }}{% endif %}">
+  <meta property="og:description" content="{% if brand.slogan %}{{ brand.slogan }} — {% endif %}Pide online en {{ brand.nombre }}">
+  <meta property="og:image" content="{{ brand.hero_image_url or brand.logo_url or url_for('static', filename='pwa-icon-512.png', _external=True) }}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:locale" content="es_ES">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ brand.nombre }}">
+  <meta name="twitter:description" content="{% if brand.slogan %}{{ brand.slogan }} — {% endif %}Pide online.">
+  <meta name="twitter:image" content="{{ brand.hero_image_url or brand.logo_url or url_for('static', filename='pwa-icon-512.png', _external=True) }}">
 
   {# Icons — usa APP_ICON_URL si está configurado, si no los estáticos #}
   {% set _app_icon = brand.app_icon_url if brand.app_icon_url is defined and brand.app_icon_url else (brand.logo_url if brand.logo_url is defined and brand.logo_url else '') %}
   <link rel="apple-touch-icon" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png') }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png') }}">
+  <link rel="apple-touch-icon" sizes="167x167" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png') }}">
+  <link rel="apple-touch-icon" sizes="152x152" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png') }}">
   <link rel="icon" type="image/png" sizes="64x64" href="{{ _app_icon or url_for('static', filename='favicon-64.png') }}">
   <link rel="icon" type="image/png" sizes="32x32" href="{{ _app_icon or url_for('static', filename='favicon-32.png') }}">
   <link rel="icon" type="image/svg+xml" href="{{ _app_icon or url_for('static', filename='pwa-icon.svg') }}">
+  <link rel="mask-icon" href="{{ url_for('static', filename='pwa-icon.svg') }}" color="{{ brand.color_primario }}">
 
   <link rel="manifest" href="{{ url_for('web_manifest') }}">
+
+  {# Splash screen para iOS (usa el color de marca de fondo con logo centrado) #}
+  <meta name="apple-mobile-web-app-orientations" content="portrait">
+  <link rel="apple-touch-startup-image"
+        href="{{ _app_icon or url_for('static', filename='pwa-icon-512.png') }}"
+        media="(prefers-color-scheme: dark)">
 
   {# Tipografía — Inter (cuerpo) carga rápida con display=swap #}
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -50,43 +77,51 @@
   </style>
   {% block styles %}{% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
+  {# Cargado AL FINAL para ganar prioridad de cascada sobre todas las hojas anteriores #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/header-modern.css', v=asset_version) }}">
 </head>
 <body class="ox-body ox-body-public ox-has-bottom-nav min-h-screen"
       style="--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-accent:{{ brand.color_acento }};--col-gold:{{ brand.color_primario }};">
 
 {# ── HEADER PÚBLICO ── #}
 <header class="ox-header-public">
-  <div class="ox-public-header-inner max-w-screen-xl mx-auto px-3 py-2 flex items-center justify-between gap-2">
-    <a href="{{ url_for('public.index') }}" class="ox-public-identity flex items-center gap-3 min-w-0">
-      {% if brand.logo_url %}
-        <img src="{{ brand.logo_url }}" alt="logo" class="ox-public-logo w-12 h-12 object-cover flex-shrink-0">
-      {% else %}
-        <div class="ox-public-logo ox-public-logo-fallback w-12 h-12 flex items-center justify-center text-2xl flex-shrink-0">🥟</div>
-      {% endif %}
-      <div class="min-w-0">
-        <span class="ox-public-kicker">PEDIDOS ONLINE</span>
-        <p class="ox-public-brand text-sm font-black leading-tight truncate">{{ brand.nombre }}</p>
-        {% if brand.slogan %}
-          <p class="ox-public-address text-[10px] leading-none truncate italic opacity-70">{{ brand.slogan }}</p>
+  <div class="ox-header-stripe" aria-hidden="true"><span></span><span></span><span></span></div>
+  <div class="ox-public-header-inner">
+    <a href="{{ url_for('public.index') }}" class="ox-public-identity" aria-label="Ir al menú de {{ brand.nombre }}">
+      <span class="ox-public-logo-frame">
+        {% if brand.logo_url %}
+          <img src="{{ brand.logo_url }}" alt="{{ brand.nombre }}" class="ox-public-logo">
         {% else %}
-          <p class="ox-public-address text-[10px] leading-none truncate">📍 {{ brand.direccion }}</p>
+          <span class="ox-public-logo ox-public-logo-fallback" aria-hidden="true">🥟</span>
         {% endif %}
-      </div>
+      </span>
+      <span class="ox-public-copy">
+        <span class="ox-public-meta">
+          <span class="ox-public-kicker">
+            {% if brand.delivery and brand.recogida %}DELIVERY · RECOGIDA{% elif brand.delivery %}DELIVERY{% else %}RECOGIDA{% endif %}
+          </span>
+          <span class="ox-public-status {{ 'is-open' if brand.tienda_abierta else 'is-closed' }}">
+            <span aria-hidden="true"></span>{{ 'Abierto' if brand.tienda_abierta else 'Cerrado' }}
+          </span>
+        </span>
+        <span class="ox-public-brand">{{ brand.nombre }}</span>
+        <span class="ox-public-address">{{ brand.slogan or brand.direccion or brand.ciudad }}</span>
+      </span>
     </a>
-    <div class="ox-public-actions flex items-center gap-2">
-      <button type="button" class="ox-header-app hidden sm:inline-flex" data-pwa-install aria-label="Instalar aplicación"><span class="ox-header-app-dot"></span><span class="ox-install-text">Instalar app</span></button>
-      <div class="ox-header-status flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-bold"
-           style="{{ 'background:rgba(0,200,83,.12);color:#5EF097;border:1px solid rgba(0,200,83,.25)' if brand.tienda_abierta else 'background:rgba(255,59,48,.12);color:#FFB3B0;border:1px solid rgba(255,59,48,.25)' }}">
-        <span class="w-1.5 h-1.5 rounded-full {% if brand.tienda_abierta %}bg-green-400{% else %}bg-red-400{% endif %}"
-              {% if brand.tienda_abierta %}style="animation:pulse 2s infinite"{% endif %}></span>
-        <span class="hidden sm:inline">{{ 'Abierto' if brand.tienda_abierta else 'Cerrado' }}</span>
-      </div>
+    <nav class="ox-public-actions" aria-label="Acciones rápidas">
+      <button type="button" class="ox-header-app" data-pwa-install aria-label="Instalar aplicación">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 15v4h14v-4"/></svg>
+        <span class="ox-install-text">Añadir app</span>
+      </button>
       <a href="{{ url_for('public.ver_carrito') }}"
-         class="ox-header-cart relative flex items-center justify-center w-10 h-10 flex-shrink-0" aria-label="Abrir carrito">
-        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="9" cy="20" r="1"/><circle cx="19" cy="20" r="1"/><path d="M3 4h2l2.5 11h11l2-7H7"/></svg>
+         class="ox-header-cart" aria-label="Abrir carrito">
+        <span class="ox-header-cart-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 8.5h11l1 11h-13l1-11Z"/><path d="M9 9V6.8a3 3 0 0 1 6 0V9"/></svg>
+        </span>
+        <span class="ox-header-cart-copy"><small>Tu pedido</small><strong>Ver carrito</strong></span>
         {% set n = session.get('carrito', {})|length %}
         {% if n > 0 %}
-        <span data-cart-badge class="absolute -top-1.5 -right-1.5 text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center" style="background:#FF3B30;color:#fff">{{ n }}</span>
+        <span data-cart-badge class="ox-header-cart-count">{{ n }}</span>
         {% endif %}
       </a>
       {% if current_user.is_authenticated %}
@@ -98,12 +133,14 @@
         </form>
       {% else %}
         <a href="{{ url_for('auth.login') }}" class="ox-employee-login" title="Ingreso empleados">
-          <span class="ox-employee-login-icon">↗</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/></svg>
           <span class="ox-employee-login-text">Empleados</span>
         </a>
       {% endif %}
-    </div>
+    </nav>
   </div>
+  {# Progreso de lectura integrado en el borde inferior #}
+  <div class="ox-hdr-progress" aria-hidden="true"></div>
 </header>
 
 {# Flash messages #}
@@ -606,6 +643,7 @@ window.oxPrepareAppStorage = async function(btn) {
 </script>
 <script src="{{ url_for('static', filename='js/storefront-viewport.js', v=asset_version) }}" defer></script>
 <script src="{{ url_for('static', filename='js/storefront-toast.js', v=asset_version) }}" defer></script>
+<script src="{{ url_for('static', filename='js/header-modern.js', v=asset_version) }}" defer></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -561,8 +561,7 @@ function _epBadgeInc() {
     if (cartLink) {
       const s = document.createElement('span');
       s.setAttribute('data-cart-badge', '');
-      s.className = 'absolute -top-1.5 -right-1.5 text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center';
-      s.style.cssText = 'background:#FF3B30;color:#fff';
+      s.className = 'ox-header-cart-count';
       s.textContent = '1';
       cartLink.appendChild(s);
     }
