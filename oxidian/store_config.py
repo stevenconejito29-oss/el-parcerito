@@ -5,6 +5,118 @@ import os
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 
+PUBLIC_THEME_DEFAULTS = {
+    "COLOR_FONDO_APP": "#F7F3EA",
+    "COLOR_SUPERFICIE": "#FFFDF8",
+    "COLOR_SUPERFICIE_ALT": "#F1EBDD",
+    "COLOR_TEXTO": "#1B1A16",
+    "COLOR_TEXTO_SUAVE": "#68635B",
+    "COLOR_CABECERA_FONDO": "#171714",
+    "COLOR_CABECERA_TEXTO": "#FFFFFF",
+    "COLOR_EXITO": "#087A48",
+    "COLOR_ALERTA": "#B42318",
+}
+
+
+PUBLIC_UI_DEFAULTS = {
+    "UI_CLOSE": "Cerrar",
+    "UI_HEADER_MODE_BOTH": "Delivery · Recogida",
+    "UI_HEADER_MODE_DELIVERY": "Delivery",
+    "UI_HEADER_MODE_PICKUP": "Recogida",
+    "UI_HEADER_OPEN": "Abierto",
+    "UI_HEADER_CLOSED": "Cerrado",
+    "UI_HEADER_INSTALL": "Añadir app",
+    "UI_HEADER_CART_LABEL": "Tu pedido",
+    "UI_HEADER_CART_ACTION": "Ver carrito",
+    "UI_HEADER_STAFF": "Empleados",
+    "UI_CART_EYEBROW": "Revisa tu pedido",
+    "UI_CART_TITLE": "Tu carrito",
+    "UI_CART_ITEM_ONE": "producto",
+    "UI_CART_ITEM_MANY": "productos",
+    "UI_CART_BACK": "Volver",
+    "UI_CART_PROCESS": "Proceso de compra",
+    "UI_CART_STEP_CART": "Carrito",
+    "UI_CART_STEP_FULFILLMENT": "Entrega",
+    "UI_CART_STEP_PAYMENT": "Pago",
+    "UI_CART_UPDATE": "Actualizar carrito",
+    "UI_CART_COMBO_BADGE": "Combo",
+    "UI_CART_COMBO_VIEW": "Ver combo",
+    "UI_CART_COMBO_ITEMS": "ítems",
+    "UI_CART_COMBO_BASE": "Base incluida",
+    "UI_CART_COMBO_INCLUDED": "Incluido",
+    "UI_CART_COMBO_SELECTION": "Tu elección",
+    "UI_CART_COMBO_KITCHEN": "Contenido definido en cocina",
+    "UI_CART_EXTRAS_LABEL": "Extras",
+    "UI_CART_ORDER_LABEL": "Pedido",
+    "UI_CART_NO_ALLERGENS": "Sin alérgenos",
+    "UI_CART_QUANTITY": "Cantidad",
+    "UI_CART_LESS": "Menos",
+    "UI_CART_MORE": "Más",
+    "UI_CART_REMOVE": "Eliminar",
+    "UI_CART_POINTS_TITLE": "Puntos y recompensas",
+    "UI_CART_POINTS_PREFIX": "Este pedido suma aprox.",
+    "UI_CART_POINTS_UNIT": "puntos",
+    "UI_CART_POINTS_REMOVE_DISCOUNT": "Quitar descuento",
+    "UI_CART_POINTS_AVAILABLE": "puntos disponibles",
+    "UI_CART_POINTS_READY": "Tus puntos están listos. El descuento se aplica en el paso de entrega.",
+    "UI_CART_POINTS_CLEAR": "Quitar puntos de la sesión",
+    "UI_CART_POINTS_VERIFY_HELP": "¿Tienes puntos acumulados? Consulta y canjea con tu WhatsApp.",
+    "UI_CART_POINTS_SEND_CODE": "Enviar código",
+    "UI_CART_POINTS_CODE_HELP": "Introduce el código recibido por WhatsApp:",
+    "UI_CART_POINTS_VERIFY": "Verificar",
+    "UI_CART_POINTS_CHANGE_PHONE": "Cambiar número",
+    "UI_CART_PHONE_PLACEHOLDER": "+34 600 000 000",
+    "UI_CART_CODE_PLACEHOLDER": "000000",
+    "UI_CART_PHONE_REQUIRED": "Introduce tu número",
+    "UI_CART_CODE_REQUIRED": "Introduce el código",
+    "UI_CART_SENDING": "Enviando...",
+    "UI_CART_VERIFYING": "Verificando...",
+    "UI_CART_GENERIC_ERROR": "Error",
+    "UI_CART_NETWORK_ERROR": "Error de red",
+    "UI_CART_INVALID_CODE": "Código incorrecto",
+    "UI_CART_REDEEMABLE_TITLE": "Productos canjeables con tus puntos",
+    "UI_CART_SELECTED": "Seleccionado",
+    "UI_CART_AVAILABLE": "Disponible",
+    "UI_CART_MISSING_PREFIX": "Faltan",
+    "UI_CART_ALLERGEN_NOTICE": "Revisa los alérgenos. Si tienes intolerancias o alergias indícalo en las notas al confirmar el pedido.",
+    "UI_CART_SUMMARY": "Resumen",
+    "UI_CART_SUBTOTAL": "Subtotal",
+    "UI_CART_SHIPPING": "Envío",
+    "UI_CART_POINTS_DISCOUNT": "Descuento puntos",
+    "UI_CART_INCOMPATIBLE": "Revisa los productos incompatibles",
+    "UI_CART_TOTAL": "Total estimado",
+    "UI_CART_CHECKOUT_BOTH": "Elegir entrega o recogida",
+    "UI_CART_CHECKOUT_DELIVERY": "Continuar con entrega",
+    "UI_CART_CHECKOUT_PICKUP": "Continuar para recoger",
+    "UI_CART_CONTINUE": "Seguir comprando",
+    "UI_CART_EMPTY_TITLE": "Tu carrito está vacío",
+    "UI_CART_EMPTY_TEXT": "Explora el menú y encuentra tu favorito",
+    "UI_CART_VIEW_MENU": "Ver menú completo",
+    "UI_PWA_DESCRIPTION": "Añade la tienda a tu pantalla de inicio para acceder sin abrir el navegador.",
+    "UI_PWA_IOS_INSTRUCTION": "En Safari, toca Compartir y luego Añadir a pantalla de inicio.",
+    "UI_PWA_INSTALL": "Instalar",
+    "UI_PWA_IOS_ACTION": "Ver cómo",
+    "UI_PWA_INAPP_INSTRUCTION": "Abre este sitio en Safari o Chrome para instalar la aplicación y activar todas sus funciones.",
+    "UI_PWA_INAPP_ACTION": "Cómo instalar",
+    "UI_PWA_OFFLINE": "Preparar offline",
+    "UI_PWA_NOTIFICATIONS": "Notificaciones",
+    "UI_PWA_NOTIFICATIONS_ACTIVE": "Activas",
+    "UI_PWA_PUSH_TITLE": "Seguimiento en tiempo real",
+    "UI_PWA_PUSH_TEXT": "Activa avisos sobre el estado de tus pedidos.",
+    "UI_PWA_PUSH_ACTION": "Activar",
+    "UI_PWA_APP_SECTION": "Experiencia de aplicación",
+    "UI_PWA_APP_SECTION_TEXT": "Instala la tienda y conserva recursos esenciales para abrirla más rápido.",
+    "UI_PWA_STORAGE_PERSISTED": "Almacenamiento persistente activado.",
+    "UI_PWA_STORAGE_AVAILABLE": "La aplicación puede funcionar sin conexión; el navegador gestionará el espacio.",
+    "UI_PWA_STORAGE_MANAGED": "El navegador gestionará el almacenamiento automáticamente.",
+    "UI_INFO_HELP": "Info y ayuda",
+    "UI_NAV_HOME": "Inicio",
+    "UI_NAV_SEARCH": "Buscar",
+    "UI_NAV_INFO": "Info",
+    "UI_NAV_CART": "Carrito",
+}
+
+
 STORE_DEFAULTS = {
     "NOMBRE_NEGOCIO": "Mi tienda",
     "SLOGAN_NEGOCIO": "",
@@ -32,6 +144,8 @@ STORE_DEFAULTS = {
     "COLOR_PRIMARIO": "#D9961A",
     "COLOR_SECUNDARIO": "#CE1126",
     "COLOR_ACENTO": "#003087",
+    **PUBLIC_THEME_DEFAULTS,
+    **PUBLIC_UI_DEFAULTS,
     "HORARIO_APERTURA": "09:00",
     "HORARIO_CIERRE": "22:30",
     "TIENDA_FORZAR_CERRADA": "0",
@@ -100,7 +214,7 @@ def get_service_commission(total) -> dict:
 
 
 def get_store_profile() -> dict:
-    return {
+    profile = {
         "nombre": get_store_value("NOMBRE_NEGOCIO"),
         "slogan": get_store_value("SLOGAN_NEGOCIO"),
         "descripcion": get_store_value("DESCRIPCION_NEGOCIO"),
@@ -126,3 +240,12 @@ def get_store_profile() -> dict:
         "horario_cierre": get_store_value("HORARIO_CIERRE"),
         "tienda_mensaje_cierre": get_store_value("TIENDA_MENSAJE_CIERRE"),
     }
+    profile["theme"] = {
+        key.removeprefix("COLOR_").lower(): get_store_value(key, default)
+        for key, default in PUBLIC_THEME_DEFAULTS.items()
+    }
+    profile["ui"] = {
+        key.removeprefix("UI_").lower(): get_store_value(key, default)
+        for key, default in PUBLIC_UI_DEFAULTS.items()
+    }
+    return profile

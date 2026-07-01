@@ -138,6 +138,8 @@ class SuperadminConfigTest(unittest.TestCase):
             ("TELEFONO_NEGOCIO", "+34 600 000 000", "34600000000"),
             ("HORARIO_APERTURA", "09:30", "09:30"),
             ("COLOR_PRIMARIO", "#ce1126", "#CE1126"),
+            ("COLOR_CABECERA_FONDO", "#123abc", "#123ABC"),
+            ("UI_HEADER_CART_ACTION", "Abrir compra", "Abrir compra"),
             ("HERO_IMAGE_URL", "https://cdn.example.com/hero.jpg", "https://cdn.example.com/hero.jpg"),
             ("BIZUM_HABILITADO", "0", "0"),
         ]
@@ -153,6 +155,8 @@ class SuperadminConfigTest(unittest.TestCase):
             ("TELEFONO_NEGOCIO", "llama al 600000000"),
             ("HORARIO_CIERRE", "24:00"),
             ("COLOR_ACENTO", "#12345"),
+            ("COLOR_TEXTO", "blue"),
+            ("UI_HEADER_CART_ACTION", ""),
             ("LOGO_URL", "javascript:alert(1)"),
             ("EFECTIVO_HABILITADO", "yes"),
         ]

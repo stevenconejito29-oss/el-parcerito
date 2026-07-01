@@ -13,7 +13,7 @@ from extensions import db, get_or_404
 from models import (User, Order, Caja, StaffPayment, Product,
                     ZonaEntrega, SiteConfig, AuditLog,
                     AdminFeature, ADMIN_FEATURES, PointsLog, utcnow)
-from store_config import get_store_features
+from store_config import PUBLIC_THEME_DEFAULTS, PUBLIC_UI_DEFAULTS, get_store_features
 
 superadmin_bp = Blueprint("superadmin", __name__)
 
@@ -70,6 +70,112 @@ CLAVES_DEFAULT = [
     ("COMBO_MAX_DISCOUNT_PCT", "50",    "Descuento porcentual máximo permitido para combos"),
     ("TIENDA_URL",             _eget("TIENDA_URL"),                 "URL de la tienda para mostrar en WhatsApp"),
 ]
+CLAVES_DEFAULT.extend(
+    (key, value, "Token visual configurable de la tienda")
+    for key, value in PUBLIC_THEME_DEFAULTS.items()
+)
+CLAVES_DEFAULT.extend(
+    (key, value, "Texto público configurable de la tienda")
+    for key, value in PUBLIC_UI_DEFAULTS.items()
+)
+
+PUBLIC_UI_FIELDS = [
+    ("UI_CLOSE", "Acción general · cerrar"),
+    ("UI_HEADER_MODE_BOTH", "Cabecera · delivery y recogida"),
+    ("UI_HEADER_MODE_DELIVERY", "Cabecera · solo delivery"),
+    ("UI_HEADER_MODE_PICKUP", "Cabecera · solo recogida"),
+    ("UI_HEADER_OPEN", "Estado abierto"),
+    ("UI_HEADER_CLOSED", "Estado cerrado"),
+    ("UI_HEADER_INSTALL", "Acción instalar app"),
+    ("UI_HEADER_CART_LABEL", "Etiqueta del pedido"),
+    ("UI_HEADER_CART_ACTION", "Acción del carrito"),
+    ("UI_HEADER_STAFF", "Acceso de empleados"),
+    ("UI_CART_EYEBROW", "Carrito · antetítulo"),
+    ("UI_CART_TITLE", "Carrito · título"),
+    ("UI_CART_ITEM_ONE", "Carrito · producto singular"),
+    ("UI_CART_ITEM_MANY", "Carrito · productos plural"),
+    ("UI_CART_BACK", "Carrito · volver"),
+    ("UI_CART_PROCESS", "Carrito · nombre del proceso"),
+    ("UI_CART_STEP_CART", "Paso carrito"),
+    ("UI_CART_STEP_FULFILLMENT", "Paso entrega"),
+    ("UI_CART_STEP_PAYMENT", "Paso pago"),
+    ("UI_CART_UPDATE", "Actualizar carrito"),
+    ("UI_CART_COMBO_BADGE", "Combo · insignia"),
+    ("UI_CART_COMBO_VIEW", "Combo · ver detalle"),
+    ("UI_CART_COMBO_ITEMS", "Combo · unidad de ítems"),
+    ("UI_CART_COMBO_BASE", "Combo · base incluida"),
+    ("UI_CART_COMBO_INCLUDED", "Combo · incluido"),
+    ("UI_CART_COMBO_SELECTION", "Combo · elección"),
+    ("UI_CART_COMBO_KITCHEN", "Combo · contenido de cocina"),
+    ("UI_CART_EXTRAS_LABEL", "Producto · extras"),
+    ("UI_CART_ORDER_LABEL", "Producto · tipo de pedido"),
+    ("UI_CART_NO_ALLERGENS", "Producto · sin alérgenos"),
+    ("UI_CART_QUANTITY", "Producto · cantidad"),
+    ("UI_CART_LESS", "Producto · reducir cantidad"),
+    ("UI_CART_MORE", "Producto · aumentar cantidad"),
+    ("UI_CART_REMOVE", "Producto · eliminar"),
+    ("UI_CART_POINTS_TITLE", "Título de puntos"),
+    ("UI_CART_POINTS_PREFIX", "Puntos · texto anterior al valor"),
+    ("UI_CART_POINTS_UNIT", "Puntos · unidad"),
+    ("UI_CART_POINTS_REMOVE_DISCOUNT", "Puntos · quitar descuento"),
+    ("UI_CART_POINTS_AVAILABLE", "Puntos · disponibles"),
+    ("UI_CART_POINTS_READY", "Puntos · mensaje listo"),
+    ("UI_CART_POINTS_CLEAR", "Puntos · limpiar sesión"),
+    ("UI_CART_POINTS_VERIFY_HELP", "Puntos · ayuda de verificación"),
+    ("UI_CART_POINTS_SEND_CODE", "Puntos · enviar código"),
+    ("UI_CART_POINTS_CODE_HELP", "Puntos · ayuda del código"),
+    ("UI_CART_POINTS_VERIFY", "Puntos · verificar"),
+    ("UI_CART_POINTS_CHANGE_PHONE", "Puntos · cambiar teléfono"),
+    ("UI_CART_PHONE_PLACEHOLDER", "Puntos · ejemplo de teléfono"),
+    ("UI_CART_CODE_PLACEHOLDER", "Puntos · ejemplo de código"),
+    ("UI_CART_PHONE_REQUIRED", "Puntos · teléfono requerido"),
+    ("UI_CART_CODE_REQUIRED", "Puntos · código requerido"),
+    ("UI_CART_SENDING", "Puntos · enviando"),
+    ("UI_CART_VERIFYING", "Puntos · verificando"),
+    ("UI_CART_GENERIC_ERROR", "Puntos · error genérico"),
+    ("UI_CART_NETWORK_ERROR", "Puntos · error de red"),
+    ("UI_CART_INVALID_CODE", "Puntos · código incorrecto"),
+    ("UI_CART_REDEEMABLE_TITLE", "Puntos · productos canjeables"),
+    ("UI_CART_SELECTED", "Puntos · seleccionado"),
+    ("UI_CART_AVAILABLE", "Puntos · disponible"),
+    ("UI_CART_MISSING_PREFIX", "Puntos · faltan"),
+    ("UI_CART_ALLERGEN_NOTICE", "Aviso de alérgenos"),
+    ("UI_CART_TOTAL", "Etiqueta del total"),
+    ("UI_CART_SUMMARY", "Resumen · título"),
+    ("UI_CART_SUBTOTAL", "Resumen · subtotal"),
+    ("UI_CART_SHIPPING", "Resumen · envío"),
+    ("UI_CART_POINTS_DISCOUNT", "Resumen · descuento de puntos"),
+    ("UI_CART_INCOMPATIBLE", "Resumen · incompatibilidades"),
+    ("UI_CART_CHECKOUT_BOTH", "Continuar · ambas modalidades"),
+    ("UI_CART_CHECKOUT_DELIVERY", "Continuar · delivery"),
+    ("UI_CART_CHECKOUT_PICKUP", "Continuar · recogida"),
+    ("UI_CART_CONTINUE", "Seguir comprando"),
+    ("UI_CART_EMPTY_TITLE", "Carrito vacío · título"),
+    ("UI_CART_EMPTY_TEXT", "Carrito vacío · descripción"),
+    ("UI_CART_VIEW_MENU", "Carrito vacío · ver menú"),
+    ("UI_PWA_DESCRIPTION", "PWA · descripción de instalación"),
+    ("UI_PWA_IOS_INSTRUCTION", "PWA · instrucción para iOS"),
+    ("UI_PWA_INSTALL", "PWA · instalar"),
+    ("UI_PWA_IOS_ACTION", "PWA · acción en iOS"),
+    ("UI_PWA_INAPP_INSTRUCTION", "PWA · instrucción en Instagram/WebView"),
+    ("UI_PWA_INAPP_ACTION", "PWA · acción en Instagram/WebView"),
+    ("UI_PWA_OFFLINE", "PWA · preparar offline"),
+    ("UI_PWA_NOTIFICATIONS", "PWA · notificaciones"),
+    ("UI_PWA_NOTIFICATIONS_ACTIVE", "PWA · notificaciones activas"),
+    ("UI_PWA_PUSH_TITLE", "PWA · título de avisos"),
+    ("UI_PWA_PUSH_TEXT", "PWA · descripción de avisos"),
+    ("UI_PWA_PUSH_ACTION", "PWA · activar avisos"),
+    ("UI_PWA_APP_SECTION", "PWA · título de herramientas"),
+    ("UI_PWA_APP_SECTION_TEXT", "PWA · descripción de herramientas"),
+    ("UI_PWA_STORAGE_PERSISTED", "PWA · almacenamiento persistente"),
+    ("UI_PWA_STORAGE_AVAILABLE", "PWA · disponibilidad offline"),
+    ("UI_PWA_STORAGE_MANAGED", "PWA · almacenamiento gestionado"),
+    ("UI_INFO_HELP", "Acción de información y ayuda"),
+    ("UI_NAV_HOME", "Navegación · inicio"),
+    ("UI_NAV_SEARCH", "Navegación · buscar"),
+    ("UI_NAV_INFO", "Navegación · información"),
+    ("UI_NAV_CART", "Navegación · carrito"),
+]
 
 # Labels legibles para cada feature
 FEATURE_LABELS = {
@@ -110,6 +216,8 @@ CONFIG_SECTION_KEYS = {
     "tienda-colores": {
         "COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO",
     },
+    "tienda-tema": set(PUBLIC_THEME_DEFAULTS),
+    "tienda-textos": set(PUBLIC_UI_DEFAULTS),
     "operacion-horario": {
         "HORARIO_APERTURA", "HORARIO_CIERRE", "TIENDA_FORZAR_CERRADA",
         "TIENDA_MENSAJE_CIERRE",
@@ -300,7 +408,7 @@ def _validar_config_value(clave, valor):
             return False, clave, valor, "El horario debe tener formato HH:MM."
         return True, clave, valor, None
 
-    if clave in {"COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO"}:
+    if clave in {"COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO", *PUBLIC_THEME_DEFAULTS}:
         if not _HEX_COLOR_RE.match(valor):
             return False, clave, valor, "El color debe tener formato hexadecimal, por ejemplo #CE1126."
         return True, clave, valor.upper(), None
@@ -341,6 +449,13 @@ def _validar_config_value(clave, valor):
         if code and not re.fullmatch(r"[a-z]{2}", code):
             return False, clave, valor, "Usa el código ISO de dos letras, por ejemplo es, co o mx."
         return True, clave, code, None
+
+    if clave in PUBLIC_UI_DEFAULTS:
+        if not valor:
+            return False, clave, valor, "El texto no puede quedar vacío."
+        if len(valor) > 240 or any(ord(char) < 32 and char not in "\t" for char in valor):
+            return False, clave, valor, "El texto no puede superar 240 caracteres ni contener controles."
+        return True, clave, valor, None
 
     if clave == "BOT_ADMIN_NUMBERS":
         numeros, invalidos = _normalizar_lista_telefonos(valor)
@@ -1004,8 +1119,21 @@ def config():
     entradas = SiteConfig.query.order_by(SiteConfig.clave).all()
     zonas = ZonaEntrega.query.order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
     config_map = {e.clave: e.valor for e in entradas}
+    for key, value in {**PUBLIC_THEME_DEFAULTS, **PUBLIC_UI_DEFAULTS}.items():
+        config_map.setdefault(key, value)
+    public_ui_groups = [
+        ("Cabecera", [(key, label) for key, label in PUBLIC_UI_FIELDS if key == "UI_CLOSE" or key.startswith("UI_HEADER_")]),
+        ("Carrito", [(key, label) for key, label in PUBLIC_UI_FIELDS if key.startswith("UI_CART_")]),
+        ("PWA y navegación", [
+            (key, label) for key, label in PUBLIC_UI_FIELDS
+            if key.startswith(("UI_PWA_", "UI_NAV_", "UI_INFO_"))
+        ]),
+    ]
     return render_template("superadmin/config.html", entradas=entradas,
-                           config_map=config_map, zonas=zonas)
+                           config_map=config_map, zonas=zonas,
+                           public_theme_defaults=PUBLIC_THEME_DEFAULTS,
+                           public_ui_fields=PUBLIC_UI_FIELDS,
+                           public_ui_groups=public_ui_groups)
 
 
 @superadmin_bp.route("/config/guardar", methods=["POST"])

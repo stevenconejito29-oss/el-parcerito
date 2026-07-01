@@ -110,18 +110,22 @@
         <div id="logo-preview-wrap" class="cfg-media-preview">{% if config_map.get('LOGO_URL') %}<img src="{{ config_map.get('LOGO_URL') }}" alt="Logo">{% else %}<span>Logo</span>{% endif %}</div>
         <div>
           <strong>Logo del negocio</strong>
-          <label class="cfg-upload">Subir imagen<input type="file" accept=".jpg,.jpeg,.png,.webp" onchange="uploadBrand(this,'logo')"></label>
-          <input type="hidden" name="config_key" value="LOGO_URL">
-          <input type="url" name="LOGO_URL" id="logo-url-input" value="{{ config_map.get('LOGO_URL','') }}" placeholder="URL del logo">
+          <div class="cfg-media-actions">
+            <label class="cfg-upload">📤 Subir<input type="file" accept=".jpg,.jpeg,.png,.webp" onchange="uploadBrand(this,'logo')"></label>
+            <button type="button" class="cfg-upload cfg-upload-danger" onclick="clearBrand('logo')" {% if not config_map.get('LOGO_URL') %}disabled{% endif %}>🗑 Quitar</button>
+          </div>
+          <input type="url" name="LOGO_URL" id="logo-url-input" value="{{ config_map.get('LOGO_URL','') }}" placeholder="O pega una URL">
         </div>
       </div>
       <div class="cfg-media-control">
         <div id="icon-preview-wrap" class="cfg-media-preview small">{% if config_map.get('APP_ICON_URL') %}<img src="{{ config_map.get('APP_ICON_URL') }}" alt="Icono">{% else %}<span>App</span>{% endif %}</div>
         <div>
           <strong>Icono PWA</strong>
-          <label class="cfg-upload">Subir icono<input type="file" accept=".jpg,.jpeg,.png,.webp" onchange="uploadBrand(this,'icon')"></label>
-          <input type="hidden" name="config_key" value="APP_ICON_URL">
-          <input type="url" name="APP_ICON_URL" id="icon-url-input" value="{{ config_map.get('APP_ICON_URL','') }}" placeholder="URL del icono">
+          <div class="cfg-media-actions">
+            <label class="cfg-upload">📤 Subir<input type="file" accept=".jpg,.jpeg,.png,.webp" onchange="uploadBrand(this,'icon')"></label>
+            <button type="button" class="cfg-upload cfg-upload-danger" onclick="clearBrand('icon')" {% if not config_map.get('APP_ICON_URL') %}disabled{% endif %}>🗑 Quitar</button>
+          </div>
+          <input type="url" name="APP_ICON_URL" id="icon-url-input" value="{{ config_map.get('APP_ICON_URL','') }}" placeholder="O pega una URL">
         </div>
       </div>
       <div class="cfg-media-control cfg-media-control--wide">
@@ -129,9 +133,11 @@
         <div>
           <strong>Imagen de cabecera</strong>
           <small style="display:block;margin:.2rem 0 .5rem;color:var(--col-muted)">Se muestra como fondo del banner principal de la tienda. Recomendado: 1600×900 px.</small>
-          <label class="cfg-upload">Subir imagen<input type="file" accept=".jpg,.jpeg,.png,.webp" onchange="uploadBrand(this,'hero')"></label>
-          <input type="hidden" name="config_key" value="HERO_IMAGE_URL">
-          <input type="url" name="HERO_IMAGE_URL" id="hero-url-input" value="{{ config_map.get('HERO_IMAGE_URL','') }}" placeholder="URL de la imagen de cabecera">
+          <div class="cfg-media-actions">
+            <label class="cfg-upload">📤 Subir<input type="file" accept=".jpg,.jpeg,.png,.webp" onchange="uploadBrand(this,'hero')"></label>
+            <button type="button" class="cfg-upload cfg-upload-danger" onclick="clearBrand('hero')" {% if not config_map.get('HERO_IMAGE_URL') %}disabled{% endif %}>🗑 Quitar</button>
+          </div>
+          <input type="url" name="HERO_IMAGE_URL" id="hero-url-input" value="{{ config_map.get('HERO_IMAGE_URL','') }}" placeholder="O pega una URL">
         </div>
       </div>
     </div>
@@ -148,6 +154,44 @@
       {% endfor %}
     </div>
       <button type="submit" class="cfg-save-bottom">Guardar colores</button>
+    </form>
+
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="section" value="tienda-tema">
+      <h3>Tema de la interfaz pública</h3>
+      <p class="cfg-form-note">Estos tokens controlan cabecera, carrito, superficies, contraste y estados en navegador y PWA.</p>
+      {% set theme_labels = {
+        'COLOR_FONDO_APP':'Fondo general', 'COLOR_SUPERFICIE':'Tarjetas y superficies',
+        'COLOR_SUPERFICIE_ALT':'Superficie secundaria', 'COLOR_TEXTO':'Texto principal',
+        'COLOR_TEXTO_SUAVE':'Texto secundario', 'COLOR_CABECERA_FONDO':'Fondo de cabecera',
+        'COLOR_CABECERA_TEXTO':'Texto de cabecera', 'COLOR_EXITO':'Estado correcto / abierto',
+        'COLOR_ALERTA':'Alertas y errores'
+      } %}
+      <div class="cfg-colors cfg-colors--theme">
+        {% for key, fallback in public_theme_defaults.items() %}
+        <label><span>{{ theme_labels.get(key, key) }}</span><input type="hidden" name="config_key" value="{{ key }}"><input type="color" name="{{ key }}" value="{{ config_map.get(key, fallback) }}"></label>
+        {% endfor %}
+      </div>
+      <button type="submit" class="cfg-save-bottom">Guardar tema público</button>
+    </form>
+
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="section" value="tienda-textos">
+      <h3>Textos de la interfaz pública</h3>
+      <p class="cfg-form-note">Personaliza los rótulos sin modificar plantillas. Los datos del negocio continúan viniendo de Identidad y contacto.</p>
+      <div class="cfg-copy-groups">
+        {% for group_name, fields in public_ui_groups %}
+        <details class="cfg-copy-group" {% if loop.first %}open{% endif %}>
+          <summary>{{ group_name }} <small>{{ fields|length }} campos</small></summary>
+          <div class="cfg-grid">
+            {% for key, label in fields %}{{ cfg_input(key, label) }}{% endfor %}
+          </div>
+        </details>
+        {% endfor %}
+      </div>
+      <button type="submit" class="cfg-save-bottom">Guardar textos públicos</button>
     </form>
   </section>
 
@@ -263,6 +307,12 @@
 
 {% block scripts %}
 <script>
+const _BRAND_KEYS = { logo: 'LOGO_URL', icon: 'APP_ICON_URL', hero: 'HERO_IMAGE_URL' };
+const _BRAND_LABELS = { logo: 'Logo', icon: 'Icono', hero: 'Cabecera' };
+function _brandToast(msg, kind){
+  if (window.OxToast) { window.OxToast.show(msg, kind || 'info'); return; }
+  alert(msg);
+}
 async function uploadBrand(input, type){
   const file=input.files?.[0]; if(!file)return;
   const endpoints={logo:'/uploads/logo',icon:'/uploads/icon',hero:'/uploads/hero'};
@@ -270,13 +320,42 @@ async function uploadBrand(input, type){
   const fd=new FormData();fd.append('imagen',file);fd.append('csrf_token','{{ csrf_token() }}');
   input.disabled=true;
   try{
-    const response=await fetch(endpoint,{method:'POST',body:fd});
+    const response=await fetch(endpoint,{method:'POST',body:fd,headers:{'X-CSRFToken':'{{ csrf_token() }}'}});
     const data=await response.json();
     if(!response.ok||!data.ok)throw new Error(data.error||'No se pudo subir');
     const urlInput=document.getElementById(type+'-url-input');
     const preview=document.getElementById(type+'-preview-wrap');
-    urlInput.value=data.url;preview.innerHTML='<img src="'+data.url+'" alt="">';
-  }catch(error){alert(error.message)}finally{input.disabled=false}
+    urlInput.value=data.url;
+    preview.innerHTML='<img src="'+data.url+'?t='+Date.now()+'" alt="">';
+    const clearBtn = document.querySelector('button.cfg-upload-danger[onclick*="'+type+'"]');
+    if (clearBtn) clearBtn.disabled = false;
+    _brandToast('✓ '+_BRAND_LABELS[type]+' actualizado', 'success');
+  }catch(error){_brandToast(error.message || 'Error al subir', 'danger');}
+  finally{input.disabled=false; input.value='';}
+}
+async function clearBrand(type){
+  if (!confirm('¿Quitar '+_BRAND_LABELS[type]+'?')) return;
+  const key = _BRAND_KEYS[type];
+  const fd = new FormData();
+  fd.append('csrf_token', '{{ csrf_token() }}');
+  fd.append(key, '');
+  fd.append('section', 'tienda-imagen');
+  try {
+    const r = await fetch('{{ url_for("superadmin.guardar_config_seccion") }}', {
+      method: 'POST', body: fd,
+      headers: {'X-CSRFToken':'{{ csrf_token() }}'}
+    });
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    const urlInput = document.getElementById(type+'-url-input');
+    const preview = document.getElementById(type+'-preview-wrap');
+    urlInput.value = '';
+    preview.innerHTML = '<span>'+_BRAND_LABELS[type]+'</span>';
+    const clearBtn = document.querySelector('button.cfg-upload-danger[onclick*="'+type+'"]');
+    if (clearBtn) clearBtn.disabled = true;
+    _brandToast('✓ '+_BRAND_LABELS[type]+' eliminado', 'success');
+  } catch (e) {
+    _brandToast('No se pudo eliminar: '+e.message, 'danger');
+  }
 }
 function cfgShowMobileSection(id){
   if(!window.matchMedia('(max-width:760px)').matches)return;

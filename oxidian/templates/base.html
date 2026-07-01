@@ -6,7 +6,7 @@
 
   {# PWA & Mobile — theme-color coordinado con el pill flotante del header #}
   <meta name="theme-color" content="{{ brand.color_primario }}" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0F0906" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="{{ brand.theme.cabecera_fondo }}" media="(prefers-color-scheme: dark)">
   <meta name="color-scheme" content="dark light">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -70,10 +70,29 @@
       --brand-accent:    {{ brand.color_acento }};
       --brand-on-primary: {{ brand.on_primario }};
       --col-gold: {{ brand.color_primario }};
+      --theme-bg: {{ brand.theme.fondo_app }};
+      --theme-surface: {{ brand.theme.superficie }};
+      --theme-surface-alt: {{ brand.theme.superficie_alt }};
+      --theme-text: {{ brand.theme.texto }};
+      --theme-muted: {{ brand.theme.texto_suave }};
+      --theme-header-bg: {{ brand.theme.cabecera_fondo }};
+      --theme-header-text: {{ brand.theme.cabecera_texto }};
+      --theme-success: {{ brand.theme.exito }};
+      --theme-danger: {{ brand.theme.alerta }};
+      --col-bg: var(--theme-bg);
+      --col-surface: var(--theme-surface);
+      --col-elevated: var(--theme-surface-alt);
+      --col-hover: color-mix(in srgb, var(--brand-primary) 8%, var(--theme-surface));
+      --col-text: var(--theme-text);
+      --col-muted: var(--theme-muted);
+      --col-faint: color-mix(in srgb, var(--theme-muted) 72%, var(--theme-surface));
+      --col-border: color-mix(in srgb, var(--theme-text) 14%, var(--theme-surface));
+      --col-border-2: color-mix(in srgb, var(--theme-text) 22%, var(--theme-surface));
     }
     /* Usar colores de marca en botones principales */
-    .ox-btn-primary { background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 75%, #000)); color:var(--brand-on-primary); }
-    .ox-btn-cart    { background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 80%, #000)); color:var(--brand-on-primary); }
+    .ox-btn-primary { background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 75%, var(--theme-text))); color:var(--brand-on-primary); }
+    .ox-btn-cart    { background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 80%, var(--theme-text))); color:var(--brand-on-primary); }
+    body.ox-body-public { background:var(--theme-bg); color:var(--theme-text); min-height:var(--app-height,100dvh); }
   </style>
   {% block styles %}{% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
@@ -81,7 +100,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/header-modern.css', v=asset_version) }}">
 </head>
 <body class="ox-body ox-body-public ox-has-bottom-nav min-h-screen"
-      style="--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-accent:{{ brand.color_acento }};--col-gold:{{ brand.color_primario }};">
+      style="--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-accent:{{ brand.color_acento }};--col-gold:{{ brand.color_primario }};--theme-bg:{{ brand.theme.fondo_app }};--theme-surface:{{ brand.theme.superficie }};--theme-surface-alt:{{ brand.theme.superficie_alt }};--theme-text:{{ brand.theme.texto }};--theme-muted:{{ brand.theme.texto_suave }};--theme-header-bg:{{ brand.theme.cabecera_fondo }};--theme-header-text:{{ brand.theme.cabecera_texto }};--theme-success:{{ brand.theme.exito }};--theme-danger:{{ brand.theme.alerta }};">
 
 {# ── HEADER PÚBLICO ── #}
 <header class="ox-header-public">
@@ -98,10 +117,10 @@
       <span class="ox-public-copy">
         <span class="ox-public-meta">
           <span class="ox-public-kicker">
-            {% if brand.delivery and brand.recogida %}DELIVERY · RECOGIDA{% elif brand.delivery %}DELIVERY{% else %}RECOGIDA{% endif %}
+            {% if brand.delivery and brand.recogida %}{{ ui.header_mode_both }}{% elif brand.delivery %}{{ ui.header_mode_delivery }}{% else %}{{ ui.header_mode_pickup }}{% endif %}
           </span>
           <span class="ox-public-status {{ 'is-open' if brand.tienda_abierta else 'is-closed' }}">
-            <span aria-hidden="true"></span>{{ 'Abierto' if brand.tienda_abierta else 'Cerrado' }}
+            <span aria-hidden="true"></span>{{ ui.header_open if brand.tienda_abierta else ui.header_closed }}
           </span>
         </span>
         <span class="ox-public-brand">{{ brand.nombre }}</span>
@@ -109,16 +128,16 @@
       </span>
     </a>
     <nav class="ox-public-actions" aria-label="Acciones rápidas">
-      <button type="button" class="ox-header-app" data-pwa-install aria-label="Instalar aplicación">
+      <button type="button" class="ox-header-app" data-pwa-install aria-label="{{ ui.header_install }}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 15v4h14v-4"/></svg>
-        <span class="ox-install-text">Añadir app</span>
+        <span class="ox-install-text">{{ ui.header_install }}</span>
       </button>
       <a href="{{ url_for('public.ver_carrito') }}"
-         class="ox-header-cart" aria-label="Abrir carrito">
+         class="ox-header-cart" aria-label="{{ ui.header_cart_action }}">
         <span class="ox-header-cart-icon">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 8.5h11l1 11h-13l1-11Z"/><path d="M9 9V6.8a3 3 0 0 1 6 0V9"/></svg>
         </span>
-        <span class="ox-header-cart-copy"><small>Tu pedido</small><strong>Ver carrito</strong></span>
+        <span class="ox-header-cart-copy"><small>{{ ui.header_cart_label }}</small><strong>{{ ui.header_cart_action }}</strong></span>
         {% set n = session.get('carrito', {})|length %}
         {% if n > 0 %}
         <span data-cart-badge class="ox-header-cart-count">{{ n }}</span>
@@ -127,14 +146,14 @@
       {% if current_user.is_authenticated %}
         <form method="post" action="{{ url_for('auth.logout') }}" class="inline-flex">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" title="Cerrar sesión" class="flex items-center justify-center w-8 h-8 rounded-lg" style="background:rgba(206,17,38,.08);color:rgba(206,17,38,.7);border:1px solid rgba(206,17,38,.15)">
+          <button type="submit" title="{{ ui.close }}" class="flex items-center justify-center w-8 h-8 rounded-lg" style="background:color-mix(in srgb,var(--theme-danger) 8%,transparent);color:var(--theme-danger);border:1px solid color-mix(in srgb,var(--theme-danger) 20%,transparent)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
         </form>
       {% else %}
-        <a href="{{ url_for('auth.login') }}" class="ox-employee-login" title="Ingreso empleados">
+        <a href="{{ url_for('auth.login') }}" class="ox-employee-login" title="{{ ui.header_staff }}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/></svg>
-          <span class="ox-employee-login-text">Empleados</span>
+          <span class="ox-employee-login-text">{{ ui.header_staff }}</span>
         </a>
       {% endif %}
     </nav>
@@ -216,7 +235,7 @@
 
 <div class="ox-pwa-sheet" id="ox-pwa-sheet" hidden>
   <div class="ox-pwa-card">
-    <button type="button" class="ox-pwa-close" data-pwa-dismiss aria-label="Cerrar">×</button>
+    <button type="button" class="ox-pwa-close" data-pwa-dismiss aria-label="{{ ui.close }}">×</button>
     <div class="ox-pwa-icon">
       {% if _app_icon %}
         <img src="{{ _app_icon }}" alt="{{ brand.nombre }} icon">
@@ -226,10 +245,10 @@
     </div>
     <div class="ox-pwa-copy">
       <p class="ox-pwa-title">{{ brand.nombre }}</p>
-      <p class="ox-pwa-text">Añadir a pantalla de inicio para acceso rápido, sin navegador.</p>
+      <p class="ox-pwa-text">{{ ui.pwa_description }}</p>
     </div>
     <button type="button" class="ox-pwa-action" data-pwa-install>
-      <span class="ox-install-text">Instalar</span>
+      <span class="ox-install-text">{{ ui.pwa_install }}</span>
     </button>
   </div>
 </div>
@@ -237,9 +256,9 @@
 {% if session.get('push_cliente_id') %}
 <div class="ox-push-prompt ox-push-prompt--floating" id="ox-push-prompt" hidden>
   <span class="ox-push-prompt-icon">🔔</span>
-  <div class="ox-push-prompt-copy"><strong>Seguimiento en tiempo real</strong><small>Activa avisos sobre el estado de tus pedidos.</small></div>
-  <button type="button" class="ox-push-prompt-btn" onclick="oxActivarPush(this)">Activar</button>
-  <button type="button" class="ox-push-prompt-close" onclick="oxDismissPushPrompt()" aria-label="Cerrar">×</button>
+  <div class="ox-push-prompt-copy"><strong>{{ ui.pwa_push_title }}</strong><small>{{ ui.pwa_push_text }}</small></div>
+  <button type="button" class="ox-push-prompt-btn" onclick="oxActivarPush(this)">{{ ui.pwa_push_action }}</button>
+  <button type="button" class="ox-push-prompt-close" onclick="oxDismissPushPrompt()" aria-label="{{ ui.close }}">×</button>
 </div>
 {% endif %}
 
@@ -250,15 +269,15 @@
    data-info-open
    aria-haspopup="dialog"
    aria-controls="ox-info-sheet"
-   aria-label="Información y ayuda">
+   aria-label="{{ ui.info_help }}">
   <span class="ox-whatsapp-fab-icon">💬</span>
-  <span class="ox-whatsapp-fab-text">Info & Ayuda</span>
+  <span class="ox-whatsapp-fab-text">{{ ui.info_help }}</span>
 </button>
 {% endif %}
 
 {# ── PANEL DE INFORMACIÓN (siempre disponible) ── #}
 <div class="ox-info-sheet" id="ox-info-sheet" hidden>
-  <button type="button" class="ox-info-backdrop" data-info-close aria-label="Cerrar"></button>
+  <button type="button" class="ox-info-backdrop" data-info-close aria-label="{{ ui.close }}"></button>
   <section class="ox-info-panel" role="dialog" aria-modal="true" aria-labelledby="ox-info-title">
     <div class="ox-info-handle" aria-hidden="true"></div>
 
@@ -278,7 +297,7 @@
           </span>
         </div>
       </div>
-      <button type="button" class="ox-info-close" data-info-close aria-label="Cerrar">×</button>
+      <button type="button" class="ox-info-close" data-info-close aria-label="{{ ui.close }}">×</button>
     </div>
 
     {# Info del negocio #}
@@ -348,11 +367,11 @@
         {% if brand.puntos %}<a href="{{ url_for('public.club') }}" data-info-close>⭐ Mis puntos</a>{% endif %}
       </div>
       <div class="ox-app-tools">
-        <div><strong>Experiencia de aplicación</strong><small>Instala la tienda y conserva recursos esenciales para abrirla más rápido.</small></div>
+        <div><strong>{{ ui.pwa_app_section }}</strong><small>{{ ui.pwa_app_section_text }}</small></div>
         <div class="ox-app-tools-actions">
-          <button type="button" data-pwa-install><span class="ox-install-text">Instalar app</span></button>
-          <button type="button" onclick="oxPrepareAppStorage(this)">Preparar offline</button>
-          {% if session.get('push_cliente_id') %}<button type="button" onclick="oxActivarPush(this)">Notificaciones</button>{% endif %}
+          <button type="button" data-pwa-install><span class="ox-install-text">{{ ui.pwa_install }}</span></button>
+          <button type="button" onclick="oxPrepareAppStorage(this)">{{ ui.pwa_offline }}</button>
+          {% if session.get('push_cliente_id') %}<button type="button" onclick="oxActivarPush(this)">{{ ui.pwa_notifications }}</button>{% endif %}
         </div>
         <p id="ox-app-tools-status" aria-live="polite"></p>
       </div>
@@ -362,14 +381,14 @@
 
 <nav class="ox-bottom-nav md:hidden">
   <a href="{{ url_for('public.index') }}" class="{{ 'active' if request.endpoint == 'public.index' else '' }}">
-    <span class="ox-bnav-icon">🏠</span><span>Inicio</span>
+    <span class="ox-bnav-icon">🏠</span><span>{{ ui.nav_home }}</span>
   </a>
   <a href="{{ url_for('public.index') }}?q=" class="{{ 'active' if request.endpoint == 'public.index' and request.args.get('q') is not none else '' }}">
-    <span class="ox-bnav-icon">🔍</span><span>Buscar</span>
+    <span class="ox-bnav-icon">🔍</span><span>{{ ui.nav_search }}</span>
   </a>
   <button type="button" data-info-open aria-haspopup="dialog" aria-controls="ox-info-sheet"
           class="{{ 'active' if request.endpoint in ('public.index',) and False else '' }}">
-    <span class="ox-bnav-icon">ℹ️</span><span>Info</span>
+    <span class="ox-bnav-icon">ℹ️</span><span>{{ ui.nav_info }}</span>
   </button>
   <a href="{{ url_for('public.ver_carrito') }}" class="{{ 'active' if request.endpoint == 'public.ver_carrito' else '' }}">
     <div class="ox-bnav-wrap">
@@ -377,11 +396,12 @@
       {% set n = session.get('carrito', {})|length %}
       {% if n > 0 %}<span class="ox-bnav-badge">{{ n }}</span>{% endif %}
     </div>
-    <span>Carrito</span>
+    <span>{{ ui.nav_cart }}</span>
   </a>
 </nav>
 
 <script>
+const OX_UI = {{ ui|tojson }};
 setTimeout(() => {
   document.querySelectorAll('.ox-toast').forEach((el, i) => {
     setTimeout(() => {
@@ -422,6 +442,7 @@ document.querySelectorAll('form[data-ox-validate]').forEach(form => {
 let oxDeferredInstallPrompt = null;
 const oxInstallButtons = () => document.querySelectorAll('[data-pwa-install]');
 const oxIsStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+const oxIsInAppBrowser = () => /Instagram|FBAN|FBAV|Line\/|TikTok|Twitter/i.test(navigator.userAgent);
 const oxPwaSheet = () => document.getElementById('ox-pwa-sheet');
 const oxCanSuggestInstall = () => {
   if (oxIsStandalone()) return false;
@@ -468,10 +489,18 @@ function oxSetInstallState(label, disabled = false) {
   });
 }
 oxShowInstallButtons();
-if (/iphone|ipad|ipod/i.test(navigator.userAgent) && oxCanSuggestInstall()) {
+if (oxIsInAppBrowser() && oxCanSuggestInstall()) {
+  document.documentElement.classList.add('ox-webview');
   const installCopy = document.querySelector('.ox-pwa-text');
-  if (installCopy) installCopy.textContent = 'En Safari, toca Compartir y luego “Añadir a pantalla de inicio”.';
-  oxSetInstallState('Ver cómo', false);
+  if (installCopy) installCopy.textContent = OX_UI.pwa_inapp_instruction;
+  oxSetInstallState(OX_UI.pwa_inapp_action, false);
+  window.addEventListener('load', () => {
+    setTimeout(() => oxShowInstallSheet(true), 2200);
+  }, { once: true });
+} else if (/iphone|ipad|ipod/i.test(navigator.userAgent) && oxCanSuggestInstall()) {
+  const installCopy = document.querySelector('.ox-pwa-text');
+  if (installCopy) installCopy.textContent = OX_UI.pwa_ios_instruction;
+  oxSetInstallState(OX_UI.pwa_ios_action, false);
   window.addEventListener('load', () => {
     setTimeout(() => oxShowInstallSheet(true), 2200);
   }, { once: true });
@@ -480,7 +509,7 @@ window.addEventListener('beforeinstallprompt', event => {
   event.preventDefault();
   oxDeferredInstallPrompt = event;
   oxShowInstallButtons();
-  oxSetInstallState('Instalar', false);
+  oxSetInstallState(OX_UI.pwa_install, false);
   setTimeout(() => oxShowInstallSheet(true), 1800);
 });
 window.addEventListener('appinstalled', () => {
@@ -591,12 +620,12 @@ window.oxActivarPush = async function(btn) {
   btn.textContent = '…';
   const ok = await window.oxRequestPushPermission();
   if (ok) {
-    btn.textContent = 'Activas';
+    btn.textContent = OX_UI.pwa_notifications_active;
     btn.disabled = true;
     document.getElementById('ox-push-prompt')?.remove();
   } else {
     btn.disabled = false;
-    btn.textContent = 'Activar';
+    btn.textContent = OX_UI.pwa_push_action;
   }
 };
 
@@ -611,10 +640,10 @@ window.oxPrepareAppStorage = async function(btn) {
   try {
     const persistent = navigator.storage?.persist ? await navigator.storage.persist() : false;
     if (status) status.textContent = persistent
-      ? 'Almacenamiento persistente activado.'
-      : 'La aplicación ya puede funcionar sin conexión; el navegador gestionará el espacio.';
+      ? OX_UI.pwa_storage_persisted
+      : OX_UI.pwa_storage_available;
   } catch (_) {
-    if (status) status.textContent = 'El navegador gestionará el almacenamiento automáticamente.';
+    if (status) status.textContent = OX_UI.pwa_storage_managed;
   } finally {
     btn.disabled = false;
   }

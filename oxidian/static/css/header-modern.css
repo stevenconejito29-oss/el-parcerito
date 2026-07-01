@@ -1,11 +1,13 @@
 /* Public header v4: a compact restaurant sign, not a floating template card. */
 body.ox-body-public {
-  --hdr-ink: #171714;
-  --hdr-ink-soft: #24241f;
-  --hdr-paper: #fffdf8;
-  --hdr-muted: #b8b8ad;
-  --hdr-line: rgba(255,255,255,.13);
+  --hdr-ink: var(--theme-header-bg);
+  --hdr-ink-soft: color-mix(in srgb, var(--theme-header-bg) 88%, var(--theme-header-text));
+  --hdr-paper: var(--theme-surface);
+  --hdr-muted: var(--theme-muted);
+  --hdr-line: color-mix(in srgb, var(--theme-header-text) 13%, transparent);
   scroll-padding-top: calc(84px + env(safe-area-inset-top, 0px));
+  background: var(--theme-bg) !important;
+  color: var(--theme-text) !important;
 }
 
 body.ox-body-public .ox-header-public {
@@ -18,7 +20,7 @@ body.ox-body-public .ox-header-public {
   border: 0 !important;
   border-radius: 0 !important;
   background: var(--hdr-ink) !important;
-  box-shadow: 0 10px 28px rgba(24,19,13,.18) !important;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--theme-text) 18%, transparent) !important;
   overflow: visible !important;
   isolation: isolate;
 }
@@ -68,7 +70,7 @@ body.ox-body-public .ox-public-header-inner::before {
   position: absolute;
   inset: auto 18px 0;
   height: 1px;
-  background: linear-gradient(90deg, var(--brand-primary), rgba(255,255,255,.16) 28%, rgba(255,255,255,.06) 72%, var(--brand-secondary));
+  background: linear-gradient(90deg, var(--brand-primary), color-mix(in srgb, var(--theme-header-text) 16%, transparent) 28%, color-mix(in srgb, var(--theme-header-text) 6%, transparent) 72%, var(--brand-secondary));
   opacity: .72;
   pointer-events: none;
 }
@@ -82,7 +84,7 @@ body.ox-body-public .ox-public-identity {
   max-width: min(620px, 62vw);
   gap: 13px !important;
   padding: 0 !important;
-  color: #fff !important;
+  color: var(--theme-header-text) !important;
   text-decoration: none !important;
   border-radius: 0 !important;
 }
@@ -96,15 +98,15 @@ body.ox-body-public .ox-public-logo-frame {
   flex: 0 0 50px;
   padding: 3px;
   background: var(--hdr-paper);
-  border: 1px solid rgba(255,255,255,.72);
+  border: 1px solid color-mix(in srgb, var(--theme-header-text) 72%, transparent);
   border-radius: 10px 10px 3px 10px;
-  box-shadow: 4px 4px 0 color-mix(in srgb, var(--brand-primary) 72%, #000);
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--brand-primary) 72%, var(--theme-text));
   transform: translateY(-1px);
   transition: transform .22s ease, box-shadow .22s ease;
 }
 body.ox-body-public .ox-public-identity:hover .ox-public-logo-frame {
   transform: translate(1px, 0);
-  box-shadow: 2px 2px 0 color-mix(in srgb, var(--brand-primary) 72%, #000);
+  box-shadow: 2px 2px 0 color-mix(in srgb, var(--brand-primary) 72%, var(--theme-text));
 }
 
 body.ox-body-public .ox-public-logo {
@@ -115,8 +117,8 @@ body.ox-body-public .ox-public-logo {
   object-fit: cover !important;
   border: 0 !important;
   border-radius: 7px 7px 2px 7px !important;
-  background: #f4efe3;
-  color: #1b1914;
+  background: var(--theme-surface-alt);
+  color: var(--theme-text);
   font-size: 1.45rem;
 }
 
@@ -131,8 +133,8 @@ body.ox-body-public .ox-public-meta {
   gap: 9px;
   min-width: 0;
 }
-body.ox-body-public .ox-public-kicker {
-  color: color-mix(in srgb, var(--brand-primary) 82%, #fff) !important;
+body.ox-body-public .ox-header-public .ox-public-kicker {
+  color: color-mix(in srgb, var(--brand-primary) 82%, var(--theme-header-text)) !important;
   font-size: .6rem !important;
   font-weight: 900 !important;
   line-height: 1.1 !important;
@@ -144,7 +146,7 @@ body.ox-body-public .ox-public-status {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: #d7d7cf;
+  color: color-mix(in srgb, var(--theme-header-text) 78%, var(--theme-header-bg));
   font-size: .59rem;
   font-weight: 800;
   letter-spacing: .03em;
@@ -154,17 +156,17 @@ body.ox-body-public .ox-public-status > span {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #ff5b55;
-  box-shadow: 0 0 0 3px rgba(255,91,85,.13);
+  background: var(--theme-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-danger) 13%, transparent);
 }
 body.ox-body-public .ox-public-status.is-open > span {
-  background: #45d47d;
-  box-shadow: 0 0 0 3px rgba(69,212,125,.13);
+  background: var(--theme-success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-success) 13%, transparent);
 }
-body.ox-body-public .ox-public-brand {
+body.ox-body-public .ox-header-public .ox-public-brand {
   display: block !important;
   overflow: hidden;
-  color: #fff !important;
+  color: var(--theme-header-text) !important;
   font-size: clamp(.98rem, 1.7vw, 1.2rem) !important;
   font-weight: 880 !important;
   line-height: 1.12 !important;
@@ -173,7 +175,7 @@ body.ox-body-public .ox-public-brand {
   white-space: nowrap;
   text-shadow: none !important;
 }
-body.ox-body-public .ox-public-address {
+body.ox-body-public .ox-header-public .ox-public-address {
   display: block !important;
   overflow: hidden;
   color: var(--hdr-muted) !important;
@@ -206,8 +208,8 @@ body.ox-body-public .ox-employee-login {
   padding: 0 13px;
   border: 1px solid var(--hdr-line) !important;
   border-radius: 9px 9px 3px 9px !important;
-  background: rgba(255,255,255,.055) !important;
-  color: #efefe9 !important;
+  background: color-mix(in srgb, var(--theme-header-text) 5.5%, transparent) !important;
+  color: var(--theme-header-text) !important;
   font-size: .69rem;
   font-weight: 820;
   text-decoration: none !important;
@@ -228,7 +230,7 @@ body.ox-body-public .ox-employee-login svg {
 body.ox-body-public .ox-header-app:hover,
 body.ox-body-public .ox-employee-login:hover {
   border-color: color-mix(in srgb, var(--brand-primary) 58%, transparent) !important;
-  background: color-mix(in srgb, var(--brand-primary) 13%, #24241f) !important;
+  background: color-mix(in srgb, var(--brand-primary) 13%, var(--hdr-ink-soft)) !important;
   transform: translateY(-1px);
 }
 body.ox-body-public .ox-header-app[hidden] { display: none !important; }
@@ -241,18 +243,18 @@ body.ox-body-public .ox-header-cart {
   min-height: 48px !important;
   gap: 9px !important;
   padding: 6px 14px 6px 8px !important;
-  border: 1px solid color-mix(in srgb, var(--brand-primary) 70%, #fff) !important;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 70%, var(--theme-header-text)) !important;
   border-radius: 13px 4px 13px 13px !important;
   background: var(--brand-primary) !important;
-  color: var(--brand-on-primary, #171714) !important;
+  color: var(--brand-on-primary) !important;
   text-decoration: none !important;
-  box-shadow: 3px 3px 0 color-mix(in srgb, var(--brand-primary) 55%, #000) !important;
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--brand-primary) 55%, var(--theme-text)) !important;
   overflow: visible !important;
   transition: transform .18s ease, box-shadow .18s ease, filter .18s ease !important;
 }
 body.ox-body-public .ox-header-cart:hover {
   transform: translate(1px, 1px);
-  box-shadow: 1px 1px 0 color-mix(in srgb, var(--brand-primary) 55%, #000) !important;
+  box-shadow: 1px 1px 0 color-mix(in srgb, var(--brand-primary) 55%, var(--theme-text)) !important;
   filter: brightness(1.05);
 }
 body.ox-body-public .ox-header-cart.is-pressed,
@@ -265,7 +267,7 @@ body.ox-body-public .ox-header-cart-icon {
   height: 34px;
   flex: 0 0 34px;
   border-radius: 9px 3px 9px 9px;
-  background: color-mix(in srgb, var(--brand-on-primary, #171714) 10%, transparent);
+  background: color-mix(in srgb, var(--brand-on-primary) 10%, transparent);
 }
 body.ox-body-public .ox-header-cart-icon svg {
   width: 20px;
@@ -301,11 +303,11 @@ body.ox-body-public .ox-header-cart-count {
   border: 3px solid var(--hdr-ink) !important;
   border-radius: 999px !important;
   background: var(--brand-secondary) !important;
-  color: #fff !important;
+  color: var(--theme-header-text) !important;
   font-size: .64rem !important;
   font-weight: 950 !important;
   line-height: 1 !important;
-  box-shadow: 0 3px 9px rgba(0,0,0,.32) !important;
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--theme-text) 32%, transparent) !important;
 }
 body.ox-body-public .ox-header-cart-count.is-bumping { animation: ox-cart-count-bump .46s cubic-bezier(.2,.9,.25,1.5); }
 @keyframes ox-cart-count-bump { 50% { transform: translateY(-3px) scale(1.28) rotate(5deg); } }
@@ -332,7 +334,7 @@ body.ox-body-public .ox-hdr-progress {
 }
 
 body.ox-body-public .ox-header-public.is-scrolled {
-  box-shadow: 0 8px 24px rgba(24,19,13,.26) !important;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--theme-text) 26%, transparent) !important;
 }
 body.ox-body-public .ox-header-public.is-scrolled .ox-public-header-inner {
   min-height: 62px !important;
@@ -359,13 +361,13 @@ body.ox-body-public .ox-header-public.is-scrolled .ox-public-address { display: 
     width: 44px;
     height: 44px;
     flex-basis: 44px;
-    box-shadow: 3px 3px 0 color-mix(in srgb, var(--brand-primary) 72%, #000);
+    box-shadow: 3px 3px 0 color-mix(in srgb, var(--brand-primary) 72%, var(--theme-text));
   }
   body.ox-body-public .ox-public-meta { gap: 7px; }
-  body.ox-body-public .ox-public-kicker { font-size: .5rem !important; letter-spacing: .12em !important; }
+  body.ox-body-public .ox-header-public .ox-public-kicker { font-size: .5rem !important; letter-spacing: .12em !important; }
   body.ox-body-public .ox-public-status { font-size: .52rem; }
-  body.ox-body-public .ox-public-brand { font-size: .92rem !important; }
-  body.ox-body-public .ox-public-address { max-width: 190px; font-size: .57rem !important; }
+  body.ox-body-public .ox-header-public .ox-public-brand { font-size: .92rem !important; }
+  body.ox-body-public .ox-header-public .ox-public-address { max-width: 190px; font-size: .57rem !important; }
   body.ox-body-public .ox-public-actions { gap: 6px !important; }
   body.ox-body-public .ox-header-app { display: none !important; }
   body.ox-body-public .ox-header-cart {
@@ -389,21 +391,21 @@ body.ox-body-public .ox-header-public.is-scrolled .ox-public-address { display: 
 @media (max-width: 390px) {
   body.ox-body-public .ox-public-identity { max-width: calc(100% - 92px); }
   body.ox-body-public .ox-public-status { display: none; }
-  body.ox-body-public .ox-public-address { max-width: 150px; }
+  body.ox-body-public .ox-header-public .ox-public-address { max-width: 150px; }
   body.ox-body-public .ox-header-cart { width: 48px !important; min-width: 48px !important; }
   body.ox-body-public .ox-employee-login { width: 36px; min-width: 36px; }
 }
 
 @media (max-width: 340px) {
-  body.ox-body-public .ox-public-address { display: none !important; }
+  body.ox-body-public .ox-header-public .ox-public-address { display: none !important; }
   body.ox-body-public .ox-public-logo-frame { width: 40px; height: 40px; flex-basis: 40px; }
-  body.ox-body-public .ox-public-brand { font-size: .82rem !important; }
+  body.ox-body-public .ox-header-public .ox-public-brand { font-size: .82rem !important; }
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
   body.ox-body-public .ox-public-header-inner { min-height: 56px !important; padding-block: 6px !important; }
   body.ox-body-public .ox-public-logo-frame { width: 40px; height: 40px; flex-basis: 40px; }
-  body.ox-body-public .ox-public-address { display: none !important; }
+  body.ox-body-public .ox-header-public .ox-public-address { display: none !important; }
   body.ox-body-public .ox-header-cart { min-height: 42px !important; }
 }
 

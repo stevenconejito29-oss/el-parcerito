@@ -15,6 +15,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from config import config
 from extensions import db, login_manager, csrf, limiter
 from flask_login import current_user, login_required
+from store_config import PUBLIC_THEME_DEFAULTS, PUBLIC_UI_DEFAULTS
 
 
 def _to_bool(val, default=False):
@@ -39,8 +40,10 @@ def _asset_version(app):
         "css/oxidian.css",
         "css/storefront-menu.css",
         "css/storefront-cart.css",
+        "css/header-modern.css",
         "css/oxidian-ui.css",
         "js/carrito.js",
+        "js/header-modern.js",
         "sw.js",
     ):
         path = os.path.join(app.static_folder, relative_path)
@@ -207,6 +210,9 @@ def create_app(env="default"):
         if profile["puntos"]:
             shortcuts.append({"name": "Mis puntos", "short_name": "Puntos", "description": "Club de fidelizacion", "url": "/club", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]})
 
+        # Background dinamico: dark si la marca tiene fondo oscuro (por defecto sí)
+        brand_bg = SiteConfig.get("COLOR_FONDO_APP", "") or "#0F0906"
+        theme_color = SiteConfig.get("COLOR_PRIMARIO", "#D9961A")
         manifest = {
             "name": nombre,
             "short_name": short_name,
@@ -214,13 +220,13 @@ def create_app(env="default"):
             "start_url": "/?source=pwa",
             "scope": "/",
             "display": "standalone",
-            "display_override": ["standalone", "minimal-ui", "browser"],
-            "background_color": "#FFFDF8",
-            "theme_color": SiteConfig.get("COLOR_PRIMARIO", "#D9961A"),
+            "display_override": ["window-controls-overlay", "standalone", "minimal-ui", "browser"],
+            "background_color": brand_bg,
+            "theme_color": theme_color,
             "orientation": "any",
             "lang": "es",
             "dir": "ltr",
-            "categories": ["food", "shopping"],
+            "categories": ["food", "shopping", "lifestyle"],
             "id": "oxidian-menu",
             "icons": [],
             "shortcuts": shortcuts,
@@ -230,6 +236,18 @@ def create_app(env="default"):
             ],
             "prefer_related_applications": False,
             "edge_side_panel": {"preferred_width": 400},
+            # Handlers para deep-linking desde iOS/Android intents
+            "launch_handler": {"client_mode": ["navigate-existing", "auto"]},
+            "handle_links": "preferred",
+            "protocol_handlers": [
+                {"protocol": "web+order", "url": "/pedido/%s"}
+            ],
+            # Habilita compartir a la app desde el share sheet nativo
+            "share_target": {
+                "action": "/",
+                "method": "GET",
+                "params": {"title": "title", "text": "text", "url": "url"}
+            },
         }
         if profile["app_icon_url"]:
             manifest["icons"].append({
@@ -434,6 +452,7 @@ def create_app(env="default"):
                 "MODO_TIENDA", "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
                 "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
                 "COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO",
+                *PUBLIC_THEME_DEFAULTS.keys(), *PUBLIC_UI_DEFAULTS.keys(),
                 "HORARIO_APERTURA", "HORARIO_CIERRE", "TIENDA_FORZAR_CERRADA",
                 "TIENDA_MENSAJE_CIERRE",
                 "APP_ICON_URL", "HERO_IMAGE_URL",
@@ -464,6 +483,14 @@ def create_app(env="default"):
         color_primario   = _c("COLOR_PRIMARIO",   _env_default("COLOR_PRIMARIO", "#FCD116"))
         color_secundario = _c("COLOR_SECUNDARIO", _env_default("COLOR_SECUNDARIO", "#CE1126"))
         color_acento     = _c("COLOR_ACENTO",     _env_default("COLOR_ACENTO", "#003087"))
+        theme = {
+            key.removeprefix("COLOR_").lower(): _c(key, default)
+            for key, default in PUBLIC_THEME_DEFAULTS.items()
+        }
+        ui = {
+            key.removeprefix("UI_").lower(): _c(key, default)
+            for key, default in PUBLIC_UI_DEFAULTS.items()
+        }
         def _on_color(value):
             raw = str(value or "").lstrip("#")
             if len(raw) != 6:
@@ -500,6 +527,7 @@ def create_app(env="default"):
         descripcion = _c("DESCRIPCION_NEGOCIO", "")
 
         return {
+            "ui": ui,
             "brand": {
                 "nombre": nombre,
                 "logo_url": logo_url,
@@ -525,6 +553,7 @@ def create_app(env="default"):
                 "on_primario": _on_color(color_primario),
                 "color_secundario": color_secundario,
                 "color_acento": color_acento,
+                "theme": theme,
                 "horario_apertura": horario_apertura,
                 "horario_cierre": horario_cierre,
                 "tienda_mensaje_cierre": tienda_mensaje_cierre,
@@ -769,6 +798,14 @@ def _seed_admin():
         ("VALIDAR_RADIO_ENTREGA",             "1",          "Activar validación de radio de entrega (1/0)"),
         ("BLOQUEAR_DIRECCION_NO_VERIFICADA",  "1",          "Bloquear pedido si no se puede geocodificar la dirección (1/0)"),
     ]
+    _defaults.extend(
+        (key, value, "Token visual configurable de la tienda")
+        for key, value in PUBLIC_THEME_DEFAULTS.items()
+    )
+    _defaults.extend(
+        (key, value, "Texto público configurable de la tienda")
+        for key, value in PUBLIC_UI_DEFAULTS.items()
+    )
     for clave, valor, desc in _defaults:
         if not SiteConfig.query.filter_by(clave=clave).first():
             SiteConfig.set(clave, valor, descripcion=desc)

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Tu Carrito — {{ brand.nombre }}{% endblock %}
+{% block title %}{{ ui.cart_title }} — {{ brand.nombre }}{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-cart.css', v=asset_version) }}">
 {% endblock %}
@@ -8,34 +8,34 @@
 <div class="cr-wrap">
 {# ── HEADER ── #}
 <div class="cr-header">
-  <a href="{{ establecimiento.url if establecimiento else url_for('public.index') }}" class="cr-back" aria-label="Volver">
+  <a href="{{ establecimiento.url if establecimiento else url_for('public.index') }}" class="cr-back" aria-label="{{ ui.cart_back }}">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
   </a>
   <div class="cr-header-info">
-    <span class="cr-eyebrow">REVISA TU PEDIDO</span>
-    <h1 class="cr-title">Tu carrito</h1>
-    {% if items %}<p class="cr-subtitle">{{ items|length }} producto{{ 's' if items|length != 1 }}</p>{% endif %}
+    <span class="cr-eyebrow">{{ ui.cart_eyebrow }}</span>
+    <h1 class="cr-title">{{ ui.cart_title }}</h1>
+    {% if items %}<p class="cr-subtitle">{{ items|length }} {{ ui.cart_item_many if items|length != 1 else ui.cart_item_one }}</p>{% endif %}
   </div>
-  {% if items %}<span class="cr-badge" aria-label="{{ items|length }} productos">{{ items|length }}</span>{% endif %}
+  {% if items %}<span class="cr-badge" aria-label="{{ items|length }} {{ ui.cart_item_many if items|length != 1 else ui.cart_item_one }}">{{ items|length }}</span>{% endif %}
 </div>
 
 {% if items %}
 
 {# ── PASOS ── #}
-<nav class="cr-steps" aria-label="Proceso de compra">
+<nav class="cr-steps" aria-label="{{ ui.cart_process }}">
   <span class="cr-step is-active">
     <span class="cr-step-n">1</span>
-    <span class="cr-step-l">Carrito</span>
+    <span class="cr-step-l">{{ ui.cart_step_cart }}</span>
   </span>
   <span class="cr-step-sep"></span>
   <span class="cr-step">
     <span class="cr-step-n">2</span>
-    <span class="cr-step-l">Entrega</span>
+    <span class="cr-step-l">{{ ui.cart_step_fulfillment }}</span>
   </span>
   <span class="cr-step-sep"></span>
   <span class="cr-step">
     <span class="cr-step-n">3</span>
-    <span class="cr-step-l">Pago</span>
+    <span class="cr-step-l">{{ ui.cart_step_payment }}</span>
   </span>
 </nav>
 
@@ -67,7 +67,7 @@
                 {% if item.producto.es_combo %}🎁{% elif item.producto.categoria and 'beb' in item.producto.categoria.nombre|lower %}🥤{% else %}🥟{% endif %}
               </div>
             {% endif %}
-            {% if item.producto.es_combo %}<span class="cr-combo-badge">COMBO</span>{% endif %}
+            {% if item.producto.es_combo %}<span class="cr-combo-badge">{{ ui.cart_combo_badge }}</span>{% endif %}
           </div>
 
           {# Info #}
@@ -80,19 +80,19 @@
             {% set sels  = item.combo_display_items|selectattr('seleccionado')|list %}
             <details class="cr-combo">
               <summary class="cr-combo-toggle">
-                🎁 Ver combo
-                <span class="cr-combo-pill">{{ fijos|length + sels|length }} ítems</span>
+                🎁 {{ ui.cart_combo_view }}
+                <span class="cr-combo-pill">{{ fijos|length + sels|length }} {{ ui.cart_combo_items }}</span>
                 <svg class="cr-combo-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
               </summary>
               <div class="cr-combo-rows">
                 {% if fijos %}
-                <div class="cr-combo-section cr-combo-section--fixed">📌 Base incluida</div>
+                <div class="cr-combo-section cr-combo-section--fixed">📌 {{ ui.cart_combo_base }}</div>
                 {% for d in fijos %}{% set ci = d.item %}
                 <div class="cr-combo-row">
                   {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="">{% endif %}
                   <span class="cr-combo-row-qty">{{ ci.cantidad }}×</span>
                   <span class="cr-combo-row-name">{{ ci.componente.nombre }}</span>
-                  <span class="cr-combo-tag cr-combo-tag--fijo">Incluido</span>
+                  <span class="cr-combo-tag cr-combo-tag--fijo">{{ ui.cart_combo_included }}</span>
                 </div>
                 {% endfor %}
                 {% endif %}
@@ -105,26 +105,26 @@
                   <span class="cr-combo-row-qty">{{ ci.cantidad }}×</span>
                   <span class="cr-combo-row-name">{{ ci.componente.nombre }}</span>
                   {% if ci.precio_extra and ci.precio_extra > 0 %}<span class="cr-combo-tag cr-combo-tag--extra">+€{{ "%.2f"|format(ci.precio_extra) }}</span>{% endif %}
-                  <span class="cr-combo-tag cr-combo-tag--sel">Tu elección</span>
+                  <span class="cr-combo-tag cr-combo-tag--sel">{{ ui.cart_combo_selection }}</span>
                 </div>
                 {% endfor %}
                 {% endfor %}
               </div>
             </details>
             {% elif item.producto.es_combo %}
-            <p class="cr-item-note">🎁 Contenido definido en cocina</p>
+            <p class="cr-item-note">🎁 {{ ui.cart_combo_kitchen }}</p>
             {% endif %}
 
             {% if item.combo_resumen %}
             <p class="cr-item-note cr-item-note--gold">{{ item.combo_resumen }}</p>
             {% endif %}
-            {% if item.extras %}<p class="cr-item-note cr-item-note--gold">Extras: {% for extra in item.extras %}{{ extra.cantidad }}× {{ extra.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
-            {% if item.producto.grupo_pedido %}<p class="cr-item-note cr-item-note--gold">Pedido: {{ item.producto.grupo_pedido }}</p>{% endif %}
+            {% if item.extras %}<p class="cr-item-note cr-item-note--gold">{{ ui.cart_extras_label }}: {% for extra in item.extras %}{{ extra.cantidad }}× {{ extra.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+            {% if item.producto.grupo_pedido %}<p class="cr-item-note cr-item-note--gold">{{ ui.cart_order_label }}: {{ item.producto.grupo_pedido }}</p>{% endif %}
 
             {# Alérgenos y origen #}
             <div class="cr-item-tags">
               {% if item.producto.es_hipoalergenico %}
-              <span class="cr-tag cr-tag--hipo">🌿 Sin alérgenos</span>
+              <span class="cr-tag cr-tag--hipo">🌿 {{ ui.cart_no_allergens }}</span>
               {% else %}
               {% set al = item.producto.alergenos_iconos %}
               {% if al %}<span class="cr-tag cr-tag--alerg">⚠️ {% for c,i,l in al %}<span title="{{ l }}">{{ i }}</span>{% endfor %}</span>{% endif %}
@@ -142,15 +142,15 @@
                 <span class="cr-item-note">+€{{ "%.2f"|format(item.combo_extra_unit) }} suplementos</span>
                 {% endif %}
               </div>
-              <div class="cr-qty" role="group" aria-label="Cantidad">
-                <button type="button" class="cr-qty-btn" onclick="crQty({{ item.producto.id }}, -1)" aria-label="Menos">
+              <div class="cr-qty" role="group" aria-label="{{ ui.cart_quantity }}">
+                <button type="button" class="cr-qty-btn" onclick="crQty({{ item.producto.id }}, -1)" aria-label="{{ ui.cart_less }}">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
                 <input type="number" name="cantidad_{{ item.producto.id }}"
                        id="qty_{{ item.producto.id }}"
                        value="{{ item.cantidad }}" min="0" max="{{ cart_max_qty }}"
-                       class="cr-qty-input ep-qty-input" aria-label="Cantidad">
-                <button type="button" class="cr-qty-btn" onclick="crQty({{ item.producto.id }}, 1)" aria-label="Más">
+                       class="cr-qty-input ep-qty-input" aria-label="{{ ui.cart_quantity }}">
+                <button type="button" class="cr-qty-btn" onclick="crQty({{ item.producto.id }}, 1)" aria-label="{{ ui.cart_more }}">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
               </div>
@@ -160,10 +160,10 @@
 
           {# Eliminar #}
           <button type="submit" class="cr-remove"
-                  title="Quitar del carrito"
+                  title="{{ ui.cart_remove }}"
                   formmethod="POST"
             formaction="{{ url_for('public.eliminar_carrito', producto_id=item.producto.id) }}"
-            aria-label="Eliminar {{ item.producto.nombre }}">
+            aria-label="{{ ui.cart_remove }} {{ item.producto.nombre }}">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>
           </button>
         </div>
@@ -174,7 +174,7 @@
       <div class="cr-update-row" id="cr-update-row" hidden>
         <button type="button" onclick="document.getElementById('cr-form-qty').submit()" class="cr-update-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          Actualizar carrito
+          {{ ui.cart_update }}
         </button>
       </div>
     </form>
@@ -186,9 +186,9 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         </div>
         <div>
-          <h3 class="cr-points-title">Puntos y recompensas</h3>
+          <h3 class="cr-points-title">{{ ui.cart_points_title }}</h3>
           <p class="cr-points-sub">
-            Este pedido suma aprox. <strong>{{ (subtotal * puntos_por_euro)|int }} puntos</strong>
+            {{ ui.cart_points_prefix }} <strong>{{ (subtotal * puntos_por_euro)|int }} {{ ui.cart_points_unit }}</strong>
           </p>
         </div>
       </div>
@@ -201,7 +201,7 @@
           <p class="cr-applied-title">-€{{ "%.2f"|format(descuento_puntos) }} de descuento</p>
           <p class="cr-applied-sub">{{ puntos_sesion.get('puntos_usados', 0) }} puntos canjeados</p>
         </div>
-        <button type="button" class="cr-remove-pts" onclick="crQuitarPuntos()" aria-label="Quitar descuento">Quitar</button>
+        <button type="button" class="cr-remove-pts" onclick="crQuitarPuntos()" aria-label="{{ ui.cart_points_remove_discount }}">{{ ui.cart_points_remove_discount }}</button>
       </div>
 
       {# ─ Estado B: verificado pero sin descuento aplicado (auth rápido) ─ #}
@@ -209,35 +209,35 @@
       <div class="cr-points-balance">
         <div class="cr-pts-num">{{ puntos_sesion.get('puntos_totales', puntos_visibles) }}</div>
         <div>
-          <p class="cr-pts-label">puntos disponibles</p>
+          <p class="cr-pts-label">{{ ui.cart_points_available }}</p>
           <p class="cr-pts-euro">≈ €{{ "%.2f"|format(puntos_visibles / puntos_ratio) }} de descuento</p>
         </div>
       </div>
-      <p class="cr-points-hint">Tus puntos están listos. El descuento se aplica en el paso de entrega.</p>
-      <button type="button" class="cr-pts-remove-link" onclick="crQuitarPuntos()">Quitar puntos de la sesión</button>
+      <p class="cr-points-hint">{{ ui.cart_points_ready }}</p>
+      <button type="button" class="cr-pts-remove-link" onclick="crQuitarPuntos()">{{ ui.cart_points_clear }}</button>
 
       {# ─ Verificación por WhatsApp ─ #}
       {% else %}
       <div class="cr-pts-verify" id="cr-pts-verify-wrap">
         {# Paso 1: Teléfono #}
         <div id="cr-pts-step1">
-          <p class="cr-pts-verify-hint">¿Tienes puntos acumulados? Consulta y canjea con tu WhatsApp.</p>
+          <p class="cr-pts-verify-hint">{{ ui.cart_points_verify_help }}</p>
           <div class="cr-input-row">
-            <input type="tel" id="cr-pts-phone" placeholder="+34 600 000 000"
+            <input type="tel" id="cr-pts-phone" placeholder="{{ ui.cart_phone_placeholder }}"
                    class="cr-input" autocomplete="tel" inputmode="tel">
-            <button type="button" class="cr-pts-btn" onclick="crSolicitarCodigo()">Enviar código</button>
+            <button type="button" class="cr-pts-btn" onclick="crSolicitarCodigo()">{{ ui.cart_points_send_code }}</button>
           </div>
           <p id="cr-pts-msg1" class="cr-pts-msg"></p>
         </div>
         {# Paso 2: Código #}
         <div id="cr-pts-step2" hidden>
-          <p class="cr-pts-verify-hint">Introduce el código recibido por WhatsApp:</p>
+          <p class="cr-pts-verify-hint">{{ ui.cart_points_code_help }}</p>
           <div class="cr-input-row">
-            <input type="text" id="cr-pts-code" placeholder="000000"
+            <input type="text" id="cr-pts-code" placeholder="{{ ui.cart_code_placeholder }}"
                    class="cr-input cr-input--code" maxlength="8" autocomplete="one-time-code" inputmode="numeric">
-            <button type="button" class="cr-pts-btn" onclick="crVerificarCodigo()">Verificar</button>
+            <button type="button" class="cr-pts-btn" onclick="crVerificarCodigo()">{{ ui.cart_points_verify }}</button>
           </div>
-          <button type="button" class="cr-pts-back" onclick="crStep(1)">← Cambiar número</button>
+          <button type="button" class="cr-pts-back" onclick="crStep(1)">← {{ ui.cart_points_change_phone }}</button>
           <p id="cr-pts-msg2" class="cr-pts-msg"></p>
         </div>
       </div>
@@ -246,7 +246,7 @@
       {# Canjeables — productos gratuitos #}
       {% if canjeables %}
       <div class="cr-canjeables" id="cr-canjeables-list">
-        <p class="cr-canjeables-title">🎁 Productos canjeables con tus puntos</p>
+        <p class="cr-canjeables-title">🎁 {{ ui.cart_redeemable_title }}</p>
         {% for prod in canjeables %}
         {% set faltan = (prod.puntos_para_canje or 0) - (puntos_visibles or 0) %}
         {% set ya_seleccionado = session.get('cart_producto_canje_id') == prod.id %}
@@ -267,11 +267,11 @@
           </span>
           <span class="cr-canjeable-status">
             {% if ya_seleccionado %}
-            <span class="cr-tag-on">Seleccionado ✓</span>
+            <span class="cr-tag-on">{{ ui.cart_selected }} ✓</span>
             {% elif faltan <= 0 %}
-            <span class="cr-tag-ok">Disponible</span>
+            <span class="cr-tag-ok">{{ ui.cart_available }}</span>
             {% else %}
-            <span class="cr-tag-falta">Faltan {{ faltan }}</span>
+            <span class="cr-tag-falta">{{ ui.cart_missing_prefix }} {{ faltan }}</span>
             {% endif %}
           </span>
         </button>
@@ -284,7 +284,7 @@
     {# ── BANNER ALÉRGENOS ── #}
     <div class="cr-alerg-banner">
       <span>⚠️</span>
-      <p>Revisa los alérgenos. Si tienes intolerancias o alergias indícalo en las notas al confirmar el pedido.</p>
+      <p>{{ ui.cart_allergen_notice }}</p>
     </div>
 
   </div>{# /cr-main #}
@@ -294,25 +294,25 @@
 
     {# ── Resumen de pedido ── #}
     <div class="cr-summary" id="cr-summary">
-      <h3 class="cr-summary-title">Resumen</h3>
+      <h3 class="cr-summary-title">{{ ui.cart_summary }}</h3>
       <div class="cr-rows">
         <div class="cr-row">
-          <span>Subtotal</span>
+          <span>{{ ui.cart_subtotal }}</span>
           <span id="total-display">€{{ "%.2f"|format(subtotal) }}</span>
         </div>
         {% if descuento_puntos > 0 %}
         <div class="cr-row cr-row--green" id="cr-discount-row">
-          <span>⭐ Descuento puntos</span>
+          <span>⭐ {{ ui.cart_points_discount }}</span>
           <span id="cr-discount-val">-€{{ "%.2f"|format(descuento_puntos) }}</span>
         </div>
         {% else %}
         <div class="cr-row cr-row--green" id="cr-discount-row" hidden>
-          <span>⭐ Descuento puntos</span>
+          <span>⭐ {{ ui.cart_points_discount }}</span>
           <span id="cr-discount-val"></span>
         </div>
         {% endif %}
         {% if 'delivery' in fulfillment_options %}<div class="cr-row cr-row--muted">
-          <span>Envío</span>
+          <span>{{ ui.cart_shipping }}</span>
           <span>
             {% if zona_principal %}
             Desde €{{ "%.2f"|format(zona_principal.precio_envio|float) }}
@@ -323,19 +323,19 @@
         </div>{% endif %}
       </div>
       <div class="cr-total-row">
-        <span class="cr-total-label">Total estimado</span>
+        <span class="cr-total-label">{{ ui.cart_total }}</span>
         <span class="cr-total-val" id="total-estimado">€{{ "%.2f"|format(subtotal - descuento_puntos) }}</span>
       </div>
       {% if cart_issue %}
       <div class="cr-compat-warning" role="alert">{{ cart_issue }}</div>
-      <button type="button" class="cr-cta cr-cta--disabled" disabled>Revisa los productos incompatibles</button>
+      <button type="button" class="cr-cta cr-cta--disabled" disabled>{{ ui.cart_incompatible }}</button>
       {% else %}
       <a href="{{ url_for('public.checkout') }}" class="cr-cta" id="btn-checkout">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-        {{ 'Elegir entrega o recogida' if fulfillment_options|length > 1 else ('Continuar con entrega' if 'delivery' in fulfillment_options else 'Continuar para recoger') }}
+        {{ ui.cart_checkout_both if fulfillment_options|length > 1 else (ui.cart_checkout_delivery if 'delivery' in fulfillment_options else ui.cart_checkout_pickup) }}
       </a>
       {% endif %}
-      <a href="{{ url_for('public.index') }}" class="cr-continue">← Seguir comprando</a>
+      <a href="{{ url_for('public.index') }}" class="cr-continue">← {{ ui.cart_continue }}</a>
     </div>
 
     {# ── Preview de zona ── #}
@@ -376,9 +376,9 @@
       <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
     </svg>
   </div>
-  <h2 class="cr-empty-title">Tu carrito está vacío</h2>
-  <p class="cr-empty-sub">Explora el menú y encuentra tu favorito</p>
-  <a href="{{ url_for('public.index') }}" class="cr-cta">Ver menú completo</a>
+  <h2 class="cr-empty-title">{{ ui.cart_empty_title }}</h2>
+  <p class="cr-empty-sub">{{ ui.cart_empty_text }}</p>
+  <a href="{{ url_for('public.index') }}" class="cr-cta">{{ ui.cart_view_menu }}</a>
 </div>
 
 {% endif %}
@@ -460,8 +460,8 @@ function crStep(n) {
 async function crSolicitarCodigo() {
   const phone = document.getElementById('cr-pts-phone')?.value?.trim();
   const msg   = document.getElementById('cr-pts-msg1');
-  if (!phone) { if (msg) { msg.textContent = 'Introduce tu número'; msg.className = 'cr-pts-msg cr-pts-msg--err'; } return; }
-  if (msg) { msg.textContent = 'Enviando...'; msg.className = 'cr-pts-msg'; }
+  if (!phone) { if (msg) { msg.textContent = OX_UI.cart_phone_required; msg.className = 'cr-pts-msg cr-pts-msg--err'; } return; }
+  if (msg) { msg.textContent = OX_UI.cart_sending; msg.className = 'cr-pts-msg'; }
   try {
     const r = await fetch('{{ url_for("public.solicitar_codigo_puntos") }}', {
       method: 'POST',
@@ -470,16 +470,16 @@ async function crSolicitarCodigo() {
     });
     const d = await r.json();
     if (d.ok) { crStep(2); }
-    else { if (msg) { msg.textContent = d.msg || 'Error'; msg.className = 'cr-pts-msg cr-pts-msg--err'; } }
-  } catch { if (msg) { msg.textContent = 'Error de red'; msg.className = 'cr-pts-msg cr-pts-msg--err'; } }
+    else { if (msg) { msg.textContent = d.msg || OX_UI.cart_generic_error; msg.className = 'cr-pts-msg cr-pts-msg--err'; } }
+  } catch { if (msg) { msg.textContent = OX_UI.cart_network_error; msg.className = 'cr-pts-msg cr-pts-msg--err'; } }
 }
 
 async function crVerificarCodigo() {
   const phone = document.getElementById('cr-pts-phone')?.value?.trim();
   const code  = document.getElementById('cr-pts-code')?.value?.trim();
   const msg   = document.getElementById('cr-pts-msg2');
-  if (!code) { if (msg) { msg.textContent = 'Introduce el código'; msg.className = 'cr-pts-msg cr-pts-msg--err'; } return; }
-  if (msg) { msg.textContent = 'Verificando...'; msg.className = 'cr-pts-msg'; }
+  if (!code) { if (msg) { msg.textContent = OX_UI.cart_code_required; msg.className = 'cr-pts-msg cr-pts-msg--err'; } return; }
+  if (msg) { msg.textContent = OX_UI.cart_verifying; msg.className = 'cr-pts-msg'; }
   try {
     const r = await fetch('{{ url_for("public.verificar_codigo_puntos") }}', {
       method: 'POST',
@@ -490,8 +490,8 @@ async function crVerificarCodigo() {
     if (d.ok) {
       /* Recarga la página para mostrar el nuevo estado de puntos */
       location.reload();
-    } else { if (msg) { msg.textContent = d.msg || 'Código incorrecto'; msg.className = 'cr-pts-msg cr-pts-msg--err'; } }
-  } catch { if (msg) { msg.textContent = 'Error de red'; msg.className = 'cr-pts-msg cr-pts-msg--err'; } }
+    } else { if (msg) { msg.textContent = d.msg || OX_UI.cart_invalid_code; msg.className = 'cr-pts-msg cr-pts-msg--err'; } }
+  } catch { if (msg) { msg.textContent = OX_UI.cart_network_error; msg.className = 'cr-pts-msg cr-pts-msg--err'; } }
 }
 
 /* ── PUNTOS: quitar ── */
@@ -526,21 +526,21 @@ async function crToggleCanje(btn, prodId) {
         const available = {{ puntos_visibles }};
         const falta = pts - available;
         status.innerHTML = falta <= 0
-          ? '<span class="cr-tag-ok">Disponible</span>'
-          : `<span class="cr-tag-falta">Faltan ${falta}</span>`;
+          ? `<span class="cr-tag-ok">${OX_UI.cart_available}</span>`
+          : `<span class="cr-tag-falta">${OX_UI.cart_missing_prefix} ${falta}</span>`;
       });
       if (!isSelected) btn.classList.add('is-selected');
       /* Actualizar texto del status */
       const statusEl = btn.querySelector('.cr-canjeable-status');
       if (statusEl) {
         if (!isSelected) {
-          statusEl.innerHTML = '<span class="cr-tag-on">Seleccionado ✓</span>';
+          statusEl.innerHTML = `<span class="cr-tag-on">${OX_UI.cart_selected} ✓</span>`;
         } else {
           const pts = parseInt(btn.dataset.pts || 0);
           const available = {{ puntos_visibles }};
           const falta = pts - available;
-          if (falta <= 0) statusEl.innerHTML = '<span class="cr-tag-ok">Disponible</span>';
-          else statusEl.innerHTML = `<span class="cr-tag-falta">Faltan ${falta}</span>`;
+          if (falta <= 0) statusEl.innerHTML = `<span class="cr-tag-ok">${OX_UI.cart_available}</span>`;
+          else statusEl.innerHTML = `<span class="cr-tag-falta">${OX_UI.cart_missing_prefix} ${falta}</span>`;
         }
       }
     } else {

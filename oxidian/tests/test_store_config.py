@@ -22,6 +22,24 @@ class StoreConfigTest(unittest.TestCase):
         self.assertEqual(profile["bizum_telefono"], "+34111222333")
         self.assertFalse(profile["bizum_habilitado"])
         self.assertTrue(profile["efectivo_habilitado"])
+        self.assertIn("cabecera_fondo", profile["theme"])
+        self.assertIn("header_cart_action", profile["ui"])
+
+    def test_public_theme_and_copy_are_read_from_site_config(self):
+        values = {
+            "COLOR_CABECERA_FONDO": "#123456",
+            "UI_HEADER_CART_ACTION": "Abrir mi compra",
+            "UI_PWA_INAPP_INSTRUCTION": "Abre la tienda en tu navegador principal.",
+        }
+        with patch("models.SiteConfig.get", side_effect=lambda key, default="": values.get(key, default)):
+            profile = get_store_profile()
+
+        self.assertEqual(profile["theme"]["cabecera_fondo"], "#123456")
+        self.assertEqual(profile["ui"]["header_cart_action"], "Abrir mi compra")
+        self.assertEqual(
+            profile["ui"]["pwa_inapp_instruction"],
+            "Abre la tienda en tu navegador principal.",
+        )
 
     def test_service_commission_only_applies_in_service_mode(self):
         values = {
