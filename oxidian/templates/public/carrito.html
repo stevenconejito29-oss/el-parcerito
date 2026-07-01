@@ -6,14 +6,6 @@
 {% block content %}
 
 <div class="cr-wrap">
-{% if establecimiento %}
-<div class="ep-origin-current ep-origin-current--cart">
-  <span>Pedido de</span>
-  <strong>{{ establecimiento.nombre }}</strong>
-  <a href="{{ establecimiento.url }}">Ver su menú</a>
-</div>
-{% endif %}
-
 {# ── HEADER ── #}
 <div class="cr-header">
   <a href="{{ establecimiento.url if establecimiento else url_for('public.index') }}" class="cr-back" aria-label="Volver">
@@ -336,7 +328,7 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         {{ 'Elegir entrega o recogida' if fulfillment_options|length > 1 else ('Continuar con entrega' if 'delivery' in fulfillment_options else 'Continuar para recoger') }}
       </a>
-      <a href="{{ establecimiento.url }}" class="cr-continue">← Seguir comprando en {{ establecimiento.nombre }}</a>
+      <a href="{{ url_for('public.index') }}" class="cr-continue">← Seguir comprando</a>
     </div>
 
     {# ── Preview de zona ── #}

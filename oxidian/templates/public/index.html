@@ -23,25 +23,6 @@
   {{- url_for('public.index', categoria=categoria, q=q) -}}
 {%- endmacro %}
 
-<section class="ep-origin-panel" aria-label="Elegir establecimiento">
-  <div class="ep-origin-current">
-    <span>Estás viendo</span>
-    <strong>{{ establecimiento.nombre }}</strong>
-    <small class="{{ 'is-open' if establecimiento.abierto else 'is-closed' }}">
-      {{ 'Abierto ahora' if establecimiento.abierto else 'Cerrado ahora' }}
-    </small>
-  </div>
-  {% if carrito and carrito_origen and carrito_origen != origen_actual %}
-  <div class="ep-origin-cart-note">
-    Tu carrito pertenece a otro establecimiento. Puedes verlo, pero no se mezclarán productos.
-    <a href="{{ url_for('public.ver_carrito') }}">Ver carrito</a>
-  </div>
-  {% endif %}
-  <nav class="ep-origin-list" aria-label="Tienda">
-    <a href="{{ url_for('public.index') }}" class="{{ 'is-active' if origen_actual == 'propio' }}">Tienda principal</a>
-  </nav>
-</section>
-
 {# ══════════════════════════════════════════
    HERO
 ══════════════════════════════════════════ #}

@@ -171,18 +171,16 @@
     </div>
   </div>
 
-  {# Menú del cliente #}
+  {# Flujo conversacional del cliente #}
   <div class="ox-card p-4">
-    <h2 class="cb-section-title mb-3">📋 Menú que ve el cliente</h2>
-    <ol class="chat-menu-list space-y-1.5">
-      <li class="flex items-center gap-2"><span class="cb-num">1</span>Abrir la tienda online</li>
-      <li class="flex items-center gap-2"><span class="cb-num">2</span>Estado de mi pedido</li>
-      {% if brand.puntos %}<li class="flex items-center gap-2"><span class="cb-num">3</span>Mis puntos</li>{% endif %}
-      {% if brand.delivery %}<li class="flex items-center gap-2"><span class="cb-num">4</span>Cobertura de delivery</li>{% endif %}
-      <li class="flex items-center gap-2"><span class="cb-num">5</span>Horario y contacto</li>
-      <li class="flex items-center gap-2"><span class="cb-num">6</span>Horarios y contacto</li>
-      <li class="flex items-center gap-2"><span class="cb-num">7</span>Hablar con una persona</li>
-    </ol>
+    <h2 class="cb-section-title mb-3">💬 Conversación del cliente</h2>
+    <p class="text-sm mb-3" style="color:var(--col-muted)">El bot pregunta qué necesita y reconoce frases naturales. Solo muestra ayuda guiada cuando no logra entender.</p>
+    <div class="space-y-2 text-sm">
+      <p>“Quiero hacer un pedido” → abre la tienda online.</p>
+      <p>“¿Dónde va mi pedido?” → consulta el estado real.</p>
+      <p>“Necesito hablar con alguien” → atención humana o cola.</p>
+      <p>Preguntas frecuentes → respuesta fija, sin gastar IA.</p>
+    </div>
   </div>
 </div>
 
@@ -357,6 +355,16 @@
       <label class="chat-label">Reglas extra del asistente (prompt opcional)</label>
       <textarea name="bot_ai_rules" rows="3" class="chat-input" placeholder="Ej: Siempre responde en español. Cuando alguien pida un producto, di 'Mírelo y pídalo en la tienda: TIENDA_URL'. No tomes pedidos por WhatsApp.">{{ bot_ai_rules }}</textarea>
       <p class="chat-help">Se concatena al prompt base. Mantén las instrucciones cortas para ahorrar tokens.</p>
+    </div>
+    <div>
+      <label class="chat-label">Consultas IA por cliente / día</label>
+      <input type="number" name="bot_ai_daily_client" min="1" max="1000" value="{{ bot_ai_daily_client }}" class="chat-input">
+      <p class="chat-help">Las respuestas fijas, estados y FAQs no consumen este límite.</p>
+    </div>
+    <div>
+      <label class="chat-label">Consultas IA globales / día</label>
+      <input type="number" name="bot_ai_daily_global" min="1" max="10000" value="{{ bot_ai_daily_global }}" class="chat-input">
+      <p class="chat-help">Corte de seguridad para controlar gasto y abuso.</p>
     </div>
     <div class="lg:col-span-2 flex justify-end pt-2">
       <button class="ox-btn-primary text-sm" type="submit">Guardar configuración e IA</button>

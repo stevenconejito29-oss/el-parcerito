@@ -111,6 +111,7 @@ test('los menús públicos y admin están separados por rol', () => {
 test('el cliente se dirige a la web y no recibe catálogo por WhatsApp', () => {
   const menu = menuPrincipal();
   assert.match(menu, /Abrir la tienda online/);
+  assert.doesNotMatch(menu, /1️⃣|2️⃣|3️⃣/);
   assert.doesNotMatch(menu, /Ver el menú y los combos/);
   assert.doesNotMatch(menu, /precio/i);
 });
@@ -121,7 +122,7 @@ test('reconoce frases naturales del cliente antes del menú genérico', () => {
     ['donde está mi pedido y cuanto falta', '2'],
     ['como puedo canjear mis recompensas', '3'],
     ['hacen domicilio hasta mi barrio', '4'],
-    ['a qué hora cierran hoy', '5'],
+    ['a qué hora cierran hoy', '6'],
     ['tengo un problema con el código de entrega', '6'],
     ['necesito hablar con un asesor', '7'],
   ];

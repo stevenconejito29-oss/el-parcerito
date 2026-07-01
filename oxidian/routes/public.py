@@ -121,7 +121,7 @@ def _establecimiento_para_origen(origen):
     if origen == "propio":
         return {
             "origen": origen,
-            "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "") or "Tienda principal",
+            "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "") or "Mi tienda",
             "abierto": True,
             "url": url_for("public.index"),
         }
@@ -369,7 +369,7 @@ def _render_catalogo(origen, proveedor=None):
     bares = []
     establecimiento = {
         "origen": origen,
-        "nombre": proveedor.nombre if proveedor else (SiteConfig.get("NOMBRE_NEGOCIO", "") or "Tienda principal"),
+        "nombre": proveedor.nombre if proveedor else (SiteConfig.get("NOMBRE_NEGOCIO", "") or "Mi tienda"),
         "abierto": proveedor.esta_abierto_ahora if proveedor else True,
         "url": url_for("public.index"),
     }
@@ -419,7 +419,7 @@ def producto_detalle(producto_id):
     producto = get_or_404(Product, producto_id)
     origen = _normalizar_origen(request.args.get("origen")) or "propio"
     if is_service_mode() and origen != "propio":
-        flash("Este producto no pertenece al catálogo principal de esta tienda.", "warning")
+        flash("Este producto no está disponible en el catálogo.", "warning")
         return redirect(url_for("public.index"))
     proveedor_id = _proveedor_id_origen(origen)
     proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
@@ -447,9 +447,6 @@ def producto_detalle(producto_id):
                            combo_fixed_base=round(combo_fixed_base, 2),
                            cart_max_qty=_cart_max_qty(),
                            origen_actual=origen,
-                           establecimiento_nombre=proveedor.nombre if proveedor else (
-                               SiteConfig.get("NOMBRE_NEGOCIO", "") or "Tienda principal"
-                           ),
                            establecimiento_abierto=proveedor.esta_abierto_ahora if proveedor else True,
                            volver_url=url_for("public.menu_bar", proveedor_id=proveedor.id)
                            if proveedor else url_for("public.index"),
@@ -601,8 +598,8 @@ def agregar_carrito(producto_id):
     origen_carrito = _carrito_origen(carrito)
     if origen_carrito and origen_solicitado != origen_carrito:
         return _err(
-            "Tu carrito pertenece a otro establecimiento. "
-            "Finaliza o vacía ese pedido antes de cambiar de tienda."
+            "El carrito contiene productos de un origen de inventario incompatible. "
+            "Vacíalo y vuelve a añadir los productos."
         )
     key = str(producto_id)
 
@@ -1025,7 +1022,7 @@ def verificar_codigo_puntos():
     ratio = max(1, get_puntos_config()["ratio"])
     origen = _carrito_origen()
     if not origen:
-        return jsonify({"ok": False, "msg": "El carrito no tiene un establecimiento válido"})
+        return jsonify({"ok": False, "msg": "El carrito no tiene un origen de inventario válido"})
     _, subtotal = _build_items_from_carrito(_get_carrito())
     max_puntos_por_carrito = int(max(subtotal, 0) * ratio)
     puntos_usar = min(max(puntos_usar, 0), cliente.puntos, max_puntos_por_carrito)
@@ -1082,7 +1079,7 @@ def checkout():
     origen = _carrito_origen(carrito)
     establecimiento = _establecimiento_para_origen(origen)
     if not origen or not establecimiento:
-        flash("El carrito no tiene un establecimiento válido. Vacíalo y vuelve a elegir la tienda.", "warning")
+        flash("El carrito no es válido. Vacíalo y vuelve a añadir los productos.", "warning")
         return redirect(url_for("public.ver_carrito"))
     proveedor_id = _proveedor_id_origen(origen)
     proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
@@ -1122,7 +1119,7 @@ def checkout():
         )
         return redirect(url_for("public.ver_carrito"))
     if any(not item["producto"].pertenece_a_origen(origen) for item in items):
-        flash("Hay productos que no pertenecen al establecimiento del carrito.", "warning")
+        flash("Hay productos incompatibles con el origen de inventario del carrito.", "warning")
         return redirect(url_for("public.ver_carrito"))
     fulfillment_options = _fulfillment_options([item["producto"] for item in items])
     if not fulfillment_options:

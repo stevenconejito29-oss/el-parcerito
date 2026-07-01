@@ -250,12 +250,30 @@ def ai_memory():
 @bot_required
 def ai_cliente_context():
     cliente, _ = _cliente_por_telefono(request.args.get("telefono"))
-    if not cliente:
-        return jsonify({"ok": True, "cliente": None})
-    pedidos = cliente.pedidos.order_by(Order.creado_en.desc()).limit(3).all()
     features = get_store_features()
+    apertura = (SiteConfig.get("HORARIO_APERTURA", "") or "").strip()
+    cierre = (SiteConfig.get("HORARIO_CIERRE", "") or "").strip()
+    metodos_pago = []
+    if _config_bool("EFECTIVO_HABILITADO", "1"):
+        metodos_pago.append("efectivo")
+    if _config_bool("BIZUM_HABILITADO", "1"):
+        metodos_pago.append("Bizum")
+    negocio = {
+        "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda"),
+        "direccion": SiteConfig.get("DIRECCION_NEGOCIO", ""),
+        "horario": f"{apertura}-{cierre}" if apertura and cierre else "",
+        "metodos_pago": metodos_pago,
+        "delivery": features["delivery"],
+        "recogida": features["recogida"],
+        "puntos": features["puntos"],
+        "programados": features["pedidos_programados"],
+    }
+    if not cliente:
+        return jsonify({"ok": True, "cliente": None, "negocio": negocio})
+    pedidos = cliente.pedidos.order_by(Order.creado_en.desc()).limit(3).all()
     return jsonify({
         "ok": True,
+        "negocio": negocio,
         "cliente": {
             "nombre": cliente.nombre,
             "puntos": int(cliente.puntos or 0) if features["puntos"] else None,
@@ -293,8 +311,8 @@ def branding():
         "pickup_enabled": features["recogida"],
         "scheduled_enabled": features["pedidos_programados"],
         "points_enabled": features["puntos"],
-        "bizum_enabled": _config_bool("BIZUM_HABILITADO"),
-        "cash_enabled": _config_bool("EFECTIVO_HABILITADO"),
+        "bizum_enabled": _config_bool("BIZUM_HABILITADO", "1"),
+        "cash_enabled": _config_bool("EFECTIVO_HABILITADO", "1"),
         "horario_apertura": SiteConfig.get("HORARIO_APERTURA", ""),
         "horario_cierre": SiteConfig.get("HORARIO_CIERRE", ""),
     })
@@ -2520,6 +2538,15 @@ def info_negocio():
         forzada    = str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).strip().lower() in {"1", "true", "yes", "on"}
         ahora_str  = datetime.now().strftime("%H:%M")
         is_open    = tienda_abierta_en_horario(apertura, cierre, ahora=ahora_str, forzada_cerrada=forzada)
+        features = get_store_features()
+        metodos_pago = []
+        if _config_bool("EFECTIVO_HABILITADO", "1"):
+            metodos_pago.append("efectivo")
+        if _config_bool("BIZUM_HABILITADO", "1"):
+            metodos_pago.append("Bizum")
+        capacidades = ["consultas", "estado del pedido"]
+        if features["puntos"]:
+            capacidades.append("puntos")
         return jsonify({
             "ok": True,
             "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda"),
@@ -2533,10 +2560,14 @@ def info_negocio():
             "forzar_cerrada": forzada,
             "hora_actual": ahora_str,
             "mensaje_cierre": SiteConfig.get("TIENDA_MENSAJE_CIERRE", "") if not is_open else "",
+            "metodos_pago": metodos_pago,
+            "delivery_enabled": features["delivery"],
+            "pickup_enabled": features["recogida"],
+            "points_enabled": features["puntos"],
             "tienda_url": tienda_url,
             "mensaje_pedido": (
                 f"🛒 Para hacer tu pedido visita:\n{tienda_url}\n\n"
-                f"Por WhatsApp puedo ayudarte con consultas, puntos, estado del pedido o pasarte con una persona."
+                f"Por WhatsApp puedo ayudarte con {', '.join(capacidades)} o pasarte con una persona."
             ) if tienda_url else (
                 "🛒 La tienda online no esta configurada ahora mismo. "
                 "Por WhatsApp puedo ayudarte con consultas o pasarte con una persona."

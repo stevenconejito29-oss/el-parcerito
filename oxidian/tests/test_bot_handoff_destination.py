@@ -140,7 +140,21 @@ class BotHandoffDestinationTest(unittest.TestCase):
             headers={"X-Bot-Key": "test-bot-key"},
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIsNone(response.get_json()["cliente"]["puntos"])
+        payload = response.get_json()
+        self.assertIsNone(payload["cliente"]["puntos"])
+        self.assertFalse(payload["negocio"]["puntos"])
+        self.assertTrue(payload["negocio"]["delivery"])
+        self.assertIn("efectivo", payload["negocio"]["metodos_pago"])
+
+    def test_ai_context_does_not_invent_an_unconfigured_schedule(self):
+        response = self.client.get(
+            "/api/bot/ai/cliente-context?telefono=+34619999999",
+            headers={"X-Bot-Key": "test-bot-key"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNone(payload["cliente"])
+        self.assertEqual(payload["negocio"]["horario"], "")
 
     def test_legacy_provider_metadata_still_uses_global_superadmins(self):
         order = self._order(17)

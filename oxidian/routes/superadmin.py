@@ -612,6 +612,8 @@ def chatbot():
     bot_ai_provider = (SiteConfig.get("BOT_AI_PROVIDER", "") or "").strip().lower()
     bot_ai_model = SiteConfig.get("BOT_AI_MODEL", "") or ""
     bot_ai_rules = SiteConfig.get("BOT_AI_RULES", "") or ""
+    bot_ai_daily_client = SiteConfig.get("BOT_AI_DAILY_CLIENT", "20") or "20"
+    bot_ai_daily_global = SiteConfig.get("BOT_AI_DAILY_GLOBAL", "500") or "500"
     bot_ai_api_key_set = bool(SiteConfig.get("BOT_AI_API_KEY", ""))
     status = _bot_get_status(bot_api_url)
     evolution_status = _evolution_get_status(evolution_api_url, evolution_api_key)
@@ -630,6 +632,8 @@ def chatbot():
                            bot_ai_provider=bot_ai_provider,
                            bot_ai_model=bot_ai_model,
                            bot_ai_rules=bot_ai_rules,
+                           bot_ai_daily_client=bot_ai_daily_client,
+                           bot_ai_daily_global=bot_ai_daily_global,
                            bot_ai_api_key_set=bot_ai_api_key_set,
                            evolution_status=evolution_status,
                            status=status)
@@ -880,6 +884,15 @@ def guardar_chatbot():
         ai_provider = ""
     ai_model = (request.form.get("bot_ai_model") or "").strip()[:80]
     ai_rules = (request.form.get("bot_ai_rules") or "").strip()[:1500]
+    try:
+        ai_daily_client = int(request.form.get("bot_ai_daily_client") or 20)
+        ai_daily_global = int(request.form.get("bot_ai_daily_global") or 500)
+    except (TypeError, ValueError):
+        flash("Los límites diarios de IA deben ser números enteros.", "danger")
+        return redirect(url_for("superadmin.chatbot"))
+    if not (1 <= ai_daily_client <= 1000 and 1 <= ai_daily_global <= 10000):
+        flash("Límites IA fuera de rango: cliente 1-1000 y global 1-10000.", "danger")
+        return redirect(url_for("superadmin.chatbot"))
     ai_api_key_new = (request.form.get("bot_ai_api_key") or "").strip()
     ai_api_key = ai_api_key_new or SiteConfig.get("BOT_AI_API_KEY", "")
     if ai_enabled == "1" and (not ai_provider or not ai_model or not ai_api_key):
@@ -893,6 +906,10 @@ def guardar_chatbot():
                    descripcion="Modelo IA usado por el bot")
     SiteConfig.set("BOT_AI_RULES", ai_rules, user_id=current_user.id,
                    descripcion="Reglas extra del system prompt del bot")
+    SiteConfig.set("BOT_AI_DAILY_CLIENT", ai_daily_client, user_id=current_user.id,
+                   descripcion="Máximo de consultas IA diarias por cliente")
+    SiteConfig.set("BOT_AI_DAILY_GLOBAL", ai_daily_global, user_id=current_user.id,
+                   descripcion="Máximo de consultas IA diarias globales")
     if ai_api_key_new:
         SiteConfig.set("BOT_AI_API_KEY", ai_api_key_new, user_id=current_user.id,
                        descripcion="API key del proveedor IA del bot")
