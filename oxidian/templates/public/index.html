@@ -242,13 +242,20 @@
   </div>
   {% if not busqueda and not categoria_activa %}
   <div class="ep-section-head">
-    <h2 class="ep-section-title">🍽️ Nuestro menú</h2>
-    <span class="ep-pill-count">{{ productos|length }} productos</span>
+    <h2 class="ep-section-title" data-storefront-title data-default-title="🍽️ Nuestro menú">🍽️ Nuestro menú</h2>
+    <span class="ep-pill-count" data-storefront-count>{{ productos|length }} productos</span>
   </div>
   {% elif busqueda %}
   <div class="ep-section-head">
     <h2 class="ep-section-title">Resultados para "{{ busqueda }}"</h2>
+    <span class="ep-pill-count" data-storefront-count>{{ productos|length }} productos</span>
     <a href="{{ storefront_url() }}" class="ep-pill-count ep-link-reset">✕ Limpiar</a>
+  </div>
+  {% elif categoria_activa %}
+  {% set categoria_seleccionada = categorias|selectattr('id','equalto',categoria_activa)|first %}
+  <div class="ep-section-head">
+    <h2 class="ep-section-title" data-storefront-title data-default-title="🍽️ Nuestro menú">{{ cat_emoji(categoria_seleccionada.nombre) if categoria_seleccionada else '🍽️' }} {{ categoria_seleccionada.nombre if categoria_seleccionada else 'Productos' }}</h2>
+    <span class="ep-pill-count" data-storefront-count>{{ productos|length }} productos</span>
   </div>
   {% endif %}
 
@@ -263,25 +270,24 @@
     </div>
 
   {% else %}
-    {# Vista completa: combos primero, luego el resto #}
-    {% set combos = productos|selectattr('es_combo')|list %}
-    {% set resto  = productos|rejectattr('es_combo')|list %}
-
-    {% if combos %}
+    {# Vista completa: una sección por categoría real, sin duplicar productos. #}
+    {% for cat in categorias %}
+    {% set productos_categoria = productos|selectattr('categoria_id','equalto',cat.id)|list %}
+    {% if productos_categoria %}
     <div class="ep-cat-section">
-      <h3 class="ep-cat-title">🎁 Combos especiales</h3>
+      <h3 class="ep-cat-title">{{ cat_emoji(cat.nombre) }} {{ cat.nombre }}</h3>
       <div class="ep-grid">
-        {% for p in combos %}{% include "public/_product_card.html" %}{% endfor %}
+        {% for p in productos_categoria %}{% include "public/_product_card.html" %}{% endfor %}
       </div>
     </div>
     {% endif %}
-
-    {% if resto %}
-    {% if combos %}<div class="ep-divider"></div>{% endif %}
+    {% endfor %}
+    {% set sin_categoria = productos|rejectattr('categoria_id')|list %}
+    {% if sin_categoria %}
     <div class="ep-cat-section">
-      {% if combos %}<h3 class="ep-cat-title">🍽️ Todos los productos</h3>{% endif %}
+      <h3 class="ep-cat-title">🍽️ Otros productos</h3>
       <div class="ep-grid">
-        {% for p in resto %}{% include "public/_product_card.html" %}{% endfor %}
+        {% for p in sin_categoria %}{% include "public/_product_card.html" %}{% endfor %}
       </div>
     </div>
     {% endif %}
@@ -484,7 +490,13 @@ function epFilterCategory(categoryId, updateUrl = true) {
   document.querySelectorAll('.ep-cat-section').forEach(section => {
     section.hidden = !section.querySelector('.ep-card:not([hidden])');
   });
-  document.querySelector('.ep-pill-count')?.replaceChildren(document.createTextNode(`${visible} productos`));
+  document.querySelectorAll('.ep-cat-title').forEach(heading => { heading.hidden = Boolean(value); });
+  const title = document.querySelector('[data-storefront-title]');
+  if (title) {
+    const selected = document.querySelector(`.ep-cat[data-category="${CSS.escape(value)}"] .ep-cat-label`);
+    title.textContent = value && selected ? selected.textContent.trim() : title.dataset.defaultTitle;
+  }
+  document.querySelector('[data-storefront-count]')?.replaceChildren(document.createTextNode(`${visible} productos`));
   const emptyState = document.querySelector('[data-storefront-empty]');
   if (emptyState) emptyState.hidden = visible !== 0;
   if (updateUrl) {

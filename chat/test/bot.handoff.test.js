@@ -39,7 +39,9 @@ const {
   saveSesion,
   menuPrincipal,
   adminMenu,
+  adminCan,
   barMenu,
+  setCfg,
 } = _test;
 
 const adminA = '34600000001@s.whatsapp.net';
@@ -99,13 +101,41 @@ test('la sesión legacy de bar conserva datos si existe en base', () => {
 
 test('los menús públicos y admin están separados por rol', () => {
   const clientMenu = menuPrincipal();
-  const globalMenu = adminMenu();
+  const globalMenu = adminMenu(adminA);
 
   assert.match(clientMenu, /Asistente de/);
   assert.match(clientMenu, /sin tomar pedidos por WhatsApp/i);
   assert.doesNotMatch(clientMenu, /Productos y precios/);
   assert.match(globalMenu, /Panel Super Admin/);
   assert.match(globalMenu, /Productos y precios/);
+});
+
+test('el menú administrativo respeta rol y módulos sincronizados', () => {
+  const normalAdmin = '34600000009@s.whatsapp.net';
+  setCfg('whatsapp_role_profiles', JSON.stringify([{
+    telefono: '34600000009',
+    rol: 'admin',
+    capabilities: ['status', 'store', 'products', 'handoff', 'risks'],
+  }]));
+
+  const menu = adminMenu(normalAdmin);
+  assert.match(menu, /Panel Admin/);
+  assert.match(menu, /Productos y precios/);
+  assert.match(menu, /Atención humana/);
+  assert.doesNotMatch(menu, /Administradores WhatsApp/);
+  assert.doesNotMatch(menu, /Modo emergencia/);
+  assert.equal(adminCan(normalAdmin, 'products'), true);
+  assert.equal(adminCan(normalAdmin, 'admins'), false);
+
+  setCfg('whatsapp_role_profiles', '[]');
+});
+
+test('un número adicional sin cuenta queda limitado a atención humana', () => {
+  const support = '34600000010@s.whatsapp.net';
+  const menu = adminMenu(support);
+  assert.match(menu, /Agente de atención/);
+  assert.match(menu, /Atención humana/);
+  assert.doesNotMatch(menu, /Productos y precios|Abrir \/ cerrar tienda|Modo emergencia/);
 });
 
 test('el cliente se dirige a la web y no recibe catálogo por WhatsApp', () => {

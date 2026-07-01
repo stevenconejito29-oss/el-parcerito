@@ -5,7 +5,7 @@ from decimal import Decimal
 from flask import Flask
 
 from extensions import db
-from models import BotAiMessage, BotAiUsage, Order, OrderItem, Product, User
+from models import AdminFeature, BotAiMessage, BotAiUsage, Order, OrderItem, Product, User
 from routes.api_bot import api_bot_bp
 
 
@@ -155,6 +155,72 @@ class BotHandoffDestinationTest(unittest.TestCase):
         payload = response.get_json()
         self.assertIsNone(payload["cliente"])
         self.assertEqual(payload["negocio"]["horario"], "")
+
+    def test_branding_exposes_role_scoped_whatsapp_capabilities(self):
+        admin = User(
+            nombre="Admin limitado",
+            email="admin@test.invalid",
+            telefono="+34610000022",
+            rol="admin",
+            activo=True,
+        )
+        admin.set_password("test-only-password")
+        db.session.add(admin)
+        db.session.flush()
+        db.session.add_all([
+            AdminFeature(user_id=admin.id, feature="productos", activo=True),
+            AdminFeature(user_id=admin.id, feature="whatsapp", activo=True),
+            AdminFeature(user_id=admin.id, feature="marketing", activo=False),
+        ])
+        db.session.commit()
+
+        response = self.client.get(
+            "/api/bot/branding",
+            headers={"X-Bot-Key": "test-bot-key"},
+        )
+        self.assertEqual(response.status_code, 200)
+        profiles = {row["rol"] + ":" + row["telefono"]: row for row in response.get_json()["whatsapp_roles"]}
+        limited = profiles["admin:+34610000022"]
+        self.assertIn("products", limited["capabilities"])
+        self.assertIn("handoff", limited["capabilities"])
+        self.assertNotIn("points", limited["capabilities"])
+        super_profile = next(row for row in profiles.values() if row["rol"] == "super_admin")
+        self.assertIn("admins", super_profile["capabilities"])
+        self.assertIn("emergency", super_profile["capabilities"])
+
+    def test_admin_mutations_revalidate_actor_capabilities(self):
+        headers = {"X-Bot-Key": "test-bot-key"}
+        no_actor = self.client.post(
+            f"/api/bot/admin/productos/{self.product.id}/activo",
+            json={"activo": False},
+            headers=headers,
+        )
+        self.assertEqual(no_actor.status_code, 403)
+
+        limited = User(
+            nombre="Admin sin productos",
+            email="limited@test.invalid",
+            telefono="+34610000033",
+            rol="admin",
+            activo=True,
+        )
+        limited.set_password("test-only-password")
+        db.session.add(limited)
+        db.session.commit()
+        denied = self.client.post(
+            f"/api/bot/admin/productos/{self.product.id}/activo",
+            json={"activo": False, "actor_telefono": limited.telefono},
+            headers=headers,
+        )
+        self.assertEqual(denied.status_code, 403)
+
+        allowed = self.client.post(
+            f"/api/bot/admin/productos/{self.product.id}/activo",
+            json={"activo": False, "actor_telefono": self.superadmin.telefono},
+            headers=headers,
+        )
+        self.assertEqual(allowed.status_code, 200)
+        self.assertFalse(allowed.get_json()["producto"]["activo"])
 
     def test_legacy_provider_metadata_still_uses_global_superadmins(self):
         order = self._order(17)

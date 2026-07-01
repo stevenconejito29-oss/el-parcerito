@@ -5,6 +5,7 @@ Autenticación: header X-Bot-Key o X-API-Key.
 import json
 import logging
 import os
+import re
 import uuid
 import threading
 import hmac
@@ -21,7 +22,7 @@ from models import (User, Product, Categoria, Order, OrderItem, OrderProviderSta
                     Coupon, ComboItem,
                     AffiliateCode, ZonaEntrega,
                     PointsLog, SiteConfig, IdempotencyKey, normalizar_metodo_pago,
-                    BotAiUsage, BotAiMessage,
+                    BotAiUsage, BotAiMessage, AdminFeature,
                     PriceHistory, metadata_componente_combo,
                     metadata_item_pedido, utcnow as _utcnow)
 from idempotency import request_idempotency_key, request_body_hash, IDEMPOTENCY_TTL
@@ -301,6 +302,37 @@ def admin_pin_hash():
 @bot_required
 def branding():
     features = get_store_features()
+    whatsapp_roles = []
+    for user in User.query.filter(
+        User.activo.is_(True),
+        User.rol.in_(["admin", "super_admin"]),
+    ).all():
+        telefono = normalizar_telefono_cliente(user.telefono_normalizado or user.telefono)
+        if not telefono_valido(telefono):
+            continue
+        if user.rol == "super_admin":
+            capabilities = [
+                "status", "store", "products", "points", "admins", "handoff",
+                "sync", "security", "emergency", "risks", "client_mode",
+            ]
+        else:
+            enabled = {
+                row.feature for row in AdminFeature.query.filter_by(
+                    user_id=user.id, activo=True
+                ).all()
+            }
+            capabilities = ["status", "store", "risks", "client_mode"]
+            if "productos" in enabled:
+                capabilities.extend(["products", "sync"])
+            if features["puntos"] and "marketing" in enabled:
+                capabilities.append("points")
+            if "whatsapp" in enabled:
+                capabilities.extend(["handoff", "security"])
+        whatsapp_roles.append({
+            "telefono": telefono,
+            "rol": user.rol,
+            "capabilities": sorted(set(capabilities)),
+        })
     return jsonify({
         "ok": True,
         "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda"),
@@ -319,6 +351,7 @@ def branding():
         "cash_enabled": _config_bool("EFECTIVO_HABILITADO", "1"),
         "horario_apertura": SiteConfig.get("HORARIO_APERTURA", ""),
         "horario_cierre": SiteConfig.get("HORARIO_CIERRE", ""),
+        "whatsapp_roles": whatsapp_roles,
     })
 
 
@@ -2659,6 +2692,48 @@ def _producto_admin_payload(producto):
     }
 
 
+def _bot_admin_actor_allowed(data, capability):
+    telefono = normalizar_telefono_cliente((data or {}).get("actor_telefono"))
+    if not telefono_valido(telefono):
+        return False
+    digits = re.sub(r"\D", "", telefono)
+    privileged = {
+        re.sub(r"\D", "", raw)
+        for raw in [
+            os.environ.get("OWNER_NUMBER", ""),
+            *os.environ.get("SUPERADMINS", "").split(","),
+        ]
+        if raw
+    }
+    if digits in privileged:
+        return True
+    user = User.query.filter_by(
+        telefono_normalizado=telefono,
+        activo=True,
+    ).filter(User.rol.in_(["admin", "super_admin"])).first()
+    if not user:
+        return False
+    if user.rol == "super_admin":
+        return True
+    feature = {
+        "products": "productos",
+        "points": "marketing",
+        "handoff": "whatsapp",
+        "security": "whatsapp",
+    }.get(capability)
+    return True if capability == "store" else bool(
+        feature and AdminFeature.tiene_acceso(user.id, feature)
+    )
+
+
+def _bot_actor_forbidden():
+    return jsonify({
+        "ok": False,
+        "code": "ADMIN_CAPABILITY_DENIED",
+        "error": "El administrador no tiene permiso para esta acción.",
+    }), 403
+
+
 def _pedido_admin_riesgo_payload(pedido, now):
     creado = pedido.creado_en or now
     edad_min = max(0, int((now - creado).total_seconds() // 60))
@@ -2694,6 +2769,8 @@ def bot_admin_tienda():
             })
 
         data = request.get_json(silent=True) or {}
+        if not _bot_admin_actor_allowed(data, "store"):
+            return _bot_actor_forbidden()
         if "forzar_cerrada" not in data:
             return jsonify({"ok": False, "error": "forzar_cerrada requerido"}), 400
         cerrada = _json_bool(data.get("forzar_cerrada"))
@@ -2803,8 +2880,10 @@ def bot_admin_buscar_productos():
 @bot_required
 def bot_admin_cambiar_precio(producto_id):
     try:
-        producto = get_or_404(Product, producto_id)
         data = request.get_json(silent=True) or {}
+        if not _bot_admin_actor_allowed(data, "products"):
+            return _bot_actor_forbidden()
+        producto = get_or_404(Product, producto_id)
         nuevo_precio = float(data.get("precio") or 0)
         motivo = str(data.get("motivo") or "Cambio por WhatsApp admin").strip()[:200]
         if nuevo_precio <= 0 or nuevo_precio > 1000:
@@ -2837,8 +2916,10 @@ def bot_admin_cambiar_precio(producto_id):
 @bot_required
 def bot_admin_producto_activo(producto_id):
     try:
-        producto = get_or_404(Product, producto_id)
         data = request.get_json(silent=True) or {}
+        if not _bot_admin_actor_allowed(data, "products"):
+            return _bot_actor_forbidden()
+        producto = get_or_404(Product, producto_id)
         if "activo" not in data:
             return jsonify({"ok": False, "error": "activo requerido"}), 400
         activo = _json_bool(data.get("activo"))
@@ -2883,10 +2964,12 @@ def bot_admin_buscar_cliente():
 @bot_required
 def bot_admin_ajustar_puntos(cliente_id):
     try:
+        data = request.get_json(silent=True) or {}
+        if not _bot_admin_actor_allowed(data, "points"):
+            return _bot_actor_forbidden()
         cliente = get_or_404(User, cliente_id)
         if cliente.rol != "cliente":
             return jsonify({"ok": False, "error": "Solo se pueden ajustar puntos de clientes"}), 400
-        data = request.get_json(silent=True) or {}
         delta = int(data.get("delta") or 0)
         motivo = str(data.get("motivo") or "Ajuste manual por WhatsApp admin").strip()[:200]
         if delta == 0 or abs(delta) > 10000:

@@ -421,8 +421,33 @@ function runtimeAdminPhones() {
   return uniquePhones(String(cfg('runtime_admins', '') || '').split(','));
 }
 
+function whatsappRoleProfiles() {
+  try {
+    const rows = JSON.parse(String(cfg('whatsapp_role_profiles', '[]') || '[]'));
+    if (!Array.isArray(rows)) return [];
+    return rows.map(row => ({
+      telefono: normalizePhone(row?.telefono),
+      rol: row?.rol === 'super_admin' ? 'super_admin' : 'admin',
+      capabilities: Array.isArray(row?.capabilities)
+        ? [...new Set(row.capabilities.map(String))]
+        : [],
+    })).filter(row => row.telefono);
+  } catch {
+    return [];
+  }
+}
+
+function whatsappRoleProfile(phone) {
+  const clean = normalizePhone(phone);
+  return whatsappRoleProfiles().find(row => row.telefono === clean) || null;
+}
+
 function adminPhones() {
-  return uniquePhones([...staticAdminPhones(), ...runtimeAdminPhones()]);
+  return uniquePhones([
+    ...staticAdminPhones(),
+    ...runtimeAdminPhones(),
+    ...whatsappRoleProfiles().map(row => row.telefono),
+  ]);
 }
 
 function setRuntimeAdmins(list) {
@@ -466,6 +491,26 @@ function isOwnerPhone(phone) {
 
 function isOwnerJid(jid) {
   return isOwnerPhone(phoneFromJid(jid));
+}
+
+function isSuperAdminJid(jid) {
+  if (isOwnerJid(jid)) return true;
+  if (SUPERADMINS.includes(normalizePhone(phoneFromJid(jid)))) return true;
+  const profile = whatsappRoleProfile(phoneFromJid(jid));
+  return profile?.rol === 'super_admin';
+}
+
+function adminCan(jid, capability) {
+  if (isSuperAdminJid(jid)) return true;
+  const profile = whatsappRoleProfile(phoneFromJid(jid));
+  if (profile) return profile.capabilities.includes(capability);
+  // Números adicionales sin cuenta solo sirven como agentes de conversación.
+  return capability === 'handoff';
+}
+
+function adminRoleLabel(jid) {
+  if (isSuperAdminJid(jid)) return 'Super Admin';
+  return whatsappRoleProfile(phoneFromJid(jid)) ? 'Admin' : 'Agente de atención';
 }
 
 function requireWebhookSecret(req, res) {
@@ -2020,6 +2065,10 @@ async function syncBranding() {
     setCfg('cash_enabled', data.cash_enabled === false ? '0' : '1');
     setCfg('horario_apertura', data.horario_apertura || '');
     setCfg('horario_cierre', data.horario_cierre || '');
+    setCfg('whatsapp_role_profiles', JSON.stringify(
+      Array.isArray(data.whatsapp_roles) ? data.whatsapp_roles : []
+    ));
+    sanitizeRuntimeState();
     log('info', 'sync_branding', `nombre=${data.nombre} modo=${data.tenant_mode} loyalty=${data.points_enabled}`);
     return true;
   } catch (err) {
@@ -2251,21 +2300,29 @@ function menuPrincipal(ses = {}) {
   );
 }
 
-function adminMenu() {
+function adminMenu(jid) {
+  const options = [
+    adminCan(jid, 'status') ? `1️⃣  Estado del bot y WhatsApp` : null,
+    adminCan(jid, 'store') ? `2️⃣  Abrir / cerrar tienda` : null,
+    adminCan(jid, 'products') ? `3️⃣  Productos y precios` : null,
+    adminCan(jid, 'points') ? `4️⃣  Clientes y puntos` : null,
+    adminCan(jid, 'admins') ? `5️⃣  Administradores WhatsApp` : null,
+    adminCan(jid, 'handoff') ? `6️⃣  Atención humana` : null,
+    adminCan(jid, 'sync') ? `7️⃣  Sincronizar catálogo` : null,
+    adminCan(jid, 'security') ? `8️⃣  Seguridad de conversaciones` : null,
+    adminCan(jid, 'emergency') ? `9️⃣  Modo emergencia` : null,
+    adminCan(jid, 'risks') ? `🔟  Pedidos en riesgo` : null,
+    adminCan(jid, 'client_mode') ? `*11* Modo cliente de prueba` : null,
+  ].filter(Boolean);
+  const commands = [
+    adminCan(jid, 'status') ? '!status' : null,
+    adminCan(jid, 'handoff') ? '!take N · !release' : null,
+    adminCan(jid, 'sync') ? '!sync' : null,
+  ].filter(Boolean).join(' · ');
   return (
-    `🔐 *Panel Super Admin — ${getNegocioNombre()}*\n\n` +
-    `1️⃣  Estado del bot y WhatsApp\n` +
-    `2️⃣  Abrir / cerrar tienda\n` +
-    `3️⃣  Productos y precios\n` +
-    `4️⃣  Clientes y puntos\n` +
-    `5️⃣  Administradores WhatsApp\n` +
-    `6️⃣  Atención humana (handoff)\n` +
-    `7️⃣  Sincronizar sistema\n` +
-    `8️⃣  Seguridad / Anti-ban\n` +
-    `9️⃣  Modo emergencia\n` +
-    `🔟  Pedidos en riesgo\n` +
-    `*11* Modo cliente 🧪\n\n` +
-    `_Comandos: !status · !sync · !take N · !release_`
+    `🔐 *Panel ${adminRoleLabel(jid)} — ${getNegocioNombre()}*\n\n` +
+    `${options.join('\n')}\n\n` +
+    (commands ? `_Comandos: ${commands}_` : `_Solo tienes habilitada la atención asignada._`)
   );
 }
 
@@ -2301,13 +2358,10 @@ function adminPointsMenu() {
 }
 
 function adminAdminsMenu(jid) {
-  const ownerNote = isOwnerJid(jid)
-    ? `2️⃣ Agregar admin\n3️⃣ Eliminar admin\n`
-    : `2️⃣ Agregar admin _(solo owner)_\n3️⃣ Eliminar admin _(solo owner)_\n`;
   return (
     `👥 *Administradores WhatsApp*\n\n` +
     `1️⃣ Ver lista de admins\n` +
-    ownerNote +
+    `2️⃣ Agregar admin\n3️⃣ Eliminar admin\n` +
     `\n_0 · volver al menú principal_`
   );
 }
@@ -2829,7 +2883,7 @@ function setSesion(jid, ses) {
 function startAdminMenu(jid, nombre = null) {
   const ses = { jid, nombre, role: 'admin', estado: 'admin_menu', carrito: [], pending: {}, zona_id: null, active_client_jid: null };
   saveSesion(ses);
-  return sendText(jid, adminMenu());
+  return sendText(jid, adminMenu(jid));
 }
 
 /**
@@ -2855,7 +2909,7 @@ async function requireAdminPin(jid, ses, text) {
       const min = Math.round(ADMIN_PIN_TTL_MS / 60000);
       await sendText(jid, `🔓 PIN correcto. Sesión segura activa durante ${min} min.`);
       // Re-mostrar menú según rol
-      if (isAdminJid(jid)) return await sendText(jid, adminMenu()).then(() => false);
+      if (isAdminJid(jid)) return await sendText(jid, adminMenu(jid)).then(() => false);
       if (ses.bar_id) return await sendText(jid, barMenu({ id: ses.bar_id, nombre: ses.bar_nombre })).then(() => false);
       return false;
     }
@@ -2953,15 +3007,15 @@ async function _handleMessage(jid, text, pushName) {
     if (['!release', '/soltar chat', '/soltar'].includes(lower)) {
       const released = await releaseHumanChat(jid, ses.active_client_jid);
       return released
-        ? sendText(jid, `✅ Chat devuelto a la cola.\n\n${adminMenu()}`)
-        : sendText(jid, `No tienes un chat activo.\n\n${adminMenu()}`);
+        ? sendText(jid, `✅ Chat devuelto a la cola.\n\n${adminMenu(jid)}`)
+        : sendText(jid, `No tienes un chat activo.\n\n${adminMenu(jid)}`);
     }
     if (['/cerrar chat', '/cerrarchat'].includes(lower)) {
       const closed = await closeHumanChat(jid, ses.active_client_jid);
       if (closed && await takeNextQueuedHandoff(jid)) return true;
       return closed
-        ? sendText(jid, `✅ Chat finalizado.\n\n${adminMenu()}`)
-        : sendText(jid, `No tienes un chat activo.\n\n${adminMenu()}`);
+        ? sendText(jid, `✅ Chat finalizado.\n\n${adminMenu(jid)}`)
+        : sendText(jid, `No tienes un chat activo.\n\n${adminMenu(jid)}`);
     }
     return handleAdminChat(jid, ses, text);
   }
@@ -3023,7 +3077,7 @@ async function _handleMessage(jid, text, pushName) {
       return startClientMenu(jid, ses.nombre);
     }
     resetSesion(jid, ses.nombre, isOwner ? 'admin' : 'client');
-    return sendText(jid, `De acuerdo, acción cancelada. ✅\n\n` + (isOwner ? adminMenu() : menuPrincipal()));
+    return sendText(jid, `De acuerdo, acción cancelada. ✅\n\n` + (isOwner ? adminMenu(jid) : menuPrincipal()));
   }
 
   if (isAdminClientMode(jid, ses)) {
@@ -3048,11 +3102,27 @@ async function _handleMessage(jid, text, pushName) {
     if (ses.estado === 'admin_chat' && ['/cerrar chat', '/cerrarchat'].includes(lower)) {
       const closed = await closeHumanChat(jid, ses.active_client_jid);
       return closed
-        ? sendText(jid, `✅ Chat finalizado.\n\n${adminMenu()}`)
-        : sendText(jid, `No tienes un chat activo.\n\n${adminMenu()}`);
+        ? sendText(jid, `✅ Chat finalizado.\n\n${adminMenu(jid)}`)
+        : sendText(jid, `No tienes un chat activo.\n\n${adminMenu(jid)}`);
     }
     if (lower === 'admin') return startAdminMenu(jid, ses.nombre);
     if (lower.startsWith('!')) return handleAdminCmd(jid, text);
+    const stateCapability = {
+      admin_store_menu: 'store', admin_store_close_message: 'store',
+      admin_products_menu: 'products', admin_product_search: 'products',
+      admin_product_price_wait: 'products', admin_product_toggle_wait: 'products',
+      admin_points_menu: 'points', admin_customer_search: 'points',
+      admin_points_adjust_wait: 'points', admin_points_history_wait: 'points',
+      admin_admins_menu: 'admins', admin_admin_add_wait: 'admins',
+      admin_admin_remove_wait: 'admins', admin_handoff_menu: 'handoff',
+      admin_take_wait: 'handoff', admin_chat: 'handoff',
+      admin_security_menu: 'security', admin_mute_wait: 'security',
+      admin_emergency_menu: 'emergency',
+    }[ses.estado];
+    if (stateCapability && !adminCan(jid, stateCapability)) {
+      setAdminState(ses, 'admin_menu');
+      return sendText(jid, `Tu cuenta ya no tiene permiso para esa función.\n\n${adminMenu(jid)}`);
+    }
     switch (ses.estado) {
       case 'admin_menu': return handleAdminMenu(jid, ses, lower);
       case 'admin_store_menu': return handleAdminStoreMenu(jid, ses, lower);
@@ -3140,14 +3210,14 @@ async function handleAdminChat(jid, ses, text) {
     ses.estado = 'admin_menu';
     ses.active_client_jid = null;
     saveSesion(ses);
-    return sendText(jid, `No tienes un chat humano activo.\n\n${adminMenu()}`);
+    return sendText(jid, `No tienes un chat humano activo.\n\n${adminMenu(jid)}`);
   }
   const queued = queueAssignedHandoffMessage(clientJid, jid, 'admin', text);
   if (!queued) {
     ses.estado = 'admin_menu';
     ses.active_client_jid = null;
     saveSesion(ses);
-    return sendText(jid, `El chat se cerró antes de enviar el mensaje.\n\n${adminMenu()}`);
+    return sendText(jid, `El chat se cerró antes de enviar el mensaje.\n\n${adminMenu(jid)}`);
   }
   const sent = await sendText(clientJid, `👤 *Respuesta del equipo:*\n\n${text}`);
   if (sent && queued?.lastInsertRowid) {
@@ -3160,6 +3230,14 @@ async function handleAdminChat(jid, ses, text) {
 async function handleAdminCmd(jid, text) {
   const cmd = text.slice(1).trim();
   const lowerCmd = cmd.toLowerCase();
+  const requiredCapability = lowerCmd === 'status' ? 'status'
+    : lowerCmd === 'sync' ? 'sync'
+    : /^(send|take|release)(\s|$)/.test(lowerCmd) || ['disponible', 'ausente'].includes(lowerCmd)
+      ? 'handoff'
+      : null;
+  if (requiredCapability && !adminCan(jid, requiredCapability)) {
+    return sendText(jid, `No tienes permiso para ese comando.\n\n${adminMenu(jid)}`);
+  }
 
   if (lowerCmd === 'status') {
     const sesiones = db.prepare(`SELECT COUNT(*) as c FROM sessions`).get().c;
@@ -3207,8 +3285,8 @@ async function handleAdminCmd(jid, text) {
   }
 
   if (lowerCmd === 'limpiar') {
-    if (!isOwnerJid(jid)) {
-      return sendText(jid, 'Solo el owner puede limpiar sesiones del bot.');
+    if (!isSuperAdminJid(jid)) {
+      return sendText(jid, 'Solo un Super Admin puede limpiar sesiones del bot.');
     }
     if (!canRunAdminAction(jid, 'clear_sessions', 10000)) {
       return sendText(jid, 'Espera unos segundos antes de repetir la limpieza de sesiones.');
@@ -3271,7 +3349,7 @@ async function handleAdminCmd(jid, text) {
     return sendText(jid, '⏸️ Quedaste como ausente. Usa *!disponible* para volver.');
   }
 
-  return sendText(jid, `Comandos: !menu · !status · !sync · !take NUM · !release · !disponible · !ausente · !send NUM mensaje`);
+  return sendText(jid, `Ese comando no está disponible para tu rol.\n\n${adminMenu(jid)}`);
 }
 
 function clearAdminChatForClient(clientJid) {
@@ -4129,6 +4207,14 @@ function formatRiskList(title, rows) {
 // Admin interactive menu (numeric choices)
 async function handleAdminMenu(jid, ses, opcion) {
   const lower = String(opcion || '').trim();
+  const requiredCapability = {
+    '1': 'status', '2': 'store', '3': 'products', '4': 'points',
+    '5': 'admins', '6': 'handoff', '7': 'sync', '8': 'security',
+    '9': 'emergency', '10': 'risks', '🔟': 'risks', '11': 'client_mode',
+  }[lower];
+  if (requiredCapability && !adminCan(jid, requiredCapability)) {
+    return sendText(jid, `No tienes permiso para esa función.\n\n${adminMenu(jid)}`);
+  }
   // Gate de PIN: si está configurado, exige PIN antes de cualquier opción
   // distinta de las lecturas básicas (status, menu).
   if (ses.estado === 'awaiting_pin') {
@@ -4176,7 +4262,7 @@ async function handleAdminMenu(jid, ses, opcion) {
       return sendText(jid, `🧪 *Modo cliente de prueba activado.*\nEscribe *admin* para volver al panel.\n\n${menuPrincipal()}`);
     }
     default:
-      return sendText(jid, adminMenu());
+      return sendText(jid, adminMenu(jid));
   }
 }
 
@@ -4362,11 +4448,11 @@ async function handleAdminAdminsMenu(jid, ses, opcion) {
     case '1':
       return sendText(jid, `Admins configurados:\n\n${adminListText()}\n\n${adminAdminsMenu(jid)}`);
     case '2':
-      if (!isOwnerJid(jid)) return sendText(jid, `Solo el owner puede agregar admins.\n\n${adminAdminsMenu(jid)}`);
+      if (!isSuperAdminJid(jid)) return sendText(jid, `Solo un Super Admin puede agregar administradores.\n\n${adminMenu(jid)}`);
       setAdminState(ses, 'admin_admin_add_wait');
       return sendText(jid, 'Escribe el número que quieres agregar como admin.');
     case '3':
-      if (!isOwnerJid(jid)) return sendText(jid, `Solo el owner puede eliminar admins.\n\n${adminAdminsMenu(jid)}`);
+      if (!isSuperAdminJid(jid)) return sendText(jid, `Solo un Super Admin puede eliminar administradores.\n\n${adminMenu(jid)}`);
       setAdminState(ses, 'admin_admin_remove_wait');
       return sendText(jid, 'Escribe el número admin que quieres eliminar. Solo se eliminan admins agregados por WhatsApp.');
     default:
@@ -4512,17 +4598,27 @@ async function handleAdminRiskOrders(jid, ses) {
       formatRiskList('Listos lentos', data.listos_lentos),
       formatRiskList('En ruta lentos', data.ruta_lentos),
     ];
-    return sendText(jid, `📦 *Pedidos en riesgo*\n\n${sections.join('\n\n')}\n\n${adminMenu()}`);
+    return sendText(jid, `📦 *Pedidos en riesgo*\n\n${sections.join('\n\n')}\n\n${adminMenu(jid)}`);
   } catch (e) {
-    return sendText(jid, `No pude consultar pedidos en riesgo: ${e.message}\n\n${adminMenu()}`);
+    return sendText(jid, `No pude consultar pedidos en riesgo: ${e.message}\n\n${adminMenu(jid)}`);
   }
 }
 
 async function handleAdminConfirm(jid, ses, text) {
   const pending = ses.pending || {};
+  const requiredCapability = {
+    close_store: 'store', open_store: 'store',
+    emergency_on: 'emergency', emergency_off: 'emergency',
+    mute_client: 'security', product_price: 'products', product_active: 'products',
+    points_adjust: 'points', admin_add: 'admins', admin_remove: 'admins',
+  }[pending.action];
+  if (!requiredCapability || !adminCan(jid, requiredCapability)) {
+    setAdminState(ses, 'admin_menu');
+    return sendText(jid, `No tienes permiso para confirmar esa acción.\n\n${adminMenu(jid)}`);
+  }
   if (isNo(text)) {
     setAdminState(ses, 'admin_menu');
-    return sendText(jid, `❌ Acción cancelada.\n\n${adminMenu()}`);
+    return sendText(jid, `❌ Acción cancelada.\n\n${adminMenu(jid)}`);
   }
   if (!isYes(text)) {
     return sendText(jid, `Responde *SI* para confirmar o *NO* para cancelar.`);
@@ -4538,9 +4634,10 @@ async function handleAdminConfirm(jid, ses, text) {
       const data = await oxidianPost('/admin/tienda', {
         forzar_cerrada: cerrada,
         mensaje_cierre: pending.message || '',
+        actor_telefono: phoneFromJid(jid),
       });
       setAdminState(ses, 'admin_menu');
-      return sendText(jid, `✅ *Tienda ${cerrada ? 'cerrada' : 'abierta'}.*\nEstado actual: *${data.estado}*\n\n${adminMenu()}`);
+      return sendText(jid, `✅ *Tienda ${cerrada ? 'cerrada' : 'abierta'}.*\nEstado actual: *${data.estado}*\n\n${adminMenu(jid)}`);
     }
 
     if (pending.action === 'emergency_on') {
@@ -4548,22 +4645,24 @@ async function handleAdminConfirm(jid, ses, text) {
       const data = await oxidianPost('/admin/tienda', {
         forzar_cerrada: true,
         mensaje_cierre: msg,
+        actor_telefono: phoneFromJid(jid),
       });
       setCfg('bot_enabled', '0');
       log('warn', 'emergency_on', `admin=${phoneFromJid(jid)}`);
       setAdminState(ses, 'admin_menu');
-      return sendText(jid, `🚨 Emergencia activada.\nTienda: ${data.estado}\nBot automático: pausado\n\n${adminMenu()}`);
+      return sendText(jid, `🚨 Emergencia activada.\nTienda: ${data.estado}\nBot automático: pausado\n\n${adminMenu(jid)}`);
     }
 
     if (pending.action === 'emergency_off') {
       const data = await oxidianPost('/admin/tienda', {
         forzar_cerrada: false,
         mensaje_cierre: '',
+        actor_telefono: phoneFromJid(jid),
       });
       setCfg('bot_enabled', '1');
       log('warn', 'emergency_off', `admin=${phoneFromJid(jid)}`);
       setAdminState(ses, 'admin_menu');
-      return sendText(jid, `✅ Normalidad restaurada.\nTienda: ${data.estado}\nBot automático: activo\n\n${adminMenu()}`);
+      return sendText(jid, `✅ Normalidad restaurada.\nTienda: ${data.estado}\nBot automático: activo\n\n${adminMenu(jid)}`);
     }
 
     if (pending.action === 'mute_client') {
@@ -4582,49 +4681,52 @@ async function handleAdminConfirm(jid, ses, text) {
       const data = await oxidianPost(`/admin/productos/${pending.productId}/precio`, {
         precio: pending.price,
         motivo: `Cambio por WhatsApp admin ${phoneFromJid(jid)}`,
+        actor_telefono: phoneFromJid(jid),
       });
       await syncCatalogo().catch(() => {});
       setAdminState(ses, 'admin_menu');
-      return sendText(jid, `✅ *Precio actualizado* correctamente.\n${productLine(data.producto)}\n\n${adminMenu()}`);
+      return sendText(jid, `✅ *Precio actualizado* correctamente.\n${productLine(data.producto)}\n\n${adminMenu(jid)}`);
     }
 
     if (pending.action === 'product_active') {
       const data = await oxidianPost(`/admin/productos/${pending.productId}/activo`, {
         activo: Boolean(pending.active),
+        actor_telefono: phoneFromJid(jid),
       });
       await syncCatalogo().catch(() => {});
       setAdminState(ses, 'admin_menu');
-      return sendText(jid, `✅ *Producto actualizado* correctamente.\n${productLine(data.producto)}\n\n${adminMenu()}`);
+      return sendText(jid, `✅ *Producto actualizado* correctamente.\n${productLine(data.producto)}\n\n${adminMenu(jid)}`);
     }
 
     if (pending.action === 'points_adjust') {
       const data = await oxidianPost(`/admin/clientes/${pending.customerId}/puntos`, {
         delta: pending.delta,
         motivo: `Ajuste por WhatsApp admin ${phoneFromJid(jid)}`,
+        actor_telefono: phoneFromJid(jid),
       });
       setAdminState(ses, 'admin_menu');
-      return sendText(jid, `✅ *Puntos actualizados.*\n${customerLine(data.cliente)}\nAntes: *${data.puntos_antes}* · Después: *${data.puntos_despues}*\n\n${adminMenu()}`);
+      return sendText(jid, `✅ *Puntos actualizados.*\n${customerLine(data.cliente)}\nAntes: *${data.puntos_antes}* · Después: *${data.puntos_despues}*\n\n${adminMenu(jid)}`);
     }
 
     if (pending.action === 'admin_add') {
       const list = setRuntimeAdmins([...runtimeAdminPhones(), pending.phone]);
       sanitizeRuntimeState();
       setAdminState(ses, 'admin_menu');
-      return sendText(jid, `✅ Admin agregado.\n\nAdmins por WhatsApp: ${list.join(', ') || 'ninguno'}\n\n${adminMenu()}`);
+      return sendText(jid, `✅ Admin agregado.\n\nAdmins por WhatsApp: ${list.join(', ') || 'ninguno'}\n\n${adminMenu(jid)}`);
     }
 
     if (pending.action === 'admin_remove') {
       const list = setRuntimeAdmins(runtimeAdminPhones().filter(phone => phone !== pending.phone));
       sanitizeRuntimeState();
       setAdminState(ses, 'admin_menu');
-      return sendText(jid, `✅ Admin eliminado.\n\nAdmins por WhatsApp: ${list.join(', ') || 'ninguno'}\n\n${adminMenu()}`);
+      return sendText(jid, `✅ Admin eliminado.\n\nAdmins por WhatsApp: ${list.join(', ') || 'ninguno'}\n\n${adminMenu(jid)}`);
     }
 
     setAdminState(ses, 'admin_menu');
-    return sendText(jid, `Acción no reconocida.\n\n${adminMenu()}`);
+    return sendText(jid, `Acción no reconocida.\n\n${adminMenu(jid)}`);
   } catch (e) {
     setAdminState(ses, 'admin_menu');
-    return sendText(jid, `No se pudo completar la acción: ${e.message}\n\n${adminMenu()}`);
+    return sendText(jid, `No se pudo completar la acción: ${e.message}\n\n${adminMenu(jid)}`);
   }
 }
 
@@ -5300,7 +5402,9 @@ module.exports = {
     saveSesion,
     menuPrincipal,
     adminMenu,
+    adminCan,
     barMenu,
+    setCfg,
     setAdminState,
     splitTextForSend,
   },
