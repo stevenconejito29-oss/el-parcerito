@@ -560,6 +560,7 @@ body.ox-body-public .ep-banner-cta {
   text-transform: uppercase; letter-spacing: .08em; margin-bottom: .75rem;
   display: flex; align-items: center; gap: .5rem;
 }
+.ep-cat-title[hidden] { display: none !important; }
 .ep-cat-title::after {
   content: ''; flex: 1; height: 1px; background: var(--col-border);
 }
