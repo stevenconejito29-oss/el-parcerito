@@ -7,6 +7,7 @@
     <p class="text-xs mt-0.5" style="color:var(--col-muted)">Gestiona el catálogo de productos y los combos disponibles</p>
   </div>
   <div class="flex gap-2">
+    <a href="{{ url_for('admin.extras_catalogo') }}" class="text-sm font-bold px-4 py-2 rounded-xl" style="background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.28);color:#D8B4FE">Extras</a>
     <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
             class="text-sm font-bold px-4 py-2 rounded-xl" style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
       + Nuevo producto
@@ -208,6 +209,8 @@
     'puntos_para_canje': p.puntos_para_canje or '',
     'es_hipoalergenico': p.es_hipoalergenico,
     'alergenos_json': p.alergenos_json or '[]',
+    'extra_catalog_ids': p.extra_catalog_ids,
+    'extras_max_selecciones': p.extra_catalog_max_selecciones,
   }|tojson }};</script>
   {% endfor %}
   </tbody>
@@ -345,6 +348,8 @@
       'puntos_para_canje': combo.puntos_para_canje or '',
       'es_hipoalergenico': combo.es_hipoalergenico,
       'alergenos_json': combo.alergenos_json or '[]',
+      'extra_catalog_ids': combo.extra_catalog_ids,
+      'extras_max_selecciones': combo.extra_catalog_max_selecciones,
     }|tojson }};</script>
     <div class="ox-card p-4">
       <div class="flex items-start gap-3">
@@ -521,6 +526,13 @@ function abrirEditar(id) {
   f.querySelectorAll('[name="dias_semana"]').forEach(cb => {
     cb.checked = diasActivos.includes(parseInt(cb.value));
   });
+
+  const selectedExtras = new Set((d.extra_catalog_ids || []).map(Number));
+  f.querySelectorAll('[name="extra_catalog_ids"]').forEach(cb => {
+    cb.checked = selectedExtras.has(Number(cb.value));
+  });
+  const extrasMax = f.querySelector('[name="extras_max_selecciones"]');
+  if (extrasMax) extrasMax.value = d.extras_max_selecciones || 1;
 
   // Mostrar/ocultar campos condicionales
   toggleCamposEntrega(f, d.tipo_entrega);

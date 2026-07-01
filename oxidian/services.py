@@ -648,6 +648,32 @@ def asignar_zona_por_direccion(direccion: str, zonas):
     return candidatos[0][1]
 
 
+def asignar_zona_por_coordenadas(lat, lon, zonas):
+    """Resuelve zona y distancia usando coordenadas concedidas por el navegador."""
+    if not zonas:
+        return None, None
+    try:
+        lat, lon = float(lat), float(lon)
+    except (TypeError, ValueError):
+        return None, None
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return None, None
+    geo_zonas = [zona for zona in zonas if zona.activo and zona.tiene_geo]
+    if not geo_zonas:
+        activas = [zona for zona in zonas if zona.activo]
+        return (activas[0], None) if activas else (None, None)
+    candidatos = []
+    for zona in geo_zonas:
+        distancia = _haversine_km(zona.centro_lat, zona.centro_lng, lat, lon)
+        if distancia <= float(zona.radio_km):
+            candidatos.append((distancia, zona))
+    if not candidatos:
+        return None, None
+    candidatos.sort(key=lambda row: (row[0], row[1].orden or 0, row[1].id))
+    distancia, zona = candidatos[0]
+    return zona, round(distancia, 2)
+
+
 def validar_radio_entrega(direccion: str) -> dict:
     """
     Valida si una dirección está dentro del radio de entrega configurado.

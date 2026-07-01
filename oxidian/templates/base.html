@@ -56,14 +56,15 @@
 
 {# ── HEADER PÚBLICO ── #}
 <header class="ox-header-public">
-  <div class="max-w-screen-xl mx-auto px-3 py-2 flex items-center justify-between gap-2">
-    <a href="{{ url_for('public.index') }}" class="flex items-center gap-3 min-w-0">
+  <div class="ox-public-header-inner max-w-screen-xl mx-auto px-3 py-2 flex items-center justify-between gap-2">
+    <a href="{{ url_for('public.index') }}" class="ox-public-identity flex items-center gap-3 min-w-0">
       {% if brand.logo_url %}
         <img src="{{ brand.logo_url }}" alt="logo" class="ox-public-logo w-12 h-12 object-cover flex-shrink-0">
       {% else %}
         <div class="ox-public-logo ox-public-logo-fallback w-12 h-12 flex items-center justify-center text-2xl flex-shrink-0">🥟</div>
       {% endif %}
       <div class="min-w-0">
+        <span class="ox-public-kicker">PEDIDOS ONLINE</span>
         <p class="ox-public-brand text-sm font-black leading-tight truncate">{{ brand.nombre }}</p>
         {% if brand.slogan %}
           <p class="ox-public-address text-[10px] leading-none truncate italic opacity-70">{{ brand.slogan }}</p>
@@ -72,16 +73,17 @@
         {% endif %}
       </div>
     </a>
-    <div class="flex items-center gap-2">
-      <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-bold"
+    <div class="ox-public-actions flex items-center gap-2">
+      <button type="button" class="ox-header-app hidden sm:inline-flex" data-pwa-install aria-label="Instalar aplicación"><span class="ox-header-app-dot"></span><span class="ox-install-text">Instalar app</span></button>
+      <div class="ox-header-status flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-bold"
            style="{{ 'background:rgba(0,200,83,.12);color:#5EF097;border:1px solid rgba(0,200,83,.25)' if brand.tienda_abierta else 'background:rgba(255,59,48,.12);color:#FFB3B0;border:1px solid rgba(255,59,48,.25)' }}">
         <span class="w-1.5 h-1.5 rounded-full {% if brand.tienda_abierta %}bg-green-400{% else %}bg-red-400{% endif %}"
               {% if brand.tienda_abierta %}style="animation:pulse 2s infinite"{% endif %}></span>
         <span class="hidden sm:inline">{{ 'Abierto' if brand.tienda_abierta else 'Cerrado' }}</span>
       </div>
       <a href="{{ url_for('public.ver_carrito') }}"
-         class="ox-header-cart relative flex items-center justify-center w-10 h-10 flex-shrink-0">
-        <span class="text-lg">🛒</span>
+         class="ox-header-cart relative flex items-center justify-center w-10 h-10 flex-shrink-0" aria-label="Abrir carrito">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="9" cy="20" r="1"/><circle cx="19" cy="20" r="1"/><path d="M3 4h2l2.5 11h11l2-7H7"/></svg>
         {% set n = session.get('carrito', {})|length %}
         {% if n > 0 %}
         <span data-cart-badge class="absolute -top-1.5 -right-1.5 text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center" style="background:#FF3B30;color:#fff">{{ n }}</span>
@@ -195,6 +197,15 @@
   </div>
 </div>
 
+{% if session.get('push_cliente_id') %}
+<div class="ox-push-prompt ox-push-prompt--floating" id="ox-push-prompt" hidden>
+  <span class="ox-push-prompt-icon">🔔</span>
+  <div class="ox-push-prompt-copy"><strong>Seguimiento en tiempo real</strong><small>Activa avisos sobre el estado de tus pedidos.</small></div>
+  <button type="button" class="ox-push-prompt-btn" onclick="oxActivarPush(this)">Activar</button>
+  <button type="button" class="ox-push-prompt-close" onclick="oxDismissPushPrompt()" aria-label="Cerrar">×</button>
+</div>
+{% endif %}
+
 {# ── WhatsApp FAB (escritorio + tablet) ── #}
 {% if brand.telefono %}
 <button type="button"
@@ -298,6 +309,15 @@
         <a href="{{ url_for('public.index') }}" data-info-close>🍽️ Ver menú</a>
         <a href="{{ url_for('public.ver_carrito') }}" data-info-close>🛒 Mi carrito</a>
         {% if brand.puntos %}<a href="{{ url_for('public.club') }}" data-info-close>⭐ Mis puntos</a>{% endif %}
+      </div>
+      <div class="ox-app-tools">
+        <div><strong>Experiencia de aplicación</strong><small>Instala la tienda y conserva recursos esenciales para abrirla más rápido.</small></div>
+        <div class="ox-app-tools-actions">
+          <button type="button" data-pwa-install><span class="ox-install-text">Instalar app</span></button>
+          <button type="button" onclick="oxPrepareAppStorage(this)">Preparar offline</button>
+          {% if session.get('push_cliente_id') %}<button type="button" onclick="oxActivarPush(this)">Notificaciones</button>{% endif %}
+        </div>
+        <p id="ox-app-tools-status" aria-live="polite"></p>
       </div>
     </div>
   </section>
@@ -477,19 +497,18 @@ if ('serviceWorker' in navigator) {
     }).catch(() => {});
   });
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!sessionStorage.getItem('oxSwReloaded')) {
-      sessionStorage.setItem('oxSwReloaded', '1');
-      location.reload();
-    }
+    // El nuevo worker controlará la siguiente navegación. Recargar aquí puede
+    // interrumpir un formulario, un cambio de categoría o el checkout.
+    sessionStorage.setItem('oxSwUpdated', '1');
   });
 }
 
 // ── Web Push: suscribir al usuario ────────────────────────────────────────
 async function oxSubscribePush(registration) {
-  if (!('PushManager' in window)) return;
-  if (Notification.permission === 'denied') return;
+  if (!('PushManager' in window)) return false;
+  if (Notification.permission === 'denied') return false;
   // No pedir permiso automáticamente la primera vez; esperar gesto del usuario
-  if (Notification.permission !== 'granted') return;
+  if (Notification.permission !== 'granted') return false;
   try {
     const keyResp = await fetch('/api/push/vapid-key');
     if (!keyResp.ok) return;
@@ -499,7 +518,7 @@ async function oxSubscribePush(registration) {
       userVisibleOnly: true,
       applicationServerKey: _urlB64ToUint8Array(public_key),
     });
-    await fetch('/api/push/subscribe', {
+    const response = await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -507,7 +526,8 @@ async function oxSubscribePush(registration) {
       },
       body: JSON.stringify(sub.toJSON()),
     });
-  } catch (e) { /* push no disponible */ }
+    return response.ok;
+  } catch (e) { return false; }
 }
 
 function _urlB64ToUint8Array(base64String) {
@@ -523,8 +543,7 @@ window.oxRequestPushPermission = async function() {
   const perm = await Notification.requestPermission();
   if (perm === 'granted') {
     const reg = await navigator.serviceWorker.ready;
-    await oxSubscribePush(reg);
-    return true;
+    return await oxSubscribePush(reg);
   }
   return false;
 };
@@ -535,10 +554,32 @@ window.oxActivarPush = async function(btn) {
   btn.textContent = '…';
   const ok = await window.oxRequestPushPermission();
   if (ok) {
+    btn.textContent = 'Activas';
+    btn.disabled = true;
     document.getElementById('ox-push-prompt')?.remove();
   } else {
     btn.disabled = false;
     btn.textContent = 'Activar';
+  }
+};
+
+window.oxDismissPushPrompt = function() {
+  localStorage.setItem('oxPushDismissedAt', Date.now().toString());
+  document.getElementById('ox-push-prompt')?.remove();
+};
+
+window.oxPrepareAppStorage = async function(btn) {
+  const status = document.getElementById('ox-app-tools-status');
+  btn.disabled = true;
+  try {
+    const persistent = navigator.storage?.persist ? await navigator.storage.persist() : false;
+    if (status) status.textContent = persistent
+      ? 'Almacenamiento persistente activado.'
+      : 'La aplicación ya puede funcionar sin conexión; el navegador gestionará el espacio.';
+  } catch (_) {
+    if (status) status.textContent = 'El navegador gestionará el almacenamiento automáticamente.';
+  } finally {
+    btn.disabled = false;
   }
 };
 
@@ -547,6 +588,8 @@ window.oxActivarPush = async function(btn) {
   const el = document.getElementById('ox-push-prompt');
   if (!el) return;
   if (!('Notification' in window) || Notification.permission !== 'default') { el.remove(); return; }
+  const dismissed = Number.parseInt(localStorage.getItem('oxPushDismissedAt') || '0', 10);
+  if (dismissed && Date.now() - dismissed < 7 * 86400 * 1000) { el.remove(); return; }
   // Mostrar tras 6 s, bien separado del install prompt (1.8 s) para no solapar
   setTimeout(() => { el.hidden = false; }, 6000);
 })();

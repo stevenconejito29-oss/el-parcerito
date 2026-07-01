@@ -6062,6 +6062,27 @@ body.ox-body-public .ox-header-public a[href*="carrito"]:active {
   transform: scale(.92);
 }
 
+/* Cabecera pública: cristal oscuro, compacta y preparada para safe areas. */
+body.ox-body-public .ox-header-public {
+  padding-top: env(safe-area-inset-top, 0px);
+  background:
+    radial-gradient(circle at 18% -40%, color-mix(in srgb, var(--brand-primary) 28%, transparent), transparent 48%),
+    linear-gradient(105deg, rgba(15,18,24,.97), rgba(26,22,20,.94)) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--brand-primary) 28%, rgba(255,255,255,.08)) !important;
+  box-shadow: 0 12px 34px rgba(8,10,14,.26), inset 0 -1px 0 rgba(255,255,255,.035) !important;
+}
+.ox-public-header-inner{position:relative;isolation:isolate}.ox-public-header-inner::after{content:"";position:absolute;left:4.5rem;right:4.5rem;bottom:-.5rem;height:1px;background:linear-gradient(90deg,transparent,var(--brand-primary),transparent);opacity:.48;pointer-events:none}
+.ox-public-identity{color:#fff!important;text-decoration:none}.ox-public-logo{width:44px!important;height:44px!important;border-radius:13px!important;border:1px solid rgba(255,255,255,.16);box-shadow:0 8px 22px rgba(0,0,0,.3),0 0 0 3px color-mix(in srgb,var(--brand-primary) 13%,transparent)}
+.ox-public-kicker{display:block;margin-bottom:.08rem;color:color-mix(in srgb,var(--brand-primary) 82%,#fff);font-size:.54rem;font-weight:950;letter-spacing:.18em;line-height:1}body.ox-body-public .ox-header-public .ox-public-brand{color:#fff!important;font-size:.9rem!important;letter-spacing:-.02em}body.ox-body-public .ox-header-public .ox-public-address{color:rgba(255,255,255,.64)!important;font-style:normal!important}
+.ox-header-app{align-items:center;gap:.45rem;min-height:38px;padding:.45rem .72rem;border:1px solid color-mix(in srgb,var(--brand-primary) 35%,rgba(255,255,255,.12));border-radius:999px;background:color-mix(in srgb,var(--brand-primary) 10%,rgba(255,255,255,.04));color:#fff;font-size:.7rem;font-weight:900}.ox-header-app-dot{width:7px;height:7px;border-radius:50%;background:var(--brand-primary);box-shadow:0 0 12px var(--brand-primary)}
+[data-pwa-install][hidden]{display:none!important}
+.ox-header-status{min-height:36px;background:rgba(26,190,100,.1)!important;border-color:rgba(94,240,151,.2)!important;color:#a7f3d0!important}.ox-header-cart{color:#fff!important;background:rgba(255,255,255,.07)!important;border:1px solid rgba(255,255,255,.13);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.ox-header-public .ox-employee-login{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.12);color:rgba(255,255,255,.78)}.ox-header-public .ox-employee-login-icon{background:var(--brand-primary);color:var(--brand-on-primary,#111)}
+
+.ox-push-prompt--floating{position:fixed;z-index:570;left:50%;bottom:calc(82px + env(safe-area-inset-bottom,0px));width:min(460px,calc(100vw - 1.5rem));margin:0;transform:translateX(-50%);background:rgba(18,21,27,.96);border-color:color-mix(in srgb,var(--brand-primary) 38%,rgba(255,255,255,.12));box-shadow:0 20px 54px rgba(0,0,0,.42);backdrop-filter:blur(18px)}.ox-push-prompt--floating .ox-push-prompt-copy strong{color:#fff}.ox-push-prompt--floating .ox-push-prompt-copy small{color:rgba(255,255,255,.62)}.ox-push-prompt-close{flex:0 0 38px;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.07);color:rgba(255,255,255,.7);font-size:1.05rem}
+.ox-app-tools{margin-top:1rem;padding:.9rem;border:1px solid rgba(52,37,22,.12);border-radius:1rem;background:linear-gradient(135deg,rgba(217,150,26,.08),rgba(39,103,177,.06))}.ox-app-tools>div:first-child strong,.ox-app-tools>div:first-child small{display:block}.ox-app-tools>div:first-child strong{color:#18120a;font-size:.86rem}.ox-app-tools>div:first-child small{margin-top:.15rem;color:#6b5a4e;font-size:.7rem}.ox-app-tools-actions{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.7rem}.ox-app-tools-actions button{min-height:40px;padding:.5rem .7rem;border:1px solid rgba(52,37,22,.14);border-radius:.7rem;background:#fff;color:#3f3328;font-size:.7rem;font-weight:900}.ox-app-tools-status{min-height:1em;margin-top:.4rem;color:#2767b1;font-size:.68rem}
+@media(max-width:639px){.ox-public-header-inner{min-height:64px!important}.ox-public-actions{gap:.35rem}.ox-header-status{width:34px;min-height:34px;padding:0!important;justify-content:center}.ox-header-cart{width:38px!important;height:38px!important}.ox-header-public .ox-employee-login{width:34px;min-width:34px;height:34px;min-height:34px;padding:0}.ox-header-public .ox-employee-login-text{display:none}.ox-public-header-inner::after{left:3.8rem;right:3.8rem}.ox-push-prompt--floating{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.55rem}.ox-push-prompt--floating .ox-push-prompt-btn{grid-column:2}.ox-push-prompt-close{grid-column:3;grid-row:1}}
+
 body.ox-body-public .ox-bottom-nav {
   background: rgba(255,253,248,.95);
   border-top: 1px solid rgba(52,37,22,.1);

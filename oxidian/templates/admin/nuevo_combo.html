@@ -58,7 +58,7 @@
         <span>Entrega</span>
         <select name="tipo_entrega" id="bundle-delivery" onchange="bundleDelivery()">
           <option value="inmediato">Preparación inmediata</option>
-          <option value="programado">Entrega en fecha fija</option>
+          {% if brand.pedidos_programados %}<option value="programado">Entrega en fecha fija</option>{% endif %}
         </select>
       </label>
       <label class="bundle-field" id="bundle-date-wrap" hidden>
@@ -68,9 +68,9 @@
       <label class="bundle-field">
         <span>Modalidad para el cliente</span>
         <select name="modalidad_entrega">
-          <option value="ambas">Delivery o recogida</option>
-          <option value="delivery">Solo delivery</option>
-          <option value="recogida">Solo recogida</option>
+          {% if brand.delivery and brand.recogida %}<option value="ambas">Delivery o recogida</option>{% endif %}
+          {% if brand.delivery %}<option value="delivery">Solo delivery</option>{% endif %}
+          {% if brand.recogida %}<option value="recogida">Solo recogida</option>{% endif %}
         </select>
       </label>
       <label class="bundle-field">
@@ -99,6 +99,13 @@
                oninput="bundleUrlPreview(this.value)">
       </div>
     </div>
+  </section>
+
+  {% set extra_catalog = extras_catalogo_disponibles() %}
+  <section class="bundle-extras">
+    <input type="hidden" name="extras_catalog_present" value="1">
+    <div class="bundle-extras-head"><div><span>Personalización opcional</span><h2>Extras disponibles para este combo</h2><p>Son suplementos del combo completo, diferentes de las elecciones de bebida o acompañamiento.</p></div><a href="{{ url_for('admin.extras_catalogo') }}">Gestionar biblioteca</a></div>
+    {% if extra_catalog %}<div class="bundle-extras-grid">{% for extra in extra_catalog %}<label><input type="checkbox" name="extra_catalog_ids" value="{{ extra.id }}"><span><strong>{{ extra.nombre }}</strong><small>+€{{ '%.2f'|format(extra.precio_float) }} · máx. {{ extra.max_cantidad }}</small></span></label>{% endfor %}</div><label class="bundle-extras-max"><span>Máximo total por combo</span><input type="number" name="extras_max_selecciones" min="1" max="20" value="4"></label>{% else %}<p class="bundle-extras-empty">La biblioteca de extras está vacía.</p>{% endif %}
   </section>
 
   <div class="bundle-builder">
@@ -231,15 +238,15 @@
       </section>
 
       <details class="bundle-options">
-        <summary>Publicación y puntos</summary>
+        <summary>Publicación{% if brand.puntos %} y puntos{% endif %}</summary>
         <div>
           <label><input type="checkbox" name="stock_mostrar_en_web"> Mostrar stock en el menú</label>
-          <label><input type="checkbox" name="canjeable_con_puntos" id="bundle-points"
+          {% if brand.puntos %}<label><input type="checkbox" name="canjeable_con_puntos" id="bundle-points"
                         onchange="bundlePoints()"> Permitir canje con puntos</label>
           <label class="bundle-points-input" id="bundle-points-wrap" hidden>
             <span>Puntos requeridos</span>
             <input type="number" name="puntos_para_canje" min="1" placeholder="500">
-          </label>
+          </label>{% else %}<input type="checkbox" id="bundle-points" hidden disabled><span id="bundle-points-wrap" hidden></span>{% endif %}
           <label class="bundle-cost-input">
             <span>Costo interno</span>
             <input type="number" name="precio_costo" min="0" step="0.01" placeholder="0.00">

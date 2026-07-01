@@ -525,6 +525,22 @@ class Product(db.Model):
     order_items = db.relationship("OrderItem", backref="producto", lazy="dynamic")
 
     @property
+    def extra_catalog_ids(self):
+        return [
+            option.catalog_item_id
+            for group in self.extra_groups
+            for option in group.opciones
+            if option.catalog_item_id and option.activo
+        ]
+
+    @property
+    def extra_catalog_max_selecciones(self):
+        for group in self.extra_groups:
+            if group.opciones.filter(ProductExtraOption.catalog_item_id.isnot(None)).first():
+                return int(group.max_selecciones or 1)
+        return 1
+
+    @property
     def stock_total(self):
         """Stock propio vendible; los lotes ya caducados no cuentan."""
         try:
@@ -866,6 +882,11 @@ class Product(db.Model):
         if not self.visible_ahora:
             return False
         if self.es_combo and any(item.es_seleccionable for item in self.combo_items):
+            return False
+        if self.extra_groups.filter(
+            ProductExtraGroup.activo.is_(True),
+            ProductExtraGroup.min_selecciones > 0,
+        ).first():
             return False
         return self.disponible_para_venta(cantidad)
 
@@ -1633,11 +1654,43 @@ class ProductExtraGroup(db.Model):
     )
 
 
+class ExtraCatalogItem(db.Model):
+    """Extra reutilizable que el administrador puede asignar a varios productos."""
+    __tablename__ = "extra_catalog_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False, unique=True)
+    descripcion = db.Column(db.String(240))
+    precio = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    max_cantidad = db.Column(db.Integer, nullable=False, default=1)
+    activo = db.Column(db.Boolean, nullable=False, default=True)
+    creado_en = db.Column(db.DateTime, nullable=False, default=utcnow)
+    actualizado_en = db.Column(db.DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+
+    opciones_producto = db.relationship(
+        "ProductExtraOption", backref="catalog_item", lazy="dynamic",
+        passive_deletes=True,
+    )
+
+    __table_args__ = (
+        db.CheckConstraint("precio >= 0", name="ck_extra_catalog_price"),
+        db.CheckConstraint("max_cantidad >= 1", name="ck_extra_catalog_max_qty"),
+    )
+
+    @property
+    def precio_float(self):
+        try:
+            return float(self.precio or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+
 class ProductExtraOption(db.Model):
     __tablename__ = "product_extra_options"
 
     id = db.Column(db.Integer, primary_key=True)
     grupo_id = db.Column(db.Integer, db.ForeignKey("product_extra_groups.id", ondelete="CASCADE"), nullable=False)
+    catalog_item_id = db.Column(db.Integer, db.ForeignKey("extra_catalog_items.id", ondelete="SET NULL"), nullable=True)
     nombre = db.Column(db.String(100), nullable=False)
     precio = db.Column(db.Numeric(10, 2), nullable=False, default=0)
     max_cantidad = db.Column(db.Integer, nullable=False, default=1)

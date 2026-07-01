@@ -22,6 +22,7 @@ from idempotency import (request_idempotency_key, request_body_hash,
 from services import (distribuir_pedido,
                        enviar_whatsapp_estado, validar_radio_entrega,
                        asignar_zona_por_direccion,
+                       asignar_zona_por_coordenadas,
                        registrar_uso_afiliado, get_puntos_config,
                        registrar_pedido_creado, sincronizar_proveedores_pedido,
                        encolar_notificaciones_proveedores_pedido,
@@ -158,6 +159,11 @@ def _producto_canjeable_en_origen(producto, origen, cantidad=1):
     ):
         return False
     if producto.es_combo and any(item.es_seleccionable for item in producto.combo_items):
+        return False
+    if producto.extra_groups.filter(
+        ProductExtraGroup.activo.is_(True),
+        ProductExtraGroup.min_selecciones > 0,
+    ).first():
         return False
     return _producto_disponible_en_origen(producto, origen, cantidad)
 
@@ -923,6 +929,19 @@ def consultar_saldo_puntos():
 def api_check_address():
     """Valida si una dirección está dentro del radio de entrega. Sin autenticación requerida."""
     data = request.get_json(silent=True) or {}
+    if data.get("lat") is not None and data.get("lng") is not None:
+        if not _feature_enabled("delivery"):
+            return jsonify({"ok": False, "mensaje": "El delivery no está habilitado."}), 403
+        zonas = ZonaEntrega.query.filter_by(activo=True).order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
+        zona, distancia = asignar_zona_por_coordenadas(data.get("lat"), data.get("lng"), zonas)
+        if not zona:
+            return jsonify({"ok": False, "distancia_km": None,
+                            "mensaje": "Tu ubicación está fuera de las zonas configuradas."})
+        return jsonify({"ok": True, "distancia_km": distancia, "mensaje": "Ubicación comprobada.",
+                        "zona": {"id": zona.id, "nombre": zona.nombre,
+                                 "precio_envio": float(zona.precio_envio or 0),
+                                 "gratis_desde": float(zona.gratis_desde) if zona.gratis_desde is not None else None,
+                                 "tiempo_estimado_min": zona.tiempo_estimado_min}})
     direccion = (data.get("direccion") or "").strip()
     if not direccion:
         return jsonify({"ok": True, "distancia_km": None, "mensaje": ""})

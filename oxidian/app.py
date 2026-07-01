@@ -217,7 +217,7 @@ def create_app(env="default"):
             "display_override": ["standalone", "minimal-ui", "browser"],
             "background_color": "#FFFDF8",
             "theme_color": SiteConfig.get("COLOR_PRIMARIO", "#D9961A"),
-            "orientation": "portrait-primary",
+            "orientation": "any",
             "lang": "es",
             "dir": "ltr",
             "categories": ["food", "shopping"],
@@ -277,7 +277,7 @@ def create_app(env="default"):
             "display": "standalone",
             "background_color": "#111827",
             "theme_color": profile["color_primario"],
-            "orientation": "portrait-primary",
+            "orientation": "any",
             "icons": [{"src": icon, "sizes": "any", "purpose": "any maskable"}],
         }
         return app.response_class(
@@ -603,7 +603,8 @@ def create_app(env="default"):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        geolocation = "(self)" if request.path.startswith("/repartidor/") else "()"
+        geolocation_allowed = request.path.startswith(("/repartidor/", "/checkout", "/api/check-address"))
+        geolocation = "(self)" if geolocation_allowed else "()"
         response.headers["Permissions-Policy"] = (
             f"camera=(), geolocation={geolocation}, microphone=(), payment=(), usb=()"
         )

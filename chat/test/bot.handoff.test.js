@@ -138,6 +138,20 @@ test('un número adicional sin cuenta queda limitado a atención humana', () => 
   assert.doesNotMatch(menu, /Productos y precios|Abrir \/ cerrar tienda|Modo emergencia/);
 });
 
+test('el menú del cliente oculta puntos y delivery cuando están desactivados', () => {
+  setCfg('loyalty_enabled', '0');
+  setCfg('delivery_enabled', '0');
+  const disabled = menuPrincipal();
+  assert.doesNotMatch(disabled, /consultar tus puntos/i);
+  assert.doesNotMatch(disabled, /comprobar cobertura/i);
+
+  setCfg('loyalty_enabled', '1');
+  setCfg('delivery_enabled', '1');
+  const enabled = menuPrincipal();
+  assert.match(enabled, /consultar tus puntos/i);
+  assert.match(enabled, /comprobar cobertura/i);
+});
+
 test('el cliente se dirige a la web y no recibe catálogo por WhatsApp', () => {
   const menu = menuPrincipal();
   assert.match(menu, /Abrir la tienda online/);

@@ -1,0 +1,55 @@
+{% extends "admin_base.html" %}
+{% block title %}Biblioteca de extras{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-4 extra-library">
+  <div class="ox-card p-5 extra-library-head">
+    <div>
+      <p class="text-xs font-black uppercase tracking-widest" style="color:var(--work-accent)">Catálogo reutilizable</p>
+      <h1 class="text-2xl font-black">Ingredientes y extras</h1>
+      <p class="text-sm" style="color:var(--col-muted)">Crea cada extra una sola vez y asígnalo a los productos o combos que correspondan.</p>
+    </div>
+    <a href="{{ url_for('admin.productos') }}" class="ox-btn-secondary">Volver a productos</a>
+  </div>
+
+  <form method="post" class="ox-card p-5 grid md:grid-cols-5 gap-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="create">
+    <div class="md:col-span-5"><h2 class="font-black text-lg">Nuevo extra</h2></div>
+    <label class="md:col-span-2">Nombre<input class="edit-input" name="nombre" maxlength="100" required placeholder="Ej. Queso extra"></label>
+    <label>Precio (€)<input class="edit-input" type="number" name="precio" min="0" step=".01" value="0" required></label>
+    <label>Máximo por producto<input class="edit-input" type="number" name="max_cantidad" min="1" max="20" value="1" required></label>
+    <label class="md:col-span-4">Descripción<input class="edit-input" name="descripcion" maxlength="240" placeholder="Información opcional para el equipo"></label>
+    <button class="ox-btn-primary">Crear extra</button>
+  </form>
+
+  <div class="grid lg:grid-cols-2 gap-3">
+    {% for item in items %}
+    <form method="post" class="ox-card p-4 extra-library-item {% if not item.activo %}is-inactive{% endif %}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="extra_id" value="{{ item.id }}">
+      <div class="extra-library-status"><span>{{ 'Activo' if item.activo else 'Inactivo' }}</span><b>{{ item.opciones_producto.count() }} asignaciones</b></div>
+      <label>Nombre<input class="edit-input" name="nombre" value="{{ item.nombre }}" maxlength="100" required></label>
+      <div class="grid grid-cols-2 gap-2">
+        <label>Precio<input class="edit-input" type="number" name="precio" min="0" step=".01" value="{{ '%.2f'|format(item.precio_float) }}" required></label>
+        <label>Máximo<input class="edit-input" type="number" name="max_cantidad" min="1" max="20" value="{{ item.max_cantidad }}" required></label>
+      </div>
+      <label>Descripción<input class="edit-input" name="descripcion" maxlength="240" value="{{ item.descripcion or '' }}"></label>
+      <div class="extra-library-actions">
+        <button name="action" value="update" class="ox-btn-primary flex-1">Guardar</button>
+        <button name="action" value="toggle" class="ox-btn-secondary">{{ 'Desactivar' if item.activo else 'Activar' }}</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="ox-card p-8 text-center lg:col-span-2"><p class="font-black">Todavía no hay extras</p><p class="text-sm" style="color:var(--col-muted)">Crea queso, salsas, toppings o cualquier suplemento que vendas.</p></div>
+    {% endfor %}
+  </div>
+</div>
+<style>
+.extra-library-head{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.extra-library-item{display:grid;gap:.65rem}.extra-library-item.is-inactive{opacity:.65}
+.extra-library label{display:grid;gap:.3rem;margin:0;min-width:0}.extra-library .edit-input{display:block;width:100%;min-width:0;box-sizing:border-box;padding:.7rem .8rem;border:1px solid var(--col-border);border-radius:.7rem;background:var(--col-elevated);color:var(--col-text)}.extra-library-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.55rem;margin-top:.4rem}.extra-library-actions button{width:100%;min-width:0;white-space:normal}
+.extra-library-status{display:flex;justify-content:space-between;gap:.5rem;font-size:.7rem;text-transform:uppercase;font-weight:900;color:var(--col-muted)}
+.extra-library-status span{color:var(--work-success)}.is-inactive .extra-library-status span{color:var(--work-danger)}
+@media(max-width:640px){.extra-library-head{align-items:flex-start;flex-direction:column}.extra-library-head .ox-btn-secondary{width:100%}.extra-library-actions{grid-template-columns:1fr 1fr}}
+</style>
+{% endblock %}

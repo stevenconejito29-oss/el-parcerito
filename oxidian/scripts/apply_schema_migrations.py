@@ -25,6 +25,7 @@ from models import (
     OrderEvent,
     OrderProviderStatus,
     Product,
+    ExtraCatalogItem,
     ProductExtraGroup,
     ProductExtraOption,
     Proveedor,
@@ -811,6 +812,19 @@ def _migrate_service_commission_snapshots():
     ))
 
 
+def _migrate_reusable_extra_catalog():
+    ExtraCatalogItem.__table__.create(bind=db.engine, checkfirst=True)
+    inspector = inspect(db.engine)
+    if not inspector.has_table("product_extra_options"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("product_extra_options")}
+    if "catalog_item_id" not in existing:
+        db.session.execute(text(
+            "ALTER TABLE product_extra_options ADD COLUMN catalog_item_id INTEGER "
+            "REFERENCES extra_catalog_items(id) ON DELETE SET NULL"
+        ))
+
+
 MIGRATIONS = [
     {
         "id": "20260526_01_order_events_notification_outbox",
@@ -945,6 +959,11 @@ MIGRATIONS = [
         "id": "20260701_01_product_order_group",
         "description": "Añadir grupo configurable de compatibilidad por producto",
         "fn": _migrate_product_order_group,
+    },
+    {
+        "id": "20260701_02_reusable_extra_catalog",
+        "description": "Crear biblioteca reutilizable de extras y vincularla a productos",
+        "fn": _migrate_reusable_extra_catalog,
     },
 ]
 

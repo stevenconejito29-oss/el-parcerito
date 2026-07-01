@@ -144,8 +144,9 @@
       <legend>{{ group.nombre }} <small>{% if group.min_selecciones %}Elige de {{ group.min_selecciones }} a {{ group.max_selecciones }}{% else %}Opcional · máximo {{ group.max_selecciones }}{% endif %}</small></legend>
       {% if group.descripcion %}<p>{{ group.descripcion }}</p>{% endif %}
       {% for option in group.opciones.filter_by(activo=True).all() %}
-      <label class="pd-extra-option"><span><strong>{{ option.nombre }}</strong>{% if option.precio_float %}<small>+€{{ '%.2f'|format(option.precio_float) }}</small>{% else %}<small>Sin coste</small>{% endif %}</span><input form="pd-add-form" type="number" inputmode="numeric" name="extra_qty_{{ option.id }}" value="0" min="0" max="{{ option.max_cantidad }}" aria-label="Cantidad de {{ option.nombre }}"></label>
+      <label class="pd-extra-option"><span><strong>{{ option.nombre }}</strong>{% if option.precio_float %}<small>+€{{ '%.2f'|format(option.precio_float) }}</small>{% else %}<small>Sin coste</small>{% endif %}</span><input form="pd-add-form" class="pd-extra-qty" data-extra="{{ option.precio_float }}" type="number" inputmode="numeric" name="extra_qty_{{ option.id }}" value="0" min="0" max="{{ option.max_cantidad }}" aria-label="Cantidad de {{ option.nombre }}"></label>
       {% endfor %}
+      <p class="pd-extra-status" aria-live="polite"></p>
     </fieldset>{% endfor %}
   </section>
   {% endif %}
@@ -392,6 +393,7 @@
 <style>
 .pd-extras{margin:1rem 0;padding:1rem;border:1px solid color-mix(in srgb,var(--brand-primary) 36%,#ddd);border-radius:1rem;background:var(--col-surface);box-shadow:0 8px 24px rgba(0,0,0,.12)}
 .pd-extras h2{font-size:1.05rem;font-weight:950;color:var(--col-text)}.pd-extras>p,.pd-extra-group>p{font-size:.76rem;color:var(--col-muted)}
+.pd-extra-group-invalid{border-color:#ce1126!important;box-shadow:0 0 0 3px rgba(206,17,38,.1)}.pd-extra-status{margin:.35rem 0 0!important;text-align:right;font-size:.68rem!important}.pd-extra-group-invalid .pd-extra-status{color:#a30d1d!important;font-weight:850}
 .pd-extra-group{margin-top:.8rem;padding:.7rem;border:1px solid var(--col-border);border-radius:.8rem}.pd-extra-group legend{padding:0 .35rem;font-weight:900;color:var(--col-text)}.pd-extra-group legend small{display:block;font-size:.65rem;color:var(--col-muted)}
 .pd-extra-option{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.65rem;margin:.35rem 0;border-radius:.7rem;background:var(--col-elevated);border:1px solid var(--col-border)}.pd-extra-option span{display:flex;flex-direction:column}.pd-extra-option small{color:var(--brand-primary);font-weight:800}.pd-extra-option input{width:56px;min-height:44px;text-align:center;border:1px solid var(--col-border-2);border-radius:.65rem;background:var(--col-surface);color:var(--col-text);font-weight:900}
 /* ═══════════════════════════════════════════════════
@@ -921,8 +923,11 @@ const PD_COMBO_FIXED_BASE = {{ combo_fixed_base|default(0)|float }};
 const PD_ADD_LABEL = {{ ('Añadir combo' if producto.es_combo else ('Reservar fecha fija' if producto.tipo_entrega in ('programado','encargo') else 'Añadir'))|tojson }};
 
 function pdCurrentUnitPrice() {
-  if (!{{ producto.es_combo|lower }}) return PD_BASE_PRICE;
   let extras = 0;
+  document.querySelectorAll('.pd-extra-qty').forEach(input => {
+    extras += Number(input.dataset.extra || 0) * Math.max(0, Number.parseInt(input.value || '0', 10) || 0);
+  });
+  if (!{{ producto.es_combo|lower }}) return PD_BASE_PRICE + extras;
   let selectedBase = PD_COMBO_FIXED_BASE;
   document.querySelectorAll('.combo-sel-radio:checked').forEach(input => {
     selectedBase += Number(input.dataset.basePrice || 0);
@@ -938,6 +943,39 @@ function pdCurrentUnitPrice() {
   }
   return PD_BASE_PRICE + extras;
 }
+
+function pdExtraGroupsValid() {
+  let valid = true;
+  document.querySelectorAll('.pd-extra-group').forEach(group => {
+    const min = Number.parseInt(group.dataset.min || '0', 10);
+    const max = Number.parseInt(group.dataset.max || '1', 10);
+    const total = Array.from(group.querySelectorAll('.pd-extra-qty')).reduce(
+      (sum, input) => sum + (Number.parseInt(input.value || '0', 10) || 0), 0
+    );
+    const ok = total >= min && total <= max;
+    group.classList.toggle('pd-extra-group-invalid', !ok);
+    const status = group.querySelector('.pd-extra-status');
+    if (status) status.textContent = ok ? `${total} de ${max} seleccionados` : `Selecciona entre ${min} y ${max}`;
+    if (!ok) valid = false;
+  });
+  return valid;
+}
+
+document.querySelectorAll('.pd-extra-qty').forEach(input => {
+  input.addEventListener('input', () => {
+    const ownMax = Number.parseInt(input.max || '1', 10);
+    input.value = Math.max(0, Math.min(ownMax, Number.parseInt(input.value || '0', 10) || 0));
+    const group = input.closest('.pd-extra-group');
+    const groupMax = Number.parseInt(group?.dataset.max || '1', 10);
+    const others = Array.from(group?.querySelectorAll('.pd-extra-qty') || [])
+      .filter(other => other !== input)
+      .reduce((sum, other) => sum + (Number.parseInt(other.value || '0', 10) || 0), 0);
+    input.value = Math.min(Number.parseInt(input.value || '0', 10), Math.max(0, groupMax - others));
+    pdExtraGroupsValid();
+    pdRenderPrice();
+  });
+});
+pdExtraGroupsValid();
 
 function pdRenderPrice() {
   const unit = Math.round(pdCurrentUnitPrice() * 100) / 100;
@@ -1068,6 +1106,11 @@ pdRenderPrice();
 
 // Capturar selecciones del combo como notas antes del submit
 void document.getElementById('pd-add-form')?.addEventListener('submit', function(e) {
+  if (!pdExtraGroupsValid()) {
+    e.preventDefault();
+    document.querySelector('.pd-extra-group-invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
   const notasEl = document.getElementById('combo-sel-notes');
   if (!notasEl) return;
   const sels = [];

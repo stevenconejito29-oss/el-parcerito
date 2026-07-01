@@ -16,7 +16,7 @@ import csv, io
 
 from extensions import db, get_or_404
 from models import (ROLES_AUTENTICABLES, User, Product, Categoria, Stock, Order, OrderItem, Review,
-                    Coupon, ComboGroup, ComboItem, ProductExtraGroup, ProductExtraOption, Caja, PointsLog, StaffPayment,
+                    Coupon, ComboGroup, ComboItem, ExtraCatalogItem, ProductExtraGroup, ProductExtraOption, Caja, PointsLog, StaffPayment,
                     AffiliateCode, AffiliateUse, MenuConfig,
                     PriceHistory, SiteConfig, AuditLog,
                     AdminFeature, NotificationOutbox, normalizar_metodo_pago, utcnow)
@@ -46,6 +46,13 @@ from phone_utils import normalizar_telefono_cliente
 from store_config import get_store_features
 
 admin_bp = Blueprint("admin", __name__)
+
+
+@admin_bp.app_context_processor
+def extra_catalog_template_helpers():
+    def extras_catalogo_disponibles():
+        return ExtraCatalogItem.query.filter_by(activo=True).order_by(ExtraCatalogItem.nombre.asc()).all()
+    return {"extras_catalogo_disponibles": extras_catalogo_disponibles}
 
 _ROLES_ADMIN = {"admin", "super_admin"}
 _ROLES_USUARIO_BASE = ["cocina", "preparacion", "repartidor"]
@@ -98,6 +105,7 @@ _FEATURE_URL_MAP = {
     "/admin/usuarios":     "usuarios",
     "/admin/productos":    "productos",
     "/admin/combos":       "productos",
+    "/admin/extras":       "productos",
     "/admin/categorias":   "productos",
     "/admin/cupones":      "cupones",
     "/admin/afiliados":    "marketing",
@@ -1699,6 +1707,67 @@ def ajustar_stock(lote_id):
 
 # ─── PRODUCTOS ───────────────────────────────
 
+@admin_bp.route("/extras", methods=["GET", "POST"])
+@admin_required
+def extras_catalogo():
+    if request.method == "POST":
+        action = (request.form.get("action") or "").strip()
+        try:
+            if action == "create":
+                nombre = " ".join((request.form.get("nombre") or "").split())[:100]
+                precio = _money(request.form.get("precio") or 0)
+                max_cantidad = request.form.get("max_cantidad", type=int) or 1
+                if not nombre:
+                    raise ValueError("Escribe un nombre para el extra.")
+                if precio < 0 or not 1 <= max_cantidad <= 20:
+                    raise ValueError("Revisa el precio y la cantidad máxima.")
+                if ExtraCatalogItem.query.filter(db.func.lower(ExtraCatalogItem.nombre) == nombre.lower()).first():
+                    raise ValueError("Ya existe un extra con ese nombre.")
+                db.session.add(ExtraCatalogItem(
+                    nombre=nombre,
+                    descripcion=(request.form.get("descripcion") or "").strip()[:240] or None,
+                    precio=precio,
+                    max_cantidad=max_cantidad,
+                ))
+            elif action in {"update", "toggle"}:
+                item = get_or_404(ExtraCatalogItem, request.form.get("extra_id", type=int))
+                if action == "toggle":
+                    item.activo = not item.activo
+                    for option in item.opciones_producto.all():
+                        option.activo = item.activo
+                else:
+                    nombre = " ".join((request.form.get("nombre") or "").split())[:100]
+                    precio = _money(request.form.get("precio") or 0)
+                    max_cantidad = request.form.get("max_cantidad", type=int) or 1
+                    duplicate = ExtraCatalogItem.query.filter(
+                        db.func.lower(ExtraCatalogItem.nombre) == nombre.lower(),
+                        ExtraCatalogItem.id != item.id,
+                    ).first()
+                    if not nombre or duplicate:
+                        raise ValueError("El nombre está vacío o ya pertenece a otro extra.")
+                    if precio < 0 or not 1 <= max_cantidad <= 20:
+                        raise ValueError("Revisa el precio y la cantidad máxima.")
+                    item.nombre = nombre
+                    item.descripcion = (request.form.get("descripcion") or "").strip()[:240] or None
+                    item.precio = precio
+                    item.max_cantidad = max_cantidad
+                    for option in item.opciones_producto.all():
+                        option.nombre = item.nombre
+                        option.precio = item.precio
+                        option.max_cantidad = item.max_cantidad
+            else:
+                raise ValueError("Acción de extras no reconocida.")
+            db.session.commit()
+            flash("Biblioteca de extras actualizada.", "success")
+        except (ValueError, IntegrityError) as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+        return redirect(url_for("admin.extras_catalogo"))
+
+    items = ExtraCatalogItem.query.order_by(ExtraCatalogItem.activo.desc(), ExtraCatalogItem.nombre.asc()).all()
+    return render_template("admin/extras_catalogo.html", items=items)
+
+
 @admin_bp.route("/productos")
 @admin_required
 def productos():
@@ -2216,6 +2285,75 @@ def _combo_groups_payload_from_form(form):
     return payload
 
 
+def _sync_catalog_extras(producto, form):
+    """Sincroniza únicamente las opciones procedentes de la biblioteca global."""
+    if form.get("extras_catalog_present") != "1":
+        return None
+    selected_ids = []
+    for raw in form.getlist("extra_catalog_ids"):
+        try:
+            item_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if item_id > 0 and item_id not in selected_ids:
+            selected_ids.append(item_id)
+    catalog_items = ExtraCatalogItem.query.filter(
+        ExtraCatalogItem.id.in_(selected_ids), ExtraCatalogItem.activo.is_(True)
+    ).all() if selected_ids else []
+    if len(catalog_items) != len(selected_ids):
+        return "Uno de los extras seleccionados ya no existe o está inactivo."
+
+    linked_options = ProductExtraOption.query.join(ProductExtraGroup).filter(
+        ProductExtraGroup.producto_id == producto.id,
+        ProductExtraOption.catalog_item_id.isnot(None),
+    ).all()
+    by_catalog = {option.catalog_item_id: option for option in linked_options}
+    selected_set = set(selected_ids)
+    for option in linked_options:
+        if option.catalog_item_id not in selected_set:
+            db.session.delete(option)
+
+    group = next((option.grupo for option in linked_options), None)
+    if catalog_items and not group:
+        group = ProductExtraGroup(
+            producto_id=producto.id,
+            nombre="Extras disponibles",
+            descripcion="Elige los ingredientes adicionales que quieras.",
+            min_selecciones=0,
+            max_selecciones=1,
+            orden=90,
+            activo=True,
+        )
+        db.session.add(group)
+        db.session.flush()
+
+    if group:
+        try:
+            requested_max = int(form.get("extras_max_selecciones") or 0)
+        except (TypeError, ValueError):
+            requested_max = 0
+        available_max = sum(max(1, int(item.max_cantidad or 1)) for item in catalog_items)
+        custom_max = sum(
+            max(1, int(option.max_cantidad or 1))
+            for option in group.opciones.filter(ProductExtraOption.catalog_item_id.is_(None)).all()
+        )
+        total_max = available_max + custom_max
+        group.max_selecciones = min(max(1, requested_max or total_max), max(1, total_max))
+        group.activo = total_max > 0
+
+    for order, item in enumerate(catalog_items):
+        option = by_catalog.get(item.id)
+        if not option:
+            option = ProductExtraOption(grupo_id=group.id, catalog_item_id=item.id)
+            db.session.add(option)
+        option.nombre = item.nombre
+        option.precio = item.precio
+        option.max_cantidad = item.max_cantidad
+        option.orden = order * 10
+        option.activo = True
+    return None
+
+
 @admin_bp.route("/productos/crear", methods=["POST"])
 @admin_required
 def crear_producto():
@@ -2234,6 +2372,9 @@ def crear_producto():
     db.session.add(p)
     try:
         db.session.flush()
+        extras_error = _sync_catalog_extras(p, request.form)
+        if extras_error:
+            raise ValueError(extras_error)
         db.session.commit()
     except Exception as exc:
         db.session.rollback()
@@ -2622,6 +2763,12 @@ def nuevo_combo():
         clean_comp_data["orden"] = comp_data.get("orden", 0)
         db.session.add(ComboItem(**clean_comp_data))
 
+    extras_error = _sync_catalog_extras(combo, request.form)
+    if extras_error:
+        db.session.rollback()
+        flash(extras_error, "danger")
+        return redirect(url_for("admin.nuevo_combo"))
+
     # ── Commit de la transacción completa ──
     try:
         db.session.commit()
@@ -2699,6 +2846,11 @@ def editar_producto(producto_id):
     precio_anterior = float(p.precio)
     for attr, val in campos.items():
         setattr(p, attr, val)
+    extras_error = _sync_catalog_extras(p, request.form)
+    if extras_error:
+        db.session.rollback()
+        flash(extras_error, "danger")
+        return redirect(url_for("admin.productos"))
     nuevo_activo = bool(request.form.get("activo"))
     if p.activo and not nuevo_activo:
         combos_afectados = ComboItem.query.filter_by(producto_id=p.id).count()
@@ -2755,6 +2907,22 @@ def gestionar_extras(producto_id):
                     raise ValueError("Opción de extra inválida.")
                 db.session.add(ProductExtraOption(grupo_id=group.id, nombre=nombre, precio=precio,
                     max_cantidad=max_qty, orden=group.opciones.count() * 10))
+            elif action == "attach_catalog":
+                group = ProductExtraGroup.query.filter_by(
+                    id=request.form.get("grupo_id", type=int), producto_id=producto.id
+                ).first()
+                item = ExtraCatalogItem.query.filter_by(
+                    id=request.form.get("catalog_item_id", type=int), activo=True
+                ).first()
+                if not group or not item:
+                    raise ValueError("Grupo o extra de biblioteca inválido.")
+                if ProductExtraOption.query.filter_by(grupo_id=group.id, catalog_item_id=item.id).first():
+                    raise ValueError("Ese extra ya está asignado al grupo.")
+                db.session.add(ProductExtraOption(
+                    grupo_id=group.id, catalog_item_id=item.id, nombre=item.nombre,
+                    precio=item.precio, max_cantidad=item.max_cantidad,
+                    orden=group.opciones.count() * 10,
+                ))
             elif action == "delete_option":
                 option = ProductExtraOption.query.join(ProductExtraGroup).filter(
                     ProductExtraOption.id == request.form.get("option_id", type=int),
@@ -2772,7 +2940,9 @@ def gestionar_extras(producto_id):
             flash(str(exc), "danger")
         return redirect(url_for("admin.gestionar_extras", producto_id=producto.id))
     groups = ProductExtraGroup.query.filter_by(producto_id=producto.id).order_by(ProductExtraGroup.orden, ProductExtraGroup.id).all()
-    return render_template("admin/producto_extras.html", producto=producto, groups=groups)
+    catalog_items = ExtraCatalogItem.query.filter_by(activo=True).order_by(ExtraCatalogItem.nombre).all()
+    return render_template("admin/producto_extras.html", producto=producto, groups=groups,
+                           catalog_items=catalog_items)
 
 
 # ─── COMBOS ──────────────────────────────────

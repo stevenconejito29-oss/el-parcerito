@@ -182,6 +182,7 @@
     <textarea name="direccion" {% if fulfillment_default == 'delivery' %}required{% endif %} rows="2"
               placeholder="Calle, número, piso{% if brand.ciudad %} · {{ brand.ciudad }}{% endif %}"
               id="direccion_input"></textarea>
+    <button type="button" class="checkout-location-btn" onclick="useCheckoutLocation(this)">Usar mi ubicación para comprobar cobertura</button>
     <div id="dir-feedback" class="mt-2 text-xs hidden" style="min-height:1.2em"></div>
     </div>
     <div id="pickup-info-block" class="p-3 rounded-xl text-sm {% if fulfillment_default != 'recogida' %}hidden{% endif %}" style="background:rgba(43,147,72,.08);border:1px solid rgba(43,147,72,.25);color:#2b9348">
@@ -516,6 +517,7 @@
 .checkout-inline-status.is-loading { color: #FFAB00; }
 .checkout-inline-status.is-ok { color: #5EF097; }
 .checkout-inline-status.is-error { color: #FF6B6B; }
+.checkout-location-btn{margin-top:.45rem;min-height:42px;padding:.55rem .75rem;border:1px solid rgba(39,103,177,.22);border-radius:.75rem;background:rgba(39,103,177,.07);color:#2767b1;font-size:.75rem;font-weight:850}.checkout-location-btn:disabled{opacity:.65}
 .checkout-rewards-summary {
   border-color: rgba(217,150,26,.22) !important;
   background: rgba(255,253,248,.98) !important;
@@ -648,6 +650,32 @@ function setFulfillmentMode(mode) {
       parseFloat(item.dataset.gratisDesde || 0)
     );
   }
+}
+
+async function useCheckoutLocation(button) {
+  const feedback = document.getElementById('dir-feedback');
+  const show = (text, color) => {
+    if (!feedback) return;
+    feedback.textContent = text; feedback.style.color = color; feedback.classList.remove('hidden');
+  };
+  if (!navigator.geolocation) { show('Este navegador no ofrece ubicación.', '#FF6B6B'); return; }
+  button.disabled = true; show('Solicitando ubicación…', 'var(--col-muted)');
+  navigator.geolocation.getCurrentPosition(async position => {
+    try {
+      const response = await checkoutJsonPost('/api/check-address', {
+        lat: position.coords.latitude, lng: position.coords.longitude,
+      });
+      const data = await response.json();
+      if (!data.ok) { show(data.mensaje || 'Ubicación fuera de cobertura.', '#FF6B6B'); return; }
+      if (data.zona) _updateZonaSummary(Number(data.zona.precio_envio || 0), Number(data.zona.gratis_desde || 0), data.zona);
+      const distance = data.distancia_km == null ? '' : ` · ${data.distancia_km} km`;
+      show(`Ubicación dentro de cobertura${distance}. Escribe también calle y número para la entrega.`, '#2b9348');
+    } catch (_) { show('No pudimos comprobar la ubicación ahora.', '#FF6B6B'); }
+    finally { button.disabled = false; }
+  }, error => {
+    show(error.code === 1 ? 'Permiso de ubicación no concedido.' : 'No pudimos obtener tu ubicación.', '#FF6B6B');
+    button.disabled = false;
+  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
 }
 
 function normalizarTelefono(tel) {
