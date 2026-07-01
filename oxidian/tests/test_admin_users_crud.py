@@ -4,7 +4,7 @@ from pathlib import Path
 from flask import Flask
 
 from extensions import db, login_manager
-from models import Proveedor, StaffPayment, User
+from models import Proveedor, SiteConfig, StaffPayment, User
 from routes.admin import admin_bp
 
 
@@ -136,6 +136,25 @@ class AdminUsersCrudTest(unittest.TestCase):
             },
         )
         self.assertIsNone(User.query.filter_by(email="operador@test.invalid").first())
+
+    def test_disabled_modules_reject_new_operational_roles(self):
+        SiteConfig.set("FEATURE_DELIVERY", "0")
+        SiteConfig.set("FEATURE_PEDIDOS_PROGRAMADOS", "0")
+        db.session.commit()
+
+        for rol in ("repartidor", "preparacion"):
+            self.client.post(
+                "/admin/usuarios/crear",
+                data={
+                    "nombre": f"Rol {rol}",
+                    "email": f"{rol}@disabled.invalid",
+                    "password": "secret1",
+                    "rol": rol,
+                },
+            )
+
+        self.assertIsNone(User.query.filter_by(email="repartidor@disabled.invalid").first())
+        self.assertIsNone(User.query.filter_by(email="preparacion@disabled.invalid").first())
 
     def test_inactive_account_can_be_fully_edited(self):
         user = self._user(

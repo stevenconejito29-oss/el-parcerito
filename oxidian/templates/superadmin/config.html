@@ -43,7 +43,7 @@
       <p>Controla la tienda, entregas, fidelización y conexiones desde un único lugar.</p>
     </div>
     <div class="cfg-header-actions">
-      <a href="{{ url_for('superadmin.zonas') }}" class="ox-btn-secondary">📍 Zonas</a>
+      {% if brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}" class="ox-btn-secondary">📍 Zonas</a>{% endif %}
       <a href="{{ url_for('superadmin.chatbot') }}" class="ox-btn-secondary">💬 Chatbot</a>
       <a href="{{ url_for('public.index') }}" target="_blank" class="ox-btn-ghost">Ver tienda</a>
     </div>
@@ -52,17 +52,17 @@
   <nav class="cfg-nav" aria-label="Secciones de configuración">
     <a href="#tienda">Tienda</a>
     <a href="#operacion">Operación</a>
-    <a href="#entregas">Entregas</a>
-    <a href="#puntos">Puntos</a>
+    {% if brand.delivery %}<a href="#entregas">Entregas</a>{% endif %}
+    {% if brand.puntos %}<a href="#puntos">Puntos</a>{% endif %}
     <a href="#integraciones">Integraciones</a>
     <a href="#avanzado">Avanzado</a>
   </nav>
 
   <section class="cfg-status-grid">
     <a href="{{ url_for('admin.menu_config') }}"><span>Página pública</span><strong>Banners y contenido</strong><small>Editar inicio, menú y checkout</small></a>
-    <a href="{{ url_for('superadmin.zonas') }}"><span>Reparto</span><strong>{{ zonas|selectattr('activo')|list|length }} zonas activas</strong><small>Precios, cobertura y tiempos</small></a>
+    {% if brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}"><span>Reparto</span><strong>{{ zonas|selectattr('activo')|list|length }} zonas activas</strong><small>Precios, cobertura y tiempos</small></a>{% endif %}
     <a href="{{ url_for('superadmin.chatbot') }}"><span>WhatsApp</span><strong>Chatbot y Evolution</strong><small>Estado, QR y sincronización</small></a>
-    <a href="{{ url_for('marketing.puntos') }}"><span>Fidelización</span><strong>Productos y puntos</strong><small>Canjes y movimientos</small></a>
+    {% if brand.puntos %}<a href="{{ url_for('marketing.puntos') }}"><span>Fidelización</span><strong>Productos y puntos</strong><small>Canjes y movimientos</small></a>{% endif %}
   </section>
 
   <section id="tienda" class="cfg-section">
@@ -190,7 +190,7 @@
     </form>
   </section>
 
-  <section id="entregas" class="cfg-section">
+  {% if brand.delivery %}<section id="entregas" class="cfg-section">
     <div class="cfg-section-head"><div><span>3</span><h2>Entregas y cobertura</h2><p>El precio de cada zona aparece en carrito y genera la liquidación del repartidor.</p></div><a href="{{ url_for('superadmin.zonas') }}">Gestionar zonas</a></div>
     <div class="cfg-zone-list">
       {% for zona in zonas %}
@@ -211,9 +211,9 @@
       </div>
       <button type="submit" class="cfg-save-bottom">Guardar cobertura</button>
     </form>
-  </section>
+  </section>{% endif %}
 
-  <form id="puntos" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
+  {% if brand.puntos %}<form id="puntos" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="puntos">
     <div class="cfg-section-head"><div><span>4</span><h2>Club de puntos</h2><p>Reglas globales. Los productos canjeables se gestionan en Marketing.</p></div><button type="submit">Guardar puntos</button></div>
     <div class="cfg-grid">
@@ -221,7 +221,7 @@
       {{ cfg_input('PUNTOS_CANJE_RATIO', 'Puntos equivalentes a 1 €', type='number', min='1', max='100000') }}
     </div>
     <a href="{{ url_for('marketing.puntos') }}" class="cfg-inline-link">Configurar productos canjeables</a>
-  </form>
+  </form>{% endif %}
 
   <form id="integraciones" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="integraciones">

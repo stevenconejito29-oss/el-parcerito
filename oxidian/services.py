@@ -15,6 +15,7 @@ from decimal import Decimal
 from sqlalchemy import and_, or_
 from extensions import db
 from models import User, Order, Caja, StaffPayment, OrderEvent, NotificationOutbox
+from store_config import get_store_features
 
 logger = logging.getLogger(__name__)
 
@@ -354,6 +355,8 @@ def reasignar_responsable_pedido(
     }
     if campo not in reglas:
         raise ValueError("Campo de responsable inválido.")
+    if campo == "repartidor_id" and not get_store_features()["delivery"]:
+        raise ValueError("El módulo de delivery está desactivado.")
 
     anterior_id = getattr(pedido, campo)
     nuevo_id = user_id or None
@@ -835,7 +838,7 @@ def distribuir_pedido(pedido: Order) -> User | None:
                 pedido.numero_pedido,
             )
             return None
-        candidatos.sort(key=lambda u: u.pedidos_activos_como_preparador())
+        candidatos.sort(key=lambda u: (u.pedidos_activos_como_preparador(), u.id))
         pedido.preparador_id = candidatos[0].id
         return candidatos[0]
 
@@ -866,7 +869,7 @@ def distribuir_pedido(pedido: Order) -> User | None:
         )
         return None
 
-    candidatos.sort(key=lambda u: u.pedidos_activos_como_preparador())
+    candidatos.sort(key=lambda u: (u.pedidos_activos_como_preparador(), u.id))
     asignado = candidatos[0]
     pedido.preparador_id = asignado.id
     return asignado
@@ -877,6 +880,8 @@ def distribuir_repartidor(pedido: Order) -> User | None:
     Asigna al repartidor disponible con menos carga cuando el pedido pasa a 'listo'.
     Solo usa repartidores con disponibilidad manual activa y presencia reciente.
     """
+    if not get_store_features()["delivery"]:
+        return None
     if not getattr(pedido, "requiere_reparto", True):
         return None
     if pedido.repartidor_id:
@@ -892,7 +897,7 @@ def distribuir_repartidor(pedido: Order) -> User | None:
         )
         return None
 
-    candidatos.sort(key=lambda u: u.pedidos_activos_como_repartidor())
+    candidatos.sort(key=lambda u: (u.pedidos_activos_como_repartidor(), u.id))
     asignado = candidatos[0]
     pedido.repartidor_id = asignado.id
     return asignado
@@ -900,6 +905,8 @@ def distribuir_repartidor(pedido: Order) -> User | None:
 
 def redistribuir_listos_sin_repartidor() -> int:
     """Asigna pedidos listos cuando un repartidor vuelve a ponerse disponible."""
+    if not get_store_features()["delivery"]:
+        return 0
     pedidos = Order.query.filter_by(
         estado="listo",
         repartidor_id=None,
@@ -946,7 +953,12 @@ def estado_cola() -> dict:
         ).group_by(_Order.repartidor_id).all()
     }
 
-    roles = ["cocina", "preparacion", "repartidor", "staff", "admin"]
+    features = get_store_features()
+    roles = ["cocina", "staff", "admin"]
+    if features["pedidos_programados"]:
+        roles.append("preparacion")
+    if features["delivery"]:
+        roles.append("repartidor")
     resultado = {}
     _roles_prep = {"cocina", "preparacion", "admin"}
     _roles_rep  = {"repartidor", "admin"}

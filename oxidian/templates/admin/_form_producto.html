@@ -88,10 +88,10 @@
         <input type="radio" name="tipo_entrega" value="inmediato" checked
                style="accent-color:#FFAB00"> ⚡ Inmediato
       </label>
-      <label class="fp-radio-label">
+      {% if brand.pedidos_programados %}<label class="fp-radio-label">
         <input type="radio" name="tipo_entrega" value="programado"
                style="accent-color:#FFAB00"> 📆 Programado
-      </label>
+      </label>{% endif %}
     </div>
   </div>
 
@@ -99,9 +99,9 @@
     <label class="fp-section-title">Cómo puede recibirlo el cliente</label>
     <p class="text-xs text-gray-500 mb-2">Esta regla se cruza con los módulos habilitados por Super Admin.</p>
     <div class="flex gap-4 flex-wrap text-sm">
-      <label class="fp-radio-label"><input type="radio" name="modalidad_entrega" value="ambas" checked> Delivery o recogida</label>
-      <label class="fp-radio-label"><input type="radio" name="modalidad_entrega" value="delivery"> Solo delivery</label>
-      <label class="fp-radio-label"><input type="radio" name="modalidad_entrega" value="recogida"> Solo recogida</label>
+      {% if brand.delivery and brand.recogida %}<label class="fp-radio-label"><input type="radio" name="modalidad_entrega" value="ambas" checked> Delivery o recogida</label>{% endif %}
+      {% if brand.delivery %}<label class="fp-radio-label"><input type="radio" name="modalidad_entrega" value="delivery" {% if not brand.recogida %}checked{% endif %}> Solo delivery</label>{% endif %}
+      {% if brand.recogida %}<label class="fp-radio-label"><input type="radio" name="modalidad_entrega" value="recogida" {% if not brand.delivery %}checked{% endif %}> Solo recogida</label>{% endif %}
     </div>
   </div>
 
@@ -148,7 +148,7 @@
   </div>
 
   <!-- ── CANJE CON PUNTOS ── -->
-  <div class="fp-span-full col-span-2 fp-section">
+  {% if brand.puntos %}<div class="fp-span-full col-span-2 fp-section">
     <label class="fp-section-title">Club de Puntos</label>
     <label class="fp-check-label">
       <input type="checkbox" name="canjeable_con_puntos" style="accent-color:#C084FC">
@@ -159,7 +159,7 @@
       <input type="number" name="puntos_para_canje" min="1" placeholder="500"
              class="fp-input" style="max-width:10rem">
     </div>
-  </div>
+  </div>{% endif %}
 
   <!-- ── ALÉRGENOS EU ── -->
   <div class="fp-span-full col-span-2 fp-section">

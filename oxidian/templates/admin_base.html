@@ -58,7 +58,7 @@
           <p class="ox-sb-urole">{{ rol | replace('_',' ') | capitalize }}</p>
         </div>
       </div>
-      {% if rol in ('cocina','preparacion','repartidor') %}
+      {% if rol == 'cocina' or (rol == 'preparacion' and brand.pedidos_programados) or (rol == 'repartidor' and brand.delivery) %}
       {% set _turl = url_for('preparador.toggle_disponible') if rol in ('cocina','preparacion') else url_for('repartidor.toggle_disponible') %}
       <button id="btn-disponible" onclick="toggleDisponible('{{ _turl }}')" class="ox-sb-toggle-btn {{ 'online' if current_user.en_linea else 'offline' }}">
         <span class="ox-sb-toggle-dot" id="dot-disponible"></span>
@@ -119,13 +119,13 @@
         <a href="{{ url_for('preparador.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🍳</span>Cola de cocina</a>
       </div>
 
-      {% elif rol == 'preparacion' %}
+      {% elif rol == 'preparacion' and brand.pedidos_programados %}
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">Mi turno</span>
         <a href="{{ url_for('preparador.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Pedidos por fecha</a>
       </div>
 
-      {% elif rol == 'repartidor' %}
+      {% elif rol == 'repartidor' and brand.delivery %}
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">Mi ruta</span>
         <a href="{{ url_for('repartidor.ruta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🚴</span>Pedidos a entregar</a>
@@ -145,7 +145,7 @@
         <span class="ox-sb-section-label">Marketing</span>
         <a href="{{ url_for('marketing.dashboard') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📣</span>Panel marketing</a>
         <a href="{{ url_for('marketing.campanas') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📲</span>Campañas</a>
-        <a href="{{ url_for('marketing.puntos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💎</span>Puntos</a>
+        {% if brand.puntos %}<a href="{{ url_for('marketing.puntos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💎</span>Puntos</a>{% endif %}
         <a href="{{ url_for('admin.cupones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎟️</span>Cupones</a>
         <a href="{{ url_for('admin.afiliados') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤝</span>Afiliados</a>
         <a href="{{ url_for('admin.menu_config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎨</span>Menú público</a>

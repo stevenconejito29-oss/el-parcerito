@@ -2055,6 +2055,10 @@ async function syncBranding() {
     setCfg('pickup_enabled',   data.pickup_enabled === false ? '0' : '1');
     setCfg('loyalty_enabled',  data.points_enabled === false ? '0' : '1');
     setCfg('scheduled_enabled', data.scheduled_enabled === false ? '0' : '1');
+    setCfg('bizum_enabled', data.bizum_enabled === false ? '0' : '1');
+    setCfg('cash_enabled', data.cash_enabled === false ? '0' : '1');
+    setCfg('horario_apertura', data.horario_apertura || '');
+    setCfg('horario_cierre', data.horario_cierre || '');
     log('info', 'sync_branding', `nombre=${data.nombre} modo=${data.tenant_mode} loyalty=${data.points_enabled}`);
     return true;
   } catch (err) {
@@ -2272,16 +2276,19 @@ function bienvenidaConversacional(ses) {
  * o cuando el flujo conversacional necesita listar opciones (fallback final).
  */
 function menuPrincipal(ses = {}) {
+  const opciones = [
+    `1️⃣  🌐 Abrir la tienda online`,
+    `2️⃣  📋 Consultar o cancelar mi pedido`,
+    String(cfg('loyalty_enabled', '1')) === '1' ? `3️⃣  ⭐ Mis puntos de fidelidad` : null,
+    String(cfg('delivery_enabled', '1')) === '1' ? `4️⃣  🗺️ Saber si llegamos a tu zona` : null,
+    `5️⃣  🕐 Horario, dirección y contacto`,
+    `6️⃣  🔐 Ayuda con entrega o pago`,
+    `7️⃣  💬 Hablar con una persona`,
+  ].filter(Boolean).join('\n');
   return (
     `🤝 *Asistente de ${getNegocioNombre()}*\n\n` +
     `Te ayudo sin tomar pedidos por WhatsApp: la compra se completa en la web para validar stock y opciones.\n\n` +
-    `1️⃣  🌐 Abrir la tienda online\n` +
-    `2️⃣  📋 Consultar o cancelar mi pedido\n` +
-    `3️⃣  ⭐ Mis puntos de fidelidad\n` +
-    `4️⃣  🗺️ Saber si llegamos a tu zona\n` +
-    `5️⃣  🕐 Horario, dirección y contacto\n` +
-    `6️⃣  🔐 Ayuda con entrega o pago\n` +
-    `7️⃣  💬 Hablar con una persona\n\n` +
+    `${opciones}\n\n` +
     `_Responde con el número o cuéntame con tus palabras lo que necesitas._`
   );
 }
@@ -3493,12 +3500,14 @@ const CLIENT_FAQS = [
   {
     name: 'metodos_pago',
     match: /\b(formas?\s+de\s+pag(o|ar)|m[eé]todos?\s+de\s+pag(o|ar)|c[oó]mo\s+pago|c[oó]mo\s+pagar|aceptan\s+(efectivo|tarjeta|bizum)|tarjeta|bizum)\b/i,
-    answer: (ctx) => (
-      `💳 *Formas de pago*\n\n` +
-      `• 💵 Efectivo al recibir\n` +
-      `• 📱 Bizum\n\n` +
-      `Indícalo al confirmar tu pedido. Escribe *menú* para empezar.`
-    ),
+    answer: (ctx) => {
+      const metodos = [
+        ctx.cash_enabled ? '• Efectivo' : null,
+        ctx.bizum_enabled ? '• Bizum' : null,
+      ].filter(Boolean);
+      if (!metodos.length) return `Las formas de pago disponibles se muestran al confirmar en la tienda online: ${ctx.tiendaUrl}`;
+      return `💳 *Formas de pago*\n\n${metodos.join('\n')}\n\nPuedes elegir una al confirmar en la tienda online.`;
+    },
   },
   {
     name: 'tiempo_entrega',
@@ -3507,11 +3516,7 @@ const CLIENT_FAQS = [
       if (!ctx.delivery_enabled) {
         return `🏪 *Solo recogida en local*\n\nAhora mismo no ofrecemos entrega a domicilio. Cuando hagas tu pedido te avisaremos por aquí cuando esté listo para que pases a recogerlo.`;
       }
-      return (
-        `🛵 *Tiempo de entrega*\n\n` +
-        `Normalmente entre 25 y 40 minutos desde que confirmamos el pedido.\n` +
-        `Te avisaremos por aquí cuando esté en camino. 💛`
-      );
+      return `El tiempo de entrega depende de tu zona y del pedido. Verás la estimación real al indicar la dirección en la tienda online: ${ctx.tiendaUrl}`;
     },
   },
   {
@@ -3572,6 +3577,8 @@ function _buildFaqContext(ses) {
     tiendaUrl: getTiendaUrl(),
     delivery_enabled: String(cfg('delivery_enabled', '1') || '1') !== '0',
     pickup_enabled: String(cfg('pickup_enabled', '1') || '1') !== '0',
+    bizum_enabled: String(cfg('bizum_enabled', '1') || '1') !== '0',
+    cash_enabled: String(cfg('cash_enabled', '1') || '1') !== '0',
     ses,
   };
 }
@@ -3677,17 +3684,10 @@ async function handleMainMenu(jid, ses, opcion) {
   const tiendaUrl = getTiendaUrl();
   switch (opcion) {
     case '1': {
-      try {
-        const catalogo = await catalogPreviewText();
-        return sendText(jid,
-          `🍽️ *Menú y combos disponibles*\n\n` +
-          `${catalogo}\n\n` +
-          `📱 Fotos, opciones de combos y pedido directo:\n👉 ${tiendaUrl}\n\n` +
-          `_Escribe *menu* para volver al inicio._`
-        );
-      } catch {
-        return sendText(jid, `No pude leer el catálogo ahora mismo. Puedes verlo aquí:\n👉 ${tiendaUrl}\n\n_Escribe *menu* para volver._`);
-      }
+      return sendText(jid,
+        `La disponibilidad, precios y opciones se consultan directamente en la tienda online:\n👉 ${tiendaUrl}\n\n` +
+        `_Por WhatsApp no mostramos productos ni tomamos pedidos._`
+      );
     }
     case '2': {
       setClientState(ses, 'espera_numero_pedido');
@@ -3698,6 +3698,9 @@ async function handleMainMenu(jid, ses, opcion) {
       );
     }
     case '3': {
+      if (String(cfg('loyalty_enabled', '1')) !== '1') {
+        return sendText(jid, `Esa opción no está disponible en esta tienda.\n\n${menuPrincipal(ses)}`);
+      }
       try {
         const phone = phoneFromJid(jid);
         const data = await oxidianGet(`/puntos?telefono=${phone}`);
@@ -3727,6 +3730,9 @@ async function handleMainMenu(jid, ses, opcion) {
       }
     }
     case '4': {
+      if (String(cfg('delivery_enabled', '1')) !== '1') {
+        return sendText(jid, `Esa opción no está disponible en esta tienda.\n\n${menuPrincipal(ses)}`);
+      }
       setClientState(ses, 'espera_direccion_cobertura');
       return sendText(jid,
         `🗺️ *¿Llegamos a tu zona?*\n\n` +
@@ -4942,6 +4948,7 @@ app.get('/api/status', async (req, res) => {
   } else if (!lastQrDataUrl || Date.now() - lastQrAt > 55_000) {
     await refreshEvolutionQr();
   }
+  const aiStatus = await getAIConfig().catch(() => ({ habilitado: false }));
   res.json({
     ok: true,
     connected: evolutionState === 'open',
@@ -4987,7 +4994,12 @@ app.get('/api/status', async (req, res) => {
     pedidosHoy: 0,
     botEnabled: isBotEnabled(),
     panicMode: !isBotEnabled(),
-    ai: { groq: { activo: false }, gemini: { activo: false }, quota: { exhausted: false } },
+    apiTypeSelected: aiStatus?.habilitado ? aiStatus.proveedor : 'FAQs locales',
+    ai: {
+      habilitada: Boolean(aiStatus?.habilitado),
+      proveedor: aiStatus?.proveedor || null,
+      modelo: aiStatus?.habilitado ? aiStatus.modelo : null,
+    },
     uptime: process.uptime(),
   });
 });
@@ -5213,12 +5225,46 @@ app.post('/api/bot/review-request', async (req, res) => {
 app.post('/api/oxidian/sync', async (req, res) => {
   try {
     if (!requireApiKey(req, res, { panel: true })) return;
-    const catalogo = await syncCatalogo();
+    const [catalogo, branding, ai] = await Promise.all([
+      syncCatalogo(),
+      syncBranding(),
+      getAIConfig(true),
+    ]);
     await syncZonas();
     const prods = db.prepare(`SELECT COUNT(*) as c FROM productos_cache WHERE activo=1`).get().c;
-    return res.json({ ok: true, catalogo, productos_cache: prods });
+    return res.json({
+      ok: true,
+      catalogo,
+      branding,
+      ia_habilitada: Boolean(ai?.habilitado),
+      productos_cache: prods,
+    });
   } catch (e) {
     log('error', 'api_sync', String(e));
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+app.post('/api/ai/test', async (req, res) => {
+  try {
+    if (!requireApiKey(req, res, { panel: true })) return;
+    const config = await getAIConfig(true);
+    if (!config?.habilitado) {
+      return res.status(409).json({ ok: false, error: 'La IA no está habilitada o le falta proveedor, modelo o API key.' });
+    }
+    const out = await _callAIProviderJSON(config, [
+      { role: 'system', content: _smartSystemPrompt(config, 'prueba_interna=si') },
+      { role: 'user', content: 'Responde brevemente qué haces si un cliente quiere realizar un pedido.' },
+    ], 100);
+    if (!out?.json) {
+      return res.status(502).json({ ok: false, error: 'El proveedor no devolvió una respuesta JSON válida.' });
+    }
+    return res.json({
+      ok: true,
+      message: `IA conectada (${config.proveedor}/${config.modelo}). Acción: ${out.json.action || 'sin acción'}`,
+    });
+  } catch (e) {
+    log('error', 'ai_test', String(e));
     return res.status(500).json({ ok: false, error: String(e) });
   }
 });

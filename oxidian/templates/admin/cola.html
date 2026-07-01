@@ -9,7 +9,7 @@
   <div>
     <span class="work-eyebrow">Centro operativo</span>
     <h1 class="work-title">Cola y equipo</h1>
-    <p class="work-subtitle">Detecta bloqueos, asigna responsables y equilibra la carga de cocina, preparación y reparto.</p>
+    <p class="work-subtitle">Detecta bloqueos, asigna responsables y equilibra la carga operativa{% if brand.delivery %} y de reparto{% endif %}.</p>
   </div>
   <div class="work-actions-top">
     <a href="{{ url_for('admin.pedidos') }}" class="work-btn work-btn-ghost">Ver pedidos</a>
@@ -22,11 +22,11 @@
     <strong>{{ total_sin_asignar }}</strong>
     <small>sin responsable</small>
   </div>
-  <div class="queue-kpi {{ 'warn' if total_sin_repartidor else '' }}">
+  {% if brand.delivery %}<div class="queue-kpi {{ 'warn' if total_sin_repartidor else '' }}">
     <span>Reparto</span>
     <strong>{{ total_sin_repartidor }}</strong>
     <small>listos sin ruta</small>
-  </div>
+  </div>{% endif %}
   <div class="queue-kpi">
     <span>Equipo</span>
     <strong>{{ cola.values()|map('length')|sum }}</strong>
@@ -70,7 +70,7 @@
       </div>
     </div>
 
-    <div class="queue-section">
+    {% if brand.delivery %}<div class="queue-section">
       <div class="queue-section-head route">
         <div>
           <h2>Listos sin repartidor</h2>
@@ -101,7 +101,7 @@
         <div class="queue-empty">No hay pedidos esperando repartidor.</div>
         {% endfor %}
       </div>
-    </div>
+    </div>{% endif %}
   </section>
 
   <aside class="queue-team">

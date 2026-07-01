@@ -43,6 +43,7 @@ from services import (estado_cola, registrar_egreso, registrar_ingreso,
 from services import reasignar_responsable_pedido
 from routes.uploads import _save_image, _borrar_imagen
 from phone_utils import normalizar_telefono_cliente
+from store_config import get_store_features
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -200,11 +201,22 @@ def _parse_acuerdo_proveedor(form):
     return modelo, comision
 
 
-def _roles_editables_usuario():
+def _roles_editables_usuario(rol_actual=None):
     """Roles que el usuario actual puede asignar desde el panel admin."""
-    if current_user.rol == "super_admin":
-        return list(_ROLES_USUARIO_SUPERADMIN)
-    return list(_ROLES_USUARIO_BASE)
+    roles = list(
+        _ROLES_USUARIO_SUPERADMIN
+        if current_user.rol == "super_admin"
+        else _ROLES_USUARIO_BASE
+    )
+    features = get_store_features()
+    if not features["delivery"]:
+        roles = [rol for rol in roles if rol != "repartidor"]
+    if not features["pedidos_programados"]:
+        roles = [rol for rol in roles if rol != "preparacion"]
+    # Conserva editable una cuenta histórica sin habilitar su rol para altas nuevas.
+    if rol_actual in ROLES_AUTENTICABLES and rol_actual not in roles:
+        roles.append(rol_actual)
+    return roles
 
 
 def _es_cuenta_gestionable(usuario):
@@ -1792,9 +1804,12 @@ def _parsear_campos_producto(form):
         canal_preparacion = "cocina"
 
     _TIPOS_ENTREGA_VALIDOS = {"inmediato", "programado"}
+    features = get_store_features()
     tipo_entrega = form.get("tipo_entrega", "inmediato")
     if tipo_entrega not in _TIPOS_ENTREGA_VALIDOS:
         tipo_entrega = "inmediato"
+    if tipo_entrega == "programado" and not features["pedidos_programados"]:
+        return None, "Los pedidos por fecha están desactivados por Super Admin."
     fecha_llegada = parse_date(form.get("fecha_llegada"))
     if tipo_entrega == "programado" and not fecha_llegada:
         return None, "Indica la fecha de llegada para productos programados."
@@ -1803,13 +1818,22 @@ def _parsear_campos_producto(form):
     modalidad_entrega = (form.get("modalidad_entrega") or "ambas").strip().lower()
     if modalidad_entrega not in {"ambas", "delivery", "recogida"}:
         return None, "La modalidad debe ser delivery, recogida o ambas."
+    permitidas = {
+        modo for modo, activo in (
+            ("delivery", features["delivery"]),
+            ("recogida", features["recogida"]),
+        ) if activo
+    }
+    requeridas = {"delivery", "recogida"} if modalidad_entrega == "ambas" else {modalidad_entrega}
+    if not (requeridas & permitidas):
+        return None, "La modalidad del producto pertenece a un módulo desactivado."
 
     hora_inicio = parse_time(form.get("hora_inicio_visibilidad"))
     hora_fin = parse_time(form.get("hora_fin_visibilidad"))
     if bool(hora_inicio) != bool(hora_fin):
         return None, "Indica hora de inicio y hora de fin, o deja ambas vacías."
 
-    canjeable = bool(form.get("canjeable_con_puntos"))
+    canjeable = features["puntos"] and bool(form.get("canjeable_con_puntos"))
     puntos_para_canje = form.get("puntos_para_canje", type=int)
     if canjeable and (not puntos_para_canje or puntos_para_canje <= 0):
         return None, "Indica cuántos puntos se necesitan para el canje (debe ser > 0)."
@@ -3421,7 +3445,7 @@ def editar_usuario(user_id):
         abort(404)
     if not _puede_gestionar_cuenta(u):
         abort(403)
-    roles_validos = _roles_editables_usuario()
+    roles_validos = _roles_editables_usuario(u.rol)
     if request.method == "GET":
         return render_template("admin/usuario_editar.html", usuario=u, roles_validos=roles_validos,
                                proveedores=[])

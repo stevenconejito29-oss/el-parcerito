@@ -207,7 +207,7 @@
     {% endif %}
 
     {# ── LISTOS PARA REPARTIR ── #}
-    {% if pedidos_listos %}
+    {% if brand.delivery and pedidos_listos %}
     <div class="dash-section">
       <div class="dash-section-header dash-header-ready">
         <span>🟢</span>
@@ -250,7 +250,7 @@
     {% endif %}
 
     {# ── EN RUTA ── #}
-    {% if pedidos_en_ruta %}
+    {% if brand.delivery and pedidos_en_ruta %}
     <div class="dash-section">
       <div class="dash-section-header dash-header-route">
         <span>🟣</span>

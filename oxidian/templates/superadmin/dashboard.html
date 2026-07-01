@@ -16,6 +16,25 @@
   </div>
 </div>
 
+<div class="sa-section-label">Módulos de esta tienda</div>
+<div class="sa-quick-grid">
+  {% for slug, nombre, activo, detalle in [
+    ('delivery', 'Delivery', brand.delivery, 'Checkout, zonas y repartidores'),
+    ('recogida', 'Recogida', brand.recogida, 'Pedidos para recoger en local'),
+    ('programados', 'Pedidos por fecha', brand.pedidos_programados, 'Productos y cola de preparación'),
+    ('puntos', 'Canje de puntos', brand.puntos, 'Fidelización y productos canjeables')
+  ] %}
+  <form method="POST" action="{{ url_for('superadmin.toggle_modulo', modulo=slug) }}" class="sa-quick" style="display:block;text-align:left">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="enabled" value="{{ '0' if activo else '1' }}">
+    <span class="sa-status-dot {{ 'sa-dot-on' if activo else 'sa-dot-off' }}"></span>
+    <p class="sa-quick-name">{{ nombre }}</p>
+    <p class="sa-quick-sub">{{ detalle }}</p>
+    <button class="sa-mini-btn mt-3" type="submit">{{ 'Desactivar' if activo else 'Activar' }}</button>
+  </form>
+  {% endfor %}
+</div>
+
 {# ── KPIs PRINCIPALES ── #}
 <div class="sa-kpi-row">
   <div class="sa-kpi sa-kpi-green">
@@ -34,7 +53,7 @@
     <span class="sa-kpi-icon">⚡</span>
     <p class="sa-kpi-val">{{ pedidos_sin_asignar }}</p>
     <p class="sa-kpi-lbl">Pedidos sin asignar</p>
-    <p class="sa-kpi-sub">Cocina {{ pedidos_sin_preparador }} · Reparto {{ pedidos_sin_repartidor }}</p>
+    <p class="sa-kpi-sub">Cocina {{ pedidos_sin_preparador }}{% if brand.delivery %} · Reparto {{ pedidos_sin_repartidor }}{% endif %}</p>
   </a>
   <div class="sa-kpi {{ 'sa-kpi-green' if saldo_total >= 0 else 'sa-kpi-red' }}">
     <span class="sa-kpi-icon">📊</span>
@@ -57,11 +76,13 @@
     <p class="sa-quick-name">Admins & Permisos</p>
     <p class="sa-quick-sub">Crea y gestiona admins</p>
   </a>
+  {% if brand.delivery %}
   <a href="{{ url_for('superadmin.zonas') }}" class="sa-quick">
     <span class="sa-quick-icon">📍</span>
     <p class="sa-quick-name">Zonas de entrega</p>
     <p class="sa-quick-sub">Precios y cobertura</p>
   </a>
+  {% endif %}
   <a href="{{ url_for('superadmin.pl') }}" class="sa-quick">
     <span class="sa-quick-icon">📈</span>
     <p class="sa-quick-name">P&L / Finanzas</p>
@@ -149,7 +170,8 @@
     </div>
   </div>
 
-  {# Puntos #}
+  {# Puntos — solo si el módulo está activo #}
+  {% if brand.puntos %}
   <div class="sa-status-card">
     <div class="sa-status-head">
       <span class="sa-status-dot sa-dot-neutral" style="background:#a78bfa;box-shadow:0 0 0 4px rgba(167,139,250,.12)"></span>
@@ -162,6 +184,7 @@
       <div><p class="sa-points-val" style="color:#a78bfa">{{ clientes_con_puntos }}</p><p class="sa-status-meta">Clientes activos</p></div>
     </div>
   </div>
+  {% endif %}
 
 </div>
 

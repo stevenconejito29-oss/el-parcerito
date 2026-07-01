@@ -7,7 +7,7 @@
   <a href="{{ url_for('admin.cupones') }}" class="ox-btn-secondary" style="font-size:.8rem">🎟️ Cupones</a>
   <a href="{{ url_for('admin.afiliados') }}" class="ox-btn-secondary" style="font-size:.8rem">🤝 Afiliados</a>
   <a href="{{ url_for('admin.resenas') }}" class="ox-btn-secondary" style="font-size:.8rem">⭐ Reseñas</a>
-  <a href="{{ url_for('marketing.puntos') }}" class="ox-btn-secondary" style="font-size:.8rem">💎 Puntos</a>
+  {% if brand.puntos %}<a href="{{ url_for('marketing.puntos') }}" class="ox-btn-secondary" style="font-size:.8rem">💎 Puntos</a>{% endif %}
   <a href="{{ url_for('marketing.campanas') }}" class="ox-btn-secondary" style="font-size:.8rem">📲 Campañas</a>
   <a href="{{ url_for('admin.menu_config') }}" class="ox-btn-secondary" style="font-size:.8rem">🎨 Banners</a>
 </div>

@@ -2723,6 +2723,28 @@ class SiteConfig(db.Model):
             return None
 
 
+class BotAiUsage(db.Model):
+    """Consumo agregado por llamada IA; el teléfono nunca se guarda en claro."""
+    __tablename__ = "bot_ai_usage"
+
+    id = db.Column(db.Integer, primary_key=True)
+    telefono_hash = db.Column(db.String(64), nullable=False, index=True)
+    tokens_in = db.Column(db.Integer, nullable=False, default=0)
+    tokens_out = db.Column(db.Integer, nullable=False, default=0)
+    creado_en = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
+
+
+class BotAiMessage(db.Model):
+    """Ventana conversacional breve para evitar enviar historiales completos al LLM."""
+    __tablename__ = "bot_ai_messages"
+
+    id = db.Column(db.Integer, primary_key=True)
+    telefono_hash = db.Column(db.String(64), nullable=False, index=True)
+    rol = db.Column(db.String(12), nullable=False)
+    contenido = db.Column(db.Text, nullable=False)
+    creado_en = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
+
+
 # ─────────────────────────────────────────────
 # LOG DE AUDITORÍA
 # ─────────────────────────────────────────────

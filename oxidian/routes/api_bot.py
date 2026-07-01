@@ -8,6 +8,7 @@ import os
 import uuid
 import threading
 import hmac
+import hashlib
 import urllib.request
 import urllib.error
 from functools import wraps
@@ -20,6 +21,7 @@ from models import (User, Product, Categoria, Order, OrderItem, OrderProviderSta
                     Coupon, ComboItem,
                     AffiliateCode, ZonaEntrega,
                     PointsLog, SiteConfig, IdempotencyKey, normalizar_metodo_pago,
+                    BotAiUsage, BotAiMessage,
                     PriceHistory, metadata_componente_combo,
                     metadata_item_pedido, utcnow as _utcnow)
 from idempotency import request_idempotency_key, request_body_hash, IDEMPOTENCY_TTL
@@ -152,6 +154,117 @@ def ai_config():
         "modelo": SiteConfig.get("BOT_AI_MODEL", "") or "",
         "temperature": 0.2, "max_tokens": 220,
         "reglas_extra": SiteConfig.get("BOT_AI_RULES", "") or "",
+        "memoria_mensajes": 4,
+        "system_prompt": (
+            "Eres el asistente informativo de {NEGOCIO}. No tomas ni creas pedidos. "
+            "Para comprar, dirige siempre a {TIENDA_URL}. No inventes información."
+        ),
+        "placeholders": {
+            "NEGOCIO": SiteConfig.get("NOMBRE_NEGOCIO", "la tienda") or "la tienda",
+            "TIENDA_URL": SiteConfig.get("TIENDA_URL", "") or SiteConfig.get("OXIDIAN_PUBLIC_URL", ""),
+        },
+    })
+
+
+def _ai_phone_hash(telefono):
+    normalizado = normalizar_telefono_cliente(telefono)
+    if not telefono_valido(normalizado):
+        return None, normalizado
+    secret = str(current_app.config.get("SECRET_KEY") or "oxidian-ai")
+    digest = hmac.new(secret.encode(), normalizado.encode(), hashlib.sha256).hexdigest()
+    return digest, normalizado
+
+
+def _ai_limit(name, default):
+    try:
+        return max(1, int(SiteConfig.get(name, str(default)) or default))
+    except (TypeError, ValueError):
+        return default
+
+
+@api_bot_bp.route("/ai/usage", methods=["POST"])
+@bot_required
+def ai_usage():
+    payload = request.get_json(silent=True) or {}
+    phone_hash, _ = _ai_phone_hash(payload.get("telefono"))
+    if not phone_hash:
+        return jsonify({"ok": False, "error": "telefono inválido"}), 400
+    inicio = datetime.combine(date.today(), datetime.min.time())
+    global_count = BotAiUsage.query.filter(BotAiUsage.creado_en >= inicio).count()
+    client_count = BotAiUsage.query.filter(
+        BotAiUsage.creado_en >= inicio,
+        BotAiUsage.telefono_hash == phone_hash,
+    ).count()
+    global_limit = _ai_limit("BOT_AI_DAILY_GLOBAL", 500)
+    client_limit = _ai_limit("BOT_AI_DAILY_CLIENT", 20)
+    tokens_in = max(0, min(int(payload.get("tokens_in") or 0), 100000))
+    tokens_out = max(0, min(int(payload.get("tokens_out") or 0), 100000))
+    exceeded_global = global_count >= global_limit
+    exceeded_client = client_count >= client_limit
+    # El preflight (0/0) solo consulta; una llamada real se registra una vez.
+    if (tokens_in or tokens_out) and not exceeded_global and not exceeded_client:
+        db.session.add(BotAiUsage(
+            telefono_hash=phone_hash,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+        ))
+        db.session.commit()
+        global_count += 1
+        client_count += 1
+    return jsonify({
+        "ok": True,
+        "count_today_global": global_count,
+        "count_today_client": client_count,
+        "exceeded_global": exceeded_global,
+        "exceeded_client": exceeded_client,
+    })
+
+
+@api_bot_bp.route("/ai/memory", methods=["GET", "POST"])
+@bot_required
+def ai_memory():
+    payload = (request.get_json(silent=True) or {}) if request.method == "POST" else {}
+    phone_hash, _ = _ai_phone_hash(payload.get("telefono") or request.args.get("telefono"))
+    if not phone_hash:
+        return jsonify({"ok": False, "error": "telefono inválido"}), 400
+    cutoff = _utcnow() - timedelta(days=7)
+    if request.method == "POST":
+        rol = (payload.get("rol") or "").strip().lower()
+        contenido = (payload.get("contenido") or "").strip()[:1200]
+        if rol not in {"user", "assistant"} or not contenido:
+            return jsonify({"ok": False, "error": "mensaje inválido"}), 400
+        db.session.add(BotAiMessage(telefono_hash=phone_hash, rol=rol, contenido=contenido))
+        db.session.query(BotAiMessage).filter(BotAiMessage.creado_en < cutoff).delete(synchronize_session=False)
+        db.session.commit()
+    rows = BotAiMessage.query.filter(
+        BotAiMessage.telefono_hash == phone_hash,
+        BotAiMessage.creado_en >= cutoff,
+    ).order_by(BotAiMessage.id.desc()).limit(4).all()
+    return jsonify({
+        "ok": True,
+        "messages": [{"role": row.rol, "content": row.contenido} for row in reversed(rows)],
+    })
+
+
+@api_bot_bp.route("/ai/cliente-context")
+@bot_required
+def ai_cliente_context():
+    cliente, _ = _cliente_por_telefono(request.args.get("telefono"))
+    if not cliente:
+        return jsonify({"ok": True, "cliente": None})
+    pedidos = cliente.pedidos.order_by(Order.creado_en.desc()).limit(3).all()
+    features = get_store_features()
+    return jsonify({
+        "ok": True,
+        "cliente": {
+            "nombre": cliente.nombre,
+            "puntos": int(cliente.puntos or 0) if features["puntos"] else None,
+            "total_pedidos": cliente.pedidos.count(),
+            "pedidos_recientes": [
+                {"numero": p.numero_pedido, "estado": p.estado, "total": float(p.total or 0)}
+                for p in pedidos
+            ],
+        },
     })
 
 
@@ -180,6 +293,10 @@ def branding():
         "pickup_enabled": features["recogida"],
         "scheduled_enabled": features["pedidos_programados"],
         "points_enabled": features["puntos"],
+        "bizum_enabled": _config_bool("BIZUM_HABILITADO"),
+        "cash_enabled": _config_bool("EFECTIVO_HABILITADO"),
+        "horario_apertura": SiteConfig.get("HORARIO_APERTURA", ""),
+        "horario_cierre": SiteConfig.get("HORARIO_CIERRE", ""),
     })
 
 

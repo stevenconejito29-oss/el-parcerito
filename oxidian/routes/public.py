@@ -191,9 +191,10 @@ def _fulfillment_from_request(default=None, options=None):
     options = list(options if options is not None else _fulfillment_options())
     if not options:
         return None
-    requested = (request.form.get("tipo_entrega_cliente") or default or options[0]).strip().lower()
+    explicit = request.form.get("tipo_entrega_cliente")
+    requested = (explicit or default or options[0]).strip().lower()
     if requested not in options:
-        requested = options[0]
+        return None if explicit else options[0]
     return requested
 
 

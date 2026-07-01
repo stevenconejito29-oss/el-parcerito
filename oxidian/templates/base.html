@@ -34,6 +34,7 @@
 
   <title>{% block title %}{{ brand.nombre }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.generated.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian.css', v=asset_version) }}">
   <style>
     :root {
@@ -560,6 +561,8 @@ window.oxActivarPush = async function(btn) {
   } catch (_) {}
 })();
 </script>
+<script src="{{ url_for('static', filename='js/storefront-viewport.js', v=asset_version) }}" defer></script>
+<script src="{{ url_for('static', filename='js/storefront-toast.js', v=asset_version) }}" defer></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

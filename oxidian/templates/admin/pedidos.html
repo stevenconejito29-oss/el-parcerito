@@ -69,7 +69,7 @@
       <p class="text-xs mt-1" style="color:var(--col-faint)">
         Pago: {{ pedido.metodo_pago or '—' }}{% if pedido.pago_confirmado and pedido.pago_confirmado_en %} · Cobrado {{ pedido.pago_confirmado_en.strftime('%d/%m %H:%M') }}{% endif %}{% if pedido.zona %} · Zona: {{ pedido.zona.nombre }}{% endif %}
         {% if pedido.preparador %} · Prep: {{ pedido.preparador.nombre }}{% endif %}
-        {% if pedido.repartidor %} · Reparto: {{ pedido.repartidor.nombre }}{% endif %}
+        {% if brand.delivery and pedido.repartidor %} · Reparto: {{ pedido.repartidor.nombre }}{% endif %}
       </p>
     </div>
     <div class="text-right">
@@ -112,12 +112,12 @@
         <option value="{{ u.id }}" {% if pedido.preparador_id == u.id %}selected{% endif %}>{{ u.nombre }} · {{ u.pedidos_activos_como_preparador() }} activos</option>
         {% endfor %}
       </select>
-      <select name="repartidor_id" class="ord-select">
+      {% if brand.delivery %}<select name="repartidor_id" class="ord-select">
         <option value="">Repartidor</option>
         {% for u in repartidores %}
         <option value="{{ u.id }}" {% if pedido.repartidor_id == u.id %}selected{% endif %}>{{ u.nombre }} · {{ u.pedidos_activos_como_repartidor() }} activos</option>
         {% endfor %}
-      </select>
+      </select>{% endif %}
       <button type="submit" class="ord-btn">Asignar</button>
     </form>
 

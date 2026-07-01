@@ -255,6 +255,10 @@
    CATÁLOGO — GRID DE TARJETAS
 ══════════════════════════════════════════ #}
 <section id="catalogo" class="ep-section">
+  <div class="ep-empty-state" data-storefront-empty hidden>
+    <span class="ep-empty-state__icon">🔍</span>
+    <p>No hay productos en esta categoría.</p>
+  </div>
   {% if not busqueda and not categoria_activa %}
   <div class="ep-section-head">
     <h2 class="ep-section-title">🍽️ Nuestro menú</h2>
@@ -500,6 +504,8 @@ function epFilterCategory(categoryId, updateUrl = true) {
     section.hidden = !section.querySelector('.ep-card:not([hidden])');
   });
   document.querySelector('.ep-pill-count')?.replaceChildren(document.createTextNode(`${visible} productos`));
+  const emptyState = document.querySelector('[data-storefront-empty]');
+  if (emptyState) emptyState.hidden = visible !== 0;
   if (updateUrl) {
     const url = new URL(location.href);
     if (value) url.searchParams.set('categoria', value); else url.searchParams.delete('categoria');

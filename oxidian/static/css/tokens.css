@@ -1,0 +1,353 @@
+/* tokens.css — sistema de variables central de la tienda pública.
+ * Cargado ANTES de oxidian.css. Permite swap de tema y mantener contraste
+ * sin tocar cada hoja.
+ *
+ * Capas:
+ *   :root            -> tema oscuro por defecto.
+ *   [data-theme=light] -> overrides para modo claro.
+ *
+ * Convención de nombres:
+ *   --col-*    -> superficies neutras (fondos, bordes, textos).
+ *   --brand-*  -> color de marca (configurable por SiteConfig + bar cliente).
+ *   --status-* -> verde/amarillo/rojo de estado (no son brand).
+ *   --safe-*   -> insets iOS/Android (los pinta storefront-viewport.js).
+ *   --vh / --app-height -> viewport útil real (storefront-viewport.js).
+ *
+ * Contraste WCAG AA: cada par texto-sobre-fondo aquí cumple ≥ 4.5:1
+ * salvo --col-muted que es para texto secundario (≥ 3.5:1).
+ */
+
+:root {
+  /* Superficies (modo oscuro por defecto) */
+  --col-bg:        #0D0A08;
+  --col-surface:   #1A1410;
+  --col-elevated:  #211A14;
+  --col-hover:     #2A211A;
+  --col-border:    rgba(255, 243, 232, 0.10);
+  --col-border-2:  rgba(255, 243, 232, 0.18);
+  --col-text:      #FFF3E8;
+  --col-muted:     rgba(255, 243, 232, 0.72);
+  --col-faint:     rgba(255, 243, 232, 0.46);
+
+  /* Estados (semánticos, NO son brand) */
+  --status-ok:        #27AE74;
+  --status-ok-soft:   rgba(39, 174, 116, 0.14);
+  --status-warn:      #FFB020;
+  --status-warn-soft: rgba(255, 176, 32, 0.14);
+  --status-err:       #FF5350;
+  --status-err-soft:  rgba(255, 83, 80, 0.14);
+  --status-info:      #4F8DFF;
+  --status-info-soft: rgba(79, 141, 255, 0.14);
+
+  /* Brand: defaults — se sobrescriben en base.html con valores de SiteConfig */
+  --brand-primary:           #FFC200;
+  --brand-primary-soft:      rgba(255, 194, 0, 0.14);
+  --brand-primary-contrast:  #1A1410;   /* texto sobre amarillo */
+  --brand-secondary:         #E84545;
+  --brand-secondary-contrast:#FFFFFF;   /* texto sobre rojo */
+  --brand-accent:            #27AE74;
+  --brand-accent-contrast:   #FFFFFF;
+
+  /* Sombras (deben verse sobre dark) */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.36);
+  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.46);
+
+  /* Radii */
+  --radius-1: 8px;
+  --radius-2: 12px;
+  --radius-3: 16px;
+  --radius-pill: 999px;
+
+  /* Insets (storefront-viewport.js los actualiza en runtime) */
+  --safe-top: 0px;
+  --safe-bottom: 0px;
+  --app-height: 100vh;
+}
+
+/* Modo claro: invierte las superficies; brand se mantiene. */
+html[data-theme="light"] {
+  --col-bg:        #FAF6F1;
+  --col-surface:   #FFFFFF;
+  --col-elevated:  #F2EDE6;
+  --col-hover:     #EDE6DC;
+  --col-border:    rgba(20, 14, 8, 0.10);
+  --col-border-2:  rgba(20, 14, 8, 0.18);
+  --col-text:      #1A1410;
+  --col-muted:     rgba(20, 14, 8, 0.66);
+  --col-faint:     rgba(20, 14, 8, 0.40);
+  --shadow-1: 0 1px 2px rgba(20, 14, 8, 0.08);
+  --shadow-2: 0 4px 12px rgba(20, 14, 8, 0.10);
+  --shadow-3: 0 12px 32px rgba(20, 14, 8, 0.14);
+}
+
+/* ─────────────────────────────────────────────
+   Helpers genéricos que DEPENDEN solo de tokens
+   ───────────────────────────────────────────── */
+
+/* Card base: usar en .ep-product, .pd-card, .ox-card si no tienen estilo propio */
+.ox-card,
+.ep-product,
+.pd-card {
+  background: var(--col-surface);
+  border: 1px solid var(--col-border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+  color: var(--col-text);
+}
+
+.ep-product:hover,
+.pd-card:hover,
+.ox-card:hover {
+  background: var(--col-elevated);
+  box-shadow: var(--shadow-3);
+}
+
+/* Botón primario unificado */
+.ox-btn-primary {
+  background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 78%, #000));
+  color: var(--brand-primary-contrast) !important;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 60%, #000);
+  font-weight: 700;
+}
+
+.ox-btn-primary:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.ox-btn-primary:disabled,
+.ox-btn-primary[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  filter: none;
+}
+
+/* ─────────────────────────────────────────────
+   Toasts v2 (storefront-toast.js)
+   ───────────────────────────────────────────── */
+.ox-toast-stack {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 84px); /* sobre bottom nav */
+  transform: translateX(-50%);
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  width: min(420px, calc(100vw - 24px));
+}
+
+.ox-toast-v2 {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  background: var(--col-elevated);
+  border: 1px solid var(--col-border-2);
+  border-radius: var(--radius-2);
+  padding: 10px 12px;
+  color: var(--col-text);
+  font-size: 14px;
+  box-shadow: var(--shadow-3);
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity .26s cubic-bezier(.2,.7,.2,1), transform .26s cubic-bezier(.2,.7,.2,1);
+  pointer-events: auto;
+}
+
+.ox-toast-v2.is-in { opacity: 1; transform: translateY(0); }
+.ox-toast-v2.is-out { opacity: 0; transform: translateY(-8px); }
+
+.ox-toast-v2__icon {
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  font-weight: 900;
+  font-size: 13px;
+}
+.ox-toast-v2-success .ox-toast-v2__icon { background: var(--status-ok-soft); color: var(--status-ok); }
+.ox-toast-v2-success { border-color: color-mix(in srgb, var(--status-ok) 32%, transparent); }
+.ox-toast-v2-danger .ox-toast-v2__icon,
+.ox-toast-v2-error .ox-toast-v2__icon  { background: var(--status-err-soft); color: var(--status-err); }
+.ox-toast-v2-danger,
+.ox-toast-v2-error  { border-color: color-mix(in srgb, var(--status-err) 32%, transparent); }
+.ox-toast-v2-warning .ox-toast-v2__icon { background: var(--status-warn-soft); color: var(--status-warn); }
+.ox-toast-v2-warning { border-color: color-mix(in srgb, var(--status-warn) 32%, transparent); }
+.ox-toast-v2-info .ox-toast-v2__icon    { background: var(--status-info-soft); color: var(--status-info); }
+.ox-toast-v2-info    { border-color: color-mix(in srgb, var(--status-info) 32%, transparent); }
+
+.ox-toast-v2__text { line-height: 1.35; }
+.ox-toast-v2__close {
+  background: transparent; border: 0; color: var(--col-faint);
+  font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 6px;
+  border-radius: 6px;
+}
+.ox-toast-v2__close:hover { color: var(--col-text); background: var(--col-hover); }
+
+/* ─────────────────────────────────────────────
+   Modal de confirmación
+   ───────────────────────────────────────────── */
+.ox-modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  z-index: 9500;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  opacity: 0; transition: opacity .2s;
+}
+.ox-modal-backdrop.is-in { opacity: 1; }
+
+.ox-modal {
+  background: var(--col-surface);
+  color: var(--col-text);
+  border: 1px solid var(--col-border-2);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-3);
+  padding: 20px;
+  max-width: 420px; width: 100%;
+}
+.ox-modal__title { font-size: 18px; font-weight: 800; margin: 0 0 8px; }
+.ox-modal__body  { font-size: 14px; color: var(--col-muted); margin-bottom: 18px; line-height: 1.45; }
+.ox-modal__actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.ox-modal__btn {
+  min-height: 44px; padding: 0 18px;
+  border-radius: var(--radius-pill);
+  font-weight: 700; font-size: 14px; border: 1px solid transparent;
+  cursor: pointer;
+}
+.ox-modal__btn--ghost {
+  background: transparent; color: var(--col-text);
+  border-color: var(--col-border-2);
+}
+.ox-modal__btn--ghost:hover { background: var(--col-hover); }
+.ox-modal__btn--primary {
+  background: var(--brand-primary);
+  color: var(--brand-primary-contrast);
+}
+.ox-modal__btn--danger {
+  background: var(--status-err);
+  color: #fff;
+}
+
+/* ─────────────────────────────────────────────
+   Filtro client-side (storefront-filter.js)
+   ───────────────────────────────────────────── */
+[data-storefront-product].is-hidden,
+.ep-card.is-hidden { display: none !important; }
+
+.ep-cat-section.is-empty { display: none !important; }
+
+[data-empty-state][hidden],
+[data-storefront-empty][hidden] { display: none !important; }
+
+.ep-empty-state {
+  text-align: center;
+  padding: 36px 16px;
+  color: var(--col-muted);
+  background: var(--col-surface);
+  border: 1px dashed var(--col-border-2);
+  border-radius: var(--radius-3);
+  margin-top: 16px;
+}
+.ep-empty-state__icon { font-size: 38px; display: block; margin-bottom: 6px; }
+
+/* ─────────────────────────────────────────────
+   Responsive: dvh, safe-area
+   ───────────────────────────────────────────── */
+html, body { min-height: 100vh; min-height: 100dvh; }
+
+@supports (height: 100dvh) {
+  .ox-fullh { height: 100dvh; }
+}
+.ox-fullh { height: var(--app-height, 100vh); }
+
+/* Bottom nav respeta safe-area-inset-bottom */
+.ep-bottom-nav,
+[data-bottom-nav] {
+  padding-bottom: max(var(--safe-bottom), 10px);
+}
+/* Header sticky no se mete bajo Dynamic Island */
+.ox-header-public {
+  padding-top: max(var(--safe-top), 0px);
+}
+
+/* Inputs y selects: tamaño mínimo iOS (≥16px) para evitar zoom auto */
+input[type="text"],
+input[type="search"],
+input[type="email"],
+input[type="tel"],
+input[type="number"],
+input[type="password"],
+select, textarea {
+  font-size: max(16px, 1rem);
+}
+
+/* Tap targets mínimos */
+.ep-cat, .ep-bottom-nav a, .ep-bottom-nav button,
+.ox-header-cart, .ox-employee-login {
+  min-height: 44px;
+}
+
+/* ─────────────────────────────────────────────
+   Grupos de extras (producto.html)
+   ───────────────────────────────────────────── */
+.pd-extra-group {
+  background: var(--col-elevated);
+  border: 1px solid var(--col-border);
+  border-radius: var(--radius-2);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.pd-extra-group__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; margin-bottom: 8px;
+}
+.pd-extra-group__name { font-weight: 700; font-size: 15px; color: var(--col-text); }
+.pd-extra-group__rule {
+  font-size: 11px; padding: 2px 8px; border-radius: var(--radius-pill);
+  background: var(--col-hover); color: var(--col-muted);
+  white-space: nowrap;
+}
+.pd-extra-group--required .pd-extra-group__rule {
+  background: var(--brand-primary-soft);
+  color: var(--brand-primary);
+  font-weight: 700;
+}
+.pd-extra-group__error {
+  font-size: 12px; color: var(--status-err); margin-top: 6px;
+  min-height: 16px;
+}
+.pd-extra-group__list { display: grid; gap: 6px; }
+.pd-extra-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-1);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.pd-extra-item:hover { background: var(--col-hover); }
+.pd-extra-item--checked {
+  background: var(--brand-primary-soft);
+  border-color: color-mix(in srgb, var(--brand-primary) 40%, transparent);
+}
+.pd-extra-item--disabled {
+  opacity: 0.42; cursor: not-allowed;
+}
+.pd-extra-item input { accent-color: var(--brand-primary); }
+.pd-extra-item__name { flex: 1; color: var(--col-text); font-size: 14px; }
+.pd-extra-item__price { color: var(--col-muted); font-weight: 600; font-size: 13px; }
+
+.pd-extra-group--invalid {
+  border-color: var(--status-err);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-err) 22%, transparent);
+}
+
+.pd-add-btn.is-blocked,
+.pd-add-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

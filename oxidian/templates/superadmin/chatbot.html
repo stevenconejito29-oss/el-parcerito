@@ -175,11 +175,11 @@
   <div class="ox-card p-4">
     <h2 class="cb-section-title mb-3">📋 Menú que ve el cliente</h2>
     <ol class="chat-menu-list space-y-1.5">
-      <li class="flex items-center gap-2"><span class="cb-num">1</span>Ver menú y combos</li>
+      <li class="flex items-center gap-2"><span class="cb-num">1</span>Abrir la tienda online</li>
       <li class="flex items-center gap-2"><span class="cb-num">2</span>Estado de mi pedido</li>
-      <li class="flex items-center gap-2"><span class="cb-num">3</span>Mis puntos</li>
-      <li class="flex items-center gap-2"><span class="cb-num">4</span>Cobertura de delivery</li>
-      <li class="flex items-center gap-2"><span class="cb-num">5</span>Abrir tienda online</li>
+      {% if brand.puntos %}<li class="flex items-center gap-2"><span class="cb-num">3</span>Mis puntos</li>{% endif %}
+      {% if brand.delivery %}<li class="flex items-center gap-2"><span class="cb-num">4</span>Cobertura de delivery</li>{% endif %}
+      <li class="flex items-center gap-2"><span class="cb-num">5</span>Horario y contacto</li>
       <li class="flex items-center gap-2"><span class="cb-num">6</span>Horarios y contacto</li>
       <li class="flex items-center gap-2"><span class="cb-num">7</span>Hablar con una persona</li>
     </ol>
@@ -194,7 +194,7 @@
       <span class="cb-check-icon">📦</span>
       <div>
         <p class="font-semibold text-sm text-white">Catálogo sincronizado</p>
-        <p class="text-xs mt-0.5" style="color:var(--col-muted)">Para menú y combos en WhatsApp</p>
+        <p class="text-xs mt-0.5" style="color:var(--col-muted)">Uso interno del panel administrativo</p>
       </div>
     </div>
     <div class="cb-check-item">
@@ -227,10 +227,10 @@
 
 {# ── SECCIÓN 4: CONFIG TÉCNICA ── #}
 <div class="cb-section-label">4 · Configuración técnica</div>
-<details class="ox-card p-5 chat-config-details mb-5">
+<details class="ox-card p-5 chat-config-details mb-5" open>
   <summary class="chat-config-summary">
     <div>
-      <strong>URLs, credenciales e instancia</strong>
+      <strong>Conexiones y asistente IA</strong>
       <small>Parámetros internos — no exponer al equipo</small>
     </div>
     <span class="chat-config-chevron">⌄</span>
@@ -307,6 +307,59 @@
     <div class="lg:col-span-2 flex flex-wrap gap-2 pt-2" style="border-top:1px solid var(--col-border)">
       <button class="ox-btn-primary text-sm" type="submit">💾 Guardar y conectar</button>
       <a href="{{ url_for('superadmin.config') }}" class="ox-btn-ghost text-sm">Ver variables globales</a>
+    </div>
+
+    {# ───────────────────────── ASISTENTE IA ───────────────────────── #}
+    <div class="lg:col-span-2" style="border-top:1px solid var(--col-border); padding-top:1rem; margin-top:.75rem">
+      <h3 class="cb-section-title" style="font-size:1rem; margin-bottom:.4rem">🧠 Asistente IA del chatbot</h3>
+      <p class="chat-help" style="margin-bottom:.9rem">
+        El bot solo da <strong>información</strong> (menú, horario, cobertura, estado del pedido). Para pedir,
+        siempre redirige a la tienda. La IA es solo fallback cuando las FAQs no aciertan — cacheado por
+        similitud para ahorrar tokens.
+      </p>
+    </div>
+
+    <div>
+      <label class="chat-label">IA habilitada</label>
+      <select name="bot_ai_enabled" class="chat-input">
+        <option value="0" {% if bot_ai_enabled != '1' %}selected{% endif %}>No (solo FAQs + intents)</option>
+        <option value="1" {% if bot_ai_enabled == '1' %}selected{% endif %}>Sí (con fallback IA)</option>
+      </select>
+      <p class="chat-help">Si está apagada, el bot responde solo con FAQs y un mensaje genérico cuando no entiende.</p>
+      {% if bot_ai_enabled == '1' %}
+      <button type="submit" formaction="{{ url_for('superadmin.chatbot_test_ai') }}" formmethod="post" class="ox-btn-ghost text-sm mt-2">Probar conexión IA</button>
+      {% endif %}
+    </div>
+
+    <div>
+      <label class="chat-label">Proveedor IA</label>
+      <select name="bot_ai_provider" class="chat-input">
+        <option value="">— ninguno —</option>
+        <option value="groq" {% if bot_ai_provider == 'groq' %}selected{% endif %}>Groq (gratis hasta cierto límite)</option>
+        <option value="openai" {% if bot_ai_provider == 'openai' %}selected{% endif %}>OpenAI</option>
+      </select>
+      <p class="chat-help">Groq es la opción más barata para empezar.</p>
+    </div>
+
+    <div>
+      <label class="chat-label">API key de IA</label>
+      <input type="password" name="bot_ai_api_key" value="" class="chat-input" autocomplete="new-password" placeholder="{{ '*** clave guardada ***' if bot_ai_api_key_set else 'Pega aquí la API key' }}">
+      <p class="chat-help">Se queda vacío si ya hay una clave guardada. Solo se sobrescribe si escribes algo.</p>
+    </div>
+
+    <div>
+      <label class="chat-label">Modelo</label>
+      <input name="bot_ai_model" value="{{ bot_ai_model }}" class="chat-input" placeholder="llama-3.1-8b-instant">
+      <p class="chat-help">Por defecto sugerido: Groq → llama-3.1-8b-instant · OpenAI → gpt-4o-mini.</p>
+    </div>
+
+    <div class="lg:col-span-2">
+      <label class="chat-label">Reglas extra del asistente (prompt opcional)</label>
+      <textarea name="bot_ai_rules" rows="3" class="chat-input" placeholder="Ej: Siempre responde en español. Cuando alguien pida un producto, di 'Mírelo y pídalo en la tienda: TIENDA_URL'. No tomes pedidos por WhatsApp.">{{ bot_ai_rules }}</textarea>
+      <p class="chat-help">Se concatena al prompt base. Mantén las instrucciones cortas para ahorrar tokens.</p>
+    </div>
+    <div class="lg:col-span-2 flex justify-end pt-2">
+      <button class="ox-btn-primary text-sm" type="submit">Guardar configuración e IA</button>
     </div>
   </form>
 </details>

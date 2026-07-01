@@ -20,6 +20,20 @@ marketing_bp = Blueprint("marketing", __name__)
 ROLES_MARKETING = {"admin", "super_admin"}  # marketing rol eliminado — acceso solo admin/superadmin
 
 
+@marketing_bp.before_request
+def _bloquear_puntos_si_feature_off():
+    """Si FEATURE_PUNTOS=0, las rutas /marketing/puntos* devuelven 404 para
+    no exponer panel de un módulo desactivado. Las otras rutas (campañas,
+    cupones, etc.) siguen accesibles."""
+    if "/puntos" not in (request.path or ""):
+        return None
+    from store_config import get_store_features
+    if not get_store_features()["puntos"]:
+        from flask import abort
+        abort(404)
+    return None
+
+
 def marketing_required(f):
     @wraps(f)
     @login_required

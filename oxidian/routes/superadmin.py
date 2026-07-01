@@ -13,6 +13,7 @@ from extensions import db, get_or_404
 from models import (User, Order, Caja, StaffPayment, Product,
                     ZonaEntrega, SiteConfig, AuditLog,
                     AdminFeature, ADMIN_FEATURES, PointsLog, utcnow)
+from store_config import get_store_features
 
 superadmin_bp = Blueprint("superadmin", __name__)
 
@@ -463,6 +464,7 @@ def superadmin_required(f):
 @superadmin_bp.route("/dashboard")
 @superadmin_required
 def dashboard():
+    features = get_store_features()
     hoy = date.today()
     ayer = hoy - timedelta(days=1)
 
@@ -492,10 +494,13 @@ def dashboard():
         Order.estado.in_(["pendiente", "armando"]),
         Order.preparador_id == None,
     ).count()
-    pedidos_sin_repartidor = Order.query.filter(
-        Order.estado == "listo",
-        Order.repartidor_id == None,
-    ).count()
+    pedidos_sin_repartidor = 0
+    if features["delivery"]:
+        pedidos_sin_repartidor = Order.query.filter(
+            Order.estado == "listo",
+            Order.repartidor_id == None,
+            Order.tipo_entrega_cliente == "delivery",
+        ).count()
     pedidos_sin_asignar = pedidos_sin_preparador + pedidos_sin_repartidor
 
     # Puntos
@@ -540,6 +545,56 @@ def dashboard():
                            brand_config=brand_config)
 
 
+@superadmin_bp.route("/modulos/<modulo>/toggle", methods=["POST"])
+@superadmin_required
+def toggle_modulo(modulo):
+    """Interruptor rápido; SiteConfig sigue siendo la única fuente de verdad."""
+    claves = {
+        "delivery": "FEATURE_DELIVERY",
+        "recogida": "FEATURE_RECOGIDA",
+        "programados": "FEATURE_PEDIDOS_PROGRAMADOS",
+        "puntos": "FEATURE_PUNTOS",
+    }
+    clave = claves.get(modulo)
+    if not clave:
+        flash("Módulo desconocido.", "danger")
+        return redirect(url_for("superadmin.dashboard"))
+    activar = request.form.get("enabled") == "1"
+    features = get_store_features()
+    if not activar and (
+        (modulo == "delivery" and not features["recogida"])
+        or (modulo == "recogida" and not features["delivery"])
+    ):
+        flash("Debe quedar activo al menos delivery o recogida.", "danger")
+        return redirect(url_for("superadmin.dashboard"))
+    SiteConfig.set(
+        clave,
+        "1" if activar else "0",
+        user_id=current_user.id,
+        descripcion=f"Módulo {modulo}",
+    )
+    AuditLog.registrar(
+        current_user.id,
+        "toggle_modulo",
+        "site_config",
+        detalle=f"{clave}={'1' if activar else '0'}",
+        ip=request.remote_addr,
+    )
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash("No se pudo actualizar el módulo.", "danger")
+        return redirect(url_for("superadmin.dashboard"))
+    ok, msg = _sincronizar_chatbot_runtime()
+    estado = "activado" if activar else "desactivado"
+    flash(
+        f"Módulo {modulo} {estado}." + ("" if ok else f" Bot pendiente: {msg}"),
+        "success" if ok else "warning",
+    )
+    return redirect(url_for("superadmin.dashboard"))
+
+
 @superadmin_bp.route("/chatbot")
 @superadmin_required
 def chatbot():
@@ -553,6 +608,11 @@ def chatbot():
     evolution_instance = SiteConfig.get("EVOLUTION_INSTANCE", "oxidian")
     webhook_secret = SiteConfig.get("WEBHOOK_SECRET", "")
     bot_admin_numbers = SiteConfig.get("BOT_ADMIN_NUMBERS", "")
+    bot_ai_enabled = SiteConfig.get("BOT_AI_ENABLED", "0") or "0"
+    bot_ai_provider = (SiteConfig.get("BOT_AI_PROVIDER", "") or "").strip().lower()
+    bot_ai_model = SiteConfig.get("BOT_AI_MODEL", "") or ""
+    bot_ai_rules = SiteConfig.get("BOT_AI_RULES", "") or ""
+    bot_ai_api_key_set = bool(SiteConfig.get("BOT_AI_API_KEY", ""))
     status = _bot_get_status(bot_api_url)
     evolution_status = _evolution_get_status(evolution_api_url, evolution_api_key)
     return render_template("superadmin/chatbot.html",
@@ -566,6 +626,11 @@ def chatbot():
                            evolution_instance=evolution_instance,
                            webhook_secret=webhook_secret,
                            bot_admin_numbers=bot_admin_numbers,
+                           bot_ai_enabled=bot_ai_enabled,
+                           bot_ai_provider=bot_ai_provider,
+                           bot_ai_model=bot_ai_model,
+                           bot_ai_rules=bot_ai_rules,
+                           bot_ai_api_key_set=bot_ai_api_key_set,
                            evolution_status=evolution_status,
                            status=status)
 
@@ -723,7 +788,12 @@ def _sincronizar_chatbot_runtime(panel_key=None):
     if not ok_admins:
         return False, f"Integraciones conectadas, pero falló la lista de administradores: {msg_admins}"
 
-    return True, "Credenciales y administradores sincronizados entre Oxidian y el bot."
+    ok_sync, msg_sync = _bot_panel_post(
+        "/api/oxidian/sync", {}, timeout=15, panel_key=active_panel_key
+    )
+    if not ok_sync:
+        return False, f"Credenciales guardadas, pero falló la sincronización de módulos e IA: {msg_sync}"
+    return True, "Credenciales, módulos, catálogo e IA sincronizados con el bot."
 
 
 @superadmin_bp.route("/chatbot/guardar", methods=["POST"])
@@ -802,6 +872,31 @@ def guardar_chatbot():
         user_id=current_user.id,
         descripcion="Números adicionales autorizados para administrar el chatbot",
     )
+
+    # ── Configuración del Asistente IA del bot ──
+    ai_enabled = "1" if request.form.get("bot_ai_enabled") == "1" else "0"
+    ai_provider = (request.form.get("bot_ai_provider") or "").strip().lower()
+    if ai_provider not in {"", "groq", "openai"}:
+        ai_provider = ""
+    ai_model = (request.form.get("bot_ai_model") or "").strip()[:80]
+    ai_rules = (request.form.get("bot_ai_rules") or "").strip()[:1500]
+    ai_api_key_new = (request.form.get("bot_ai_api_key") or "").strip()
+    ai_api_key = ai_api_key_new or SiteConfig.get("BOT_AI_API_KEY", "")
+    if ai_enabled == "1" and (not ai_provider or not ai_model or not ai_api_key):
+        flash("Para activar la IA debes indicar proveedor, modelo y API key.", "danger")
+        return redirect(url_for("superadmin.chatbot"))
+    SiteConfig.set("BOT_AI_ENABLED", ai_enabled, user_id=current_user.id,
+                   descripcion="Activa/desactiva el fallback IA del bot")
+    SiteConfig.set("BOT_AI_PROVIDER", ai_provider, user_id=current_user.id,
+                   descripcion="Proveedor IA (groq | openai)")
+    SiteConfig.set("BOT_AI_MODEL", ai_model, user_id=current_user.id,
+                   descripcion="Modelo IA usado por el bot")
+    SiteConfig.set("BOT_AI_RULES", ai_rules, user_id=current_user.id,
+                   descripcion="Reglas extra del system prompt del bot")
+    if ai_api_key_new:
+        SiteConfig.set("BOT_AI_API_KEY", ai_api_key_new, user_id=current_user.id,
+                       descripcion="API key del proveedor IA del bot")
+
     AuditLog.registrar(current_user.id, "guardar_chatbot", "site_config",
                        detalle=bot_url, ip=request.remote_addr)
     try:
@@ -829,6 +924,14 @@ def sincronizar_chatbot():
 @superadmin_required
 def sincronizar_chatbot_catalogo():
     ok, msg = _bot_panel_post("/api/oxidian/sync", {}, timeout=12)
+    flash(msg, "success" if ok else "danger")
+    return redirect(url_for("superadmin.chatbot"))
+
+
+@superadmin_bp.route("/chatbot/test-ai", methods=["POST"])
+@superadmin_required
+def chatbot_test_ai():
+    ok, msg = _bot_panel_post("/api/ai/test", {}, timeout=20)
     flash(msg, "success" if ok else "danger")
     return redirect(url_for("superadmin.chatbot"))
 
@@ -898,6 +1001,11 @@ def guardar_config():
     if not ok:
         flash(error, "danger")
         return redirect(url_for("superadmin.config"))
+    if clave in {"FEATURE_DELIVERY", "FEATURE_RECOGIDA"} and valor == "0":
+        otra = "FEATURE_RECOGIDA" if clave == "FEATURE_DELIVERY" else "FEATURE_DELIVERY"
+        if SiteConfig.get(otra, "1") == "0":
+            flash("Debe quedar habilitado delivery o recogida.", "danger")
+            return redirect(url_for("superadmin.config"))
     SiteConfig.set(clave, valor, user_id=current_user.id, descripcion=descripcion)
     es_secreto = any(token in clave for token in ("KEY", "SECRET", "PASSWORD", "TOKEN"))
     valor_auditado = "<redacted>" if es_secreto else valor
@@ -1195,9 +1303,19 @@ def activar_todos_features(user_id):
 
 # ─── ZONAS DE ENTREGA ─────────────────────────
 
+def _exigir_delivery_para_zonas():
+    """Las zonas de entrega solo aplican si delivery está activo. Si no, devolvemos
+    404 para evitar que se gestionen configs huérfanas."""
+    from store_config import get_store_features
+    if not get_store_features()["delivery"]:
+        from flask import abort
+        abort(404)
+
+
 @superadmin_bp.route("/zonas")
 @superadmin_required
 def zonas():
+    _exigir_delivery_para_zonas()
     zonas = ZonaEntrega.query.order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
     return render_template("superadmin/zonas.html", zonas=zonas)
 
@@ -1205,6 +1323,7 @@ def zonas():
 @superadmin_bp.route("/zonas/crear", methods=["POST"])
 @superadmin_required
 def crear_zona():
+    _exigir_delivery_para_zonas()
     data, error = _parse_zona_form(request.form)
     if error:
         flash(error, "danger")
@@ -1225,6 +1344,7 @@ def crear_zona():
 @superadmin_bp.route("/zonas/<int:zona_id>/editar", methods=["GET", "POST"])
 @superadmin_required
 def editar_zona(zona_id):
+    _exigir_delivery_para_zonas()
     zona = get_or_404(ZonaEntrega, zona_id)
     if request.method == "GET":
         return render_template("superadmin/zona_editar.html", zona=zona)
@@ -1249,6 +1369,7 @@ def editar_zona(zona_id):
 @superadmin_bp.route("/zonas/<int:zona_id>/toggle", methods=["POST"])
 @superadmin_required
 def toggle_zona(zona_id):
+    _exigir_delivery_para_zonas()
     zona = get_or_404(ZonaEntrega, zona_id)
     if zona.activo:
         activas_restantes = ZonaEntrega.query.filter(
