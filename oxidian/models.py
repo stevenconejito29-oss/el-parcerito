@@ -737,10 +737,47 @@ class Product(db.Model):
                 return False
             if self.tipo_entrega != "inmediato":
                 return True
-            return self._combo_stock_total_origen(key) >= cantidad
+            # Disponibilidad del combo hereda de sus componentes: si cada
+            # componente está disponible en la tienda (individualmente), el
+            # combo está disponible. Ignoramos la cantidad de receta para el
+            # display público — el cálculo exacto se hace en el checkout.
+            return self._combo_componentes_disponibles(key)
         if self.tipo_entrega != "inmediato":
             return True
         return self.stock_para_origen(key) >= int(cantidad or 1)
+
+    def _combo_componentes_disponibles(self, origen):
+        """True si TODOS los componentes fijos y al menos una opción de cada
+        grupo seleccionable están disponibles en la tienda para ese origen.
+        No aplica la cantidad de receta — un producto de tienda disponible
+        implica que el combo también lo está."""
+        grupos = {}
+        for item in self.combo_items:
+            if not item.activo:
+                continue
+            if item.es_seleccionable:
+                grupos.setdefault(item.grupo_seleccion or "Seleccion", []).append(item)
+                continue
+            if not self._componente_item_disponible(item, origen):
+                return False
+        for opciones in grupos.values():
+            if not any(self._componente_item_disponible(op, origen) for op in opciones if op.activo):
+                return False
+        return True
+
+    @staticmethod
+    def _componente_item_disponible(item, origen):
+        """Un componente cuenta como disponible si el producto individual lo está.
+        Respeta stock_mostrar_en_web: sin control → siempre disponible; con
+        control → basta con stock >= 1 (misma regla que la tienda)."""
+        comp = item.componente
+        if not comp or not comp.activo:
+            return False
+        if (comp.tipo_entrega or "inmediato") != "inmediato":
+            return True
+        if not bool(getattr(comp, "stock_mostrar_en_web", False)):
+            return True
+        return comp.stock_para_origen(origen) >= 1
 
     def disponible_para_venta_en_origen(self, origen, cantidad=1):
         return self.disponible_para_venta(cantidad, origen=origen)
