@@ -270,9 +270,17 @@
     </div>
 
   {% else %}
-    {# Sección "Canje con puntos" — productos solo-canje separados en su propio bloque. #}
-    {% set productos_solo_canje = productos|selectattr('solo_canje')|list %}
-    {% set productos_venta = productos|rejectattr('solo_canje')|list %}
+    {# Sección "Canje con puntos" — productos solo-canje separados en su propio bloque.
+       Solo aparece si el módulo de puntos está activo (brand.puntos ⇐ FEATURE_PUNTOS).
+       Si está apagado, los productos solo_canje se excluyen también del catálogo de
+       venta — no se pueden comprar con dinero, así que no deben mostrarse. #}
+    {% if brand.puntos %}
+      {% set productos_solo_canje = productos|selectattr('solo_canje')|list %}
+      {% set productos_venta = productos|rejectattr('solo_canje')|list %}
+    {% else %}
+      {% set productos_solo_canje = [] %}
+      {% set productos_venta = productos|rejectattr('solo_canje')|list %}
+    {% endif %}
     {% if productos_solo_canje %}
     <div class="ep-cat-section ep-cat-section-puntos" data-section-cat="_canje">
       <h3 class="ep-cat-title ep-cat-title-puntos">⭐ Canje con puntos</h3>
