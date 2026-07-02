@@ -14,11 +14,11 @@
       <img src="{{ _src }}" alt="{{ p.nombre }}" loading="lazy"
            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
       <div class="ep-card-img-emoji" style="display:none">
-        {%- if p.es_combo %}🎁{%- elif p.categoria and 'beb' in p.categoria.nombre|lower %}🥤{%- elif p.categoria and 'arepa' in p.categoria.nombre|lower %}🫓{%- elif p.categoria and 'dulce' in p.categoria.nombre|lower or p.categoria and 'postre' in p.categoria.nombre|lower %}🍮{%- else %}🥟{%- endif %}
+        {%- if p.es_combo %}🎁{%- elif p.categoria and 'beb' in p.categoria.nombre|lower %}🥤{%- elif p.categoria and ('dulce' in p.categoria.nombre|lower or 'postre' in p.categoria.nombre|lower) %}🍮{%- elif p.categoria and 'pizza' in p.categoria.nombre|lower %}🍕{%- elif p.categoria and 'ensalada' in p.categoria.nombre|lower %}🥗{%- else %}{{ brand.fallback_emoji or '🍽️' }}{%- endif %}
       </div>
     {% else %}
       <div class="ep-card-img-emoji">
-        {%- if p.es_combo %}🎁{%- elif p.categoria and 'beb' in p.categoria.nombre|lower %}🥤{%- elif p.categoria and 'arepa' in p.categoria.nombre|lower %}🫓{%- elif p.categoria and 'dulce' in p.categoria.nombre|lower or p.categoria and 'postre' in p.categoria.nombre|lower %}🍮{%- else %}🥟{%- endif %}
+        {%- if p.es_combo %}🎁{%- elif p.categoria and 'beb' in p.categoria.nombre|lower %}🥤{%- elif p.categoria and ('dulce' in p.categoria.nombre|lower or 'postre' in p.categoria.nombre|lower) %}🍮{%- elif p.categoria and 'pizza' in p.categoria.nombre|lower %}🍕{%- elif p.categoria and 'ensalada' in p.categoria.nombre|lower %}🥗{%- else %}{{ brand.fallback_emoji or '🍽️' }}{%- endif %}
       </div>
     {% endif %}
 

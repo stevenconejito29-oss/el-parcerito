@@ -2126,9 +2126,13 @@ def menu_flow():
         # Construir categorías disponibles
         categorias = Categoria.query.filter_by(activo=True).order_by(Categoria.id).all()
         cats_menu = []
+        # Iconos por categoría — palabras neutrales que aplican a cualquier tienda.
         emojis_cat = {
-            "empanada": "🥟", "frito": "🥟", "arepa": "🫓", "plato": "🫓",
-            "bebida": "🥤", "dulce": "🍮", "postre": "🍮", "combo": "🎁"
+            "bebida": "🥤", "refresco": "🥤", "cerveza": "🥤",
+            "dulce": "🍮", "postre": "🍮", "helado": "🍮",
+            "combo": "🎁", "pack": "🎁", "menu": "🎁",
+            "pizza": "🍕", "burger": "🍔", "hambur": "🍔",
+            "ensalada": "🥗", "sopa": "🍲", "caldo": "🍲",
         }
         for i, cat in enumerate(categorias, 1):
             emoji = "🍽️"

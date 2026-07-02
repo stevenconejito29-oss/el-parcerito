@@ -945,7 +945,7 @@ def _seed_demo_data():
     # ── Categorías ────────────────────────────────────────────────
     cat_data = [
         ("Combos",          "Los mejores combos de la casa",             1,  "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=200&fit=crop"),
-        ("Fritos & Snacks", "Empanadas, tequeños, buñuelos y más",       2,  "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=200&fit=crop"),
+        ("Fritos & Snacks", "Tequeños, buñuelos y aperitivos crujientes", 2,  "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=200&fit=crop"),
         ("Arepas & Platos", "Platos típicos colombianos y venezolanos",  3,  None),
         ("Postres",         "Dulces y postres latinos tradicionales",    4,  None),
         ("Bebidas",         "Refrescos, jugos y aguas",                  5,  "https://images.unsplash.com/photo-1544145945-f90425340c7e?w=200&fit=crop"),
@@ -971,20 +971,6 @@ def _seed_demo_data():
     #         dias_anticipacion_encargo, stock_mostrar_en_web
     demo_products = [
         # ── Fritos ──
-        ("Empanada de Pollo",
-         "Empanada frita crujiente rellena de pollo guisado y papa criolla. Receta venezolana auténtica.",
-         2.50, 1.00, "Fritos & Snacks", 60, "inmediato",
-         {"imagen_url": U.format("1601050690597-df0568f70950"),
-          "origen_pais": "Venezuela",
-          "alergenos_info": "Gluten, Huevos",
-          "stock_mostrar_en_web": True}),
-
-        ("Empanada de Carne",
-         "Empanada de carne molida sazonada con especias colombianas. Perfecta como snack.",
-         2.80, 1.10, "Fritos & Snacks", 50, "inmediato",
-         {"imagen_url": U.format("1432139509613-5c4255815697"),
-          "origen_pais": "Colombia",
-          "alergenos_info": "Gluten, Huevos"}),
 
         ("Tequeños de Queso (4 uds)",
          "Palitos fritos de masa de maíz rellenos de queso blanco venezolano. Sin gluten.",
@@ -1071,14 +1057,14 @@ def _seed_demo_data():
 
         # ── Combos ──
         ("Combo Parcerito",
-         "El favorito del barrio: 2 empanadas a elegir + 1 bebida a elegir. ¡Todo por menos!",
+         "El favorito del barrio: snacks a elegir + 1 bebida a elegir. ¡Todo por menos!",
          6.50, 2.80, "Combos", 0, "inmediato",
          {"imagen_url": U.format("1550547660-d9450f859349"),
           "origen_pais": "Carmona",
           "es_combo": True}),
 
         ("Combo Familiar",
-         "Para toda la familia: 6 empanadas surtidas + 2 bebidas a elegir + 2 postres.",
+         "Para toda la familia: snacks surtidos + 2 bebidas a elegir + 2 postres.",
          18.50, 8.50, "Combos", 0, "inmediato",
          {"imagen_url": U.format("1504674900247-0877df9cc836"),
           "origen_pais": "Carmona",
@@ -1127,22 +1113,12 @@ def _seed_demo_data():
         p = Product.query.filter_by(nombre=n).first()
         return p
 
-    # Combo Parcerito: 2x empanada (seleccionable: pollo o carne) + 1 bebida (seleccionable)
+    # Combo Parcerito: 2x snack + 1 bebida (seleccionable)
     combo1 = pid("Combo Parcerito")
-    emp_pol = pid("Empanada de Pollo")
-    emp_car = pid("Empanada de Carne")
     malta   = pid("Malta Colombiana 33cl")
     agua    = pid("Agua Mineral 33cl")
     jugo    = pid("Jugo Natural de Lulo")
     if combo1 and not ComboItem.query.filter_by(combo_id=combo1.id).first():
-        if emp_pol:
-            db.session.add(ComboItem(combo_id=combo1.id, producto_id=emp_pol.id,
-                                     cantidad=2, es_seleccionable=True,
-                                     grupo_seleccion="Elige tu empanada", max_selecciones=1))
-        if emp_car:
-            db.session.add(ComboItem(combo_id=combo1.id, producto_id=emp_car.id,
-                                     cantidad=2, es_seleccionable=True,
-                                     grupo_seleccion="Elige tu empanada", max_selecciones=1))
         if malta:
             db.session.add(ComboItem(combo_id=combo1.id, producto_id=malta.id,
                                      cantidad=1, es_seleccionable=True,
@@ -1157,13 +1133,13 @@ def _seed_demo_data():
                                      grupo_seleccion="Elige tu bebida", max_selecciones=1))
         changed = True
 
-    # Combo Familiar: 6x empanada (seleccionable max 2) + 2 bebidas (seleccionable) + 2 postres fijos
+    # Combo Familiar: snacks + 2 bebidas (seleccionable) + 2 postres fijos
     combo2 = pid("Combo Familiar")
     natilla = pid("Natilla Colombiana")
     majarete = pid("Majarete de Coco")
     teq = pid("Tequeños de Queso (4 uds)")
     if combo2 and not ComboItem.query.filter_by(combo_id=combo2.id).first():
-        for ep in [emp_pol, emp_car, teq]:
+        for ep in [teq]:
             if ep:
                 db.session.add(ComboItem(combo_id=combo2.id, producto_id=ep.id,
                                          cantidad=2, es_seleccionable=True,
@@ -1242,8 +1218,6 @@ def _seed_demo_data():
         cliente2 = User.query.filter_by(email="cliente2@oxidian.com").first()
         zona = ZonaEntrega.query.filter_by(nombre="Carmona Centro").first()
 
-        emp_pol  = Product.query.filter_by(nombre="Empanada de Pollo").first()
-        emp_car  = Product.query.filter_by(nombre="Empanada de Carne").first()
         teq      = Product.query.filter_by(nombre="Tequeños de Queso (4 uds)").first()
         bunuelos = Product.query.filter_by(nombre="Buñuelos de Queso (6 uds)").first()
         malta    = Product.query.filter_by(nombre="Malta Colombiana 33cl").first()
@@ -1308,23 +1282,23 @@ def _seed_demo_data():
 
         if cliente1 and cliente2:
             _make_order("OX-DEMO-001", cliente1, "entregado",  "efectivo", 6,
-                        [(emp_pol, 2), (malta, 1)], zona)
+                        [(teq, 2), (malta, 1)], zona)
             _make_order("OX-DEMO-002", cliente2, "entregado",  "bizum",    5,
                         [(teq, 1), (bunuelos, 1), (agua, 2)], zona)
             _make_order("OX-DEMO-003", cliente1, "entregado",  "efectivo", 4,
                         [(combo1, 1), (natilla, 1)], zona)
             _make_order("OX-DEMO-004", cliente2, "entregado",  "bizum",    3,
-                        [(emp_car, 3), (jugo, 1), (majarete, 1)], zona)
+                        [(bunuelos, 3), (jugo, 1), (majarete, 1)], zona)
             _make_order("OX-DEMO-005", cliente1, "entregado",  "efectivo", 2,
-                        [(emp_pol, 1), (emp_car, 1), (agua, 1)], zona)
+                        [(teq, 1), (bunuelos, 1), (agua, 1)], zona)
             _make_order("OX-DEMO-006", cliente2, "en_ruta",    "bizum",    0,
                         [(combo1, 1), (agua, 1)], zona)
             _make_order("OX-DEMO-007", cliente1, "armando",    "efectivo", 0,
                         [(teq, 2), (malta, 1)], zona)
             _make_order("OX-DEMO-008", cliente2, "pendiente",  "bizum",    0,
-                        [(emp_pol, 4), (bunuelos, 1), (jugo, 2)], zona)
+                        [(bunuelos, 1), (jugo, 2)], zona)
             _make_order("OX-DEMO-009", cliente1, "cancelado",  "efectivo", 1,
-                        [(emp_car, 2), (agua, 1)], zona)
+                        [(bunuelos, 2), (agua, 1)], zona)
             _make_order("OX-DEMO-010", cliente2, "listo",      "bizum",    0,
                         [(natilla, 2), (majarete, 1), (malta, 1)], zona)
 

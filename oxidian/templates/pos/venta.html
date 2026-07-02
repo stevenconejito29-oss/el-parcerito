@@ -73,7 +73,7 @@
         </div>
         {% else %}
         <div class="pos-prod-emoji">
-          {{ '🎁' if p.es_combo else ('🛑' if p.tipo_entrega == 'inmediato' and pos_stock <= 0 else ('🥟' if 'empanada' in p.nombre|lower else ('🥤' if p.categoria and p.categoria.nombre|lower == 'bebidas' else '🍽️'))) }}
+          {{ '🎁' if p.es_combo else ('🛑' if p.tipo_entrega == 'inmediato' and pos_stock <= 0 else ('🥤' if p.categoria and p.categoria.nombre|lower == 'bebidas' else '🍽️')) }}
         </div>
         {% endif %}
         <div class="pos-prod-info">

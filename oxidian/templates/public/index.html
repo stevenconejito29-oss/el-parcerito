@@ -10,13 +10,19 @@
   {{- url|upload_url -}}
 {%- endmacro %}
 {% macro cat_emoji(n) -%}
+  {#- Iconos por categoría — palabras neutras (sin nombres de plato concretos).
+      El emoji de fallback de marca (brand.fallback_emoji) se usa como default
+      genérico → el super_admin lo cambia desde /superadmin/config si quiere
+      otro icono base para su tienda. -#}
   {%- set nl = n|lower -%}
-  {%- if 'empanada' in nl or 'frito' in nl or 'snack' in nl or 'buñuelo' in nl or 'tequeño' in nl -%}🥟
-  {%- elif 'arepa' in nl or 'plato' in nl or 'bandeja' in nl -%}🫓
-  {%- elif 'bebida' in nl or 'refresco' in nl or 'jugo' in nl or 'agua' in nl -%}🥤
-  {%- elif 'dulce' in nl or 'postre' in nl or 'torta' in nl -%}🍮
-  {%- elif 'combo' in nl or 'pack' in nl -%}🎁
+  {%- if 'bebida' in nl or 'refresco' in nl or 'jugo' in nl or 'agua' in nl or 'cerveza' in nl -%}🥤
+  {%- elif 'dulce' in nl or 'postre' in nl or 'torta' in nl or 'helado' in nl -%}🍮
+  {%- elif 'combo' in nl or 'pack' in nl or 'menu' in nl or 'menú' in nl -%}🎁
   {%- elif 'sopa' in nl or 'caldo' in nl -%}🍲
+  {%- elif 'pizza' in nl -%}🍕
+  {%- elif 'burger' in nl or 'hambur' in nl -%}🍔
+  {%- elif 'ensalada' in nl -%}🥗
+  {%- elif 'entrada' in nl or 'aperitivo' in nl or 'tapa' in nl or 'snack' in nl -%}🍢
   {%- else -%}🍽️{%- endif -%}
 {%- endmacro %}
 {% macro storefront_url(categoria=None, q=None) -%}

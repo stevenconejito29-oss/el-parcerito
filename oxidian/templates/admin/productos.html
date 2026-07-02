@@ -50,7 +50,7 @@
 <div class="flex gap-2 mb-4" id="tabs-productos">
   <button onclick="mostrarTab('productos')" id="tab-productos"
           class="px-4 py-2 rounded-xl text-sm font-bold tab-active">
-    🥟 Productos ({{ productos|selectattr('es_combo','equalto',false)|list|length }})
+    {{ brand.fallback_emoji or '🍽️' }} Productos ({{ productos|selectattr('es_combo','equalto',false)|list|length }})
   </button>
   <button onclick="mostrarTab('combos')" id="tab-combos"
           class="px-4 py-2 rounded-xl text-sm font-bold tab-inactive">

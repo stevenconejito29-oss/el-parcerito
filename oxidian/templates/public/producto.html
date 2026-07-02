@@ -189,7 +189,7 @@
               {% set comp_src = item.componente.imagen_url|upload_url %}
               <img src="{{ comp_src }}" alt="{{ item.componente.nombre }}">
             {% else %}
-              <span>{% if item.componente.categoria and 'beb' in item.componente.categoria.nombre|lower %}🥤{% elif item.componente.categoria and 'arepa' in item.componente.categoria.nombre|lower %}🫓{% elif item.componente.categoria and 'dulce' in item.componente.categoria.nombre|lower %}🍮{% else %}🥟{% endif %}</span>
+              <span>{% if item.componente.categoria and 'beb' in item.componente.categoria.nombre|lower %}🥤{% elif item.componente.categoria and 'dulce' in item.componente.categoria.nombre|lower %}🍮{% elif item.componente.categoria and 'pizza' in item.componente.categoria.nombre|lower %}🍕{% elif item.componente.categoria and 'ensalada' in item.componente.categoria.nombre|lower %}🥗{% else %}{{ brand.fallback_emoji or '🍽️' }}{% endif %}</span>
             {% endif %}
           </div>
           <span class="pd-combo-qty">{{ item.cantidad }}×</span>
@@ -260,7 +260,7 @@
               {% set opt_src = item.componente.imagen_url|upload_url %}
               <img src="{{ opt_src }}" alt="{{ item.componente.nombre }}">
             {% else %}
-              <span>{% if item.componente.categoria and 'beb' in item.componente.categoria.nombre|lower %}🥤{% elif item.componente.categoria and 'arepa' in item.componente.categoria.nombre|lower %}🫓{% elif item.componente.categoria and 'dulce' in item.componente.categoria.nombre|lower %}🍮{% else %}🥟{% endif %}</span>
+              <span>{% if item.componente.categoria and 'beb' in item.componente.categoria.nombre|lower %}🥤{% elif item.componente.categoria and 'dulce' in item.componente.categoria.nombre|lower %}🍮{% elif item.componente.categoria and 'pizza' in item.componente.categoria.nombre|lower %}🍕{% elif item.componente.categoria and 'ensalada' in item.componente.categoria.nombre|lower %}🥗{% else %}{{ brand.fallback_emoji or '🍽️' }}{% endif %}</span>
             {% endif %}
           </span>
           <span class="pd-combo-opt-body">

@@ -60,11 +60,11 @@
               <img src="{{ src }}" alt="{{ item.producto.nombre }}" loading="lazy"
                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
               <div class="cr-thumb-fb" style="display:none">
-                {% if item.producto.es_combo %}🎁{% elif item.producto.categoria and 'beb' in item.producto.categoria.nombre|lower %}🥤{% else %}🥟{% endif %}
+                {% if item.producto.es_combo %}🎁{% elif item.producto.categoria and 'beb' in item.producto.categoria.nombre|lower %}🥤{% else %}{{ brand.fallback_emoji or '🍽️' }}{% endif %}
               </div>
             {% else %}
               <div class="cr-thumb-fb">
-                {% if item.producto.es_combo %}🎁{% elif item.producto.categoria and 'beb' in item.producto.categoria.nombre|lower %}🥤{% else %}🥟{% endif %}
+                {% if item.producto.es_combo %}🎁{% elif item.producto.categoria and 'beb' in item.producto.categoria.nombre|lower %}🥤{% else %}{{ brand.fallback_emoji or '🍽️' }}{% endif %}
               </div>
             {% endif %}
             {% if item.producto.es_combo %}<span class="cr-combo-badge">{{ ui.cart_combo_badge }}</span>{% endif %}
