@@ -435,6 +435,13 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="origen" value="{{ origen_actual }}">
         <input type="hidden" name="cantidad" id="ep-modal-qty-val" value="1">
+        {# Notas del cliente por producto: p.ej. "sin cebolla", "sin sal", etc. #}
+        <div class="ep-modal-notas-wrap">
+          <label for="ep-modal-notas" class="ep-modal-notas-lbl">📝 Alguna preferencia? <span class="ep-modal-notas-hint">(opcional)</span></label>
+          <textarea id="ep-modal-notas" name="notas_personalizacion" rows="2" maxlength="240"
+                    class="ep-modal-notas-input"
+                    placeholder="Ej: sin cebolla, sin sal, poca salsa..."></textarea>
+        </div>
         <div class="ep-modal-actions">
           <div class="ep-modal-qty-ctrl">
             <button type="button" class="ep-modal-qty-btn" onclick="modalQty(-1)">−</button>

@@ -1540,13 +1540,19 @@ def checkout():
         try:
             for item in items:
                 precio_venta = item.get("precio_unit", item["producto"].precio_final)
+                # notas por línea: combo_resumen (auto) + nota del cliente (manual)
+                _partes_notas = []
+                if item.get("combo_resumen"):
+                    _partes_notas.append(item["combo_resumen"])
+                if item.get("nota_cliente"):
+                    _partes_notas.append("👤 " + item["nota_cliente"])
                 oi = OrderItem(
                     pedido_id=pedido.id,
                     producto_id=item["producto"].id,
                     cantidad=item["cantidad"],
                     precio_unit=precio_venta,
                     subtotal=round(precio_venta * item["cantidad"], 2),
-                    notas=item.get("combo_resumen"),
+                    notas=" | ".join(_partes_notas) if _partes_notas else None,
                     metadata_json=json.dumps(
                         _metadata_item_con_origen(
                             item["producto"],
@@ -2004,6 +2010,7 @@ def _build_items_from_carrito(carrito):
     subtotal = 0.0
     selecciones_combo = session.get("combo_selecciones", {})
     extras_selecciones = session.get("extras_selecciones", {})
+    notas_cliente_map = session.get("notas_combo", {})  # notas por producto: "sin cebolla", etc.
     for producto_id_str, cantidad in carrito.items():
         try:
             pid = int(producto_id_str)
@@ -2033,6 +2040,7 @@ def _build_items_from_carrito(carrito):
         precio = round(precio, 2)
         item_total = round(precio * qty, 2)
         subtotal += item_total
+        nota_cliente_item = (notas_cliente_map.get(producto_id_str) or "").strip()[:240]
         items.append({"producto": p, "cantidad": qty, "subtotal": item_total,
                       "precio_unit": precio,
                       "combo_extra_unit": extra_unit,
@@ -2040,6 +2048,7 @@ def _build_items_from_carrito(carrito):
                       "combo_display_items": _combo_display_items(combo_items, metadata),
                       "combo_seleccion_ids": seleccion_ids,
                       "combo_resumen": combo_resumen,
+                      "nota_cliente": nota_cliente_item,
                       "extras": extras_rows,
                       "metadata": metadata})
     return items, round(subtotal, 2)

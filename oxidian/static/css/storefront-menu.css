@@ -1069,6 +1069,28 @@ body.ox-body-public .ep-banner-cta {
 .ep-modal-price-old { font-size:.9rem;color:var(--col-faint);text-decoration:line-through; }
 .ep-modal-price-old.hidden { display:none; }
 
+/* Notas del cliente (preferencias por producto) */
+.ep-modal-notas-wrap { margin: 0 0 .8rem 0; }
+.ep-modal-notas-lbl {
+  display:block; font-size:.78rem; font-weight:800; color:var(--col-ink);
+  margin-bottom:.35rem; letter-spacing:.005em;
+}
+.ep-modal-notas-hint { font-weight:500; color:var(--col-faint); font-size:.7rem; }
+.ep-modal-notas-input {
+  width:100%; box-sizing:border-box; resize:vertical;
+  min-height:44px; max-height:110px;
+  padding:.55rem .75rem; border-radius:.7rem;
+  border:1.5px solid rgba(52,37,22,.14);
+  background:#fff; color:var(--col-ink);
+  font-size:.88rem; font-family:inherit; line-height:1.4;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+.ep-modal-notas-input:focus {
+  outline:none; border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 22%, transparent);
+}
+.ep-modal-notas-input::placeholder { color: color-mix(in srgb, var(--col-ink) 45%, transparent); }
+
 /* Acciones: qty + botón */
 .ep-modal-actions {
   display:flex;align-items:center;gap:.65rem;

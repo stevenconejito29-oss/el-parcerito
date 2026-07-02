@@ -4261,10 +4261,21 @@ async function handleEstadoPedido(jid, ses, numero) {
         const cancelHint = pedido.estado === 'pendiente'
           ? `\nPara cancelarlo antes de preparación escribe *CANCELAR ${pedido.numero}*.\n`
           : '';
+        // Lista de artículos con notas del cliente si las hay
+        let itemsTxt = '';
+        if (Array.isArray(pedido.items) && pedido.items.length) {
+          const lineas = pedido.items.slice(0, 10).map(it => {
+            const base = `• ${it.cantidad}× ${it.nombre}`;
+            const nota = it.notas && it.notas.trim() ? `\n   _${it.notas.trim().slice(0, 120)}_` : '';
+            return base + nota;
+          });
+          itemsTxt = `\n📋 *Artículos:*\n${lineas.join('\n')}${pedido.items.length > 10 ? `\n_(+${pedido.items.length - 10} más)_` : ''}\n`;
+        }
         return sendText(jid,
           `${est.emoji} *Pedido ${pedido.numero}*\n\n` +
           `Estado: *${est.label}*\n` +
           `Total: *${formatPrecio(pedido.total)}*\n` +
+          itemsTxt +
           cancelHint +
           `\n` +
           `_Escribe *menu* para volver._`
