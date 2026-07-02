@@ -663,11 +663,11 @@ class Product(db.Model):
             return 0
         if (componente.tipo_entrega or "inmediato") != "inmediato":
             return None
-        # Si el componente NO gestiona stock en web (stock_mostrar_en_web=False),
-        # se considera "sin control de stock" → siempre disponible para el combo.
-        # Antes: si stock=0 y no se gestiona, el combo aparecía agotado aunque el
-        # producto individual sí se podía comprar. Fix 2026-07-02.
-        if not bool(getattr(componente, "stock_mostrar_en_web", False)):
+        # stock_mostrar_en_web=False → "sin control de stock" para el stock propio.
+        # Solo aplica al origen 'propio'; los orígenes de proveedor SIEMPRE usan
+        # el stock real de ProveedorProducto (que es su propia gestión).
+        origen_es_propio = (origen or "propio") == "propio"
+        if origen_es_propio and not bool(getattr(componente, "stock_mostrar_en_web", False)):
             return 999999
         return componente.stock_para_origen(origen) // item.cantidad
 
@@ -679,6 +679,9 @@ class Product(db.Model):
     def _combo_stock_total_origen(self, origen):
         if not self.es_combo:
             return self.stock_para_origen(origen)
+
+        if not self.pertenece_a_origen(origen):
+            return 0
 
         componentes = list(self.combo_items)
         if not componentes:
