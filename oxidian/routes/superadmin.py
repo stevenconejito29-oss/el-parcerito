@@ -13,7 +13,7 @@ from extensions import db, get_or_404
 from models import (User, Order, Caja, StaffPayment, Product,
                     ZonaEntrega, SiteConfig, AuditLog,
                     AdminFeature, ADMIN_FEATURES, PointsLog, utcnow)
-from store_config import PUBLIC_THEME_DEFAULTS, PUBLIC_UI_DEFAULTS, get_store_features
+from store_config import PUBLIC_THEME_DEFAULTS, PUBLIC_UI_DEFAULTS, get_store_features, get_store_value
 
 superadmin_bp = Blueprint("superadmin", __name__)
 
@@ -643,8 +643,6 @@ def dashboard():
     }
 
     # ── Modo tienda + comisión acumulada ──
-    from store_config import get_store_features, get_store_value
-    features = get_store_features()
     modo_tienda = features.get("modo_tienda", "propia")
     try:
         commission_pct = float(get_store_value("SERVICE_COMMISSION_PCT", "0") or 0)
