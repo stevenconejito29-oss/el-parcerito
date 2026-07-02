@@ -19,8 +19,105 @@
     :root{--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-accent:{{ brand.color_acento }};}
     .sb-alert { color: var(--col-primary, #D9961A) !important; }
     .sb-alert:hover { background: rgba(217,150,26,.12) !important; }
-    .ox-sidebar { background: linear-gradient(180deg, #090b10, #131a2c); }
-    .ox-topbar { background: rgba(15,23,42,.94); border-bottom: 1px solid rgba(255,255,255,.08); }
+    /* Safe-area para Dynamic Island iOS / notch Android — el topbar y el brand
+       superior del sidebar respetan la barra del sistema. */
+    .ox-sidebar {
+      background: linear-gradient(180deg, #090b10, #131a2c);
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      padding-left: env(safe-area-inset-left, 0px);
+    }
+    .ox-topbar {
+      background: rgba(15,23,42,.94);
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      padding-top: max(env(safe-area-inset-top, 0px), 8px);
+      padding-right: max(env(safe-area-inset-right, 0px), 12px);
+      padding-left: max(env(safe-area-inset-left, 0px), 12px);
+    }
+    /* Layout responsive vertical: fija altura útil con visualViewport */
+    .ox-admin-layout { min-height: 100vh; min-height: 100dvh; }
+    /* Layout horizontal: en tablet landscape el sidebar mantiene ancho pero deja
+       espacio para safe-area-inset-left (auriculares/notch iPhone en horizontal) */
+    @media (min-width: 768px) {
+      .ox-admin-layout { padding-left: env(safe-area-inset-left, 0px); }
+    }
+    /* Bottom safe-area para floating action bars de los roles operativos */
+    .ox-workarea, .work-area { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+    /* ═══ BOTTOM NAV OPERATIVO — visible en móvil, oculto en desktop ═══ */
+    .ox-admin-bnav {
+      position: fixed;
+      left: 8px;
+      right: 8px;
+      bottom: max(8px, env(safe-area-inset-bottom, 8px));
+      z-index: 88;
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
+      gap: 3px;
+      padding: 6px;
+      border-radius: 20px;
+      background: linear-gradient(180deg, rgba(15,23,42,.9), rgba(15,23,42,.78));
+      backdrop-filter: blur(18px) saturate(1.6);
+      -webkit-backdrop-filter: blur(18px) saturate(1.6);
+      border: 1px solid rgba(255,255,255,.1);
+      box-shadow: 0 -10px 30px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.06);
+      min-height: 60px;
+    }
+    .ox-admin-bnav-form { display: contents; margin: 0; }
+    .ox-admin-bnav-item {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; padding: 6px 4px; min-height: 48px; border: 0;
+      border-radius: 14px; background: transparent; color: rgba(255,244,226,.55);
+      font-size: 10px; font-weight: 700; text-decoration: none; cursor: pointer;
+      transition: color .2s, background .2s, transform .2s cubic-bezier(.34,1.56,.64,1);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .ox-admin-bnav-item svg { display: block; }
+    .ox-admin-bnav-item:hover { color: #FFF3E8; background: rgba(255,255,255,.05); }
+    .ox-admin-bnav-item:active { transform: scale(.94); }
+    .ox-admin-bnav-item.is-active {
+      color: var(--brand-primary);
+      background: color-mix(in srgb, var(--brand-primary) 15%, transparent);
+      transform: translateY(-1px);
+    }
+    .ox-admin-bnav-item.is-active svg { filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--brand-primary) 45%, transparent)); }
+    .ox-admin-bnav-logout {
+      color: #ff8888 !important;
+      background: rgba(255,80,80,.06);
+      border: 1px solid rgba(255,80,80,.18);
+    }
+    .ox-admin-bnav-logout:hover { background: rgba(255,80,80,.14); color: #ffa5a5 !important; }
+
+    /* Añade padding al contenido para que no quede tapado por el bottom nav */
+    body.ox-body-admin .ox-page { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+
+    /* Solo visible en mobile — desktop tiene el sidebar completo */
+    @media (min-width: 900px) {
+      .ox-admin-bnav { display: none; }
+      body.ox-body-admin .ox-page { padding-bottom: 20px; }
+    }
+
+    /* Landscape móvil: nav más compacto y padding lateral safe-area */
+    @media (orientation: landscape) and (max-height: 500px) {
+      .ox-admin-bnav {
+        left: max(8px, env(safe-area-inset-left, 8px));
+        right: max(8px, env(safe-area-inset-right, 8px));
+        min-height: 46px; padding: 4px;
+      }
+      .ox-admin-bnav-item { min-height: 38px; font-size: 9px; }
+      .ox-admin-bnav-item svg { width: 18px; height: 18px; }
+    }
+
+    /* PWA standalone: extra bottom para home indicator iOS */
+    @media (display-mode: standalone), (display-mode: fullscreen) {
+      .ox-admin-bnav { bottom: max(14px, env(safe-area-inset-bottom, 14px)); }
+    }
+
+    /* Reduce motion */
+    @media (prefers-reduced-motion: reduce) {
+      .ox-admin-bnav-item { transition: none !important; }
+    }
     .ox-sb-item, .ox-sb-footer .ox-sb-item { transition: background .2s, color .2s; }
     .ox-sb-item:hover, .ox-sb-item.active { background: rgba(252,209,22,.12); color: #fff; }
     .ox-sb-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg, var(--brand-primary), var(--brand-secondary)); border-radius: 999px 0 0 999px; }
@@ -40,7 +137,7 @@
   <aside class="ox-sidebar" id="ox-sidebar">
     <div class="ox-sb-brand">
       {% if brand.logo_url %}<img src="{{ brand.logo_url }}" class="ox-sb-logo" style="object-fit:cover;border-radius:.5rem" alt="logo">
-      {% else %}<div class="ox-sb-logo">🥟</div>{% endif %}
+      {% else %}<div class="ox-sb-logo">{{ brand.fallback_emoji or '🥟' }}</div>{% endif %}
       <div style="flex:1;min-width:0">
         <p class="ox-sb-brand-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ brand.nombre }}</p>
         <p class="ox-sb-brand-sub">Gestión operativa</p>
@@ -80,7 +177,7 @@
       <div class="ox-sb-divider"></div>
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">🛍️ Catálogo</span>
-        {% if has_admin_feature('productos') %}<a href="{{ url_for('admin.productos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🥟</span>Productos</a>
+        {% if has_admin_feature('productos') %}<a href="{{ url_for('admin.productos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ brand.fallback_emoji or '🥟' }}</span>Productos</a>
         <a href="{{ url_for('admin.categorias') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏷️</span>Categorías</a>
         {% endif %}
         {% if has_admin_feature('stock') %}<a href="{{ url_for('admin.stock') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Stock</a>{% endif %}
@@ -95,8 +192,15 @@
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">🔧 Gestión</span>
         {% if has_admin_feature('usuarios') %}<a href="{{ url_for('admin.usuarios') }}" class="ox-sb-item"><span class="ox-sb-item-icon">👤</span>Usuarios & Equipo</a>{% endif %}
-        {% if has_admin_feature('cupones') or has_admin_feature('marketing') %}<a href="{{ url_for('admin.cupones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎟️</span>Marketing</a>{% endif %}
+        {% if has_admin_feature('cupones') or has_admin_feature('marketing') %}<a href="{{ url_for('admin.cupones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎟️</span>Cupones</a>{% endif %}
+        {% if has_admin_feature('marketing') %}<a href="{{ url_for('admin.afiliados') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤝</span>Afiliados</a>{% endif %}
         {% if has_admin_feature('marketing') %}<a href="{{ url_for('admin.menu_config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖼️</span>Banners & Home</a>{% endif %}
+        {% if has_admin_feature('productos') %}<a href="{{ url_for('admin.combos_nuevo') if url_for('admin.combos_nuevo') else url_for('admin.productos') }}#combos" class="ox-sb-item"><span class="ox-sb-item-icon">🎁</span>Combos</a>{% endif %}
+        {# Ajustes rápidos: para super_admin apunta a /superadmin/config;
+           para admin puro, redirige a productos como fallback (por ahora) #}
+        {% if rol == 'super_admin' %}
+        <a href="{{ url_for('superadmin.config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎨</span>Marca & Ajustes</a>
+        {% endif %}
       </div>
 
       {% if rol == 'super_admin' %}
@@ -189,6 +293,49 @@
     <div class="ox-page">
       {% block content %}{% endblock %}
     </div>
+
+    {# ── BOTTOM NAV para roles operativos — logout siempre accesible ── #}
+    <nav class="ox-admin-bnav" aria-label="Accesos rápidos">
+      <a href="{% if rol in ('admin','super_admin') %}{{ url_for('admin.dashboard') }}{% elif rol in ('cocina','preparacion') %}{{ url_for('preparador.pedidos') }}{% elif rol == 'repartidor' %}{{ url_for('repartidor.ruta') }}{% else %}{{ url_for('public.index') }}{% endif %}"
+         class="ox-admin-bnav-item {{ 'is-active' if request.endpoint in ('admin.dashboard','preparador.pedidos','repartidor.ruta') else '' }}"
+         data-abn="home">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>
+        <span>Inicio</span>
+      </a>
+
+      {% if rol in ('admin','super_admin') %}
+      <a href="{{ url_for('admin.cola') }}"
+         class="ox-admin-bnav-item {{ 'is-active' if request.endpoint == 'admin.cola' else '' }}">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>
+        <span>Cola</span>
+      </a>
+      <a href="{{ url_for('admin.pedidos') }}"
+         class="ox-admin-bnav-item {{ 'is-active' if request.endpoint == 'admin.pedidos' else '' }}">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 10h6"/><path d="M9 14h4"/></svg>
+        <span>Pedidos</span>
+      </a>
+      {% elif rol == 'repartidor' %}
+      <a href="{{ url_for('repartidor.comisiones') if 'comisiones' in url_for('repartidor.ruta') or true else '#' }}"
+         class="ox-admin-bnav-item {{ 'is-active' if request.endpoint == 'repartidor.comisiones' else '' }}">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg>
+        <span>Comisiones</span>
+      </a>
+      {% endif %}
+
+      <button type="button" onclick="sidebarOpen()"
+              class="ox-admin-bnav-item ox-admin-bnav-menu">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        <span>Menú</span>
+      </button>
+
+      <form method="post" action="{{ url_for('auth.logout') }}" class="ox-admin-bnav-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="ox-admin-bnav-item ox-admin-bnav-logout" title="Cerrar sesión">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span>Salir</span>
+        </button>
+      </form>
+    </nav>
   </div>
 </div>
 

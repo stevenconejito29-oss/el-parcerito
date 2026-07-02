@@ -337,31 +337,30 @@
         {% endif %}
       </div>
 
-      <div class="work-items">
+      <div class="work-items" data-check-list>
         {% for item in lineas_preparacion_interna(pedido) %}
         <div class="work-item">
+          {# Checkbox mental para tachar el ítem cuando se prepara #}
+          <label class="work-item-check" title="Marcar como preparado">
+            <input type="checkbox" data-item-check aria-label="Marcar {{ item.producto.nombre }} como preparado">
+            <span aria-hidden="true"></span>
+          </label>
           {% include "_order_item_combo.html" %}
         </div>
         {% endfor %}
       </div>
 
       {% if pedido.notas %}
-      <div class="work-note">Nota: {{ pedido.notas }}</div>
+      <div class="work-note work-note-strong">📝 Nota del cliente: {{ pedido.notas }}</div>
       {% endif %}
 
-      <form method="POST" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}">
+      <form method="POST" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}" data-mark-ready data-pedido-id="{{ pedido.id }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        {% set esperando_almacen = pedido.id in almacen_listo and not almacen_listo[pedido.id] %}
-        <button type="submit"
-                class="work-btn work-btn-success full-width"
-                {% if esperando_almacen %}disabled aria-describedby="almacen-pendiente-{{ pedido.id }}"{% endif %}>
-          {% if esperando_almacen %}Esperando a almacén{% else %}Listo para despacho{% endif %}
+        {# El flujo de "almacén" queda como badge informativo — NO bloquea al preparador.
+           Se prepara todo el pedido de forma unificada. #}
+        <button type="submit" class="work-btn work-btn-success full-width">
+          ✓ Listo · Siguiente pedido
         </button>
-        {% if esperando_almacen %}
-        <p id="almacen-pendiente-{{ pedido.id }}" class="work-action-help" role="status">
-          Este pedido es mixto. Podrás marcarlo listo cuando almacén termine su parte.
-        </p>
-        {% endif %}
       </form>
   </article>
   {% else %}
@@ -432,5 +431,68 @@ document.querySelectorAll('.js-availability-form').forEach(form => {
     }
   });
 });
+
+// ── Checkboxes por item para tachar mental durante la preparación ──
+document.querySelectorAll('[data-item-check]').forEach(cb => {
+  cb.addEventListener('change', () => {
+    const item = cb.closest('.work-item');
+    if (item) item.classList.toggle('is-checked', cb.checked);
+    // Vibración corta como feedback táctil (Android)
+    if (cb.checked && navigator.vibrate) navigator.vibrate(15);
+  });
+});
+
+// ── Flujo "siguiente pedido" — al marcar listo, redirige + auto-scroll al siguiente ──
+document.querySelectorAll('form[data-mark-ready]').forEach(form => {
+  form.addEventListener('submit', async (ev) => {
+    // Encuentra el siguiente article ANTES del submit para saber dónde saltar
+    const card = form.closest('article.work-card');
+    const nextCard = card ? card.nextElementSibling : null;
+    // Guarda en sessionStorage el id del siguiente pedido para hacer scroll tras reload
+    if (nextCard && nextCard.classList.contains('work-card')) {
+      const nextCode = nextCard.querySelector('.work-order-code')?.textContent?.trim();
+      if (nextCode) sessionStorage.setItem('nextPedido', nextCode);
+    } else {
+      sessionStorage.removeItem('nextPedido');
+    }
+    // Deja que el form haga POST normal (server hace redirect)
+  });
+});
+
+// Al cargar la página, scroll al pedido siguiente si estaba marcado
+(() => {
+  const next = sessionStorage.getItem('nextPedido');
+  if (!next) return;
+  sessionStorage.removeItem('nextPedido');
+  // Busca la card cuyo código coincide
+  const target = Array.from(document.querySelectorAll('article.work-card'))
+    .find(c => c.querySelector('.work-order-code')?.textContent?.trim() === next);
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  target.classList.add('is-next-focus');
+  setTimeout(() => target.classList.remove('is-next-focus'), 3000);
+})();
 </script>
+<style>
+/* Checkboxes visuales para tachar items ya preparados */
+.work-item { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; padding: 8px 10px; border-radius: 10px; transition: background .2s, opacity .2s; }
+.work-item.is-checked { opacity: .48; background: rgba(94,240,151,.06); }
+.work-item.is-checked > *:not(.work-item-check) { text-decoration: line-through; text-decoration-color: rgba(94,240,151,.6); text-decoration-thickness: 2px; }
+.work-item-check { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; cursor: pointer; background: rgba(255,255,255,.04); border: 1.5px solid rgba(255,255,255,.14); transition: background .18s, border-color .18s; user-select: none; touch-action: manipulation; }
+.work-item-check:hover { background: rgba(94,240,151,.1); border-color: rgba(94,240,151,.5); }
+.work-item-check input { position: absolute; opacity: 0; width: 0; height: 0; }
+.work-item-check span { width: 18px; height: 18px; border-radius: 5px; border: 2px solid currentColor; color: rgba(255,255,255,.35); position: relative; transition: color .15s, background .15s; }
+.work-item-check input:checked + span { background: #4ade80; border-color: #4ade80; color: #05341a; }
+.work-item-check input:checked + span::after { content: '✓'; position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; font-weight: 900; color: #05341a; }
+
+/* Nota del cliente más prominente */
+.work-note-strong { background: linear-gradient(135deg, rgba(255,171,0,.18), rgba(255,171,0,.06)); border: 1px solid rgba(255,171,0,.4); border-left: 4px solid #FFAB00; color: #ffd97a; font-weight: 700; padding: .75rem .9rem; border-radius: 10px; margin: .75rem 0; font-size: .92rem; line-height: 1.35; }
+
+/* Efecto "siguiente pedido" tras marcar listo */
+.work-card.is-next-focus { animation: work-next-glow 1.6s ease-out 2; box-shadow: 0 0 0 3px rgba(94,240,151,.35), 0 20px 42px rgba(94,240,151,.18); }
+@keyframes work-next-glow {
+  0%   { box-shadow: 0 0 0 0    rgba(94,240,151,.6),  0 20px 42px rgba(94,240,151,.28); }
+  100% { box-shadow: 0 0 0 22px rgba(94,240,151,0),   0 20px 42px rgba(94,240,151,.02); }
+}
+</style>
 {% endblock %}

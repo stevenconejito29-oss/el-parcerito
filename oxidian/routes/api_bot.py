@@ -2792,6 +2792,53 @@ def bot_admin_tienda():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@api_bot_bp.route("/admin/resumen-hoy")
+@bot_required
+def bot_admin_resumen_hoy():
+    """Resumen operativo del día: pedidos, ventas, activos, productos sin stock."""
+    try:
+        from datetime import datetime, time as dtime
+        from sqlalchemy import func
+        hoy = datetime.now().date()
+        inicio = datetime.combine(hoy, dtime.min)
+        fin = datetime.combine(hoy, dtime.max)
+        pedidos_hoy_q = Order.query.filter(
+            Order.creado_en >= inicio, Order.creado_en <= fin
+        )
+        pedidos_hoy = pedidos_hoy_q.count()
+        entregados = pedidos_hoy_q.filter(Order.estado == "entregado").count()
+        cancelados = pedidos_hoy_q.filter(Order.estado == "cancelado").count()
+        ventas_hoy = float(db.session.query(func.coalesce(func.sum(Order.total), 0))
+                           .filter(Order.creado_en >= inicio,
+                                   Order.creado_en <= fin,
+                                   Order.estado != "cancelado").scalar() or 0)
+        activos = Order.query.filter(
+            Order.estado.in_(["pendiente", "armando", "listo", "en_ruta"])
+        ).count()
+        # Productos sin stock visible (solo los que gestionan stock en web)
+        sin_stock = Product.query.filter(
+            Product.activo.is_(True),
+            Product.es_combo.is_(False),
+            Product.stock_mostrar_en_web.is_(True),
+        ).all()
+        agotados = [p for p in sin_stock if p.stock_para_origen("propio") <= 0]
+        return jsonify({
+            "ok": True,
+            "fecha": hoy.isoformat(),
+            "pedidos_hoy": pedidos_hoy,
+            "entregados": entregados,
+            "cancelados": cancelados,
+            "ventas_hoy": round(ventas_hoy, 2),
+            "activos": activos,
+            "productos_sin_stock": [
+                {"id": p.id, "nombre": p.nombre} for p in agotados[:20]
+            ],
+            "total_sin_stock": len(agotados),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @api_bot_bp.route("/admin/pedidos/riesgo")
 @bot_required
 def bot_admin_pedidos_riesgo():

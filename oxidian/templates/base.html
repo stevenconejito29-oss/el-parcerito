@@ -111,7 +111,7 @@
         {% if brand.logo_url %}
           <img src="{{ brand.logo_url }}" alt="{{ brand.nombre }}" class="ox-public-logo">
         {% else %}
-          <span class="ox-public-logo ox-public-logo-fallback" aria-hidden="true">🥟</span>
+          <span class="ox-public-logo ox-public-logo-fallback" aria-hidden="true">{{ brand.fallback_emoji or '🥟' }}</span>
         {% endif %}
       </span>
       <span class="ox-public-copy">
@@ -187,7 +187,7 @@
         {% if brand.logo_url %}
           <img src="{{ brand.logo_url }}" alt="{{ brand.nombre }}" class="ep-footer-logo">
         {% else %}
-          <div class="ep-footer-logo-fb">🥟</div>
+          <div class="ep-footer-logo-fb">{{ brand.fallback_emoji or '🥟' }}</div>
         {% endif %}
         <h3 class="ep-footer-brand-name">{{ brand.nombre }}</h3>
         {% if brand.slogan %}<p class="ep-footer-slogan">"{{ brand.slogan }}"</p>{% endif %}
@@ -287,7 +287,7 @@
         {% if brand.logo_url %}
           <img src="{{ brand.logo_url }}" alt="{{ brand.nombre }}" class="ox-info-logo">
         {% else %}
-          <div class="ox-info-logo-fb">🥟</div>
+          <div class="ox-info-logo-fb">{{ brand.fallback_emoji or '🥟' }}</div>
         {% endif %}
         <div>
           <h2 id="ox-info-title">{{ brand.nombre }}</h2>
@@ -379,26 +379,70 @@
   </section>
 </div>
 
-<nav class="ox-bottom-nav md:hidden">
-  <a href="{{ url_for('public.index') }}" class="{{ 'active' if request.endpoint == 'public.index' else '' }}">
-    <span class="ox-bnav-icon">🏠</span><span>{{ ui.nav_home }}</span>
+<nav class="ox-bottom-nav ox-bnav-v2 md:hidden" aria-label="Navegación principal">
+  <a href="{{ url_for('public.index') }}"
+     class="ox-bnav-item {{ 'is-active' if request.endpoint == 'public.index' and 'q' not in request.args else '' }}"
+     data-bnav="home">
+    <span class="ox-bnav-svg" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>
+    </span>
+    <span class="ox-bnav-label">{{ ui.nav_home }}</span>
+    <span class="ox-bnav-glow" aria-hidden="true"></span>
   </a>
-  <a href="{{ url_for('public.index') }}?q=" class="{{ 'active' if request.endpoint == 'public.index' and request.args.get('q') is not none else '' }}">
-    <span class="ox-bnav-icon">🔍</span><span>{{ ui.nav_search }}</span>
+
+  <a href="{{ url_for('public.index') }}?q="
+     class="ox-bnav-item {{ 'is-active' if 'q' in request.args else '' }}"
+     data-bnav="search">
+    <span class="ox-bnav-svg" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>
+    </span>
+    <span class="ox-bnav-label">{{ ui.nav_search }}</span>
+    <span class="ox-bnav-glow" aria-hidden="true"></span>
   </a>
+
+  {% if brand.puntos %}
+  <a href="{{ url_for('public.club') }}"
+     class="ox-bnav-item {{ 'is-active' if request.endpoint == 'public.club' else '' }}"
+     data-bnav="puntos">
+    <span class="ox-bnav-svg" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+    </span>
+    <span class="ox-bnav-label">Puntos</span>
+    <span class="ox-bnav-glow" aria-hidden="true"></span>
+  </a>
+  {% else %}
   <button type="button" data-info-open aria-haspopup="dialog" aria-controls="ox-info-sheet"
-          class="{{ 'active' if request.endpoint in ('public.index',) and False else '' }}">
-    <span class="ox-bnav-icon">ℹ️</span><span>{{ ui.nav_info }}</span>
+          class="ox-bnav-item" data-bnav="info">
+    <span class="ox-bnav-svg" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+    </span>
+    <span class="ox-bnav-label">{{ ui.nav_info }}</span>
+    <span class="ox-bnav-glow" aria-hidden="true"></span>
   </button>
-  <a href="{{ url_for('public.ver_carrito') }}" class="{{ 'active' if request.endpoint == 'public.ver_carrito' else '' }}">
-    <div class="ox-bnav-wrap">
-      <span class="ox-bnav-icon">🛒</span>
+  {% endif %}
+
+  <a href="{{ url_for('public.ver_carrito') }}"
+     class="ox-bnav-item ox-bnav-cart {{ 'is-active' if request.endpoint == 'public.ver_carrito' else '' }}"
+     data-bnav="cart">
+    <span class="ox-bnav-svg" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M3 4h2l2.5 11h11l2-7H7"/></svg>
       {% set n = session.get('carrito', {})|length %}
-      {% if n > 0 %}<span class="ox-bnav-badge">{{ n }}</span>{% endif %}
-    </div>
-    <span>{{ ui.nav_cart }}</span>
+      {% if n > 0 %}<span class="ox-bnav-badge" data-bnav-badge>{{ n }}</span>{% endif %}
+    </span>
+    <span class="ox-bnav-label">{{ ui.nav_cart }}</span>
+    <span class="ox-bnav-glow" aria-hidden="true"></span>
   </a>
 </nav>
+
+{# Prefetch/prerender del bottom nav para navegación casi-instantánea (Chrome/Edge) #}
+<script type="speculationrules">
+{
+  "prefetch": [{
+    "where": {"selector_matches": ".ox-bottom-nav a[href]"},
+    "eagerness": "moderate"
+  }]
+}
+</script>
 
 <script>
 const OX_UI = {{ ui|tojson }};
@@ -470,12 +514,15 @@ function oxShowInstallButtons() {
   });
   document.body.classList.add('ox-install-visible');
 }
-function oxShowInstallSheet(auto = false) {
-  if (!oxCanSuggestInstall()) return;
+function oxShowInstallSheet(auto = false, force = false) {
+  // `auto` = disparado por lógica automática (timer, in-app, iOS).
+  // `force` = clic explícito del usuario. Ignora dismissedAt para responder.
+  if (!force && !oxCanSuggestInstall()) return;
   const sheet = oxPwaSheet();
   if (!sheet) return;
   sheet.hidden = false;
   if (auto) sheet.classList.add('is-soft');
+  else sheet.classList.remove('is-soft');
 }
 function oxDismissInstallSheet() {
   localStorage.setItem('oxPwaDismissedAt', Date.now().toString());
@@ -517,23 +564,39 @@ window.addEventListener('appinstalled', () => {
   localStorage.setItem('oxPwaInstalled', '1');
   oxHideInstallButtons();
 });
-oxInstallButtons().forEach(btn => {
-  btn.addEventListener('click', async () => {
-    if (oxIsStandalone()) {
-      localStorage.setItem('oxPwaInstalled', '1');
-      oxHideInstallButtons();
-      return;
-    }
-    if (!oxDeferredInstallPrompt) {
-      oxShowInstallSheet();
-      return;
-    }
-    oxDeferredInstallPrompt.prompt();
-    await oxDeferredInstallPrompt.userChoice;
+// Handler DELEGADO al documento: funciona con cualquier botón data-pwa-install
+// aunque se cree dinámicamente. Cierra el info-sheet si el clic viene desde ahí.
+document.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('[data-pwa-install]');
+  if (!btn) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  // Si el clic viene de dentro del info-sheet, cerrarlo primero para que
+  // el sheet PWA (con instrucciones iOS o el prompt nativo) quede visible.
+  if (btn.closest('#ox-info-sheet')) {
+    document.getElementById('ox-info-sheet')?.setAttribute('hidden', '');
+  }
+  // 1) Ya está instalada → ocultar botones y guardar flag.
+  if (oxIsStandalone()) {
+    localStorage.setItem('oxPwaInstalled', '1');
+    oxHideInstallButtons();
+    return;
+  }
+  // 2) Android/Chromium con prompt nativo capturado → mostrarlo.
+  if (oxDeferredInstallPrompt) {
+    try {
+      oxDeferredInstallPrompt.prompt();
+      await oxDeferredInstallPrompt.userChoice;
+    } catch (_) {}
     oxDeferredInstallPrompt = null;
     oxDismissInstallSheet();
-  });
-});
+    return;
+  }
+  // 3) iOS / Safari / navegadores sin beforeinstallprompt → abrir sheet con
+  //    instrucciones específicas (add to home screen). Siempre mostramos algo
+  //    para que el usuario NUNCA se quede sin feedback.
+  oxShowInstallSheet(false, true /* force */);
+}, { capture: false });
 document.querySelectorAll('[data-pwa-dismiss]').forEach(btn => {
   btn.addEventListener('click', oxDismissInstallSheet);
 });
@@ -673,6 +736,7 @@ window.oxPrepareAppStorage = async function(btn) {
 <script src="{{ url_for('static', filename='js/storefront-viewport.js', v=asset_version) }}" defer></script>
 <script src="{{ url_for('static', filename='js/storefront-toast.js', v=asset_version) }}" defer></script>
 <script src="{{ url_for('static', filename='js/header-modern.js', v=asset_version) }}" defer></script>
+<script src="{{ url_for('static', filename='js/spa-nav.js', v=asset_version) }}" defer></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

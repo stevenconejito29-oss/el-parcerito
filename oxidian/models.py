@@ -497,6 +497,10 @@ class Product(db.Model):
     # ── Canje con puntos ─────────────────────────────────────────────
     canjeable_con_puntos = db.Column(db.Boolean, default=False)
     puntos_para_canje = db.Column(db.Integer)   # cuántos puntos cuesta
+    # solo_canje=True → producto EXCLUSIVO para canje con puntos.
+    # NO se puede añadir al carrito como compra normal. Solo aparece en /club
+    # y en la selección de canje del carrito. Implica canjeable_con_puntos=True.
+    solo_canje = db.Column(db.Boolean, default=False, server_default="false", nullable=False)
 
     # ── Hipoalergénicos / alérgenos ──────────────────────────────────
     es_hipoalergenico = db.Column(db.Boolean, default=False)
@@ -659,6 +663,12 @@ class Product(db.Model):
             return 0
         if (componente.tipo_entrega or "inmediato") != "inmediato":
             return None
+        # Si el componente NO gestiona stock en web (stock_mostrar_en_web=False),
+        # se considera "sin control de stock" → siempre disponible para el combo.
+        # Antes: si stock=0 y no se gestiona, el combo aparecía agotado aunque el
+        # producto individual sí se podía comprar. Fix 2026-07-02.
+        if not bool(getattr(componente, "stock_mostrar_en_web", False)):
+            return 999999
         return componente.stock_para_origen(origen) // item.cantidad
 
     @property
@@ -2788,7 +2798,48 @@ class SiteConfig(db.Model):
             return entry
         except Exception:
             logger.exception("No se pudo guardar SiteConfig %s", clave)
+
+    def obtener_valor(self):
+        """Obtiene el valor con conversión de tipo"""
+        if self.valor is None:
             return None
+        
+        # Intentar convertir a bool
+        if self.valor.lower() in ['true', 'yes', '1', 'on']:
+            return True
+        if self.valor.lower() in ['false', 'no', '0', 'off']:
+            return False
+        
+        # Intentar convertir a número
+        try:
+            if '.' in self.valor:
+                return float(self.valor)
+            return int(self.valor)
+        except ValueError:
+            pass
+        
+        return self.valor
+
+    @classmethod
+    def get_all(cls, prefix: str = None) -> dict:
+        """Obtiene todas las configuraciones (opcionalmente filtradas por prefijo)"""
+        query = cls.query
+        if prefix:
+            query = query.filter(cls.clave.like(f"{prefix}%"))
+        return {cfg.clave: cfg.obtener_valor() for cfg in query.all()}
+
+    @classmethod
+    def get_or_create(cls, clave: str, valor_default=None, descripcion: str = None):
+        """Obtiene o crea una configuración"""
+        cfg = cls.query.filter_by(clave=clave).first()
+        if not cfg:
+            cfg = cls(clave=clave, valor=str(valor_default), descripcion=descripcion)
+            db.session.add(cfg)
+            db.session.commit()
+        return cfg
+
+    def __repr__(self):
+        return f"<SiteConfig {self.clave}={self.valor[:50] if self.valor else None}>"
 
 
 class BotAiUsage(db.Model):

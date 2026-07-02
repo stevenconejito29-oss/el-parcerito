@@ -703,15 +703,28 @@
   }
   .cr-total-label { font-size: .7rem; color: var(--col-muted); white-space: nowrap; }
   .cr-total-val {
-    font-size: 1.35rem;
+    font-size: clamp(1rem, 4.5vw, 1.35rem);
     line-height: 1.1;
     color: var(--brand-primary, var(--col-gold));
     text-shadow: 0 0 12px color-mix(in srgb, var(--brand-primary) 30%, transparent);
     white-space: nowrap;
+    flex-shrink: 0;
+    max-width: 100%;
   }
   .cr-cta { min-height: 48px; padding: .75rem .65rem; font-size: .9rem; }
   .cr-zone { display: none; }
+}
 
+/* ── Ultra small screens (iPhone SE 5s, ancho <340px) ── */
+@media (max-width: 339px) {
+  .cr-summary { padding: .55rem .65rem; gap: .5rem !important; }
+  .cr-total-label { font-size: .62rem !important; }
+  .cr-total-val { font-size: 1.05rem !important; text-shadow: none !important; }
+  .cr-cta { padding: .65rem .5rem !important; font-size: .82rem !important; min-height: 44px !important; }
+  .cr-cta svg { display: none; }
+}
+
+@media (max-width:767px) {
   /* Items en mobile: tarjetas separadas */
   .cr-items {
     background: transparent;

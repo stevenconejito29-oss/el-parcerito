@@ -579,6 +579,26 @@ body.ox-body-public .ep-banner-cta {
 @media(min-width: 1024px) { .ep-grid { grid-template-columns: repeat(4, 1fr); gap: 1.15rem; } }
 
 /* ── TARJETA (artículo) ── */
+.ep-card[hidden],
+.ep-cat-section[hidden],
+.ep-cat-title[hidden] { display: none !important; }
+
+/* Sección de canje con puntos: destaque dorado y separación clara */
+.ep-cat-section-puntos {
+  position: relative;
+  padding: .85rem .75rem 1rem;
+  margin: 1rem 0 1.15rem;
+  border-radius: 1.1rem;
+  background:
+    linear-gradient(135deg, rgba(252,209,22,.14), rgba(0,48,135,.05) 55%, transparent),
+    color-mix(in srgb, var(--brand-primary, #FCD116) 6%, var(--theme-surface, #FFFFFF));
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #FCD116) 40%, transparent);
+  box-shadow: 0 10px 28px rgba(252,209,22,.15);
+}
+.ep-cat-title-puntos {
+  color: color-mix(in srgb, var(--brand-primary, #FCD116) 40%, #18120A);
+  letter-spacing: .01em;
+}
 .ep-card {
   background: linear-gradient(180deg, #FFFFFF 0%, #FFF9F0 100%);
   border: 1px solid rgba(38, 25, 12, .10);
@@ -900,12 +920,11 @@ body.ox-body-public .ep-banner-cta {
 .ep-why-desc  { font-size:.68rem;color:var(--col-muted);line-height:1.3; }
 
 /* ── Carrito flotante ── */
-.ep-float-cart {
-  position:fixed;bottom:calc(68px + env(safe-area-inset-bottom,0px));
-  left:.75rem;right:.75rem;z-index:80;
-  animation:slideUpCart .28s ease;pointer-events:auto;
-}
-@media(min-width:768px) { .ep-float-cart { display:none; } }
+/* Float cart RETIRADO 2026-07-02 — el bottom nav v2 ya expone el carrito con
+   badge de cantidad. Mantener ambos era redundante, poco responsive y añadía
+   ruido visual. Se oculta en todos los tamaños; el bottom nav es la fuente
+   única para acceder al carrito desde el catálogo. */
+.ep-float-cart { display: none !important; }
 .ep-float-inner {
   display:flex;align-items:center;justify-content:space-between;
   background:var(--flag-blue);color:#fff;
@@ -1081,14 +1100,43 @@ body.ox-body-public .ep-banner-cta {
 .ep-modal-add-btn:hover { filter:brightness(1.07); }
 .ep-modal-add-btn:active { transform:scale(.97); }
 .ep-modal-detail-btn {
-  display:flex;align-items:center;justify-content:center;
-  width:100%;min-height:46px;margin-top:.65rem;
-  border:1.5px solid rgba(0,48,135,.16);
-  background:#F3F7FF;
-  color:var(--flag-blue);font-size:.88rem;font-weight:900;
-  border-radius:.875rem;text-decoration:none;transition:background .15s;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:.35rem;
+  width:100%;
+  min-height:48px;
+  padding:.7rem 1rem;
+  margin-top:.65rem;
+  border:1.5px solid color-mix(in srgb, var(--brand-primary) 40%, transparent);
+  background:linear-gradient(180deg,
+    color-mix(in srgb, var(--brand-primary) 14%, transparent),
+    color-mix(in srgb, var(--brand-primary) 6%, transparent));
+  color:var(--brand-primary);
+  font-size:.9rem;
+  font-weight:900;
+  letter-spacing:.01em;
+  border-radius:.875rem;
+  text-decoration:none;
+  transition:background .18s ease, transform .18s ease, box-shadow .18s ease;
+  /* Evita que el texto se corte cuando es largo */
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  box-sizing:border-box;
+  /* Asegura visibilidad completa en el modal — no se pega al borde inferior */
+  margin-bottom:max(.65rem, env(safe-area-inset-bottom, .65rem));
+  position:relative;
+  z-index:2;
 }
-.ep-modal-detail-btn:hover { background:#E8F0FF; }
+.ep-modal-detail-btn:hover {
+  background:linear-gradient(180deg,
+    color-mix(in srgb, var(--brand-primary) 22%, transparent),
+    color-mix(in srgb, var(--brand-primary) 10%, transparent));
+  transform:translateY(-1px);
+  box-shadow:0 4px 14px color-mix(in srgb, var(--brand-primary) 28%, transparent);
+}
+.ep-modal-detail-btn:active { transform:translateY(0); }
 
 /* ── Mobile hardening: evita solapes y textos invisibles ── */
 .ep-card,

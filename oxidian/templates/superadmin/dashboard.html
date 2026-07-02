@@ -35,6 +35,59 @@
   {% endfor %}
 </div>
 
+{# ── MODO TIENDA — tarjeta prominente con revenue si es servicio ── #}
+{% if tienda_modo is defined %}
+<div class="sa-mode-card {{ 'sa-mode-service' if tienda_modo.es_servicio else 'sa-mode-own' }}">
+  <div class="sa-mode-left">
+    <span class="sa-mode-pill">
+      <span class="sa-mode-dot"></span>
+      {{ tienda_modo.modo_label }}
+    </span>
+    <p class="sa-mode-desc">
+      {% if tienda_modo.es_servicio %}
+      Comisión vigente por venta: <strong>{{ "%.2f"|format(tienda_modo.comision_pct) }}%</strong>
+      {% else %}
+      Ingresos íntegros para la tienda. Sin comisión al hub.
+      {% endif %}
+    </p>
+    <a href="{{ url_for('superadmin.config') }}#tienda" class="sa-mode-cta">Cambiar modo →</a>
+  </div>
+  {% if tienda_modo.es_servicio %}
+  <div class="sa-mode-right">
+    <div class="sa-mode-metric">
+      <span class="sa-mode-label">Comisión hoy</span>
+      <p class="sa-mode-val">€{{ "%.2f"|format(tienda_modo.comision_hoy) }}</p>
+    </div>
+    <div class="sa-mode-metric">
+      <span class="sa-mode-label">Comisión este mes</span>
+      <p class="sa-mode-val sa-mode-val-lg">€{{ "%.2f"|format(tienda_modo.comision_mes) }}</p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+<style>
+.sa-mode-card{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.15rem;margin:0 0 1rem;border-radius:14px;background:linear-gradient(135deg,color-mix(in srgb,var(--brand-primary) 12%,transparent),color-mix(in srgb,var(--brand-primary) 4%,transparent));border:1px solid color-mix(in srgb,var(--brand-primary) 30%,transparent);position:relative;overflow:hidden}
+.sa-mode-card::before{content:"";position:absolute;inset:auto -20% -60% -20%;height:150%;background:radial-gradient(60% 50% at 50% 100%,color-mix(in srgb,var(--brand-primary) 22%,transparent),transparent);pointer-events:none;filter:blur(30px)}
+.sa-mode-card.sa-mode-service{background:linear-gradient(135deg,rgba(94,240,151,.16),rgba(94,240,151,.04));border-color:rgba(94,240,151,.35)}
+.sa-mode-card.sa-mode-service::before{background:radial-gradient(60% 50% at 50% 100%,rgba(94,240,151,.24),transparent)}
+.sa-mode-left{flex:1;min-width:230px;position:relative;z-index:1}
+.sa-mode-pill{display:inline-flex;align-items:center;gap:.45rem;padding:.35rem .75rem;border-radius:999px;background:rgba(0,0,0,.24);color:#fff;font-size:.72rem;font-weight:900;letter-spacing:.03em;text-transform:uppercase}
+.sa-mode-dot{width:8px;height:8px;border-radius:50%;background:var(--brand-primary);box-shadow:0 0 8px currentColor,0 0 0 3px color-mix(in srgb,currentColor 22%,transparent);animation:sa-mode-pulse 2.4s ease-in-out infinite}
+.sa-mode-service .sa-mode-dot{background:#5EF097}
+@keyframes sa-mode-pulse{50%{transform:scale(1.25);opacity:.7}}
+.sa-mode-desc{margin:.6rem 0 .35rem;color:var(--col-muted);font-size:.85rem;line-height:1.4}
+.sa-mode-desc strong{color:var(--col-text);font-weight:900}
+.sa-mode-cta{display:inline-block;color:var(--brand-primary);font-size:.75rem;font-weight:900;text-decoration:none;letter-spacing:.02em}
+.sa-mode-cta:hover{text-decoration:underline}
+.sa-mode-right{display:flex;gap:1.2rem;position:relative;z-index:1;flex-wrap:wrap}
+.sa-mode-metric{min-width:110px}
+.sa-mode-label{display:block;font-size:.65rem;font-weight:800;color:var(--col-muted);text-transform:uppercase;letter-spacing:.04em}
+.sa-mode-val{margin:.15rem 0 0;font-size:1.15rem;font-weight:950;color:#5EF097;line-height:1;letter-spacing:-.01em}
+.sa-mode-val-lg{font-size:1.7rem}
+@media(max-width:640px){.sa-mode-right{width:100%;justify-content:space-between}.sa-mode-metric{min-width:0;flex:1}}
+</style>
+{% endif %}
+
 {# ── KPIs PRINCIPALES ── #}
 <div class="sa-kpi-row">
   <div class="sa-kpi sa-kpi-green">
@@ -155,7 +208,7 @@
            style="border:1px solid var(--col-border)">
       {% else %}
       <div class="w-10 h-10 rounded-lg flex items-center justify-center text-xl flex-shrink-0"
-           style="background:var(--col-elevated);border:1px solid var(--col-border)">🥟</div>
+           style="background:var(--col-elevated);border:1px solid var(--col-border)">{{ brand.fallback_emoji or '🥟' }}</div>
       {% endif %}
       <div>
         <p class="font-bold text-white text-sm">{{ brand_config.nombre or '(sin nombre)' }}</p>

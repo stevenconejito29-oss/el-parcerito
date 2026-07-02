@@ -422,3 +422,362 @@ body.ox-body-public .ox-header-public.is-scrolled .ox-public-address { display: 
   body.ox-body-public .ox-hdr-progress { transition: none !important; }
   body.ox-body-public .ox-header-cart-count.is-bumping { animation: none !important; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   BOTTOM NAV v2 · glassmorphism moderno, SVG icons, safe-area
+   Se activa cuando el nav tiene la clase .ox-bnav-v2 (base.html).
+   ══════════════════════════════════════════════════════════════ */
+body.ox-body-public .ox-bottom-nav.ox-bnav-v2 {
+  position: fixed !important;
+  left: max(10px, env(safe-area-inset-left, 10px)) !important;
+  right: max(10px, env(safe-area-inset-right, 10px)) !important;
+  bottom: max(10px, env(safe-area-inset-bottom, 0px)) !important;
+  z-index: 88 !important;
+  display: grid !important;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px !important;
+  padding: 8px 10px !important;
+  border: 1px solid color-mix(in srgb, #fff 8%, transparent) !important;
+  border-radius: 26px !important;
+  /* Dark glass sólido con leve tinte de marca */
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, #0A0605 82%, transparent) 0%,
+      color-mix(in srgb, #0A0605 72%, transparent) 100%),
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--brand-primary) 6%, transparent),
+      color-mix(in srgb, var(--brand-secondary, #E84545) 4%, transparent)) !important;
+  backdrop-filter: blur(24px) saturate(1.8) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.8) !important;
+  box-shadow:
+    0 -14px 44px rgba(0,0,0,.5),
+    0 -2px 10px rgba(0,0,0,.28),
+    0 0 0 1px color-mix(in srgb, #000 30%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent),
+    inset 0 -1px 0 rgba(0,0,0,.4) !important;
+  min-height: 66px;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+/* Aurora sutil de fondo */
+body.ox-body-public .ox-bottom-nav.ox-bnav-v2::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(50% 100% at 20% 130%, color-mix(in srgb, var(--brand-primary) 30%, transparent), transparent 60%),
+    radial-gradient(50% 100% at 80% 130%, color-mix(in srgb, var(--brand-secondary, #E84545) 30%, transparent), transparent 60%);
+  opacity: .8;
+}
+
+body.ox-body-public .ox-bnav-v2 .ox-bnav-item {
+  position: relative;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 6px !important;
+  border-radius: 18px !important;
+  background: transparent !important;
+  border: 0 !important;
+  color: color-mix(in srgb, #FFF3E8 60%, transparent) !important;
+  text-decoration: none !important;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .005em;
+  cursor: pointer;
+  transition:
+    color .28s ease,
+    transform .3s cubic-bezier(.34,1.56,.64,1),
+    background .28s ease !important;
+  min-width: 0;
+  min-height: 50px;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 1;
+}
+body.ox-body-public .ox-bnav-v2 .ox-bnav-item:hover {
+  color: #FFF3E8 !important;
+  background: color-mix(in srgb, #fff 5%, transparent) !important;
+}
+body.ox-body-public .ox-bnav-v2 .ox-bnav-item:active { transform: scale(.92); }
+
+/* Ítem activo — pill dorada SÓLIDA con texto oscuro para contraste máximo.
+   Sigue las reglas WCAG AA: contraste texto/fondo ≥ 4.5:1 */
+body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active {
+  color: var(--brand-on-primary, #1B0A00) !important;
+  background:
+    linear-gradient(180deg,
+      var(--brand-primary) 0%,
+      color-mix(in srgb, var(--brand-primary) 82%, #000) 100%) !important;
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #000 20%, transparent),
+    0 6px 18px color-mix(in srgb, var(--brand-primary) 55%, transparent),
+    0 2px 4px rgba(0,0,0,.25);
+}
+body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active .ox-bnav-svg {
+  transform: scale(1.1) translateY(-1px);
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,.25));
+  color: var(--brand-on-primary, #1B0A00) !important;
+}
+body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active .ox-bnav-svg svg {
+  stroke-width: 2.4;
+}
+body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active .ox-bnav-label {
+  font-weight: 900;
+  letter-spacing: .02em;
+  color: var(--brand-on-primary, #1B0A00) !important;
+  text-shadow: 0 1px 0 color-mix(in srgb, #fff 25%, transparent);
+}
+
+body.ox-body-public .ox-bnav-v2 .ox-bnav-svg {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  transition:
+    transform .32s cubic-bezier(.34,1.56,.64,1),
+    filter .28s ease;
+}
+body.ox-body-public .ox-bnav-v2 .ox-bnav-svg svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.1;
+}
+body.ox-body-public .ox-bnav-v2 .ox-bnav-label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  transition: font-weight .22s ease;
+}
+
+/* Indicador de sección activa — pill blanca sobre la pill dorada (contraste) */
+body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand-on-primary, #1B0A00) 82%, transparent);
+  opacity: .85;
+  animation: bnav-pill-in .35s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes bnav-pill-in {
+  0%   { opacity: 0; transform: translateX(-50%) scaleX(.3); }
+  100% { opacity: .85; transform: translateX(-50%) scaleX(1); }
+}
+
+/* Halo animado del ítem activo */
+body.ox-body-public .ox-bnav-v2 .ox-bnav-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(60% 90% at 50% 100%, color-mix(in srgb, var(--brand-primary) 32%, transparent), transparent 70%);
+  transition: opacity .3s ease;
+}
+body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active .ox-bnav-glow { opacity: 1; }
+
+/* Badge carrito en bottom nav */
+body.ox-body-public .ox-bnav-v2 .ox-bnav-badge {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(145deg, var(--brand-secondary, #FF3B30), color-mix(in srgb, var(--brand-secondary, #FF3B30) 75%, #000));
+  border: 2px solid color-mix(in srgb, var(--col-bg, #0F0906) 90%, transparent);
+  box-shadow: 0 3px 10px rgba(0,0,0,.4), 0 0 8px color-mix(in srgb, var(--brand-secondary, #FF3B30) 45%, transparent);
+  animation: bnav-pop .5s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes bnav-pop {
+  0%   { transform: scale(0); opacity: 0; }
+  60%  { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+/* Padding para que el contenido no quede bajo el bottom nav */
+body.ox-body-public.ox-has-bottom-nav main { padding-bottom: 90px; }
+
+/* En landscape móvil, más compacto */
+@media (max-height: 480px) and (orientation: landscape) {
+  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { min-height: 52px; }
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-svg { width: 22px; height: 22px; }
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-svg svg { width: 18px; height: 18px; }
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-label { font-size: 9px; }
+}
+
+/* Ocultar cuando teclado abierto (visualViewport reduce altura) */
+@media (max-height: 480px) {
+  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { opacity: 1; }
+}
+
+/* PWA standalone: extra bottom */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 {
+    bottom: max(14px, env(safe-area-inset-bottom, 14px)) !important;
+  }
+}
+
+/* Accesibilidad: reducir animaciones */
+@media (prefers-reduced-motion: reduce) {
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-item,
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-svg,
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-badge { transition: none !important; animation: none !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PERFORMANCE OPTIMIZATIONS · 2026-07-02
+   Reduce jank en móviles con GPU compositing + content-visibility
+   ══════════════════════════════════════════════════════════════ */
+
+/* Grid de productos: solo pinta las tarjetas visibles (Chrome/Edge/Safari 18+) */
+body.ox-body-public .ep-grid > .ep-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 340px 300px;
+  /* Contain aísla el reflow — cada card ya no repinta al scroll */
+  contain: layout paint style;
+}
+
+/* Cards siempre en su propia capa GPU para animaciones suaves */
+body.ox-body-public .ep-card,
+body.ox-body-public .ep-modal-overlay,
+body.ox-body-public .cr-item {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Aurora del bottom nav v2 — animation costosa en móviles low-end.
+   La pausamos cuando no está en primer plano y respetamos reduced-motion */
+body.ox-body-public .ox-bottom-nav.ox-bnav-v2::before {
+  will-change: opacity;
+  animation-play-state: running;
+}
+body.ox-body-public.ox-modal-open .ox-bottom-nav.ox-bnav-v2::before,
+body.ox-body-public.ox-info-open .ox-bottom-nav.ox-bnav-v2::before { animation-play-state: paused; }
+
+/* Backdrop-filter es caro. Solo lo mantenemos donde aporta (header y bottom nav).
+   Quitamos el saturate excesivo que multiplica el coste. */
+@supports not (backdrop-filter: blur(1px)) {
+  body.ox-body-public .ox-header-public > .ox-public-header-inner,
+  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { background: rgba(15,10,6,.94) !important; }
+}
+
+/* Reducir aurora en fondo del header cuando el device es low-end (memoria <4GB) */
+@media (max-device-memory: 4gb), (max-resolution: 300dpi) {
+  body.ox-body-public .ox-header-public > .ox-public-header-inner::before {
+    animation-duration: 40s !important;
+    filter: none !important;
+  }
+  body.ox-body-public .ox-header-public > .ox-public-header-inner::after { display: none !important; }
+}
+
+/* Imágenes de productos: promover al GPU */
+body.ox-body-public .ep-card img,
+body.ox-body-public .cr-thumb img { transform: translateZ(0); }
+
+/* Carrito: contenedor lista con contain layout para acelerar recalc de qty */
+body.ox-body-public .cr-items { contain: layout style; }
+body.ox-body-public .cr-item { contain: layout paint style; }
+
+/* Scroll snap suave en el catálogo de chips categorías (más natural) */
+body.ox-body-public .ep-cats {
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+}
+body.ox-body-public .ep-cat { scroll-snap-align: start; }
+
+/* Reduce el jitter del backdrop-filter durante scroll rápido: durante el swipe
+   se sustituye por un color sólido similar. Mejora fps sensiblemente. */
+@media (max-width: 900px) {
+  body.ox-body-public.is-scrolling .ox-header-public > .ox-public-header-inner,
+  body.ox-body-public.is-scrolling .ox-bottom-nav.ox-bnav-v2 {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(15,10,6,.94) !important;
+  }
+}
+
+/* prefers-reduced-motion: desactiva aurora, ticker y ripples completamente */
+@media (prefers-reduced-motion: reduce) {
+  body.ox-body-public .ox-header-public > .ox-public-header-inner::before,
+  body.ox-body-public .ox-bottom-nav.ox-bnav-v2::before,
+  body.ox-body-public .ox-hdr-progress,
+  body.ox-body-public .ox-hdr-ticker-track,
+  body.ox-body-public .ep-banners { animation: none !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   VIEW TRANSITIONS · 2026-07-02
+   Nombres únicos para elementos que persisten entre páginas.
+   Chrome/Edge/Safari 18+ hacen fade cruzado automático.
+   ══════════════════════════════════════════════════════════════ */
+/* Cross-document View Transitions — Chrome 126+, Safari 18+.
+   Triggers native fade entre navegaciones same-origin (bottom nav → carrito, etc.).
+   Requiere que las páginas destino tengan la misma regla; base.html se encarga. */
+@view-transition { navigation: auto; }
+
+@supports (view-transition-name: none) {
+  body.ox-body-public .ox-header-public { view-transition-name: ox-header; }
+  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { view-transition-name: ox-bottom-nav; }
+  body.ox-body-public .ox-header-cart,
+  body.ox-body-public .ox-bnav-cart { view-transition-name: ox-cart-btn; }
+
+  /* Transición base: fade rápido, no interfiere con contenido */
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: .22s;
+    animation-timing-function: cubic-bezier(.2, .8, .2, 1);
+  }
+  /* Header y bottom nav: sin animación (persisten y se ven "estáticos") */
+  ::view-transition-old(ox-header),
+  ::view-transition-new(ox-header),
+  ::view-transition-old(ox-bottom-nav),
+  ::view-transition-new(ox-bottom-nav) {
+    animation: none;
+    mix-blend-mode: normal;
+  }
+}
+
+/* Feedback visual mientras carga (durante navegación instant) */
+body.ox-body-public.is-navigating .ox-hdr-progress,
+body.ox-body-public.is-navigating::after {
+  opacity: 1 !important;
+}
+body.ox-body-public.is-navigating::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0;
+  height: 2px; width: 100%;
+  z-index: 9999;
+  background: linear-gradient(90deg, var(--brand-primary), var(--brand-secondary, #E84545), var(--brand-primary));
+  background-size: 200% 100%;
+  animation: nav-progress .8s linear infinite;
+  pointer-events: none;
+}
+@keyframes nav-progress {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

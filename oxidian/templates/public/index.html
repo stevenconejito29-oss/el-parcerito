@@ -270,11 +270,22 @@
     </div>
 
   {% else %}
+    {# Sección "Canje con puntos" — productos solo-canje separados en su propio bloque. #}
+    {% set productos_solo_canje = productos|selectattr('solo_canje')|list %}
+    {% set productos_venta = productos|rejectattr('solo_canje')|list %}
+    {% if productos_solo_canje %}
+    <div class="ep-cat-section ep-cat-section-puntos" data-section-cat="_canje">
+      <h3 class="ep-cat-title ep-cat-title-puntos">⭐ Canje con puntos</h3>
+      <div class="ep-grid">
+        {% for p in productos_solo_canje %}{% include "public/_product_card.html" %}{% endfor %}
+      </div>
+    </div>
+    {% endif %}
     {# Vista completa: una sección por categoría real, sin duplicar productos. #}
     {% for cat in categorias %}
-    {% set productos_categoria = productos|selectattr('categoria_id','equalto',cat.id)|list %}
+    {% set productos_categoria = productos_venta|selectattr('categoria_id','equalto',cat.id)|list %}
     {% if productos_categoria %}
-    <div class="ep-cat-section">
+    <div class="ep-cat-section" data-section-cat="{{ cat.id }}">
       <h3 class="ep-cat-title">{{ cat_emoji(cat.nombre) }} {{ cat.nombre }}</h3>
       <div class="ep-grid">
         {% for p in productos_categoria %}{% include "public/_product_card.html" %}{% endfor %}
@@ -282,7 +293,7 @@
     </div>
     {% endif %}
     {% endfor %}
-    {% set sin_categoria = productos|rejectattr('categoria_id')|list %}
+    {% set sin_categoria = productos_venta|rejectattr('categoria_id')|list %}
     {% if sin_categoria %}
     <div class="ep-cat-section">
       <h3 class="ep-cat-title">🍽️ Otros productos</h3>
@@ -478,19 +489,38 @@ const EP_CART_MAX_QTY = {{ cart_max_qty|default(99)|int }};
 let _modalQty = 1;
 let _closeTimer = null;
 
+const EP_CARDS_CACHE = [];
+const EP_CHIPS_CACHE = [];
+const EP_SECTIONS_CACHE = [];
+const EP_TITLES_CACHE = [];
+function epCollectFilterables() {
+  if (EP_CARDS_CACHE.length) return;
+  document.querySelectorAll('.ep-card[data-category-id]').forEach(el => EP_CARDS_CACHE.push(el));
+  document.querySelectorAll('.ep-cat[data-category]').forEach(el => EP_CHIPS_CACHE.push(el));
+  document.querySelectorAll('.ep-cat-section').forEach(el => EP_SECTIONS_CACHE.push(el));
+  document.querySelectorAll('.ep-cat-title').forEach(el => EP_TITLES_CACHE.push(el));
+}
 function epFilterCategory(categoryId, updateUrl = true) {
+  epCollectFilterables();
   const value = String(categoryId || '');
   let visible = 0;
-  document.querySelectorAll('.ep-card[data-category-id]').forEach(card => {
+  const sectionHasVisible = Object.create(null);
+  for (const card of EP_CARDS_CACHE) {
     const show = !value || card.dataset.categoryId === value;
-    card.hidden = !show;
-    if (show) visible += 1;
-  });
-  document.querySelectorAll('.ep-cat[data-category]').forEach(link => link.classList.toggle('ep-cat-on', link.dataset.category === value));
-  document.querySelectorAll('.ep-cat-section').forEach(section => {
-    section.hidden = !section.querySelector('.ep-card:not([hidden])');
-  });
-  document.querySelectorAll('.ep-cat-title').forEach(heading => { heading.hidden = Boolean(value); });
+    if (card.hidden === show) card.hidden = !show;
+    if (show) {
+      visible += 1;
+      const sec = card.closest('.ep-cat-section');
+      if (sec) sectionHasVisible[sec.dataset.sectionCat || '_'] = true;
+    }
+  }
+  for (const chip of EP_CHIPS_CACHE) chip.classList.toggle('ep-cat-on', chip.dataset.category === value);
+  for (const sec of EP_SECTIONS_CACHE) {
+    const key = sec.dataset.sectionCat || '_';
+    sec.hidden = !sectionHasVisible[key];
+  }
+  const hideTitles = Boolean(value);
+  for (const heading of EP_TITLES_CACHE) heading.hidden = hideTitles;
   const title = document.querySelector('[data-storefront-title]');
   if (title) {
     const selected = document.querySelector(`.ep-cat[data-category="${CSS.escape(value)}"] .ep-cat-label`);
@@ -505,9 +535,13 @@ function epFilterCategory(categoryId, updateUrl = true) {
     history.pushState({ category: value }, '', url);
   }
 }
-document.querySelectorAll('.ep-cat[data-category]').forEach(link => link.addEventListener('click', event => {
-  event.preventDefault(); epFilterCategory(link.dataset.category); document.getElementById('catalogo')?.scrollIntoView({behavior:'smooth', block:'start'});
-}));
+document.addEventListener('click', event => {
+  const link = event.target.closest('.ep-cat[data-category]');
+  if (!link) return;
+  event.preventDefault();
+  epFilterCategory(link.dataset.category);
+  document.getElementById('catalogo')?.scrollIntoView({behavior:'smooth', block:'start'});
+}, true);
 window.addEventListener('popstate', () => epFilterCategory(new URL(location.href).searchParams.get('categoria'), false));
 epFilterCategory({{ (categoria_activa|string if categoria_activa else '')|tojson }}, false);
 
@@ -749,15 +783,11 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal()
   if (reduced || !('IntersectionObserver' in window)) { showAll(); return; }
 
   const obs = new IntersectionObserver(entries => {
-    let idx = 0;
     entries.filter(e => e.isIntersecting).forEach(entry => {
-      const el = entry.target;
-      el.style.transitionDelay = (idx * 0.055) + 's';
-      el.classList.add('ep-vis');
-      obs.unobserve(el);
-      idx++;
+      entry.target.classList.add('ep-vis');
+      obs.unobserve(entry.target);
     });
-  }, { threshold: 0.05, rootMargin: '0px 0px -28px 0px' });
+  }, { threshold: 0.01, rootMargin: '200px 0px 200px 0px' });
 
   document.querySelectorAll('.ep-grid .ep-card').forEach(c => obs.observe(c));
 })();

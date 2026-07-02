@@ -182,8 +182,16 @@
     <label class="fp-section-title">Club de Puntos</label>
     <label class="fp-check-label">
       <input type="checkbox" name="canjeable_con_puntos" style="accent-color:#C084FC">
-      ⭐ Canjeable con puntos
+      ⭐ Canjeable con puntos (además de comprarse con dinero)
     </label>
+    <label class="fp-check-label mt-2" style="border-top:1px dashed var(--col-border);padding-top:.6rem">
+      <input type="checkbox" name="solo_canje" style="accent-color:#C084FC">
+      🎁 EXCLUSIVO de canje — sólo se obtiene con puntos, no se vende con dinero
+    </label>
+    <p class="text-xs mt-1" style="color:var(--col-muted)">
+      Al marcar "exclusivo de canje", el precio pasa a €0.00 y el producto no aparece
+      en el catálogo normal, solo en el club de puntos y en el canje del carrito.
+    </p>
     <div class="campo-puntos-canje hidden mt-3">
       <label class="fp-label">Puntos necesarios para canjear</label>
       <input type="number" name="puntos_para_canje" min="1" placeholder="500"

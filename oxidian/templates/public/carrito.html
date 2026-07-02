@@ -158,12 +158,14 @@
             </div>
           </div>
 
-          {# Eliminar #}
+          {# Eliminar — con confirmación anti mis-tap en mobile #}
           <button type="submit" class="cr-remove"
                   title="{{ ui.cart_remove }}"
                   formmethod="POST"
-            formaction="{{ url_for('public.eliminar_carrito', producto_id=item.producto.id) }}"
-            aria-label="{{ ui.cart_remove }} {{ item.producto.nombre }}">
+                  formaction="{{ url_for('public.eliminar_carrito', producto_id=item.producto.id) }}"
+                  aria-label="{{ ui.cart_remove }} {{ item.producto.nombre }}"
+                  data-confirm="¿Quitar «{{ item.producto.nombre|e }}» del carrito?"
+                  onclick="return (this.dataset.confirmed==='1' || window.OxToast?.confirm ? (window.OxToast.confirm({title:'Quitar producto',body:this.dataset.confirm,confirmText:'Sí, quitar',cancelText:'Cancelar',danger:true}).then(ok=>{if(ok){this.dataset.confirmed='1';this.click();}}), false) : confirm(this.dataset.confirm));">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>
           </button>
         </div>
@@ -488,21 +490,59 @@ async function crVerificarCodigo() {
     });
     const d = await r.json();
     if (d.ok) {
-      /* Recarga la página para mostrar el nuevo estado de puntos */
-      location.reload();
+      /* AJAX: sin reload — actualizar UI in-place */
+      if (msg) { msg.textContent = '✓ ' + (d.mensaje || 'Verificado'); msg.className = 'cr-pts-msg cr-pts-msg--ok'; }
+      if (window.OxToast) window.OxToast.show(d.mensaje || 'Puntos verificados', 'success');
+      crRefreshWidget(d);
     } else { if (msg) { msg.textContent = d.msg || OX_UI.cart_invalid_code; msg.className = 'cr-pts-msg cr-pts-msg--err'; } }
   } catch { if (msg) { msg.textContent = OX_UI.cart_network_error; msg.className = 'cr-pts-msg cr-pts-msg--err'; } }
 }
 
-/* ── PUNTOS: quitar ── */
+/* ── PUNTOS: quitar (AJAX puro sin reload) ── */
 async function crQuitarPuntos() {
   try {
-    await fetch('{{ url_for("public.quitar_puntos_carrito") }}', {
+    const r = await fetch('{{ url_for("public.quitar_puntos_carrito") }}', {
       method: 'POST',
-      headers: { 'X-CSRFToken': CR_CSRF },
+      headers: { 'X-CSRFToken': CR_CSRF, 'Accept': 'application/json' },
     });
+    if (r.ok) {
+      const d = await r.json().catch(() => ({ ok: true }));
+      if (window.OxToast) window.OxToast.show('Puntos quitados del pedido', 'info');
+      crRefreshWidget(d);
+    }
+  } catch {
+    // Fallback si algo falla: recarga como último recurso
     location.reload();
-  } catch { location.reload(); }
+  }
+}
+
+/* ── Refresca solo el widget de puntos + totales, sin recargar todo ── */
+async function crRefreshWidget(data) {
+  try {
+    // 1) Reset visual del stepper de puntos a estado inicial
+    crStep(1);
+    // 2) Actualizar total estimado con lo devuelto por el server (si trae)
+    if (data && typeof data.subtotal !== 'undefined') {
+      const te = document.getElementById('total-estimado');
+      const st = document.getElementById('subtotal_display');
+      if (te) te.textContent = '€' + Number(data.subtotal - (data.descuento_puntos || 0)).toFixed(2);
+      if (st && typeof data.subtotal !== 'undefined') st.textContent = '€' + Number(data.subtotal).toFixed(2);
+    }
+    // 3) Refrescar el fragmento del widget si el server expone endpoint parcial
+    const wrap = document.getElementById('cr-pts-block');
+    if (wrap && data && data.widget_html) {
+      wrap.innerHTML = data.widget_html;
+    } else if (wrap) {
+      // Si no hay html parcial, invalidamos inputs (feedback mínimo)
+      const codeInput = document.getElementById('cr-pts-code');
+      if (codeInput) codeInput.value = '';
+    }
+    // 4) Trigger bounce del badge del carrito
+    if (window.OxHeader?.bumpCart) window.OxHeader.bumpCart();
+  } catch (e) {
+    // Sin regresión: si el AJAX parcial falla, no rompemos la página
+    console.warn('crRefreshWidget parcial fail', e);
+  }
 }
 
 /* ── Canje de producto ── */

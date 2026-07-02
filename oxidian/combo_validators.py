@@ -292,6 +292,35 @@ def validate_component_product(
     if product_obj.es_combo:
         return False, "Un combo no puede contener otro combo. Usa solo productos simples"
 
+    # ── Modalidad de entrega compatible ──────────────────────────────────
+    # Si un componente es solo-delivery y otro solo-recogida, el combo no
+    # se puede armar (no existe modalidad válida para todos).
+    from models import ComboItem, Product
+
+    def _modes(mode):
+        m = (mode or "ambas").strip().lower()
+        if m == "delivery":
+            return {"delivery"}
+        if m == "recogida":
+            return {"recogida"}
+        return {"delivery", "recogida"}
+
+    combo = Product.query.get(combo_id)
+    if combo:
+        allowed = _modes(getattr(combo, "modalidad_entrega", None))
+        for it in ComboItem.query.filter_by(combo_id=combo_id).all():
+            comp = it.componente
+            if comp:
+                allowed &= _modes(getattr(comp, "modalidad_entrega", None))
+        allowed &= _modes(getattr(product_obj, "modalidad_entrega", None))
+        if not allowed:
+            return False, (
+                f"'{product_obj.nombre}' es incompatible con el combo: "
+                "los componentes actuales solo permiten una modalidad de entrega "
+                "distinta (delivery vs recogida). Cambia la modalidad del producto "
+                "o del combo antes de agregarlo."
+            )
+
     return True, None
 
 

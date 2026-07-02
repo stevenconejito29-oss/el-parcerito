@@ -642,6 +642,48 @@ def dashboard():
         "app_icon_url":     SiteConfig.get("APP_ICON_URL", ""),
     }
 
+    # ── Modo tienda + comisión acumulada ──
+    from store_config import get_store_features, get_store_value
+    features = get_store_features()
+    modo_tienda = features.get("modo_tienda", "propia")
+    try:
+        commission_pct = float(get_store_value("SERVICE_COMMISSION_PCT", "0") or 0)
+    except (TypeError, ValueError):
+        commission_pct = 0.0
+
+    # Suma la comisión facturada por el hub este mes (bar_servicio)
+    comision_mes = 0.0
+    comision_hoy = 0.0
+    try:
+        cols = {c.name for c in Order.__table__.columns}
+        if "service_commission_amount" in cols:
+            inicio_mes = hoy.replace(day=1)
+            comision_mes = float(
+                db.session.query(func.coalesce(func.sum(Order.service_commission_amount), 0))
+                .filter(Order.creado_en >= inicio_mes)
+                .filter(Order.estado.in_(["entregado", "listo", "en_ruta"]))
+                .scalar() or 0
+            )
+            comision_hoy = float(
+                db.session.query(func.coalesce(func.sum(Order.service_commission_amount), 0))
+                .filter(Order.creado_en >= hoy)
+                .filter(Order.estado.in_(["entregado", "listo", "en_ruta"]))
+                .scalar() or 0
+            )
+    except Exception:
+        # Si la columna no existe (instalaciones legacy), la comisión queda a 0
+        comision_mes = 0.0
+        comision_hoy = 0.0
+
+    tienda_context = {
+        "modo": modo_tienda,
+        "modo_label": "Modo servicio" if modo_tienda == "bar_servicio" else "Modo propio",
+        "es_servicio": modo_tienda == "bar_servicio",
+        "comision_pct": commission_pct,
+        "comision_hoy": comision_hoy,
+        "comision_mes": comision_mes,
+    }
+
     return render_template("superadmin/dashboard.html",
                            total_clientes=total_clientes,
                            total_staff=total_staff,
@@ -657,7 +699,8 @@ def dashboard():
                            puntos_canjeados=int(abs(puntos_canjeados)),
                            clientes_con_puntos=clientes_con_puntos,
                            bot_status=bot_status,
-                           brand_config=brand_config)
+                           brand_config=brand_config,
+                           tienda_modo=tienda_context)
 
 
 @superadmin_bp.route("/modulos/<modulo>/toggle", methods=["POST"])

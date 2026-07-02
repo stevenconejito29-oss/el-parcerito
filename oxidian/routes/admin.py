@@ -1906,7 +1906,12 @@ def _parsear_campos_producto(form):
         return None, "Indica hora de inicio y hora de fin, o deja ambas vacías."
 
     canjeable = features["puntos"] and bool(form.get("canjeable_con_puntos"))
+    solo_canje = features["puntos"] and bool(form.get("solo_canje"))
     puntos_para_canje = form.get("puntos_para_canje", type=int)
+    # Un producto solo_canje IMPLICA canjeable_con_puntos y precio=0
+    if solo_canje:
+        canjeable = True
+        precio = 0.0  # no vendible con dinero
     if canjeable and (not puntos_para_canje or puntos_para_canje <= 0):
         return None, "Indica cuántos puntos se necesitan para el canje (debe ser > 0)."
     es_hipoalergenico = bool(form.get("es_hipoalergenico"))
@@ -1943,6 +1948,7 @@ def _parsear_campos_producto(form):
         # canje con puntos
         "canjeable_con_puntos":      canjeable,
         "puntos_para_canje":         puntos_para_canje if canjeable else None,
+        "solo_canje":                solo_canje,
         # hipoalergénicos / alérgenos EU
         "es_hipoalergenico":         es_hipoalergenico,
         "alergenos_json":            json.dumps(alergenos) if alergenos else None,

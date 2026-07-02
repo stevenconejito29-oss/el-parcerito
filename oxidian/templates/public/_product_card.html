@@ -31,7 +31,11 @@
       {% if p.tipo_entrega in ('programado','encargo') %}
       <span class="ep-cbadge ep-cbadge-encargo">📆 Fecha fija{% if p.fecha_llegada %}: {{ p.fecha_llegada.strftime('%d/%m') }}{% endif %}</span>
       {% endif %}
-      {% if p.canjeable_con_puntos %}<span class="ep-cbadge ep-cbadge-puntos">⭐</span>{% endif %}
+      {% if p.solo_canje %}
+        <span class="ep-cbadge ep-cbadge-puntos" style="background:linear-gradient(135deg,#C084FC,#8B5CF6);color:#fff;font-weight:900">🎁 SOLO CANJE</span>
+      {% elif p.canjeable_con_puntos %}
+        <span class="ep-cbadge ep-cbadge-puntos">⭐ Canjeable</span>
+      {% endif %}
       {% set stock_origen = stock_en_origen(p, origen_actual) %}
       {% if p.stock_mostrar_en_web and stock_origen <= 5 and stock_origen > 0 %}
       <span class="ep-cbadge ep-cbadge-urgente">⚡ Quedan {{ stock_origen }}</span>

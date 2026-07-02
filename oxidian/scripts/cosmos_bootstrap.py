@@ -40,9 +40,27 @@ def main() -> None:
             "EVOLUTION_INSTANCE": env("EVOLUTION_INSTANCE"),
             "WEBHOOK_SECRET": env("WEBHOOK_SECRET"),
         }
+        # Claves de bootstrap "fuerte" (deben venir siempre del env; suelen ser
+        # secretos/URLs de infraestructura). Se sobreescriben en cada arranque.
+        BOOTSTRAP_FUERTE = {
+            "BOT_API_URL", "BOT_PUBLIC_URL", "BOT_API_KEY", "BOT_PANEL_KEY",
+            "OXIDIAN_PUBLIC_URL",
+            "EVOLUTION_API_URL", "EVOLUTION_API_KEY", "EVOLUTION_INSTANCE",
+            "WEBHOOK_SECRET",
+        }
+        # El resto son valores EDITABLES desde /superadmin/config. El env solo
+        # se usa como bootstrap inicial — si ya hay valor en BD, NO se pisa.
+        # Fix de 2026-07-02: antes reseteaba NOMBRE_NEGOCIO, TELEFONO_NEGOCIO,
+        # etc. en cada restart, deshaciendo los cambios del admin.
         for key, value in mappings.items():
-            if value:
+            if not value:
+                continue
+            if key in BOOTSTRAP_FUERTE:
                 SiteConfig.set(key, value)
+            else:
+                existente = SiteConfig.get(key, "")
+                if not str(existente or "").strip():
+                    SiteConfig.set(key, value)
 
         db.session.commit()
 

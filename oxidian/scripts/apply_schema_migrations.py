@@ -177,6 +177,19 @@ def _migrate_product_order_group():
         ))
 
 
+def _migrate_product_solo_canje():
+    """Añade Product.solo_canje (bool NOT NULL default false).
+    Marca productos exclusivos de canje con puntos — no comprables con dinero."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("products"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("products")}
+    if "solo_canje" not in existing:
+        db.session.execute(text(
+            "ALTER TABLE products ADD COLUMN solo_canje BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+
+
 def _migrate_combo_groups_structure():
     inspector = inspect(db.engine)
     if not inspector.has_table("products"):
@@ -964,6 +977,11 @@ MIGRATIONS = [
         "id": "20260701_02_reusable_extra_catalog",
         "description": "Crear biblioteca reutilizable de extras y vincularla a productos",
         "fn": _migrate_reusable_extra_catalog,
+    },
+    {
+        "id": "20260702_01_product_solo_canje",
+        "description": "Añadir Product.solo_canje (productos exclusivos de canje con puntos)",
+        "fn": _migrate_product_solo_canje,
     },
 ]
 

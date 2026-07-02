@@ -583,6 +583,13 @@ def agregar_carrito(producto_id):
         return redirect(request.referrer or url_for("public.index"))
 
     producto = get_or_404(Product, producto_id)
+    # Bloqueo: productos EXCLUSIVOS de canje con puntos no se pueden comprar.
+    # Redirige al cliente al club para canjear con puntos.
+    if getattr(producto, "solo_canje", False):
+        return _err(
+            "«{}» sólo se obtiene canjeando puntos. Ve al Club de puntos.".format(producto.nombre),
+            "info",
+        )
     origen_solicitado = _normalizar_origen(request.form.get("origen"))
     if not origen_solicitado:
         origen_solicitado = "propio"
@@ -1403,11 +1410,26 @@ def checkout():
         puntos_por_euro = puntos_cfg["por_euro"]
         puntos_a_canjear = 0
         cart_puntos = session.get("cart_puntos", {})
-        if (puntos_habilitados and cart_puntos and cart_puntos.get("cliente_id") == cliente.id
+        # Guard defensivo: si el módulo de puntos se apagó entre el GET y este
+        # POST, ignoramos silenciosamente cualquier `cart_puntos` cacheado y el
+        # `puntos_usar` del form. Evita que un canje quede "pegado" en sesión y
+        # se aplique después de que super_admin desactive FEATURE_PUNTOS.
+        puntos_pedidos_por_form = 0
+        try:
+            puntos_pedidos_por_form = max(0, int(request.form.get("puntos_usar", 0) or 0))
+        except (TypeError, ValueError):
+            puntos_pedidos_por_form = 0
+        if not puntos_habilitados:
+            # Limpiar cualquier residuo de una sesión previa
+            session.pop("cart_puntos", None)
+            session.pop("cart_producto_canje_id", None)
+            if puntos_pedidos_por_form > 0:
+                flash("El canje de puntos se ha desactivado. Refresca el checkout.", "warning")
+                return redirect(url_for("public.checkout"))
+        elif (cart_puntos and cart_puntos.get("cliente_id") == cliente.id
                 and cart_puntos.get("verificado")
                 and cart_puntos.get("origen") == origen):
-            pts = min(max(0, int(request.form.get("puntos_usar", 0) or 0)), cliente.puntos)
-            puntos_a_canjear = pts
+            puntos_a_canjear = min(puntos_pedidos_por_form, cliente.puntos)
 
         # Producto canje desde sesión solo si el formulario no envió decisión explícita.
         if producto_canje_raw is None and not producto_canje_id:

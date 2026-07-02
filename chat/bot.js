@@ -1183,6 +1183,9 @@ function hitWindow(map, key, windowMs, maxHits) {
 }
 
 function inboundAllowed(jid, admin = false) {
+  // Registrar entrada SIEMPRE (incluye admin/SA) para que sendText no dispare
+  // cold_message_blocked cuando respondemos al mismo hilo.
+  lastInboundAt.set(jid, Date.now());
   if (admin) return true;
   const muted = getMutedClient(phoneFromJid(jid));
   if (muted) {
@@ -1967,6 +1970,21 @@ async function aiSmartReply(jid, ses, mensajeUsuario) {
     return null;
   }
 
+  // Cache LRU compartido: si otro cliente hizo la MISMA pregunta hace poco,
+  // devolvemos la respuesta cacheada sin gastar tokens. Clave = texto
+  // normalizado. TTL corto (aiCache) para no servir información caducada.
+  const cacheKey = 'smart:' + String(mensajeUsuario || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9áéíóúñü ]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  const cached = aiCacheGet(cacheKey);
+  if (cached && typeof cached === 'object' && cached.action) {
+    log('info', 'ai_smart_cache_hit', `phone=${phone} key=${cacheKey.slice(0, 40)}`);
+    return { ...cached, fromCache: true };
+  }
+
   // Rate limit pre-flight con el backend (cuenta llamadas sin tokens).
   try {
     const usage = await oxidianPost('/ai/usage', { telefono: phone, tokens_in: 0, tokens_out: 0 });
@@ -2020,7 +2038,11 @@ async function aiSmartReply(jid, ses, mensajeUsuario) {
     await oxidianPost('/ai/usage', { telefono: phone, tokens_in: out.tokens_in, tokens_out: out.tokens_out });
   } catch {}
 
-  return { action, reply, confidence, cliente };
+  // Guardar en cache LRU la respuesta (sin memoria de cliente específico —
+  // el reply es genérico, útil para el próximo que pregunte lo mismo).
+  const result = { action, reply, confidence, cliente };
+  try { aiCacheSet(cacheKey, { action, reply, confidence, cliente: null }); } catch {}
+  return result;
 }
 
 // ─── SYNC DEL HASH DEL PIN ADMIN ────────────────────────────────────────────
@@ -2423,7 +2445,7 @@ function setClientState(ses, estado, pending = {}) {
   saveSesion(ses);
 }
 
-async function startClientMenu(jid, nombre = null) {
+async function startClientMenu(jid, nombre = null, primerMensaje = null) {
   const ses = { jid, nombre, role: 'client', estado: clientStateFor(jid, 'main_menu'), carrito: [], pending: {}, zona_id: null, active_client_jid: null };
   saveSesion(ses);
   // Si el cliente tiene un pedido activo, lo saludamos primero. El resumen
@@ -2432,10 +2454,37 @@ async function startClientMenu(jid, nombre = null) {
   if (resumenPedido) {
     return sendText(jid, resumenPedido);
   }
+  // Si su primer mensaje ya es una pregunta natural (no un simple saludo),
+  // procesamos con la cascada FAQ→intent→IA para no perderle una interacción
+  // en la bienvenida. La bienvenida se prepende como línea corta.
+  const textoPrimero = String(primerMensaje || '').trim();
+  const esConsulta = textoPrimero &&
+    !esSaludo(textoPrimero) &&
+    (typeof _looksLikeNaturalQuestion === 'function' ? _looksLikeNaturalQuestion(textoPrimero.toLowerCase()) : textoPrimero.length > 8);
+  if (esConsulta) {
+    try {
+      // 1) FAQ canned primero (sin IA)
+      const faq = typeof tryCannedFAQ === 'function' ? tryCannedFAQ(textoPrimero, _buildFaqContext(ses)) : null;
+      if (faq) {
+        if (typeof bumpStat === 'function') bumpStat('faq');
+        const nombreCorto = _primerNombre(nombre);
+        const saludo = nombreCorto ? `${saludoHora()}, ${nombreCorto}. ` : '';
+        return sendText(jid, `${saludo}\n${faq.text}`);
+      }
+      // 2) IA como fallback
+      const smart = await aiSmartReply(jid, ses, textoPrimero);
+      if (smart && smart.reply && smart.reply.length > 1) {
+        if (typeof bumpStat === 'function') bumpStat(smart.fromCache ? 'ai_cache_hit' : 'ai_fresh');
+        const nombreCorto = _primerNombre(nombre);
+        const saludo = nombreCorto ? `👋 *${saludoHora()}, ${nombreCorto}*` : `👋 *${saludoHora()}*`;
+        return sendText(jid, `${saludo}\n\n${smart.reply}\n\n_Escribe *menu* para más opciones._`);
+      }
+    } catch (err) {
+      log('warn', 'client_first_msg_ai_fail', err?.message || String(err));
+    }
+  }
   // Sin pedido activo → saludo conversacional natural (sin lista numerada).
-  // El cliente puede escribirle como a una persona; nuestra cascada NLU
-  // (saludo → FAQ → intent fuzzy → AI) responderá. Solo si pide explícitamente
-  // "opciones" o "menú" mostramos la lista numerada.
+  if (typeof bumpStat === 'function') bumpStat('saludo');
   return sendText(jid, bienvenidaConversacional(ses));
 }
 
@@ -2931,7 +2980,16 @@ async function requireAdminPin(jid, ses, text) {
 // ─── ESTADO PRINCIPAL: ROUTER DE MENSAJES ────────────────────────────────────
 async function _handleMessage(jid, text, pushName) {
   const ses = getSesion(jid);
-  if (!ses.nombre && pushName) { ses.nombre = pushName; }
+  // No confiar en pushName para admins/SA: WhatsApp broadcasts el nombre
+  // configurado en el contacto del emisor, que no coincide con el rol interno.
+  // Para admin/SA usamos etiqueta de rol; para cliente sí aceptamos pushName.
+  if (!ses.nombre) {
+    if (isAdminJid(jid)) {
+      ses.nombre = adminRoleLabel(jid);
+    } else if (pushName) {
+      ses.nombre = pushName;
+    }
+  }
 
   // ── Enriquecer sesión con datos del cliente registrado (memoria) ──
   // Lo hacemos una vez por sesión (cuando aún no tenemos cliente_id) y solo
@@ -3055,14 +3113,34 @@ async function _handleMessage(jid, text, pushName) {
   }
 
   if (!ses || !ses.estado || ses.estado === 'idle') {
-    if (isOwner) return startAdminMenu(jid, ses?.nombre || pushName || null);
+    if (isOwner) {
+      // Owner/admin sin sesión → si escribe una pregunta natural (≥3 palabras
+      // o interrogación), inicializamos sesión admin y le pasamos el mensaje
+      // al handler admin, que caerá en el default con IA. Si escribe algo
+      // corto o un número, se le muestra el menú admin clásico.
+      const looksNatural = typeof _looksLikeNaturalQuestion === 'function'
+        ? _looksLikeNaturalQuestion(lower)
+        : false;
+      if (looksNatural) {
+        const nombre = ses?.nombre || pushName || null;
+        const adminSes = {
+          jid, nombre, role: 'admin', estado: 'admin_menu',
+          carrito: [], pending: {}, zona_id: null, active_client_jid: null,
+        };
+        saveSesion(adminSes);
+        return handleAdminMenu(jid, adminSes, lower);
+      }
+      return startAdminMenu(jid, ses?.nombre || pushName || null);
+    }
     if (!isOwner && /^[1-7]$/.test(lower)) {
       ses.role = 'client';
       ses.estado = 'main_menu';
       saveSesion(ses);
       return handleMainMenu(jid, ses, lower);
     }
-    return startClientMenu(jid, ses?.nombre || pushName || null);
+    // Pasamos el primer mensaje para que si es una pregunta natural, se responda
+    // con FAQ/IA en el mismo turno en vez de solo un saludo aislado.
+    return startClientMenu(jid, ses?.nombre || pushName || null, text);
   }
 
   // Las sesiones antiguas de operador ya no forman parte del producto actual.
@@ -3238,6 +3316,7 @@ async function handleAdminCmd(jid, text) {
   if (requiredCapability && !adminCan(jid, requiredCapability)) {
     return sendText(jid, `No tienes permiso para ese comando.\n\n${adminMenu(jid)}`);
   }
+  bumpStat('admin_cmd');
 
   if (lowerCmd === 'status') {
     const sesiones = db.prepare(`SELECT COUNT(*) as c FROM sessions`).get().c;
@@ -3247,12 +3326,20 @@ async function handleAdminCmd(jid, text) {
     const assigned = db.prepare(`SELECT COUNT(*) as c FROM handoffs WHERE admin_jid IS NOT NULL`).get().c;
     const logs = db.prepare(`SELECT COUNT(*) as c FROM logs WHERE created_at >= unixepoch()-86400`).get().c;
     const prods = db.prepare(`SELECT COUNT(*) as c FROM productos_cache WHERE activo=1`).get().c;
+    // Reporte de ahorro IA (si hay tráfico).
+    const totalMsg = Object.entries(MSG_STATS).filter(([k]) => k !== 'since').reduce((s, [, v]) => s + v, 0);
+    const sinIA = MSG_STATS.saludo + MSG_STATS.faq + MSG_STATS.intent + MSG_STATS.ai_cache_hit;
+    const pctSinIA = totalMsg > 0 ? Math.round((sinIA / totalMsg) * 100) : 0;
     return sendText(jid,
       `🤖 *Bot Status*\n\n` +
       `Sesiones: ${sesiones} (${clientes} clientes / ${admins} admins)\n` +
       `Handoffs: ${pending} pendientes / ${assigned} activos\n` +
       `Catálogo cache: ${prods} productos\n` +
-      `Logs 24h: ${logs}\n` +
+      `Logs 24h: ${logs}\n\n` +
+      `📊 *Ahorro IA*\n` +
+      `Mensajes procesados: ${totalMsg}\n` +
+      `Sin IA (FAQ+intent+cache): ${sinIA} (${pctSinIA}%)\n` +
+      `IA fresca: ${MSG_STATS.ai_fresh} · Cache hit: ${MSG_STATS.ai_cache_hit}\n\n` +
       `Evolution: ${getEvolutionUrl()}\n` +
       `Instancia: ${getEvolutionInstance()}\n` +
       `Oxidian: ${getOxidianUrl()}`
@@ -3261,6 +3348,29 @@ async function handleAdminCmd(jid, text) {
 
   if (lowerCmd === 'menu') {
     return startAdminMenu(jid, getSesion(jid).nombre);
+  }
+
+  if (lowerCmd === 'hoy' || lowerCmd === 'resumen' || lowerCmd === 'ventas') {
+    try {
+      const r = await oxidianGet('/admin/resumen-hoy');
+      if (!r || !r.ok) throw new Error(r?.error || 'sin datos');
+      const agot = (r.productos_sin_stock || []).slice(0, 8)
+        .map(p => `  • ${p.nombre}`).join('\n');
+      const cola = r.total_sin_stock > 8 ? `\n  … +${r.total_sin_stock - 8} más` : '';
+      return sendText(jid,
+        `📊 *Resumen de hoy* (${r.fecha})\n\n` +
+        `Pedidos: ${r.pedidos_hoy}\n` +
+        `  ✅ Entregados: ${r.entregados}\n` +
+        `  ❌ Cancelados: ${r.cancelados}\n` +
+        `Ventas: ${r.ventas_hoy.toLocaleString('es-ES', {style:'currency', currency:'EUR'})}\n` +
+        `Activos ahora: ${r.activos}\n\n` +
+        (r.total_sin_stock > 0
+          ? `⚠️ *Sin stock* (${r.total_sin_stock}):\n${agot}${cola}`
+          : `✅ Todos los productos con stock.`)
+      );
+    } catch (e) {
+      return sendText(jid, `No pude consultar el resumen: ${e.message || e}`);
+    }
   }
 
   if (lowerCmd === 'sync') {
@@ -3571,6 +3681,74 @@ const CLIENT_FAQS = [
       `Elige los productos, indica si quieres delivery o pasar a recoger, y listo.`
     ),
   },
+  {
+    // Combos y ofertas — muy consultado. Redirige a tienda para ver actual.
+    name: 'combos_ofertas',
+    match: /\b(combo|combos|ofert(a|as)|promo(ci[oó]n(es)?)?|descuento|especial(es)?|pack|packs|men[uú]\s+del\s+d[ií]a|barato|econ[oó]mico|paquete)\b/i,
+    answer: (ctx) => (
+      `🎁 *Combos y ofertas de hoy*\n\n` +
+      `Las promos cambian según disponibilidad. Míralas actualizadas aquí:\n👉 ${ctx.tiendaUrl}\n\n` +
+      `_Escribe *menú* para más opciones._`
+    ),
+  },
+  {
+    // Alérgenos y dietas — típico de una pregunta a IA. Respuesta corta.
+    name: 'alergenos_dietas',
+    match: /\b(vegan[oa]s?|vegetarian[oa]s?|sin\s+glut(en)?|celiac[oa]s?|al[eé]rgen(o|os)|alergia|intolerancia|lactos[a]?|sin\s+lactosa|kosher|halal|sin\s+az[uú]car)\b/i,
+    answer: (ctx) => (
+      `🌿 *Alérgenos e información dietética*\n\n` +
+      `Cada producto tiene sus iconos de alérgenos en la ficha. Para revisarlos con calma:\n👉 ${ctx.tiendaUrl}\n\n` +
+      `Si tienes una alergia importante, avísanos al confirmar el pedido y lo tenemos en cuenta.`
+    ),
+  },
+  {
+    // Precio del envío / mínimo — pregunta frecuente. Redirige a checkout.
+    name: 'envio_precio_minimo',
+    match: /\b(precio\s+del?\s+env[ií]o|env[ií]o\s+gratis|coste\s+del?\s+env[ií]o|cu[aá]nto\s+cuesta\s+el\s+env[ií]o|m[ií]nimo\s+de?\s+pedido|pedido\s+m[ií]nimo|gastos?\s+de\s+env[ií]o)\b/i,
+    answer: (ctx) => {
+      if (!ctx.delivery_enabled) {
+        return `🏪 En este momento no hacemos entregas a domicilio, solo recogida en local. No hay coste de envío.`;
+      }
+      return (
+        `🚴 *Envío y mínimo*\n\n` +
+        `El coste de envío y el pedido mínimo dependen de tu zona. Al meter tu dirección en el checkout te aparece el precio exacto:\n👉 ${ctx.tiendaUrl}`
+      );
+    },
+  },
+  {
+    // Bizum — cómo pagar con Bizum. Frecuente en España.
+    name: 'bizum_detalle',
+    match: /\b(bizum(iar)?|c[oó]mo\s+pago\s+con\s+bizum|env[ií]o\s+bizum|bizumear|hacer\s+bizum)\b/i,
+    answer: (ctx) => {
+      if (!ctx.bizum_enabled) {
+        return `Bizum no está habilitado ahora mismo en la tienda. Puedes pagar con las opciones que aparecen al confirmar tu pedido.`;
+      }
+      return (
+        `💸 *Pago con Bizum*\n\n` +
+        `Elige *Bizum* al confirmar tu pedido. Te mostraremos el número al que enviar el importe. En cuanto llegue, tu pedido entra a preparación.\n\n` +
+        `👉 ${ctx.tiendaUrl}`
+      );
+    },
+  },
+  {
+    // Está abierto ahora — frecuente después de horario.
+    name: 'abierto_ahora',
+    match: /\b(est[aá]n?\s+abier(to|tos)\s+ahora|est[aá]n?\s+cerrad(o|os)\s+ahora|abren\s+ahora|cerraron|siguen\s+abiertos|est[aá]n\s+ya\s+cerrad(o|os))\b/i,
+    answer: (ctx) => {
+      const abierta = String(cfg('tienda_abierta', '1')) === '1';
+      if (abierta) return `🟢 *${ctx.negocio}* está abierto ahora.\n\nHaz tu pedido aquí:\n👉 ${ctx.tiendaUrl}`;
+      const msg = String(cfg('tienda_mensaje_cierre', '') || '').trim();
+      return `🔴 *${ctx.negocio}* está cerrado en este momento.\n${msg ? '\n' + msg + '\n' : ''}${ctx.horario ? '\n' + ctx.horario + '\n' : ''}\nCuando abramos podrás pedir en: ${ctx.tiendaUrl}`;
+    },
+  },
+  {
+    // Link a la tienda — atajo súper común.
+    name: 'link_tienda',
+    match: /\b(cu[aá]l\s+es\s+la\s+p[aá]gina|d[oó]nde\s+pido|link\s+de?\s+la\s+tienda|url\s+de?\s+la\s+tienda|p[aá]gina\s+(web)?|el\s+link|el\s+enlace|la\s+web)\b/i,
+    answer: (ctx) => (
+      `🛒 Aquí tienes la tienda:\n👉 ${ctx.tiendaUrl}\n\n_Todo se pide desde ahí._`
+    ),
+  },
 ];
 
 /**
@@ -3691,26 +3869,30 @@ async function handleMainMenu(jid, ses, opcion) {
 
   // 1) Saludo — respuesta conversacional, sin abrumar con menú numerado.
   if (esSaludo(textoLibre) && textoLibre.length < 30) {
+    bumpStat('saludo');
     return sendText(jid, bienvenidaConversacional(ses));
   }
 
   // 2) Despedida / agradecimiento
   if (esDespedida(textoLibre) && textoLibre.length < 50) {
+    bumpStat('saludo');
     const nombre = _primerNombre(ses?.nombre);
     const cierre = nombre ? `¡Hasta pronto, ${nombre}! 💛` : `¡Hasta pronto! 💛`;
     return sendText(jid, `${cierre}\n\nEscríbeme cuando quieras. Estaré por aquí. 🍽️`);
   }
 
-  // 3) FAQ canned (horario, dirección, pago, tiempo entrega, take-away, "cómo pedir")
+  // 3) FAQ canned (horario, dirección, pago, tiempo entrega, take-away, "cómo pedir",
+  //    combos, alérgenos, envío, bizum, abierto ahora, link tienda)
   const faq = tryCannedFAQ(textoLibre, _buildFaqContext(ses));
   if (faq) {
+    bumpStat('faq');
     log('info', 'faq_canned', faq.name);
     return sendText(jid, faq.text);
   }
 
   // 4) Detección de intención numérica/keyword (con tolerancia a typos)
   const detectada = detectClientIntent(opcion);
-  if (detectada) opcion = detectada;
+  if (detectada) { bumpStat('intent'); opcion = detectada; }
   log('info', 'main_menu_choice', String(opcion));
   const tiendaUrl = getTiendaUrl();
   switch (opcion) {
@@ -3832,6 +4014,8 @@ async function handleMainMenu(jid, ses, opcion) {
       }
 
       if (smart && smart.confidence >= 0.55) {
+        // Registrar si vino de cache o fue llamada fresca a la IA.
+        if (smart.fromCache) bumpStat('ai_cache_hit'); else bumpStat('ai_fresh');
         switch (smart.action) {
           case 'estado':
             return handleMainMenu(jid, ses, '2');
@@ -3853,10 +4037,15 @@ async function handleMainMenu(jid, ses, opcion) {
         }
       } else if (smart && smart.reply && smart.reply.length > 1) {
         // Baja confianza pero hay reply (probablemente una aclaración) → enviar.
+        if (smart.fromCache) bumpStat('ai_cache_hit'); else bumpStat('ai_fresh');
         return sendText(jid, smart.reply);
+      } else {
+        // IA no aportó nada útil (deshabilitada, fallo o límite).
+        bumpStat('ai_fail');
       }
 
       // Sin IA o IA falló: orientación corta, sin abrumar con menú.
+      bumpStat('fallback');
       return sendText(jid,
         `${pick(FRASES_NO_ENTENDI)} ¿Quieres consultar un pedido, saber el horario, abrir la tienda online o hablar con una persona?`
       );
@@ -4262,8 +4451,111 @@ async function handleAdminMenu(jid, ses, opcion) {
       return sendText(jid, `🧪 *Modo cliente de prueba activado.*\nEscribe *admin* para volver al panel.\n\n${menuPrincipal()}`);
     }
     default:
+      // Si es un comando corto (word/short) → probablemente típo, mostrar menú.
+      // Si es una pregunta natural (>= 3 palabras o interrogación) → IA fallback.
+      if (_looksLikeNaturalQuestion(lower)) {
+        if (typeof bumpStat === 'function') bumpStat('ai_fresh');
+        try {
+          const smart = await aiSmartReplyAdmin(jid, ses, lower);
+          if (smart && smart.reply && smart.reply.length > 1) {
+            return sendText(jid, `${smart.reply}\n\n_Escribe *menu* para ver opciones admin._`);
+          }
+        } catch (err) {
+          log('warn', 'ai_admin_fail', err?.message || String(err));
+        }
+      }
       return sendText(jid, adminMenu(jid));
   }
+}
+
+// Heurística: ¿el texto parece una pregunta natural (no comando)?
+function _looksLikeNaturalQuestion(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (/^\d+$/.test(t)) return false;          // Solo dígitos → comando
+  if (t.length < 5) return false;             // Muy corto → probable typo
+  const words = t.split(/\s+/).filter(Boolean);
+  if (words.length >= 3) return true;         // 3+ palabras → natural
+  if (/\?|¿|cómo|como|qué|que|dónde|donde|cuánto|cuanto|por qué|porque/i.test(t)) return true;
+  return false;
+}
+
+// Versión admin del smart reply: prompt de sistema con contexto interno.
+// Reutiliza el pipeline de aiSmartReply pero con instrucciones específicas
+// para admin/super_admin (informar, no ejecutar acciones destructivas).
+async function aiSmartReplyAdmin(jid, ses, mensajeUsuario) {
+  const cfg = await getAIConfig();
+  if (!cfg || !cfg.habilitado) return null;
+  const phone = phoneFromJid(jid);
+  if (!phone) return null;
+
+  // Cache LRU compartido para preguntas admin frecuentes (métricas, horario, etc.)
+  const cacheKey = 'admin_smart:' + String(mensajeUsuario || '')
+    .toLowerCase().replace(/[^a-z0-9áéíóúñü ]/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const cached = aiCacheGet(cacheKey);
+  if (cached && typeof cached === 'object' && cached.reply) {
+    log('info', 'ai_admin_cache_hit', `phone=${phone}`);
+    return { ...cached, fromCache: true };
+  }
+
+  // Rate limit pre-flight
+  try {
+    const usage = await oxidianPost('/ai/usage', { telefono: phone, tokens_in: 0, tokens_out: 0 });
+    if (usage?.exceeded_global) return null;
+  } catch (_) {}
+
+  // Contexto admin: métricas actuales + toggles + rol
+  let ctx = { rol: adminRoleLabel(jid), negocio: getNegocioNombre(), tienda_url: getTiendaUrl() };
+  try {
+    const branding = await oxidianGet('/branding');
+    if (branding && branding.ok) {
+      ctx.horario = `${branding.horario_apertura || ''}-${branding.horario_cierre || ''}`;
+      ctx.direccion = branding.direccion || '';
+      ctx.abierta = branding.tienda_abierta !== false;
+      ctx.delivery = branding.delivery_enabled !== false;
+      ctx.recogida = branding.pickup_enabled !== false;
+      ctx.puntos = branding.points_enabled !== false;
+    }
+  } catch (_) {}
+
+  const sysPrompt = [
+    `Eres el asistente interno del panel WhatsApp de "${ctx.negocio}".`,
+    `Hablas con: ${ctx.rol}. Su nombre: ${ses?.nombre || 'colega'}.`,
+    ``,
+    `Estado actual de la tienda:`,
+    `- Nombre: ${ctx.negocio}`,
+    `- Horario: ${ctx.horario || 'no configurado'}`,
+    `- Dirección: ${ctx.direccion || 'no configurada'}`,
+    `- Abierta ahora: ${ctx.abierta ? 'sí' : 'no'}`,
+    `- Delivery: ${ctx.delivery ? 'activo' : 'inactivo'}`,
+    `- Recogida: ${ctx.recogida ? 'activa' : 'inactiva'}`,
+    `- Programa de puntos: ${ctx.puntos ? 'activo' : 'inactivo'}`,
+    `- URL tienda: ${ctx.tienda_url}`,
+    ``,
+    `Instrucciones:`,
+    `- Responde de forma directa, corta (máximo 3 líneas), profesional pero cercana.`,
+    `- Si te pide una acción destructiva (borrar, cerrar, cambiar precio), NO la ejecutes. Indícale el comando del menú admin correspondiente (opción numerada).`,
+    `- Si pregunta métricas o info operativa que no tengas, dile que la mire en "/admin/dashboard" con el link.`,
+    `- Si pregunta algo del negocio (horario, dirección, features), respondes con los datos de arriba.`,
+    `- No uses emojis excesivos. Máximo 1 por respuesta.`,
+    (cfg.reglas_extra || '').slice(0, 400),
+  ].filter(Boolean).join('\n').slice(0, 1800);
+
+  const messages = [
+    { role: 'system', content: sysPrompt },
+    { role: 'user', content: String(mensajeUsuario).slice(0, 500) },
+  ];
+
+  const out = await _callAIProvider(cfg, messages);
+  if (!out || !out.text) return null;
+
+  try {
+    await oxidianPost('/ai/usage', { telefono: phone, tokens_in: out.tokens_in || 0, tokens_out: out.tokens_out || 0 });
+  } catch (_) {}
+
+  const result = { reply: out.text.trim(), confidence: 0.8, admin: true };
+  try { aiCacheSet(cacheKey, result); } catch (_) {}
+  return result;
 }
 
 async function handleAdminStoreMenu(jid, ses, opcion) {
@@ -4950,6 +5242,57 @@ app.get('/health', async (req, res) => {
 });
 
 // Estado para el panel de admin de Flask
+// ──────────────────────────────────────────────────────────────────────
+// Métricas globales del pipeline conversacional cliente. Se acumulan
+// en memoria (rotan al reiniciar). Muestran cuánto tráfico se resuelve
+// SIN IA vs cuánto sí — para ver el ahorro real de tokens.
+// ──────────────────────────────────────────────────────────────────────
+const MSG_STATS = {
+  since: Date.now(),
+  saludo: 0,        // Respondido con canned de saludo/despedida
+  faq: 0,           // Respondido con CLIENT_FAQS
+  intent: 0,        // Resuelto con detectClientIntent (keywords + fuzzy)
+  ai_cache_hit: 0,  // Respondido desde LRU cache de IA
+  ai_fresh: 0,      // Llamada nueva a la IA
+  ai_fail: 0,       // IA falló o burst limiter cortó
+  admin_cmd: 0,     // Comando ejecutado por admin/super_admin
+  fallback: 0,      // Ni FAQ ni intent ni IA — mensaje genérico
+};
+function bumpStat(k) { if (MSG_STATS[k] !== undefined) MSG_STATS[k]++; }
+try { globalThis.bumpStat = bumpStat; } catch (_) {}
+
+app.get('/api/metrics', (req, res) => {
+  if (!requireApiKey(req, res, { panel: true })) return;
+  const total = Object.entries(MSG_STATS)
+    .filter(([k]) => k !== 'since')
+    .reduce((s, [, v]) => s + v, 0);
+  const sinIA = MSG_STATS.saludo + MSG_STATS.faq + MSG_STATS.intent + MSG_STATS.ai_cache_hit;
+  const conIA = MSG_STATS.ai_fresh;
+  const pct = (v) => total > 0 ? +((v / total) * 100).toFixed(1) : 0;
+  res.json({
+    ok: true,
+    since: MSG_STATS.since,
+    uptime_hours: +((Date.now() - MSG_STATS.since) / 3600000).toFixed(2),
+    total_messages: total,
+    counters: MSG_STATS,
+    percentages: {
+      saludo: pct(MSG_STATS.saludo),
+      faq: pct(MSG_STATS.faq),
+      intent: pct(MSG_STATS.intent),
+      ai_cache_hit: pct(MSG_STATS.ai_cache_hit),
+      ai_fresh: pct(MSG_STATS.ai_fresh),
+      ai_fail: pct(MSG_STATS.ai_fail),
+      admin_cmd: pct(MSG_STATS.admin_cmd),
+      fallback: pct(MSG_STATS.fallback),
+    },
+    ahorro_tokens: {
+      mensajes_sin_ia: sinIA,
+      mensajes_con_ia: conIA,
+      porcentaje_sin_ia: pct(sinIA),
+    },
+  });
+});
+
 app.get('/api/status', async (req, res) => {
   if (!requireApiKey(req, res, { panel: true })) return;
   const prods = db.prepare(`SELECT COUNT(*) as c FROM productos_cache WHERE activo=1`).get().c;

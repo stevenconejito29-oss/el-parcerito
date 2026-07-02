@@ -63,20 +63,23 @@ def _encargo_disponible_para_preparar(pedido):
 
 
 def _puede_operar_pedido(pedido):
-    # Pedidos 100% del bar no aparecen en la cola del preparador interno:
+    # Pedidos 100% del bar externo no aparecen en la cola del preparador interno:
     # el bar los prepara y nuestro personal solo gestiona el reparto.
     from services import es_pedido_solo_bar
     if es_pedido_solo_bar(pedido):
         return False
-    if pedido.items.count() and all(
-        (item.display_canal_preparacion or "cocina").strip().lower() == "almacen"
-        for item in pedido.items
-    ):
-        return False
+    # NOTA: el atributo Product.canal_preparacion ('cocina' | 'almacen') era una
+    # separación interna heredada. NO existe un rol "almacén" — cualquier
+    # preparador puede preparar pedidos 100% de productos empaquetados. Esa
+    # regla se dejaba pedidos huérfanos y se retiró 2026-07-02.
     if _es_admin_operativo() or pedido.preparador_id == current_user.id:
         return True
     if pedido.preparador_id is not None:
         return False
+    # Reparto por rol operativo (misma persona no ve las 2 colas):
+    # · cocina        → solo pedidos inmediatos (comida al momento)
+    # · preparacion   → solo encargos programados (con fecha)
+    # · admin/super_admin → ve TODO
     if current_user.rol == "cocina":
         return not _es_encargo(pedido)
     if current_user.rol == "preparacion":
