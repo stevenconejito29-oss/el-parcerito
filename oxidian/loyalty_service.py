@@ -281,7 +281,12 @@ def aplicar_canje_en_pedido(
 # ── Consulta de puntos ────────────────────────────────────────────────────────
 
 def puntos_disponibles(cliente) -> int:
-    """Puntos actuales del cliente."""
+    """Puntos actuales del cliente. Aplica reset periódico si toca antes de leer."""
+    try:
+        reset_periodico_si_toca()
+    except Exception:
+        # No debemos fallar la consulta si el reset tiene un problema puntual.
+        pass
     return max(0, cliente.puntos)
 
 
@@ -316,3 +321,67 @@ def enviar_saldo_puntos(cliente, commit: bool = True) -> bool:
 def euros_por_puntos(puntos: int, ratio: int = 100) -> float:
     """Convierte puntos a euros según el ratio configurado."""
     return round(puntos / ratio, 2) if ratio > 0 else 0.0
+
+
+# ── Reset periódico de puntos ────────────────────────────────────────────────
+
+def _puntos_reset_config():
+    """Lee la config de reset periódico. Devuelve (period_days, last_reset_iso)."""
+    from models import SiteConfig
+    try:
+        period_days = int(SiteConfig.get("POINTS_RESET_PERIOD_DAYS", "0") or 0)
+    except (ValueError, TypeError):
+        period_days = 0
+    last_reset = SiteConfig.get("POINTS_LAST_RESET_AT", "")
+    return period_days, last_reset
+
+
+def reset_periodico_si_toca():
+    """Comprueba si toca resetear los puntos globalmente y lo hace.
+    Devuelve True si reseteó, False si no.
+    Usa advisory lock para evitar carrera si se llama concurrentemente."""
+    from datetime import datetime, timedelta
+    from extensions import db
+    from models import SiteConfig, User, PointsLog
+
+    period_days, last_reset_iso = _puntos_reset_config()
+    if period_days <= 0:
+        return False  # reset desactivado
+    ahora = datetime.utcnow()
+    if last_reset_iso:
+        try:
+            last = datetime.fromisoformat(last_reset_iso)
+            if ahora - last < timedelta(days=period_days):
+                return False  # aún no toca
+        except (ValueError, TypeError):
+            pass  # fecha corrupta → reseteamos y grabamos ahora
+    # Advisory lock para exclusión mutua entre workers
+    try:
+        db.session.execute(db.text("SELECT pg_advisory_lock(-53214112)"))
+        # Re-check post-lock (double-check locking)
+        _, last_reset_iso = _puntos_reset_config()
+        if last_reset_iso:
+            try:
+                last = datetime.fromisoformat(last_reset_iso)
+                if ahora - last < timedelta(days=period_days):
+                    return False
+            except (ValueError, TypeError):
+                pass
+        # Reset: puntos → 0 para todos los clientes con puntos > 0
+        afectados = 0
+        for u in User.query.filter(User.rol == "cliente", User.puntos > 0).all():
+            previo = int(u.puntos or 0)
+            u.puntos = 0
+            db.session.add(PointsLog(cliente_id=u.id, tipo="reset", cantidad=-previo,
+                                     descripcion=f"Reset periódico ({period_days}d)"))
+            afectados += 1
+        SiteConfig.set("POINTS_LAST_RESET_AT", ahora.isoformat(),
+                       descripcion="Timestamp del último reset automático de puntos")
+        db.session.commit()
+        return afectados
+    finally:
+        try:
+            db.session.execute(db.text("SELECT pg_advisory_unlock(-53214112)"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()

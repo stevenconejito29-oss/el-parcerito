@@ -1516,6 +1516,32 @@ def preset_operacional_features(user_id):
     return redirect(url_for("superadmin.admin_features", user_id=u.id))
 
 
+# ─── RESET DE PUNTOS PERIÓDICO ─────────────────────────
+
+@superadmin_bp.route("/puntos/reset-manual", methods=["POST"])
+@superadmin_required
+def puntos_reset_manual():
+    """Ejecuta un reset inmediato de puntos de todos los clientes.
+    Solo super_admin. Guarda log en PointsLog con motivo 'manual'."""
+    from datetime import datetime
+    from loyalty_service import reset_periodico_si_toca
+    from models import User, PointsLog, SiteConfig
+    afectados = 0
+    for u in User.query.filter(User.rol == "cliente", User.puntos > 0).all():
+        previo = int(u.puntos or 0)
+        u.puntos = 0
+        db.session.add(PointsLog(cliente_id=u.id, tipo="reset", cantidad=-previo,
+                                 descripcion=f"Reset manual por {current_user.email}"))
+        afectados += 1
+    SiteConfig.set("POINTS_LAST_RESET_AT", datetime.utcnow().isoformat(),
+                   descripcion="Timestamp del último reset de puntos")
+    AuditLog.registrar(current_user.id, "puntos_reset_manual", "site_config",
+                       detalle=f"{afectados} clientes reseteados", ip=request.remote_addr)
+    db.session.commit()
+    flash(f"Puntos reseteados a 0 en {afectados} clientes.", "success")
+    return redirect(url_for("superadmin.config"))
+
+
 # ─── ZONAS DE ENTREGA ─────────────────────────
 
 def _exigir_delivery_para_zonas():
