@@ -2,320 +2,312 @@
 {% block title %}Super Admin — Panel de control{% endblock %}
 {% block content %}
 
-<div class="sa-wrap">
+<div class="oa-page">
 
-{# ── CABECERA ── #}
-<div class="sa-header">
-  <div>
-    <p class="sa-eyebrow">Super Administración</p>
-    <h1 class="sa-title">Panel de control</h1>
-  </div>
-  <div class="sa-header-actions">
-    <a href="{{ url_for('admin.dashboard') }}" class="ox-btn-ghost text-sm">Panel Admin →</a>
-    <a href="{{ url_for('public.index') }}" class="ox-btn-ghost text-sm" target="_blank">Ver tienda</a>
-  </div>
-</div>
+  {# ── Header ─────────────────────────────────────────────── #}
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Super administración</p>
+      <h1 class="oa-page-header__title">Panel de control</h1>
+      <p class="oa-page-header__subtitle">Estado operativo, módulos activos y accesos rápidos a toda la configuración de la tienda.</p>
+    </div>
+    <div class="oa-page-header__actions">
+      <a href="{{ url_for('admin.dashboard') }}" class="oa-btn oa-btn--ghost">Panel Admin →</a>
+      <a href="{{ url_for('public.index') }}" class="oa-btn oa-btn--ghost" target="_blank">Ver tienda ↗</a>
+    </div>
+  </header>
 
-<div class="sa-section-label">Módulos de esta tienda</div>
-<div class="sa-quick-grid">
-  {% for slug, nombre, activo, detalle in [
-    ('delivery', 'Delivery', brand.delivery, 'Checkout, zonas y repartidores'),
-    ('recogida', 'Recogida', brand.recogida, 'Pedidos para recoger en local'),
-    ('programados', 'Pedidos por fecha', brand.pedidos_programados, 'Productos y cola de preparación'),
-    ('puntos', 'Canje de puntos', brand.puntos, 'Fidelización y productos canjeables')
-  ] %}
-  <form method="POST" action="{{ url_for('superadmin.toggle_modulo', modulo=slug) }}" class="sa-quick" style="display:block;text-align:left">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="enabled" value="{{ '0' if activo else '1' }}">
-    <span class="sa-status-dot {{ 'sa-dot-on' if activo else 'sa-dot-off' }}"></span>
-    <p class="sa-quick-name">{{ nombre }}</p>
-    <p class="sa-quick-sub">{{ detalle }}</p>
-    <button class="sa-mini-btn mt-3" type="submit">{{ 'Desactivar' if activo else 'Activar' }}</button>
-  </form>
-  {% endfor %}
-</div>
-
-{# ── MODO TIENDA — tarjeta prominente con revenue si es servicio ── #}
-{% if tienda_modo is defined %}
-<div class="sa-mode-card {{ 'sa-mode-service' if tienda_modo.es_servicio else 'sa-mode-own' }}">
-  <div class="sa-mode-left">
-    <span class="sa-mode-pill">
-      <span class="sa-mode-dot"></span>
-      {{ tienda_modo.modo_label }}
-    </span>
-    <p class="sa-mode-desc">
+  {# ── Modo tienda — banner destacado ─────────────────────── #}
+  {% if tienda_modo is defined %}
+  <section class="oa-panel" aria-labelledby="modo-title" style="border-color: color-mix(in srgb, var(--brand-primary) 32%, var(--col-border));">
+    <div class="oa-panel__body" style="display:flex;flex-wrap:wrap;gap:var(--oa-space-5);align-items:center;justify-content:space-between;">
+      <div style="flex:1;min-width:240px;">
+        <span class="oa-badge oa-badge--{{ 'ok' if tienda_modo.es_servicio else 'brand' }}">
+          {% if tienda_modo.es_servicio %}⚡ {% else %}🏪 {% endif %}{{ tienda_modo.modo_label }}
+        </span>
+        <p id="modo-title" style="margin: var(--oa-space-3) 0 var(--oa-space-1); color: var(--col-muted); font-size: var(--oa-font-sm); line-height: 1.5;">
+          {% if tienda_modo.es_servicio %}
+          Modo servicio activo · comisión vigente por venta <strong style="color:var(--col-text);">{{ "%.2f"|format(tienda_modo.comision_pct) }}%</strong>.
+          {% else %}
+          Modo propio · los ingresos van íntegramente a la tienda, sin comisión al hub.
+          {% endif %}
+        </p>
+        <a href="{{ url_for('superadmin.config') }}#tienda" class="oa-btn oa-btn--sm oa-btn--ghost" style="margin-top: var(--oa-space-2);">Cambiar modo</a>
+      </div>
       {% if tienda_modo.es_servicio %}
-      Comisión vigente por venta: <strong>{{ "%.2f"|format(tienda_modo.comision_pct) }}%</strong>
-      {% else %}
-      Ingresos íntegros para la tienda. Sin comisión al hub.
+      <div class="oa-kpi-grid" style="min-width:280px;flex:1;margin:0;grid-template-columns:1fr 1fr;">
+        <div class="oa-kpi oa-kpi--ok">
+          <p class="oa-kpi__label">Comisión hoy</p>
+          <p class="oa-kpi__value">€{{ "%.2f"|format(tienda_modo.comision_hoy) }}</p>
+        </div>
+        <div class="oa-kpi oa-kpi--primary">
+          <p class="oa-kpi__label">Comisión mes</p>
+          <p class="oa-kpi__value">€{{ "%.2f"|format(tienda_modo.comision_mes) }}</p>
+        </div>
+      </div>
       {% endif %}
-    </p>
-    <a href="{{ url_for('superadmin.config') }}#tienda" class="sa-mode-cta">Cambiar modo →</a>
-  </div>
-  {% if tienda_modo.es_servicio %}
-  <div class="sa-mode-right">
-    <div class="sa-mode-metric">
-      <span class="sa-mode-label">Comisión hoy</span>
-      <p class="sa-mode-val">€{{ "%.2f"|format(tienda_modo.comision_hoy) }}</p>
     </div>
-    <div class="sa-mode-metric">
-      <span class="sa-mode-label">Comisión este mes</span>
-      <p class="sa-mode-val sa-mode-val-lg">€{{ "%.2f"|format(tienda_modo.comision_mes) }}</p>
-    </div>
-  </div>
+  </section>
   {% endif %}
-</div>
-<style>
-.sa-mode-card{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.15rem;margin:0 0 1rem;border-radius:14px;background:linear-gradient(135deg,color-mix(in srgb,var(--brand-primary) 12%,transparent),color-mix(in srgb,var(--brand-primary) 4%,transparent));border:1px solid color-mix(in srgb,var(--brand-primary) 30%,transparent);position:relative;overflow:hidden}
-.sa-mode-card::before{content:"";position:absolute;inset:auto -20% -60% -20%;height:150%;background:radial-gradient(60% 50% at 50% 100%,color-mix(in srgb,var(--brand-primary) 22%,transparent),transparent);pointer-events:none;filter:blur(30px)}
-.sa-mode-card.sa-mode-service{background:linear-gradient(135deg,rgba(94,240,151,.16),rgba(94,240,151,.04));border-color:rgba(94,240,151,.35)}
-.sa-mode-card.sa-mode-service::before{background:radial-gradient(60% 50% at 50% 100%,rgba(94,240,151,.24),transparent)}
-.sa-mode-left{flex:1;min-width:230px;position:relative;z-index:1}
-.sa-mode-pill{display:inline-flex;align-items:center;gap:.45rem;padding:.35rem .75rem;border-radius:999px;background:rgba(0,0,0,.24);color:#fff;font-size:.72rem;font-weight:900;letter-spacing:.03em;text-transform:uppercase}
-.sa-mode-dot{width:8px;height:8px;border-radius:50%;background:var(--brand-primary);box-shadow:0 0 8px currentColor,0 0 0 3px color-mix(in srgb,currentColor 22%,transparent);animation:sa-mode-pulse 2.4s ease-in-out infinite}
-.sa-mode-service .sa-mode-dot{background:#5EF097}
-@keyframes sa-mode-pulse{50%{transform:scale(1.25);opacity:.7}}
-.sa-mode-desc{margin:.6rem 0 .35rem;color:var(--col-muted);font-size:.85rem;line-height:1.4}
-.sa-mode-desc strong{color:var(--col-text);font-weight:900}
-.sa-mode-cta{display:inline-block;color:var(--brand-primary);font-size:.75rem;font-weight:900;text-decoration:none;letter-spacing:.02em}
-.sa-mode-cta:hover{text-decoration:underline}
-.sa-mode-right{display:flex;gap:1.2rem;position:relative;z-index:1;flex-wrap:wrap}
-.sa-mode-metric{min-width:110px}
-.sa-mode-label{display:block;font-size:.65rem;font-weight:800;color:var(--col-muted);text-transform:uppercase;letter-spacing:.04em}
-.sa-mode-val{margin:.15rem 0 0;font-size:1.15rem;font-weight:950;color:#5EF097;line-height:1;letter-spacing:-.01em}
-.sa-mode-val-lg{font-size:1.7rem}
-@media(max-width:640px){.sa-mode-right{width:100%;justify-content:space-between}.sa-mode-metric{min-width:0;flex:1}}
-</style>
-{% endif %}
 
-{# ── KPIs PRINCIPALES ── #}
-<div class="sa-kpi-row">
-  <div class="sa-kpi sa-kpi-green">
-    <span class="sa-kpi-icon">💰</span>
-    <p class="sa-kpi-val">€{{ "%.2f"|format(ventas_hoy) }}</p>
-    <p class="sa-kpi-lbl">Ventas hoy</p>
-    <p class="sa-kpi-sub">Ayer: €{{ "%.2f"|format(ventas_ayer) }}</p>
-  </div>
-  <div class="sa-kpi {{ 'sa-kpi-amber' if pagos_pendientes > 0 else 'sa-kpi-neutral' }}">
-    <span class="sa-kpi-icon">💸</span>
-    <p class="sa-kpi-val">€{{ "%.2f"|format(pagos_pendientes) }}</p>
-    <p class="sa-kpi-lbl">Pagos equipo pendientes</p>
-    <p class="sa-kpi-sub">{{ 'Revisar en Pagos equipo' if pagos_pendientes > 0 else 'Al día ✓' }}</p>
-  </div>
-  <a href="{{ url_for('admin.cola') }}" class="sa-kpi {{ 'sa-kpi-red' if pedidos_sin_asignar > 0 else 'sa-kpi-neutral' }}" style="text-decoration:none">
-    <span class="sa-kpi-icon">⚡</span>
-    <p class="sa-kpi-val">{{ pedidos_sin_asignar }}</p>
-    <p class="sa-kpi-lbl">Pedidos sin asignar</p>
-    <p class="sa-kpi-sub">Cocina {{ pedidos_sin_preparador }}{% if brand.delivery %} · Reparto {{ pedidos_sin_repartidor }}{% endif %}</p>
-  </a>
-  <div class="sa-kpi {{ 'sa-kpi-green' if saldo_total >= 0 else 'sa-kpi-red' }}">
-    <span class="sa-kpi-icon">📊</span>
-    <p class="sa-kpi-val">€{{ "%.0f"|format(saldo_total) }}</p>
-    <p class="sa-kpi-lbl">Saldo histórico</p>
-    <p class="sa-kpi-sub">{{ total_clientes }} clientes · {{ total_staff }} staff</p>
-  </div>
-</div>
-
-{# ── ACCESOS RÁPIDOS ── #}
-<div class="sa-section-label">Accesos rápidos</div>
-<div class="sa-quick-grid">
-  <a href="{{ url_for('superadmin.config') }}" class="sa-quick">
-    <span class="sa-quick-icon">⚙️</span>
-    <p class="sa-quick-name">Configuración</p>
-    <p class="sa-quick-sub">Marca, tienda, integraciones</p>
-  </a>
-  <a href="{{ url_for('superadmin.admins') }}" class="sa-quick">
-    <span class="sa-quick-icon">👑</span>
-    <p class="sa-quick-name">Admins & Permisos</p>
-    <p class="sa-quick-sub">Crea y gestiona admins</p>
-  </a>
-  {% if brand.delivery %}
-  <a href="{{ url_for('superadmin.zonas') }}" class="sa-quick">
-    <span class="sa-quick-icon">📍</span>
-    <p class="sa-quick-name">Zonas de entrega</p>
-    <p class="sa-quick-sub">Precios y cobertura</p>
-  </a>
-  {% endif %}
-  <a href="{{ url_for('superadmin.pl') }}" class="sa-quick">
-    <span class="sa-quick-icon">📈</span>
-    <p class="sa-quick-name">P&L / Finanzas</p>
-    <p class="sa-quick-sub">Pérdidas y ganancias</p>
-  </a>
-  <a href="{{ url_for('superadmin.chatbot') }}" class="sa-quick">
-    <span class="sa-quick-icon">💬</span>
-    <p class="sa-quick-name">Chatbot WhatsApp</p>
-    <p class="sa-quick-sub">Estado, QR y configuración</p>
-  </a>
-  <a href="{{ url_for('superadmin.audit') }}" class="sa-quick">
-    <span class="sa-quick-icon">🔍</span>
-    <p class="sa-quick-name">Auditoría</p>
-    <p class="sa-quick-sub">Registro de cambios</p>
-  </a>
-</div>
-
-{# ── ESTADO OPERATIVO ── #}
-<div class="sa-section-label">Estado del sistema</div>
-<div class="sa-status-row">
-
-  {# Chatbot #}
-  <div class="sa-status-card">
-    <div class="sa-status-head">
-      <span class="sa-status-dot {{ 'sa-dot-on' if bot_status.ok and bot_status.connected else 'sa-dot-off' }}"></span>
-      <h3 class="sa-status-title">Chatbot WhatsApp</h3>
-      <a href="{{ url_for('superadmin.chatbot') }}" class="sa-status-link">Gestionar →</a>
-    </div>
-    {% if bot_status.ok %}
-      <p class="sa-status-val">
-        {{ 'Conectado' if bot_status.connected else 'Sin conectar' }} ·
-        Bot <span style="color:{{ '#5EF097' if bot_status.botEnabled else '#FFAB00' }}">{{ 'activo' if bot_status.botEnabled else 'pausado' }}</span>
-      </p>
-      <p class="sa-status-meta">Sesiones: {{ bot_status.activeSessions or 0 }} · Pedidos hoy: {{ bot_status.pedidosHoy or 0 }}</p>
-      {% if bot_status.qrDataUrl %}
-      <div class="mt-2">
-        <p class="text-xs font-bold mb-1" style="color:#FFAB00">⚠️ QR pendiente de escanear</p>
-        <img src="{{ bot_status.qrDataUrl }}" alt="QR"
-             class="rounded-lg block" style="width:120px;background:#fff;padding:.3rem">
-      </div>
-      {% endif %}
-      <div class="sa-status-actions">
-        <form method="POST" action="{{ url_for('superadmin.chatbot_power') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="enabled" value="{{ '0' if bot_status.botEnabled else '1' }}">
-          <button class="sa-mini-btn" type="submit">{{ '⏸ Pausar' if bot_status.botEnabled else '▶ Activar' }}</button>
-        </form>
-        <form method="POST" action="{{ url_for('superadmin.chatbot_reset') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="sa-mini-btn" type="submit">🔄 Reiniciar</button>
-        </form>
-      </div>
-    {% else %}
-      <p class="sa-status-val" style="color:#FF6B6B">Bot no disponible</p>
-      <p class="sa-status-meta">{{ bot_status.error or 'Sin respuesta del servicio' }}</p>
-    {% endif %}
-  </div>
-
-  {# Marca #}
-  <div class="sa-status-card">
-    <div class="sa-status-head">
-      <span class="sa-status-dot sa-dot-neutral"></span>
-      <h3 class="sa-status-title">Marca & Tienda</h3>
-      <a href="{{ url_for('superadmin.config') }}" class="sa-status-link">Editar →</a>
-    </div>
-    <div class="flex items-center gap-3 mt-2">
-      {% if brand_config.logo_url %}
-      <img src="{{ brand_config.logo_url }}" alt="logo"
-           class="w-10 h-10 rounded-lg object-cover flex-shrink-0"
-           style="border:1px solid var(--col-border)">
-      {% else %}
-      <div class="w-10 h-10 rounded-lg flex items-center justify-center text-xl flex-shrink-0"
-           style="background:var(--col-elevated);border:1px solid var(--col-border)">{{ brand.fallback_emoji or '🥟' }}</div>
-      {% endif %}
-      <div>
-        <p class="font-bold text-white text-sm">{{ brand_config.nombre or '(sin nombre)' }}</p>
-        <p class="sa-status-meta mt-0.5">{{ brand_config.telefono or 'Sin teléfono' }}</p>
-      </div>
-    </div>
-    <div class="flex gap-2 mt-3">
-      {% for color in [brand_config.color_primario, brand_config.color_secundario, brand_config.color_acento] %}
-      <div class="w-6 h-6 rounded-md flex-shrink-0" style="background:{{ color }};border:1px solid rgba(255,255,255,.15)"></div>
+  {# ── Módulos activables ─────────────────────────────────── #}
+  <section class="oa-section">
+    <h2 class="oa-section__title">Módulos de esta tienda</h2>
+    <p class="oa-section__sub">Activa o desactiva funciones. El sistema se adapta al momento: menú, carrito, checkout y bot se comportan según lo que actives aquí.</p>
+    <div class="oa-toggle-list" style="grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));display:grid;">
+      {% for slug, nombre, activo, detalle, icono in [
+        ('delivery', 'Delivery', brand.delivery, 'Checkout, zonas y repartidores', '🛵'),
+        ('recogida', 'Recogida', brand.recogida, 'Pedidos para recoger en local', '🏬'),
+        ('programados', 'Pedidos por fecha', brand.pedidos_programados, 'Productos y cola de preparación', '📅'),
+        ('puntos', 'Canje de puntos', brand.puntos, 'Fidelización y productos canjeables', '⭐')
+      ] %}
+      <form method="POST" action="{{ url_for('superadmin.toggle_modulo', modulo=slug) }}" class="oa-toggle {{ 'oa-toggle--on' if activo else '' }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="enabled" value="{{ '0' if activo else '1' }}">
+        <span style="font-size:1.5rem;flex-shrink:0;line-height:1;">{{ icono }}</span>
+        <div class="oa-toggle__meta">
+          <div class="oa-toggle__name">
+            {{ nombre }}
+            <span class="oa-badge oa-badge--{{ 'ok' if activo else 'muted' }}">{{ 'ON' if activo else 'OFF' }}</span>
+          </div>
+          <p class="oa-toggle__desc">{{ detalle }}</p>
+        </div>
+        <button class="oa-btn oa-btn--sm {{ 'oa-btn--ghost' if activo else 'oa-btn--primary' }}" type="submit">
+          {{ 'Desactivar' if activo else 'Activar' }}
+        </button>
+      </form>
       {% endfor %}
-      <span class="text-xs self-center" style="color:var(--col-faint)">Colores de marca</span>
     </div>
-  </div>
+  </section>
 
-  {# Puntos — solo si el módulo está activo #}
-  {% if brand.puntos %}
-  <div class="sa-status-card">
-    <div class="sa-status-head">
-      <span class="sa-status-dot sa-dot-neutral" style="background:#a78bfa;box-shadow:0 0 0 4px rgba(167,139,250,.12)"></span>
-      <h3 class="sa-status-title">Puntos & Fidelización</h3>
-      <a href="{{ url_for('marketing.puntos') }}" class="sa-status-link">Ver detalle →</a>
+  {# ── KPIs operativos ─────────────────────────────────────── #}
+  <section class="oa-section">
+    <h2 class="oa-section__title">Métricas de hoy</h2>
+    <div class="oa-kpi-grid">
+      <div class="oa-kpi oa-kpi--ok">
+        <p class="oa-kpi__label">💰 Ventas hoy</p>
+        <p class="oa-kpi__value">€{{ "%.0f"|format(ventas_hoy) }}</p>
+        {% if ventas_ayer %}
+        {% set delta = ((ventas_hoy - ventas_ayer) / ventas_ayer * 100) if ventas_ayer > 0 else 0 %}
+        <span class="oa-kpi__delta oa-kpi__delta--{{ 'up' if delta > 0 else ('down' if delta < 0 else 'neutral') }}">
+          {{ '↑' if delta > 0 else ('↓' if delta < 0 else '=') }} {{ "%.0f"|format(delta|abs) }}% vs ayer
+        </span>
+        {% endif %}
+      </div>
+      <div class="oa-kpi oa-kpi--{{ 'warn' if pedidos_sin_asignar else 'primary' }}">
+        <p class="oa-kpi__label">📦 Sin asignar</p>
+        <p class="oa-kpi__value">{{ pedidos_sin_asignar }}</p>
+        {% if pedidos_sin_asignar %}
+        <span class="oa-kpi__delta oa-kpi__delta--down">Requieren atención</span>
+        {% else %}
+        <span class="oa-kpi__delta oa-kpi__delta--up">Todo asignado</span>
+        {% endif %}
+      </div>
+      <div class="oa-kpi oa-kpi--info">
+        <p class="oa-kpi__label">👥 Clientes</p>
+        <p class="oa-kpi__value">{{ total_clientes }}</p>
+      </div>
+      <div class="oa-kpi">
+        <p class="oa-kpi__label">🛒 Pedidos totales</p>
+        <p class="oa-kpi__value">{{ total_pedidos }}</p>
+      </div>
     </div>
-    <div class="sa-points-row">
-      <div><p class="sa-points-val">{{ puntos_emitidos }}</p><p class="sa-status-meta">Emitidos</p></div>
-      <div><p class="sa-points-val" style="color:#FFAB00">{{ puntos_canjeados }}</p><p class="sa-status-meta">Canjeados</p></div>
-      <div><p class="sa-points-val" style="color:#a78bfa">{{ clientes_con_puntos }}</p><p class="sa-status-meta">Clientes activos</p></div>
+  </section>
+
+  {# ── Accesos rápidos ────────────────────────────────────── #}
+  <section class="oa-section">
+    <h2 class="oa-section__title">Accesos rápidos</h2>
+    <div class="oa-quick-grid">
+      <a href="{{ url_for('superadmin.config') }}" class="oa-quick">
+        <span class="oa-quick__icon">🎨</span>
+        <div class="oa-quick__body">
+          <p class="oa-quick__title">Configuración</p>
+          <p class="oa-quick__desc">Marca, textos y opciones</p>
+        </div>
+        <span class="oa-quick__arrow">→</span>
+      </a>
+      <a href="{{ url_for('superadmin.admins') }}" class="oa-quick">
+        <span class="oa-quick__icon">👤</span>
+        <div class="oa-quick__body">
+          <p class="oa-quick__title">Administradores</p>
+          <p class="oa-quick__desc">Crear y gestionar admins</p>
+        </div>
+        <span class="oa-quick__arrow">→</span>
+      </a>
+      {% if brand.delivery %}
+      <a href="{{ url_for('superadmin.zonas') }}" class="oa-quick">
+        <span class="oa-quick__icon">📍</span>
+        <div class="oa-quick__body">
+          <p class="oa-quick__title">Zonas de entrega</p>
+          <p class="oa-quick__desc">Precios y cobertura</p>
+        </div>
+        <span class="oa-quick__arrow">→</span>
+      </a>
+      {% endif %}
+      <a href="{{ url_for('superadmin.pl') }}" class="oa-quick">
+        <span class="oa-quick__icon">📈</span>
+        <div class="oa-quick__body">
+          <p class="oa-quick__title">P&L / Finanzas</p>
+          <p class="oa-quick__desc">Pérdidas y ganancias</p>
+        </div>
+        <span class="oa-quick__arrow">→</span>
+      </a>
+      <a href="{{ url_for('superadmin.chatbot') }}" class="oa-quick">
+        <span class="oa-quick__icon">💬</span>
+        <div class="oa-quick__body">
+          <p class="oa-quick__title">Chatbot WhatsApp</p>
+          <p class="oa-quick__desc">Estado, QR y configuración</p>
+        </div>
+        <span class="oa-quick__arrow">→</span>
+      </a>
+      <a href="{{ url_for('superadmin.audit') }}" class="oa-quick">
+        <span class="oa-quick__icon">🔍</span>
+        <div class="oa-quick__body">
+          <p class="oa-quick__title">Auditoría</p>
+          <p class="oa-quick__desc">Registro de cambios</p>
+        </div>
+        <span class="oa-quick__arrow">→</span>
+      </a>
     </div>
-  </div>
+  </section>
+
+  {# ── Estado del sistema ─────────────────────────────────── #}
+  <section class="oa-section">
+    <h2 class="oa-section__title">Estado del sistema</h2>
+    <div style="display:grid;gap:var(--oa-space-3);grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));">
+
+      {# Chatbot #}
+      <div class="oa-panel" style="margin: 0;">
+        <div class="oa-panel__header">
+          <div>
+            <p class="oa-panel__title">💬 Chatbot WhatsApp
+              <span class="oa-badge oa-badge--{{ 'ok' if bot_status.ok and bot_status.connected else 'err' }}" style="margin-left: var(--oa-space-2);">
+                {{ '● Conectado' if bot_status.ok and bot_status.connected else '● Sin conectar' }}
+              </span>
+            </p>
+          </div>
+          <a href="{{ url_for('superadmin.chatbot') }}" class="oa-btn oa-btn--sm oa-btn--ghost">Gestionar →</a>
+        </div>
+        <div class="oa-panel__body">
+          {% if bot_status.ok %}
+          <p style="color:var(--col-text);font-size:var(--oa-font-sm);margin:0;">
+            Bot <strong style="color:{{ '#5EF097' if bot_status.botEnabled else '#FFAB00' }};">{{ 'activo' if bot_status.botEnabled else 'pausado' }}</strong>
+            · Sesiones: {{ bot_status.activeSessions or 0 }}
+            · Pedidos hoy: {{ bot_status.pedidosHoy or 0 }}
+          </p>
+          {% if bot_status.qrDataUrl %}
+          <div class="oa-alert oa-alert--warn" style="margin-top: var(--oa-space-3);">
+            <span class="oa-alert__icon">📱</span>
+            <div>
+              <strong>QR pendiente de escanear</strong>
+              <img src="{{ bot_status.qrDataUrl }}" alt="QR" style="width:120px;background:#fff;padding:.3rem;border-radius:8px;display:block;margin-top:var(--oa-space-2);">
+            </div>
+          </div>
+          {% endif %}
+          <div style="display:flex;gap:var(--oa-space-2);margin-top:var(--oa-space-3);flex-wrap:wrap;">
+            <form method="POST" action="{{ url_for('superadmin.chatbot_power') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="enabled" value="{{ '0' if bot_status.botEnabled else '1' }}">
+              <button class="oa-btn oa-btn--sm" type="submit">{{ '⏸ Pausar' if bot_status.botEnabled else '▶ Activar' }}</button>
+            </form>
+            <form method="POST" action="{{ url_for('superadmin.chatbot_reset') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="oa-btn oa-btn--sm" type="submit">🔄 Reiniciar</button>
+            </form>
+          </div>
+          {% else %}
+          <div class="oa-alert oa-alert--err">
+            <span class="oa-alert__icon">⚠️</span>
+            <div>
+              <strong>Bot no disponible</strong>
+              <p style="margin: 4px 0 0; font-size: var(--oa-font-xs);">{{ bot_status.error or 'Sin respuesta del servicio' }}</p>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      {# Marca #}
+      <div class="oa-panel" style="margin: 0;">
+        <div class="oa-panel__header">
+          <p class="oa-panel__title">🎨 Marca & Tienda</p>
+          <a href="{{ url_for('superadmin.config') }}" class="oa-btn oa-btn--sm oa-btn--ghost">Editar →</a>
+        </div>
+        <div class="oa-panel__body">
+          <div style="display:flex;align-items:center;gap:var(--oa-space-3);">
+            {% if brand_config.logo_url %}
+            <img src="{{ brand_config.logo_url }}" alt="logo" style="width:44px;height:44px;border-radius:var(--radius-2);object-fit:cover;border:1px solid var(--col-border);flex-shrink:0;">
+            {% else %}
+            <div style="width:44px;height:44px;border-radius:var(--radius-2);display:flex;align-items:center;justify-content:center;font-size:1.4rem;background:var(--col-elevated);border:1px solid var(--col-border);flex-shrink:0;">{{ brand.fallback_emoji or '🥟' }}</div>
+            {% endif %}
+            <div style="min-width:0;">
+              <p style="font-size:var(--oa-font-base);font-weight:800;color:var(--col-text);margin:0;">{{ brand_config.nombre or '(sin nombre)' }}</p>
+              <p style="font-size:var(--oa-font-xs);color:var(--col-faint);margin: 2px 0 0;">{{ brand_config.telefono or 'Sin teléfono' }}</p>
+            </div>
+          </div>
+          <div style="display:flex;gap:var(--oa-space-2);margin-top:var(--oa-space-4);align-items:center;">
+            {% for color in [brand_config.color_primario, brand_config.color_secundario, brand_config.color_acento] %}
+            <div style="width:24px;height:24px;border-radius:var(--radius-1);background:{{ color }};border:1px solid var(--col-border-2);"></div>
+            {% endfor %}
+            <span style="font-size:var(--oa-font-xs);color:var(--col-faint);margin-left: var(--oa-space-1);">Colores de marca</span>
+          </div>
+        </div>
+      </div>
+
+      {# Puntos - solo si activos #}
+      {% if brand.puntos %}
+      <div class="oa-panel" style="margin: 0;">
+        <div class="oa-panel__header">
+          <p class="oa-panel__title">⭐ Puntos & Fidelización</p>
+          <a href="{{ url_for('marketing.puntos') }}" class="oa-btn oa-btn--sm oa-btn--ghost">Detalle →</a>
+        </div>
+        <div class="oa-panel__body">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:var(--oa-space-3);">
+            <div>
+              <p style="font-size:var(--oa-font-2xl);font-weight:900;color:var(--col-text);margin:0;line-height:1;font-variant-numeric:tabular-nums;">{{ puntos_emitidos }}</p>
+              <p class="oa-kpi__label" style="margin-top:var(--oa-space-2);">Emitidos</p>
+            </div>
+            <div>
+              <p style="font-size:var(--oa-font-2xl);font-weight:900;color:var(--status-warn);margin:0;line-height:1;font-variant-numeric:tabular-nums;">{{ puntos_canjeados }}</p>
+              <p class="oa-kpi__label" style="margin-top:var(--oa-space-2);">Canjeados</p>
+            </div>
+            <div>
+              <p style="font-size:var(--oa-font-2xl);font-weight:900;color:var(--status-info);margin:0;line-height:1;font-variant-numeric:tabular-nums;">{{ clientes_con_puntos }}</p>
+              <p class="oa-kpi__label" style="margin-top:var(--oa-space-2);">Clientes activos</p>
+            </div>
+          </div>
+          <form method="POST" action="{{ url_for('superadmin.puntos_reset_manual') }}"
+                onsubmit="return confirm('¿Reiniciar los puntos de TODOS los clientes a 0? Esta acción queda registrada en auditoría.');"
+                style="margin-top: var(--oa-space-4);">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="oa-btn oa-btn--sm oa-btn--ghost">🗑 Resetear puntos globalmente</button>
+          </form>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </section>
+
+  {% if config.get('ALLOW_DEMO_RESET') %}
+  <section class="oa-section">
+    <details class="oa-panel">
+      <summary style="padding: var(--oa-space-4); cursor: pointer; font-weight: 800; color: var(--col-text); display: flex; align-items: center; gap: var(--oa-space-2);">
+        <span style="color: var(--status-err);">⚠️</span>
+        Herramientas de mantenimiento
+      </summary>
+      <div class="oa-panel__body">
+        <form method="POST" action="{{ url_for('superadmin.reset_demo') }}"
+              onsubmit="var v=prompt('Escribe RESET para confirmar:');if(v!=='RESET'){alert('Cancelado.');return false;}this.querySelector('[name=confirmacion]').value=v;return true;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="confirmacion" value="">
+          <button type="submit" class="oa-btn oa-btn--sm oa-btn--danger">🗑 Reiniciar datos demo</button>
+        </form>
+      </div>
+    </details>
+  </section>
   {% endif %}
 
 </div>
-
-{% if config.get('ALLOW_DEMO_RESET') %}
-<details class="ox-card p-4 mt-5" style="border-color:rgba(255,59,48,.2)">
-  <summary class="font-bold text-white cursor-pointer flex items-center gap-2 select-none text-sm">
-    <span class="text-red-400">⚠️</span> Herramientas de mantenimiento
-  </summary>
-  <div class="mt-3 flex flex-wrap gap-2">
-    <form method="POST" action="{{ url_for('superadmin.reset_demo') }}"
-          onsubmit="var v=prompt('Escribe RESET para confirmar:');if(v!=='RESET'){alert('Cancelado.');return false;}this.querySelector('[name=confirmacion]').value=v;return true;">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="confirmacion" value="">
-      <button type="submit" class="text-xs px-3 py-1.5 rounded-lg font-semibold"
-              style="background:rgba(255,59,48,.1);color:#FF6B6B;border:1px solid rgba(255,59,48,.2)">
-        🗑️ Reiniciar datos demo
-      </button>
-    </form>
-  </div>
-</details>
-{% endif %}
-
-</div>
-
-<style>
-.sa-wrap { max-width:1100px; }
-.sa-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
-.sa-eyebrow { font-size:.68rem; font-weight:900; text-transform:uppercase; letter-spacing:.07em; color:rgba(192,132,252,.7); margin-bottom:.2rem; }
-.sa-title { font-size:1.6rem; font-weight:950; color:#fff; }
-.sa-header-actions { display:flex; gap:.5rem; flex-wrap:wrap; }
-
-/* KPIs */
-.sa-kpi-row { display:grid; grid-template-columns:repeat(4,1fr); gap:.75rem; margin-bottom:1.5rem; }
-@media(max-width:760px){.sa-kpi-row{grid-template-columns:1fr 1fr;}}
-@media(max-width:420px){.sa-kpi-row{grid-template-columns:1fr;}}
-.sa-kpi { background:var(--col-surface); border:1px solid var(--col-border); border-radius:.9rem; padding:1rem 1.1rem; }
-.sa-kpi-green { border-color:rgba(94,240,151,.2); background:rgba(94,240,151,.04); }
-.sa-kpi-red   { border-color:rgba(255,107,107,.25); background:rgba(255,107,107,.04); }
-.sa-kpi-amber { border-color:rgba(255,171,0,.25); background:rgba(255,171,0,.04); }
-.sa-kpi-neutral { border-color:var(--col-border); }
-.sa-kpi-icon { font-size:1.2rem; display:block; margin-bottom:.3rem; }
-.sa-kpi-val  { font-size:1.55rem; font-weight:950; color:#fff; }
-.sa-kpi-green .sa-kpi-val { color:#5EF097; }
-.sa-kpi-red   .sa-kpi-val { color:#FF6B6B; }
-.sa-kpi-amber .sa-kpi-val { color:#FFAB00; }
-.sa-kpi-lbl  { font-size:.72rem; font-weight:700; color:var(--col-muted); margin-top:.15rem; }
-.sa-kpi-sub  { font-size:.65rem; color:var(--col-faint); margin-top:.2rem; }
-
-/* Quick access */
-.sa-section-label { font-size:.68rem; font-weight:900; text-transform:uppercase; letter-spacing:.06em; color:var(--col-muted); margin-bottom:.6rem; margin-top:1.5rem; }
-.sa-quick-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:.65rem; margin-bottom:1.5rem; }
-@media(max-width:600px){.sa-quick-grid{grid-template-columns:1fr 1fr;}}
-.sa-quick { display:block; text-decoration:none; background:var(--col-surface); border:1px solid var(--col-border); border-radius:.85rem; padding:.9rem 1rem; transition:border-color .15s,background .15s; }
-.sa-quick:hover { background:var(--col-elevated); border-color:rgba(255,171,0,.3); }
-.sa-quick-icon { font-size:1.4rem; display:block; margin-bottom:.35rem; }
-.sa-quick-name { font-size:.85rem; font-weight:800; color:#fff; }
-.sa-quick-sub  { font-size:.7rem; color:var(--col-muted); margin-top:.15rem; }
-
-/* Status cards */
-.sa-status-row { display:grid; grid-template-columns:repeat(3,1fr); gap:.75rem; }
-@media(max-width:760px){.sa-status-row{grid-template-columns:1fr;}}
-.sa-status-card { background:var(--col-surface); border:1px solid var(--col-border); border-radius:.875rem; padding:1rem 1.1rem; }
-.sa-status-head { display:flex; align-items:center; gap:.55rem; margin-bottom:.6rem; }
-.sa-status-dot  { width:.6rem; height:.6rem; border-radius:999px; flex-shrink:0; }
-.sa-dot-on      { background:#5EF097; box-shadow:0 0 0 4px rgba(94,240,151,.14); }
-.sa-dot-off     { background:#FF6B6B; box-shadow:0 0 0 4px rgba(255,107,107,.12); }
-.sa-dot-neutral { background:rgba(255,255,255,.3); }
-.sa-status-title{ font-size:.8rem; font-weight:800; color:#fff; flex:1; }
-.sa-status-link { font-size:.7rem; color:var(--col-gold,#FFAB00); text-decoration:none; white-space:nowrap; }
-.sa-status-val  { font-size:.82rem; font-weight:600; color:var(--col-text); }
-.sa-status-meta { font-size:.68rem; color:var(--col-faint); margin-top:.15rem; }
-.sa-status-actions { display:flex; gap:.4rem; margin-top:.75rem; flex-wrap:wrap; }
-.sa-mini-btn { font-size:.72rem; font-weight:700; padding:.35rem .7rem; border-radius:.5rem; border:1px solid var(--col-border); background:var(--col-elevated); color:var(--col-text); cursor:pointer; }
-.sa-mini-btn:hover { border-color:rgba(255,171,0,.3); }
-
-/* Points */
-.sa-points-row { display:flex; gap:1.2rem; margin-top:.75rem; flex-wrap:wrap; }
-.sa-points-val  { font-size:1.2rem; font-weight:900; color:#fff; }
-</style>
 
 {% endblock %}

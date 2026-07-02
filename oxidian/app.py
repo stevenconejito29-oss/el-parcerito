@@ -42,6 +42,7 @@ def _asset_version(app):
         "css/storefront-cart.css",
         "css/header-modern.css",
         "css/oxidian-ui.css",
+        "css/oxidian-admin.css",
         "js/carrito.js",
         "js/header-modern.js",
         "sw.js",

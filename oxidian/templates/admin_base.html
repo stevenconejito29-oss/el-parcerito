@@ -128,6 +128,7 @@
   </style>
   {% block styles %}{% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-admin.css', v=asset_version) }}">
 </head>
 {% set rol = current_user.rol if current_user.is_authenticated else '' %}
 <body class="ox-body ox-body-admin"
