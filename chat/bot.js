@@ -1154,6 +1154,41 @@ async function paceOutbound() {
   lastOutboundAt = Date.now();
 }
 
+/* ── Simulación de escritura humana ────────────────────────────────────
+ * Antes de enviar la respuesta al cliente, emitimos presencia "composing"
+ * a través de Evolution y esperamos un tiempo proporcional a la longitud
+ * del texto (velocidad tecleo ~200 cpm ≈ 300ms/palabra). Cap 4.5s para
+ * no cansar al usuario. Esto reduce la señal "bot que contesta al instante"
+ * que dispara anti-spam/anti-bot de WhatsApp.
+ * Configurable por env; se desactiva con BOT_HUMANIZE=0. */
+const HUMANIZE_ENABLED = process.env.BOT_HUMANIZE !== '0';
+const HUMANIZE_BASE_MS = parseInt(process.env.BOT_HUMANIZE_BASE_MS || '450', 10);
+const HUMANIZE_PER_CHAR_MS = parseInt(process.env.BOT_HUMANIZE_PER_CHAR_MS || '22', 10);
+const HUMANIZE_MAX_MS = parseInt(process.env.BOT_HUMANIZE_MAX_MS || '4500', 10);
+
+async function humanizedTypingDelay(target, text, evolutionUrl, evolutionInstance, evolutionKey) {
+  if (!HUMANIZE_ENABLED) return;
+  const length = String(text || '').length;
+  // Delay proporcional a longitud + jitter humano (±15%) + base cognitiva
+  const raw = HUMANIZE_BASE_MS + length * HUMANIZE_PER_CHAR_MS;
+  const jitterFactor = 0.85 + Math.random() * 0.30; // 0.85–1.15
+  const totalMs = Math.min(HUMANIZE_MAX_MS, Math.floor(raw * jitterFactor));
+  if (totalMs <= 0) return;
+
+  // Presencia "composing" en Evolution — fire-and-forget, no bloquea si falla.
+  try {
+    const presenceUrl = `${evolutionUrl}/chat/sendPresence/${evolutionInstance}`;
+    fetch(presenceUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: evolutionKey },
+      body: JSON.stringify({ number: target, presence: 'composing', delay: totalMs }),
+      signal: AbortSignal.timeout(2000),
+    }).catch(() => {});
+  } catch (_) { /* silent */ }
+
+  await sleep(totalMs);
+}
+
 function sanitizeOutgoingText(value) {
   const text = String(value || '').replace(/\u0000/g, '').trim();
   if (!text) return '';
@@ -1367,6 +1402,14 @@ async function sendText(jid, text, opts = {}) {
 
   const url = `${evolutionUrl}/message/sendText/${evolutionInstance}`;
   const payload = { number: target, text: safeText };
+
+  // Simulación humana: presencia "escribiendo" + delay proporcional al texto.
+  // Reduce señal-bot y respeta cadencia de conversación real.
+  // Se desactiva con opts.humanize=false o opts.transactional=true.
+  const humanize = opts.humanize !== false && !opts.transactional && !opts.force;
+  if (humanize) {
+    await humanizedTypingDelay(target, safeText, evolutionUrl, evolutionInstance, evolutionKey);
+  }
 
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

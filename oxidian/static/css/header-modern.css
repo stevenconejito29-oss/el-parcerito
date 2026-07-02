@@ -440,16 +440,20 @@ body.ox-body-public .ox-bottom-nav.ox-bnav-v2 {
   padding: 8px 10px !important;
   border: 1px solid color-mix(in srgb, #fff 8%, transparent) !important;
   border-radius: 26px !important;
-  /* Dark glass sólido con leve tinte de marca */
+  /* Dark glass — opacidad alta para evitar bleed de color del contenido detrás
+     al scrollear (95%/92% en vez de 82%/72%). Mantiene el efecto vidrio sin
+     el "flash" de color que producía el fondo semi-translúcido. */
   background:
     linear-gradient(180deg,
-      color-mix(in srgb, #0A0605 82%, transparent) 0%,
-      color-mix(in srgb, #0A0605 72%, transparent) 100%),
+      color-mix(in srgb, #0A0605 95%, transparent) 0%,
+      color-mix(in srgb, #0A0605 92%, transparent) 100%),
     linear-gradient(90deg,
       color-mix(in srgb, var(--brand-primary) 6%, transparent),
       color-mix(in srgb, var(--brand-secondary, #E84545) 4%, transparent)) !important;
-  backdrop-filter: blur(24px) saturate(1.8) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(1.8) !important;
+  backdrop-filter: blur(20px) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.4) !important;
+  /* Transición suave para el toggle is-scrolling → no "pop" al frenar scroll */
+  transition: background .28s ease, backdrop-filter .28s ease !important;
   box-shadow:
     0 -14px 44px rgba(0,0,0,.5),
     0 -2px 10px rgba(0,0,0,.28),
@@ -716,7 +720,8 @@ body.ox-body-public .ep-cat { scroll-snap-align: start; }
   body.ox-body-public.is-scrolling .ox-bottom-nav.ox-bnav-v2 {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    background: rgba(15,10,6,.94) !important;
+    /* Fondo casi idéntico al idle (95% opaco) → no se aprecia el toggle. */
+    background: rgba(10,6,5,.95) !important;
   }
 }
 

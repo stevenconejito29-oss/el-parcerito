@@ -663,12 +663,18 @@ class Product(db.Model):
             return 0
         if (componente.tipo_entrega or "inmediato") != "inmediato":
             return None
-        # stock_mostrar_en_web=False → "sin control de stock" para el stock propio.
-        # Solo aplica al origen 'propio'; los orígenes de proveedor SIEMPRE usan
-        # el stock real de ProveedorProducto (que es su propia gestión).
+        # Reglas del "sin control de stock":
+        # - En origen propio: si stock_mostrar_en_web=False, el componente se trata
+        #   como sin control → capacidad ilimitada. (Fix histórico 2026-07-02.)
+        # - En origen proveedor:X: siempre usamos el stock real de ProveedorProducto,
+        #   PERO si la fila no existe (o stock=0 y no se gestiona en web), también
+        #   consideramos ilimitado — evita marcar combos del bar como agotados solo
+        #   porque el operador no cargó stock manualmente.
         origen_es_propio = (origen or "propio") == "propio"
-        if origen_es_propio and not bool(getattr(componente, "stock_mostrar_en_web", False)):
-            return 999999
+        if not bool(getattr(componente, "stock_mostrar_en_web", False)):
+            stock_disponible = componente.stock_para_origen(origen)
+            if origen_es_propio or stock_disponible <= 0:
+                return 999999
         return componente.stock_para_origen(origen) // item.cantidad
 
     @property
