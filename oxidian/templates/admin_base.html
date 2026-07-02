@@ -196,7 +196,7 @@
         {% if has_admin_feature('cupones') or has_admin_feature('marketing') %}<a href="{{ url_for('admin.cupones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎟️</span>Cupones</a>{% endif %}
         {% if has_admin_feature('marketing') %}<a href="{{ url_for('admin.afiliados') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤝</span>Afiliados</a>{% endif %}
         {% if has_admin_feature('marketing') %}<a href="{{ url_for('admin.menu_config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖼️</span>Banners & Home</a>{% endif %}
-        {% if has_admin_feature('productos') %}<a href="{{ url_for('admin.combos_nuevo') if url_for('admin.combos_nuevo') else url_for('admin.productos') }}#combos" class="ox-sb-item"><span class="ox-sb-item-icon">🎁</span>Combos</a>{% endif %}
+        {% if has_admin_feature('productos') %}<a href="{{ url_for('admin.nuevo_combo') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎁</span>Combos</a>{% endif %}
         {# Ajustes rápidos: para super_admin apunta a /superadmin/config;
            para admin puro, redirige a productos como fallback (por ahora) #}
         {% if rol == 'super_admin' %}
@@ -316,8 +316,8 @@
         <span>Pedidos</span>
       </a>
       {% elif rol == 'repartidor' %}
-      <a href="{{ url_for('repartidor.comisiones') if 'comisiones' in url_for('repartidor.ruta') or true else '#' }}"
-         class="ox-admin-bnav-item {{ 'is-active' if request.endpoint == 'repartidor.comisiones' else '' }}">
+      <a href="{{ url_for('repartidor.mis_comisiones') }}"
+         class="ox-admin-bnav-item {{ 'is-active' if request.endpoint == 'repartidor.mis_comisiones' else '' }}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg>
         <span>Comisiones</span>
       </a>
