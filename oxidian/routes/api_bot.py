@@ -585,6 +585,8 @@ def _pedido_bot_payload(pedido):
         "metodo_pago": pedido.metodo_pago,
         "pago_confirmado": bool(pedido.pago_confirmado),
         "codigo_confirmacion": None,
+        "repartidor_id": pedido.repartidor_id,
+        "en_punto_encuentro": bool(getattr(pedido, "en_punto_encuentro", False)),
         "creado_en": pedido.creado_en.isoformat() if pedido.creado_en else None,
         "entregado_en": pedido.entregado_en.isoformat() if pedido.entregado_en else None,
         "mensaje_cliente": mensaje_estado_pedido(pedido),

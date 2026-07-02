@@ -1667,7 +1667,9 @@ class ComboItem(db.Model):
     orden = db.Column(db.Integer, nullable=False, default=0)
     precio_extra = db.Column(db.Numeric(10, 2), nullable=False, default=0)
     es_predeterminado = db.Column(db.Boolean, default=False)
-    activo = db.Column(db.Boolean, default=True)
+    # nullable=False + server_default para evitar que filas antiguas o
+    # inserts sin defaults dejen NULL, que se evalúa como "agotado" en templates.
+    activo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
     notas_preparacion = db.Column(db.Text)
 
     # Selección por el cliente: si es_seleccionable=True, el cliente elige entre las
@@ -1852,6 +1854,11 @@ class Order(db.Model):
     preparador_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     repartidor_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     cajero_id = db.Column(db.Integer, db.ForeignKey("users.id"))  # quien cobró en POS
+
+    # Subestado del reparto: repartidor confirma "estoy en el punto de encuentro"
+    # (portal/recepción del cliente). El bot muestra label distinto al usuario.
+    en_punto_encuentro = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
+    en_punto_encuentro_en = db.Column(db.DateTime)
 
     # ── Señal del bar (proveedor) ────────────────────────────────────
     # No cambia la máquina de estados; es un flag informativo.

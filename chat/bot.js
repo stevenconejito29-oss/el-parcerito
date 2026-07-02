@@ -4249,14 +4249,24 @@ async function handleEstadoPedido(jid, ses, numero) {
           p.numero.toLowerCase().includes(consulta.toLowerCase())
         );
       if (pedido) {
+        // Estados extendidos: cubren el ciclo completo del pedido.
+        // El estado base (pedido.estado) se refina con señales del pedido:
+        // repartidor_id, salida_en, en_punto_encuentro → subestados visibles.
         const ESTADOS = {
-          pendiente: { emoji: '⏳', label: 'Recibido — pendiente de preparación' },
+          pendiente: { emoji: '⏳', label: 'Recibido — esperando para preparar' },
           armando:   { emoji: '🔥', label: 'En preparación ahora mismo' },
-          listo:     { emoji: '✅', label: 'Listo — saliendo pronto' },
-          en_ruta:   { emoji: '🚀', label: 'En camino hacia ti' },
+          listo:     { emoji: '✅', label: 'Preparado — esperando repartidor' },
+          en_ruta:   { emoji: '🛵', label: 'Repartidor en camino' },
           entregado: { emoji: '🎊', label: '¡Entregado con éxito!' },
           cancelado: { emoji: '❌', label: 'Cancelado' },
         };
+        // Refinamiento con banderas de pedido cuando el bot expone más contexto.
+        if (pedido.estado === 'listo' && pedido.repartidor_id) {
+          ESTADOS.listo = { emoji: '✅', label: 'Preparado — repartidor asignado' };
+        }
+        if (pedido.estado === 'en_ruta' && pedido.en_punto_encuentro) {
+          ESTADOS.en_ruta = { emoji: '📍', label: 'Repartidor en punto de encuentro' };
+        }
         const est = ESTADOS[pedido.estado] || { emoji: '•', label: pedido.estado.replace('_', ' ') };
         const cancelHint = pedido.estado === 'pendiente'
           ? `\nPara cancelarlo antes de preparación escribe *CANCELAR ${pedido.numero}*.\n`

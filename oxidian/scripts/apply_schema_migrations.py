@@ -293,6 +293,40 @@ def _migrate_combo_item_option_fields():
             db.session.execute(text(ddl))
 
 
+def _migrate_order_en_punto_encuentro():
+    """Añade Order.en_punto_encuentro (subestado del reparto) + timestamp."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("orders"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("orders")}
+    stmts = {
+        "en_punto_encuentro": "ALTER TABLE orders ADD COLUMN en_punto_encuentro BOOLEAN NOT NULL DEFAULT false",
+        "en_punto_encuentro_en": "ALTER TABLE orders ADD COLUMN en_punto_encuentro_en TIMESTAMP",
+    }
+    for col, ddl in stmts.items():
+        if col not in existing:
+            db.session.execute(text(ddl))
+
+
+def _migrate_combo_item_activo_not_null():
+    """Combo items con activo=NULL se evaluaban como agotados en templates.
+    Set default=true en filas existentes y añade NOT NULL + server_default."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("combo_items"):
+        return
+    # 1) datos: NULL → true
+    db.session.execute(text("UPDATE combo_items SET activo=true WHERE activo IS NULL"))
+    # 2) schema: NOT NULL + DEFAULT (postgres tolera si ya lo tienen)
+    for stmt in (
+        "ALTER TABLE combo_items ALTER COLUMN activo SET DEFAULT true",
+        "ALTER TABLE combo_items ALTER COLUMN activo SET NOT NULL",
+    ):
+        try:
+            db.session.execute(text(stmt))
+        except Exception:
+            db.session.rollback()
+
+
 def _remove_legacy_promotions():
     """Retira el motor de promociones antiguo sin perder datos silenciosamente."""
     inspector = inspect(db.engine)
@@ -982,6 +1016,16 @@ MIGRATIONS = [
         "id": "20260702_01_product_solo_canje",
         "description": "Añadir Product.solo_canje (productos exclusivos de canje con puntos)",
         "fn": _migrate_product_solo_canje,
+    },
+    {
+        "id": "20260702_02_combo_item_activo_not_null",
+        "description": "combo_items.activo → NOT NULL con default TRUE (NULLs se evaluaban como agotado)",
+        "fn": _migrate_combo_item_activo_not_null,
+    },
+    {
+        "id": "20260702_03_order_en_punto_encuentro",
+        "description": "Order.en_punto_encuentro + timestamp (subestado del reparto para el bot)",
+        "fn": _migrate_order_en_punto_encuentro,
     },
 ]
 
