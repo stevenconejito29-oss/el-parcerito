@@ -174,13 +174,13 @@
     </a>
     {% elif item.tipo == 'producto_destacado' and item.producto %}
     <a class="ep-menu-config-product" href="{{ url_for('public.producto_detalle', producto_id=item.producto_id, origen=origen_actual) }}">
-      {% if item.producto.imagen_url %}<img src="{{ item.producto.imagen_url|upload_url }}" alt="">{% endif %}
+      {% if item.producto.imagen_url %}<img src="{{ item.producto.imagen_url|upload_url }}" alt="" decoding="async">{% endif %}
       <div><small>Recomendado</small><strong>{{ item.titulo or item.producto.nombre }}</strong><span>€{{ "%.2f"|format(item.producto.precio_final) }}</span></div>
     </a>
     {% elif item.tipo == 'banner' and item.imagen_url %}
     <a class="ep-menu-config-banner" href="{{ item.enlace_url or '#catalogo' }}"
        {% if item.enlace_url and item.enlace_url.startswith('http') %}target="_blank" rel="noopener"{% endif %}>
-      <img src="{{ item.imagen_url|upload_url }}" alt="{{ item.titulo or '' }}">
+      <img src="{{ item.imagen_url|upload_url }}" alt="{{ item.titulo or '' }}" decoding="async">
       {% if item.titulo %}<strong>{{ item.titulo }}</strong>{% endif %}
     </a>
     {% endif %}

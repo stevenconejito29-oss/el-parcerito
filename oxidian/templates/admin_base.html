@@ -172,6 +172,7 @@
         <a href="{{ url_for('admin.dashboard') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏠</span>Dashboard</a>
         <a href="{{ url_for('admin.cola') }}" class="ox-sb-item"><span class="ox-sb-item-icon">⚡</span>Cola de trabajo</a>
         <a href="{{ url_for('admin.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📋</span>Pedidos</a>
+        <a href="{{ url_for('admin.notificaciones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🔔</span>Notificaciones bot</a>
         {% if has_admin_feature('pos') %}<a href="{{ url_for('pos.venta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖥️</span>Punto de venta</a>{% endif %}
       </div>
       <div class="ox-sb-divider"></div>
