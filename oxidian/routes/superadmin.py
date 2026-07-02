@@ -1359,7 +1359,11 @@ def crear_admin():
     db.session.add(u)
     db.session.flush()
     if rol == "admin":
-        AdminFeature.inicializar_para_admin(u.id, activar_todos=False)
+        # Preset operacional: admin nuevo puede gestionar productos, combos,
+        # cupones, afiliados, POS, stock, reportes, staff y zonas por defecto.
+        # Las 3 sensibles (auditoria, usuarios, whatsapp) quedan apagadas hasta
+        # que el super_admin las active caso a caso.
+        AdminFeature.inicializar_para_admin(u.id, preset="operacional")
     AuditLog.registrar(current_user.id, "crear_admin", "user",
                        detalle=f"{email} [{rol}]", ip=request.remote_addr)
     try:
@@ -1432,9 +1436,12 @@ def admin_features(user_id):
     except Exception:
         db.session.rollback()
     features = {af.feature: af for af in AdminFeature.query.filter_by(user_id=u.id).all()}
+    from models import ADMIN_FEATURES_OPERACIONALES, ADMIN_FEATURES_SENSIBLES
     return render_template("superadmin/admin_features.html",
                            admin_user=u, features=features,
                            all_features=ADMIN_FEATURES,
+                           features_sensibles=set(ADMIN_FEATURES_SENSIBLES),
+                           features_operacionales=set(ADMIN_FEATURES_OPERACIONALES),
                            feature_labels=FEATURE_LABELS)
 
 
@@ -1486,6 +1493,28 @@ def activar_todos_features(user_id):
     except Exception as exc:
         db.session.rollback()
         flash(f"Error al activar features: {exc}", "danger")
+    return redirect(url_for("superadmin.admin_features", user_id=u.id))
+
+
+@superadmin_bp.route("/admins/<int:user_id>/features/preset-operacional", methods=["POST"])
+@superadmin_required
+def preset_operacional_features(user_id):
+    """Aplica el preset operacional: enciende operacionales, apaga sensibles."""
+    from models import ADMIN_FEATURES_OPERACIONALES
+    u = get_or_404(User, user_id)
+    AdminFeature.inicializar_para_admin(u.id, preset="ninguno")  # asegura filas
+    db.session.flush()
+    operacionales = set(ADMIN_FEATURES_OPERACIONALES)
+    for af in AdminFeature.query.filter_by(user_id=u.id).all():
+        af.activo = af.feature in operacionales
+        af.actualizado_por = current_user.id
+        af.actualizado_en = utcnow()
+    try:
+        db.session.commit()
+        flash(f"Preset operacional aplicado a '{u.nombre}': {len(operacionales)} módulos activos, sensibles desactivados.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Error al aplicar preset: {exc}", "danger")
     return redirect(url_for("superadmin.admin_features", user_id=u.id))
 
 

@@ -70,6 +70,21 @@ ADMIN_FEATURES = [
     "marketing", "pos", "whatsapp", "usuarios"
 ]
 
+# Features que un admin nuevo recibe activas por defecto — cubren la operación
+# diaria de tienda (productos, combos, cupones, afiliados, POS, stock, reportes,
+# staff, zonas). Un super_admin puede desactivarlas caso a caso.
+ADMIN_FEATURES_OPERACIONALES = [
+    "caja", "productos", "stock", "cupones",
+    "staff_pagos", "reportes", "marketing", "pos", "zonas",
+]
+
+# Features "sensibles" — quedan desactivadas por defecto en admins nuevos.
+# El super_admin las activa explícitamente si delega esa parte. Motivos:
+#   - auditoria: acceso a logs de todo el sistema.
+#   - usuarios: crear/editar cuentas; vector de escalada de permisos.
+#   - whatsapp: config del bot (API keys, prompts, power) — costes y voz de marca.
+ADMIN_FEATURES_SENSIBLES = ["auditoria", "usuarios", "whatsapp"]
+
 
 class User(UserMixin, db.Model):
     __tablename__ = "users"
@@ -2981,12 +2996,29 @@ class AdminFeature(db.Model):
         return af.activo if af else False
 
     @staticmethod
-    def inicializar_para_admin(user_id, activar_todos=False):
-        """Crea los registros de features para un nuevo admin."""
+    def inicializar_para_admin(user_id, activar_todos=False, preset="operacional"):
+        """Crea los registros de features para un nuevo admin.
+
+        preset:
+          - "operacional" (default): activa las features de operación diaria
+            (ver ADMIN_FEATURES_OPERACIONALES); deja las sensibles apagadas.
+          - "ninguno": todas apagadas — el super_admin activa a mano.
+          - "todos": todas activas — reservado para dev/pruebas.
+
+        activar_todos (retrocompatibilidad): si True fuerza preset="todos".
+        """
+        if activar_todos:
+            preset = "todos"
+        if preset == "todos":
+            activas = set(ADMIN_FEATURES)
+        elif preset == "ninguno":
+            activas = set()
+        else:  # operacional
+            activas = set(ADMIN_FEATURES_OPERACIONALES)
         for feat in ADMIN_FEATURES:
             existe = AdminFeature.query.filter_by(user_id=user_id, feature=feat).first()
             if not existe:
-                af = AdminFeature(user_id=user_id, feature=feat, activo=activar_todos)
+                af = AdminFeature(user_id=user_id, feature=feat, activo=(feat in activas))
                 db.session.add(af)
 
 
