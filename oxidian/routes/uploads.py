@@ -217,10 +217,14 @@ def subir_logo():
 
     # Siempre nombrar 'logo.jpg' para sobreescribir
     ruta = _save_image(f, "logo", "logo.jpg")
-    SiteConfig.set("LOGO_URL", f"/uploads/{ruta}", descripcion="Logo del negocio")
+    # Cache-buster: el archivo siempre se llama igual (logo.jpg), pero cambiamos
+    # el query param para que browsers/CDN sirvan la nueva versión al instante.
+    import time as _t
+    versioned = f"/uploads/{ruta}?v={int(_t.time())}"
+    SiteConfig.set("LOGO_URL", versioned, descripcion="Logo del negocio")
     db.session.commit()
 
-    return jsonify({"ok": True, "ruta": ruta, "url": f"/uploads/{ruta}"})
+    return jsonify({"ok": True, "ruta": ruta, "url": versioned})
 
 
 # ── Subir imagen de categoría ─────────────────────────────────────────────────
@@ -279,10 +283,12 @@ def subir_icon():
         return jsonify({"ok": False, "error": error}), 400
 
     ruta = _save_image(f, "icon", "app-icon.png")
-    SiteConfig.set("APP_ICON_URL", f"/uploads/{ruta}", descripcion="Icono / favicon de la app")
+    import time as _t
+    versioned = f"/uploads/{ruta}?v={int(_t.time())}"
+    SiteConfig.set("APP_ICON_URL", versioned, descripcion="Icono / favicon de la app")
     db.session.commit()
 
-    return jsonify({"ok": True, "ruta": ruta, "url": f"/uploads/{ruta}"})
+    return jsonify({"ok": True, "ruta": ruta, "url": versioned})
 
 
 @uploads_bp.route("/uploads/hero", methods=["POST"])
@@ -297,10 +303,12 @@ def subir_hero():
         return jsonify({"ok": False, "error": error}), 400
 
     ruta = _save_image(f, "hero", "hero.jpg")
-    SiteConfig.set("HERO_IMAGE_URL", f"/uploads/{ruta}", descripcion="Imagen de cabecera de la tienda")
+    import time as _t
+    versioned = f"/uploads/{ruta}?v={int(_t.time())}"
+    SiteConfig.set("HERO_IMAGE_URL", versioned, descripcion="Imagen de cabecera de la tienda")
     db.session.commit()
 
-    return jsonify({"ok": True, "ruta": ruta, "url": f"/uploads/{ruta}"})
+    return jsonify({"ok": True, "ruta": ruta, "url": versioned})
 
 
 # ── Listar imágenes disponibles ───────────────────────────────────────────────

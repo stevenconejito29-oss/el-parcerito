@@ -626,9 +626,32 @@ if ('serviceWorker' in navigator) {
     }).catch(() => {});
   });
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    // El nuevo worker controlará la siguiente navegación. Recargar aquí puede
-    // interrumpir un formulario, un cambio de categoría o el checkout.
     sessionStorage.setItem('oxSwUpdated', '1');
+    // Autorecarga cuando el usuario NO está haciendo algo importante:
+    // - tab oculto (probablemente en otra app)
+    // - o vuelve a la tab tras haberla ocultado
+    // No recargamos si hay formularios con cambios, modales abiertos, o
+    // requests en curso — evita romper el checkout u otras acciones.
+    var recargarSiSeguro = function () {
+      if (document.visibilityState === 'visible') return; // en foreground, esperar
+      var forms = document.querySelectorAll('form');
+      var hayCambios = false;
+      forms.forEach(function (f) {
+        f.querySelectorAll('input, textarea, select').forEach(function (el) {
+          if (el.type === 'hidden' || el.readOnly || el.disabled) return;
+          if ((el.value || '') !== (el.defaultValue || '')) hayCambios = true;
+        });
+      });
+      if (hayCambios) return;
+      if (document.querySelector('[role="dialog"]:not([hidden]), .ep-modal-overlay:not([hidden])')) return;
+      location.reload();
+    };
+    // Intento inmediato + al volver a la tab
+    setTimeout(recargarSiSeguro, 100);
+    document.addEventListener('visibilitychange', function () {
+      // Cuando el usuario oculta la tab, es el momento perfecto.
+      if (document.visibilityState === 'hidden') setTimeout(recargarSiSeguro, 300);
+    });
   });
 }
 
