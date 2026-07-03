@@ -40,6 +40,7 @@ CLAVES_DEFAULT = [
     ("BIZUM_TELEFONO",         _eget("BIZUM_TELEFONO"),              "Número que recibe pagos Bizum"),
     ("BIZUM_HABILITADO",       "1",                                  "Permitir pagos mediante Bizum"),
     ("EFECTIVO_HABILITADO",    "1",                                  "Permitir pagos en efectivo"),
+    ("TARJETA_HABILITADA",     "1",                                  "Permitir pagos con tarjeta al recoger o al repartidor"),
     ("MODO_TIENDA",            "propia",                             "Modo comercial de la instalación"),
     ("FEATURE_DELIVERY",       "1",                                  "Permitir pedidos a domicilio"),
     ("FEATURE_RECOGIDA",       "1",                                  "Permitir pedidos para recoger"),
@@ -222,7 +223,7 @@ CONFIG_SECTION_KEYS = {
         "HORARIO_APERTURA", "HORARIO_CIERRE", "TIENDA_FORZAR_CERRADA",
         "TIENDA_MENSAJE_CIERRE",
     },
-    "operacion-pagos": {"EFECTIVO_HABILITADO", "BIZUM_HABILITADO"},
+    "operacion-pagos": {"EFECTIVO_HABILITADO", "BIZUM_HABILITADO", "TARJETA_HABILITADA"},
     "operacion-modo": {
         "MODO_TIENDA", "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
         "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
@@ -322,7 +323,7 @@ def _validar_config_value(clave, valor):
 
     if clave in {
         "VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA",
-        "TIENDA_FORZAR_CERRADA", "BIZUM_HABILITADO", "EFECTIVO_HABILITADO",
+        "TIENDA_FORZAR_CERRADA", "BIZUM_HABILITADO", "EFECTIVO_HABILITADO", "TARJETA_HABILITADA",
         "FEATURE_DELIVERY", "FEATURE_RECOGIDA", "FEATURE_PEDIDOS_PROGRAMADOS",
         "FEATURE_PUNTOS",
     }:

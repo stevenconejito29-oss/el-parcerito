@@ -3441,6 +3441,54 @@ async function handleAdminCmd(jid, text) {
     return sendText(jid, 'Uso: !send NUMERO mensaje');
   }
 
+  // ── Registrar un cliente nuevo desde WhatsApp admin ──
+  // Uso: !cliente NOMBRE APELLIDO NUMERO
+  // Ej:  !cliente Maria Garcia 34612345678
+  // Crea un usuario rol=cliente en Oxidian. Si ya existe, avisa y devuelve id.
+  if (lowerCmd.startsWith('cliente ')) {
+    if (!adminCan(jid, 'points')) {
+      return sendText(jid, '⛔ No tienes permiso para registrar clientes.');
+    }
+    const rest = cmd.slice(8).trim(); // preservar mayúsculas del nombre
+    if (!rest) {
+      return sendText(jid,
+        '📝 *Registrar cliente*\n\n' +
+        'Uso: `!cliente Nombre Apellido NUMERO`\n' +
+        'Ejemplo: `!cliente Maria Garcia 34612345678`\n\n' +
+        'El número debe ir sin +, con el prefijo del país.');
+    }
+    const parts = rest.split(/\s+/);
+    // Último token es el teléfono, el resto es el nombre
+    const posibleTel = parts[parts.length - 1];
+    const telefono = normalizePhone(posibleTel);
+    if (!/^[0-9]{6,15}$/.test(telefono)) {
+      return sendText(jid,
+        `❌ Número no válido: \`${posibleTel}\`\n\n` +
+        'Debe ser 6-15 dígitos, sin + ni espacios. Ejemplo: `34612345678`.');
+    }
+    const nombre = parts.slice(0, -1).join(' ').trim();
+    if (!nombre || nombre.length < 2) {
+      return sendText(jid,
+        '❌ Falta el nombre del cliente.\n\n' +
+        'Uso: `!cliente Nombre Apellido NUMERO`');
+    }
+    try {
+      const resp = await oxidianPost('/cliente/registrar', { nombre, telefono });
+      if (resp && resp.ok) {
+        const c = resp.cliente || {};
+        return sendText(jid,
+          `✅ Cliente ${c.nombre ? c.nombre : nombre} registrado.\n` +
+          `📞 Teléfono: ${telefono}\n` +
+          `🆔 Id: ${c.id || resp.cliente_id}\n` +
+          `⭐ Puntos actuales: ${c.puntos ?? 0}`);
+      }
+      return sendText(jid, `❌ No se pudo registrar: ${resp?.error || 'error desconocido'}`);
+    } catch (err) {
+      log('warn', 'admin_registrar_cliente', String(err));
+      return sendText(jid, `❌ Error al registrar: ${err?.message || err}`);
+    }
+  }
+
   if (lowerCmd === 'limpiar') {
     if (!isSuperAdminJid(jid)) {
       return sendText(jid, 'Solo un Super Admin puede limpiar sesiones del bot.');

@@ -12,14 +12,14 @@
       {% if producto.es_combo %}🎁
       {% elif producto.categoria and 'beb' in producto.categoria.nombre|lower %}🥤
       {% elif producto.categoria and 'arepa' in producto.categoria.nombre|lower %}🫓
-      {% else %}🥟{% endif %}
+      {% else %}{{ brand.fallback_emoji or "🍽️" }}{% endif %}
     </div>
   {% else %}
     <div class="pd-hero-fallback">
       {% if producto.es_combo %}🎁
       {% elif producto.categoria and 'beb' in producto.categoria.nombre|lower %}🥤
       {% elif producto.categoria and 'arepa' in producto.categoria.nombre|lower %}🫓
-      {% else %}🥟{% endif %}
+      {% else %}{{ brand.fallback_emoji or "🍽️" }}{% endif %}
     </div>
   {% endif %}
 

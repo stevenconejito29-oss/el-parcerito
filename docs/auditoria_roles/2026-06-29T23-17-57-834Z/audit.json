@@ -1,0 +1,249 @@
+{
+  "generatedAt": "2026-06-29T23:17:57.835Z",
+  "baseUrl": "http://127.0.0.1:5070",
+  "outputDir": "/home/panzeta/Documentos/el-parcerito/docs/auditoria_roles/2026-06-29T23-17-57-834Z",
+  "viewport": {
+    "width": 393,
+    "height": 851
+  },
+  "captures": [
+    {
+      "name": "menu-principal",
+      "route": "/",
+      "folder": "vistas",
+      "ok": true,
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:5070/",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "horizontalOverflow": false,
+      "unexpectedAuthRedirect": false,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "file": "vistas/menu-principal.png"
+    },
+    {
+      "name": "menu-informacion",
+      "route": "/",
+      "folder": "modales",
+      "ok": true,
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:5070/",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "horizontalOverflow": false,
+      "unexpectedAuthRedirect": false,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "file": "modales/menu-informacion.png"
+    },
+    {
+      "name": "menu-modal-producto",
+      "route": "/",
+      "folder": "modales",
+      "ok": true,
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:5070/",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "horizontalOverflow": false,
+      "unexpectedAuthRedirect": false,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "file": "modales/menu-modal-producto.png"
+    },
+    {
+      "name": "carrito-con-producto",
+      "route": "/carrito",
+      "folder": "flujos",
+      "ok": true,
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:5070/carrito",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "horizontalOverflow": false,
+      "unexpectedAuthRedirect": false,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "file": "flujos/carrito-con-producto.png"
+    },
+    {
+      "name": "checkout-datos-pedido",
+      "route": "/checkout",
+      "folder": "flujos",
+      "ok": true,
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:5070/carrito",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "horizontalOverflow": false,
+      "unexpectedAuthRedirect": false,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "file": "flujos/checkout-datos-pedido.png"
+    },
+    {
+      "name": "checkout-puntos-whatsapp",
+      "route": "/checkout",
+      "folder": "flujos",
+      "ok": true,
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:5070/carrito",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "horizontalOverflow": false,
+      "unexpectedAuthRedirect": false,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "file": "flujos/checkout-puntos-whatsapp.png"
+    },
+    {
+      "name": "club-puntos",
+      "route": "/club",
+      "folder": "vistas",
+      "ok": true,
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:5070/club",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "horizontalOverflow": false,
+      "unexpectedAuthRedirect": false,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "file": "vistas/club-puntos.png"
+    },
+    {
+      "name": "whatsapp-cliente",
+      "route": "/whatsapp",
+      "folder": "vistas",
+      "ok": true,
+      "status": 200,
+      "finalUrl": "https://api.whatsapp.com/send/?phone=34633096706&text=Hola%2C+quiero+pedir+en+El+Parcerito+de+Carmona.+Vi+la+tienda+aqui%3A+http%3A%2F%2F192.168.1.41%3A5070&type=phone_number&app_absent=0",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "horizontalOverflow": false,
+      "unexpectedAuthRedirect": false,
+      "consoleErrors": [],
+      "failedRequests": [
+        "GET whatsapp://send/?phone=34633096706&text=Hola%2C%20quiero%20pedir%20en%20El%20Parcerito%20de%20Carmona.%20Vi%20la%20tienda%20aqui%3A%20http%3A%2F%2F192.168.1.41%3A5070&type=phone_number&app_absent=0 net::ERR_ABORTED"
+      ],
+      "file": "vistas/whatsapp-cliente.png"
+    },
+    {
+      "name": "inicio-sesion",
+      "route": "/auth/login",
+      "folder": "formularios",
+      "ok": true,
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:5070/auth/login",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "horizontalOverflow": false,
+      "unexpectedAuthRedirect": false,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "file": "formularios/inicio-sesion.png"
+    },
+    {
+      "name": "superadmin-login",
+      "route": "/auth/login",
+      "folder": "formularios",
+      "ok": false,
+      "error": "No se pudo iniciar sesión con carmocream15@gmail.com",
+      "finalUrl": "http://127.0.0.1:5070/auth/login"
+    },
+    {
+      "name": "admin-real-dashboard",
+      "route": "/admin/dashboard",
+      "folder": "vistas",
+      "ok": true,
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:5070/admin/dashboard",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "horizontalOverflow": false,
+      "unexpectedAuthRedirect": false,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "file": "vistas/admin-real-dashboard.png"
+    },
+    {
+      "name": "admin-real-cola",
+      "route": "/admin/cola",
+      "folder": "vistas",
+      "ok": true,
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:5070/admin/cola",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "horizontalOverflow": false,
+      "unexpectedAuthRedirect": false,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "file": "vistas/admin-real-cola.png"
+    },
+    {
+      "name": "admin-real-pedidos",
+      "route": "/admin/pedidos",
+      "folder": "vistas",
+      "ok": true,
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:5070/admin/pedidos",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "horizontalOverflow": false,
+      "unexpectedAuthRedirect": false,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "file": "vistas/admin-real-pedidos.png"
+    },
+    {
+      "name": "cocina-login",
+      "route": "/auth/login",
+      "folder": "formularios",
+      "ok": false,
+      "error": "No se pudo iniciar sesión con cocina@oxidian.com",
+      "finalUrl": "http://127.0.0.1:5070/auth/login"
+    },
+    {
+      "name": "preparacion-login",
+      "route": "/auth/login",
+      "folder": "formularios",
+      "ok": false,
+      "error": "No se pudo iniciar sesión con preparacion@oxidian.com",
+      "finalUrl": "http://127.0.0.1:5070/auth/login"
+    },
+    {
+      "name": "repartidor-login",
+      "route": "/auth/login",
+      "folder": "formularios",
+      "ok": false,
+      "error": "locator.fill: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[name=\"email\"]')\u001b[22m\n",
+      "finalUrl": "http://127.0.0.1:5070/auth/login"
+    }
+  ]
+}

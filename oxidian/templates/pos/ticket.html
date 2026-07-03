@@ -49,7 +49,7 @@
 
 <!-- CABECERA -->
 <div class="logo-block center">
-  <div class="brand-name">🥟 {{ brand.nombre }}</div>
+  <div class="brand-name">{{ brand.fallback_emoji or "🍽️" }} {{ brand.nombre }}</div>
   {% if brand.ciudad %}<div class="brand-sub">{{ brand.ciudad }}</div>{% endif %}
   {% if brand.direccion %}<div class="brand-sub">{{ brand.direccion }}</div>{% endif %}
   {% if brand.telefono %}<div class="brand-sub">{{ brand.telefono }}</div>{% endif %}

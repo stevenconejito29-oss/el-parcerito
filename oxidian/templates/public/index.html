@@ -47,7 +47,7 @@
         Ver menú completo
       </a>
     </div>
-    {% if not hero_product %}<div class="ep-hero-emoji" aria-hidden="true">🥟</div>{% endif %}
+    {% if not hero_product %}<div class="ep-hero-emoji" aria-hidden="true">{{ brand.fallback_emoji or '🍽️' }}</div>{% endif %}
   </div>
   <div class="ep-trust">
     {% if brand.delivery %}
@@ -122,7 +122,7 @@
       {% if mc.producto.imagen_url %}
         <img src="{{ img_url(mc.producto.imagen_url) }}" alt="{{ mc.producto.nombre }}" loading="lazy">
       {% else %}
-        <span>{% if mc.producto.es_combo %}🎁{% elif mc.producto.categoria and 'beb' in mc.producto.categoria.nombre|lower %}🥤{% else %}🥟{% endif %}</span>
+        <span>{% if mc.producto.es_combo %}🎁{% elif mc.producto.categoria and 'beb' in mc.producto.categoria.nombre|lower %}🥤{% else %}{{ brand.fallback_emoji or '🍽️' }}{% endif %}</span>
       {% endif %}
     </span>
     <span class="ep-mc-dest-info">
@@ -417,7 +417,7 @@
     {# Imagen #}
     <div class="ep-modal-img-wrap" id="ep-modal-img-wrap">
       <img id="ep-modal-img" src="" alt="" class="ep-modal-img">
-      <div id="ep-modal-img-fb" class="ep-modal-img-fb">🥟</div>
+      <div id="ep-modal-img-fb" class="ep-modal-img-fb">{{ brand.fallback_emoji or '🍽️' }}</div>
       <button class="ep-modal-close" onclick="closeModal()" aria-label="Cerrar">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
@@ -679,10 +679,10 @@ function openModal(id) {
   if (d.imagen_url) {
     imgEl.src = d.imagen_url;
     imgEl.style.display = 'block'; fbEl.style.display = 'none';
-    imgEl.onerror = () => { imgEl.style.display = 'none'; fbEl.style.display = 'flex'; fbEl.textContent = d.es_combo ? '🎁' : '🥟'; };
+    imgEl.onerror = () => { imgEl.style.display = 'none'; fbEl.style.display = 'flex'; fbEl.textContent = d.es_combo ? '🎁' : {{ (brand.fallback_emoji or '🍽️')|tojson }}; };
   } else {
     imgEl.style.display = 'none'; fbEl.style.display = 'flex';
-    fbEl.textContent = d.es_combo ? '🎁' : (d.tipo_entrega === 'bebida' ? '🥤' : '🥟');
+    fbEl.textContent = d.es_combo ? '🎁' : (d.tipo_entrega === 'bebida' ? '🥤' : {{ (brand.fallback_emoji or '🍽️')|tojson }});
   }
 
   document.getElementById('ep-modal-cat').textContent  = d.categoria || '';

@@ -35,7 +35,7 @@ ROLES_AUTENTICABLES = frozenset({
     "super_admin", "admin", "preparacion", "repartidor", "cocina",
 })
 ROLES_LEGACY_PREPARACION = {"staff"}
-METODOS_PAGO_VALIDOS = ("efectivo", "bizum")
+METODOS_PAGO_VALIDOS = ("efectivo", "bizum", "tarjeta")
 
 # LEGACY: modelo de acuerdo del flujo multi-proveedor/bar aliado.
 # El flujo operativo vigente no usa proveedores como rol ni como origen público;

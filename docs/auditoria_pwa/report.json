@@ -1,0 +1,191 @@
+{
+  "generatedAt": "2026-06-30T15:05:21.711Z",
+  "baseUrl": "http://127.0.0.1:5070",
+  "views": [
+    {
+      "name": "android-menu",
+      "status": 200,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "title": "El Parcerito de Carmona — Pide online",
+      "horizontalOverflow": false,
+      "scrollWidth": 390,
+      "viewportWidth": 390,
+      "products": 1,
+      "visibleProducts": 1,
+      "smallTargets": [
+        {
+          "tag": "a",
+          "text": "Tienda principal",
+          "width": 130,
+          "height": 39
+        }
+      ],
+      "serviceWorkerControlled": true,
+      "standalone": false
+    },
+    {
+      "name": "iphone-pwa",
+      "status": 200,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "title": "El Parcerito de Carmona — Pide online",
+      "horizontalOverflow": false,
+      "scrollWidth": 393,
+      "viewportWidth": 393,
+      "products": 1,
+      "visibleProducts": 1,
+      "smallTargets": [
+        {
+          "tag": "a",
+          "text": "Tienda principal",
+          "width": 130,
+          "height": 39
+        }
+      ],
+      "serviceWorkerControlled": true,
+      "standalone": true
+    },
+    {
+      "name": "desktop-menu",
+      "status": 200,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "title": "El Parcerito de Carmona — Pide online",
+      "horizontalOverflow": false,
+      "scrollWidth": 1440,
+      "viewportWidth": 1440,
+      "products": 1,
+      "visibleProducts": 1,
+      "smallTargets": [
+        {
+          "tag": "a",
+          "text": "Tienda principal",
+          "width": 130,
+          "height": 39
+        }
+      ],
+      "serviceWorkerControlled": true,
+      "standalone": false
+    }
+  ],
+  "manifest": {
+    "status": 200,
+    "contentType": "application/manifest+json",
+    "data": {
+      "name": "El Parcerito de Carmona",
+      "short_name": "El Parcerito",
+      "description": "Menu online y carrito con entrega a domicilio, recogida en local, pedidos por fecha.",
+      "start_url": "/?source=pwa",
+      "scope": "/",
+      "display": "standalone",
+      "display_override": [
+        "standalone",
+        "minimal-ui",
+        "browser"
+      ],
+      "background_color": "#FFFDF8",
+      "theme_color": "#7C6DE8",
+      "orientation": "portrait-primary",
+      "lang": "es",
+      "dir": "ltr",
+      "categories": [
+        "food",
+        "shopping"
+      ],
+      "id": "oxidian-menu",
+      "icons": [
+        {
+          "src": "/static/pwa-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png",
+          "purpose": "any"
+        },
+        {
+          "src": "/static/pwa-icon-512.png",
+          "sizes": "512x512",
+          "type": "image/png",
+          "purpose": "any"
+        },
+        {
+          "src": "/static/pwa-icon-512-maskable.png",
+          "sizes": "512x512",
+          "type": "image/png",
+          "purpose": "maskable"
+        },
+        {
+          "src": "/static/pwa-icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml",
+          "purpose": "any"
+        }
+      ],
+      "shortcuts": [
+        {
+          "name": "Ver menu",
+          "short_name": "Menu",
+          "description": "Explora el catalogo",
+          "url": "/",
+          "icons": [
+            {
+              "src": "/static/pwa-icon-192.png",
+              "sizes": "192x192"
+            }
+          ]
+        },
+        {
+          "name": "Mi carrito",
+          "short_name": "Carrito",
+          "description": "Ver pedido actual",
+          "url": "/carrito",
+          "icons": [
+            {
+              "src": "/static/pwa-icon-192.png",
+              "sizes": "192x192"
+            }
+          ]
+        },
+        {
+          "name": "Mis puntos",
+          "short_name": "Puntos",
+          "description": "Club de fidelizacion",
+          "url": "/club",
+          "icons": [
+            {
+              "src": "/static/pwa-icon-192.png",
+              "sizes": "192x192"
+            }
+          ]
+        }
+      ],
+      "screenshots": [
+        {
+          "src": "/static/pwa-screenshot-mobile.png",
+          "sizes": "390x844",
+          "type": "image/png",
+          "form_factor": "narrow",
+          "label": "El Parcerito de Carmona — Menu online"
+        },
+        {
+          "src": "/static/pwa-screenshot-wide.png",
+          "sizes": "1280x720",
+          "type": "image/png",
+          "form_factor": "wide",
+          "label": "El Parcerito de Carmona — Pedidos y seguimiento"
+        }
+      ],
+      "prefer_related_applications": false,
+      "edge_side_panel": {
+        "preferred_width": 400
+      }
+    }
+  },
+  "offline": {
+    "error": null,
+    "result": {
+      "title": "El Parcerito de Carmona — Pide online",
+      "bodyText": "🥟\n\nEl Parcerito de Carmona\n\n📍 Carmona, Sevilla\n\n🛒\n↗\nESTÁS VIENDO\nEl Parcerito de Carmona\nAbierto ahora\nTienda principal\nEl Parcerito de Carmona\n\nCarmona\n\nVer menú completo\n🥟\n~25 min\nDelivery o recogida\nAbierto\nBuscar\n🌎\nTodo\n🍽️ Nuestro menú\n1 productos\n🥟\nDISPONIBLE\n\nQA Hamburguesa extras\n\nProd",
+      "controlled": true
+    }
+  }
+}

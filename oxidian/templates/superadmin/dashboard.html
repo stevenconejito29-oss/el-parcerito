@@ -32,15 +32,19 @@
           Modo propio · los ingresos van íntegramente a la tienda, sin comisión al hub.
           {% endif %}
         </p>
-        <div style="display:flex;gap:var(--oa-space-2);margin-top:var(--oa-space-2);flex-wrap:wrap;">
-          <form method="POST" action="{{ url_for('superadmin.toggle_modo_tienda') }}"
-                onsubmit="return confirm('¿Cambiar a modo {{ 'propio' if tienda_modo.es_servicio else 'servicio' }}? Las comisiones y cálculos del sistema se adaptan automáticamente.');">
+        <div style="display:flex;gap:var(--oa-space-2);margin-top:var(--oa-space-2);flex-wrap:wrap;align-items:center;">
+          {# Toggle instant: un click cambia. Sin confirm() bloqueante — el
+             cambio es reversible y se muestra flash de éxito al recargar. #}
+          <form method="POST" action="{{ url_for('superadmin.toggle_modo_tienda') }}" style="display:inline;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="oa-btn oa-btn--sm oa-btn--primary">
+            <button type="submit" class="oa-btn oa-btn--sm oa-btn--primary" title="Un click cambia. Sin necesidad de guardar.">
               🔄 Cambiar a modo {{ 'propio' if tienda_modo.es_servicio else 'servicio' }}
             </button>
           </form>
+          {% if tienda_modo.es_servicio %}
           <a href="{{ url_for('superadmin.config') }}#operacion" class="oa-btn oa-btn--sm oa-btn--ghost">Ajustar comisión</a>
+          {% endif %}
+          <span style="font-size:var(--oa-font-xs);color:var(--col-faint);">Actual: <strong style="color:var(--col-text);">{{ tienda_modo.modo_label }}</strong></span>
         </div>
       </div>
       {% if tienda_modo.es_servicio %}
