@@ -41,6 +41,34 @@ api_bot_bp = Blueprint("api_bot", __name__)
 logger = logging.getLogger(__name__)
 
 
+# ── Handlers globales del blueprint ──────────────────────────────────
+# Blindaje: cualquier HTTPException (abort(404), etc.) se serializa como
+# JSON en vez de HTML. Cualquier excepción NO controlada se loggea con
+# stacktrace server-side y devuelve un mensaje neutro al cliente (sin
+# filtrar str(e) que podía leakear rutas de código, valores de DB, etc.).
+from werkzeug.exceptions import HTTPException as _HTTPExc
+
+
+@api_bot_bp.errorhandler(_HTTPExc)
+def _api_bot_http_error(exc):
+    code = exc.code or 500
+    msg = {
+        404: "Recurso no encontrado",
+        403: "Sin permiso",
+        405: "Método no permitido",
+        400: "Solicitud inválida",
+    }.get(code, exc.description or "Error HTTP")
+    return jsonify({"ok": False, "error": msg}), code
+
+
+@api_bot_bp.errorhandler(Exception)
+def _api_bot_generic_error(exc):
+    # Si ya se manejó y devolvió jsonify explícito, este handler no se ejecuta.
+    # Solo aquí cuando algo escapó del try/except del endpoint.
+    logger.exception("api_bot unhandled: %s", exc)
+    return jsonify({"ok": False, "error": "Error interno del bot"}), 500
+
+
 def _cliente_por_telefono(value):
     telefono = normalizar_telefono_cliente(value)
     if not telefono_valido(telefono):
@@ -635,6 +663,7 @@ def catalogo():
 @api_bot_bp.route("/producto/<int:producto_id>")
 @bot_required
 def detalle_producto(producto_id):
+    from werkzeug.exceptions import HTTPException
     try:
         p = get_or_404(Product, producto_id)
         if not _producto_disponible_para_bot(p):
@@ -643,8 +672,15 @@ def detalle_producto(producto_id):
             "ok": True,
             "producto": _producto_catalogo_payload(p)
         })
+    except HTTPException as http_exc:
+        # get_or_404 lanza NotFound (404). Retornar como JSON coherente en vez
+        # de que el except Exception genérico lo capture y devuelva 500.
+        code = http_exc.code or 500
+        msg = "No encontrado" if code == 404 else (http_exc.description or "Error HTTP")
+        return jsonify({"ok": False, "error": msg}), code
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        logger.exception("detalle_producto pid=%s falló", producto_id)
+        return jsonify({"ok": False, "error": "Error interno consultando producto"}), 500
 
 
 @api_bot_bp.route("/catalogo/simulador")
@@ -744,6 +780,7 @@ def buscar_cliente():
 @api_bot_bp.route("/cliente/registrar", methods=["POST"])
 @bot_required
 def registrar_cliente():
+    from sqlalchemy.exc import IntegrityError
     try:
         data = request.json or {}
         nombre = data.get("nombre", "").strip()
@@ -769,15 +806,36 @@ def registrar_cliente():
         )
         cliente.set_password(str(uuid.uuid4()))
         db.session.add(cliente)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            # Race condition: otro request registró el mismo teléfono/email
+            # entre nuestro check y el commit. Recuperamos el cliente que ganó
+            # y lo devolvemos como si fuera el nuestro — el bot es idempotente.
+            db.session.rollback()
+            existente_race, _ = _cliente_por_telefono(telefono)
+            if existente_race:
+                return jsonify({
+                    "ok": True,
+                    "cliente_id": existente_race.id,
+                    "cliente": {
+                        "id": existente_race.id,
+                        "nombre": existente_race.nombre,
+                        "puntos": existente_race.puntos,
+                    }
+                })
+            # Ni siquiera existía tras el race → error de otra restricción
+            logger.exception("registrar_cliente IntegrityError sin cliente existente tel=%s", telefono)
+            return jsonify({"ok": False, "error": "No se pudo registrar el cliente. Intenta de nuevo."}), 409
         return jsonify({
             "ok": True,
             "cliente_id": cliente.id,
             "cliente": {"id": cliente.id, "nombre": cliente.nombre, "puntos": 0}
         })
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        logger.exception("registrar_cliente falló")
+        return jsonify({"ok": False, "error": "Error interno registrando cliente"}), 500
 
 
 # ─── PUNTOS ──────────────────────────────────
