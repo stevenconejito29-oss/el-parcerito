@@ -1,203 +1,178 @@
 {% extends "admin_base.html" %}
-{% block title %}Gestión de Admins — SuperAdmin{% endblock %}
+{% block title %}Gestión de Admins — Super Admin{% endblock %}
 {% block content %}
 
-<div class="flex items-center justify-between mb-5 flex-wrap gap-3">
-  <div>
-    <h1 class="text-2xl font-black text-white">👑 Gestión de Administradores</h1>
-    <p class="text-xs mt-0.5" style="color:var(--col-muted)">
-      Crea y configura admins — cada uno tiene features individuales que determinan a qué módulos accede.
-    </p>
-  </div>
-  <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
-          class="ox-btn-primary text-sm">
-    + Nuevo admin
-  </button>
-</div>
+<div class="oa-page">
 
-{# ── GUÍA RÁPIDA ── #}
-<div class="ox-card p-4 mb-5" style="border-left:3px solid rgba(192,132,252,.5)">
-  <div class="flex items-start gap-3">
-    <span class="text-xl flex-shrink-0">💡</span>
-    <div class="text-sm" style="color:var(--col-muted)">
-      <strong style="color:#C084FC">¿Cómo funciona?</strong>
-      Un <strong>Admin</strong> solo accede a los módulos que tú actives (features). Un <strong>Super Admin</strong> tiene acceso total sin restricciones. Configura features tras crear el admin.
+  {# ── Header ─────────────────────────────────────────────── #}
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Super administración</p>
+      <h1 class="oa-page-header__title">Administradores</h1>
+      <p class="oa-page-header__subtitle">Crea admins y decide qué módulos puede usar cada uno. Nuevos admins arrancan con el <strong>preset operacional</strong> (9 módulos) — sensibles quedan apagados hasta que los actives.</p>
     </div>
-  </div>
-</div>
+    <div class="oa-page-header__actions">
+      <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')" class="oa-btn oa-btn--primary">
+        + Nuevo admin
+      </button>
+    </div>
+  </header>
 
-{# ── LISTA DE ADMINS ── #}
-<div class="space-y-3">
-  {% for u in users %}
-  {% set n_activos = u.features|selectattr('activo')|list|length if u.features is defined else 0 %}
-  <div class="ox-card p-4 admin-user-card" id="admin-{{ u.id }}">
-    <div class="flex items-start gap-3 flex-wrap">
+  {# ── Lista de admins ────────────────────────────────────── #}
+  {% if users %}
+  <div style="display: grid; gap: var(--oa-space-3);">
+    {% for u in users %}
+    {% set n_activos = u.features|selectattr('activo')|list|length if u.features is defined else 0 %}
+    {% set n_total = 12 %}
+    <div class="oa-panel" id="admin-{{ u.id }}" style="margin: 0;">
+      <div class="oa-panel__body" style="display:flex;align-items:flex-start;gap:var(--oa-space-4);flex-wrap:wrap;">
 
-      {# Avatar + info #}
-      <div class="flex items-center gap-3 flex-1 min-w-0">
-        <div class="w-11 h-11 rounded-full flex items-center justify-center text-lg font-black flex-shrink-0"
-             style="background:{% if u.rol == 'super_admin' %}rgba(192,132,252,.18){% else %}rgba(10,132,255,.15){% endif %};color:{% if u.rol == 'super_admin' %}#C084FC{% else %}#5AC8FA{% endif %}">
+        {# Avatar #}
+        <div style="width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.15rem;font-weight:900;flex-shrink:0;
+                    background:{% if u.rol == 'super_admin' %}color-mix(in srgb, var(--brand-primary) 20%, transparent){% else %}color-mix(in srgb, var(--status-info) 18%, transparent){% endif %};
+                    color:{% if u.rol == 'super_admin' %}var(--brand-primary){% else %}var(--status-info){% endif %};">
           {{ u.nombre[0].upper() if u.nombre else '?' }}
         </div>
-        <div class="min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-            <p class="font-black text-white text-sm">{{ u.nombre }}</p>
-            <span class="text-xs px-2 py-0.5 rounded-full font-bold"
-                  style="{% if u.rol == 'super_admin' %}background:rgba(192,132,252,.12);color:#C084FC;border:1px solid rgba(192,132,252,.2){% else %}background:rgba(10,132,255,.1);color:#5AC8FA;border:1px solid rgba(10,132,255,.18){% endif %}">
+
+        {# Info principal #}
+        <div style="flex:1;min-width:200px;">
+          <div style="display:flex;align-items:center;gap:var(--oa-space-2);flex-wrap:wrap;">
+            <p style="font-size:var(--oa-font-base);font-weight:900;color:var(--col-text);margin:0;">{{ u.nombre }}</p>
+            <span class="oa-badge {% if u.rol == 'super_admin' %}oa-badge--brand{% else %}oa-badge--info{% endif %}">
               {{ '👑 Super Admin' if u.rol == 'super_admin' else '🔧 Admin' }}
             </span>
-            <span class="text-xs px-2 py-0.5 rounded-full font-bold"
-                  style="{% if u.activo %}background:rgba(94,240,151,.1);color:#5EF097;border:1px solid rgba(94,240,151,.18){% else %}background:rgba(255,59,48,.08);color:#FF6B6B;border:1px solid rgba(255,59,48,.15){% endif %}">
+            <span class="oa-badge {% if u.activo %}oa-badge--ok{% else %}oa-badge--err{% endif %}">
               {{ '● Activo' if u.activo else '○ Inactivo' }}
             </span>
           </div>
-          <p class="text-xs mt-0.5" style="color:var(--col-muted)">{{ u.email }}</p>
-          {# Features indicator para admins #}
+          <p style="font-size:var(--oa-font-xs);color:var(--col-faint);margin:2px 0 0;">{{ u.email }}</p>
+
           {% if u.rol == 'admin' %}
-          <div class="flex items-center gap-2 mt-1.5">
-            <div class="admin-feat-bar">
-              <div class="admin-feat-fill {% if n_activos == 0 %}red{% elif n_activos < 4 %}amber{% else %}green{% endif %}"
-                   style="width:{{ [n_activos / 11 * 100, 100]|min|int }}%"></div>
+          {% set pct = ((n_activos / n_total) * 100)|int if n_total else 0 %}
+          <div style="margin-top:var(--oa-space-3);display:flex;align-items:center;gap:var(--oa-space-3);flex-wrap:wrap;">
+            <div style="flex:1;min-width:120px;max-width:220px;height:6px;border-radius:var(--radius-pill);background:var(--col-hover);overflow:hidden;">
+              <div style="height:100%;width:{{ pct }}%;background:{% if n_activos == 0 %}var(--status-err){% elif n_activos < 4 %}var(--status-warn){% else %}var(--status-ok){% endif %};transition:width .3s;"></div>
             </div>
-            <span class="text-xs {% if n_activos == 0 %}text-red-400{% elif n_activos < 4 %}text-amber-400{% else %}text-green-400{% endif %}">
-              {{ n_activos }}/11 módulos
+            <span style="font-size:var(--oa-font-xs);font-weight:700;color:{% if n_activos == 0 %}var(--status-err){% elif n_activos < 4 %}var(--status-warn){% else %}var(--status-ok){% endif %};">
+              {{ n_activos }}/{{ n_total }} módulos
             </span>
             {% if n_activos == 0 %}
-            <span class="text-xs" style="color:#FF6B6B">⚠️ Sin módulos activos</span>
+            <span class="oa-badge oa-badge--err">⚠️ Sin módulos activos</span>
             {% endif %}
           </div>
           {% else %}
-          <p class="text-xs mt-1" style="color:rgba(192,132,252,.7)">Acceso completo a todos los módulos</p>
+          <p style="font-size:var(--oa-font-xs);color:var(--brand-primary);margin:var(--oa-space-2) 0 0;font-weight:700;">Acceso completo a todos los módulos</p>
           {% endif %}
         </div>
-      </div>
 
-      {# Acciones #}
-      <div class="flex items-center gap-2 flex-wrap flex-shrink-0">
-        {% if u.rol == 'admin' %}
-        <a href="{{ url_for('superadmin.admin_features', user_id=u.id) }}"
-           class="text-xs font-bold px-3 py-1.5 rounded-lg transition"
-           style="background:rgba(192,132,252,.1);border:1px solid rgba(192,132,252,.2);color:#C084FC">
-          ⚡ Features
-        </a>
-        {% endif %}
-        <button onclick='abrirEditar({{ u.id }}, {{ u.nombre|tojson }}, {{ u.rol|tojson }})'
-                class="text-xs font-bold px-3 py-1.5 rounded-lg transition"
-                style="background:rgba(255,255,255,.05);border:1px solid var(--col-border);color:var(--col-muted)">
-          ✏️ Editar
-        </button>
-        {% if u.id != current_user.id %}
-        <form method="POST" action="{{ url_for('superadmin.toggle_admin', user_id=u.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit"
-                  class="text-xs font-bold px-3 py-1.5 rounded-lg transition"
-                  style="{% if u.activo %}background:rgba(255,59,48,.08);border:1px solid rgba(255,59,48,.18);color:#FF6B6B{% else %}background:rgba(94,240,151,.08);border:1px solid rgba(94,240,151,.18);color:#5EF097{% endif %}">
-            {{ '⏸ Desactivar' if u.activo else '▶ Activar' }}
+        {# Acciones #}
+        <div style="display:flex;gap:var(--oa-space-2);align-items:center;flex-wrap:wrap;flex-shrink:0;">
+          {% if u.rol == 'admin' %}
+          <a href="{{ url_for('superadmin.admin_features', user_id=u.id) }}" class="oa-btn oa-btn--sm">
+            ⚡ Features
+          </a>
+          {% endif %}
+          <button onclick='abrirEditar({{ u.id }}, {{ u.nombre|tojson }}, {{ u.rol|tojson }})' class="oa-btn oa-btn--sm">
+            ✏️ Editar
           </button>
-        </form>
-        {% endif %}
+          {% if u.id != current_user.id %}
+          <form method="POST" action="{{ url_for('superadmin.toggle_admin', user_id=u.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="oa-btn oa-btn--sm {% if u.activo %}oa-btn--danger{% else %}oa-btn--primary{% endif %}">
+              {{ '⏸ Desactivar' if u.activo else '▶ Activar' }}
+            </button>
+          </form>
+          {% endif %}
+        </div>
+
       </div>
     </div>
+    {% endfor %}
   </div>
   {% else %}
-  <div class="ox-card p-10 text-center">
-    <p class="text-4xl mb-3">👤</p>
-    <p class="font-bold text-white">Sin administradores</p>
-    <p class="text-sm mt-1" style="color:var(--col-muted)">Crea el primer administrador para gestionar el sistema</p>
+  <div class="oa-empty">
+    <div class="oa-empty__icon">👥</div>
+    <p class="oa-empty__title">Sin administradores</p>
+    <p class="oa-empty__body">Crea el primer administrador para delegar la operación diaria del panel.</p>
+    <div class="oa-empty__cta">
+      <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')" class="oa-btn oa-btn--primary">+ Crear primer admin</button>
+    </div>
   </div>
-  {% endfor %}
+  {% endif %}
+
 </div>
 
-{# ── MODAL NUEVO ADMIN ── #}
-<div id="modal-nuevo" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
-     style="background:rgba(0,0,0,.7);backdrop-filter:blur(6px)"
-     onclick="if(event.target===this)this.classList.add('hidden')">
-  <div class="ox-card p-5 w-full max-w-md shadow-2xl" onclick="event.stopPropagation()">
-    <div class="flex justify-between items-center mb-4">
+{# ── Modal: Nuevo admin ─────────────────────────────────── #}
+<div id="modal-nuevo" class="oa-dialog hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="oa-dialog__panel" onclick="event.stopPropagation()">
+    <div class="oa-dialog__head">
       <div>
-        <h2 class="font-black text-white">Nuevo Administrador</h2>
-        <p class="text-xs mt-0.5" style="color:var(--col-muted)">Tras crearlo, configura sus módulos de acceso</p>
+        <p class="oa-dialog__title">Nuevo administrador</p>
+        <p class="oa-dialog__sub">Se creará con el preset operacional activo. Los módulos sensibles requieren tu OK después.</p>
       </div>
-      <button onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
-              class="w-8 h-8 rounded-lg flex items-center justify-center text-xl"
-              style="background:var(--col-elevated);color:var(--col-muted);border:1px solid var(--col-border)">&times;</button>
+      <button onclick="document.getElementById('modal-nuevo').classList.add('hidden')" class="oa-dialog__close" aria-label="Cerrar">&times;</button>
     </div>
-    <form method="POST" action="{{ url_for('superadmin.crear_admin') }}" class="space-y-3">
+    <form method="POST" action="{{ url_for('superadmin.crear_admin') }}" class="oa-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div>
-        <label class="admin-lbl">Nombre completo</label>
-        <input type="text" name="nombre" required placeholder="Ej: María García" class="admin-inp">
+      <div class="oa-form__group">
+        <label class="oa-label">Nombre completo</label>
+        <input type="text" name="nombre" required placeholder="Nombre y apellido" class="oa-input">
       </div>
-      <div>
-        <label class="admin-lbl">Email de acceso</label>
-        <input type="email" name="email" required placeholder="admin@ejemplo.com" class="admin-inp">
+      <div class="oa-form__group">
+        <label class="oa-label">Email de acceso</label>
+        <input type="email" name="email" required placeholder="admin@ejemplo.com" class="oa-input">
       </div>
-      <div>
-        <label class="admin-lbl">Contraseña</label>
-        <input type="password" name="password" required placeholder="Mínimo 8 caracteres"
-               autocomplete="new-password" class="admin-inp">
+      <div class="oa-form__group">
+        <label class="oa-label">Contraseña <span class="oa-label__hint">mínimo 8 caracteres</span></label>
+        <input type="password" name="password" required autocomplete="new-password" class="oa-input">
       </div>
-      <div>
-        <label class="admin-lbl">Rol</label>
-        <select name="rol" class="admin-inp">
+      <div class="oa-form__group">
+        <label class="oa-label">Rol</label>
+        <select name="rol" class="oa-select">
           <option value="admin">🔧 Admin — accede solo a módulos activos</option>
           <option value="super_admin">👑 Super Admin — acceso total</option>
         </select>
       </div>
-      <div class="p-3 rounded-lg text-xs" style="background:rgba(10,132,255,.07);border:1px solid rgba(10,132,255,.15);color:#5AC8FA">
-        💡 Después de crear el admin podrás elegir qué módulos puede ver y usar.
+      <div class="oa-alert oa-alert--info">
+        <span class="oa-alert__icon">💡</span>
+        <div>Después de crear el admin podrás afinar sus módulos individualmente desde la pantalla de features.</div>
       </div>
-      <button type="submit" class="ox-btn-primary w-full">Crear y configurar features →</button>
+      <button type="submit" class="oa-btn oa-btn--primary oa-btn--block oa-btn--lg">Crear y configurar features →</button>
     </form>
   </div>
 </div>
 
-{# ── MODAL EDITAR ADMIN ── #}
-<div id="modal-editar" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
-     style="background:rgba(0,0,0,.7);backdrop-filter:blur(6px)"
-     onclick="if(event.target===this)this.classList.add('hidden')">
-  <div class="ox-card p-5 w-full max-w-md shadow-2xl" onclick="event.stopPropagation()">
-    <div class="flex justify-between items-center mb-4">
-      <h2 class="font-black text-white">✏️ Editar: <span id="edit-nombre" class="text-yellow-400"></span></h2>
-      <button onclick="document.getElementById('modal-editar').classList.add('hidden')"
-              class="w-8 h-8 rounded-lg flex items-center justify-center text-xl"
-              style="background:var(--col-elevated);color:var(--col-muted);border:1px solid var(--col-border)">&times;</button>
+{# ── Modal: Editar admin ────────────────────────────────── #}
+<div id="modal-editar" class="oa-dialog hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="oa-dialog__panel" onclick="event.stopPropagation()">
+    <div class="oa-dialog__head">
+      <p class="oa-dialog__title">✏️ Editar: <span id="edit-nombre" style="color:var(--brand-primary);"></span></p>
+      <button onclick="document.getElementById('modal-editar').classList.add('hidden')" class="oa-dialog__close" aria-label="Cerrar">&times;</button>
     </div>
-    <form id="form-editar" method="POST" action="" class="space-y-3">
+    <form id="form-editar" method="POST" action="" class="oa-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div>
-        <label class="admin-lbl">Nombre</label>
-        <input type="text" name="nombre" id="edit-nombre-input" required class="admin-inp">
+      <div class="oa-form__group">
+        <label class="oa-label">Nombre</label>
+        <input type="text" name="nombre" id="edit-nombre-input" required class="oa-input">
       </div>
-      <div>
-        <label class="admin-lbl">Rol</label>
-        <select name="rol" id="edit-rol" class="admin-inp">
+      <div class="oa-form__group">
+        <label class="oa-label">Rol</label>
+        <select name="rol" id="edit-rol" class="oa-select">
           <option value="admin">🔧 Admin</option>
           <option value="super_admin">👑 Super Admin</option>
         </select>
       </div>
-      <div>
-        <label class="admin-lbl">Nueva contraseña <span style="color:var(--col-faint);font-weight:400">(dejar vacío = no cambiar)</span></label>
-        <input type="password" name="nueva_password" placeholder="Nueva contraseña (opcional)"
-               autocomplete="off" class="admin-inp">
+      <div class="oa-form__group">
+        <label class="oa-label">Nueva contraseña <span class="oa-label__hint">dejar vacío = no cambiar</span></label>
+        <input type="password" name="nueva_password" autocomplete="off" class="oa-input">
       </div>
-      <button type="submit" class="ox-btn-primary w-full">Guardar cambios</button>
+      <button type="submit" class="oa-btn oa-btn--primary oa-btn--block oa-btn--lg">Guardar cambios</button>
     </form>
   </div>
 </div>
 
 {% endblock %}
 {% block scripts %}
-<style>
-.admin-lbl { font-size:.7rem; font-weight:900; color:var(--col-muted); display:block; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.04em; }
-.admin-inp { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.55rem .75rem; color:#fff; font-size:.9rem; transition:border-color .15s; outline:none; }
-.admin-inp:focus { border-color:rgba(255,171,0,.5); box-shadow:0 0 0 3px rgba(255,171,0,.1); }
-.admin-feat-bar { flex:1; max-width:80px; height:5px; border-radius:2px; background:rgba(255,255,255,.08); overflow:hidden; }
-.admin-feat-fill { height:100%; border-radius:2px; transition:width .3s; }
-.admin-feat-fill.red { background:#FF6B6B; }
-.admin-feat-fill.amber { background:#FFAB00; }
-.admin-feat-fill.green { background:#5EF097; }
-</style>
 <script>
 function abrirEditar(id, nombre, rol) {
   const form = document.getElementById('form-editar');

@@ -198,11 +198,6 @@
         {% if has_admin_feature('marketing') %}<a href="{{ url_for('admin.afiliados') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤝</span>Afiliados</a>{% endif %}
         {% if has_admin_feature('marketing') %}<a href="{{ url_for('admin.menu_config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖼️</span>Banners & Home</a>{% endif %}
         {% if has_admin_feature('productos') %}<a href="{{ url_for('admin.nuevo_combo') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎁</span>Combos</a>{% endif %}
-        {# Ajustes rápidos: para super_admin apunta a /superadmin/config;
-           para admin puro, redirige a productos como fallback (por ahora) #}
-        {% if rol == 'super_admin' %}
-        <a href="{{ url_for('superadmin.config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎨</span>Marca & Ajustes</a>
-        {% endif %}
       </div>
 
       {% if rol == 'super_admin' %}
@@ -210,12 +205,12 @@
       <div class="ox-sb-section">
         <span class="ox-sb-section-label" style="color:rgba(192,132,252,.7)">👑 Super Admin</span>
         <a href="{{ url_for('superadmin.dashboard') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎛️</span>Panel SA</a>
-        <a href="{{ url_for('superadmin.config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">⚙️</span>Configuración</a>
+        <a href="{{ url_for('superadmin.config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">⚙️</span>Configuración & Marca</a>
         <a href="{{ url_for('superadmin.chatbot') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💬</span>Chatbot</a>
-        {% if brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📍</span>Zonas</a>{% endif %}
-        <a href="{{ url_for('superadmin.audit') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🧾</span>Auditoría</a>
+        <a href="{{ url_for('superadmin.admins') }}" class="ox-sb-item"><span class="ox-sb-item-icon">👥</span>Admins & Permisos</a>
+        {% if brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📍</span>Zonas de entrega</a>{% endif %}
         <a href="{{ url_for('superadmin.pl') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📈</span>P&L · Finanzas</a>
-        <a href="{{ url_for('superadmin.admins') }}" class="ox-sb-item"><span class="ox-sb-item-icon">👑</span>Admins & Permisos</a>
+        <a href="{{ url_for('superadmin.audit') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🧾</span>Auditoría</a>
       </div>
       {% endif %}
 

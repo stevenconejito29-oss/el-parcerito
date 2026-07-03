@@ -1,5 +1,5 @@
 {% extends "admin_base.html" %}
-{% block title %}Auditoría{% endblock %}
+{% block title %}Auditoría — Super Admin{% endblock %}
 {% block content %}
 
 {% set action_labels = {
@@ -19,6 +19,7 @@
   'crear_categoria':'Creó una categoría',
   'eliminar_categoria':'Eliminó una categoría',
   'ajuste_puntos':'Ajustó puntos de un cliente',
+  'puntos_reset_manual':'Reset masivo de puntos',
   'crear_campana':'Creó una campaña',
   'enviar_campana':'Envió una campaña',
   'crear_usuario':'Creó un usuario',
@@ -32,121 +33,148 @@
   'affiliate_code':'Afiliado','affiliate_use':'Comisión','system':'Sistema'
 } %}
 
-<header class="au-head">
-  <div>
-    <p class="au-kicker">Trazabilidad del sistema</p>
-    <h1>Actividad y auditoría</h1>
-    <p>Aquí puedes saber quién cambió algo, qué modificó y desde dónde lo hizo.</p>
-  </div>
-  <a href="{{ url_for('superadmin.dashboard') }}">Volver al panel</a>
-</header>
+<div class="oa-page">
 
-<section class="au-summary">
-  <div><span>Acciones en 24 h</span><strong>{{ resumen_24h.total }}</strong></div>
-  <div><span>Usuarios activos</span><strong>{{ resumen_24h.usuarios }}</strong></div>
-  <div><span>Cambios sensibles</span><strong>{{ resumen_24h.seguridad }}</strong></div>
-  <div><span>Resultados filtrados</span><strong>{{ logs.total }}</strong></div>
-</section>
-
-<form method="GET" class="au-filters">
-  <label class="au-search">
-    <span>Buscar en detalles</span>
-    <input type="search" name="q" value="{{ buscar_f }}" placeholder="Pedido, producto, IP o texto">
-  </label>
-  <label>
-    <span>Periodo</span>
-    <select name="periodo">
-      {% for value, label in [('1','Hoy'),('7','7 días'),('30','30 días'),('90','90 días'),('all','Todo')] %}
-      <option value="{{ value }}" {% if periodo_f == value %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    <span>Responsable</span>
-    <select name="user_id">
-      <option value="">Todos</option>
-      {% for u in staff_users %}<option value="{{ u.id }}" {% if user_id_f == u.id %}selected{% endif %}>{{ u.nombre }} · {{ u.rol }}</option>{% endfor %}
-    </select>
-  </label>
-  <label>
-    <span>Tipo de dato</span>
-    <select name="recurso">
-      <option value="">Todos</option>
-      {% for recurso in recursos %}<option value="{{ recurso }}" {% if recurso_f == recurso %}selected{% endif %}>{{ resource_labels.get(recurso, recurso|replace('_',' ')|title) }}</option>{% endfor %}
-    </select>
-  </label>
-  <label>
-    <span>Acción</span>
-    <select name="accion">
-      <option value="">Todas</option>
-      {% for accion in acciones %}<option value="{{ accion }}" {% if accion_f == accion %}selected{% endif %}>{{ action_labels.get(accion, accion|replace('_',' ')|title) }}</option>{% endfor %}
-    </select>
-  </label>
-  <div class="au-filter-actions">
-    <button type="submit">Consultar</button>
-    <a href="{{ url_for('superadmin.audit') }}">Limpiar</a>
-  </div>
-</form>
-
-<section class="au-feed">
-  {% for log in logs.items %}
-  {% set actor = log.usuario.nombre if log.usuario else 'Sistema' %}
-  {% set label = action_labels.get(log.accion, log.accion|replace('_',' ')|title) %}
-  {% set resource = resource_labels.get(log.recurso, (log.recurso or 'Sistema')|replace('_',' ')|title) %}
-  <article class="au-event">
-    <div class="au-time">
-      <strong>{{ log.creado_en.strftime('%H:%M') }}</strong>
-      <span>{{ log.creado_en.strftime('%d/%m/%Y') }}</span>
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Trazabilidad del sistema</p>
+      <h1 class="oa-page-header__title">Actividad y auditoría</h1>
+      <p class="oa-page-header__subtitle">Quién cambió qué, cuándo y desde dónde. Todo lo sensible queda registrado con IP.</p>
     </div>
-    <div class="au-dot" aria-hidden="true"></div>
-    <div class="au-event-body">
-      <div class="au-event-head">
-        <div>
-          <strong>{{ actor }}</strong>
-          <span>{{ label }}</span>
+    <div class="oa-page-header__actions">
+      <a href="{{ url_for('superadmin.dashboard') }}" class="oa-btn oa-btn--ghost">← Panel SA</a>
+    </div>
+  </header>
+
+  {# KPIs 24h #}
+  <div class="oa-kpi-grid">
+    <div class="oa-kpi oa-kpi--info">
+      <p class="oa-kpi__label">Acciones 24 h</p>
+      <p class="oa-kpi__value">{{ resumen_24h.total }}</p>
+    </div>
+    <div class="oa-kpi">
+      <p class="oa-kpi__label">Usuarios activos</p>
+      <p class="oa-kpi__value">{{ resumen_24h.usuarios }}</p>
+    </div>
+    <div class="oa-kpi oa-kpi--{{ 'warn' if resumen_24h.seguridad else 'ok' }}">
+      <p class="oa-kpi__label">Cambios sensibles</p>
+      <p class="oa-kpi__value">{{ resumen_24h.seguridad }}</p>
+    </div>
+    <div class="oa-kpi oa-kpi--primary">
+      <p class="oa-kpi__label">Filtrados ahora</p>
+      <p class="oa-kpi__value">{{ logs.total }}</p>
+    </div>
+  </div>
+
+  {# Filtros #}
+  <div class="oa-panel">
+    <div class="oa-panel__header">
+      <p class="oa-panel__title">🔍 Filtros</p>
+    </div>
+    <div class="oa-panel__body">
+      <form method="GET" class="oa-form">
+        <div class="oa-form__row">
+          <div class="oa-form__group">
+            <label class="oa-label">Buscar en detalles</label>
+            <input type="search" name="q" value="{{ buscar_f }}" placeholder="Pedido, producto, IP o texto" class="oa-input">
+          </div>
+          <div class="oa-form__group">
+            <label class="oa-label">Periodo</label>
+            <select name="periodo" class="oa-select">
+              {% for value, label in [('1','Hoy'),('7','7 días'),('30','30 días'),('90','90 días'),('all','Todo')] %}
+              <option value="{{ value }}" {% if periodo_f == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="oa-form__group">
+            <label class="oa-label">Responsable</label>
+            <select name="user_id" class="oa-select">
+              <option value="">Todos</option>
+              {% for u in staff_users %}<option value="{{ u.id }}" {% if user_id_f == u.id %}selected{% endif %}>{{ u.nombre }} · {{ u.rol }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="oa-form__group">
+            <label class="oa-label">Tipo de dato</label>
+            <select name="recurso" class="oa-select">
+              <option value="">Todos</option>
+              {% for recurso in recursos %}<option value="{{ recurso }}" {% if recurso_f == recurso %}selected{% endif %}>{{ resource_labels.get(recurso, recurso|replace('_',' ')|title) }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="oa-form__group">
+            <label class="oa-label">Acción</label>
+            <select name="accion" class="oa-select">
+              <option value="">Todas</option>
+              {% for accion in acciones %}<option value="{{ accion }}" {% if accion_f == accion %}selected{% endif %}>{{ action_labels.get(accion, accion|replace('_',' ')|title) }}</option>{% endfor %}
+            </select>
+          </div>
         </div>
-        <span class="au-resource">{{ resource }}{% if log.recurso_id %} #{{ log.recurso_id }}{% endif %}</span>
-      </div>
-      {% if log.detalle %}
-      <details class="au-detail">
-        <summary>Ver información registrada</summary>
-        <pre>{{ log.detalle }}</pre>
-      </details>
-      {% else %}
-      <p class="au-no-detail">La acción no guardó información adicional.</p>
-      {% endif %}
-      <div class="au-meta">
-        <span>Rol: {{ log.usuario.rol if log.usuario else 'sistema' }}</span>
-        <span>IP: {{ log.ip or 'no registrada' }}</span>
-        <span>Código: {{ log.accion }}</span>
-      </div>
+        <div style="display:flex;gap:var(--oa-space-2);justify-content:flex-end;">
+          <a href="{{ url_for('superadmin.audit') }}" class="oa-btn oa-btn--ghost">Limpiar</a>
+          <button type="submit" class="oa-btn oa-btn--primary">Consultar</button>
+        </div>
+      </form>
     </div>
-  </article>
-  {% else %}
-  <div class="au-empty">
-    <strong>No hay actividad para estos filtros</strong>
-    <p>Amplía el periodo o limpia los filtros para consultar otros registros.</p>
   </div>
-  {% endfor %}
-</section>
 
-{% if logs.pages > 1 %}
-<nav class="au-pages" aria-label="Paginación">
-  {% set query_tail = '&user_id=' ~ (user_id_f or '') ~ '&recurso=' ~ recurso_f ~ '&accion=' ~ accion_f ~ '&periodo=' ~ periodo_f ~ '&q=' ~ buscar_f %}
-  {% if logs.has_prev %}<a href="?page={{ logs.prev_num }}{{ query_tail }}">Anterior</a>{% endif %}
-  <span>Página {{ logs.page }} de {{ logs.pages }}</span>
-  {% if logs.has_next %}<a href="?page={{ logs.next_num }}{{ query_tail }}">Siguiente</a>{% endif %}
-</nav>
-{% endif %}
+  {# Feed #}
+  {% if logs.items %}
+  <div class="oa-panel">
+    <div class="oa-panel__header">
+      <p class="oa-panel__title">🧾 Registro cronológico</p>
+      <span class="oa-badge oa-badge--muted">{{ logs.total }} eventos</span>
+    </div>
+    <div class="oa-panel__body oa-panel__body--dense">
+      <ul style="list-style:none;padding:0;margin:0;display:grid;gap:var(--oa-space-2);">
+        {% for log in logs.items %}
+        {% set actor = log.usuario.nombre if log.usuario else 'Sistema' %}
+        {% set label = action_labels.get(log.accion, log.accion|replace('_',' ')|title) %}
+        {% set resource = resource_labels.get(log.recurso, (log.recurso or 'Sistema')|replace('_',' ')|title) %}
+        <li style="border:1px solid var(--col-border);border-radius:var(--radius-2);padding:var(--oa-space-3) var(--oa-space-4);background:var(--col-elevated);">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--oa-space-3);flex-wrap:wrap;">
+            <div style="min-width:0;flex:1;">
+              <div style="display:flex;align-items:center;gap:var(--oa-space-2);flex-wrap:wrap;">
+                <strong style="color:var(--col-text);font-size:var(--oa-font-sm);">{{ actor }}</strong>
+                <span style="color:var(--col-muted);font-size:var(--oa-font-sm);">{{ label }}</span>
+                <span class="oa-badge oa-badge--info">{{ resource }}{% if log.recurso_id %} #{{ log.recurso_id }}{% endif %}</span>
+              </div>
+              {% if log.detalle %}
+              <details style="margin-top:var(--oa-space-2);">
+                <summary style="cursor:pointer;color:var(--col-muted);font-size:var(--oa-font-xs);">Ver información registrada</summary>
+                <pre style="white-space:pre-wrap;overflow-wrap:anywhere;color:var(--col-text);background:var(--col-surface);border-radius:var(--radius-1);padding:var(--oa-space-2);margin-top:var(--oa-space-2);font-size:var(--oa-font-xs);line-height:1.45;">{{ log.detalle }}</pre>
+              </details>
+              {% endif %}
+              <div style="display:flex;gap:var(--oa-space-3);flex-wrap:wrap;margin-top:var(--oa-space-2);color:var(--col-faint);font-size:var(--oa-font-xs);">
+                <span>Rol: <strong style="color:var(--col-muted);">{{ log.usuario.rol if log.usuario else 'sistema' }}</strong></span>
+                <span>IP: <strong style="color:var(--col-muted);">{{ log.ip or 'no registrada' }}</strong></span>
+                <span>Código: <code style="color:var(--col-muted);">{{ log.accion }}</code></span>
+              </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0;">
+              <p style="font-size:var(--oa-font-sm);font-weight:800;color:var(--col-text);margin:0;font-variant-numeric:tabular-nums;">{{ log.creado_en.strftime('%H:%M') }}</p>
+              <p style="font-size:var(--oa-font-xs);color:var(--col-faint);margin:0;">{{ log.creado_en.strftime('%d/%m/%Y') }}</p>
+            </div>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% if logs.pages > 1 %}
+    <div class="oa-panel__footer" style="justify-content:center;">
+      {% set query_tail = '&user_id=' ~ (user_id_f or '') ~ '&recurso=' ~ recurso_f ~ '&accion=' ~ accion_f ~ '&periodo=' ~ periodo_f ~ '&q=' ~ buscar_f %}
+      {% if logs.has_prev %}<a href="?page={{ logs.prev_num }}{{ query_tail }}" class="oa-btn oa-btn--sm oa-btn--ghost">← Anterior</a>{% endif %}
+      <span style="color:var(--col-muted);font-size:var(--oa-font-sm);align-self:center;">Página {{ logs.page }} de {{ logs.pages }}</span>
+      {% if logs.has_next %}<a href="?page={{ logs.next_num }}{{ query_tail }}" class="oa-btn oa-btn--sm oa-btn--ghost">Siguiente →</a>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="oa-empty">
+    <div class="oa-empty__icon">🔍</div>
+    <p class="oa-empty__title">No hay actividad para estos filtros</p>
+    <p class="oa-empty__body">Amplía el periodo o limpia los filtros para consultar otros registros.</p>
+  </div>
+  {% endif %}
 
-<style>
-.au-head{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;margin-bottom:1rem}.au-kicker{color:#5ac8fa;font-size:.68rem;font-weight:900;text-transform:uppercase}.au-head h1{font-size:1.45rem;font-weight:950;color:var(--col-text)}.au-head p:not(.au-kicker){font-size:.8rem;color:var(--col-muted);margin-top:.15rem}.au-head>a,.au-filter-actions a,.au-pages a{border:1px solid var(--col-border);background:var(--col-elevated);border-radius:.5rem;padding:.55rem .7rem;color:var(--col-text);font-size:.75rem;font-weight:850;text-decoration:none}
-.au-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.55rem;margin-bottom:.7rem}.au-summary div{padding:.75rem;border:1px solid var(--col-border);background:var(--col-surface);border-radius:.6rem;display:grid;gap:.2rem}.au-summary span{color:var(--col-muted);font-size:.68rem;font-weight:800}.au-summary strong{color:var(--col-text);font-size:1.35rem}
-.au-filters{display:grid;grid-template-columns:minmax(180px,1.3fr) repeat(4,minmax(120px,1fr));gap:.5rem;padding:.75rem;border:1px solid var(--col-border);background:var(--col-surface);border-radius:.6rem;margin-bottom:1rem}.au-filters label{display:grid;gap:.25rem;color:var(--col-muted);font-size:.65rem;font-weight:850;text-transform:uppercase}.au-filters input,.au-filters select{width:100%;min-width:0;background:var(--col-elevated);border:1px solid var(--col-border);border-radius:.45rem;padding:.55rem;color:var(--col-text);min-height:40px}.au-filter-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:.4rem}.au-filter-actions button{border:0;border-radius:.5rem;background:#5ac8fa;color:#07151d;font-weight:900;padding:.58rem .85rem;cursor:pointer}
-.au-feed{display:grid}.au-event{display:grid;grid-template-columns:74px 18px minmax(0,1fr);gap:.55rem;position:relative}.au-time{display:grid;align-content:start;text-align:right;padding-top:.7rem}.au-time strong{color:var(--col-text);font-size:.76rem}.au-time span{color:var(--col-faint);font-size:.62rem}.au-dot{position:relative}.au-dot:before{content:"";position:absolute;top:1rem;left:5px;width:9px;height:9px;border-radius:50%;background:#5ac8fa;box-shadow:0 0 0 4px rgba(90,200,250,.12)}.au-dot:after{content:"";position:absolute;top:1.6rem;bottom:-.2rem;left:9px;width:1px;background:var(--col-border)}.au-event:last-child .au-dot:after{display:none}
-.au-event-body{padding:.7rem .8rem;margin-bottom:.45rem;border:1px solid var(--col-border);background:var(--col-surface);border-radius:.55rem;min-width:0}.au-event-head{display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem}.au-event-head>div{display:flex;flex-wrap:wrap;gap:.3rem}.au-event-head strong{color:var(--col-text);font-size:.8rem}.au-event-head div span{color:var(--col-muted);font-size:.78rem}.au-resource{color:#5ac8fa;background:rgba(90,200,250,.08);border:1px solid rgba(90,200,250,.16);padding:.18rem .4rem;border-radius:.35rem;font-size:.65rem;white-space:nowrap}.au-detail{margin-top:.45rem}.au-detail summary{color:var(--col-muted);font-size:.68rem;cursor:pointer}.au-detail pre{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--col-text);background:var(--col-elevated);border-radius:.4rem;padding:.55rem;margin-top:.35rem;font:inherit;font-size:.7rem;line-height:1.45}.au-no-detail{color:var(--col-faint);font-size:.68rem;margin-top:.4rem}.au-meta{display:flex;gap:.65rem;flex-wrap:wrap;margin-top:.45rem;color:var(--col-faint);font-size:.62rem}
-.au-empty{text-align:center;padding:2.5rem;border:1px dashed var(--col-border);border-radius:.6rem;color:var(--col-muted)}.au-empty p{font-size:.72rem;margin-top:.2rem}.au-pages{display:flex;justify-content:center;align-items:center;gap:.55rem;margin-top:.8rem}.au-pages span{color:var(--col-muted);font-size:.72rem}
-@media(max-width:1050px){.au-filters{grid-template-columns:repeat(3,1fr)}.au-search{grid-column:span 2}}
-@media(max-width:680px){.au-head{align-items:flex-start;flex-direction:column}.au-summary{grid-template-columns:1fr 1fr}.au-filters{grid-template-columns:1fr 1fr}.au-search{grid-column:1/-1}.au-event{grid-template-columns:54px 14px minmax(0,1fr);gap:.35rem}.au-event-head{display:grid}.au-resource{justify-self:start}.au-meta{display:grid;gap:.15rem}.au-filter-actions{justify-content:stretch}.au-filter-actions>*{flex:1;text-align:center}}
-</style>
+</div>
+
 {% endblock %}
