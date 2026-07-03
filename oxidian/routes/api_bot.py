@@ -2845,6 +2845,98 @@ def bot_admin_resumen_hoy():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+# ─── Endpoints exclusivos super_admin desde el bot ──────────────
+# El bot ya autentica al remitente como super_admin antes de invocarlos
+# (isSuperAdminJid). El bot_required guarda la llamada bot→oxidian con la
+# clave X-Bot-Key. Ambas capas son necesarias — sin cualquiera, 403.
+
+@api_bot_bp.route("/admin/modo-tienda/toggle", methods=["POST"])
+@bot_required
+def bot_admin_toggle_modo_tienda():
+    """Alterna entre modo 'propia' y 'bar_servicio' desde el bot."""
+    from store_config import get_store_features
+    features = get_store_features()
+    actual = features.get("modo_tienda", "propia")
+    nuevo = "bar_servicio" if actual == "propia" else "propia"
+    SiteConfig.set("MODO_TIENDA", nuevo, descripcion="Toggle desde bot super_admin")
+    db.session.commit()
+    return jsonify({
+        "ok": True,
+        "modo": nuevo,
+        "modo_label": "servicio" if nuevo == "bar_servicio" else "propio",
+        "es_servicio": nuevo == "bar_servicio",
+    })
+
+
+@api_bot_bp.route("/admin/modulos/toggle", methods=["POST"])
+@bot_required
+def bot_admin_toggle_modulo():
+    """Activa/desactiva un módulo (delivery, recogida, programados, puntos)."""
+    data = request.get_json(silent=True) or {}
+    claves = {
+        "delivery": "FEATURE_DELIVERY",
+        "recogida": "FEATURE_RECOGIDA",
+        "programados": "FEATURE_PEDIDOS_PROGRAMADOS",
+        "puntos": "FEATURE_PUNTOS",
+    }
+    clave = claves.get(str(data.get("modulo", "")).lower())
+    enabled = str(data.get("enabled", "0"))
+    if not clave or enabled not in ("0", "1"):
+        return jsonify({"ok": False, "error": "modulo o enabled inválido"}), 400
+    # Guard: no permitir apagar delivery Y recogida a la vez
+    if enabled == "0":
+        otra_clave = "FEATURE_RECOGIDA" if clave == "FEATURE_DELIVERY" else \
+                     "FEATURE_DELIVERY" if clave == "FEATURE_RECOGIDA" else None
+        if otra_clave and SiteConfig.get(otra_clave, "1") == "0":
+            return jsonify({"ok": False, "error": "Debe quedar delivery o recogida activo"}), 400
+    SiteConfig.set(clave, enabled, descripcion="Toggle desde bot super_admin")
+    db.session.commit()
+    return jsonify({"ok": True, "clave": clave, "enabled": enabled})
+
+
+@api_bot_bp.route("/admin/tienda/forzar-cierre", methods=["POST"])
+@bot_required
+def bot_admin_forzar_cierre():
+    """Fuerza cierre / reapertura de la tienda al vuelo."""
+    data = request.get_json(silent=True) or {}
+    cerrada = bool(data.get("cerrada"))
+    SiteConfig.set("TIENDA_FORZAR_CERRADA", "1" if cerrada else "0",
+                   descripcion="Forzar cierre desde bot super_admin")
+    db.session.commit()
+    return jsonify({"ok": True, "cerrada": cerrada})
+
+
+@api_bot_bp.route("/admin/salud")
+@bot_required
+def bot_admin_salud():
+    """Snapshot rápido de salud del sistema para el super_admin."""
+    from datetime import date
+    try:
+        pedidos_hoy = Order.query.filter(
+            db.func.date(Order.creado_en) == date.today()
+        ).count()
+        pedidos_pend = Order.query.filter(
+            Order.estado.in_(("pendiente", "armando"))
+        ).count()
+        clientes = User.query.filter_by(rol="cliente", activo=True).count()
+        db_ok = True
+    except Exception:
+        pedidos_hoy = pedidos_pend = clientes = 0
+        db_ok = False
+    from store_config import get_store_features
+    features = get_store_features()
+    return jsonify({
+        "ok": True,
+        "pedidos_hoy": pedidos_hoy,
+        "pedidos_pendientes": pedidos_pend,
+        "clientes": clientes,
+        "db_ok": db_ok,
+        "bot_ok": True,
+        "modo_tienda": features.get("modo_tienda", "propia"),
+        "uptime": "activo",
+    })
+
+
 @api_bot_bp.route("/admin/pedidos/pendientes")
 @bot_required
 def bot_admin_pedidos_pendientes():

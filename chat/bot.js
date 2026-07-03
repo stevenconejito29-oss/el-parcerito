@@ -3518,6 +3518,104 @@ async function handleAdminCmd(jid, text) {
     }
   }
 
+  // ═════════════ COMANDOS EXCLUSIVOS SUPER_ADMIN ══════════════
+
+  // ── Alternar modo tienda propio ↔ servicio ──
+  // Uso: !modo-tienda
+  if (lowerCmd === 'modo-tienda' || lowerCmd === 'modo') {
+    if (!isSuperAdminJid(jid)) {
+      return sendText(jid, '⛔ Solo el super admin puede cambiar el modo de tienda.');
+    }
+    try {
+      const resp = await oxidianPost('/admin/modo-tienda/toggle', {});
+      if (resp && resp.ok) {
+        return sendText(jid,
+          `🔄 *Modo tienda cambiado.*\n\n` +
+          `Nuevo modo: *${resp.modo_label || resp.modo}*\n` +
+          `${resp.es_servicio ? '⚡ Aplica comisión por venta' : '🏪 Ingresos íntegros para la tienda'}`);
+      }
+      return sendText(jid, `❌ No se pudo cambiar: ${resp?.error || 'error'}`);
+    } catch (err) {
+      return sendText(jid, `❌ Error: ${err?.message || err}`);
+    }
+  }
+
+  // ── Activar / desactivar módulos ──
+  // Uso: !modulo delivery on|off | !modulo puntos on|off
+  if (lowerCmd.startsWith('modulo ')) {
+    if (!isSuperAdminJid(jid)) {
+      return sendText(jid, '⛔ Solo el super admin gestiona módulos.');
+    }
+    const partes = cmd.slice(7).trim().split(/\s+/);
+    const modulo = (partes[0] || '').toLowerCase();
+    const estado = (partes[1] || '').toLowerCase();
+    if (!['delivery', 'recogida', 'programados', 'puntos'].includes(modulo) || !['on', 'off', '1', '0'].includes(estado)) {
+      return sendText(jid,
+        '📝 *Módulos:*\n' +
+        '`!modulo delivery on|off`\n' +
+        '`!modulo recogida on|off`\n' +
+        '`!modulo programados on|off`\n' +
+        '`!modulo puntos on|off`');
+    }
+    const enabled = (estado === 'on' || estado === '1') ? '1' : '0';
+    try {
+      const resp = await oxidianPost('/admin/modulos/toggle', { modulo, enabled });
+      if (resp?.ok) {
+        return sendText(jid,
+          `✅ Módulo *${modulo}* ${enabled === '1' ? 'activado ✔' : 'desactivado ✖'}.\n` +
+          `El sistema se adapta al momento (front + bot).`);
+      }
+      return sendText(jid, `❌ ${resp?.error || 'No se pudo aplicar.'}`);
+    } catch (err) {
+      return sendText(jid, `❌ Error: ${err?.message || err}`);
+    }
+  }
+
+  // ── Cerrar / abrir tienda ──
+  // Uso: !cerrar-tienda | !abrir-tienda
+  if (lowerCmd === 'cerrar-tienda' || lowerCmd === 'abrir-tienda') {
+    if (!isSuperAdminJid(jid)) {
+      return sendText(jid, '⛔ Solo el super admin puede cerrar/abrir la tienda.');
+    }
+    const cerrar = lowerCmd === 'cerrar-tienda';
+    try {
+      const resp = await oxidianPost('/admin/tienda/forzar-cierre', { cerrada: cerrar });
+      if (resp?.ok) {
+        return sendText(jid,
+          cerrar
+            ? '🔒 *Tienda cerrada temporalmente.*\nLos clientes no pueden hacer pedidos hasta que la reabras con `!abrir-tienda`.'
+            : '🟢 *Tienda reabierta.*\nYa se aceptan pedidos según el horario.');
+      }
+      return sendText(jid, `❌ ${resp?.error || 'No se pudo aplicar.'}`);
+    } catch (err) {
+      return sendText(jid, `❌ Error: ${err?.message || err}`);
+    }
+  }
+
+  // ── Salud del sistema ──
+  // Uso: !salud
+  if (lowerCmd === 'salud' || lowerCmd === 'health') {
+    if (!isSuperAdminJid(jid)) {
+      return sendText(jid, '⛔ Solo el super admin.');
+    }
+    try {
+      const resp = await oxidianGet('/admin/salud');
+      if (!resp?.ok) throw new Error(resp?.error || 'sin datos');
+      const s = resp;
+      return sendText(jid,
+        `💚 *Estado del sistema*\n\n` +
+        `🕒 Uptime: ${s.uptime || '?'}\n` +
+        `📦 Pedidos hoy: ${s.pedidos_hoy ?? '?'}\n` +
+        `⏳ Pendientes: ${s.pedidos_pendientes ?? 0}\n` +
+        `👥 Clientes: ${s.clientes ?? '?'}\n` +
+        `📊 DB: ${s.db_ok ? '✔ OK' : '✖ ERROR'}\n` +
+        `🤖 Bot: ${s.bot_ok ? '✔ activo' : '✖ inactivo'}\n` +
+        `🔧 Modo: *${s.modo_tienda || '?'}*`);
+    } catch (err) {
+      return sendText(jid, `❌ No pude consultar salud: ${err?.message || err}`);
+    }
+  }
+
   // ── Pedidos pendientes en tiempo real ──
   // Uso: !pendientes
   if (lowerCmd === 'pendientes' || lowerCmd === 'cola') {
