@@ -2122,12 +2122,16 @@ async function syncBranding() {
     }
     setCfg('tenant_mode',     data.tenant_mode || 'propia');
     setCfg('tenant_suspended', data.suspended ? '1' : '0');
-    setCfg('delivery_enabled', data.delivery_enabled === false ? '0' : '1');
-    setCfg('pickup_enabled',   data.pickup_enabled === false ? '0' : '1');
-    setCfg('loyalty_enabled',  data.points_enabled === false ? '0' : '1');
-    setCfg('scheduled_enabled', data.scheduled_enabled === false ? '0' : '1');
-    setCfg('bizum_enabled', data.bizum_enabled === false ? '0' : '1');
-    setCfg('cash_enabled', data.cash_enabled === false ? '0' : '1');
+    // Coerción explícita a booleano — evita que undefined caiga a '1' por
+    // defecto y muestre opciones que el super_admin apagó pero el bot aún
+    // no recibió porque el server no las envió. Con doble negación garantizamos
+    // que solo true (o "true"/"1"/1) enciendan el flag.
+    setCfg('delivery_enabled',  !!data.delivery_enabled  ? '1' : '0');
+    setCfg('pickup_enabled',    !!data.pickup_enabled    ? '1' : '0');
+    setCfg('loyalty_enabled',   !!data.points_enabled    ? '1' : '0');
+    setCfg('scheduled_enabled', !!data.scheduled_enabled ? '1' : '0');
+    setCfg('bizum_enabled',     !!data.bizum_enabled     ? '1' : '0');
+    setCfg('cash_enabled',      !!data.cash_enabled      ? '1' : '0');
     setCfg('horario_apertura', data.horario_apertura || '');
     setCfg('horario_cierre', data.horario_cierre || '');
     setCfg('whatsapp_role_profiles', JSON.stringify(

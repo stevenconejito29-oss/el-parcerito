@@ -1,12 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════
-   Oxidian — Service Worker v33
+   Oxidian — Service Worker v34
    • Assets propios CSS/JS/IMG: cache-first + actualización en segundo plano
    • HTML público y datos de sesión: network-only
    • API / Admin       : Network-only (nunca cachear dinámico)
    • Push Notifications: Muestra notificaciones + abre URL al click
    ═══════════════════════════════════════════════════════════════ */
 
-const CACHE_STATIC = "ox-static-v33";
+const CACHE_STATIC = "ox-static-v34";
 const CACHE_PREFIX = "ox-";
 
 const PRECACHE = [
