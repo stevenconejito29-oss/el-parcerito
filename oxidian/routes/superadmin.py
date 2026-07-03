@@ -1518,6 +1518,40 @@ def preset_operacional_features(user_id):
 
 # ─── RESET DE PUNTOS PERIÓDICO ─────────────────────────
 
+@superadmin_bp.route("/modo-tienda/toggle", methods=["POST"])
+@superadmin_required
+def toggle_modo_tienda():
+    """Alterna entre modo 'propia' y 'bar_servicio'. Endpoint directo,
+    sin depender de la sección de config. Adapta el sistema al vuelo:
+    comisiones, vistas de comisión en dashboard, cálculos en checkout."""
+    features = get_store_features()
+    actual = features.get("modo_tienda", "propia")
+    nuevo = "bar_servicio" if actual == "propia" else "propia"
+    SiteConfig.set(
+        "MODO_TIENDA",
+        nuevo,
+        user_id=current_user.id,
+        descripcion="Modo comercial de la tienda",
+    )
+    AuditLog.registrar(
+        current_user.id,
+        "toggle_modo_tienda",
+        "site_config",
+        detalle=f"MODO_TIENDA {actual}→{nuevo}",
+        ip=request.remote_addr,
+    )
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash("No se pudo cambiar el modo.", "danger")
+        return redirect(url_for("superadmin.dashboard"))
+    _sincronizar_chatbot_runtime()
+    label = "servicio (comisión)" if nuevo == "bar_servicio" else "propio (ingresos íntegros)"
+    flash(f"Modo tienda cambiado a: {label}.", "success")
+    return redirect(url_for("superadmin.dashboard"))
+
+
 @superadmin_bp.route("/puntos/reset-manual", methods=["POST"])
 @superadmin_required
 def puntos_reset_manual():

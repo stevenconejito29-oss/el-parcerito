@@ -32,7 +32,16 @@
           Modo propio · los ingresos van íntegramente a la tienda, sin comisión al hub.
           {% endif %}
         </p>
-        <a href="{{ url_for('superadmin.config') }}#tienda" class="oa-btn oa-btn--sm oa-btn--ghost" style="margin-top: var(--oa-space-2);">Cambiar modo</a>
+        <div style="display:flex;gap:var(--oa-space-2);margin-top:var(--oa-space-2);flex-wrap:wrap;">
+          <form method="POST" action="{{ url_for('superadmin.toggle_modo_tienda') }}"
+                onsubmit="return confirm('¿Cambiar a modo {{ 'propio' if tienda_modo.es_servicio else 'servicio' }}? Las comisiones y cálculos del sistema se adaptan automáticamente.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="oa-btn oa-btn--sm oa-btn--primary">
+              🔄 Cambiar a modo {{ 'propio' if tienda_modo.es_servicio else 'servicio' }}
+            </button>
+          </form>
+          <a href="{{ url_for('superadmin.config') }}#operacion" class="oa-btn oa-btn--sm oa-btn--ghost">Ajustar comisión</a>
+        </div>
       </div>
       {% if tienda_modo.es_servicio %}
       <div class="oa-kpi-grid" style="min-width:280px;flex:1;margin:0;grid-template-columns:1fr 1fr;">
