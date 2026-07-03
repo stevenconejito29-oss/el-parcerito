@@ -49,6 +49,23 @@
 <div class="work-note" style="margin:.35rem 0;font-size:.8rem;padding:.5rem .65rem">⚠ {{ item.notas }}</div>
 {% endif %}
 
+{# ── Alérgenos del producto (info de salud, crítica en cocina) ── #}
+{% set _alerg_list = item.display_alergenos if item.display_alergenos is defined else [] %}
+{% if _alerg_list %}
+<div class="work-alergen">
+  <span class="work-alergen-icon">⚠️</span>
+  <div>
+    <strong>ALÉRGENOS:</strong>
+    <span>
+      {% for a in _alerg_list -%}
+        {%- if a is mapping -%}{{ a.get('label') or a.get('code') or a }}{%- else -%}{{ a }}{%- endif -%}
+        {%- if not loop.last %} · {% endif -%}
+      {% endfor %}
+    </span>
+  </div>
+</div>
+{% endif %}
+
 {# ── Desglose del combo: secciones estructuradas ── #}
 {% if item.display_es_combo and (fijos_meta or sels_meta) %}
 <div class="work-combo-breakdown">

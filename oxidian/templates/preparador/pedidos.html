@@ -6,6 +6,76 @@
 {% endblock %}
 {% block styles %}
 <style>
+/* Alérgenos: crítico, siempre visible con contraste alto */
+.work-alergen {
+  display: flex; align-items: flex-start; gap: .5rem;
+  margin: .4rem 0;
+  padding: .55rem .7rem;
+  border-radius: .55rem;
+  background: rgba(255, 90, 90, .14);
+  border: 1.5px solid rgba(255, 90, 90, .42);
+  color: #ffb0b0;
+  font-size: .82rem; line-height: 1.35;
+}
+.work-alergen strong { color: #FF6B6B; font-weight: 900; letter-spacing: .02em; }
+.work-alergen-icon { font-size: 1.05rem; flex-shrink: 0; }
+
+/* Badge modalidad de entrega */
+.work-badge-modo {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .25rem .6rem;
+  border-radius: .55rem;
+  font-size: .72rem; font-weight: 900; letter-spacing: .01em;
+}
+.work-badge-modo-delivery  { background: rgba(90, 200, 250, .16); color: #5AC8FA; border: 1px solid rgba(90, 200, 250, .32); }
+.work-badge-modo-recogida  { background: rgba(94, 240, 151, .14); color: #5EF097; border: 1px solid rgba(94, 240, 151, .30); }
+.work-badge-modo-programado{ background: rgba(192, 132, 252, .16); color: #C084FC; border: 1px solid rgba(192, 132, 252, .32); }
+
+/* Badge método de pago */
+.work-badge-pago {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .25rem .6rem;
+  border-radius: .55rem;
+  font-size: .72rem; font-weight: 900;
+}
+.work-badge-pago-efectivo { background: rgba(255, 194, 0, .16); color: #FFC200; border: 1px solid rgba(255, 194, 0, .32); }
+.work-badge-pago-bizum    { background: rgba(163, 100, 255, .16); color: #B884FF; border: 1px solid rgba(163, 100, 255, .32); }
+.work-badge-pago-tarjeta  { background: rgba(255, 143, 61, .16); color: #FFAB40; border: 1px solid rgba(255, 143, 61, .32); }
+
+/* Dirección para delivery */
+.work-address {
+  margin: .45rem 0 .1rem;
+  padding: .45rem .65rem;
+  background: rgba(90, 200, 250, .09);
+  border-left: 3px solid #5AC8FA;
+  border-radius: .4rem;
+  font-size: .82rem; font-weight: 700; color: #C7ECFF;
+}
+
+/* Teléfono del cliente inline */
+.work-tel-link {
+  margin-left: .5rem;
+  font-size: .78rem; font-weight: 700; color: #5AC8FA;
+  text-decoration: none;
+}
+.work-tel-link:hover { text-decoration: underline; }
+
+/* Item marcado como preparado por el cocinero (localStorage) */
+.work-item.is-checked {
+  opacity: .55;
+  background: rgba(94, 240, 151, .06);
+}
+.work-item.is-checked > *:not(.work-item-check) {
+  text-decoration: line-through;
+  text-decoration-color: rgba(94, 240, 151, .5);
+}
+
+/* Botón deshabilitado (almacén pendiente) */
+.work-btn:disabled, .work-btn[disabled] {
+  opacity: .55; cursor: not-allowed;
+  filter: grayscale(.3);
+}
+
 .work-employee-card {
   display: flex;
   align-items: center;
@@ -317,25 +387,48 @@
         </div>
       </div>
 
-      <p class="work-client">{{ pedido.cliente.nombre }}</p>
+      <p class="work-client">
+        {{ pedido.cliente.nombre }}
+        {% if pedido.cliente.telefono %}<a href="tel:{{ pedido.cliente.telefono }}" class="work-tel-link" title="Llamar al cliente">📞 {{ pedido.cliente.telefono }}</a>{% endif %}
+      </p>
       <div class="mt-2 flex flex-wrap gap-2">
-        {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
+        {# Modalidad de entrega — badge grande y claro #}
+        {% set _tipo = pedido.tipo_entrega_cliente or 'recogida' %}
+        <span class="work-badge-modo work-badge-modo-{{ _tipo }}">
+          {% if _tipo == 'delivery' %}🛵 Delivery{% elif _tipo == 'recogida' %}🏬 Recogida{% else %}📆 Programado{% endif %}
+        </span>
+        {# Método de pago — crítico para que el repartidor sepa si debe cobrar #}
+        {% if pedido.metodo_pago %}
+        <span class="work-badge-pago work-badge-pago-{{ pedido.metodo_pago }}">
+          {% if pedido.metodo_pago == 'efectivo' %}💵 Efectivo
+          {% elif pedido.metodo_pago == 'bizum' %}📱 Bizum{% if not pedido.pago_confirmado %} · POR COBRAR{% endif %}
+          {% elif pedido.metodo_pago == 'tarjeta' %}💳 Tarjeta al entregar
+          {% else %}{{ pedido.metodo_pago }}{% endif %}
+        </span>
+        {% endif %}
+        {% if pedido.zona %}<span class="work-badge-zone">📍 {{ pedido.zona.nombre }}</span>{% endif %}
         {% if pedido.preparador_id and pedido.preparador_id != current_user.id %}
           <span class="work-badge-assigned">Asignado a {{ pedido.preparador.nombre }}</span>
         {% endif %}
         {% if pedido.tiene_proveedores and pedido.proveedores_listos %}
         <span class="work-badge-prov-ready">✓ Bar listo</span>
         {% elif pedido.proveedores_pendientes %}
-        <span class="work-badge-assigned">Bar pendiente</span>
+        <span class="work-badge-assigned">⏳ Bar pendiente</span>
         {% endif %}
+        {% set _almacen_pendiente = false %}
         {% if pedido.id in almacen_listo %}
           {% if almacen_listo[pedido.id] %}
           <span class="work-badge-prov-ready">✓ Almacén listo</span>
           {% else %}
-          <span class="work-badge-assigned">Almacén pendiente</span>
+          <span class="work-badge-assigned">⏳ Almacén pendiente</span>
+          {% set _almacen_pendiente = true %}
           {% endif %}
         {% endif %}
       </div>
+      {# Dirección — solo delivery, para que el repartidor no tenga que abrir el pedido #}
+      {% if _tipo == 'delivery' and pedido.direccion_entrega %}
+      <div class="work-address">🏠 {{ pedido.direccion_entrega }}</div>
+      {% endif %}
 
       <div class="work-items" data-check-list>
         {% for item in lineas_preparacion_interna(pedido) %}
@@ -354,12 +447,14 @@
       <div class="work-note work-note-strong">📝 Nota del cliente: {{ pedido.notas }}</div>
       {% endif %}
 
-      <form method="POST" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}" data-mark-ready data-pedido-id="{{ pedido.id }}">
+      <form method="POST" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}"
+            data-mark-ready data-pedido-id="{{ pedido.id }}"
+            {% if _almacen_pendiente %}data-almacen-pendiente="1"{% endif %}
+            onsubmit="return prepConfirmReady(this);">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        {# El flujo de "almacén" queda como badge informativo — NO bloquea al preparador.
-           Se prepara todo el pedido de forma unificada. #}
-        <button type="submit" class="work-btn work-btn-success full-width">
-          ✓ Listo · Siguiente pedido
+        <button type="submit" class="work-btn work-btn-success full-width"
+                {% if _almacen_pendiente %}disabled title="Espera confirmación del almacén"{% endif %}>
+          {% if _almacen_pendiente %}⏳ Esperando almacén{% else %}✓ Listo · Enviar a repartidor{% endif %}
         </button>
       </form>
   </article>
@@ -377,6 +472,61 @@
 
 {% block scripts %}
 <script>
+// ── Persistencia local de checkboxes item-a-item ──
+// Cada item marcado como preparado se guarda en localStorage con clave
+// prep_pedido_<id>. Sobrevive a los reloads automáticos cada 30s → el
+// cocinero no pierde el trabajo mental. Se limpia al marcar el pedido listo.
+function prepStateKey(pedidoId) { return `prep_pedido_${pedidoId}`; }
+function prepRestoreChecks() {
+  document.querySelectorAll('[data-pedido-id]').forEach(form => {
+    const pid = form.dataset.pedidoId;
+    if (!pid) return;
+    let state = {};
+    try { state = JSON.parse(localStorage.getItem(prepStateKey(pid)) || '{}') || {}; } catch (_) {}
+    const card = form.closest('.work-card');
+    if (!card) return;
+    card.querySelectorAll('[data-item-check]').forEach((chk, idx) => {
+      if (state['i' + idx]) {
+        chk.checked = true;
+        chk.closest('.work-item')?.classList.add('is-checked');
+      }
+    });
+  });
+}
+document.addEventListener('change', ev => {
+  const chk = ev.target.closest('[data-item-check]');
+  if (!chk) return;
+  const form = chk.closest('.work-card')?.querySelector('[data-pedido-id]');
+  if (!form) return;
+  const pid = form.dataset.pedidoId;
+  const card = form.closest('.work-card');
+  const items = Array.from(card.querySelectorAll('[data-item-check]'));
+  const idx = items.indexOf(chk);
+  let state = {};
+  try { state = JSON.parse(localStorage.getItem(prepStateKey(pid)) || '{}') || {}; } catch (_) {}
+  if (chk.checked) state['i' + idx] = 1;
+  else delete state['i' + idx];
+  localStorage.setItem(prepStateKey(pid), JSON.stringify(state));
+  chk.closest('.work-item')?.classList.toggle('is-checked', chk.checked);
+});
+
+// ── Confirmación al marcar listo — antes de enviar a repartidor ──
+window.prepConfirmReady = function(form) {
+  const card = form.closest('.work-card');
+  if (!card) return true;
+  const total = card.querySelectorAll('[data-item-check]').length;
+  const checked = card.querySelectorAll('[data-item-check]:checked').length;
+  if (total > 0 && checked < total) {
+    if (!confirm(`Marcaste ${checked} de ${total} ítems. ¿Aun así enviar a repartidor?`)) {
+      return false;
+    }
+  }
+  // Limpia el estado local — el pedido ya no está en preparación
+  const pid = form.dataset.pedidoId;
+  if (pid) { try { localStorage.removeItem(prepStateKey(pid)); } catch (_) {} }
+  return true;
+};
+
 // Urgencia por tiempo transcurrido
 function actualizarUrgencia() {
   document.querySelectorAll('[data-created]').forEach(card => {
@@ -405,6 +555,7 @@ function actualizarUrgencia() {
 }
 actualizarUrgencia();
 setInterval(actualizarUrgencia, 60000);
+prepRestoreChecks();
 
 // Countdown + auto-refresh
 let countdown = 30;
