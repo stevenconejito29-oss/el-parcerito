@@ -282,6 +282,11 @@
        Regla estricta: los productos canjeables NUNCA aparecen en el catálogo
        de venta normal. Solo salen aquí. Si el módulo está OFF, se ocultan por
        completo del front. #}
+    {# ── SEPARACIÓN DE PRODUCTOS EN 3 GRUPOS EXCLUYENTES:
+       1. Canjeables: puntos_para_canje>0 O solo_canje. Solo si brand.puntos.
+       2. Combos: es_combo=True Y no canjeables. Siempre en su bloque propio.
+       3. Venta normal: el resto, agrupados por categoría.
+       Cada producto aparece EXACTAMENTE en UN grupo — nunca duplicados. #}
     {% set canje_ids = productos|selectattr('puntos_para_canje')|map(attribute='id')|list
                      + productos|selectattr('solo_canje')|map(attribute='id')|list %}
     {% if brand.puntos %}
@@ -290,6 +295,10 @@
       {% set productos_canjeables = [] %}
     {% endif %}
     {% set productos_venta = productos|rejectattr('id', 'in', canje_ids)|list %}
+    {% set combos_venta = productos_venta|selectattr('es_combo')|list %}
+    {% set productos_regulares = productos_venta|rejectattr('es_combo')|list %}
+
+    {# ── 1. Sección Canje con puntos ── #}
     {% if productos_canjeables %}
     <div class="ep-cat-section ep-cat-section-puntos" data-section-cat="_canje">
       <h3 class="ep-cat-title ep-cat-title-puntos">⭐ Canje con puntos</h3>
@@ -298,9 +307,20 @@
       </div>
     </div>
     {% endif %}
-    {# Vista completa: una sección por categoría real, sin duplicar productos. #}
+
+    {# ── 2. Sección Combos — SIEMPRE su bloque propio, no mezclados con categorías ── #}
+    {% if combos_venta %}
+    <div class="ep-cat-section ep-cat-section-combos" data-section-cat="_combos">
+      <h3 class="ep-cat-title">🎁 Combos</h3>
+      <div class="ep-grid">
+        {% for p in combos_venta %}{% include "public/_product_card.html" %}{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── 3. Productos regulares por categoría ── #}
     {% for cat in categorias %}
-    {% set productos_categoria = productos_venta|selectattr('categoria_id','equalto',cat.id)|list %}
+    {% set productos_categoria = productos_regulares|selectattr('categoria_id','equalto',cat.id)|list %}
     {% if productos_categoria %}
     <div class="ep-cat-section" data-section-cat="{{ cat.id }}">
       <h3 class="ep-cat-title">{{ cat_emoji(cat.nombre) }} {{ cat.nombre }}</h3>
@@ -310,7 +330,7 @@
     </div>
     {% endif %}
     {% endfor %}
-    {% set sin_categoria = productos_venta|rejectattr('categoria_id')|list %}
+    {% set sin_categoria = productos_regulares|rejectattr('categoria_id')|list %}
     {% if sin_categoria %}
     <div class="ep-cat-section">
       <h3 class="ep-cat-title">🍽️ Otros productos</h3>

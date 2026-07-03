@@ -599,6 +599,18 @@ body.ox-body-public .ep-banner-cta {
   color: color-mix(in srgb, var(--brand-primary, #FCD116) 40%, #18120A);
   letter-spacing: .01em;
 }
+/* Sección de combos: destaque sutil, visualmente diferenciada de categorías */
+.ep-cat-section-combos {
+  position: relative;
+  padding: .85rem .75rem 1rem;
+  margin: 1rem 0 1.15rem;
+  border-radius: 1.1rem;
+  background:
+    linear-gradient(135deg, rgba(232,69,69,.08), transparent 60%),
+    color-mix(in srgb, var(--brand-secondary, #E84545) 4%, var(--theme-surface, #FFFFFF));
+  border: 1px solid color-mix(in srgb, var(--brand-secondary, #E84545) 26%, transparent);
+  box-shadow: 0 8px 24px rgba(232,69,69,.10);
+}
 .ep-card {
   background: linear-gradient(180deg, #FFFFFF 0%, #FFF9F0 100%);
   border: 1px solid rgba(38, 25, 12, .10);
