@@ -222,12 +222,20 @@
        data-category="" class="ep-cat {% if not categoria_activa %}ep-cat-on{% endif %}">
       <span class="ep-cat-icon">🌎</span><span>Todo</span>
     </a>
+    {# Chip especial: Combos — al mismo nivel que las categorías reales. #}
+    {% set _combos_count = productos|selectattr('es_combo')|rejectattr('solo_canje')|rejectattr('puntos_para_canje')|list|length %}
+    {% if _combos_count > 0 %}
+    <a href="#combos" data-category="_combos" class="ep-cat ep-cat-combos">
+      <span class="ep-cat-icon">🎁</span><span class="ep-cat-label">Combos</span>
+      <span class="ep-cat-count">{{ _combos_count }}</span>
+    </a>
+    {% endif %}
     {# Chip especial: Canje con puntos — solo si módulo puntos activo. Al
        hacer clic filtra a los productos canjeables (que están OCULTOS de la
        vista Todo por diseño). #}
     {% if brand.puntos %}
     <a href="#canje" data-category="_canje" class="ep-cat ep-cat-canje">
-      <span class="ep-cat-icon">⭐</span><span>Canje</span>
+      <span class="ep-cat-icon">⭐</span><span class="ep-cat-label">Canje</span>
     </a>
     {% endif %}
     {% for cat in categorias %}

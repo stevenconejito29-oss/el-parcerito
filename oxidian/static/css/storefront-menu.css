@@ -583,6 +583,30 @@ body.ox-body-public .ep-banner-cta {
 .ep-cat-section[hidden],
 .ep-cat-title[hidden] { display: none !important; }
 
+/* Chip especial "Combos" en la barra de categorías */
+.ep-cat-combos {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--brand-secondary, #E84545) 12%, transparent),
+    color-mix(in srgb, var(--brand-secondary, #E84545) 4%, transparent));
+  border-color: color-mix(in srgb, var(--brand-secondary, #E84545) 40%, transparent);
+}
+.ep-cat-combos.ep-cat-on {
+  background: color-mix(in srgb, var(--brand-secondary, #E84545) 22%, transparent);
+  border-color: var(--brand-secondary, #E84545);
+}
+
+/* Chip especial "Canje" con estilo dorado del brand primary */
+.ep-cat-canje {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--brand-primary, #FCD116) 14%, transparent),
+    color-mix(in srgb, var(--brand-primary, #FCD116) 4%, transparent));
+  border-color: color-mix(in srgb, var(--brand-primary, #FCD116) 42%, transparent);
+}
+.ep-cat-canje.ep-cat-on {
+  background: color-mix(in srgb, var(--brand-primary, #FCD116) 26%, transparent);
+  border-color: var(--brand-primary, #FCD116);
+}
+
 /* Sección de canje con puntos: destaque dorado y separación clara */
 .ep-cat-section-puntos {
   position: relative;

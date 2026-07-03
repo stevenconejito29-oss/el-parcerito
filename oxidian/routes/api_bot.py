@@ -795,12 +795,26 @@ def consultar_puntos():
                 "valor_euro": 0,
             })
         ratio = get_puntos_config()["ratio"]
+        # Confirmación de identidad: el bot muestra el nombre y un código
+        # opcional válido 10 min para verificar en el checkout. La sola
+        # llegada del mensaje ya autentica (WhatsApp) pero el código sirve
+        # como "recibo" y desbloquea el canje web sin volver a pedir OTP.
+        codigo = None
+        try:
+            if cliente.puntos > 0:
+                codigo = cliente.generar_cod_puntos()
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
+            codigo = None
         return jsonify({
             "ok": True,
             "existe": True,
+            "nombre": cliente.nombre or "",
             "puntos": cliente.puntos,
             "valor_euro": round(cliente.puntos / ratio, 2),
             "ratio": ratio,
+            "codigo_verificacion": codigo,  # 4 dígitos, expira 10 min
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500

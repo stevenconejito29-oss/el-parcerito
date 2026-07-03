@@ -2370,6 +2370,7 @@ function menuPrincipal(ses = {}) {
 }
 
 function adminMenu(jid) {
+  const isSA = isSuperAdminJid(jid);
   const options = [
     adminCan(jid, 'status') ? `1️⃣  Estado del bot y WhatsApp` : null,
     adminCan(jid, 'store') ? `2️⃣  Abrir / cerrar tienda` : null,
@@ -2383,15 +2384,37 @@ function adminMenu(jid) {
     adminCan(jid, 'risks') ? `🔟  Pedidos en riesgo` : null,
     adminCan(jid, 'client_mode') ? `*11* Modo cliente de prueba` : null,
   ].filter(Boolean);
-  const commands = [
-    adminCan(jid, 'status') ? '!status' : null,
-    adminCan(jid, 'handoff') ? '!take N · !release' : null,
-    adminCan(jid, 'sync') ? '!sync' : null,
-  ].filter(Boolean).join(' · ');
+
+  // Bloque de comandos directos por texto (todos los admins ven los suyos).
+  const cmdsAdmin = [
+    adminCan(jid, 'status') ? '`!status` estado del bot' : null,
+    adminCan(jid, 'store') ? '`!hoy` resumen del día' : null,
+    adminCan(jid, 'points') ? '`!cliente Nombre 34XXXXXXXXX` registrar' : null,
+    adminCan(jid, 'points') ? '`!buscar-cliente 34XXXXXXXXX` ver perfil' : null,
+    adminCan(jid, 'points') ? '`!puntos 34XXXXXXXXX +50 motivo` ajustar puntos' : null,
+    adminCan(jid, 'store') || adminCan(jid, 'points') ? '`!pendientes` cola tiempo real' : null,
+    adminCan(jid, 'handoff') ? '`!take N` · `!release` · `!disponible`' : null,
+    adminCan(jid, 'sync') ? '`!sync` sincronizar catálogo' : null,
+    adminCan(jid, 'handoff') ? '`!send NUMERO mensaje`' : null,
+  ].filter(Boolean);
+
+  // Bloque exclusivo super_admin (comandos de control estratégico).
+  const cmdsSA = isSA ? [
+    '`!modo-tienda` alternar propio ↔ servicio',
+    '`!modulo delivery|recogida|puntos|programados on|off`',
+    '`!cerrar-tienda` / `!abrir-tienda`',
+    '`!salud` snapshot del sistema',
+    '`!limpiar` reset sesiones clientes',
+  ] : [];
+
+  const bloqueCmdsAdmin = cmdsAdmin.length ? `\n📝 *Comandos rápidos*\n${cmdsAdmin.join('\n')}` : '';
+  const bloqueCmdsSA = cmdsSA.length ? `\n\n👑 *Solo Super Admin*\n${cmdsSA.join('\n')}` : '';
+
   return (
     `🔐 *Panel ${adminRoleLabel(jid)} — ${getNegocioNombre()}*\n\n` +
-    `${options.join('\n')}\n\n` +
-    (commands ? `_Comandos: ${commands}_` : `_Solo tienes habilitada la atención asignada._`)
+    `${options.join('\n')}` +
+    bloqueCmdsAdmin +
+    bloqueCmdsSA
   );
 }
 
@@ -4231,16 +4254,22 @@ async function handleMainMenu(jid, ses, opcion) {
         const phone = phoneFromJid(jid);
         const data = await oxidianGet(`/puntos?telefono=${phone}`);
         if (data.ok && data.existe !== false) {
+          const saludo = data.nombre ? `Hola *${data.nombre}* 👋\n\n` : '';
+          const bloqueCodigo = data.codigo_verificacion
+            ? `\n🔐 *Código verificación:* \`${data.codigo_verificacion}\`\n` +
+              `_Válido 10 min. Úsalo en el checkout para canjear sin volver a pedirlo._\n`
+            : '';
           return sendText(jid,
-            `⭐ *Tu club de fidelidad*\n\n` +
+            `${saludo}⭐ *Tu club de fidelidad*\n\n` +
             `Tienes *${data.puntos} puntos* 🎉\n` +
-            `Equivalen a *${formatPrecio(data.valor_euro)}* de descuento posible.\n\n` +
-            `*¿Cómo canjearlos?*\n` +
+            `Equivalen a *${formatPrecio(data.valor_euro)}* de descuento posible.` +
+            bloqueCodigo +
+            `\n*¿Cómo canjearlos?*\n` +
             `1. Haz tu pedido en la tienda 🛒\n` +
-            `2. En el paso de confirmación verifica este WhatsApp\n` +
+            `2. En el checkout introduce el código de arriba ⬆️\n` +
             `3. Elige descuento o producto de regalo 🎁\n\n` +
-            `👉 *Ver tu historial de puntos:*\n${tiendaUrl}/club\n\n` +
-            `👉 *Hacer un pedido:*\n${tiendaUrl}\n\n` +
+            `👉 *Historial:* ${tiendaUrl}/club\n` +
+            `👉 *Hacer un pedido:* ${tiendaUrl}\n\n` +
             `_Escribe *menu* para volver._`
           );
         }
