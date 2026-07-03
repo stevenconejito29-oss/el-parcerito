@@ -415,15 +415,6 @@
         {% elif pedido.proveedores_pendientes %}
         <span class="work-badge-assigned">⏳ Bar pendiente</span>
         {% endif %}
-        {% set _almacen_pendiente = false %}
-        {% if pedido.id in almacen_listo %}
-          {% if almacen_listo[pedido.id] %}
-          <span class="work-badge-prov-ready">✓ Almacén listo</span>
-          {% else %}
-          <span class="work-badge-assigned">⏳ Almacén pendiente</span>
-          {% set _almacen_pendiente = true %}
-          {% endif %}
-        {% endif %}
       </div>
       {# Dirección — solo delivery, para que el repartidor no tenga que abrir el pedido #}
       {% if _tipo == 'delivery' and pedido.direccion_entrega %}
@@ -449,12 +440,10 @@
 
       <form method="POST" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}"
             data-mark-ready data-pedido-id="{{ pedido.id }}"
-            {% if _almacen_pendiente %}data-almacen-pendiente="1"{% endif %}
             onsubmit="return prepConfirmReady(this);">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="work-btn work-btn-success full-width"
-                {% if _almacen_pendiente %}disabled title="Espera confirmación del almacén"{% endif %}>
-          {% if _almacen_pendiente %}⏳ Esperando almacén{% else %}✓ Listo · Enviar a repartidor{% endif %}
+        <button type="submit" class="work-btn work-btn-success full-width">
+          ✓ Listo · Enviar a repartidor
         </button>
       </form>
   </article>

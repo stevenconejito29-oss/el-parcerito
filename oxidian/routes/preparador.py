@@ -201,11 +201,9 @@ def pedidos():
         and (not _es_encargo(p) or _encargo_disponible_para_preparar(p))
     ]
     armando = [p for p in armando if _puede_operar_pedido(p)]
-    almacen_listo = {
-        pedido.id: _almacen_listo(pedido)
-        for pedido in pendientes + armando
-        if _es_pedido_mixto(pedido)
-    }
+    # Almacén retirado: negocio opera como punto único (cocina + despacho).
+    # Se envía dict vacío para no romper referencias del template legacy.
+    almacen_listo = {}
 
     pendientes_encargo  = sorted([p for p in pendientes if _es_encargo(p)],
                                   key=lambda p: min(
@@ -313,9 +311,22 @@ def marcar_listo(pedido_id):
         from services import enviar_whatsapp_estado
         enviar_whatsapp_estado(pedido)
         db.session.commit()
-    except (ValueError, Exception) as e:
+    except ValueError as e:
+        # Errores de negocio con mensaje intencional (proveedor pendiente,
+        # responsable no asignado, etc.) → se muestra al usuario tal cual.
         db.session.rollback()
-        flash(f"No se pudo marcar como listo: {e}", "danger")
+        flash(f"No se pudo marcar como listo: {e}", "warning")
+        return redirect(url_for("preparador.pedidos"))
+    except Exception as e:
+        # Excepción no anticipada → log completo + mensaje neutro al usuario
+        # para no filtrar detalles técnicos ni stacktrace en la UI.
+        db.session.rollback()
+        logger.exception("Error inesperado al marcar listo pedido %s", pedido.id)
+        flash(
+            "No se pudo marcar como listo por un problema técnico. "
+            "Inténtalo de nuevo en unos segundos o avisa a operación.",
+            "danger",
+        )
         return redirect(url_for("preparador.pedidos"))
     try:
         from push_service import notify_order_state, notify_roles

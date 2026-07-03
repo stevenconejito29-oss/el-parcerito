@@ -333,12 +333,11 @@ def validar_avance_operativo(pedido: Order) -> None:
         )
         raise ValueError(f"Falta confirmación de proveedor: {nombres}.")
 
-    canales = {
-        (item.display_canal_preparacion or "cocina").strip().lower()
-        for item in lineas_preparacion_interna(pedido)
-    }
-    if "almacen" in canales and "cocina" in canales and not _almacen_mixto_preparado(pedido):
-        raise ValueError("Falta la confirmación de empaque de almacén.")
+    # NOTA: el concepto "almacén" fue retirado — el negocio opera como un
+    # único punto físico donde se prepara y despacha. No existe distinción
+    # entre canal cocina y canal almacén. La validación previa se conserva
+    # como no-op para no romper llamadas históricas.
+    return
 
 
 def reasignar_responsable_pedido(

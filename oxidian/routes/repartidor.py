@@ -321,9 +321,16 @@ def confirmar_entrega(pedido_id):
         if _es_admin_operativo():
             flash("Asigna un repartidor antes de cerrar la entrega.", "warning")
             return redirect(url_for("repartidor.ruta"))
-        if not _requiere_disponible_para_nuevo_trabajo():
-            return redirect(url_for("repartidor.ruta"))
-        pedido.repartidor_id = current_user.id
+        # Guard reforzado contra race: exigir que el repartidor haya usado
+        # antes el botón "Tomar" o "Salir a entregar" (que asigna repartidor_id).
+        # Cerrar entrega "en frío" sin flujo previo se rechaza — evita que un
+        # repartidor entregue pedidos que no había asumido formalmente.
+        flash(
+            "Antes de cerrar la entrega debes tomar el pedido con «Salir a entregar». "
+            "Si el pedido no aparece en tu ruta, contacta con operación.",
+            "warning",
+        )
+        return redirect(url_for("repartidor.ruta"))
 
     codigo_ingresado = request.form.get("codigo_confirmacion", "").strip()
 
