@@ -759,6 +759,11 @@ class Product(db.Model):
             return self._combo_componentes_disponibles(key)
         if self.tipo_entrega != "inmediato":
             return True
+        # Producto individual sin control de stock en web (stock_mostrar_en_web=False)
+        # se considera siempre disponible — la cocina lo prepara al momento.
+        # Coherente con la regla que ya usan los componentes de combo.
+        if not bool(getattr(self, "stock_mostrar_en_web", False)):
+            return True
         return self.stock_para_origen(key) >= int(cantidad or 1)
 
     def _combo_componentes_disponibles(self, origen):

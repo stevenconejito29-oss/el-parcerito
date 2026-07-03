@@ -4,6 +4,8 @@ Las imágenes se guardan en <proyecto>/images/ y se sirven en /uploads/<subcarpe
 """
 import uuid
 import logging
+import hashlib
+import time as _t
 from pathlib import Path
 from functools import wraps
 
@@ -68,11 +70,67 @@ def _valid_image_file(file_obj) -> bool:
 
 
 def _validate_upload_file(file_obj) -> str | None:
-    if not file_obj.filename or not _allowed(file_obj.filename):
-        return "Tipo de archivo no permitido"
+    """Devuelve mensaje de error o None si el archivo es válido.
+    Mensajes explícitos para el usuario final (no técnicos)."""
+    if not file_obj or not file_obj.filename:
+        return "No se recibió ningún archivo."
+    if not _allowed(file_obj.filename):
+        ext = file_obj.filename.rsplit(".", 1)[-1].lower() if "." in file_obj.filename else "?"
+        return f"Formato .{ext} no admitido. Usa JPG, PNG, WEBP o GIF."
     if not _valid_image_file(file_obj):
-        return "El archivo no es una imagen válida"
+        return "El archivo parece dañado o no es una imagen real."
+    # Verificar tamaño máximo (10 MB por env, ya limitado por MAX_CONTENT_LENGTH)
+    try:
+        file_obj.stream.seek(0, 2)  # end
+        size = file_obj.stream.tell()
+        file_obj.stream.seek(0)
+        if size > 10 * 1024 * 1024:
+            return f"Imagen demasiado pesada ({size // (1024*1024)} MB). Máximo 10 MB."
+        if size < 100:
+            return "El archivo está vacío o corrupto."
+    except Exception:
+        pass
     return None
+
+
+def _cleanup_old_brand_files(subcarpeta: str, keep_prefix: str, max_keep: int = 3):
+    """Mantiene solo los N archivos más recientes que empiezan por keep_prefix.
+    Evita que el volumen crezca sin control tras muchas subidas de logo."""
+    try:
+        folder = IMAGES_DIR / subcarpeta
+        if not folder.exists():
+            return
+        candidates = sorted(
+            [f for f in folder.iterdir() if f.is_file() and f.name.startswith(keep_prefix)],
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for old in candidates[max_keep:]:
+            try:
+                old.unlink()
+                logger.info("cleanup: eliminado %s", old.name)
+            except OSError:
+                pass
+    except Exception as exc:
+        logger.warning("cleanup fallo en %s/%s: %s", subcarpeta, keep_prefix, exc)
+
+
+def _save_brand_asset(file_obj, subcarpeta: str, kind: str) -> dict:
+    """Guarda un asset de marca (logo/icon/hero) con nombre único basado en
+    hash+timestamp para invalidar caches de forma garantizada. Limpia versiones
+    antiguas y devuelve dict con url versionada, ruta y bytes."""
+    # Nombre único = kind_<hash8>_<epoch>.<ext> → invalidar cache siempre
+    file_obj.stream.seek(0)
+    contenido = file_obj.stream.read(65536)
+    file_obj.stream.seek(0)
+    content_hash = hashlib.sha256(contenido).hexdigest()[:8]
+    ts = int(_t.time())
+    stem = f"{kind}_{content_hash}_{ts}"
+    ruta_relativa = _save_image(file_obj, subcarpeta, stem)
+    _cleanup_old_brand_files(subcarpeta, keep_prefix=f"{kind}_", max_keep=3)
+    # URL con cache-buster explícito por si algún proxy ignora el nombre
+    url = f"/uploads/{ruta_relativa}?v={ts}"
+    return {"ruta": ruta_relativa, "url": url}
 
 
 def _save_image(file_obj, subcarpeta: str, nombre_custom: str = None) -> str:
@@ -208,23 +266,19 @@ def subir_imagen_producto(producto_id):
 @admin_required_upload
 def subir_logo():
     if "imagen" not in request.files:
-        return jsonify({"ok": False, "error": "No se envió ningún archivo"}), 400
-
+        return jsonify({"ok": False, "error": "No se envió ningún archivo."}), 400
     f = request.files["imagen"]
     error = _validate_upload_file(f)
     if error:
         return jsonify({"ok": False, "error": error}), 400
-
-    # Siempre nombrar 'logo.jpg' para sobreescribir
-    ruta = _save_image(f, "logo", "logo.jpg")
-    # Cache-buster: el archivo siempre se llama igual (logo.jpg), pero cambiamos
-    # el query param para que browsers/CDN sirvan la nueva versión al instante.
-    import time as _t
-    versioned = f"/uploads/{ruta}?v={int(_t.time())}"
-    SiteConfig.set("LOGO_URL", versioned, descripcion="Logo del negocio")
+    try:
+        result = _save_brand_asset(f, "logo", "logo")
+    except Exception as exc:
+        logger.error("subir_logo fallo: %s", exc, exc_info=True)
+        return jsonify({"ok": False, "error": "No se pudo procesar la imagen. Prueba con otro archivo."}), 500
+    SiteConfig.set("LOGO_URL", result["url"], descripcion="Logo del negocio")
     db.session.commit()
-
-    return jsonify({"ok": True, "ruta": ruta, "url": versioned})
+    return jsonify({"ok": True, **result})
 
 
 # ── Subir imagen de categoría ─────────────────────────────────────────────────
@@ -275,20 +329,19 @@ def subir_banner():
 @admin_required_upload
 def subir_icon():
     if "imagen" not in request.files:
-        return jsonify({"ok": False, "error": "No se envió ningún archivo"}), 400
-
+        return jsonify({"ok": False, "error": "No se envió ningún archivo."}), 400
     f = request.files["imagen"]
     error = _validate_upload_file(f)
     if error:
         return jsonify({"ok": False, "error": error}), 400
-
-    ruta = _save_image(f, "icon", "app-icon.png")
-    import time as _t
-    versioned = f"/uploads/{ruta}?v={int(_t.time())}"
-    SiteConfig.set("APP_ICON_URL", versioned, descripcion="Icono / favicon de la app")
+    try:
+        result = _save_brand_asset(f, "icon", "icon")
+    except Exception as exc:
+        logger.error("subir_icon fallo: %s", exc, exc_info=True)
+        return jsonify({"ok": False, "error": "No se pudo procesar el icono. Prueba con otro archivo."}), 500
+    SiteConfig.set("APP_ICON_URL", result["url"], descripcion="Icono / favicon de la app")
     db.session.commit()
-
-    return jsonify({"ok": True, "ruta": ruta, "url": versioned})
+    return jsonify({"ok": True, **result})
 
 
 @uploads_bp.route("/uploads/hero", methods=["POST"])
@@ -302,13 +355,14 @@ def subir_hero():
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
-    ruta = _save_image(f, "hero", "hero.jpg")
-    import time as _t
-    versioned = f"/uploads/{ruta}?v={int(_t.time())}"
-    SiteConfig.set("HERO_IMAGE_URL", versioned, descripcion="Imagen de cabecera de la tienda")
+    try:
+        result = _save_brand_asset(f, "hero", "hero")
+    except Exception as exc:
+        logger.error("subir_hero fallo: %s", exc, exc_info=True)
+        return jsonify({"ok": False, "error": "No se pudo procesar la imagen. Prueba con otro archivo."}), 500
+    SiteConfig.set("HERO_IMAGE_URL", result["url"], descripcion="Imagen de cabecera de la tienda")
     db.session.commit()
-
-    return jsonify({"ok": True, "ruta": ruta, "url": versioned})
+    return jsonify({"ok": True, **result})
 
 
 # ── Listar imágenes disponibles ───────────────────────────────────────────────
