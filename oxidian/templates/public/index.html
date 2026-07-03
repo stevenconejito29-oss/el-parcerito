@@ -276,19 +276,20 @@
     </div>
 
   {% else %}
-    {# Sección "Canje con puntos" — TODO producto/combo con puntos_para_canje>0.
-       Solo aparece si el módulo de puntos está activo (brand.puntos ⇐ FEATURE_PUNTOS).
-       Los solo_canje se separan del catálogo de venta; los "mixed" (comprables Y
-       canjeables) aparecen en ambos sitios: en su categoría normal para compra y
-       aquí para canje con puntos. Si el módulo está apagado, los solo_canje se
-       ocultan también del catálogo de venta. #}
+    {# Sección "Canje con puntos" — TODO producto/combo con puntos_para_canje>0
+       o solo_canje. Solo aparece si el módulo puntos está activo
+       (brand.puntos ⇐ FEATURE_PUNTOS).
+       Regla estricta: los productos canjeables NUNCA aparecen en el catálogo
+       de venta normal. Solo salen aquí. Si el módulo está OFF, se ocultan por
+       completo del front. #}
+    {% set canje_ids = productos|selectattr('puntos_para_canje')|map(attribute='id')|list
+                     + productos|selectattr('solo_canje')|map(attribute='id')|list %}
     {% if brand.puntos %}
-      {% set productos_canjeables = productos|selectattr('puntos_para_canje')|list %}
-      {% set productos_venta = productos|rejectattr('solo_canje')|list %}
+      {% set productos_canjeables = productos|selectattr('id', 'in', canje_ids)|list %}
     {% else %}
       {% set productos_canjeables = [] %}
-      {% set productos_venta = productos|rejectattr('solo_canje')|list %}
     {% endif %}
+    {% set productos_venta = productos|rejectattr('id', 'in', canje_ids)|list %}
     {% if productos_canjeables %}
     <div class="ep-cat-section ep-cat-section-puntos" data-section-cat="_canje">
       <h3 class="ep-cat-title ep-cat-title-puntos">⭐ Canje con puntos</h3>

@@ -605,6 +605,237 @@
   .oa-panel { box-shadow: none; border: 1px solid #ccc; }
 }
 
+/* ═════════════════════════════════════════════════════════════════
+   Capa de compatibilidad: mapea clases legacy .cfg-* al look de .oa-*
+   Permite que superadmin/config.html (373 líneas con clases antiguas)
+   herede el mismo lenguaje visual sin reescribir el Jinja.
+   ═════════════════════════════════════════════════════════════════ */
+.cfg-page { max-width: var(--oa-content-max); margin: 0 auto; padding: var(--oa-space-6) var(--oa-space-4); color: var(--col-text); }
+@media (max-width: 720px) { .cfg-page { padding: var(--oa-space-4) var(--oa-space-3); } }
+
+.cfg-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--oa-space-4); margin-bottom: var(--oa-space-6); flex-wrap: wrap;
+}
+.cfg-header > div:first-child { flex: 1; min-width: 0; }
+.cfg-eyebrow {
+  font-size: var(--oa-font-xs); font-weight: 700;
+  color: var(--col-faint); text-transform: uppercase;
+  letter-spacing: .08em; margin: 0 0 var(--oa-space-1);
+}
+.cfg-header h1 {
+  font-size: var(--oa-font-2xl); font-weight: 900; color: var(--col-text);
+  margin: 0; letter-spacing: -.02em; line-height: 1.15;
+}
+.cfg-header > div > p:not(.cfg-eyebrow) {
+  font-size: var(--oa-font-sm); color: var(--col-muted);
+  margin: var(--oa-space-2) 0 0; max-width: 62ch; line-height: 1.5;
+}
+.cfg-header-actions {
+  display: flex; gap: var(--oa-space-2); align-items: center; flex-wrap: wrap;
+}
+.cfg-header-actions .ox-btn-secondary,
+.cfg-header-actions .ox-btn-ghost {
+  min-height: 40px; padding: 0 var(--oa-space-4); border-radius: var(--radius-2);
+  font-size: var(--oa-font-sm); font-weight: 700; text-decoration: none;
+  display: inline-flex; align-items: center; gap: var(--oa-space-2);
+  border: 1.5px solid transparent; background: var(--col-elevated);
+  color: var(--col-text); transition: background .15s, border-color .15s;
+}
+.cfg-header-actions .ox-btn-secondary { border-color: var(--col-border-2); }
+.cfg-header-actions .ox-btn-ghost { background: transparent; border-color: var(--col-border-2); }
+.cfg-header-actions .ox-btn-secondary:hover,
+.cfg-header-actions .ox-btn-ghost:hover { background: var(--col-hover); }
+
+/* Navegación de secciones (chips scrollables) */
+.cfg-nav {
+  display: flex; gap: var(--oa-space-2);
+  overflow-x: auto; padding-bottom: var(--oa-space-2);
+  margin-bottom: var(--oa-space-6);
+  border-bottom: 1px solid var(--col-border);
+}
+.cfg-nav a {
+  padding: var(--oa-space-2) var(--oa-space-4);
+  font-size: var(--oa-font-sm); font-weight: 700;
+  color: var(--col-muted); text-decoration: none; white-space: nowrap;
+  border-radius: var(--radius-pill); background: var(--col-elevated);
+  border: 1px solid var(--col-border); transition: all .15s;
+}
+.cfg-nav a:hover { color: var(--col-text); background: var(--col-hover); }
+
+/* Cards de status (grid con enlaces) */
+.cfg-status-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--oa-space-3); margin-bottom: var(--oa-space-6);
+}
+.cfg-status-grid a {
+  display: block; padding: var(--oa-space-4);
+  background: var(--col-surface); border: 1px solid var(--col-border);
+  border-radius: var(--radius-2); text-decoration: none;
+  transition: transform .15s, border-color .15s, background .15s;
+}
+.cfg-status-grid a:hover {
+  background: var(--col-elevated); border-color: var(--brand-primary);
+  transform: translateY(-1px);
+}
+.cfg-status-grid a span:first-child {
+  display: block; font-size: var(--oa-font-xs); font-weight: 800;
+  color: var(--col-faint); text-transform: uppercase;
+  letter-spacing: .06em; margin-bottom: var(--oa-space-2);
+}
+.cfg-status-grid a strong {
+  display: block; font-size: var(--oa-font-base); font-weight: 800;
+  color: var(--col-text); letter-spacing: -.005em;
+}
+.cfg-status-grid a small {
+  display: block; font-size: var(--oa-font-xs);
+  color: var(--col-muted); margin-top: 2px;
+}
+
+/* Secciones: cada una es un panel */
+.cfg-section {
+  background: var(--col-surface); border: 1px solid var(--col-border);
+  border-radius: var(--radius-3); box-shadow: var(--shadow-2);
+  overflow: hidden; margin-bottom: var(--oa-space-6);
+}
+.cfg-section-head {
+  padding: var(--oa-space-4) var(--oa-space-5);
+  border-bottom: 1px solid var(--col-border);
+  background: var(--col-elevated);
+}
+.cfg-section-head > div { display: flex; align-items: center; gap: var(--oa-space-3); flex-wrap: wrap; }
+.cfg-section-head span {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: var(--radius-pill);
+  background: var(--brand-primary-soft); color: var(--brand-primary);
+  font-weight: 900; font-size: var(--oa-font-sm); flex-shrink: 0;
+}
+.cfg-section-head h2 {
+  font-size: var(--oa-font-lg); font-weight: 900; color: var(--col-text);
+  margin: 0; letter-spacing: -.005em;
+}
+.cfg-section-head p {
+  font-size: var(--oa-font-xs); color: var(--col-muted);
+  margin: 4px 0 0; flex-basis: 100%;
+}
+
+/* Subformularios dentro de una sección */
+.cfg-subform { padding: var(--oa-space-5); border-bottom: 1px solid var(--col-border); }
+.cfg-subform:last-child { border-bottom: 0; }
+.cfg-subform h3 {
+  font-size: var(--oa-font-base); font-weight: 800; color: var(--col-text);
+  margin: 0 0 var(--oa-space-4); letter-spacing: -.005em;
+}
+.cfg-form-note {
+  font-size: var(--oa-font-xs); color: var(--col-muted);
+  margin: 0 0 var(--oa-space-3); line-height: 1.5;
+}
+
+/* Grid de campos */
+.cfg-grid {
+  display: grid; gap: var(--oa-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: var(--oa-space-4);
+}
+.cfg-field {
+  display: block;
+}
+.cfg-field > span {
+  display: block; font-size: var(--oa-font-sm); font-weight: 700;
+  color: var(--col-text); margin-bottom: var(--oa-space-2);
+}
+.cfg-field input:not([type="hidden"]):not([type="color"]),
+.cfg-field select,
+.cfg-field textarea {
+  width: 100%; box-sizing: border-box;
+  padding: 10px 12px; min-height: 42px;
+  background: var(--col-elevated); border: 1.5px solid var(--col-border);
+  border-radius: var(--radius-2); color: var(--col-text);
+  font-size: var(--oa-font-base); font-family: inherit;
+  transition: border-color .15s, box-shadow .15s;
+}
+.cfg-field input:focus,
+.cfg-field select:focus,
+.cfg-field textarea:focus {
+  outline: none; border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 22%, transparent);
+}
+.cfg-field small {
+  display: block; font-size: var(--oa-font-xs);
+  color: var(--col-muted); margin-top: 4px; line-height: 1.4;
+}
+.cfg-field--full { grid-column: 1 / -1; }
+
+/* Colores (color pickers) */
+.cfg-colors {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--oa-space-3); margin-bottom: var(--oa-space-4);
+}
+.cfg-colors label {
+  display: flex; align-items: center; gap: var(--oa-space-3);
+  padding: var(--oa-space-3); background: var(--col-elevated);
+  border: 1px solid var(--col-border); border-radius: var(--radius-2);
+}
+.cfg-colors label span { flex: 1; font-size: var(--oa-font-sm); font-weight: 700; color: var(--col-text); }
+.cfg-colors input[type="color"] {
+  width: 44px; height: 32px; padding: 0; border-radius: var(--radius-1);
+  border: 1px solid var(--col-border-2); background: none; cursor: pointer;
+}
+
+/* Botón de guardar */
+.cfg-save-bottom {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 40px; padding: 0 var(--oa-space-5);
+  background: var(--brand-primary); color: var(--brand-primary-contrast);
+  border: 1.5px solid var(--brand-primary); border-radius: var(--radius-2);
+  font-size: var(--oa-font-sm); font-weight: 800;
+  cursor: pointer; transition: filter .12s;
+}
+.cfg-save-bottom:hover { filter: brightness(1.06); }
+
+/* Media (logo, icon, hero) */
+.cfg-brand-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--oa-space-3); margin-bottom: var(--oa-space-4);
+}
+.cfg-media-control {
+  display: flex; gap: var(--oa-space-3); align-items: flex-start;
+  padding: var(--oa-space-3); background: var(--col-elevated);
+  border: 1px solid var(--col-border); border-radius: var(--radius-2);
+}
+.cfg-media-control--wide { grid-column: 1 / -1; }
+.cfg-media-preview {
+  width: 68px; height: 68px; flex-shrink: 0;
+  border-radius: var(--radius-2); background: var(--col-hover);
+  border: 1px solid var(--col-border-2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--oa-font-xs); color: var(--col-faint); overflow: hidden;
+}
+.cfg-media-preview.small { width: 48px; height: 48px; }
+.cfg-media-preview.wide { width: 120px; height: 68px; }
+.cfg-media-preview img { width: 100%; height: 100%; object-fit: cover; }
+.cfg-media-control > div:last-child { flex: 1; min-width: 0; }
+.cfg-media-control strong { font-size: var(--oa-font-sm); font-weight: 800; color: var(--col-text); }
+.cfg-media-control input[type="url"] {
+  width: 100%; box-sizing: border-box; margin-top: var(--oa-space-2);
+  padding: 8px 10px; min-height: 36px;
+  background: var(--col-surface); border: 1px solid var(--col-border);
+  border-radius: var(--radius-2); color: var(--col-text);
+  font-size: var(--oa-font-xs);
+}
+.cfg-media-actions { display: flex; gap: var(--oa-space-2); margin-top: var(--oa-space-2); flex-wrap: wrap; }
+.cfg-upload {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 10px; font-size: var(--oa-font-xs); font-weight: 700;
+  border-radius: var(--radius-1); background: var(--brand-primary);
+  color: var(--brand-primary-contrast); cursor: pointer; border: 0;
+}
+.cfg-upload:hover { filter: brightness(1.06); }
+.cfg-upload input { display: none; }
+.cfg-upload-danger { background: var(--status-err); color: #fff; }
+.cfg-upload-danger:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Diálogo modal reutilizable — ORIGINAL preserved below ── */
 /* ── Diálogo modal reutilizable ─────────────────────────────────── */
 .oa-dialog {
   position: fixed; inset: 0; z-index: 2000;

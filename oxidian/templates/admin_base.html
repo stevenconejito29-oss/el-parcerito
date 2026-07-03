@@ -47,8 +47,8 @@
     /* ═══ BOTTOM NAV OPERATIVO — visible en móvil, oculto en desktop ═══ */
     .ox-admin-bnav {
       position: fixed;
-      left: 8px;
-      right: 8px;
+      left: max(8px, env(safe-area-inset-left, 8px));
+      right: max(8px, env(safe-area-inset-right, 8px));
       bottom: max(8px, env(safe-area-inset-bottom, 8px));
       z-index: 88;
       display: grid;
