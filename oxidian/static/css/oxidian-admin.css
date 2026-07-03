@@ -599,6 +599,16 @@
   .oa-btn { padding: 0 var(--oa-space-3); }
 }
 
+/* Campo bloqueado (solo lectura por rol) */
+.cfg-field--locked { opacity: 0.65; position: relative; }
+.cfg-field--locked input:disabled,
+.cfg-field--locked select:disabled,
+.cfg-field--locked textarea:disabled {
+  cursor: not-allowed !important;
+  background: color-mix(in srgb, var(--col-elevated) 60%, transparent) !important;
+  border-color: var(--col-border) !important;
+}
+
 /* ── Print (para tickets/reports) ───────────────────────────────── */
 @media print {
   .oa-btn, .oa-page-header__actions, .oa-panel__footer { display: none !important; }

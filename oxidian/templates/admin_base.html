@@ -198,6 +198,10 @@
         {% if has_admin_feature('marketing') %}<a href="{{ url_for('admin.afiliados') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤝</span>Afiliados</a>{% endif %}
         {% if has_admin_feature('marketing') %}<a href="{{ url_for('admin.menu_config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖼️</span>Banners & Home</a>{% endif %}
         {% if has_admin_feature('productos') %}<a href="{{ url_for('admin.nuevo_combo') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎁</span>Combos</a>{% endif %}
+        {# Ajustes de la tienda: accesible tanto por super_admin como por
+           admin. Las claves soberanas (modo, comisión, features, bot) salen
+           como solo-lectura para el admin. Ver LOCKED_CONFIG_KEYS. #}
+        <a href="{{ url_for('superadmin.config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎨</span>Ajustes de tienda</a>
       </div>
 
       {% if rol == 'super_admin' %}

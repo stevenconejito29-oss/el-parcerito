@@ -2845,6 +2845,34 @@ def bot_admin_resumen_hoy():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@api_bot_bp.route("/admin/pedidos/pendientes")
+@bot_required
+def bot_admin_pedidos_pendientes():
+    """Cola operativa: pedidos activos (pendiente/armando/listo) para mostrar
+    al admin desde el bot. Ordenados por más antiguo primero."""
+    estados_activos = ("pendiente", "armando", "listo", "en_ruta")
+    pedidos = Order.query.filter(Order.estado.in_(estados_activos)) \
+        .order_by(Order.creado_en.asc()).limit(30).all()
+    ESTADO_LABEL = {
+        "pendiente": "⏳ Recibido",
+        "armando": "🔥 Preparando",
+        "listo": "✅ Listo",
+        "en_ruta": "🛵 En ruta",
+    }
+    return jsonify({
+        "ok": True,
+        "pedidos": [{
+            "id": p.id,
+            "numero": p.numero_pedido,
+            "estado": p.estado,
+            "estado_label": ESTADO_LABEL.get(p.estado, p.estado),
+            "total": float(p.total or 0),
+            "creado_en": p.creado_en.isoformat() if p.creado_en else None,
+            "tipo_entrega": p.tipo_entrega_cliente,
+        } for p in pedidos]
+    })
+
+
 @api_bot_bp.route("/admin/pedidos/riesgo")
 @bot_required
 def bot_admin_pedidos_riesgo():

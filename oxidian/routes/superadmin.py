@@ -1155,9 +1155,52 @@ def chatbot_test_whatsapp():
 
 # ─── CONFIGURACIÓN DEL SISTEMA ───────────────
 
+# Claves "soberanas": SOLO super_admin puede cambiarlas, incluso si el admin
+# tiene acceso a la pantalla /superadmin/config. Definen el modelo comercial,
+# comisiones, features del producto (delivery/recogida/puntos/programados),
+# integraciones y bot. El admin operativo NUNCA puede tocarlas.
+#
+# Filosofía: en modo servicio el admin gestiona SU tienda (marca, contacto,
+# horarios, pagos, zonas, textos, imágenes) pero jamás puede quitarle el
+# control al super_admin sobre lo estratégico.
+LOCKED_CONFIG_KEYS = frozenset({
+    # Modo comercial y comisiones
+    "MODO_TIENDA",
+    "SERVICE_COMMISSION_PCT",
+    # Toggles de features del producto (super_admin decide qué contrata)
+    "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
+    "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
+    # Integraciones y bot (super_admin gestiona el WhatsApp central)
+    "BOT_API_URL", "BOT_OXIDIAN_URL", "BOT_API_KEY", "BOT_PANEL_KEY",
+    "BOT_ADMIN_NUMBERS", "BOT_AI_ENABLED", "BOT_AI_API_KEY",
+    "BOT_AI_PROVIDER", "BOT_AI_MODEL", "BOT_AI_RULES",
+    "BOT_AI_DAILY_CLIENT", "BOT_AI_DAILY_GLOBAL", "BOT_ALLOW_ORDER_CREATE",
+    "BOT_EMAIL_DOMAIN",
+    "EVOLUTION_API_URL", "EVOLUTION_INSTANCE",
+    # Sistema
+    "OXIDIAN_PUBLIC_URL", "TIENDA_URL", "ALLOW_DEMO_RESET",
+    # Reset masivo de puntos (afecta a todos los clientes)
+    "POINTS_RESET_PERIOD_DAYS", "POINTS_LAST_RESET_AT",
+})
+
+
+def _user_puede_modificar_clave(user, clave):
+    """El super_admin puede tocar cualquier clave. El admin no puede tocar
+    las LOCKED_CONFIG_KEYS. Fuente única de la verdad para la UI y el save."""
+    if getattr(user, "rol", None) == "super_admin":
+        return True
+    return clave not in LOCKED_CONFIG_KEYS
+
+
 @superadmin_bp.route("/config")
-@superadmin_required
+@login_required
 def config():
+    """Centro de configuración. Accesible por super_admin y admin.
+    El admin ve las mismas secciones pero las claves soberanas aparecen como
+    solo-lectura con etiqueta 'Controla el super admin' — nunca puede
+    modificarlas por más que intente."""
+    if current_user.rol not in ("super_admin", "admin"):
+        return redirect(url_for("public.index"))
     entradas = SiteConfig.query.order_by(SiteConfig.clave).all()
     zonas = ZonaEntrega.query.order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
     config_map = {e.clave: e.valor for e in entradas}
@@ -1175,15 +1218,24 @@ def config():
                            config_map=config_map, zonas=zonas,
                            public_theme_defaults=PUBLIC_THEME_DEFAULTS,
                            public_ui_fields=PUBLIC_UI_FIELDS,
-                           public_ui_groups=public_ui_groups)
+                           public_ui_groups=public_ui_groups,
+                           locked_keys=LOCKED_CONFIG_KEYS,
+                           es_super_admin=(current_user.rol == "super_admin"))
 
 
 @superadmin_bp.route("/config/guardar", methods=["POST"])
-@superadmin_required
+@login_required
 def guardar_config():
+    if current_user.rol not in ("super_admin", "admin"):
+        return "Sin permiso", 403
     clave = request.form.get("clave", "").strip()
     valor = request.form.get("valor", "").strip()
     descripcion = request.form.get("descripcion", "").strip() or None
+    # Blindaje: si el admin envía una clave soberana, rechazamos con flash
+    # explícito. Evita cualquier intento de escalada por edición del form.
+    if not _user_puede_modificar_clave(current_user, clave):
+        flash(f"Solo el super admin puede cambiar {clave}.", "warning")
+        return redirect(url_for("superadmin.config"))
     ok, clave, valor, error = _validar_config_value(clave, valor)
     if not ok:
         flash(error, "danger")
@@ -1208,12 +1260,33 @@ def guardar_config():
 
 
 @superadmin_bp.route("/config/guardar-seccion", methods=["POST"])
-@superadmin_required
+@login_required
 def guardar_config_seccion():
-    """Guarda únicamente los campos presentes de una tarjeta."""
+    """Guarda únicamente los campos presentes de una tarjeta.
+
+    Permisos:
+    - super_admin: puede tocar cualquier clave (incluidas las soberanas).
+    - admin: puede tocar solo claves NO bloqueadas (ver LOCKED_CONFIG_KEYS).
+      Las tocaduras a claves bloqueadas se ignoran silenciosamente con un
+      flash informativo — nunca se lanzan 500, ni el admin puede escalar.
+    """
+    if current_user.rol not in ("super_admin", "admin"):
+        return "Sin permiso", 403
     defaults = {clave: desc for clave, _, desc in CLAVES_DEFAULT}
     default_values = {clave: valor for clave, valor, _ in CLAVES_DEFAULT}
     section, cambios, errores = _config_section_submission(request.form)
+    # Bloqueo por claves soberanas. Si el admin intenta cambiar una clave
+    # bloqueada, la retiramos del dict antes de guardar y avisamos que el
+    # super_admin es quien controla eso.
+    if current_user.rol != "super_admin":
+        cambios_originales = list(cambios)
+        cambios = [(k, v) for k, v in cambios if k not in LOCKED_CONFIG_KEYS]
+        bloqueadas = [k for k, _ in cambios_originales if k in LOCKED_CONFIG_KEYS]
+        if bloqueadas:
+            flash(
+                f"Algunos ajustes solo puede cambiarlos el super admin ({', '.join(bloqueadas)}).",
+                "warning",
+            )
     parent_section = CONFIG_SECTION_PARENT.get(section, "tienda")
     if errores:
         flash("No se guardó esta tarjeta: " + " ".join(errores), "danger")

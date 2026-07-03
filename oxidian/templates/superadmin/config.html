@@ -4,29 +4,36 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/superadmin-config.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
+{# is_locked: True si la clave es soberana y el user actual es admin (no SA).
+   Cuando está bloqueada, el input se marca disabled y visualmente aparece
+   con el badge 🔒 Super admin. Coherente con el guard del backend. #}
 {% macro cfg_input(key, label, type='text', placeholder='', help='', min='', max='', step='') -%}
-<label class="cfg-field">
-  <span>{{ label }}</span>
+{% set is_locked = (not es_super_admin) and (key in (locked_keys or [])) %}
+<label class="cfg-field {% if is_locked %}cfg-field--locked{% endif %}">
+  <span>{{ label }}{% if is_locked %} <span class="oa-badge oa-badge--brand">🔒 Super admin</span>{% endif %}</span>
   <input type="hidden" name="config_key" value="{{ key }}">
   <input type="{{ type }}" name="{{ key }}" value="{{ config_map.get(key, '') }}"
          placeholder="{{ placeholder }}" {% if min != '' %}min="{{ min }}"{% endif %}
-         {% if max != '' %}max="{{ max }}"{% endif %} {% if step != '' %}step="{{ step }}"{% endif %}>
+         {% if max != '' %}max="{{ max }}"{% endif %} {% if step != '' %}step="{{ step }}"{% endif %}
+         {% if is_locked %}disabled aria-disabled="true"{% endif %}>
   {% if help %}<small>{{ help }}</small>{% endif %}
 </label>
 {%- endmacro %}
 {% macro cfg_textarea(key, label, placeholder='', help='', rows=3) -%}
-<label class="cfg-field cfg-field--full">
-  <span>{{ label }}</span>
+{% set is_locked = (not es_super_admin) and (key in (locked_keys or [])) %}
+<label class="cfg-field cfg-field--full {% if is_locked %}cfg-field--locked{% endif %}">
+  <span>{{ label }}{% if is_locked %} <span class="oa-badge oa-badge--brand">🔒 Super admin</span>{% endif %}</span>
   <input type="hidden" name="config_key" value="{{ key }}">
-  <textarea name="{{ key }}" rows="{{ rows }}" placeholder="{{ placeholder }}">{{ config_map.get(key, '') }}</textarea>
+  <textarea name="{{ key }}" rows="{{ rows }}" placeholder="{{ placeholder }}" {% if is_locked %}disabled aria-disabled="true"{% endif %}>{{ config_map.get(key, '') }}</textarea>
   {% if help %}<small>{{ help }}</small>{% endif %}
 </label>
 {%- endmacro %}
 {% macro cfg_select(key, label, options, help='') -%}
-<label class="cfg-field">
-  <span>{{ label }}</span>
+{% set is_locked = (not es_super_admin) and (key in (locked_keys or [])) %}
+<label class="cfg-field {% if is_locked %}cfg-field--locked{% endif %}">
+  <span>{{ label }}{% if is_locked %} <span class="oa-badge oa-badge--brand">🔒 Super admin</span>{% endif %}</span>
   <input type="hidden" name="config_key" value="{{ key }}">
-  <select name="{{ key }}">
+  <select name="{{ key }}" {% if is_locked %}disabled aria-disabled="true"{% endif %}>
     {% for value, text in options %}
     <option value="{{ value }}" {% if config_map.get(key, '') == value %}selected{% endif %}>{{ text }}</option>
     {% endfor %}
@@ -36,11 +43,27 @@
 {%- endmacro %}
 
 <div class="cfg-page">
+  {# Si es admin (no super_admin), aviso que ciertas claves están bloqueadas
+     y qué gestiona quien. Coherente con la filosofía modo servicio:
+     admin lleva su tienda; super_admin controla lo estratégico. #}
+  {% if not es_super_admin %}
+  <div class="oa-alert oa-alert--info" style="margin-bottom: var(--oa-space-4);">
+    <span class="oa-alert__icon">🔐</span>
+    <div>
+      <strong>Estás gestionando tu tienda como admin.</strong>
+      <p style="margin: 4px 0 0; font-size: var(--oa-font-xs);">
+        Puedes ajustar marca, contacto, horarios, pagos, zonas, textos e imágenes con total libertad.
+        Las claves marcadas con <span class="oa-badge oa-badge--brand" style="margin: 0 4px;">🔒 Super admin</span>
+        son estratégicas (modo comercial, comisión, módulos contratados, bot central) y solo el super admin puede tocarlas.
+      </p>
+    </div>
+  </div>
+  {% endif %}
   <header class="cfg-header">
     <div>
-      <p class="cfg-eyebrow">Superadministración</p>
-      <h1>Centro de configuración</h1>
-      <p>Controla la tienda, entregas, fidelización y conexiones desde un único lugar.</p>
+      <p class="cfg-eyebrow">{{ 'Super administración' if es_super_admin else 'Mi tienda' }}</p>
+      <h1>{{ 'Centro de configuración' if es_super_admin else 'Ajustes de mi tienda' }}</h1>
+      <p>{{ 'Controla la tienda, entregas, fidelización y conexiones desde un único lugar.' if es_super_admin else 'Gestiona tu marca, contacto, horarios, pagos, textos e imágenes. Lo estratégico lo controla el super admin.' }}</p>
     </div>
     <div class="cfg-header-actions">
       {% if brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}" class="ox-btn-secondary">📍 Zonas</a>{% endif %}

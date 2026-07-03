@@ -3489,6 +3489,59 @@ async function handleAdminCmd(jid, text) {
     }
   }
 
+  // ── Buscar cliente por teléfono ──
+  // Uso: !buscar-cliente 34612345678
+  if (lowerCmd.startsWith('buscar-cliente ') || lowerCmd.startsWith('cliente-buscar ')) {
+    if (!adminCan(jid, 'points')) {
+      return sendText(jid, '⛔ No tienes permiso para buscar clientes.');
+    }
+    const partes = cmd.split(/\s+/);
+    const tel = normalizePhone(partes[1] || '');
+    if (!/^[0-9]{6,15}$/.test(tel)) {
+      return sendText(jid, '❌ Uso: `!buscar-cliente 34612345678`');
+    }
+    try {
+      const resp = await oxidianGet(`/admin/clientes/buscar?q=${encodeURIComponent(tel)}`);
+      if (!resp || !resp.ok || !resp.resultados?.length) {
+        return sendText(jid, `❌ Sin resultados para ${tel}.`);
+      }
+      const c = resp.resultados[0];
+      return sendText(jid,
+        `👤 *${c.nombre || 'Sin nombre'}*\n` +
+        `📞 ${c.telefono || tel}\n` +
+        `⭐ Puntos: ${c.puntos ?? 0}\n` +
+        `📦 Pedidos: ${c.total_pedidos ?? 0}\n` +
+        `💰 Gastado: €${Number(c.total_gastado || 0).toFixed(2)}\n` +
+        `🆔 Id: ${c.id}`);
+    } catch (err) {
+      return sendText(jid, `❌ Error al buscar: ${err?.message || err}`);
+    }
+  }
+
+  // ── Pedidos pendientes en tiempo real ──
+  // Uso: !pendientes
+  if (lowerCmd === 'pendientes' || lowerCmd === 'cola') {
+    if (!adminCan(jid, 'store') && !adminCan(jid, 'points')) {
+      return sendText(jid, '⛔ No tienes permiso.');
+    }
+    try {
+      const resp = await oxidianGet('/admin/pedidos/pendientes');
+      const lista = Array.isArray(resp?.pedidos) ? resp.pedidos : [];
+      if (!lista.length) {
+        return sendText(jid, '✅ *Sin pedidos pendientes* — todo al día.');
+      }
+      const lineas = lista.slice(0, 15).map(p => {
+        const est = p.estado_label || p.estado || '?';
+        return `• *${p.numero}* — ${est} · €${Number(p.total || 0).toFixed(2)}`;
+      });
+      return sendText(jid,
+        `📦 *${lista.length} pedidos pendientes*\n\n${lineas.join('\n')}` +
+        (lista.length > 15 ? `\n\n_(+${lista.length - 15} más)_` : ''));
+    } catch (err) {
+      return sendText(jid, `❌ No pude consultar la cola: ${err?.message || err}`);
+    }
+  }
+
   if (lowerCmd === 'limpiar') {
     if (!isSuperAdminJid(jid)) {
       return sendText(jid, 'Solo un Super Admin puede limpiar sesiones del bot.');
