@@ -2,7 +2,13 @@
 {# Variable esperada: p (Product) #}
 {% set _qty_cart = (carrito.get(p.id|string, 0) if carrito is defined and carrito_origen == origen_actual else 0)|int %}
 {% set _has_extras = p.extra_groups.filter_by(activo=True).count() > 0 %}
-<div class="ep-card {% if p.es_combo %}ep-card-combo{% endif %} {% if _qty_cart > 0 %}ep-card-in-cart{% endif %}" data-category-id="{{ p.categoria_id or '' }}">
+{# data-group ayuda al filtro client-side a saber a qué "bloque" pertenece:
+   canje (⭐), combos (🎁) o regular. Ver epFilterCategory en index.html. #}
+{% set _es_canje = (p.solo_canje or (p.puntos_para_canje and p.puntos_para_canje > 0)) %}
+{% set _card_group = 'canje' if _es_canje else ('combos' if p.es_combo else 'regular') %}
+<div class="ep-card {% if p.es_combo %}ep-card-combo{% endif %} {% if _qty_cart > 0 %}ep-card-in-cart{% endif %}"
+     data-category-id="{{ p.categoria_id or '' }}"
+     data-card-group="{{ _card_group }}">
 
   {# ── Imagen ── #}
   <a class="ep-card-img"

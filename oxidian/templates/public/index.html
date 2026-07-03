@@ -222,6 +222,14 @@
        data-category="" class="ep-cat {% if not categoria_activa %}ep-cat-on{% endif %}">
       <span class="ep-cat-icon">🌎</span><span>Todo</span>
     </a>
+    {# Chip especial: Canje con puntos — solo si módulo puntos activo. Al
+       hacer clic filtra a los productos canjeables (que están OCULTOS de la
+       vista Todo por diseño). #}
+    {% if brand.puntos %}
+    <a href="#canje" data-category="_canje" class="ep-cat ep-cat-canje">
+      <span class="ep-cat-icon">⭐</span><span>Canje</span>
+    </a>
+    {% endif %}
     {% for cat in categorias %}
     {% set cat_count = categoria_counts.get(cat.id, 0) if categoria_counts is defined else productos|selectattr('categoria_id','equalto',cat.id)|list|length %}
     <a href="{{ storefront_url(cat.id, busqueda or None) }}"
@@ -549,8 +557,28 @@ function epFilterCategory(categoryId, updateUrl = true) {
   const value = String(categoryId || '');
   let visible = 0;
   const sectionHasVisible = Object.create(null);
+  // Chips especiales: "_canje" solo muestra canje. "_combos" solo combos.
+  // Cualquier otro valor (incluido "" = Todo) OCULTA los canjeables — solo
+  // deben verse cuando el cliente entra explícitamente al espacio de canje.
+  const isCanjeFilter = value === '_canje';
+  const isCombosFilter = value === '_combos';
   for (const card of EP_CARDS_CACHE) {
-    const show = !value || card.dataset.categoryId === value;
+    const group = card.dataset.cardGroup || 'regular';
+    let show;
+    if (isCanjeFilter) {
+      show = group === 'canje';
+    } else if (isCombosFilter) {
+      show = group === 'combos';
+    } else {
+      // Todo o categoría concreta: excluye SIEMPRE los canjeables del listado
+      if (group === 'canje') {
+        show = false;
+      } else if (!value) {
+        show = true; // Todo → muestra combos + regulares
+      } else {
+        show = card.dataset.categoryId === value;
+      }
+    }
     if (card.hidden === show) card.hidden = !show;
     if (show) {
       visible += 1;
