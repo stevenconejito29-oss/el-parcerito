@@ -3489,6 +3489,73 @@ async function handleAdminCmd(jid, text) {
     }
   }
 
+  // ── Ajustar puntos de un cliente por teléfono ──
+  // Uso: !puntos NUMERO +50 [motivo]
+  //      !puntos NUMERO -30 devolucion
+  // Requiere capability 'points'. Motivo opcional.
+  if (lowerCmd.startsWith('puntos ')) {
+    if (!adminCan(jid, 'points')) {
+      return sendText(jid, '⛔ No tienes permiso para ajustar puntos.');
+    }
+    const rest = cmd.slice(7).trim();
+    if (!rest) {
+      return sendText(jid,
+        '⭐ *Ajustar puntos*\n\n' +
+        'Uso: `!puntos NUMERO ±CANTIDAD [motivo]`\n\n' +
+        'Ejemplos:\n' +
+        '`!puntos 34612345678 +50 Regalo cumpleaños`\n' +
+        '`!puntos 34612345678 -30 Devolución pedido`\n\n' +
+        'La cantidad debe llevar signo (+ o -). Sin signo = suma.');
+    }
+    const partes = rest.split(/\s+/);
+    if (partes.length < 2) {
+      return sendText(jid, '❌ Faltan datos. Ejemplo: `!puntos 34612345678 +50 motivo`');
+    }
+    const telefono = normalizePhone(partes[0]);
+    if (!/^[0-9]{6,15}$/.test(telefono)) {
+      return sendText(jid, `❌ Número no válido: \`${partes[0]}\``);
+    }
+    // Parse cantidad (con signo opcional)
+    const rawDelta = partes[1];
+    const match = rawDelta.match(/^([+-]?)(\d+)$/);
+    if (!match) {
+      return sendText(jid, `❌ Cantidad no válida: \`${rawDelta}\`. Ej: +50, -30, 100`);
+    }
+    const signo = match[1] || '+';
+    const magnitud = parseInt(match[2], 10);
+    if (!magnitud || magnitud > 10000) {
+      return sendText(jid, '❌ La cantidad debe ser >0 y ≤10000.');
+    }
+    const delta = signo === '-' ? -magnitud : magnitud;
+    const motivo = partes.slice(2).join(' ').trim() || 'Ajuste manual por WhatsApp';
+
+    try {
+      // Buscar cliente por teléfono
+      const busqueda = await oxidianGet(`/admin/clientes/buscar?q=${encodeURIComponent(telefono)}`);
+      if (!busqueda?.ok || !busqueda.resultados?.length) {
+        return sendText(jid,
+          `❌ No encontré cliente con teléfono ${telefono}.\n\n` +
+          `Regístralo primero con: \`!cliente Nombre Apellido ${telefono}\``);
+      }
+      const cliente = busqueda.resultados[0];
+      // Ajustar puntos
+      const ajuste = await oxidianPost(`/admin/clientes/${cliente.id}/puntos`,
+        { delta, motivo, actor_telefono: phoneFromJid(jid) });
+      if (ajuste?.ok) {
+        const signoEmoji = delta >= 0 ? '➕' : '➖';
+        return sendText(jid,
+          `${signoEmoji} *Puntos ajustados*\n\n` +
+          `👤 ${ajuste.cliente.nombre || cliente.nombre}\n` +
+          `📞 ${telefono}\n` +
+          `${signoEmoji} ${Math.abs(delta)} puntos (${motivo})\n\n` +
+          `⭐ Saldo: *${ajuste.puntos_antes}* → *${ajuste.puntos_despues}*`);
+      }
+      return sendText(jid, `❌ ${ajuste?.error || 'No se pudo ajustar.'}`);
+    } catch (err) {
+      return sendText(jid, `❌ Error: ${err?.message || err}`);
+    }
+  }
+
   // ── Buscar cliente por teléfono ──
   // Uso: !buscar-cliente 34612345678
   if (lowerCmd.startsWith('buscar-cliente ') || lowerCmd.startsWith('cliente-buscar ')) {
