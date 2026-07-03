@@ -66,6 +66,15 @@
   {% else %}
   <span class="type-badge">🌐 Pedido Online</span>
   {% endif %}
+  {# Modalidad de entrega — DESTACADA arriba para que el repartidor la vea al pegar el ticket #}
+  {% set _tipo = pedido.tipo_entrega_cliente or 'recogida' %}
+  <div style="margin-top:6px;">
+    <span class="type-badge" style="font-size:12px;background:#111;color:#fff;">
+      {% if _tipo == 'delivery' %}🛵 DELIVERY
+      {% elif _tipo == 'recogida' %}🏬 RECOGIDA
+      {% else %}📆 PROGRAMADO{% endif %}
+    </span>
+  </div>
 </div>
 
 <div class="dashed"></div>
@@ -108,7 +117,17 @@
     <div class="item-price">€{{ "%.2f"|format(item.subtotal) }}</div>
   </div>
   <div class="small muted" style="padding:0 0 2px 0">  @€{{ "%.2f"|format(item.precio_unit) }}/ud</div>
-  {% if item.notas %}<div class="small muted" style="padding:0 0 2px 0">  Nota: {{ item.notas }}</div>{% endif %}
+  {% if item.notas %}<div class="small" style="padding:0 0 2px 0;color:#c00;font-weight:700">  📝 Nota: {{ item.notas }}</div>{% endif %}
+  {# Alérgenos por línea — información de salud crítica, siempre visible en el ticket #}
+  {% set _alerg_list = item.display_alergenos if item.display_alergenos is defined else [] %}
+  {% if _alerg_list %}
+  <div class="small" style="padding:0 0 3px 0;color:#c00;font-weight:700">  ⚠ ALÉRGENOS:
+    {%- for a in _alerg_list -%}
+      {%- if a is mapping %}{{ a.get('label') or a.get('code') or a }}{%- else %}{{ a }}{%- endif -%}
+      {%- if not loop.last %}, {% endif -%}
+    {%- endfor %}
+  </div>
+  {% endif %}
   {% if item.display_es_combo and (combo_meta.get('componentes') or combo_meta.get('selecciones')) %}
   <div style="font-size:10px;color:#555;padding:1px 0 5px 6px;line-height:1.7">
     {% if combo_meta.get('componentes') %}
@@ -204,8 +223,8 @@
 </button>
 
 <script>
-  // Auto-print si viene con ?autoprint=1
-  if (window.location.search.includes('autoprint=1')) {
+  // Auto-print: acepta tanto ?autoprint=1 como ?auto_print=1 (cualquier canal).
+  if (/[?&](autoprint|auto_print)=1/.test(window.location.search)) {
     setTimeout(() => window.print(), 400);
   }
 </script>

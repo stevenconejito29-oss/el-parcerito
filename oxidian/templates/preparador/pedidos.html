@@ -438,14 +438,26 @@
       <div class="work-note work-note-strong">📝 Nota del cliente: {{ pedido.notas }}</div>
       {% endif %}
 
-      <form method="POST" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}"
-            data-mark-ready data-pedido-id="{{ pedido.id }}"
-            onsubmit="return prepConfirmReady(this);">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="work-btn work-btn-success full-width">
-          ✓ Listo · Enviar a repartidor
-        </button>
-      </form>
+      <div style="display:flex;gap:.5rem;align-items:stretch;">
+        <form method="POST" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}"
+              data-mark-ready data-pedido-id="{{ pedido.id }}"
+              onsubmit="return prepConfirmReady(this);"
+              style="flex:1;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="work-btn work-btn-success full-width">
+            ✓ Listo · Enviar a repartidor
+          </button>
+        </form>
+        {# Imprime el ticket para pegarlo al pedido — abre en nueva pestaña
+           con window.print() automático al cargar. #}
+        <a href="{{ url_for('pos.ticket', pedido_id=pedido.id) }}?auto_print=1"
+           target="_blank" rel="noopener"
+           class="work-btn work-btn-ghost"
+           title="Imprimir ticket para pegar al pedido"
+           style="flex-shrink:0;padding:0 .9rem;display:inline-flex;align-items:center;">
+          🖨️ Ticket
+        </a>
+      </div>
   </article>
   {% else %}
   <div class="work-empty">

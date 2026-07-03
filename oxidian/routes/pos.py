@@ -578,8 +578,14 @@ def movimiento_manual():
 # ─── TICKET (JSON para imprimir) ─────────────
 
 @pos_bp.route("/ticket/<int:pedido_id>")
-@pos_required
+@login_required
 def ticket(pedido_id):
+    """El ticket para pegar al pedido tiene que estar disponible para todo
+    el staff operativo — cocina, preparación, repartidor, admin y super_admin.
+    No es una operación destructiva; solo renderiza para imprimir."""
+    if current_user.rol not in {"admin", "super_admin", "cocina", "preparacion", "repartidor"}:
+        flash("Acceso restringido.", "danger")
+        return redirect(url_for("public.index"))
     pedido = get_or_404(Order, pedido_id)
     return render_template("pos/ticket.html", pedido=pedido)
 
