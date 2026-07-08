@@ -186,6 +186,10 @@ def crear_matriz(cats, provs):
             cats["TEST-Cocina"] if modalidad != "recogida" else cats["TEST-Bar"]
         )
 
+        # Producto de proveedor: DEBE tener proveedor_despachador_id set,
+        # o el sistema lo trata como propio-sin-stock y bloquea.
+        prov = provs[tag % len(provs)] if origen == "proveedor" else None
+
         prod = Product(
             nombre=nombre,
             descripcion=f"Sintético {tag}: origen={origen}, entrega={tipo_ent}, "
@@ -203,19 +207,21 @@ def crear_matriz(cats, provs):
             puntos_para_canje=puntos_canje,
             solo_canje=solo_canje,
             stock_mostrar_en_web=stock_vis,
+            proveedor_despachador_id=prov.id if prov else None,
         )
         db.session.add(prod)
         db.session.flush()
 
-        # Enlace de stock según origen
-        if origen == "propio":
-            db.session.add(Stock(
-                producto_id=prod.id,
-                cantidad=25 + (tag % 15),
-                fecha_caducidad=fecha_futuro,
-            ))
-        else:
-            prov = provs[tag % len(provs)]
+        # Stock propio siempre (para que aparezca en catálogo público).
+        # El `proveedor_despachador_id` decide quién prepara/despacha, pero
+        # el flujo web actual (`is_provider_flow_enabled()`=False) filtra por
+        # Stock propio en `pertenece_a_origen("propio")`.
+        db.session.add(Stock(
+            producto_id=prod.id,
+            cantidad=25 + (tag % 15),
+            fecha_caducidad=fecha_futuro,
+        ))
+        if origen == "proveedor":
             db.session.add(ProveedorProducto(
                 proveedor_id=prov.id,
                 producto_id=prod.id,
@@ -269,13 +275,12 @@ def crear_combos(cats, productos):
         for j, comp in enumerate(componentes[:3]):
             db.session.add(ComboItem(
                 combo_id=combo.id,
-                componente_id=comp.id,
-                grupo_id=grupo.id,
+                producto_id=comp.id,
+                combo_group_id=grupo.id,
                 cantidad=1,
                 orden=j,
                 activo=True,
-                es_seleccionable=(j > 0),
-                grupo_seleccion=f"opciones-{i}" if j > 0 else None,
+                es_predeterminado=(j == 0),
             ))
         combos.append(combo)
     return combos
@@ -309,9 +314,9 @@ def crear_extras(productos):
                 db.session.add(ProductExtraOption(
                     grupo_id=grupo.id,
                     nombre=f"{grupo_nombre}-{op_nombre}",
-                    precio_extra=Decimal(str(precio)),
+                    precio=Decimal(str(precio)),
                     activo=True,
-                    max_por_unidad=2,
+                    max_cantidad=2,
                 ))
 
 
