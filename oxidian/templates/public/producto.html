@@ -76,6 +76,26 @@
   {% if producto.descripcion %}
   <p class="pd-desc">{{ producto.descripcion }}</p>
   {% endif %}
+
+  {# ── Características de producto (RETAIL) ── #}
+  {% if brand.es_producto and producto.atributos_json %}
+  {% set _attrs = producto.atributos_json|from_json if producto.atributos_json is string else producto.atributos_json %}
+  {% if _attrs and (_attrs.marca or _attrs.color or _attrs.material or _attrs.genero) %}
+  <ul class="pd-attrs">
+    {% if _attrs.marca %}<li><span>🏷️ Marca</span><strong>{{ _attrs.marca }}</strong></li>{% endif %}
+    {% if _attrs.color %}<li><span>🎨 Color</span><strong>{{ _attrs.color }}</strong></li>{% endif %}
+    {% if _attrs.material %}<li><span>🧵 Material</span><strong>{{ _attrs.material }}</strong></li>{% endif %}
+    {% if _attrs.genero %}<li><span>👤 Para</span><strong>{{ _attrs.genero|capitalize }}</strong></li>{% endif %}
+  </ul>
+  <style>
+  .pd-attrs { list-style:none; padding:0; margin:.75rem 0; display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:.5rem; }
+  .pd-attrs li { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:.5rem; padding:.5rem .65rem; display:flex; flex-direction:column; gap:.15rem; }
+  .pd-attrs li span { font-size:.7rem; color:var(--col-muted); text-transform:uppercase; letter-spacing:.03em; }
+  .pd-attrs li strong { font-size:.9rem; color:var(--col-text); font-weight:800; }
+  </style>
+  {% endif %}
+  {% endif %}
+
   {% set fb = fulfillment_badge(producto) %}
   <div class="pd-info-box" style="border-color:color-mix(in srgb,var(--brand-primary) 30%,var(--col-border))">
     <span class="pd-box-icon">{{ fb.emoji }}</span>

@@ -88,21 +88,26 @@
   </div>
 
   <!-- ── CANAL DE PREPARACIÓN ── -->
+  {% if brand.es_comida %}
   <div class="fp-span-full col-span-2 fp-section">
     <label class="fp-section-title">Canal de preparación</label>
     <p class="text-xs text-gray-500 mb-2">Define qué mesa de trabajo prepara este producto. No determina por sí solo si puede compartir pedido.</p>
     <div class="flex gap-4 flex-wrap text-sm">
       <label class="fp-radio-label">
-        <input type="radio" name="canal_preparacion" value="cocina" checked
-               style="accent-color:#e85d04">
-          {% if brand.es_comida %}🍳 Cocina — requiere elaboración{% else %}🛠️ Preparación — requiere ensamblaje{% endif %}
+        <input type="radio" name="canal_preparacion" value="cocina" checked style="accent-color:#e85d04">
+        🍳 Cocina — requiere elaboración
       </label>
       <label class="fp-radio-label">
-        <input type="radio" name="canal_preparacion" value="almacen"
-               style="accent-color:#2b9348"> 📦 Almacén — solo empacar y entregar
+        <input type="radio" name="canal_preparacion" value="almacen" style="accent-color:#2b9348">
+        📦 Almacén — solo empacar y entregar
       </label>
     </div>
   </div>
+  {% else %}
+    {# En retail todos los productos se preparan desde almacén (empacar). Fijamos
+       el canal por defecto sin exponerlo al admin — evita configuración inútil. #}
+    <input type="hidden" name="canal_preparacion" value="almacen">
+  {% endif %}
 
   <!-- ── TIPO DE ENTREGA ── -->
   <div class="fp-span-full col-span-2 fp-section">
@@ -114,7 +119,8 @@
       </label>
       {% if brand.pedidos_programados %}<label class="fp-radio-label">
         <input type="radio" name="tipo_entrega" value="programado"
-               style="accent-color:#FFAB00"> 📆 Programado
+               style="accent-color:#FFAB00">
+        {% if brand.es_producto %}📅 Pre-orden / reserva{% else %}📆 Programado (encargo){% endif %}
       </label>{% endif %}
     </div>
   </div>
@@ -241,7 +247,8 @@
     </div>
   </div>{% endif %}
 
-  <!-- ── ALÉRGENOS EU ── -->
+  <!-- ── ALÉRGENOS EU (solo COMIDA) ── -->
+  {% if brand.es_comida %}
   <div class="fp-span-full col-span-2 fp-section">
     <label class="fp-section-title">Alérgenos EU (14 obligatorios)</label>
     <label class="fp-check-label mb-3 px-3 py-2 rounded-xl"
@@ -262,6 +269,41 @@
       {% endfor %}
     </div>
   </div>
+  {% endif %}
+
+  <!-- ── CARACTERÍSTICAS DE PRODUCTO (solo RETAIL) ── -->
+  {% if brand.es_producto %}
+  <div class="fp-span-full col-span-2 fp-section">
+    <label class="fp-section-title">Características del producto</label>
+    <p class="text-xs text-gray-500 mb-2">Estos datos se muestran al cliente en la ficha del producto.</p>
+    <div class="grid sm:grid-cols-2 gap-3">
+      <div>
+        <label class="fp-label">Marca</label>
+        <input type="text" name="attr_marca" maxlength="60"
+               class="fp-input" placeholder="Ej: Zara, Nike, El Parcerito">
+      </div>
+      <div>
+        <label class="fp-label">Color</label>
+        <input type="text" name="attr_color" maxlength="40"
+               class="fp-input" placeholder="Ej: Negro, Beige, Rojo/Azul">
+      </div>
+      <div>
+        <label class="fp-label">Material</label>
+        <input type="text" name="attr_material" maxlength="80"
+               class="fp-input" placeholder="Ej: 100% algodón, Piel sintética">
+      </div>
+      <div>
+        <label class="fp-label">Género (opcional)</label>
+        <select name="attr_genero" class="fp-input">
+          <option value="">Unisex / no aplica</option>
+          <option value="mujer">Mujer</option>
+          <option value="hombre">Hombre</option>
+          <option value="niños">Niños</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- Atributos JSON avanzado -->
   <div class="fp-span-full col-span-2">

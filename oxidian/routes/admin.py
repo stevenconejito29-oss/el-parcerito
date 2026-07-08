@@ -1928,14 +1928,23 @@ def _parsear_campos_producto(form):
     dias = form.getlist("dias_semana")
     dias_json = json.dumps([int(d) for d in dias]) if dias else None
 
+    # Atributos JSON: fusionamos el textarea "atributos avanzados" con los
+    # campos estructurados attr_* (marca, color, material, genero) del bloque
+    # de retail. Los estructurados sobrescriben al JSON si hay colisión.
     attrs_raw = (form.get("atributos_json") or "").strip()
-    atributos_json = None
+    atributos_dict = {}
     if attrs_raw:
         try:
-            json.loads(attrs_raw)
-            atributos_json = attrs_raw
+            atributos_dict = json.loads(attrs_raw) or {}
+            if not isinstance(atributos_dict, dict):
+                return None, "Atributos JSON debe ser un objeto."
         except json.JSONDecodeError:
             return None, "Atributos JSON no válidos."
+    for key in ("marca", "color", "material", "genero"):
+        valor = (form.get(f"attr_{key}") or "").strip()
+        if valor:
+            atributos_dict[key] = valor
+    atributos_json = json.dumps(atributos_dict, ensure_ascii=False) if atributos_dict else None
 
     # Validaciones de negocio
     try:

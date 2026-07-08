@@ -457,6 +457,20 @@ def create_app(env="default"):
             return f"{diff // 60}min"
         return f"{diff // 3600}h {(diff % 3600) // 60}min"
 
+    @app.template_filter("from_json")
+    def from_json_filter(value):
+        """Parsea un string JSON a dict/list para usar en Jinja.
+        Devuelve {} si es inválido o vacío. No lanza excepciones."""
+        if not value:
+            return {}
+        if isinstance(value, (dict, list)):
+            return value
+        try:
+            import json as _j
+            return _j.loads(value) or {}
+        except (TypeError, ValueError):
+            return {}
+
     @app.template_filter("upload_url")
     def upload_url_filter(path):
         """Devuelve una URL de imagen usable para rutas relativas, /uploads o URLs externas."""
