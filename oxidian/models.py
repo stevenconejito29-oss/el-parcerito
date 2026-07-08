@@ -770,7 +770,11 @@ class Product(db.Model):
         # Producto individual sin control de stock en web (stock_mostrar_en_web=False)
         # se considera siempre disponible — la cocina lo prepara al momento.
         # Coherente con la regla que ya usan los componentes de combo.
+        # Excepción: si existen lotes registrados en Stock, respetamos la contabilidad
+        # real aunque no se exponga al cliente (evita vender cuando todo está a 0/caducado).
         if not bool(getattr(self, "stock_mostrar_en_web", False)):
+            if key == "propio" and Stock.query.filter_by(producto_id=self.id).first():
+                return self.stock_para_origen(key) >= int(cantidad or 1)
             return True
         return self.stock_para_origen(key) >= int(cantidad or 1)
 

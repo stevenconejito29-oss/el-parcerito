@@ -107,7 +107,8 @@
 <details class="ox-card p-4" open>
   <summary class="font-bold text-white cursor-pointer">📋 Movimientos detallados ({{ pagos|length }})</summary>
   {% if pagos %}
-  <table class="w-full text-sm mt-3">
+  <div class="ox-table-wrap mt-3">
+  <table class="w-full text-sm">
     <thead class="text-xs uppercase" style="color:var(--col-muted)">
       <tr>
         <th class="text-left py-2">Fecha</th>
@@ -133,6 +134,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p class="text-gray-400 mt-2">Sin movimientos en este período.</p>
   {% endif %}
