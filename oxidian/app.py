@@ -889,16 +889,20 @@ def _seed_operational_basics():
     now = utcnow()
     minimal_users = _to_bool(os.environ.get("OXIDIAN_MINIMAL_USERS"), False)
 
+    # Rol "cocina" fue fusionado en "preparacion" (ver CLAUDE.md). Ya no se crea
+    # ningún user nuevo con rol="cocina" — solo mantenemos el enum por retro-compat
+    # en users antiguos importados. El seed inicial genera roles vigentes.
+    _domain = os.environ.get("STAFF_EMAIL_DOMAIN", "oxidian.local").strip() or "oxidian.local"
     if minimal_users:
         staff_users = [
-            {"nombre": "Armado de Pedidos", "email": "preparacion@oxidian.com", "rol": "preparacion", "puesto_trabajo": "Armado de pedidos delivery"},
-            {"nombre": "Repartidor Delivery", "email": "repartidor@oxidian.com", "rol": "repartidor", "puesto_trabajo": "Reparto delivery", "tarifa_entrega": 2.5},
+            {"nombre": "Preparación", "email": f"preparacion@{_domain}", "rol": "preparacion", "puesto_trabajo": "Armado de pedidos"},
+            {"nombre": "Repartidor", "email": f"repartidor@{_domain}", "rol": "repartidor", "puesto_trabajo": "Reparto", "tarifa_entrega": 2.5},
         ]
     else:
         staff_users = [
-            {"nombre": "Chef Carlos", "email": "cocina@oxidian.com", "rol": "cocina", "puesto_trabajo": "Cocina"},
-            {"nombre": "Prep María", "email": "preparacion@oxidian.com", "rol": "preparacion", "puesto_trabajo": "Preparación"},
-            {"nombre": "Pedro Delivery", "email": "repartidor@oxidian.com", "rol": "repartidor", "puesto_trabajo": "Reparto", "tarifa_entrega": 2.5},
+            {"nombre": "Preparación 1", "email": f"prep1@{_domain}", "rol": "preparacion", "puesto_trabajo": "Cocina / Almacén"},
+            {"nombre": "Preparación 2", "email": f"prep2@{_domain}", "rol": "preparacion", "puesto_trabajo": "Encargos"},
+            {"nombre": "Repartidor",    "email": f"repartidor@{_domain}", "rol": "repartidor",  "puesto_trabajo": "Reparto", "tarifa_entrega": 2.5},
         ]
     for payload in staff_users:
         user = User.query.filter_by(email=payload["email"]).first()
@@ -985,12 +989,15 @@ def _seed_demo_data():
     seed_pw = _seed_password()
 
     # ── Usuarios operativos ────────────────────────────────────────
+    # Rol "cocina" desaparecido — todo lo prepara "preparacion" (CLAUDE.md).
+    # Dominio de email neutralizado para no filtrar branding del vendor.
+    _demo_domain = os.environ.get("STAFF_EMAIL_DOMAIN", "oxidian.local").strip() or "oxidian.local"
     demo_users = [
-        {"nombre": "Chef Carlos",    "email": "cocina@oxidian.com",       "rol": "cocina",      "puesto_trabajo": "Jefe de Cocina"},
-        {"nombre": "Prep María",     "email": "preparacion@oxidian.com",  "rol": "preparacion", "puesto_trabajo": "Gestión Encargos"},
-        {"nombre": "Pedro Delivery", "email": "repartidor@oxidian.com",   "rol": "repartidor",  "tarifa_entrega": 2.5},
-        {"nombre": "Laura Sánchez",  "email": "cliente@oxidian.com",      "rol": "cliente",     "telefono": "600000001", "puntos": 250},
-        {"nombre": "Carlos Reyes",   "email": "cliente2@oxidian.com",     "rol": "cliente",     "telefono": "600000002", "puntos": 80},
+        {"nombre": "Preparación",    "email": f"preparacion@{_demo_domain}", "rol": "preparacion", "puesto_trabajo": "Cocina / Almacén"},
+        {"nombre": "Encargos",       "email": f"encargos@{_demo_domain}",    "rol": "preparacion", "puesto_trabajo": "Gestión encargos"},
+        {"nombre": "Repartidor",     "email": f"repartidor@{_demo_domain}",  "rol": "repartidor",  "tarifa_entrega": 2.5},
+        {"nombre": "Cliente Demo 1", "email": f"cliente1@{_demo_domain}",    "rol": "cliente",     "telefono": "600000001", "puntos": 250},
+        {"nombre": "Cliente Demo 2", "email": f"cliente2@{_demo_domain}",    "rol": "cliente",     "telefono": "600000002", "puntos": 80},
     ]
     for p in demo_users:
         if not User.query.filter_by(email=p["email"]).first():
@@ -1124,21 +1131,21 @@ def _seed_demo_data():
          "El favorito del barrio: snacks a elegir + 1 bebida a elegir. ¡Todo por menos!",
          6.50, 2.80, "Combos", 0, "inmediato",
          {"imagen_url": U.format("1550547660-d9450f859349"),
-          "origen_pais": "Carmona",
+          "origen_pais": "Local",
           "es_combo": True}),
 
         ("Combo Familiar",
          "Para toda la familia: snacks surtidos + 2 bebidas a elegir + 2 postres.",
          18.50, 8.50, "Combos", 0, "inmediato",
          {"imagen_url": U.format("1504674900247-0877df9cc836"),
-          "origen_pais": "Carmona",
+          "origen_pais": "Local",
           "es_combo": True}),
 
         ("Combo Arepa Feliz",
          "Arepa Reina Pepiada + Malta o Jugo Natural. El almuerzo perfecto. Producto programado.",
          7.50, 3.50, "Combos", 0, "programado",
          {"imagen_url": U.format("1546069901-ba9599a7e63c"),
-          "origen_pais": "Carmona",
+          "origen_pais": "Local",
           "es_combo": True,
           "fecha_llegada": date.today() + timedelta(days=2)}),
     ]
@@ -1232,17 +1239,17 @@ def _seed_demo_data():
                                          grupo_seleccion="Elige tu bebida", max_selecciones=1))
         changed = True
 
-    # ── Zona de entrega ───────────────────────────────────────────
-    if not ZonaEntrega.query.filter_by(nombre="Carmona Centro").first():
+    # ── Zonas de entrega (genéricas, sin hardcodear ciudad) ───────
+    # El nombre real de las zonas lo configura el admin en /superadmin/zonas.
+    # Aquí sembramos placeholders neutros solo si no hay ninguna zona aún.
+    if not ZonaEntrega.query.first():
         db.session.add(ZonaEntrega(
-            nombre="Carmona Centro", descripcion="Casco histórico y área urbana",
+            nombre="Centro", descripcion="Casco urbano principal",
             es_epicentro=True, activo=True,
             precio_envio=0, tiempo_estimado_min=20, gratis_desde=20, orden=1,
         ))
-        changed = True
-    if not ZonaEntrega.query.filter_by(nombre="Extrarradio Carmona").first():
         db.session.add(ZonaEntrega(
-            nombre="Extrarradio Carmona", descripcion="Urbanizaciones y zonas periféricas",
+            nombre="Extrarradio", descripcion="Zonas periféricas",
             es_epicentro=False, activo=True,
             precio_envio=1.50, tiempo_estimado_min=35, gratis_desde=30, orden=2,
         ))
@@ -1278,9 +1285,12 @@ def _seed_demo_data():
     if Order.query.count() == 0:
         from decimal import Decimal
 
-        cliente1 = User.query.filter_by(email="cliente@oxidian.com").first()
-        cliente2 = User.query.filter_by(email="cliente2@oxidian.com").first()
-        zona = ZonaEntrega.query.filter_by(nombre="Carmona Centro").first()
+        cliente1 = (User.query.filter_by(email=f"cliente1@{_demo_domain}").first()
+                    or User.query.filter_by(email="cliente@oxidian.com").first())
+        cliente2 = (User.query.filter_by(email=f"cliente2@{_demo_domain}").first()
+                    or User.query.filter_by(email="cliente2@oxidian.com").first())
+        zona = (ZonaEntrega.query.filter_by(es_epicentro=True).first()
+                or ZonaEntrega.query.first())
 
         teq      = Product.query.filter_by(nombre="Tequeños de Queso (4 uds)").first()
         bunuelos = Product.query.filter_by(nombre="Buñuelos de Queso (6 uds)").first()
@@ -1303,7 +1313,7 @@ def _seed_demo_data():
                 descuento=Decimal("0"),
                 total=Decimal("0"),
                 metodo_pago=metodo,
-                direccion_entrega="Calle Mayor 1, Carmona",
+                direccion_entrega="Dirección demo 1",
                 notas="Pedido de demostración",
                 zona_id=zona_obj.id if zona_obj else None,
                 creado_en=utcnow() - timedelta(days=dias_atras),
