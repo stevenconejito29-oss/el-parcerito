@@ -16,7 +16,7 @@ def _strip_accents(s: str) -> str:
         return ""
     return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
 from urllib.parse import quote
-from datetime import datetime
+from datetime import datetime, date
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_login import current_user
@@ -165,6 +165,8 @@ def _producto_pertenece_al_vertical(producto):
 
 def _producto_disponible_en_origen(producto, origen, cantidad=1):
     if producto and _delivery_family(producto) == "programado" and not _feature_enabled("pedidos_programados"):
+        return False
+    if producto and _programmed_date_expired(producto):
         return False
     if producto and not _fulfillment_options([producto]):
         return False
@@ -664,6 +666,13 @@ def _delivery_family(producto):
     return "programado" if tipo in ("programado", "encargo") else "inmediato"
 
 
+def _programmed_date_expired(producto):
+    if not producto or _delivery_family(producto) != "programado":
+        return False
+    fecha = getattr(producto, "fecha_llegada", None)
+    return bool(fecha and fecha < date.today())
+
+
 def _order_group(producto):
     """Grupo configurable que determina qué productos comparten pedido."""
     key = getattr(producto, "grupo_pedido_key", None)
@@ -728,6 +737,46 @@ def _product_names(productos, limit=4):
     return ", ".join(names)
 
 
+_CART_ISSUE_TITLES = {
+    "vertical": "Producto de otro tipo de catálogo",
+    "programados_disabled": "Pedidos programados desactivados",
+    "delivery_family": "Fecha fija e inmediato no van juntos",
+    "order_group": "Estos productos requieren pedidos separados",
+    "fulfillment_modules_disabled": "Modalidad no disponible",
+    "fulfillment_conflict": "No se pueden combinar esas modalidades",
+    "minimum_order": "Pedido mínimo pendiente",
+    "programados_expired": "Fecha programada vencida",
+}
+
+
+def _cart_issue_payload(issue, action_url=None, action_label=None):
+    """Versión JSON segura y accionable de un issue de compatibilidad."""
+    issue = issue or {}
+    code = issue.get("code") or "cart_issue"
+    products = []
+    for product in issue.get("products") or []:
+        if not product:
+            continue
+        products.append({
+            "id": getattr(product, "id", None),
+            "nombre": getattr(product, "nombre", "Producto"),
+            "modalidad": sorted(_product_fulfillment_modes(product)),
+            "modalidad_label": _product_fulfillment_badge(product)["label"],
+            "tipo_entrega": _delivery_family(product),
+            "grupo": _order_group_label(product),
+            "vertical": getattr(product, "vertical", "ambos") or "ambos",
+        })
+    return {
+        "code": code,
+        "title": _CART_ISSUE_TITLES.get(code, "Revisa tu carrito"),
+        "message": issue.get("message") or "",
+        "severity": issue.get("severity") or "warning",
+        "products": products[:8],
+        "action_url": action_url,
+        "action_label": action_label,
+    }
+
+
 def _cart_compatibility(productos, subtotal=None, pedido_minimo=0):
     """Diagnóstico único para carrito y checkout.
 
@@ -758,6 +807,15 @@ def _cart_compatibility(productos, subtotal=None, pedido_minimo=0):
         )
 
     programados = [p for p in productos if _delivery_family(p) == "programado"]
+    programados_vencidos = [p for p in programados if _programmed_date_expired(p)]
+    if programados_vencidos:
+        add(
+            "programados_expired",
+            "La fecha programada de algunos productos ya pasó. "
+            f"Retira {_product_names(programados_vencidos)} y vuelve a elegir productos disponibles.",
+            programados_vencidos,
+            "danger",
+        )
     if programados and not features.get("pedidos_programados", False):
         add(
             "programados_disabled",
@@ -856,9 +914,12 @@ def agregar_carrito_get(producto_id):
 def agregar_carrito(producto_id):
     _ajax = request.headers.get("X-Ajax") == "1"
 
-    def _err(msg, category="warning"):
+    def _err(msg, category="warning", issue=None, action_url=None, action_label=None):
         if _ajax:
-            return jsonify({"ok": False, "msg": msg}), 200
+            payload = {"ok": False, "msg": msg, "category": category}
+            if issue:
+                payload["issue"] = _cart_issue_payload(issue, action_url, action_label)
+            return jsonify(payload), 200
         flash(msg, category)
         return redirect(request.referrer or url_for("public.index"))
 
@@ -875,6 +936,16 @@ def agregar_carrito(producto_id):
         origen_solicitado = "propio"
     proveedor_id = _proveedor_id_origen(origen_solicitado)
     proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
+    single_compat = _cart_compatibility([producto])
+    if not single_compat["ok"]:
+        issue = single_compat["issues"][0]
+        return _err(
+            issue["message"],
+            issue.get("severity", "warning"),
+            issue=issue,
+            action_url=url_for("public.index"),
+            action_label="Ver catálogo actual",
+        )
     if not _producto_disponible_en_origen(producto, origen_solicitado):
         return _err("Este producto no está disponible ahora.")
     if proveedor_id and (
@@ -908,7 +979,14 @@ def agregar_carrito(producto_id):
         for pid, qty in carrito.items()
     )
     if not compat["ok"]:
-        return _err(compat["message"], compat["issues"][0].get("severity", "warning"))
+        issue = compat["issues"][0]
+        return _err(
+            compat["message"],
+            issue.get("severity", "warning"),
+            issue=issue,
+            action_url=url_for("public.ver_carrito") if carrito else url_for("public.index"),
+            action_label="Ver carrito" if carrito else "Ver catálogo",
+        )
     if hay_otros_productos and not compat["fulfillment_options"]:
         return _err(
             "El carrito tiene productos incompatibles entre sí. "

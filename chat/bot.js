@@ -1587,7 +1587,10 @@ async function oxidianPost(path, body, opts = {}) {
   return data;
 }
 
-// ─── ASISTENTE IA DEL CHATBOT ──────────────────────────────────────────────
+// ─── IA ADMINISTRATIVA ─────────────────────────────────────────────────────
+// La IA NO atiende clientes. Se reserva para admin/super_admin: análisis de
+// datos agregados, apoyo operativo y consultas internas. El cliente público se
+// gestiona con FAQs, intents, opciones múltiples, búsqueda de catálogo y handoff.
 // Cache local de la configuración IA (refrescada cada 5 min desde Oxidian).
 let aiConfigCache = null;
 let aiConfigUntil = 0;
@@ -1731,6 +1734,9 @@ async function _callAIProvider(cfg, messages) {
  * Devuelve string con la respuesta, o null si no se puede.
  */
 async function aiResponderCliente(jid, ses, mensajeUsuario) {
+  log('warn', 'ai_cliente_bloqueada', `jid=${jid}`);
+  return null;
+
   const cfg = await getAIConfig();
   if (!cfg || !cfg.habilitado) return null;
   const phone = phoneFromJid(jid);
@@ -2090,10 +2096,11 @@ function _sanitizeReply(reply, cfg) {
   return s;
 }
 
-/* aiSmartReply: devuelve {action, reply, confidence} o null si no se puede.
- * Solo debe ser invocado para JIDs de CLIENTE. El dispatcher en handleMainMenu
- * garantiza eso (admin/bar tienen su propio menú y nunca caen aquí). */
+/* IA cliente desactivada por diseño. La IA solo vive en admin/super_admin. */
 async function aiSmartReply(jid, ses, mensajeUsuario) {
+  log('warn', 'ai_cliente_smart_bloqueada', `jid=${jid}`);
+  return null;
+
   const cfg = await getAIConfig();
   if (!cfg || !cfg.habilitado) return null;
 
@@ -2485,11 +2492,38 @@ function menuPrincipal(ses = {}) {
   const extraText = extras.length ? `, ${extras.join(' o ')}` : '';
   return (
     `🤝 *Asistente de ${getNegocioNombre()}*\n\n` +
-    `Te ayudo sin tomar pedidos por WhatsApp: la compra se completa en la web para validar stock y opciones.\n\n` +
+    `Te ayudo sin tomar compras por WhatsApp: la compra se completa en la web para validar stock, combos, horarios y módulos activos.\n\n` +
     `Puedes preguntarme por el estado o cancelación de un pedido, horario, ubicación o pagos${extraText}. ` +
-    `También puedes decir *Abrir la tienda online* o *quiero hablar con una persona*.\n\n` +
+    `También puedes decir *Abrir tienda online* o *quiero hablar con una persona*.\n\n` +
     `_Cuéntame con tus palabras qué necesitas._`
   );
+}
+
+function clientMenuLines() {
+  const catalogo = String(cfg('vertical_label', 'Menú')).toLowerCase();
+  const lines = [
+    `*1* — 🛒 Ver el ${catalogo} en la web`,
+    `*2* — 📦 Estado de mi pedido`,
+  ];
+  if (String(cfg('loyalty_enabled', '1')) === '1') {
+    lines.push(`*3* — ⭐ Mis puntos`);
+  }
+  if (String(cfg('delivery_enabled', '1')) === '1') {
+    lines.push(`*4* — 📍 Zona de entrega`);
+  }
+  lines.push(
+    `*6* — ⏰ Horario / contacto`,
+    `*7* — 👤 Hablar con una persona`,
+  );
+  return lines.join('\n');
+}
+
+function clientCapabilityText() {
+  const caps = ['estado de pedidos', 'información general'];
+  if (String(cfg('loyalty_enabled', '1')) === '1') caps.push('puntos');
+  if (String(cfg('delivery_enabled', '1')) === '1') caps.push('cobertura');
+  caps.push('horario');
+  return caps.join(', ');
 }
 
 function adminMenu(jid) {
@@ -2649,8 +2683,8 @@ async function startClientMenu(jid, nombre = null, primerMensaje = null) {
     return sendText(jid, resumenPedido);
   }
   // Si su primer mensaje ya es una pregunta natural (no un simple saludo),
-  // procesamos con la cascada FAQ→intent→IA para no perderle una interacción
-  // en la bienvenida. La bienvenida se prepende como línea corta.
+  // procesamos con la cascada determinista FAQ→intent→catálogo. No usamos IA
+  // con clientes para mantener el flujo controlado y auditable.
   const textoPrimero = String(primerMensaje || '').trim();
   const esConsulta = textoPrimero &&
     !esSaludo(textoPrimero) &&
@@ -2665,16 +2699,13 @@ async function startClientMenu(jid, nombre = null, primerMensaje = null) {
         const saludo = nombreCorto ? `${saludoHora()}, ${nombreCorto}. ` : '';
         return sendText(jid, `${saludo}\n${faq.text}`);
       }
-      // 2) IA como fallback
-      const smart = await aiSmartReply(jid, ses, textoPrimero);
-      if (smart && smart.reply && smart.reply.length > 1) {
-        if (typeof bumpStat === 'function') bumpStat(smart.fromCache ? 'ai_cache_hit' : 'ai_fresh');
-        const nombreCorto = _primerNombre(nombre);
-        const saludo = nombreCorto ? `👋 *${saludoHora()}, ${nombreCorto}*` : `👋 *${saludoHora()}*`;
-        return sendText(jid, `${saludo}\n\n${smart.reply}\n\n_Escribe *menu* para más opciones._`);
-      }
+      // 2) Intención local + búsqueda de catálogo.
+      const detected = detectClientIntent(textoPrimero);
+      if (detected) return handleMainMenu(jid, ses, detected);
+      const catalogReply = await _tryCatalogSearchReply(textoPrimero, getTiendaUrl());
+      if (catalogReply) return sendText(jid, catalogReply);
     } catch (err) {
-      log('warn', 'client_first_msg_ai_fail', err?.message || String(err));
+      log('warn', 'client_first_msg_flow_fail', err?.message || String(err));
     }
   }
   // Sin pedido activo → saludo conversacional natural (sin lista numerada).
@@ -4062,8 +4093,8 @@ async function catalogPreviewText() {
 
 function clientHelpText() {
   return (
-    `Las compras se hacen en la tienda online para garantizar stock actualizado, opciones de combos y pago seguro. 🛒\n` +
-    `Por aquí puedo ayudarte con información, cobertura, puntos y seguimiento de pedidos.`
+    `Las compras se hacen únicamente en la tienda online para garantizar stock actualizado, opciones de combos, módulos activos y pago seguro. 🛒\n` +
+    `Por aquí puedo ayudarte con información general, horario, estado abierto/cerrado, cobertura, puntos y seguimiento de pedidos.`
   );
 }
 
@@ -4229,7 +4260,7 @@ const CLIENT_FAQS = [
     match: /\b(est[aá]n?\s+abier(to|tos)\s+ahora|est[aá]n?\s+cerrad(o|os)\s+ahora|abren\s+ahora|cerraron|siguen\s+abiertos|est[aá]n\s+ya\s+cerrad(o|os))\b/i,
     answer: (ctx) => {
       const abierta = String(cfg('tienda_abierta', '1')) === '1';
-      if (abierta) return `🟢 *${ctx.negocio}* está abierto ahora.\n\nHaz tu pedido aquí:\n👉 ${ctx.tiendaUrl}`;
+      if (abierta) return `🟢 *${ctx.negocio}* está abierto ahora.\n\nAbre la tienda online aquí:\n👉 ${ctx.tiendaUrl}`;
       const msg = String(cfg('tienda_mensaje_cierre', '') || '').trim();
       return `🔴 *${ctx.negocio}* está cerrado en este momento.\n${msg ? '\n' + msg + '\n' : ''}${ctx.horario ? '\n' + ctx.horario + '\n' : ''}\nCuando abramos podrás pedir en: ${ctx.tiendaUrl}`;
     },
@@ -4284,7 +4315,8 @@ const CLIENT_FAQS = [
     match: /\b(muchas\s+gracias|super|excelente|genial|perfect(o|as)|de\s+lujo|estupendo|estupenda|bien|muy\s+bien|todo\s+bien|👍|❤️|💛|💯)\b/i,
     answer: (ctx) => {
       const nombre = (ctx && ctx.ses && ctx.ses.nombre) ? ` ${String(ctx.ses.nombre).split(/\s+/)[0]}` : '';
-      return `¡Gracias a ti${nombre}! 💛\n\nEscríbeme cuando quieras hacer otro pedido o consultar tus puntos.`;
+      const extra = ctx.loyalty_enabled ? ' o consultar tus puntos' : '';
+      return `¡Gracias a ti${nombre}! 💛\n\nEscríbeme cuando quieras hacer otro pedido${extra}.`;
     },
   },
   {
@@ -4292,7 +4324,7 @@ const CLIENT_FAQS = [
     match: /\b(c[oó]mo\s+te\s+llamas|eres\s+un\s+bot|eres\s+humano|con\s+qui[eé]n\s+hablo|qui[eé]n\s+eres|d[íi]me\s+qui[eé]n\s+eres)\b/i,
     answer: (ctx) => (
       `Soy el asistente de *${ctx.negocio}* por WhatsApp. 🤖\n\n` +
-      `Puedo ayudarte con pedidos, estado, puntos, cobertura y horario. ` +
+      `Puedo ayudarte con ${clientCapabilityText()}. ` +
       `Si necesitas hablar con una persona escribe *AGENTE* y te conecto.`
     ),
   },
@@ -4300,15 +4332,9 @@ const CLIENT_FAQS = [
     name: 'ayuda_generico',
     match: /\b(ayuda|help|no\s+s[eé]\s+qu[eé]\s+hacer|c[oó]mo\s+funciona\s+esto|opciones|comandos|qu[eé]\s+puedes\s+hacer)\b/i,
     answer: (ctx) => {
-      const catalogo = String(cfg('vertical_label', 'Menú')).toLowerCase();
       return (
         `Puedo ayudarte con:\n\n` +
-        `*1* — 🛒 Ver el ${catalogo}\n` +
-        `*2* — 📦 Estado o cancelar pedido\n` +
-        `*3* — ⭐ Mis puntos\n` +
-        `*4* — 📍 Zona de entrega\n` +
-        `*6* — ⏰ Horario y contacto\n` +
-        `*7* — 👤 Hablar con una persona\n\n` +
+        `${clientMenuLines()}\n\n` +
         `_Escribe el número o el nombre del producto que buscas._`
       );
     },
@@ -4359,6 +4385,7 @@ function _buildFaqContext(ses) {
     tiendaUrl: getTiendaUrl(),
     delivery_enabled: String(cfg('delivery_enabled', '1') || '1') !== '0',
     pickup_enabled: String(cfg('pickup_enabled', '1') || '1') !== '0',
+    loyalty_enabled: String(cfg('loyalty_enabled', '1') || '1') !== '0',
     bizum_enabled: String(cfg('bizum_enabled', '1') || '1') !== '0',
     cash_enabled: String(cfg('cash_enabled', '1') || '1') !== '0',
     ses,
@@ -4448,6 +4475,45 @@ function detectClientIntent(text) {
   return mejor.opcion;
 }
 
+function _catalogSearchQuery(texto) {
+  return String(texto || '')
+    .replace(/^(hola|hey|buenas|ok|dale|porfa|por favor)[\s,.]*/i, '')
+    .replace(/\b(hay|tienen|teneis|tenéis|venden|cuanto|cuánto|vale|precio|cuesta|de|un|una|unos|unas|el|la|los|las|que|qué|hay|q|me|das|quiero|busco|necesito|tendran|tendrán)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function _tryCatalogSearchReply(textoLibre, tiendaUrl) {
+  const qBusqueda = _catalogSearchQuery(textoLibre);
+  if (!qBusqueda || qBusqueda.length < 3) return null;
+  try {
+    const busqueda = await oxidianGet(`/cliente/buscar-producto?q=${encodeURIComponent(qBusqueda)}&limit=5`);
+    if (!busqueda || !busqueda.ok || !Array.isArray(busqueda.resultados) || !busqueda.resultados.length) {
+      return null;
+    }
+    const catalogoLabel = String(cfg('vertical_label', 'Menú')).toLowerCase();
+    const lineas = busqueda.resultados.map((p, idx) => {
+      const combo = p.es_combo ? ' 🎁' : '';
+      let etiqueta;
+      if (p.solo_canje && p.puntos_para_canje > 0) {
+        etiqueta = `⭐ ${p.puntos_para_canje} pts`;
+      } else if (p.canjeable_con_puntos && p.puntos_para_canje > 0) {
+        etiqueta = `€${(p.precio || 0).toFixed(2)} · ⭐ ${p.puntos_para_canje} pts`;
+      } else {
+        etiqueta = `€${(p.precio || 0).toFixed(2)}`;
+      }
+      return `${idx + 1}. *${p.nombre}*${combo} — ${etiqueta}`;
+    }).join('\n');
+    return (
+      `🔎 Esto encontré en nuestro ${catalogoLabel} para *"${busqueda.consulta}"*:\n\n${lineas}\n\n` +
+      `Para pedir o ver detalles:\n👉 ${tiendaUrl || busqueda.tienda_url || ''}`
+    );
+  } catch (err) {
+    log('warn', 'client_search_fail', err?.message || String(err));
+    return null;
+  }
+}
+
 // ─── MENÚ CLIENTE ────────────────────────────────────────────────────────────
 async function handleMainMenu(jid, ses, opcion) {
   // Si el cliente escribió una palabra natural en vez de "1", "2"…, intentamos
@@ -4510,38 +4576,8 @@ async function handleMainMenu(jid, ses, opcion) {
   //     genérica. Cubre: "¿hay pizza?", "¿cuánto vale la margarita?",
   //     "tenéis coca cola?", "tienen postres?".
   if (opcion === '1' && textoLibre && !/^[1-7]$/.test(textoLibre)) {
-    const qBusqueda = textoLibre
-      .replace(/^(hola|hey|buenas|ok|dale|porfa|por favor)[\s,.]*/i, '')
-      .replace(/\b(hay|tienen|teneis|tenéis|venden|cuanto|cuánto|vale|precio|cuesta|de|un|una|unos|unas|el|la|los|las|que|qué|hay|q)\b/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (qBusqueda && qBusqueda.length >= 3) {
-      try {
-        const busqueda = await oxidianGet(`/cliente/buscar-producto?q=${encodeURIComponent(qBusqueda)}&limit=5`);
-        if (busqueda && busqueda.ok && Array.isArray(busqueda.resultados) && busqueda.resultados.length) {
-          const catalogoLabel = String(cfg('vertical_label', 'Menú')).toLowerCase();
-          const lineas = busqueda.resultados.map((p, idx) => {
-            const combo = p.es_combo ? ' 🎁' : '';
-            // Productos solo_canje: se obtienen entregando puntos, sin precio en €.
-            let etiqueta;
-            if (p.solo_canje && p.puntos_para_canje > 0) {
-              etiqueta = `⭐ ${p.puntos_para_canje} pts`;
-            } else if (p.canjeable_con_puntos && p.puntos_para_canje > 0) {
-              etiqueta = `€${(p.precio || 0).toFixed(2)} · ⭐ ${p.puntos_para_canje} pts`;
-            } else {
-              etiqueta = `€${(p.precio || 0).toFixed(2)}`;
-            }
-            return `${idx + 1}. *${p.nombre}*${combo} — ${etiqueta}`;
-          }).join('\n');
-          return sendText(jid,
-            `🔎 Esto encontré en nuestro ${catalogoLabel} para *"${busqueda.consulta}"*:\n\n${lineas}\n\n` +
-            `Para pedirlos o ver detalle:\n👉 ${tiendaUrl || busqueda.tienda_url || ''}`
-          );
-        }
-      } catch (err) {
-        log('warn', 'client_search_fail', err?.message || String(err));
-      }
-    }
+    const catalogReply = await _tryCatalogSearchReply(textoLibre, tiendaUrl);
+    if (catalogReply) return sendText(jid, catalogReply);
   }
 
   switch (opcion) {
@@ -4579,11 +4615,11 @@ async function handleMainMenu(jid, ses, opcion) {
             `Equivalen a *${formatPrecio(data.valor_euro)}* de descuento posible.` +
             bloqueCodigo +
             `\n*¿Cómo canjearlos?*\n` +
-            `1. Haz tu pedido en la tienda 🛒\n` +
+            `1. Abre la tienda online 🛒\n` +
             `2. En el checkout introduce el código de arriba ⬆️\n` +
             `3. Elige descuento o producto de regalo 🎁\n\n` +
             `👉 *Historial:* ${tiendaUrl}/club\n` +
-            `👉 *Hacer un pedido:* ${tiendaUrl}\n\n` +
+            `👉 *Abrir tienda online:* ${tiendaUrl}\n\n` +
             `_Escribe *menu* para volver._`
           );
         }
@@ -4656,57 +4692,10 @@ async function handleMainMenu(jid, ses, opcion) {
         return sendText(jid, menuPrincipal(ses));
       }
 
-      // ── ANALIZADOR IA-FIRST ──
-      // Una sola llamada decide intent + reply usando memoria del cliente.
-      // Si el intent matchea una plantilla, la renderizamos sin más LLM.
-      // Si no, mandamos el `reply` directamente. Si la IA falla o no está,
-      // caemos al mensaje genérico de orientación.
-      let smart = null;
-      try {
-        smart = await aiSmartReply(jid, ses, opcion);
-      } catch (err) {
-        log('warn', 'ai_smart_fail', err?.message || String(err));
-      }
+      const catalogReply = await _tryCatalogSearchReply(textoLibre, tiendaUrl);
+      if (catalogReply) return sendText(jid, catalogReply);
 
-      // Si el burst-limiter local cortó la llamada, contestamos con un
-      // mensaje breve y natural en vez de quedarnos en silencio (que el
-      // cliente interpretaría como "el bot me ignora").
-      if (!smart && _smartBurstRecentlyDenied(phoneFromJid(jid))) {
-        return sendText(jid, 'Dame un momentito, atiendo tu mensaje en breve. 🙏');
-      }
-
-      if (smart && smart.confidence >= 0.55) {
-        // Registrar si vino de cache o fue llamada fresca a la IA.
-        if (smart.fromCache) bumpStat('ai_cache_hit'); else bumpStat('ai_fresh');
-        switch (smart.action) {
-          case 'estado':
-            return handleMainMenu(jid, ses, '2');
-          case 'puntos':
-            return handleMainMenu(jid, ses, '3');
-          case 'cobertura':
-            return handleMainMenu(jid, ses, '4');
-          case 'menu':
-            return handleMainMenu(jid, ses, smart.query || opcion);
-          case 'info':
-            return handleMainMenu(jid, ses, '6');
-          case 'agente':
-            return handleMainMenu(jid, ses, '7');
-          case 'chat':
-          default:
-            if (smart.reply && smart.reply.length > 1) {
-              return sendText(jid, smart.reply);
-            }
-        }
-      } else if (smart && smart.reply && smart.reply.length > 1) {
-        // Baja confianza pero hay reply (probablemente una aclaración) → enviar.
-        if (smart.fromCache) bumpStat('ai_cache_hit'); else bumpStat('ai_fresh');
-        return sendText(jid, smart.reply);
-      } else {
-        // IA no aportó nada útil (deshabilitada, fallo o límite).
-        bumpStat('ai_fail');
-      }
-
-      // Sin IA o IA falló → dos verificaciones ANTES del fallback ciego:
+      // Dos verificaciones ANTES del fallback guiado:
       //  1) ¿El cliente está frustrado explícitamente?
       //  2) ¿El cliente lleva N mensajes casi idénticos (loop)?
       // En ambos casos → derivamos a agente humano SIN insistir con opciones.
@@ -4729,16 +4718,10 @@ async function handleMainMenu(jid, ses, opcion) {
       // Fallback final: menú numerado explícito + opciones útiles. Antes
       // era una frase genérica que dejaba al cliente sin saber qué hacer.
       bumpStat('fallback');
-      const catalogo = String(cfg('vertical_label', 'Menú')).toLowerCase();
       return sendText(jid,
         `${pick(FRASES_NO_ENTENDI)}\n\n` +
         `Puedo ayudarte con:\n` +
-        `*1* — 🛒 Ver el ${catalogo} / hacer pedido\n` +
-        `*2* — 📦 Estado de mi pedido\n` +
-        `*3* — ⭐ Mis puntos\n` +
-        `*4* — 📍 Zona de entrega\n` +
-        `*6* — ⏰ Horario / contacto\n` +
-        `*7* — 👤 Hablar con una persona\n\n` +
+        `${clientMenuLines()}\n\n` +
         `_Escribe el número o la palabra clave._`
       );
     }
@@ -4981,7 +4964,7 @@ async function handleCoberturaDelivery(jid, ses, direccion) {
       return sendText(jid,
         `✅ *¡Llegamos a tu zona!*\n\n` +
         `${coverage.mensaje || '¡Tu dirección está dentro de nuestra área de delivery!'}${distancia}${radio}\n\n` +
-        `🛵 Para hacer el pedido entra aquí:\n👉 ${getTiendaUrl()}\n\n` +
+        `🛵 Para finalizar la compra entra aquí:\n👉 ${getTiendaUrl()}\n\n` +
         `_Escribe *menu* para volver._`
       );
     }

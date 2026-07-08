@@ -2641,6 +2641,29 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
   }
 }
 
+/* Producción: el catálogo debe mostrarse siempre completo. La animación de
+   scroll-reveal dejaba tarjetas offscreen invisibles si el observer tardaba o
+   si se generaban capturas full-page. */
+.ep-grid .ep-card {
+  opacity: 1 !important;
+  transform: none !important;
+  animation: none !important;
+  content-visibility: visible !important;
+  contain: none !important;
+  contain-intrinsic-size: auto !important;
+}
+.ep-card-img {
+  min-height: 132px;
+}
+@media (max-width: 767px) {
+  .ep-card-img {
+    min-height: 128px;
+  }
+  .ep-card-combo .ep-card-img {
+    min-height: 190px;
+  }
+}
+
 /* ── Category active pill: glow underline indicator ── */
 .ep-cats {
   position: relative;

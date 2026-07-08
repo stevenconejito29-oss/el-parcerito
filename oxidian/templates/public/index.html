@@ -699,6 +699,9 @@ document.getElementById('ep-modal-form')?.addEventListener('submit', async (even
       closeModal();
       _epToast('✓ Añadido al carrito');
       _epBadgeInc();
+    } else if (data?.issue) {
+      closeModal();
+      await _epShowCartIssue(data.issue, data.msg);
     } else if (data?.msg) {
       /* bloqueo de stock, familia, etc. — cerrar modal y mostrar aviso */
       closeModal();
@@ -713,6 +716,34 @@ document.getElementById('ep-modal-form')?.addEventListener('submit', async (even
     btn.innerHTML = '🛒 Añadir al carrito';
   }
 });
+
+async function _epShowCartIssue(issue, fallbackMsg) {
+  const title = issue?.title || 'Revisa tu carrito';
+  const products = Array.isArray(issue?.products) ? issue.products : [];
+  const productLines = products.slice(0, 5).map(p => {
+    const mode = p.modalidad_label ? ` (${p.modalidad_label})` : '';
+    return `• ${p.nombre}${mode}`;
+  });
+  const body = [
+    issue?.message || fallbackMsg || 'Hay productos que no pueden ir juntos en el mismo pedido.',
+    productLines.length ? `\nProductos afectados:\n${productLines.join('\n')}` : '',
+  ].filter(Boolean).join('\n');
+  const actionUrl = issue?.action_url || '{{ url_for("public.ver_carrito") }}';
+  const actionLabel = issue?.action_label || 'Ver carrito';
+  const canConfirm = !!(window.OxToast && typeof window.OxToast.confirm === 'function');
+  if (!canConfirm) {
+    _epToast('⚠ ' + (issue?.message || fallbackMsg || title), 'warn');
+    return;
+  }
+  const go = await window.OxToast.confirm({
+    title,
+    body,
+    confirmText: actionLabel,
+    cancelText: 'Seguir viendo',
+    danger: issue?.severity === 'danger',
+  });
+  if (go && actionUrl) window.location.href = actionUrl;
+}
 
 function _epBadgeInc() {
   const badge = document.querySelector('[data-cart-badge]');

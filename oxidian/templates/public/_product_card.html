@@ -19,7 +19,7 @@
      tabindex="-1" aria-hidden="true">
     {% if p.imagen_url %}
       {% set _src = p.imagen_url|upload_url %}
-      <img src="{{ _src }}" alt="{{ p.nombre }}" loading="lazy"
+      <img src="{{ _src }}" alt="{{ p.nombre }}" loading="eager" decoding="async"
            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
       <div class="ep-card-img-emoji" style="display:none">
         {%- if p.es_combo %}🎁{%- elif p.categoria and 'beb' in p.categoria.nombre|lower %}🥤{%- elif p.categoria and ('dulce' in p.categoria.nombre|lower or 'postre' in p.categoria.nombre|lower) %}🍮{%- elif p.categoria and 'pizza' in p.categoria.nombre|lower %}🍕{%- elif p.categoria and 'ensalada' in p.categoria.nombre|lower %}🥗{%- else %}{{ brand.fallback_emoji or '🍽️' }}{%- endif %}

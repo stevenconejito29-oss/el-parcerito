@@ -156,6 +156,30 @@ class BotHandoffDestinationTest(unittest.TestCase):
         self.assertIsNone(payload["cliente"])
         self.assertEqual(payload["negocio"]["horario"], "")
 
+    def test_customer_bot_contract_is_informational_only(self):
+        headers = {"X-Bot-Key": "test-bot-key"}
+
+        assistant = self.client.get("/api/bot/asistente", headers=headers)
+        self.assertEqual(assistant.status_code, 200)
+        assistant_payload = assistant.get_json()
+        self.assertFalse(assistant_payload["negocio"]["order_create_enabled"])
+        self.assertIn("Toda compra se finaliza directamente", assistant_payload["reglas"]["pedido"])
+
+        flow = self.client.get("/api/bot/menu-flow", headers=headers)
+        self.assertEqual(flow.status_code, 200)
+        flow_payload = flow.get_json()
+        actions = {item["action"] for item in flow_payload["menu_principal"]["opciones"]}
+        self.assertNotIn("pedido_inicio", actions)
+        self.assertIn("abrir_tienda", actions)
+
+        create = self.client.post(
+            "/api/bot/pedido/crear",
+            json={"telefono": "+34610000001", "items": []},
+            headers=headers,
+        )
+        self.assertEqual(create.status_code, 403)
+        self.assertEqual(create.get_json()["code"], "BOT_ORDER_CREATE_DISABLED")
+
     def test_branding_exposes_role_scoped_whatsapp_capabilities(self):
         admin = User(
             nombre="Admin limitado",

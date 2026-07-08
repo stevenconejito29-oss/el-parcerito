@@ -92,6 +92,10 @@ class CartOrderGroupTest(unittest.TestCase):
 
         self.assertFalse(response["ok"])
         self.assertIn("modalidad", response["msg"].lower())
+        self.assertEqual(response["issue"]["code"], "fulfillment_conflict")
+        self.assertEqual(response["issue"]["action_label"], "Ver carrito")
+        self.assertIn("Solo llevar", [p["nombre"] for p in response["issue"]["products"]])
+        self.assertIn("Solo recoger", [p["nombre"] for p in response["issue"]["products"]])
 
     def test_immediate_and_scheduled_families_cannot_share_cart(self):
         # Regla: pedido inmediato y pedido con fecha fija son familias distintas.
@@ -167,6 +171,8 @@ class CartOrderGroupTest(unittest.TestCase):
         response = self._add(producto).get_json()
         # El producto no debe siquiera aparecer disponible en modo retail.
         self.assertFalse(response["ok"])
+        self.assertEqual(response["issue"]["code"], "vertical")
+        self.assertEqual(response["issue"]["action_label"], "Ver catálogo actual")
 
     def test_producto_vertical_ambos_pasa_en_cualquier_nicho(self):
         # vertical=ambos siempre pasa, sea comida o retail.

@@ -11,6 +11,7 @@ const RUN_ID = new Date().toISOString().replace(/[:.]/g, '-');
 const OUTPUT_DIR = path.join(OUTPUT_ROOT, RUN_ID);
 const ENV = loadEnv(path.join(ROOT, '.env.cosmos.local'));
 const PASSWORD = process.env.VISUAL_PASSWORD || ENV.SEED_PASSWORD;
+const POINTS_ENABLED = process.env.VISUAL_POINTS_ENABLED !== '0';
 const BROWSER = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
   || '/home/panzeta/.cache/ms-playwright/chromium-1169/chrome-linux/chrome';
 
@@ -231,7 +232,7 @@ async function capturePublic(page) {
   }
   await snap(page, 'carrito-con-producto', '/carrito', 'flujos');
   await snap(page, 'checkout-datos-pedido', '/checkout', 'flujos');
-  await snap(page, 'checkout-puntos-whatsapp', '/checkout', 'flujos', async () => {
+  if (POINTS_ENABLED) await snap(page, 'checkout-puntos-whatsapp', '/checkout', 'flujos', async () => {
     if (!page.url().includes('/checkout')) return;
     const phone = page.locator('#tel_input');
     await phone.fill('699 111 222');
@@ -271,7 +272,7 @@ async function captureSuperadmin(page) {
     ['admin-menu-config', '/admin/menu-config'],
     ['admin-analytics', '/admin/analytics'],
     ['marketing-dashboard', '/marketing/dashboard'],
-    ['marketing-puntos', '/marketing/puntos'],
+    ...(POINTS_ENABLED ? [['marketing-puntos', '/marketing/puntos']] : []),
     ['marketing-campanas', '/marketing/campanas'],
     ['pos-catalogo', '/pos/'],
     ['pos-historial', '/pos/historial'],

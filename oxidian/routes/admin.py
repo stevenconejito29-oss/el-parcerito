@@ -102,6 +102,7 @@ _FEATURE_URL_MAP = {
     "/admin/stock":        "stock",
     "/admin/pagos-staff":  "staff_pagos",
     "/admin/analytics":    "reportes",
+    "/admin/ia-analisis":  "reportes",
     "/admin/notificaciones": "whatsapp",
     "/admin/usuarios":     "usuarios",
     "/admin/clientes":     "usuarios",

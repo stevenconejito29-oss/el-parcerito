@@ -1094,7 +1094,7 @@ def guardar_chatbot():
         descripcion="Números adicionales autorizados para administrar el chatbot",
     )
 
-    # ── Configuración del Asistente IA del bot ──
+    # ── Configuración de IA administrativa ──
     ai_enabled = "1" if request.form.get("bot_ai_enabled") == "1" else "0"
     ai_provider = (request.form.get("bot_ai_provider") or "").strip().lower()
     if ai_provider not in {"", "groq", "openai"}:
@@ -1116,20 +1116,20 @@ def guardar_chatbot():
         flash("Para activar la IA debes indicar proveedor, modelo y API key.", "danger")
         return redirect(url_for("superadmin.chatbot"))
     SiteConfig.set("BOT_AI_ENABLED", ai_enabled, user_id=current_user.id,
-                   descripcion="Activa/desactiva el fallback IA del bot")
+                   descripcion="Activa/desactiva la IA administrativa")
     SiteConfig.set("BOT_AI_PROVIDER", ai_provider, user_id=current_user.id,
                    descripcion="Proveedor IA (groq | openai)")
     SiteConfig.set("BOT_AI_MODEL", ai_model, user_id=current_user.id,
-                   descripcion="Modelo IA usado por el bot")
+                   descripcion="Modelo IA usado para análisis internos")
     SiteConfig.set("BOT_AI_RULES", ai_rules, user_id=current_user.id,
-                   descripcion="Reglas extra del system prompt del bot")
+                   descripcion="Reglas extra del prompt de análisis interno")
     SiteConfig.set("BOT_AI_DAILY_CLIENT", ai_daily_client, user_id=current_user.id,
-                   descripcion="Máximo de consultas IA diarias por cliente")
+                   descripcion="Máximo de consultas IA diarias por usuario admin")
     SiteConfig.set("BOT_AI_DAILY_GLOBAL", ai_daily_global, user_id=current_user.id,
                    descripcion="Máximo de consultas IA diarias globales")
     if ai_api_key_new:
         SiteConfig.set("BOT_AI_API_KEY", ai_api_key_new, user_id=current_user.id,
-                       descripcion="API key del proveedor IA del bot")
+                       descripcion="API key del proveedor IA administrativa")
 
     AuditLog.registrar(current_user.id, "guardar_chatbot", "site_config",
                        detalle=bot_url, ip=request.remote_addr)
@@ -1234,7 +1234,7 @@ LOCKED_CONFIG_KEYS = frozenset({
     "BOT_API_URL", "BOT_OXIDIAN_URL", "BOT_API_KEY", "BOT_PANEL_KEY",
     "BOT_ADMIN_NUMBERS", "BOT_AI_ENABLED", "BOT_AI_API_KEY",
     "BOT_AI_PROVIDER", "BOT_AI_MODEL", "BOT_AI_RULES",
-    "BOT_AI_DAILY_CLIENT", "BOT_AI_DAILY_GLOBAL", "BOT_ALLOW_ORDER_CREATE",
+    "BOT_AI_DAILY_CLIENT", "BOT_AI_DAILY_GLOBAL",
     "BOT_EMAIL_DOMAIN",
     "EVOLUTION_API_URL", "EVOLUTION_INSTANCE",
     # Sistema

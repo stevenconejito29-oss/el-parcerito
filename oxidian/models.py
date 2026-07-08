@@ -2916,6 +2916,10 @@ class SiteConfig(db.Model):
 
     @staticmethod
     def get(clave, default=None):
+        from flask import has_app_context
+
+        if not has_app_context():
+            return default
         try:
             from flask import g
             cache = g.__dict__.setdefault("_siteconfig_cache", {})
@@ -2932,8 +2936,9 @@ class SiteConfig(db.Model):
     def set(clave, valor, user_id=None, descripcion=None):
         """Upsert de una clave de configuración. NO hace commit — el llamador es responsable."""
         try:
-            from flask import g
-            g.__dict__.get("_siteconfig_cache", {}).pop(clave, None)
+            from flask import g, has_app_context
+            if has_app_context():
+                g.__dict__.get("_siteconfig_cache", {}).pop(clave, None)
             entry = SiteConfig.query.filter_by(clave=clave).first()
             valor_normalizado = None if valor is None else str(valor)
             if entry:

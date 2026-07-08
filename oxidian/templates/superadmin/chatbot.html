@@ -128,7 +128,7 @@
 </div>
 
 {# ── SECCIÓN 2: PRUEBA Y REFERENCIA ── #}
-<div class="cb-section-label mt-5">2 · Prueba, comandos y flujo del cliente</div>
+<div class="cb-section-label mt-5">2 · Prueba, comandos y flujo informativo del cliente</div>
 <div class="grid xl:grid-cols-3 gap-4 mb-2">
 
   {# Prueba de envío #}
@@ -167,7 +167,7 @@
       </div>
     </div>
     <div class="p-3 rounded-lg text-xs" style="background:rgba(255,171,0,.06);border:1px solid rgba(255,171,0,.15);color:rgba(255,171,0,.9)">
-      💡 Úsalo para validar el menú y el flujo de pedido tal como lo ve el cliente.
+      💡 Úsalo para validar el menú informativo tal como lo ve el cliente.
     </div>
   </div>
 
@@ -176,8 +176,9 @@
     <h2 class="cb-section-title mb-3">💬 Conversación del cliente</h2>
     <p class="text-sm mb-3" style="color:var(--col-muted)">El bot pregunta qué necesita y reconoce frases naturales. Solo muestra ayuda guiada cuando no logra entender.</p>
     <div class="space-y-2 text-sm">
-      <p>“Quiero hacer un pedido” → abre la tienda online.</p>
+      <p>“Quiero comprar” → abre la tienda online.</p>
       <p>“¿Dónde va mi pedido?” → consulta el estado real.</p>
+      <p>“¿Están abiertos?” → informa estado y horario.</p>
       <p>“Necesito hablar con alguien” → atención humana o cola.</p>
       <p>Preguntas frecuentes → respuesta fija, sin gastar IA.</p>
     </div>
@@ -307,23 +308,23 @@
       <a href="{{ url_for('superadmin.config') }}" class="ox-btn-ghost text-sm">Ver variables globales</a>
     </div>
 
-    {# ───────────────────────── ASISTENTE IA ───────────────────────── #}
+    {# ───────────────────────── IA ADMINISTRATIVA ───────────────────────── #}
     <div class="lg:col-span-2" style="border-top:1px solid var(--col-border); padding-top:1rem; margin-top:.75rem">
-      <h3 class="cb-section-title" style="font-size:1rem; margin-bottom:.4rem">🧠 Asistente IA del chatbot</h3>
+      <h3 class="cb-section-title" style="font-size:1rem; margin-bottom:.4rem">🧠 IA administrativa</h3>
       <p class="chat-help" style="margin-bottom:.9rem">
-        El bot solo da <strong>información</strong> (horario, cobertura, estado del pedido y enlace a la tienda).
-        Para pedir, siempre redirige a la web. La IA solo interviene cuando las FAQs y los filtros locales
-        no resuelven el mensaje.
+        Uso interno para admin y super admin: analiza datos agregados de la tienda, ventas,
+        productos, combos y módulos activos. El chatbot del cliente no usa IA generativa;
+        responde con opciones, FAQs, palabras clave, búsqueda de catálogo y atención humana.
       </p>
     </div>
 
     <div>
       <label class="chat-label">IA habilitada</label>
       <select name="bot_ai_enabled" class="chat-input">
-        <option value="0" {% if bot_ai_enabled != '1' %}selected{% endif %}>No (solo FAQs + intents)</option>
-        <option value="1" {% if bot_ai_enabled == '1' %}selected{% endif %}>Sí (con fallback IA)</option>
+        <option value="0" {% if bot_ai_enabled != '1' %}selected{% endif %}>No</option>
+        <option value="1" {% if bot_ai_enabled == '1' %}selected{% endif %}>Sí, solo para consultas internas</option>
       </select>
-      <p class="chat-help">Si está apagada, el bot responde solo con FAQs y un mensaje genérico cuando no entiende.</p>
+      <p class="chat-help">Activa consultas como “top productos”, “mejora del ticket medio” o “combos sugeridos” desde panel o WhatsApp admin.</p>
       {% if bot_ai_enabled == '1' %}
       <button type="submit" formaction="{{ url_for('superadmin.chatbot_test_ai') }}" formmethod="post" class="ox-btn-ghost text-sm mt-2">Probar conexión IA</button>
       {% endif %}
@@ -352,14 +353,14 @@
     </div>
 
     <div class="lg:col-span-2">
-      <label class="chat-label">Reglas extra del asistente (prompt opcional)</label>
-      <textarea name="bot_ai_rules" rows="3" class="chat-input" placeholder="Ej: Siempre responde en español. Cuando alguien pida un producto, di 'Mírelo y pídalo en la tienda: TIENDA_URL'. No tomes pedidos por WhatsApp.">{{ bot_ai_rules }}</textarea>
-      <p class="chat-help">Se concatena al prompt base. Mantén las instrucciones cortas para ahorrar tokens.</p>
+      <label class="chat-label">Reglas extra del analista IA</label>
+      <textarea name="bot_ai_rules" rows="3" class="chat-input" placeholder="Ej: responde con acciones concretas, prioriza margen, no inventes números y diferencia comida de retail.">{{ bot_ai_rules }}</textarea>
+      <p class="chat-help">Se concatena al prompt base del análisis interno. Mantén instrucciones cortas y de negocio.</p>
     </div>
     <div>
-      <label class="chat-label">Consultas IA por cliente / día</label>
+      <label class="chat-label">Consultas IA por usuario / día</label>
       <input type="number" name="bot_ai_daily_client" min="1" max="1000" value="{{ bot_ai_daily_client }}" class="chat-input">
-      <p class="chat-help">Las respuestas fijas, estados y FAQs no consumen este límite.</p>
+      <p class="chat-help">Aplica a usuarios admin/superadmin que consultan análisis.</p>
     </div>
     <div>
       <label class="chat-label">Consultas IA globales / día</label>

@@ -31,6 +31,7 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
             SQLALCHEMY_DATABASE_URI="sqlite://",
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
             CART_MAX_QTY=20,
+            SKIP_DELIVERY_VALIDATION=True,
         )
         db.init_app(self.app)
         self.app.register_blueprint(public_bp)

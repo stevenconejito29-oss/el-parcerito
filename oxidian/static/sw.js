@@ -1,12 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════
-   Oxidian — Service Worker v36
+   Oxidian — Service Worker v37
    • Assets propios CSS/JS/IMG: network-first + fallback cacheado
    • HTML público y datos de sesión: network-only
    • API / Admin       : Network-only (nunca cachear dinámico)
    • Push Notifications: Muestra notificaciones + abre URL al click
    ═══════════════════════════════════════════════════════════════ */
 
-const CACHE_STATIC = "ox-static-v36";
+const CACHE_STATIC = "ox-static-v37";
 const CACHE_PREFIX = "ox-";
 
 const PRECACHE = [
@@ -83,7 +83,7 @@ background:#D9961A;color:#1B0A00;font-weight:800;font-size:1rem;text-decoration:
 <div class="icon">📡</div>
 <p class="title">Sin conexión</p>
 	<p>Esta sección necesita internet para proteger tus datos y confirmar cambios.</p>
-<a href="/">Volver al menú</a>
+<a href="/">Volver al inicio</a>
 <button onclick="location.reload()">Reintentar</button>
 </body></html>`,
     { headers: { "Content-Type": "text/html;charset=utf-8" } }

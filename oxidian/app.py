@@ -206,7 +206,8 @@ def create_app(env="default"):
             capabilities.append("recogida en local")
         if profile["pedidos_programados"]:
             capabilities.append("pedidos por fecha")
-        description = f"{_catalogo_word} online y carrito con {', '.join(capabilities)}."
+        capabilities_text = ", ".join(capabilities) if capabilities else "compra guiada"
+        description = f"{_catalogo_word} online y carrito con {capabilities_text}."
         shortcuts = [
             {"name": f"Ver {_catalogo_word.lower()}", "short_name": _catalogo_word, "description": "Explora el catalogo", "url": "/", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]},
             {"name": "Mi carrito", "short_name": "Carrito", "description": "Ver pedido actual", "url": "/carrito", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]},

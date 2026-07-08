@@ -176,8 +176,8 @@ def _json_bool(value):
 
 
 def _bot_order_create_enabled():
-    """Permite crear pedidos desde bot solo si está habilitado explícitamente."""
-    return _config_bool("BOT_ALLOW_ORDER_CREATE", "0")
+    """El chatbot de cliente nunca crea pedidos: toda compra termina en la web."""
+    return False
 
 
 @api_bot_bp.route("/ai/config")
@@ -2293,30 +2293,40 @@ def asistente_bot():
         nombre = SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda")
         tienda_url = get_public_store_url(request.url_root)
         telefono = SiteConfig.get("TELEFONO_NEGOCIO", "")
+        features = get_store_features()
+        menu = [
+            {"key": "1", "label": "Ver menu y combos en la web", "endpoint": "GET /api/bot/catalogo/completo"},
+            {"key": "2", "label": "Estado de pedido", "endpoint": "GET /api/bot/pedido/estado"},
+        ]
+        if features["puntos"]:
+            menu.append({"key": "3", "label": "Puntos", "endpoint": "GET /api/bot/puntos?telefono="})
+        if features["delivery"]:
+            menu.append({"key": "4", "label": "Cobertura delivery", "endpoint": "GET /api/bot/cobertura?direccion="})
+        menu.extend([
+            {"key": "5", "label": "Abrir tienda online", "endpoint": None, "url": tienda_url},
+            {"key": "6", "label": "Horarios y contacto", "endpoint": "GET /api/bot/negocio"},
+            {"key": "7", "label": "Hablar con agente", "action": "handoff"},
+        ])
         return jsonify({
             "ok": True,
             "negocio": {
                 "nombre": nombre,
                 "telefono": telefono,
                 "tienda_url": tienda_url,
+                "delivery_enabled": features["delivery"],
+                "pickup_enabled": features["recogida"],
+                "points_enabled": features["puntos"],
+                "order_create_enabled": False,
                 "horario": {
                     "apertura": SiteConfig.get("HORARIO_APERTURA", "09:00"),
                     "cierre": SiteConfig.get("HORARIO_CIERRE", "22:30"),
                 },
             },
-            "menu": [
-                {"key": "1", "label": "Ver menu y combos", "endpoint": "GET /api/bot/catalogo/completo"},
-                {"key": "2", "label": "Estado de pedido", "endpoint": "GET /api/bot/pedido/estado"},
-                {"key": "3", "label": "Puntos", "endpoint": "GET /api/bot/puntos?telefono="},
-                {"key": "4", "label": "Cobertura delivery", "endpoint": "GET /api/bot/cobertura?direccion="},
-                {"key": "5", "label": "Abrir tienda online", "endpoint": None, "url": tienda_url},
-                {"key": "6", "label": "Horarios y contacto", "endpoint": "GET /api/bot/negocio"},
-                {"key": "7", "label": "Hablar con agente", "action": "handoff"},
-            ],
+            "menu": menu,
             "reglas": {
                 "identificar_cliente": "Usa telefono como identificador principal.",
                 "estado_pedido": "Consulta por numero_pedido y telefono cuando el cliente lo tenga; si no, por telefono para traer el ultimo pedido.",
-                "pedido": "No crees pedidos por chatbot. Para comprar, envia al cliente a tienda_url.",
+                "pedido": "No crees pedidos por chatbot. Toda compra se finaliza directamente en tienda_url.",
                 "pagos": "Efectivo y Bizum son confirmaciones manuales, no pasarela bancaria.",
                 "agente": "Si hay duda, queja, direccion confusa o pago no claro, deriva al telefono del negocio.",
             },
@@ -2343,10 +2353,77 @@ def menu_flow():
         horario_ap = SiteConfig.get("HORARIO_APERTURA", "09:00")
         horario_ci = SiteConfig.get("HORARIO_CIERRE", "22:30")
         tipo_tienda = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
+        features = get_store_features()
         es_comida = (tipo_tienda == "comida")
         catalogo_label = "menú" if es_comida else "catálogo"
         catalogo_emoji = "🍽️" if es_comida else "🛍️"
         preparando_emoji = "👨‍🍳" if es_comida else "📦"
+        puntos_on = bool(features.get("puntos"))
+        delivery_on = bool(features.get("delivery"))
+
+        menu_opciones = [
+            {"key": "1", "emoji": catalogo_emoji, "label": f"Ver el {catalogo_label}", "action": "menu_catalogo"},
+            {"key": "2", "emoji": "🔥", "label": "Promociones activas", "action": "promociones"},
+            {"key": "3", "emoji": "🎟️", "label": "Mis cupones", "action": "cupones"},
+        ]
+        if puntos_on:
+            menu_opciones.append({"key": "4", "emoji": "⭐", "label": "Consultar mis puntos", "action": "puntos_consulta"})
+        if delivery_on:
+            menu_opciones.append({"key": "5", "emoji": "📍", "label": "Ver cobertura de entrega", "action": "cobertura"})
+        menu_opciones.extend([
+            {"key": "6", "emoji": "🛒", "label": "Abrir tienda online", "action": "abrir_tienda"},
+            {"key": "7", "emoji": "📦", "label": "Estado de mi pedido", "action": "estado_pedido"},
+            {"key": "8", "emoji": "👨‍💼", "label": "Hablar con un agente", "action": "agente"},
+        ])
+        flujo_puntos = {
+            "habilitado": puntos_on,
+            "paso_1": {
+                "mensaje": (
+                    "⭐ *Sistema de puntos*\n\n¿Cuál es tu número de WhatsApp?\n"
+                    "_(es tu identificación; no necesitas registrarte)_"
+                    if puntos_on
+                    else "El club de puntos no está disponible ahora mismo."
+                ),
+                "accion": "pedir_telefono" if puntos_on else "volver_menu",
+            },
+            "paso_2_con_puntos": {
+                "mensaje": "¡Tienes *{puntos}* puntos! 🌟\nEquivalen a *€{valor_euro}* de descuento.\n\nEscribe *CANJEAR* para ver los productos que puedes conseguir con tus puntos\nO *MENU* para volver al inicio",
+                "accion": "mostrar_opciones_puntos",
+            },
+            "paso_2_sin_puntos": {
+                "mensaje": "Aún no tienes puntos acumulados 😅\nPero en cada compra ganas *1 punto por €* gastado.\n¿Quieres ver el menú para pedir? 🛒",
+                "accion": "ir_al_menu",
+            },
+            "paso_3_productos": {
+                "mensaje": "🎁 *Productos que puedes canjear:*\n{lista_productos}\n\nArma tu pedido en la web y elige el canje durante la confirmación.",
+                "accion": "abrir_tienda",
+            },
+            "paso_4_confirmar": {
+                "mensaje": "🔐 Para confirmar el canje de *{puntos_necesarios}* puntos por *{producto_nombre}*, te enviaremos un código a este WhatsApp.\n\n¿Lo confirmas? Responde *SÍ* para recibir el código",
+                "accion": "pedir_confirmacion_canje",
+            },
+            "paso_5_codigo": {
+                "mensaje": "📱 Te hemos enviado un código de 6 dígitos.\nEscríbelo aquí para confirmar el canje:",
+                "accion": "pedir_codigo_verificacion",
+            },
+            "paso_6_exito": {
+                "mensaje": "✅ ¡Listo parce! *{puntos_descontados}* puntos canjeados.\nTu *{producto_nombre}* está incluido en tu próximo pedido.\n\nTe quedan *{puntos_restantes}* puntos 🌟",
+                "accion": "canje_completado",
+            },
+        }
+        entregado_msg = "🎉 ¡Pedido *{num}* entregado! Gracias parce 💛"
+        if puntos_on:
+            entregado_msg += "\nGanaste *{puntos}* puntos ⭐"
+        flujo_puntos_instrucciones = [
+            "1. El módulo de puntos está apagado; no ofrecer consulta ni canje."
+        ]
+        if puntos_on:
+            flujo_puntos_instrucciones = [
+                "1. Usar el teléfono del propio chat como identidad",
+                "2. GET /api/bot/puntos?telefono=X → informar saldo",
+                "3. GET /api/bot/puntos/productos-canjeables?telefono=X → informar opciones",
+                "4. Enviar al cliente a la tienda web para realizar el pedido y aplicar el canje",
+            ]
 
         # Construir categorías disponibles
         categorias = Categoria.query.filter_by(activo=True).order_by(Categoria.id).all()
@@ -2388,15 +2465,7 @@ def menu_flow():
             # ── MENÚ PRINCIPAL ──
             "menu_principal": {
                 "bienvenida": f"¡Hola parce! 🥟 Bienvenido a *{nombre}*\n\n¿En qué te ayudo hoy?",
-                "opciones": [
-                    {"key": "1", "emoji": catalogo_emoji, "label": f"Ver el {catalogo_label}",          "action": "menu_catalogo"},
-                    {"key": "2", "emoji": "🔥", "label": "Promociones activas",   "action": "promociones"},
-                    {"key": "3", "emoji": "🎟️", "label": "Mis cupones",           "action": "cupones"},
-                    {"key": "4", "emoji": "⭐", "label": "Consultar mis puntos",  "action": "puntos_consulta"},
-                    {"key": "5", "emoji": "🛒", "label": "Hacer un pedido",       "action": "pedido_inicio"},
-                    {"key": "6", "emoji": "📦", "label": "Estado de mi pedido",   "action": "estado_pedido"},
-                    {"key": "7", "emoji": "👨‍💼", "label": "Hablar con un agente", "action": "agente"},
-                ]
+                "opciones": menu_opciones,
             },
 
             # ── MENÚ CATÁLOGO (por categoría) ──
@@ -2408,46 +2477,17 @@ def menu_flow():
             },
 
             # ── FLUJO DE PUNTOS ──
-            "flujo_puntos": {
-                "paso_1": {
-                    "mensaje": "⭐ *Sistema de puntos*\n\n¿Cuál es tu número de WhatsApp?\n_(es tu identificación; no necesitas registrarte)_",
-                    "accion": "pedir_telefono",
-                },
-                "paso_2_con_puntos": {
-                    "mensaje": "¡Tienes *{puntos}* puntos! 🌟\nEquivalen a *€{valor_euro}* de descuento.\n\nEscribe *CANJEAR* para ver los productos que puedes conseguir con tus puntos\nO *MENU* para volver al inicio",
-                    "accion": "mostrar_opciones_puntos",
-                },
-                "paso_2_sin_puntos": {
-                    "mensaje": "Aún no tienes puntos acumulados 😅\nPero en cada compra ganas *1 punto por €* gastado.\n¿Quieres ver el menú para pedir? 🛒",
-                    "accion": "ir_al_menu",
-                },
-                "paso_3_productos": {
-                    "mensaje": "🎁 *Productos que puedes canjear:*\n{lista_productos}\n\nArma tu pedido en la web y elige el canje durante la confirmación.",
-                    "accion": "abrir_tienda",
-                },
-                "paso_4_confirmar": {
-                    "mensaje": "🔐 Para confirmar el canje de *{puntos_necesarios}* puntos por *{producto_nombre}*, te enviaremos un código a este WhatsApp.\n\n¿Lo confirmas? Responde *SÍ* para recibir el código",
-                    "accion": "pedir_confirmacion_canje",
-                },
-                "paso_5_codigo": {
-                    "mensaje": "📱 Te hemos enviado un código de 6 dígitos.\nEscríbelo aquí para confirmar el canje:",
-                    "accion": "pedir_codigo_verificacion",
-                },
-                "paso_6_exito": {
-                    "mensaje": "✅ ¡Listo parce! *{puntos_descontados}* puntos canjeados.\nTu *{producto_nombre}* está incluido en tu próximo pedido.\n\nTe quedan *{puntos_restantes}* puntos 🌟",
-                    "accion": "canje_completado",
-                },
-            },
+            "flujo_puntos": flujo_puntos,
 
             # ── FLUJO DE PEDIDO ──
             "flujo_pedido": {
                 "paso_1": {
-                    "mensaje": "🛒 *Hacer un pedido*\n\nLas compras se realizan en la tienda web. Tu WhatsApp identifica automáticamente tus pedidos y puntos.",
-                    "accion": "pedir_telefono",
+                    "mensaje": "🛒 *Tienda online*\n\nLas compras se realizan únicamente en la web para validar stock, combos, horarios, módulos activos y pago.",
+                    "accion": "abrir_tienda",
                 },
                 "paso_2": {
-                    "mensaje": "¡Hola *{nombre}*! 👋\n\nPide visitando nuestra tienda web:\n🌐 {tienda_url}\n\nO dime qué quieres y te ayudo paso a paso 📝",
-                    "accion": "mostrar_opciones_pedido",
+                    "mensaje": "¡Hola *{nombre}*! 👋\n\nAbre la tienda web aquí:\n🌐 {tienda_url}\n\nPor WhatsApp puedo ayudarte con estado, horario, información general o pasarte con una persona.",
+                    "accion": "abrir_tienda",
                 },
             },
 
@@ -2457,7 +2497,7 @@ def menu_flow():
                 "armando":    f"{preparando_emoji} Estamos preparando tu pedido *{{num}}*. En breve sale.",
                 "listo":      "📦 Tu pedido *{num}* está listo y pronto sale a entregarse.",
                 "en_ruta":    "🚀 Tu pedido *{num}* está en camino. Cuando el repartidor llegue te enviaremos el código de entrega.",
-                "entregado":  "🎉 ¡Pedido *{num}* entregado! Gracias parce 💛\nGanaste *{puntos}* puntos ⭐",
+                "entregado":  entregado_msg,
                 "cancelado":  "❌ Tu pedido *{num}* fue cancelado. Si tienes dudas contáctanos.",
             },
 
@@ -2470,12 +2510,7 @@ def menu_flow():
                     "Para bebidas: filtra categoría con 'bebida'",
                     "Para dulces: filtra categoría con 'dulce'",
                 ],
-                "flujo_puntos": [
-                    "1. Usar el teléfono del propio chat como identidad",
-                    "2. GET /api/bot/puntos?telefono=X → informar saldo",
-                    "3. GET /api/bot/puntos/productos-canjeables?telefono=X → informar opciones",
-                    "4. Enviar al cliente a la tienda web para realizar el pedido y aplicar el canje",
-                ],
+                "flujo_puntos": flujo_puntos_instrucciones,
                 "palabras_clave": {
                     "menu": ["menú", "carta", "productos", "que tienen", "que hay"],
                     "promociones": ["promo", "oferta", "descuento", "rebaja", "barato"],
@@ -2859,6 +2894,8 @@ def info_negocio():
         capacidades = ["consultas", "estado del pedido"]
         if features["puntos"]:
             capacidades.append("puntos")
+        if features["delivery"]:
+            capacidades.append("cobertura")
         return jsonify({
             "ok": True,
             "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda"),
@@ -2876,9 +2913,11 @@ def info_negocio():
             "delivery_enabled": features["delivery"],
             "pickup_enabled": features["recogida"],
             "points_enabled": features["puntos"],
+            "order_create_enabled": False,
+            "capacidades": capacidades,
             "tienda_url": tienda_url,
             "mensaje_pedido": (
-                f"🛒 Para hacer tu pedido visita:\n{tienda_url}\n\n"
+                f"🛒 Para comprar, abre la tienda online:\n{tienda_url}\n\n"
                 f"Por WhatsApp puedo ayudarte con {', '.join(capacidades)} o pasarte con una persona."
             ) if tienda_url else (
                 "🛒 La tienda online no esta configurada ahora mismo. "
@@ -3528,6 +3567,22 @@ def ai_admin_consulta():
         return jsonify({"ok": False, "error": "Escribe una pregunta más específica."})
     if len(pregunta) > 500:
         return jsonify({"ok": False, "error": "Pregunta demasiado larga (máx 500)."})
+
+    # Rate limit por teléfono: máx N consultas/hora (configurable). Evita que
+    # un admin comprometido queme tokens del proveedor IA en un bucle.
+    try:
+        limite_hora = int(SiteConfig.get("IA_ADMIN_LIMITE_HORA", "30") or "30")
+    except (TypeError, ValueError):
+        limite_hora = 30
+    ventana = _utcnow() - timedelta(hours=1)
+    recientes = AuditLog.query.filter(
+        AuditLog.accion == "ia_consulta_whatsapp",
+        AuditLog.creado_en >= ventana,
+        AuditLog.detalle.isnot(None),
+        AuditLog.ip == request.remote_addr,
+    ).count()
+    if recientes >= limite_hora:
+        return jsonify({"ok": False, "error": f"Has alcanzado el límite de {limite_hora} consultas/hora. Intenta más tarde."})
 
     contexto = _resumen_negocio_para_ia()
     respuesta, error = _llamar_ia_analisis(pregunta, contexto)

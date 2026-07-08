@@ -210,7 +210,7 @@ html[data-theme="light"] {
   max-width: 420px; width: 100%;
 }
 .ox-modal__title { font-size: 18px; font-weight: 800; margin: 0 0 8px; }
-.ox-modal__body  { font-size: 14px; color: var(--col-muted); margin-bottom: 18px; line-height: 1.45; }
+.ox-modal__body  { font-size: 14px; color: var(--col-muted); margin-bottom: 18px; line-height: 1.45; white-space: pre-line; }
 .ox-modal__actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
 .ox-modal__btn {
   min-height: 44px; padding: 0 18px;

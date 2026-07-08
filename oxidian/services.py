@@ -1730,7 +1730,8 @@ def _send_whatsapp_message(telefono: str, mensaje: str) -> bool:
     if str(SiteConfig.get("WHATSAPP_SIMULATE_SEND", "0") or "0").strip().lower() in {
         "1", "true", "yes", "on",
     }:
-        logger.info("WhatsApp simulado para %s", telefono)
+        # Tail-only para no dejar PII completa en logs.
+        logger.info("WhatsApp simulado para tel …%s", (telefono or "")[-3:] or "?")
         return True
     return _bot_http_post("/api/bot/message", {"telefono": telefono, "mensaje": mensaje})
 

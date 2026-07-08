@@ -290,7 +290,7 @@
         {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.caja') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Caja & Analytics</a>{% endif %}
         {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.pagos_pendientes_digital') }}" class="ox-sb-item"><span class="ox-sb-item-icon">✅</span>Pagos pendientes</a>{% endif %}
         {% if has_admin_feature('staff_pagos') %}<a href="{{ url_for('admin.pagos_staff') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💸</span>Pagos & Liquidaciones</a>{% endif %}
-        <a href="{{ url_for('admin.ia_analisis') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤖</span>Consulta IA</a>
+        {% if has_admin_feature('reportes') %}<a href="{{ url_for('admin.ia_analisis') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤖</span>Consulta IA</a>{% endif %}
       </div>
       <div class="ox-sb-divider"></div>
       <div class="ox-sb-section">

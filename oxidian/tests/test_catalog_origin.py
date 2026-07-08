@@ -1,4 +1,5 @@
 import unittest
+from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -58,6 +59,21 @@ class CatalogOriginTest(unittest.TestCase):
         self.assertTrue(_producto_disponible_en_origen(product, "propio", 2))
         self.assertFalse(_producto_disponible_en_origen(product, "proveedor:7", 2))
         self.assertIn(("disponible", "propio", 2), product.calls)
+
+    def test_expired_scheduled_product_is_not_available(self):
+        product = OriginAwareProduct("propio")
+        product.tipo_entrega = "programado"
+        product.modalidad_entrega = "ambas"
+        product.vertical = "ambos"
+        product.fecha_llegada = date.today() - timedelta(days=1)
+
+        with patch("routes.public.get_store_features", return_value={
+            "delivery": True,
+            "recogida": True,
+            "pedidos_programados": True,
+            "puntos": True,
+        }):
+            self.assertFalse(_producto_disponible_en_origen(product, "propio", 1))
 
     def test_legacy_catalog_helper_never_replaces_or_collapses_products(self):
         products = [SimpleNamespace(id=1), SimpleNamespace(id=2)]
@@ -220,6 +236,28 @@ class CatalogOriginTest(unittest.TestCase):
         codes = {issue["code"] for issue in result["issues"]}
         self.assertIn("programados_disabled", codes)
         self.assertIn("fulfillment_modules_disabled", codes)
+
+    def test_cart_compatibility_reports_expired_scheduled_products(self):
+        product = SimpleNamespace(
+            nombre="Lechona sábado pasado",
+            modalidad_entrega="ambas",
+            tipo_entrega="programado",
+            fecha_llegada=date.today() - timedelta(days=1),
+            grupo_pedido=None,
+            vertical="ambos",
+        )
+
+        with patch("routes.public.get_store_features", return_value={
+            "delivery": True,
+            "recogida": True,
+            "pedidos_programados": True,
+            "puntos": True,
+        }):
+            result = _cart_compatibility([product])
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["issues"][0]["code"], "programados_expired")
+        self.assertIn("fecha programada", result["message"].lower())
 
     def test_cart_compatibility_blocks_products_from_other_vertical(self):
         product = SimpleNamespace(

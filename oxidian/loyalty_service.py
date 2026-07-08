@@ -99,7 +99,10 @@ def solicitar_codigo(
     else:
         db.session.flush()
 
-    logger.info("OTP de puntos enviado a cliente %s (tel: %s)", cliente.id, cliente.telefono)
+    # NO loguear teléfono en claro: solo cliente_id + últimos 3 dígitos para trazar
+    # incidencias sin exponer PII completa en logs de gunicorn/journald.
+    _tail = (cliente.telefono or "")[-3:] if cliente.telefono else "?"
+    logger.info("OTP de puntos enviado a cliente %s (tel …%s)", cliente.id, _tail)
     return {"ok": True, "msg": "Código enviado a tu WhatsApp", "puntos": cliente.puntos}
 
 
