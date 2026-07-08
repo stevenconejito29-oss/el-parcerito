@@ -5339,13 +5339,13 @@ async function handleAdminPointsMenu(jid, ses, opcion) {
       return startAdminMenu(jid, ses.nombre);
     case '1':
       setAdminState(ses, 'admin_customer_search');
-      return sendText(jid, 'Escribe el teléfono del cliente. Ejemplo: 622663874');
+      return sendText(jid, 'Escribe el teléfono del cliente. Ejemplo: 612345678');
     case '2':
       setAdminState(ses, 'admin_points_adjust_wait', { sign: 1 });
-      return sendText(jid, 'Escribe *TELEFONO PUNTOS*. Ejemplo: 622663874 50');
+      return sendText(jid, 'Escribe *TELEFONO PUNTOS*. Ejemplo: 612345678 50');
     case '3':
       setAdminState(ses, 'admin_points_adjust_wait', { sign: -1 });
-      return sendText(jid, 'Escribe *TELEFONO PUNTOS*. Ejemplo: 622663874 50');
+      return sendText(jid, 'Escribe *TELEFONO PUNTOS*. Ejemplo: 612345678 50');
     case '4':
       setAdminState(ses, 'admin_points_history_wait');
       return sendText(jid, 'Escribe el teléfono del cliente para ver historial.');
@@ -5371,7 +5371,7 @@ async function handleAdminPointsAdjustWait(jid, ses, text) {
   const amount = Number.parseInt(parts[1], 10);
   const sign = ses.pending?.sign === -1 ? -1 : 1;
   if (!/^[0-9]{6,15}$/.test(phone) || !amount || amount <= 0 || amount > 10000) {
-    return sendText(jid, 'Formato inválido. Escribe *TELEFONO PUNTOS*. Ejemplo: 622663874 50');
+    return sendText(jid, 'Formato inválido. Escribe *TELEFONO PUNTOS*. Ejemplo: 612345678 50');
   }
   try {
     const customer = await findCustomerByPhone(phone, jid);
