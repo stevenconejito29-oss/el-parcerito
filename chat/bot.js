@@ -4355,8 +4355,15 @@ function _levenshteinLE(a, b, limit = 2) {
   return prev[lb];
 }
 
+// Quita tildes/diacríticos para que "café"/"cafe"/"CAFÉ" cuenten como iguales
+// tanto en el input del cliente como en el diccionario de intents. Reduce falsos
+// negativos cuando el usuario escribe con o sin acentos.
+function _stripAccents(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
 function detectClientIntent(text) {
-  const normalized = String(text || '').toLowerCase().trim();
+  const normalized = _stripAccents(String(text || '').toLowerCase().trim());
   if (!normalized) return null;
   if (/\b(?:quiero|deseo|necesito)\s+(?:hacer|realizar)\s+un\s+pedido\b/.test(normalized)) return '1';
   // Match prioritario: opción numérica.
@@ -4365,17 +4372,19 @@ function detectClientIntent(text) {
   if (/^estado$/.test(normalized)) return '2';
   if (/^cancelar$/.test(normalized) || /^cancelar\b/.test(normalized)) return '2';
   if (/^agente$/.test(normalized) || /^humano$/.test(normalized)) return '7';
-  if (/^menu$/.test(normalized) || /^menú$/.test(normalized)) return '1';
+  if (/^menu$/.test(normalized)) return '1';
   // Match por keyword + tolerancia a typos en palabras largas.
   // Estrategia:
   //  - keyword corta (≤4 letras): exigimos palabra entera (regex \b).
   //  - keyword larga: contains substring directo (score 3), o si el cliente
   //    escribió una palabra similar (Levenshtein ≤ 2), score 2.
+  //  - todo se compara sin tildes en ambos lados para robustez.
   const palabrasCliente = normalized.split(/[\s,.!?¡¿]+/).filter(w => w.length >= 3);
-  let mejor = { opcion: null, score: 0 };
+  let mejor = { opcion: null, score: 0, segundo: 0 };
   for (const [opt, keywords] of Object.entries(CLIENT_INTENT_KEYWORDS)) {
     let score = 0;
-    for (const kw of keywords) {
+    for (const kwRaw of keywords) {
+      const kw = _stripAccents(kwRaw);
       if (kw.length <= 4) {
         const re = new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\b`, 'i');
         if (re.test(normalized)) score += 2;
@@ -4391,9 +4400,18 @@ function detectClientIntent(text) {
         }
       }
     }
-    if (score > mejor.score) mejor = { opcion: opt, score };
+    if (score > mejor.score) {
+      mejor = { opcion: opt, score, segundo: mejor.score };
+    } else if (score > mejor.segundo) {
+      mejor.segundo = score;
+    }
   }
-  return mejor.score >= 2 ? mejor.opcion : null;
+  // Umbral mínimo: 2. Además, si el segundo mejor empata exactamente con el
+  // primero, la intención es ambigua y devolvemos null (evita ganador arbitrario
+  // por orden de iteración del objeto).
+  if (mejor.score < 2) return null;
+  if (mejor.segundo === mejor.score) return null;
+  return mejor.opcion;
 }
 
 // ─── MENÚ CLIENTE ────────────────────────────────────────────────────────────
