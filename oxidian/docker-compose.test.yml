@@ -1,0 +1,78 @@
+# ════════════════════════════════════════════════════════════════════
+# OXIDIAN — Entorno de TEST aislado
+# Base de datos efímera + app Oxidian expuesta en puerto 5071.
+# Independiente del stack productivo (usa red y volumen propios).
+#
+# Uso:
+#   docker compose -f oxidian/docker-compose.test.yml up -d
+#   docker compose -f oxidian/docker-compose.test.yml exec oxidian-test \
+#     python3 scripts/seed_matrix.py
+#   Navega: http://localhost:5071
+#
+# Limpiar todo (borra BD test):
+#   docker compose -f oxidian/docker-compose.test.yml down -v
+# ════════════════════════════════════════════════════════════════════
+
+services:
+
+  oxidian-test-db:
+    image: postgres:15-alpine
+    container_name: oxidian-test-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: oxidian
+      POSTGRES_PASSWORD: testpassword
+      POSTGRES_DB: oxidian_test
+    volumes:
+      - oxidian_test_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oxidian -d oxidian_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - oxidian-test-net
+
+  oxidian-test:
+    image: oxidian:latest
+    container_name: oxidian-test
+    restart: unless-stopped
+    depends_on:
+      oxidian-test-db:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      FLASK_ENV: production
+      SECRET_KEY: test-secret-key-do-not-use-in-prod
+      DATABASE_URL: postgresql://oxidian:testpassword@oxidian-test-db:5432/oxidian_test
+      OXIDIAN_DB_USER: oxidian
+      OXIDIAN_DB_PASSWORD: testpassword
+      OXIDIAN_DB_NAME: oxidian_test
+      SEED_PASSWORD: testpassword
+      ADMIN_EMAIL: admin@test.local
+      SUPERADMIN_EMAIL: superadmin@test.local
+      OXIDIAN_KEY: test-oxidian-key
+      BOT_API_KEY: test-bot-key
+      BOT_PANEL_KEY: test-panel-key
+      OWNER_NUMBER: "34600000000"
+      SUPERADMINS: "34600000000"
+      SKIP_DELIVERY_VALIDATION: "1"
+      OXIDIAN_MFA_ENFORCED: "0"
+      OXIDIAN_PUBLIC_URL: "http://localhost:5071"
+      TIENDA_URL: "http://localhost:5071"
+    ports:
+      - "5071:5000"
+    networks:
+      - oxidian-test-net
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport urllib.request\nurllib.request.urlopen('http://127.0.0.1:5000/', timeout=3).read(1)\nPY"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  oxidian_test_db_data:
+
+networks:
+  oxidian-test-net:
+    driver: bridge
