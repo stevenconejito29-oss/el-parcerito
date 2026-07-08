@@ -59,7 +59,7 @@
 <div class="ox-card p-4 mb-5">
   <h3 class="text-sm font-bold text-white mb-2">💼 Reparto del dinero (período)</h3>
   <div class="overflow-x-auto">
-  <table class="w-full text-sm min-w-[320px]">
+  <table class="w-full text-sm min-w-full">
     <tr class="border-b border-zinc-800">
       <td class="py-2">PVP cobrado al cliente (vendido)</td>
       <td class="text-right text-white font-mono">€{{ "%.2f"|format(pvp_vendido|float) }}</td>
@@ -87,7 +87,7 @@
 <details class="ox-card p-4 mb-3" open>
   <summary class="cursor-pointer font-bold text-white">✅ Pedidos vendidos ({{ vendidos|length }})</summary>
   <div class="overflow-x-auto mt-3">
-  <table class="w-full text-sm min-w-[360px]">
+  <table class="w-full text-sm min-w-full">
     <thead class="text-xs uppercase" style="color:var(--col-muted)">
       <tr><th class="text-left py-1">Pedido</th><th class="text-right">PVP</th><th class="text-right">Coste bar</th></tr>
     </thead>

@@ -148,8 +148,9 @@ def _establecimiento_para_origen(origen):
 def _producto_pertenece_al_vertical(producto):
     """Filtra productos que solo se muestran en un vertical concreto.
     `vertical="ambos"` (default) → siempre visible.
-    `vertical="comida"` → solo si TIPO_TIENDA=comida.
-    `vertical="producto"` → solo si TIPO_TIENDA=producto."""
+    `vertical="comida"` → solo si TIPO_TIENDA in ("comida", "mixto").
+    `vertical="producto"` → solo si TIPO_TIENDA in ("producto", "mixto").
+    `TIPO_TIENDA="mixto"` → catálogo unificado (ambos nichos a la vez)."""
     if not producto:
         return False
     v = (getattr(producto, "vertical", None) or "ambos").strip().lower()
@@ -157,6 +158,8 @@ def _producto_pertenece_al_vertical(producto):
         return True
     from models import SiteConfig
     tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
+    if tt == "mixto":
+        return True
     return v == tt
 
 
@@ -2002,7 +2005,18 @@ def club():
     if not _feature_enabled("puntos"):
         flash("El club de puntos no está habilitado en esta tienda.", "info")
         return redirect(url_for("public.index"))
-    return render_template("public/puntos_consulta.html")
+    # Vitrina de canje: productos solo_canje visibles en el catálogo,
+    # ordenados por puntos ascendentes para mostrar primero lo más accesible.
+    canjeables = (
+        Product.query.filter_by(activo=True, solo_canje=True)
+        .filter(Product.puntos_para_canje.isnot(None))
+        .order_by(Product.puntos_para_canje.asc(), Product.nombre.asc())
+        .all()
+    )
+    return render_template(
+        "public/puntos_consulta.html",
+        canjeables=canjeables,
+    )
 
 
 # ─── HELPERS ─────────────────────────────────
