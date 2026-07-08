@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from functools import wraps
 import logging
+from sqlalchemy.orm import joinedload
 from extensions import db, get_or_404
 from models import Order, OrderEvent, User, utcnow as _utcnow
 from services import (avanzar_estado_pedido, distribuir_repartidor,
@@ -173,18 +174,19 @@ def pedidos():
         else "programado" if current_user.rol == "preparacion"
         else "completo"
     )
+    _eager = joinedload(Order.zona)
     if _es_admin_operativo():
-        pendientes = Order.query.filter_by(estado="pendiente").order_by(Order.creado_en).all()
-        armando = Order.query.filter_by(estado="armando").order_by(Order.creado_en).all()
+        pendientes = Order.query.options(_eager).filter_by(estado="pendiente").order_by(Order.creado_en).all()
+        armando = Order.query.options(_eager).filter_by(estado="armando").order_by(Order.creado_en).all()
     else:
-        pendientes = Order.query.filter(
+        pendientes = Order.query.options(_eager).filter(
             Order.estado == "pendiente",
             db.or_(
                 Order.preparador_id == current_user.id,
                 Order.preparador_id.is_(None),
             ),
         ).order_by(Order.creado_en).all() if disponible else []
-        armando = Order.query.filter_by(
+        armando = Order.query.options(_eager).filter_by(
             estado="armando",
             preparador_id=current_user.id,
         ).order_by(Order.creado_en).all()
@@ -213,9 +215,22 @@ def pedidos():
                                   ) or p.creado_en.date())
     pendientes_inmediato = [p for p in pendientes if not _es_encargo(p)]
 
+    # Agrupar los encargos por fecha de entrega para que cocina vea la
+    # planificación del día: cuántos pedidos para hoy, mañana, próximos
+    # días. Se ordena por fecha ascendente. La fecha se calcula tomando
+    # la MÍNIMA entre todos los items del pedido (la más urgente).
+    from collections import OrderedDict
+    encargos_por_fecha: "OrderedDict[object, list]" = OrderedDict()
+    for p in pendientes_encargo:
+        fecha = _fecha_encargo(p) or p.creado_en.date()
+        encargos_por_fecha.setdefault(fecha, []).append(p)
+    hoy_date = _utcnow().date()
+
     return render_template("preparador/pedidos.html",
                            pendientes=pendientes_inmediato,
                            pendientes_encargo=pendientes_encargo,
+                           encargos_por_fecha=encargos_por_fecha,
+                           hoy_date=hoy_date,
                            armando=armando,
                            companeros=companeros,
                            disponible=disponible,

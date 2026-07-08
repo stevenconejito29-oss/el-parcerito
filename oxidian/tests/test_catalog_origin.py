@@ -5,12 +5,15 @@ from unittest.mock import patch
 from flask import Flask, session
 
 from routes.public import (
+    _cart_compatibility,
     _descontar_stock_en_origen,
     _metadata_item_con_origen,
     _normalizar_origen,
     _order_group,
     _order_group_label,
+    _fulfillment_unavailable_reasons,
     _fulfillment_options,
+    _product_fulfillment_badge,
     _product_fulfillment_modes,
     _producto_disponible_en_origen,
     _save_carrito,
@@ -141,6 +144,102 @@ class CatalogOriginTest(unittest.TestCase):
 
         with patch("routes.public.get_store_features", return_value={"delivery": False, "recogida": True}):
             self.assertEqual(_fulfillment_options([SimpleNamespace(modalidad_entrega="ambas")]), ["recogida"])
+
+    def test_fulfillment_badges_are_customer_facing(self):
+        self.assertEqual(
+            _product_fulfillment_badge(SimpleNamespace(modalidad_entrega="delivery"))["label"],
+            "Para llevar",
+        )
+        self.assertEqual(
+            _product_fulfillment_badge(SimpleNamespace(modalidad_entrega="recogida"))["label"],
+            "Recoger en local",
+        )
+        self.assertEqual(
+            _product_fulfillment_badge(SimpleNamespace(modalidad_entrega="ambas"))["label"],
+            "Llevar o recoger",
+        )
+
+    def test_fulfillment_unavailable_reasons_list_blocking_products(self):
+        delivery_only = SimpleNamespace(nombre="Arepa delivery", modalidad_entrega="delivery")
+        pickup_only = SimpleNamespace(nombre="Postre recogida", modalidad_entrega="recogida")
+
+        with patch("routes.public.get_store_features", return_value={"delivery": True, "recogida": True}):
+            reasons = _fulfillment_unavailable_reasons([delivery_only, pickup_only])
+
+        self.assertIn("delivery", reasons)
+        self.assertIn("recogida", reasons)
+        self.assertEqual(reasons["delivery"]["products"], [pickup_only])
+        self.assertEqual(reasons["recogida"]["products"], [delivery_only])
+
+    def test_cart_compatibility_explains_mixed_fulfillment_modes(self):
+        delivery_only = SimpleNamespace(
+            nombre="Arepa delivery",
+            modalidad_entrega="delivery",
+            tipo_entrega="inmediato",
+            grupo_pedido=None,
+            vertical="ambos",
+        )
+        pickup_only = SimpleNamespace(
+            nombre="Postre recogida",
+            modalidad_entrega="recogida",
+            tipo_entrega="inmediato",
+            grupo_pedido=None,
+            vertical="ambos",
+        )
+
+        with patch("routes.public.get_store_features", return_value={
+            "delivery": True,
+            "recogida": True,
+            "pedidos_programados": True,
+            "puntos": True,
+        }):
+            result = _cart_compatibility([delivery_only, pickup_only])
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["issues"][0]["code"], "fulfillment_conflict")
+        self.assertIn("solo para llevar", result["message"])
+        self.assertIn("solo para recoger", result["message"])
+
+    def test_cart_compatibility_respects_disabled_modules_and_programados(self):
+        product = SimpleNamespace(
+            nombre="Bandeja programada",
+            modalidad_entrega="ambas",
+            tipo_entrega="programado",
+            grupo_pedido=None,
+            vertical="ambos",
+        )
+
+        with patch("routes.public.get_store_features", return_value={
+            "delivery": False,
+            "recogida": False,
+            "pedidos_programados": False,
+            "puntos": True,
+        }):
+            result = _cart_compatibility([product])
+
+        codes = {issue["code"] for issue in result["issues"]}
+        self.assertIn("programados_disabled", codes)
+        self.assertIn("fulfillment_modules_disabled", codes)
+
+    def test_cart_compatibility_blocks_products_from_other_vertical(self):
+        product = SimpleNamespace(
+            nombre="Camiseta",
+            modalidad_entrega="ambas",
+            tipo_entrega="inmediato",
+            grupo_pedido=None,
+            vertical="producto",
+        )
+
+        with patch("routes.public.get_store_features", return_value={
+            "delivery": True,
+            "recogida": True,
+            "pedidos_programados": True,
+            "puntos": True,
+        }), patch("routes.public.SiteConfig.get", return_value="comida"):
+            result = _cart_compatibility([product])
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["issues"][0]["code"], "vertical")
 
     def test_order_groups_are_configurable_and_case_insensitive(self):
         general = SimpleNamespace(grupo_pedido=None)

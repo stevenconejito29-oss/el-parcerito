@@ -12,7 +12,7 @@
   {% if producto.es_combo %}
   <a href="{{ url_for('admin.gestionar_combo', producto_id=producto.id) }}" class="ox-btn-primary text-sm">Gestionar componentes</a>
   {% endif %}
-  <a href="{{ url_for('admin.gestionar_extras', producto_id=producto.id) }}" class="ox-btn-primary text-sm">Ingredientes extra</a>
+  <a href="{{ url_for('admin.gestionar_extras', producto_id=producto.id) }}" class="ox-btn-primary text-sm">{% if brand.es_comida %}Ingredientes extra{% else %}Complementos{% endif %}</a>
 </div>
 
 <form method="POST" action="{{ url_for('admin.editar_producto', producto_id=producto.id) }}" enctype="multipart/form-data" class="grid lg:grid-cols-3 gap-5">
@@ -31,7 +31,10 @@
       </div>
       <div>
         <label class="edit-label">Precio de venta (€) *</label>
-        <input type="number" name="precio" step="0.01" min="0" required value="{{ '%.2f'|format(producto.precio|float) }}" class="edit-input">
+        <input type="number" id="ep-precio" name="precio" step="0.01" min="0" required value="{{ '%.2f'|format(producto.precio|float) }}" class="edit-input">
+        <p id="ep-precio-hint" class="text-xs mt-1" style="color:var(--col-muted);display:none">
+          Modo solo-canje: el precio queda en €0 automáticamente.
+        </p>
       </div>
       <div>
         <label class="edit-label">Precio de costo (€)</label>
@@ -122,16 +125,46 @@
       </div>
     </div>
 
+    {# Sección "Puntos y alérgenos" — solo se renderiza si HAY algo que enseñar.
+       Si puntos=OFF y modo=producto (sin alérgenos), toda la sección se oculta. #}
+    {% set _mostrar_puntos = brand.puntos %}
+    {% set _mostrar_alergenos = (brand.es_comida is not defined or brand.es_comida) %}
+    {% if _mostrar_puntos or _mostrar_alergenos %}
     <div class="edit-block">
-      <h2 class="edit-title">Puntos y alérgenos</h2>
+      {% if _mostrar_puntos and _mostrar_alergenos %}
+        <h2 class="edit-title">Puntos y alérgenos</h2>
+      {% elif _mostrar_puntos %}
+        <h2 class="edit-title">Canje con puntos</h2>
+      {% else %}
+        <h2 class="edit-title">Alérgenos</h2>
+      {% endif %}
       <div class="grid md:grid-cols-2 gap-3">
         <label class="edit-check"><input type="checkbox" name="stock_mostrar_en_web" {% if producto.stock_mostrar_en_web %}checked{% endif %}> Mostrar stock en web</label>
-        {% if brand.puntos %}<div>
-          <label class="edit-label">Puntos para canje</label>
-          <input type="number" name="puntos_para_canje" min="1" value="{{ producto.puntos_para_canje or '' }}" class="edit-input">
-          <label class="edit-check mt-2"><input type="checkbox" name="canjeable_con_puntos" {% if producto.canjeable_con_puntos %}checked{% endif %}> Canjeable con puntos</label>
+        {% if brand.puntos %}<div class="edit-canje-box">
+          <label class="edit-label">Puntos necesarios para canje</label>
+          <input type="number" id="ep-puntos-canje" name="puntos_para_canje" min="1"
+                 value="{{ producto.puntos_para_canje or '' }}" class="edit-input"
+                 placeholder="Ej: 500">
+          <label class="edit-check mt-2">
+            <input type="checkbox" id="ep-canjeable" name="canjeable_con_puntos"
+                   {% if producto.canjeable_con_puntos %}checked{% endif %}>
+            <span>Canjeable con puntos <small style="color:var(--col-muted)">(el cliente puede pagarlo con puntos o dinero)</small></span>
+          </label>
+          <label class="edit-check mt-2">
+            <input type="checkbox" id="ep-solo-canje" name="solo_canje"
+                   {% if producto.solo_canje %}checked{% endif %}>
+            <span>⭐ Solo canje <small style="color:var(--col-muted)">(exclusivo por puntos, no se vende con dinero, precio=0)</small></span>
+          </label>
+          {% if usado_en_combos and usado_en_combos > 0 %}
+          <p class="text-xs mt-2" style="color:#ffb347">
+            ⚠️ Este producto forma parte de {{ usado_en_combos }} combo(s). No puede marcarse como "solo canje" sin retirarlo primero.
+          </p>
+          {% endif %}
         </div>{% endif %}
       </div>
+      {# Alérgenos solo si la tienda es de comida. En tienda genérica (ropa,
+         retail) no aplican y saturan visualmente el formulario. #}
+      {% if brand.es_comida is not defined or brand.es_comida %}
       <label class="edit-check mt-3"><input type="checkbox" name="es_hipoalergenico" {% if producto.es_hipoalergenico %}checked{% endif %}> Sin alérgenos relevantes</label>
       <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 gap-2 mt-3">
         {% for code, icon, label in ALERGENOS_EU %}
@@ -142,6 +175,49 @@
         </label>
         {% endfor %}
       </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# ═══════════════ PRESENTACIONES (tamaños) — opcional ═══════════════ #}
+    <div class="edit-block">
+      <h2 class="edit-title">Presentaciones (opcional)</h2>
+      <p class="text-xs mb-3" style="color:var(--col-muted)">
+        Si el producto se ofrece en varios tamaños, actívalos aquí. El precio final
+        de cada tamaño = precio base + extra. Deja todo desactivado para vender solo
+        en tamaño único.
+      </p>
+      {% set _pres_map = {} %}
+      {% for pr in producto.presentaciones %}{% set _ = _pres_map.update({pr.tamaño: pr}) %}{% endfor %}
+      {% set _pres_labels = ([('pequeño','🥣','Pequeño'),('mediano','🍽️','Mediano'),('grande','🍛','Grande')] if brand.es_comida else [('pequeño','👕','S — Pequeña'),('mediano','👔','M — Mediana'),('grande','🧥','L — Grande')]) %}
+      <div class="grid md:grid-cols-3 gap-3">
+        {% for size, emoji, label in _pres_labels %}
+        {% set pr = _pres_map.get(size) %}
+        <div class="edit-pres-card">
+          <label class="edit-check">
+            <input type="checkbox" name="pres_{{ size }}_activo" value="1"
+                   {% if pr and pr.activo %}checked{% endif %}
+                   onchange="epTogglePres(this,'{{ size }}')">
+            <span>{{ emoji }} {{ label }}</span>
+          </label>
+          <label class="edit-label mt-2">Precio extra (€)</label>
+          <input type="number" step="0.01" name="pres_{{ size }}_extra"
+                 value="{{ '%.2f'|format(pr.precio_extra_float) if pr else '0.00' }}"
+                 class="edit-input edit-pres-extra"
+                 data-pres="{{ size }}"
+                 {% if not pr or not pr.activo %}disabled{% endif %}>
+          <p class="text-xs mt-1" style="color:var(--col-muted)">
+            Puede ser negativo (más barato que el base).
+          </p>
+        </div>
+        {% endfor %}
+      </div>
+      <script>
+      function epTogglePres(cb, size){
+        const inp = document.querySelector('.edit-pres-extra[data-pres="'+size+'"]');
+        if (inp) inp.disabled = !cb.checked;
+      }
+      </script>
     </div>
   </section>
 
@@ -171,11 +247,26 @@
       <textarea name="atributos_json" rows="5" class="edit-input font-mono text-xs">{{ producto.atributos_json or '' }}</textarea>
     </div>
 
-    <button type="submit" class="ox-btn-primary w-full">Guardar cambios</button>
-    <a href="{{ url_for('admin.productos') }}{% if producto.es_combo %}#combos{% endif %}" class="ox-btn-ghost w-full text-center">Cancelar</a>
+    <div class="edit-save-sticky">
+      <button type="submit" class="ox-btn-primary w-full">Guardar cambios</button>
+      <a href="{{ url_for('admin.productos') }}{% if producto.es_combo %}#combos{% endif %}" class="ox-btn-ghost w-full text-center">Cancelar</a>
+    </div>
   </aside>
 </form>
 
+<style>
+.edit-save-sticky {
+  position: sticky; bottom: 12px; z-index: 5;
+  display: flex; flex-direction: column; gap: .5rem;
+  background: color-mix(in srgb, var(--col-surface) 92%, transparent);
+  padding: .6rem; border-radius: 12px;
+  border: 1px solid var(--col-border);
+  backdrop-filter: blur(6px);
+}
+@media (min-width: 900px) {
+  .edit-save-sticky { position: static; background: transparent; border: none; padding: 0; backdrop-filter: none; }
+}
+</style>
 <style>
 .edit-label { display:block; font-size:.72rem; font-weight:800; text-transform:uppercase; color:var(--col-muted); margin-bottom:.35rem; }
 .edit-input { width:100%; border:1px solid var(--col-border); background:var(--col-elevated); color:white; border-radius:8px; padding:.65rem .75rem; font-size:.9rem; }
@@ -188,5 +279,45 @@
 .edit-allergen small { font-size:.62rem; color:var(--col-muted); text-align:center; line-height:1.1; }
 .edit-img { aspect-ratio:1/1; border-radius:8px; background:var(--col-elevated); border:1px solid var(--col-border); display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:3rem; }
 .edit-img img { width:100%; height:100%; object-fit:cover; }
+.edit-canje-box { border:1px dashed rgba(192,132,252,.4); border-radius:.6rem; padding:.7rem .8rem; background:rgba(139,92,246,.06); }
+.edit-pres-card { border:1px solid var(--col-border); border-radius:.6rem; padding:.7rem .8rem; background:var(--col-elevated); }
+.edit-pres-card input.edit-pres-extra:disabled { opacity:.4; }
 </style>
+<script>
+(function(){
+  const cbCanje    = document.getElementById('ep-canjeable');
+  const cbSolo     = document.getElementById('ep-solo-canje');
+  const inPuntos   = document.getElementById('ep-puntos-canje');
+  const inPrecio   = document.getElementById('ep-precio');
+  const hintPrecio = document.getElementById('ep-precio-hint');
+  if (!cbSolo) return;
+
+  function refresh() {
+    // "Solo canje" implica canjeable + precio 0
+    if (cbSolo.checked) {
+      cbCanje.checked = true;
+      cbCanje.disabled = true;
+      inPrecio.value = '0.00';
+      inPrecio.readOnly = true;
+      inPrecio.classList.add('opacity-60');
+      hintPrecio.style.display = 'block';
+    } else {
+      cbCanje.disabled = false;
+      inPrecio.readOnly = false;
+      inPrecio.classList.remove('opacity-60');
+      hintPrecio.style.display = 'none';
+    }
+    // Canjeable requiere puntos > 0
+    if (cbCanje.checked) {
+      inPuntos.required = true;
+      inPuntos.min = 1;
+    } else {
+      inPuntos.required = false;
+    }
+  }
+  cbSolo.addEventListener('change', refresh);
+  cbCanje.addEventListener('change', refresh);
+  refresh();
+})();
+</script>
 {% endblock %}

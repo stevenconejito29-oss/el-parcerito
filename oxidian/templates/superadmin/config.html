@@ -7,7 +7,7 @@
 {# is_locked: True si la clave es soberana y el user actual es admin (no SA).
    Cuando está bloqueada, el input se marca disabled y visualmente aparece
    con el badge 🔒 Super admin. Coherente con el guard del backend. #}
-{% macro cfg_input(key, label, type='text', placeholder='', help='', min='', max='', step='') -%}
+{% macro cfg_input(key, label, type='text', placeholder='', help='', min='', max='', step='', inputmode='') -%}
 {% set is_locked = (not es_super_admin) and (key in (locked_keys or [])) %}
 <label class="cfg-field {% if is_locked %}cfg-field--locked{% endif %}">
   <span>{{ label }}{% if is_locked %} <span class="oa-badge oa-badge--brand">🔒 Super admin</span>{% endif %}</span>
@@ -15,6 +15,7 @@
   <input type="{{ type }}" name="{{ key }}" value="{{ config_map.get(key, '') }}"
          placeholder="{{ placeholder }}" {% if min != '' %}min="{{ min }}"{% endif %}
          {% if max != '' %}max="{{ max }}"{% endif %} {% if step != '' %}step="{{ step }}"{% endif %}
+         {% if inputmode or type in ['number','tel','url','email'] %}inputmode="{{ inputmode or ('decimal' if type == 'number' else type) }}"{% endif %}
          {% if is_locked %}disabled aria-disabled="true"{% endif %}>
   {% if help %}<small>{{ help }}</small>{% endif %}
 </label>
@@ -247,6 +248,7 @@
       <h3>Modo comercial y módulos contratados</h3>
       <div class="cfg-grid">
         {{ cfg_select('MODO_TIENDA', 'Modo de tienda', [('propia','Tienda propia'),('bar_servicio','Servicio para un único bar / comisión')], 'En modo servicio, el admin gestiona esa tienda como su propio negocio y el superadmin controla funciones y comisión.') }}
+        {{ cfg_select('TIPO_TIENDA', 'Tipo de catálogo', [('comida','🍽️ Comida / gastronomía'),('producto','🛍️ Producto genérico (ropa, retail…)')], 'Cambia labels visibles ("menú"→"catálogo"), oculta alérgenos si no aplican y ajusta emojis. NO borra datos: se puede cambiar de un lado al otro sin perder nada.') }}
         {{ cfg_select('FEATURE_DELIVERY', 'Delivery', [('1','Habilitado'),('0','Deshabilitado')], 'Si está apagado, checkout y roles de reparto quedan fuera del flujo público.') }}
         {{ cfg_select('FEATURE_RECOGIDA', 'Recogida en local', [('1','Habilitada'),('0','Deshabilitada')]) }}
         {{ cfg_select('FEATURE_PEDIDOS_PROGRAMADOS', 'Pedidos por fecha', [('1','Habilitados'),('0','Deshabilitados')], 'Bloquea productos programados si el cliente no tiene ese módulo.') }}
@@ -275,6 +277,7 @@
         {{ cfg_input('RADIO_ENTREGA_KM', 'Radio máximo (km)', type='number', min='0.5', max='50', step='0.5') }}
         {{ cfg_input('CENTRO_LAT', 'Latitud del local', type='number', step='0.000001') }}
         {{ cfg_input('CENTRO_LON', 'Longitud del local', type='number', step='0.000001') }}
+        {{ cfg_input('PEDIDO_MINIMO_EUR', 'Pedido mínimo (€) — 0 desactiva', type='number', min='0', step='0.5') }}
       </div>
       <button type="submit" class="cfg-save-bottom">Guardar cobertura</button>
     </form>
@@ -316,6 +319,7 @@
         {{ cfg_input('COMBO_MAX_QTY_COMPONENT', 'Máxima cantidad por componente', type='number', min='1', max='999') }}
         {{ cfg_input('COMBO_MAX_SELECTIONS_GROUP', 'Máximas elecciones por grupo', type='number', min='1', max='100') }}
         {{ cfg_input('COMBO_MAX_DISCOUNT_PCT', 'Descuento máximo combo (%)', type='number', min='0', max='100', step='0.1') }}
+        {{ cfg_select('AUTO_DESTACADOS_ENABLED', 'Recomendaciones automáticas', [('1','Sí (usa top rating si no hay destacados manuales)'),('0','No mostrar bloque de recomendaciones')]) }}
       </div>
       <button type="submit" class="cfg-save-bottom">Guardar límites</button>
     </form>
@@ -393,4 +397,26 @@ if(window.matchMedia('(max-width:760px)').matches){
   cfgShowMobileSection(new URLSearchParams(location.search).get('section')||location.hash.slice(1)||'tienda');
 }
 </script>
+<style>
+/* Landscape móvil en superadmin config: colapsa el header, reduce padding
+   del section y muestra el nav lateral como pills scroll-x. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .cfg-header h1 { font-size: 1rem; }
+  .cfg-header p { display: none; }
+  .cfg-section { padding: .7rem; }
+  .cfg-section-head { padding-bottom: .55rem; margin-bottom: .6rem; }
+  .cfg-section-head h2 { font-size: .9rem; }
+  .cfg-section-head p { display: none; }
+  .cfg-grid { gap: .5rem; }
+  .cfg-field input, .cfg-field select { min-height: 38px; padding: .4rem .55rem; }
+  .cfg-nav { overflow-x: auto; white-space: nowrap; padding: .35rem 0; scrollbar-width: none; }
+  .cfg-nav::-webkit-scrollbar { display: none; }
+  .cfg-nav a { flex: 0 0 auto; display: inline-block; margin-right: .3rem; }
+}
+
+/* Todos los inputs con inputmode adecuado según el tipo detectable */
+.cfg-field input[type="number"] { inputmode: decimal; }
+.cfg-field input[type="tel"] { inputmode: tel; }
+.cfg-field input[type="email"] { inputmode: email; }
+</style>
 {% endblock %}

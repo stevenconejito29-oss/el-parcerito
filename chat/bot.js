@@ -405,6 +405,45 @@ const FRASES_NO_ENTENDI = [
   'No estoy seguro de qué necesitas. Prueba con *menú* para ver lo que puedo hacer.',
 ];
 
+// Frustración explícita del cliente → deriva a agente HUMANO SIN insistir con
+// el bot. Evita bucles donde el cliente repite "no me entiendes" y el bot
+// vuelve a ofrecer opciones que no le sirven.
+const FRUSTRACION_RE = new RegExp(
+  '(?:no\\s+me\\s+entiendes|no\\s+entiendes|eres\\s+un\\s+bot|eres\\s+in[uú]til|'
+  + 'quiero\\s+(?:hablar|comunicarme)\\s+con\\s+(?:una\\s+)?persona|'
+  + 'quiero\\s+hablar\\s+con\\s+(?:un\\s+)?humano|dame\\s+un\\s+humano|'
+  + 'll[aá]mame|que\\s+alguien\\s+me\\s+atienda|otra\\s+vez\\s+lo\\s+mismo|'
+  + 'ya\\s+te\\s+dije|no\\s+sirves|eso\\s+no\\s+(?:es|responde)|'
+  + 'no\\s+(?:es|era)\\s+eso|est[aá]s\\s+(?:mal|equivocado|roto))',
+  'i'
+);
+function esFrustracion(text) { return FRUSTRACION_RE.test(String(text || '')); }
+
+// Detección de LOOP: si el cliente envía prácticamente el mismo mensaje
+// más de una vez en la misma sesión, el bot debe reconocer que no está
+// resolviendo y derivar a agente. Guardamos hash normalizado en la sesión.
+function _hashMensajeCliente(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9áéíóúñü ]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60);
+}
+function esLoopCliente(ses, text) {
+  if (!ses || !text) return false;
+  const h = _hashMensajeCliente(text);
+  if (h.length < 4) return false;
+  if (!ses._loop) ses._loop = { last: '', count: 0 };
+  if (ses._loop.last === h) {
+    ses._loop.count = (ses._loop.count || 1) + 1;
+  } else {
+    ses._loop.last = h;
+    ses._loop.count = 1;
+  }
+  return ses._loop.count >= 3; // 3+ mensajes casi idénticos → loop
+}
+
 function isBotEnabled() {
   return String(cfg('bot_enabled', '1')).trim() !== '0';
 }
@@ -564,6 +603,28 @@ function log(nivel, evento, detalle = '') {
 
 function phoneFromJid(jid) {
   return String(jid || '').replace('@s.whatsapp.net', '').replace('@g.us', '');
+}
+
+function adminActorPhone(jid) {
+  return normalizePhone(phoneFromJid(jid));
+}
+
+function appendQuery(path, params = {}) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && String(value) !== '') query.set(key, String(value));
+  }
+  const qs = query.toString();
+  if (!qs) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}${qs}`;
+}
+
+function withAdminActor(path, jid) {
+  return appendQuery(path, { actor_telefono: adminActorPhone(jid) });
+}
+
+function adminBody(jid, body = {}) {
+  return { ...body, actor_telefono: adminActorPhone(jid) };
 }
 
 function isAdminPhone(phone) {
@@ -1446,28 +1507,82 @@ async function sendText(jid, text, opts = {}) {
 }
 
 // ─── FLASK API: LLAMADAS OXIDIAN ──────────────────────────────────────────────
-async function oxidianGet(path) {
-  const r = await fetch(`${getOxidianUrl()}/api/bot${path}`, {
-    headers: { 'X-Bot-Key': getOxidianKey() },
-    signal: AbortSignal.timeout(8000),
+/**
+ * Helpers HTTP hacia Oxidian con:
+ *  - timeout explícito (8s GET, 10s POST)
+ *  - reintento único ante errores de red (no HTTP 4xx/5xx)
+ *  - detección temprana de X-Bot-Key vacía → mensaje claro
+ *  - parseo JSON tolerante (no explota si el body está vacío)
+ *  - propaga `error.status` y `error.data` para que el caller decida qué mostrar
+ */
+async function oxidianGet(path, opts = {}) {
+  const key = getOxidianKey();
+  if (!key) {
+    const err = new Error('X-Bot-Key no configurada — revisa BOT_API_KEY en /superadmin/config');
+    err.code = 'NO_BOT_KEY';
+    throw err;
+  }
+  const url = `${getOxidianUrl()}/api/bot${path}`;
+  const doFetch = () => fetch(url, {
+    headers: { 'X-Bot-Key': key },
+    signal: AbortSignal.timeout(opts.timeout || 8000),
   });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
-}
-
-async function oxidianPost(path, body) {
-  const r = await fetch(`${getOxidianUrl()}/api/bot${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Bot-Key': getOxidianKey() },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10000),
-  });
+  let r;
+  try {
+    r = await doFetch();
+  } catch (netErr) {
+    // Reintento único ante errores de red / timeout (no HTTP)
+    try { r = await doFetch(); }
+    catch (retryErr) {
+      const err = new Error(`Sin conexión con Oxidian (${retryErr.name || 'net'}): ${url}`);
+      err.code = 'NET_ERROR'; err.cause = retryErr;
+      throw err;
+    }
+  }
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
-    const error = new Error(data.error || `HTTP ${r.status}`);
-    error.status = r.status;
-    error.data = data;
-    throw error;
+    const err = new Error(data.error || `HTTP ${r.status} en GET ${path}`);
+    err.status = r.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+async function oxidianPost(path, body, opts = {}) {
+  const key = getOxidianKey();
+  if (!key) {
+    const err = new Error('X-Bot-Key no configurada — revisa BOT_API_KEY en /superadmin/config');
+    err.code = 'NO_BOT_KEY';
+    throw err;
+  }
+  const url = `${getOxidianUrl()}/api/bot${path}`;
+  const doFetch = () => fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Bot-Key': key },
+    body: JSON.stringify(body ?? {}),
+    signal: AbortSignal.timeout(opts.timeout || 10000),
+  });
+  let r;
+  try {
+    r = await doFetch();
+  } catch (netErr) {
+    // POST idempotentes se pueden reintentar sin riesgo — los que crean
+    // pedidos ya llevan Idempotency-Key en el header. Reintentamos igual
+    // pero solo una vez para no duplicar side-effects si la primera pasó.
+    try { r = await doFetch(); }
+    catch (retryErr) {
+      const err = new Error(`Sin conexión con Oxidian (${retryErr.name || 'net'}): ${url}`);
+      err.code = 'NET_ERROR'; err.cause = retryErr;
+      throw err;
+    }
+  }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const err = new Error(data.error || `HTTP ${r.status} en POST ${path}`);
+    err.status = r.status;
+    err.data = data;
+    throw err;
   }
   return data;
 }
@@ -1785,11 +1900,11 @@ function _smartSystemPrompt(cfg, ctxBreve, negocioCtx = {}) {
       ? `Pagos habilitados: ${negocioCtx.metodos_pago.join(', ')}.` : null,
     ctxBreve ? `Cliente: ${ctxBreve}.` : 'Cliente nuevo, sin datos.',
     `Devuelve SOLO un objeto JSON válido sin markdown ni texto fuera del JSON.`,
-    `Schema obligatorio: {"action":"${actions}","reply":"texto a enviar","confidence":0.0-1.0}.`,
+    `Schema obligatorio: {"action":"${actions}","query":"consulta específica si aplica","reply":"texto a enviar","confidence":0.0-1.0}.`,
     `Reglas de routing:`,
     `- pedido/estado/cancelar/dónde-está → action="estado"`,
     loyaltyOn ? `- puntos/saldo/fidelidad/cuántos-tengo → action="puntos"` : null,
-    `- carta/menú/qué-venden/precios/productos → action="menu"`,
+    `- carta/menú/qué-venden/precios/productos → action="menu" y pon en query el producto o categoría concreta si existe`,
     deliveryOn ? `- llegan-a/cobertura/reparto-en-mi-zona/dirección-X → action="cobertura"` : null,
     `- horario/dónde-están/teléfono/abierto → action="info"`,
     `- hablar-con-persona/agente/humano/queja → action="agente"`,
@@ -2013,20 +2128,14 @@ async function aiSmartReply(jid, ses, mensajeUsuario) {
     return null;
   }
 
-  // Cache LRU compartido: si otro cliente hizo la MISMA pregunta hace poco,
-  // devolvemos la respuesta cacheada sin gastar tokens. Clave = texto
-  // normalizado. TTL corto (aiCache) para no servir información caducada.
+  // Clave normalizada. La lectura de cache se hace después de saber si hay
+  // contexto de cliente; las respuestas personalizadas no se comparten.
   const cacheKey = 'smart:' + String(mensajeUsuario || '')
     .toLowerCase()
     .replace(/[^a-z0-9áéíóúñü ]/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 120);
-  const cached = aiCacheGet(cacheKey);
-  if (cached && typeof cached === 'object' && cached.action) {
-    log('info', 'ai_smart_cache_hit', `phone=${phone} key=${cacheKey.slice(0, 40)}`);
-    return { ...cached, fromCache: true };
-  }
 
   // Rate limit pre-flight con el backend (cuenta llamadas sin tokens).
   try {
@@ -2047,6 +2156,13 @@ async function aiSmartReply(jid, ses, mensajeUsuario) {
       negocioCtx = r.negocio || {};
     }
   } catch {}
+  if (!cliente) {
+    const cached = aiCacheGet(cacheKey);
+    if (cached && typeof cached === 'object' && cached.action) {
+      log('info', 'ai_smart_cache_hit', `phone=${phone} key=${cacheKey.slice(0, 40)}`);
+      return { ...cached, fromCache: true };
+    }
+  }
   const ctxBreve = _smartCtxBreve(ses, cliente);
 
   // Memoria: últimos 4 turnos (2 user + 2 assistant). Reduce drásticamente tokens.
@@ -2066,6 +2182,7 @@ async function aiSmartReply(jid, ses, mensajeUsuario) {
   if (!out || !out.json) return null;
 
   const action = SMART_ACTIONS.has(out.json.action) ? out.json.action : 'chat';
+  const query = String(out.json.query || '').trim().slice(0, 160);
   const replyRaw = String(out.json.reply || '').trim();
   const reply = _sanitizeReply(replyRaw, cfg);
   const confidence = Number(out.json.confidence) || 0.5;
@@ -2083,8 +2200,10 @@ async function aiSmartReply(jid, ses, mensajeUsuario) {
 
   // Guardar en cache LRU la respuesta (sin memoria de cliente específico —
   // el reply es genérico, útil para el próximo que pregunte lo mismo).
-  const result = { action, reply, confidence, cliente };
-  try { aiCacheSet(cacheKey, { action, reply, confidence, cliente: null }); } catch {}
+  const result = { action, query, reply, confidence, cliente };
+  if (!cliente) {
+    try { aiCacheSet(cacheKey, { action, query, reply, confidence, cliente: null }); } catch {}
+  }
   return result;
 }
 
@@ -2122,6 +2241,10 @@ async function syncBranding() {
     }
     setCfg('tenant_mode',     data.tenant_mode || 'propia');
     setCfg('tenant_suspended', data.suspended ? '1' : '0');
+    // Vertical del negocio: comida vs producto genérico (ropa/accesorios/etc.).
+    // Los textos "menú"/"carta" se degradan a "catálogo" cuando es producto.
+    setCfg('tipo_tienda',    (data.tipo_tienda || 'comida').toLowerCase());
+    setCfg('vertical_label', data.vertical_label || 'Menú');
     // Coerción explícita a booleano — evita que undefined caiga a '1' por
     // defecto y muestre opciones que el super_admin apagó pero el bot aún
     // no recibió porque el server no las envió. Con doble negación garantizamos
@@ -3554,7 +3677,7 @@ async function handleAdminCmd(jid, text) {
 
     try {
       // Buscar cliente por teléfono
-      const busqueda = await oxidianGet(`/admin/clientes/buscar?q=${encodeURIComponent(telefono)}`);
+      const busqueda = await oxidianGet(withAdminActor(`/admin/clientes/buscar?q=${encodeURIComponent(telefono)}`, jid));
       if (!busqueda?.ok || !busqueda.resultados?.length) {
         return sendText(jid,
           `❌ No encontré cliente con teléfono ${telefono}.\n\n` +
@@ -3591,7 +3714,7 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, '❌ Uso: `!buscar-cliente 34612345678`');
     }
     try {
-      const resp = await oxidianGet(`/admin/clientes/buscar?q=${encodeURIComponent(tel)}`);
+      const resp = await oxidianGet(withAdminActor(`/admin/clientes/buscar?q=${encodeURIComponent(tel)}`, jid));
       if (!resp || !resp.ok || !resp.resultados?.length) {
         return sendText(jid, `❌ Sin resultados para ${tel}.`);
       }
@@ -3617,7 +3740,7 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, '⛔ Solo el super admin puede cambiar el modo de tienda.');
     }
     try {
-      const resp = await oxidianPost('/admin/modo-tienda/toggle', {});
+      const resp = await oxidianPost('/admin/modo-tienda/toggle', adminBody(jid));
       if (resp && resp.ok) {
         return sendText(jid,
           `🔄 *Modo tienda cambiado.*\n\n` +
@@ -3649,7 +3772,7 @@ async function handleAdminCmd(jid, text) {
     }
     const enabled = (estado === 'on' || estado === '1') ? '1' : '0';
     try {
-      const resp = await oxidianPost('/admin/modulos/toggle', { modulo, enabled });
+      const resp = await oxidianPost('/admin/modulos/toggle', adminBody(jid, { modulo, enabled }));
       if (resp?.ok) {
         return sendText(jid,
           `✅ Módulo *${modulo}* ${enabled === '1' ? 'activado ✔' : 'desactivado ✖'}.\n` +
@@ -3669,7 +3792,7 @@ async function handleAdminCmd(jid, text) {
     }
     const cerrar = lowerCmd === 'cerrar-tienda';
     try {
-      const resp = await oxidianPost('/admin/tienda/forzar-cierre', { cerrada: cerrar });
+      const resp = await oxidianPost('/admin/tienda/forzar-cierre', adminBody(jid, { cerrada: cerrar }));
       if (resp?.ok) {
         return sendText(jid,
           cerrar
@@ -3689,7 +3812,7 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, '⛔ Solo el super admin.');
     }
     try {
-      const resp = await oxidianGet('/admin/salud');
+      const resp = await oxidianGet(withAdminActor('/admin/salud', jid));
       if (!resp?.ok) throw new Error(resp?.error || 'sin datos');
       const s = resp;
       return sendText(jid,
@@ -3713,7 +3836,7 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, '⛔ No tienes permiso.');
     }
     try {
-      const resp = await oxidianGet('/admin/pedidos/pendientes');
+      const resp = await oxidianGet(withAdminActor('/admin/pedidos/pendientes', jid));
       const lista = Array.isArray(resp?.pedidos) ? resp.pedidos : [];
       if (!lista.length) {
         return sendText(jid, '✅ *Sin pedidos pendientes* — todo al día.');
@@ -4085,6 +4208,86 @@ const CLIENT_FAQS = [
       `🛒 Aquí tienes la tienda:\n👉 ${ctx.tiendaUrl}\n\n_Todo se pide desde ahí._`
     ),
   },
+  {
+    name: 'cancelar_generico',
+    match: /\b(quiero\s+cancelar|c[oó]mo\s+cancelo|puedo\s+cancelar|anular\s+(?:el\s+)?pedido|cancel(o|as|ar|aci[oó]n)(?:\s+(?:mi|el|un))?\s*(?:pedido)?)\b/i,
+    answer: () => (
+      `❌ *Cancelar pedido*\n\n` +
+      `Escribe *CANCELAR* (o *2*) para elegir el pedido a cancelar.\n\n` +
+      `Solo se cancelan pedidos que aún NO se hayan empezado a preparar. ` +
+      `Si ya está en preparación, te conecto con quien lo hace.`
+    ),
+  },
+  {
+    name: 'metodos_pago_detalle',
+    match: /\b(pago\s+contra\s*entrega|pagar\s+al\s+recibir|cobro\s+contra\s*entrega|puedo\s+pagar\s+en\s+efectivo|acepta?n\s+contado|contra\s*reembolso|efectivo\s+al\s+llegar)\b/i,
+    answer: (ctx) => {
+      const efect = String(cfg('cash_enabled', '1')) === '1';
+      const bizum = String(cfg('bizum_enabled', '1')) === '1';
+      const opts = [];
+      if (efect) opts.push('💵 Efectivo al recibir');
+      if (bizum) opts.push('📱 Bizum al llegar el repartidor');
+      if (!opts.length) return `Consulta al llegar los métodos de pago disponibles.`;
+      return `💳 Puedes pagar así:\n${opts.map(o => '· ' + o).join('\n')}\n\n_La confirmación del cobro se hace al recibir el pedido._`;
+    },
+  },
+  {
+    name: 'canje_puntos_como',
+    match: /\b(c[oó]mo\s+(?:canjeo|uso)\s+(?:mis\s+)?puntos|para\s+qu[eé]\s+sirven\s+los\s+puntos|c[oó]mo\s+gano\s+puntos|acumular\s+puntos|puntos\s+por\s+compra)\b/i,
+    answer: (ctx) => {
+      const on = String(cfg('loyalty_enabled', '1')) === '1';
+      if (!on) return `El programa de puntos está desactivado en esta tienda.`;
+      return (
+        `⭐ *Programa de puntos*\n\n` +
+        `· Ganas *1 punto por cada €* gastado en pedidos entregados.\n` +
+        `· Puedes canjearlos por descuentos o productos exclusivos.\n\n` +
+        `Escribe *3* o *"mis puntos"* para consultar tu saldo.`
+      );
+    },
+  },
+  {
+    name: 'gracias_positivo',
+    match: /\b(muchas\s+gracias|super|excelente|genial|perfect(o|as)|de\s+lujo|estupendo|estupenda|bien|muy\s+bien|todo\s+bien|👍|❤️|💛|💯)\b/i,
+    answer: (ctx) => {
+      const nombre = (ctx && ctx.ses && ctx.ses.nombre) ? ` ${String(ctx.ses.nombre).split(/\s+/)[0]}` : '';
+      return `¡Gracias a ti${nombre}! 💛\n\nEscríbeme cuando quieras hacer otro pedido o consultar tus puntos.`;
+    },
+  },
+  {
+    name: 'nombre_bot',
+    match: /\b(c[oó]mo\s+te\s+llamas|eres\s+un\s+bot|eres\s+humano|con\s+qui[eé]n\s+hablo|qui[eé]n\s+eres|d[íi]me\s+qui[eé]n\s+eres)\b/i,
+    answer: (ctx) => (
+      `Soy el asistente de *${ctx.negocio}* por WhatsApp. 🤖\n\n` +
+      `Puedo ayudarte con pedidos, estado, puntos, cobertura y horario. ` +
+      `Si necesitas hablar con una persona escribe *AGENTE* y te conecto.`
+    ),
+  },
+  {
+    name: 'ayuda_generico',
+    match: /\b(ayuda|help|no\s+s[eé]\s+qu[eé]\s+hacer|c[oó]mo\s+funciona\s+esto|opciones|comandos|qu[eé]\s+puedes\s+hacer)\b/i,
+    answer: (ctx) => {
+      const catalogo = String(cfg('vertical_label', 'Menú')).toLowerCase();
+      return (
+        `Puedo ayudarte con:\n\n` +
+        `*1* — 🛒 Ver el ${catalogo}\n` +
+        `*2* — 📦 Estado o cancelar pedido\n` +
+        `*3* — ⭐ Mis puntos\n` +
+        `*4* — 📍 Zona de entrega\n` +
+        `*6* — ⏰ Horario y contacto\n` +
+        `*7* — 👤 Hablar con una persona\n\n` +
+        `_Escribe el número o el nombre del producto que buscas._`
+      );
+    },
+  },
+  {
+    name: 'donde_va_repartidor',
+    match: /\b(d[oó]nde\s+(?:est[aá]|va)\s+el\s+repartidor|ya\s+viene\s+el\s+repartidor|tracking|seguimiento\s+del?\s+repartidor|d[oó]nde\s+est[aá]\s+mi\s+repartidor)\b/i,
+    answer: () => (
+      `📍 Puedes ver el estado en tiempo real escribiendo *ESTADO* (o *2*).\n\n` +
+      `Cuando el repartidor esté cerca, recibirás por WhatsApp el *código de entrega*. ` +
+      `Compártelo solo al recibir tu pedido.`
+    ),
+  },
 ];
 
 /**
@@ -4201,12 +4404,30 @@ async function handleMainMenu(jid, ses, opcion) {
   //   2. FAQs comunes (horario, dirección, pago, tiempo) — canned
   //   3. Detección de intención por keywords + fuzzy match
   //   4. AI fallback en rama `default` si nada matchea
-  const textoLibre = String(opcion || '').trim();
+  let textoLibre = String(opcion || '').trim();
+
+  // 0) Frustración explícita → agente humano AL INSTANTE, sin gastar AI ni
+  //    presentar el menú (que sería percibido como "sigue sin entenderme").
+  if (esFrustracion(textoLibre)) {
+    bumpStat('handoff_frustracion_early');
+    log('info', 'handoff_frustracion_early', textoLibre.slice(0, 40));
+    return requestHumanSupport(jid, `Cliente frustrado: "${textoLibre}"`);
+  }
 
   // 1) Saludo — respuesta conversacional, sin abrumar con menú numerado.
-  if (esSaludo(textoLibre) && textoLibre.length < 30) {
-    bumpStat('saludo');
-    return sendText(jid, bienvenidaConversacional(ses));
+  //    Detección compuesta: si el saludo trae también una pregunta
+  //    ("hola, ¿qué venden?", "buenas, cuánto vale la pizza?"), quitamos
+  //    el saludo y procesamos el resto para no descartar la intención real.
+  if (esSaludo(textoLibre)) {
+    const restante = textoLibre.replace(SALUDOS_RE, '').replace(/^[\s,.!¡?¿]+/, '').trim();
+    if (!restante || restante.length < 3) {
+      bumpStat('saludo');
+      return sendText(jid, bienvenidaConversacional(ses));
+    }
+    // Hay contenido después del saludo: reemplazamos y seguimos el flujo.
+    opcion = restante;
+    textoLibre = restante;
+    // El saludo se saluda implícitamente al procesar la pregunta real.
   }
 
   // 2) Despedida / agradecimiento
@@ -4231,11 +4452,52 @@ async function handleMainMenu(jid, ses, opcion) {
   if (detectada) { bumpStat('intent'); opcion = detectada; }
   log('info', 'main_menu_choice', String(opcion));
   const tiendaUrl = getTiendaUrl();
+
+  // 4b) Si el cliente escribió texto libre buscando un producto concreto,
+  //     intentamos búsqueda directa en el catálogo antes de mandar la URL
+  //     genérica. Cubre: "¿hay pizza?", "¿cuánto vale la margarita?",
+  //     "tenéis coca cola?", "tienen postres?".
+  if (opcion === '1' && textoLibre && !/^[1-7]$/.test(textoLibre)) {
+    const qBusqueda = textoLibre
+      .replace(/^(hola|hey|buenas|ok|dale|porfa|por favor)[\s,.]*/i, '')
+      .replace(/\b(hay|tienen|teneis|tenéis|venden|cuanto|cuánto|vale|precio|cuesta|de|un|una|unos|unas|el|la|los|las|que|qué|hay|q)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (qBusqueda && qBusqueda.length >= 3) {
+      try {
+        const busqueda = await oxidianGet(`/cliente/buscar-producto?q=${encodeURIComponent(qBusqueda)}&limit=5`);
+        if (busqueda && busqueda.ok && Array.isArray(busqueda.resultados) && busqueda.resultados.length) {
+          const catalogoLabel = String(cfg('vertical_label', 'Menú')).toLowerCase();
+          const lineas = busqueda.resultados.map((p, idx) => {
+            const combo = p.es_combo ? ' 🎁' : '';
+            // Productos solo_canje: se obtienen entregando puntos, sin precio en €.
+            let etiqueta;
+            if (p.solo_canje && p.puntos_para_canje > 0) {
+              etiqueta = `⭐ ${p.puntos_para_canje} pts`;
+            } else if (p.canjeable_con_puntos && p.puntos_para_canje > 0) {
+              etiqueta = `€${(p.precio || 0).toFixed(2)} · ⭐ ${p.puntos_para_canje} pts`;
+            } else {
+              etiqueta = `€${(p.precio || 0).toFixed(2)}`;
+            }
+            return `${idx + 1}. *${p.nombre}*${combo} — ${etiqueta}`;
+          }).join('\n');
+          return sendText(jid,
+            `🔎 Esto encontré en nuestro ${catalogoLabel} para *"${busqueda.consulta}"*:\n\n${lineas}\n\n` +
+            `Para pedirlos o ver detalle:\n👉 ${tiendaUrl || busqueda.tienda_url || ''}`
+          );
+        }
+      } catch (err) {
+        log('warn', 'client_search_fail', err?.message || String(err));
+      }
+    }
+  }
+
   switch (opcion) {
     case '1': {
+      const catalogoLabel = String(cfg('vertical_label', 'Menú')).toLowerCase();
       return sendText(jid,
-        `La disponibilidad, precios y opciones se consultan directamente en la tienda online:\n👉 ${tiendaUrl}\n\n` +
-        `_Por WhatsApp no mostramos productos ni tomamos pedidos._`
+        `La disponibilidad, precios y opciones se consultan en el ${catalogoLabel} online:\n👉 ${tiendaUrl}\n\n` +
+        `💡 También puedes escribirme el nombre de un producto (ej: "hay pizza?", "cuánto vale la coca cola") y te digo si tenemos.`
       );
     }
     case '2': {
@@ -4280,8 +4542,14 @@ async function handleMainMenu(jid, ses, opcion) {
           `👉 *Hacer tu primer pedido:*\n${tiendaUrl}\n\n` +
           `_Escribe *menu* para volver._`
         );
-      } catch {
-        return sendText(jid, `⚠️ No pude consultar tus puntos ahora. Intenta de nuevo.\n\n_Escribe *menu* para volver._`);
+      } catch (err) {
+        console.error('[bot] puntos_consulta_fail', err?.message || err);
+        return sendText(jid,
+          `⚠️ No pude consultar tus puntos ahora mismo.\n\n` +
+          `Puede ser un problema temporal de conexión. Por favor:\n` +
+          `• Espera 30 segundos y escribe *3* de nuevo.\n` +
+          `• Si sigue fallando, escribe *AGENTE* para hablar con nosotros.\n\n` +
+          `_Escribe *menu* para volver._`);
       }
     }
     case '4': {
@@ -4366,7 +4634,7 @@ async function handleMainMenu(jid, ses, opcion) {
           case 'cobertura':
             return handleMainMenu(jid, ses, '4');
           case 'menu':
-            return handleMainMenu(jid, ses, '1');
+            return handleMainMenu(jid, ses, smart.query || opcion);
           case 'info':
             return handleMainMenu(jid, ses, '6');
           case 'agente':
@@ -4386,10 +4654,40 @@ async function handleMainMenu(jid, ses, opcion) {
         bumpStat('ai_fail');
       }
 
-      // Sin IA o IA falló: orientación corta, sin abrumar con menú.
+      // Sin IA o IA falló → dos verificaciones ANTES del fallback ciego:
+      //  1) ¿El cliente está frustrado explícitamente?
+      //  2) ¿El cliente lleva N mensajes casi idénticos (loop)?
+      // En ambos casos → derivamos a agente humano SIN insistir con opciones.
+      if (esFrustracion(textoLibre)) {
+        bumpStat('handoff_frustracion');
+        log('info', 'handoff_frustracion', textoLibre.slice(0, 40));
+        return requestHumanSupport(jid, `Cliente frustrado con el bot: "${textoLibre}"`);
+      }
+      if (esLoopCliente(ses, textoLibre)) {
+        bumpStat('handoff_loop');
+        log('info', 'handoff_loop', textoLibre.slice(0, 40));
+        // Limpiamos el contador para que si vuelve más tarde no encadene.
+        if (ses._loop) ses._loop = { last: '', count: 0 };
+        return requestHumanSupport(
+          jid,
+          `El bot no logra resolver: cliente repitió mensaje similar 3 veces. Último: "${textoLibre}"`
+        );
+      }
+
+      // Fallback final: menú numerado explícito + opciones útiles. Antes
+      // era una frase genérica que dejaba al cliente sin saber qué hacer.
       bumpStat('fallback');
+      const catalogo = String(cfg('vertical_label', 'Menú')).toLowerCase();
       return sendText(jid,
-        `${pick(FRASES_NO_ENTENDI)} ¿Quieres consultar un pedido, saber el horario, abrir la tienda online o hablar con una persona?`
+        `${pick(FRASES_NO_ENTENDI)}\n\n` +
+        `Puedo ayudarte con:\n` +
+        `*1* — 🛒 Ver el ${catalogo} / hacer pedido\n` +
+        `*2* — 📦 Estado de mi pedido\n` +
+        `*3* — ⭐ Mis puntos\n` +
+        `*4* — 📍 Zona de entrega\n` +
+        `*6* — ⏰ Horario / contacto\n` +
+        `*7* — 👤 Hablar con una persona\n\n` +
+        `_Escribe el número o la palabra clave._`
       );
     }
   }
@@ -4534,7 +4832,16 @@ async function confirmarCancelacionPedido(jid, ses, answer) {
 
 async function handleEstadoPedido(jid, ses, numero) {
   setClientState(ses, 'main_menu');
-  const consulta = String(numero || '').trim();
+  // Normalización defensiva del número de pedido:
+  //  - remueve todos los espacios (usuario que copia/pega desde WhatsApp)
+  //  - remueve símbolos comunes # · - que a veces vienen con el número
+  //  - preserva "ultimo/último" como palabra
+  //  - preserva mayúsculas por si el numero tiene formato tipo "EPX-2024-0042"
+  const raw = String(numero || '').trim();
+  const esUltimo = /^ultimo|último$/i.test(raw);
+  const consulta = esUltimo
+    ? raw
+    : raw.replace(/[\s#·\-–—]+/g, '').trim();
 
   // Buscar por número de pedido en los pedidos del teléfono
   try {
@@ -4677,14 +4984,14 @@ function customerLine(c) {
   return `#${c.id} ${c.nombre || 'Cliente'} · ${c.telefono || 'sin teléfono'} · ${c.puntos || 0} puntos`;
 }
 
-async function findProductById(productId) {
-  const data = await oxidianGet(`/admin/productos/buscar?q=${encodeURIComponent(productId)}`);
+async function findProductById(productId, jid = '') {
+  const data = await oxidianGet(withAdminActor(`/admin/productos/buscar?q=${encodeURIComponent(productId)}`, jid));
   const productos = Array.isArray(data.productos) ? data.productos : [];
   return productos.find(p => Number(p.id) === Number(productId)) || null;
 }
 
-async function findCustomerByPhone(phone) {
-  const data = await oxidianGet(`/admin/clientes/buscar?telefono=${encodeURIComponent(phone)}`);
+async function findCustomerByPhone(phone, jid = '') {
+  const data = await oxidianGet(withAdminActor(`/admin/clientes/buscar?telefono=${encodeURIComponent(phone)}`, jid));
   return data.cliente || null;
 }
 
@@ -4968,7 +5275,7 @@ async function handleAdminProductsMenu(jid, ses, opcion) {
 
 async function handleAdminProductSearch(jid, ses, text) {
   try {
-    const data = await oxidianGet(`/admin/productos/buscar?q=${encodeURIComponent(String(text || '').trim())}`);
+    const data = await oxidianGet(withAdminActor(`/admin/productos/buscar?q=${encodeURIComponent(String(text || '').trim())}`, jid));
     const productos = Array.isArray(data.productos) ? data.productos : [];
     setAdminState(ses, 'admin_products_menu');
     if (!productos.length) return sendText(jid, `No encontré productos.\n\n${adminProductsMenu()}`);
@@ -4987,7 +5294,7 @@ async function handleAdminProductPriceWait(jid, ses, text) {
     return sendText(jid, 'Formato inválido. Escribe *ID PRECIO*. Ejemplo: 12 4.50');
   }
   try {
-    const product = await findProductById(productId);
+    const product = await findProductById(productId, jid);
     if (!product) return sendText(jid, 'Producto no encontrado. Escribe *0* para volver o intenta con otro ID.');
     return askAdminConfirm(
       jid,
@@ -5013,7 +5320,7 @@ async function handleAdminProductToggleWait(jid, ses, text) {
     return sendText(jid, 'Formato inválido. Escribe *ID activar* o *ID desactivar*.');
   }
   try {
-    const product = await findProductById(productId);
+    const product = await findProductById(productId, jid);
     if (!product) return sendText(jid, 'Producto no encontrado. Escribe *0* para volver o intenta con otro ID.');
     return askAdminConfirm(
       jid,
@@ -5049,7 +5356,7 @@ async function handleAdminPointsMenu(jid, ses, opcion) {
 
 async function handleAdminCustomerSearch(jid, ses, text) {
   try {
-    const customer = await findCustomerByPhone(text);
+    const customer = await findCustomerByPhone(text, jid);
     setAdminState(ses, 'admin_points_menu');
     return sendText(jid, `${customerLine(customer)}\n\n${adminPointsMenu()}`);
   } catch (e) {
@@ -5067,7 +5374,7 @@ async function handleAdminPointsAdjustWait(jid, ses, text) {
     return sendText(jid, 'Formato inválido. Escribe *TELEFONO PUNTOS*. Ejemplo: 622663874 50');
   }
   try {
-    const customer = await findCustomerByPhone(phone);
+    const customer = await findCustomerByPhone(phone, jid);
     const delta = amount * sign;
     return askAdminConfirm(
       jid,
@@ -5082,8 +5389,8 @@ async function handleAdminPointsAdjustWait(jid, ses, text) {
 
 async function handleAdminPointsHistoryWait(jid, ses, text) {
   try {
-    const customer = await findCustomerByPhone(text);
-    const data = await oxidianGet(`/admin/clientes/${customer.id}/puntos/historial`);
+    const customer = await findCustomerByPhone(text, jid);
+    const data = await oxidianGet(withAdminActor(`/admin/clientes/${customer.id}/puntos/historial`, jid));
     const rows = Array.isArray(data.historial) ? data.historial : [];
     setAdminState(ses, 'admin_points_menu');
     const history = rows.length
@@ -5244,7 +5551,7 @@ async function handleAdminEmergencyMenu(jid, ses, opcion) {
 
 async function handleAdminRiskOrders(jid, ses) {
   try {
-    const data = await oxidianGet('/admin/pedidos/riesgo');
+    const data = await oxidianGet(withAdminActor('/admin/pedidos/riesgo', jid));
     const sections = [
       formatRiskList('Pendientes lentos', data.pendientes_lentos),
       formatRiskList('Armando lentos', data.armando_lentos),

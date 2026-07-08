@@ -74,6 +74,22 @@
           <div class="cr-item-info">
             <p class="cr-item-name">{{ item.producto.nombre }}</p>
 
+            {% if item.presentacion_tamaño %}
+            {# Label dinámico según vertical: en producto (ropa/retail) se
+               muestra S/M/L; en comida el nombre completo. #}
+            {% set _pres_labels_map = ({'pequeño':'Pequeño','mediano':'Mediano','grande':'Grande'} if brand.es_comida else {'pequeño':'S','mediano':'M','grande':'L'}) %}
+            {% set _pres_emoji_map = ({'pequeño':'🥣','mediano':'🍽️','grande':'🍛'} if brand.es_comida else {'pequeño':'👕','mediano':'👔','grande':'🧥'}) %}
+            <p class="cr-item-note cr-item-size">
+              {{ _pres_emoji_map.get(item.presentacion_tamaño, '📏') }}
+              <strong>{{ _pres_labels_map.get(item.presentacion_tamaño, item.presentacion_tamaño|capitalize) }}</strong>
+              {% if item.presentacion_extra and item.presentacion_extra > 0 %}
+              <small>(+€{{ "%.2f"|format(item.presentacion_extra) }})</small>
+              {% elif item.presentacion_extra and item.presentacion_extra < 0 %}
+              <small>(−€{{ "%.2f"|format(item.presentacion_extra|abs) }})</small>
+              {% endif %}
+            </p>
+            {% endif %}
+
             {# Combo expandible #}
             {% if item.producto.es_combo and item.combo_display_items %}
             {% set fijos = item.combo_display_items|selectattr('seleccionado','equalto',False)|list %}
@@ -123,6 +139,8 @@
 
             {# Alérgenos y origen #}
             <div class="cr-item-tags">
+              {% set fb = fulfillment_badge(item.producto) %}
+              <span class="cr-tag cr-tag--fulfillment" title="{{ fb.title }}">{{ fb.emoji }} {{ fb.label }}</span>
               {% if item.producto.es_hipoalergenico %}
               <span class="cr-tag cr-tag--hipo">🌿 {{ ui.cart_no_allergens }}</span>
               {% else %}
@@ -159,13 +177,12 @@
           </div>
 
           {# Eliminar — con confirmación anti mis-tap en mobile #}
-          <button type="submit" class="cr-remove"
+          <button type="submit" class="cr-remove js-cart-remove"
                   title="{{ ui.cart_remove }}"
                   formmethod="POST"
                   formaction="{{ url_for('public.eliminar_carrito', producto_id=item.producto.id) }}"
                   aria-label="{{ ui.cart_remove }} {{ item.producto.nombre }}"
-                  data-confirm="¿Quitar «{{ item.producto.nombre|e }}» del carrito?"
-                  onclick="return (this.dataset.confirmed==='1' || window.OxToast?.confirm ? (window.OxToast.confirm({title:'Quitar producto',body:this.dataset.confirm,confirmText:'Sí, quitar',cancelText:'Cancelar',danger:true}).then(ok=>{if(ok){this.dataset.confirmed='1';this.click();}}), false) : confirm(this.dataset.confirm));">
+                  data-confirm="¿Quitar «{{ item.producto.nombre|e }}» del carrito?">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>
           </button>
         </div>
@@ -328,8 +345,38 @@
         <span class="cr-total-label">{{ ui.cart_total }}</span>
         <span class="cr-total-val" id="total-estimado">€{{ "%.2f"|format(subtotal - descuento_puntos) }}</span>
       </div>
+      {% if pedido_minimo and pedido_minimo > 0 %}
+      {% set _falta = pedido_minimo - subtotal %}
+      {% if _falta > 0 %}
+      <div class="cr-min-order cr-min-order--warn" role="status">
+        <span>Pedido mínimo: €{{ "%.2f"|format(pedido_minimo) }}</span>
+        <strong>Faltan €{{ "%.2f"|format(_falta) }}</strong>
+      </div>
+      {% else %}
+      <div class="cr-min-order cr-min-order--ok" role="status">
+        ✓ Superas el pedido mínimo de €{{ "%.2f"|format(pedido_minimo) }}
+      </div>
+      {% endif %}
+      {% endif %}
       {% if cart_issue %}
       <div class="cr-compat-warning" role="alert">{{ cart_issue }}</div>
+      {% if fulfillment_unavailable %}
+      <div class="cr-fulfillment-blockers">
+        {% for mode, info in fulfillment_unavailable.items() %}
+        <div class="cr-fulfillment-blocker">
+          <strong>{{ info.label }}</strong>
+          <span>{{ info.reason }}</span>
+          {% if info.products %}
+          <ul>
+            {% for p in info.products[:5] %}
+            <li>{{ p.nombre }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
       <button type="button" class="cr-cta cr-cta--disabled" disabled>{{ ui.cart_incompatible }}</button>
       {% else %}
       <a href="{{ url_for('public.checkout') }}" class="cr-cta" id="btn-checkout">
@@ -524,12 +571,12 @@ async function crRefreshWidget(data) {
     // 2) Actualizar total estimado con lo devuelto por el server (si trae)
     if (data && typeof data.subtotal !== 'undefined') {
       const te = document.getElementById('total-estimado');
-      const st = document.getElementById('subtotal_display');
+      const st = document.getElementById('total-display');
       if (te) te.textContent = '€' + Number(data.subtotal - (data.descuento_puntos || 0)).toFixed(2);
       if (st && typeof data.subtotal !== 'undefined') st.textContent = '€' + Number(data.subtotal).toFixed(2);
     }
     // 3) Refrescar el fragmento del widget si el server expone endpoint parcial
-    const wrap = document.getElementById('cr-pts-block');
+    const wrap = document.getElementById('cr-puntos-wrap');
     if (wrap && data && data.widget_html) {
       wrap.innerHTML = data.widget_html;
     } else if (wrap) {
@@ -589,5 +636,40 @@ async function crToggleCanje(btn, prodId) {
     }
   } catch(e) { console.error(e); }
 }
+
+/* ── Eliminar item con confirmación robusta ─────────────────────────────
+   Reemplaza el `onclick=` inline anterior que tenía un pattern con
+   `this.click()` recursivo. Aquí:
+     • el listener intercepta el submit del form padre
+     • deshabilita el botón mientras el toast está abierto
+     • si el usuario cancela, restaura el estado normal
+     • si confirma, submit del form (SIN dispatchear un segundo click)
+   Robusto ante toques dobles y sin recursión.
+──────────────────────────────────────────────────────────────────────── */
+document.addEventListener('click', function (ev) {
+  const btn = ev.target.closest('.js-cart-remove');
+  if (!btn || btn.dataset.crConfirmed === '1' || btn.disabled) return;
+  ev.preventDefault();
+  const form = btn.form;
+  const msg = btn.dataset.confirm || '¿Quitar del carrito?';
+  btn.disabled = true;
+  const ask = window.OxToast?.confirm
+    ? window.OxToast.confirm({
+        title: 'Quitar producto', body: msg,
+        confirmText: 'Sí, quitar', cancelText: 'Cancelar', danger: true,
+      })
+    : Promise.resolve(confirm(msg));
+  Promise.resolve(ask).then(function (ok) {
+    if (!ok) { btn.disabled = false; return; }
+    btn.dataset.crConfirmed = '1';
+    if (form && typeof form.requestSubmit === 'function') {
+      // requestSubmit respeta el formaction del botón que disparó el submit
+      form.requestSubmit(btn);
+    } else if (form) {
+      form.action = btn.getAttribute('formaction') || form.action;
+      form.submit();
+    }
+  }).catch(function () { btn.disabled = false; });
+});
 </script>
 {% endblock %}

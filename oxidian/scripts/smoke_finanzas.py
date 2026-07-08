@@ -21,6 +21,7 @@ import json
 import time
 from decimal import Decimal
 from pathlib import Path
+from sqlalchemy import text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("OXIDIAN_SKIP_STARTUP_DB", "1")
@@ -28,7 +29,7 @@ os.environ.setdefault("OXIDIAN_SKIP_STARTUP_DB", "1")
 from app import create_app
 from extensions import db
 from models import (
-    Caja, Order, OrderItem, OrderEvent, OrderProviderStatus,
+    Caja, Categoria, Order, OrderItem, OrderEvent, OrderProviderStatus,
     PointsLog, Product, Proveedor, ProveedorProducto, StaffPayment,
     Stock, User, metadata_item_pedido, utcnow,
 )
@@ -96,7 +97,107 @@ def stock_bar(bar_id, prod_id):
     return int(f.stock or 0) if f else None
 
 
+def ensure_user(email, nombre, rol):
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        user = User(email=email, nombre=nombre, rol=rol, activo=True)
+        user.set_password(os.environ.get("SEED_PASSWORD") or "smoke-finanzas")
+        db.session.add(user)
+        db.session.flush()
+    user.nombre = user.nombre or nombre
+    user.rol = rol
+    user.activo = True
+    return user
+
+
+def ensure_category():
+    category = Categoria.query.filter_by(nombre="QA Finanzas").first()
+    if not category:
+        category = Categoria(nombre="QA Finanzas", descripcion="Fixtures smoke financiero", activo=True)
+        db.session.add(category)
+        db.session.flush()
+    category.activo = True
+    return category
+
+
+def ensure_own_product(category):
+    product = Product.query.filter_by(nombre="QA Finanzas Producto Propio").first()
+    if not product:
+        product = Product(nombre="QA Finanzas Producto Propio", precio=Decimal("6.50"))
+        db.session.add(product)
+        db.session.flush()
+    product.descripcion = "Producto propio para smoke financiero."
+    product.precio = Decimal("6.50")
+    product.precio_costo = Decimal("2.10")
+    product.categoria_id = category.id
+    product.activo = True
+    product.es_combo = False
+    product.tipo_producto = "simple"
+    product.canal_preparacion = "cocina"
+    product.modalidad_entrega = "ambas"
+    product.proveedor_despachador_id = None
+    if stock_propio(product.id) < 20:
+        db.session.add(Stock(producto_id=product.id, cantidad=50))
+    return product
+
+
+def ensure_provider_product(category):
+    provider = Proveedor.query.filter_by(nombre="Bar El Parcerito").first()
+    if not provider:
+        provider = Proveedor(nombre="Bar El Parcerito")
+        db.session.add(provider)
+        db.session.flush()
+    provider.activo = True
+    provider.modelo_acuerdo = "stock_proveedor"
+    provider.comision_pct = Decimal("0")
+
+    product = Product.query.filter_by(nombre="QA Finanzas Producto Bar").first()
+    if not product:
+        product = Product(nombre="QA Finanzas Producto Bar", precio=Decimal("8.25"))
+        db.session.add(product)
+        db.session.flush()
+    product.descripcion = "Producto de bar para smoke financiero."
+    product.precio = Decimal("8.25")
+    product.precio_costo = Decimal("3.25")
+    product.categoria_id = category.id
+    product.activo = True
+    product.es_combo = False
+    product.tipo_producto = "simple"
+    product.canal_preparacion = "cocina"
+    product.modalidad_entrega = "ambas"
+    product.proveedor_despachador_id = provider.id
+
+    mapping = ProveedorProducto.query.filter_by(
+        proveedor_id=provider.id,
+        producto_id=product.id,
+    ).first()
+    if not mapping:
+        mapping = ProveedorProducto(
+            proveedor_id=provider.id,
+            producto_id=product.id,
+            stock=30,
+            precio_costo=Decimal("3.25"),
+            activo=True,
+        )
+        db.session.add(mapping)
+    mapping.stock = max(int(mapping.stock or 0), 30)
+    mapping.precio_costo = Decimal("3.25")
+    mapping.activo = True
+    return provider, product
+
+
+def ensure_fixture_data():
+    category = ensure_category()
+    cliente = ensure_user("cliente@oxidian.com", "Cliente Smoke Finanzas", "cliente")
+    repart = ensure_user("repartidor@oxidian.com", "Repartidor Smoke Finanzas", "repartidor")
+    prod_propio = ensure_own_product(category)
+    bar, prod_bar = ensure_provider_product(category)
+    db.session.commit()
+    return cliente, repart, prod_propio, bar, prod_bar
+
+
 def cleanup_pedido(p_id):
+    db.session.execute(text("DELETE FROM idempotency_keys WHERE order_id = :id"), {"id": p_id})
     OrderProviderStatus.query.filter_by(pedido_id=p_id).delete()
     OrderEvent.query.filter_by(pedido_id=p_id).delete()
     PointsLog.query.filter_by(pedido_id=p_id).delete()
@@ -330,18 +431,7 @@ def test_6_bizum_sin_confirmar(cliente, repart, prod_propio):
 def main():
     app = create_app(os.environ.get("FLASK_ENV", "production"))
     with app.app_context():
-        cliente = User.query.filter_by(email="cliente@oxidian.com").first()
-        repart = User.query.filter_by(email="repartidor@oxidian.com").first()
-        prod_propio = Product.query.filter_by(
-            activo=True, es_combo=False,
-            proveedor_despachador_id=None,
-        ).first()
-        bar = Proveedor.query.filter_by(nombre="Bar El Parcerito").first()
-        prod_bar = Product.query.filter(
-            Product.activo, Product.proveedor_despachador_id == bar.id
-        ).first()
-        chk(cliente and repart and prod_propio and bar and prod_bar,
-            "Datos demo incompletos (necesita cliente, repartidor, prod propio, bar y prod del bar)")
+        cliente, repart, prod_propio, bar, prod_bar = ensure_fixture_data()
 
         tests = [
             (test_1_pedido_propio_entregado, (cliente, repart, prod_propio)),

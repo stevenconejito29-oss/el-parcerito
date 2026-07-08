@@ -411,6 +411,71 @@ def confirmar_entrega(pedido_id):
     return redirect(url_for("repartidor.ruta"))
 
 
+@repartidor_bp.route("/pedidos/<int:pedido_id>/no-entregado", methods=["POST"])
+@repartidor_required
+def marcar_no_entregado(pedido_id):
+    """Escape para el repartidor cuando la entrega no es posible.
+
+    Casos: cliente no está en la dirección, no responde al teléfono, código
+    de confirmación bloqueado por 3 intentos fallidos, o rechaza el pedido.
+    Restaura stock, cancela el pedido y registra el motivo. Es la única forma
+    de sacar el pedido del limbo `en_ruta`/`listo` cuando no hay entrega física.
+    """
+    from services import cancelar_pedido_operativo, registrar_evento_pedido
+    pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
+    if pedido.repartidor_id != current_user.id and not _es_admin_operativo():
+        flash("Este pedido no está asignado a ti.", "danger")
+        return redirect(url_for("repartidor.ruta"))
+    if pedido.estado in ("entregado", "cancelado"):
+        flash(f"El pedido {pedido.numero_pedido} ya estaba en estado {pedido.estado}.", "warning")
+        return redirect(url_for("repartidor.ruta"))
+    if pedido.estado not in ("listo", "en_ruta"):
+        flash("Solo puedes reportar no-entrega si el pedido está listo o en ruta.", "danger")
+        return redirect(url_for("repartidor.ruta"))
+    motivo = (request.form.get("motivo") or "").strip()[:300] or "Cliente no disponible en la dirección"
+    registrar_evento_pedido(
+        pedido,
+        "pedido_no_entregado",
+        actor_id=current_user.id,
+        estado_anterior=pedido.estado,
+        estado_nuevo="cancelado",
+        canal="repartidor",
+        detalle=motivo,
+        metadata={"repartidor_id": current_user.id, "motivo": motivo},
+    )
+    try:
+        cancelar_pedido_operativo(
+            pedido,
+            actor_id=current_user.id,
+            canal="repartidor_no_entregado",
+            detalle=f"No entregado: {motivo}",
+        )
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("no_entregado falló para pedido %s", pedido.id)
+        flash(f"Error al reportar no-entrega: {e}", "danger")
+        return redirect(url_for("repartidor.ruta"))
+    AuditLog.registrar(
+        current_user.id,
+        "pedido_no_entregado",
+        "order",
+        entity_id=pedido.id,
+        detalle=motivo,
+        ip=request.remote_addr,
+    )
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    flash(
+        f"Pedido {pedido.numero_pedido} marcado como no entregado. "
+        "Stock restaurado. Devuelve el pedido al local.",
+        "warning",
+    )
+    return redirect(url_for("repartidor.ruta"))
+
+
 @repartidor_bp.route("/mis-comisiones")
 @repartidor_required
 def mis_comisiones():

@@ -292,11 +292,20 @@ def validate_component_product(
     if product_obj.es_combo:
         return False, "Un combo no puede contener otro combo. Usa solo productos simples"
 
+    # ── Bloqueo de productos exclusivos de canje ──────────────────────────
+    # Un producto marcado como "solo canje por puntos" no puede formar parte
+    # de un combo vendible: mezclaría dinero con puntos y rompería el pricing.
+    if getattr(product_obj, "solo_canje", False):
+        return False, (
+            f"'{product_obj.nombre}' es de canje exclusivo por puntos y no puede "
+            "formar parte de un combo. Retira el flag 'solo canje' o usa otro producto."
+        )
+
+    from models import ComboItem, Product
+
     # ── Modalidad de entrega compatible ──────────────────────────────────
     # Si un componente es solo-delivery y otro solo-recogida, el combo no
     # se puede armar (no existe modalidad válida para todos).
-    from models import ComboItem, Product
-
     def _modes(mode):
         m = (mode or "ambas").strip().lower()
         if m == "delivery":
@@ -319,6 +328,44 @@ def validate_component_product(
                 "los componentes actuales solo permiten una modalidad de entrega "
                 "distinta (delivery vs recogida). Cambia la modalidad del producto "
                 "o del combo antes de agregarlo."
+            )
+
+    # ── Tipo de entrega compatible (inmediato vs programado) ─────────────
+    # Un combo no puede mezclar productos inmediatos con productos de fecha
+    # fija: cocina, preparación y reparto no pueden coordinar dos flujos.
+    if combo:
+        combo_tipo = (getattr(combo, "tipo_entrega", "inmediato") or "inmediato").strip().lower()
+        prod_tipo = (getattr(product_obj, "tipo_entrega", "inmediato") or "inmediato").strip().lower()
+        if combo_tipo and prod_tipo and combo_tipo != prod_tipo:
+            return False, (
+                f"'{product_obj.nombre}' es de tipo '{prod_tipo}' pero el combo es "
+                f"'{combo_tipo}'. No puedes mezclar productos inmediatos con productos "
+                "de fecha programada."
+            )
+        for it in ComboItem.query.filter_by(combo_id=combo_id).all():
+            comp = it.componente
+            if not comp:
+                continue
+            comp_tipo = (getattr(comp, "tipo_entrega", "inmediato") or "inmediato").strip().lower()
+            if comp_tipo and prod_tipo and comp_tipo != prod_tipo:
+                return False, (
+                    f"'{product_obj.nombre}' ({prod_tipo}) no comparte tipo de entrega "
+                    f"con '{comp.nombre}' ({comp_tipo}). Todos los componentes de un "
+                    "combo deben ser del mismo tipo."
+                )
+
+    # ── Origen (stock propio vs proveedor) ───────────────────────────────
+    # Cada combo se arma con productos del MISMO origen (regla documentada
+    # en CLAUDE.md). Refuerzo aquí para blindar la puerta de entrada.
+    if combo:
+        combo_prov = getattr(combo, "proveedor_despachador_id", None)
+        prod_prov = getattr(product_obj, "proveedor_despachador_id", None)
+        if combo_prov != prod_prov:
+            origen_combo = "stock propio" if combo_prov is None else f"proveedor #{combo_prov}"
+            origen_prod = "stock propio" if prod_prov is None else f"proveedor #{prod_prov}"
+            return False, (
+                f"'{product_obj.nombre}' es de {origen_prod} pero el combo es de "
+                f"{origen_combo}. Todos los componentes deben compartir origen."
             )
 
     return True, None

@@ -35,7 +35,12 @@ from services import (distribuir_pedido, registrar_uso_afiliado,
 from pricing_service import calcular_precio
 from loyalty_service import aplicar_canje_en_pedido, bloquear_cliente_puntos, solicitar_codigo
 from phone_utils import normalizar_telefono_cliente, telefono_valido
-from store_config import get_service_commission, get_store_features, is_service_mode
+from store_config import (
+    get_public_store_url,
+    get_service_commission,
+    get_store_features,
+    is_service_mode,
+)
 
 api_bot_bp = Blueprint("api_bot", __name__)
 logger = logging.getLogger(__name__)
@@ -170,8 +175,8 @@ def _json_bool(value):
 
 
 def _bot_order_create_enabled():
-    """Los pedidos se crean exclusivamente en la tienda web o POS."""
-    return False
+    """Permite crear pedidos desde bot solo si está habilitado explícitamente."""
+    return _config_bool("BOT_ALLOW_ORDER_CREATE", "0")
 
 
 @api_bot_bp.route("/ai/config")
@@ -194,7 +199,7 @@ def ai_config():
         ),
         "placeholders": {
             "NEGOCIO": SiteConfig.get("NOMBRE_NEGOCIO", "la tienda") or "la tienda",
-            "TIENDA_URL": SiteConfig.get("TIENDA_URL", "") or SiteConfig.get("OXIDIAN_PUBLIC_URL", ""),
+            "TIENDA_URL": get_public_store_url(request.url_root),
         },
     })
 
@@ -361,6 +366,7 @@ def branding():
             "rol": user.rol,
             "capabilities": sorted(set(capabilities)),
         })
+    _tipo_tienda = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
     return jsonify({
         "ok": True,
         "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda"),
@@ -369,6 +375,9 @@ def branding():
         "telefono": SiteConfig.get("TELEFONO_NEGOCIO", ""),
         "direccion": SiteConfig.get("DIRECCION_NEGOCIO", ""),
         "ciudad": SiteConfig.get("CIUDAD_NEGOCIO", ""),
+        "tipo_tienda": _tipo_tienda,
+        "es_comida": _tipo_tienda == "comida",
+        "vertical_label": "Menú" if _tipo_tienda == "comida" else "Catálogo",
         "tenant_mode": features["modo_tienda"],
         "suspended": str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).lower() in {"1", "true", "yes", "on"},
         "delivery_enabled": features["delivery"],
@@ -454,6 +463,41 @@ def _combo_order_payload(producto, seleccion_item_ids):
 def _producto_disponible_para_bot(producto):
     if not producto:
         return False
+    # Coherencia con feature flags globales: si el módulo está OFF, el bot
+    # NO debe mostrar productos que dependen de él (evita que el cliente pida
+    # algo que el checkout luego rechaza).
+    try:
+        features = get_store_features()
+    except Exception:
+        features = {
+            "pedidos_programados": True,
+            "puntos": True,
+            "delivery": True,
+            "recogida": True,
+        }
+    # Producto programado y feature apagada → invisible al bot.
+    tipo_ent = (getattr(producto, "tipo_entrega", "") or "").lower()
+    if tipo_ent in ("programado", "encargo") and not features.get("pedidos_programados", True):
+        return False
+    # Producto solo-canje y puntos apagados → invisible al bot.
+    if getattr(producto, "solo_canje", False) and not features.get("puntos", True):
+        return False
+    modalidad = (getattr(producto, "modalidad_entrega", "") or "ambas").strip().lower()
+    if modalidad == "delivery" and not features.get("delivery", True):
+        return False
+    if modalidad == "recogida" and not features.get("recogida", True):
+        return False
+    if modalidad == "ambas" and not (
+        features.get("delivery", True) or features.get("recogida", True)
+    ):
+        return False
+    # Filtro por vertical: los productos con `vertical="comida"` o `"producto"`
+    # solo aparecen si TIPO_TIENDA coincide. Los `"ambos"` (default) siempre.
+    v = (getattr(producto, "vertical", None) or "ambos").strip().lower()
+    if v != "ambos":
+        tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
+        if v != tt:
+            return False
     return bool(
         producto
         and producto.activo
@@ -683,6 +727,82 @@ def detalle_producto(producto_id):
         return jsonify({"ok": False, "error": "Error interno consultando producto"}), 500
 
 
+@api_bot_bp.route("/cliente/buscar-producto")
+@bot_required
+def cliente_buscar_producto():
+    """Búsqueda accent-insensitive para preguntas del cliente por WhatsApp.
+
+    Casos: "¿hay pizza?", "¿cuánto vale la margarita?", "tenéis coca cola?".
+    Devuelve top N productos que matchean por nombre o descripción, con precio,
+    disponibilidad y URL directa a la web para pedir.
+    Query params: `q` (texto libre), `limit` (default 5, max 10).
+    """
+    import unicodedata
+
+    def _strip_accents(s: str) -> str:
+        if not s:
+            return ""
+        return "".join(
+            c for c in unicodedata.normalize("NFD", s)
+            if unicodedata.category(c) != "Mn"
+        ).lower()
+
+    q_raw = (request.args.get("q") or "").strip()
+    if not q_raw:
+        return jsonify({"ok": False, "error": "Falta parámetro q"}), 400
+    try:
+        limit = min(max(1, int(request.args.get("limit", 5))), 10)
+    except (TypeError, ValueError):
+        limit = 5
+    q_norm = _strip_accents(q_raw)
+    tokens = [t for t in q_norm.split() if len(t) >= 2]
+    if not tokens:
+        return jsonify({"ok": True, "resultados": [], "consulta": q_raw})
+
+    productos = _catalogo_unificado_para_bot()
+    resultados = []
+    for p in productos:
+        if not _producto_disponible_para_bot(p):
+            continue
+        nombre_norm = _strip_accents(p.nombre or "")
+        desc_norm = _strip_accents(p.descripcion or "")
+        # score: token en nombre vale 3, en descripción vale 1
+        score = 0
+        for t in tokens:
+            if t in nombre_norm:
+                score += 3
+            elif t in desc_norm:
+                score += 1
+        if score > 0:
+            resultados.append((score, p))
+    resultados.sort(key=lambda x: (-x[0], x[1].nombre or ""))
+    resultados = resultados[:limit]
+    tienda_url = get_public_store_url(request.url_root)
+    return jsonify({
+        "ok": True,
+        "consulta": q_raw,
+        "count": len(resultados),
+        "tienda_url": tienda_url,
+        "resultados": [
+            {
+                "id": p.id,
+                "nombre": p.nombre,
+                "precio": float(p.precio_final or 0),
+                "es_combo": bool(p.es_combo),
+                # Canje con puntos: los productos solo_canje NO tienen precio
+                # en euros; el cliente los obtiene entregando puntos.
+                "solo_canje": bool(getattr(p, "solo_canje", False)),
+                "canjeable_con_puntos": bool(getattr(p, "canjeable_con_puntos", False)),
+                "puntos_para_canje": int(getattr(p, "puntos_para_canje", 0) or 0),
+                "descripcion": (p.descripcion or "")[:140],
+                "url": f"{tienda_url.rstrip('/')}/producto/{p.id}" if tienda_url else f"/producto/{p.id}",
+                "score": score,
+            }
+            for score, p in resultados
+        ],
+    })
+
+
 @api_bot_bp.route("/catalogo/simulador")
 @bot_required
 def catalogo_simulador():
@@ -844,6 +964,14 @@ def registrar_cliente():
 @bot_required
 def consultar_puntos():
     try:
+        if not get_store_features().get("puntos", True):
+            return jsonify({
+                "ok": False,
+                "error": "El club de puntos no está habilitado.",
+                "code": "FEATURE_DISABLED",
+                "puntos": 0,
+                "valor_euro": 0,
+            }), 403
         cliente, _telefono = _cliente_por_telefono(request.args.get("telefono", ""))
         if not cliente:
             return jsonify({
@@ -875,7 +1003,13 @@ def consultar_puntos():
             "codigo_verificacion": codigo,  # 4 dígitos, expira 10 min
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        # Log el error real con traceback para debugging server-side,
+        # pero devuelve mensaje genérico al bot (no leakea internals).
+        import traceback
+        current_app.logger.error(
+            "consultar_puntos fallo — %s\n%s", e, traceback.format_exc()
+        )
+        return jsonify({"ok": False, "error": "Error interno consultando puntos"}), 500
 
 
 # ─── VALIDAR CUPÓN ───────────────────────────
@@ -944,9 +1078,16 @@ def crear_pedido():
 
         # ── Idempotency guard ────────────────────────────────────
         # El bot DEBE enviar Idempotency-Key (UUID por intento). Si no la envía,
-        # caemos a una key automática que agrupa POSTs idénticos del mismo bot
-        # en una ventana corta — pero el bot debería siempre enviarla.
-        idem_key = request_idempotency_key("bot", auto_seed=request.remote_addr or "bot")
+        # caemos a una key automática que agrupa POSTs idénticos del MISMO
+        # teléfono en una ventana corta. Incluir el teléfono en el auto_seed
+        # evita colisiones cuando dos clientes hacen pedidos idénticos por casualidad
+        # dentro de la misma ventana (todos los requests del bot vienen del mismo IP).
+        _peek = request.get_json(silent=True) or {}
+        _tel_seed = (_peek.get("telefono_cliente") or _peek.get("telefono") or "").strip()
+        idem_key = request_idempotency_key(
+            "bot",
+            auto_seed=f"{request.remote_addr or 'bot'}|{_tel_seed}",
+        )
         body_h = request_body_hash()
         prev = IdempotencyKey.query.filter_by(scope="bot", key=idem_key).first()
         if prev:
@@ -1761,11 +1902,17 @@ def reportar_incidencia(pedido_id):
 @api_bot_bp.route("/pedido/estado")
 @bot_required
 def estado_pedido_buscar():
-    """Busca estado por id o numero_pedido; telefono limita la consulta al cliente."""
+    """Busca estado de pedido. Las consultas cliente siempre requieren teléfono."""
     try:
         pedido_id = request.args.get("pedido_id", type=int)
         numero = (request.args.get("numero") or request.args.get("numero_pedido") or "").strip()
         telefono = normalizar_telefono_cliente(request.args.get("telefono"))
+        if (pedido_id or numero) and not telefono_valido(telefono):
+            return jsonify({
+                "ok": False,
+                "error": "Indica el teléfono del cliente para consultar ese pedido",
+                "code": "TELEFONO_REQUERIDO",
+            }), 400
 
         query = Order.query
         if pedido_id:
@@ -2143,7 +2290,7 @@ def asistente_bot():
     """Contrato compacto para el bot: opciones, endpoints y textos base."""
     try:
         nombre = SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda")
-        tienda_url = SiteConfig.get("TIENDA_URL", "") or SiteConfig.get("OXIDIAN_PUBLIC_URL", "")
+        tienda_url = get_public_store_url(request.url_root)
         telefono = SiteConfig.get("TELEFONO_NEGOCIO", "")
         return jsonify({
             "ok": True,
@@ -2194,6 +2341,11 @@ def menu_flow():
         telefono_negocio = SiteConfig.get("TELEFONO_NEGOCIO", "")
         horario_ap = SiteConfig.get("HORARIO_APERTURA", "09:00")
         horario_ci = SiteConfig.get("HORARIO_CIERRE", "22:30")
+        tipo_tienda = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
+        es_comida = (tipo_tienda == "comida")
+        catalogo_label = "menú" if es_comida else "catálogo"
+        catalogo_emoji = "🍽️" if es_comida else "🛍️"
+        preparando_emoji = "👨‍🍳" if es_comida else "📦"
 
         # Construir categorías disponibles
         categorias = Categoria.query.filter_by(activo=True).order_by(Categoria.id).all()
@@ -2205,9 +2357,14 @@ def menu_flow():
             "combo": "🎁", "pack": "🎁", "menu": "🎁",
             "pizza": "🍕", "burger": "🍔", "hambur": "🍔",
             "ensalada": "🥗", "sopa": "🍲", "caldo": "🍲",
+            "camisa": "👕", "camiseta": "👕", "polo": "👕",
+            "pantalon": "👖", "vaquero": "👖", "jean": "👖",
+            "zapato": "👟", "calzado": "👟", "zapatilla": "👟",
+            "accesor": "🎒", "bolso": "👜", "mochila": "🎒",
+            "chaqueta": "🧥", "abrigo": "🧥",
         }
         for i, cat in enumerate(categorias, 1):
-            emoji = "🍽️"
+            emoji = catalogo_emoji
             nombre_lower = cat.nombre.lower()
             for kw, em in emojis_cat.items():
                 if kw in nombre_lower:
@@ -2219,7 +2376,7 @@ def menu_flow():
                 "label": cat.nombre,
                 "categoria_id": cat.id,
             })
-        cats_menu.append({"key": str(len(cats_menu) + 1), "emoji": "📋", "label": "Ver todo el menú", "categoria_id": None})
+        cats_menu.append({"key": str(len(cats_menu) + 1), "emoji": "📋", "label": f"Ver todo el {catalogo_label}", "categoria_id": None})
 
         return jsonify({
             "ok": True,
@@ -2231,7 +2388,7 @@ def menu_flow():
             "menu_principal": {
                 "bienvenida": f"¡Hola parce! 🥟 Bienvenido a *{nombre}*\n\n¿En qué te ayudo hoy?",
                 "opciones": [
-                    {"key": "1", "emoji": "🍽️", "label": "Ver el menú",          "action": "menu_catalogo"},
+                    {"key": "1", "emoji": catalogo_emoji, "label": f"Ver el {catalogo_label}",          "action": "menu_catalogo"},
                     {"key": "2", "emoji": "🔥", "label": "Promociones activas",   "action": "promociones"},
                     {"key": "3", "emoji": "🎟️", "label": "Mis cupones",           "action": "cupones"},
                     {"key": "4", "emoji": "⭐", "label": "Consultar mis puntos",  "action": "puntos_consulta"},
@@ -2243,7 +2400,8 @@ def menu_flow():
 
             # ── MENÚ CATÁLOGO (por categoría) ──
             "menu_catalogo": {
-                "pregunta": "¿Qué se te antoja hoy? 🤤\nElige una categoría:",
+                "pregunta": ("¿Qué se te antoja hoy? 🤤\nElige una categoría:" if es_comida
+                             else "¿Qué buscas hoy? 🛍️\nElige una categoría:"),
                 "categorias": cats_menu,
                 "nota": "Escribe el número o nombre de la categoría"
             },
@@ -2295,7 +2453,7 @@ def menu_flow():
             # ── MENSAJES DE ESTADO ──
             "mensajes_estado": {
                 "pendiente":  "✅ Tu pedido *{num}* fue recibido. Total: €{total}. ¡Ya lo estamos preparando!",
-                "armando":    "👨‍🍳 Estamos preparando tu pedido *{num}*. En breve sale.",
+                "armando":    f"{preparando_emoji} Estamos preparando tu pedido *{{num}}*. En breve sale.",
                 "listo":      "📦 Tu pedido *{num}* está listo y pronto sale a entregarse.",
                 "en_ruta":    "🚀 Tu pedido *{num}* está en camino. Cuando el repartidor llegue te enviaremos el código de entrega.",
                 "entregado":  "🎉 ¡Pedido *{num}* entregado! Gracias parce 💛\nGanaste *{puntos}* puntos ⭐",
@@ -2413,6 +2571,13 @@ def productos_canjeables():
     Requiere telefono como query param.
     """
     try:
+        if not get_store_features().get("puntos", True):
+            return jsonify({
+                "ok": False,
+                "error": "El club de puntos no está habilitado.",
+                "code": "FEATURE_DISABLED",
+                "productos_canjeables": [],
+            }), 403
         cliente, telefono = _cliente_por_telefono(request.args.get("telefono", ""))
         if not telefono_valido(telefono):
             return jsonify({"ok": False, "error": "Parámetro telefono requerido"}), 400
@@ -2539,15 +2704,20 @@ def bot_verificar_codigo_puntos():
             # Solo verificación, sin canje
             return jsonify({"ok": True, "verificado": True, "puntos": cliente.puntos})
 
-        producto = db.session.get(Product, int(producto_id))
+        try:
+            producto = db.session.get(Product, int(producto_id))
+        except (ValueError, TypeError):
+            producto = None
         if not producto or not producto.canje_directo_disponible():
-            return jsonify({"ok": False, "error": "Producto no válido para canje"})
+            # Status 400 explícito para que el bot detecte como error
+            # y no como éxito silencioso.
+            return jsonify({"ok": False, "error": "Producto no válido para canje"}), 400
 
         if producto.puntos_para_canje > cliente.puntos:
             return jsonify({
                 "ok": False,
                 "error": f"Puntos insuficientes. Necesitas {producto.puntos_para_canje}"
-            })
+            }), 400
 
         return jsonify({
             "ok": True,
@@ -2578,6 +2748,13 @@ def puntos_saldo_completo():
     Reemplaza a /puntos para el bot cuando necesita info completa.
     """
     try:
+        if not get_store_features().get("puntos", True):
+            return jsonify({
+                "ok": False,
+                "error": "El club de puntos no está habilitado.",
+                "code": "FEATURE_DISABLED",
+                "mensaje_bot": "El club de puntos no está disponible ahora mismo.",
+            }), 403
         cliente, telefono = _cliente_por_telefono(request.args.get("telefono", ""))
         if not telefono_valido(telefono):
             return jsonify({"ok": False, "error": "Parámetro telefono requerido"}), 400
@@ -2666,7 +2843,7 @@ def puntos_saldo_completo():
 def info_negocio():
     """Info pública del negocio para el bot, incluyendo estado de apertura en tiempo real."""
     try:
-        tienda_url = SiteConfig.get("TIENDA_URL", "")
+        tienda_url = get_public_store_url(request.url_root)
         apertura   = SiteConfig.get("HORARIO_APERTURA", "09:00")
         cierre     = SiteConfig.get("HORARIO_CIERRE", "22:30")
         forzada    = str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).strip().lower() in {"1", "true", "yes", "on"}
@@ -2804,6 +2981,16 @@ def _bot_admin_actor_allowed(data, capability):
     )
 
 
+def _bot_admin_request_payload():
+    if request.method in {"GET", "HEAD"}:
+        return request.args.to_dict(flat=True)
+    return request.get_json(silent=True) or {}
+
+
+def _bot_admin_request_allowed(capability):
+    return _bot_admin_actor_allowed(_bot_admin_request_payload(), capability)
+
+
 def _bot_actor_forbidden():
     return jsonify({
         "ok": False,
@@ -2926,6 +3113,8 @@ def bot_admin_resumen_hoy():
 @bot_required
 def bot_admin_toggle_modo_tienda():
     """Alterna entre modo 'propia' y 'bar_servicio' desde el bot."""
+    if not _bot_admin_request_allowed("store"):
+        return _bot_actor_forbidden()
     from store_config import get_store_features
     features = get_store_features()
     actual = features.get("modo_tienda", "propia")
@@ -2945,6 +3134,8 @@ def bot_admin_toggle_modo_tienda():
 def bot_admin_toggle_modulo():
     """Activa/desactiva un módulo (delivery, recogida, programados, puntos)."""
     data = request.get_json(silent=True) or {}
+    if not _bot_admin_actor_allowed(data, "store"):
+        return _bot_actor_forbidden()
     claves = {
         "delivery": "FEATURE_DELIVERY",
         "recogida": "FEATURE_RECOGIDA",
@@ -2971,6 +3162,8 @@ def bot_admin_toggle_modulo():
 def bot_admin_forzar_cierre():
     """Fuerza cierre / reapertura de la tienda al vuelo."""
     data = request.get_json(silent=True) or {}
+    if not _bot_admin_actor_allowed(data, "store"):
+        return _bot_actor_forbidden()
     cerrada = bool(data.get("cerrada"))
     SiteConfig.set("TIENDA_FORZAR_CERRADA", "1" if cerrada else "0",
                    descripcion="Forzar cierre desde bot super_admin")
@@ -2982,6 +3175,8 @@ def bot_admin_forzar_cierre():
 @bot_required
 def bot_admin_salud():
     """Snapshot rápido de salud del sistema para el super_admin."""
+    if not _bot_admin_request_allowed("store"):
+        return _bot_actor_forbidden()
     from datetime import date
     try:
         pedidos_hoy = Order.query.filter(
@@ -3014,6 +3209,8 @@ def bot_admin_salud():
 def bot_admin_pedidos_pendientes():
     """Cola operativa: pedidos activos (pendiente/armando/listo) para mostrar
     al admin desde el bot. Ordenados por más antiguo primero."""
+    if not _bot_admin_request_allowed("store"):
+        return _bot_actor_forbidden()
     estados_activos = ("pendiente", "armando", "listo", "en_ruta")
     pedidos = Order.query.filter(Order.estado.in_(estados_activos)) \
         .order_by(Order.creado_en.asc()).limit(30).all()
@@ -3041,6 +3238,8 @@ def bot_admin_pedidos_pendientes():
 @bot_required
 def bot_admin_pedidos_riesgo():
     """Pedidos que requieren atención operativa rápida desde WhatsApp admin."""
+    if not _bot_admin_request_allowed("store"):
+        return _bot_actor_forbidden()
     try:
         now = datetime.utcnow()
         pending_min = max(5, min(180, request.args.get("pending_min", 20, type=int)))
@@ -3107,6 +3306,8 @@ def bot_admin_pedidos_riesgo():
 @bot_required
 def bot_admin_buscar_productos():
     try:
+        if not _bot_admin_request_allowed("products"):
+            return _bot_actor_forbidden()
         q = (request.args.get("q") or "").strip()
         if not q:
             return jsonify({"ok": False, "error": "q requerido"}), 400
@@ -3186,6 +3387,8 @@ def bot_admin_producto_activo(producto_id):
 @bot_required
 def bot_admin_buscar_cliente():
     try:
+        if not _bot_admin_request_allowed("points"):
+            return _bot_actor_forbidden()
         telefono_raw = request.args.get("telefono") or request.args.get("q") or ""
         cliente, telefono = _buscar_cliente_por_telefono(telefono_raw)
         if not cliente:
@@ -3252,6 +3455,8 @@ def bot_admin_ajustar_puntos(cliente_id):
 @bot_required
 def bot_admin_historial_puntos(cliente_id):
     try:
+        if not _bot_admin_request_allowed("points"):
+            return _bot_actor_forbidden()
         cliente = get_or_404(User, cliente_id)
         historial = PointsLog.query.filter_by(cliente_id=cliente.id)\
             .order_by(PointsLog.creado_en.desc()).limit(5).all()

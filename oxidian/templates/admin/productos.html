@@ -408,33 +408,81 @@
 </div>
 
 <style>
-.tab-active   { background:rgba(255,171,0,.15); border:1.5px solid rgba(255,171,0,.35); color:#FFAB00; }
-.tab-inactive { background:var(--col-elevated); border:1.5px solid var(--col-border); color:var(--col-muted); cursor:pointer; transition:all .15s; }
-.tab-inactive:hover { color:#fff; border-color:rgba(255,255,255,.15); }
+/* Admin productos — tokens semánticos que responden al branding */
+.tab-active {
+  background: color-mix(in srgb, var(--brand-primary) 15%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--brand-primary) 35%, transparent);
+  color: var(--brand-primary);
+}
+.tab-inactive {
+  background: var(--col-elevated); border:1.5px solid var(--col-border);
+  color: var(--col-muted); cursor:pointer; transition: all .15s;
+}
+.tab-inactive:hover {
+  color: var(--col-text);
+  border-color: color-mix(in srgb, var(--col-text) 15%, transparent);
+}
 .prod-label { font-size:.72rem; font-weight:700; color:var(--col-muted); display:block; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.04em; }
-.prod-input { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem; transition:border-color .15s; resize:vertical; }
-.prod-input:focus { outline:none; border-color:rgba(255,171,0,.5); }
-.prod-select { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem; }
-.admin-product-card { background:var(--col-surface); border:1px solid var(--col-border); border-radius:.85rem; padding:.75rem; box-shadow:0 8px 22px rgba(0,0,0,.16); }
+.prod-input, .prod-select {
+  width:100%; background:var(--col-elevated);
+  border:1.5px solid var(--col-border); border-radius:.65rem;
+  padding:.5rem .75rem; color: var(--col-text); font-size:.88rem;
+}
+.prod-input { transition: border-color .15s; resize: vertical; }
+.prod-input:focus {
+  outline:none;
+  border-color: color-mix(in srgb, var(--brand-primary) 50%, transparent);
+}
+.admin-product-card {
+  background: var(--col-surface); border: 1px solid var(--col-border);
+  border-radius:.85rem; padding:.75rem;
+  box-shadow: 0 8px 22px rgba(0,0,0,.16);
+}
 .admin-product-card-main { display:flex; gap:.7rem; align-items:flex-start; }
-.admin-product-thumb { width:52px; height:52px; border-radius:.65rem; object-fit:cover; flex-shrink:0; background:var(--col-elevated); border:1px solid rgba(255,255,255,.08); }
+.admin-product-thumb {
+  width:52px; height:52px; border-radius:.65rem;
+  object-fit:cover; flex-shrink:0;
+  background: var(--col-elevated);
+  border: 1px solid color-mix(in srgb, var(--col-text) 8%, transparent);
+}
 .admin-product-thumb-empty { display:flex; align-items:center; justify-content:center; font-size:1.25rem; }
 .admin-product-name { color:var(--col-text); font-size:.98rem; font-weight:900; line-height:1.15; overflow-wrap:anywhere; }
 .admin-product-meta { margin-top:.25rem; display:flex; flex-wrap:wrap; gap:.25rem; color:var(--col-muted); font-size:.72rem; line-height:1.25; }
 .admin-product-badges { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.45rem; }
-.admin-product-badge { border-radius:999px; padding:.14rem .45rem; font-size:.62rem; font-weight:900; text-transform:uppercase; letter-spacing:.02em; }
-.badge-stock { background:rgba(16,185,129,.14); color:#A7F3D0; }
-.badge-channel { background:rgba(90,200,250,.14); color:#BAE6FD; }
-.badge-points { background:rgba(168,85,247,.16); color:#C084FC; }
-.badge-hipo { background:rgba(16,185,129,.14); color:#6EE7B7; }
-.badge-active { background:rgba(34,197,94,.14); color:#86EFAC; }
-.badge-inactive { background:rgba(239,68,68,.14); color:#FCA5A5; }
-.admin-product-card-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.45rem; margin-top:.75rem; }
-.admin-product-card-stats div { background:var(--col-elevated); border:1px solid rgba(255,255,255,.06); border-radius:.65rem; padding:.45rem; min-width:0; }
+.admin-product-badge {
+  border-radius:999px; padding:.14rem .45rem; font-size:.62rem;
+  font-weight:900; text-transform:uppercase; letter-spacing:.02em;
+}
+/* Badges semánticos que siguen los tokens del tema. */
+.badge-stock    { background: color-mix(in srgb, var(--theme-success) 14%, transparent); color: color-mix(in srgb, var(--theme-success) 72%, #fff); }
+.badge-channel  { background: color-mix(in srgb, var(--brand-accent) 15%, transparent);  color: color-mix(in srgb, var(--brand-accent) 55%, #bfe4ff); }
+.badge-points   { background: color-mix(in srgb, #C084FC 18%, transparent); color: #C084FC; }
+.badge-hipo     { background: color-mix(in srgb, var(--theme-success) 14%, transparent); color: color-mix(in srgb, var(--theme-success) 68%, #fff); }
+.badge-active   { background: color-mix(in srgb, var(--theme-success) 14%, transparent); color: color-mix(in srgb, var(--theme-success) 70%, #fff); }
+.badge-inactive { background: color-mix(in srgb, var(--theme-danger)  14%, transparent); color: color-mix(in srgb, var(--theme-danger) 65%, #fff); }
+.admin-product-card-stats {
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:.45rem; margin-top:.75rem;
+}
+.admin-product-card-stats div {
+  background: var(--col-elevated);
+  border: 1px solid color-mix(in srgb, var(--col-text) 6%, transparent);
+  border-radius:.65rem; padding:.45rem; min-width:0;
+}
 .admin-product-card-stats span { display:block; color:var(--col-faint); font-size:.62rem; font-weight:800; text-transform:uppercase; }
-.admin-product-card-stats strong { display:block; color:#FFAB00; font-size:.86rem; line-height:1.2; overflow-wrap:anywhere; }
+.admin-product-card-stats strong { display:block; color: var(--brand-primary); font-size:.86rem; line-height:1.2; overflow-wrap:anywhere; }
 .admin-product-actions { margin-top:.75rem; display:flex; }
-.admin-product-actions a { flex:1; text-align:center; border-radius:.65rem; border:1px solid rgba(255,171,0,.34); color:#FFAB00; background:rgba(255,171,0,.08); font-size:.78rem; font-weight:900; padding:.5rem .75rem; }
+.admin-product-actions a {
+  flex:1; text-align:center; border-radius:.65rem;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 34%, transparent);
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
+  font-size:.78rem; font-weight:900; padding:.5rem .75rem;
+  transition: background .15s;
+}
+.admin-product-actions a:hover {
+  background: color-mix(in srgb, var(--brand-primary) 16%, transparent);
+}
 @media (max-width: 640px) {
   #tabs-productos { overflow-x:auto; padding-bottom:.15rem; }
   #tabs-productos button { flex:0 0 auto; white-space:nowrap; }
@@ -512,7 +560,7 @@ function abrirEditar(id) {
 
   // Hipoalergénico toggle
   const cbHipo = f.querySelector('[name="es_hipoalergenico"]');
-  if (cbHipo) toggleHipo(cbHipo.checked);
+  if (cbHipo) toggleHipo(cbHipo);
 
   // Categoría
   const selCat = f.querySelector('[name="categoria_id"]');
@@ -667,8 +715,10 @@ document.addEventListener('click', e => {
     if (cb) { cb.checked = !cb.checked; btn.classList.toggle('alergen-active', cb.checked); }
   }
 });
-function toggleHipo(checked) {
-  const bloque = document.getElementById('bloque-alergenos');
+function toggleHipo(source) {
+  const checked = typeof source === 'boolean' ? source : !!source?.checked;
+  const form = source?.closest ? source.closest('form') : document;
+  const bloque = form?.querySelector ? form.querySelector('#bloque-alergenos') : document.getElementById('bloque-alergenos');
   if (bloque) bloque.style.opacity = checked ? '.35' : '1';
 }
 </script>

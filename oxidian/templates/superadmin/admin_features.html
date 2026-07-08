@@ -29,7 +29,7 @@
 {% else %}
 
 {# ── KPIs ── #}
-<div class="grid grid-cols-3 gap-3 mb-5">
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
   {% set n_activos = features.values()|selectattr('activo')|list|length %}
   {% set n_total = all_features|length %}
   <div class="ox-card p-4 text-center">
@@ -118,25 +118,45 @@
 {% endblock %}
 {% block scripts %}
 <style>
+/* Tokens locales — mapean a los semánticos globales del proyecto. Cambiar
+   `--theme-success` en /superadmin/config actualiza también estos toggles. */
 .feat-toggle {
   display:flex; align-items:center; justify-content:space-between; gap:.75rem;
   padding:.85rem 1rem; border-radius:.75rem; cursor:pointer; transition:all .15s;
   border:1.5px solid var(--col-border); background:var(--col-surface);
 }
 .feat-toggle:hover { background:var(--col-elevated); }
-.feat-on  { background:rgba(94,240,151,.05) !important; border-color:rgba(94,240,151,.25) !important; }
+.feat-on {
+  background: color-mix(in srgb, var(--theme-success, #5EF097) 8%, var(--col-surface)) !important;
+  border-color: color-mix(in srgb, var(--theme-success, #5EF097) 32%, transparent) !important;
+}
 .feat-off { opacity:.85; }
 .feat-pill {
   font-size:.65rem; font-weight:900; padding:.2rem .55rem; border-radius:999px;
   white-space:nowrap; flex-shrink:0;
 }
-.feat-pill-on  { background:rgba(94,240,151,.15); color:#5EF097; border:1px solid rgba(94,240,151,.25); }
-.feat-pill-off { background:rgba(255,255,255,.07); color:var(--col-faint); border:1px solid var(--col-border); }
-.feat-sensible { border-left-width:3px !important; border-left-color:rgba(255,140,60,.55) !important; }
+.feat-pill-on {
+  background: color-mix(in srgb, var(--theme-success, #5EF097) 18%, transparent);
+  color: var(--theme-success, #5EF097);
+  border: 1px solid color-mix(in srgb, var(--theme-success, #5EF097) 28%, transparent);
+}
+.feat-pill-off {
+  background: color-mix(in srgb, var(--col-text) 6%, transparent);
+  color: var(--col-faint);
+  border: 1px solid var(--col-border);
+}
+/* "Sensible" = feature con impacto financiero / operativo alto: se marca
+   con un borde de aviso naranja/warn. */
+.feat-sensible {
+  border-left-width:3px !important;
+  border-left-color: color-mix(in srgb, var(--brand-primary) 60%, #ff8c3c) !important;
+}
 .feat-tag-sensible {
   display:inline-block; margin-left:.4rem; font-size:.6rem; font-weight:800;
   padding:.1rem .4rem; border-radius:.4rem;
-  background:rgba(255,140,60,.14); color:#FFAB00; border:1px solid rgba(255,140,60,.3);
+  background: color-mix(in srgb, var(--brand-primary) 16%, transparent);
+  color: color-mix(in srgb, var(--brand-primary) 82%, #ffb400);
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 32%, transparent);
   vertical-align:middle;
 }
 </style>

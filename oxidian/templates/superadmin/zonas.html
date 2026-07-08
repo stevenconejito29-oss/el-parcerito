@@ -5,29 +5,35 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 {%- endmacro %}
 
-<div class="flex items-center gap-3 mb-6">
-  <a href="{{ url_for('superadmin.dashboard') }}" class="ox-btn-ghost text-sm">← Volver</a>
-  <div>
-    <h1 class="text-xl font-extrabold text-white">📍 Zonas de Entrega</h1>
-    <p class="text-xs text-gray-400 mt-0.5">{{ brand.ciudad or 'Tu área de reparto' }} — configura precios, tiempos y cobertura</p>
-  </div>
-</div>
+<div class="oa-page">
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Super administración</p>
+      <h1 class="oa-page-header__title">📍 Zonas de entrega</h1>
+      <p class="oa-page-header__subtitle">{{ brand.ciudad or 'Tu área de reparto' }} — configura precios, tiempos y cobertura por zona.</p>
+    </div>
+    <div class="oa-page-header__actions">
+      <a href="{{ url_for('superadmin.dashboard') }}" class="oa-btn oa-btn--ghost">← Volver</a>
+    </div>
+  </header>
 
-{# ── INFO GEO-VALIDACIÓN ── #}
-<div class="text-xs p-3 rounded-xl flex items-start gap-2 mb-5"
-     style="background:rgba(255,171,0,.06);border:1px solid rgba(255,171,0,.15);color:rgba(255,171,0,.8)">
-  <span>📍</span>
-  <div>
-    El radio de entrega se configura en
-    <a href="{{ url_for('superadmin.config') }}" class="underline font-semibold">⚙️ Configuración → Radio de Entrega</a>.
-    Las zonas aquí definen el precio de envío según el área elegida por el cliente al hacer el pedido.
+  {# ── INFO GEO-VALIDACIÓN ── #}
+  <div class="oa-panel" style="border-color: color-mix(in srgb, var(--brand-primary) 30%, var(--col-border));">
+    <div class="oa-panel__body" style="display:flex;gap:var(--oa-space-3);align-items:flex-start;">
+      <span style="font-size:1.25rem;flex-shrink:0;">📍</span>
+      <p style="margin:0;font-size:var(--oa-font-sm);color:var(--col-muted);line-height:1.5;">
+        El <strong style="color:var(--col-text);">radio de entrega</strong> se configura en
+        <a href="{{ url_for('superadmin.config') }}#entregas" style="color:var(--brand-primary);font-weight:700;text-decoration:underline;">Configuración → Cobertura</a>.
+        Las zonas aquí definen el precio y tiempo estimado según el área elegida por el cliente al hacer el pedido.
+      </p>
+    </div>
   </div>
-</div>
 
 {# ── CREAR ZONA ── #}
-<details class="ox-card p-5 mb-5" id="form-crear">
-  <summary class="font-bold text-white cursor-pointer flex items-center gap-2 select-none">
-    <span class="text-green-400">＋</span> Nueva zona de entrega
+<details class="oa-panel" id="form-crear" style="margin: 0;">
+  <summary class="oa-panel__body" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:var(--oa-space-3);font-weight:800;color:var(--col-text);">
+    <span style="color:var(--status-ok, var(--theme-success));font-size:1.2rem;">＋</span>
+    Nueva zona de entrega
   </summary>
   <form method="POST" action="{{ url_for('superadmin.crear_zona') }}" class="mt-4 grid sm:grid-cols-2 gap-3">
     {{ csrf_field() }}
@@ -70,40 +76,39 @@
 
 {# ── ZONAS EXISTENTES ── #}
 {% if zonas %}
-<div class="space-y-3">
+<div style="display:grid;gap:var(--oa-space-3);">
   {% for z in zonas %}
-  <div class="ox-card p-4 {% if not z.activo %}opacity-50{% endif %}">
-    <div class="flex items-start justify-between gap-3 mb-3">
-      <div>
-        <div class="flex items-center gap-2 flex-wrap">
-          <h3 class="font-bold text-white">{{ z.nombre }}</h3>
-          <span class="text-xs px-2 py-0.5 rounded-full font-semibold
-            {{ 'bg-blue-500/20 text-blue-300 border border-blue-500/30' if z.es_epicentro else 'bg-orange-500/20 text-orange-300 border border-orange-500/30' }}">
+  <div class="oa-panel {% if not z.activo %}oa-panel--dim{% endif %}" style="margin:0;">
+    <div class="oa-panel__body">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--oa-space-3);margin-bottom:var(--oa-space-3);flex-wrap:wrap;">
+      <div style="flex:1;min-width:240px;">
+        <div style="display:flex;align-items:center;gap:var(--oa-space-2);flex-wrap:wrap;">
+          <h3 style="font-weight:900;color:var(--col-text);margin:0;font-size:var(--oa-font-base);">{{ z.nombre }}</h3>
+          <span class="oa-badge {{ 'oa-badge--info' if z.es_epicentro else 'oa-badge--brand' }}">
             {{ 'Epicentro' if z.es_epicentro else 'Periferia' }}
           </span>
           {% if not z.activo %}
-          <span class="text-xs px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/25 font-semibold">Inactivo</span>
+          <span class="oa-badge oa-badge--err">Inactivo</span>
           {% endif %}
         </div>
-        {% if z.descripcion %}<p class="text-xs text-gray-500 mt-0.5">{{ z.descripcion }}</p>{% endif %}
-        <div class="flex gap-3 mt-1 text-xs text-gray-400">
-          <span>💰 Envío: €{{ "%.2f"|format(z.precio_envio) }}</span>
-          <span>⏱ {{ z.tiempo_estimado_min }} min</span>
-          {% if z.gratis_desde %}<span class="text-green-400">🎁 Gratis desde €{{ "%.2f"|format(z.gratis_desde) }}</span>{% endif %}
+        {% if z.descripcion %}<p style="font-size:var(--oa-font-xs);color:var(--col-faint);margin:2px 0 0;">{{ z.descripcion }}</p>{% endif %}
+        <div style="display:flex;gap:var(--oa-space-3);margin-top:var(--oa-space-2);font-size:var(--oa-font-xs);color:var(--col-muted);flex-wrap:wrap;">
+          <span>💰 Envío: <strong style="color:var(--col-text);">€{{ "%.2f"|format(z.precio_envio) }}</strong></span>
+          <span>⏱ <strong style="color:var(--col-text);">{{ z.tiempo_estimado_min }} min</strong></span>
+          {% if z.gratis_desde %}<span style="color:var(--theme-success, var(--status-ok));">🎁 Gratis desde €{{ "%.2f"|format(z.gratis_desde) }}</span>{% endif %}
         </div>
       </div>
       <form method="POST" action="{{ url_for('superadmin.toggle_zona', zona_id=z.id) }}">
         {{ csrf_field() }}
-        <button type="submit" class="text-xs px-3 py-1.5 rounded-lg font-semibold transition
-          {{ 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20' if z.activo else 'bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20' }}">
-          {{ 'Desactivar' if z.activo else 'Activar' }}
+        <button type="submit" class="oa-btn oa-btn--sm {{ 'oa-btn--danger' if z.activo else 'oa-btn--success' }}">
+          {{ '❌ Desactivar' if z.activo else '✓ Activar' }}
         </button>
       </form>
     </div>
 
     <details>
       <summary class="text-xs cursor-pointer select-none font-semibold" style="color:var(--col-muted)">✏️ Editar zona</summary>
-      <form method="POST" action="{{ url_for('superadmin.editar_zona', zona_id=z.id) }}" class="mt-3 grid sm:grid-cols-3 gap-2">
+      <form method="POST" action="{{ url_for('superadmin.editar_zona', zona_id=z.id) }}" class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
         {{ csrf_field() }}
         <div class="ox-field">
           <label class="ox-label">Nombre</label>
@@ -145,11 +150,26 @@
   {% endfor %}
 </div>
 {% else %}
-<div class="ox-card text-center py-12">
-  <p class="text-4xl mb-3">📍</p>
-  <p class="font-bold text-gray-400">Sin zonas de entrega configuradas</p>
-  <p class="text-sm text-gray-600 mt-1 mb-4">Crea la primera zona con el formulario de arriba</p>
+<div class="oa-panel" style="text-align:center;padding:var(--oa-space-6) var(--oa-space-4);">
+  <p style="font-size:2.5rem;margin:0 0 var(--oa-space-3);">📍</p>
+  <p style="font-weight:800;color:var(--col-muted);margin:0;">Sin zonas de entrega configuradas</p>
+  <p style="font-size:var(--oa-font-sm);color:var(--col-faint);margin:var(--oa-space-2) 0 0;">Crea la primera zona con el formulario de arriba.</p>
 </div>
 {% endif %}
 
+</div>{# oa-page #}
+
+<script>
+// Confirmación defensiva antes de desactivar una zona
+// (evita clics accidentales que rompen la cobertura del área).
+document.querySelectorAll('form[action*="/toggle_zona"]').forEach(f => {
+  f.addEventListener('submit', ev => {
+    const btn = f.querySelector('button');
+    const esDesactivar = btn && btn.textContent.includes('Desactivar');
+    if (esDesactivar && !confirm('¿Desactivar esta zona? Los clientes de ese área ya no podrán elegirla al hacer el pedido.')) {
+      ev.preventDefault();
+    }
+  });
+});
+</script>
 {% endblock %}

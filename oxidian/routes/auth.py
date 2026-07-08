@@ -1,4 +1,6 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, session
+import time
+
+from flask import Blueprint, render_template, redirect, url_for, flash, request, session, current_app
 from urllib.parse import urlparse
 from flask_login import login_user, logout_user, login_required, current_user
 from extensions import limiter, db
@@ -13,6 +15,11 @@ REDIRECT_POR_ROL = {
     "repartidor":   "repartidor.ruta",
     "cocina":       "preparador.pedidos",
 }
+
+# Tras un password válido, el usuario tiene N segundos para introducir el TOTP.
+# Pasado ese tiempo, se limpia la intención y hay que volver a autenticarse.
+# 5 minutos es holgado para copiar el código pero corto ante robo de sesión.
+MFA_PENDING_TTL_SECONDS = 300
 
 # Roles a los que SIEMPRE se les obliga a tener MFA activo. El primer GET a
 # cualquier ruta protegida tras un login válido los manda al setup si aún no
@@ -39,10 +46,14 @@ def login():
 
         if user and user.puede_iniciar_sesion and user.check_password(password):
             # Si el user tiene MFA activo: NO completar login todavía. Guardamos
-            # un "intent" en la sesión y le pedimos el código TOTP.
+            # un "intent" en la sesión con timestamp y le pedimos el código TOTP.
             if user.mfa_enabled and user.mfa_secret:
                 session["mfa_pending_user_id"] = user.id
                 session["mfa_pending_next"] = request.args.get("next") or ""
+                session["mfa_pending_at"] = int(time.time())
+                # Snapshot del hash para invalidar la intención si un admin
+                # cambia la contraseña mientras el usuario está en MFA challenge.
+                session["mfa_pending_pw_hash"] = (user.password_hash or "")[:32]
                 return redirect(url_for("auth.mfa_challenge"))
 
             _complete_login(user)
@@ -63,17 +74,29 @@ def mfa_challenge():
     pending_id = session.get("mfa_pending_user_id")
     if not pending_id:
         return redirect(url_for("auth.login"))
+    # TTL: si el usuario tardó > MFA_PENDING_TTL_SECONDS, abortar y forzar login.
+    started_at = int(session.get("mfa_pending_at") or 0)
+    if started_at and (int(time.time()) - started_at) > MFA_PENDING_TTL_SECONDS:
+        _clear_mfa_pending()
+        flash("El tiempo para introducir el código de verificación expiró. Inicia sesión de nuevo.", "warning")
+        return redirect(url_for("auth.login"))
     user = db.session.get(User, pending_id)
     if not user or not user.puede_iniciar_sesion or not user.mfa_enabled or not user.mfa_secret:
-        session.pop("mfa_pending_user_id", None)
-        session.pop("mfa_pending_next", None)
+        _clear_mfa_pending()
+        return redirect(url_for("auth.login"))
+    # Invalidar si la contraseña cambió entre login y MFA challenge.
+    expected_hash = session.get("mfa_pending_pw_hash") or ""
+    current_hash = (user.password_hash or "")[:32]
+    if expected_hash and expected_hash != current_hash:
+        _clear_mfa_pending()
+        flash("Tu contraseña cambió. Inicia sesión de nuevo.", "warning")
         return redirect(url_for("auth.login"))
 
     if request.method == "POST":
         code = (request.form.get("code") or "").strip().replace(" ", "")
         if _verify_totp(user.mfa_secret, code):
             next_page = session.pop("mfa_pending_next", "") or None
-            session.pop("mfa_pending_user_id", None)
+            _clear_mfa_pending()
             _complete_login(user)
             if _next_is_safe_get(next_page):
                 return redirect(next_page)
@@ -83,6 +106,13 @@ def mfa_challenge():
     return render_template("auth/mfa_challenge.html")
 
 
+def _clear_mfa_pending():
+    """Limpia todas las llaves de sesión relacionadas con MFA pending."""
+    for key in ("mfa_pending_user_id", "mfa_pending_next",
+                "mfa_pending_at", "mfa_pending_pw_hash"):
+        session.pop(key, None)
+
+
 @auth_bp.route("/logout", methods=["POST"])
 @login_required
 def logout():
@@ -90,6 +120,7 @@ def logout():
     db.session.commit()
     logout_user()
     session.pop("mfa_v", None)
+    _clear_mfa_pending()
     return redirect(url_for("public.index"))
 
 
@@ -194,7 +225,19 @@ def _qr_svg_inline(data):
 
 
 def _redirect_rol(rol):
-    destino = REDIRECT_POR_ROL.get(rol, "auth.login")
+    destino = REDIRECT_POR_ROL.get(rol)
+    if not destino:
+        # Rol legacy o corrupto (p.ej. "staff" antiguo). Fuerza logout limpio
+        # y da feedback al usuario en lugar de un loop silencioso hacia login.
+        current_app.logger.warning("_redirect_rol: rol sin destino: %r", rol)
+        logout_user()
+        session.pop("mfa_v", None)
+        _clear_mfa_pending()
+        flash(
+            "Tu rol no tiene un panel asignado. Contacta con administración.",
+            "warning",
+        )
+        return redirect(url_for("auth.login"))
     return redirect(url_for(destino))
 
 

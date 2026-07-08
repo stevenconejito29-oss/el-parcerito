@@ -30,6 +30,8 @@
 
   {# Badges flotantes #}
   <div class="pd-hero-badges">
+    {% set fb = fulfillment_badge(producto) %}
+    <span class="pd-badge pd-badge-fulfillment" title="{{ fb.title }}">{{ fb.emoji }} {{ fb.label }}</span>
     {% if producto.es_combo %}
     <span class="pd-badge pd-badge-combo">🎁 Combo</span>
     {% endif %}
@@ -74,9 +76,10 @@
   {% if producto.descripcion %}
   <p class="pd-desc">{{ producto.descripcion }}</p>
   {% endif %}
+  {% set fb = fulfillment_badge(producto) %}
   <div class="pd-info-box" style="border-color:color-mix(in srgb,var(--brand-primary) 30%,var(--col-border))">
-    <span class="pd-box-icon">{% if producto.modalidad_entrega == 'delivery' %}🚴{% elif producto.modalidad_entrega == 'recogida' %}🏪{% else %}↔{% endif %}</span>
-    <div><p class="pd-box-title">{% if producto.modalidad_entrega == 'delivery' %}Disponible solo con delivery{% elif producto.modalidad_entrega == 'recogida' %}Disponible solo para recoger{% else %}Disponible con delivery o recogida{% endif %}</p></div>
+    <span class="pd-box-icon">{{ fb.emoji }}</span>
+    <div><p class="pd-box-title">{{ fb.title }}</p></div>
   </div>
   {% if producto.grupo_pedido %}
   <div class="pd-info-box pd-box-encargo">
@@ -487,6 +490,7 @@ main { padding-top: 0 !important; }
 .pd-badge-encargo { background: rgba(255,149,0,.9); color: #fff; }
 .pd-badge-puntos  { background: rgba(168,85,247,.85); color: #fff; }
 .pd-badge-origin  { background: rgba(0,0,0,.65); color: #fff; }
+.pd-badge-fulfillment { background: color-mix(in srgb,var(--brand-primary) 82%,#111); color: #fff; }
 
 /* ── Card principal ── */
 .pd-card {

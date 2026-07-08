@@ -1,7 +1,7 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_required, current_user
 from functools import wraps
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from calendar import monthrange
 from sqlalchemy import func, or_
 from urllib.parse import urlparse
@@ -42,6 +42,7 @@ CLAVES_DEFAULT = [
     ("EFECTIVO_HABILITADO",    "1",                                  "Permitir pagos en efectivo"),
     ("TARJETA_HABILITADA",     "1",                                  "Permitir pagos con tarjeta al recoger o al repartidor"),
     ("MODO_TIENDA",            "propia",                             "Modo comercial de la instalación"),
+    ("TIPO_TIENDA",            "comida",                             "Vertical del catálogo: comida o producto genérico (ropa, retail)"),
     ("FEATURE_DELIVERY",       "1",                                  "Permitir pedidos a domicilio"),
     ("FEATURE_RECOGIDA",       "1",                                  "Permitir pedidos para recoger"),
     ("FEATURE_PEDIDOS_PROGRAMADOS", "1",                              "Permitir productos/pedidos con fecha de entrega"),
@@ -63,6 +64,8 @@ CLAVES_DEFAULT = [
     ("VALIDAR_RADIO_ENTREGA",  "1",     "Activar validación de distancia para checkout"),
     ("BLOQUEAR_DIRECCION_NO_VERIFICADA", "1", "Bloquear checkout si la dirección no se puede geocodificar"),
     ("RADIO_ENTREGA_KM",       "5",     "Radio máximo de entrega en km"),
+    ("PEDIDO_MINIMO_EUR",      "0",     "Monto mínimo de pedido en euros (0 = sin mínimo)"),
+    ("AUTO_DESTACADOS_ENABLED", "1",    "Mostrar recomendaciones automáticas si no hay destacados configurados"),
     ("CART_MAX_QTY",           "99",    "Cantidad máxima por producto en carrito"),
     ("COMBO_MIN_COMPONENTS",   "1",     "Mínimo de componentes requeridos para crear un combo"),
     ("COMBO_MAX_COMPONENTS",   "30",    "Máximo de componentes permitidos por combo"),
@@ -225,13 +228,15 @@ CONFIG_SECTION_KEYS = {
     },
     "operacion-pagos": {"EFECTIVO_HABILITADO", "BIZUM_HABILITADO", "TARJETA_HABILITADA"},
     "operacion-modo": {
-        "MODO_TIENDA", "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
+        "MODO_TIENDA", "TIPO_TIENDA",
+        "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
         "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
         "SERVICE_COMMISSION_PCT",
     },
     "entregas": {
         "VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA",
         "RADIO_ENTREGA_KM", "CENTRO_LAT", "CENTRO_LON",
+        "PEDIDO_MINIMO_EUR",
     },
     "puntos": {"PUNTOS_POR_EURO", "PUNTOS_CANJE_RATIO"},
     "integraciones": {
@@ -241,7 +246,7 @@ CONFIG_SECTION_KEYS = {
     "avanzado": {
         "CART_MAX_QTY", "COMBO_MIN_COMPONENTS", "COMBO_MAX_COMPONENTS",
         "COMBO_MAX_QTY_COMPONENT", "COMBO_MAX_SELECTIONS_GROUP",
-        "COMBO_MAX_DISCOUNT_PCT",
+        "COMBO_MAX_DISCOUNT_PCT", "AUTO_DESTACADOS_ENABLED",
     },
 }
 
@@ -699,7 +704,8 @@ def dashboard():
                            clientes_con_puntos=clientes_con_puntos,
                            bot_status=bot_status,
                            brand_config=brand_config,
-                           tienda_modo=tienda_context)
+                           tienda_modo=tienda_context,
+                           vertical_just_changed=session.pop("vertical_just_changed", None))
 
 
 @superadmin_bp.route("/modulos/<modulo>/toggle", methods=["POST"])
@@ -748,6 +754,60 @@ def toggle_modulo(modulo):
     flash(
         f"Módulo {modulo} {estado}." + ("" if ok else f" Bot pendiente: {msg}"),
         "success" if ok else "warning",
+    )
+    return redirect(url_for("superadmin.dashboard"))
+
+
+@superadmin_bp.route("/toggle-vertical", methods=["POST"])
+@superadmin_required
+def toggle_vertical():
+    """Cambia el vertical de la tienda (comida ↔ producto) en un clic.
+
+    Solo altera SiteConfig['TIPO_TIENDA']. NO borra datos ni migra:
+    alérgenos, categorías, presentaciones siguen guardados y se re-mostrarán
+    si el admin vuelve al modo comida. Los emojis, etiquetas ("menú"→"catálogo"),
+    manifest PWA, bot y push notifications se adaptan automáticamente en la
+    siguiente request porque leen el flag en cada render.
+    """
+    actual = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
+    destino = "producto" if actual == "comida" else "comida"
+    # Permite forzar valor explícito por si el UI manda `destino`.
+    override = (request.form.get("destino") or "").strip().lower()
+    if override in ("comida", "producto"):
+        destino = override
+    SiteConfig.set(
+        "TIPO_TIENDA", destino,
+        user_id=current_user.id,
+        descripcion="Vertical del catálogo",
+    )
+    AuditLog.registrar(
+        current_user.id,
+        "toggle_vertical",
+        "site_config",
+        detalle=f"TIPO_TIENDA={actual}→{destino}",
+        ip=request.remote_addr,
+    )
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash("No se pudo cambiar el vertical de la tienda.", "danger")
+        return redirect(url_for("superadmin.dashboard"))
+    _sincronizar_chatbot_runtime()  # el bot re-lee /branding en su próximo sync
+    label = "🍽️ Comida / gastronomía" if destino == "comida" else "🛍️ Producto / retail"
+    # Bandera de "recién cambiado" para que el dashboard muestre un banner
+    # con link a la vista cliente. Se limpia al primer render.
+    session["vertical_just_changed"] = {
+        "actual": actual,
+        "destino": destino,
+        "label": label,
+        "at": int(datetime.now(timezone.utc).replace(tzinfo=None).timestamp()),
+    }
+    flash(
+        f"✅ Vertical cambiado a {label}. "
+        "Etiquetas, emojis y alérgenos se han adaptado automáticamente. "
+        "Los productos, categorías y datos existentes se conservan.",
+        "success",
     )
     return redirect(url_for("superadmin.dashboard"))
 

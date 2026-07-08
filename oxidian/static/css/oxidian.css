@@ -172,35 +172,49 @@ button:active, .btn:active { transform: scale(.96) !important; }
 
 .ox-btn-primary {
   display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
-  background: linear-gradient(135deg, var(--col-gold) 0%, var(--col-gold-2) 100%);
-  color: #3D1F00; font-weight: 900; font-size: .95rem;
+  background: linear-gradient(135deg, var(--brand-primary) 0%,
+              color-mix(in srgb, var(--brand-primary) 78%, #000) 100%);
+  color: var(--brand-on-primary); font-weight: 900; font-size: .95rem;
   border-radius: var(--r-md); padding: .8rem 1.4rem; min-height: 48px;
-  box-shadow: 0 4px 18px rgba(255,194,0,.28); border: none;
-  text-decoration: none; white-space: nowrap;
+  box-shadow: 0 4px 18px color-mix(in srgb, var(--brand-primary) 30%, transparent);
+  border: none; text-decoration: none; white-space: nowrap;
 }
-.ox-btn-primary:hover { filter: brightness(1.07); box-shadow: 0 6px 24px rgba(255,194,0,.4); transform: translateY(-1px); }
+.ox-btn-primary:hover {
+  filter: brightness(1.07);
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--brand-primary) 42%, transparent);
+  transform: translateY(-1px);
+}
 
 .ox-btn-secondary {
   display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
-  background: rgba(255,200,120,.08); border: 1.5px solid var(--col-border-2);
+  background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
+  border: 1.5px solid var(--col-border-2);
   color: var(--col-text); font-weight: 700; font-size: .9rem;
   border-radius: var(--r-md); padding: .75rem 1.2rem; min-height: 44px; text-decoration: none;
 }
-.ox-btn-secondary:hover { background: rgba(255,200,120,.14); border-color: rgba(255,194,0,.35); }
+.ox-btn-secondary:hover {
+  background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  border-color: color-mix(in srgb, var(--brand-primary) 35%, transparent);
+}
 
 .ox-btn-danger {
   display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
-  background: rgba(232,69,69,.12); border: 1.5px solid rgba(232,69,69,.28);
-  color: #FFA8A8; font-weight: 700; border-radius: var(--r-md); padding: .7rem 1rem; min-height: 44px;
+  background: color-mix(in srgb, var(--theme-danger) 12%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--theme-danger) 28%, transparent);
+  color: color-mix(in srgb, var(--theme-danger) 88%, #fff);
+  font-weight: 700; border-radius: var(--r-md); padding: .7rem 1rem; min-height: 44px;
 }
-.ox-btn-danger:hover { background: rgba(232,69,69,.2); }
+.ox-btn-danger:hover { background: color-mix(in srgb, var(--theme-danger) 20%, transparent); }
 
 .ox-btn-ghost {
   background: transparent; border: 1.5px solid var(--col-border-2);
   color: var(--col-muted); border-radius: var(--r-sm); padding: .5rem .9rem;
   font-size: .82rem; min-height: 36px; display: inline-flex; align-items: center; gap: .3rem;
 }
-.ox-btn-ghost:hover { border-color: rgba(255,194,0,.3); color: var(--col-text); }
+.ox-btn-ghost:hover {
+  border-color: color-mix(in srgb, var(--brand-primary) 30%, transparent);
+  color: var(--col-text);
+}
 
 .ox-btn-cart {
   display: flex; align-items: center; justify-content: center; gap: .35rem;
@@ -351,13 +365,23 @@ button:active, .btn:active { transform: scale(.96) !important; }
 /* ── BOTTOM NAV PÚBLICO — cálido ── */
 .ox-bottom-nav {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 90;
-  background: rgba(13,10,8,.97);
-  border-top: 1px solid rgba(255,194,0,.12);
-  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  background: var(--theme-surface, #0D0A08);
+  border-top: 1px solid var(--col-border, rgba(255,194,0,.12));
+  /* Sin backdrop-filter: superficie sólida evita bugs de transparencia. */
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  /* Grid auto-adaptativo: se ajusta al número real de items del nav sin
+     dejar huecos si algún módulo está desactivado. */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+  /* Safe-area también aplica a los lados (iOS notch en landscape). */
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 4px);
+  padding-left: max(env(safe-area-inset-left, 0px), 0px);
+  padding-right: max(env(safe-area-inset-right, 0px), 0px);
+  /* Sombra sutil hacia arriba para dar peso visual sin transparencia. */
+  box-shadow: 0 -1px 0 var(--col-border, rgba(0,0,0,.08)),
+              0 -8px 24px rgba(0,0,0,.12);
 }
-.ox-bottom-nav.without-whatsapp { grid-template-columns: repeat(3,1fr); }
+.ox-bottom-nav.without-whatsapp { grid-template-columns: repeat(auto-fit, minmax(60px, 1fr)); }
 .ox-bottom-nav a,
 .ox-bottom-nav button {
   display: flex; flex-direction: column; align-items: center; gap: .15rem;
@@ -365,6 +389,21 @@ button:active, .btn:active { transform: scale(.96) !important; }
   font-size: .6rem; font-weight: 700; letter-spacing: .02em;
   transition: color .15s; min-height: 56px; justify-content: center;
   background: transparent; border: 0;
+  /* Elimina el flash gris de Android en tap. */
+  -webkit-tap-highlight-color: transparent;
+}
+/* Contenedor del icono: debe ser `relative` para que el badge del carrito
+   (que está DENTRO del svg-wrap) se posicione correctamente respecto al
+   icono y no respecto al item flex. */
+.ox-bnav-svg { position: relative; display: inline-flex; }
+
+/* Landscape móvil pequeño (iPhone en horizontal, etc.): reducir altura
+   para que el nav no coma la mitad del viewport y los items sean tocables. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .ox-bottom-nav a,
+  .ox-bottom-nav button { min-height: 44px; padding: .35rem .25rem; }
+  .ox-bnav-svg svg { width: 18px; height: 18px; }
+  .ox-bnav-label { font-size: .55rem; }
 }
 .ox-bottom-nav [hidden],
 .ox-pwa-installed {
@@ -1027,16 +1066,20 @@ body.ox-body-public .ox-header-public::before {
 body.ox-body-public .ox-header-public .text-white,
 body.ox-body-public .ox-header-public p { color: #18120A !important; }
 
-/* Bottom nav — blanco */
+/* Bottom nav — superficie sólida y color tokenizado */
 body.ox-body-public .ox-bottom-nav {
-  background: rgba(255,255,255,.98);
-  border-top: 1px solid rgba(0,0,0,.08);
-  box-shadow: 0 -2px 12px rgba(0,0,0,.07);
+  background: var(--theme-surface, #FFFFFF);
+  border-top: 1px solid var(--col-border, rgba(0,0,0,.08));
+  box-shadow: 0 -1px 0 var(--col-border, rgba(0,0,0,.08)),
+              0 -6px 22px rgba(0,0,0,.07);
   backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
-body.ox-body-public .ox-bottom-nav a { color: #B09A8C; }
+body.ox-body-public .ox-bottom-nav a,
+body.ox-body-public .ox-bottom-nav button { color: var(--col-muted, #7A6B60); }
 body.ox-body-public .ox-bottom-nav a.active,
-body.ox-body-public .ox-bottom-nav a:active { color: var(--brand-primary, #FCD116); }
+body.ox-body-public .ox-bottom-nav a:active,
+body.ox-body-public .ox-bottom-nav .is-active { color: var(--brand-primary, #FCD116); }
 
 /* Cards en tema claro */
 body.ox-body-public .ox-card {
@@ -1275,11 +1318,13 @@ body.ox-body-public {
 body.ox-body-public .ox-header-public,
 body.ox-body-public .ox-bottom-nav,
 body.ox-body-admin .ox-topbar {
-  background: rgba(255,253,248,.94);
+  background: var(--theme-surface);
   border-color: var(--col-border);
   box-shadow: 0 2px 18px rgba(38,25,12,.08);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  /* Sin backdrop-filter: causa artefactos visuales en scroll y no funciona
+     coherentemente en todos los browsers (Safari iOS, Firefox mobile). */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 body.ox-body-public .ox-header-public::before,
@@ -3145,14 +3190,18 @@ body.ox-body-admin .ord-card:hover {
   box-shadow: var(--ox-shadow-admin) !important;
 }
 
-/* Header y navegación */
+/* ── Header + Bottom Nav (superficies sólidas para evitar filtrado visual) ──
+   Usa tokens de tema inyectados por base.html. Sin backdrop-filter: el blur
+   causa artefactos y bugs en scroll rápido. El fondo es 100% opaco,
+   configurable desde /superadmin/config → COLOR_* / theme.superficie. */
 body.ox-body-public .ox-header-public,
 body.ox-body-public .ox-bottom-nav {
-  background: rgba(255, 253, 248, .96) !important;
-  border-color: rgba(42, 31, 20, .10) !important;
-  box-shadow: 0 2px 18px rgba(21, 15, 8, .08) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--theme-surface, #FFFDF8) !important;
+  border-color: var(--col-border, rgba(42, 31, 20, .10)) !important;
+  box-shadow: 0 -1px 0 var(--col-border, rgba(42, 31, 20, .10)),
+              0 -6px 22px rgba(21, 15, 8, .08) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 body.ox-body-admin .ox-sidebar,
@@ -5002,14 +5051,7 @@ body.ox-body-admin :focus-visible {
   color: rgba(255,255,255,.7);
   line-height: 1.4;
 }
-.ep-hero-emoji {
-  font-size: clamp(2.5rem, 8vw, 3.5rem);
-  flex-shrink: 0;
-  animation: floatFood 3.5s ease-in-out infinite;
-  line-height: 1;
-}
 @media (max-width: 380px) {
-  .ep-hero-emoji { display: none; }
   .ep-hero { padding: 1rem .9rem .85rem; }
 }
 

@@ -174,11 +174,16 @@ def notify_order_state(pedido) -> None:
     """Notifica al cliente del cambio de estado de su pedido."""
     if not pedido.cliente_id:
         return
+    from models import SiteConfig
+    _tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
+    _es_comida = (_tt == "comida")
+    _prep_emoji = "🍳" if _es_comida else "📦"
+    _entregado_extra = "¡Buen provecho!" if _es_comida else "¡Que lo disfrutes!"
     msgs = {
-        "armando":   ("🍳 Preparando tu pedido", f"#{pedido.numero_pedido} está siendo preparado."),
+        "armando":   (f"{_prep_emoji} Preparando tu pedido", f"#{pedido.numero_pedido} está siendo preparado."),
         "listo":     ("✅ Pedido listo", f"#{pedido.numero_pedido} está listo para salir."),
         "en_ruta":   ("🚴 En camino", f"Tu pedido #{pedido.numero_pedido} viene de camino."),
-        "entregado": ("🎉 Pedido entregado", f"#{pedido.numero_pedido} ha sido entregado. ¡Buen provecho!"),
+        "entregado": ("🎉 Pedido entregado", f"#{pedido.numero_pedido} ha sido entregado. {_entregado_extra}"),
         "cancelado": ("❌ Pedido cancelado", f"#{pedido.numero_pedido} ha sido cancelado."),
     }
     entry = msgs.get(pedido.estado)

@@ -190,6 +190,24 @@ def _migrate_product_solo_canje():
         ))
 
 
+def _migrate_product_vertical():
+    """Añade Product.vertical (comida|producto|ambos) para separar catálogos por nicho.
+    Por defecto 'ambos' → no rompe catálogos existentes.
+    El super_admin puede editarlo por producto para restringir en qué modo se muestra."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("products"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("products")}
+    if "vertical" not in existing:
+        db.session.execute(text(
+            "ALTER TABLE products ADD COLUMN vertical VARCHAR(20) NOT NULL "
+            "DEFAULT 'ambos'"
+        ))
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_products_vertical ON products (vertical)"
+        ))
+
+
 def _migrate_combo_groups_structure():
     inspector = inspect(db.engine)
     if not inspector.has_table("products"):
@@ -872,6 +890,92 @@ def _migrate_reusable_extra_catalog():
         ))
 
 
+def _migrate_product_extra_groups_current_schema():
+    """Alinea bases antiguas de extras con el modelo actual.
+
+    Algunas instalaciones locales conservaron las columnas legacy
+    min_select/max_select aunque la migración quedó registrada como aplicada.
+    Esta migración mira el esquema real y corrige nombres/defaults sin perder
+    los grupos ya creados.
+    """
+    db.metadata.create_all(
+        bind=db.engine,
+        tables=[ExtraCatalogItem.__table__, ProductExtraGroup.__table__, ProductExtraOption.__table__],
+        checkfirst=True,
+    )
+    inspector = inspect(db.engine)
+    if not inspector.has_table("product_extra_groups"):
+        return
+
+    existing = {col["name"] for col in inspector.get_columns("product_extra_groups")}
+    if "descripcion" not in existing:
+        db.session.execute(text(
+            "ALTER TABLE product_extra_groups ADD COLUMN descripcion VARCHAR(240)"
+        ))
+
+    if "min_selecciones" not in existing:
+        if "min_select" in existing:
+            db.session.execute(text(
+                "ALTER TABLE product_extra_groups RENAME COLUMN min_select TO min_selecciones"
+            ))
+            existing.remove("min_select")
+            existing.add("min_selecciones")
+        else:
+            db.session.execute(text(
+                "ALTER TABLE product_extra_groups ADD COLUMN min_selecciones INTEGER NOT NULL DEFAULT 0"
+            ))
+            existing.add("min_selecciones")
+    elif "min_select" in existing:
+        db.session.execute(text("""
+            UPDATE product_extra_groups
+            SET min_selecciones = COALESCE(min_selecciones, min_select, 0)
+        """))
+
+    if "max_selecciones" not in existing:
+        if "max_select" in existing:
+            db.session.execute(text(
+                "ALTER TABLE product_extra_groups RENAME COLUMN max_select TO max_selecciones"
+            ))
+            existing.remove("max_select")
+            existing.add("max_selecciones")
+        else:
+            db.session.execute(text(
+                "ALTER TABLE product_extra_groups ADD COLUMN max_selecciones INTEGER NOT NULL DEFAULT 1"
+            ))
+            existing.add("max_selecciones")
+    elif "max_select" in existing:
+        db.session.execute(text("""
+            UPDATE product_extra_groups
+            SET max_selecciones = COALESCE(max_selecciones, max_select, 1)
+        """))
+
+    db.session.execute(text("""
+        UPDATE product_extra_groups
+        SET min_selecciones = GREATEST(0, COALESCE(min_selecciones, 0)),
+            max_selecciones = GREATEST(GREATEST(0, COALESCE(min_selecciones, 0)), COALESCE(max_selecciones, 1))
+    """))
+    db.session.execute(text("ALTER TABLE product_extra_groups ALTER COLUMN min_selecciones SET DEFAULT 0"))
+    db.session.execute(text("ALTER TABLE product_extra_groups ALTER COLUMN min_selecciones SET NOT NULL"))
+    db.session.execute(text("ALTER TABLE product_extra_groups ALTER COLUMN max_selecciones SET DEFAULT 1"))
+    db.session.execute(text("ALTER TABLE product_extra_groups ALTER COLUMN max_selecciones SET NOT NULL"))
+    db.session.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_product_extra_groups_product "
+        "ON product_extra_groups (producto_id, orden)"
+    ))
+    _add_postgresql_check_if_safe(
+        "product_extra_groups",
+        "ck_extra_group_min",
+        "min_selecciones >= 0",
+        "min_selecciones < 0",
+    )
+    _add_postgresql_check_if_safe(
+        "product_extra_groups",
+        "ck_extra_group_range",
+        "max_selecciones >= min_selecciones",
+        "max_selecciones < min_selecciones",
+    )
+
+
 MIGRATIONS = [
     {
         "id": "20260526_01_order_events_notification_outbox",
@@ -1026,6 +1130,16 @@ MIGRATIONS = [
         "id": "20260702_03_order_en_punto_encuentro",
         "description": "Order.en_punto_encuentro + timestamp (subestado del reparto para el bot)",
         "fn": _migrate_order_en_punto_encuentro,
+    },
+    {
+        "id": "20260706_01_product_vertical",
+        "description": "Product.vertical: separa catálogo por nicho (comida|producto|ambos)",
+        "fn": _migrate_product_vertical,
+    },
+    {
+        "id": "20260707_01_product_extra_groups_current_schema",
+        "description": "Alinear product_extra_groups legacy con columnas actuales de selección",
+        "fn": _migrate_product_extra_groups_current_schema,
     },
 ]
 

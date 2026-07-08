@@ -1,0 +1,396 @@
+{% extends "admin_base.html" %}
+{% block title %}{{ pedido.numero_pedido }} — Detalle{% endblock %}
+{% block content %}
+
+<div class="work-area admin-orders-board admin-order-detail">
+
+  <section class="work-hero">
+    <div>
+      <span class="work-eyebrow">
+        <a href="{{ url_for('admin.pedidos') }}" style="color:var(--col-muted);text-decoration:none;">← Todos los pedidos</a>
+      </span>
+      <h1 class="work-title">
+        <span class="ord-num">{{ pedido.numero_pedido }}</span>
+      </h1>
+      <p class="work-subtitle">
+        {{ pedido.cliente.nombre }}
+        · {{ pedido.creado_en.strftime('%d/%m/%Y %H:%M') }}
+        · <span class="ord-state">{{ pedido.estado }}</span>
+      </p>
+    </div>
+    <div class="work-actions-top">
+      {% if pedido.estado not in ('entregado','cancelado') %}
+      <form method="POST" action="{{ url_for('admin.avanzar_pedido_admin', pedido_id=pedido.id) }}" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="ord-btn success">
+          {% if pedido.estado == 'listo' and not pedido.requiere_reparto %}Marcar entregado{% else %}▶ Avanzar estado{% endif %}
+        </button>
+      </form>
+      <form method="POST" action="{{ url_for('admin.cancelar_pedido', pedido_id=pedido.id) }}" style="display:inline;"
+            onsubmit="return confirm('¿Cancelar pedido {{ pedido.numero_pedido }}?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="ord-btn danger">Cancelar</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="detail-layout">
+
+    {# ── Columna principal ── #}
+    <div class="detail-main">
+
+      {# ── Info del cliente + dirección ── #}
+      <section class="ox-card p-4">
+        <h2 class="detail-section-title">👤 Cliente</h2>
+        <div class="detail-info-grid">
+          <div>
+            <span class="detail-info-lbl">Nombre</span>
+            <strong class="detail-info-val">{{ pedido.cliente.nombre or '—' }}</strong>
+          </div>
+          <div>
+            <span class="detail-info-lbl">Teléfono</span>
+            {% if pedido.cliente.telefono %}
+            <a href="tel:{{ pedido.cliente.telefono }}" class="detail-info-val detail-link">
+              📞 {{ pedido.cliente.telefono }}
+            </a>
+            {% else %}
+            <strong class="detail-info-val">—</strong>
+            {% endif %}
+          </div>
+          {% if pedido.cliente.email %}
+          <div>
+            <span class="detail-info-lbl">Email</span>
+            <strong class="detail-info-val">{{ pedido.cliente.email }}</strong>
+          </div>
+          {% endif %}
+          {% if pedido.cliente.puntos %}
+          <div>
+            <span class="detail-info-lbl">Puntos actuales</span>
+            <strong class="detail-info-val ord-num">⭐ {{ pedido.cliente.puntos }}</strong>
+          </div>
+          {% endif %}
+        </div>
+
+        {% if pedido.tipo_entrega_cliente == 'delivery' and pedido.direccion_entrega %}
+        <div class="detail-address mt-3">
+          <span class="detail-info-lbl">Dirección de entrega</span>
+          <p class="detail-address-val">{{ pedido.direccion_entrega }}</p>
+          <div class="flex gap-2 flex-wrap mt-2">
+            <a href="https://www.google.com/maps/dir/?api=1&destination={{ (pedido.direccion_entrega ~ ', ' ~ (brand.ciudad or '')) | urlencode }}"
+               target="_blank" rel="noopener" class="ord-btn">🗺 Google Maps</a>
+            <a href="https://waze.com/ul?q={{ (pedido.direccion_entrega ~ ', ' ~ (brand.ciudad or '')) | urlencode }}"
+               target="_blank" rel="noopener" class="ord-btn">🚗 Waze</a>
+            {% if pedido.zona %}
+            <span class="ord-chip">Zona: {{ pedido.zona.nombre }}</span>
+            {% endif %}
+          </div>
+        </div>
+        {% elif pedido.tipo_entrega_cliente == 'recogida' %}
+        <div class="detail-address mt-3">
+          <p class="detail-address-val">🏬 Recogida en local</p>
+        </div>
+        {% endif %}
+
+        {% if pedido.notas %}
+        <div class="detail-note mt-3">
+          <span class="detail-info-lbl">Notas del cliente</span>
+          <p>⚠ {{ pedido.notas }}</p>
+        </div>
+        {% endif %}
+      </section>
+
+      {# ── Items del pedido ── #}
+      <section class="ox-card p-4 mt-3">
+        <h2 class="detail-section-title">📦 Items ({{ pedido.items|length }})</h2>
+        <div class="work-items">
+          {% for item in pedido.items %}
+          <div class="work-item">
+            {% include "_order_item_combo.html" %}
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+
+      {# ── Timeline de eventos ── #}
+      <section class="ox-card p-4 mt-3">
+        <h2 class="detail-section-title">🕒 Historial ({{ eventos|length }})</h2>
+        {% if eventos %}
+        <ol class="detail-timeline">
+          {% for ev in eventos %}
+          {% set _meta = ev.get_metadata() %}
+          <li class="detail-tl-item">
+            <div class="detail-tl-dot" data-tipo="{{ ev.tipo }}"></div>
+            <div class="detail-tl-body">
+              <div class="detail-tl-head">
+                <strong class="detail-tl-tipo">{{ ev.tipo|replace('_',' ')|capitalize }}</strong>
+                <span class="detail-tl-time">{{ ev.creado_en.strftime('%d/%m/%Y %H:%M:%S') }}</span>
+              </div>
+              {% if ev.estado_anterior or ev.estado_nuevo %}
+              <p class="detail-tl-transition">
+                {% if ev.estado_anterior %}<span class="ord-chip">{{ ev.estado_anterior }}</span>{% endif %}
+                {% if ev.estado_anterior and ev.estado_nuevo %} → {% endif %}
+                {% if ev.estado_nuevo %}<span class="ord-state">{{ ev.estado_nuevo }}</span>{% endif %}
+              </p>
+              {% endif %}
+              {% if ev.detalle %}<p class="detail-tl-detail">{{ ev.detalle }}</p>{% endif %}
+              <p class="detail-tl-meta">
+                {% if ev.actor %}👤 {{ ev.actor.nombre }}{% else %}🤖 sistema{% endif %}
+                {% if ev.canal %} · vía {{ ev.canal }}{% endif %}
+              </p>
+            </div>
+          </li>
+          {% endfor %}
+        </ol>
+        {% else %}
+        <p style="color:var(--col-muted);font-size:.85rem;">
+          Sin eventos registrados. El pedido fue creado directamente o los eventos
+          están en versiones anteriores del sistema.
+        </p>
+        {% endif %}
+      </section>
+
+    </div>
+
+    {# ── Columna lateral ── #}
+    <aside class="detail-side">
+
+      {# Pago + totales #}
+      <section class="ox-card p-4">
+        <h2 class="detail-section-title">💰 Pago</h2>
+        <div class="detail-pay-grid">
+          <div>
+            <span class="detail-info-lbl">Método</span>
+            <strong class="detail-info-val">
+              {% if pedido.metodo_pago == 'efectivo' %}💵 Efectivo
+              {% elif pedido.metodo_pago == 'bizum' %}📱 Bizum
+              {% elif pedido.metodo_pago == 'tarjeta' %}💳 Tarjeta
+              {% else %}{{ pedido.metodo_pago or '—' }}{% endif %}
+            </strong>
+          </div>
+          <div>
+            <span class="detail-info-lbl">Estado del cobro</span>
+            {% if pedido.pago_confirmado %}
+            <strong class="detail-info-val ord-desc">✓ Cobrado
+              {% if pedido.pago_confirmado_en %}
+              <br><small style="color:var(--col-faint);font-weight:600">{{ pedido.pago_confirmado_en.strftime('%d/%m %H:%M') }}</small>
+              {% endif %}
+            </strong>
+            {% else %}
+            <strong class="detail-info-val" style="color:var(--ord-warn)">⏳ Pendiente</strong>
+            {% endif %}
+          </div>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--col-border);margin:.85rem 0;">
+        <div class="detail-total-row">
+          <span>Subtotal</span>
+          <b>€{{ "%.2f"|format(pedido.subtotal or 0) }}</b>
+        </div>
+        {% if pedido.descuento %}
+        <div class="detail-total-row">
+          <span>Descuento</span>
+          <b class="ord-desc">−€{{ "%.2f"|format(pedido.descuento) }}</b>
+        </div>
+        {% endif %}
+        {% if pedido.puntos_usados %}
+        <div class="detail-total-row">
+          <span>Canjeados</span>
+          <b class="ord-note-client">⭐ {{ pedido.puntos_usados }} pts</b>
+        </div>
+        {% endif %}
+        {% if pedido.service_commission_amount %}
+        <div class="detail-total-row">
+          <span>Comisión hub</span>
+          <b style="color:var(--col-muted)">−€{{ "%.2f"|format(pedido.service_commission_amount) }}</b>
+        </div>
+        {% endif %}
+        <div class="detail-total-row detail-total-final">
+          <span>Total</span>
+          <b class="ord-total">€{{ "%.2f"|format(pedido.total or 0) }}</b>
+        </div>
+      </section>
+
+      {# Asignación (form como el de la lista) #}
+      <section class="ox-card p-4 mt-3">
+        <h2 class="detail-section-title">👥 Asignación</h2>
+        <form method="POST" action="{{ url_for('admin.asignar_pedido', pedido_id=pedido.id) }}" class="detail-assign-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="detail-info-lbl">Preparación</label>
+          <select name="preparador_id" class="ord-select">
+            <option value="">— Sin asignar —</option>
+            {% for u in preparadores %}
+            <option value="{{ u.id }}" {% if pedido.preparador_id == u.id %}selected{% endif %}>
+              {{ u.nombre }} · {{ u.pedidos_activos_como_preparador() }} activos
+            </option>
+            {% endfor %}
+          </select>
+          {% if brand.delivery %}
+          <label class="detail-info-lbl mt-2">Reparto</label>
+          <select name="repartidor_id" class="ord-select">
+            <option value="">— Sin asignar —</option>
+            {% for u in repartidores %}
+            <option value="{{ u.id }}" {% if pedido.repartidor_id == u.id %}selected{% endif %}>
+              {{ u.nombre }} · {{ u.pedidos_activos_como_repartidor() }} activos
+            </option>
+            {% endfor %}
+          </select>
+          {% endif %}
+          <button type="submit" class="ord-btn success mt-2" style="width:100%;">💾 Guardar asignación</button>
+        </form>
+      </section>
+
+      {# Código de confirmación (si aplica) #}
+      {% if pedido.codigo_confirmacion and pedido.estado in ('listo','en_ruta') %}
+      <section class="ox-card p-4 mt-3">
+        <h2 class="detail-section-title">🔑 Confirmación de entrega</h2>
+        <p class="detail-code">{{ pedido.codigo_confirmacion }}</p>
+        <p class="text-xs" style="color:var(--col-muted);">
+          El cliente debe leer este código al repartidor al recibir el pedido.
+          {% if pedido.intentos_codigo %}
+          <br><strong>{{ 3 - pedido.intentos_codigo }} intento(s) restantes</strong>
+          {% endif %}
+        </p>
+        {% if pedido.intentos_codigo >= 3 %}
+        <form method="POST" action="{{ url_for('admin.reset_codigo_confirmacion', pedido_id=pedido.id) }}" class="mt-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="ord-btn" style="width:100%;">🔄 Regenerar código</button>
+        </form>
+        {% endif %}
+      </section>
+      {% endif %}
+
+    </aside>
+
+  </div>
+</div>
+
+<style>
+.admin-order-detail .detail-layout {
+  display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 1rem;
+  align-items: start;
+}
+.admin-order-detail .detail-side {
+  position: sticky; top: 74px;
+  display: flex; flex-direction: column;
+}
+.admin-order-detail .detail-section-title {
+  font-size: .95rem; font-weight: 900; color: var(--col-text);
+  margin-bottom: .85rem;
+}
+.admin-order-detail .detail-info-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: .75rem;
+}
+.admin-order-detail .detail-info-lbl {
+  display: block; font-size: .68rem; font-weight: 900;
+  color: var(--col-muted); text-transform: uppercase;
+  letter-spacing: .04em; margin-bottom: .18rem;
+}
+.admin-order-detail .detail-info-val {
+  color: var(--col-text); font-size: .92rem; font-weight: 800;
+  text-decoration: none;
+}
+.admin-order-detail .detail-link { color: var(--ord-info); }
+.admin-order-detail .detail-link:hover { text-decoration: underline; }
+.admin-order-detail .detail-address {
+  padding: .6rem .8rem; border-left: 3px solid var(--ord-info);
+  background: color-mix(in srgb, var(--ord-info) 6%, transparent);
+  border-radius: 0 .5rem .5rem 0;
+}
+.admin-order-detail .detail-address-val {
+  color: var(--col-text); font-size: .95rem; font-weight: 700;
+  margin: .1rem 0 0;
+}
+.admin-order-detail .detail-note {
+  padding: .6rem .8rem; border-left: 3px solid var(--ord-warn);
+  background: var(--ord-warn-soft);
+  border-radius: 0 .5rem .5rem 0;
+}
+.admin-order-detail .detail-note p {
+  color: var(--ord-warn); font-size: .88rem; font-weight: 700;
+  margin: .1rem 0 0;
+}
+
+/* Timeline */
+.admin-order-detail .detail-timeline {
+  list-style: none; padding: 0 0 0 .8rem;
+  border-left: 2px solid var(--col-border);
+  display: flex; flex-direction: column; gap: 1rem;
+  margin: 0;
+}
+.admin-order-detail .detail-tl-item {
+  position: relative;
+  display: flex; gap: .8rem; align-items: flex-start;
+}
+.admin-order-detail .detail-tl-dot {
+  position: absolute; left: -1.5rem; top: .3rem;
+  width: 14px; height: 14px; border-radius: 999px;
+  background: var(--brand-primary);
+  border: 2.5px solid var(--col-surface);
+  box-shadow: 0 0 0 1px var(--col-border);
+}
+.admin-order-detail .detail-tl-dot[data-tipo*="cancel"] { background: var(--ord-danger); }
+.admin-order-detail .detail-tl-dot[data-tipo*="entrega"] { background: var(--ord-ok); }
+.admin-order-detail .detail-tl-dot[data-tipo*="listo"] { background: var(--ord-route); }
+.admin-order-detail .detail-tl-dot[data-tipo*="pago"] { background: var(--ord-ok); }
+.admin-order-detail .detail-tl-dot[data-tipo*="creado"] { background: var(--ord-info); }
+.admin-order-detail .detail-tl-body { flex: 1; min-width: 0; }
+.admin-order-detail .detail-tl-head {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  flex-wrap: wrap;
+}
+.admin-order-detail .detail-tl-tipo {
+  color: var(--col-text); font-size: .88rem; font-weight: 900;
+}
+.admin-order-detail .detail-tl-time {
+  color: var(--col-faint); font-size: .72rem; font-weight: 700;
+  font-family: ui-monospace, monospace;
+}
+.admin-order-detail .detail-tl-transition {
+  margin: .35rem 0 0; display: flex; align-items: center; gap: .35rem;
+  flex-wrap: wrap;
+}
+.admin-order-detail .detail-tl-detail {
+  margin: .35rem 0 0; color: var(--col-muted); font-size: .82rem;
+  line-height: 1.4;
+}
+.admin-order-detail .detail-tl-meta {
+  margin: .35rem 0 0; color: var(--col-faint); font-size: .72rem;
+  font-weight: 700;
+}
+
+/* Pay + totales */
+.admin-order-detail .detail-pay-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: .75rem;
+}
+.admin-order-detail .detail-total-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: .28rem 0; font-size: .88rem;
+}
+.admin-order-detail .detail-total-row span { color: var(--col-muted); }
+.admin-order-detail .detail-total-row b { color: var(--col-text); font-weight: 900; }
+.admin-order-detail .detail-total-final {
+  margin-top: .35rem; padding-top: .6rem;
+  border-top: 1px solid var(--col-border);
+  font-size: 1.05rem;
+}
+
+.admin-order-detail .detail-code {
+  font-size: 2.2rem; font-weight: 950;
+  letter-spacing: .35em; text-align: center;
+  color: var(--brand-primary);
+  margin: .5rem 0; font-family: ui-monospace, monospace;
+}
+
+.admin-order-detail .detail-assign-form {
+  display: flex; flex-direction: column; gap: .35rem;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .admin-order-detail .detail-layout { grid-template-columns: 1fr; }
+  .admin-order-detail .detail-side { position: static; }
+  .admin-order-detail .detail-code { font-size: 1.8rem; letter-spacing: .28em; }
+}
+</style>
+{% endblock %}

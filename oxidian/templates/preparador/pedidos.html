@@ -6,18 +6,33 @@
 {% endblock %}
 {% block styles %}
 <style>
+/* Tokens locales de intención (mapean a los globales de branding).
+   Cambiar aquí propaga a TODO el panel de cocina/encargos. */
+.prep-board {
+  --prep-info: color-mix(in srgb, var(--brand-accent, #003087) 60%, #6ac8ff);
+  --prep-info-soft: color-mix(in srgb, var(--brand-accent, #003087) 12%, transparent);
+  --prep-ok:   var(--theme-success, #5EF097);
+  --prep-ok-soft: color-mix(in srgb, var(--theme-success, #5EF097) 14%, transparent);
+  --prep-warn: color-mix(in srgb, var(--brand-primary) 82%, #ffb400);
+  --prep-warn-soft: color-mix(in srgb, var(--brand-primary) 16%, transparent);
+  --prep-danger: var(--theme-danger, #FF6B6B);
+  --prep-danger-soft: color-mix(in srgb, var(--theme-danger, #FF6B6B) 14%, transparent);
+  --prep-programado: #C084FC;
+  --prep-programado-soft: color-mix(in srgb, #C084FC 16%, transparent);
+}
+
 /* Alérgenos: crítico, siempre visible con contraste alto */
 .work-alergen {
   display: flex; align-items: flex-start; gap: .5rem;
   margin: .4rem 0;
   padding: .55rem .7rem;
   border-radius: .55rem;
-  background: rgba(255, 90, 90, .14);
-  border: 1.5px solid rgba(255, 90, 90, .42);
-  color: #ffb0b0;
+  background: var(--prep-danger-soft);
+  border: 1.5px solid color-mix(in srgb, var(--prep-danger) 42%, transparent);
+  color: color-mix(in srgb, var(--prep-danger) 72%, #fff);
   font-size: .82rem; line-height: 1.35;
 }
-.work-alergen strong { color: #FF6B6B; font-weight: 900; letter-spacing: .02em; }
+.work-alergen strong { color: var(--prep-danger); font-weight: 900; letter-spacing: .02em; }
 .work-alergen-icon { font-size: 1.05rem; flex-shrink: 0; }
 
 /* Badge modalidad de entrega */
@@ -27,59 +42,93 @@
   border-radius: .55rem;
   font-size: .72rem; font-weight: 900; letter-spacing: .01em;
 }
-.work-badge-modo-delivery  { background: rgba(90, 200, 250, .16); color: #5AC8FA; border: 1px solid rgba(90, 200, 250, .32); }
-.work-badge-modo-recogida  { background: rgba(94, 240, 151, .14); color: #5EF097; border: 1px solid rgba(94, 240, 151, .30); }
-.work-badge-modo-programado{ background: rgba(192, 132, 252, .16); color: #C084FC; border: 1px solid rgba(192, 132, 252, .32); }
+.work-badge-modo-delivery  { background: var(--prep-info-soft); color: var(--prep-info); border: 1px solid color-mix(in srgb, var(--prep-info) 32%, transparent); }
+.work-badge-modo-recogida  { background: var(--prep-ok-soft); color: var(--prep-ok); border: 1px solid color-mix(in srgb, var(--prep-ok) 30%, transparent); }
+.work-badge-modo-programado{ background: var(--prep-programado-soft); color: var(--prep-programado); border: 1px solid color-mix(in srgb, var(--prep-programado) 32%, transparent); }
 
-/* Badge método de pago */
+/* Badge método de pago (tokenizados por semántica) */
 .work-badge-pago {
   display: inline-flex; align-items: center; gap: .3rem;
   padding: .25rem .6rem;
   border-radius: .55rem;
   font-size: .72rem; font-weight: 900;
 }
-.work-badge-pago-efectivo { background: rgba(255, 194, 0, .16); color: #FFC200; border: 1px solid rgba(255, 194, 0, .32); }
-.work-badge-pago-bizum    { background: rgba(163, 100, 255, .16); color: #B884FF; border: 1px solid rgba(163, 100, 255, .32); }
-.work-badge-pago-tarjeta  { background: rgba(255, 143, 61, .16); color: #FFAB40; border: 1px solid rgba(255, 143, 61, .32); }
+.work-badge-pago-efectivo { background: var(--prep-warn-soft); color: var(--prep-warn); border: 1px solid color-mix(in srgb, var(--prep-warn) 32%, transparent); }
+.work-badge-pago-bizum    { background: color-mix(in srgb, var(--prep-programado) 16%, transparent); color: var(--prep-programado); border: 1px solid color-mix(in srgb, var(--prep-programado) 32%, transparent); }
+.work-badge-pago-tarjeta  { background: color-mix(in srgb, #FFAB40 16%, transparent); color: #FFAB40; border: 1px solid color-mix(in srgb, #FFAB40 32%, transparent); }
 
 /* Dirección para delivery */
 .work-address {
   margin: .45rem 0 .1rem;
-  padding: .45rem .65rem;
-  background: rgba(90, 200, 250, .09);
-  border-left: 3px solid #5AC8FA;
+  padding: .55rem .7rem;
+  background: var(--prep-info-soft);
+  border-left: 3px solid var(--prep-info);
   border-radius: .4rem;
-  font-size: .82rem; font-weight: 700; color: #C7ECFF;
+  font-size: .85rem; font-weight: 700;
+  color: color-mix(in srgb, var(--prep-info) 62%, var(--col-text));
 }
 
 /* Teléfono del cliente inline */
 .work-tel-link {
   margin-left: .5rem;
-  font-size: .78rem; font-weight: 700; color: #5AC8FA;
+  font-size: .78rem; font-weight: 700; color: var(--prep-info);
   text-decoration: none;
 }
 .work-tel-link:hover { text-decoration: underline; }
 
+/* Presentación (tamaño S/M/L) del item */
+.work-item-size {
+  display: inline-block;
+  padding: .12rem .48rem;
+  border-radius: 999px;
+  font-size: .68rem; font-weight: 900;
+  background: var(--prep-warn-soft);
+  color: color-mix(in srgb, var(--prep-warn) 70%, var(--col-text));
+  border: 1px solid color-mix(in srgb, var(--prep-warn) 28%, transparent);
+  margin-left: .35rem; letter-spacing: .01em;
+}
+
 /* Item marcado como preparado por el cocinero (localStorage) */
 .work-item.is-checked {
   opacity: .55;
-  background: rgba(94, 240, 151, .06);
+  background: var(--prep-ok-soft);
 }
 .work-item.is-checked > *:not(.work-item-check) {
   text-decoration: line-through;
-  text-decoration-color: rgba(94, 240, 151, .5);
+  text-decoration-color: color-mix(in srgb, var(--prep-ok) 50%, transparent);
 }
 
-/* Botón deshabilitado (almacén pendiente) */
+/* Botón deshabilitado */
 .work-btn:disabled, .work-btn[disabled] {
   opacity: .55; cursor: not-allowed;
   filter: grayscale(.3);
 }
 
+/* Urgencia por tiempo: elevar visualmente cards atrasadas */
+.work-card.is-aging {
+  border-color: color-mix(in srgb, var(--prep-warn) 55%, transparent) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--prep-warn) 32%, transparent),
+              0 6px 18px color-mix(in srgb, var(--prep-warn) 18%, transparent);
+}
+.work-card.is-late {
+  border-color: var(--prep-danger) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--prep-danger) 48%, transparent),
+              0 8px 24px color-mix(in srgb, var(--prep-danger) 22%, transparent);
+  animation: prep-pulse 1.8s ease-in-out infinite;
+}
+@keyframes prep-pulse {
+  0%,100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--prep-danger) 48%, transparent),
+                        0 8px 24px color-mix(in srgb, var(--prep-danger) 22%, transparent); }
+  50%     { box-shadow: 0 0 0 2px var(--prep-danger),
+                        0 10px 28px color-mix(in srgb, var(--prep-danger) 40%, transparent); }
+}
+.work-elapsed.is-fresh { color: var(--prep-ok); font-weight: 800; }
+.work-elapsed.is-aging { color: var(--prep-warn); font-weight: 900; }
+.work-elapsed.is-late  { color: var(--prep-danger); font-weight: 900; }
+
+/* Empleado */
 .work-employee-card {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
+  display: flex; align-items: center; gap: 1rem;
   padding: .85rem 1rem;
   background: var(--col-surface);
   border: 1px solid var(--col-border);
@@ -87,29 +136,194 @@
   margin-bottom: 1rem;
 }
 .work-employee-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, rgba(255,171,0,.25), rgba(255,100,0,.15));
-  color: #FFAB00;
-  font-size: 1.2rem;
-  font-weight: 900;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 44px; height: 44px; border-radius: 12px;
+  background: linear-gradient(135deg,
+              color-mix(in srgb, var(--brand-primary) 25%, transparent),
+              color-mix(in srgb, var(--brand-primary) 8%, transparent));
+  color: var(--brand-primary);
+  font-size: 1.2rem; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
-  border: 1.5px solid rgba(255,171,0,.3);
+  border: 1.5px solid color-mix(in srgb, var(--brand-primary) 30%, transparent);
 }
 .work-employee-info { flex: 1; min-width: 0; }
 .work-employee-name { font-weight: 800; font-size: .92rem; color: var(--col-text); }
 .work-employee-role { font-size: .75rem; color: var(--col-muted); margin-top: .1rem; }
 .work-employee-status {
-  display: flex;
-  align-items: center;
-  gap: .4rem;
-  font-size: .78rem;
-  color: var(--col-muted);
-  flex-shrink: 0;
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .78rem; color: var(--col-muted); flex-shrink: 0;
+}
+
+/* Banner de scope del rol (cocina vs preparacion) */
+.prep-scope-banner {
+  display: flex; align-items: center; gap: .8rem;
+  padding: .7rem .95rem; margin-bottom: 1rem;
+  border-radius: .7rem;
+  background: color-mix(in srgb, var(--brand-accent, #003087) 10%, var(--col-surface));
+  border: 1px solid color-mix(in srgb, var(--brand-accent, #003087) 22%, transparent);
+  border-left-width: 4px;
+}
+.prep-scope-banner[data-rol="preparacion"] {
+  background: color-mix(in srgb, var(--prep-programado) 10%, var(--col-surface));
+  border-color: color-mix(in srgb, var(--prep-programado) 25%, transparent);
+}
+.prep-scope-icon { font-size: 1.4rem; flex-shrink: 0; }
+.prep-scope-txt {
+  color: var(--col-text); font-size: .84rem; line-height: 1.35;
+}
+.prep-scope-txt strong { font-weight: 900; color: var(--col-text); }
+.prep-scope-txt em {
+  font-style: normal; font-weight: 800;
+  color: var(--brand-primary);
+}
+
+/* Grupos de encargos por fecha (planificación del día) */
+.prep-fecha-grupo { margin: .75rem 0; }
+.prep-fecha-head {
+  display: flex; align-items: center; gap: .55rem; flex-wrap: wrap;
+  padding: .55rem .8rem; margin-bottom: .35rem;
+  border-radius: .55rem;
+  background: color-mix(in srgb, var(--prep-programado) 8%, var(--col-surface));
+  border-left: 4px solid var(--prep-programado);
+}
+.prep-fecha-grupo[data-urgencia="hoy"] .prep-fecha-head {
+  background: color-mix(in srgb, var(--prep-danger) 12%, var(--col-surface));
+  border-left-color: var(--prep-danger);
+}
+.prep-fecha-grupo[data-urgencia="mañana"] .prep-fecha-head {
+  background: color-mix(in srgb, var(--prep-warn) 10%, var(--col-surface));
+  border-left-color: var(--prep-warn);
+}
+.prep-fecha-badge {
+  font-size: .78rem; font-weight: 900; color: var(--col-text);
+  letter-spacing: .01em;
+}
+.prep-fecha-grupo[data-urgencia="vencido"] .prep-fecha-head {
+  background: color-mix(in srgb, var(--prep-danger) 22%, transparent);
+  border-left: 4px solid var(--prep-danger);
+}
+.prep-fecha-grupo[data-urgencia="vencido"] .prep-fecha-badge {
+  color: var(--prep-danger); font-weight: 900; animation: prepPulse 1.5s ease-in-out infinite;
+}
+@keyframes prepPulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+.prep-fecha-grupo[data-urgencia="hoy"] .prep-fecha-badge { color: var(--prep-danger); }
+.prep-fecha-grupo[data-urgencia="mañana"] .prep-fecha-badge { color: var(--prep-warn); }
+.prep-fecha-date {
+  font-size: .74rem; font-weight: 700; color: var(--col-muted);
+  text-transform: capitalize; margin-left: auto;
+}
+.prep-fecha-count {
+  font-size: .68rem; font-weight: 800; color: var(--col-faint);
+  padding: .15rem .45rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--col-text) 6%, transparent);
+}
+
+/* Tarjeta empleado como toggle Online/Offline. Cursor y borde claro. */
+.work-employee-toggle {
+  cursor: pointer; transition: border-color .15s, background .15s;
+  text-align: left;
+}
+.work-employee-toggle.is-online {
+  border-color: color-mix(in srgb, var(--prep-ok) 45%, transparent);
+}
+.work-employee-toggle.is-online:hover {
+  background: color-mix(in srgb, var(--prep-ok) 6%, var(--col-surface));
+}
+.work-employee-toggle.is-offline {
+  border-color: color-mix(in srgb, var(--prep-warn) 45%, transparent);
+}
+.work-employee-toggle.is-offline:hover {
+  background: color-mix(in srgb, var(--prep-warn) 8%, var(--col-surface));
+}
+.work-employee-toggle:focus-visible {
+  outline: 2px solid var(--brand-primary); outline-offset: 2px;
+}
+
+/* Responsive: en móvil, cards a ancho completo con más espacio para acciones */
+@media (max-width: 720px) {
+  .prep-board .work-cta-group { flex-direction: column; gap: .5rem; }
+  .prep-board .work-cta-group .work-btn { min-height: 48px; font-size: .95rem; }
+  .prep-board .work-btn { min-height: 44px; }
+  .prep-board .work-order-code { font-size: 1rem; }
+  .prep-board .work-employee-card { padding: .7rem .85rem; gap: .7rem; }
+  .prep-board .work-employee-avatar { width: 38px; height: 38px; font-size: 1rem; }
+  .prep-board .work-badges,
+  .prep-board .work-badge-row,
+  .prep-board [class*="work-badge"] { flex-wrap: wrap; word-break: break-word; min-width: 0; }
+  /* Dirección larga: envuelve correctamente en pantalla estrecha. */
+  .prep-board .work-address { word-break: break-word; overflow-wrap: anywhere; }
+  /* work-item grid: en móvil <380px la primera columna 34px es OK pero la
+     2ª debe poder envolver texto largo sin cortar. */
+  .prep-board .work-item { min-width: 0; }
+  .prep-board .work-item > * { min-width: 0; word-break: break-word; }
+  /* En móvil el orden natural (pendientes → encargos → preparando) esconde la
+     acción más urgente. Reordenamos con flex: preparando primero, luego lo
+     que hay que tomar, luego los futuros. */
+  .prep-board .work-board { display: flex; flex-direction: column; gap: 1rem; }
+  .prep-board .work-lane--armando { order: 1; }
+  .prep-board .work-lane--pendientes { order: 2; }
+  .prep-board .work-lane { order: 3; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   LANDSCAPE = MODO PRINCIPAL de cocina/preparación
+   Estas vistas se usan típicamente en TABLETS FIJAS en horizontal
+   (montadas en cocina o mesa de preparación). En vez de comprimir,
+   aprovechamos el ancho para mostrar más columnas de pedidos y que
+   el operario vea toda la operación de un vistazo.
+─────────────────────────────────────────────────────────────────────── */
+@media (orientation: landscape) and (min-width: 900px) {
+  /* Tarjeta empleado horizontal en la esquina, no bloque completo */
+  .prep-board .work-employee-card {
+    display: inline-flex; width: auto; max-width: 480px;
+    margin-bottom: .8rem;
+  }
+  /* KPIs siempre en línea horizontal aprovechando el ancho */
+  .prep-board .work-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: .55rem;
+  }
+  /* Board principal en 2-3 columnas (pendientes | armando | encargos) */
+  .prep-board .work-board {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 1rem;
+    align-items: start;
+  }
+  .prep-board .work-lane { margin: 0; }
+  /* Cards de pedido en dos columnas dentro de cada lane si hay ancho */
+  .prep-board .work-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: .6rem;
+  }
+  /* Compañeros visibles horizontalmente */
+  .prep-board .work-team {
+    display: flex; flex-wrap: wrap; gap: .4rem;
+  }
+}
+
+/* Landscape en móvil / tablet pequeño (max-height 500px): comprimir
+   (caso menos común pero soportado — smartphones horizontales o
+   tablets con pantalla split). */
+@media (orientation: landscape) and (max-height: 500px) {
+  .prep-board .work-hero { padding: .55rem .8rem; }
+  .prep-board .work-hero h1 { font-size: 1.15rem; }
+  .prep-board .work-subtitle { display: none; }
+  .prep-board .work-employee-card { padding: .5rem .7rem; margin-bottom: .5rem; }
+  .prep-board .work-employee-avatar { width: 32px; height: 32px; font-size: .85rem; }
+  .prep-board .work-kpis { grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: .35rem; }
+  .prep-board .work-kpi strong { font-size: 1.05rem; }
+  .prep-board .work-team { display: none; }
+}
+
+/* Portrait grande (tablet vertical) — apila 1 columna con lanes anchas */
+@media (orientation: portrait) and (min-width: 700px) {
+  .prep-board .work-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: .55rem;
+  }
 }
 </style>
 {% endblock %}
@@ -124,8 +338,8 @@
       {% else %}Operación de pedidos{% endif %}
     </span>
     <h1 class="work-title">
-      {% if current_user.rol == 'cocina' %}Cocina
-      {% elif current_user.rol == 'preparacion' %}Encargos
+      {% if current_user.rol == 'cocina' %}🍳 Cocina
+      {% elif current_user.rol == 'preparacion' %}📆 Encargos
       {% else %}Cola de Pedidos{% endif %}
     </h1>
     <p class="work-subtitle">
@@ -135,20 +349,40 @@
     </p>
   </div>
   <div class="work-actions-top">
-    <form method="POST" action="{{ url_for('preparador.toggle_disponible') }}" class="js-availability-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="work-btn {% if disponible %}work-btn-success{% else %}work-btn-ghost{% endif %}">
-        <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
-        {% if disponible %}Online{% else %}Ponerme online{% endif %}
-      </button>
-    </form>
     <span class="work-pill">Refresco <strong id="refresh-countdown">30s</strong></span>
   </div>
 </section>
 
-<!-- Tarjeta de empleado -->
-<div class="work-employee-card">
-  <div class="work-employee-avatar">{{ current_user.nombre[0].upper() }}</div>
+{# Banner explicativo del reparto de responsabilidades entre roles. Ayuda a
+   entender por qué esta cola muestra un subconjunto de pedidos. Solo se
+   muestra a los roles operativos, no a admin/super_admin que ven todo. #}
+{% if current_user.rol in ('cocina', 'preparacion') %}
+<aside class="prep-scope-banner" data-rol="{{ current_user.rol }}">
+  <span class="prep-scope-icon">
+    {% if current_user.rol == 'cocina' %}🚀{% else %}📆{% endif %}
+  </span>
+  <div class="prep-scope-txt">
+    {% if current_user.rol == 'cocina' %}
+    <strong>Tu cola muestra solo pedidos inmediatos.</strong>
+    Los pedidos con fecha de entrega van al rol <em>Preparación</em>.
+    {% else %}
+    <strong>Tu cola muestra solo pedidos con fecha de entrega.</strong>
+    Los pedidos inmediatos (delivery ya) van al rol <em>Cocina</em>.
+    {% endif %}
+  </div>
+</aside>
+{% endif %}
+
+<!-- Tarjeta de empleado con toggle Online/Offline integrado (un solo lugar
+     de acción — antes había un botón duplicado en el hero y un dot informativo
+     aquí, generando confusión). -->
+<form method="POST" action="{{ url_for('preparador.toggle_disponible') }}"
+      class="js-availability-form work-employee-card work-employee-toggle {% if disponible %}is-online{% else %}is-offline{% endif %}"
+      aria-label="{% if disponible %}Ponerte offline{% else %}Ponerte online{% endif %}"
+      title="Toca para cambiar a {{ 'offline' if disponible else 'online' }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="work-employee-avatar" aria-hidden="true"
+          style="border:0;cursor:pointer;">{{ current_user.nombre[0].upper() }}</button>
   <div class="work-employee-info">
     <p class="work-employee-name">{{ current_user.nombre }}</p>
     <p class="work-employee-role">
@@ -161,16 +395,10 @@
   </div>
   <div class="work-employee-status">
     <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
-    <span>{% if disponible %}Online{% else %}Offline{% endif %}</span>
+    <span>{% if disponible %}Online — toca para pausar{% else %}Offline — toca para activar{% endif %}</span>
   </div>
-</div>
+</form>
 
-{% if not disponible and current_user.rol not in ('admin','super_admin') %}
-<div class="work-panel work-status-panel mb-4">
-  <p class="font-bold text-warning">Estás offline para nuevos pedidos</p>
-  <p class="text-sm mt-1 text-muted">Puedes terminar pedidos ya asignados, pero no recibirás ni tomarás pedidos nuevos hasta ponerte online.</p>
-</div>
-{% endif %}
 
 <!-- Compañeros activos -->
 {% if companeros %}
@@ -221,7 +449,7 @@
 <div class="work-board">
 
 <!-- ── PENDIENTES ── -->
-<section class="work-lane">
+<section class="work-lane work-lane--pendientes">
   <div class="work-lane-head">
     <div>
       <h2 class="work-lane-title">Pendientes</h2>
@@ -279,15 +507,24 @@
       {% endif %}
 
       <div class="work-action-row work-cta-group">
+        {# UX simplificado: "Reservar" solo asigna el pedido (útil si otro
+           preparador lo terminará). "Tomar y empezar" asigna + pasa a
+           "armando" en un click. Si ya está reservado a mí, muestra solo
+           "Empezar a preparar". #}
         {% if not pedido.preparador_id %}
         <form method="POST" action="{{ url_for('preparador.tomar_pedido', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-ghost full-width">Tomar</button>
+          <button type="submit" class="work-btn work-btn-ghost full-width"
+                  title="Reservar el pedido sin empezar aún">
+            📌 Reservar
+          </button>
         </form>
         {% endif %}
         <form method="POST" action="{{ url_for('preparador.empezar_armar', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-primary full-width">Empezar a preparar</button>
+          <button type="submit" class="work-btn work-btn-primary full-width">
+            {% if pedido.preparador_id == current_user.id %}▶ Empezar a preparar
+            {% else %}🍳 Tomar y empezar{% endif %}</button>
         </form>
       </div>
   </article>
@@ -299,18 +536,38 @@
   </div>
 </section>
 
-<!-- ── ENCARGOS PROGRAMADOS ── -->
+<!-- ── ENCARGOS PROGRAMADOS (agrupados por fecha) ── -->
 {% if pendientes_encargo is defined and pendientes_encargo %}
+{%- set _hoy_date = hoy_date if hoy_date is defined else None -%}
 <section class="work-lane" style="border-top:2px solid rgba(168,85,247,.25)">
   <div class="work-lane-head">
     <div>
-      <h2 class="work-lane-title" style="color:#C084FC">📦 Encargos programados</h2>
-      <p class="work-lane-sub">Pedidos con fecha de entrega fija — ordena por fecha de entrega.</p>
+      <h2 class="work-lane-title" style="color:var(--prep-programado)">📦 Encargos programados</h2>
+      <p class="work-lane-sub">Agrupados por fecha para planificar el día. Al marcar listo se avisa por WhatsApp al cliente.</p>
     </div>
-    <span class="work-count" style="background:rgba(168,85,247,.15);color:#C084FC">{{ pendientes_encargo|length }}</span>
+    <span class="work-count" style="background:var(--prep-programado-soft);color:var(--prep-programado)">{{ pendientes_encargo|length }}</span>
   </div>
-  <div class="work-list">
-  {% for pedido in pendientes_encargo %}
+  {# Sub-headers por fecha. `encargos_por_fecha` viene del backend como
+     OrderedDict; iteramos y renderizamos un grupo por cada fecha. #}
+  {% if encargos_por_fecha is defined and encargos_por_fecha %}
+    {% for _fecha, _grupo in encargos_por_fecha.items() %}
+    {%- set _dias_hasta = (_fecha - _hoy_date).days if _hoy_date and _fecha else None -%}
+    <div class="prep-fecha-grupo"
+         data-dias-hasta="{{ _dias_hasta if _dias_hasta is not none else '' }}"
+         data-urgencia="{% if _dias_hasta is not none and _dias_hasta < 0 %}vencido{% elif _dias_hasta is not none and _dias_hasta == 0 %}hoy{% elif _dias_hasta == 1 %}mañana{% elif _dias_hasta is not none and _dias_hasta <= 3 %}proxima{% else %}futura{% endif %}">
+      <div class="prep-fecha-head">
+        <span class="prep-fecha-badge">
+          {% if _dias_hasta is not none and _dias_hasta < 0 %}🚨 VENCIDO ({{ _dias_hasta|abs }}d)
+          {% elif _dias_hasta is not none and _dias_hasta == 0 %}⏰ HOY
+          {% elif _dias_hasta == 1 %}📅 Mañana
+          {% elif _dias_hasta is not none and _dias_hasta <= 7 %}📅 En {{ _dias_hasta }} días
+          {% else %}📅 Futuro{% endif %}
+        </span>
+        <span class="prep-fecha-date">{{ _fecha.strftime('%A %d/%m') if _fecha else 'Sin fecha' }}</span>
+        <span class="prep-fecha-count">{{ _grupo|length }} pedido{{ 's' if _grupo|length != 1 }}</span>
+      </div>
+      <div class="work-list">
+      {% for pedido in _grupo %}
   {%- set _ns = namespace(fecha_ent=none) -%}
   {%- for _it in pedido.items -%}{%- if _it.display_fecha_entrega and (_ns.fecha_ent is none or _it.display_fecha_entrega < _ns.fecha_ent) -%}{%- set _ns.fecha_ent = _it.display_fecha_entrega -%}{%- endif -%}{%- endfor -%}
   {%- set fecha_ent = _ns.fecha_ent -%}
@@ -347,27 +604,45 @@
       </div>
       {% if pedido.notas %}<div class="work-note">Nota: {{ pedido.notas }}</div>{% endif %}
       <div class="work-action-row work-cta-group">
+        {# UX simplificado: "Reservar" solo asigna el pedido (útil si otro
+           preparador lo terminará). "Tomar y empezar" asigna + pasa a
+           "armando" en un click. Si ya está reservado a mí, muestra solo
+           "Empezar a preparar". #}
         {% if not pedido.preparador_id %}
         <form method="POST" action="{{ url_for('preparador.tomar_pedido', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-ghost full-width">Tomar</button>
+          <button type="submit" class="work-btn work-btn-ghost full-width"
+                  title="Reservar el pedido sin empezar aún">
+            📌 Reservar
+          </button>
         </form>
         {% endif %}
         <form method="POST" action="{{ url_for('preparador.empezar_armar', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-primary full-width">Empezar a preparar</button>
+          <button type="submit" class="work-btn work-btn-primary full-width">
+            {% if pedido.preparador_id == current_user.id %}▶ Empezar a preparar
+            {% else %}🍳 Tomar y empezar{% endif %}</button>
         </form>
       </div>
   </article>
-  {% else %}
-  <div class="work-empty"><p class="text-sm">Sin encargos pendientes.</p></div>
   {% endfor %}
-  </div>
+      </div>{# work-list del grupo #}
+    </div>{# prep-fecha-grupo #}
+    {% endfor %}
+  {% else %}
+    {# Fallback si encargos_por_fecha no vino (compatibilidad con caché
+       de sesión que aún tenga la versión antigua del contexto). #}
+    <div class="work-list">
+    {% for pedido in pendientes_encargo %}
+      {% include "preparador/_encargo_card.html" ignore missing %}
+    {% endfor %}
+    </div>
+  {% endif %}
 </section>
 {% endif %}
 
 <!-- ── ARMANDO ── -->
-<section class="work-lane">
+<section class="work-lane work-lane--armando">
   <div class="work-lane-head">
     <div>
       <h2 class="work-lane-title">Preparando</h2>

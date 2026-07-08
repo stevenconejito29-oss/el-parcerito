@@ -55,11 +55,13 @@
             {% if item.combo_resumen %}
               <p class="text-xs mt-0.5" style="color:#C084FC">{{ item.combo_resumen }}</p>
             {% endif %}
-            {% set al_icons = item.producto.alergenos_iconos %}
-            {% if al_icons %}
-              <p class="text-xs mt-0.5" style="color:#FFB340">⚠️ {% for c,i,l in al_icons %}<span title="{{ l }}">{{ i }}</span> {% endfor %}</p>
-            {% elif item.producto.es_hipoalergenico %}
-              <p class="text-xs mt-0.5" style="color:#5EF097">🌿 Sin alérgenos</p>
+            {% if brand.es_comida %}
+              {% set al_icons = item.producto.alergenos_iconos %}
+              {% if al_icons %}
+                <p class="text-xs mt-0.5" style="color:#FFB340">⚠️ {% for c,i,l in al_icons %}<span title="{{ l }}">{{ i }}</span> {% endfor %}</p>
+              {% elif item.producto.es_hipoalergenico %}
+                <p class="text-xs mt-0.5" style="color:#5EF097">🌿 Sin alérgenos</p>
+              {% endif %}
             {% endif %}
           </div>
           <span class="font-bold flex-shrink-0" style="color:#FFAB00">€{{ "%.2f"|format(item.subtotal) }}</span>
@@ -77,10 +79,12 @@
     </div>
   </details>
 
-  <!-- Aviso alérgenos -->
+  {% if brand.es_comida %}
+  <!-- Aviso alérgenos (solo tienda de comida) -->
   <div class="text-xs p-3 rounded-xl" style="background:rgba(255,171,0,.08);border:1px solid rgba(255,171,0,.2);color:rgba(255,171,0,.9)">
     ⚠️ Consulta alérgenos antes de confirmar. Si tienes intolerancias, indícalo en las notas.
   </div>
+  {% endif %}
 
   {% if checkout_items %}
   <div class="checkout-content-list">
@@ -126,12 +130,13 @@
 </div>
 
 <!-- ── FORMULARIO (der / abajo mobile) ── -->
-<form method="POST" class="md:col-span-3 order-1 md:order-1 space-y-4" id="form-checkout">
+<form method="POST" class="md:col-span-3 order-1 md:order-1 space-y-4" id="form-checkout" data-no-guard>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="cupon_id" id="cupon_id_input">
   <input type="hidden" name="cupon_codigo" id="cupon_codigo_input">
   <input type="hidden" name="producto_canje_id" id="canje_hidden">
   <input type="hidden" name="puntos_usar" id="puntos_usar_input" value="0">
+  <input type="hidden" name="zona_id" id="zona_id_input" value="">
 
   <!-- ① IDENTIFICACIÓN POR TELÉFONO -->
   <div class="ox-card p-4 checkout-step">
@@ -167,16 +172,29 @@
       {% if 'delivery' in fulfillment_options %}
       <label class="flex items-center gap-2.5 p-3 rounded-xl cursor-pointer checkout-choice" style="background:var(--col-elevated);border:1.5px solid var(--col-border)">
         <input type="radio" name="tipo_entrega_cliente" value="delivery" {% if fulfillment_default == 'delivery' %}checked{% endif %} onchange="setFulfillmentMode('delivery')" class="accent-yellow-500">
-        <span class="font-bold text-sm">A domicilio</span>
+        <span class="font-bold text-sm">{{ fulfillment_mode_label('delivery') }}</span>
       </label>
       {% endif %}
       {% if 'recogida' in fulfillment_options %}
       <label class="flex items-center gap-2.5 p-3 rounded-xl cursor-pointer checkout-choice" style="background:var(--col-elevated);border:1.5px solid var(--col-border)">
         <input type="radio" name="tipo_entrega_cliente" value="recogida" {% if fulfillment_default == 'recogida' %}checked{% endif %} onchange="setFulfillmentMode('recogida')" class="accent-yellow-500">
-        <span class="font-bold text-sm">Recoger en local</span>
+        <span class="font-bold text-sm">{{ fulfillment_mode_label('recogida') }}</span>
       </label>
       {% endif %}
     </div>
+    {% if fulfillment_unavailable %}
+    <div class="checkout-blockers mb-3" role="status">
+      {% for mode, info in fulfillment_unavailable.items() %}
+      <div class="checkout-blocker">
+        <strong>{{ info.label }} no disponible</strong>
+        <span>{{ info.reason }}</span>
+        {% if info.products %}
+        <small>{% for p in info.products[:4] %}{{ p.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}</small>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div id="delivery-address-block">
     <label class="ox-label">Dirección de entrega</label>
     <textarea name="direccion" {% if fulfillment_default == 'delivery' %}required{% endif %} rows="2"
@@ -184,6 +202,12 @@
               id="direccion_input"></textarea>
     <button type="button" class="checkout-location-btn" onclick="useCheckoutLocation(this)">Usar mi ubicación para comprobar cobertura</button>
     <div id="dir-feedback" class="mt-2 text-xs hidden" style="min-height:1.2em"></div>
+    {% if radio_entrega_km %}
+    <p class="text-xs mt-1" style="color:var(--col-muted)">
+      📍 Radio de reparto: hasta <strong>{{ '%.1f'|format(radio_entrega_km) }} km</strong>
+      {% if brand.ciudad %}desde {{ brand.ciudad }}{% endif %}.
+    </p>
+    {% endif %}
     </div>
     <div id="pickup-info-block" class="p-3 rounded-xl text-sm {% if fulfillment_default != 'recogida' %}hidden{% endif %}" style="background:rgba(43,147,72,.08);border:1px solid rgba(43,147,72,.25);color:#2b9348">
       Recoge tu pedido en <strong>{{ establecimiento.nombre }}</strong>{% if brand.direccion %}, {{ brand.direccion }}{% endif %}. Te avisaremos por WhatsApp cuando esté listo.
@@ -195,7 +219,7 @@
   {% set z = zonas[0] %}
   <div class="ox-card p-4 checkout-step" id="delivery-zone-card">
     <div class="flex items-center justify-between p-3 rounded-xl js-zona-item"
-         data-precio="{{ z.precio_envio }}" data-gratis-desde="{{ z.gratis_desde or '' }}"
+         data-zona-id="{{ z.id }}" data-precio="{{ z.precio_envio }}" data-gratis-desde="{{ z.gratis_desde or '' }}"
          style="background:var(--col-elevated);border:1.5px solid rgba(255,171,0,.25)">
       <div class="flex items-center gap-2.5">
         <span class="text-lg">🚚</span>
@@ -372,6 +396,28 @@
   background: rgba(217,150,26,.12) !important;
   border-color: rgba(217,150,26,.55) !important;
   box-shadow: 0 0 0 3px rgba(217,150,26,.1);
+}
+.checkout-blockers {
+  display: grid;
+  gap: .5rem;
+}
+.checkout-blocker {
+  display: grid;
+  gap: .2rem;
+  padding: .65rem .75rem;
+  border-radius: .75rem;
+  border: 1px solid rgba(217,150,26,.22);
+  background: rgba(217,150,26,.08);
+  color: #6B5A4E;
+  font-size: .75rem;
+}
+.checkout-blocker strong {
+  color: #18120A;
+  font-weight: 900;
+}
+.checkout-blocker small {
+  color: #9A5E00;
+  font-weight: 750;
 }
 .checkout-pay-label {
   min-height: 58px;
@@ -640,6 +686,8 @@ function setFulfillmentMode(mode) {
   if (dirInput) dirInput.required = fulfillmentMode === 'delivery';
   if (fulfillmentMode === 'recogida') {
     envioActual = 0;
+    const zonaInput = document.getElementById('zona_id_input');
+    if (zonaInput) zonaInput.value = '';
     document.getElementById('resumen_envio')?.classList.add('hidden');
     document.getElementById('dir-feedback')?.classList.add('hidden');
     actualizarTotalEstimado();
@@ -647,8 +695,14 @@ function setFulfillmentMode(mode) {
     const item = document.querySelector('.js-zona-item');
     if (item) _updateZonaSummary(
       parseFloat(item.dataset.precio || 0),
-      parseFloat(item.dataset.gratisDesde || 0)
+      parseFloat(item.dataset.gratisDesde || 0),
+      { id: item.dataset.zonaId }
     );
+  }
+  // Al cambiar de modo, recalcular estado del botón: en recogida siempre
+  // habilitado, en delivery depende del veredicto de dirección.
+  if (typeof window._checkoutRefreshSubmit === 'function') {
+    window._checkoutRefreshSubmit();
   }
 }
 
@@ -974,6 +1028,8 @@ async function validarAfiliado() {
 // Zona de entrega
 function _updateZonaSummary(precio, gratisDesde, zona) {
   const el = document.getElementById('resumen_envio');
+  const zonaInput = document.getElementById('zona_id_input');
+  if (zonaInput && zona && zona.id) zonaInput.value = zona.id;
   envioActual = gratisDesde && SUBTOTAL_BASE >= gratisDesde ? 0 : precio;
   if (el) {
     el.classList.remove('hidden');
@@ -1095,12 +1151,38 @@ function toggleBizumInfo(show) {
 
 document.getElementById('form-checkout')?.addEventListener('submit', e => {
   const btn = document.getElementById('btn-confirmar');
+  const originalText = btn ? btn.textContent : '';
+  const restoreButton = () => {
+    if (!btn) return;
+    btn.disabled = false;
+    btn.textContent = originalText || 'Confirmar pedido';
+    btn.classList.remove('is-submitting');
+  };
+  // Defensa en profundidad: si el usuario intenta enviar el formulario con
+  // dirección fuera de radio (por ejemplo tras manipular el DOM), impedimos
+  // el submit y le pedimos corregir la dirección. El servidor también valida.
+  if (typeof window._checkoutAddressState === 'function'
+      && fulfillmentMode === 'delivery'
+      && window._checkoutAddressState() === false) {
+    e.preventDefault();
+    restoreButton();
+    const fb = document.getElementById('dir-feedback');
+    if (fb) {
+      fb.classList.remove('hidden');
+      fb.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return;
+  }
   const tel = document.getElementById('tel_input');
   if (tel) tel.value = normalizarTelefono(tel.value);
   saveGuestCheckoutData();
   if (btn) {
     btn.disabled = true;
+    btn.classList.add('is-submitting');
     btn.textContent = 'Procesando pedido...';
+    setTimeout(() => {
+      if (document.visibilityState === 'visible') restoreButton();
+    }, 15000);
   }
 });
 actualizarTotalEstimado();
@@ -1119,24 +1201,48 @@ if (INITIAL_REWARDS.verified) {
 }
 
 // ── Validación de dirección en tiempo real ────────────────────
+// Preventivo: valida al perder el foco del input y deshabilita el botón
+// "Confirmar pedido" si la dirección está fuera del radio de reparto o no
+// se puede geocodificar. Evita que el cliente rellene 6 campos, pulse
+// submit y reciba un error redirigido al carrito.
 (function () {
   const dirInput = document.getElementById('direccion_input');
   const fb = document.getElementById('dir-feedback');
+  const btnConfirmar = document.getElementById('btn-confirmar');
   if (!dirInput || !fb) return;
 
   let _lastDir = '';
   let _checking = false;
+  let _addressValid = null; // null=indeterminado, true=ok, false=fuera
 
-  function showFeedback(text, color) {
+  function showFeedback(text, color, sticky = false) {
     const span = document.createElement('span');
     span.style.color = color;
+    span.style.fontWeight = sticky ? '800' : '600';
     span.textContent = text;
     fb.replaceChildren(span);
     fb.classList.remove('hidden');
+    if (sticky) fb.setAttribute('data-sticky', '1');
+    else fb.removeAttribute('data-sticky');
+  }
+
+  function refreshSubmitState() {
+    if (!btnConfirmar) return;
+    // Solo bloquear en modo delivery cuando sabemos que está fuera.
+    const bloquear = fulfillmentMode === 'delivery' && _addressValid === false;
+    btnConfirmar.disabled = !!bloquear;
+    btnConfirmar.classList.toggle('opacity-50', !!bloquear);
+    btnConfirmar.classList.toggle('cursor-not-allowed', !!bloquear);
+    btnConfirmar.setAttribute('aria-disabled', bloquear ? 'true' : 'false');
+    if (bloquear) {
+      btnConfirmar.title = 'La dirección está fuera del radio de reparto';
+    } else {
+      btnConfirmar.removeAttribute('title');
+    }
   }
 
   async function checkAddress(dir) {
-    if (fulfillmentMode !== 'delivery') return;
+    if (fulfillmentMode !== 'delivery') { _addressValid = null; refreshSubmitState(); return; }
     if (!dir || dir.length < 4 || dir === _lastDir || _checking) return;
     _lastDir = dir;
     _checking = true;
@@ -1149,6 +1255,7 @@ if (INITIAL_REWARDS.verified) {
       });
       const d = await r.json();
       if (d.ok) {
+        _addressValid = true;
         const dist = d.distancia_km !== null ? ` · ${d.distancia_km} km del local` : '';
         if (d.zona) {
           _updateZonaSummary(
@@ -1160,21 +1267,36 @@ if (INITIAL_REWARDS.verified) {
         const zona = d.zona?.nombre ? ` · ${d.zona.nombre}` : '';
         showFeedback(`✓ Dentro del área de cobertura${dist}${zona}`, '#5EF097');
       } else {
-        showFeedback(`✗ ${d.mensaje}`, '#FF6B6B');
+        _addressValid = false;
+        showFeedback(`✗ ${d.mensaje}`, '#FF6B6B', true);
       }
     } catch {
+      _addressValid = null; // fallo de red — no bloquear preventivamente
       showFeedback('⚠️ No pudimos verificar la ubicación ahora', 'var(--col-muted)');
     } finally {
       _checking = false;
+      refreshSubmitState();
     }
   }
   window.checkCheckoutAddress = checkAddress;
 
   dirInput.addEventListener('blur', () => checkAddress(dirInput.value.trim()));
+  dirInput.addEventListener('input', () => {
+    // El usuario está editando: descarta el veredicto anterior para no
+    // bloquearlo mientras corrige la dirección.
+    if (_addressValid === false) {
+      _addressValid = null;
+      refreshSubmitState();
+    }
+  });
   // Si hay dirección pre-cargada (cliente logueado), verificar al cargar la página
   if (fulfillmentMode === 'delivery' && dirInput.value.trim().length >= 4) {
     setTimeout(() => checkAddress(dirInput.value.trim()), 800);
   }
+
+  // Exponer el estado para que el cambio de modo delivery/recogida recalcule
+  window._checkoutAddressState = () => _addressValid;
+  window._checkoutRefreshSubmit = refreshSubmitState;
 })();
 window.addEventListener('DOMContentLoaded', () => setFulfillmentMode(fulfillmentMode));
 </script>

@@ -12,7 +12,7 @@
       <p class="oa-page-header__subtitle">Crea admins y decide qué módulos puede usar cada uno. Nuevos admins arrancan con el <strong>preset operacional</strong> (9 módulos) — sensibles quedan apagados hasta que los actives.</p>
     </div>
     <div class="oa-page-header__actions">
-      <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')" class="oa-btn oa-btn--primary">
+      <button type="button" onclick="document.getElementById('modal-nuevo').classList.remove('hidden')" class="oa-btn oa-btn--primary">
         + Nuevo admin
       </button>
     </div>
@@ -72,11 +72,12 @@
             ⚡ Features
           </a>
           {% endif %}
-          <button onclick='abrirEditar({{ u.id }}, {{ u.nombre|tojson }}, {{ u.rol|tojson }})' class="oa-btn oa-btn--sm">
+          <button type="button" onclick='abrirEditar({{ u.id }}, {{ u.nombre|tojson }}, {{ u.rol|tojson }})' class="oa-btn oa-btn--sm">
             ✏️ Editar
           </button>
           {% if u.id != current_user.id %}
-          <form method="POST" action="{{ url_for('superadmin.toggle_admin', user_id=u.id) }}">
+          <form method="POST" action="{{ url_for('superadmin.toggle_admin', user_id=u.id) }}"
+                {% if u.activo %}onsubmit="return confirm('¿Desactivar a {{ u.nombre|e }}? Perderá acceso al panel hasta que lo reactives.');"{% endif %}>
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="oa-btn oa-btn--sm {% if u.activo %}oa-btn--danger{% else %}oa-btn--primary{% endif %}">
               {{ '⏸ Desactivar' if u.activo else '▶ Activar' }}
@@ -95,7 +96,7 @@
     <p class="oa-empty__title">Sin administradores</p>
     <p class="oa-empty__body">Crea el primer administrador para delegar la operación diaria del panel.</p>
     <div class="oa-empty__cta">
-      <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')" class="oa-btn oa-btn--primary">+ Crear primer admin</button>
+      <button type="button" onclick="document.getElementById('modal-nuevo').classList.remove('hidden')" class="oa-btn oa-btn--primary">+ Crear primer admin</button>
     </div>
   </div>
   {% endif %}
@@ -110,7 +111,7 @@
         <p class="oa-dialog__title">Nuevo administrador</p>
         <p class="oa-dialog__sub">Se creará con el preset operacional activo. Los módulos sensibles requieren tu OK después.</p>
       </div>
-      <button onclick="document.getElementById('modal-nuevo').classList.add('hidden')" class="oa-dialog__close" aria-label="Cerrar">&times;</button>
+      <button type="button" onclick="document.getElementById('modal-nuevo').classList.add('hidden')" class="oa-dialog__close" aria-label="Cerrar">&times;</button>
     </div>
     <form method="POST" action="{{ url_for('superadmin.crear_admin') }}" class="oa-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -147,7 +148,7 @@
   <div class="oa-dialog__panel" onclick="event.stopPropagation()">
     <div class="oa-dialog__head">
       <p class="oa-dialog__title">✏️ Editar: <span id="edit-nombre" style="color:var(--brand-primary);"></span></p>
-      <button onclick="document.getElementById('modal-editar').classList.add('hidden')" class="oa-dialog__close" aria-label="Cerrar">&times;</button>
+      <button type="button" onclick="document.getElementById('modal-editar').classList.add('hidden')" class="oa-dialog__close" aria-label="Cerrar">&times;</button>
     </div>
     <form id="form-editar" method="POST" action="" class="oa-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

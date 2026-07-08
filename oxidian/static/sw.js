@@ -1,12 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════
-   Oxidian — Service Worker v34
-   • Assets propios CSS/JS/IMG: cache-first + actualización en segundo plano
+   Oxidian — Service Worker v36
+   • Assets propios CSS/JS/IMG: network-first + fallback cacheado
    • HTML público y datos de sesión: network-only
    • API / Admin       : Network-only (nunca cachear dinámico)
    • Push Notifications: Muestra notificaciones + abre URL al click
    ═══════════════════════════════════════════════════════════════ */
 
-const CACHE_STATIC = "ox-static-v34";
+const CACHE_STATIC = "ox-static-v36";
 const CACHE_PREFIX = "ox-";
 
 const PRECACHE = [
@@ -139,13 +139,13 @@ self.addEventListener("fetch", event => {
     event.respondWith(
       caches.open(CACHE_STATIC).then(async cache => {
         const cached = await cache.match(event.request);
-        const update = fetch(event.request, { cache: "no-cache" })
-          .then(response => {
-            if (canStore(response)) cache.put(event.request, response.clone());
-            return response;
-          })
-          .catch(() => null);
-        return cached || await update || Response.error();
+        try {
+          const response = await fetch(event.request, { cache: "reload" });
+          if (canStore(response)) cache.put(event.request, response.clone());
+          return response;
+        } catch {
+          return cached || Response.error();
+        }
       })
     );
     return;

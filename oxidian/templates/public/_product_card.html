@@ -30,8 +30,8 @@
 
     {# Badges sobre imagen #}
     <div class="ep-card-badges">
-      {% if p.modalidad_entrega == 'delivery' %}<span class="ep-cbadge ep-cbadge-encargo">Solo delivery</span>{% endif %}
-      {% if p.modalidad_entrega == 'recogida' %}<span class="ep-cbadge ep-cbadge-encargo">Solo recogida</span>{% endif %}
+      {% set fb = fulfillment_badge(p) %}
+      <span class="ep-cbadge ep-cbadge-fulfillment" title="{{ fb.title }}">{{ fb.emoji }} {{ fb.label }}</span>
       {% if p.grupo_pedido %}<span class="ep-cbadge ep-cbadge-encargo">Pedido: {{ p.grupo_pedido }}</span>{% endif %}
       {% if p.es_combo %}<span class="ep-cbadge ep-cbadge-combo">🎁 COMBO</span>{% endif %}
       {% if p.tipo_entrega in ('programado','encargo') %}
@@ -109,12 +109,14 @@
     {% endif %}
     {% endif %}
 
-    {# Alérgenos / hipo #}
-    {% if p.es_hipoalergenico %}
-    <span class="ep-card-hipo">🌿 Sin alérgenos</span>
-    {% else %}
-    {% set al = p.alergenos_iconos %}
-    {% if al %}<span class="ep-card-alerg">⚠️ {% for c,i,l in al[:4] %}<span title="{{ l }}">{{ i }}</span>{% endfor %}{% if al|length > 4 %} +{{ al|length - 4 }}{% endif %}</span>{% endif %}
+    {# Alérgenos / hipo (solo en tienda de comida — se ocultan si es catálogo genérico) #}
+    {% if brand.es_comida is not defined or brand.es_comida %}
+      {% if p.es_hipoalergenico %}
+      <span class="ep-card-hipo">🌿 Sin alérgenos</span>
+      {% else %}
+      {% set al = p.alergenos_iconos %}
+      {% if al %}<span class="ep-card-alerg">⚠️ {% for c,i,l in al[:4] %}<span title="{{ l }}">{{ i }}</span>{% endfor %}{% if al|length > 4 %} +{{ al|length - 4 }}{% endif %}</span>{% endif %}
+      {% endif %}
     {% endif %}
 
     {# Rating #}
@@ -125,16 +127,33 @@
     {# Footer: precio + acción #}
     <div class="ep-card-footer">
       <div class="ep-card-prices">
-        <span class="ep-card-price">€{{ "%.2f"|format(p.precio_final) }}</span>
-        {% if p.es_combo and p.combo_precio_modo_normalizado == 'descuento_porcentaje' and p.combo_descuento_pct_float > 0 %}
-        <span class="ep-card-price-note">{{ "%.0f"|format(p.combo_descuento_pct_float) }}% dto</span>
-        {% elif p.es_combo %}
-        <span class="ep-card-price-note">Precio fijo</span>
+        {% if p.solo_canje %}
+          {# Exclusivo canje: NO tiene precio en euros, solo puntos. #}
+          <span class="ep-card-price ep-card-price--points">
+            ⭐ {{ p.puntos_para_canje or 0 }} pts
+          </span>
+          <span class="ep-card-price-note">Solo canje</span>
+        {% else %}
+          <span class="ep-card-price">€{{ "%.2f"|format(p.precio_final) }}</span>
+          {% if p.canjeable_con_puntos and p.puntos_para_canje %}
+          <span class="ep-card-price-note ep-card-price-note--pts">o {{ p.puntos_para_canje }} pts</span>
+          {% elif p.es_combo and p.combo_precio_modo_normalizado == 'descuento_porcentaje' and p.combo_descuento_pct_float > 0 %}
+          <span class="ep-card-price-note">{{ "%.0f"|format(p.combo_descuento_pct_float) }}% dto</span>
+          {% elif p.es_combo %}
+          <span class="ep-card-price-note">Precio fijo</span>
+          {% endif %}
         {% endif %}
       </div>
 
       {% if not establecimiento.abierto %}
         <span class="ep-btn-sold">Cerrado</span>
+      {% elif p.solo_canje %}
+        {# Producto exclusivo de canje: no se vende con dinero, solo se
+           canjea con puntos desde el carrito al hacer un pedido. #}
+        <a href="{{ url_for('public.ver_carrito') }}" class="ep-btn-detail"
+           title="Solo se canjea con puntos al hacer un pedido">
+          Ver carrito →
+        </a>
       {% elif not p.disponible_para_venta_en_origen(origen_actual) %}
         <span class="ep-btn-sold">Agotado</span>
       {% elif p.tipo_entrega in ('encargo','programado') or p.es_combo or _has_extras %}

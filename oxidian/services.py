@@ -266,6 +266,27 @@ def avanzar_estado_pedido(
         canal=canal,
         detalle=detalle,
     )
+    # Cuando un pedido con reserva (producto de fecha fija) queda listo,
+    # avisamos al cliente que ya puede recoger o que su reparto está
+    # programado. `enviar_whatsapp_estado` ya se encarga del canal WhatsApp
+    # y respeta la config de notificaciones; aquí lo disparamos solo para
+    # transiciones a "listo" que involucran productos programados.
+    if estado_anterior != pedido.estado and pedido.estado == "listo":
+        try:
+            tiene_reserva = any(
+                (getattr(item, "display_tipo_entrega", None) or "").lower() in ("programado", "encargo")
+                for item in pedido.items
+            )
+        except Exception:
+            tiene_reserva = False
+        if tiene_reserva:
+            try:
+                enviar_whatsapp_estado(pedido)
+            except Exception:
+                logger.exception(
+                    "No se pudo notificar al cliente del pedido %s la reserva lista",
+                    getattr(pedido, "id", None),
+                )
     return pedido.estado
 
 
@@ -470,6 +491,20 @@ def get_puntos_config() -> dict:
         "por_euro": max(0, _int_config("PUNTOS_POR_EURO", 1)),
         "ratio":    max(1, _int_config("PUNTOS_CANJE_RATIO", 100)),
     }
+
+
+def get_pedido_minimo() -> float:
+    """
+    Monto mínimo global de pedido (euros). 0 = sin mínimo.
+    Se configura desde `/superadmin/config` como clave PEDIDO_MINIMO_EUR.
+    """
+    from models import SiteConfig
+    raw = SiteConfig.get("PEDIDO_MINIMO_EUR", "0")
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        logger.warning("PEDIDO_MINIMO_EUR inválido (%r); usando 0", raw)
+        return 0.0
 
 
 # ─────────────────────────────────────────────
@@ -1460,7 +1495,11 @@ def _bot_http_post(path: str, payload: dict, timeout: int = 8) -> bool:
     import requests
     from models import SiteConfig
 
-    bot_url = (SiteConfig.get("BOT_API_URL", os.environ.get("BOT_API_URL", "http://127.0.0.1:3000")) or "").rstrip("/")
+    # Default a `http://chat:3000` (nombre del servicio Docker) porque
+    # 127.0.0.1 dentro del contenedor NO resuelve al servicio del bot en
+    # otro contenedor. Env var `BOT_API_URL` sigue teniendo prioridad y
+    # `SiteConfig.BOT_API_URL` sobre todo, para permitir override en runtime.
+    bot_url = (SiteConfig.get("BOT_API_URL", os.environ.get("BOT_API_URL", "http://chat:3000")) or "").rstrip("/")
     api_key = SiteConfig.get("BOT_API_KEY", "")
     if not bot_url or not api_key:
         return False

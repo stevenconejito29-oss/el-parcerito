@@ -4,6 +4,17 @@ import uuid
 import random
 import re
 import inspect
+import unicodedata
+
+
+def _strip_accents(s: str) -> str:
+    """Normaliza a NFD y elimina marcas de acento — para búsqueda ACCENT-insensitive.
+
+    Ej: 'Café' → 'Cafe', 'Jamón' → 'Jamon'. Postgres no tiene unaccent() sin la
+    extensión, así que hacemos el fold en Python. Coste bajo (<100 productos)."""
+    if not s:
+        return ""
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
 from urllib.parse import quote
 from datetime import datetime
 
@@ -23,7 +34,7 @@ from services import (distribuir_pedido,
                        enviar_whatsapp_estado, validar_radio_entrega,
                        asignar_zona_por_direccion,
                        asignar_zona_por_coordenadas,
-                       registrar_uso_afiliado, get_puntos_config,
+                       registrar_uso_afiliado, get_puntos_config, get_pedido_minimo,
                        registrar_pedido_creado, sincronizar_proveedores_pedido,
                        encolar_notificaciones_proveedores_pedido,
                        tienda_abierta_en_horario)
@@ -35,7 +46,12 @@ from loyalty_service import (
     solicitar_codigo,
 )
 from phone_utils import normalizar_telefono_cliente, telefono_valido
-from store_config import get_store_features, get_service_commission, is_service_mode
+from store_config import (
+    get_public_store_url,
+    get_store_features,
+    get_service_commission,
+    is_service_mode,
+)
 
 public_bp = Blueprint("public", __name__)
 
@@ -129,10 +145,27 @@ def _establecimiento_para_origen(origen):
     return None
 
 
+def _producto_pertenece_al_vertical(producto):
+    """Filtra productos que solo se muestran en un vertical concreto.
+    `vertical="ambos"` (default) → siempre visible.
+    `vertical="comida"` → solo si TIPO_TIENDA=comida.
+    `vertical="producto"` → solo si TIPO_TIENDA=producto."""
+    if not producto:
+        return False
+    v = (getattr(producto, "vertical", None) or "ambos").strip().lower()
+    if v == "ambos":
+        return True
+    from models import SiteConfig
+    tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
+    return v == tt
+
+
 def _producto_disponible_en_origen(producto, origen, cantidad=1):
     if producto and _delivery_family(producto) == "programado" and not _feature_enabled("pedidos_programados"):
         return False
     if producto and not _fulfillment_options([producto]):
+        return False
+    if not _producto_pertenece_al_vertical(producto):
         return False
     return bool(
         producto
@@ -181,12 +214,82 @@ def _product_fulfillment_modes(producto):
     return {"delivery", "recogida"}
 
 
+_FULFILLMENT_LABELS = {
+    "delivery": {
+        "emoji": "🛵",
+        "label": "Para llevar",
+        "short": "Llevar",
+        "exclusive": "solo para llevar",
+    },
+    "recogida": {
+        "emoji": "🏪",
+        "label": "Recoger en local",
+        "short": "Recoger",
+        "exclusive": "solo para recoger",
+    },
+}
+
+
+def _fulfillment_mode_label(mode, short=False):
+    data = _FULFILLMENT_LABELS.get(mode)
+    if not data:
+        return str(mode or "")
+    text = data["short"] if short else data["label"]
+    return f"{data['emoji']} {text}"
+
+
+def _product_fulfillment_badge(producto):
+    modes = _product_fulfillment_modes(producto)
+    if modes == {"delivery"}:
+        data = _FULFILLMENT_LABELS["delivery"]
+        return {"emoji": data["emoji"], "label": data["label"], "title": "Disponible solo para llevar"}
+    if modes == {"recogida"}:
+        data = _FULFILLMENT_LABELS["recogida"]
+        return {"emoji": data["emoji"], "label": data["label"], "title": "Disponible solo para recoger"}
+    return {"emoji": "🔁", "label": "Llevar o recoger", "title": "Disponible para llevar y recoger"}
+
+
+def _fulfillment_blockers_for_mode(productos, mode):
+    """Productos que no permiten la modalidad logística solicitada."""
+    return [
+        producto for producto in (productos or [])
+        if producto and mode not in _product_fulfillment_modes(producto)
+    ]
+
+
+def _fulfillment_unavailable_reasons(productos):
+    productos = [p for p in (productos or []) if p]
+    reasons = {}
+    features = get_store_features()
+    for mode in ("delivery", "recogida"):
+        blockers = _fulfillment_blockers_for_mode(productos, mode)
+        if mode == "delivery" and not features.get("delivery", False):
+            reasons[mode] = {
+                "label": _fulfillment_mode_label(mode),
+                "reason": "El módulo de delivery está desactivado.",
+                "products": [],
+            }
+        elif mode == "recogida" and not features.get("recogida", False):
+            reasons[mode] = {
+                "label": _fulfillment_mode_label(mode),
+                "reason": "El módulo de recogida está desactivado.",
+                "products": [],
+            }
+        elif blockers:
+            reasons[mode] = {
+                "label": _fulfillment_mode_label(mode),
+                "reason": "Estos productos no permiten esa modalidad.",
+                "products": blockers,
+            }
+    return reasons
+
+
 def _fulfillment_options(productos=None):
     features = get_store_features()
     allowed = set()
-    if features["delivery"]:
+    if features.get("delivery", False):
         allowed.add("delivery")
-    if features["recogida"]:
+    if features.get("recogida", False):
         allowed.add("recogida")
     for producto in (productos or []):
         allowed &= _product_fulfillment_modes(producto)
@@ -319,13 +422,15 @@ def _render_catalogo(origen, proveedor=None):
     busqueda = request.args.get("q", "").strip()
 
     base_query = Product.query.filter_by(activo=True)
-    if busqueda:
-        # Eliminar wildcards de LIKE para evitar escaneos no intencionados
-        busqueda_q = re.sub(r"[%_\\]", "", busqueda)
-        if busqueda_q:
-            base_query = base_query.filter(Product.nombre.ilike(f"%{busqueda_q}%"))
-
+    # Nota: NO filtramos por nombre en SQL. `ilike` en Postgres es
+    # case-insensitive pero NO accent-insensitive, así que 'cafe' no
+    # encontraría 'café'. Filtramos en Python con _strip_accents después
+    # de traer los productos activos (catálogo típico <200 items).
     todos = base_query.all()
+    if busqueda:
+        _q_norm = _strip_accents(busqueda)
+        if _q_norm:
+            todos = [p for p in todos if _q_norm in _strip_accents(p.nombre or "")]
     productos_catalogo = [
         p for p in todos
         if _producto_disponible_en_origen(p, origen)
@@ -380,12 +485,52 @@ def _render_catalogo(origen, proveedor=None):
         "url": url_for("public.index"),
     }
 
+    # Recomendaciones automáticas fallback: si el admin no configuró destacados
+    # en MenuConfig y el flag no está desactivado, calculamos top 3 por rating
+    # (con desempate por precio_final) para que el bloque no quede vacío.
+    auto_destacados_enabled = str(SiteConfig.get("AUTO_DESTACADOS_ENABLED", "1")).strip() == "1"
+    productos_auto_destacados = []
+    if auto_destacados_enabled:
+        _tiene_destacados_manuales = any(
+            it.tipo == "producto_destacado" and it.pagina == "home"
+            for it in menu_items
+        )
+        if not _tiene_destacados_manuales:
+            _candidatos = [
+                p for p in productos
+                if p.activo
+                and not getattr(p, "solo_canje", False)
+                and p.disponible_para_venta_en_origen(origen)
+            ]
+            # Primer intento: top por rating con reviews aprobadas.
+            con_rating = [p for p in _candidatos if (p.rating_promedio or 0) > 0]
+            if con_rating:
+                productos_auto_destacados = sorted(
+                    con_rating,
+                    key=lambda p: (
+                        -float(p.rating_promedio or 0),
+                        -float(p.precio_final or 0),
+                    ),
+                )[:3]
+            else:
+                # Fallback secundario: aún sin reviews, mostramos "premium"
+                # (precio más alto) para que el bloque nunca quede vacío.
+                # Priorizamos combos si existen, luego productos individuales.
+                productos_auto_destacados = sorted(
+                    _candidatos,
+                    key=lambda p: (
+                        0 if getattr(p, "es_combo", False) else 1,
+                        -float(p.precio_final or 0),
+                    ),
+                )[:3]
+
     return render_template("public/index.html",
                            productos=productos, categorias=categorias,
                            categoria_counts=categoria_counts,
                            categoria_activa=categoria_id,
                            busqueda=busqueda,
                            menu_items=menu_items,
+                           productos_auto_destacados=productos_auto_destacados,
                            resenas_recientes=resenas_recientes,
                            zona_principal=zona_principal,
                            carrito=carrito,
@@ -396,7 +541,8 @@ def _render_catalogo(origen, proveedor=None):
                            establecimiento=establecimiento,
                            bares=bares,
                            proveedor_actual=proveedor,
-                           stock_en_origen=_stock_en_origen)
+                           stock_en_origen=_stock_en_origen,
+                           fulfillment_badge=_product_fulfillment_badge)
 
 
 @public_bp.route("/whatsapp")
@@ -409,11 +555,7 @@ def whatsapp():
         return redirect(url_for("public.index"))
 
     nombre = SiteConfig.get("NOMBRE_NEGOCIO", "") or "Mi tienda"
-    public_url = (
-        SiteConfig.get("TIENDA_URL", "")
-        or SiteConfig.get("OXIDIAN_PUBLIC_URL", "")
-        or request.url_root.rstrip("/")
-    ).rstrip("/")
+    public_url = get_public_store_url(request.url_root)
     default_text = f"Hola, quiero pedir en {nombre}. Vi la tienda aqui: {public_url}"
     text = (request.args.get("text") or default_text).strip()[:500]
     return redirect(f"https://wa.me/{digits}?text={quote(text)}")
@@ -456,7 +598,8 @@ def producto_detalle(producto_id):
                            establecimiento_abierto=proveedor.esta_abierto_ahora if proveedor else True,
                            volver_url=url_for("public.menu_bar", proveedor_id=proveedor.id)
                            if proveedor else url_for("public.index"),
-                           stock_en_origen=_stock_en_origen)
+                           stock_en_origen=_stock_en_origen,
+                           fulfillment_badge=_product_fulfillment_badge)
 
 
 # ─── CARRITO (sesión Flask) ──────────────────
@@ -467,11 +610,20 @@ def _get_carrito():
 def _save_carrito(carrito):
     session["carrito"] = carrito
     if not carrito:
-        session.pop("carrito_origen", None)
-        session.pop("cart_puntos", None)
-        session.pop("cart_producto_canje_id", None)
-        session.pop("combo_selecciones", None)
-        session.pop("extras_selecciones", None)
+        # Limpieza COMPLETA de todo el estado de sesión ligado al carrito
+        # para evitar datos huérfanos que se filtran al siguiente pedido.
+        # Historial de un bug: `presentaciones_carrito` y `notas_combo`
+        # quedaban con datos del carrito anterior tras vaciar.
+        for _k in (
+            "carrito_origen",
+            "cart_puntos",
+            "cart_producto_canje_id",
+            "combo_selecciones",
+            "extras_selecciones",
+            "presentaciones_carrito",
+            "notas_combo",
+        ):
+            session.pop(_k, None)
     session.modified = True
 
 
@@ -555,6 +707,124 @@ def _cart_fulfillment_options(carrito, exclude_key=None):
     productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all() if ids else []
     return _fulfillment_options(productos)
 
+
+def _cart_products_from_carrito(carrito, exclude_key=None):
+    ids = [int(pid) for pid in (carrito or {})
+           if str(pid) != str(exclude_key) and str(pid).isdigit()]
+    if not ids:
+        return []
+    productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all()
+    order = {pid: i for i, pid in enumerate(ids)}
+    return sorted(productos, key=lambda p: order.get(p.id, 9999))
+
+
+def _product_names(productos, limit=4):
+    names = [f"«{getattr(p, 'nombre', 'Producto')}»" for p in (productos or []) if p]
+    if len(names) > limit:
+        return ", ".join(names[:limit]) + f" y {len(names) - limit} más"
+    return ", ".join(names)
+
+
+def _cart_compatibility(productos, subtotal=None, pedido_minimo=0):
+    """Diagnóstico único para carrito y checkout.
+
+    Agrupa las reglas que definen si un conjunto de productos puede convertirse
+    en un solo pedido: nicho/vertical, módulos activos, fecha, grupo operativo y
+    modalidad logística. Mantenerlo centralizado evita que el carrito deje pasar
+    algo que luego falla en checkout.
+    """
+    productos = [p for p in (productos or []) if p]
+    features = get_store_features()
+    issues = []
+
+    def add(code, message, products=None, severity="warning"):
+        issues.append({
+            "code": code,
+            "message": message,
+            "products": [p for p in (products or []) if p],
+            "severity": severity,
+        })
+
+    vertical_blockers = [p for p in productos if not _producto_pertenece_al_vertical(p)]
+    if vertical_blockers:
+        add(
+            "vertical",
+            "Algunos productos ya no pertenecen al tipo de tienda activo. "
+            f"Retira {_product_names(vertical_blockers)} y vuelve a añadir productos del catálogo actual.",
+            vertical_blockers,
+        )
+
+    programados = [p for p in productos if _delivery_family(p) == "programado"]
+    if programados and not features.get("pedidos_programados", False):
+        add(
+            "programados_disabled",
+            "Los pedidos con fecha programada están desactivados. "
+            f"Retira {_product_names(programados)} para continuar.",
+            programados,
+        )
+
+    familias = {_delivery_family(p) for p in productos}
+    if len(familias) > 1:
+        add(
+            "delivery_family",
+            "El carrito mezcla productos inmediatos y productos con fecha fija. "
+            "Sepáralos en dos pedidos para evitar errores de preparación y despacho.",
+            productos,
+        )
+
+    grupos = {_order_group(p): _order_group_label(p) for p in productos}
+    if len(grupos) > 1:
+        add(
+            "order_group",
+            "Estos grupos requieren pedidos separados: " + ", ".join(grupos.values()) + ".",
+            productos,
+        )
+
+    fulfillment_options = _fulfillment_options(productos)
+    fulfillment_unavailable = _fulfillment_unavailable_reasons(productos)
+    if productos and not fulfillment_options:
+        if not features.get("delivery", False) and not features.get("recogida", False):
+            add(
+                "fulfillment_modules_disabled",
+                "La tienda no tiene delivery ni recogida activos. Contacta con el negocio.",
+                productos,
+                "danger",
+            )
+        else:
+            details = []
+            for p in productos:
+                modes = _product_fulfillment_modes(p)
+                if modes == {"delivery"}:
+                    details.append(f"«{p.nombre}» solo para llevar")
+                elif modes == {"recogida"}:
+                    details.append(f"«{p.nombre}» solo para recoger")
+            suffix = f" Detectado: {'; '.join(details[:4])}." if details else ""
+            add(
+                "fulfillment_conflict",
+                "Los productos del carrito no comparten modalidad de entrega. "
+                "No mezcles productos solo para llevar con productos solo para recoger."
+                + suffix,
+                productos,
+            )
+
+    if subtotal is not None and pedido_minimo and pedido_minimo > 0 and subtotal < pedido_minimo:
+        falta = pedido_minimo - subtotal
+        add(
+            "minimum_order",
+            f"El pedido mínimo es €{pedido_minimo:.2f}. Añade €{falta:.2f} más para poder finalizar.",
+            [],
+        )
+
+    return {
+        "ok": not issues,
+        "issues": issues,
+        "message": issues[0]["message"] if issues else "",
+        "fulfillment_options": fulfillment_options,
+        "fulfillment_unavailable": fulfillment_unavailable,
+        "features": features,
+    }
+
+
 def _cart_origins(carrito, exclude_key=None):
     if not carrito:
         return set()
@@ -601,6 +871,12 @@ def agregar_carrito(producto_id):
         not proveedor or not proveedor.activo or not proveedor.esta_abierto_ahora
     ):
         return _err("El establecimiento que prepara este producto está cerrado ahora.")
+    if not proveedor_id and not current_app.config.get("SKIP_DELIVERY_VALIDATION", False):
+        # Bloqueo temprano cuando la tienda propia está cerrada por horario:
+        # antes solo se detectaba en checkout, dejando llenar el carrito en vano.
+        abierto_local, msg_cierre = _establecimiento_abierto_checkout(origen_solicitado, None)
+        if not abierto_local:
+            return _err(msg_cierre or "La tienda está cerrada ahora, no podemos añadir productos, parce.")
     cart_max_qty = _cart_max_qty()
     try:
         cantidad = max(1, min(cart_max_qty, int(request.form.get("cantidad", 1))))
@@ -615,44 +891,18 @@ def agregar_carrito(producto_id):
         )
     key = str(producto_id)
 
-    # Bloqueo 1: no mezclar inmediato con programado
-    familias_actuales = _cart_delivery_families(carrito, exclude_key=key)
-    familia_producto = _delivery_family(producto)
-    if len(familias_actuales) > 1:
-        return _err("El carrito quedó incompatible por un cambio de fecha. Retira un producto antes de continuar.")
-    if familias_actuales and familia_producto not in familias_actuales:
-        return _err(
-            "Para evitar errores de preparación y despacho, haz pedidos separados: "
-            "uno para delivery inmediato y otro para productos con fecha fija."
-        )
-
-    # Bloqueo 2: grupos de pedido configurables. Cocina y almacén sí pueden
-    # colaborar en un pedido mixto; solo se separan productos marcados por negocio.
-    grupos_actuales = _cart_order_groups(carrito, exclude_key=key)
-    grupo_producto = _order_group(producto)
-    if len(grupos_actuales) > 1:
-        return _err("El carrito contiene grupos incompatibles. Retira un producto antes de continuar.")
-    if grupos_actuales and grupo_producto not in grupos_actuales:
-        grupo_actual = next(iter(grupos_actuales.values()))
-        return _err(
-            f"'{producto.nombre}' pertenece a «{_order_group_label(producto)}» y "
-            f"no puede combinarse con «{grupo_actual}». Haz pedidos separados."
-        )
-
-    opciones_actuales = set(_cart_fulfillment_options(carrito, exclude_key=key))
+    productos_candidato = _cart_products_from_carrito(carrito, exclude_key=key) + [producto]
+    compat = _cart_compatibility(productos_candidato)
     hay_otros_productos = any(
         str(pid) != key and str(pid).isdigit() and int(qty or 0) > 0
         for pid, qty in carrito.items()
     )
-    opciones_producto = set(_fulfillment_options([producto]))
-    if not opciones_producto:
-        return _err("Este producto no tiene una modalidad de entrega habilitada ahora.")
-    if hay_otros_productos and not opciones_actuales:
-        return _err("El carrito no comparte una modalidad de entrega válida. Retira un producto antes de continuar.")
-    if opciones_actuales and not (opciones_actuales & opciones_producto):
+    if not compat["ok"]:
+        return _err(compat["message"], compat["issues"][0].get("severity", "warning"))
+    if hay_otros_productos and not compat["fulfillment_options"]:
         return _err(
-            "Este producto no admite la misma modalidad que el resto del carrito. "
-            "Haz un pedido para delivery y otro para recogida."
+            "El carrito tiene productos incompatibles entre sí. "
+            f"Vacíalo o retira los productos que bloquean a «{producto.nombre}»."
         )
 
     nueva_cantidad_total = int(carrito.get(key, 0) or 0) + cantidad
@@ -660,6 +910,32 @@ def agregar_carrito(producto_id):
         return _err(f"No puedes añadir más de {cart_max_qty} unidades por producto.")
     if not producto.disponible_para_venta_en_origen(origen_solicitado, nueva_cantidad_total):
         return _err("No hay stock suficiente para esa cantidad.")
+
+    # Presentaciones opt-in: si el producto define presentaciones activas,
+    # el cliente debe elegir una. Si no define ninguna → tamaño único (skip).
+    presentation_size = (request.form.get("presentation_size") or "").strip().lower()
+    presentaciones_activas = [
+        pr for pr in producto.presentaciones if pr.activo
+    ] if hasattr(producto, "presentaciones") else []
+    if presentaciones_activas:
+        tamaños_validos = {pr.tamaño for pr in presentaciones_activas}
+        if not presentation_size or presentation_size not in tamaños_validos:
+            return _err(
+                f"Elige un tamaño para «{producto.nombre}»: "
+                + ", ".join(sorted(tamaños_validos)) + "."
+            )
+        presentaciones_carrito = session.get("presentaciones_carrito", {})
+        anterior_pres = presentaciones_carrito.get(key)
+        if carrito.get(key) and anterior_pres and anterior_pres != presentation_size:
+            return _err(
+                "Este producto ya está en el carrito con otro tamaño. "
+                "Elimínalo antes de cambiar la presentación."
+            )
+        presentaciones_carrito[key] = presentation_size
+        session["presentaciones_carrito"] = presentaciones_carrito
+    elif presentation_size:
+        # El form envió tamaño pero el producto no tiene presentaciones — ignorar
+        pass
     if producto.es_combo:
         seleccion, error = _parse_combo_selection(
             producto,
@@ -777,11 +1053,16 @@ def eliminar_carrito(producto_id):
     selecciones_combo.pop(key, None)
     extras = session.get("extras_selecciones", {})
     extras.pop(key, None)
+    presentaciones = session.get("presentaciones_carrito", {})
+    presentaciones.pop(key, None)
+    session["presentaciones_carrito"] = presentaciones
     session["extras_selecciones"] = extras
     notas_combo.pop(key, None)
     session["combo_selecciones"] = selecciones_combo
     session["notas_combo"] = notas_combo
     _save_carrito(carrito)
+    if request.headers.get("X-Ajax") == "1":
+        return jsonify({"ok": True})
     return redirect(url_for("public.ver_carrito"))
 
 
@@ -801,6 +1082,7 @@ def ver_carrito():
         puntos_verificados = 0
         puntos_visibles = 0
     cart_productos = [item["producto"] for item in items if item.get("producto")]
+    compat = _cart_compatibility(cart_productos)
     cart_grupos = {_order_group(producto) for producto in cart_productos}
     cart_familias = {_delivery_family(producto) for producto in cart_productos}
     todos_canjeables = [
@@ -825,20 +1107,16 @@ def ver_carrito():
     except (TypeError, ValueError):
         radio_entrega_km = 5.0
     cart_max_qty = _cart_max_qty()
-    fulfillment_options = _fulfillment_options(cart_productos)
-    grupos_pedido = {
-        _order_group(item["producto"]): _order_group_label(item["producto"])
-        for item in items if item.get("producto")
-    }
-    cart_issue = None
-    if len(_items_delivery_families(items)) > 1:
-        cart_issue = "El carrito mezcla productos inmediatos y con fecha fija. Sepáralos en dos pedidos."
-    elif len(grupos_pedido) > 1:
-        cart_issue = "Estos grupos requieren pedidos separados: " + ", ".join(grupos_pedido.values()) + "."
-    elif items and not fulfillment_options:
-        cart_issue = "Los productos no comparten una modalidad disponible de delivery o recogida."
+    fulfillment_options = compat["fulfillment_options"]
+    fulfillment_unavailable = compat["fulfillment_unavailable"]
+    pedido_minimo = get_pedido_minimo()
+    compat = _cart_compatibility(cart_productos, subtotal=subtotal, pedido_minimo=pedido_minimo)
+    fulfillment_options = compat["fulfillment_options"]
+    fulfillment_unavailable = compat["fulfillment_unavailable"]
+    cart_issue = compat["message"] if items and not compat["ok"] else None
     return render_template("public/carrito.html",
                            items=items, subtotal=subtotal,
+                           pedido_minimo=pedido_minimo,
                            canjeables=todos_canjeables,
                            puntos_sesion=puntos_sesion,
                            descuento_puntos=descuento_puntos,
@@ -849,6 +1127,9 @@ def ver_carrito():
                            zona_principal=zona_principal,
                            radio_entrega_km=radio_entrega_km,
                            fulfillment_options=fulfillment_options,
+                           fulfillment_unavailable=fulfillment_unavailable,
+                           fulfillment_badge=_product_fulfillment_badge,
+                           fulfillment_mode_label=_fulfillment_mode_label,
                            cart_issue=cart_issue,
                            cart_max_qty=cart_max_qty,
                            origen_actual=origen,
@@ -1156,35 +1437,17 @@ def checkout():
             "warning",
         )
         return redirect(url_for("public.ver_carrito"))
-    if len(_items_delivery_families(items)) > 1:
-        flash(
-            "Tu carrito mezcla delivery inmediato con productos de fecha fija. "
-            "Sepáralos en dos pedidos para que cocina, preparación y reparto trabajen bien.",
-            "warning",
-        )
-        return redirect(url_for("public.ver_carrito"))
-    grupos_pedido = {
-        _order_group(item["producto"]): _order_group_label(item["producto"])
-        for item in items if item.get("producto")
-    }
-    if len(grupos_pedido) > 1:
-        flash(
-            "Los productos pertenecen a grupos de pedido incompatibles: "
-            f"{', '.join(grupos_pedido.values())}. Haz pedidos separados.",
-            "warning",
-        )
-        return redirect(url_for("public.ver_carrito"))
     if any(not item["producto"].pertenece_a_origen(origen) for item in items):
         flash("Hay productos incompatibles con el origen de inventario del carrito.", "warning")
         return redirect(url_for("public.ver_carrito"))
-    fulfillment_options = _fulfillment_options([item["producto"] for item in items])
-    if not fulfillment_options:
-        flash(
-            "Los productos del carrito no comparten una modalidad válida. "
-            "Separa los productos de delivery y recogida.",
-            "warning",
-        )
+    pedido_minimo = get_pedido_minimo()
+    cart_productos = [item["producto"] for item in items if item.get("producto")]
+    compat = _cart_compatibility(cart_productos, subtotal=subtotal, pedido_minimo=pedido_minimo)
+    if not compat["ok"]:
+        flash(compat["message"], compat["issues"][0].get("severity", "warning"))
         return redirect(url_for("public.ver_carrito"))
+    fulfillment_options = compat["fulfillment_options"]
+    fulfillment_unavailable = compat["fulfillment_unavailable"]
     fulfillment_default = "delivery" if "delivery" in fulfillment_options else fulfillment_options[0]
     zonas = ZonaEntrega.query.filter_by(activo=True)\
         .order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
@@ -1267,7 +1530,17 @@ def checkout():
 
         tipo_entrega_cliente = _fulfillment_from_request(fulfillment_default, fulfillment_options)
         if not tipo_entrega_cliente:
-            flash("La modalidad seleccionada ya no está disponible.", "danger")
+            solicitado = (request.form.get("tipo_entrega_cliente") or "").strip().lower()
+            blockers = _fulfillment_blockers_for_mode([item["producto"] for item in items], solicitado)
+            if blockers:
+                nombres = ", ".join(f"«{p.nombre}»" for p in blockers[:5])
+                flash(
+                    f"No se puede confirmar {_fulfillment_mode_label(solicitado).lower()}: "
+                    f"{nombres} no admite{'n' if len(blockers) > 1 else ''} esa modalidad.",
+                    "danger",
+                )
+            else:
+                flash("La modalidad seleccionada ya no está disponible.", "danger")
             return redirect(url_for("public.ver_carrito"))
         direccion = request.form.get("direccion", "").strip()
         if tipo_entrega_cliente == "recogida":
@@ -1304,7 +1577,11 @@ def checkout():
         for item in items:
             producto = item["producto"]
             if tipo_entrega_cliente not in _product_fulfillment_modes(producto):
-                flash(f"'{producto.nombre}' no admite esta modalidad de entrega.", "danger")
+                flash(
+                    f"«{producto.nombre}» no admite {_fulfillment_mode_label(tipo_entrega_cliente).lower()}. "
+                    "Retíralo o elige una modalidad compatible.",
+                    "danger",
+                )
                 return redirect(url_for("public.ver_carrito"))
             if _delivery_family(producto) == "programado" and not _feature_enabled("pedidos_programados"):
                 flash("Los pedidos por fecha se han desactivado. Retira esos productos del carrito.", "warning")
@@ -1354,19 +1631,41 @@ def checkout():
         else:
             cualquier_geo = any(z.tiene_geo for z in zonas if z.activo)
             if tipo_entrega_cliente == "delivery" and cualquier_geo and not _skip_val:
-                flash(
-                    "Tu dirección está fuera de todas nuestras zonas de cobertura. "
-                    "Comprueba la dirección o contacta con el negocio.",
-                    "danger",
-                )
+                # Si la recogida en local está activa, ofrecemos ese camino
+                # como escape en lugar de dejar al cliente sin salida.
+                if _feature_enabled("recogida"):
+                    flash(
+                        "Tu dirección está fuera de nuestra cobertura de delivery. "
+                        "Puedes seleccionar «Recogida en local» como alternativa, "
+                        "o comprueba la dirección.",
+                        "warning",
+                    )
+                else:
+                    flash(
+                        "Tu dirección está fuera de todas nuestras zonas de cobertura. "
+                        "Comprueba la dirección o contacta con el negocio.",
+                        "danger",
+                    )
                 return redirect(url_for("public.checkout"))
             zona_id = zonas[0].id if tipo_entrega_cliente == "delivery" and zonas else None
 
         # ── Resolver cliente ────────────────────────────────────────────
+        # ValueError se lanza para errores de validación (mensaje ya legible).
+        # SQLAlchemyError puede aparecer si otro request creó al mismo cliente
+        # a la vez (race condition en unique constraint sobre teléfono).
         try:
             cliente = _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion)
         except ValueError as exc:
             flash(str(exc), "danger")
+            return redirect(url_for("public.checkout"))
+        except Exception as exc:  # pragma: no cover — defensivo
+            db.session.rollback()
+            try:
+                from flask import current_app as _capp
+                _capp.logger.error("Error resolviendo cliente en checkout: %s", exc)
+            except Exception:
+                pass
+            flash("Hubo un error al procesar tus datos. Vuelve a intentarlo.", "danger")
             return redirect(url_for("public.checkout"))
         if not cliente:
             flash("Para compra sin registro, indica nombre y teléfono.", "danger")
@@ -1434,6 +1733,13 @@ def checkout():
         # Producto canje desde sesión solo si el formulario no envió decisión explícita.
         if producto_canje_raw is None and not producto_canje_id:
             producto_canje_id = session.get("cart_producto_canje_id")
+        # Blindaje contra ID inválido en sesión (ej. corrupción por versión
+        # anterior de la app). Si no es un entero coercible, ignorar el canje.
+        try:
+            producto_canje_id = int(producto_canje_id) if producto_canje_id else None
+        except (ValueError, TypeError):
+            producto_canje_id = None
+            session.pop("cart_producto_canje_id", None)
         producto_canje = db.session.get(Product, producto_canje_id) if producto_canje_id else None
         if producto_canje_id:
             if not puntos_habilitados:
@@ -1454,19 +1760,9 @@ def checkout():
             if puntos_a_canjear + puntos_producto > int(cliente.puntos or 0):
                 flash("Tus puntos no alcanzan para el descuento y el producto elegido a la vez.", "danger")
                 return redirect(url_for("public.checkout"))
-            familias_entrega = _items_delivery_families(items)
-            grupos_pedido = {_order_group(item["producto"]) for item in items if item.get("producto")}
-            if (
-                familias_entrega
-                and _delivery_family(producto_canje) not in familias_entrega
-            ) or (
-                grupos_pedido
-                and _order_group(producto_canje) not in grupos_pedido
-            ):
-                flash(
-                    "El producto de canje requiere un pedido separado por su grupo o fecha de entrega.",
-                    "danger",
-                )
+            compat_canje = _cart_compatibility(cart_productos + [producto_canje])
+            if not compat_canje["ok"]:
+                flash(compat_canje["message"], compat_canje["issues"][0].get("severity", "danger"))
                 return redirect(url_for("public.checkout"))
             if tipo_entrega_cliente not in _product_fulfillment_modes(producto_canje):
                 flash("El producto de canje no admite la modalidad elegida.", "danger")
@@ -1654,6 +1950,10 @@ def checkout():
     checkout_items = MenuConfig.query.filter_by(pagina="checkout", activo=True)\
         .order_by(MenuConfig.orden.asc(), MenuConfig.id.asc()).all()
     puntos_cfg = get_puntos_config()
+    try:
+        radio_entrega_km = max(0.0, float(SiteConfig.get("RADIO_ENTREGA_KM", "5") or 5))
+    except (TypeError, ValueError):
+        radio_entrega_km = 5.0
     return render_template("public/checkout.html", items=items, subtotal=subtotal,
                            puntos_disponibles=puntos_cliente,
                            puntos_ratio=puntos_cfg["ratio"],
@@ -1662,10 +1962,13 @@ def checkout():
                            canjeables=canjeables,
                            puntos_habilitados=puntos_habilitados,
                            fulfillment_options=fulfillment_options,
+                           fulfillment_unavailable=fulfillment_unavailable,
+                           fulfillment_mode_label=_fulfillment_mode_label,
                            fulfillment_default=fulfillment_default,
                            checkout_items=checkout_items,
                            origen_actual=origen,
                            establecimiento=establecimiento,
+                           radio_entrega_km=radio_entrega_km,
                            puntos_sesion=cart_puntos_sesion
                            if cart_puntos_sesion.get("origen") == origen else {},
                            canjeables_data=canjeables_data,
@@ -2011,6 +2314,8 @@ def _build_items_from_carrito(carrito):
     selecciones_combo = session.get("combo_selecciones", {})
     extras_selecciones = session.get("extras_selecciones", {})
     notas_cliente_map = session.get("notas_combo", {})  # notas por producto: "sin cebolla", etc.
+    presentaciones_map = session.get("presentaciones_carrito", {})  # tamaño S/M/L por producto
+    ids_desaparecidos = []
     for producto_id_str, cantidad in carrito.items():
         try:
             pid = int(producto_id_str)
@@ -2018,7 +2323,18 @@ def _build_items_from_carrito(carrito):
         except (ValueError, TypeError):
             continue
         p = productos_map.get(pid)
+        if p is None:
+            # Producto borrado en admin mientras estaba en carrito. Se marca
+            # para limpieza posterior — no hacemos pop dentro del loop para
+            # no mutar la sesión mientras iteramos.
+            ids_desaparecidos.append(producto_id_str)
+            continue
         if not _producto_disponible_en_origen(p, origen, qty):
+            # Producto desactivado/agotado en admin mientras estaba en carrito.
+            # Se marca para limpieza igual que si se hubiese borrado, para que la
+            # sesión no arrastre un ID inválido y el cliente vea claramente que
+            # se quitó (evita "carrito invisible" en checkout).
+            ids_desaparecidos.append(producto_id_str)
             continue
         combo_items = ComboItem.query.filter_by(combo_id=p.id)\
             .order_by(ComboItem.orden.asc(), ComboItem.id.asc()).all() if p.es_combo else []
@@ -2037,6 +2353,20 @@ def _build_items_from_carrito(carrito):
             continue
         extra_unit = float((metadata.get("combo") or {}).get("extras_total") or 0) if p.es_combo else 0.0
         precio = (float(p.precio_combo_para_seleccion(seleccion_ids)) if p.es_combo else float(p.precio_final or 0)) + extras_unit
+        # Presentación (tamaño) opt-in: aplicar precio_extra + registrar tamaño
+        presentacion_tamaño = presentaciones_map.get(producto_id_str) or ""
+        presentacion_extra = 0.0
+        if presentacion_tamaño and hasattr(p, "presentaciones"):
+            pr = next(
+                (x for x in p.presentaciones if x.activo and x.tamaño == presentacion_tamaño),
+                None,
+            )
+            if pr:
+                presentacion_extra = pr.precio_extra_float
+                precio += presentacion_extra
+                metadata["presentacion"] = {"tamaño": pr.tamaño, "extra": presentacion_extra}
+            else:
+                presentacion_tamaño = ""
         precio = round(precio, 2)
         item_total = round(precio * qty, 2)
         subtotal += item_total
@@ -2050,7 +2380,32 @@ def _build_items_from_carrito(carrito):
                       "combo_resumen": combo_resumen,
                       "nota_cliente": nota_cliente_item,
                       "extras": extras_rows,
+                      "presentacion_tamaño": presentacion_tamaño,
+                      "presentacion_extra": presentacion_extra,
                       "metadata": metadata})
+
+    # Limpieza de productos borrados que quedaron huérfanos en la sesión.
+    # Evita que el carrito quede "invisiblemente vacío" al usuario (item
+    # no aparece pero session["carrito"] aún lo tiene). Registramos en log
+    # para auditoría — puede indicar que el admin borró un producto activo.
+    if ids_desaparecidos:
+        try:
+            from flask import current_app as _capp
+            _capp.logger.info(
+                "Carrito limpió %d producto(s) borrado(s): %s",
+                len(ids_desaparecidos), ids_desaparecidos,
+            )
+        except Exception:
+            pass
+        for _k in ids_desaparecidos:
+            carrito.pop(_k, None)
+            for _s in ("combo_selecciones", "extras_selecciones",
+                       "notas_combo", "presentaciones_carrito"):
+                _map = session.get(_s) or {}
+                if _k in _map:
+                    _map.pop(_k, None)
+                    session[_s] = _map
+        _save_carrito(carrito)
     return items, round(subtotal, 2)
 
 

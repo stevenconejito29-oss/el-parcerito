@@ -4,6 +4,7 @@
 {% set fijos_meta = combo_meta.get('componentes') or [] %}
 {% set sels_meta  = combo_meta.get('selecciones')  or [] %}
 {% set extras_meta = (item_meta.get('extras') or {}).get('opciones') or [] %}
+{% set pres_meta  = item_meta.get('presentacion') or {} %}
 {# Origen real del item (modelo nuevo): proveedor_despachador del producto vivo,
    con fallback al snapshot por si fue editado después. #}
 {% set root_proveedor_id = prod_meta.get('proveedor_despachador_id') if prod_meta else none %}
@@ -24,6 +25,16 @@
 <div class="work-item-main">
   <span>
 	    {{ item.display_nombre }}
+	    {% if pres_meta.get('tamaño') %}
+	    {%- set _t = pres_meta.get('tamaño')|string -%}
+	    {%- set _e = pres_meta.get('extra') or 0 -%}
+	    <em class="work-item-size" title="Presentación pedida por el cliente">
+	      📏 {{ _t.capitalize() }}
+	      {% if _e and _e > 0 %} (+€{{ "%.2f"|format(_e) }})
+	      {% elif _e and _e < 0 %} (−€{{ "%.2f"|format(_e|abs) }})
+	      {% endif %}
+	    </em>
+	    {% endif %}
 	    {% if item.es_canje_puntos %}<em class="work-reward-badge">Canje con puntos</em>{% endif %}
 	    {% if item.display_es_combo %}<em class="work-combo-badge">Combo</em>{% endif %}
 	    {% if item.display_tipo_entrega in ('programado','encargo') %}<em class="work-combo-badge work-badge-prog">Fecha fija</em>{% endif %}

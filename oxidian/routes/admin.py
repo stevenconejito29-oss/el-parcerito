@@ -18,7 +18,7 @@ from extensions import db, get_or_404
 from models import (ROLES_AUTENTICABLES, User, Product, Categoria, Stock, Order, OrderItem, Review,
                     Coupon, ComboGroup, ComboItem, ExtraCatalogItem, ProductExtraGroup, ProductExtraOption, Caja, PointsLog, StaffPayment,
                     AffiliateCode, AffiliateUse, MenuConfig,
-                    PriceHistory, SiteConfig, AuditLog,
+                    PriceHistory, ProductPresentation, TAMAÑOS_PRESENTACION, SiteConfig, AuditLog,
                     AdminFeature, NotificationOutbox, normalizar_metodo_pago, utcnow)
 from combo_validators import (
     ComboLimits,
@@ -98,11 +98,15 @@ def _normalizar_imagen_url(valor):
 # super_admin siempre pasa; admin se verifica según el mapa de features.
 _FEATURE_URL_MAP = {
     "/admin/caja":         "caja",
+    "/admin/pagos-pendientes": "caja",
     "/admin/stock":        "stock",
     "/admin/pagos-staff":  "staff_pagos",
     "/admin/analytics":    "reportes",
     "/admin/notificaciones": "whatsapp",
     "/admin/usuarios":     "usuarios",
+    "/admin/clientes":     "usuarios",
+    "/admin/cola":         "pos",
+    "/admin/pedidos":      "pos",
     "/admin/productos":    "productos",
     "/admin/combos":       "productos",
     "/admin/extras":       "productos",
@@ -301,8 +305,39 @@ def marketing_or_admin_required(f):
 @admin_bp.route("/dashboard")
 @admin_required
 def dashboard():
+    from datetime import timedelta
     ingresos_hoy, egresos_hoy = resumen_caja_hoy()
-    pedidos_hoy = Order.query.filter(db.func.date(Order.creado_en) == date.today()).count()
+    hoy = date.today()
+    ayer = hoy - timedelta(days=1)
+    pedidos_hoy = Order.query.filter(db.func.date(Order.creado_en) == hoy).count()
+
+    # Comparativa con ayer para lectura rápida de tendencia
+    pedidos_ayer = Order.query.filter(db.func.date(Order.creado_en) == ayer).count()
+    ingresos_ayer_q = db.session.query(db.func.coalesce(db.func.sum(Order.total), 0)).filter(
+        db.func.date(Order.creado_en) == ayer,
+        Order.estado.in_(["entregado", "listo", "en_ruta"]),
+    ).scalar() or 0
+    ingresos_ayer = float(ingresos_ayer_q)
+
+    def _variacion_pct(hoy_val, ayer_val):
+        if not ayer_val:
+            return None
+        try:
+            return round(((float(hoy_val) - float(ayer_val)) / float(ayer_val)) * 100.0, 1)
+        except (TypeError, ValueError, ZeroDivisionError):
+            return None
+
+    ingresos_var_pct = _variacion_pct(ingresos_hoy, ingresos_ayer)
+    pedidos_var_pct = _variacion_pct(pedidos_hoy, pedidos_ayer)
+
+    # Ticket medio: solo pedidos con al menos un item entregado o en curso.
+    ticket_medio = round(float(ingresos_hoy) / pedidos_hoy, 2) if pedidos_hoy else 0.0
+
+    # Clientes únicos que hicieron pedido hoy (proxy de "actividad de clientes")
+    clientes_hoy = db.session.query(db.func.count(db.func.distinct(Order.cliente_id))).filter(
+        db.func.date(Order.creado_en) == hoy
+    ).scalar() or 0
+
     pendientes_count = Order.query.filter_by(estado="pendiente").count()
     alertas_stock = _count_alertas_stock()
     pagos_pend = pagos_pendientes_staff()
@@ -347,7 +382,13 @@ def dashboard():
 
     return render_template("admin/dashboard.html",
                            pedidos_hoy=pedidos_hoy,
+                           pedidos_ayer=pedidos_ayer,
+                           pedidos_var_pct=pedidos_var_pct,
                            ingresos_hoy=ingresos_hoy,
+                           ingresos_ayer=ingresos_ayer,
+                           ingresos_var_pct=ingresos_var_pct,
+                           ticket_medio=ticket_medio,
+                           clientes_hoy=clientes_hoy,
                            egresos_hoy=egresos_hoy,
                            saldo_hoy=ingresos_hoy - egresos_hoy,
                            pendientes=pendientes_count,
@@ -447,10 +488,14 @@ def _registrar_reversion_caja_pedido(pedido, motivo, user_id):
 @admin_bp.route("/pedidos")
 @admin_required
 def pedidos():
+    from datetime import datetime as _dt
     estado = request.args.get("estado")
     origen = request.args.get("origen")
     epicentro = request.args.get("epicentro")
     pedido_id = request.args.get("id", type=int)
+    cliente_q = (request.args.get("cliente") or "").strip()
+    desde_raw = (request.args.get("desde") or "").strip()
+    hasta_raw = (request.args.get("hasta") or "").strip()
     if estado and estado not in _ESTADOS_PEDIDO_VALIDOS:
         estado = None
     if origen and origen not in _ORIGENES_PEDIDO_VALIDOS:
@@ -466,6 +511,28 @@ def pedidos():
         query = query.filter_by(es_entrega_epicentro=True)
     elif epicentro == "0":
         query = query.filter_by(es_entrega_epicentro=False)
+    # Búsqueda por cliente (nombre parcial o teléfono normalizado)
+    if cliente_q:
+        like = f"%{cliente_q}%"
+        query = query.join(Order.cliente).filter(
+            db.or_(
+                User.nombre.ilike(like),
+                User.telefono.ilike(like),
+                User.telefono_normalizado.ilike(like),
+            )
+        )
+    # Rango de fechas — inclusivo por día completo.
+    def _parse_date(s):
+        try:
+            return _dt.strptime(s, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return None
+    d0 = _parse_date(desde_raw)
+    d1 = _parse_date(hasta_raw)
+    if d0:
+        query = query.filter(db.func.date(Order.creado_en) >= d0)
+    if d1:
+        query = query.filter(db.func.date(Order.creado_en) <= d1)
     todos = query.all()
     preparadores = User.query.filter(
         User.rol.in_(["cocina", "preparacion"]), User.activo == True
@@ -473,6 +540,29 @@ def pedidos():
     repartidores = User.query.filter_by(rol="repartidor", activo=True).all()
     return render_template("admin/pedidos.html",
                            pedidos=todos,
+                           preparadores=preparadores,
+                           repartidores=repartidores)
+
+
+@admin_bp.route("/pedidos/<int:pedido_id>")
+@admin_required
+def pedido_detalle(pedido_id):
+    """Vista de detalle con timeline auditable de un pedido concreto.
+
+    Reutiliza las tokens (ord-info/ok/warn/danger/route) y `_order_item_combo.html`
+    ya usados en la lista, para mantener coherencia visual con el resto del admin.
+    """
+    from models import OrderEvent as _OrderEvent
+    pedido = get_or_404(Order, pedido_id)
+    eventos = _OrderEvent.query.filter_by(pedido_id=pedido_id)\
+        .order_by(_OrderEvent.creado_en.asc(), _OrderEvent.id.asc()).all()
+    preparadores = User.query.filter(
+        User.rol.in_(["cocina", "preparacion"]), User.activo == True
+    ).all()
+    repartidores = User.query.filter_by(rol="repartidor", activo=True).all()
+    return render_template("admin/pedido_detalle.html",
+                           pedido=pedido,
+                           eventos=eventos,
                            preparadores=preparadores,
                            repartidores=repartidores)
 
@@ -1945,6 +2035,9 @@ def _parsear_campos_producto(form):
         "dias_semana_json":          dias_json,
         # visualización stock
         "stock_mostrar_en_web":      bool(form.get("stock_mostrar_en_web")),
+        # vertical / nicho: comida | producto | ambos (default ambos)
+        "vertical":                  (form.get("vertical") or "ambos").strip().lower()
+                                     if (form.get("vertical") or "").strip().lower() in ("comida", "producto", "ambos") else "ambos",
         # canje con puntos
         "canjeable_con_puntos":      canjeable,
         "puntos_para_canje":         puntos_para_canje if canjeable else None,
@@ -2289,6 +2382,42 @@ def _combo_groups_payload_from_form(form):
             "orden": orden,
         }
     return payload
+
+
+def _sync_presentaciones(producto, form):
+    """Sincroniza las 3 presentaciones opt-in (pequeño/mediano/grande) del form.
+
+    Para cada tamaño:
+      - Si `pres_<tamaño>_activo` viene marcado y `pres_<tamaño>_extra` es numérico
+        → upsert de la fila con activo=True.
+      - Si el checkbox NO viene marcado → si existe fila, marcar activo=False
+        (no borrar para preservar historial de pedidos que referencian la fila).
+    """
+    for idx, size in enumerate(TAMAÑOS_PRESENTACION):
+        activo = bool(form.get(f"pres_{size}_activo"))
+        try:
+            precio_extra = float(form.get(f"pres_{size}_extra") or 0)
+        except (TypeError, ValueError):
+            precio_extra = 0.0
+        row = ProductPresentation.query.filter_by(
+            producto_id=producto.id, tamaño=size
+        ).first()
+        if activo:
+            if row is None:
+                row = ProductPresentation(
+                    producto_id=producto.id,
+                    tamaño=size,
+                    precio_extra=precio_extra,
+                    activo=True,
+                    orden=idx,
+                )
+                db.session.add(row)
+            else:
+                row.precio_extra = precio_extra
+                row.activo = True
+                row.orden = idx
+        elif row is not None:
+            row.activo = False
 
 
 def _sync_catalog_extras(producto, form):
@@ -2811,11 +2940,13 @@ def editar_producto(producto_id):
             alergenos_activos = json.loads(p.alergenos_json or "[]")
         except (json.JSONDecodeError, TypeError):
             alergenos_activos = []
+        usado_en_combos = ComboItem.query.filter_by(producto_id=p.id).count()
         return render_template("admin/producto_editar.html",
                                producto=p,
                                categorias=categorias,
                                dias_activos=dias_activos,
                                alergenos_activos=alergenos_activos,
+                               usado_en_combos=usado_en_combos,
                                proveedores=[])
     form_con_id = request.form.copy()
     form_con_id["_producto_id"] = str(producto_id)
@@ -2823,6 +2954,18 @@ def editar_producto(producto_id):
     if error:
         flash(error, "danger")
         return redirect(url_for("admin.productos"))
+    # Si se marca solo_canje pero el producto ya es componente de algún combo,
+    # rompemos coherencia (no se puede pagar con puntos algo que forma parte
+    # de un combo pagado con dinero).
+    if campos.get("solo_canje") and not p.solo_canje:
+        usado_en_combos = ComboItem.query.filter_by(producto_id=p.id).count()
+        if usado_en_combos:
+            flash(
+                f"No se puede marcar '{p.nombre}' como solo-canje: está usado como "
+                f"componente en {usado_en_combos} combo(s). Retíralo primero de esos combos.",
+                "danger",
+            )
+            return redirect(url_for("admin.editar_producto", producto_id=producto_id))
     # Guardar imagen DESPUÉS de validar el formulario para no dejar archivos huérfanos
     ruta_subida = _guardar_imagen_producto_desde_request(request.files)
     if ruta_subida:
@@ -2852,6 +2995,7 @@ def editar_producto(producto_id):
     precio_anterior = float(p.precio)
     for attr, val in campos.items():
         setattr(p, attr, val)
+    _sync_presentaciones(p, request.form)
     extras_error = _sync_catalog_extras(p, request.form)
     if extras_error:
         db.session.rollback()

@@ -63,6 +63,122 @@
   </section>
   {% endif %}
 
+  {% if vertical_just_changed %}
+  <div class="oa-vertical-just-changed" role="status">
+    <div>
+      <strong>✅ Vertical cambiado a {{ vertical_just_changed.label }}</strong>
+      <p style="margin:.25rem 0 0;font-size:.85rem;">
+        Etiquetas, emojis, alérgenos y bot ya se adaptaron. Comprueba cómo se ve tu tienda.
+      </p>
+    </div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <a href="{{ url_for('public.index') }}" target="_blank" rel="noopener" class="oa-btn oa-btn--primary">👁️ Ver tienda</a>
+      <a href="{{ url_for('superadmin.config') }}" class="oa-btn oa-btn--ghost">⚙️ Ajustes</a>
+    </div>
+  </div>
+  <style>
+  .oa-vertical-just-changed {
+    display:flex; justify-content:space-between; align-items:center; gap:1rem;
+    padding:.85rem 1.1rem; border-radius:12px; margin:.5rem 0 1rem;
+    background: color-mix(in srgb, var(--theme-success, #22c55e) 15%, var(--col-surface));
+    border: 1px solid var(--theme-success, #22c55e);
+    animation: verticalPop .5s ease-out;
+  }
+  .oa-vertical-just-changed p { color: var(--col-text); }
+  @keyframes verticalPop { from { opacity:0; transform: translateY(-6px); } to { opacity:1; transform: translateY(0); } }
+  @media (max-width: 720px) { .oa-vertical-just-changed { flex-direction: column; align-items: stretch; } }
+  </style>
+  {% endif %}
+
+  {# ── Vertical / nicho — cambio en 1 clic ────────────────────
+       Alterna comida ↔ producto. No borra datos: alérgenos, categorías y
+       presentaciones se conservan, solo cambian los labels visibles al
+       cliente (menú↔catálogo), emojis, manifest PWA y mensajes del bot. #}
+  {% set _tt = (brand.tipo_tienda or 'comida') %}
+  {% set _es_comida = (_tt == 'comida') %}
+  <section class="oa-section">
+    <h2 class="oa-section__title">Vertical de la tienda</h2>
+    <p class="oa-section__sub">Convierte la tienda de comida a productos genéricos (ropa, accesorios, retail…) o al revés. Un clic, sin perder datos.</p>
+    <div class="oa-vertical-panel">
+      {# Estado actual — grande, dominante, no confundir con el destino #}
+      <div class="oa-vertical-current {{ 'is-comida' if _es_comida else 'is-producto' }}">
+        <div class="oa-vertical-current__badge">Ahora</div>
+        <span class="oa-vertical-current__emoji">{{ '🍽️' if _es_comida else '🛍️' }}</span>
+        <div class="oa-vertical-current__label">{{ 'Comida / gastronomía' if _es_comida else 'Producto / retail' }}</div>
+        <ul class="oa-vertical-current__props">
+          <li>{{ 'Menú/carta' if _es_comida else 'Catálogo' }}</li>
+          <li>Alérgenos {{ 'visibles' if _es_comida else 'ocultos' }}</li>
+          <li>Tallas: {{ 'Pequeño/Mediano/Grande' if _es_comida else 'S/M/L' }}</li>
+          <li>Bot habla de "{{ 'menú' if _es_comida else 'catálogo' }}"</li>
+        </ul>
+      </div>
+      {# Flecha con el destino — preview de qué cambia #}
+      <div class="oa-vertical-arrow" aria-hidden="true">→</div>
+      <div class="oa-vertical-target">
+        <div class="oa-vertical-current__badge">Al cambiar</div>
+        <span class="oa-vertical-current__emoji">{{ '🛍️' if _es_comida else '🍽️' }}</span>
+        <div class="oa-vertical-current__label">{{ 'Producto / retail' if _es_comida else 'Comida / gastronomía' }}</div>
+        <ul class="oa-vertical-current__props">
+          <li>{{ 'Catálogo' if _es_comida else 'Menú/carta' }}</li>
+          <li>Alérgenos {{ 'ocultos' if _es_comida else 'visibles' }}</li>
+          <li>Tallas: {{ 'S/M/L' if _es_comida else 'Pequeño/Mediano/Grande' }}</li>
+          <li>Bot habla de "{{ 'catálogo' if _es_comida else 'menú' }}"</li>
+        </ul>
+        <form method="POST" action="{{ url_for('superadmin.toggle_vertical') }}"
+              onsubmit="return confirm('{% if _es_comida %}¿Convertir la tienda a productos (ropa/accesorios/retail)?\n\nLos alérgenos se ocultarán, las tallas usarán S/M/L y el bot dirá \'catálogo\' en vez de \'menú\'. Los datos NO se borran: puedes volver a comida en cualquier momento.{% else %}¿Volver a tienda de comida / gastronomía?\n\nLos alérgenos volverán a ser visibles, presentaciones = Pequeño/Mediano/Grande y el bot dirá \'menú\'.{% endif %}');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="oa-btn oa-btn--primary oa-vertical-cta">
+            {% if _es_comida %}🛍️ Cambiar a Producto{% else %}🍽️ Cambiar a Comida{% endif %}
+          </button>
+        </form>
+      </div>
+    </div>
+    <p class="oa-vertical-hint">
+      💡 Los datos existentes se conservan — al volver al vertical anterior todo reaparece.
+      <a href="{{ url_for('public.index') }}" target="_blank" rel="noopener">👁️ Ver tienda como cliente</a>
+    </p>
+  </section>
+  <style>
+  .oa-vertical-panel {
+    display:grid; grid-template-columns: 1fr auto 1fr; gap:1rem; align-items:stretch;
+  }
+  .oa-vertical-current, .oa-vertical-target {
+    padding:1rem 1.1rem; border-radius:14px;
+    border:1px solid var(--col-border);
+    background: color-mix(in srgb, var(--brand-primary) 8%, var(--col-surface));
+    display:flex; flex-direction:column; gap:.35rem;
+  }
+  .oa-vertical-target {
+    background: color-mix(in srgb, var(--col-text) 3%, var(--col-surface));
+    border-style: dashed;
+  }
+  .oa-vertical-current__badge {
+    font-size:.65rem; text-transform:uppercase; letter-spacing:.08em;
+    font-weight:800; color: var(--col-muted);
+  }
+  .oa-vertical-current__emoji { font-size:2rem; line-height:1; }
+  .oa-vertical-current__label { font-weight:800; font-size:1.05rem; color:var(--col-text); }
+  .oa-vertical-current__props {
+    list-style:none; padding:0; margin:.35rem 0 0;
+    font-size:.8rem; color:var(--col-muted); display:grid; gap:.15rem;
+  }
+  .oa-vertical-current__props li::before { content:"·  "; color:var(--brand-primary); font-weight:800; }
+  .oa-vertical-arrow {
+    display:flex; align-items:center; justify-content:center;
+    font-size:2rem; color:var(--brand-primary); font-weight:900;
+  }
+  .oa-vertical-cta { margin-top:.75rem; width:100%; }
+  .oa-vertical-hint {
+    margin:.75rem 0 0; font-size:.82rem; color:var(--col-muted);
+    display:flex; gap:.75rem; flex-wrap:wrap; align-items:center;
+  }
+  .oa-vertical-hint a { color: var(--brand-primary); font-weight:700; }
+  @media (max-width: 720px) {
+    .oa-vertical-panel { grid-template-columns: 1fr; }
+    .oa-vertical-arrow { transform: rotate(90deg); font-size:1.5rem; }
+  }
+  </style>
+
   {# ── Módulos activables ─────────────────────────────────── #}
   <section class="oa-section">
     <h2 class="oa-section__title">Módulos de esta tienda</h2>

@@ -467,6 +467,14 @@ class Product(db.Model):
     activo = db.Column(db.Boolean, default=True)
     creado_en = db.Column(db.DateTime, default=utcnow)
 
+    # ── Vertical / nicho ──────────────────────────────────────────────
+    # "comida"    → solo visible cuando la tienda está en modo comida
+    # "producto"  → solo visible cuando la tienda está en modo producto (retail)
+    # "ambos"     → visible en cualquier modo (default, no rompe catálogos existentes)
+    # El filtrado se hace en `_producto_pertenece_al_vertical` (public.py + api_bot.py).
+    vertical = db.Column(db.String(20), nullable=False, default="ambos",
+                          server_default=db.text("'ambos'"))
+
     # ── Canal de preparación ─────────────────────────────────────────
     # cocina   = requiere cocinarse/elaborarse (default — no rompe nada existente)
     # almacen  = producto de stock: bebidas, envasados, snacks — solo empacar y entregar
@@ -690,7 +698,7 @@ class Product(db.Model):
             stock_disponible = componente.stock_para_origen(origen)
             if origen_es_propio or stock_disponible <= 0:
                 return 999999
-        return componente.stock_para_origen(origen) // item.cantidad
+        return componente.stock_para_origen(origen) // max(1, int(item.cantidad or 1))
 
     @property
     def combo_stock_total(self):
@@ -1079,8 +1087,12 @@ class Product(db.Model):
                 base=base_seleccion,
                 descuento_pct=self.combo_descuento_pct_float,
             )
-            return self._money(precio + extras)
-        return self._money(self.precio_final + extras)
+            return self._money(self._money(precio) + self._money(extras))
+        # Modo "fijo": el precio del combo se lee de `combo_precio_base`
+        # (Decimal), NO de `precio_final` (float, refleja el campo `precio`).
+        # Mezclar float con Decimal reventaba con TypeError cuando había extras.
+        base_fijo = self._money(self.combo_precio_base or self.precio_final)
+        return self._money(base_fijo + self._money(extras))
 
     def precio_desde_descuento_combo(self, base=None, descuento_pct=None):
         base_money = self._money(base if base is not None else self.combo_precio_base)
@@ -1242,6 +1254,10 @@ class Product(db.Model):
                            .order_by(Stock.fecha_caducidad.asc().nullslast(), Stock.fecha_entrada.asc())\
                            .with_for_update()\
                            .all()
+        if not lotes and not bool(getattr(self, "stock_mostrar_en_web", False)):
+            # Si el producto no expone stock y tampoco tiene lotes físicos,
+            # se comporta como preparado bajo demanda/sin control de inventario.
+            return
         disponible = sum(lote.cantidad for lote in lotes)
         if disponible < cantidad:
             raise ValueError(f"Stock insuficiente para '{self.nombre}'")
@@ -1784,6 +1800,62 @@ class ProductExtraOption(db.Model):
     @property
     def precio_float(self):
         return float(self.precio or 0)
+
+
+# ─────────────────────────────────────────────
+# PRESENTACIONES (tamaños) — opt-in por producto
+# ─────────────────────────────────────────────
+# Un producto puede definir 0-N presentaciones (típicamente pequeño / mediano /
+# grande). Si NO tiene ninguna activa → se vende con el precio base tal cual.
+# Si tiene ≥1 activa → el cliente DEBE elegir una antes de agregar al carrito.
+# El precio final es `producto.precio + presentacion.precio_extra` (extra puede
+# ser negativo para tamaño más económico que el base).
+
+TAMAÑOS_PRESENTACION = ("pequeño", "mediano", "grande")
+
+
+class ProductPresentation(db.Model):
+    __tablename__ = "product_presentations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    producto_id = db.Column(
+        db.Integer,
+        db.ForeignKey("products.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    tamaño = db.Column(db.String(20), nullable=False)  # pequeño|mediano|grande
+    precio_extra = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    activo = db.Column(db.Boolean, nullable=False, default=True)
+    orden = db.Column(db.Integer, nullable=False, default=0)
+
+    producto = db.relationship(
+        "Product",
+        backref=db.backref(
+            "presentaciones",
+            cascade="all, delete-orphan",
+            lazy="dynamic",
+            order_by="ProductPresentation.orden",
+        ),
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint("producto_id", "tamaño", name="uq_product_presentation"),
+        db.Index("ix_product_presentations_producto", "producto_id", "activo"),
+    )
+
+    @property
+    def precio_extra_float(self) -> float:
+        return float(self.precio_extra or 0)
+
+    @property
+    def label(self) -> str:
+        return self.tamaño.capitalize()
+
+    def precio_final(self, precio_base) -> float:
+        try:
+            return round(float(precio_base or 0) + self.precio_extra_float, 2)
+        except (TypeError, ValueError):
+            return float(precio_base or 0)
 
 
 # ─────────────────────────────────────────────

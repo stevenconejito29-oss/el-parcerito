@@ -17,12 +17,21 @@ except Exception:  # pragma: no cover - permite arrancar hasta instalar requirem
 db = SQLAlchemy()
 login_manager = LoginManager()
 csrf = CSRFProtect()
+# Rate limiting. Activo solo si la libreria está disponible Y hay Redis
+# configurado (memory:// no sirve con varios gunicorn workers — cada worker
+# tendría su propio contador). En dev sin Redis el limiter se apaga
+# explícitamente para no dar falso sentido de seguridad.
+_LIMITER_STORAGE = os.environ.get("REDIS_URL", "memory://")
+_LIMITER_ENABLED = bool(Limiter) and _LIMITER_STORAGE.startswith("redis://")
 limiter = (
     Limiter(
         key_func=get_remote_address,
-        default_limits=["200 per minute"],
-        storage_uri=os.environ.get("REDIS_URL", "memory://"),
-        enabled=False,
+        # Sin default global — algunos assets estáticos y polling de sw.js/branding
+        # generan >200 req/min por cliente legítimo. Aplicamos límites explícitos
+        # solo a endpoints sensibles (login, MFA, check-address, bot).
+        default_limits=[],
+        storage_uri=_LIMITER_STORAGE,
+        enabled=_LIMITER_ENABLED,
     )
     if Limiter else None
 )

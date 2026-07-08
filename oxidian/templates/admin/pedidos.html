@@ -39,8 +39,18 @@
     <a href="{{ url_for('admin.pedidos', epicentro='0') }}" class="ord-filter {{ 'active' if request.args.get('epicentro') == '0' else '' }}">Fuera</a>
   </div>
   <form method="GET" action="{{ url_for('admin.pedidos') }}" class="ord-search">
-    <input type="number" name="id" placeholder="ID pedido" value="{{ request.args.get('id','') }}">
+    {# Preservamos filtros de estado/origen que ya trae la URL. #}
+    {% if request.args.get('estado') %}<input type="hidden" name="estado" value="{{ request.args.get('estado') }}">{% endif %}
+    {% if request.args.get('origen') %}<input type="hidden" name="origen" value="{{ request.args.get('origen') }}">{% endif %}
+    {% if request.args.get('epicentro') %}<input type="hidden" name="epicentro" value="{{ request.args.get('epicentro') }}">{% endif %}
+    <input type="number" name="id" placeholder="ID pedido" value="{{ request.args.get('id','') }}" class="ord-input">
+    <input type="text"   name="cliente" placeholder="Cliente o tel." value="{{ request.args.get('cliente','') }}" class="ord-input">
+    <input type="date"   name="desde" title="Desde" value="{{ request.args.get('desde','') }}" class="ord-input">
+    <input type="date"   name="hasta" title="Hasta" value="{{ request.args.get('hasta','') }}" class="ord-input">
     <button type="submit">Buscar</button>
+    {% if request.args.get('id') or request.args.get('cliente') or request.args.get('desde') or request.args.get('hasta') %}
+    <a href="{{ url_for('admin.pedidos') }}" class="ord-clear" title="Limpiar filtros">✕</a>
+    {% endif %}
   </form>
   </div>
 </div>
@@ -51,7 +61,7 @@
   <div class="flex items-start justify-between gap-3 flex-wrap">
     <div class="min-w-0">
       <div class="flex items-center gap-2 flex-wrap">
-        <span class="font-mono font-black" style="color:#FFAB00">{{ pedido.numero_pedido }}</span>
+        <span class="font-mono font-black ord-num">{{ pedido.numero_pedido }}</span>
         <span class="ord-state">{{ pedido.estado }}</span>
         {% if pedido.estado == 'pendiente' %}<span class="ord-next">Siguiente: preparar</span>{% endif %}
         {% if pedido.estado == 'armando' %}<span class="ord-next">Siguiente: listo</span>{% endif %}
@@ -73,8 +83,10 @@
       </p>
     </div>
     <div class="text-right">
-      <p class="text-xl font-black" style="color:#FFAB00">€{{ "%.2f"|format(pedido.total) }}</p>
-      {% if pedido.descuento %}<p class="text-xs" style="color:#5EF097">-€{{ "%.2f"|format(pedido.descuento) }} desc.</p>{% endif %}
+      <p class="text-xl font-black ord-total">€{{ "%.2f"|format(pedido.total) }}</p>
+      {% if pedido.descuento %}<p class="text-xs ord-desc">-€{{ "%.2f"|format(pedido.descuento) }} desc.</p>{% endif %}
+      <a href="{{ url_for('admin.pedido_detalle', pedido_id=pedido.id) }}"
+         class="ord-btn text-xs mt-1" style="display:inline-block;">Ver detalle →</a>
     </div>
   </div>
 
@@ -91,7 +103,7 @@
       </div>
       <div class="min-w-0 flex-1">
         <p class="text-sm font-bold text-white truncate">{{ item.display_nombre }} × {{ item.cantidad }}</p>
-        {% if item.notas %}<p class="text-xs mt-0.5" style="color:#C084FC">{{ item.notas }}</p>{% endif %}
+        {% if item.notas %}<p class="text-xs mt-0.5 ord-note-client">{{ item.notas }}</p>{% endif %}
         {% if item.display_categoria or item.display_origen_pais %}
         <p class="text-[11px] mt-0.5" style="color:var(--col-faint)">
           {{ item.display_categoria or 'Sin categoría' }}{% if item.display_origen_pais %} · {{ item.display_origen_pais }}{% endif %}
@@ -144,7 +156,11 @@
   </div>
 </div>
 {% else %}
-<div class="ox-card p-8 text-center" style="color:var(--col-muted)">No hay pedidos con estos filtros.</div>
+<div class="ox-empty">
+  <span class="ox-empty__icon">📭</span>
+  <div class="ox-empty__title">Sin pedidos</div>
+  <div class="ox-empty__hint">No hay pedidos que coincidan con los filtros actuales.</div>
+</div>
 {% endfor %}
 </div>
 </div>
@@ -152,28 +168,167 @@
 {% endblock %}
 {% block scripts %}
 <style>
-.ord-filter { padding:.35rem .7rem; border-radius:.55rem; background:var(--col-elevated); border:1px solid var(--col-border); color:var(--col-muted); font-weight:800; text-decoration:none; }
-.ord-filter.active, .ord-filter:hover { background:rgba(255,171,0,.14); border-color:rgba(255,171,0,.28); color:#FFAB00; }
-.ord-search{display:flex;gap:.4rem;align-items:center}
-.ord-search input{width:8rem;padding:.35rem .55rem;border-radius:.55rem;font-size:.8rem!important}
-.ord-search button{border-radius:.55rem;background:#FFAB00;color:#321800;font-weight:950;padding:.42rem .7rem;font-size:.75rem}
-.order-card { padding:1rem; border-left:3px solid var(--col-border); }
-.order-pendiente { border-left-color:#FFB340; }
-.order-armando { border-left-color:#5AC8FA; }
-.order-listo { border-left-color:#C084FC; }
-.order-en_ruta { border-left-color:#5EF097; }
-.order-cancelado { opacity:.62; }
-.ord-state, .ord-chip { font-size:.68rem; font-weight:900; padding:.15rem .5rem; border-radius:999px; text-transform:uppercase; background:var(--col-elevated); border:1px solid var(--col-border); color:var(--col-muted); }
-.ord-state { color:#fff; }
-.ord-next { font-size:.68rem; font-weight:900; padding:.15rem .5rem; border-radius:999px; background:rgba(90,200,250,.12); border:1px solid rgba(90,200,250,.22); color:#7CC7FF; }
-.ord-chip.warn { background:rgba(255,179,64,.12); border-color:rgba(255,179,64,.25); color:#FFB340; }
-.order-items-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:.5rem; }
-.order-item { display:flex; align-items:center; gap:.6rem; background:rgba(255,255,255,.035); border:1px solid var(--col-border); border-radius:.65rem; padding:.45rem; }
-.order-item-img { width:42px; height:42px; border-radius:.55rem; overflow:hidden; background:var(--col-elevated); display:flex; align-items:center; justify-content:center; color:var(--col-faint); font-size:.6rem; font-weight:900; flex-shrink:0; }
-.order-item-img img { width:100%; height:100%; object-fit:cover; }
-.ord-select { background:var(--col-elevated); border:1px solid var(--col-border); border-radius:.55rem; color:#fff; padding:.38rem .55rem; font-size:.75rem; min-width:170px; }
-.ord-btn { background:var(--col-elevated); border:1px solid var(--col-border); color:var(--col-muted); border-radius:.55rem; padding:.38rem .75rem; font-size:.75rem; font-weight:900; }
-.ord-btn.success { background:rgba(52,199,89,.12); border-color:rgba(52,199,89,.28); color:#5EF097; }
-.ord-btn.danger { background:rgba(255,59,48,.1); border-color:rgba(255,59,48,.22); color:#FF6B6B; }
+/* Tokens locales de estado. Mismos que el admin dashboard para coherencia
+   visual entre la landing y la lista completa de pedidos. */
+.admin-orders-board {
+  --ord-warn:   var(--brand-primary);
+  --ord-warn-soft: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  --ord-info:   color-mix(in srgb, var(--brand-accent, #003087) 55%, #6bcbff);
+  --ord-info-soft: color-mix(in srgb, var(--brand-accent, #003087) 12%, transparent);
+  --ord-ok:     var(--theme-success, #5EF097);
+  --ord-ok-soft: color-mix(in srgb, var(--theme-success, #5EF097) 12%, transparent);
+  --ord-danger: var(--theme-danger, #FF6B6B);
+  --ord-danger-soft: color-mix(in srgb, var(--theme-danger, #FF6B6B) 12%, transparent);
+  --ord-route:  #C084FC;
+  --ord-route-soft: color-mix(in srgb, #C084FC 14%, transparent);
+}
+
+.admin-orders-board .ord-filter {
+  padding:.35rem .7rem; border-radius:.55rem;
+  background:var(--col-elevated); border:1px solid var(--col-border);
+  color:var(--col-muted); font-weight:800; text-decoration:none;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.admin-orders-board .ord-filter.active,
+.admin-orders-board .ord-filter:hover {
+  background: var(--ord-warn-soft);
+  border-color: color-mix(in srgb, var(--ord-warn) 28%, transparent);
+  color: var(--ord-warn);
+}
+
+.admin-orders-board .ord-search { display:flex; gap:.4rem; align-items:center; flex-wrap: wrap; }
+.admin-orders-board .ord-search .ord-input {
+  width: 8rem; padding:.35rem .55rem; border-radius:.55rem; font-size:.8rem!important;
+  background: var(--col-elevated); border: 1px solid var(--col-border);
+  color: var(--col-text);
+}
+.admin-orders-board .ord-search .ord-input[type="date"] { width: 9rem; }
+.admin-orders-board .ord-clear {
+  display: inline-flex; align-items:center; justify-content:center;
+  width: 2rem; height: 2rem; border-radius: .5rem;
+  background: var(--ord-danger-soft); color: var(--ord-danger);
+  font-weight: 900; text-decoration: none;
+  border: 1px solid color-mix(in srgb, var(--ord-danger) 22%, transparent);
+}
+.admin-orders-board .ord-search button {
+  border-radius:.55rem;
+  background: var(--brand-primary);
+  color: var(--brand-on-primary);
+  font-weight:950; padding:.42rem .7rem; font-size:.75rem; border: 0;
+}
+
+.admin-orders-board .order-card { padding:1rem; border-left:3px solid var(--col-border); }
+.admin-orders-board .order-pendiente { border-left-color: var(--ord-warn); }
+.admin-orders-board .order-armando   { border-left-color: var(--ord-info); }
+.admin-orders-board .order-listo     { border-left-color: var(--ord-route); }
+.admin-orders-board .order-en_ruta   { border-left-color: var(--ord-ok); }
+.admin-orders-board .order-cancelado { opacity:.62; }
+
+.admin-orders-board .ord-state,
+.admin-orders-board .ord-chip {
+  font-size:.68rem; font-weight:900;
+  padding:.15rem .5rem; border-radius:999px;
+  text-transform:uppercase;
+  background:var(--col-elevated); border:1px solid var(--col-border);
+  color:var(--col-muted);
+}
+.admin-orders-board .ord-state { color: var(--col-text); }
+.admin-orders-board .ord-next {
+  font-size:.68rem; font-weight:900;
+  padding:.15rem .5rem; border-radius:999px;
+  background: var(--ord-info-soft);
+  border: 1px solid color-mix(in srgb, var(--ord-info) 25%, transparent);
+  color: var(--ord-info);
+}
+.admin-orders-board .ord-chip.warn {
+  background: var(--ord-warn-soft);
+  border-color: color-mix(in srgb, var(--ord-warn) 28%, transparent);
+  color: var(--ord-warn);
+}
+
+.admin-orders-board .order-items-grid {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:.5rem;
+}
+@media (max-width: 420px) {
+  .admin-orders-board .order-items-grid { grid-template-columns: 1fr; }
+}
+.admin-orders-board .order-item {
+  display:flex; align-items:center; gap:.6rem;
+  background: color-mix(in srgb, var(--col-text) 3%, transparent);
+  border:1px solid var(--col-border);
+  border-radius:.65rem; padding:.45rem;
+}
+.admin-orders-board .order-item-img {
+  width:42px; height:42px; border-radius:.55rem; overflow:hidden;
+  background:var(--col-elevated);
+  display:flex; align-items:center; justify-content:center;
+  color:var(--col-faint); font-size:.6rem; font-weight:900; flex-shrink:0;
+}
+.admin-orders-board .order-item-img img { width:100%; height:100%; object-fit:cover; }
+
+.admin-orders-board .ord-select {
+  background: var(--col-elevated); border:1px solid var(--col-border);
+  border-radius:.55rem; color: var(--col-text);
+  padding:.38rem .55rem; font-size:.75rem; min-width:170px;
+}
+.admin-orders-board .ord-btn {
+  background: var(--col-elevated); border:1px solid var(--col-border);
+  color: var(--col-muted);
+  border-radius:.55rem; padding:.38rem .75rem;
+  font-size:.75rem; font-weight:900;
+  transition: background .15s;
+  cursor: pointer;
+}
+.admin-orders-board .ord-btn.success {
+  background: var(--ord-ok-soft);
+  border-color: color-mix(in srgb, var(--ord-ok) 30%, transparent);
+  color: var(--ord-ok);
+}
+.admin-orders-board .ord-btn.danger  {
+  background: var(--ord-danger-soft);
+  border-color: color-mix(in srgb, var(--ord-danger) 25%, transparent);
+  color: var(--ord-danger);
+}
+
+/* Identidad de datos clave: número y total muy visibles */
+.admin-orders-board .ord-num   { color: var(--ord-warn); }
+.admin-orders-board .ord-total { color: var(--ord-warn); }
+.admin-orders-board .ord-desc  { color: var(--ord-ok); }
+.admin-orders-board .ord-note-client { color: var(--ord-route); }
+
+/* Responsive: móvil apila botones y reduce ord-select */
+@media (max-width: 720px) {
+  .admin-orders-board .ord-btn { min-height: 44px; }
+  .admin-orders-board .ord-select { min-width: 100%; width: 100%; }
+  .admin-orders-board .order-items-grid { grid-template-columns: 1fr; }
+  .admin-orders-board .ord-search { width: 100%; }
+  .admin-orders-board .ord-search .ord-input { flex: 1 1 auto; min-width: 45%; }
+}
+
+/* Landscape móvil: KPIs y filtros compactos, header oculto */
+@media (orientation: landscape) and (max-height: 500px) {
+  .admin-orders-board .work-hero { padding: .5rem .8rem; }
+  .admin-orders-board .work-hero h1 { font-size: 1.1rem; }
+  .admin-orders-board .work-subtitle { display: none; }
+  .admin-orders-board .work-kpis { grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: .35rem; }
+}
+
+/* Touch UX consistente: sin flash de tap + focus visible tokenizado */
+.admin-orders-board button,
+.admin-orders-board a,
+.admin-orders-board select,
+.admin-orders-board input,
+.admin-orders-board .ord-btn,
+.admin-orders-board .ord-filter {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.admin-orders-board button:focus-visible,
+.admin-orders-board a:focus-visible,
+.admin-orders-board .ord-filter:focus-visible,
+.admin-orders-board .ord-btn:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
 </style>
 {% endblock %}

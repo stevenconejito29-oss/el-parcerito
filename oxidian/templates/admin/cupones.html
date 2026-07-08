@@ -223,32 +223,72 @@
 {% endblock %}
 {% block scripts %}
 <style>
+/* Cupones admin — tokens semánticos */
 .cup-label { font-size:.72rem; font-weight:700; color:var(--col-muted); display:block; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.04em; }
-.cup-input { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem; transition:border-color .15s; }
-.cup-input:focus { outline:none; border-color:rgba(255,171,0,.5); }
-.cup-select { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem; }
+.cup-input, .cup-select {
+  width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border);
+  border-radius:.65rem; padding:.5rem .75rem; color: var(--col-text);
+  font-size:.88rem;
+}
+.cup-input { transition: border-color .15s; }
+.cup-input:focus { outline: none; border-color: color-mix(in srgb, var(--brand-primary) 50%, transparent); }
 .cup-badge { font-size:.65rem; font-weight:700; padding:2px 8px; border-radius:999px; }
-.cup-badge-active { background:rgba(52,199,89,.12); color:#5EF097; border:1px solid rgba(52,199,89,.2); }
-.cup-badge-off    { background:rgba(100,100,100,.12); color:var(--col-muted); border:1px solid var(--col-border); }
-.cup-badge-warn   { background:rgba(255,171,0,.12); color:#FFAB00; border:1px solid rgba(255,171,0,.2); }
-.cup-valor-box { text-align:center; padding:.5rem; background:rgba(255,171,0,.06); border-radius:.65rem; margin:.5rem 0; }
-.cup-valor { font-size:1.6rem; font-weight:900; color:#FFAB00; display:block; line-height:1; }
-.cup-valor-lbl { font-size:.68rem; color:var(--col-muted); }
-.cup-progress-bar { height:4px; background:rgba(255,255,255,.08); border-radius:2px; margin-top:.3rem; }
-.cup-progress-fill { height:100%; background:#FFAB00; border-radius:2px; }
+.cup-badge-active {
+  background: color-mix(in srgb, var(--theme-success) 14%, transparent);
+  color: var(--theme-success);
+  border: 1px solid color-mix(in srgb, var(--theme-success) 22%, transparent);
+}
+.cup-badge-off {
+  background: color-mix(in srgb, var(--col-text) 8%, transparent);
+  color: var(--col-muted);
+  border: 1px solid var(--col-border);
+}
+.cup-badge-warn {
+  background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  color: var(--brand-primary);
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 22%, transparent);
+}
+.cup-valor-box {
+  text-align:center; padding:.5rem;
+  background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
+  border-radius:.65rem; margin:.5rem 0;
+}
+.cup-valor {
+  font-size:1.6rem; font-weight:900;
+  color: var(--brand-primary);
+  display:block; line-height:1;
+}
+.cup-valor-lbl { font-size:.68rem; color: var(--col-muted); }
+.cup-progress-bar {
+  height:4px;
+  background: color-mix(in srgb, var(--col-text) 10%, transparent);
+  border-radius:2px; margin-top:.3rem;
+}
+.cup-progress-fill { height:100%; background: var(--brand-primary); border-radius:2px; }
 .cup-toggle-btn { width:100%; padding:.4rem; border-radius:.6rem; font-size:.78rem; font-weight:700; border:none; cursor:pointer; transition:all .15s; }
-.cup-toggle-off { background:rgba(255,59,48,.1); color:#FF6B6B; border:1px solid rgba(255,59,48,.2); }
-.cup-toggle-off:hover { background:rgba(255,59,48,.2); }
-.cup-toggle-on { background:rgba(52,199,89,.1); color:#5EF097; border:1px solid rgba(52,199,89,.2); }
-.cup-toggle-on:hover { background:rgba(52,199,89,.2); }
+.cup-toggle-off {
+  background: color-mix(in srgb, var(--theme-danger) 12%, transparent);
+  color: var(--theme-danger);
+  border: 1px solid color-mix(in srgb, var(--theme-danger) 22%, transparent);
+}
+.cup-toggle-off:hover { background: color-mix(in srgb, var(--theme-danger) 22%, transparent); }
+.cup-toggle-on {
+  background: color-mix(in srgb, var(--theme-success) 12%, transparent);
+  color: var(--theme-success);
+  border: 1px solid color-mix(in srgb, var(--theme-success) 22%, transparent);
+}
+.cup-toggle-on:hover { background: color-mix(in srgb, var(--theme-success) 22%, transparent); }
 </style>
 <script>
 function actualizarTipoCupon() {
   const tipo = document.getElementById('tipo-cupon').value;
   const campo = document.getElementById('campo-valor-cupon');
   const suf = document.getElementById('cupon-sufijo');
-  if (tipo === 'envio_gratis') { campo.style.opacity = '.4'; }
-  else { campo.style.opacity = '1'; if (suf) suf.textContent = tipo === 'porcentaje' ? '%' : '€'; }
+  const input = campo ? campo.querySelector('input[name="valor"]') : null;
+  const gratis = (tipo === 'envio_gratis');
+  campo.style.opacity = gratis ? '.4' : '1';
+  if (input) { input.disabled = gratis; if (gratis) input.value = 0; }
+  if (!gratis && suf) suf.textContent = tipo === 'porcentaje' ? '%' : '€';
 }
 
 function abrirEditarCupon(id, data) {
@@ -269,8 +309,11 @@ function actualizarTipoEditar() {
   const tipo = document.getElementById('edit-tipo').value;
   const campo = document.getElementById('edit-campo-valor');
   const suf = document.getElementById('edit-sufijo');
-  if (tipo === 'envio_gratis') { campo.style.opacity = '.4'; }
-  else { campo.style.opacity = '1'; if (suf) suf.textContent = tipo === 'porcentaje' ? '%' : '€'; }
+  const input = document.getElementById('edit-valor');
+  const gratis = (tipo === 'envio_gratis');
+  campo.style.opacity = gratis ? '.4' : '1';
+  if (input) { input.disabled = gratis; if (gratis) input.value = 0; }
+  if (!gratis && suf) suf.textContent = tipo === 'porcentaje' ? '%' : '€';
 }
 </script>
 {% endblock %}

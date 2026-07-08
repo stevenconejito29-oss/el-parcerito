@@ -93,6 +93,110 @@
     .ox-btn-primary { background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 75%, var(--theme-text))); color:var(--brand-on-primary); }
     .ox-btn-cart    { background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 80%, var(--theme-text))); color:var(--brand-on-primary); }
     body.ox-body-public { background:var(--theme-bg); color:var(--theme-text); min-height:var(--app-height,100dvh); }
+    /* Bottom nav: superficie 100% opaca, sin backdrop-filter (elimina bugs
+       de transparencia y artefactos en scroll). Colores tokenizados desde
+       SiteConfig, editable en /superadmin/config. */
+    body.ox-body-public .ox-bottom-nav {
+      background: var(--theme-surface) !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      border-top: 1px solid var(--col-border) !important;
+    }
+    /* SPA navigation — transición fluida entre páginas
+       Fallback para browsers sin View Transitions API (Safari, Firefox).
+       En browsers que sí soportan VT, el navegador hace la transición nativa. */
+    body.ox-body-public main { transition: opacity .18s ease-out, transform .18s ease-out; }
+    body.ox-body-public.spa-fade-out main { opacity: 0; transform: translateY(4px); }
+    body.ox-body-public.spa-fade-in  main { opacity: 1; transform: translateY(0);
+                                            animation: spa-fade-in .18s ease-out; }
+    body.ox-body-public.is-navigating { cursor: progress; }
+    body.ox-body-public.is-navigating .ox-bottom-nav .ox-bnav-item { pointer-events: none; opacity: .7; }
+    @keyframes spa-fade-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    /* Barra de progreso sutil en el borde superior del bottom nav durante el fetch */
+    body.ox-body-public.is-navigating .ox-bottom-nav::before {
+      content: ''; position: absolute; top: -2px; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--brand-primary), transparent);
+      animation: spa-progress 1s linear infinite;
+    }
+    @keyframes spa-progress {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      body.ox-body-public main { transition: none; }
+      body.ox-body-public.spa-fade-out main,
+      body.ox-body-public.spa-fade-in main { transform: none; animation: none; }
+    }
+    /* Touch UX y accesibilidad GLOBAL en público (menú, carrito, checkout).
+       Elimina flash de tap en Android, elimina delay de 300ms en iOS, y
+       aplica focus visible con color de marca. */
+    body.ox-body-public button,
+    body.ox-body-public a,
+    body.ox-body-public input,
+    body.ox-body-public select,
+    body.ox-body-public textarea,
+    body.ox-body-public [role="button"] {
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    body.ox-body-public button:focus-visible,
+    body.ox-body-public a:focus-visible,
+    body.ox-body-public input:focus-visible,
+    body.ox-body-public select:focus-visible,
+    body.ox-body-public textarea:focus-visible,
+    body.ox-body-public [role="button"]:focus-visible {
+      outline: 2px solid var(--brand-primary);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+    /* Prevenir overflow horizontal accidental (fix común en móvil pequeño) */
+    body.ox-body-public { overflow-x: hidden; }
+    /* Responsividad global 320-380px: touch targets, hero clamp, grids fallback */
+    @media (max-width: 400px) {
+      body.ox-body-public .ep-hero-title { font-size: clamp(1.1rem, 5vw, 1.8rem); line-height: 1.15; }
+      body.ox-body-public .ep-hero-sub { font-size: .82rem; }
+      /* Grids con minmax(240px|260px) → forzar 1 columna para no overflow */
+      body.ox-body-public .ep-grid,
+      body.ox-body-public .ep-review-list,
+      body.ox-body-public .ep-menu-config,
+      body.ox-body-public .cr-canjeables { grid-template-columns: 1fr !important; }
+      /* Touch targets mínimos 44px en botones/inputs/anchors principales */
+      body.ox-body-public button:not(.ox-icon-btn),
+      body.ox-body-public input[type="text"],
+      body.ox-body-public input[type="tel"],
+      body.ox-body-public input[type="email"],
+      body.ox-body-public input[type="number"],
+      body.ox-body-public input[type="search"],
+      body.ox-body-public .ox-btn-primary,
+      body.ox-body-public .ox-btn-ghost,
+      body.ox-body-public .ep-hero-cta,
+      body.ox-body-public .cr-qty-btn { min-height: 44px; }
+      /* Botones qty carrito: cuadrados de 44px mínimo */
+      body.ox-body-public .cr-qty-btn { min-width: 44px; }
+      /* Toast del bot / botones flotantes: no salir del viewport */
+      body.ox-body-public [class*="toast"],
+      body.ox-body-public [class*="Toast"] { max-width: calc(100vw - 24px); }
+    }
+    /* Landscape móvil (400-800px alto): permitir que el código de entrega
+       del repartidor no salte de línea si el viewport es muy estrecho. */
+    @media (max-width: 380px) {
+      body.ox-body-public .work-code-input { font-size: 1.25rem !important; letter-spacing: .2em !important; min-height: 48px; }
+    }
+    /* Tablet portrait 768x1024 (típica para menú fijo en local o cliente): */
+    @media (min-width: 700px) and (max-width: 1000px) and (orientation: portrait) {
+      body.ox-body-public .ep-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      body.ox-body-public .ep-menu-config { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      body.ox-body-public .cr-body { grid-template-columns: 1fr; }
+    }
+    /* Tablet landscape 1024x768 (POS del bar o pantalla del cliente rotada): */
+    @media (min-width: 1000px) and (max-height: 900px) and (orientation: landscape) {
+      body.ox-body-public .ep-hero { padding-top: 1rem; padding-bottom: 1rem; }
+      body.ox-body-public .ep-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+      body.ox-body-public .cr-body { grid-template-columns: 1fr 320px; }
+    }
   </style>
   {% block styles %}{% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
@@ -205,7 +309,7 @@
       <div>
         <h4 class="ep-footer-heading">Explorar</h4>
         <ul class="ep-footer-links">
-          <li><a href="{{ url_for('public.index') }}">🍽️ Menú completo</a></li>
+          <li><a href="{{ url_for('public.index') }}">{% if brand.es_comida %}🍽️ Menú completo{% else %}🛍️ Catálogo completo{% endif %}</a></li>
           <li><a href="{{ url_for('public.ver_carrito') }}">🛒 Mi carrito</a></li>
           {% if brand.puntos %}<li><a href="{{ url_for('public.club') }}">⭐ Programa de puntos</a></li>{% endif %}
         </ul>
@@ -220,7 +324,7 @@
         </a>
         {% endif %}
         <p class="ep-footer-note">Seguimiento de pedidos{% if brand.puntos %}, consulta de puntos{% endif %} y atención en tiempo real.</p>
-        <p class="ep-footer-legal">Información sobre alérgenos disponible bajo solicitud.<br>RGPD · LSSI-CE · RDL 1/2007</p>
+        <p class="ep-footer-legal">{% if brand.es_comida %}Información sobre alérgenos disponible bajo solicitud.<br>{% endif %}RGPD · LSSI-CE · RDL 1/2007</p>
       </div>
 
     </div>
@@ -627,29 +731,38 @@ if ('serviceWorker' in navigator) {
   });
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     sessionStorage.setItem('oxSwUpdated', '1');
-    // Autorecarga cuando el usuario NO está haciendo algo importante:
-    // - tab oculto (probablemente en otra app)
-    // - o vuelve a la tab tras haberla ocultado
-    // No recargamos si hay formularios con cambios, modales abiertos, o
-    // requests en curso — evita romper el checkout u otras acciones.
+    // Autorecarga cuando el usuario NO está haciendo algo importante.
+    // Reglas de bloqueo (nunca recargar):
+    //  - ruta crítica: /checkout, /carrito, /puntos, /pedido-confirmado
+    //  - formularios con cambios (excluyendo hidden/CSRF)
+    //  - modales abiertos
+    //  - la SPA está navegando ahora mismo
+    //  - hay una request en curso (usamos fetch counter)
+    var _rutasCriticas = /^\/(checkout|carrito|puntos|pedido|confirmar|entrega|cliente\/|login|mfa)/i;
     var recargarSiSeguro = function () {
-      if (document.visibilityState === 'visible') return; // en foreground, esperar
+      // Nunca en primer plano — esperar a que la tab se oculte para no interrumpir
+      if (document.visibilityState === 'visible') return;
+      // Nunca en rutas críticas — el usuario podría estar cerrando un pedido
+      if (_rutasCriticas.test(location.pathname)) return;
+      // Nunca si la SPA está navegando (fade activo)
+      if (document.body.classList.contains('is-navigating')) return;
+      // Nunca si hay formularios con cambios (excluye hidden y CSRF tokens)
       var forms = document.querySelectorAll('form');
       var hayCambios = false;
       forms.forEach(function (f) {
         f.querySelectorAll('input, textarea, select').forEach(function (el) {
           if (el.type === 'hidden' || el.readOnly || el.disabled) return;
+          if (el.name === 'csrf_token') return;
           if ((el.value || '') !== (el.defaultValue || '')) hayCambios = true;
         });
       });
       if (hayCambios) return;
-      if (document.querySelector('[role="dialog"]:not([hidden]), .ep-modal-overlay:not([hidden])')) return;
+      // Modales abiertos (dialog, ep-modal, oa-modal, admin-modal)
+      if (document.querySelector('[role="dialog"]:not([hidden]), .ep-modal-overlay:not([hidden]), .oa-modal:not([hidden]), .admin-modal:not([hidden])')) return;
       location.reload();
     };
-    // Intento inmediato + al volver a la tab
-    setTimeout(recargarSiSeguro, 100);
+    // Intento al ocultar tab (más seguro que inmediato)
     document.addEventListener('visibilitychange', function () {
-      // Cuando el usuario oculta la tab, es el momento perfecto.
       if (document.visibilityState === 'hidden') setTimeout(recargarSiSeguro, 300);
     });
   });
@@ -760,6 +873,49 @@ window.oxPrepareAppStorage = async function(btn) {
 <script src="{{ url_for('static', filename='js/storefront-toast.js', v=asset_version) }}" defer></script>
 <script src="{{ url_for('static', filename='js/header-modern.js', v=asset_version) }}" defer></script>
 <script src="{{ url_for('static', filename='js/spa-nav.js', v=asset_version) }}" defer></script>
+
+<script>
+/* Prevención universal de doble-submit en formularios del público
+   (checkout, agregar al carrito, verificar código puntos). Mismo
+   patrón que en admin. Formularios con [data-no-guard] se saltan. */
+(function () {
+  const IN_FLIGHT_MS = 10000;
+  document.addEventListener('submit', function (ev) {
+    const form = ev.target;
+    if (!form || form.tagName !== 'FORM') return;
+    if (ev.defaultPrevented) return;
+    if (form.hasAttribute('data-no-guard')) return;
+    if ((form.method || 'get').toLowerCase() !== 'post') return;
+    const btn = form.querySelector('button[type="submit"]:not([data-no-guard]), input[type="submit"]:not([data-no-guard])');
+    if (!btn || btn.dataset._guardBusy === '1') return;
+    btn.dataset._guardBusy = '1';
+    const originalText = btn.innerHTML;
+    const originalDisabled = btn.disabled;
+    btn.disabled = true;
+    btn.classList.add('is-submitting');
+    if (!btn.querySelector('svg, img') || btn.textContent.trim().length > 0) {
+      btn.innerHTML = '<span class="_guard-spinner" aria-hidden="true">⏳</span> ' +
+        (btn.getAttribute('data-busy-label') || 'Procesando…');
+    }
+    const restore = () => {
+      btn.disabled = originalDisabled;
+      btn.innerHTML = originalText;
+      btn.classList.remove('is-submitting');
+      delete btn.dataset._guardBusy;
+    };
+    setTimeout(restore, IN_FLIGHT_MS);
+    window.addEventListener('pageshow', function _once(e) {
+      if (e.persisted) { restore(); window.removeEventListener('pageshow', _once); }
+    });
+  });
+})();
+</script>
+<style>
+.is-submitting { opacity: .75; cursor: progress !important; }
+._guard-spinner { display: inline-block; animation: _guardSpin 1s linear infinite; }
+@keyframes _guardSpin { to { transform: rotate(360deg); } }
+</style>
+
 {% block scripts %}{% endblock %}
 </body>
 </html>

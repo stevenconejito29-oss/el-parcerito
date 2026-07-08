@@ -125,6 +125,101 @@
     .ox-sb-toggle-btn.online { background: linear-gradient(135deg, #4ade80, #22c55e); color: #fff; }
     .ox-sb-toggle-btn.offline { background: linear-gradient(135deg, #f87171, #ef4444); color: #fff; }
     .ox-sb-toggle-dot { box-shadow: 0 0 0 4px rgba(255,255,255,.14); }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       Overrides de utilidades Tailwind residuales.
+       Muchos templates admin históricos usan .text-white, .text-gray-400,
+       .text-red-400... Esas clases pintan colores FIJOS que no responden
+       al branding. Aquí las remapeamos a los tokens del tema (--col-*,
+       --brand-*, --theme-*) para que TODO el admin reaccione cuando el
+       super_admin cambia los COLOR_* en /superadmin/config.
+
+       Se aplican solo dentro de body.ox-body-admin para no afectar al
+       storefront público (que sí puede necesitar blanco real sobre hero). */
+    body.ox-body-admin .text-white          { color: var(--col-text) !important; }
+    body.ox-body-admin .text-gray-100,
+    body.ox-body-admin .text-gray-200,
+    body.ox-body-admin .text-gray-300       { color: var(--col-text) !important; }
+    body.ox-body-admin .text-gray-400,
+    body.ox-body-admin .text-gray-500       { color: var(--col-muted) !important; }
+    body.ox-body-admin .text-gray-600,
+    body.ox-body-admin .text-gray-700       { color: var(--col-faint) !important; }
+    body.ox-body-admin .text-green-400,
+    body.ox-body-admin .text-green-500,
+    body.ox-body-admin .text-emerald-400    { color: var(--theme-success) !important; }
+    body.ox-body-admin .text-red-400,
+    body.ox-body-admin .text-red-500,
+    body.ox-body-admin .text-rose-400       { color: var(--theme-danger) !important; }
+    body.ox-body-admin .text-amber-400,
+    body.ox-body-admin .text-amber-500,
+    body.ox-body-admin .text-yellow-400,
+    body.ox-body-admin .text-yellow-500,
+    body.ox-body-admin .text-orange-400     { color: var(--brand-primary) !important; }
+    body.ox-body-admin .text-blue-400,
+    body.ox-body-admin .text-blue-500,
+    body.ox-body-admin .text-sky-400        { color: color-mix(in srgb, var(--brand-accent, #003087) 55%, #6bcbff) !important; }
+    body.ox-body-admin .text-purple-400,
+    body.ox-body-admin .text-violet-400     { color: #C084FC !important; }
+    body.ox-body-admin .text-warning        { color: var(--brand-primary) !important; }
+    body.ox-body-admin .text-muted          { color: var(--col-muted) !important; }
+
+    /* Fondos y bordes semi-transparentes de Tailwind más usados. Se remapean
+       a color-mix() derivados del branding, con alpha ~20% consistente. */
+    body.ox-body-admin [class*="bg-blue-500/"]  { background-color: color-mix(in srgb, var(--brand-accent) 18%, transparent) !important; }
+    body.ox-body-admin [class*="border-blue-500/"] { border-color: color-mix(in srgb, var(--brand-accent) 30%, transparent) !important; }
+    body.ox-body-admin [class*="bg-orange-500/"] { background-color: color-mix(in srgb, var(--brand-primary) 18%, transparent) !important; }
+    body.ox-body-admin [class*="border-orange-500/"] { border-color: color-mix(in srgb, var(--brand-primary) 30%, transparent) !important; }
+    body.ox-body-admin [class*="bg-red-500/"],
+    body.ox-body-admin [class*="bg-rose-500/"] { background-color: color-mix(in srgb, var(--theme-danger) 15%, transparent) !important; }
+    body.ox-body-admin [class*="border-red-500/"],
+    body.ox-body-admin [class*="border-rose-500/"] { border-color: color-mix(in srgb, var(--theme-danger) 25%, transparent) !important; }
+    body.ox-body-admin [class*="bg-green-500/"],
+    body.ox-body-admin [class*="bg-emerald-500/"] { background-color: color-mix(in srgb, var(--theme-success) 15%, transparent) !important; }
+    body.ox-body-admin [class*="border-green-500/"],
+    body.ox-body-admin [class*="border-emerald-500/"] { border-color: color-mix(in srgb, var(--theme-success) 25%, transparent) !important; }
+    body.ox-body-admin [class*="bg-amber-500/"],
+    body.ox-body-admin [class*="bg-yellow-500/"] { background-color: color-mix(in srgb, var(--brand-primary) 15%, transparent) !important; }
+    body.ox-body-admin [class*="bg-purple-500/"],
+    body.ox-body-admin [class*="bg-violet-500/"] { background-color: color-mix(in srgb, #C084FC 15%, transparent) !important; }
+    body.ox-body-admin [class*="border-purple-500/"],
+    body.ox-body-admin [class*="border-violet-500/"] { border-color: color-mix(in srgb, #C084FC 25%, transparent) !important; }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       Touch UX y accesibilidad GLOBAL en admin — se aplica a TODOS los
+       botones/enlaces/inputs de cualquier panel sin tener que repetirlo
+       en cada template. Cubre: sin flash de tap Android, delay 300ms en
+       iOS, focus visible con el color de marca. */
+    body.ox-body-admin button,
+    body.ox-body-admin a,
+    body.ox-body-admin input,
+    body.ox-body-admin select,
+    body.ox-body-admin textarea,
+    body.ox-body-admin [role="button"] {
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    body.ox-body-admin button:focus-visible,
+    body.ox-body-admin a:focus-visible,
+    body.ox-body-admin input:focus-visible,
+    body.ox-body-admin select:focus-visible,
+    body.ox-body-admin textarea:focus-visible,
+    body.ox-body-admin [role="button"]:focus-visible {
+      outline: 2px solid var(--brand-primary);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+    /* Touch targets ≥ 44px en móvil y landscape (WCAG AA) */
+    @media (max-width: 900px), (orientation: landscape) and (max-height: 500px) {
+      body.ox-body-admin .work-btn,
+      body.ox-body-admin .oa-btn,
+      body.ox-body-admin .ord-btn,
+      body.ox-body-admin .ox-btn-primary,
+      body.ox-body-admin .ox-btn-secondary,
+      body.ox-body-admin .ox-btn-danger,
+      body.ox-body-admin .ox-btn-ghost {
+        min-height: 44px;
+      }
+    }
   </style>
   {% block styles %}{% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
@@ -141,7 +236,10 @@
       {% else %}<div class="ox-sb-logo">{{ brand.fallback_emoji or '🥟' }}</div>{% endif %}
       <div style="flex:1;min-width:0">
         <p class="ox-sb-brand-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ brand.nombre }}</p>
-        <p class="ox-sb-brand-sub">Gestión operativa</p>
+        <p class="ox-sb-brand-sub" title="Vertical activo — cambia en /superadmin/dashboard">
+          <span style="opacity:.7">{{ brand.vertical_emoji or ('🍽️' if brand.es_comida else '🛍️') }}</span>
+          {{ brand.vertical_label or ('Menú' if brand.es_comida else 'Catálogo') }} · Gestión
+        </p>
       </div>
       <button id="btn-close-sb" onclick="sidebarClose()" class="ox-sb-toggle" style="display:none;flex-shrink:0">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -171,10 +269,12 @@
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">⚡ Operaciones</span>
         <a href="{{ url_for('admin.dashboard') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏠</span>Dashboard</a>
+        {% if has_admin_feature('pos') %}
         <a href="{{ url_for('admin.cola') }}" class="ox-sb-item"><span class="ox-sb-item-icon">⚡</span>Cola de trabajo</a>
         <a href="{{ url_for('admin.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📋</span>Pedidos</a>
-        <a href="{{ url_for('admin.notificaciones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🔔</span>Notificaciones bot</a>
-        {% if has_admin_feature('pos') %}<a href="{{ url_for('pos.venta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖥️</span>Punto de venta</a>{% endif %}
+        <a href="{{ url_for('pos.venta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖥️</span>Punto de venta</a>
+        {% endif %}
+        {% if has_admin_feature('whatsapp') %}<a href="{{ url_for('admin.notificaciones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🔔</span>Notificaciones bot</a>{% endif %}
       </div>
       <div class="ox-sb-divider"></div>
       <div class="ox-sb-section">
@@ -188,6 +288,7 @@
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">💰 Finanzas</span>
         {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.caja') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Caja & Analytics</a>{% endif %}
+        {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.pagos_pendientes_digital') }}" class="ox-sb-item"><span class="ox-sb-item-icon">✅</span>Pagos pendientes</a>{% endif %}
         {% if has_admin_feature('staff_pagos') %}<a href="{{ url_for('admin.pagos_staff') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💸</span>Pagos & Liquidaciones</a>{% endif %}
       </div>
       <div class="ox-sb-divider"></div>
@@ -497,6 +598,141 @@ function _urlB64ToUint8Array(b64) {
   return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
 }
 </script>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────
+   Prevención universal de doble-submit en formularios operativos.
+   Evita que un doble click cree dos pedidos, dos comisiones, dos
+   ajustes de puntos, o cualquier POST idempotente crítico.
+
+   Se activa automáticamente en TODOS los <form method="POST"> del admin.
+   Marca el botón submit como .is-submitting, lo deshabilita, guarda el
+   texto original, cambia a "Procesando…" y lo restaura si el request
+   falla o si el usuario cancela con back button (bfcache).
+
+   NO se aplica a formularios con [data-no-guard] (búsqueda, filtros).
+──────────────────────────────────────────────────────────────────────── */
+(function () {
+  const IN_FLIGHT_MS = 8000; // ventana de bloqueo antes de re-habilitar
+  document.addEventListener('submit', function (ev) {
+    const form = ev.target;
+    if (!form || form.tagName !== 'FORM') return;
+    if (form.hasAttribute('data-no-guard')) return;
+    if ((form.method || 'get').toLowerCase() !== 'post') return;
+
+    const btn = form.querySelector('button[type="submit"]:not([data-no-guard]), input[type="submit"]:not([data-no-guard])');
+    if (!btn) return;
+
+    if (btn.dataset._guardBusy === '1') {
+      ev.preventDefault();
+      return;
+    }
+    btn.dataset._guardBusy = '1';
+    const originalText = btn.innerHTML;
+    const originalDisabled = btn.disabled;
+    btn.disabled = true;
+    btn.classList.add('is-submitting');
+    // Reemplazar el texto por "Procesando…" solo si el botón tiene texto
+    // (no imágenes/svg puros — algunos íconos redondos serían un lío).
+    if (!btn.querySelector('svg, img') || btn.textContent.trim().length > 0) {
+      btn.innerHTML = '<span class="_guard-spinner" aria-hidden="true">⏳</span> ' +
+        (btn.getAttribute('data-busy-label') || 'Procesando…');
+    }
+    // Restauración automática ante caches / back / errores
+    const restore = () => {
+      btn.disabled = originalDisabled;
+      btn.innerHTML = originalText;
+      btn.classList.remove('is-submitting');
+      delete btn.dataset._guardBusy;
+    };
+    setTimeout(restore, IN_FLIGHT_MS);
+    window.addEventListener('pageshow', function _once(e) {
+      if (e.persisted) { restore(); window.removeEventListener('pageshow', _once); }
+    });
+  }, true);
+})();
+</script>
+
+<style>
+.is-submitting { opacity: .75; cursor: progress !important; }
+._guard-spinner { display: inline-block; animation: _guardSpin 1s linear infinite; }
+@keyframes _guardSpin { to { transform: rotate(360deg); } }
+.ox-empty {
+  padding: 1.6rem 1.2rem;
+  text-align: center;
+  color: var(--col-muted);
+  border: 1px dashed var(--col-border);
+  border-radius: 12px;
+  background: var(--col-surface, transparent);
+}
+.ox-empty__icon { font-size: 2rem; display: block; margin-bottom: .35rem; opacity: .7; }
+.ox-empty__title { font-weight: 600; color: var(--col-text); margin-bottom: .25rem; }
+.ox-empty__hint { font-size: .9rem; }
+/* ═══════ TABLETS ═══════
+   El equipo del bar/restaurante usa tabletas montadas en la pared o de
+   mano (portrait). Cubrimos 3 escenarios:
+   1. Tablet PORTRAIT 768x1024 (fija en portrait, para cocina/inventario)
+   2. Tablet LANDSCAPE 1024x768 (POS, dashboard admin, cola pedidos)
+   3. Tablet chica LANDSCAPE 800x600 (repartidor con móvil rotado)
+*/
+@media (min-width: 700px) and (max-width: 1200px) and (orientation: portrait) {
+  /* Sidebar fijo puede tapar contenido: aseguramos scroll interno */
+  .ox-sidebar { overflow-y: auto; }
+  /* KPI grid: 2 columnas máximo en portrait para legibilidad */
+  .dash-kpi-bar,
+  .oa-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Cards en 2 columnas */
+  .dash-cards,
+  .oa-toggle-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Buttons táctiles cómodos */
+  .ox-btn-primary, .ox-btn-ghost, .oa-btn, .work-btn { min-height: 48px; }
+}
+@media (min-width: 700px) and (max-height: 900px) and (orientation: landscape) {
+  /* Contenido siempre scrollable: evitar botones cortados fuera de viewport */
+  .ox-page { min-height: 0; }
+  /* KPI grid: 4-6 columnas aprovechando ancho */
+  .dash-kpi-bar,
+  .oa-kpi-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  /* Cards 3 columnas si hay ancho */
+  .dash-cards,
+  .oa-toggle-list { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  /* Botones de acción con altura razonable pero no gigante */
+  .ox-btn-primary, .ox-btn-ghost, .oa-btn { min-height: 44px; }
+  /* Formularios largos: 2 columnas de campos si hay espacio */
+  .ox-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Modales fullscreen no tienen sentido en landscape corto: max-height */
+  .oa-dialog__panel,
+  .admin-modal-panel { max-height: 88vh; overflow-y: auto; }
+}
+/* Tablet chica landscape (rotación móvil o tablet 800x600) */
+@media (min-width: 600px) and (max-width: 800px) and (max-height: 600px) and (orientation: landscape) {
+  /* Sidebar collapse forzado: en tan poco alto no cabe */
+  .ox-sidebar { max-width: 200px; }
+  .ox-page { padding: .75rem 1rem; }
+  .dash-kpi-bar,
+  .oa-kpi-grid { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); font-size: .85rem; }
+}
+/* Responsividad global admin/superadmin en móvil pequeño */
+@media (max-width: 400px) {
+  /* KPI bars: scroll horizontal antes que overflow silencioso */
+  .dash-kpi-bar,
+  .oa-kpi-grid { overflow-x: auto; scrollbar-width: thin; }
+  /* Cards con minmax(260px) obligadas a 1 columna */
+  .dash-cards,
+  .oa-toggle-list { grid-template-columns: 1fr !important; }
+  /* Selects y botones de acciones a ancho completo */
+  .dash-select-mini,
+  .dash-card-actions select,
+  .dash-card-actions button { width: 100%; min-height: 44px; }
+  /* Direcciones largas: envolver correctamente */
+  .dash-card-address,
+  .ord-address { word-break: break-word; overflow-wrap: anywhere; }
+  /* Botones táctiles mínimos 44px */
+  .ox-btn-primary,
+  .ox-btn-ghost,
+  .oa-btn { min-height: 44px; }
+}
+</style>
 {% block scripts %}{% endblock %}
 </body>
 </html>

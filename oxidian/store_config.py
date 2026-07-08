@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from ipaddress import ip_address
+from urllib.parse import urlparse
 
 
 PUBLIC_THEME_DEFAULTS = {
@@ -165,6 +167,64 @@ def get_store_value(key: str, default: str | None = None) -> str:
     fallback = STORE_DEFAULTS.get(key, "") if default is None else default
     env_value = os.environ.get(key, fallback)
     return SiteConfig.get(key, env_value) or fallback
+
+
+def _absolute_http_url(value: str | None) -> str:
+    url = str(value or "").strip().rstrip("/")
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return url
+
+
+def _is_private_url(value: str | None) -> bool:
+    url = _absolute_http_url(value)
+    if not url:
+        return False
+    host = (urlparse(url).hostname or "").strip().lower()
+    if not host:
+        return False
+    if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
+        return True
+    try:
+        parsed_ip = ip_address(host)
+    except ValueError:
+        return False
+    return (
+        parsed_ip.is_private
+        or parsed_ip.is_loopback
+        or parsed_ip.is_link_local
+        or parsed_ip.is_reserved
+    )
+
+
+def get_public_store_url(request_root: str | None = None) -> str:
+    """URL pública para enlaces de cliente, evitando filtrar hosts internos.
+
+    La configuración guardada sigue siendo editable desde superadmin, pero si
+    una instalación pública conserva una URL privada antigua, se prefiere un
+    valor público disponible o el host real de la petición.
+    """
+    request_url = _absolute_http_url(request_root)
+    request_is_public = bool(request_url and not _is_private_url(request_url))
+    fallback_private = ""
+
+    for candidate in (
+        get_store_value("TIENDA_URL", ""),
+        get_store_value("OXIDIAN_PUBLIC_URL", ""),
+        request_url,
+    ):
+        url = _absolute_http_url(candidate)
+        if not url:
+            continue
+        if _is_private_url(url):
+            fallback_private = fallback_private or url
+            if request_is_public:
+                continue
+        return url
+    return request_url or fallback_private
 
 
 def get_store_bool(key: str, default: str = "0") -> bool:

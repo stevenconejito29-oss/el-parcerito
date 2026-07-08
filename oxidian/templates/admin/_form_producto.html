@@ -64,6 +64,29 @@
     </div>
   </div>
 
+  <!-- ── VERTICAL / NICHO — separar catálogo por tipo de tienda ── -->
+  <div class="fp-span-full col-span-2 fp-section">
+    <label class="fp-section-title">Visible en qué tienda</label>
+    <p class="text-xs text-gray-500 mb-2">
+      Restringe en qué modo aparece este producto. "Ambos" (default) → siempre visible al cambiar de nicho.
+    </p>
+    {% set _v_actual = (producto.vertical if producto is defined and producto and producto.vertical else 'ambos') %}
+    <div class="flex gap-4 flex-wrap text-sm">
+      <label class="fp-radio-label">
+        <input type="radio" name="vertical" value="ambos" {% if _v_actual == 'ambos' %}checked{% endif %}
+               style="accent-color:#8b5cf6"> ✨ Ambas tiendas
+      </label>
+      <label class="fp-radio-label">
+        <input type="radio" name="vertical" value="comida" {% if _v_actual == 'comida' %}checked{% endif %}
+               style="accent-color:#e85d04"> 🍽️ Solo comida
+      </label>
+      <label class="fp-radio-label">
+        <input type="radio" name="vertical" value="producto" {% if _v_actual == 'producto' %}checked{% endif %}
+               style="accent-color:#2563eb"> 🛍️ Solo producto / retail
+      </label>
+    </div>
+  </div>
+
   <!-- ── CANAL DE PREPARACIÓN ── -->
   <div class="fp-span-full col-span-2 fp-section">
     <label class="fp-section-title">Canal de preparación</label>
@@ -71,7 +94,8 @@
     <div class="flex gap-4 flex-wrap text-sm">
       <label class="fp-radio-label">
         <input type="radio" name="canal_preparacion" value="cocina" checked
-               style="accent-color:#e85d04"> 🍳 Cocina — requiere elaboración
+               style="accent-color:#e85d04">
+          {% if brand.es_comida %}🍳 Cocina — requiere elaboración{% else %}🛠️ Preparación — requiere ensamblaje{% endif %}
       </label>
       <label class="fp-radio-label">
         <input type="radio" name="canal_preparacion" value="almacen"
@@ -158,7 +182,7 @@
   <div class="fp-span-full col-span-2 fp-section fp-extra-library">
     <input type="hidden" name="extras_catalog_present" value="1">
     <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
-      <div><label class="fp-section-title mb-0">Ingredientes extra</label><p class="text-xs text-gray-500">Selecciona qué extras podrá añadir el cliente a este producto.</p></div>
+      <div><label class="fp-section-title mb-0">{% if brand.es_comida %}Ingredientes extra{% else %}Complementos{% endif %}</label><p class="text-xs text-gray-500">{% if brand.es_comida %}Selecciona qué extras podrá añadir el cliente a este producto.{% else %}Selecciona qué complementos podrá añadir el cliente (accesorios, personalización, etc.).{% endif %}</p></div>
       <a href="{{ url_for('admin.extras_catalogo') }}" class="text-xs font-bold" style="color:var(--work-accent)">Gestionar biblioteca</a>
     </div>
     {% if extra_catalog %}
@@ -205,7 +229,7 @@
     <label class="fp-check-label mb-3 px-3 py-2 rounded-xl"
            style="background:rgba(39,174,116,.08);border:1px solid rgba(39,174,116,.2)">
       <input type="checkbox" name="es_hipoalergenico" id="cb-hipo" style="accent-color:#5EF097"
-             onchange="toggleHipo(this.checked)">
+             onchange="toggleHipo(this)">
       <span style="color:#27AE74">🌿 Apto para todos — sin alérgenos relevantes</span>
     </label>
     <div id="bloque-alergenos" class="fp-allergen-grid grid grid-cols-5 sm:grid-cols-7 gap-1.5">

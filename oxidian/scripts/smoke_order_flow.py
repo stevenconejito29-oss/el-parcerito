@@ -109,6 +109,10 @@ def cleanup(order_ids, customer_id, combo_id, product_ids, category_id, zone_id,
             text("DELETE FROM audit_log WHERE recurso = 'order' AND recurso_id = :id"),
             {"id": order_id},
         )
+        db.session.execute(
+            text("DELETE FROM idempotency_keys WHERE order_id = :id"),
+            {"id": order_id},
+        )
         for table in (
             "notification_outbox",
             "reviews",

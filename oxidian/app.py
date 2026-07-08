@@ -196,6 +196,9 @@ def create_app(env="default"):
         profile = get_store_profile()
         nombre = profile["nombre"]
         short_name = (nombre[:12] or "Mi tienda").strip()
+        _tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
+        _es_comida = (_tt == "comida")
+        _catalogo_word = "Menu" if _es_comida else "Catalogo"
         capabilities = []
         if profile["delivery"]:
             capabilities.append("entrega a domicilio")
@@ -203,9 +206,9 @@ def create_app(env="default"):
             capabilities.append("recogida en local")
         if profile["pedidos_programados"]:
             capabilities.append("pedidos por fecha")
-        description = f"Menu online y carrito con {', '.join(capabilities)}."
+        description = f"{_catalogo_word} online y carrito con {', '.join(capabilities)}."
         shortcuts = [
-            {"name": "Ver menu", "short_name": "Menu", "description": "Explora el catalogo", "url": "/", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]},
+            {"name": f"Ver {_catalogo_word.lower()}", "short_name": _catalogo_word, "description": "Explora el catalogo", "url": "/", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]},
             {"name": "Mi carrito", "short_name": "Carrito", "description": "Ver pedido actual", "url": "/carrito", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]},
         ]
         if profile["puntos"]:
@@ -227,12 +230,12 @@ def create_app(env="default"):
             "orientation": "any",
             "lang": "es",
             "dir": "ltr",
-            "categories": ["food", "shopping", "lifestyle"],
+            "categories": (["food", "shopping", "lifestyle"] if _es_comida else ["shopping", "lifestyle", "business"]),
             "id": "oxidian-menu",
             "icons": [],
             "shortcuts": shortcuts,
             "screenshots": [
-                {"src": "/static/pwa-screenshot-mobile.png", "sizes": "390x844", "type": "image/png", "form_factor": "narrow", "label": f"{nombre} — Menu online"},
+                {"src": "/static/pwa-screenshot-mobile.png", "sizes": "390x844", "type": "image/png", "form_factor": "narrow", "label": f"{nombre} — {_catalogo_word} online"},
                 {"src": "/static/pwa-screenshot-wide.png", "sizes": "1280x720", "type": "image/png", "form_factor": "wide", "label": f"{nombre} — Pedidos y seguimiento"},
             ],
             "prefer_related_applications": False,
@@ -311,13 +314,41 @@ def create_app(env="default"):
     @app.route("/health")
     @app.route("/health/ready")
     def health_ready():
+        checks = {"db": "unknown", "redis": "skipped", "outbox_stuck": 0}
+        overall_ok = True
         try:
             db.session.execute(text("SELECT 1"))
-            return {"status": "ok", "db": "ok"}, 200
+            checks["db"] = "ok"
         except Exception:
             db.session.rollback()
             app.logger.exception("health_check: DB no disponible")
-            return {"status": "error", "db": "unreachable"}, 503
+            checks["db"] = "unreachable"
+            overall_ok = False
+        # Redis (opcional): si REDIS_URL está definida, comprobamos ping. Si
+        # está caída avisamos pero no marcamos 503 — la web funciona sin él,
+        # solo pierde rate limiting y algún caché de sesión.
+        redis_url = os.environ.get("REDIS_URL", "")
+        if redis_url.startswith("redis://"):
+            try:
+                import redis as _redis  # type: ignore
+                _r = _redis.Redis.from_url(redis_url, socket_connect_timeout=1.5, socket_timeout=1.5)
+                checks["redis"] = "ok" if _r.ping() else "unreachable"
+            except Exception:
+                checks["redis"] = "unreachable"
+        # Outbox atascado: mensajes pending con >1h sin procesar indican que
+        # el worker de notificaciones no está corriendo o WhatsApp está caído.
+        try:
+            from models import NotificationOutbox
+            hora_atras = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
+            stuck = db.session.execute(
+                text("SELECT COUNT(*) FROM notification_outbox "
+                     "WHERE estado = 'pending' AND creado_en < :t"),
+                {"t": hora_atras},
+            ).scalar() or 0
+            checks["outbox_stuck"] = int(stuck)
+        except Exception:
+            db.session.rollback()
+        return checks, (200 if overall_ok else 503)
 
     @app.route("/health/integrations")
     def health_integrations():
@@ -458,6 +489,7 @@ def create_app(env="default"):
                 "TIENDA_MENSAJE_CIERRE",
                 "APP_ICON_URL", "HERO_IMAGE_URL",
                 "SLOGAN_NEGOCIO", "DESCRIPCION_NEGOCIO",
+                "TIPO_TIENDA",
             }
             try:
                 rows = SiteConfig.query.filter(SiteConfig.clave.in_(_BRAND_KEYS)).all()
@@ -510,6 +542,14 @@ def create_app(env="default"):
         modo_tienda = (_c("MODO_TIENDA", "propia") or "propia").strip().lower()
         if modo_tienda not in {"propia", "bar_servicio"}:
             modo_tienda = "propia"
+        # TIPO_TIENDA determina la vertical: "comida" (default, retrocompat)
+        # o "producto" (ropa, retail, cualquier catálogo genérico).
+        # Afecta labels visibles ("menú"→"catálogo"), alérgenos (ocultos si
+        # no es comida) y algún emoji por defecto. NUNCA cambia el modelo
+        # ni rompe pedidos existentes.
+        tipo_tienda = (_c("TIPO_TIENDA", "comida") or "comida").strip().lower()
+        if tipo_tienda not in {"comida", "producto"}:
+            tipo_tienda = "comida"
         feature_delivery = _to_bool(_c("FEATURE_DELIVERY", "1"), True)
         feature_recogida = _to_bool(_c("FEATURE_RECOGIDA", "1"), True)
         if not feature_delivery and not feature_recogida:
@@ -544,6 +584,15 @@ def create_app(env="default"):
                 "bizum_habilitado": _to_bool(_c("BIZUM_HABILITADO", "1"), True),
                 "efectivo_habilitado": _to_bool(_c("EFECTIVO_HABILITADO", "1"), True),
                 "modo_tienda": modo_tienda,
+                "tipo_tienda": tipo_tienda,
+                # Helpers explícitos para templates. Preferir estos flags a
+                # comparar strings — más legible en Jinja.
+                "es_comida": tipo_tienda == "comida",
+                "es_producto": tipo_tienda == "producto",
+                # Emoji vertical: comida = 🍽️, producto = 🛍️
+                "vertical_emoji": "🍽️" if tipo_tienda == "comida" else "🛍️",
+                # Label para "menú" según vertical
+                "vertical_label": "Menú" if tipo_tienda == "comida" else "Catálogo",
                 "delivery": feature_delivery,
                 "recogida": feature_recogida,
                 "pedidos_programados": _to_bool(_c("FEATURE_PEDIDOS_PROGRAMADOS", "1"), True),

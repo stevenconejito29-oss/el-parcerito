@@ -49,7 +49,7 @@
       <label class="bundle-field">
         <span>Canal preparación</span>
         <select name="canal_preparacion">
-          <option value="cocina">🍳 Cocina</option>
+          <option value="cocina">{% if brand.es_comida %}🍳 Cocina{% else %}🛠️ Preparación{% endif %}</option>
           <option value="almacen">📦 Almacén</option>
         </select>
       </label>
@@ -78,7 +78,7 @@
         <input type="text" name="grupo_pedido" maxlength="80" placeholder="Vacío = pedido general">
       </label>
       <label class="bundle-field bundle-description">
-        <span>Descripción para el menú</span>
+        <span>Descripción para el {% if brand.es_comida %}menú{% else %}catálogo{% endif %}</span>
         <textarea name="descripcion" rows="2" maxlength="600"
                   placeholder="Explica qué incluye y por qué merece la pena."></textarea>
       </label>
@@ -240,7 +240,7 @@
       <details class="bundle-options">
         <summary>Publicación{% if brand.puntos %} y puntos{% endif %}</summary>
         <div>
-          <label><input type="checkbox" name="stock_mostrar_en_web"> Mostrar stock en el menú</label>
+          <label><input type="checkbox" name="stock_mostrar_en_web"> Mostrar stock en el {% if brand.es_comida %}menú{% else %}catálogo{% endif %}</label>
           {% if brand.puntos %}<label><input type="checkbox" name="canjeable_con_puntos" id="bundle-points"
                         onchange="bundlePoints()"> Permitir canje con puntos</label>
           <label class="bundle-points-input" id="bundle-points-wrap" hidden>
@@ -384,11 +384,15 @@ function bundleCategory(button){
 }
 function bundleFilterCatalog(){
   const term = document.getElementById('bundle-search').value.trim().toLowerCase();
+  const allowed = bundleAllowedIds();
   let visible = 0;
   document.querySelectorAll('.bundle-product').forEach(card => {
-    const show = (!term || card.dataset.name.includes(term)) &&
+    const allowedForOrigin = allowed.has(String(card.dataset.productId));
+    const show = allowedForOrigin &&
+      (!term || card.dataset.name.includes(term)) &&
       (!bundleCatalogCategory || card.dataset.category === bundleCatalogCategory);
     card.hidden = !show;
+    card.classList.toggle('is-disabled', !allowedForOrigin);
     if(show) visible += 1;
   });
   document.getElementById('bundle-no-results').hidden = visible > 0;

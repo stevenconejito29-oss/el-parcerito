@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from store_config import get_service_commission, get_store_profile
+from store_config import get_public_store_url, get_service_commission, get_store_profile
 
 
 class StoreConfigTest(unittest.TestCase):
@@ -66,6 +66,17 @@ class StoreConfigTest(unittest.TestCase):
         self.assertEqual(str(fee["pct"]), "0.00")
         self.assertEqual(str(fee["amount"]), "0.00")
         self.assertEqual(str(fee["merchant_net"]), "80.00")
+
+    def test_public_store_url_skips_private_config_on_public_request(self):
+        values = {
+            "TIENDA_URL": "http://192.168.1.41:5070",
+            "OXIDIAN_PUBLIC_URL": "https://elparcerito.com",
+        }
+
+        with patch("models.SiteConfig.get", side_effect=lambda key, default="": values.get(key, default)):
+            url = get_public_store_url("https://elparcerito.com/")
+
+        self.assertEqual(url, "https://elparcerito.com")
 
 
 if __name__ == "__main__":

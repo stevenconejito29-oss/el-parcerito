@@ -131,7 +131,11 @@
     </div>
   </article>
   {% else %}
-  <div class="ox-card p-5 text-center" style="color:var(--col-muted)">No hay cuentas con esos filtros.</div>
+  <div class="ox-empty">
+    <span class="ox-empty__icon">👤</span>
+    <div class="ox-empty__title">Sin cuentas</div>
+    <div class="ox-empty__hint">Prueba con otros filtros o crea una nueva cuenta.</div>
+  </div>
   {% endfor %}
 </div>
 

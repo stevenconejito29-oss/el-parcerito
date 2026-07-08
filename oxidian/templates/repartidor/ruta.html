@@ -2,10 +2,24 @@
 {% block title %}Mi Ruta — Repartidor{% endblock %}
 {% block styles %}
 <style>
+/* Tokens locales del panel de repartidor. Cambiar aquí propaga en todo. */
+.route-board {
+  --route-info: color-mix(in srgb, var(--brand-accent, #003087) 55%, #6bcbff);
+  --route-info-soft: color-mix(in srgb, var(--brand-accent, #003087) 12%, transparent);
+  --route-ok:   var(--theme-success, #2b9348);
+  --route-ok-soft: color-mix(in srgb, var(--theme-success, #2b9348) 14%, transparent);
+  --route-warn: color-mix(in srgb, var(--brand-primary) 82%, #ffb400);
+  --route-warn-soft: color-mix(in srgb, var(--brand-primary) 16%, transparent);
+  --route-danger: var(--theme-danger, #ef4444);
+  --route-danger-soft: color-mix(in srgb, var(--theme-danger, #ef4444) 14%, transparent);
+  --route-bar: #fb923c;      /* bar externo — semántico */
+  --route-kitchen: #e85d04;  /* cocina interna */
+  --route-cash:   var(--brand-primary);
+  --route-cash-soft: color-mix(in srgb, var(--brand-primary) 16%, transparent);
+}
+
 .work-employee-card {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
+  display: flex; align-items: center; gap: 1rem;
   padding: .85rem 1rem;
   background: var(--col-surface);
   border: 1px solid var(--col-border);
@@ -13,30 +27,160 @@
   margin-bottom: 1rem;
 }
 .work-employee-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, rgba(90,200,250,.2), rgba(0,120,200,.1));
-  color: #5AC8FA;
-  font-size: 1.2rem;
-  font-weight: 900;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 44px; height: 44px; border-radius: 12px;
+  background: linear-gradient(135deg,
+              color-mix(in srgb, var(--route-info) 22%, transparent),
+              color-mix(in srgb, var(--route-info) 8%, transparent));
+  color: var(--route-info);
+  font-size: 1.2rem; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
-  border: 1.5px solid rgba(90,200,250,.3);
+  border: 1.5px solid color-mix(in srgb, var(--route-info) 30%, transparent);
 }
 .work-employee-info { flex: 1; min-width: 0; }
 .work-employee-name { font-weight: 800; font-size: .92rem; color: var(--col-text); }
 .work-employee-role { font-size: .75rem; color: var(--col-muted); margin-top: .1rem; }
 .work-employee-status {
-  display: flex;
-  align-items: center;
-  gap: .4rem;
-  font-size: .78rem;
-  color: var(--col-muted);
-  flex-shrink: 0;
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .78rem; color: var(--col-muted); flex-shrink: 0;
 }
+
+/* Chips semánticos de canal: se aplican a spans previamente
+   inline-styled. Los reemplazamos por clases limpias. */
+.route-chip-almacen  { background: var(--route-ok-soft); color: var(--route-ok); border: 1px solid color-mix(in srgb, var(--route-ok) 30%, transparent); }
+.route-chip-cocina   { background: color-mix(in srgb, var(--route-kitchen) 12%, transparent); color: var(--route-kitchen); border: 1px solid color-mix(in srgb, var(--route-kitchen) 26%, transparent); }
+.route-chip-bar      { background: color-mix(in srgb, var(--route-bar) 12%, transparent); color: var(--route-bar); border: 1px solid color-mix(in srgb, var(--route-bar) 28%, transparent); }
+
+.route-pickup {
+  background: color-mix(in srgb, var(--route-bar) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--route-bar) 30%, transparent);
+}
+.route-pickup-title { color: var(--route-bar); }
+.route-pickup-line  { color: var(--col-text); }
+
+/* Alerta de efectivo: destacada porque el repartidor necesita cambio */
+.route-cash-alert {
+  display: flex; align-items: center; gap: .5rem;
+  margin: .55rem 0;
+  padding: .55rem .7rem;
+  border-radius: .55rem;
+  background: var(--route-cash-soft);
+  border: 1.5px solid color-mix(in srgb, var(--route-cash) 40%, transparent);
+  color: color-mix(in srgb, var(--route-cash) 72%, var(--col-text));
+  font-size: .82rem; font-weight: 800;
+}
+.route-cash-alert strong { color: var(--route-cash); font-weight: 900; }
+
+/* Panel de código de confirmación */
+.route-confirm-block {
+  border-left: 3px solid color-mix(in srgb, var(--route-info) 55%, transparent);
+}
+.route-confirm-locked {
+  color: var(--route-danger);
+  font-weight: 900;
+}
+
+/* Semáforo de urgencia: si el pedido lleva demasiado tiempo listo o en ruta */
+.route-board .work-card.is-aging {
+  border-color: color-mix(in srgb, var(--route-warn) 55%, transparent) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--route-warn) 32%, transparent),
+              0 6px 18px color-mix(in srgb, var(--route-warn) 18%, transparent);
+}
+.route-board .work-card.is-late {
+  border-color: var(--route-danger) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--route-danger) 48%, transparent),
+              0 8px 24px color-mix(in srgb, var(--route-danger) 22%, transparent);
+  animation: route-pulse 1.8s ease-in-out infinite;
+}
+@keyframes route-pulse {
+  0%,100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--route-danger) 48%, transparent),
+                        0 8px 24px color-mix(in srgb, var(--route-danger) 22%, transparent); }
+  50%     { box-shadow: 0 0 0 2px var(--route-danger),
+                        0 10px 28px color-mix(in srgb, var(--route-danger) 40%, transparent); }
+}
+.route-board .work-elapsed.is-fresh { color: var(--route-ok); font-weight: 800; }
+.route-board .work-elapsed.is-aging { color: var(--route-warn); font-weight: 900; }
+.route-board .work-elapsed.is-late  { color: var(--route-danger); font-weight: 900; }
+
+/* Tarjeta empleado como toggle Online/Offline (mismo patrón que preparador) */
+.work-employee-toggle {
+  cursor: pointer; transition: border-color .15s, background .15s;
+  text-align: left;
+}
+.work-employee-toggle.is-online {
+  border-color: color-mix(in srgb, var(--route-ok) 45%, transparent);
+}
+.work-employee-toggle.is-online:hover {
+  background: color-mix(in srgb, var(--route-ok) 6%, var(--col-surface));
+}
+.work-employee-toggle.is-offline {
+  border-color: color-mix(in srgb, var(--route-warn) 45%, transparent);
+}
+.work-employee-toggle.is-offline:hover {
+  background: color-mix(in srgb, var(--route-warn) 8%, var(--col-surface));
+}
+.work-employee-toggle:focus-visible {
+  outline: 2px solid var(--brand-primary); outline-offset: 2px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   PORTRAIT (vertical) = MODO PRINCIPAL del repartidor.
+   El repartidor lleva el móvil en la mano, típicamente vertical.
+   Priorizamos: dirección grande, tel/WhatsApp fácil de tocar, código
+   6-dígitos gigante, botones ≥ 48px para tocar con guantes o en calle.
+─────────────────────────────────────────────────────────────────────── */
+.route-board .work-btn { min-height: 48px; font-size: .95rem; }
+.route-board .work-code-input {
+  min-height: 60px; font-size: 1.8rem; letter-spacing: .35em;
+  text-align: center; font-weight: 900;
+}
+.route-board .work-cta-group { display: flex; flex-direction: column; gap: .5rem; }
+
+/* Tabletas verticales y pantallas grandes: aún vertical pero con más aire */
+@media (orientation: portrait) and (min-width: 700px) {
+  .route-board .work-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: .75rem;
+  }
+}
+
+/* Móvil pequeño: código un poco más pequeño para que no salga del viewport */
+@media (max-width: 380px) {
+  .route-board .work-code-input {
+    min-height: 54px; font-size: 1.3rem; letter-spacing: .18em;
+  }
+  /* Botones de dirección (Navegar + Copiar) y llamada/WhatsApp: permitir
+     wrap para no forzar scroll horizontal en 320-360px. */
+  .route-board .flex.gap-2 { flex-wrap: wrap; }
+  .route-board .work-btn { min-height: 44px; }
+  .route-board .work-address { word-break: break-word; overflow-wrap: anywhere; }
+}
+
+/* Landscape (menos común pero soportado): compactar hero y avatar, y
+   permitir 2 columnas de pedidos si hay ancho suficiente. Nunca ocultar
+   info crítica (dirección, código, botones). */
+@media (orientation: landscape) {
+  .route-board .work-hero { padding: .5rem .8rem; }
+  .route-board .work-hero h1 { font-size: 1.1rem; }
+  .route-board .work-subtitle { display: none; }
+  .route-board .work-employee-card { padding: .5rem .7rem; margin-bottom: .5rem; }
+  .route-board .work-employee-avatar { width: 32px; height: 32px; font-size: .85rem; }
+  /* Cards en 2 columnas si el ancho lo permite */
+  .route-board .work-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: .6rem;
+  }
+  /* Código NUNCA se reduce a menos de 48px — es la acción clave */
+  .route-board .work-code-input { min-height: 52px; font-size: 1.4rem; }
+}
+.work-team-details { margin: .5rem 0 1rem; }
+.work-team-summary {
+  cursor: pointer; user-select: none; font-size: .85rem;
+  color: var(--col-muted); padding: .35rem 0;
+}
+.work-team-details[open] .work-team-summary { color: var(--col-text); }
 </style>
 {% endblock %}
 {% block content %}
@@ -49,23 +193,19 @@
     <p class="work-subtitle">Recoge, navega y confirma entregas con cobro verificado.</p>
   </div>
   <div class="work-actions-top">
-    <form method="POST" action="{{ url_for('repartidor.toggle_disponible') }}" class="js-availability-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="work-btn {% if disponible %}work-btn-success{% else %}work-btn-ghost{% endif %}">
-        <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
-        {% if disponible %}Online{% else %}Ponerme online{% endif %}
-      </button>
-    </form>
-    <a href="{{ url_for('repartidor.mis_comisiones') }}"
-       class="work-btn work-btn-ghost">
-      Mis comisiones
-    </a>
+    <a href="{{ url_for('repartidor.mis_comisiones') }}" class="work-btn work-btn-ghost">Mis comisiones</a>
   </div>
 </section>
 
-<!-- Tarjeta de empleado -->
-<div class="work-employee-card">
-  <div class="work-employee-avatar">{{ current_user.nombre[0].upper() }}</div>
+<!-- Tarjeta de empleado como toggle (mismo patrón que preparador — un solo
+     punto de acción para Online/Offline en lugar de duplicar botón). -->
+<form method="POST" action="{{ url_for('repartidor.toggle_disponible') }}"
+      class="js-availability-form work-employee-card work-employee-toggle {% if disponible %}is-online{% else %}is-offline{% endif %}"
+      aria-label="{% if disponible %}Ponerte offline{% else %}Ponerte online{% endif %}"
+      title="Toca para cambiar a {{ 'offline' if disponible else 'online' }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="work-employee-avatar" aria-hidden="true"
+          style="border:0;cursor:pointer;">{{ current_user.nombre[0].upper() }}</button>
   <div class="work-employee-info">
     <p class="work-employee-name">{{ current_user.nombre }}</p>
     <p class="work-employee-role">
@@ -78,9 +218,9 @@
   </div>
   <div class="work-employee-status">
     <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
-    <span>{% if disponible %}Online{% else %}Offline{% endif %}</span>
+    <span>{% if disponible %}Online — toca para pausar{% else %}Offline — toca para activar{% endif %}</span>
   </div>
-</div>
+</form>
 
 {% if not disponible and current_user.rol not in ('admin','super_admin') %}
 <div class="work-panel work-status-panel mb-4">
@@ -89,8 +229,10 @@
 </div>
 {% endif %}
 
-<!-- Compañeros conectados -->
+<!-- Compañeros conectados (colapsado para no restar espacio a los pedidos) -->
 {% if companeros %}
+<details class="work-team-details">
+  <summary class="work-team-summary">👥 Equipo conectado ({{ companeros|length }})</summary>
 <div class="work-team" aria-label="Repartidores conectados">
   {% for c in companeros %}
   <span class="work-chip">
@@ -111,6 +253,7 @@
   </span>
   {% endfor %}
 </div>
+</details>
 {% endif %}
 
 <!-- Contadores rápidos -->
@@ -173,24 +316,28 @@
           {%- set _cp.has_cocina = true -%}
         {%- endif -%}
       {%- endfor -%}
-      <article class="work-card work-card--tight is-success">
+      <article class="work-card work-card--tight is-success"
+               data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
         <div class="work-order-head">
           <div>
             <span class="work-order-code is-success">{{ pedido.numero_pedido }}</span>
             <span class="work-chip">{{ pedido.origen }}</span>
             {%- if _cp.has_items -%}
             {%- if _cp.has_almacen -%}
-            <span class="work-chip" style="background:rgba(43,147,72,.12);color:#2b9348;border-color:rgba(43,147,72,.3)">📦 Almacén</span>
+            <span class="work-chip route-chip-almacen">📦 Almacén</span>
             {%- endif -%}
             {%- if _cp.has_cocina -%}
-            <span class="work-chip" style="background:rgba(232,93,4,.1);color:#e85d04;border-color:rgba(232,93,4,.25)">🍳 Cocina</span>
+            <span class="work-chip route-chip-cocina">🍳 Cocina</span>
             {%- endif -%}
             {%- for _bar_info in _cp.bares_info -%}
-            <span class="work-chip" style="background:rgba(251,146,60,.12);color:#fb923c;border-color:rgba(251,146,60,.28)">🏪 {{ _bar_info.nombre }}</span>
+            <span class="work-chip route-chip-bar">🏪 {{ _bar_info.nombre }}</span>
             {%- endfor -%}
             {%- endif -%}
           </div>
-          <span class="work-time">{{ pedido.creado_en.strftime('%H:%M') }}</span>
+          <span class="work-time-stack" style="display:inline-flex;flex-direction:column;align-items:flex-end;gap:.1rem;">
+            <span class="work-time">{{ pedido.creado_en.strftime('%H:%M') }}</span>
+            <span class="work-elapsed"></span>
+          </span>
         </div>
         <div class="mt-2 flex flex-wrap gap-2">
           {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
@@ -198,10 +345,10 @@
         </div>
         {%- if _cp.bares_info -%}
         {# Punto de recogida — crítico para el repartidor cuando hay bares involucrados #}
-        <div class="work-pickup mt-2 p-2 rounded" style="background:rgba(251,146,60,.08); border:1px solid rgba(251,146,60,.3)">
-          <p class="text-xs font-bold" style="color:#fb923c">📍 Punto(s) de recogida:</p>
+        <div class="work-pickup route-pickup mt-2 p-2 rounded">
+          <p class="text-xs font-bold route-pickup-title">📍 Punto(s) de recogida:</p>
           {% for _bar_info in _cp.bares_info %}
-          <p class="text-xs mt-1" style="color:#fff">
+          <p class="text-xs mt-1 route-pickup-line">
             <strong>🏪 {{ _bar_info.nombre }}</strong>
             {% if _bar_info.direccion %} · {{ _bar_info.direccion }}{% endif %}
             {% if _bar_info.telefono %}
@@ -223,6 +370,16 @@
         </div>
       </div>
 
+      {% if pedido.metodo_pago == 'efectivo' %}
+      <div class="route-cash-alert" role="alert">
+        <span aria-hidden="true">💵</span>
+        <span>
+          Cobrar en efectivo: <strong>€{{ "%.2f"|format(pedido.total) }}</strong>.
+          Lleva cambio para billetes grandes.
+        </span>
+      </div>
+      {% endif %}
+
       <!-- Notas PRIMERO — instrucciones de entrega -->
       {% if pedido.notas %}
       <div class="work-note mt-2">⚠ {{ pedido.notas }}</div>
@@ -239,14 +396,9 @@
           <a href="https://www.google.com/maps/dir/?api=1&destination={{ (pedido.direccion_entrega + ", " + brand.ciudad) | urlencode }}"
              target="_blank" rel="noopener"
              class="work-btn work-btn-info flex-1">
-            Abrir GPS
+            🧭 Navegar
           </a>
-          <a href="https://waze.com/ul?q={{ (pedido.direccion_entrega + ', ' + brand.ciudad) | urlencode }}"
-             target="_blank" rel="noopener"
-             class="work-btn work-btn-ghost">
-            Waze
-          </a>
-          <button onclick='copiarDireccion({{ pedido.direccion_entrega | tojson }})'
+          <button type="button" onclick='copiarDireccion({{ pedido.direccion_entrega | tojson }})'
                   class="work-btn work-btn-ghost">
             Copiar
           </button>
@@ -331,29 +483,33 @@
         {%- set _cp2.has_cocina = true -%}
       {%- endif -%}
     {%- endfor -%}
-    <article class="work-card work-card--tight is-info">
+    <article class="work-card work-card--tight is-info"
+             data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
       <div class="work-order-head">
         <div class="flex items-center gap-2">
           <span class="work-order-code is-info">{{ pedido.numero_pedido }}</span>
           {%- if _cp2.has_items -%}
 	          {%- if _cp2.has_almacen -%}
-	          <span class="work-chip" style="background:rgba(43,147,72,.12);color:#2b9348;border-color:rgba(43,147,72,.3)">📦 Almacén</span>
+	          <span class="work-chip route-chip-almacen">📦 Almacén</span>
 	          {%- endif -%}
 	          {%- if _cp2.has_cocina -%}
-	          <span class="work-chip" style="background:rgba(232,93,4,.1);color:#e85d04;border-color:rgba(232,93,4,.25)">🍳 Cocina</span>
+	          <span class="work-chip route-chip-cocina">🍳 Cocina</span>
 	          {%- endif -%}
 	          {%- for _bar_info in _cp2.bares_info -%}
-	          <span class="work-chip" style="background:rgba(251,146,60,.12);color:#fb923c;border-color:rgba(251,146,60,.28)">🏪 {{ _bar_info.nombre }}</span>
+	          <span class="work-chip route-chip-bar">🏪 {{ _bar_info.nombre }}</span>
 	          {%- endfor -%}
 	          {%- endif -%}
         </div>
-        <span class="work-time">{{ pedido.creado_en.strftime('%H:%M') }}</span>
+        <span class="work-time-stack" style="display:inline-flex;flex-direction:column;align-items:flex-end;gap:.1rem;">
+            <span class="work-time">{{ pedido.creado_en.strftime('%H:%M') }}</span>
+            <span class="work-elapsed"></span>
+          </span>
       </div>
       {%- if _cp2.bares_info -%}
-      <div class="work-pickup mt-2 p-2 rounded" style="background:rgba(251,146,60,.08); border:1px solid rgba(251,146,60,.3)">
-        <p class="text-xs font-bold" style="color:#fb923c">📍 Recogida:</p>
+      <div class="work-pickup route-pickup mt-2 p-2 rounded">
+        <p class="text-xs font-bold route-pickup-title">📍 Recogida:</p>
         {% for _bar_info in _cp2.bares_info %}
-        <p class="text-xs mt-1" style="color:#fff">
+        <p class="text-xs mt-1 route-pickup-line">
           <strong>🏪 {{ _bar_info.nombre }}</strong>
           {% if _bar_info.direccion %} · {{ _bar_info.direccion }}{% endif %}
           {% if _bar_info.telefono %}
@@ -400,12 +556,7 @@
           <a href="https://www.google.com/maps/dir/?api=1&destination={{ (pedido.direccion_entrega + ", " + brand.ciudad) | urlencode }}"
              target="_blank" rel="noopener"
              class="work-btn work-btn-info flex-1">
-            Navegar ahora
-          </a>
-          <a href="https://waze.com/ul?q={{ (pedido.direccion_entrega + ', ' + brand.ciudad) | urlencode }}"
-             target="_blank" rel="noopener"
-             class="work-btn work-btn-ghost">
-            Waze
+            🧭 Navegar ahora
           </a>
         </div>
       </div>
@@ -434,7 +585,7 @@
       </div>
       {% endif %}
 
-      <div class="work-panel mb-3 mt-3" style="border-left:3px solid rgba(90,200,250,.45)">
+      <div class="work-panel route-confirm-block mb-3 mt-3">
         <p class="work-confirm-label">1. Código al llegar</p>
         {% if pedido.id in codigo_enviado_ids %}
         <p class="work-confirm-note">Código enviado al cliente. Puedes reenviarlo si el cliente no lo encuentra.</p>
@@ -452,6 +603,36 @@
       <!-- Formulario de confirmación de entrega -->
       <form method="POST" action="{{ url_for('repartidor.confirmar_entrega', pedido_id=pedido.id) }}" class="mt-3">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        {% if pedido.metodo_pago == 'bizum' %}
+        {% if pedido.pago_confirmado %}
+        <div class="work-panel work-panel--bizum mb-3">
+          <p class="work-confirm-label">2. Bizum ya confirmado</p>
+          <p class="work-confirm-note">Importe: <strong class="work-confirm-amount">€{{ "%.2f"|format(pedido.total) }}</strong></p>
+          <p class="work-confirm-note">
+            Pago verificado{% if pedido.confirmador_pago %} por {{ pedido.confirmador_pago.nombre }}{% endif %}.
+          </p>
+        </div>
+        {% else %}
+        <div class="work-panel work-panel--bizum mb-3">
+          <p class="work-confirm-label">2. Confirmar Bizum recibido</p>
+          <p class="work-confirm-note">Importe exacto: <strong class="work-confirm-amount">€{{ "%.2f"|format(pedido.total) }}</strong></p>
+          <p class="work-confirm-note">Comprueba la recepción en la app/cuenta del negocio o con una confirmación fiable. No aceptes solicitudes de cobro inversas.</p>
+          <label class="mt-2 flex items-start gap-2 text-sm font-bold" style="color:var(--col-text)">
+            <input type="checkbox" name="bizum_recibido" required class="accent-green-500 w-4 h-4 mt-0.5">
+            <span>Confirmo que el Bizum fue recibido antes de entregar.</span>
+          </label>
+          <input type="text" name="bizum_referencia"
+                 placeholder="Referencia opcional: hora, nombre o últimos dígitos"
+                 class="ox-input text-sm mt-2" style="min-height:44px">
+        </div>
+        {% endif %}
+        {% else %}
+        <label class="work-panel work-panel--cash-confirm mb-3">
+          <input type="checkbox" name="cobro_recibido" required class="accent-green-500 w-4 h-4">
+          <span>2. Confirmo cobro en efectivo: <strong class="work-confirm-amount">€{{ "%.2f"|format(pedido.total) }}</strong>. Dinero contado y cambio entregado si aplica.</span>
+        </label>
+        {% endif %}
 
         {% if pedido.codigo_confirmacion %}
         {% if pedido.intentos_codigo >= 3 %}
@@ -476,38 +657,32 @@
         {% endif %}
         {% endif %}
 
-        {% if pedido.metodo_pago == 'bizum' %}
-        {% if pedido.pago_confirmado %}
-        <div class="work-panel work-panel--bizum mb-3">
-          <p class="work-confirm-label">2. Bizum ya confirmado</p>
-          <p class="work-confirm-note">Importe: <strong class="work-confirm-amount">€{{ "%.2f"|format(pedido.total) }}</strong></p>
-          <p class="work-confirm-note">
-            Pago verificado{% if pedido.confirmador_pago %} por {{ pedido.confirmador_pago.nombre }}{% endif %}.
-          </p>
-        </div>
-        {% else %}
-        <div class="work-panel work-panel--bizum mb-3">
-          <p class="work-confirm-label">2. Confirmar Bizum recibido</p>
-          <p class="work-confirm-note">Importe exacto: <strong class="work-confirm-amount">€{{ "%.2f"|format(pedido.total) }}</strong></p>
-          <p class="work-confirm-note">Comprueba la recepción en la app/cuenta del negocio o con una confirmación fiable. No aceptes solicitudes de cobro inversas.</p>
-          <label class="mt-2 flex items-start gap-2 text-sm font-bold" style="color:var(--col-text)">
-            <input type="checkbox" name="bizum_recibido" required class="accent-green-500 w-4 h-4 mt-0.5">
-            <span>Confirmo que el Bizum fue recibido antes de entregar.</span>
-          </label>
-          <input type="text" name="bizum_referencia"
-                 placeholder="Referencia opcional: hora, nombre o últimos dígitos"
-                 class="ox-input text-sm mt-2">
-        </div>
-        {% endif %}
-        {% else %}
-        <label class="work-panel work-panel--cash-confirm mb-3">
-          <input type="checkbox" name="cobro_recibido" required class="accent-green-500 w-4 h-4">
-          <span>2. Confirmo cobro en efectivo: <strong class="work-confirm-amount">€{{ "%.2f"|format(pedido.total) }}</strong>. Dinero contado y cambio entregado si aplica.</span>
-        </label>
-        {% endif %}
-
         <button type="submit" class="work-btn work-btn-success full-width">Confirmar entrega y cobro</button>
       </form>
+
+      {# Escape para casos: cliente no está, no contesta, código bloqueado por
+         3 intentos. Restaura stock, cancela y libera el pedido — evita quedar
+         atascado en `en_ruta`. Pide motivo obligatorio para auditoría. #}
+      <details class="mt-3 route-no-deliver">
+        <summary class="text-sm work-muted-text" style="cursor:pointer">🚫 No pude entregar este pedido</summary>
+        <form method="POST" action="{{ url_for('repartidor.marcar_no_entregado', pedido_id=pedido.id) }}"
+              class="mt-2" onsubmit="return confirm('¿Marcar como no entregado?\n\nEl stock volverá al almacén y el pedido se cancelará. Devuelve la mercancía al local. Esta acción se registra en auditoría.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="work-code-label" style="font-size:.8rem">Motivo (requerido para auditoría)</label>
+          <select name="motivo" required class="ox-input" style="width:100%;margin-top:.35rem">
+            <option value="">— elige un motivo —</option>
+            <option value="Cliente no está en la dirección">Cliente no está en la dirección</option>
+            <option value="Cliente no contesta al teléfono">Cliente no contesta al teléfono</option>
+            <option value="Cliente rechazó el pedido">Cliente rechazó el pedido</option>
+            <option value="Código de confirmación bloqueado (3 intentos fallidos)">Código bloqueado (3 intentos fallidos)</option>
+            <option value="Dirección incorrecta o inexistente">Dirección incorrecta o inexistente</option>
+            <option value="Otro (indicar al admin al volver al local)">Otro</option>
+          </select>
+          <button type="submit" class="work-btn work-btn-ghost full-width mt-2" style="border-color:var(--prep-danger,#ef4444);color:var(--prep-danger,#ef4444)">
+            🚫 Marcar como no entregado y volver al local
+          </button>
+        </form>
+      </details>
     </article>
     {% else %}
     <div class="work-empty">
@@ -527,13 +702,44 @@ function copiarDireccion(dir) {
   navigator.clipboard.writeText(dir).then(() => {
     const toast = document.createElement('div');
     toast.textContent = '📋 Dirección copiada';
-    toast.style.cssText = 'position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:#374151;color:#f3f4f6;padding:.5rem 1rem;border-radius:.75rem;font-size:.85rem;z-index:9999;animation:fadeIn .2s ease';
+    toast.style.cssText = 'position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:var(--col-surface);color:var(--col-text);border:1px solid var(--col-border);padding:.5rem 1rem;border-radius:.75rem;font-size:.85rem;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,.2);max-width:calc(100vw - 32px);text-align:center;';
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 2500);
   }).catch(() => {
     prompt('Copia esta dirección:', dir);
   });
 }
+
+// Semáforo de urgencia: pedidos que llevan demasiado tiempo asignados.
+// Reutiliza el patrón que ya usa el panel de cocina. Umbrales: 15/30 min.
+function actualizarUrgenciaRepartidor() {
+  document.querySelectorAll('.route-board [data-created]').forEach(card => {
+    const created = new Date(card.dataset.created);
+    if (isNaN(created)) return;
+    const mins = Math.floor((Date.now() - created) / 60000);
+    const el = card.querySelector('.work-elapsed');
+    if (!el) return;
+    el.className = 'work-elapsed';
+    card.classList.remove('is-aging', 'is-late');
+    if (mins < 1) {
+      el.textContent = 'ahora';
+      el.classList.add('is-fresh');
+    } else if (mins < 15) {
+      el.textContent = `hace ${mins}m`;
+      el.classList.add('is-fresh');
+    } else if (mins < 30) {
+      el.textContent = `hace ${mins}m ⚠`;
+      el.classList.add('is-aging');
+      card.classList.add('is-aging');
+    } else {
+      el.textContent = `hace ${mins}m 🔴`;
+      el.classList.add('is-late');
+      card.classList.add('is-late');
+    }
+  });
+}
+actualizarUrgenciaRepartidor();
+setInterval(actualizarUrgenciaRepartidor, 60000);
 
   // Auto-refresh cada 25 segundos, sin interrumpir formularios de entrega.
   setTimeout(() => {
