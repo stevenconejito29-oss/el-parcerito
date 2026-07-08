@@ -36,6 +36,7 @@ from models import (
     ComboItem,
     ProductExtraGroup,
     ProductExtraOption,
+    ProductPresentation,
     User,
     Order,
     OrderItem,
@@ -244,6 +245,26 @@ def seed_comida():
                 cantidad=1, orden=j, activo=True, es_predeterminado=(j == 0),
             ))
 
+    # Presentaciones comida: Pequeño/Mediano/Grande con precio extra
+    presentaciones_comida = {
+        "Hamburguesa clásica": [("pequeño", -1.50), ("mediano", 0.00), ("grande", 2.50)],
+        "Pizza margarita": [("pequeño", -2.00), ("mediano", 0.00), ("grande", 3.00)],
+        "Pizza cuatro quesos": [("pequeño", -2.00), ("mediano", 0.00), ("grande", 3.50)],
+        "Coca-Cola 33cl": [("mediano", 0.00), ("grande", 1.20)],
+        "Cerveza tirada 33cl": [("mediano", 0.00), ("grande", 1.50)],
+        "Café gratis (canje)": [("pequeño", 0.00), ("grande", 0.00)],
+    }
+    for prod_nombre, tamaños in presentaciones_comida.items():
+        prod = by_c.get(prod_nombre)
+        if not prod:
+            continue
+        for orden, (tam, extra) in enumerate(tamaños):
+            db.session.add(ProductPresentation(
+                producto_id=prod.id, tamaño=tam,
+                precio_extra=Decimal(str(extra)),
+                activo=True, orden=orden,
+            ))
+
     if all(k in by_c for k in ["Hamburguesa clásica", "Bravas El Parcerito", "Coca-Cola 33cl"]):
         _combo_c("Menú hamburguesa fijo", "Hamburguesa + bravas + refresco (precio fijo).", 12.90,
                  [by_c["Hamburguesa clásica"], by_c["Bravas El Parcerito"], by_c["Coca-Cola 33cl"]], "fijo")
@@ -325,6 +346,26 @@ def seed_retail():
                 combo_id=combo.id, producto_id=comp.id, combo_group_id=g.id,
                 cantidad=1, orden=j, activo=True, es_predeterminado=(j == 0),
             ))
+
+    # Presentaciones retail: tallas ropa (S/M/L/XL) y números zapatos (36-45).
+    tallas_ropa = ["S", "M", "L", "XL"]
+    numeros_zapato = ["36", "37", "38", "39", "40", "41", "42", "43", "44", "45"]
+    for prod in productos:
+        cat_nombre = next((k for k, v in cats.items() if v.id == prod.categoria_id), None)
+        if cat_nombre == "Ropa":
+            for orden, tam in enumerate(tallas_ropa):
+                db.session.add(ProductPresentation(
+                    producto_id=prod.id, tamaño=tam,
+                    precio_extra=Decimal("0.00"),
+                    activo=True, orden=orden,
+                ))
+        elif cat_nombre == "Zapatos":
+            for orden, num in enumerate(numeros_zapato):
+                db.session.add(ProductPresentation(
+                    producto_id=prod.id, tamaño=num,
+                    precio_extra=Decimal("0.00"),
+                    activo=True, orden=orden,
+                ))
 
     if all(k in by_r for k in ["Camiseta blanca básica", "Pantalón chino beige"]):
         _combo_r("Look casual básico", "Camiseta + pantalón chino (precio fijo).", 50.00,

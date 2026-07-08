@@ -4604,3 +4604,159 @@ def cambiar_precio(producto_id):
         db.session.rollback()
         flash(f"Error al actualizar precio: {exc}", "danger")
     return redirect(url_for("admin.productos"))
+
+
+# ─── IA ANALÍTICA (admin/super_admin) ────────────────────────────
+# Asistente de análisis del negocio con acceso ÚNICAMENTE a agregados
+# (nunca datos personales de clientes). Reutiliza el provider AI ya
+# configurado en superadmin/chatbot (BOT_AI_PROVIDER + BOT_AI_API_KEY).
+
+def _resumen_negocio_para_ia():
+    """Snapshot agregado y seguro para inyectar al modelo.
+    Sin PII: nada de nombres, teléfonos, direcciones ni emails de clientes."""
+    from sqlalchemy import func
+    hoy = date.today()
+    hace_30d = hoy - timedelta(days=30)
+    hace_7d = hoy - timedelta(days=7)
+
+    total_productos = Product.query.filter_by(activo=True).count()
+    total_combos = Product.query.filter_by(activo=True, es_combo=True).count()
+    solo_canje = Product.query.filter_by(activo=True, solo_canje=True).count()
+    canjeables = Product.query.filter_by(activo=True, canjeable_con_puntos=True).count()
+
+    pedidos_30 = Order.query.filter(Order.creado_en >= hace_30d).count()
+    pedidos_7 = Order.query.filter(Order.creado_en >= hace_7d).count()
+    facturacion_30 = float(db.session.query(func.coalesce(func.sum(Order.total), 0))
+                           .filter(Order.creado_en >= hace_30d,
+                                   Order.estado.in_(("entregado", "listo", "pagado"))).scalar() or 0)
+    ticket_medio = round(facturacion_30 / pedidos_30, 2) if pedidos_30 else 0
+
+    top_productos_30 = (
+        db.session.query(Product.nombre, func.sum(OrderItem.cantidad).label("uds"))
+        .join(OrderItem, OrderItem.producto_id == Product.id)
+        .join(Order, Order.id == OrderItem.pedido_id)
+        .filter(Order.creado_en >= hace_30d)
+        .group_by(Product.nombre)
+        .order_by(func.sum(OrderItem.cantidad).desc())
+        .limit(5).all()
+    )
+
+    puntos_emitidos_30 = int(db.session.query(func.coalesce(func.sum(PointsLog.cantidad), 0))
+                              .filter(PointsLog.creado_en >= hace_30d,
+                                      PointsLog.cantidad > 0).scalar() or 0)
+    puntos_canjeados_30 = abs(int(db.session.query(func.coalesce(func.sum(PointsLog.cantidad), 0))
+                                   .filter(PointsLog.creado_en >= hace_30d,
+                                           PointsLog.cantidad < 0).scalar() or 0))
+
+    tt = SiteConfig.get("TIPO_TIENDA", "comida") or "comida"
+    modo = SiteConfig.get("MODO_TIENDA", "propia") or "propia"
+
+    return {
+        "tipo_tienda": tt,
+        "modo_tienda": modo,
+        "catalogo": {
+            "productos_activos": total_productos,
+            "combos_activos": total_combos,
+            "canjeables_con_puntos": canjeables,
+            "solo_canje": solo_canje,
+        },
+        "ventas_ultimos_30_dias": {
+            "pedidos": pedidos_30,
+            "pedidos_ultimos_7_dias": pedidos_7,
+            "facturacion_eur": round(facturacion_30, 2),
+            "ticket_medio_eur": ticket_medio,
+        },
+        "top_5_productos_30d": [{"nombre": n, "unidades": int(u)} for n, u in top_productos_30],
+        "fidelidad_30d": {
+            "puntos_emitidos": puntos_emitidos_30,
+            "puntos_canjeados": puntos_canjeados_30,
+        },
+    }
+
+
+def _llamar_ia_analisis(pregunta_usuario, contexto_dict):
+    """Llama al provider configurado (openai/groq) con guardrails."""
+    import json as _json
+    provider = (SiteConfig.get("BOT_AI_PROVIDER", "") or "").strip().lower()
+    api_key = SiteConfig.get("BOT_AI_API_KEY", "") or ""
+    modelo = SiteConfig.get("BOT_AI_MODEL", "") or ""
+    if provider not in {"openai", "groq"} or not api_key or not modelo:
+        return None, "IA no configurada. Ve a Superadmin → Chatbot y configura BOT_AI_PROVIDER, BOT_AI_API_KEY y BOT_AI_MODEL."
+
+    system = (
+        "Eres un analista de negocio del sistema El Parcerito. "
+        "Solo respondes usando el CONTEXTO agregado que se te da (sin datos personales). "
+        "Si la pregunta pide datos que no están en el contexto, dilo claramente. "
+        "Responde en español, conciso, con recomendaciones accionables. "
+        "NUNCA inventes números."
+    )
+    user_msg = (
+        f"CONTEXTO (agregado, sin PII):\n{_json.dumps(contexto_dict, ensure_ascii=False, indent=2)}\n\n"
+        f"PREGUNTA:\n{pregunta_usuario}"
+    )
+
+    endpoint = "https://api.openai.com/v1/chat/completions" if provider == "openai" \
+               else "https://api.groq.com/openai/v1/chat/completions"
+    try:
+        import requests as _req
+        resp = _req.post(
+            endpoint,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": modelo,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_msg},
+                ],
+                "temperature": 0.3,
+                "max_tokens": 600,
+            },
+            timeout=25,
+        )
+        if resp.status_code != 200:
+            return None, f"El proveedor respondió {resp.status_code}. Verifica tu API key en Superadmin → Chatbot."
+        data = resp.json()
+        texto = (data.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+        return texto or None, None
+    except Exception as exc:
+        return None, f"Error llamando al proveedor IA: {exc}"
+
+
+@admin_bp.route("/ia-analisis", methods=["GET", "POST"])
+@admin_required
+def ia_analisis():
+    """Panel de consultas IA para admin/super_admin.
+
+    Guardrails:
+    - Solo agregados (sin PII de clientes).
+    - Rate-limit implícito via el proveedor (cliente config).
+    - No ejecuta SQL crudo; el contexto es un dict Python calculado.
+    """
+    respuesta = None
+    error = None
+    pregunta = ""
+    contexto = _resumen_negocio_para_ia()
+    if request.method == "POST":
+        pregunta = (request.form.get("pregunta") or "").strip()
+        if len(pregunta) < 5:
+            error = "Escribe una pregunta más específica."
+        elif len(pregunta) > 800:
+            error = "Pregunta demasiado larga (máx 800 caracteres)."
+        else:
+            respuesta, error = _llamar_ia_analisis(pregunta, contexto)
+            if respuesta:
+                AuditLog.registrar(
+                    current_user.id, "ia_consulta", "analisis",
+                    detalle=pregunta[:200], ip=request.remote_addr,
+                )
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+    return render_template(
+        "admin/ia_analisis.html",
+        pregunta=pregunta,
+        respuesta=respuesta,
+        error=error,
+        contexto=contexto,
+    )
