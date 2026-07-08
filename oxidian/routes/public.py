@@ -842,6 +842,13 @@ def _items_delivery_families(items):
     return {_delivery_family(item["producto"]) for item in items if item.get("producto")}
 
 
+@public_bp.route("/carrito/agregar/<int:producto_id>", methods=["GET"])
+def agregar_carrito_get(producto_id):
+    """GET directo (URL pegada, click en enlace externo) → no muestra 405.
+    Redirige al detalle del producto donde el usuario puede añadir vía form."""
+    return redirect(url_for("public.producto_detalle", producto_id=producto_id))
+
+
 @public_bp.route("/carrito/agregar/<int:producto_id>", methods=["POST"])
 def agregar_carrito(producto_id):
     _ajax = request.headers.get("X-Ajax") == "1"
