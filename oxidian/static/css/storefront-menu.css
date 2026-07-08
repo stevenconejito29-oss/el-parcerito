@@ -924,6 +924,26 @@ body.ox-body-public .ep-banner-cta {
   font-size: 1.02rem; font-weight: 950;
   color: var(--brand-secondary, var(--flag-red));
 }
+
+/* Chips de tallas / tamaños (retail y comida con presentaciones) */
+.ep-card-sizes {
+  display: flex; flex-wrap: wrap; gap: .25rem;
+  margin-top: .35rem;
+}
+.ep-card-size-chip {
+  font-size: .68rem; font-weight: 800;
+  padding: .12rem .4rem;
+  border-radius: .35rem;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1);
+  color: var(--col-muted);
+  letter-spacing: .02em;
+}
+.ep-card-size-more {
+  font-size: .68rem; font-weight: 800;
+  padding: .12rem .35rem;
+  color: var(--col-faint);
+}
 .ep-card-price-old { font-size: .68rem; color: var(--col-faint); text-decoration: line-through; }
 .ep-card-price-note {
   font-size:.64rem; font-weight:850;

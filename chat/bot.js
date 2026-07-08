@@ -2519,6 +2519,7 @@ function adminMenu(jid) {
     adminCan(jid, 'handoff') ? '`!take N` · `!release` · `!disponible`' : null,
     adminCan(jid, 'sync') ? '`!sync` sincronizar catálogo' : null,
     adminCan(jid, 'handoff') ? '`!send NUMERO mensaje`' : null,
+    '`!ia <pregunta>` análisis IA del negocio',
   ].filter(Boolean);
 
   // Bloque exclusivo super_admin (comandos de control estratégico).
@@ -3541,6 +3542,39 @@ async function handleAdminCmd(jid, text) {
 
   if (lowerCmd === 'menu') {
     return startAdminMenu(jid, getSesion(jid).nombre);
+  }
+
+  // ── !ia <pregunta> — Consulta IA de negocio (admin/super_admin) ───────
+  if (/^ia(\s|$)/.test(lowerCmd)) {
+    const pregunta = cmd.slice(3).trim();
+    if (!pregunta || pregunta.length < 5) {
+      return sendText(jid,
+        `🤖 *Consulta IA de negocio*\n\n` +
+        `Uso: \`!ia <pregunta>\`\n\n` +
+        `Ejemplos:\n` +
+        `  \`!ia ¿Cuál es mi top 3 productos este mes?\`\n` +
+        `  \`!ia Sugiéreme 2 combos nuevos con lo que ya vendo\`\n` +
+        `  \`!ia ¿Cómo puedo subir el ticket medio?\`\n\n` +
+        `_Solo agregados, sin datos personales de clientes._`
+      );
+    }
+    try {
+      const telefono = phoneFromJid(jid);
+      const r = await oxidianPost('/api/bot/ai/admin-consulta', {
+        telefono,
+        pregunta,
+      });
+      if (!r || !r.ok) {
+        return sendText(jid, `🤖 No pude consultar la IA: ${r?.error || 'error desconocido'}`);
+      }
+      const ctx = r.contexto_resumen || {};
+      return sendText(jid,
+        `🤖 *Análisis IA*\n\n${r.respuesta}\n\n` +
+        `_Contexto: ${ctx.pedidos_30d ?? '?'} pedidos / €${ctx.facturacion_30d ?? '?'} en 30d._`
+      );
+    } catch (e) {
+      return sendText(jid, `🤖 Error consultando IA: ${e.message || e}`);
+    }
   }
 
   if (lowerCmd === 'hoy' || lowerCmd === 'resumen' || lowerCmd === 'ventas') {

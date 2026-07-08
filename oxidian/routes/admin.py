@@ -4683,13 +4683,20 @@ def _llamar_ia_analisis(pregunta_usuario, contexto_dict):
     if provider not in {"openai", "groq"} or not api_key or not modelo:
         return None, "IA no configurada. Ve a Superadmin → Chatbot y configura BOT_AI_PROVIDER, BOT_AI_API_KEY y BOT_AI_MODEL."
 
+    nombre_negocio = SiteConfig.get("NOMBRE_NEGOCIO", "el negocio") or "el negocio"
+    tipo = SiteConfig.get("TIPO_TIENDA", "comida") or "comida"
+    modo = SiteConfig.get("MODO_TIENDA", "propia") or "propia"
+    reglas_extra = (SiteConfig.get("BOT_AI_RULES", "") or "").strip()
     system = (
-        "Eres un analista de negocio del sistema El Parcerito. "
+        f"Eres analista de negocio de «{nombre_negocio}» "
+        f"(tipo_tienda={tipo}, modo={modo}). "
         "Solo respondes usando el CONTEXTO agregado que se te da (sin datos personales). "
         "Si la pregunta pide datos que no están en el contexto, dilo claramente. "
         "Responde en español, conciso, con recomendaciones accionables. "
         "NUNCA inventes números."
     )
+    if reglas_extra:
+        system += "\n\nReglas extra del propietario:\n" + reglas_extra
     user_msg = (
         f"CONTEXTO (agregado, sin PII):\n{_json.dumps(contexto_dict, ensure_ascii=False, indent=2)}\n\n"
         f"PREGUNTA:\n{pregunta_usuario}"

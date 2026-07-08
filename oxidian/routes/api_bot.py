@@ -24,7 +24,8 @@ from models import (User, Product, Categoria, Order, OrderItem, OrderProviderSta
                     PointsLog, SiteConfig, IdempotencyKey, normalizar_metodo_pago,
                     BotAiUsage, BotAiMessage, AdminFeature,
                     PriceHistory, metadata_componente_combo,
-                    metadata_item_pedido, utcnow as _utcnow)
+                    metadata_item_pedido, utcnow as _utcnow,
+                    AuditLog)
 from idempotency import request_idempotency_key, request_body_hash, IDEMPOTENCY_TTL
 from services import (distribuir_pedido, registrar_uso_afiliado,
                       get_puntos_config, enviar_whatsapp_estado, mensaje_estado_pedido,
@@ -3475,3 +3476,77 @@ def bot_admin_historial_puntos(cliente_id):
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ─── IA para admin/super_admin vía WhatsApp ─────────────────────────────
+# El bot llama a este endpoint cuando un super_admin/admin envía `!ia <pregunta>`.
+# Reutiliza la misma capa de análisis del panel web (agregados + guardrails).
+
+def _telefono_admin_autorizado(telefono):
+    """True si el teléfono normalizado pertenece a un usuario admin/super_admin
+    activo o coincide con SUPERADMINS/OWNER_NUMBER del entorno."""
+    tn = normalizar_telefono_cliente(telefono)
+    if not telefono_valido(tn):
+        return None
+    # Whitelist runtime desde SiteConfig/env
+    whitelist = set()
+    for clave in ("SUPERADMINS", "OWNER_NUMBER"):
+        raw = (SiteConfig.get(clave, current_app.config.get(clave, "")) or "")
+        for chunk in raw.replace(";", ",").split(","):
+            n = normalizar_telefono_cliente(chunk)
+            if telefono_valido(n):
+                whitelist.add(n)
+    if tn in whitelist:
+        return tn
+    # Fallback: usuario del sistema con rol admin/super_admin
+    user = User.query.filter_by(telefono_normalizado=tn).first()
+    if user and user.rol in ("admin", "super_admin") and user.activo:
+        return tn
+    return None
+
+
+@api_bot_bp.route("/ai/admin-consulta", methods=["POST"])
+@bot_required
+def ai_admin_consulta():
+    """Consulta IA desde WhatsApp para admin/super_admin.
+
+    Body JSON:
+      { "telefono": "34...", "pregunta": "top productos..." }
+
+    Reutiliza _llamar_ia_analisis + _resumen_negocio_para_ia del panel web.
+    """
+    from routes.admin import _resumen_negocio_para_ia, _llamar_ia_analisis
+
+    payload = request.get_json(silent=True) or {}
+    telefono = (payload.get("telefono") or "").strip()
+    pregunta = (payload.get("pregunta") or "").strip()
+
+    tn = _telefono_admin_autorizado(telefono)
+    if not tn:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    if len(pregunta) < 5:
+        return jsonify({"ok": False, "error": "Escribe una pregunta más específica."})
+    if len(pregunta) > 500:
+        return jsonify({"ok": False, "error": "Pregunta demasiado larga (máx 500)."})
+
+    contexto = _resumen_negocio_para_ia()
+    respuesta, error = _llamar_ia_analisis(pregunta, contexto)
+    if error:
+        return jsonify({"ok": False, "error": error})
+
+    # Auditoría (registra teléfono normalizado, no la pregunta completa)
+    try:
+        user = User.query.filter_by(telefono_normalizado=tn).first()
+        AuditLog.registrar(
+            (user.id if user else None), "ia_consulta_whatsapp",
+            "analisis", detalle=pregunta[:180],
+            ip=request.remote_addr,
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    return jsonify({"ok": True, "respuesta": respuesta, "contexto_resumen": {
+        "pedidos_30d": contexto["ventas_ultimos_30_dias"]["pedidos"],
+        "facturacion_30d": contexto["ventas_ultimos_30_dias"]["facturacion_eur"],
+    }})

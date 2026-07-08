@@ -2,6 +2,8 @@
 {# Variable esperada: p (Product) #}
 {% set _qty_cart = (carrito.get(p.id|string, 0) if carrito is defined and carrito_origen == origen_actual else 0)|int %}
 {% set _has_extras = p.extra_groups.filter_by(activo=True).count() > 0 %}
+{% set _tallas = p.presentaciones.filter_by(activo=True).all() if p.presentaciones is defined else [] %}
+{% set _vertical = (p.vertical or 'ambos') %}
 {# data-group ayuda al filtro client-side a saber a qué "bloque" pertenece:
    canje (⭐), combos (🎁) o regular. Ver epFilterCategory en index.html. #}
 {% set _es_canje = (p.solo_canje or (p.puntos_para_canje and p.puntos_para_canje > 0)) %}
@@ -134,7 +136,11 @@
           </span>
           <span class="ep-card-price-note">Solo canje</span>
         {% else %}
+          {% if _tallas|length > 0 %}
+          <span class="ep-card-price">Desde €{{ "%.2f"|format(p.precio_final) }}</span>
+          {% else %}
           <span class="ep-card-price">€{{ "%.2f"|format(p.precio_final) }}</span>
+          {% endif %}
           {% if p.canjeable_con_puntos and p.puntos_para_canje %}
           <span class="ep-card-price-note ep-card-price-note--pts">o {{ p.puntos_para_canje }} pts</span>
           {% elif p.es_combo and p.combo_precio_modo_normalizado == 'descuento_porcentaje' and p.combo_descuento_pct_float > 0 %}
@@ -144,6 +150,16 @@
           {% endif %}
         {% endif %}
       </div>
+
+      {# Chips de tallas (retail) o tamaños (comida) — solo si hay presentaciones #}
+      {% if _tallas|length > 0 %}
+      <div class="ep-card-sizes" aria-label="Tallas disponibles">
+        {% for t in _tallas[:6] %}
+        <span class="ep-card-size-chip">{{ t.label }}</span>
+        {% endfor %}
+        {% if _tallas|length > 6 %}<span class="ep-card-size-more">+{{ _tallas|length - 6 }}</span>{% endif %}
+      </div>
+      {% endif %}
 
       {% if not establecimiento.abierto %}
         <span class="ep-btn-sold">Cerrado</span>
