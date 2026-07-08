@@ -148,7 +148,7 @@ class CatalogOriginTest(unittest.TestCase):
     def test_fulfillment_badges_are_customer_facing(self):
         self.assertEqual(
             _product_fulfillment_badge(SimpleNamespace(modalidad_entrega="delivery"))["label"],
-            "Para llevar",
+            "Envío a domicilio",
         )
         self.assertEqual(
             _product_fulfillment_badge(SimpleNamespace(modalidad_entrega="recogida"))["label"],
@@ -197,7 +197,7 @@ class CatalogOriginTest(unittest.TestCase):
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["issues"][0]["code"], "fulfillment_conflict")
-        self.assertIn("solo para llevar", result["message"])
+        self.assertIn("solo con envío a domicilio", result["message"])
         self.assertIn("solo para recoger", result["message"])
 
     def test_cart_compatibility_respects_disabled_modules_and_programados(self):

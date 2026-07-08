@@ -92,7 +92,7 @@
         <p class="text-xs text-gray-500 mb-1 font-semibold uppercase tracking-wide">Modalidad disponible</p>
         <div class="flex flex-wrap gap-3 text-sm">
           {% set modalidad_actual = producto.modalidad_entrega or 'ambas' %}
-          {% set modalidades_visibles = ([('ambas','Delivery o recogida')] if brand.delivery and brand.recogida else []) + ([('delivery','Solo delivery')] if brand.delivery else []) + ([('recogida','Solo recogida')] if brand.recogida else []) %}
+          {% set modalidades_visibles = ([('ambas','🔁 Ambas (llevar o recoger)')] if brand.delivery and brand.recogida else []) + ([('delivery','🛵 Solo llevar')] if brand.delivery else []) + ([('recogida','🏪 Solo recoger')] if brand.recogida else []) %}
           {% for val, label in modalidades_visibles %}
           <label class="edit-chip"><input type="radio" name="modalidad_entrega" value="{{ val }}" {% if modalidad_actual == val %}checked{% endif %}> {{ label }}</label>
           {% endfor %}

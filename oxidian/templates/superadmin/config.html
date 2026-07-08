@@ -248,7 +248,7 @@
       <h3>Modo comercial y módulos contratados</h3>
       <div class="cfg-grid">
         {{ cfg_select('MODO_TIENDA', 'Modo de tienda', [('propia','Tienda propia'),('bar_servicio','Servicio para un único bar / comisión')], 'En modo servicio, el admin gestiona esa tienda como su propio negocio y el superadmin controla funciones y comisión.') }}
-        {{ cfg_select('TIPO_TIENDA', 'Tipo de catálogo', [('comida','🍽️ Comida / gastronomía'),('producto','🛍️ Producto genérico (ropa, retail…)'),('mixto','🔀 Mixto (ambos nichos)')], 'Cambia labels visibles ("menú"→"catálogo"), oculta alérgenos si no aplican y ajusta emojis. "Mixto" muestra productos de ambos verticales sin filtrar. NO borra datos.') }}
+        {{ cfg_select('TIPO_TIENDA', 'Tipo de catálogo', [('comida','🍽️ Comida / gastronomía'),('producto','🛍️ Retail / nicho general (ropa, zapatos, bisutería…)')], 'Cambia labels visibles ("menú"→"catálogo"), oculta alérgenos, ajusta emojis y tallas. NO borra datos: cambia de un modo al otro sin perder nada.') }}
         {{ cfg_select('FEATURE_DELIVERY', 'Delivery', [('1','Habilitado'),('0','Deshabilitado')], 'Si está apagado, checkout y roles de reparto quedan fuera del flujo público.') }}
         {{ cfg_select('FEATURE_RECOGIDA', 'Recogida en local', [('1','Habilitada'),('0','Deshabilitada')]) }}
         {{ cfg_select('FEATURE_PEDIDOS_PROGRAMADOS', 'Pedidos por fecha', [('1','Habilitados'),('0','Deshabilitados')], 'Bloquea productos programados si el cliente no tiene ese módulo.') }}

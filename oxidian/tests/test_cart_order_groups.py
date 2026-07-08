@@ -146,6 +146,50 @@ class CartOrderGroupTest(unittest.TestCase):
         with self.client.session_transaction() as session:
             self.assertEqual(session["carrito"], {str(producto.id): 1})
 
+    def test_producto_del_vertical_opuesto_no_puede_agregarse(self):
+        # Regla nicho: si TIPO_TIENDA=producto (retail), un producto con
+        # vertical=comida no debe poder añadirse al carrito.
+        db.session.add(SiteConfig(clave="TIPO_TIENDA", valor="producto"))
+        db.session.commit()
+
+        producto = Product(
+            nombre="Pizza de solo comida",
+            precio=Decimal("8.00"),
+            activo=True,
+            canal_preparacion="cocina",
+            tipo_entrega="inmediato",
+            modalidad_entrega="ambas",
+            vertical="comida",  # marcado explícito, no ambos
+        )
+        db.session.add(producto)
+        db.session.commit()
+
+        response = self._add(producto).get_json()
+        # El producto no debe siquiera aparecer disponible en modo retail.
+        self.assertFalse(response["ok"])
+
+    def test_producto_vertical_ambos_pasa_en_cualquier_nicho(self):
+        # vertical=ambos siempre pasa, sea comida o retail.
+        for tipo in ("comida", "producto"):
+            SiteConfig.query.filter_by(clave="TIPO_TIENDA").delete()
+            db.session.add(SiteConfig(clave="TIPO_TIENDA", valor=tipo))
+            db.session.commit()
+            with self.client.session_transaction() as s:
+                s.pop("carrito", None)
+
+            producto = Product(
+                nombre=f"Universal {tipo}",
+                precio=Decimal("5.00"),
+                activo=True,
+                canal_preparacion="almacen",
+                tipo_entrega="inmediato",
+                modalidad_entrega="ambas",
+                vertical="ambos",
+            )
+            db.session.add(producto)
+            db.session.commit()
+            self.assertTrue(self._add(producto).get_json()["ok"], f"falló en {tipo}")
+
 
 if __name__ == "__main__":
     unittest.main()

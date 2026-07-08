@@ -772,9 +772,8 @@ def toggle_vertical():
     actual = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
     destino = "producto" if actual == "comida" else "comida"
     # Permite forzar valor explícito por si el UI manda `destino`.
-    # "mixto" añadido para exponer ambos verticales a la vez sin filtrar.
     override = (request.form.get("destino") or "").strip().lower()
-    if override in ("comida", "producto", "mixto"):
+    if override in ("comida", "producto"):
         destino = override
     SiteConfig.set(
         "TIPO_TIENDA", destino,

@@ -96,7 +96,6 @@
        cliente (menú↔catálogo), emojis, manifest PWA y mensajes del bot. #}
   {% set _tt = (brand.tipo_tienda or 'comida') %}
   {% set _es_comida = (_tt == 'comida') %}
-  {% set _es_mixto = (_tt == 'mixto') %}
   <section class="oa-section">
     <h2 class="oa-section__title">Vertical de la tienda</h2>
     <p class="oa-section__sub">Convierte la tienda de comida a productos genéricos (ropa, accesorios, retail…) o al revés. Un clic, sin perder datos.</p>
@@ -105,7 +104,7 @@
       <div class="oa-vertical-current {{ 'is-comida' if _es_comida else 'is-producto' }}">
         <div class="oa-vertical-current__badge">Ahora</div>
         <span class="oa-vertical-current__emoji">{{ '🍽️' if _es_comida else '🛍️' }}</span>
-        <div class="oa-vertical-current__label">{{ 'Comida / gastronomía' if _es_comida else 'Producto / retail' }}</div>
+        <div class="oa-vertical-current__label">{{ 'Comida / gastronomía' if _es_comida else 'Retail / nicho general' }}</div>
         <ul class="oa-vertical-current__props">
           <li>{{ 'Menú/carta' if _es_comida else 'Catálogo' }}</li>
           <li>Alérgenos {{ 'visibles' if _es_comida else 'ocultos' }}</li>
@@ -118,7 +117,7 @@
       <div class="oa-vertical-target">
         <div class="oa-vertical-current__badge">Al cambiar</div>
         <span class="oa-vertical-current__emoji">{{ '🛍️' if _es_comida else '🍽️' }}</span>
-        <div class="oa-vertical-current__label">{{ 'Producto / retail' if _es_comida else 'Comida / gastronomía' }}</div>
+        <div class="oa-vertical-current__label">{{ 'Retail / nicho general' if _es_comida else 'Comida / gastronomía' }}</div>
         <ul class="oa-vertical-current__props">
           <li>{{ 'Catálogo' if _es_comida else 'Menú/carta' }}</li>
           <li>Alérgenos {{ 'ocultos' if _es_comida else 'visibles' }}</li>
@@ -129,21 +128,13 @@
               onsubmit="return confirm('¿Cambiar el vertical de la tienda? Los datos no se borran.');">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="oa-btn oa-btn--primary oa-vertical-cta">
-            {% if _es_comida %}🛍️ Cambiar a Producto{% elif _es_mixto %}🍽️ Cambiar a Comida{% else %}🍽️ Cambiar a Comida{% endif %}
-          </button>
-        </form>
-        {# Tercer estado: mixto (ambos nichos) — botón adicional #}
-        <form method="POST" action="{{ url_for('superadmin.toggle_vertical') }}" style="margin-top:.5rem">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="destino" value="mixto">
-          <button type="submit" class="oa-btn oa-vertical-cta" style="opacity:{{ 0.5 if _es_mixto else 1 }}" {% if _es_mixto %}disabled{% endif %}>
-            🔀 {% if _es_mixto %}Ya en modo mixto{% else %}Activar modo mixto (ambos){% endif %}
+            {% if _es_comida %}🛍️ Cambiar a Retail{% else %}🍽️ Cambiar a Comida{% endif %}
           </button>
         </form>
       </div>
     </div>
     <p class="oa-vertical-hint">
-      💡 Modo actual: <strong>{{ 'Comida' if _es_comida else ('Mixto (ambos)' if _es_mixto else 'Producto') }}</strong>. Los datos se conservan al alternar.
+      💡 Modo actual: <strong>{{ 'Comida / gastronomía' if _es_comida else 'Retail / nicho general' }}</strong>. Los datos se conservan al alternar.
       <a href="{{ url_for('public.index') }}" target="_blank" rel="noopener">👁️ Ver tienda como cliente</a>
     </p>
   </section>

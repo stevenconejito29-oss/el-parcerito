@@ -147,10 +147,12 @@ def _establecimiento_para_origen(origen):
 
 def _producto_pertenece_al_vertical(producto):
     """Filtra productos que solo se muestran en un vertical concreto.
-    `vertical="ambos"` (default) → siempre visible.
-    `vertical="comida"` → solo si TIPO_TIENDA in ("comida", "mixto").
-    `vertical="producto"` → solo si TIPO_TIENDA in ("producto", "mixto").
-    `TIPO_TIENDA="mixto"` → catálogo unificado (ambos nichos a la vez)."""
+    Solo dos verticales soportados:
+      - `comida` → gastronomía (menú, alérgenos, cocina, tallas Pequeño/Mediano/Grande).
+      - `producto` → retail / nicho general (ropa, zapatos, bisutería, tallas S/M/L).
+    `vertical="ambos"` en Product → visible en cualquier TIPO_TIENDA.
+    `vertical="comida"` → solo si TIPO_TIENDA == "comida".
+    `vertical="producto"` → solo si TIPO_TIENDA == "producto"."""
     if not producto:
         return False
     v = (getattr(producto, "vertical", None) or "ambos").strip().lower()
@@ -158,8 +160,6 @@ def _producto_pertenece_al_vertical(producto):
         return True
     from models import SiteConfig
     tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
-    if tt == "mixto":
-        return True
     return v == tt
 
 
@@ -220,15 +220,15 @@ def _product_fulfillment_modes(producto):
 _FULFILLMENT_LABELS = {
     "delivery": {
         "emoji": "🛵",
-        "label": "Para llevar",
-        "short": "Llevar",
-        "exclusive": "solo para llevar",
+        "label": "Envío a domicilio",
+        "short": "Domicilio",
+        "exclusive": "solo con envío a domicilio",
     },
     "recogida": {
         "emoji": "🏪",
         "label": "Recoger en local",
         "short": "Recoger",
-        "exclusive": "solo para recoger",
+        "exclusive": "solo para recoger en local",
     },
 }
 
@@ -245,7 +245,7 @@ def _product_fulfillment_badge(producto):
     modes = _product_fulfillment_modes(producto)
     if modes == {"delivery"}:
         data = _FULFILLMENT_LABELS["delivery"]
-        return {"emoji": data["emoji"], "label": data["label"], "title": "Disponible solo para llevar"}
+        return {"emoji": data["emoji"], "label": data["label"], "title": "Disponible solo con envío a domicilio"}
     if modes == {"recogida"}:
         data = _FULFILLMENT_LABELS["recogida"]
         return {"emoji": data["emoji"], "label": data["label"], "title": "Disponible solo para recoger"}
@@ -798,14 +798,14 @@ def _cart_compatibility(productos, subtotal=None, pedido_minimo=0):
             for p in productos:
                 modes = _product_fulfillment_modes(p)
                 if modes == {"delivery"}:
-                    details.append(f"«{p.nombre}» solo para llevar")
+                    details.append(f"«{p.nombre}» solo con envío a domicilio")
                 elif modes == {"recogida"}:
                     details.append(f"«{p.nombre}» solo para recoger")
             suffix = f" Detectado: {'; '.join(details[:4])}." if details else ""
             add(
                 "fulfillment_conflict",
                 "Los productos del carrito no comparten modalidad de entrega. "
-                "No mezcles productos solo para llevar con productos solo para recoger."
+                "No mezcles productos solo con envío a domicilio con productos solo para recoger."
                 + suffix,
                 productos,
             )
@@ -1368,15 +1368,18 @@ def verificar_codigo_puntos():
     if not origen:
         return jsonify({"ok": False, "msg": "El carrito no tiene un origen de inventario válido"})
     _, subtotal = _build_items_from_carrito(_get_carrito())
-    max_puntos_por_carrito = int(max(subtotal, 0) * ratio)
-    puntos_usar = min(max(puntos_usar, 0), cliente.puntos, max_puntos_por_carrito)
+    # Diseño: los puntos SOLO se canjean por productos canjeables (nunca como
+    # descuento en euros). Ignoramos cualquier `puntos_usar` suelto sin producto
+    # asociado y forzamos que el consumo de puntos venga ligado a un product_id.
     producto_canje_id = data.get("producto_canje_id")
     if producto_canje_id:
         try:
             producto_canje_id = int(producto_canje_id)
         except (ValueError, TypeError):
             producto_canje_id = None
-    descuento = round(puntos_usar / ratio, 2)
+
+    puntos_usar = 0
+    descuento = 0.0  # los puntos nunca reducen el total en euros
     if producto_canje_id:
         producto_canje = db.session.get(Product, producto_canje_id)
         if (
@@ -1384,9 +1387,12 @@ def verificar_codigo_puntos():
             or not _producto_canjeable_en_origen(producto_canje, origen)
         ):
             return jsonify({"ok": False, "msg": "Producto de canje no válido"})
-        if puntos_usar + int(producto_canje.puntos_para_canje or 0) > int(cliente.puntos or 0):
-            return jsonify({"ok": False, "msg": "Los puntos no alcanzan para descuento y producto a la vez"})
+        puntos_producto = int(producto_canje.puntos_para_canje or 0)
+        if puntos_producto <= 0 or puntos_producto > int(cliente.puntos or 0):
+            return jsonify({"ok": False, "msg": "No tienes puntos suficientes para este producto"})
         session["cart_producto_canje_id"] = producto_canje_id
+        # Sólo registramos los puntos del producto canjeado; sin descuento monetario.
+        puntos_usar = puntos_producto
     else:
         session.pop("cart_producto_canje_id", None)
 
@@ -1714,31 +1720,18 @@ def checkout():
                     afiliado_codigo = None
 
         # ── Puntos verificados en sesión ─────────────────────────────────
+        # Diseño: los puntos NO reducen el total en euros. Solo se consumen al
+        # canjearlos por un producto canjeable dentro del carrito. Cualquier
+        # `puntos_usar` suelto del formulario se ignora silenciosamente.
         puntos_cfg = get_puntos_config()
         ratio = puntos_cfg["ratio"]
         puntos_por_euro = puntos_cfg["por_euro"]
-        puntos_a_canjear = 0
+        puntos_a_canjear = 0  # sin descuento libre; los puntos del producto se cargan más abajo
         cart_puntos = session.get("cart_puntos", {})
-        # Guard defensivo: si el módulo de puntos se apagó entre el GET y este
-        # POST, ignoramos silenciosamente cualquier `cart_puntos` cacheado y el
-        # `puntos_usar` del form. Evita que un canje quede "pegado" en sesión y
-        # se aplique después de que super_admin desactive FEATURE_PUNTOS.
-        puntos_pedidos_por_form = 0
-        try:
-            puntos_pedidos_por_form = max(0, int(request.form.get("puntos_usar", 0) or 0))
-        except (TypeError, ValueError):
-            puntos_pedidos_por_form = 0
         if not puntos_habilitados:
             # Limpiar cualquier residuo de una sesión previa
             session.pop("cart_puntos", None)
             session.pop("cart_producto_canje_id", None)
-            if puntos_pedidos_por_form > 0:
-                flash("El canje de puntos se ha desactivado. Refresca el checkout.", "warning")
-                return redirect(url_for("public.checkout"))
-        elif (cart_puntos and cart_puntos.get("cliente_id") == cliente.id
-                and cart_puntos.get("verificado")
-                and cart_puntos.get("origen") == origen):
-            puntos_a_canjear = min(puntos_pedidos_por_form, cliente.puntos)
 
         # Producto canje desde sesión solo si el formulario no envió decisión explícita.
         if producto_canje_raw is None and not producto_canje_id:
@@ -1767,8 +1760,8 @@ def checkout():
                 flash("Producto de canje no válido.", "danger")
                 return redirect(url_for("public.checkout"))
             puntos_producto = int(producto_canje.puntos_para_canje or 0)
-            if puntos_a_canjear + puntos_producto > int(cliente.puntos or 0):
-                flash("Tus puntos no alcanzan para el descuento y el producto elegido a la vez.", "danger")
+            if puntos_producto > int(cliente.puntos or 0):
+                flash("No tienes suficientes puntos para canjear este producto.", "danger")
                 return redirect(url_for("public.checkout"))
             compat_canje = _cart_compatibility(cart_productos + [producto_canje])
             if not compat_canje["ok"]:

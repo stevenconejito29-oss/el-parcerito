@@ -121,11 +121,29 @@
 
   <div class="fp-span-full col-span-2 fp-section">
     <label class="fp-section-title">Cómo puede recibirlo el cliente</label>
-    <p class="text-xs text-gray-500 mb-2">Esta regla se cruza con los módulos habilitados por Super Admin.</p>
+    <p class="text-xs text-gray-500 mb-2">
+      El carrito impedirá mezclar productos con modalidades incompatibles.
+      Esta regla se cruza con los módulos habilitados por Super Admin.
+    </p>
     <div class="flex gap-4 flex-wrap text-sm">
-      {% if brand.delivery and brand.recogida %}<label class="fp-radio-label"><input type="radio" name="modalidad_entrega" value="ambas" checked> Delivery o recogida</label>{% endif %}
-      {% if brand.delivery %}<label class="fp-radio-label"><input type="radio" name="modalidad_entrega" value="delivery" {% if not brand.recogida %}checked{% endif %}> Solo delivery</label>{% endif %}
-      {% if brand.recogida %}<label class="fp-radio-label"><input type="radio" name="modalidad_entrega" value="recogida" {% if not brand.delivery %}checked{% endif %}> Solo recogida</label>{% endif %}
+      {% if brand.delivery and brand.recogida %}
+      <label class="fp-radio-label" title="El cliente puede elegir domicilio o recoger">
+        <input type="radio" name="modalidad_entrega" value="ambas" checked>
+        🔁 Ambas (llevar a domicilio o recoger)
+      </label>
+      {% endif %}
+      {% if brand.delivery %}
+      <label class="fp-radio-label" title="Solo envío a domicilio">
+        <input type="radio" name="modalidad_entrega" value="delivery" {% if not brand.recogida %}checked{% endif %}>
+        🛵 Solo llevar (envío a domicilio)
+      </label>
+      {% endif %}
+      {% if brand.recogida %}
+      <label class="fp-radio-label" title="El cliente lo recoge en el local">
+        <input type="radio" name="modalidad_entrega" value="recogida" {% if not brand.delivery %}checked{% endif %}>
+        🏪 Solo recoger (en el local)
+      </label>
+      {% endif %}
     </div>
   </div>
 
