@@ -3753,9 +3753,9 @@ def bot_diagnostico():
     ).count()
     from models import Caja as _Caja
     ingresos_7d = float(db.session.query(func.coalesce(func.sum(_Caja.monto), 0))
-                        .filter(_Caja.tipo == "ingreso", _Caja.creado_en >= hace_7d).scalar() or 0)
+                        .filter(_Caja.tipo == "ingreso", _Caja.fecha >= hace_7d).scalar() or 0)
     egresos_7d = float(db.session.query(func.coalesce(func.sum(_Caja.monto), 0))
-                       .filter(_Caja.tipo == "egreso", _Caja.creado_en >= hace_7d).scalar() or 0)
+                       .filter(_Caja.tipo == "egreso", _Caja.fecha >= hace_7d).scalar() or 0)
 
     # Features runtime
     from store_config import get_store_features
