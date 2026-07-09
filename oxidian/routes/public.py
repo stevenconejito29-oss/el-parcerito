@@ -27,7 +27,8 @@ from models import (Product, Categoria, Order, OrderItem, Review, Coupon,
                      ComboItem, ProductExtraGroup, ProductExtraOption, SiteConfig,
                      ZonaEntrega, MenuConfig, User, Proveedor, normalizar_metodo_pago,
                      AffiliateCode, IdempotencyKey, metadata_componente_combo,
-                     metadata_item_pedido, utcnow as _utcnow)
+                     metadata_item_pedido, utcnow as _utcnow,
+                     internal_customer_email)
 from idempotency import (request_idempotency_key, request_body_hash,
                           IDEMPOTENCY_TTL)
 from services import (distribuir_pedido,
@@ -806,6 +807,25 @@ def _cart_compatibility(productos, subtotal=None, pedido_minimo=0):
             vertical_blockers,
         )
 
+    # Regla: no mezclar productos de nicho comida con nicho retail en el
+    # mismo carrito. Aunque ambos verticales estén activos (o el producto
+    # sea vertical='ambos'), un pedido no puede combinar Hamburguesa (cocina)
+    # con Camiseta (paquetería). Flujos operativos distintos, empaquetado
+    # distinto, tiempo de entrega distinto.
+    verticales_reales = {
+        (getattr(p, "vertical", None) or "ambos").strip().lower()
+        for p in productos
+    }
+    verticales_reales.discard("ambos")
+    if len(verticales_reales) > 1:  # {comida, producto}
+        add(
+            "vertical_mix",
+            "No puedes mezclar productos de comida con productos de retail "
+            "(ropa/accesorios) en el mismo pedido. Sepáralos en dos pedidos.",
+            productos,
+            "danger",
+        )
+
     programados = [p for p in productos if _delivery_family(p) == "programado"]
     programados_vencidos = [p for p in programados if _programmed_date_expired(p)]
     if programados_vencidos:
@@ -1310,9 +1330,9 @@ def consultar_saldo_puntos():
 def api_check_address():
     """Valida si una dirección está dentro del radio de entrega. Sin autenticación requerida."""
     data = request.get_json(silent=True) or {}
+    if not _feature_enabled("delivery"):
+        return jsonify({"ok": False, "mensaje": "El delivery no está habilitado."}), 403
     if data.get("lat") is not None and data.get("lng") is not None:
-        if not _feature_enabled("delivery"):
-            return jsonify({"ok": False, "mensaje": "El delivery no está habilitado."}), 403
         zonas = ZonaEntrega.query.filter_by(activo=True).order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
         zona, distancia = asignar_zona_por_coordenadas(data.get("lat"), data.get("lng"), zonas)
         if not zona:
@@ -1423,6 +1443,7 @@ def verificar_codigo_puntos():
     """Verifica el código de puntos."""
     if not _feature_enabled("puntos"):
         return jsonify({"ok": False, "msg": "El club de puntos no está habilitado"}), 403
+    msg_invalido = "No se pudo verificar el código. Revisa el WhatsApp y el código recibido."
     data = request.get_json(silent=True) or {}
     telefono = data.get("telefono", "").strip()
     codigo = data.get("codigo", "").strip()
@@ -1434,14 +1455,14 @@ def verificar_codigo_puntos():
     if telefono:
         cliente, _ = _find_cliente_by_phone(telefono)
     else:
-        return jsonify({"ok": False, "msg": "Teléfono requerido"})
+        return _json_no_store({"ok": False, "msg": msg_invalido})
 
     if not cliente:
-        return jsonify({"ok": False, "msg": "Cliente no encontrado"})
+        return _json_no_store({"ok": False, "msg": msg_invalido})
 
     if not cliente.verificar_cod_puntos(codigo):
         db.session.commit()  # persiste incremento de intentos fallidos
-        return jsonify({"ok": False, "msg": "Código incorrecto o expirado"})
+        return _json_no_store({"ok": False, "msg": msg_invalido})
 
     # OTP válido: commit inmediato para que no pueda reutilizarse antes del checkout
     db.session.commit()
@@ -2528,11 +2549,10 @@ def _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion):
 
     # Cliente nuevo: crear con teléfono como identificador
     nombre = nombre_invitado or f"Cliente {telefono_invitado[-4:]}"
-    _dom = SiteConfig.get("BOT_EMAIL_DOMAIN", "wa.internal")
-    email = f"tel.{telefono_invitado}@{_dom}"
+    email = internal_customer_email(telefono_invitado)
     existing_email = User.query.filter_by(email=email).first()
     if existing_email:
-        email = f"tel.{telefono_invitado}.{uuid.uuid4().hex[:4]}@{_dom}"
+        email = internal_customer_email(telefono_invitado, uuid.uuid4().hex[:4])
 
     invitado = User(
         nombre=nombre,

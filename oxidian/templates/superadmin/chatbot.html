@@ -342,9 +342,31 @@
 
     <div>
       <label class="chat-label">API key de IA</label>
-      <input type="password" name="bot_ai_api_key" value="" class="chat-input" autocomplete="new-password" placeholder="{{ '*** clave guardada ***' if bot_ai_api_key_set else 'Pega aquí la API key' }}">
-      <p class="chat-help">Se queda vacío si ya hay una clave guardada. Solo se sobrescribe si escribes algo.</p>
+      <div style="display:flex;gap:.4rem;align-items:stretch;flex-wrap:wrap;">
+        <input type="password" name="bot_ai_api_key" id="bot-ai-api-key" value="" class="chat-input"
+               style="flex:1;min-width:220px;"
+               autocomplete="new-password"
+               placeholder="{{ '*** clave guardada ***' if bot_ai_api_key_set else 'Pega aquí la API key' }}">
+        <button type="button" class="ox-btn-ghost text-xs" onclick="_togglePwd('bot-ai-api-key', this)">👁 Ver</button>
+      </div>
+      <p class="chat-help">
+        {% if bot_ai_api_key_set %}
+        ✓ Clave guardada. Déjalo vacío para conservarla; escribe algo solo para sobrescribir.
+        Prueba con <code>!ia</code> desde WhatsApp o desde <a href="{{ url_for('admin.ia_analisis') }}">Consulta IA</a>.
+        {% else %}
+        ⚠ Sin clave configurada — <strong>!ia</strong> y el panel Consulta IA responderán con un mensaje de error hasta que la configures.
+        {% endif %}
+      </p>
     </div>
+    <script>
+    function _togglePwd(id, btn) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const showing = el.type === 'text';
+      el.type = showing ? 'password' : 'text';
+      btn.textContent = showing ? '👁 Ver' : '🙈 Ocultar';
+    }
+    </script>
 
     <div>
       <label class="chat-label">Modelo</label>

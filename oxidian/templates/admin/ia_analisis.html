@@ -2,15 +2,21 @@
 {% block title %}Consulta IA — {{ brand.nombre }}{% endblock %}
 {% block content %}
 
+{# Ejemplos y placeholder adaptados al nicho: evita hardcoding "combos"/comida
+   cuando la tienda es retail. Todo se lee de brand.es_comida / brand.es_producto. #}
+{% set _es_comida = brand.es_comida if brand.es_comida is defined else true %}
+{% set _tipo_agrupacion = 'combos' if _es_comida else 'packs' %}
+{% set _catalogo_label = 'menú' if _es_comida else 'catálogo' %}
+
 <div class="flex items-center gap-3 mb-4 flex-wrap">
   <h1 class="text-xl font-bold text-white">🤖 Consulta IA de negocio</h1>
   <span class="text-xs px-2 py-0.5 rounded-full" style="background:rgba(94,240,151,.1);color:#5EF097;border:1px solid rgba(94,240,151,.2)">Solo agregados · sin datos personales</span>
 </div>
 
 <p class="text-sm mb-4" style="color:var(--col-muted)">
-  Pregúntale al asistente sobre tu negocio: rendimiento del catálogo, oportunidades
-  de marketing, tendencias del último mes, ideas de combos, etc. La IA solo ve datos
-  agregados (nunca información personal de clientes) y no puede modificar nada.
+  Pregúntale al asistente sobre tu negocio: rendimiento del {{ _catalogo_label }}, oportunidades
+  de marketing, tendencias del último mes, ideas de {{ _tipo_agrupacion }}, etc. La IA solo ve
+  datos agregados (nunca información personal de clientes) y no puede modificar nada.
 </p>
 
 <form method="POST" class="ox-card p-4 mb-5">
@@ -19,7 +25,7 @@
   <textarea name="pregunta" id="pregunta" rows="3" maxlength="800" required
             class="w-full p-3 rounded-lg text-sm"
             style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);color:var(--col-text)"
-            placeholder="Ejemplo: ¿Qué producto se está vendiendo más este mes? ¿Cuál sería un buen combo nuevo? ¿Cómo puedo aumentar el ticket medio? ¿Los puntos de fidelidad están generando canje?">{{ pregunta or "" }}</textarea>
+            placeholder="Ejemplo: ¿Qué producto se está vendiendo más este mes? ¿Cuál sería un buen {% if _es_comida %}combo{% else %}pack{% endif %} nuevo? ¿Cómo puedo aumentar el ticket medio? ¿El programa de puntos está funcionando?">{{ pregunta or "" }}</textarea>
   <div class="flex items-center justify-between mt-3 gap-3 flex-wrap">
     <p class="text-xs" style="color:var(--col-muted)">💡 Sé específico: "top 3 productos con mejor rotación" es mejor que "cómo va todo".</p>
     <button type="submit" class="ox-btn-primary px-5 py-2 text-sm font-bold">
@@ -57,7 +63,13 @@
   <ul class="list-disc list-inside mt-2 space-y-1">
     <li>¿Qué producto tuvo más ventas los últimos 30 días?</li>
     <li>¿Cuál es mi ticket medio y cómo puedo subirlo?</li>
-    <li>Sugiéreme 3 combos nuevos basados en mis productos más vendidos.</li>
+    {% if _es_comida %}
+    <li>Sugiéreme 3 combos nuevos basados en mis platos más pedidos.</li>
+    <li>¿Qué maridajes bebida+plato podría destacar?</li>
+    {% else %}
+    <li>Sugiéreme 3 packs/outfits basados en las prendas más compradas.</li>
+    <li>¿Qué categorías (ropa, calzado, accesorios) están rotando mejor?</li>
+    {% endif %}
     <li>¿El sistema de puntos está generando canje o solo acumulando?</li>
     <li>Con {{ contexto.tipo_tienda }} como tipo de tienda, ¿qué categorías debería reforzar?</li>
     <li>Ideas de campaña para aumentar pedidos esta semana.</li>
