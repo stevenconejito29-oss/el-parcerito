@@ -196,6 +196,37 @@ class CartOrderGroupTest(unittest.TestCase):
             db.session.commit()
             self.assertTrue(self._add(producto).get_json()["ok"], f"falló en {tipo}")
 
+    def test_cart_compatibility_bloquea_mezcla_comida_y_retail(self):
+        """Regla vertical_mix: si dos productos con verticales explícitos
+        distintos (comida + producto) coexisten, _cart_compatibility debe
+        marcar el issue con code='vertical_mix' incluso si ambos son
+        visibles en TIPO_TIENDA activo."""
+        from routes.public import _cart_compatibility
+        from unittest.mock import patch
+
+        hamb = Product(
+            nombre="Hamburguesa test", precio=Decimal("9.90"), activo=True,
+            canal_preparacion="cocina", tipo_entrega="inmediato",
+            modalidad_entrega="ambas", vertical="comida",
+        )
+        camiseta = Product(
+            nombre="Camiseta test", precio=Decimal("15.00"), activo=True,
+            canal_preparacion="almacen", tipo_entrega="inmediato",
+            modalidad_entrega="ambas", vertical="producto",
+        )
+        db.session.add_all([hamb, camiseta])
+        db.session.commit()
+
+        # Simulamos catálogo mixto: parche a _producto_pertenece_al_vertical
+        # para que devuelva True en ambos (evita que 'vertical' clásico ataque).
+        with patch("routes.public._producto_pertenece_al_vertical", return_value=True):
+            result = _cart_compatibility([hamb, camiseta])
+
+        self.assertFalse(result["ok"])
+        codes = {i["code"] for i in result["issues"]}
+        self.assertIn("vertical_mix", codes,
+                      f"vertical_mix ausente en issues: {codes}")
+
 
 if __name__ == "__main__":
     unittest.main()
