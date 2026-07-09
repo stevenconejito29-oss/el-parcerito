@@ -3842,6 +3842,76 @@ async function handleAdminCmd(jid, text) {
     } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
   }
 
+  // ── Comandos admin adicionales (disponibles en ambos modos) ─────
+
+  // !pedido <numero> — Ver detalle de un pedido específico
+  if (lowerCmd.startsWith('pedido ')) {
+    const num = cmd.slice(7).trim().replace(/^#/, '');
+    if (!num) return sendText(jid, 'Uso: `!pedido <numero>`\nEj: `!pedido 1042`');
+    try {
+      const r = await oxidianGet(withAdminActor(`/admin/pedidos?numero=${encodeURIComponent(num)}&limit=1`, jid));
+      const p = r?.pedidos?.[0];
+      if (!p) return sendText(jid, `No encontré pedido "${num}".`);
+      return sendText(jid,
+        `📦 *Pedido ${p.numero}*\n` +
+        `  Estado: ${p.estado}\n` +
+        `  Total: €${(p.total || 0).toFixed(2)}\n` +
+        `  Pago: ${p.metodo_pago || '—'}\n` +
+        `  Creado hace: ${p.creado_hace || '?'}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // !aviso <numero> <texto> — Notifica al cliente de un pedido
+  if (lowerCmd.startsWith('aviso ')) {
+    const m = cmd.slice(6).trim().match(/^(\S+)\s+(.+)$/);
+    if (!m) return sendText(jid, 'Uso: `!aviso <numero-pedido> <mensaje>`\nEj: `!aviso 1042 Tu pedido está listo`');
+    const [, numero, mensaje] = m;
+    try {
+      const r = await oxidianPost('/admin/aviso-pedido',
+        adminBody(jid, { numero_pedido: numero.replace(/^#/, ''), mensaje }));
+      return sendText(jid, r?.ok
+        ? `✅ Aviso enviado a ${r.telefono_masked || 'cliente'}`
+        : `❌ ${r?.error || 'no se pudo enviar'}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // !cupon <codigo> <descuento%> — Crea cupón express
+  if (lowerCmd.startsWith('cupon ') || lowerCmd.startsWith('cupón ')) {
+    const rest = cmd.replace(/^cup[oó]n\s+/i, '').trim();
+    const m = rest.match(/^([A-Z0-9_-]{2,20})\s+(\d{1,2})$/i);
+    if (!m) return sendText(jid, 'Uso: `!cupon CODIGO 15`\n_(código alfanumérico + % de descuento)_\nEj: `!cupon VERANO25 25`');
+    try {
+      const r = await oxidianPost('/admin/cupon/crear',
+        adminBody(jid, { codigo: m[1].toUpperCase(), descuento_pct: Number(m[2]) }));
+      return sendText(jid, r?.ok
+        ? `✅ Cupón *${r.codigo}* creado (${r.descuento_pct}% dto)`
+        : `❌ ${r?.error || 'error'}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // !top — top productos vendidos 30d
+  if (lowerCmd === 'top' || lowerCmd.startsWith('top ')) {
+    const dias = Number(cmd.slice(4).trim()) || 30;
+    try {
+      const r = await oxidianGet(withAdminActor(`/admin/top-productos?dias=${dias}`, jid));
+      const items = (r?.top || []).slice(0, 10);
+      if (!items.length) return sendText(jid, `Sin ventas en los últimos ${dias} días.`);
+      const lines = items.map((p, i) => `${i + 1}. ${p.nombre} — ${p.unidades} uds — €${(p.total || 0).toFixed(2)}`);
+      return sendText(jid, `🏆 *Top ventas ${dias}d*\n${lines.join('\n')}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // !stock-bajo — productos con stock < 10
+  if (lowerCmd === 'stock-bajo' || lowerCmd === 'agotandose') {
+    try {
+      const r = await oxidianGet(withAdminActor('/admin/stock-bajo?umbral=10', jid));
+      const items = (r?.productos || []);
+      if (!items.length) return sendText(jid, '✅ Todos los productos con stock suficiente.');
+      const lines = items.slice(0, 20).map(p => `⚠️ #${p.id} ${p.nombre} — ${p.stock} uds`);
+      return sendText(jid, `📉 *Stock bajo* (${items.length})\n${lines.join('\n')}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
   if (lowerCmd === 'diag' || lowerCmd === 'diagnostico') {
     try {
       const r = await oxidianGet(withAdminActor('/admin/diagnostico', jid));
