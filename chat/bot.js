@@ -3915,11 +3915,15 @@ async function handleAdminCmd(jid, text) {
     const parts = cmd.slice(5).trim().split(/\s+/);
     const to = normalizePhone(parts[0]);
     const msg = parts.slice(1).join(' ');
-    if (/^[0-9]{6,15}$/.test(to) && msg) {
-      await sendText(`${to}@s.whatsapp.net`, msg);
-      return sendText(jid, `✅ Mensaje enviado a ${to}`);
+    if (!/^[0-9]{6,15}$/.test(to) || !msg) {
+      return sendText(jid, 'Uso: `!send NUMERO mensaje`\nEj: `!send 34600123456 Hola, tu pedido ya está listo`');
     }
-    return sendText(jid, 'Uso: !send NUMERO mensaje');
+    // opts.force: acción admin explícita, salta la ventana 24h que sí aplica
+    // al bot conversacional automático. El logging + AuditLog ya trazan quién.
+    const ok = await sendText(`${to}@s.whatsapp.net`, msg, { force: true, transactional: true });
+    return sendText(jid, ok
+      ? `✅ Mensaje enviado a ${to}`
+      : `❌ No pude enviarlo. Verifica: número correcto, Evolution conectado, y logs con \`!status\`.`);
   }
 
   // ── Registrar un cliente nuevo desde WhatsApp admin ──
