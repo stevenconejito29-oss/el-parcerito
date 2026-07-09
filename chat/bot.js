@@ -2592,7 +2592,7 @@ function adminMenu(jid) {
     adminCan(jid, 'handoff') ? '`!take N` · `!release` · `!disponible`' : null,
     adminCan(jid, 'sync') ? '`!sync` sincronizar catálogo' : null,
     adminCan(jid, 'handoff') ? '`!send NUMERO mensaje`' : null,
-    '`!ia <pregunta>` análisis IA del negocio',
+    adminCan(jid, 'ai') ? '`!ia <pregunta>` análisis IA del negocio' : null,
     '`!buscar <texto>` encontrar producto',
     '`!diag` diagnóstico completo',
   ].filter(Boolean);
@@ -3669,7 +3669,7 @@ async function handleAdminCmd(jid, text) {
         '`!config <CLAVE> <valor>` — cambia\n' +
         '`!ver-config <prefijo>` — lista (ej: `!ver-config FEATURE_`)\n\n' +
         'Ejemplos:\n' +
-        '`!config PEDIDO_MINIMO 10.00`\n' +
+        '`!config PEDIDO_MINIMO_EUR 10.00`\n' +
         '`!config HORARIO_CIERRE 23:30`\n' +
         '`!config FEATURE_DELIVERY 0`');
     }
@@ -3683,7 +3683,7 @@ async function handleAdminCmd(jid, text) {
   if (lowerCmd.startsWith('ver-config') || lowerCmd === 'verconfig') {
     const pref = (cmd.slice(10).trim() || '').toUpperCase();
     try {
-      const r = await oxidianGet(`/config${pref ? '?prefijo=' + encodeURIComponent(pref) : ''}`);
+      const r = await oxidianGet(withAdminActor(`/config${pref ? '?prefijo=' + encodeURIComponent(pref) : ''}`, jid));
       if (!r?.ok || !r.config) return sendText(jid, '❌ No pude leer la config');
       const lines = Object.entries(r.config).slice(0, 25).map(([k, v]) => `  \`${k}\`=${v}`);
       return sendText(jid, `⚙️ *Config${pref ? ' ' + pref + '*' : ''}\n${lines.join('\n')}${Object.keys(r.config).length > 25 ? '\n_… truncado_' : ''}`);
@@ -3837,7 +3837,7 @@ async function handleAdminCmd(jid, text) {
     const val = cmd.slice(7).trim().replace(',', '.');
     if (!/^\d+(\.\d{1,2})?$/.test(val)) return sendText(jid, 'Uso: `!minimo <euros>`\nEj: `!minimo 10.00`');
     try {
-      const r = await oxidianPost('/config/set', { clave: 'PEDIDO_MINIMO', valor: val });
+      const r = await oxidianPost('/config/set', adminBody(jid, { clave: 'PEDIDO_MINIMO_EUR', valor: val }));
       return sendText(jid, r?.ok ? `✅ Pedido mínimo: *€${val}*` : `❌ ${r?.error}`);
     } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
   }
@@ -3872,6 +3872,9 @@ async function handleAdminCmd(jid, text) {
 
   // ── !ia <pregunta> — Consulta IA de negocio (admin/super_admin) ───────
   if (/^ia(\s|$)/.test(lowerCmd)) {
+    if (!adminCan(jid, 'ai')) {
+      return sendText(jid, `No tienes permiso para consultar la IA de negocio.\n\n${adminMenu(jid)}`);
+    }
     const pregunta = cmd.slice(3).trim();
     if (!pregunta || pregunta.length < 5) {
       return sendText(jid,
@@ -4408,7 +4411,7 @@ const CLIENT_INTENT_KEYWORDS = {
         'donde esta mi pedido', 'donde está mi pedido', 'seguimiento',
         'rastreo', 'cancelar', 'cancela', 'anular', 'anular pedido',
         'ya llega', 'cuanto falta', 'cuánto falta', 'donde anda'],
-  '3': ['puntos', 'club', 'fidelidad', 'descuento', 'descuentos', 'recompensa',
+  '3': ['puntos', 'club', 'fidelidad', 'canje', 'canjear', 'recompensa',
         'recompensas', 'mis puntos', 'cuantos puntos', 'cuántos puntos',
         'beneficios'],
   '4': ['cobertura', 'reparten', 'llegan', 'zona', 'zonas', 'direccion',
@@ -4558,11 +4561,21 @@ const CLIENT_FAQS = [
     // Está abierto ahora — frecuente después de horario.
     name: 'abierto_ahora',
     match: /\b(est[aá]n?\s+abier(to|tos)\s+ahora|est[aá]n?\s+cerrad(o|os)\s+ahora|abren\s+ahora|cerraron|siguen\s+abiertos|est[aá]n\s+ya\s+cerrad(o|os))\b/i,
-    answer: (ctx) => {
-      const abierta = String(cfg('tienda_abierta', '1')) === '1';
-      if (abierta) return `🟢 *${ctx.negocio}* está abierto ahora.\n\nAbre la tienda online aquí:\n👉 ${ctx.tiendaUrl}`;
-      const msg = String(cfg('tienda_mensaje_cierre', '') || '').trim();
-      return `🔴 *${ctx.negocio}* está cerrado en este momento.\n${msg ? '\n' + msg + '\n' : ''}${ctx.horario ? '\n' + ctx.horario + '\n' : ''}\nCuando abramos podrás pedir en: ${ctx.tiendaUrl}`;
+    answer: async (ctx) => {
+      try {
+        const data = await oxidianGet('/negocio', { timeout: 5000 });
+        const nombre = data.nombre || ctx.negocio;
+        const tiendaUrl = data.tienda_url || ctx.tiendaUrl;
+        const horario = data.horario_apertura && data.horario_cierre
+          ? `Horario: ${data.horario_apertura}–${data.horario_cierre}`
+          : ctx.horario;
+        if (data.is_open) return `🟢 *${nombre}* está abierto ahora.\n\nAbre la tienda online aquí:\n👉 ${tiendaUrl}`;
+        const msg = String(data.mensaje_cierre || cfg('tienda_mensaje_cierre', '') || '').trim();
+        return `🔴 *${nombre}* está cerrado en este momento.\n${msg ? '\n' + msg + '\n' : ''}${horario ? '\n' + horario + '\n' : ''}\nCuando abramos podrás pedir en: ${tiendaUrl}`;
+      } catch (e) {
+        const msg = String(cfg('tienda_mensaje_cierre', '') || '').trim();
+        return `Puedo consultar el horario, pero ahora no pude verificar el estado en tiempo real.\n${msg ? '\n' + msg + '\n' : ''}${ctx.horario ? '\n' + ctx.horario + '\n' : ''}\nTienda: ${ctx.tiendaUrl}`;
+      }
     },
   },
   {
@@ -4605,10 +4618,38 @@ const CLIENT_FAQS = [
       return (
         `⭐ *Programa de puntos*\n\n` +
         `· Ganas *1 punto por cada €* gastado en pedidos entregados.\n` +
-        `· Puedes canjearlos por descuentos o productos exclusivos.\n\n` +
+        `· Puedes canjearlos por productos exclusivos disponibles en la tienda.\n\n` +
         `Escribe *3* o *"mis puntos"* para consultar tu saldo.`
       );
     },
+  },
+  {
+    name: 'cambios_devoluciones_retail',
+    match: /\b(cambio|cambios|devoluci[oó]n|devolver|garant[ií]a|talla|tallas|medida|medidas|color|colores|stock|disponible|disponibilidad)\b/i,
+    answer: (ctx) => {
+      if (ctx.es_comida) {
+        return (
+          `Puedo ayudarte a revisar disponibilidad y opciones del menú en la tienda:\n` +
+          `👉 ${ctx.tiendaUrl}\n\n` +
+          `Si tienes una duda concreta sobre un producto, escribe el nombre y te muestro coincidencias.`
+        );
+      }
+      return (
+        `🛍️ *Disponibilidad, tallas y cambios*\n\n` +
+        `La ficha de cada producto muestra las opciones disponibles. Para elegir talla, color o presentación entra aquí:\n` +
+        `👉 ${ctx.tiendaUrl}\n\n` +
+        `Si necesitas cambiar algo de un pedido ya hecho, escribe *AGENTE* y te conecto con una persona.`
+      );
+    },
+  },
+  {
+    name: 'comprar_por_whatsapp',
+    match: /\b(quiero\s+comprar|te\s+pido|pedir\s+por\s+aqu[ií]|comprar\s+por\s+whatsapp|hazme\s+un\s+pedido|me\s+vendes|reservar|reserva(r)?)\b/i,
+    answer: (ctx) => (
+      `Para evitar errores, los pedidos se hacen directamente en la tienda online:\n` +
+      `👉 ${ctx.tiendaUrl}\n\n` +
+      `Por aquí puedo ayudarte con estado del pedido, horario, puntos, dudas generales o pasarte con una persona.`
+    ),
   },
   {
     name: 'gracias_positivo',
@@ -4652,13 +4693,13 @@ const CLIENT_FAQS = [
 
 /**
  * Devuelve la respuesta enlatada de la FAQ que matchee, o null.
- * Las FAQs NO consumen API y se sirven instantáneamente.
+ * Algunas FAQs consultan Oxidian para no responder con caché obsoleta.
  */
-function tryCannedFAQ(text, ctx) {
+async function tryCannedFAQ(text, ctx) {
   const t = String(text || '').toLowerCase();
   for (const faq of CLIENT_FAQS) {
     if (faq.match.test(t)) {
-      const out = faq.answer(ctx);
+      const out = await faq.answer(ctx);
       if (out) return { name: faq.name, text: out };
     }
   }
@@ -4683,6 +4724,9 @@ function _buildFaqContext(ses) {
       return '';
     })(),
     tiendaUrl: getTiendaUrl(),
+    tipo_tienda: String(cfg('tipo_tienda', 'comida') || 'comida').toLowerCase(),
+    catalogo_label: String(cfg('vertical_label', 'Menú') || 'Menú'),
+    es_comida: String(cfg('tipo_tienda', 'comida') || 'comida').toLowerCase() !== 'producto',
     delivery_enabled: String(cfg('delivery_enabled', '1') || '1') !== '0',
     pickup_enabled: String(cfg('pickup_enabled', '1') || '1') !== '0',
     loyalty_enabled: String(cfg('loyalty_enabled', '1') || '1') !== '0',
@@ -4865,7 +4909,7 @@ async function handleMainMenu(jid, ses, opcion) {
 
   // 3) FAQ canned (horario, dirección, pago, tiempo entrega, take-away, "cómo pedir",
   //    combos, alérgenos, envío, bizum, abierto ahora, link tienda)
-  const faq = tryCannedFAQ(textoLibre, _buildFaqContext(ses));
+  const faq = await tryCannedFAQ(textoLibre, _buildFaqContext(ses));
   if (faq) {
     bumpStat('faq');
     log('info', 'faq_canned', faq.name);
@@ -4919,12 +4963,12 @@ async function handleMainMenu(jid, ses, opcion) {
           return sendText(jid,
             `${saludo}⭐ *Tu club de fidelidad*\n\n` +
             `Tienes *${data.puntos} puntos* 🎉\n` +
-            `Equivalen a *${formatPrecio(data.valor_euro)}* de descuento posible.` +
+            `Puedes usarlos para canjear productos disponibles en la tienda.` +
             bloqueCodigo +
             `\n*¿Cómo canjearlos?*\n` +
             `1. Abre la tienda online 🛒\n` +
             `2. En el checkout introduce el código de arriba ⬆️\n` +
-            `3. Elige descuento o producto de regalo 🎁\n\n` +
+            `3. Elige el producto canjeable que quieras añadir 🎁\n\n` +
             `👉 *Historial:* ${tiendaUrl}/club\n` +
             `👉 *Abrir tienda online:* ${tiendaUrl}\n\n` +
             `_Escribe *menu* para volver._`

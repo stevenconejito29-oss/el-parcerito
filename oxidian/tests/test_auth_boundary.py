@@ -2,7 +2,7 @@ import unittest
 
 from flask import Flask
 
-from models import ROLES_AUTENTICABLES, User
+from models import CUSTOMER_INTERNAL_EMAIL_DOMAIN, ROLES_AUTENTICABLES, User, internal_customer_email
 from routes.auth import _complete_login, auth_bp
 from routes.public import public_bp
 
@@ -22,6 +22,10 @@ class EmployeeAuthBoundaryTest(unittest.TestCase):
         )
         customer.set_password("unused-password")
         self.assertFalse(customer.puede_iniciar_sesion)
+        self.assertEqual(
+            internal_customer_email("+34 610 000 001"),
+            f"cliente.34610000001@{CUSTOMER_INTERNAL_EMAIL_DOMAIN}",
+        )
 
     def test_login_helper_rejects_customer_records(self):
         customer = User(

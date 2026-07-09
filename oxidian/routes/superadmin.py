@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file
 from flask_login import login_required, current_user
 from functools import wraps
 from datetime import datetime, date, timedelta, timezone
@@ -7,6 +7,8 @@ from sqlalchemy import func, or_
 from urllib.parse import urlparse
 import os
 import re
+import subprocess
+import tempfile
 import uuid
 
 from extensions import db, get_or_404
@@ -1211,6 +1213,137 @@ def chatbot_test_whatsapp():
     flash("Mensaje de prueba enviado por WhatsApp." if ok else "No se pudo enviar. Revisa URL, key y estado conectado del bot.",
           "success" if ok else "danger")
     return redirect(url_for("superadmin.chatbot"))
+
+
+# ─── BASE DE DATOS (solo super_admin) ───────────────────────
+
+def _database_tool_url():
+    """URL compatible con pg_dump/pg_restore, sin ocultar password."""
+    url = db.engine.url.render_as_string(hide_password=False)
+    return re.sub(r"^postgresql\+[^:]+://", "postgresql://", url)
+
+
+def _require_postgres_url():
+    url = _database_tool_url()
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise RuntimeError("La exportación/restauración desde panel requiere PostgreSQL.")
+    return url
+
+
+@superadmin_bp.route("/database")
+@superadmin_required
+def database_admin():
+    ultima_export = SiteConfig.get("DB_LAST_EXPORT_AT", "")
+    ultima_import = SiteConfig.get("DB_LAST_IMPORT_AT", "")
+    return render_template(
+        "superadmin/database.html",
+        ultima_export=ultima_export,
+        ultima_import=ultima_import,
+        max_upload_mb=int(os.environ.get("DB_BACKUP_MAX_UPLOAD_MB", "200") or "200"),
+    )
+
+
+@superadmin_bp.route("/database/download", methods=["POST"])
+@superadmin_required
+def database_download():
+    try:
+        database_url = _require_postgres_url()
+        stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        tmp = tempfile.NamedTemporaryFile(prefix=f"oxidian_{stamp}_", suffix=".dump", delete=False)
+        tmp.close()
+        cmd = [
+            "pg_dump",
+            "--format=custom",
+            "--no-owner",
+            "--no-privileges",
+            "--dbname", database_url,
+            "--file", tmp.name,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        if result.returncode != 0:
+            os.unlink(tmp.name)
+            flash(f"No se pudo exportar la base de datos: {result.stderr[-300:]}", "danger")
+            return redirect(url_for("superadmin.database_admin"))
+        SiteConfig.set("DB_LAST_EXPORT_AT", datetime.utcnow().isoformat(timespec="seconds") + "Z")
+        AuditLog.registrar(current_user.id, "db_export", "database", detalle="backup descargado", ip=request.remote_addr)
+        db.session.commit()
+        response = send_file(
+            tmp.name,
+            as_attachment=True,
+            download_name=f"oxidian_backup_{stamp}.dump",
+            mimetype="application/octet-stream",
+            max_age=0,
+        )
+        @response.call_on_close
+        def _cleanup_backup():
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+        return response
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"No se pudo exportar la base de datos: {exc}", "danger")
+        return redirect(url_for("superadmin.database_admin"))
+
+
+@superadmin_bp.route("/database/upload", methods=["POST"])
+@superadmin_required
+def database_upload():
+    confirmacion = (request.form.get("confirmacion") or "").strip()
+    if confirmacion != "RESTAURAR":
+        flash("Para restaurar debes escribir RESTAURAR exactamente.", "danger")
+        return redirect(url_for("superadmin.database_admin"))
+    file = request.files.get("backup")
+    if not file or not file.filename:
+        flash("Selecciona un archivo .dump o .sql.", "danger")
+        return redirect(url_for("superadmin.database_admin"))
+    filename = os.path.basename(file.filename)
+    suffix = os.path.splitext(filename)[1].lower()
+    if suffix not in {".dump", ".backup", ".sql"}:
+        flash("Formato no permitido. Usa .dump, .backup o .sql.", "danger")
+        return redirect(url_for("superadmin.database_admin"))
+    max_mb = int(os.environ.get("DB_BACKUP_MAX_UPLOAD_MB", "200") or "200")
+    if request.content_length and request.content_length > max_mb * 1024 * 1024:
+        flash(f"El archivo supera el máximo permitido ({max_mb} MB).", "danger")
+        return redirect(url_for("superadmin.database_admin"))
+
+    tmp = tempfile.NamedTemporaryFile(prefix="oxidian_restore_", suffix=suffix, delete=False)
+    tmp.close()
+    try:
+        database_url = _require_postgres_url()
+        file.save(tmp.name)
+        db.session.close()
+        if suffix == ".sql":
+            cmd = ["psql", "--dbname", database_url, "--file", tmp.name]
+        else:
+            cmd = [
+                "pg_restore",
+                "--clean",
+                "--if-exists",
+                "--no-owner",
+                "--no-privileges",
+                "--dbname", database_url,
+                tmp.name,
+            ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            flash(f"No se pudo restaurar la base de datos: {result.stderr[-400:]}", "danger")
+            return redirect(url_for("superadmin.database_admin"))
+        SiteConfig.set("DB_LAST_IMPORT_AT", datetime.utcnow().isoformat(timespec="seconds") + "Z")
+        AuditLog.registrar(current_user.id, "db_import", "database", detalle=f"archivo={filename[:120]}", ip=request.remote_addr)
+        db.session.commit()
+        flash("Base de datos restaurada correctamente. Revisa usuarios, tienda y pedidos antes de operar.", "success")
+        return redirect(url_for("superadmin.database_admin"))
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"No se pudo restaurar la base de datos: {exc}", "danger")
+        return redirect(url_for("superadmin.database_admin"))
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
 
 
 # ─── CONFIGURACIÓN DEL SISTEMA ───────────────

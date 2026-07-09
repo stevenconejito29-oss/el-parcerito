@@ -25,7 +25,7 @@ from models import (User, Product, Categoria, Order, OrderItem, OrderProviderSta
                     BotAiUsage, BotAiMessage, AdminFeature,
                     PriceHistory, metadata_componente_combo,
                     metadata_item_pedido, utcnow as _utcnow,
-                    AuditLog)
+                    AuditLog, internal_customer_email)
 from idempotency import request_idempotency_key, request_body_hash, IDEMPOTENCY_TTL
 from services import (distribuir_pedido, registrar_uso_afiliado,
                       get_puntos_config, enviar_whatsapp_estado, mensaje_estado_pedido,
@@ -347,7 +347,7 @@ def branding():
         if user.rol == "super_admin":
             capabilities = [
                 "status", "store", "products", "points", "admins", "handoff",
-                "sync", "security", "emergency", "risks", "client_mode",
+                "sync", "security", "emergency", "risks", "client_mode", "ai",
             ]
         else:
             enabled = {
@@ -362,6 +362,8 @@ def branding():
                 capabilities.append("points")
             if "whatsapp" in enabled:
                 capabilities.extend(["handoff", "security"])
+            if "reportes" in enabled:
+                capabilities.append("ai")
         whatsapp_roles.append({
             "telefono": telefono,
             "rol": user.rol,
@@ -914,10 +916,9 @@ def registrar_cliente():
                 "cliente_id": existente.id,
                 "cliente": {"id": existente.id, "nombre": existente.nombre, "puntos": existente.puntos}
             })
-        _bot_dom = SiteConfig.get("BOT_EMAIL_DOMAIN", "wa.internal")
-        email = f"wa.{telefono}@{_bot_dom}"
+        email = internal_customer_email(telefono)
         if User.query.filter_by(email=email).first():
-            email = f"wa.{telefono}.{uuid.uuid4().hex[:6]}@{_bot_dom}"
+            email = internal_customer_email(telefono, uuid.uuid4().hex[:6])
         cliente = User(
             nombre=nombre,
             email=email,
@@ -1138,11 +1139,10 @@ def crear_pedido():
         if not cliente:
             # Auto-crear cliente identificado por teléfono (misma lógica que web checkout)
             nombre = (data.get("nombre_cliente") or f"WA {telefono[-4:]}").strip()[:100]
-            _bot_dom = SiteConfig.get("BOT_EMAIL_DOMAIN", "wa.internal")
-            email = f"wa.{telefono}@{_bot_dom}"
+            email = internal_customer_email(telefono)
             existing_email = User.query.filter_by(email=email).first()
             if existing_email:
-                email = f"wa.{telefono}.{uuid.uuid4().hex[:4]}@{_bot_dom}"
+                email = internal_customer_email(telefono, uuid.uuid4().hex[:4])
             cliente = User(
                 nombre=nombre,
                 email=email,
@@ -3015,6 +3015,7 @@ def _bot_admin_actor_allowed(data, capability):
         "points": "marketing",
         "handoff": "whatsapp",
         "security": "whatsapp",
+        "ai": "reportes",
     }.get(capability)
     return True if capability == "store" else bool(
         feature and AdminFeature.tiene_acceso(user.id, feature)
@@ -3439,7 +3440,6 @@ def bot_admin_buscar_cliente():
                 "id": cliente.id,
                 "nombre": cliente.nombre,
                 "telefono": cliente.telefono,
-                "email": cliente.email,
                 "puntos": int(cliente.puntos or 0),
                 "activo": bool(cliente.activo),
             },
@@ -3561,7 +3561,7 @@ def ai_admin_consulta():
     pregunta = (payload.get("pregunta") or "").strip()
 
     tn = _telefono_admin_autorizado(telefono)
-    if not tn:
+    if not tn or not _bot_admin_actor_allowed({"actor_telefono": tn}, "ai"):
         return jsonify({"ok": False, "error": "No autorizado"}), 403
     if len(pregunta) < 5:
         return jsonify({"ok": False, "error": "Escribe una pregunta más específica."})
@@ -3613,7 +3613,9 @@ def ai_admin_consulta():
 @bot_required
 def bot_config_ver():
     """Devuelve un subconjunto de SiteConfig. Filtra por prefijo o claves
-    específicas. NO devuelve BOT_AI_API_KEY / SECRET_KEY / passwords."""
+    específicas. Requiere actor admin y NO devuelve secretos."""
+    if not _bot_admin_request_allowed("store"):
+        return _bot_actor_forbidden()
     SENSIBLES = {"BOT_AI_API_KEY", "BOT_API_KEY", "SECRET_KEY", "BOT_PANEL_KEY"}
     prefijo = (request.args.get("prefijo") or "").strip().upper()
     claves_arg = (request.args.get("claves") or "").strip()
@@ -3639,6 +3641,8 @@ def bot_config_set():
     aún exige que el teléfono admin sea válido)."""
     if not _bot_admin_request_allowed("store"):
         return _bot_actor_forbidden()
+    from routes.superadmin import LOCKED_CONFIG_KEYS, _validar_config_value
+
     BLOQUEADAS = {"BOT_AI_API_KEY", "BOT_API_KEY", "SECRET_KEY", "BOT_PANEL_KEY",
                   "SEED_PASSWORD", "OXIDIAN_KEY"}
     payload = request.get_json(silent=True) or {}
@@ -3648,6 +3652,28 @@ def bot_config_set():
         return jsonify({"ok": False, "error": "Clave requerida (<60 chars)"})
     if clave in BLOQUEADAS or clave.endswith("_API_KEY") or "PASSWORD" in clave:
         return jsonify({"ok": False, "error": f"Clave protegida: {clave}"}), 403
+    actor_telefono = _bot_admin_request_payload().get("actor_telefono")
+    actor_norm = normalizar_telefono_cliente(actor_telefono)
+    actor_user = User.query.filter_by(telefono_normalizado=actor_norm, activo=True).first() if actor_norm else None
+    actor_superadmin = bool(actor_user and actor_user.rol == "super_admin")
+    if not actor_superadmin:
+        privileged = set()
+        for key in ("SUPERADMINS", "OWNER_NUMBER"):
+            raw = (SiteConfig.get(key, current_app.config.get(key, "")) or "")
+            for chunk in raw.replace(";", ",").split(","):
+                n = normalizar_telefono_cliente(chunk)
+                if telefono_valido(n):
+                    privileged.add(n)
+        actor_superadmin = bool(actor_norm and actor_norm in privileged)
+    if clave in LOCKED_CONFIG_KEYS and not actor_superadmin:
+        return jsonify({
+            "ok": False,
+            "code": "SUPERADMIN_REQUIRED",
+            "error": f"Solo el super admin puede cambiar {clave}.",
+        }), 403
+    ok, clave, valor, error = _validar_config_value(clave, valor)
+    if not ok:
+        return jsonify({"ok": False, "error": error}), 400
     try:
         SiteConfig.set(clave, valor)
         AuditLog.registrar(None, "config_set_whatsapp", "site_config",

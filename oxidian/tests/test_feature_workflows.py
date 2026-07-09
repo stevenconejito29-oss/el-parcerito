@@ -5,7 +5,7 @@ from flask import Flask
 
 from extensions import db
 from models import Order, SiteConfig, User, utcnow
-from services import distribuir_repartidor, estado_cola
+from services import calcular_pl, distribuir_repartidor, estado_cola
 
 
 class FeatureWorkflowTest(unittest.TestCase):
@@ -88,6 +88,43 @@ class FeatureWorkflowTest(unittest.TestCase):
         self.assertIsNone(target.repartidor_id)
         self.assertNotIn("repartidor", estado_cola())
         self.assertIsNotNone(driver.id)
+
+    def test_queue_does_not_expose_legacy_staff_role(self):
+        staff = User(
+            nombre="Staff legado",
+            email="staff@test.invalid",
+            rol="staff",
+            activo=True,
+            en_linea=True,
+            last_seen=utcnow(),
+        )
+        staff.set_password("password")
+        db.session.add(staff)
+        db.session.commit()
+
+        self.assertNotIn("staff", estado_cola())
+
+    def test_service_commission_is_subtracted_from_pl_result(self):
+        today = utcnow().date()
+        order = Order(
+            numero_pedido="#PL-SERVICE",
+            cliente_id=self.customer.id,
+            estado="entregado",
+            origen="online",
+            subtotal=Decimal("100.00"),
+            total=Decimal("100.00"),
+            service_commission_amount=Decimal("12.00"),
+            merchant_net_amount=Decimal("88.00"),
+            entregado_en=utcnow(),
+        )
+        db.session.add(order)
+        db.session.commit()
+
+        pl = calcular_pl(today, today)
+
+        self.assertEqual(pl["ingresos_netos"], 100.0)
+        self.assertEqual(pl["service_commission"], 12.0)
+        self.assertEqual(pl["resultado"], 88.0)
 
 
 if __name__ == "__main__":

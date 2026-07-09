@@ -1014,7 +1014,7 @@ def estado_cola() -> dict:
     }
 
     features = get_store_features()
-    roles = ["cocina", "staff", "admin"]
+    roles = ["cocina", "admin"]
     if features["pedidos_programados"]:
         roles.append("preparacion")
     if features["delivery"]:
@@ -1339,6 +1339,7 @@ def calcular_pl(fecha_ini, fecha_fin):
 
     # ── Cascada final ─────────────────────────────────────────────────
     resultado = (margen_bruto
+                 - float(service_commission)
                  - float(nominas)
                  - float(comisiones)
                  - float(gastos_caja)

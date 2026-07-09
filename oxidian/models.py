@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import random
+import re
+import uuid
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import text
@@ -36,6 +38,7 @@ ROLES_AUTENTICABLES = frozenset({
 })
 ROLES_LEGACY_PREPARACION = {"staff"}
 METODOS_PAGO_VALIDOS = ("efectivo", "bizum", "tarjeta")
+CUSTOMER_INTERNAL_EMAIL_DOMAIN = "customers.oxidian.internal"
 
 # LEGACY: modelo de acuerdo del flujo multi-proveedor/bar aliado.
 # El flujo operativo vigente no usa proveedores como rol ni como origen público;
@@ -84,6 +87,20 @@ ADMIN_FEATURES_OPERACIONALES = [
 #   - usuarios: crear/editar cuentas; vector de escalada de permisos.
 #   - whatsapp: config del bot (API keys, prompts, power) — costes y voz de marca.
 ADMIN_FEATURES_SENSIBLES = ["auditoria", "usuarios", "whatsapp"]
+
+
+def internal_customer_email(phone, suffix=None):
+    """Email técnico para cumplir la restricción única de BD.
+
+    Los clientes públicos se identifican por teléfono y nunca inician sesión
+    con este valor. Mantenerlo centralizado evita dominios visibles o cadenas
+    sueltas en checkout, bot y seeds.
+    """
+    digits = re.sub(r"\D", "", str(phone or ""))
+    if not digits:
+        digits = uuid.uuid4().hex[:12]
+    extra = f".{suffix}" if suffix else ""
+    return f"cliente.{digits}{extra}@{CUSTOMER_INTERNAL_EMAIL_DOMAIN}"
 
 
 class User(UserMixin, db.Model):

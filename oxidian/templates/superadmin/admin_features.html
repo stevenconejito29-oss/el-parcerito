@@ -92,27 +92,30 @@
     <button type="submit" class="ox-btn-primary flex-1 py-3 font-black">
       💾 Guardar configuración
     </button>
-    <form method="POST" action="{{ url_for('superadmin.preset_operacional_features', user_id=admin_user.id) }}" class="flex-shrink-0">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="ox-btn-ghost py-3 px-5"
-              style="color:#FFAB00;border-color:rgba(255,171,0,.3)"
-              title="Enciende módulos de operación diaria, deja los sensibles apagados">
-        ⚡ Preset operacional
-      </button>
-    </form>
-    <form method="POST" action="{{ url_for('superadmin.activar_todos_features', user_id=admin_user.id) }}" class="flex-shrink-0">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="ox-btn-ghost py-3 px-5"
-              style="color:#5EF097;border-color:rgba(94,240,151,.3)"
-              title="Incluye módulos sensibles — usar con cuidado">
-        ✓ Activar todos
-      </button>
-    </form>
     <a href="{{ url_for('superadmin.admins') }}" class="ox-btn-ghost py-3 px-5">
       Cancelar
     </a>
   </div>
 </form>
+
+<div class="flex gap-3 flex-wrap mt-3">
+  <form method="POST" action="{{ url_for('superadmin.preset_operacional_features', user_id=admin_user.id) }}" class="flex-shrink-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="ox-btn-ghost py-3 px-5"
+            style="color:#FFAB00;border-color:rgba(255,171,0,.3)"
+            title="Enciende módulos de operación diaria, deja los sensibles apagados">
+      ⚡ Preset operacional
+    </button>
+  </form>
+  <form method="POST" action="{{ url_for('superadmin.activar_todos_features', user_id=admin_user.id) }}" class="flex-shrink-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="ox-btn-ghost py-3 px-5"
+            style="color:#5EF097;border-color:rgba(94,240,151,.3)"
+            title="Incluye módulos sensibles — usar con cuidado">
+      ✓ Activar todos
+    </button>
+  </form>
+</div>
 
 {% endif %}
 {% endblock %}

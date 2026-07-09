@@ -1,0 +1,59 @@
+{% extends "admin_base.html" %}
+{% block title %}Base de datos — Super Admin{% endblock %}
+{% block content %}
+
+<div class="oa-page">
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Super administración</p>
+      <h1 class="oa-page-header__title">Base de datos</h1>
+      <p class="oa-page-header__subtitle">Exporta respaldos y restaura datos completos de Oxidian. Solo super admin.</p>
+    </div>
+    <div class="oa-page-header__actions">
+      <a href="{{ url_for('superadmin.dashboard') }}" class="oa-btn oa-btn--ghost">Panel SA</a>
+      <a href="{{ url_for('superadmin.audit') }}" class="oa-btn oa-btn--ghost">Auditoría</a>
+    </div>
+  </header>
+
+  <section class="oa-panel">
+    <div class="oa-panel__body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--oa-space-4);">
+      <div>
+        <h2 class="oa-section__title" style="margin-top:0;">Descargar respaldo</h2>
+        <p style="color:var(--col-muted);line-height:1.55;margin:.35rem 0 1rem;">
+          Genera un archivo PostgreSQL custom con datos, estructura, usuarios, pedidos, productos, combos, puntos y configuración.
+        </p>
+        <form method="POST" action="{{ url_for('superadmin.database_download') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="oa-btn oa-btn--primary" type="submit">Descargar base de datos</button>
+        </form>
+        <p style="font-size:var(--oa-font-xs);color:var(--col-faint);margin-top:.75rem;">
+          Última descarga desde panel: {{ ultima_export or 'sin registro' }}
+        </p>
+      </div>
+
+      <div>
+        <h2 class="oa-section__title" style="margin-top:0;">Subir y restaurar</h2>
+        <p style="color:var(--col-muted);line-height:1.55;margin:.35rem 0 1rem;">
+          Reemplaza la base actual por un respaldo. Hazlo solo en mantenimiento y descarga un respaldo antes de restaurar.
+        </p>
+        <form method="POST" action="{{ url_for('superadmin.database_upload') }}" enctype="multipart/form-data" style="display:grid;gap:.8rem;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label>
+            <span style="display:block;font-weight:700;margin-bottom:.35rem;">Archivo .dump, .backup o .sql</span>
+            <input type="file" name="backup" accept=".dump,.backup,.sql" required class="oa-input">
+          </label>
+          <label>
+            <span style="display:block;font-weight:700;margin-bottom:.35rem;">Confirmación</span>
+            <input name="confirmacion" required class="oa-input" placeholder="Escribe RESTAURAR">
+          </label>
+          <button class="oa-btn oa-btn--danger" type="submit">Restaurar base de datos</button>
+        </form>
+        <p style="font-size:var(--oa-font-xs);color:var(--col-faint);margin-top:.75rem;">
+          Máximo {{ max_upload_mb }} MB · Última restauración: {{ ultima_import or 'sin registro' }}
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+
+{% endblock %}

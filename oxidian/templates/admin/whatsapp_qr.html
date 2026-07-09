@@ -23,7 +23,7 @@
         <div class="flex justify-between"><span style="color:var(--col-faint)">Modo pánico</span><span id="val-panico" class="text-white">—</span></div>
       </div>
       <div id="info-desconectado" class="text-sm" style="color:var(--col-faint)">
-        <p>El bot no está corriendo. Ábrelo en una terminal con el comando de abajo.</p>
+        <p>El bot no está disponible o falta configurar la URL pública desde SuperAdmin → Chatbot.</p>
       </div>
     </div>
 
@@ -34,17 +34,19 @@
 
     <div class="ox-card p-4">
       <p class="text-xs mb-1" style="color:var(--col-faint)">API Key (Oxidian ↔ Bot)</p>
-      <code class="text-xs break-all" style="color:#5EF097">{{ bot_api_key or '⚠️ No configurada — SuperAdmin → Config' }}</code>
+      <code class="text-xs break-all" style="color:#5EF097">
+        {{ ('••••••••' ~ bot_api_key[-4:]) if bot_api_key else 'No configurada — SuperAdmin → Chatbot' }}
+      </code>
     </div>
   </div>
 
   <div class="space-y-4">
     <div class="ox-card p-5">
-      <h2 class="font-semibold mb-3 text-white">Cómo encender el bot</h2>
-      <p class="text-xs mb-3" style="color:var(--col-faint)">Abre una terminal y ejecuta:</p>
+      <h2 class="font-semibold mb-3 text-white">Estado del bot</h2>
+      <p class="text-xs mb-3" style="color:var(--col-faint)">La conexión y credenciales se administran desde el panel de Chatbot del SuperAdmin.</p>
       <div class="rounded-lg p-3 font-mono text-sm mb-2 select-all"
            style="background:rgba(0,0,0,.3);color:#5EF097;border:1px solid var(--col-border)">
-        docker compose --env-file .env.cosmos.local -f docker-compose.cosmos-local.yml up -d evolution-api chatbot evolution-setup
+        SuperAdmin → Chatbot → Guardar y sincronizar credenciales
       </div>
       <p class="text-xs" style="color:var(--col-faint)">Si la sesión está guardada se reconecta sin escanear QR. Si no, aparecerá el QR aquí arriba en segundos.</p>
     </div>
@@ -81,11 +83,12 @@
 <script>
 const CONFIGURED_BOT_URL = '{{ bot_public_url or bot_api_url }}';
 const BOT_URL = (() => {
+  if (!CONFIGURED_BOT_URL) return '';
   try {
     if ((CONFIGURED_BOT_URL || '').startsWith('/')) {
       return location.origin + CONFIGURED_BOT_URL.replace(/\/$/, '');
     }
-    const url = new URL(CONFIGURED_BOT_URL || `${location.protocol}//${location.hostname}:3000`);
+    const url = new URL(CONFIGURED_BOT_URL);
     const internalDockerHost = !url.hostname.includes('.') && !['localhost', '127.0.0.1'].includes(url.hostname);
     const localHostFromRemoteDevice = ['localhost', '127.0.0.1'].includes(url.hostname) && !['localhost', '127.0.0.1'].includes(location.hostname);
     if ((internalDockerHost || localHostFromRemoteDevice) && url.hostname !== location.hostname) {
@@ -93,7 +96,7 @@ const BOT_URL = (() => {
     }
     return url.origin;
   } catch {
-    return `${location.protocol}//${location.hostname}:3000`;
+    return '';
   }
 })();
 
@@ -111,6 +114,7 @@ async function actualizarEstado() {
   const divQr  = document.getElementById('div-qr');
 
   try {
+    if (!BOT_URL) throw new Error('BOT_URL no configurada');
     const r = await fetch(BOT_URL + '/api/status', { signal: AbortSignal.timeout(4000) });
     const d = await r.json();
 

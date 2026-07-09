@@ -10,10 +10,13 @@ from models import (
     Product,
     ProductExtraGroup,
     ProductExtraOption,
+    SiteConfig,
     Stock,
+    User,
     ZonaEntrega,
 )
 from routes.admin import _sync_catalog_extras
+from routes.admin import _parsear_campos_producto
 from routes.public import (
     _build_items_from_carrito,
     _parse_product_extras,
@@ -156,6 +159,58 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
         self.assertEqual(inside.get_json()["zona"]["nombre"], "Centro QA")
         outside = self.client.post("/api/check-address", json={"lat": 40.4168, "lng": -3.7038})
         self.assertFalse(outside.get_json()["ok"])
+
+    def test_check_address_blocks_all_branches_when_delivery_is_disabled(self):
+        SiteConfig.set("FEATURE_DELIVERY", "0")
+        db.session.commit()
+
+        by_coordinates = self.client.post("/api/check-address", json={"lat": 37.39, "lng": -5.98})
+        by_text = self.client.post("/api/check-address", json={"direccion": "Calle Sierpes 1, Sevilla"})
+
+        self.assertEqual(by_coordinates.status_code, 403)
+        self.assertEqual(by_text.status_code, 403)
+
+    def test_points_code_verification_does_not_enumerate_customers(self):
+        customer = User(
+            nombre="Cliente puntos",
+            email="puntos@test.invalid",
+            telefono="+34610009999",
+            rol="cliente",
+            activo=True,
+            puntos=100,
+        )
+        customer.set_password("test-only-password")
+        customer.generar_cod_puntos()
+        db.session.add(customer)
+        db.session.commit()
+
+        unknown = self.client.post(
+            "/puntos/verificar-codigo",
+            json={"telefono": "+34619999999", "codigo": "000000"},
+        ).get_json()
+        wrong = self.client.post(
+            "/puntos/verificar-codigo",
+            json={"telefono": customer.telefono, "codigo": "000000"},
+        ).get_json()
+
+        self.assertFalse(unknown["ok"])
+        self.assertFalse(wrong["ok"])
+        self.assertEqual(unknown["msg"], wrong["msg"])
+        self.assertNotIn("Cliente no encontrado", unknown["msg"])
+
+    def test_retail_product_import_defaults_to_warehouse_channel(self):
+        SiteConfig.set("TIPO_TIENDA", "producto")
+        db.session.commit()
+
+        fields, error = _parsear_campos_producto(MultiDict({
+            "nombre": "Camiseta sin canal explícito",
+            "precio": "19.90",
+            "modalidad_entrega": "ambas",
+            "tipo_entrega": "inmediato",
+        }))
+
+        self.assertIsNone(error)
+        self.assertEqual(fields["canal_preparacion"], "almacen")
 
 
 if __name__ == "__main__":

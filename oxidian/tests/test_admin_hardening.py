@@ -76,6 +76,7 @@ class AdminHardeningTest(unittest.TestCase):
     def test_product_feature_covers_combo_builder_but_not_legacy_providers(self):
         self.assertNotIn("/admin/proveedores", _FEATURE_URL_MAP)
         self.assertEqual(_FEATURE_URL_MAP["/admin/combos"], "productos")
+        self.assertEqual(_FEATURE_URL_MAP["/admin/empleado/"], "staff_pagos")
 
     def test_admin_and_provider_post_forms_include_csrf(self):
         templates = Path(__file__).resolve().parents[1] / "templates"

@@ -236,7 +236,9 @@
   {% if categoria_activa %}<input type="hidden" name="categoria" value="{{ categoria_activa }}">{% endif %}
   <div class="ep-search-box">
     <svg class="ep-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input type="search" name="q" value="{{ busqueda or '' }}" placeholder="Busca platos, bebidas o combos" class="ep-search-input" autocomplete="off" aria-label="Buscar productos">
+    <input type="search" name="q" value="{{ busqueda or '' }}"
+           placeholder="{{ 'Busca platos, bebidas o combos' if brand.es_comida else 'Busca productos, tallas o packs' }}"
+           class="ep-search-input" autocomplete="off" aria-label="Buscar productos">
     {% if busqueda %}<a href="{{ storefront_url() }}" class="ep-search-clear" aria-label="Limpiar">✕</a>{% endif %}
     <button type="submit" class="ep-search-submit" aria-label="Buscar">Buscar</button>
   </div>
@@ -524,12 +526,12 @@
         <input type="hidden" name="origen" value="{{ origen_actual }}">
         <input type="hidden" name="cantidad" id="ep-modal-qty-val" value="1">
         <input type="hidden" name="presentation_size" id="ep-modal-pres-val" value="">
-        {# Notas del cliente por producto: p.ej. "sin cebolla", "sin sal", etc. #}
+        {# Notas del cliente por producto. #}
         <div class="ep-modal-notas-wrap">
           <label for="ep-modal-notas" class="ep-modal-notas-lbl">📝 Alguna preferencia? <span class="ep-modal-notas-hint">(opcional)</span></label>
           <textarea id="ep-modal-notas" name="notas_personalizacion" rows="2" maxlength="240"
                     class="ep-modal-notas-input"
-                    placeholder="Ej: sin cebolla, sin sal, poca salsa..."></textarea>
+                    placeholder="{{ 'Ej: sin cebolla, sin sal, poca salsa...' if brand.es_comida else 'Ej: talla alternativa, color preferido, envolver para regalo...' }}"></textarea>
         </div>
         <div class="ep-modal-actions">
           <div class="ep-modal-qty-ctrl">

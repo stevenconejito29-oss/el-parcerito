@@ -587,6 +587,9 @@ def ticket(pedido_id):
         flash("Acceso restringido.", "danger")
         return redirect(url_for("public.index"))
     pedido = get_or_404(Order, pedido_id)
+    if current_user.rol == "repartidor" and pedido.repartidor_id != current_user.id:
+        flash("Este ticket no está asignado a tu ruta.", "danger")
+        return redirect(url_for("repartidor.ruta"))
     return render_template("pos/ticket.html", pedido=pedido)
 
 

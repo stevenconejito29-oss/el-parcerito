@@ -5,7 +5,7 @@ from decimal import Decimal
 from flask import Flask
 
 from extensions import db
-from models import AdminFeature, BotAiMessage, BotAiUsage, Order, OrderItem, Product, User
+from models import AdminFeature, BotAiMessage, BotAiUsage, Order, OrderItem, Product, SiteConfig, User
 from routes.api_bot import api_bot_bp
 
 
@@ -195,6 +195,7 @@ class BotHandoffDestinationTest(unittest.TestCase):
             AdminFeature(user_id=admin.id, feature="productos", activo=True),
             AdminFeature(user_id=admin.id, feature="whatsapp", activo=True),
             AdminFeature(user_id=admin.id, feature="marketing", activo=False),
+            AdminFeature(user_id=admin.id, feature="reportes", activo=True),
         ])
         db.session.commit()
 
@@ -207,10 +208,32 @@ class BotHandoffDestinationTest(unittest.TestCase):
         limited = profiles["admin:+34610000022"]
         self.assertIn("products", limited["capabilities"])
         self.assertIn("handoff", limited["capabilities"])
+        self.assertIn("ai", limited["capabilities"])
         self.assertNotIn("points", limited["capabilities"])
         super_profile = next(row for row in profiles.values() if row["rol"] == "super_admin")
         self.assertIn("admins", super_profile["capabilities"])
         self.assertIn("emergency", super_profile["capabilities"])
+        self.assertIn("ai", super_profile["capabilities"])
+
+    def test_ai_admin_consulta_requires_reportes_permission(self):
+        headers = {"X-Bot-Key": "test-bot-key"}
+        admin = User(
+            nombre="Admin sin reportes",
+            email="admin-no-ai@test.invalid",
+            telefono="+34610000023",
+            rol="admin",
+            activo=True,
+        )
+        admin.set_password("test-only-password")
+        db.session.add(admin)
+        db.session.commit()
+
+        denied = self.client.post(
+            "/api/bot/ai/admin-consulta",
+            json={"telefono": admin.telefono, "pregunta": "top productos del mes"},
+            headers=headers,
+        )
+        self.assertEqual(denied.status_code, 403)
 
     def test_admin_mutations_revalidate_actor_capabilities(self):
         headers = {"X-Bot-Key": "test-bot-key"}
@@ -245,6 +268,49 @@ class BotHandoffDestinationTest(unittest.TestCase):
         )
         self.assertEqual(allowed.status_code, 200)
         self.assertFalse(allowed.get_json()["producto"]["activo"])
+
+    def test_config_read_requires_an_authorized_actor(self):
+        response = self.client.get(
+            "/api/bot/config?prefijo=FEATURE_",
+            headers={"X-Bot-Key": "test-bot-key"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_config_set_uses_superadmin_guards_and_value_validation(self):
+        headers = {"X-Bot-Key": "test-bot-key"}
+        admin = User(
+            nombre="Admin limitado",
+            email="config-admin@test.invalid",
+            telefono="+34610000044",
+            rol="admin",
+            activo=True,
+        )
+        admin.set_password("test-only-password")
+        db.session.add(admin)
+        db.session.commit()
+
+        locked = self.client.post(
+            "/api/bot/config/set",
+            json={"clave": "FEATURE_DELIVERY", "valor": "0", "actor_telefono": admin.telefono},
+            headers=headers,
+        )
+        self.assertEqual(locked.status_code, 403)
+        self.assertEqual(locked.get_json()["code"], "SUPERADMIN_REQUIRED")
+
+        invalid = self.client.post(
+            "/api/bot/config/set",
+            json={"clave": "HORARIO_CIERRE", "valor": "99:99", "actor_telefono": self.superadmin.telefono},
+            headers=headers,
+        )
+        self.assertEqual(invalid.status_code, 400)
+
+        allowed = self.client.post(
+            "/api/bot/config/set",
+            json={"clave": "PEDIDO_MINIMO_EUR", "valor": "10.50", "actor_telefono": self.superadmin.telefono},
+            headers=headers,
+        )
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(SiteConfig.get("PEDIDO_MINIMO_EUR"), "10.50")
 
     def test_legacy_provider_metadata_still_uses_global_superadmins(self):
         order = self._order(17)

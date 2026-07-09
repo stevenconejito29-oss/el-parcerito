@@ -101,6 +101,7 @@ _FEATURE_URL_MAP = {
     "/admin/pagos-pendientes": "caja",
     "/admin/stock":        "stock",
     "/admin/pagos-staff":  "staff_pagos",
+    "/admin/empleado/":    "staff_pagos",
     "/admin/analytics":    "reportes",
     "/admin/ia-analisis":  "reportes",
     "/admin/notificaciones": "whatsapp",
@@ -1968,9 +1969,11 @@ def _parsear_campos_producto(form):
         return None, "La categoría seleccionada no existe o está inactiva."
 
     _CANALES_PREP_VALIDOS = {"cocina", "almacen"}
-    canal_preparacion = form.get("canal_preparacion", "cocina")
+    tipo_tienda_actual = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").strip().lower()
+    canal_default = "almacen" if tipo_tienda_actual == "producto" else "cocina"
+    canal_preparacion = form.get("canal_preparacion", canal_default)
     if canal_preparacion not in _CANALES_PREP_VALIDOS:
-        canal_preparacion = "cocina"
+        canal_preparacion = canal_default
 
     _TIPOS_ENTREGA_VALIDOS = {"inmediato", "programado"}
     features = get_store_features()

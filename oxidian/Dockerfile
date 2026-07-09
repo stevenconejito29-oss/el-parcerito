@@ -20,7 +20,7 @@ WORKDIR /app
 COPY oxidian/requirements.txt .
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential libpq-dev libffi-dev libssl-dev curl gosu nodejs npm \
+        build-essential libpq-dev libffi-dev libssl-dev curl gosu nodejs npm postgresql-client \
     && pip install --upgrade pip \
     && pip install -r requirements.txt \
     && apt-get clean \

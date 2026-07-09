@@ -141,11 +141,13 @@
             <div class="cr-item-tags">
               {% set fb = fulfillment_badge(item.producto) %}
               <span class="cr-tag cr-tag--fulfillment" title="{{ fb.title }}">{{ fb.emoji }} {{ fb.label }}</span>
+              {% if brand.es_comida %}
               {% if item.producto.es_hipoalergenico %}
               <span class="cr-tag cr-tag--hipo">🌿 {{ ui.cart_no_allergens }}</span>
               {% else %}
               {% set al = item.producto.alergenos_iconos %}
               {% if al %}<span class="cr-tag cr-tag--alerg">⚠️ {% for c,i,l in al %}<span title="{{ l }}">{{ i }}</span>{% endfor %}</span>{% endif %}
+              {% endif %}
               {% endif %}
               {% if item.producto.origen_pais %}
               <span class="cr-tag">{{ item.producto.origen_pais }}</span>
@@ -301,10 +303,12 @@
     </div>{# /cr-puntos-wrap #}{% endif %}
 
     {# ── BANNER ALÉRGENOS ── #}
+    {% if brand.es_comida %}
     <div class="cr-alerg-banner">
       <span>⚠️</span>
       <p>{{ ui.cart_allergen_notice }}</p>
     </div>
+    {% endif %}
 
   </div>{# /cr-main #}
 

@@ -356,12 +356,27 @@ def confirmar_entrega(pedido_id):
         flash("Confirma que recibiste el pago en efectivo antes de marcar como entregado.", "warning")
         return redirect(url_for("repartidor.ruta"))
 
-    if pedido.codigo_confirmacion:
-        ok, msg_codigo = pedido.confirmar_entrega_con_codigo(codigo_ingresado)
-        if not ok:
-            db.session.commit()  # guardar intentos_codigo
-            flash(f"Código incorrecto: {msg_codigo}", "danger")
+    if not pedido.codigo_confirmacion:
+        try:
+            pedido.generar_codigo_confirmacion()
+            enviado = enviar_whatsapp_codigo_entrega(pedido, actor_id=current_user.id)
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            logger.exception("No se pudo regenerar código de entrega del pedido %s", pedido.id)
+            flash(f"Este pedido no tenía código de entrega y no se pudo generar: {exc}", "danger")
             return redirect(url_for("repartidor.ruta"))
+        if enviado:
+            flash("El pedido no tenía código. Generamos uno nuevo y lo enviamos al cliente.", "warning")
+        else:
+            flash("El pedido no tenía código. Generamos uno nuevo; envíalo manualmente desde la ruta.", "warning")
+        return redirect(url_for("repartidor.ruta"))
+
+    ok, msg_codigo = pedido.confirmar_entrega_con_codigo(codigo_ingresado)
+    if not ok:
+        db.session.commit()  # guardar intentos_codigo
+        flash(f"Código incorrecto: {msg_codigo}", "danger")
+        return redirect(url_for("repartidor.ruta"))
 
     try:
         avanzar_estado_pedido(pedido, actor_id=current_user.id, canal="repartidor")

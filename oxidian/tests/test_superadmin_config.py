@@ -30,6 +30,15 @@ class SuperadminConfigTest(unittest.TestCase):
             session["_user_id"] = "1"
             session["_fresh"] = True
 
+    @patch("routes.superadmin.render_template", return_value="database-page")
+    @patch("routes.superadmin.SiteConfig.get", return_value="")
+    def test_database_panel_is_available_to_superadmin(self, _config_get, _render):
+        response = self.client.get("/superadmin/database")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_data(as_text=True), "database-page")
+        _render.assert_called_once()
+
     def test_section_parser_only_accepts_declared_present_fields(self):
         form = MultiDict([
             ("section", "tienda-colores"),
