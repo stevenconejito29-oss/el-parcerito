@@ -3718,3 +3718,73 @@ def bot_producto_toggle():
         db.session.rollback()
         return jsonify({"ok": False, "error": "No se pudo guardar"}), 500
     return jsonify({"ok": True, "id": pid, "activo": activo, "nombre": p.nombre})
+
+
+@api_bot_bp.route("/admin/diagnostico", methods=["GET"])
+@bot_required
+def bot_diagnostico():
+    """Snapshot rápido del estado del sistema: stock, finanzas, features
+    y flujos. Diseñado para el comando `!diag` del admin en WhatsApp.
+    Sin PII, todo agregados."""
+    from sqlalchemy import func
+    hoy = date.today()
+    hace_7d = hoy - timedelta(days=7)
+
+    # Catálogo
+    total_prod = Product.query.filter_by(activo=True).count()
+    total_combo = Product.query.filter_by(activo=True, es_combo=True).count()
+    con_stock = db.session.query(Product.id).filter(
+        Product.activo == True,  # noqa
+        Product.tipo_entrega == "inmediato",
+        Product.es_combo == False,  # noqa
+    ).count()
+    sin_stock = 0
+    for p in Product.query.filter_by(activo=True, es_combo=False, tipo_entrega="inmediato").all():
+        try:
+            if int(p.stock_total or 0) <= 0:
+                sin_stock += 1
+        except Exception:
+            pass
+
+    # Finanzas 7d
+    pedidos_7d = Order.query.filter(Order.creado_en >= hace_7d).count()
+    entregados_7d = Order.query.filter(
+        Order.creado_en >= hace_7d, Order.estado == "entregado"
+    ).count()
+    from models import Caja as _Caja
+    ingresos_7d = float(db.session.query(func.coalesce(func.sum(_Caja.monto), 0))
+                        .filter(_Caja.tipo == "ingreso", _Caja.creado_en >= hace_7d).scalar() or 0)
+    egresos_7d = float(db.session.query(func.coalesce(func.sum(_Caja.monto), 0))
+                       .filter(_Caja.tipo == "egreso", _Caja.creado_en >= hace_7d).scalar() or 0)
+
+    # Features runtime
+    from store_config import get_store_features
+    features = get_store_features()
+
+    # Pedidos "atascados" — pendientes con >30 min
+    from datetime import datetime as _dt
+    hace_30min = _utcnow() - timedelta(minutes=30)
+    atascados = Order.query.filter(
+        Order.estado.in_(("pendiente", "armando")),
+        Order.creado_en < hace_30min,
+    ).count()
+
+    return jsonify({
+        "ok": True,
+        "catalogo": {
+            "productos_activos": total_prod,
+            "combos_activos": total_combo,
+            "productos_sin_stock": sin_stock,
+        },
+        "finanzas_7d": {
+            "pedidos": pedidos_7d,
+            "entregados": entregados_7d,
+            "ingresos_eur": round(ingresos_7d, 2),
+            "egresos_eur": round(egresos_7d, 2),
+            "resultado_eur": round(ingresos_7d - egresos_7d, 2),
+        },
+        "operativa": {
+            "pedidos_atascados_>30min": atascados,
+        },
+        "features": features,
+    })

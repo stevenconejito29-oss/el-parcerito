@@ -2560,6 +2560,7 @@ function adminMenu(jid) {
     '`!nicho comida|producto` cambiar nicho',
     '`!config <CLAVE> <valor>` cambiar config',
     '`!ver-config <PREFIJO>` listar config',
+    '`!diag` diagnóstico completo del sistema',
   ].filter(Boolean);
 
   // Bloque exclusivo super_admin (comandos de control estratégico).
@@ -3674,6 +3675,35 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, r?.ok
         ? `✅ Producto #${parts[0]} ${activo ? 'activado' : 'desactivado'}`
         : `❌ ${r?.error || 'error'}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // Diagnóstico del sistema completo (stock, finanzas, features, atascos)
+  if (lowerCmd === 'diag' || lowerCmd === 'diagnostico') {
+    try {
+      const r = await oxidianGet('/admin/diagnostico');
+      if (!r?.ok) return sendText(jid, `❌ ${r?.error || 'error'}`);
+      const c = r.catalogo || {};
+      const f = r.finanzas_7d || {};
+      const op = r.operativa || {};
+      const feat = r.features || {};
+      const activos = Object.entries(feat)
+        .filter(([k, v]) => typeof v === 'boolean')
+        .map(([k, v]) => `${v ? '✅' : '❌'} ${k}`).join('\n  ');
+      return sendText(jid,
+        `🔧 *Diagnóstico del sistema*\n\n` +
+        `📦 *Catálogo*\n` +
+        `  Productos activos: ${c.productos_activos ?? '?'}\n` +
+        `  Combos: ${c.combos_activos ?? '?'}\n` +
+        `  Sin stock: ${c.productos_sin_stock ?? '?'}\n\n` +
+        `💰 *Finanzas 7 días*\n` +
+        `  Pedidos: ${f.pedidos ?? '?'} (entregados: ${f.entregados ?? '?'})\n` +
+        `  Ingresos: €${(f.ingresos_eur ?? 0).toFixed(2)}\n` +
+        `  Egresos: €${(f.egresos_eur ?? 0).toFixed(2)}\n` +
+        `  Resultado: €${(f.resultado_eur ?? 0).toFixed(2)}\n\n` +
+        `⚙️ *Módulos*\n  ${activos}\n\n` +
+        `${op['pedidos_atascados_>30min'] > 0 ? `⚠️ *${op['pedidos_atascados_>30min']} pedidos atascados >30min*` : '✅ Sin pedidos atascados'}`
+      );
     } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
   }
 

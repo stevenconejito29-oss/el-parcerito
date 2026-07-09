@@ -17,11 +17,13 @@
     <p class="text-3xl font-black" style="color:#60A5FA">{{ nuevos_semana }}</p>
     <p class="text-xs mt-1" style="color:var(--col-faint)">Semana anterior: {{ nuevos_semana_ant }}</p>
   </div>
+  {% if brand.puntos %}
   <div class="ox-card p-4">
     <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:var(--col-muted)">Puntos en circulación</p>
     <p class="text-3xl font-black" style="color:var(--col-primary)">{{ puntos_circulacion }}</p>
     <a href="{{ url_for('marketing.puntos') }}" class="text-xs mt-1 block" style="color:var(--col-primary)">Gestionar →</a>
   </div>
+  {% endif %}
   <div class="ox-card p-4">
     <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:var(--col-muted)">Cupones activos</p>
     <p class="text-3xl font-black" style="color:#5EF097">{{ cupones_activos }}</p>
@@ -37,6 +39,7 @@
 {# ── MÓDULOS ── #}
 <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--col-muted)">Módulos</p>
 <div class="grid md:grid-cols-3 gap-3 mb-6">
+  {% if brand.puntos %}
   <a href="{{ url_for('marketing.puntos') }}"
      class="ox-card p-4 flex items-center gap-3 hover:border-yellow-500/50 transition-colors group">
     <span class="text-2xl group-hover:scale-110 transition-transform">⭐</span>
@@ -45,6 +48,7 @@
       <p class="text-xs" style="color:var(--col-faint)">Gestionar puntos de clientes</p>
     </div>
   </a>
+  {% endif %}
   <a href="{{ url_for('admin.afiliados') }}"
      class="ox-card p-4 flex items-center gap-3 hover:border-purple-500/50 transition-colors group">
     <span class="text-2xl group-hover:scale-110 transition-transform">🤝</span>
