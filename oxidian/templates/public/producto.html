@@ -112,6 +112,69 @@
   {% endif %}
 
   {# ── Precio ── #}
+  {# ── Selector de tallas / tamaños (presentaciones activas) ── #}
+  {% set _tallas_producto = producto.presentaciones.filter_by(activo=True).all() if producto.presentaciones is defined else [] %}
+  {% if _tallas_producto|length > 0 and not producto.es_combo %}
+  <div class="pd-tallas">
+    <p class="pd-tallas-lbl">
+      {% if brand.es_producto %}👕 Elige tu talla:{% else %}📏 Elige tu tamaño:{% endif %}
+    </p>
+    <div class="pd-tallas-grid">
+      {% for t in _tallas_producto %}
+      <label class="pd-tallas-opt {% if loop.first %}is-selected{% endif %}">
+        <input type="radio" name="presentation_size" value="{{ t.tamaño|lower }}"
+               form="pd-add-form"
+               data-precio-extra="{{ t.precio_extra_float }}"
+               {% if loop.first %}checked{% endif %}>
+        <span class="pd-tallas-label">{{ t.label }}</span>
+        {% if t.precio_extra_float and t.precio_extra_float > 0 %}
+        <span class="pd-tallas-plus">+€{{ "%.2f"|format(t.precio_extra_float) }}</span>
+        {% elif t.precio_extra_float and t.precio_extra_float < 0 %}
+        <span class="pd-tallas-minus">−€{{ "%.2f"|format(t.precio_extra_float|abs) }}</span>
+        {% endif %}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  <style>
+  .pd-tallas { margin:.75rem 0 .5rem; }
+  .pd-tallas-lbl { font-size:.85rem; font-weight:800; color:var(--col-text); margin:0 0 .5rem; }
+  .pd-tallas-grid { display:flex; flex-wrap:wrap; gap:.4rem; }
+  .pd-tallas-opt {
+    position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:.45rem .7rem; min-width:52px; border-radius:.55rem;
+    background:rgba(255,255,255,.04); border:1.5px solid rgba(255,255,255,.1);
+    cursor:pointer; transition:border-color .15s, transform .15s, background .15s;
+    user-select:none;
+  }
+  .pd-tallas-opt:hover { border-color:var(--brand-primary, #FFAB00); transform:translateY(-1px); }
+  .pd-tallas-opt.is-selected,
+  .pd-tallas-opt:has(input:checked) {
+    background:color-mix(in srgb, var(--brand-primary, #FFAB00) 12%, transparent);
+    border-color:var(--brand-primary, #FFAB00);
+  }
+  .pd-tallas-opt input { position:absolute; opacity:0; pointer-events:none; }
+  .pd-tallas-label { font-size:.9rem; font-weight:900; color:var(--col-text); line-height:1; }
+  .pd-tallas-plus { font-size:.68rem; font-weight:800; color:#FFAB00; margin-top:.2rem; }
+  .pd-tallas-minus { font-size:.68rem; font-weight:800; color:#5EF097; margin-top:.2rem; }
+  </style>
+  <script>
+  (function(){
+    const opts = document.querySelectorAll('.pd-tallas-opt');
+    const priceEl = document.getElementById('pd-unit-price');
+    const basePrice = {{ producto.precio_final|float }};
+    opts.forEach(opt => {
+      const radio = opt.querySelector('input');
+      radio?.addEventListener('change', () => {
+        opts.forEach(o => o.classList.toggle('is-selected', o === opt));
+        const extra = parseFloat(radio.dataset.precioExtra || 0);
+        if (priceEl) priceEl.textContent = '€' + (basePrice + extra).toFixed(2);
+      });
+    });
+  })();
+  </script>
+  {% endif %}
+
   <div class="pd-price-row">
     <span class="pd-price" id="pd-unit-price">€{{ "%.2f"|format(producto.precio_final) }}</span>
     {% if producto.es_combo and producto.combo_precio_modo_normalizado == 'descuento_porcentaje' and producto.combo_descuento_pct_float > 0 %}
@@ -137,7 +200,8 @@
   </div>
   {% endif %}
 
-  {# ── Información alimentaria ── #}
+  {# ── Información alimentaria (SOLO en modo comida) ── #}
+  {% if brand.es_comida %}
   <div class="pd-info-box pd-box-alerg">
     <div class="pd-box-alerg-inner">
       <p class="pd-box-label">Información alimentaria</p>
@@ -157,6 +221,7 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
 
   {% if extra_groups %}
   <section class="pd-extras" aria-labelledby="pd-extras-title">
