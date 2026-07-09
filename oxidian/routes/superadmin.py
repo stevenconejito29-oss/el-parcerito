@@ -2104,3 +2104,107 @@ def audit():
                            acciones=acciones,
                            recursos=recursos,
                            resumen_24h=resumen_24h)
+
+
+# ─── DELETE zonas y admins ───────────────────────────────────────
+
+@superadmin_bp.route("/zonas/<int:zona_id>/eliminar", methods=["POST"])
+@superadmin_required
+def eliminar_zona(zona_id):
+    zona = get_or_404(ZonaEntrega, zona_id)
+    nombre = zona.nombre
+    pedidos_ref = Order.query.filter_by(zona_id=zona.id).count()
+    if pedidos_ref > 0:
+        # Archivar: desactiva pero preserva historial de pedidos.
+        zona.activo = False
+        if not (zona.nombre or "").startswith("[archivada]"):
+            zona.nombre = f"[archivada] {nombre}"[:120]
+        try:
+            AuditLog.registrar(current_user.id, "archivar_zona",
+                               "zona_entrega", zona.id, detalle=nombre,
+                               ip=request.remote_addr)
+            db.session.commit()
+            flash(
+                f"Zona '{nombre}' archivada ({pedidos_ref} pedidos históricos "
+                "referencian esta zona).",
+                "info",
+            )
+        except Exception as exc:
+            db.session.rollback()
+            flash(f"Error al archivar zona: {exc}", "danger")
+        return redirect(url_for("superadmin.zonas"))
+    try:
+        AuditLog.registrar(current_user.id, "eliminar_zona",
+                           "zona_entrega", zona.id, detalle=nombre,
+                           ip=request.remote_addr)
+        db.session.delete(zona)
+        db.session.commit()
+        flash(f"Zona '{nombre}' eliminada.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Error al eliminar zona: {exc}", "danger")
+    return redirect(url_for("superadmin.zonas"))
+
+
+@superadmin_bp.route("/admins/<int:user_id>/eliminar", methods=["POST"])
+@superadmin_required
+def eliminar_admin(user_id):
+    """Elimina un usuario admin/staff. Reglas de seguridad:
+    - NO se puede eliminar a uno mismo (evita lock-out del último super_admin).
+    - NO se puede eliminar al último super_admin activo.
+    - Si tiene registros dependientes (pedidos, caja) → archivar en su lugar."""
+    user = get_or_404(User, user_id)
+    if user.id == current_user.id:
+        flash("No puedes eliminarte a ti mismo.", "warning")
+        return redirect(url_for("superadmin.admins"))
+    if user.rol == "super_admin":
+        otros_sa = User.query.filter(
+            User.id != user_id,
+            User.rol == "super_admin",
+            User.activo == True,  # noqa
+        ).count()
+        if otros_sa == 0:
+            flash(
+                "No se puede eliminar al último super_admin activo. "
+                "Crea otro super_admin primero.",
+                "danger",
+            )
+            return redirect(url_for("superadmin.admins"))
+
+    nombre = user.nombre or user.email or f"#{user.id}"
+    from sqlalchemy.exc import IntegrityError
+
+    # Limpia dependencias sin FK (features admin, etc.)
+    AdminFeature.query.filter_by(user_id=user_id).delete()
+
+    try:
+        db.session.delete(user)
+        db.session.flush()
+        AuditLog.registrar(current_user.id, "eliminar_admin",
+                           "user", user_id, detalle=nombre,
+                           ip=request.remote_addr)
+        db.session.commit()
+        flash(f"Usuario '{nombre}' eliminado.", "success")
+    except IntegrityError:
+        db.session.rollback()
+        user = db.session.get(User, user_id)
+        if user:
+            user.activo = False
+            try:
+                AuditLog.registrar(current_user.id, "archivar_admin",
+                                   "user", user_id,
+                                   detalle=f"{nombre} (tenía referencias)",
+                                   ip=request.remote_addr)
+                db.session.commit()
+                flash(
+                    f"Usuario '{nombre}' desactivado (tiene registros "
+                    "operativos vinculados; no se puede borrar).",
+                    "info",
+                )
+            except Exception as exc:
+                db.session.rollback()
+                flash(f"Error al desactivar: {exc}", "danger")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Error al eliminar usuario: {exc}", "danger")
+    return redirect(url_for("superadmin.admins"))

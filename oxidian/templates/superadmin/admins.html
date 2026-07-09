@@ -83,6 +83,13 @@
               {{ '⏸ Desactivar' if u.activo else '▶ Activar' }}
             </button>
           </form>
+          <form method="POST" action="{{ url_for('superadmin.eliminar_admin', user_id=u.id) }}"
+                onsubmit="return confirm('¿ELIMINAR permanentemente a {{ u.nombre|e }}? Si tiene registros operativos se desactivará en su lugar. Esta acción no se puede deshacer.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="oa-btn oa-btn--sm oa-btn--danger" title="Eliminar usuario">
+              🗑️
+            </button>
+          </form>
           {% endif %}
         </div>
 

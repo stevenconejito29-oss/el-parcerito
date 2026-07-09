@@ -4787,3 +4787,65 @@ def ia_analisis():
         error=error,
         contexto=contexto,
     )
+
+
+# ─── DELETE productos y combos ───────────────────────────────────
+
+def _delete_or_archive_product(prod: Product, actor_id: int) -> tuple[bool, str]:
+    """Intenta borrar un producto. Si hay OrderItem que lo referencian
+    (FK RESTRICT del snapshot congelado), lo archiva: activo=False + prefijo
+    [archivado]. Preserva la trazabilidad de pedidos históricos."""
+    from sqlalchemy.exc import IntegrityError
+    nombre_original = prod.nombre or f"#{prod.id}"
+    try:
+        db.session.delete(prod)
+        db.session.flush()
+        AuditLog.registrar(actor_id, "eliminar_producto", "product",
+                           prod.id, detalle=nombre_original,
+                           ip=request.remote_addr)
+        db.session.commit()
+        return True, f"Producto '{nombre_original}' eliminado."
+    except IntegrityError:
+        db.session.rollback()
+        prod = db.session.get(Product, prod.id)
+        if not prod:
+            return False, "Producto no encontrado."
+        prod.activo = False
+        if not (prod.nombre or "").startswith("[archivado]"):
+            prod.nombre = f"[archivado] {nombre_original}"[:200]
+        try:
+            AuditLog.registrar(actor_id, "archivar_producto", "product",
+                               prod.id, detalle=nombre_original,
+                               ip=request.remote_addr)
+            db.session.commit()
+            return True, (
+                f"Producto '{nombre_original}' archivado "
+                "(tiene pedidos históricos, no se puede borrar)."
+            )
+        except Exception as exc:
+            db.session.rollback()
+            return False, f"Error al archivar: {exc}"
+    except Exception as exc:
+        db.session.rollback()
+        return False, f"Error al eliminar: {exc}"
+
+
+@admin_bp.route("/productos/<int:producto_id>/eliminar", methods=["POST"])
+@admin_required
+def eliminar_producto(producto_id):
+    prod = get_or_404(Product, producto_id)
+    ok, msg = _delete_or_archive_product(prod, current_user.id)
+    flash(msg, "success" if ok else "danger")
+    return redirect(url_for("admin.productos"))
+
+
+@admin_bp.route("/combos/<int:combo_id>/eliminar", methods=["POST"])
+@admin_required
+def eliminar_combo(combo_id):
+    combo = get_or_404(Product, combo_id)
+    if not combo.es_combo:
+        flash("Ese producto no es un combo.", "warning")
+        return redirect(url_for("admin.productos"))
+    ok, msg = _delete_or_archive_product(combo, current_user.id)
+    flash(msg, "success" if ok else "danger")
+    return redirect(url_for("admin.productos"))

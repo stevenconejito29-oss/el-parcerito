@@ -98,12 +98,21 @@
           {% if z.gratis_desde %}<span style="color:var(--theme-success, var(--status-ok));">🎁 Gratis desde €{{ "%.2f"|format(z.gratis_desde) }}</span>{% endif %}
         </div>
       </div>
-      <form method="POST" action="{{ url_for('superadmin.toggle_zona', zona_id=z.id) }}">
-        {{ csrf_field() }}
-        <button type="submit" class="oa-btn oa-btn--sm {{ 'oa-btn--danger' if z.activo else 'oa-btn--success' }}">
-          {{ '❌ Desactivar' if z.activo else '✓ Activar' }}
-        </button>
-      </form>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
+        <form method="POST" action="{{ url_for('superadmin.toggle_zona', zona_id=z.id) }}">
+          {{ csrf_field() }}
+          <button type="submit" class="oa-btn oa-btn--sm {{ 'oa-btn--danger' if z.activo else 'oa-btn--success' }}">
+            {{ '❌ Desactivar' if z.activo else '✓ Activar' }}
+          </button>
+        </form>
+        <form method="POST" action="{{ url_for('superadmin.eliminar_zona', zona_id=z.id) }}"
+              onsubmit="return confirm('¿Eliminar zona «{{ z.nombre|e }}»? Si tiene pedidos históricos se archivará.');">
+          {{ csrf_field() }}
+          <button type="submit" class="oa-btn oa-btn--sm oa-btn--danger" title="Eliminar zona">
+            🗑️
+          </button>
+        </form>
+      </div>
     </div>
 
     <details>
