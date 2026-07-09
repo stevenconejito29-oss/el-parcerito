@@ -2554,6 +2554,12 @@ function adminMenu(jid) {
     adminCan(jid, 'sync') ? '`!sync` sincronizar catálogo' : null,
     adminCan(jid, 'handoff') ? '`!send NUMERO mensaje`' : null,
     '`!ia <pregunta>` análisis IA del negocio',
+    '`!buscar <texto>` encontrar producto',
+    '`!producto <id> activar|desactivar`',
+    '`!pausar-tienda` / `!reanudar-tienda`',
+    '`!nicho comida|producto` cambiar nicho',
+    '`!config <CLAVE> <valor>` cambiar config',
+    '`!ver-config <PREFIJO>` listar config',
   ].filter(Boolean);
 
   // Bloque exclusivo super_admin (comandos de control estratégico).
@@ -3575,6 +3581,102 @@ async function handleAdminCmd(jid, text) {
     return startAdminMenu(jid, getSesion(jid).nombre);
   }
 
+  // ── Comandos operativos ampliados (todos requieren admin/super_admin) ──
+  // Cambio rápido de nicho (comida ↔ retail) sin abrir el panel web.
+  if (lowerCmd === 'nicho' || lowerCmd.startsWith('nicho ')) {
+    const arg = cmd.slice(5).trim().toLowerCase();
+    if (!arg) {
+      try {
+        const r = await oxidianGet('/config?claves=TIPO_TIENDA');
+        return sendText(jid, `Nicho actual: *${r?.config?.TIPO_TIENDA || '?'}*\n\nUso: \`!nicho comida\` o \`!nicho producto\``);
+      } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    }
+    if (!['comida', 'producto'].includes(arg)) {
+      return sendText(jid, '❌ Uso: `!nicho comida` o `!nicho producto`');
+    }
+    try {
+      const r = await oxidianPost('/config/set', { clave: 'TIPO_TIENDA', valor: arg });
+      return sendText(jid, r?.ok
+        ? `✅ Nicho cambiado a *${arg}*. Los templates se adaptan al siguiente request.`
+        : `❌ ${r?.error || 'No se pudo cambiar'}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // Ver/editar SiteConfig runtime
+  if (lowerCmd.startsWith('config ')) {
+    const rest = cmd.slice(7).trim();
+    const parts = rest.split(/\s+/, 2);
+    if (parts.length < 2) {
+      return sendText(jid,
+        '📋 *Config runtime*\n\n' +
+        'Uso:\n' +
+        '`!config <CLAVE> <valor>` — cambia\n' +
+        '`!ver-config <prefijo>` — lista (ej: `!ver-config FEATURE_`)\n\n' +
+        'Ejemplos:\n' +
+        '`!config PEDIDO_MINIMO 10.00`\n' +
+        '`!config HORARIO_CIERRE 23:30`\n' +
+        '`!config FEATURE_DELIVERY 0`');
+    }
+    const [clave, ...restoVal] = parts[0] === parts[1] ? parts : [parts[0], parts[1]];
+    const valor = rest.slice(clave.length).trim();
+    try {
+      const r = await oxidianPost('/config/set', { clave, valor });
+      return sendText(jid, r?.ok ? `✅ ${clave} = *${valor}*` : `❌ ${r?.error || 'error'}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+  if (lowerCmd.startsWith('ver-config') || lowerCmd === 'verconfig') {
+    const pref = (cmd.slice(10).trim() || '').toUpperCase();
+    try {
+      const r = await oxidianGet(`/config${pref ? '?prefijo=' + encodeURIComponent(pref) : ''}`);
+      if (!r?.ok || !r.config) return sendText(jid, '❌ No pude leer la config');
+      const lines = Object.entries(r.config).slice(0, 25).map(([k, v]) => `  \`${k}\`=${v}`);
+      return sendText(jid, `⚙️ *Config${pref ? ' ' + pref + '*' : ''}\n${lines.join('\n')}${Object.keys(r.config).length > 25 ? '\n_… truncado_' : ''}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // Pausar / reanudar tienda (TIENDA_FORZAR_CERRADA)
+  if (lowerCmd === 'pausar-tienda' || lowerCmd === 'pausa') {
+    try {
+      const r = await oxidianPost('/config/set', { clave: 'TIENDA_FORZAR_CERRADA', valor: '1' });
+      return sendText(jid, r?.ok ? '⏸ Tienda pausada. No aceptará pedidos.' : `❌ ${r?.error}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+  if (lowerCmd === 'reanudar-tienda' || lowerCmd === 'reanuda') {
+    try {
+      const r = await oxidianPost('/config/set', { clave: 'TIENDA_FORZAR_CERRADA', valor: '0' });
+      return sendText(jid, r?.ok ? '▶ Tienda reanudada. Aceptando pedidos.' : `❌ ${r?.error}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // Buscar producto por texto
+  if (lowerCmd.startsWith('buscar ') || lowerCmd.startsWith('buscar-producto ')) {
+    const q = lowerCmd.startsWith('buscar-producto ')
+      ? cmd.slice(16).trim() : cmd.slice(7).trim();
+    if (!q) return sendText(jid, 'Uso: `!buscar <texto>` — encuentra productos por nombre');
+    try {
+      const r = await oxidianGet(`/admin/buscar-producto?q=${encodeURIComponent(q)}`);
+      if (!r?.ok || !r.productos?.length) return sendText(jid, `Sin resultados para "${q}".`);
+      const lines = r.productos.slice(0, 8).map(p =>
+        `• #${p.id} *${p.nombre}* €${(p.precio || 0).toFixed(2)} ${p.activo ? '✅' : '❌'}${p.stock != null ? ` · stock:${p.stock}` : ''}`);
+      return sendText(jid, `🔍 *Resultados*\n${lines.join('\n')}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // Toggle producto activar/desactivar
+  if (lowerCmd.startsWith('producto ')) {
+    const parts = cmd.slice(9).trim().split(/\s+/);
+    if (parts.length < 2 || !/^\d+$/.test(parts[0]) || !['activar', 'desactivar'].includes(parts[1].toLowerCase())) {
+      return sendText(jid, 'Uso: `!producto <id> activar` o `!producto <id> desactivar`');
+    }
+    const activo = parts[1].toLowerCase() === 'activar';
+    try {
+      const r = await oxidianPost('/admin/producto/toggle', { producto_id: Number(parts[0]), activo });
+      return sendText(jid, r?.ok
+        ? `✅ Producto #${parts[0]} ${activo ? 'activado' : 'desactivado'}`
+        : `❌ ${r?.error || 'error'}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
   // ── !ia <pregunta> — Consulta IA de negocio (admin/super_admin) ───────
   if (/^ia(\s|$)/.test(lowerCmd)) {
     const pregunta = cmd.slice(3).trim();
@@ -3591,7 +3693,8 @@ async function handleAdminCmd(jid, text) {
     }
     try {
       const telefono = phoneFromJid(jid);
-      const r = await oxidianPost('/api/bot/ai/admin-consulta', {
+      // oxidianPost YA añade prefix /api/bot — evitar duplicarlo.
+      const r = await oxidianPost('/ai/admin-consulta', {
         telefono,
         pregunta,
       });
@@ -4540,6 +4643,13 @@ async function handleMainMenu(jid, ses, opcion) {
     const restante = textoLibre.replace(SALUDOS_RE, '').replace(/^[\s,.!¡?¿]+/, '').trim();
     if (!restante || restante.length < 3) {
       bumpStat('saludo');
+      // Si el cliente tiene un pedido activo, priorizamos mostrarle el estado
+      // en vez de la bienvenida genérica. Así resolvemos su pregunta obvia
+      // ("¿cómo va mi pedido?") sin que tenga que escribirlo.
+      try {
+        const resumen = await resumenPedidoActivo(jid, ses);
+        if (resumen) return sendText(jid, resumen);
+      } catch (_) { /* fallthrough a la bienvenida normal */ }
       return sendText(jid, bienvenidaConversacional(ses));
     }
     // Hay contenido después del saludo: reemplazamos y seguimos el flujo.

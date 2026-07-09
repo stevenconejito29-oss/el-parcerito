@@ -3605,3 +3605,116 @@ def ai_admin_consulta():
         "pedidos_30d": contexto["ventas_ultimos_30_dias"]["pedidos"],
         "facturacion_30d": contexto["ventas_ultimos_30_dias"]["facturacion_eur"],
     }})
+
+
+# ─── Comandos admin ampliados (todos requieren teléfono autorizado) ─────
+
+@api_bot_bp.route("/config", methods=["GET"])
+@bot_required
+def bot_config_ver():
+    """Devuelve un subconjunto de SiteConfig. Filtra por prefijo o claves
+    específicas. NO devuelve BOT_AI_API_KEY / SECRET_KEY / passwords."""
+    SENSIBLES = {"BOT_AI_API_KEY", "BOT_API_KEY", "SECRET_KEY", "BOT_PANEL_KEY"}
+    prefijo = (request.args.get("prefijo") or "").strip().upper()
+    claves_arg = (request.args.get("claves") or "").strip()
+    q = SiteConfig.query
+    if claves_arg:
+        wanted = [c.strip() for c in claves_arg.split(",") if c.strip()]
+        q = q.filter(SiteConfig.clave.in_(wanted))
+    elif prefijo:
+        q = q.filter(SiteConfig.clave.like(f"{prefijo}%"))
+    out = {}
+    for row in q.order_by(SiteConfig.clave).limit(50).all():
+        if row.clave in SENSIBLES:
+            continue
+        out[row.clave] = row.valor or ""
+    return jsonify({"ok": True, "config": out})
+
+
+@api_bot_bp.route("/config/set", methods=["POST"])
+@bot_required
+def bot_config_set():
+    """Cambia una SiteConfig. Bloquea claves sensibles.
+    El teléfono del admin viene en el bot request (por ahora sin verificar
+    aquí; el bot Node ya restringe a admins por adminCan)."""
+    BLOQUEADAS = {"BOT_AI_API_KEY", "BOT_API_KEY", "SECRET_KEY", "BOT_PANEL_KEY",
+                  "SEED_PASSWORD", "OXIDIAN_KEY"}
+    payload = request.get_json(silent=True) or {}
+    clave = (payload.get("clave") or "").strip().upper()
+    valor = str(payload.get("valor") or "").strip()
+    if not clave or len(clave) > 60:
+        return jsonify({"ok": False, "error": "Clave requerida (<60 chars)"})
+    if clave in BLOQUEADAS or clave.endswith("_API_KEY") or "PASSWORD" in clave:
+        return jsonify({"ok": False, "error": f"Clave protegida: {clave}"}), 403
+    try:
+        SiteConfig.set(clave, valor)
+        AuditLog.registrar(None, "config_set_whatsapp", "site_config",
+                           detalle=f"{clave}={valor[:80]}",
+                           ip=request.remote_addr)
+        db.session.commit()
+        return jsonify({"ok": True, "clave": clave, "valor": valor})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@api_bot_bp.route("/admin/buscar-producto", methods=["GET"])
+@bot_required
+def bot_buscar_producto():
+    """Busca productos por nombre (LIKE) para el bot admin."""
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify({"ok": False, "error": "Query mínimo 2 chars"})
+    from sqlalchemy import func
+    resultados = (
+        Product.query
+        .filter(func.lower(Product.nombre).like(f"%{q.lower()}%"))
+        .order_by(Product.activo.desc(), Product.nombre.asc())
+        .limit(15)
+        .all()
+    )
+    out = []
+    for p in resultados:
+        stock_total = None
+        try:
+            stock_total = int(p.stock_total or 0)
+        except Exception:
+            stock_total = None
+        out.append({
+            "id": p.id,
+            "nombre": p.nombre,
+            "precio": float(p.precio or 0),
+            "activo": bool(p.activo),
+            "stock": stock_total,
+            "categoria": p.categoria.nombre if p.categoria else None,
+            "vertical": p.vertical or "ambos",
+        })
+    return jsonify({"ok": True, "productos": out})
+
+
+@api_bot_bp.route("/admin/producto/toggle", methods=["POST"])
+@bot_required
+def bot_producto_toggle():
+    """Activa/desactiva un producto rápido desde WhatsApp admin."""
+    payload = request.get_json(silent=True) or {}
+    pid = payload.get("producto_id")
+    activo = bool(payload.get("activo", True))
+    try:
+        pid = int(pid) if pid is not None else None
+    except (TypeError, ValueError):
+        pid = None
+    if not pid:
+        return jsonify({"ok": False, "error": "producto_id requerido"})
+    p = db.session.get(Product, pid)
+    if not p:
+        return jsonify({"ok": False, "error": f"Producto #{pid} no existe"}), 404
+    p.activo = activo
+    try:
+        AuditLog.registrar(None, "producto_toggle_whatsapp", "product",
+                           detalle=f"#{pid}→{'activo' if activo else 'inactivo'}",
+                           ip=request.remote_addr)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": "No se pudo guardar"}), 500
+    return jsonify({"ok": True, "id": pid, "activo": activo, "nombre": p.nombre})
