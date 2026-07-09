@@ -12,6 +12,20 @@ except Exception:  # pragma: no cover - permite importar validadores fuera de Fl
         return False
 
 
+def _db_get(model, pk):
+    """Wrapper de db.session.get() con guard: None si el pk es falsy o
+    si no hay contexto Flask (para permitir tests unitarios que importan
+    el módulo sin app). Reemplaza los Model.query.get() deprecados en
+    SQLAlchemy 2.0."""
+    if not pk:
+        return None
+    try:
+        from extensions import db
+        return db.session.get(model, pk)
+    except Exception:  # pragma: no cover - fallback fuera de app-context
+        return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURACIÓN DE LÍMITES (sin hardcoding)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -281,7 +295,7 @@ def validate_component_product(
 
     if product_obj is None:
         from models import Product
-        product_obj = Product.query.get(product_id)
+        product_obj = _db_get(Product, product_id)
 
     if not product_obj:
         return False, f"Producto {product_id} no existe"
@@ -314,7 +328,7 @@ def validate_component_product(
             return {"recogida"}
         return {"delivery", "recogida"}
 
-    combo = Product.query.get(combo_id)
+    combo = _db_get(Product, combo_id)
     if combo:
         allowed = _modes(getattr(combo, "modalidad_entrega", None))
         for it in ComboItem.query.filter_by(combo_id=combo_id).all():
@@ -391,7 +405,7 @@ def validate_combo_delivery_zones(
     """
     from models import Product, ZonaEntrega
 
-    combo = Product.query.get(combo_id)
+    combo = _db_get(Product, combo_id)
     if not combo or not combo.es_combo:
         return False, "Combo no existe o no es válido"
 
@@ -427,11 +441,11 @@ def validate_delivery_zone_for_combo(
     """
     from models import Product, ZonaEntrega
 
-    combo = Product.query.get(combo_id)
+    combo = _db_get(Product, combo_id)
     if not combo or not combo.es_combo:
         return False, "Combo no existe"
 
-    zone = ZonaEntrega.query.get(zone_id)
+    zone = _db_get(ZonaEntrega, zone_id)
     if not zone:
         return False, "Zona de entrega no existe"
 

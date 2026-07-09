@@ -350,7 +350,8 @@ def reset_periodico_si_toca():
     period_days, last_reset_iso = _puntos_reset_config()
     if period_days <= 0:
         return False  # reset desactivado
-    ahora = datetime.utcnow()
+    from models import utcnow as _utcnow_helper
+    ahora = _utcnow_helper()
     if last_reset_iso:
         try:
             last = datetime.fromisoformat(last_reset_iso)

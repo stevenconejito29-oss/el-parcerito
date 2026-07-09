@@ -1701,7 +1701,7 @@ def puntos_reset_manual():
         db.session.add(PointsLog(cliente_id=u.id, tipo="reset", cantidad=-previo,
                                  descripcion=f"Reset manual por {current_user.email}"))
         afectados += 1
-    SiteConfig.set("POINTS_LAST_RESET_AT", datetime.utcnow().isoformat(),
+    SiteConfig.set("POINTS_LAST_RESET_AT", utcnow().isoformat(),
                    descripcion="Timestamp del último reset de puntos")
     AuditLog.registrar(current_user.id, "puntos_reset_manual", "site_config",
                        detalle=f"{afectados} clientes reseteados", ip=request.remote_addr)

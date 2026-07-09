@@ -3281,7 +3281,7 @@ def bot_admin_pedidos_riesgo():
     if not _bot_admin_request_allowed("store"):
         return _bot_actor_forbidden()
     try:
-        now = datetime.utcnow()
+        now = _utcnow()
         pending_min = max(5, min(180, request.args.get("pending_min", 20, type=int)))
         armando_min = max(5, min(180, request.args.get("armando_min", 35, type=int)))
         listo_min = max(5, min(180, request.args.get("listo_min", 15, type=int)))
