@@ -320,6 +320,15 @@ function getTiendaUrl() {
   return cleanBaseUrl(cfg('tienda_url', TIENDA_URL), TIENDA_URL || getOxidianUrl());
 }
 
+// Modo de la tienda (propia | bar_servicio) — se sincroniza desde /branding
+// en syncCatalogo(). Cache local para decidir comandos avanzados en el bot.
+function getModoTienda() {
+  return (cfg('modo_tienda', 'propia') || 'propia').toLowerCase();
+}
+function isBarServicio() {
+  return getModoTienda() === 'bar_servicio';
+}
+
 /**
  * Nombre del negocio mostrado al cliente.
  * Prioridad: cfg('nombre_negocio') (sincronizado desde Oxidian/SiteConfig) →
@@ -2542,8 +2551,12 @@ function adminMenu(jid) {
     adminCan(jid, 'client_mode') ? `*11* Modo cliente de prueba` : null,
   ].filter(Boolean);
 
-  // Bloque de comandos directos por texto (todos los admins ven los suyos).
-  const cmdsAdmin = [
+  // ── Comandos disponibles según modo tienda ──
+  // Modo propio: admin usa panel web → chatbot limitado a comandos básicos.
+  // Modo bar_servicio: admin vive en WhatsApp → control total desde aquí.
+  const barServicio = isBarServicio();
+
+  const cmdsBase = [
     adminCan(jid, 'status') ? '`!status` estado del bot' : null,
     adminCan(jid, 'store') ? '`!hoy` resumen del día' : null,
     adminCan(jid, 'points') ? '`!cliente Nombre 34XXXXXXXXX` registrar' : null,
@@ -2555,13 +2568,26 @@ function adminMenu(jid) {
     adminCan(jid, 'handoff') ? '`!send NUMERO mensaje`' : null,
     '`!ia <pregunta>` análisis IA del negocio',
     '`!buscar <texto>` encontrar producto',
+    '`!diag` diagnóstico completo',
+  ].filter(Boolean);
+
+  // Comandos avanzados solo en modo bar_servicio (admin gestiona todo por WhatsApp).
+  const cmdsAvanzados = barServicio ? [
     '`!producto <id> activar|desactivar`',
+    '`!precio <id> <euros>` cambiar precio',
+    '`!stock <id> +N | -N | =N` ajustar inventario',
+    '`!crear-producto <nombre>|<precio>|<categoria>`',
+    '`!ver-pedidos [estado]` listar pedidos con detalle',
     '`!pausar-tienda` / `!reanudar-tienda`',
     '`!nicho comida|producto` cambiar nicho',
-    '`!config <CLAVE> <valor>` cambiar config',
+    '`!nombre <texto>` cambiar nombre del negocio',
+    '`!horario HH:MM-HH:MM` fijar apertura/cierre',
+    '`!minimo <euros>` pedido mínimo',
+    '`!config <CLAVE> <valor>` cualquier ajuste runtime',
     '`!ver-config <PREFIJO>` listar config',
-    '`!diag` diagnóstico completo del sistema',
-  ].filter(Boolean);
+  ] : [];
+
+  const cmdsAdmin = cmdsBase.concat(cmdsAvanzados);
 
   // Bloque exclusivo super_admin (comandos de control estratégico).
   const cmdsSA = isSA ? [
@@ -2574,9 +2600,12 @@ function adminMenu(jid) {
 
   const bloqueCmdsAdmin = cmdsAdmin.length ? `\n📝 *Comandos rápidos*\n${cmdsAdmin.join('\n')}` : '';
   const bloqueCmdsSA = cmdsSA.length ? `\n\n👑 *Solo Super Admin*\n${cmdsSA.join('\n')}` : '';
+  const modoTxt = barServicio
+    ? '\n\n_🏪 Modo servicio: gestión completa desde WhatsApp._'
+    : '\n\n_🏠 Modo propio: usa el panel web para gestión avanzada._';
 
   return (
-    `🔐 *Panel ${adminRoleLabel(jid)} — ${getNegocioNombre()}*\n\n` +
+    `🔐 *Panel ${adminRoleLabel(jid)} — ${getNegocioNombre()}*` + modoTxt + `\n\n` +
     `${options.join('\n')}` +
     bloqueCmdsAdmin +
     bloqueCmdsSA
@@ -3679,6 +3708,114 @@ async function handleAdminCmd(jid, text) {
   }
 
   // Diagnóstico del sistema completo (stock, finanzas, features, atascos)
+  // ── Comandos AVANZADOS (solo modo bar_servicio) ────────────────────
+  // En modo propio, el admin usa el panel web. En servicio, controla todo aquí.
+  const _adv = isBarServicio();
+  const _needAdv = () => sendText(jid,
+    '⚠️ Este comando solo está disponible en modo *bar_servicio*.\n' +
+    'Usa el panel web (`/superadmin/config` → Modo comercial) o `!nicho`, o pide al super admin cambiar el modo.');
+
+  // Cambio de precio express: !precio <id> <euros>
+  if (lowerCmd.startsWith('precio ')) {
+    if (!_adv) return _needAdv();
+    const m = cmd.slice(7).trim().match(/^(\d+)\s+([\d.,]+)$/);
+    if (!m) return sendText(jid, 'Uso: `!precio <id> <euros>`\nEj: `!precio 42 8.90`');
+    try {
+      const r = await oxidianPost('/admin/producto/precio',
+        { producto_id: Number(m[1]), precio: Number(m[2].replace(',', '.')) });
+      return sendText(jid, r?.ok
+        ? `✅ Precio de #${m[1]} actualizado a €${(r.precio ?? m[2]).toString()}`
+        : `❌ ${r?.error || 'error'}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // Ajuste de stock: !stock <id> +5 | -3 | =10
+  if (lowerCmd.startsWith('stock ')) {
+    if (!_adv) return _needAdv();
+    const m = cmd.slice(6).trim().match(/^(\d+)\s+([+\-=])(\d+)$/);
+    if (!m) return sendText(jid, 'Uso: `!stock <id> +N` (sumar), `-N` (restar) o `=N` (fijar)\nEj: `!stock 42 +10`');
+    try {
+      const r = await oxidianPost('/admin/producto/stock',
+        { producto_id: Number(m[1]), operacion: m[2], cantidad: Number(m[3]) });
+      return sendText(jid, r?.ok
+        ? `✅ Stock de #${m[1]}: ${r.antes ?? '?'} → *${r.nuevo}*`
+        : `❌ ${r?.error || 'error'}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // Crear producto rápido: !crear-producto Nombre|precio|categoria
+  if (lowerCmd.startsWith('crear-producto ')) {
+    if (!_adv) return _needAdv();
+    const parts = cmd.slice(15).split('|').map(s => s.trim()).filter(Boolean);
+    if (parts.length < 2) {
+      return sendText(jid,
+        'Uso: `!crear-producto Nombre|precio|categoria`\n' +
+        'Ejemplos:\n' +
+        '`!crear-producto Hamburguesa completa|9.90|Principales`\n' +
+        '`!crear-producto Coca-Cola 33cl|2.50` _(sin categoría)_');
+    }
+    const [nombre, precio, categoria] = parts;
+    try {
+      const r = await oxidianPost('/admin/producto/crear', {
+        nombre, precio: Number(String(precio).replace(',', '.')),
+        categoria: categoria || null,
+      });
+      return sendText(jid, r?.ok
+        ? `✅ Producto creado #${r.id}: *${r.nombre}* €${r.precio.toFixed(2)}${r.categoria ? ' · ' + r.categoria : ''}`
+        : `❌ ${r?.error || 'error'}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // Listar pedidos con detalle
+  if (lowerCmd.startsWith('ver-pedidos')) {
+    if (!_adv) return _needAdv();
+    const estado = cmd.slice(11).trim() || 'pendiente,armando,listo';
+    try {
+      const r = await oxidianGet(`/admin/pedidos?estados=${encodeURIComponent(estado)}&limit=10`);
+      if (!r?.ok) return sendText(jid, `❌ ${r?.error || 'error'}`);
+      const items = (r.pedidos || []).slice(0, 10);
+      if (!items.length) return sendText(jid, `Sin pedidos en estados: ${estado}`);
+      const lines = items.map(p =>
+        `• #${p.numero} — *${p.estado}* — €${(p.total || 0).toFixed(2)} — ${p.creado_hace || '?'}`
+      );
+      return sendText(jid, `📦 *Pedidos (${estado})*\n${lines.join('\n')}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // Cambiar nombre del negocio
+  if (lowerCmd.startsWith('nombre ')) {
+    if (!_adv) return _needAdv();
+    const nuevo = cmd.slice(7).trim();
+    if (nuevo.length < 2 || nuevo.length > 60) return sendText(jid, 'Nombre entre 2 y 60 caracteres.');
+    try {
+      const r = await oxidianPost('/config/set', { clave: 'NOMBRE_NEGOCIO', valor: nuevo });
+      return sendText(jid, r?.ok ? `✅ Nombre del negocio: *${nuevo}*` : `❌ ${r?.error}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // Horario: !horario 09:00-22:30
+  if (lowerCmd.startsWith('horario ')) {
+    if (!_adv) return _needAdv();
+    const m = cmd.slice(8).trim().match(/^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/);
+    if (!m) return sendText(jid, 'Uso: `!horario HH:MM-HH:MM`\nEj: `!horario 09:00-22:30`');
+    try {
+      await oxidianPost('/config/set', { clave: 'HORARIO_APERTURA', valor: m[1] });
+      const r = await oxidianPost('/config/set', { clave: 'HORARIO_CIERRE', valor: m[2] });
+      return sendText(jid, r?.ok ? `✅ Horario: *${m[1]}–${m[2]}*` : `❌ ${r?.error}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
+  // Pedido mínimo
+  if (lowerCmd.startsWith('minimo ')) {
+    if (!_adv) return _needAdv();
+    const val = cmd.slice(7).trim().replace(',', '.');
+    if (!/^\d+(\.\d{1,2})?$/.test(val)) return sendText(jid, 'Uso: `!minimo <euros>`\nEj: `!minimo 10.00`');
+    try {
+      const r = await oxidianPost('/config/set', { clave: 'PEDIDO_MINIMO', valor: val });
+      return sendText(jid, r?.ok ? `✅ Pedido mínimo: *€${val}*` : `❌ ${r?.error}`);
+    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+  }
+
   if (lowerCmd === 'diag' || lowerCmd === 'diagnostico') {
     try {
       const r = await oxidianGet('/admin/diagnostico');

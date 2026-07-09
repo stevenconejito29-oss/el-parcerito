@@ -3788,3 +3788,184 @@ def bot_diagnostico():
         },
         "features": features,
     })
+
+
+# ─── Comandos AVANZADOS del bot (solo modo bar_servicio) ─────────────────
+
+def _requiere_bar_servicio():
+    """Guard runtime: 403 si MODO_TIENDA != bar_servicio."""
+    modo = (SiteConfig.get("MODO_TIENDA", "propia") or "propia").strip().lower()
+    if modo != "bar_servicio":
+        return jsonify({
+            "ok": False,
+            "error": "Comando disponible solo en modo bar_servicio",
+        }), 403
+    return None
+
+
+@api_bot_bp.route("/admin/producto/precio", methods=["POST"])
+@bot_required
+def bot_producto_precio():
+    guard = _requiere_bar_servicio()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    pid = payload.get("producto_id")
+    precio = payload.get("precio")
+    try:
+        pid = int(pid); precio = float(precio)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "producto_id y precio numéricos"}), 400
+    if precio < 0 or precio > 10000:
+        return jsonify({"ok": False, "error": "Precio fuera de rango [0, 10000]"})
+    p = db.session.get(Product, pid)
+    if not p:
+        return jsonify({"ok": False, "error": f"Producto #{pid} no existe"}), 404
+    from decimal import Decimal
+    p.precio = Decimal(str(precio))
+    try:
+        AuditLog.registrar(None, "precio_whatsapp", "product",
+                           detalle=f"#{pid} → €{precio}",
+                           ip=request.remote_addr)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": "No se pudo guardar"}), 500
+    return jsonify({"ok": True, "id": pid, "precio": precio, "nombre": p.nombre})
+
+
+@api_bot_bp.route("/admin/producto/stock", methods=["POST"])
+@bot_required
+def bot_producto_stock():
+    guard = _requiere_bar_servicio()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    pid = payload.get("producto_id")
+    op = (payload.get("operacion") or "=").strip()
+    try:
+        pid = int(pid); cantidad = int(payload.get("cantidad", 0))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "producto_id y cantidad enteros"}), 400
+    if op not in ("+", "-", "="):
+        return jsonify({"ok": False, "error": "operacion debe ser +, - o ="})
+    p = db.session.get(Product, pid)
+    if not p:
+        return jsonify({"ok": False, "error": f"Producto #{pid} no existe"}), 404
+
+    from models import Stock
+    from datetime import date as _d, timedelta as _td
+    # Trabajamos con un lote único "ajuste bot" con caducidad lejana.
+    lote = Stock.query.filter_by(producto_id=pid, lote="__bot_ajuste").first()
+    antes = int(lote.cantidad) if lote else 0
+    if op == "=":
+        nuevo = max(0, cantidad)
+    elif op == "+":
+        nuevo = antes + cantidad
+    else:
+        nuevo = max(0, antes - cantidad)
+    if lote is None:
+        lote = Stock(
+            producto_id=pid, cantidad=nuevo,
+            lote="__bot_ajuste",
+            fecha_caducidad=_d.today() + _td(days=365 * 3),
+        )
+        db.session.add(lote)
+    else:
+        lote.cantidad = nuevo
+    try:
+        AuditLog.registrar(None, "stock_whatsapp", "stock",
+                           detalle=f"#{pid} {antes}→{nuevo}",
+                           ip=request.remote_addr)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": "No se pudo guardar"}), 500
+    return jsonify({"ok": True, "id": pid, "antes": antes, "nuevo": nuevo})
+
+
+@api_bot_bp.route("/admin/producto/crear", methods=["POST"])
+@bot_required
+def bot_producto_crear():
+    guard = _requiere_bar_servicio()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    nombre = (payload.get("nombre") or "").strip()
+    cat_nombre = (payload.get("categoria") or "").strip() or None
+    try:
+        precio = float(payload.get("precio") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "precio inválido"}), 400
+    if len(nombre) < 2 or len(nombre) > 120:
+        return jsonify({"ok": False, "error": "Nombre entre 2 y 120 chars"}), 400
+    if precio <= 0 or precio > 10000:
+        return jsonify({"ok": False, "error": "Precio fuera de rango"}), 400
+
+    from decimal import Decimal
+    cat = None
+    if cat_nombre:
+        cat = Categoria.query.filter(
+            db.func.lower(Categoria.nombre) == cat_nombre.lower()
+        ).first()
+        if not cat:
+            cat = Categoria(nombre=cat_nombre, activo=True)
+            db.session.add(cat)
+            db.session.flush()
+
+    tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
+    p = Product(
+        nombre=nombre,
+        precio=Decimal(str(precio)),
+        activo=True,
+        categoria_id=cat.id if cat else None,
+        canal_preparacion="cocina" if tt == "comida" else "almacen",
+        tipo_entrega="inmediato",
+        modalidad_entrega="ambas",
+        vertical=tt,
+    )
+    db.session.add(p)
+    try:
+        db.session.flush()
+        AuditLog.registrar(None, "producto_crear_whatsapp", "product",
+                           detalle=f"'{nombre}' €{precio}",
+                           ip=request.remote_addr)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": f"No se pudo crear: {exc}"}), 500
+    return jsonify({
+        "ok": True, "id": p.id, "nombre": p.nombre,
+        "precio": float(p.precio), "categoria": cat.nombre if cat else None,
+    })
+
+
+@api_bot_bp.route("/admin/pedidos", methods=["GET"])
+@bot_required
+def bot_admin_pedidos():
+    guard = _requiere_bar_servicio()
+    if guard:
+        return guard
+    estados_raw = (request.args.get("estados") or "pendiente,armando,listo").strip()
+    limit = min(50, max(1, request.args.get("limit", 10, type=int)))
+    estados = [e.strip() for e in estados_raw.split(",") if e.strip()]
+    q = Order.query.filter(Order.estado.in_(estados)).order_by(Order.creado_en.desc()).limit(limit)
+    out = []
+    ahora = _utcnow()
+    for p in q.all():
+        creado = p.creado_en
+        mins = int((ahora - creado).total_seconds() // 60) if creado else 0
+        if mins < 60:
+            hace = f"{mins} min"
+        elif mins < 1440:
+            hace = f"{mins // 60}h {mins % 60}min"
+        else:
+            hace = f"{mins // 1440}d"
+        out.append({
+            "numero": p.numero_pedido,
+            "estado": p.estado,
+            "total": float(p.total or 0),
+            "creado_hace": hace,
+            "metodo_pago": p.metodo_pago or "",
+        })
+    return jsonify({"ok": True, "pedidos": out})
