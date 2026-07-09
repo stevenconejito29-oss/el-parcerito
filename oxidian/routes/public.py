@@ -1001,25 +1001,30 @@ def agregar_carrito(producto_id):
 
     # Presentaciones opt-in: si el producto define presentaciones activas,
     # el cliente debe elegir una. Si no define ninguna → tamaño único (skip).
-    presentation_size = (request.form.get("presentation_size") or "").strip().lower()
+    # Comparación case-insensitive: retail guarda "S","M","L","XL"; comida
+    # guarda "pequeño","mediano","grande". El form puede enviar cualquier case.
+    presentation_size_raw = (request.form.get("presentation_size") or "").strip()
+    presentation_size = presentation_size_raw.lower()
     presentaciones_activas = [
         pr for pr in producto.presentaciones if pr.activo
     ] if hasattr(producto, "presentaciones") else []
     if presentaciones_activas:
-        tamaños_validos = {pr.tamaño for pr in presentaciones_activas}
-        if not presentation_size or presentation_size not in tamaños_validos:
+        tamaños_map = {(pr.tamaño or "").strip().lower(): pr.tamaño for pr in presentaciones_activas}
+        if not presentation_size or presentation_size not in tamaños_map:
             return _err(
                 f"Elige un tamaño para «{producto.nombre}»: "
-                + ", ".join(sorted(tamaños_validos)) + "."
+                + ", ".join(pr.tamaño for pr in presentaciones_activas) + "."
             )
+        # Canónico según lo guardado en BD (respeta S/M/L/XL vs pequeño/mediano)
+        presentation_canonico = tamaños_map[presentation_size]
         presentaciones_carrito = session.get("presentaciones_carrito", {})
         anterior_pres = presentaciones_carrito.get(key)
-        if carrito.get(key) and anterior_pres and anterior_pres != presentation_size:
+        if carrito.get(key) and anterior_pres and anterior_pres != presentation_canonico:
             return _err(
                 "Este producto ya está en el carrito con otro tamaño. "
                 "Elimínalo antes de cambiar la presentación."
             )
-        presentaciones_carrito[key] = presentation_size
+        presentaciones_carrito[key] = presentation_canonico
         session["presentaciones_carrito"] = presentaciones_carrito
     elif presentation_size:
         # El form envió tamaño pero el producto no tiene presentaciones — ignorar
