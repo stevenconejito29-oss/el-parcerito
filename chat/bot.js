@@ -1259,8 +1259,34 @@ async function humanizedTypingDelay(target, text, evolutionUrl, evolutionInstanc
   await sleep(totalMs);
 }
 
+// Patrones de secretos que NUNCA deben salir del bot al cliente/admin.
+// Defensa contra alucinaciones IA, logs pegados por error, o mensajes admin
+// que incluyan la config del proveedor por accidente.
+const _SECRET_PATTERNS = [
+  /\bsk-[A-Za-z0-9_-]{16,}\b/g,
+  /\bxox[abpr]-[A-Za-z0-9-]{10,}\b/g,
+  /\bgsk_[A-Za-z0-9]{20,}\b/g,
+  /\bBearer\s+[A-Za-z0-9._-]{20,}\b/gi,
+  /\b(?:api[_-]?key|apikey|secret|password|token|clave)\s*[:=]\s*['\"]?([A-Za-z0-9._+\/-]{8,})['\"]?/gi,
+  /\b[A-Fa-f0-9]{40,}\b/g,
+];
+
+function redactSecrets(text) {
+  let out = String(text || '');
+  for (const rx of _SECRET_PATTERNS) {
+    out = out.replace(rx, (match) => {
+      if (/^(api|password|secret|token|clave|bearer)/i.test(match)) {
+        return match.replace(/([A-Za-z0-9._+\/-]{8,})/, '[REDACTADO]');
+      }
+      return '[REDACTADO]';
+    });
+  }
+  return out;
+}
+
 function sanitizeOutgoingText(value) {
-  const text = String(value || '').replace(/\u0000/g, '').trim();
+  const raw = String(value || '').replace(/\u0000/g, '').trim();
+  const text = redactSecrets(raw);
   if (!text) return '';
   return text.length > MAX_OUTBOUND_CHARS
     ? `${text.slice(0, MAX_OUTBOUND_CHARS - 40)}\n\n[Mensaje recortado por seguridad]`

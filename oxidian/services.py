@@ -12,7 +12,7 @@ import logging
 import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, case
 from extensions import db
 from models import User, Order, Caja, StaffPayment, OrderEvent, NotificationOutbox
 from store_config import get_store_features
@@ -1616,9 +1616,17 @@ def procesar_notificaciones_pendientes(
         if not ids:
             return {"procesadas": 0, "enviadas": 0, "fallidas": 0, "saltadas": 0}
         query = query.filter(NotificationOutbox.id.in_(ids))
+    # Prioridad: OTP de canje y códigos de entrega van antes que broadcasts
+    # o estados. El cliente los está esperando ahora mismo (en checkout o con
+    # el repartidor delante) — retrasarlos rompe el flujo. Sin cambio de schema.
+    EVENTOS_URGENTES = ("delivery_code", "points_otp", "canje_codigo", "pago_confirmado")
+    prioridad_expr = case(
+        (NotificationOutbox.evento.in_(EVENTOS_URGENTES), 0),
+        else_=1,
+    )
     jobs = (
         query
-        .order_by(NotificationOutbox.creado_en.asc())
+        .order_by(prioridad_expr.asc(), NotificationOutbox.creado_en.asc())
         .with_for_update(skip_locked=True)
         .limit(max(1, int(limit or 25)))
         .all()
