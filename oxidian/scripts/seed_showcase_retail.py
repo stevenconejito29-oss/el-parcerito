@@ -292,10 +292,10 @@ def seed_retail():
 def main():
     app = create_app()
     with app.app_context():
-        # Limpiar retail previo (borra productos retail para reseed limpio)
+        # Limpiar retail previo. Los productos referenciados por order_items
+        # no se pueden borrar (FK RESTRICT del snapshot) — se archivan renombrados.
         from sqlalchemy import text
-        print("• Limpieza previa retail (preserva comida)")
-        # Borrar en orden por FK
+        print("• Limpieza previa retail (preserva comida y pedidos históricos)")
         for tabla, cond in [
             ("combo_items", "combo_id IN (SELECT id FROM products WHERE vertical='producto')"),
             ("combo_items", "producto_id IN (SELECT id FROM products WHERE vertical='producto')"),
@@ -305,10 +305,25 @@ def main():
             ("product_extra_groups", "producto_id IN (SELECT id FROM products WHERE vertical='producto')"),
             ("stock", "producto_id IN (SELECT id FROM products WHERE vertical='producto')"),
             ("proveedor_productos", "producto_id IN (SELECT id FROM products WHERE vertical='producto')"),
-            ("products", "vertical='producto'"),
         ]:
             db.session.execute(text(f"DELETE FROM {tabla} WHERE {cond}"))
         db.session.commit()
+        # Intento de borrado con manejo por-FK: los que tienen order_items se archivan.
+        borrables = 0
+        archivados = 0
+        for p in Product.query.filter_by(vertical="producto").all():
+            try:
+                db.session.delete(p)
+                db.session.flush()
+                borrables += 1
+            except Exception:
+                db.session.rollback()
+                p.activo = False
+                if not (p.nombre or "").startswith("[archivado]"):
+                    p.nombre = f"[archivado] {p.nombre}"[:200]
+                archivados += 1
+        db.session.commit()
+        print(f"  - borrados: {borrables}, archivados (tenían pedidos): {archivados}")
 
         seed_retail()
         db.session.commit()

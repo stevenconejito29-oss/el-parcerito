@@ -3617,7 +3617,7 @@ async function handleAdminCmd(jid, text) {
     const arg = cmd.slice(5).trim().toLowerCase();
     if (!arg) {
       try {
-        const r = await oxidianGet('/config?claves=TIPO_TIENDA');
+        const r = await oxidianGet(withAdminActor('/config?claves=TIPO_TIENDA', jid));
         return sendText(jid, `Nicho actual: *${r?.config?.TIPO_TIENDA || '?'}*\n\nUso: \`!nicho comida\` o \`!nicho producto\``);
       } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
     }
@@ -3625,7 +3625,7 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, '❌ Uso: `!nicho comida` o `!nicho producto`');
     }
     try {
-      const r = await oxidianPost('/config/set', { clave: 'TIPO_TIENDA', valor: arg });
+      const r = await oxidianPost('/config/set', adminBody(jid, { clave: 'TIPO_TIENDA', valor: arg }));
       return sendText(jid, r?.ok
         ? `✅ Nicho cambiado a *${arg}*. Los templates se adaptan al siguiente request.`
         : `❌ ${r?.error || 'No se pudo cambiar'}`);
@@ -3650,7 +3650,7 @@ async function handleAdminCmd(jid, text) {
     const [clave, ...restoVal] = parts[0] === parts[1] ? parts : [parts[0], parts[1]];
     const valor = rest.slice(clave.length).trim();
     try {
-      const r = await oxidianPost('/config/set', { clave, valor });
+      const r = await oxidianPost('/config/set', adminBody(jid, { clave, valor }));
       return sendText(jid, r?.ok ? `✅ ${clave} = *${valor}*` : `❌ ${r?.error || 'error'}`);
     } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
   }
@@ -3667,13 +3667,13 @@ async function handleAdminCmd(jid, text) {
   // Pausar / reanudar tienda (TIENDA_FORZAR_CERRADA)
   if (lowerCmd === 'pausar-tienda' || lowerCmd === 'pausa') {
     try {
-      const r = await oxidianPost('/config/set', { clave: 'TIENDA_FORZAR_CERRADA', valor: '1' });
+      const r = await oxidianPost('/config/set', adminBody(jid, { clave: 'TIENDA_FORZAR_CERRADA', valor: '1' }));
       return sendText(jid, r?.ok ? '⏸ Tienda pausada. No aceptará pedidos.' : `❌ ${r?.error}`);
     } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
   }
   if (lowerCmd === 'reanudar-tienda' || lowerCmd === 'reanuda') {
     try {
-      const r = await oxidianPost('/config/set', { clave: 'TIENDA_FORZAR_CERRADA', valor: '0' });
+      const r = await oxidianPost('/config/set', adminBody(jid, { clave: 'TIENDA_FORZAR_CERRADA', valor: '0' }));
       return sendText(jid, r?.ok ? '▶ Tienda reanudada. Aceptando pedidos.' : `❌ ${r?.error}`);
     } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
   }
@@ -3684,7 +3684,7 @@ async function handleAdminCmd(jid, text) {
       ? cmd.slice(16).trim() : cmd.slice(7).trim();
     if (!q) return sendText(jid, 'Uso: `!buscar <texto>` — encuentra productos por nombre');
     try {
-      const r = await oxidianGet(`/admin/buscar-producto?q=${encodeURIComponent(q)}`);
+      const r = await oxidianGet(withAdminActor(`/admin/buscar-producto?q=${encodeURIComponent(q)}`, jid));
       if (!r?.ok || !r.productos?.length) return sendText(jid, `Sin resultados para "${q}".`);
       const lines = r.productos.slice(0, 8).map(p =>
         `• #${p.id} *${p.nombre}* €${(p.precio || 0).toFixed(2)} ${p.activo ? '✅' : '❌'}${p.stock != null ? ` · stock:${p.stock}` : ''}`);
@@ -3700,7 +3700,7 @@ async function handleAdminCmd(jid, text) {
     }
     const activo = parts[1].toLowerCase() === 'activar';
     try {
-      const r = await oxidianPost('/admin/producto/toggle', { producto_id: Number(parts[0]), activo });
+      const r = await oxidianPost('/admin/producto/toggle', adminBody(jid, { producto_id: Number(parts[0]), activo }));
       return sendText(jid, r?.ok
         ? `✅ Producto #${parts[0]} ${activo ? 'activado' : 'desactivado'}`
         : `❌ ${r?.error || 'error'}`);
@@ -3722,7 +3722,7 @@ async function handleAdminCmd(jid, text) {
     if (!m) return sendText(jid, 'Uso: `!precio <id> <euros>`\nEj: `!precio 42 8.90`');
     try {
       const r = await oxidianPost('/admin/producto/precio',
-        { producto_id: Number(m[1]), precio: Number(m[2].replace(',', '.')) });
+        adminBody(jid, { producto_id: Number(m[1]), precio: Number(m[2].replace(',', '.')) }));
       return sendText(jid, r?.ok
         ? `✅ Precio de #${m[1]} actualizado a €${(r.precio ?? m[2]).toString()}`
         : `❌ ${r?.error || 'error'}`);
@@ -3736,7 +3736,7 @@ async function handleAdminCmd(jid, text) {
     if (!m) return sendText(jid, 'Uso: `!stock <id> +N` (sumar), `-N` (restar) o `=N` (fijar)\nEj: `!stock 42 +10`');
     try {
       const r = await oxidianPost('/admin/producto/stock',
-        { producto_id: Number(m[1]), operacion: m[2], cantidad: Number(m[3]) });
+        adminBody(jid, { producto_id: Number(m[1]), operacion: m[2], cantidad: Number(m[3]) }));
       return sendText(jid, r?.ok
         ? `✅ Stock de #${m[1]}: ${r.antes ?? '?'} → *${r.nuevo}*`
         : `❌ ${r?.error || 'error'}`);
@@ -3756,10 +3756,10 @@ async function handleAdminCmd(jid, text) {
     }
     const [nombre, precio, categoria] = parts;
     try {
-      const r = await oxidianPost('/admin/producto/crear', {
+      const r = await oxidianPost('/admin/producto/crear', adminBody(jid, {
         nombre, precio: Number(String(precio).replace(',', '.')),
         categoria: categoria || null,
-      });
+      }));
       return sendText(jid, r?.ok
         ? `✅ Producto creado #${r.id}: *${r.nombre}* €${r.precio.toFixed(2)}${r.categoria ? ' · ' + r.categoria : ''}`
         : `❌ ${r?.error || 'error'}`);
@@ -3771,7 +3771,7 @@ async function handleAdminCmd(jid, text) {
     if (!_adv) return _needAdv();
     const estado = cmd.slice(11).trim() || 'pendiente,armando,listo';
     try {
-      const r = await oxidianGet(`/admin/pedidos?estados=${encodeURIComponent(estado)}&limit=10`);
+      const r = await oxidianGet(withAdminActor(`/admin/pedidos?estados=${encodeURIComponent(estado)}&limit=10`, jid));
       if (!r?.ok) return sendText(jid, `❌ ${r?.error || 'error'}`);
       const items = (r.pedidos || []).slice(0, 10);
       if (!items.length) return sendText(jid, `Sin pedidos en estados: ${estado}`);
@@ -3788,7 +3788,7 @@ async function handleAdminCmd(jid, text) {
     const nuevo = cmd.slice(7).trim();
     if (nuevo.length < 2 || nuevo.length > 60) return sendText(jid, 'Nombre entre 2 y 60 caracteres.');
     try {
-      const r = await oxidianPost('/config/set', { clave: 'NOMBRE_NEGOCIO', valor: nuevo });
+      const r = await oxidianPost('/config/set', adminBody(jid, { clave: 'NOMBRE_NEGOCIO', valor: nuevo }));
       return sendText(jid, r?.ok ? `✅ Nombre del negocio: *${nuevo}*` : `❌ ${r?.error}`);
     } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
   }
@@ -3799,8 +3799,8 @@ async function handleAdminCmd(jid, text) {
     const m = cmd.slice(8).trim().match(/^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/);
     if (!m) return sendText(jid, 'Uso: `!horario HH:MM-HH:MM`\nEj: `!horario 09:00-22:30`');
     try {
-      await oxidianPost('/config/set', { clave: 'HORARIO_APERTURA', valor: m[1] });
-      const r = await oxidianPost('/config/set', { clave: 'HORARIO_CIERRE', valor: m[2] });
+      await oxidianPost('/config/set', adminBody(jid, { clave: 'HORARIO_APERTURA', valor: m[1] }));
+      const r = await oxidianPost('/config/set', adminBody(jid, { clave: 'HORARIO_CIERRE', valor: m[2] }));
       return sendText(jid, r?.ok ? `✅ Horario: *${m[1]}–${m[2]}*` : `❌ ${r?.error}`);
     } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
   }
@@ -3818,7 +3818,7 @@ async function handleAdminCmd(jid, text) {
 
   if (lowerCmd === 'diag' || lowerCmd === 'diagnostico') {
     try {
-      const r = await oxidianGet('/admin/diagnostico');
+      const r = await oxidianGet(withAdminActor('/admin/diagnostico', jid));
       if (!r?.ok) return sendText(jid, `❌ ${r?.error || 'error'}`);
       const c = r.catalogo || {};
       const f = r.finanzas_7d || {};

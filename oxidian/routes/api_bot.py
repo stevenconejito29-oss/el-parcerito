@@ -3634,9 +3634,11 @@ def bot_config_ver():
 @api_bot_bp.route("/config/set", methods=["POST"])
 @bot_required
 def bot_config_set():
-    """Cambia una SiteConfig. Bloquea claves sensibles.
-    El teléfono del admin viene en el bot request (por ahora sin verificar
-    aquí; el bot Node ya restringe a admins por adminCan)."""
+    """Cambia una SiteConfig. Bloquea claves sensibles y requiere actor
+    admin verificado (defense-in-depth: si el X-Bot-Key se filtra, esto
+    aún exige que el teléfono admin sea válido)."""
+    if not _bot_admin_request_allowed("store"):
+        return _bot_actor_forbidden()
     BLOQUEADAS = {"BOT_AI_API_KEY", "BOT_API_KEY", "SECRET_KEY", "BOT_PANEL_KEY",
                   "SEED_PASSWORD", "OXIDIAN_KEY"}
     payload = request.get_json(silent=True) or {}
@@ -3662,6 +3664,8 @@ def bot_config_set():
 @bot_required
 def bot_buscar_producto():
     """Busca productos por nombre (LIKE) para el bot admin."""
+    if not _bot_admin_request_allowed("products"):
+        return _bot_actor_forbidden()
     q = (request.args.get("q") or "").strip()
     if len(q) < 2:
         return jsonify({"ok": False, "error": "Query mínimo 2 chars"})
@@ -3696,6 +3700,8 @@ def bot_buscar_producto():
 @bot_required
 def bot_producto_toggle():
     """Activa/desactiva un producto rápido desde WhatsApp admin."""
+    if not _bot_admin_request_allowed("products"):
+        return _bot_actor_forbidden()
     payload = request.get_json(silent=True) or {}
     pid = payload.get("producto_id")
     activo = bool(payload.get("activo", True))
@@ -3726,6 +3732,8 @@ def bot_diagnostico():
     """Snapshot rápido del estado del sistema: stock, finanzas, features
     y flujos. Diseñado para el comando `!diag` del admin en WhatsApp.
     Sin PII, todo agregados."""
+    if not _bot_admin_request_allowed("store"):
+        return _bot_actor_forbidden()
     from sqlalchemy import func
     hoy = date.today()
     hace_7d = hoy - timedelta(days=7)
@@ -3806,6 +3814,8 @@ def _requiere_bar_servicio():
 @api_bot_bp.route("/admin/producto/precio", methods=["POST"])
 @bot_required
 def bot_producto_precio():
+    if not _bot_admin_request_allowed("products"):
+        return _bot_actor_forbidden()
     guard = _requiere_bar_servicio()
     if guard:
         return guard
@@ -3837,6 +3847,8 @@ def bot_producto_precio():
 @api_bot_bp.route("/admin/producto/stock", methods=["POST"])
 @bot_required
 def bot_producto_stock():
+    if not _bot_admin_request_allowed("stock"):
+        return _bot_actor_forbidden()
     guard = _requiere_bar_servicio()
     if guard:
         return guard
@@ -3887,6 +3899,8 @@ def bot_producto_stock():
 @api_bot_bp.route("/admin/producto/crear", methods=["POST"])
 @bot_required
 def bot_producto_crear():
+    if not _bot_admin_request_allowed("products"):
+        return _bot_actor_forbidden()
     guard = _requiere_bar_servicio()
     if guard:
         return guard
@@ -3943,6 +3957,8 @@ def bot_producto_crear():
 @api_bot_bp.route("/admin/pedidos", methods=["GET"])
 @bot_required
 def bot_admin_pedidos():
+    if not _bot_admin_request_allowed("store"):
+        return _bot_actor_forbidden()
     guard = _requiere_bar_servicio()
     if guard:
         return guard
