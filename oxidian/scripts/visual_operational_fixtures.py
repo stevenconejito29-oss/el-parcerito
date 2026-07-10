@@ -87,7 +87,9 @@ def cleanup() -> int:
 
 def create() -> int:
     cleanup()
-    preparador = User.query.filter_by(rol="preparacion", activo=True).first()
+    # El pedido inmediato de demostración debe probar la cola real de Cocina;
+    # `preparacion` queda reservado para encargos con fecha.
+    preparador = User.query.filter_by(rol="cocina", activo=True).first()
     repartidor = User.query.filter_by(rol="repartidor", activo=True).first()
     product = Product.query.filter_by(activo=True).first()
     reward = Product.query.filter_by(activo=True, canjeable_con_puntos=True).first()

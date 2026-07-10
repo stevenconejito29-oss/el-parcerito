@@ -324,7 +324,13 @@
         </a>
         {% endif %}
         <p class="ep-footer-note">Seguimiento de pedidos{% if brand.puntos %}, consulta de puntos{% endif %} y atención en tiempo real.</p>
-        <p class="ep-footer-legal">{% if brand.es_comida %}Información sobre alérgenos disponible bajo solicitud.<br>{% endif %}RGPD · LSSI-CE · RDL 1/2007</p>
+        <p class="ep-footer-legal">{% if brand.es_comida %}Información sobre alérgenos disponible bajo solicitud.<br>{% endif %}</p>
+        <nav class="ep-footer-legal-links" aria-label="Información legal">
+          <a href="{{ url_for('public.legal', documento='aviso-legal') }}">Aviso legal</a>
+          <a href="{{ url_for('public.legal', documento='privacidad') }}">Privacidad</a>
+          <a href="{{ url_for('public.legal', documento='condiciones') }}">Condiciones</a>
+          <button type="button" data-cookie-settings>Cookies</button>
+        </nav>
       </div>
 
     </div>
@@ -336,6 +342,15 @@
     </div>
   </div>
 </footer>
+
+<section class="ox-cookie-panel" id="ox-cookie-panel" hidden role="region" aria-live="polite" aria-labelledby="ox-cookie-title">
+  <div>
+    <strong id="ox-cookie-title">Tu privacidad, sin complicaciones</strong>
+    <p>Usamos almacenamiento necesario para que funcionen el carrito, la sesión y la seguridad. Las funciones opcionales solo se activan con tu permiso.</p>
+    <a href="{{ url_for('public.legal', documento='cookies') }}">Ver información</a>
+  </div>
+  <button type="button" class="ox-cookie-ok" data-cookie-accept>Aceptar necesarias</button>
+</section>
 
 <div class="ox-pwa-sheet" id="ox-pwa-sheet" hidden>
   <div class="ox-pwa-card">
@@ -875,6 +890,22 @@ window.oxPrepareAppStorage = async function(btn) {
 <script src="{{ url_for('static', filename='js/spa-nav.js', v=asset_version) }}" defer></script>
 
 <script>
+/* Consentimiento versionado: vuelve a solicitarse solo si cambia la política. */
+(function () {
+  const key = 'oxCookieConsent';
+  const version = '1';
+  const panel = document.getElementById('ox-cookie-panel');
+  if (!panel) return;
+  const open = () => { panel.hidden = false; document.body.classList.add('ox-cookie-visible'); };
+  const close = () => { panel.hidden = true; document.body.classList.remove('ox-cookie-visible'); };
+  if (localStorage.getItem(key) !== version) setTimeout(open, 700);
+  document.querySelectorAll('[data-cookie-settings]').forEach(el => el.addEventListener('click', open));
+  panel.querySelector('[data-cookie-accept]')?.addEventListener('click', () => {
+    localStorage.setItem(key, version);
+    close();
+  });
+})();
+
 /* Prevención universal de doble-submit en formularios del público
    (checkout, agregar al carrito, verificar código puntos). Mismo
    patrón que en admin. Formularios con [data-no-guard] se saltan. */

@@ -361,6 +361,7 @@
         <a href="{{ url_for('admin.afiliados') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤝</span>Afiliados</a>
         <a href="{{ url_for('admin.menu_config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎨</span>Menú público</a>
       </div>
+
       {% endif %}
     </nav>
 
@@ -402,8 +403,12 @@
     </div>
 
     {# ── BOTTOM NAV compacto: acciones frecuentes; el drawer conserva el resto. ── #}
-    <nav class="ox-admin-bnav" aria-label="Accesos rápidos">
-      <a href="{% if rol in ('admin','super_admin') %}{{ url_for('admin.dashboard') }}{% elif rol in ('cocina','preparacion') %}{{ url_for('preparador.pedidos') }}{% elif rol == 'repartidor' %}{{ url_for('repartidor.ruta') }}{% else %}{{ url_for('public.index') }}{% endif %}"
+    {% set _home_url = url_for('admin.dashboard') if rol in ('admin','super_admin')
+      else url_for('preparador.pedidos') if rol in ('cocina','preparacion')
+      else url_for('repartidor.ruta') if rol == 'repartidor'
+      else url_for('public.index') %}
+    <nav class="ox-admin-bnav" aria-label="Navegación principal de {{ role_label(rol, short=True) }}">
+      <a href="{{ _home_url }}"
          class="ox-admin-bnav-item {{ 'is-active' if request.endpoint in ('admin.dashboard','preparador.pedidos','repartidor.ruta') else '' }}"
          data-abn="home">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>
@@ -449,7 +454,7 @@
 </div>
 
 {# Banner de permiso push — solo visible si Notification.permission === 'default' #}
-<div id="ox-push-banner" style="display:none;position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);z-index:580;
+<div id="ox-push-banner" class="ox-push-permission" style="display:none;position:fixed;left:50%;transform:translateX(-50%);z-index:580;
      background:#1B1F24;border:1px solid rgba(255,244,226,.18);border-radius:1rem;
      padding:.75rem 1rem;gap:.75rem;align-items:center;width:min(92vw,420px);box-sizing:border-box;
      box-shadow:0 14px 36px rgba(0,0,0,.35)">
@@ -467,6 +472,50 @@
 </div>
 
 <script>
+/* Alerta audible dentro del panel. Los navegadores solo permiten audio tras
+   una interacción; desbloqueamos el contexto con el primer toque sin pedir
+   permisos invasivos. Las notificaciones con la app cerrada usan el sonido
+   que el usuario tenga configurado en Android/iOS. */
+(function () {
+  let ctx = null;
+  let unlocked = false;
+  function unlock() {
+    try {
+      ctx ||= new (window.AudioContext || window.webkitAudioContext)();
+      ctx.resume();
+      unlocked = ctx.state === 'running';
+    } catch (_) {}
+  }
+  document.addEventListener('pointerdown', unlock, { once: true, passive: true });
+  window.oxPlayOperationalAlert = function () {
+    if (!unlocked || !ctx) return false;
+    try {
+      const now = ctx.currentTime;
+      [0, .18].forEach((delay, index) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = index ? 880 : 660;
+        gain.gain.setValueAtTime(.0001, now + delay);
+        gain.gain.exponentialRampToValueAtTime(.16, now + delay + .015);
+        gain.gain.exponentialRampToValueAtTime(.0001, now + delay + .14);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now + delay); osc.stop(now + delay + .15);
+      });
+      navigator.vibrate?.([120, 70, 120]);
+      return true;
+    } catch (_) { return false; }
+  };
+  navigator.serviceWorker?.addEventListener('message', event => {
+    if (event.data?.type !== 'OX_PUSH_RECEIVED') return;
+    window.oxPlayOperationalAlert();
+    document.title = '● ' + document.title.replace(/^●\s*/, '');
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') document.title = document.title.replace(/^●\s*/, '');
+  });
+})();
+
 setTimeout(() => {
   document.querySelectorAll('.ox-toast').forEach((el,i) => {
     setTimeout(() => { el.style.transition='opacity .25s,transform .25s'; el.style.opacity='0'; el.style.transform='translateY(-6px)'; setTimeout(() => el.remove(), 280); }, 4000 + i * 400);

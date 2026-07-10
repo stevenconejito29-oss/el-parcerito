@@ -103,7 +103,13 @@ def create_app(env="default"):
     login_manager.init_app(app)
     csrf.init_app(app)
     if limiter is not None:
-        limiter.enabled = not app.config.get("TESTING", False)
+        # Un contador memory:// se fragmenta entre workers y además bloquea
+        # auditorías/desarrollo de forma arbitraria. Solo habilitar cuando hay
+        # Redis compartido, como establece extensions.py.
+        limiter.enabled = (
+            not app.config.get("TESTING", False)
+            and os.environ.get("REDIS_URL", "").startswith("redis://")
+        )
         limiter.init_app(app)
 
     from models import User, utcnow

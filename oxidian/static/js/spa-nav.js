@@ -23,6 +23,8 @@
   const supportsVT = typeof document.startViewTransition === 'function';
   const SCROLL_HISTORY = new Map(); // href → { top, left }
   const parser = new DOMParser();
+  const PREFETCH_SAFE = !/^\/(auth|checkout|carrito|pedido|puntos)\b/.test(location.pathname)
+    && !document.querySelector('form[method="post" i]');
 
   // Rutas del backend que hacen su propio manejo pesado (paneles con auto-refresh,
   // formularios con CSRF, etc.). Mejor no interceptar para evitar sorpresas.
@@ -218,6 +220,7 @@
   // Prefetch on hover/focus/touchstart para calentar cache antes del clic.
   const prefetched = new Set();
   function prefetch(url) {
+    if (!PREFETCH_SAFE) return;
     if (prefetched.has(url)) return;
     prefetched.add(url);
     fetchPage(url).catch(() => prefetched.delete(url));

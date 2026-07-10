@@ -433,6 +433,11 @@ def cancelar_pedido_operativo(
 ) -> None:
     estado_anterior = pedido.estado
     pedido.cancelar(forzar_desde_entregado=forzar_desde_entregado)
+    registrar_reversion_ingreso_pedido(
+        pedido,
+        motivo=detalle or "cancelación",
+        registrado_por=actor_id,
+    )
     registrar_evento_pedido(
         pedido,
         "pedido_cancelado",
@@ -441,6 +446,39 @@ def cancelar_pedido_operativo(
         estado_nuevo=pedido.estado,
         canal=canal,
         detalle=detalle,
+    )
+
+
+def registrar_reversion_ingreso_pedido(
+    pedido: Order,
+    motivo: str,
+    registrado_por: int | None = None,
+):
+    """Revierte una venta cobrada al cancelar, una sola vez y desde cualquier canal.
+
+    Si nunca se reconoció ingreso (efectivo aún no entregado, Bizum pendiente),
+    no crea un egreso artificial. La restricción parcial de Caja protege además
+    frente a carreras concurrentes.
+    """
+    from models import Caja
+    ingreso = db.session.query(db.func.coalesce(db.func.sum(Caja.monto), 0)).filter(
+        Caja.pedido_id == pedido.id,
+        Caja.tipo == "ingreso",
+    ).scalar() or 0
+    reembolsado = db.session.query(db.func.coalesce(db.func.sum(Caja.monto), 0)).filter(
+        Caja.pedido_id == pedido.id,
+        Caja.tipo == "egreso",
+        Caja.categoria == "devolucion",
+    ).scalar() or 0
+    pendiente = (Decimal(str(ingreso)) - Decimal(str(reembolsado))).quantize(Decimal("0.01"))
+    if pendiente <= 0:
+        return None
+    return registrar_egreso(
+        pendiente,
+        f"Reversión {pedido.numero_pedido} — {motivo}"[:200],
+        categoria="devolucion",
+        pedido_id=pedido.id,
+        registrado_por=registrado_por,
     )
 
 
@@ -968,6 +1006,11 @@ def distribuir_repartidor(pedido: Order) -> User | None:
     """
     Asigna al repartidor disponible con menos carga cuando el pedido pasa a 'listo'.
     Solo usa repartidores con disponibilidad manual activa y presencia reciente.
+
+    Zona (coherente con PR #5): si el pedido tiene `zona_id`, se prefieren
+    repartidores asignados a esa zona. Si no hay ninguno online, cae al pool
+    global (sin zona o cualquier zona) para no bloquear entregas — mejor que
+    dejar el pedido huérfano por especialización rígida.
     """
     if not get_store_features()["delivery"]:
         return None
@@ -986,8 +1029,26 @@ def distribuir_repartidor(pedido: Order) -> User | None:
         )
         return None
 
-    candidatos.sort(key=lambda u: (u.pedidos_activos_como_repartidor(), u.id))
-    asignado = candidatos[0]
+    # Preferencia por zona: si el pedido tiene zona asignada, filtra los
+    # repartidores que la tienen como zona propia. Los repartidores sin
+    # zona_repartidor_id son comodín (aceptan cualquier zona).
+    zona_pedido = getattr(pedido, "zona_id", None)
+    if zona_pedido is not None:
+        de_zona = [u for u in candidatos
+                   if getattr(u, "zona_repartidor_id", None) == zona_pedido]
+        sin_zona = [u for u in candidatos
+                    if getattr(u, "zona_repartidor_id", None) is None]
+        # Escala en preferencia: primero especialistas de la zona, luego
+        # comodines. Solo si ambos vacíos usamos el pool completo (evita
+        # bloqueo cuando el único especialista de la zona está offline y
+        # todos los online tienen otra zona; peor entregar tarde con otro
+        # que no entregar).
+        pool = de_zona or sin_zona or candidatos
+    else:
+        pool = candidatos
+
+    pool.sort(key=lambda u: (u.pedidos_activos_como_repartidor(), u.id))
+    asignado = pool[0]
     pedido.repartidor_id = asignado.id
     return asignado
 

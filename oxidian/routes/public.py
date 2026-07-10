@@ -59,6 +59,22 @@ from store_config import (
 public_bp = Blueprint("public", __name__)
 
 
+@public_bp.route("/legal/<documento>")
+def legal(documento):
+    """Información legal pública en una ruta estable y enlazable."""
+    documentos = {
+        "privacidad": "privacidad",
+        "cookies": "cookies",
+        "aviso-legal": "aviso_legal",
+        "condiciones": "condiciones",
+    }
+    tipo = documentos.get((documento or "").strip().lower())
+    if not tipo:
+        from flask import abort
+        abort(404)
+    return render_template("public/legal.html", tipo=tipo)
+
+
 def _normalize_phone(raw):
     """Normaliza el teléfono que identifica de forma única a cada cliente."""
     return normalizar_telefono_cliente(raw)

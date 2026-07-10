@@ -551,27 +551,6 @@ def reasignar_pedido(pedido_id):
 
 # ─── PEDIDOS ─────────────────────────────────
 
-def _registrar_reversion_caja_pedido(pedido, motivo, user_id):
-    """Registra un egreso por el ingreso neto asociado a un pedido cancelado."""
-    ingresos = db.session.query(db.func.coalesce(db.func.sum(Caja.monto), 0)).filter(
-        Caja.pedido_id == pedido.id,
-        Caja.tipo == "ingreso",
-    ).scalar() or 0
-    egresos = db.session.query(db.func.coalesce(db.func.sum(Caja.monto), 0)).filter(
-        Caja.pedido_id == pedido.id,
-        Caja.tipo == "egreso",
-    ).scalar() or 0
-    monto_revertir = round(float(ingresos) - float(egresos), 2)
-    if monto_revertir <= 0:
-        return None
-    return registrar_egreso(
-        monto_revertir,
-        f"Reversion {pedido.numero_pedido} - {motivo}",
-        categoria="devolucion",
-        pedido_id=pedido.id,
-        registrado_por=user_id,
-    )
-
 @admin_bp.route("/pedidos")
 @admin_required
 def pedidos():
@@ -709,7 +688,6 @@ def cancelar_pedido(pedido_id):
             canal="admin",
             detalle="cancelacion admin",
         )
-        _registrar_reversion_caja_pedido(pedido, "cancelacion admin", current_user.id)
         enviar_whatsapp_estado(pedido)
         db.session.commit()
         flash(f"Pedido {pedido.numero_pedido} cancelado.", "warning")
@@ -866,7 +844,6 @@ def rechazar_pago_digital(pedido_id):
         db.session.rollback()
         flash(f"No se pudo rechazar el pago: {exc}", "danger")
         return redirect(url_for("admin.pagos_pendientes_digital"))
-    _registrar_reversion_caja_pedido(pedido, "pago rechazado", current_user.id)
     pedido.notas = (pedido.notas or "") + f" [Pago rechazado: {motivo}]"
     AuditLog.registrar(
         current_user.id, "rechazar_pago_digital", "order", pedido.id,
@@ -2053,9 +2030,9 @@ def _parsear_campos_producto(form):
     if categoria_id and not Categoria.query.filter_by(id=categoria_id, activo=True).first():
         return None, "La categoría seleccionada no existe o está inactiva."
 
+    vertical_objetivo = _default_vertical_para_creacion(form.get("vertical"))
     _CANALES_PREP_VALIDOS = {"cocina", "almacen"}
-    tipo_tienda_actual = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").strip().lower()
-    canal_default = "almacen" if tipo_tienda_actual == "producto" else "cocina"
+    canal_default = "almacen" if vertical_objetivo == "producto" else "cocina"
     canal_preparacion = form.get("canal_preparacion", canal_default)
     if canal_preparacion not in _CANALES_PREP_VALIDOS:
         canal_preparacion = canal_default
@@ -2104,6 +2081,12 @@ def _parsear_campos_producto(form):
         return None, "Indica cuántos puntos se necesitan para el canje (debe ser > 0)."
     es_hipoalergenico = bool(form.get("es_hipoalergenico"))
     alergenos = [] if es_hipoalergenico else form.getlist("alergenos")
+    if vertical_objetivo == "producto":
+        # Conceptos alimentarios no pertenecen al contrato retail.
+        es_hipoalergenico = False
+        alergenos = []
+    else:
+        atributos_json = None
 
     es_combo = bool(form.get("es_combo"))
     proveedor_despachador_id = None
@@ -2136,13 +2119,13 @@ def _parsear_campos_producto(form):
         # vertical / nicho: comida | producto. Default = nicho activo de la
         # tienda (evita productos huérfanos "ambos" que aparecen en los dos
         # catálogos). Valores válidos: exactamente comida o producto.
-        "vertical":                  _default_vertical_para_creacion(form.get("vertical")),
+        "vertical":                  vertical_objetivo,
         # ── Campos retail (solo aplican si vertical="producto") ─────────
-        "marca":                     (form.get("marca") or "").strip()[:100] or None,
-        "material":                  (form.get("material") or "").strip()[:100] or None,
-        "dimensiones":               (form.get("dimensiones") or "").strip()[:80] or None,
-        "peso_gramos":               _int_o_none(form.get("peso_gramos")),
-        "garantia_meses":            _int_o_none(form.get("garantia_meses")),
+        "marca":                     ((form.get("marca") or "").strip()[:100] or None) if vertical_objetivo == "producto" else None,
+        "material":                  ((form.get("material") or "").strip()[:100] or None) if vertical_objetivo == "producto" else None,
+        "dimensiones":               ((form.get("dimensiones") or "").strip()[:80] or None) if vertical_objetivo == "producto" else None,
+        "peso_gramos":               _int_o_none(form.get("peso_gramos")) if vertical_objetivo == "producto" else None,
+        "garantia_meses":            _int_o_none(form.get("garantia_meses")) if vertical_objetivo == "producto" else None,
         # canje con puntos
         "canjeable_con_puntos":      canjeable,
         "puntos_para_canje":         puntos_para_canje if canjeable else None,
@@ -2263,7 +2246,11 @@ def _disponibilidad_productos_por_origen():
     """
     propios = [
         pid for pid, in db.session.query(Product.id)
-        .filter(Product.activo.is_(True), Product.es_combo.is_(False))
+        .filter(
+            Product.activo.is_(True),
+            Product.es_combo.is_(False),
+            Product.vertical == _nicho_activo(),
+        )
         .filter(Product.proveedor_despachador_id.is_(None))
         .all()
     ]
@@ -2637,6 +2624,7 @@ def nuevo_combo():
     productos_simples = (
         Product.query.filter_by(activo=True, es_combo=False)
         .filter(Product.proveedor_despachador_id.is_(None))
+        .filter(Product.vertical == _nicho_activo())
         .order_by(Product.nombre).all()
     )
     disponibilidad_por_origen = _disponibilidad_productos_por_origen()
@@ -2798,6 +2786,14 @@ def nuevo_combo():
         if comp_error:
             db.session.rollback()
             flash(f"Componente {i + 1}: {comp_error}", "danger")
+            return _render_form()
+        if (producto.vertical or "").strip().lower() != (combo.vertical or "").strip().lower():
+            db.session.rollback()
+            flash(
+                f"'{producto.nombre}' pertenece a otro catálogo. "
+                "Un combo solo puede contener productos de su mismo nicho.",
+                "danger",
+            )
             return _render_form()
 
         # ── Detectar duplicados (fijos y seleccionables) ──
@@ -4709,14 +4705,17 @@ def clientes():
         pedido_counts=pedido_counts,
         q=q,
         estado=solo_activos,
-        puede_editar=(getattr(current_user, "rol", None) == "super_admin"),
+        # El feature `usuarios` ya fue comprobado por el before_request.
+        # Admin y super_admin pueden corregir identidad comercial; esta ruta
+        # no permite cambiar rol, credenciales, puntos ni estado de la cuenta.
+        puede_editar=True,
     )
 
 
 @admin_bp.route("/clientes/<int:user_id>/editar", methods=["POST"])
-@super_admin_required
+@admin_required
 def editar_cliente(user_id):
-    """Edita nombre y/o teléfono de un cliente. Solo super_admin.
+    """Edita nombre y/o teléfono de un cliente desde gestión autorizada.
 
     Valida: nombre 2..80 chars; teléfono con validador estándar; deduplicado
     por `telefono_normalizado` UNIQUE (rechaza si otro user ya lo tiene).

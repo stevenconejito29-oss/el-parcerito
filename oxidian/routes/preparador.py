@@ -252,7 +252,6 @@ def pedidos():
     pendientes = [
         p for p in pendientes
         if _puede_operar_pedido(p)
-        and (not _es_encargo(p) or _encargo_disponible_para_preparar(p))
     ]
     armando = [p for p in armando if _puede_operar_pedido(p)]
     # Almacén retirado: negocio opera como punto único (cocina + despacho).
@@ -279,11 +278,11 @@ def pedidos():
     hoy_date = _utcnow().date()
 
     # ── Fase 6: partición "Preparar ahora" vs "Programados" ──────────
-    # "Ahora" = inmediatos + encargos con fecha ≤ hoy + buffer(min).
-    # "Programados" = encargos con fecha > hoy + buffer.
+    # El modelo vigente almacena FECHA, no hora. Por tanto "Ahora" significa
+    # inmediatos + encargos con fecha de hoy/vencida. No fingimos precisión
+    # por minutos que la base de datos no puede representar.
     buffer_min = _prep_buffer_minutos()
-    corte = _utcnow() + _timedelta(minutes=buffer_min)
-    corte_date = corte.date()
+    corte_date = hoy_date
 
     prep_ahora = list(pendientes_inmediato)
     prep_programados_planos: list = []

@@ -83,6 +83,13 @@
 (function() {
   'use strict';
 
+  // Una respuesta prefetched puede incluir Set-Cookie. Si coincide con un
+  // login/checkout POST, una respuesta antigua puede sobrescribir la sesión
+  // nueva. En pantallas transaccionales prima integridad sobre anticipación.
+  var sensitivePage = /^\/(auth|checkout|carrito|pedido|puntos)\b/.test(location.pathname)
+    || !!document.querySelector('form[method="post" i]');
+  if (sensitivePage) return;
+
   // Guarda URLs ya prefetch para no duplicar requests
   var prefetched = new Set();
 
@@ -101,11 +108,6 @@
     link.as = 'document';
     // No cachear en storage — solo hint al browser
     document.head.appendChild(link);
-    // Fallback moderno: usar fetch con keepalive para forzar warm cache
-    if ('fetch' in window) {
-      fetch(url, { credentials: 'same-origin', keepalive: true, mode: 'no-cors' })
-        .catch(function() {});
-    }
   }
 
   // Prefetch de rutas críticas cuando el navegador está idle

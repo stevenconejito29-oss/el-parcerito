@@ -1,12 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════
-   Oxidian — Service Worker v37
+   Oxidian — Service Worker v38
    • Assets propios CSS/JS/IMG: network-first + fallback cacheado
    • HTML público y datos de sesión: network-only
    • API / Admin       : Network-only (nunca cachear dinámico)
    • Push Notifications: Muestra notificaciones + abre URL al click
    ═══════════════════════════════════════════════════════════════ */
 
-const CACHE_STATIC = "ox-static-v37";
+const CACHE_STATIC = "ox-static-v38";
 const CACHE_PREFIX = "ox-";
 
 const PRECACHE = [
@@ -189,7 +189,14 @@ self.addEventListener("push", event => {
     ],
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(Promise.all([
+    self.registration.showNotification(title, options),
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then(list =>
+      Promise.all(list.map(client => client.postMessage({
+        type: "OX_PUSH_RECEIVED", title, body, url,
+      })))
+    ),
+  ]));
 });
 
 // ── Click en la notificación ─────────────────────────────────────────────

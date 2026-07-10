@@ -530,12 +530,14 @@
      de acción — antes había un botón duplicado en el hero y un dot informativo
      aquí, generando confusión). -->
 <form method="POST" action="{{ url_for('preparador.toggle_disponible') }}"
-      class="js-availability-form work-employee-card work-employee-toggle {% if disponible %}is-online{% else %}is-offline{% endif %}"
-      aria-label="{% if disponible %}Ponerte offline{% else %}Ponerte online{% endif %}"
-      title="Toca para cambiar a {{ 'offline' if disponible else 'online' }}">
+      class="js-availability-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <button type="submit" class="work-employee-avatar" aria-hidden="true"
-          style="border:0;cursor:pointer;">{{ current_user.nombre[0].upper() }}</button>
+  <button type="submit"
+      class="work-employee-card work-employee-toggle {% if disponible %}is-online{% else %}is-offline{% endif %}"
+      aria-label="{% if disponible %}Ponerte offline{% else %}Ponerte online{% endif %}"
+      title="Toca para cambiar a {{ 'offline' if disponible else 'online' }}"
+      style="width:100%;color:inherit;">
+  <span class="work-employee-avatar" aria-hidden="true">{{ current_user.nombre[0].upper() }}</span>
   <div class="work-employee-info">
     <p class="work-employee-name">{{ current_user.nombre }}</p>
     <p class="work-employee-role">
@@ -550,6 +552,7 @@
     <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
     <span>{% if disponible %}Online — toca para pausar{% else %}Offline — toca para activar{% endif %}</span>
   </div>
+  </button>
 </form>
 
 
@@ -605,8 +608,7 @@
   <div>
     <h2>Preparar ahora</h2>
     <p class="prep-section-sub">
-      Pedidos inmediatos y programados dentro de los próximos
-      {{ prep_buffer_min if prep_buffer_min is defined else 60 }} minutos.
+      Pedidos inmediatos y encargos cuya fecha de preparación es hoy.
     </p>
   </div>
   <span class="prep-section-count">{{ (prep_ahora|length) if prep_ahora is defined else (pendientes|length + (armando|length)) }}</span>
@@ -718,7 +720,7 @@
   <div>
     <h2>Programados</h2>
     <p class="prep-section-sub">
-      Encargos con fecha futura — no bloquean el flujo de cocina inmediata.
+      Encargos futuros visibles para planificar; se habilitan al llegar su fecha.
     </p>
   </div>
   <span class="prep-section-count">
@@ -1122,6 +1124,7 @@ prepRestoreChecks();
   });
   es.addEventListener('refresh', function () {
     setState('live', 'Cambio detectado');
+    window.oxPlayOperationalAlert?.();
     scheduleReload();
   });
   es.addEventListener('bye', function () {

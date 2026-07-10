@@ -53,6 +53,16 @@ def _requiere_disponible_para_nuevo_trabajo():
     return True
 
 
+def _cfg_route_minutes(key, default):
+    """Umbral visual configurable, acotado para evitar valores absurdos."""
+    from models import SiteConfig
+    try:
+        value = int(SiteConfig.get(key, str(default)) or default)
+    except (TypeError, ValueError):
+        value = default
+    return max(1, min(value, 24 * 60))
+
+
 def repartidor_required(f):
     @wraps(f)
     @login_required
@@ -212,7 +222,9 @@ def ruta():
                            en_ruta=en_ruta,
                            codigo_enviado_ids=_codigo_enviado_ids(en_ruta),
                            companeros=companeros,
-                           disponible=disponible)
+                           disponible=disponible,
+                           route_warn_min=_cfg_route_minutes("DELIVERY_WARN_MIN", 15),
+                           route_late_min=_cfg_route_minutes("DELIVERY_LATE_MIN", 30))
 
 
 @repartidor_bp.route("/pedidos/<int:pedido_id>/tomar", methods=["POST"])

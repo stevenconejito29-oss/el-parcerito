@@ -2956,18 +2956,23 @@ class Caja(db.Model):
             "pedido_id",
             unique=True,
             postgresql_where=text("tipo = 'ingreso' AND pedido_id IS NOT NULL"),
+            sqlite_where=text("tipo = 'ingreso' AND pedido_id IS NOT NULL"),
         ),
         db.Index(
             "uq_caja_staff_payment_expense",
             "staff_payment_id",
             unique=True,
             postgresql_where=text("tipo = 'egreso' AND staff_payment_id IS NOT NULL"),
+            sqlite_where=text("tipo = 'egreso' AND staff_payment_id IS NOT NULL"),
         ),
         db.Index(
             "uq_caja_order_refund",
             "pedido_id",
             unique=True,
             postgresql_where=text(
+                "tipo = 'egreso' AND categoria = 'devolucion' AND pedido_id IS NOT NULL"
+            ),
+            sqlite_where=text(
                 "tipo = 'egreso' AND categoria = 'devolucion' AND pedido_id IS NOT NULL"
             ),
         ),

@@ -472,6 +472,7 @@
   color: var(--col-text); padding: 0 6px;
 }
 .dash-section-link { font-size: .7rem; color: var(--col-faint); text-decoration: none; }
+.dash-section-link { min-height: 36px; padding: .45rem; display: inline-flex; align-items: center; }
 .dash-section-link:hover { color: var(--col-text); }
 
 /* Tarjetas de pedido */
@@ -547,6 +548,7 @@
   font-size: .68rem; font-weight: 700; padding: .25rem .6rem;
   border-radius: .4rem; border: none; cursor: pointer; text-decoration: none;
   display: inline-flex; align-items: center; transition: background .15s;
+  min-height: 36px;
 }
 .dash-btn-view {
   background: var(--dash-warn-soft); color: var(--dash-warn);
@@ -628,6 +630,7 @@
 /* Finanzas lateral */
 .dash-fin-row { display: flex; justify-content: space-between; align-items: center; font-size: .82rem; padding: .2rem 0; }
 .dash-link-small { display: block; font-size: .68rem; color: var(--col-faint); margin-top: .5rem; text-decoration: none; }
+.dash-link-small { min-height: 36px; padding:.55rem 0; }
 .dash-link-small:hover { color: var(--col-muted); }
 
 /* Variación día anterior (↑/↓ %) */
@@ -655,6 +658,9 @@
   .admin-dashboard-board .dash-kpi { min-width: 60px; padding: .3rem .5rem; }
   .admin-dashboard-board .dash-kpi-num { font-size: 1.2rem; }
   .admin-dashboard-board .work-btn { min-height: 44px; }
+  .admin-dashboard-board .dash-btn-sm,
+  .admin-dashboard-board .dash-section-link,
+  .admin-dashboard-board .dash-link-small { min-height:44px; }
   .admin-dashboard-board .dash-col-side { position: static; }
 }
 @media (max-width: 480px) {
@@ -665,10 +671,14 @@
 /* Landscape móvil (iPhone/Android horizontal): compactar KPIs y col side
    para que quepan más cards de pedido en la pantalla visible. */
 @media (orientation: landscape) and (max-height: 500px) {
-  .admin-dashboard-board .dash-kpi-bar { padding: .3rem .55rem; gap: .25rem; }
-  .admin-dashboard-board .dash-kpi { min-width: 52px; padding: .2rem .4rem; }
-  .admin-dashboard-board .dash-kpi-num { font-size: 1rem; }
-  .admin-dashboard-board .dash-kpi-lbl { font-size: .5rem; }
+  .admin-dashboard-board .dash-kpi-bar {
+    padding: .4rem .55rem; gap: .3rem; flex-wrap: nowrap;
+    scroll-snap-type: x proximity; scrollbar-width: thin;
+  }
+  .admin-dashboard-board .dash-kpi { min-width: 88px; padding: .3rem .5rem; scroll-snap-align: start; }
+  .admin-dashboard-board .dash-kpi-divider { display: none; }
+  .admin-dashboard-board .dash-kpi-num { font-size: 1.15rem; }
+  .admin-dashboard-board .dash-kpi-lbl { font-size: .62rem; }
   .admin-dashboard-board .work-hero { padding: .5rem .8rem; }
   .admin-dashboard-board .work-title { font-size: 1.05rem; }
   .admin-dashboard-board .work-subtitle { display: none; }

@@ -46,6 +46,24 @@
   --brand-accent:    #27AE74;
 }
 
+/* Legal y consentimiento: compacto, accesible y seguro con safe areas. */
+.ep-footer-legal-links{display:flex;flex-wrap:wrap;gap:.35rem .8rem;margin-top:.45rem;font-size:.75rem}
+.ep-footer-legal-links a,.ep-footer-legal-links button{color:inherit;text-decoration:underline;text-underline-offset:3px;background:none;border:0;padding:0;cursor:pointer}
+.ox-cookie-panel{position:fixed;z-index:700;left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));margin:auto;max-width:760px;display:flex;align-items:center;gap:1rem;padding:1rem 1.1rem;border:1px solid var(--col-border);border-radius:1rem;background:var(--col-surface);color:var(--col-text);box-shadow:0 18px 60px rgba(0,0,0,.28)}
+.ox-cookie-panel[hidden]{display:none}.ox-cookie-panel p{font-size:.82rem;line-height:1.45;color:var(--col-muted);margin:.25rem 0}.ox-cookie-panel a{font-size:.78rem;text-decoration:underline}.ox-cookie-ok{flex:0 0 auto;min-height:44px;padding:.65rem 1rem;border:0;border-radius:.75rem;background:var(--brand-primary);color:var(--brand-on-primary);font-weight:800}
+.ox-legal-page{max-width:760px;margin:clamp(1rem,4vw,3rem) auto;padding:clamp(1rem,4vw,2.5rem);border:1px solid var(--col-border);border-radius:1.25rem;background:var(--col-surface);color:var(--col-text);box-shadow:var(--shadow-2)}
+.ox-legal-page header{margin:1.2rem 0 1.6rem}.ox-legal-page header span,.ox-legal-page small{color:var(--col-muted);font-size:.75rem}.ox-legal-page h1{font-size:clamp(1.7rem,5vw,2.5rem);font-weight:900;line-height:1.1;margin:.25rem 0}.ox-legal-page p{line-height:1.7;margin:0 0 1rem}.ox-legal-page aside{margin:1.5rem 0;padding:1rem;border-radius:.8rem;background:var(--col-elevated);line-height:1.6}.ox-legal-back{font-weight:700;color:var(--brand-primary)}
+@media(max-width:600px){.ox-cookie-panel{align-items:stretch;flex-direction:column}.ox-cookie-ok{width:100%}}
+@media(orientation:landscape) and (max-height:500px){.ox-cookie-panel{max-width:900px;padding:.65rem .8rem;flex-direction:row}.ox-cookie-panel p{margin:.1rem 0}.ox-cookie-ok{width:auto}}
+
+/* Los permisos push nunca compiten con la navegación operativa móvil. */
+.ox-push-permission{bottom:calc(82px + env(safe-area-inset-bottom,0px))}
+@media(min-width:900px){.ox-push-permission{bottom:1rem}}
+@media(orientation:landscape) and (max-height:500px){.ox-push-permission{bottom:calc(62px + env(safe-area-inset-bottom,0px));max-width:560px}}
+
+/* El disparador del drawer es una acción primaria en tablet/móvil. */
+body.ox-body-admin .ox-topbar .ox-sb-toggle{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+
 html, body { touch-action: manipulation; }
 
 /* ── Legibilidad global: evita textos apagados sobre fondos oscuros ── */

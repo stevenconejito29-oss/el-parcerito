@@ -277,6 +277,7 @@ def seed():
     credentials = {}
     _account("qa.superadmin@elparcerito.local", "QA Super Admin", "super_admin", credentials)
     _account("qa.admin@elparcerito.local", "QA Admin", "admin", credentials)
+    _account("qa.cocina@elparcerito.local", "QA Cocina", "cocina", credentials)
     _account("qa.preparacion@elparcerito.local", "QA Preparación", "preparacion", credentials)
     _account("qa.repartidor@elparcerito.local", "QA Repartidor", "repartidor", credentials)
     _account("qa.norte@elparcerito.local", "QA Bar Norte", "proveedor", credentials, north)

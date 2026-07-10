@@ -200,12 +200,14 @@
 <!-- Tarjeta de empleado como toggle (mismo patrón que preparador — un solo
      punto de acción para Online/Offline en lugar de duplicar botón). -->
 <form method="POST" action="{{ url_for('repartidor.toggle_disponible') }}"
-      class="js-availability-form work-employee-card work-employee-toggle {% if disponible %}is-online{% else %}is-offline{% endif %}"
-      aria-label="{% if disponible %}Ponerte offline{% else %}Ponerte online{% endif %}"
-      title="Toca para cambiar a {{ 'offline' if disponible else 'online' }}">
+      class="js-availability-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <button type="submit" class="work-employee-avatar" aria-hidden="true"
-          style="border:0;cursor:pointer;">{{ current_user.nombre[0].upper() }}</button>
+  <button type="submit"
+      class="work-employee-card work-employee-toggle {% if disponible %}is-online{% else %}is-offline{% endif %}"
+      aria-label="{% if disponible %}Ponerte offline{% else %}Ponerte online{% endif %}"
+      title="Toca para cambiar a {{ 'offline' if disponible else 'online' }}"
+      style="width:100%;color:inherit;">
+  <span class="work-employee-avatar" aria-hidden="true">{{ current_user.nombre[0].upper() }}</span>
   <div class="work-employee-info">
     <p class="work-employee-name">{{ current_user.nombre }}</p>
     <p class="work-employee-role">
@@ -220,6 +222,7 @@
     <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
     <span>{% if disponible %}Online — toca para pausar{% else %}Offline — toca para activar{% endif %}</span>
   </div>
+  </button>
 </form>
 
 {% if not disponible and current_user.rol not in ('admin','super_admin') %}
@@ -364,7 +367,7 @@
         <p class="work-client">{{ pedido.cliente.nombre }}</p>
         <div class="work-payment">
           <span class="work-chip work-payment-method {% if pedido.metodo_pago == 'bizum' %}is-presencial{% endif %}">
-            {% if pedido.metodo_pago == 'bizum' %}📱 Bizum{% else %}💵 Efectivo{% endif %}
+            {% if pedido.metodo_pago == 'bizum' %}📱 Bizum{% elif pedido.metodo_pago == 'tarjeta' %}💳 Tarjeta al entregar{% else %}💵 Efectivo{% endif %}
           </span>
           <span class="work-money work-payment-total">€{{ "%.2f"|format(pedido.total) }}</span>
         </div>
@@ -530,7 +533,7 @@
         <p class="work-client">{{ pedido.cliente.nombre }}</p>
         <div class="work-payment">
           <span class="work-chip work-payment-method {% if pedido.metodo_pago == 'bizum' %}is-presencial{% endif %}">
-            {% if pedido.metodo_pago == 'bizum' %}📱 Bizum{% else %}💵 Efectivo{% endif %}
+            {% if pedido.metodo_pago == 'bizum' %}📱 Bizum{% elif pedido.metodo_pago == 'tarjeta' %}💳 Tarjeta al entregar{% else %}💵 Efectivo{% endif %}
           </span>
           <span class="work-money work-payment-total">€{{ "%.2f"|format(pedido.total) }}</span>
         </div>
@@ -632,6 +635,11 @@
                  class="ox-input text-sm mt-2" style="min-height:44px">
         </div>
         {% endif %}
+        {% elif pedido.metodo_pago == 'tarjeta' %}
+        <label class="work-panel work-panel--cash-confirm mb-3">
+          <input type="checkbox" name="cobro_recibido" required class="accent-green-500 w-4 h-4">
+          <span>2. Confirmo cobro con tarjeta: <strong class="work-confirm-amount">€{{ "%.2f"|format(pedido.total) }}</strong>. El terminal muestra la operación aprobada.</span>
+        </label>
         {% else %}
         <label class="work-panel work-panel--cash-confirm mb-3">
           <input type="checkbox" name="cobro_recibido" required class="accent-green-500 w-4 h-4">
@@ -722,8 +730,10 @@ function copiarDireccion(dir) {
 }
 
 // Semáforo de urgencia: pedidos que llevan demasiado tiempo asignados.
-// Reutiliza el patrón que ya usa el panel de cocina. Umbrales: 15/30 min.
+// Reutiliza el patrón de cocina con umbrales configurables por tienda.
 function actualizarUrgenciaRepartidor() {
+  const warnMin = {{ (route_warn_min or 15)|int }};
+  const lateMin = Math.max(warnMin + 1, {{ (route_late_min or 30)|int }});
   document.querySelectorAll('.route-board [data-created]').forEach(card => {
     const created = new Date(card.dataset.created);
     if (isNaN(created)) return;
@@ -735,10 +745,10 @@ function actualizarUrgenciaRepartidor() {
     if (mins < 1) {
       el.textContent = 'ahora';
       el.classList.add('is-fresh');
-    } else if (mins < 15) {
+    } else if (mins < warnMin) {
       el.textContent = `hace ${mins}m`;
       el.classList.add('is-fresh');
-    } else if (mins < 30) {
+    } else if (mins < lateMin) {
       el.textContent = `hace ${mins}m ⚠`;
       el.classList.add('is-aging');
       card.classList.add('is-aging');
