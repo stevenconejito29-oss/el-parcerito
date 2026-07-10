@@ -1157,6 +1157,21 @@ def actualizar_carrito():
     selecciones_combo = session.get("combo_selecciones", {})
     notas_combo = session.get("notas_combo", {})
     cart_max_qty = _cart_max_qty()
+
+    def _cleanup_key(k):
+        """Elimina TODAS las selecciones paralelas de un producto retirado
+        del carrito. Antes: extras_selecciones y presentaciones_carrito
+        quedaban huérfanas si el producto desaparecía por unavailability,
+        y ensuciaban la sesión hasta un vaciado completo."""
+        selecciones_combo.pop(k, None)
+        notas_combo.pop(k, None)
+        for _s in ("extras_selecciones", "presentaciones_carrito",
+                   "variantes_carrito"):
+            _map = session.get(_s) or {}
+            if k in _map:
+                _map.pop(k, None)
+                session[_s] = _map
+
     for key in list(carrito.keys()):
         try:
             nueva_cantidad = max(0, min(cart_max_qty, int(request.form.get(f"cantidad_{key}", 0))))
@@ -1164,17 +1179,12 @@ def actualizar_carrito():
             nueva_cantidad = 0
         if nueva_cantidad <= 0:
             del carrito[key]
-            selecciones_combo.pop(key, None)
-            extras = session.get("extras_selecciones", {})
-            extras.pop(key, None)
-            session["extras_selecciones"] = extras
-            notas_combo.pop(key, None)
+            _cleanup_key(key)
         else:
             producto = db.session.get(Product, int(key)) if str(key).isdigit() else None
             if not _producto_disponible_en_origen(producto, origen):
                 del carrito[key]
-                selecciones_combo.pop(key, None)
-                notas_combo.pop(key, None)
+                _cleanup_key(key)
                 continue
             try:
                 if producto.es_combo:
