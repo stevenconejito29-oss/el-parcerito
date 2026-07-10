@@ -28,6 +28,7 @@ class OriginAwareProduct:
     activo = True
     visible_ahora = True
     es_combo = False
+    vertical = "comida"  # default; los tests que necesiten otro lo sobrescriben.
 
     def __init__(self, allowed_origin):
         self.allowed_origin = allowed_origin
@@ -64,7 +65,7 @@ class CatalogOriginTest(unittest.TestCase):
         product = OriginAwareProduct("propio")
         product.tipo_entrega = "programado"
         product.modalidad_entrega = "ambas"
-        product.vertical = "ambos"
+        product.vertical = "comida"
         product.fecha_llegada = date.today() - timedelta(days=1)
 
         with patch("routes.public.get_store_features", return_value={
@@ -193,14 +194,14 @@ class CatalogOriginTest(unittest.TestCase):
             modalidad_entrega="delivery",
             tipo_entrega="inmediato",
             grupo_pedido=None,
-            vertical="ambos",
+            vertical="comida",
         )
         pickup_only = SimpleNamespace(
             nombre="Postre recogida",
             modalidad_entrega="recogida",
             tipo_entrega="inmediato",
             grupo_pedido=None,
-            vertical="ambos",
+            vertical="comida",
         )
 
         with patch("routes.public.get_store_features", return_value={
@@ -222,7 +223,7 @@ class CatalogOriginTest(unittest.TestCase):
             modalidad_entrega="ambas",
             tipo_entrega="programado",
             grupo_pedido=None,
-            vertical="ambos",
+            vertical="comida",
         )
 
         with patch("routes.public.get_store_features", return_value={
@@ -244,7 +245,7 @@ class CatalogOriginTest(unittest.TestCase):
             tipo_entrega="programado",
             fecha_llegada=date.today() - timedelta(days=1),
             grupo_pedido=None,
-            vertical="ambos",
+            vertical="comida",
         )
 
         with patch("routes.public.get_store_features", return_value={
