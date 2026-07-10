@@ -85,7 +85,7 @@
           </div>
           <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
             <form method="POST" action="{{ url_for('admin.toggle_zona_admin', zona_id=z.id) }}">
-              {{ csrf_field() }}
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="oa-btn oa-btn--sm {{ 'oa-btn--danger' if z.activo else 'oa-btn--success' }}">
                 {{ 'Desactivar' if z.activo else 'Activar' }}
               </button>
@@ -101,7 +101,7 @@
           <summary style="cursor:pointer;user-select:none;font-size:var(--oa-font-xs);font-weight:700;color:var(--col-muted);">Asignar repartidor</summary>
           <form method="POST" action="{{ url_for('admin.asignar_repartidor_zona', zona_id=z.id) }}"
                 style="margin-top:var(--oa-space-2);display:flex;gap:var(--oa-space-2);align-items:flex-end;flex-wrap:wrap;">
-            {{ csrf_field() }}
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="ox-field" style="flex:1;min-width:180px;">
               <label class="ox-label">Repartidor</label>
               <select name="user_id" class="ox-input" required>

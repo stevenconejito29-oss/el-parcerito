@@ -3149,7 +3149,20 @@ def _bot_admin_request_allowed(capability):
     return _bot_admin_actor_allowed(_bot_admin_request_payload(), capability)
 
 
-def _bot_actor_forbidden():
+def _bot_actor_forbidden(capability: str | None = None):
+    """403 estándar para acciones denegadas al actor admin.
+
+    Diferencia entre "requiere super_admin" (política `super_only`) y
+    "admin sin la feature" para que el cliente pueda mostrar mensaje útil.
+    """
+    from permissions import is_super_only
+    action = _BOT_CAPABILITY_TO_ACTION.get(capability or "") if capability else None
+    if action and is_super_only(action):
+        return jsonify({
+            "ok": False,
+            "code": "SUPERADMIN_REQUIRED",
+            "error": "Esta acción requiere super_admin.",
+        }), 403
     return jsonify({
         "ok": False,
         "code": "ADMIN_CAPABILITY_DENIED",
@@ -3195,7 +3208,7 @@ def bot_admin_tienda():
 
         data = request.get_json(silent=True) or {}
         if not _bot_admin_actor_allowed(data, "store_write"):
-            return _bot_actor_forbidden()
+            return _bot_actor_forbidden("store_write")
         if "forzar_cerrada" not in data:
             return jsonify({"ok": False, "error": "forzar_cerrada requerido"}), 400
         cerrada = _json_bool(data.get("forzar_cerrada"))
@@ -3275,7 +3288,7 @@ def bot_admin_resumen_hoy():
 def bot_admin_toggle_modo_tienda():
     """Alterna entre modo 'propia' y 'bar_servicio' desde el bot."""
     if not _bot_admin_request_allowed("modo_tienda"):
-        return _bot_actor_forbidden()
+        return _bot_actor_forbidden("modo_tienda")
     from store_config import get_store_features
     features = get_store_features()
     actual = features.get("modo_tienda", "propia")
@@ -3296,7 +3309,7 @@ def bot_admin_toggle_modulo():
     """Activa/desactiva un módulo (delivery, recogida, programados, puntos)."""
     data = request.get_json(silent=True) or {}
     if not _bot_admin_actor_allowed(data, "modulos"):
-        return _bot_actor_forbidden()
+        return _bot_actor_forbidden("modulos")
     claves = {
         "delivery": "FEATURE_DELIVERY",
         "recogida": "FEATURE_RECOGIDA",
@@ -3325,7 +3338,7 @@ def bot_admin_forzar_cierre():
     try:
         data = request.get_json(silent=True) or {}
         if not _bot_admin_actor_allowed(data, "store_write"):
-            return _bot_actor_forbidden()
+            return _bot_actor_forbidden("store_write")
         if "cerrada" not in data and "forzar_cerrada" not in data:
             return jsonify({"ok": False, "error": "cerrada requerido"}), 400
         cerrada = _json_bool(data.get("cerrada", data.get("forzar_cerrada")))
@@ -3786,7 +3799,7 @@ def bot_config_set():
     admin verificado (defense-in-depth: si el X-Bot-Key se filtra, esto
     aún exige que el teléfono admin sea válido)."""
     if not _bot_admin_request_allowed("config_write"):
-        return _bot_actor_forbidden()
+        return _bot_actor_forbidden("config_write")
     from routes.superadmin import LOCKED_CONFIG_KEYS, _validar_config_value
 
     BLOQUEADAS = {"BOT_AI_API_KEY", "BOT_API_KEY", "SECRET_KEY", "BOT_PANEL_KEY",

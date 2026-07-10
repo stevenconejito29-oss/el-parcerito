@@ -125,6 +125,13 @@ def allow(actor: Optional[Actor], action: str) -> bool:
     return False
 
 
+def is_super_only(action: str) -> bool:
+    """True si la acción está declarada `super_only` en la matriz.
+    Útil para respuestas de error diferenciadas (SUPERADMIN_REQUIRED vs
+    ADMIN_CAPABILITY_DENIED) sin exponer el dict interno."""
+    return _POLICY.get(action) == "super_only"
+
+
 def actor_from_user(user) -> Actor:
     """Construye Actor desde un flask_login `current_user`."""
     return Actor(
