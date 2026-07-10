@@ -33,3 +33,22 @@ def normalizar_telefono_cliente(value: str | None, country_code: str | None = No
 def telefono_valido(value: str | None) -> bool:
     canonical = normalizar_telefono_cliente(value)
     return 8 <= len(canonical) <= 20
+
+
+def telefono_local_ambiguo(value: str | None, country_code: str | None = None) -> bool:
+    """Indica si un teléfono local no puede normalizarse sin prefijo de país."""
+    raw = str(value or "").strip()
+    digits = re.sub(r"\D", "", raw)
+    if not digits or raw.startswith("+") or raw.startswith("00"):
+        return False
+    configured_code = country_code
+    if configured_code is None:
+        configured_code = os.environ.get("WHATSAPP_COUNTRY_CODE", "")
+        try:
+            from flask import has_app_context
+            if has_app_context():
+                from models import SiteConfig
+                configured_code = SiteConfig.get("WHATSAPP_COUNTRY_CODE", configured_code)
+        except (ImportError, RuntimeError):
+            pass
+    return not re.sub(r"\D", "", configured_code or "")

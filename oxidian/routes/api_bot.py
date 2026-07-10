@@ -2896,6 +2896,7 @@ def info_negocio():
             capacidades.append("puntos")
         if features["delivery"]:
             capacidades.append("cobertura")
+        mensaje_cierre = (SiteConfig.get("TIENDA_MENSAJE_CIERRE", "") or "").strip()
         return jsonify({
             "ok": True,
             "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda"),
@@ -2908,7 +2909,9 @@ def info_negocio():
             "is_open": is_open,
             "forzar_cerrada": forzada,
             "hora_actual": ahora_str,
-            "mensaje_cierre": SiteConfig.get("TIENDA_MENSAJE_CIERRE", "") if not is_open else "",
+            "mensaje_cierre": (
+                mensaje_cierre or f"Cerrado. Horario: {apertura}–{cierre}"
+            ) if not is_open else "",
             "metodos_pago": metodos_pago,
             "delivery_enabled": features["delivery"],
             "pickup_enabled": features["recogida"],
@@ -2938,12 +2941,15 @@ def tienda_status():
         forzada  = str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).strip().lower() in {"1", "true", "yes", "on"}
         ahora    = datetime.now().strftime("%H:%M")
         is_open  = tienda_abierta_en_horario(apertura, cierre, ahora=ahora, forzada_cerrada=forzada)
+        mensaje_cierre = (SiteConfig.get("TIENDA_MENSAJE_CIERRE", "") or "").strip()
         return jsonify({
             "ok": True,
             "is_open": is_open,
             "hora_actual": ahora,
             "horario": f"{apertura} – {cierre}",
-            "mensaje": "Abierto ahora" if is_open else SiteConfig.get("TIENDA_MENSAJE_CIERRE", f"Cerrado. Horario: {apertura}–{cierre}"),
+            "mensaje": "Abierto ahora" if is_open else (
+                mensaje_cierre or f"Cerrado. Horario: {apertura}–{cierre}"
+            ),
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -3087,6 +3093,8 @@ def bot_admin_tienda():
     """Consulta o cambia apertura forzada de tienda desde WhatsApp admin."""
     try:
         if request.method == "GET":
+            if not _bot_admin_request_allowed("store"):
+                return _bot_actor_forbidden()
             cerrada = str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).strip().lower() in {"1", "true", "yes", "on"}
             return jsonify({
                 "ok": True,
@@ -3104,9 +3112,8 @@ def bot_admin_tienda():
         mensaje = str(data.get("mensaje_cierre") or "").strip()[:240]
         SiteConfig.set("TIENDA_FORZAR_CERRADA", "1" if cerrada else "0",
                        descripcion="Cierre temporal controlado por bot admin")
-        if mensaje or cerrada:
-            SiteConfig.set("TIENDA_MENSAJE_CIERRE", mensaje,
-                           descripcion="Mensaje de cierre temporal")
+        SiteConfig.set("TIENDA_MENSAJE_CIERRE", mensaje,
+                       descripcion="Mensaje de cierre temporal")
         db.session.commit()
         return jsonify({
             "ok": True,
@@ -3123,6 +3130,8 @@ def bot_admin_tienda():
 @bot_required
 def bot_admin_resumen_hoy():
     """Resumen operativo del día: pedidos, ventas, activos, productos sin stock."""
+    if not _bot_admin_request_allowed("store"):
+        return _bot_actor_forbidden()
     try:
         from datetime import datetime, time as dtime
         from sqlalchemy import func
@@ -3223,14 +3232,29 @@ def bot_admin_toggle_modulo():
 @bot_required
 def bot_admin_forzar_cierre():
     """Fuerza cierre / reapertura de la tienda al vuelo."""
-    data = request.get_json(silent=True) or {}
-    if not _bot_admin_actor_allowed(data, "store"):
-        return _bot_actor_forbidden()
-    cerrada = bool(data.get("cerrada"))
-    SiteConfig.set("TIENDA_FORZAR_CERRADA", "1" if cerrada else "0",
-                   descripcion="Forzar cierre desde bot super_admin")
-    db.session.commit()
-    return jsonify({"ok": True, "cerrada": cerrada})
+    try:
+        data = request.get_json(silent=True) or {}
+        if not _bot_admin_actor_allowed(data, "store"):
+            return _bot_actor_forbidden()
+        if "cerrada" not in data and "forzar_cerrada" not in data:
+            return jsonify({"ok": False, "error": "cerrada requerido"}), 400
+        cerrada = _json_bool(data.get("cerrada", data.get("forzar_cerrada")))
+        mensaje = str(data.get("mensaje_cierre") or "").strip()[:240]
+        SiteConfig.set("TIENDA_FORZAR_CERRADA", "1" if cerrada else "0",
+                       descripcion="Forzar cierre desde bot admin")
+        SiteConfig.set("TIENDA_MENSAJE_CIERRE", mensaje,
+                       descripcion="Mensaje de cierre temporal")
+        db.session.commit()
+        return jsonify({
+            "ok": True,
+            "cerrada": cerrada,
+            "forzar_cerrada": cerrada,
+            "estado": "cerrada" if cerrada else "abierta",
+            "mensaje_cierre": mensaje,
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @api_bot_bp.route("/admin/salud")
@@ -4015,13 +4039,16 @@ def bot_producto_crear():
 def bot_admin_pedidos():
     if not _bot_admin_request_allowed("store"):
         return _bot_actor_forbidden()
-    guard = _requiere_bar_servicio()
-    if guard:
-        return guard
+    numero = (request.args.get("numero") or "").strip().lstrip("#")
     estados_raw = (request.args.get("estados") or "pendiente,armando,listo").strip()
     limit = min(50, max(1, request.args.get("limit", 10, type=int)))
     estados = [e.strip() for e in estados_raw.split(",") if e.strip()]
-    q = Order.query.filter(Order.estado.in_(estados)).order_by(Order.creado_en.desc()).limit(limit)
+    q = Order.query
+    if numero:
+        q = q.filter(db.or_(Order.numero_pedido == numero, Order.numero_pedido == f"#{numero}"))
+    else:
+        q = q.filter(Order.estado.in_(estados))
+    q = q.order_by(Order.creado_en.desc()).limit(limit)
     out = []
     ahora = _utcnow()
     for p in q.all():

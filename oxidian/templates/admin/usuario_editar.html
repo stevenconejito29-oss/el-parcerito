@@ -5,8 +5,8 @@
 {% set role_labels = {
   'super_admin': 'Superadmin',
   'admin': 'Administrador',
-  'cocina': 'Cocina (pedidos inmediatos)',
-  'preparacion': 'Preparacion (pedidos con fecha)',
+  'cocina': role_label('cocina'),
+  'preparacion': role_label('preparacion'),
   'repartidor': 'Repartidor'
 } %}
 
@@ -41,8 +41,9 @@
       {% endif %}
     </div>
     <div class="ox-field">
-      <label class="ox-label">Telefono</label>
-      <input class="ox-input" type="tel" name="telefono" value="{{ usuario.telefono or '' }}">
+      <label class="ox-label">Teléfono WhatsApp *</label>
+      <input class="ox-input" type="tel" name="telefono" value="{{ usuario.telefono or '' }}" required autocomplete="tel">
+      <small style="color:var(--col-muted)">No lo dejes vacío: el bot usa este número para reconocer roles y permisos.</small>
     </div>
     <div class="ox-field md:col-span-2">
       <label class="ox-label">Puesto de trabajo</label>

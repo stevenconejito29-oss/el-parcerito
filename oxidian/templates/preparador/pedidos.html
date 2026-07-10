@@ -1,7 +1,7 @@
 {% extends "admin_base.html" %}
 {% block title %}
-  {% if current_user.rol == 'cocina' %}Cocina
-  {% elif current_user.rol == 'preparacion' %}Encargos
+  {% if current_user.rol == 'cocina' %}{{ role_label('cocina', short=True) }}
+  {% elif current_user.rol == 'preparacion' %}{{ role_label('preparacion', short=True) }}
   {% else %}Cola de Pedidos{% endif %}
 {% endblock %}
 {% block styles %}
@@ -333,18 +333,18 @@
 <section class="work-hero">
   <div>
     <span class="work-eyebrow">
-      {% if current_user.rol == 'cocina' %}Reparto / Delivery inmediato
-      {% elif current_user.rol == 'preparacion' %}Encargos programados
+      {% if current_user.rol == 'cocina' %}{{ 'Cocina inmediata' if brand.es_comida else 'Almacén inmediato' }}
+      {% elif current_user.rol == 'preparacion' %}{{ 'Encargos programados' if brand.es_comida else 'Preparación retail con fecha' }}
       {% else %}Operación de pedidos{% endif %}
     </span>
     <h1 class="work-title">
-      {% if current_user.rol == 'cocina' %}🍳 Cocina
-      {% elif current_user.rol == 'preparacion' %}📆 Encargos
+      {% if current_user.rol == 'cocina' %}{{ '🍳' if brand.es_comida else '📦' }} {{ role_label('cocina', short=True) }}
+      {% elif current_user.rol == 'preparacion' %}📆 {{ role_label('preparacion', short=True) }}
       {% else %}Cola de Pedidos{% endif %}
     </h1>
     <p class="work-subtitle">
-      {% if current_user.rol == 'cocina' %}Prepara y despacha pedidos de delivery inmediato. Toma responsabilidad y marca listo cuando salga perfecto.
-      {% elif current_user.rol == 'preparacion' %}Control de encargos y pedidos programados con foco en orden, tiempos y salida a despacho.
+      {% if current_user.rol == 'cocina' %}{{ 'Prepara y despacha pedidos inmediatos.' if brand.es_comida else 'Valida stock, empaca y despacha pedidos inmediatos.' }} Toma responsabilidad y marca listo cuando esté correcto.
+      {% elif current_user.rol == 'preparacion' %}Control de pedidos con fecha con foco en orden, tiempos y salida a despacho.
       {% else %}Vista operativa de pedidos para resolver bloqueos rápidamente.{% endif %}
     </p>
   </div>
@@ -364,10 +364,10 @@
   <div class="prep-scope-txt">
     {% if current_user.rol == 'cocina' %}
     <strong>Tu cola muestra solo pedidos inmediatos.</strong>
-    Los pedidos con fecha de entrega van al rol <em>Preparación</em>.
+    Los pedidos con fecha de entrega van al rol <em>{{ role_label('preparacion', short=True) }}</em>.
     {% else %}
     <strong>Tu cola muestra solo pedidos con fecha de entrega.</strong>
-    Los pedidos inmediatos (delivery ya) van al rol <em>Cocina</em>.
+    Los pedidos inmediatos van al rol <em>{{ role_label('cocina', short=True) }}</em>.
     {% endif %}
   </div>
 </aside>
@@ -386,9 +386,9 @@
   <div class="work-employee-info">
     <p class="work-employee-name">{{ current_user.nombre }}</p>
     <p class="work-employee-role">
-      {% if current_user.rol == 'cocina' %}🍳 Cocina
-      {% elif current_user.rol == 'preparacion' %}📦 Encargos
-      {% elif current_user.rol == 'admin' %}🔧 Admin
+      {% if current_user.rol == 'cocina' %}{{ '🍳' if brand.es_comida else '📦' }} {{ role_label('cocina', short=True) }}
+      {% elif current_user.rol == 'preparacion' %}📦 {{ role_label('preparacion', short=True) }}
+      {% elif current_user.rol == 'admin' %}🔧 {{ role_label('admin', short=True) }}
       {% else %}👑 Super Admin{% endif %}
       {% if current_user.puesto_trabajo %} · {{ current_user.puesto_trabajo }}{% endif %}
     </p>
@@ -408,9 +408,7 @@
     <span class="work-dot {% if c.disponible_para_pedidos %}is-on{% endif %}"></span>
     <span class="font-semibold">{{ c.nombre }}</span>
     <span class="work-muted-text">·
-      {% if c.rol == 'cocina' %}Cocina
-      {% elif c.rol == 'preparacion' %}Encargos
-      {% elif c.rol == 'admin' %}Admin
+      {% if c.rol in ('cocina','preparacion','admin','super_admin') %}{{ role_label(c.rol, short=True) }}
       {% else %}{{ c.rol }}{% endif %}
     </span>
     {% if c.disponible_para_pedidos %}
@@ -439,9 +437,9 @@
   </div>
   {% if pendientes_encargo is defined and pendientes_encargo %}
   <div class="work-panel work-kpi" style="border-color:rgba(168,85,247,.3)">
-    <span>Encargos</span>
+    <span>{{ role_label('preparacion', short=True) }}</span>
     <strong style="color:#C084FC">{{ pendientes_encargo|length }}</strong>
-    <small>Programados / Fecha fija</small>
+    <small>Pedidos con fecha fija</small>
   </div>
   {% endif %}
 </div>
@@ -453,7 +451,7 @@
   <div class="work-lane-head">
     <div>
       <h2 class="work-lane-title">Pendientes</h2>
-      <p class="work-lane-sub">Preparación propia inmediata que espera responsable o arranque.</p>
+      <p class="work-lane-sub">{{ 'Preparación propia inmediata' if brand.es_comida else 'Validación y empaque inmediato' }} que espera responsable o arranque.</p>
     </div>
     <span class="work-count">{{ pendientes|length }}</span>
   </div>
@@ -524,7 +522,7 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="work-btn work-btn-primary full-width">
             {% if pedido.preparador_id == current_user.id %}▶ Empezar a preparar
-            {% else %}🍳 Tomar y empezar{% endif %}</button>
+            {% else %}{{ '🍳' if brand.es_comida else '📦' }} Tomar y empezar{% endif %}</button>
         </form>
       </div>
   </article>
@@ -536,13 +534,13 @@
   </div>
 </section>
 
-<!-- ── ENCARGOS PROGRAMADOS (agrupados por fecha) ── -->
+<!-- ── PEDIDOS CON FECHA (agrupados por fecha) ── -->
 {% if pendientes_encargo is defined and pendientes_encargo %}
 {%- set _hoy_date = hoy_date if hoy_date is defined else None -%}
 <section class="work-lane" style="border-top:2px solid rgba(168,85,247,.25)">
   <div class="work-lane-head">
     <div>
-      <h2 class="work-lane-title" style="color:var(--prep-programado)">📦 Encargos programados</h2>
+      <h2 class="work-lane-title" style="color:var(--prep-programado)">📦 {{ role_label('preparacion') }}</h2>
       <p class="work-lane-sub">Agrupados por fecha para planificar el día. Al marcar listo se avisa por WhatsApp al cliente.</p>
     </div>
     <span class="work-count" style="background:var(--prep-programado-soft);color:var(--prep-programado)">{{ pendientes_encargo|length }}</span>

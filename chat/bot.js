@@ -3692,15 +3692,27 @@ async function handleAdminCmd(jid, text) {
 
   // Pausar / reanudar tienda (TIENDA_FORZAR_CERRADA)
   if (lowerCmd === 'pausar-tienda' || lowerCmd === 'pausa') {
+    if (!adminCan(jid, 'store')) {
+      return sendText(jid, '⛔ No tienes permiso para pausar o reanudar la tienda.');
+    }
     try {
-      const r = await oxidianPost('/config/set', adminBody(jid, { clave: 'TIENDA_FORZAR_CERRADA', valor: '1' }));
-      return sendText(jid, r?.ok ? '⏸ Tienda pausada. No aceptará pedidos.' : `❌ ${r?.error}`);
+      const r = await oxidianPost('/admin/tienda', adminBody(jid, {
+        forzar_cerrada: true,
+        mensaje_cierre: 'La tienda está pausada temporalmente. Vuelve a intentarlo más tarde.',
+      }));
+      return sendText(jid, r?.ok ? `⏸ Tienda pausada. Estado actual: *${r.estado || 'cerrada'}*.` : `❌ ${r?.error}`);
     } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
   }
   if (lowerCmd === 'reanudar-tienda' || lowerCmd === 'reanuda') {
+    if (!adminCan(jid, 'store')) {
+      return sendText(jid, '⛔ No tienes permiso para pausar o reanudar la tienda.');
+    }
     try {
-      const r = await oxidianPost('/config/set', adminBody(jid, { clave: 'TIENDA_FORZAR_CERRADA', valor: '0' }));
-      return sendText(jid, r?.ok ? '▶ Tienda reanudada. Aceptando pedidos.' : `❌ ${r?.error}`);
+      const r = await oxidianPost('/admin/tienda', adminBody(jid, {
+        forzar_cerrada: false,
+        mensaje_cierre: '',
+      }));
+      return sendText(jid, r?.ok ? `▶ Tienda reanudada. Estado actual: *${r.estado || 'abierta'}*.` : `❌ ${r?.error}`);
     } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
   }
 
@@ -3979,7 +3991,7 @@ async function handleAdminCmd(jid, text) {
 
   if (lowerCmd === 'hoy' || lowerCmd === 'resumen' || lowerCmd === 'ventas') {
     try {
-      const r = await oxidianGet('/admin/resumen-hoy');
+      const r = await oxidianGet(withAdminActor('/admin/resumen-hoy', jid));
       if (!r || !r.ok) throw new Error(r?.error || 'sin datos');
       const agot = (r.productos_sin_stock || []).slice(0, 8)
         .map(p => `  • ${p.nombre}`).join('\n');
@@ -4225,17 +4237,22 @@ async function handleAdminCmd(jid, text) {
   // ── Cerrar / abrir tienda ──
   // Uso: !cerrar-tienda | !abrir-tienda
   if (lowerCmd === 'cerrar-tienda' || lowerCmd === 'abrir-tienda') {
-    if (!isSuperAdminJid(jid)) {
-      return sendText(jid, '⛔ Solo el super admin puede cerrar/abrir la tienda.');
+    if (!adminCan(jid, 'store')) {
+      return sendText(jid, '⛔ No tienes permiso para cerrar/abrir la tienda.');
     }
     const cerrar = lowerCmd === 'cerrar-tienda';
     try {
-      const resp = await oxidianPost('/admin/tienda/forzar-cierre', adminBody(jid, { cerrada: cerrar }));
+      const resp = await oxidianPost('/admin/tienda', adminBody(jid, {
+        forzar_cerrada: cerrar,
+        mensaje_cierre: cerrar
+          ? 'La tienda está cerrada temporalmente. Vuelve a intentarlo más tarde.'
+          : '',
+      }));
       if (resp?.ok) {
         return sendText(jid,
           cerrar
-            ? '🔒 *Tienda cerrada temporalmente.*\nLos clientes no pueden hacer pedidos hasta que la reabras con `!abrir-tienda`.'
-            : '🟢 *Tienda reabierta.*\nYa se aceptan pedidos según el horario.');
+            ? `🔒 *Tienda cerrada temporalmente.*\nEstado actual: *${resp.estado || 'cerrada'}*. Los clientes no pueden hacer pedidos hasta que la reabras con \`!abrir-tienda\`.`
+            : `🟢 *Tienda reabierta.*\nEstado actual: *${resp.estado || 'abierta'}*. Ya se aceptan pedidos según el horario.`);
       }
       return sendText(jid, `❌ ${resp?.error || 'No se pudo aplicar.'}`);
     } catch (err) {
@@ -4900,32 +4917,12 @@ function _catalogSearchQuery(texto) {
 async function _tryCatalogSearchReply(textoLibre, tiendaUrl) {
   const qBusqueda = _catalogSearchQuery(textoLibre);
   if (!qBusqueda || qBusqueda.length < 3) return null;
-  try {
-    const busqueda = await oxidianGet(`/cliente/buscar-producto?q=${encodeURIComponent(qBusqueda)}&limit=5`);
-    if (!busqueda || !busqueda.ok || !Array.isArray(busqueda.resultados) || !busqueda.resultados.length) {
-      return null;
-    }
-    const catalogoLabel = String(cfg('vertical_label', 'Menú')).toLowerCase();
-    const lineas = busqueda.resultados.map((p, idx) => {
-      const combo = p.es_combo ? ' 🎁' : '';
-      let etiqueta;
-      if (p.solo_canje && p.puntos_para_canje > 0) {
-        etiqueta = `⭐ ${p.puntos_para_canje} pts`;
-      } else if (p.canjeable_con_puntos && p.puntos_para_canje > 0) {
-        etiqueta = `€${(p.precio || 0).toFixed(2)} · ⭐ ${p.puntos_para_canje} pts`;
-      } else {
-        etiqueta = `€${(p.precio || 0).toFixed(2)}`;
-      }
-      return `${idx + 1}. *${p.nombre}*${combo} — ${etiqueta}`;
-    }).join('\n');
-    return (
-      `🔎 Esto encontré en nuestro ${catalogoLabel} para *"${busqueda.consulta}"*:\n\n${lineas}\n\n` +
-      `Para pedir o ver detalles:\n👉 ${tiendaUrl || busqueda.tienda_url || ''}`
-    );
-  } catch (err) {
-    log('warn', 'client_search_fail', err?.message || String(err));
-    return null;
-  }
+  const catalogoLabel = String(cfg('vertical_label', 'Menú')).toLowerCase();
+  return (
+    `Para ver disponibilidad, precios, fotos, opciones y combos abre el ${catalogoLabel} online:\n` +
+    `👉 ${tiendaUrl}\n\n` +
+    `Por aquí puedo ayudarte con horario, estado de pedido, cobertura, puntos o atención humana.`
+  );
 }
 
 // ─── MENÚ CLIENTE ────────────────────────────────────────────────────────────
@@ -4993,9 +4990,8 @@ async function handleMainMenu(jid, ses, opcion) {
   const tiendaUrl = getTiendaUrl();
 
   // 4b) Si el cliente escribió texto libre buscando un producto concreto,
-  //     intentamos búsqueda directa en el catálogo antes de mandar la URL
-  //     genérica. Cubre: "¿hay pizza?", "¿cuánto vale la margarita?",
-  //     "tenéis coca cola?", "tienen postres?".
+  //     no devolvemos catálogo ni precios por WhatsApp: redirigimos a la web,
+  //     que respeta stock, combos, módulos activos y nicho actual.
   if (opcion === '1' && textoLibre && !/^[1-7]$/.test(textoLibre)) {
     const catalogReply = await _tryCatalogSearchReply(textoLibre, tiendaUrl);
     if (catalogReply) return sendText(jid, catalogReply);
@@ -5006,7 +5002,7 @@ async function handleMainMenu(jid, ses, opcion) {
       const catalogoLabel = String(cfg('vertical_label', 'Menú')).toLowerCase();
       return sendText(jid,
         `La disponibilidad, precios y opciones se consultan en el ${catalogoLabel} online:\n👉 ${tiendaUrl}\n\n` +
-        `💡 También puedes escribirme el nombre de un producto (ej: "hay pizza?", "cuánto vale la coca cola") y te digo si tenemos.`
+        `Por WhatsApp puedo ayudarte con estado de pedido, horario, cobertura, puntos o atención humana.`
       );
     }
     case '2': {
@@ -5690,7 +5686,7 @@ async function handleAdminStoreMenu(jid, ses, opcion) {
       return startAdminMenu(jid, ses.nombre);
     case '1': {
       try {
-        const data = await oxidianGet('/admin/tienda');
+        const data = await oxidianGet(withAdminActor('/admin/tienda', jid));
         return sendText(jid, `🏪 *Estado de tienda*\n\nEstado: *${data.estado || 'desconocido'}*\nMensaje de cierre: ${data.mensaje_cierre || 'sin mensaje'}\n\n${adminStoreMenu()}`);
       } catch (e) {
         return sendText(jid, `No pude leer el estado de tienda: ${e.message}\n\n${adminStoreMenu()}`);
@@ -5988,7 +5984,7 @@ async function handleAdminEmergencyMenu(jid, ses, opcion) {
       );
     case '3': {
       try {
-        const data = await oxidianGet('/admin/tienda');
+        const data = await oxidianGet(withAdminActor('/admin/tienda', jid));
         return sendText(jid,
           `🚨 *Estado emergencia*\n\n` +
           `Tienda: ${data.estado}\n` +

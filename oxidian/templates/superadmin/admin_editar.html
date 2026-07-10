@@ -25,6 +25,11 @@
       </select>
     </div>
     <div class="ox-field">
+      <label class="ox-label">Teléfono WhatsApp *</label>
+      <input type="tel" name="telefono" value="{{ admin_user.telefono or '' }}" required autocomplete="tel" class="ox-input">
+      <small style="color:var(--col-muted)">Necesario para que el chatbot reconozca esta cuenta.</small>
+    </div>
+    <div class="ox-field">
       <label class="ox-label">Nueva contraseña</label>
       <input type="password" name="password" placeholder="Dejar vacío para conservar la actual" class="ox-input">
     </div>

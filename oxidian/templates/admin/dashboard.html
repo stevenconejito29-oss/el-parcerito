@@ -84,7 +84,7 @@
     <div>
       <p class="font-black dash-alert-title">Hay pedidos sin responsable operativo</p>
       <p class="text-sm" style="color:var(--work-muted)">
-        Cocina/preparación: {{ pedidos_sin_preparador }} · Reparto: {{ pedidos_sin_repartidor }}.
+        Operación interna: {{ pedidos_sin_preparador }} · Reparto: {{ pedidos_sin_repartidor }}.
         Revisa empleados online o asigna manualmente desde Cola y equipo.
       </p>
     </div>
@@ -338,8 +338,8 @@
     <div class="dash-side-card">
       <p class="dash-side-title">👥 Equipo ahora</p>
       {% set roles_info = [
-        ('cocina',      '🍳', 'Cocina'),
-        ('preparacion', '📦', 'Preparación'),
+        ('cocina',      '🍳' if brand.es_comida else '📦', role_label('cocina', short=True)),
+        ('preparacion', '📦', role_label('preparacion', short=True)),
         ('repartidor',  '🚴', 'Repartidores'),
       ] %}
       {% for rol_key, icon, label in roles_info %}

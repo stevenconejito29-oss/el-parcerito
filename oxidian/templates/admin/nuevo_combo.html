@@ -48,10 +48,15 @@
       </label>
       <label class="bundle-field">
         <span>Canal preparación</span>
+        {% if brand.es_comida %}
         <select name="canal_preparacion">
-          <option value="cocina">{% if brand.es_comida %}🍳 Cocina{% else %}🛠️ Preparación{% endif %}</option>
+          <option value="cocina">🍳 Cocina</option>
           <option value="almacen">📦 Almacén</option>
         </select>
+        {% else %}
+        <input type="hidden" name="canal_preparacion" value="almacen">
+        <span class="bundle-static">📦 Almacén retail</span>
+        {% endif %}
       </label>
       <input type="hidden" name="proveedor_despachador_id" id="bundle-origin" value="">
       <label class="bundle-field">

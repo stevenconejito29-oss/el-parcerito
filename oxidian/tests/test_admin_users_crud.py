@@ -35,8 +35,12 @@ class AdminUsersCrudTest(unittest.TestCase):
         self.ctx = self.app.app_context()
         self.ctx.push()
         db.create_all()
+        SiteConfig.set("WHATSAPP_COUNTRY_CODE", "+34")
         self.superadmin = self._user(
-            "Super Admin", "super@test.invalid", "super_admin"
+            "Super Admin",
+            "super@test.invalid",
+            "super_admin",
+            telefono="+34600000000",
         )
         db.session.commit()
         self.client = self.app.test_client()
@@ -68,6 +72,7 @@ class AdminUsersCrudTest(unittest.TestCase):
                     "email": f"prep{index}@test.invalid",
                     "password": "secret1",
                     "rol": "preparacion",
+                    "telefono": f"+3462000000{index}",
                 },
             )
             self.assertEqual(response.status_code, 302)
@@ -82,6 +87,7 @@ class AdminUsersCrudTest(unittest.TestCase):
                     "email": f"cocina{index}@test.invalid",
                     "password": "secret1",
                     "rol": "cocina",
+                    "telefono": f"+3463000000{index}",
                 },
             )
             self.assertEqual(response.status_code, 302)
@@ -121,6 +127,61 @@ class AdminUsersCrudTest(unittest.TestCase):
             },
         )
         self.assertIsNone(User.query.filter_by(email="operador@test.invalid").first())
+
+    def test_internal_accounts_require_unique_phone_for_bot_permissions(self):
+        response = self.client.post(
+            "/admin/usuarios/crear",
+            data={
+                "nombre": "Sin telefono",
+                "email": "sintelefono@test.invalid",
+                "password": "secret1",
+                "rol": "admin",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNone(User.query.filter_by(email="sintelefono@test.invalid").first())
+
+        self.client.post(
+            "/admin/usuarios/crear",
+            data={
+                "nombre": "Admin con telefono",
+                "email": "adminphone@test.invalid",
+                "password": "secret1",
+                "rol": "admin",
+                "telefono": "+34 620 111 222",
+            },
+        )
+        self.assertIsNotNone(User.query.filter_by(email="adminphone@test.invalid").first())
+
+        self.client.post(
+            "/admin/usuarios/crear",
+            data={
+                "nombre": "Duplicado",
+                "email": "duplicado@test.invalid",
+                "password": "secret1",
+                "rol": "repartidor",
+                "telefono": "620111222",
+            },
+        )
+        self.assertIsNone(User.query.filter_by(email="duplicado@test.invalid").first())
+
+    def test_internal_accounts_reject_local_phone_without_country_prefix(self):
+        SiteConfig.set("WHATSAPP_COUNTRY_CODE", "")
+        db.session.commit()
+
+        self.client.post(
+            "/admin/usuarios/crear",
+            data={
+                "nombre": "Telefono ambiguo",
+                "email": "ambiguo@test.invalid",
+                "password": "secret1",
+                "rol": "admin",
+                "telefono": "620 111 333",
+            },
+        )
+
+        self.assertIsNone(User.query.filter_by(email="ambiguo@test.invalid").first())
 
         provider = Proveedor(nombre="Bar activo", activo=True)
         db.session.add(provider)
@@ -198,6 +259,7 @@ class AdminUsersCrudTest(unittest.TestCase):
                 "nombre": self.superadmin.nombre,
                 "email": self.superadmin.email,
                 "rol": "admin",
+                "telefono": self.superadmin.telefono,
                 "salario_base": "0",
                 "tarifa_entrega": "0",
             },

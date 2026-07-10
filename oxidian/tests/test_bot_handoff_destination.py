@@ -276,6 +276,102 @@ class BotHandoffDestinationTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_admin_store_reads_require_actor_and_allow_superadmin(self):
+        headers = {"X-Bot-Key": "test-bot-key"}
+
+        denied = self.client.get("/api/bot/admin/tienda", headers=headers)
+        self.assertEqual(denied.status_code, 403)
+
+        allowed = self.client.get(
+            f"/api/bot/admin/tienda?actor_telefono={self.superadmin.telefono}",
+            headers=headers,
+        )
+        self.assertEqual(allowed.status_code, 200)
+        self.assertTrue(allowed.get_json()["ok"])
+
+    def test_admin_store_toggle_updates_public_store_status(self):
+        headers = {"X-Bot-Key": "test-bot-key"}
+
+        closed = self.client.post(
+            "/api/bot/admin/tienda",
+            json={
+                "forzar_cerrada": True,
+                "mensaje_cierre": "Pausa operativa",
+                "actor_telefono": self.superadmin.telefono,
+            },
+            headers=headers,
+        )
+        self.assertEqual(closed.status_code, 200)
+        self.assertEqual(closed.get_json()["estado"], "cerrada")
+
+        public_status = self.client.get("/api/bot/tienda/status", headers=headers)
+        self.assertEqual(public_status.status_code, 200)
+        self.assertFalse(public_status.get_json()["is_open"])
+        self.assertIn("Pausa operativa", public_status.get_json()["mensaje"])
+
+        opened = self.client.post(
+            "/api/bot/admin/tienda",
+            json={
+                "forzar_cerrada": False,
+                "mensaje_cierre": "",
+                "actor_telefono": self.superadmin.telefono,
+            },
+            headers=headers,
+        )
+        self.assertEqual(opened.status_code, 200)
+        self.assertEqual(opened.get_json()["estado"], "abierta")
+        self.assertEqual(SiteConfig.get("TIENDA_MENSAJE_CIERRE"), "")
+
+        public_status = self.client.get("/api/bot/tienda/status", headers=headers)
+        self.assertEqual(public_status.status_code, 200)
+        self.assertNotEqual(public_status.get_json()["mensaje"], "")
+
+    def test_legacy_store_toggle_parses_false_string_as_open(self):
+        headers = {"X-Bot-Key": "test-bot-key"}
+        SiteConfig.set("TIENDA_FORZAR_CERRADA", "1")
+        db.session.commit()
+
+        response = self.client.post(
+            "/api/bot/admin/tienda/forzar-cierre",
+            json={"cerrada": "false", "actor_telefono": self.superadmin.telefono},
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertFalse(payload["forzar_cerrada"])
+        self.assertEqual(payload["estado"], "abierta")
+        self.assertEqual(SiteConfig.get("TIENDA_FORZAR_CERRADA"), "0")
+        self.assertEqual(SiteConfig.get("TIENDA_MENSAJE_CIERRE", ""), "")
+
+    def test_admin_summary_requires_actor(self):
+        headers = {"X-Bot-Key": "test-bot-key"}
+
+        denied = self.client.get("/api/bot/admin/resumen-hoy", headers=headers)
+        self.assertEqual(denied.status_code, 403)
+
+        allowed = self.client.get(
+            f"/api/bot/admin/resumen-hoy?actor_telefono={self.superadmin.telefono}",
+            headers=headers,
+        )
+        self.assertEqual(allowed.status_code, 200)
+        self.assertTrue(allowed.get_json()["ok"])
+
+    def test_admin_order_lookup_honors_order_number(self):
+        headers = {"X-Bot-Key": "test-bot-key"}
+        first = self._order(None)
+        second = self._order(None)
+        first.numero_pedido = "#BOT-1"
+        second.numero_pedido = "#BOT-2"
+        db.session.commit()
+
+        response = self.client.get(
+            f"/api/bot/admin/pedidos?numero=BOT-1&actor_telefono={self.superadmin.telefono}",
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual([row["numero"] for row in payload["pedidos"]], ["#BOT-1"])
+
     def test_config_set_uses_superadmin_guards_and_value_validation(self):
         headers = {"X-Bot-Key": "test-bot-key"}
         admin = User(

@@ -221,9 +221,9 @@
       }
     }
   </style>
-  {% block styles %}{% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-admin.css', v=asset_version) }}">
+  {% block styles %}{% endblock %}
 </head>
 {% set rol = current_user.rol if current_user.is_authenticated else '' %}
 <body class="ox-body ox-body-admin"
@@ -251,7 +251,7 @@
         <div class="ox-sb-avatar ox-avatar-{{ rol }}">{{ current_user.nombre[0].upper() if current_user.is_authenticated else '?' }}</div>
         <div style="flex:1;min-width:0">
           <p class="ox-sb-uname" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ current_user.nombre }}</p>
-          <p class="ox-sb-urole">{{ rol | replace('_',' ') | capitalize }}</p>
+          <p class="ox-sb-urole">{{ role_label(rol, short=True) }}</p>
         </div>
       </div>
       {% if rol == 'cocina' or (rol == 'preparacion' and brand.pedidos_programados) or (rol == 'repartidor' and brand.delivery) %}
@@ -324,13 +324,13 @@
       {% elif rol == 'cocina' %}
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">Mi turno</span>
-        <a href="{{ url_for('preparador.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🍳</span>Cola de cocina</a>
+        <a href="{{ url_for('preparador.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ '🍳' if brand.es_comida else '📦' }}</span>Cola de {{ role_label('cocina', short=True)|lower }}</a>
       </div>
 
       {% elif rol == 'preparacion' and brand.pedidos_programados %}
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">Mi turno</span>
-        <a href="{{ url_for('preparador.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Pedidos por fecha</a>
+        <a href="{{ url_for('preparador.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>{{ role_label('preparacion', short=True) }}</a>
       </div>
 
       {% elif rol == 'repartidor' and brand.delivery %}
@@ -381,7 +381,7 @@
       </button>
       <span class="ox-topbar-mark">●</span>
       <span class="ox-topbar-title">{{ brand.nombre }}</span>
-      <span class="ml-auto text-xs px-2 py-1 rounded font-semibold ox-topbar-role">{{ rol | replace('_',' ') | capitalize }}</span>
+      <span class="ml-auto text-xs px-2 py-1 rounded font-semibold ox-topbar-role">{{ role_label(rol, short=True) }}</span>
     </div>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -398,7 +398,7 @@
       {% block content %}{% endblock %}
     </div>
 
-    {# ── BOTTOM NAV para roles operativos — logout siempre accesible ── #}
+    {# ── BOTTOM NAV compacto: acciones frecuentes; el drawer conserva el resto. ── #}
     <nav class="ox-admin-bnav" aria-label="Accesos rápidos">
       <a href="{% if rol in ('admin','super_admin') %}{{ url_for('admin.dashboard') }}{% elif rol in ('cocina','preparacion') %}{{ url_for('preparador.pedidos') }}{% elif rol == 'repartidor' %}{{ url_for('repartidor.ruta') }}{% else %}{{ url_for('public.index') }}{% endif %}"
          class="ox-admin-bnav-item {{ 'is-active' if request.endpoint in ('admin.dashboard','preparador.pedidos','repartidor.ruta') else '' }}"
@@ -408,6 +408,7 @@
       </a>
 
       {% if rol in ('admin','super_admin') %}
+      {% if has_admin_feature('pos') %}
       <a href="{{ url_for('admin.cola') }}"
          class="ox-admin-bnav-item {{ 'is-active' if request.endpoint == 'admin.cola' else '' }}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>
@@ -418,6 +419,14 @@
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 10h6"/><path d="M9 14h4"/></svg>
         <span>Pedidos</span>
       </a>
+      {% endif %}
+      {% if has_admin_feature('productos') %}
+      <a href="{{ url_for('admin.productos') }}"
+         class="ox-admin-bnav-item {{ 'is-active' if request.endpoint == 'admin.productos' else '' }}">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12l2 7H4z"/><path d="M5 9v11h14V9"/><path d="M9 13h6"/></svg>
+        <span>{{ 'Menú' if brand.es_comida else 'Catálogo' }}</span>
+      </a>
+      {% endif %}
       {% elif rol == 'repartidor' %}
       <a href="{{ url_for('repartidor.mis_comisiones') }}"
          class="ox-admin-bnav-item {{ 'is-active' if request.endpoint == 'repartidor.mis_comisiones' else '' }}">
@@ -432,13 +441,6 @@
         <span>Menú</span>
       </button>
 
-      <form method="post" action="{{ url_for('auth.logout') }}" class="ox-admin-bnav-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="ox-admin-bnav-item ox-admin-bnav-logout" title="Cerrar sesión">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          <span>Salir</span>
-        </button>
-      </form>
     </nav>
   </div>
 </div>

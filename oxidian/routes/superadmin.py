@@ -15,9 +15,24 @@ from extensions import db, get_or_404
 from models import (User, Order, Caja, StaffPayment, Product,
                     ZonaEntrega, SiteConfig, AuditLog,
                     AdminFeature, ADMIN_FEATURES, PointsLog, utcnow)
+from phone_utils import normalizar_telefono_cliente, telefono_local_ambiguo, telefono_valido
 from store_config import PUBLIC_THEME_DEFAULTS, PUBLIC_UI_DEFAULTS, get_store_features, get_store_value
 
 superadmin_bp = Blueprint("superadmin", __name__)
+
+
+def _telefono_admin_form(raw, user_id=None):
+    telefono = normalizar_telefono_cliente(raw) or None
+    if not telefono_valido(telefono):
+        return None, "El teléfono es obligatorio: el chatbot identifica admins y permisos por WhatsApp con ese número."
+    if telefono_local_ambiguo(raw):
+        return None, "Usa formato internacional (+57..., +34...) o configura WHATSAPP_COUNTRY_CODE antes de crear admins para WhatsApp."
+    query = User.query.filter(User.telefono_normalizado == telefono)
+    if user_id is not None:
+        query = query.filter(User.id != user_id)
+    if query.first():
+        return None, "Ese teléfono ya está asignado a otra cuenta."
+    return telefono, None
 
 def _eget(key, fallback=""):
     """Lee variable de entorno; igual que _env_default en app.py."""
@@ -1606,9 +1621,13 @@ def crear_admin():
     nombre = request.form.get("nombre", "").strip()
     password = request.form.get("password", "").strip()
     rol = request.form.get("rol", "admin")
+    telefono, telefono_error = _telefono_admin_form(request.form.get("telefono", ""))
 
     if not email or not nombre:
         flash("Nombre y email son obligatorios.", "danger")
+        return redirect(url_for("superadmin.admins"))
+    if telefono_error:
+        flash(telefono_error, "danger")
         return redirect(url_for("superadmin.admins"))
     if len(password) < 12:
         flash("La contraseña debe tener al menos 12 caracteres.", "danger")
@@ -1619,7 +1638,7 @@ def crear_admin():
         flash("Email ya registrado.", "warning")
         return redirect(url_for("superadmin.admins"))
 
-    u = User(nombre=nombre, email=email, rol=rol)
+    u = User(nombre=nombre, email=email, rol=rol, telefono=telefono)
     u.set_password(password)
     db.session.add(u)
     db.session.flush()
@@ -1652,6 +1671,11 @@ def editar_admin(user_id):
     nuevo_rol = request.form.get("rol")
     if nuevo_rol in ("admin", "super_admin") and u.id != current_user.id:
         u.rol = nuevo_rol
+    telefono, telefono_error = _telefono_admin_form(request.form.get("telefono", ""), user_id=u.id)
+    if telefono_error:
+        flash(telefono_error, "danger")
+        return redirect(url_for("superadmin.admins"))
+    u.telefono = telefono
     nueva_pw = request.form.get("nueva_password", request.form.get("password", "")).strip()
     if nueva_pw:
         if len(nueva_pw) < 12:

@@ -104,7 +104,7 @@ test('los menús públicos y admin están separados por rol', () => {
   const globalMenu = adminMenu(adminA);
 
   assert.match(clientMenu, /Asistente de/);
-  assert.match(clientMenu, /sin tomar pedidos por WhatsApp/i);
+  assert.match(clientMenu, /sin tomar compras por WhatsApp/i);
   assert.doesNotMatch(clientMenu, /Productos y precios/);
   assert.match(globalMenu, /Panel Super Admin/);
   assert.match(globalMenu, /Productos y precios/);
@@ -154,7 +154,7 @@ test('el menú del cliente oculta puntos y delivery cuando están desactivados',
 
 test('el cliente se dirige a la web y no recibe catálogo por WhatsApp', () => {
   const menu = menuPrincipal();
-  assert.match(menu, /Abrir la tienda online/);
+  assert.match(menu, /Abrir tienda online/);
   assert.doesNotMatch(menu, /1️⃣|2️⃣|3️⃣/);
   assert.doesNotMatch(menu, /Ver el menú y los combos/);
   assert.doesNotMatch(menu, /precio/i);

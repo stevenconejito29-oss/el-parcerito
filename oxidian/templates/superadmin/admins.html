@@ -46,6 +46,9 @@
             </span>
           </div>
           <p style="font-size:var(--oa-font-xs);color:var(--col-faint);margin:2px 0 0;">{{ u.email }}</p>
+          <p style="font-size:var(--oa-font-xs);color:var(--col-muted);margin:2px 0 0;">
+            WhatsApp admin: {{ u.telefono or 'sin teléfono configurado' }}
+          </p>
 
           {% if u.rol == 'admin' %}
           {% set pct = ((n_activos / n_total) * 100)|int if n_total else 0 %}
@@ -72,7 +75,7 @@
             ⚡ Features
           </a>
           {% endif %}
-          <button type="button" onclick='abrirEditar({{ u.id }}, {{ u.nombre|tojson }}, {{ u.rol|tojson }})' class="oa-btn oa-btn--sm">
+          <button type="button" onclick='abrirEditar({{ u.id }}, {{ u.nombre|tojson }}, {{ u.rol|tojson }}, {{ (u.telefono or "")|tojson }})' class="oa-btn oa-btn--sm">
             ✏️ Editar
           </button>
           {% if u.id != current_user.id %}
@@ -131,8 +134,12 @@
         <input type="email" name="email" required placeholder="admin@ejemplo.com" class="oa-input">
       </div>
       <div class="oa-form__group">
-        <label class="oa-label">Contraseña <span class="oa-label__hint">mínimo 8 caracteres</span></label>
-        <input type="password" name="password" required autocomplete="new-password" class="oa-input">
+        <label class="oa-label">Teléfono WhatsApp <span class="oa-label__hint">obligatorio para permisos del bot</span></label>
+        <input type="tel" name="telefono" required autocomplete="tel" placeholder="+34 600 000 000" class="oa-input">
+      </div>
+      <div class="oa-form__group">
+        <label class="oa-label">Contraseña <span class="oa-label__hint">mínimo 12 caracteres</span></label>
+        <input type="password" name="password" required minlength="12" autocomplete="new-password" class="oa-input">
       </div>
       <div class="oa-form__group">
         <label class="oa-label">Rol</label>
@@ -171,6 +178,10 @@
         </select>
       </div>
       <div class="oa-form__group">
+        <label class="oa-label">Teléfono WhatsApp <span class="oa-label__hint">obligatorio</span></label>
+        <input type="tel" name="telefono" id="edit-telefono" required autocomplete="tel" class="oa-input">
+      </div>
+      <div class="oa-form__group">
         <label class="oa-label">Nueva contraseña <span class="oa-label__hint">dejar vacío = no cambiar</span></label>
         <input type="password" name="nueva_password" autocomplete="off" class="oa-input">
       </div>
@@ -182,11 +193,12 @@
 {% endblock %}
 {% block scripts %}
 <script>
-function abrirEditar(id, nombre, rol) {
+function abrirEditar(id, nombre, rol, telefono) {
   const form = document.getElementById('form-editar');
   document.getElementById('edit-nombre').textContent = nombre;
   document.getElementById('edit-nombre-input').value = nombre;
   document.getElementById('edit-rol').value = rol;
+  document.getElementById('edit-telefono').value = telefono || '';
   form.action = `/superadmin/admins/${id}/editar`;
   form.querySelector('input[name="nueva_password"]').value = '';
   document.getElementById('modal-editar').classList.remove('hidden');

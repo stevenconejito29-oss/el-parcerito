@@ -628,6 +628,9 @@ def create_app(env="default"):
 
     @app.context_processor
     def inject_admin_feature_access():
+        from models import SiteConfig
+        tipo_tienda_context = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").strip().lower()
+
         def has_admin_feature(feature):
             if not current_user.is_authenticated:
                 return False
@@ -637,7 +640,22 @@ def create_app(env="default"):
                 return False
             from models import AdminFeature
             return AdminFeature.tiene_acceso(current_user.id, feature)
-        return {"has_admin_feature": has_admin_feature}
+        def role_label(role, short=False):
+            es_comida = tipo_tienda_context == "comida"
+            labels = {
+                "super_admin": "Super Admin" if short else "Super administrador",
+                "admin": "Admin" if short else "Administrador de tienda",
+                "cocina": ("Cocina" if es_comida else "Almacén") if short else (
+                    "Cocina · pedidos inmediatos" if es_comida else "Almacén · pedidos inmediatos"
+                ),
+                "preparacion": ("Encargos" if es_comida else "Preparación retail") if short else (
+                    "Encargos con fecha" if es_comida else "Preparación de pedidos con fecha"
+                ),
+                "repartidor": "Repartidor",
+                "cliente": "Cliente",
+            }
+            return labels.get(role, str(role or "").replace("_", " ").title())
+        return {"has_admin_feature": has_admin_feature, "role_label": role_label}
 
     # Blueprints
     from routes.auth import auth_bp
@@ -887,23 +905,27 @@ def _seed_operational_basics():
     changed = False
     seed_pw = _seed_password()
     now = utcnow()
+    seed_staff_default = os.environ.get("APP_ENV", os.environ.get("FLASK_ENV", "production")) != "production"
+    seed_staff = _to_bool(os.environ.get("OXIDIAN_SEED_STAFF"), seed_staff_default)
     minimal_users = _to_bool(os.environ.get("OXIDIAN_MINIMAL_USERS"), False)
 
     # Rol "cocina" fue fusionado en "preparacion" (ver CLAUDE.md). Ya no se crea
     # ningún user nuevo con rol="cocina" — solo mantenemos el enum por retro-compat
     # en users antiguos importados. El seed inicial genera roles vigentes.
     _domain = os.environ.get("STAFF_EMAIL_DOMAIN", "oxidian.local").strip() or "oxidian.local"
-    if minimal_users:
-        staff_users = [
-            {"nombre": "Preparación", "email": f"preparacion@{_domain}", "rol": "preparacion", "puesto_trabajo": "Armado de pedidos"},
-            {"nombre": "Repartidor", "email": f"repartidor@{_domain}", "rol": "repartidor", "puesto_trabajo": "Reparto", "tarifa_entrega": 2.5},
-        ]
-    else:
-        staff_users = [
-            {"nombre": "Preparación 1", "email": f"prep1@{_domain}", "rol": "preparacion", "puesto_trabajo": "Cocina / Almacén"},
-            {"nombre": "Preparación 2", "email": f"prep2@{_domain}", "rol": "preparacion", "puesto_trabajo": "Encargos"},
-            {"nombre": "Repartidor",    "email": f"repartidor@{_domain}", "rol": "repartidor",  "puesto_trabajo": "Reparto", "tarifa_entrega": 2.5},
-        ]
+    staff_users = []
+    if seed_staff:
+        if minimal_users:
+            staff_users = [
+                {"nombre": "Preparación", "email": f"preparacion@{_domain}", "rol": "preparacion", "puesto_trabajo": "Armado de pedidos"},
+                {"nombre": "Repartidor", "email": f"repartidor@{_domain}", "rol": "repartidor", "puesto_trabajo": "Reparto", "tarifa_entrega": 2.5},
+            ]
+        else:
+            staff_users = [
+                {"nombre": "Preparación 1", "email": f"prep1@{_domain}", "rol": "preparacion", "puesto_trabajo": "Cocina / Almacén"},
+                {"nombre": "Preparación 2", "email": f"prep2@{_domain}", "rol": "preparacion", "puesto_trabajo": "Encargos"},
+                {"nombre": "Repartidor",    "email": f"repartidor@{_domain}", "rol": "repartidor",  "puesto_trabajo": "Reparto", "tarifa_entrega": 2.5},
+            ]
     for payload in staff_users:
         user = User.query.filter_by(email=payload["email"]).first()
         if not user:

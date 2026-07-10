@@ -5,8 +5,8 @@
 {% set role_labels = {
   'super_admin': 'Superadmin',
   'admin': 'Administrador',
-  'cocina': 'Cocina (pedidos inmediatos)',
-  'preparacion': 'Preparacion (pedidos con fecha)',
+  'cocina': role_label('cocina'),
+  'preparacion': role_label('preparacion'),
   'repartidor': 'Repartidor',
   'staff': 'Staff (legado)'
 } %}
@@ -171,8 +171,9 @@
         </select>
       </div>
       <div class="ox-field">
-        <label class="ox-label">Telefono</label>
-        <input class="ox-input" type="tel" name="telefono" autocomplete="tel">
+        <label class="ox-label">Teléfono WhatsApp *</label>
+        <input class="ox-input" type="tel" name="telefono" required autocomplete="tel" placeholder="+34 600 000 000">
+        <small style="color:var(--col-muted)">Identifica permisos y comandos del chatbot para este usuario.</small>
       </div>
       <div class="ox-field">
         <label class="ox-label">Puesto de trabajo</label>

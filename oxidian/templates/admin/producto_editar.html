@@ -74,12 +74,17 @@
       <h2 class="edit-title">Entrega y visibilidad</h2>
       <div class="mb-3">
         <p class="text-xs text-gray-500 mb-1 font-semibold uppercase tracking-wide">Canal de preparación</p>
+        {% if brand.es_comida %}
         <div class="flex flex-wrap gap-3 text-sm">
           {% set canal_actual = producto.canal_preparacion or 'cocina' %}
           {% for val, label in [('cocina','🍳 Cocina'),('almacen','📦 Almacén')] %}
           <label class="edit-chip"><input type="radio" name="canal_preparacion" value="{{ val }}" {% if canal_actual == val %}checked{% endif %}> {{ label }}</label>
           {% endfor %}
         </div>
+        {% else %}
+        <input type="hidden" name="canal_preparacion" value="almacen">
+        <p class="text-sm" style="color:var(--col-muted)">📦 Almacén retail: validar stock, empacar y despachar.</p>
+        {% endif %}
       </div>
       <div class="flex flex-wrap gap-3 text-sm">
         {% set tipo_actual = 'programado' if producto.tipo_entrega == 'encargo' else (producto.tipo_entrega or 'inmediato') %}
