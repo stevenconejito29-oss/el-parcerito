@@ -92,7 +92,10 @@ class AiAutoRouterTest(unittest.TestCase):
         self.assertEqual(data["route"], "ai", msg=data)
 
     def test_texto_corto_route_noop(self):
-        r = self._route("hola")
+        # "xyz" no matchea ningún hard command ni intent conocido y es demasiado
+        # corto para el heurístico de pregunta → noop deja pasar el flujo estándar.
+        # NOTA: "hola" sí es un hard command por diseño (saludo → menú).
+        r = self._route("xyz")
         self.assertEqual(r.get_json()["route"], "noop")
 
     def test_rate_limit_handoff(self):
