@@ -296,6 +296,7 @@
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">🔧 Gestión</span>
         {% if has_admin_feature('usuarios') %}<a href="{{ url_for('admin.usuarios') }}" class="ox-sb-item"><span class="ox-sb-item-icon">👤</span>Usuarios & Equipo</a>{% endif %}
+        {% if has_admin_feature('usuarios') %}<a href="{{ url_for('admin.clientes') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🧑‍🤝‍🧑</span>Clientes</a>{% endif %}
         {% if has_admin_feature('cupones') or has_admin_feature('marketing') %}<a href="{{ url_for('admin.cupones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎟️</span>Cupones</a>{% endif %}
         {% if has_admin_feature('marketing') %}<a href="{{ url_for('admin.afiliados') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤝</span>Afiliados</a>{% endif %}
         {% if has_admin_feature('marketing') %}<a href="{{ url_for('admin.menu_config') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖼️</span>Banners & Home</a>{% endif %}
