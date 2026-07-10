@@ -2193,12 +2193,16 @@ def club():
         return redirect(url_for("public.index"))
     # Vitrina de canje: productos solo_canje visibles en el catálogo,
     # ordenados por puntos ascendentes para mostrar primero lo más accesible.
-    canjeables = (
-        Product.query.filter_by(activo=True, solo_canje=True)
-        .filter(Product.puntos_para_canje.isnot(None))
-        .order_by(Product.puntos_para_canje.asc(), Product.nombre.asc())
-        .all()
-    )
+    # Filtro por nicho activo → un canje retail no aparece en comida y viceversa.
+    canjeables = [
+        p for p in (
+            Product.query.filter_by(activo=True, solo_canje=True)
+            .filter(Product.puntos_para_canje.isnot(None))
+            .order_by(Product.puntos_para_canje.asc(), Product.nombre.asc())
+            .all()
+        )
+        if _producto_pertenece_al_vertical(p)
+    ]
     return render_template(
         "public/puntos_consulta.html",
         canjeables=canjeables,
