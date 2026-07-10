@@ -43,7 +43,11 @@ class DeliveryIntentosConfigurableTest(unittest.TestCase):
         self.ctx.pop()
 
     def _mk_order(self, intentos=0, codigo="123456"):
+        # numero_pedido NOT NULL — usar contador incremental (sqlite en memoria
+        # se recrea por test, así que empieza en 1 cada vez).
+        self._order_seq = getattr(self, "_order_seq", 0) + 1
         o = Order(
+            numero_pedido=f"TEST-INT-{self._order_seq:04d}",
             cliente_id=self.cliente_id,
             total=10,
             subtotal=10,
