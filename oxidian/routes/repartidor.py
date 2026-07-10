@@ -394,7 +394,9 @@ def confirmar_entrega(pedido_id):
     ok, msg_codigo = pedido.confirmar_entrega_con_codigo(codigo_ingresado)
     if not ok:
         db.session.commit()  # guardar intentos_codigo
-        flash(f"Código incorrecto: {msg_codigo}", "danger")
+        # msg_codigo ya es mensaje completo ("Código incorrecto. N intentos restantes",
+        # "El código ha expirado", "Demasiados intentos fallidos") — no prefijar.
+        flash(msg_codigo, "danger")
         return redirect(url_for("repartidor.ruta"))
 
     try:

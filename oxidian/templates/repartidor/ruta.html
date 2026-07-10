@@ -393,10 +393,15 @@
           <span>{{ pedido.direccion_entrega }}</span>
         </p>
         <div class="flex gap-2 mt-2">
-          <a href="https://www.google.com/maps/dir/?api=1&destination={{ (pedido.direccion_entrega + ", " + brand.ciudad) | urlencode }}"
+          <a href="https://www.google.com/maps/dir/?api=1&destination={{ (pedido.direccion_entrega + ", " + (brand.ciudad or '')) | urlencode }}"
              target="_blank" rel="noopener"
              class="work-btn work-btn-info flex-1">
-            🧭 Navegar
+            🧭 Maps
+          </a>
+          <a href="https://waze.com/ul?q={{ (pedido.direccion_entrega + ", " + (brand.ciudad or '')) | urlencode }}"
+             target="_blank" rel="noopener"
+             class="work-btn work-btn-info flex-1">
+            🚗 Waze
           </a>
           <button type="button" onclick='copiarDireccion({{ pedido.direccion_entrega | tojson }})'
                   class="work-btn work-btn-ghost">
@@ -422,7 +427,7 @@
            class="work-btn work-btn-ghost flex-1">
           📞 {{ pedido.cliente.telefono }}
         </a>
-        <a href="https://wa.me/{{ pedido.cliente.telefono | replace(' ', '') | replace('+', '') | replace('-', '') }}" target="_blank"
+        <a href="https://wa.me/{{ pedido.cliente.telefono | phone_digits }}" target="_blank"
            class="work-btn work-btn-ghost flex-1">
           WhatsApp
         </a>
@@ -578,7 +583,7 @@
            class="work-btn work-btn-ghost flex-1">
           📞 {{ pedido.cliente.telefono }}
         </a>
-        <a href="https://wa.me/{{ pedido.cliente.telefono | replace(' ', '') | replace('+', '') | replace('-', '') }}" target="_blank"
+        <a href="https://wa.me/{{ pedido.cliente.telefono | phone_digits }}" target="_blank"
            class="work-btn work-btn-ghost flex-1">
           WhatsApp
         </a>
