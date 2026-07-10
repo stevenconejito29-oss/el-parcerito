@@ -1782,12 +1782,23 @@ class ComboItem(db.Model):
     # Cuántos productos del grupo puede elegir el cliente (default 1).
     max_selecciones = db.Column(db.Integer, default=1)
 
+    # Bundle retail: si el combo padre es vertical='producto', cada componente
+    # puede apuntar a una ProductVariant concreta (talla/color) para congelarla.
+    # Nullable: comida no la usa; retail sin variante = cliente elige al añadir.
+    variant_id = db.Column(
+        db.Integer,
+        db.ForeignKey("product_variants.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     componente = db.relationship("Product", foreign_keys=[producto_id])
+    variante = db.relationship("ProductVariant", foreign_keys=[variant_id])
 
     __table_args__ = (
         db.Index("ix_combo_items_combo_id", "combo_id"),
         db.Index("ix_combo_items_group_id", "combo_group_id"),
         db.Index("ix_combo_items_producto_id", "producto_id"),
+        db.Index("ix_combo_items_variant_id", "variant_id"),
     )
 
     @property

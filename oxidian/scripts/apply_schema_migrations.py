@@ -1125,6 +1125,37 @@ def _migrate_product_variants():
         """))
 
 
+def _migrate_combo_item_variant():
+    """Añade combo_items.variant_id (FK product_variants ondelete SET NULL) para
+    permitir bundles retail que congelen una talla/color por componente."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("combo_items"):
+        return
+    cols = {c["name"] for c in inspector.get_columns("combo_items")}
+    dialect = db.engine.dialect.name
+    if "variant_id" not in cols:
+        if dialect == "postgresql":
+            db.session.execute(text(
+                "ALTER TABLE combo_items ADD COLUMN variant_id INTEGER "
+                "REFERENCES product_variants(id) ON DELETE SET NULL"
+            ))
+        elif dialect == "mysql":
+            db.session.execute(text(
+                "ALTER TABLE combo_items ADD COLUMN variant_id INTEGER NULL"
+            ))
+        else:
+            db.session.execute(text(
+                "ALTER TABLE combo_items ADD COLUMN variant_id INTEGER"
+            ))
+    try:
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_combo_items_variant_id "
+            "ON combo_items (variant_id)"
+        ))
+    except Exception:
+        pass
+
+
 MIGRATIONS = [
     {
         "id": "20260526_01_order_events_notification_outbox",
@@ -1323,6 +1354,14 @@ MIGRATIONS = [
         ),
         "tables": [ProductVariant.__table__],
         "fn": _migrate_product_variants,
+    },
+    {
+        "id": "20260710_21_combo_item_variant",
+        "description": (
+            "combo_items.variant_id (FK product_variants ON DELETE SET NULL) "
+            "para bundles retail que congelan talla/color por componente"
+        ),
+        "fn": _migrate_combo_item_variant,
     },
 ]
 

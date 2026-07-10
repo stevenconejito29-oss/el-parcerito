@@ -167,7 +167,8 @@ def validate_group_name(group_name: str, is_selectable: bool) -> Tuple[bool, Opt
 
 def validate_combo_structure(
     components: List[Dict],  # List of {prod_id, cantidad, es_sel, grupo, max_sel}
-    combo_id: Optional[int] = None
+    combo_id: Optional[int] = None,
+    parent_vertical: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """
     Valida la estructura global de un combo.
@@ -175,6 +176,10 @@ def validate_combo_structure(
     Args:
         components: Lista de componentes
         combo_id: ID del combo (para distinguir de None al crear)
+        parent_vertical: vertical del combo padre. Si es "producto" (retail),
+            se aplica la restricción bundle: no se permiten componentes
+            seleccionables (todo fijo). "comida"/"ambos"/None permiten
+            grupos seleccionables (comportamiento histórico).
 
     Returns:
         (is_valid, error_message)
@@ -184,6 +189,17 @@ def validate_combo_structure(
 
     if len(components) > ComboLimits.max_components():
         return False, f"Un combo no puede tener más de {ComboLimits.max_components()} componentes"
+
+    # Modo bundle retail: los combos de vertical=producto son todo-fijo.
+    if (parent_vertical or "").strip().lower() == "producto":
+        for comp in components:
+            es_sel = comp.get("es_sel", comp.get("es_seleccionable", False))
+            if es_sel:
+                return False, (
+                    "Los combos de retail son bundles fijos: no se permiten "
+                    "componentes seleccionables. Cambia el vertical del combo "
+                    "a Comida si necesitas grupos con opciones."
+                )
 
     # Validar que no haya duplicados entre fijos
     fixed_product_ids: Set[int] = set()

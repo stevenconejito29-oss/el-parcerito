@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file, jsonify
 from flask_login import login_required, current_user
 from functools import wraps
 from datetime import datetime, date, timedelta, timezone
@@ -773,6 +773,38 @@ def toggle_modulo(modulo):
         "success" if ok else "warning",
     )
     return redirect(url_for("superadmin.dashboard"))
+
+
+@superadmin_bp.route("/vertical/preview")
+@superadmin_required
+def toggle_vertical_preview():
+    """Devuelve cuántos productos quedarían ocultos al cliente si el super_admin
+    cambia el vertical. UI lo consume para mostrar confirmación explícita.
+
+    Read-only. NO cambia estado.
+    """
+    from models import Product
+    actual = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
+    destino = "producto" if actual == "comida" else "comida"
+    override = (request.args.get("destino") or "").strip().lower()
+    if override in ("comida", "producto"):
+        destino = override
+    a_ocultar = Product.query.filter(
+        Product.activo.is_(True),
+        Product.vertical == actual,
+    ).count()
+    a_mostrar = Product.query.filter(
+        Product.activo.is_(True),
+        Product.vertical == destino,
+    ).count()
+    return jsonify({
+        "ok": True,
+        "actual": actual,
+        "destino": destino,
+        "productos_a_ocultar_del_cliente": a_ocultar,
+        "productos_a_mostrar_al_cliente": a_mostrar,
+        "nota_admin": "Admin y super_admin seguirán viendo todos los productos para gestión.",
+    })
 
 
 @superadmin_bp.route("/toggle-vertical", methods=["POST"])

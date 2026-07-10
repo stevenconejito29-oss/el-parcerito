@@ -125,12 +125,37 @@
           <li>Bot habla de "{{ 'catálogo' if _es_comida else 'menú' }}"</li>
         </ul>
         <form method="POST" action="{{ url_for('superadmin.toggle_vertical') }}"
-              onsubmit="return confirm('¿Cambiar el vertical de la tienda? Los datos no se borran.');">
+              id="toggle-vertical-form"
+              onsubmit="return window.__confirmToggleVertical && window.__confirmToggleVertical(event);">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="oa-btn oa-btn--primary oa-vertical-cta">
             {% if _es_comida %}🛍️ Cambiar a Retail{% else %}🍽️ Cambiar a Comida{% endif %}
           </button>
         </form>
+        <script>
+        (function(){
+          const previewUrl = "{{ url_for('superadmin.toggle_vertical_preview') }}";
+          window.__confirmToggleVertical = async function(ev){
+            ev.preventDefault();
+            let stats = null;
+            try {
+              const r = await fetch(previewUrl, {credentials:'same-origin'});
+              stats = r.ok ? await r.json() : null;
+            } catch(_) { stats = null; }
+            let msg = '¿Cambiar el vertical de la tienda? Los datos no se borran.';
+            if (stats && stats.ok) {
+              const oc = stats.productos_a_ocultar_del_cliente;
+              const mo = stats.productos_a_mostrar_al_cliente;
+              msg = 'Vas a activar «' + stats.destino + '».\n\n'
+                  + '• ' + oc + ' producto(s) del vertical «' + stats.actual + '» se ocultarán al cliente.\n'
+                  + '• ' + mo + ' producto(s) del vertical «' + stats.destino + '» pasarán a ser visibles.\n\n'
+                  + stats.nota_admin + '\n\n¿Confirmar cambio?';
+            }
+            if (window.confirm(msg)) ev.target.submit();
+            return false;
+          };
+        })();
+        </script>
       </div>
     </div>
     <p class="oa-vertical-hint">
