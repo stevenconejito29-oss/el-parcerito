@@ -635,10 +635,10 @@
         {% endif %}
 
         {% if pedido.codigo_confirmacion %}
-        {% if pedido.intentos_codigo >= 3 %}
+        {% if pedido.codigo_confirmacion_bloqueado %}
         <div class="work-panel work-panel--locked mb-3">
           <p class="work-confirm-label" style="color:#ef4444">Código bloqueado</p>
-          <p class="work-confirm-note">Se agotaron los 3 intentos. Contacta al admin para regenerar el código antes de entregar.</p>
+          <p class="work-confirm-note">Se agotaron los {{ pedido.max_intentos_entrega }} intentos. Contacta al admin para regenerar el código antes de entregar.</p>
           <input type="hidden" name="codigo_confirmacion" value="">
         </div>
         {% elif pedido.codigo_confirmacion_expirado %}
@@ -657,7 +657,7 @@
                  class="work-code-input"
                  autocomplete="off">
           {% if pedido.intentos_codigo > 0 %}
-          <p class="work-code-attempts">{{ 3 - pedido.intentos_codigo }} intento(s) restante(s)</p>
+          <p class="work-code-attempts">{{ pedido.intentos_codigo_restantes }} intento(s) restante(s)</p>
           {% endif %}
         </div>
         {% endif %}
@@ -680,7 +680,7 @@
             <option value="Cliente no está en la dirección">Cliente no está en la dirección</option>
             <option value="Cliente no contesta al teléfono">Cliente no contesta al teléfono</option>
             <option value="Cliente rechazó el pedido">Cliente rechazó el pedido</option>
-            <option value="Código de confirmación bloqueado (3 intentos fallidos)">Código bloqueado (3 intentos fallidos)</option>
+            <option value="Código de confirmación bloqueado ({{ pedido.max_intentos_entrega }} intentos fallidos)">Código bloqueado ({{ pedido.max_intentos_entrega }} intentos fallidos)</option>
             <option value="Dirección incorrecta o inexistente">Dirección incorrecta o inexistente</option>
             <option value="Otro (indicar al admin al volver al local)">Otro</option>
           </select>
