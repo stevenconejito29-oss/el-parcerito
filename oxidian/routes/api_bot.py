@@ -325,6 +325,229 @@ def ai_cliente_context():
     })
 
 
+# ─── AUTO-ROUTER IA ────────────────────────────────────────────
+# Centraliza en el back la decisión de si un mensaje del cliente debe:
+#   - dejarse pasar al flujo estándar (comando / intent conocido)  → route: noop
+#   - responderse con IA sin exigir `!ia`                          → route: ai
+#   - devolver el menú principal                                   → route: menu
+#   - derivar a un humano (rate limit o petición explícita)        → route: handoff
+#
+# El bot Node solo enruta; NO decide. Así evitamos duplicar lógica de
+# rate limits, patrones de comando o keywords de intent en el JS.
+
+# Comandos “duros” del cliente (matchean SIN pasar por IA).
+_BOT_HARD_COMMANDS = {
+    "menu", "menú", "inicio", "hola", "start", "0",
+    "estado", "cancelar", "reportar", "agente", "humano", "asesor", "persona",
+    "salir",
+    "1", "2", "3", "4", "5", "6", "7",
+}
+
+# Prefijos que se consideran comando aunque venga texto adicional.
+_BOT_COMMAND_PREFIXES = (
+    "menu", "menú", "estado", "cancelar", "reportar",
+    "incidencia", "problema", "novedad", "queja",
+    "agente", "humano",
+)
+
+# Palabras de arranque que sugieren pregunta en español (auto-router IA).
+_BOT_QUESTION_STARTERS = (
+    "como", "cómo", "que", "qué", "donde", "dónde",
+    "cuando", "cuándo", "quien", "quién", "por que", "por qué",
+    "porque", "cuanto", "cuánto",
+    "tienen", "teneis", "tenéis", "hay",
+    "puedo", "puede", "podria", "podría", "podrian", "podrían",
+    "quiero saber", "quisiera",
+    "me gustaria", "me gustaría",
+    "necesito saber", "sabes",
+)
+
+
+def _strip_accents_lower(text):
+    import unicodedata
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFD", str(text))
+    return "".join(c for c in normalized if unicodedata.category(c) != "Mn").lower().strip()
+
+
+def _bot_intent_keywords():
+    """Keywords que ya cubre `detectClientIntent` en bot.js.
+    Reutilizamos el mapeo para NO invocar IA si el cliente pregunta algo que
+    el flujo estándar ya resuelve (pedidos, puntos, cobertura, etc.).
+    """
+    return {
+        "pedido": ("pedido", "pedir", "ordenar", "comprar", "compra"),
+        "estado": ("estado", "seguimiento", "donde esta", "dónde está", "mi pedido"),
+        "cancelar": ("cancelar", "anular"),
+        "puntos": ("puntos", "fidelidad", "canje", "canjear"),
+        "cobertura": ("cobertura", "zona", "llegan", "reparto", "envio", "envío"),
+        "horario": ("horario", "abren", "cierran", "abierto", "cerrado"),
+        "agente": ("agente", "humano", "persona", "asesor", "operador"),
+    }
+
+
+def _looks_like_question(text):
+    """True si el texto parece una pregunta (>10 chars y patrón interrogativo).
+
+    Reglas (todas modificables extendiendo _BOT_QUESTION_STARTERS):
+      - Contiene '?' o '¿'.
+      - Empieza por: cómo/qué/dónde/cuándo/quién/por qué/tienen/hay/puedo/quisiera/quiero saber…
+    """
+    raw = (text or "").strip()
+    if len(raw) <= 10:
+        return False
+    if "?" in raw or "¿" in raw:
+        return True
+    norm = _strip_accents_lower(raw)
+    for starter in _BOT_QUESTION_STARTERS:
+        s = _strip_accents_lower(starter)
+        if norm.startswith(s + " ") or norm == s:
+            return True
+    return False
+
+
+def _matches_hard_command(text):
+    norm = _strip_accents_lower(text)
+    if not norm:
+        return False
+    if norm in _BOT_HARD_COMMANDS:
+        return True
+    for prefix in _BOT_COMMAND_PREFIXES:
+        p = _strip_accents_lower(prefix)
+        if norm == p or norm.startswith(p + " "):
+            return True
+    return False
+
+
+def _matches_client_intent(text):
+    """Espejo mínimo de `detectClientIntent` (bot.js) para decisiones back."""
+    norm = _strip_accents_lower(text)
+    if not norm:
+        return False
+    # Match numérico 1-7 → menú directo, ya cubierto como hard command.
+    for _opt, keywords in _bot_intent_keywords().items():
+        for kw in keywords:
+            k = _strip_accents_lower(kw)
+            if not k:
+                continue
+            # keyword corta → palabra entera; larga → substring.
+            if len(k) <= 4:
+                if re.search(rf"\b{re.escape(k)}\b", norm):
+                    return True
+            elif k in norm:
+                return True
+    return False
+
+
+def _ai_hourly_limit_client():
+    return _ai_limit("AI_MAX_MESSAGES_PER_HOUR", 20)
+
+
+def _client_ai_hourly_count(phone_hash):
+    since = _utcnow() - timedelta(hours=1)
+    return BotAiUsage.query.filter(
+        BotAiUsage.creado_en >= since,
+        BotAiUsage.telefono_hash == phone_hash,
+    ).count()
+
+
+@api_bot_bp.route("/ai/route", methods=["POST"])
+@bot_required
+def ai_route():
+    """Decide qué debe hacer el bot ante un mensaje del cliente.
+
+    Payload: {"telefono": str, "mensaje": str, "force_ai": bool?}
+
+    Respuesta:
+        {"ok": true, "route": "menu"|"noop"|"ai"|"handoff",
+         "reason": str, "message": str?}
+
+    Reglas de decisión (en orden):
+      1. force_ai (equivalente a `!ia` explícito) → route=ai, salta rate limit.
+      2. Mensaje vacío o solo whitespace → noop.
+      3. Comando duro (MENU, ESTADO, CANCELAR, …, 1-7) → menu (deja que el
+         router del bot lo procese; no hay IA).
+      4. Intent conocido (detectClientIntent-espejo) → noop.
+      5. IA no configurada → noop.
+      6. No parece pregunta (≤10 chars o sin patrón) → noop.
+      7. Rate limit por cliente excedido → handoff.
+      8. Todo lo demás → ai.
+    """
+    payload = request.get_json(silent=True) or {}
+    mensaje = str(payload.get("mensaje") or "").strip()
+    force_ai = bool(payload.get("force_ai") or payload.get("forzar_ia"))
+    phone_hash, telefono_norm = _ai_phone_hash(payload.get("telefono"))
+
+    if not telefono_norm or not telefono_valido(telefono_norm):
+        return jsonify({"ok": False, "error": "telefono inválido"}), 400
+
+    if not mensaje:
+        return jsonify({"ok": True, "route": "noop", "reason": "empty"})
+
+    # 1. Override manual (equivale a `!ia` de admin): salta rate limit
+    #    pero exige IA configurada.
+    if force_ai:
+        provider = (SiteConfig.get("BOT_AI_PROVIDER", "") or "").strip().lower()
+        api_key = SiteConfig.get("BOT_AI_API_KEY", "") or ""
+        ai_enabled = (
+            _config_bool("BOT_AI_ENABLED")
+            and provider in {"openai", "groq"}
+            and bool(api_key)
+        )
+        if not ai_enabled:
+            return jsonify({
+                "ok": True, "route": "noop", "reason": "ai_disabled",
+                "message": "no entendí, escribe MENU para ver opciones",
+            })
+        return jsonify({"ok": True, "route": "ai", "reason": "force_ai"})
+
+    # 3. Comando duro → devolvemos "menu" para que el bot procese sin IA.
+    if _matches_hard_command(mensaje):
+        return jsonify({"ok": True, "route": "menu", "reason": "hard_command"})
+
+    # 4. Intent conocido → dejamos pasar al flujo estándar (no IA).
+    if _matches_client_intent(mensaje):
+        return jsonify({"ok": True, "route": "noop", "reason": "client_intent"})
+
+    # 5. IA no configurada → noop + mensaje de fallback amable.
+    provider = (SiteConfig.get("BOT_AI_PROVIDER", "") or "").strip().lower()
+    api_key = SiteConfig.get("BOT_AI_API_KEY", "") or ""
+    ai_enabled = (
+        _config_bool("BOT_AI_ENABLED")
+        and provider in {"openai", "groq"}
+        and bool(api_key)
+    )
+    if not ai_enabled:
+        return jsonify({
+            "ok": True, "route": "noop", "reason": "ai_disabled",
+            "message": "no entendí, escribe MENU para ver opciones",
+        })
+
+    # 6. No parece pregunta → noop (deja pasar el flujo estándar, que decidirá
+    #    saludo/FAQ/fallback como hoy).
+    if not _looks_like_question(mensaje):
+        return jsonify({"ok": True, "route": "noop", "reason": "not_question"})
+
+    # 7. Rate limit por cliente (mensajes IA en la última hora).
+    if phone_hash:
+        limit_hour = _ai_hourly_limit_client()
+        count_hour = _client_ai_hourly_count(phone_hash)
+        if count_hour >= limit_hour:
+            return jsonify({
+                "ok": True, "route": "handoff", "reason": "rate_limit",
+                "message": (
+                    "Estamos recibiendo muchas consultas ahora mismo. "
+                    "Te contactamos en breve por este mismo chat."
+                ),
+                "count_last_hour": count_hour,
+                "limit_last_hour": limit_hour,
+            })
+
+    # 8. Todo OK → IA responde.
+    return jsonify({"ok": True, "route": "ai", "reason": "auto"})
+
+
 @api_bot_bp.route("/security/admin-pin-hash")
 @bot_required
 def admin_pin_hash():
