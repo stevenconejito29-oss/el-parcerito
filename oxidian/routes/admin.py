@@ -124,6 +124,7 @@ _FEATURE_URL_MAP = {
     "/admin/usuarios":     "usuarios",
     "/admin/clientes":            "usuarios",
     "/admin/clientes/editar":     "usuarios",
+    "/admin/telefonos":           "usuarios",
     "/admin/cola":         "pos",
     "/admin/pedidos":      "pos",
     "/admin/productos":    "productos",
@@ -4653,6 +4654,70 @@ def analytics():
                            labels_dias=labels_dias,
                            data_pedidos=data_pedidos,
                            data_totales=data_totales)
+
+
+# ─── ROSTER DE TELÉFONOS POR ROL ──────────────
+
+@admin_bp.route("/telefonos")
+@admin_required
+def telefonos_roster():
+    """Roster consolidado de teléfonos por rol.
+
+    Un panel que responde a "¿qué número está conectado a qué perfil?" —
+    útil para verificar que el bot admin, los repartidores y los operadores
+    de bar están enlazados a los números correctos.
+
+    - Staff interno (rol ∈ ROLES_AUTENTICABLES) — desde BD.
+    - Operadores de bar — desde `Proveedor`.
+    - Env: OWNER_NUMBER y SUPERADMINS del bot admin.
+    - Cross-check: alerta si env autoriza un teléfono que no tiene
+      User(super_admin) activo (mismo problema que resolvió PR #4 en el back;
+      aquí visible en la UI).
+
+    Read-only. Edición reutiliza `editar_usuario` existente (link por fila).
+    """
+    from models import Proveedor
+    import os as _os
+    from collections import defaultdict
+
+    staff = User.query.filter(
+        User.rol.in_(ROLES_AUTENTICABLES),
+    ).order_by(User.rol, User.nombre).all()
+
+    proveedores = Proveedor.query.filter_by(activo=True).order_by(Proveedor.nombre).all()
+
+    env_owner = re.sub(r"\D", "", _os.environ.get("OWNER_NUMBER", "") or "")
+    env_superadmins = [
+        re.sub(r"\D", "", chunk)
+        for chunk in (_os.environ.get("SUPERADMINS", "") or "").split(",")
+        if chunk.strip()
+    ]
+    env_privileged = {d for d in ([env_owner] + env_superadmins) if d}
+
+    db_super_admin_digits = {
+        re.sub(r"\D", "", u.telefono_normalizado or u.telefono or "")
+        for u in staff
+        if u.rol == "super_admin" and (u.telefono_normalizado or u.telefono)
+    }
+    db_super_admin_digits.discard("")
+
+    env_solo = sorted(env_privileged - db_super_admin_digits)
+    env_ok = sorted(env_privileged & db_super_admin_digits)
+
+    por_rol = defaultdict(list)
+    for u in staff:
+        por_rol[u.rol].append(u)
+
+    return render_template(
+        "admin/telefonos_roster.html",
+        por_rol=dict(por_rol),
+        proveedores=proveedores,
+        env_privileged=env_privileged,
+        env_solo=env_solo,
+        env_ok=env_ok,
+        puede_editar_staff=(getattr(current_user, "rol", None) in ("admin", "super_admin")),
+        puede_editar_proveedor=(getattr(current_user, "rol", None) == "super_admin"),
+    )
 
 
 # ─── HISTORIAL CLIENTE ────────────────────────

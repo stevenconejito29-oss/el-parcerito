@@ -1,0 +1,152 @@
+{% extends "admin_base.html" %}
+{% block title %}Roster de teléfonos por rol{% endblock %}
+{% block content %}
+
+<div class="mb-5">
+  <h1 class="text-2xl font-black text-white">Roster de teléfonos</h1>
+  <p class="text-sm mt-1" style="color:var(--col-muted)">
+    Qué número está conectado a qué perfil. Fuente autoritativa: base de datos.
+    El env <code>OWNER_NUMBER</code>/<code>SUPERADMINS</code> es whitelist del bot;
+    no otorga rol por sí solo (ver PR #4).
+  </p>
+</div>
+
+{# ── Cross-check env vs BD ─────────────────────────────────── #}
+{% if env_solo %}
+<div class="ox-card p-4 mb-4" style="border-color:var(--theme-danger,#ef4444);background:color-mix(in srgb, var(--theme-danger,#ef4444) 8%, var(--col-surface));">
+  <h3 class="font-black" style="color:var(--theme-danger,#ef4444);margin-bottom:.5rem;">
+    ⚠ Env autoriza números que no existen como super_admin en BD
+  </h3>
+  <p class="text-sm mb-2" style="color:var(--col-text);">
+    Estos dígitos están en <code>OWNER_NUMBER</code> o <code>SUPERADMINS</code> del contenedor,
+    pero <strong>no hay un <code>User(rol='super_admin', activo=True)</code> con ese teléfono</strong>.
+    El bot los rechaza (PR #4) y logea warning. Arregla en BD o quita del env.
+  </p>
+  <ul style="font-family:var(--font-mono,monospace);font-size:.85rem;color:var(--col-text);">
+    {% for d in env_solo %}
+    <li>+{{ d }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if env_ok %}
+<div class="ox-card p-3 mb-4" style="border-color:var(--theme-success,#22c55e);background:color-mix(in srgb, var(--theme-success,#22c55e) 6%, var(--col-surface));">
+  <p style="color:var(--col-text);font-size:.85rem;margin:0;">
+    ✓ Env sincronizado con BD para {{ env_ok|length }} número(s) super_admin.
+  </p>
+</div>
+{% endif %}
+
+{# ── Staff por rol ──────────────────────────────────────────── #}
+{% set _rol_labels = {
+  'super_admin': ('Super Admin', '#a855f7'),
+  'admin':       ('Admin',       '#3b82f6'),
+  'preparacion': ('Preparación', '#e85d04'),
+  'cocina':      ('Cocina',      '#e85d04'),
+  'repartidor':  ('Repartidor',  '#22c55e'),
+} %}
+
+{% for rol_key, users in por_rol.items() %}
+{% set _label, _color = _rol_labels.get(rol_key, (rol_key, '#888')) %}
+<div class="ox-card p-4 mb-4">
+  <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;">
+    <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ _color }};"></span>
+    <h2 class="text-lg font-black" style="color:var(--col-text);">{{ _label }}</h2>
+    <span class="ox-chip" style="margin-left:auto;">{{ users|length }} activo(s)</span>
+  </div>
+  <div class="ox-table-wrap">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b" style="border-color:var(--col-border);">
+        <th class="text-left p-2 text-xs font-black" style="color:var(--col-muted);">Nombre</th>
+        <th class="text-left p-2 text-xs font-black" style="color:var(--col-muted);">Teléfono</th>
+        <th class="text-left p-2 text-xs font-black" style="color:var(--col-muted);">Email</th>
+        <th class="text-center p-2 text-xs font-black" style="color:var(--col-muted);">Estado</th>
+        <th class="text-right p-2 text-xs font-black" style="color:var(--col-muted);">Acción</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      {% set _tel_digits = (u.telefono_normalizado or u.telefono or '')|replace('+','')|replace(' ','')|replace('-','') %}
+      {% set _en_env = _tel_digits in env_privileged %}
+      <tr class="border-b" style="border-color:var(--col-border);">
+        <td class="p-2" style="color:var(--col-text);font-weight:600;">{{ u.nombre or '(sin nombre)' }}</td>
+        <td class="p-2" style="font-family:var(--font-mono,monospace);color:var(--col-text);">
+          {{ u.telefono_normalizado or u.telefono or '—' }}
+          {% if _en_env %}<span class="ox-chip" style="margin-left:.35rem;font-size:.7rem;background:color-mix(in srgb, #22c55e 20%, transparent);color:#22c55e;">en env</span>{% endif %}
+        </td>
+        <td class="p-2" style="color:var(--col-muted);font-size:.8rem;">{{ u.email or '' }}</td>
+        <td class="p-2 text-center">
+          {% if u.activo %}<span style="color:#22c55e;">✓ Activo</span>
+          {% else %}<span style="color:var(--col-muted);">Inactivo</span>{% endif %}
+        </td>
+        <td class="p-2 text-right">
+          {% if puede_editar_staff %}
+          <a href="{{ url_for('admin.editar_usuario', user_id=u.id) }}"
+             class="ox-btn-secondary" style="font-size:.75rem;padding:.3rem .55rem;">Editar</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not users %}
+      <tr><td colspan="5" class="p-3 text-center" style="color:var(--col-muted);">Sin usuarios en este rol.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endfor %}
+
+{# ── Bar operators (Proveedor.telefono) ─────────────────────── #}
+{% if proveedores %}
+<div class="ox-card p-4 mb-4">
+  <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;">
+    <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#fb923c;"></span>
+    <h2 class="text-lg font-black" style="color:var(--col-text);">Bar operators</h2>
+    <span class="ox-chip" style="margin-left:auto;">{{ proveedores|length }} activo(s)</span>
+  </div>
+  <p class="text-xs" style="color:var(--col-muted);margin-bottom:.5rem;">
+    Teléfono operador del bar (usado por el bot para menú bar).
+  </p>
+  <div class="ox-table-wrap">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b" style="border-color:var(--col-border);">
+        <th class="text-left p-2 text-xs font-black" style="color:var(--col-muted);">Bar</th>
+        <th class="text-left p-2 text-xs font-black" style="color:var(--col-muted);">Teléfono operador</th>
+        <th class="text-left p-2 text-xs font-black" style="color:var(--col-muted);">Modelo acuerdo</th>
+        <th class="text-right p-2 text-xs font-black" style="color:var(--col-muted);">Acción</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in proveedores %}
+      <tr class="border-b" style="border-color:var(--col-border);">
+        <td class="p-2" style="color:var(--col-text);font-weight:600;">{{ p.nombre }}</td>
+        <td class="p-2" style="font-family:var(--font-mono,monospace);color:var(--col-text);">
+          {{ p.telefono or '—' }}
+        </td>
+        <td class="p-2" style="color:var(--col-muted);font-size:.8rem;">{{ p.modelo_acuerdo or '—' }}</td>
+        <td class="p-2 text-right">
+          {% if puede_editar_proveedor %}
+          <a href="{{ url_for('admin.editar_proveedor', proveedor_id=p.id) }}"
+             class="ox-btn-secondary" style="font-size:.75rem;padding:.3rem .55rem;">Editar</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="ox-card p-3 mt-4" style="background:color-mix(in srgb, var(--col-text) 4%, var(--col-surface));">
+  <p style="color:var(--col-muted);font-size:.8rem;margin:0;">
+    <strong style="color:var(--col-text);">Cimientos:</strong> la BD es fuente autoritativa
+    del rol; el env solo dice qué números pueden hablar con el bot admin (whitelist).
+    Los teléfonos de clientes están en <a href="{{ url_for('admin.clientes') }}" style="color:var(--brand-primary);">/admin/clientes</a>.
+  </p>
+</div>
+
+{% endblock %}
