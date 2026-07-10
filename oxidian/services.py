@@ -683,7 +683,15 @@ def asignar_zona_por_direccion(direccion: str, zonas):
 
 
 def asignar_zona_por_coordenadas(lat, lon, zonas):
-    """Resuelve zona y distancia usando coordenadas concedidas por el navegador."""
+    """Resuelve zona y distancia usando coordenadas concedidas por el navegador.
+
+    Estrategia (por orden):
+    1. Si hay zonas con centro+radio: matchea contra la más cercana dentro
+       del radio.
+    2. Si NO hay zonas con geo pero SÍ hay coordenadas del NEGOCIO
+       (SiteConfig.DIRECCION_NEGOCIO_LAT/LNG + RADIO_ENTREGA_KM), valida
+       contra el centro del negocio con ese radio.
+    3. Fallback final: primera zona activa (compat con zonas legacy sin geo)."""
     if not zonas:
         return None, None
     try:
@@ -692,20 +700,41 @@ def asignar_zona_por_coordenadas(lat, lon, zonas):
         return None, None
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return None, None
+
+    # 1) Zonas con geo configurado — mejor match por distancia dentro del radio
     geo_zonas = [zona for zona in zonas if zona.activo and zona.tiene_geo]
-    if not geo_zonas:
+    if geo_zonas:
+        candidatos = []
+        for zona in geo_zonas:
+            distancia = _haversine_km(zona.centro_lat, zona.centro_lng, lat, lon)
+            if distancia <= float(zona.radio_km):
+                candidatos.append((distancia, zona))
+        if not candidatos:
+            return None, None
+        candidatos.sort(key=lambda row: (row[0], row[1].orden or 0, row[1].id))
+        distancia, zona = candidatos[0]
+        return zona, round(distancia, 2)
+
+    # 2) Sin zonas geo: usa centro del negocio como fallback si está configurado
+    from models import SiteConfig
+    try:
+        neg_lat = float(SiteConfig.get("NEGOCIO_LAT", "") or 0) or None
+        neg_lng = float(SiteConfig.get("NEGOCIO_LNG", "") or 0) or None
+        neg_radio = float(SiteConfig.get("RADIO_ENTREGA_KM", "") or 0) or None
+    except (TypeError, ValueError):
+        neg_lat = neg_lng = neg_radio = None
+    if neg_lat is not None and neg_lng is not None and neg_radio and neg_radio > 0:
+        distancia = _haversine_km(neg_lat, neg_lng, lat, lon)
         activas = [zona for zona in zonas if zona.activo]
-        return (activas[0], None) if activas else (None, None)
-    candidatos = []
-    for zona in geo_zonas:
-        distancia = _haversine_km(zona.centro_lat, zona.centro_lng, lat, lon)
-        if distancia <= float(zona.radio_km):
-            candidatos.append((distancia, zona))
-    if not candidatos:
-        return None, None
-    candidatos.sort(key=lambda row: (row[0], row[1].orden or 0, row[1].id))
-    distancia, zona = candidatos[0]
-    return zona, round(distancia, 2)
+        if distancia <= neg_radio and activas:
+            # Ordena por precio ascendente (zona más barata / centro por defecto)
+            activas.sort(key=lambda z: (z.orden or 0, float(z.precio_envio or 0)))
+            return activas[0], round(distancia, 2)
+        return None, round(distancia, 2)
+
+    # 3) Fallback legacy: zonas sin geo, sin config negocio → primera activa
+    activas = [zona for zona in zonas if zona.activo]
+    return (activas[0], None) if activas else (None, None)
 
 
 def validar_radio_entrega(direccion: str) -> dict:
