@@ -100,6 +100,18 @@ test('la sesión legacy de bar conserva datos si existe en base', () => {
 });
 
 test('los menús públicos y admin están separados por rol', () => {
+  // Requiere perfil DB-derivado (whatsapp_role_profiles) para conceder
+  // super_admin. El env por sí solo ya no basta: es whitelist de acceso,
+  // no fuente del rol. Coherente con _resolver_actor_admin_bot del backend.
+  setCfg('whatsapp_role_profiles', JSON.stringify([{
+    telefono: '34600000001',
+    rol: 'super_admin',
+    capabilities: [
+      'status', 'store', 'products', 'points', 'admins', 'handoff',
+      'sync', 'security', 'emergency', 'risks', 'client_mode', 'ai',
+    ],
+  }]));
+
   const clientMenu = menuPrincipal();
   const globalMenu = adminMenu(adminA);
 
