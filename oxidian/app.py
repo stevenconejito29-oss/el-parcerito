@@ -894,6 +894,17 @@ def _seed_admin():
             SiteConfig.set(clave, valor, descripcion=desc)
             changed = True
 
+    # Sembrado de claves nuevas (fiscal + anti-hardcoding). Idempotente:
+    # solo escribe las que aún no existen.
+    try:
+        from config_defaults import sembrar_defaults
+        if sembrar_defaults() > 0:
+            changed = True
+    except Exception:
+        # No queremos que un fallo aquí impida arrancar la app; el resto
+        # de defaults sí se persistieron.
+        pass
+
     if changed:
         db.session.commit()
 

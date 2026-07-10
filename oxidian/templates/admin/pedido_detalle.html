@@ -204,10 +204,22 @@
           <b style="color:var(--col-muted)">−€{{ "%.2f"|format(pedido.service_commission_amount) }}</b>
         </div>
         {% endif %}
+        {% if pedido.iva_total and pedido.iva_total > 0 %}
+        <div class="detail-total-row">
+          <span>IVA incluido</span>
+          <b style="color:var(--col-muted)">€{{ "%.2f"|format(pedido.iva_total) }}</b>
+        </div>
+        {% endif %}
         <div class="detail-total-row detail-total-final">
           <span>Total</span>
           <b class="ord-total">€{{ "%.2f"|format(pedido.total or 0) }}</b>
         </div>
+        {% if pedido.cliente and pedido.cliente.nif %}
+        <div class="detail-total-row" style="margin-top:.5rem;padding-top:.5rem;border-top:1px dashed var(--col-border);">
+          <span>NIF cliente</span>
+          <b style="font-family:var(--font-mono,monospace);">{{ pedido.cliente.nif }}</b>
+        </div>
+        {% endif %}
       </section>
 
       {# Asignación (form como el de la lista) #}
@@ -242,18 +254,26 @@
       {# Código de confirmación (si aplica) #}
       {% if pedido.codigo_confirmacion and pedido.estado in ('listo','en_ruta') %}
       <section class="ox-card p-4 mt-3">
-        <h2 class="detail-section-title">🔑 Confirmación de entrega</h2>
+        <h2 class="detail-section-title">Confirmación de entrega</h2>
         <p class="detail-code">{{ pedido.codigo_confirmacion }}</p>
         <p class="text-xs" style="color:var(--col-muted);">
           El cliente debe leer este código al repartidor al recibir el pedido.
           {% if pedido.intentos_codigo %}
           <br><strong>{{ 3 - pedido.intentos_codigo }} intento(s) restantes</strong>
           {% endif %}
+          {% if pedido.codigo_confirmacion_expira_en %}
+          <br>
+          {% if pedido.codigo_confirmacion_expirado %}
+            <strong style="color:var(--col-danger,#c0392b);">Código expirado — regenéralo.</strong>
+          {% else %}
+            <span>Válido hasta {{ pedido.codigo_confirmacion_expira_en.strftime('%d/%m %H:%M') }}</span>
+          {% endif %}
+          {% endif %}
         </p>
-        {% if pedido.intentos_codigo >= 3 %}
+        {% if pedido.intentos_codigo >= 3 or pedido.codigo_confirmacion_expirado %}
         <form method="POST" action="{{ url_for('admin.reset_codigo_confirmacion', pedido_id=pedido.id) }}" class="mt-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="ord-btn" style="width:100%;">🔄 Regenerar código</button>
+          <button type="submit" class="ord-btn" style="width:100%;">Regenerar código</button>
         </form>
         {% endif %}
       </section>

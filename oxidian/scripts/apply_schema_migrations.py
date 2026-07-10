@@ -25,6 +25,7 @@ from models import (
     OrderEvent,
     OrderProviderStatus,
     Product,
+    ProductVariant,
     ExtraCatalogItem,
     ProductExtraGroup,
     ProductExtraOption,
@@ -976,6 +977,154 @@ def _migrate_product_extra_groups_current_schema():
     )
 
 
+def _migrate_user_zona_repartidor():
+    """Añade users.zona_repartidor_id (FK zonas_entrega) para asignar zona al repartidor."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("users") or not inspector.has_table("zonas_entrega"):
+        return
+    cols = {col["name"] for col in inspector.get_columns("users")}
+    if "zona_repartidor_id" not in cols:
+        db.session.execute(text(
+            "ALTER TABLE users ADD COLUMN zona_repartidor_id INTEGER NULL "
+            "REFERENCES zonas_entrega(id) ON DELETE SET NULL"
+        ))
+
+
+def _migrate_order_codigo_confirmacion_expira():
+    """Añade orders.codigo_confirmacion_expira_en (DateTime nullable) para
+    aplicar TTL a los códigos de entrega. Idempotente en todos los dialectos."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("orders"):
+        return
+    cols = {c["name"] for c in inspector.get_columns("orders")}
+    if "codigo_confirmacion_expira_en" in cols:
+        return
+    dialect = db.engine.dialect.name
+    if dialect == "postgresql":
+        db.session.execute(text(
+            "ALTER TABLE orders ADD COLUMN codigo_confirmacion_expira_en TIMESTAMP NULL"
+        ))
+    elif dialect == "mysql":
+        db.session.execute(text(
+            "ALTER TABLE orders ADD COLUMN codigo_confirmacion_expira_en DATETIME NULL"
+        ))
+    else:
+        db.session.execute(text(
+            "ALTER TABLE orders ADD COLUMN codigo_confirmacion_expira_en DATETIME"
+        ))
+
+
+def _migrate_product_iva_pct():
+    """Añade products.iva_pct (NUMERIC(4,2) nullable).
+
+    Nullable → si es NULL, en `_resolver_iva_pct_producto` se aplica el
+    default por vertical desde SiteConfig (IVA_DEFAULT_COMIDA/IVA_DEFAULT_RETAIL).
+    """
+    inspector = inspect(db.engine)
+    if not inspector.has_table("products"):
+        return
+    cols = {c["name"] for c in inspector.get_columns("products")}
+    if "iva_pct" in cols:
+        return
+    dialect = db.engine.dialect.name
+    if dialect in ("postgresql", "mysql"):
+        db.session.execute(text(
+            "ALTER TABLE products ADD COLUMN iva_pct NUMERIC(4,2) NULL"
+        ))
+    else:
+        db.session.execute(text(
+            "ALTER TABLE products ADD COLUMN iva_pct NUMERIC(4,2)"
+        ))
+
+
+def _migrate_order_iva_total():
+    """Añade orders.iva_total (NUMERIC(10,2) NOT NULL default 0).
+
+    Se calcula al confirmar el pedido a partir del snapshot iva_pct de cada
+    OrderItem. Los pedidos preexistentes se quedan en 0 (correcto: no hay
+    reprocesado retro-activo)."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("orders"):
+        return
+    cols = {c["name"] for c in inspector.get_columns("orders")}
+    if "iva_total" in cols:
+        return
+    dialect = db.engine.dialect.name
+    if dialect == "postgresql":
+        db.session.execute(text(
+            "ALTER TABLE orders ADD COLUMN iva_total NUMERIC(10,2) NOT NULL DEFAULT 0"
+        ))
+    elif dialect == "mysql":
+        db.session.execute(text(
+            "ALTER TABLE orders ADD COLUMN iva_total DECIMAL(10,2) NOT NULL DEFAULT 0"
+        ))
+    else:
+        db.session.execute(text(
+            "ALTER TABLE orders ADD COLUMN iva_total NUMERIC(10,2) DEFAULT 0"
+        ))
+
+
+def _migrate_user_nif():
+    """Añade users.nif (VARCHAR(15) nullable) para facturación fiscal opcional."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("users"):
+        return
+    cols = {c["name"] for c in inspector.get_columns("users")}
+    if "nif" in cols:
+        return
+    db.session.execute(text(
+        "ALTER TABLE users ADD COLUMN nif VARCHAR(15) NULL"
+    ))
+
+
+def _migrate_product_variants():
+    """Crea la tabla `product_variants` (variantes retail: talla/color/precio/stock).
+
+    Idempotente:
+    - Si la tabla ya existe, no hace nada (db.create_all previo la habrá creado
+      desde el modelo cuando aplique).
+    - Añade además el índice único parcial en Postgres para evitar duplicados
+      (product_id, talla, color) cuando ambos no son NULL.
+    """
+    inspector = inspect(db.engine)
+    if not inspector.has_table("products"):
+        return
+    if not inspector.has_table("product_variants"):
+        # db.create_all() en apply_migrations() ya la habrá creado desde el
+        # metadata del modelo. Si aún así falta (dialecto atípico), la creamos
+        # en bruto.
+        dialect = db.engine.dialect.name
+        if dialect == "postgresql":
+            db.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS product_variants (
+                    id SERIAL PRIMARY KEY,
+                    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                    sku VARCHAR(60) UNIQUE,
+                    talla VARCHAR(20),
+                    color VARCHAR(40),
+                    color_hex VARCHAR(7),
+                    precio_override NUMERIC(10,2),
+                    stock INTEGER NOT NULL DEFAULT 0,
+                    activo BOOLEAN NOT NULL DEFAULT TRUE,
+                    orden INTEGER NOT NULL DEFAULT 0,
+                    imagen_url VARCHAR(300)
+                )
+            """))
+    # Índice de orden (idempotente).
+    dialect = db.engine.dialect.name
+    if dialect == "postgresql":
+        db.session.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_product_variants_producto_orden
+            ON product_variants (product_id, orden)
+        """))
+        # Índice único parcial para (product_id, talla, color) cuando ambos no son NULL.
+        db.session.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_product_variants_talla_color
+            ON product_variants (product_id, talla, color)
+            WHERE talla IS NOT NULL AND color IS NOT NULL
+        """))
+
+
 MIGRATIONS = [
     {
         "id": "20260526_01_order_events_notification_outbox",
@@ -1140,6 +1289,40 @@ MIGRATIONS = [
         "id": "20260707_01_product_extra_groups_current_schema",
         "description": "Alinear product_extra_groups legacy con columnas actuales de selección",
         "fn": _migrate_product_extra_groups_current_schema,
+    },
+    {
+        "id": "20260710_01_order_codigo_confirmacion_expira",
+        "description": "orders.codigo_confirmacion_expira_en (TTL configurable del código de entrega)",
+        "fn": _migrate_order_codigo_confirmacion_expira,
+    },
+    {
+        "id": "20260710_02_user_zona_repartidor",
+        "description": "users.zona_repartidor_id (FK zonas_entrega) para restringir pedidos por zona asignada",
+        "fn": _migrate_user_zona_repartidor,
+    },
+    {
+        "id": "20260710_03_product_iva_pct",
+        "description": "Product.iva_pct (tasa IVA por producto — España, fallback por vertical)",
+        "fn": _migrate_product_iva_pct,
+    },
+    {
+        "id": "20260710_04_order_iva_total",
+        "description": "Order.iva_total (IVA congelado por pedido para exportación fiscal)",
+        "fn": _migrate_order_iva_total,
+    },
+    {
+        "id": "20260710_05_user_nif",
+        "description": "User.nif (NIF/DNI/NIE/CIF opcional para facturas a empresa)",
+        "fn": _migrate_user_nif,
+    },
+    {
+        "id": "20260710_10_product_variants",
+        "description": (
+            "product_variants: variantes retail (talla/color/precio_override/stock) "
+            "por producto con vertical producto|ambos"
+        ),
+        "tables": [ProductVariant.__table__],
+        "fn": _migrate_product_variants,
     },
 ]
 

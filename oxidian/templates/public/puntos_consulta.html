@@ -86,7 +86,11 @@ document.getElementById('points-lookup-form')?.addEventListener('submit', async 
       headers: {'Content-Type':'application/json','X-CSRFToken':csrf},
       body: JSON.stringify({telefono: phone}),
     });
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 503 || data.service_available === false) {
+      status.textContent = data.msg || 'Servicio de WhatsApp no disponible ahora mismo. Reintenta en unos minutos.';
+      return;
+    }
     status.textContent = data.msg || 'Revisa tu WhatsApp.';
   } catch (_error) {
     status.textContent = 'No pudimos enviar la consulta. Inténtalo de nuevo.';

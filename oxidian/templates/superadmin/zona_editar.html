@@ -59,13 +59,13 @@
     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
       <div class="ox-field">
         <label class="ox-label">Centro lat</label>
-        <input type="number" name="centro_lat" step="0.000001" min="-90" max="90"
+        <input type="number" name="centro_lat" id="centro_lat" step="0.000001" min="-90" max="90"
                value="{{ zona.centro_lat or '' }}" class="ox-input"
                placeholder="37.4698">
       </div>
       <div class="ox-field">
         <label class="ox-label">Centro lng</label>
-        <input type="number" name="centro_lng" step="0.000001" min="-180" max="180"
+        <input type="number" name="centro_lng" id="centro_lng" step="0.000001" min="-180" max="180"
                value="{{ zona.centro_lng or '' }}" class="ox-input"
                placeholder="-5.6435">
       </div>
@@ -76,7 +76,42 @@
                placeholder="5">
       </div>
     </div>
+    <div class="mt-3">
+      <button type="button" class="ox-btn-ghost text-sm" onclick="usarMiUbicacion(this)">
+        📍 Usar mi ubicación actual
+      </button>
+      <span id="geo_status" class="text-xs ml-2" style="color:var(--col-muted)"></span>
+    </div>
   </details>
+
+  <script>
+    function usarMiUbicacion(btn) {
+      const status = document.getElementById('geo_status');
+      if (!navigator.geolocation) {
+        status.textContent = 'Tu navegador no soporta geolocalización.';
+        status.style.color = '#f87171';
+        return;
+      }
+      btn.disabled = true;
+      status.textContent = 'Obteniendo ubicación...';
+      status.style.color = 'var(--col-muted)';
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          document.getElementById('centro_lat').value = pos.coords.latitude.toFixed(6);
+          document.getElementById('centro_lng').value = pos.coords.longitude.toFixed(6);
+          status.textContent = `Ubicación fijada (±${Math.round(pos.coords.accuracy)} m).`;
+          status.style.color = '#4ade80';
+          btn.disabled = false;
+        },
+        (err) => {
+          status.textContent = 'No se pudo obtener la ubicación: ' + err.message;
+          status.style.color = '#f87171';
+          btn.disabled = false;
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
+  </script>
 
   <div class="flex gap-3 mt-5">
     <button type="submit" class="ox-btn-primary">Guardar cambios</button>

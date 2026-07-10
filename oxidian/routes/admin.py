@@ -4,7 +4,7 @@ import uuid
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from urllib.parse import urlparse
-from flask import Blueprint, render_template, request, redirect, url_for, flash, make_response, abort
+from flask import Blueprint, render_template, request, redirect, url_for, flash, make_response, abort, jsonify
 from flask_login import login_required, current_user
 from functools import wraps
 from datetime import datetime, date, timedelta
@@ -18,8 +18,8 @@ from extensions import db, get_or_404
 from models import (ROLES_AUTENTICABLES, User, Product, Categoria, Stock, Order, OrderItem, Review,
                     Coupon, ComboGroup, ComboItem, ExtraCatalogItem, ProductExtraGroup, ProductExtraOption, Caja, PointsLog, StaffPayment,
                     AffiliateCode, AffiliateUse, MenuConfig,
-                    PriceHistory, ProductPresentation, TAMAÑOS_PRESENTACION, SiteConfig, AuditLog,
-                    AdminFeature, NotificationOutbox, normalizar_metodo_pago, utcnow)
+                    PriceHistory, ProductPresentation, ProductVariant, TAMAÑOS_PRESENTACION, SiteConfig, AuditLog,
+                    AdminFeature, NotificationOutbox, ZonaEntrega, normalizar_metodo_pago, utcnow)
 from combo_validators import (
     ComboLimits,
     validate_component_quantity,
@@ -316,6 +316,40 @@ def admin_required(f):
 def marketing_or_admin_required(f):
     """Alias de admin_required — el rol marketing fue eliminado, solo admin/super_admin."""
     return admin_required(f)
+
+
+def super_admin_required(f):
+    @wraps(f)
+    @login_required
+    def decorated(*args, **kwargs):
+        if getattr(current_user, "rol", None) != "super_admin":
+            flash("Esta acción requiere super_admin.", "danger")
+            return redirect(url_for("admin.dashboard"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _puede_editar_vertical() -> bool:
+    """Autoriza el cambio del vertical del producto. Delega la política a
+    `permissions.allow` (fuente única compartida con el bot)."""
+    from permissions import ACTIONS, actor_from_user, allow
+    if not getattr(current_user, "is_authenticated", False):
+        return False
+    return allow(actor_from_user(current_user), ACTIONS.CATALOG_WRITE_VERTICAL)
+
+
+def _aplicar_politica_vertical(campos: dict, producto_actual=None) -> None:
+    """Sanea el campo `vertical` en `campos` según rol.
+    - super_admin: respeta lo que venga del form.
+    - admin (edición): elimina la clave para preservar el valor persistido.
+    - admin (creación): fuerza el default 'ambos' (visible en ambos catálogos).
+    Aplicar antes de instanciar Product(**campos) o setattr en edición."""
+    if _puede_editar_vertical():
+        return
+    if producto_actual is not None:
+        campos.pop("vertical", None)
+    else:
+        campos["vertical"] = "ambos"
 
 
 # ─── DASHBOARD ───────────────────────────────
@@ -2532,6 +2566,7 @@ def crear_producto():
         campos["imagen_url"] = ruta_subida
     campos["es_combo"] = False
     campos["tipo_producto"] = "simple"
+    _aplicar_politica_vertical(campos)
     p = Product(**campos)
     db.session.add(p)
     try:
@@ -2608,6 +2643,7 @@ def nuevo_combo():
         campos["imagen_url"] = ruta_subida
 
     # Crear objeto combo (sin commit aún)
+    _aplicar_politica_vertical(campos)
     combo = Product(**campos)
     db.session.add(combo)
     db.session.flush()  # Para obtener ID sin commit
@@ -3021,6 +3057,7 @@ def editar_producto(producto_id):
             return redirect(url_for("admin.productos"))
     else:
         campos["proveedor_despachador_id"] = None
+    _aplicar_politica_vertical(campos, producto_actual=p)
     precio_anterior = float(p.precio)
     for attr, val in campos.items():
         setattr(p, attr, val)
@@ -5035,3 +5072,282 @@ def eliminar_combo(combo_id):
     ok, msg = _delete_or_archive_product(combo, current_user.id)
     flash(msg, "success" if ok else "danger")
     return redirect(url_for("admin.productos"))
+
+
+# ─────────────────────────────────────────────
+# ZONAS DE REPARTO (Fase 5)
+# Vista compartida admin + super_admin. Admin solo lectura + toggle activo.
+# Super_admin CRUD completo delega a routes/superadmin.py.
+# ─────────────────────────────────────────────
+
+def _serializar_zona(z):
+    return {
+        "id": z.id,
+        "nombre": z.nombre,
+        "descripcion": z.descripcion or "",
+        "activo": bool(z.activo),
+        "es_epicentro": bool(z.es_epicentro),
+        "precio_envio": float(z.precio_envio or 0),
+        "tiempo_estimado_min": int(z.tiempo_estimado_min or 0),
+        "gratis_desde": float(z.gratis_desde) if z.gratis_desde is not None else None,
+        "orden": int(z.orden or 0),
+        "centro_lat": float(z.centro_lat) if z.centro_lat is not None else None,
+        "centro_lng": float(z.centro_lng) if z.centro_lng is not None else None,
+        "radio_km": float(z.radio_km) if z.radio_km is not None else None,
+        "tiene_geo": bool(z.tiene_geo),
+    }
+
+
+@admin_bp.route("/zonas")
+@admin_required
+def zonas():
+    features = get_store_features()
+    if not features.get("delivery"):
+        flash("El módulo de delivery está desactivado.", "info")
+        return redirect(url_for("admin.dashboard"))
+    zonas_list = ZonaEntrega.query.order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
+    puede_editar = current_user.rol == "super_admin"
+    repartidores = User.query.filter(
+        User.rol == "repartidor", User.activo == True  # noqa: E712
+    ).order_by(User.nombre).all() if puede_editar else []
+    return render_template(
+        "admin/zonas.html",
+        zonas=zonas_list,
+        puede_editar=puede_editar,
+        repartidores=repartidores,
+    )
+
+
+@admin_bp.route("/zonas.json")
+@admin_required
+def zonas_json():
+    zonas_list = ZonaEntrega.query.order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
+    return jsonify({"zonas": [_serializar_zona(z) for z in zonas_list]})
+
+
+@admin_bp.route("/zonas/<int:zona_id>/toggle", methods=["POST"])
+@admin_required
+def toggle_zona_admin(zona_id):
+    features = get_store_features()
+    if not features.get("delivery"):
+        flash("El módulo de delivery está desactivado.", "info")
+        return redirect(url_for("admin.dashboard"))
+    zona = get_or_404(ZonaEntrega, zona_id)
+    if zona.activo:
+        activas_restantes = ZonaEntrega.query.filter(
+            ZonaEntrega.activo == True,  # noqa: E712
+            ZonaEntrega.id != zona.id,
+        ).count()
+        if activas_restantes == 0:
+            flash("No se puede desactivar la única zona activa.", "warning")
+            return redirect(url_for("admin.zonas"))
+    zona.activo = not zona.activo
+    AuditLog.registrar(
+        current_user.id,
+        "toggle_zona",
+        "zona_entrega",
+        zona.id,
+        detalle=f"activo={zona.activo}",
+    )
+    db.session.commit()
+    flash(
+        f"Zona «{zona.nombre}» {'activada' if zona.activo else 'desactivada'}.",
+        "success",
+    )
+    return redirect(url_for("admin.zonas"))
+
+
+@admin_bp.route("/zonas/<int:zona_id>/asignar_repartidor", methods=["POST"])
+@super_admin_required
+def asignar_repartidor_zona(zona_id):
+    """Asigna o desasigna un repartidor a una zona (solo super_admin)."""
+    zona = get_or_404(ZonaEntrega, zona_id)
+    user_id_raw = (request.form.get("user_id") or "").strip()
+    accion = (request.form.get("accion") or "asignar").strip()
+    if not user_id_raw.isdigit():
+        flash("Repartidor inválido.", "danger")
+        return redirect(url_for("admin.zonas"))
+    usuario = get_or_404(User, int(user_id_raw))
+    if usuario.rol != "repartidor":
+        flash("El usuario seleccionado no es repartidor.", "warning")
+        return redirect(url_for("admin.zonas"))
+    if accion == "desasignar":
+        usuario.zona_repartidor_id = None
+        detalle = f"desasignado de zona {zona.id}"
+    else:
+        usuario.zona_repartidor_id = zona.id
+        detalle = f"asignado a zona {zona.id}"
+    AuditLog.registrar(
+        current_user.id,
+        "asignar_repartidor_zona",
+        "user",
+        usuario.id,
+        detalle=detalle,
+    )
+    db.session.commit()
+    flash(f"Repartidor {usuario.nombre}: {detalle}.", "success")
+    return redirect(url_for("admin.zonas"))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# VARIANTES RETAIL (talla / color)
+# ═══════════════════════════════════════════════════════════════════════
+import re as _re_variantes
+
+_COLOR_HEX_RE = _re_variantes.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _catalog_write_or_abort():
+    """Guardia unificada — requiere permiso CATALOG_WRITE."""
+    from permissions import ACTIONS, actor_from_user, allow
+    if not allow(actor_from_user(current_user), ACTIONS.CATALOG_WRITE):
+        abort(403)
+
+
+def _variant_producto_valido(producto):
+    """El producto debe admitir variantes (vertical retail)."""
+    if not producto._admite_variantes():
+        flash("Este producto no admite variantes (vertical comida).", "warning")
+        return False
+    return True
+
+
+def _parse_variant_form(form, files, es_creacion=False):
+    """Parsea y valida el form de una variante. Devuelve (datos, error_msg)."""
+    talla = (form.get("talla") or "").strip()[:20] or None
+    color = (form.get("color") or "").strip()[:40] or None
+    color_hex = (form.get("color_hex") or "").strip() or None
+    sku = (form.get("sku") or "").strip()[:60] or None
+    if not talla and not color:
+        return None, "Debes indicar al menos una talla o un color."
+    if color_hex and not _COLOR_HEX_RE.match(color_hex):
+        return None, "El color HEX debe tener formato #RRGGBB."
+
+    precio_override_raw = (form.get("precio_override") or "").strip()
+    precio_override = None
+    if precio_override_raw:
+        try:
+            precio_override = Decimal(precio_override_raw.replace(",", "."))
+        except (InvalidOperation, ValueError):
+            return None, "Precio override inválido."
+        if precio_override < 0:
+            return None, "El precio override no puede ser negativo."
+
+    stock_raw = (form.get("stock") or "0").strip()
+    try:
+        stock = int(stock_raw)
+    except ValueError:
+        return None, "El stock debe ser un entero."
+    if stock < 0:
+        return None, "El stock no puede ser negativo."
+
+    try:
+        orden = int((form.get("orden") or "0").strip())
+    except ValueError:
+        orden = 0
+
+    if es_creacion:
+        activo = True
+    else:
+        activo = form.get("activo") in ("1", "on", "true", "True")
+
+    imagen_url = _guardar_imagen_producto_desde_request(files) or (
+        (form.get("imagen_url") or "").strip()[:300] or None
+    )
+
+    return {
+        "talla": talla,
+        "color": color,
+        "color_hex": color_hex,
+        "sku": sku,
+        "precio_override": precio_override,
+        "stock": stock,
+        "orden": orden,
+        "activo": activo,
+        "imagen_url": imagen_url,
+    }, None
+
+
+@admin_bp.route("/productos/<int:producto_id>/variantes/crear", methods=["POST"])
+@admin_required
+def crear_variante_producto(producto_id):
+    _catalog_write_or_abort()
+    producto = get_or_404(Product, producto_id)
+    if not _variant_producto_valido(producto):
+        return redirect(url_for("admin.editar_producto", producto_id=producto.id))
+    datos, error = _parse_variant_form(request.form, request.files, es_creacion=True)
+    if error:
+        flash(error, "danger")
+        return redirect(url_for("admin.editar_producto", producto_id=producto.id))
+    variante = ProductVariant(product_id=producto.id, **datos)
+    db.session.add(variante)
+    try:
+        db.session.commit()
+    except IntegrityError as exc:
+        db.session.rollback()
+        flash(f"No se pudo crear la variante (¿duplicada?): {exc.orig}", "danger")
+        return redirect(url_for("admin.editar_producto", producto_id=producto.id))
+    AuditLog.registrar(
+        current_user.id, "variante_crear", "product_variant", variante.id,
+        detalle=f"producto={producto.id} label='{variante.label_publico}'",
+    )
+    db.session.commit()
+    flash(f"Variante creada: {variante.label_publico or variante.sku or variante.id}.", "success")
+    return redirect(url_for("admin.editar_producto", producto_id=producto.id))
+
+
+@admin_bp.route(
+    "/productos/<int:producto_id>/variantes/<int:variante_id>/actualizar",
+    methods=["POST"],
+)
+@admin_required
+def actualizar_variante_producto(producto_id, variante_id):
+    _catalog_write_or_abort()
+    producto = get_or_404(Product, producto_id)
+    variante = get_or_404(ProductVariant, variante_id)
+    if variante.product_id != producto.id:
+        abort(404)
+    datos, error = _parse_variant_form(request.form, request.files)
+    if error:
+        flash(error, "danger")
+        return redirect(url_for("admin.editar_producto", producto_id=producto.id))
+    for attr, val in datos.items():
+        # Solo sobrescribe imagen_url si el usuario subió algo nuevo o dio URL.
+        if attr == "imagen_url" and not val:
+            continue
+        setattr(variante, attr, val)
+    try:
+        db.session.commit()
+    except IntegrityError as exc:
+        db.session.rollback()
+        flash(f"No se pudo actualizar (¿duplicada?): {exc.orig}", "danger")
+        return redirect(url_for("admin.editar_producto", producto_id=producto.id))
+    AuditLog.registrar(
+        current_user.id, "variante_actualizar", "product_variant", variante.id,
+        detalle=f"producto={producto.id}",
+    )
+    db.session.commit()
+    flash("Variante actualizada.", "success")
+    return redirect(url_for("admin.editar_producto", producto_id=producto.id))
+
+
+@admin_bp.route(
+    "/productos/<int:producto_id>/variantes/<int:variante_id>/eliminar",
+    methods=["POST"],
+)
+@admin_required
+def eliminar_variante_producto(producto_id, variante_id):
+    """Soft delete — marca activo=False. Preserva historial y snapshots."""
+    _catalog_write_or_abort()
+    producto = get_or_404(Product, producto_id)
+    variante = get_or_404(ProductVariant, variante_id)
+    if variante.product_id != producto.id:
+        abort(404)
+    variante.activo = False
+    AuditLog.registrar(
+        current_user.id, "variante_desactivar", "product_variant", variante.id,
+        detalle=f"producto={producto.id}",
+    )
+    db.session.commit()
+    flash("Variante desactivada.", "success")
+    return redirect(url_for("admin.editar_producto", producto_id=producto.id))

@@ -141,21 +141,33 @@ def toggle_disponible():
 def ruta():
     disponible = _esta_disponible()
     _eager_zona = joinedload(Order.zona)
+    # Filtro por zona asignada al repartidor (Fase 5). Si el repartidor no tiene
+    # zona asignada explícita, mantiene el comportamiento anterior (ve todo).
+    zona_asignada_id = getattr(current_user, "zona_repartidor_id", None)
+    aplicar_filtro_zona = (
+        zona_asignada_id is not None and not _es_admin_operativo()
+    )
     if _es_admin_operativo():
-        listos = Order.query.options(_eager_zona).filter_by(
+        listos_q = Order.query.options(_eager_zona).filter_by(
             estado="listo", tipo_entrega_cliente="delivery"
-        ).order_by(Order.creado_en).all()
-        en_ruta = Order.query.options(_eager_zona).filter_by(
+        )
+        en_ruta_q = Order.query.options(_eager_zona).filter_by(
             estado="en_ruta", tipo_entrega_cliente="delivery"
-        ).order_by(Order.creado_en).all()
+        )
+        listos = listos_q.order_by(Order.creado_en).all()
+        en_ruta = en_ruta_q.order_by(Order.creado_en).all()
     else:
         if disponible:
-            listos_propios = Order.query.options(_eager_zona).filter_by(
+            listos_propios_q = Order.query.options(_eager_zona).filter_by(
                 estado="listo", repartidor_id=current_user.id, tipo_entrega_cliente="delivery"
-            ).order_by(Order.creado_en).all()
-            sin_asignar = Order.query.options(_eager_zona).filter_by(
+            )
+            sin_asignar_q = Order.query.options(_eager_zona).filter_by(
                 estado="listo", repartidor_id=None, tipo_entrega_cliente="delivery"
-            ).order_by(Order.creado_en).all()
+            )
+            if aplicar_filtro_zona:
+                sin_asignar_q = sin_asignar_q.filter(Order.zona_id == zona_asignada_id)
+            listos_propios = listos_propios_q.order_by(Order.creado_en).all()
+            sin_asignar = sin_asignar_q.order_by(Order.creado_en).all()
             listos = listos_propios + sin_asignar
         else:
             listos = []
@@ -174,6 +186,13 @@ def ruta():
                 ),
                 Order.tipo_entrega_cliente == "delivery",
             ]
+            if aplicar_filtro_zona:
+                filtros_en_ruta.append(
+                    db.or_(
+                        Order.repartidor_id == current_user.id,
+                        Order.zona_id == zona_asignada_id,
+                    )
+                )
         en_ruta = Order.query.options(_eager_zona).filter(
             *filtros_en_ruta
         ).order_by(Order.creado_en).all()

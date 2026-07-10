@@ -1,13 +1,65 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, jsonify
+from flask import (Blueprint, render_template, redirect, url_for, flash,
+                   jsonify, Response, stream_with_context, current_app)
 from flask_login import login_required, current_user
 from functools import wraps
 import logging
+import time
+import json as _json
+import os as _os
+from datetime import timedelta as _timedelta
 from sqlalchemy.orm import joinedload
+from sqlalchemy import func as _sa_func
 from extensions import db, get_or_404
-from models import Order, OrderEvent, User, utcnow as _utcnow
+from models import Order, OrderEvent, User, SiteConfig, utcnow as _utcnow
 from services import (avanzar_estado_pedido, distribuir_repartidor,
                       redistribuir_pendientes_sin_asignar,
                       sincronizar_proveedores_pedido, lineas_preparacion_interna)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Umbrales de la vista de cocina (Fase 6).
+# Fuentes en cascada: SiteConfig → env → default.
+# Cambiar en /superadmin/config sin redeploy.
+# ─────────────────────────────────────────────────────────────────────
+_DEFAULT_PREP_BUFFER_MIN = 60          # ventana "programado que ya es ahora"
+_DEFAULT_SSE_HEARTBEAT_S = 15          # keep-alive del stream (segundos)
+_DEFAULT_SSE_POLL_S = 3                # cada cuánto miramos cambios reales
+_DEFAULT_SSE_MAX_LIFETIME_S = 300      # cerramos y el cliente reconecta
+
+def _cfg_int(clave, default, minimo=1, maximo=None):
+    """Lee int desde SiteConfig → env → default con clamps defensivos."""
+    val = None
+    try:
+        val = SiteConfig.get(clave, None)
+    except Exception:
+        val = None
+    if val in (None, ""):
+        val = _os.environ.get(clave)
+    try:
+        n = int(str(val).strip()) if val not in (None, "") else default
+    except (TypeError, ValueError):
+        n = default
+    if n < minimo:
+        n = minimo
+    if maximo is not None and n > maximo:
+        n = maximo
+    return n
+
+
+def _prep_buffer_minutos():
+    return _cfg_int("PREP_BUFFER_PROGRAMADO_MIN", _DEFAULT_PREP_BUFFER_MIN, 5, 24 * 60)
+
+
+def _sse_heartbeat_s():
+    return _cfg_int("SSE_HEARTBEAT_SECONDS", _DEFAULT_SSE_HEARTBEAT_S, 3, 120)
+
+
+def _sse_poll_s():
+    return _cfg_int("SSE_POLL_SECONDS", _DEFAULT_SSE_POLL_S, 1, 30)
+
+
+def _sse_max_lifetime_s():
+    return _cfg_int("SSE_MAX_LIFETIME_SECONDS", _DEFAULT_SSE_MAX_LIFETIME_S, 30, 3600)
 
 preparador_bp = Blueprint("preparador", __name__)
 logger = logging.getLogger(__name__)
@@ -226,6 +278,22 @@ def pedidos():
         encargos_por_fecha.setdefault(fecha, []).append(p)
     hoy_date = _utcnow().date()
 
+    # ── Fase 6: partición "Preparar ahora" vs "Programados" ──────────
+    # "Ahora" = inmediatos + encargos con fecha ≤ hoy + buffer(min).
+    # "Programados" = encargos con fecha > hoy + buffer.
+    buffer_min = _prep_buffer_minutos()
+    corte = _utcnow() + _timedelta(minutes=buffer_min)
+    corte_date = corte.date()
+
+    prep_ahora = list(pendientes_inmediato)
+    prep_programados_planos: list = []
+    for p in pendientes_encargo:
+        fecha = _fecha_encargo(p)
+        if fecha and fecha <= corte_date:
+            prep_ahora.append(p)
+        else:
+            prep_programados_planos.append(p)
+
     return render_template("preparador/pedidos.html",
                            pendientes=pendientes_inmediato,
                            pendientes_encargo=pendientes_encargo,
@@ -236,7 +304,91 @@ def pedidos():
                            disponible=disponible,
                            modo_operativo=modo_operativo,
                            almacen_listo=almacen_listo,
-                           lineas_preparacion_interna=lineas_preparacion_interna)
+                           lineas_preparacion_interna=lineas_preparacion_interna,
+                           # Fase 6
+                           prep_ahora=prep_ahora,
+                           prep_programados=prep_programados_planos,
+                           prep_buffer_min=buffer_min,
+                           sse_url=url_for("preparador.eventos"),
+                           sse_heartbeat_s=_sse_heartbeat_s())
+
+
+# ─────────────────────────────────────────────────────────────────────
+# SSE — cambios en la cola del preparador
+# El cliente escucha /preparador/eventos y recibe un `ping` heartbeat y
+# `refresh` cuando cambia el conjunto de pedidos pendientes/armando.
+# ─────────────────────────────────────────────────────────────────────
+def _cola_signature():
+    """Firma barata del estado observable de la cola.
+
+    Combina COUNT + MAX(id) + MAX(creado_en) + suma de hashes de estado
+    para detectar cambios sin cargar toda la lista.
+    """
+    row = db.session.execute(db.text("""
+        SELECT COALESCE(COUNT(*),0),
+               COALESCE(MAX(id),0),
+               COALESCE(MAX(EXTRACT(EPOCH FROM creado_en))::bigint, 0),
+               COALESCE(SUM(('x'||substr(md5(estado),1,8))::bit(32)::bigint), 0)
+          FROM orders
+         WHERE estado IN ('pendiente','armando')
+    """)).first()
+    if not row:
+        return "0"
+    return "|".join(str(v) for v in row)
+
+
+@preparador_bp.route("/eventos")
+@preparador_required
+def eventos():
+    """Server-Sent Events: notifica cambios en la cola del preparador.
+
+    Contrato con el cliente:
+      - `event: ping`  → keep-alive, ignorar
+      - `event: refresh` → recargar la vista (el HTML manda)
+    El cliente reconecta automáticamente (EventSource) al desconectar.
+    """
+    heartbeat = _sse_heartbeat_s()
+    poll = _sse_poll_s()
+    lifetime = _sse_max_lifetime_s()
+    app = current_app._get_current_object()
+
+    @stream_with_context
+    def gen():
+        # Firma inicial: dentro del app_context (stream_with_context lo garantiza).
+        try:
+            last_sig = _cola_signature()
+        except Exception:
+            logger.exception("SSE: no se pudo calcular firma inicial")
+            last_sig = ""
+        # Aviso inicial para que el cliente sepa que está enganchado.
+        yield f"retry: 5000\nevent: hello\ndata: {_json.dumps({'heartbeat': heartbeat})}\n\n"
+        started = time.monotonic()
+        last_beat = started
+        while True:
+            now = time.monotonic()
+            if now - started > lifetime:
+                # Cerramos: el navegador reconectará solo.
+                yield "event: bye\ndata: {}\n\n"
+                return
+            try:
+                sig = _cola_signature()
+            except Exception:
+                logger.exception("SSE: error calculando firma; seguimos vivos")
+                sig = last_sig
+            if sig != last_sig:
+                last_sig = sig
+                yield f"event: refresh\ndata: {_json.dumps({'sig': sig})}\n\n"
+                last_beat = now
+            elif now - last_beat >= heartbeat:
+                yield f"event: ping\ndata: {int(now - started)}\n\n"
+                last_beat = now
+            time.sleep(poll)
+
+    resp = Response(gen(), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache, no-transform"
+    resp.headers["X-Accel-Buffering"] = "no"  # nginx: no bufferizar
+    resp.headers["Connection"] = "keep-alive"
+    return resp
 
 
 @preparador_bp.route("/pedidos/<int:pedido_id>/tomar", methods=["POST"])

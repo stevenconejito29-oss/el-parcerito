@@ -17,10 +17,12 @@ def _strip_accents(s: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
 from urllib.parse import quote
 from datetime import datetime, date
+from decimal import Decimal
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_login import current_user
 from flask import current_app
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from extensions import db, get_or_404, limiter, csrf
 from models import (Product, Categoria, Order, OrderItem, Review, Coupon,
@@ -99,13 +101,17 @@ def _json_no_store(payload, status=200):
 
 
 def _find_cliente_by_phone(raw, allow_fuzzy=True):
+    """Busca al usuario por teléfono.
+
+    Prioriza rol='cliente' para no confundir cuentas operativas con clientes,
+    pero cae al match sin filtro de rol si no hay cliente puro. Esto evita
+    que operadores/admins que también compran queden invisibles al flujo de
+    puntos/checkout (el UNIQUE es global sobre telefono_normalizado)."""
     telefono = _normalize_phone(raw)
     if not telefono_valido(telefono):
         return None, telefono
-    cliente = User.query.filter_by(
-        rol="cliente",
-        telefono_normalizado=telefono,
-    ).first()
+    q = User.query.filter_by(telefono_normalizado=telefono)
+    cliente = q.filter_by(rol="cliente").first() or q.first()
     return cliente, telefono
 
 
@@ -627,6 +633,7 @@ def _save_carrito(carrito):
             "combo_selecciones",
             "extras_selecciones",
             "presentaciones_carrito",
+            "variantes_carrito",
             "notas_combo",
         ):
             session.pop(_k, None)
@@ -1019,6 +1026,38 @@ def agregar_carrito(producto_id):
     if not producto.disponible_para_venta_en_origen(origen_solicitado, nueva_cantidad_total):
         return _err("No hay stock suficiente para esa cantidad.")
 
+    # Variantes retail opt-in: si el producto tiene variantes activas,
+    # el cliente debe elegir una. Sigue el patrón de `presentaciones_carrito`:
+    # dict paralelo en session, validación server-side aunque el UI la fuerce.
+    if getattr(producto, "tiene_variantes", False):
+        from models import ProductVariant
+        variant_raw = (request.form.get("variant_id") or "").strip()
+        variantes_activas = producto.variantes_activas
+        try:
+            variant_id = int(variant_raw) if variant_raw else 0
+        except (TypeError, ValueError):
+            variant_id = 0
+        variantes_map = {v.id: v for v in variantes_activas}
+        if not variant_id or variant_id not in variantes_map:
+            return _err(f"Elige una variante para «{producto.nombre}».")
+        variante = variantes_map[variant_id]
+        if not variante.disponible():
+            return _err(f"«{variante.label_publico}» está agotado.")
+        if variante.stock is not None and nueva_cantidad_total > variante.stock:
+            return _err(
+                f"No hay stock suficiente de «{variante.label_publico}» "
+                f"(quedan {variante.stock})."
+            )
+        variantes_carrito = session.get("variantes_carrito", {})
+        anterior_variant = variantes_carrito.get(key)
+        if carrito.get(key) and anterior_variant and int(anterior_variant) != variant_id:
+            return _err(
+                "Este producto ya está en el carrito con otra variante. "
+                "Elimínalo antes de cambiar la selección."
+            )
+        variantes_carrito[key] = variant_id
+        session["variantes_carrito"] = variantes_carrito
+
     # Presentaciones opt-in: si el producto define presentaciones activas,
     # el cliente debe elegir una. Si no define ninguna → tamaño único (skip).
     # Comparación case-insensitive: retail guarda "S","M","L","XL"; comida
@@ -1169,6 +1208,9 @@ def eliminar_carrito(producto_id):
     presentaciones = session.get("presentaciones_carrito", {})
     presentaciones.pop(key, None)
     session["presentaciones_carrito"] = presentaciones
+    variantes = session.get("variantes_carrito", {})
+    variantes.pop(key, None)
+    session["variantes_carrito"] = variantes
     session["extras_selecciones"] = extras
     notas_combo.pop(key, None)
     session["combo_selecciones"] = selecciones_combo
@@ -1306,9 +1348,20 @@ def buscar_cliente_publico():
 @public_bp.route("/puntos/consultar-saldo", methods=["POST"])
 @limiter.limit("3 per minute") if limiter else (lambda f: f)
 def consultar_saldo_puntos():
-    """Envía el saldo al número consultado sin revelarlo en el navegador."""
+    """Envía el saldo al número consultado sin revelarlo en el navegador.
+
+    Diseño: respuesta neutra (no revela si el número existe). Sí revela si el
+    canal de mensajería está caído, para que el usuario reintente más tarde
+    en vez de creer que llegará y no llegue nunca."""
     if not _feature_enabled("puntos"):
         return _json_no_store({"ok": False, "msg": "El club de puntos no está habilitado"}, 403)
+    from loyalty_service import messaging_service_available
+    if not messaging_service_available():
+        return _json_no_store({
+            "ok": False,
+            "service_available": False,
+            "msg": "El servicio de WhatsApp no está disponible ahora mismo. Reintenta en unos minutos.",
+        }, 503)
     data = request.get_json(silent=True) or {}
     cliente, _ = _find_cliente_by_phone(data.get("telefono", ""), allow_fuzzy=False)
     if cliente:
@@ -1318,6 +1371,7 @@ def consultar_saldo_puntos():
             current_app.logger.exception("No se pudo enviar el saldo de puntos")
     return _json_no_store({
         "ok": True,
+        "service_available": True,
         "msg": "Si el número tiene puntos, recibirá el saldo por WhatsApp.",
     })
 
@@ -1685,6 +1739,16 @@ def checkout():
         zona_id = request.form.get("zona_id", type=int)
         nombre_invitado = request.form.get("nombre_invitado", "").strip()[:100]
         telefono_invitado = _normalize_phone(request.form.get("telefono_invitado", ""))
+        # NIF opcional para factura fiscal a empresa (España). Vacío = B2C normal.
+        nif_invitado_raw = (request.form.get("nif_invitado") or "").strip()
+        nif_invitado = None
+        if nif_invitado_raw:
+            from fiscal_utils import normalizar_nif, nif_valido
+            nif_norm = normalizar_nif(nif_invitado_raw)
+            if not nif_valido(nif_norm):
+                flash("El NIF/DNI/NIE/CIF indicado no es válido. Déjalo en blanco si no lo necesitas.", "danger")
+                return redirect(url_for("public.checkout"))
+            nif_invitado = nif_norm
         codigo_afiliado_str = request.form.get("codigo_afiliado", "").strip().upper()
         producto_canje_raw = request.form.get("producto_canje_id")
         producto_canje_id = None
@@ -1774,7 +1838,7 @@ def checkout():
         # SQLAlchemyError puede aparecer si otro request creó al mismo cliente
         # a la vez (race condition en unique constraint sobre teléfono).
         try:
-            cliente = _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion)
+            cliente = _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion, nif=nif_invitado)
         except ValueError as exc:
             flash(str(exc), "danger")
             return redirect(url_for("public.checkout"))
@@ -1977,6 +2041,31 @@ def checkout():
             db.session.rollback()
             flash(str(exc), "danger")
             return redirect(url_for("public.ver_carrito"))
+
+        # ── IVA total (España, exportación fiscal) ─────────────────────
+        # Se calcula desde el snapshot congelado en cada OrderItem — así el
+        # importe reportado no depende de cambios de tasa posteriores.
+        try:
+            from fiscal_utils import base_e_iva_desde_total
+            from models import _resolver_iva_pct_producto
+            iva_acumulado = Decimal("0.00")
+            for oi in pedido.items:
+                meta = oi.get_metadata() or {}
+                snap_iva = (meta.get("producto") or {}).get("iva_pct")
+                # Fallback: si el snapshot no traía iva_pct (pedidos previos a
+                # Fase 9), resolver desde el producto vivo → SiteConfig → default.
+                # Nunca cae a 0 salvo que el producto se haya borrado, para no
+                # subreportar IVA a Hacienda.
+                if snap_iva in (None, ""):
+                    iva_pct = _resolver_iva_pct_producto(oi.producto) if oi.producto else 0
+                else:
+                    iva_pct = snap_iva
+                _, iva_importe = base_e_iva_desde_total(oi.subtotal or 0, iva_pct)
+                iva_acumulado += iva_importe
+            pedido.iva_total = iva_acumulado
+        except Exception:
+            # No bloqueamos el checkout si algo va mal calculando IVA.
+            pedido.iva_total = 0
 
         # ── Canje de puntos unificado via loyalty_service ───────────────
         # Único punto de deducción — garantiza idempotencia
@@ -2527,11 +2616,14 @@ def _build_items_from_carrito(carrito):
     return items, round(subtotal, 2)
 
 
-def _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion):
+def _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion, nif=None):
     """
     Identifica al cliente por teléfono (identificador principal).
     Busca el registro interno por teléfono o crea uno nuevo. Estos registros
     no son cuentas autenticables y no tienen panel público.
+
+    Si `nif` viene informado, se guarda/actualiza en el registro del cliente
+    para poder emitir facturas fiscales españolas.
     """
     if not telefono_invitado:
         return None
@@ -2539,12 +2631,18 @@ def _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion):
     # Buscar cliente existente por teléfono (identificador único)
     invitado, telefono_normalizado = _find_cliente_by_phone(telefono_invitado)
     telefono_invitado = telefono_normalizado or telefono_invitado
+    if not invitado:
+        # Puede existir el teléfono con otro rol (admin/super_admin operando
+        # como cliente). El unique constraint es global, así que reutilizamos.
+        invitado = User.query.filter_by(telefono_normalizado=telefono_invitado).first()
     if invitado:
         # Actualizar dirección si se proveyó nueva
         if direccion and direccion != invitado.direccion:
             invitado.direccion = direccion
         if nombre_invitado and (not invitado.nombre or invitado.nombre.startswith("Cliente ")):
             invitado.nombre = nombre_invitado
+        if nif:
+            invitado.nif = nif
         return invitado
 
     # Cliente nuevo: crear con teléfono como identificador
@@ -2561,9 +2659,19 @@ def _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion):
         telefono=telefono_invitado,
         telefono_normalizado=telefono_invitado,
         direccion=direccion or None,
+        nif=nif or None,
         activo=True,
     )
     invitado.set_password(uuid.uuid4().hex)
     db.session.add(invitado)
-    db.session.flush()
+    try:
+        db.session.flush()
+    except IntegrityError:
+        # Race o coincidencia por unique(telefono_normalizado). Rehidratamos.
+        db.session.rollback()
+        invitado = User.query.filter_by(telefono_normalizado=telefono_invitado).first()
+        if not invitado:
+            raise
+        if direccion and direccion != invitado.direccion:
+            invitado.direccion = direccion
     return invitado

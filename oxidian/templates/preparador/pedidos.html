@@ -19,6 +19,125 @@
   --prep-danger-soft: color-mix(in srgb, var(--theme-danger, #FF6B6B) 14%, transparent);
   --prep-programado: #C084FC;
   --prep-programado-soft: color-mix(in srgb, #C084FC 16%, transparent);
+  /* Alias semánticos (Fase 6) — apuntan a tokens ya existentes para no
+     duplicar la paleta. Cambiar aquí propaga a badges/chips nuevos. */
+  --prep-warning:   var(--prep-warn);
+  --prep-warning-soft: var(--prep-warn-soft);
+  --prep-scheduled: var(--prep-programado);
+  --prep-scheduled-soft: var(--prep-programado-soft);
+}
+
+/* ── Fase 6: thumbnails de producto en la línea del item ─────────── */
+.work-item-thumb {
+  width: 64px; height: 64px; flex-shrink: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--col-text) 5%, transparent);
+  border: 1px solid var(--col-border);
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  color: color-mix(in srgb, var(--col-text) 45%, transparent);
+}
+.work-item-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.work-item-thumb svg { width: 34px; height: 34px; opacity: .55; }
+
+/* Cantidad grande y prominente (tipografía numérica) */
+.work-item-qty-big {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.75rem; line-height: 1;
+  font-weight: 900;
+  color: var(--brand-primary);
+  min-width: 2.4ch; text-align: right;
+  padding: 0 .35rem;
+  letter-spacing: -.02em;
+}
+
+/* Sección "Preparar ahora" vs "Programados" — cabecera con energía */
+.prep-section-head {
+  display: flex; align-items: center; gap: .65rem;
+  padding: .7rem .9rem; margin: 1.1rem 0 .55rem;
+  border-radius: .8rem;
+  background: var(--col-surface);
+  border: 1px solid var(--col-border);
+  border-left: 4px solid var(--prep-warning);
+}
+.prep-section-head[data-kind="ahora"] {
+  border-left-color: var(--prep-warning);
+  background: color-mix(in srgb, var(--prep-warning) 6%, var(--col-surface));
+}
+.prep-section-head[data-kind="programados"] {
+  border-left-color: var(--prep-scheduled);
+  background: color-mix(in srgb, var(--prep-scheduled) 6%, var(--col-surface));
+}
+.prep-section-head h2 {
+  font-size: 1.05rem; font-weight: 900; margin: 0;
+  color: var(--col-text); letter-spacing: -.01em;
+}
+.prep-section-head .prep-section-sub {
+  font-size: .78rem; color: var(--col-muted); margin: 0;
+}
+.prep-section-head .prep-section-count {
+  margin-left: auto;
+  font-size: .82rem; font-weight: 900;
+  padding: .2rem .6rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--col-text) 8%, transparent);
+  color: var(--col-text);
+}
+.prep-section-head[data-kind="ahora"] .prep-section-count {
+  background: var(--prep-warning-soft); color: var(--prep-warning);
+}
+.prep-section-head[data-kind="programados"] .prep-section-count {
+  background: var(--prep-scheduled-soft); color: var(--prep-scheduled);
+}
+
+/* Chip hora prevista de entrega */
+.prep-eta-chip {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .2rem .55rem; border-radius: 999px;
+  background: var(--prep-scheduled-soft);
+  color: var(--prep-scheduled);
+  border: 1px solid color-mix(in srgb, var(--prep-scheduled) 32%, transparent);
+  font-size: .74rem; font-weight: 800;
+}
+.prep-eta-chip svg { width: 12px; height: 12px; }
+
+/* Badge URGENTE (listo y saliente) */
+.prep-badge-urgent {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .22rem .6rem; border-radius: .5rem;
+  font-size: .7rem; font-weight: 900; letter-spacing: .05em;
+  text-transform: uppercase;
+  background: var(--prep-danger-soft);
+  color: var(--prep-danger);
+  border: 1px solid color-mix(in srgb, var(--prep-danger) 45%, transparent);
+  animation: prep-pulse 1.6s ease-in-out infinite;
+}
+
+/* Iconos semánticos SVG (delivery / recogida) */
+.prep-icon-inline { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* Indicador conexión SSE */
+.prep-sse-indicator {
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-size: .72rem; color: var(--col-muted);
+  padding: .2rem .55rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--col-text) 6%, transparent);
+}
+.prep-sse-indicator .prep-sse-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--prep-warn);
+  transition: background .2s;
+}
+.prep-sse-indicator[data-state="live"] .prep-sse-dot {
+  background: var(--prep-ok);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--prep-ok) 65%, transparent);
+  animation: prep-sse-live 2s ease-out infinite;
+}
+.prep-sse-indicator[data-state="poll"] .prep-sse-dot { background: var(--prep-warn); }
+.prep-sse-indicator[data-state="off"]  .prep-sse-dot { background: var(--prep-danger); }
+@keyframes prep-sse-live {
+  0%   { box-shadow: 0 0 0 0    color-mix(in srgb, var(--prep-ok) 65%, transparent); }
+  70%  { box-shadow: 0 0 0 8px  color-mix(in srgb, var(--prep-ok) 0%,  transparent); }
+  100% { box-shadow: 0 0 0 0    color-mix(in srgb, var(--prep-ok) 0%,  transparent); }
 }
 
 /* Alérgenos: crítico, siempre visible con contraste alto */
@@ -349,9 +468,43 @@
     </p>
   </div>
   <div class="work-actions-top">
-    <span class="work-pill">Refresco <strong id="refresh-countdown">30s</strong></span>
+    <span id="prep-sse-indicator" class="prep-sse-indicator" data-state="init"
+          title="Conexión en vivo con la cola de pedidos">
+      <span class="prep-sse-dot" aria-hidden="true"></span>
+      <span id="prep-sse-label">Conectando…</span>
+    </span>
   </div>
 </section>
+
+{# ── Macros SVG inline (heroicons/lucide) — sin CDN ────────────────
+   Iconos monocromos que heredan currentColor. Reutilizables en cards. #}
+{% macro _icon_delivery() %}
+<svg class="prep-icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7z"/>
+  <circle cx="7" cy="17.5" r="1.8"/><circle cx="17.5" cy="17.5" r="1.8"/>
+</svg>
+{% endmacro %}
+{% macro _icon_bag() %}
+<svg class="prep-icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M6 7h12l-1 12H7z"/><path d="M9 7a3 3 0 0 1 6 0"/>
+</svg>
+{% endmacro %}
+{% macro _icon_clock() %}
+<svg class="prep-icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+</svg>
+{% endmacro %}
+{% macro _icon_placeholder() %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+     stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <rect x="3" y="4" width="18" height="16" rx="3"/>
+  <path d="M3 15l5-5 4 4 3-3 6 6"/>
+  <circle cx="9" cy="9" r="1.5"/>
+</svg>
+{% endmacro %}
 
 {# Banner explicativo del reparto de responsabilidades entre roles. Ayuda a
    entender por qué esta cola muestra un subconjunto de pedidos. Solo se
@@ -446,6 +599,19 @@
 
 <div class="work-board">
 
+{# ── Fase 6: cabecera de sección "Preparar ahora" ── #}
+<div class="prep-section-head" data-kind="ahora" style="grid-column:1/-1">
+  {{ _icon_clock() }}
+  <div>
+    <h2>Preparar ahora</h2>
+    <p class="prep-section-sub">
+      Pedidos inmediatos y programados dentro de los próximos
+      {{ prep_buffer_min if prep_buffer_min is defined else 60 }} minutos.
+    </p>
+  </div>
+  <span class="prep-section-count">{{ (prep_ahora|length) if prep_ahora is defined else (pendientes|length + (armando|length)) }}</span>
+</div>
+
 <!-- ── PENDIENTES ── -->
 <section class="work-lane work-lane--pendientes">
   <div class="work-lane-head">
@@ -491,7 +657,18 @@
 
         {% for item in lineas_preparacion_interna(pedido) %}
         <div class="work-item">
-          {% include "_order_item_combo.html" %}
+          <span class="work-item-thumb" aria-hidden="true">
+            {% if item.display_imagen_url %}
+            <img src="{{ item.display_imagen_url }}" alt="" loading="lazy" onerror="this.replaceWith(this.nextElementSibling.content.cloneNode(true))">
+            <template>{{ _icon_placeholder() }}</template>
+            {% else %}
+            {{ _icon_placeholder() }}
+            {% endif %}
+          </span>
+          <span class="work-item-qty-big" title="Cantidad">{{ item.cantidad }}×</span>
+          <div style="min-width:0">
+            {% include "_order_item_combo.html" %}
+          </div>
         </div>
         {% endfor %}
       </div>
@@ -533,6 +710,22 @@
   {% endfor %}
   </div>
 </section>
+
+{# ── Fase 6: cabecera de sección "Programados" ── #}
+{% if (prep_programados is defined and prep_programados) or (pendientes_encargo is defined and pendientes_encargo) %}
+<div class="prep-section-head" data-kind="programados" style="grid-column:1/-1">
+  {{ _icon_clock() }}
+  <div>
+    <h2>Programados</h2>
+    <p class="prep-section-sub">
+      Encargos con fecha futura — no bloquean el flujo de cocina inmediata.
+    </p>
+  </div>
+  <span class="prep-section-count">
+    {{ (prep_programados|length) if prep_programados is defined else (pendientes_encargo|length) }}
+  </span>
+</div>
+{% endif %}
 
 <!-- ── PEDIDOS CON FECHA (agrupados por fecha) ── -->
 {% if pendientes_encargo is defined and pendientes_encargo %}
@@ -593,11 +786,36 @@
       </div>
       <p class="work-client">{{ pedido.cliente.nombre if pedido.cliente else '—' }}</p>
       <div class="mt-2 flex flex-wrap gap-2">
+        {% if fecha_ent %}
+        <span class="prep-eta-chip" title="Entrega prevista">
+          {{ _icon_clock() }} {{ fecha_ent.strftime('%d/%m') }}
+        </span>
+        {% endif %}
+        {% set _tipo2 = pedido.tipo_entrega_cliente or 'recogida' %}
+        <span class="work-badge-modo work-badge-modo-{{ _tipo2 }}">
+          {% if _tipo2 == 'delivery' %}{{ _icon_delivery() }} Delivery
+          {% elif _tipo2 == 'recogida' %}{{ _icon_bag() }} Recogida
+          {% else %}{{ _icon_clock() }} Programado{% endif %}
+        </span>
         {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
       </div>
+      {% if _tipo2 == 'delivery' and pedido.direccion_entrega %}
+      <div class="work-address">{{ pedido.direccion_entrega }}</div>
+      {% endif %}
       <div class="work-items">
         {% for item in lineas_preparacion_interna(pedido) %}
-        <div class="work-item">{% include "_order_item_combo.html" %}</div>
+        <div class="work-item">
+          <span class="work-item-thumb" aria-hidden="true">
+            {% if item.display_imagen_url %}
+            <img src="{{ item.display_imagen_url }}" alt="" loading="lazy" onerror="this.replaceWith(this.nextElementSibling.content.cloneNode(true))">
+            <template>{{ _icon_placeholder() }}</template>
+            {% else %}
+            {{ _icon_placeholder() }}
+            {% endif %}
+          </span>
+          <span class="work-item-qty-big" title="Cantidad">{{ item.cantidad }}×</span>
+          <div style="min-width:0">{% include "_order_item_combo.html" %}</div>
+        </div>
         {% endfor %}
       </div>
       {% if pedido.notas %}<div class="work-note">Nota: {{ pedido.notas }}</div>{% endif %}
@@ -663,12 +881,18 @@
       <p class="work-client">
         {{ pedido.cliente.nombre }}
         {% if pedido.cliente.telefono %}<a href="tel:{{ pedido.cliente.telefono }}" class="work-tel-link" title="Llamar al cliente">📞 {{ pedido.cliente.telefono }}</a>{% endif %}
+        {% set _mins_prep = ((now() - pedido.creado_en).total_seconds() / 60) if now is defined else 0 %}
+        {% if pedido.estado == 'armando' and _mins_prep > 15 %}
+        <span class="prep-badge-urgent" title="Lleva más de 15 min en preparación">URGENTE</span>
+        {% endif %}
       </p>
       <div class="mt-2 flex flex-wrap gap-2">
-        {# Modalidad de entrega — badge grande y claro #}
+        {# Modalidad de entrega — badge grande con SVG semántico #}
         {% set _tipo = pedido.tipo_entrega_cliente or 'recogida' %}
         <span class="work-badge-modo work-badge-modo-{{ _tipo }}">
-          {% if _tipo == 'delivery' %}🛵 Delivery{% elif _tipo == 'recogida' %}🏬 Recogida{% else %}📆 Programado{% endif %}
+          {% if _tipo == 'delivery' %}{{ _icon_delivery() }} Delivery
+          {% elif _tipo == 'recogida' %}{{ _icon_bag() }} Recogida
+          {% else %}{{ _icon_clock() }} Programado{% endif %}
         </span>
         {# Método de pago — crítico para que el repartidor sepa si debe cobrar #}
         {% if pedido.metodo_pago %}
@@ -702,7 +926,18 @@
             <input type="checkbox" data-item-check aria-label="Marcar {{ item.producto.nombre }} como preparado">
             <span aria-hidden="true"></span>
           </label>
-          {% include "_order_item_combo.html" %}
+          <span class="work-item-thumb" aria-hidden="true">
+            {% if item.display_imagen_url %}
+            <img src="{{ item.display_imagen_url }}" alt="" loading="lazy" onerror="this.replaceWith(this.nextElementSibling.content.cloneNode(true))">
+            <template>{{ _icon_placeholder() }}</template>
+            {% else %}
+            {{ _icon_placeholder() }}
+            {% endif %}
+          </span>
+          <span class="work-item-qty-big" title="Cantidad">{{ item.cantidad }}×</span>
+          <div style="min-width:0">
+            {% include "_order_item_combo.html" %}
+          </div>
         </div>
         {% endfor %}
       </div>
@@ -831,14 +1066,75 @@ actualizarUrgencia();
 setInterval(actualizarUrgencia, 60000);
 prepRestoreChecks();
 
-// Countdown + auto-refresh
-let countdown = 30;
-const el = document.getElementById('refresh-countdown');
-const timer = setInterval(() => {
-  countdown--;
-  if (el) el.textContent = countdown + 's';
-  if (countdown <= 0) { clearInterval(timer); location.reload(); }
-}, 1000);
+// ── Real-time (SSE) con fallback a polling ────────────────────────
+// Objetivo: cocina ve cambios cuando ocurren, no cada 30s.
+// El backend expone `event: refresh` cuando cambia el conjunto de
+// pedidos pendiente/armando. Si el navegador o la red bloquean SSE,
+// caemos a poll cada 30s. En cualquier caso `location.reload()` es
+// suficiente: el server-side renderer es la fuente de verdad.
+(function initPrepStream() {
+  var url = {{ (sse_url or '/preparador/eventos')|tojson }};
+  var heartbeat = {{ (sse_heartbeat_s or 15)|int }};
+  var pollFallbackMs = 30000;
+  var indicator = document.getElementById('prep-sse-indicator');
+  var label = document.getElementById('prep-sse-label');
+  var reloadPending = false;
+  function setState(state, text) {
+    if (indicator) indicator.setAttribute('data-state', state);
+    if (label && text) label.textContent = text;
+  }
+  function scheduleReload() {
+    if (reloadPending) return;
+    reloadPending = true;
+    // Debounce corto para agrupar ráfagas de eventos.
+    setTimeout(function () { location.reload(); }, 400);
+  }
+  var supportsSse = ('EventSource' in window);
+  if (!supportsSse) {
+    setState('poll', 'Sin SSE · recargando cada 30s');
+    setInterval(function () { location.reload(); }, pollFallbackMs);
+    return;
+  }
+  var es;
+  var fallbackTimer = null;
+  function armFallback() {
+    // Si en 3× heartbeat no llega nada, asumimos SSE muerto y hacemos poll.
+    if (fallbackTimer) clearTimeout(fallbackTimer);
+    fallbackTimer = setTimeout(function () {
+      setState('poll', 'Sin señal · recargando');
+      location.reload();
+    }, Math.max(30, heartbeat * 3) * 1000);
+  }
+  try {
+    es = new EventSource(url);
+  } catch (err) {
+    setState('poll', 'SSE bloqueado · poll 30s');
+    setInterval(function () { location.reload(); }, pollFallbackMs);
+    return;
+  }
+  es.addEventListener('hello', function () {
+    setState('live', 'En vivo');
+    armFallback();
+  });
+  es.addEventListener('ping', function () {
+    setState('live', 'En vivo');
+    armFallback();
+  });
+  es.addEventListener('refresh', function () {
+    setState('live', 'Cambio detectado');
+    scheduleReload();
+  });
+  es.addEventListener('bye', function () {
+    // El server nos cierra tras SSE_MAX_LIFETIME. EventSource reconecta solo.
+    setState('live', 'Reanudando…');
+  });
+  es.onerror = function () {
+    setState('off', 'Reconectando…');
+    // No cerramos: EventSource intentará reconectar solo.
+    armFallback();
+  };
+  armFallback();
+})();
 
 // Ping presencia cada 90s
 setInterval(() => { fetch('/api/ping', {method:'POST'}).catch(()=>{}); }, 90000);
@@ -900,7 +1196,8 @@ document.querySelectorAll('form[data-mark-ready]').forEach(form => {
 </script>
 <style>
 /* Checkboxes visuales para tachar items ya preparados */
-.work-item { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; padding: 8px 10px; border-radius: 10px; transition: background .2s, opacity .2s; }
+.work-item { display: flex; flex-wrap: nowrap; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 10px; transition: background .2s, opacity .2s; }
+.work-item > div:last-child { flex: 1 1 auto; min-width: 0; }
 .work-item.is-checked { opacity: .48; background: rgba(94,240,151,.06); }
 .work-item.is-checked > *:not(.work-item-check) { text-decoration: line-through; text-decoration-color: rgba(94,240,151,.6); text-decoration-thickness: 2px; }
 .work-item-check { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; cursor: pointer; background: rgba(255,255,255,.04); border: 1.5px solid rgba(255,255,255,.14); transition: background .18s, border-color .18s; user-select: none; touch-action: manipulation; }

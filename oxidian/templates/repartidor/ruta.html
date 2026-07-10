@@ -641,6 +641,12 @@
           <p class="work-confirm-note">Se agotaron los 3 intentos. Contacta al admin para regenerar el código antes de entregar.</p>
           <input type="hidden" name="codigo_confirmacion" value="">
         </div>
+        {% elif pedido.codigo_confirmacion_expirado %}
+        <div class="work-panel work-panel--locked mb-3">
+          <p class="work-confirm-label" style="color:#ef4444">Código expirado</p>
+          <p class="work-confirm-note">El código de entrega ha caducado. Contacta al admin para regenerarlo antes de entregar.</p>
+          <input type="hidden" name="codigo_confirmacion" value="">
+        </div>
         {% else %}
         <div class="mb-3">
           <label class="work-code-label">3. Código de confirmación del cliente</label>

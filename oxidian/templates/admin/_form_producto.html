@@ -65,26 +65,41 @@
   </div>
 
   <!-- ── VERTICAL / NICHO — separar catálogo por tipo de tienda ── -->
+  {% set _v_actual = (producto.vertical if producto is defined and producto and producto.vertical else 'ambos') %}
+  {% set _es_super = current_user.is_authenticated and current_user.rol == 'super_admin' %}
   <div class="fp-span-full col-span-2 fp-section">
     <label class="fp-section-title">Visible en qué tienda</label>
-    <p class="text-xs text-gray-500 mb-2">
-      Restringe en qué modo aparece este producto. "Ambos" (default) → siempre visible al cambiar de nicho.
-    </p>
-    {% set _v_actual = (producto.vertical if producto is defined and producto and producto.vertical else 'ambos') %}
-    <div class="flex gap-4 flex-wrap text-sm">
-      <label class="fp-radio-label">
-        <input type="radio" name="vertical" value="ambos" {% if _v_actual == 'ambos' %}checked{% endif %}
-               style="accent-color:#8b5cf6"> ✨ Ambas tiendas
-      </label>
-      <label class="fp-radio-label">
-        <input type="radio" name="vertical" value="comida" {% if _v_actual == 'comida' %}checked{% endif %}
-               style="accent-color:#e85d04"> 🍽️ Solo comida
-      </label>
-      <label class="fp-radio-label">
-        <input type="radio" name="vertical" value="producto" {% if _v_actual == 'producto' %}checked{% endif %}
-               style="accent-color:#2563eb"> 🛍️ Solo producto / retail
-      </label>
-    </div>
+    {% if _es_super %}
+      <p class="text-xs text-gray-500 mb-2">
+        Restringe en qué modo aparece este producto. "Ambos" (default) → siempre visible al cambiar de nicho.
+      </p>
+      <div class="flex gap-4 flex-wrap text-sm">
+        <label class="fp-radio-label">
+          <input type="radio" name="vertical" value="ambos" {% if _v_actual == 'ambos' %}checked{% endif %}
+                 style="accent-color:#8b5cf6"> Ambas tiendas
+        </label>
+        <label class="fp-radio-label">
+          <input type="radio" name="vertical" value="comida" {% if _v_actual == 'comida' %}checked{% endif %}
+                 style="accent-color:#e85d04"> Solo comida
+        </label>
+        <label class="fp-radio-label">
+          <input type="radio" name="vertical" value="producto" {% if _v_actual == 'producto' %}checked{% endif %}
+                 style="accent-color:#2563eb"> Solo producto / retail
+        </label>
+      </div>
+    {% else %}
+      <p class="text-xs text-gray-500 mb-2">
+        El catálogo al que pertenece el producto solo lo cambia super_admin.
+      </p>
+      <span class="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs">
+        Catálogo actual:
+        <strong>
+          {% if _v_actual == 'comida' %}Solo comida
+          {% elif _v_actual == 'producto' %}Solo producto / retail
+          {% else %}Ambas tiendas{% endif %}
+        </strong>
+      </span>
+    {% endif %}
   </div>
 
   <!-- ── CANAL DE PREPARACIÓN ── -->

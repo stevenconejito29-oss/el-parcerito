@@ -2232,3 +2232,107 @@ def eliminar_admin(user_id):
         db.session.rollback()
         flash(f"Error al eliminar usuario: {exc}", "danger")
     return redirect(url_for("superadmin.admins"))
+
+
+# ────────────────────────────────────────────────────────────────
+# FINANZAS — EXPORTACIÓN FISCAL (España)
+# ────────────────────────────────────────────────────────────────
+
+@superadmin_bp.route("/finanzas/export")
+@login_required
+@superadmin_required
+def finanzas_export():
+    """Exporta pedidos entre dos fechas a CSV para el gestor fiscal.
+
+    Query params:
+      - desde=YYYY-MM-DD (default: primer día del trimestre actual)
+      - hasta=YYYY-MM-DD (default: hoy)
+      - formato=csv     (por ahora solo csv)
+
+    Columnas: fecha, numero_pedido, cliente_nif, base_imponible, iva_pct,
+    iva_importe, total, metodo_pago, estado.
+
+    Un pedido puede tener ítems con distinta tasa IVA → se emite una fila
+    por (pedido, tasa_iva). Suficiente para trimestrales del gestor.
+    """
+    import csv
+    from io import StringIO
+    from flask import Response
+
+    from fiscal_utils import base_e_iva_desde_total
+    from models import OrderItem
+
+    def _parse_date(raw, default):
+        if not raw:
+            return default
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return default
+
+    hoy = date.today()
+    # Default: primer día del trimestre actual.
+    q_inicio_mes = ((hoy.month - 1) // 3) * 3 + 1
+    default_desde = hoy.replace(month=q_inicio_mes, day=1)
+    desde = _parse_date(request.args.get("desde"), default_desde)
+    hasta = _parse_date(request.args.get("hasta"), hoy)
+    if desde > hasta:
+        desde, hasta = hasta, desde
+
+    inicio_dt = datetime.combine(desde, datetime.min.time())
+    fin_dt = datetime.combine(hasta, datetime.max.time())
+
+    pedidos = (
+        Order.query
+        .filter(Order.creado_en >= inicio_dt, Order.creado_en <= fin_dt)
+        .filter(Order.estado != "cancelado")
+        .order_by(Order.creado_en.asc())
+        .all()
+    )
+
+    buf = StringIO()
+    writer = csv.writer(buf, delimiter=",", quoting=csv.QUOTE_MINIMAL)
+    writer.writerow([
+        "fecha", "numero_pedido", "cliente_nif",
+        "base_imponible", "iva_pct", "iva_importe",
+        "total", "metodo_pago", "estado",
+    ])
+
+    for pedido in pedidos:
+        # Agrupar líneas del pedido por tasa IVA a partir del snapshot congelado.
+        por_tasa: dict[float, float] = {}
+        for oi in pedido.items:
+            meta = oi.get_metadata() or {}
+            iva_pct = (meta.get("producto") or {}).get("iva_pct")
+            try:
+                iva_pct_f = float(iva_pct) if iva_pct is not None else 0.0
+            except (TypeError, ValueError):
+                iva_pct_f = 0.0
+            por_tasa[iva_pct_f] = por_tasa.get(iva_pct_f, 0.0) + float(oi.subtotal or 0)
+
+        cliente_nif = (pedido.cliente.nif or "") if pedido.cliente else ""
+        fecha_str = pedido.creado_en.strftime("%Y-%m-%d") if pedido.creado_en else ""
+        metodo = pedido.metodo_pago or ""
+        estado = pedido.estado or ""
+
+        if not por_tasa:
+            writer.writerow([
+                fecha_str, pedido.numero_pedido, cliente_nif,
+                f"{float(pedido.total or 0):.2f}", "0.00", "0.00",
+                f"{float(pedido.total or 0):.2f}", metodo, estado,
+            ])
+            continue
+
+        for tasa, subtotal_tasa in sorted(por_tasa.items()):
+            base, iva_imp = base_e_iva_desde_total(subtotal_tasa, tasa)
+            writer.writerow([
+                fecha_str, pedido.numero_pedido, cliente_nif,
+                f"{base:.2f}", f"{tasa:.2f}", f"{iva_imp:.2f}",
+                f"{float(subtotal_tasa):.2f}", metodo, estado,
+            ])
+
+    nombre_archivo = f"finanzas_{desde.isoformat()}_{hasta.isoformat()}.csv"
+    resp = Response(buf.getvalue(), mimetype="text/csv; charset=utf-8")
+    resp.headers["Content-Disposition"] = f'attachment; filename="{nombre_archivo}"'
+    return resp
+
