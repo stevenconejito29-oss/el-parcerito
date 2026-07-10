@@ -338,18 +338,51 @@ def _puede_editar_vertical() -> bool:
     return allow(actor_from_user(current_user), ACTIONS.CATALOG_WRITE_VERTICAL)
 
 
+def _nicho_activo() -> str:
+    """Nicho activo de la tienda (SiteConfig.TIPO_TIENDA). comida por default."""
+    try:
+        from models import SiteConfig
+        v = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").strip().lower()
+    except Exception:
+        v = "comida"
+    return v if v in ("comida", "producto") else "comida"
+
+
+def _default_vertical_para_creacion(raw: str | None) -> str:
+    """Sanea el vertical de un producto en creación/edición.
+
+    Solo `comida` y `producto` son válidos. Cualquier otro valor (incluido
+    el legacy `ambos`) → nicho activo actual. Esto elimina productos huérfanos
+    que se filtran a ambas tiendas.
+    """
+    v = (raw or "").strip().lower()
+    if v in ("comida", "producto"):
+        return v
+    return _nicho_activo()
+
+
+def _int_o_none(raw):
+    if raw in (None, ""):
+        return None
+    try:
+        n = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return n if n >= 0 else None
+
+
 def _aplicar_politica_vertical(campos: dict, producto_actual=None) -> None:
     """Sanea el campo `vertical` en `campos` según rol.
-    - super_admin: respeta lo que venga del form.
+    - super_admin: respeta lo que venga del form (ya normalizado).
     - admin (edición): elimina la clave para preservar el valor persistido.
-    - admin (creación): fuerza el default 'ambos' (visible en ambos catálogos).
+    - admin (creación): fuerza el nicho activo (no `ambos`).
     Aplicar antes de instanciar Product(**campos) o setattr en edición."""
     if _puede_editar_vertical():
         return
     if producto_actual is not None:
         campos.pop("vertical", None)
     else:
-        campos["vertical"] = "ambos"
+        campos["vertical"] = _nicho_activo()
 
 
 # ─── DASHBOARD ───────────────────────────────
@@ -2098,9 +2131,16 @@ def _parsear_campos_producto(form):
         "dias_semana_json":          dias_json,
         # visualización stock
         "stock_mostrar_en_web":      bool(form.get("stock_mostrar_en_web")),
-        # vertical / nicho: comida | producto | ambos (default ambos)
-        "vertical":                  (form.get("vertical") or "ambos").strip().lower()
-                                     if (form.get("vertical") or "").strip().lower() in ("comida", "producto", "ambos") else "ambos",
+        # vertical / nicho: comida | producto. Default = nicho activo de la
+        # tienda (evita productos huérfanos "ambos" que aparecen en los dos
+        # catálogos). Valores válidos: exactamente comida o producto.
+        "vertical":                  _default_vertical_para_creacion(form.get("vertical")),
+        # ── Campos retail (solo aplican si vertical="producto") ─────────
+        "marca":                     (form.get("marca") or "").strip()[:100] or None,
+        "material":                  (form.get("material") or "").strip()[:100] or None,
+        "dimensiones":               (form.get("dimensiones") or "").strip()[:80] or None,
+        "peso_gramos":               _int_o_none(form.get("peso_gramos")),
+        "garantia_meses":            _int_o_none(form.get("garantia_meses")),
         # canje con puntos
         "canjeable_con_puntos":      canjeable,
         "puntos_para_canje":         puntos_para_canje if canjeable else None,

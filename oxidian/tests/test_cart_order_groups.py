@@ -174,8 +174,11 @@ class CartOrderGroupTest(unittest.TestCase):
         self.assertEqual(response["issue"]["code"], "vertical")
         self.assertEqual(response["issue"]["action_label"], "Ver catálogo actual")
 
-    def test_producto_vertical_ambos_pasa_en_cualquier_nicho(self):
-        # vertical=ambos siempre pasa, sea comida o retail.
+    def test_producto_vertical_ambos_legacy_no_pasa(self):
+        # Régimen nuevo: comida y retail son tiendas separadas. El legacy
+        # `vertical="ambos"` queda invisible; la migración de deploy lo
+        # convierte al nicho activo. Ningún producto debería quedarse en `ambos`
+        # en prod, pero si aparece (regresión), el filtro lo bloquea.
         for tipo in ("comida", "producto"):
             SiteConfig.query.filter_by(clave="TIPO_TIENDA").delete()
             db.session.add(SiteConfig(clave="TIPO_TIENDA", valor=tipo))
@@ -184,7 +187,7 @@ class CartOrderGroupTest(unittest.TestCase):
                 s.pop("carrito", None)
 
             producto = Product(
-                nombre=f"Universal {tipo}",
+                nombre=f"Legacy {tipo}",
                 precio=Decimal("5.00"),
                 activo=True,
                 canal_preparacion="almacen",
@@ -194,7 +197,8 @@ class CartOrderGroupTest(unittest.TestCase):
             )
             db.session.add(producto)
             db.session.commit()
-            self.assertTrue(self._add(producto).get_json()["ok"], f"falló en {tipo}")
+            self.assertFalse(self._add(producto).get_json()["ok"],
+                             f"vertical=ambos debería estar bloqueado en {tipo}")
 
     def test_cart_compatibility_bloquea_mezcla_comida_y_retail(self):
         """Regla vertical_mix: si dos productos con verticales explícitos
