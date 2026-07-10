@@ -3655,9 +3655,11 @@ def ai_admin_consulta():
     except Exception:
         db.session.rollback()
 
+    # Contexto expandido: nueva clave 'ventas' con subranges 7/30/90d.
+    ventas_30 = (contexto.get("ventas") or {}).get("ultimos_30_dias") or {}
     return jsonify({"ok": True, "respuesta": respuesta, "contexto_resumen": {
-        "pedidos_30d": contexto["ventas_ultimos_30_dias"]["pedidos"],
-        "facturacion_30d": contexto["ventas_ultimos_30_dias"]["facturacion_eur"],
+        "pedidos_30d": ventas_30.get("pedidos", 0),
+        "facturacion_30d": ventas_30.get("facturacion_eur", 0),
     }})
 
 
