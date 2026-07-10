@@ -2131,11 +2131,33 @@ function _sanitizeReply(reply, cfg) {
   return s;
 }
 
-/* IA cliente desactivada por diseño. La IA solo vive en admin/super_admin. */
-async function aiSmartReply(jid, ses, mensajeUsuario) {
-  log('warn', 'ai_cliente_smart_bloqueada', `jid=${jid}`);
-  return null;
+// ─── AUTO-ROUTER IA ─────────────────────────────────────────────────────────
+// Pregunta al back qué hacer con el mensaje del cliente. Timeout corto (5s
+// duro con abort controller) para no bloquear el flujo del bot si el back
+// tarda o está caído. En caso de error, devolvemos null y el caller sigue
+// con el flujo estándar (menú / FAQ) — nunca rompemos el chat por IA.
+async function _aiAutoRoute(jid, mensajeUsuario) {
+  if (!mensajeUsuario || typeof mensajeUsuario !== 'string') return null;
+  const phone = phoneFromJid(jid);
+  if (!phone) return null;
+  try {
+    const data = await oxidianPost('/ai/route', {
+      telefono: phone,
+      mensaje: String(mensajeUsuario).slice(0, 600),
+    }, { timeout: 5000 });
+    if (!data || !data.ok) return null;
+    const valid = new Set(['ai', 'menu', 'handoff', 'noop']);
+    if (!valid.has(data.route)) return null;
+    return data;
+  } catch (err) {
+    log('info', 'ai_autorouter_skip', err?.message || String(err));
+    return null;
+  }
+}
 
+/* IA cliente: gated por SiteConfig. El endpoint /api/bot/ai/route decide
+   cuándo se invoca; aquí solo generamos la respuesta si está habilitada. */
+async function aiSmartReply(jid, ses, mensajeUsuario) {
   const cfg = await getAIConfig();
   if (!cfg || !cfg.habilitado) return null;
 
@@ -3397,6 +3419,42 @@ async function _handleMessage(jid, text, pushName) {
   if (!isOwner && /^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i.test(lower)) {
     const identifier = text.match(/^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i)?.[1] || '';
     return iniciarCancelacionPedido(jid, ses, identifier);
+  }
+
+  // ── Auto-router IA (PR #3) ────────────────────────────────────────────
+  // Delegamos al back la decisión de si contestamos con IA sin exigir `!ia`.
+  // El bot Node solo enruta: menu/noop → sigue el flujo estándar; ai →
+  // dispara aiSmartReply; handoff → aviso neutro + cola humana.
+  if (!isOwner) {
+    try {
+      const decision = await _aiAutoRoute(jid, text);
+      if (decision) {
+        if (decision.route === 'ai') {
+          const smart = await aiSmartReply(jid, ses, text).catch((err) => {
+            log('warn', 'ai_autorouter_fail', err?.message || String(err));
+            return null;
+          });
+          if (smart && smart.reply && smart.reply.length > 1) {
+            if (typeof bumpStat === 'function') bumpStat('ai_fresh');
+            return sendText(jid, smart.reply);
+          }
+          // IA falló silenciosamente: fallback graceful.
+          return sendText(jid, 'No pude entender tu consulta ahora mismo. Escribe *MENU* para ver las opciones.');
+        }
+        if (decision.route === 'handoff') {
+          const msg = decision.message
+            || 'Estamos recibiendo muchas consultas. Te contactamos en breve.';
+          await sendText(jid, msg);
+          return requestHumanSupport(jid, `Auto-router IA (rate limit): "${text.slice(0, 80)}"`);
+        }
+        if (decision.route === 'menu' && decision.message) {
+          // El back sugiere que enseñemos el menú; el flujo normal ya lo hace.
+          // Solo mostramos mensaje si viene explícito (p.ej. IA deshabilitada).
+        }
+      }
+    } catch (_err) {
+      // Failure abierto: seguimos con el flujo estándar sin ruido.
+    }
   }
 
   if (!ses || !ses.estado || ses.estado === 'idle') {
