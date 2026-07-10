@@ -2291,15 +2291,29 @@ class Order(db.Model):
         total = Decimal(str(self.total or 0))
         return max(Decimal("0.00"), total - subtotal + descuento).quantize(Decimal("0.01"))
 
+    @property
+    def max_intentos_entrega(self) -> int:
+        """Máximo de intentos configurable de código de entrega."""
+        try:
+            n = int(SiteConfig.get("DELIVERY_CODE_MAX_INTENTOS", 3) or 3)
+        except (TypeError, ValueError):
+            n = 3
+        return max(1, min(n, 10))  # cap defensivo
+
+    @property
+    def intentos_codigo_restantes(self) -> int:
+        return max(0, self.max_intentos_entrega - int(self.intentos_codigo or 0))
+
+    @property
+    def codigo_confirmacion_bloqueado(self) -> bool:
+        return int(self.intentos_codigo or 0) >= self.max_intentos_entrega
+
     def confirmar_entrega_con_codigo(self, codigo_ingresado):
         """
         Valida el código del repartidor. Retorna (ok, mensaje).
         Máx. intentos configurable via SiteConfig.DELIVERY_CODE_MAX_INTENTOS (default 3).
         """
-        try:
-            max_intentos = int(SiteConfig.get("DELIVERY_CODE_MAX_INTENTOS", 3) or 3)
-        except (TypeError, ValueError):
-            max_intentos = 3
+        max_intentos = self.max_intentos_entrega
         if self.intentos_codigo >= max_intentos:
             return False, "Demasiados intentos fallidos. Contacta al admin."
         if self.codigo_confirmacion_expirado:
@@ -2308,7 +2322,7 @@ class Order(db.Model):
             self.codigo_confirmado_en = utcnow()
             return True, "OK"
         self.intentos_codigo = (self.intentos_codigo or 0) + 1
-        restantes = 3 - self.intentos_codigo
+        restantes = max(0, max_intentos - self.intentos_codigo)
         return False, f"Código incorrecto. {restantes} intento(s) restante(s)."
 
     def avanzar_estado(self):

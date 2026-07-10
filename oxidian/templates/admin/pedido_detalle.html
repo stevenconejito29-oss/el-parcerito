@@ -259,7 +259,7 @@
         <p class="text-xs" style="color:var(--col-muted);">
           El cliente debe leer este código al repartidor al recibir el pedido.
           {% if pedido.intentos_codigo %}
-          <br><strong>{{ 3 - pedido.intentos_codigo }} intento(s) restantes</strong>
+          <br><strong>{{ pedido.intentos_codigo_restantes }} intento(s) restantes</strong>
           {% endif %}
           {% if pedido.codigo_confirmacion_expira_en %}
           <br>
@@ -270,7 +270,7 @@
           {% endif %}
           {% endif %}
         </p>
-        {% if pedido.intentos_codigo >= 3 or pedido.codigo_confirmacion_expirado %}
+        {% if pedido.codigo_confirmacion_bloqueado or pedido.codigo_confirmacion_expirado %}
         <form method="POST" action="{{ url_for('admin.reset_codigo_confirmacion', pedido_id=pedido.id) }}" class="mt-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="ord-btn" style="width:100%;">Regenerar código</button>

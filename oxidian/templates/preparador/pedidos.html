@@ -659,7 +659,7 @@
         <div class="work-item">
           <span class="work-item-thumb" aria-hidden="true">
             {% if item.display_imagen_url %}
-            <img src="{{ item.display_imagen_url }}" alt="" loading="lazy" onerror="this.replaceWith(this.nextElementSibling.content.cloneNode(true))">
+            <img src="{{ item.display_imagen_url|upload_url }}" alt="" loading="lazy" onerror="this.replaceWith(this.nextElementSibling.content.cloneNode(true))">
             <template>{{ _icon_placeholder() }}</template>
             {% else %}
             {{ _icon_placeholder() }}
@@ -807,7 +807,7 @@
         <div class="work-item">
           <span class="work-item-thumb" aria-hidden="true">
             {% if item.display_imagen_url %}
-            <img src="{{ item.display_imagen_url }}" alt="" loading="lazy" onerror="this.replaceWith(this.nextElementSibling.content.cloneNode(true))">
+            <img src="{{ item.display_imagen_url|upload_url }}" alt="" loading="lazy" onerror="this.replaceWith(this.nextElementSibling.content.cloneNode(true))">
             <template>{{ _icon_placeholder() }}</template>
             {% else %}
             {{ _icon_placeholder() }}
@@ -923,12 +923,12 @@
         <div class="work-item">
           {# Checkbox mental para tachar el ítem cuando se prepara #}
           <label class="work-item-check" title="Marcar como preparado">
-            <input type="checkbox" data-item-check aria-label="Marcar {{ item.producto.nombre }} como preparado">
+            <input type="checkbox" data-item-check aria-label="Marcar {{ item.display_nombre }} como preparado">
             <span aria-hidden="true"></span>
           </label>
           <span class="work-item-thumb" aria-hidden="true">
             {% if item.display_imagen_url %}
-            <img src="{{ item.display_imagen_url }}" alt="" loading="lazy" onerror="this.replaceWith(this.nextElementSibling.content.cloneNode(true))">
+            <img src="{{ item.display_imagen_url|upload_url }}" alt="" loading="lazy" onerror="this.replaceWith(this.nextElementSibling.content.cloneNode(true))">
             <template>{{ _icon_placeholder() }}</template>
             {% else %}
             {{ _icon_placeholder() }}
