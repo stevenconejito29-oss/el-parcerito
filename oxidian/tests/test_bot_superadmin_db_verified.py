@@ -8,43 +8,41 @@ import os
 import unittest
 from unittest.mock import patch
 
-from app import create_app
+from flask import Flask
+
 from extensions import db
 from models import User
+from routes.api_bot import _resolver_actor_admin_bot, api_bot_bp
 
 
 class BotSuperadminDBVerifiedAuthTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        os.environ.setdefault("BOT_API_KEY", "test-bot-key")
-        os.environ.setdefault("SECRET_KEY", "test-secret")
-        cls.app = create_app()
-        cls.app.config["TESTING"] = True
-        cls.app.config["WTF_CSRF_ENABLED"] = False
-        cls.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-        cls.app_ctx = cls.app.app_context()
-        cls.app_ctx.push()
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            TESTING=True,
+            SQLALCHEMY_DATABASE_URI="sqlite://",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+            BOT_API_KEY="test-bot-key",
+        )
+        db.init_app(self.app)
+        self.app.register_blueprint(api_bot_bp, url_prefix="/api/bot")
+        self.ctx = self.app.app_context()
+        self.ctx.push()
         db.create_all()
 
-    @classmethod
-    def tearDownClass(cls):
+    def tearDown(self):
         db.session.remove()
         db.drop_all()
-        cls.app_ctx.pop()
+        self.ctx.pop()
 
-    def setUp(self):
-        # Limpiar users entre tests para independencia.
-        User.query.delete()
-        db.session.commit()
-
-    def _mk_super(self, tel="+34600111222"):
+    def _mk(self, tel, rol="super_admin", activo=True):
         u = User(
-            nombre="Super",
-            email=f"sa-{tel[-4:]}@test.invalid",
+            nombre=f"User {tel[-4:]}",
+            email=f"u-{tel[-4:]}@test.invalid",
             telefono=tel,
             telefono_normalizado=tel,
-            rol="super_admin",
-            activo=True,
+            rol=rol,
+            activo=activo,
         )
         u.set_password("test-password")
         db.session.add(u)
@@ -52,17 +50,14 @@ class BotSuperadminDBVerifiedAuthTest(unittest.TestCase):
         return u
 
     def test_env_only_sin_user_deny(self):
-        """Env tiene 34600111222 pero no hay usuario en BD → deny + warning."""
+        """Env tiene 34600111222 pero no hay usuario en BD → deny."""
         with patch.dict(os.environ, {"OWNER_NUMBER": "34600111222", "SUPERADMINS": ""}):
-            from routes.api_bot import _resolver_actor_admin_bot
-            actor = _resolver_actor_admin_bot("+34600111222")
-            self.assertIsNone(actor)
+            self.assertIsNone(_resolver_actor_admin_bot("+34600111222"))
 
     def test_env_mas_user_super_admin_permite(self):
-        """Env y BD ambos autorizan → actor super_admin."""
-        self._mk_super("+34600111222")
+        """Env y BD ambos autorizan → actor super_admin con privileged_by_env."""
+        self._mk("+34600111222", rol="super_admin")
         with patch.dict(os.environ, {"OWNER_NUMBER": "34600111222", "SUPERADMINS": ""}):
-            from routes.api_bot import _resolver_actor_admin_bot
             actor = _resolver_actor_admin_bot("+34600111222")
             self.assertIsNotNone(actor)
             self.assertEqual(actor.rol, "super_admin")
@@ -70,19 +65,8 @@ class BotSuperadminDBVerifiedAuthTest(unittest.TestCase):
 
     def test_user_admin_sin_env_permite_admin(self):
         """Sin env pero con usuario admin en BD → actor admin (no super_admin)."""
-        adm = User(
-            nombre="Admin",
-            email="admin@test.invalid",
-            telefono="+34600333444",
-            telefono_normalizado="+34600333444",
-            rol="admin",
-            activo=True,
-        )
-        adm.set_password("test-password")
-        db.session.add(adm)
-        db.session.commit()
+        self._mk("+34600333444", rol="admin")
         with patch.dict(os.environ, {"OWNER_NUMBER": "", "SUPERADMINS": ""}):
-            from routes.api_bot import _resolver_actor_admin_bot
             actor = _resolver_actor_admin_bot("+34600333444")
             self.assertIsNotNone(actor)
             self.assertEqual(actor.rol, "admin")
@@ -90,21 +74,15 @@ class BotSuperadminDBVerifiedAuthTest(unittest.TestCase):
 
     def test_user_inactivo_deny(self):
         """Usuario existe pero inactivo → deny aunque env autorice."""
-        u = self._mk_super("+34600555666")
-        u.activo = False
-        db.session.commit()
+        self._mk("+34600555666", rol="super_admin", activo=False)
         with patch.dict(os.environ, {"OWNER_NUMBER": "34600555666", "SUPERADMINS": ""}):
-            from routes.api_bot import _resolver_actor_admin_bot
-            actor = _resolver_actor_admin_bot("+34600555666")
-            self.assertIsNone(actor)
+            self.assertIsNone(_resolver_actor_admin_bot("+34600555666"))
 
     def test_telefono_desconocido_deny(self):
         """Teléfono sin match en BD ni en env → deny."""
-        self._mk_super("+34600111222")
+        self._mk("+34600111222", rol="super_admin")
         with patch.dict(os.environ, {"OWNER_NUMBER": "34600111222", "SUPERADMINS": ""}):
-            from routes.api_bot import _resolver_actor_admin_bot
-            actor = _resolver_actor_admin_bot("+34699999999")
-            self.assertIsNone(actor)
+            self.assertIsNone(_resolver_actor_admin_bot("+34699999999"))
 
 
 if __name__ == "__main__":
