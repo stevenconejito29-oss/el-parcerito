@@ -968,6 +968,10 @@ def distribuir_repartidor(pedido: Order) -> User | None:
     """
     Asigna al repartidor disponible con menos carga cuando el pedido pasa a 'listo'.
     Solo usa repartidores con disponibilidad manual activa y presencia reciente.
+
+    Zona (coherente con PR #5): si el pedido tiene `zona_id`, se prefieren
+    repartidores asignados a esa zona. Si no hay ninguno online, cae al pool
+    global (sin zona o cualquier zona) para no bloquear entregas.
     """
     if not get_store_features()["delivery"]:
         return None
@@ -986,8 +990,20 @@ def distribuir_repartidor(pedido: Order) -> User | None:
         )
         return None
 
-    candidatos.sort(key=lambda u: (u.pedidos_activos_como_repartidor(), u.id))
-    asignado = candidatos[0]
+    # Preferencia por zona: especialistas primero, comodines después, pool
+    # completo solo si no hay ninguno de los dos (evita entregas huérfanas).
+    zona_pedido = getattr(pedido, "zona_id", None)
+    if zona_pedido is not None:
+        de_zona = [u for u in candidatos
+                   if getattr(u, "zona_repartidor_id", None) == zona_pedido]
+        sin_zona = [u for u in candidatos
+                    if getattr(u, "zona_repartidor_id", None) is None]
+        pool = de_zona or sin_zona or candidatos
+    else:
+        pool = candidatos
+
+    pool.sort(key=lambda u: (u.pedidos_activos_como_repartidor(), u.id))
+    asignado = pool[0]
     pedido.repartidor_id = asignado.id
     return asignado
 
