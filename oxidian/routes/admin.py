@@ -122,7 +122,8 @@ _FEATURE_URL_MAP = {
     "/admin/ia-analisis":  "reportes",
     "/admin/notificaciones": "whatsapp",
     "/admin/usuarios":     "usuarios",
-    "/admin/clientes":     "usuarios",
+    "/admin/clientes":            "usuarios",
+    "/admin/clientes/editar":     "usuarios",
     "/admin/cola":         "pos",
     "/admin/pedidos":      "pos",
     "/admin/productos":    "productos",
@@ -4655,6 +4656,144 @@ def analytics():
 
 
 # ─── HISTORIAL CLIENTE ────────────────────────
+
+@admin_bp.route("/clientes")
+@admin_required
+def clientes():
+    """Lista de clientes registrados con búsqueda, filtros y paginación.
+
+    Admin y super_admin ven la misma tabla. Solo super_admin puede editar
+    (nombre, teléfono) — ver `editar_cliente`. La búsqueda matchea por
+    nombre, email o dígitos del teléfono.
+    """
+    q = (request.args.get("q") or "").strip()
+    solo_activos = (request.args.get("estado") or "activos").strip().lower()
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(SiteConfig.get("ADMIN_CLIENTES_PAGE_SIZE", "40") or 40)
+    except (TypeError, ValueError):
+        page_size = 40
+    page_size = max(10, min(page_size, 200))
+
+    base = User.query.filter(User.rol == "cliente")
+    if solo_activos == "activos":
+        base = base.filter(User.activo.is_(True))
+    elif solo_activos == "inactivos":
+        base = base.filter(User.activo.is_(False))
+    total_base = base.count()
+
+    # Búsqueda tolerante: si el input tiene dígitos, matchea por teléfono.
+    # Si tiene texto, matchea por nombre/email case-insensitive con LIKE.
+    resultados = base
+    q_digits = re.sub(r"\D", "", q or "")
+    if q:
+        if q_digits and len(q_digits) >= 3:
+            # Traemos candidatos y filtramos en Python (portable SQLite/Postgres).
+            candidatos = base.all()
+            resultados_lista = [
+                u for u in candidatos
+                if re.sub(r"\D", "", (u.telefono_normalizado or u.telefono or "")) .endswith(q_digits)
+                or re.sub(r"\D", "", (u.telefono_normalizado or u.telefono or "")) .startswith(q_digits)
+                or q_digits in re.sub(r"\D", "", (u.telefono_normalizado or u.telefono or ""))
+            ]
+        else:
+            like = f"%{q.lower()}%"
+            resultados_lista = base.filter(
+                db.or_(
+                    db.func.lower(User.nombre).like(like),
+                    db.func.lower(User.email).like(like),
+                )
+            ).all()
+    else:
+        resultados_lista = resultados.all()
+
+    resultados_lista.sort(
+        key=lambda u: (u.creado_en or datetime.min),
+        reverse=True,
+    )
+    total = len(resultados_lista)
+    inicio = (page - 1) * page_size
+    fin = inicio + page_size
+    clientes_pag = resultados_lista[inicio:fin]
+
+    # Enriquecer con conteo de pedidos y último pedido para la tabla.
+    ids = [c.id for c in clientes_pag] or [0]
+    pedido_counts = dict(
+        db.session.query(Order.cliente_id, db.func.count(Order.id))
+        .filter(Order.cliente_id.in_(ids))
+        .group_by(Order.cliente_id).all()
+    )
+
+    return render_template(
+        "admin/clientes.html",
+        clientes=clientes_pag,
+        total_visible=total,
+        total_registrados=total_base,
+        page=page,
+        page_size=page_size,
+        pedido_counts=pedido_counts,
+        q=q,
+        estado=solo_activos,
+        puede_editar=(getattr(current_user, "rol", None) == "super_admin"),
+    )
+
+
+@admin_bp.route("/clientes/<int:user_id>/editar", methods=["POST"])
+@super_admin_required
+def editar_cliente(user_id):
+    """Edita nombre y/o teléfono de un cliente. Solo super_admin.
+
+    Valida: nombre 2..80 chars; teléfono con validador estándar; deduplicado
+    por `telefono_normalizado` UNIQUE (rechaza si otro user ya lo tiene).
+    """
+    cli = get_or_404(User, user_id)
+    if cli.rol != "cliente":
+        flash("Solo se permite editar clientes desde este panel.", "danger")
+        return redirect(url_for("admin.clientes"))
+
+    nombre = (request.form.get("nombre") or "").strip()
+    telefono_raw = (request.form.get("telefono") or "").strip()
+
+    if nombre:
+        if len(nombre) < 2 or len(nombre) > 80:
+            flash("Nombre entre 2 y 80 caracteres.", "danger")
+            return redirect(url_for("admin.clientes"))
+        cli.nombre = nombre
+
+    if telefono_raw:
+        tn = normalizar_telefono_cliente(telefono_raw)
+        if not telefono_valido(tn):
+            flash("Teléfono inválido.", "danger")
+            return redirect(url_for("admin.clientes"))
+        conflicto = User.query.filter(
+            User.telefono_normalizado == tn,
+            User.id != cli.id,
+        ).first()
+        if conflicto:
+            flash(
+                f"Ese teléfono ya está asociado a otro usuario ({conflicto.nombre or conflicto.email}).",
+                "danger",
+            )
+            return redirect(url_for("admin.clientes"))
+        cli.telefono = tn
+        cli.telefono_normalizado = tn
+
+    try:
+        AuditLog.registrar(
+            current_user.id, "editar_cliente", "user",
+            detalle=f"cliente_id={cli.id} nombre={cli.nombre!r} tel=***{(cli.telefono or '')[-3:]}",
+            ip=request.remote_addr,
+        )
+        db.session.commit()
+        flash("Cliente actualizado.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"No se pudo actualizar el cliente: {exc}", "danger")
+    return redirect(url_for("admin.clientes", q=request.args.get("q", "")))
+
 
 @admin_bp.route("/clientes/<int:user_id>/historial")
 @admin_required

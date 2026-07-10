@@ -1,0 +1,174 @@
+{% extends "admin_base.html" %}
+{% block title %}Clientes registrados{% endblock %}
+{% block content %}
+
+<div class="flex items-start justify-between gap-3 flex-wrap mb-5">
+  <div>
+    <h1 class="text-2xl font-black text-white">Clientes registrados</h1>
+    <p class="text-sm mt-1" style="color:var(--col-muted)">
+      {{ total_registrados }} clientes en el estado seleccionado ·
+      mostrando {{ clientes|length }} de {{ total_visible }}
+    </p>
+  </div>
+</div>
+
+{# ── Buscador + filtros ─────────────────────────────────────── #}
+<form method="GET" action="{{ url_for('admin.clientes') }}"
+      class="ox-card p-3 mb-4"
+      style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:end;">
+  <label class="block" style="flex:1;min-width:220px;">
+    <span class="text-xs" style="color:var(--col-muted);">Buscar por nombre, email o teléfono</span>
+    <input type="text" name="q" value="{{ q }}"
+           class="w-full mt-1 px-3 py-2 rounded"
+           style="background:var(--col-elevated);border:1px solid var(--col-border);color:var(--col-text);"
+           placeholder="Ej: María o 34612…" autocomplete="off">
+  </label>
+  <label class="block" style="min-width:150px;">
+    <span class="text-xs" style="color:var(--col-muted);">Estado</span>
+    <select name="estado" class="w-full mt-1 px-3 py-2 rounded"
+            style="background:var(--col-elevated);border:1px solid var(--col-border);color:var(--col-text);">
+      <option value="activos" {% if estado == 'activos' %}selected{% endif %}>Activos</option>
+      <option value="inactivos" {% if estado == 'inactivos' %}selected{% endif %}>Inactivos</option>
+      <option value="todos" {% if estado == 'todos' %}selected{% endif %}>Todos</option>
+    </select>
+  </label>
+  <button type="submit" class="ox-btn-primary" style="height:38px;">Buscar</button>
+  {% if q or estado != 'activos' %}
+  <a href="{{ url_for('admin.clientes') }}" class="ox-btn-secondary" style="height:38px;line-height:38px;">Limpiar</a>
+  {% endif %}
+</form>
+
+{% if not clientes %}
+<div class="ox-card p-6 text-center" style="color:var(--col-muted);">
+  {% if q %}Ningún cliente coincide con «{{ q }}».{% else %}No hay clientes registrados.{% endif %}
+</div>
+{% else %}
+
+<div class="ox-card overflow-hidden">
+  <div class="ox-table-wrap">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b" style="border-color:var(--col-border);">
+        <th class="text-left p-3 text-xs font-black" style="color:var(--col-muted);">Nombre</th>
+        <th class="text-left p-3 text-xs font-black" style="color:var(--col-muted);">Contacto</th>
+        <th class="text-left p-3 text-xs font-black" style="color:var(--col-muted);">Registro</th>
+        <th class="text-right p-3 text-xs font-black" style="color:var(--col-muted);">Pedidos</th>
+        <th class="text-right p-3 text-xs font-black" style="color:var(--col-muted);">Puntos</th>
+        <th class="text-right p-3 text-xs font-black" style="color:var(--col-muted);">Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in clientes %}
+      <tr class="border-b" style="border-color:var(--col-border);">
+        <td class="p-3">
+          <div style="color:var(--col-text);font-weight:600;">
+            {{ c.nombre or "(sin nombre)" }}
+            {% if not c.activo %}<span class="ox-chip ox-chip--muted" style="margin-left:.35rem;font-size:.7rem;">Inactivo</span>{% endif %}
+          </div>
+          {% if c.nif %}<div style="font-size:.7rem;color:var(--col-muted);">NIF {{ c.nif }}</div>{% endif %}
+        </td>
+        <td class="p-3">
+          <div style="color:var(--col-text);font-family:var(--font-mono,monospace);font-size:.85rem;">
+            {{ c.telefono_normalizado or c.telefono or "—" }}
+          </div>
+          <div style="font-size:.75rem;color:var(--col-muted);">{{ c.email or "" }}</div>
+        </td>
+        <td class="p-3" style="font-size:.8rem;color:var(--col-muted);">
+          {{ c.creado_en.strftime("%d/%m/%Y") if c.creado_en else "—" }}
+        </td>
+        <td class="p-3 text-right" style="color:var(--col-text);">
+          {{ pedido_counts.get(c.id, 0) }}
+        </td>
+        <td class="p-3 text-right" style="color:var(--col-text);font-weight:700;">
+          {{ c.puntos or 0 }}
+        </td>
+        <td class="p-3 text-right" style="white-space:nowrap;">
+          <a href="{{ url_for('admin.historial_cliente', user_id=c.id) }}"
+             class="ox-btn-secondary" style="font-size:.75rem;padding:.3rem .55rem;">Historial</a>
+          {% if puede_editar %}
+          <button type="button" class="ox-btn-primary"
+                  style="font-size:.75rem;padding:.3rem .55rem;margin-left:.2rem;"
+                  data-editar-cliente
+                  data-id="{{ c.id }}"
+                  data-nombre="{{ c.nombre|e }}"
+                  data-telefono="{{ (c.telefono_normalizado or c.telefono)|e }}">Editar</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{# ── Paginación ─────────────────────────────────────────────── #}
+{% set total_pages = ((total_visible - 1) // page_size) + 1 %}
+{% if total_pages > 1 %}
+<nav class="mt-4" style="display:flex;gap:.3rem;justify-content:center;flex-wrap:wrap;">
+  {% for p in range(1, total_pages + 1) %}
+    {% if p == page %}
+    <span class="ox-btn-primary" style="padding:.3rem .7rem;">{{ p }}</span>
+    {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+    <a href="{{ url_for('admin.clientes', q=q, estado=estado, page=p) }}"
+       class="ox-btn-secondary" style="padding:.3rem .7rem;">{{ p }}</a>
+    {% elif p == page - 3 or p == page + 3 %}
+    <span style="padding:.3rem .3rem;color:var(--col-muted);">…</span>
+    {% endif %}
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% endif %}
+
+{# ── Modal editar (solo super_admin) ─────────────────────────── #}
+{% if puede_editar %}
+<div id="editar-cliente-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:80;align-items:center;justify-content:center;padding:1rem;">
+  <form method="POST" id="editar-cliente-form"
+        class="ox-card p-4"
+        style="max-width:420px;width:100%;background:var(--col-surface);">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h2 class="text-lg font-black mb-3" style="color:var(--col-text);">Editar cliente</h2>
+    <label class="block mb-3">
+      <span class="text-xs" style="color:var(--col-muted);">Nombre</span>
+      <input type="text" name="nombre" id="ec-nombre" maxlength="80" required
+             class="w-full mt-1 px-3 py-2 rounded"
+             style="background:var(--col-elevated);border:1px solid var(--col-border);color:var(--col-text);">
+    </label>
+    <label class="block mb-3">
+      <span class="text-xs" style="color:var(--col-muted);">Teléfono (formato E.164 sin espacios)</span>
+      <input type="tel" name="telefono" id="ec-telefono" maxlength="20"
+             class="w-full mt-1 px-3 py-2 rounded"
+             style="background:var(--col-elevated);border:1px solid var(--col-border);color:var(--col-text);font-family:var(--font-mono,monospace);"
+             placeholder="+34612345678" autocomplete="off">
+      <span class="text-xs" style="color:var(--col-muted);">Se rechaza si ya está asociado a otro usuario.</span>
+    </label>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end;">
+      <button type="button" id="ec-cancelar" class="ox-btn-secondary">Cancelar</button>
+      <button type="submit" class="ox-btn-primary">Guardar</button>
+    </div>
+  </form>
+</div>
+<script>
+(function(){
+  const modal = document.getElementById('editar-cliente-modal');
+  const form = document.getElementById('editar-cliente-form');
+  const inputNombre = document.getElementById('ec-nombre');
+  const inputTel = document.getElementById('ec-telefono');
+  const btnCancelar = document.getElementById('ec-cancelar');
+  const editUrlBase = "{{ url_for('admin.editar_cliente', user_id=0) }}".replace('/0/', '/__ID__/');
+
+  document.querySelectorAll('[data-editar-cliente]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      form.action = editUrlBase.replace('__ID__', btn.dataset.id);
+      inputNombre.value = btn.dataset.nombre || '';
+      inputTel.value = btn.dataset.telefono || '';
+      modal.style.display = 'flex';
+    });
+  });
+  btnCancelar?.addEventListener('click', () => { modal.style.display = 'none'; });
+  modal.addEventListener('click', (ev) => { if (ev.target === modal) modal.style.display = 'none'; });
+})();
+</script>
+{% endif %}
+
+{% endblock %}
