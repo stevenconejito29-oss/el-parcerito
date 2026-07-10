@@ -2231,6 +2231,15 @@ def _parse_combo_selection(producto, form, cantidad=1, origen=None):
             return producto.combo_item_stock_disponible(item, cantidad, origen=origen)
 
         validos = {item.id for item in opciones if _item_disponible(item)}
+        # Guard: si el grupo tiene opciones pero NINGUNA tiene stock, el combo
+        # entero no es fabricable ahora. Antes: aceptábamos empty select y
+        # dábamos error confuso "stock insuficiente" en downstream. Ahora
+        # devolvemos error claro y bloqueamos el add-to-cart.
+        if opciones and not validos:
+            return {}, (
+                f"El combo «{producto.nombre}» no está disponible ahora: "
+                f"todas las opciones del grupo «{grupo}» están sin stock."
+            )
 
         if max_sel == 1:
             valores = form.getlist(field_template)
@@ -2562,6 +2571,10 @@ def _build_items_from_carrito(carrito):
             elif not p.disponible_para_venta_en_origen(origen, qty):
                 raise ValueError("stock")
         except ValueError:
+            # No renderiza pero además lo marca para cleanup: si el combo
+            # perdió stock (admin desactivó un componente), no debe quedar
+            # como zombie en la sesión.
+            ids_desaparecidos.append(producto_id_str)
             continue
         extra_unit = float((metadata.get("combo") or {}).get("extras_total") or 0) if p.es_combo else 0.0
         precio = (float(p.precio_combo_para_seleccion(seleccion_ids)) if p.es_combo else float(p.precio_final or 0)) + extras_unit
