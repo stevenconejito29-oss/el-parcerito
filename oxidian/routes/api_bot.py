@@ -3324,14 +3324,14 @@ _BOT_CAPABILITY_TO_ACTION = {
 }
 
 
-def _bot_admin_actor_allowed(data, capability):
-    """Autoriza una acción del bot admin. Identifica al actor por teléfono
-    y delega la política a `permissions.allow`, evitando drift con la web."""
-    telefono = normalizar_telefono_cliente((data or {}).get("actor_telefono"))
-    if not telefono_valido(telefono):
-        return False
-    digits = re.sub(r"\D", "", telefono)
-    privileged = {
+def _env_privileged_digits():
+    """Set de dígitos puros de OWNER_NUMBER + SUPERADMINS.
+
+    Es un WHITELIST (defense-in-depth): el teléfono admin debe estar aquí
+    para hablar con el bot. Pero NO otorga rol por sí solo — la BD es la
+    fuente de verdad del rol. Ver `_resolver_actor_admin_bot`.
+    """
+    return {
         re.sub(r"\D", "", raw)
         for raw in [
             os.environ.get("OWNER_NUMBER", ""),
@@ -3339,27 +3339,79 @@ def _bot_admin_actor_allowed(data, capability):
         ]
         if raw
     }
-    action = _BOT_CAPABILITY_TO_ACTION.get(capability)
-    if action is None:
-        return False  # Capability desconocida → deny by default.
-    if digits in privileged:
-        return _allow(_Actor(rol="super_admin", user_id=None, privileged_by_env=True), action)
-    # Match por dígitos: tolera '+34XXX' vs '34XXX' en telefono_normalizado.
-    # Portable a SQLite (tests) y Postgres (prod): traemos candidatos y
-    # filtramos en Python. Lista pequeña (admins activos), sin impacto.
-    user = None
+
+
+def _resolver_actor_admin_bot(telefono_raw):
+    """Resuelve el actor admin del bot desde un teléfono, cruzando DB y env.
+
+    Política (defense-in-depth, sin bypass silencioso):
+      1. Normaliza el teléfono a dígitos puros.
+      2. Busca `User` activo con rol ∈ {admin, super_admin} y teléfono coincidente.
+         La BD es la fuente autoritativa del rol.
+      3. Si además el teléfono está en `OWNER_NUMBER`/`SUPERADMINS` env, marca
+         el actor como `privileged_by_env=True` (segundo factor implícito).
+      4. Si el env tiene el número pero no hay usuario en BD → log de auditoría
+         y deny. Nunca se acepta env como fuente única del rol.
+
+    Retorna `Actor` si autoriza, `None` si no.
+    """
+    digits = re.sub(r"\D", "", telefono_raw or "")
+    if not digits:
+        return None
+    env_whitelist = _env_privileged_digits()
+
+    # Búsqueda de usuario admin/super_admin por teléfono normalizado.
+    # Lista pequeña; comparación en Python (portable SQLite/Postgres).
     candidatos = User.query.filter(
         User.activo == True,  # noqa
         User.rol.in_(["admin", "super_admin"]),
         User.telefono_normalizado.isnot(None),
     ).all()
+    user = None
     for u in candidatos:
         if re.sub(r"\D", "", u.telefono_normalizado or "") == digits:
             user = u
             break
-    if not user:
+
+    if user is None:
+        # Env autoriza pero no hay usuario en BD → audit + deny.
+        if digits in env_whitelist:
+            try:
+                current_app.logger.warning(
+                    "bot admin: teléfono env-privilegiado sin User(super_admin) "
+                    "en BD (digits=***%s). Deny by policy — crea el usuario o "
+                    "quita el número del env.",
+                    digits[-3:] if len(digits) >= 3 else "?",
+                )
+            except Exception:
+                pass
+        return None
+
+    # Usuario existe. Env acompaña como segundo factor (defense-in-depth).
+    return _Actor(
+        rol=user.rol,
+        user_id=user.id,
+        privileged_by_env=(digits in env_whitelist),
+    )
+
+
+def _bot_admin_actor_allowed(data, capability):
+    """Autoriza una acción del bot admin.
+
+    - Identifica al actor cruzando teléfono + BD + env.
+    - Delega la política a `permissions.allow` (fuente única).
+    - Deny by default para capability desconocida.
+    """
+    telefono = normalizar_telefono_cliente((data or {}).get("actor_telefono"))
+    if not telefono_valido(telefono):
         return False
-    return _allow(_Actor(rol=user.rol, user_id=user.id), action)
+    action = _BOT_CAPABILITY_TO_ACTION.get(capability)
+    if action is None:
+        return False
+    actor = _resolver_actor_admin_bot(telefono)
+    if actor is None:
+        return False
+    return _allow(actor, action)
 
 
 def _bot_admin_request_payload():
@@ -3893,12 +3945,19 @@ def bot_admin_historial_puntos(cliente_id):
 # Reutiliza la misma capa de análisis del panel web (agregados + guardrails).
 
 def _telefono_admin_autorizado(telefono):
-    """True si el teléfono normalizado pertenece a un usuario admin/super_admin
-    activo o coincide con SUPERADMINS/OWNER_NUMBER del entorno."""
+    """Devuelve el teléfono normalizado si pertenece a un `User` activo con rol
+    admin/super_admin. Cruza con el whitelist env (SUPERADMINS/OWNER_NUMBER)
+    como defense-in-depth, PERO nunca acepta env sin usuario en BD.
+
+    Si el env tiene un teléfono sin usuario correspondiente → warning y deny,
+    para evitar bypass silencioso si el env se filtra o queda desincronizado.
+    """
     tn = normalizar_telefono_cliente(telefono)
     if not telefono_valido(tn):
         return None
-    # Whitelist runtime desde SiteConfig/env — compara por dígitos.
+    tn_digits = re.sub(r"\D", "", tn)
+
+    # Whitelist runtime (SiteConfig o env) — solo para trazabilidad.
     whitelist_digits = set()
     for clave in ("SUPERADMINS", "OWNER_NUMBER"):
         raw = (SiteConfig.get(clave, current_app.config.get(clave, "")) or "")
@@ -3906,11 +3965,8 @@ def _telefono_admin_autorizado(telefono):
             d = re.sub(r"\D", "", chunk or "")
             if d:
                 whitelist_digits.add(d)
-    tn_digits = re.sub(r"\D", "", tn)
-    if tn_digits in whitelist_digits:
-        return tn
-    # Fallback: usuario admin/super_admin — match por dígitos para tolerar '+34...' vs '34...'.
-    # Portable a SQLite (test) sin regexp_replace de Postgres.
+
+    # Búsqueda autoritativa en BD.
     user = None
     for u in User.query.filter(
         User.telefono_normalizado.isnot(None),
@@ -3921,6 +3977,17 @@ def _telefono_admin_autorizado(telefono):
             break
     if user and user.activo:
         return tn
+
+    # Env-only sin usuario en BD → warning + deny.
+    if tn_digits in whitelist_digits:
+        try:
+            current_app.logger.warning(
+                "ai admin: teléfono env-privilegiado sin User(admin/super_admin) "
+                "en BD (digits=***%s). Deny by policy.",
+                tn_digits[-3:] if len(tn_digits) >= 3 else "?",
+            )
+        except Exception:
+            pass
     return None
 
 
@@ -4037,16 +4104,10 @@ def bot_config_set():
     actor_telefono = _bot_admin_request_payload().get("actor_telefono")
     actor_norm = normalizar_telefono_cliente(actor_telefono)
     actor_user = User.query.filter_by(telefono_normalizado=actor_norm, activo=True).first() if actor_norm else None
+    # Fuente autoritativa: BD. El env (SUPERADMINS/OWNER_NUMBER) es whitelist
+    # de defensa, no otorga rol. Ver `_resolver_actor_admin_bot` para el
+    # patrón general del bot.
     actor_superadmin = bool(actor_user and actor_user.rol == "super_admin")
-    if not actor_superadmin:
-        privileged = set()
-        for key in ("SUPERADMINS", "OWNER_NUMBER"):
-            raw = (SiteConfig.get(key, current_app.config.get(key, "")) or "")
-            for chunk in raw.replace(";", ",").split(","):
-                n = normalizar_telefono_cliente(chunk)
-                if telefono_valido(n):
-                    privileged.add(n)
-        actor_superadmin = bool(actor_norm and actor_norm in privileged)
     if clave in LOCKED_CONFIG_KEYS and not actor_superadmin:
         return jsonify({
             "ok": False,
