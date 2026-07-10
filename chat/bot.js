@@ -541,11 +541,24 @@ function isOwnerJid(jid) {
   return isOwnerPhone(phoneFromJid(jid));
 }
 
+// Fuente autoritativa del rol super_admin: el perfil DB-derivado que llega
+// vía /branding. El env (OWNER_NUMBER / SUPERADMINS) sigue siendo whitelist
+// de acceso (staticAdminPhones), pero NO otorga rol.
+// Si env y BD divergen, log de advertencia — el fix va en la BD, no en el bot.
+let _superAdminMismatchLogged = false;
 function isSuperAdminJid(jid) {
-  if (isOwnerJid(jid)) return true;
-  if (SUPERADMINS.includes(normalizePhone(phoneFromJid(jid)))) return true;
-  const profile = whatsappRoleProfile(phoneFromJid(jid));
-  return profile?.rol === 'super_admin';
+  const phone = phoneFromJid(jid);
+  const profile = whatsappRoleProfile(phone);
+  const dbSuperAdmin = profile?.rol === 'super_admin';
+
+  // Diagnóstico: env autoriza pero BD no. Loguear una vez para trazabilidad.
+  const envPrivileged = isOwnerPhone(phone) || SUPERADMINS.includes(normalizePhone(phone));
+  if (envPrivileged && !dbSuperAdmin && !_superAdminMismatchLogged) {
+    log('warn', 'super_admin_env_mismatch',
+        `phone ***${normalizePhone(phone).slice(-3)} en env pero sin User(super_admin) en BD`);
+    _superAdminMismatchLogged = true;
+  }
+  return dbSuperAdmin;
 }
 
 function adminCan(jid, capability) {
