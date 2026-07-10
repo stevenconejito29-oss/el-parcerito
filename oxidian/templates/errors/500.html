@@ -9,7 +9,7 @@
   {% if brand.telefono %}
   <p class="mb-8 text-sm" style="color:var(--col-muted)">
     Si tienes urgencia, contáctanos por WhatsApp:
-    <a href="https://wa.me/{{ brand.telefono|replace(' ','')|replace('+','') }}"
+    <a href="https://wa.me/{{ brand.telefono|phone_digits }}"
        class="font-bold" style="color:var(--brand-primary,#FCD116)">{{ brand.telefono }}</a>
   </p>
   {% endif %}

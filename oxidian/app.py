@@ -472,6 +472,15 @@ def create_app(env="default"):
         except (TypeError, ValueError):
             return {}
 
+    @app.template_filter("phone_digits")
+    def phone_digits_filter(raw):
+        """Extrae solo dígitos de un teléfono para wa.me / tel: URLs.
+        Robusto ante paréntesis, puntos, espacios, guiones y símbolos.
+        Reemplaza el patrón frágil `|replace(' ','')|replace('+','')|replace('-','')`
+        que dejaba pasar caracteres no numéricos."""
+        import re as _re
+        return _re.sub(r"\D", "", str(raw or ""))
+
     @app.template_filter("upload_url")
     def upload_url_filter(path):
         """Devuelve una URL de imagen usable para rutas relativas, /uploads o URLs externas."""
