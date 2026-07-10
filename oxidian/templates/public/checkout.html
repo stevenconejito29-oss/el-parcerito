@@ -160,6 +160,14 @@
       <input type="text" name="nombre_invitado" id="nombre_invitado"
              placeholder="¿Cómo te llamamos?" autocomplete="name" required>
     </div>
+    <div class="mt-3">
+      <label class="ox-label">NIF / DNI / CIF <span style="color:var(--col-muted)">(opcional, solo para factura)</span></label>
+      <input type="text" name="nif_invitado" id="nif_invitado"
+             placeholder="Ej: 12345678Z o B12345678"
+             maxlength="15" autocomplete="off"
+             style="text-transform:uppercase">
+      <div class="text-xs mt-1" style="color:var(--col-faint)">Déjalo en blanco si no necesitas factura fiscal.</div>
+    </div>
   </div>
 
   <!-- ② ENTREGA -->

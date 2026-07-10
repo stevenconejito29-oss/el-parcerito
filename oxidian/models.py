@@ -114,6 +114,9 @@ class User(UserMixin, db.Model):
     telefono = db.Column(db.String(20))
     telefono_normalizado = db.Column(db.String(20), unique=True, index=True)
     direccion = db.Column(db.Text)
+    # NIF/DNI/NIE/CIF opcional para clientes que necesiten factura fiscal (España).
+    # Nullable siempre: la mayoría de pedidos B2C no lo requieren.
+    nif = db.Column(db.String(15))
     puntos = db.Column(db.Integer, default=0)
     activo = db.Column(db.Boolean, default=True)
     creado_en = db.Column(db.DateTime, default=utcnow)
@@ -143,6 +146,15 @@ class User(UserMixin, db.Model):
     # LEGACY: vínculo antiguo con proveedor/bar aliado. No se usa para login ni
     # permisos del flujo vigente.
     proveedor_id = db.Column(db.Integer, db.ForeignKey("proveedores.id"), nullable=True)
+
+    # Zona de reparto asignada al repartidor. Si es NULL, ve todos los pedidos
+    # (comportamiento retro-compatible). Solo aplica a rol repartidor.
+    zona_repartidor_id = db.Column(
+        db.Integer,
+        db.ForeignKey("zonas_entrega.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    zona_repartidor = db.relationship("ZonaEntrega", foreign_keys=[zona_repartidor_id])
 
     # Relaciones
     pedidos = db.relationship("Order", foreign_keys="Order.cliente_id", backref="cliente", lazy="dynamic")
@@ -231,17 +243,25 @@ class User(UserMixin, db.Model):
         return self.rol in ("admin", "super_admin")
 
     def generar_cod_puntos(self):
-        """Genera código de 6 dígitos criptográficamente seguro para verificar canje de puntos."""
+        """Genera código de 6 dígitos criptográficamente seguro para verificar canje de puntos.
+
+        TTL configurable via SiteConfig.COD_PUNTOS_TTL_MINUTOS (default 10)."""
         import secrets as _secrets
+        try:
+            ttl_min = int(SiteConfig.get("COD_PUNTOS_TTL_MINUTOS", 10) or 10)
+        except (TypeError, ValueError):
+            ttl_min = 10
+        ttl_min = max(1, min(ttl_min, 60))  # cap defensivo
         self.cod_puntos = str(_secrets.randbelow(1_000_000)).zfill(6)
-        self.cod_puntos_expira = utcnow() + timedelta(minutes=10)
+        self.cod_puntos_expira = utcnow() + timedelta(minutes=ttl_min)
         self.cod_puntos_intentos = 0
         return self.cod_puntos
 
     def verificar_cod_puntos(self, codigo):
         """
         Verifica el código OTP. Retorna True si válido.
-        Limita a 5 intentos y borra el código tras éxito para evitar replay attacks.
+        Máx. intentos configurable en SiteConfig.COD_PUNTOS_MAX_INTENTOS (default 5).
+        Borra el código tras éxito para evitar replay attacks.
         """
         if not self.cod_puntos or not self.cod_puntos_expira:
             return False
@@ -250,7 +270,11 @@ class User(UserMixin, db.Model):
             self.cod_puntos_expira = None
             return False
         intentos = getattr(self, 'cod_puntos_intentos', 0) or 0
-        if intentos >= 5:
+        try:
+            max_intentos = int(SiteConfig.get("COD_PUNTOS_MAX_INTENTOS", 5) or 5)
+        except (TypeError, ValueError):
+            max_intentos = 5
+        if intentos >= max_intentos:
             return False
         if self.cod_puntos != str(codigo).strip():
             self.cod_puntos_intentos = intentos + 1
@@ -541,6 +565,12 @@ class Product(db.Model):
     # NO se puede añadir al carrito como compra normal. Solo aparece en /club
     # y en la selección de canje del carrito. Implica canjeable_con_puntos=True.
     solo_canje = db.Column(db.Boolean, default=False, server_default="false", nullable=False)
+
+    # ── Fiscal (IVA/España) ──────────────────────────────────────────
+    # Tasa IVA aplicable al producto. NULL → se hereda del SiteConfig
+    # (IVA_DEFAULT_COMIDA o IVA_DEFAULT_RETAIL según vertical) al facturar.
+    # Ejemplos: 10.00 comida en local, 4.00 alimentos básicos, 21.00 retail.
+    iva_pct = db.Column(db.Numeric(4, 2))
 
     # ── Hipoalergénicos / alérgenos ──────────────────────────────────
     es_hipoalergenico = db.Column(db.Boolean, default=False)
@@ -1658,6 +1688,35 @@ class Product(db.Model):
             if fila:
                 fila.stock += qty
 
+    # ── Variantes retail (tallas/colores) ────────────────────────────
+    def _admite_variantes(self) -> bool:
+        """Solo productos con vertical retail (producto|ambos) usan variantes.
+        Los productos de comida ignoran filas de variantes incluso si existen."""
+        return (self.vertical or "").lower() in ("producto", "ambos")
+
+    @property
+    def tiene_variantes(self) -> bool:
+        if not self._admite_variantes():
+            return False
+        try:
+            return self.variantes.filter_by(activo=True).first() is not None
+        except Exception:
+            return False
+
+    @property
+    def variantes_activas(self):
+        """Lista ordenada de variantes activas del producto. Vacía para comida."""
+        if not self._admite_variantes():
+            return []
+        try:
+            return (
+                self.variantes.filter_by(activo=True)
+                .order_by(ProductVariant.orden, ProductVariant.id)
+                .all()
+            )
+        except Exception:
+            return []
+
     def __repr__(self):
         return f"<Product {self.nombre}>"
 
@@ -1880,6 +1939,100 @@ class ProductPresentation(db.Model):
 
 
 # ─────────────────────────────────────────────
+# VARIANTES RETAIL (tallas / colores) — opt-in por producto
+# ─────────────────────────────────────────────
+# Solo aplica a productos con `vertical in ('producto','ambos')`. Un producto
+# puede definir 0-N variantes. Si tiene ≥1 activa, el cliente elige una antes
+# de añadir al carrito. Cada variante puede tener precio propio (`precio_override`)
+# o heredar el del producto. `stock` es local a la variante (retail simple —
+# no está integrado con Stock FIFO/proveedor todavía).
+#
+# La unicidad (product_id, talla, color) se refuerza mediante índice único
+# parcial en Postgres (ver `_migrate_product_variants`). En SQLite u otros
+# motores queda como restricción a nivel aplicativo — suficiente para dev.
+
+class ProductVariant(db.Model):
+    __tablename__ = "product_variants"
+
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(
+        db.Integer,
+        db.ForeignKey("products.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sku = db.Column(db.String(60), unique=True, nullable=True)
+    talla = db.Column(db.String(20), nullable=True)
+    color = db.Column(db.String(40), nullable=True)
+    # #RRGGBB para chip visual en UI del catálogo bot/admin.
+    color_hex = db.Column(db.String(7), nullable=True)
+    precio_override = db.Column(db.Numeric(10, 2), nullable=True)
+    stock = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    activo = db.Column(
+        db.Boolean, nullable=False, default=True, server_default=db.text("true")
+    )
+    orden = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    imagen_url = db.Column(db.String(300), nullable=True)
+
+    producto = db.relationship(
+        "Product",
+        backref=db.backref(
+            "variantes",
+            cascade="all, delete-orphan",
+            lazy="dynamic",
+            order_by="ProductVariant.orden",
+        ),
+    )
+
+    __table_args__ = (
+        db.Index("ix_product_variants_producto_orden", "product_id", "orden"),
+    )
+
+    @property
+    def precio_efectivo(self) -> Decimal:
+        """Precio efectivo de la variante: `precio_override` o `producto.precio`."""
+        if self.precio_override is not None:
+            return Decimal(self.precio_override)
+        try:
+            return Decimal(self.producto.precio) if self.producto else Decimal("0")
+        except (TypeError, AttributeError):
+            return Decimal("0")
+
+    @property
+    def label_publico(self) -> str:
+        """Etiqueta legible: 'Talla M · Rojo', 'Rojo', 'Talla M' o ''."""
+        partes = []
+        if self.talla:
+            partes.append(f"Talla {self.talla}")
+        if self.color:
+            partes.append(self.color)
+        return " · ".join(partes)
+
+    def disponible(self) -> bool:
+        return bool(self.activo and (self.stock or 0) > 0)
+
+    def __repr__(self):
+        return f"<ProductVariant p={self.product_id} t={self.talla} c={self.color}>"
+
+
+def metadata_variante(variant) -> dict:
+    """Helper de snapshot para adjuntar la variante congelada al metadata_json
+    de un OrderItem. NO se invoca desde flujos existentes — está aquí como
+    utilidad para checkout retail cuando se implemente."""
+    if variant is None:
+        return {}
+    return {
+        "variant_id": variant.id,
+        "sku": variant.sku,
+        "talla": variant.talla,
+        "color": variant.color,
+        "color_hex": variant.color_hex,
+        "precio_efectivo": float(variant.precio_efectivo or 0),
+        "label": variant.label_publico,
+    }
+
+
+# ─────────────────────────────────────────────
 # STOCK
 # ─────────────────────────────────────────────
 
@@ -1937,6 +2090,10 @@ class Order(db.Model):
     subtotal = db.Column(db.Numeric(10, 2), nullable=False)
     descuento = db.Column(db.Numeric(10, 2), default=0)
     total = db.Column(db.Numeric(10, 2), nullable=False)
+    # ── Fiscal (IVA/España) ──────────────────────────────────────────
+    # IVA total (suma por ítem) congelado al confirmar el pedido. Se calcula
+    # desde `OrderItem.metadata_json.iva_pct` (snapshot) para trazabilidad.
+    iva_total = db.Column(db.Numeric(10, 2), default=0, server_default="0", nullable=False)
     service_commission_pct = db.Column(db.Numeric(5, 2), default=0, server_default="0", nullable=False)
     service_commission_amount = db.Column(db.Numeric(10, 2), default=0, server_default="0", nullable=False)
     merchant_net_amount = db.Column(db.Numeric(10, 2), default=0, server_default="0", nullable=False)
@@ -1973,6 +2130,7 @@ class Order(db.Model):
     # ── Confirmación de entrega ──────────────────────────────────────
     # Código de 6 dígitos que se envía al cliente cuando el pedido sale
     codigo_confirmacion = db.Column(db.String(8))
+    codigo_confirmacion_expira_en = db.Column(db.DateTime)  # TTL (env DELIVERY_CODE_TTL_HOURS)
     codigo_confirmado_en = db.Column(db.DateTime)
     intentos_codigo = db.Column(db.Integer, default=0)
 
@@ -2046,12 +2204,36 @@ class Order(db.Model):
         ts = _time.time_ns() % 1_000_000_000
         return f"#{ts:09d}"
 
+    @staticmethod
+    def _delivery_code_ttl_hours() -> int:
+        """TTL del código de entrega en horas. Configurable en 3 capas
+        (SiteConfig > env > default). Sin hardcoding en el flujo."""
+        try:
+            v = SiteConfig.get("DELIVERY_CODE_TTL_HOURS", None)
+        except Exception:
+            v = None
+        if v in (None, ""):
+            v = os.environ.get("DELIVERY_CODE_TTL_HOURS", "24")
+        try:
+            n = int(str(v).strip())
+        except (TypeError, ValueError):
+            n = 24
+        return max(1, min(n, 168))  # cap defensivo: 1h ≤ ttl ≤ 7d
+
     def generar_codigo_confirmacion(self):
-        """Genera un código de 6 dígitos criptográficamente seguro para confirmar la entrega."""
+        """Genera un código de 6 dígitos criptográficamente seguro para confirmar la entrega.
+        Setea expiración según DELIVERY_CODE_TTL_HOURS (SiteConfig|env|24)."""
         import secrets as _secrets
+        from datetime import timedelta as _timedelta
         self.codigo_confirmacion = str(_secrets.randbelow(1_000_000)).zfill(6)
+        self.codigo_confirmacion_expira_en = utcnow() + _timedelta(hours=self._delivery_code_ttl_hours())
         self.intentos_codigo = 0
         return self.codigo_confirmacion
+
+    @property
+    def codigo_confirmacion_expirado(self) -> bool:
+        exp = self.codigo_confirmacion_expira_en
+        return bool(exp and exp < utcnow())
 
     @property
     def tiene_proveedores(self):
@@ -2091,10 +2273,16 @@ class Order(db.Model):
     def confirmar_entrega_con_codigo(self, codigo_ingresado):
         """
         Valida el código del repartidor. Retorna (ok, mensaje).
-        Máximo 3 intentos fallidos.
+        Máx. intentos configurable via SiteConfig.DELIVERY_CODE_MAX_INTENTOS (default 3).
         """
-        if self.intentos_codigo >= 3:
+        try:
+            max_intentos = int(SiteConfig.get("DELIVERY_CODE_MAX_INTENTOS", 3) or 3)
+        except (TypeError, ValueError):
+            max_intentos = 3
+        if self.intentos_codigo >= max_intentos:
             return False, "Demasiados intentos fallidos. Contacta al admin."
+        if self.codigo_confirmacion_expirado:
+            return False, "El código ha expirado. Regenéralo desde el panel."
         if self.codigo_confirmacion and self.codigo_confirmacion == str(codigo_ingresado).strip():
             self.codigo_confirmado_en = utcnow()
             return True, "OK"
@@ -2424,6 +2612,34 @@ class NotificationOutbox(db.Model):
             return {}
 
 
+def _resolver_iva_pct_producto(producto):
+    """Devuelve la tasa IVA aplicable a un producto.
+
+    Orden de resolución (España):
+      1. Producto tiene `iva_pct` explícito → se usa.
+      2. Vertical del producto → IVA_DEFAULT_COMIDA o IVA_DEFAULT_RETAIL en SiteConfig.
+      3. Fallback duro razonable: 10% comida, 21% resto.
+    """
+    if producto is None:
+        return 0
+    if getattr(producto, "iva_pct", None) is not None:
+        try:
+            return float(producto.iva_pct)
+        except (TypeError, ValueError):
+            pass
+    vertical = (getattr(producto, "vertical", None) or "ambos").lower()
+    if vertical == "comida":
+        clave, fallback = "IVA_DEFAULT_COMIDA", 10.0
+    else:
+        # producto retail (o "ambos") → tratamos como retail para el default fiscal
+        clave, fallback = "IVA_DEFAULT_RETAIL", 21.0
+    raw = SiteConfig.get(clave, None)
+    try:
+        return float(raw) if raw not in (None, "") else fallback
+    except (TypeError, ValueError):
+        return fallback
+
+
 def snapshot_producto_para_pedido(producto, origen_operativo=None):
     """Crea una foto estable del producto para trazabilidad de pedidos."""
     if not producto:
@@ -2486,6 +2702,9 @@ def snapshot_producto_para_pedido(producto, origen_operativo=None):
         "proveedor_comision_pct": (
             float(proveedor.comision_pct or 0) if proveedor else None
         ),
+        # IVA congelado al momento del pedido. Si el producto no tiene tasa
+        # propia, cae al default por vertical desde SiteConfig.
+        "iva_pct": float(_resolver_iva_pct_producto(producto)),
         "stock_mostrar_en_web": bool(producto.stock_mostrar_en_web),
         "canjeable_con_puntos": bool(producto.canjeable_con_puntos),
         "puntos_para_canje": int(producto.puntos_para_canje or 0),

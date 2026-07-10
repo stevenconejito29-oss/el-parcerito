@@ -718,8 +718,8 @@ def asignar_zona_por_coordenadas(lat, lon, zonas):
     # 2) Sin zonas geo: usa centro del negocio como fallback si está configurado
     from models import SiteConfig
     try:
-        neg_lat = float(SiteConfig.get("NEGOCIO_LAT", "") or 0) or None
-        neg_lng = float(SiteConfig.get("NEGOCIO_LNG", "") or 0) or None
+        neg_lat = float(SiteConfig.get("CENTRO_LAT", "") or 0) or None
+        neg_lng = float(SiteConfig.get("CENTRO_LON", "") or 0) or None
         neg_radio = float(SiteConfig.get("RADIO_ENTREGA_KM", "") or 0) or None
     except (TypeError, ValueError):
         neg_lat = neg_lng = neg_radio = None
@@ -1518,6 +1518,27 @@ def mensaje_codigo_entrega(pedido: Order) -> str:
         "Compártelo únicamente con el repartidor cuando estés recibiendo tu pedido. "
         "Si elegiste Bizum, confirma primero el pago del importe exacto."
     )
+
+
+def _bot_http_get(path: str, timeout: int = 3) -> bool:
+    """Consulta ligera al bot (p.ej. health). Devuelve True si respondió 2xx."""
+    import requests
+    from models import SiteConfig
+
+    bot_url = (SiteConfig.get("BOT_API_URL", os.environ.get("BOT_API_URL", "http://chat:3000")) or "").rstrip("/")
+    api_key = SiteConfig.get("BOT_API_KEY", "")
+    if not bot_url:
+        return False
+    headers = {}
+    if api_key:
+        headers["X-API-Key"] = api_key
+        headers["X-Bot-Key"] = api_key
+    try:
+        resp = requests.get(f"{bot_url}{path}", headers=headers, timeout=timeout)
+        return resp.ok
+    except Exception as exc:
+        logger.warning("bot get %s fallo: %s", path, exc)
+        return False
 
 
 def _bot_http_post(path: str, payload: dict, timeout: int = 8) -> bool:

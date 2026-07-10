@@ -588,6 +588,22 @@ def _producto_catalogo_payload(producto, incluir_diagnostico=False):
         "puntos_para_canje": producto.puntos_para_canje,
         "badges": producto.badge_info,
     }
+    # Variantes retail (talla/color) — solo si el producto las admite y tiene ≥1 activa.
+    if producto.tiene_variantes:
+        payload["variantes"] = [
+            {
+                "id": v.id,
+                "label": v.label_publico,
+                "talla": v.talla,
+                "color": v.color,
+                "color_hex": v.color_hex,
+                "sku": v.sku,
+                "precio": float(v.precio_efectivo),
+                "stock": int(v.stock or 0),
+                "imagen_url": v.imagen_url or "",
+            }
+            for v in producto.variantes_activas
+        ]
     if incluir_diagnostico:
         payload.update({
             "activo": bool(producto.activo),
@@ -659,7 +675,20 @@ def _pedido_bot_payload(pedido):
         "total": float(pedido.total),
         "metodo_pago": pedido.metodo_pago,
         "pago_confirmado": bool(pedido.pago_confirmado),
-        "codigo_confirmacion": None,
+        # Código de entrega: solo se expone cuando ya se generó (estado
+        # 'listo' o posterior) y no está expirado. Antes de eso no existe.
+        "codigo_confirmacion": (
+            pedido.codigo_confirmacion
+            if (pedido.codigo_confirmacion
+                and pedido.estado in ("listo", "en_ruta")
+                and not getattr(pedido, "codigo_confirmacion_expirado", False))
+            else None
+        ),
+        "codigo_confirmacion_expira_en": (
+            pedido.codigo_confirmacion_expira_en.isoformat()
+            if getattr(pedido, "codigo_confirmacion_expira_en", None)
+            else None
+        ),
         "repartidor_id": pedido.repartidor_id,
         "en_punto_encuentro": bool(getattr(pedido, "en_punto_encuentro", False)),
         "creado_en": pedido.creado_en.isoformat() if pedido.creado_en else None,
@@ -1486,8 +1515,35 @@ def _normalizar_tel_match(telefono_raw):
     return digits, plus
 
 
-def _operador_bar_por_telefono(_telefono_raw):
-    """LEGACY desactivado: no existe rol proveedor/bar en el flujo vigente."""
+def _operador_bar_por_telefono(telefono_raw):
+    """Localiza el bar activo cuyo teléfono operador coincide con `telefono_raw`.
+
+    Tolera formatos `+34...` vs `34...` (compara por dígitos). Solo activo cuando
+    la tienda opera en modo `bar_servicio`; en modo `propia` se mantiene el
+    menú del bar del bot desactivado (single-tenant).
+
+    Retorna (bar, bar) — devuelve el mismo Proveedor dos veces para conservar la
+    firma tupla histórica (operador, bar). El "operador" no es un `User` sino el
+    número que respondió; el bar concentra ambas identidades.
+    """
+    if not telefono_raw:
+        return None, None
+    modo = (SiteConfig.get("MODO_TIENDA", "propia") or "propia").strip().lower()
+    if modo != "bar_servicio":
+        return None, None
+    digits, _ = _normalizar_tel_match(telefono_raw)
+    if not digits:
+        return None, None
+    # Lista pequeña (bares activos); comparación en Python evita depender de
+    # normalización SQL (portable a SQLite en tests).
+    candidatos = Proveedor.query.filter(
+        Proveedor.activo.is_(True),
+        Proveedor.telefono.isnot(None),
+    ).all()
+    for bar in candidatos:
+        bar_digits, _ = _normalizar_tel_match(bar.telefono)
+        if bar_digits and bar_digits == digits:
+            return bar, bar
     return None, None
 
 
@@ -1569,8 +1625,25 @@ def handoff_destination():
 @api_bot_bp.route("/bar/identify")
 @bot_required
 def identify_bar():
-    """El menú bar/proveedor del bot queda desactivado en tienda única."""
-    return jsonify({"ok": True, "es_bar": False, "bar": None})
+    """Determina si el remitente es operador de un bar activo.
+
+    En modo `propia` (single-tenant) el menú bar del bot está desactivado por
+    diseño → siempre `es_bar: False`. En `bar_servicio` matchea por teléfono
+    contra `Proveedor.telefono` activos.
+    """
+    telefono = (request.args.get("telefono") or "").strip()
+    bar, _ = _operador_bar_por_telefono(telefono)
+    if not bar:
+        return jsonify({"ok": True, "es_bar": False, "bar": None})
+    return jsonify({
+        "ok": True,
+        "es_bar": True,
+        "bar": {
+            "id": bar.id,
+            "nombre": bar.nombre,
+            "modelo_acuerdo": getattr(bar, "modelo_acuerdo", None),
+        },
+    })
 
 
 @api_bot_bp.route("/bar/pedidos")
@@ -3005,7 +3078,32 @@ def _producto_admin_payload(producto):
     }
 
 
+# Traducción de capabilities-legacy del bot → acciones canónicas (permissions.ACTIONS).
+# La política (super_only / admin_read / feature:X) vive en `permissions._POLICY`,
+# fuente única de verdad compartida con la web. Aquí solo mapeamos vocabulario.
+from permissions import ACTIONS as _ACT, Actor as _Actor, allow as _allow
+
+_BOT_CAPABILITY_TO_ACTION = {
+    "store_read":   _ACT.STORE_READ,
+    "store":        _ACT.STORE_READ,   # alias legacy
+    "store_write":  _ACT.STORE_WRITE,
+    "modo_tienda":  _ACT.STORE_MODE_TOGGLE,
+    "modulos":      _ACT.STORE_MODULES_TOGGLE,
+    "config_write": _ACT.CONFIG_WRITE,
+    "products":     _ACT.CATALOG_WRITE,
+    "stock":        _ACT.STOCK_WRITE,
+    "points":       _ACT.POINTS_WRITE,
+    "marketing":    _ACT.MARKETING_WRITE,
+    "whatsapp":     _ACT.WHATSAPP_SEND,
+    "handoff":      _ACT.WHATSAPP_SEND,
+    "security":     _ACT.WHATSAPP_SEND,
+    "ai":           _ACT.REPORTS_READ,
+}
+
+
 def _bot_admin_actor_allowed(data, capability):
+    """Autoriza una acción del bot admin. Identifica al actor por teléfono
+    y delega la política a `permissions.allow`, evitando drift con la web."""
     telefono = normalizar_telefono_cliente((data or {}).get("actor_telefono"))
     if not telefono_valido(telefono):
         return False
@@ -3018,8 +3116,11 @@ def _bot_admin_actor_allowed(data, capability):
         ]
         if raw
     }
+    action = _BOT_CAPABILITY_TO_ACTION.get(capability)
+    if action is None:
+        return False  # Capability desconocida → deny by default.
     if digits in privileged:
-        return True
+        return _allow(_Actor(rol="super_admin", user_id=None, privileged_by_env=True), action)
     # Match por dígitos: tolera '+34XXX' vs '34XXX' en telefono_normalizado.
     # Portable a SQLite (tests) y Postgres (prod): traemos candidatos y
     # filtramos en Python. Lista pequeña (admins activos), sin impacto.
@@ -3035,18 +3136,7 @@ def _bot_admin_actor_allowed(data, capability):
             break
     if not user:
         return False
-    if user.rol == "super_admin":
-        return True
-    feature = {
-        "products": "productos",
-        "points": "marketing",
-        "handoff": "whatsapp",
-        "security": "whatsapp",
-        "ai": "reportes",
-    }.get(capability)
-    return True if capability == "store" else bool(
-        feature and AdminFeature.tiene_acceso(user.id, feature)
-    )
+    return _allow(_Actor(rol=user.rol, user_id=user.id), action)
 
 
 def _bot_admin_request_payload():
@@ -3059,7 +3149,20 @@ def _bot_admin_request_allowed(capability):
     return _bot_admin_actor_allowed(_bot_admin_request_payload(), capability)
 
 
-def _bot_actor_forbidden():
+def _bot_actor_forbidden(capability: str | None = None):
+    """403 estándar para acciones denegadas al actor admin.
+
+    Diferencia entre "requiere super_admin" (política `super_only`) y
+    "admin sin la feature" para que el cliente pueda mostrar mensaje útil.
+    """
+    from permissions import is_super_only
+    action = _BOT_CAPABILITY_TO_ACTION.get(capability or "") if capability else None
+    if action and is_super_only(action):
+        return jsonify({
+            "ok": False,
+            "code": "SUPERADMIN_REQUIRED",
+            "error": "Esta acción requiere super_admin.",
+        }), 403
     return jsonify({
         "ok": False,
         "code": "ADMIN_CAPABILITY_DENIED",
@@ -3104,8 +3207,8 @@ def bot_admin_tienda():
             })
 
         data = request.get_json(silent=True) or {}
-        if not _bot_admin_actor_allowed(data, "store"):
-            return _bot_actor_forbidden()
+        if not _bot_admin_actor_allowed(data, "store_write"):
+            return _bot_actor_forbidden("store_write")
         if "forzar_cerrada" not in data:
             return jsonify({"ok": False, "error": "forzar_cerrada requerido"}), 400
         cerrada = _json_bool(data.get("forzar_cerrada"))
@@ -3184,8 +3287,8 @@ def bot_admin_resumen_hoy():
 @bot_required
 def bot_admin_toggle_modo_tienda():
     """Alterna entre modo 'propia' y 'bar_servicio' desde el bot."""
-    if not _bot_admin_request_allowed("store"):
-        return _bot_actor_forbidden()
+    if not _bot_admin_request_allowed("modo_tienda"):
+        return _bot_actor_forbidden("modo_tienda")
     from store_config import get_store_features
     features = get_store_features()
     actual = features.get("modo_tienda", "propia")
@@ -3205,8 +3308,8 @@ def bot_admin_toggle_modo_tienda():
 def bot_admin_toggle_modulo():
     """Activa/desactiva un módulo (delivery, recogida, programados, puntos)."""
     data = request.get_json(silent=True) or {}
-    if not _bot_admin_actor_allowed(data, "store"):
-        return _bot_actor_forbidden()
+    if not _bot_admin_actor_allowed(data, "modulos"):
+        return _bot_actor_forbidden("modulos")
     claves = {
         "delivery": "FEATURE_DELIVERY",
         "recogida": "FEATURE_RECOGIDA",
@@ -3234,8 +3337,8 @@ def bot_admin_forzar_cierre():
     """Fuerza cierre / reapertura de la tienda al vuelo."""
     try:
         data = request.get_json(silent=True) or {}
-        if not _bot_admin_actor_allowed(data, "store"):
-            return _bot_actor_forbidden()
+        if not _bot_admin_actor_allowed(data, "store_write"):
+            return _bot_actor_forbidden("store_write")
         if "cerrada" not in data and "forzar_cerrada" not in data:
             return jsonify({"ok": False, "error": "cerrada requerido"}), 400
         cerrada = _json_bool(data.get("cerrada", data.get("forzar_cerrada")))
@@ -3689,14 +3792,14 @@ def bot_config_ver():
     return jsonify({"ok": True, "config": out})
 
 
-@api_bot_bp.route("/config/set", methods=["POST"])
+@api_bot_bp.route("/config/set", methods=["POST"])  # super_admin only via config_write
 @bot_required
 def bot_config_set():
     """Cambia una SiteConfig. Bloquea claves sensibles y requiere actor
     admin verificado (defense-in-depth: si el X-Bot-Key se filtra, esto
     aún exige que el teléfono admin sea válido)."""
-    if not _bot_admin_request_allowed("store"):
-        return _bot_actor_forbidden()
+    if not _bot_admin_request_allowed("config_write"):
+        return _bot_actor_forbidden("config_write")
     from routes.superadmin import LOCKED_CONFIG_KEYS, _validar_config_value
 
     BLOQUEADAS = {"BOT_AI_API_KEY", "BOT_API_KEY", "SECRET_KEY", "BOT_PANEL_KEY",

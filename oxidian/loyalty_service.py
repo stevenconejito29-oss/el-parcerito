@@ -22,6 +22,26 @@ from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 
+def _to_int(value, default: int = 0) -> int:
+    """Coerción defensiva a int para campos que pueden venir como str/Decimal/None
+    desde ORM, formularios o payloads externos. Devuelve `default` ante fallo."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return int(value)
+        except (ValueError, OverflowError):
+            return default
+    if isinstance(value, str):
+        try:
+            return int(value.strip() or default)
+        except ValueError:
+            return default
+    return default
+
+
 def bloquear_cliente_puntos(cliente):
     """Bloquea y refresca la fila del cliente antes de calcular o mutar puntos."""
     from extensions import db
@@ -70,8 +90,32 @@ def solicitar_codigo(
     if not cliente.telefono:
         return {"ok": False, "msg": "No tienes teléfono registrado para verificación"}
 
-    from services import enviar_whatsapp_generico
+    # Throttle anti-flood: si ya hay un código válido reciente, no reemitir.
+    # Se deduce el instante de emisión a partir de `cod_puntos_expira - TTL`.
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
     from models import SiteConfig
+    try:
+        min_gap = int(SiteConfig.get("OTP_MIN_RESEND_SECONDS", "60") or 60)
+    except (TypeError, ValueError):
+        min_gap = 60
+    try:
+        ttl_min = int(SiteConfig.get("COD_PUNTOS_TTL_MINUTOS", "10") or 10)
+    except (TypeError, ValueError):
+        ttl_min = 10
+    if cliente.cod_puntos_expira and cliente.cod_puntos:
+        ahora = _dt.now(_tz.utc).replace(tzinfo=None)
+        try:
+            emitido_en = cliente.cod_puntos_expira - _td(minutes=ttl_min)
+            if (ahora - emitido_en).total_seconds() < min_gap:
+                return {
+                    "ok": False,
+                    "msg": "Ya te enviamos un código hace un momento. Revisa tu WhatsApp.",
+                    "puntos": cliente.puntos,
+                }
+        except (TypeError, ValueError):
+            pass
+
+    from services import enviar_whatsapp_generico
     codigo = cliente.generar_cod_puntos()
     nombre_negocio = SiteConfig.get("NOMBRE_NEGOCIO", "Oxidian")
     producto_txt = (
@@ -146,18 +190,8 @@ def aplicar_canje_en_pedido(
     cliente = bloquear_cliente_puntos(cliente)
 
     # Idempotencia: si el pedido ya tiene puntos_usados registrados, no deducir de nuevo.
-    # Esto protege contra doble submit, retries o llamadas accidentales duplicadas.
-    raw_puntos_usados = getattr(pedido, "puntos_usados", 0)
-    if isinstance(raw_puntos_usados, str):
-        raw_puntos_usados = raw_puntos_usados.strip() or 0
-
-    if isinstance(raw_puntos_usados, (int, float, Decimal, str)):
-        try:
-            puntos_ya_usados = int(raw_puntos_usados or 0)
-        except (TypeError, ValueError):
-            puntos_ya_usados = 0
-    else:
-        puntos_ya_usados = 0
+    # Protege contra doble submit, retries y llamadas duplicadas.
+    puntos_ya_usados = _to_int(getattr(pedido, "puntos_usados", 0))
 
     if puntos_ya_usados > 0:
         logger.warning(
@@ -291,6 +325,19 @@ def puntos_disponibles(cliente) -> int:
         # No debemos fallar la consulta si el reset tiene un problema puntual.
         pass
     return max(0, cliente.puntos)
+
+
+def messaging_service_available() -> bool:
+    """Comprueba si el canal WhatsApp está disponible sin exponer al cliente.
+    Un cliente no debe saber si su número existe, pero sí saber si el servicio
+    de mensajería está caído para reintentar más tarde."""
+    try:
+        from services import _bot_http_get  # type: ignore
+        return bool(_bot_http_get("/api/bot/health"))
+    except Exception:
+        # Best-effort: si no hay health check, asumimos disponible para no
+        # dar falsos negativos en producción.
+        return True
 
 
 def enviar_saldo_puntos(cliente, commit: bool = True) -> bool:

@@ -1,0 +1,221 @@
+{% extends "admin_base.html" %}
+{% block title %}Zonas de reparto{% endblock %}
+
+{% block content %}
+{% macro csrf_field() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
+
+<div class="oa-page">
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Operación</p>
+      <h1 class="oa-page-header__title">Zonas de reparto</h1>
+      <p class="oa-page-header__subtitle">
+        {% if puede_editar %}
+          Configura cobertura, precios y tiempos por zona. Cambios aplican al checkout inmediato.
+        {% else %}
+          Vista de solo lectura. Puedes activar o desactivar una zona; el resto lo controla el super_admin.
+        {% endif %}
+      </p>
+    </div>
+    <div class="oa-page-header__actions">
+      <a href="{{ url_for('admin.dashboard') }}" class="oa-btn oa-btn--ghost">Volver</a>
+      {% if puede_editar %}
+      <a href="{{ url_for('superadmin.zonas') }}" class="oa-btn oa-btn--brand">Editar (super_admin)</a>
+      {% endif %}
+    </div>
+  </header>
+
+  {# ── Mapa Leaflet ── #}
+  <div class="oa-panel" style="margin:0;">
+    <div class="oa-panel__body">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--oa-space-3);flex-wrap:wrap;margin-bottom:var(--oa-space-3);">
+        <div>
+          <h2 style="margin:0;font-size:var(--oa-font-lg);font-weight:900;color:var(--col-text);">Mapa de cobertura</h2>
+          <p style="margin:2px 0 0;font-size:var(--oa-font-xs);color:var(--col-muted);">
+            Radios en km leídos de cada zona. Zonas sin coordenadas no aparecen en el mapa.
+          </p>
+        </div>
+        <div style="display:flex;gap:var(--oa-space-2);font-size:var(--oa-font-xs);color:var(--col-muted);flex-wrap:wrap;">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;vertical-align:middle;margin-right:.3rem;"></span>Activa</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#9ca3af;vertical-align:middle;margin-right:.3rem;"></span>Inactiva</span>
+        </div>
+      </div>
+      <div id="zonas-map" style="height:420px;width:100%;border-radius:var(--oa-radius-md, 12px);overflow:hidden;background:#0f1421;"></div>
+      <p id="zonas-map-empty" style="display:none;margin:var(--oa-space-3) 0 0;font-size:var(--oa-font-sm);color:var(--col-muted);text-align:center;">
+        Ninguna zona tiene coordenadas configuradas todavía.
+      </p>
+    </div>
+  </div>
+
+  {# ── Listado de zonas ── #}
+  {% if zonas %}
+  <div class="fp-section" style="display:grid;gap:var(--oa-space-3);margin-top:var(--oa-space-4);">
+    {% for z in zonas %}
+    <div class="oa-panel {% if not z.activo %}oa-panel--dim{% endif %}" style="margin:0;">
+      <div class="oa-panel__body">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--oa-space-3);flex-wrap:wrap;">
+          <div style="flex:1;min-width:240px;">
+            <div style="display:flex;align-items:center;gap:var(--oa-space-2);flex-wrap:wrap;">
+              <h3 style="margin:0;font-weight:900;color:var(--col-text);font-size:var(--oa-font-base);">{{ z.nombre }}</h3>
+              <span class="oa-badge {{ 'oa-badge--info' if z.es_epicentro else 'oa-badge--brand' }}">
+                {{ 'Epicentro' if z.es_epicentro else 'Periferia' }}
+              </span>
+              {% if not z.activo %}
+              <span class="oa-badge oa-badge--err">Inactiva</span>
+              {% endif %}
+              {% if z.tiene_geo %}
+              <span class="oa-badge oa-badge--brand">Geo</span>
+              {% endif %}
+            </div>
+            {% if z.descripcion %}
+              <p style="margin:2px 0 0;font-size:var(--oa-font-xs);color:var(--col-faint);">{{ z.descripcion }}</p>
+            {% endif %}
+            <div style="display:flex;gap:var(--oa-space-3);margin-top:var(--oa-space-2);font-size:var(--oa-font-xs);color:var(--col-muted);flex-wrap:wrap;">
+              <span>Envío: <strong style="color:var(--col-text);">€{{ "%.2f"|format(z.precio_envio or 0) }}</strong></span>
+              <span>Tiempo: <strong style="color:var(--col-text);">{{ z.tiempo_estimado_min }} min</strong></span>
+              {% if z.gratis_desde %}
+                <span>Gratis desde: <strong style="color:var(--col-text);">€{{ "%.2f"|format(z.gratis_desde) }}</strong></span>
+              {% endif %}
+              {% if z.tiene_geo %}
+                <span>Radio: <strong style="color:var(--col-text);">{{ "%.1f"|format(z.radio_km) }} km</strong></span>
+              {% endif %}
+            </div>
+          </div>
+          <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
+            <form method="POST" action="{{ url_for('admin.toggle_zona_admin', zona_id=z.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="oa-btn oa-btn--sm {{ 'oa-btn--danger' if z.activo else 'oa-btn--success' }}">
+                {{ 'Desactivar' if z.activo else 'Activar' }}
+              </button>
+            </form>
+            {% if puede_editar %}
+            <a href="{{ url_for('superadmin.zonas') }}#zona-{{ z.id }}" class="oa-btn oa-btn--sm oa-btn--brand">Editar</a>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if puede_editar and repartidores %}
+        <details style="margin-top:var(--oa-space-3);">
+          <summary style="cursor:pointer;user-select:none;font-size:var(--oa-font-xs);font-weight:700;color:var(--col-muted);">Asignar repartidor</summary>
+          <form method="POST" action="{{ url_for('admin.asignar_repartidor_zona', zona_id=z.id) }}"
+                style="margin-top:var(--oa-space-2);display:flex;gap:var(--oa-space-2);align-items:flex-end;flex-wrap:wrap;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="ox-field" style="flex:1;min-width:180px;">
+              <label class="ox-label">Repartidor</label>
+              <select name="user_id" class="ox-input" required>
+                <option value="">— elegir —</option>
+                {% for r in repartidores %}
+                <option value="{{ r.id }}" {% if r.zona_repartidor_id == z.id %}selected{% endif %}>
+                  {{ r.nombre }}{% if r.zona_repartidor_id and r.zona_repartidor_id != z.id %} (en otra zona){% endif %}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <button type="submit" name="accion" value="asignar" class="oa-btn oa-btn--sm oa-btn--success">Asignar</button>
+            <button type="submit" name="accion" value="desasignar" class="oa-btn oa-btn--sm oa-btn--ghost">Quitar</button>
+          </form>
+          {% set asignados = repartidores|selectattr('zona_repartidor_id','equalto',z.id)|list %}
+          {% if asignados %}
+          <p style="margin:var(--oa-space-2) 0 0;font-size:var(--oa-font-xs);color:var(--col-muted);">
+            En esta zona:
+            {% for r in asignados %}<strong style="color:var(--col-text);">{{ r.nombre }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}
+          </p>
+          {% endif %}
+        </details>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="oa-panel" style="text-align:center;padding:var(--oa-space-6) var(--oa-space-4);">
+    <p style="font-weight:800;color:var(--col-muted);margin:0;">Sin zonas de entrega configuradas.</p>
+    {% if puede_editar %}
+    <p style="font-size:var(--oa-font-sm);color:var(--col-faint);margin:var(--oa-space-2) 0 0;">
+      Crea la primera desde <a href="{{ url_for('superadmin.zonas') }}" style="color:var(--brand-primary);font-weight:700;">el panel super_admin</a>.
+    </p>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{# ── Leaflet CDN ── #}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+
+<script>
+(function(){
+  const mapEl = document.getElementById('zonas-map');
+  const emptyMsg = document.getElementById('zonas-map-empty');
+  if (!mapEl || typeof L === 'undefined') return;
+
+  const map = L.map('zonas-map', {
+    center: [{{ (brand.centro_lat if brand and brand.centro_lat else 37.4703) }},
+             {{ (brand.centro_lng if brand and brand.centro_lng else -5.6435) }}],
+    zoom: 13,
+    scrollWheelZoom: true,
+  });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors',
+  }).addTo(map);
+
+  fetch('{{ url_for("admin.zonas_json") }}', {credentials: 'same-origin'})
+    .then(r => r.json())
+    .then(data => {
+      const zonas = (data && data.zonas) || [];
+      const bounds = [];
+      let plotted = 0;
+      zonas.forEach(z => {
+        if (!z.tiene_geo) return;
+        const color = z.activo ? '#22c55e' : '#9ca3af';
+        const circle = L.circle([z.centro_lat, z.centro_lng], {
+          radius: (z.radio_km || 0) * 1000,
+          color: color,
+          weight: 2,
+          fillColor: color,
+          fillOpacity: z.activo ? 0.18 : 0.08,
+        }).addTo(map);
+        const gratis = (z.gratis_desde !== null && z.gratis_desde !== undefined)
+          ? '<br>Gratis desde: <strong>€' + z.gratis_desde.toFixed(2) + '</strong>' : '';
+        circle.bindPopup(
+          '<strong>' + escapeHtml(z.nombre) + '</strong>' +
+          '<br>Envío: <strong>€' + z.precio_envio.toFixed(2) + '</strong>' +
+          '<br>Tiempo: <strong>' + z.tiempo_estimado_min + ' min</strong>' +
+          '<br>Radio: <strong>' + z.radio_km.toFixed(1) + ' km</strong>' +
+          gratis +
+          (z.activo ? '' : '<br><em>Zona inactiva</em>')
+        );
+        L.marker([z.centro_lat, z.centro_lng]).addTo(map).bindTooltip(z.nombre, {permanent: false});
+        bounds.push([z.centro_lat, z.centro_lng]);
+        plotted++;
+      });
+      if (plotted === 0) {
+        if (emptyMsg) emptyMsg.style.display = 'block';
+      } else if (bounds.length > 1) {
+        map.fitBounds(bounds, {padding: [30, 30]});
+      } else if (bounds.length === 1) {
+        map.setView(bounds[0], 13);
+      }
+    })
+    .catch(() => {
+      if (emptyMsg) {
+        emptyMsg.textContent = 'No se pudo cargar el mapa de zonas.';
+        emptyMsg.style.display = 'block';
+      }
+    });
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+})();
+</script>
+{% endblock %}

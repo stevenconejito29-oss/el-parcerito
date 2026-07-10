@@ -48,15 +48,12 @@ if [ "$1" = "gunicorn" ] || [ "$#" -eq 0 ]; then
   fi
 
   if [ "${RUN_OUTBOX_WORKER:-1}" = "1" ]; then
-    echo "Arrancando worker outbox..."
-    (
-      while true; do
-        gosu oxidian python scripts/process_notification_outbox.py \
-          --env "${FLASK_ENV:-production}" \
-          --limit "${OUTBOX_LIMIT:-25}" || true
-        sleep "${OUTBOX_INTERVAL_SECONDS:-5}"
-      done
-    ) &
+    echo "Arrancando worker outbox (long-lived, interval=${OUTBOX_INTERVAL_SECONDS:-2}s)..."
+    gosu oxidian python scripts/process_notification_outbox.py \
+      --loop \
+      --env "${FLASK_ENV:-production}" \
+      --limit "${OUTBOX_LIMIT:-25}" \
+      --interval "${OUTBOX_INTERVAL_SECONDS:-2}" &
     PIDS="$PIDS $!"
   fi
 

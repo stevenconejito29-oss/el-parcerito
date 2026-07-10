@@ -112,6 +112,53 @@
   {% endif %}
 
   {# ── Precio ── #}
+  {# ── Selector de variantes retail (talla × color) ── #}
+  {% set _variantes = producto.variantes_activas if producto.tiene_variantes else [] %}
+  {% if _variantes %}
+  <div class="pd-variantes">
+    <p class="pd-variantes-lbl">Elige una variante:</p>
+    <div class="pd-variantes-grid">
+      {% for v in _variantes %}
+      <label class="pd-variantes-opt {% if loop.first %}is-selected{% endif %} {% if not v.disponible() %}is-out{% endif %}">
+        <input type="radio" name="variant_id" value="{{ v.id }}"
+               form="pd-add-form"
+               {% if loop.first %}checked{% endif %}
+               {% if not v.disponible() %}disabled{% endif %}>
+        {% if v.color_hex %}
+        <span class="pd-variantes-swatch" style="background:{{ v.color_hex }}" aria-hidden="true"></span>
+        {% endif %}
+        <span class="pd-variantes-label">{{ v.label_publico }}</span>
+        {% if v.precio_override %}
+        <span class="pd-variantes-price">€{{ "%.2f"|format(v.precio_efectivo) }}</span>
+        {% endif %}
+        {% if not v.disponible() %}
+        <span class="pd-variantes-out">Agotado</span>
+        {% endif %}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  <style>
+  .pd-variantes { margin:.75rem 0 .5rem; }
+  .pd-variantes-lbl { font-size:.85rem; font-weight:800; color:var(--col-text); margin:0 0 .5rem; }
+  .pd-variantes-grid { display:flex; flex-wrap:wrap; gap:.4rem; }
+  .pd-variantes-opt {
+    position:relative; display:inline-flex; align-items:center; gap:.5rem;
+    padding:.5rem .7rem; border-radius:.55rem;
+    background:rgba(255,255,255,.04); border:1.5px solid rgba(255,255,255,.1);
+    cursor:pointer; transition:border-color .15s, background .15s;
+    user-select:none; font-size:.85rem;
+  }
+  .pd-variantes-opt input { position:absolute; opacity:0; pointer-events:none; }
+  .pd-variantes-opt.is-selected,
+  .pd-variantes-opt:has(input:checked) { border-color:var(--brand-primary,#FCD116); background:rgba(252,209,22,.08); }
+  .pd-variantes-opt.is-out { opacity:.45; cursor:not-allowed; }
+  .pd-variantes-swatch { width:16px; height:16px; border-radius:50%; border:1.5px solid rgba(255,255,255,.4); flex-shrink:0; }
+  .pd-variantes-price { color:var(--col-muted); font-size:.78rem; }
+  .pd-variantes-out { color:var(--col-danger,#c0392b); font-size:.72rem; font-weight:700; }
+  </style>
+  {% endif %}
+
   {# ── Selector de tallas / tamaños (presentaciones activas) ── #}
   {% set _tallas_producto = producto.presentaciones.filter_by(activo=True).all() if producto.presentaciones is defined else [] %}
   {% if _tallas_producto|length > 0 and not producto.es_combo %}
