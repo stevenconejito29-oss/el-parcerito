@@ -2883,7 +2883,10 @@ def nuevo_combo():
             disponibilidad_por_origen=disponibilidad_por_origen,
         )
 
-    is_valid, error_msg = validate_combo_structure(componentes_para_agregar, combo.id)
+    is_valid, error_msg = validate_combo_structure(
+        componentes_para_agregar, combo.id,
+        parent_vertical=(combo.vertical if combo else None),
+    )
     if not is_valid:
         db.session.rollback()
         flash(error_msg, "danger")
@@ -3332,7 +3335,10 @@ def quitar_componente_combo(producto_id, item_id):
             ComboItem.activo.is_(True),
         ).all()
     )
-    es_valido, error = validate_combo_structure(restantes, producto_id)
+    es_valido, error = validate_combo_structure(
+        restantes, producto_id,
+        parent_vertical=(combo.vertical if combo else None),
+    )
     if not es_valido:
         flash(f"No se puede quitar el componente: {error}", "danger")
         return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
