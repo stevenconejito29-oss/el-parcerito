@@ -38,6 +38,18 @@ class DistribucionRepartidorZonaTest(unittest.TestCase):
         self.rep_sur = self._mk_rep("Rep Sur", tel="+34600000002", zona_id=self.zona_sur.id)
         self.rep_libre = self._mk_rep("Rep Libre", tel="+34600000003", zona_id=None)
 
+        # Cliente para asociar a los pedidos (Order.cliente_id NOT NULL).
+        self.cliente = User(
+            nombre="Cliente Test",
+            email="cliente@test.invalid",
+            telefono="+34611111111",
+            rol="cliente",
+            activo=True,
+        )
+        self.cliente.set_password("test")
+        db.session.add(self.cliente)
+        db.session.commit()
+
     def tearDown(self):
         db.session.remove()
         db.drop_all()
@@ -62,6 +74,7 @@ class DistribucionRepartidorZonaTest(unittest.TestCase):
     def _mk_pedido(self, zona_id):
         o = Order(
             numero_pedido=f"TEST-Z-{zona_id or 'none'}",
+            cliente_id=self.cliente.id,
             total=10,
             subtotal=10,
             estado="listo",
