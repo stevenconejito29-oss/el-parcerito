@@ -2642,15 +2642,26 @@ def nuevo_combo():
     disponibilidad_por_origen = _disponibilidad_productos_por_origen()
     combo_limits = _combo_limits_payload()
 
+    def _render_form(**overrides):
+        """Renderiza `nuevo_combo.html` con TODO el contexto crítico.
+
+        Bug estructural corregido: los 17 sitios de error en este endpoint
+        rendían el template sin `disponibilidad_por_origen` (y a veces sin
+        `combo_limits`), dejando el catálogo vacío tras cualquier error.
+        Este helper centraliza el contexto y evita el drift.
+        """
+        ctx = {
+            "categorias": categorias,
+            "productos_simples": productos_simples,
+            "proveedores": [],
+            "combo_limits": combo_limits,
+            "disponibilidad_por_origen": disponibilidad_por_origen,
+        }
+        ctx.update(overrides)
+        return render_template("admin/nuevo_combo.html", **ctx)
+
     if request.method == "GET":
-        return render_template(
-            "admin/nuevo_combo.html",
-            categorias=categorias,
-            productos_simples=productos_simples,
-            proveedores=[],
-            combo_limits=combo_limits,
-            disponibilidad_por_origen=disponibilidad_por_origen,
-        )
+        return _render_form()
 
     # ── POST: Validar y crear combo + componentes en transacción ──
 
@@ -2668,14 +2679,7 @@ def nuevo_combo():
     campos, error = _parsear_campos_producto(form_producto)
     if error:
         flash(error, "danger")
-        return render_template(
-            "admin/nuevo_combo.html",
-            categorias=categorias,
-            productos_simples=productos_simples,
-            proveedores=[],
-            combo_limits=combo_limits,
-            disponibilidad_por_origen=disponibilidad_por_origen,
-        )
+        return _render_form()
 
     campos["es_combo"] = True
     campos["tipo_producto"] = "combo"
@@ -2716,27 +2720,13 @@ def nuevo_combo():
     if not is_valid:
         db.session.rollback()
         flash(f"Error en validación: {error_msg}", "danger")
-        return render_template(
-            "admin/nuevo_combo.html",
-            categorias=categorias,
-            productos_simples=productos_simples,
-            proveedores=[],
-            combo_limits=combo_limits,
-            disponibilidad_por_origen=disponibilidad_por_origen,
-        )
+        return _render_form()
 
     externos = _componentes_externos_en_combo_propio(prod_ids)
     if externos:
         db.session.rollback()
         flash(_mensaje_componentes_externos_combo_propio(externos), "danger")
-        return render_template(
-            "admin/nuevo_combo.html",
-            categorias=categorias,
-            productos_simples=productos_simples,
-            proveedores=[],
-            combo_limits=combo_limits,
-            disponibilidad_por_origen=disponibilidad_por_origen,
-        )
+        return _render_form()
 
     # ── Procesar componentes ──
     componentes_para_agregar = []
@@ -2778,13 +2768,7 @@ def nuevo_combo():
         if precio_extra < 0:
             db.session.rollback()
             flash(f"Componente {i + 1}: el suplemento no puede ser negativo.", "danger")
-            return render_template(
-                "admin/nuevo_combo.html",
-                categorias=categorias,
-                productos_simples=productos_simples,
-                proveedores=[],
-                combo_limits=combo_limits,
-            )
+            return _render_form()
         es_default = (defaults[i] if i < len(defaults) else "").strip().lower() in ("1", "true", "on", "si", "sí")
         nota_prep = (notas_prep[i].strip() if i < len(notas_prep) and notas_prep[i] else "")[:300]
 
@@ -2793,13 +2777,7 @@ def nuevo_combo():
         if not is_valid:
             db.session.rollback()
             flash(f"Componente {i + 1}: {error_msg}", "danger")
-            return render_template(
-                "admin/nuevo_combo.html",
-                categorias=categorias,
-                productos_simples=productos_simples,
-                proveedores=[],
-                combo_limits=combo_limits,
-            )
+            return _render_form()
 
         # ── Validar grupo y selecciones (si es seleccionable) ──
         if es_sel:
@@ -2807,38 +2785,20 @@ def nuevo_combo():
             if not is_valid:
                 db.session.rollback()
                 flash(f"Componente {i + 1}: {error_msg}", "danger")
-                return render_template(
-                    "admin/nuevo_combo.html",
-                    categorias=categorias,
-                    productos_simples=productos_simples,
-                    proveedores=[],
-                    combo_limits=combo_limits,
-                )
+                return _render_form()
 
             is_valid, error_msg = validate_group_name(grupo, True)
             if not is_valid:
                 db.session.rollback()
                 flash(f"Componente {i + 1}: {error_msg}", "danger")
-                return render_template(
-                    "admin/nuevo_combo.html",
-                    categorias=categorias,
-                    productos_simples=productos_simples,
-                    proveedores=[],
-                    combo_limits=combo_limits,
-                )
+                return _render_form()
 
         # ── Validar producto como componente ──
         producto, comp_error = _validar_producto_componente_combo(combo.id, prod_id)
         if comp_error:
             db.session.rollback()
             flash(f"Componente {i + 1}: {comp_error}", "danger")
-            return render_template(
-                "admin/nuevo_combo.html",
-                categorias=categorias,
-                productos_simples=productos_simples,
-                proveedores=[],
-                combo_limits=combo_limits,
-            )
+            return _render_form()
 
         # ── Detectar duplicados (fijos y seleccionables) ──
         if es_sel:
@@ -2852,13 +2812,7 @@ def nuevo_combo():
                     f"El producto '{producto.nombre}' está repetido dentro del grupo '{grupo}'.",
                     "danger"
                 )
-                return render_template(
-                    "admin/nuevo_combo.html",
-                    categorias=categorias,
-                    productos_simples=productos_simples,
-                    proveedores=[],
-                    combo_limits=combo_limits,
-                )
+                return _render_form()
             componentes_seleccionables[grupo_key].add(producto.id)
         else:
             if producto.id in componentes_fijos:
@@ -2867,13 +2821,7 @@ def nuevo_combo():
                     f"El producto '{producto.nombre}' ya está como componente fijo. Ajusta la cantidad en una sola línea.",
                     "danger"
                 )
-                return render_template(
-                    "admin/nuevo_combo.html",
-                    categorias=categorias,
-                    productos_simples=productos_simples,
-                    proveedores=[],
-                    combo_limits=combo_limits,
-                )
+                return _render_form()
             componentes_fijos.add(producto.id)
 
         # ── Agregar a lista para insertar después ──
@@ -2900,14 +2848,7 @@ def nuevo_combo():
             f"Añade al menos {combo_limits['min_components']} componente para crear un combo funcional.",
             "danger"
         )
-        return render_template(
-            "admin/nuevo_combo.html",
-            categorias=categorias,
-            productos_simples=productos_simples,
-            proveedores=[],
-            combo_limits=combo_limits,
-            disponibilidad_por_origen=disponibilidad_por_origen,
-        )
+        return _render_form()
 
     # ── Validar máximo de componentes ──
     if n_comp > combo_limits["max_components"]:
@@ -2916,14 +2857,7 @@ def nuevo_combo():
             f"No puedes añadir más de {combo_limits['max_components']} componentes.",
             "danger"
         )
-        return render_template(
-            "admin/nuevo_combo.html",
-            categorias=categorias,
-            productos_simples=productos_simples,
-            proveedores=[],
-            combo_limits=combo_limits,
-            disponibilidad_por_origen=disponibilidad_por_origen,
-        )
+        return _render_form()
 
     is_valid, error_msg = validate_combo_structure(
         componentes_para_agregar, combo.id,
@@ -2932,14 +2866,7 @@ def nuevo_combo():
     if not is_valid:
         db.session.rollback()
         flash(error_msg, "danger")
-        return render_template(
-            "admin/nuevo_combo.html",
-            categorias=categorias,
-            productos_simples=productos_simples,
-            proveedores=[],
-            combo_limits=combo_limits,
-            disponibilidad_por_origen=disponibilidad_por_origen,
-        )
+        return _render_form()
 
     # ── Validar restricción: combo con seleccionables no puede ser canje directo ──
     if combo.canjeable_con_puntos and componentes_seleccionables:
@@ -2948,14 +2875,7 @@ def nuevo_combo():
             "Los combos con grupos seleccionables no pueden marcarse como canje directo con puntos.",
             "danger"
         )
-        return render_template(
-            "admin/nuevo_combo.html",
-            categorias=categorias,
-            productos_simples=productos_simples,
-            proveedores=[],
-            combo_limits=combo_limits,
-            disponibilidad_por_origen=disponibilidad_por_origen,
-        )
+        return _render_form()
 
     pricing_error = _aplicar_precio_combo_desde_form(
         combo,
@@ -2966,14 +2886,7 @@ def nuevo_combo():
     if pricing_error:
         db.session.rollback()
         flash(pricing_error, "danger")
-        return render_template(
-            "admin/nuevo_combo.html",
-            categorias=categorias,
-            productos_simples=productos_simples,
-            proveedores=[],
-            combo_limits=combo_limits,
-            disponibilidad_por_origen=disponibilidad_por_origen,
-        )
+        return _render_form()
 
     # ── Crear secciones formales del combo y luego insertar componentes ──
     groups_by_uid = {}
@@ -3025,13 +2938,7 @@ def nuevo_combo():
     except Exception as exc:
         db.session.rollback()
         flash(f"❌ Error al crear combo: {exc}", "danger")
-        return render_template(
-            "admin/nuevo_combo.html",
-            categorias=categorias,
-            productos_simples=productos_simples,
-            combo_limits=combo_limits,
-            disponibilidad_por_origen=disponibilidad_por_origen,
-        )
+        return _render_form()
 
     return redirect(url_for("admin.gestionar_combo", producto_id=combo.id))
 
