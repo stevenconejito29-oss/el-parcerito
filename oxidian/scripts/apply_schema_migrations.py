@@ -1125,6 +1125,51 @@ def _migrate_product_variants():
         """))
 
 
+def _migrate_product_retail_fields():
+    """Añade columnas retail-specific a `products`.
+    Nullable en todos — comida no las usa. Idempotente."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("products"):
+        return
+    cols = {c["name"] for c in inspector.get_columns("products")}
+    dialect = db.engine.dialect.name
+    if "marca" not in cols:
+        db.session.execute(text("ALTER TABLE products ADD COLUMN marca VARCHAR(100)"))
+    if "material" not in cols:
+        db.session.execute(text("ALTER TABLE products ADD COLUMN material VARCHAR(100)"))
+    if "dimensiones" not in cols:
+        db.session.execute(text("ALTER TABLE products ADD COLUMN dimensiones VARCHAR(80)"))
+    if "peso_gramos" not in cols:
+        db.session.execute(text("ALTER TABLE products ADD COLUMN peso_gramos INTEGER"))
+    if "garantia_meses" not in cols:
+        db.session.execute(text("ALTER TABLE products ADD COLUMN garantia_meses INTEGER"))
+
+
+def _migrate_product_vertical_backfill_ambos():
+    """Convierte productos legacy con vertical='ambos' al nicho activo actual
+    (SiteConfig.TIPO_TIENDA). Elimina la contaminación cruzada donde un producto
+    aparecía en las dos tiendas simultáneamente.
+
+    Idempotente: si no hay filas con 'ambos', no hace nada. Segundo run: 0 filas.
+    """
+    inspector = inspect(db.engine)
+    if not inspector.has_table("products"):
+        return
+    cols = {c["name"] for c in inspector.get_columns("products")}
+    if "vertical" not in cols:
+        return
+    # Lee nicho activo desde SiteConfig — si no existe, comida por default.
+    tt_row = db.session.execute(text(
+        "SELECT valor FROM site_config WHERE clave = 'TIPO_TIENDA' LIMIT 1"
+    )).first()
+    tt = (tt_row[0].strip().lower() if tt_row and tt_row[0] else "comida")
+    if tt not in ("comida", "producto"):
+        tt = "comida"
+    db.session.execute(text(
+        "UPDATE products SET vertical = :tt WHERE LOWER(COALESCE(vertical, '')) = 'ambos'"
+    ), {"tt": tt})
+
+
 def _migrate_combo_item_variant():
     """Añade combo_items.variant_id (FK product_variants ondelete SET NULL) para
     permitir bundles retail que congelen una talla/color por componente."""
@@ -1362,6 +1407,22 @@ MIGRATIONS = [
             "para bundles retail que congelan talla/color por componente"
         ),
         "fn": _migrate_combo_item_variant,
+    },
+    {
+        "id": "20260710_30_product_retail_fields",
+        "description": (
+            "Product: marca, material, dimensiones, peso_gramos, garantia_meses "
+            "(nullable). Solo aplican si vertical='producto'."
+        ),
+        "fn": _migrate_product_retail_fields,
+    },
+    {
+        "id": "20260710_31_backfill_vertical_ambos",
+        "description": (
+            "Convierte Product.vertical='ambos' (legacy) al nicho activo actual "
+            "para eliminar la contaminación cruzada entre comida y retail."
+        ),
+        "fn": _migrate_product_vertical_backfill_ambos,
     },
 ]
 

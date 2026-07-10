@@ -717,13 +717,13 @@ def _producto_disponible_para_bot(producto):
         features.get("delivery", True) or features.get("recogida", True)
     ):
         return False
-    # Filtro por vertical: los productos con `vertical="comida"` o `"producto"`
-    # solo aparecen si TIPO_TIENDA coincide. Los `"ambos"` (default) siempre.
-    v = (getattr(producto, "vertical", None) or "ambos").strip().lower()
-    if v != "ambos":
-        tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
-        if v != tt:
-            return False
+    # Filtro estricto por nicho: comida y retail son tiendas separadas.
+    # Un producto solo aparece si su vertical coincide con TIPO_TIENDA.
+    # Legacy `ambos` queda invisible (migración de deploy lo convierte).
+    v = (getattr(producto, "vertical", None) or "").strip().lower()
+    tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
+    if v != tt:
+        return False
     return bool(
         producto
         and producto.activo

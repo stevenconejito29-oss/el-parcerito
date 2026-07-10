@@ -153,18 +153,19 @@ def _establecimiento_para_origen(origen):
 
 
 def _producto_pertenece_al_vertical(producto):
-    """Filtra productos que solo se muestran en un vertical concreto.
-    Solo dos verticales soportados:
-      - `comida` → gastronomía (menú, alérgenos, cocina, tallas Pequeño/Mediano/Grande).
-      - `producto` → retail / nicho general (ropa, zapatos, bisutería, tallas S/M/L).
-    `vertical="ambos"` en Product → visible en cualquier TIPO_TIENDA.
-    `vertical="comida"` → solo si TIPO_TIENDA == "comida".
-    `vertical="producto"` → solo si TIPO_TIENDA == "producto"."""
+    """Filtra productos por nicho activo (comida vs retail).
+
+    Comida y retail son tiendas SEPARADAS. Un producto solo aparece si su
+    `Product.vertical` coincide EXACTAMENTE con `SiteConfig.TIPO_TIENDA`.
+
+    - `vertical="comida"` → visible SOLO si TIPO_TIENDA == "comida".
+    - `vertical="producto"` → visible SOLO si TIPO_TIENDA == "producto".
+    - `vertical="ambos"` (legacy) → invisible. Un producto sin nicho no cruza
+      al otro; la migración de deploy convierte "ambos" al TIPO_TIENDA inicial.
+    """
     if not producto:
         return False
-    v = (getattr(producto, "vertical", None) or "ambos").strip().lower()
-    if v == "ambos":
-        return True
+    v = (getattr(producto, "vertical", None) or "").strip().lower()
     from models import SiteConfig
     tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
     return v == tt

@@ -511,10 +511,20 @@ class Product(db.Model):
     # ── Vertical / nicho ──────────────────────────────────────────────
     # "comida"    → solo visible cuando la tienda está en modo comida
     # "producto"  → solo visible cuando la tienda está en modo producto (retail)
-    # "ambos"     → visible en cualquier modo (default, no rompe catálogos existentes)
+    # "ambos"     → LEGACY: valor deprecado. Migración backfilling los normaliza
+    #               al nicho activo. Nuevos productos: default = nicho activo.
     # El filtrado se hace en `_producto_pertenece_al_vertical` (public.py + api_bot.py).
-    vertical = db.Column(db.String(20), nullable=False, default="ambos",
-                          server_default=db.text("'ambos'"))
+    vertical = db.Column(db.String(20), nullable=False, default="comida",
+                          server_default=db.text("'comida'"))
+
+    # ── Campos retail (solo tienen sentido si vertical="producto") ────
+    # Nullable en todos: comida no los usa. Formulario admin los muestra
+    # condicionalmente según el vertical.
+    marca = db.Column(db.String(100))
+    material = db.Column(db.String(100))
+    dimensiones = db.Column(db.String(80))    # "20x15x10 cm", "Talla única", etc.
+    peso_gramos = db.Column(db.Integer)
+    garantia_meses = db.Column(db.Integer)
 
     # ── Canal de preparación ─────────────────────────────────────────
     # cocina   = requiere cocinarse/elaborarse (default — no rompe nada existente)

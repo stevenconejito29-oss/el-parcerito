@@ -64,43 +64,97 @@
     </div>
   </div>
 
-  <!-- ── VERTICAL / NICHO — separar catálogo por tipo de tienda ── -->
-  {% set _v_actual = (producto.vertical if producto is defined and producto and producto.vertical else 'ambos') %}
+  <!-- ── VERTICAL / NICHO — separación estricta comida vs retail ── -->
+  {# Nicho activo de la tienda para el default cuando el producto es nuevo o legacy 'ambos'. #}
+  {% set _v_actual = (producto.vertical if producto is defined and producto and producto.vertical in ('comida','producto') else (brand.tipo_tienda or 'comida')) %}
   {% set _es_super = current_user.is_authenticated and current_user.rol == 'super_admin' %}
   <div class="fp-span-full col-span-2 fp-section">
-    <label class="fp-section-title">Visible en qué tienda</label>
+    <label class="fp-section-title">Nicho del producto</label>
     {% if _es_super %}
       <p class="text-xs text-gray-500 mb-2">
-        Restringe en qué modo aparece este producto. "Ambos" (default) → siempre visible al cambiar de nicho.
+        Comida y retail son <strong>tiendas separadas</strong>: un producto solo aparece en su nicho.
       </p>
       <div class="flex gap-4 flex-wrap text-sm">
         <label class="fp-radio-label">
-          <input type="radio" name="vertical" value="ambos" {% if _v_actual == 'ambos' %}checked{% endif %}
-                 style="accent-color:#8b5cf6"> Ambas tiendas
-        </label>
-        <label class="fp-radio-label">
           <input type="radio" name="vertical" value="comida" {% if _v_actual == 'comida' %}checked{% endif %}
-                 style="accent-color:#e85d04"> Solo comida
+                 style="accent-color:#e85d04"> Comida
         </label>
         <label class="fp-radio-label">
           <input type="radio" name="vertical" value="producto" {% if _v_actual == 'producto' %}checked{% endif %}
-                 style="accent-color:#2563eb"> Solo producto / retail
+                 style="accent-color:#2563eb"> Retail / producto
         </label>
       </div>
     {% else %}
       <p class="text-xs text-gray-500 mb-2">
-        El catálogo al que pertenece el producto solo lo cambia super_admin.
+        El nicho del producto solo lo cambia super_admin.
       </p>
       <span class="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs">
-        Catálogo actual:
-        <strong>
-          {% if _v_actual == 'comida' %}Solo comida
-          {% elif _v_actual == 'producto' %}Solo producto / retail
-          {% else %}Ambas tiendas{% endif %}
-        </strong>
+        Nicho actual:
+        <strong>{% if _v_actual == 'producto' %}Retail{% else %}Comida{% endif %}</strong>
       </span>
     {% endif %}
   </div>
+
+  <!-- ── CAMPOS RETAIL — solo relevantes si vertical=producto ── -->
+  <div class="fp-span-full col-span-2 fp-section fp-retail-fields"
+       data-visible-if-vertical="producto"
+       {% if _v_actual != 'producto' %}style="display:none"{% endif %}>
+    <label class="fp-section-title">Ficha retail</label>
+    <p class="text-xs text-gray-500 mb-3">
+      Datos específicos del producto físico. Todos opcionales.
+    </p>
+    <div class="grid grid-cols-2 gap-3 text-sm">
+      <label class="block">
+        <span class="text-xs text-gray-600">Marca</span>
+        <input type="text" name="marca" maxlength="100"
+               value="{{ producto.marca if producto is defined and producto and producto.marca else '' }}"
+               class="w-full mt-1 rounded border-gray-300"
+               placeholder="Ej: Nike">
+      </label>
+      <label class="block">
+        <span class="text-xs text-gray-600">Material</span>
+        <input type="text" name="material" maxlength="100"
+               value="{{ producto.material if producto is defined and producto and producto.material else '' }}"
+               class="w-full mt-1 rounded border-gray-300"
+               placeholder="Ej: Algodón 100%">
+      </label>
+      <label class="block">
+        <span class="text-xs text-gray-600">Dimensiones</span>
+        <input type="text" name="dimensiones" maxlength="80"
+               value="{{ producto.dimensiones if producto is defined and producto and producto.dimensiones else '' }}"
+               class="w-full mt-1 rounded border-gray-300"
+               placeholder="Ej: 20x15x10 cm">
+      </label>
+      <label class="block">
+        <span class="text-xs text-gray-600">Peso (gramos)</span>
+        <input type="number" name="peso_gramos" min="0" step="1"
+               value="{{ producto.peso_gramos if producto is defined and producto and producto.peso_gramos else '' }}"
+               class="w-full mt-1 rounded border-gray-300"
+               placeholder="500">
+      </label>
+      <label class="block">
+        <span class="text-xs text-gray-600">Garantía (meses)</span>
+        <input type="number" name="garantia_meses" min="0" step="1"
+               value="{{ producto.garantia_meses if producto is defined and producto and producto.garantia_meses else '' }}"
+               class="w-full mt-1 rounded border-gray-300"
+               placeholder="24">
+      </label>
+    </div>
+  </div>
+  {% if _es_super %}
+  <script>
+  (function(){
+    const container = document.currentScript.closest('form') || document;
+    const retailBox = container.querySelector('.fp-retail-fields[data-visible-if-vertical="producto"]');
+    if (!retailBox) return;
+    container.querySelectorAll('input[name="vertical"]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        retailBox.style.display = (inp.checked && inp.value === 'producto') ? '' : 'none';
+      });
+    });
+  })();
+  </script>
+  {% endif %}
 
   <!-- ── CANAL DE PREPARACIÓN ── -->
   {% if brand.es_comida %}
