@@ -112,6 +112,13 @@ if deploy_revision; then
     if [ -f "$DEPLOY_DIR/scripts/auto-deploy.sh" ]; then
         install -m 0755 "$DEPLOY_DIR/scripts/auto-deploy.sh" "$STATE_DIR/auto-deploy.sh"
     fi
+    # ─── PRUNE POST-DEPLOY ─────────────────────────────────────
+    # Sin esto, cada rebuild deja la imagen anterior con tag <none>
+    # → el SSD se llena en semanas. Se conserva 1GB de build cache
+    # para acelerar el próximo build incremental.
+    log "Prune post-deploy: liberando imágenes dangling y cache antiguo…"
+    docker image prune -f 2>&1 | tail -3 | sed 's/^/  /'
+    docker builder prune -f --keep-storage 1GB 2>&1 | tail -3 | sed 's/^/  /'
     log "Despliegue $target_sha completado y saludable."
     exit 0
 fi
