@@ -2140,12 +2140,12 @@ def checkout():
             flash("Error al procesar tu pedido. Por favor, inténtalo de nuevo.", "danger")
             return redirect(url_for("public.checkout"))
 
-        session.pop("carrito", None)
-        session.pop("cart_puntos", None)
-        session.pop("cart_producto_canje_id", None)
-        session.pop("notas_combo", None)
-        session.pop("combo_selecciones", None)
-        session.pop("carrito_origen", None)
+        # Vaciado COMPLETO tras crear pedido: helper canónico limpia las 8
+        # claves de sesión ligadas al carrito. Antes se hacían pops parciales
+        # (6 de 8) y quedaban huérfanas `extras_selecciones`,
+        # `presentaciones_carrito` y `variantes_carrito` — se filtraban al
+        # siguiente pedido del mismo cliente en la misma sesión.
+        _save_carrito({})
 
         # Notificación push: alertar a admins del nuevo pedido
         try:
