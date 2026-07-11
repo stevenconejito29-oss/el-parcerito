@@ -2045,7 +2045,13 @@ def bar_marcar_preparado(pedido_id):
     if not bar:
         return jsonify({"ok": False, "error": "No autorizado"}), 403
 
-    pedido = get_or_404(Order, pedido_id)
+    pedido = (
+        Order.query.filter_by(id=pedido_id).with_for_update().first()
+    )
+    if pedido is None:
+        return jsonify({"ok": False, "error": "Pedido no encontrado"}), 404
+    if pedido.estado == "cancelado":
+        return jsonify({"ok": False, "error": "El pedido fue cancelado"}), 409
     if pedido.estado not in ("pendiente", "armando", "listo"):
         return jsonify({"ok": False, "error": "El pedido ya está cerrado"}), 409
     estado = OrderProviderStatus.query.filter_by(
@@ -2073,14 +2079,24 @@ def bar_marcar_preparado(pedido_id):
     )
     db.session.expire(pedido, ["estados_proveedor"])
     avanzado = False
+    repartidor_asignado = None
     if (not pedido.proveedores_pendientes
             and es_pedido_solo_bar(pedido)
             and pedido.estado in ("pendiente", "armando")):
         pedido.estado = "listo"
         try:
-            distribuir_repartidor(pedido)
+            repartidor_asignado = distribuir_repartidor(pedido)
         except Exception:
-            pass
+            current_app.logger.exception(
+                "bar_marcar_preparado: distribuir_repartidor falló pedido=%s bar=%s",
+                pedido.id, bar.id,
+            )
+        if not repartidor_asignado:
+            current_app.logger.warning(
+                "bar_marcar_preparado: pedido %s avanzó a listo SIN repartidor "
+                "(nadie disponible). Quedará en cola de espera.",
+                pedido.numero_pedido,
+            )
         avanzado = True
     db.session.commit()
     return jsonify({
