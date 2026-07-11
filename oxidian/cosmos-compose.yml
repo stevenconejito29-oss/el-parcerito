@@ -31,12 +31,26 @@ services:
     container_name: oxidian-db
     restart: unless-stopped
     <<: *default-logging
+    # Postgres tuning: aprovechar RAM sin monopolizarla en un server multi-stack.
+    # shared_buffers ~25% del mem_limit; effective_cache_size ~75%.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${OXIDIAN_PG_SHARED_BUFFERS:-256MB}
+      - -c
+      - effective_cache_size=${OXIDIAN_PG_EFFECTIVE_CACHE:-1GB}
+      - -c
+      - work_mem=${OXIDIAN_PG_WORK_MEM:-8MB}
+      - -c
+      - maintenance_work_mem=${OXIDIAN_PG_MAINT_MEM:-64MB}
     environment:
       POSTGRES_USER: oxidian
       POSTGRES_PASSWORD: ${OXIDIAN_DB_PASSWORD:?define OXIDIAN_DB_PASSWORD}
       POSTGRES_DB: oxidian
     volumes:
       - oxidian_db_data:/var/lib/postgresql/data
+    mem_limit: ${OXIDIAN_DB_MEM_LIMIT:-1g}
+    shm_size: ${OXIDIAN_DB_SHM_SIZE:-256m}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U oxidian -d oxidian"]
       interval: 10s
@@ -54,6 +68,10 @@ services:
       dockerfile: oxidian/Dockerfile
     restart: unless-stopped
     <<: *default-logging
+    # Aprovechar CPU: gunicorn concurrency vía env (WEB_CONCURRENCY × WEB_THREADS
+    # concurrent requests). mem_limit protege el server multi-stack.
+    mem_limit: ${OXIDIAN_APP_MEM_LIMIT:-2g}
+    cpus: ${OXIDIAN_APP_CPUS:-4}
     depends_on:
       oxidian-db:
         condition: service_healthy
@@ -140,9 +158,12 @@ services:
     container_name: oxidian-redis
     restart: unless-stopped
     <<: *default-logging
-    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    # maxmemory parametrizado por env — con más RAM en el server, se puede
+    # elevar sin tocar código.
+    command: redis-server --maxmemory ${OXIDIAN_REDIS_MAXMEMORY:-256mb} --maxmemory-policy allkeys-lru
     volumes:
       - oxidian_redis_data:/data
+    mem_limit: ${OXIDIAN_REDIS_MEM_LIMIT:-512m}
 
   # ── Redis Cache (para Evolution API) ─────────────────────────────
   evolution-redis:
@@ -152,7 +173,8 @@ services:
     <<: *default-logging
     volumes:
       - evolution_redis_data:/data
-    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory ${EVOLUTION_REDIS_MAXMEMORY:-256mb} --maxmemory-policy allkeys-lru
+    mem_limit: ${EVOLUTION_REDIS_MEM_LIMIT:-512m}
 
   # ── Base de datos Evolution ───────────────────────────────────────
   evolution-db:
