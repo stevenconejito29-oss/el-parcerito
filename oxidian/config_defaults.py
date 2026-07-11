@@ -94,6 +94,30 @@ DEFAULTS: dict[str, dict] = {
             "Tamaño de página del listado /admin/clientes (cap 10-200)."
         ),
     },
+
+    # ── Workload balancing (no sobrecargar empleados) ────────────────
+    # Consumidas por `services.distribuir_pedido` / `distribuir_repartidor`
+    # como tope de pedidos activos concurrentes por empleado. Si TODOS los
+    # candidatos superan el tope, se asigna al menos cargado igualmente
+    # (log warning) — evita dejar pedidos huérfanos.
+    "MAX_PEDIDOS_POR_PREPARADOR": {
+        "default": "8",
+        "type": "int",
+        "desc": (
+            "Máximo pedidos activos (pendiente+armando) por preparador antes "
+            "de repartir a otros. Cap defensivo 1-100. Ajusta según capacidad "
+            "real de tu cocina."
+        ),
+    },
+    "MAX_PEDIDOS_POR_REPARTIDOR": {
+        "default": "5",
+        "type": "int",
+        "desc": (
+            "Máximo pedidos activos (listo+en_ruta) por repartidor antes de "
+            "repartir a otros. Cap defensivo 1-50. En moto/coche subir; en "
+            "bici bajar."
+        ),
+    },
 }
 
 

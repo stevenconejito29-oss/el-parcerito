@@ -853,6 +853,180 @@ def _canal_pedido(pedido: Order) -> str:
     return "almacen" if canales == {"almacen"} else "cocina"
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# WORKLOAD BALANCING — carga de empleados y topes concurrentes
+#
+# Guarda contra sobrecarga: un empleado que se queda como único online no
+# debe recibir infinitos pedidos. Config vía SiteConfig con env fallback.
+#
+# `carga_actual_preparadores()` y `carga_actual_repartidores()` computan la
+# carga de TODOS los usuarios candidatos en 1 sola query — reemplaza los
+# N accesos a `pedidos_activos_como_*()` en el sort.
+# ═══════════════════════════════════════════════════════════════════════
+
+def _cfg_int(clave: str, default: int, minimo: int = 1, maximo: int = 999) -> int:
+    """Lee SiteConfig con cap defensivo. Fallback silencioso al default."""
+    try:
+        from models import SiteConfig as _SC
+        v = int(_SC.get(clave, str(default)) or default)
+        return max(minimo, min(v, maximo))
+    except Exception:
+        return default
+
+
+def max_pedidos_por_preparador() -> int:
+    """Máximo pedidos activos (pendiente+armando) por preparador antes de
+    considerar desbordado. Default 8. Se puede subir/bajar sin redeploy."""
+    return _cfg_int("MAX_PEDIDOS_POR_PREPARADOR", 8, minimo=1, maximo=100)
+
+
+def max_pedidos_por_repartidor() -> int:
+    """Máximo pedidos activos (listo+en_ruta) por repartidor. Default 5."""
+    return _cfg_int("MAX_PEDIDOS_POR_REPARTIDOR", 5, minimo=1, maximo=50)
+
+
+def carga_actual_preparadores(user_ids: list[int]) -> dict[int, int]:
+    """Devuelve {user_id: pedidos_activos_como_preparador} para user_ids
+    dados, con UNA sola query agregada. Evita el N+1 del sort."""
+    if not user_ids:
+        return {}
+    from sqlalchemy import func
+    rows = (
+        db.session.query(Order.preparador_id, func.count(Order.id))
+        .filter(
+            Order.preparador_id.in_(user_ids),
+            Order.estado.in_(("pendiente", "armando")),
+        )
+        .group_by(Order.preparador_id)
+        .all()
+    )
+    return {uid: 0 for uid in user_ids} | {uid: n for uid, n in rows}
+
+
+def carga_actual_repartidores(user_ids: list[int]) -> dict[int, int]:
+    """Devuelve {user_id: pedidos_activos_como_repartidor} en 1 query.
+    Cuenta pedidos en estado listo o en_ruta asignados al repartidor."""
+    if not user_ids:
+        return {}
+    from sqlalchemy import func
+    rows = (
+        db.session.query(Order.repartidor_id, func.count(Order.id))
+        .filter(
+            Order.repartidor_id.in_(user_ids),
+            Order.estado.in_(("listo", "en_ruta")),
+            Order.tipo_entrega_cliente == "delivery",
+        )
+        .group_by(Order.repartidor_id)
+        .all()
+    )
+    return {uid: 0 for uid in user_ids} | {uid: n for uid, n in rows}
+
+
+def _elegir_menos_cargado(candidatos: list, cargas: dict[int, int],
+                          tope: int) -> tuple | None:
+    """Elige el candidato menos cargado que aún tenga margen bajo el tope.
+
+    Si TODOS los candidatos están al tope o por encima, devuelve el menos
+    cargado igualmente (política pragmática: mejor asignar tarde que dejar
+    huérfano). Retorna (usuario, carga_actual, overloaded_flag).
+    """
+    if not candidatos:
+        return None
+    ordenados = sorted(candidatos, key=lambda u: (cargas.get(u.id, 0), u.id))
+    con_margen = [u for u in ordenados if cargas.get(u.id, 0) < tope]
+    if con_margen:
+        elegido = con_margen[0]
+        return (elegido, cargas.get(elegido.id, 0), False)
+    elegido = ordenados[0]
+    logger.warning(
+        "workload: TODOS los candidatos (%d) están al tope (%d). Asigno al "
+        "menos cargado igualmente: %s con %d pedidos activos.",
+        len(candidatos), tope, elegido.nombre, cargas.get(elegido.id, 0),
+    )
+    return (elegido, cargas.get(elegido.id, 0), True)
+
+
+def rebalancear_pedidos_huerfanos() -> dict:
+    """Reasigna pedidos cuyo preparador/repartidor está offline o inactivo.
+
+    Escenario: un empleado se cae en medio del turno. Sus pedidos activos
+    quedan bloqueados hasta que alguien los tome manual. Este helper los
+    re-asigna a otros disponibles.
+
+    Ejecutable desde el worker (cron) o desde admin como acción one-shot.
+    Devuelve dict con conteos por rol.
+    """
+    resultado = {"preparador": 0, "repartidor": 0}
+
+    # ── Preparador huérfano
+    pedidos_prep = (
+        Order.query
+        .filter(
+            Order.estado.in_(("pendiente", "armando")),
+            Order.preparador_id.isnot(None),
+        )
+        .join(User, Order.preparador_id == User.id)
+        .filter(db.or_(User.activo.is_(False), User.en_linea.is_(False)))
+        .with_for_update(skip_locked=True)
+        .all()
+    )
+    for pedido in pedidos_prep:
+        try:
+            preparador_anterior_id = pedido.preparador_id
+            pedido.preparador_id = None
+            db.session.flush()
+            nuevo = distribuir_pedido(pedido)
+            if nuevo and nuevo.id != preparador_anterior_id:
+                resultado["preparador"] += 1
+                logger.info(
+                    "rebalanceo: pedido %s reasignado de user %s → %s (huérfano)",
+                    pedido.numero_pedido, preparador_anterior_id, nuevo.nombre,
+                )
+            elif not nuevo:
+                # Nadie disponible: dejar sin asignar para que cola lo recoja.
+                pass
+        except Exception:
+            logger.exception("rebalanceo preparador: fallo pedido %s", pedido.id)
+
+    # ── Repartidor huérfano
+    pedidos_rep = (
+        Order.query
+        .filter(
+            Order.estado.in_(("listo", "en_ruta")),
+            Order.repartidor_id.isnot(None),
+            Order.tipo_entrega_cliente == "delivery",
+        )
+        .join(User, Order.repartidor_id == User.id)
+        .filter(db.or_(User.activo.is_(False), User.en_linea.is_(False)))
+        .with_for_update(skip_locked=True)
+        .all()
+    )
+    for pedido in pedidos_rep:
+        try:
+            rep_anterior_id = pedido.repartidor_id
+            pedido.repartidor_id = None
+            db.session.flush()
+            nuevo = distribuir_repartidor(pedido)
+            if nuevo and nuevo.id != rep_anterior_id:
+                resultado["repartidor"] += 1
+                logger.info(
+                    "rebalanceo: pedido %s reasignado de rep %s → %s (huérfano)",
+                    pedido.numero_pedido, rep_anterior_id, nuevo.nombre,
+                )
+        except Exception:
+            logger.exception("rebalanceo repartidor: fallo pedido %s", pedido.id)
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("rebalancear_pedidos_huerfanos: commit falló")
+
+    if resultado["preparador"] or resultado["repartidor"]:
+        logger.info("rebalanceo: %s", resultado)
+    return resultado
+
+
 def redistribuir_pendientes_sin_asignar() -> int:
     """
     Asigna a preparadores online los pedidos 'pendiente' sin preparador.
@@ -910,6 +1084,7 @@ def distribuir_pedido(pedido: Order) -> User | None:
         pedido.preparador_id = None
         return None
 
+    tope = max_pedidos_por_preparador()
     canal = _canal_pedido(pedido)
     if canal == "almacen":
         candidatos = _candidatos_disponibles(
@@ -927,9 +1102,13 @@ def distribuir_pedido(pedido: Order) -> User | None:
                 pedido.numero_pedido,
             )
             return None
-        candidatos.sort(key=lambda u: (u.pedidos_activos_como_preparador(), u.id))
-        pedido.preparador_id = candidatos[0].id
-        return candidatos[0]
+        cargas = carga_actual_preparadores([u.id for u in candidatos])
+        resultado = _elegir_menos_cargado(candidatos, cargas, tope)
+        if not resultado:
+            return None
+        asignado, _, _ = resultado
+        pedido.preparador_id = asignado.id
+        return asignado
 
     tipo = _tipo_pedido(pedido)
     rol_preferido  = "cocina" if tipo == "inmediato" else "preparacion"
@@ -958,8 +1137,11 @@ def distribuir_pedido(pedido: Order) -> User | None:
         )
         return None
 
-    candidatos.sort(key=lambda u: (u.pedidos_activos_como_preparador(), u.id))
-    asignado = candidatos[0]
+    cargas = carga_actual_preparadores([u.id for u in candidatos])
+    resultado = _elegir_menos_cargado(candidatos, cargas, tope)
+    if not resultado:
+        return None
+    asignado, _, _ = resultado
     pedido.preparador_id = asignado.id
     return asignado
 
@@ -1002,8 +1184,14 @@ def distribuir_repartidor(pedido: Order) -> User | None:
     else:
         pool = candidatos
 
-    pool.sort(key=lambda u: (u.pedidos_activos_como_repartidor(), u.id))
-    asignado = pool[0]
+    # Workload balancing: menor carga primero, respeta tope configurable.
+    # Bulk query en vez de N queries del sort key.
+    tope = max_pedidos_por_repartidor()
+    cargas = carga_actual_repartidores([u.id for u in pool])
+    resultado = _elegir_menos_cargado(pool, cargas, tope)
+    if not resultado:
+        return None
+    asignado, _, _ = resultado
     pedido.repartidor_id = asignado.id
     return asignado
 
