@@ -12,6 +12,17 @@
 #   OXIDIAN_PUBLIC_URL, TIENDA_URL (tu dominio con https://)
 # ════════════════════════════════════════════════════════════════════
 
+# ── Anchor: política de logs con rotación ──────────────────────────
+# Sin esto los logs de Docker crecen sin límite y llenan el SSD en semanas.
+# Aplicado a todos los servicios con `<<: *default-logging`.
+# Ajustable via env: DOCKER_LOG_MAX_SIZE (default 10m), DOCKER_LOG_MAX_FILE (default 3).
+x-default-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
+      max-file: "${DOCKER_LOG_MAX_FILE:-3}"
+
 services:
 
   # ── Base de datos Oxidian ──────────────────────────────────────────
@@ -19,6 +30,7 @@ services:
     image: postgres:15-alpine
     container_name: oxidian-db
     restart: unless-stopped
+    <<: *default-logging
     environment:
       POSTGRES_USER: oxidian
       POSTGRES_PASSWORD: ${OXIDIAN_DB_PASSWORD:?define OXIDIAN_DB_PASSWORD}
@@ -41,6 +53,7 @@ services:
       context: ..
       dockerfile: oxidian/Dockerfile
     restart: unless-stopped
+    <<: *default-logging
     depends_on:
       oxidian-db:
         condition: service_healthy
@@ -126,6 +139,7 @@ services:
     image: redis:7-alpine
     container_name: oxidian-redis
     restart: unless-stopped
+    <<: *default-logging
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
     volumes:
       - oxidian_redis_data:/data
@@ -135,6 +149,7 @@ services:
     image: redis:7-alpine
     container_name: evolution-redis
     restart: unless-stopped
+    <<: *default-logging
     volumes:
       - evolution_redis_data:/data
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
@@ -144,6 +159,7 @@ services:
     image: postgres:15-alpine
     container_name: evolution-db
     restart: unless-stopped
+    <<: *default-logging
     environment:
       POSTGRES_USER: evolution
       POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD:?define EVOLUTION_DB_PASSWORD}
@@ -161,6 +177,7 @@ services:
     image: evoapicloud/evolution-api:v2.3.7
     container_name: evolution-api
     restart: unless-stopped
+    <<: *default-logging
     depends_on:
       evolution-db:
         condition: service_healthy
@@ -195,6 +212,7 @@ services:
     image: nginx:1.27-alpine
     container_name: oxidian-gateway
     restart: unless-stopped
+    <<: *default-logging
     depends_on:
       oxidian:
         condition: service_healthy
@@ -219,6 +237,7 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: oxidian-cloudflared
     restart: unless-stopped
+    <<: *default-logging
     depends_on:
       gateway:
         condition: service_healthy
@@ -231,6 +250,7 @@ services:
     image: curlimages/curl:8.11.1
     container_name: evolution-setup
     restart: "no"
+    <<: *default-logging
     depends_on:
       evolution-api:
         condition: service_healthy

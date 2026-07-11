@@ -58,6 +58,42 @@ DEFAULTS: dict[str, dict] = {
         "type": "int",
         "desc": "Vigencia (minutos) del OTP para canje de puntos.",
     },
+
+    # ── Retención / poda de tablas de crecimiento continuo ─────────────
+    # Consumidas por `services.purgar_registros_antiguos()`, invocada por el
+    # worker de outbox cada `OUTBOX_PURGE_EVERY_SECONDS` (default 1h).
+    "NOTIFICATION_OUTBOX_RETENTION_DAYS": {
+        "default": "30",
+        "type": "int",
+        "desc": (
+            "Días que se conservan las notificaciones ya enviadas o fallidas "
+            "en notification_outbox. Solo purga estado in (sent, failed). "
+            "Cap defensivo interno 7-365."
+        ),
+    },
+    "IDEMPOTENCY_PURGE_ENABLED": {
+        "default": "1",
+        "type": "bool",
+        "desc": (
+            "Habilita la purga automática de idempotency_keys expiradas junto "
+            "con la de notification_outbox. Poner a 0 solo para diagnóstico."
+        ),
+    },
+    "OTP_MIN_RESEND_SECONDS": {
+        "default": "60",
+        "type": "int",
+        "desc": (
+            "Ventana mínima (segundos) entre 2 solicitudes de OTP de puntos "
+            "del mismo cliente. Anti-flood — consumida por loyalty_service."
+        ),
+    },
+    "ADMIN_CLIENTES_PAGE_SIZE": {
+        "default": "40",
+        "type": "int",
+        "desc": (
+            "Tamaño de página del listado /admin/clientes (cap 10-200)."
+        ),
+    },
 }
 
 

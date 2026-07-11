@@ -26,6 +26,31 @@ en BD).
 | `COD_PUNTOS_MAX_INTENTOS` | int | `5` | `User.verificar_cod_puntos` | Máx. intentos fallidos del cliente al canjear puntos por OTP. |
 | `COD_PUNTOS_TTL_MINUTOS` | int | `10` | `User.generar_cod_puntos` | Vigencia del OTP de canje de puntos (cap 1–60). |
 
+## Retención / poda de tablas — PR #17 disk fix
+
+Sembradas por `config_defaults` desde PR #17. Consumidas por
+`services.purgar_registros_antiguos`, invocada por el worker de outbox cada
+`OUTBOX_PURGE_EVERY_SECONDS` (env, default 3600s = 1h).
+
+| Clave | Tipo | Default | Qué hace |
+|---|---|---|---|
+| `NOTIFICATION_OUTBOX_RETENTION_DAYS` | int | `30` | Días que se conservan filas `sent`/`failed` en `notification_outbox`. Cap defensivo 7-365. NUNCA borra pendientes. |
+| `IDEMPOTENCY_PURGE_ENABLED` | bool | `"1"` | Habilita purga de `idempotency_keys` expiradas junto con la de outbox. `0` para diagnóstico. |
+| `OTP_MIN_RESEND_SECONDS` | int | `60` | Ventana mínima entre 2 solicitudes de OTP de puntos del mismo cliente. Anti-flood. |
+| `ADMIN_CLIENTES_PAGE_SIZE` | int | `40` | Paginación de `/admin/clientes` (cap 10-200). |
+
+## Variables env infraestructura (no SiteConfig — se leen al arranque)
+
+| Clave | Default | Qué hace |
+|---|---|---|
+| `DOCKER_LOG_MAX_SIZE` | `10m` | Tamaño máximo por archivo de log Docker (driver json-file). |
+| `DOCKER_LOG_MAX_FILE` | `3` | Máximo archivos rotados por servicio. |
+| `OUTBOX_PURGE_EVERY_SECONDS` | `3600` | Frecuencia poda automática (mín 300s). |
+| `OUTBOX_INTERVAL_SECONDS` | `2` | Intervalo del worker outbox entre lotes. |
+| `OUTBOX_LIMIT` | `25` | Máx. notificaciones procesadas por lote. |
+| `BOT_INBOUND_MAX_ATTEMPTS` | `5` | Reintentos del bot antes de dead-letter. |
+| `BOT_INBOUND_RETENTION_SECS` | `86400` | Retención de `inbound_messages` procesados en el bot. |
+
 ## Claves ya existentes referenciadas (contexto — no nuevas)
 
 Estas ya vivían en `app._seed_admin` antes de la fase 9 y se documentan aquí

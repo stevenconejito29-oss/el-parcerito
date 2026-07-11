@@ -1,7 +1,16 @@
+# Anchor: rotación de logs (evita que Docker llene el SSD con json-file sin cap).
+x-default-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
+      max-file: "${DOCKER_LOG_MAX_FILE:-3}"
+
 services:
   oxidian-db:
     image: postgres:15
     restart: unless-stopped
+    <<: *default-logging
     environment:
       POSTGRES_USER: ${OXIDIAN_DB_USER:-oxidian}
       POSTGRES_PASSWORD: ${OXIDIAN_DB_PASSWORD:?define OXIDIAN_DB_PASSWORD}
@@ -19,6 +28,7 @@ services:
       context: ..
       dockerfile: oxidian/Dockerfile
     restart: unless-stopped
+    <<: *default-logging
     depends_on:
       oxidian-db:
         condition: service_healthy
@@ -93,6 +103,7 @@ services:
   oxidian-redis:
     image: redis:7-alpine
     restart: unless-stopped
+    <<: *default-logging
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
     volumes:
       - oxidian_redis_data:/data
@@ -100,6 +111,7 @@ services:
   evolution-db:
     image: postgres:15
     restart: unless-stopped
+    <<: *default-logging
     environment:
       POSTGRES_USER: ${EVOLUTION_DB_USER:-evolution}
       POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD:?define EVOLUTION_DB_PASSWORD}
@@ -115,6 +127,7 @@ services:
   evolution-api:
     image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:v2.3.7}
     restart: unless-stopped
+    <<: *default-logging
     depends_on:
       evolution-db:
         condition: service_healthy
@@ -140,6 +153,7 @@ services:
   gateway:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    <<: *default-logging
     depends_on:
       oxidian:
         condition: service_healthy
@@ -158,6 +172,7 @@ services:
   evolution-setup:
     image: curlimages/curl:8.11.1
     restart: "no"
+    <<: *default-logging
     depends_on:
       evolution-api:
         condition: service_started
@@ -192,6 +207,7 @@ services:
   evolution-redis:
     image: redis:7-alpine
     restart: unless-stopped
+    <<: *default-logging
     volumes:
       - evolution_redis_data:/data
 

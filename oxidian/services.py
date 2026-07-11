@@ -1656,6 +1656,78 @@ def _enviar_con_outbox(
         return False
 
 
+def purgar_registros_antiguos(now: datetime | None = None) -> dict:
+    """Poda periódica de tablas que crecen sin límite en producción.
+
+    Bug detectado en auditoría de disco:
+      - `notification_outbox` acumulaba filas para siempre tras `sent`/`failed`.
+      - `idempotency_keys` tenía `purge_expired_idempotency_keys()` pero
+        ningún caller — grow-forever.
+
+    Estrategia:
+      - Retención configurable via SiteConfig (con env fallback):
+        * `NOTIFICATION_OUTBOX_RETENTION_DAYS` (default 30 · min 7)
+        * `IDEMPOTENCY_PURGE_ENABLED` (default "1")
+      - Purga en batches (500 max) para no bloquear la BD.
+      - Solo purga `estado in (sent, failed)` — nunca borra pendientes.
+
+    Devuelve dict con conteos por tabla.
+    """
+    from datetime import timedelta as _td
+    from models import NotificationOutbox as _NO, SiteConfig as _SC
+
+    ahora = now or utcnow()
+    resultado = {"notification_outbox": 0, "idempotency_keys": 0}
+
+    # ── notification_outbox: sent/failed más viejos que retención ─────
+    try:
+        retention_days = int(_SC.get("NOTIFICATION_OUTBOX_RETENTION_DAYS", "30") or 30)
+    except (TypeError, ValueError):
+        retention_days = 30
+    retention_days = max(7, min(retention_days, 365))  # cap defensivo
+    corte = ahora - _td(days=retention_days)
+
+    # Delete en batch (500) para no bloquear la tabla durante mucho tiempo.
+    ids_borrar = [
+        row.id for row in _NO.query.filter(
+            _NO.estado.in_(("sent", "failed")),
+            _NO.enviado_en.isnot(None),
+            _NO.enviado_en < corte,
+        ).limit(500).all()
+    ]
+    if ids_borrar:
+        _NO.query.filter(_NO.id.in_(ids_borrar)).delete(synchronize_session=False)
+        resultado["notification_outbox"] = len(ids_borrar)
+
+    # ── idempotency_keys expiradas ────────────────────────────────────
+    try:
+        idem_enabled = str(_SC.get("IDEMPOTENCY_PURGE_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+    except Exception:
+        idem_enabled = True
+    if idem_enabled:
+        try:
+            from idempotency import purge_expired_idempotency_keys as _purge_idem
+            resultado["idempotency_keys"] = _purge_idem(batch_size=500)
+        except Exception:
+            logger.exception("purgar_registros_antiguos: fallo idempotency purge")
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("purgar_registros_antiguos: commit falló")
+        # No re-raise: la purga es best-effort, no debe tumbar el worker.
+
+    if resultado["notification_outbox"] or resultado["idempotency_keys"]:
+        logger.info(
+            "purga: outbox=%d idempotency=%d (retention=%dd)",
+            resultado["notification_outbox"],
+            resultado["idempotency_keys"],
+            retention_days,
+        )
+    return resultado
+
+
 def procesar_notificaciones_pendientes(
     limit: int = 25,
     only_ids: list[int] | tuple[int, ...] | None = None,
