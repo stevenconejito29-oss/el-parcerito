@@ -58,6 +58,11 @@ const API_WINDOW_MS = parseInt(process.env.BOT_API_WINDOW_MS || '60000', 10);
 const MAX_API_HITS_PER_WINDOW = parseInt(process.env.BOT_MAX_API_HITS_PER_WINDOW || '120', 10);
 const ADMIN_ACTIVE_WINDOW_SEC = parseInt(process.env.BOT_ADMIN_ACTIVE_MIN || '15', 10) * 60;
 const HANDOFF_LEASE_SEC = parseInt(process.env.BOT_HANDOFF_LEASE_MIN || '30', 10) * 60;
+// Cola inbound: reintentos y retención antes de dead-letter/limpieza.
+// Antes eran literales 5 y 86400 en el drainer — no configurables, no
+// documentados. Ahora expuestos como env-vars con defaults sensatos.
+const INBOUND_MAX_ATTEMPTS = Math.max(1, parseInt(process.env.BOT_INBOUND_MAX_ATTEMPTS || '5', 10) || 5);
+const INBOUND_RETENTION_SECS = Math.max(3600, parseInt(process.env.BOT_INBOUND_RETENTION_SECS || '86400', 10) || 86400);
 
 // TODO: internacionalizar los textos de menú cuando el negocio necesite múltiples idiomas.
 if (!process.env.OXIDIAN_KEY) {
@@ -1615,13 +1620,21 @@ async function oxidianPost(path, body, opts = {}) {
   try {
     r = await doFetch();
   } catch (netErr) {
-    // POST idempotentes se pueden reintentar sin riesgo — los que crean
-    // pedidos ya llevan Idempotency-Key en el header. Reintentamos igual
-    // pero solo una vez para no duplicar side-effects si la primera pasó.
-    try { r = await doFetch(); }
-    catch (retryErr) {
-      const err = new Error(`Sin conexión con Oxidian (${retryErr.name || 'net'}): ${url}`);
-      err.code = 'NET_ERROR'; err.cause = retryErr;
+    // Reintento opt-in por el caller: `opts.retryOnNetError` (default true
+    // solo para peticiones idempotentes; en `/ai/memory` y `/ai/usage`
+    // conviene pasar `false` para no inflar contadores si la primera pasó).
+    // El comportamiento previo reintentaba siempre — creaba duplicados en
+    // endpoints no-idempotentes cuando el timeout ocurría tras llegar al server.
+    if (opts.retryOnNetError !== false) {
+      try { r = await doFetch(); }
+      catch (retryErr) {
+        const err = new Error(`Sin conexión con Oxidian (${retryErr.name || 'net'}): ${url}`);
+        err.code = 'NET_ERROR'; err.cause = retryErr;
+        throw err;
+      }
+    } else {
+      const err = new Error(`Sin conexión con Oxidian (${netErr.name || 'net'}): ${url}`);
+      err.code = 'NET_ERROR'; err.cause = netErr;
       throw err;
     }
   }
@@ -1833,7 +1846,7 @@ async function aiResponderCliente(jid, ses, mensajeUsuario) {
   try {
     const usage = await oxidianPost('/ai/usage', {
       telefono: phone, tokens_in: 0, tokens_out: 0,
-    });
+    }, { retryOnNetError: false });
     if (usage?.exceeded_global) {
       log('warn', 'ai_limit_global', `count=${usage.count_today_global}`);
       return null; // Silencio: caer a fallback no-IA
@@ -1850,15 +1863,15 @@ async function aiResponderCliente(jid, ses, mensajeUsuario) {
 
   // 6) Persistir mensaje del usuario y respuesta en memoria
   try {
-    await oxidianPost('/ai/memory', { telefono: phone, rol: 'user', contenido: mensajeUsuario });
-    await oxidianPost('/ai/memory', { telefono: phone, rol: 'assistant', contenido: out.text });
+    await oxidianPost('/ai/memory', { telefono: phone, rol: 'user', contenido: mensajeUsuario }, { retryOnNetError: false });
+    await oxidianPost('/ai/memory', { telefono: phone, rol: 'assistant', contenido: out.text }, { retryOnNetError: false });
   } catch {}
 
   // 7) Registrar tokens reales para métrica
   try {
     await oxidianPost('/ai/usage', {
       telefono: phone, tokens_in: out.tokens_in, tokens_out: out.tokens_out,
-    });
+    }, { retryOnNetError: false });
   } catch {}
 
   if (!noCache) aiCacheSet(cacheKey, out.text);
@@ -2216,7 +2229,7 @@ async function aiSmartReply(jid, ses, mensajeUsuario) {
 
   // Rate limit pre-flight con el backend (cuenta llamadas sin tokens).
   try {
-    const usage = await oxidianPost('/ai/usage', { telefono: phone, tokens_in: 0, tokens_out: 0 });
+    const usage = await oxidianPost('/ai/usage', { telefono: phone, tokens_in: 0, tokens_out: 0 }, { retryOnNetError: false });
     if (usage?.exceeded_global || usage?.exceeded_client) {
       log('warn', 'ai_smart_limit', `phone=${phone} global=${!!usage?.exceeded_global}`);
       return null;
@@ -2266,13 +2279,13 @@ async function aiSmartReply(jid, ses, mensajeUsuario) {
 
   // Persistir memoria (mensaje del usuario + reply si lo hubo)
   try {
-    await oxidianPost('/ai/memory', { telefono: phone, rol: 'user', contenido: mensajeUsuario });
-    if (reply) await oxidianPost('/ai/memory', { telefono: phone, rol: 'assistant', contenido: reply });
+    await oxidianPost('/ai/memory', { telefono: phone, rol: 'user', contenido: mensajeUsuario }, { retryOnNetError: false });
+    if (reply) await oxidianPost('/ai/memory', { telefono: phone, rol: 'assistant', contenido: reply }, { retryOnNetError: false });
   } catch {}
 
   // Registrar tokens reales
   try {
-    await oxidianPost('/ai/usage', { telefono: phone, tokens_in: out.tokens_in, tokens_out: out.tokens_out });
+    await oxidianPost('/ai/usage', { telefono: phone, tokens_in: out.tokens_in, tokens_out: out.tokens_out }, { retryOnNetError: false });
   } catch {}
 
   // Guardar en cache LRU la respuesta (sin memoria de cliente específico —
@@ -5693,7 +5706,7 @@ async function aiSmartReplyAdmin(jid, ses, mensajeUsuario) {
 
   // Rate limit pre-flight
   try {
-    const usage = await oxidianPost('/ai/usage', { telefono: phone, tokens_in: 0, tokens_out: 0 });
+    const usage = await oxidianPost('/ai/usage', { telefono: phone, tokens_in: 0, tokens_out: 0 }, { retryOnNetError: false });
     if (usage?.exceeded_global) return null;
   } catch (_) {}
 
@@ -5743,7 +5756,7 @@ async function aiSmartReplyAdmin(jid, ses, mensajeUsuario) {
   if (!out || !out.text) return null;
 
   try {
-    await oxidianPost('/ai/usage', { telefono: phone, tokens_in: out.tokens_in || 0, tokens_out: out.tokens_out || 0 });
+    await oxidianPost('/ai/usage', { telefono: phone, tokens_in: out.tokens_in || 0, tokens_out: out.tokens_out || 0 }, { retryOnNetError: false });
   } catch (_) {}
 
   const result = { reply: out.text.trim(), confidence: 0.8, admin: true };
@@ -6343,7 +6356,7 @@ async function drainInboundMessages(eventHandler = handleEvolutionEvent) {
         `).run(row.message_id);
       } catch (error) {
         log('error', 'inbound_process_fail', `${row.message_id} attempt=${attempts}: ${String(error)}`);
-        if (attempts >= 5) {
+        if (attempts >= INBOUND_MAX_ATTEMPTS) {
           db.prepare(`
             UPDATE inbound_messages SET processed_at=unixepoch() WHERE message_id=?
           `).run(row.message_id);
@@ -6353,7 +6366,7 @@ async function drainInboundMessages(eventHandler = handleEvolutionEvent) {
         break;
       }
     }
-    db.prepare(`DELETE FROM inbound_messages WHERE processed_at < unixepoch()-86400`).run();
+    db.prepare(`DELETE FROM inbound_messages WHERE processed_at < unixepoch()-?`).run(INBOUND_RETENTION_SECS);
   } finally {
     drainingInbound = false;
   }
