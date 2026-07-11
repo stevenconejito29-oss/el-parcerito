@@ -1763,10 +1763,23 @@ def _operador_bar_por_telefono(telefono_raw):
         Proveedor.activo.is_(True),
         Proveedor.telefono.isnot(None),
     ).all()
+    coincidencias = []
     for bar in candidatos:
         bar_digits, _ = _normalizar_tel_match(bar.telefono)
         if bar_digits and bar_digits == digits:
-            return bar, bar
+            coincidencias.append(bar)
+    if len(coincidencias) > 1:
+        # Estado inconsistente: dos bares activos comparten el mismo teléfono
+        # operador. Cualquier decisión aquí es arbitraria y puede autorizar
+        # acciones sobre pedidos del bar equivocado. Fallamos cerrado (sin
+        # autorizar) y alertamos para que admin corrija el duplicado.
+        current_app.logger.critical(
+            "Multiple bares activos comparten telefono operador: ids=%s",
+            [b.id for b in coincidencias],
+        )
+        return None, None
+    if coincidencias:
+        return coincidencias[0], coincidencias[0]
     return None, None
 
 

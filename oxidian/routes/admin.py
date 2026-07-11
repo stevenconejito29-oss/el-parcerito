@@ -233,6 +233,37 @@ def _parse_acuerdo_proveedor(form):
     return modelo, comision
 
 
+def _validar_telefono_bar_unico(telefono, excluir_id=None):
+    """Rechaza teléfonos ya usados por otro bar activo.
+
+    Sin esta validación, dos bares con el mismo número operador colisionan
+    en la resolución del bot (autorizaría acciones sobre el bar equivocado).
+    NULL/vacío es válido — un bar sin teléfono simplemente no responde al
+    menú del bot pero puede existir. Compara por dígitos puros, tolerante a
+    formatos +34/34/con espacios.
+    """
+    from models import Proveedor as _Prov
+
+    if not telefono:
+        return
+    digits = "".join(c for c in str(telefono) if c.isdigit())
+    if not digits:
+        return
+    candidatos = _Prov.query.filter(
+        _Prov.activo.is_(True),
+        _Prov.telefono.isnot(None),
+    ).all()
+    for bar in candidatos:
+        if excluir_id is not None and bar.id == excluir_id:
+            continue
+        bar_digits = "".join(c for c in (bar.telefono or "") if c.isdigit())
+        if bar_digits == digits:
+            raise ValueError(
+                f"El teléfono ya está asignado al bar «{bar.nombre}». "
+                "Los teléfonos operadores deben ser únicos entre bares activos."
+            )
+
+
 def _roles_editables_usuario(rol_actual=None):
     """Roles que el usuario actual puede asignar desde el panel admin."""
     roles = list(
@@ -1621,11 +1652,17 @@ def proveedores():
             except ValueError as exc:
                 flash(str(exc), "danger")
                 return redirect(url_for("admin.proveedores"))
+            telefono_prov = request.form.get("telefono", "").strip() or None
+            try:
+                _validar_telefono_bar_unico(telefono_prov)
+            except ValueError as exc:
+                flash(str(exc), "danger")
+                return redirect(url_for("admin.proveedores"))
             prov = _Prov(
                 nombre=nombre,
                 razon_social=request.form.get("razon_social", "").strip() or None,
                 direccion=request.form.get("direccion", "").strip() or None,
-                telefono=request.form.get("telefono", "").strip() or None,
+                telefono=telefono_prov,
                 email=request.form.get("email", "").strip() or None,
                 horario=request.form.get("horario", "").strip() or None,
                 hora_apertura=_parse_time_form(request.form.get("hora_apertura")),
@@ -1673,10 +1710,16 @@ def editar_proveedor(proveedor_id):
             except ValueError as exc:
                 flash(str(exc), "danger")
                 return redirect(url_for("admin.editar_proveedor", proveedor_id=proveedor_id))
+            telefono_prov = request.form.get("telefono", "").strip() or None
+            try:
+                _validar_telefono_bar_unico(telefono_prov, excluir_id=prov.id)
+            except ValueError as exc:
+                flash(str(exc), "danger")
+                return redirect(url_for("admin.editar_proveedor", proveedor_id=proveedor_id))
             prov.nombre = nombre
             prov.razon_social = request.form.get("razon_social", "").strip() or None
             prov.direccion = request.form.get("direccion", "").strip() or None
-            prov.telefono = request.form.get("telefono", "").strip() or None
+            prov.telefono = telefono_prov
             prov.email = request.form.get("email", "").strip() or None
             prov.horario = request.form.get("horario", "").strip() or None
             prov.hora_apertura = _parse_time_form(request.form.get("hora_apertura"))
