@@ -966,7 +966,7 @@ def rebalancear_pedidos_huerfanos() -> dict:
             Order.preparador_id.isnot(None),
         )
         .join(User, Order.preparador_id == User.id)
-        .filter(db.or_(User.activo.is_(False), User.disponible == False))  # noqa
+        .filter(db.or_(User.activo.is_(False), User.en_linea.is_(False)))
         .with_for_update(skip_locked=True)
         .all()
     )
@@ -997,7 +997,7 @@ def rebalancear_pedidos_huerfanos() -> dict:
             Order.tipo_entrega_cliente == "delivery",
         )
         .join(User, Order.repartidor_id == User.id)
-        .filter(db.or_(User.activo.is_(False), User.disponible == False))  # noqa
+        .filter(db.or_(User.activo.is_(False), User.en_linea.is_(False)))
         .with_for_update(skip_locked=True)
         .all()
     )

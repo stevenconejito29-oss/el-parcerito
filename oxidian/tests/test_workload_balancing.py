@@ -46,17 +46,20 @@ class WorkloadBalancingTest(unittest.TestCase):
         db.drop_all()
         self.ctx.pop()
 
+    _user_seq = 0
+
     def _mk_user(self, nombre, rol="preparacion", activo=True, disponible=True):
+        WorkloadBalancingTest._user_seq += 1
+        seq = WorkloadBalancingTest._user_seq
         u = User(
             nombre=nombre,
-            email=f"{nombre}@test.invalid",
-            telefono=f"+346000000{len(nombre):02d}",
+            email=f"{nombre}-{seq}@test.invalid",
+            telefono=f"+3460000{seq:05d}",
             rol=rol,
             activo=activo,
         )
         u.set_password("test")
-        u.disponible = disponible
-        u.en_linea = True
+        u.en_linea = bool(disponible)
         db.session.add(u)
         db.session.commit()
         return u
