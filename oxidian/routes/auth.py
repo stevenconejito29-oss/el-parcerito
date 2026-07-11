@@ -44,7 +44,16 @@ def login():
             User.rol.in_(ROLES_AUTENTICABLES),
         ).first()
 
-        if user and user.puede_iniciar_sesion and user.check_password(password):
+        # Ejecuta la verificación de password aun si el usuario no existe para
+        # que la latencia sea indistinguible entre "email no registrado" y
+        # "password incorrecto". Previene enumeración de emails por timing.
+        if user and user.puede_iniciar_sesion:
+            password_ok = user.check_password(password)
+        else:
+            _check_password_dummy(password)
+            password_ok = False
+
+        if user and user.puede_iniciar_sesion and password_ok:
             # Si el user tiene MFA activo: NO completar login todavía. Guardamos
             # un "intent" en la sesión con timestamp y le pedimos el código TOTP.
             if user.mfa_enabled and user.mfa_secret:
@@ -53,7 +62,7 @@ def login():
                 session["mfa_pending_at"] = int(time.time())
                 # Snapshot del hash para invalidar la intención si un admin
                 # cambia la contraseña mientras el usuario está en MFA challenge.
-                session["mfa_pending_pw_hash"] = (user.password_hash or "")[:32]
+                session["mfa_pending_pw_hash"] = user.password_hash or ""
                 return redirect(url_for("auth.mfa_challenge"))
 
             _complete_login(user)
@@ -85,9 +94,12 @@ def mfa_challenge():
         _clear_mfa_pending()
         return redirect(url_for("auth.login"))
     # Invalidar si la contraseña cambió entre login y MFA challenge.
+    # Comparación constant-time del hash COMPLETO (evita colisión accidental
+    # sobre un prefijo corto y timing side channel en la comparación).
+    import hmac
     expected_hash = session.get("mfa_pending_pw_hash") or ""
-    current_hash = (user.password_hash or "")[:32]
-    if expected_hash and expected_hash != current_hash:
+    current_hash = user.password_hash or ""
+    if expected_hash and not hmac.compare_digest(expected_hash, current_hash):
         _clear_mfa_pending()
         flash("Tu contraseña cambió. Inicia sesión de nuevo.", "warning")
         return redirect(url_for("auth.login"))
@@ -212,6 +224,26 @@ def _verify_totp(secret, code):
     if not secret or not code or not code.isdigit() or len(code) != 6:
         return False
     return pyotp.TOTP(secret).verify(code, valid_window=1)
+
+
+# Hash scrypt pregenerado (cost equivalente al de producción) sobre una
+# contraseña que no se corresponde con ningún usuario. Se usa para nivelar
+# la latencia del login cuando el email no existe.
+_DUMMY_HASH_CACHE = None
+
+
+def _check_password_dummy(password):
+    """Ejecuta un check_password contra un hash dummy para uniformar latencia.
+
+    Cuando el email tecleado no coincide con ningún usuario, hay que gastar
+    aproximadamente el mismo CPU que gastaría un check real; de lo contrario
+    un atacante puede enumerar usuarios midiendo el tiempo de respuesta.
+    """
+    from werkzeug.security import check_password_hash, generate_password_hash
+    global _DUMMY_HASH_CACHE
+    if _DUMMY_HASH_CACHE is None:
+        _DUMMY_HASH_CACHE = generate_password_hash("timing-shield-placeholder")
+    check_password_hash(_DUMMY_HASH_CACHE, password or "")
 
 
 def _qr_svg_inline(data):
