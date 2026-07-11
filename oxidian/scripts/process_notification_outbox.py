@@ -16,7 +16,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import create_app
-from services import procesar_notificaciones_pendientes, purgar_registros_antiguos
+from services import (
+    procesar_notificaciones_pendientes,
+    purgar_registros_antiguos,
+    rebalancear_pedidos_huerfanos,
+)
 
 logger = logging.getLogger("outbox_worker")
 
@@ -35,6 +39,21 @@ def _run_purge(app):
             return purgar_registros_antiguos()
     except Exception:
         logger.exception("outbox worker: purga falló")
+        return None
+
+
+def _run_rebalanceo(app):
+    """Rebalanceo periódico de pedidos huérfanos (empleado offline/inactivo).
+
+    Ejecutable cada N segundos (default 300 = 5 min). Sin esto, pedidos
+    activos de un preparador que se cae quedan bloqueados hasta que un admin
+    lo tome manualmente. Best-effort — errores no interrumpen el worker.
+    """
+    try:
+        with app.app_context():
+            return rebalancear_pedidos_huerfanos()
+    except Exception:
+        logger.exception("outbox worker: rebalanceo falló")
         return None
 
 
@@ -64,11 +83,16 @@ def main():
     signal.signal(signal.SIGINT, _stop)
 
     # Purga periódica cada N ciclos (default cada hora si interval=2s).
-    # Configurable via env — poda ligera de tablas de crecimiento continuo.
     purge_every_seconds = max(300, int(os.environ.get("OUTBOX_PURGE_EVERY_SECONDS", "3600") or 3600))
-    logger.info("outbox worker: loop cada %.1fs (limit=%d) purga cada %ds",
-                args.interval, args.limit, purge_every_seconds)
+    # Rebalanceo de pedidos huérfanos (empleado offline) — frecuencia más
+    # agresiva porque afecta operativa activa. Default 5 min.
+    rebalanceo_every_seconds = max(60, int(os.environ.get("REBALANCEO_EVERY_SECONDS", "300") or 300))
+    logger.info(
+        "outbox worker: loop cada %.1fs (limit=%d) purga cada %ds rebalanceo cada %ds",
+        args.interval, args.limit, purge_every_seconds, rebalanceo_every_seconds,
+    )
     last_purge = time.monotonic()
+    last_rebalanceo = time.monotonic()
     while not stop["flag"]:
         try:
             _run_once(app, args.limit)
@@ -78,6 +102,10 @@ def main():
         if time.monotonic() - last_purge >= purge_every_seconds:
             _run_purge(app)
             last_purge = time.monotonic()
+        # Rebalanceo periódico — devuelve la carga al pool cuando alguien cae.
+        if time.monotonic() - last_rebalanceo >= rebalanceo_every_seconds:
+            _run_rebalanceo(app)
+            last_rebalanceo = time.monotonic()
         # Sleep interrumpible para no retrasar SIGTERM
         for _ in range(max(1, int(args.interval * 10))):
             if stop["flag"]:
