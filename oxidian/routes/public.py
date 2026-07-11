@@ -1611,9 +1611,12 @@ def checkout():
     items, subtotal = _build_items_from_carrito(carrito)
     if not items:
         flash("Los productos del carrito ya no están disponibles.", "warning")
-        session.pop("carrito", None)
-        session.pop("combo_selecciones", None)
-        session.pop("extras_selecciones", None)
+        # Vaciado COMPLETO usando el helper canónico. Antes se hacían pops
+        # parciales de solo 3 keys y quedaban huérfanas notas_combo,
+        # presentaciones_carrito, variantes_carrito, cart_puntos y
+        # cart_producto_canje_id — misma clase de bug que arregló PR #12
+        # para modificar_cantidades.
+        _save_carrito({})
         return redirect(url_for("public.index"))
     if len(items) != len(carrito):
         flash(
