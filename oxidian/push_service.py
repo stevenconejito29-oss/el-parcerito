@@ -158,14 +158,20 @@ def notify_user(user_id: int, title: str, body: str, url: str = "/",
 def notify_new_order(pedido) -> None:
     """Alerta a admins cuando llega un pedido nuevo."""
     num = pedido.numero_pedido
+    # Defensa: pedido.origen y pedido.metodo_pago pueden ser None en pedidos
+    # legacy o durante la ventana entre creación y elección de método. `dict.get`
+    # evalúa `default` eagerly, así que `pedido.origen.capitalize()` como default
+    # crasheaba si origen era None. Coalescemos antes.
+    _origen = (pedido.origen or "manual")
     origen_label = {"online": "Web", "whatsapp": "WhatsApp", "presencial": "POS"}.get(
-        pedido.origen, pedido.origen.capitalize()
+        _origen, _origen.capitalize()
     )
     total = f"€{float(pedido.total):.2f}" if pedido.total else ""
+    _metodo = (pedido.metodo_pago or "").capitalize() or "sin método"
     notify_roles(
         ["admin", "super_admin"],
         title=f"🔔 Nuevo pedido {origen_label}",
-        body=f"#{num} · {total} · {pedido.metodo_pago.capitalize()}",
+        body=f"#{num} · {total} · {_metodo}",
         url="/admin/pedidos",
     )
 
