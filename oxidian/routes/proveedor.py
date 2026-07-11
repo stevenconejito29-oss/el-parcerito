@@ -4,8 +4,9 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from functools import wraps
 from extensions import db, get_or_404
-from models import (Order, OrderEvent, OrderProviderStatus, Product, Proveedor,
-                    ProveedorProducto, User, utcnow)
+from models import (ESTADOS_EN_PREPARACION, Order, OrderEvent,
+                    OrderProviderStatus, Product, Proveedor, ProveedorProducto,
+                    User, utcnow)
 from services import (lineas_proveedor_pedido, registrar_evento_pedido,
                        es_pedido_solo_bar, distribuir_repartidor,
                        cancelar_pedido_operativo)
@@ -14,7 +15,6 @@ proveedor_bp = Blueprint("proveedor", __name__)
 logger = logging.getLogger(__name__)
 
 ROLES_PROVEEDOR = {"admin", "super_admin"}
-_ESTADOS_ACTIVOS = ("pendiente", "armando")
 
 
 @proveedor_bp.before_request
@@ -100,12 +100,12 @@ def pedidos():
 
     if prov_id:
         base = Order.query.join(OrderProviderStatus).filter(
-            Order.estado.in_(_ESTADOS_ACTIVOS),
+            Order.estado.in_(ESTADOS_EN_PREPARACION),
             OrderProviderStatus.proveedor_id == prov_id,
         )
     else:
         base = Order.query.join(OrderProviderStatus).filter(
-            Order.estado.in_(_ESTADOS_ACTIVOS),
+            Order.estado.in_(ESTADOS_EN_PREPARACION),
         ).distinct()
 
     pendientes = base.filter(Order.estado == "pendiente").order_by(Order.creado_en).all()
@@ -129,7 +129,7 @@ def pedidos():
 @proveedor_required
 def marcar_preparado(pedido_id):
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
-    if pedido.estado not in _ESTADOS_ACTIVOS:
+    if pedido.estado not in ESTADOS_EN_PREPARACION:
         flash("Este pedido ya no está activo.", "warning")
         return redirect(url_for("proveedor.pedidos"))
     prov_id = _proveedor_id_efectivo()
@@ -177,7 +177,7 @@ def marcar_preparado(pedido_id):
     # avanzamos el estado nosotros y asignamos repartidor.
     db.session.expire(pedido, ["estados_proveedor"])
     todos_listos = bool(pedido.estados_proveedor) and not pedido.proveedores_pendientes
-    if todos_listos and es_pedido_solo_bar(pedido) and pedido.estado in ("pendiente", "armando"):
+    if todos_listos and es_pedido_solo_bar(pedido) and pedido.estado in ESTADOS_EN_PREPARACION:
         registrar_evento_pedido(
             pedido,
             "estado_cambiado",
@@ -410,7 +410,7 @@ def marcar_extraviado(pedido_id):
                 "danger",
             )
             return redirect(url_for("proveedor.pedidos"))
-        if pedido.estado not in ("pendiente", "armando"):
+        if pedido.estado not in ESTADOS_EN_PREPARACION:
             flash("Solo puedes reportar extravío antes de que el pedido esté listo o en ruta.", "danger")
             return redirect(url_for("proveedor.pedidos"))
     if pedido.estado in ("entregado", "cancelado"):
@@ -597,7 +597,7 @@ def inventario():
 @proveedor_required
 def reabrir_preparacion(pedido_id):
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
-    if pedido.estado not in _ESTADOS_ACTIVOS:
+    if pedido.estado not in ESTADOS_EN_PREPARACION:
         flash("Solo se puede corregir un pedido que siga en preparación.", "warning")
         return redirect(url_for("proveedor.pedidos"))
 
