@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import create_app
-from services import procesar_notificaciones_pendientes
+from services import procesar_notificaciones_pendientes, purgar_registros_antiguos
 
 logger = logging.getLogger("outbox_worker")
 
@@ -24,6 +24,18 @@ logger = logging.getLogger("outbox_worker")
 def _run_once(app, limit):
     with app.app_context():
         return procesar_notificaciones_pendientes(limit=limit)
+
+
+def _run_purge(app):
+    """Poda periódica de notification_outbox y idempotency_keys.
+    Best-effort: nunca lanza excepción — el worker debe seguir procesando.
+    """
+    try:
+        with app.app_context():
+            return purgar_registros_antiguos()
+    except Exception:
+        logger.exception("outbox worker: purga falló")
+        return None
 
 
 def main():
@@ -51,12 +63,21 @@ def main():
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
 
-    logger.info("outbox worker: loop cada %.1fs (limit=%d)", args.interval, args.limit)
+    # Purga periódica cada N ciclos (default cada hora si interval=2s).
+    # Configurable via env — poda ligera de tablas de crecimiento continuo.
+    purge_every_seconds = max(300, int(os.environ.get("OUTBOX_PURGE_EVERY_SECONDS", "3600") or 3600))
+    logger.info("outbox worker: loop cada %.1fs (limit=%d) purga cada %ds",
+                args.interval, args.limit, purge_every_seconds)
+    last_purge = time.monotonic()
     while not stop["flag"]:
         try:
             _run_once(app, args.limit)
         except Exception:
             logger.exception("outbox worker: error procesando lote")
+        # Poda periódica separada del procesamiento — no retrasa las notificaciones.
+        if time.monotonic() - last_purge >= purge_every_seconds:
+            _run_purge(app)
+            last_purge = time.monotonic()
         # Sleep interrumpible para no retrasar SIGTERM
         for _ in range(max(1, int(args.interval * 10))):
             if stop["flag"]:
