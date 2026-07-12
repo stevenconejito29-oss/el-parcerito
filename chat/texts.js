@@ -18,13 +18,27 @@
 // ─── Cadenas comunes reutilizables ──────────────────────────────────────
 
 // Pista de salida universal en submenús. Referenciar en cualquier estado
-// donde el cliente puede quedar atascado esperando un input concreto.
-const ESCAPE_HINT = "_Escribe *MENU* para volver al inicio._";
+// donde el cliente puede quedar atascado esperando un input concreto. Los
+// disparadores reales (`menu`, `0`, `inicio`, `hola`, `hi`, `start`) están
+// centralizados en el catch global de `_handleMessage` — este texto solo
+// documenta los dos más memorables para el cliente final.
+const ESCAPE_HINT = "_Escribe *MENU* o *0* para volver al inicio._";
 
 // Texto que se muestra cuando el bot no entiende la intención del cliente
 // dentro de un submenú donde SÍ acepta texto libre. No aplicar en menú
 // principal (allí detectClientIntent captura y responde con menú).
 const FALLBACK_HINT = "No estoy seguro de qué necesitas. " + ESCAPE_HINT;
+
+/**
+ * Ensambla un prompt de submenú añadiendo la pista de escape al final si
+ * no está ya presente. Los llamadores pasan el cuerpo del prompt libre y
+ * este helper garantiza consistencia visual sin duplicar strings.
+ */
+function withEscapeHint(body) {
+  const text = String(body || "").trimEnd();
+  if (text.includes("*MENU*") || text.includes("*0*")) return text;
+  return `${text}\n\n${ESCAPE_HINT}`;
+}
 
 // ─── Menús para el cliente WhatsApp ─────────────────────────────────────
 
@@ -153,4 +167,5 @@ module.exports = {
   clientCapabilityText,
   barMenu,
   handoffClosedMessage,
+  withEscapeHint,
 };
