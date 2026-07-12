@@ -2363,83 +2363,10 @@ class Order(db.Model):
         if self.estado == "entregado":
             self.entregado_en = utcnow()
 
-    def cancelar(self, forzar_desde_entregado=False):
-        if self.estado == "cancelado":
-            raise ValueError("El pedido ya está cancelado")
-        if self.estado == "entregado" and not forzar_desde_entregado:
-            raise ValueError("No se puede cancelar un pedido ya entregado")
-        # Devolver stock al lote más reciente (LIFO — coherente con FIFO de salida).
-        # POS descuenta stock de TODOS los productos; web/bot solo descuenta "inmediato".
-        # Por tanto, solo restauramos stock si el producto es inmediato O el pedido es presencial.
-        for item in self.items:
-            producto = item.producto
-            if not producto:
-                continue
-            metadata = item.get_metadata()
-            restaurar = (
-                self.origen == "presencial"
-                or (item.display_tipo_entrega or "inmediato") == "inmediato"
-            )
-            if not restaurar:
-                continue
-            producto.restaurar_stock_pedido(item.cantidad, metadata)
-        # Ajuste de puntos al cancelar
-        if self.cliente_id:
-            # Distintos pedidos del mismo cliente pueden cancelarse a la vez.
-            # Bloqueamos su saldo para que ninguna devolución pise a otra.
-            cliente = (
-                User.query.filter_by(id=self.cliente_id)
-                .with_for_update()
-                .populate_existing()
-                .first()
-            )
-            if cliente:
-                # Revertir puntos SOLO si fueron realmente otorgados (PointsLog tipo='ganado')
-                if self.puntos_ganados:
-                    log_ganado = PointsLog.query.filter_by(
-                        cliente_id=self.cliente_id,
-                        pedido_id=self.id,
-                        tipo="ganado",
-                    ).first()
-                    if log_ganado:
-                        puntos_a_quitar = min(self.puntos_ganados, cliente.puntos)
-                        if puntos_a_quitar > 0:
-                            cliente.puntos -= puntos_a_quitar
-                            db.session.add(PointsLog(
-                                cliente_id=self.cliente_id,
-                                pedido_id=self.id,
-                                tipo="cancelado",
-                                cantidad=-puntos_a_quitar,
-                                descripcion=f"Puntos ganados revertidos — cancelación {self.numero_pedido}",
-                            ))
-                # Devolver los puntos que gastó como descuento
-                if self.puntos_usados:
-                    cliente.puntos += self.puntos_usados
-                    db.session.add(PointsLog(
-                        cliente_id=self.cliente_id,
-                        pedido_id=self.id,
-                        tipo="devuelto",
-                        cantidad=self.puntos_usados,
-                        descripcion=f"Puntos de canje devueltos — cancelación {self.numero_pedido}",
-                    ))
-        if self.cupon:
-            self.cupon.revertir_uso()
-        if self.afiliado_codigo_rel:
-            self.afiliado_codigo_rel.revertir_uso()
-
-        # Desvincular primero el uso afiliado: PostgreSQL no permite eliminar
-        # StaffPayment mientras AffiliateUse conserve su clave foránea.
-        for uso in AffiliateUse.query.filter_by(
-            pedido_id=self.id,
-            comision_pagada=False,
-        ).all():
-            uso.comision_generada = 0
-            uso.staff_payment_id = None
-        for pago in StaffPayment.query.filter_by(
-            pedido_id=self.id, tipo="comision", pagado=False
-        ).all():
-            db.session.delete(pago)
-        self.estado = "cancelado"
+    # La cancelación de un pedido vive en `services.cancelar_pedido_operativo`
+    # — toca stock, puntos, cupones, afiliados y comisiones. Mantenerla como
+    # método de modelo repetía lógica y dejaba abierta la posibilidad de
+    # saltarse el evento de auditoría llamando `pedido.cancelar()` directo.
 
     def __repr__(self):
         return f"<Order {self.numero_pedido} [{self.estado}]>"

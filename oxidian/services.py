@@ -437,6 +437,129 @@ def reasignar_responsable_pedido(
     return anterior_id, nuevo_id
 
 
+def _restaurar_stock_pedido(pedido: Order) -> None:
+    """Devuelve al inventario los ítems del pedido que corresponden.
+
+    Reglas:
+    - POS descuenta stock de TODOS los productos al vender.
+    - Web/bot solo descuentan los productos ``inmediato`` (los ``programado``
+      se descuentan al armar el pedido).
+    Por tanto, solo se restaura si el ítem era inmediato O el pedido fue
+    presencial (POS). El destino del stock (origen propio vs bar) se lee
+    del snapshot congelado en ``OrderItem.metadata_json`` para preservar
+    la trazabilidad histórica.
+    """
+    for item in pedido.items:
+        producto = item.producto
+        if not producto:
+            continue
+        restaurar = (
+            pedido.origen == "presencial"
+            or (item.display_tipo_entrega or "inmediato") == "inmediato"
+        )
+        if not restaurar:
+            continue
+        producto.restaurar_stock_pedido(item.cantidad, item.get_metadata())
+
+
+def _revertir_puntos_pedido(pedido: Order) -> None:
+    """Ajusta el saldo de puntos del cliente al cancelar un pedido.
+
+    - Puntos ``ganados``: solo se restan si realmente hubo un ``PointsLog`` de
+      tipo ``ganado`` para este pedido (protege ante cancelaciones antes de
+      la entrega, cuando aún no se han otorgado).
+    - Puntos ``usados``: se devuelven íntegros. Cliente los canjeó como
+      descuento y el pedido no llegó a fin.
+
+    Se toma un lock sobre el ``User`` para evitar que dos cancelaciones
+    concurrentes del mismo cliente pisen el saldo.
+    """
+    from models import PointsLog
+
+    if not pedido.cliente_id:
+        return
+    cliente = (
+        User.query.filter_by(id=pedido.cliente_id)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
+    if not cliente:
+        return
+    if pedido.puntos_ganados:
+        log_ganado = PointsLog.query.filter_by(
+            cliente_id=pedido.cliente_id,
+            pedido_id=pedido.id,
+            tipo="ganado",
+        ).first()
+        if log_ganado:
+            puntos_a_quitar = min(pedido.puntos_ganados, cliente.puntos)
+            if puntos_a_quitar > 0:
+                cliente.puntos -= puntos_a_quitar
+                db.session.add(PointsLog(
+                    cliente_id=pedido.cliente_id,
+                    pedido_id=pedido.id,
+                    tipo="cancelado",
+                    cantidad=-puntos_a_quitar,
+                    descripcion=f"Puntos ganados revertidos — cancelación {pedido.numero_pedido}",
+                ))
+    if pedido.puntos_usados:
+        cliente.puntos += pedido.puntos_usados
+        db.session.add(PointsLog(
+            cliente_id=pedido.cliente_id,
+            pedido_id=pedido.id,
+            tipo="devuelto",
+            cantidad=pedido.puntos_usados,
+            descripcion=f"Puntos de canje devueltos — cancelación {pedido.numero_pedido}",
+        ))
+
+
+def _revertir_comisiones_pedido(pedido: Order) -> None:
+    """Desliga usos de afiliado del pedido y elimina StaffPayments no pagados.
+
+    PostgreSQL no permite eliminar el StaffPayment mientras el AffiliateUse
+    conserve la FK, por eso primero se anula ``staff_payment_id`` en cada
+    uso y solo después se borra el StaffPayment de tipo comisión pendiente.
+    """
+    from models import AffiliateUse, StaffPayment
+
+    for uso in AffiliateUse.query.filter_by(
+        pedido_id=pedido.id,
+        comision_pagada=False,
+    ).all():
+        uso.comision_generada = 0
+        uso.staff_payment_id = None
+    for pago in StaffPayment.query.filter_by(
+        pedido_id=pedido.id, tipo="comision", pagado=False,
+    ).all():
+        db.session.delete(pago)
+
+
+def _ejecutar_cancelacion_pedido(
+    pedido: Order,
+    forzar_desde_entregado: bool = False,
+) -> None:
+    """Aplica todos los efectos de negocio al cancelar un pedido.
+
+    Restaura stock, revierte puntos, libera cupones/afiliados y anula
+    comisiones no pagadas. NO escribe evento de auditoría — de eso se
+    encarga el llamador (``cancelar_pedido_operativo``) para tener una
+    única fuente de logging.
+    """
+    if pedido.estado == "cancelado":
+        raise ValueError("El pedido ya está cancelado")
+    if pedido.estado == "entregado" and not forzar_desde_entregado:
+        raise ValueError("No se puede cancelar un pedido ya entregado")
+    _restaurar_stock_pedido(pedido)
+    _revertir_puntos_pedido(pedido)
+    if pedido.cupon:
+        pedido.cupon.revertir_uso()
+    if pedido.afiliado_codigo_rel:
+        pedido.afiliado_codigo_rel.revertir_uso()
+    _revertir_comisiones_pedido(pedido)
+    pedido.estado = "cancelado"
+
+
 def cancelar_pedido_operativo(
     pedido: Order,
     actor_id: int | None = None,
@@ -444,8 +567,15 @@ def cancelar_pedido_operativo(
     detalle: str | None = None,
     forzar_desde_entregado: bool = False,
 ) -> None:
+    """Cancela un pedido registrando el evento de auditoría.
+
+    Entrada única para cancelaciones desde routes (admin, POS, api_bot,
+    repartidor, proveedor). Toda la lógica de reversión vive en helpers
+    privados de este módulo — el método ``Order.cancelar`` fue eliminado
+    para que no exista un segundo camino que salte esta traza.
+    """
     estado_anterior = pedido.estado
-    pedido.cancelar(forzar_desde_entregado=forzar_desde_entregado)
+    _ejecutar_cancelacion_pedido(pedido, forzar_desde_entregado=forzar_desde_entregado)
     registrar_evento_pedido(
         pedido,
         "pedido_cancelado",
