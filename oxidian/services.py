@@ -75,6 +75,10 @@ def registrar_pedido_creado(
     detalle: str | None = None,
     metadata: dict | None = None,
 ) -> OrderEvent | None:
+    # Antifraude: marca el pedido para verificación pasiva ANTES de escribir
+    # el evento — si el motor de riesgo hoy dice "pending", el evento queda
+    # con esa señal metadata para que la timeline lo refleje.
+    marcar_confirmacion_si_procede(pedido)
     return registrar_evento_pedido(
         pedido,
         "pedido_creado",
@@ -84,6 +88,135 @@ def registrar_pedido_creado(
         detalle=detalle,
         metadata=metadata,
     )
+
+
+# ─────────────────────────────────────────────
+# ANTIFRAUDE — verificación pasiva del pedido
+# ─────────────────────────────────────────────
+
+def _config_confirmacion_habilitada() -> bool:
+    """Interruptor global. Config decide si aplicamos scoring de riesgo."""
+    from models import SiteConfig as _SC
+    raw = _SC.get("CONFIRMACION_HABILITADA", "1")
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "si", "sí"}
+
+
+def _config_umbral_monto() -> float:
+    """Umbral en euros por encima del cual el pedido es MEDIUM/HIGH."""
+    from models import SiteConfig as _SC
+    try:
+        raw = _SC.get("CONFIRMACION_MONTO_UMBRAL_EUR", "50")
+        umbral = float(raw or 50)
+    except (TypeError, ValueError):
+        umbral = 50.0
+    return max(1.0, min(9999.0, umbral))
+
+
+def _cliente_tiene_pedido_entregado_previo(cliente_id: int, pedido_id_actual: int | None = None) -> bool:
+    """True si el cliente ya entregó un pedido antes del actual.
+
+    Establecer historial reduce el riesgo — un cliente que ya recibió una
+    entrega y no denunció fraude es señal fuerte de identidad legítima.
+    """
+    if not cliente_id:
+        return False
+    q = Order.query.filter(
+        Order.cliente_id == cliente_id,
+        Order.estado == "entregado",
+    )
+    if pedido_id_actual is not None:
+        q = q.filter(Order.id != pedido_id_actual)
+    return db.session.query(q.exists()).scalar() is True
+
+
+def evaluate_order_risk(pedido: Order) -> dict:
+    """Puntúa el pedido para verificación pasiva antifraude.
+
+    Devuelve un dict con:
+      - level:   'LOW' | 'MEDIUM' | 'HIGH'
+      - reasons: lista de motivos legibles (útil para logs y auditoría)
+
+    Reglas actuales (v1 — deliberadamente simples):
+      - LOW    → cliente con al menos 1 pedido entregado previo Y monto
+                 bajo el umbral.
+      - MEDIUM → cliente sin historial (primer pedido) O monto alto (>=
+                 umbral) pero solo uno de los dos.
+      - HIGH   → cliente sin historial Y monto alto.
+
+    Ampliar heurísticas aquí es seguro: solo altera el `level` — no muta
+    el pedido ni escribe en BD. El caller decide qué hacer con el level.
+    """
+    reasons: list[str] = []
+    umbral = _config_umbral_monto()
+
+    monto = float(pedido.total or 0)
+    monto_alto = monto >= umbral
+    tiene_historial = _cliente_tiene_pedido_entregado_previo(
+        pedido.cliente_id, pedido_id_actual=pedido.id
+    )
+    if not tiene_historial:
+        reasons.append("cliente_sin_historial")
+    if monto_alto:
+        reasons.append(f"monto_alto>={umbral:.0f}")
+
+    if not tiene_historial and monto_alto:
+        level = "HIGH"
+    elif not tiene_historial or monto_alto:
+        level = "MEDIUM"
+    else:
+        level = "LOW"
+    return {"level": level, "reasons": reasons}
+
+
+def marcar_confirmacion_si_procede(pedido: Order) -> str | None:
+    """Aplica scoring de riesgo al pedido y setea `confirmacion_estado`.
+
+    Devuelve el nivel de riesgo evaluado (para logs / tests), o None si el
+    feature está desactivado en config o si el pedido ya tenía un valor.
+
+    LOW    → no toca (pedido queda con confirmacion_estado=NULL, sin fricción).
+    MEDIUM → marca 'pending'.
+    HIGH   → marca 'pending'.
+
+    No lanza ninguna excepción: el guard antifraude es best-effort. Si algo
+    en la evaluación falla (ej: SiteConfig inaccesible), se loguea y el
+    pedido sigue su flujo normal — nunca bloqueamos por un error del scorer.
+    """
+    if not _config_confirmacion_habilitada():
+        return None
+    if pedido.confirmacion_estado:
+        return None
+    try:
+        result = evaluate_order_risk(pedido)
+    except Exception:
+        logger.exception(
+            "evaluate_order_risk falló pedido=%s — sigue flujo normal",
+            getattr(pedido, "id", None),
+        )
+        return None
+    level = result["level"]
+    if level in ("MEDIUM", "HIGH"):
+        pedido.confirmacion_estado = "pending"
+        logger.info(
+            "confirmacion pending pedido=%s level=%s reasons=%s",
+            pedido.numero_pedido, level, ",".join(result["reasons"]),
+        )
+    return level
+
+
+def marcar_pedido_confirmado(pedido: Order) -> bool:
+    """Registra la confirmación del cliente sobre un pedido `pending`.
+
+    Idempotente — si el pedido no estaba en pending o ya fue confirmado
+    devuelve False sin tocar la fila (para que el caller decida qué
+    responder al bot). El commit lo hace el caller.
+    """
+    if pedido.confirmacion_estado != "pending":
+        return False
+    pedido.confirmacion_estado = "confirmed"
+    pedido.confirmacion_en = utcnow()
+    logger.info("confirmacion confirmed pedido=%s", pedido.numero_pedido)
+    return True
 
 
 def _coalesce_proveedor_id(snapshot: dict, item) -> int | None:

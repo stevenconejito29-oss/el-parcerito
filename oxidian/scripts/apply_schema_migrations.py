@@ -178,6 +178,28 @@ def _migrate_product_order_group():
         ))
 
 
+def _migrate_order_confirmacion_estado():
+    """Añade `orders.confirmacion_estado` y `confirmacion_en` (nullable).
+
+    Señal paralela al `estado` para marcar pedidos que necesitan verificación
+    del cliente antes de comenzar preparación (antifraude / anti pedido
+    fantasma). NULL para pedidos legacy y para pedidos de riesgo bajo — no
+    cambia la máquina de estados operativa.
+    """
+    inspector = inspect(db.engine)
+    if not inspector.has_table("orders"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("orders")}
+    if "confirmacion_estado" not in existing:
+        db.session.execute(text(
+            "ALTER TABLE orders ADD COLUMN confirmacion_estado VARCHAR(30)"
+        ))
+    if "confirmacion_en" not in existing:
+        db.session.execute(text(
+            "ALTER TABLE orders ADD COLUMN confirmacion_en TIMESTAMP"
+        ))
+
+
 def _migrate_product_solo_canje():
     """Añade Product.solo_canje (bool NOT NULL default false).
     Marca productos exclusivos de canje con puntos — no comprables con dinero."""
@@ -1423,6 +1445,15 @@ MIGRATIONS = [
             "para eliminar la contaminación cruzada entre comida y retail."
         ),
         "fn": _migrate_product_vertical_backfill_ambos,
+    },
+    {
+        "id": "20260712_40_order_confirmacion_estado",
+        "description": (
+            "Añade orders.confirmacion_estado y confirmacion_en para verificación "
+            "pasiva anti-pedido-fantasma vía WhatsApp. NULL por defecto — no "
+            "toca pedidos legacy ni cambia la máquina de estados operativa."
+        ),
+        "fn": _migrate_order_confirmacion_estado,
     },
 ]
 

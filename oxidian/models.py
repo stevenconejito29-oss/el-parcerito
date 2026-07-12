@@ -2186,6 +2186,17 @@ class Order(db.Model):
     pago_confirmado_por = db.Column(db.Integer, db.ForeignKey("users.id"))
     pago_confirmado_en = db.Column(db.DateTime)
 
+    # ── Antifraude / anti pedido fantasma ────────────────────────────
+    # NULL          → pedido no fue evaluado o riesgo bajo (flujo normal).
+    # 'pending'     → riesgo medio/alto; esperamos que el cliente confirme
+    #                 vía WhatsApp antes de que el equipo comience a
+    #                 preparar. Se ve en admin como advertencia visual.
+    # 'confirmed'   → cliente confirmó explícitamente el pedido.
+    # No bloquea la máquina de estados de pedido; es una señal paralela
+    # que permite al equipo priorizar mejor sin añadir fricción al cliente.
+    confirmacion_estado = db.Column(db.String(30))
+    confirmacion_en = db.Column(db.DateTime)
+
     # ── Notificaciones WhatsApp ──────────────────────────────────────
     whatsapp_enviado_confirmacion = db.Column(db.Boolean, default=False)
 
