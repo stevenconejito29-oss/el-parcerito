@@ -6,6 +6,7 @@ const path     = require('path');
 const fs       = require('fs');
 const crypto   = require('crypto');
 const Database = require('better-sqlite3');
+const texts    = require('./texts');
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const EVO_URL        = (process.env.EVOLUTION_API_URL  || 'http://localhost:8080').replace(/\/$/, '');
@@ -1040,18 +1041,22 @@ async function requestHumanSupport(clientJid, initialText = '') {
   }
   createHandoffRequest(clientJid, destination);
   if (initialText) queueHandoffMessage(clientJid, 'client', initialText);
-  const assignedAdmin = await autoAssignPendingHandoff(clientJid);
+  // Auto-asignación es best-effort: si Evolution está caído o la BD del bot
+  // falla al escribir, el cliente igual debe recibir el mensaje de cola. No
+  // dejamos que un fallo aquí bloquee el turn.
+  let assignedAdmin = null;
+  try {
+    assignedAdmin = await autoAssignPendingHandoff(clientJid);
+  } catch (error) {
+    log('error', 'handoff_auto_assign_fail', error?.message || String(error));
+  }
   if (assignedAdmin) return true;
-  await notifyAdminsHandoffQueued(clientJid);
-  return sendText(
-    clientJid,
-    `💬 *Te he puesto en cola para hablar con una persona.*\n\n` +
-    `Ahora mismo no hay agentes libres, pero guardo todos tus mensajes ` +
-    `y la primera persona disponible recibirá tu historial completo. ` +
-    `No te preocupes, no se pierde nada. 😊\n\n` +
-    `Mientras tanto, puedes seguir escribiendo lo que necesites. ` +
-    `Si prefieres volver al asistente automático escribe */volver bot*.`,
-  );
+  try {
+    await notifyAdminsHandoffQueued(clientJid);
+  } catch (error) {
+    log('error', 'handoff_notify_admins_fail', error?.message || String(error));
+  }
+  return sendText(clientJid, texts.HANDOFF_QUEUED);
 }
 
 async function closeHumanChat(adminJid, clientJid, notifyClient = true) {
@@ -1071,10 +1076,7 @@ async function closeHumanChat(adminJid, clientJid, notifyClient = true) {
   if (!closed) return false;
   log('info', 'handoff_closed', `${clientJid} admin=${adminJid}`);
   if (notifyClient) {
-    await sendText(
-      clientJid,
-      `✅ *La conversación con el agente ha finalizado.*\n\nEl asistente automático vuelve a estar disponible.\n\n${menuPrincipal()}`,
-    );
+    await sendText(clientJid, texts.handoffClosedMessage(menuPrincipal()));
   }
   return true;
 }
@@ -1097,12 +1099,13 @@ async function releaseHumanChat(adminJid, clientJid, notifyClient = true) {
   if (!released) return false;
   log('info', 'handoff_released', `${clientJid} admin=${adminJid}`);
   if (notifyClient) {
-    await sendText(
-      clientJid,
-      `🕐 *Tu chat volvió a la cola.*\n\nConservamos el historial y otro agente podrá continuar la conversación.`,
-    );
+    await sendText(clientJid, texts.HANDOFF_REQUEUED);
   }
-  await notifyAdminsHandoffQueued(clientJid);
+  try {
+    await notifyAdminsHandoffQueued(clientJid);
+  } catch (error) {
+    log('error', 'handoff_notify_admins_fail', error?.message || String(error));
+  }
   return true;
 }
 
@@ -1166,7 +1169,14 @@ async function retryPendingHandoffMessages() {
       AND (m.next_attempt_at IS NULL OR m.next_attempt_at <= unixepoch())
   `).all();
   for (const row of active) {
-    await deliverQueuedTranscript(row.client_jid, row.admin_jid);
+    // Cada iteración es best-effort: un fallo en Evolution para un cliente
+    // no debe cortar la entrega de los siguientes. Se loguea y se sigue.
+    try {
+      await deliverQueuedTranscript(row.client_jid, row.admin_jid);
+    } catch (error) {
+      log('error', 'handoff_transcript_deliver_fail',
+          `${row.client_jid}: ${error?.message || String(error)}`);
+    }
   }
 }
 function releaseHandoffByAdmin(adminJid) {
@@ -2567,46 +2577,30 @@ function bienvenidaConversacional(ses) {
  * Resumen conversacional local. Se muestra cuando el cliente pide ayuda y no
  * consume tokens del proveedor de IA.
  */
-function menuPrincipal(ses = {}) {
-  const extras = [
-    String(cfg('loyalty_enabled', '1')) === '1' ? 'consultar tus puntos' : null,
-    String(cfg('delivery_enabled', '1')) === '1' ? 'comprobar cobertura' : null,
-  ].filter(Boolean);
-  const extraText = extras.length ? `, ${extras.join(' o ')}` : '';
-  return (
-    `🤝 *Asistente de ${getNegocioNombre()}*\n\n` +
-    `Te ayudo sin tomar compras por WhatsApp: la compra se completa en la web para validar stock, combos, horarios y módulos activos.\n\n` +
-    `Puedes preguntarme por el estado o cancelación de un pedido, horario, ubicación o pagos${extraText}. ` +
-    `También puedes decir *Abrir tienda online* o *quiero hablar con una persona*.\n\n` +
-    `_Cuéntame con tus palabras qué necesitas._`
-  );
+// Presentación y menús del cliente viven en chat/texts.js — este módulo
+// se queda con la firma histórica y le pasa el contexto resuelto (nombre,
+// features activas) para que los llamadores no cambien.
+function menuPrincipal(_ses = {}) {
+  return texts.menuPrincipal({
+    nombreNegocio: getNegocioNombre(),
+    loyaltyEnabled: String(cfg('loyalty_enabled', '1')) === '1',
+    deliveryEnabled: String(cfg('delivery_enabled', '1')) === '1',
+  });
 }
 
 function clientMenuLines() {
-  const catalogo = String(cfg('vertical_label', 'Menú')).toLowerCase();
-  const lines = [
-    `*1* — 🛒 Ver el ${catalogo} en la web`,
-    `*2* — 📦 Estado de mi pedido`,
-  ];
-  if (String(cfg('loyalty_enabled', '1')) === '1') {
-    lines.push(`*3* — ⭐ Mis puntos`);
-  }
-  if (String(cfg('delivery_enabled', '1')) === '1') {
-    lines.push(`*4* — 📍 Zona de entrega`);
-  }
-  lines.push(
-    `*6* — ⏰ Horario / contacto`,
-    `*7* — 👤 Hablar con una persona`,
-  );
-  return lines.join('\n');
+  return texts.clientMenuLines({
+    verticalLabel: String(cfg('vertical_label', 'Menú')),
+    loyaltyEnabled: String(cfg('loyalty_enabled', '1')) === '1',
+    deliveryEnabled: String(cfg('delivery_enabled', '1')) === '1',
+  });
 }
 
 function clientCapabilityText() {
-  const caps = ['estado de pedidos', 'información general'];
-  if (String(cfg('loyalty_enabled', '1')) === '1') caps.push('puntos');
-  if (String(cfg('delivery_enabled', '1')) === '1') caps.push('cobertura');
-  caps.push('horario');
-  return caps.join(', ');
+  return texts.clientCapabilityText({
+    loyaltyEnabled: String(cfg('loyalty_enabled', '1')) === '1',
+    deliveryEnabled: String(cfg('delivery_enabled', '1')) === '1',
+  });
 }
 
 function adminMenu(jid) {
@@ -2877,19 +2871,7 @@ async function identificarBarOperador(clientJid) {
 }
 
 function barMenu(bar) {
-  return (
-    `🏪 *Panel de ${bar.nombre}*\n\n` +
-    `Estás conectado como operador de tu bar. Desde aquí puedes:\n\n` +
-    `1️⃣  📋 Ver mis pedidos pendientes\n` +
-    `2️⃣  ✅ Marcar un pedido como preparado\n` +
-    `3️⃣  📨 Ver incidencias de clientes\n` +
-    `4️⃣  🌐 Abrir mi inventario en la web\n` +
-    `5️⃣  💬 Contactar con el administrador general\n` +
-    `6️⃣  🔓 Abrir / cerrar mi tienda\n` +
-    `7️⃣  🛑 Marcar producto agotado / disponible\n` +
-    `8️⃣  💶 Cambiar precio de un producto\n\n` +
-    `_Responde con el número o con palabras (pedidos, abrir, agotado, precio…)_`
-  );
+  return texts.barMenu({ nombreBar: bar.nombre });
 }
 
 async function startBarMenu(jid, bar, nombre = null) {
