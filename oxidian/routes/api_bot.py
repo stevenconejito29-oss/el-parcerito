@@ -2278,6 +2278,59 @@ def cancelar_pedido_cliente(pedido_id):
     })
 
 
+@api_bot_bp.route("/pedido/<int:pedido_id>/confirmar", methods=["POST"])
+@bot_required
+def confirmar_pedido_cliente(pedido_id):
+    """El bot llama este endpoint cuando el cliente responde SI a la
+    verificación pasiva antifraude enviada al crear pedidos de riesgo.
+
+    Idempotente: pedido ya `confirmed` devuelve 200 con `ya_confirmado=True`.
+    Pedido sin verificación pendiente devuelve 409 explicativo. Cliente
+    no dueño del pedido devuelve 404 para no filtrar existencia.
+    """
+    from services import marcar_pedido_confirmado
+
+    data = request.get_json(silent=True) or {}
+    cliente, telefono = _cliente_por_telefono(data.get("telefono"))
+    if not cliente or not telefono_valido(telefono):
+        return jsonify({"ok": False, "error": "Cliente no encontrado"}), 404
+
+    pedido = Order.query.filter_by(
+        id=pedido_id,
+        cliente_id=cliente.id,
+    ).with_for_update().first()
+    if not pedido:
+        return jsonify({"ok": False, "error": "Pedido no encontrado"}), 404
+    if pedido.confirmacion_estado == "confirmed":
+        return jsonify({
+            "ok": True,
+            "ya_confirmado": True,
+            "numero": pedido.numero_pedido,
+        })
+    if pedido.confirmacion_estado != "pending":
+        return jsonify({
+            "ok": False,
+            "error": "Este pedido no está pendiente de confirmación.",
+            "estado_confirmacion": pedido.confirmacion_estado,
+        }), 409
+
+    try:
+        marcar_pedido_confirmado(pedido)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "confirmar_pedido_cliente falló pedido=%s", pedido_id
+        )
+        return jsonify({"ok": False, "error": "No se pudo confirmar el pedido"}), 500
+
+    return jsonify({
+        "ok": True,
+        "numero": pedido.numero_pedido,
+        "mensaje": f"Pedido {pedido.numero_pedido} confirmado. Empezaremos a prepararlo.",
+    })
+
+
 # ─── ENVIAR MENSAJE AL CLIENTE (Oxidian → Bot) ─
 
 @api_bot_bp.route("/message", methods=["POST"])

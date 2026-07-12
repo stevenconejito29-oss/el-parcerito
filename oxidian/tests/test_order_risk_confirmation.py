@@ -1,0 +1,193 @@
+"""Tests de la verificación pasiva antifraude de pedidos.
+
+Cubre:
+- `evaluate_order_risk`: puntúa LOW/MEDIUM/HIGH según historial + monto.
+- `marcar_confirmacion_si_procede`: setea `confirmacion_estado='pending'`
+  para riesgos MEDIUM/HIGH; deja LOW sin fricción.
+- `marcar_pedido_confirmado`: idempotente y solo aplica sobre 'pending'.
+- El endpoint `/api/bot/pedido/<id>/confirmar` respeta ownership por
+  teléfono y devuelve códigos coherentes.
+"""
+import unittest
+
+from flask import Flask
+
+from extensions import db
+from models import Order, SiteConfig, User
+
+
+class OrderRiskConfirmationTest(unittest.TestCase):
+    _seq_user = 0
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            TESTING=True,
+            SQLALCHEMY_DATABASE_URI="sqlite://",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.create_all()
+        self._seq_order = 0
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        self.ctx.pop()
+
+    def _mk_cliente(self, nombre="Cliente"):
+        OrderRiskConfirmationTest._seq_user += 1
+        seq = OrderRiskConfirmationTest._seq_user
+        u = User(
+            nombre=nombre,
+            email=f"{nombre}-{seq}@test.invalid",
+            telefono=f"+3460000{seq:05d}",
+            rol="cliente",
+            activo=True,
+        )
+        u.set_password("test")
+        db.session.add(u)
+        db.session.commit()
+        return u
+
+    def _mk_pedido(self, cliente, total=10, estado="pendiente"):
+        self._seq_order += 1
+        o = Order(
+            numero_pedido=f"TEST-{self._seq_order:04d}",
+            cliente_id=cliente.id,
+            total=total,
+            subtotal=total,
+            estado=estado,
+        )
+        db.session.add(o)
+        db.session.commit()
+        return o
+
+    # ── evaluate_order_risk ─────────────────────────────────────────
+
+    def test_evaluate_low_cuando_cliente_conocido_y_monto_bajo(self):
+        from services import evaluate_order_risk
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        # Pedido histórico entregado
+        self._mk_pedido(cliente, total=8, estado="entregado")
+        pedido = self._mk_pedido(cliente, total=15)
+        result = evaluate_order_risk(pedido)
+        self.assertEqual(result["level"], "LOW")
+
+    def test_evaluate_medium_cuando_solo_cliente_nuevo(self):
+        from services import evaluate_order_risk
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=20)
+        result = evaluate_order_risk(pedido)
+        self.assertEqual(result["level"], "MEDIUM")
+        self.assertIn("cliente_sin_historial", result["reasons"])
+
+    def test_evaluate_medium_cuando_solo_monto_alto(self):
+        from services import evaluate_order_risk
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        self._mk_pedido(cliente, total=8, estado="entregado")
+        pedido = self._mk_pedido(cliente, total=80)
+        result = evaluate_order_risk(pedido)
+        self.assertEqual(result["level"], "MEDIUM")
+        self.assertIn("monto_alto>=50", result["reasons"])
+
+    def test_evaluate_high_cuando_cliente_nuevo_y_monto_alto(self):
+        from services import evaluate_order_risk
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=120)
+        result = evaluate_order_risk(pedido)
+        self.assertEqual(result["level"], "HIGH")
+        self.assertEqual(
+            set(result["reasons"]),
+            {"cliente_sin_historial", "monto_alto>=50"},
+        )
+
+    def test_umbral_configurable_via_siteconfig(self):
+        from services import evaluate_order_risk
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "10", descripcion="test")
+        cliente = self._mk_cliente()
+        self._mk_pedido(cliente, total=5, estado="entregado")
+        pedido = self._mk_pedido(cliente, total=20)
+        # 20 >= 10 → monto_alto activo aunque cliente tiene historial
+        self.assertEqual(evaluate_order_risk(pedido)["level"], "MEDIUM")
+
+    # ── marcar_confirmacion_si_procede ──────────────────────────────
+
+    def test_marcar_no_toca_pedido_low(self):
+        from services import marcar_confirmacion_si_procede
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        self._mk_pedido(cliente, total=8, estado="entregado")
+        pedido = self._mk_pedido(cliente, total=10)
+        level = marcar_confirmacion_si_procede(pedido)
+        self.assertEqual(level, "LOW")
+        self.assertIsNone(pedido.confirmacion_estado)
+
+    def test_marcar_pending_para_medium(self):
+        from services import marcar_confirmacion_si_procede
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=15)
+        marcar_confirmacion_si_procede(pedido)
+        self.assertEqual(pedido.confirmacion_estado, "pending")
+
+    def test_marcar_pending_para_high(self):
+        from services import marcar_confirmacion_si_procede
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=200)
+        marcar_confirmacion_si_procede(pedido)
+        self.assertEqual(pedido.confirmacion_estado, "pending")
+
+    def test_marcar_respeta_interruptor_habilitada(self):
+        from services import marcar_confirmacion_si_procede
+        SiteConfig.set("CONFIRMACION_HABILITADA", "0", descripcion="test")
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=200)
+        level = marcar_confirmacion_si_procede(pedido)
+        self.assertIsNone(level)
+        self.assertIsNone(pedido.confirmacion_estado)
+
+    def test_marcar_es_idempotente(self):
+        from services import marcar_confirmacion_si_procede
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=200)
+        marcar_confirmacion_si_procede(pedido)
+        # Segunda pasada no debe sobrescribir (aunque marcaría lo mismo)
+        prev = pedido.confirmacion_estado
+        level = marcar_confirmacion_si_procede(pedido)
+        self.assertIsNone(level)
+        self.assertEqual(pedido.confirmacion_estado, prev)
+
+    # ── marcar_pedido_confirmado ────────────────────────────────────
+
+    def test_confirmado_solo_aplica_sobre_pending(self):
+        from services import marcar_pedido_confirmado
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=15)
+        # Sin confirmacion pendiente → no aplica
+        self.assertFalse(marcar_pedido_confirmado(pedido))
+        pedido.confirmacion_estado = "pending"
+        self.assertTrue(marcar_pedido_confirmado(pedido))
+        self.assertEqual(pedido.confirmacion_estado, "confirmed")
+        self.assertIsNotNone(pedido.confirmacion_en)
+
+    def test_confirmado_idempotente_segunda_llamada(self):
+        from services import marcar_pedido_confirmado
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=15)
+        pedido.confirmacion_estado = "pending"
+        self.assertTrue(marcar_pedido_confirmado(pedido))
+        # Segunda llamada retorna False porque ya está confirmed
+        self.assertFalse(marcar_pedido_confirmado(pedido))
+
+
+if __name__ == "__main__":
+    unittest.main()

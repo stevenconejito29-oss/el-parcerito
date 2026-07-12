@@ -130,6 +130,30 @@ DEFAULTS: dict[str, dict] = {
             "de lotes de Stock. Cada lote puede sobrescribirlo en su ficha."
         ),
     },
+
+    # ── Antifraude / verificación pasiva de pedidos ───────────────────
+    # Consumidas por `services.evaluate_order_risk`. Un pedido cuyo total
+    # supera el umbral, o de un cliente sin historial de entregas previas,
+    # se marca `confirmacion_estado='pending'`. Riesgo bajo pasa sin
+    # fricción para no ralentizar el flujo del cliente en la web.
+    "CONFIRMACION_MONTO_UMBRAL_EUR": {
+        "default": "50",
+        "type": "float",
+        "desc": (
+            "Umbral en euros a partir del cual el sistema marca el pedido "
+            "como MEDIUM/HIGH y solicita verificación pasiva vía WhatsApp. "
+            "Ajusta según ticket medio de tu negocio. Cap defensivo 1-9999."
+        ),
+    },
+    "CONFIRMACION_HABILITADA": {
+        "default": "1",
+        "type": "bool",
+        "desc": (
+            "Interruptor global de la verificación anti-fantasma. "
+            "0 desactiva completamente el marcado — usa solo durante debug "
+            "o si el negocio prefiere revisión 100% manual."
+        ),
+    },
 }
 
 
