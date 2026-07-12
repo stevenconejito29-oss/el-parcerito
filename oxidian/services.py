@@ -2021,12 +2021,24 @@ def mensaje_estado_pedido(pedido: Order) -> str:
     plantilla = MENSAJES_ESTADO.get(pedido.estado)
     if not plantilla:
         return ""
-    return plantilla.format(
+    base = plantilla.format(
         num=pedido.numero_pedido,
         total="%.2f" % float(pedido.total),
         codigo=pedido.codigo_confirmacion or "------",
         puntos=pedido.puntos_ganados or 0,
     )
+    # Verificación pasiva antifraude: cuando el pedido acaba de crearse y
+    # el motor de riesgo lo marcó como `pending`, invitamos al cliente a
+    # confirmar. Sin bloquear el flujo — el equipo puede empezar igual si
+    # decide asumir el riesgo. Solo aplica al estado `pendiente` porque en
+    # los demás la confirmación ya ocurrió o dejó de ser relevante.
+    if pedido.estado == "pendiente" and getattr(pedido, "confirmacion_estado", None) == "pending":
+        base += (
+            "\n\n🔐 *Un paso más para preparar tu pedido:*\n"
+            "Responde *SI* para confirmarlo y empezar a prepararlo, "
+            "o *NO* para anularlo."
+        )
+    return base
 
 
 def mensaje_codigo_entrega(pedido: Order) -> str:

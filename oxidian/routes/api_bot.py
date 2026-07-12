@@ -2278,6 +2278,127 @@ def cancelar_pedido_cliente(pedido_id):
     })
 
 
+@api_bot_bp.route("/confirmacion/responder", methods=["POST"])
+@bot_required
+def responder_confirmacion_pedido():
+    """El bot delega la resolución de la respuesta del cliente en Oxidian.
+
+    Body:
+      { "telefono": "+34...", "respuesta": "si" | "no" }
+
+    El bot detecta el reply pero NO conoce qué pedido está en confirmación —
+    Oxidian es el único que sabe. Aquí buscamos el pedido `pending` más
+    reciente del cliente y aplicamos:
+      - "si" / "confirmo" / "confirmar" → confirmed.
+      - "no" / "cancelar" / "cancelo"    → cancelacion vía flujo estándar.
+
+    Devuelve un dict con:
+      - `accion`: `"confirmado"` | `"cancelado"` | `"sin_pendiente"` | `"respuesta_invalida"`
+      - `numero` (opcional): número de pedido afectado.
+      - `mensaje`: texto listo para reenviar al cliente.
+
+    Diseñado para ser idempotente: si el cliente responde SI dos veces,
+    la segunda devuelve `sin_pendiente` con un mensaje amable.
+    """
+    from services import marcar_pedido_confirmado, cancelar_pedido_operativo
+
+    data = request.get_json(silent=True) or {}
+    cliente, telefono = _cliente_por_telefono(data.get("telefono"))
+    if not cliente or not telefono_valido(telefono):
+        return jsonify({"ok": False, "error": "Cliente no encontrado"}), 404
+
+    raw = str(data.get("respuesta") or "").strip().lower()
+    palabras_si = {"si", "sí", "s", "ok", "vale", "confirmo", "confirmar", "confirmado"}
+    palabras_no = {"no", "n", "cancelo", "cancelar", "cancelado", "anular"}
+    if raw in palabras_si:
+        accion = "confirmar"
+    elif raw in palabras_no:
+        accion = "cancelar"
+    else:
+        return jsonify({
+            "ok": True,
+            "accion": "respuesta_invalida",
+            "mensaje": (
+                "No entendí tu respuesta. Contesta *SI* para confirmar el pedido "
+                "o *NO* para cancelarlo."
+            ),
+        })
+
+    pedido = (
+        Order.query
+        .filter_by(cliente_id=cliente.id, confirmacion_estado="pending")
+        .filter(Order.estado.in_(ESTADOS_EN_PREPARACION))
+        .order_by(Order.creado_en.desc())
+        .with_for_update()
+        .first()
+    )
+    if not pedido:
+        return jsonify({
+            "ok": True,
+            "accion": "sin_pendiente",
+            "mensaje": (
+                "No tienes ningún pedido pendiente de confirmación ahora mismo. "
+                "Si necesitas algo escribe *MENU*."
+            ),
+        })
+
+    if accion == "confirmar":
+        try:
+            marcar_pedido_confirmado(pedido)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception(
+                "responder_confirmacion: confirmar falló pedido=%s", pedido.id
+            )
+            return jsonify({"ok": False, "error": "No se pudo confirmar el pedido"}), 500
+        return jsonify({
+            "ok": True,
+            "accion": "confirmado",
+            "numero": pedido.numero_pedido,
+            "mensaje": (
+                f"✅ *Pedido {pedido.numero_pedido} confirmado.*\n\n"
+                "El equipo ya puede empezar a prepararlo. Te aviso cuando esté listo."
+            ),
+        })
+
+    # accion == "cancelar"
+    if pedido.estado != "pendiente":
+        return jsonify({
+            "ok": True,
+            "accion": "sin_pendiente",
+            "mensaje": (
+                f"El pedido *{pedido.numero_pedido}* ya entró en preparación. "
+                "Escribe *AGENTE* si necesitas ayuda."
+            ),
+        })
+    try:
+        cancelar_pedido_operativo(
+            pedido,
+            canal="chatbot",
+            detalle="cliente respondió NO a la verificación pasiva",
+        )
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(exc)}), 409
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "responder_confirmacion: cancelar falló pedido=%s", pedido.id
+        )
+        return jsonify({"ok": False, "error": "No se pudo cancelar el pedido"}), 500
+    return jsonify({
+        "ok": True,
+        "accion": "cancelado",
+        "numero": pedido.numero_pedido,
+        "mensaje": (
+            f"❌ *Pedido {pedido.numero_pedido} cancelado.*\n\n"
+            "Si fue un error escríbenos, lo resolvemos rápido."
+        ),
+    })
+
+
 @api_bot_bp.route("/pedido/<int:pedido_id>/confirmar", methods=["POST"])
 @bot_required
 def confirmar_pedido_cliente(pedido_id):
