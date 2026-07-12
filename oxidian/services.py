@@ -1809,6 +1809,78 @@ def registrar_uso_afiliado(codigo, pedido, cliente, descuento_aplicado):
 # ANALYTICS / P&L
 # ─────────────────────────────────────────────
 
+def metricas_antifraude(dias: int = 30) -> dict:
+    """Resumen operativo de la verificación pasiva antifraude en la ventana.
+
+    Devuelve un dict con:
+      - `evaluados`: pedidos creados en la ventana con confirmacion_estado
+        no NULL (LOW no cuenta — no se puntúa).
+      - `confirmados`: dentro de esos, cuántos el cliente confirmó por
+        WhatsApp.
+      - `pending_vigentes`: pending que aún NO ha vencido ni sido
+        resuelto (útil para saber la cola actual de riesgo).
+      - `cancelados_por_bot`: pedidos que el cliente rechazó respondiendo
+        NO en la verificación — se identifican por evento con detalle
+        específico. Diferentes de cancelaciones normales del cliente.
+      - `tasa_confirmacion`: confirmados / (confirmados + cancelados_por_bot)
+        expresada como float 0-1 (o None si no hay resoluciones aún).
+        Es la métrica más útil para tunear `CONFIRMACION_MONTO_UMBRAL_EUR`
+        — si sube al 90%+ probablemente puedes bajar el umbral (menos
+        pedidos evaluados innecesariamente), si baja al 50%- probablemente
+        el umbral debería subir (evitas alienar a clientes legítimos).
+
+    Best-effort: cualquier fallo devuelve un dict de ceros para no romper
+    el dashboard.
+    """
+    from datetime import timedelta
+
+    try:
+        dias = max(1, min(365, int(dias or 30)))
+    except (TypeError, ValueError):
+        dias = 30
+    desde = utcnow() - timedelta(days=dias)
+
+    try:
+        evaluados = db.session.query(db.func.count(Order.id)).filter(
+            Order.creado_en >= desde,
+            Order.confirmacion_estado.isnot(None),
+        ).scalar() or 0
+        confirmados = db.session.query(db.func.count(Order.id)).filter(
+            Order.creado_en >= desde,
+            Order.confirmacion_estado == "confirmed",
+        ).scalar() or 0
+        pending_vigentes = db.session.query(db.func.count(Order.id)).filter(
+            Order.confirmacion_estado == "pending",
+            Order.estado.notin_(["cancelado", "entregado"]),
+        ).scalar() or 0
+        cancelados_por_bot = db.session.query(db.func.count(OrderEvent.id)).filter(
+            OrderEvent.creado_en >= desde,
+            OrderEvent.tipo == "pedido_cancelado",
+            OrderEvent.detalle.ilike("%verificación pasiva%"),
+        ).scalar() or 0
+    except Exception:
+        logger.exception("metricas_antifraude: query falló")
+        return {
+            "dias": dias,
+            "evaluados": 0,
+            "confirmados": 0,
+            "pending_vigentes": 0,
+            "cancelados_por_bot": 0,
+            "tasa_confirmacion": None,
+        }
+
+    resueltos = confirmados + cancelados_por_bot
+    tasa = round(confirmados / resueltos, 3) if resueltos else None
+    return {
+        "dias": dias,
+        "evaluados": int(evaluados),
+        "confirmados": int(confirmados),
+        "pending_vigentes": int(pending_vigentes),
+        "cancelados_por_bot": int(cancelados_por_bot),
+        "tasa_confirmacion": tasa,
+    }
+
+
 def calcular_pl(fecha_ini, fecha_fin):
     """P&L entre dos date objects. Devuelve dict con la cascada financiera completa."""
     from sqlalchemy import func

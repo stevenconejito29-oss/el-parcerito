@@ -35,6 +35,7 @@ from services import (estado_cola, registrar_egreso, registrar_ingreso,
                       calcular_pl, top_productos, resumen_ventas_por_categoria,
                       enviar_whatsapp_codigo_entrega, enviar_whatsapp_estado, enviar_whatsapp_pago_confirmado,
                       distribuir_pedido, distribuir_repartidor, generar_comision_entrega,
+                      metricas_antifraude,
                       notificar_bot_sync,
                       solicitar_resena_pedido, avanzar_estado_pedido,
                       cancelar_pedido_operativo, registrar_pago_pedido,
@@ -491,6 +492,10 @@ def dashboard():
     ).all()
     repartidores = User.query.filter_by(rol="repartidor", activo=True).all()
 
+    # Métricas del feature antifraude — ventana 30 días. Best-effort:
+    # devuelve dict con ceros si algo falla; nunca rompe el dashboard.
+    antifraude = metricas_antifraude(dias=30)
+
     return render_template("admin/dashboard.html",
                            pedidos_hoy=pedidos_hoy,
                            pedidos_ayer=pedidos_ayer,
@@ -516,7 +521,8 @@ def dashboard():
                            pedidos_en_ruta=pedidos_en_ruta,
                            entregados_hoy=entregados_hoy,
                            preparadores=preparadores,
-                           repartidores=repartidores)
+                           repartidores=repartidores,
+                           antifraude=antifraude)
 
 
 # ─── COLA DE TRABAJO ─────────────────────────
