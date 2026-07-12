@@ -111,28 +111,9 @@ def _product_fulfillment_modes(producto):
     return {"delivery", "recogida"}
 
 
-def notificar_bot_sync():
-    """Notifica al bot que debe re-sincronizar el catálogo (disparo asíncrono)."""
-    bot_url = SiteConfig.get("BOT_API_URL", os.environ.get("BOT_API_URL", "http://127.0.0.1:3000"))
-    panel_key = SiteConfig.get("BOT_PANEL_KEY", "") or SiteConfig.get("BOT_API_KEY", "")
-    if not bot_url or not panel_key:
-        return
-
-    def _fire():
-        try:
-            req = urllib.request.Request(
-                f"{bot_url.rstrip('/')}/api/oxidian/sync",
-                method="POST",
-                headers={"Content-Type": "application/json", "X-Panel-Key": panel_key},
-                data=b"{}",
-            )
-            with urllib.request.urlopen(req, timeout=5):
-                pass
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            logger.warning("Bot no disponible para sincronizacion en %s: %s", bot_url, exc)
-        except Exception:
-            logger.exception("Error inesperado notificando sync al bot")
-    threading.Thread(target=_fire, daemon=True).start()
+# notificar_bot_sync se movió a services.py. Se re-exporta para preservar
+# el punto de entrada histórico usado por rutas admin y llamadas internas.
+from services import notificar_bot_sync  # noqa: E402,F401
 
 
 # ─── AUTH ─────────────────────────────────────
@@ -2486,8 +2467,8 @@ def guardar_resena(pedido_id):
 
         # Verificar pertenencia al cliente (si se provee teléfono)
         if telefono:
-            from routes.public import _find_cliente_by_phone
-            cliente_match, _ = _find_cliente_by_phone(telefono)
+            from services import buscar_cliente_por_telefono
+            cliente_match, _ = buscar_cliente_por_telefono(telefono)
             if not cliente_match or pedido.cliente_id != cliente_match.id:
                 return jsonify({"ok": False, "error": "Este pedido no pertenece al cliente"}), 403
         pedido.resena_calificacion = int(calificacion)
@@ -4112,7 +4093,8 @@ def bot_config_set():
     aún exige que el teléfono admin sea válido)."""
     if not _bot_admin_request_allowed("config_write"):
         return _bot_actor_forbidden("config_write")
-    from routes.superadmin import LOCKED_CONFIG_KEYS, _validar_config_value
+    from store_config import LOCKED_CONFIG_KEYS
+    from routes.superadmin import _validar_config_value
 
     BLOQUEADAS = {"BOT_AI_API_KEY", "BOT_API_KEY", "SECRET_KEY", "BOT_PANEL_KEY",
                   "SEED_PASSWORD", "OXIDIAN_KEY"}

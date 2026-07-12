@@ -30,12 +30,12 @@ from combo_validators import (
     validate_parallel_arrays,
     validate_combo_pricing
 )
-from routes.api_bot import notificar_bot_sync
 from services import (estado_cola, registrar_egreso, registrar_ingreso,
                       resumen_caja_hoy, pagos_pendientes_staff,
                       calcular_pl, top_productos, resumen_ventas_por_categoria,
                       enviar_whatsapp_codigo_entrega, enviar_whatsapp_estado, enviar_whatsapp_pago_confirmado,
                       distribuir_pedido, distribuir_repartidor, generar_comision_entrega,
+                      notificar_bot_sync,
                       solicitar_resena_pedido, avanzar_estado_pedido,
                       cancelar_pedido_operativo, registrar_pago_pedido,
                       registrar_ingreso_pedido, procesar_notificaciones_pendientes,

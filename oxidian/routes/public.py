@@ -33,7 +33,7 @@ from models import (Product, Categoria, Order, OrderItem, Review, Coupon,
                      internal_customer_email)
 from idempotency import (request_idempotency_key, request_body_hash,
                           IDEMPOTENCY_TTL)
-from services import (distribuir_pedido,
+from services import (buscar_cliente_por_telefono, distribuir_pedido,
                        enviar_whatsapp_estado, validar_radio_entrega,
                        asignar_zona_por_direccion,
                        asignar_zona_por_coordenadas,
@@ -100,19 +100,8 @@ def _json_no_store(payload, status=200):
     return response
 
 
-def _find_cliente_by_phone(raw, allow_fuzzy=True):
-    """Busca al usuario por teléfono.
-
-    Prioriza rol='cliente' para no confundir cuentas operativas con clientes,
-    pero cae al match sin filtro de rol si no hay cliente puro. Esto evita
-    que operadores/admins que también compran queden invisibles al flujo de
-    puntos/checkout (el UNIQUE es global sobre telefono_normalizado)."""
-    telefono = _normalize_phone(raw)
-    if not telefono_valido(telefono):
-        return None, telefono
-    q = User.query.filter_by(telefono_normalizado=telefono)
-    cliente = q.filter_by(rol="cliente").first() or q.first()
-    return cliente, telefono
+# La búsqueda de cliente por teléfono vive en services.buscar_cliente_por_telefono.
+# Se importa arriba y se usa directamente — sin wrapper local.
 
 
 def _normalizar_origen(raw):
@@ -1374,7 +1363,7 @@ def consultar_saldo_puntos():
             "msg": "El servicio de WhatsApp no está disponible ahora mismo. Reintenta en unos minutos.",
         }, 503)
     data = request.get_json(silent=True) or {}
-    cliente, _ = _find_cliente_by_phone(data.get("telefono", ""), allow_fuzzy=False)
+    cliente, _ = buscar_cliente_por_telefono(data.get("telefono", ""))
     if cliente:
         try:
             enviar_saldo_puntos(cliente)
@@ -1490,7 +1479,7 @@ def solicitar_codigo_puntos():
     telefono = data.get("telefono", "").strip()
     if not telefono:
         return jsonify({"ok": False, "msg": "Indica tu número de teléfono"})
-    cliente, _ = _find_cliente_by_phone(telefono)
+    cliente, _ = buscar_cliente_por_telefono(telefono)
     respuesta_neutra = "Si el número está registrado, recibirá un código por WhatsApp."
     if not cliente or not cliente.telefono:
         return _json_no_store({"ok": True, "msg": respuesta_neutra})
@@ -1518,7 +1507,7 @@ def verificar_codigo_puntos():
         puntos_usar = 0
 
     if telefono:
-        cliente, _ = _find_cliente_by_phone(telefono)
+        cliente, _ = buscar_cliente_por_telefono(telefono)
     else:
         return _json_no_store({"ok": False, "msg": msg_invalido})
 
@@ -2660,7 +2649,7 @@ def _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion, ni
         return None
 
     # Buscar cliente existente por teléfono (identificador único)
-    invitado, telefono_normalizado = _find_cliente_by_phone(telefono_invitado)
+    invitado, telefono_normalizado = buscar_cliente_por_telefono(telefono_invitado)
     telefono_invitado = telefono_normalizado or telefono_invitado
     if not invitado:
         # Puede existir el teléfono con otro rol (admin/super_admin operando

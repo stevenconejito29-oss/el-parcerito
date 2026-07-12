@@ -313,3 +313,41 @@ def get_store_profile() -> dict:
         for key, default in PUBLIC_UI_DEFAULTS.items()
     }
     return profile
+
+
+# ─── Autoridad sobre SiteConfig ────────────────────────────────────────
+# Claves cuyo control queda reservado al super_admin. El admin operativo
+# puede ver estas claves pero jamás modificarlas — el UI las muestra como
+# solo-lectura con etiqueta "Controla el super admin".
+#
+# Cubren: modo comercial, comisiones, toggles de features, integraciones
+# del bot, credenciales de IA y sistema. Cualquier ruta o endpoint que
+# ofrezca cambiar SiteConfig debe consultar este set antes de aceptar el
+# cambio bajo un rol admin.
+LOCKED_CONFIG_KEYS = frozenset({
+    # Modo comercial y comisiones
+    "MODO_TIENDA",
+    "SERVICE_COMMISSION_PCT",
+    # Toggles de features del producto (super_admin decide qué contrata)
+    "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
+    "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
+    # Integraciones y bot (super_admin gestiona el WhatsApp central)
+    "BOT_API_URL", "BOT_OXIDIAN_URL", "BOT_API_KEY", "BOT_PANEL_KEY",
+    "BOT_ADMIN_NUMBERS", "BOT_AI_ENABLED", "BOT_AI_API_KEY",
+    "BOT_AI_PROVIDER", "BOT_AI_MODEL", "BOT_AI_RULES",
+    "BOT_AI_DAILY_CLIENT", "BOT_AI_DAILY_GLOBAL",
+    "BOT_EMAIL_DOMAIN",
+    "EVOLUTION_API_URL", "EVOLUTION_INSTANCE",
+    # Sistema
+    "OXIDIAN_PUBLIC_URL", "TIENDA_URL", "ALLOW_DEMO_RESET",
+    # Reset masivo de puntos (afecta a todos los clientes)
+    "POINTS_RESET_PERIOD_DAYS", "POINTS_LAST_RESET_AT",
+})
+
+
+def user_puede_modificar_clave(user, clave):
+    """El super_admin puede tocar cualquier clave. Cualquier otro rol no
+    puede tocar las `LOCKED_CONFIG_KEYS`. Fuente única para UI y save."""
+    if getattr(user, "rol", None) == "super_admin":
+        return True
+    return clave not in LOCKED_CONFIG_KEYS
