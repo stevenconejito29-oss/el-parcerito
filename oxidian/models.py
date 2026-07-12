@@ -303,13 +303,31 @@ def normalizar_metodo_pago(val):
 # PAGOS AL STAFF
 # ─────────────────────────────────────────────
 
+# Tipos de asiento válidos en `staff_payments`. Fuente única de verdad —
+# usada por rutas admin al validar el form y por reports para clasificar.
+# Añadir un tipo aquí basta: no hay literales dispersos que actualizar.
+TIPOS_STAFF_PAYMENT = frozenset({
+    "salario",
+    "comision",
+    "bonus",
+    "adelanto",
+    "descuento",
+    "liquidacion_proveedor",
+})
+
+# Subconjunto autorizado para creación manual desde el panel admin.
+# `liquidacion_proveedor` la genera el sistema al cerrar liquidaciones y no
+# debe ser insertable a mano — se excluye explícitamente aquí para no
+# tener que recordarlo en cada form.
+TIPOS_STAFF_PAYMENT_MANUAL = TIPOS_STAFF_PAYMENT - {"liquidacion_proveedor"}
+
+
 class StaffPayment(db.Model):
     __tablename__ = "staff_payments"
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    tipo = db.Column(db.String(20), nullable=False)
-    # salario / comision / bonus / adelanto / descuento
+    tipo = db.Column(db.String(20), nullable=False)  # ver TIPOS_STAFF_PAYMENT
 
     monto = db.Column(db.Numeric(10, 2), nullable=False)
     concepto = db.Column(db.String(200))

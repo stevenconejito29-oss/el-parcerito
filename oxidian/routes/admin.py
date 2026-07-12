@@ -15,7 +15,7 @@ from sqlalchemy.orm import joinedload
 import csv, io
 
 from extensions import db, get_or_404
-from models import (ROLES_AUTENTICABLES, User, Product, Categoria, Stock, Order, OrderItem, Review,
+from models import (ROLES_AUTENTICABLES, TIPOS_STAFF_PAYMENT, TIPOS_STAFF_PAYMENT_MANUAL, User, Product, Categoria, Stock, Order, OrderItem, Review,
                     Coupon, ComboGroup, ComboItem, ExtraCatalogItem, ProductExtraGroup, ProductExtraOption, Caja, PointsLog, StaffPayment,
                     AffiliateCode, AffiliateUse, MenuConfig,
                     PriceHistory, ProductPresentation, ProductVariant, TAMAÑOS_PRESENTACION, SiteConfig, AuditLog,
@@ -1055,8 +1055,6 @@ def pagos_staff():
     pagado_f  = request.args.get("pagado")
     tipo_f    = request.args.get("tipo", "").strip()
 
-    _TIPOS_STAFF_VALIDOS = {"salario", "comision", "bonus", "adelanto", "descuento", "liquidacion_proveedor"}
-
     query = StaffPayment.query.order_by(StaffPayment.creado_en.desc())
     if user_id_f:
         query = query.filter_by(user_id=user_id_f)
@@ -1064,7 +1062,7 @@ def pagos_staff():
         query = query.filter_by(pagado=False)
     elif pagado_f == "1":
         query = query.filter_by(pagado=True)
-    if tipo_f in _TIPOS_STAFF_VALIDOS:
+    if tipo_f in TIPOS_STAFF_PAYMENT:
         query = query.filter(StaffPayment.tipo == tipo_f)
 
     pagos = query.all()
@@ -1135,12 +1133,11 @@ def crear_pago_staff():
     periodo_inicio = request.form.get("periodo_inicio")
     periodo_fin = request.form.get("periodo_fin")
 
-    tipos_validos = ["salario", "comision", "bonus", "adelanto", "descuento"]
     try:
         monto = float(request.form.get("monto", 0) or 0)
     except (ValueError, TypeError):
         monto = 0.0
-    if not user_id or tipo not in tipos_validos or monto <= 0:
+    if not user_id or tipo not in TIPOS_STAFF_PAYMENT_MANUAL or monto <= 0:
         flash("Datos inválidos.", "danger")
         return redirect(url_for("admin.pagos_staff"))
 
@@ -1882,7 +1879,8 @@ def agregar_stock():
     lote = request.form.get("lote", "").strip() or None
     fecha_cad = request.form.get("fecha_caducidad", "").strip() or None
     ubicacion = request.form.get("ubicacion", "").strip() or None
-    alerta_dias = request.form.get("alerta_dias", 7, type=int) or 7
+    default_alerta = max(1, min(90, int(SiteConfig.get("STOCK_ALERTA_DIAS_DEFAULT", "7") or 7)))
+    alerta_dias = request.form.get("alerta_dias", default_alerta, type=int) or default_alerta
 
     try:
         fecha_caducidad = _parse_date_strict(fecha_cad) if fecha_cad else None
