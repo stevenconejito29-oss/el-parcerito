@@ -19,7 +19,6 @@ from routes.public import (
     _producto_disponible_en_origen,
     _save_carrito,
     _set_carrito_origen,
-    _variantes_catalogo_unificadas,
     public_bp,
 )
 
@@ -75,14 +74,6 @@ class CatalogOriginTest(unittest.TestCase):
             "puntos": True,
         }):
             self.assertFalse(_producto_disponible_en_origen(product, "propio", 1))
-
-    def test_legacy_catalog_helper_never_replaces_or_collapses_products(self):
-        products = [SimpleNamespace(id=1), SimpleNamespace(id=2)]
-        selected = _variantes_catalogo_unificadas(
-            products,
-            origen_preferido="propio",
-        )
-        self.assertEqual([product.id for product in selected], [1, 2])
 
     def test_cart_origin_survives_items_and_is_cleared_with_empty_cart(self):
         with self.app.test_request_context("/"):

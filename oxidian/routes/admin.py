@@ -174,17 +174,6 @@ def verificar_feature_acceso():
             return
 
 
-def _safe_commit(msg_ok: str, redirect_to: str):
-    """Intenta commit; si falla hace rollback y flashea error. Devuelve redirect."""
-    try:
-        db.session.commit()
-        flash(msg_ok, "success")
-    except Exception as exc:
-        db.session.rollback()
-        flash(f"Error al guardar: {exc}", "danger")
-    return redirect(redirect_to)
-
-
 def _parse_date_strict(valor: str):
     """Convierte 'YYYY-MM-DD' a date o lanza ValueError con mensaje claro."""
     try:
@@ -2198,43 +2187,6 @@ def _parsear_campos_producto(form):
         "alergenos_info":            None,
     }, None
 
-
-def _componentes_faltantes_proveedor(proveedor_id, producto_ids):
-    """Devuelve componentes que no existen como SKU activo del proveedor."""
-    if not proveedor_id:
-        return []
-
-    ids = []
-    for raw in producto_ids or []:
-        try:
-            pid = int(raw)
-        except (TypeError, ValueError):
-            continue
-        if pid > 0 and pid not in ids:
-            ids.append(pid)
-    if not ids:
-        return []
-
-    from models import ProveedorProducto as _ProveedorProducto
-    registrados = {
-        row.producto_id for row in _ProveedorProducto.query.filter(
-            _ProveedorProducto.proveedor_id == proveedor_id,
-            _ProveedorProducto.producto_id.in_(ids),
-            _ProveedorProducto.activo.is_(True),
-        ).all()
-    }
-    faltantes_ids = [pid for pid in ids if pid not in registrados]
-    if not faltantes_ids:
-        return []
-    return Product.query.filter(Product.id.in_(faltantes_ids)).order_by(Product.nombre.asc()).all()
-
-
-def _mensaje_componentes_faltantes_proveedor(faltantes):
-    nombres = ", ".join(p.nombre for p in faltantes)
-    return (
-        "El proveedor despachador no tiene estos SKUs activos en su inventario: "
-        f"{nombres}. Agregalos primero en Proveedores."
-    )
 
 def _componentes_externos_en_combo_propio(producto_ids):
     ids = []

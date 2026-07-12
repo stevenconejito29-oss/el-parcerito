@@ -400,11 +400,6 @@ def _canjeables_payload(cliente, origen=None):
     }
 
 
-def _variantes_catalogo_unificadas(productos, origen_preferido=None):
-    """Compatibilidad para scripts antiguos: ya no colapsa ni sustituye variantes."""
-    return list(productos)
-
-
 # ─── CATÁLOGO ────────────────────────────────
 
 @public_bp.route("/")
@@ -687,37 +682,6 @@ def _order_group_label(producto):
     return " ".join(str(getattr(producto, "grupo_pedido", None) or "").split()) or "Pedido general"
 
 
-def _cart_delivery_families(carrito, exclude_key=None):
-    if not carrito:
-        return set()
-    ids = []
-    for pid in carrito.keys():
-        if str(pid) == str(exclude_key):
-            continue
-        try:
-            ids.append(int(pid))
-        except (TypeError, ValueError):
-            continue
-    if not ids:
-        return set()
-    productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all()
-    return {_delivery_family(p) for p in productos}
-
-
-def _cart_order_groups(carrito, exclude_key=None):
-    ids = [int(pid) for pid in (carrito or {})
-           if str(pid) != str(exclude_key) and str(pid).isdigit()]
-    productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all() if ids else []
-    return {_order_group(p): _order_group_label(p) for p in productos}
-
-
-def _cart_fulfillment_options(carrito, exclude_key=None):
-    ids = [int(pid) for pid in (carrito or {})
-           if str(pid) != str(exclude_key) and str(pid).isdigit()]
-    productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all() if ids else []
-    return _fulfillment_options(productos)
-
-
 def _cart_products_from_carrito(carrito, exclude_key=None):
     ids = [int(pid) for pid in (carrito or {})
            if str(pid) != str(exclude_key) and str(pid).isdigit()]
@@ -914,10 +878,6 @@ def _cart_origins(carrito, exclude_key=None):
         return set()
     productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all()
     return {p.origen_operativo_key for p in productos}
-
-
-def _items_delivery_families(items):
-    return {_delivery_family(item["producto"]) for item in items if item.get("producto")}
 
 
 @public_bp.route("/carrito/agregar/<int:producto_id>", methods=["GET"])
