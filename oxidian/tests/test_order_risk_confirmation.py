@@ -219,6 +219,22 @@ class OrderRiskConfirmationTest(unittest.TestCase):
         msg = mensaje_estado_pedido(pedido)
         self.assertNotIn("Responde *SI*", msg)
 
+    # ── Persistencia de la columna (regresión de la migración) ──────
+
+    def test_confirmacion_estado_persiste_en_orm(self):
+        # Asegura que el mapeo SQLAlchemy escribe y lee la nueva columna,
+        # y que confirmacion_en también viaja.
+        from datetime import datetime
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=15)
+        pedido.confirmacion_estado = "pending"
+        pedido.confirmacion_en = datetime(2026, 7, 12, 22, 0, 0)
+        db.session.commit()
+        db.session.expire(pedido)
+        refetched = Order.query.get(pedido.id)
+        self.assertEqual(refetched.confirmacion_estado, "pending")
+        self.assertEqual(refetched.confirmacion_en.year, 2026)
+
 
 if __name__ == "__main__":
     unittest.main()
