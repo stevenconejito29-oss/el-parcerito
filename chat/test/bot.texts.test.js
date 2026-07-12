@@ -113,3 +113,37 @@ test('ESCAPE_HINT y FALLBACK_HINT están definidos y coinciden con la convenció
   assert.match(texts.ESCAPE_HINT, /\*MENU\*/);
   assert.match(texts.FALLBACK_HINT, /\*MENU\*/);
 });
+
+test('ESCAPE_HINT ofrece explícitamente el atajo *0* además de *MENU*', () => {
+  assert.match(texts.ESCAPE_HINT, /\*0\*/);
+});
+
+test('withEscapeHint añade la pista si el prompt no la trae', () => {
+  const prompt = 'Escribe el número de tu pedido.';
+  const out = texts.withEscapeHint(prompt);
+  assert.ok(out.endsWith(texts.ESCAPE_HINT));
+  assert.ok(out.includes(prompt));
+});
+
+test('withEscapeHint no duplica la pista si el prompt ya menciona *MENU*', () => {
+  const prompt = 'Escribe el número. También puedes escribir *MENU* para volver.';
+  const out = texts.withEscapeHint(prompt);
+  const matches = (out.match(/\*MENU\*/g) || []).length;
+  assert.equal(matches, 1);
+});
+
+test('withEscapeHint no duplica la pista si el prompt ya menciona *0*', () => {
+  const prompt = 'Responde SI/NO. Escribe *0* para volver.';
+  const out = texts.withEscapeHint(prompt);
+  // Solo debe haber la mención original
+  const matchesMenu = (out.match(/\*MENU\*/g) || []).length;
+  const matchesCero = (out.match(/\*0\*/g) || []).length;
+  assert.equal(matchesMenu, 0);
+  assert.equal(matchesCero, 1);
+});
+
+test('withEscapeHint tolera inputs vacíos o null', () => {
+  assert.ok(texts.withEscapeHint('').includes(texts.ESCAPE_HINT));
+  assert.ok(texts.withEscapeHint(null).includes(texts.ESCAPE_HINT));
+  assert.ok(texts.withEscapeHint(undefined).includes(texts.ESCAPE_HINT));
+});

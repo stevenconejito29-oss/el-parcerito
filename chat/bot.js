@@ -3351,7 +3351,11 @@ async function _handleMessage(jid, text, pushName) {
     return true;
   }
 
-  if (['menu', 'inicio', 'hola', 'hi', 'start', '0'].includes(lower)) {
+  // Escape universal: cualquier de estos disparadores devuelve al cliente
+  // al menú principal desde cualquier estado. El comando *0* está también
+  // documentado en la constante `texts.ESCAPE_HINT` que se muestra al pie
+  // de los submenús — ambos deben mantenerse sincronizados si se amplían.
+  if (['menu', 'menú', 'inicio', 'hola', 'hi', 'start', '0', 'salir', 'volver'].includes(lower)) {
     if (isOwner && !isAdminClientMode(jid, ses)) {
       return startAdminMenu(jid, ses.nombre);
     }
@@ -5028,11 +5032,11 @@ async function handleMainMenu(jid, ses, opcion) {
     }
     case '2': {
       setClientState(ses, 'espera_numero_pedido');
-      return sendText(jid,
+      return sendText(jid, texts.withEscapeHint(
         `🔍 *Estado o cancelación de pedido*\n\n` +
         `Escribe el *número de tu pedido* o *ULTIMO* para ver el más reciente.\n\n` +
         `También puedes escribir *CANCELAR* o *CANCELAR número-pedido*.`
-      );
+      ));
     }
     case '3': {
       if (String(cfg('loyalty_enabled', '1')) !== '1') {
@@ -5083,12 +5087,12 @@ async function handleMainMenu(jid, ses, opcion) {
         return sendText(jid, `Esa opción no está disponible en esta tienda.\n\n${menuPrincipal(ses)}`);
       }
       setClientState(ses, 'espera_direccion_cobertura');
-      return sendText(jid,
+      return sendText(jid, texts.withEscapeHint(
         `🗺️ *¿Llegamos a tu zona?*\n\n` +
         `Escribe tu dirección completa y la verificamos ahora mismo.\n\n` +
         `📍 Ejemplo: ${getEjemploDireccion()}\n\n` +
         `_Nota: solo la uso para verificar cobertura, no la guardo._`
-      );
+      ));
     }
     case '5': {
       return sendText(jid,
@@ -5262,14 +5266,13 @@ async function iniciarCancelacionPedido(jid, ses, identifier = '') {
       pedido_id: pedido.id,
       numero: pedido.numero,
     });
-    return sendText(
-      jid,
+    return sendText(jid, texts.withEscapeHint(
       `⚠️ *Confirmar cancelación*\n\n` +
       `Pedido: *${pedido.numero}*\n` +
       `Total: *${formatPrecio(pedido.total)}*\n\n` +
       `Solo se cancelará si todavía no inició preparación.\n\n` +
       `Responde *SI* para cancelar o *NO* para conservarlo.`,
-    );
+    ));
   } catch (error) {
     log('warn', 'cancel_order_lookup_fail', String(error));
     setClientState(ses, 'main_menu');
