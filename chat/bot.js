@@ -3367,6 +3367,18 @@ async function _handleMessage(jid, text, pushName) {
   if (!isOwner && /^(?:7|agente|persona|humano|asesor)$|(?:hablar|comunicarme|contactar).*(?:agente|persona|humano|asesor)/i.test(lower)) {
     return requestHumanSupport(jid, text);
   }
+
+  // ── Verificación pasiva antifraude ────────────────────────────────
+  // Cuando el cliente responde SI/CONFIRMO/NO a la invitación que va en
+  // el mensaje de "pedido recibido", intentamos resolverlo contra la API.
+  // Solo interceptamos respuestas inequívocas de una palabra para no
+  // colisionar con otros flujos (ej. "cancelar" con id, "no quiero ...").
+  if (!isOwner && /^(?:si|sí|s|ok|vale|confirmo|confirmar|no|n|cancelo|cancelar|anular)$/i.test(lower)) {
+    const consumed = await tryHandleConfirmationReply(jid, lower);
+    if (consumed) return true;
+    // sin pedido pendiente → cae al flujo normal (cancelar, menú, etc.)
+  }
+
   if (!isOwner && /^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i.test(lower)) {
     const identifier = text.match(/^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i)?.[1] || '';
     return iniciarCancelacionPedido(jid, ses, identifier);
@@ -5151,6 +5163,37 @@ async function handleMainMenu(jid, ses, opcion) {
         `_Escribe el número o la palabra clave._`
       );
     }
+  }
+}
+
+// ─── VERIFICACIÓN PASIVA ANTIFRAUDE ──────────────────────────────────────────
+/**
+ * Intenta resolver un SI/NO explícito del cliente contra un pedido que el
+ * backend haya marcado como `confirmacion_estado='pending'`. Devuelve
+ * `true` solo si el mensaje fue consumido — el llamador debe respetar ese
+ * flag y no continuar con el resto del pipeline.
+ *
+ * El bot no conoce por sí mismo si el cliente tiene un pending; Oxidian
+ * es la fuente única. Este helper delega la decisión al endpoint que
+ * responde `sin_pendiente` cuando no hay nada que confirmar — en ese caso
+ * dejamos que el cliente siga por el flujo normal (menú, cancelar, etc).
+ */
+async function tryHandleConfirmationReply(jid, respuesta) {
+  try {
+    const resp = await oxidianPost('/confirmacion/responder', {
+      telefono: phoneFromJid(jid),
+      respuesta,
+    });
+    if (!resp || !resp.ok) return false;
+    if (resp.accion === 'sin_pendiente' || resp.accion === 'respuesta_invalida') {
+      return false;
+    }
+    // "confirmado" o "cancelado" → tenemos mensaje listo del backend
+    if (resp.mensaje) await sendText(jid, resp.mensaje);
+    return true;
+  } catch (err) {
+    log('warn', 'confirmacion_reply_fail', err?.message || String(err));
+    return false;
   }
 }
 

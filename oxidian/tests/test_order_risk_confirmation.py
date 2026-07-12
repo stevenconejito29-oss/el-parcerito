@@ -188,6 +188,37 @@ class OrderRiskConfirmationTest(unittest.TestCase):
         # Segunda llamada retorna False porque ya está confirmed
         self.assertFalse(marcar_pedido_confirmado(pedido))
 
+    # ── Enriquecido del mensaje de estado ───────────────────────────
+
+    def test_mensaje_pendiente_incluye_invitacion_a_confirmar(self):
+        from services import mensaje_estado_pedido
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=80)
+        pedido.confirmacion_estado = "pending"
+        msg = mensaje_estado_pedido(pedido)
+        self.assertIn("SI", msg)
+        self.assertIn("NO", msg)
+        self.assertIn(pedido.numero_pedido, msg)
+
+    def test_mensaje_pendiente_sin_confirmacion_no_incluye_invitacion(self):
+        from services import mensaje_estado_pedido
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=10)
+        # sin confirmacion_estado → LOW normal → sin invitación
+        msg = mensaje_estado_pedido(pedido)
+        self.assertNotIn("Responde *SI*", msg)
+
+    def test_mensaje_armando_ignora_confirmacion(self):
+        # En estados posteriores a `pendiente` no debe aparecer la invitación
+        # aunque confirmacion_estado siga en 'pending' — la puerta de entrada
+        # ya se cerró y no queremos duplicar CTAs.
+        from services import mensaje_estado_pedido
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=80, estado="armando")
+        pedido.confirmacion_estado = "pending"
+        msg = mensaje_estado_pedido(pedido)
+        self.assertNotIn("Responde *SI*", msg)
+
 
 if __name__ == "__main__":
     unittest.main()
