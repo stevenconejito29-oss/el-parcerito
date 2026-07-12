@@ -1,6 +1,9 @@
 """
-Gestión de imágenes: subida, redimensionado y servido.
-Las imágenes se guardan en <proyecto>/images/ y se sirven en /uploads/<subcarpeta>/<archivo>
+Rutas HTTP para subir y servir imágenes desde el panel admin.
+
+La lógica de guardado, redimensionado y borrado seguro vive en
+`image_service.py` para ser reutilizable desde otras rutas (admin, etc)
+sin cruzar imports entre blueprints.
 """
 import uuid
 import logging
@@ -14,31 +17,23 @@ from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from extensions import db, get_or_404
 from models import AdminFeature, Product, SiteConfig, Categoria
+from image_service import (
+    ALLOWED_EXT,
+    IMAGES_DIR,
+    MAX_SIZES,
+    PILLOW_OK,
+    delete_image,
+    save_image,
+)
 
 try:
     from PIL import Image
-    PILLOW_OK = True
-except ImportError:
-    PILLOW_OK = False
+except ImportError:  # image_service ya expone PILLOW_OK; Image local solo si Pillow OK
+    Image = None
 
 uploads_bp = Blueprint("uploads", __name__)
 logger = logging.getLogger(__name__)
 
-# ── Ruta base de imágenes — dentro de oxidian/ para estructura limpia de 3 carpetas ──
-IMAGES_DIR = Path(__file__).parent.parent / "images"
-ALLOWED_EXT = {"jpg", "jpeg", "png", "webp", "gif"}
-
-# Tamaños máximos por subcarpeta (ancho x alto en px)
-MAX_SIZES = {
-    "productos":  (800, 800),
-    "logo":       (400, 400),
-    "categorias": (600, 400),
-    "banners":    (1200, 400),
-    "icon":       (512, 512),
-    "hero":       (1600, 900),
-    "test-images": (1200, 800),
-    "showcase": (1200, 860),
-}
 
 
 def _allowed(filename: str) -> bool:
@@ -126,82 +121,11 @@ def _save_brand_asset(file_obj, subcarpeta: str, kind: str) -> dict:
     content_hash = hashlib.sha256(contenido).hexdigest()[:8]
     ts = int(_t.time())
     stem = f"{kind}_{content_hash}_{ts}"
-    ruta_relativa = _save_image(file_obj, subcarpeta, stem)
+    ruta_relativa = save_image(file_obj, subcarpeta, stem)
     _cleanup_old_brand_files(subcarpeta, keep_prefix=f"{kind}_", max_keep=3)
     # URL con cache-buster explícito por si algún proxy ignora el nombre
     url = f"/uploads/{ruta_relativa}?v={ts}"
     return {"ruta": ruta_relativa, "url": url}
-
-
-def _save_image(file_obj, subcarpeta: str, nombre_custom: str = None) -> str:
-    """
-    Guarda el archivo, lo redimensiona si Pillow está disponible,
-    y devuelve la ruta relativa tipo 'productos/abc123.jpg'.
-
-    Reglas:
-    - Si `nombre_custom` incluye extensión (.jpg, .png, etc.) se respeta.
-    - Si no, se deriva la extensión del archivo subido.
-    - Los PNG con canal alfa se guardan como PNG preservando transparencia.
-    - Todos los demás se convierten a JPEG (menor tamaño, mayor compatibilidad).
-    - El directorio de destino se crea si no existe.
-    """
-    # Derivar extensión real del archivo subido
-    ext_original = (
-        file_obj.filename.rsplit(".", 1)[1].lower()
-        if "." in file_obj.filename else "jpg"
-    )
-    if ext_original not in ALLOWED_EXT:
-        ext_original = "jpg"
-
-    # Resolver nombre final: si nombre_custom ya tiene extensión, usarla tal cual
-    if nombre_custom:
-        stem = nombre_custom.rsplit(".", 1)[0] if "." in nombre_custom else nombre_custom
-    else:
-        stem = uuid.uuid4().hex[:12]
-
-    # Crear directorio si no existe
-    (IMAGES_DIR / subcarpeta).mkdir(parents=True, exist_ok=True)
-
-    # Guardar archivo temporal con extensión original para que Pillow pueda leerlo
-    tmp_nombre = f"{stem}.{ext_original}"
-    tmp_destino = IMAGES_DIR / subcarpeta / tmp_nombre
-    file_obj.save(str(tmp_destino))
-
-    if not PILLOW_OK:
-        # Casos sin Pillow: usar el archivo tal cual tras validación de cabecera.
-        return f"{subcarpeta}/{tmp_nombre}"
-
-    max_w, max_h = MAX_SIZES.get(subcarpeta, (1000, 1000))
-    try:
-        with Image.open(str(tmp_destino)) as img:
-            # Leer el modo ANTES de hacer ninguna conversión
-            tiene_alpha = img.mode in ("RGBA", "LA", "P")
-            img.thumbnail((max_w, max_h), Image.LANCZOS)
-
-            if ext_original == "png" and tiene_alpha:
-                # Preservar transparencia para logos y banners PNG
-                if img.mode == "P":
-                    img = img.convert("RGBA")
-                nombre_final = f"{stem}.png"
-                destino_final = IMAGES_DIR / subcarpeta / nombre_final
-                img.save(str(destino_final), "PNG", optimize=True)
-            else:
-                # Convertir todo lo demás a JPEG
-                img = img.convert("RGB")
-                nombre_final = f"{stem}.jpg"
-                destino_final = IMAGES_DIR / subcarpeta / nombre_final
-                img.save(str(destino_final), "JPEG", quality=85, optimize=True)
-
-        # Limpiar el archivo temporal si es diferente al final
-        if tmp_destino != destino_final and tmp_destino.exists():
-            tmp_destino.unlink(missing_ok=True)
-
-        return f"{subcarpeta}/{nombre_final}"
-
-    except Exception as e:
-        logger.warning("Pillow error al procesar imagen: %s", e, exc_info=True)
-        # Si Pillow falló, devolver el archivo original sin procesar
-        return f"{subcarpeta}/{tmp_nombre}"
 
 
 def admin_required_upload(f):
@@ -251,9 +175,9 @@ def subir_imagen_producto(producto_id):
 
     # Borrar imagen anterior si existe
     if producto.imagen_url and producto.imagen_url.startswith("productos/"):
-        _borrar_imagen(producto.imagen_url)
+        delete_image(producto.imagen_url)
 
-    ruta = _save_image(f, "productos")
+    ruta = save_image(f, "productos")
     producto.imagen_url = ruta
     db.session.commit()
 
@@ -297,9 +221,9 @@ def subir_imagen_categoria(cat_id):
         return jsonify({"ok": False, "error": error}), 400
 
     if cat.imagen_url and cat.imagen_url.startswith("categorias/"):
-        _borrar_imagen(cat.imagen_url)
+        delete_image(cat.imagen_url)
 
-    ruta = _save_image(f, "categorias", f"cat_{cat_id}.jpg")
+    ruta = save_image(f, "categorias", f"cat_{cat_id}.jpg")
     cat.imagen_url = ruta
     db.session.commit()
 
@@ -319,7 +243,7 @@ def subir_banner():
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
-    ruta = _save_image(f, "banners")
+    ruta = save_image(f, "banners")
     return jsonify({"ok": True, "ruta": ruta, "url": f"/uploads/{ruta}"})
 
 
@@ -396,7 +320,7 @@ def eliminar_imagen():
     if len(partes) != 2 or ".." in partes or partes[0] not in {*MAX_SIZES, "misc"}:
         return jsonify({"ok": False, "error": "Ruta no permitida"}), 400
 
-    ok = _borrar_imagen(ruta)
+    ok = delete_image(ruta)
     if ok:
         _limpiar_referencias_bd(ruta)
 
@@ -417,19 +341,5 @@ def _limpiar_referencias_bd(ruta: str):
         logger.warning("Error limpiando referencias BD para %s: %s", ruta, e, exc_info=True)
 
 
-def _borrar_imagen(ruta: str) -> bool:
-    try:
-        raw = (ruta or "").strip()
-        if not raw or raw.startswith(("http://", "https://")):
-            return False
-        base = IMAGES_DIR.resolve()
-        p = (base / raw.lstrip("/")).resolve()
-        if base not in p.parents:
-            logger.warning("Ruta de imagen fuera del directorio permitido: %s", ruta)
-            return False
-        if p.exists() and p.is_file():
-            p.unlink()
-            return True
-    except Exception:
-        logger.warning("No se pudo borrar imagen %s", ruta, exc_info=True)
-    return False
+# La lógica de save_image y delete_image vive ahora en image_service.py.
+# Se re-exponen arriba como aliases privados para preservar callers históricos.

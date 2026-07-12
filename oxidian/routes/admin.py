@@ -41,7 +41,7 @@ from services import (estado_cola, registrar_egreso, registrar_ingreso,
                       registrar_ingreso_pedido, procesar_notificaciones_pendientes,
                       registrar_evento_pedido, award_points_on_delivery)
 from services import reasignar_responsable_pedido
-from routes.uploads import _save_image, _borrar_imagen
+from image_service import save_image, delete_image
 from phone_utils import (
     normalizar_telefono_cliente,
     solo_digitos,
@@ -2268,7 +2268,7 @@ def _guardar_imagen_producto_desde_request(files):
     filename = f.filename.lower()
     if not filename.endswith((".jpg", ".jpeg", ".png", ".webp")):
         return None
-    return _save_image(f, "productos", f"prod_{uuid.uuid4().hex[:12]}.jpg")
+    return save_image(f, "productos", f"prod_{uuid.uuid4().hex[:12]}.jpg")
 
 
 def _validar_producto_componente_combo(combo_id, producto_id):
@@ -3032,7 +3032,7 @@ def editar_producto(producto_id):
     ruta_subida = _guardar_imagen_producto_desde_request(request.files)
     if ruta_subida:
         if p.imagen_url and p.imagen_url.startswith("productos/"):
-            _borrar_imagen(p.imagen_url)
+            delete_image(p.imagen_url)
         campos["imagen_url"] = ruta_subida
     elif not campos.get("imagen_url"):
         campos["imagen_url"] = p.imagen_url
@@ -3487,7 +3487,7 @@ def crear_categoria():
     img_file = request.files.get("imagen_archivo")
     img_url = _normalizar_imagen_url(request.form.get("imagen_url"))
     if img_file and getattr(img_file, "filename", None):
-        ruta = _save_image(img_file, "categorias", f"cat_{c.id}.jpg")
+        ruta = save_image(img_file, "categorias", f"cat_{c.id}.jpg")
         if ruta:
             c.imagen_url = ruta
     elif img_url:
@@ -3518,7 +3518,7 @@ def editar_categoria(cat_id):
     img_url = _normalizar_imagen_url(request.form.get("imagen_url"))
     img_file = request.files.get("imagen_archivo")
     if img_file and getattr(img_file, "filename", None):
-        ruta = _save_image(img_file, "categorias", f"cat_{cat.id}.jpg")
+        ruta = save_image(img_file, "categorias", f"cat_{cat.id}.jpg")
         if ruta:
             cat.imagen_url = ruta
     elif img_url:
@@ -4413,7 +4413,7 @@ def crear_menu_config():
     imagen_url = _normalizar_imagen_url(request.form.get("imagen_url"))
     img_file = request.files.get("imagen_archivo")
     if img_file and getattr(img_file, "filename", None):
-        ruta = _save_image(img_file, "banners", f"banner_{uuid.uuid4().hex[:10]}.jpg")
+        ruta = save_image(img_file, "banners", f"banner_{uuid.uuid4().hex[:10]}.jpg")
         if ruta:
             imagen_url = ruta
     titulo = request.form.get("titulo", "").strip()
@@ -4424,12 +4424,12 @@ def crear_menu_config():
     )
     if error:
         if img_file and imagen_url:
-            _borrar_imagen(imagen_url)
+            delete_image(imagen_url)
         flash(error, "danger")
         return redirect(url_for("admin.menu_config"))
     if enlace_url and not enlace_url.startswith(("/", "http://", "https://", "#")):
         if img_file and imagen_url:
-            _borrar_imagen(imagen_url)
+            delete_image(imagen_url)
         flash("El enlace debe ser una ruta interna, ancla o URL http(s).", "danger")
         return redirect(url_for("admin.menu_config"))
     item = MenuConfig(
@@ -4451,7 +4451,7 @@ def crear_menu_config():
     except Exception as exc:
         db.session.rollback()
         if img_file and imagen_url:
-            _borrar_imagen(imagen_url)
+            delete_image(imagen_url)
         flash(f"Error al crear item: {exc}", "danger")
     return redirect(url_for("admin.menu_config"))
 
@@ -4481,7 +4481,7 @@ def editar_menu_config(item_id):
     imagen_anterior = item.imagen_url
     imagen_nueva = item.imagen_url
     if img_file and getattr(img_file, "filename", None):
-        ruta = _save_image(img_file, "banners", f"banner_{uuid.uuid4().hex[:10]}.jpg")
+        ruta = save_image(img_file, "banners", f"banner_{uuid.uuid4().hex[:10]}.jpg")
         if ruta:
             imagen_nueva = ruta
     elif img_url:
@@ -4493,7 +4493,7 @@ def editar_menu_config(item_id):
     )
     if error:
         if imagen_nueva and imagen_nueva != imagen_anterior:
-            _borrar_imagen(imagen_nueva)
+            delete_image(imagen_nueva)
         flash(error, "danger")
         return redirect(url_for("admin.menu_config"))
     item.tipo = campos_tipo["tipo"]
@@ -4508,12 +4508,12 @@ def editar_menu_config(item_id):
     try:
         db.session.commit()
         if imagen_anterior and imagen_anterior != imagen_nueva:
-            _borrar_imagen(imagen_anterior)
+            delete_image(imagen_anterior)
         flash("Banner actualizado.", "success")
     except Exception as exc:
         db.session.rollback()
         if imagen_nueva and imagen_nueva != imagen_anterior:
-            _borrar_imagen(imagen_nueva)
+            delete_image(imagen_nueva)
         flash(f"Error al actualizar banner: {exc}", "danger")
     return redirect(url_for("admin.menu_config"))
 
@@ -4543,7 +4543,7 @@ def eliminar_menu_config(item_id):
     try:
         db.session.commit()
         if imagen_url:
-            _borrar_imagen(imagen_url)
+            delete_image(imagen_url)
         flash("Item eliminado.", "warning")
     except Exception as exc:
         db.session.rollback()
