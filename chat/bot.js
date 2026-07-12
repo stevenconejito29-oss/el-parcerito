@@ -6,7 +6,8 @@ const path     = require('path');
 const fs       = require('fs');
 const crypto   = require('crypto');
 const Database = require('better-sqlite3');
-const texts    = require('./texts');
+const texts     = require('./texts');
+const evolution = require('./evolution');
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const EVO_URL        = (process.env.EVOLUTION_API_URL  || 'http://localhost:8080').replace(/\/$/, '');
@@ -107,42 +108,10 @@ function normalizePhone(value) {
   return digits;
 }
 
-function asQrDataUrl(value) {
-  if (!value || typeof value !== 'string') return null;
-  const raw = value.trim();
-  if (!raw) return null;
-  if (raw.startsWith('data:image/')) return raw;
-  if (raw.length > 200 && /^[A-Za-z0-9+/=\r\n]+$/.test(raw)) {
-    return `data:image/png;base64,${raw.replace(/\s+/g, '')}`;
-  }
-  return null;
-}
-
-function extractQrDataUrl(payload) {
-  const candidates = [
-    payload?.qrcode,
-    payload?.qrCode,
-    payload?.qr,
-    payload?.base64,
-    payload?.code,
-    payload?.data?.qrcode,
-    payload?.data?.qrCode,
-    payload?.data?.qr,
-    payload?.data?.base64,
-    payload?.data?.code,
-    payload?.qrcode?.base64,
-    payload?.qrcode?.code,
-    payload?.data?.qrcode?.base64,
-    payload?.data?.qrcode?.code,
-    payload?.data?.qrCode?.base64,
-    payload?.data?.qrCode?.code,
-  ];
-  for (const candidate of candidates) {
-    const dataUrl = asQrDataUrl(candidate);
-    if (dataUrl) return dataUrl;
-  }
-  return null;
-}
+// La lógica de parsing de QR vive en chat/evolution.js. Se reexportan como
+// nombres locales para preservar callsites internos y exports históricos.
+const asQrDataUrl = evolution.asQrDataUrl;
+const extractQrDataUrl = evolution.extractQrDataUrl;
 
 async function refreshEvolutionQr() {
   const evolutionKey = getEvolutionKey();
@@ -2500,36 +2469,10 @@ function resetSesion(jid, nombre = null, role = null) {
 }
 
 // ─── HELPERS DE TEXTO ─────────────────────────────────────────────────────────
-function extractText(msg) {
-  const text = (
-    msg.message?.conversation ||
-    msg.message?.extendedTextMessage?.text ||
-    msg.message?.imageMessage?.caption ||
-    msg.message?.videoMessage?.caption ||
-    msg.message?.documentMessage?.caption ||
-    ''
-  ).trim();
-  if (text) return text;
-
-  const media = [
-    ['audio', msg.message?.audioMessage],
-    ['imagen', msg.message?.imageMessage],
-    ['video', msg.message?.videoMessage],
-    ['documento', msg.message?.documentMessage],
-    ['sticker', msg.message?.stickerMessage],
-    ['contacto', msg.message?.contactMessage],
-    ['ubicacion', msg.message?.locationMessage],
-  ].find(([, value]) => value);
-  if (!media) return '';
-
-  const [type, value] = media;
-  const details = [
-    value.fileName,
-    value.mimetype,
-    value.seconds ? `${value.seconds}s` : '',
-  ].filter(Boolean).join(' · ');
-  return `[Adjunto recibido: ${type}${details ? ` · ${details}` : ''}]`;
-}
+// La extracción de texto legible de un mensaje Evolution/Baileys vive en
+// chat/evolution.js. Se reexporta como nombre local para preservar
+// callsites internos y el export histórico (usado por tests y bot API).
+const extractText = evolution.extractText;
 
 function formatPrecio(n) { return `€${parseFloat(n).toFixed(2)}`; }
 
@@ -6239,32 +6182,26 @@ async function handleEvolutionEvent(payload, messageHandler = handleMessage) {
   // Evolution API puede enviar varios eventos
   const event = payload.event;
 
-  if (event === 'messages.upsert') {
-    const msgs = Array.isArray(payload.data?.messages)
-      ? payload.data.messages
-      : [payload.data];
-
-    for (const msg of msgs) {
-      if (!msg || msg.key?.fromMe) continue;                     // ignorar propios
-      const jid  = msg.key?.remoteJid;
-      if (!jid || jid.endsWith('@g.us')) continue;               // ignorar grupos
+  if (event === evolution.EVENT_MESSAGE_UPSERT) {
+    for (const msg of evolution.getMessagesFromPayload(payload)) {
+      const meta = evolution.getMessageMeta(msg);
+      if (meta.isFromMe) continue;             // ignorar propios (echo)
+      if (!meta.jid || meta.isGroup) continue; // ignorar grupos
 
       const text = extractText(msg);
       if (!text) continue;
       if (text.length > MAX_MESSAGE_CHARS) {
-        log('warn', 'message_too_long_skip', `${jid} chars=${text.length}`);
+        log('warn', 'message_too_long_skip', `${meta.jid} chars=${text.length}`);
         continue;
       }
 
-      const name = msg.pushName || msg.key?.participant || '';
-      log('info', 'message_in', `${jid} → ${text.slice(0, 50)}`);
-
-      await messageHandler(jid, text, name);
+      log('info', 'message_in', `${meta.jid} → ${text.slice(0, 50)}`);
+      await messageHandler(meta.jid, text, meta.senderName);
     }
   }
 
   // Evento de conexión
-  if (event === 'connection.update') {
+  if (event === evolution.EVENT_CONNECTION_UPDATE) {
     const state = payload.data?.state;
     log('info', 'connection', state || 'unknown');
     const qr = extractQrDataUrl(payload);
@@ -6276,7 +6213,7 @@ async function handleEvolutionEvent(payload, messageHandler = handleMessage) {
     if (state === 'open') log('info', 'wa_connected', 'WhatsApp listo');
   }
 
-  if (event === 'qrcode.updated') {
+  if (event === evolution.EVENT_QRCODE_UPDATED) {
     const qr = extractQrDataUrl(payload);
     if (qr) {
       lastQrDataUrl = qr;
@@ -6288,8 +6225,8 @@ async function handleEvolutionEvent(payload, messageHandler = handleMessage) {
 
 let drainingInbound = false;
 function persistInboundMessages(payload) {
-  if (payload?.event !== 'messages.upsert') return 0;
-  const msgs = Array.isArray(payload.data?.messages) ? payload.data.messages : [payload.data];
+  const msgs = evolution.getMessagesFromPayload(payload);
+  if (!msgs.length) return 0;
   const insert = db.prepare(`
     INSERT OR IGNORE INTO inbound_messages (message_id, payload_json)
     VALUES (?, ?)
@@ -6298,12 +6235,16 @@ function persistInboundMessages(payload) {
     let changes = 0;
     for (const msg of batch) {
       if (!msg) continue;
+      const meta = evolution.getMessageMeta(msg);
+      // Fallback a hash del contenido cuando el mensaje no trae ID —
+      // Evolution puede omitirlo en eventos anómalos y no queremos que
+      // el INSERT OR IGNORE quede sin PK.
       const messageId = String(
-        msg.key?.id
+        meta.messageId
         || crypto.createHash('sha256').update(JSON.stringify(msg)).digest('hex')
       );
       changes += insert.run(messageId, JSON.stringify({
-        event: 'messages.upsert',
+        event: evolution.EVENT_MESSAGE_UPSERT,
         data: msg,
       })).changes;
     }
