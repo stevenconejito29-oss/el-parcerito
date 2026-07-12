@@ -42,7 +42,12 @@ from services import (estado_cola, registrar_egreso, registrar_ingreso,
                       registrar_evento_pedido, award_points_on_delivery)
 from services import reasignar_responsable_pedido
 from routes.uploads import _save_image, _borrar_imagen
-from phone_utils import normalizar_telefono_cliente, telefono_local_ambiguo, telefono_valido
+from phone_utils import (
+    normalizar_telefono_cliente,
+    solo_digitos,
+    telefono_local_ambiguo,
+    telefono_valido,
+)
 from store_config import get_store_features
 
 admin_bp = Blueprint("admin", __name__)
@@ -246,7 +251,7 @@ def _validar_telefono_bar_unico(telefono, excluir_id=None):
 
     if not telefono:
         return
-    digits = "".join(c for c in str(telefono) if c.isdigit())
+    digits = solo_digitos(telefono)
     if not digits:
         return
     candidatos = _Prov.query.filter(
@@ -256,8 +261,7 @@ def _validar_telefono_bar_unico(telefono, excluir_id=None):
     for bar in candidatos:
         if excluir_id is not None and bar.id == excluir_id:
             continue
-        bar_digits = "".join(c for c in (bar.telefono or "") if c.isdigit())
-        if bar_digits == digits:
+        if solo_digitos(bar.telefono) == digits:
             raise ValueError(
                 f"El teléfono ya está asignado al bar «{bar.nombre}». "
                 "Los teléfonos operadores deben ser únicos entre bares activos."

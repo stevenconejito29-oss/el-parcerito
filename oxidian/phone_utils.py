@@ -35,6 +35,18 @@ def telefono_valido(value: str | None) -> bool:
     return 8 <= len(canonical) <= 20
 
 
+def solo_digitos(value: str | None) -> str:
+    """Extrae únicamente los dígitos del teléfono, sin normalizar prefijos.
+
+    Usado para comparación entre números en formatos distintos
+    (``+34633096706`` == ``34633096706`` == ``633096706 con +34 configurado``).
+    Para persistencia canónica usar :func:`normalizar_telefono_cliente`.
+    """
+    if not value:
+        return ""
+    return "".join(c for c in str(value) if c.isdigit())
+
+
 def telefono_local_ambiguo(value: str | None, country_code: str | None = None) -> bool:
     """Indica si un teléfono local no puede normalizarse sin prefijo de país."""
     raw = str(value or "").strip()

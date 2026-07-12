@@ -21,6 +21,7 @@ from models import (User, Product, Categoria, Order, OrderItem, OrderProviderSta
                     ProveedorProducto,
                     Coupon, ComboItem,
                     AffiliateCode, ZonaEntrega,
+                    ESTADOS_ACTIVOS, ESTADOS_EN_PREPARACION, ESTADOS_EN_REPARTO,
                     PointsLog, SiteConfig, IdempotencyKey, normalizar_metodo_pago,
                     BotAiUsage, BotAiMessage, AdminFeature,
                     PriceHistory, metadata_componente_combo,
@@ -35,7 +36,11 @@ from services import (distribuir_pedido, registrar_uso_afiliado,
                       encolar_notificaciones_proveedores_pedido)
 from pricing_service import calcular_precio
 from loyalty_service import aplicar_canje_en_pedido, bloquear_cliente_puntos, solicitar_codigo
-from phone_utils import normalizar_telefono_cliente, telefono_valido
+from phone_utils import (
+    normalizar_telefono_cliente,
+    solo_digitos,
+    telefono_valido,
+)
 from store_config import (
     get_public_store_url,
     get_service_commission,
@@ -903,7 +908,7 @@ def _pedido_bot_payload(pedido):
         "codigo_confirmacion": (
             pedido.codigo_confirmacion
             if (pedido.codigo_confirmacion
-                and pedido.estado in ("listo", "en_ruta")
+                and pedido.estado in ESTADOS_EN_REPARTO
                 and not getattr(pedido, "codigo_confirmacion_expirado", False))
             else None
         ),
@@ -1728,15 +1733,6 @@ def crear_pedido():
 
 # ─── ESTADO PEDIDO ───────────────────────────
 
-def _normalizar_tel_match(telefono_raw):
-    """Devuelve dos formas comparables: dígitos puros y +prefijo+dígitos."""
-    if not telefono_raw:
-        return "", ""
-    raw = str(telefono_raw).strip()
-    digits = "".join(c for c in raw if c.isdigit())
-    plus = "+" + digits if digits else ""
-    return digits, plus
-
 
 def _operador_bar_por_telefono(telefono_raw):
     """Localiza el bar activo cuyo teléfono operador coincide con `telefono_raw`.
@@ -1754,7 +1750,7 @@ def _operador_bar_por_telefono(telefono_raw):
     modo = (SiteConfig.get("MODO_TIENDA", "propia") or "propia").strip().lower()
     if modo != "bar_servicio":
         return None, None
-    digits, _ = _normalizar_tel_match(telefono_raw)
+    digits = solo_digitos(telefono_raw)
     if not digits:
         return None, None
     # Lista pequeña (bares activos); comparación en Python evita depender de
@@ -1763,11 +1759,7 @@ def _operador_bar_por_telefono(telefono_raw):
         Proveedor.activo.is_(True),
         Proveedor.telefono.isnot(None),
     ).all()
-    coincidencias = []
-    for bar in candidatos:
-        bar_digits, _ = _normalizar_tel_match(bar.telefono)
-        if bar_digits and bar_digits == digits:
-            coincidencias.append(bar)
+    coincidencias = [bar for bar in candidatos if solo_digitos(bar.telefono) == digits]
     if len(coincidencias) > 1:
         # Estado inconsistente: dos bares activos comparten el mismo teléfono
         # operador. Cualquier decisión aquí es arbitraria y puede autorizar
@@ -1783,7 +1775,8 @@ def _operador_bar_por_telefono(telefono_raw):
     return None, None
 
 
-ESTADOS_PEDIDO_ACTIVO_HANDOFF = ("pendiente", "armando", "listo", "en_ruta")
+# Alias local por compat semántica con el handoff a agente humano.
+ESTADOS_PEDIDO_ACTIVO_HANDOFF = ESTADOS_ACTIVOS
 
 
 def _telefonos_usuarios_handoff(query):
@@ -2065,7 +2058,7 @@ def bar_marcar_preparado(pedido_id):
         return jsonify({"ok": False, "error": "Pedido no encontrado"}), 404
     if pedido.estado == "cancelado":
         return jsonify({"ok": False, "error": "El pedido fue cancelado"}), 409
-    if pedido.estado not in ("pendiente", "armando", "listo"):
+    if pedido.estado not in ESTADOS_EN_PREPARACION + ("listo",):
         return jsonify({"ok": False, "error": "El pedido ya está cerrado"}), 409
     estado = OrderProviderStatus.query.filter_by(
         pedido_id=pedido.id, proveedor_id=bar.id
@@ -2095,7 +2088,7 @@ def bar_marcar_preparado(pedido_id):
     repartidor_asignado = None
     if (not pedido.proveedores_pendientes
             and es_pedido_solo_bar(pedido)
-            and pedido.estado in ("pendiente", "armando")):
+            and pedido.estado in ESTADOS_EN_PREPARACION):
         pedido.estado = "listo"
         try:
             repartidor_asignado = distribuir_repartidor(pedido)
@@ -3556,7 +3549,7 @@ def bot_admin_resumen_hoy():
                                    Order.creado_en <= fin,
                                    Order.estado != "cancelado").scalar() or 0)
         activos = Order.query.filter(
-            Order.estado.in_(["pendiente", "armando", "listo", "en_ruta"])
+            Order.estado.in_(ESTADOS_ACTIVOS)
         ).count()
         # Productos sin stock visible (solo los que gestionan stock en web)
         sin_stock = Product.query.filter(
@@ -3676,7 +3669,7 @@ def bot_admin_salud():
             db.func.date(Order.creado_en) == date.today()
         ).count()
         pedidos_pend = Order.query.filter(
-            Order.estado.in_(("pendiente", "armando"))
+            Order.estado.in_(ESTADOS_EN_PREPARACION)
         ).count()
         clientes = User.query.filter_by(rol="cliente", activo=True).count()
         db_ok = True
@@ -3704,7 +3697,7 @@ def bot_admin_pedidos_pendientes():
     al admin desde el bot. Ordenados por más antiguo primero."""
     if not _bot_admin_request_allowed("store"):
         return _bot_actor_forbidden()
-    estados_activos = ("pendiente", "armando", "listo", "en_ruta")
+    estados_activos = ESTADOS_ACTIVOS
     pedidos = Order.query.filter(Order.estado.in_(estados_activos)) \
         .order_by(Order.creado_en.asc()).limit(30).all()
     ESTADO_LABEL = {
@@ -3749,7 +3742,7 @@ def bot_admin_pedidos_riesgo():
             Order.creado_en <= now - timedelta(minutes=armando_min),
         ).order_by(Order.creado_en.asc()).limit(8).all()
         sin_preparador = Order.query.filter(
-            Order.estado.in_(["pendiente", "armando"]),
+            Order.estado.in_(ESTADOS_EN_PREPARACION),
             Order.preparador_id.is_(None),
         ).order_by(Order.creado_en.asc()).limit(8).all()
         sin_repartidor = Order.query.filter(
@@ -4271,7 +4264,7 @@ def bot_diagnostico():
     from datetime import datetime as _dt
     hace_30min = _utcnow() - timedelta(minutes=30)
     atascados = Order.query.filter(
-        Order.estado.in_(("pendiente", "armando")),
+        Order.estado.in_(ESTADOS_EN_PREPARACION),
         Order.creado_en < hace_30min,
     ).count()
 

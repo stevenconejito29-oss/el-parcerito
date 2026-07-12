@@ -2098,6 +2098,14 @@ class Stock(db.Model):
 
 ESTADOS_PEDIDO = ["pendiente", "armando", "listo", "en_ruta", "entregado", "cancelado"]
 
+# Agrupaciones operativas del estado de un pedido. Fuente única de verdad —
+# rutas y servicios importan estas constantes en vez de duplicar literales en
+# cada `Order.estado.in_(...)`. Son tuplas para señalar inmutabilidad.
+ESTADOS_EN_PREPARACION = ("pendiente", "armando")
+ESTADOS_EN_REPARTO = ("listo", "en_ruta")
+ESTADOS_ACTIVOS = ESTADOS_EN_PREPARACION + ESTADOS_EN_REPARTO
+ESTADOS_TERMINALES = ("entregado", "cancelado")
+
 
 class Order(db.Model):
     __tablename__ = "orders"

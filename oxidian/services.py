@@ -14,7 +14,17 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from sqlalchemy import and_, or_, case
 from extensions import db
-from models import User, Order, Caja, StaffPayment, OrderEvent, NotificationOutbox
+from models import (
+    Caja,
+    ESTADOS_ACTIVOS,
+    ESTADOS_EN_PREPARACION,
+    ESTADOS_EN_REPARTO,
+    NotificationOutbox,
+    Order,
+    OrderEvent,
+    StaffPayment,
+    User,
+)
 from store_config import get_store_features
 
 logger = logging.getLogger(__name__)
@@ -895,7 +905,7 @@ def carga_actual_preparadores(user_ids: list[int]) -> dict[int, int]:
         db.session.query(Order.preparador_id, func.count(Order.id))
         .filter(
             Order.preparador_id.in_(user_ids),
-            Order.estado.in_(("pendiente", "armando")),
+            Order.estado.in_(ESTADOS_EN_PREPARACION),
         )
         .group_by(Order.preparador_id)
         .all()
@@ -913,7 +923,7 @@ def carga_actual_repartidores(user_ids: list[int]) -> dict[int, int]:
         db.session.query(Order.repartidor_id, func.count(Order.id))
         .filter(
             Order.repartidor_id.in_(user_ids),
-            Order.estado.in_(("listo", "en_ruta")),
+            Order.estado.in_(ESTADOS_EN_REPARTO),
             Order.tipo_entrega_cliente == "delivery",
         )
         .group_by(Order.repartidor_id)
@@ -962,7 +972,7 @@ def rebalancear_pedidos_huerfanos() -> dict:
     pedidos_prep = (
         Order.query
         .filter(
-            Order.estado.in_(("pendiente", "armando")),
+            Order.estado.in_(ESTADOS_EN_PREPARACION),
             Order.preparador_id.isnot(None),
         )
         .join(User, Order.preparador_id == User.id)
@@ -992,7 +1002,7 @@ def rebalancear_pedidos_huerfanos() -> dict:
     pedidos_rep = (
         Order.query
         .filter(
-            Order.estado.in_(("listo", "en_ruta")),
+            Order.estado.in_(ESTADOS_EN_REPARTO),
             Order.repartidor_id.isnot(None),
             Order.tipo_entrega_cliente == "delivery",
         )
@@ -1231,7 +1241,7 @@ def estado_cola() -> dict:
         for row in db.session.query(
             _Order.preparador_id, func.count(_Order.id).label("n")
         ).filter(
-            _Order.estado.in_(["pendiente", "armando"]),
+            _Order.estado.in_(ESTADOS_EN_PREPARACION),
             _Order.preparador_id.isnot(None),
         ).group_by(_Order.preparador_id).all()
     }
@@ -1241,7 +1251,7 @@ def estado_cola() -> dict:
         for row in db.session.query(
             _Order.repartidor_id, func.count(_Order.id).label("n")
         ).filter(
-            _Order.estado.in_(["listo", "en_ruta"]),
+            _Order.estado.in_(ESTADOS_EN_REPARTO),
             _Order.repartidor_id.isnot(None),
         ).group_by(_Order.repartidor_id).all()
     }
