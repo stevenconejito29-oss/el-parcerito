@@ -1463,6 +1463,11 @@ def guardar_config():
                        detalle=f"{clave}={valor_auditado}", ip=request.remote_addr)
     try:
         db.session.commit()
+        # Notifica al bot para que resincronice si la clave es sensible.
+        # Sin este push, cambios como MODO_TIENDA o FEATURE_DELIVERY tardan
+        # hasta 10 minutos en propagarse al cliente WhatsApp.
+        from services import refrescar_bot_si_claves_relevantes
+        refrescar_bot_si_claves_relevantes([clave])
         flash(f"Configuración '{clave}' guardada.", "success")
     except Exception as exc:
         db.session.rollback()
@@ -1559,6 +1564,9 @@ def guardar_config_seccion():
             ip=request.remote_addr,
         )
         db.session.commit()
+        # Push al bot si alguna clave modificada exige refresh inmediato.
+        from services import refrescar_bot_si_claves_relevantes
+        refrescar_bot_si_claves_relevantes(clave for clave, _ in cambios)
         nombres = ", ".join(clave for clave, _ in cambios)
         flash(f"Tarjeta guardada ({len(cambios)}): {nombres}.", "success")
     except Exception as exc:

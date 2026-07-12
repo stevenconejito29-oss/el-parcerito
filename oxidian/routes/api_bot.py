@@ -4279,6 +4279,8 @@ def bot_config_set():
                            detalle=f"{clave}={valor[:80]}",
                            ip=request.remote_addr)
         db.session.commit()
+        from services import refrescar_bot_si_claves_relevantes
+        refrescar_bot_si_claves_relevantes([clave])
         return jsonify({"ok": True, "clave": clave, "valor": valor})
     except Exception as exc:
         db.session.rollback()

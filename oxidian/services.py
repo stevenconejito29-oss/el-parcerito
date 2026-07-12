@@ -1728,6 +1728,31 @@ def notificar_bot_sync():
     threading.Thread(target=_fire, daemon=True).start()
 
 
+def refrescar_bot_si_claves_relevantes(claves) -> bool:
+    """Dispara `notificar_bot_sync` solo si alguna de `claves` es sensible
+    para el bot (según `store_config.CLAVES_QUE_REFRESCAN_BOT`).
+
+    Es la puerta única que las rutas admin llaman tras guardar SiteConfig
+    para forzar refresco inmediato del cliente Node — sin este helper el
+    bot no ve el cambio hasta el próximo ciclo pasivo de 10 minutos, lo
+    que genera confusión cuando un operador cambia el modo tienda o un
+    feature flag desde el panel.
+
+    Devuelve True si se disparó el sync, False si ninguna clave era
+    relevante o si la clave era `None`. Best-effort — nunca lanza.
+    """
+    from store_config import alguna_clave_refresca_bot
+
+    try:
+        if not alguna_clave_refresca_bot(claves):
+            return False
+        notificar_bot_sync()
+        return True
+    except Exception:
+        logger.exception("refrescar_bot_si_claves_relevantes fallo — claves=%s", list(claves or ()))
+        return False
+
+
 def buscar_cliente_por_telefono(raw):
     """Localiza al usuario que compra bajo este teléfono.
 

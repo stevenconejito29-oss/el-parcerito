@@ -351,3 +351,39 @@ def user_puede_modificar_clave(user, clave):
     if getattr(user, "rol", None) == "super_admin":
         return True
     return clave not in LOCKED_CONFIG_KEYS
+
+
+# ─── Claves que exigen refrescar el bot de WhatsApp ────────────────────
+# Cuando un admin cambia CUALQUIERA de estas claves, el bot Node debe
+# resincronizar su caché local (branding, feature flags, textos) para
+# reflejar el cambio inmediatamente en la conversación con clientes en
+# curso. El resto de claves (colores UI, defaults técnicos, etc) se
+# refrescan pasivamente en el ciclo de 10 min — no hace falta pushear.
+#
+# Ampliar aquí cuando se detecte que otra clave requiere latencia < 10min.
+CLAVES_QUE_REFRESCAN_BOT = frozenset({
+    # Modo comercial → determina qué comandos del bar se exponen.
+    "MODO_TIENDA",
+    # Rubro / etiqueta del catálogo → cambia "Menú" ↔ "Catálogo" en menús.
+    "TIPO_TIENDA", "VERTICAL_LABEL",
+    # Identidad visible al cliente en cada saludo.
+    "NOMBRE_NEGOCIO", "TELEFONO_NEGOCIO", "TIENDA_URL", "OXIDIAN_PUBLIC_URL",
+    # Toggles de features → controlan qué opciones muestra el menú (3/4).
+    "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
+    "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
+    # Horario y forzado de cierre → el bot debe reflejarlos al instante
+    # para no aceptar pedidos fuera de ventana.
+    "HORARIO_APERTURA", "HORARIO_CIERRE",
+    "TIENDA_FORZAR_CERRADA", "MENSAJE_CIERRE",
+    # Números administrativos y IA → cambios raros pero críticos.
+    "BOT_ADMIN_NUMBERS",
+    "BOT_AI_ENABLED", "BOT_AI_PROVIDER", "BOT_AI_MODEL", "BOT_AI_RULES",
+})
+
+
+def alguna_clave_refresca_bot(claves) -> bool:
+    """True si al menos una clave de la iterable dispara refresh del bot."""
+    for c in claves or ():
+        if c in CLAVES_QUE_REFRESCAN_BOT:
+            return True
+    return False
