@@ -118,6 +118,18 @@ DEFAULTS: dict[str, dict] = {
             "bici bajar."
         ),
     },
+
+    # ── Inventario / lotes ────────────────────────────────────────────
+    # Consumida por rutas admin al crear entradas de Stock cuando el form
+    # no incluye un valor explícito. Cap defensivo interno 1-90.
+    "STOCK_ALERTA_DIAS_DEFAULT": {
+        "default": "7",
+        "type": "int",
+        "desc": (
+            "Días de anticipación por defecto para alertar próximo vencimiento "
+            "de lotes de Stock. Cada lote puede sobrescribirlo en su ficha."
+        ),
+    },
 }
 
 
