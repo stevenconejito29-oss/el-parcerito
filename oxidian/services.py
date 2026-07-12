@@ -8,6 +8,9 @@ Lógica de negocio central:
 import math
 import os
 import time
+import threading
+import urllib.error
+import urllib.request
 import logging
 import json
 from datetime import datetime, timedelta, timezone
@@ -1444,6 +1447,59 @@ def pagos_pendientes_staff():
 # ─────────────────────────────────────────────
 # AFILIADOS
 # ─────────────────────────────────────────────
+
+def notificar_bot_sync():
+    """Dispara una petición asíncrona al bot para que resincronice catálogo.
+
+    Best-effort — silencioso si el bot no está accesible. Corre en un hilo
+    daemon para no bloquear la respuesta al cliente HTTP. La clave se lee
+    de SiteConfig con fallback a env por bootstrap.
+    """
+    from models import SiteConfig as _SC
+
+    bot_url = _SC.get("BOT_API_URL", os.environ.get("BOT_API_URL", "http://127.0.0.1:3000"))
+    panel_key = _SC.get("BOT_PANEL_KEY", "") or _SC.get("BOT_API_KEY", "")
+    if not bot_url or not panel_key:
+        return
+
+    def _fire():
+        try:
+            req = urllib.request.Request(
+                f"{bot_url.rstrip('/')}/api/oxidian/sync",
+                method="POST",
+                headers={"Content-Type": "application/json", "X-Panel-Key": panel_key},
+                data=b"{}",
+            )
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            logger.warning("Bot no disponible para sincronizacion en %s: %s", bot_url, exc)
+        except Exception:
+            logger.exception("Error inesperado notificando sync al bot")
+
+    threading.Thread(target=_fire, daemon=True).start()
+
+
+def buscar_cliente_por_telefono(raw):
+    """Localiza al usuario que compra bajo este teléfono.
+
+    Prioriza rol='cliente' para no confundir con cuentas operativas, pero
+    cae al match sin filtro de rol si no existe cliente puro. Necesario
+    porque el UNIQUE es global sobre ``telefono_normalizado`` y un
+    operador que a la vez compra debe recuperar puntos y checkout con la
+    misma cuenta.
+
+    Devuelve ``(cliente_or_none, telefono_normalizado)``.
+    """
+    from phone_utils import normalizar_telefono_cliente, telefono_valido
+
+    telefono = normalizar_telefono_cliente(raw)
+    if not telefono_valido(telefono):
+        return None, telefono
+    q = User.query.filter_by(telefono_normalizado=telefono)
+    cliente = q.filter_by(rol="cliente").first() or q.first()
+    return cliente, telefono
+
 
 def registrar_uso_afiliado(codigo, pedido, cliente, descuento_aplicado):
     """Registra el uso de un código de afiliado y genera StaffPayment si corresponde."""

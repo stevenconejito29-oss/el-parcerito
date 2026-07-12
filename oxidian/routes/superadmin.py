@@ -1394,42 +1394,13 @@ def database_upload():
 
 
 # ─── CONFIGURACIÓN DEL SISTEMA ───────────────
+# LOCKED_CONFIG_KEYS y user_puede_modificar_clave viven en store_config.py.
+# Este re-export preserva el punto de entrada histórico para que rutas y
+# templates que ya lo importaban desde superadmin.* sigan funcionando.
+from store_config import LOCKED_CONFIG_KEYS, user_puede_modificar_clave  # noqa: E402,F401
 
-# Claves "soberanas": SOLO super_admin puede cambiarlas, incluso si el admin
-# tiene acceso a la pantalla /superadmin/config. Definen el modelo comercial,
-# comisiones, features del producto (delivery/recogida/puntos/programados),
-# integraciones y bot. El admin operativo NUNCA puede tocarlas.
-#
-# Filosofía: en modo servicio el admin gestiona SU tienda (marca, contacto,
-# horarios, pagos, zonas, textos, imágenes) pero jamás puede quitarle el
-# control al super_admin sobre lo estratégico.
-LOCKED_CONFIG_KEYS = frozenset({
-    # Modo comercial y comisiones
-    "MODO_TIENDA",
-    "SERVICE_COMMISSION_PCT",
-    # Toggles de features del producto (super_admin decide qué contrata)
-    "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
-    "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
-    # Integraciones y bot (super_admin gestiona el WhatsApp central)
-    "BOT_API_URL", "BOT_OXIDIAN_URL", "BOT_API_KEY", "BOT_PANEL_KEY",
-    "BOT_ADMIN_NUMBERS", "BOT_AI_ENABLED", "BOT_AI_API_KEY",
-    "BOT_AI_PROVIDER", "BOT_AI_MODEL", "BOT_AI_RULES",
-    "BOT_AI_DAILY_CLIENT", "BOT_AI_DAILY_GLOBAL",
-    "BOT_EMAIL_DOMAIN",
-    "EVOLUTION_API_URL", "EVOLUTION_INSTANCE",
-    # Sistema
-    "OXIDIAN_PUBLIC_URL", "TIENDA_URL", "ALLOW_DEMO_RESET",
-    # Reset masivo de puntos (afecta a todos los clientes)
-    "POINTS_RESET_PERIOD_DAYS", "POINTS_LAST_RESET_AT",
-})
-
-
-def _user_puede_modificar_clave(user, clave):
-    """El super_admin puede tocar cualquier clave. El admin no puede tocar
-    las LOCKED_CONFIG_KEYS. Fuente única de la verdad para la UI y el save."""
-    if getattr(user, "rol", None) == "super_admin":
-        return True
-    return clave not in LOCKED_CONFIG_KEYS
+# Alias privado para preservar la firma histórica interna de este módulo.
+_user_puede_modificar_clave = user_puede_modificar_clave
 
 
 @superadmin_bp.route("/config")
