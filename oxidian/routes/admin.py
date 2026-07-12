@@ -603,6 +603,7 @@ def pedidos():
     estado = request.args.get("estado")
     origen = request.args.get("origen")
     epicentro = request.args.get("epicentro")
+    confirmacion = (request.args.get("confirmacion") or "").strip().lower()
     pedido_id = request.args.get("id", type=int)
     cliente_q = (request.args.get("cliente") or "").strip()
     desde_raw = (request.args.get("desde") or "").strip()
@@ -611,6 +612,8 @@ def pedidos():
         estado = None
     if origen and origen not in _ORIGENES_PEDIDO_VALIDOS:
         origen = None
+    if confirmacion not in ("", "pending", "confirmed"):
+        confirmacion = ""
     query = Order.query.order_by(Order.creado_en.desc())
     if pedido_id:
         query = query.filter_by(id=pedido_id)
@@ -622,6 +625,8 @@ def pedidos():
         query = query.filter_by(es_entrega_epicentro=True)
     elif epicentro == "0":
         query = query.filter_by(es_entrega_epicentro=False)
+    if confirmacion:
+        query = query.filter(Order.confirmacion_estado == confirmacion)
     # Búsqueda por cliente (nombre parcial o teléfono normalizado)
     if cliente_q:
         like = f"%{cliente_q}%"

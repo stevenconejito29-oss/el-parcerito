@@ -4,6 +4,7 @@
 
 {% set activos = pedidos|rejectattr('estado','in',['entregado','cancelado'])|list %}
 {% set pendientes_pago = pedidos|selectattr('metodo_pago','equalto','bizum')|rejectattr('pago_confirmado')|rejectattr('estado','in',['entregado','cancelado'])|list %}
+{% set sin_verificar = pedidos|selectattr('confirmacion_estado','equalto','pending')|rejectattr('estado','in',['entregado','cancelado'])|list %}
 
 <div class="work-area admin-orders-board">
 <section class="work-hero">
@@ -21,13 +22,18 @@
   <div class="work-panel work-kpi"><span>Mostrados</span><strong>{{ pedidos|length }}</strong><small>Según filtros</small></div>
   <div class="work-panel work-kpi"><span>Activos</span><strong style="color:var(--work-info)">{{ activos|length }}</strong><small>Requieren seguimiento</small></div>
   <div class="work-panel work-kpi"><span>Bizum por cobrar</span><strong>{{ pendientes_pago|length }}</strong><small>No bloquea preparación</small></div>
+  <a href="{{ url_for('admin.pedidos', confirmacion='pending') }}" class="work-panel work-kpi" style="text-decoration:none;color:inherit" title="Filtrar por pedidos sin verificar">
+    <span>Sin verificar</span>
+    <strong style="color:{{ 'var(--work-warn,#c0850a)' if sin_verificar else 'inherit' }}">{{ sin_verificar|length }}</strong>
+    <small>Verificación WhatsApp pendiente</small>
+  </a>
   <div class="work-panel work-kpi"><span>Total visible</span><strong>€{{ "%.2f"|format(pedidos|sum(attribute='total')) }}</strong><small>Importe filtrado</small></div>
 </div>
 
 <div class="ox-card p-3 mb-4">
   <div class="flex items-center justify-between gap-3 flex-wrap">
   <div class="flex gap-2 flex-wrap text-xs">
-    <a href="{{ url_for('admin.pedidos') }}" class="ord-filter {{ 'active' if not request.args.get('estado') and not request.args.get('origen') and not request.args.get('epicentro') else '' }}">Todos</a>
+    <a href="{{ url_for('admin.pedidos') }}" class="ord-filter {{ 'active' if not request.args.get('estado') and not request.args.get('origen') and not request.args.get('epicentro') and not request.args.get('confirmacion') else '' }}">Todos</a>
     {% for estado in ['pendiente','armando','listo','en_ruta','entregado','cancelado'] %}
     <a href="{{ url_for('admin.pedidos', estado=estado) }}" class="ord-filter {{ 'active' if request.args.get('estado') == estado else '' }}">{{ estado }}</a>
     {% endfor %}
@@ -37,12 +43,16 @@
     <a href="{{ url_for('admin.pedidos', origen='presencial') }}" class="ord-filter {{ 'active' if request.args.get('origen') == 'presencial' else '' }}">POS</a>
     <a href="{{ url_for('admin.pedidos', epicentro='1') }}" class="ord-filter {{ 'active' if request.args.get('epicentro') == '1' else '' }}">Epicentro</a>
     <a href="{{ url_for('admin.pedidos', epicentro='0') }}" class="ord-filter {{ 'active' if request.args.get('epicentro') == '0' else '' }}">Fuera</a>
+    <span class="w-px self-stretch" style="background:var(--col-border)"></span>
+    <a href="{{ url_for('admin.pedidos', confirmacion='pending') }}" class="ord-filter {{ 'active' if request.args.get('confirmacion') == 'pending' else '' }}">Sin verificar</a>
+    <a href="{{ url_for('admin.pedidos', confirmacion='confirmed') }}" class="ord-filter {{ 'active' if request.args.get('confirmacion') == 'confirmed' else '' }}">Verificados</a>
   </div>
   <form method="GET" action="{{ url_for('admin.pedidos') }}" class="ord-search">
     {# Preservamos filtros de estado/origen que ya trae la URL. #}
     {% if request.args.get('estado') %}<input type="hidden" name="estado" value="{{ request.args.get('estado') }}">{% endif %}
     {% if request.args.get('origen') %}<input type="hidden" name="origen" value="{{ request.args.get('origen') }}">{% endif %}
     {% if request.args.get('epicentro') %}<input type="hidden" name="epicentro" value="{{ request.args.get('epicentro') }}">{% endif %}
+    {% if request.args.get('confirmacion') %}<input type="hidden" name="confirmacion" value="{{ request.args.get('confirmacion') }}">{% endif %}
     <input type="number" name="id" placeholder="ID pedido" value="{{ request.args.get('id','') }}" class="ord-input">
     <input type="text"   name="cliente" placeholder="Cliente o tel." value="{{ request.args.get('cliente','') }}" class="ord-input">
     <input type="date"   name="desde" title="Desde" value="{{ request.args.get('desde','') }}" class="ord-input">
@@ -73,6 +83,12 @@
         <span class="ord-chip warn">Bizum por cobrar</span>
         {% elif pedido.pago_confirmado %}
         <span class="ord-chip">Cobro confirmado</span>
+        {% endif %}
+        {# Verificación pasiva antifraude — visible solo cuando el motor de riesgo marcó el pedido #}
+        {% if pedido.confirmacion_estado == 'pending' %}
+        <span class="ord-chip warn" title="El cliente aún no confirmó por WhatsApp. Priorizar revisión antes de preparar.">Sin verificar</span>
+        {% elif pedido.confirmacion_estado == 'confirmed' %}
+        <span class="ord-chip" title="El cliente confirmó por WhatsApp.">Verificado</span>
         {% endif %}
       </div>
       <p class="text-sm mt-1" style="color:var(--col-muted)">{{ pedido.cliente.nombre }} · {{ pedido.creado_en.strftime('%d/%m/%Y %H:%M') }}</p>
