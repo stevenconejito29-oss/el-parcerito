@@ -303,13 +303,6 @@ def avanzar_estado_pedido(
     return pedido.estado
 
 
-def _canales_preparacion_pedido(pedido: Order) -> set[str]:
-    return {
-        (item.display_canal_preparacion or "cocina").strip().lower()
-        for item in lineas_preparacion_interna(pedido)
-    }
-
-
 def es_pedido_solo_bar(pedido: Order) -> bool:
     """True si TODOS los items del pedido tienen proveedor_despachador_id.
 
@@ -335,14 +328,6 @@ def lineas_preparacion_interna(pedido: Order) -> list:
         if not _coalesce_proveedor_id(snapshot, item):
             lineas.append(item)
     return lineas
-
-
-def _almacen_mixto_preparado(pedido: Order) -> bool:
-    evento = OrderEvent.query.filter(
-        OrderEvent.pedido_id == pedido.id,
-        OrderEvent.tipo.in_(["almacen_preparado", "almacen_reabierto"]),
-    ).order_by(OrderEvent.id.desc()).first()
-    return bool(evento and evento.tipo == "almacen_preparado")
 
 
 def validar_avance_operativo(pedido: Order) -> None:
@@ -1918,27 +1903,6 @@ def mensaje_codigo_entrega(pedido: Order) -> str:
         "Compártelo únicamente con el repartidor cuando estés recibiendo tu pedido. "
         "Si elegiste Bizum, confirma primero el pago del importe exacto."
     )
-
-
-def _bot_http_get(path: str, timeout: int = 3) -> bool:
-    """Consulta ligera al bot (p.ej. health). Devuelve True si respondió 2xx."""
-    import requests
-    from models import SiteConfig
-
-    bot_url = (SiteConfig.get("BOT_API_URL", os.environ.get("BOT_API_URL", "http://chat:3000")) or "").rstrip("/")
-    api_key = SiteConfig.get("BOT_API_KEY", "")
-    if not bot_url:
-        return False
-    headers = {}
-    if api_key:
-        headers["X-API-Key"] = api_key
-        headers["X-Bot-Key"] = api_key
-    try:
-        resp = requests.get(f"{bot_url}{path}", headers=headers, timeout=timeout)
-        return resp.ok
-    except Exception as exc:
-        logger.warning("bot get %s fallo: %s", path, exc)
-        return False
 
 
 def _bot_http_post(path: str, payload: dict, timeout: int = 8) -> bool:

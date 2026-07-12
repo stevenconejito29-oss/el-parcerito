@@ -1771,28 +1771,6 @@ def _telefonos_usuarios_handoff(query):
     return telefonos
 
 
-def _proveedor_congelado_pedido(pedido):
-    """Devuelve el proveedor solo si todo el pedido pertenece al mismo tercero."""
-    from services import _coalesce_proveedor_id, _snapshot_producto_item
-
-    proveedor_ids = {
-        _coalesce_proveedor_id(_snapshot_producto_item(item), item)
-        for item in pedido.items
-    }
-    proveedor_ids.discard(None)
-    if len(proveedor_ids) != 1:
-        return None
-
-    proveedor_id = next(iter(proveedor_ids))
-    # Si alguna línea es propia, el soporte corresponde al equipo global.
-    if any(
-        _coalesce_proveedor_id(_snapshot_producto_item(item), item) is None
-        for item in pedido.items
-    ):
-        return None
-    return proveedor_id
-
-
 def _destino_handoff_cliente(telefono_raw):
     cliente, telefono = _cliente_por_telefono(telefono_raw)
     pedido = None
