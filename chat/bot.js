@@ -2528,6 +2528,7 @@ function menuPrincipal(_ses = {}) {
     nombreNegocio: getNegocioNombre(),
     loyaltyEnabled: String(cfg('loyalty_enabled', '1')) === '1',
     deliveryEnabled: String(cfg('delivery_enabled', '1')) === '1',
+    scheduledEnabled: String(cfg('scheduled_enabled', '0')) === '1',
   });
 }
 
@@ -2543,6 +2544,7 @@ function clientCapabilityText() {
   return texts.clientCapabilityText({
     loyaltyEnabled: String(cfg('loyalty_enabled', '1')) === '1',
     deliveryEnabled: String(cfg('delivery_enabled', '1')) === '1',
+    scheduledEnabled: String(cfg('scheduled_enabled', '0')) === '1',
   });
 }
 

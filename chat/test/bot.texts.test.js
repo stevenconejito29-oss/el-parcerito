@@ -44,6 +44,36 @@ test('menuPrincipal soporta activar solo uno de los dos features', () => {
   assert.doesNotMatch(soloLoyalty, /cobertura/);
 });
 
+test('menuPrincipal menciona pedidos programados cuando scheduledEnabled', () => {
+  const out = texts.menuPrincipal({
+    nombreNegocio: 'X',
+    loyaltyEnabled: false,
+    deliveryEnabled: false,
+    scheduledEnabled: true,
+  });
+  assert.match(out, /reservar tu pedido con antelación/);
+});
+
+test('menuPrincipal NO menciona programados cuando scheduledEnabled es false', () => {
+  const out = texts.menuPrincipal({
+    nombreNegocio: 'X',
+    loyaltyEnabled: false,
+    deliveryEnabled: false,
+    scheduledEnabled: false,
+  });
+  assert.doesNotMatch(out, /reservar/);
+});
+
+test('menuPrincipal es retro-compatible: sin scheduledEnabled no aparece', () => {
+  // Llamadas legacy sin la clave nueva no deben romper ni introducir texto.
+  const out = texts.menuPrincipal({
+    nombreNegocio: 'X',
+    loyaltyEnabled: true,
+    deliveryEnabled: true,
+  });
+  assert.doesNotMatch(out, /reservar/);
+});
+
 test('clientMenuLines muestra opciones 1, 2, 6 y 7 siempre', () => {
   const out = texts.clientMenuLines({
     verticalLabel: 'Menú',
@@ -84,6 +114,17 @@ test('clientCapabilityText refleja los flags activos', () => {
   const sin = texts.clientCapabilityText({ loyaltyEnabled: false, deliveryEnabled: false });
   assert.doesNotMatch(sin, /puntos/);
   assert.doesNotMatch(sin, /cobertura/);
+});
+
+test('clientCapabilityText incluye "pedidos programados" cuando scheduledEnabled', () => {
+  const con = texts.clientCapabilityText({
+    loyaltyEnabled: false, deliveryEnabled: false, scheduledEnabled: true,
+  });
+  assert.match(con, /pedidos programados/);
+  const sin = texts.clientCapabilityText({
+    loyaltyEnabled: false, deliveryEnabled: false, scheduledEnabled: false,
+  });
+  assert.doesNotMatch(sin, /programados/);
 });
 
 test('barMenu incluye el nombre del bar y las 8 opciones numeradas', () => {

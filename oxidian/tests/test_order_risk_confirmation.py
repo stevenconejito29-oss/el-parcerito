@@ -67,83 +67,100 @@ class OrderRiskConfirmationTest(unittest.TestCase):
 
     # ── evaluate_order_risk ─────────────────────────────────────────
 
-    def test_evaluate_low_cuando_cliente_conocido_y_monto_bajo(self):
+    def test_evaluate_low_cuando_cliente_conocido_y_monto_normal(self):
         from services import evaluate_order_risk
         SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
         cliente = self._mk_cliente()
         # Pedido histórico entregado
         self._mk_pedido(cliente, total=8, estado="entregado")
-        pedido = self._mk_pedido(cliente, total=15)
+        pedido = self._mk_pedido(cliente, total=80)
+        # Con historial y monto no-extremo (80 < 3*50=150) → LOW sin fricción
         result = evaluate_order_risk(pedido)
         self.assertEqual(result["level"], "LOW")
 
-    def test_evaluate_medium_cuando_solo_cliente_nuevo(self):
+    def test_evaluate_high_para_primera_vez_del_cliente(self):
+        # Regla del negocio: primera vez = siempre confirmar. Monto no importa.
         from services import evaluate_order_risk
         SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
         cliente = self._mk_cliente()
-        pedido = self._mk_pedido(cliente, total=20)
+        pedido = self._mk_pedido(cliente, total=10)  # monto pequeño
         result = evaluate_order_risk(pedido)
-        self.assertEqual(result["level"], "MEDIUM")
+        self.assertEqual(result["level"], "HIGH")
         self.assertIn("cliente_sin_historial", result["reasons"])
 
-    def test_evaluate_medium_cuando_solo_monto_alto(self):
+    def test_evaluate_high_incluso_para_primera_vez_con_monto_alto(self):
+        # Mismo resultado — la primera vez siempre es HIGH.
+        from services import evaluate_order_risk
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=500)
+        self.assertEqual(evaluate_order_risk(pedido)["level"], "HIGH")
+
+    def test_evaluate_medium_cliente_conocido_con_monto_extremo(self):
+        # Guardrail defensivo: cliente registrado pero pide 3x el umbral.
+        # Puede indicar cuenta comprometida, pedido accidental o cambio de
+        # comportamiento — MEDIUM para revisión, no bloqueo.
+        from services import evaluate_order_risk
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        self._mk_pedido(cliente, total=8, estado="entregado")
+        pedido = self._mk_pedido(cliente, total=200)  # 200 >= 3*50=150
+        result = evaluate_order_risk(pedido)
+        self.assertEqual(result["level"], "MEDIUM")
+        self.assertIn("monto_extremo>=150", result["reasons"])
+
+    def test_cliente_conocido_con_monto_medio_no_activa_medium(self):
+        # Monto entre umbral y 3x umbral: LOW porque tiene historial.
+        # Antes: 80 disparaba MEDIUM. Ahora: LOW (regla nueva del negocio).
         from services import evaluate_order_risk
         SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
         cliente = self._mk_cliente()
         self._mk_pedido(cliente, total=8, estado="entregado")
         pedido = self._mk_pedido(cliente, total=80)
-        result = evaluate_order_risk(pedido)
-        self.assertEqual(result["level"], "MEDIUM")
-        self.assertIn("monto_alto>=50", result["reasons"])
+        self.assertEqual(evaluate_order_risk(pedido)["level"], "LOW")
 
-    def test_evaluate_high_cuando_cliente_nuevo_y_monto_alto(self):
-        from services import evaluate_order_risk
-        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
-        cliente = self._mk_cliente()
-        pedido = self._mk_pedido(cliente, total=120)
-        result = evaluate_order_risk(pedido)
-        self.assertEqual(result["level"], "HIGH")
-        self.assertEqual(
-            set(result["reasons"]),
-            {"cliente_sin_historial", "monto_alto>=50"},
-        )
-
-    def test_umbral_configurable_via_siteconfig(self):
+    def test_umbral_extremo_configurable_via_siteconfig(self):
+        # Umbral 10 → 3x = 30. Monto 40 con historial → MEDIUM extremo.
         from services import evaluate_order_risk
         SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "10", descripcion="test")
         cliente = self._mk_cliente()
         self._mk_pedido(cliente, total=5, estado="entregado")
-        pedido = self._mk_pedido(cliente, total=20)
-        # 20 >= 10 → monto_alto activo aunque cliente tiene historial
+        pedido = self._mk_pedido(cliente, total=40)
         self.assertEqual(evaluate_order_risk(pedido)["level"], "MEDIUM")
 
     # ── marcar_confirmacion_si_procede ──────────────────────────────
 
     def test_marcar_no_toca_pedido_low(self):
+        # Cliente conocido con monto normal → LOW → sin fricción.
         from services import marcar_confirmacion_si_procede
         SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
         cliente = self._mk_cliente()
         self._mk_pedido(cliente, total=8, estado="entregado")
-        pedido = self._mk_pedido(cliente, total=10)
+        pedido = self._mk_pedido(cliente, total=80)
         level = marcar_confirmacion_si_procede(pedido)
         self.assertEqual(level, "LOW")
         self.assertIsNone(pedido.confirmacion_estado)
 
     def test_marcar_pending_para_medium(self):
+        # Cliente conocido pero monto extremo (>=3x umbral) → MEDIUM.
         from services import marcar_confirmacion_si_procede
         SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
         cliente = self._mk_cliente()
-        pedido = self._mk_pedido(cliente, total=15)
-        marcar_confirmacion_si_procede(pedido)
-        self.assertEqual(pedido.confirmacion_estado, "pending")
-
-    def test_marcar_pending_para_high(self):
-        from services import marcar_confirmacion_si_procede
-        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
-        cliente = self._mk_cliente()
+        self._mk_pedido(cliente, total=8, estado="entregado")
         pedido = self._mk_pedido(cliente, total=200)
         marcar_confirmacion_si_procede(pedido)
         self.assertEqual(pedido.confirmacion_estado, "pending")
+        self.assertEqual(pedido.confirmacion_nivel, "MEDIUM")
+
+    def test_marcar_pending_para_high_primera_vez(self):
+        # Regla del negocio: primera vez → SIEMPRE HIGH, sin importar monto.
+        from services import marcar_confirmacion_si_procede
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=10)  # monto pequeño
+        marcar_confirmacion_si_procede(pedido)
+        self.assertEqual(pedido.confirmacion_estado, "pending")
+        self.assertEqual(pedido.confirmacion_nivel, "HIGH")
 
     def test_marcar_respeta_interruptor_habilitada(self):
         from services import marcar_confirmacion_si_procede
@@ -272,30 +289,34 @@ class OrderRiskConfirmationTest(unittest.TestCase):
         m = metricas_antifraude(dias=30)
         self.assertEqual(m["pending_vigentes"], 0)
 
-    def test_marcar_guarda_nivel_medium(self):
+    def test_marcar_guarda_nivel_medium_cuando_conocido_con_monto_extremo(self):
+        # Cliente conocido pero monto extremo (>=3x umbral) → MEDIUM.
         from services import marcar_confirmacion_si_procede
         SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
         cliente = self._mk_cliente()
-        pedido = self._mk_pedido(cliente, total=15)  # solo cliente_sin_historial → MEDIUM
+        self._mk_pedido(cliente, total=8, estado="entregado")
+        pedido = self._mk_pedido(cliente, total=200)  # 200 >= 150 (3x50) → MEDIUM
         marcar_confirmacion_si_procede(pedido)
         self.assertEqual(pedido.confirmacion_estado, "pending")
         self.assertEqual(pedido.confirmacion_nivel, "MEDIUM")
 
-    def test_marcar_guarda_nivel_high(self):
+    def test_marcar_guarda_nivel_high_para_primera_vez(self):
+        # Regla del negocio: primera vez → HIGH, sin importar monto.
         from services import marcar_confirmacion_si_procede
         SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
         cliente = self._mk_cliente()
-        pedido = self._mk_pedido(cliente, total=200)  # sin historial + monto alto → HIGH
+        pedido = self._mk_pedido(cliente, total=200)
         marcar_confirmacion_si_procede(pedido)
         self.assertEqual(pedido.confirmacion_estado, "pending")
         self.assertEqual(pedido.confirmacion_nivel, "HIGH")
 
     def test_marcar_low_no_setea_nivel(self):
+        # Cliente conocido con monto no-extremo → LOW → sin fricción.
         from services import marcar_confirmacion_si_procede
         SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
         cliente = self._mk_cliente()
         self._mk_pedido(cliente, total=10, estado="entregado")
-        pedido = self._mk_pedido(cliente, total=15)  # con historial + monto bajo → LOW
+        pedido = self._mk_pedido(cliente, total=80)  # con historial + monto normal → LOW
         marcar_confirmacion_si_procede(pedido)
         self.assertIsNone(pedido.confirmacion_estado)
         self.assertIsNone(pedido.confirmacion_nivel)

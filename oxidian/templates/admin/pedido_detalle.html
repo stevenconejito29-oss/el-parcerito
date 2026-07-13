@@ -106,11 +106,21 @@
             {% if pedido.confirmacion_nivel %}<span style="opacity:0.7">· nivel {{ pedido.confirmacion_nivel }}</span>{% endif %}
           </span>
           <p>
-            El sistema marcó este pedido para verificación por el motor de riesgo
-            ({% if pedido.confirmacion_nivel == 'HIGH' %}cliente sin historial <em>y</em> monto sobre el umbral{% else %}cliente sin historial <em>o</em> monto sobre el umbral{% endif %}).
-            Estamos esperando que el cliente responda <strong>SI</strong> o <strong>NO</strong> a la
-            invitación enviada por WhatsApp. Puede prepararse igual bajo tu
-            criterio — es un aviso operativo, no un bloqueo.
+            {% if pedido.confirmacion_nivel == 'HIGH' %}
+            <strong>Primer pedido de este cliente</strong> — el sistema pide siempre verificación
+            para minimizar pedidos fantasma. Estamos esperando que responda
+            <strong>SI</strong> o <strong>NO</strong> por WhatsApp.
+            {% elif pedido.confirmacion_nivel == 'MEDIUM' %}
+            Cliente conocido con historial, pero el monto es significativamente
+            superior a lo habitual (guardrail defensivo). Puede indicar cambio
+            de comportamiento o cuenta comprometida — el sistema pide confirmación
+            preventiva.
+            {% else %}
+            El sistema marcó este pedido para verificación por el motor de riesgo.
+            Estamos esperando que el cliente responda <strong>SI</strong> o
+            <strong>NO</strong> a la invitación enviada por WhatsApp.
+            {% endif %}
+            Puede prepararse igual bajo tu criterio — es un aviso operativo, no un bloqueo.
           </p>
         </div>
         {% elif pedido.confirmacion_estado == 'confirmed' and pedido.confirmacion_en %}
