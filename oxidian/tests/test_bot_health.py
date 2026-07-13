@@ -47,13 +47,16 @@ class BotHealthTest(unittest.TestCase):
 
     def test_devuelve_unknown_sin_bot_url(self):
         from services import consultar_estado_bot
-        # Vaciamos la config
         SiteConfig.set("BOT_API_URL", "", descripcion="test")
         db.session.commit()
-        with patch.dict("os.environ", {}, clear=False):
-            import os
-            os.environ.pop("BOT_API_URL", None)
+        import os
+        # También limpiamos el env por si BOT_API_URL cae al fallback.
+        prev = os.environ.pop("BOT_API_URL", None)
+        try:
             r = consultar_estado_bot(timeout=1)
+        finally:
+            if prev is not None:
+                os.environ["BOT_API_URL"] = prev
         self.assertEqual(r["salud"], "unknown")
 
     def test_devuelve_unknown_sin_panel_key(self):
@@ -68,14 +71,16 @@ class BotHealthTest(unittest.TestCase):
 
     def test_devuelve_down_ante_timeout(self):
         from services import consultar_estado_bot
-        with patch("services.requests.get", side_effect=Exception("timeout")):
+        # `requests` se importa dentro de la función; patcheamos en su módulo
+        # nativo para que la referencia se resuelva ya interceptada.
+        with patch("requests.get", side_effect=Exception("timeout")):
             r = consultar_estado_bot(timeout=1)
         self.assertEqual(r["salud"], "down")
         self.assertFalse(r["connected"])
 
     def test_devuelve_down_ante_http_5xx(self):
         from services import consultar_estado_bot
-        with patch("services.requests.get", return_value=self._mk_response(status=502)):
+        with patch("requests.get", return_value=self._mk_response(status=502)):
             r = consultar_estado_bot(timeout=1)
         self.assertEqual(r["salud"], "down")
 
@@ -91,7 +96,7 @@ class BotHealthTest(unittest.TestCase):
             "sessions": {"client": 12, "admin": 2},
             "handoffs": {"pending": 1, "undelivered_messages": 0},
         }
-        with patch("services.requests.get", return_value=self._mk_response(200, body)):
+        with patch("requests.get", return_value=self._mk_response(200, body)):
             r = consultar_estado_bot(timeout=1)
         self.assertEqual(r["salud"], "up")
         self.assertTrue(r["connected"])
@@ -107,7 +112,7 @@ class BotHealthTest(unittest.TestCase):
             "sessions": {"client": 0},
             "handoffs": {"pending": 0, "undelivered_messages": 0},
         }
-        with patch("services.requests.get", return_value=self._mk_response(200, body)):
+        with patch("requests.get", return_value=self._mk_response(200, body)):
             r = consultar_estado_bot(timeout=1)
         self.assertEqual(r["salud"], "degraded")
         self.assertFalse(r["connected"])
@@ -122,7 +127,7 @@ class BotHealthTest(unittest.TestCase):
             "sessions": {"client": 0},
             "handoffs": {"pending": 0, "undelivered_messages": 0},
         }
-        with patch("services.requests.get", return_value=self._mk_response(200, body)):
+        with patch("requests.get", return_value=self._mk_response(200, body)):
             r = consultar_estado_bot(timeout=1)
         self.assertEqual(r["salud"], "degraded")
 
@@ -136,7 +141,7 @@ class BotHealthTest(unittest.TestCase):
             "sessions": {"client": 3},
             "handoffs": {"pending": 0, "undelivered_messages": 80},
         }
-        with patch("services.requests.get", return_value=self._mk_response(200, body)):
+        with patch("requests.get", return_value=self._mk_response(200, body)):
             r = consultar_estado_bot(timeout=1)
         self.assertEqual(r["salud"], "degraded")
 
@@ -150,7 +155,7 @@ class BotHealthTest(unittest.TestCase):
             "sessions": {"client": 0},
             "handoffs": {"pending": 0, "undelivered_messages": 0},
         }
-        with patch("services.requests.get", return_value=self._mk_response(200, body)):
+        with patch("requests.get", return_value=self._mk_response(200, body)):
             r = consultar_estado_bot(timeout=1)
         self.assertIsInstance(r["latency_ms"], int)
         self.assertGreaterEqual(r["latency_ms"], 0)
