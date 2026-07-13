@@ -154,6 +154,17 @@ DEFAULTS: dict[str, dict] = {
             "o si el negocio prefiere revisión 100% manual."
         ),
     },
+    "CONFIRMACION_TTL_HIGH_MINUTES": {
+        "default": "120",
+        "type": "int",
+        "desc": (
+            "Minutos que un pedido HIGH puede quedarse 'pending' sin respuesta "
+            "del cliente antes de auto-cancelarse. Solo aplica a HIGH "
+            "(cliente sin historial + monto sobre umbral). MEDIUM no expira "
+            "automáticamente — queda para revisión manual. Cap defensivo "
+            "15-1440. Poner 0 desactiva la auto-cancelación."
+        ),
+    },
 }
 
 

@@ -205,6 +205,90 @@ def marcar_confirmacion_si_procede(pedido: Order) -> str | None:
     return level
 
 
+def _config_ttl_high_minutes() -> int:
+    """Ventana de espera para HIGH pending antes de auto-cancelar."""
+    from models import SiteConfig as _SC
+    try:
+        raw = _SC.get("CONFIRMACION_TTL_HIGH_MINUTES", "120")
+        minutos = int(raw or 120)
+    except (TypeError, ValueError):
+        minutos = 120
+    # 0 desactiva la auto-cancelación; para valores positivos aplicamos
+    # el cap 15-1440 (15 min a 24 h). Un TTL muy corto genera falsos
+    # positivos (cliente que tardó en ver el WhatsApp); muy largo pierde
+    # protección.
+    if minutos <= 0:
+        return 0
+    return max(15, min(1440, minutos))
+
+
+def autocancelar_confirmaciones_expiradas() -> dict:
+    """Cancela pedidos HIGH que llevan pending más de `CONFIRMACION_TTL_HIGH_MINUTES`.
+
+    Diseño (deliberadamente conservador):
+      - Solo cancela HIGH — MEDIUM queda para revisión manual.
+      - Solo cancela pedidos aún en estado `pendiente` (no `armando` — si
+        el equipo ya empezó a preparar, no interferimos).
+      - Usa `cancelar_pedido_operativo` con detalle específico para que
+        `metricas_antifraude` pueda distinguir del rechazo directo del
+        cliente.
+      - Best-effort por pedido: un fallo en uno no bloquea el resto.
+      - Interruptor: TTL=0 desactiva completamente.
+
+    Devuelve dict `{procesados, cancelados, errores}`.
+    """
+    resultado = {"procesados": 0, "cancelados": 0, "errores": 0}
+
+    ttl_min = _config_ttl_high_minutes()
+    if ttl_min <= 0:
+        return resultado
+
+    from datetime import timedelta
+    corte = utcnow() - timedelta(minutes=ttl_min)
+
+    try:
+        pedidos = (
+            Order.query
+            .filter(
+                Order.confirmacion_estado == "pending",
+                Order.confirmacion_nivel == "HIGH",
+                Order.estado == "pendiente",
+                Order.creado_en <= corte,
+            )
+            .with_for_update(skip_locked=True)
+            .all()
+        )
+    except Exception:
+        logger.exception("autocancelar_confirmaciones_expiradas: query falló")
+        return resultado
+
+    for pedido in pedidos:
+        resultado["procesados"] += 1
+        try:
+            cancelar_pedido_operativo(
+                pedido,
+                canal="antifraude",
+                detalle=(
+                    f"auto-cancelado por verificación pasiva expirada "
+                    f"(HIGH, TTL {ttl_min}min sin respuesta)"
+                ),
+            )
+            db.session.commit()
+            resultado["cancelados"] += 1
+            logger.info(
+                "autocancel HIGH: pedido=%s creado_en=%s",
+                pedido.numero_pedido, pedido.creado_en.isoformat(),
+            )
+        except Exception:
+            db.session.rollback()
+            resultado["errores"] += 1
+            logger.exception(
+                "autocancel HIGH falló pedido=%s — sigue con el resto",
+                getattr(pedido, "id", None),
+            )
+    return resultado
+
+
 def marcar_pedido_confirmado(pedido: Order) -> bool:
     """Registra la confirmación del cliente sobre un pedido `pending`.
 

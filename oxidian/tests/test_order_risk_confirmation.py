@@ -300,6 +300,104 @@ class OrderRiskConfirmationTest(unittest.TestCase):
         self.assertIsNone(pedido.confirmacion_estado)
         self.assertIsNone(pedido.confirmacion_nivel)
 
+    # ── autocancelar_confirmaciones_expiradas ──────────────────────
+
+    def _configurar_ttl(self, minutos):
+        SiteConfig.set("CONFIRMACION_TTL_HIGH_MINUTES", str(minutos), descripcion="test")
+        db.session.commit()
+
+    def _mk_pedido_pending(self, cliente, nivel, minutos_atras, estado="pendiente"):
+        from datetime import timedelta
+        from services import utcnow
+        p = self._mk_pedido(cliente, total=100, estado=estado)
+        p.confirmacion_estado = "pending"
+        p.confirmacion_nivel = nivel
+        p.creado_en = utcnow() - timedelta(minutes=minutos_atras)
+        db.session.commit()
+        return p
+
+    def test_autocancel_no_toca_high_reciente(self):
+        from services import autocancelar_confirmaciones_expiradas
+        self._configurar_ttl(120)  # 2h TTL
+        cliente = self._mk_cliente()
+        p = self._mk_pedido_pending(cliente, "HIGH", minutos_atras=30)
+        r = autocancelar_confirmaciones_expiradas()
+        self.assertEqual(r["procesados"], 0)
+        db.session.expire(p)
+        self.assertEqual(p.estado, "pendiente")
+
+    def test_autocancel_cancela_high_expirado(self):
+        from services import autocancelar_confirmaciones_expiradas
+        self._configurar_ttl(60)  # 1h TTL
+        cliente = self._mk_cliente()
+        p = self._mk_pedido_pending(cliente, "HIGH", minutos_atras=90)
+        r = autocancelar_confirmaciones_expiradas()
+        self.assertEqual(r["procesados"], 1)
+        self.assertEqual(r["cancelados"], 1)
+        db.session.expire(p)
+        self.assertEqual(p.estado, "cancelado")
+
+    def test_autocancel_no_toca_medium_aunque_expire(self):
+        # MEDIUM se queda pending para revisión manual — nunca auto-cancela.
+        from services import autocancelar_confirmaciones_expiradas
+        self._configurar_ttl(60)
+        cliente = self._mk_cliente()
+        p = self._mk_pedido_pending(cliente, "MEDIUM", minutos_atras=300)
+        r = autocancelar_confirmaciones_expiradas()
+        self.assertEqual(r["procesados"], 0)
+        db.session.expire(p)
+        self.assertEqual(p.estado, "pendiente")
+
+    def test_autocancel_no_toca_high_que_ya_esta_armando(self):
+        # Si el equipo ya empezó a preparar, no interferimos.
+        from services import autocancelar_confirmaciones_expiradas
+        self._configurar_ttl(60)
+        cliente = self._mk_cliente()
+        p = self._mk_pedido_pending(cliente, "HIGH", minutos_atras=90, estado="armando")
+        r = autocancelar_confirmaciones_expiradas()
+        self.assertEqual(r["procesados"], 0)
+        db.session.expire(p)
+        self.assertEqual(p.estado, "armando")
+
+    def test_autocancel_desactivado_con_ttl_cero(self):
+        from services import autocancelar_confirmaciones_expiradas
+        self._configurar_ttl(0)
+        cliente = self._mk_cliente()
+        self._mk_pedido_pending(cliente, "HIGH", minutos_atras=9999)
+        r = autocancelar_confirmaciones_expiradas()
+        self.assertEqual(r["procesados"], 0)
+        self.assertEqual(r["cancelados"], 0)
+
+    def test_autocancel_cap_defensivo_ttl_minimo_15min(self):
+        # TTL=5 (por debajo del cap) → se sube a 15 internamente.
+        from services import autocancelar_confirmaciones_expiradas
+        self._configurar_ttl(5)
+        cliente = self._mk_cliente()
+        # Pedido de 10 min atrás no expira (por debajo del cap 15).
+        p1 = self._mk_pedido_pending(cliente, "HIGH", minutos_atras=10)
+        # Pedido de 20 min atrás sí expira.
+        p2 = self._mk_pedido_pending(cliente, "HIGH", minutos_atras=20)
+        r = autocancelar_confirmaciones_expiradas()
+        self.assertEqual(r["cancelados"], 1)
+        db.session.expire(p1); db.session.expire(p2)
+        self.assertEqual(p1.estado, "pendiente")
+        self.assertEqual(p2.estado, "cancelado")
+
+    def test_autocancel_evento_tiene_detalle_identificable(self):
+        # `metricas_antifraude` cuenta rechazados_por_bot buscando la
+        # palabra clave "verificación pasiva". El auto-cancel debe usar
+        # un detalle que no se confunda con un rechazo real del cliente.
+        from services import autocancelar_confirmaciones_expiradas
+        from models import OrderEvent
+        self._configurar_ttl(60)
+        cliente = self._mk_cliente()
+        p = self._mk_pedido_pending(cliente, "HIGH", minutos_atras=90)
+        autocancelar_confirmaciones_expiradas()
+        eventos = OrderEvent.query.filter_by(pedido_id=p.id, tipo="pedido_cancelado").all()
+        self.assertEqual(len(eventos), 1)
+        self.assertIn("auto-cancelado", eventos[0].detalle.lower())
+        self.assertIn("high", eventos[0].detalle.lower())
+
     def test_metricas_desagregan_por_nivel(self):
         from services import metricas_antifraude
         cliente = self._mk_cliente()

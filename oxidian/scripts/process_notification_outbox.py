@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import create_app
 from services import (
+    autocancelar_confirmaciones_expiradas,
     procesar_notificaciones_pendientes,
     purgar_registros_antiguos,
     rebalancear_pedidos_huerfanos,
@@ -57,6 +58,21 @@ def _run_rebalanceo(app):
         return None
 
 
+def _run_autocancel_confirmaciones(app):
+    """Auto-cancela pedidos HIGH sin respuesta del cliente pasado el TTL.
+
+    Best-effort — el worker debe seguir ejecutándose aunque un pedido
+    concreto falle. Se ejecuta con menor frecuencia que rebalanceo porque
+    el TTL default es de horas.
+    """
+    try:
+        with app.app_context():
+            return autocancelar_confirmaciones_expiradas()
+    except Exception:
+        logger.exception("outbox worker: autocancel confirmaciones falló")
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=int(os.environ.get("OUTBOX_LIMIT", "25")))
@@ -87,12 +103,17 @@ def main():
     # Rebalanceo de pedidos huérfanos (empleado offline) — frecuencia más
     # agresiva porque afecta operativa activa. Default 5 min.
     rebalanceo_every_seconds = max(60, int(os.environ.get("REBALANCEO_EVERY_SECONDS", "300") or 300))
+    # Auto-cancel de pedidos HIGH sin respuesta del cliente. Frecuencia
+    # conservadora (default 10 min) porque el TTL suele ser de horas —
+    # no vale correrlo cada minuto. Cap mínimo 5 min.
+    autocancel_every_seconds = max(300, int(os.environ.get("AUTOCANCEL_EVERY_SECONDS", "600") or 600))
     logger.info(
-        "outbox worker: loop cada %.1fs (limit=%d) purga cada %ds rebalanceo cada %ds",
-        args.interval, args.limit, purge_every_seconds, rebalanceo_every_seconds,
+        "outbox worker: loop cada %.1fs (limit=%d) purga cada %ds rebalanceo cada %ds autocancel cada %ds",
+        args.interval, args.limit, purge_every_seconds, rebalanceo_every_seconds, autocancel_every_seconds,
     )
     last_purge = time.monotonic()
     last_rebalanceo = time.monotonic()
+    last_autocancel = time.monotonic()
     while not stop["flag"]:
         try:
             _run_once(app, args.limit)
@@ -106,6 +127,11 @@ def main():
         if time.monotonic() - last_rebalanceo >= rebalanceo_every_seconds:
             _run_rebalanceo(app)
             last_rebalanceo = time.monotonic()
+        # Auto-cancel de HIGH sin confirmación — cierra la puerta de
+        # entrada a pedidos que llevan horas esperando respuesta.
+        if time.monotonic() - last_autocancel >= autocancel_every_seconds:
+            _run_autocancel_confirmaciones(app)
+            last_autocancel = time.monotonic()
         # Sleep interrumpible para no retrasar SIGTERM
         for _ in range(max(1, int(args.interval * 10))):
             if stop["flag"]:
