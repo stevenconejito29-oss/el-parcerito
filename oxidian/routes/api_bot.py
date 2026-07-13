@@ -81,14 +81,18 @@ def _api_bot_generic_error(exc):
 
 
 def _cliente_por_telefono(value):
-    telefono = normalizar_telefono_cliente(value)
-    if not telefono_valido(telefono):
-        return None, telefono
-    cliente = User.query.filter_by(
-        telefono_normalizado=telefono,
-        rol="cliente",
-    ).first()
-    return cliente, telefono
+    """Localiza al usuario que compra bajo este teléfono.
+
+    Prioriza rol='cliente' pero cae al match sin filtro si no existe uno
+    puro. Esto es crítico para el flujo "empleado/admin hace su propio
+    pedido con su número": sin el fallback, `crear_pedido` intentaría
+    crear un cliente shadow que colisiona con el UNIQUE global sobre
+    `telefono_normalizado` y devolvía 500 al empleado.
+
+    Delega en `services.buscar_cliente_por_telefono` (fuente única).
+    """
+    from services import buscar_cliente_por_telefono
+    return buscar_cliente_por_telefono(value)
 
 
 def _delivery_family(producto):
