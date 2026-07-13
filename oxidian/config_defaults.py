@@ -163,6 +163,47 @@ DEFAULTS: dict[str, dict] = {
             "Cap 15-1440. 0 desactiva."
         ),
     },
+
+    # ── Cobertura geográfica ─────────────────────────────────────────
+    # Fuente única para el radio de entrega y el centro del negocio.
+    # Consumidas por `services.validar_radio_entrega` y por el fallback
+    # global en `asignar_zona_por_coordenadas`. Configurar SIEMPRE en
+    # producción — sin CENTRO_LAT/LON el servicio queda fail-closed.
+    "CENTRO_LAT": {
+        "default": "37.4736",
+        "type": "float",
+        "desc": (
+            "Latitud del centro del negocio. Default apunta a Carmona "
+            "(37.4736, -5.6438). Se usa como origen para calcular distancia "
+            "en km y validar cobertura de delivery."
+        ),
+    },
+    "CENTRO_LON": {
+        "default": "-5.6438",
+        "type": "float",
+        "desc": (
+            "Longitud del centro del negocio (Carmona por defecto). "
+            "Emparejar siempre con CENTRO_LAT."
+        ),
+    },
+    "RADIO_ENTREGA_KM": {
+        "default": "3",
+        "type": "float",
+        "desc": (
+            "Radio máximo de entrega en kilómetros. Carmona centro cabe en "
+            "~1.5km; 3km cubre urbanizaciones cercanas sin alcanzar Sevilla. "
+            "Cap 0.5-25. Ajustar según capacidad de reparto real."
+        ),
+    },
+    "CIUDAD_NEGOCIO": {
+        "default": "Carmona",
+        "type": "str",
+        "desc": (
+            "Ciudad para desambiguar direcciones al geocodificar. Se envía "
+            "a Nominatim como bias para que 'Calle Mayor 5' no acabe "
+            "resolviendo en otra provincia."
+        ),
+    },
 }
 
 

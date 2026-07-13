@@ -999,40 +999,59 @@ def geocodificar_direccion(direccion: str, ciudad: str = "") -> tuple[float, flo
 def asignar_zona_por_direccion(direccion: str, zonas):
     """Devuelve la ZonaEntrega que mejor se ajusta a la dirección del cliente.
 
-    Reglas:
-    - Si NINGUNA zona tiene geodata (centro_lat/lng/radio_km), devuelve la
-      primera zona activa por orden (fallback histórico — compatibilidad).
-    - Si HAY zonas con geodata pero no podemos geocodificar la dirección,
-      devuelve None (el caller debe pedir una dirección verificable).
-    - Si la dirección geocodifica, recorre todas las zonas con geodata y
-      devuelve la más cercana cuyo radio contiene al cliente. Si ninguna lo
-      contiene → None (cliente fuera de cobertura).
+    Diseño **fail-closed** (2026-07-13): ante ausencia de geodata o dirección
+    no geocodificable, devolvemos None en vez de aceptar el pedido con
+    fallback ciego. El fallback legacy (primera zona activa sin verificar
+    geografía) solo se activa si `ALLOW_LEGACY_ZONE_FALLBACK` está a 1 en
+    SiteConfig — por defecto está desactivado.
 
-    Las zonas sin geodata se ignoran cuando hay otras con geodata.
+    Reglas:
+    - Si HAY zonas con geodata: match por distancia dentro del radio, o
+      None si no encaja / no se puede geocodificar.
+    - Si NO hay zonas con geodata: intenta el radio global del negocio
+      (CENTRO_LAT/LON/RADIO_ENTREGA_KM). Si tampoco, cae al legacy solo
+      cuando el flag lo permite explícitamente.
     """
     if not zonas:
         return None
-    geo_zonas = [z for z in zonas if z.activo and z.tiene_geo]
-    if not geo_zonas:
-        # Fallback legacy: primera zona activa por orden.
-        activas = [z for z in zonas if z.activo]
-        return activas[0] if activas else None
-
     from models import SiteConfig
+    geo_zonas = [z for z in zonas if z.activo and z.tiene_geo]
     ciudad = SiteConfig.get("CIUDAD_NEGOCIO", "")
-    coords = geocodificar_direccion(direccion or "", ciudad=ciudad) if direccion else None
-    if coords is None:
+
+    if geo_zonas:
+        coords = geocodificar_direccion(direccion or "", ciudad=ciudad) if direccion else None
+        if coords is None:
+            return None
+        lat, lon = coords
+        candidatos = []
+        for z in geo_zonas:
+            d = _haversine_km(z.centro_lat, z.centro_lng, lat, lon)
+            if d <= float(z.radio_km):
+                candidatos.append((d, z))
+        if not candidatos:
+            return None
+        candidatos.sort(key=lambda t: (t[0], t[1].orden or 0, t[1].id))
+        return candidatos[0][1]
+
+    # Sin zonas con geodata — intento con el radio global del negocio.
+    activas = [z for z in zonas if z.activo]
+    if not activas:
         return None
-    lat, lon = coords
-    candidatos = []
-    for z in geo_zonas:
-        d = _haversine_km(z.centro_lat, z.centro_lng, lat, lon)
-        if d <= float(z.radio_km):
-            candidatos.append((d, z))
-    if not candidatos:
-        return None
-    candidatos.sort(key=lambda t: (t[0], t[1].orden or 0, t[1].id))
-    return candidatos[0][1]
+    validacion = validar_radio_entrega(direccion)
+    if validacion["ok"] and validacion.get("distancia_km") is not None:
+        activas.sort(key=lambda z: (z.orden or 0, float(z.precio_envio or 0)))
+        return activas[0]
+
+    # Último recurso: fallback legacy sin verificación geográfica. Deshabilitado
+    # por defecto — solo lo activa un admin con conocimiento de causa cuando
+    # todavía no ha configurado geodata pero necesita seguir vendiendo.
+    if _to_bool_service(SiteConfig.get("ALLOW_LEGACY_ZONE_FALLBACK", "0")):
+        logger.warning(
+            "asignar_zona_por_direccion: fallback LEGACY activo, aceptando %r sin geocode",
+            (direccion or "")[:60],
+        )
+        return activas[0]
+    return None
 
 
 def asignar_zona_por_coordenadas(lat, lon, zonas):
@@ -1068,39 +1087,86 @@ def asignar_zona_por_coordenadas(lat, lon, zonas):
         distancia, zona = candidatos[0]
         return zona, round(distancia, 2)
 
-    # 2) Sin zonas geo: usa centro del negocio como fallback si está configurado
-    from models import SiteConfig
-    try:
-        neg_lat = float(SiteConfig.get("CENTRO_LAT", "") or 0) or None
-        neg_lng = float(SiteConfig.get("CENTRO_LON", "") or 0) or None
-        neg_radio = float(SiteConfig.get("RADIO_ENTREGA_KM", "") or 0) or None
-    except (TypeError, ValueError):
-        neg_lat = neg_lng = neg_radio = None
-    if neg_lat is not None and neg_lng is not None and neg_radio and neg_radio > 0:
+    # 2) Sin zonas geo: usa el centro global del negocio como fallback si está
+    # configurado. Este es el camino usado por comercios que aún no han creado
+    # zonas individuales — la validación de radio global se aplica igual.
+    neg_lat, neg_lng, neg_radio = _leer_geo_negocio()
+    if neg_lat is not None:
         distancia = _haversine_km(neg_lat, neg_lng, lat, lon)
         activas = [zona for zona in zonas if zona.activo]
         if distancia <= neg_radio and activas:
-            # Ordena por precio ascendente (zona más barata / centro por defecto)
             activas.sort(key=lambda z: (z.orden or 0, float(z.precio_envio or 0)))
             return activas[0], round(distancia, 2)
         return None, round(distancia, 2)
 
-    # 3) Fallback legacy: zonas sin geo, sin config negocio → primera activa
-    activas = [zona for zona in zonas if zona.activo]
-    return (activas[0], None) if activas else (None, None)
+    # 3) Sin geodata en zonas ni en negocio: fail-closed. El fallback legacy
+    # sin verificar geografía solo se activa si el admin lo pidió
+    # explícitamente vía `ALLOW_LEGACY_ZONE_FALLBACK`.
+    from models import SiteConfig
+    if _to_bool_service(SiteConfig.get("ALLOW_LEGACY_ZONE_FALLBACK", "0")):
+        activas = [zona for zona in zonas if zona.activo]
+        if activas:
+            logger.warning(
+                "asignar_zona_por_coordenadas: fallback LEGACY activo (%.4f, %.4f)",
+                lat, lon,
+            )
+            return activas[0], None
+    return None, None
+
+
+def _leer_geo_negocio() -> tuple[float | None, float | None, float | None]:
+    """Lee (lat, lon, radio_km) del centro del negocio desde SiteConfig.
+
+    Devuelve (None, None, None) si cualquier valor está ausente o no se puede
+    parsear. El cap defensivo del radio protege contra configuraciones que
+    dispararían el radio a valores absurdos (>25km cubre casi toda una
+    provincia y hace inviable el negocio de proximidad).
+    """
+    from models import SiteConfig
+
+    def _f(clave):
+        raw = SiteConfig.get(clave, "")
+        if raw is None or str(raw).strip() == "":
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+
+    lat = _f("CENTRO_LAT")
+    lon = _f("CENTRO_LON")
+    radio = _f("RADIO_ENTREGA_KM")
+    if lat is None or lon is None or radio is None:
+        return None, None, None
+    if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        return None, None, None
+    # Cap defensivo: 0.5 km mínimo (evita configuraciones que rechazan todo),
+    # 25 km máximo (delivery de proximidad, ya no local).
+    radio = max(0.5, min(25.0, radio))
+    return lat, lon, radio
 
 
 def validar_radio_entrega(direccion: str) -> dict:
-    """
-    Valida si una dirección está dentro del radio de entrega configurado.
-    Devuelve {"ok": bool, "distancia_km": float|None, "mensaje": str}.
+    """Valida si una dirección cae dentro del radio configurado del negocio.
+
+    Devuelve dict {"ok": bool, "distancia_km": float|None, "mensaje": str}.
+    Diseño **fail-closed**: cualquier ambigüedad devuelve `ok=False` con
+    mensaje operativo. Nunca acepta silenciosamente con advertencia — el
+    daño de un pedido a 30km es mayor que la fricción de re-teclear.
+
+    Escenarios cubiertos:
+      - Validación desactivada (`VALIDAR_RADIO_ENTREGA=0`) → acepta.
+      - Dirección demasiado corta (<6 chars) → rechaza con instrucción.
+      - Sin config de centro/radio → rechaza pidiendo configurar.
+      - Dirección no geocodificable → rechaza con instrucción, salvo que
+        el admin haya bajado el flag `BLOQUEAR_DIRECCION_NO_VERIFICADA=0`.
+      - Fuera del radio → rechaza indicando la distancia.
     """
     from models import SiteConfig
 
     if not _to_bool_service(SiteConfig.get("VALIDAR_RADIO_ENTREGA", "1")):
         return {"ok": True, "distancia_km": None, "mensaje": ""}
 
-    # Longitud mínima para considerarse una dirección real (calle + número mínimo)
     if not direccion or len(direccion.strip()) < 6:
         return {
             "ok": False,
@@ -1108,11 +1174,11 @@ def validar_radio_entrega(direccion: str) -> dict:
             "mensaje": "Escribe la dirección completa con calle y número.",
         }
 
-    try:
-        centro_lat = float(SiteConfig.get("CENTRO_LAT", ""))
-        centro_lon = float(SiteConfig.get("CENTRO_LON", ""))
-        radio_km   = float(SiteConfig.get("RADIO_ENTREGA_KM", "5"))
-    except (ValueError, TypeError):
+    centro_lat, centro_lon, radio_km = _leer_geo_negocio()
+    if centro_lat is None:
+        # Fail-closed: sin config no aceptamos pedidos aunque el flag esté
+        # activo. Mejor no vender un pedido que enviarlo a Sevilla y perder
+        # dinero + reputación.
         return {
             "ok": False,
             "distancia_km": None,
@@ -1145,7 +1211,7 @@ def validar_radio_entrega(direccion: str) -> dict:
             "mensaje": (
                 f"Lo sentimos, tu dirección queda fuera de nuestra zona de reparto"
                 f"{f' en {ciudad}' if ciudad else ''} "
-                f"({distancia:.1f} km del centro). Solo entregamos dentro del radio configurado."
+                f"({distancia:.1f} km del centro). Solo entregamos dentro de {radio_km:.1f} km."
             ),
         }
 
