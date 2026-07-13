@@ -139,7 +139,15 @@
     <a href="{{ url_for('admin.pedidos', confirmacion='pending') }}" class="work-btn">Ver pending →</a>
   </div>
   <div class="work-kpis" style="margin-top:0.5rem">
-    <div class="work-panel work-kpi"><span>Evaluados</span><strong>{{ antifraude.evaluados }}</strong><small>MEDIUM + HIGH</small></div>
+    <div class="work-panel work-kpi">
+      <span>Evaluados</span>
+      <strong>{{ antifraude.evaluados }}</strong>
+      <small>
+        {% set _med = antifraude.por_nivel.MEDIUM if antifraude.por_nivel else 0 %}
+        {% set _hig = antifraude.por_nivel.HIGH if antifraude.por_nivel else 0 %}
+        MEDIUM: {{ _med }} · HIGH: {{ _hig }}
+      </small>
+    </div>
     <div class="work-panel work-kpi"><span>Confirmados</span><strong style="color:var(--col-success,#087A48)">{{ antifraude.confirmados }}</strong><small>Cliente respondió SI</small></div>
     <div class="work-panel work-kpi"><span>Rechazados por bot</span><strong style="color:var(--col-alert,#B42318)">{{ antifraude.cancelados_por_bot }}</strong><small>Cliente respondió NO</small></div>
     <div class="work-panel work-kpi"><span>Pending vigentes</span><strong style="color:{{ 'var(--work-warn,#c0850a)' if antifraude.pending_vigentes else 'inherit' }}">{{ antifraude.pending_vigentes }}</strong><small>Esperando respuesta</small></div>

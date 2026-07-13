@@ -200,6 +200,26 @@ def _migrate_order_confirmacion_estado():
         ))
 
 
+def _migrate_order_confirmacion_nivel():
+    """Añade `orders.confirmacion_nivel` (VARCHAR(10) nullable).
+
+    Persiste el nivel de riesgo evaluado ('MEDIUM' o 'HIGH') para pedidos
+    que activaron la verificación pasiva. Necesario para:
+      - Desagregar métricas admin (cuántos MEDIUM vs HIGH).
+      - Aplicar políticas distintas (auto-cancel más agresivo para HIGH).
+      - Auditoría posterior de por qué se marcó un pedido.
+    NULL para pedidos que pasaron como LOW o legacy previos al feature.
+    """
+    inspector = inspect(db.engine)
+    if not inspector.has_table("orders"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("orders")}
+    if "confirmacion_nivel" not in existing:
+        db.session.execute(text(
+            "ALTER TABLE orders ADD COLUMN confirmacion_nivel VARCHAR(10)"
+        ))
+
+
 def _migrate_product_solo_canje():
     """Añade Product.solo_canje (bool NOT NULL default false).
     Marca productos exclusivos de canje con puntos — no comprables con dinero."""
@@ -1454,6 +1474,15 @@ MIGRATIONS = [
             "toca pedidos legacy ni cambia la máquina de estados operativa."
         ),
         "fn": _migrate_order_confirmacion_estado,
+    },
+    {
+        "id": "20260713_41_order_confirmacion_nivel",
+        "description": (
+            "Añade orders.confirmacion_nivel (VARCHAR(10) nullable) para "
+            "persistir MEDIUM/HIGH del scoring de riesgo antifraude. Permite "
+            "desagregar métricas y aplicar políticas distintas por nivel."
+        ),
+        "fn": _migrate_order_confirmacion_nivel,
     },
 ]
 

@@ -102,18 +102,22 @@
         {# ── Verificación pasiva antifraude ── #}
         {% if pedido.confirmacion_estado == 'pending' %}
         <div class="detail-note mt-3" style="border-left-color:var(--col-warn,#c0850a);background:rgba(192,133,10,0.06)">
-          <span class="detail-info-lbl">🔐 Verificación por WhatsApp pendiente</span>
+          <span class="detail-info-lbl">🔐 Verificación por WhatsApp pendiente
+            {% if pedido.confirmacion_nivel %}<span style="opacity:0.7">· nivel {{ pedido.confirmacion_nivel }}</span>{% endif %}
+          </span>
           <p>
             El sistema marcó este pedido para verificación por el motor de riesgo
-            (cliente sin historial o monto sobre el umbral). Estamos esperando que
-            el cliente responda <strong>SI</strong> o <strong>NO</strong> a la
+            ({% if pedido.confirmacion_nivel == 'HIGH' %}cliente sin historial <em>y</em> monto sobre el umbral{% else %}cliente sin historial <em>o</em> monto sobre el umbral{% endif %}).
+            Estamos esperando que el cliente responda <strong>SI</strong> o <strong>NO</strong> a la
             invitación enviada por WhatsApp. Puede prepararse igual bajo tu
             criterio — es un aviso operativo, no un bloqueo.
           </p>
         </div>
         {% elif pedido.confirmacion_estado == 'confirmed' and pedido.confirmacion_en %}
         <div class="detail-note mt-3" style="border-left-color:var(--col-success,#087A48);background:rgba(8,122,72,0.06)">
-          <span class="detail-info-lbl">✅ Verificado por el cliente</span>
+          <span class="detail-info-lbl">✅ Verificado por el cliente
+            {% if pedido.confirmacion_nivel %}<span style="opacity:0.7">· nivel {{ pedido.confirmacion_nivel }}</span>{% endif %}
+          </span>
           <p>Confirmado por WhatsApp el {{ pedido.confirmacion_en.strftime('%d/%m/%Y %H:%M') }}.</p>
         </div>
         {% endif %}
