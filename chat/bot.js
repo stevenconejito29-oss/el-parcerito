@@ -2513,7 +2513,13 @@ function bienvenidaConversacional(ses) {
     `Soy el asistente de *${neg}*. ¿En qué te puedo ayudar?`,
     `Aquí estoy para ayudarte con *${neg}*. ¿Qué necesitas?`,
   ];
-  return `${pick(aperturas)}\n\n${pick(cierres)}`;
+  // Si es un admin en modo cliente prueba, mostramos siempre el banner
+  // para que sepa cómo salir. Sin esto, el admin queda "atascado" mirando
+  // el menú del cliente sin saber que basta escribir *admin*.
+  const banner = ses?.jid && isAdminJid(ses.jid)
+    ? `🧪 *Modo cliente de prueba activo.* Escribe *admin* para volver al panel.\n\n`
+    : '';
+  return `${banner}${pick(aperturas)}\n\n${pick(cierres)}`;
 }
 
 /**
@@ -3398,7 +3404,14 @@ async function _handleMessage(jid, text, pushName) {
 
   if (isAdminClientMode(jid, ses)) {
     if (lower === 'admin') return startAdminMenu(jid, ses.nombre);
-    if (lower.startsWith('!')) return handleAdminCmd(jid, text);
+    if (lower.startsWith('!')) {
+      // Ejecutar el comando desde modo cliente prueba tiene sentido puntual
+      // (probar sin salir), pero después no queremos dejar al admin viendo
+      // solo el output — le volvemos a mostrar el panel para que continúe
+      // la operación sin escribir "admin" explícito.
+      await handleAdminCmd(jid, text);
+      return startAdminMenu(jid, ses.nombre);
+    }
     if (/^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i.test(lower)) {
       const identifier = text.match(/^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i)?.[1] || '';
       return iniciarCancelacionPedido(jid, ses, identifier);
@@ -5087,10 +5100,17 @@ async function handleMainMenu(jid, ses, opcion) {
       // frases divagativas — el cliente ve SIEMPRE la misma estructura
       // clara de opciones, y sabe exactamente qué escribir (un número).
       bumpStat('fallback');
+      // Admin en modo cliente prueba: le recordamos cómo volver al panel.
+      // Sin este hint muchos admins quedaban atascados mirando el menú
+      // del cliente sin saber que existía la salida.
+      const adminHint = isAdminJid(jid)
+        ? `\n🔒 _Eres admin en modo prueba. Escribe *admin* para volver al panel._`
+        : '';
       return sendText(jid,
         `👇 *Elige una opción respondiendo con el número:*\n\n` +
         `${clientMenuLines()}\n\n` +
-        `_También puedes escribir *AGENTE* para hablar con una persona._`
+        `_También puedes escribir *AGENTE* para hablar con una persona._` +
+        adminHint
       );
     }
   }
