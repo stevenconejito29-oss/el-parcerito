@@ -2546,154 +2546,51 @@ function clientCapabilityText() {
   });
 }
 
+// Panel principal admin/super_admin — delega en `texts.adminMenu` que hace
+// el rendering agrupado por dominios. Aquí solo resolvemos las capabilities
+// y armamos el ctx para no acoplar el renderizado con el runtime.
 function adminMenu(jid) {
-  const isSA = isSuperAdminJid(jid);
-  const options = [
-    adminCan(jid, 'status') ? `1️⃣  Estado del bot y WhatsApp` : null,
-    adminCan(jid, 'store') ? `2️⃣  Abrir / cerrar tienda` : null,
-    adminCan(jid, 'products') ? `3️⃣  Productos y precios` : null,
-    adminCan(jid, 'points') ? `4️⃣  Clientes y puntos` : null,
-    adminCan(jid, 'admins') ? `5️⃣  Administradores WhatsApp` : null,
-    adminCan(jid, 'handoff') ? `6️⃣  Atención humana` : null,
-    adminCan(jid, 'sync') ? `7️⃣  Sincronizar catálogo` : null,
-    adminCan(jid, 'security') ? `8️⃣  Seguridad de conversaciones` : null,
-    adminCan(jid, 'emergency') ? `9️⃣  Modo emergencia` : null,
-    adminCan(jid, 'risks') ? `🔟  Pedidos en riesgo` : null,
-    adminCan(jid, 'client_mode') ? `*11* Modo cliente de prueba` : null,
+  const sections = [
+    adminCan(jid, 'status')      ? { n: '1️⃣',  label: 'Estado del bot y WhatsApp' } : null,
+    adminCan(jid, 'store')       ? { n: '2️⃣',  label: 'Abrir / cerrar tienda' } : null,
+    adminCan(jid, 'products')    ? { n: '3️⃣',  label: 'Productos y precios' } : null,
+    adminCan(jid, 'points')      ? { n: '4️⃣',  label: 'Clientes y puntos' } : null,
+    adminCan(jid, 'admins')      ? { n: '5️⃣',  label: 'Administradores WhatsApp' } : null,
+    adminCan(jid, 'handoff')     ? { n: '6️⃣',  label: 'Atención humana' } : null,
+    adminCan(jid, 'sync')        ? { n: '7️⃣',  label: 'Sincronizar catálogo' } : null,
+    adminCan(jid, 'security')    ? { n: '8️⃣',  label: 'Seguridad de conversaciones' } : null,
+    adminCan(jid, 'emergency')   ? { n: '9️⃣',  label: 'Modo emergencia' } : null,
+    adminCan(jid, 'risks')       ? { n: '🔟',  label: 'Pedidos en riesgo' } : null,
+    adminCan(jid, 'client_mode') ? { n: '*11*', label: 'Modo cliente de prueba' } : null,
   ].filter(Boolean);
 
-  // ── Comandos disponibles según modo tienda ──
-  // Modo propio: admin usa panel web → chatbot limitado a comandos básicos.
-  // Modo bar_servicio: admin vive en WhatsApp → control total desde aquí.
-  const barServicio = isBarServicio();
-
-  const cmdsBase = [
-    adminCan(jid, 'status') ? '`!status` estado del bot' : null,
-    adminCan(jid, 'store') ? '`!hoy` resumen del día' : null,
-    adminCan(jid, 'points') ? '`!cliente Nombre 34XXXXXXXXX` registrar' : null,
-    adminCan(jid, 'points') ? '`!buscar-cliente 34XXXXXXXXX` ver perfil' : null,
-    adminCan(jid, 'points') ? '`!puntos 34XXXXXXXXX +50 motivo` ajustar puntos' : null,
-    adminCan(jid, 'store') || adminCan(jid, 'points') ? '`!pendientes` cola tiempo real' : null,
-    adminCan(jid, 'handoff') ? '`!take N` · `!release` · `!disponible`' : null,
-    adminCan(jid, 'sync') ? '`!sync` sincronizar catálogo' : null,
-    adminCan(jid, 'handoff') ? '`!send NUMERO mensaje`' : null,
-    adminCan(jid, 'ai') ? '`!ia <pregunta>` análisis IA del negocio' : null,
-    '`!buscar <texto>` encontrar producto',
-    '`!diag` diagnóstico completo',
-  ].filter(Boolean);
-
-  // Comandos avanzados solo en modo bar_servicio (admin gestiona todo por WhatsApp).
-  const cmdsAvanzados = barServicio ? [
-    '`!producto <id> activar|desactivar`',
-    '`!precio <id> <euros>` cambiar precio',
-    '`!stock <id> +N | -N | =N` ajustar inventario',
-    '`!crear-producto <nombre>|<precio>|<categoria>`',
-    '`!ver-pedidos [estado]` listar pedidos con detalle',
-    '`!pausar-tienda` / `!reanudar-tienda`',
-    '`!nicho comida|producto` cambiar nicho',
-    '`!nombre <texto>` cambiar nombre del negocio',
-    '`!horario HH:MM-HH:MM` fijar apertura/cierre',
-    '`!minimo <euros>` pedido mínimo',
-    '`!config <CLAVE> <valor>` cualquier ajuste runtime',
-    '`!ver-config <PREFIJO>` listar config',
-  ] : [];
-
-  const cmdsAdmin = cmdsBase.concat(cmdsAvanzados);
-
-  // Bloque exclusivo super_admin (comandos de control estratégico).
-  const cmdsSA = isSA ? [
-    '`!modo-tienda` alternar propio ↔ servicio',
-    '`!modulo delivery|recogida|puntos|programados on|off`',
-    '`!cerrar-tienda` / `!abrir-tienda`',
-    '`!salud` snapshot del sistema',
-    '`!limpiar` reset sesiones clientes',
-  ] : [];
-
-  const bloqueCmdsAdmin = cmdsAdmin.length ? `\n📝 *Comandos rápidos*\n${cmdsAdmin.join('\n')}` : '';
-  const bloqueCmdsSA = cmdsSA.length ? `\n\n👑 *Solo Super Admin*\n${cmdsSA.join('\n')}` : '';
-  const modoTxt = barServicio
-    ? '\n\n_🏪 Modo servicio: gestión completa desde WhatsApp._'
-    : '\n\n_🏠 Modo propio: usa el panel web para gestión avanzada._';
-
-  return (
-    `🔐 *Panel ${adminRoleLabel(jid)} — ${getNegocioNombre()}*` + modoTxt + `\n\n` +
-    `${options.join('\n')}` +
-    bloqueCmdsAdmin +
-    bloqueCmdsSA
-  );
+  return texts.adminMenu({
+    rolLabel: adminRoleLabel(jid),
+    nombreNegocio: getNegocioNombre(),
+    barServicio: isBarServicio(),
+    isSuperAdmin: isSuperAdminJid(jid),
+    sections,
+    can: {
+      status:   adminCan(jid, 'status'),
+      store:    adminCan(jid, 'store'),
+      products: adminCan(jid, 'products'),
+      points:   adminCan(jid, 'points'),
+      handoff:  adminCan(jid, 'handoff'),
+      sync:     adminCan(jid, 'sync'),
+      ai:       adminCan(jid, 'ai'),
+    },
+  });
 }
 
-function adminStoreMenu() {
-  return (
-    `🏪 *Gestión de tienda*\n\n` +
-    `1️⃣ Ver estado actual\n` +
-    `2️⃣ Cerrar tienda (con mensaje)\n` +
-    `3️⃣ Abrir tienda\n\n` +
-    `_0 · volver al menú principal_`
-  );
-}
-
-function adminProductsMenu() {
-  return (
-    `🧾 *Productos y precios*\n\n` +
-    `1️⃣ Buscar producto por nombre o ID\n` +
-    `2️⃣ Cambiar precio\n` +
-    `3️⃣ Activar / desactivar producto\n\n` +
-    `_0 · volver al menú principal_`
-  );
-}
-
-function adminPointsMenu() {
-  return (
-    `⭐ *Clientes y fidelidad*\n\n` +
-    `1️⃣ Buscar cliente por teléfono\n` +
-    `2️⃣ Añadir puntos\n` +
-    `3️⃣ Quitar puntos\n` +
-    `4️⃣ Historial de puntos\n\n` +
-    `_0 · volver al menú principal_`
-  );
-}
-
-function adminAdminsMenu(jid) {
-  return (
-    `👥 *Administradores WhatsApp*\n\n` +
-    `1️⃣ Ver lista de admins\n` +
-    `2️⃣ Agregar admin\n3️⃣ Eliminar admin\n` +
-    `\n_0 · volver al menú principal_`
-  );
-}
-
-function adminHandoffMenu() {
-  return (
-    `💬 *Atención humana (handoff)*\n\n` +
-    `1️⃣ Ver clientes en espera\n` +
-    `2️⃣ Soltar mi chat activo\n` +
-    `3️⃣ Cerrar todos mis chats\n\n` +
-    `_0 · volver al menú principal_`
-  );
-}
-
-function adminSecurityMenu() {
-  return (
-    `🛡️ *Seguridad y protección*\n\n` +
-    `1️⃣ Estado anti-ban y reputación\n` +
-    `2️⃣ Silenciar cliente 1 hora\n` +
-    `3️⃣ Silenciar cliente 24 horas\n` +
-    `4️⃣ Desbloquear cliente\n` +
-    `5️⃣ Ver lista de silenciados\n\n` +
-    `_0 · volver al menú principal_`
-  );
-}
-
-function adminEmergencyMenu() {
-  return (
-    `🚨 *Modo emergencia*\n\n` +
-    `1️⃣ 🔴 Activar emergencia (cierra tienda + pausa bot)\n` +
-    `2️⃣ ✅ Volver a normalidad\n` +
-    `3️⃣ 🔍 Ver estado actual\n\n` +
-    `_0 · volver al menú principal_`
-  );
-}
+// Los submenús están centralizados en `texts.ADMIN_SUB_MENUS` como copy
+// puro. Los wrappers preservan la firma histórica para no romper llamadas.
+const adminStoreMenu     = () => texts.ADMIN_SUB_MENUS.store;
+const adminProductsMenu  = () => texts.ADMIN_SUB_MENUS.products;
+const adminPointsMenu    = () => texts.ADMIN_SUB_MENUS.points;
+const adminAdminsMenu    = () => texts.ADMIN_SUB_MENUS.admins;
+const adminHandoffMenu   = () => texts.ADMIN_SUB_MENUS.handoff;
+const adminSecurityMenu  = () => texts.ADMIN_SUB_MENUS.security;
+const adminEmergencyMenu = () => texts.ADMIN_SUB_MENUS.emergency;
 
 function adminChatMenu(clientJid) {
   return (

@@ -125,6 +125,191 @@ function barMenu(ctx) {
   );
 }
 
+// ─── Menú admin / super_admin ──────────────────────────────────────────
+
+/**
+ * Renderiza el panel completo del admin/super_admin agrupando los comandos
+ * por dominio funcional. Sin secciones el operador veía 30+ líneas planas
+ * y buscar "¿cómo cambio el precio?" era mirar un chorro. Ahora:
+ *
+ *   1. Encabezado con modo (propio vs bar_servicio).
+ *   2. Bloque de secciones numeradas (submenús).
+ *   3. Grupos de comandos por dominio, cada uno con su emoji identificador.
+ *   4. Bloque exclusivo super_admin al final.
+ *
+ * Recibe `sections` y varias capabilities booleanas — no consulta ni cfg()
+ * ni la BD. El llamador (bot.js) resuelve las capabilities y arma el ctx.
+ *
+ * @param {{
+ *   rolLabel: string,             // "admin" o "super_admin"
+ *   nombreNegocio: string,
+ *   barServicio: boolean,
+ *   isSuperAdmin: boolean,
+ *   sections: Array<{n: string|number, label: string}>,  // 1-11
+ *   can: {                        // permisos ya resueltos por adminCan()
+ *     status: boolean,
+ *     store: boolean,
+ *     products: boolean,
+ *     points: boolean,
+ *     handoff: boolean,
+ *     sync: boolean,
+ *     ai: boolean,
+ *   },
+ * }} ctx
+ */
+function adminMenu(ctx) {
+  const header = (
+    `🔐 *Panel ${ctx.rolLabel} — ${ctx.nombreNegocio}*\n` +
+    (ctx.barServicio
+      ? `_🏪 Modo servicio · gestión completa desde WhatsApp._`
+      : `_🏠 Modo propio · usa el panel web para gestión avanzada._`)
+  );
+
+  const sectionsBlock = ctx.sections.length
+    ? `📂 *Secciones* _(responde con el número)_\n${
+        ctx.sections.map(s => `${s.n} ${s.label}`).join("\n")
+      }`
+    : "";
+
+  // Agrupamos comandos por dominio. Cada grupo solo aparece si el operador
+  // tiene al menos un comando dentro — evita bloques vacíos con el título.
+  const grupos = [];
+
+  const consulta = [
+    ctx.can.status ? "`!status` estado del bot" : null,
+    ctx.can.store  ? "`!hoy` resumen del día" : null,
+    "`!diag` diagnóstico completo",
+  ].filter(Boolean);
+  if (consulta.length) {
+    grupos.push(`📊 *Consulta rápida*\n${consulta.join("\n")}`);
+  }
+
+  const clientes = [
+    ctx.can.points ? "`!buscar-cliente 34XXXXXXXXX` ver perfil" : null,
+    ctx.can.points ? "`!cliente Nombre 34XXXXXXXXX` registrar" : null,
+    ctx.can.points ? "`!puntos 34XXXXXXXXX +50 motivo` ajustar puntos" : null,
+  ].filter(Boolean);
+  if (clientes.length) {
+    grupos.push(`👥 *Clientes y fidelidad*\n${clientes.join("\n")}`);
+  }
+
+  const atencion = [
+    (ctx.can.store || ctx.can.points) ? "`!pendientes` cola tiempo real" : null,
+    ctx.can.handoff ? "`!take N` tomar chat · `!release` soltar" : null,
+    ctx.can.handoff ? "`!disponible` marcar disponible/ausente" : null,
+    ctx.can.handoff ? "`!send NUMERO mensaje` enviar directo" : null,
+  ].filter(Boolean);
+  if (atencion.length) {
+    grupos.push(`💬 *Atención humana*\n${atencion.join("\n")}`);
+  }
+
+  const catalogo = [
+    "`!buscar <texto>` encontrar producto",
+    ctx.can.sync ? "`!sync` sincronizar catálogo" : null,
+    ctx.can.ai ? "`!ia <pregunta>` análisis IA del negocio" : null,
+  ].filter(Boolean);
+  if (catalogo.length) {
+    grupos.push(`🛍️ *Catálogo e IA*\n${catalogo.join("\n")}`);
+  }
+
+  // Comandos avanzados de tienda — solo tiene sentido exponerlos cuando el
+  // admin gestiona su negocio íntegramente desde WhatsApp (bar_servicio).
+  if (ctx.barServicio) {
+    const tienda = [
+      "`!pausar-tienda` / `!reanudar-tienda`",
+      "`!producto <id> activar|desactivar`",
+      "`!precio <id> <euros>` cambiar precio",
+      "`!stock <id> +N | -N | =N` ajustar inventario",
+      "`!crear-producto <nombre>|<precio>|<categoria>`",
+      "`!ver-pedidos [estado]` listar con detalle",
+      "`!horario HH:MM-HH:MM` fijar apertura/cierre",
+      "`!minimo <euros>` pedido mínimo",
+      "`!nombre <texto>` cambiar nombre del negocio",
+      "`!nicho comida|producto` cambiar nicho",
+      "`!config <CLAVE> <valor>` cualquier ajuste runtime",
+      "`!ver-config <PREFIJO>` listar config",
+    ];
+    grupos.push(`🏪 *Gestión de tienda (modo servicio)*\n${tienda.join("\n")}`);
+  }
+
+  // Solo super_admin ve estos — corresponden a control estratégico global.
+  if (ctx.isSuperAdmin) {
+    const sa = [
+      "`!modo-tienda` alternar propio ↔ servicio",
+      "`!modulo delivery|recogida|puntos|programados on|off`",
+      "`!cerrar-tienda` / `!abrir-tienda`",
+      "`!salud` snapshot del sistema",
+      "`!limpiar` reset sesiones clientes",
+    ];
+    grupos.push(`👑 *Solo Super Admin*\n${sa.join("\n")}`);
+  }
+
+  const parts = [header];
+  if (sectionsBlock) parts.push(sectionsBlock);
+  parts.push(...grupos);
+  return parts.join("\n\n");
+}
+
+/**
+ * Submenús específicos que se muestran al elegir una sección del panel.
+ * Cada submenú es corto (3-5 opciones), auto-explicativo y siempre incluye
+ * la salida "0 · volver al menú principal" para no atascar al operador.
+ */
+const ADMIN_SUB_MENUS = {
+  store: (
+    `🏪 *Gestión de tienda*\n\n` +
+    `1️⃣  Ver estado actual\n` +
+    `2️⃣  Cerrar tienda (con mensaje)\n` +
+    `3️⃣  Abrir tienda\n\n` +
+    `_0 · volver al menú principal_`
+  ),
+  products: (
+    `🧾 *Productos y precios*\n\n` +
+    `1️⃣  Buscar producto por nombre o ID\n` +
+    `2️⃣  Cambiar precio\n` +
+    `3️⃣  Activar / desactivar producto\n\n` +
+    `_0 · volver al menú principal_`
+  ),
+  points: (
+    `⭐ *Clientes y fidelidad*\n\n` +
+    `1️⃣  Buscar cliente por teléfono\n` +
+    `2️⃣  Añadir puntos\n` +
+    `3️⃣  Quitar puntos\n` +
+    `4️⃣  Historial de puntos\n\n` +
+    `_0 · volver al menú principal_`
+  ),
+  admins: (
+    `👥 *Administradores WhatsApp*\n\n` +
+    `1️⃣  Ver lista de admins\n` +
+    `2️⃣  Agregar admin\n` +
+    `3️⃣  Eliminar admin\n\n` +
+    `_0 · volver al menú principal_`
+  ),
+  handoff: (
+    `💬 *Atención humana (handoff)*\n\n` +
+    `1️⃣  Ver clientes en espera\n` +
+    `2️⃣  Soltar mi chat activo\n` +
+    `3️⃣  Cerrar todos mis chats\n\n` +
+    `_0 · volver al menú principal_`
+  ),
+  security: (
+    `🛡️ *Seguridad y protección*\n\n` +
+    `1️⃣  Estado anti-ban y reputación\n` +
+    `2️⃣  Silenciar cliente 1 hora\n` +
+    `3️⃣  Silenciar cliente 24 horas\n` +
+    `4️⃣  Desbloquear cliente\n` +
+    `5️⃣  Ver lista de silenciados\n\n` +
+    `_0 · volver al menú principal_`
+  ),
+  emergency: (
+    `🚨 *Modo emergencia*\n\n` +
+    `1️⃣  🔴 Activar emergencia (cierra tienda + pausa bot)\n` +
+    `2️⃣  ✅ Volver a normalidad\n` +
+    `3️⃣  🔍 Ver estado actual\n\n` +
+    `_0 · volver al menú principal_`
+  ),
+};
+
 // ─── Estados en cola de handoff ─────────────────────────────────────────
 
 /**
@@ -162,10 +347,12 @@ module.exports = {
   FALLBACK_HINT,
   HANDOFF_QUEUED,
   HANDOFF_REQUEUED,
+  ADMIN_SUB_MENUS,
   menuPrincipal,
   clientMenuLines,
   clientCapabilityText,
   barMenu,
+  adminMenu,
   handoffClosedMessage,
   withEscapeHint,
 };
