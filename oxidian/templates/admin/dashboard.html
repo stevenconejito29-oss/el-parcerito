@@ -93,6 +93,36 @@
 </div>
 {% endif %}
 
+{# ── Antifraude: mostramos el bloque solo si el motor ya evaluó pedidos ── #}
+{% if antifraude and antifraude.evaluados > 0 %}
+<div class="work-panel p-4 mb-4">
+  <div class="flex items-center justify-between gap-3 flex-wrap mb-2">
+    <div>
+      <p class="font-black" style="color:var(--work-info)">🔐 Verificación pasiva antifraude — últimos {{ antifraude.dias }} días</p>
+      <p class="text-sm" style="color:var(--work-muted)">
+        Pedidos evaluados por el motor de riesgo. LOW no aparece — pasa sin fricción.
+      </p>
+    </div>
+    <a href="{{ url_for('admin.pedidos', confirmacion='pending') }}" class="work-btn">Ver pending →</a>
+  </div>
+  <div class="work-kpis" style="margin-top:0.5rem">
+    <div class="work-panel work-kpi"><span>Evaluados</span><strong>{{ antifraude.evaluados }}</strong><small>MEDIUM + HIGH</small></div>
+    <div class="work-panel work-kpi"><span>Confirmados</span><strong style="color:var(--col-success,#087A48)">{{ antifraude.confirmados }}</strong><small>Cliente respondió SI</small></div>
+    <div class="work-panel work-kpi"><span>Rechazados por bot</span><strong style="color:var(--col-alert,#B42318)">{{ antifraude.cancelados_por_bot }}</strong><small>Cliente respondió NO</small></div>
+    <div class="work-panel work-kpi"><span>Pending vigentes</span><strong style="color:{{ 'var(--work-warn,#c0850a)' if antifraude.pending_vigentes else 'inherit' }}">{{ antifraude.pending_vigentes }}</strong><small>Esperando respuesta</small></div>
+    <div class="work-panel work-kpi">
+      <span>Tasa de confirmación</span>
+      <strong>{% if antifraude.tasa_confirmacion is none %}—{% else %}{{ (antifraude.tasa_confirmacion * 100)|round(0)|int }}%{% endif %}</strong>
+      <small>Confirmados / (confirmados + rechazados)</small>
+    </div>
+  </div>
+  <p class="text-xs mt-2" style="color:var(--work-muted)">
+    Tunear <code>CONFIRMACION_MONTO_UMBRAL_EUR</code> según esta tasa: si &gt;90% probablemente puedes bajar el umbral,
+    si &lt;50% probablemente conviene subirlo para no alienar clientes legítimos.
+  </p>
+</div>
+{% endif %}
+
 {# ── LAYOUT DOS COLUMNAS ─────────────────────────────────────────── #}
 <div class="dash-body">
 

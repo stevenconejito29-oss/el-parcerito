@@ -235,6 +235,69 @@ class OrderRiskConfirmationTest(unittest.TestCase):
         self.assertEqual(refetched.confirmacion_estado, "pending")
         self.assertEqual(refetched.confirmacion_en.year, 2026)
 
+    # ── metricas_antifraude ─────────────────────────────────────────
+
+    def test_metricas_vacio_devuelve_ceros_y_tasa_none(self):
+        from services import metricas_antifraude
+        m = metricas_antifraude(dias=30)
+        self.assertEqual(m["evaluados"], 0)
+        self.assertEqual(m["confirmados"], 0)
+        self.assertEqual(m["cancelados_por_bot"], 0)
+        self.assertIsNone(m["tasa_confirmacion"])
+
+    def test_metricas_cuenta_confirmados_y_pending(self):
+        from services import metricas_antifraude
+        cliente = self._mk_cliente()
+        p1 = self._mk_pedido(cliente, total=10)
+        p1.confirmacion_estado = "pending"
+        p2 = self._mk_pedido(cliente, total=20)
+        p2.confirmacion_estado = "confirmed"
+        p3 = self._mk_pedido(cliente, total=30)
+        # p3 LOW → sin confirmacion_estado, no debe contar como evaluado.
+        db.session.commit()
+        m = metricas_antifraude(dias=30)
+        self.assertEqual(m["evaluados"], 2)  # p1 + p2
+        self.assertEqual(m["confirmados"], 1)  # p2
+        self.assertEqual(m["pending_vigentes"], 1)  # p1
+
+    def test_metricas_no_cuenta_pending_de_pedidos_cancelados(self):
+        # Un pedido que quedó marcado 'pending' pero luego se cancela por
+        # cualquier vía NO debe seguir figurando como "pending_vigente":
+        # es una cola de riesgo actualmente actionable.
+        from services import metricas_antifraude
+        cliente = self._mk_cliente()
+        p = self._mk_pedido(cliente, total=10, estado="cancelado")
+        p.confirmacion_estado = "pending"
+        db.session.commit()
+        m = metricas_antifraude(dias=30)
+        self.assertEqual(m["pending_vigentes"], 0)
+
+    def test_metricas_tasa_confirmacion_calculada(self):
+        # 3 confirmados + 1 rechazado por bot (evento) → tasa 75%.
+        from services import metricas_antifraude
+        from models import OrderEvent
+        cliente = self._mk_cliente()
+        for _ in range(3):
+            p = self._mk_pedido(cliente, total=10)
+            p.confirmacion_estado = "confirmed"
+        # 1 evento de cancelación por verificación pasiva
+        pc = self._mk_pedido(cliente, total=10, estado="cancelado")
+        pc.confirmacion_estado = "pending"  # antes de cancelar
+        ev = OrderEvent(
+            pedido_id=pc.id,
+            tipo="pedido_cancelado",
+            estado_anterior="pendiente",
+            estado_nuevo="cancelado",
+            canal="chatbot",
+            detalle="cliente respondió NO a la verificación pasiva",
+        )
+        db.session.add(ev)
+        db.session.commit()
+        m = metricas_antifraude(dias=30)
+        self.assertEqual(m["confirmados"], 3)
+        self.assertEqual(m["cancelados_por_bot"], 1)
+        self.assertAlmostEqual(m["tasa_confirmacion"], 0.75, places=2)
+
 
 if __name__ == "__main__":
     unittest.main()
