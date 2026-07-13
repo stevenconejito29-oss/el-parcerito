@@ -3287,11 +3287,38 @@ async function _handleMessage(jid, text, pushName) {
     return iniciarCancelacionPedido(jid, ses, identifier);
   }
 
-  // ── Auto-router IA (PR #3) ────────────────────────────────────────────
-  // Delegamos al back la decisión de si contestamos con IA sin exigir `!ia`.
-  // El bot Node solo enruta: menu/noop → sigue el flujo estándar; ai →
-  // dispara aiSmartReply; handoff → aviso neutro + cola humana.
-  if (!isOwner) {
+  // ── Enrutado DETERMINÍSTICO antes de invocar la IA ─────────────────
+  // La IA sigue disponible para preguntas de forma libre, pero NUNCA debe
+  // procesar entradas cortas o submenús esperando input concreto: si el
+  // cliente está eligiendo entre 7 opciones o tecleando un número de
+  // pedido, la respuesta debe ser 100% predecible por el state machine.
+  //
+  // Reglas del guard (todas para no-admin):
+  //   1. Estado de submenú activo (espera_numero_pedido, confirmar_
+  //      cancelacion, espera_direccion_cobertura) → salta la IA y deja
+  //      que el switch de estado maneje el input tal cual llegó.
+  //   2. Mensaje de solo dígitos o ≤3 chars ("2", "ok", "si", "hola") →
+  //      salta la IA. Estos casos los resuelven handleMainMenu (saludos,
+  //      selección numérica) o el catch de escape (menu/0/salir).
+  //   3. En cualquier otro caso (frase libre ≥4 chars con letras) → la
+  //      IA puede intentar routear como antes.
+  //
+  // Sin este guard, el AI autorouter interceptaba el "2" del cliente y
+  // le devolvía "no pude entender tu consulta" en vez de abrir el flujo
+  // de estado de pedido.
+  const skipIA = !isOwner && (function () {
+    const trimmed = String(text || '').trim();
+    if (trimmed.length <= 3) return true;
+    if (/^\d+$/.test(trimmed)) return true;
+    const stateSinPrefijo = String(ses?.estado || '').replace(/^client_/, '');
+    if (['espera_numero_pedido', 'confirmar_cancelacion',
+         'espera_direccion_cobertura'].includes(stateSinPrefijo)) {
+      return true;
+    }
+    return false;
+  })();
+
+  if (!isOwner && !skipIA) {
     try {
       const decision = await _aiAutoRoute(jid, text);
       if (decision) {
@@ -5056,14 +5083,14 @@ async function handleMainMenu(jid, ses, opcion) {
         );
       }
 
-      // Fallback final: menú numerado explícito + opciones útiles. Antes
-      // era una frase genérica que dejaba al cliente sin saber qué hacer.
+      // Fallback final: menú numerado explícito. Sin variantes vagas ni
+      // frases divagativas — el cliente ve SIEMPRE la misma estructura
+      // clara de opciones, y sabe exactamente qué escribir (un número).
       bumpStat('fallback');
       return sendText(jid,
-        `${pick(FRASES_NO_ENTENDI)}\n\n` +
-        `Puedo ayudarte con:\n` +
+        `👇 *Elige una opción respondiendo con el número:*\n\n` +
         `${clientMenuLines()}\n\n` +
-        `_Escribe el número o la palabra clave._`
+        `_También puedes escribir *AGENTE* para hablar con una persona._`
       );
     }
   }
@@ -5304,13 +5331,31 @@ async function handleEstadoPedido(jid, ses, numero) {
         );
       }
     }
+    // Ningún match con lo que escribió — construimos una respuesta útil:
+    // 1) le sugerimos ULTIMO como camino más rápido,
+    // 2) le enseñamos qué pedidos SÍ tenemos (últimos 3, para que
+    //    reconozca el número exacto), y
+    // 3) le ofrecemos agente para casos raros.
+    const listaPedidos = (data.ok && Array.isArray(data.pedidos) && data.pedidos.length)
+      ? `\n📋 *Tus últimos pedidos:*\n${
+          data.pedidos.slice(0, 3)
+            .map(p => `• *${p.numero}* — ${p.estado}`).join('\n')
+        }\n`
+      : '';
     return sendText(jid,
-      `❓ No encontramos ese pedido asociado a tu número.\n\n` +
-      `Usa el número exacto (ej. *#0042*) o escribe *ULTIMO*.\n\n` +
+      `❓ No encontré el pedido *${raw}* asociado a tu número.\n` +
+      listaPedidos +
+      `\nPuedes:\n` +
+      `• Escribir *ULTIMO* para ver el más reciente\n` +
+      `• Escribir *AGENTE* si necesitas ayuda\n\n` +
       `_Escribe *menu* para volver._`
     );
-  } catch {
-    return sendText(jid, `⚠️ No pudimos consultar el estado ahora. Intenta de nuevo.\n\n_Escribe *menu* para volver._`);
+  } catch (err) {
+    log('warn', 'estado_pedido_lookup_fail', err?.message || String(err));
+    return sendText(jid,
+      `⚠️ No pudimos consultar el estado ahora mismo.\n\n` +
+      `Puedes intentar de nuevo en 30 segundos o escribir *AGENTE*.\n\n` +
+      `_Escribe *menu* para volver._`);
   }
 }
 
