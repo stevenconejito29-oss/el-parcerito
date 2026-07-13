@@ -204,6 +204,54 @@ DEFAULTS: dict[str, dict] = {
             "resolviendo en otra provincia."
         ),
     },
+
+    # ── Combos (fuente única de límites) ─────────────────────────────
+    # Consumidas por `combo_validators.ComboLimits`. Sin estas claves, el
+    # sistema caía a env → default hardcodeado. Ahora hay una fuente
+    # documentada en /superadmin/config que evita drift.
+    "COMBO_MAX_PRICE_EUR": {
+        "default": "1000",
+        "type": "float",
+        "desc": (
+            "Precio máximo permitido para un combo, en euros. Cap "
+            "defensivo interno 1-100000. Antes hardcoded a 1000€."
+        ),
+    },
+    "COMBO_MAX_DISCOUNT_PCT": {
+        "default": "50",
+        "type": "float",
+        "desc": (
+            "Porcentaje máximo de descuento sobre precio compuesto de un "
+            "combo. 50% típico permite ofertas agresivas sin regalar "
+            "productos."
+        ),
+    },
+    "COMBO_MAX_COMPONENTS": {
+        "default": "30",
+        "type": "int",
+        "desc": (
+            "Máximo de componentes distintos en un combo. Más = pesada "
+            "vista, más lento el checkout y difícil comunicar al cliente."
+        ),
+    },
+    "COMBO_MIN_COMPONENTS": {
+        "default": "1",
+        "type": "int",
+        "desc": "Mínimo de componentes para considerar un producto como combo.",
+    },
+    "COMBO_MAX_QTY_COMPONENT": {
+        "default": "50",
+        "type": "int",
+        "desc": "Cantidad máxima de unidades de un mismo componente en un combo.",
+    },
+    "COMBO_MAX_SELECTIONS_GROUP": {
+        "default": "10",
+        "type": "int",
+        "desc": (
+            "Máximo de opciones seleccionables por grupo dentro de un combo. "
+            "Ej: grupo 'Bebida' con hasta 10 sabores para elegir."
+        ),
+    },
 }
 
 

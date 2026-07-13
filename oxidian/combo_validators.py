@@ -84,6 +84,23 @@ class ComboLimits:
             return float(val)
         return float(os.environ.get("COMBO_MAX_DISCOUNT_PCT", "50.0"))
 
+    @staticmethod
+    def max_price_eur() -> float:
+        """Precio máximo permitido para un combo (euros).
+
+        Antes: hardcoded 1000€ en `validate_combo_pricing`. Ahora fluye desde
+        SiteConfig `COMBO_MAX_PRICE_EUR` con fallback a env → default 1000.
+        Cap defensivo interno 1-100000 para evitar valores absurdos que
+        deshabiliten toda validación.
+        """
+        val = ComboLimits._site_config_value("COMBO_MAX_PRICE_EUR")
+        try:
+            raw = val if val is not None else os.environ.get("COMBO_MAX_PRICE_EUR", "1000")
+            v = float(raw)
+        except (TypeError, ValueError):
+            v = 1000.0
+        return max(1.0, min(100000.0, v))
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # VALIDADORES REUTILIZABLES
@@ -276,8 +293,11 @@ def validate_combo_pricing(
     if not isinstance(precio, (int, float)) or precio <= 0:
         return False, f"{error_prefix}: debe ser un número mayor a 0"
 
-    if precio > 1000:
-        return False, f"{error_prefix}: el precio no puede exceder 1000€"
+    max_precio = ComboLimits.max_price_eur()
+    if precio > max_precio:
+        # Redondeo defensivo del label: si el admin puso 999.5, el mensaje
+        # dice "no puede exceder 1000€" evitando decimales molestos.
+        return False, f"{error_prefix}: el precio no puede exceder {max_precio:.0f}€"
 
     if descuento_porcentaje is not None:
         try:
