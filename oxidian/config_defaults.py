@@ -158,14 +158,20 @@ DEFAULTS: dict[str, dict] = {
         "default": "120",
         "type": "int",
         "desc": (
-            "Minutos que un pedido HIGH puede quedarse 'pending' sin respuesta "
-            "del cliente antes de auto-cancelarse. Solo aplica a HIGH "
-            "(cliente sin historial + monto sobre umbral). MEDIUM no expira "
-            "automáticamente — queda para revisión manual. Cap defensivo "
-            "15-1440. Poner 0 desactiva la auto-cancelación."
+            "Minutos que un HIGH puede estar pending sin respuesta antes de "
+            "auto-cancelar. Solo HIGH — MEDIUM queda para revisión manual. "
+            "Cap 15-1440. 0 desactiva."
         ),
     },
 }
+
+
+# `SiteConfig.descripcion` es VARCHAR(200) en Postgres. Truncar aquí
+# defiende el arranque de la app: una descripción demasiado larga en un
+# default lanzaría StringDataRightTruncation y el contenedor no llega a
+# healthy, provocando rollback en despliegue. Preferimos verdad parcial
+# a caída dura.
+_DESC_MAX_LEN = 200
 
 
 def sembrar_defaults() -> int:
@@ -178,7 +184,10 @@ def sembrar_defaults() -> int:
     for clave, meta in DEFAULTS.items():
         if SiteConfig.query.filter_by(clave=clave).first():
             continue
-        SiteConfig.set(clave, meta["default"], descripcion=meta["desc"])
+        desc = str(meta.get("desc") or "")
+        if len(desc) > _DESC_MAX_LEN:
+            desc = desc[: _DESC_MAX_LEN - 1] + "…"
+        SiteConfig.set(clave, meta["default"], descripcion=desc)
         nuevas += 1
     return nuevas
 
