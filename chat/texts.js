@@ -43,18 +43,24 @@ function withEscapeHint(body) {
 // ─── Menús para el cliente WhatsApp ─────────────────────────────────────
 
 /**
- * Presentación de arranque del bot para clientes.
+ * Presentación de arranque del bot para clientes. Menciona en la línea de
+ * capabilities solo las features que están ACTIVAS en la tienda — así el
+ * cliente nunca lee "consultar tus puntos" en una tienda que no maneja
+ * fidelidad, ni "comprobar cobertura" si no hay delivery. Cambios de
+ * feature en el panel se propagan aquí en <5s vía config push (PR #38).
  *
  * @param {{
  *   nombreNegocio: string,
  *   loyaltyEnabled: boolean,
  *   deliveryEnabled: boolean,
+ *   scheduledEnabled?: boolean,
  * }} ctx
  */
 function menuPrincipal(ctx) {
   const extras = [
     ctx.loyaltyEnabled ? "consultar tus puntos" : null,
     ctx.deliveryEnabled ? "comprobar cobertura" : null,
+    ctx.scheduledEnabled ? "reservar tu pedido con antelación" : null,
   ].filter(Boolean);
   const extraText = extras.length ? `, ${extras.join(" o ")}` : "";
   return (
@@ -98,6 +104,7 @@ function clientCapabilityText(ctx) {
   const caps = ["estado de pedidos", "información general"];
   if (ctx.loyaltyEnabled) caps.push("puntos");
   if (ctx.deliveryEnabled) caps.push("cobertura");
+  if (ctx.scheduledEnabled) caps.push("pedidos programados");
   caps.push("horario");
   return caps.join(", ");
 }

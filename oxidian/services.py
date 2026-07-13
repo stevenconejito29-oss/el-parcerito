@@ -136,12 +136,20 @@ def evaluate_order_risk(pedido: Order) -> dict:
       - level:   'LOW' | 'MEDIUM' | 'HIGH'
       - reasons: lista de motivos legibles (útil para logs y auditoría)
 
-    Reglas actuales (v1 — deliberadamente simples):
-      - LOW    → cliente con al menos 1 pedido entregado previo Y monto
-                 bajo el umbral.
-      - MEDIUM → cliente sin historial (primer pedido) O monto alto (>=
-                 umbral) pero solo uno de los dos.
-      - HIGH   → cliente sin historial Y monto alto.
+    Regla v2 (2026-07-13) — deliberadamente simple:
+      - HIGH   → cliente sin ningún pedido entregado previo (primera vez).
+                 SIEMPRE se pide confirmación, independiente del monto.
+      - MEDIUM → cliente con historial pero monto EXTREMO (>= 3x el umbral
+                 configurado). Puede indicar cuenta comprometida, pedido
+                 accidental o cambio de comportamiento — señal para el
+                 equipo, no bloqueo.
+      - LOW    → cliente con historial y monto normal. Cero fricción para
+                 clientes conocidos, alineado con la política del negocio.
+
+    La rama MEDIUM es un guardrail defensivo opcional: si el umbral se
+    configura muy alto (o el negocio no maneja tickets extremos), en la
+    práctica nunca dispara. La rama HIGH cubre el 99% de pedidos fantasma
+    (siempre vienen de identidades nuevas).
 
     Ampliar heurísticas aquí es seguro: solo altera el `level` — no muta
     el pedido ni escribe en BD. El caller decide qué hacer con el level.
@@ -150,22 +158,21 @@ def evaluate_order_risk(pedido: Order) -> dict:
     umbral = _config_umbral_monto()
 
     monto = float(pedido.total or 0)
-    monto_alto = monto >= umbral
     tiene_historial = _cliente_tiene_pedido_entregado_previo(
         pedido.cliente_id, pedido_id_actual=pedido.id
     )
+
     if not tiene_historial:
         reasons.append("cliente_sin_historial")
-    if monto_alto:
-        reasons.append(f"monto_alto>={umbral:.0f}")
+        return {"level": "HIGH", "reasons": reasons}
 
-    if not tiene_historial and monto_alto:
-        level = "HIGH"
-    elif not tiene_historial or monto_alto:
-        level = "MEDIUM"
-    else:
-        level = "LOW"
-    return {"level": level, "reasons": reasons}
+    # Cliente conocido con historial de al menos 1 entrega.
+    umbral_extremo = umbral * 3
+    if monto >= umbral_extremo:
+        reasons.append(f"monto_extremo>={umbral_extremo:.0f}")
+        return {"level": "MEDIUM", "reasons": reasons}
+
+    return {"level": "LOW", "reasons": reasons}
 
 
 def marcar_confirmacion_si_procede(pedido: Order) -> str | None:
