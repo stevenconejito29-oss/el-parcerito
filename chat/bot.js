@@ -305,6 +305,32 @@ function isBarServicio() {
 }
 
 /**
+ * Límite superior configurable para cambios de precio desde el bot admin
+ * (`!precio ID EUROS`, opción "Cambiar precio" del menú Productos, y el
+ * comando `!precio` del panel bar). Antes: hardcoded a 1000 o 9999 según
+ * la ruta. Ahora: fuente única desde SiteConfig `BOT_MAX_PRICE_EUR`
+ * (sincronizado por syncBranding) con cap defensivo 1-100000.
+ */
+function botMaxPrice() {
+  const raw = cfg('bot_max_price_eur', '9999') || '9999';
+  const v = parseFloat(raw);
+  if (!isFinite(v)) return 9999;
+  return Math.max(1, Math.min(100000, v));
+}
+
+/**
+ * Límite superior para ajustes de puntos desde el bot admin.
+ * Fuente única `BOT_MAX_POINTS_ADJUST`, cap defensivo 1-1000000. Evita
+ * que un typo agregue 100000 puntos en vez de 100.
+ */
+function botMaxPointsAdjust() {
+  const raw = cfg('bot_max_points_adjust', '10000') || '10000';
+  const v = parseInt(raw, 10);
+  if (!isFinite(v)) return 10000;
+  return Math.max(1, Math.min(1000000, v));
+}
+
+/**
  * Nombre del negocio mostrado al cliente.
  * Prioridad: cfg('nombre_negocio') (sincronizado desde Oxidian/SiteConfig) →
  * env.NEGOCIO → fallback neutral.
@@ -2326,6 +2352,15 @@ async function syncBranding() {
     setCfg('cash_enabled',      !!data.cash_enabled      ? '1' : '0');
     setCfg('horario_apertura', data.horario_apertura || '');
     setCfg('horario_cierre', data.horario_cierre || '');
+    // Límites operativos configurables (BOT_MAX_PRICE_EUR, BOT_MAX_POINTS_ADJUST)
+    // — persistidos aquí para que `botMaxPrice()` y `botMaxPointsAdjust()`
+    // reflejen cambios del panel sin reiniciar el contenedor chat.
+    if (data.bot_max_price_eur !== undefined) {
+      setCfg('bot_max_price_eur', String(data.bot_max_price_eur || '9999'));
+    }
+    if (data.bot_max_points_adjust !== undefined) {
+      setCfg('bot_max_points_adjust', String(data.bot_max_points_adjust || '10000'));
+    }
     setCfg('whatsapp_role_profiles', JSON.stringify(
       Array.isArray(data.whatsapp_roles) ? data.whatsapp_roles : []
     ));
@@ -3040,8 +3075,9 @@ async function handleBarPrecioSku(jid, ses, rawText) {
   }
   const ppId = parseInt(m[1], 10);
   const precio = parseFloat(m[2].replace(',', '.'));
-  if (!isFinite(precio) || precio < 0 || precio > 9999) {
-    return sendText(jid, `Precio fuera de rango. Usa por ejemplo *12 4.50* (entre 0 y 9999 €).`);
+  const maxPrecio = botMaxPrice();
+  if (!isFinite(precio) || precio < 0 || precio > maxPrecio) {
+    return sendText(jid, `Precio fuera de rango. Usa por ejemplo *12 4.50* (entre 0 y ${maxPrecio.toFixed(0)} €).`);
   }
   setSesion(jid, { ...ses, pending: { tipo: 'bar_precio', ppId, precio } });
   return sendText(jid,
@@ -4083,8 +4119,9 @@ async function handleAdminCmd(jid, text) {
     }
     const signo = match[1] || '+';
     const magnitud = parseInt(match[2], 10);
-    if (!magnitud || magnitud > 10000) {
-      return sendText(jid, '❌ La cantidad debe ser >0 y ≤10000.');
+    const maxPuntos = botMaxPointsAdjust();
+    if (!magnitud || magnitud > maxPuntos) {
+      return sendText(jid, `❌ La cantidad debe ser >0 y ≤${maxPuntos}.`);
     }
     const delta = signo === '-' ? -magnitud : magnitud;
     const motivo = partes.slice(2).join(' ').trim() || 'Ajuste manual por WhatsApp';
@@ -5761,8 +5798,9 @@ async function handleAdminProductPriceWait(jid, ses, text) {
   const parts = String(text || '').trim().split(/\s+/);
   const productId = Number.parseInt(parts[0], 10);
   const price = parsePrice(parts[1]);
-  if (!productId || !price || price <= 0 || price > 1000) {
-    return sendText(jid, 'Formato inválido. Escribe *ID PRECIO*. Ejemplo: 12 4.50');
+  const maxPrecio = botMaxPrice();
+  if (!productId || !price || price <= 0 || price > maxPrecio) {
+    return sendText(jid, `Formato inválido o precio fuera de rango (máx ${maxPrecio.toFixed(0)} €). Escribe *ID PRECIO*. Ejemplo: 12 4.50`);
   }
   try {
     const product = await findProductById(productId, jid);
@@ -5841,8 +5879,9 @@ async function handleAdminPointsAdjustWait(jid, ses, text) {
   const phone = normalizePhone(parts[0]);
   const amount = Number.parseInt(parts[1], 10);
   const sign = ses.pending?.sign === -1 ? -1 : 1;
-  if (!/^[0-9]{6,15}$/.test(phone) || !amount || amount <= 0 || amount > 10000) {
-    return sendText(jid, 'Formato inválido. Escribe *TELEFONO PUNTOS*. Ejemplo: 612345678 50');
+  const maxPuntos = botMaxPointsAdjust();
+  if (!/^[0-9]{6,15}$/.test(phone) || !amount || amount <= 0 || amount > maxPuntos) {
+    return sendText(jid, `Formato inválido o cantidad fuera de rango (máx ${maxPuntos}). Escribe *TELEFONO PUNTOS*. Ejemplo: 612345678 50`);
   }
   try {
     const customer = await findCustomerByPhone(phone, jid);
@@ -6889,5 +6928,7 @@ module.exports = {
     setCfg,
     setAdminState,
     splitTextForSend,
+    botMaxPrice,
+    botMaxPointsAdjust,
   },
 };

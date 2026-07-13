@@ -252,6 +252,30 @@ DEFAULTS: dict[str, dict] = {
             "Ej: grupo 'Bebida' con hasta 10 sabores para elegir."
         ),
     },
+
+    # ── Bot admin — límites operativos ─────────────────────────────
+    # Antes: `!precio 12 4.50` rechazaba precios sobre 1000€ hardcode,
+    # `!puntos 34XXX +5000` rechazaba magnitudes sobre 10000. Sin
+    # fuente única el admin no podía ajustarlos sin redeploy.
+    "BOT_MAX_PRICE_EUR": {
+        "default": "9999",
+        "type": "float",
+        "desc": (
+            "Precio máximo permitido en cambios de producto/SKU desde el "
+            "bot WhatsApp (`!precio ID EUROS`). Cap defensivo interno "
+            "1-100000. Sirve tanto para productos propios como para "
+            "SKUs del bar en modo bar_servicio."
+        ),
+    },
+    "BOT_MAX_POINTS_ADJUST": {
+        "default": "10000",
+        "type": "int",
+        "desc": (
+            "Cantidad máxima de puntos ajustables en una sola operación "
+            "desde el bot (`!puntos +/-N` o menú admin). Evita typos "
+            "que agreguen 100000 en vez de 100. Cap 1-1000000."
+        ),
+    },
 }
 
 
