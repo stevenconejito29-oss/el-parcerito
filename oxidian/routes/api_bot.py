@@ -600,6 +600,12 @@ def branding():
         "cash_enabled": _config_bool("EFECTIVO_HABILITADO", "1"),
         "horario_apertura": SiteConfig.get("HORARIO_APERTURA", ""),
         "horario_cierre": SiteConfig.get("HORARIO_CIERRE", ""),
+        # Límites operativos del bot admin. Antes hardcoded en bot.js
+        # (1000, 9999, 10000); ahora ida-vuelta desde SiteConfig para que
+        # los ajustes en /superadmin/config surtan efecto sin redeploy
+        # del contenedor chat.
+        "bot_max_price_eur": SiteConfig.get("BOT_MAX_PRICE_EUR", "9999"),
+        "bot_max_points_adjust": SiteConfig.get("BOT_MAX_POINTS_ADJUST", "10000"),
         "whatsapp_roles": whatsapp_roles,
     })
 
