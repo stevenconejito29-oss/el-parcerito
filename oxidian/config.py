@@ -44,6 +44,19 @@ class Config:
     REMEMBER_COOKIE_SAMESITE = "Lax"
     REMEMBER_COOKIE_PATH = "/"
     WTF_CSRF_TIME_LIMIT = 8 * 60 * 60
+    # Flask-WTF valida el Referer header en POST sobre HTTPS por defecto.
+    # Muchos navegadores modernos (Chrome/Safari en iOS con Intelligent
+    # Tracking Prevention, extensiones de privacidad, ciertas policies
+    # corporativas) o proxies como Cloudflare bajo modo estricto NO envían
+    # el header Referer, incluso en peticiones same-origin. Esto rechaza
+    # el login legítimo con 400 "The referrer header is missing" sin dar
+    # feedback al usuario.
+    #
+    # El CSRF token session-bound del formulario es la defensa principal
+    # contra cross-site request forgery y sigue activo — desactivar la
+    # validación de Referer no debilita la protección real, solo elimina
+    # una segunda capa que rompe con navegadores modernos.
+    WTF_CSRF_SSL_STRICT = False
 
 
 class DevelopmentConfig(Config):
