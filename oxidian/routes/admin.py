@@ -33,6 +33,7 @@ from combo_validators import (
 from services import (estado_cola, registrar_egreso, registrar_ingreso,
                       resumen_caja_hoy, pagos_pendientes_staff,
                       calcular_pl, top_productos, resumen_ventas_por_categoria,
+                      consultar_estado_bot,
                       enviar_whatsapp_codigo_entrega, enviar_whatsapp_estado, enviar_whatsapp_pago_confirmado,
                       distribuir_pedido, distribuir_repartidor, generar_comision_entrega,
                       metricas_antifraude,
@@ -496,6 +497,10 @@ def dashboard():
     # devuelve dict con ceros si algo falla; nunca rompe el dashboard.
     antifraude = metricas_antifraude(dias=30)
 
+    # Salud del bot Node — timeout corto para no bloquear el render aunque
+    # el bot no responda. Muestra estado visual al operador.
+    bot_health = consultar_estado_bot(timeout=2.0)
+
     return render_template("admin/dashboard.html",
                            pedidos_hoy=pedidos_hoy,
                            pedidos_ayer=pedidos_ayer,
@@ -522,7 +527,8 @@ def dashboard():
                            entregados_hoy=entregados_hoy,
                            preparadores=preparadores,
                            repartidores=repartidores,
-                           antifraude=antifraude)
+                           antifraude=antifraude,
+                           bot_health=bot_health)
 
 
 # ─── COLA DE TRABAJO ─────────────────────────

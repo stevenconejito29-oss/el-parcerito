@@ -1728,6 +1728,110 @@ def notificar_bot_sync():
     threading.Thread(target=_fire, daemon=True).start()
 
 
+def consultar_estado_bot(timeout: float = 2.5) -> dict:
+    """Consulta el `/api/status` del bot Node y devuelve un resumen listo
+    para renderizar en el panel admin.
+
+    Best-effort — nunca lanza. Ante fallo devuelve un dict con `salud="down"`
+    para que el widget muestre estado rojo. Timeout corto (default 2.5s)
+    para no ralentizar la carga del dashboard cuando el bot no responde.
+
+    Salud clasificada:
+      - `up`        → HTTP 200 + connected=true + errores_24h razonables.
+      - `degraded`  → responde pero WhatsApp desconectado O errores altos.
+      - `down`      → no responde, timeout o HTTP error.
+
+    Devuelve un dict con:
+      salud, connected, evolution_state, errores_24h, sessions_client,
+      handoffs_pending, handoffs_undelivered, latency_ms, mensaje (para UI).
+    """
+    from models import SiteConfig as _SC
+    import requests
+
+    bot_url = (_SC.get("BOT_API_URL", os.environ.get("BOT_API_URL", "http://chat:3000")) or "").rstrip("/")
+    panel_key = _SC.get("BOT_PANEL_KEY", "") or _SC.get("BOT_API_KEY", "")
+    if not bot_url or not panel_key:
+        return {
+            "salud": "unknown",
+            "mensaje": "BOT_API_URL o BOT_PANEL_KEY no configurados.",
+            "connected": False,
+            "evolution_state": None,
+            "errores_24h": None,
+            "sessions_client": None,
+            "handoffs_pending": None,
+            "handoffs_undelivered": None,
+            "latency_ms": None,
+        }
+
+    inicio = time.monotonic()
+    try:
+        resp = requests.get(
+            f"{bot_url}/api/status",
+            headers={"X-Panel-Key": panel_key, "X-API-Key": panel_key},
+            timeout=timeout,
+        )
+        latency_ms = int((time.monotonic() - inicio) * 1000)
+        if not resp.ok:
+            return {
+                "salud": "down",
+                "mensaje": f"HTTP {resp.status_code}",
+                "connected": False,
+                "evolution_state": None,
+                "errores_24h": None,
+                "sessions_client": None,
+                "handoffs_pending": None,
+                "handoffs_undelivered": None,
+                "latency_ms": latency_ms,
+            }
+        d = resp.json() if resp.content else {}
+    except Exception as exc:
+        logger.warning("consultar_estado_bot fallo: %s", exc)
+        return {
+            "salud": "down",
+            "mensaje": "Bot no responde",
+            "connected": False,
+            "evolution_state": None,
+            "errores_24h": None,
+            "sessions_client": None,
+            "handoffs_pending": None,
+            "handoffs_undelivered": None,
+            "latency_ms": None,
+        }
+
+    connected = bool(d.get("connected"))
+    evolution_state = d.get("evolution_state") or "unknown"
+    errores_24h = int(d.get("errores_24h") or 0)
+    handoffs = d.get("handoffs") or {}
+    handoffs_pending = int(handoffs.get("pending") or 0)
+    handoffs_undelivered = int(handoffs.get("undelivered_messages") or 0)
+    sessions = d.get("sessions") or {}
+    sessions_client = int(sessions.get("client") or 0)
+
+    # Clasificación de salud. Umbrales conservadores — se pueden hacer
+    # configurables si el negocio quiere afinarlos.
+    if not connected:
+        salud = "degraded"
+        mensaje = f"WhatsApp desconectado (estado: {evolution_state})."
+    elif errores_24h > 200 or handoffs_undelivered > 50:
+        salud = "degraded"
+        mensaje = f"Errores 24h: {errores_24h}. Handoffs sin entregar: {handoffs_undelivered}."
+    else:
+        salud = "up"
+        mensaje = f"Conectado. {sessions_client} clientes en sesión."
+
+    return {
+        "salud": salud,
+        "mensaje": mensaje,
+        "connected": connected,
+        "evolution_state": evolution_state,
+        "errores_24h": errores_24h,
+        "sessions_client": sessions_client,
+        "handoffs_pending": handoffs_pending,
+        "handoffs_undelivered": handoffs_undelivered,
+        "latency_ms": latency_ms,
+    }
+
+
 def refrescar_bot_si_claves_relevantes(claves) -> bool:
     """Dispara `notificar_bot_sync` solo si alguna de `claves` es sensible
     para el bot (según `store_config.CLAVES_QUE_REFRESCAN_BOT`).

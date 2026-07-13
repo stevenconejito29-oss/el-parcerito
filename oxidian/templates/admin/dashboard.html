@@ -93,6 +93,39 @@
 </div>
 {% endif %}
 
+{# ── Salud del bot de WhatsApp ── #}
+{% if bot_health %}
+{% set _salud = bot_health.salud or 'unknown' %}
+{% set _color = {'up': 'var(--col-success,#087A48)', 'degraded': 'var(--work-warn,#c0850a)', 'down': 'var(--col-alert,#B42318)', 'unknown': 'var(--work-muted)'}.get(_salud, 'var(--work-muted)') %}
+{% set _label = {'up': 'Operativo', 'degraded': 'Degradado', 'down': 'Caído', 'unknown': 'Sin datos'}.get(_salud, 'Sin datos') %}
+{% set _dot = {'up': '🟢', 'degraded': '🟡', 'down': '🔴', 'unknown': '⚪'}.get(_salud, '⚪') %}
+<div class="work-panel p-3 mb-4" style="border-left:4px solid {{ _color }}">
+  <div class="flex items-center justify-between gap-3 flex-wrap">
+    <div class="min-w-0">
+      <p class="font-black" style="color:{{ _color }}">{{ _dot }} Bot de WhatsApp — {{ _label }}</p>
+      <p class="text-sm mt-1" style="color:var(--work-muted)">
+        {{ bot_health.mensaje }}
+        {% if bot_health.latency_ms is not none %} · Latencia: {{ bot_health.latency_ms }}ms{% endif %}
+      </p>
+      {% if bot_health.evolution_state %}
+      <p class="text-xs mt-1" style="color:var(--work-muted)">
+        Evolution: <code>{{ bot_health.evolution_state }}</code>
+        {% if bot_health.sessions_client is not none %} · Sesiones cliente: {{ bot_health.sessions_client }}{% endif %}
+        {% if bot_health.handoffs_pending is not none %} · Handoffs pendientes: {{ bot_health.handoffs_pending }}{% endif %}
+        {% if bot_health.errores_24h is not none and bot_health.errores_24h > 0 %} · Errores 24h: {{ bot_health.errores_24h }}{% endif %}
+      </p>
+      {% endif %}
+    </div>
+    {% if _salud in ('degraded', 'down') %}
+    <a href="{{ url_for('superadmin.config', section='integraciones') if current_user.rol == 'super_admin' else '#' }}"
+       class="work-btn" style="color:{{ _color }};border-color:{{ _color }}">
+      {% if _salud == 'down' %}Revisar conexión{% else %}Ver detalles{% endif %}
+    </a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 {# ── Antifraude: mostramos el bloque solo si el motor ya evaluó pedidos ── #}
 {% if antifraude and antifraude.evaluados > 0 %}
 <div class="work-panel p-4 mb-4">
