@@ -197,6 +197,7 @@ def marcar_confirmacion_si_procede(pedido: Order) -> str | None:
     level = result["level"]
     if level in ("MEDIUM", "HIGH"):
         pedido.confirmacion_estado = "pending"
+        pedido.confirmacion_nivel = level
         logger.info(
             "confirmacion pending pedido=%s level=%s reasons=%s",
             pedido.numero_pedido, level, ",".join(result["reasons"]),
@@ -1962,6 +1963,18 @@ def metricas_antifraude(dias: int = 30) -> dict:
             OrderEvent.tipo == "pedido_cancelado",
             OrderEvent.detalle.ilike("%verificación pasiva%"),
         ).scalar() or 0
+        # Desglose por nivel de riesgo — cuenta evaluados en ventana por nivel.
+        # NULL nivel = pedidos que quedaron pending pero fueron creados antes
+        # de introducir la columna (legacy), o donde la migración falló.
+        por_nivel = dict(
+            db.session.query(Order.confirmacion_nivel, db.func.count(Order.id))
+            .filter(
+                Order.creado_en >= desde,
+                Order.confirmacion_estado.isnot(None),
+            )
+            .group_by(Order.confirmacion_nivel)
+            .all()
+        )
     except Exception:
         logger.exception("metricas_antifraude: query falló")
         return {
@@ -1971,6 +1984,7 @@ def metricas_antifraude(dias: int = 30) -> dict:
             "pending_vigentes": 0,
             "cancelados_por_bot": 0,
             "tasa_confirmacion": None,
+            "por_nivel": {"MEDIUM": 0, "HIGH": 0},
         }
 
     resueltos = confirmados + cancelados_por_bot
@@ -1982,6 +1996,10 @@ def metricas_antifraude(dias: int = 30) -> dict:
         "pending_vigentes": int(pending_vigentes),
         "cancelados_por_bot": int(cancelados_por_bot),
         "tasa_confirmacion": tasa,
+        "por_nivel": {
+            "MEDIUM": int(por_nivel.get("MEDIUM", 0) or 0),
+            "HIGH": int(por_nivel.get("HIGH", 0) or 0),
+        },
     }
 
 

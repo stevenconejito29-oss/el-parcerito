@@ -272,6 +272,51 @@ class OrderRiskConfirmationTest(unittest.TestCase):
         m = metricas_antifraude(dias=30)
         self.assertEqual(m["pending_vigentes"], 0)
 
+    def test_marcar_guarda_nivel_medium(self):
+        from services import marcar_confirmacion_si_procede
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=15)  # solo cliente_sin_historial → MEDIUM
+        marcar_confirmacion_si_procede(pedido)
+        self.assertEqual(pedido.confirmacion_estado, "pending")
+        self.assertEqual(pedido.confirmacion_nivel, "MEDIUM")
+
+    def test_marcar_guarda_nivel_high(self):
+        from services import marcar_confirmacion_si_procede
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=200)  # sin historial + monto alto → HIGH
+        marcar_confirmacion_si_procede(pedido)
+        self.assertEqual(pedido.confirmacion_estado, "pending")
+        self.assertEqual(pedido.confirmacion_nivel, "HIGH")
+
+    def test_marcar_low_no_setea_nivel(self):
+        from services import marcar_confirmacion_si_procede
+        SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
+        cliente = self._mk_cliente()
+        self._mk_pedido(cliente, total=10, estado="entregado")
+        pedido = self._mk_pedido(cliente, total=15)  # con historial + monto bajo → LOW
+        marcar_confirmacion_si_procede(pedido)
+        self.assertIsNone(pedido.confirmacion_estado)
+        self.assertIsNone(pedido.confirmacion_nivel)
+
+    def test_metricas_desagregan_por_nivel(self):
+        from services import metricas_antifraude
+        cliente = self._mk_cliente()
+        # 2 MEDIUM, 1 HIGH
+        for _ in range(2):
+            p = self._mk_pedido(cliente, total=15)
+            p.confirmacion_estado = "pending"
+            p.confirmacion_nivel = "MEDIUM"
+        p2 = self._mk_pedido(cliente, total=200)
+        p2.confirmacion_estado = "pending"
+        p2.confirmacion_nivel = "HIGH"
+        db.session.commit()
+        m = metricas_antifraude(dias=30)
+        self.assertEqual(m["por_nivel"]["MEDIUM"], 2)
+        self.assertEqual(m["por_nivel"]["HIGH"], 1)
+        self.assertEqual(m["evaluados"], 3)
+
     def test_metricas_tasa_confirmacion_calculada(self):
         # 3 confirmados + 1 rechazado por bot (evento) → tasa 75%.
         from services import metricas_antifraude

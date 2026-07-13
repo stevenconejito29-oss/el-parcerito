@@ -2196,6 +2196,11 @@ class Order(db.Model):
     # que permite al equipo priorizar mejor sin añadir fricción al cliente.
     confirmacion_estado = db.Column(db.String(30))
     confirmacion_en = db.Column(db.DateTime)
+    # Nivel del scoring de riesgo cuando `confirmacion_estado` es 'pending'
+    # o 'confirmed'. NULL si el pedido pasó como LOW (sin fricción) o si
+    # es legacy previo al feature. Permite desagregar métricas y aplicar
+    # políticas distintas (auto-cancel más agresivo para HIGH, etc).
+    confirmacion_nivel = db.Column(db.String(10))
 
     # ── Notificaciones WhatsApp ──────────────────────────────────────
     whatsapp_enviado_confirmacion = db.Column(db.Boolean, default=False)
