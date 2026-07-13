@@ -1,5 +1,6 @@
 import ipaddress
 import json
+import re
 import uuid
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
