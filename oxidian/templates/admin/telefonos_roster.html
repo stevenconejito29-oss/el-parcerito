@@ -1,13 +1,42 @@
 {% extends "admin_base.html" %}
 {% block title %}Roster de teléfonos por rol{% endblock %}
+{% block styles %}
+<style>
+@media (max-width: 600px) {
+  .phone-roster-wrap { overflow: visible; }
+  .phone-roster-table, .phone-roster-table tbody { display: block; width: 100%; }
+  .phone-roster-table thead { display: none; }
+  .phone-roster-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: .65rem;
+    padding: .8rem;
+    border-bottom: 1px solid var(--col-border);
+  }
+  .phone-roster-table td { display: block; min-width: 0; padding: 0 !important; text-align: left !important; overflow-wrap: anywhere; }
+  .phone-roster-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: .18rem;
+    color: var(--col-muted);
+    font-size: .62rem;
+    font-weight: 850;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .phone-roster-table .phone-name,
+  .phone-roster-table .phone-email { grid-column: 1 / -1; }
+  .phone-roster-table .phone-action a { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; }
+}
+</style>
+{% endblock %}
 {% block content %}
 
 <div class="mb-5">
   <h1 class="text-2xl font-black text-white">Roster de teléfonos</h1>
   <p class="text-sm mt-1" style="color:var(--col-muted)">
-    Qué número está conectado a qué perfil. Fuente autoritativa: base de datos.
-    El env <code>OWNER_NUMBER</code>/<code>SUPERADMINS</code> es whitelist del bot;
-    no otorga rol por sí solo (ver PR #4).
+    Consulta qué número está vinculado a cada perfil activo. Los permisos del
+    panel y del chatbot siempre se validan con el rol registrado en el sistema.
   </p>
 </div>
 
@@ -15,12 +44,12 @@
 {% if env_solo %}
 <div class="ox-card p-4 mb-4" style="border-color:var(--theme-danger,#ef4444);background:color-mix(in srgb, var(--theme-danger,#ef4444) 8%, var(--col-surface));">
   <h3 class="font-black" style="color:var(--theme-danger,#ef4444);margin-bottom:.5rem;">
-    ⚠ Env autoriza números que no existen como super_admin en BD
+    ⚠ Hay números administrativos sin un perfil válido
   </h3>
   <p class="text-sm mb-2" style="color:var(--col-text);">
-    Estos dígitos están en <code>OWNER_NUMBER</code> o <code>SUPERADMINS</code> del contenedor,
-    pero <strong>no hay un <code>User(rol='super_admin', activo=True)</code> con ese teléfono</strong>.
-    El bot los rechaza (PR #4) y logea warning. Arregla en BD o quita del env.
+    Estos números figuran como autorizados para el canal administrativo, pero
+    no están asociados a un Super Admin activo. El chatbot los rechazará hasta
+    que vincules el número a un perfil válido o retires su autorización.
   </p>
   <ul style="font-family:var(--font-mono,monospace);font-size:.85rem;color:var(--col-text);">
     {% for d in env_solo %}
@@ -33,7 +62,7 @@
 {% if env_ok %}
 <div class="ox-card p-3 mb-4" style="border-color:var(--theme-success,#22c55e);background:color-mix(in srgb, var(--theme-success,#22c55e) 6%, var(--col-surface));">
   <p style="color:var(--col-text);font-size:.85rem;margin:0;">
-    ✓ Env sincronizado con BD para {{ env_ok|length }} número(s) super_admin.
+    ✓ Canal administrativo sincronizado con {{ env_ok|length }} perfil(es) Super Admin.
   </p>
 </div>
 {% endif %}
@@ -55,8 +84,8 @@
     <h2 class="text-lg font-black" style="color:var(--col-text);">{{ _label }}</h2>
     <span class="ox-chip" style="margin-left:auto;">{{ users|length }} activo(s)</span>
   </div>
-  <div class="ox-table-wrap">
-  <table class="w-full text-sm">
+  <div class="ox-table-wrap phone-roster-wrap">
+  <table class="w-full text-sm phone-roster-table">
     <thead>
       <tr class="border-b" style="border-color:var(--col-border);">
         <th class="text-left p-2 text-xs font-black" style="color:var(--col-muted);">Nombre</th>
@@ -71,17 +100,17 @@
       {% set _tel_digits = (u.telefono_normalizado or u.telefono or '')|replace('+','')|replace(' ','')|replace('-','') %}
       {% set _en_env = _tel_digits in env_privileged %}
       <tr class="border-b" style="border-color:var(--col-border);">
-        <td class="p-2" style="color:var(--col-text);font-weight:600;">{{ u.nombre or '(sin nombre)' }}</td>
-        <td class="p-2" style="font-family:var(--font-mono,monospace);color:var(--col-text);">
+        <td class="p-2 phone-name" data-label="Perfil" style="color:var(--col-text);font-weight:600;">{{ u.nombre or '(sin nombre)' }}</td>
+        <td class="p-2" data-label="Teléfono" style="font-family:var(--font-mono,monospace);color:var(--col-text);">
           {{ u.telefono_normalizado or u.telefono or '—' }}
           {% if _en_env %}<span class="ox-chip" style="margin-left:.35rem;font-size:.7rem;background:color-mix(in srgb, #22c55e 20%, transparent);color:#22c55e;">en env</span>{% endif %}
         </td>
-        <td class="p-2" style="color:var(--col-muted);font-size:.8rem;">{{ u.email or '' }}</td>
-        <td class="p-2 text-center">
+        <td class="p-2 phone-email" data-label="Email" style="color:var(--col-muted);font-size:.8rem;">{{ u.email or '' }}</td>
+        <td class="p-2 text-center" data-label="Estado">
           {% if u.activo %}<span style="color:#22c55e;">✓ Activo</span>
           {% else %}<span style="color:var(--col-muted);">Inactivo</span>{% endif %}
         </td>
-        <td class="p-2 text-right">
+        <td class="p-2 text-right phone-action" data-label="Acción">
           {% if puede_editar_staff %}
           <a href="{{ url_for('admin.editar_usuario', user_id=u.id) }}"
              class="ox-btn-secondary" style="font-size:.75rem;padding:.3rem .55rem;">Editar</a>
@@ -109,8 +138,8 @@
   <p class="text-xs" style="color:var(--col-muted);margin-bottom:.5rem;">
     Teléfono operador del bar (usado por el bot para menú bar).
   </p>
-  <div class="ox-table-wrap">
-  <table class="w-full text-sm">
+  <div class="ox-table-wrap phone-roster-wrap">
+  <table class="w-full text-sm phone-roster-table">
     <thead>
       <tr class="border-b" style="border-color:var(--col-border);">
         <th class="text-left p-2 text-xs font-black" style="color:var(--col-muted);">Bar</th>
@@ -122,12 +151,12 @@
     <tbody>
       {% for p in proveedores %}
       <tr class="border-b" style="border-color:var(--col-border);">
-        <td class="p-2" style="color:var(--col-text);font-weight:600;">{{ p.nombre }}</td>
-        <td class="p-2" style="font-family:var(--font-mono,monospace);color:var(--col-text);">
+        <td class="p-2 phone-name" data-label="Bar" style="color:var(--col-text);font-weight:600;">{{ p.nombre }}</td>
+        <td class="p-2" data-label="Teléfono" style="font-family:var(--font-mono,monospace);color:var(--col-text);">
           {{ p.telefono or '—' }}
         </td>
-        <td class="p-2" style="color:var(--col-muted);font-size:.8rem;">{{ p.modelo_acuerdo or '—' }}</td>
-        <td class="p-2 text-right">
+        <td class="p-2 phone-email" data-label="Acuerdo" style="color:var(--col-muted);font-size:.8rem;">{{ p.modelo_acuerdo or '—' }}</td>
+        <td class="p-2 text-right phone-action" data-label="Acción">
           {% if puede_editar_proveedor %}
           <a href="{{ url_for('admin.editar_proveedor', proveedor_id=p.id) }}"
              class="ox-btn-secondary" style="font-size:.75rem;padding:.3rem .55rem;">Editar</a>
@@ -143,9 +172,9 @@
 
 <div class="ox-card p-3 mt-4" style="background:color-mix(in srgb, var(--col-text) 4%, var(--col-surface));">
   <p style="color:var(--col-muted);font-size:.8rem;margin:0;">
-    <strong style="color:var(--col-text);">Cimientos:</strong> la BD es fuente autoritativa
-    del rol; el env solo dice qué números pueden hablar con el bot admin (whitelist).
-    Los teléfonos de clientes están en <a href="{{ url_for('admin.clientes') }}" style="color:var(--brand-primary);">/admin/clientes</a>.
+    <strong style="color:var(--col-text);">Seguridad:</strong> el rol y el estado del
+    perfil determinan sus permisos. Gestiona los teléfonos de clientes desde
+    <a href="{{ url_for('admin.clientes') }}" style="color:var(--brand-primary);">Clientes</a>.
   </p>
 </div>
 

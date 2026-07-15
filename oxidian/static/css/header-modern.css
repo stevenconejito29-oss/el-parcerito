@@ -20,6 +20,11 @@ body.ox-body-public .ox-header-public {
   border: 0 !important;
   border-radius: 0 !important;
   background: var(--hdr-ink) !important;
+  /* La cabecera debe conservar exactamente el color configurado al pasar
+     contenido por debajo. Un backdrop translúcido heredado hacía que el
+     tono variase durante el scroll, especialmente en Safari/iOS. */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   box-shadow: 0 10px 28px color-mix(in srgb, var(--theme-text) 18%, transparent) !important;
   overflow: visible !important;
   isolation: isolate;
@@ -60,9 +65,11 @@ body.ox-body-public .ox-public-header-inner {
   background:
     linear-gradient(105deg, color-mix(in srgb, var(--brand-primary) 9%, transparent), transparent 36%),
     var(--hdr-ink) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
   overflow: visible !important;
-  transition: min-height .24s ease, padding .24s ease !important;
+  transition: min-height var(--motion-slow) var(--ease-standard), padding var(--motion-slow) var(--ease-standard) !important;
 }
 
 body.ox-body-public .ox-public-header-inner::before {
@@ -102,7 +109,7 @@ body.ox-body-public .ox-public-logo-frame {
   border-radius: 10px 10px 3px 10px;
   box-shadow: 4px 4px 0 color-mix(in srgb, var(--brand-primary) 72%, var(--theme-text));
   transform: translateY(-1px);
-  transition: transform .22s ease, box-shadow .22s ease;
+  transition: transform var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard);
 }
 body.ox-body-public .ox-public-identity:hover .ox-public-logo-frame {
   transform: translate(1px, 0);
@@ -197,13 +204,14 @@ body.ox-body-public .ox-public-actions {
   gap: 8px !important;
 }
 
+body.ox-body-public .ox-header-info,
 body.ox-body-public .ox-header-app,
 body.ox-body-public .ox-employee-login {
   position: relative;
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  min-height: 42px;
+  min-height: 44px;
   gap: 7px;
   padding: 0 13px;
   border: 1px solid var(--hdr-line) !important;
@@ -217,6 +225,7 @@ body.ox-body-public .ox-employee-login {
   overflow: hidden;
   transition: background .18s ease, border-color .18s ease, transform .18s ease !important;
 }
+body.ox-body-public .ox-header-info svg,
 body.ox-body-public .ox-header-app svg,
 body.ox-body-public .ox-employee-login svg {
   width: 17px;
@@ -227,6 +236,7 @@ body.ox-body-public .ox-employee-login svg {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+body.ox-body-public .ox-header-info:hover,
 body.ox-body-public .ox-header-app:hover,
 body.ox-body-public .ox-employee-login:hover {
   border-color: color-mix(in srgb, var(--brand-primary) 58%, transparent) !important;
@@ -243,21 +253,22 @@ body.ox-body-public .ox-header-cart {
   min-height: 48px !important;
   gap: 9px !important;
   padding: 6px 14px 6px 8px !important;
-  border: 1px solid color-mix(in srgb, var(--brand-primary) 70%, var(--theme-header-text)) !important;
+  border: 1px solid color-mix(in srgb, var(--action-primary) 70%, var(--theme-header-text)) !important;
   border-radius: 13px 4px 13px 13px !important;
-  background: var(--brand-primary) !important;
-  color: var(--brand-on-primary) !important;
+  background: var(--action-primary) !important;
+  color: var(--action-on-primary) !important;
   text-decoration: none !important;
-  box-shadow: 3px 3px 0 color-mix(in srgb, var(--brand-primary) 55%, var(--theme-text)) !important;
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--action-primary) 55%, var(--theme-text)) !important;
   overflow: visible !important;
   transition: transform .18s ease, box-shadow .18s ease, filter .18s ease !important;
 }
 body.ox-body-public .ox-header-cart:hover {
   transform: translate(1px, 1px);
-  box-shadow: 1px 1px 0 color-mix(in srgb, var(--brand-primary) 55%, var(--theme-text)) !important;
+  box-shadow: 1px 1px 0 color-mix(in srgb, var(--action-primary) 55%, var(--theme-text)) !important;
   filter: brightness(1.05);
 }
 body.ox-body-public .ox-header-cart.is-pressed,
+body.ox-body-public .ox-header-info.is-pressed,
 body.ox-body-public .ox-header-app.is-pressed,
 body.ox-body-public .ox-employee-login.is-pressed { transform: translateY(1px) scale(.97) !important; }
 body.ox-body-public .ox-header-cart-icon {
@@ -314,8 +325,8 @@ body.ox-body-public .ox-header-cart-count.is-bumping { animation: ox-cart-count-
 
 body.ox-body-public .ox-public-actions form { display: inline-flex; }
 body.ox-body-public .ox-public-actions form button {
-  width: 42px !important;
-  height: 42px !important;
+  width: 44px !important;
+  height: 44px !important;
   border-radius: 9px 9px 3px 9px !important;
 }
 
@@ -369,6 +380,7 @@ body.ox-body-public .ox-header-public.is-scrolled .ox-public-address { display: 
   body.ox-body-public .ox-header-public .ox-public-brand { font-size: .92rem !important; }
   body.ox-body-public .ox-header-public .ox-public-address { max-width: 190px; font-size: .57rem !important; }
   body.ox-body-public .ox-public-actions { gap: 6px !important; }
+  body.ox-body-public .ox-header-info { display: none !important; }
   body.ox-body-public .ox-header-app { display: none !important; }
   body.ox-body-public .ox-header-cart {
     min-width: 50px !important;
@@ -380,20 +392,27 @@ body.ox-body-public .ox-header-public.is-scrolled .ox-public-address { display: 
   body.ox-body-public .ox-header-cart-copy { display: none; }
   body.ox-body-public .ox-header-cart-icon { width: 34px; height: 34px; }
   body.ox-body-public .ox-employee-login {
-    width: 38px;
-    min-width: 38px;
-    min-height: 42px;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
     padding: 0;
   }
   body.ox-body-public .ox-employee-login-text { display: none; }
 }
 
+/* En retrato el carrito ya tiene un acceso persistente en la navegación
+   inferior. Evitar repetirlo en la cabecera libera espacio para la identidad
+   del negocio; en horizontal se conserva porque allí el bottom nav se oculta. */
+@media (max-width: 760px) and (orientation: portrait) {
+  body.ox-body-public .ox-header-cart { display: none !important; }
+  body.ox-body-public .ox-public-identity { max-width: calc(100% - 48px); }
+}
+
 @media (max-width: 390px) {
-  body.ox-body-public .ox-public-identity { max-width: calc(100% - 92px); }
   body.ox-body-public .ox-public-status { display: none; }
   body.ox-body-public .ox-header-public .ox-public-address { max-width: 150px; }
   body.ox-body-public .ox-header-cart { width: 48px !important; min-width: 48px !important; }
-  body.ox-body-public .ox-employee-login { width: 36px; min-width: 36px; }
+  body.ox-body-public .ox-employee-login { width: 44px; min-width: 44px; }
 }
 
 @media (max-width: 340px) {
@@ -417,6 +436,7 @@ body.ox-body-public .ox-header-public.is-scrolled .ox-public-address { display: 
   body.ox-body-public .ox-public-header-inner,
   body.ox-body-public .ox-public-logo-frame,
   body.ox-body-public .ox-header-cart,
+  body.ox-body-public .ox-header-info,
   body.ox-body-public .ox-header-app,
   body.ox-body-public .ox-employee-login,
   body.ox-body-public .ox-hdr-progress { transition: none !important; }
@@ -438,19 +458,15 @@ body.ox-body-public .ox-bottom-nav.ox-bnav-v2 {
   grid-auto-columns: 1fr;
   gap: 6px !important;
   padding: 8px 10px !important;
-  border: 1px solid color-mix(in srgb, #fff 8%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--navigation-text) 18%, transparent) !important;
   border-radius: 26px !important;
-  /* Fondo SÓLIDO — sin transparencia ni backdrop-filter. Elimina el "glinche"
-     de color al scrollear en móviles low-end (el backdrop-filter re-renderiza
-     por cada frame el contenido detrás y con GPU débil parpadea). El look de
-     "vidrio" se mantiene con gradient sutil y borde iluminado. */
+  /* Fondo sólido derivado de la misma pareja de contraste que su texto. */
   background:
-    linear-gradient(180deg, #0F0906 0%, #0A0605 100%),
-    linear-gradient(90deg,
-      color-mix(in srgb, var(--brand-primary) 8%, transparent),
-      color-mix(in srgb, var(--brand-secondary, #E84545) 6%, transparent)) !important;
-  background-blend-mode: overlay, normal !important;
-  /* backdrop-filter deliberadamente omitido: causa jank en scroll móvil */
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--navigation-text) 3%, var(--navigation-surface)) 0%,
+      var(--navigation-surface) 100%) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   box-shadow:
     0 -14px 44px rgba(0,0,0,.5),
     0 -2px 10px rgba(0,0,0,.28),
@@ -486,46 +502,45 @@ body.ox-body-public .ox-bnav-v2 .ox-bnav-item {
   border-radius: 18px !important;
   background: transparent !important;
   border: 0 !important;
-  color: color-mix(in srgb, #FFF3E8 60%, transparent) !important;
+  color: var(--navigation-text) !important;
   text-decoration: none !important;
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: .005em;
   cursor: pointer;
   transition:
-    color .28s ease,
-    transform .3s cubic-bezier(.34,1.56,.64,1),
-    background .28s ease !important;
+    color var(--motion-base) var(--ease-standard),
+    transform var(--motion-slow) var(--ease-spring),
+    background var(--motion-base) var(--ease-standard) !important;
   min-width: 0;
   min-height: 50px;
   -webkit-tap-highlight-color: transparent;
   z-index: 1;
 }
 body.ox-body-public .ox-bnav-v2 .ox-bnav-item:hover {
-  color: #FFF3E8 !important;
-  background: color-mix(in srgb, #fff 5%, transparent) !important;
+  color: var(--navigation-text) !important;
+  background: color-mix(in srgb, var(--navigation-text) 7%, transparent) !important;
 }
 body.ox-body-public .ox-bnav-v2 .ox-bnav-item:active { transform: scale(.92); }
 
-/* Ítem activo — pill dorada SÓLIDA con texto oscuro para contraste máximo.
-   Sigue las reglas WCAG AA: contraste texto/fondo ≥ 4.5:1 */
+/* Ítem activo: color de acción, separado del color principal de marca. */
 body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active {
-  color: var(--brand-on-primary, #1B0A00) !important;
+  color: var(--navigation-active-text) !important;
   background:
     linear-gradient(180deg,
-      var(--brand-primary) 0%,
-      color-mix(in srgb, var(--brand-primary) 82%, #000) 100%) !important;
+      var(--navigation-active) 0%,
+      color-mix(in srgb, var(--navigation-active) 82%, var(--theme-text)) 100%) !important;
   transform: translateY(-2px);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent),
     inset 0 -1px 0 color-mix(in srgb, #000 20%, transparent),
-    0 6px 18px color-mix(in srgb, var(--brand-primary) 55%, transparent),
+    0 6px 18px color-mix(in srgb, var(--action-primary) 55%, transparent),
     0 2px 4px rgba(0,0,0,.25);
 }
 body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active .ox-bnav-svg {
   transform: scale(1.1) translateY(-1px);
   filter: drop-shadow(0 2px 4px rgba(0,0,0,.25));
-  color: var(--brand-on-primary, #1B0A00) !important;
+  color: var(--navigation-active-text) !important;
 }
 body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active .ox-bnav-svg svg {
   stroke-width: 2.4;
@@ -533,8 +548,8 @@ body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active .ox-bnav-svg svg {
 body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active .ox-bnav-label {
   font-weight: 900;
   letter-spacing: .02em;
-  color: var(--brand-on-primary, #1B0A00) !important;
-  text-shadow: 0 1px 0 color-mix(in srgb, #fff 25%, transparent);
+  color: var(--navigation-active-text) !important;
+  text-shadow: 0 1px 1px color-mix(in srgb, #000 35%, transparent);
 }
 
 body.ox-body-public .ox-bnav-v2 .ox-bnav-svg {
@@ -545,8 +560,8 @@ body.ox-body-public .ox-bnav-v2 .ox-bnav-svg {
   width: 24px;
   height: 24px;
   transition:
-    transform .32s cubic-bezier(.34,1.56,.64,1),
-    filter .28s ease;
+    transform var(--motion-slow) var(--ease-spring),
+    filter var(--motion-base) var(--ease-standard);
 }
 body.ox-body-public .ox-bnav-v2 .ox-bnav-svg svg {
   width: 22px;
@@ -560,7 +575,7 @@ body.ox-body-public .ox-bnav-v2 .ox-bnav-label {
   line-height: 1;
   letter-spacing: .01em;
   white-space: nowrap;
-  transition: font-weight .22s ease;
+  transition: font-weight var(--motion-base) var(--ease-standard);
 }
 
 /* Indicador de sección activa — pill blanca sobre la pill dorada (contraste) */
@@ -573,7 +588,7 @@ body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active::before {
   width: 24px;
   height: 3px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--brand-on-primary, #1B0A00) 82%, transparent);
+  background: color-mix(in srgb, var(--action-on-primary, #fff) 88%, transparent);
   opacity: .85;
   animation: bnav-pill-in .35s cubic-bezier(.34,1.56,.64,1);
 }
@@ -622,12 +637,58 @@ body.ox-body-public .ox-bnav-v2 .ox-bnav-badge {
 /* Padding para que el contenido no quede bajo el bottom nav */
 body.ox-body-public.ox-has-bottom-nav main { padding-bottom: 90px; }
 
+/* El nav conserva aspecto de app pero deja una zona final completamente
+   desplazable. Así ninguna tarjeta, botón o texto legal queda atrapado detrás
+   de la barra o del indicador Home de iOS. */
+body.ox-body-public.ox-has-bottom-nav {
+  padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px)) !important;
+  scroll-padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+}
+body.ox-body-public.ox-has-bottom-nav :is(a, button, input, select, textarea, [tabindex]) {
+  scroll-margin-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+}
+
+/* En tablet la cabecera ya contiene información, instalación, carrito y acceso.
+   Eliminar la segunda navegación libera espacio útil y evita controles tapados. */
+@media (min-width: 761px) {
+  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { display: none !important; }
+  body.ox-body-public.ox-has-bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+    scroll-padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  body.ox-body-public.ox-has-bottom-nav main { padding-bottom: 1.5rem; }
+}
+
+@media (max-width: 430px) and (orientation: portrait) {
+  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 {
+    left: max(8px, env(safe-area-inset-left, 8px)) !important;
+    right: max(8px, env(safe-area-inset-right, 8px)) !important;
+    bottom: max(6px, env(safe-area-inset-bottom, 0px)) !important;
+    min-height: 58px;
+    gap: 3px !important;
+    padding: 5px 7px !important;
+    border-radius: 21px !important;
+  }
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-item {
+    min-height: 44px;
+    gap: 2px;
+    padding: 5px 3px !important;
+    border-radius: 15px !important;
+  }
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-svg,
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-svg svg {
+    width: 19px;
+    height: 19px;
+  }
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-label { font-size: 10px; }
+}
+
 /* En landscape móvil, más compacto */
 @media (max-height: 480px) and (orientation: landscape) {
   body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { min-height: 52px; }
   body.ox-body-public .ox-bnav-v2 .ox-bnav-svg { width: 22px; height: 22px; }
   body.ox-body-public .ox-bnav-v2 .ox-bnav-svg svg { width: 18px; height: 18px; }
-  body.ox-body-public .ox-bnav-v2 .ox-bnav-label { font-size: 9px; }
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-label { font-size: 10px; }
 }
 
 /* Ocultar cuando teclado abierto (visualViewport reduce altura) */
@@ -638,7 +699,7 @@ body.ox-body-public.ox-has-bottom-nav main { padding-bottom: 90px; }
 /* PWA standalone: extra bottom */
 @media (display-mode: standalone), (display-mode: fullscreen) {
   body.ox-body-public .ox-bottom-nav.ox-bnav-v2 {
-    bottom: max(14px, env(safe-area-inset-bottom, 14px)) !important;
+    bottom: max(8px, env(safe-area-inset-bottom, 8px)) !important;
   }
 }
 
@@ -679,11 +740,12 @@ body.ox-body-public .ox-bottom-nav.ox-bnav-v2::before {
 body.ox-body-public.ox-modal-open .ox-bottom-nav.ox-bnav-v2::before,
 body.ox-body-public.ox-info-open .ox-bottom-nav.ox-bnav-v2::before { animation-play-state: paused; }
 
-/* Backdrop-filter es caro. Solo lo mantenemos donde aporta (header y bottom nav).
-   Quitamos el saturate excesivo que multiplica el coste. */
-@supports not (backdrop-filter: blur(1px)) {
-  body.ox-body-public .ox-header-public > .ox-public-header-inner,
-  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { background: rgba(15,10,6,.94) !important; }
+/* Un diálogo posee su propia navegación y acciones. La barra global no debe
+   permanecer visible ni interceptar toques sobre cantidad o confirmación. */
+body.ox-body-public.ox-modal-open .ox-bottom-nav.ox-bnav-v2 {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 /* Reducir aurora en fondo del header cuando el device es low-end (memoria <4GB) */
@@ -710,16 +772,12 @@ body.ox-body-public .ep-cats {
 }
 body.ox-body-public .ep-cat { scroll-snap-align: start; }
 
-/* Reduce el jitter del backdrop-filter durante scroll rápido: durante el swipe
-   se sustituye por un color sólido similar. Mejora fps sensiblemente. */
-/* is-scrolling ya NO cambia el fondo del bottom nav — es sólido siempre.
-   Sigue aplicando al header por si el usuario lo tiene translúcido allí. */
-@media (max-width: 900px) {
-  body.ox-body-public.is-scrolling .ox-header-public > .ox-public-header-inner {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    background: rgba(10,6,5,.95) !important;
-  }
+/* En teléfonos apaisados la cabecera ya ofrece menú, carrito y acceso interno.
+   Ocultar la navegación inferior duplicada recupera una franja crítica de la
+   pantalla y evita que cubra formularios o llamadas a la acción. */
+@media (orientation: landscape) and (max-height: 500px) {
+  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { display: none !important; }
+  body.ox-body-public { padding-bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important; }
 }
 
 /* prefers-reduced-motion: desactiva aurora, ticker y ripples completamente */
@@ -744,8 +802,10 @@ body.ox-body-public .ep-cat { scroll-snap-align: start; }
 @supports (view-transition-name: none) {
   body.ox-body-public .ox-header-public { view-transition-name: ox-header; }
   body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { view-transition-name: ox-bottom-nav; }
-  body.ox-body-public .ox-header-cart,
-  body.ox-body-public .ox-bnav-cart { view-transition-name: ox-cart-btn; }
+  /* Cada nombre debe ser único dentro del documento. Cabecera y navegación
+     inferior contienen accesos distintos al carrito. */
+  body.ox-body-public .ox-header-cart { view-transition-name: ox-header-cart; }
+  body.ox-body-public .ox-bnav-cart { view-transition-name: ox-bottom-cart; }
 
   /* Transición base: fade rápido, no interfiere con contenido */
   ::view-transition-old(root),

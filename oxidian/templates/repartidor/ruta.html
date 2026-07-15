@@ -18,33 +18,6 @@
   --route-cash-soft: color-mix(in srgb, var(--brand-primary) 16%, transparent);
 }
 
-.work-employee-card {
-  display: flex; align-items: center; gap: 1rem;
-  padding: .85rem 1rem;
-  background: var(--col-surface);
-  border: 1px solid var(--col-border);
-  border-radius: 1rem;
-  margin-bottom: 1rem;
-}
-.work-employee-avatar {
-  width: 44px; height: 44px; border-radius: 12px;
-  background: linear-gradient(135deg,
-              color-mix(in srgb, var(--route-info) 22%, transparent),
-              color-mix(in srgb, var(--route-info) 8%, transparent));
-  color: var(--route-info);
-  font-size: 1.2rem; font-weight: 900;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  border: 1.5px solid color-mix(in srgb, var(--route-info) 30%, transparent);
-}
-.work-employee-info { flex: 1; min-width: 0; }
-.work-employee-name { font-weight: 800; font-size: .92rem; color: var(--col-text); }
-.work-employee-role { font-size: .75rem; color: var(--col-muted); margin-top: .1rem; }
-.work-employee-status {
-  display: flex; align-items: center; gap: .4rem;
-  font-size: .78rem; color: var(--col-muted); flex-shrink: 0;
-}
-
 /* Chips semánticos de canal: se aplican a spans previamente
    inline-styled. Los reemplazamos por clases limpias. */
 .route-chip-almacen  { background: var(--route-ok-soft); color: var(--route-ok); border: 1px solid color-mix(in srgb, var(--route-ok) 30%, transparent); }
@@ -175,12 +148,6 @@
   /* Código NUNCA se reduce a menos de 48px — es la acción clave */
   .route-board .work-code-input { min-height: 52px; font-size: 1.4rem; }
 }
-.work-team-details { margin: .5rem 0 1rem; }
-.work-team-summary {
-  cursor: pointer; user-select: none; font-size: .85rem;
-  color: var(--col-muted); padding: .35rem 0;
-}
-.work-team-details[open] .work-team-summary { color: var(--col-text); }
 </style>
 {% endblock %}
 {% block content %}
@@ -193,19 +160,21 @@
     <p class="work-subtitle">Recoge, navega y confirma entregas con cobro verificado.</p>
   </div>
   <div class="work-actions-top">
-    <a href="{{ url_for('repartidor.mis_comisiones') }}" class="work-btn work-btn-ghost">Mis comisiones</a>
+    <button type="button" class="work-btn work-btn-ghost delivery-theme-toggle"
+            data-delivery-theme-toggle aria-pressed="false" aria-label="Cambiar delivery a modo noche">
+      <span class="delivery-theme-toggle__icon" data-theme-icon aria-hidden="true">🌙</span>
+      <span data-theme-label>Modo noche</span>
+    </button>
   </div>
 </section>
 
-<!-- Tarjeta de empleado como toggle (mismo patrón que preparador — un solo
-     punto de acción para Online/Offline en lugar de duplicar botón). -->
+<!-- Identidad + control explícito. La tarjeta ya no finge ser un botón: antes
+     sólo el avatar enviaba el formulario y el texto de estado no respondía. -->
 <form method="POST" action="{{ url_for('repartidor.toggle_disponible') }}"
       class="js-availability-form work-employee-card work-employee-toggle {% if disponible %}is-online{% else %}is-offline{% endif %}"
-      aria-label="{% if disponible %}Ponerte offline{% else %}Ponerte online{% endif %}"
-      title="Toca para cambiar a {{ 'offline' if disponible else 'online' }}">
+      data-availability="{{ 'online' if disponible else 'offline' }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <button type="submit" class="work-employee-avatar" aria-hidden="true"
-          style="border:0;cursor:pointer;">{{ current_user.nombre[0].upper() }}</button>
+  <div class="work-employee-avatar" aria-hidden="true">{{ current_user.nombre[0].upper() }}</div>
   <div class="work-employee-info">
     <p class="work-employee-name">{{ current_user.nombre }}</p>
     <p class="work-employee-role">
@@ -216,10 +185,10 @@
       {% if current_user.tarifa_entrega and current_user.tarifa_entrega > 0 %} · €{{ "%.2f"|format(current_user.tarifa_entrega) }}/entrega{% endif %}
     </p>
   </div>
-  <div class="work-employee-status">
+  <button type="submit" class="work-availability-button" aria-pressed="{{ 'true' if disponible else 'false' }}">
     <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
-    <span>{% if disponible %}Online — toca para pausar{% else %}Offline — toca para activar{% endif %}</span>
-  </div>
+    <span><strong>{{ 'Online' if disponible else 'Offline' }}</strong><small>{{ 'Pausar recepción' if disponible else 'Activar recepción' }}</small></span>
+  </button>
 </form>
 
 {% if not disponible and current_user.rol not in ('admin','super_admin') %}
@@ -273,7 +242,7 @@
 <div class="work-board">
 
   <!-- ── LISTOS PARA RECOGER ──────────────── -->
-  <section class="work-lane">
+  <section class="work-lane route-lane--ready">
     <div class="work-lane-head">
       <div>
         <h2 class="work-lane-title">Listos para salir</h2>
@@ -281,6 +250,25 @@
       </div>
       <span class="work-count">{{ listos_count }}</span>
     </div>
+    {# Barra de ruta múltiple — permite tomar/despachar varios pedidos como
+       una única ruta. Los checkboxes de cada card se asocian a este form
+       vía el atributo `form=` (HTML5) sin necesidad de anidar formularios. #}
+    {% if listos_count and listos_count > 1 %}
+    <div class="route-multi-bar" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.5rem 0;padding:.5rem;border-radius:.5rem;background:color-mix(in srgb,var(--brand-primary) 6%,transparent)">
+      <span style="font-weight:600">🗺️ Ruta múltiple:</span>
+      <form id="ruta-tomar-form" method="POST"
+            action="{{ url_for('repartidor.tomar_multiples') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="work-btn work-btn-ghost">Tomar seleccionados</button>
+      </form>
+      <form id="ruta-salir-form" method="POST"
+            action="{{ url_for('repartidor.salir_multiples') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="work-btn work-btn-info">Salir con seleccionados</button>
+      </form>
+      <span class="text-sm text-muted" style="margin-left:auto">Marca los pedidos de tu ruta y elige la acción.</span>
+    </div>
+    {% endif %}
     <div class="work-list">
 
     {% for group in listos_grouped %}
@@ -342,6 +330,7 @@
         <div class="mt-2 flex flex-wrap gap-2">
           {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
           {% if pedido.repartidor_id %}<span class="work-badge-assigned">Asignado</span>{% endif %}
+          {% if pedido.es_programado %}<span class="work-chip">📅 {{ pedido.fecha_entrega_programada.strftime('%d/%m/%Y') if pedido.fecha_entrega_programada else 'Fecha por revisar' }}</span>{% endif %}
         </div>
         {%- if _cp.bares_info -%}
         {# Punto de recogida — crítico para el repartidor cuando hay bares involucrados #}
@@ -404,8 +393,9 @@
             🚗 Waze
           </a>
           <button type="button" onclick='copiarDireccion({{ pedido.direccion_entrega | tojson }})'
-                  class="work-btn work-btn-ghost">
-            Copiar
+                  class="work-btn work-btn-ghost flex-1"
+                  aria-label="Copiar dirección al portapapeles">
+            📋 Copiar
           </button>
         </div>
       </div>
@@ -434,6 +424,29 @@
       </div>
       {% endif %}
 
+      {# Checkbox de ruta múltiple. Emite `pedido_ids` a ambos forms
+         (tomar-multiples y salir-multiples) para permitir procesar
+         varios pedidos como una única ruta. #}
+      {% if listos_count and listos_count > 1 %}
+      <label class="route-multi-check" style="display:flex;gap:.4rem;align-items:center;margin:.3rem 0;font-size:.9em">
+        <input type="checkbox" name="pedido_ids" value="{{ pedido.id }}"
+               form="ruta-tomar-form">
+        <input type="checkbox" name="pedido_ids" value="{{ pedido.id }}"
+               form="ruta-salir-form" hidden>
+        <span>Incluir en ruta múltiple</span>
+      </label>
+      <script>
+        // Sincroniza el checkbox visible con el "espejo" oculto del form de
+        // salida. Sin esto el usuario tendría que marcar dos veces cada card.
+        (function(){
+          var els = document.currentScript.parentElement.querySelectorAll('input[type=checkbox]');
+          if (els.length === 2) {
+            els[0].addEventListener('change', function(){ els[1].checked = els[0].checked; });
+          }
+        })();
+      </script>
+      {% endif %}
+
       <!-- Botones de acción -->
       <div class="work-action-row work-cta-group mt-3">
         {% if not pedido.repartidor_id %}
@@ -458,7 +471,7 @@
   </section>
 
   <!-- ── EN RUTA ────────────────────────────── -->
-  <section class="work-lane">
+  <section class="work-lane route-lane--active">
     <div class="work-lane-head">
       <div>
         <h2 class="work-lane-title">En ruta</h2>
@@ -538,6 +551,7 @@
 
       <div class="mt-2 flex flex-wrap gap-2">
         {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
+        {% if pedido.es_programado %}<span class="work-chip">📅 {{ pedido.fecha_entrega_programada.strftime('%d/%m/%Y') if pedido.fecha_entrega_programada else 'Fecha por revisar' }}</span>{% endif %}
         {% if pedido.repartidor_id %}
         <span class="work-badge-assigned">Asignado</span>
         {% else %}
@@ -708,7 +722,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 function copiarDireccion(dir) {
   navigator.clipboard.writeText(dir).then(() => {
     const toast = document.createElement('div');

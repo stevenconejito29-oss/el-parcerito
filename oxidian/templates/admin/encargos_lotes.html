@@ -1,0 +1,97 @@
+{% extends "admin_base.html" %}
+{% block title %}Lotes de encargos — {{ brand.nombre }}{% endblock %}
+{% block content %}
+<section class="p-4">
+  <div class="flex items-center justify-between gap-3 mb-4">
+    <div>
+      <h1 class="text-2xl font-bold">🍽 Lotes de encargos</h1>
+      <p class="text-sm text-muted">
+        Cada lote agrupa las tandas de un producto para una fecha. Muestra
+        cuántas tandas se han vendido y permite ajustar el tope o cerrar
+        el lote sin cancelar los pedidos ya realizados.
+      </p>
+    </div>
+  </div>
+
+  {% if not batches %}
+  <div class="p-6 rounded-lg border text-center text-muted">
+    No hay lotes activos. Los lotes se crean automáticamente cuando un cliente
+    hace el primer pedido de un producto programado con "unidades por tanda".
+  </div>
+  {% else %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm border-collapse">
+      <thead>
+        <tr class="text-left border-b" style="background:color-mix(in srgb,var(--brand-primary) 8%,transparent)">
+          <th class="p-2">Producto</th>
+          <th class="p-2">Fecha entrega</th>
+          <th class="p-2">Tanda</th>
+          <th class="p-2">Vendidas</th>
+          <th class="p-2">Tope</th>
+          <th class="p-2">Estado</th>
+          <th class="p-2">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in batches %}
+        {%- set _dias = (b.fecha_entrega - hoy).days -%}
+        <tr class="border-b" style="{% if _dias < 0 %}background:color-mix(in srgb,#dc2626 10%,transparent){% elif _dias == 0 %}background:color-mix(in srgb,#f59e0b 12%,transparent){% endif %}">
+          <td class="p-2 font-semibold">{{ b.producto.nombre if b.producto else '—' }}</td>
+          <td class="p-2">
+            {{ b.fecha_entrega.strftime('%d/%m/%Y') }}
+            {% if _dias < 0 %}<span class="text-xs" style="color:#dc2626">(vencido {{ _dias|abs }}d)</span>
+            {% elif _dias == 0 %}<span class="text-xs" style="color:#b45309">(hoy)</span>
+            {% elif _dias == 1 %}<span class="text-xs text-muted">(mañana)</span>
+            {% else %}<span class="text-xs text-muted">(en {{ _dias }}d)</span>
+            {% endif %}
+          </td>
+          <td class="p-2">{{ b.cantidad_por_tanda }} u.</td>
+          <td class="p-2"><strong>{{ b.cantidad_vendida_tandas }}</strong></td>
+          <td class="p-2">
+            <form method="POST"
+                  action="{{ url_for('admin.actualizar_tope_lote', batch_id=b.id) }}"
+                  style="display:flex;gap:.3rem;align-items:center">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="number" name="cantidad_maxima_tandas" min="0" step="1"
+                     value="{{ b.cantidad_maxima_tandas if b.cantidad_maxima_tandas is not none else '' }}"
+                     placeholder="∞"
+                     style="width:5rem;padding:.2rem;border:1px solid #ccc;border-radius:.25rem">
+              <button type="submit" class="btn btn-sm"
+                      style="background:var(--brand-primary);color:#fff;border:none;padding:.2rem .5rem;border-radius:.25rem;cursor:pointer">
+                Guardar
+              </button>
+            </form>
+          </td>
+          <td class="p-2">
+            {% if b.estado == 'abierto' %}
+              <span style="color:#166534">🟢 Abierto</span>
+            {% elif b.estado == 'agotado' %}
+              <span style="color:#b45309">🟠 Agotado</span>
+            {% elif b.estado == 'listo' %}
+              <span style="color:#1d4ed8">✔ Listo</span>
+            {% else %}
+              {{ b.estado }}
+            {% endif %}
+          </td>
+          <td class="p-2">
+            {% if b.estado != 'agotado' and b.estado != 'listo' %}
+            <form method="POST"
+                  action="{{ url_for('admin.cerrar_lote', batch_id=b.id) }}"
+                  onsubmit="return confirm('¿Cerrar el lote? No se cancelan los pedidos ya realizados, solo se dejan de aceptar nuevas reservas.');"
+                  style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm"
+                      style="background:#f59e0b;color:#fff;border:none;padding:.2rem .5rem;border-radius:.25rem;cursor:pointer">
+                Cerrar lote
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -279,7 +279,7 @@
 }
 .cup-toggle-on:hover { background: color-mix(in srgb, var(--theme-success) 22%, transparent); }
 </style>
-<script>
+<script nonce="{{ csp_nonce() }}">
 function actualizarTipoCupon() {
   const tipo = document.getElementById('tipo-cupon').value;
   const campo = document.getElementById('campo-valor-cupon');

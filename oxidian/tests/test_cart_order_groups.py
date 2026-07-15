@@ -108,6 +108,26 @@ class CartOrderGroupTest(unittest.TestCase):
         self.assertFalse(response["ok"])
         self.assertIn("fecha", response["msg"].lower())
 
+    def test_scheduled_products_with_different_dates_require_separate_orders(self):
+        first = self._product("Cena del viernes", "cocina")
+        second = self._product("Cena del sábado", "cocina")
+        second.fecha_llegada = date.today() + timedelta(days=3)
+        db.session.commit()
+
+        self.assertTrue(self._add(first).get_json()["ok"])
+        response = self._add(second).get_json()
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["issue"]["code"], "programados_mixed_dates")
+        self.assertIn("fechas", response["msg"].lower())
+
+    def test_scheduled_products_with_same_date_share_one_order(self):
+        first = self._product("Bandeja A", "cocina")
+        second = self._product("Bandeja B", "almacen")
+
+        self.assertTrue(self._add(first).get_json()["ok"])
+        self.assertTrue(self._add(second).get_json()["ok"])
+
     def test_inactive_product_cannot_be_added(self):
         # Regla: producto inactivo no puede añadirse (404 del get_or_404).
         producto = self._product("Retirado", "cocina", activo=False)

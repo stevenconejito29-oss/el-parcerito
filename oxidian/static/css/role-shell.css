@@ -1,0 +1,326 @@
+/* Shell operativo único para admin y roles. Mantiene libres los controles en
+   móviles pequeños, landscape, PWA standalone y dispositivos con notch. */
+body.ox-body-admin {
+  /* La configuración de marca inyectada por admin_base es la fuente real.
+     Los alias --ox-* mantienen compatibles las vistas históricas. */
+  --ox-primary: var(--brand-primary);
+  --ox-primary-strong: color-mix(in srgb, var(--brand-primary) 78%, #000);
+  --ox-action: var(--brand-accent);
+  --ox-danger: var(--brand-secondary);
+  --col-primary: var(--brand-primary);
+  --col-gold: var(--brand-primary);
+  --col-blue: var(--brand-accent);
+  --col-red: var(--brand-secondary);
+  --role-shell-bg: color-mix(in srgb, var(--brand-accent) 9%, #11151b);
+  --role-shell-raised: color-mix(in srgb, var(--brand-accent) 13%, #171c24);
+  --role-shell-line: color-mix(in srgb, var(--brand-primary) 24%, rgba(255,255,255,.08));
+  min-height: 100dvh;
+  overflow-x: clip;
+}
+
+body.ox-body-admin .ox-page {
+  box-sizing: border-box;
+  min-width: 0;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px)) !important;
+}
+
+/* Shell sobrio de cadena: superficies neutras y marca como señal operativa,
+   no como decoración invasiva. */
+body.ox-body-admin .ox-sidebar {
+  background:
+    radial-gradient(circle at 15% 0, color-mix(in srgb, var(--brand-primary) 18%, transparent), transparent 180px),
+    linear-gradient(180deg, var(--role-shell-raised), var(--role-shell-bg)) !important;
+  border-right: 1px solid var(--role-shell-line) !important;
+  box-shadow: 12px 0 34px rgba(0,0,0,.22) !important;
+}
+body.ox-body-admin .ox-sidebar::before {
+  height: 4px;
+  background: linear-gradient(90deg, var(--brand-primary), var(--brand-accent), var(--brand-secondary)) !important;
+}
+body.ox-body-admin .ox-sidebar::after {
+  background: linear-gradient(to top, var(--role-shell-bg), transparent) !important;
+}
+body.ox-body-admin .ox-sb-brand,
+body.ox-body-admin .ox-sb-user,
+body.ox-body-admin .ox-sb-footer {
+  background: transparent !important;
+  border-color: var(--role-shell-line) !important;
+}
+body.ox-body-admin .ox-sb-logo {
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary)) !important;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--brand-primary) 24%, transparent) !important;
+}
+body.ox-body-admin .ox-sb-brand-name,
+body.ox-body-admin .ox-sb-uname { color: #fff !important; }
+body.ox-body-admin .ox-sb-brand-sub,
+body.ox-body-admin .ox-sb-urole,
+body.ox-body-admin .ox-sb-section-label { color: rgba(255,255,255,.58) !important; }
+body.ox-body-admin .ox-sb-section-label {
+  letter-spacing: .12em;
+  font-size: .59rem;
+}
+body.ox-body-admin .ox-sb-item {
+  color: rgba(255,255,255,.72) !important;
+  border-radius: .65rem;
+  margin: 2px .55rem;
+}
+body.ox-body-admin .ox-sb-item:hover {
+  color: #fff !important;
+  background: color-mix(in srgb, var(--brand-primary) 12%, transparent) !important;
+}
+body.ox-body-admin .ox-sb-item.active {
+  color: #fff !important;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--brand-primary) 23%, transparent),
+    color-mix(in srgb, var(--brand-accent) 10%, transparent)) !important;
+  border-color: transparent !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-primary) 28%, transparent) !important;
+}
+body.ox-body-admin .ox-sb-item.active::before {
+  background: var(--brand-primary) !important;
+}
+body.ox-body-admin .ox-admin-content {
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--brand-accent) 7%, transparent), transparent 320px),
+    var(--col-bg) !important;
+}
+body.ox-body-admin .ox-topbar {
+  background: color-mix(in srgb, var(--brand-accent) 7%, #15191f) !important;
+  border-color: var(--role-shell-line) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18) !important;
+}
+body.ox-body-admin .ox-topbar-title { color: #fff !important; }
+body.ox-body-admin .ox-topbar-mark {
+  color: var(--brand-primary) !important;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--brand-primary) 55%, transparent);
+}
+body.ox-body-admin .ox-topbar-role {
+  color: #fff !important;
+  background: color-mix(in srgb, var(--brand-primary) 15%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 28%, transparent);
+}
+body.ox-body-admin .ox-sb-toggle {
+  color: rgba(255,255,255,.82) !important;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 20%, rgba(255,255,255,.08));
+  background: rgba(255,255,255,.04) !important;
+}
+body.ox-body-admin .ox-sb-toggle:hover {
+  color: #fff !important;
+  background: color-mix(in srgb, var(--brand-primary) 15%, transparent) !important;
+}
+body.ox-body-admin .ox-sb-toggle-btn {
+  min-height: 44px;
+  justify-content: center;
+  border-radius: .72rem;
+  font-size: .78rem;
+  letter-spacing: .01em;
+}
+/* Toggle online/offline en el sidebar admin. Antes 6 hex tailwind
+   hardcoded (verdes y naranjas). Ahora derivados de `--theme-success`
+   y `--brand-primary` (naranja tipo "atención") — cambiar los tokens
+   propaga al toggle. */
+body.ox-body-admin .ox-sb-toggle-btn.online {
+  color: color-mix(in srgb, var(--theme-success) 60%, #fff) !important;
+  background: color-mix(in srgb, var(--theme-success) 13%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--theme-success) 35%, transparent) !important;
+}
+body.ox-body-admin .ox-sb-toggle-btn.offline {
+  color: color-mix(in srgb, var(--status-warn) 62%, #fff) !important;
+  background: var(--status-warn-soft) !important;
+  border: 1px solid color-mix(in srgb, var(--status-warn) 32%, transparent) !important;
+}
+body.ox-body-admin .ox-sb-toggle-btn.online .ox-sb-toggle-dot { background: var(--theme-success) !important; }
+body.ox-body-admin .ox-sb-toggle-btn.offline .ox-sb-toggle-dot { background: var(--status-warn) !important; }
+
+/* El permiso push participa en el layout: cero overlays sobre acciones. */
+body.ox-body-admin #ox-push-banner.is-inline {
+  position: relative !important;
+  inset: auto !important;
+  left: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  width: min(100%, 720px) !important;
+  margin: 0 0 .8rem !important;
+  box-shadow: 0 8px 22px rgba(0,0,0,.16) !important;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--brand-accent) 14%, #171b22),
+    color-mix(in srgb, var(--brand-primary) 9%, #11151a)) !important;
+  border-color: var(--role-shell-line) !important;
+}
+body.ox-body-admin #ox-push-banner.is-inline .ox-push-prompt__copy p {
+  color: #fff !important;
+}
+body.ox-body-admin #ox-push-banner.is-inline .ox-push-prompt__copy small {
+  color: rgba(255,255,255,.68) !important;
+}
+body.ox-body-admin #ox-push-banner.is-inline > button:first-of-type {
+  background: var(--action-primary) !important;
+  color: var(--action-on-primary) !important;
+}
+
+.ox-staff-install {
+  min-height: 36px;
+  padding: .45rem .7rem;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 42%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand-primary) 13%, transparent);
+  color: var(--col-text, #fff);
+  font-size: .7rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.ox-sb-toggle-btn[disabled] { opacity: .62; cursor: wait; }
+.ox-sb-toggle-btn[aria-pressed="true"] .ox-sb-toggle-dot { animation: role-online-pulse 2.2s ease-in-out infinite; }
+@keyframes role-online-pulse { 50% { box-shadow: 0 0 0 7px rgba(74,222,128,.12); } }
+
+/* Disponibilidad operativa: control real, no texto que aparenta ser botón. */
+body.ox-body-admin .work-employee-toggle { cursor: default; }
+body.ox-body-admin .work-availability-button {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr);
+  align-items: center;
+  gap: .55rem;
+  min-width: 154px;
+  min-height: 48px;
+  padding: .5rem .7rem;
+  border: 1px solid color-mix(in srgb, var(--col-muted) 32%, transparent);
+  border-radius: .8rem;
+  background: var(--col-elevated);
+  color: var(--col-text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+body.ox-body-admin .work-availability-button strong,
+body.ox-body-admin .work-availability-button small { display: block; }
+body.ox-body-admin .work-availability-button strong { font-size: .78rem; line-height: 1.1; }
+body.ox-body-admin .work-availability-button small { margin-top: .12rem; color: var(--col-muted); font-size: .64rem; line-height: 1.2; }
+body.ox-body-admin .work-availability-button:active { transform: scale(.97); }
+body.ox-body-admin .work-availability-button:focus-visible { outline: 3px solid color-mix(in srgb,var(--action-primary) 40%,transparent); outline-offset: 2px; }
+body.ox-body-admin .is-online .work-availability-button { border-color: color-mix(in srgb,var(--theme-success) 45%,transparent); background: color-mix(in srgb,var(--theme-success) 9%,var(--col-surface)); }
+body.ox-body-admin .is-offline .work-availability-button { border-color: color-mix(in srgb,var(--status-warn) 48%,transparent); background: color-mix(in srgb,var(--status-warn) 9%,var(--col-surface)); }
+
+@media (max-width: 430px) {
+  body.ox-body-admin .work-employee-toggle {
+    display: grid;
+    grid-template-columns: auto minmax(0,1fr);
+    align-items: center;
+  }
+  body.ox-body-admin .work-employee-toggle .work-availability-button { grid-column: 1/-1; width: 100%; margin-top: .25rem; }
+}
+
+/* Jerarquía móvil: alertas y pedidos operativos antes que diagnósticos. */
+@media (max-width: 767px) {
+  body.ox-body-admin .admin-dashboard-board { display: flex; flex-direction: column; }
+  body.ox-body-admin .admin-dashboard-board > .work-hero { order: 1; }
+  body.ox-body-admin .admin-dashboard-board > .dash-kpi-bar { order: 2; }
+  body.ox-body-admin .admin-dashboard-board > .dash-alert-critical { order: 3; }
+  body.ox-body-admin .admin-dashboard-board > .dash-body { order: 4; }
+  body.ox-body-admin .admin-dashboard-board > .dash-support-card { order: 5; }
+
+  /* Los KPIs principales se leen sin scroll lateral. Métricas secundarias
+     siguen disponibles en las tarjetas de análisis inferiores. */
+  body.ox-body-admin .dash-kpi-bar {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0,1fr)) !important;
+    overflow: visible !important;
+  }
+  body.ox-body-admin .dash-kpi-bar > .dash-kpi:nth-child(n+5) { display: none; }
+  body.ox-body-admin .dash-kpi-bar > a.dash-kpi { display: block !important; grid-column: span 2; }
+  body.ox-body-admin .dash-kpi-bar .dash-kpi { min-width: 0 !important; }
+  body.ox-body-admin .dash-kpi-lbl { overflow-wrap: anywhere; }
+
+  body.ox-body-admin #ox-push-banner.is-inline {
+    display: grid !important;
+    grid-template-columns: auto minmax(0,1fr) auto auto;
+    align-items: center;
+    gap: .55rem !important;
+    padding: .65rem .7rem !important;
+    border-radius: .85rem !important;
+  }
+  body.ox-body-admin #ox-push-banner.is-inline > button:first-of-type {
+    grid-column: 3;
+    width: auto;
+    min-height: 40px;
+  }
+  body.ox-body-admin #ox-push-banner.is-inline > button:last-child {
+    grid-column: 4;
+    grid-row: 1;
+  }
+}
+
+@media (max-width: 390px) {
+  body.ox-body-admin #ox-push-banner.is-inline .ox-push-prompt__copy small { display: none; }
+  body.ox-body-admin #ox-push-banner.is-inline > button:first-of-type { padding-inline: .6rem; }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  body.ox-body-admin #ox-push-banner.is-inline {
+    grid-template-columns: auto minmax(0,1fr) auto auto !important;
+    max-width: none !important;
+  }
+  body.ox-body-admin #ox-push-banner.is-inline > button:first-of-type {
+    grid-column: auto;
+    width: auto;
+  }
+  body.ox-body-admin #ox-push-banner.is-inline > button:last-child {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 390px) {
+  .ox-topbar-role { display: none; }
+}
+
+/* Una única arquitectura: cabecera + drawer hasta 1099 px y sidebar
+   permanente desde 1100 px. No hay una segunda barra que cubra contenido. */
+@media (max-width: 1099px) {
+  body.ox-body-admin .ox-sidebar {
+    position: fixed !important;
+    inset: 0 auto 0 0 !important;
+    width: min(300px, 88vw) !important;
+    height: 100dvh !important;
+    transform: translateX(-102%) !important;
+    z-index: 320 !important;
+  }
+  body.ox-body-admin .ox-sidebar.sb-open { transform: translateX(0) !important; }
+  body.ox-body-admin .ox-admin-content { margin-left: 0 !important; width: 100% !important; }
+  body.ox-body-admin .ox-topbar {
+    display: flex !important;
+    min-height: calc(56px + env(safe-area-inset-top, 0px));
+    height: auto !important;
+    gap: .55rem;
+  }
+  body.ox-body-admin .ox-sb-toggle { width: 44px; height: 44px; }
+  body.ox-body-admin .ox-sidebar-overlay.active { display: block !important; z-index: 300 !important; }
+}
+
+@media (min-width: 1100px) {
+  body.ox-body-admin .ox-sidebar {
+    width: 248px !important;
+    transform: none !important;
+  }
+  body.ox-body-admin .ox-admin-content { margin-left: 248px !important; }
+  body.ox-body-admin .ox-topbar { display: none !important; }
+  body.ox-body-admin .ox-sidebar-overlay { display: none !important; }
+}
+
+@media (max-width: 430px) {
+  body.ox-body-admin .ox-topbar { padding-inline: max(.55rem, env(safe-area-inset-left, 0px)) max(.55rem, env(safe-area-inset-right, 0px)); }
+  body.ox-body-admin .ox-topbar-title { font-size: .83rem; }
+  body.ox-body-admin .ox-staff-install { padding-inline: .55rem; font-size: .64rem; }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  body.ox-body-admin .ox-page { padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px)) !important; }
+}
+
+@media (min-width: 900px) {
+  body.ox-body-admin .ox-page { padding-bottom: 2rem !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ox-sb-toggle-btn[aria-pressed="true"] .ox-sb-toggle-dot { animation: none; }
+}

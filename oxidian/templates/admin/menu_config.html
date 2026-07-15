@@ -274,7 +274,7 @@
 
 {% endblock %}
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 function toggleEdit(id) { document.getElementById(id).classList.toggle('hidden'); }
 function actualizarTipo(tipo, ctx) {
   const catField = document.getElementById(ctx + '-campo-categoria');

@@ -194,7 +194,7 @@
 
 {% endblock %}
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 let redeemOnlyActive=false;
 function filterRedeemProducts(value){
   const q=(value||'').trim().toLowerCase();

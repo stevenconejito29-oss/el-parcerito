@@ -1,12 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════
-   Oxidian — Service Worker v37
+   Oxidian — Service Worker v48
    • Assets propios CSS/JS/IMG: network-first + fallback cacheado
    • HTML público y datos de sesión: network-only
    • API / Admin       : Network-only (nunca cachear dinámico)
    • Push Notifications: Muestra notificaciones + abre URL al click
    ═══════════════════════════════════════════════════════════════ */
 
-const CACHE_STATIC = "ox-static-v37";
+const CACHE_STATIC = "ox-static-v48";
 const CACHE_PREFIX = "ox-";
 
 const PRECACHE = [
@@ -16,11 +16,14 @@ const PRECACHE = [
   "/static/css/storefront-menu.css",
   "/static/css/storefront-cart.css",
   "/static/css/header-modern.css",
+  "/static/css/role-shell.css",
+  "/static/css/operational-roles.css",
   "/static/css/tailwind.generated.css",
   "/static/js/carrito.js",
   "/static/js/storefront-viewport.js",
   "/static/js/storefront-toast.js",
   "/static/js/header-modern.js",
+  "/static/js/operational-roles.js",
   "/static/pwa-icon.svg",
   "/static/pwa-icon-192.png",
   "/static/pwa-icon-512.png",
@@ -175,21 +178,21 @@ self.addEventListener("push", event => {
     requireInteraction = false,
   } = payload;
 
+  const safeTitle = String(title || "Mi tienda").slice(0, 80);
+  const safeBody = String(body || "").slice(0, 180);
   const options = {
-    body,
+    body: safeBody,
     icon,
     badge,
     tag: tag || "ox-" + Date.now(),
     requireInteraction,
-    vibrate: [200, 100, 200],
+    renotify: Boolean(tag),
+    vibrate: [180, 80, 180],
     data: { url },
-    actions: [
-      { action: "open",    title: "Ver"     },
-      { action: "dismiss", title: "Ignorar" },
-    ],
+    actions: [{ action: "open", title: "Abrir" }],
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(self.registration.showNotification(safeTitle, options));
 });
 
 // ── Click en la notificación ─────────────────────────────────────────────

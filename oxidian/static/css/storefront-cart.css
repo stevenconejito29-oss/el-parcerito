@@ -111,6 +111,24 @@
   opacity: .6;
 }
 
+.cr-scheduled {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: .7rem;
+  margin: -0.35rem 0 1rem;
+  padding: .75rem .85rem;
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 28%, var(--col-border));
+  border-radius: .85rem;
+  background: color-mix(in srgb, var(--brand-accent) 8%, var(--col-surface));
+  color: var(--col-text);
+}
+.cr-scheduled-icon { font-size: 1.35rem; }
+.cr-scheduled strong,
+.cr-scheduled span { display: block; }
+.cr-scheduled strong { font-size: .82rem; font-weight: 900; }
+.cr-scheduled span { margin-top: .12rem; color: var(--col-muted); font-size: .7rem; line-height: 1.35; }
+
 /* ═══════ LAYOUT ═══════ */
 .cr-body {
   display: grid;
@@ -386,6 +404,20 @@
 }
 .cr-points-title { font-size: .94rem; font-weight: 850; color: var(--col-text); margin-bottom: .1rem; }
 .cr-points-sub   { font-size: .74rem; color: var(--col-muted); }
+/* Aclara al cliente que "canjear puntos" = producto gratis, no descuento
+   monetario. Antes la falta de este mensaje generaba abandono al no ver
+   la rebaja esperada. */
+.cr-points-explainer {
+  margin-top: .3rem;
+  font-size: .72rem;
+  line-height: 1.35;
+  color: var(--col-muted);
+  padding: .35rem .5rem;
+  background: color-mix(in srgb, var(--col-gold) 6%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--col-gold) 45%, transparent);
+  border-radius: .35rem;
+}
+.cr-points-explainer strong { color: var(--col-text); }
 
 /* Estado: aplicado */
 .cr-points-applied {
@@ -488,12 +520,20 @@
 }
 .cr-pts-btn {
   flex-shrink: 0;
-  background: linear-gradient(135deg, var(--col-gold), #D4920A);
-  color: #1B0A00; font-weight: 950; font-size: .85rem;
+  /* Gradiente derivado 100% del brand-primary. Antes: segundo stop
+     `#D4920A` era un dorado fijo — el botón siempre parecía amarillo
+     aunque el fundador cambiara COLOR_PRIMARIO a rojo o azul. */
+  background: linear-gradient(135deg,
+    var(--brand-primary, var(--col-gold)),
+    color-mix(in srgb, var(--brand-primary, var(--col-gold)) 82%, #000));
+  color: var(--brand-on-primary, #1B0A00);
+  font-weight: 950; font-size: .85rem;
   border: none; border-radius: .75rem; padding: .65rem 1rem;
   cursor: pointer; transition: filter .15s; white-space: nowrap;
   min-height: 44px;
-  box-shadow: 0 4px 14px rgba(255,194,0,.3), 0 0 0 1px rgba(255,220,120,.25) inset;
+  box-shadow:
+    0 4px 14px color-mix(in srgb, var(--brand-primary, var(--col-gold)) 30%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--brand-primary, var(--col-gold)) 25%, transparent) inset;
 }
 .cr-pts-btn:hover { filter: brightness(1.09); }
 .cr-pts-back {
@@ -503,6 +543,20 @@
   transition: color .15s;
 }
 .cr-pts-back:hover { color: var(--col-muted); }
+/* Fila de acciones secundarias del step 2 (volver + reenviar) — antes
+   solo estaba "volver", ahora incluye "reenviar código" prominente. */
+.cr-pts-step2-actions {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .5rem; flex-wrap: wrap; margin-top: .35rem;
+}
+.cr-pts-resend {
+  background: none; border: 1px solid color-mix(in srgb, var(--col-gold) 32%, transparent);
+  color: var(--col-gold); font-size: .72rem; font-weight: 800;
+  border-radius: .55rem; padding: .4rem .7rem; cursor: pointer;
+  min-height: 36px; transition: background .15s;
+}
+.cr-pts-resend:hover:not(:disabled) { background: color-mix(in srgb, var(--col-gold) 8%, transparent); }
+.cr-pts-resend:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Canjeables — productos gratuitos */
 .cr-canjeables { margin-top: .85rem; padding-top: .7rem; border-top: 1px solid rgba(255,200,120,.07); }
@@ -561,6 +615,45 @@
 /* ═══════ PANEL (SIDEBAR) ═══════ */
 .cr-panel { display: flex; flex-direction: column; gap: .65rem; }
 
+/* ── Descuentos (cupón + afiliado) en el carrito ──
+   Antes solo estaban en checkout — el cliente confirmaba sin ver
+   descuento aplicado. Ahora bloque compacto en el sidebar, con estado
+   aplicado (readonly + Quitar) y feedback inline. Tokens del sistema. */
+.cr-discounts {
+  display: flex; flex-direction: column; gap: .55rem;
+  background: var(--col-surface);
+  border: 1px solid var(--col-border);
+  border-radius: 1rem; padding: .85rem .9rem;
+}
+.cr-discount-block { display: flex; flex-direction: column; gap: .3rem; }
+.cr-discount-label {
+  font-size: .72rem; font-weight: 900; color: var(--col-muted);
+  letter-spacing: .02em; text-transform: uppercase;
+}
+.cr-discount-row { display: flex; gap: .4rem; align-items: stretch; }
+.cr-discount-row .cr-input { flex: 1 1 auto; min-width: 0; }
+.cr-discount-btn {
+  flex-shrink: 0; min-height: 40px; padding: .4rem .8rem;
+  border-radius: .55rem; border: none; cursor: pointer;
+  background: var(--col-gold); color: var(--brand-on-primary, #1B0A00);
+  font-size: .78rem; font-weight: 900; white-space: nowrap;
+  transition: filter .15s;
+}
+.cr-discount-btn:hover { filter: brightness(1.08); }
+.cr-discount-btn--ghost {
+  background: transparent;
+  color: var(--col-muted);
+  border: 1px solid var(--col-border);
+}
+.cr-discount-btn.hidden { display: none; }
+.cr-discount-msg {
+  font-size: .72rem; color: var(--col-muted); margin: 0;
+  min-height: 1em;
+}
+.cr-discount-msg--ok  { color: var(--theme-success); }
+.cr-discount-msg--err { color: var(--theme-danger); }
+.cr-row.hidden { display: none; }
+
 /* Resumen del pedido */
 .cr-summary {
   background: var(--col-surface);
@@ -603,8 +696,8 @@
 .cr-total-val {
   font-size: 1.55rem; font-weight: 950; color: var(--col-gold);
   letter-spacing: -.03em;
-  /* Glow text suave — característica de los apps premium oscuros */
-  text-shadow: 0 0 20px rgba(255,194,0,.3);
+  /* Glow text suave — respeta el brand primary. */
+  text-shadow: 0 0 20px color-mix(in srgb, var(--brand-primary, var(--col-gold)) 30%, transparent);
 }
 
 /* ── CTA principal ── */
@@ -1062,13 +1155,13 @@ body.ox-body-public .cr-summary-title { color: var(--theme-header-text) !importa
 .cr-total-label { color: color-mix(in srgb, var(--theme-header-text) 68%, var(--theme-header-bg)); }
 .cr-total-val { color: var(--theme-header-text); text-shadow: none; }
 .cr-cta {
-  border: 1px solid color-mix(in srgb, var(--brand-primary) 70%, var(--theme-header-text));
+  border: 1px solid color-mix(in srgb, var(--action-primary) 70%, var(--theme-header-text));
   border-radius: 12px 4px 12px 12px;
-  background: var(--brand-primary);
-  color: var(--brand-on-primary, var(--cr-ink));
-  box-shadow: 3px 3px 0 color-mix(in srgb, var(--brand-primary) 45%, var(--theme-text));
+  background: var(--action-primary);
+  color: var(--action-on-primary);
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--action-primary) 45%, var(--theme-text));
 }
-.cr-cta:hover { filter: brightness(1.05); transform: translate(1px, 1px); box-shadow: 1px 1px 0 color-mix(in srgb, var(--brand-primary) 45%, var(--theme-text)); }
+.cr-cta:hover { filter: brightness(1.05); transform: translate(1px, 1px); box-shadow: 1px 1px 0 color-mix(in srgb, var(--action-primary) 45%, var(--theme-text)); }
 .cr-continue { color: color-mix(in srgb, var(--theme-header-text) 72%, var(--theme-header-bg)); }
 .cr-continue:hover { color: var(--theme-header-text); }
 .cr-zone { margin-top: 1rem; }

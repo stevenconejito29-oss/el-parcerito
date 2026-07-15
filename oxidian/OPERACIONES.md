@@ -1,5 +1,9 @@
 # Guía operacional — El Parcerito de Carmona
 
+> **Referencia histórica.** Incluye el antiguo flujo multi-proveedor, hoy
+> desactivado. Para operación y despliegue vigentes consulta
+> [`../docs/OPERATIONS.md`](../docs/OPERATIONS.md).
+
 Cómo añadir bares, asignarles stock, configurar el WhatsApp para derivación
 de clientes y operar el sistema de pedidos sin tocar código.
 

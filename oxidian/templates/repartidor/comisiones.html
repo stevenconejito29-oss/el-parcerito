@@ -1,8 +1,33 @@
 {% extends "admin_base.html" %}
 {% block title %}Mis Comisiones{% endblock %}
+{% block styles %}
+<style>
+/* Alias local del color de "tipo de comisión" — replica el token
+   `--prep-programado` del panel de preparación (púrpura) para que la
+   paleta se sienta unificada entre roles operativos. Si mañana el
+   fundador cambia el color en tokens.css, aquí basta con actualizar
+   este valor. */
+.comm-chip-type {
+  --_c: #C084FC;
+  display: inline-block; padding: .18rem .55rem; border-radius: 999px;
+  font-size: .7rem; font-weight: 700; letter-spacing: .01em;
+  background: color-mix(in srgb, var(--_c) 14%, transparent);
+  color: var(--_c);
+  border: 1px solid color-mix(in srgb, var(--_c) 28%, transparent);
+}
+@media (max-width: 520px) {
+  .commission-heading { display: grid !important; grid-template-columns: 1fr; gap: .65rem; }
+  .commission-heading > a { width: max-content; min-height: 44px; }
+  .commission-heading h1 { font-size: 1.35rem; }
+  .commission-summary { gap: .65rem; }
+  .commission-summary > div { padding: .85rem .5rem; }
+  .commission-summary .text-3xl { font-size: 1.65rem; }
+}
+</style>
+{% endblock %}
 {% block content %}
 
-<div class="flex items-center gap-3 mb-5">
+<div class="flex items-center gap-3 mb-5 commission-heading">
   <a href="{{ url_for('repartidor.ruta') }}" class="ox-btn-ghost text-sm">← Mi Ruta</a>
   <div>
     <h1 class="text-xl font-black text-white">💰 Mis Comisiones</h1>
@@ -10,14 +35,14 @@
   </div>
 </div>
 
-<div class="grid grid-cols-2 gap-4 mb-6">
-  <div class="ox-card p-4 text-center" style="border-left:3px solid rgba(255,107,107,.4)">
-    <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:#FF6B6B">Pendiente de cobro</p>
-    <p class="text-3xl font-black" style="color:#FF6B6B">€{{ "%.2f"|format(pendiente) }}</p>
+<div class="grid grid-cols-2 gap-4 mb-6 commission-summary">
+  <div class="ox-card p-4 text-center" style="border-left:3px solid color-mix(in srgb,var(--theme-danger) 45%,transparent)">
+    <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:var(--theme-danger)">Pendiente de cobro</p>
+    <p class="text-3xl font-black" style="color:var(--theme-danger)">€{{ "%.2f"|format(pendiente) }}</p>
   </div>
-  <div class="ox-card p-4 text-center" style="border-left:3px solid rgba(94,240,151,.4)">
-    <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:#5EF097">Total cobrado</p>
-    <p class="text-3xl font-black" style="color:#5EF097">€{{ "%.2f"|format(cobrado) }}</p>
+  <div class="ox-card p-4 text-center" style="border-left:3px solid color-mix(in srgb,var(--theme-success) 45%,transparent)">
+    <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:var(--theme-success)">Total cobrado</p>
+    <p class="text-3xl font-black" style="color:var(--theme-success)">€{{ "%.2f"|format(cobrado) }}</p>
   </div>
 </div>
 
@@ -26,14 +51,13 @@
   {% for c in comisiones %}
   <div class="ox-card p-3">
     <div class="flex justify-between items-center mb-1">
-      <span class="text-xs font-bold px-2 py-0.5 rounded capitalize"
-            style="background:rgba(192,132,252,.12);color:#C084FC;border:1px solid rgba(192,132,252,.2)">{{ c.tipo }}</span>
-      <span class="font-mono font-black" style="color:#FFAB00">€{{ "%.2f"|format(c.monto) }}</span>
+      <span class="comm-chip-type capitalize">{{ c.tipo }}</span>
+      <span class="font-mono font-black" style="color:var(--brand-primary)">€{{ "%.2f"|format(c.monto) }}</span>
     </div>
     <p class="text-xs mb-2" style="color:var(--col-muted)">{{ c.concepto }}</p>
     <div class="flex justify-between text-xs">
       <span style="color:var(--col-faint)">{{ c.creado_en.strftime('%d/%m/%Y') }}</span>
-      <span class="font-semibold" style="color:{{ '#5EF097' if c.pagado else '#FF6B6B' }}">
+      <span class="font-semibold" style="color:{{ 'var(--theme-success)' if c.pagado else 'var(--theme-danger)' }}">
         {{ 'Pagado' if c.pagado else 'Pendiente' }}
       </span>
     </div>
@@ -61,13 +85,12 @@
       <tr>
         <td class="text-xs whitespace-nowrap" style="color:var(--col-faint)">{{ c.creado_en.strftime('%d/%m/%Y') }}</td>
         <td class="whitespace-nowrap">
-          <span class="text-xs font-bold px-2 py-0.5 rounded"
-                style="background:rgba(192,132,252,.12);color:#C084FC;border:1px solid rgba(192,132,252,.2)">{{ c.tipo }}</span>
+          <span class="comm-chip-type">{{ c.tipo }}</span>
         </td>
-        <td class="text-right font-mono font-black whitespace-nowrap" style="color:#FFAB00">€{{ "%.2f"|format(c.monto) }}</td>
+        <td class="text-right font-mono font-black whitespace-nowrap" style="color:var(--brand-primary)">€{{ "%.2f"|format(c.monto) }}</td>
         <td class="text-xs" style="color:var(--col-muted)">{{ c.concepto }}</td>
         <td class="text-center text-xs font-semibold whitespace-nowrap"
-            style="color:{{ '#5EF097' if c.pagado else '#FF6B6B' }}">
+            style="color:{{ 'var(--theme-success)' if c.pagado else 'var(--theme-danger)' }}">
           {{ 'Pagado' if c.pagado else 'Pendiente' }}
         </td>
       </tr>

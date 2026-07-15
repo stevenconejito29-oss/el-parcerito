@@ -132,7 +132,7 @@
             {% if _es_comida %}🛍️ Cambiar a Retail{% else %}🍽️ Cambiar a Comida{% endif %}
           </button>
         </form>
-        <script>
+        <script nonce="{{ csp_nonce() }}">
         (function(){
           const previewUrl = "{{ url_for('superadmin.toggle_vertical_preview') }}";
           window.__confirmToggleVertical = async function(ev){

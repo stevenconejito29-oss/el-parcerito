@@ -1,5 +1,38 @@
 {% extends "admin_base.html" %}
 {% block title %}Clientes registrados{% endblock %}
+{% block styles %}
+<style>
+@media (max-width: 600px) {
+  .customer-table-wrap { overflow: visible; }
+  .customer-table, .customer-table tbody { display: block; width: 100%; }
+  .customer-table thead { display: none; }
+  .customer-table tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .7rem;
+    padding: .9rem;
+    border-bottom: 1px solid var(--col-border);
+  }
+  .customer-table td { display: block; min-width: 0; padding: 0 !important; text-align: left !important; overflow-wrap: anywhere; }
+  .customer-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: .18rem;
+    color: var(--col-muted);
+    font-size: .64rem;
+    font-weight: 850;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .customer-table .customer-name,
+  .customer-table .customer-contact,
+  .customer-table .customer-actions { grid-column: 1 / -1; }
+  .customer-table .customer-name { font-size: 1rem; }
+  .customer-table .customer-actions { display: flex; gap: .5rem; }
+  .customer-table .customer-actions :is(a,button) { flex: 1; min-height: 44px; margin: 0 !important; }
+}
+</style>
+{% endblock %}
 {% block content %}
 
 <div class="flex items-start justify-between gap-3 flex-wrap mb-5">
@@ -45,8 +78,8 @@
 {% else %}
 
 <div class="ox-card overflow-hidden">
-  <div class="ox-table-wrap">
-  <table class="w-full text-sm">
+  <div class="ox-table-wrap customer-table-wrap">
+  <table class="w-full text-sm customer-table">
     <thead>
       <tr class="border-b" style="border-color:var(--col-border);">
         <th class="text-left p-3 text-xs font-black" style="color:var(--col-muted);">Nombre</th>
@@ -60,29 +93,31 @@
     <tbody>
       {% for c in clientes %}
       <tr class="border-b" style="border-color:var(--col-border);">
-        <td class="p-3">
+        <td class="p-3 customer-name" data-label="Cliente">
           <div style="color:var(--col-text);font-weight:600;">
             {{ c.nombre or "(sin nombre)" }}
             {% if not c.activo %}<span class="ox-chip ox-chip--muted" style="margin-left:.35rem;font-size:.7rem;">Inactivo</span>{% endif %}
           </div>
           {% if c.nif %}<div style="font-size:.7rem;color:var(--col-muted);">NIF {{ c.nif }}</div>{% endif %}
         </td>
-        <td class="p-3">
+        <td class="p-3 customer-contact" data-label="Contacto">
           <div style="color:var(--col-text);font-family:var(--font-mono,monospace);font-size:.85rem;">
             {{ c.telefono_normalizado or c.telefono or "—" }}
           </div>
-          <div style="font-size:.75rem;color:var(--col-muted);">{{ c.email or "" }}</div>
+          <div style="font-size:.75rem;color:var(--col-muted);">
+            {{ c.email_visible or "Cliente identificado por teléfono" }}
+          </div>
         </td>
-        <td class="p-3" style="font-size:.8rem;color:var(--col-muted);">
+        <td class="p-3" data-label="Registro" style="font-size:.8rem;color:var(--col-muted);">
           {{ c.creado_en.strftime("%d/%m/%Y") if c.creado_en else "—" }}
         </td>
-        <td class="p-3 text-right" style="color:var(--col-text);">
+        <td class="p-3 text-right" data-label="Pedidos" style="color:var(--col-text);">
           {{ pedido_counts.get(c.id, 0) }}
         </td>
-        <td class="p-3 text-right" style="color:var(--col-text);font-weight:700;">
+        <td class="p-3 text-right" data-label="Puntos" style="color:var(--col-text);font-weight:700;">
           {{ c.puntos or 0 }}
         </td>
-        <td class="p-3 text-right" style="white-space:nowrap;">
+        <td class="p-3 text-right customer-actions" data-label="Acciones">
           <a href="{{ url_for('admin.historial_cliente', user_id=c.id) }}"
              class="ox-btn-secondary" style="font-size:.75rem;padding:.3rem .55rem;">Historial</a>
           {% if puede_editar %}
@@ -148,7 +183,7 @@
     </div>
   </form>
 </div>
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function(){
   const modal = document.getElementById('editar-cliente-modal');
   const form = document.getElementById('editar-cliente-form');

@@ -75,6 +75,10 @@ def solicitar_codigo(
     """
     from extensions import db
 
+    # Serializa emisión/reenvío para que dos solicitudes concurrentes no
+    # creen códigos distintos ni eludan el throttle usando la misma cuenta.
+    cliente = bloquear_cliente_puntos(cliente)
+
     if cliente.puntos <= 0 and not permitir_sin_puntos:
         return {"ok": False, "msg": "No tienes puntos disponibles", "puntos": 0}
 
@@ -156,6 +160,7 @@ def verificar_codigo(cliente, codigo: str) -> dict:
 
     Retorna dict con ok, msg, puntos.
     """
+    cliente = bloquear_cliente_puntos(cliente)
     if not cliente.verificar_cod_puntos(codigo):
         return {"ok": False, "msg": "Código incorrecto o expirado. Solicita uno nuevo."}
     return {"ok": True, "msg": "Código verificado", "puntos": cliente.puntos}

@@ -173,7 +173,7 @@
 
 {% endblock %}
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 function campContador(ta) {
   const len = ta.value.length;
   const counter = document.getElementById('camp-chars');

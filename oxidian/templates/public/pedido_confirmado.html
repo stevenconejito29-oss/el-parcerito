@@ -69,7 +69,7 @@
         <span>Subtotal</span><span>€{{ "%.2f"|format(pedido.subtotal) }}</span>
       </div>
       {% if pedido.descuento and pedido.descuento > 0 %}
-      <div class="flex justify-between" style="color:#5EF097">
+      <div class="flex justify-between" style="color:var(--theme-success)">
         <span>Descuento</span><span>-€{{ "%.2f"|format(pedido.descuento) }}</span>
       </div>
       {% endif %}
@@ -195,7 +195,7 @@
 <style>
 @keyframes popIn { from{transform:scale(0) rotate(-10deg);opacity:0} 60%{transform:scale(1.15) rotate(3deg)} to{transform:scale(1) rotate(0);opacity:1} }
 </style>
-<script>
+<script nonce="{{ csp_nonce() }}">
 // Lanzar confetti visual sencillo
 (function() {
   const colors = ['#FCD116', '#CE1126', '#003087', '#27AE74', '#fff'];

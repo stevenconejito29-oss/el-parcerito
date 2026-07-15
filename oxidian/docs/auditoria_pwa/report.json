@@ -1,19 +1,38 @@
 {
-  "generatedAt": "2026-06-19T17:15:01.911Z",
-  "baseUrl": "https://elparcerito.com",
+  "generatedAt": "2026-07-15T15:16:18.984Z",
+  "baseUrl": "http://127.0.0.1:5071",
   "views": [
     {
       "name": "android-menu",
       "status": 200,
       "consoleErrors": [],
       "failedRequests": [],
-      "title": "El Parcerito de Carmona — Pide online",
+      "title": "Mi tienda — Pide online",
       "horizontalOverflow": false,
       "scrollWidth": 390,
       "viewportWidth": 390,
-      "products": 9,
-      "visibleProducts": 9,
-      "smallTargets": [],
+      "products": 74,
+      "visibleProducts": 30,
+      "smallTargets": [
+        {
+          "tag": "a",
+          "text": "Empleados",
+          "width": 36,
+          "height": 42
+        },
+        {
+          "tag": "a",
+          "text": "Privacidad y condiciones",
+          "width": 131,
+          "height": 14
+        },
+        {
+          "tag": "a",
+          "text": "WhatsApp",
+          "width": 59,
+          "height": 17
+        }
+      ],
       "serviceWorkerControlled": true,
       "standalone": false
     },
@@ -22,13 +41,32 @@
       "status": 200,
       "consoleErrors": [],
       "failedRequests": [],
-      "title": "El Parcerito de Carmona — Pide online",
+      "title": "Mi tienda — Pide online",
       "horizontalOverflow": false,
       "scrollWidth": 393,
       "viewportWidth": 393,
-      "products": 9,
-      "visibleProducts": 9,
-      "smallTargets": [],
+      "products": 74,
+      "visibleProducts": 30,
+      "smallTargets": [
+        {
+          "tag": "a",
+          "text": "Empleados",
+          "width": 38,
+          "height": 42
+        },
+        {
+          "tag": "a",
+          "text": "Privacidad y condiciones",
+          "width": 131,
+          "height": 14
+        },
+        {
+          "tag": "a",
+          "text": "WhatsApp",
+          "width": 59,
+          "height": 17
+        }
+      ],
       "serviceWorkerControlled": true,
       "standalone": true
     },
@@ -37,13 +75,44 @@
       "status": 200,
       "consoleErrors": [],
       "failedRequests": [],
-      "title": "El Parcerito de Carmona — Pide online",
+      "title": "Mi tienda — Pide online",
       "horizontalOverflow": false,
       "scrollWidth": 1440,
       "viewportWidth": 1440,
-      "products": 9,
-      "visibleProducts": 9,
-      "smallTargets": [],
+      "products": 74,
+      "visibleProducts": 30,
+      "smallTargets": [
+        {
+          "tag": "button",
+          "text": "Info y ayuda",
+          "width": 74,
+          "height": 42
+        },
+        {
+          "tag": "button",
+          "text": "Añadir app",
+          "width": 113,
+          "height": 42
+        },
+        {
+          "tag": "a",
+          "text": "Mis puntos y recompensas",
+          "width": 91,
+          "height": 42
+        },
+        {
+          "tag": "a",
+          "text": "Empleados",
+          "width": 113,
+          "height": 42
+        },
+        {
+          "tag": "a",
+          "text": "Privacidad y condiciones",
+          "width": 131,
+          "height": 14
+        }
+      ],
       "serviceWorkerControlled": true,
       "standalone": false
     }
@@ -52,25 +121,27 @@
     "status": 200,
     "contentType": "application/manifest+json",
     "data": {
-      "name": "El Parcerito de Carmona",
-      "short_name": "El Parcerito",
-      "description": "Menu online, carrito, puntos y seguimiento de pedidos.",
+      "name": "Mi tienda",
+      "short_name": "Mi tienda",
+      "description": "Menu online y carrito con entrega a domicilio, recogida en local, pedidos por fecha.",
       "start_url": "/?source=pwa",
       "scope": "/",
       "display": "standalone",
       "display_override": [
+        "window-controls-overlay",
         "standalone",
         "minimal-ui",
         "browser"
       ],
-      "background_color": "#FFFDF8",
+      "background_color": "#F7F3EA",
       "theme_color": "#E8B26C",
-      "orientation": "portrait-primary",
+      "orientation": "any",
       "lang": "es",
       "dir": "ltr",
       "categories": [
         "food",
-        "shopping"
+        "shopping",
+        "lifestyle"
       ],
       "id": "oxidian-menu",
       "icons": [
@@ -143,27 +214,49 @@
           "sizes": "390x844",
           "type": "image/png",
           "form_factor": "narrow",
-          "label": "El Parcerito de Carmona — Menu online"
+          "label": "Mi tienda — Menu online"
         },
         {
           "src": "/static/pwa-screenshot-wide.png",
           "sizes": "1280x720",
           "type": "image/png",
           "form_factor": "wide",
-          "label": "El Parcerito de Carmona — Pedidos y seguimiento"
+          "label": "Mi tienda — Pedidos y seguimiento"
         }
       ],
       "prefer_related_applications": false,
       "edge_side_panel": {
         "preferred_width": 400
+      },
+      "launch_handler": {
+        "client_mode": [
+          "navigate-existing",
+          "auto"
+        ]
+      },
+      "handle_links": "preferred",
+      "protocol_handlers": [
+        {
+          "protocol": "web+order",
+          "url": "/pedido/%s"
+        }
+      ],
+      "share_target": {
+        "action": "/",
+        "method": "GET",
+        "params": {
+          "title": "title",
+          "text": "text",
+          "url": "url"
+        }
       }
     }
   },
   "offline": {
     "error": null,
     "result": {
-      "title": "El Parcerito de Carmona — Pide online",
-      "bodyText": "🥟\n\nEl Parcerito de Carmona\n\n📍 Carmona, Sevilla\n\n🛒\n↗\nEl Parcerito de Carmona\n\nCarmona\n\nVer menú completo\n🥟\n~35 min\nGratis +€25\nAbierto\nBuscar\n🌎\nTodo\n🍽️\nComidas QA\n4\n🥤\nBebidas QA\n1\n🎁\nCombos QA\n3\n🍽️\nEncargos QA\n1\n🍽️ Nuestro menú\n9 productos\n🎁 COMBOS ESPECIALES\n🎁 COMBO\nCOMBO PERSONALIZABLE\n\n",
+      "title": "Mi tienda — Pide online",
+      "bodyText": "🥟\nDELIVERY · RECOGIDA\nMi tienda\nMi tienda\nVer menú completo\n~35 min\nGratis +€25\nAbierto\n🍽️ Nuestras estrellas\nSelección de la casa\n🎁\n🎁 COMBO\nTEST-COMBO-01\n€9.90\n🎁\n🎁 COMBO\nTEST-COMBO-02\n€9.90\n🎁\n🎁 COMBO\nTEST-COMBO-03\n€9.90\nBuscar\n🌎\nTodo\n🎁\nCombos\n7\n⭐\nCanje\n🍽️\nTEST-Cocina\n30\n🍽️\nTEST-Bar\n12\n\ud83c",
       "controlled": true
     }
   }

@@ -20,7 +20,7 @@ from models import (ROLES_AUTENTICABLES, TIPOS_STAFF_PAYMENT, TIPOS_STAFF_PAYMEN
                     Coupon, ComboGroup, ComboItem, ExtraCatalogItem, ProductExtraGroup, ProductExtraOption, Caja, PointsLog, StaffPayment,
                     AffiliateCode, AffiliateUse, MenuConfig,
                     PriceHistory, ProductPresentation, ProductVariant, TAMAÑOS_PRESENTACION, SiteConfig, AuditLog,
-                    AdminFeature, NotificationOutbox, ZonaEntrega, normalizar_metodo_pago, utcnow)
+                    AdminFeature, NotificationOutbox, ProductBatch, ZonaEntrega, normalizar_metodo_pago, utcnow)
 from combo_validators import (
     ComboLimits,
     validate_component_quantity,
@@ -42,8 +42,9 @@ from services import (estado_cola, registrar_egreso, registrar_ingreso,
                       solicitar_resena_pedido, avanzar_estado_pedido,
                       cancelar_pedido_operativo, registrar_pago_pedido,
                       registrar_ingreso_pedido, procesar_notificaciones_pendientes,
-                      registrar_evento_pedido, award_points_on_delivery)
-from services import reasignar_responsable_pedido
+                      registrar_evento_pedido, award_points_on_delivery,
+                      reasignar_responsable_pedido,
+                      pedido_programado_disponible_para_preparar)
 from image_service import save_image, delete_image
 from phone_utils import (
     normalizar_telefono_cliente,
@@ -670,7 +671,8 @@ def pedidos():
     return render_template("admin/pedidos.html",
                            pedidos=todos,
                            preparadores=preparadores,
-                           repartidores=repartidores)
+                           repartidores=repartidores,
+                           puede_preparar_programado=pedido_programado_disponible_para_preparar)
 
 
 @admin_bp.route("/pedidos/<int:pedido_id>")
@@ -693,7 +695,8 @@ def pedido_detalle(pedido_id):
                            pedido=pedido,
                            eventos=eventos,
                            preparadores=preparadores,
-                           repartidores=repartidores)
+                           repartidores=repartidores,
+                           puede_preparar_programado=pedido_programado_disponible_para_preparar)
 
 
 @admin_bp.route("/pedidos/<int:pedido_id>/asignar", methods=["POST"])
@@ -766,6 +769,20 @@ def cancelar_pedido(pedido_id):
 @admin_required
 def avanzar_pedido_admin(pedido_id):
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
+    if (
+        pedido.estado == "pendiente"
+        and not pedido_programado_disponible_para_preparar(pedido)
+    ):
+        fecha = pedido.fecha_entrega_programada
+        mensaje = (
+            "Este pedido está reservado para el "
+            f"{fecha.strftime('%d/%m/%Y')}. Se habilitará al entrar en la "
+            "ventana de preparación configurada."
+            if fecha
+            else "El pedido programado no tiene una fecha de entrega única. Revísalo antes de prepararlo."
+        )
+        flash(mensaje, "warning")
+        return redirect(url_for("admin.pedido_detalle", pedido_id=pedido.id))
     if pedido.estado == "en_ruta":
         flash(
             "La entrega debe cerrarse desde el panel de reparto para validar código y cobro.",
@@ -2179,6 +2196,13 @@ def _parsear_campos_producto(form):
         "grupo_pedido":              grupo_pedido or None,
         "fecha_llegada":             fecha_llegada if tipo_entrega == "programado" else None,
         "dias_anticipacion_encargo": 1,
+        # Encargo por lote: solo aplica a productos programados con fecha.
+        # Un valor > 0 activa el flujo `ProductBatch` (cliente compra tandas,
+        # preparador ve el total agregado del día). Vacío o 0 → sin lote.
+        "cantidad_por_lote":         (
+            _int_o_none(form.get("cantidad_por_lote"))
+            if tipo_entrega == "programado" else None
+        ),
         # visibilidad horaria
         "hora_inicio_visibilidad":   hora_inicio,
         "hora_fin_visibilidad":      hora_fin,
@@ -4831,6 +4855,11 @@ def cambiar_precio(producto_id):
                        ip=request.remote_addr)
     try:
         db.session.commit()
+        # Invalida el caché de catálogo del bot inmediatamente. Sin esto,
+        # el precio nuevo no aparecía en respuestas del bot durante la
+        # ventana stale (hasta 5 min). Las otras rutas mutantes ya lo
+        # hacen; ésta se había olvidado.
+        notificar_bot_sync()
         flash(f"Precio de '{producto.nombre}' actualizado a €{nuevo_precio:.2f}.", "success")
     except Exception as exc:
         db.session.rollback()
@@ -5523,3 +5552,84 @@ def eliminar_variante_producto(producto_id, variante_id):
     db.session.commit()
     flash("Variante desactivada.", "success")
     return redirect(url_for("admin.editar_producto", producto_id=producto.id))
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Gestión de lotes (`ProductBatch`) — encargos con fecha por tanda.
+# Admin ve todos los batches vivos, su capacidad, tandas vendidas,
+# y puede ajustar el tope máximo o cerrarlos manualmente.
+# ─────────────────────────────────────────────────────────────────────
+@admin_bp.route("/encargos/lotes")
+@admin_required
+def encargos_lotes():
+    hoy = date.today()
+    # Ordenar por fecha ascendente: primero los que hay que producir antes.
+    batches = (
+        ProductBatch.query
+        .join(Product, Product.id == ProductBatch.producto_id)
+        .filter(ProductBatch.fecha_entrega >= hoy - timedelta(days=1))
+        .order_by(ProductBatch.fecha_entrega.asc(), Product.nombre.asc())
+        .all()
+    )
+    return render_template("admin/encargos_lotes.html",
+                           batches=batches, hoy=hoy)
+
+
+@admin_bp.route("/encargos/lotes/<int:batch_id>/tope", methods=["POST"])
+@admin_required
+def actualizar_tope_lote(batch_id):
+    """Ajusta el tope máximo de tandas del batch.
+
+    Reglas:
+        * Vacío → sin tope (ilimitado).
+        * Entero ≥ tandas ya vendidas → aplica y reabre si estaba `agotado`.
+        * Entero < tandas vendidas → rechaza (no puede overbookearse ex-post).
+    """
+    batch = ProductBatch.query.filter_by(id=batch_id).with_for_update().first_or_404()
+    raw = (request.form.get("cantidad_maxima_tandas") or "").strip()
+    if raw == "":
+        batch.cantidad_maxima_tandas = None
+    else:
+        try:
+            nuevo = int(raw)
+        except ValueError:
+            flash("El tope debe ser un número entero.", "warning")
+            return redirect(url_for("admin.encargos_lotes"))
+        if nuevo < 0:
+            flash("El tope no puede ser negativo.", "warning")
+            return redirect(url_for("admin.encargos_lotes"))
+        if nuevo < batch.cantidad_vendida_tandas:
+            flash(
+                f"El nuevo tope ({nuevo}) es menor que las tandas ya vendidas "
+                f"({batch.cantidad_vendida_tandas}). Cancela pedidos primero.",
+                "danger",
+            )
+            return redirect(url_for("admin.encargos_lotes"))
+        batch.cantidad_maxima_tandas = nuevo
+    # Si el nuevo tope deja cupo, reabre el batch agotado.
+    if batch.estado == "agotado" and (
+        batch.cantidad_maxima_tandas is None
+        or batch.cantidad_vendida_tandas < batch.cantidad_maxima_tandas
+    ):
+        batch.estado = "abierto"
+    db.session.commit()
+    flash("Tope del lote actualizado.", "success")
+    return redirect(url_for("admin.encargos_lotes"))
+
+
+@admin_bp.route("/encargos/lotes/<int:batch_id>/cerrar", methods=["POST"])
+@admin_required
+def cerrar_lote(batch_id):
+    """Marca el batch como `agotado` para dejar de aceptar reservas.
+
+    NO cancela pedidos ya en curso; solo impide nuevas ventas. El estado
+    puede revertirse subiendo el tope o subiéndolo a NULL desde la UI.
+    """
+    batch = ProductBatch.query.filter_by(id=batch_id).with_for_update().first_or_404()
+    if batch.estado == "listo":
+        flash("El lote ya está marcado como listo; no se puede cerrar.", "warning")
+        return redirect(url_for("admin.encargos_lotes"))
+    batch.estado = "agotado"
+    db.session.commit()
+    flash("Lote cerrado — no aceptará nuevas reservas.", "info")
+    return redirect(url_for("admin.encargos_lotes"))

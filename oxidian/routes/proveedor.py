@@ -129,6 +129,12 @@ def pedidos():
 @proveedor_required
 def marcar_preparado(pedido_id):
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
+    if pedido.confirmacion_estado == "pending":
+        flash(
+            "El cliente aún no confirmó su primer pedido por WhatsApp. No se modificó la preparación.",
+            "warning",
+        )
+        return redirect(url_for("proveedor.pedidos"))
     if pedido.estado not in ESTADOS_EN_PREPARACION:
         flash("Este pedido ya no está activo.", "warning")
         return redirect(url_for("proveedor.pedidos"))

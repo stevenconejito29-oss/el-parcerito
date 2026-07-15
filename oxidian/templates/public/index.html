@@ -89,7 +89,7 @@
   <a class="ep-banner-slide" {% if b.enlace_url %}href="{{ b.enlace_url }}"{% else %}href="#catalogo"{% endif %}
      {% if b.enlace_url and b.enlace_url.startswith('http') %}target="_blank" rel="noopener"{% endif %}>
     <img src="{{ b.imagen_url|upload_url }}" alt="{{ b.titulo or '' }}" loading="lazy"
-         onerror="this.parentElement.style.display='none'">
+         data-image-fallback="hide-parent">
     <span class="ep-banner-shade"></span>
     {% if b.titulo or b.contenido %}
     <span class="ep-banner-copy">
@@ -232,7 +232,7 @@
 {# ══════════════════════════════════════════
    BÚSQUEDA
 ══════════════════════════════════════════ #}
-<form method="GET" action="{{ establecimiento.url }}" class="ep-search-wrap">
+<form method="GET" action="{{ establecimiento.url }}" class="ep-search-wrap" id="buscar">
   {% if categoria_activa %}<input type="hidden" name="categoria" value="{{ categoria_activa }}">{% endif %}
   <div class="ep-search-box">
     <svg class="ep-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -353,7 +353,7 @@
 
     {# ── 1. Sección Canje con puntos ── #}
     {% if productos_canjeables %}
-    <div class="ep-cat-section ep-cat-section-puntos" data-section-cat="_canje">
+    <div class="ep-cat-section ep-cat-section-puntos" data-section-cat="_canje" data-palette="promo">
       <h3 class="ep-cat-title ep-cat-title-puntos">⭐ Canje con puntos</h3>
       <div class="ep-grid">
         {% for p in productos_canjeables %}{% include "public/_product_card.html" %}{% endfor %}
@@ -363,7 +363,7 @@
 
     {# ── 2. Sección Combos — SIEMPRE su bloque propio, no mezclados con categorías ── #}
     {% if combos_venta %}
-    <div class="ep-cat-section ep-cat-section-combos" data-section-cat="_combos">
+    <div class="ep-cat-section ep-cat-section-combos" data-section-cat="_combos" data-palette="info">
       <h3 class="ep-cat-title">🎁 Combos</h3>
       <div class="ep-grid">
         {% for p in combos_venta %}{% include "public/_product_card.html" %}{% endfor %}
@@ -375,7 +375,7 @@
     {% for cat in categorias %}
     {% set productos_categoria = productos_regulares|selectattr('categoria_id','equalto',cat.id)|list %}
     {% if productos_categoria %}
-    <div class="ep-cat-section" data-section-cat="{{ cat.id }}">
+    <div class="ep-cat-section" data-section-cat="{{ cat.id }}" data-palette="{{ loop.index0 % 5 }}">
       <h3 class="ep-cat-title">{{ cat_emoji(cat.nombre) }} {{ cat.nombre }}</h3>
       <div class="ep-grid">
         {% for p in productos_categoria %}{% include "public/_product_card.html" %}{% endfor %}
@@ -385,7 +385,7 @@
     {% endfor %}
     {% set sin_categoria = productos_regulares|rejectattr('categoria_id')|list %}
     {% if sin_categoria %}
-    <div class="ep-cat-section">
+    <div class="ep-cat-section" data-palette="warning">
       <h3 class="ep-cat-title">🍽️ Otros productos</h3>
       <div class="ep-grid">
         {% for p in sin_categoria %}{% include "public/_product_card.html" %}{% endfor %}
@@ -464,14 +464,14 @@
 {# ══════════════════════════════════════════
    MODAL QUICK-ADD
 ══════════════════════════════════════════ #}
-<div id="ep-modal" class="ep-modal-overlay" onclick="if(event.target===this)closeModal()" role="dialog" aria-modal="true" hidden>
+<div id="ep-modal" class="ep-modal-overlay" data-modal-backdrop role="dialog" aria-modal="true" hidden>
   <div class="ep-modal-panel" tabindex="-1">
 
     {# Imagen #}
     <div class="ep-modal-img-wrap" id="ep-modal-img-wrap">
       <img id="ep-modal-img" src="" alt="" class="ep-modal-img">
       <div id="ep-modal-img-fb" class="ep-modal-img-fb">{{ brand.fallback_emoji or '🍽️' }}</div>
-      <button class="ep-modal-close" onclick="closeModal()" aria-label="Cerrar">
+      <button type="button" class="ep-modal-close" data-modal-close aria-label="Cerrar">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
       <span id="ep-modal-badge" class="ep-modal-badge is-hidden"></span>
@@ -535,9 +535,9 @@
         </div>
         <div class="ep-modal-actions">
           <div class="ep-modal-qty-ctrl">
-            <button type="button" class="ep-modal-qty-btn" onclick="modalQty(-1)">−</button>
+            <button type="button" class="ep-modal-qty-btn" data-modal-qty="-1" aria-label="Reducir cantidad">−</button>
             <span class="ep-modal-qty-display" id="ep-modal-qty-disp">1</span>
-            <button type="button" class="ep-modal-qty-btn" onclick="modalQty(1)">+</button>
+            <button type="button" class="ep-modal-qty-btn" data-modal-qty="1" aria-label="Aumentar cantidad">+</button>
           </div>
           <button type="submit" class="ep-modal-add-btn">
             🛒 Añadir al carrito
@@ -593,11 +593,12 @@
 
 {% block scripts %}
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 const EP_DATA = JSON.parse(document.getElementById('ep-data')?.textContent || '{}');
 const EP_CART_MAX_QTY = {{ cart_max_qty|default(99)|int }};
 let _modalQty = 1;
 let _closeTimer = null;
+let _modalProductId = null;
 
 const EP_CARDS_CACHE = [];
 const EP_CHIPS_CACHE = [];
@@ -686,6 +687,8 @@ document.getElementById('ep-modal-form')?.addEventListener('submit', async (even
   if (!btn || btn.disabled) return;
 
   btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
+  form.setAttribute('aria-busy', 'true');
   btn.innerHTML = '<span class="ep-btn-spin"></span>';
   if (navigator.vibrate) navigator.vibrate(12);
 
@@ -698,6 +701,7 @@ document.getElementById('ep-modal-form')?.addEventListener('submit', async (even
     const data = await res.json().catch(() => null);
 
     if (data?.ok) {
+      epConfirmProductAdded(_modalProductId);
       closeModal();
       _epToast('✓ Añadido al carrito');
       _epBadgeInc();
@@ -715,9 +719,22 @@ document.getElementById('ep-modal-form')?.addEventListener('submit', async (even
   } catch { form.submit(); }
   finally {
     btn.disabled = false;
+    btn.removeAttribute('aria-busy');
+    form.removeAttribute('aria-busy');
     btn.innerHTML = '🛒 Añadir al carrito';
   }
 });
+
+function epConfirmProductAdded(productId) {
+  if (productId == null) return;
+  const selector = `[data-product-card="${CSS.escape(String(productId))}"]`;
+  const card = document.querySelector(selector);
+  if (!card) return;
+  card.classList.remove('is-just-added');
+  card.classList.add('ep-card-in-cart');
+  requestAnimationFrame(() => card.classList.add('is-just-added'));
+  window.setTimeout(() => card.classList.remove('is-just-added'), 700);
+}
 
 async function _epShowCartIssue(issue, fallbackMsg) {
   const title = issue?.title || 'Revisa tu carrito';
@@ -777,6 +794,7 @@ function _epToast(msg, type) {
 function openModal(id) {
   const d = EP_DATA[String(id)];
   if (!d) return;
+  _modalProductId = d.id;
   const rating = Number(d.rating || 0);
   const precioFinal = Number(d.precio_final ?? d.precio ?? 0);
 
@@ -982,6 +1000,20 @@ function modalQty(delta) {
   document.getElementById('ep-modal-qty-disp').textContent = _modalQty;
   document.getElementById('ep-modal-qty-val').value = _modalQty;
 }
+
+document.addEventListener('click', event => {
+  const opener = event.target.closest('[data-modal-open]');
+  if (opener) {
+    event.preventDefault();
+    openModal(Number.parseInt(opener.dataset.modalOpen, 10));
+    return;
+  }
+  if (event.target.closest('[data-modal-close]')) { closeModal(); return; }
+  const quantity = event.target.closest('[data-modal-qty]');
+  if (quantity) { modalQty(Number.parseInt(quantity.dataset.modalQty, 10)); return; }
+  const backdrop = event.target.closest('[data-modal-backdrop]');
+  if (backdrop && event.target === backdrop) closeModal();
+});
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 

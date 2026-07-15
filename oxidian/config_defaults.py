@@ -276,6 +276,66 @@ DEFAULTS: dict[str, dict] = {
             "que agreguen 100000 en vez de 100. Cap 1-1000000."
         ),
     },
+
+    # ── Salud del bot (widget dashboard admin) ──────────────────────
+    # Consumidas por `services.consultar_estado_bot`. Antes hardcoded
+    # a 200/50 en el clasificador de salud; con SiteConfig podemos
+    # ajustar sin redeploy según el tráfico real del negocio.
+    "BOT_HEALTH_ERRORS_24H_MAX": {
+        "default": "200",
+        "type": "int",
+        "desc": (
+            "Errores en 24h por encima de los cuales el widget del bot "
+            "en el dashboard admin se marca como 'degraded'. Cap 10-10000."
+        ),
+    },
+    "BOT_HEALTH_HANDOFFS_UNDELIVERED_MAX": {
+        "default": "50",
+        "type": "int",
+        "desc": (
+            "Handoffs sin entregar por encima de los cuales el widget "
+            "marca 'degraded'. Indica que los mensajes no llegan al admin. "
+            "Cap 1-10000."
+        ),
+    },
+    "BOT_STATUS_CHECK_TIMEOUT_SEC": {
+        "default": "2.5",
+        "type": "float",
+        "desc": (
+            "Timeout en segundos de la consulta HTTP a `/api/status` del "
+            "bot Node desde el dashboard admin. Corto para no ralentizar "
+            "la carga si el bot no responde. Cap 0.5-30."
+        ),
+    },
+
+    # ── Reintentos de notificaciones (outbox) ───────────────────────
+    # Consumida por `services._marcar_notificacion`. El backoff crece
+    # exponencial (2^intentos min) con techo configurable — antes 60min
+    # hardcoded que era razonable pero no ajustable ante crisis.
+    "NOTIFICATION_RETRY_BACKOFF_MAX_MIN": {
+        "default": "60",
+        "type": "int",
+        "desc": (
+            "Techo (minutos) del backoff exponencial entre reintentos de "
+            "notification_outbox. Cap 1-1440 (24h). Bajar durante debugging "
+            "para reintentar rápido; subir si se satura la cola."
+        ),
+    },
+
+    # ── Geocoding cobertura ────────────────────────────────────────
+    # Consumida por el paso 2 de `geocode_direccion` (búsqueda libre
+    # acotada por bbox). El margen expande el bbox sobre el radio de
+    # entrega para no perder direcciones justo en el borde.
+    "GEOCODE_BBOX_MARGIN": {
+        "default": "1.5",
+        "type": "float",
+        "desc": (
+            "Multiplicador del radio de entrega usado para construir "
+            "el bbox de Nominatim. 1.5 = 50 % más grande que el radio "
+            "real. Cap 1.0-5.0. Subir si Nominatim rechaza direcciones "
+            "válidas cerca del borde de cobertura."
+        ),
+    },
 }
 
 

@@ -27,12 +27,16 @@ def normalizar_telefono_cliente(value: str | None, country_code: str | None = No
         prefix = re.sub(r"\D", "", configured_code or "")
         if prefix and len(digits) <= 10 and not digits.startswith(prefix):
             digits = f"{prefix}{digits}"
-    return f"+{digits[:19]}"
+    # No truncar silenciosamente: dos números largos distintos podrían acabar
+    # compartiendo identidad. `telefono_valido` se encarga de rechazarlos.
+    return f"+{digits}"
 
 
 def telefono_valido(value: str | None) -> bool:
     canonical = normalizar_telefono_cliente(value)
-    return 8 <= len(canonical) <= 20
+    # E.164 admite como máximo 15 dígitos. Exigimos al menos 8 para evitar
+    # extensiones/locales demasiado cortos y el código de país no empieza en 0.
+    return re.fullmatch(r"\+[1-9]\d{7,14}", canonical or "") is not None
 
 
 def solo_digitos(value: str | None) -> str:

@@ -14,7 +14,7 @@
     <input type="date" name="fecha_fin" value="{{ fecha_fin }}"
            class="text-sm rounded-lg px-3 py-1.5" style="background:var(--col-elevated);border:1px solid var(--col-border);color:#fff">
     <button type="submit" class="text-sm font-bold px-4 py-1.5 rounded-lg"
-            style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
+            style="background:color-mix(in srgb,var(--brand-primary,#FFAB00) 15%,transparent);border:1px solid color-mix(in srgb,var(--brand-primary,#FFAB00) 30%,transparent);color:var(--brand-primary,#FFAB00)">
       Calcular
     </button>
   </form>
@@ -55,7 +55,7 @@
     {% if pl.descuentos_concedidos > 0 %}
     <div class="an-cas-row an-cas-sub">
       <span class="an-cas-label">− Descuentos</span>
-      <span class="an-cas-val" style="color:#FFB340">− €{{ "%.2f"|format(pl.descuentos_concedidos) }}</span>
+      <span class="an-cas-val" style="color:var(--status-warn,#FFB340)">− €{{ "%.2f"|format(pl.descuentos_concedidos) }}</span>
     </div>
     <div class="an-cas-row an-cas-result">
       <span class="an-cas-label">= Ingresos netos</span>
@@ -110,10 +110,11 @@
     <h3 class="an-chart-title">🌐 Ventas por canal</h3>
     {% set total_canales = pl.ventas_online + pl.ventas_presencial + pl.ventas_whatsapp %}
     <div class="space-y-3">
+      {# Colores por canal — usan CSS vars con fallback documentado. #}
       {% for label, val, color in [
-        ('Online (web)',    pl.ventas_online,     '#5AC8FA'),
-        ('Presencial',      pl.ventas_presencial, '#FFAB00'),
-        ('WhatsApp',        pl.ventas_whatsapp,   '#25D366'),
+        ('Online (web)',    pl.ventas_online,     'var(--role-admin,#5AC8FA)'),
+        ('Presencial',      pl.ventas_presencial, 'var(--brand-primary,#FFAB00)'),
+        ('WhatsApp',        pl.ventas_whatsapp,   'var(--theme-success,#25D366)'),
       ] %}
       {% if val > 0 or total_canales == 0 %}
       {% set pct = ((val / total_canales * 100)|round(1)) if total_canales > 0 else 0 %}
@@ -142,10 +143,10 @@
       <div>
         <div class="flex justify-between text-sm mb-1">
           <span class="font-semibold text-white truncate max-w-[65%]">{{ r.producto.nombre }}</span>
-          <span style="color:#FFAB00">{{ r.total_vendido }} uds</span>
+          <span style="color:var(--brand-primary,#FFAB00)">{{ r.total_vendido }} uds</span>
         </div>
         <div class="w-full rounded-full h-1.5" style="background:rgba(255,255,255,.08)">
-          <div class="h-1.5 rounded-full" style="width:{{ pct }}%;background:#FFAB00"></div>
+          <div class="h-1.5 rounded-full" style="width:{{ pct }}%;background:var(--brand-primary,#FFAB00)"></div>
         </div>
       </div>
       {% endfor %}
@@ -183,7 +184,7 @@
         <tr class="border-b" style="border-color:var(--col-border)">
           <td class="py-2 px-3 font-medium text-white">{{ row.categoria }}</td>
           <td class="py-2 px-3 text-right" style="color:var(--col-muted)">{{ row.unidades }}</td>
-          <td class="py-2 px-3 text-right font-bold" style="color:#FFAB00">€{{ "%.2f"|format(row.ventas) }}</td>
+          <td class="py-2 px-3 text-right font-bold" style="color:var(--brand-primary,#FFAB00)">€{{ "%.2f"|format(row.ventas) }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -208,7 +209,7 @@
 .an-kpi-val   { font-size:1.5rem; font-weight:900; color:#fff; }
 .an-kpi-green .an-kpi-val { color:#5EF097; }
 .an-kpi-red   .an-kpi-val { color:#FF6B6B; }
-.an-kpi-yellow .an-kpi-val{ color:#FFAB00; }
+.an-kpi-yellow .an-kpi-val{ color:var(--brand-primary,#FFAB00); }
 .an-kpi-blue   .an-kpi-val{ color:#5AC8FA; }
 .an-kpi-lbl  { font-size:.72rem; font-weight:700; color:var(--col-muted); margin-top:.2rem; }
 .an-kpi-sub  { font-size:.68rem; color:var(--col-faint); margin-top:.15rem; }
@@ -237,7 +238,22 @@
 </style>
 
 {% if labels_dias|length > 1 %}
-<script>
+<script nonce="{{ csp_nonce() }}">
+/* Chart.js necesita colores concretos, no CSS-vars. Leemos los tokens
+   del `computedStyle` del body para que el chart siga la marca actual
+   (si el super_admin cambia COLOR_PRIMARIO, el gráfico lo refleja al
+   recargar). Fallback documentado para no romper si el token falta. */
+(function () {
+  const cs = getComputedStyle(document.body);
+  const brand   = (cs.getPropertyValue('--brand-primary') || '#FFAB00').trim();
+  const accent  = (cs.getPropertyValue('--brand-accent')  || cs.getPropertyValue('--role-admin') || '#5AC8FA').trim();
+  const surface = (cs.getPropertyValue('--col-surface')   || '#1A1410').trim();
+  const text    = (cs.getPropertyValue('--col-text')      || '#FFF3E8').trim();
+  const hexToRgba = (hex, a) => {
+    const h = hex.replace('#',''); if (h.length !== 6) return hex;
+    const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+    return `rgba(${r},${g},${b},${a})`;
+  };
 new Chart(document.getElementById('chartTendencia'), {
   type: 'line',
   data: {
@@ -246,8 +262,8 @@ new Chart(document.getElementById('chartTendencia'), {
       {
         label: 'Ventas (€)',
         data: {{ data_totales|tojson }},
-        borderColor: '#FFAB00',
-        backgroundColor: 'rgba(255,171,0,.1)',
+        borderColor: brand,
+        backgroundColor: hexToRgba(brand, .1),
         fill: true, tension: 0.4,
         pointRadius: {{ '3' if labels_dias|length < 15 else '0' }},
         pointHoverRadius: 5, borderWidth: 2,
@@ -256,8 +272,8 @@ new Chart(document.getElementById('chartTendencia'), {
       {
         label: 'Pedidos',
         data: {{ data_pedidos|tojson }},
-        borderColor: '#5AC8FA',
-        backgroundColor: 'rgba(90,200,250,.06)',
+        borderColor: accent,
+        backgroundColor: hexToRgba(accent, .06),
         fill: true, tension: 0.4,
         pointRadius: {{ '3' if labels_dias|length < 15 else '0' }},
         pointHoverRadius: 5, borderWidth: 1.5,
@@ -270,19 +286,20 @@ new Chart(document.getElementById('chartTendencia'), {
     responsive: true, maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
-      legend: { labels: { color: 'rgba(255,255,255,.6)', font: { size: 11 } } },
+      legend: { labels: { color: hexToRgba(text, .6), font: { size: 11 } } },
       tooltip: {
-        backgroundColor: '#1A1410', borderColor: 'rgba(255,171,0,.2)', borderWidth: 1,
-        titleColor: '#FFAB00', bodyColor: '#FFF3E8',
+        backgroundColor: surface, borderColor: hexToRgba(brand, .2), borderWidth: 1,
+        titleColor: brand, bodyColor: text,
       }
     },
     scales: {
-      x: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: 'rgba(255,255,255,.5)', font: { size: 10 }, maxTicksLimit: 14 } },
-      y:  { position:'left',  grid:{ color:'rgba(255,255,255,.04)' }, ticks:{ color:'#FFAB00', callback: v => '€'+v } },
-      y1: { position:'right', grid:{ drawOnChartArea:false }, ticks:{ color:'#5AC8FA', stepSize:1 } }
+      x: { grid: { color: hexToRgba(text, .04) }, ticks: { color: hexToRgba(text, .5), font: { size: 10 }, maxTicksLimit: 14 } },
+      y:  { position:'left',  grid:{ color: hexToRgba(text, .04) }, ticks:{ color: brand, callback: v => '€'+v } },
+      y1: { position:'right', grid:{ drawOnChartArea:false }, ticks:{ color: accent, stepSize:1 } }
     }
   }
 });
+})();
 </script>
 {% endif %}
 {% endblock %}

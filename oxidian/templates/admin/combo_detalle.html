@@ -530,7 +530,7 @@
 }
 </style>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 const CD_BASE = {{ combo_base|float|tojson }};
 const CD_LIMS = {maxQty:{{ combo_limits.max_qty }},maxSel:{{ combo_limits.max_selections }},maxDisc:{{ combo_limits.max_discount_pct }}};
 const CD_GRUPOS_EXISTENTES = {{ grupos|tojson }};

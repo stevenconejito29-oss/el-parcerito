@@ -271,7 +271,7 @@
 {% endblock %}
 {% block scripts %}
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 const BUNDLE_PRODUCTS = [{% for p in productos_simples %}{
   id:{{ p.id }},
   name:{{ p.nombre|tojson }},

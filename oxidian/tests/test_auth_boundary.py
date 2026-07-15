@@ -26,6 +26,10 @@ class EmployeeAuthBoundaryTest(unittest.TestCase):
             internal_customer_email("+34 610 000 001"),
             f"cliente.34610000001@{CUSTOMER_INTERNAL_EMAIL_DOMAIN}",
         )
+        customer.email = internal_customer_email("+34 610 000 001")
+        self.assertIsNone(customer.email_visible)
+        customer.email = "cliente@example.com"
+        self.assertEqual(customer.email_visible, "cliente@example.com")
 
     def test_login_helper_rejects_customer_records(self):
         customer = User(

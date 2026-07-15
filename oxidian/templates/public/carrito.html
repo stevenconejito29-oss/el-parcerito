@@ -39,6 +39,16 @@
   </span>
 </nav>
 
+{% if fecha_entrega_programada %}
+<div class="cr-scheduled" role="status">
+  <span class="cr-scheduled-icon" aria-hidden="true">📅</span>
+  <div>
+    <strong>Entrega reservada para {{ fecha_entrega_programada.strftime('%d/%m/%Y') }}</strong>
+    <span>Todos los productos de este carrito corresponden a la misma fecha.</span>
+  </div>
+</div>
+{% endif %}
+
 <div class="cr-body">
 
   {# ════════════════════════════════ COLUMNA IZQUIERDA ════════════════════════════════ #}
@@ -58,7 +68,7 @@
             {% if item.producto.imagen_url %}
               {% set src = item.producto.imagen_url|upload_url %}
               <img src="{{ src }}" alt="{{ item.producto.nombre }}" loading="lazy"
-                   onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                   data-image-fallback="next">
               <div class="cr-thumb-fb" style="display:none">
                 {% if item.producto.es_combo %}🎁{% elif item.producto.categoria and 'beb' in item.producto.categoria.nombre|lower %}🥤{% else %}{{ brand.fallback_emoji or '🍽️' }}{% endif %}
               </div>
@@ -163,14 +173,14 @@
                 {% endif %}
               </div>
               <div class="cr-qty" role="group" aria-label="{{ ui.cart_quantity }}">
-                <button type="button" class="cr-qty-btn" onclick="crQty({{ item.producto.id }}, -1)" aria-label="{{ ui.cart_less }}">
+                <button type="button" class="cr-qty-btn" data-cart-qty="-1" data-cart-product-id="{{ item.producto.id }}" aria-label="{{ ui.cart_less }}">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
                 <input type="number" name="cantidad_{{ item.producto.id }}"
                        id="qty_{{ item.producto.id }}"
                        value="{{ item.cantidad }}" min="0" max="{{ cart_max_qty }}"
                        class="cr-qty-input ep-qty-input" aria-label="{{ ui.cart_quantity }}">
-                <button type="button" class="cr-qty-btn" onclick="crQty({{ item.producto.id }}, 1)" aria-label="{{ ui.cart_more }}">
+                <button type="button" class="cr-qty-btn" data-cart-qty="1" data-cart-product-id="{{ item.producto.id }}" aria-label="{{ ui.cart_more }}">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
               </div>
@@ -193,14 +203,19 @@
 
       {# Botón actualizar (solo aparece si hay cambio) #}
       <div class="cr-update-row" id="cr-update-row" hidden>
-        <button type="button" onclick="document.getElementById('cr-form-qty').submit()" class="cr-update-btn">
+        <button type="button" data-cart-update class="cr-update-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           {{ ui.cart_update }}
         </button>
       </div>
     </form>
 
-    {# ── PUNTOS Y RECOMPENSAS ── #}
+    {# ── PUNTOS Y RECOMPENSAS ──
+       El modelo actual: los puntos NO reducen el total en euros
+       (services + loyalty_service línea 1565 lo marcan explícitamente).
+       Solo se canjean por productos gratis del catálogo `canjeables`.
+       La UI antes mezclaba "descuento €" con "producto gratis" y el
+       cliente esperaba una rebaja monetaria que nunca llegaba. #}
     {% if puntos_habilitados %}<div class="cr-points" id="cr-puntos-wrap">
       <div class="cr-points-header">
         <div class="cr-points-icon-wrap">
@@ -211,31 +226,43 @@
           <p class="cr-points-sub">
             {{ ui.cart_points_prefix }} <strong>{{ (subtotal * puntos_por_euro)|int }} {{ ui.cart_points_unit }}</strong>
           </p>
+          <p class="cr-points-explainer">
+            🎁 Con tus puntos eliges un <strong>producto gratis</strong> de la lista.
+            No se descuentan del total en euros.
+          </p>
         </div>
       </div>
 
-      {# ─ Estado A: puntos ya aplicados con descuento real ─ #}
-      {% if descuento_puntos > 0 %}
+      {# ─ Estado A: producto gratis ya seleccionado ─
+         La selección vive en sesión mediante `cart_producto_canje_id`;
+         los puntos no alteran importes en euros. #}
+      {% set _canje_id = session.get('cart_producto_canje_id') %}
+      {% set _canje_prod = (canjeables | selectattr('id', 'equalto', _canje_id) | list | first) if _canje_id else None %}
+      {% if _canje_prod %}
       <div class="cr-points-applied">
-        <div class="cr-applied-icon">✓</div>
+        <div class="cr-applied-icon">🎁</div>
         <div class="cr-applied-body">
-          <p class="cr-applied-title">-€{{ "%.2f"|format(descuento_puntos) }} de descuento</p>
-          <p class="cr-applied-sub">{{ puntos_sesion.get('puntos_usados', 0) }} puntos canjeados</p>
+          <p class="cr-applied-title">
+            <strong>{{ _canje_prod.nombre }}</strong> — gratis con tus puntos
+          </p>
+          <p class="cr-applied-sub">
+            Se resta {{ _canje_prod.puntos_para_canje }} {{ ui.cart_points_unit }} de tu saldo al confirmar el pedido.
+          </p>
         </div>
-        <button type="button" class="cr-remove-pts" onclick="crQuitarPuntos()" aria-label="{{ ui.cart_points_remove_discount }}">{{ ui.cart_points_remove_discount }}</button>
+        <button type="button" class="cr-remove-pts" data-redeem-clear data-redeem-id="{{ _canje_id }}" aria-label="Quitar canje">Quitar</button>
       </div>
 
-      {# ─ Estado B: verificado pero sin descuento aplicado (auth rápido) ─ #}
+      {# ─ Estado B: verificado, aún no eligió producto ─ #}
       {% elif puntos_sesion and puntos_sesion.get('verificado') %}
       <div class="cr-points-balance">
         <div class="cr-pts-num">{{ puntos_sesion.get('puntos_totales', puntos_visibles) }}</div>
         <div>
           <p class="cr-pts-label">{{ ui.cart_points_available }}</p>
-          <p class="cr-pts-euro">≈ €{{ "%.2f"|format(puntos_visibles / puntos_ratio) }} de descuento</p>
+          <p class="cr-pts-euro">Elige un producto gratis abajo 👇</p>
         </div>
       </div>
       <p class="cr-points-hint">{{ ui.cart_points_ready }}</p>
-      <button type="button" class="cr-pts-remove-link" onclick="crQuitarPuntos()">{{ ui.cart_points_clear }}</button>
+      <button type="button" class="cr-pts-remove-link" data-points-clear>{{ ui.cart_points_clear }}</button>
 
       {# ─ Verificación por WhatsApp ─ #}
       {% else %}
@@ -246,19 +273,26 @@
           <div class="cr-input-row">
             <input type="tel" id="cr-pts-phone" placeholder="{{ ui.cart_phone_placeholder }}"
                    class="cr-input" autocomplete="tel" inputmode="tel">
-            <button type="button" class="cr-pts-btn" onclick="crSolicitarCodigo()">{{ ui.cart_points_send_code }}</button>
+            <button type="button" class="cr-pts-btn" data-points-request>{{ ui.cart_points_send_code }}</button>
           </div>
           <p id="cr-pts-msg1" class="cr-pts-msg"></p>
         </div>
-        {# Paso 2: Código #}
+        {# Paso 2: Código — con "reenviar" prominente. Antes el usuario
+           que perdía el OTP tenía que ir al paso 1 y reingresar el
+           teléfono. Ahora el botón "reenviar" lo dispara con el mismo
+           número guardado en el input oculto de step 1. #}
         <div id="cr-pts-step2" hidden>
           <p class="cr-pts-verify-hint">{{ ui.cart_points_code_help }}</p>
           <div class="cr-input-row">
             <input type="text" id="cr-pts-code" placeholder="{{ ui.cart_code_placeholder }}"
                    class="cr-input cr-input--code" maxlength="8" autocomplete="one-time-code" inputmode="numeric">
-            <button type="button" class="cr-pts-btn" onclick="crVerificarCodigo()">{{ ui.cart_points_verify }}</button>
+            <button type="button" class="cr-pts-btn" data-points-verify>{{ ui.cart_points_verify }}</button>
           </div>
-          <button type="button" class="cr-pts-back" onclick="crStep(1)">← {{ ui.cart_points_change_phone }}</button>
+          <div class="cr-pts-step2-actions">
+            <button type="button" class="cr-pts-back" data-points-step="1">← {{ ui.cart_points_change_phone }}</button>
+            <button type="button" class="cr-pts-resend" data-points-resend
+                    aria-label="Reenviar código por WhatsApp">🔄 Reenviar código</button>
+          </div>
           <p id="cr-pts-msg2" class="cr-pts-msg"></p>
         </div>
       </div>
@@ -276,7 +310,7 @@
                 data-prod-id="{{ prod.id }}"
                 data-pts="{{ prod.puntos_para_canje or 0 }}"
                 {% if faltan > 0 %}disabled aria-disabled="true"{% endif %}
-                onclick="crToggleCanje(this, {{ prod.id }})">
+                data-redeem-toggle>
           {% if prod.imagen_url %}
           <img src="{{ prod.imagen_url|upload_url }}" alt="" class="cr-canjeable-img">
           {% else %}
@@ -315,6 +349,39 @@
   {# ════════════════════════════════ SIDEBAR ════════════════════════════════ #}
   <aside class="cr-panel">
 
+    {# ── Descuentos (cupón + afiliado) ──
+       Antes: solo se podían aplicar en checkout. Cliente confirmaba
+       carrito sin saber el importe final. Reutiliza los mismos endpoints
+       `/carrito/cupon` y `/carrito/afiliado` que ya existen. #}
+    <div class="cr-discounts" id="cr-discounts">
+      <div class="cr-discount-block">
+        <label for="cr-cupon-input" class="cr-discount-label">🎟️ Cupón</label>
+        <div class="cr-discount-row">
+          <input type="text" id="cr-cupon-input" class="cr-input" autocomplete="off"
+                 placeholder="Código" style="text-transform:uppercase">
+          <button type="button" class="cr-discount-btn" id="cr-cupon-apply"
+                  data-coupon-apply>Aplicar</button>
+          <button type="button" class="cr-discount-btn cr-discount-btn--ghost hidden"
+                  id="cr-cupon-clear" data-coupon-clear
+                  aria-label="Quitar cupón">✕</button>
+        </div>
+        <p id="cr-cupon-msg" class="cr-discount-msg" role="status"></p>
+      </div>
+      <div class="cr-discount-block">
+        <label for="cr-afil-input" class="cr-discount-label">👥 Código afiliado</label>
+        <div class="cr-discount-row">
+          <input type="text" id="cr-afil-input" class="cr-input" autocomplete="off"
+                 placeholder="Código" style="text-transform:uppercase">
+          <button type="button" class="cr-discount-btn" id="cr-afil-apply"
+                  data-affiliate-apply>Aplicar</button>
+          <button type="button" class="cr-discount-btn cr-discount-btn--ghost hidden"
+                  id="cr-afil-clear" data-affiliate-clear
+                  aria-label="Quitar código">✕</button>
+        </div>
+        <p id="cr-afil-msg" class="cr-discount-msg" role="status"></p>
+      </div>
+    </div>
+
     {# ── Resumen de pedido ── #}
     <div class="cr-summary" id="cr-summary">
       <h3 class="cr-summary-title">{{ ui.cart_summary }}</h3>
@@ -323,17 +390,14 @@
           <span>{{ ui.cart_subtotal }}</span>
           <span id="total-display">€{{ "%.2f"|format(subtotal) }}</span>
         </div>
-        {% if descuento_puntos > 0 %}
-        <div class="cr-row cr-row--green" id="cr-discount-row">
-          <span>⭐ {{ ui.cart_points_discount }}</span>
-          <span id="cr-discount-val">-€{{ "%.2f"|format(descuento_puntos) }}</span>
+        <div class="cr-row cr-row--green hidden" id="cr-cupon-row">
+          <span>🎟️ <span id="cr-cupon-tag">Cupón</span></span>
+          <span id="cr-cupon-val">-€0.00</span>
         </div>
-        {% else %}
-        <div class="cr-row cr-row--green" id="cr-discount-row" hidden>
-          <span>⭐ {{ ui.cart_points_discount }}</span>
-          <span id="cr-discount-val"></span>
+        <div class="cr-row cr-row--green hidden" id="cr-afil-row">
+          <span>👥 <span id="cr-afil-tag">Afiliado</span></span>
+          <span id="cr-afil-val">-€0.00</span>
         </div>
-        {% endif %}
         {% if 'delivery' in fulfillment_options %}<div class="cr-row cr-row--muted">
           <span>{{ ui.cart_shipping }}</span>
           <span>
@@ -347,7 +411,7 @@
       </div>
       <div class="cr-total-row">
         <span class="cr-total-label">{{ ui.cart_total }}</span>
-        <span class="cr-total-val" id="total-estimado">€{{ "%.2f"|format(subtotal - descuento_puntos) }}</span>
+        <span class="cr-total-val" id="total-estimado">€{{ "%.2f"|format(subtotal) }}</span>
       </div>
       {% if pedido_minimo and pedido_minimo > 0 %}
       {% set _falta = pedido_minimo - subtotal %}
@@ -382,6 +446,8 @@
       </div>
       {% endif %}
       <button type="button" class="cr-cta cr-cta--disabled" disabled>{{ ui.cart_incompatible }}</button>
+      {% elif not brand.tienda_abierta %}
+      <button type="button" class="cr-cta cr-cta--disabled" disabled>Tienda cerrada · tu carrito queda guardado</button>
       {% else %}
       <a href="{{ url_for('public.checkout') }}" class="cr-cta" id="btn-checkout">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -444,7 +510,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 const CR_MAX = {{ cart_max_qty|int }};
 const CR_CSRF = document.querySelector('#cr-form-qty [name=csrf_token]')?.value || '';
 const CR_PUNTOS_RATIO = {{ puntos_ratio|default(1)|float }};
@@ -462,6 +528,35 @@ function crQty(id, delta) {
   clearTimeout(_crAutoSave);
   _crAutoSave = setTimeout(() => document.getElementById('cr-form-qty').submit(), 1600);
 }
+
+// Delegación declarativa: mantiene todos los controles del carrito activos
+// bajo la CSP estricta y evita un listener distinto por cada producto.
+document.addEventListener('click', function(event) {
+  const quantity = event.target.closest('[data-cart-qty]');
+  if (quantity) {
+    crQty(Number.parseInt(quantity.dataset.cartProductId, 10), Number.parseInt(quantity.dataset.cartQty, 10));
+    return;
+  }
+  if (event.target.closest('[data-cart-update]')) { document.getElementById('cr-form-qty')?.requestSubmit(); return; }
+  const redeem = event.target.closest('[data-redeem-toggle]');
+  if (redeem) { crToggleCanje(redeem, Number.parseInt(redeem.dataset.prodId, 10)); return; }
+  const clearRedeem = event.target.closest('[data-redeem-clear]');
+  if (clearRedeem) {
+    crToggleCanje(document.querySelector('.cr-canjeable.is-selected'), Number.parseInt(clearRedeem.dataset.redeemId, 10));
+    return;
+  }
+  if (event.target.closest('[data-points-clear]')) { crQuitarPuntos(); return; }
+  if (event.target.closest('[data-points-request]')) { crSolicitarCodigo(); return; }
+  if (event.target.closest('[data-points-verify]')) { crVerificarCodigo(); return; }
+  const step = event.target.closest('[data-points-step]');
+  if (step) { crStep(Number.parseInt(step.dataset.pointsStep, 10)); return; }
+  const resend = event.target.closest('[data-points-resend]');
+  if (resend) { crReenviarCodigo(resend); return; }
+  if (event.target.closest('[data-coupon-apply]')) { crAplicarCupon(); return; }
+  if (event.target.closest('[data-coupon-clear]')) { crQuitarCupon(); return; }
+  if (event.target.closest('[data-affiliate-apply]')) { crAplicarAfiliado(); return; }
+  if (event.target.closest('[data-affiliate-clear]')) crQuitarAfiliado();
+});
 
 function crShowUpdate() {
   const r = document.getElementById('cr-update-row');
@@ -514,11 +609,18 @@ function crStep(n) {
   document.getElementById('cr-pts-step2').hidden = n !== 2;
 }
 
+/* Ventana anti-flood cliente. El backend ya tiene `OTP_MIN_RESEND_SECONDS`,
+   pero deshabilitar el botón visualmente evita spam de clicks y toasts
+   de error mientras el server rechaza. */
+const CR_RESEND_COOLDOWN_MS = 30 * 1000;
+let _crLastCodeAt = 0;
+
 async function crSolicitarCodigo() {
   const phone = document.getElementById('cr-pts-phone')?.value?.trim();
   const msg   = document.getElementById('cr-pts-msg1');
   if (!phone) { if (msg) { msg.textContent = OX_UI.cart_phone_required; msg.className = 'cr-pts-msg cr-pts-msg--err'; } return; }
   if (msg) { msg.textContent = OX_UI.cart_sending; msg.className = 'cr-pts-msg'; }
+  _crLastCodeAt = Date.now();
   try {
     const r = await fetch('{{ url_for("public.solicitar_codigo_puntos") }}', {
       method: 'POST',
@@ -529,6 +631,22 @@ async function crSolicitarCodigo() {
     if (d.ok) { crStep(2); }
     else { if (msg) { msg.textContent = d.msg || OX_UI.cart_generic_error; msg.className = 'cr-pts-msg cr-pts-msg--err'; } }
   } catch { if (msg) { msg.textContent = OX_UI.cart_network_error; msg.className = 'cr-pts-msg cr-pts-msg--err'; } }
+}
+
+/* Reenvía el OTP con el teléfono ya introducido, sin volver al step 1.
+   Aplica cooldown para no acribillar el endpoint (ni al WhatsApp del
+   cliente con toasts duplicados). */
+async function crReenviarCodigo(btn) {
+  const msg = document.getElementById('cr-pts-msg2');
+  const elapsed = Date.now() - _crLastCodeAt;
+  if (elapsed < CR_RESEND_COOLDOWN_MS) {
+    const rest = Math.ceil((CR_RESEND_COOLDOWN_MS - elapsed) / 1000);
+    if (msg) { msg.textContent = `Espera ${rest}s antes de reenviar.`; msg.className = 'cr-pts-msg'; }
+    return;
+  }
+  if (btn) { btn.disabled = true; setTimeout(() => btn && (btn.disabled = false), CR_RESEND_COOLDOWN_MS); }
+  await crSolicitarCodigo();
+  if (msg) { msg.textContent = 'Código reenviado. Revisa tu WhatsApp.'; msg.className = 'cr-pts-msg cr-pts-msg--ok'; }
 }
 
 async function crVerificarCodigo() {
@@ -580,7 +698,7 @@ async function crRefreshWidget(data) {
     if (data && typeof data.subtotal !== 'undefined') {
       const te = document.getElementById('total-estimado');
       const st = document.getElementById('total-display');
-      if (te) te.textContent = '€' + Number(data.subtotal - (data.descuento_puntos || 0)).toFixed(2);
+      if (te) te.textContent = '€' + Number(data.subtotal).toFixed(2);
       if (st && typeof data.subtotal !== 'undefined') st.textContent = '€' + Number(data.subtotal).toFixed(2);
     }
     // 3) Refrescar el fragmento del widget si el server expone endpoint parcial
@@ -678,6 +796,154 @@ document.addEventListener('click', function (ev) {
       form.submit();
     }
   }).catch(function () { btn.disabled = false; });
+});
+
+/* ── DESCUENTOS: cupón + afiliado ─────────────────────────────────────
+   Los endpoints /carrito/cupon y /carrito/afiliado ya validan y guardan
+   en sesión. Aquí solo pintamos el resultado y ajustamos el total. El
+   checkout POST leerá la sesión y aplicará el cupón/afiliado al pedido.
+   Estado local reflejado en `crDiscState` para reconciliar el total. */
+const crDiscState = { cupon: 0, afil: 0 };
+
+function _crToggleCuponUI(applied, codigo) {
+  document.getElementById('cr-cupon-apply')?.classList.toggle('hidden', applied);
+  document.getElementById('cr-cupon-clear')?.classList.toggle('hidden', !applied);
+  const inp = document.getElementById('cr-cupon-input');
+  if (inp) { inp.readOnly = Boolean(applied); if (codigo) inp.value = codigo; }
+}
+function _crToggleAfilUI(applied, codigo) {
+  document.getElementById('cr-afil-apply')?.classList.toggle('hidden', applied);
+  document.getElementById('cr-afil-clear')?.classList.toggle('hidden', !applied);
+  const inp = document.getElementById('cr-afil-input');
+  if (inp) { inp.readOnly = Boolean(applied); if (codigo) inp.value = codigo; }
+}
+function _crRefreshTotals() {
+  const sub = {{ subtotal|float }};
+  const t = Math.max(sub - crDiscState.cupon - crDiscState.afil, 0);
+  const te = document.getElementById('total-estimado');
+  if (te) te.textContent = '€' + t.toFixed(2);
+}
+function _crShowRow(rowId, valId, monto, label) {
+  const row = document.getElementById(rowId);
+  const val = document.getElementById(valId);
+  if (row) row.classList.toggle('hidden', !monto);
+  if (val) val.textContent = monto ? `-€${monto.toFixed(2)}` : '';
+}
+
+async function crAplicarCupon() {
+  const codigo = document.getElementById('cr-cupon-input')?.value?.trim().toUpperCase();
+  const msg = document.getElementById('cr-cupon-msg');
+  if (!codigo) return;
+  msg.textContent = '⏳ Validando…';
+  msg.className = 'cr-discount-msg';
+  try {
+    const r = await fetch('{{ url_for("public.validar_cupon") }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CR_CSRF },
+      body: JSON.stringify({ codigo, subtotal: {{ subtotal|float }} }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      crDiscState.cupon = parseFloat(d.descuento) || 0;
+      msg.textContent = `✓ ${d.descripcion || codigo}`;
+      msg.className = 'cr-discount-msg cr-discount-msg--ok';
+      _crShowRow('cr-cupon-row', 'cr-cupon-val', crDiscState.cupon);
+      document.getElementById('cr-cupon-tag').textContent = codigo;
+      _crToggleCuponUI(true, codigo);
+    } else {
+      crDiscState.cupon = 0;
+      msg.textContent = `✗ ${d.msg || 'Cupón no válido'}`;
+      msg.className = 'cr-discount-msg cr-discount-msg--err';
+      _crShowRow('cr-cupon-row', 'cr-cupon-val', 0);
+      _crToggleCuponUI(false);
+    }
+  } catch {
+    msg.textContent = 'Sin conexión — reintenta.';
+    msg.className = 'cr-discount-msg cr-discount-msg--err';
+  }
+  _crRefreshTotals();
+}
+
+async function crQuitarCupon() {
+  try {
+    await fetch('{{ url_for("public.quitar_cupon_sesion") }}', {
+      method: 'POST', headers: { 'X-CSRFToken': CR_CSRF },
+    });
+  } catch {}
+  crDiscState.cupon = 0;
+  const msg = document.getElementById('cr-cupon-msg');
+  if (msg) { msg.textContent = ''; msg.className = 'cr-discount-msg'; }
+  document.getElementById('cr-cupon-input').value = '';
+  _crShowRow('cr-cupon-row', 'cr-cupon-val', 0);
+  _crToggleCuponUI(false);
+  _crRefreshTotals();
+}
+
+async function crAplicarAfiliado() {
+  const codigo = document.getElementById('cr-afil-input')?.value?.trim().toUpperCase();
+  const msg = document.getElementById('cr-afil-msg');
+  if (!codigo) return;
+  msg.textContent = '⏳ Validando…';
+  msg.className = 'cr-discount-msg';
+  try {
+    const r = await fetch('{{ url_for("public.validar_afiliado") }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CR_CSRF },
+      body: JSON.stringify({ codigo, subtotal: {{ subtotal|float }} }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      crDiscState.afil = parseFloat(d.descuento) || 0;
+      msg.textContent = `✓ ${d.descripcion || codigo}`;
+      msg.className = 'cr-discount-msg cr-discount-msg--ok';
+      _crShowRow('cr-afil-row', 'cr-afil-val', crDiscState.afil);
+      document.getElementById('cr-afil-tag').textContent = codigo;
+      _crToggleAfilUI(true, codigo);
+    } else {
+      crDiscState.afil = 0;
+      msg.textContent = `✗ ${d.msg || 'Código no válido'}`;
+      msg.className = 'cr-discount-msg cr-discount-msg--err';
+      _crShowRow('cr-afil-row', 'cr-afil-val', 0);
+      _crToggleAfilUI(false);
+    }
+  } catch {
+    msg.textContent = 'Sin conexión — reintenta.';
+    msg.className = 'cr-discount-msg cr-discount-msg--err';
+  }
+  _crRefreshTotals();
+}
+
+async function crQuitarAfiliado() {
+  try {
+    await fetch('{{ url_for("public.quitar_afiliado_sesion") }}', {
+      method: 'POST', headers: { 'X-CSRFToken': CR_CSRF },
+    });
+  } catch {}
+  crDiscState.afil = 0;
+  const msg = document.getElementById('cr-afil-msg');
+  if (msg) { msg.textContent = ''; msg.className = 'cr-discount-msg'; }
+  document.getElementById('cr-afil-input').value = '';
+  _crShowRow('cr-afil-row', 'cr-afil-val', 0);
+  _crToggleAfilUI(false);
+  _crRefreshTotals();
+}
+
+/* Hidratación al cargar: si el cliente ya aplicó cupón/afiliado antes
+   (sesión persistida), pre-populamos el input y re-validamos para
+   obtener el descuento actualizado con el subtotal actual. */
+window.addEventListener('DOMContentLoaded', () => {
+  const cupon = {{ (session.get('cart_cupon') or {}) | tojson }};
+  const afil  = {{ (session.get('cart_afiliado') or {}) | tojson }};
+  if (cupon && cupon.codigo) {
+    const inp = document.getElementById('cr-cupon-input');
+    if (inp) inp.value = cupon.codigo;
+    crAplicarCupon();
+  }
+  if (afil && afil.codigo) {
+    const inp = document.getElementById('cr-afil-input');
+    if (inp) inp.value = afil.codigo;
+    crAplicarAfiliado();
+  }
 });
 </script>
 {% endblock %}

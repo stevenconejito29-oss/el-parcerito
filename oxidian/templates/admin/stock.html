@@ -72,8 +72,8 @@
     <h2 class="font-black text-white">Lotes activos</h2>
     <p class="text-xs" style="color:var(--col-muted)">Ajustar a 0 equivale a retirar o agotar un lote.</p>
   </div>
-  <div class="ox-table-wrap">
-    <table class="ox-table">
+  <div class="ox-table-wrap stock-table-wrap">
+    <table class="ox-table stock-table">
       <thead>
         <tr>
           <th>Producto</th>
@@ -88,20 +88,20 @@
       <tbody>
       {% for lote in lotes %}
       <tr>
-        <td>
+        <td class="stock-product" data-label="Producto">
           <p class="font-semibold text-white">{{ lote.producto.nombre }}</p>
           <p class="text-xs" style="color:var(--col-faint)">Total producto: {{ lote.producto.stock_total }}</p>
         </td>
-        <td class="font-mono text-xs">{{ lote.lote or '—' }}</td>
-        <td class="text-right font-bold">{{ lote.cantidad }}</td>
-        <td>{% if lote.fecha_caducidad %}{{ lote.fecha_caducidad.strftime('%d/%m/%Y') }}{% else %}Sin fecha{% endif %}</td>
-        <td>{{ lote.ubicacion or '—' }}</td>
-        <td>
+        <td class="font-mono text-xs" data-label="Lote">{{ lote.lote or '—' }}</td>
+        <td class="text-right font-bold" data-label="Cantidad">{{ lote.cantidad }}</td>
+        <td data-label="Caducidad">{% if lote.fecha_caducidad %}{{ lote.fecha_caducidad.strftime('%d/%m/%Y') }}{% else %}Sin fecha{% endif %}</td>
+        <td data-label="Ubicación">{{ lote.ubicacion or '—' }}</td>
+        <td data-label="Estado">
           {% if lote.esta_caducado %}<span class="st-badge st-bad">Caducado</span>
           {% elif lote.esta_en_alerta %}<span class="st-badge st-warn">Vence en {{ lote.dias_para_caducar }}d</span>
           {% else %}<span class="st-badge st-ok">OK</span>{% endif %}
         </td>
-        <td>
+        <td class="stock-adjust" data-label="Ajustar unidades">
           <form method="POST" action="{{ url_for('admin.ajustar_stock', lote_id=lote.id) }}" class="flex gap-1">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="number" name="cantidad" value="{{ lote.cantidad }}" min="0" class="st-input" style="width:80px">
@@ -125,5 +125,33 @@
 .st-ok { background:rgba(52,199,89,.1); color:#5EF097; }
 .st-warn { background:rgba(255,171,0,.12); color:#FFAB00; }
 .st-bad { background:rgba(255,59,48,.12); color:#FF6B6B; }
+@media (max-width: 600px) {
+  .stock-table-wrap { width: 100%; max-width: 100%; overflow: visible; }
+  .stock-table, .stock-table tbody { display: block; width: 100% !important; min-width: 0 !important; max-width: 100%; }
+  .stock-table thead { display: none; }
+  .stock-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .7rem;
+    padding: .9rem;
+    border-bottom: 1px solid var(--col-border);
+  }
+  .stock-table td { display: block; min-width: 0; padding: 0 !important; text-align: left !important; overflow-wrap: anywhere; }
+  .stock-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: .18rem;
+    color: var(--col-muted);
+    font-size: .62rem;
+    font-weight: 850;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .stock-table .stock-product,
+  .stock-table .stock-adjust { grid-column: 1 / -1; }
+  .stock-table .stock-adjust form { width: 100%; }
+  .stock-table .stock-adjust input { flex: 1; width: auto !important; min-width: 0; min-height: 44px; }
+  .stock-table .stock-adjust button { min-width: 64px; min-height: 44px; color: var(--col-text); }
+}
 </style>
 {% endblock %}

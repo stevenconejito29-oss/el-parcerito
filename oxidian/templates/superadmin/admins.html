@@ -192,7 +192,7 @@
 
 {% endblock %}
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 function abrirEditar(id, nombre, rol, telefono) {
   const form = document.getElementById('form-editar');
   document.getElementById('edit-nombre').textContent = nombre;

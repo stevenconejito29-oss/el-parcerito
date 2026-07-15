@@ -23,6 +23,7 @@ from routes.public import (
     _product_extras_payload,
     public_bp,
 )
+from routes.api_bot import api_bot_bp
 
 
 class ProductExtrasWorkflowTest(unittest.TestCase):
@@ -35,9 +36,11 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
             CART_MAX_QTY=20,
             SKIP_DELIVERY_VALIDATION=True,
+            BOT_API_KEY="test-bot-key",
         )
         db.init_app(self.app)
         self.app.register_blueprint(public_bp)
+        self.app.register_blueprint(api_bot_bp, url_prefix="/api/bot")
         self.ctx = self.app.app_context()
         self.ctx.push()
         db.create_all()
@@ -197,6 +200,31 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
         self.assertFalse(wrong["ok"])
         self.assertEqual(unknown["msg"], wrong["msg"])
         self.assertNotIn("Cliente no encontrado", unknown["msg"])
+
+    def test_consultar_saldo_bot_no_genera_ni_expone_otp(self):
+        customer = User(
+            nombre="Cliente saldo",
+            email="saldo@test.invalid",
+            telefono="+34610008888",
+            rol="cliente",
+            activo=True,
+            puntos=250,
+        )
+        customer.set_password("test-only-password")
+        db.session.add(customer)
+        db.session.commit()
+
+        response = self.client.get(
+            "/api/bot/puntos?telefono=34610008888",
+            headers={"X-Bot-Key": "test-bot-key"},
+        )
+        payload = response.get_json()
+        db.session.refresh(customer)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["puntos"], 250)
+        self.assertNotIn("codigo_verificacion", payload)
+        self.assertIsNone(customer.cod_puntos)
 
     def test_retail_product_import_defaults_to_warehouse_channel(self):
         SiteConfig.set("TIPO_TIENDA", "producto")

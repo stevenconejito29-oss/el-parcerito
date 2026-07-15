@@ -30,28 +30,58 @@
   --col-faint:     rgba(255, 243, 232, 0.46);
 
   /* Estados (semánticos, NO son brand) */
-  --status-ok:        #27AE74;
-  --status-ok-soft:   rgba(39, 174, 116, 0.14);
-  --status-warn:      #FFB020;
-  --status-warn-soft: rgba(255, 176, 32, 0.14);
-  --status-err:       #FF5350;
-  --status-err-soft:  rgba(255, 83, 80, 0.14);
-  --status-info:      #4F8DFF;
-  --status-info-soft: rgba(79, 141, 255, 0.14);
+  --status-ok:        var(--theme-success, #27AE74);
+  --status-ok-soft:   color-mix(in srgb, var(--status-ok) 14%, transparent);
+  --status-warn:      var(--theme-warning, #FFB020);
+  --status-warn-soft: color-mix(in srgb, var(--status-warn) 14%, transparent);
+  --status-err:       var(--theme-danger, #FF5350);
+  --status-err-soft:  color-mix(in srgb, var(--status-err) 14%, transparent);
+  --status-info:      var(--theme-info, #4F8DFF);
+  --status-info-soft: color-mix(in srgb, var(--status-info) 14%, transparent);
+  --visual-promo:     var(--theme-promo, #A21CAF);
+  --visual-highlight: var(--theme-highlight, #0F766E);
 
-  /* Brand: defaults — se sobrescriben en base.html con valores de SiteConfig */
+  /* Brand: defaults de fallback. Los valores REALES llegan inyectados
+     en <body style="..."> desde base.html y admin_base.html con los
+     `COLOR_PRIMARIO/SECUNDARIO/ACENTO` de SiteConfig. Estos defaults
+     solo se aplican si el contexto brand no llega (raro, ej. error). */
   --brand-primary:           #FFC200;
-  --brand-primary-soft:      rgba(255, 194, 0, 0.14);
-  --brand-primary-contrast:  #1A1410;   /* texto sobre amarillo */
+  --brand-primary-soft:      color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  --brand-primary-contrast:  var(--brand-on-primary, #1A1410);
   --brand-secondary:         #E84545;
-  --brand-secondary-contrast:#FFFFFF;   /* texto sobre rojo */
+  --brand-secondary-contrast:#FFFFFF;
   --brand-accent:            #27AE74;
   --brand-accent-contrast:   #FFFFFF;
 
-  /* Sombras (deben verse sobre dark) */
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.32);
-  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.36);
-  --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.46);
+  /* Acciones: identidad visual e interacción son responsabilidades distintas.
+     El primario puede seguir siendo dorado sin convertir toda acción en oro. */
+  --action-primary:          var(--brand-accent);
+  --action-primary-soft:     color-mix(in srgb, var(--action-primary) 12%, transparent);
+  --action-on-primary:       var(--brand-on-accent, var(--brand-accent-contrast));
+
+  /* Navegación: fondo y texto proceden del mismo par configurable validado. */
+  --navigation-surface:      var(--theme-header-bg, var(--col-surface));
+  --navigation-text:         var(--theme-header-text, var(--col-text));
+  --navigation-active:       var(--action-primary);
+  --navigation-active-text:  var(--action-on-primary);
+
+  /* Elevación y movimiento. Los alias --shadow-* conservan compatibilidad
+     con componentes existentes mientras toda la interfaz usa una escala. */
+  --elevation-low:     0 1px 2px rgba(0, 0, 0, 0.32);
+  --elevation-rest:    0 4px 12px rgba(0, 0, 0, 0.36);
+  --elevation-raised:  0 12px 32px rgba(0, 0, 0, 0.46);
+  --elevation-overlay: 0 18px 48px rgba(0, 0, 0, 0.52);
+  --shadow-1: var(--elevation-low);
+  --shadow-2: var(--elevation-rest);
+  --shadow-3: var(--elevation-raised);
+
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 260ms;
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --ease-emphasized: cubic-bezier(.22, 1, .36, 1);
+  --ease-spring: cubic-bezier(.34, 1.36, .64, 1);
+  --interaction-lift: -2px;
 
   /* Radii */
   --radius-1: 8px;
@@ -76,9 +106,10 @@ html[data-theme="light"] {
   --col-text:      #1A1410;
   --col-muted:     rgba(20, 14, 8, 0.66);
   --col-faint:     rgba(20, 14, 8, 0.40);
-  --shadow-1: 0 1px 2px rgba(20, 14, 8, 0.08);
-  --shadow-2: 0 4px 12px rgba(20, 14, 8, 0.10);
-  --shadow-3: 0 12px 32px rgba(20, 14, 8, 0.14);
+  --elevation-low:     0 1px 2px rgba(20, 14, 8, 0.08);
+  --elevation-rest:    0 4px 12px rgba(20, 14, 8, 0.10);
+  --elevation-raised:  0 12px 32px rgba(20, 14, 8, 0.14);
+  --elevation-overlay: 0 18px 48px rgba(20, 14, 8, 0.18);
 }
 
 /* ─────────────────────────────────────────────
@@ -105,9 +136,9 @@ html[data-theme="light"] {
 
 /* Botón primario unificado */
 .ox-btn-primary {
-  background: linear-gradient(135deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 78%, #000));
-  color: var(--brand-primary-contrast) !important;
-  border: 1px solid color-mix(in srgb, var(--brand-primary) 60%, #000);
+  background: linear-gradient(135deg, var(--action-primary), color-mix(in srgb, var(--action-primary) 78%, #000));
+  color: var(--action-on-primary) !important;
+  border: 1px solid color-mix(in srgb, var(--action-primary) 60%, #000);
   font-weight: 700;
 }
 

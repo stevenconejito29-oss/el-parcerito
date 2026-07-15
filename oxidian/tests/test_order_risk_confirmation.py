@@ -13,7 +13,7 @@ import unittest
 from flask import Flask
 
 from extensions import db
-from models import Order, SiteConfig, User
+from models import Order, SiteConfig, User, utcnow
 
 
 class OrderRiskConfirmationTest(unittest.TestCase):
@@ -141,16 +141,26 @@ class OrderRiskConfirmationTest(unittest.TestCase):
         self.assertEqual(level, "LOW")
         self.assertIsNone(pedido.confirmacion_estado)
 
-    def test_marcar_pending_para_medium(self):
-        # Cliente conocido pero monto extremo (>=3x umbral) → MEDIUM.
+    def test_medium_no_vuelve_a_pedir_confirmacion(self):
+        # Cliente conocido con monto extremo sigue auditado como MEDIUM,
+        # pero la verificación de identidad sólo ocurre en la primera compra.
         from services import marcar_confirmacion_si_procede
         SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
         cliente = self._mk_cliente()
         self._mk_pedido(cliente, total=8, estado="entregado")
         pedido = self._mk_pedido(cliente, total=200)
         marcar_confirmacion_si_procede(pedido)
-        self.assertEqual(pedido.confirmacion_estado, "pending")
-        self.assertEqual(pedido.confirmacion_nivel, "MEDIUM")
+        self.assertIsNone(pedido.confirmacion_estado)
+        self.assertIsNone(pedido.confirmacion_nivel)
+
+    def test_confirmacion_previa_valida_identidad_sin_esperar_entrega(self):
+        from services import evaluate_order_risk
+        cliente = self._mk_cliente()
+        anterior = self._mk_pedido(cliente, total=10, estado="pendiente")
+        anterior.confirmacion_estado = "confirmed"
+        db.session.commit()
+        actual = self._mk_pedido(cliente, total=15, estado="pendiente")
+        self.assertEqual(evaluate_order_risk(actual)["level"], "LOW")
 
     def test_marcar_pending_para_high_primera_vez(self):
         # Regla del negocio: primera vez → SIEMPRE HIGH, sin importar monto.
@@ -205,6 +215,31 @@ class OrderRiskConfirmationTest(unittest.TestCase):
         # Segunda llamada retorna False porque ya está confirmed
         self.assertFalse(marcar_pedido_confirmado(pedido))
 
+    def test_pending_no_se_asigna_y_confirmar_activa_la_operacion(self):
+        from services import distribuir_pedido, marcar_pedido_confirmado
+        cliente = self._mk_cliente()
+        staff = User(
+            nombre="Cocina activa",
+            email=f"cocina-{self._seq_order}@test.invalid",
+            telefono=f"+3470000{self._seq_order:05d}",
+            rol="cocina",
+            activo=True,
+            en_linea=True,
+            last_seen=utcnow(),
+        )
+        staff.set_password("test")
+        db.session.add(staff)
+        db.session.commit()
+        pedido = self._mk_pedido(cliente, total=15)
+        pedido.confirmacion_estado = "pending"
+
+        self.assertIsNone(distribuir_pedido(pedido))
+        self.assertIsNone(pedido.preparador_id)
+
+        self.assertTrue(marcar_pedido_confirmado(pedido))
+        self.assertEqual(pedido.confirmacion_estado, "confirmed")
+        self.assertEqual(pedido.preparador_id, staff.id)
+
     # ── Enriquecido del mensaje de estado ───────────────────────────
 
     def test_mensaje_pendiente_incluye_invitacion_a_confirmar(self):
@@ -216,6 +251,9 @@ class OrderRiskConfirmationTest(unittest.TestCase):
         self.assertIn("SI", msg)
         self.assertIn("NO", msg)
         self.assertIn(pedido.numero_pedido, msg)
+        self.assertIn("ACCIÓN NECESARIA", msg)
+        self.assertIn("Sólo te lo pediremos", msg)
+        self.assertTrue(msg.startswith("⚠️ *ACCIÓN NECESARIA"))
 
     def test_mensaje_pendiente_sin_confirmacion_no_incluye_invitacion(self):
         from services import mensaje_estado_pedido
@@ -235,6 +273,16 @@ class OrderRiskConfirmationTest(unittest.TestCase):
         pedido.confirmacion_estado = "pending"
         msg = mensaje_estado_pedido(pedido)
         self.assertNotIn("Responde *SI*", msg)
+
+    def test_payload_chatbot_no_expone_codigo_de_entrega(self):
+        from routes.api_bot import _pedido_bot_payload
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=80, estado="listo")
+        pedido.codigo_confirmacion = "123456"
+        pedido.codigo_confirmacion_expira_en = utcnow()
+        payload = _pedido_bot_payload(pedido)
+        self.assertNotIn("codigo_confirmacion", payload)
+        self.assertNotIn("codigo_confirmacion_expira_en", payload)
 
     # ── Persistencia de la columna (regresión de la migración) ──────
 
@@ -289,16 +337,24 @@ class OrderRiskConfirmationTest(unittest.TestCase):
         m = metricas_antifraude(dias=30)
         self.assertEqual(m["pending_vigentes"], 0)
 
-    def test_marcar_guarda_nivel_medium_cuando_conocido_con_monto_extremo(self):
-        # Cliente conocido pero monto extremo (>=3x umbral) → MEDIUM.
+    def test_medium_conocido_no_setea_confirmacion_ni_nivel(self):
         from services import marcar_confirmacion_si_procede
         SiteConfig.set("CONFIRMACION_MONTO_UMBRAL_EUR", "50", descripcion="test")
         cliente = self._mk_cliente()
         self._mk_pedido(cliente, total=8, estado="entregado")
         pedido = self._mk_pedido(cliente, total=200)  # 200 >= 150 (3x50) → MEDIUM
         marcar_confirmacion_si_procede(pedido)
-        self.assertEqual(pedido.confirmacion_estado, "pending")
-        self.assertEqual(pedido.confirmacion_nivel, "MEDIUM")
+        self.assertIsNone(pedido.confirmacion_estado)
+        self.assertIsNone(pedido.confirmacion_nivel)
+
+    def test_no_inicia_preparacion_si_primera_compra_no_confirmada(self):
+        from services import avanzar_estado_pedido
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=10, estado="pendiente")
+        pedido.confirmacion_estado = "pending"
+        with self.assertRaisesRegex(ValueError, "confirmado por WhatsApp"):
+            avanzar_estado_pedido(pedido)
+        self.assertEqual(pedido.estado, "pendiente")
 
     def test_marcar_guarda_nivel_high_para_primera_vez(self):
         # Regla del negocio: primera vez → HIGH, sin importar monto.
@@ -418,6 +474,21 @@ class OrderRiskConfirmationTest(unittest.TestCase):
         self.assertEqual(len(eventos), 1)
         self.assertIn("auto-cancelado", eventos[0].detalle.lower())
         self.assertIn("high", eventos[0].detalle.lower())
+
+    def test_cancelacion_elimina_secreto_de_entrega(self):
+        from services import cancelar_pedido_operativo
+        cliente = self._mk_cliente()
+        pedido = self._mk_pedido(cliente, total=15, estado="en_ruta")
+        pedido.generar_codigo_confirmacion()
+        db.session.commit()
+
+        cancelar_pedido_operativo(pedido, canal="test", detalle="cancelación QA")
+        db.session.commit()
+
+        self.assertEqual(pedido.estado, "cancelado")
+        self.assertIsNone(pedido.codigo_confirmacion)
+        self.assertIsNone(pedido.codigo_confirmacion_expira_en)
+        self.assertEqual(pedido.intentos_codigo, 0)
 
     def test_metricas_desagregan_por_nivel(self):
         from services import metricas_antifraude

@@ -13,6 +13,14 @@ const test = require('node:test');
 
 const texts = require('../texts');
 
+test('fecha programada conserva el día canónico sin conversión de zona horaria', () => {
+  assert.equal(
+    texts.scheduledOrderLine('2026-08-03'),
+    '📅 Entrega programada: *03/08/2026*',
+  );
+  assert.equal(texts.scheduledOrderLine(null), '');
+});
+
 test('menuPrincipal incluye el nombre del negocio y las capacidades habilitadas', () => {
   const out = texts.menuPrincipal({
     nombreNegocio: 'El Parcerito',
@@ -20,8 +28,9 @@ test('menuPrincipal incluye el nombre del negocio y las capacidades habilitadas'
     deliveryEnabled: true,
   });
   assert.match(out, /El Parcerito/);
-  assert.match(out, /consultar tus puntos/);
-  assert.match(out, /comprobar cobertura/);
+  assert.match(out, /Mis puntos/);
+  assert.match(out, /Zona de entrega/);
+  assert.match(out, /respondiendo con su número/i);
 });
 
 test('menuPrincipal oculta capacidades cuando el feature está apagado', () => {
@@ -30,8 +39,8 @@ test('menuPrincipal oculta capacidades cuando el feature está apagado', () => {
     loyaltyEnabled: false,
     deliveryEnabled: false,
   });
-  assert.doesNotMatch(out, /puntos/);
-  assert.doesNotMatch(out, /cobertura/);
+  assert.doesNotMatch(out, /Mis puntos/);
+  assert.doesNotMatch(out, /Zona de entrega/);
 });
 
 test('menuPrincipal soporta activar solo uno de los dos features', () => {
@@ -40,8 +49,8 @@ test('menuPrincipal soporta activar solo uno de los dos features', () => {
     loyaltyEnabled: true,
     deliveryEnabled: false,
   });
-  assert.match(soloLoyalty, /consultar tus puntos/);
-  assert.doesNotMatch(soloLoyalty, /cobertura/);
+  assert.match(soloLoyalty, /Mis puntos/);
+  assert.doesNotMatch(soloLoyalty, /Zona de entrega/);
 });
 
 test('menuPrincipal menciona pedidos programados cuando scheduledEnabled', () => {
@@ -51,7 +60,7 @@ test('menuPrincipal menciona pedidos programados cuando scheduledEnabled', () =>
     deliveryEnabled: false,
     scheduledEnabled: true,
   });
-  assert.match(out, /reservar tu pedido con antelación/);
+  assert.match(out, /productos disponibles con fecha de entrega/);
 });
 
 test('menuPrincipal NO menciona programados cuando scheduledEnabled es false', () => {
@@ -125,6 +134,20 @@ test('clientCapabilityText incluye "pedidos programados" cuando scheduledEnabled
     loyaltyEnabled: false, deliveryEnabled: false, scheduledEnabled: false,
   });
   assert.doesNotMatch(sin, /programados/);
+});
+
+test('orderFollowupActions adapta cancelar y mantiene salidas claras', () => {
+  const cancelable = texts.orderFollowupActions({ cancelable: true });
+  assert.match(cancelable, /\*1\*.*Actualizar/);
+  assert.match(cancelable, /\*3\*.*Cancelar/);
+  assert.match(cancelable, /\*4\*.*Reportar/);
+  assert.match(cancelable, /\*5\*.*persona/);
+  assert.match(cancelable, /\*0\*.*inicio/);
+
+  const cerrado = texts.orderFollowupActions({ cancelable: false });
+  assert.doesNotMatch(cerrado, /Cancelar/);
+  assert.match(cerrado, /\*3\*.*Reportar/);
+  assert.match(cerrado, /\*4\*.*persona/);
 });
 
 test('barMenu incluye el nombre del bar y las 8 opciones numeradas', () => {

@@ -37,6 +37,42 @@ def utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def minutos_anticipacion_pedido_programado() -> int:
+    """Ventana configurable para iniciar un pedido con fecha de entrega."""
+    from models import SiteConfig
+
+    raw = SiteConfig.get(
+        "PREP_BUFFER_PROGRAMADO_MIN",
+        os.environ.get("PREP_BUFFER_PROGRAMADO_MIN", "60"),
+    )
+    try:
+        minutos = int(str(raw).strip())
+    except (TypeError, ValueError):
+        minutos = 60
+    return max(5, min(24 * 60, minutos))
+
+
+def pedido_programado_disponible_para_preparar(
+    pedido: Order,
+    ahora: datetime | None = None,
+) -> bool:
+    """Aplica en todos los canales la ventana de un pedido programado.
+
+    Una fecha ausente o contradictoria se cierra de forma segura para evitar
+    preparar el pedido en un día incorrecto.
+    """
+    if not pedido.es_programado:
+        return True
+    fecha = pedido.fecha_entrega_programada
+    if not fecha:
+        return False
+    referencia = ahora or utcnow()
+    corte = (
+        referencia + timedelta(minutes=minutos_anticipacion_pedido_programado())
+    ).date()
+    return fecha <= corte
+
+
 def _json_payload(payload: dict | None) -> str:
     return json.dumps(payload or {}, ensure_ascii=False, default=str)
 
@@ -112,17 +148,22 @@ def _config_umbral_monto() -> float:
     return max(1.0, min(9999.0, umbral))
 
 
-def _cliente_tiene_pedido_entregado_previo(cliente_id: int, pedido_id_actual: int | None = None) -> bool:
-    """True si el cliente ya entregó un pedido antes del actual.
+def _cliente_tiene_identidad_verificada(cliente_id: int, pedido_id_actual: int | None = None) -> bool:
+    """True si el WhatsApp del cliente ya fue validado en una compra previa.
 
-    Establecer historial reduce el riesgo — un cliente que ya recibió una
-    entrega y no denunció fraude es señal fuerte de identidad legítima.
+    Una respuesta afirmativa guardada como ``confirmacion_estado=confirmed``
+    demuestra que controla ese WhatsApp sin obligarle a esperar a la entrega.
+    Conservamos ``entregado`` como prueba para pedidos históricos anteriores a
+    esta verificación. Un pedido cancelado o nunca confirmado no valida identidad.
     """
     if not cliente_id:
         return False
     q = Order.query.filter(
         Order.cliente_id == cliente_id,
-        Order.estado == "entregado",
+        or_(
+            Order.confirmacion_estado == "confirmed",
+            Order.estado == "entregado",
+        ),
     )
     if pedido_id_actual is not None:
         q = q.filter(Order.id != pedido_id_actual)
@@ -158,7 +199,7 @@ def evaluate_order_risk(pedido: Order) -> dict:
     umbral = _config_umbral_monto()
 
     monto = float(pedido.total or 0)
-    tiene_historial = _cliente_tiene_pedido_entregado_previo(
+    tiene_historial = _cliente_tiene_identidad_verificada(
         pedido.cliente_id, pedido_id_actual=pedido.id
     )
 
@@ -182,7 +223,7 @@ def marcar_confirmacion_si_procede(pedido: Order) -> str | None:
     feature está desactivado en config o si el pedido ya tenía un valor.
 
     LOW    → no toca (pedido queda con confirmacion_estado=NULL, sin fricción).
-    MEDIUM → marca 'pending'.
+    MEDIUM → no muta el pedido ni pide otra confirmación a un cliente conocido.
     HIGH   → marca 'pending'.
 
     No lanza ninguna excepción: el guard antifraude es best-effort. Si algo
@@ -202,7 +243,10 @@ def marcar_confirmacion_si_procede(pedido: Order) -> str | None:
         )
         return None
     level = result["level"]
-    if level in ("MEDIUM", "HIGH"):
+    # La confirmación por WhatsApp se solicita exclusivamente la primera vez.
+    # Un importe extremo puede evaluarse como MEDIUM en el caller, pero nunca
+    # debe reabrir la fricción de identidad ni dejar el pedido pendiente.
+    if level == "HIGH":
         pedido.confirmacion_estado = "pending"
         pedido.confirmacion_nivel = level
         logger.info(
@@ -307,6 +351,20 @@ def marcar_pedido_confirmado(pedido: Order) -> bool:
         return False
     pedido.confirmacion_estado = "confirmed"
     pedido.confirmacion_en = utcnow()
+    # La primera compra permanece fuera de la operación hasta verificar el
+    # WhatsApp. Al confirmarla activamos en la misma transacción la asignación
+    # y las notificaciones que se omitieron de forma deliberada al crearla.
+    try:
+        distribuir_pedido(pedido)
+        encolar_notificaciones_proveedores_pedido(pedido)
+    except Exception:
+        # La identidad ya quedó verificada; una incidencia de asignación no
+        # debe obligar al cliente a confirmar otra vez. La cola operativa puede
+        # recuperar el pedido sin asignar y el fallo queda trazado.
+        logger.exception(
+            "No se pudo activar completamente el pedido confirmado %s",
+            getattr(pedido, "id", None),
+        )
     logger.info("confirmacion confirmed pedido=%s", pedido.numero_pedido)
     return True
 
@@ -491,6 +549,11 @@ def avanzar_estado_pedido(
     validar_operativa: bool = False,
 ) -> str:
     """Avanza el pedido usando el modelo y registra el cambio de estado."""
+    if pedido.estado == "pendiente" and pedido.confirmacion_estado == "pending":
+        raise ValueError(
+            "El primer pedido aún no fue confirmado por WhatsApp. "
+            "El cliente debe responder SI antes de iniciar la preparación."
+        )
     if validar_operativa:
         validar_avance_operativo(pedido)
     estado_anterior = pedido.estado
@@ -672,6 +735,28 @@ def _restaurar_stock_pedido(pedido: Order) -> None:
         producto.restaurar_stock_pedido(item.cantidad, item.get_metadata())
 
 
+def _liberar_tandas_pedido(pedido: Order) -> None:
+    """Devuelve al `ProductBatch` las tandas reservadas por este pedido.
+
+    Cada `OrderItem.metadata_json` de un encargo por lote guarda
+    ``batch_id`` y ``tandas_reservadas`` en el momento del checkout.
+    Al cancelar liberamos ese cupo para que otro cliente pueda comprar.
+    Idempotente: si el batch no existe o el metadata no está, no rompe.
+    """
+    from models import ProductBatch
+
+    for item in pedido.items:
+        meta = item.get_metadata() or {}
+        batch_id = meta.get("batch_id")
+        tandas = int(meta.get("tandas_reservadas") or 0)
+        if not batch_id or tandas <= 0:
+            continue
+        batch = ProductBatch.query.filter_by(id=batch_id).with_for_update().first()
+        if batch is None:
+            continue
+        batch.liberar_tandas(tandas)
+
+
 def _revertir_puntos_pedido(pedido: Order) -> None:
     """Ajusta el saldo de puntos del cliente al cancelar un pedido.
 
@@ -761,12 +846,18 @@ def _ejecutar_cancelacion_pedido(
     if pedido.estado == "entregado" and not forzar_desde_entregado:
         raise ValueError("No se puede cancelar un pedido ya entregado")
     _restaurar_stock_pedido(pedido)
+    _liberar_tandas_pedido(pedido)
     _revertir_puntos_pedido(pedido)
     if pedido.cupon:
         pedido.cupon.revertir_uso()
     if pedido.afiliado_codigo_rel:
         pedido.afiliado_codigo_rel.revertir_uso()
     _revertir_comisiones_pedido(pedido)
+    # Un pedido terminal no debe conservar secretos de entrega. Esto también
+    # cubre cancelaciones administrativas excepcionales desde reparto.
+    pedido.codigo_confirmacion = None
+    pedido.codigo_confirmacion_expira_en = None
+    pedido.intentos_codigo = 0
     pedido.estado = "cancelado"
 
 
@@ -975,8 +1066,9 @@ def geocodificar_direccion(direccion: str, ciudad: str = "") -> tuple[float, flo
         # por lo que no importa si el cliente escribió "Madrid" en la dirección.
         if centro_lat is None or centro_lon is None:
             return None
-        deg_lat = radio_km / 111.0 * 1.5   # margen 50 % sobre el radio
-        deg_lon = radio_km / (111.0 * math.cos(math.radians(centro_lat))) * 1.5
+        margen = geocode_bbox_margin()
+        deg_lat = radio_km / 111.0 * margen
+        deg_lon = radio_km / (111.0 * math.cos(math.radians(centro_lat))) * margen
         viewbox = (
             f"{centro_lon - deg_lon:.6f},{centro_lat - deg_lat:.6f},"
             f"{centro_lon + deg_lon:.6f},{centro_lat + deg_lat:.6f}"
@@ -1222,10 +1314,28 @@ def _to_bool_service(val):
     return str(val).strip().lower() in ("1", "true", "si", "sí", "on", "yes")
 
 
-def tienda_abierta_en_horario(apertura: str, cierre: str, ahora: str | None = None, forzada_cerrada: bool = False) -> bool:
-    """Evalua horario HH:MM, incluyendo ventanas nocturnas como 20:00-02:00."""
+def tienda_abierta_en_horario(
+    apertura: str,
+    cierre: str,
+    ahora: str | None = None,
+    forzada_cerrada: bool = False,
+    forzada_abierta: bool = False,
+) -> bool:
+    """Evalua estado de tienda combinando overrides manuales + horario.
+
+    Precedencia:
+        1. `forzada_cerrada` gana sobre todo (emergencia / cierre urgente).
+        2. `forzada_abierta` ignora el horario (admin quiere vender fuera de
+           franja — p. ej. evento especial, servicio extraordinario). Sin
+           este flag no había forma de aceptar pedidos fuera del horario
+           configurado aunque el admin lo pidiera desde WhatsApp.
+        3. Sin overrides → respeta la franja HH:MM (soporta ventanas
+           nocturnas tipo 20:00-02:00).
+    """
     if forzada_cerrada:
         return False
+    if forzada_abierta:
+        return True
     ahora = ahora or datetime.now().strftime("%H:%M")
     apertura = (apertura or "00:00").strip()
     cierre = (cierre or "23:59").strip()
@@ -1291,6 +1401,37 @@ def _cfg_int(clave: str, default: int, minimo: int = 1, maximo: int = 999) -> in
         return max(minimo, min(v, maximo))
     except Exception:
         return default
+
+
+def _cfg_float(clave: str, default: float, minimo: float = 0.0, maximo: float = 1e9) -> float:
+    """Análogo a `_cfg_int` para valores decimales (timeouts, márgenes)."""
+    try:
+        from models import SiteConfig as _SC
+        raw = _SC.get(clave, str(default))
+        v = float(str(raw).strip().replace(",", ".")) if raw is not None else default
+        return max(minimo, min(v, maximo))
+    except Exception:
+        return default
+
+
+def bot_health_errors_24h_max() -> int:
+    return _cfg_int("BOT_HEALTH_ERRORS_24H_MAX", 200, minimo=10, maximo=10000)
+
+
+def bot_health_handoffs_undelivered_max() -> int:
+    return _cfg_int("BOT_HEALTH_HANDOFFS_UNDELIVERED_MAX", 50, minimo=1, maximo=10000)
+
+
+def bot_status_check_timeout_sec() -> float:
+    return _cfg_float("BOT_STATUS_CHECK_TIMEOUT_SEC", 2.5, minimo=0.5, maximo=30.0)
+
+
+def notification_retry_backoff_max_min() -> int:
+    return _cfg_int("NOTIFICATION_RETRY_BACKOFF_MAX_MIN", 60, minimo=1, maximo=1440)
+
+
+def geocode_bbox_margin() -> float:
+    return _cfg_float("GEOCODE_BBOX_MARGIN", 1.5, minimo=1.0, maximo=5.0)
 
 
 def max_pedidos_por_preparador() -> int:
@@ -1457,9 +1598,17 @@ def redistribuir_pendientes_sin_asignar() -> int:
 
     Devuelve el número de pedidos asignados.
     """
-    pedidos = Order.query.filter_by(
-        estado="pendiente", preparador_id=None
-    ).order_by(Order.creado_en).with_for_update(skip_locked=True).all()
+    pedidos = (
+        Order.query
+        .filter_by(estado="pendiente", preparador_id=None)
+        .filter(or_(
+            Order.confirmacion_estado.is_(None),
+            Order.confirmacion_estado != "pending",
+        ))
+        .order_by(Order.creado_en)
+        .with_for_update(skip_locked=True)
+        .all()
+    )
 
     asignados = 0
     for pedido in pedidos:
@@ -1495,6 +1644,14 @@ def distribuir_pedido(pedido: Order) -> User | None:
     proveedor_despachador_id), no se asigna preparador interno: el bar lo
     prepara y nuestro personal solo gestiona el reparto.
     """
+    if pedido.confirmacion_estado == "pending":
+        logger.info(
+            "distribuir_pedido: pedido %s espera confirmación de WhatsApp.",
+            pedido.numero_pedido,
+        )
+        pedido.preparador_id = None
+        return None
+
     if es_pedido_solo_bar(pedido):
         logger.info(
             "distribuir_pedido: pedido %s es 100%% del bar, no se asigna preparador interno.",
@@ -1531,14 +1688,19 @@ def distribuir_pedido(pedido: Order) -> User | None:
 
     tipo = _tipo_pedido(pedido)
     rol_preferido  = "cocina" if tipo == "inmediato" else "preparacion"
-    rol_alternativo = "preparacion" if tipo == "inmediato" else "cocina"
+    # Un inmediato SÍ puede caer a 'preparacion' como alternativa (staff de
+    # encargos puede echar mano si la cocina está saturada). Un programado NO
+    # cae a 'cocina': antes lo hacía y los encargos aparecían en el dashboard
+    # de cocina, invisibles para el rol correcto. Preferimos dejarlo sin
+    # asignar (visible en cola de admin) a esconder el problema.
+    rol_alternativo = "preparacion" if tipo == "inmediato" else None
 
     # 1. Intentar con el rol preferido
     candidatos_pref = User.query.filter_by(rol=rol_preferido, activo=True).all()
     candidatos = _candidatos_disponibles(candidatos_pref)
 
-    # 2. Alternativa: el otro rol
-    if not candidatos:
+    # 2. Alternativa: el otro rol (solo para inmediatos)
+    if not candidatos and rol_alternativo:
         candidatos_alt = User.query.filter_by(rol=rol_alternativo, activo=True).all()
         candidatos = _candidatos_disponibles(candidatos_alt)
         if candidatos:
@@ -1886,7 +2048,7 @@ def notificar_bot_sync():
     threading.Thread(target=_fire, daemon=True).start()
 
 
-def consultar_estado_bot(timeout: float = 2.5) -> dict:
+def consultar_estado_bot(timeout: float | None = None) -> dict:
     """Consulta el `/api/status` del bot Node y devuelve un resumen listo
     para renderizar en el panel admin.
 
@@ -1906,6 +2068,8 @@ def consultar_estado_bot(timeout: float = 2.5) -> dict:
     from models import SiteConfig as _SC
     import requests
 
+    if timeout is None:
+        timeout = bot_status_check_timeout_sec()
     bot_url = (_SC.get("BOT_API_URL", os.environ.get("BOT_API_URL", "http://chat:3000")) or "").rstrip("/")
     panel_key = _SC.get("BOT_PANEL_KEY", "") or _SC.get("BOT_API_KEY", "")
     if not bot_url or not panel_key:
@@ -1965,12 +2129,14 @@ def consultar_estado_bot(timeout: float = 2.5) -> dict:
     sessions = d.get("sessions") or {}
     sessions_client = int(sessions.get("client") or 0)
 
-    # Clasificación de salud. Umbrales conservadores — se pueden hacer
-    # configurables si el negocio quiere afinarlos.
+    # Clasificación de salud. Umbrales configurables vía SiteConfig
+    # (BOT_HEALTH_ERRORS_24H_MAX / BOT_HEALTH_HANDOFFS_UNDELIVERED_MAX).
+    err_max = bot_health_errors_24h_max()
+    hnd_max = bot_health_handoffs_undelivered_max()
     if not connected:
         salud = "degraded"
         mensaje = f"WhatsApp desconectado (estado: {evolution_state})."
-    elif errores_24h > 200 or handoffs_undelivered > 50:
+    elif errores_24h > err_max or handoffs_undelivered > hnd_max:
         salud = "degraded"
         mensaje = f"Errores 24h: {errores_24h}. Handoffs sin entregar: {handoffs_undelivered}."
     else:
@@ -2033,14 +2199,82 @@ def buscar_cliente_por_telefono(raw):
         return None, telefono
     q = User.query.filter_by(telefono_normalizado=telefono)
     cliente = q.filter_by(rol="cliente").first() or q.first()
+
+    # Compatibilidad reparadora para datos legacy creados cuando faltaba el
+    # prefijo de país: +632… frente al JID real +34632…. Sólo se intenta si
+    # existe un prefijo explícitamente configurado y el match local es único;
+    # nunca adivinamos países ni hacemos búsquedas laxas por sufijo.
+    from phone_utils import solo_digitos
+    try:
+        from models import SiteConfig
+        prefijo = solo_digitos(SiteConfig.get("WHATSAPP_COUNTRY_CODE", ""))
+    except (ImportError, RuntimeError):
+        prefijo = solo_digitos(os.environ.get("WHATSAPP_COUNTRY_CODE", ""))
+    digits = solo_digitos(telefono)
+    if prefijo and digits.startswith(prefijo) and len(digits) > len(prefijo):
+        legacy = f"+{digits[len(prefijo):]}"
+        legacy_rows = User.query.filter_by(telefono_normalizado=legacy).limit(2).all()
+        if len(legacy_rows) == 1:
+            legacy_user = legacy_rows[0]
+            if not cliente:
+                return legacy_user, telefono
+            # Una cuenta operativa canónica puede coexistir con un cliente
+            # histórico creado sin prefijo. Si el historial de compra vive
+            # inequívocamente en el registro legacy, éste es la identidad de
+            # cliente hasta que ambos perfiles se consoliden.
+            if cliente.rol != "cliente" and legacy_user.rol == "cliente":
+                exact_has_orders = Order.query.filter_by(cliente_id=cliente.id).first() is not None
+                legacy_has_orders = Order.query.filter_by(cliente_id=legacy_user.id).first() is not None
+                if legacy_has_orders and not exact_has_orders:
+                    logger.warning(
+                        "Identidad cliente legacy seleccionada: canonical_user=%s legacy_user=%s",
+                        cliente.id,
+                        legacy_user.id,
+                    )
+                    return legacy_user, telefono
     return cliente, telefono
 
 
+def _cliente_es_referido_nuevo(cliente, pedido_actual) -> bool:
+    """Determina si `cliente` cuenta como REFERIDO NUEVO para efectos de
+    comisión de afiliado.
+
+    Regla: el pedido actual debe ser el primero no-cancelado del cliente.
+    Antes: se otorgaba comisión cada vez que se usaba el código, aunque
+    fuera un cliente veterano — un vector de fraude claro (staff podía
+    aplicarse su propio código en cada pedido de clientes recurrentes).
+
+    - Se excluye el propio `pedido_actual.id` del recuento (ya está en BD
+      cuando llamamos).
+    - Se excluye `estado='cancelado'` para no penalizar cancelaciones.
+    """
+    from models import Order
+    if not cliente or not cliente.id:
+        return False
+    q = (db.session.query(db.func.count(Order.id))
+         .filter(Order.cliente_id == cliente.id,
+                 Order.estado != "cancelado"))
+    if getattr(pedido_actual, "id", None):
+        q = q.filter(Order.id != pedido_actual.id)
+    previos = int(q.scalar() or 0)
+    return previos == 0
+
+
 def registrar_uso_afiliado(codigo, pedido, cliente, descuento_aplicado):
-    """Registra el uso de un código de afiliado y genera StaffPayment si corresponde."""
+    """Registra el uso de un código de afiliado.
+
+    El descuento al cliente ya se aplicó antes en `calcular_precio` y
+    afecta `Order.descuento`. Aquí registramos la traza en `AffiliateUse`
+    y — SOLO si el cliente es referido nuevo — generamos el StaffPayment
+    de comisión al afiliado. Comisiones sobre clientes recurrentes se
+    marcan con `comision_generada = 0` y se registran para trazabilidad
+    con `detalle_no_comision` en el motivo del uso (sin StaffPayment).
+    """
     from models import AffiliateUse, StaffPayment
 
-    comision = codigo.calcular_comision(float(pedido.total))
+    es_nuevo = _cliente_es_referido_nuevo(cliente, pedido)
+    comision = float(codigo.calcular_comision(float(pedido.total))) if es_nuevo else 0.0
+
     uso = AffiliateUse(
         codigo_id=codigo.id,
         pedido_id=pedido.id,
@@ -2063,6 +2297,12 @@ def registrar_uso_afiliado(codigo, pedido, cliente, descuento_aplicado):
         db.session.add(pago)
         db.session.flush()
         uso.staff_payment_id = pago.id
+    elif not es_nuevo:
+        logger.info(
+            "registrar_uso_afiliado: cliente %s NO es referido nuevo — "
+            "sin comisión para %s (pedido %s)",
+            cliente.id, codigo.codigo, getattr(pedido, "numero_pedido", pedido.id),
+        )
 
     return uso
 
@@ -2379,11 +2619,12 @@ MENSAJES_ESTADO = {
     "pendiente":  (
         "🎉 *¡Pedido recibido!*\n"
         "Tu pedido *{num}* ya está registrado. Total: *€{total}*.\n\n"
+        "⏳ Todavía no ha comenzado la preparación. Te avisaremos cuando el equipo empiece.\n\n"
         "Desde aquí mismo puedes:\n"
         "• Escribir *ESTADO* para ver cómo va.\n"
         "• Escribir *CANCELAR* (solo antes de empezar a prepararlo).\n"
         "• Escribir *AGENTE* si necesitas hablar con una persona.\n\n"
-        "¡Estamos en ello ahora mismo! 🔥"
+        "Puedes seguir consultando el estado por este mismo chat."
     ),
     "armando":    "🔥 *¡Manos a la obra!*\nTu pedido *{num}* está en preparación en este momento.\nEn breve te avisamos cuando esté listo. ✨",
     "listo":      "✅ *¡Tu pedido está listo!*\nEl pedido *{num}* está perfectamente preparado y en breve sale hacia ti. 📦",
@@ -2409,11 +2650,15 @@ def mensaje_estado_pedido(pedido: Order) -> str:
     # decide asumir el riesgo. Solo aplica al estado `pendiente` porque en
     # los demás la confirmación ya ocurrió o dejó de ser relevante.
     if pedido.estado == "pendiente" and getattr(pedido, "confirmacion_estado", None) == "pending":
-        base += (
-            "\n\n🔐 *Un paso más para preparar tu pedido:*\n"
-            "Responde *SI* para confirmarlo y empezar a prepararlo, "
-            "o *NO* para anularlo."
+        confirmacion = (
+            "⚠️ *ACCIÓN NECESARIA — CONFIRMA TU PRIMER PEDIDO*\n\n"
+            "Necesitamos comprobar que este WhatsApp es correcto. "
+            "El pedido no empezará a prepararse hasta que respondas.\n\n"
+            "👉 Responde *SI* para confirmar el pedido.\n"
+            "👉 Responde *NO* si no lo reconoces y quieres anularlo.\n\n"
+            "_Sólo te lo pediremos en tu primera compra._"
         )
+        return f"{confirmacion}\n\n{base}"
     return base
 
 
@@ -2497,7 +2742,9 @@ def _marcar_notificacion(job: NotificationOutbox | None, ok: bool, error: str | 
     else:
         job.estado = "failed" if job.intentos >= (job.max_intentos or 3) else "pending"
         job.ultimo_error = (error or "send_failed")[:1000]
-        job.siguiente_intento_en = utcnow() + timedelta(minutes=min(60, 2 ** job.intentos))
+        job.siguiente_intento_en = utcnow() + timedelta(
+            minutes=min(notification_retry_backoff_max_min(), 2 ** job.intentos)
+        )
 
 
 def _enviar_con_outbox(

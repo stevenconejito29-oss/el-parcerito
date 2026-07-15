@@ -84,7 +84,7 @@
     </div>
   </details>
 
-  <script>
+  <script nonce="{{ csp_nonce() }}">
     function usarMiUbicacion(btn) {
       const status = document.getElementById('geo_status');
       if (!navigator.geolocation) {

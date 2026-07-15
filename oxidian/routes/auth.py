@@ -1,3 +1,4 @@
+import os
 import time
 
 from flask import Blueprint, render_template, redirect, url_for, flash, request, session, current_app
@@ -21,10 +22,22 @@ REDIRECT_POR_ROL = {
 # 5 minutos es holgado para copiar el código pero corto ante robo de sesión.
 MFA_PENDING_TTL_SECONDS = 300
 
-# Roles a los que SIEMPRE se les obliga a tener MFA activo. El primer GET a
-# cualquier ruta protegida tras un login válido los manda al setup si aún no
-# han activado MFA.
-ROLES_MFA_OBLIGATORIO = {"super_admin"}
+# Roles a los que SIEMPRE se les obliga a tener MFA activo. El primer GET
+# a cualquier ruta protegida tras un login válido los manda al setup si
+# aún no han activado MFA.
+#
+# Antes: solo super_admin llevaba MFA. Un admin phished sin 2º factor =
+# tienda comprometida (acceso a /admin/usuarios, cambio de contraseñas,
+# manipulación de pedidos). Ahora admin también entra en el set —
+# configurable vía env `MFA_ROLES_OBLIGATORIOS` para negocios que
+# quieran ampliar (ej. cocina, repartidor) sin tocar código.
+def _roles_mfa_obligatorio():
+    raw = (os.environ.get("MFA_ROLES_OBLIGATORIOS") or "").strip()
+    if raw:
+        return {r.strip() for r in raw.split(",") if r.strip()}
+    return {"super_admin", "admin"}
+
+ROLES_MFA_OBLIGATORIO = _roles_mfa_obligatorio()
 
 
 # ── LOGIN ───────────────────────────────────────────────────────────────────

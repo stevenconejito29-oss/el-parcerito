@@ -115,6 +115,14 @@
           <input type="date" name="fecha_llegada" value="{{ producto.fecha_llegada.strftime('%Y-%m-%d') if producto.fecha_llegada else '' }}" class="edit-input">
         </div>
         <div>
+          <label class="edit-label">Unidades por tanda (encargo por lote)</label>
+          <input type="number" name="cantidad_por_lote" min="0" step="1"
+                 value="{{ producto.cantidad_por_lote if producto.cantidad_por_lote else '' }}"
+                 class="edit-input"
+                 placeholder="Ej: 4 (0 o vacío = sin lote)">
+          <p class="text-xs mt-1" style="color:var(--col-muted)">Ej: "4 empanadas por 5€ para el día 18" → 4. Cada compra reserva 1 tanda.</p>
+        </div>
+        <div>
           <label class="edit-label">Hora inicio visible</label>
           <input type="time" name="hora_inicio_visibilidad" value="{{ producto.hora_inicio_visibilidad.strftime('%H:%M') if producto.hora_inicio_visibilidad else '' }}" class="edit-input">
         </div>
@@ -217,7 +225,7 @@
         </div>
         {% endfor %}
       </div>
-      <script>
+      <script nonce="{{ csp_nonce() }}">
       function epTogglePres(cb, size){
         const inp = document.querySelector('.edit-pres-extra[data-pres="'+size+'"]');
         if (inp) inp.disabled = !cb.checked;
@@ -401,7 +409,7 @@
 .edit-pres-card { border:1px solid var(--col-border); border-radius:.6rem; padding:.7rem .8rem; background:var(--col-elevated); }
 .edit-pres-card input.edit-pres-extra:disabled { opacity:.4; }
 </style>
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function(){
   const cbCanje    = document.getElementById('ep-canjeable');
   const cbSolo     = document.getElementById('ep-solo-canje');

@@ -174,7 +174,7 @@
 }
 .work-badge-pago-efectivo { background: var(--prep-warn-soft); color: var(--prep-warn); border: 1px solid color-mix(in srgb, var(--prep-warn) 32%, transparent); }
 .work-badge-pago-bizum    { background: color-mix(in srgb, var(--prep-programado) 16%, transparent); color: var(--prep-programado); border: 1px solid color-mix(in srgb, var(--prep-programado) 32%, transparent); }
-.work-badge-pago-tarjeta  { background: color-mix(in srgb, #FFAB40 16%, transparent); color: #FFAB40; border: 1px solid color-mix(in srgb, #FFAB40 32%, transparent); }
+.work-badge-pago-tarjeta  { background: color-mix(in srgb, var(--brand-primary, #FFAB40) 16%, transparent); color: var(--brand-primary, #FFAB40); border: 1px solid color-mix(in srgb, var(--brand-primary, #FFAB40) 32%, transparent); }
 
 /* Dirección para delivery */
 .work-address {
@@ -244,34 +244,6 @@
 .work-elapsed.is-fresh { color: var(--prep-ok); font-weight: 800; }
 .work-elapsed.is-aging { color: var(--prep-warn); font-weight: 900; }
 .work-elapsed.is-late  { color: var(--prep-danger); font-weight: 900; }
-
-/* Empleado */
-.work-employee-card {
-  display: flex; align-items: center; gap: 1rem;
-  padding: .85rem 1rem;
-  background: var(--col-surface);
-  border: 1px solid var(--col-border);
-  border-radius: 1rem;
-  margin-bottom: 1rem;
-}
-.work-employee-avatar {
-  width: 44px; height: 44px; border-radius: 12px;
-  background: linear-gradient(135deg,
-              color-mix(in srgb, var(--brand-primary) 25%, transparent),
-              color-mix(in srgb, var(--brand-primary) 8%, transparent));
-  color: var(--brand-primary);
-  font-size: 1.2rem; font-weight: 900;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  border: 1.5px solid color-mix(in srgb, var(--brand-primary) 30%, transparent);
-}
-.work-employee-info { flex: 1; min-width: 0; }
-.work-employee-name { font-weight: 800; font-size: .92rem; color: var(--col-text); }
-.work-employee-role { font-size: .75rem; color: var(--col-muted); margin-top: .1rem; }
-.work-employee-status {
-  display: flex; align-items: center; gap: .4rem;
-  font-size: .78rem; color: var(--col-muted); flex-shrink: 0;
-}
 
 /* Banner de scope del rol (cocina vs preparacion) */
 .prep-scope-banner {
@@ -473,6 +445,15 @@
       <span class="prep-sse-dot" aria-hidden="true"></span>
       <span id="prep-sse-label">Conectando…</span>
     </span>
+    {# Toggle modo noche — antes solo en repartidor. Añadido aquí para que
+       cocina y preparación (pantallas fijas, tablets nocturnas) puedan
+       cambiar sin salir a otra vista. Comparte estado (localStorage). #}
+    <button type="button" class="work-btn work-btn-ghost delivery-theme-toggle"
+            data-delivery-theme-toggle aria-pressed="false"
+            aria-label="Cambiar a modo noche">
+      <span class="delivery-theme-toggle__icon" data-theme-icon aria-hidden="true">🌙</span>
+      <span data-theme-label>Modo noche</span>
+    </button>
   </div>
 </section>
 
@@ -526,16 +507,12 @@
 </aside>
 {% endif %}
 
-<!-- Tarjeta de empleado con toggle Online/Offline integrado (un solo lugar
-     de acción — antes había un botón duplicado en el hero y un dot informativo
-     aquí, generando confusión). -->
+<!-- Identidad + control explícito; no hacemos pasar toda la tarjeta por botón. -->
 <form method="POST" action="{{ url_for('preparador.toggle_disponible') }}"
       class="js-availability-form work-employee-card work-employee-toggle {% if disponible %}is-online{% else %}is-offline{% endif %}"
-      aria-label="{% if disponible %}Ponerte offline{% else %}Ponerte online{% endif %}"
-      title="Toca para cambiar a {{ 'offline' if disponible else 'online' }}">
+      data-availability="{{ 'online' if disponible else 'offline' }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <button type="submit" class="work-employee-avatar" aria-hidden="true"
-          style="border:0;cursor:pointer;">{{ current_user.nombre[0].upper() }}</button>
+  <div class="work-employee-avatar" aria-hidden="true">{{ current_user.nombre[0].upper() }}</div>
   <div class="work-employee-info">
     <p class="work-employee-name">{{ current_user.nombre }}</p>
     <p class="work-employee-role">
@@ -546,15 +523,17 @@
       {% if current_user.puesto_trabajo %} · {{ current_user.puesto_trabajo }}{% endif %}
     </p>
   </div>
-  <div class="work-employee-status">
+  <button type="submit" class="work-availability-button" aria-pressed="{{ 'true' if disponible else 'false' }}">
     <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
-    <span>{% if disponible %}Online — toca para pausar{% else %}Offline — toca para activar{% endif %}</span>
-  </div>
+    <span><strong>{{ 'Online' if disponible else 'Offline' }}</strong><small>{{ 'Pausar recepción' if disponible else 'Activar recepción' }}</small></span>
+  </button>
 </form>
 
 
 <!-- Compañeros activos -->
 {% if companeros %}
+<details class="work-team-details">
+  <summary class="work-team-summary">👥 Estado del equipo ({{ companeros|length }})</summary>
 <div class="work-team" aria-label="Compañeros activos">
   {% for c in companeros %}
   <span class="work-chip">
@@ -574,6 +553,7 @@
   </span>
   {% endfor %}
 </div>
+</details>
 {% endif %}
 
 <!-- KPIs rápidos -->
@@ -589,9 +569,9 @@
     <small>Activos hasta despacho</small>
   </div>
   {% if pendientes_encargo is defined and pendientes_encargo %}
-  <div class="work-panel work-kpi" style="border-color:rgba(168,85,247,.3)">
+  <div class="work-panel work-kpi" style="border-color:color-mix(in srgb,var(--prep-programado) 32%,transparent)">
     <span>{{ role_label('preparacion', short=True) }}</span>
-    <strong style="color:#C084FC">{{ pendientes_encargo|length }}</strong>
+    <strong style="color:var(--prep-programado)">{{ pendientes_encargo|length }}</strong>
     <small>Pedidos con fecha fija</small>
   </div>
   {% endif %}
@@ -599,17 +579,23 @@
 
 <div class="work-board">
 
-{# ── Fase 6: cabecera de sección "Preparar ahora" ── #}
+{# ── Cabecera de sección "Preparar ahora" ── el texto se adapta al rol
+   para no confundir al preparador de encargos con "trabajo inmediato". #}
 <div class="prep-section-head" data-kind="ahora" style="grid-column:1/-1">
   {{ _icon_clock() }}
   <div>
+    {% if current_user.rol == 'preparacion' %}
+    <h2>Encargos para preparar hoy</h2>
+    <p class="prep-section-sub">Pedidos con fecha que ya entran en ventana de preparación.</p>
+    {% elif current_user.rol == 'cocina' %}
     <h2>Preparar ahora</h2>
-    <p class="prep-section-sub">
-      Pedidos inmediatos y programados dentro de los próximos
-      {{ prep_buffer_min if prep_buffer_min is defined else 60 }} minutos.
-    </p>
+    <p class="prep-section-sub">Pedidos inmediatos en cola de cocina.</p>
+    {% else %}
+    <h2>Preparar ahora</h2>
+    <p class="prep-section-sub">Trabajo inmediato disponible para tomar o continuar.</p>
+    {% endif %}
   </div>
-  <span class="prep-section-count">{{ (prep_ahora|length) if prep_ahora is defined else (pendientes|length + (armando|length)) }}</span>
+  <span class="prep-section-count">{{ pendientes|length }}</span>
 </div>
 
 <!-- ── PENDIENTES ── -->
@@ -690,15 +676,18 @@
         <form method="POST" action="{{ url_for('preparador.tomar_pedido', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="work-btn work-btn-ghost full-width"
+                  {% if not disponible %}disabled aria-disabled="true"{% endif %}
                   title="Reservar el pedido sin empezar aún">
-            📌 Reservar
+            {{ 'Ponte online para reservar' if not disponible else '📌 Reservar' }}
           </button>
         </form>
         {% endif %}
         <form method="POST" action="{{ url_for('preparador.empezar_armar', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-primary full-width">
-            {% if pedido.preparador_id == current_user.id %}▶ Empezar a preparar
+          <button type="submit" class="work-btn work-btn-primary full-width"
+                  {% if not disponible %}disabled aria-disabled="true"{% endif %}>
+            {% if not disponible %}Ponte online para tomar
+            {% elif pedido.preparador_id == current_user.id %}▶ Empezar a preparar
             {% else %}{{ '🍳' if brand.es_comida else '📦' }} Tomar y empezar{% endif %}</button>
         </form>
       </div>
@@ -716,7 +705,7 @@
 <div class="prep-section-head" data-kind="programados" style="grid-column:1/-1">
   {{ _icon_clock() }}
   <div>
-    <h2>Programados</h2>
+    <h2>Pedidos con fecha</h2>
     <p class="prep-section-sub">
       Encargos con fecha futura — no bloquean el flujo de cocina inmediata.
     </p>
@@ -730,7 +719,7 @@
 <!-- ── PEDIDOS CON FECHA (agrupados por fecha) ── -->
 {% if pendientes_encargo is defined and pendientes_encargo %}
 {%- set _hoy_date = hoy_date if hoy_date is defined else None -%}
-<section class="work-lane" style="border-top:2px solid rgba(168,85,247,.25)">
+<section class="work-lane" style="border-top:2px solid color-mix(in srgb,var(--prep-programado) 28%,transparent)">
   <div class="work-lane-head">
     <div>
       <h2 class="work-lane-title" style="color:var(--prep-programado)">📦 {{ role_label('preparacion') }}</h2>
@@ -757,17 +746,59 @@
         <span class="prep-fecha-date">{{ _fecha.strftime('%A %d/%m') if _fecha else 'Sin fecha' }}</span>
         <span class="prep-fecha-count">{{ _grupo|length }} pedido{{ 's' if _grupo|length != 1 }}</span>
       </div>
+      {# TOTAL DEL DÍA — agregado por lote (ProductBatch).
+         Muestra al preparador cuántas unidades reales debe producir para
+         esta fecha, sumando las tandas reservadas por todos los pedidos
+         vivos. El botón "Marcar lote listo" transiciona el batch entero
+         y dispara push web (sin WhatsApp masivo — política anti-baneo). #}
+      {% if totales_lote_por_fecha is defined and totales_lote_por_fecha.get(_fecha) %}
+      <div class="prep-total-dia"
+           style="margin:.5rem 0 .75rem; padding:.6rem .75rem; border-radius:.6rem;
+                  background:color-mix(in srgb,var(--brand-primary) 8%,transparent);
+                  border:1px solid color-mix(in srgb,var(--brand-primary) 25%,transparent)">
+        <div style="font-weight:700; margin-bottom:.35rem; color:var(--brand-primary)">
+          🧮 TOTAL DEL DÍA
+        </div>
+        {% for _item in totales_lote_por_fecha[_fecha] %}
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.25rem 0">
+          <div>
+            <strong>{{ _item.producto_nombre }}</strong>
+            {% if _item.es_lote %}
+              — {{ _item.tandas_totales }} tanda{{ 's' if _item.tandas_totales != 1 }}
+              × {{ _item.tandas_por_lote }} =
+              <strong>{{ _item.unidades_totales }} u.</strong>
+              {% if _item.estado_batch == 'listo' %}
+                <span class="work-chip" style="background:var(--ok-soft,#dcfce7);color:var(--ok,#166534)">✔ Listo</span>
+              {% endif %}
+            {% else %}
+              — <strong>{{ _item.unidades_totales }} u.</strong>
+              <span class="work-chip" style="background:color-mix(in srgb,var(--prep-programado) 15%,transparent);color:var(--prep-programado)">encargo individual</span>
+            {% endif %}
+          </div>
+          {% if _item.es_lote and _item.estado_batch != 'listo' %}
+          <form method="post"
+                action="{{ url_for('preparador.marcar_lote_listo', batch_id=_item.batch_id) }}"
+                onsubmit="return confirm('¿Marcar TODO el lote como listo? Se notificará por push a los clientes.');"
+                style="margin:0">
+            <button type="submit" class="btn btn-sm"
+                    style="background:var(--brand-primary);color:#fff;border:none;padding:.3rem .6rem;border-radius:.4rem;cursor:pointer">
+              ✅ Marcar lote listo
+            </button>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
       <div class="work-list">
       {% for pedido in _grupo %}
-  {%- set _ns = namespace(fecha_ent=none) -%}
-  {%- for _it in pedido.items -%}{%- if _it.display_fecha_entrega and (_ns.fecha_ent is none or _it.display_fecha_entrega < _ns.fecha_ent) -%}{%- set _ns.fecha_ent = _it.display_fecha_entrega -%}{%- endif -%}{%- endfor -%}
-  {%- set fecha_ent = _ns.fecha_ent -%}
+  {%- set fecha_ent = pedido.fecha_entrega_programada -%}
   <article class="work-card is-warn" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}"
-           style="border-left:3px solid rgba(168,85,247,.5)">
+           style="border-left:3px solid color-mix(in srgb,var(--prep-programado) 55%,transparent)">
       <div class="work-order-head">
         <div>
           <span class="work-order-code">{{ pedido.numero_pedido }}</span>
-          <span class="work-chip" style="background:rgba(168,85,247,.15);color:#C084FC;border-color:rgba(168,85,247,.3)">
+          <span class="work-chip" style="background:var(--prep-programado-soft);color:var(--prep-programado);border-color:color-mix(in srgb,var(--prep-programado) 32%,transparent)">
             📅 {% if fecha_ent %}{{ fecha_ent.strftime('%d/%m/%Y') }}{% else %}Sin fecha{% endif %}
           </span>
           <span class="work-chip {% if pedido.origen == 'whatsapp' %}is-whatsapp{% else %}is-web{% endif %}">
@@ -786,11 +817,6 @@
       </div>
       <p class="work-client">{{ pedido.cliente.nombre if pedido.cliente else '—' }}</p>
       <div class="mt-2 flex flex-wrap gap-2">
-        {% if fecha_ent %}
-        <span class="prep-eta-chip" title="Entrega prevista">
-          {{ _icon_clock() }} {{ fecha_ent.strftime('%d/%m') }}
-        </span>
-        {% endif %}
         {% set _tipo2 = pedido.tipo_entrega_cliente or 'recogida' %}
         <span class="work-badge-modo work-badge-modo-{{ _tipo2 }}">
           {% if _tipo2 == 'delivery' %}{{ _icon_delivery() }} Delivery
@@ -828,15 +854,19 @@
         <form method="POST" action="{{ url_for('preparador.tomar_pedido', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="work-btn work-btn-ghost full-width"
+                  {% if not disponible %}disabled aria-disabled="true"{% endif %}
                   title="Reservar el pedido sin empezar aún">
-            📌 Reservar
+            {{ 'Ponte online para reservar' if not disponible else '📌 Reservar' }}
           </button>
         </form>
         {% endif %}
         <form method="POST" action="{{ url_for('preparador.empezar_armar', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-primary full-width">
-            {% if pedido.preparador_id == current_user.id %}▶ Empezar a preparar
+          <button type="submit" class="work-btn work-btn-primary full-width"
+                  {% if not disponible or not puede_preparar_encargo(pedido) %}disabled aria-disabled="true"{% endif %}>
+            {% if not disponible %}Ponte online para tomar
+            {% elif not puede_preparar_encargo(pedido) %}{% set _dias_falta = ((fecha_ent - now().date()).days) if fecha_ent else None %}{% if _dias_falta is not none and _dias_falta <= 0 %}Disponible en unos minutos{% elif _dias_falta == 1 %}⏳ Se abre mañana{% elif _dias_falta is not none %}⏳ Se abre en {{ _dias_falta }} días ({{ fecha_ent.strftime('%d/%m') }}){% else %}Fecha de entrega no fijada{% endif %}
+            {% elif pedido.preparador_id == current_user.id %}▶ Empezar a preparar
             {% else %}🍳 Tomar y empezar{% endif %}</button>
         </form>
       </div>
@@ -946,23 +976,27 @@
       <div class="work-note work-note-strong">📝 Nota del cliente: {{ pedido.notas }}</div>
       {% endif %}
 
-      <div style="display:flex;gap:.5rem;align-items:stretch;">
+      {# Fila de acción "Listo + Ticket". Antes: inline flex con `flex:1` en
+         el form + `<a inline-flex>` con padding fijo — en landscape corto o
+         móviles < 380px el botón "Ticket" se escondía o el "Listo" perdía
+         su ancho. Ahora usa `.work-action-row` con `min-height` táctil
+         garantizado y wrap responsive: en pantallas estrechas ambos ocupan
+         100% en columnas separadas; en anchas se ven en una sola línea. #}
+      <div class="work-action-row work-action-row--ready">
         <form method="POST" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}"
               data-mark-ready data-pedido-id="{{ pedido.id }}"
               onsubmit="return prepConfirmReady(this);"
-              style="flex:1;">
+              class="work-action-row__primary">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="work-btn work-btn-success full-width">
             ✓ Listo · Enviar a repartidor
           </button>
         </form>
-        {# Imprime el ticket para pegarlo al pedido — abre en nueva pestaña
-           con window.print() automático al cargar. #}
         <a href="{{ url_for('pos.ticket', pedido_id=pedido.id) }}?auto_print=1"
            target="_blank" rel="noopener"
-           class="work-btn work-btn-ghost"
+           class="work-btn work-btn-ghost work-action-row__ticket"
            title="Imprimir ticket para pegar al pedido"
-           style="flex-shrink:0;padding:0 .9rem;display:inline-flex;align-items:center;">
+           aria-label="Imprimir ticket del pedido">
           🖨️ Ticket
         </a>
       </div>
@@ -980,7 +1014,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 // ── Persistencia local de checkboxes item-a-item ──
 // Cada item marcado como preparado se guarda en localStorage con clave
 // prep_pedido_<id>. Sobrevive a los reloads automáticos cada 30s → el
@@ -1208,7 +1242,7 @@ document.querySelectorAll('form[data-mark-ready]').forEach(form => {
 .work-item-check input:checked + span::after { content: '✓'; position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; font-weight: 900; color: #05341a; }
 
 /* Nota del cliente más prominente */
-.work-note-strong { background: linear-gradient(135deg, rgba(255,171,0,.18), rgba(255,171,0,.06)); border: 1px solid rgba(255,171,0,.4); border-left: 4px solid #FFAB00; color: #ffd97a; font-weight: 700; padding: .75rem .9rem; border-radius: 10px; margin: .75rem 0; font-size: .92rem; line-height: 1.35; }
+.work-note-strong { background: linear-gradient(135deg, color-mix(in srgb, var(--brand-primary, #FFAB00) 18%, transparent), color-mix(in srgb, var(--brand-primary, #FFAB00) 6%, transparent)); border: 1px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 40%, transparent); border-left: 4px solid var(--brand-primary, #FFAB00); color: color-mix(in srgb, var(--brand-primary, #FFAB00) 50%, #fff); font-weight: 700; padding: .75rem .9rem; border-radius: 10px; margin: .75rem 0; font-size: .92rem; line-height: 1.35; }
 
 /* Efecto "siguiente pedido" tras marcar listo */
 .work-card.is-next-focus { animation: work-next-glow 1.6s ease-out 2; box-shadow: 0 0 0 3px rgba(94,240,151,.35), 0 20px 42px rgba(94,240,151,.18); }

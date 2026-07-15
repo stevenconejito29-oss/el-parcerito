@@ -13,9 +13,10 @@
      - scripts inline del nuevo <main> re-ejecutados en orden
      - title, meta viewport y evento spa:navigated para hidratar carrito/header
 
-   Fallback total: navegación normal (location.assign) si el fetch falla o
-   no encuentra <main>. Usa `data-no-spa` para forzar navegación clásica en
-   enlaces puntuales.
+   Contrato de seguridad: el intercambio parcial solo ocurre cuando origen y
+   destino declaran los mismos estilos y scripts. Si una vista necesita assets
+   propios, se usa navegación normal para que el navegador reconstruya todo el
+   documento. Usa `data-no-spa` para forzarla en enlaces puntuales.
    ═══════════════════════════════════════════════════════════════════ */
 (function () {
   if (typeof window === 'undefined') return;
@@ -23,6 +24,7 @@
   const supportsVT = typeof document.startViewTransition === 'function';
   const SCROLL_HISTORY = new Map(); // href → { top, left }
   const parser = new DOMParser();
+  let renderedRoute = normalizePath(location.pathname) + location.search;
 
   // Rutas del backend que hacen su propio manejo pesado (paneles con auto-refresh,
   // formularios con CSRF, etc.). Mejor no interceptar para evitar sorpresas.
@@ -61,6 +63,51 @@
     return parser.parseFromString(html, 'text/html');
   }
 
+  function sameOrderedValues(left, right) {
+    return left.length === right.length && left.every((value, index) => value === right[index]);
+  }
+
+  function stylesheetContract(doc, baseUrl) {
+    return Array.from(doc.querySelectorAll('link[rel~="stylesheet"][href]'), link =>
+      new URL(link.getAttribute('href'), baseUrl).href
+    );
+  }
+
+  function inlineStyleContract(doc) {
+    return Array.from(doc.head?.querySelectorAll('style') || [], style =>
+      `${style.getAttribute('media') || ''}\u0000${style.textContent || ''}`
+    );
+  }
+
+  function scriptContract(doc, baseUrl) {
+    return Array.from(doc.querySelectorAll('script'))
+      .filter(script => !script.closest('main'))
+      .map(script => {
+        const source = script.getAttribute('src');
+        if (source) return `src\u0000${new URL(source, baseUrl).href}`;
+        return `inline\u0000${script.getAttribute('type') || ''}\u0000${script.textContent || ''}`;
+      });
+  }
+
+  function canSwapDocument(doc, targetUrl) {
+    const currentUrl = location.href;
+    const destinationUrl = new URL(targetUrl, currentUrl).href;
+    const mainHasScripts = document.querySelector('main script') || doc.querySelector('main script');
+    if (mainHasScripts) return false;
+
+    return (
+      sameOrderedValues(
+        stylesheetContract(document, currentUrl),
+        stylesheetContract(doc, destinationUrl)
+      )
+      && sameOrderedValues(inlineStyleContract(document), inlineStyleContract(doc))
+      && sameOrderedValues(
+        scriptContract(document, currentUrl),
+        scriptContract(doc, destinationUrl)
+      )
+    );
+  }
+
   function swap(doc, url, restoreScroll) {
     const newMain = doc.querySelector('main');
     const oldMain = document.querySelector('main');
@@ -69,6 +116,8 @@
 
     const newTitle = doc.querySelector('title')?.textContent;
     if (newTitle) document.title = newTitle;
+    const renderedUrl = new URL(url, location.href);
+    renderedRoute = normalizePath(renderedUrl.pathname) + renderedUrl.search;
 
     // Re-ejecuta <script> inline dentro del nuevo main. Los externos ya se
     // cargaron una vez en base.html — no hace falta refrescarlos.
@@ -76,6 +125,8 @@
       if (s.src) return;
       const clone = document.createElement('script');
       if (s.type) clone.type = s.type;
+      const activeNonce = document.querySelector('script[nonce]')?.nonce;
+      if (activeNonce) clone.nonce = activeNonce;
       clone.textContent = s.textContent;
       s.replaceWith(clone);
     });
@@ -89,7 +140,7 @@
     }
 
     // Actualizar el estado activo del bottom nav (comparando href con location).
-    updateActiveNav();
+    updateActiveNav(url);
     // Sincronizar el badge del carrito flotante del bottom nav (vive fuera
     // de <main>, así que hay que extraerlo del doc nuevo manualmente).
     syncCartBadge(doc);
@@ -100,6 +151,7 @@
     document.dispatchEvent(new CustomEvent('spa:navigated', {
       detail: { url, path: new URL(url, location.href).pathname },
     }));
+    activateSearchTarget(url);
   }
 
   function syncCartBadge(doc) {
@@ -122,34 +174,43 @@
     return p.replace(/\/index(\.html?)?$/i, '/').replace(/\/+$/, '') || '/';
   }
 
-  function updateActiveNav() {
+  function updateActiveNav(targetUrl = location.href) {
     // Marca .is-active en el item del bottom nav cuyo href coincida con
     // la ruta actual. Robusto ante recarga o llegada por back button.
     //
-    // Bug fix: en el menú público, "Home" y "Búsqueda" comparten pathname
-    // (ambos apuntan a `/`; la búsqueda solo añade `?q=`). Si comparamos
-    // solo pathname, ambos se marcan activos a la vez. Consideramos el
-    // query string clave `q` para discriminar entre menú y modo búsqueda.
-    const path = normalizePath(location.pathname);
-    const locHasSearchQuery = new URLSearchParams(location.search).has('q');
-    document.querySelectorAll('.ox-bottom-nav .ox-bnav-item[href], .ox-admin-bnav a[href], .ox-admin-bnav-item[href]').forEach(a => {
+    // Menú y Buscar comparten documento, pero son modos distintos: Buscar
+    // está activo al abrir #buscar o al mostrar resultados mediante ?q=.
+    const current = new URL(targetUrl, location.href);
+    const path = normalizePath(current.pathname);
+    const searchMode = current.hash === '#buscar' || current.searchParams.has('q');
+    document.querySelectorAll('.ox-bottom-nav .ox-bnav-item[href]').forEach(a => {
       const linkUrl = new URL(a.href, location.href);
       const linkPath = normalizePath(linkUrl.pathname);
-      const linkHasSearchQuery = linkUrl.searchParams.has('q');
       let active = linkPath === path;
-      // Discrimina entre variantes que solo se distinguen por ?q=
-      // - Link con `?q=` (búsqueda) → activo SOLO si estamos en modo búsqueda
-      // - Link sin `?q=` (home)      → activo SOLO si NO estamos en búsqueda
-      if (active && linkHasSearchQuery !== locHasSearchQuery) {
-        active = false;
-      }
+      if (a.dataset.bnav === 'search') active = active && searchMode;
+      if (a.dataset.bnav === 'home') active = active && !searchMode;
       a.classList.toggle('is-active', active);
-      // También aplicamos .active para compatibilidad con estilos antiguos
-      // del bottom nav admin que usan esa clase en lugar de is-active.
       a.classList.toggle('active', active);
       if (active) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
     });
+  }
+
+  function activateSearchTarget(targetUrl = location.href) {
+    const url = new URL(targetUrl, location.href);
+    if (normalizePath(url.pathname) !== '/' || url.hash !== '#buscar') return;
+    const form = document.getElementById('buscar');
+    const input = form?.querySelector('.ep-search-input');
+    if (!form || !input) return;
+    form.classList.add('is-search-target');
+    form.scrollIntoView({
+      behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    });
+    window.setTimeout(() => {
+      input.focus({ preventScroll: true });
+      form.classList.remove('is-search-target');
+    }, 180);
   }
 
   /**
@@ -197,6 +258,10 @@
     document.body.classList.add('is-navigating');
     try {
       const doc = await fetchPage(url);
+      if (!canSwapDocument(doc, url)) {
+        location.assign(url);
+        return;
+      }
       const restore = isBack ? SCROLL_HISTORY.get(url) : null;
       await withTransition(() => swap(doc, url, restore));
       if (!isBack) history.pushState({ spa: true }, '', url);
@@ -234,12 +299,26 @@
   }, { passive: true });
 
   window.addEventListener('popstate', () => {
+    // Un cambio exclusivo de hash (#buscar) conserva el mismo documento.
+    // Volver a descargarlo retrasaba el foco y bloqueaba temporalmente la nav.
+    const targetRoute = normalizePath(location.pathname) + location.search;
+    if (targetRoute === renderedRoute) {
+      updateActiveNav();
+      activateSearchTarget();
+      return;
+    }
     navigate(location.href, { isBack: true });
+  });
+
+  window.addEventListener('hashchange', () => {
+    updateActiveNav();
+    activateSearchTarget();
   });
 
   // Estado activo inicial (por si la clase se pinta con Jinja pero el usuario
   // navega por SPA — mantenemos coherencia).
   updateActiveNav();
+  activateSearchTarget();
   // Badge PWA en primera carga (por si el usuario ya tenía cosas en el carrito).
   syncPwaBadge();
 })();

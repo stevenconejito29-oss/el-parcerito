@@ -8,11 +8,11 @@
 <div class="work-area staff-board">
 
 {% if caducados %}
-<div style="background:rgba(239,68,68,.12);border:1.5px solid rgba(239,68,68,.35);border-radius:14px;padding:.85rem 1rem;margin-bottom:1.25rem;display:flex;align-items:center;gap:.75rem">
-  <span style="font-size:1.4rem">🚨</span>
+<div class="work-critical-alert" role="alert">
+  <span class="work-critical-alert__icon" aria-hidden="true">🚨</span>
   <div>
-    <p style="color:#FCA5A5;font-weight:900;font-size:.92rem">{{ caducados|length }} lote{{ 's' if caducados|length != 1 else '' }} CADUCADO{{ 'S' if caducados|length != 1 else '' }} — retirar de inmediato</p>
-    <p style="color:#F87171;font-size:.78rem;margin-top:.2rem">
+    <p class="work-critical-alert__title">{{ caducados|length }} lote{{ 's' if caducados|length != 1 else '' }} caducado{{ 's' if caducados|length != 1 else '' }} — retirar de inmediato</p>
+    <p class="work-critical-alert__text">
       {% for l in caducados %}{{ l.producto.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}
     </p>
   </div>
@@ -112,7 +112,7 @@
         <tr class="{% if lote.esta_caducado %}bg-red-900/20{% elif lote.esta_en_alerta %}bg-yellow-900/12{% endif %}">
           <td class="font-medium {% if lote.esta_caducado %}text-red-300{% endif %}">
             {{ lote.producto.nombre }}
-            {% if lote.esta_caducado %}<span style="font-size:.7rem;font-weight:900;color:#FCA5A5;display:block">⛔ RETIRAR</span>{% endif %}
+            {% if lote.esta_caducado %}<span class="work-stock-remove">⛔ RETIRAR</span>{% endif %}
           </td>
           <td class="text-center font-bold text-white">{{ lote.cantidad }}</td>
           <td class="text-gray-500 text-xs">{{ lote.lote or '—' }}</td>
@@ -123,9 +123,9 @@
             {% if lote.esta_caducado %}
               <span class="ox-badge ox-badge-hot" style="font-size:.75rem">🚨 CADUCADO</span>
             {% elif lote.esta_en_alerta %}
-              <span style="color:#FFAB00;font-size:.78rem;font-weight:900">⚠ {{ lote.dias_para_caducar }}d</span>
+              <span class="work-stock-status is-warning">⚠ {{ lote.dias_para_caducar }}d</span>
             {% else %}
-              <span style="color:#5EF097;font-size:.78rem;font-weight:900">✓ OK</span>
+              <span class="work-stock-status is-ok">✓ OK</span>
             {% endif %}
           </td>
         </tr>

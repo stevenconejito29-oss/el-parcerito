@@ -380,7 +380,7 @@
   .delivery-summary-mobile dd{font-size:.85rem;font-weight:900;color:var(--col-text);margin-top:.1rem}
 }
 </style>
-<script>
+<script nonce="{{ csp_nonce() }}">
 function toggleAll(cb) {
   document.querySelectorAll('input[name="pago_ids"]').forEach(c => c.checked = cb.checked);
 }

@@ -1,0 +1,377 @@
+/* ========================================================================== 
+   Operational Roles UI
+   Capa autoritativa y compartida para cocina, preparación, reparto y almacén.
+   Los colores estructurales provienen de la configuración de marca; verde,
+   ámbar y rojo se reservan para estados operativos universales.
+   ========================================================================== */
+
+body.operational-view {
+  --op-radius-sm: .65rem;
+  --op-radius: .9rem;
+  --op-radius-lg: 1.15rem;
+  --op-space: clamp(.7rem, 1.6vw, 1rem);
+  --op-surface: var(--col-surface);
+  --op-raised: var(--col-elevated);
+  --op-line: color-mix(in srgb, var(--brand-accent) 14%, var(--col-border));
+  --op-shadow: 0 8px 24px rgba(20, 28, 38, .08);
+  --op-success: var(--theme-success, #21835b);
+  --op-warning: var(--status-warn);
+  --op-danger: var(--theme-danger, #c64040);
+  background: var(--col-bg);
+}
+
+body.operational-view .work-area {
+  --work-surface: var(--op-surface);
+  --work-elevated: var(--op-raised);
+  --work-border: var(--op-line);
+  --work-muted: var(--col-muted);
+  --work-text: var(--col-text);
+  --work-accent: var(--brand-primary);
+  --work-info: color-mix(in srgb, var(--brand-accent) 78%, #2795d2);
+  --work-success: var(--op-success);
+  --work-danger: var(--op-danger);
+  width: min(100%, 1480px);
+  margin-inline: auto;
+  color: var(--work-text);
+}
+
+body.operational-view
+  :is(.work-hero,.work-panel,.work-card,.work-lane) {
+  border-radius: var(--op-radius) !important;
+  border-color: var(--op-line) !important;
+}
+
+body.operational-view .work-hero {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(.9rem, 2vw, 1.25rem) !important;
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--brand-primary) 8%, transparent), transparent 42%),
+    var(--op-surface) !important;
+  border-top: 0 !important;
+  box-shadow: var(--op-shadow) !important;
+}
+
+body.operational-view .work-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--brand-primary), var(--brand-secondary));
+}
+
+body.operational-view .work-eyebrow {
+  color: color-mix(in srgb, var(--brand-primary) 82%, var(--col-text)) !important;
+  letter-spacing: .08em;
+}
+
+body.operational-view .work-title {
+  font-size: clamp(1.3rem, 3vw, 2rem) !important;
+  letter-spacing: -.025em;
+}
+
+body.operational-view .work-subtitle {
+  max-width: 68ch;
+  font-size: clamp(.8rem, 1.4vw, .9rem);
+}
+
+/* Identidad y disponibilidad: un único componente para los cuatro roles. */
+body.operational-view .work-employee-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .8rem;
+  width: 100%;
+  margin: 0 0 var(--op-space);
+  padding: .75rem .85rem;
+  border: 1px solid var(--op-line);
+  border-radius: var(--op-radius);
+  background: var(--op-surface);
+  box-shadow: var(--op-shadow);
+  color: var(--col-text);
+}
+
+body.operational-view .work-employee-toggle {
+  cursor: default;
+  text-align: left;
+}
+
+body.operational-view .work-employee-avatar {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 30%, transparent);
+  border-radius: .75rem;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--brand-primary) 20%, transparent),
+    color-mix(in srgb, var(--brand-accent) 9%, transparent));
+  color: color-mix(in srgb, var(--brand-primary) 76%, var(--col-text));
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+body.operational-view .work-employee-info { min-width: 0; }
+body.operational-view .work-employee-name {
+  overflow: hidden;
+  color: var(--col-text);
+  font-size: .9rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.operational-view .work-employee-role {
+  margin-top: .1rem;
+  color: var(--col-muted);
+  font-size: .72rem;
+  line-height: 1.35;
+}
+
+body.operational-view .work-availability-button {
+  min-width: 148px;
+  min-height: 46px;
+}
+
+/* Resumen compacto: el trabajo está en las tarjetas, no en KPIs gigantes. */
+body.operational-view .work-kpis {
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)) !important;
+  gap: .6rem;
+}
+body.operational-view .work-kpi {
+  min-height: 94px;
+  padding: .75rem .85rem !important;
+  border-left: 3px solid var(--brand-primary) !important;
+  background: var(--op-surface) !important;
+  box-shadow: none !important;
+}
+body.operational-view .work-kpi strong {
+  font-size: clamp(1.45rem, 4vw, 1.8rem) !important;
+}
+
+body.operational-view .work-board {
+  align-items: start;
+  gap: var(--op-space);
+}
+body.operational-view .work-lane {
+  padding: clamp(.6rem, 1.5vw, .85rem) !important;
+  background: color-mix(in srgb, var(--brand-accent) 3%, var(--col-elevated)) !important;
+  box-shadow: none !important;
+}
+body.operational-view .work-card {
+  padding: clamp(.72rem, 1.5vw, .95rem) !important;
+  background: var(--op-surface) !important;
+  box-shadow: 0 3px 14px rgba(18, 26, 36, .06) !important;
+}
+body.operational-view .work-card:hover {
+  transform: none;
+  border-color: color-mix(in srgb, var(--brand-primary) 32%, var(--op-line)) !important;
+}
+body.operational-view .work-order-code {
+  color: color-mix(in srgb, var(--brand-primary) 76%, var(--col-text)) !important;
+  overflow-wrap: anywhere;
+}
+body.operational-view
+  :is(.work-box,.work-items,.work-details) {
+  background: color-mix(in srgb, var(--brand-accent) 2.5%, var(--col-elevated)) !important;
+  border-color: var(--op-line) !important;
+}
+body.operational-view .work-note {
+  color: color-mix(in srgb, var(--op-warning) 70%, var(--col-text)) !important;
+  background: color-mix(in srgb, var(--op-warning) 9%, var(--op-surface)) !important;
+  border-color: color-mix(in srgb, var(--op-warning) 30%, transparent) !important;
+}
+
+/* Acciones: intención principal, información y cierre semántico. */
+body.operational-view .work-btn {
+  min-height: 46px;
+  border-radius: var(--op-radius-sm) !important;
+  font-size: .84rem;
+  box-shadow: none !important;
+}
+body.operational-view .work-btn-primary {
+  background: var(--action-primary) !important;
+  color: var(--action-on-primary) !important;
+}
+body.operational-view .work-btn-info {
+  background: var(--status-info) !important;
+  color: #fff !important;
+}
+body.operational-view .work-btn-success {
+  background: var(--op-success) !important;
+  color: #fff !important;
+}
+body.operational-view .work-btn-ghost {
+  background: var(--op-surface) !important;
+  border-color: var(--op-line) !important;
+  color: var(--col-text) !important;
+}
+
+/* Equipo secundario colapsado: no compite con la cola de trabajo. */
+.work-team-details { margin: 0 0 var(--op-space); }
+.work-team-summary {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  cursor: pointer;
+  color: var(--col-muted);
+  font-size: .78rem;
+  font-weight: 800;
+}
+.work-team-details[open] .work-team-summary { color: var(--col-text); }
+.work-team-details .work-team { margin-top: .35rem !important; }
+.work-chip-stock {
+  color: var(--op-success) !important;
+  background: color-mix(in srgb, var(--op-success) 10%, var(--op-surface)) !important;
+  border-color: color-mix(in srgb, var(--op-success) 28%, transparent) !important;
+}
+
+/* Prioridad del flujo: continuar lo iniciado antes de tomar trabajo nuevo. */
+.route-board .route-lane--active,
+.staff-orders-board .staff-lane--active { order: 1; }
+.route-board .route-lane--ready,
+.staff-orders-board .staff-lane--pending { order: 2; }
+
+/* Inventario: semántica reusable, sin colores embebidos en la plantilla. */
+.work-critical-alert {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin-bottom: 1rem;
+  padding: .8rem .9rem;
+  border: 1px solid color-mix(in srgb, var(--op-danger) 34%, transparent);
+  border-radius: var(--op-radius);
+  background: color-mix(in srgb, var(--op-danger) 9%, var(--op-surface));
+}
+.work-critical-alert__icon { font-size: 1.35rem; }
+.work-critical-alert__title { color: var(--op-danger); font-size: .88rem; font-weight: 950; }
+.work-critical-alert__text { margin-top: .15rem; color: color-mix(in srgb, var(--op-danger) 72%, var(--col-muted)); font-size: .76rem; }
+.work-stock-remove { display: block; color: var(--op-danger); font-size: .68rem; font-weight: 900; }
+.work-stock-status { font-size: .76rem; font-weight: 900; }
+.work-stock-status.is-warning { color: var(--op-warning); }
+.work-stock-status.is-ok { color: var(--op-success); }
+
+/* Modo noche persistente para roles operativos.
+   Antes: solo aplicaba a repartidor. Ahora cubre también preparación y
+   cocina — pantallas fijas en cocina/almacén nocturno o tablets de
+   preparadores en horario tarde-noche quedan legibles sin explotar los
+   ojos. La preferencia se guarda en localStorage; nombre de atributo
+   (`data-delivery-theme`) se conserva por compatibilidad hacia atrás. */
+html[data-delivery-theme="dark"] body.operational-view {
+  color-scheme: dark;
+  --col-bg: #0b1016;
+  --col-surface: #131a22;
+  --col-elevated: #19222c;
+  --col-text: #f4f7fa;
+  --col-muted: #aab6c2;
+  --col-faint: #748290;
+  --col-border: rgba(255,255,255,.10);
+  --col-border-2: rgba(255,255,255,.17);
+  --op-shadow: 0 10px 30px rgba(0,0,0,.28);
+}
+html[data-delivery-theme="dark"] body.operational-view .ox-admin-content {
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--brand-accent) 14%, transparent), transparent 360px),
+    var(--col-bg) !important;
+}
+html[data-delivery-theme="dark"] body.operational-view .work-card,
+html[data-delivery-theme="dark"] body.operational-view .work-panel,
+html[data-delivery-theme="dark"] body.operational-view .work-hero {
+  box-shadow: var(--op-shadow) !important;
+}
+.delivery-theme-toggle { white-space: nowrap; }
+.delivery-theme-toggle__icon { font-size: 1rem; }
+
+/* Fila de acción "Listo · Enviar + Ticket" (preparador/pedidos.html).
+   Antes: inline styles con `flex:1` y `<a inline-flex>` con padding fijo —
+   en móviles pequeños el "Ticket" se escondía o se comprimía por debajo
+   del mínimo táctil. Ahora es una fila responsive que garantiza 44px de
+   alto siempre y wrap limpio en < 380px. */
+.work-action-row--ready {
+  display: flex; gap: .5rem; align-items: stretch;
+  flex-wrap: wrap;
+}
+.work-action-row--ready .work-action-row__primary {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.work-action-row--ready .work-action-row__ticket {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 1rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: .35rem; white-space: nowrap;
+}
+@media (max-width: 380px) {
+  .work-action-row--ready .work-action-row__ticket {
+    flex: 1 1 100%;
+  }
+}
+
+/* Portrait: una sola lectura vertical y botones alcanzables. */
+@media (orientation: portrait) and (max-width: 899px) {
+  body.operational-view .work-board {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  body.operational-view .work-action-row.work-cta-group {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 560px) {
+  body.operational-view .work-employee-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  body.operational-view .work-availability-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  body.operational-view .work-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  body.operational-view .work-kpi small { display: none; }
+  body.operational-view .work-kpi { min-height: 72px; }
+  body.operational-view .work-order-head {
+    flex-wrap: wrap;
+  }
+  body.view-repartidor .route-board .flex.gap-2 { flex-wrap: wrap; }
+  body.view-repartidor .route-board .flex.gap-2 > :is(a,button) { min-width: min(100%, 130px); }
+}
+
+/* Landscape corto: dos columnas y densidad controlada, sin ocultar acciones. */
+@media (orientation: landscape) and (max-height: 540px) {
+  body.operational-view .work-area { width: 100%; }
+  body.operational-view .work-hero {
+    margin-bottom: .55rem;
+    padding: .65rem .8rem !important;
+  }
+  body.operational-view .work-subtitle { display: none; }
+  body.operational-view .work-employee-card {
+    margin-bottom: .55rem;
+    padding: .55rem .7rem;
+  }
+  body.operational-view .work-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)) !important;
+    margin-bottom: .55rem;
+  }
+  body.operational-view .work-kpi {
+    min-height: 64px;
+    padding: .55rem .65rem !important;
+  }
+  body.operational-view .work-kpi small { display: none; }
+  body.operational-view .work-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: .6rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.operational-view *,
+  body.operational-view *::before,
+  body.operational-view *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

@@ -1,4 +1,9 @@
 # OXIDIAN — Arquitectura y Flujos de la Plataforma
+
+> **Documento histórico (versión 1).** No describe todos los roles ni flujos
+> vigentes. Para el mapa actual consulta
+> [`../docs/PROJECT_STRUCTURE.md`](../docs/PROJECT_STRUCTURE.md).
+
 > Sistema integral de delivery de productos latinos
 > Versión: 1.0 — Fase 1
 

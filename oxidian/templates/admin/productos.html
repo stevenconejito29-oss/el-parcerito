@@ -7,7 +7,7 @@
     <p class="text-xs mt-0.5" style="color:var(--col-muted)">Gestiona el catálogo de productos y los combos disponibles</p>
   </div>
   <div class="flex gap-2">
-    <a href="{{ url_for('admin.extras_catalogo') }}" class="text-sm font-bold px-4 py-2 rounded-xl" style="background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.28);color:#D8B4FE">Extras</a>
+    <a href="{{ url_for('admin.extras_catalogo') }}" class="text-sm font-bold px-4 py-2 rounded-xl" style="background:color-mix(in srgb,var(--role-super-admin,#A855F7) 14%,transparent);border:1px solid color-mix(in srgb,var(--role-super-admin,#A855F7) 32%,transparent);color:color-mix(in srgb,var(--role-super-admin,#A855F7) 55%,#fff)">Extras</a>
     <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
             class="text-sm font-bold px-4 py-2 rounded-xl" style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
       + Nuevo producto
@@ -102,7 +102,7 @@
             style="display:inline;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" title="Eliminar"
-                style="background:rgba(255,80,80,.14);color:#FF7B7B;border:1px solid rgba(255,80,80,.3);padding:.25rem .55rem;border-radius:.4rem;font-weight:800;">
+                style="background:color-mix(in srgb,var(--theme-danger) 14%,transparent);color:color-mix(in srgb,var(--theme-danger) 62%,#fff);border:1px solid color-mix(in srgb,var(--theme-danger) 32%,transparent);padding:.25rem .55rem;border-radius:.4rem;font-weight:800;">
           🗑️
         </button>
       </form>
@@ -141,11 +141,11 @@
         <div class="min-w-0">
           <p class="font-semibold text-white truncate">{{ p.nombre }}</p>
           <div class="flex gap-1 mt-0.5 flex-wrap">
-            <span class="text-xs px-1.5 rounded-full font-bold" style="color:#5EF097;background:rgba(94,240,151,.1)">Stock propio</span>
-            <span class="text-xs px-1.5 rounded-full font-bold" style="color:#5AC8FA;background:rgba(90,200,250,.1)">{{ p.canal_preparacion or 'cocina' }}</span>
-            {% if p.grupo_pedido %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:#FFD59A;background:rgba(255,179,64,.12)">Pedido: {{ p.grupo_pedido }}</span>{% endif %}
-            {% if p.canjeable_con_puntos %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:#C084FC;background:rgba(192,132,252,.12)">⭐ Puntos</span>{% endif %}
-            {% if p.es_hipoalergenico %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:#5EF097;background:rgba(94,240,151,.1)">🌿 Hipo</span>{% endif %}
+            <span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--theme-success,#5EF097);background:color-mix(in srgb,var(--theme-success,#5EF097) 12%,transparent)">Stock propio</span>
+            <span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--role-admin,#5AC8FA);background:color-mix(in srgb,var(--role-admin,#5AC8FA) 12%,transparent)">{{ p.canal_preparacion or 'cocina' }}</span>
+            {% if p.grupo_pedido %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:color-mix(in srgb,var(--brand-primary,#FFD59A) 55%,#fff);background:color-mix(in srgb,var(--brand-primary,#FFD59A) 14%,transparent)">Pedido: {{ p.grupo_pedido }}</span>{% endif %}
+            {% if p.canjeable_con_puntos %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--role-super-admin,#C084FC);background:color-mix(in srgb,var(--role-super-admin,#C084FC) 14%,transparent)">⭐ Puntos</span>{% endif %}
+            {% if p.es_hipoalergenico %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--theme-success,#5EF097);background:color-mix(in srgb,var(--theme-success,#5EF097) 12%,transparent)">🌿 Hipo</span>{% endif %}
           </div>
         </div>
       </div>
@@ -153,16 +153,16 @@
     <td class="text-center text-sm" style="color:var(--col-muted)">{{ p.categoria.nombre if p.categoria else '—' }}</td>
     <td class="text-center">
       {% if p.tipo_entrega in ('programado', 'encargo') %}
-        <span class="text-xs font-bold px-2 py-0.5 rounded-full" style="color:#5AC8FA;background:rgba(90,200,250,.1)">📅 {{ p.fecha_llegada.strftime('%d/%m') if p.fecha_llegada else 'Sin fecha' }}</span>
+        <span class="text-xs font-bold px-2 py-0.5 rounded-full" style="color:var(--role-admin,#5AC8FA);background:color-mix(in srgb,var(--role-admin,#5AC8FA) 12%,transparent)">📅 {{ p.fecha_llegada.strftime('%d/%m') if p.fecha_llegada else 'Sin fecha' }}</span>
       {% else %}
-        <span class="text-xs font-bold px-2 py-0.5 rounded-full" style="color:#5EF097;background:rgba(94,240,151,.08)">⚡ Inmediato</span>
+        <span class="text-xs font-bold px-2 py-0.5 rounded-full" style="color:var(--theme-success,#5EF097);background:color-mix(in srgb,var(--theme-success,#5EF097) 10%,transparent)">⚡ Inmediato</span>
       {% endif %}
     </td>
-    <td class="text-center font-mono font-bold" style="color:#FFAB00">
+    <td class="text-center font-mono font-bold" style="color:var(--brand-primary,#FFAB00)">
       €{{ "%.2f"|format(p.precio) }}
     </td>
     <td class="text-center font-mono font-bold"
-        style="color:{{ '#FF6B6B' if p.stock_total <= 5 else ('#FFAB00' if p.stock_total <= 20 else 'var(--col-text)') }}">
+        style="color:{{ 'var(--theme-danger,#FF6B6B)' if p.stock_total <= 5 else ('var(--brand-primary,#FFAB00)' if p.stock_total <= 20 else 'var(--col-text)') }}">
       {{ p.stock_total }}
       {% if p.stock_mostrar_en_web %}<span class="text-xs ml-1" style="color:var(--col-faint)" title="Visible en web">👁</span>{% endif %}
     </td>
@@ -175,7 +175,7 @@
     </td>
     <td class="text-center">
       <span class="text-xs px-2 py-0.5 rounded-full font-bold"
-            style="{{ 'background:rgba(94,240,151,.12);color:#5EF097;border:1px solid rgba(94,240,151,.2)' if p.activo else 'background:rgba(255,107,107,.1);color:#FF6B6B;border:1px solid rgba(255,107,107,.2)' }}">
+            style="{{ 'background:color-mix(in srgb,var(--theme-success) 12%,transparent);color:var(--theme-success);border:1px solid color-mix(in srgb,var(--theme-success) 22%,transparent)' if p.activo else 'background:color-mix(in srgb,var(--theme-danger) 10%,transparent);color:var(--theme-danger);border:1px solid color-mix(in srgb,var(--theme-danger) 22%,transparent)' }}">
         {{ 'Activo' if p.activo else 'Inactivo' }}
       </span>
     </td>
@@ -200,7 +200,7 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit"
                   class="text-xs px-2 py-1 rounded-lg font-bold"
-                  style="background:rgba(255,80,80,.1);color:#FF5A5A;border:1px solid rgba(255,80,80,.25)"
+                  style="background:color-mix(in srgb,var(--theme-danger) 10%,transparent);color:color-mix(in srgb,var(--theme-danger) 72%,#fff);border:1px solid color-mix(in srgb,var(--theme-danger) 26%,transparent)"
                   title="Eliminar (archiva si hay pedidos)">
             🗑️
           </button>
@@ -209,7 +209,7 @@
     </td>
   </tr>
   <!-- datos para JS -->
-  <script>window._prod_{{ p.id }} = {{ {
+  <script nonce="{{ csp_nonce() }}">window._prod_{{ p.id }} = {{ {
     'id': p.id, 'nombre': p.nombre, 'descripcion': p.descripcion or '',
     'precio': p.precio|float, 'precio_costo': p.precio_costo|float if p.precio_costo else '',
     'categoria_id': p.categoria_id or '', 'origen_pais': p.origen_pais or '',
@@ -258,7 +258,7 @@
       {% include "admin/_form_producto.html" %}
       <div class="admin-modal-actions flex gap-3 mt-5">
         <button type="submit" class="flex-1 font-bold py-2.5 rounded-xl text-sm"
-                style="background:linear-gradient(135deg,#FFAB00,#FF8C00);color:#000;box-shadow:0 4px 14px rgba(255,171,0,.3)">
+                style="background:linear-gradient(135deg,var(--brand-primary,#FFAB00),color-mix(in srgb,var(--brand-primary,#FFAB00) 78%,#000));color:var(--brand-on-primary,#000);box-shadow:0 4px 14px color-mix(in srgb,var(--brand-primary,#FFAB00) 30%,transparent)">
           Crear producto →
         </button>
         <button type="button" onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
@@ -298,7 +298,7 @@
       </div>
       <div class="admin-modal-actions flex gap-3 mt-4">
         <button type="submit" class="flex-1 font-bold py-2.5 rounded-xl text-sm"
-                style="background:linear-gradient(135deg,#FFAB00,#FF8C00);color:#000;box-shadow:0 4px 14px rgba(255,171,0,.3)">
+                style="background:linear-gradient(135deg,var(--brand-primary,#FFAB00),color-mix(in srgb,var(--brand-primary,#FFAB00) 78%,#000));color:var(--brand-on-primary,#000);box-shadow:0 4px 14px color-mix(in srgb,var(--brand-primary,#FFAB00) 30%,transparent)">
           Guardar cambios →
         </button>
         <button type="button" onclick="document.getElementById('modal-editar').classList.add('hidden')"
@@ -318,7 +318,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="text" name="nombre" placeholder="Ej: Sopas & Cremas" required
            class="flex-1 rounded-lg px-3 py-2 text-sm" style="background:var(--col-surface);border:1px solid var(--col-border);color:#fff">
-    <button type="submit" class="px-4 py-2 rounded-lg text-sm font-bold" style="background:#FFAB00;color:#000">Crear</button>
+    <button type="submit" class="px-4 py-2 rounded-lg text-sm font-bold" style="background:var(--brand-primary,#FFAB00);color:var(--brand-on-primary,#000)">Crear</button>
   </form>
 </details>
 
@@ -329,7 +329,7 @@
    ══════════════════════════════════ #}
 <div id="section-combos" class="hidden">
   <div class="mb-4 p-4 rounded-xl text-sm" style="background:rgba(10,132,255,.07);border:1px solid rgba(10,132,255,.15)">
-    <p class="font-bold" style="color:#5AC8FA">¿Qué es un combo?</p>
+    <p class="font-bold" style="color:var(--role-admin,#5AC8FA)">¿Qué es un combo?</p>
     <p style="color:var(--col-muted)">Un combo es un conjunto de productos vendidos juntos a precio especial.
     El cliente lo ve como un único producto en el menú, pero internamente descuenta stock de sus componentes.
     Puedes crear componentes fijos y grupos seleccionables para que el cliente elija opciones al pedir.</p>
@@ -342,7 +342,7 @@
     <p class="font-bold text-white">Sin combos creados</p>
     <p class="text-sm mt-1" style="color:var(--col-muted)">Los combos permiten vender grupos de productos a precio especial</p>
     <a href="{{ url_for('admin.nuevo_combo') }}"
-       class="inline-block mt-4 px-5 py-2 rounded-lg text-sm font-bold text-black" style="background:#FFAB00">
+       class="inline-block mt-4 px-5 py-2 rounded-lg text-sm font-bold text-black" style="background:var(--brand-primary,#FFAB00)">
       + Construir primer combo
     </a>
   </div>
@@ -350,7 +350,7 @@
   <div class="grid md:grid-cols-2 gap-4">
     {% for combo in combos_list %}
     {% set combo_items = combo.combo_items.all() %}
-    <script>window._prod_{{ combo.id }} = {{ {
+    <script nonce="{{ csp_nonce() }}">window._prod_{{ combo.id }} = {{ {
       'id': combo.id, 'nombre': combo.nombre, 'descripcion': combo.descripcion or '',
       'precio': combo.precio|float, 'precio_costo': combo.precio_costo|float if combo.precio_costo else '',
       'categoria_id': combo.categoria_id or '', 'origen_pais': combo.origen_pais or '',
@@ -386,9 +386,9 @@
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-1">
             <p class="font-bold text-white">{{ combo.nombre }}</p>
-            {% if not combo.activo %}<span class="text-xs px-2 py-0.5 rounded-full" style="background:rgba(255,59,48,.1);color:#FF6B6B">Inactivo</span>{% endif %}
+            {% if not combo.activo %}<span class="text-xs px-2 py-0.5 rounded-full" style="background:color-mix(in srgb,var(--theme-danger) 10%,transparent);color:var(--theme-danger)">Inactivo</span>{% endif %}
           </div>
-          <p class="text-lg font-black" style="color:#FFAB00">€{{ "%.2f"|format(combo.precio_final) }}</p>
+          <p class="text-lg font-black" style="color:var(--brand-primary,#FFAB00)">€{{ "%.2f"|format(combo.precio_final) }}</p>
           {% if combo.descripcion %}<p class="text-xs mt-1" style="color:var(--col-muted)">{{ combo.descripcion[:80] }}</p>{% endif %}
         </div>
       </div>
@@ -408,7 +408,7 @@
           {% endfor %}
         </div>
         {% else %}
-        <p class="text-xs" style="color:#FFB340">⚠️ Sin componentes — añádelos desde la página de gestión del combo</p>
+        <p class="text-xs" style="color:var(--status-warn,#FFB340)">⚠️ Sin componentes — añádelos desde la página de gestión del combo</p>
         {% endif %}
       </div>
 
@@ -429,7 +429,7 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" title="Eliminar combo"
                   class="text-xs font-bold py-1.5 px-3 rounded-lg"
-                  style="background:rgba(255,80,80,.1);color:#FF5A5A;border:1px solid rgba(255,80,80,.25)">
+                  style="background:color-mix(in srgb,var(--theme-danger) 10%,transparent);color:color-mix(in srgb,var(--theme-danger) 72%,#fff);border:1px solid color-mix(in srgb,var(--theme-danger) 26%,transparent)">
             🗑️
           </button>
         </form>
@@ -526,7 +526,7 @@
   .admin-combo-price-grid { grid-template-columns:minmax(0,1fr)!important; }
 }
 </style>
-<script>
+<script nonce="{{ csp_nonce() }}">
 function mostrarTab(tab) {
   document.getElementById('section-productos').classList.toggle('hidden', tab !== 'productos');
   document.getElementById('section-combos').classList.toggle('hidden', tab !== 'combos');
@@ -625,8 +625,10 @@ function abrirEditar(id) {
 function toggleCamposEntrega(form, tipo) {
   const divFecha = form.querySelector('.campo-fecha-llegada');
   const divAnticipacion = form.querySelector('.campo-anticipacion');
+  const divLote  = form.querySelector('.campo-cantidad-lote');
   if (divFecha) divFecha.classList.toggle('hidden', tipo !== 'programado');
   if (divAnticipacion) divAnticipacion.classList.add('hidden');
+  if (divLote)  divLote.classList.toggle('hidden', tipo !== 'programado');
 }
 
 function toggleCamposPuntos(form, activo) {

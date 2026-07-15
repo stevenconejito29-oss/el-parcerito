@@ -1270,6 +1270,58 @@ def _database_tool_url():
     return re.sub(r"^postgresql\+[^:]+://", "postgresql://", url)
 
 
+def _validar_dump_postgres(path: str, suffix: str) -> tuple[bool, str]:
+    """Valida que un archivo subido para restauración sea un dump legítimo.
+
+    * `.dump` / `.backup` (formato custom `pg_dump -Fc`): primeros 5 bytes
+      son `PGDMP` (magic bytes documentados en `src/bin/pg_dump/pg_backup_archiver.h`).
+    * `.sql` (plain text): verificamos que sea texto imprimible y que
+      empiece con algo compatible con un dump SQL — comentario `--`,
+      `BEGIN`, `SET`, `CREATE`, `INSERT` o `COPY` en las primeras líneas.
+
+    Antes: `pg_restore` recibía el archivo directo. Un atacante que se
+    hiciera con credenciales super_admin podía subir un `.dump` con
+    payloads inesperados. Ahora rechazamos cualquier cosa que no huela
+    a backup postgres antes de invocar la herramienta.
+    """
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(4096)
+    except OSError as exc:
+        return False, f"No se pudo leer el archivo: {exc}"
+    if not head:
+        return False, "El archivo está vacío."
+
+    if suffix in {".dump", ".backup"}:
+        if not head.startswith(b"PGDMP"):
+            return False, (
+                "El archivo no tiene la firma `PGDMP` esperada de un "
+                "backup custom (`pg_dump -Fc`). Regenera el backup con "
+                "el formato correcto o usa `.sql` para dumps de texto."
+            )
+        return True, "OK"
+
+    if suffix == ".sql":
+        # Debe ser texto UTF-8 o ASCII compatible.
+        try:
+            texto = head.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            return False, "El .sql no es UTF-8 válido."
+        # Debe empezar (tras espacios/BOM) con algo típico de SQL dump.
+        primeras = texto.lstrip("﻿ \t\r\n").splitlines()[:8]
+        joined = " ".join(primeras).upper()
+        marcadores = ("--", "BEGIN", "SET ", "CREATE ", "COPY ", "INSERT ", "DROP ", "ALTER ")
+        if not any(m in joined for m in marcadores):
+            return False, (
+                "El .sql no parece un dump: no encontramos marcadores "
+                "SQL comunes (--, BEGIN, SET, CREATE, COPY, …) en las "
+                "primeras líneas."
+            )
+        return True, "OK"
+
+    return False, f"Extensión no soportada: {suffix}"
+
+
 def _require_postgres_url():
     url = _database_tool_url()
     if not url.startswith(("postgresql://", "postgres://")):
@@ -1361,8 +1413,29 @@ def database_upload():
         database_url = _require_postgres_url()
         file.save(tmp.name)
         db.session.close()
+
+        # Validación de contenido ANTES de invocar pg_restore/psql.
+        # Sin esto, un `.dump` malformado (o intencionalmente malicioso)
+        # llegaba directo a `pg_restore` que puede ejecutar SQL arbitrario
+        # embebido. Aquí verificamos que el archivo tenga la forma
+        # correcta de un backup postgres — no elimina el riesgo del 100%
+        # (pg_restore --list sería más profundo) pero cierra el vector
+        # obvio de subir un binario inesperado.
+        _valid, _msg = _validar_dump_postgres(tmp.name, suffix)
+        if not _valid:
+            AuditLog.registrar(
+                current_user.id, "db_import_rechazado", "database",
+                detalle=f"archivo={filename[:120]} motivo={_msg[:200]}",
+                ip=request.remote_addr,
+            )
+            db.session.commit()
+            flash(f"Archivo rechazado por validación de seguridad: {_msg}", "danger")
+            return redirect(url_for("superadmin.database_admin"))
+
         if suffix == ".sql":
-            cmd = ["psql", "--dbname", database_url, "--file", tmp.name]
+            cmd = ["psql", "--dbname", database_url,
+                   "--single-transaction",  # atómico: rollback si algo falla
+                   "--file", tmp.name]
         else:
             cmd = [
                 "pg_restore",
@@ -1370,6 +1443,8 @@ def database_upload():
                 "--if-exists",
                 "--no-owner",
                 "--no-privileges",
+                "--single-transaction",  # rollback ante error, no queda estado sucio
+                "--exit-on-error",
                 "--dbname", database_url,
                 tmp.name,
             ]

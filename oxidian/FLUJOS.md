@@ -1,5 +1,9 @@
 # Oxidian — Diagrama de Flujos del Sistema
 
+> **Especificación histórica (2026-05-09).** Algunos roles y módulos cambiaron.
+> El mapa vigente está en
+> [`../docs/PROJECT_STRUCTURE.md`](../docs/PROJECT_STRUCTURE.md).
+
 Versión: 2026-05-09
 Stack: Flask + SQLAlchemy + PostgreSQL · Bot WhatsApp (Node.js) · POS
 

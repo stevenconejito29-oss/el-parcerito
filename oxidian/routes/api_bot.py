@@ -152,6 +152,53 @@ def bot_required(f):
     return decorated
 
 
+def _is_internal_request() -> bool:
+    """El bot Node vive en la misma red docker que Oxidian. Los endpoints
+    con datos sensibles (teléfonos de admin, PIN hash) rechazan orígenes
+    externos aunque tengan la BOT_API_KEY correcta. Defensa en profundidad
+    ante leak de key: un atacante remoto no puede llegar aquí porque el
+    gateway nginx bloquea `/api/bot/*` con 404 público.
+    """
+    remote = (request.remote_addr or "").strip()
+    if not remote:
+        return False
+    # Localhost y bucle IPv6.
+    if remote in {"127.0.0.1", "::1"}:
+        return True
+    # Redes privadas RFC 1918 (Docker suele asignar 172.16.0.0/12 y 10.0.0.0/8).
+    try:
+        from ipaddress import ip_address
+        addr = ip_address(remote)
+        return addr.is_private or addr.is_loopback
+    except Exception:
+        return False
+
+
+def _hmac_phone(phone: str) -> str:
+    """Hash HMAC-SHA256 de un teléfono con la BOT_API_KEY como secreto.
+
+    Uso: el bot recibe la lista de `phone_hash` de admins en /branding y
+    compara con el HMAC del JID entrante. Si /branding se filtra sin la
+    key, un atacante no puede revertir el hash para obtener los números
+    reales — una lista de hashes es poco útil sin la key correspondiente
+    (que rotaría junto con la key). Migración: el bot puede consumir
+    `phone_hash` en paralelo a `telefono` hasta que la app deprecate el
+    campo en claro.
+    """
+    key = str(_get_api_key() or "").encode("utf-8")
+    if not key:
+        return ""
+    return hmac.new(key, str(phone or "").encode("utf-8"), "sha256").hexdigest()[:32]
+
+
+def _mask_phone(phone: str) -> str:
+    """Enmascara para debug UI: `+34600XXX789`."""
+    p = str(phone or "")
+    if len(p) < 6:
+        return "***"
+    return p[:4] + "X" * max(0, len(p) - 7) + p[-3:]
+
+
 def _config_bool(clave, default="0"):
     raw = SiteConfig.get(clave, current_app.config.get(clave, default))
     return str(raw or default).strip().lower() in {"1", "true", "yes", "on"}
@@ -548,7 +595,18 @@ def admin_pin_hash():
 @api_bot_bp.route("/branding")
 @bot_required
 def branding():
+    # Doble gate: además de BOT_API_KEY, el request debe venir de red
+    # interna (127.0.0.1 o subred privada Docker). Si la key leakase, un
+    # atacante remoto aún no podría enumerar admins por este endpoint.
+    if not _is_internal_request():
+        logger.warning("Rechazado /branding externo desde %s", request.remote_addr)
+        return jsonify({"ok": False, "error": "Solo red interna"}), 403
     features = get_store_features()
+    tienda_url = get_public_store_url(request.url_root)
+    # `expose_full_phone` controla si mandamos el teléfono en claro (para
+    # compat con bots antiguos que aún no consumen `phone_hash`). Default
+    # `1` para no romper hoy; poner `0` cuando el bot Node migre al hash.
+    expose_full = _config_bool("BRANDING_EXPOSE_FULL_PHONE", "1")
     whatsapp_roles = []
     for user in User.query.filter(
         User.activo.is_(True),
@@ -577,14 +635,24 @@ def branding():
                 capabilities.extend(["handoff", "security"])
             if "reportes" in enabled:
                 capabilities.append("ai")
-        whatsapp_roles.append({
-            "telefono": telefono,
+        entry = {
             "rol": user.rol,
             "capabilities": sorted(set(capabilities)),
-        })
+            # `phone_hash` es HMAC-SHA256(BOT_API_KEY, teléfono). El bot
+            # calcula el mismo HMAC del JID entrante y compara — sin la
+            # key, la lista de hashes es opaca para un atacante.
+            "phone_hash": _hmac_phone(telefono),
+            # Enmascarado para UI/logs del bot (nunca telemetría cruda).
+            "phone_masked": _mask_phone(telefono),
+        }
+        if expose_full:
+            # Deprecado: se retirará cuando el bot Node consuma phone_hash.
+            entry["telefono"] = telefono
+        whatsapp_roles.append(entry)
     _tipo_tienda = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
     return jsonify({
         "ok": True,
+        "tienda_url": tienda_url,
         "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda"),
         "slogan": SiteConfig.get("SLOGAN_NEGOCIO", ""),
         "descripcion": SiteConfig.get("DESCRIPCION_NEGOCIO", ""),
@@ -777,6 +845,27 @@ def _combo_items_payload(producto, incluir_stock=False):
     return items
 
 
+def _lote_tandas_disponibles(producto):
+    """Devuelve cuántas tandas quedan libres en el batch activo del producto.
+
+    Retorna:
+        * None si el producto no es un encargo por lote.
+        * Entero grande (10**9) si el batch no tiene tope de tandas.
+        * Entero con las tandas restantes en caso normal.
+    """
+    if not (producto.cantidad_por_lote and producto.fecha_llegada
+            and (producto.tipo_entrega or "").lower() == "programado"):
+        return None
+    from models import ProductBatch
+    batch = ProductBatch.query.filter_by(
+        producto_id=producto.id, fecha_entrega=producto.fecha_llegada
+    ).first()
+    if batch is None:
+        # Sin batch todavía → capacidad ilimitada hasta que llegue el 1er pedido
+        return 10 ** 9
+    return batch.tandas_disponibles()
+
+
 def _producto_catalogo_payload(producto, incluir_diagnostico=False):
     disponible = _producto_disponible_para_bot(producto)
     payload = {
@@ -791,6 +880,11 @@ def _producto_catalogo_payload(producto, incluir_diagnostico=False):
         "modalidad_entrega": getattr(producto, "modalidad_entrega", None) or "ambas",
         "fecha_llegada": producto.fecha_llegada.isoformat() if producto.fecha_llegada else None,
         "dias_anticipacion_encargo": producto.dias_anticipacion_encargo,
+        # Encargo por lote: cantidad por tanda + tandas disponibles del batch
+        # activo (si existe). Permite al bot mostrar "4 empanadas por 5€ para
+        # el día 18 — quedan 3 tandas".
+        "cantidad_por_lote": int(producto.cantidad_por_lote or 0) or None,
+        "lote_tandas_disponibles": _lote_tandas_disponibles(producto),
         "es_combo": bool(producto.es_combo),
         "combo_precio_modo": producto.combo_precio_modo_normalizado if producto.es_combo else None,
         "combo_descuento_pct": float(producto.combo_descuento_pct or 0) if producto.es_combo else 0,
@@ -879,12 +973,13 @@ def _pedido_bot_payload(pedido):
         else:
             bar_contacto = _contacto_general()
 
+    fecha_programada = pedido.fecha_entrega_programada
     return {
         "id": pedido.id,
         "numero": pedido.numero_pedido,
         "estado": pedido.estado,
         "estado_label": {
-            "pendiente": "Recibido",
+            "pendiente": "Recibido — pendiente de preparación",
             "armando": "En preparacion",
             "listo": "Listo",
             "en_ruta": "En camino",
@@ -894,34 +989,33 @@ def _pedido_bot_payload(pedido):
         "total": float(pedido.total),
         "metodo_pago": pedido.metodo_pago,
         "pago_confirmado": bool(pedido.pago_confirmado),
-        # Código de entrega: solo se expone cuando ya se generó (estado
-        # 'listo' o posterior) y no está expirado. Antes de eso no existe.
-        "codigo_confirmacion": (
-            pedido.codigo_confirmacion
-            if (pedido.codigo_confirmacion
-                and pedido.estado in ESTADOS_EN_REPARTO
-                and not getattr(pedido, "codigo_confirmacion_expirado", False))
-            else None
-        ),
-        "codigo_confirmacion_expira_en": (
-            pedido.codigo_confirmacion_expira_en.isoformat()
-            if getattr(pedido, "codigo_confirmacion_expira_en", None)
-            else None
-        ),
+        "confirmacion_estado": pedido.confirmacion_estado,
+        "requiere_confirmacion": pedido.confirmacion_estado == "pending",
+        # El código de entrega nunca viaja al chatbot. El cliente no lo
+        # necesita para consultar estado y exponerlo aquí ampliaba el alcance
+        # de un secreto que solo corresponde a la entrega presencial.
         "repartidor_id": pedido.repartidor_id,
         "en_punto_encuentro": bool(getattr(pedido, "en_punto_encuentro", False)),
         "creado_en": pedido.creado_en.isoformat() if pedido.creado_en else None,
         "entregado_en": pedido.entregado_en.isoformat() if pedido.entregado_en else None,
+        "es_programado": pedido.es_programado,
+        "fecha_entrega": (
+            fecha_programada.isoformat() if fecha_programada else None
+        ),
         "mensaje_cliente": mensaje_estado_pedido(pedido),
         "bar_contacto": bar_contacto,
         "items": [
             {
-                "nombre": oi.producto.nombre if oi.producto else f"Producto #{oi.producto_id}",
+                "nombre": oi.display_nombre,
                 "cantidad": oi.cantidad,
                 "precio_unit": float(oi.precio_unit),
                 "subtotal": float(oi.subtotal),
                 "notas": oi.notas or "",
-                "metadata": oi.get_metadata(),
+                "tipo_entrega": oi.display_tipo_entrega,
+                "fecha_entrega": (
+                    oi.display_fecha_entrega.isoformat()
+                    if oi.display_fecha_entrega else None
+                ),
             }
             for oi in pedido.items
         ],
@@ -1231,18 +1325,9 @@ def consultar_puntos():
                 "valor_euro": 0,
             })
         ratio = get_puntos_config()["ratio"]
-        # Confirmación de identidad: el bot muestra el nombre y un código
-        # opcional válido 10 min para verificar en el checkout. La sola
-        # llegada del mensaje ya autentica (WhatsApp) pero el código sirve
-        # como "recibo" y desbloquea el canje web sin volver a pedir OTP.
-        codigo = None
-        try:
-            if cliente.puntos > 0:
-                codigo = cliente.generar_cod_puntos()
-                db.session.commit()
-        except Exception:
-            db.session.rollback()
-            codigo = None
+        # Consultar el saldo es una operación de lectura. El OTP se emite
+        # exclusivamente al iniciar un canje desde checkout y nunca se
+        # devuelve el secreto dentro de una respuesta API.
         return jsonify({
             "ok": True,
             "existe": True,
@@ -1250,7 +1335,6 @@ def consultar_puntos():
             "puntos": cliente.puntos,
             "valor_euro": round(cliente.puntos / ratio, 2),
             "ratio": ratio,
-            "codigo_verificacion": codigo,  # 4 dígitos, expira 10 min
         })
     except Exception as e:
         # Log el error real con traceback para debugging server-side,
@@ -1410,6 +1494,7 @@ def crear_pedido():
         items_procesados = []
         subtotal = 0.0
         for item_d in items_data:
+            fecha_ent = None
             try:
                 pid = int(item_d.get("producto_id", 0))
                 cantidad = int(item_d.get("cantidad", 1))
@@ -1435,24 +1520,41 @@ def crear_pedido():
             if p.tipo_entrega == "inmediato" and not p.disponible_para_venta(cantidad):
                 return jsonify({"ok": False, "error": f"Stock insuficiente para '{p.nombre}'"}), 400
             if p.tipo_entrega in ("programado", "encargo"):
+                fecha_ent = p.fecha_llegada
+                if not fecha_ent:
+                    return jsonify({
+                        "ok": False,
+                        "code": "SCHEDULED_DATE_MISSING",
+                        "error": f"'{p.nombre}' todavía no tiene una fecha de entrega definida.",
+                    }), 409
+                if fecha_ent < date.today():
+                    return jsonify({
+                        "ok": False,
+                        "code": "SCHEDULED_DATE_EXPIRED",
+                        "error": f"La fecha de entrega de '{p.nombre}' ya venció.",
+                    }), 409
+                # La fecha pertenece al producto/reserva y no es un dato libre
+                # del consumidor. Se acepta en el payload por compatibilidad,
+                # pero nunca puede sobrescribir la fecha canónica del catálogo.
                 fecha_str = item_d.get("fecha_entrega") or data.get("fecha_entrega")
-                if not fecha_str:
-                    return jsonify({"ok": False, "error": "fecha_entrega requerida"}), 400
-                try:
-                    fecha_ent = datetime.fromisoformat(str(fecha_str)).date()
-                    dias_min = p.dias_anticipacion_encargo or 1
-                    dias_hasta = (fecha_ent - date.today()).days
-                    if dias_hasta < dias_min:
-                        fecha_min = (date.today() + timedelta(days=dias_min)).isoformat()
+                if fecha_str:
+                    try:
+                        solicitada = datetime.fromisoformat(str(fecha_str)).date()
+                    except (ValueError, TypeError):
                         return jsonify({
                             "ok": False,
-                            "error": (
-                                f"'{p.nombre}' requiere {dias_min} día(s) de anticipación. "
-                                f"Fecha mínima: {fecha_min}"
-                            ),
+                            "code": "SCHEDULED_DATE_INVALID",
+                            "error": "fecha_entrega inválida (usa YYYY-MM-DD)",
                         }), 400
-                except (ValueError, TypeError):
-                    return jsonify({"ok": False, "error": "fecha_entrega inválida (usa ISO 8601: YYYY-MM-DD)"}), 400
+                    if solicitada != fecha_ent:
+                        return jsonify({
+                            "ok": False,
+                            "code": "SCHEDULED_DATE_MISMATCH",
+                            "error": (
+                                f"'{p.nombre}' está reservado para "
+                                f"{fecha_ent.strftime('%d/%m/%Y')}."
+                            ),
+                        }), 409
             combo_item_ids = item_d.get("combo_item_ids") or []
             if p.es_combo:
                 try:
@@ -1482,6 +1584,15 @@ def crear_pedido():
                     "No mezcles delivery inmediato con productos de fecha fija en el mismo pedido. "
                     "Crea un pedido para cada flujo."
                 ),
+            }), 400
+        fechas_programadas = {
+            item["fecha_entrega"] for item in items_procesados if item.get("fecha_entrega")
+        }
+        if len(fechas_programadas) > 1:
+            return jsonify({
+                "ok": False,
+                "code": "MIXED_SCHEDULED_DATES",
+                "error": "Los productos tienen fechas distintas. Crea un pedido para cada fecha de entrega.",
             }), 400
         grupos_pedido = {_order_group(item["producto"]) for item in items_procesados}
         if len(grupos_pedido) > 1:
@@ -1674,9 +1785,9 @@ def crear_pedido():
         from services import sincronizar_proveedores_pedido
         sincronizar_proveedores_pedido(pedido)
         db.session.flush()
-        encolar_notificaciones_proveedores_pedido(pedido)
-
-        distribuir_pedido(pedido)
+        if pedido.confirmacion_estado != "pending":
+            encolar_notificaciones_proveedores_pedido(pedido)
+            distribuir_pedido(pedido)
 
         if afiliado_obj and precio.descuento_afiliado > 0:
             registrar_uso_afiliado(afiliado_obj, pedido, cliente, precio.descuento_afiliado)
@@ -2027,6 +2138,12 @@ def bar_marcar_preparado(pedido_id):
         return jsonify({"ok": False, "error": "Pedido no encontrado"}), 404
     if pedido.estado == "cancelado":
         return jsonify({"ok": False, "error": "El pedido fue cancelado"}), 409
+    if pedido.confirmacion_estado == "pending":
+        return jsonify({
+            "ok": False,
+            "error": "El cliente todavía no confirmó su primer pedido por WhatsApp",
+            "code": "CONFIRMACION_PENDIENTE",
+        }), 409
     if pedido.estado not in ESTADOS_EN_PREPARACION + ("listo",):
         return jsonify({"ok": False, "error": "El pedido ya está cerrado"}), 409
     estado = OrderProviderStatus.query.filter_by(
@@ -2138,8 +2255,11 @@ def estado_pedido(pedido_id):
         if not cliente or cliente.id != pedido.cliente_id:
             return jsonify({"ok": False, "error": "No autorizado"}), 403
         return jsonify({"ok": True, "pedido": _pedido_bot_payload(pedido)})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    except _HTTPExc:
+        raise
+    except Exception:
+        current_app.logger.exception("estado_pedido: fallo pedido=%s", pedido_id)
+        return jsonify({"ok": False, "error": "No se pudo consultar el pedido"}), 500
 
 
 @api_bot_bp.route("/pedido/<int:pedido_id>/incidencia", methods=["POST"])
@@ -2172,7 +2292,6 @@ def reportar_incidencia(pedido_id):
             detalle=texto[:500],
             metadata={
                 "texto_completo": texto,
-                "telefono": telefono,
             },
         )
         db.session.commit()
@@ -2181,10 +2300,13 @@ def reportar_incidencia(pedido_id):
             "pedido": pedido.numero_pedido,
             "mensaje": "Incidencia registrada — el equipo responsable la recibirá.",
         })
-    except Exception as e:
+    except _HTTPExc:
         db.session.rollback()
-        current_app.logger.error("reportar_incidencia: %s", e, exc_info=True)
-        return jsonify({"ok": False, "error": str(e)}), 500
+        raise
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("reportar_incidencia: fallo pedido=%s", pedido_id)
+        return jsonify({"ok": False, "error": "No se pudo registrar la incidencia"}), 500
 
 
 @api_bot_bp.route("/pedido/estado")
@@ -2216,21 +2338,21 @@ def estado_pedido_buscar():
             return jsonify({"ok": False, "error": "Indica pedido_id, numero_pedido o telefono"}), 400
 
         if telefono and (pedido_id or numero):
-            cliente_ids = [
-                row.id for row in User.query.with_entities(User.id)
-                .filter_by(telefono_normalizado=telefono, rol="cliente")
-                .all()
-            ]
-            if not cliente_ids:
+            # El teléfono puede pertenecer a una cuenta operativa que también
+            # compra. buscar_cliente_por_telefono ya resuelve esa identidad
+            # dual; volver a exigir rol='cliente' hacía invisible su pedido.
+            cliente, telefono = _cliente_por_telefono(telefono)
+            if not cliente:
                 return jsonify({"ok": False, "error": "Cliente no encontrado"}), 404
-            query = query.filter(Order.cliente_id.in_(cliente_ids))
+            query = query.filter(Order.cliente_id == cliente.id)
 
         pedido = query.first()
         if not pedido:
             return jsonify({"ok": False, "error": "Pedido no encontrado"}), 404
         return jsonify({"ok": True, "pedido": _pedido_bot_payload(pedido)})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    except Exception:
+        current_app.logger.exception("estado_pedido_buscar: fallo de consulta")
+        return jsonify({"ok": False, "error": "No se pudo consultar el pedido"}), 500
 
 
 @api_bot_bp.route("/pedido/<int:pedido_id>/cancelar", methods=["POST"])
@@ -2337,7 +2459,10 @@ def responder_confirmacion_pedido():
     pedido = (
         Order.query
         .filter_by(cliente_id=cliente.id, confirmacion_estado="pending")
-        .filter(Order.estado.in_(ESTADOS_EN_PREPARACION))
+        # Un pedido pendiente de verificación nunca debería estar armando. Si
+        # hay un dato legacy inconsistente, no lo confirmamos silenciosamente:
+        # debe revisarlo un agente antes de seguir procesándolo.
+        .filter(Order.estado == "pendiente")
         .order_by(Order.creado_en.desc())
         .with_for_update()
         .first()
@@ -2523,7 +2648,8 @@ def broadcast():
         return jsonify({"ok": True, "total": encolados, "estado": "encolado"})
     except Exception as e:
         db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("No se pudo encolar el broadcast")
+        return jsonify({"ok": False, "error": "No se pudo encolar el envío"}), 500
 
 
 # ─── CATÁLOGO para BOT con campos nuevos ─────
@@ -2618,8 +2744,14 @@ def guardar_resena(pedido_id):
         comentario   = (data.get("comentario") or "").strip() or None
         telefono     = (data.get("telefono") or "").strip()
 
-        if calificacion is None or not (1 <= int(calificacion) <= 5):
+        try:
+            calificacion = int(calificacion)
+        except (TypeError, ValueError):
+            calificacion = 0
+        if not (1 <= calificacion <= 5):
             return jsonify({"ok": False, "error": "calificacion debe ser 1-5"}), 400
+        if not telefono_valido(normalizar_telefono_cliente(telefono)):
+            return jsonify({"ok": False, "error": "telefono requerido"}), 400
 
         pedido = get_or_404(Order, pedido_id)
 
@@ -2627,13 +2759,13 @@ def guardar_resena(pedido_id):
         if pedido.estado != "entregado":
             return jsonify({"ok": False, "error": "Solo se pueden reseñar pedidos entregados"}), 400
 
-        # Verificar pertenencia al cliente (si se provee teléfono)
-        if telefono:
-            from services import buscar_cliente_por_telefono
-            cliente_match, _ = buscar_cliente_por_telefono(telefono)
-            if not cliente_match or pedido.cliente_id != cliente_match.id:
-                return jsonify({"ok": False, "error": "Este pedido no pertenece al cliente"}), 403
-        pedido.resena_calificacion = int(calificacion)
+        # El teléfono es obligatorio: el ID del pedido por sí solo nunca
+        # autoriza a crear o modificar una reseña de otro cliente.
+        from services import buscar_cliente_por_telefono
+        cliente_match, _ = buscar_cliente_por_telefono(telefono)
+        if not cliente_match or pedido.cliente_id != cliente_match.id:
+            return jsonify({"ok": False, "error": "Este pedido no pertenece al cliente"}), 403
+        pedido.resena_calificacion = calificacion
         pedido.resena_comentario   = comentario
 
         # Crear/actualizar registro Review para moderación en el panel admin
@@ -2646,23 +2778,26 @@ def guardar_resena(pedido_id):
                 producto_id  = item_principal.producto_id,
                 cliente_id   = pedido.cliente_id,
                 pedido_id    = pedido_id,
-                calificacion = int(calificacion),
+                calificacion = calificacion,
                 comentario   = comentario,
                 aprobada     = False,  # pendiente de moderación del admin
             )
             db.session.add(nueva_review)
         elif review_existente:
-            review_existente.calificacion = int(calificacion)
+            review_existente.calificacion = calificacion
             review_existente.comentario   = comentario
             review_existente.aprobada     = False  # re-moderar si cambia
 
         db.session.commit()
         current_app.logger.info(f"Reseña WhatsApp guardada: pedido={pedido_id} rating={calificacion}")
-        return jsonify({"ok": True, "pedido_id": pedido_id, "calificacion": int(calificacion)})
-    except Exception as e:
+        return jsonify({"ok": True, "pedido_id": pedido_id, "calificacion": calificacion})
+    except _HTTPExc:
         db.session.rollback()
-        current_app.logger.error(f"api_bot.guardar_resena: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        raise
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("api_bot.guardar_resena: fallo pedido=%s", pedido_id)
+        return jsonify({"ok": False, "error": "No se pudo guardar la reseña"}), 500
 
 
 # ─── HISTORIAL PEDIDOS CLIENTE ───────────────
@@ -2672,7 +2807,7 @@ def guardar_resena(pedido_id):
 def pedidos_cliente():
     try:
         cliente, _telefono = _cliente_por_telefono(request.args.get("telefono", ""))
-        limit = request.args.get("limit", 5, type=int)
+        limit = max(1, min(request.args.get("limit", 5, type=int) or 5, 50))
         if not cliente:
             return jsonify({"ok": False, "error": "Cliente no encontrado"}), 404
         estados_raw = (request.args.get("estados") or "").strip()
@@ -2701,8 +2836,9 @@ def pedidos_cliente():
                 for p in pedidos
             ]
         return jsonify({"ok": True, "pedidos": payload})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    except Exception:
+        current_app.logger.exception("pedidos_cliente: fallo de consulta")
+        return jsonify({"ok": False, "error": "No se pudieron consultar los pedidos"}), 500
 
 
 # ─── COBERTURA / DISTANCIA ───────────────────────────────────────────────────
@@ -3143,14 +3279,14 @@ def bot_solicitar_codigo_puntos():
         if not cliente:
             return jsonify({"ok": False, "error": "Cliente no encontrado"}), 404
 
-        producto = None
-        if producto_id:
-            try:
-                producto = db.session.get(Product, int(producto_id))
-            except (TypeError, ValueError):
-                return jsonify({"ok": False, "error": "producto_id inválido"}), 400
-            if not producto:
-                return jsonify({"ok": False, "error": "Producto no encontrado"}), 404
+        if not producto_id:
+            return jsonify({"ok": False, "error": "producto_id es requerido para iniciar un canje"}), 400
+        try:
+            producto = db.session.get(Product, int(producto_id))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "producto_id inválido"}), 400
+        if not producto:
+            return jsonify({"ok": False, "error": "Producto no encontrado"}), 404
 
         resultado = solicitar_codigo(cliente, producto=producto)
         if not resultado.get("ok"):
@@ -3160,11 +3296,12 @@ def bot_solicitar_codigo_puntos():
             "ok": True,
             "mensaje": "Código enviado por WhatsApp",
             "enviado_wa": True,
-            "producto": {"id": producto.id, "nombre": producto.nombre, "puntos": producto.puntos_para_canje} if producto else None,
+            "producto": {"id": producto.id, "nombre": producto.nombre, "puntos": producto.puntos_para_canje},
         })
     except Exception as e:
         db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("No se pudo solicitar OTP de puntos")
+        return jsonify({"ok": False, "error": "No se pudo iniciar la verificación de puntos"}), 500
 
 
 # ─── PUNTOS: VERIFICAR CÓDIGO Y CANJEAR ──────────────────────────────────────
@@ -3190,31 +3327,28 @@ def bot_verificar_codigo_puntos():
         if not cliente:
             return jsonify({"ok": False, "error": "Cliente no encontrado"}), 404
 
+        if not producto_id:
+            return jsonify({"ok": False, "error": "producto_id es requerido para verificar un canje"}), 400
+        try:
+            producto = db.session.get(Product, int(producto_id))
+        except (ValueError, TypeError):
+            producto = None
+        if not producto or not producto.canje_directo_disponible():
+            return jsonify({"ok": False, "error": "Producto no válido para canje"}), 400
+        if producto.puntos_para_canje > cliente.puntos:
+            return jsonify({
+                "ok": False,
+                "error": f"Puntos insuficientes. Necesitas {producto.puntos_para_canje}"
+            }), 400
+
+        from loyalty_service import bloquear_cliente_puntos
+        cliente = bloquear_cliente_puntos(cliente)
         if not cliente.verificar_cod_puntos(codigo):
             db.session.commit()  # persiste incremento de intentos fallidos
             return jsonify({"ok": False, "error": "Código incorrecto o expirado. Solicita uno nuevo."}), 400
 
         # OTP válido: commit inmediato para invalidarlo y no permitir reutilización
         db.session.commit()
-
-        if not producto_id:
-            # Solo verificación, sin canje
-            return jsonify({"ok": True, "verificado": True, "puntos": cliente.puntos})
-
-        try:
-            producto = db.session.get(Product, int(producto_id))
-        except (ValueError, TypeError):
-            producto = None
-        if not producto or not producto.canje_directo_disponible():
-            # Status 400 explícito para que el bot detecte como error
-            # y no como éxito silencioso.
-            return jsonify({"ok": False, "error": "Producto no válido para canje"}), 400
-
-        if producto.puntos_para_canje > cliente.puntos:
-            return jsonify({
-                "ok": False,
-                "error": f"Puntos insuficientes. Necesitas {producto.puntos_para_canje}"
-            }), 400
 
         return jsonify({
             "ok": True,
@@ -3232,7 +3366,8 @@ def bot_verificar_codigo_puntos():
         })
     except Exception as e:
         db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("No se pudo verificar OTP de puntos")
+        return jsonify({"ok": False, "error": "No se pudo verificar el código de puntos"}), 500
 
 
 # ─── PUNTOS MEJORADO: CON PRODUCTOS CANJEABLES ───────────────────────────────
@@ -3344,8 +3479,9 @@ def info_negocio():
         apertura   = SiteConfig.get("HORARIO_APERTURA", "09:00")
         cierre     = SiteConfig.get("HORARIO_CIERRE", "22:30")
         forzada    = str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).strip().lower() in {"1", "true", "yes", "on"}
+        forzada_ab = str(SiteConfig.get("TIENDA_FORZAR_ABIERTA", "0")).strip().lower() in {"1", "true", "yes", "on"}
         ahora_str  = datetime.now().strftime("%H:%M")
-        is_open    = tienda_abierta_en_horario(apertura, cierre, ahora=ahora_str, forzada_cerrada=forzada)
+        is_open    = tienda_abierta_en_horario(apertura, cierre, ahora=ahora_str, forzada_cerrada=forzada, forzada_abierta=forzada_ab)
         features = get_store_features()
         metodos_pago = []
         if _config_bool("EFECTIVO_HABILITADO", "1"):
@@ -3399,9 +3535,10 @@ def tienda_status():
     try:
         apertura = SiteConfig.get("HORARIO_APERTURA", "09:00")
         cierre   = SiteConfig.get("HORARIO_CIERRE", "22:30")
-        forzada  = str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).strip().lower() in {"1", "true", "yes", "on"}
+        forzada    = str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).strip().lower() in {"1", "true", "yes", "on"}
+        forzada_ab = str(SiteConfig.get("TIENDA_FORZAR_ABIERTA", "0")).strip().lower() in {"1", "true", "yes", "on"}
         ahora    = datetime.now().strftime("%H:%M")
-        is_open  = tienda_abierta_en_horario(apertura, cierre, ahora=ahora, forzada_cerrada=forzada)
+        is_open  = tienda_abierta_en_horario(apertura, cierre, ahora=ahora, forzada_cerrada=forzada, forzada_abierta=forzada_ab)
         mensaje_cierre = (SiteConfig.get("TIENDA_MENSAJE_CIERRE", "") or "").strip()
         return jsonify({
             "ok": True,
@@ -3638,11 +3775,21 @@ def bot_admin_tienda():
         if request.method == "GET":
             if not _bot_admin_request_allowed("store"):
                 return _bot_actor_forbidden()
-            cerrada = str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).strip().lower() in {"1", "true", "yes", "on"}
+            cerrada  = str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).strip().lower() in {"1", "true", "yes", "on"}
+            abierta  = str(SiteConfig.get("TIENDA_FORZAR_ABIERTA", "0")).strip().lower() in {"1", "true", "yes", "on"}
+            apertura = SiteConfig.get("HORARIO_APERTURA", "09:00")
+            cierre_h = SiteConfig.get("HORARIO_CIERRE", "22:30")
+            ahora_s  = datetime.now().strftime("%H:%M")
+            is_open  = tienda_abierta_en_horario(
+                apertura, cierre_h, ahora=ahora_s,
+                forzada_cerrada=cerrada, forzada_abierta=abierta,
+            )
             return jsonify({
                 "ok": True,
                 "forzar_cerrada": cerrada,
-                "estado": "cerrada" if cerrada else "abierta",
+                "forzar_abierta": abierta,
+                "estado": "cerrada" if not is_open else "abierta",
+                "dentro_horario": tienda_abierta_en_horario(apertura, cierre_h, ahora=ahora_s),
                 "mensaje_cierre": SiteConfig.get("TIENDA_MENSAJE_CIERRE", ""),
             })
 
@@ -3653,14 +3800,44 @@ def bot_admin_tienda():
             return jsonify({"ok": False, "error": "forzar_cerrada requerido"}), 400
         cerrada = _json_bool(data.get("forzar_cerrada"))
         mensaje = str(data.get("mensaje_cierre") or "").strip()[:240]
-        SiteConfig.set("TIENDA_FORZAR_CERRADA", "1" if cerrada else "0",
-                       descripcion="Cierre temporal controlado por bot admin")
+
+        # Los dos flags son mutuamente excluyentes en el runtime. Al pedir
+        # "cerrar" se activa FORZAR_CERRADA y se limpia FORZAR_ABIERTA. Al
+        # pedir "abrir" fuera de horario se activa FORZAR_ABIERTA para que
+        # los pedidos se acepten; dentro de horario basta con limpiar los
+        # dos overrides (el horario ya autoriza). Antes: sin FORZAR_ABIERTA,
+        # el admin veía "OK, abierta" en el bot pero el checkout seguía
+        # rechazando pedidos por horario — silencio operativo.
+        if cerrada:
+            SiteConfig.set("TIENDA_FORZAR_CERRADA", "1",
+                           descripcion="Cierre temporal controlado por bot admin")
+            SiteConfig.set("TIENDA_FORZAR_ABIERTA", "0",
+                           descripcion="Reset por comando de cierre desde bot")
+        else:
+            apertura = SiteConfig.get("HORARIO_APERTURA", "09:00")
+            cierre_h = SiteConfig.get("HORARIO_CIERRE", "22:30")
+            ahora_str = datetime.now().strftime("%H:%M")
+            dentro_horario = tienda_abierta_en_horario(
+                apertura, cierre_h, ahora=ahora_str,
+                forzada_cerrada=False, forzada_abierta=False,
+            )
+            SiteConfig.set("TIENDA_FORZAR_CERRADA", "0",
+                           descripcion="Reset por comando de apertura desde bot")
+            SiteConfig.set(
+                "TIENDA_FORZAR_ABIERTA",
+                "0" if dentro_horario else "1",
+                descripcion=(
+                    "Auto-limpio: dentro de horario" if dentro_horario
+                    else "Apertura forzada fuera de horario por bot admin"
+                ),
+            )
         SiteConfig.set("TIENDA_MENSAJE_CIERRE", mensaje,
                        descripcion="Mensaje de cierre temporal")
         db.session.commit()
         return jsonify({
             "ok": True,
             "forzar_cerrada": cerrada,
+            "forzar_abierta": str(SiteConfig.get("TIENDA_FORZAR_ABIERTA", "0")) == "1",
             "estado": "cerrada" if cerrada else "abierta",
             "mensaje_cierre": mensaje,
         })

@@ -227,7 +227,7 @@
   🖨️ Imprimir Ticket
 </button>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
   // Auto-print: acepta tanto ?autoprint=1 como ?auto_print=1 (cualquier canal).
   if (/[?&](autoprint|auto_print)=1/.test(window.location.search)) {
     setTimeout(() => window.print(), 400);

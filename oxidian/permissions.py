@@ -79,7 +79,9 @@ _POLICY = {
     ACTIONS.CATALOG_WRITE:           "feature:productos",
     ACTIONS.CATALOG_WRITE_VERTICAL:  "super_only",
     ACTIONS.STORE_READ:              "admin_read",
-    ACTIONS.STORE_WRITE:             "super_only",
+    # Abrir/cerrar temporalmente forma parte de la operación diaria. El cambio
+    # de nicho, módulos y configuración estructural permanece super_only.
+    ACTIONS.STORE_WRITE:             "admin_read",
     ACTIONS.STORE_MODE_TOGGLE:       "super_only",
     ACTIONS.STORE_MODULES_TOGGLE:    "super_only",
     ACTIONS.CONFIG_WRITE:            "super_only",

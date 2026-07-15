@@ -17,7 +17,7 @@
       </div>
       <div id="info-conectado" class="hidden space-y-1.5 text-sm">
         <div class="flex justify-between"><span style="color:var(--col-faint)">Uptime</span><span id="val-uptime" class="text-white">—</span></div>
-        <div class="flex justify-between"><span style="color:var(--col-faint)">Pedidos hoy</span><span id="val-pedidos" style="color:#FFAB00">—</span></div>
+        <div class="flex justify-between"><span style="color:var(--col-faint)">Pedidos hoy</span><span id="val-pedidos" style="color:var(--brand-primary,#FFAB00)">—</span></div>
         <div class="flex justify-between"><span style="color:var(--col-faint)">Sesiones activas</span><span id="val-sesiones" class="text-white">—</span></div>
         <div class="flex justify-between"><span style="color:var(--col-faint)">Motor IA</span><span id="val-ia" class="text-white">—</span></div>
         <div class="flex justify-between"><span style="color:var(--col-faint)">Modo pánico</span><span id="val-panico" class="text-white">—</span></div>
@@ -28,13 +28,13 @@
     </div>
 
     <div id="div-qr" class="hidden ox-card p-5 text-center mb-4" style="border-color:rgba(255,171,0,.3)">
-      <p class="font-semibold mb-3" style="color:#FFAB00">📱 Escanea para conectar WhatsApp</p>
+      <p class="font-semibold mb-3" style="color:var(--brand-primary,#FFAB00)">📱 Escanea para conectar WhatsApp</p>
       <img id="qr-img" src="" alt="QR WhatsApp" class="mx-auto rounded-lg max-w-xs">
     </div>
 
     <div class="ox-card p-4">
       <p class="text-xs mb-1" style="color:var(--col-faint)">API Key (Oxidian ↔ Bot)</p>
-      <code class="text-xs break-all" style="color:#5EF097">
+      <code class="text-xs break-all" style="color:var(--theme-success,#5EF097)">
         {{ ('••••••••' ~ bot_api_key[-4:]) if bot_api_key else 'No configurada — SuperAdmin → Chatbot' }}
       </code>
     </div>
@@ -45,7 +45,7 @@
       <h2 class="font-semibold mb-3 text-white">Estado del bot</h2>
       <p class="text-xs mb-3" style="color:var(--col-faint)">La conexión y credenciales se administran desde el panel de Chatbot del SuperAdmin.</p>
       <div class="rounded-lg p-3 font-mono text-sm mb-2 select-all"
-           style="background:rgba(0,0,0,.3);color:#5EF097;border:1px solid var(--col-border)">
+           style="background:rgba(0,0,0,.3);color:var(--theme-success,#5EF097);border:1px solid var(--col-border)">
         SuperAdmin → Chatbot → Guardar y sincronizar credenciales
       </div>
       <p class="text-xs" style="color:var(--col-faint)">Si la sesión está guardada se reconecta sin escanear QR. Si no, aparecerá el QR aquí arriba en segundos.</p>
@@ -66,7 +66,7 @@
         ] %}
         <div class="flex gap-2 py-0.5 border-b" style="border-color:var(--col-border)">
           <span class="w-10 flex-shrink-0 font-bold"
-                style="color:{{ '#FFAB00' if method == 'POST' else '#5AC8FA' }}">{{ method }}</span>
+                style="color:{{ 'var(--brand-primary,#FFAB00)' if method == 'POST' else 'var(--role-admin,#5AC8FA)' }}">{{ method }}</span>
           <span class="flex-1" style="color:var(--col-muted)">{{ ruta }}</span>
           <span style="color:var(--col-faint)">{{ desc }}</span>
         </div>
@@ -80,7 +80,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 const CONFIGURED_BOT_URL = '{{ bot_public_url or bot_api_url }}';
 const BOT_URL = (() => {
   if (!CONFIGURED_BOT_URL) return '';
@@ -113,15 +113,22 @@ async function actualizarEstado() {
   const descon = document.getElementById('info-desconectado');
   const divQr  = document.getElementById('div-qr');
 
+  /* Los colores de estado se leen del CSS para seguir la marca actual. */
+  const cs = getComputedStyle(document.body);
+  const _c = (name, fb) => (cs.getPropertyValue(name) || fb).trim();
+  const CLR_OK   = _c('--theme-success', '#5EF097');
+  const CLR_WARN = _c('--brand-primary', '#FFAB00');
+  const CLR_ERR  = _c('--theme-danger',  '#FF6B6B');
+
   try {
     if (!BOT_URL) throw new Error('BOT_URL no configurada');
     const r = await fetch(BOT_URL + '/api/status', { signal: AbortSignal.timeout(4000) });
     const d = await r.json();
 
     if (d.connected) {
-      dot.style.background = '#5EF097';
+      dot.style.background = CLR_OK;
       txt.textContent = '✅ Bot conectado y activo';
-      txt.style.color = '#5EF097';
+      txt.style.color = CLR_OK;
       info.classList.remove('hidden');
       descon.classList.add('hidden');
       divQr.classList.add('hidden');
@@ -135,23 +142,23 @@ async function actualizarEstado() {
         document.getElementById('val-ia').textContent = motor + (ia.quota?.exhausted ? ' — cuota agotada' : '');
       }
     } else if (d.qrDataUrl) {
-      dot.style.background = '#FFAB00';
+      dot.style.background = CLR_WARN;
       dot.style.animation = 'pulse 1s infinite';
       txt.textContent = '📱 Esperando escaneo de QR';
-      txt.style.color = '#FFAB00';
+      txt.style.color = CLR_WARN;
       info.classList.add('hidden');
       descon.classList.add('hidden');
       divQr.classList.remove('hidden');
       document.getElementById('qr-img').src = d.qrDataUrl;
     } else {
-      dot.style.background = '#FFAB00';
+      dot.style.background = CLR_WARN;
       txt.textContent = '⏳ Bot iniciando...';
-      txt.style.color = '#FFAB00';
+      txt.style.color = CLR_WARN;
     }
   } catch(e) {
-    dot.style.background = '#FF6B6B';
+    dot.style.background = CLR_ERR;
     txt.textContent = '🔴 Bot apagado';
-    txt.style.color = '#FF6B6B';
+    txt.style.color = CLR_ERR;
     info.classList.add('hidden');
     descon.classList.remove('hidden');
   }

@@ -1,10 +1,19 @@
 # El Parcerito
 
-Monorepo del sistema de pedidos:
+Monorepo del sistema de pedidos, operación por roles, PWA y chatbot de
+WhatsApp.
 
-- `oxidian/`: aplicacion web Flask, roles operativos, PWA y despliegue.
+La entrada para entender el código es [docs/README.md](docs/README.md). El mapa
+de responsabilidades está en
+[docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) y las reglas para cambiar
+sin romper flujos en [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+## Componentes
+
+- `oxidian/`: aplicación Flask, API, roles, PWA y configuración del stack.
 - `chat/`: chatbot de WhatsApp integrado con Evolution API.
-- `scripts/`: respaldo y restauracion del stack de produccion.
+- `scripts/`: respaldo, restauración y autodespliegue.
+- `docs/`: documentación vigente y artefactos de auditoría identificados.
 
 ## Despliegue
 
@@ -20,8 +29,10 @@ docker compose \
 Crea `oxidian/.env.cosmos.local` a partir de
 `oxidian/.env.production.example`. Nunca publiques ese archivo.
 
-La documentacion operativa esta en `oxidian/OPERACIONES.md` y
-`oxidian/COSMOS_DEPLOY.md`.
+La operación vigente está resumida en
+[docs/OPERATIONS.md](docs/OPERATIONS.md). Los documentos que permanecen en la
+raíz de `oxidian/` son referencias históricas o guías específicas y están
+clasificados en el índice.
 
 ## Actualizaciones de produccion
 

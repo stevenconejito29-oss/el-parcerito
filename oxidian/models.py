@@ -181,6 +181,14 @@ class User(UserMixin, db.Model):
         return check_password_hash(self.password_hash, password)
 
     @property
+    def email_visible(self):
+        """Correo mostrable en UI; oculta identificadores técnicos de clientes."""
+        email = (self.email or "").strip()
+        if email.lower().endswith(f"@{CUSTOMER_INTERNAL_EMAIL_DOMAIN}"):
+            return None
+        return email or None
+
+    @property
     def puede_iniciar_sesion(self):
         return self.activo and self.rol in ROLES_AUTENTICABLES
 
@@ -257,7 +265,7 @@ class User(UserMixin, db.Model):
         self.cod_puntos_intentos = 0
         return self.cod_puntos
 
-    def verificar_cod_puntos(self, codigo):
+    def verificar_cod_puntos(self, codigo, *, consumir=True):
         """
         Verifica el código OTP. Retorna True si válido.
         Máx. intentos configurable en SiteConfig.COD_PUNTOS_MAX_INTENTOS (default 5).
@@ -276,13 +284,15 @@ class User(UserMixin, db.Model):
             max_intentos = 5
         if intentos >= max_intentos:
             return False
-        if self.cod_puntos != str(codigo).strip():
+        import hmac as _hmac
+        if not _hmac.compare_digest(str(self.cod_puntos), str(codigo or "").strip()):
             self.cod_puntos_intentos = intentos + 1
             return False
-        # Éxito: borrar código para evitar reutilización
-        self.cod_puntos = None
-        self.cod_puntos_expira = None
-        self.cod_puntos_intentos = 0
+        if consumir:
+            # Éxito: borrar código para evitar reutilización
+            self.cod_puntos = None
+            self.cod_puntos_expira = None
+            self.cod_puntos_intentos = 0
         return True
 
     def __repr__(self):
@@ -575,6 +585,14 @@ class Product(db.Model):
     grupo_pedido = db.Column(db.String(80), nullable=True)
     fecha_llegada = db.Column(db.Date)          # solo tipo=programado
     dias_anticipacion_encargo = db.Column(db.Integer, default=1)  # legado: mantener compatibilidad con datos antiguos
+    # ── Producto por lote/tanda ──────────────────────────────────────
+    # Cuando `cantidad_por_lote > 0`, el producto se vende POR TANDAS.
+    # Ejemplo: "4 empanadas por 5€ para el día 18" → cantidad_por_lote=4.
+    # El cliente compra 1, 2, 3 tandas; el rol preparación ve el total
+    # agregado (tandas × cantidad_por_lote unidades). El modelo detallado
+    # de disponibilidad por fecha vive en `ProductBatch` (relación 1-N).
+    # `NULL` o `0` = comportamiento clásico (venta unitaria).
+    cantidad_por_lote = db.Column(db.Integer, nullable=True)
 
     # ── Visibilidad horaria ──────────────────────────────────────────
     # Si hora_inicio_visibilidad es null, el producto es visible siempre
@@ -2111,6 +2129,113 @@ class Stock(db.Model):
 
 
 # ─────────────────────────────────────────────
+# PRODUCT BATCH (encargos por lote con fecha)
+# ─────────────────────────────────────────────
+#
+# Un `ProductBatch` representa "N tandas de un producto para una fecha
+# concreta". Ejemplo del negocio: "16 empanadas (4 tandas de 4) para el
+# 18/07". Diferente de `Stock`: éste maneja lotes internos por caducidad
+# (control almacén), `ProductBatch` maneja disponibilidad de venta al
+# público por fecha de entrega (planificación pedidos con fecha).
+#
+# La reserva de tandas al crear un pedido es ATÓMICA — usa `UPDATE ...
+# WHERE cantidad_vendida + n <= maximo` que retorna 0 rowcount si dos
+# clientes compran la última tanda simultáneamente. El segundo ve error
+# claro sin dejar overbooking.
+
+class ProductBatch(db.Model):
+    __tablename__ = "product_batches"
+
+    id = db.Column(db.Integer, primary_key=True)
+    producto_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=False)
+    fecha_entrega = db.Column(db.Date, nullable=False)
+    # Cantidad de unidades que agrupa una "tanda" (redundante con
+    # Product.cantidad_por_lote — snapshot para que cambios futuros del
+    # producto no rompan lotes ya publicados con precio/tamaño distintos).
+    cantidad_por_tanda = db.Column(db.Integer, nullable=False)
+    # Máximo de tandas que el negocio se compromete a producir para esa
+    # fecha. NULL = ilimitado (raro, útil para pruebas).
+    cantidad_maxima_tandas = db.Column(db.Integer, nullable=True)
+    # Contador de tandas ya vendidas (suma de todos los pedidos activos
+    # de ese lote). Se decrementa si un pedido se cancela.
+    cantidad_vendida_tandas = db.Column(db.Integer, nullable=False, default=0)
+    # abierto | agotado | cancelado — visibilidad y capacidad.
+    estado = db.Column(db.String(16), nullable=False, default="abierto")
+    # Marca operativa: cuando preparación pulsa "marcar listo", este
+    # campo se llena y todos los pedidos del lote transitan a "listo"
+    # en la misma transacción.
+    listo_en = db.Column(db.DateTime, nullable=True)
+    creado_en = db.Column(db.DateTime, default=utcnow)
+
+    producto = db.relationship("Product", backref="batches")
+
+    __table_args__ = (
+        db.UniqueConstraint("producto_id", "fecha_entrega", name="uq_product_batches_producto_fecha"),
+    )
+
+    def tandas_disponibles(self) -> int:
+        """Cuántas tandas quedan por vender. `None` en `cantidad_maxima_tandas`
+        significa ilimitado — devolvemos `2**31` como sentinela seguro."""
+        if self.cantidad_maxima_tandas is None:
+            return 2**31
+        vendidas = int(self.cantidad_vendida_tandas or 0)
+        return max(0, int(self.cantidad_maxima_tandas) - vendidas)
+
+    def reservar_tandas(self, cantidad: int) -> bool:
+        """Reserva atómicamente `cantidad` tandas.
+
+        Devuelve `True` si la reserva se aplicó, `False` si no había cupo.
+        Usa UPDATE condicional para evitar race conditions entre dos
+        checkouts simultáneos que compiten por la última tanda.
+
+        Antes: sin este método, dos pedidos concurrentes podían sumar
+        más tandas de las disponibles → overbooking en cocina. Ahora el
+        segundo cliente ve mensaje claro y el pedido no se crea.
+        """
+        cantidad = max(0, int(cantidad))
+        if cantidad == 0:
+            return True
+        if self.estado != "abierto":
+            return False
+        if self.cantidad_maxima_tandas is None:
+            # Ilimitado — solo incrementamos.
+            db.session.execute(text(
+                "UPDATE product_batches SET cantidad_vendida_tandas = cantidad_vendida_tandas + :n WHERE id = :id"
+            ), {"n": cantidad, "id": self.id})
+            self.cantidad_vendida_tandas = (self.cantidad_vendida_tandas or 0) + cantidad
+            return True
+        result = db.session.execute(text(
+            "UPDATE product_batches SET cantidad_vendida_tandas = cantidad_vendida_tandas + :n "
+            "WHERE id = :id AND cantidad_vendida_tandas + :n <= cantidad_maxima_tandas AND estado = 'abierto'"
+        ), {"n": cantidad, "id": self.id})
+        if result.rowcount == 0:
+            return False
+        self.cantidad_vendida_tandas = (self.cantidad_vendida_tandas or 0) + cantidad
+        # Auto-agotado cuando llegamos al máximo.
+        if self.cantidad_vendida_tandas >= self.cantidad_maxima_tandas:
+            db.session.execute(text(
+                "UPDATE product_batches SET estado = 'agotado' WHERE id = :id AND cantidad_vendida_tandas >= cantidad_maxima_tandas"
+            ), {"id": self.id})
+            self.estado = "agotado"
+        return True
+
+    def liberar_tandas(self, cantidad: int) -> None:
+        """Devuelve tandas al pool si un pedido se cancela. Idempotente:
+        nunca deja el contador negativo. Vuelve a `abierto` si estaba
+        agotado y ahora hay cupo."""
+        cantidad = max(0, int(cantidad))
+        if cantidad == 0:
+            return
+        db.session.execute(text(
+            "UPDATE product_batches SET cantidad_vendida_tandas = "
+            "CASE WHEN cantidad_vendida_tandas > :n THEN cantidad_vendida_tandas - :n ELSE 0 END, "
+            "estado = CASE WHEN estado = 'agotado' AND (cantidad_vendida_tandas - :n) < COALESCE(cantidad_maxima_tandas, 2147483647) THEN 'abierto' ELSE estado END "
+            "WHERE id = :id"
+        ), {"n": cantidad, "id": self.id})
+        db.session.expire(self, ["cantidad_vendida_tandas", "estado"])
+
+
+# ─────────────────────────────────────────────
 # PEDIDOS
 # ─────────────────────────────────────────────
 
@@ -2326,6 +2451,34 @@ class Order(db.Model):
         )
 
     @property
+    def fechas_entrega_programadas(self):
+        """Fechas de entrega congeladas en las líneas del pedido.
+
+        La fecha se lee del snapshot del ``OrderItem`` y no del producto vivo,
+        de modo que cambiar el catálogo nunca altera un pedido ya confirmado.
+        Un pedido válido debe contener como máximo una fecha; devolver la tupla
+        completa permite detectar datos históricos inconsistentes sin ocultarlos.
+        """
+        return tuple(sorted({
+            item.display_fecha_entrega
+            for item in self.items
+            if item.display_fecha_entrega
+        }))
+
+    @property
+    def fecha_entrega_programada(self):
+        fechas = self.fechas_entrega_programadas
+        return fechas[0] if len(fechas) == 1 else None
+
+    @property
+    def es_programado(self):
+        return any(
+            (item.display_tipo_entrega or "inmediato").strip().lower()
+            in ("programado", "encargo")
+            for item in self.items
+        )
+
+    @property
     def costo_envio(self):
         """Importe de entrega cobrado, reconstruido desde el desglose persistido."""
         subtotal = Decimal(str(self.subtotal or 0))
@@ -2360,8 +2513,15 @@ class Order(db.Model):
             return False, "Demasiados intentos fallidos. Contacta al admin."
         if self.codigo_confirmacion_expirado:
             return False, "El código ha expirado. Regenéralo desde el panel."
-        if self.codigo_confirmacion and self.codigo_confirmacion == str(codigo_ingresado).strip():
+        import hmac as _hmac
+        recibido = str(codigo_ingresado or "").strip()
+        codigo = str(self.codigo_confirmacion or "")
+        if codigo and _hmac.compare_digest(codigo, recibido):
             self.codigo_confirmado_en = utcnow()
+            # El secreto deja de tener utilidad tras validarse. Borrarlo
+            # minimiza exposición en backups, vistas y serializaciones futuras.
+            self.codigo_confirmacion = None
+            self.codigo_confirmacion_expira_en = None
             return True, "OK"
         self.intentos_codigo = (self.intentos_codigo or 0) + 1
         restantes = max(0, max_intentos - self.intentos_codigo)
@@ -2806,6 +2966,10 @@ class Coupon(db.Model):
     minimo_pedido = db.Column(db.Numeric(10, 2), default=0)
     usos_maximos = db.Column(db.Integer)
     usos_actuales = db.Column(db.Integer, default=0)
+    # Límite de usos por CLIENTE. None = ilimitado (comportamiento previo).
+    # Antes: el mismo cliente podía aplicar "WELCOME10" en cada pedido.
+    # Se cuenta contra `Order.cupon_id = self.id AND cliente_id = X`.
+    usos_por_cliente = db.Column(db.Integer)
     activo = db.Column(db.Boolean, default=True)
     fecha_inicio = db.Column(db.Date)
     fecha_fin = db.Column(db.Date)
@@ -2820,6 +2984,33 @@ class Coupon(db.Model):
             return False, "Cupón expirado"
         if self.usos_maximos and self.usos_actuales >= self.usos_maximos:
             return False, "Cupón agotado"
+        return True, "OK"
+
+    def usos_por_cliente_actuales(self, cliente_id: int) -> int:
+        """Cuenta cuántos pedidos NO cancelados de `cliente_id` ya usaron
+        este cupón. Se excluye 'cancelado' para no penalizar al cliente por
+        pedidos que nunca se cobraron."""
+        if not cliente_id:
+            return 0
+        return int(
+            db.session.query(db.func.count(Order.id))
+            .filter(Order.cupon_id == self.id,
+                    Order.cliente_id == cliente_id,
+                    Order.estado != "cancelado")
+            .scalar() or 0
+        )
+
+    def es_valido_para_cliente(self, cliente_id):
+        """Combina la validación global con el límite por cliente. Si
+        `cliente_id` es None (guest sin cuenta), solo aplica la global —
+        el límite por cliente no es aplicable a alguien sin identidad."""
+        valido, msg = self.es_valido()
+        if not valido:
+            return False, msg
+        if cliente_id and self.usos_por_cliente:
+            usados = self.usos_por_cliente_actuales(cliente_id)
+            if usados >= self.usos_por_cliente:
+                return False, "Ya usaste este cupón el máximo de veces permitido"
         return True, "OK"
 
     def calcular_descuento(self, subtotal):
@@ -3001,6 +3192,8 @@ class AffiliateCode(db.Model):
     activo = db.Column(db.Boolean, default=True)
     usos_maximos = db.Column(db.Integer)
     usos_actuales = db.Column(db.Integer, default=0)
+    # Ver `Coupon.usos_por_cliente` — mismo contrato aquí.
+    usos_por_cliente = db.Column(db.Integer)
     fecha_inicio = db.Column(db.Date)
     fecha_fin = db.Column(db.Date)
     creado_en = db.Column(db.DateTime, default=utcnow)
@@ -3020,6 +3213,27 @@ class AffiliateCode(db.Model):
             return False, "Código expirado"
         if self.usos_maximos and self.usos_actuales >= self.usos_maximos:
             return False, "Código agotado"
+        return True, "OK"
+
+    def usos_por_cliente_actuales(self, cliente_id: int) -> int:
+        """Cuenta usos válidos (`AffiliateUse`) de este código por cliente."""
+        if not cliente_id:
+            return 0
+        return int(
+            db.session.query(db.func.count(AffiliateUse.id))
+            .filter(AffiliateUse.codigo_id == self.id,
+                    AffiliateUse.cliente_id == cliente_id)
+            .scalar() or 0
+        )
+
+    def es_valido_para_cliente(self, cliente_id):
+        valido, msg = self.es_valido()
+        if not valido:
+            return False, msg
+        if cliente_id and self.usos_por_cliente:
+            usados = self.usos_por_cliente_actuales(cliente_id)
+            if usados >= self.usos_por_cliente:
+                return False, "Ya usaste este código el máximo de veces permitido"
         return True, "OK"
 
     def calcular_descuento(self, subtotal):

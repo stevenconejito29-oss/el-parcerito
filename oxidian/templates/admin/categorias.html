@@ -152,7 +152,7 @@
 .cat-off { opacity:.68; border-style:dashed; }
 .cat-status { display:inline-flex; margin-top:.15rem; font-size:.65rem; font-weight:900; color:#FFB340; background:rgba(255,179,64,.12); border:1px solid rgba(255,179,64,.24); border-radius:999px; padding:.1rem .45rem; }
 </style>
-<script>
+<script nonce="{{ csp_nonce() }}">
 function previewCatImg(input, previewId) {
   const el = document.getElementById(previewId);
   if (!el || !input.files[0]) return;

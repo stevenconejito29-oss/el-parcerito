@@ -83,7 +83,6 @@ class PermissionsPureLogicTest(unittest.TestCase):
         admin = Actor(rol="admin", user_id=1)
         for action in [
             ACTIONS.CATALOG_WRITE_VERTICAL,
-            ACTIONS.STORE_WRITE,
             ACTIONS.STORE_MODE_TOGGLE,
             ACTIONS.STORE_MODULES_TOGGLE,
             ACTIONS.CONFIG_WRITE,
@@ -103,6 +102,7 @@ class PermissionsPureLogicTest(unittest.TestCase):
     def test_admin_read_allows_admin_only(self):
         for action in [
             ACTIONS.CATALOG_READ,
+            ACTIONS.STORE_WRITE,
             ACTIONS.STORE_READ,
             ACTIONS.ZONE_READ,
             ACTIONS.ZONE_TOGGLE,

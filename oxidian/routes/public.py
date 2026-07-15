@@ -48,7 +48,7 @@ from loyalty_service import (
     enviar_saldo_puntos,
     solicitar_codigo,
 )
-from phone_utils import normalizar_telefono_cliente, telefono_valido
+from phone_utils import normalizar_telefono_cliente, telefono_local_ambiguo, telefono_valido
 from store_config import (
     get_public_store_url,
     get_store_features,
@@ -317,13 +317,16 @@ def _establecimiento_abierto_checkout(origen, proveedor=None):
             "El establecimiento de este pedido está cerrado o ya no está activo."
         )
     cfg = {r.clave: r.valor for r in SiteConfig.query.filter(
-        SiteConfig.clave.in_(["HORARIO_APERTURA", "HORARIO_CIERRE", "TIENDA_FORZAR_CERRADA", "TIENDA_MENSAJE_CIERRE"])
+        SiteConfig.clave.in_(["HORARIO_APERTURA", "HORARIO_CIERRE",
+                              "TIENDA_FORZAR_CERRADA", "TIENDA_FORZAR_ABIERTA",
+                              "TIENDA_MENSAJE_CIERRE"])
     ).all()}
     apertura = cfg.get("HORARIO_APERTURA", "09:00")
     cierre = cfg.get("HORARIO_CIERRE", "22:30")
     forzada = str(cfg.get("TIENDA_FORZAR_CERRADA", "0")).lower() in ("1", "true", "yes", "on")
+    forzada_ab = str(cfg.get("TIENDA_FORZAR_ABIERTA", "0")).lower() in ("1", "true", "yes", "on")
     ahora = datetime.now().strftime("%H:%M")
-    if tienda_abierta_en_horario(apertura, cierre, ahora, forzada):
+    if tienda_abierta_en_horario(apertura, cierre, ahora, forzada, forzada_ab):
         return True, ""
     mensaje = (cfg.get("TIENDA_MENSAJE_CIERRE") or "").strip()
     return False, mensaje or f"La tienda está cerrada ahora. Horario: {apertura}–{cierre}."
@@ -405,6 +408,12 @@ def _canjeables_payload(cliente, origen=None):
 @public_bp.route("/")
 def index():
     return _render_catalogo("propio")
+
+
+@public_bp.route("/informacion-legal")
+def informacion_legal():
+    """Resumen accesible de privacidad, cookies y condiciones de compra."""
+    return render_template("public/informacion_legal.html")
 
 
 @public_bp.route("/bar/<int:proveedor_id>")
@@ -615,6 +624,8 @@ def _save_carrito(carrito):
             "carrito_origen",
             "cart_puntos",
             "cart_producto_canje_id",
+            "cart_cupon",       # aplicado desde /carrito/cupon
+            "cart_afiliado",    # aplicado desde /carrito/afiliado
             "combo_selecciones",
             "extras_selecciones",
             "presentaciones_carrito",
@@ -645,8 +656,13 @@ def _set_carrito_origen(origen):
     origen = _normalizar_origen(origen)
     anterior = _normalizar_origen(session.get("carrito_origen"))
     if anterior != origen:
+        # Cambio de tienda/origen invalida descuentos aplicados
+        # (algunos cupones son específicos por origen, y el carrito
+        # anterior podría haber tenido un producto de canje incompatible).
         session.pop("cart_puntos", None)
         session.pop("cart_producto_canje_id", None)
+        session.pop("cart_cupon", None)
+        session.pop("cart_afiliado", None)
     if origen:
         session["carrito_origen"] = origen
     else:
@@ -708,6 +724,8 @@ _CART_ISSUE_TITLES = {
     "fulfillment_conflict": "No se pueden combinar esas modalidades",
     "minimum_order": "Pedido mínimo pendiente",
     "programados_expired": "Fecha programada vencida",
+    "programados_missing_date": "Falta definir la fecha programada",
+    "programados_mixed_dates": "Las fechas programadas no coinciden",
 }
 
 
@@ -725,6 +743,10 @@ def _cart_issue_payload(issue, action_url=None, action_label=None):
             "modalidad": sorted(_product_fulfillment_modes(product)),
             "modalidad_label": _product_fulfillment_badge(product)["label"],
             "tipo_entrega": _delivery_family(product),
+            "fecha_entrega": (
+                product.fecha_llegada.isoformat()
+                if getattr(product, "fecha_llegada", None) else None
+            ),
             "grupo": _order_group_label(product),
             "vertical": getattr(product, "vertical", "ambos") or "ambos",
         })
@@ -788,13 +810,34 @@ def _cart_compatibility(productos, subtotal=None, pedido_minimo=0):
         )
 
     programados = [p for p in productos if _delivery_family(p) == "programado"]
+    programados_sin_fecha = [p for p in programados if not getattr(p, "fecha_llegada", None)]
     programados_vencidos = [p for p in programados if _programmed_date_expired(p)]
+    fechas_programadas = {
+        p.fecha_llegada for p in programados if getattr(p, "fecha_llegada", None)
+    }
+    if programados_sin_fecha:
+        add(
+            "programados_missing_date",
+            "Algunos productos programados todavía no tienen fecha de entrega. "
+            f"Retira {_product_names(programados_sin_fecha)} hasta que el negocio defina una fecha.",
+            programados_sin_fecha,
+            "danger",
+        )
     if programados_vencidos:
         add(
             "programados_expired",
             "La fecha programada de algunos productos ya pasó. "
             f"Retira {_product_names(programados_vencidos)} y vuelve a elegir productos disponibles.",
             programados_vencidos,
+            "danger",
+        )
+    if len(fechas_programadas) > 1:
+        fechas_txt = ", ".join(fecha.strftime("%d/%m/%Y") for fecha in sorted(fechas_programadas))
+        add(
+            "programados_mixed_dates",
+            "Los productos programados corresponden a fechas distintas "
+            f"({fechas_txt}). Crea un pedido separado para cada fecha de entrega.",
+            programados,
             "danger",
         )
     if programados and not features.get("pedidos_programados", False):
@@ -864,6 +907,8 @@ def _cart_compatibility(productos, subtotal=None, pedido_minimo=0):
         "fulfillment_options": fulfillment_options,
         "fulfillment_unavailable": fulfillment_unavailable,
         "features": features,
+        "scheduled_date": next(iter(fechas_programadas), None)
+        if len(fechas_programadas) == 1 else None,
     }
 
 
@@ -1181,6 +1226,35 @@ def eliminar_carrito(producto_id):
     return redirect(url_for("public.ver_carrito"))
 
 
+def _auto_verify_puntos_for_authenticated_client(origen: str) -> dict | None:
+    """Si el cliente está logueado (rol='cliente'), su identidad ya fue
+    probada por password. No tiene sentido pedirle OTP en cada carrito.
+
+    Devuelve el dict `cart_puntos` listo para persistir en sesión con
+    `verificado=True`. Solo aplica al rol 'cliente' — admins/staff que
+    hagan pedidos con su propio número usarán el OTP para separar
+    contextos y evitar canjes accidentales.
+    """
+    try:
+        if not current_user.is_authenticated:
+            return None
+        if getattr(current_user, "rol", None) != "cliente":
+            return None
+        return {
+            "cliente_id": current_user.id,
+            "telefono": current_user.telefono,
+            "puntos_usados": 0,
+            "descuento": 0.0,
+            "puntos_totales": int(current_user.puntos or 0),
+            "verificado": True,
+            "origen": origen,
+            "auto_verified": True,
+        }
+    except Exception:
+        # Cualquier fallo (session desactualizada, campo ausente) → OTP.
+        return None
+
+
 @public_bp.route("/carrito")
 def ver_carrito():
     carrito = _get_carrito()
@@ -1189,6 +1263,15 @@ def ver_carrito():
     puntos_sesion = session.get("cart_puntos", {})
     if puntos_sesion.get("origen") != origen:
         puntos_sesion = {}
+    # Atajo: cliente autenticado no necesita OTP — ya probó identidad.
+    # Solo se aplica si el widget aún está sin verificar (no queremos
+    # pisar un OTP recién hecho con datos potencialmente distintos).
+    if not puntos_sesion.get("verificado"):
+        auto = _auto_verify_puntos_for_authenticated_client(origen)
+        if auto:
+            session["cart_puntos"] = auto
+            session.modified = True
+            puntos_sesion = auto
     puntos_verificados = int(puntos_sesion.get("puntos_totales", 0) or 0)
     puntos_visibles = puntos_verificados
     puntos_habilitados = _feature_enabled("puntos")
@@ -1213,7 +1296,6 @@ def ver_carrito():
         and (not cart_familias or _delivery_family(p) in cart_familias)
         and bool(_fulfillment_options(cart_productos + [p]))
     ] if puntos_habilitados else []
-    descuento_puntos = puntos_sesion.get("descuento", 0.0)
     puntos_cfg = get_puntos_config()
     zona_principal = ZonaEntrega.query.filter_by(activo=True)\
         .order_by(ZonaEntrega.orden, ZonaEntrega.nombre).first()
@@ -1234,7 +1316,6 @@ def ver_carrito():
                            pedido_minimo=pedido_minimo,
                            canjeables=todos_canjeables,
                            puntos_sesion=puntos_sesion,
-                           descuento_puntos=descuento_puntos,
                            puntos_ratio=puntos_cfg["ratio"],
                            puntos_por_euro=puntos_cfg["por_euro"],
                            puntos_visibles=puntos_visibles,
@@ -1246,6 +1327,7 @@ def ver_carrito():
                            fulfillment_badge=_product_fulfillment_badge,
                            fulfillment_mode_label=_fulfillment_mode_label,
                            cart_issue=cart_issue,
+                           fecha_entrega_programada=compat.get("scheduled_date"),
                            cart_max_qty=cart_max_qty,
                            origen_actual=origen,
                            establecimiento=_establecimiento_para_origen(origen))
@@ -1385,6 +1467,17 @@ def api_check_address():
 
 # ─── VALIDAR CUPÓN (AJAX) ────────────────────
 
+def _cliente_id_actual():
+    """Devuelve `current_user.id` si es cliente logueado, None si guest.
+    Se usa para aplicar el límite por cliente en cupones/afiliados."""
+    try:
+        if current_user.is_authenticated and getattr(current_user, "rol", None) == "cliente":
+            return current_user.id
+    except Exception:
+        pass
+    return None
+
+
 @public_bp.route("/carrito/cupon", methods=["POST"])
 def validar_cupon():
     data = request.get_json(silent=True) or {}
@@ -1396,12 +1489,31 @@ def validar_cupon():
     cupon = Coupon.query.filter_by(codigo=codigo).first()
     if not cupon:
         return jsonify({"ok": False, "msg": "Cupón no encontrado"})
+    # Límite por cliente antes de calcular descuento: si el cliente ya usó
+    # este cupón el máximo permitido, no tiene sentido mostrarle el monto.
+    ok_cliente, msg_cliente = cupon.es_valido_para_cliente(_cliente_id_actual())
+    if not ok_cliente:
+        return jsonify({"ok": False, "msg": msg_cliente})
     try:
         descuento = cupon.calcular_descuento(subtotal)
+        # Persistir en sesión para que checkout lo aplique automáticamente
+        # sin obligar al cliente a reintroducirlo. `checkout()` sigue
+        # aceptando el POST del formulario como override.
+        session["cart_cupon"] = {"id": cupon.id, "codigo": cupon.codigo}
+        session.modified = True
         return jsonify({"ok": True, "descuento": descuento, "cupon_id": cupon.id,
-                        "descripcion": cupon.descripcion})
+                        "descripcion": cupon.descripcion,
+                        "codigo": cupon.codigo})
     except ValueError as e:
         return jsonify({"ok": False, "msg": str(e)})
+
+
+@public_bp.route("/carrito/cupon/quitar", methods=["POST"])
+def quitar_cupon_sesion():
+    """Limpia el cupón guardado en sesión (aplicado desde el carrito)."""
+    session.pop("cart_cupon", None)
+    session.modified = True
+    return jsonify({"ok": True})
 
 
 @public_bp.route("/carrito/afiliado", methods=["POST"])
@@ -1415,7 +1527,7 @@ def validar_afiliado():
     af = AffiliateCode.query.filter_by(codigo=codigo).first()
     if not af:
         return jsonify({"ok": False, "msg": "Código de afiliado no encontrado"})
-    ok, reason = af.es_valido()
+    ok, reason = af.es_valido_para_cliente(_cliente_id_actual())
     if not ok:
         return jsonify({"ok": False, "msg": reason or "Código no válido o expirado"})
     descuento = 0.0
@@ -1423,10 +1535,19 @@ def validar_afiliado():
         descuento = round(subtotal * float(af.descuento_valor) / 100, 2)
     elif af.descuento_tipo == "monto_fijo" and af.descuento_valor:
         descuento = min(float(af.descuento_valor), subtotal)
+    session["cart_afiliado"] = {"codigo": af.codigo}
+    session.modified = True
     return jsonify({"ok": True, "descuento": descuento, "codigo": af.codigo,
                     "descripcion": af.descripcion or af.codigo,
                     "descuento_tipo": af.descuento_tipo,
                     "descuento_valor": float(af.descuento_valor or 0)})
+
+
+@public_bp.route("/carrito/afiliado/quitar", methods=["POST"])
+def quitar_afiliado_sesion():
+    session.pop("cart_afiliado", None)
+    session.modified = True
+    return jsonify({"ok": True})
 
 
 @public_bp.route("/puntos/solicitar-codigo", methods=["POST"])
@@ -1474,16 +1595,17 @@ def verificar_codigo_puntos():
     if not cliente:
         return _json_no_store({"ok": False, "msg": msg_invalido})
 
-    if not cliente.verificar_cod_puntos(codigo):
+    from loyalty_service import bloquear_cliente_puntos
+    cliente = bloquear_cliente_puntos(cliente)
+    # Primero autenticamos sin consumir. Así un carrito inválido no quema un
+    # código correcto, pero un atacante sin OTP sólo recibe respuesta neutra.
+    if not cliente.verificar_cod_puntos(codigo, consumir=False):
         db.session.commit()  # persiste incremento de intentos fallidos
         return _json_no_store({"ok": False, "msg": msg_invalido})
 
-    # OTP válido: commit inmediato para que no pueda reutilizarse antes del checkout
-    db.session.commit()
-
-    ratio = max(1, get_puntos_config()["ratio"])
     origen = _carrito_origen()
     if not origen:
+        db.session.rollback()
         return jsonify({"ok": False, "msg": "El carrito no tiene un origen de inventario válido"})
     _, subtotal = _build_items_from_carrito(_get_carrito())
     # Diseño: los puntos SOLO se canjean por productos canjeables (nunca como
@@ -1496,18 +1618,38 @@ def verificar_codigo_puntos():
         except (ValueError, TypeError):
             producto_canje_id = None
 
-    puntos_usar = 0
-    descuento = 0.0  # los puntos nunca reducen el total en euros
+    # Valida primero el contexto del canje. Un producto/cart inválido no debe
+    # consumir un OTP correcto ni dejar una sesión verificada a medias.
+    producto_canje = None
     if producto_canje_id:
         producto_canje = db.session.get(Product, producto_canje_id)
         if (
             not producto_canje
             or not _producto_canjeable_en_origen(producto_canje, origen)
         ):
+            db.session.rollback()
             return jsonify({"ok": False, "msg": "Producto de canje no válido"})
         puntos_producto = int(producto_canje.puntos_para_canje or 0)
         if puntos_producto <= 0 or puntos_producto > int(cliente.puntos or 0):
+            db.session.rollback()
             return jsonify({"ok": False, "msg": "No tienes puntos suficientes para este producto"})
+
+    # Mismo lock, mismo OTP: la segunda verificación lo consume de forma
+    # atómica una vez que todo el contexto resultó válido.
+    if not cliente.verificar_cod_puntos(codigo, consumir=True):
+        db.session.rollback()
+        return _json_no_store({"ok": False, "msg": msg_invalido})
+
+    # El lock y el commit hacen el OTP de un solo uso incluso con dos requests
+    # simultáneas del navegador.
+    db.session.commit()
+
+    ratio = max(1, get_puntos_config()["ratio"])
+
+    puntos_usar = 0
+    descuento = 0.0  # los puntos nunca reducen el total en euros
+    if producto_canje_id:
+        puntos_producto = int(producto_canje.puntos_para_canje or 0)
         session["cart_producto_canje_id"] = producto_canje_id
         # Sólo registramos los puntos del producto canjeado; sin descuento monetario.
         puntos_usar = puntos_producto
@@ -1605,17 +1747,6 @@ def checkout():
         .filter(Product.puntos_para_canje <= puntos_cliente).all()
         if _producto_canjeable_en_origen(p, origen)
     ] if puntos_habilitados and puntos_cliente > 0 else []
-    canjeables_data = [
-        {
-            "id": p.id,
-            "nombre": p.nombre,
-            "puntos": int(p.puntos_para_canje or 0),
-            "categoria": p.categoria.nombre if p.categoria else "",
-            "origen": p.origen_pais or "",
-        }
-        for p in canjeables
-    ]
-
     if request.method == "POST":
         # ── Idempotency guard ──────────────────────────────────────
         # Evita que un double-click o un retry del cliente cree dos pedidos.
@@ -1698,10 +1829,29 @@ def checkout():
             notas = (notas + " [" + notas_combo_txt + "]").strip() if notas else "[" + notas_combo_txt + "]"
         cupon_id = request.form.get("cupon_id", type=int)
         cupon_codigo = request.form.get("cupon_codigo", "").strip().upper()
+        # Fallback a la sesión: si el cliente aplicó el cupón desde el
+        # carrito y no lo re-envió por el form del checkout, seguimos
+        # respetando esa decisión. Form-value gana si viene.
+        if not cupon_id:
+            _sess_cupon = session.get("cart_cupon") or {}
+            if _sess_cupon.get("id"):
+                cupon_id = int(_sess_cupon["id"])
+                cupon_codigo = _sess_cupon.get("codigo") or cupon_codigo
         puntos_a_canjear = request.form.get("puntos_usar", 0, type=int)
         zona_id = request.form.get("zona_id", type=int)
         nombre_invitado = request.form.get("nombre_invitado", "").strip()[:100]
-        telefono_invitado = _normalize_phone(request.form.get("telefono_invitado", ""))
+        telefono_invitado_raw = request.form.get("telefono_invitado", "")
+        # Sin prefijo configurado, aceptar un número local crea dos identidades:
+        # checkout guarda +6… y WhatsApp responde desde +<país>6…. Es preferible
+        # detener el pedido y explicar cómo corregirlo antes de perder su vínculo.
+        if telefono_local_ambiguo(telefono_invitado_raw):
+            flash(
+                "Escribe tu teléfono con prefijo internacional (por ejemplo, +34…) "
+                "para que podamos identificar tu pedido por WhatsApp.",
+                "danger",
+            )
+            return redirect(url_for("public.checkout"))
+        telefono_invitado = _normalize_phone(telefono_invitado_raw)
         # NIF opcional para factura fiscal a empresa (España). Vacío = B2C normal.
         nif_invitado_raw = (request.form.get("nif_invitado") or "").strip()
         nif_invitado = None
@@ -1713,6 +1863,12 @@ def checkout():
                 return redirect(url_for("public.checkout"))
             nif_invitado = nif_norm
         codigo_afiliado_str = request.form.get("codigo_afiliado", "").strip().upper()
+        # Fallback a la sesión (igual que cupón): el afiliado aplicado
+        # desde el carrito se conserva si el form no lo reenvía.
+        if not codigo_afiliado_str:
+            _sess_afil = session.get("cart_afiliado") or {}
+            if _sess_afil.get("codigo"):
+                codigo_afiliado_str = _sess_afil["codigo"]
         producto_canje_raw = request.form.get("producto_canje_id")
         producto_canje_id = None
         if producto_canje_raw not in (None, ""):
@@ -1837,7 +1993,9 @@ def checkout():
                 flash("Cupón no válido.", "danger")
                 return redirect(url_for("public.checkout"))
             if cupon:
-                ok_c, msg_c = cupon.es_valido()
+                # Valida global + límite por cliente (si el cliente está
+                # identificado). Ver `Coupon.es_valido_para_cliente`.
+                ok_c, msg_c = cupon.es_valido_para_cliente(cliente.id if cliente else None)
                 if not ok_c:
                     flash(f"Cupón no válido: {msg_c}", "danger")
                     return redirect(url_for("public.checkout"))
@@ -1846,7 +2004,7 @@ def checkout():
         if codigo_afiliado_str:
             afiliado_codigo = AffiliateCode.query.filter_by(codigo=codigo_afiliado_str).first()
             if afiliado_codigo:
-                ok_a, _ = afiliado_codigo.es_valido()
+                ok_a, _ = afiliado_codigo.es_valido_para_cliente(cliente.id if cliente else None)
                 if not ok_a:
                     afiliado_codigo = None
 
@@ -1976,6 +2134,12 @@ def checkout():
                     _partes_notas.append(item["combo_resumen"])
                 if item.get("nota_cliente"):
                     _partes_notas.append("👤 " + item["nota_cliente"])
+                item_metadata = dict(item.get("metadata") or {})
+                if _delivery_family(item["producto"]) == "programado":
+                    # Congelar de forma explícita la fecha canónica del carrito.
+                    # El snapshot del producto también la conserva, pero esta
+                    # clave es el contrato común con POS y API del chatbot.
+                    item_metadata["entrega_programada"] = compat["scheduled_date"].isoformat()
                 oi = OrderItem(
                     pedido_id=pedido.id,
                     producto_id=item["producto"].id,
@@ -1986,7 +2150,7 @@ def checkout():
                     metadata_json=json.dumps(
                         _metadata_item_con_origen(
                             item["producto"],
-                            item.get("metadata") or {},
+                            item_metadata,
                             origen,
                         ),
                         ensure_ascii=False,
@@ -2000,6 +2164,51 @@ def checkout():
                         item["cantidad"],
                         item.get("combo_seleccion_ids") or [],
                     )
+                # ── Reserva atómica de tandas en ProductBatch ──
+                # Cuando el producto se vende por lote (cantidad_por_lote > 0)
+                # y tiene fecha de entrega, `item["cantidad"]` representa
+                # TANDAS (no unidades). Aquí buscamos/creamos el batch y
+                # reservamos el cupo con UPDATE condicional. Un rechazo
+                # significa que otro cliente concurrente consumió las
+                # últimas tandas → abortamos el checkout con mensaje claro
+                # para que el cliente ajuste cantidad o elija otra fecha.
+                _prod = item["producto"]
+                _por_lote = int(_prod.cantidad_por_lote or 0)
+                _fecha_lote = _prod.fecha_llegada
+                if _por_lote > 0 and _fecha_lote and _prod.tipo_entrega == "programado":
+                    from models import ProductBatch
+                    batch = ProductBatch.query.filter_by(
+                        producto_id=_prod.id, fecha_entrega=_fecha_lote,
+                    ).first()
+                    if batch is None:
+                        # Auto-crea el batch la primera vez que un producto
+                        # por-lote publicado recibe un pedido. `cantidad_maxima_tandas`
+                        # queda NULL (ilimitado) hasta que el admin lo tope
+                        # desde el panel. Alternativa: exigir batch pre-creado.
+                        batch = ProductBatch(
+                            producto_id=_prod.id,
+                            fecha_entrega=_fecha_lote,
+                            cantidad_por_tanda=_por_lote,
+                            cantidad_maxima_tandas=None,
+                        )
+                        db.session.add(batch)
+                        db.session.flush()
+                    tandas_pedidas = int(item["cantidad"])
+                    if not batch.reservar_tandas(tandas_pedidas):
+                        db.session.rollback()
+                        disp = batch.tandas_disponibles()
+                        flash(
+                            f"«{_prod.nombre}» del {_fecha_lote.strftime('%d/%m')}: "
+                            f"solo quedan {disp} tandas disponibles. "
+                            f"Ajusta la cantidad o elige otra fecha.",
+                            "warning",
+                        )
+                        return redirect(url_for("public.ver_carrito"))
+                    # Trace en metadata para poder devolver tandas al cancelar.
+                    _meta = json.loads(oi.metadata_json or "{}")
+                    _meta["batch_id"] = batch.id
+                    _meta["tandas_reservadas"] = tandas_pedidas
+                    oi.metadata_json = json.dumps(_meta, ensure_ascii=False)
         except ValueError as exc:
             db.session.rollback()
             flash(str(exc), "danger")
@@ -2046,7 +2255,11 @@ def checkout():
         db.session.flush()
         sincronizar_proveedores_pedido(pedido)
         db.session.flush()
-        encolar_notificaciones_proveedores_pedido(pedido)
+        # El primer pedido no entra en operación hasta que el cliente confirme
+        # el número desde WhatsApp. La confirmación activa después asignación y
+        # notificaciones en services.marcar_pedido_confirmado().
+        if pedido.confirmacion_estado != "pending":
+            encolar_notificaciones_proveedores_pedido(pedido)
 
         # Los puntos se otorgan al entregar (repartidor.confirmar_entrega → award_points_on_delivery)
         # No se suman aquí para evitar que pedidos cancelados o no entregados acumulen puntos
@@ -2055,7 +2268,8 @@ def checkout():
         if afiliado_codigo and descuento_afiliado > 0:
             registrar_uso_afiliado(afiliado_codigo, pedido, cliente, descuento_afiliado)
 
-        distribuir_pedido(pedido)
+        if pedido.confirmacion_estado != "pending":
+            distribuir_pedido(pedido)
 
         token = uuid.uuid4().hex
         guest_tokens = session.get("guest_order_tokens", {})
@@ -2108,14 +2322,11 @@ def checkout():
     precio_preview = calcular_precio(items, subtotal, ratio_puntos=get_puntos_config()["ratio"])
     checkout_items = MenuConfig.query.filter_by(pagina="checkout", activo=True)\
         .order_by(MenuConfig.orden.asc(), MenuConfig.id.asc()).all()
-    puntos_cfg = get_puntos_config()
     try:
         radio_entrega_km = max(0.0, float(SiteConfig.get("RADIO_ENTREGA_KM", "5") or 5))
     except (TypeError, ValueError):
         radio_entrega_km = 5.0
     return render_template("public/checkout.html", items=items, subtotal=subtotal,
-                           puntos_disponibles=puntos_cliente,
-                           puntos_ratio=puntos_cfg["ratio"],
                            zonas=zonas,
                            tiene_encargos=tiene_encargos,
                            canjeables=canjeables,
@@ -2124,13 +2335,11 @@ def checkout():
                            fulfillment_unavailable=fulfillment_unavailable,
                            fulfillment_mode_label=_fulfillment_mode_label,
                            fulfillment_default=fulfillment_default,
+                           fecha_entrega_programada=compat.get("scheduled_date"),
                            checkout_items=checkout_items,
                            origen_actual=origen,
                            establecimiento=establecimiento,
                            radio_entrega_km=radio_entrega_km,
-                           puntos_sesion=cart_puntos_sesion
-                           if cart_puntos_sesion.get("origen") == origen else {},
-                           canjeables_data=canjeables_data,
                            producto_canje_seleccionado=session.get("cart_producto_canje_id"))
 
 
@@ -2166,9 +2375,20 @@ def club():
         )
         if _producto_pertenece_al_vertical(p)
     ]
+    # Saldo del cliente cuando esté autenticado. Antes: la página SIEMPRE
+    # obligaba a "enviar mi saldo por WhatsApp" aunque el cliente ya
+    # hubiera hecho login. Ahora: si es cliente autenticado, se muestra
+    # su saldo real y cada canjeable revela "✓ disponible" o "faltan X".
+    saldo_cliente = None
+    if current_user.is_authenticated and getattr(current_user, "rol", None) == "cliente":
+        try:
+            saldo_cliente = int(current_user.puntos or 0)
+        except (TypeError, ValueError):
+            saldo_cliente = None
     return render_template(
         "public/puntos_consulta.html",
         canjeables=canjeables,
+        saldo_cliente=saldo_cliente,
     )
 
 

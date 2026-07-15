@@ -142,7 +142,7 @@
     </div>
   </div>
   {% if _es_super %}
-  <script>
+  <script nonce="{{ csp_nonce() }}">
   (function(){
     const container = document.currentScript.closest('form') || document;
     const retailBox = container.querySelector('.fp-retail-fields[data-visible-if-vertical="producto"]');
@@ -233,6 +233,21 @@
   <div class="campo-fecha-llegada hidden">
     <label class="fp-label">Fecha de llegada</label>
     <input type="date" name="fecha_llegada" class="fp-input">
+  </div>
+
+  {# ── Encargos por lote ─────────────────────────────────────────
+     Si el producto se vende en tandas (p.ej. "4 empanadas por 5€"),
+     cada unidad del carrito reserva una tanda del `ProductBatch`.
+     Preparación ve el TOTAL agregado del día en su vista. #}
+  <div class="campo-cantidad-lote hidden fp-span-full col-span-2 fp-section">
+    <label class="fp-section-title">Encargo por lote <span class="fp-section-note">solo productos programados con fecha</span></label>
+    <label class="fp-label">Unidades por tanda</label>
+    <input type="number" name="cantidad_por_lote" min="0" step="1" class="fp-input"
+           placeholder="Ej: 4 (deja vacío o 0 para desactivar)">
+    <p class="text-xs text-gray-500 mt-2">
+      Ejemplo: "4 empanadas por 5€ para el día 18" → introduce 4.
+      El cliente compra tandas; el preparador ve el total del día.
+    </p>
   </div>
 
   <!-- ── VISIBILIDAD HORARIA ── -->

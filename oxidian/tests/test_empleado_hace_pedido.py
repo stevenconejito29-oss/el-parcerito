@@ -11,7 +11,7 @@ import unittest
 from flask import Flask
 
 from extensions import db
-from models import User
+from models import Order, SiteConfig, User
 
 
 class EmpleadoHacePedidoTest(unittest.TestCase):
@@ -110,6 +110,34 @@ class EmpleadoHacePedidoTest(unittest.TestCase):
         found, tel = _cliente_por_telefono("+34600666666")
         self.assertIsNotNone(found)
         self.assertEqual(found.id, empleado.id)
+
+    def test_recupera_identidad_legacy_sin_prefijo_configurado_en_su_momento(self):
+        from services import buscar_cliente_por_telefono
+        SiteConfig.set("WHATSAPP_COUNTRY_CODE", "34", descripcion="test")
+        legacy = self._mk_user("Legacy", "cliente", "+632907709")
+        found, canonical = buscar_cliente_por_telefono("+34632907709")
+        self.assertEqual(canonical, "+34632907709")
+        self.assertIsNotNone(found)
+        self.assertEqual(found.id, legacy.id)
+
+    def test_admin_canonico_recupera_historial_cliente_legacy_inequivoco(self):
+        from services import buscar_cliente_por_telefono
+        SiteConfig.set("WHATSAPP_COUNTRY_CODE", "34", descripcion="test")
+        admin = self._mk_user("Admin canonico", "super_admin", "+34622663874")
+        legacy = self._mk_user("Cliente legacy", "cliente", "+622663874")
+        db.session.add(Order(
+            numero_pedido="LEGACY-1",
+            cliente_id=legacy.id,
+            subtotal=10,
+            total=10,
+            estado="pendiente",
+        ))
+        db.session.commit()
+
+        found, canonical = buscar_cliente_por_telefono(admin.telefono)
+
+        self.assertEqual(canonical, "+34622663874")
+        self.assertEqual(found.id, legacy.id)
 
 
 if __name__ == "__main__":

@@ -52,6 +52,21 @@ const OUTBOUND_WINDOW_MS = parseInt(process.env.BOT_OUTBOUND_WINDOW_MS || '36000
 const MAX_OUTBOUND_PER_TARGET = parseInt(process.env.BOT_MAX_OUTBOUND_PER_TARGET || '45', 10);
 const DUPLICATE_OUTBOUND_MS = parseInt(process.env.BOT_DUPLICATE_OUTBOUND_MS || '15000', 10);
 const MAX_BROADCAST_MESSAGES = parseInt(process.env.BOT_MAX_BROADCAST_MESSAGES || '20', 10);
+
+/* Intervalos de polling de fondo. Push desde Oxidian invalida los caches
+   de forma inmediata en el 95% de casos (endpoint `/api/oxidian/sync`);
+   estos setIntervals son solo el fallback por si un push se pierde por
+   red o el arranque del bot fue anterior al del panel. Todos ajustables
+   por env sin redeploy, con caps defensivos para evitar `NaN` o valores
+   absurdos. */
+function _minToMs(envKey, defaultMin, minMin = 1, maxMin = 1440) {
+  const raw = parseInt(process.env[envKey] || String(defaultMin), 10);
+  const clamped = Math.min(maxMin, Math.max(minMin, Number.isFinite(raw) ? raw : defaultMin));
+  return clamped * 60_000;
+}
+const CATALOG_SYNC_INTERVAL_MS  = _minToMs('BOT_CATALOG_SYNC_MIN', 5);
+const BRANDING_SYNC_INTERVAL_MS = _minToMs('BOT_BRANDING_SYNC_MIN', 10);
+const ADMIN_PIN_SYNC_INTERVAL_MS = _minToMs('BOT_ADMIN_PIN_SYNC_MIN', 15);
 const MAX_WEBHOOK_MESSAGES = Math.max(
   1,
   parseInt(process.env.BOT_MAX_WEBHOOK_MESSAGES || '25', 10) || 25,
@@ -260,6 +275,9 @@ db.transaction(() => {
   `ALTER TABLE sessions ADD COLUMN bar_nombre TEXT`,
   `ALTER TABLE productos_cache ADD COLUMN es_combo INTEGER DEFAULT 0`,
   `ALTER TABLE productos_cache ADD COLUMN combo_items_json TEXT`,
+  `ALTER TABLE productos_cache ADD COLUMN cantidad_por_lote INTEGER`,
+  `ALTER TABLE productos_cache ADD COLUMN fecha_llegada TEXT`,
+  `ALTER TABLE productos_cache ADD COLUMN lote_tandas_disp INTEGER`,
   `ALTER TABLE handoffs ADD COLUMN assigned_at INTEGER`,
   `ALTER TABLE handoffs ADD COLUMN scope TEXT DEFAULT 'global'`,
   `ALTER TABLE handoffs ADD COLUMN agents_json TEXT DEFAULT '[]'`,
@@ -659,6 +677,21 @@ function isAdminJid(jid) {
   return isAdminPhone(phoneFromJid(jid));
 }
 
+function detectOperationalModeCommand(text) {
+  const normalized = String(text || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/^\/+/, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (['offline', 'off', 'modo cliente', 'cliente', 'comprar como cliente',
+       'salir de linea', 'fuera de linea'].includes(normalized)) return 'offline';
+  if (['online', 'on', 'modo admin', 'admin', 'panel admin', 'volver al panel',
+       'entrar en linea', 'en linea'].includes(normalized)) return 'online';
+  return null;
+}
+
 // ─── PIN ADMIN ANTI-HACKEO ──────────────────────────────────────────────────
 // Si alguien clona/roba el WhatsApp del admin, sin PIN no puede ejecutar
 // acciones críticas. El PIN se configura desde super_admin en la web
@@ -666,6 +699,21 @@ function isAdminJid(jid) {
 // La sesión queda desbloqueada por ADMIN_PIN_TTL_MIN (default 30 min).
 
 const ADMIN_PIN_TTL_MS = parseInt(process.env.ADMIN_PIN_TTL_MIN || '30', 10) * 60_000;
+// Ventana máxima que la sesión puede estar en 'awaiting_pin' sin respuesta.
+// Si el admin deja el chat abierto y vuelve horas después, no queremos que
+// siga bloqueado en ese estado ignorando comandos del menú. Cap 60-1800s.
+const AWAITING_PIN_TTL_MS = Math.min(1800, Math.max(60,
+  parseInt(process.env.ADMIN_AWAITING_PIN_TTL_SEC || '300', 10))) * 1000;
+// Ventana máxima que la sesión puede estar en 'admin_confirm' sin recibir
+// SI/NO. Antes: si el admin cambiaba de tema, el próximo `si` casual (p.ej.
+// respondiendo a otro mensaje) ejecutaba una acción ya olvidada. Cap 60-3600s.
+const ADMIN_CONFIRM_TTL_MS = Math.min(3600, Math.max(60,
+  parseInt(process.env.ADMIN_CONFIRM_TTL_SEC || '600', 10))) * 1000;
+// Una confirmación de cancelación tampoco puede vivir indefinidamente. Sin
+// este TTL, un "SI" escrito horas después podía cancelar un pedido todavía
+// pendiente aunque el cliente ya no recordara la pregunta original.
+const CLIENT_CANCEL_CONFIRM_TTL_MS = Math.min(1800, Math.max(60,
+  parseInt(process.env.CLIENT_CANCEL_CONFIRM_TTL_SEC || '600', 10))) * 1000;
 const _adminPinUnlockedUntil = new Map(); // jid → timestamp ms
 
 function adminPinConfigured() {
@@ -749,23 +797,40 @@ function sanitizeRuntimeState() {
 function getHandoff(clientJid) {
   return db.prepare(`SELECT * FROM handoffs WHERE client_jid = ?`).get(clientJid) || null;
 }
+function canBeHandoffClient(clientJid) {
+  if (!isAdminJid(clientJid)) return true;
+  return isAdminClientMode(clientJid, getSesion(clientJid));
+}
 function listPendingHandoffs() {
   return db.prepare(`SELECT client_jid, admin_jid, requested_at FROM handoffs WHERE admin_jid IS NULL ORDER BY requested_at ASC`).all()
-    .filter(h => !isAdminJid(h.client_jid));
+    .filter(h => canBeHandoffClient(h.client_jid));
 }
+// Sección crítica del reclamo de handoff: comprueba "el admin no tiene
+// ya un chat" y hace el UPDATE en una sola transacción. `better-sqlite3`
+// usa modo IMMEDIATE por defecto, así que dos reclamos concurrentes se
+// serializan y el segundo ve el estado actualizado por el primero.
+//
+// Antes: había un pequeño gap entre `adminHasActiveChat` y el UPDATE en
+// el que dos reclamos simultáneos del mismo admin (p. ej. doble-tap
+// desde el panel + WhatsApp) podían dejarle con 2 chats activos.
+const _assignHandoffTx = db.transaction((clientJid, adminJid) => {
+  if (adminHasActiveChat(adminJid)) return { changes: 0 };
+  return db.prepare(`
+    UPDATE handoffs
+    SET admin_jid = ?, assigned_at = unixepoch()
+    WHERE client_jid = ? AND admin_jid IS NULL
+  `).run(adminJid, clientJid);
+});
+
 function assignHandoff(clientJid, adminJid) {
-  if (isAdminJid(clientJid)) return { changes: 0 };
+  // Pre-validaciones (no requieren tx: son puramente lecturas + reglas).
+  if (!canBeHandoffClient(clientJid) || clientJid === adminJid) return { changes: 0 };
   const handoff = getHandoff(clientJid);
   const allowedAgents = parseJsonSafe(handoff?.agents_json, []).map(normalizeJid);
-  if (!isAdminJid(adminJid) && !allowedAgents.includes(adminJid)) return { changes: 0 };
+  if ((!isAdminJid(adminJid) || !adminCan(adminJid, 'handoff')) && !allowedAgents.includes(adminJid)) return { changes: 0 };
   if (allowedAgents.length && !allowedAgents.includes(adminJid)) return { changes: 0 };
-  if (adminHasActiveChat(adminJid)) return { changes: 0 };
   try {
-    return db.prepare(`
-      UPDATE handoffs
-      SET admin_jid = ?, assigned_at = unixepoch()
-      WHERE client_jid = ? AND admin_jid IS NULL
-    `).run(adminJid, clientJid);
+    return _assignHandoffTx(clientJid, adminJid);
   } catch (error) {
     if (String(error?.code || '').startsWith('SQLITE_CONSTRAINT')) {
       log('warn', 'handoff_claim_conflict', `${clientJid} -> ${adminJid}`);
@@ -775,7 +840,7 @@ function assignHandoff(clientJid, adminJid) {
   }
 }
 function createHandoffRequest(clientJid, destination = {}) {
-  if (isAdminJid(clientJid)) return false;
+  if (!canBeHandoffClient(clientJid)) return false;
   try {
     const scope = 'global';
     const admins = new Set(adminPhones());
@@ -883,11 +948,28 @@ function isAdminAvailable(adminJid) {
   `).get(adminJid)?.available === 1;
 }
 
+function resetOperationalPresenceForStartup() {
+  return db.transaction(() => {
+    db.prepare(`UPDATE admin_availability SET available=0, updated_at=unixepoch()`).run();
+    // El reinicio es fail-safe: nadie recibe chats hasta escribir /online.
+    // La sesión conversacional debe reflejar lo mismo; antes quedaba en
+    // admin_menu aunque el indicador estuviera offline.
+    return db.prepare(`
+      UPDATE sessions
+      SET role='client', estado='client_main_menu', pending_json='{}', updated_at=unixepoch()
+      WHERE role='admin'
+        AND active_client_jid IS NULL
+        AND estado <> 'admin_chat'
+    `).run().changes;
+  })();
+}
+
 function availableAdminJids() {
   const cutoff = Math.floor(Date.now() / 1000) - ADMIN_ACTIVE_WINDOW_SEC;
   return adminPhones()
     .map(phone => `${phone}@s.whatsapp.net`)
     .filter(jid => {
+      if (!adminCan(jid, 'handoff')) return false;
       if (adminHasActiveChat(jid)) return false;
       if (!isAdminAvailable(jid)) return false;
       const session = db.prepare(`
@@ -959,8 +1041,11 @@ async function notifyAdminsHandoffQueued(clientJid) {
     `📨 *Cliente en espera*\n` +
     `${phoneFromJid(clientJid)} necesita atención humana.\n\n` +
     `Escribe *!take ${phoneFromJid(clientJid)}* para tomar el chat.`;
-  for (const phone of adminPhones()) {
-    sendText(`${phone}@s.whatsapp.net`, message).catch(() => {});
+  // Sólo operadores realmente online. Antes se avisaba también a admins
+  // offline y, si uno pedía ayuda en modo cliente, recibía su propio !take.
+  for (const adminJid of availableAdminJids()) {
+    if (adminJid === clientJid) continue;
+    sendText(adminJid, message).catch(() => {});
   }
 }
 
@@ -1034,7 +1119,14 @@ async function requestHumanSupport(clientJid, initialText = '') {
   } catch (error) {
     log('warn', 'handoff_destination_fail', error?.message || String(error));
   }
-  createHandoffRequest(clientJid, destination);
+  const created = createHandoffRequest(clientJid, destination);
+  if (!created && !getHandoff(clientJid)) {
+    return sendText(
+      clientJid,
+      `No puedo abrir un chat del equipo desde el modo operativo. ` +
+      `Escribe */offline* para entrar como cliente y vuelve a solicitar ayuda.`,
+    );
+  }
   if (initialText) queueHandoffMessage(clientJid, 'client', initialText);
   // Auto-asignación es best-effort: si Evolution está caído o la BD del bot
   // falla al escribir, el cliente igual debe recibir el mensaje de cola. No
@@ -1651,6 +1743,114 @@ async function oxidianPost(path, body, opts = {}) {
     throw err;
   }
   return data;
+}
+
+/**
+ * Convierte un error de `oxidianGet`/`oxidianPost` en un mensaje corto y
+ * seguro para enviar por WhatsApp al admin.
+ *
+ * Antes: los callsites hacían `Error: ${e.message}` — eso filtraba URLs
+ * internas (http://oxidian:5000/api/bot/…), stack traces embebidos en
+ * `data.error` (tracebacks Python) y códigos HTTP crudos. El admin veía
+ * ruido técnico y, peor, cualquiera con acceso al WhatsApp del admin
+ * podía mapear la topología del backend.
+ *
+ * Ahora: mensaje corto por categoría. El error completo se loguea con
+ * `log('warn', ...)` para diagnóstico interno.
+ */
+function friendlyOxidianError(err, contexto = '') {
+  try {
+    log('warn', 'oxidian_error', `${contexto || 'op'}: code=${err?.code || '-'} status=${err?.status || '-'} msg=${String(err?.message || err).slice(0, 200)}`);
+  } catch (_) { /* nunca romper por el log */ }
+  const code = err?.code;
+  const status = Number(err?.status || 0);
+  if (code === 'NO_BOT_KEY') {
+    return '⚠️ El bot no está autenticado con el panel. Avisa al super_admin.';
+  }
+  if (code === 'NET_ERROR') {
+    return '📡 Sin conexión con el panel. Reintenta en unos segundos.';
+  }
+  if (status === 401 || status === 403) {
+    return '⛔ No tienes permiso para esa acción.';
+  }
+  if (status === 404) {
+    return '❓ El elemento consultado no existe.';
+  }
+  if (status === 409) {
+    return '⚠️ Conflicto: el estado ya no permite esa operación.';
+  }
+  if (status === 422) {
+    // 422 suele venir con `data.error` amigable ya redactado (validaciones
+    // de negocio). Lo pasamos con truncado defensivo.
+    const msg = String(err?.data?.error || 'Datos inválidos.').slice(0, 180);
+    return `⚠️ ${msg}`;
+  }
+  if (status >= 500) {
+    return '💥 Error interno del panel. El log queda para diagnóstico.';
+  }
+  if (status >= 400 && err?.data?.error) {
+    return `❌ ${String(err.data.error).slice(0, 180)}`;
+  }
+  return '❌ No pude completar la acción. Reintenta o usa el panel web.';
+}
+
+// ─── HELPERS UNIVERSALES DE ROBUSTEZ (Sprint A) ─────────────────────────────
+//
+// Ideas centrales:
+//   * Todo handler que espera input del usuario (número, dirección, texto)
+//     debe aceptar palabras-escape universales sin repetir el prompt.
+//   * Todo handler que valida input debe contar reintentos y auto-resetear
+//     al menú principal si el usuario responde N veces cosas inválidas
+//     (evita bucles frustrantes).
+//   * Todo handler admin debe respetar `bot_enabled` (modo pánico).
+//
+// Los tres helpers viven aquí y se importan bajo demanda para no acoplar
+// cambios de firma a handlers legacy.
+
+/** Palabras que salen de cualquier submenu al menú principal.
+ *  Antes: cada handler comprobaba su propia lista, con drift y omisiones. */
+const _ESCAPE_WORDS = /^(?:0|menu|menú|inicio|salir|cancelar)$/i;
+
+function isEscapeWord(text) {
+  return _ESCAPE_WORDS.test(String(text || '').trim());
+}
+
+/**
+ * Incrementa el contador de reintentos guardado dentro de `pending` y
+ * devuelve `true` si el límite se alcanzó — el caller debe resetear el
+ * estado. Sin este contador un cliente que responde texto inválido queda
+ * atrapado repitiendo el mismo prompt indefinidamente.
+ *
+ * Uso típico:
+ *   if (bumpAttempt(ses, 'reporte', 3)) {
+ *     setClientState(ses, 'main_menu');
+ *     return sendText(jid, `Salgo al menú principal.\n\n${menuPrincipal()}`);
+ *   }
+ */
+function bumpAttempt(ses, key, max = 3) {
+  const pending = ses.pending || {};
+  const attempts = Number(pending[`_attempts_${key}`] || 0) + 1;
+  pending[`_attempts_${key}`] = attempts;
+  ses.pending = pending;
+  saveSesion(ses);
+  return attempts >= max;
+}
+
+/** Limpia el contador de reintentos cuando el input finalmente fue válido. */
+function clearAttempts(ses, key) {
+  if (!ses.pending) return;
+  delete ses.pending[`_attempts_${key}`];
+  saveSesion(ses);
+}
+
+/**
+ * Modo pánico global: cuando super_admin activa "emergency_on" desde el
+ * web (`bot_enabled=0`), todos los handlers admin deben responder con
+ * un aviso corto en lugar de ejecutar. Los comandos !status y !sync
+ * antes ignoraban este flag.
+ */
+function isBotEnabled() {
+  return String(cfg('bot_enabled', '1') || '1').trim() !== '0';
 }
 
 // ─── IA ADMINISTRATIVA ─────────────────────────────────────────────────────
@@ -2326,6 +2526,7 @@ async function syncBranding() {
     if (data.direccion) setCfg('direccion_negocio', data.direccion);
     if (data.ciudad)    setCfg('ciudad_negocio',    data.ciudad);
     if (data.slogan)    setCfg('slogan_negocio',    data.slogan);
+    if (data.tienda_url) setCfg('tienda_url', cleanBaseUrl(data.tienda_url, getTiendaUrl()));
     // Construye ejemplo de dirección: si tenemos dirección real, la usamos
     // como ejemplo; si no, dejamos genérico.
     if (data.direccion) {
@@ -2380,14 +2581,18 @@ async function syncCatalogo() {
     if (!data.ok || !Array.isArray(data.productos)) return false;
 
     const upsert = db.prepare(`
-      INSERT INTO productos_cache (id, nombre, descripcion, precio, categoria, stock, tipo_entrega, es_combo, combo_items_json)
-      VALUES (?,?,?,?,?,?,?,?,?)
+      INSERT INTO productos_cache (id, nombre, descripcion, precio, categoria, stock, tipo_entrega, es_combo, combo_items_json, cantidad_por_lote, fecha_llegada, lote_tandas_disp)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET
         nombre=excluded.nombre, descripcion=excluded.descripcion,
         precio=excluded.precio, categoria=excluded.categoria,
         stock=excluded.stock, tipo_entrega=excluded.tipo_entrega,
         es_combo=excluded.es_combo,
-        combo_items_json=excluded.combo_items_json, synced_at=unixepoch()
+        combo_items_json=excluded.combo_items_json,
+        cantidad_por_lote=excluded.cantidad_por_lote,
+        fecha_llegada=excluded.fecha_llegada,
+        lote_tandas_disp=excluded.lote_tandas_disp,
+        synced_at=unixepoch()
     `);
     db.transaction(() => {
       db.prepare(`UPDATE productos_cache SET activo=0`).run();
@@ -2399,6 +2604,9 @@ async function syncCatalogo() {
           p.stock ?? -1, p.tipo_entrega || 'inmediato',
           p.es_combo ? 1 : 0,
           p.combo_items?.length ? JSON.stringify(p.combo_items) : null,
+          p.cantidad_por_lote ?? null,
+          p.fecha_llegada ?? null,
+          (typeof p.lote_tandas_disponibles === 'number') ? p.lote_tandas_disponibles : null,
         );
       }
       if (syncedIds.length) {
@@ -2536,25 +2744,22 @@ function _primerNombre(raw) {
 function bienvenidaConversacional(ses) {
   const nombre = _primerNombre(ses?.nombre);
   const hora = saludoHora();
-  const neg = getNegocioNombre();
   // Pool de aperturas para no sonar repetitivo (humano).
   const aperturas = [
     nombre ? `${hora}, ${nombre} 👋` : `${hora} 👋`,
     nombre ? `¡Hola ${nombre}!` : `¡Hola!`,
     nombre ? `${hora}, ${nombre}. Me alegra verte por aquí.` : `${hora}. Encantado de saludarte.`,
   ];
-  const cierres = [
-    `Soy el asistente de *${neg}*. Cuéntame, ¿qué te apetece hoy?`,
-    `Soy el asistente de *${neg}*. ¿En qué te puedo ayudar?`,
-    `Aquí estoy para ayudarte con *${neg}*. ¿Qué necesitas?`,
-  ];
-  // Si es un admin en modo cliente prueba, mostramos siempre el banner
-  // para que sepa cómo salir. Sin esto, el admin queda "atascado" mirando
-  // el menú del cliente sin saber que basta escribir *admin*.
-  const banner = ses?.jid && isAdminJid(ses.jid)
-    ? `🧪 *Modo cliente de prueba activo.* Escribe *admin* para volver al panel.\n\n`
+  // La identidad operativa se conserva, pero el contexto actual es cliente.
+  const banner = isAdminClientMode(ses?.jid, ses)
+    ? `🛒 *Modo cliente activo.* Estás offline para atención. Usa */online* para volver al panel.\n\n`
     : '';
-  return `${banner}${pick(aperturas)}\n\n${pick(cierres)}`;
+  return (
+    `${banner}${pick(aperturas)}\n\n` +
+    `¿Qué necesitas? Responde con un número:\n\n` +
+    `${clientMenuLines()}\n\n` +
+    `_También puedes escribir tu pregunta con tus palabras._`
+  );
 }
 
 /**
@@ -2567,6 +2772,7 @@ function bienvenidaConversacional(ses) {
 function menuPrincipal(_ses = {}) {
   return texts.menuPrincipal({
     nombreNegocio: getNegocioNombre(),
+    verticalLabel: String(cfg('vertical_label', 'Menú')),
     loyaltyEnabled: String(cfg('loyalty_enabled', '1')) === '1',
     deliveryEnabled: String(cfg('delivery_enabled', '1')) === '1',
     scheduledEnabled: String(cfg('scheduled_enabled', '0')) === '1',
@@ -2653,6 +2859,15 @@ function isAdminClientMode(jid, ses) {
   return isAdminJid(jid) && String(ses?.estado || '').startsWith('client_');
 }
 
+function bareClientState(ses) {
+  return String(ses?.estado || 'idle').replace(/^client_/, '');
+}
+
+function isOrderStatusIntent(text) {
+  const value = _stripAccents(String(text || '').toLowerCase().trim());
+  return /^(?:estado|estado (?:de |del )?(?:mi )?pedido|mi pedido|mis pedidos|seguimiento|rastrear pedido|consultar pedido|donde (?:esta|va|anda) (?:mi )?pedido|como va (?:mi )?pedido|cuanto falta(?: para (?:mi )?pedido)?|a que hora llega(?: (?:mi )?pedido)?)$/.test(value);
+}
+
 function setClientState(ses, estado, pending = {}) {
   ses.role = 'client';
   ses.estado = clientStateFor(ses.jid, estado);
@@ -2660,14 +2875,17 @@ function setClientState(ses, estado, pending = {}) {
   saveSesion(ses);
 }
 
-async function startClientMenu(jid, nombre = null, primerMensaje = null) {
+async function startClientMenu(jid, nombre = null, primerMensaje = null, options = {}) {
   const ses = { jid, nombre, role: 'client', estado: clientStateFor(jid, 'main_menu'), carrito: [], pending: {}, zona_id: null, active_client_jid: null };
   saveSesion(ses);
-  // Si el cliente tiene un pedido activo, lo saludamos primero. El resumen
-  // ya incluye saludo personalizado + datos del pedido.
-  const resumenPedido = await resumenPedidoActivo(jid, ses).catch(() => '');
-  if (resumenPedido) {
-    return sendText(jid, resumenPedido);
+  // Al entrar o saludar mostramos el pedido activo. En cambio, MENU/0 son
+  // escapes explícitos: deben mostrar el menú aunque exista un pedido, sin
+  // volver a encerrar al usuario en `pedido_acciones`.
+  if (options.showActiveOrder !== false) {
+    const resumenPedido = await resumenPedidoActivo(jid, ses).catch(() => '');
+    if (resumenPedido) {
+      return sendText(jid, resumenPedido);
+    }
   }
   // Si su primer mensaje ya es una pregunta natural (no un simple saludo),
   // procesamos con la cascada determinista FAQ→intent→catálogo. No usamos IA
@@ -2719,412 +2937,52 @@ async function resumenPedidoActivo(clientJid, ses) {
     if (pedidos.length === 1) {
       const p = pedidos[0];
       const cancelable = (p.estado === 'pendiente');
-      const opciones = cancelable
-        ? `_Puedes responder *CANCELAR* si aún no quieres recibirlo._`
-        : `_Ya no se puede cancelar automáticamente. Escribe *AGENTE* y te conecto con quien lo prepara._`;
+      const confirmationHint = p.requiere_confirmacion || p.confirmacion_estado === 'pending'
+        ? `\n⚠️ *Falta confirmar tu primera compra.*\n` +
+          `Responde *SI* para verificar este WhatsApp y habilitar la preparación, o *NO* para anular el pedido.\n`
+        : '';
+      setClientState(ses, 'pedido_acciones', {
+        pedido_id: p.id,
+        numero: p.numero,
+        estado: p.estado,
+        cancelable,
+      });
       return (
         `${saludo}\n\n` +
         `Tienes un pedido en curso:\n` +
         `📦 *${p.numero}* — ${p.estado_label}\n` +
-        `${opciones}\n` +
-        `_O *REPORTAR <mensaje>* si quieres dejar una nota._`
+        (texts.scheduledOrderLine(p.fecha_entrega) ? `${texts.scheduledOrderLine(p.fecha_entrega)}\n` : '') +
+        confirmationHint +
+        `\n*¿Qué quieres hacer?*\n` +
+        texts.orderFollowupActions({ cancelable })
       );
     }
-    const lineas = pedidos.map(p => `• *${p.numero}* — ${p.estado_label}`).join('\n');
+    setClientState(ses, 'espera_numero_pedido');
+    const lineas = pedidos.map(p => {
+      const fecha = texts.scheduledOrderLine(p.fecha_entrega);
+      return `• *${p.numero}* — ${p.estado_label}${fecha ? `\n  ${fecha}` : ''}`;
+    }).join('\n');
     return (
       `${saludo}\n\n` +
       `Tienes ${pedidos.length} pedidos en curso:\n${lineas}\n\n` +
-      `Escribe *ESTADO* para ver detalles o *CANCELAR <número>* / *REPORTAR <número> <texto>* para acciones.`
+      `Escribe el número de uno para ver detalles, cancelarlo si aún es posible o reportar un problema.\n` +
+      `_Escribe *0* para volver al inicio._`
     );
   } catch (_) {
     return '';
   }
 }
 
-async function identificarBarOperador(clientJid) {
-  // Devuelve {id, nombre, telefono} si el JID coincide con el WhatsApp directo
-  // de un Proveedor activo. null si no es operador de ningún bar.
-  try {
-    const phone = phoneFromJid(clientJid);
-    const data = await oxidianGet(`/bar/identify?telefono=${encodeURIComponent(phone)}`);
-    return (data && data.ok && data.es_bar) ? data.bar : null;
-  } catch (_) {
-    return null;
-  }
-}
-
-function barMenu(bar) {
-  return texts.barMenu({ nombreBar: bar.nombre });
-}
-
-async function startBarMenu(jid, bar, nombre = null) {
-  const ses = {
-    jid,
-    nombre: nombre || bar.nombre,
-    role: 'bar',
-    estado: 'bar_menu',
-    bar_id: bar.id,
-    bar_nombre: bar.nombre,
-    carrito: [],
-    pending: {},
-    zona_id: null,
-    active_client_jid: null,
-  };
-  saveSesion(ses);
-  return sendText(jid, barMenu(bar));
-}
-
-function detectBarIntent(text) {
-  const t = String(text || '').toLowerCase().trim();
-  if (!t) return null;
-  if (/^[1-8]$/.test(t)) return t;
-  if (/pedidos?|listado|cola/.test(t)) return '1';
-  if (/preparad|listo|terminad/.test(t)) return '2';
-  if (/incidencias?|novedad|queja|reclamo/.test(t)) return '3';
-  if (/inventario|stock|productos?/.test(t)) return '4';
-  if (/admin|ayuda|soporte|gerent|encargad/.test(t)) return '5';
-  if (/abrir|cerrar|abierta|cerrada|estado.*tienda|tienda.*estado/.test(t)) return '6';
-  if (/agotad|sin.*stock|disponible/.test(t)) return '7';
-  if (/precio|coste|tarifa/.test(t)) return '8';
-  if (/menu|menú|inicio/.test(t)) return '0';
-  return null;
-}
-
-async function handleBarMenu(jid, ses, lower, rawText) {
-  // Si está esperando el PIN, gestiónalo primero.
-  if (ses.estado === 'awaiting_pin') {
-    const ok = await requireAdminPin(jid, ses, rawText);
-    if (!ok) return;
-    ses = getSesion(jid);
-  } else {
-    const ok = await requireAdminPin(jid, ses, lower);
-    if (!ok) return;
-  }
-  // Si el operador está en un sub-estado (esperando un número de pedido para
-  // marcar preparado), lo gestionamos primero.
-  if (ses.estado === 'bar_preparar_pide_id') {
-    return handleBarMarcarPreparado(jid, ses, rawText);
-  }
-  if (ses.estado === 'bar_estado_tienda') {
-    return handleBarEstadoTienda(jid, ses, rawText);
-  }
-  if (ses.estado === 'bar_agotado_pide_id') {
-    return handleBarAgotadoSku(jid, ses, rawText);
-  }
-  if (ses.estado === 'bar_precio_pide_id') {
-    return handleBarPrecioSku(jid, ses, rawText);
-  }
-
-  // Guardrail: el operador del bar puede confundirse y escribir "cancelar"
-  // (palabra del menú del cliente). Le explicamos que sus acciones son otras.
-  if (/^cancelar/i.test(lower)) {
-    return sendText(jid,
-      `📌 Como operador del bar no puedes cancelar pedidos directamente desde el chat.\n\n` +
-      `Si necesitas anular un pedido en curso usa:\n` +
-      `• *2* o *PREPARADO <número>* — marcar como preparado.\n` +
-      `• Desde el panel web puedes reportar un extravío.\n` +
-      `• *5* o *AYUDA* — contactar al administrador general.\n\n` +
-      barMenu({ id: ses.bar_id, nombre: ses.bar_nombre })
-    );
-  }
-
-  const opcion = detectBarIntent(lower);
-  const tiendaUrl = getTiendaUrl();
-
-  if (opcion === '0' || !opcion) {
-    // Refrescar menú
-    return sendText(jid, barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-  }
-
-  if (opcion === '1') {
-    try {
-      const phone = phoneFromJid(jid);
-      const data = await oxidianGet(`/bar/pedidos?telefono=${encodeURIComponent(phone)}&estados=pendiente,armando`);
-      if (!data || !data.ok) {
-        return sendText(jid, `No pude consultar tus pedidos ahora. Inténtalo en un momento.`);
-      }
-      if (!data.pedidos.length) {
-        return sendText(jid, `🎉 *No tienes pedidos pendientes.*\n\nCuando entre uno te avisaremos por aquí.\n\n_Escribe *menu* para volver._`);
-      }
-      const lineas = data.pedidos.map(p => {
-        const items = (p.items || []).map(it => `   • ${it.cantidad}× ${it.nombre}`).join('\n');
-        return `📦 *${p.numero}* (${p.estado})\n${items}`;
-      }).join('\n\n');
-      return sendText(jid,
-        `📋 *Tus pedidos pendientes (${data.pedidos.length}):*\n\n${lineas}\n\n` +
-        `Para marcar uno como preparado responde *2* o *PREPARADO <número>*.\n_Ej: PREPARADO 1024_`
-      );
-    } catch (error) {
-      log('warn', 'bar_pedidos_fallo', error?.message || String(error));
-      return sendText(jid, pick(FRASES_ERROR_RED));
-    }
-  }
-
-  if (opcion === '2') {
-    setSesion(jid, { ...ses, estado: 'bar_preparar_pide_id' });
-    return sendText(jid,
-      `✅ *Marcar pedido como preparado*\n\n` +
-      `Escribe el *número* del pedido (ej. *1024* o *#1024*).\n` +
-      `_O escribe *cancelar* para volver al menú._`
-    );
-  }
-
-  if (opcion === '3') {
-    try {
-      const phone = phoneFromJid(jid);
-      const data = await oxidianGet(`/bar/incidencias?telefono=${encodeURIComponent(phone)}`);
-      if (!data || !data.ok) return sendText(jid, `No pude leer las incidencias ahora.`);
-      if (!data.incidencias.length) {
-        return sendText(jid, `📭 *Sin incidencias pendientes.*\n\nCuando un cliente reporte algo te aparecerá aquí.\n\n_Escribe *menu* para volver._`);
-      }
-      const lineas = data.incidencias.slice(0, 5).map(i => {
-        const flag = i.atendida ? '✓' : '🔴';
-        return `${flag} *${i.pedido || '#'}* — «${(i.texto || '').slice(0, 120)}»`;
-      }).join('\n\n');
-      return sendText(jid,
-        `📨 *Incidencias recientes:*\n\n${lineas}\n\n` +
-        `_Para gestionarlas completas y marcar como atendidas, entra al panel web:_\n` +
-        `${tiendaUrl}/proveedor/incidencias`
-      );
-    } catch (error) {
-      log('warn', 'bar_incidencias_fallo', error?.message || String(error));
-      return sendText(jid, pick(FRASES_ERROR_RED));
-    }
-  }
-
-  if (opcion === '4') {
-    return sendText(jid,
-      `🌐 *Tu inventario online:*\n\n${tiendaUrl}/proveedor/inventario\n\n` +
-      `Desde ahí puedes ajustar stock y precios de coste.\n\n_Escribe *menu* para volver._`
-    );
-  }
-
-  if (opcion === '5') {
-    // Derivar al admin general (cola estándar)
-    return requestHumanSupport(jid, `${ses.bar_nombre}: necesito hablar con el administrador.`);
-  }
-
-  if (opcion === '6') {
-    setSesion(jid, { ...ses, estado: 'bar_estado_tienda' });
-    return sendText(jid,
-      `🔓 *Estado de mi tienda*\n\n` +
-      `Responde con una opción:\n` +
-      `• *abrir* — forzar tienda abierta\n` +
-      `• *cerrar* — forzar tienda cerrada\n` +
-      `• *auto* — usar horario global\n\n` +
-      `_Escribe *cancelar* para volver al menú._`
-    );
-  }
-
-  if (opcion === '7') {
-    setSesion(jid, { ...ses, estado: 'bar_agotado_pide_id' });
-    try {
-      const phone = phoneFromJid(jid);
-      const data = await oxidianGet(`/bar/sku-list?telefono=${encodeURIComponent(phone)}`);
-      if (!data || !data.ok || !data.items.length) {
-        setSesion(jid, { ...ses, estado: 'bar_menu' });
-        return sendText(jid, `No tienes productos en tu inventario. Pide al admin que te asigne SKUs.\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-      }
-      const lineas = data.items.slice(0, 30).map(it =>
-        `${it.agotado ? '🛑' : '✅'} *${it.pp_id}* — ${it.nombre} (stock: ${it.stock})`
-      ).join('\n');
-      return sendText(jid,
-        `🛑 *Marcar producto agotado / disponible*\n\n${lineas}\n\n` +
-        `Responde con el *id del SKU* seguido de *agotado* o *disponible*.\n` +
-        `_Ej: "${data.items[0].pp_id} agotado"_\n\n_Escribe *cancelar* para volver._`
-      );
-    } catch (error) {
-      setSesion(jid, { ...ses, estado: 'bar_menu' });
-      log('warn', 'bar_sku_list_fallo', error?.message || String(error));
-      return sendText(jid, `No pude consultar tus productos. Intenta de nuevo.`);
-    }
-  }
-
-  if (opcion === '8') {
-    setSesion(jid, { ...ses, estado: 'bar_precio_pide_id' });
-    try {
-      const phone = phoneFromJid(jid);
-      const data = await oxidianGet(`/bar/sku-list?telefono=${encodeURIComponent(phone)}`);
-      if (!data || !data.ok || !data.items.length) {
-        setSesion(jid, { ...ses, estado: 'bar_menu' });
-        return sendText(jid, `No tienes productos en tu inventario.\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-      }
-      const lineas = data.items.slice(0, 30).map(it =>
-        `💶 *${it.pp_id}* — ${it.nombre} (${it.precio.toFixed(2)} €)`
-      ).join('\n');
-      return sendText(jid,
-        `💶 *Cambiar precio*\n\n${lineas}\n\n` +
-        `Responde con el *id del SKU* y el *nuevo precio*.\n` +
-        `_Ej: "${data.items[0].pp_id} 4.50"_\n\n_Escribe *cancelar* para volver._`
-      );
-    } catch (error) {
-      setSesion(jid, { ...ses, estado: 'bar_menu' });
-      log('warn', 'bar_sku_list_fallo', error?.message || String(error));
-      return sendText(jid, `No pude consultar tus productos. Intenta de nuevo.`);
-    }
-  }
-
-  return sendText(jid, barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-}
-
-async function handleBarEstadoTienda(jid, ses, rawText) {
-  const text = String(rawText || '').trim().toLowerCase();
-  if (/^(?:cancelar|salir|menu|menú|inicio|0)$/i.test(text)) {
-    setSesion(jid, { ...ses, estado: 'bar_menu' });
-    return sendText(jid, `OK, volviendo al menú.\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-  }
-  let abierta;
-  if (/^(?:abrir|abierta?|open|1)$/.test(text)) abierta = true;
-  else if (/^(?:cerrar|cerrada?|close|0)$/.test(text)) abierta = false;
-  else if (/^(?:auto|horario)$/.test(text)) abierta = null;
-  else {
-    return sendText(jid, `No te entendí. Escribe *abrir*, *cerrar*, *auto* o *cancelar*.`);
-  }
-  try {
-    const phone = phoneFromJid(jid);
-    const resp = await oxidianPost('/bar/estado-tienda', { telefono: phone, abierta });
-    setSesion(jid, { ...ses, estado: 'bar_menu' });
-    if (!resp || !resp.ok) {
-      return sendText(jid, `No pude actualizar (${resp?.error || 'error'}).\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-    }
-    const estado = abierta === true ? 'ABIERTA' : abierta === false ? 'CERRADA' : 'AUTO (horario)';
-    return sendText(jid, `✅ Estado guardado: tienda *${estado}*.\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-  } catch (error) {
-    setSesion(jid, { ...ses, estado: 'bar_menu' });
-    log('warn', 'bar_estado_tienda_fallo', error?.message || String(error));
-    return sendText(jid, `No pude guardar el estado. Inténtalo de nuevo.`);
-  }
-}
-
-async function handleBarAgotadoSku(jid, ses, rawText) {
-  const text = String(rawText || '').trim().toLowerCase();
-  if (/^(?:cancelar|salir|menu|menú|inicio|0|no)$/i.test(text)) {
-    setSesion(jid, { ...ses, estado: 'bar_menu', pending: {} });
-    return sendText(jid, `Sin cambios. ✅\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-  }
-
-  // Confirmación
-  if (ses.pending?.tipo === 'bar_agotado' && /^(?:si|sí|s|yes|y|1|confirmar)$/i.test(text)) {
-    const { ppId, agotado, stockNuevo } = ses.pending;
-    try {
-      const phone = phoneFromJid(jid);
-      const body = { telefono: phone, agotado };
-      if (stockNuevo !== undefined) body.stock = stockNuevo;
-      const resp = await oxidianPost(`/bar/producto/${ppId}/agotado`, body);
-      setSesion(jid, { ...ses, estado: 'bar_menu', pending: {} });
-      if (!resp || !resp.ok) {
-        return sendText(jid, `No pude actualizar. Inténtalo de nuevo en unos segundos.\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-      }
-      return sendText(jid, `✅ Hecho. SKU *${ppId}* ${resp.producto.agotado ? 'marcado *AGOTADO*' : `disponible (stock=${resp.producto.stock})`}.\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-    } catch (error) {
-      setSesion(jid, { ...ses, estado: 'bar_menu', pending: {} });
-      log('warn', 'bar_agotado_fallo', error?.message || String(error));
-      return sendText(jid, `No pude guardar ahora mismo. Vuelve a intentarlo en un minuto.`);
-    }
-  }
-
-  // Primer paso
-  const m = text.match(/^(\d+)\s+(agotad\w*|disponible|stock)\s*(\d*)$/);
-  if (!m) {
-    return sendText(jid, `Formato: *<id> agotado* o *<id> disponible*. Por ejemplo: *12 agotado*\n\nEscribe *cancelar* para volver.`);
-  }
-  const ppId = parseInt(m[1], 10);
-  const agotado = /^agotad/.test(m[2]);
-  const stockNuevo = m[3] ? parseInt(m[3], 10) : undefined;
-  setSesion(jid, { ...ses, pending: { tipo: 'bar_agotado', ppId, agotado, stockNuevo } });
-  const estadoLabel = agotado ? '*AGOTADO* 🛑' : (stockNuevo !== undefined ? `disponible (stock = ${stockNuevo})` : 'disponible');
-  return sendText(jid,
-    `⚠️ *Confirmar disponibilidad*\n\n` +
-    `SKU *${ppId}* → ${estadoLabel}\n\n` +
-    `Responde *SI* para aplicarlo o *NO* para cancelar.`
-  );
-}
-
-async function handleBarPrecioSku(jid, ses, rawText) {
-  const text = String(rawText || '').trim().toLowerCase();
-  if (/^(?:cancelar|salir|menu|menú|inicio|0|no)$/i.test(text)) {
-    setSesion(jid, { ...ses, estado: 'bar_menu', pending: {} });
-    return sendText(jid, `De acuerdo, cambio descartado. ✅\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-  }
-
-  // Si estamos esperando confirmación de un cambio ya tecleado, ejecuta.
-  if (ses.pending?.tipo === 'bar_precio' && /^(?:si|sí|s|yes|y|1|confirmar)$/i.test(text)) {
-    const { ppId, precio } = ses.pending;
-    try {
-      const phone = phoneFromJid(jid);
-      const resp = await oxidianPost(`/bar/producto/${ppId}/precio`, { telefono: phone, precio });
-      setSesion(jid, { ...ses, estado: 'bar_menu', pending: {} });
-      if (!resp || !resp.ok) {
-        if (resp && resp.code === 'PRICE_OVERRIDE_UNSUPPORTED') {
-          return sendText(jid, `Tu inventario aún no soporta cambio de precio por bot. Pide al admin que lo active.\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-        }
-        return sendText(jid, `No pude actualizar el precio. Vuelve a intentarlo en unos segundos.\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-      }
-      return sendText(jid, `✅ Listo. Precio del SKU *${ppId}* actualizado a *${precio.toFixed(2)} €*.\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-    } catch (error) {
-      setSesion(jid, { ...ses, estado: 'bar_menu', pending: {} });
-      log('warn', 'bar_precio_fallo', error?.message || String(error));
-      return sendText(jid, `No pude guardar el precio ahora. Probemos de nuevo en un minuto.`);
-    }
-  }
-
-  // Primer paso: parsear y pedir confirmación
-  const m = text.match(/^(\d+)\s+([\d.,]+)$/);
-  if (!m) {
-    return sendText(jid, `Formato: *<id> <precio>*. Por ejemplo: *12 4.50*\n\nEscribe *cancelar* si quieres volver.`);
-  }
-  const ppId = parseInt(m[1], 10);
-  const precio = parseFloat(m[2].replace(',', '.'));
-  const maxPrecio = botMaxPrice();
-  if (!isFinite(precio) || precio < 0 || precio > maxPrecio) {
-    return sendText(jid, `Precio fuera de rango. Usa por ejemplo *12 4.50* (entre 0 y ${maxPrecio.toFixed(0)} €).`);
-  }
-  setSesion(jid, { ...ses, pending: { tipo: 'bar_precio', ppId, precio } });
-  return sendText(jid,
-    `⚠️ *Confirmar cambio de precio*\n\n` +
-    `SKU *${ppId}* → *${precio.toFixed(2)} €*\n\n` +
-    `Responde *SI* para aplicarlo o *NO* para cancelar.`
-  );
-}
-
-async function handleBarMarcarPreparado(jid, ses, rawText) {
-  const text = String(rawText || '').trim();
-  if (/^(?:cancelar|salir|menu|menú|inicio|0)$/i.test(text)) {
-    setSesion(jid, { ...ses, estado: 'bar_menu' });
-    return sendText(jid, `OK, volviendo al menú.\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-  }
-  const m = text.match(/#?(\d+)/);
-  if (!m) {
-    return sendText(jid, `Necesito un número de pedido. Por ejemplo *1024* o *#1024*. (Escribe *cancelar* para volver.)`);
-  }
-  // Buscar el pedido por número en la lista del bar y obtener su id real.
-  try {
-    const phone = phoneFromJid(jid);
-    const lista = await oxidianGet(`/bar/pedidos?telefono=${encodeURIComponent(phone)}&estados=pendiente,armando`);
-    if (!lista || !lista.ok) {
-      setSesion(jid, { ...ses, estado: 'bar_menu' });
-      return sendText(jid, `No pude consultar tus pedidos.`);
-    }
-    const target = `#${m[1]}`;
-    const pedido = lista.pedidos.find(p => p.numero === target || String(p.id) === m[1]);
-    if (!pedido) {
-      return sendText(jid, `No encuentro el pedido *${target}* entre los pendientes. ¿Otro número? (o *cancelar*)`);
-    }
-    const resp = await oxidianPost(`/bar/pedido/${pedido.id}/preparado`, { telefono: phone });
-    setSesion(jid, { ...ses, estado: 'bar_menu' });
-    if (!resp || resp.ok === false) {
-      return sendText(jid, `No pude marcar el pedido (${resp?.error || 'error'}). Vuelve al menú.\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre }));
-    }
-    const avanzo = resp.avanzado_a_listo ? `\n\n🚚 El pedido pasa automáticamente a *listo* y se asigna repartidor.` : '';
-    return sendText(jid,
-      `✅ Pedido *${resp.numero}* marcado como preparado.${avanzo}\n\n` + barMenu({ id: ses.bar_id, nombre: ses.bar_nombre })
-    );
-  } catch (error) {
-    log('warn', 'bar_preparado_fallo', error?.message || String(error));
-    setSesion(jid, { ...ses, estado: 'bar_menu' });
-    return sendText(jid, `Hubo un error. Inténtalo desde el panel web si es urgente.`);
-  }
-}
+// ── DEAD CODE REMOVED: bar operator flow ────────────────────────────────
+// Las 9 funciones (identificarBarOperador, barMenu, startBarMenu,
+// detectBarIntent, handleBarMenu, handleBarEstadoTienda,
+// handleBarAgotadoSku, handleBarPrecioSku, handleBarMarcarPreparado)
+// se retiraron el 2026-07-15. Ningún caller externo las invocaba y el
+// producto ya no soporta operador de bar por WhatsApp — los bares
+// gestionan su inventario y pedidos vía panel web /proveedor/*.
+// El reset legacy `if (ses.role === 'bar') { resetSesion(...) }` en
+// `handleEvolutionEvent` sigue vivo para migrar sesiones antiguas al
+// flujo cliente sin perder el JID.
 
 function setSesion(jid, ses) {
   saveSesion({ ...ses, jid });
@@ -3153,22 +3011,57 @@ async function requireAdminPin(jid, ses, text) {
 
   // Si el usuario está enviando el PIN ahora
   if (ses?.estado === 'awaiting_pin') {
+    // El estado no persiste `prev_estado`/`awaiting_pin_since` como columnas
+    // propias — viven dentro de `pending` para sobrevivir el round-trip a la
+    // BD entre mensajes.
+    const pending = ses.pending || {};
+    const prevEstado = pending.awaiting_pin_prev;
+    const back = prevEstado || (isAdminJid(jid) ? 'admin_menu' : 'bar_menu');
+    const clearPin = { ...pending };
+    delete clearPin.awaiting_pin_prev;
+    delete clearPin.awaiting_pin_since;
+
+    // Escape explícito: si escribe salir/menu/cancelar, salimos del gate y
+    // volvemos al menú correspondiente sin ejecutar la acción original.
+    const escape = String(text || '').toLowerCase().trim();
+    if (/^(?:salir|cancelar|menu|menú|inicio|0)$/.test(escape)) {
+      setSesion(jid, { ...ses, estado: back, pending: clearPin });
+      await sendText(jid, `Cancelado. Vuelves al menú.`);
+      if (isAdminJid(jid)) await sendText(jid, adminMenu(jid));
+      // Bar operator flow retirado — ver bloque DEAD CODE REMOVED.
+      return false;
+    }
+    // Timeout: si el usuario dejó la sesión colgada en 'awaiting_pin', no
+    // seguimos tratando cualquier mensaje futuro como intento de PIN. Reset
+    // al menú y volvemos a pedir PIN si de verdad quiere una acción admin.
+    const since = Number(pending.awaiting_pin_since || 0);
+    if (since && (Date.now() - since) > AWAITING_PIN_TTL_MS) {
+      setSesion(jid, { ...ses, estado: back, pending: clearPin });
+      await sendText(jid, `⌛ La solicitud de PIN expiró. Escribe *menu* y vuelve a intentarlo.`);
+      return false;
+    }
     if (verifyAdminPin(text)) {
       unlockAdmin(jid);
-      setSesion(jid, { ...ses, estado: ses.prev_estado || (isAdminJid(jid) ? 'admin_menu' : 'bar_menu'), prev_estado: undefined });
+      setSesion(jid, { ...ses, estado: back, pending: clearPin });
       const min = Math.round(ADMIN_PIN_TTL_MS / 60000);
       await sendText(jid, `🔓 PIN correcto. Sesión segura activa durante ${min} min.`);
       // Re-mostrar menú según rol
       if (isAdminJid(jid)) return await sendText(jid, adminMenu(jid)).then(() => false);
-      if (ses.bar_id) return await sendText(jid, barMenu({ id: ses.bar_id, nombre: ses.bar_nombre })).then(() => false);
+      // Bar operator flow retirado — ver bloque DEAD CODE REMOVED.
       return false;
     }
     await sendText(jid, `❌ PIN incorrecto. Inténtalo de nuevo o escribe *salir*.`);
     return false;
   }
 
-  // Pedir PIN
-  setSesion(jid, { ...ses, estado: 'awaiting_pin', prev_estado: ses?.estado });
+  // Pedir PIN — persistimos `prev_estado` y timestamp dentro de `pending`
+  // para que sobrevivan al round-trip por la BD entre mensajes.
+  const nextPending = {
+    ...(ses?.pending || {}),
+    awaiting_pin_prev: ses?.estado,
+    awaiting_pin_since: Date.now(),
+  };
+  setSesion(jid, { ...ses, estado: 'awaiting_pin', pending: nextPending });
   await sendText(jid,
     `🔐 *Acceso seguro*\n\n` +
     `Esta acción requiere tu PIN de admin.\n` +
@@ -3216,8 +3109,10 @@ async function _handleMessage(jid, text, pushName) {
 
   const lower = text.toLowerCase().trim();
   const isOwner = isAdminJid(jid);
+  const ownerAsClient = isOwner && isAdminClientMode(jid, ses);
+  const requestedMode = isOwner ? detectOperationalModeCommand(text) : null;
 
-  if (!isBotEnabled() && !isOwner) {
+  if (!isBotEnabled() && (!isOwner || ownerAsClient)) {
     const handoff = getHandoff(jid);
     if (handoff && lower === '/volver bot') {
       const closed = closeHumanChatByClient(jid);
@@ -3236,29 +3131,99 @@ async function _handleMessage(jid, text, pushName) {
   }
 
   // Un handoff humano tiene prioridad sobre los comandos generales del bot.
-  if (!isOwner) {
+  if (!isOwner || ownerAsClient) {
     const handoff = getHandoff(jid);
     if (handoff) {
-      if (lower === '/volver bot') {
+      const clientMenuEscape = ['0', 'menu', 'menú', 'inicio', 'volver'].includes(lower);
+      if (ownerAsClient && clientMenuEscape) {
         const closed = closeHumanChatByClient(jid);
         if (closed?.admin_jid) {
           sendText(
             closed.admin_jid,
-            `ℹ️ El cliente ${phoneFromJid(jid)} volvió al asistente automático.`,
+            `ℹ️ El cliente ${phoneFromJid(jid)} cerró la atención y volvió al menú.`,
           ).catch(() => {});
         }
-        return startClientMenu(jid, ses.nombre);
+        return startClientMenu(jid, ses.nombre, null, { showActiveOrder: false });
       }
-      if (handoff.admin_jid) {
-        return forwardClientToAdmin(jid, handoff.admin_jid, text);
+      // Un admin que estaba comprando como cliente puede volver al panel sin
+      // reenviar "/online" como si fuera un mensaje para el agente.
+      if (ownerAsClient && requestedMode === 'online') {
+        const closed = closeHumanChatByClient(jid);
+        if (closed?.admin_jid) {
+          sendText(closed.admin_jid, `ℹ️ El cliente ${phoneFromJid(jid)} volvió a su panel operativo.`).catch(() => {});
+        }
+      } else {
+        if (lower === '/volver bot') {
+          const closed = closeHumanChatByClient(jid);
+          if (closed?.admin_jid) {
+            sendText(
+              closed.admin_jid,
+              `ℹ️ El cliente ${phoneFromJid(jid)} volvió al asistente automático.`,
+            ).catch(() => {});
+          }
+          return startClientMenu(jid, ses.nombre, null, { showActiveOrder: false });
+        }
+        if (handoff.admin_jid) {
+          return forwardClientToAdmin(jid, handoff.admin_jid, text);
+        }
+        queueHandoffMessage(jid, 'client', text);
+        const assigned = await autoAssignPendingHandoff(jid);
+        if (!assigned) {
+          return sendText(jid, `🕐 Tu mensaje quedó guardado en la cola. Te responderemos por este mismo chat.`);
+        }
+        return true;
       }
-      queueHandoffMessage(jid, 'client', text);
-      const assigned = await autoAssignPendingHandoff(jid);
-      if (!assigned) {
-        return sendText(jid, `🕐 Tu mensaje quedó guardado en la cola. Te responderemos por este mismo chat.`);
-      }
-      return true;
     }
+  }
+
+  // El cambio de modo debe evaluarse ANTES del interceptor de chat humano.
+  // De lo contrario `/offline` se reenviaba al cliente como texto normal.
+  if (isOwner && ['/modo', 'modo', 'mi modo', 'estado de modo'].includes(lower)) {
+    const clientMode = isAdminClientMode(jid, ses);
+    return sendText(jid, clientMode
+      ? `🛒 *Modo cliente (offline).* Puedes comprar y consultar pedidos. Escribe */online* para volver al panel.`
+      : `🟢 *Modo operativo (online).* Estás usando el panel de ${adminRoleLabel(jid)}. Escribe */offline* para comprar como cliente.`
+    );
+  }
+  if (requestedMode === 'offline') {
+    if (ses.active_client_jid || adminHasActiveChat(jid)) {
+      return sendText(jid,
+        `No puedo pasar a modo cliente mientras atiendes un chat. ` +
+        `Ciérralo con */cerrar chat* y vuelve a escribir */offline*.`
+      );
+    }
+    setAdminAvailability(jid, false);
+    const next = {
+      jid, nombre: ses.nombre, role: 'client',
+      estado: clientStateFor(jid, 'main_menu'), carrito: [], pending: {},
+      zona_id: null, active_client_jid: null,
+    };
+    saveSesion(next);
+    log('info', 'operational_mode_changed', `${phoneFromJid(jid)} -> offline/client`);
+    await sendText(jid,
+      `⏸️ *Modo cliente activado.*\n\n` +
+      `Quedaste offline para atención y ahora puedes comprar o consultar pedidos como cualquier cliente.\n` +
+      `Escribe */online* cuando quieras volver al panel operativo.`
+    );
+    return startClientMenu(jid, next.nombre);
+  }
+
+  if (requestedMode === 'online') {
+    if (ses.active_client_jid || adminHasActiveChat(jid)) {
+      return sendText(jid, `Ya tienes un chat activo; sigues online.`);
+    }
+    setAdminAvailability(jid, true);
+    const next = {
+      jid, nombre: ses.nombre || adminRoleLabel(jid), role: 'admin',
+      estado: 'admin_menu', carrito: [], pending: {}, zona_id: null,
+      active_client_jid: null,
+    };
+    saveSesion(next);
+    log('info', 'operational_mode_changed', `${phoneFromJid(jid)} -> online/admin`);
+    const waiting = listPendingHandoffs()[0];
+    if (waiting && await takeHandoff(jid, next, waiting.client_jid, { automatic: true })) return true;
+    await sendText(jid, `🟢 *Modo operativo online.*\nRecibirás chats y alertas compatibles con tus permisos.`);
+    return sendText(jid, adminMenu(jid));
   }
 
   // Durante un handoff, cada mensaje del admin pertenece al chat hasta cerrarlo.
@@ -3280,11 +3245,16 @@ async function _handleMessage(jid, text, pushName) {
   }
 
   // ── Comandos globales (siempre activos) ────────────────────────────────
+  // Un teléfono operativo conserva su identidad y permisos, pero puede
+  // alternar explícitamente el contexto de conversación. Offline significa
+  // "no recibir chats de trabajo" y, desde ese momento, el flujo normal es
+  // exactamente el de cualquier cliente (pedidos, puntos, cobertura, etc.).
   if (['cliente', 'modo cliente', 'modo-cliente', 'client'].includes(lower)) {
     deleteHandoff(jid);
     clearAdminChatForClient(jid);
+    if (isOwner) setAdminAvailability(jid, false);
     const aviso = isOwner
-      ? `🧪 *Modo cliente de prueba activado.*\nEscribe *admin* para volver al panel.\n\n`
+      ? `🛒 *Modo cliente activado.*\nNo recibirás chats mientras estés offline. Escribe */online* para volver al panel.\n\n`
       : '';
     await sendText(jid, aviso + menuPrincipal());
     const next = { jid, nombre: ses.nombre, role: 'client', estado: clientStateFor(jid, 'main_menu'), carrito: [], pending: {}, zona_id: null, active_client_jid: null };
@@ -3296,20 +3266,28 @@ async function _handleMessage(jid, text, pushName) {
   // al menú principal desde cualquier estado. El comando *0* está también
   // documentado en la constante `texts.ESCAPE_HINT` que se muestra al pie
   // de los submenús — ambos deben mantenerse sincronizados si se amplían.
-  if (['menu', 'menú', 'inicio', 'hola', 'hi', 'start', '0', 'salir', 'volver'].includes(lower)) {
+  // Sólo comandos de salida inequívocos rompen un subflujo. Un saludo o una
+  // palabra inesperada debe recibir ayuda contextual, no borrar la operación.
+  if (['menu', 'menú', 'inicio', '0', 'salir', 'volver'].includes(lower)) {
     if (isOwner && !isAdminClientMode(jid, ses)) {
       return startAdminMenu(jid, ses.nombre);
     }
     deleteHandoff(jid);
     clearAdminChatForClient(jid);
-    return startClientMenu(jid, ses.nombre);
+    return startClientMenu(jid, ses.nombre, null, { showActiveOrder: false });
   }
 
   // Las intenciones críticas deben funcionar también en una sesión nueva.
-  if (isOwner && lower.startsWith('!')) {
+  if (isOwner && lower.startsWith('!')
+      && !isAdminClientMode(jid, ses)
+      && ses.estado !== 'admin_confirm') {
     return handleAdminCmd(jid, text);
   }
-  if (!isOwner && /^(?:7|agente|persona|humano|asesor)$|(?:hablar|comunicarme|contactar).*(?:agente|persona|humano|asesor)/i.test(lower)) {
+  // El número 7 solo significa "agente" dentro del menú principal. Tratarlo
+  // como comando global interceptaba la opción 7 al elegir entre varios
+  // pedidos pendientes. Las palabras explícitas sí son escape global.
+  if ((!isOwner || isAdminClientMode(jid, ses))
+      && /^(?:agente|persona|humano|asesor)$|(?:hablar|comunicarme|contactar).*(?:agente|persona|humano|asesor)/i.test(lower)) {
     return requestHumanSupport(jid, text);
   }
 
@@ -3318,15 +3296,28 @@ async function _handleMessage(jid, text, pushName) {
   // el mensaje de "pedido recibido", intentamos resolverlo contra la API.
   // Solo interceptamos respuestas inequívocas de una palabra para no
   // colisionar con otros flujos (ej. "cancelar" con id, "no quiero ...").
-  if (!isOwner && /^(?:si|sí|s|ok|vale|confirmo|confirmar|no|n|cancelo|cancelar|anular)$/i.test(lower)) {
+  const clientConversation = !isOwner || isAdminClientMode(jid, ses);
+  const clientState = bareClientState(ses);
+  // La confirmación de cancelación tiene prioridad absoluta. Antes, su "SI"
+  // podía ser consumido por antifraude y confirmar el pedido en vez de anularlo.
+  const passiveConfirmationStates = new Set(['idle', 'main_menu', 'pedido_acciones']);
+  if (clientConversation && passiveConfirmationStates.has(clientState)
+      && /^(?:si|sí|s|ok|vale|confirmo|confirmar(?: pedido)?|no|n)$/i.test(lower)) {
     const consumed = await tryHandleConfirmationReply(jid, lower);
     if (consumed) return true;
     // sin pedido pendiente → cae al flujo normal (cancelar, menú, etc.)
   }
 
-  if (!isOwner && /^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i.test(lower)) {
+  if (clientConversation && /^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i.test(lower)) {
     const identifier = text.match(/^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i)?.[1] || '';
     return iniciarCancelacionPedido(jid, ses, identifier);
+  }
+
+  // Consulta determinística de estado con lenguaje natural. Se permite desde
+  // estados de consulta, pero no interrumpe formularios/reporte/cancelación.
+  if (clientConversation && isOrderStatusIntent(lower)
+      && ['idle', 'main_menu', 'espera_numero_pedido', 'pedido_acciones'].includes(clientState)) {
+    return handleEstadoPedido(jid, ses, 'ULTIMO');
   }
 
   // ── Enrutado DETERMINÍSTICO antes de invocar la IA ─────────────────
@@ -3352,11 +3343,29 @@ async function _handleMessage(jid, text, pushName) {
     const trimmed = String(text || '').trim();
     if (trimmed.length <= 3) return true;
     if (/^\d+$/.test(trimmed)) return true;
-    const stateSinPrefijo = String(ses?.estado || '').replace(/^client_/, '');
-    if (['espera_numero_pedido', 'confirmar_cancelacion',
-         'espera_direccion_cobertura'].includes(stateSinPrefijo)) {
-      return true;
-    }
+    // Ampliado: TODO estado que espera input concreto (cliente O admin
+    // en modo cliente de prueba) salta la IA para que la respuesta no se
+    // interprete como consulta general.
+    const stateSinPrefijo = String(ses?.estado || '').replace(/^client_/, '').replace(/^admin_/, '');
+    const submenuStates = [
+      // Cliente
+      'espera_numero_pedido', 'pedido_acciones', 'espera_reporte_pedido',
+      'seleccionar_cancelacion', 'confirmar_cancelacion',
+      'espera_direccion_cobertura',
+      // Admin en modo cliente de prueba
+      'confirm', 'store_menu', 'store_close_message',
+      'products_menu', 'product_search', 'product_price_wait',
+      'product_toggle_wait', 'points_menu', 'points_adjust_wait',
+      'points_history_wait', 'admins_menu', 'admin_add_wait',
+      'admin_remove_wait', 'handoff_menu', 'take_wait', 'chat',
+      'security_menu', 'mute_wait', 'emergency_menu',
+      // Wait states del bar operator (código legacy pero por seguridad)
+      'bar_preparar_pide_id', 'bar_estado_tienda',
+      'bar_agotado_pide_id', 'bar_precio_pide_id',
+    ];
+    if (submenuStates.includes(stateSinPrefijo)) return true;
+    // Fallback genérico: cualquier estado que acabe en `_wait` o `_espera_*`.
+    if (/(_wait|_espera_|_pide_)/.test(String(ses?.estado || ''))) return true;
     return false;
   })();
 
@@ -3439,14 +3448,17 @@ async function _handleMessage(jid, text, pushName) {
   }
 
   if (isAdminClientMode(jid, ses)) {
-    if (lower === 'admin') return startAdminMenu(jid, ses.nombre);
+    if (lower === 'admin') {
+      return sendText(jid, `Para volver a trabajar y recibir chats escribe */online*.`);
+    }
     if (lower.startsWith('!')) {
-      // Ejecutar el comando desde modo cliente prueba tiene sentido puntual
-      // (probar sin salir), pero después no queremos dejar al admin viendo
-      // solo el output — le volvemos a mostrar el panel para que continúe
-      // la operación sin escribir "admin" explícito.
-      await handleAdminCmd(jid, text);
-      return startAdminMenu(jid, ses.nombre);
+      // Offline significa contexto cliente real. Ejecutar comandos de trabajo
+      // aquí dejaba la sesión en panel admin pero la disponibilidad seguía
+      // offline. Exigimos el cambio explícito para mantener ambos estados
+      // sincronizados.
+      return sendText(jid,
+        `Estás en *modo cliente (offline)*. Escribe */online* antes de usar comandos administrativos.`
+      );
     }
     if (/^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i.test(lower)) {
       const identifier = text.match(/^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i)?.[1] || '';
@@ -3455,6 +3467,9 @@ async function _handleMessage(jid, text, pushName) {
     switch (ses.estado) {
       case 'client_main_menu': return handleMainMenu(jid, ses, lower);
       case 'client_espera_numero_pedido': return handleEstadoPedido(jid, ses, text);
+      case 'client_pedido_acciones': return handlePedidoActions(jid, ses, text);
+      case 'client_espera_reporte_pedido': return handleReportePedido(jid, ses, text);
+      case 'client_seleccionar_cancelacion': return handleSeleccionCancelacion(jid, ses, text);
       case 'client_confirmar_cancelacion': return confirmarCancelacionPedido(jid, ses, lower);
       case 'client_espera_direccion_cobertura': return handleCoberturaDelivery(jid, ses, text);
       default:
@@ -3470,8 +3485,50 @@ async function _handleMessage(jid, text, pushName) {
         ? sendText(jid, `✅ Chat finalizado.\n\n${adminMenu(jid)}`)
         : sendText(jid, `No tienes un chat activo.\n\n${adminMenu(jid)}`);
     }
+    // Alias operativos visibles e intuitivos. Se conserva confirmación SI/NO
+    // para evitar cierres accidentales y se respeta la matriz de permisos.
+    const storeMutationAlias = /^\/?(?:abrir|reabrir)(?:\s+tienda)?$/i.test(lower)
+      || /^\/?cerrar(?:\s+tienda)?$/i.test(lower);
+    // Los alias sin slash solo se interpretan en el menú principal. Dentro
+    // de formularios (p. ej. "ID activar/cerrar") son datos, no comandos de
+    // tienda. Un comando con slash sigue siendo global e inequívoco.
+    if (storeMutationAlias && (lower.startsWith('/') || ses.estado === 'admin_menu')) {
+      if (!adminCan(jid, 'store')) {
+        return sendText(jid, '⛔ No tienes permiso para abrir o cerrar la tienda.');
+      }
+      const cerrar = /^\/?cerrar/i.test(lower);
+      return askAdminConfirm(
+        jid,
+        ses,
+        { action: cerrar ? 'close_store' : 'open_store', message: cerrar ? 'Cerrado temporalmente.' : '' },
+        cerrar
+          ? 'Vas a cerrar temporalmente la tienda y detener pedidos web.'
+          : 'Vas a abrir la tienda. Los pedidos se aceptarán si el horario configurado también está activo.',
+      );
+    }
+    if (/^\/?(?:estado\s+tienda|tienda\s+estado)$/i.test(lower)
+        && (lower.startsWith('/') || ses.estado === 'admin_menu')) {
+      try {
+        const data = await oxidianGet(withAdminActor('/admin/tienda', jid));
+        return sendText(jid, `🏪 Tienda *${data.estado || 'desconocida'}*.\nMensaje de cierre: ${data.mensaje_cierre || 'sin mensaje'}.`);
+      } catch (error) {
+        return sendText(jid, friendlyOxidianError(error, 'consulta_tienda'));
+      }
+    }
     if (lower === 'admin') return startAdminMenu(jid, ses.nombre);
-    if (lower.startsWith('!')) return handleAdminCmd(jid, text);
+    if (lower.startsWith('!') && ses.estado !== 'admin_confirm') {
+      return handleAdminCmd(jid, text);
+    }
+    // Si intenta comprar o consultar "mi pedido" desde el panel operativo,
+    // explicamos el cambio de contexto en vez de repetir el menú admin.
+    if (ses.estado === 'admin_menu' && /^(?:pedido|pedidos|mi pedido|mis pedidos|pedir|comprar|quiero (?:pedir|comprar|hacer un pedido)|donde est[aá] mi pedido)$/i.test(lower)) {
+      return sendText(jid,
+        `Ahora estás *online como ${adminRoleLabel(jid)}*.\n\n` +
+        `Para comprar o consultar tus pedidos personales escribe */offline*. ` +
+        `El bot cambiará a modo cliente sin desvincular tu cuenta.\n\n` +
+        `_Puedes comprobarlo en cualquier momento con */modo*._`
+      );
+    }
     const stateCapability = {
       admin_store_menu: 'store', admin_store_close_message: 'store',
       admin_products_menu: 'products', admin_product_search: 'products',
@@ -3524,7 +3581,7 @@ async function _handleMessage(jid, text, pushName) {
     return sendText(jid, `Los comandos administrativos no están disponibles para clientes.\n\n${menuPrincipal()}`);
   }
 
-  if (/^(?:7|agente|persona|humano|asesor)$|(?:hablar|comunicarme|contactar).*(?:agente|persona|humano|asesor)/i.test(lower)) {
+  if (/^(?:agente|persona|humano|asesor)$|(?:hablar|comunicarme|contactar).*(?:agente|persona|humano|asesor)/i.test(lower)) {
     return requestHumanSupport(jid, text);
   }
 
@@ -3538,7 +3595,9 @@ async function _handleMessage(jid, text, pushName) {
   //   REPORTAR #1024 <texto>          → reporta sobre ese pedido concreto
   //   REPORTAR 1024 <texto>           → idem
   // También aceptamos sinónimos: incidencia, problema, novedad, queja.
-  const reportarMatch = text.match(/^(reportar|incidencia|problema|novedad|queja)\s+(.+)$/i);
+  const reportarMatch = String(ses.estado || '') !== 'espera_reporte_pedido'
+    ? text.match(/^(reportar|incidencia|problema|novedad|queja)\s+(.+)$/i)
+    : null;
   if (reportarMatch) {
     return iniciarReporteNovedad(jid, ses, reportarMatch[2]);
   }
@@ -3548,6 +3607,9 @@ async function _handleMessage(jid, text, pushName) {
     case 'idle':
     case 'main_menu': return handleMainMenu(jid, ses, lower);
     case 'espera_numero_pedido': return handleEstadoPedido(jid, ses, text);
+    case 'pedido_acciones': return handlePedidoActions(jid, ses, text);
+    case 'espera_reporte_pedido': return handleReportePedido(jid, ses, text);
+    case 'seleccionar_cancelacion': return handleSeleccionCancelacion(jid, ses, text);
     case 'confirmar_cancelacion': return confirmarCancelacionPedido(jid, ses, lower);
     case 'espera_direccion_cobertura': return handleCoberturaDelivery(jid, ses, text);
     default:
@@ -3595,6 +3657,16 @@ async function handleAdminChat(jid, ses, text) {
 async function handleAdminCmd(jid, text) {
   const cmd = text.slice(1).trim();
   const lowerCmd = cmd.toLowerCase();
+  // Modo pánico global: si super_admin activó `emergency_on`, cualquier
+  // comando (incluidos !status y !sync que antes se colaban) responde
+  // solo con aviso. Excepción explícita: !emergency_off para poder
+  // desactivar el modo desde el propio bot sin acceso al panel web.
+  if (!isBotEnabled() && lowerCmd !== 'emergency_off' && lowerCmd !== 'reanudar') {
+    return sendText(jid,
+      `🚨 Bot en modo pánico. Los comandos operativos están pausados.\n` +
+      `Usa el panel web o escribe *!emergency_off* para reanudar.`
+    );
+  }
   const requiredCapability = lowerCmd === 'status' ? 'status'
     : lowerCmd === 'sync' ? 'sync'
     : /^(send|take|release)(\s|$)/.test(lowerCmd) || ['disponible', 'ausente'].includes(lowerCmd)
@@ -3645,7 +3717,7 @@ async function handleAdminCmd(jid, text) {
       try {
         const r = await oxidianGet(withAdminActor('/config?claves=TIPO_TIENDA', jid));
         return sendText(jid, `Nicho actual: *${r?.config?.TIPO_TIENDA || '?'}*\n\nUso: \`!nicho comida\` o \`!nicho producto\``);
-      } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+      } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
     }
     if (!['comida', 'producto'].includes(arg)) {
       return sendText(jid, '❌ Uso: `!nicho comida` o `!nicho producto`');
@@ -3655,7 +3727,7 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, r?.ok
         ? `✅ Nicho cambiado a *${arg}*. Los templates se adaptan al siguiente request.`
         : `❌ ${r?.error || 'No se pudo cambiar'}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // Ver/editar SiteConfig runtime
@@ -3678,7 +3750,7 @@ async function handleAdminCmd(jid, text) {
     try {
       const r = await oxidianPost('/config/set', adminBody(jid, { clave, valor }));
       return sendText(jid, r?.ok ? `✅ ${clave} = *${valor}*` : `❌ ${r?.error || 'error'}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
   if (lowerCmd.startsWith('ver-config') || lowerCmd === 'verconfig') {
     const pref = (cmd.slice(10).trim() || '').toUpperCase();
@@ -3687,7 +3759,7 @@ async function handleAdminCmd(jid, text) {
       if (!r?.ok || !r.config) return sendText(jid, '❌ No pude leer la config');
       const lines = Object.entries(r.config).slice(0, 25).map(([k, v]) => `  \`${k}\`=${v}`);
       return sendText(jid, `⚙️ *Config${pref ? ' ' + pref + '*' : ''}\n${lines.join('\n')}${Object.keys(r.config).length > 25 ? '\n_… truncado_' : ''}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // Pausar / reanudar tienda (TIENDA_FORZAR_CERRADA)
@@ -3701,7 +3773,7 @@ async function handleAdminCmd(jid, text) {
         mensaje_cierre: 'La tienda está pausada temporalmente. Vuelve a intentarlo más tarde.',
       }));
       return sendText(jid, r?.ok ? `⏸ Tienda pausada. Estado actual: *${r.estado || 'cerrada'}*.` : `❌ ${r?.error}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
   if (lowerCmd === 'reanudar-tienda' || lowerCmd === 'reanuda') {
     if (!adminCan(jid, 'store')) {
@@ -3713,7 +3785,7 @@ async function handleAdminCmd(jid, text) {
         mensaje_cierre: '',
       }));
       return sendText(jid, r?.ok ? `▶ Tienda reanudada. Estado actual: *${r.estado || 'abierta'}*.` : `❌ ${r?.error}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // Buscar producto por texto
@@ -3727,7 +3799,7 @@ async function handleAdminCmd(jid, text) {
       const lines = r.productos.slice(0, 8).map(p =>
         `• #${p.id} *${p.nombre}* €${(p.precio || 0).toFixed(2)} ${p.activo ? '✅' : '❌'}${p.stock != null ? ` · stock:${p.stock}` : ''}`);
       return sendText(jid, `🔍 *Resultados*\n${lines.join('\n')}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // Toggle producto activar/desactivar
@@ -3742,7 +3814,7 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, r?.ok
         ? `✅ Producto #${parts[0]} ${activo ? 'activado' : 'desactivado'}`
         : `❌ ${r?.error || 'error'}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // Diagnóstico del sistema completo (stock, finanzas, features, atascos)
@@ -3764,7 +3836,7 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, r?.ok
         ? `✅ Precio de #${m[1]} actualizado a €${(r.precio ?? m[2]).toString()}`
         : `❌ ${r?.error || 'error'}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // Ajuste de stock: !stock <id> +5 | -3 | =10
@@ -3778,7 +3850,7 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, r?.ok
         ? `✅ Stock de #${m[1]}: ${r.antes ?? '?'} → *${r.nuevo}*`
         : `❌ ${r?.error || 'error'}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // Crear producto rápido: !crear-producto Nombre|precio|categoria
@@ -3801,7 +3873,7 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, r?.ok
         ? `✅ Producto creado #${r.id}: *${r.nombre}* €${r.precio.toFixed(2)}${r.categoria ? ' · ' + r.categoria : ''}`
         : `❌ ${r?.error || 'error'}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // Listar pedidos con detalle
@@ -3817,7 +3889,7 @@ async function handleAdminCmd(jid, text) {
         `• #${p.numero} — *${p.estado}* — €${(p.total || 0).toFixed(2)} — ${p.creado_hace || '?'}`
       );
       return sendText(jid, `📦 *Pedidos (${estado})*\n${lines.join('\n')}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // Cambiar nombre del negocio
@@ -3828,7 +3900,7 @@ async function handleAdminCmd(jid, text) {
     try {
       const r = await oxidianPost('/config/set', adminBody(jid, { clave: 'NOMBRE_NEGOCIO', valor: nuevo }));
       return sendText(jid, r?.ok ? `✅ Nombre del negocio: *${nuevo}*` : `❌ ${r?.error}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // Horario: !horario 09:00-22:30
@@ -3840,7 +3912,7 @@ async function handleAdminCmd(jid, text) {
       await oxidianPost('/config/set', adminBody(jid, { clave: 'HORARIO_APERTURA', valor: m[1] }));
       const r = await oxidianPost('/config/set', adminBody(jid, { clave: 'HORARIO_CIERRE', valor: m[2] }));
       return sendText(jid, r?.ok ? `✅ Horario: *${m[1]}–${m[2]}*` : `❌ ${r?.error}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // Pedido mínimo
@@ -3851,7 +3923,7 @@ async function handleAdminCmd(jid, text) {
     try {
       const r = await oxidianPost('/config/set', adminBody(jid, { clave: 'PEDIDO_MINIMO_EUR', valor: val }));
       return sendText(jid, r?.ok ? `✅ Pedido mínimo: *€${val}*` : `❌ ${r?.error}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // ── Comandos admin adicionales (disponibles en ambos modos) ─────
@@ -3870,7 +3942,7 @@ async function handleAdminCmd(jid, text) {
         `  Total: €${(p.total || 0).toFixed(2)}\n` +
         `  Pago: ${p.metodo_pago || '—'}\n` +
         `  Creado hace: ${p.creado_hace || '?'}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // !aviso <numero> <texto> — Notifica al cliente de un pedido
@@ -3884,7 +3956,7 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, r?.ok
         ? `✅ Aviso enviado a ${r.telefono_masked || 'cliente'}`
         : `❌ ${r?.error || 'no se pudo enviar'}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // !cupon <codigo> <descuento%> — Crea cupón express
@@ -3898,7 +3970,7 @@ async function handleAdminCmd(jid, text) {
       return sendText(jid, r?.ok
         ? `✅ Cupón *${r.codigo}* creado (${r.descuento_pct}% dto)`
         : `❌ ${r?.error || 'error'}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // !top — top productos vendidos 30d
@@ -3910,7 +3982,7 @@ async function handleAdminCmd(jid, text) {
       if (!items.length) return sendText(jid, `Sin ventas en los últimos ${dias} días.`);
       const lines = items.map((p, i) => `${i + 1}. ${p.nombre} — ${p.unidades} uds — €${(p.total || 0).toFixed(2)}`);
       return sendText(jid, `🏆 *Top ventas ${dias}d*\n${lines.join('\n')}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // !stock-bajo — productos con stock < 10
@@ -3921,7 +3993,7 @@ async function handleAdminCmd(jid, text) {
       if (!items.length) return sendText(jid, '✅ Todos los productos con stock suficiente.');
       const lines = items.slice(0, 20).map(p => `⚠️ #${p.id} ${p.nombre} — ${p.stock} uds`);
       return sendText(jid, `📉 *Stock bajo* (${items.length})\n${lines.join('\n')}`);
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   if (lowerCmd === 'diag' || lowerCmd === 'diagnostico') {
@@ -3949,7 +4021,7 @@ async function handleAdminCmd(jid, text) {
         `⚙️ *Módulos*\n  ${activos}\n\n` +
         `${op['pedidos_atascados_>30min'] > 0 ? `⚠️ *${op['pedidos_atascados_>30min']} pedidos atascados >30min*` : '✅ Sin pedidos atascados'}`
       );
-    } catch (e) { return sendText(jid, `Error: ${e.message || e}`); }
+    } catch (e) { return sendText(jid, friendlyOxidianError(e, 'admin_cmd')); }
   }
 
   // ── !ia <pregunta> — Consulta IA de negocio (admin/super_admin) ───────
@@ -3985,7 +4057,7 @@ async function handleAdminCmd(jid, text) {
         `_Contexto: ${ctx.pedidos_30d ?? '?'} pedidos / €${ctx.facturacion_30d ?? '?'} en 30d._`
       );
     } catch (e) {
-      return sendText(jid, `🤖 Error consultando IA: ${e.message || e}`);
+      return sendText(jid, `🤖 ${friendlyOxidianError(e, 'ia_query')}`);
     }
   }
 
@@ -4008,7 +4080,7 @@ async function handleAdminCmd(jid, text) {
           : `✅ Todos los productos con stock.`)
       );
     } catch (e) {
-      return sendText(jid, `No pude consultar el resumen: ${e.message || e}`);
+      return sendText(jid, friendlyOxidianError(e, 'resumen_hoy'));
     }
   }
 
@@ -4384,14 +4456,21 @@ function clearAdminChatForClient(clientJid) {
 }
 
 async function takeHandoff(adminJid, ses, clientJid, options = {}) {
-  if (!clientJid || isAdminJid(clientJid)) {
-    await sendText(adminJid, 'No puedo tomar como cliente un número administrativo.');
+  const manual = !options.automatic;
+  if (!clientJid || !canBeHandoffClient(clientJid) || adminJid === clientJid) {
+    if (manual) {
+      await sendText(adminJid, adminJid === clientJid
+        ? 'No puedes tomar tu propio chat.'
+        : 'Ese número no está disponible como cliente.');
+    }
     return false;
   }
   if (adminHasActiveChat(adminJid)) {
     const active = db.prepare(`SELECT client_jid FROM handoffs WHERE admin_jid = ? LIMIT 1`).get(adminJid);
     if (active?.client_jid !== clientJid) {
-      await sendText(adminJid, `Ya atiendes a ${phoneFromJid(active?.client_jid)}. Cierra ese chat antes de tomar otro.`);
+      if (manual) {
+        await sendText(adminJid, `Ya atiendes a ${phoneFromJid(active?.client_jid)}. Cierra ese chat antes de tomar otro.`);
+      }
       return false;
     }
   }
@@ -4399,13 +4478,13 @@ async function takeHandoff(adminJid, ses, clientJid, options = {}) {
   if (!existing) {
     createHandoffRequest(clientJid);
   } else if (existing.admin_jid && existing.admin_jid !== adminJid) {
-    await sendText(adminJid, 'Ese cliente ya está siendo atendido por otro administrador.');
+    if (manual) await sendText(adminJid, 'Ese cliente ya está siendo atendido por otro administrador.');
     return false;
   }
   if (!getHandoff(clientJid)?.admin_jid) {
     const claimed = assignHandoff(clientJid, adminJid);
     if (!claimed.changes) {
-      await sendText(adminJid, 'Otro administrador tomó ese chat antes.');
+      if (manual) await sendText(adminJid, 'Otro administrador tomó ese chat antes.');
       return false;
     }
   }
@@ -4424,7 +4503,10 @@ async function handleMessage(jid, text, pushName) {
   const admin = isAdminJid(jid);
   if (!inboundAllowed(jid, admin)) return false;
   const adminSession = admin ? getSesion(jid) : null;
-  const handoff = admin
+  const adminAsClient = admin && isAdminClientMode(jid, adminSession);
+  const handoff = adminAsClient
+    ? getHandoff(jid)
+    : admin
     ? (adminSession?.active_client_jid ? getHandoff(adminSession.active_client_jid) : null)
     : getHandoff(jid);
   const queueKey = handoff?.client_jid || adminSession?.active_client_jid || jid;
@@ -4450,7 +4532,8 @@ async function catalogPreviewText() {
   let rows = [];
   try {
     rows = db.prepare(`
-      SELECT id, nombre, precio, categoria, tipo_entrega, es_combo
+      SELECT id, nombre, precio, categoria, tipo_entrega, es_combo,
+             cantidad_por_lote, fecha_llegada, lote_tandas_disp
       FROM productos_cache
       WHERE activo=1
       ORDER BY es_combo DESC, categoria COLLATE NOCASE, nombre COLLATE NOCASE
@@ -4478,7 +4561,19 @@ async function catalogPreviewText() {
   return rows.map((p, index) => {
     const combo = Number(p.es_combo) ? 'Combo' : 'Producto';
     const categoria = p.categoria ? ` · ${p.categoria}` : '';
-    return `${index + 1}. ${p.nombre} · ${formatPrecio(p.precio)} · ${combo} · ${deliveryLabel(p.tipo_entrega)}${categoria}`;
+    // Badge de lote: "4 por 5€ para 18/07 · quedan 3 tandas"
+    // Solo se muestra si el producto tiene cantidad_por_lote > 0 y fecha.
+    let lote = '';
+    if (Number(p.cantidad_por_lote) > 0 && p.fecha_llegada) {
+      const [yyyy, mm, dd] = String(p.fecha_llegada).split('-');
+      const fechaTxt = (dd && mm) ? `${dd}/${mm}` : p.fecha_llegada;
+      lote = ` · 🍽 ${p.cantidad_por_lote} u. por tanda · para el ${fechaTxt}`;
+      const disp = Number(p.lote_tandas_disp);
+      if (Number.isFinite(disp) && disp < 1_000_000) {
+        lote += ` · quedan ${Math.max(0, disp)} tanda${disp === 1 ? '' : 's'}`;
+      }
+    }
+    return `${index + 1}. ${p.nombre} · ${formatPrecio(p.precio)} · ${combo} · ${deliveryLabel(p.tipo_entrega)}${categoria}${lote}`;
   }).join('\n');
 }
 
@@ -5007,12 +5102,10 @@ async function handleMainMenu(jid, ses, opcion) {
       );
     }
     case '2': {
-      setClientState(ses, 'espera_numero_pedido');
-      return sendText(jid, texts.withEscapeHint(
-        `🔍 *Estado o cancelación de pedido*\n\n` +
-        `Escribe el *número de tu pedido* o *ULTIMO* para ver el más reciente.\n\n` +
-        `También puedes escribir *CANCELAR* o *CANCELAR número-pedido*.`
-      ));
+      // El teléfono ya identifica al cliente: mostramos directamente su
+      // pedido activo o, si no existe, el último pedido cerrado. Evita pedir
+      // un número que normalmente el cliente no tiene a mano.
+      return handleEstadoPedido(jid, ses, 'ULTIMO');
     }
     case '3': {
       if (String(cfg('loyalty_enabled', '1')) !== '1') {
@@ -5023,19 +5116,15 @@ async function handleMainMenu(jid, ses, opcion) {
         const data = await oxidianGet(`/puntos?telefono=${phone}`);
         if (data.ok && data.existe !== false) {
           const saludo = data.nombre ? `Hola *${data.nombre}* 👋\n\n` : '';
-          const bloqueCodigo = data.codigo_verificacion
-            ? `\n🔐 *Código verificación:* \`${data.codigo_verificacion}\`\n` +
-              `_Válido 10 min. Úsalo en el checkout para canjear sin volver a pedirlo._\n`
-            : '';
           return sendText(jid,
             `${saludo}⭐ *Tu club de fidelidad*\n\n` +
             `Tienes *${data.puntos} puntos* 🎉\n` +
-            `Puedes usarlos para canjear productos disponibles en la tienda.` +
-            bloqueCodigo +
+            `Puedes usarlos para canjear productos disponibles en la tienda.\n` +
+            `_Por seguridad, el código se envía únicamente cuando inicias el canje en el checkout._\n` +
             `\n*¿Cómo canjearlos?*\n` +
             `1. Abre la tienda online 🛒\n` +
-            `2. En el checkout introduce el código de arriba ⬆️\n` +
-            `3. Elige el producto canjeable que quieras añadir 🎁\n\n` +
+            `2. Pulsa *Usar mis puntos* en el checkout\n` +
+            `3. Introduce el código recibido y elige tu canje 🎁\n\n` +
             `👉 *Historial:* ${tiendaUrl}/club\n` +
             `👉 *Abrir tienda online:* ${tiendaUrl}\n\n` +
             `_Escribe *menu* para volver._`
@@ -5098,9 +5187,6 @@ async function handleMainMenu(jid, ses, opcion) {
       return sendText(jid, `Ahora mismo no pude consultar esa información. Puedes abrir la tienda online aquí: ${tiendaUrl}`);
     }
     case '7': {
-      if (isAdminJid(jid)) {
-        return sendText(jid, `Estás en modo prueba de cliente desde un número admin.\n\nEscribe *admin* para volver al panel o *menu* para reiniciar.\n\n${menuPrincipal()}`);
-      }
       return requestHumanSupport(jid);
     }
     default: {
@@ -5187,16 +5273,37 @@ async function tryHandleConfirmationReply(jid, respuesta) {
 // ─── ESTADO Y CANCELACIÓN DE PEDIDO ──────────────────────────────────────────
 async function iniciarCancelacionPedido(jid, ses, identifier = '') {
   const phone = phoneFromJid(jid);
-  const requested = String(identifier || '').trim().replace(/^#/, '').toLowerCase();
+  const normalizeOrderNumber = value => String(value || '')
+    .toLowerCase().replace(/[\s#·\-–—]+/g, '');
+  const requested = normalizeOrderNumber(identifier);
   try {
     const data = await oxidianGet(`/pedidos?telefono=${phone}&limit=20`);
     const pedidos = Array.isArray(data.pedidos) ? data.pedidos : [];
+    const cancelables = pedidos.filter(item => item.estado === 'pendiente');
+    // Nunca resolver referencias parciales: "1" podía coincidir con #1001,
+    // #1010, etc. y conducir a la cancelación del pedido equivocado.
     const pedido = requested
-      ? pedidos.find(item => {
-        const numero = String(item.numero || '').replace(/^#/, '').toLowerCase();
-        return numero === requested || numero.includes(requested);
-      })
-      : pedidos.find(item => item.estado === 'pendiente');
+      ? pedidos.find(item => normalizeOrderNumber(item.numero) === requested)
+      : cancelables.length === 1 ? cancelables[0] : null;
+
+    if (!requested && cancelables.length > 1) {
+      const opciones = cancelables.slice(0, 10).map((item, index) => ({
+        id: item.id,
+        numero: item.numero,
+        total: item.total,
+      }));
+      setClientState(ses, 'seleccionar_cancelacion', {
+        opciones_cancelacion: opciones,
+        _asked_at: Date.now(),
+      });
+      return sendText(jid, texts.withEscapeHint(
+        `Tienes varios pedidos que todavía pueden cancelarse.\n\n` +
+        opciones.map((item, index) =>
+          `*${index + 1}* — Pedido *${item.numero}* · ${formatPrecio(item.total)}`
+        ).join('\n') +
+        `\n\nResponde con el número de la opción. No cambiaré nada hasta que lo confirmes.`
+      ));
+    }
 
     if (!pedido) {
       setClientState(ses, 'main_menu');
@@ -5248,39 +5355,76 @@ async function iniciarCancelacionPedido(jid, ses, identifier = '') {
     setClientState(ses, 'confirmar_cancelacion', {
       pedido_id: pedido.id,
       numero: pedido.numero,
+      _asked_at: Date.now(),
     });
     return sendText(jid, texts.withEscapeHint(
       `⚠️ *Confirmar cancelación*\n\n` +
       `Pedido: *${pedido.numero}*\n` +
       `Total: *${formatPrecio(pedido.total)}*\n\n` +
       `Solo se cancelará si todavía no inició preparación.\n\n` +
-      `Responde *SI* para cancelar o *NO* para conservarlo.`,
+      `*1* o *SI* — cancelar el pedido\n` +
+      `*2* o *NO* — conservarlo`,
     ));
   } catch (error) {
     log('warn', 'cancel_order_lookup_fail', String(error));
     setClientState(ses, 'main_menu');
+    if (error?.status === 404) {
+      return sendText(jid, menuSinPedidos());
+    }
     return sendText(jid, `No pude consultar tus pedidos ahora mismo. Intenta de nuevo o escribe *AGENTE*.\n\n${menuPrincipal()}`);
   }
+}
+
+async function handleSeleccionCancelacion(jid, ses, answer) {
+  const pending = { ...(ses.pending || {}) };
+  const opciones = Array.isArray(pending.opciones_cancelacion)
+    ? pending.opciones_cancelacion
+    : [];
+  const askedAt = Number(pending._asked_at || 0);
+  if (!askedAt || (Date.now() - askedAt) > CLIENT_CANCEL_CONFIRM_TTL_MS) {
+    setClientState(ses, 'main_menu');
+    return sendText(jid,
+      `⌛ La selección venció y no cambié ningún pedido. Escribe *CANCELAR* para empezar de nuevo.\n\n${menuPrincipal()}`
+    );
+  }
+  const index = Number.parseInt(String(answer || '').trim(), 10) - 1;
+  if (!Number.isInteger(index) || index < 0 || index >= opciones.length) {
+    return sendText(jid,
+      `No cambié ningún pedido. Responde con una opción entre *1* y *${opciones.length}*, o escribe *0* para volver.`
+    );
+  }
+  // Se vuelve a consultar el backend usando el número exacto. El estado
+  // guardado en la sesión sirve solo para elegir; nunca autoriza la acción.
+  return iniciarCancelacionPedido(jid, ses, opciones[index].numero);
 }
 
 async function confirmarCancelacionPedido(jid, ses, answer) {
   const lower = String(answer || '').trim().toLowerCase();
   // Escape: si el cliente escribe MENU / SALIR / 0 le devolvemos al menú
   // principal (no queda atrapado en el flujo de confirmación).
-  if (['no', 'n', 'salir', 'menu', 'menú', '0', 'inicio'].includes(lower)) {
+  if (['2', 'no', 'n', 'salir', 'menu', 'menú', '0', 'inicio'].includes(lower)) {
     setClientState(ses, 'main_menu');
     return sendText(jid, `De acuerdo, el pedido se conserva.\n\n${menuPrincipal()}`);
   }
-  if (!['si', 'sí', 's', 'confirmar'].includes(lower)) {
+  if (!['1', 'si', 'sí', 's', 'confirmar'].includes(lower)) {
     return sendText(jid,
-      `Responde *SI* para cancelar el pedido o *NO* para conservarlo.\n` +
-      `Si te equivocaste, escribe *menu* para volver al inicio.`);
+      `No cambié el pedido. Elige una opción:\n\n` +
+      `*1* o *SI* — cancelar\n` +
+      `*2* o *NO* — conservar\n` +
+      `*0* — volver al inicio`);
   }
 
   const pending = { ...(ses.pending || {}) };
   if (!pending.pedido_id) {
     setClientState(ses, 'main_menu');
     return sendText(jid, `La confirmación venció. Vuelve a escribir *CANCELAR*.\n\n${menuPrincipal()}`);
+  }
+  const askedAt = Number(pending._asked_at || 0);
+  if (!askedAt || (Date.now() - askedAt) > CLIENT_CANCEL_CONFIRM_TTL_MS) {
+    setClientState(ses, 'main_menu');
+    return sendText(jid,
+      `⌛ La confirmación venció y no cambié el pedido. Vuelve a escribir *CANCELAR* si aún quieres anularlo.\n\n${menuPrincipal()}`
+    );
   }
 
   try {
@@ -5320,15 +5464,53 @@ async function confirmarCancelacionPedido(jid, ses, answer) {
   }
 }
 
+const PEDIDO_ESTADOS_ACTIVOS = new Set(['pendiente', 'armando', 'listo', 'en_ruta']);
+
+function seleccionarPedidoConsulta(pedidos, consulta) {
+  const items = Array.isArray(pedidos) ? pedidos : [];
+  if (/^(?:ultimo|último)$/i.test(String(consulta || '').trim())) {
+    return items.find(item => PEDIDO_ESTADOS_ACTIVOS.has(item.estado)) || items[0] || null;
+  }
+  const normalize = value => String(value || '').toLowerCase().replace(/[\s#·\-–—]+/g, '');
+  const needle = normalize(consulta);
+  // La consulta debe identificar exactamente el pedido. Aceptar fragmentos
+  // cortos mostraba datos de otro pedido cuando varios números compartían
+  // dígitos (por ejemplo 1001 y 11001).
+  return items.find(item => normalize(item.numero) === needle) || null;
+}
+
+function menuSinPedidos() {
+  return (
+    `📭 *No encontré pedidos asociados a este WhatsApp.*\n\n` +
+    `Puedes hacer tu primer pedido o consultar información:\n\n` +
+    `*1* — 🛒 Abrir la tienda online\n` +
+    `*6* — ⏰ Horario y contacto\n` +
+    `*7* — 👤 Hablar con una persona\n` +
+    `*0* — 🏠 Volver al inicio`
+  );
+}
+
+function contextoPedidoConsulta(pedido, esUltimo) {
+  if (!esUltimo || !pedido) return '';
+  return PEDIDO_ESTADOS_ACTIVOS.has(pedido.estado)
+    ? `📍 *Este es tu pedido activo más reciente.*\n\n`
+    : `📚 *No tienes pedidos activos ahora.* Te muestro el último pedido cerrado.\n\n`;
+}
+
 async function handleEstadoPedido(jid, ses, numero) {
-  setClientState(ses, 'main_menu');
+  // Escape universal: salir sin dejar la sesión atrapada.
+  if (isEscapeWord(numero)) {
+    clearAttempts(ses, 'estado_pedido');
+    setClientState(ses, 'main_menu');
+    return sendText(jid, `De acuerdo, vuelvo al menú.\n\n${menuPrincipal(ses)}`);
+  }
   // Normalización defensiva del número de pedido:
   //  - remueve todos los espacios (usuario que copia/pega desde WhatsApp)
   //  - remueve símbolos comunes # · - que a veces vienen con el número
   //  - preserva "ultimo/último" como palabra
   //  - preserva mayúsculas por si el numero tiene formato tipo "EPX-2024-0042"
   const raw = String(numero || '').trim();
-  const esUltimo = /^ultimo|último$/i.test(raw);
+  const esUltimo = /^(?:ultimo|último)$/i.test(raw);
   const consulta = esUltimo
     ? raw
     : raw.replace(/[\s#·\-–—]+/g, '').trim();
@@ -5338,12 +5520,7 @@ async function handleEstadoPedido(jid, ses, numero) {
     const phone = phoneFromJid(jid);
     const data  = await oxidianGet(`/pedidos?telefono=${phone}&limit=20`);
     if (data.ok && Array.isArray(data.pedidos)) {
-      const pedido = /^ultimo|último$/i.test(consulta)
-        ? data.pedidos[0]
-        : data.pedidos.find(p =>
-          p.numero.toLowerCase() === consulta.toLowerCase() ||
-          p.numero.toLowerCase().includes(consulta.toLowerCase())
-        );
+      const pedido = seleccionarPedidoConsulta(data.pedidos, consulta);
       if (pedido) {
         // Estados extendidos: cubren el ciclo completo del pedido.
         // El estado base (pedido.estado) se refina con señales del pedido:
@@ -5364,9 +5541,61 @@ async function handleEstadoPedido(jid, ses, numero) {
           ESTADOS.en_ruta = { emoji: '📍', label: 'Repartidor en punto de encuentro' };
         }
         const est = ESTADOS[pedido.estado] || { emoji: '•', label: pedido.estado.replace('_', ' ') };
+        const seed = String(pedido.numero || '').split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+        const creadoMs = pedido.creado_en ? new Date(pedido.creado_en).getTime() : NaN;
+        const minutos = Number.isFinite(creadoMs)
+          ? Math.max(0, Math.floor((Date.now() - creadoMs) / 60000))
+          : null;
+        const espera = minutos === null ? '' : (minutos < 60 ? `${minutos} min` : `${Math.floor(minutos / 60)} h ${minutos % 60} min`);
+        const variantes = {
+          pendiente: [
+            `Lo recibimos correctamente, pero *todavía no ha comenzado la preparación*.`,
+            `Está registrado y esperando turno de preparación. No figura como preparado todavía.`,
+            `El equipo ya tiene el pedido en cola; el siguiente cambio será cuando empiece la preparación.`,
+          ],
+          armando: [
+            `Ya salió de la espera: *el equipo lo está preparando ahora*.`,
+            `La preparación está en curso. Te avisaremos cuando quede listo.`,
+            `Está siendo preparado; aún no está listo para recoger ni para reparto.`,
+          ],
+          listo: [
+            pedido.repartidor_id ? `Ya está preparado y tiene repartidor asignado.` : `Ya está preparado; falta iniciar la entrega.`,
+            pedido.repartidor_id ? `Preparación terminada. El reparto ya está asignado.` : `Preparación terminada. Está esperando salida.`,
+          ],
+          en_ruta: [
+            pedido.en_punto_encuentro ? `El repartidor ya está en el punto de encuentro.` : `Ya salió y está en camino hacia la entrega.`,
+            pedido.en_punto_encuentro ? `La entrega llegó al punto acordado.` : `El pedido está con el repartidor y continúa en ruta.`,
+          ],
+          entregado: [`La entrega figura completada.`, `El pedido aparece como entregado correctamente.`],
+          cancelado: [`El pedido está cancelado y no continuará su preparación.`, `La operación fue cancelada.`],
+        };
+        const fechaProgramadaTxt = texts.scheduledOrderLine(pedido.fecha_entrega);
+        const contextoProgramado = pedido.estado === 'pendiente' && fechaProgramadaTxt
+          ? `Está reservado correctamente para esa fecha. La preparación aún no comienza porque debe hacerse dentro de la ventana planificada.`
+          : '';
+        const contexto = contextoProgramado || variantes[pedido.estado]?.[seed % variantes[pedido.estado].length] || `El estado registrado es *${est.label}*.`;
+        const tiempoTxt = espera && !fechaProgramadaTxt && ['pendiente', 'armando'].includes(pedido.estado)
+          ? `\nTiempo desde el registro: *${espera}*. _No es una estimación de entrega._`
+          : '';
+        const siguiente = {
+          pendiente: fechaProgramadaTxt
+            ? `Siguiente paso: se habilitará la preparación cuando corresponda por fecha.`
+            : `Siguiente paso: el equipo toma el pedido y empieza a prepararlo.${minutos !== null && minutos >= 60 ? ' Si necesitas revisarlo con una persona, escribe *AGENTE*.' : ''}`,
+          armando: `Siguiente paso: marcarlo como listo.`,
+          listo: pedido.repartidor_id ? `Siguiente paso: comenzar la ruta.` : `Siguiente paso: asignar o iniciar el reparto.`,
+          en_ruta: `Siguiente paso: confirmar la entrega. No compartas códigos antes de recibirla.`,
+          entregado: `Si hubo algún inconveniente, escribe *AGENTE*.`,
+          cancelado: `Si necesitas conocer el motivo, escribe *AGENTE*.`,
+        }[pedido.estado] || '';
         const cancelHint = pedido.estado === 'pendiente'
           ? `\nPara cancelarlo antes de preparación escribe *CANCELAR ${pedido.numero}*.\n`
           : '';
+        const confirmationHint = pedido.requiere_confirmacion || pedido.confirmacion_estado === 'pending'
+          ? `\n⚠️ *Este primer pedido todavía necesita tu confirmación.*\n` +
+            `Responde *SI* para comprobar este WhatsApp y habilitar la preparación, o *NO* para anularlo.\n`
+          : '';
+        const hayActivo = data.pedidos.some(item => PEDIDO_ESTADOS_ACTIVOS.has(item.estado));
+        const contextoConsulta = contextoPedidoConsulta(pedido, esUltimo);
         // Lista de artículos con notas del cliente si las hay
         let itemsTxt = '';
         if (Array.isArray(pedido.items) && pedido.items.length) {
@@ -5375,16 +5604,29 @@ async function handleEstadoPedido(jid, ses, numero) {
             const nota = it.notas && it.notas.trim() ? `\n   _${it.notas.trim().slice(0, 120)}_` : '';
             return base + nota;
           });
-          itemsTxt = `\n📋 *Artículos:*\n${lineas.join('\n')}${pedido.items.length > 10 ? `\n_(+${pedido.items.length - 10} más)_` : ''}\n`;
+          itemsTxt = `\n📋 *Resumen:*\n${lineas.slice(0, 4).join('\n')}${pedido.items.length > 4 ? `\n_(+${pedido.items.length - 4} productos más)_` : ''}\n`;
         }
+        setClientState(ses, 'pedido_acciones', {
+          pedido_id: pedido.id,
+          numero: pedido.numero,
+          estado: pedido.estado,
+          cancelable: pedido.estado === 'pendiente',
+          era_ultimo_cerrado: esUltimo && !hayActivo,
+        });
         return sendText(jid,
+          contextoConsulta +
           `${est.emoji} *Pedido ${pedido.numero}*\n\n` +
           `Estado: *${est.label}*\n` +
+          (fechaProgramadaTxt ? `${fechaProgramadaTxt}\n` : '') +
+          `${contexto}${tiempoTxt}\n` +
+          confirmationHint +
+          (siguiente ? `${siguiente}\n` : '') +
           `Total: *${formatPrecio(pedido.total)}*\n` +
+          `Pago: *${pedido.pago_confirmado ? 'confirmado' : 'pendiente o contra entrega'}*\n` +
           itemsTxt +
           cancelHint +
-          `\n` +
-          `_Escribe *menu* para volver._`
+          `\n*¿Qué quieres hacer ahora?*\n` +
+          texts.orderFollowupActions({ cancelable: pedido.estado === 'pendiente' })
         );
       }
     }
@@ -5399,20 +5641,131 @@ async function handleEstadoPedido(jid, ses, numero) {
             .map(p => `• *${p.numero}* — ${p.estado}`).join('\n')
         }\n`
       : '';
+    if (esUltimo && !listaPedidos) {
+      setClientState(ses, 'main_menu');
+      return sendText(jid, menuSinPedidos());
+    }
+    // Contador de reintentos: 3 fallos consecutivos → volver al menú.
+    // Evita bucles de "no encontré el pedido X" cuando el cliente escribe
+    // texto arbitrario o números erróneos.
+    if (bumpAttempt(ses, 'estado_pedido', 3)) {
+      clearAttempts(ses, 'estado_pedido');
+      setClientState(ses, 'main_menu');
+      return sendText(jid,
+        `No encontré el pedido tras varios intentos. Vuelvo al menú.\n\n` +
+        `Escribe *AGENTE* si necesitas ayuda de una persona.\n\n${menuPrincipal(ses)}`
+      );
+    }
+    setClientState(ses, 'espera_numero_pedido');
     return sendText(jid,
       `❓ No encontré el pedido *${raw}* asociado a tu número.\n` +
       listaPedidos +
-      `\nPuedes:\n` +
-      `• Escribir *ULTIMO* para ver el más reciente\n` +
-      `• Escribir *AGENTE* si necesitas ayuda\n\n` +
-      `_Escribe *menu* para volver._`
+      `\nResponde *ULTIMO* para ver el más reciente, escribe otro número o *0* para volver.`
     );
   } catch (err) {
     log('warn', 'estado_pedido_lookup_fail', err?.message || String(err));
+    if (err?.status === 404) {
+      setClientState(ses, 'main_menu');
+      return sendText(jid, menuSinPedidos());
+    }
+    setClientState(ses, 'main_menu');
     return sendText(jid,
       `⚠️ No pudimos consultar el estado ahora mismo.\n\n` +
       `Puedes intentar de nuevo en 30 segundos o escribir *AGENTE*.\n\n` +
       `_Escribe *menu* para volver._`);
+  }
+}
+
+async function handlePedidoActions(jid, ses, input) {
+  const value = String(input || '').trim().toLowerCase();
+  const pending = { ...(ses.pending || {}) };
+  if (!pending.numero) {
+    setClientState(ses, 'main_menu');
+    return sendText(jid, menuPrincipal(ses));
+  }
+
+  if (value === '1' || /actualizar|refrescar|como va|cómo va/.test(value)) {
+    return handleEstadoPedido(jid, ses, pending.numero);
+  }
+  if (value === '2' || /otro pedido|buscar pedido|consultar otro/.test(value)) {
+    setClientState(ses, 'espera_numero_pedido');
+    return sendText(jid, texts.withEscapeHint(
+      `🔎 *Consultar otro pedido*\n\n` +
+      `Escribe el número del pedido o *ULTIMO* para volver al más reciente.`
+    ));
+  }
+
+  const reportOption = pending.cancelable ? '4' : '3';
+  const agentOption = pending.cancelable ? '5' : '4';
+  if (pending.cancelable && (value === '3' || /cancelar|anular/.test(value))) {
+    return iniciarCancelacionPedido(jid, ses, pending.numero);
+  }
+  if (value === reportOption || /reportar|problema|incidencia|novedad|queja/.test(value)) {
+    setClientState(ses, 'espera_reporte_pedido', pending);
+    return sendText(jid, texts.withEscapeHint(
+      `📝 *Reportar un problema — pedido ${pending.numero}*\n\n` +
+      `Cuéntame brevemente qué ocurrió. Enviaré el mensaje al equipo responsable.`
+    ));
+  }
+  if (value === agentOption || /agente|persona|humano|asesor/.test(value)) {
+    return requestHumanSupport(jid, `Ayuda con pedido ${pending.numero}`);
+  }
+  return sendText(jid,
+    `No reconocí esa opción. Responde con uno de estos números:\n\n` +
+    texts.orderFollowupActions({ cancelable: Boolean(pending.cancelable) })
+  );
+}
+
+async function handleReportePedido(jid, ses, input) {
+  const pending = { ...(ses.pending || {}) };
+  const texto = String(input || '').trim().slice(0, 500);
+  // Escape universal: el cliente puede abandonar el flujo con cualquier
+  // palabra-escape sin que el bot le repita "necesito más detalle".
+  if (isEscapeWord(input)) {
+    clearAttempts(ses, 'reporte');
+    setClientState(ses, 'main_menu');
+    return sendText(jid, `De acuerdo, vuelvo al menú.\n\n${menuPrincipal(ses)}`);
+  }
+  if (!pending.pedido_id || !pending.numero) {
+    setClientState(ses, 'main_menu');
+    return sendText(jid, `La consulta venció. Escribe *2* para buscar nuevamente tu pedido.`);
+  }
+  if (texto.length < 4) {
+    // Reintentos limitados: sin este cap, un cliente que responde "ok"
+    // varias veces queda repitiendo el mismo prompt indefinidamente.
+    if (bumpAttempt(ses, 'reporte', 3)) {
+      clearAttempts(ses, 'reporte');
+      setClientState(ses, 'main_menu');
+      return sendText(jid,
+        `No pude entender tu reporte. Vuelvo al menú principal.\n` +
+        `Puedes escribir *AGENTE* para hablar con una persona.\n\n${menuPrincipal(ses)}`
+      );
+    }
+    return sendText(jid, texts.withEscapeHint(
+      `Necesito un poco más de detalle. Por ejemplo: *Falta un producto en la entrega*.`
+    ));
+  }
+  clearAttempts(ses, 'reporte');
+  try {
+    const resp = await oxidianPost(`/pedido/${pending.pedido_id}/incidencia`, {
+      texto,
+      telefono: phoneFromJid(jid),
+    });
+    if (!resp || resp.ok === false) throw new Error(resp?.error || 'Sin respuesta del servidor');
+    setClientState(ses, 'main_menu');
+    return sendText(jid,
+      `✅ *Problema registrado para el pedido ${pending.numero}.*\n\n` +
+      `El equipo recibió tu mensaje: «${texto}».\n\n` +
+      `*1* — 🛒 Abrir la tienda\n` +
+      `*2* — 📦 Consultar pedidos\n` +
+      `*7* — 👤 Hablar con una persona\n` +
+      `*0* — 🏠 Volver al inicio`
+    );
+  } catch (error) {
+    log('warn', 'reporte_pedido_contextual_fail', error?.message || String(error));
+    return sendText(jid,
+      `No pude registrar el problema ahora mismo. Responde *AGENTE* para hablar con una persona o *0* para volver.`
+    );
   }
 }
 
@@ -5464,8 +5817,13 @@ function setAdminState(ses, estado, pending = {}) {
 }
 
 function askAdminConfirm(jid, ses, pending, message) {
-  setAdminState(ses, 'admin_confirm', pending);
-  return sendText(jid, `⚠️ *Confirmación requerida*\n\n${message}\n\nResponde *SI* para confirmar o *NO* para cancelar.`);
+  setAdminState(ses, 'admin_confirm', { ...pending, _asked_at: Date.now() });
+  const min = Math.round(ADMIN_CONFIRM_TTL_MS / 60000);
+  return sendText(jid,
+    `⚠️ *Confirmación requerida*\n\n${message}\n\n` +
+    `Responde *SI* para confirmar o *NO* para cancelar.\n` +
+    `_Expira en ${min} min._`
+  );
 }
 
 function isYes(text) {
@@ -6076,8 +6434,33 @@ async function handleAdminRiskOrders(jid, ses) {
   }
 }
 
+/**
+ * Lee el estado actual de la tienda (`abierta` | `cerrada` | null) desde
+ * Oxidian. "Best-effort" — si falla la lectura devuelve `null` y el caller
+ * debe seguir adelante (fail-open) para no dejar al admin bloqueado por
+ * un timeout de red al intentar una acción operativa.
+ */
+async function _estadoTiendaBestEffort(jid) {
+  try {
+    const data = await oxidianGet(withAdminActor('/admin/tienda', jid), { timeout: 4000 });
+    const s = String(data?.estado || '').trim().toLowerCase();
+    return (s === 'abierta' || s === 'cerrada') ? s : null;
+  } catch (e) {
+    log('warn', 'estado_tienda_read_fail', `code=${e?.code || '-'} status=${e?.status || '-'}`);
+    return null;
+  }
+}
+
 async function handleAdminConfirm(jid, ses, text) {
   const pending = ses.pending || {};
+  // TTL: si la confirmación quedó colgada, la descartamos silenciosamente
+  // para no ejecutar acciones que el admin ya olvidó (o que un tercero podría
+  // aprovechar si tomó el WhatsApp). Cualquier input futuro cae al menú.
+  const askedAt = Number(pending._asked_at || 0);
+  if (!askedAt || (Date.now() - askedAt) > ADMIN_CONFIRM_TTL_MS) {
+    setAdminState(ses, 'admin_menu');
+    return sendText(jid, `⌛ La confirmación anterior expiró. Repite la acción si aún la quieres.\n\n${adminMenu(jid)}`);
+  }
   const requiredCapability = {
     close_store: 'store', open_store: 'store',
     emergency_on: 'emergency', emergency_off: 'emergency',
@@ -6103,6 +6486,21 @@ async function handleAdminConfirm(jid, ses, text) {
 
     if (pending.action === 'close_store' || pending.action === 'open_store') {
       const cerrada = pending.action === 'close_store';
+      // Guard idempotente: si el estado actual ya coincide con el destino,
+      // no volvemos a llamar al backend. Antes: cada `SI` disparaba un POST
+      // aunque la tienda ya estuviera en ese estado — ruidoso en el log de
+      // eventos y arriesga que un doble tap del admin cierre-abra-cierre en
+      // ráfaga por race. `fail-open`: si la lectura falla, ejecutamos igual
+      // (mejor operar que bloquear al admin por un timeout).
+      const estadoActual = await _estadoTiendaBestEffort(jid);
+      if (estadoActual === 'cerrada' && cerrada) {
+        setAdminState(ses, 'admin_menu');
+        return sendText(jid, `ℹ️ La tienda ya está *cerrada*. No cambié nada.\n\n${adminMenu(jid)}`);
+      }
+      if (estadoActual === 'abierta' && !cerrada) {
+        setAdminState(ses, 'admin_menu');
+        return sendText(jid, `ℹ️ La tienda ya está *abierta*. No cambié nada.\n\n${adminMenu(jid)}`);
+      }
       const data = await oxidianPost('/admin/tienda', {
         forzar_cerrada: cerrada,
         mensaje_cierre: pending.message || '',
@@ -6113,6 +6511,14 @@ async function handleAdminConfirm(jid, ses, text) {
     }
 
     if (pending.action === 'emergency_on') {
+      // Guard idempotente compuesto: emergencia = tienda cerrada + bot pausado.
+      // Si ambas ya se cumplen, no repetimos el POST.
+      const estadoActual = await _estadoTiendaBestEffort(jid);
+      const botPausado = cfg('bot_enabled', '1') === '0';
+      if (estadoActual === 'cerrada' && botPausado) {
+        setAdminState(ses, 'admin_menu');
+        return sendText(jid, `ℹ️ La emergencia ya está activa (tienda cerrada + bot pausado).\n\n${adminMenu(jid)}`);
+      }
       const msg = 'Estamos resolviendo una incidencia operativa. La tienda queda pausada temporalmente.';
       const data = await oxidianPost('/admin/tienda', {
         forzar_cerrada: true,
@@ -6126,6 +6532,12 @@ async function handleAdminConfirm(jid, ses, text) {
     }
 
     if (pending.action === 'emergency_off') {
+      const estadoActual = await _estadoTiendaBestEffort(jid);
+      const botActivo = cfg('bot_enabled', '1') !== '0';
+      if (estadoActual === 'abierta' && botActivo) {
+        setAdminState(ses, 'admin_menu');
+        return sendText(jid, `ℹ️ Ya estás en normalidad (tienda abierta + bot activo).\n\n${adminMenu(jid)}`);
+      }
       const data = await oxidianPost('/admin/tienda', {
         forzar_cerrada: false,
         mensaje_cierre: '',
@@ -6857,7 +7269,8 @@ function startServer() {
 
   return app.listen(PORT, HOST, () => {
     sanitizeRuntimeState();
-    db.prepare(`UPDATE admin_availability SET available=0, updated_at=unixepoch()`).run();
+    const offlineSessions = resetOperationalPresenceForStartup();
+    if (offlineSessions) log('info', 'startup_offline_sessions', String(offlineSessions));
     recoverOrphanedHandoffs(false);
     drainInboundMessages().catch(error => log('warn', 'inbound_resume_fail', String(error)));
     console.log(`\n🚀 Oxidian Bot (Evolution API) arrancado en ${HOST}:${PORT}`);
@@ -6880,10 +7293,12 @@ function startServer() {
       }
       await syncZonas().catch(() => {});
     }, 3000);
-    // Branding cada 10 min, catálogo cada 5, PIN cada 15 (cambios poco frecuentes)
-    setInterval(() => syncBranding().catch(() => {}), 10 * 60_000);
-    setInterval(() => syncCatalogo().catch(() => {}), 5 * 60_000);
-    setInterval(() => syncAdminPinHash().catch(() => {}), 15 * 60_000);
+    // Polling de fallback — el push desde Oxidian es la fuente primaria.
+    // Intervalos configurables via BOT_BRANDING_SYNC_MIN, BOT_CATALOG_SYNC_MIN,
+    // BOT_ADMIN_PIN_SYNC_MIN. Ver constantes al inicio del archivo.
+    setInterval(() => syncBranding().catch(() => {}), BRANDING_SYNC_INTERVAL_MS);
+    setInterval(() => syncCatalogo().catch(() => {}), CATALOG_SYNC_INTERVAL_MS);
+    setInterval(() => syncAdminPinHash().catch(() => {}), ADMIN_PIN_SYNC_INTERVAL_MS);
     setInterval(() => retryPendingHandoffMessages().catch(
       error => log('warn', 'handoff_retry_fail', String(error))
     ), 15_000);
@@ -6909,12 +7324,12 @@ module.exports = {
     createHandoffRequest,
     deliverQueuedTranscript,
     drainInboundMessages,
-    detectBarIntent,
     detectClientIntent,
     extractText,
     getHandoff,
     getSesion,
     handleEvolutionEvent,
+    handleMessage,
     handleAdminTakeWait,
     pendingHandoffTranscript,
     persistInboundMessages,
@@ -6924,11 +7339,28 @@ module.exports = {
     menuPrincipal,
     adminMenu,
     adminCan,
-    barMenu,
     setCfg,
     setAdminState,
+    setAdminAvailability,
+    isAdminAvailable,
+    detectOperationalModeCommand,
+    resetOperationalPresenceForStartup,
     splitTextForSend,
+    seleccionarPedidoConsulta,
+    contextoPedidoConsulta,
     botMaxPrice,
     botMaxPointsAdjust,
+    requireAdminPin,
+    setSesion,
+    AWAITING_PIN_TTL_MS,
+    handleAdminConfirm,
+    askAdminConfirm,
+    ADMIN_CONFIRM_TTL_MS,
+    friendlyOxidianError,
+    sendText,
+    isEscapeWord,
+    bumpAttempt,
+    clearAttempts,
+    isBotEnabled,
   },
 };

@@ -78,6 +78,11 @@
         {% if pedido.estado == 'listo' %}<span class="ord-next">Siguiente: ruta</span>{% endif %}
         {% if pedido.estado == 'en_ruta' %}<span class="ord-next">Siguiente: entregar</span>{% endif %}
         <span class="ord-chip">{{ pedido.origen }}</span>
+        {% if pedido.es_programado %}
+        <span class="ord-chip warn" title="Pedido reservado con fecha de entrega">
+          📅 {{ pedido.fecha_entrega_programada.strftime('%d/%m/%Y') if pedido.fecha_entrega_programada else 'Fecha por revisar' }}
+        </span>
+        {% endif %}
         {% if pedido.origen != 'presencial' %}<span class="ord-chip">{{ 'epicentro' if pedido.es_entrega_epicentro else 'fuera' }}</span>{% endif %}
         {% if pedido.metodo_pago == 'bizum' and not pedido.pago_confirmado and pedido.estado not in ('entregado','cancelado') %}
         <span class="ord-chip warn">Bizum por cobrar</span>
@@ -153,8 +158,10 @@
       {% if pedido.estado not in ('entregado','cancelado') %}
       <form method="POST" action="{{ url_for('admin.avanzar_pedido_admin', pedido_id=pedido.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="ord-btn success">
-          {% if pedido.estado == 'listo' and not pedido.requiere_reparto %}Entregar recogida{% else %}Avanzar{% endif %}
+        {% set programado_bloqueado = pedido.estado == 'pendiente' and pedido.es_programado and not puede_preparar_programado(pedido) %}
+        <button type="submit" class="ord-btn success" {% if programado_bloqueado %}disabled title="Aún no está en su ventana de preparación"{% endif %}>
+          {% if programado_bloqueado %}Programado {{ pedido.fecha_entrega_programada.strftime('%d/%m') if pedido.fecha_entrega_programada else 'por revisar' }}
+          {% elif pedido.estado == 'listo' and not pedido.requiere_reparto %}Entregar recogida{% else %}Avanzar{% endif %}
         </button>
       </form>
       {% if pedido.estado == 'en_ruta' and pedido.intentos_codigo >= 3 %}

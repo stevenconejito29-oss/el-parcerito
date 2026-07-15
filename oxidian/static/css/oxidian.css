@@ -3,13 +3,26 @@
    Colores cálidos · Colombiano · Confianza · Amabilidad
    ═══════════════════════════════════════════════════════════════ */
 :root {
-  /* ── Paleta cálida colombiana ── */
-  --col-gold:     #FFC200;   /* Mazorca, sol colombiano */
-  --col-gold-2:   #E8A800;   /* Dorado profundo */
-  --col-warm:     #FF7043;   /* Naranja chicharrón */
-  --col-red:      #E84545;   /* Rojo festivo (no agresivo) */
-  --col-green:    #27AE74;   /* Verde aguacate */
-  --col-blue:     #3B82F6;   /* Azul cielo colombiano */
+  /* ═════ SISTEMA DE 3 COLORES CONFIGURABLES ═════
+     Los brand-* llegan inyectados en `<body style="...">` desde
+     base.html/admin_base.html con `COLOR_PRIMARIO/SECUNDARIO/ACENTO`
+     de SiteConfig. Aquí solo declaramos los DEFAULTS de fallback,
+     que se activan si el `<body>` no llegara a inyectar (ej.
+     durante error de contexto). */
+  --brand-primary:   #FFC200;   /* fallback amarillo Parcerito */
+  --brand-secondary: #E84545;   /* fallback rojo festivo */
+  --brand-accent:    #27AE74;   /* fallback verde aguacate */
+
+  /* Aliases legacy — SIEMPRE derivan del brand-primary para que
+     cambiar el color en /superadmin/config propague a los ~200
+     sitios que usan --col-gold. Antes: --col-gold era un hex fijo
+     que ignoraba la config y los botones dorados no cambiaban. */
+  --col-gold:     var(--brand-primary);
+  --col-gold-2:   color-mix(in srgb, var(--brand-primary) 88%, #000);
+  --col-warm:     var(--brand-secondary);
+  --col-red:      var(--brand-secondary);
+  --col-green:    #27AE74;
+  --col-blue:     var(--brand-accent);
   --col-purple:   #A855F7;
 
   /* ── Fondos cálidos (café oscuro, no frío azul-negro) ── */
@@ -31,19 +44,14 @@
   --shadow-sm:    0 2px 8px rgba(0,0,0,.5);
   --shadow-md:    0 4px 20px rgba(0,0,0,.55), 0 1px 4px rgba(0,0,0,.4);
   --shadow-lg:    0 8px 32px rgba(0,0,0,.65), 0 2px 8px rgba(0,0,0,.5);
-  --glow-gold:    0 0 28px rgba(255,194,0,.2);
-  --glow-warm:    0 0 28px rgba(255,112,67,.18);
+  --glow-gold:    0 0 28px color-mix(in srgb, var(--brand-primary) 20%, transparent);
+  --glow-warm:    0 0 28px color-mix(in srgb, var(--brand-secondary) 18%, transparent);
 
   /* ── Radios ── */
   --r-sm:  .625rem;
   --r-md:  .875rem;
   --r-lg:  1.25rem;
   --r-xl:  1.75rem;
-
-  /* compat */
-  --brand-primary:   #FFC200;
-  --brand-secondary: #E84545;
-  --brand-accent:    #27AE74;
 }
 
 html, body { touch-action: manipulation; }
@@ -59,12 +67,12 @@ body.ox-body-admin {
 body.ox-body-admin .text-gray-500,
 body.ox-body-admin .text-gray-400,
 body.ox-body-admin [style*="var(--col-faint)"] {
-  color: #BFA895 !important;
+  color: var(--col-faint, #BFA895) !important;
 }
 
 body.ox-body-admin [style*="var(--col-muted)"],
 body.ox-body-admin .ox-card p {
-  color: #D7C6B8;
+  color: var(--col-muted, #D7C6B8);
 }
 
 body.ox-body-admin table,
@@ -100,6 +108,18 @@ body {
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
 }
+/* Sticky-footer layout SOLO en público: main crece y empuja el footer al
+   pie de pantalla, aunque el contenido sea corto (carrito vacío, búsqueda
+   sin resultados, checkout de 1 item). Antes: `.ep-footer` quedaba pegado
+   a la cabecera y parecía parte de ella, con la info del negocio
+   "colgada" arriba en vez de al fondo. Acotado a `ox-body-public` para
+   no cambiar el layout del panel admin. */
+body.ox-body-public {
+  display: flex;
+  flex-direction: column;
+}
+body.ox-body-public > main { flex: 1 0 auto; }
+body.ox-body-public > footer.ep-footer { flex-shrink: 0; }
 /* Textura de fondo cálida — como la madera de una cocina colombiana */
 body.ox-body-public {
   background-image:
@@ -219,13 +239,25 @@ button:active, .btn:active { transform: scale(.96) !important; }
 .ox-btn-cart {
   display: flex; align-items: center; justify-content: center; gap: .35rem;
   width: 100%; min-height: 44px;
-  background: linear-gradient(135deg, #FFC200, #E8A800);
-  color: #3D1F00; font-weight: 900; font-size: .85rem;
+  /* Gradiente derivado del brand primario: `--col-gold` es la copia
+     legacy con default #FFC200; el "-2" (fondo del gradiente) se
+     computa como un 88% del primario para evitar duplicar la paleta.
+     Antes: `linear-gradient(#FFC200, #E8A800)` fijaba el amarillo
+     colombiano; ahora si el fundador cambia el brand desde /superadmin,
+     el botón lo refleja al instante. */
+  background: linear-gradient(135deg,
+    var(--brand-primary, var(--col-gold)),
+    color-mix(in srgb, var(--brand-primary, var(--col-gold)) 88%, #000));
+  color: var(--brand-on-primary, #3D1F00);
+  font-weight: 900; font-size: .85rem;
   border-radius: var(--r-sm); border: none;
-  box-shadow: 0 3px 12px rgba(255,194,0,.22);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--brand-primary, var(--col-gold)) 22%, transparent);
   transition: filter .15s, transform .15s, box-shadow .15s;
 }
-.ox-btn-cart:hover { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(255,194,0,.35); }
+.ox-btn-cart:hover {
+  filter: brightness(1.07); transform: translateY(-1px);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--brand-primary, var(--col-gold)) 35%, transparent);
+}
 
 .ox-install-btn {
   min-height: 38px;
@@ -253,7 +285,7 @@ button:active, .btn:active { transform: scale(.96) !important; }
   align-items: center;
   justify-content: center;
   background: var(--col-gold);
-  color: #3D1F00;
+  color: var(--brand-on-primary, #3D1F00);
   font-size: .72rem;
   line-height: 1;
 }
@@ -266,9 +298,9 @@ button:active, .btn:active { transform: scale(.96) !important; }
   gap: .35rem;
   padding: .45rem .72rem;
   border-radius: .8rem;
-  background: rgba(52,64,84,.08);
-  color: #3F3328;
-  border: 1px solid rgba(52,64,84,.18);
+  background: color-mix(in srgb, var(--theme-text, #344054) 8%, transparent);
+  color: var(--theme-text, #3F3328);
+  border: 1px solid color-mix(in srgb, var(--theme-text, #344054) 18%, transparent);
   font-size: .76rem;
   font-weight: 900;
   text-decoration: none;
@@ -276,7 +308,7 @@ button:active, .btn:active { transform: scale(.96) !important; }
   transition: background .2s, transform .2s;
 }
 .ox-employee-login:hover {
-  background: rgba(52,64,84,.12);
+  background: color-mix(in srgb, var(--theme-text, #344054) 12%, transparent);
   transform: translateY(-1px);
 }
 .ox-employee-login-icon {
@@ -286,8 +318,8 @@ button:active, .btn:active { transform: scale(.96) !important; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #344054;
-  color: #fff;
+  background: var(--theme-text, #344054);
+  color: var(--theme-surface, #fff);
   font-size: .68rem;
   line-height: 1;
 }
@@ -339,14 +371,18 @@ button:active, .btn:active { transform: scale(.96) !important; }
   padding: .25rem .65rem; border-radius: 999px;
   font-size: .7rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
 }
-.ox-role-super_admin { background: rgba(168,85,247,.2);  color: #C084FC; border: 1px solid rgba(168,85,247,.3); }
-.ox-role-admin       { background: rgba(59,130,246,.2);  color: #93C5FD; border: 1px solid rgba(59,130,246,.3); }
-.ox-role-marketing   { background: rgba(244,63,94,.2);   color: #FCA5A5; border: 1px solid rgba(244,63,94,.3); }
-.ox-role-cocina      { background: rgba(255,112,67,.2);  color: #FFB07A; border: 1px solid rgba(255,112,67,.3); }
-.ox-role-preparacion { background: rgba(34,197,160,.2);  color: #6EE7C9; border: 1px solid rgba(34,197,160,.3); }
-.ox-role-preparador  { background: rgba(34,197,160,.2);  color: #6EE7C9; border: 1px solid rgba(34,197,160,.3); }
-.ox-role-repartidor  { background: rgba(39,174,116,.2);  color: #6EDBA8; border: 1px solid rgba(39,174,116,.3); }
-.ox-role-staff       { background: rgba(161,140,128,.2); color: #C4AFA4; border: 1px solid rgba(161,140,128,.3); }
+/* Chips de rol: paleta 100% derivada de los tokens --role-* que el
+   `<body>` de admin_base.html declara. Antes: 8 colores rgba() con
+   valores fijos duplicados en 3 shades cada uno. Ahora un solo token
+   por rol; el fondo/borde se derivan con `color-mix`. */
+.ox-role-super_admin { background: color-mix(in srgb, var(--role-super-admin) 20%, transparent); color: var(--role-super-admin); border: 1px solid color-mix(in srgb, var(--role-super-admin) 30%, transparent); }
+.ox-role-admin       { background: color-mix(in srgb, var(--role-admin) 20%, transparent);       color: var(--role-admin);       border: 1px solid color-mix(in srgb, var(--role-admin) 30%, transparent); }
+.ox-role-marketing   { background: color-mix(in srgb, var(--role-marketing) 20%, transparent);   color: var(--role-marketing);   border: 1px solid color-mix(in srgb, var(--role-marketing) 30%, transparent); }
+.ox-role-cocina      { background: color-mix(in srgb, var(--role-cocina) 20%, transparent);      color: var(--role-cocina);      border: 1px solid color-mix(in srgb, var(--role-cocina) 30%, transparent); }
+.ox-role-preparacion { background: color-mix(in srgb, var(--role-preparacion) 20%, transparent); color: var(--role-preparacion); border: 1px solid color-mix(in srgb, var(--role-preparacion) 30%, transparent); }
+.ox-role-preparador  { background: color-mix(in srgb, var(--role-preparacion) 20%, transparent); color: var(--role-preparacion); border: 1px solid color-mix(in srgb, var(--role-preparacion) 30%, transparent); }
+.ox-role-repartidor  { background: color-mix(in srgb, var(--role-repartidor) 20%, transparent);  color: var(--role-repartidor);  border: 1px solid color-mix(in srgb, var(--role-repartidor) 30%, transparent); }
+.ox-role-staff       { background: color-mix(in srgb, var(--role-staff) 20%, transparent);       color: var(--role-staff);       border: 1px solid color-mix(in srgb, var(--role-staff) 30%, transparent); }
 
 /* Tabs admin */
 .ox-admin-tabs { display: flex; gap: .25rem; overflow-x: auto; padding: 0 .5rem .5rem; scrollbar-width: none; }
@@ -440,7 +476,7 @@ button:active, .btn:active { transform: scale(.96) !important; }
   background: rgba(255,253,248,.98);
   border: 1px solid rgba(52,37,22,.12);
   box-shadow: 0 18px 42px rgba(38,25,12,.18);
-  color: #18120A;
+  color: var(--theme-text, #18120A);
 }
 .ox-pwa-close {
   position: absolute;
@@ -451,7 +487,7 @@ button:active, .btn:active { transform: scale(.96) !important; }
   border: 0;
   border-radius: 999px;
   background: rgba(52,37,22,.08);
-  color: #6B5A4E;
+  color: var(--theme-muted, #6B5A4E);
   font-size: 1rem;
   line-height: 1;
 }
@@ -462,7 +498,9 @@ button:active, .btn:active { transform: scale(.96) !important; }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #D9961A, #E8B84A);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--brand-primary) 85%, #000),
+    color-mix(in srgb, var(--brand-primary) 90%, #fff));
   font-size: 1.25rem;
   overflow: hidden;
 }
@@ -479,12 +517,12 @@ button:active, .btn:active { transform: scale(.96) !important; }
 .ox-pwa-title {
   font-size: .86rem;
   font-weight: 950;
-  color: #18120A;
+  color: var(--theme-text, #18120A);
   line-height: 1.15;
 }
 .ox-pwa-text {
   font-size: .7rem;
-  color: #6B5A4E;
+  color: var(--theme-muted, #6B5A4E);
   line-height: 1.25;
   margin-top: .1rem;
 }
@@ -494,7 +532,7 @@ button:active, .btn:active { transform: scale(.96) !important; }
   border-radius: .8rem;
   padding: 0 1rem;
   background: linear-gradient(135deg, var(--brand-primary, #D9961A), color-mix(in srgb, var(--brand-primary, #D9961A) 75%, #000));
-  color: #1B0A00;
+  color: var(--brand-on-primary, #1B0A00);
   font-size: .78rem;
   font-weight: 900;
   white-space: nowrap;
@@ -521,33 +559,6 @@ button:active, .btn:active { transform: scale(.96) !important; }
   }
 }
 
-/* ── PWA sheet: premium dark version ── */
-.ox-pwa-card {
-  background: linear-gradient(135deg, #1E1208 0%, #150D06 100%);
-  border: 1px solid rgba(232,178,108,.18);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.06),
-    0 24px 52px rgba(0,0,0,.42);
-  color: #FFF8EE;
-}
-.ox-pwa-title { color: #FFF8EE; }
-.ox-pwa-text  { color: rgba(255,248,238,.58); }
-.ox-pwa-action {
-  background: linear-gradient(135deg, var(--brand-primary,#D9961A), color-mix(in srgb, var(--brand-primary,#D9961A) 75%, #000));
-  color: #1B0A00;
-  font-weight: 950;
-  box-shadow: 0 6px 16px rgba(217,150,26,.3);
-  transition: filter .15s, transform .15s;
-}
-.ox-pwa-action:hover {
-  filter: brightness(1.08);
-  transform: translateY(-1px);
-}
-.ox-pwa-close {
-  background: rgba(255,255,255,.08);
-  color: rgba(255,248,238,.5);
-}
-
 /* ── Push notification prompt ── */
 .ox-push-prompt {
   display: flex;
@@ -561,6 +572,17 @@ button:active, .btn:active { transform: scale(.96) !important; }
   animation: oxPwaIn .3s ease;
 }
 .ox-push-prompt[hidden] { display: none !important; }
+.ox-push-prompt__icon { font-size: 1.2rem; flex: 0 0 auto; }
+.ox-push-prompt__copy { flex: 1; min-width: 0; }
+.ox-push-prompt__copy p { margin: 0; color: var(--col-text,#18120A); font-size: .8rem; font-weight: 900; }
+.ox-push-prompt__copy small { display: block; color: var(--col-muted,#6B5A4E); font-size: .68rem; line-height: 1.3; }
+.ox-push-prompt__activate { min-height: 40px; padding: .42rem .75rem; border: 0; border-radius: .6rem; background: var(--action-primary); color: var(--action-on-primary); font-size: .76rem; font-weight: 900; cursor: pointer; }
+.ox-push-prompt__dismiss { width: 40px; height: 40px; flex: 0 0 40px; display: grid; place-items: center; border-radius: 999px; border: 1px solid var(--col-border,rgba(0,0,0,.12)); background: transparent; color: var(--col-muted,#6B5A4E); cursor: pointer; }
+@media (max-width: 420px) {
+  .ox-push-prompt { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: .4rem .55rem; padding: .6rem .7rem; }
+  .ox-push-prompt__activate { grid-column: 2; width: max-content; min-height: 36px; }
+  .ox-push-prompt__dismiss { grid-column: 3; grid-row: 1 / span 2; width: 36px; height: 36px; }
+}
 .ox-push-prompt-icon {
   font-size: 1.35rem;
   flex-shrink: 0;
@@ -574,21 +596,21 @@ button:active, .btn:active { transform: scale(.96) !important; }
   display: block;
   font-size: .82rem;
   font-weight: 900;
-  color: #18120A;
+  color: var(--theme-text, #18120A);
   line-height: 1.2;
 }
 .ox-push-prompt-copy small {
   display: block;
   font-size: .68rem;
-  color: #6B5A4E;
+  color: var(--theme-muted, #6B5A4E);
   margin-top: .1rem;
 }
 .ox-push-prompt-btn {
   flex-shrink: 0;
   padding: .44rem .85rem;
   border-radius: .65rem;
-  background: var(--brand-primary,#D9961A);
-  color: #1B0A00;
+  background: var(--action-primary);
+  color: var(--action-on-primary);
   font-size: .74rem;
   font-weight: 950;
   border: none;
@@ -650,10 +672,10 @@ button:active, .btn:active { transform: scale(.96) !important; }
 
 /* ── BADGES ── */
 .ox-badge { display:inline-flex; align-items:center; gap:.2rem; padding:.15rem .55rem; border-radius:999px; font-size:.65rem; font-weight:800; line-height:1.3; }
-.ox-badge-hot     { background:linear-gradient(90deg,#E84545,#FF6B35); color:#fff; }
-.ox-badge-new     { background:linear-gradient(90deg,#A855F7,#8B3CF7); color:#fff; }
-.ox-badge-combo   { background:linear-gradient(90deg,#2D7DD2,#1A5FAD); color:#fff; }
-.ox-badge-encargo { background:rgba(255,112,67,.85); color:#fff; }
+.ox-badge-hot     { background:linear-gradient(90deg, var(--brand-secondary), color-mix(in srgb, var(--brand-secondary) 78%, #F60)); color:var(--brand-secondary-contrast, #fff); }
+.ox-badge-new     { background:linear-gradient(90deg, var(--role-super-admin, #A855F7), color-mix(in srgb, var(--role-super-admin, #A855F7) 78%, #000)); color:#fff; }
+.ox-badge-combo   { background:linear-gradient(90deg, var(--brand-accent, #2D7DD2), color-mix(in srgb, var(--brand-accent, #2D7DD2) 78%, #000)); color:var(--brand-accent-contrast, #fff); }
+.ox-badge-encargo { background:color-mix(in srgb, var(--brand-secondary) 85%, transparent); color:var(--brand-secondary-contrast, #fff); }
 .ox-badge-sold    { background:rgba(80,60,50,.6); color:var(--col-muted); }
 .ox-badge-urgent  { background:var(--col-red); color:#fff; animation:urgentBeat 1.3s infinite; }
 @keyframes urgentBeat { 0%,100%{transform:scale(1)}50%{transform:scale(1.06)} }
@@ -687,21 +709,39 @@ button:active, .btn:active { transform: scale(.96) !important; }
 /* ── STATUS PEDIDO ── */
 .ox-status { display:inline-flex; align-items:center; gap:.3rem; padding:.25rem .7rem; border-radius:999px; font-size:.72rem; font-weight:800; }
 .ox-status::before { content:"●"; font-size:.5rem; }
-.ox-status-pendiente { background:rgba(255,194,0,.12);  color:#FFC200; border:1px solid rgba(255,194,0,.25); }
-.ox-status-armando   { background:rgba(59,130,246,.12); color:#93C5FD; border:1px solid rgba(59,130,246,.25); }
-.ox-status-listo     { background:rgba(39,174,116,.12); color:#6EDBA8; border:1px solid rgba(39,174,116,.25); }
-.ox-status-en_ruta   { background:rgba(37,99,235,.12);  color:#93C5FD; border:1px solid rgba(37,99,235,.25); }
-.ox-status-entregado { background:rgba(39,174,116,.1);  color:#4ADE80; border:1px solid rgba(39,174,116,.2); }
-.ox-status-cancelado { background:rgba(100,80,70,.1);   color:#7A6660; border:1px solid rgba(100,80,70,.2); }
+/* Chips de estado de pedido: paleta derivada de tokens del tema/rol
+   para que un cambio en la config del negocio se propague al panel de
+   pedidos sin editar 6 líneas de rgba. */
+.ox-status-pendiente { background:color-mix(in srgb,var(--brand-primary) 12%,transparent);  color:var(--brand-primary);      border:1px solid color-mix(in srgb,var(--brand-primary) 25%,transparent); }
+.ox-status-armando   { background:color-mix(in srgb,var(--role-admin) 12%,transparent);     color:var(--role-admin);         border:1px solid color-mix(in srgb,var(--role-admin) 25%,transparent); }
+.ox-status-listo     { background:color-mix(in srgb,var(--theme-success) 14%,transparent);  color:var(--theme-success);      border:1px solid color-mix(in srgb,var(--theme-success) 28%,transparent); }
+.ox-status-en_ruta   { background:color-mix(in srgb,var(--role-admin) 12%,transparent);     color:var(--role-admin);         border:1px solid color-mix(in srgb,var(--role-admin) 25%,transparent); }
+.ox-status-entregado { background:color-mix(in srgb,var(--theme-success) 10%,transparent);  color:var(--theme-success);      border:1px solid color-mix(in srgb,var(--theme-success) 22%,transparent); }
+.ox-status-cancelado { background:color-mix(in srgb,var(--col-muted) 12%,transparent);      color:var(--col-muted);          border:1px solid color-mix(in srgb,var(--col-muted) 22%,transparent); }
 
 /* ── TOASTS cálidos ── */
-.ox-toast-wrap { position:fixed; top:1rem; right:1rem; left:1rem; z-index:200; display:grid; gap:.5rem; pointer-events:none; }
-@media(min-width:480px) { .ox-toast-wrap { left:auto; width:min(94vw,340px); } }
+.ox-toast-wrap {
+  position: fixed;
+  /* En PWA standalone, env(safe-area-inset-top) reserva notch/Dynamic Island. */
+  top: max(1rem, calc(env(safe-area-inset-top, 0px) + .75rem));
+  right: max(1rem, env(safe-area-inset-right, 0px));
+  left: max(1rem, env(safe-area-inset-left, 0px));
+  z-index: 200;
+  display: grid;
+  gap: .5rem;
+  pointer-events: none;
+}
+@media(min-width:480px) {
+  .ox-toast-wrap {
+    left: auto;
+    width: min(calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 2rem), 340px);
+  }
+}
 .ox-toast { border-radius:var(--r-md); padding:.85rem 1rem; backdrop-filter:blur(12px); box-shadow:var(--shadow-md); animation:toastIn .28s cubic-bezier(.34,1.56,.64,1); pointer-events:all; font-size:.88rem; font-weight:500; }
-.ox-toast-success { background:rgba(39,174,116,.18);  color:#A7F3C0; border:1px solid rgba(39,174,116,.3); }
-.ox-toast-danger  { background:rgba(232,69,69,.18);   color:#FFC9C9; border:1px solid rgba(232,69,69,.3); }
-.ox-toast-warning { background:rgba(255,194,0,.18);   color:#FFE87E; border:1px solid rgba(255,194,0,.3); }
-.ox-toast-info    { background:rgba(59,130,246,.18);  color:#BAD9FF; border:1px solid rgba(59,130,246,.3); }
+.ox-toast-success { background:color-mix(in srgb,var(--theme-success) 18%,transparent); color:color-mix(in srgb,var(--theme-success) 65%,#fff); border:1px solid color-mix(in srgb,var(--theme-success) 30%,transparent); }
+.ox-toast-danger  { background:color-mix(in srgb,var(--theme-danger) 18%,transparent);  color:color-mix(in srgb,var(--theme-danger) 60%,#fff);  border:1px solid color-mix(in srgb,var(--theme-danger) 30%,transparent); }
+.ox-toast-warning { background:color-mix(in srgb,var(--brand-primary) 18%,transparent); color:color-mix(in srgb,var(--brand-primary) 70%,#fff); border:1px solid color-mix(in srgb,var(--brand-primary) 30%,transparent); }
+.ox-toast-info    { background:color-mix(in srgb,var(--role-admin) 18%,transparent);    color:color-mix(in srgb,var(--role-admin) 65%,#fff);    border:1px solid color-mix(in srgb,var(--role-admin) 30%,transparent); }
 @keyframes toastIn { from{opacity:0;transform:translateY(-10px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)} }
 
 /* ── TABLAS ── */
@@ -716,13 +756,17 @@ button:active, .btn:active { transform: scale(.96) !important; }
 .ox-form { display:grid; gap:1rem; }
 .ox-field { display:grid; gap:.3rem; }
 .ox-label { color:var(--col-muted); font-size:.75rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
-.ox-error { color:#FFC9C9; font-size:.72rem; display:none; }
+.ox-error { color:color-mix(in srgb,var(--theme-danger) 60%,#fff); font-size:.72rem; display:none; }
 .ox-field.has-error .ox-error { display:block; }
 .ox-input.is-invalid, .ox-select.is-invalid { border-color:var(--col-red)!important; box-shadow:0 0 0 3px rgba(232,69,69,.15)!important; }
 
 /* ── TEXTO BRAND ── */
 .ox-text-brand {
-  background: linear-gradient(90deg, #FFC200 0%, #FF7043 40%, #FFC200 80%);
+  /* Efecto scroll con gradiente 100% brand — antes ignoraba la config. */
+  background: linear-gradient(90deg,
+    var(--brand-primary) 0%,
+    var(--brand-secondary) 40%,
+    var(--brand-primary) 80%);
   background-size: 200% auto;
   -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   animation: brandScroll 4s linear infinite;
@@ -809,11 +853,13 @@ button:active, .btn:active { transform: scale(.96) !important; }
 }
 .ox-sb-logo {
   width: 32px; height: 32px; border-radius: .5rem; flex-shrink: 0;
-  background: linear-gradient(135deg, #FFAB00, #FF3B30);
+  /* Logo sidebar: gradiente primary → secondary. Antes hex fijos
+     amarillo→rojo que ignoraban COLOR_PRIMARIO. */
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
   display: flex; align-items: center; justify-content: center;
   font-size: 1rem;
 }
-.ox-sb-brand-name { font-size: .82rem; font-weight: 900; color: #fff; line-height: 1.2; }
+.ox-sb-brand-name { font-size: .82rem; font-weight: 900; color: var(--col-text, #fff); line-height: 1.2; }
 .ox-sb-brand-sub { font-size: .65rem; color: var(--col-faint); }
 
 /* Botón hamburger (mobile) */
@@ -848,7 +894,7 @@ button:active, .btn:active { transform: scale(.96) !important; }
   transition: background .15s;
 }
 .ox-sb-toggle-btn.online {
-  background: rgba(0,200,83,.1); color: #5EF097;
+  background: color-mix(in srgb, var(--theme-success) 12%, transparent); color: var(--theme-success);
   border: 1px solid rgba(0,200,83,.2);
 }
 .ox-sb-toggle-btn.offline {
@@ -858,7 +904,7 @@ button:active, .btn:active { transform: scale(.96) !important; }
 .ox-sb-toggle-dot {
   width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0;
 }
-.online .ox-sb-toggle-dot { background: #5EF097; }
+.online .ox-sb-toggle-dot { background: var(--theme-success); }
 .offline .ox-sb-toggle-dot { background: #555; }
 
 /* ── NAVEGACIÓN SCROLLABLE ── */
@@ -993,16 +1039,18 @@ button:active, .btn:active { transform: scale(.96) !important; }
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem;
 }
-.ox-page-title { font-size: 1.2rem; font-weight: 900; color: #fff; line-height: 1.2; }
+.ox-page-title { font-size: 1.2rem; font-weight: 900; color: var(--col-text); line-height: 1.2; }
 .ox-page-sub { font-size: .78rem; color: var(--col-muted); margin-top: .2rem; }
 .ox-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
 
-/* ── COLORES DE AVATAR POR ROL ── */
-.ox-avatar-super_admin { background: #7C3AED; }
-.ox-avatar-admin       { background: #1D4ED8; }
-.ox-avatar-cocina      { background: #EA580C; }
-.ox-avatar-preparacion { background: #0D9488; }
-.ox-avatar-repartidor  { background: #16A34A; }
+/* ── COLORES DE AVATAR POR ROL ──
+   Antes: 5 hex hardcoded. Ahora derivados de tokens `--role-*` (mixin
+   ~85% con negro para un tono más profundo que el chip). */
+.ox-avatar-super_admin { background: color-mix(in srgb, var(--role-super-admin) 85%, #000); }
+.ox-avatar-admin       { background: color-mix(in srgb, var(--role-admin) 85%, #000); }
+.ox-avatar-cocina      { background: color-mix(in srgb, var(--role-cocina) 85%, #000); }
+.ox-avatar-preparacion { background: color-mix(in srgb, var(--role-preparacion) 85%, #000); }
+.ox-avatar-repartidor  { background: color-mix(in srgb, var(--role-repartidor) 85%, #000); }
 
 /* ═══════════════════════════════════════════════════════════════
    TEMA PÚBLICO CLARO — Bandera de Colombia
@@ -1024,7 +1072,7 @@ body.ox-body-public {
   --shadow-md:    0 4px 18px rgba(0,0,0,.09), 0 1px 3px rgba(0,0,0,.05);
   --shadow-lg:    0 8px 32px rgba(0,0,0,.11), 0 2px 8px rgba(0,0,0,.06);
   background-color: #FFFFFF;
-  color: #18120A;
+  color: var(--theme-text, #18120A);
 }
 
 /* Inputs en tema claro */
@@ -1041,7 +1089,7 @@ body.ox-body-public textarea,
 body.ox-body-public select {
   background: #FFFFFF;
   border-color: rgba(0,0,0,.15);
-  color: #18120A;
+  color: var(--theme-text, #18120A);
 }
 body.ox-body-public input::placeholder,
 body.ox-body-public textarea::placeholder { color: #B09A8C; }
@@ -1114,7 +1162,7 @@ body.ox-body-public ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.12); }
 body.ox-body-public footer {
   background: #F3F0EC;
   border-top: 1px solid rgba(0,0,0,.08);
-  color: #6B5A4E;
+  color: var(--theme-muted, #6B5A4E);
 }
 body.ox-body-public footer p { color: #6B5A4E; }
 
@@ -1122,7 +1170,7 @@ body.ox-body-public footer p { color: #6B5A4E; }
 body.ox-body-public .ox-cat-pill {
   background: #F9F7F4;
   border-color: rgba(0,0,0,.10);
-  color: #6B5A4E;
+  color: var(--theme-muted, #6B5A4E);
 }
 body.ox-body-public .ox-cat-pill:hover {
   background: rgba(252,209,22,.16);
@@ -1255,7 +1303,7 @@ body.ox-body-public .cart-continue-link { color: #B09A8C; }
 body.ox-body-public .cart-continue-link:hover { color: #6B5A4E; }
 body.ox-body-public .cart-checkout-btn {
   background: linear-gradient(135deg,var(--brand-primary,#FCD116),color-mix(in srgb,var(--brand-primary,#FCD116) 80%,#000));
-  color: #18120A;
+  color: var(--theme-text, #18120A);
   box-shadow: 0 6px 20px color-mix(in srgb,var(--brand-primary,#FCD116) 35%,transparent);
 }
 body.ox-body-public .cart-count-badge { background: var(--brand-primary,#FCD116); color: #18120A; }
@@ -1283,9 +1331,9 @@ body.ox-body-public .ox-status-cancelado { background: rgba(100,80,70,.08); colo
   --col-bone-2:     #F5E7D4;
   --col-ink:        #2A1E14;
   --col-ink-soft:   #6D5A4D;
-  --flag-yellow:    #E8B26C;
-  --flag-blue:      #1E4CA1;
-  --flag-red:       #D65A2A;
+  --flag-yellow:    var(--theme-warning, #E8B26C);
+  --flag-blue:      var(--theme-info, #1E4CA1);
+  --flag-red:       var(--theme-danger, #D65A2A);
 }
 
 body.ox-body-public,
@@ -1562,23 +1610,26 @@ body.ox-body-admin .ox-role-cliente     { background: rgba(72,49,23,.06);  color
 
 body.ox-body-admin .ox-sb-avatar,
 body.ox-body-admin [class*="ox-avatar-"] {
-  color: #fff;
-  box-shadow: inset 0 0 0 2px rgba(255,255,255,.38), 0 5px 12px rgba(38,25,12,.14);
+  color: var(--theme-header-text, #fff);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--theme-header-text, #fff) 38%, transparent), 0 5px 12px rgba(38,25,12,.14);
 }
 
-body.ox-body-admin .ox-avatar-super_admin { background: linear-gradient(135deg, #E2B600, var(--flag-yellow)); color: var(--col-ink); }
-body.ox-body-admin .ox-avatar-admin       { background: linear-gradient(135deg, var(--flag-blue), #2858B8); }
-body.ox-body-admin .ox-avatar-marketing   { background: linear-gradient(135deg, var(--flag-red), #E0444D); }
-body.ox-body-admin .ox-avatar-cocina      { background: linear-gradient(135deg, var(--flag-yellow), #F2A900); color: var(--col-ink); }
-body.ox-body-admin .ox-avatar-preparacion { background: linear-gradient(135deg, var(--flag-blue), #2D68C4); }
-body.ox-body-admin .ox-avatar-repartidor  { background: linear-gradient(135deg, var(--flag-red), #D7353F); }
+/* Avatares admin: gradiente derivado del token de rol (light theme).
+   El segundo stop se computa como versión ligeramente más oscura del
+   mismo color (~85%) — antes eran ~24 hex duplicados. */
+body.ox-body-admin .ox-avatar-super_admin { background: linear-gradient(135deg, var(--role-super-admin), color-mix(in srgb, var(--role-super-admin) 82%, #000)); color: var(--col-ink, #1B0A00); }
+body.ox-body-admin .ox-avatar-admin       { background: linear-gradient(135deg, var(--role-admin),       color-mix(in srgb, var(--role-admin) 82%, #000)); }
+body.ox-body-admin .ox-avatar-marketing   { background: linear-gradient(135deg, var(--role-marketing),   color-mix(in srgb, var(--role-marketing) 82%, #000)); }
+body.ox-body-admin .ox-avatar-cocina      { background: linear-gradient(135deg, var(--role-cocina),      color-mix(in srgb, var(--role-cocina) 82%, #000)); color: var(--col-ink, #1B0A00); }
+body.ox-body-admin .ox-avatar-preparacion { background: linear-gradient(135deg, var(--role-preparacion), color-mix(in srgb, var(--role-preparacion) 82%, #000)); }
+body.ox-body-admin .ox-avatar-repartidor  { background: linear-gradient(135deg, var(--role-repartidor),  color-mix(in srgb, var(--role-repartidor) 82%, #000)); }
 body.ox-body-admin .ox-avatar-staff,
-body.ox-body-admin .ox-avatar-cliente     { background: linear-gradient(135deg, #7C6A57, #A89178); }
+body.ox-body-admin .ox-avatar-cliente     { background: linear-gradient(135deg, var(--role-staff), color-mix(in srgb, var(--role-staff) 78%, #000)); }
 
-body.ox-body-admin .ox-status-pendiente { background: rgba(252,209,22,.20); color: #6B5100; border-color: rgba(252,209,22,.45); }
-body.ox-body-admin .ox-status-armando   { background: rgba(0,48,135,.09);  color: var(--flag-blue); border-color: rgba(0,48,135,.23); }
-body.ox-body-admin .ox-status-listo     { background: rgba(39,174,116,.10); color: #1B6A46; border-color: rgba(39,174,116,.24); }
-body.ox-body-admin .ox-status-en_ruta   { background: rgba(206,17,38,.08); color: var(--flag-red); border-color: rgba(206,17,38,.20); }
+body.ox-body-admin .ox-status-pendiente { background: color-mix(in srgb, var(--brand-primary) 20%, transparent); color: color-mix(in srgb, var(--brand-primary) 45%, #000); border-color: color-mix(in srgb, var(--brand-primary) 45%, transparent); }
+body.ox-body-admin .ox-status-armando   { background: color-mix(in srgb, var(--role-admin) 9%, transparent);  color: var(--role-admin); border-color: color-mix(in srgb, var(--role-admin) 23%, transparent); }
+body.ox-body-admin .ox-status-listo     { background: color-mix(in srgb, var(--theme-success) 10%, transparent); color: color-mix(in srgb, var(--theme-success) 62%, #000); border-color: color-mix(in srgb, var(--theme-success) 24%, transparent); }
+body.ox-body-admin .ox-status-en_ruta   { background: color-mix(in srgb, var(--theme-danger) 8%, transparent); color: var(--theme-danger); border-color: color-mix(in srgb, var(--theme-danger) 20%, transparent); }
 
 body.ox-body-public [style*="linear-gradient(135deg,#FFAB00"],
 body.ox-body-admin [style*="linear-gradient(135deg,#FFAB00"],
@@ -2365,11 +2416,16 @@ body.ox-body-public .pd-add-btn {
    Color principal: dorado maiz tostado (#D9961A)
    ═══════════════════════════════════════════════════════════════ */
 body.ox-body-admin {
-  --col-primary: #D9961A;
-  --col-primary-2: #B87512;
-  --col-accent: #2F9E6D;
-  --col-danger: #D64545;
-  --col-info: #3E7CB1;
+  /* Paleta admin: los brand-* vienen inyectados desde admin_base.html
+     con COLOR_PRIMARIO/SECUNDARIO/ACENTO de SiteConfig. Antes:
+     --col-primary era `#D9961A` fijo → los botones admin ignoraban
+     la config del super_admin. Ahora derivan de la cadena brand,
+     con el hex previo como fallback si no llegara el token. */
+  --col-primary: var(--brand-primary, #D9961A);
+  --col-primary-2: color-mix(in srgb, var(--brand-primary, #D9961A) 80%, #000);
+  --col-accent: var(--brand-accent, #2F9E6D);
+  --col-danger: var(--theme-danger, #D64545);
+  --col-info: color-mix(in srgb, var(--brand-accent, #003087) 60%, #6bcbff);
   --col-bg: #12100D;
   --col-surface: #1C1813;
   --col-elevated: #262018;
@@ -2910,7 +2966,7 @@ body.ox-body-public .ep-cart-item-note,
 body.ox-body-public .pd-desc,
 body.ox-body-public .pd-box-sub,
 body.ox-body-public .checkout-step p {
-  color: #6B5A4E !important;
+  color: var(--theme-muted) !important;
 }
 
 body.ox-body-public .ep-btn-add,
@@ -2918,16 +2974,16 @@ body.ox-body-public .ep-modal-add-btn,
 body.ox-body-public .ep-checkout-btn,
 body.ox-body-public #btn-confirmar,
 body.ox-body-public .pd-add-btn {
-  background: linear-gradient(135deg, var(--col-brand), var(--col-brand-2)) !important;
-  color: #1B0A00 !important;
-  box-shadow: 0 10px 24px rgba(217,150,26,.24) !important;
+  background: linear-gradient(135deg, var(--action-primary), color-mix(in srgb, var(--action-primary) 78%, var(--theme-text))) !important;
+  color: var(--action-on-primary) !important;
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--action-primary) 22%, transparent) !important;
 }
 
 body.ox-body-public .ep-modal-detail-btn,
 body.ox-body-public .ep-btn-detail,
 body.ox-body-public .ox-btn-ghost {
-  border-color: rgba(0,48,135,.18) !important;
-  color: var(--col-action) !important;
+  border-color: color-mix(in srgb, var(--action-primary) 24%, var(--col-border)) !important;
+  color: var(--action-primary) !important;
 }
 
 @media (max-width: 767px) {
@@ -2956,17 +3012,21 @@ body.ox-body-public .ox-btn-ghost {
 
   --ox-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  --ox-primary: #B7791F;
-  --ox-primary-strong: #8F5A12;
-  --ox-primary-soft: #FFF4D6;
-  --ox-action: #174EA6;
-  --ox-action-soft: #EAF1FF;
-  --ox-success: #217A55;
-  --ox-success-soft: #E8F7EF;
-  --ox-danger: #B83232;
-  --ox-danger-soft: #FDECEC;
-  --ox-warning: #946200;
-  --ox-warning-soft: #FFF7E0;
+  /* Sistema Unified Design: los ox-* derivan de los 3 brand-*
+     inyectados en <body>. Antes tenían hex fijos (#B7791F, #174EA6…)
+     que ignoraban COLOR_PRIMARIO/ACENTO del super_admin. Fallback
+     documentado preserva el color previo si el token no llega. */
+  --ox-primary: var(--brand-primary, #B7791F);
+  --ox-primary-strong: color-mix(in srgb, var(--brand-primary, #B7791F) 78%, #000);
+  --ox-primary-soft: color-mix(in srgb, var(--brand-primary, #B7791F) 15%, #fff);
+  --ox-action: var(--brand-accent, #174EA6);
+  --ox-action-soft: color-mix(in srgb, var(--brand-accent, #174EA6) 10%, #fff);
+  --ox-success: var(--theme-success, #217A55);
+  --ox-success-soft: color-mix(in srgb, var(--theme-success, #217A55) 10%, #fff);
+  --ox-danger: var(--theme-danger, #B83232);
+  --ox-danger-soft: color-mix(in srgb, var(--theme-danger, #B83232) 10%, #fff);
+  --ox-warning: color-mix(in srgb, var(--brand-primary, #B7791F) 70%, #000);
+  --ox-warning-soft: color-mix(in srgb, var(--brand-primary, #B7791F) 12%, #fff);
 
   --ox-public-bg: #FAF7F0;
   --ox-public-surface: #FFFDF8;
@@ -3332,7 +3392,7 @@ body.ox-body-admin .chat-help {
   color: var(--ox-admin-muted) !important;
 }
 
-/* Botones y acciones */
+/* Botones y acciones: una sola semántica configurable para todos los canales. */
 .ox-btn-primary,
 .ox-btn-cart,
 .cart-checkout-btn,
@@ -3343,10 +3403,10 @@ body.ox-body-admin .chat-help {
 .pd-add-btn,
 .pos-btn-cobrar,
 .pos-modal-btn-pri {
-  background: linear-gradient(135deg, #D79A35, #E9BE68) !important;
-  color: #211407 !important;
-  border: 1px solid rgba(255, 255, 255, .18) !important;
-  box-shadow: 0 8px 20px rgba(183, 121, 31, .22) !important;
+  background: linear-gradient(135deg, var(--action-primary), color-mix(in srgb, var(--action-primary) 78%, var(--theme-text))) !important;
+  color: var(--action-on-primary) !important;
+  border: 1px solid color-mix(in srgb, var(--action-primary) 70%, var(--theme-surface)) !important;
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--action-primary) 22%, transparent) !important;
 }
 
 .ox-btn-primary:hover,
@@ -3847,7 +3907,7 @@ body.ox-body-admin .work-area {
   --work-border: rgba(255, 255, 255, .10);
   --work-muted: #B8AFA5;
   --work-text: #FFF7EF;
-  --work-accent: #F3A22D;
+  --work-accent: var(--brand-primary);
   --work-info: #63B3ED;
   --work-success: #63D895;
   --work-danger: #FF7A7A;
@@ -4552,31 +4612,42 @@ body.ox-body-admin .work-btn:hover {
   transform: translateY(-1px);
 }
 
+/* Botones del panel operativo (repartidor/preparador/cocina).
+   Gradientes derivados de tokens brand para que respondan al
+   COLOR_PRIMARIO del super_admin. Antes: hex fijos (#F3A22D, #3B82F6,
+   #63D895) que hacían que "Confirmar orden" y "Marcar listo" fueran
+   siempre naranja+azul+verde independientemente de la marca. */
 body.ox-body-admin .work-btn-primary {
-  background: linear-gradient(135deg, #F3A22D, #F07A1A);
-  color: #211006;
+  background: linear-gradient(135deg,
+    var(--brand-primary),
+    color-mix(in srgb, var(--brand-primary) 78%, #000));
+  color: var(--brand-on-primary, #211006);
 }
 
 body.ox-body-admin .work-btn-info {
-  background: linear-gradient(135deg, #3B82F6, #2563EB);
-  color: #FFFFFF;
+  background: linear-gradient(135deg,
+    var(--brand-accent),
+    color-mix(in srgb, var(--brand-accent) 80%, #000));
+  color: var(--brand-accent-contrast, #FFFFFF);
 }
 
 body.ox-body-admin .work-btn-success {
-  background: linear-gradient(135deg, #63D895, #1FA66B);
-  color: #071B10;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--theme-success) 82%, #fff),
+    var(--theme-success));
+  color: color-mix(in srgb, var(--theme-success) 20%, #000);
 }
 
 body.ox-body-admin .work-btn-ghost {
-  background: rgba(255,255,255,.07);
+  background: color-mix(in srgb, var(--col-text) 7%, transparent);
   border-color: var(--work-border);
   color: var(--work-text);
 }
 
 body.ox-body-admin .work-btn-danger {
-  background: rgba(255, 122, 122, .12);
-  border-color: rgba(255, 122, 122, .30);
-  color: #FFC1C1;
+  background: color-mix(in srgb, var(--theme-danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--theme-danger) 30%, transparent);
+  color: color-mix(in srgb, var(--theme-danger) 60%, #fff);
 }
 
 body.ox-body-admin .work-action-row form {
@@ -5291,7 +5362,7 @@ body.ox-body-admin :focus-visible {
   padding: 0 6px;
   border-radius: 999px;
   background: var(--col-gold, #D9961A);
-  color: #1B0A00;
+  color: var(--brand-on-primary, #1B0A00);
   font-size: .78rem;
   font-weight: 900;
   flex-shrink: 0;
@@ -5378,7 +5449,7 @@ body.ox-body-admin .work-area {
   --work-border:   rgba(255,244,226,.12);
   --work-muted:    #D2C8BA;
   --work-text:     #F7F4EE;
-  --work-accent:   #E9BE68;
+  --work-accent:   var(--brand-primary);
   --work-info:     #8EBDE8;
   --work-success:  #9DE4C1;
   --work-danger:   #FFB1B1;
@@ -6121,9 +6192,9 @@ body.ox-body-public .ox-header-public {
 .ox-header-status{min-height:36px;background:rgba(26,190,100,.1)!important;border-color:rgba(94,240,151,.2)!important;color:#a7f3d0!important}.ox-header-cart{color:#fff!important;background:rgba(255,255,255,.07)!important;border:1px solid rgba(255,255,255,.13);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
 .ox-header-public .ox-employee-login{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.12);color:rgba(255,255,255,.78)}.ox-header-public .ox-employee-login-icon{background:var(--brand-primary);color:var(--brand-on-primary,#111)}
 
-.ox-push-prompt--floating{position:fixed;z-index:570;left:50%;bottom:calc(82px + env(safe-area-inset-bottom,0px));width:min(460px,calc(100vw - 1.5rem));margin:0;transform:translateX(-50%);background:rgba(18,21,27,.96);border-color:color-mix(in srgb,var(--brand-primary) 38%,rgba(255,255,255,.12));box-shadow:0 20px 54px rgba(0,0,0,.42);backdrop-filter:blur(18px)}.ox-push-prompt--floating .ox-push-prompt-copy strong{color:#fff}.ox-push-prompt--floating .ox-push-prompt-copy small{color:rgba(255,255,255,.62)}.ox-push-prompt-close{flex:0 0 38px;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.07);color:rgba(255,255,255,.7);font-size:1.05rem}
+.ox-push-prompt-close{flex:0 0 38px;width:38px;height:38px;border-radius:50%;border:1px solid var(--col-border);background:var(--col-surface);color:var(--col-muted);font-size:1.05rem}
 .ox-app-tools{margin-top:1rem;padding:.9rem;border:1px solid rgba(52,37,22,.12);border-radius:1rem;background:linear-gradient(135deg,rgba(217,150,26,.08),rgba(39,103,177,.06))}.ox-app-tools>div:first-child strong,.ox-app-tools>div:first-child small{display:block}.ox-app-tools>div:first-child strong{color:#18120a;font-size:.86rem}.ox-app-tools>div:first-child small{margin-top:.15rem;color:#6b5a4e;font-size:.7rem}.ox-app-tools-actions{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.7rem}.ox-app-tools-actions button{min-height:40px;padding:.5rem .7rem;border:1px solid rgba(52,37,22,.14);border-radius:.7rem;background:#fff;color:#3f3328;font-size:.7rem;font-weight:900}.ox-app-tools-status{min-height:1em;margin-top:.4rem;color:#2767b1;font-size:.68rem}
-@media(max-width:639px){.ox-public-header-inner{min-height:64px!important}.ox-public-actions{gap:.35rem}.ox-header-status{width:34px;min-height:34px;padding:0!important;justify-content:center}.ox-header-cart{width:38px!important;height:38px!important}.ox-header-public .ox-employee-login{width:34px;min-width:34px;height:34px;min-height:34px;padding:0}.ox-header-public .ox-employee-login-text{display:none}.ox-public-header-inner::after{left:3.8rem;right:3.8rem}.ox-push-prompt--floating{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.55rem}.ox-push-prompt--floating .ox-push-prompt-btn{grid-column:2}.ox-push-prompt-close{grid-column:3;grid-row:1}}
+@media(max-width:639px){.ox-public-header-inner{min-height:64px!important}.ox-public-actions{gap:.35rem}.ox-header-status{width:34px;min-height:34px;padding:0!important;justify-content:center}.ox-header-cart{width:38px!important;height:38px!important}.ox-header-public .ox-employee-login{width:34px;min-width:34px;height:34px;min-height:34px;padding:0}.ox-header-public .ox-employee-login-text{display:none}.ox-public-header-inner::after{left:3.8rem;right:3.8rem}.ox-push-prompt-close{grid-column:3;grid-row:1}}
 
 body.ox-body-public .ox-bottom-nav {
   background: rgba(255,253,248,.95);
@@ -6207,7 +6278,7 @@ body.ox-body-admin .ox-sidebar .ox-sb-item.active {
 }
 
 body.ox-body-admin .ox-sidebar .ox-sb-item.active::before {
-  background: #E2A634 !important;
+  background: var(--brand-primary, #E2A634) !important;
 }
 
 body.ox-body-admin .work-area {
@@ -6216,7 +6287,7 @@ body.ox-body-admin .work-area {
   --work-border: #DDE2E7;
   --work-muted: #66717D;
   --work-text: #20252B;
-  --work-accent: #B97608;
+  --work-accent: var(--brand-primary);
   --work-info: #2878B8;
   --work-success: #21835B;
   --work-danger: #C64040;
@@ -6228,7 +6299,7 @@ body.ox-body-admin :is(.work-hero,.work-panel,.work-card,.work-lane) {
 
 body.ox-body-admin .work-hero {
   background: #FFFFFF !important;
-  border-top: 4px solid #E2A634 !important;
+  border-top: 4px solid var(--brand-primary, #E2A634) !important;
   box-shadow: 0 5px 18px rgba(31,41,55,.07) !important;
 }
 
@@ -6253,7 +6324,7 @@ body.ox-body-admin .work-card:hover {
 }
 
 body.ox-body-admin .work-kpi {
-  border-left: 3px solid #E2A634 !important;
+  border-left: 3px solid var(--brand-primary, #E2A634) !important;
 }
 
 body.ox-body-admin .work-kpi strong,
@@ -6289,7 +6360,7 @@ body.ox-body-admin :is(.work-btn,.ord-btn,.pos-top-btn,.pos-pay-btn):active {
 }
 
 body.ox-body-admin .work-btn-primary {
-  background: #E2A634 !important;
+  background: var(--brand-primary, #E2A634) !important;
   color: #201500 !important;
 }
 
@@ -6475,12 +6546,34 @@ body.ox-body-admin :is(input,select,textarea,button,a,summary):focus-visible {
    ═══════════════════════════════════════════════════════ */
 .ep-footer { margin-top: 3rem; }
 .ep-footer-stripe { height: 5px; background: linear-gradient(90deg, var(--brand-primary,#FCD116) 0% 50%, var(--brand-accent,#003087) 50% 75%, var(--brand-secondary,#CE1126) 75% 100%); }
-.ep-footer-body { background: #1B1F24; color: rgba(255,255,255,.72); }
-.ep-footer-inner { max-width: 80rem; margin: 0 auto; padding: 2.5rem 1.25rem; display: grid; grid-template-columns: 1fr; gap: 2.25rem; }
+.ep-footer-body { background: var(--theme-header-bg, #1B1F24); color: color-mix(in srgb, var(--theme-header-text, #fff) 72%, transparent); }
+.ep-footer-assurance { max-width: 80rem; margin: 0 auto; padding: .65rem 1.25rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .35rem 1rem; border-bottom: 1px solid rgba(255,255,255,.08); font-size: .66rem; line-height: 1.35; color: rgba(255,255,255,.42); }
+.ep-footer-assurance strong { color: rgba(255,255,255,.7); font-weight: 800; }
+.ep-footer-assurance a { color: var(--brand-primary,#FCD116) !important; font-weight: 750; text-underline-offset: 3px; }
+.ep-footer-inner { max-width: 80rem; margin: 0 auto; padding: 1.6rem 1.25rem; display: grid; grid-template-columns: 1fr; gap: 1.35rem; }
 @media (min-width: 640px)  { .ep-footer-inner { grid-template-columns: repeat(2,1fr); } }
-@media (min-width: 1024px) { .ep-footer-inner { grid-template-columns: 2fr 1fr 1fr; } }
-.ep-footer-logo { width: 54px; height: 54px; object-fit: cover; border-radius: .8rem; border: 2px solid rgba(255,255,255,.12); margin-bottom: .8rem; display: block; }
-.ep-footer-logo-fb { width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; font-size: 1.9rem; border-radius: .8rem; border: 2px solid rgba(255,255,255,.12); margin-bottom: .8rem; }
+@media (min-width: 768px) { .ep-footer-inner { grid-template-columns: 2fr 1fr 1fr; } }
+.ep-footer-logo { width: 42px; height: 42px; object-fit: cover; border-radius: .7rem; border: 2px solid rgba(255,255,255,.12); margin-bottom: .6rem; display: block; }
+.ep-footer-logo-fb { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; border-radius: .7rem; border: 2px solid rgba(255,255,255,.12); margin-bottom: .6rem; }
+.ep-footer-mobile { display: none; }
+@media (max-width: 639px), (orientation: landscape) and (max-height: 500px) {
+  .ep-footer { margin-top: 1.75rem; }
+  .ep-footer-assurance { padding: .55rem .8rem; display: flex; justify-content: flex-start; gap: .35rem .7rem; }
+  .ep-footer-assurance > span:nth-child(-n+2) { display: none; }
+  .ep-footer-inner { display: none; }
+  .ep-footer-mobile { display: grid; gap: .65rem; padding: .8rem max(.8rem,env(safe-area-inset-left)) .85rem max(.8rem,env(safe-area-inset-right)); }
+  .ep-footer-mobile-brand { display: flex; align-items: center; gap: .65rem; min-width: 0; }
+  .ep-footer-mobile-logo { width: 36px; height: 36px; flex: 0 0 36px; border-radius: .6rem; object-fit: cover; display: grid; place-items: center; background: rgba(255,255,255,.08); }
+  .ep-footer-mobile-brand div { display: grid; min-width: 0; }
+  .ep-footer-mobile-brand strong { color: #fff; font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ep-footer-mobile-brand span { color: rgba(255,255,255,.48); font-size: .68rem; }
+  .ep-footer-mobile-links { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .75rem; font-size: .7rem; }
+  .ep-footer-mobile-links a { color: var(--brand-primary,#FCD116) !important; font-weight: 750; text-underline-offset: 3px; }
+  .ep-footer-mobile-links span { color: rgba(255,255,255,.42); }
+  .ep-footer-bar { padding: .55rem max(.8rem,env(safe-area-inset-right)) calc(.55rem + env(safe-area-inset-bottom)) max(.8rem,env(safe-area-inset-left)); }
+  .ep-footer-bar-tagline { display: none; }
+}
+@media (max-width: 370px) { .ep-footer-assurance { grid-template-columns: 1fr; } .ep-footer-assurance a { grid-column: auto; } }
 /* force text colors inside dark footer to override public-theme h-tag resets */
 body.ox-body-public .ep-footer-body h1,
 body.ox-body-public .ep-footer-body h2,
@@ -6491,8 +6584,8 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
 .ep-footer-contact { display: flex; flex-direction: column; gap: .32rem; }
 .ep-footer-contact p { font-size: .79rem; color: rgba(255,255,255,.55) !important; margin: 0; }
 .ep-footer-status-pill { display: inline-flex; align-items: center; gap: .4rem; margin-top: .55rem; font-size: .72rem; font-weight: 700; padding: .28rem .75rem; border-radius: 999px; width: max-content; }
-.ep-footer-status-pill.open   { background: rgba(0,200,83,.12); color: #5EF097 !important; border: 1px solid rgba(0,200,83,.25); }
-.ep-footer-status-pill.closed { background: rgba(255,59,48,.12); color: #FFB3B0 !important; border: 1px solid rgba(255,59,48,.25); }
+.ep-footer-status-pill.open   { background: color-mix(in srgb, var(--theme-success) 12%, transparent); color: var(--theme-success) !important; border: 1px solid color-mix(in srgb, var(--theme-success) 25%, transparent); }
+.ep-footer-status-pill.closed { background: color-mix(in srgb, var(--theme-danger) 12%, transparent); color: var(--theme-danger) !important; border: 1px solid color-mix(in srgb, var(--theme-danger) 25%, transparent); }
 .ep-footer-heading { font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; color: var(--brand-primary,#FCD116) !important; margin: 0 0 .9rem; }
 .ep-footer-links { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .5rem; }
 .ep-footer-links a {
@@ -6505,11 +6598,11 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
   transition: color .15s;
 }
 .ep-footer-links a:hover { color: var(--brand-primary,#FCD116) !important; }
-.ep-footer-wa-btn { min-height: 44px; display: inline-flex; align-items: center; gap: .5rem; padding: .55rem 1rem; border-radius: .7rem; background: rgba(37,211,102,.1); color: #5EF097 !important; border: 1px solid rgba(37,211,102,.2); font-size: .82rem; font-weight: 700; text-decoration: none; transition: background .15s; margin-bottom: .8rem; }
-.ep-footer-wa-btn:hover { background: rgba(37,211,102,.18); color: #5EF097 !important; }
+.ep-footer-wa-btn { min-height: 44px; display: inline-flex; align-items: center; gap: .5rem; padding: .55rem 1rem; border-radius: .7rem; background: color-mix(in srgb, var(--theme-success) 12%, transparent); color: var(--theme-success) !important; border: 1px solid color-mix(in srgb, var(--theme-success) 25%, transparent); font-size: .82rem; font-weight: 700; text-decoration: none; transition: background .15s; margin-bottom: .8rem; }
+.ep-footer-wa-btn:hover { background: color-mix(in srgb, var(--theme-success) 20%, transparent); color: var(--theme-success) !important; }
 .ep-footer-note  { font-size: .78rem; color: rgba(255,255,255,.48) !important; margin: 0 0 .5rem; line-height: 1.55; }
 .ep-footer-legal { font-size: .7rem; color: rgba(255,255,255,.3) !important; line-height: 1.55; }
-.ep-footer-bar { background: #141720; padding: .9rem 1.25rem; }
+.ep-footer-bar { background: color-mix(in srgb, var(--theme-header-bg, #141720) 88%, #000); padding: .9rem 1.25rem; }
 .ep-footer-bar-inner { max-width: 80rem; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
 .ep-footer-bar p { font-size: .72rem; color: rgba(255,255,255,.3) !important; margin: 0; }
 .ep-footer-bar-tagline { color: rgba(255,255,255,.2) !important; font-size: .68rem !important; }
@@ -6545,7 +6638,7 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
 .ep-origin-current > span { color: var(--col-muted); font-size: .72rem; font-weight: 700; text-transform: uppercase; }
 .ep-origin-current > strong { color: var(--col-text); font-size: .95rem; }
 .ep-origin-current > small { font-size: .72rem; font-weight: 800; margin-left: auto; }
-.ep-origin-current > small.is-open { color: #198754; }
+.ep-origin-current > small.is-open { color: var(--theme-success, #198754); }
 .ep-origin-current > small.is-closed { color: #d33; }
 .ep-origin-current > a { color: var(--brand-primary, #9a6500); font-size: .76rem; font-weight: 800; margin-left: auto; }
 .ep-origin-list { display: flex; gap: .5rem; overflow-x: auto; padding-bottom: .2rem; }
@@ -6575,7 +6668,37 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
 .ep-origin-current--cart,
 .ep-origin-current--checkout { margin-bottom: 1rem; }
 
-/* Provider administration and partner workspace */
+/* ── Provider administration and partner workspace ──
+   Paleta autocontenida de la sección "proveedor" (panel del bar externo).
+   Antes: 40+ hex hardcoded esparcidos por 200 líneas — cambiar el look
+   requería editar 40 sitios. Ahora hay 12 tokens locales con defaults
+   claros y comentados. El fundador puede sobrescribirlos desde tokens.css
+   o vía SiteConfig si se agrega el sync correspondiente. */
+:where(.prov-page-head, .prov-back, .prov-eyebrow, .prov-summary-action,
+       .prov-btn-primary, .prov-btn-danger, .prov-status, .prov-warnings,
+       .prov-ok, .prov-danger, .prov-alert-panel) {
+  --prov-eyebrow:      #9A6408;
+  --prov-back:         #805105;
+  --prov-primary:      #D9961A;
+  --prov-primary-ink:  #201500;
+  --prov-primary-soft: #FFF7E6;
+  --prov-primary-txt:  #5B4631;
+  --prov-warn-bg:      #FFF1D1;
+  --prov-warn-fg:      #704600;
+  --prov-warn-border:  #E7C27D;
+  --prov-warn-soft:    #FFF8E8;
+  --prov-warn-copy:    #5E4317;
+  --prov-warn-alt-fg:  #714A0C;
+  --prov-danger-bg:    #FFF4F4;
+  --prov-danger-fg:    #A32626;
+  --prov-danger-strong:#B52D2D;
+  --prov-danger-border:#E4B3B3;
+  --prov-danger-soft:  #FFF0F0;
+  --prov-ok-bg:        #EEFAF4;
+  --prov-ok-fg:        #176541;
+  --prov-ok-border:    #A8D8C3;
+}
+
 .prov-page-head {
   display: flex;
   align-items: flex-end;
@@ -6592,13 +6715,13 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
 .prov-page-head p { max-width: 760px; color: var(--col-muted); font-size: .85rem; line-height: 1.5; }
 .prov-eyebrow {
   display: block;
-  color: #9A6408;
+  color: var(--prov-eyebrow);
   font-size: .68rem;
   font-weight: 900;
   letter-spacing: .08em;
   text-transform: uppercase;
 }
-.prov-back { display: inline-block; margin-bottom: .65rem; color: #805105; font-size: .78rem; font-weight: 850; }
+.prov-back { display: inline-block; margin-bottom: .65rem; color: var(--prov-back); font-size: .78rem; font-weight: 850; }
 .prov-head-stats { display: flex; gap: .5rem; flex-wrap: wrap; }
 .prov-head-stats span {
   padding: .55rem .7rem;
@@ -6624,7 +6747,7 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
 .prov-create > summary strong,.prov-create > summary small { display: block; }
 .prov-create > summary strong { color: var(--col-text); font-size: .95rem; }
 .prov-create > summary small { margin-top: .15rem; color: var(--col-muted); font-size: .75rem; font-weight: 500; }
-.prov-summary-action { color: #805105; font-size: .75rem; font-weight: 850; }
+.prov-summary-action { color: var(--prov-back); font-size: .75rem; font-weight: 850; }
 .prov-create[open] .prov-summary-action { font-size: 0; }
 .prov-create[open] .prov-summary-action::after { content: "Cerrar formulario"; font-size: .75rem; }
 .prov-form-grid,.prov-editor { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .85rem; }
@@ -6669,10 +6792,10 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
 .prov-form-section > .prov-section-help:first-of-type { grid-column: 1 / -1; margin-top: -.3rem; }
 .prov-inline-note {
   padding: .65rem .7rem;
-  border-left: 3px solid #D9961A;
+  border-left: 3px solid var(--prov-primary);
   border-radius: .35rem;
-  background: #FFF7E6;
-  color: #5B4631;
+  background: var(--prov-primary-soft);
+  color: var(--prov-primary-txt);
   font-size: .72rem;
   line-height: 1.4;
 }
@@ -6693,9 +6816,9 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
   text-decoration: none;
   cursor: pointer;
 }
-.prov-btn-primary { background: #D9961A; color: #201500; }
+.prov-btn-primary { background: var(--prov-primary); color: var(--prov-primary-ink); }
 .prov-btn-secondary { border-color: var(--col-border-2); background: var(--col-surface); color: var(--col-text); }
-.prov-btn-danger { border-color: #E4B3B3; background: #FFF4F4; color: #A32626; }
+.prov-btn-danger { border-color: var(--prov-danger-border); background: var(--prov-danger-bg); color: var(--prov-danger-fg); }
 .prov-directory { display: grid; gap: .85rem; }
 .prov-card { padding: 1rem !important; }
 .prov-card.is-inactive { border-style: dashed !important; }
@@ -6709,8 +6832,8 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
   display: grid;
   place-items: center;
   border-radius: .65rem;
-  background: #FFF1D1;
-  color: #704600;
+  background: var(--prov-warn-bg);
+  color: var(--prov-warn-fg);
   font-size: 1rem;
   font-weight: 950;
 }
@@ -6730,18 +6853,18 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
   font-weight: 850;
   white-space: nowrap;
 }
-.prov-status.is-active { border-color: #A8D8C3; background: #EEFAF4; color: #176541; }
-.prov-status.is-inactive { border-color: #E4B3B3; background: #FFF4F4; color: #A32626; }
+.prov-status.is-active { border-color: var(--prov-ok-border); background: var(--prov-ok-bg); color: var(--prov-ok-fg); }
+.prov-status.is-inactive { border-color: var(--prov-danger-border); background: var(--prov-danger-bg); color: var(--prov-danger-fg); }
 .prov-warnings { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .8rem; }
 .prov-warnings span {
   padding: .32rem .5rem;
   border-radius: .4rem;
-  background: #FFF7E6;
-  color: #714A0C;
+  background: var(--prov-primary-soft);
+  color: var(--prov-warn-alt-fg);
   font-size: .68rem;
   font-weight: 750;
 }
-.prov-warnings span.is-danger { background: #FFF0F0; color: #A32626; }
+.prov-warnings span.is-danger { background: var(--prov-danger-soft); color: var(--prov-danger-fg); }
 .prov-card-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: .65rem; margin-top: .85rem; }
 .prov-card-grid section { min-width: 0; padding: .75rem; border: 1px solid var(--col-border); border-radius: .6rem; background: var(--col-elevated); }
 .prov-card-grid h3 { margin-bottom: .45rem; color: var(--col-text); font-size: .72rem; font-weight: 900; }
@@ -6749,8 +6872,8 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
 .prov-facts div { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .5rem; font-size: .7rem; }
 .prov-facts dt { color: var(--col-muted); }
 .prov-facts dd { color: var(--col-text); font-weight: 750; text-align: right; overflow-wrap: anywhere; }
-.prov-ok { color: #176541 !important; }
-.prov-danger { color: #B52D2D !important; }
+.prov-ok { color: var(--prov-ok-fg) !important; }
+.prov-danger { color: var(--prov-danger-strong) !important; }
 .prov-empty { padding: 1.5rem; text-align: center; }
 .prov-empty strong { color: var(--col-text); font-size: .95rem; }
 .prov-empty p { margin-top: .25rem; color: var(--col-muted); font-size: .78rem; }
@@ -6763,7 +6886,7 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
 .prov-kpis strong.prov-kpi-text { font-size: .95rem; line-height: 1.7; }
 .prov-kpis small { color: var(--col-muted); font-size: .68rem; }
 .prov-kpis-compact { grid-template-columns: repeat(3,minmax(0,1fr)); }
-.prov-alert-panel { margin-bottom: .85rem; padding: .8rem; border: 1px solid #E7C27D; border-radius: .65rem; background: #FFF8E8; color: #5E4317; }
+.prov-alert-panel { margin-bottom: .85rem; padding: .8rem; border: 1px solid var(--prov-warn-border); border-radius: .65rem; background: var(--prov-warn-soft); color: var(--prov-warn-copy); }
 .prov-alert-panel > strong { font-size: .78rem; }
 .prov-alert-panel > p { margin-top: .25rem; font-size: .75rem; }
 .prov-editor { margin-bottom: .85rem; }
@@ -6812,13 +6935,13 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
 .prov-stock-label { display: block; margin-bottom: .18rem; color: var(--col-muted); font-size: .65rem; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
 .prov-stock-main strong { display: block; color: var(--col-text); font-size: .95rem; line-height: 1.2; overflow-wrap: anywhere; }
 .prov-stock-main small { display: block; margin-top: .2rem; color: var(--col-muted); font-size: .7rem; }
-.prov-stock-chip { flex: 0 0 auto; padding: .25rem .55rem; border-radius: 999px; background: #EEFAF4; color: #176541; font-size: .72rem; font-weight: 900; }
-.prov-stock-chip.is-low { background: #FFF4DF; color: #8B5700; }
+.prov-stock-chip { flex: 0 0 auto; padding: .25rem .55rem; border-radius: 999px; background: var(--prov-ok-bg); color: var(--prov-ok-fg); font-size: .72rem; font-weight: 900; }
+.prov-stock-chip.is-low { background: var(--prov-warn-bg); color: var(--prov-warn-fg); }
 .prov-stock-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .65rem; margin-top: .8rem; }
 .prov-stock-fields span { display: block; margin-bottom: .25rem; color: var(--col-muted); font-size: .68rem; font-weight: 800; }
 .prov-stock-fields input { width: 100%; min-height: 44px; padding: .65rem .7rem; border: 1px solid var(--col-border-2); border-radius: .55rem; background: var(--col-surface); color: var(--col-text); font-weight: 800; text-align: right; }
-.prov-stock-warning { margin-top: .65rem; padding: .5rem .6rem; border-radius: .45rem; background: #FFF4DF; color: #7A4D05; font-size: .7rem; font-weight: 700; }
-.prov-stock-save { width: 100%; min-height: 44px; margin-top: .7rem; padding: .65rem; border-radius: .55rem; background: #D9961A; color: #201500; font-size: .78rem; font-weight: 900; }
+.prov-stock-warning { margin-top: .65rem; padding: .5rem .6rem; border-radius: .45rem; background: var(--prov-warn-bg); color: var(--prov-warn-alt-fg); font-size: .7rem; font-weight: 700; }
+.prov-stock-save { width: 100%; min-height: 44px; margin-top: .7rem; padding: .65rem; border-radius: .55rem; background: var(--prov-primary); color: var(--prov-primary-ink); font-size: .78rem; font-weight: 900; }
 
 @media (max-width: 1000px) {
   .prov-card-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
@@ -6896,13 +7019,6 @@ body.ox-body-admin .ox-sb-uname {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-body.ox-body-admin .ox-admin-bnav { grid-auto-columns: minmax(0, 1fr); }
-body.ox-body-admin .ox-admin-bnav-item span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 @media (min-width: 1100px) {
   body.ox-body-admin .ox-sidebar { width: 248px; }
   body.ox-body-admin .ox-admin-content { margin-left: 248px; }
@@ -6953,4 +7069,72 @@ body.ox-body-admin .ox-admin-bnav-item span {
   body.ox-body-admin .ox-sb-user { padding-block: .5rem; }
   body.ox-body-admin .ox-sb-section-label { padding-top: .2rem; }
   body.ox-body-admin .ox-sb-item { min-height: 38px; }
+}
+.legal-page{width:min(980px,100%);margin:0 auto;padding:clamp(1rem,3vw,2.5rem);border:1px solid var(--col-border);border-radius:1rem;background:var(--col-surface)}.legal-head span{color:var(--brand-primary);font-size:.72rem;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.legal-head h1{margin:.35rem 0;font-size:clamp(1.55rem,5vw,2.4rem);color:var(--col-text)}.legal-head p,.legal-grid p,.legal-update{color:var(--col-muted);line-height:1.6}.legal-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.75rem;margin-top:1.25rem}.legal-grid section{padding:1rem;border:1px solid var(--col-border);border-radius:.8rem;background:var(--col-elevated)}.legal-grid h2{margin:0 0 .35rem;color:var(--col-text);font-size:.92rem}.legal-grid p{margin:0;font-size:.78rem}.legal-update{margin-top:1rem;font-size:.7rem}
+
+.checkout-scheduled {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: .7rem;
+  margin: 0 0 1rem;
+  padding: .8rem .9rem;
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 28%, var(--col-border));
+  border-radius: .85rem;
+  background: color-mix(in srgb, var(--brand-accent) 8%, var(--col-surface));
+  color: var(--col-text);
+}
+.checkout-scheduled > span { font-size: 1.35rem; }
+.checkout-scheduled strong,
+.checkout-scheduled small { display: block; }
+.checkout-scheduled strong { font-size: .84rem; font-weight: 900; }
+.checkout-scheduled small { margin-top: .15rem; color: var(--col-muted); font-size: .72rem; line-height: 1.4; }
+
+/* ── Avisos públicos y permisos PWA en el flujo del documento ────────────
+   Ningún aviso automático se posiciona sobre el carrito o la navegación. */
+body.ox-body-public > .ox-push-prompt,
+body.ox-body-public > .ox-pwa-sheet {
+  width: min(1240px, calc(100% - 1.5rem));
+  margin: .75rem auto 0;
+}
+body.ox-body-public > .ox-pwa-sheet {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  animation: oxPwaIn .24s ease;
+}
+body.ox-body-public > .ox-pwa-sheet .ox-pwa-card,
+body.ox-body-public > .ox-push-prompt {
+  border: 1px solid color-mix(in srgb, var(--action-primary) 25%, var(--col-border));
+  background: color-mix(in srgb, var(--action-primary) 5%, var(--theme-surface));
+  color: var(--theme-text);
+  box-shadow: var(--shadow-1);
+}
+body.ox-body-public > .ox-pwa-sheet .ox-pwa-title,
+body.ox-body-public > .ox-push-prompt .ox-push-prompt-copy strong { color: var(--theme-text); }
+body.ox-body-public > .ox-pwa-sheet .ox-pwa-text,
+body.ox-body-public > .ox-push-prompt .ox-push-prompt-copy small { color: var(--theme-muted); }
+.ox-pwa-action,
+.ox-push-prompt-btn,
+.ox-push-prompt__activate {
+  background: var(--action-primary);
+  color: var(--action-on-primary);
+  box-shadow: none;
+}
+@media (max-width: 520px) {
+  body.ox-body-public > .ox-pwa-sheet .ox-pwa-card,
+  body.ox-body-public > .ox-push-prompt {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: .55rem;
+  }
+  body.ox-body-public > .ox-pwa-sheet .ox-pwa-action,
+  body.ox-body-public > .ox-push-prompt .ox-push-prompt-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 44px;
+  }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  body.ox-body-public > .ox-push-prompt,
+  body.ox-body-public > .ox-pwa-sheet { margin-top: .4rem; }
 }

@@ -12,6 +12,16 @@
     </div>
   </div>
 
+  {# Bloque saldo. Si el cliente está logueado, mostramos su saldo real
+     y ocultamos el formulario de consulta por WhatsApp. Si no, mantenemos
+     el flujo original. #}
+  {% if saldo_cliente is not none %}
+  <div class="points-lookup-card points-lookup-mine">
+    <p class="pc-saldo-label">Tu saldo actual</p>
+    <p class="pc-saldo-num">⭐ {{ saldo_cliente }} <small>puntos</small></p>
+    <p class="pc-saldo-hint">Se aplica automáticamente al confirmar tu pedido.</p>
+  </div>
+  {% else %}
   <form id="points-lookup-form" class="points-lookup-card">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label for="points-phone">Número de WhatsApp</label>
@@ -20,6 +30,7 @@
     <button type="submit">Enviar mi saldo por WhatsApp</button>
     <p id="points-lookup-status" role="status"></p>
   </form>
+  {% endif %}
 
   <div class="points-lookup-note">
     <strong>¿Quieres usarlos?</strong>
@@ -48,6 +59,17 @@
           <h3>{{ p.nombre }}</h3>
           {% if p.descripcion %}<p class="pc-vitrina-desc">{{ p.descripcion[:80] }}</p>{% endif %}
           <p class="pc-vitrina-pts">⭐ {{ p.puntos_para_canje }} pts</p>
+          {# Badge de disponibilidad relativo al saldo del cliente. Solo
+             aparece si el cliente está logueado (saldo conocido). Para
+             visitantes anónimos mostramos el precio en puntos y nada más. #}
+          {% if saldo_cliente is not none %}
+            {% set faltan = (p.puntos_para_canje or 0) - saldo_cliente %}
+            {% if faltan <= 0 %}
+              <span class="pc-vitrina-badge pc-vitrina-badge--ok">✓ Puedes canjearlo</span>
+            {% else %}
+              <span class="pc-vitrina-badge pc-vitrina-badge--wait">Te faltan {{ faltan }} pts</span>
+            {% endif %}
+          {% endif %}
         </div>
       </article>
       {% endfor %}
@@ -67,13 +89,33 @@
   .pc-vitrina-body { padding: .55rem .65rem .7rem; display: flex; flex-direction: column; gap: .3rem; flex: 1; }
   .pc-vitrina-body h3 { font-size: .82rem; font-weight: 800; color: var(--col-text); margin: 0; line-height: 1.2; }
   .pc-vitrina-desc { font-size: .72rem; color: var(--col-muted); margin: 0; line-height: 1.3; }
-  .pc-vitrina-pts { font-size: .82rem; font-weight: 900; color: #FFAB00; margin-top: auto; letter-spacing: -.01em; }
+  .pc-vitrina-pts { font-size: .82rem; font-weight: 900; color: var(--brand-primary); margin-top: auto; letter-spacing: -.01em; }
+  .pc-vitrina-badge {
+    display: inline-block; margin-top: .3rem; font-size: .68rem; font-weight: 800;
+    padding: .18rem .45rem; border-radius: 999px; letter-spacing: .01em;
+  }
+  .pc-vitrina-badge--ok {
+    background: color-mix(in srgb, var(--theme-success) 14%, transparent);
+    color: var(--theme-success);
+    border: 1px solid color-mix(in srgb, var(--theme-success) 32%, transparent);
+  }
+  .pc-vitrina-badge--wait {
+    background: color-mix(in srgb, var(--col-muted) 14%, transparent);
+    color: var(--col-muted);
+    border: 1px solid color-mix(in srgb, var(--col-muted) 25%, transparent);
+  }
+  /* Card del saldo real del cliente logueado */
+  .points-lookup-mine { text-align: center; padding: 1.2rem 1rem; }
+  .pc-saldo-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--col-muted); margin: 0 0 .35rem; }
+  .pc-saldo-num { font-size: 2.2rem; font-weight: 950; color: var(--brand-primary); line-height: 1; margin: 0; letter-spacing: -.03em; }
+  .pc-saldo-num small { font-size: .85rem; color: var(--col-muted); font-weight: 700; margin-left: .25rem; }
+  .pc-saldo-hint { font-size: .78rem; color: var(--col-muted); margin-top: .5rem; }
   </style>
   {% endif %}
 </section>
 {% endblock %}
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 document.getElementById('points-lookup-form')?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const phone = document.getElementById('points-phone').value.trim();

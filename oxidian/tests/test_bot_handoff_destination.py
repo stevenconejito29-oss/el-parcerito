@@ -5,7 +5,7 @@ from decimal import Decimal
 from flask import Flask
 
 from extensions import db
-from models import AdminFeature, BotAiMessage, BotAiUsage, Order, OrderItem, Product, SiteConfig, User
+from models import AdminFeature, BotAiMessage, BotAiUsage, Order, OrderEvent, OrderItem, Product, SiteConfig, User
 from routes.api_bot import api_bot_bp
 
 
@@ -95,6 +95,56 @@ class BotHandoffDestinationTest(unittest.TestCase):
 
     def test_requires_bot_authentication(self):
         self.assertEqual(self._get(authenticated=False).status_code, 401)
+
+    def test_missing_order_detail_is_json_404_not_internal_error(self):
+        response = self.client.get(
+            "/api/bot/pedido/999999?telefono=+34610000001",
+            headers={"X-Bot-Key": "test-bot-key"},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(response.is_json)
+        self.assertFalse(response.get_json()["ok"])
+
+    def test_review_requires_phone_and_order_ownership(self):
+        order = self._order(None)
+        order.estado = "entregado"
+        db.session.commit()
+        headers = {"X-Bot-Key": "test-bot-key"}
+
+        missing = self.client.post(
+            f"/api/bot/pedido/{order.id}/resena",
+            json={"calificacion": 5},
+            headers=headers,
+        )
+        self.assertEqual(missing.status_code, 400)
+
+        wrong = self.client.post(
+            f"/api/bot/pedido/{order.id}/resena",
+            json={"calificacion": 5, "telefono": self.superadmin.telefono},
+            headers=headers,
+        )
+        self.assertEqual(wrong.status_code, 403)
+
+        owned = self.client.post(
+            f"/api/bot/pedido/{order.id}/resena",
+            json={"calificacion": 5, "telefono": self.customer.telefono},
+            headers=headers,
+        )
+        self.assertEqual(owned.status_code, 200)
+
+    def test_incident_audit_does_not_duplicate_customer_phone(self):
+        order = self._order(None)
+        response = self.client.post(
+            f"/api/bot/pedido/{order.id}/incidencia",
+            json={"texto": "Falta un producto", "telefono": self.customer.telefono},
+            headers={"X-Bot-Key": "test-bot-key"},
+        )
+        self.assertEqual(response.status_code, 200)
+        event = OrderEvent.query.filter_by(
+            pedido_id=order.id,
+            tipo="cliente_reporto_novedad",
+        ).one()
+        self.assertNotIn("telefono", event.get_metadata())
 
     def test_ai_usage_and_memory_keep_phone_out_of_storage(self):
         headers = {"X-Bot-Key": "test-bot-key"}

@@ -7,7 +7,7 @@
   {% if producto.imagen_url %}
     {% set src = producto.imagen_url|upload_url %}
     <img src="{{ src }}" alt="{{ producto.nombre }}" class="pd-hero-img-el"
-         onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+         data-image-fallback="next">
     <div class="pd-hero-fallback" style="display:none">
       {% if producto.es_combo %}🎁
       {% elif producto.categoria and 'beb' in producto.categoria.nombre|lower %}🥤
@@ -37,6 +37,11 @@
     {% endif %}
     {% if producto.tipo_entrega in ('programado','encargo') %}
     <span class="pd-badge pd-badge-encargo">📆 Fecha fija{% if producto.fecha_llegada %}: {{ producto.fecha_llegada.strftime('%d/%m') }}{% endif %}</span>
+    {% endif %}
+    {% if producto.cantidad_por_lote and producto.cantidad_por_lote > 0 %}
+    <span class="pd-badge pd-badge-encargo" style="background:color-mix(in srgb,var(--brand-primary) 22%,transparent)">
+      🍽 {{ producto.cantidad_por_lote }} u. por tanda
+    </span>
     {% endif %}
     {% if producto.canjeable_con_puntos %}
     <span class="pd-badge pd-badge-puntos">⭐ Canjeable</span>
@@ -151,7 +156,7 @@
   }
   .pd-variantes-opt input { position:absolute; opacity:0; pointer-events:none; }
   .pd-variantes-opt.is-selected,
-  .pd-variantes-opt:has(input:checked) { border-color:var(--brand-primary,#FCD116); background:rgba(252,209,22,.08); }
+  .pd-variantes-opt:has(input:checked) { border-color:var(--brand-primary,#FCD116); background:color-mix(in srgb, var(--brand-primary) 10%, transparent); }
   .pd-variantes-opt.is-out { opacity:.45; cursor:not-allowed; }
   .pd-variantes-swatch { width:16px; height:16px; border-radius:50%; border:1.5px solid rgba(255,255,255,.4); flex-shrink:0; }
   .pd-variantes-price { color:var(--col-muted); font-size:.78rem; }
@@ -202,10 +207,10 @@
   }
   .pd-tallas-opt input { position:absolute; opacity:0; pointer-events:none; }
   .pd-tallas-label { font-size:.9rem; font-weight:900; color:var(--col-text); line-height:1; }
-  .pd-tallas-plus { font-size:.68rem; font-weight:800; color:#FFAB00; margin-top:.2rem; }
-  .pd-tallas-minus { font-size:.68rem; font-weight:800; color:#5EF097; margin-top:.2rem; }
+  .pd-tallas-plus { font-size:.68rem; font-weight:800; color:var(--brand-primary); margin-top:.2rem; }
+  .pd-tallas-minus { font-size:.68rem; font-weight:800; color:var(--theme-success); margin-top:.2rem; }
   </style>
-  <script>
+  <script nonce="{{ csp_nonce() }}">
   (function(){
     const opts = document.querySelectorAll('.pd-tallas-opt');
     const priceEl = document.getElementById('pd-unit-price');
@@ -400,8 +405,8 @@
           </span>
           <span class="pd-combo-opt-body">
             <span class="pd-combo-opt-name">{{ item.componente.nombre }}</span>
-            {% if item.es_predeterminado %}<span class="pd-combo-opt-desc" style="color:#5EF097;font-weight:900">Recomendada</span>{% endif %}
-            {% if item.precio_extra and item.precio_extra > 0 %}<span class="pd-combo-opt-desc" style="color:#FFAB00;font-weight:900">+€{{ "%.2f"|format(item.precio_extra) }}</span>{% endif %}
+            {% if item.es_predeterminado %}<span class="pd-combo-opt-desc" style="color:var(--theme-success);font-weight:900">Recomendada</span>{% endif %}
+            {% if item.precio_extra and item.precio_extra > 0 %}<span class="pd-combo-opt-desc" style="color:var(--brand-primary);font-weight:900">+€{{ "%.2f"|format(item.precio_extra) }}</span>{% endif %}
             {% if item.componente.descripcion %}
             <span class="pd-combo-opt-desc">{{ item.componente.descripcion[:70] }}</span>
             {% endif %}
@@ -430,10 +435,13 @@
   <div class="pd-info-box pd-box-encargo">
     <span class="pd-box-icon">📆</span>
     <div>
-      <p class="pd-box-title" style="color:#7CC7FF">Producto con fecha fija</p>
+      <p class="pd-box-title" style="color:var(--brand-accent,#7CC7FF)">Producto con fecha fija</p>
       <p class="pd-box-sub">
         {% if producto.fecha_llegada %}
         Se prepara para entregar el {{ producto.fecha_llegada.strftime('%d/%m/%Y') }}. Haz este pedido separado del delivery inmediato.
+        {% if producto.cantidad_por_lote and producto.cantidad_por_lote > 0 %}
+        <br><strong>Encargo por lote:</strong> cada unidad del carrito reserva 1 tanda de {{ producto.cantidad_por_lote }} u.
+        {% endif %}
         {% else %}
         Se prepara bajo una fecha definida por el negocio. Haz este pedido separado del delivery inmediato.
         {% endif %}
@@ -449,7 +457,7 @@
   <div class="pd-info-box pd-box-sold">
     <span class="pd-box-icon">😔</span>
     <div>
-      <p class="pd-box-title" style="color:#FF6B6B">Agotado momentáneamente</p>
+      <p class="pd-box-title" style="color:var(--theme-danger)">Agotado momentáneamente</p>
       <p class="pd-box-sub">Vuelve pronto o consulta por WhatsApp.</p>
     </div>
   </div>
@@ -502,7 +510,7 @@
     {% endif %}
 
     <div class="pd-qty-ctrl" id="pd-qty-ctrl">
-      <button type="button" class="pd-qty-btn" onclick="pdQty(-1)" aria-label="Menos">
+      <button type="button" class="pd-qty-btn" data-pd-qty="-1" aria-label="Menos">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
       {% set qty_stock_max = stock_en_origen(producto, origen_actual) if producto.tipo_entrega == 'inmediato' else cart_max_qty %}
@@ -510,7 +518,7 @@
       <input type="number" name="cantidad" id="pd-qty" value="1" min="1"
              max="{{ qty_form_max }}"
              class="pd-qty-input" readonly>
-      <button type="button" class="pd-qty-btn" onclick="pdQty(1)" aria-label="Más">
+      <button type="button" class="pd-qty-btn" data-pd-qty="1" aria-label="Más">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
     </div>
@@ -666,7 +674,7 @@ main { padding-top: 0 !important; }
 .pd-price-badge { background: var(--flag-red); color: #fff; font-size: .7rem; font-weight: 900; padding: 2px 8px; border-radius: 999px; }
 .pd-combo-price-note {
   display:inline-flex;align-items:center;gap:.35rem;flex-wrap:wrap;
-  font-size:.74rem;font-weight:850;color:#5EF097;
+  font-size:.74rem;font-weight:850;color:var(--theme-success);
 }
 .pd-combo-price-note span { color:var(--col-faint);text-decoration:line-through; }
 
@@ -698,11 +706,11 @@ main { padding-top: 0 !important; }
   background: rgba(94,240,151,.1); border: 1px solid rgba(94,240,151,.2);
   border-radius: .5rem; padding: .3rem .7rem; margin-bottom: .5rem;
 }
-.pd-alerg-title { font-size: .75rem; font-weight: 700; color: #FFB340; margin-bottom: .4rem; }
+.pd-alerg-title { font-size: .75rem; font-weight: 700; color: var(--status-warn); margin-bottom: .4rem; }
 .pd-alerg-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
 .pd-alerg-chip {
   display: flex; align-items: center; gap: .25rem;
-  font-size: .78rem; font-weight: 700; color: #FFB340;
+  font-size: .78rem; font-weight: 700; color: var(--status-warn);
   background: rgba(255,140,0,.1); border: 1px solid rgba(255,140,0,.22);
   border-radius: .5rem; padding: .25rem .6rem;
 }
@@ -737,7 +745,7 @@ main { padding-top: 0 !important; }
 .pd-combo-item-info { flex: 1; min-width: 0; }
 .pd-combo-item-name { font-size: .87rem; font-weight: 700; color: var(--col-text); }
 .pd-combo-item-desc { font-size: .68rem; color: var(--col-muted); line-height: 1.35; margin-top: .1rem; }
-.pd-combo-item-alerg { font-size: .67rem; color: #FFB340; margin-top: .1rem; }
+.pd-combo-item-alerg { font-size: .67rem; color: var(--status-warn); margin-top: .1rem; }
 .pd-combo-item-hipo  { font-size: .67rem; color: #5EF097; margin-top: .1rem; }
 .pd-combo-tag {
   flex-shrink: 0; font-size: .62rem; font-weight: 800;
@@ -832,7 +840,7 @@ main { padding-top: 0 !important; }
 .pd-combo-opt-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .08rem; }
 .pd-combo-opt-name { font-size: .85rem; font-weight: 700; color: var(--col-text); }
 .pd-combo-opt-desc { font-size: .68rem; color: var(--col-muted); line-height: 1.3; }
-.pd-combo-opt-alerg { font-size: .65rem; color: #FFB340; flex-shrink: 0; }
+.pd-combo-opt-alerg { font-size: .65rem; color: var(--status-warn); flex-shrink: 0; }
 .pd-combo-opt-sold {
   font-size: .62rem; font-weight: 900; color: #FF6B6B;
   background: rgba(255,59,48,.12); border: 1px solid rgba(255,59,48,.22);
@@ -1051,7 +1059,7 @@ main { padding-top: 0 !important; }
 }
 </style>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 const PD_BASE_PRICE = {{ producto.precio_final|float }};
 const PD_COMBO_MODE = {{ (producto.combo_precio_modo_normalizado if producto.es_combo else 'fijo')|tojson }};
 const PD_COMBO_DISCOUNT = {{ producto.combo_descuento_pct_float if producto.es_combo else 0 }};
@@ -1130,6 +1138,10 @@ function pdQty(d) {
   i.value = Math.max(parseInt(i.min) || 1, Math.min(parseInt(i.max) || 999, v));
   pdRenderPrice();
 }
+
+document.querySelectorAll('[data-pd-qty]').forEach(button => {
+  button.addEventListener('click', () => pdQty(Number.parseInt(button.dataset.pdQty, 10)));
+});
 
 function pdComboUpdateBadges() {
   document.querySelectorAll('.pd-combo-grupo').forEach(group => {

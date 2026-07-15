@@ -2,7 +2,7 @@
 {% block title %}Almacén — Cola de Pedidos{% endblock %}
 {% block content %}
 
-<div class="work-area">
+<div class="work-area staff-orders-board">
 <section class="work-hero">
   <div>
     <span class="work-eyebrow">📦 Almacén / Stock</span>
@@ -10,31 +10,27 @@
     <p class="work-subtitle">Bebidas, envasados y productos de stock. Toma, empaca y despacha.</p>
   </div>
   <div class="work-actions-top">
-    <form method="POST" action="{{ url_for('staff.toggle_disponible') }}" class="js-availability-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="work-btn {% if disponible %}work-btn-success{% else %}work-btn-ghost{% endif %}">
-        <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
-        {% if disponible %}Online{% else %}Ponerme online{% endif %}
-      </button>
-    </form>
     <span class="work-pill">Refresco <strong id="refresh-countdown">30s</strong></span>
   </div>
 </section>
 
-<!-- Tarjeta empleado -->
-<div class="work-employee-card">
-  <div class="work-employee-avatar">{{ current_user.nombre[0].upper() }}</div>
+<!-- Identidad y único control de disponibilidad -->
+<form method="POST" action="{{ url_for('staff.toggle_disponible') }}"
+      class="js-availability-form work-employee-card work-employee-toggle {% if disponible %}is-online{% else %}is-offline{% endif %}"
+      data-availability="{{ 'online' if disponible else 'offline' }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="work-employee-avatar" aria-hidden="true">{{ current_user.nombre[0].upper() }}</div>
   <div class="work-employee-info">
     <p class="work-employee-name">{{ current_user.nombre }}</p>
     <p class="work-employee-role">📦 Staff Almacén
       {% if current_user.puesto_trabajo %} · {{ current_user.puesto_trabajo }}{% endif %}
     </p>
   </div>
-  <div class="work-employee-status">
+  <button type="submit" class="work-availability-button" aria-pressed="{{ 'true' if disponible else 'false' }}">
     <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
-    <span>{% if disponible %}Online{% else %}Offline{% endif %}</span>
-  </div>
-</div>
+    <span><strong>{{ 'Online' if disponible else 'Offline' }}</strong><small>{{ 'Pausar recepción' if disponible else 'Activar recepción' }}</small></span>
+  </button>
+</form>
 
 {% if not disponible and current_user.rol not in ('admin','super_admin') %}
 <div class="work-panel work-status-panel mb-4">
@@ -44,6 +40,8 @@
 {% endif %}
 
 {% if companeros %}
+<details class="work-team-details">
+  <summary class="work-team-summary">👥 Equipo conectado ({{ companeros|length }})</summary>
 <div class="work-team" aria-label="Compañeros activos">
   {% for c in companeros %}
   <span class="work-chip">
@@ -62,6 +60,7 @@
   </span>
   {% endfor %}
 </div>
+</details>
 {% endif %}
 
 <!-- KPIs -->
@@ -81,7 +80,7 @@
 <div class="work-board">
 
 <!-- ── PENDIENTES ── -->
-<section class="work-lane">
+<section class="work-lane staff-lane--pending">
   <div class="work-lane-head">
     <div>
       <h2 class="work-lane-title">Pendientes</h2>
@@ -101,7 +100,7 @@
           {% elif pedido.origen == 'whatsapp' %}📱 WhatsApp
           {% else %}🌐 Web{% endif %}
         </span>
-        <span class="work-chip" style="background:rgba(43,147,72,.12);color:#2b9348;border-color:rgba(43,147,72,.3)">📦 Almacén</span>
+        <span class="work-chip work-chip-stock">📦 Almacén</span>
       </div>
       <div class="work-time-stack">
         <span class="work-time">{{ pedido.creado_en.strftime('%H:%M') }}</span>
@@ -149,7 +148,7 @@
 </section>
 
 <!-- ── EMPACANDO ── -->
-<section class="work-lane">
+<section class="work-lane staff-lane--active">
   <div class="work-lane-head">
     <div>
       <h2 class="work-lane-title">Empacando</h2>
@@ -203,28 +202,10 @@
 </div>
 </div>
 
-<style>
-.work-employee-card {
-  display:flex; align-items:center; gap:1rem; padding:.85rem 1rem;
-  background:var(--col-surface); border:1px solid var(--col-border);
-  border-radius:1rem; margin-bottom:1rem;
-}
-.work-employee-avatar {
-  width:44px; height:44px; border-radius:12px;
-  background:linear-gradient(135deg,rgba(43,147,72,.25),rgba(0,180,80,.15));
-  color:#2b9348; font-size:1.2rem; font-weight:900;
-  display:flex; align-items:center; justify-content:center;
-  flex-shrink:0; border:1.5px solid rgba(43,147,72,.3);
-}
-.work-employee-info { flex:1; min-width:0; }
-.work-employee-name { font-weight:800; font-size:.92rem; color:var(--col-text); }
-.work-employee-role { font-size:.75rem; color:var(--col-muted); margin-top:.1rem; }
-.work-employee-status { display:flex; align-items:center; gap:.4rem; font-size:.78rem; color:var(--col-muted); flex-shrink:0; }
-</style>
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 function actualizarUrgencia() {
   document.querySelectorAll('[data-created]').forEach(card => {
     const created = new Date(card.dataset.created);

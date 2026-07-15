@@ -57,18 +57,15 @@ function withEscapeHint(body) {
  * }} ctx
  */
 function menuPrincipal(ctx) {
-  const extras = [
-    ctx.loyaltyEnabled ? "consultar tus puntos" : null,
-    ctx.deliveryEnabled ? "comprobar cobertura" : null,
-    ctx.scheduledEnabled ? "reservar tu pedido con antelación" : null,
-  ].filter(Boolean);
-  const extraText = extras.length ? `, ${extras.join(" o ")}` : "";
+  const lines = clientMenuLines(ctx);
+  const scheduledHint = ctx.scheduledEnabled
+    ? "\n📅 Consulta en la tienda los productos disponibles con fecha de entrega."
+    : "";
   return (
     `🤝 *Asistente de ${ctx.nombreNegocio}*\n\n` +
-    `Te ayudo sin tomar compras por WhatsApp: la compra se completa en la web para validar stock, combos, horarios y módulos activos.\n\n` +
-    `Puedes preguntarme por el estado o cancelación de un pedido, horario, ubicación o pagos${extraText}. ` +
-    `También puedes decir *Abrir tienda online* o *quiero hablar con una persona*.\n\n` +
-    `_Cuéntame con tus palabras qué necesitas._`
+    `Elige una opción respondiendo con su número:\n\n` +
+    `${lines}${scheduledHint}\n\n` +
+    `_También puedes escribir tu pregunta con tus palabras._`
   );
 }
 
@@ -107,6 +104,26 @@ function clientCapabilityText(ctx) {
   if (ctx.scheduledEnabled) caps.push("pedidos programados");
   caps.push("horario");
   return caps.join(", ");
+}
+
+/** Opciones posteriores a consultar un pedido, según su estado real. */
+function orderFollowupActions(ctx = {}) {
+  const lines = [
+    "*1* — 🔄 Actualizar este pedido",
+    "*2* — 🔎 Consultar otro pedido",
+  ];
+  if (ctx.cancelable) lines.push("*3* — ❌ Cancelar este pedido");
+  lines.push(`*${ctx.cancelable ? 4 : 3}* — 📝 Reportar un problema`);
+  lines.push(`*${ctx.cancelable ? 5 : 4}* — 👤 Hablar con una persona`);
+  lines.push("*0* — 🏠 Volver al inicio");
+  return lines.join("\n");
+}
+
+/** Fecha canónica del pedido sin convertirla a UTC ni cambiar el día. */
+function scheduledOrderLine(fechaEntrega) {
+  const match = String(fechaEntrega || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return "";
+  return `📅 Entrega programada: *${match[3]}/${match[2]}/${match[1]}*`;
 }
 
 // ─── Menú del operador del bar (modo bar_servicio) ──────────────────────
@@ -358,6 +375,8 @@ module.exports = {
   menuPrincipal,
   clientMenuLines,
   clientCapabilityText,
+  orderFollowupActions,
+  scheduledOrderLine,
   barMenu,
   adminMenu,
   handoffClosedMessage,

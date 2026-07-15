@@ -33,6 +33,9 @@
 **/test-results/
 **/playwright-report/
 oxidian/docs/auditoria_roles/
+docs/auditoria_roles/
+docs/auditoria_pwa/
+oxidian/docs/auditoria_pwa/
 
 # Editor and operating-system files
 **/.DS_Store

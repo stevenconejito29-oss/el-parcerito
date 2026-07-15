@@ -99,7 +99,7 @@
 {% set _color = {'up': 'var(--col-success,#087A48)', 'degraded': 'var(--work-warn,#c0850a)', 'down': 'var(--col-alert,#B42318)', 'unknown': 'var(--work-muted)'}.get(_salud, 'var(--work-muted)') %}
 {% set _label = {'up': 'Operativo', 'degraded': 'Degradado', 'down': 'Caído', 'unknown': 'Sin datos'}.get(_salud, 'Sin datos') %}
 {% set _dot = {'up': '🟢', 'degraded': '🟡', 'down': '🔴', 'unknown': '⚪'}.get(_salud, '⚪') %}
-<div class="work-panel p-3 mb-4" style="border-left:4px solid {{ _color }}">
+<div class="work-panel p-3 mb-4 dash-support-card" style="border-left:4px solid {{ _color }}">
   <div class="flex items-center justify-between gap-3 flex-wrap">
     <div class="min-w-0">
       <p class="font-black" style="color:{{ _color }}">{{ _dot }} Bot de WhatsApp — {{ _label }}</p>
@@ -128,7 +128,7 @@
 
 {# ── Antifraude: mostramos el bloque solo si el motor ya evaluó pedidos ── #}
 {% if antifraude and antifraude.evaluados > 0 %}
-<div class="work-panel p-4 mb-4">
+<div class="work-panel p-4 mb-4 dash-support-card dash-antifraud-card">
   <div class="flex items-center justify-between gap-3 flex-wrap mb-2">
     <div>
       <p class="font-black" style="color:var(--work-info)">🔐 Verificación pasiva antifraude — últimos {{ antifraude.dias }} días</p>
@@ -384,10 +384,10 @@
     <div class="dash-side-card">
       <p class="dash-side-title">⚡ Acciones rápidas</p>
       <div class="dash-quick-grid">
-        <a href="{{ url_for('pos.venta') }}" class="dash-quick-btn" style="background:rgba(255,171,0,.15);border-color:rgba(255,171,0,.3);color:#FFAB00">
+        <a href="{{ url_for('pos.venta') }}" class="dash-quick-btn" style="background:color-mix(in srgb,var(--brand-primary,#FFAB00) 15%,transparent);border-color:color-mix(in srgb,var(--brand-primary,#FFAB00) 30%,transparent);color:var(--brand-primary,#FFAB00)">
           🖥️ POS
         </a>
-        <a href="{{ url_for('admin.pedidos') }}" class="dash-quick-btn" style="background:rgba(10,132,255,.1);border-color:rgba(10,132,255,.25);color:#5AC8FA">
+        <a href="{{ url_for('admin.pedidos') }}" class="dash-quick-btn" style="background:color-mix(in srgb,var(--role-admin,#5AC8FA) 12%,transparent);border-color:color-mix(in srgb,var(--role-admin,#5AC8FA) 26%,transparent);color:var(--role-admin,#5AC8FA)">
           📦 Pedidos
         </a>
         <a href="{{ url_for('admin.stock') }}" class="dash-quick-btn {{ 'dash-quick-urgent' if alertas_stock > 0 else '' }}">
@@ -463,11 +463,11 @@
       <p class="dash-side-title">📊 Hoy</p>
       <div class="dash-fin-row">
         <span style="color:var(--col-muted)">Ingresos</span>
-        <span style="color:#5EF097;font-weight:800">€{{ "%.2f"|format(ingresos_hoy) }}</span>
+        <span style="color:var(--theme-success,#5EF097);font-weight:800">€{{ "%.2f"|format(ingresos_hoy) }}</span>
       </div>
       <div class="dash-fin-row">
         <span style="color:var(--col-muted)">Egresos</span>
-        <span style="color:#FF6B6B;font-weight:800">€{{ "%.2f"|format(egresos_hoy) }}</span>
+        <span style="color:var(--theme-danger,#FF6B6B);font-weight:800">€{{ "%.2f"|format(egresos_hoy) }}</span>
       </div>
       <div class="dash-fin-row" style="border-top:1px solid var(--col-border);margin-top:.35rem;padding-top:.5rem">
         <span style="font-weight:700;color:#fff">Saldo neto</span>
@@ -497,8 +497,8 @@
   --dash-ok-soft: color-mix(in srgb, var(--theme-success, #5EF097) 12%, transparent);
   --dash-warn: var(--brand-primary, #FFAB00);
   --dash-warn-soft: color-mix(in srgb, var(--brand-primary, #FFAB00) 12%, transparent);
-  --dash-route: #C084FC;
-  --dash-route-soft: color-mix(in srgb, #C084FC 12%, transparent);
+  --dash-route: var(--role-super-admin, #C084FC);
+  --dash-route-soft: color-mix(in srgb, var(--role-super-admin, #C084FC) 12%, transparent);
 }
 .dash-kpi-bar {
   display: flex; align-items: center; gap: .35rem;
@@ -764,7 +764,7 @@
 }
 </style>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 // Auto-refresh cada 30 segundos (dashboard operacional)
 let refreshTimer = setTimeout(() => window.location.reload(), 30000);
 document.addEventListener('visibilitychange', () => {

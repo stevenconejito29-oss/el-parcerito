@@ -61,10 +61,15 @@
       {% for p in productos %}
       {% set pos_stock = p.combo_stock_total if p.es_combo else p.stock_total %}
       {% set pos_limit = pos_stock if p.tipo_entrega == 'inmediato' else pos_max_qty %}
-      <button onclick="seleccionarProducto({{ p.id }}, {{ p.nombre|tojson }}, {{ p.precio_final|float }}, {{ pos_limit }}, {{ p.es_combo|lower }})"
+      <button type="button"
               class="pos-prod-btn"
               data-categoria="{{ p.categoria_id or 0 }}"
               data-nombre="{{ p.nombre|lower }}"
+              data-product-id="{{ p.id }}"
+              data-product-name="{{ p.nombre }}"
+              data-product-price="{{ p.precio_final|float }}"
+              data-product-stock="{{ pos_limit }}"
+              data-product-combo="{{ '1' if p.es_combo else '0' }}"
               {% if p.tipo_entrega == 'inmediato' and pos_stock <= 0 %}disabled{% endif %}>
         {% if p.imagen_url %}
         <div class="pos-prod-img">
@@ -115,10 +120,6 @@
         <div class="flex items-center gap-2">
           <span class="text-lg">🧾</span>
           <h2 class="font-black text-white">Ticket</h2>
-        </div>
-        <div class="flex items-center gap-2">
-          <a href="{{ url_for('pos.historial') }}" class="pos-link-hist">Historial</a>
-          <button onclick="limpiarTicket()" class="pos-btn-clear" title="Limpiar ticket">✕ Vaciar</button>
         </div>
       </div>
 
@@ -307,8 +308,11 @@
   display: grid;
   grid-template-columns: 1fr 380px;
   gap: 1rem;
-  height: calc(100vh - 80px);
+  height: calc(var(--app-height, 100dvh) - 8rem);
   overflow: hidden;
+}
+@media (min-width: 901px) and (max-width: 1099px) {
+  .pos-layout { height: calc(var(--app-height, 100dvh) - 11rem); }
 }
 @media (max-width: 900px) {
   .pos-layout { grid-template-columns: 1fr; height: auto; overflow: visible; }
@@ -388,14 +392,6 @@
   padding: 1rem;
 }
 .pos-ticket-header { display: flex; align-items: center; justify-content: space-between; }
-.pos-link-hist { font-size: .72rem; color: var(--col-muted); text-decoration: none; }
-.pos-link-hist:hover { color: #fff; }
-.pos-btn-clear {
-  font-size: .72rem; font-weight: 700; padding: .25rem .6rem; border-radius: .5rem;
-  background: rgba(255,59,48,.08); border: 1px solid rgba(255,59,48,.2); color: #FF6B6B;
-  cursor: pointer; transition: background .15s;
-}
-.pos-btn-clear:hover { background: rgba(255,59,48,.18); }
 
 .pos-items { min-height: 80px; max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: .2rem; scrollbar-width: thin; scrollbar-color: rgba(255,171,0,.2) transparent; }
 .pos-items-empty { display: flex; flex-direction: column; align-items: center; gap: .4rem; padding: 1.5rem; color: var(--col-faint); font-size: .82rem; }
@@ -493,12 +489,13 @@
 .pos-modal {
   position: fixed; inset: 0; background: rgba(0,0,0,.7);
   display: flex; align-items: center; justify-content: center; z-index: 100;
+  padding: max(.6rem, env(safe-area-inset-top, 0px)) max(.6rem, env(safe-area-inset-right, 0px)) max(.6rem, env(safe-area-inset-bottom, 0px)) max(.6rem, env(safe-area-inset-left, 0px));
   backdrop-filter: blur(4px);
 }
 .pos-modal-box {
   background: var(--col-surface); border: 1.5px solid var(--col-border);
   border-radius: 1.25rem; padding: 2rem; text-align: center;
-  max-width: 360px; width: 90%; animation: slideUp .2s ease;
+  max-width: 360px; width: 100%; max-height: calc(100dvh - 1.2rem); overflow-y: auto; animation: slideUp .2s ease;
 }
 @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 .pos-modal-check { font-size: 3rem; color: #5EF097; margin-bottom: .5rem; }
@@ -573,6 +570,13 @@
   .pos-hidden { display:none !important; }
   .pos-prod-btn { display:flex; flex-direction:column; gap:.3rem; }
 }
+@media(max-width:1099px){
+  /* Evita zoom automático de iOS y conserva objetivos táctiles WCAG. */
+  .pos-search,.pos-select,.pos-cupon-inp,.pos-textarea,.pos-desc-input{font-size:16px}
+  .pos-top-btn,.pos-cat-btn,.pos-pay-btn,.pos-cupon-btn,.pos-cash-quick button{min-height:44px}
+  .pos-item-btn{width:44px;height:44px}
+  .pos-item-del{min-width:44px;min-height:44px}
+}
 @media(max-width:390px){
   .pos-topbar{display:grid}.pos-top-actions{justify-content:flex-start}.pos-clock{display:none}.pos-top-btn{flex:1;text-align:center}
   .pos-grid{gap:.45rem}
@@ -580,9 +584,14 @@
   .pos-item-row{align-items:flex-start;flex-wrap:wrap}
   .pos-item-controls{width:100%;justify-content:flex-end}
 }
+@media (orientation: landscape) and (max-height: 500px) {
+  .pos-layout { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .pos-btn-cobrar { bottom: max(.5rem, env(safe-area-inset-bottom, 0px)); }
+  .pos-modal { align-items: flex-start; }
+}
 </style>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 let items = {};
 let cuponId = null;
 let descuentoCupon = 0;
@@ -601,6 +610,22 @@ function seleccionarProducto(id, nombre, precio, stock, esCombo = false) {
   agregarItem(id, nombre, precio, stock, false, esCombo, []);
 }
 
+// Los datos de producto viajan en atributos HTML escapados por Jinja. Evita
+// construir JavaScript inline con nombres comerciales (comillas, apóstrofes o
+// caracteres Unicode podían truncar el onclick y bloquear todo el POS).
+document.querySelectorAll('.pos-prod-btn[data-product-id]').forEach(button => {
+  button.addEventListener('click', () => {
+    if (button.disabled) return;
+    seleccionarProducto(
+      Number(button.dataset.productId),
+      button.dataset.productName || '',
+      Number(button.dataset.productPrice || 0),
+      Number(button.dataset.productStock || 0),
+      button.dataset.productCombo === '1',
+    );
+  });
+});
+
 function agregarItem(id, nombre, precio, stock, enPromo, esCombo = false, comboItemIds = [], comboResumen = '') {
   const ids = [...comboItemIds].map(Number).sort((a,b) => a-b);
   const key = esCombo ? `${id}:${ids.join('-')}` : String(id);
@@ -614,8 +639,9 @@ function agregarItem(id, nombre, precio, stock, enPromo, esCombo = false, comboI
   items[key].cantidad++;
   renderTicket();
   // Feedback táctil
-  document.querySelector(`[onclick*="seleccionarProducto(${id},"]`)?.classList.add('pressed');
-  setTimeout(() => document.querySelector(`[onclick*="seleccionarProducto(${id},"]`)?.classList.remove('pressed'), 100);
+  const productButton = document.querySelector(`.pos-prod-btn[data-product-id="${Number(id)}"]`);
+  productButton?.classList.add('pressed');
+  setTimeout(() => productButton?.classList.remove('pressed'), 100);
 }
 
 function cambiarCantidad(key, delta) {
@@ -635,16 +661,16 @@ function eliminarItem(key) {
 
 function renderTicket() {
   const container = document.getElementById('ticket-items');
-  const vacio = document.getElementById('ticket-vacio');
   const keys = Object.keys(items);
 
   if (keys.length === 0) {
-    container.innerHTML = '';
-    container.appendChild(vacio);
-    vacio.style.display = '';
+    // `innerHTML` de la rama con productos elimina el placeholder original.
+    // Recrearlo evita referencias DOM obsoletas al vaciar y volver a agregar.
+    container.innerHTML = `<div id="ticket-vacio" class="pos-items-empty">
+      <span>🛒</span><p>Toca un producto para agregarlo</p>
+    </div>`;
     recalcular(); return;
   }
-  vacio.style.display = 'none';
   container.innerHTML = keys.map(key => {
     const it = items[key];
     const sub = (it.precio * it.cantidad).toFixed(2);

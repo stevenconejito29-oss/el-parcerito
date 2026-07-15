@@ -1,5 +1,9 @@
 # El Parcerito — guía técnica para futuras sesiones
 
+> **Snapshot histórico del 2026-06-18.** Se conserva para rastrear decisiones,
+> pero no es la guía vigente. Empieza por [`../AGENTS.md`](../AGENTS.md) y
+> [`../docs/README.md`](../docs/README.md).
+
 Estado del proyecto al cierre del 2026-06-18. Marketplace de delivery con un
 hub central (El Parcerito) y bares externos que despachan productos bajo la
 misma marca.

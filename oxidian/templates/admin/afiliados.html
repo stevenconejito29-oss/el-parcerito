@@ -306,7 +306,7 @@
 .af-btn-success { background:rgba(52,199,89,.1); border-color:rgba(52,199,89,.25); color:#5EF097; }
 .af-btn-danger  { background:rgba(255,59,48,.1); border-color:rgba(255,59,48,.2); color:#FF6B6B; }
 </style>
-<script>
+<script nonce="{{ csp_nonce() }}">
 function toggleForm(id) { document.getElementById(id).classList.toggle('hidden'); }
 
 function abrirEditarAfiliado(id, codigo, desc, tipo, userId, descTipo, descVal, comTipo, comVal, usosMax, fi, ff) {

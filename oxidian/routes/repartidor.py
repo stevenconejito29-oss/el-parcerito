@@ -239,6 +239,114 @@ def tomar_pedido(pedido_id):
     return redirect(url_for("repartidor.ruta"))
 
 
+def _parse_pedido_ids(raw_values):
+    """Convierte los `pedido_ids[]` del form en enteros únicos válidos."""
+    ids = []
+    for v in raw_values:
+        try:
+            n = int(v)
+            if n > 0 and n not in ids:
+                ids.append(n)
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+@repartidor_bp.route("/ruta/tomar-multiples", methods=["POST"])
+@repartidor_required
+def tomar_multiples():
+    """Asigna varios pedidos al repartidor como una única ruta.
+
+    Reglas:
+        * Solo pedidos en estado `listo` con `tipo_entrega_cliente="delivery"`.
+        * Solo si están sin asignar o ya asignados al repartidor actual.
+        * Admin operativo no puede usarlo (debe asignar desde admin).
+    Cuenta éxitos/omitidos y devuelve mensaje agregado.
+    """
+    if _es_admin_operativo():
+        flash("Asigna los pedidos desde la cola administrativa.", "warning")
+        return redirect(url_for("repartidor.ruta"))
+    ids = _parse_pedido_ids(request.form.getlist("pedido_ids"))
+    if not ids:
+        flash("No seleccionaste ningún pedido.", "warning")
+        return redirect(url_for("repartidor.ruta"))
+    if not _requiere_disponible_para_nuevo_trabajo():
+        return redirect(url_for("repartidor.ruta"))
+    asignados, omitidos = 0, 0
+    for pid in ids:
+        pedido = Order.query.filter_by(id=pid).with_for_update().first()
+        if pedido is None or pedido.estado != "listo" or not pedido.requiere_reparto:
+            omitidos += 1
+            continue
+        if pedido.repartidor_id not in (None, current_user.id):
+            omitidos += 1
+            continue
+        pedido.repartidor_id = current_user.id
+        asignados += 1
+    db.session.commit()
+    if asignados:
+        flash(
+            f"{asignados} pedido{'s' if asignados != 1 else ''} asignado{'s' if asignados != 1 else ''} a tu ruta"
+            + (f" ({omitidos} omitido{'s' if omitidos != 1 else ''})." if omitidos else "."),
+            "success",
+        )
+    else:
+        flash("Ningún pedido pudo asignarse (ya no están disponibles).", "warning")
+    return redirect(url_for("repartidor.ruta"))
+
+
+@repartidor_bp.route("/ruta/salir-multiples", methods=["POST"])
+@repartidor_required
+def salir_multiples():
+    """Marca `en_ruta` a varios pedidos asignados al repartidor.
+
+    Cada pedido avanza individualmente (avanzar_estado_pedido + WhatsApp).
+    Si alguno falla, se registra el error pero el resto continúa — la ruta
+    del repartidor no debe romperse porque un solo pedido tenga un
+    problema puntual.
+    """
+    ids = _parse_pedido_ids(request.form.getlist("pedido_ids"))
+    if not ids:
+        flash("No seleccionaste ningún pedido.", "warning")
+        return redirect(url_for("repartidor.ruta"))
+    despachados, fallidos = 0, []
+    for pid in ids:
+        pedido = Order.query.filter_by(id=pid).with_for_update().first()
+        if pedido is None or pedido.estado != "listo" or not pedido.requiere_reparto:
+            fallidos.append(str(pid))
+            continue
+        if not _es_admin_operativo() and pedido.repartidor_id not in (None, current_user.id):
+            fallidos.append(pedido.numero_pedido)
+            continue
+        if not pedido.repartidor_id:
+            if _es_admin_operativo():
+                fallidos.append(pedido.numero_pedido)
+                continue
+            pedido.repartidor_id = current_user.id
+        try:
+            avanzar_estado_pedido(pedido, actor_id=current_user.id, canal="repartidor")
+            enviar_whatsapp_estado(pedido)
+            db.session.commit()
+            despachados += 1
+            try:
+                from push_service import notify_order_state
+                notify_order_state(pedido)
+            except Exception:
+                logger.exception("push notify_order_state al despachar %s", pedido.id)
+        except Exception as e:
+            db.session.rollback()
+            logger.warning("Fallo despachando %s en ruta múltiple: %s", pedido.id, e)
+            fallidos.append(pedido.numero_pedido)
+    if despachados:
+        msg = f"{despachados} pedido{'s' if despachados != 1 else ''} en ruta."
+        if fallidos:
+            msg += f" No se pudo despachar: {', '.join(fallidos)}."
+        flash(msg, "info")
+    else:
+        flash("Ningún pedido pudo despacharse.", "warning")
+    return redirect(url_for("repartidor.ruta"))
+
+
 @repartidor_bp.route("/pedidos/<int:pedido_id>/salir", methods=["POST"])
 @repartidor_required
 def salir_entregar(pedido_id):

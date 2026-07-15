@@ -171,34 +171,54 @@
     <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="section" value="tienda-colores">
-      <h3>Paleta de marca</h3>
-    <div class="cfg-colors">
-      {% for key, label, fallback in [('COLOR_PRIMARIO','Principal','#D9961A'),('COLOR_SECUNDARIO','Secundario','#CE1126'),('COLOR_ACENTO','Acento','#003087')] %}
-      <label><span>{{ label }}</span><input type="hidden" name="config_key" value="{{ key }}"><input type="color" name="{{ key }}" value="{{ config_map.get(key, fallback) }}"></label>
-      {% endfor %}
-    </div>
-      <button type="submit" class="cfg-save-bottom">Guardar colores</button>
-    </form>
-
-    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="section" value="tienda-tema">
-      <h3>Tema de la interfaz pública</h3>
-      <p class="cfg-form-note">Estos tokens controlan cabecera, carrito, superficies, contraste y estados en navegador y PWA.</p>
-      {% set theme_labels = {
-        'COLOR_FONDO_APP':'Fondo general', 'COLOR_SUPERFICIE':'Tarjetas y superficies',
-        'COLOR_SUPERFICIE_ALT':'Superficie secundaria', 'COLOR_TEXTO':'Texto principal',
-        'COLOR_TEXTO_SUAVE':'Texto secundario', 'COLOR_CABECERA_FONDO':'Fondo de cabecera',
-        'COLOR_CABECERA_TEXTO':'Texto de cabecera', 'COLOR_EXITO':'Estado correcto / abierto',
-        'COLOR_ALERTA':'Alertas y errores'
-      } %}
-      <div class="cfg-colors cfg-colors--theme">
-        {% for key, fallback in public_theme_defaults.items() %}
-        <label><span>{{ theme_labels.get(key, key) }}</span><input type="hidden" name="config_key" value="{{ key }}"><input type="color" name="{{ key }}" value="{{ config_map.get(key, fallback) }}"></label>
+      <h3>🎨 Colores de identidad y acción</h3>
+      <p class="cfg-form-note">
+        Define la identidad principal. La paleta de interfaz inferior permite
+        separar promociones, información, estados y destacados sin repetir siempre estos tres tonos.
+      </p>
+      <div class="cfg-colors">
+        {% for key, label, help_txt, fallback in [
+            ('COLOR_PRIMARIO', 'Principal', 'Identidad, precios y detalles de marca', '#D9961A'),
+            ('COLOR_SECUNDARIO', 'Secundario', 'Cabecera, footer, tinta oscura', '#CE1126'),
+            ('COLOR_ACENTO', 'Acción', 'Botones CTA, enlaces y navegación activa', '#003087')
+        ] %}
+        <label>
+          <span>{{ label }}<small style="display:block;font-weight:600;color:var(--col-muted);margin-top:.15rem">{{ help_txt }}</small></span>
+          <input type="hidden" name="config_key" value="{{ key }}">
+          <input type="color" name="{{ key }}" value="{{ config_map.get(key, fallback) }}">
+        </label>
         {% endfor %}
       </div>
-      <button type="submit" class="cfg-save-bottom">Guardar tema público</button>
+      <button type="submit" class="cfg-save-bottom">Guardar colores de marca</button>
     </form>
+
+    <details class="cfg-subform" open style="border:1px solid var(--col-border); border-radius:.65rem; padding:.75rem 1rem; background:var(--col-elevated);">
+      <summary style="cursor:pointer; font-weight:800; font-size:.88rem; color:var(--col-text);">
+        🎨 Paleta ampliada de interfaz y contenido
+        <small style="display:block;font-weight:500;color:var(--col-muted);margin-top:.2rem;">
+          Personaliza superficies, lectura, cabecera, promociones, información y estados por separado.
+        </small>
+      </summary>
+      <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform" style="margin-top:.9rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="section" value="tienda-tema">
+        {% set theme_labels = {
+          'COLOR_FONDO_APP':'Fondo general', 'COLOR_SUPERFICIE':'Tarjetas y superficies',
+          'COLOR_SUPERFICIE_ALT':'Superficie secundaria', 'COLOR_TEXTO':'Texto principal',
+          'COLOR_TEXTO_SUAVE':'Texto secundario', 'COLOR_CABECERA_FONDO':'Fondo de cabecera',
+          'COLOR_CABECERA_TEXTO':'Texto de cabecera', 'COLOR_EXITO':'Estado correcto / abierto',
+          'COLOR_ALERTA':'Errores y peligro', 'COLOR_INFORMATIVO':'Información y ayudas',
+          'COLOR_ADVERTENCIA':'Advertencias y atención', 'COLOR_PROMOCION':'Ofertas y promociones',
+          'COLOR_DESTACADO':'Productos y contenido destacado'
+        } %}
+        <div class="cfg-colors cfg-colors--theme">
+          {% for key, fallback in public_theme_defaults.items() %}
+          <label><span>{{ theme_labels.get(key, key) }}</span><input type="hidden" name="config_key" value="{{ key }}"><input type="color" name="{{ key }}" value="{{ config_map.get(key, fallback) }}"></label>
+          {% endfor %}
+        </div>
+        <button type="submit" class="cfg-save-bottom">Guardar paleta visual</button>
+      </form>
+    </details>
 
     <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -284,7 +304,7 @@
                 onclick="cfgUsarUbicacion(this)">📍 Usar mi ubicación actual</button>
         <small id="cfg_geo_status" style="color:var(--col-muted)"></small>
       </div>
-      <script>
+      <script nonce="{{ csp_nonce() }}">
         function cfgUsarUbicacion(btn) {
           const status = document.getElementById('cfg_geo_status');
           const findInput = (name) => document.querySelector('input[name="' + name + '"]');
@@ -367,7 +387,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 const _BRAND_KEYS = { logo: 'LOGO_URL', icon: 'APP_ICON_URL', hero: 'HERO_IMAGE_URL' };
 const _BRAND_LABELS = { logo: 'Logo', icon: 'Icono', hero: 'Cabecera' };
 function _brandToast(msg, kind){

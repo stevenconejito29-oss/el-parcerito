@@ -35,7 +35,12 @@ const report = {
   generatedAt: new Date().toISOString(),
   baseUrl: BASE_URL,
   outputDir: OUTPUT_DIR,
-  viewport: { width: 393, height: 851 },
+  viewports: {
+    phone_vertical: { width: 393, height: 852 },
+    phone_horizontal: { width: 852, height: 393 },
+    tablet_vertical: { width: 768, height: 1024 },
+    tablet_horizontal: { width: 1024, height: 768 },
+  },
   captures: [],
 };
 
@@ -114,7 +119,7 @@ if (failures.length) process.exitCode = 1;
 
 async function createPage() {
   const context = await browser.newContext({
-    viewport: report.viewport,
+    viewport: report.viewports.phone_vertical,
     deviceScaleFactor: 1,
     isMobile: true,
     hasTouch: true,
@@ -147,6 +152,9 @@ async function captureAuthenticatedRole(role, email, password, capture, totpSecr
 
 async function login(page, email, password, totpSecret = '') {
   await page.goto(`${BASE_URL}/auth/login`, { waitUntil: 'domcontentloaded' });
+  // Esperar la estabilidad de la pantalla evita interactuar durante una
+  // transición o carga diferida legítima del formulario.
+  await page.waitForLoadState('networkidle').catch(() => {});
   await page.locator('input[name="email"]').fill(email);
   await page.locator('input[name="password"]').fill(password);
   await Promise.all([
@@ -222,7 +230,10 @@ async function capturePublic(page) {
   });
   if (productId) {
     const addButton = page.locator('#ep-modal-form button[type="submit"]').first();
-    if (await addButton.count()) {
+    // El botón puede existir en el DOM aunque el producto seleccionado abra un
+    // detalle no comprable o el modal se haya cerrado durante la transición.
+    // No bloquear toda la auditoría visual intentando pulsar un control oculto.
+    if (await addButton.count() && await addButton.isVisible()) {
       await Promise.all([
         page.waitForLoadState('domcontentloaded').catch(() => {}),
         addButton.click(),
@@ -232,7 +243,7 @@ async function capturePublic(page) {
   }
   await snap(page, 'carrito-con-producto', '/carrito', 'flujos');
   await snap(page, 'checkout-datos-pedido', '/checkout', 'flujos');
-  if (POINTS_ENABLED) await snap(page, 'checkout-puntos-whatsapp', '/checkout', 'flujos', async () => {
+  if (POINTS_ENABLED) await snap(page, 'checkout-puntos-verificacion', '/checkout', 'flujos', async () => {
     if (!page.url().includes('/checkout')) return;
     const phone = page.locator('#tel_input');
     await phone.fill('699 111 222');
@@ -241,9 +252,9 @@ async function capturePublic(page) {
     await page.evaluate(() => document.getElementById('puntos-verificando')?.classList.remove('hidden'));
     await page.locator('#cod_puntos_input').fill('123456');
     await page.evaluate(() => verificarCodigoPuntos());
-    await page.waitForSelector('#checkout-rewards-panel:not(.hidden)', { timeout: 5000 });
-    const reward = page.locator('input[name="reward_product_choice"][value]:not([value=""])').first();
-    if (await reward.count()) await reward.check();
+    // Un código inventado nunca debe desbloquear recompensas. La captura audita
+    // el estado de error/validación; el panel sólo se abre con un OTP real.
+    await page.waitForTimeout(900);
     await page.locator('#puntos-section').scrollIntoViewIfNeeded();
   });
   await snap(page, 'club-puntos', '/club', 'vistas');
@@ -266,6 +277,8 @@ async function captureSuperadmin(page) {
     ['admin-cupones', '/admin/cupones'],
     ['admin-resenas', '/admin/resenas'],
     ['admin-usuarios', '/admin/usuarios'],
+    ['admin-clientes', '/admin/clientes'],
+    ['admin-telefonos', '/admin/telefonos'],
     ['admin-whatsapp', '/admin/whatsapp-qr'],
     ['admin-notificaciones', '/admin/notificaciones'],
     ['admin-afiliados', '/admin/afiliados'],
@@ -303,12 +316,15 @@ async function captureSuperadmin(page) {
     await reveal(page, '#form-nuevo');
   });
   await snap(page, 'usuario-nuevo', '/admin/usuarios', 'formularios', async () => {
-    await reveal(page, '#modal-nuevo');
+    const dialog = page.locator('#nuevo-usuario');
+    if (!await dialog.count()) throw new Error('No existe #nuevo-usuario');
+    await dialog.evaluate((el) => el.showModal());
   }, false);
   await snap(page, 'usuario-editar', '/admin/usuarios', 'formularios', async () => {
-    const button = page.locator('button[onclick^="abrirEditar("]:visible').first();
-    if (await button.count()) await button.click();
-    else await reveal(page, '#modal-editar');
+    const link = page.locator('a[href*="/usuarios/"][href$="/editar"]:visible').first();
+    if (!await link.count()) throw new Error('No hay usuario editable');
+    await Promise.all([page.waitForLoadState('domcontentloaded'), link.click()]);
+    await settle(page);
   }, false);
   await snap(page, 'afiliado-nuevo', '/admin/afiliados', 'formularios', async () => {
     await reveal(page, '#form-nuevo');
@@ -372,8 +388,6 @@ async function captureSuperadmin(page) {
 
 async function captureCocina(page) {
   await snap(page, 'cocina-pedidos', '/preparador/pedidos', 'vistas');
-  await page.setViewportSize({ width: 851, height: 393 });
-  await snap(page, 'cocina-pedidos-horizontal', '/preparador/pedidos', 'vistas');
 }
 
 async function captureRole(page, views) {
@@ -383,6 +397,29 @@ async function captureRole(page, views) {
 }
 
 async function snap(page, name, route, folder, prepare = null, fullPage = true) {
+  for (const [orientation, viewport] of Object.entries(report.viewports)) {
+    await page.setViewportSize(viewport);
+    await snapOrientation(
+      page,
+      `${name}-${orientation}`,
+      route,
+      folder,
+      prepare,
+      fullPage,
+      orientation,
+    );
+  }
+}
+
+async function snapOrientation(
+  page,
+  name,
+  route,
+  folder,
+  prepare = null,
+  fullPage = true,
+  orientation = 'vertical',
+) {
   const errors = [];
   const failedRequests = [];
   const onConsole = (message) => {
@@ -401,11 +438,13 @@ async function snap(page, name, route, folder, prepare = null, fullPage = true) 
     name,
     route,
     folder,
+    orientation,
     ok: false,
     status: null,
     finalUrl: null,
     viewport: page.viewportSize(),
     horizontalOverflow: false,
+    fixedControlOverlaps: [],
     unexpectedAuthRedirect: false,
     consoleErrors: errors,
     failedRequests,
@@ -427,11 +466,46 @@ async function snap(page, name, route, folder, prepare = null, fullPage = true) 
     if (entry.unexpectedAuthRedirect) {
       throw new Error(`Redirección inesperada de ${route} a ${new URL(entry.finalUrl).pathname}`);
     }
-    const dimensions = await page.evaluate(() => ({
-      clientWidth: document.documentElement.clientWidth,
-      scrollWidth: document.documentElement.scrollWidth,
-    }));
+    const dimensions = await page.evaluate(() => {
+      const visible = (element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden'
+          && Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
+      };
+      const intersects = (a, b) => (
+        a.left < b.right - 2 && a.right > b.left + 2
+        && a.top < b.bottom - 2 && a.bottom > b.top + 2
+      );
+      const fixed = [...document.querySelectorAll('body *')].filter((element) => (
+        visible(element) && getComputedStyle(element).position === 'fixed'
+      ));
+      const controls = [...document.querySelectorAll(
+        'main a[href], main button, main input, main select, main textarea, main [role="button"]',
+      )].filter(visible);
+      const overlaps = [];
+      for (const overlay of fixed) {
+        const overlayRect = overlay.getBoundingClientRect();
+        for (const control of controls) {
+          if (overlay.contains(control) || control.contains(overlay)) continue;
+          if (!intersects(overlayRect, control.getBoundingClientRect())) continue;
+          overlaps.push({
+            overlay: overlay.id || overlay.className || overlay.tagName,
+            control: control.id || control.getAttribute('aria-label')
+              || control.textContent?.trim().slice(0, 60) || control.tagName,
+          });
+          if (overlaps.length >= 12) break;
+        }
+        if (overlaps.length >= 12) break;
+      }
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        fixedControlOverlaps: overlaps,
+      };
+    });
     entry.horizontalOverflow = dimensions.scrollWidth > dimensions.clientWidth + 3;
+    entry.fixedControlOverlaps = dimensions.fixedControlOverlaps;
 
     if (fullPage) {
       await page.addStyleTag({
@@ -453,7 +527,8 @@ async function snap(page, name, route, folder, prepare = null, fullPage = true) 
     page.off('pageerror', onPageError);
     page.off('requestfailed', onRequestFailed);
     report.captures.push(entry);
-    console.log(`${entry.ok ? '✓' : '✗'} ${name}${entry.horizontalOverflow ? ' [overflow]' : ''}`);
+    const overlap = entry.fixedControlOverlaps.length ? ' [fixed-overlap]' : '';
+    console.log(`${entry.ok ? '✓' : '✗'} ${name}${entry.horizontalOverflow ? ' [overflow]' : ''}${overlap}`);
   }
 }
 
@@ -508,9 +583,12 @@ function buildReadme(data) {
     '',
     `Generados: ${data.generatedAt}`,
     `Origen: ${data.baseUrl}`,
-    `Viewport móvil: ${data.viewport.width} x ${data.viewport.height}`,
+    `Móvil vertical: ${data.viewports.phone_vertical.width} x ${data.viewports.phone_vertical.height}`,
+    `Móvil horizontal: ${data.viewports.phone_horizontal.width} x ${data.viewports.phone_horizontal.height}`,
+    `Tablet vertical: ${data.viewports.tablet_vertical.width} x ${data.viewports.tablet_vertical.height}`,
+    `Tablet horizontal: ${data.viewports.tablet_horizontal.width} x ${data.viewports.tablet_horizontal.height}`,
     '',
-    'Cada captura fue generada navegando la aplicación real. `audit.json` contiene estado HTTP, URL final, viewport, errores de navegador, control de desbordamiento horizontal y redirecciones inesperadas a login/MFA.',
+    'Cada vista fue capturada en teléfono y tablet, tanto en orientación vertical como horizontal, navegando la aplicación real. `audit.json` contiene estado HTTP, URL final, viewport, errores de navegador, desbordamiento horizontal, solapamientos de controles por elementos fijos y redirecciones inesperadas a login/MFA.',
     '',
   ];
   for (const [folder, items] of Object.entries(grouped)) {
@@ -518,7 +596,8 @@ function buildReadme(data) {
     for (const item of items) {
       const state = item.ok ? 'OK' : 'ERROR';
       const overflow = item.horizontalOverflow ? ' · desbordamiento horizontal' : '';
-      lines.push(`- [${item.name}](${item.file || '#'}) · ${state} · HTTP ${item.status ?? 'N/A'}${overflow}`);
+      const overlaps = item.fixedControlOverlaps?.length ? ' · controles obstruidos' : '';
+      lines.push(`- [${item.name}](${item.file || '#'}) · ${state} · HTTP ${item.status ?? 'N/A'}${overflow}${overlaps}`);
     }
     lines.push('');
   }

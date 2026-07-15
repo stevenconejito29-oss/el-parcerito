@@ -358,7 +358,7 @@
         {% endif %}
       </p>
     </div>
-    <script>
+    <script nonce="{{ csp_nonce() }}">
     function _togglePwd(id, btn) {
       const el = document.getElementById(id);
       if (!el) return;

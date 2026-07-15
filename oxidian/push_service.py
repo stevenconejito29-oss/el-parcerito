@@ -131,7 +131,9 @@ def send_push_outbox_payload(payload: dict) -> tuple[bool, str | None]:
 # ── API pública del servicio ──────────────────────────────────────────────
 
 def notify_roles(roles: list[str], title: str, body: str, url: str = "/",
-                 icon: Optional[str] = None, badge: Optional[str] = None) -> None:
+                 icon: Optional[str] = None, badge: Optional[str] = None,
+                 *, tag: Optional[str] = None,
+                 require_interaction: bool = False) -> None:
     """Envía notificación push a todos los usuarios con los roles indicados."""
     from models import PushSubscription, User
     subs = PushSubscription.query.filter(
@@ -140,23 +142,30 @@ def notify_roles(roles: list[str], title: str, body: str, url: str = "/",
     ).all()
     if not subs:
         return
-    payload = _build_payload(title, body, url, icon, badge)
+    payload = _build_payload(title, body, url, icon, badge, tag, require_interaction)
     _dispatch(subs, payload)
 
 
 def notify_user(user_id: int, title: str, body: str, url: str = "/",
-                icon: Optional[str] = None, badge: Optional[str] = None) -> None:
+                icon: Optional[str] = None, badge: Optional[str] = None,
+                *, tag: Optional[str] = None,
+                require_interaction: bool = False) -> None:
     """Envía notificación push a todas las suscripciones activas de un usuario."""
     from models import PushSubscription
     subs = PushSubscription.query.filter_by(user_id=user_id, activo=True).all()
     if not subs:
         return
-    payload = _build_payload(title, body, url, icon, badge)
+    payload = _build_payload(title, body, url, icon, badge, tag, require_interaction)
     _dispatch(subs, payload)
 
 
 def notify_new_order(pedido) -> None:
-    """Alerta a admins cuando llega un pedido nuevo."""
+    """Alerta a admins y al rol de preparación correspondiente.
+
+    Antes: solo se avisaba a admin/super_admin. Cocina y preparación se
+    enteraban recargando la vista o via SSE, con lag. Ahora el rol
+    operativo correcto recibe push directo con URL a su cola.
+    """
     num = pedido.numero_pedido
     # Defensa: pedido.origen y pedido.metodo_pago pueden ser None en pedidos
     # legacy o durante la ventana entre creación y elección de método. `dict.get`
@@ -168,12 +177,40 @@ def notify_new_order(pedido) -> None:
     )
     total = f"€{float(pedido.total):.2f}" if pedido.total else ""
     _metodo = (pedido.metodo_pago or "").capitalize() or "sin método"
+
+    # Rol operativo destinatario según tipo. Nunca lanza si `_tipo_pedido`
+    # falla — la notificación es best-effort, no debe romper el checkout.
+    prep_role: Optional[str] = None
+    prep_url: str = "/preparador/pedidos"
+    prep_prefix: str = "🔔"
+    try:
+        from services import _tipo_pedido
+        if _tipo_pedido(pedido) == "programado":
+            prep_role = "preparacion"
+            prep_prefix = "📦 Nuevo encargo"
+        else:
+            prep_role = "cocina"
+            prep_prefix = "🍳 Nuevo pedido"
+    except Exception:
+        logger.exception("notify_new_order: no se pudo determinar rol operativo")
+
     notify_roles(
         ["admin", "super_admin"],
         title=f"🔔 Nuevo pedido {origen_label}",
         body=f"#{num} · {total} · {_metodo}",
         url="/admin/pedidos",
+        tag=f"nuevo-pedido-{pedido.id}",
+        require_interaction=True,
     )
+    if prep_role:
+        notify_roles(
+            [prep_role],
+            title=f"{prep_prefix} — {origen_label}",
+            body=f"#{num} · {total}",
+            url=prep_url,
+            tag=f"nuevo-pedido-{pedido.id}",
+            require_interaction=True,
+        )
 
 
 def notify_order_state(pedido) -> None:
@@ -196,10 +233,14 @@ def notify_order_state(pedido) -> None:
     if not entry:
         return
     title, body = entry
-    notify_user(pedido.cliente_id, title, body, url="/")
+    notify_user(
+        pedido.cliente_id, title, body, url="/",
+        tag=f"pedido-{pedido.id}",
+    )
 
 
-def _build_payload(title, body, url, icon=None, badge=None) -> dict:
+def _build_payload(title, body, url, icon=None, badge=None, tag=None,
+                   require_interaction=False) -> dict:
     from store_config import get_store_value
     return {
         "title": title,
@@ -207,5 +248,7 @@ def _build_payload(title, body, url, icon=None, badge=None) -> dict:
         "url": url,
         "icon": icon or get_store_value("APP_ICON_URL") or "/static/pwa-icon-192.png",
         "badge": badge or "/static/favicon-32.png",
+        "tag": tag,
+        "requireInteraction": bool(require_interaction),
         "timestamp": int(__import__("time").time() * 1000),
     }

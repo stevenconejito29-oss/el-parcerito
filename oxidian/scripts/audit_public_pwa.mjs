@@ -143,7 +143,9 @@ async function captureView(name, contextOptions, standalone = false) {
     };
   });
 
-  const addButton = page.locator('.ep-btn-add').first();
+  // Los filtros de categoría conservan tarjetas ocultas en el DOM. Auditar
+  // sólo una acción realmente visible evita falsos fallos por esa estructura.
+  const addButton = page.locator('.ep-btn-add:visible').first();
   if (await addButton.count()) {
     await addButton.click();
     await page.waitForTimeout(250);

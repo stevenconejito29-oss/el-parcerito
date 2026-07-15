@@ -6,6 +6,7 @@ import secrets
 import time
 import hmac
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 from flask import Flask, render_template, request, send_from_directory, g
 from flask_wtf.csrf import generate_csrf
@@ -33,24 +34,27 @@ def _seed_password():
 
 
 def _asset_version(app):
-    """Huella del frontend para invalidar caches PWA en cada cambio real."""
+    """Huella de todos los CSS/JS para invalidar cachés en cada cambio real.
+
+    La lista no se mantiene a mano: cualquier componente nuevo dentro de
+    ``static/css`` o ``static/js`` participa automáticamente en la versión.
+    Incluir la ruta evita colisiones entre concatenaciones de archivos.
+    """
     digest = hashlib.sha256()
-    for relative_path in (
-        "css/tailwind.generated.css",
-        "css/oxidian.css",
-        "css/storefront-menu.css",
-        "css/storefront-cart.css",
-        "css/header-modern.css",
-        "css/oxidian-ui.css",
-        "css/oxidian-admin.css",
-        "js/carrito.js",
-        "js/header-modern.js",
-        "sw.js",
-    ):
-        path = os.path.join(app.static_folder, relative_path)
+    static_root = Path(app.static_folder)
+    assets = []
+    for directory, suffix in (("css", ".css"), ("js", ".js")):
+        assets.extend((static_root / directory).rglob(f"*{suffix}"))
+    assets.append(static_root / "sw.js")
+
+    for path in sorted(assets, key=lambda item: item.as_posix()):
+        relative_path = path.relative_to(static_root).as_posix()
+        digest.update(relative_path.encode("utf-8"))
+        digest.update(b"\0")
         try:
-            with open(path, "rb") as asset:
-                digest.update(asset.read())
+            with path.open("rb") as asset:
+                for chunk in iter(lambda: asset.read(64 * 1024), b""):
+                    digest.update(chunk)
         except OSError:
             digest.update(relative_path.encode("utf-8"))
     return digest.hexdigest()[:12]
@@ -285,9 +289,7 @@ def create_app(env="default"):
             "admin": "/admin/dashboard",
             "preparacion": "/preparador/pedidos",
             "cocina": "/preparador/pedidos",
-            "staff": "/staff/",
             "repartidor": "/repartidor/ruta",
-            "marketing": "/marketing/",
         }
         icon = profile["app_icon_url"] or "/static/pwa-icon-192.png"
         manifest = {
@@ -380,7 +382,12 @@ def create_app(env="default"):
 
     @app.route("/webhook/evolution", methods=["POST"])
     @csrf.exempt
-    @limiter.limit(os.environ.get("WEBHOOK_RATE_LIMIT", "120 per minute")) if limiter is not None else (lambda f: f)
+    # Rate limit del webhook público. Antes: 120/min (demasiado laxo, un
+    # atacante que descubra el endpoint y adivine WEBHOOK_SECRET podía
+    # inundar el bot). Ahora: 60/min por IP — suficiente para conversaciones
+    # reales (Evolution manda ~1 msg/s en pico) y bloquea flood explotable.
+    # Configurable vía env `WEBHOOK_RATE_LIMIT` para ajustar por negocio.
+    @limiter.limit(os.environ.get("WEBHOOK_RATE_LIMIT", "60 per minute")) if limiter is not None else (lambda f: f)
     def evolution_webhook_proxy():
         """Entrada única del webhook Evolution; Oxidian lo entrega al bot interno."""
         from models import SiteConfig
@@ -563,6 +570,7 @@ def create_app(env="default"):
         horario_cierre        = _c("HORARIO_CIERRE",   _env_default("HORARIO_CIERRE", "22:30"))
         tienda_mensaje_cierre = _c("TIENDA_MENSAJE_CIERRE", "")
         tienda_forzada_cerrada = _to_bool(_c("TIENDA_FORZAR_CERRADA", "0"), False)
+        tienda_forzada_abierta = _to_bool(_c("TIENDA_FORZAR_ABIERTA", "0"), False)
         modo_tienda = (_c("MODO_TIENDA", "propia") or "propia").strip().lower()
         if modo_tienda not in {"propia", "bar_servicio"}:
             modo_tienda = "propia"
@@ -586,6 +594,7 @@ def create_app(env="default"):
             horario_cierre,
             ahora=ahora,
             forzada_cerrada=tienda_forzada_cerrada,
+            forzada_abierta=tienda_forzada_abierta,
         )
 
         slogan      = _c("SLOGAN_NEGOCIO", "")
@@ -627,6 +636,7 @@ def create_app(env="default"):
                 "on_primario": _on_color(color_primario),
                 "color_secundario": color_secundario,
                 "color_acento": color_acento,
+                "on_acento": _on_color(color_acento),
                 "theme": theme,
                 "horario_apertura": horario_apertura,
                 "horario_cierre": horario_cierre,
@@ -715,6 +725,24 @@ def create_app(env="default"):
         db.session.rollback()
         return render_template("errors/500.html"), 500
 
+    # ── CSP nonce por request ──
+    # Se genera antes de cualquier render y se expone a Jinja como
+    # `csp_nonce()`. Cada `<script>` inline debe incluir
+    # `nonce="{{ csp_nonce() }}"`. El CSP declara solo scripts con nonce
+    # válido → los navegadores modernos ignoran `unsafe-inline` cuando hay
+    # nonce presente, cerrando el vector XSS clásico. Un atacante que
+    # inyecte `<script>alert()</script>` no conoce el nonce del request
+    # actual y su script queda bloqueado.
+    @app.before_request
+    def _generate_csp_nonce():
+        g.csp_nonce = secrets.token_urlsafe(18)
+
+    @app.context_processor
+    def _inject_csp_nonce():
+        def _get_nonce():
+            return getattr(g, "csp_nonce", "")
+        return {"csp_nonce": _get_nonce}
+
     # ── Cabeceras de seguridad ──
     @app.after_request
     def set_security_headers(response):
@@ -731,13 +759,18 @@ def create_app(env="default"):
         )
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Origin-Agent-Cluster"] = "?1"
+        # CSP con nonce por request. `'strict-dynamic'` permite que un
+        # script con nonce válido cargue otros dinámicamente. Sin
+        # `'unsafe-inline'`: XSS clásico bloqueado. Los CDN se mantienen
+        # explícitos por si algún template usa <script src="cdn/…">.
+        nonce = getattr(g, "csp_nonce", "")
         response.headers["Content-Security-Policy"] = "; ".join((
             "default-src 'self'",
             "base-uri 'self'",
             "object-src 'none'",
             "frame-ancestors 'self'",
             "form-action 'self'",
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+            f"script-src 'self' 'nonce-{nonce}' 'strict-dynamic' https: 'unsafe-inline'",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "font-src 'self' data: https://fonts.gstatic.com",
             "img-src 'self' data: blob: https:",
@@ -745,7 +778,13 @@ def create_app(env="default"):
             "manifest-src 'self'",
             "worker-src 'self' blob:",
         ))
-        if request.is_secure and app.config.get("SESSION_COOKIE_SECURE"):
+        # HSTS: se emite cuando el request está en HTTPS (directamente o
+        # detrás de proxy con X-Forwarded-Proto=https) O cuando la
+        # configuración fuerza cookies seguras. Cubre el caso de nginx
+        # que termina TLS y proxy_pass al Flask upstream sin TLS.
+        forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+        is_https = request.is_secure or forwarded_proto == "https"
+        if is_https and app.config.get("SESSION_COOKIE_SECURE"):
             response.headers["Strict-Transport-Security"] = (
                 "max-age=31536000; includeSubDomains"
             )
@@ -777,16 +816,37 @@ def create_app(env="default"):
 
 
 def _validar_config_runtime(app, env):
-    """Falla pronto en producción si faltan variables críticas."""
+    """Falla pronto en producción si faltan variables críticas o son
+    defaults débiles conocidos. Nunca corre en desarrollo — un fallo
+    en boot es preferible a exponer una app con secretos comprometidos.
+    """
     entorno = env or os.environ.get("FLASK_ENV", "development")
     if entorno != "production":
         return
-    requeridas = ["SECRET_KEY", "DATABASE_URL", "BOT_API_KEY"]
+    requeridas = ["SECRET_KEY", "DATABASE_URL", "BOT_API_KEY", "WEBHOOK_SECRET"]
     faltantes = [k for k in requeridas if not os.environ.get(k) and not app.config.get(k)]
     if faltantes:
         raise RuntimeError(f"Variables requeridas no configuradas: {faltantes}")
     if app.config.get("SECRET_KEY") in (None, "", "dev-key", "insecure"):
         raise RuntimeError("SECRET_KEY no puede ser el valor por defecto en producción")
+    if len(str(app.config.get("SECRET_KEY") or "")) < 32:
+        raise RuntimeError("SECRET_KEY debe tener ≥ 32 caracteres en producción")
+
+    # Rechaza secrets con marcadores obvios de "no producción". Cierra el
+    # error humano típico de dejar el .env.example en el server real.
+    debiles = {
+        "change-me", "changeme", "local-dev", "example", "insecure",
+        "test", "dev", "default", "placeholder",
+    }
+    for var in ("BOT_API_KEY", "WEBHOOK_SECRET", "EVOLUTION_API_KEY", "BOT_PANEL_KEY"):
+        val = str(os.environ.get(var) or app.config.get(var) or "").lower()
+        if not val:
+            continue
+        if len(val) < 24:
+            raise RuntimeError(f"{var} debe tener ≥ 24 caracteres en producción")
+        if any(m in val for m in debiles):
+            raise RuntimeError(f"{var} contiene marcador de default débil ({[m for m in debiles if m in val]})")
+
     public_url = (os.environ.get("OXIDIAN_PUBLIC_URL") or "").strip().lower()
     if public_url.startswith("https://") and not app.config.get("SESSION_COOKIE_SECURE"):
         raise RuntimeError(
@@ -867,7 +927,8 @@ def _seed_admin():
         ("COLOR_ACENTO",          _env_default("COLOR_ACENTO", "#6B3D8A"),   "Color de acento para estado y CTA"),
         ("HORARIO_APERTURA",      _env_default("HORARIO_APERTURA", "09:00"), "Hora de apertura tienda (HH:MM)"),
         ("HORARIO_CIERRE",        _env_default("HORARIO_CIERRE", "22:30"),   "Hora de cierre tienda (HH:MM)"),
-        ("TIENDA_FORZAR_CERRADA", "0",                        "Forzar tienda cerrada (1/0)"),
+        ("TIENDA_FORZAR_CERRADA", "0",                        "Forzar tienda cerrada (1/0). Prevalece sobre horario y FORZAR_ABIERTA."),
+        ("TIENDA_FORZAR_ABIERTA", "0",                        "Forzar tienda abierta (1/0), ignorando horario. Útil para servicios fuera de franja horaria."),
         # Geo-validación de radio de entrega
         ("CIUDAD_NEGOCIO",                    _env_default("CIUDAD_NEGOCIO", ""),  "Ciudad del negocio (para geocodificación de direcciones)"),
         ("PROVINCIA_NEGOCIO",                 _env_default("PROVINCIA_NEGOCIO", ""), "Provincia del negocio (para geocodificación estructurada)"),
@@ -929,9 +990,9 @@ def _seed_operational_basics():
     seed_staff = _to_bool(os.environ.get("OXIDIAN_SEED_STAFF"), seed_staff_default)
     minimal_users = _to_bool(os.environ.get("OXIDIAN_MINIMAL_USERS"), False)
 
-    # Rol "cocina" fue fusionado en "preparacion" (ver CLAUDE.md). Ya no se crea
-    # ningún user nuevo con rol="cocina" — solo mantenemos el enum por retro-compat
-    # en users antiguos importados. El seed inicial genera roles vigentes.
+    # El seed automático crea la dotación mínima de preparación y reparto.
+    # "cocina" sigue siendo un rol vigente para pedidos inmediatos, pero sus
+    # cuentas se crean desde administración según la operación de cada tienda.
     _domain = os.environ.get("STAFF_EMAIL_DOMAIN", "oxidian.local").strip() or "oxidian.local"
     staff_users = []
     if seed_staff:
@@ -1031,7 +1092,8 @@ def _seed_demo_data():
     seed_pw = _seed_password()
 
     # ── Usuarios operativos ────────────────────────────────────────
-    # Rol "cocina" desaparecido — todo lo prepara "preparacion" (CLAUDE.md).
+    # El catálogo demo usa una dotación reducida; las cuentas de cocina se
+    # crean desde administración cuando el flujo de pedidos inmediatos lo exige.
     # Dominio de email neutralizado para no filtrar branding del vendor.
     _demo_domain = os.environ.get("STAFF_EMAIL_DOMAIN", "oxidian.local").strip() or "oxidian.local"
     demo_users = [

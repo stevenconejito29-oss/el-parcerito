@@ -1484,7 +1484,95 @@ MIGRATIONS = [
         ),
         "fn": _migrate_order_confirmacion_nivel,
     },
+    {
+        "id": "20260715_01_cupon_afiliado_usos_por_cliente",
+        "description": (
+            "Añade coupons.usos_por_cliente y affiliate_codes.usos_por_cliente "
+            "(INTEGER nullable, None = ilimitado). Permite topear reutilización "
+            "por cliente para prevenir abuso de códigos permanentes."
+        ),
+        "fn": lambda: _migrate_add_nullable_int_columns([
+            ("coupons", "usos_por_cliente"),
+            ("affiliate_codes", "usos_por_cliente"),
+        ]),
+    },
+    {
+        "id": "20260715_02_product_cantidad_por_lote",
+        "description": (
+            "Añade products.cantidad_por_lote (INT NULL). Cuando >0, el "
+            "producto se vende por tandas — el checkout multiplica cantidad "
+            "de item por este valor para stock/coste. NULL = venta unitaria "
+            "clásica (retro-compat)."
+        ),
+        "fn": lambda: _migrate_add_nullable_int_columns([
+            ("products", "cantidad_por_lote"),
+        ]),
+    },
+    {
+        "id": "20260715_03_product_batches",
+        "description": (
+            "Crea tabla product_batches (encargos con fecha por lote): "
+            "disponibilidad de tandas por producto/fecha con reserva atómica. "
+            "UNIQUE (producto_id, fecha_entrega) — un lote por combinación."
+        ),
+        "fn": lambda: _migrate_create_product_batches(),
+    },
 ]
+
+
+def _migrate_create_product_batches():
+    """Crea la tabla product_batches si aún no existe (Postgres + SQLite).
+    Idempotente: chequea inspector antes de emitir DDL."""
+    inspector = inspect(db.engine)
+    if inspector.has_table("product_batches"):
+        return
+    dialect = db.engine.dialect.name
+    if dialect == "postgresql":
+        db.session.execute(text("""
+            CREATE TABLE product_batches (
+                id                       SERIAL PRIMARY KEY,
+                producto_id              INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                fecha_entrega            DATE NOT NULL,
+                cantidad_por_tanda       INTEGER NOT NULL,
+                cantidad_maxima_tandas   INTEGER NULL,
+                cantidad_vendida_tandas  INTEGER NOT NULL DEFAULT 0,
+                estado                   VARCHAR(16) NOT NULL DEFAULT 'abierto',
+                listo_en                 TIMESTAMP NULL,
+                creado_en                TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_product_batches_producto_fecha UNIQUE (producto_id, fecha_entrega)
+            )
+        """))
+    else:
+        # SQLite (tests) — mismo esquema sin las particularidades PG.
+        db.session.execute(text("""
+            CREATE TABLE product_batches (
+                id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+                producto_id              INTEGER NOT NULL,
+                fecha_entrega            DATE NOT NULL,
+                cantidad_por_tanda       INTEGER NOT NULL,
+                cantidad_maxima_tandas   INTEGER,
+                cantidad_vendida_tandas  INTEGER NOT NULL DEFAULT 0,
+                estado                   VARCHAR(16) NOT NULL DEFAULT 'abierto',
+                listo_en                 DATETIME,
+                creado_en                DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (producto_id, fecha_entrega)
+            )
+        """))
+
+
+def _migrate_add_nullable_int_columns(pairs):
+    """Añade columnas INTEGER NULL a las tablas indicadas si no existen.
+    Idempotente: chequea `information_schema` (o inspector) antes."""
+    inspector = inspect(db.engine)
+    for tabla, col in pairs:
+        if not inspector.has_table(tabla):
+            continue
+        cols = {c["name"] for c in inspector.get_columns(tabla)}
+        if col in cols:
+            continue
+        db.session.execute(text(
+            f"ALTER TABLE {tabla} ADD COLUMN {col} INTEGER NULL"
+        ))
 
 
 def _utcnow():

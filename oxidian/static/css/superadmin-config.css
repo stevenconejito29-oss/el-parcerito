@@ -8,8 +8,8 @@
 .cfg-upload{display:inline-flex;align-items:center;justify-content:center;gap:.3rem;color:var(--brand-primary,var(--col-gold));background:color-mix(in srgb,var(--brand-primary,#D9961A) 12%,transparent);border:1px solid color-mix(in srgb,var(--brand-primary,#D9961A) 30%,transparent);border-radius:8px;font-size:.72rem;font-weight:800;cursor:pointer;padding:.4rem .65rem;min-height:34px;text-decoration:none;line-height:1}
 .cfg-upload:hover{background:color-mix(in srgb,var(--brand-primary,#D9961A) 20%,transparent)}
 .cfg-upload input{display:none}
-.cfg-upload-danger{color:#ff8888;background:rgba(255,80,80,.08);border-color:rgba(255,80,80,.28)}
-.cfg-upload-danger:hover:not(:disabled){background:rgba(255,80,80,.16)}
+.cfg-upload-danger{color:color-mix(in srgb, var(--theme-danger) 62%, #fff);background:color-mix(in srgb, var(--theme-danger) 8%, transparent);border-color:color-mix(in srgb, var(--theme-danger) 28%, transparent)}
+.cfg-upload-danger:hover:not(:disabled){background:color-mix(in srgb, var(--theme-danger) 16%, transparent)}
 .cfg-upload-danger:disabled{opacity:.35;cursor:not-allowed}.cfg-media-control input[type=url]{min-height:36px;font-size:.72rem}
 .cfg-colors{display:grid;grid-template-columns:repeat(3,1fr);gap:.7rem;margin-top:.8rem}.cfg-colors label{display:flex;align-items:center;justify-content:space-between;padding:.55rem .7rem;background:var(--col-elevated);border:1px solid var(--col-border);border-radius:7px}.cfg-colors input[type=color]{width:42px;height:32px;border:0;background:transparent}
 .cfg-form-note{margin:.25rem 0 .75rem;color:var(--col-muted);font-size:.72rem;line-height:1.45}.cfg-colors--theme{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}

@@ -276,7 +276,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 function actualizarUrgencia() {
   document.querySelectorAll('[data-created]').forEach(card => {
     const created = new Date(card.dataset.created);

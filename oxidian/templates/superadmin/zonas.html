@@ -100,7 +100,7 @@
   </form>
 </details>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 function usarMiUbicacion(btn) {
   const msg = document.getElementById('zc-msg');
   if (!navigator.geolocation) {
@@ -224,7 +224,7 @@ function usarMiUbicacion(btn) {
 
 </div>{# oa-page #}
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 // Confirmación defensiva antes de desactivar una zona
 // (evita clics accidentales que rompen la cobertura del área).
 document.querySelectorAll('form[action*="/toggle_zona"]').forEach(f => {

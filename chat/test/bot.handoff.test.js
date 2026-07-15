@@ -24,7 +24,6 @@ const {
   closeHumanChatByClient,
   createHandoffRequest,
   deliverQueuedTranscript,
-  detectBarIntent,
   detectClientIntent,
   drainInboundMessages,
   extractText,
@@ -40,8 +39,9 @@ const {
   menuPrincipal,
   adminMenu,
   adminCan,
-  barMenu,
   setCfg,
+  seleccionarPedidoConsulta,
+  contextoPedidoConsulta,
 } = _test;
 
 const adminA = '34600000001@s.whatsapp.net';
@@ -116,7 +116,7 @@ test('los menús públicos y admin están separados por rol', () => {
   const globalMenu = adminMenu(adminA);
 
   assert.match(clientMenu, /Asistente de/);
-  assert.match(clientMenu, /sin tomar compras por WhatsApp/i);
+  assert.match(clientMenu, /respondiendo con su número/i);
   assert.doesNotMatch(clientMenu, /Productos y precios/);
   assert.match(globalMenu, /Panel Super Admin/);
   assert.match(globalMenu, /Productos y precios/);
@@ -160,16 +160,32 @@ test('el menú del cliente oculta puntos y delivery cuando están desactivados',
   setCfg('loyalty_enabled', '1');
   setCfg('delivery_enabled', '1');
   const enabled = menuPrincipal();
-  assert.match(enabled, /consultar tus puntos/i);
-  assert.match(enabled, /comprobar cobertura/i);
+  assert.match(enabled, /Mis puntos/i);
+  assert.match(enabled, /Zona de entrega/i);
 });
 
 test('el cliente se dirige a la web y no recibe catálogo por WhatsApp', () => {
   const menu = menuPrincipal();
-  assert.match(menu, /Abrir tienda online/);
-  assert.doesNotMatch(menu, /1️⃣|2️⃣|3️⃣/);
-  assert.doesNotMatch(menu, /Ver el menú y los combos/);
-  assert.doesNotMatch(menu, /precio/i);
+  assert.match(menu, /Ver el menú en la web/);
+  assert.match(menu, /\*1\*|\*2\*/);
+  assert.doesNotMatch(menu, /precio actualizado/i);
+});
+
+test('consulta ULTIMO prioriza activo y cae al último cerrado', () => {
+  const cerrado = { numero: 'EP-100', estado: 'entregado' };
+  const activo = { numero: 'EP-099', estado: 'armando' };
+  assert.equal(seleccionarPedidoConsulta([cerrado, activo], 'ULTIMO'), activo);
+  assert.equal(seleccionarPedidoConsulta([cerrado], 'último'), cerrado);
+  assert.equal(seleccionarPedidoConsulta([], 'ULTIMO'), null);
+  assert.match(contextoPedidoConsulta(activo, true), /pedido activo más reciente/i);
+  assert.match(contextoPedidoConsulta(cerrado, true), /No tienes pedidos activos/i);
+  assert.equal(contextoPedidoConsulta(cerrado, false), '');
+});
+
+test('consulta de pedido tolera formato pero rechaza referencias parciales ambiguas', () => {
+  const pedido = { numero: 'EP-2026-0102', estado: 'entregado' };
+  assert.equal(seleccionarPedidoConsulta([pedido], '# EP 2026 0102'), pedido);
+  assert.equal(seleccionarPedidoConsulta([pedido], '0102'), null);
 });
 
 test('reconoce frases naturales del cliente antes del menú genérico', () => {
@@ -187,13 +203,10 @@ test('reconoce frases naturales del cliente antes del menú genérico', () => {
   }
 });
 
-test('el detector legacy del bar reconoce sus funciones si una sesión antigua lo usa', () => {
-  assert.equal(detectBarIntent('ver pedidos pendientes'), '1');
-  assert.equal(detectBarIntent('PREPARADO 1024'), '2');
-  assert.equal(detectBarIntent('incidencias'), '3');
-  assert.equal(detectBarIntent('ajustar stock'), '4');
-  assert.equal(detectBarIntent('hablar con administrador'), '5');
-});
+// Nota: `detectBarIntent` y las 9 funciones del flujo bar-operator se
+// retiraron el 2026-07-15 (código huérfano). El test histórico que las
+// ejercía se eliminó junto con el código. Las sesiones legacy con
+// role='bar' se resetean automáticamente en `handleEvolutionEvent`.
 
 test('un administrador no puede reclamar dos clientes activos', () => {
   createHandoffRequest(clientA);
