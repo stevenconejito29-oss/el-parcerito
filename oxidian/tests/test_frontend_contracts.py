@@ -192,12 +192,15 @@ class FrontendContractsTest(unittest.TestCase):
         cart = (ROOT / "templates" / "public" / "carrito.html").read_text(encoding="utf-8")
         checkout = (ROOT / "templates" / "public" / "checkout.html").read_text(encoding="utf-8")
 
-        self.assertIn("crSolicitarCodigo", cart)
-        self.assertIn("crToggleCanje", cart)
-        self.assertNotIn("solicitarCodigoPuntosTel", checkout)
-        self.assertNotIn("verificarCodigoPuntos", checkout)
+        self.assertNotIn("crSolicitarCodigo", cart)
+        self.assertNotIn("crToggleCanje", cart)
+        self.assertNotIn("cr-discounts", cart)
+        self.assertIn("requestRewardCode", checkout)
+        self.assertIn("verifyRewardCode", checkout)
+        self.assertIn("chooseReward", checkout)
         self.assertNotIn("descuentoPuntos", checkout)
-        self.assertIn("Consultar y canjear en el carrito", checkout)
+        self.assertNotIn("nif_invitado", checkout)
+        self.assertIn("Canjear una recompensa", checkout)
 
     def test_public_header_keeps_configured_color_while_scrolling(self):
         styles = (ROOT / "static" / "css" / "header-modern.css").read_text(encoding="utf-8")

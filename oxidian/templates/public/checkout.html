@@ -23,6 +23,7 @@
 
 <div class="checkout-layout grid md:grid-cols-5 gap-5"
      data-subtotal-base="{{ subtotal }}">
+{% set checkout_canje = (canjeables | selectattr('id', 'equalto', producto_canje_seleccionado) | list | first) if producto_canje_seleccionado else None %}
 
 <!-- ── RESUMEN (derecha desktop, abajo mobile) ── -->
 <div class="md:col-span-2 order-2 md:order-2 md:sticky md:top-20 md:self-start">
@@ -107,18 +108,6 @@
   </div>
   {% endif %}
 
-  {% if puntos_habilitados %}
-  {% set checkout_canje = (canjeables | selectattr('id', 'equalto', producto_canje_seleccionado) | list | first) if producto_canje_seleccionado else None %}
-  <div class="mt-4 ox-card p-4 checkout-rewards-summary" id="rewards-summary" {% if not checkout_canje %}hidden{% endif %}>
-    <div class="flex items-start justify-between gap-3">
-      <div>
-        <h3 class="text-sm font-black">Recompensas aplicadas</h3>
-        <p class="text-xs mt-1" id="rewards-summary-text" style="color:var(--col-muted)">{% if checkout_canje %}Regalo: {{ checkout_canje.nombre }}{% endif %}</p>
-      </div>
-      <span class="checkout-reward-pill" id="rewards-summary-pill">{% if checkout_canje %}{{ checkout_canje.puntos_para_canje }} pts{% endif %}</span>
-    </div>
-  </div>
-  {% endif %}
 </div>
 
 <!-- ── FORMULARIO (der / abajo mobile) ── -->
@@ -127,7 +116,6 @@
   <input type="hidden" name="cupon_id" id="cupon_id_input">
   <input type="hidden" name="cupon_codigo" id="cupon_codigo_input">
   <input type="hidden" name="producto_canje_id" id="canje_hidden" value="{{ producto_canje_seleccionado or '' }}">
-  <input type="hidden" name="puntos_usar" id="puntos_usar_input" value="0">
   <input type="hidden" name="zona_id" id="zona_id_input" value="">
 
   <!-- ① IDENTIFICACIÓN POR TELÉFONO -->
@@ -151,14 +139,6 @@
       <label class="ox-label">Tu nombre</label>
       <input type="text" name="nombre_invitado" id="nombre_invitado"
              placeholder="¿Cómo te llamamos?" autocomplete="name" required>
-    </div>
-    <div class="mt-3">
-      <label class="ox-label">NIF / DNI / CIF <span style="color:var(--col-muted)">(opcional, solo para factura)</span></label>
-      <input type="text" name="nif_invitado" id="nif_invitado"
-             placeholder="Ej: 12345678Z o B12345678"
-             maxlength="15" autocomplete="off"
-             style="text-transform:uppercase">
-      <div class="text-xs mt-1" style="color:var(--col-faint)">Déjalo en blanco si no necesitas factura fiscal.</div>
     </div>
   </div>
 
@@ -276,7 +256,8 @@
     <div>
       <label class="ox-label">Cupón de descuento</label>
       <div class="flex gap-2">
-        <input type="text" id="cupon_input" placeholder="Ej: BIENVENIDA" class="flex-1" style="text-transform:uppercase">
+        <input type="text" id="cupon_input" placeholder="Ej: BIENVENIDA" class="flex-1" style="text-transform:uppercase"
+               value="{{ (session.get('cart_cupon') or {}).get('codigo', '') }}">
         <button type="button" data-checkout-coupon-apply
                 class="ox-btn-ghost flex-shrink-0" id="cupon_btn_apply">Aplicar</button>
         <button type="button" data-checkout-coupon-clear
@@ -289,7 +270,8 @@
       <label class="ox-label">Código de referido / afiliado</label>
       <div class="flex gap-2">
         <input type="text" id="afiliado_input" name="codigo_afiliado" placeholder="Ej: AMIGO20"
-               class="flex-1" style="text-transform:uppercase">
+               class="flex-1" style="text-transform:uppercase"
+               value="{{ (session.get('cart_afiliado') or {}).get('codigo', '') }}">
         <button type="button" data-checkout-affiliate-apply
                 class="ox-btn-ghost flex-shrink-0" id="afiliado_btn_apply">Aplicar</button>
         <button type="button" data-checkout-affiliate-clear
@@ -301,20 +283,48 @@
   </div>
 
   {% if puntos_habilitados %}
-  <!-- ⑥ PUNTOS: el canje se decide una sola vez, en el carrito. -->
+  <!-- ⑥ PUNTOS: único lugar de verificación y canje durante la compra. -->
   <div class="ox-card p-4 checkout-step checkout-rewards-card" id="puntos-section">
     <h2 class="text-sm font-extrabold mb-1 flex items-center gap-2">
       <span class="text-base">⭐</span>
-      Puntos y recompensa
+      Canjear una recompensa <span class="checkout-optional">Opcional</span>
     </h2>
     <p class="text-xs mb-3" style="color:var(--col-muted)">
-      Este pedido acumulará puntos. Los puntos se canjean únicamente por productos gratis desde el carrito.
+      Este pedido acumulará puntos. Abre esta opción solo si quieres añadir un producto gratis; la consulta de saldo permanece en Club.
     </p>
-    <div class="checkout-rewards-empty">
+    <button type="button" class="checkout-rewards-toggle" data-rewards-toggle aria-expanded="{{ 'true' if checkout_canje else 'false' }}">
       <span aria-hidden="true">{{ '🎁' if checkout_canje else '⭐' }}</span>
-      <div>
-        <p>{% if checkout_canje %}<strong>{{ checkout_canje.nombre }}</strong> está seleccionado como regalo.{% else %}No has seleccionado un regalo para este pedido.{% endif %}</p>
-        <a href="{{ url_for('public.ver_carrito') }}#cr-puntos-wrap" class="ox-btn-ghost mt-2">{{ 'Cambiar recompensa' if checkout_canje else 'Consultar y canjear en el carrito' }}</a>
+      <span><strong id="reward-toggle-title">{% if checkout_canje %}{{ checkout_canje.nombre }} seleccionado{% else %}Quiero usar mis puntos{% endif %}</strong><small id="reward-toggle-subtitle">{% if checkout_canje %}Puedes cambiarlo o quitarlo antes de confirmar{% else %}Verificar por WhatsApp y elegir recompensa{% endif %}</small></span>
+      <span class="checkout-rewards-chevron" aria-hidden="true">⌄</span>
+    </button>
+    <div class="checkout-rewards-flow" id="rewards-flow" {% if not checkout_canje %}hidden{% endif %}>
+      <div id="reward-request-step" {% if puntos_sesion and puntos_sesion.get('verificado') %}hidden{% endif %}>
+        <p class="checkout-reward-help">Enviaremos un código al número escrito arriba para proteger tus puntos.</p>
+        <button type="button" class="ox-btn-ghost" data-reward-request>Enviar código por WhatsApp</button>
+        <p class="checkout-reward-message" id="reward-request-message" role="status"></p>
+      </div>
+      <div id="reward-code-step" hidden>
+        <label class="ox-label" for="reward-code">Código de verificación</label>
+        <div class="checkout-reward-code-row">
+          <input type="text" id="reward-code" maxlength="8" inputmode="numeric" autocomplete="one-time-code" placeholder="Código recibido">
+          <button type="button" class="ox-btn-ghost" data-reward-verify>Verificar</button>
+        </div>
+        <button type="button" class="checkout-reward-resend" data-reward-resend>Reenviar código</button>
+        <p class="checkout-reward-message" id="reward-code-message" role="status"></p>
+      </div>
+      <div id="reward-picker" {% if not (puntos_sesion and puntos_sesion.get('verificado')) %}hidden{% endif %}>
+        <div class="checkout-reward-balance"><strong id="reward-balance">{{ puntos_sesion.get('puntos_totales', 0) if puntos_sesion else 0 }}</strong><span>puntos disponibles</span></div>
+        <div class="checkout-reward-grid" id="reward-options">
+          {% for prod in canjeables %}
+          <button type="button" class="checkout-reward-option {{ 'is-selected' if producto_canje_seleccionado == prod.id }}"
+                  data-reward-id="{{ prod.id }}" data-reward-name="{{ prod.nombre }}" data-reward-points="{{ prod.puntos_para_canje }}">
+            <span aria-hidden="true">🎁</span><span><strong>{{ prod.nombre }}</strong><small>{{ prod.puntos_para_canje }} puntos</small></span><b>{{ 'Elegido' if producto_canje_seleccionado == prod.id else 'Elegir' }}</b>
+          </button>
+          {% else %}
+          <p class="checkout-reward-empty">Aún no hay recompensas disponibles con este saldo.</p>
+          {% endfor %}
+        </div>
+        <button type="button" class="checkout-reward-remove" data-reward-remove {% if not checkout_canje %}hidden{% endif %}>Quitar recompensa</button>
       </div>
     </div>
   </div>
@@ -434,7 +444,19 @@
 .checkout-rewards-card {
   border-color: color-mix(in srgb, var(--brand-primary) 20%, var(--col-border)) !important;
 }
-.checkout-rewards-empty {
+.checkout-optional {
+  margin-left: auto;
+  padding: .18rem .48rem;
+  border-radius: 999px;
+  background: var(--action-primary-soft);
+  color: var(--action-primary);
+  font-size: .66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.checkout-rewards-toggle {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: .7rem;
@@ -444,25 +466,54 @@
   border: 1px dashed color-mix(in srgb, var(--brand-primary) 28%, var(--col-border));
   color: var(--theme-muted);
   font-size: .82rem;
+  text-align: left;
 }
-.checkout-reward-pill {
-  display: inline-flex;
+.checkout-rewards-toggle > span:nth-child(2) { display: grid; gap: .12rem; flex: 1; }
+.checkout-rewards-toggle strong { color: var(--theme-text); }
+.checkout-rewards-toggle small { color: var(--theme-muted); font-size: .72rem; }
+.checkout-rewards-chevron { font-size: 1.15rem; transition: transform var(--motion-fast, 160ms) ease; }
+.checkout-rewards-toggle[aria-expanded="true"] .checkout-rewards-chevron { transform: rotate(180deg); }
+.checkout-rewards-flow {
+  margin-top: .75rem;
+  padding: .85rem;
+  border-radius: .9rem;
+  background: color-mix(in srgb, var(--action-primary) 4%, var(--theme-surface));
+  border: 1px solid var(--col-border);
+}
+.checkout-reward-help,
+.checkout-reward-message { margin: 0 0 .65rem; color: var(--theme-muted); font-size: .76rem; line-height: 1.45; }
+.checkout-reward-message { margin: .5rem 0 0; min-height: 1.1rem; }
+.checkout-reward-code-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; }
+.checkout-reward-resend,
+.checkout-reward-remove { margin-top: .55rem; color: var(--action-primary); font-size: .72rem; font-weight: 850; }
+.checkout-reward-balance { display: flex; align-items: baseline; gap: .4rem; margin-bottom: .7rem; }
+.checkout-reward-balance strong { color: var(--action-primary); font-size: 1.4rem; font-weight: 950; }
+.checkout-reward-balance span { color: var(--theme-muted); font-size: .75rem; }
+.checkout-reward-grid { display: grid; gap: .5rem; }
+.checkout-reward-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: center;
-  white-space: nowrap;
-  padding: .28rem .55rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--brand-primary) 13%, var(--theme-surface));
-  color: color-mix(in srgb, var(--brand-primary) 45%, var(--theme-text));
-  font-size: .74rem;
-  font-weight: 900;
+  gap: .65rem;
+  width: 100%;
+  padding: .72rem;
+  border: 1px solid var(--col-border);
+  border-radius: .8rem;
+  background: var(--theme-surface);
+  color: var(--theme-text);
+  text-align: left;
 }
+.checkout-reward-option > span:nth-child(2) { display: grid; gap: .1rem; min-width: 0; }
+.checkout-reward-option strong { overflow-wrap: anywhere; font-size: .8rem; }
+.checkout-reward-option small { color: var(--theme-muted); font-size: .7rem; }
+.checkout-reward-option b { color: var(--action-primary); font-size: .7rem; }
+.checkout-reward-option.is-selected { border-color: var(--action-primary); background: var(--action-primary-soft); box-shadow: 0 0 0 2px color-mix(in srgb, var(--action-primary) 10%, transparent); }
+.checkout-reward-empty { color: var(--theme-muted); font-size: .76rem; }
+.checkout-reward-remove { color: var(--theme-danger); }
+.checkout-rewards-toggle:focus-visible,
+.checkout-reward-option:focus-visible { outline: 3px solid var(--action-primary-soft); outline-offset: 2px; }
 .hidden { display: none !important; }
 .checkout-location-btn{margin-top:.45rem;min-height:42px;padding:.55rem .75rem;border:1px solid color-mix(in srgb,var(--action-primary) 22%,var(--col-border));border-radius:.75rem;background:var(--action-primary-soft);color:var(--action-primary);font-size:.75rem;font-weight:850}.checkout-location-btn:disabled{opacity:.65}
-.checkout-rewards-summary {
-  border-color: color-mix(in srgb, var(--brand-primary) 22%, var(--col-border)) !important;
-  background: var(--theme-surface) !important;
-}
 @media (max-width: 767px) {
   .checkout-head {
     margin-bottom: 1rem;
@@ -529,8 +580,9 @@
   #form-checkout .flex.gap-2:has(#afiliado_input) {
     flex-direction: column;
   }
-  #form-checkout .flex.gap-2:has(#cod_puntos_input) {
+  .checkout-reward-code-row {
     flex-direction: column;
+    grid-template-columns: 1fr;
   }
   #form-checkout .ox-btn-ghost,
   #form-checkout .ox-btn-secondary {
@@ -538,7 +590,7 @@
   }
   #form-checkout .flex.gap-2:has(#cupon_input) > *,
   #form-checkout .flex.gap-2:has(#afiliado_input) > *,
-  #form-checkout .flex.gap-2:has(#cod_puntos_input) > * {
+  .checkout-reward-code-row > * {
     width: 100%;
   }
 }
@@ -633,6 +685,181 @@ function checkoutJsonPost(url, body) {
   });
 }
 
+/* Canje de recompensas: la consulta de saldo vive en Club; durante la compra
+   solo se abre este flujo cuando el cliente decide usar puntos. El teléfono
+   del checkout es la identidad y cualquier cambio invalida la verificación. */
+let verifiedRewardPhone = normalizarTelefono({{ (puntos_sesion.get('telefono', '') if puntos_sesion else '') | tojson }});
+let rewardCodeSentAt = 0;
+
+function rewardMessage(id, text, kind = '') {
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.textContent = text || '';
+  element.style.color = kind === 'error' ? 'var(--theme-danger)'
+    : kind === 'success' ? 'var(--theme-success)' : 'var(--theme-muted)';
+}
+
+function setRewardFlow(open) {
+  const toggle = document.querySelector('[data-rewards-toggle]');
+  const flow = document.getElementById('rewards-flow');
+  if (!toggle || !flow) return;
+  toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  flow.hidden = !open;
+}
+
+function showRewardPicker(data) {
+  document.getElementById('reward-request-step')?.setAttribute('hidden', '');
+  document.getElementById('reward-code-step')?.setAttribute('hidden', '');
+  const picker = document.getElementById('reward-picker');
+  if (picker) picker.hidden = false;
+  const balance = document.getElementById('reward-balance');
+  if (balance) balance.textContent = String(Number(data.puntos || 0));
+  renderRewardOptions(data.canjeables || []);
+}
+
+function renderRewardOptions(rewards) {
+  const container = document.getElementById('reward-options');
+  if (!container) return;
+  const selectedId = Number(document.getElementById('canje_hidden')?.value || 0);
+  container.replaceChildren();
+  if (!rewards.length) {
+    const empty = document.createElement('p');
+    empty.className = 'checkout-reward-empty';
+    empty.textContent = 'Aún no hay recompensas disponibles con este saldo.';
+    container.append(empty);
+    return;
+  }
+  rewards.forEach(reward => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'checkout-reward-option';
+    button.dataset.rewardId = String(reward.id);
+    button.dataset.rewardName = reward.nombre;
+    button.dataset.rewardPoints = String(reward.puntos);
+    if (Number(reward.id) === selectedId) button.classList.add('is-selected');
+    const icon = document.createElement('span');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '🎁';
+    const copy = document.createElement('span');
+    const name = document.createElement('strong');
+    name.textContent = reward.nombre;
+    const points = document.createElement('small');
+    points.textContent = `${reward.puntos} puntos`;
+    copy.append(name, points);
+    const action = document.createElement('b');
+    action.textContent = Number(reward.id) === selectedId ? 'Elegido' : 'Elegir';
+    button.append(icon, copy, action);
+    container.append(button);
+  });
+}
+
+async function requestRewardCode(isResend = false) {
+  const phone = checkoutPhone();
+  if (phone.replace(/\D/g, '').length < 7) {
+    rewardMessage('reward-request-message', 'Escribe primero un número de teléfono válido arriba.', 'error');
+    document.getElementById('tel_input')?.focus();
+    return;
+  }
+  if (isResend && Date.now() - rewardCodeSentAt < 30000) {
+    const seconds = Math.ceil((30000 - (Date.now() - rewardCodeSentAt)) / 1000);
+    rewardMessage('reward-code-message', `Espera ${seconds}s antes de reenviar.`);
+    return;
+  }
+  rewardMessage(isResend ? 'reward-code-message' : 'reward-request-message', 'Enviando código…');
+  try {
+    const response = await checkoutJsonPost('{{ url_for("public.solicitar_codigo_puntos") }}', { telefono: phone });
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.msg || 'No pudimos enviar el código.');
+    rewardCodeSentAt = Date.now();
+    document.getElementById('reward-request-step')?.setAttribute('hidden', '');
+    const codeStep = document.getElementById('reward-code-step');
+    if (codeStep) codeStep.hidden = false;
+    rewardMessage('reward-code-message', 'Código enviado. Revisa tu WhatsApp.', 'success');
+    document.getElementById('reward-code')?.focus();
+  } catch (error) {
+    rewardMessage(isResend ? 'reward-code-message' : 'reward-request-message', error.message || 'No pudimos conectar. Inténtalo de nuevo.', 'error');
+  }
+}
+
+async function verifyRewardCode() {
+  const phone = checkoutPhone();
+  const code = document.getElementById('reward-code')?.value.trim() || '';
+  if (!code) { rewardMessage('reward-code-message', 'Escribe el código recibido.', 'error'); return; }
+  rewardMessage('reward-code-message', 'Verificando…');
+  try {
+    const response = await checkoutJsonPost('{{ url_for("public.verificar_codigo_puntos") }}', { telefono: phone, codigo: code, puntos: 0 });
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.msg || 'El código no es válido.');
+    verifiedRewardPhone = phone;
+    rewardMessage('reward-code-message', 'Número verificado correctamente.', 'success');
+    showRewardPicker(data);
+  } catch (error) {
+    rewardMessage('reward-code-message', error.message || 'No pudimos verificar el código.', 'error');
+  }
+}
+
+async function chooseReward(button) {
+  const rewardId = Number(button.dataset.rewardId || 0);
+  if (!rewardId) return;
+  try {
+    const response = await checkoutJsonPost('{{ url_for("public.set_producto_canje") }}', { producto_id: rewardId });
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.msg || 'No pudimos seleccionar la recompensa.');
+    document.getElementById('canje_hidden').value = String(rewardId);
+    document.querySelectorAll('.checkout-reward-option').forEach(option => {
+      const selected = option === button;
+      option.classList.toggle('is-selected', selected);
+      const label = option.querySelector('b');
+      if (label) label.textContent = selected ? 'Elegido' : 'Elegir';
+    });
+    const remove = document.querySelector('[data-reward-remove]');
+    if (remove) remove.hidden = false;
+    document.getElementById('reward-toggle-title').textContent = `${button.dataset.rewardName} seleccionado`;
+    document.getElementById('reward-toggle-subtitle').textContent = 'Puedes cambiarlo o quitarlo antes de confirmar';
+    window.OxToast?.show('Recompensa añadida al pedido', 'success');
+  } catch (error) {
+    window.OxToast?.show(error.message || 'No pudimos seleccionar la recompensa', 'danger');
+  }
+}
+
+async function removeReward(clearVerification = false) {
+  // Invalida localmente antes del await para que una ráfaga de eventos
+  // `input` no dispare varias limpiezas de sesión en paralelo.
+  if (clearVerification) verifiedRewardPhone = '';
+  try {
+    const endpoint = clearVerification
+      ? '{{ url_for("public.quitar_puntos_carrito") }}'
+      : '{{ url_for("public.set_producto_canje") }}';
+    const response = clearVerification
+      ? await fetch(endpoint, { method: 'POST', headers: { 'X-CSRFToken': CHECKOUT_CSRF, 'Accept': 'application/json' } })
+      : await checkoutJsonPost(endpoint, { producto_id: null });
+    if (!response.ok) throw new Error('No pudimos actualizar la recompensa.');
+  } catch (_) {
+    if (!clearVerification) {
+      window.OxToast?.show('No pudimos quitar la recompensa', 'danger');
+      return;
+    }
+    // El servidor también valida que el teléfono verificado pertenezca al
+    // cliente del pedido; limpiar la UI local sigue siendo el estado seguro.
+  }
+  document.getElementById('canje_hidden').value = '';
+  document.querySelectorAll('.checkout-reward-option').forEach(option => {
+    option.classList.remove('is-selected');
+    const label = option.querySelector('b');
+    if (label) label.textContent = 'Elegir';
+  });
+  const remove = document.querySelector('[data-reward-remove]');
+  if (remove) remove.hidden = true;
+  document.getElementById('reward-toggle-title').textContent = 'Quiero usar mis puntos';
+  document.getElementById('reward-toggle-subtitle').textContent = 'Verificar por WhatsApp y elegir recompensa';
+  if (clearVerification) {
+    document.getElementById('reward-picker')?.setAttribute('hidden', '');
+    const request = document.getElementById('reward-request-step');
+    if (request) request.hidden = false;
+    setRewardFlow(false);
+  }
+}
+
 function actualizarTotalEstimado() {
   // Los puntos canjean un producto gratis y no modifican el total en euros.
   const total = Math.max(
@@ -708,6 +935,10 @@ function loadGuestCheckoutData() {
       direccionInput.value = data.direccion;
       setTimeout(() => window.checkCheckoutAddress?.(data.direccion), 400);
     }
+    const loadedPhone = normalizarTelefono(telInput?.value || '');
+    if (verifiedRewardPhone && loadedPhone && loadedPhone !== verifiedRewardPhone) {
+      removeReward(true);
+    }
   } catch (err) {
     console.warn('No se pudo cargar datos de checkout', err);
   }
@@ -716,6 +947,8 @@ function loadGuestCheckoutData() {
 window.addEventListener('DOMContentLoaded', () => {
   attachCheckoutPersistenceHandlers();
   loadGuestCheckoutData();
+  if (document.getElementById('cupon_input')?.value.trim()) validarCupon();
+  if (document.getElementById('afiliado_input')?.value.trim()) validarAfiliado();
 });
 
 /* Helpers de UI para alternar los botones "Aplicar"/"Quitar" y el
@@ -767,10 +1000,14 @@ async function validarCupon() {
   }
 }
 
-// Quitar cupón sin recargar la página. Limpia inputs, resumen y estado
-// local. El backend no persiste nada hasta el POST /checkout, así que
-// basta con borrar los hidden inputs.
-function quitarCupon() {
+// Quitar cupón también limpia la sesión: evita que un código invisible
+// reaparezca por el fallback defensivo del checkout.
+async function quitarCupon() {
+  try {
+    await fetch('{{ url_for("public.quitar_cupon_sesion") }}', {
+      method: 'POST', headers: { 'X-CSRFToken': CHECKOUT_CSRF, 'Accept': 'application/json' },
+    });
+  } catch (_) {}
   document.getElementById('cupon_input').value = '';
   document.getElementById('cupon_id_input').value = '';
   document.getElementById('cupon_codigo_input').value = '';
@@ -809,9 +1046,13 @@ async function validarAfiliado() {
   actualizarTotalEstimado();
 }
 
-// Quitar código afiliado. Backend no persiste hasta POST /checkout —
-// borrar el input basta.
-function quitarAfiliado() {
+// Mantiene el estado visual y la sesión del afiliado sincronizados.
+async function quitarAfiliado() {
+  try {
+    await fetch('{{ url_for("public.quitar_afiliado_sesion") }}', {
+      method: 'POST', headers: { 'X-CSRFToken': CHECKOUT_CSRF, 'Accept': 'application/json' },
+    });
+  } catch (_) {}
   document.getElementById('afiliado_input').value = '';
   const msg = document.getElementById('afiliado_msg');
   if (msg) { msg.textContent = ''; msg.classList.add('hidden'); }
@@ -1006,7 +1247,13 @@ if (metodoInicial?.value === 'bizum') toggleBizumInfo(true);
   window._checkoutAddressState = () => _addressValid;
   window._checkoutRefreshSubmit = refreshSubmitState;
 })();
-document.querySelector('[data-customer-phone]')?.addEventListener('input', event => buscarClientePorTelefono(event.currentTarget.value));
+document.querySelector('[data-customer-phone]')?.addEventListener('input', event => {
+  buscarClientePorTelefono(event.currentTarget.value);
+  const currentPhone = normalizarTelefono(event.currentTarget.value);
+  if (verifiedRewardPhone && currentPhone.replace(/\D/g, '').length >= 7 && currentPhone !== verifiedRewardPhone) {
+    removeReward(true);
+  }
+});
 document.querySelectorAll('[data-fulfillment-mode]').forEach(input => {
   input.addEventListener('change', () => { if (input.checked) setFulfillmentMode(input.value); });
 });
@@ -1018,6 +1265,20 @@ document.querySelector('[data-checkout-coupon-apply]')?.addEventListener('click'
 document.querySelector('[data-checkout-coupon-clear]')?.addEventListener('click', quitarCupon);
 document.querySelector('[data-checkout-affiliate-apply]')?.addEventListener('click', validarAfiliado);
 document.querySelector('[data-checkout-affiliate-clear]')?.addEventListener('click', quitarAfiliado);
+document.querySelector('[data-rewards-toggle]')?.addEventListener('click', event => {
+  setRewardFlow(event.currentTarget.getAttribute('aria-expanded') !== 'true');
+});
+document.querySelector('[data-reward-request]')?.addEventListener('click', () => requestRewardCode(false));
+document.querySelector('[data-reward-resend]')?.addEventListener('click', () => requestRewardCode(true));
+document.querySelector('[data-reward-verify]')?.addEventListener('click', verifyRewardCode);
+document.getElementById('reward-code')?.addEventListener('keydown', event => {
+  if (event.key === 'Enter') { event.preventDefault(); verifyRewardCode(); }
+});
+document.getElementById('reward-options')?.addEventListener('click', event => {
+  const option = event.target.closest('[data-reward-id]');
+  if (option) chooseReward(option);
+});
+document.querySelector('[data-reward-remove]')?.addEventListener('click', () => removeReward(false));
 window.addEventListener('DOMContentLoaded', () => setFulfillmentMode(fulfillmentMode));
 </script>
 {% endblock %}

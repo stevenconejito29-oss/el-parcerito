@@ -1787,20 +1787,19 @@ body.ox-body-public .ep-banner-cta {
   height: 3px;
   z-index: 3;
   background: var(--ep-card-accent, var(--brand-primary));
-  opacity: 0;
-  transform: scaleX(.25);
+  opacity: .62;
+  transform: scaleX(1);
   transform-origin: left;
   transition: opacity .2s ease, transform .28s ease;
 }
 .ep-card:hover::after,
 .ep-card:focus-within::after {
   opacity: 1;
-  transform: scaleX(1);
 }
 .ep-card-img {
   background:
     linear-gradient(145deg, color-mix(in srgb, var(--visual-highlight) 9%, transparent), color-mix(in srgb, var(--visual-promo) 6%, transparent)),
-    #F7F1E8;
+    var(--theme-surface-alt);
 }
 .ep-card-img::after {
   content: "";

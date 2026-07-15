@@ -221,7 +221,7 @@ def create_app(env="default"):
 
         # Background dinamico: dark si la marca tiene fondo oscuro (por defecto sí)
         brand_bg = SiteConfig.get("COLOR_FONDO_APP", "") or "#0F0906"
-        theme_color = SiteConfig.get("COLOR_PRIMARIO", "#D9961A")
+        theme_color = SiteConfig.get("COLOR_PRIMARIO", "#FFD23F")
         manifest = {
             "name": nombre,
             "short_name": short_name,
@@ -544,9 +544,9 @@ def create_app(env="default"):
         email = _c("EMAIL_CONTACTO")
         bizum_telefono = _c("BIZUM_TELEFONO")
 
-        color_primario   = _c("COLOR_PRIMARIO",   _env_default("COLOR_PRIMARIO", "#FCD116"))
-        color_secundario = _c("COLOR_SECUNDARIO", _env_default("COLOR_SECUNDARIO", "#CE1126"))
-        color_acento     = _c("COLOR_ACENTO",     _env_default("COLOR_ACENTO", "#003087"))
+        color_primario   = _c("COLOR_PRIMARIO",   _env_default("COLOR_PRIMARIO", "#FFD23F"))
+        color_secundario = _c("COLOR_SECUNDARIO", _env_default("COLOR_SECUNDARIO", "#E63946"))
+        color_acento     = _c("COLOR_ACENTO",     _env_default("COLOR_ACENTO", "#1769E0"))
         theme = {
             key.removeprefix("COLOR_").lower(): _c(key, default)
             for key, default in PUBLIC_THEME_DEFAULTS.items()
@@ -922,9 +922,9 @@ def _seed_admin():
         ("APP_ICON_URL",          _env_default("APP_ICON_URL", ""),          "Icono instalable de la PWA"),
         ("HERO_IMAGE_URL",        _env_default("HERO_IMAGE_URL", ""),        "Imagen principal del menú público"),
         ("TIENDA_URL",            _env_default("TIENDA_URL", ""),            "URL de la tienda web para pedidos (mostrado en WhatsApp)"),
-        ("COLOR_PRIMARIO",        _env_default("COLOR_PRIMARIO", "#E8B26C"), "Color principal de marca"),
-        ("COLOR_SECUNDARIO",      _env_default("COLOR_SECUNDARIO", "#D65A2A"), "Color secundario de marca"),
-        ("COLOR_ACENTO",          _env_default("COLOR_ACENTO", "#6B3D8A"),   "Color de acento para estado y CTA"),
+        ("COLOR_PRIMARIO",        _env_default("COLOR_PRIMARIO", "#FFD23F"), "Color principal de marca"),
+        ("COLOR_SECUNDARIO",      _env_default("COLOR_SECUNDARIO", "#E63946"), "Color secundario de marca"),
+        ("COLOR_ACENTO",          _env_default("COLOR_ACENTO", "#1769E0"),   "Color de acento para estado y CTA"),
         ("HORARIO_APERTURA",      _env_default("HORARIO_APERTURA", "09:00"), "Hora de apertura tienda (HH:MM)"),
         ("HORARIO_CIERRE",        _env_default("HORARIO_CIERRE", "22:30"),   "Hora de cierre tienda (HH:MM)"),
         ("TIENDA_FORZAR_CERRADA", "0",                        "Forzar tienda cerrada (1/0). Prevalece sobre horario y FORZAR_ABIERTA."),

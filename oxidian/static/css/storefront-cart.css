@@ -371,237 +371,6 @@
 }
 .cr-update-btn:hover { background: rgba(255,194,0,.12); color: var(--col-gold); }
 
-/* ═══════ SECCIÓN PUNTOS ═══════ */
-.cr-points {
-  background: var(--col-surface);
-  border: 1px solid rgba(255,194,0,.16);
-  /* Glow dorado muy sutil desde arriba */
-  box-shadow:
-    0 -1px 0 rgba(255,194,0,.14) inset,
-    0 1px 0 rgba(0,0,0,.5) inset,
-    0 8px 24px rgba(0,0,0,.35);
-  border-radius: 1.1rem; padding: 1rem;
-  margin-bottom: .85rem;
-  position: relative; overflow: hidden;
-}
-/* Resplandor gold sutil en la esquina superior */
-.cr-points::before {
-  content: ""; position: absolute;
-  top: -30px; right: -20px;
-  width: 120px; height: 120px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,194,0,.09), transparent 70%);
-  pointer-events: none;
-}
-
-.cr-points-header {
-  display: flex; align-items: flex-start; gap: .65rem; margin-bottom: .8rem;
-}
-.cr-points-icon-wrap {
-  width: 38px; height: 38px; border-radius: .875rem; flex-shrink: 0;
-  background: linear-gradient(135deg, var(--col-gold) 0%, #E8A800 100%);
-  color: #1B0A00; display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 4px 14px rgba(255,194,0,.4), 0 0 0 1px rgba(255,220,120,.3) inset;
-}
-.cr-points-title { font-size: .94rem; font-weight: 850; color: var(--col-text); margin-bottom: .1rem; }
-.cr-points-sub   { font-size: .74rem; color: var(--col-muted); }
-/* Aclara al cliente que "canjear puntos" = producto gratis, no descuento
-   monetario. Antes la falta de este mensaje generaba abandono al no ver
-   la rebaja esperada. */
-.cr-points-explainer {
-  margin-top: .3rem;
-  font-size: .72rem;
-  line-height: 1.35;
-  color: var(--col-muted);
-  padding: .35rem .5rem;
-  background: color-mix(in srgb, var(--col-gold) 6%, transparent);
-  border-left: 2px solid color-mix(in srgb, var(--col-gold) 45%, transparent);
-  border-radius: .35rem;
-}
-.cr-points-explainer strong { color: var(--col-text); }
-
-/* Estado: aplicado */
-.cr-points-applied {
-  display: flex; align-items: center; gap: .6rem;
-  background: rgba(94,240,151,.05);
-  border: 1px solid rgba(94,240,151,.15);
-  box-shadow: 0 1px 0 rgba(94,240,151,.06) inset;
-  border-radius: .875rem; padding: .65rem .85rem;
-  animation: cr-fade-in .25s ease;
-}
-.cr-applied-icon {
-  width: 28px; height: 28px; border-radius: 999px; flex-shrink: 0;
-  background: rgba(94,240,151,.12); color: #5EF097;
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 950; font-size: .88rem;
-  box-shadow: 0 0 10px rgba(94,240,151,.2);
-}
-.cr-applied-body { flex: 1; min-width: 0; }
-.cr-applied-title{ font-size: .88rem; font-weight: 850; color: #5EF097; }
-.cr-applied-sub  { font-size: .7rem; color: var(--col-muted); }
-.cr-remove-pts {
-  background: none; border: none; color: rgba(255,80,60,.55); font-size: .72rem;
-  font-weight: 700; cursor: pointer; flex-shrink: 0; padding: .15rem .55rem;
-  min-height: 44px;
-  transition: color .15s;
-}
-.cr-remove-pts:hover { color: #FF453A; }
-
-/* Balance de puntos */
-.cr-points-balance {
-  display: flex; align-items: center; gap: .75rem;
-  background: rgba(255,194,0,.05);
-  border: 1px solid rgba(255,194,0,.12);
-  box-shadow: 0 1px 0 rgba(255,194,0,.06) inset;
-  border-radius: .875rem; padding: .65rem .85rem; margin-bottom: .6rem;
-}
-.cr-pts-num   { font-size: 1.65rem; font-weight: 950; color: var(--col-gold); line-height: 1; letter-spacing: -.03em; }
-.cr-pts-label { font-size: .7rem; color: var(--col-muted); }
-.cr-pts-euro  { font-size: .73rem; color: rgba(255,194,0,.65); font-weight: 700; margin-top: .06rem; }
-
-/* Botón aplicar puntos */
-.cr-pts-apply-btn {
-  display: flex; align-items: center; justify-content: center; gap: .45rem;
-  width: 100%; padding: .72rem;
-  background: rgba(255,194,0,.07);
-  border: 1px solid rgba(255,194,0,.22);
-  box-shadow: 0 1px 0 rgba(255,194,0,.08) inset;
-  border-radius: .875rem;
-  color: rgba(255,194,0,.9); font-size: .88rem; font-weight: 800;
-  cursor: pointer; transition: background .18s, border-color .18s, color .18s;
-  position: relative; overflow: hidden;
-}
-/* Efecto shimmer en hover */
-.cr-pts-apply-btn::before {
-  content: ""; position: absolute;
-  top: 0; left: -80%; width: 60%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.06), transparent);
-  transition: left 0s;
-}
-.cr-pts-apply-btn:hover {
-  background: rgba(255,194,0,.12); border-color: rgba(255,194,0,.4); color: var(--col-gold);
-}
-.cr-pts-apply-btn:hover::before { animation: cr-shine .55s ease; }
-.cr-pts-apply-btn:disabled { opacity: .45; cursor: not-allowed; }
-
-.cr-points-hint { font-size: .73rem; color: var(--col-muted); margin: .45rem 0 .2rem; line-height: 1.45; }
-.cr-pts-remove-link {
-  background: none; border: none; cursor: pointer;
-  color: rgba(255,80,60,.5); font-size: .7rem; font-weight: 600; padding: .45rem 0;
-  min-height: 44px;
-  transition: color .15s;
-}
-.cr-pts-remove-link:hover { color: #FF453A; }
-
-/* Mensajes de estado */
-.cr-pts-msg      { font-size: .74rem; margin-top: .4rem; min-height: 1.2em; color: var(--col-faint); font-weight: 600; line-height: 1.4; }
-.cr-pts-msg--ok  { color: #5EF097; }
-.cr-pts-msg--err { color: #FF6B6B; }
-
-/* Verificación guest */
-.cr-pts-verify { padding-top: .15rem; }
-.cr-pts-verify-hint { font-size: .78rem; color: var(--col-muted); margin-bottom: .5rem; line-height: 1.45; }
-.cr-input-row { display: flex; gap: .45rem; }
-.cr-input {
-  flex: 1;
-  background: var(--col-elevated);
-  border: 1px solid var(--col-border-2);
-  box-shadow: 0 1px 0 rgba(255,200,120,.04) inset, 0 2px 6px rgba(0,0,0,.2);
-  border-radius: .75rem; padding: .65rem .85rem; color: var(--col-text);
-  font-size: 16px !important; outline: none; transition: border-color .2s, box-shadow .2s;
-  font-family: inherit;
-}
-.cr-input:focus {
-  border-color: rgba(255,194,0,.45);
-  box-shadow: 0 0 0 3px rgba(255,194,0,.09), 0 1px 0 rgba(255,200,120,.06) inset;
-}
-.cr-input--code {
-  letter-spacing: .3em; font-size: 1.2rem !important;
-  text-align: center; font-weight: 950; max-width: 130px;
-}
-.cr-pts-btn {
-  flex-shrink: 0;
-  /* Gradiente derivado 100% del brand-primary. Antes: segundo stop
-     `#D4920A` era un dorado fijo — el botón siempre parecía amarillo
-     aunque el fundador cambiara COLOR_PRIMARIO a rojo o azul. */
-  background: linear-gradient(135deg,
-    var(--brand-primary, var(--col-gold)),
-    color-mix(in srgb, var(--brand-primary, var(--col-gold)) 82%, #000));
-  color: var(--brand-on-primary, #1B0A00);
-  font-weight: 950; font-size: .85rem;
-  border: none; border-radius: .75rem; padding: .65rem 1rem;
-  cursor: pointer; transition: filter .15s; white-space: nowrap;
-  min-height: 44px;
-  box-shadow:
-    0 4px 14px color-mix(in srgb, var(--brand-primary, var(--col-gold)) 30%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--brand-primary, var(--col-gold)) 25%, transparent) inset;
-}
-.cr-pts-btn:hover { filter: brightness(1.09); }
-.cr-pts-back {
-  display: block; background: none; border: none; cursor: pointer;
-  color: var(--col-faint); font-size: .7rem; margin-top: .45rem; padding: .45rem 0;
-  min-height: 44px;
-  transition: color .15s;
-}
-.cr-pts-back:hover { color: var(--col-muted); }
-/* Fila de acciones secundarias del step 2 (volver + reenviar) — antes
-   solo estaba "volver", ahora incluye "reenviar código" prominente. */
-.cr-pts-step2-actions {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: .5rem; flex-wrap: wrap; margin-top: .35rem;
-}
-.cr-pts-resend {
-  background: none; border: 1px solid color-mix(in srgb, var(--col-gold) 32%, transparent);
-  color: var(--col-gold); font-size: .72rem; font-weight: 800;
-  border-radius: .55rem; padding: .4rem .7rem; cursor: pointer;
-  min-height: 36px; transition: background .15s;
-}
-.cr-pts-resend:hover:not(:disabled) { background: color-mix(in srgb, var(--col-gold) 8%, transparent); }
-.cr-pts-resend:disabled { opacity: .45; cursor: not-allowed; }
-
-/* Canjeables — productos gratuitos */
-.cr-canjeables { margin-top: .85rem; padding-top: .7rem; border-top: 1px solid rgba(255,200,120,.07); }
-.cr-canjeables-title { font-size: .76rem; font-weight: 800; color: var(--col-muted); margin-bottom: .5rem; text-transform: uppercase; letter-spacing: .04em; }
-
-.cr-canjeable {
-  display: flex; align-items: center; gap: .6rem;
-  width: 100%; min-height: 58px; padding: .6rem .7rem; border-radius: .875rem;
-  background: var(--col-elevated);
-  border: 1px solid transparent;
-  box-shadow: 0 1px 0 rgba(255,200,120,.04) inset;
-  cursor: pointer; text-align: left; margin-bottom: .4rem;
-  transition: border-color .18s, background .18s, box-shadow .18s;
-  -webkit-tap-highlight-color: transparent;
-}
-.cr-canjeable:hover {
-  border-color: rgba(255,194,0,.25);
-  background: rgba(255,194,0,.03);
-}
-.cr-canjeable.is-selected {
-  border-color: rgba(255,194,0,.4);
-  background: rgba(255,194,0,.06);
-  box-shadow: 0 0 14px rgba(255,194,0,.1), 0 1px 0 rgba(255,200,120,.08) inset;
-}
-.cr-canjeable.is-disabled,
-.cr-canjeable:disabled {
-  opacity: .58;
-  cursor: not-allowed;
-  filter: grayscale(.2);
-}
-.cr-canjeable:disabled:hover {
-  border-color: transparent;
-  background: var(--col-elevated);
-}
-.cr-canjeable-img    { width: 44px; height: 36px; object-fit: cover; border-radius: .5rem; flex-shrink: 0; border: 1px solid rgba(255,200,120,.08); }
-.cr-canjeable-img--fb{ background: rgba(255,194,0,.08); display: flex; align-items: center; justify-content: center; font-size: 1rem; }
-.cr-canjeable-body   { flex: 1; min-width: 0; }
-.cr-canjeable-body strong{ font-size: .82rem; font-weight: 800; color: var(--col-text); display: block; }
-.cr-canjeable-body small { font-size: .68rem; color: var(--col-muted); }
-.cr-canjeable-status { flex-shrink: 0; }
-
-.cr-tag-on   { font-size: .66rem; font-weight: 850; padding: .16rem .45rem; border-radius: 999px; background: rgba(255,194,0,.12); color: var(--col-gold); border: 1px solid rgba(255,194,0,.2); }
-.cr-tag-ok   { font-size: .66rem; font-weight: 850; padding: .16rem .45rem; border-radius: 999px; background: rgba(94,240,151,.09); color: #5EF097; border: 1px solid rgba(94,240,151,.15); }
-.cr-tag-falta{ font-size: .66rem; font-weight: 850; padding: .16rem .45rem; border-radius: 999px; background: rgba(255,100,80,.07); color: rgba(255,100,80,.75); border: 1px solid rgba(255,100,80,.12); }
-
 /* Banner alérgenos */
 .cr-alerg-banner {
   display: flex; align-items: flex-start; gap: .5rem;
@@ -614,45 +383,6 @@
 
 /* ═══════ PANEL (SIDEBAR) ═══════ */
 .cr-panel { display: flex; flex-direction: column; gap: .65rem; }
-
-/* ── Descuentos (cupón + afiliado) en el carrito ──
-   Antes solo estaban en checkout — el cliente confirmaba sin ver
-   descuento aplicado. Ahora bloque compacto en el sidebar, con estado
-   aplicado (readonly + Quitar) y feedback inline. Tokens del sistema. */
-.cr-discounts {
-  display: flex; flex-direction: column; gap: .55rem;
-  background: var(--col-surface);
-  border: 1px solid var(--col-border);
-  border-radius: 1rem; padding: .85rem .9rem;
-}
-.cr-discount-block { display: flex; flex-direction: column; gap: .3rem; }
-.cr-discount-label {
-  font-size: .72rem; font-weight: 900; color: var(--col-muted);
-  letter-spacing: .02em; text-transform: uppercase;
-}
-.cr-discount-row { display: flex; gap: .4rem; align-items: stretch; }
-.cr-discount-row .cr-input { flex: 1 1 auto; min-width: 0; }
-.cr-discount-btn {
-  flex-shrink: 0; min-height: 40px; padding: .4rem .8rem;
-  border-radius: .55rem; border: none; cursor: pointer;
-  background: var(--col-gold); color: var(--brand-on-primary, #1B0A00);
-  font-size: .78rem; font-weight: 900; white-space: nowrap;
-  transition: filter .15s;
-}
-.cr-discount-btn:hover { filter: brightness(1.08); }
-.cr-discount-btn--ghost {
-  background: transparent;
-  color: var(--col-muted);
-  border: 1px solid var(--col-border);
-}
-.cr-discount-btn.hidden { display: none; }
-.cr-discount-msg {
-  font-size: .72rem; color: var(--col-muted); margin: 0;
-  min-height: 1em;
-}
-.cr-discount-msg--ok  { color: var(--theme-success); }
-.cr-discount-msg--err { color: var(--theme-danger); }
-.cr-row.hidden { display: none; }
 
 /* Resumen del pedido */
 .cr-summary {
@@ -678,6 +408,16 @@
 .cr-summary-title { font-size: .88rem; font-weight: 950; color: var(--col-text); margin-bottom: .8rem; letter-spacing: -.01em; }
 
 .cr-rows { display: flex; flex-direction: column; gap: .48rem; margin-bottom: .8rem; }
+.cr-checkout-note {
+  margin: 0 0 .8rem;
+  padding: .55rem .65rem;
+  border-radius: .7rem;
+  background: color-mix(in srgb, var(--action-primary) 9%, transparent);
+  color: color-mix(in srgb, var(--action-primary) 72%, var(--theme-text));
+  font-size: .72rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
 .cr-row {
   display: flex; justify-content: space-between; align-items: center;
   font-size: .84rem; color: var(--col-muted);
@@ -892,10 +632,9 @@
 /* ═══════ ACCESIBILIDAD ═══════ */
 @media (prefers-reduced-motion: reduce) {
   .cr-item, .cr-badge, .cr-empty,
-  .cr-cta, .cr-pts-apply-btn,
+  .cr-cta,
   .cr-combo-chevron,
-  .cr-combo-rows,
-  .cr-points-applied {
+  .cr-combo-rows {
     animation: none !important;
     transition-duration: .01ms !important;
   }
@@ -1103,7 +842,6 @@
 }
 .cr-update-btn:hover { background: var(--cr-ink); color: var(--theme-surface); }
 
-.cr-points,
 .cr-alerg-banner,
 .cr-zone {
   border: 1px solid var(--cr-line);
@@ -1112,15 +850,6 @@
   color: var(--cr-ink);
   box-shadow: none;
 }
-.cr-points-title { color: var(--cr-ink); }
-.cr-points-sub,
-.cr-points-hint,
-.cr-pts-verify-hint { color: var(--cr-muted); }
-.cr-points-icon-wrap { background: var(--brand-primary); color: var(--brand-on-primary, var(--cr-ink)); }
-.cr-input { border-color: var(--cr-line); background: var(--theme-surface); color: var(--cr-ink); }
-.cr-pts-btn { background: var(--cr-ink); color: var(--theme-surface); }
-.cr-canjeable { border-color: var(--cr-line); background: var(--theme-surface); color: var(--cr-ink); }
-.cr-canjeable.is-selected { border-color: var(--brand-primary); background: color-mix(in srgb, var(--brand-primary) 10%, var(--theme-surface)); }
 .cr-alerg-banner {
   border-color: color-mix(in srgb, var(--brand-primary) 52%, var(--theme-surface));
   background: color-mix(in srgb, var(--brand-primary) 11%, var(--theme-surface));

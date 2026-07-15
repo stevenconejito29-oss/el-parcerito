@@ -1226,77 +1226,13 @@ def eliminar_carrito(producto_id):
     return redirect(url_for("public.ver_carrito"))
 
 
-def _auto_verify_puntos_for_authenticated_client(origen: str) -> dict | None:
-    """Si el cliente está logueado (rol='cliente'), su identidad ya fue
-    probada por password. No tiene sentido pedirle OTP en cada carrito.
-
-    Devuelve el dict `cart_puntos` listo para persistir en sesión con
-    `verificado=True`. Solo aplica al rol 'cliente' — admins/staff que
-    hagan pedidos con su propio número usarán el OTP para separar
-    contextos y evitar canjes accidentales.
-    """
-    try:
-        if not current_user.is_authenticated:
-            return None
-        if getattr(current_user, "rol", None) != "cliente":
-            return None
-        return {
-            "cliente_id": current_user.id,
-            "telefono": current_user.telefono,
-            "puntos_usados": 0,
-            "descuento": 0.0,
-            "puntos_totales": int(current_user.puntos or 0),
-            "verificado": True,
-            "origen": origen,
-            "auto_verified": True,
-        }
-    except Exception:
-        # Cualquier fallo (session desactualizada, campo ausente) → OTP.
-        return None
-
-
 @public_bp.route("/carrito")
 def ver_carrito():
     carrito = _get_carrito()
     origen = _carrito_origen(carrito)
     items, subtotal = _build_items_from_carrito(carrito)
-    puntos_sesion = session.get("cart_puntos", {})
-    if puntos_sesion.get("origen") != origen:
-        puntos_sesion = {}
-    # Atajo: cliente autenticado no necesita OTP — ya probó identidad.
-    # Solo se aplica si el widget aún está sin verificar (no queremos
-    # pisar un OTP recién hecho con datos potencialmente distintos).
-    if not puntos_sesion.get("verificado"):
-        auto = _auto_verify_puntos_for_authenticated_client(origen)
-        if auto:
-            session["cart_puntos"] = auto
-            session.modified = True
-            puntos_sesion = auto
-    puntos_verificados = int(puntos_sesion.get("puntos_totales", 0) or 0)
-    puntos_visibles = puntos_verificados
-    puntos_habilitados = _feature_enabled("puntos")
-    if not puntos_habilitados:
-        puntos_sesion = {}
-        puntos_verificados = 0
-        puntos_visibles = 0
     cart_productos = [item["producto"] for item in items if item.get("producto")]
     compat = _cart_compatibility(cart_productos)
-    cart_grupos = {_order_group(producto) for producto in cart_productos}
-    cart_familias = {_delivery_family(producto) for producto in cart_productos}
-    todos_canjeables = [
-        p for p in Product.query.filter_by(canjeable_con_puntos=True, activo=True)
-        .filter(Product.puntos_para_canje.isnot(None))
-        .order_by(Product.puntos_para_canje.asc(), Product.nombre.asc()).all()
-        if _producto_canjeable_en_origen(p, origen)
-        and origen
-        and len(cart_grupos) <= 1
-        and len(cart_familias) <= 1
-        and (not cart_productos or bool(_fulfillment_options(cart_productos)))
-        and (not cart_grupos or _order_group(p) in cart_grupos)
-        and (not cart_familias or _delivery_family(p) in cart_familias)
-        and bool(_fulfillment_options(cart_productos + [p]))
-    ] if puntos_habilitados else []
-    puntos_cfg = get_puntos_config()
     zona_principal = ZonaEntrega.query.filter_by(activo=True)\
         .order_by(ZonaEntrega.orden, ZonaEntrega.nombre).first()
     try:
@@ -1314,12 +1250,6 @@ def ver_carrito():
     return render_template("public/carrito.html",
                            items=items, subtotal=subtotal,
                            pedido_minimo=pedido_minimo,
-                           canjeables=todos_canjeables,
-                           puntos_sesion=puntos_sesion,
-                           puntos_ratio=puntos_cfg["ratio"],
-                           puntos_por_euro=puntos_cfg["por_euro"],
-                           puntos_visibles=puntos_visibles,
-                           puntos_habilitados=puntos_habilitados,
                            zona_principal=zona_principal,
                            radio_entrega_km=radio_entrega_km,
                            fulfillment_options=fulfillment_options,
@@ -1740,7 +1670,9 @@ def checkout():
     if cart_puntos_sesion.get("origen") == origen:
         puntos_cliente = cart_puntos_sesion.get("puntos_totales", 0)
     else:
+        cart_puntos_sesion = {}
         puntos_cliente = 0
+        session.pop("cart_producto_canje_id", None)
 
     canjeables = [
         p for p in Product.query.filter_by(canjeable_con_puntos=True, activo=True)
@@ -1829,15 +1761,13 @@ def checkout():
             notas = (notas + " [" + notas_combo_txt + "]").strip() if notas else "[" + notas_combo_txt + "]"
         cupon_id = request.form.get("cupon_id", type=int)
         cupon_codigo = request.form.get("cupon_codigo", "").strip().upper()
-        # Fallback a la sesión: si el cliente aplicó el cupón desde el
-        # carrito y no lo re-envió por el form del checkout, seguimos
-        # respetando esa decisión. Form-value gana si viene.
+        # Fallback a la sesión para conservar una validación previa del propio
+        # checkout ante recargas o retornos del navegador. Form-value gana.
         if not cupon_id:
             _sess_cupon = session.get("cart_cupon") or {}
             if _sess_cupon.get("id"):
                 cupon_id = int(_sess_cupon["id"])
                 cupon_codigo = _sess_cupon.get("codigo") or cupon_codigo
-        puntos_a_canjear = request.form.get("puntos_usar", 0, type=int)
         zona_id = request.form.get("zona_id", type=int)
         nombre_invitado = request.form.get("nombre_invitado", "").strip()[:100]
         telefono_invitado_raw = request.form.get("telefono_invitado", "")
@@ -1852,19 +1782,8 @@ def checkout():
             )
             return redirect(url_for("public.checkout"))
         telefono_invitado = _normalize_phone(telefono_invitado_raw)
-        # NIF opcional para factura fiscal a empresa (España). Vacío = B2C normal.
-        nif_invitado_raw = (request.form.get("nif_invitado") or "").strip()
-        nif_invitado = None
-        if nif_invitado_raw:
-            from fiscal_utils import normalizar_nif, nif_valido
-            nif_norm = normalizar_nif(nif_invitado_raw)
-            if not nif_valido(nif_norm):
-                flash("El NIF/DNI/NIE/CIF indicado no es válido. Déjalo en blanco si no lo necesitas.", "danger")
-                return redirect(url_for("public.checkout"))
-            nif_invitado = nif_norm
         codigo_afiliado_str = request.form.get("codigo_afiliado", "").strip().upper()
-        # Fallback a la sesión (igual que cupón): el afiliado aplicado
-        # desde el carrito se conserva si el form no lo reenvía.
+        # Fallback a la sesión (igual que cupón) ante recarga del checkout.
         if not codigo_afiliado_str:
             _sess_afil = session.get("cart_afiliado") or {}
             if _sess_afil.get("codigo"):
@@ -1957,7 +1876,7 @@ def checkout():
         # SQLAlchemyError puede aparecer si otro request creó al mismo cliente
         # a la vez (race condition en unique constraint sobre teléfono).
         try:
-            cliente = _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion, nif=nif_invitado)
+            cliente = _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion)
         except ValueError as exc:
             flash(str(exc), "danger")
             return redirect(url_for("public.checkout"))
@@ -2340,6 +2259,7 @@ def checkout():
                            origen_actual=origen,
                            establecimiento=establecimiento,
                            radio_entrega_km=radio_entrega_km,
+                           puntos_sesion=cart_puntos_sesion,
                            producto_canje_seleccionado=session.get("cart_producto_canje_id"))
 
 
