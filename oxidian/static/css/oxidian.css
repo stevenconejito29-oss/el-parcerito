@@ -6599,6 +6599,7 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
 }
 .ep-footer-links a:hover { color: var(--brand-primary,#FCD116) !important; }
 .ep-footer-wa-btn { min-height: 44px; display: inline-flex; align-items: center; gap: .5rem; padding: .55rem 1rem; border-radius: .7rem; background: color-mix(in srgb, var(--theme-success) 12%, transparent); color: var(--theme-success) !important; border: 1px solid color-mix(in srgb, var(--theme-success) 25%, transparent); font-size: .82rem; font-weight: 700; text-decoration: none; transition: background .15s; margin-bottom: .8rem; }
+.ep-footer-wa-btn > span { flex: 0 0 auto; min-width: 1.2em; }
 .ep-footer-wa-btn:hover { background: color-mix(in srgb, var(--theme-success) 20%, transparent); color: var(--theme-success) !important; }
 .ep-footer-note  { font-size: .78rem; color: rgba(255,255,255,.48) !important; margin: 0 0 .5rem; line-height: 1.55; }
 .ep-footer-legal { font-size: .7rem; color: rgba(255,255,255,.3) !important; line-height: 1.55; }
@@ -7101,7 +7102,7 @@ body.ox-body-public > .ox-pwa-sheet {
   position: static;
   inset: auto;
   z-index: auto;
-  animation: oxPwaIn .24s ease;
+  animation: none;
 }
 body.ox-body-public > .ox-pwa-sheet .ox-pwa-card,
 body.ox-body-public > .ox-push-prompt {
@@ -7109,6 +7110,7 @@ body.ox-body-public > .ox-push-prompt {
   background: color-mix(in srgb, var(--action-primary) 5%, var(--theme-surface));
   color: var(--theme-text);
   box-shadow: var(--shadow-1);
+  animation: none;
 }
 body.ox-body-public > .ox-pwa-sheet .ox-pwa-title,
 body.ox-body-public > .ox-push-prompt .ox-push-prompt-copy strong { color: var(--theme-text); }

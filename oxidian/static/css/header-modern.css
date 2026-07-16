@@ -147,7 +147,9 @@ body.ox-body-public .ox-header-public .ox-public-kicker {
   line-height: 1.1 !important;
   letter-spacing: .16em !important;
   text-transform: uppercase !important;
-  white-space: nowrap;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 body.ox-body-public .ox-public-status {
   display: inline-flex;
@@ -335,29 +337,22 @@ body.ox-body-public .ox-hdr-progress {
   left: 0;
   bottom: -2px;
   z-index: 3;
-  width: 0;
+  width: 100%;
   height: 2px;
   min-height: 2px !important;
   padding: 0 !important;
   background: linear-gradient(90deg, var(--brand-primary), var(--brand-accent), var(--brand-secondary));
   pointer-events: none;
-  transition: width .08s linear;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform .08s linear;
 }
 
 body.ox-body-public .ox-header-public.is-scrolled {
   box-shadow: 0 8px 24px color-mix(in srgb, var(--theme-text) 26%, transparent) !important;
 }
-body.ox-body-public .ox-header-public.is-scrolled .ox-public-header-inner {
-  min-height: 62px !important;
-  padding-top: 7px !important;
-  padding-bottom: 7px !important;
-}
-body.ox-body-public .ox-header-public.is-scrolled .ox-public-logo-frame {
-  width: 42px;
-  height: 42px;
-  flex-basis: 42px;
-}
-body.ox-body-public .ox-header-public.is-scrolled .ox-public-address { display: none !important; }
+/* El estado de scroll solo refuerza la sombra. Cambiar la altura del sticky
+   durante el gesto desplazaba todo el documento y producía tirones en iOS. */
 
 @media (max-width: 760px) {
   body.ox-body-public { scroll-padding-top: calc(70px + env(safe-area-inset-top, 0px)); }
@@ -723,13 +718,9 @@ body.ox-body-public .ep-grid > .ep-card {
   contain: layout paint style;
 }
 
-/* Cards siempre en su propia capa GPU para animaciones suaves */
-body.ox-body-public .ep-card,
-body.ox-body-public .ep-modal-overlay,
-body.ox-body-public .cr-item {
-  transform: translateZ(0);
-  backface-visibility: hidden;
-}
+/* Los overlays sí justifican una capa propia. Promover cada tarjeta del
+   catálogo agotaba memoria GPU y empeoraba el scroll en catálogos grandes. */
+body.ox-body-public .ep-modal-overlay { backface-visibility: hidden; }
 
 /* Aurora del bottom nav v2 — animation costosa en móviles low-end.
    La pausamos cuando no está en primer plano y respetamos reduced-motion */

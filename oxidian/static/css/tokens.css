@@ -45,10 +45,10 @@
      en <body style="..."> desde base.html y admin_base.html con los
      `COLOR_PRIMARIO/SECUNDARIO/ACENTO` de SiteConfig. Estos defaults
      solo se aplican si el contexto brand no llega (raro, ej. error). */
-  --brand-primary:           #F2B705;
+  --brand-primary:           #F4C542;
   --brand-primary-soft:      color-mix(in srgb, var(--brand-primary) 14%, transparent);
   --brand-primary-contrast:  var(--brand-on-primary, #1A1410);
-  --brand-secondary:         #D94F3D;
+  --brand-secondary:         #E85D3F;
   --brand-secondary-contrast:#FFFFFF;
   --brand-accent:            #147A55;
   --brand-accent-contrast:   #FFFFFF;
@@ -63,15 +63,15 @@
 
   /* Acciones: identidad visual e interacción son responsabilidades distintas.
      El primario puede seguir siendo dorado sin convertir toda acción en oro. */
-  --action-primary:          var(--brand-accent);
+  --action-primary:          var(--brand-secondary);
   --action-primary-soft:     color-mix(in srgb, var(--action-primary) 12%, transparent);
-  --action-on-primary:       var(--brand-on-accent, var(--brand-accent-contrast));
+  --action-on-primary:       var(--theme-text, var(--brand-primary-contrast));
 
   /* Navegación: fondo y texto proceden del mismo par configurable validado. */
   --navigation-surface:      var(--theme-header-bg, var(--col-surface));
   --navigation-text:         var(--theme-header-text, var(--col-text));
-  --navigation-active:       var(--action-primary);
-  --navigation-active-text:  var(--action-on-primary);
+  --navigation-active:       var(--brand-primary);
+  --navigation-active-text:  var(--brand-on-primary, var(--brand-primary-contrast));
 
   /* Elevación y movimiento. Los alias --shadow-* conservan compatibilidad
      con componentes existentes mientras toda la interfaz usa una escala. */

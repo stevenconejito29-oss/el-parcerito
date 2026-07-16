@@ -154,11 +154,10 @@
 </div>
 </section>
 {% elif productos_auto_destacados %}
-{% set _hay_ratings = productos_auto_destacados|selectattr('rating_promedio')|list|length > 0 %}
 <section class="ep-mc-destacados-wrap" aria-label="Recomendaciones automáticas">
   <div class="ep-mini-head">
-    <strong>{% if _hay_ratings %}⭐ Los favoritos del momento{% else %}🍽️ Nuestras estrellas{% endif %}</strong>
-    <span>{% if _hay_ratings %}Mejor valorados{% else %}Selección de la casa{% endif %}</span>
+    <strong>{% if auto_destacados_con_rating %}⭐ Los favoritos del momento{% else %}🍽️ Nuestras estrellas{% endif %}</strong>
+    <span>{% if auto_destacados_con_rating %}Mejor valorados{% else %}Selección de la casa{% endif %}</span>
   </div>
 <div class="ep-mc-destacados">
   {% for p in productos_auto_destacados %}
@@ -171,8 +170,8 @@
       {% endif %}
     </span>
     <span class="ep-mc-dest-info">
-      {% if p.rating_promedio and p.rating_promedio > 0 %}
-      <span class="ep-mc-dest-title">★ {{ "%.1f"|format(p.rating_promedio) }}</span>
+      {% if product_cards[p.id].rating > 0 %}
+      <span class="ep-mc-dest-title">★ {{ "%.1f"|format(product_cards[p.id].rating) }}</span>
       {% elif p.es_combo %}
       <span class="ep-mc-dest-title">🎁 Combo</span>
       {% elif p.categoria %}
@@ -569,20 +568,20 @@
     "combo_precio_base": {{ p.combo_precio_base|float if p.es_combo else 0 }},
     "tipo_entrega": {{ p.tipo_entrega|tojson }},
     "imagen_url": {{ (p.imagen_url|upload_url)|tojson }},
-    "stock": {{ stock_en_origen(p, origen_actual) }},
+    "stock": {{ product_cards[p.id].stock }},
     "stock_mostrar": {{ 'true' if p.stock_mostrar_en_web else 'false' }},
-    "disponible_directo": {{ 'true' if establecimiento.abierto and p.disponible_para_venta_en_origen(origen_actual) and p.tipo_entrega == 'inmediato' and not p.es_combo and p.extra_groups.filter_by(activo=True).count() == 0 else 'false' }},
+    "disponible_directo": {{ 'true' if establecimiento.abierto and product_cards[p.id].available and p.tipo_entrega == 'inmediato' and not p.es_combo and not product_cards[p.id].has_extras else 'false' }},
     "es_hipo": {{ 'true' if p.es_hipoalergenico else 'false' }},
     "solo_canje": {{ 'true' if p.solo_canje else 'false' }},
     "canjeable_con_puntos": {{ 'true' if p.canjeable_con_puntos else 'false' }},
     "puntos_para_canje": {{ (p.puntos_para_canje or 0)|int }},
     "alergenos": {{ p.alergenos_iconos|list|tojson }},
     "categoria": {{ (p.categoria.nombre if p.categoria else '')|tojson }},
-    "rating": {{ p.rating_promedio|float }},
+    "rating": {{ product_cards[p.id].rating|float }},
     "url": {{ url_for('public.producto_detalle', producto_id=p.id, origen=origen_actual)|tojson }},
     "add_url": {{ url_for('public.agregar_carrito', producto_id=p.id)|tojson }},
-    "combo_preview": [{% if p.es_combo %}{% for ci in p.combo_items.all()[:5] %}{{ {"nombre": ci.componente.nombre, "qty": ci.cantidad, "sel": ci.es_seleccionable, "grupo": ci.grupo_display, "extra": ci.precio_extra_float}|tojson }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %}],
-    "presentaciones": [{% for pr in p.presentaciones if pr.activo %}{{ {"tamaño": pr.tamaño, "extra": pr.precio_extra_float, "orden": pr.orden}|tojson }}{% if not loop.last %},{% endif %}{% endfor %}]
+    "combo_preview": [{% if p.es_combo %}{% for ci in product_cards[p.id].combo_items[:5] %}{{ {"nombre": ci.componente.nombre, "qty": ci.cantidad, "sel": ci.es_seleccionable, "grupo": ci.grupo_display, "extra": ci.precio_extra_float}|tojson }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %}],
+    "presentaciones": [{% for pr in product_cards[p.id].presentations %}{{ {"tamaño": pr.tamaño, "extra": pr.precio_extra_float, "orden": pr.orden}|tojson }}{% if not loop.last %},{% endif %}{% endfor %}]
   }{% if not loop.last %},{% endif %}
 {% else %}
   "__empty": true

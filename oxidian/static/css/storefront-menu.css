@@ -2309,7 +2309,7 @@ body.ox-body-public .ep-menu-config-message a{color:#8a5900}
   background: var(--flag-blue);
   z-index: -1;
   opacity: 0;
-  animation: floatGlow 2.6s ease-in-out infinite;
+  transition: opacity var(--motion-base) var(--ease-standard);
 }
 @keyframes floatGlow {
   0%,100% { opacity: 0;    transform: scale(1); }
@@ -2327,13 +2327,18 @@ body.ox-body-public .ep-menu-config-message a{color:#8a5900}
   top: -30%; left: -80%;
   width: 55%; height: 160%;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,.32), transparent);
-  animation: badgeShimmer 3s ease-in-out infinite;
+  transform: translateX(-150%);
+  transition: transform .55s var(--ease-standard);
   pointer-events: none;
 }
 @keyframes badgeShimmer {
   0%,72%,100% { left: -80%; opacity: 0; }
   10%         { opacity: 1; }
   60%         { left: 130%; opacity: 0; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .ep-float-cart:hover::before { opacity: .16; }
+  .ep-promo-rule:hover .ep-promo-rule-badge::after { transform: translateX(380%); }
 }
 
 /* ── Banner slides: hover micro-lift ── */
@@ -2409,7 +2414,7 @@ body.ox-body-public .ep-menu-config-message a{color:#8a5900}
    VISUAL v3 — Grain, Parallax, CTA, Scroll-reveal
    ════════════════════════════════════════════════════════════════ */
 
-/* ── Animated film-grain on hero (both variants) ── */
+/* Textura estática: conserva profundidad sin repintar el hero cada 500 ms. */
 @media (prefers-reduced-motion: no-preference) {
   .ep-hero:not(.ep-hero-photo)::before {
     background:
@@ -2418,20 +2423,12 @@ body.ox-body-public .ep-menu-config-message a{color:#8a5900}
       radial-gradient(ellipse 55% 65% at 95% 5%, color-mix(in srgb, var(--brand-primary) 18%, transparent), transparent 50%);
     background-size: 256px 256px, cover, cover;
     opacity: .06;
-    animation: heroGrain .5s steps(1) infinite;
   }
   .ep-hero-photo::before {
     background:
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.88' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23n)' opacity='.9'/%3E%3C/svg%3E") repeat;
     background-size: 256px 256px;
     opacity: .048;
-    animation: heroGrain .5s steps(1) infinite;
-  }
-  @keyframes heroGrain {
-    0%   { background-position: 0      0,      0 0, 0 0; }
-    25%  { background-position: -22px  -9px,  -22px -9px, -22px -9px; }
-    50%  { background-position:  12px  17px,   12px  17px,  12px  17px; }
-    75%  { background-position: -9px   12px,  -9px   12px, -9px   12px; }
   }
 }
 
@@ -2475,14 +2472,13 @@ body.ox-body-public .ep-menu-config-message a{color:#8a5900}
   background: var(--theme-success, #4ADE80);
   box-shadow: 0 0 0 3px rgba(74,222,128,.22);
   flex-shrink: 0;
-  animation: pulseDot 2s infinite;
   display: inline-block;
 }
 
 /* ── Hero title: crisper ── */
 .ep-hero-title {
   font-size: clamp(1.6rem, 6vw, 2.35rem);
-  line-height: 1.06;
+  line-height: 1.14;
   letter-spacing: -.04em;
   margin-bottom: .4rem;
 }
@@ -2543,7 +2539,7 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
   right: -60px;
   pointer-events: none;
   z-index: 0;
-  animation: orbDrift 8s ease-in-out infinite alternate;
+  transform: translate(-8px, 6px) scale(1.04);
 }
 @keyframes orbDrift {
   from { transform: translate(0, 0) scale(1); }
@@ -2617,16 +2613,33 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
   }
 }
 
-/* Producción: el catálogo debe mostrarse siempre completo. La animación de
-   scroll-reveal dejaba tarjetas offscreen invisibles si el observer tardaba o
-   si se generaban capturas full-page. */
+/* Render diferido nativo: las tarjetas siguen en el DOM y son buscables, pero
+   el navegador no pinta las que están lejos del viewport. En catálogos largos
+   evita trabajo y memoria sin introducir paginación ni alterar filtros. */
 .ep-grid .ep-card {
   opacity: 1 !important;
   transform: none !important;
   animation: none !important;
-  content-visibility: visible !important;
-  contain: none !important;
-  contain-intrinsic-size: auto !important;
+  content-visibility: auto !important;
+  contain: layout paint style !important;
+  contain-intrinsic-size: auto 320px !important;
+}
+.ep-grid .ep-card-name,
+.ep-grid .ep-card-desc,
+.ep-grid .ep-card-combo-copy {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+  -webkit-line-clamp: unset;
+}
+.ep-grid .ep-card-name,
+.ep-grid .ep-card-desc,
+.ep-grid .ep-card-combo-copy { display: block; }
+.ep-grid .ep-card-prices { flex-wrap: wrap; }
+.ep-grid .ep-card-price-note {
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .ep-card-img {
   min-height: 132px;
@@ -2638,6 +2651,60 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
   .ep-card-combo .ep-card-img {
     min-height: 190px;
   }
+}
+
+/* Menú móvil vertical: una tarjeta legible por fila. La antigua rejilla de
+   dos columnas dejaba apenas 150 px de ancho útil y recortaba descripciones,
+   combos, precios y acciones. El formato horizontal aprovecha mejor la altura
+   sin ocultar información y mantiene targets táctiles de 44 px. */
+@media (max-width: 560px) and (orientation: portrait) {
+  .ep-grid { grid-template-columns: minmax(0, 1fr); gap: .72rem; }
+  .ep-card,
+  .ep-card-combo {
+    display: grid;
+    grid-template-columns: clamp(104px, 31vw, 132px) minmax(0, 1fr);
+    min-height: 168px;
+  }
+  .ep-card .ep-card-img,
+  .ep-card-combo .ep-card-img {
+    width: 100%;
+    height: 100%;
+    min-height: 168px;
+    aspect-ratio: auto;
+    border-radius: .85rem 0 0 .85rem;
+  }
+  .ep-card-body,
+  .ep-card-combo .ep-card-body { min-width: 0; padding: .7rem; }
+  .ep-card-name,
+  .ep-card-desc,
+  .ep-card-combo-copy,
+  .ep-card-auto-promo {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+    -webkit-line-clamp: unset;
+  }
+  .ep-card-desc { display: block; line-height: 1.38; }
+  .ep-card-combo-copy { display: block; }
+  .ep-card-footer { flex-wrap: wrap; gap: .45rem; }
+  .ep-card-prices { flex: 1 1 88px; }
+  .ep-btn-detail { max-width: none; white-space: normal; text-align: center; }
+  .ep-card-sizes { flex-basis: 100%; }
+}
+
+@media (max-width: 350px) and (orientation: portrait) {
+  .ep-card,
+  .ep-card-combo { grid-template-columns: 96px minmax(0, 1fr); }
+  .ep-card-body,
+  .ep-card-combo .ep-card-body { padding: .6rem; }
+  .ep-cbadge-fulfillment { max-width: 100%; padding-inline: 3px; font-size: .44rem; }
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .ep-hero-label,
+  .ep-hero-cta,
+  .ep-trust { backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
 
 /* ── Category active pill: glow underline indicator ── */

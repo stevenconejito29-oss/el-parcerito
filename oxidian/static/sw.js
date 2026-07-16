@@ -1,12 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════
-   Oxidian — Service Worker v50
+   Oxidian — Service Worker v51
    • Assets propios CSS/JS/IMG: network-first + fallback cacheado
    • HTML público y datos de sesión: network-only
    • API / Admin       : Network-only (nunca cachear dinámico)
    • Push Notifications: Muestra notificaciones + abre URL al click
    ═══════════════════════════════════════════════════════════════ */
 
-const CACHE_STATIC = "ox-static-v50";
+const CACHE_STATIC = "ox-static-v51";
 const CACHE_PREFIX = "ox-";
 
 const PRECACHE = [
@@ -71,7 +71,7 @@ function offlineResponse() {
   return new Response(
     `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#F2B705">
+<meta name="theme-color" content="#F4C542">
 <title>Sin conexión</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -81,7 +81,7 @@ min-height:100dvh;padding:2rem;text-align:center;gap:1rem}
 .icon{font-size:3.5rem}.title{font-size:1.35rem;font-weight:900}
 p{font-size:.95rem;color:#6B5A4E;max-width:340px;line-height:1.5}
 a,button{min-height:44px;padding:.75rem 1.5rem;border-radius:.875rem;border:0;
-background:#F2B705;color:#1B0A00;font-weight:800;font-size:1rem;text-decoration:none}
+background:#F4C542;color:#2B2118;font-weight:800;font-size:1rem;text-decoration:none}
 </style></head><body>
 <div class="icon">📡</div>
 <p class="title">Sin conexión</p>

@@ -18,7 +18,7 @@
       header.classList.toggle('is-scrolled', y > 18);
       if (!progress) return;
       var max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      progress.style.width = (max ? Math.min(100, (y / max) * 100) : 0) + '%';
+      progress.style.transform = 'scaleX(' + (max ? Math.min(1, y / max) : 0) + ')';
     }
 
     function queueUpdate() {

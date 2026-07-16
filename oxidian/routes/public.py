@@ -55,6 +55,7 @@ from store_config import (
     get_service_commission,
     is_service_mode,
 )
+from catalog_projection import build_catalog_projection
 
 public_bp = Blueprint("public", __name__)
 
@@ -465,10 +466,26 @@ def _render_catalogo(origen, proveedor=None):
         _q_norm = _strip_accents(busqueda)
         if _q_norm:
             todos = [p for p in todos if _q_norm in _strip_accents(p.nombre or "")]
-    productos_catalogo = [
-        p for p in todos
-        if _producto_disponible_en_origen(p, origen)
-    ]
+    projection = build_catalog_projection(todos, origen)
+    store_features = get_store_features()
+    active_vertical = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
+
+    def catalog_eligible(product):
+        if not projection[product.id].available:
+            return False
+        if (product.vertical or "").strip().lower() != active_vertical:
+            return False
+        if _delivery_family(product) == "programado" and not store_features.get("pedidos_programados", False):
+            return False
+        if _programmed_date_expired(product):
+            return False
+        modes = _product_fulfillment_modes(product)
+        return bool(
+            ("delivery" in modes and store_features.get("delivery", False))
+            or ("recogida" in modes and store_features.get("recogida", False))
+        )
+
+    productos_catalogo = [product for product in todos if catalog_eligible(product)]
     categoria_counts = {}
     for producto in productos_catalogo:
         if producto.categoria_id:
@@ -501,7 +518,8 @@ def _render_catalogo(origen, proveedor=None):
             and item.producto.activo
             and item.producto.visible_ahora
             and item.producto.pertenece_a_origen(origen)
-            and item.producto.disponible_para_venta_en_origen(origen)
+            and projection.get(item.producto.id)
+            and catalog_eligible(item.producto)
         )
     ]
     todas_resenas = Review.query.filter_by(aprobada=True).all()
@@ -534,15 +552,15 @@ def _render_catalogo(origen, proveedor=None):
                 p for p in productos
                 if p.activo
                 and not getattr(p, "solo_canje", False)
-                and p.disponible_para_venta_en_origen(origen)
+                and catalog_eligible(p)
             ]
             # Primer intento: top por rating con reviews aprobadas.
-            con_rating = [p for p in _candidatos if (p.rating_promedio or 0) > 0]
+            con_rating = [p for p in _candidatos if projection[p.id].rating > 0]
             if con_rating:
                 productos_auto_destacados = sorted(
                     con_rating,
                     key=lambda p: (
-                        -float(p.rating_promedio or 0),
+                        -projection[p.id].rating,
                         -float(p.precio_final or 0),
                     ),
                 )[:3]
@@ -565,6 +583,10 @@ def _render_catalogo(origen, proveedor=None):
                            busqueda=busqueda,
                            menu_items=menu_items,
                            productos_auto_destacados=productos_auto_destacados,
+                           auto_destacados_con_rating=any(
+                               projection[product.id].rating > 0
+                               for product in productos_auto_destacados
+                           ),
                            resenas_recientes=resenas_recientes,
                            zona_principal=zona_principal,
                            carrito=carrito,
@@ -575,7 +597,7 @@ def _render_catalogo(origen, proveedor=None):
                            establecimiento=establecimiento,
                            bares=bares,
                            proveedor_actual=proveedor,
-                           stock_en_origen=_stock_en_origen,
+                           product_cards=projection,
                            fulfillment_badge=_product_fulfillment_badge)
 
 
