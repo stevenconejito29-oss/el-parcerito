@@ -47,9 +47,12 @@ class BrandColorPipelineTest(unittest.TestCase):
 
     def test_default_brand_primary_es_hex_valido(self):
         p = self._brand_snapshot()
-        # El schema define el default como amarillo Parcerito.
-        self.assertTrue(p["color_primario"].startswith("#"))
-        self.assertEqual(len(p["color_primario"]), 7)
+        # Identidad colombiana sobria: amarillo dominante, rojo y azul como
+        # acentos; se verifica la fuente central y no estilos aislados.
+        self.assertEqual(p["color_primario"].upper(), "#F4C542")
+        self.assertEqual(p["color_secundario"].upper(), "#DA4D40")
+        self.assertEqual(p["color_acento"].upper(), "#245A9A")
+        self.assertEqual(p["theme"]["cabecera_fondo"].upper(), "#162A46")
 
     def test_cambiar_COLOR_PRIMARIO_se_refleja_en_snapshot(self):
         SiteConfig.set("COLOR_PRIMARIO", "#FF0000")

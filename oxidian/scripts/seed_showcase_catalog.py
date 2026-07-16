@@ -246,8 +246,8 @@ def replace_catalog() -> dict:
     ))
 
     SiteConfig.set("COLOR_PRIMARIO", "#F4C542")
-    SiteConfig.set("COLOR_SECUNDARIO", "#E85D3F")
-    SiteConfig.set("COLOR_ACENTO", "#147A55")
+    SiteConfig.set("COLOR_SECUNDARIO", "#DA4D40")
+    SiteConfig.set("COLOR_ACENTO", "#245A9A")
     SiteConfig.set("PWA_VERSION", today.isoformat())
 
     db.session.commit()

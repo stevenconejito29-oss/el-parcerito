@@ -48,9 +48,9 @@
   --brand-primary:           #F4C542;
   --brand-primary-soft:      color-mix(in srgb, var(--brand-primary) 14%, transparent);
   --brand-primary-contrast:  var(--brand-on-primary, #1A1410);
-  --brand-secondary:         #E85D3F;
+  --brand-secondary:         #DA4D40;
   --brand-secondary-contrast:#FFFFFF;
-  --brand-accent:            #147A55;
+  --brand-accent:            #245A9A;
   --brand-accent-contrast:   #FFFFFF;
 
   /* Tintas de marca/estado para texto sobre superficies. Un color apto como
