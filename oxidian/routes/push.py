@@ -6,22 +6,65 @@ Rutas Web Push — suscripción, baja y clave pública VAPID.
   POST /api/push/unsubscribe   → elimina una suscripción
   POST /api/push/test          → envía notificación de prueba (solo admin)
 """
+import ipaddress
+import re
+from urllib.parse import urlsplit
+
 from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
 from extensions import db
 from models import PushSubscription, utcnow
 
 push_bp = Blueprint("push", __name__)
+_WEB_PUSH_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+={0,2}$")
+
+
+def _validate_subscription(endpoint: str, p256dh: str, auth_key: str) -> str | None:
+    """Valida forma y destino sin restringir proveedores Web Push legítimos."""
+    if len(endpoint) > 4096 or len(p256dh) > 512 or len(auth_key) > 256:
+        return "Suscripción demasiado larga"
+    parsed = urlsplit(endpoint)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        return "El endpoint push debe usar HTTPS"
+    hostname = parsed.hostname.rstrip(".").lower()
+    if hostname == "localhost" or hostname.endswith((".localhost", ".local", ".internal")):
+        return "Endpoint push no permitido"
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        address = None
+    if address is not None and not address.is_global:
+        return "Endpoint push no permitido"
+    if not _WEB_PUSH_KEY_RE.fullmatch(p256dh) or not _WEB_PUSH_KEY_RE.fullmatch(auth_key):
+        return "Claves push inválidas"
+    return None
 
 
 @push_bp.route("/vapid-key")
 def vapid_key():
     """Clave pública VAPID para que el frontend suscriba al usuario."""
-    from push_service import get_vapid_public_key
+    from push_service import get_vapid_public_key, vapid_configuration_error
     key = get_vapid_public_key()
-    if not key:
+    if not key or vapid_configuration_error():
         return jsonify({"ok": False, "error": "VAPID no configurado"}), 503
     return jsonify({"ok": True, "public_key": key})
+
+
+@push_bp.route("/status")
+def status():
+    """Diagnóstico seguro: nunca expone endpoints ni claves del dispositivo."""
+    from push_service import vapid_configuration_error
+
+    user_id = current_user.id if current_user.is_authenticated else session.get("push_cliente_id")
+    active_devices = 0
+    if user_id:
+        active_devices = PushSubscription.query.filter_by(user_id=user_id, activo=True).count()
+    return jsonify({
+        "ok": True,
+        "configured": not vapid_configuration_error(),
+        "eligible": bool(user_id),
+        "active_devices": active_devices,
+    })
 
 
 @push_bp.route("/subscribe", methods=["POST"])
@@ -34,6 +77,9 @@ def subscribe():
 
     if not endpoint or not p256dh or not auth_key:
         return jsonify({"ok": False, "error": "Suscripción incompleta"}), 400
+    validation_error = _validate_subscription(endpoint, p256dh, auth_key)
+    if validation_error:
+        return jsonify({"ok": False, "error": validation_error}), 400
 
     user_id = current_user.id if current_user.is_authenticated else session.get("push_cliente_id")
     if not user_id:

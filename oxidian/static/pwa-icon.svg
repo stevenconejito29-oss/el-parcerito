@@ -1,9 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0D0A08"/>
-  <path d="M0 0h512v184H0z" fill="#FFC200"/>
-  <path d="M0 184h512v104H0z" fill="#003087"/>
-  <path d="M0 288h512v224H0z" fill="#CE1126"/>
-  <circle cx="256" cy="256" r="142" fill="#1A1410" stroke="#FFF3E8" stroke-width="18"/>
-  <path d="M155 274c8-63 54-109 107-109 56 0 98 45 98 104 0 47-42 83-102 83-48 0-91-29-103-78z" fill="#FFC200"/>
-  <path d="M187 268c19 28 49 43 83 43 25 0 48-8 66-22" fill="none" stroke="#3D1F00" stroke-width="18" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Empanada</title>
+  <desc id="desc">Icono de una empanada dorada sobre un fondo cálido</desc>
+  <defs>
+    <linearGradient id="bg" x1="80" y1="48" x2="432" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF2A8"/>
+      <stop offset=".5" stop-color="#F4C542"/>
+      <stop offset="1" stop-color="#E99A1A"/>
+    </linearGradient>
+    <linearGradient id="dough" x1="160" y1="150" x2="360" y2="365" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF4B9"/>
+      <stop offset=".46" stop-color="#F6C95D"/>
+      <stop offset="1" stop-color="#DF8612"/>
+    </linearGradient>
+    <filter id="shadow" x="92" y="100" width="336" height="326" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="18" stdDeviation="16" flood-color="#4B2100" flood-opacity=".26"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <path d="M0 392h512v120H0z" fill="#CE1126" opacity=".94"/>
+  <path d="M0 346h512v46H0z" fill="#144C9A" opacity=".96"/>
+  <g filter="url(#shadow)">
+    <path d="M103 245Q256 76 409 245q-12 151-153 168Q115 396 103 245Z" fill="url(#dough)" stroke="#5B2B08" stroke-width="16" stroke-linejoin="round"/>
+    <path d="M124 247Q256 108 388 247" fill="none" stroke="#6A3208" stroke-width="15" stroke-linecap="round"/>
+    <path d="M137 233q11 22 24 0m7-29q12 20 25-2m10-20q13 18 27-2m12-5q14 17 28 0m12 5q14 20 27 2m10 20q13 22 25 2m7 29q13 22 24 0" fill="none" stroke="#FFF1A8" stroke-width="11" stroke-linecap="round"/>
+    <path d="M159 318c25 38 60 56 105 56 39 0 73-13 98-42" fill="none" stroke="#FFF7CD" stroke-width="13" stroke-linecap="round" opacity=".72"/>
+  </g>
 </svg>

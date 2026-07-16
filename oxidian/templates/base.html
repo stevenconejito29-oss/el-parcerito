@@ -18,6 +18,10 @@
   <meta name="msapplication-tap-highlight" content="no">
   <meta name="msapplication-TileColor" content="{{ brand.color_primario }}">
   <meta name="msapplication-navbutton-color" content="{{ brand.color_primario }}">
+  <meta name="ox-pwa-mode" content="public">
+  <meta name="ox-push-eligible" content="{{ '1' if session.get('push_cliente_id') else '0' }}">
+  <meta name="ox-cart-count" content="{{ session.get('carrito', {})|length }}">
+  <meta name="ox-csrf-token" content="{{ csrf_token() }}">
 
   {# SEO básico #}
   <meta name="description" content="{{ brand.nombre }}{% if brand.slogan %} — {{ brand.slogan }}{% elif brand.descripcion %} — {{ brand.descripcion }}{% elif brand.delivery %} — Haz tu pedido online con entrega o recogida.{% else %} — Haz tu pedido online para recoger.{% endif %}">
@@ -298,7 +302,7 @@
     <button type="button" class="ox-pwa-close" data-pwa-dismiss aria-label="{{ ui.close }}">×</button>
     <div class="ox-pwa-icon">
       {% if _app_icon %}<img src="{{ _app_icon }}" alt="{{ brand.nombre }} icon">
-      {% else %}<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m8 22 4-10 4 10"/></svg>{% endif %}
+      {% else %}<img src="{{ url_for('static', filename='pwa-icon.svg') }}" alt="Icono de empanada">{% endif %}
     </div>
     <div class="ox-pwa-copy"><p class="ox-pwa-title">{{ brand.nombre }}</p><p class="ox-pwa-text">{{ ui.pwa_description }}</p></div>
     <button type="button" class="ox-pwa-action" data-pwa-install><span class="ox-install-text">{{ ui.pwa_install }}</span></button>
@@ -597,278 +601,6 @@ document.querySelectorAll('form[data-ox-validate]').forEach(form => {
   form.addEventListener('submit', e => { let v=true; fields.forEach(el=>{if(!mark(el))v=false;}); if(!v)e.preventDefault(); });
 });
 
-let oxDeferredInstallPrompt = null;
-const oxInstallButtons = () => document.querySelectorAll('[data-pwa-install]');
-const oxIsStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-const oxIsInAppBrowser = () => /Instagram|FBAN|FBAV|Line\/|TikTok|Twitter/i.test(navigator.userAgent);
-const oxPwaSheet = () => document.getElementById('ox-pwa-sheet');
-const oxCanSuggestInstall = () => {
-  if (oxIsStandalone()) return false;
-  // No confiamos en una marca persistente de `appinstalled`: al desinstalar una
-  // PWA iOS/Android conserva a veces el localStorage y el botón desaparecía para
-  // siempre. El modo standalone es la única señal fiable disponible en web.
-  const dismissed = parseInt(localStorage.getItem('oxPwaDismissedAt') || '0', 10);
-  if (dismissed && (Date.now() - dismissed) < 7 * 86400 * 1000) return false;
-  return true;
-};
-function oxHideInstallButtons() {
-  oxInstallButtons().forEach(btn => {
-    btn.hidden = true;
-    btn.classList.add('ox-pwa-installed');
-  });
-  document.body.classList.remove('ox-install-visible');
-  oxPwaSheet()?.setAttribute('hidden', '');
-}
-function oxShowInstallButtons() {
-  if (oxIsStandalone()) {
-    oxHideInstallButtons();
-    return;
-  }
-  oxInstallButtons().forEach(btn => {
-    btn.hidden = false;
-    btn.classList.remove('ox-pwa-installed');
-  });
-  document.body.classList.add('ox-install-visible');
-}
-function oxShowInstallSheet(auto = false, force = false) {
-  // `auto` = disparado por lógica automática (timer, in-app, iOS).
-  // `force` = clic explícito del usuario. Ignora dismissedAt para responder.
-  if (!force && !oxCanSuggestInstall()) return;
-  const sheet = oxPwaSheet();
-  if (!sheet) return;
-  sheet.hidden = false;
-  if (auto) sheet.classList.add('is-soft');
-  else sheet.classList.remove('is-soft');
-}
-function oxDismissInstallSheet() {
-  localStorage.setItem('oxPwaDismissedAt', Date.now().toString());
-  oxPwaSheet()?.setAttribute('hidden', '');
-}
-function oxSetInstallState(label, disabled = false) {
-  oxInstallButtons().forEach(btn => {
-    btn.disabled = disabled;
-    const text = btn.querySelector('.ox-install-text') || btn.querySelector('span:last-child');
-    if (text) text.textContent = label;
-  });
-}
-oxShowInstallButtons();
-if (oxIsInAppBrowser() && oxCanSuggestInstall()) {
-  document.documentElement.classList.add('ox-webview');
-  const installCopy = document.querySelector('.ox-pwa-text');
-  if (installCopy) installCopy.textContent = OX_UI.pwa_inapp_instruction;
-  oxSetInstallState(OX_UI.pwa_inapp_action, false);
-  window.addEventListener('load', () => {
-    setTimeout(() => oxShowInstallSheet(true), 2200);
-  }, { once: true });
-} else if (/iphone|ipad|ipod/i.test(navigator.userAgent) && oxCanSuggestInstall()) {
-  const installCopy = document.querySelector('.ox-pwa-text');
-  if (installCopy) installCopy.textContent = OX_UI.pwa_ios_instruction;
-  oxSetInstallState(OX_UI.pwa_ios_action, false);
-  window.addEventListener('load', () => {
-    setTimeout(() => oxShowInstallSheet(true), 2200);
-  }, { once: true });
-}
-window.addEventListener('beforeinstallprompt', event => {
-  event.preventDefault();
-  oxDeferredInstallPrompt = event;
-  oxShowInstallButtons();
-  oxSetInstallState(OX_UI.pwa_install, false);
-  setTimeout(() => oxShowInstallSheet(true), 1800);
-});
-window.addEventListener('appinstalled', () => {
-  oxDeferredInstallPrompt = null;
-  localStorage.setItem('oxPwaInstalled', '1');
-  oxHideInstallButtons();
-});
-// Handler DELEGADO al documento: funciona con cualquier botón data-pwa-install
-// aunque se cree dinámicamente. Cierra el info-sheet si el clic viene desde ahí.
-document.addEventListener('click', async (ev) => {
-  const btn = ev.target.closest('[data-pwa-install]');
-  if (!btn) return;
-  ev.preventDefault();
-  ev.stopPropagation();
-  // Si el clic viene de dentro del info-sheet, cerrarlo primero para que
-  // el sheet PWA (con instrucciones iOS o el prompt nativo) quede visible.
-  if (btn.closest('#ox-info-sheet')) {
-    document.getElementById('ox-info-sheet')?.setAttribute('hidden', '');
-  }
-  // 1) Ya está instalada → ocultar botones y guardar flag.
-  if (oxIsStandalone()) {
-    localStorage.setItem('oxPwaInstalled', '1');
-    oxHideInstallButtons();
-    return;
-  }
-  // 2) Android/Chromium con prompt nativo capturado → mostrarlo.
-  if (oxDeferredInstallPrompt) {
-    try {
-      oxDeferredInstallPrompt.prompt();
-      await oxDeferredInstallPrompt.userChoice;
-    } catch (_) {}
-    oxDeferredInstallPrompt = null;
-    oxDismissInstallSheet();
-    return;
-  }
-  // 3) iOS / Safari / navegadores sin beforeinstallprompt → abrir sheet con
-  //    instrucciones específicas (add to home screen). Siempre mostramos algo
-  //    para que el usuario NUNCA se quede sin feedback.
-  oxShowInstallSheet(false, true /* force */);
-}, { capture: false });
-document.querySelectorAll('[data-pwa-dismiss]').forEach(btn => {
-  btn.addEventListener('click', oxDismissInstallSheet);
-});
-if ('serviceWorker' in navigator) {
-  const oxEnsureSwUpdate = async (reg) => {
-    try {
-      await reg.update();
-      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-    } catch (e) {}
-  };
-
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).then(reg => {
-      oxEnsureSwUpdate(reg);
-      reg.addEventListener('updatefound', () => {
-        const worker = reg.installing;
-        worker?.addEventListener('statechange', () => {
-          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
-            worker.postMessage({ type: 'SKIP_WAITING' });
-          }
-        });
-      });
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') oxEnsureSwUpdate(reg);
-      });
-      setInterval(() => oxEnsureSwUpdate(reg), 5 * 60 * 1000);
-    }).catch(() => {});
-  });
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    sessionStorage.setItem('oxSwUpdated', '1');
-    // Autorecarga cuando el usuario NO está haciendo algo importante.
-    // Reglas de bloqueo (nunca recargar):
-    //  - ruta crítica: /checkout, /carrito, /puntos, /pedido-confirmado
-    //  - formularios con cambios (excluyendo hidden/CSRF)
-    //  - modales abiertos
-    //  - la SPA está navegando ahora mismo
-    //  - hay una request en curso (usamos fetch counter)
-    var _rutasCriticas = /^\/(checkout|carrito|puntos|pedido|confirmar|entrega|cliente\/|login|mfa)/i;
-    var recargarSiSeguro = function () {
-      // Nunca en primer plano — esperar a que la tab se oculte para no interrumpir
-      if (document.visibilityState === 'visible') return;
-      // Nunca en rutas críticas — el usuario podría estar cerrando un pedido
-      if (_rutasCriticas.test(location.pathname)) return;
-      // Nunca si la SPA está navegando (fade activo)
-      if (document.body.classList.contains('is-navigating')) return;
-      // Nunca si hay formularios con cambios (excluye hidden y CSRF tokens)
-      var forms = document.querySelectorAll('form');
-      var hayCambios = false;
-      forms.forEach(function (f) {
-        f.querySelectorAll('input, textarea, select').forEach(function (el) {
-          if (el.type === 'hidden' || el.readOnly || el.disabled) return;
-          if (el.name === 'csrf_token') return;
-          if ((el.value || '') !== (el.defaultValue || '')) hayCambios = true;
-        });
-      });
-      if (hayCambios) return;
-      // Modales abiertos (dialog, ep-modal, oa-modal, admin-modal)
-      if (document.querySelector('[role="dialog"]:not([hidden]), .ep-modal-overlay:not([hidden]), .oa-modal:not([hidden]), .admin-modal:not([hidden])')) return;
-      location.reload();
-    };
-    // Intento al ocultar tab (más seguro que inmediato)
-    document.addEventListener('visibilitychange', function () {
-      if (document.visibilityState === 'hidden') setTimeout(recargarSiSeguro, 300);
-    });
-  });
-}
-
-// ── Web Push: suscribir al usuario ────────────────────────────────────────
-async function oxSubscribePush(registration) {
-  if (!('PushManager' in window)) return false;
-  if (Notification.permission === 'denied') return false;
-  // No pedir permiso automáticamente la primera vez; esperar gesto del usuario
-  if (Notification.permission !== 'granted') return false;
-  try {
-    const keyResp = await fetch('/api/push/vapid-key');
-    if (!keyResp.ok) return;
-    const { public_key } = await keyResp.json();
-    if (!public_key) return;
-    const sub = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: _urlB64ToUint8Array(public_key),
-    });
-    const response = await fetch('/api/push/subscribe', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': '{{ csrf_token() }}',
-      },
-      body: JSON.stringify(sub.toJSON()),
-    });
-    return response.ok;
-  } catch (e) { return false; }
-}
-
-function _urlB64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
-}
-
-// ── Pedir permiso push (llamado desde un botón visible) ───────────────────
-window.oxRequestPushPermission = async function() {
-  if (!('Notification' in window)) return false;
-  const perm = await Notification.requestPermission();
-  if (perm === 'granted') {
-    const reg = await navigator.serviceWorker.ready;
-    return await oxSubscribePush(reg);
-  }
-  return false;
-};
-
-// ── Activar notificaciones desde el prompt ───────────────────────────────
-window.oxActivarPush = async function(btn) {
-  btn.disabled = true;
-  btn.textContent = '…';
-  const ok = await window.oxRequestPushPermission();
-  if (ok) {
-    btn.textContent = OX_UI.pwa_notifications_active;
-    btn.disabled = true;
-    document.getElementById('ox-push-prompt')?.remove();
-  } else {
-    btn.disabled = false;
-    btn.textContent = OX_UI.pwa_push_action;
-  }
-};
-
-window.oxDismissPushPrompt = function() {
-  localStorage.setItem('oxPushDismissedAt', Date.now().toString());
-  document.getElementById('ox-push-prompt')?.remove();
-};
-
-window.oxPrepareAppStorage = async function(btn) {
-  const status = document.getElementById('ox-app-tools-status');
-  btn.disabled = true;
-  try {
-    const persistent = navigator.storage?.persist ? await navigator.storage.persist() : false;
-    if (status) status.textContent = persistent
-      ? OX_UI.pwa_storage_persisted
-      : OX_UI.pwa_storage_available;
-  } catch (_) {
-    if (status) status.textContent = OX_UI.pwa_storage_managed;
-  } finally {
-    btn.disabled = false;
-  }
-};
-
-// Acciones PWA compatibles con CSP. Los atributos onclick quedan bloqueados
-// por strict-dynamic en navegadores modernos aunque el control sea visible.
-document.addEventListener('click', function(event) {
-  const push = event.target.closest('[data-push-activate]');
-  if (push) { window.oxActivarPush(push); return; }
-  if (event.target.closest('[data-push-dismiss]')) { window.oxDismissPushPrompt(); return; }
-  const storage = event.target.closest('[data-storage-prepare]');
-  if (storage) window.oxPrepareAppStorage(storage);
-});
 
 // Fallback de imágenes declarativo y compartido. `error` no burbujea, por
 // eso se escucha en captura desde un único punto compatible con CSP.
@@ -885,27 +617,8 @@ document.addEventListener('error', function(event) {
   }
 }, true);
 
-// ── Mostrar push prompt si el permiso es 'default' ───────────────────────
-(function () {
-  const el = document.getElementById('ox-push-prompt');
-  if (!el) return;
-  if (!('Notification' in window) || Notification.permission !== 'default') { el.remove(); return; }
-  const dismissed = Number.parseInt(localStorage.getItem('oxPushDismissedAt') || '0', 10);
-  if (dismissed && Date.now() - dismissed < 7 * 86400 * 1000) { el.remove(); return; }
-  // Mostrar tras 6 s, bien separado del install prompt (1.8 s) para no solapar
-  setTimeout(() => { el.hidden = false; }, 6000);
-})();
-
-// ── App Badge: refleja el número de productos en carrito ─────────────────
-(function () {
-  if (!('setAppBadge' in navigator)) return;
-  const n = {{ session.get('carrito', {})|length }};
-  try {
-    if (n > 0) navigator.setAppBadge(n);
-    else navigator.clearAppBadge();
-  } catch (_) {}
-})();
 </script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/pwa-manager.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/storefront-viewport.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/storefront-toast.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/header-modern.js', v=asset_version) }}" defer></script>

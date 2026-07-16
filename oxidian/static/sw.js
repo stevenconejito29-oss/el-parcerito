@@ -1,12 +1,14 @@
 /* ═══════════════════════════════════════════════════════════════
-   Oxidian — Service Worker v51
-   • Assets propios CSS/JS/IMG: network-first + fallback cacheado
+   Oxidian — Service Worker v52
+   • App shell CSS/JS: cache-first + actualización en segundo plano
+   • Imágenes: stale-while-revalidate con caché acotada
    • HTML público y datos de sesión: network-only
    • API / Admin       : Network-only (nunca cachear dinámico)
    • Push Notifications: Muestra notificaciones + abre URL al click
    ═══════════════════════════════════════════════════════════════ */
 
-const CACHE_STATIC = "ox-static-v51";
+const CACHE_STATIC = "ox-static-v52";
+const CACHE_MEDIA = "ox-media-v52";
 const CACHE_PREFIX = "ox-";
 
 const PRECACHE = [
@@ -20,6 +22,7 @@ const PRECACHE = [
   "/static/css/operational-roles.css",
   "/static/css/tailwind.generated.css",
   "/static/js/carrito.js",
+  "/static/js/pwa-manager.js",
   "/static/js/storefront-viewport.js",
   "/static/js/storefront-toast.js",
   "/static/js/header-modern.js",
@@ -28,6 +31,7 @@ const PRECACHE = [
   "/static/pwa-icon-192.png",
   "/static/pwa-icon-512.png",
   "/static/pwa-icon-512-maskable.png",
+  "/static/pwa-badge-96.png",
   "/static/apple-touch-icon.png",
 ];
 
@@ -57,6 +61,10 @@ function isStaticAsset(pathname) {
   );
 }
 
+function isMediaAsset(pathname) {
+  return /\.(png|jpg|jpeg|webp|avif|svg|ico|gif)$/i.test(pathname);
+}
+
 function canStore(response) {
   return Boolean(
     response &&
@@ -78,15 +86,15 @@ function offlineResponse() {
 body{font-family:system-ui,sans-serif;background:#FFFDF8;color:#18120A;
 display:flex;flex-direction:column;align-items:center;justify-content:center;
 min-height:100dvh;padding:2rem;text-align:center;gap:1rem}
-.icon{font-size:3.5rem}.title{font-size:1.35rem;font-weight:900}
+.icon{width:88px;height:88px;border-radius:24px;box-shadow:0 16px 34px #4B21002b}.title{font-size:1.35rem;font-weight:900}
 p{font-size:.95rem;color:#6B5A4E;max-width:340px;line-height:1.5}
 a,button{min-height:44px;padding:.75rem 1.5rem;border-radius:.875rem;border:0;
 background:#F4C542;color:#2B2118;font-weight:800;font-size:1rem;text-decoration:none}
 </style></head><body>
-<div class="icon">📡</div>
-<p class="title">Sin conexión</p>
-	<p>Esta sección necesita internet para proteger tus datos y confirmar cambios.</p>
-<a href="/">Reintentar</a>
+<img class="icon" src="/static/pwa-icon-192.png" alt="">
+<p class="title">Ahora mismo no hay conexión</p>
+<p>Tu app sigue instalada y tus datos están protegidos. Recupera internet para consultar disponibilidad o confirmar cambios.</p>
+<a href="/">Volver a intentar</a>
 </body></html>`,
     { headers: { "Content-Type": "text/html;charset=utf-8" } }
   );
@@ -101,7 +109,6 @@ self.addEventListener("install", event => {
       );
     })
   );
-  self.skipWaiting();
 });
 
 // ── ACTIVATE ─────────────────────────────────────────────────────────────
@@ -110,7 +117,7 @@ self.addEventListener("activate", event => {
     caches.keys().then(keys =>
       Promise.all(
         keys
-          .filter(k => k.startsWith(CACHE_PREFIX) && k !== CACHE_STATIC)
+          .filter(k => k.startsWith(CACHE_PREFIX) && ![CACHE_STATIC, CACHE_MEDIA].includes(k))
           .map(k => caches.delete(k))
       )
     )
@@ -138,17 +145,21 @@ self.addEventListener("fetch", event => {
   }
 
   if (isStaticAsset(pathname)) {
-    event.respondWith(
-      caches.open(CACHE_STATIC).then(async cache => {
-        const cached = await cache.match(event.request);
-        try {
-          const response = await fetch(event.request, { cache: "reload" });
-          if (canStore(response)) cache.put(event.request, response.clone());
-          return response;
-        } catch {
-          return cached || Response.error();
+    const cacheName = isMediaAsset(pathname) ? CACHE_MEDIA : CACHE_STATIC;
+    const refresh = caches.open(cacheName).then(cache =>
+      fetch(event.request).then(async response => {
+        if (canStore(response)) {
+          await cache.put(event.request, response.clone());
+          if (isMediaAsset(pathname)) await trimCache(cache, 80);
         }
+        return response;
       })
+    );
+    event.waitUntil(refresh.catch(() => null));
+    event.respondWith(
+      caches.open(cacheName).then(cache => cache.match(event.request)).then(cached =>
+        cached || refresh.catch(() => Response.error())
+      )
     );
     return;
   }
@@ -156,25 +167,32 @@ self.addEventListener("fetch", event => {
   event.respondWith(fetch(event.request, { cache: "no-store" }).catch(() => offlineResponse()));
 });
 
+async function trimCache(cache, maximumEntries) {
+  const keys = await cache.keys();
+  if (keys.length <= maximumEntries) return;
+  await Promise.all(keys.slice(0, keys.length - maximumEntries).map(key => cache.delete(key)));
+}
+
 // ═══════════════════════════════════════════════════════════════
 // PUSH NOTIFICATIONS
 // ═══════════════════════════════════════════════════════════════
 
 self.addEventListener("push", event => {
-  if (!event.data) return;
-
   let payload;
-  try { payload = event.data.json(); }
-  catch { payload = { title: "Mi tienda", body: event.data.text() }; }
+  try { payload = event.data ? event.data.json() : {}; }
+  catch { payload = { title: "Mi tienda", body: event.data?.text() || "Tienes una novedad." }; }
 
   const {
     title  = "Mi tienda",
     body   = "",
     icon   = "/static/pwa-icon-192.png",
-    badge  = "/static/favicon-32.png",
+    badge  = "/static/pwa-badge-96.png",
     url    = "/",
     tag,
     requireInteraction = false,
+    timestamp = Date.now(),
+    actions = [{ action: "open", title: "Ver ahora" }],
+    badgeCount = 1,
   } = payload;
 
   const safeTitle = String(title || "Mi tienda").slice(0, 80);
@@ -187,11 +205,29 @@ self.addEventListener("push", event => {
     requireInteraction,
     renotify: Boolean(tag),
     vibrate: [180, 80, 180],
-    data: { url },
-    actions: [{ action: "open", title: "Abrir" }],
+    silent: false,
+    timestamp: Number(timestamp) || Date.now(),
+    lang: "es",
+    data: { url: typeof url === "string" ? url : "/" },
+    actions: Array.isArray(actions)
+      ? actions.slice(0, 2).map(action => ({
+          action: String(action.action || "open").slice(0, 32),
+          title: String(action.title || "Abrir").slice(0, 32),
+        }))
+      : [{ action: "open", title: "Ver ahora" }],
   };
 
-  event.waitUntil(self.registration.showNotification(safeTitle, options));
+  event.waitUntil((async () => {
+    const windows = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    windows.forEach(client => client.postMessage({
+      type: "OX_PUSH_RECEIVED",
+      payload: { title: safeTitle, body: safeBody, url: options.data.url },
+    }));
+    if ("setAppBadge" in self.registration && Number(badgeCount) > 0) {
+      await self.registration.setAppBadge(Number(badgeCount)).catch(() => {});
+    }
+    await self.registration.showNotification(safeTitle, options);
+  })());
 });
 
 // ── Click en la notificación ─────────────────────────────────────────────
@@ -207,7 +243,9 @@ self.addEventListener("notificationclick", event => {
     : self.location.origin + "/";
 
   event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+    Promise.resolve("clearAppBadge" in self.registration
+      ? self.registration.clearAppBadge().catch(() => {})
+      : null).then(() => clients.matchAll({ type: "window", includeUncontrolled: true })).then(list => {
       // Si ya hay una ventana abierta con esa URL, enfocarla
       for (const client of list) {
         if (client.url === fullUrl && "focus" in client) {
@@ -217,12 +255,19 @@ self.addEventListener("notificationclick", event => {
       // Si hay cualquier ventana abierta, navegar ahí
       for (const client of list) {
         if ("focus" in client) {
-          client.navigate(fullUrl);
-          return client.focus();
+          return Promise.resolve(client.navigate?.(fullUrl)).catch(() => null).then(() => client.focus());
         }
       }
       // Ninguna ventana abierta: abrir nueva
       return clients.openWindow(fullUrl);
+    })
+  );
+});
+
+self.addEventListener("pushsubscriptionchange", event => {
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+      list.forEach(client => client.postMessage({ type: "OX_PUSH_SUBSCRIPTION_CHANGED" }));
     })
   );
 });

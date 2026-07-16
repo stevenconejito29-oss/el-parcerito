@@ -152,10 +152,11 @@ class FrontendContractsTest(unittest.TestCase):
 
     def test_staff_push_prompt_can_be_dismissed_for_the_navigation_session(self):
         template = (ROOT / "templates" / "admin_base.html").read_text(encoding="utf-8")
+        pwa_manager = (ROOT / "static" / "js" / "pwa-manager.js").read_text(encoding="utf-8")
 
         self.assertIn("data-push-dismiss", template)
-        self.assertIn("sessionStorage.getItem('ox.pushPromptDismissed')", template)
-        self.assertIn("sessionStorage.setItem('ox.pushPromptDismissed', '1')", template)
+        self.assertIn("sessionStorage.getItem('ox.pushPromptDismissed')", pwa_manager)
+        self.assertIn("sessionStorage.setItem('ox.pushPromptDismissed', '1')", pwa_manager)
         self.assertNotIn("this.closest('#ox-push-banner').style.display='none'", template)
 
     def test_public_actions_are_separate_from_brand_identity(self):

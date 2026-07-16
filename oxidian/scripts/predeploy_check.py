@@ -119,9 +119,12 @@ for artifact in (
     'static/pwa-icon-192.png',
     'static/pwa-icon-512.png',
     'static/pwa-icon-512-maskable.png',
+    'static/pwa-icon-monochrome.svg',
+    'static/pwa-badge-96.png',
     'static/pwa-screenshot-mobile.png',
     'static/pwa-screenshot-wide.png',
     'templates/base.html',
+    'static/js/pwa-manager.js',
 ):
     require_file(artifact)
 

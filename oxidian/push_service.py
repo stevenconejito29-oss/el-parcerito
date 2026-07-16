@@ -39,6 +39,52 @@ def get_vapid_public_key() -> str:
     return pub
 
 
+def _prepare_vapid_private_key(private_key: str):
+    """Convierte PEM almacenado en BD al objeto esperado por pywebpush.
+
+    `pywebpush` interpreta cualquier string que no sea una ruta como Base64
+    DER. Pasarle el contenido PEM directamente provoca
+    ``Could not deserialize key data`` aunque la clave sea válida.
+    Se conserva compatibilidad con claves raw/Base64 existentes.
+    """
+    value = (private_key or "").strip()
+    if "-----BEGIN" not in value:
+        return value
+    from py_vapid import Vapid
+    return Vapid.from_pem(value.encode("ascii"))
+
+
+def vapid_configuration_error() -> str | None:
+    """Devuelve un diagnóstico sin exponer material criptográfico."""
+    public_key, private_key = _get_vapid_keys()
+    if not public_key or not private_key:
+        return "vapid_no_configurado"
+    try:
+        import base64
+        import hmac
+        from cryptography.hazmat.primitives import serialization
+        from py_vapid import Vapid
+
+        prepared = _prepare_vapid_private_key(private_key)
+        vapid = prepared if hasattr(prepared, "sign") else Vapid.from_string(prepared)
+        derived_raw = vapid.public_key.public_bytes(
+            encoding=serialization.Encoding.X962,
+            format=serialization.PublicFormat.UncompressedPoint,
+        )
+        derived_public = base64.urlsafe_b64encode(derived_raw).rstrip(b"=").decode("ascii")
+        if not hmac.compare_digest(derived_public, public_key.strip().rstrip("=")):
+            return "vapid_claves_no_corresponden"
+        vapid.sign({
+            "sub": "mailto:diagnostico@example.invalid",
+            "aud": "https://push.example.invalid",
+            "exp": int(__import__("time").time()) + 300,
+        })
+        return None
+    except Exception:
+        logger.exception("La clave privada VAPID no se puede cargar")
+        return "vapid_clave_invalida"
+
+
 # ── Envío de una notificación push a una suscripción ──────────────────────
 
 def _send_one_result(sub_row, payload: dict, vapid_claims: dict, priv_key: str) -> tuple[bool, bool, str | None]:
@@ -51,7 +97,7 @@ def _send_one_result(sub_row, payload: dict, vapid_claims: dict, priv_key: str) 
                 "keys": {"p256dh": sub_row.p256dh, "auth": sub_row.auth},
             },
             data=json.dumps(payload),
-            vapid_private_key=priv_key,
+            vapid_private_key=_prepare_vapid_private_key(priv_key),
             vapid_claims=vapid_claims,
         )
         return True, False, None
@@ -247,8 +293,12 @@ def _build_payload(title, body, url, icon=None, badge=None, tag=None,
         "body": body,
         "url": url,
         "icon": icon or get_store_value("APP_ICON_URL") or "/static/pwa-icon-192.png",
-        "badge": badge or "/static/favicon-32.png",
+        # Android transforma `badge` en una silueta monocroma; usar el favicon
+        # a color producía un cuadrado ilegible en la barra de estado.
+        "badge": badge or "/static/pwa-badge-96.png",
         "tag": tag,
         "requireInteraction": bool(require_interaction),
         "timestamp": int(__import__("time").time() * 1000),
+        "badgeCount": 1,
+        "actions": [{"action": "open", "title": "Ver ahora"}],
     }

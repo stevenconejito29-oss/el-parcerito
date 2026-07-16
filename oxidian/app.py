@@ -79,7 +79,11 @@ def _seed_vapid_keys(app):
                         format=serialization.PublicFormat.UncompressedPoint,
                     )
                     vapid_public = base64.urlsafe_b64encode(public_raw).rstrip(b"=").decode("ascii")
-                    vapid_private = vapid.private_pem().decode("utf-8")
+                    # pywebpush acepta el escalar raw Base64URL directamente.
+                    # Evita PEM multilínea en SiteConfig para instalaciones nuevas.
+                    private_value = vapid.private_key.private_numbers().private_value
+                    private_raw = private_value.to_bytes(32, "big")
+                    vapid_private = base64.urlsafe_b64encode(private_raw).rstrip(b"=").decode("ascii")
                 SiteConfig.set("VAPID_PUBLIC_KEY",  vapid_public,
                                descripcion="Clave pública VAPID para Web Push")
                 SiteConfig.set("VAPID_PRIVATE_KEY", vapid_private,
@@ -232,12 +236,13 @@ def create_app(env="default"):
             capabilities.append("pedidos por fecha")
         capabilities_text = ", ".join(capabilities) if capabilities else "compra guiada"
         description = f"{_catalogo_word} online y carrito con {capabilities_text}."
+        shortcut_icon = profile["app_icon_url"] or "/static/pwa-icon-192.png"
         shortcuts = [
-            {"name": f"Ver {_catalogo_word.lower()}", "short_name": _catalogo_word, "description": "Explora el catalogo", "url": "/", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]},
-            {"name": "Mi carrito", "short_name": "Carrito", "description": "Ver pedido actual", "url": "/carrito", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]},
+            {"name": f"Ver {_catalogo_word.lower()}", "short_name": _catalogo_word, "description": "Explora el catalogo", "url": "/", "icons": [{"src": shortcut_icon, "sizes": "any"}]},
+            {"name": "Mi carrito", "short_name": "Carrito", "description": "Ver pedido actual", "url": "/carrito", "icons": [{"src": shortcut_icon, "sizes": "any"}]},
         ]
         if profile["puntos"]:
-            shortcuts.append({"name": "Mis puntos", "short_name": "Puntos", "description": "Club de fidelizacion", "url": "/club", "icons": [{"src": "/static/pwa-icon-192.png", "sizes": "192x192"}]})
+            shortcuts.append({"name": "Mis puntos", "short_name": "Puntos", "description": "Club de fidelizacion", "url": "/club", "icons": [{"src": shortcut_icon, "sizes": "any"}]})
 
         # Background dinamico: dark si la marca tiene fondo oscuro (por defecto sí)
         brand_bg = SiteConfig.get("COLOR_FONDO_APP", "") or "#0F0906"
@@ -249,45 +254,38 @@ def create_app(env="default"):
             "start_url": "/?source=pwa",
             "scope": "/",
             "display": "standalone",
-            "display_override": ["window-controls-overlay", "standalone", "minimal-ui", "browser"],
+            "display_override": ["standalone", "minimal-ui"],
             "background_color": brand_bg,
             "theme_color": theme_color,
             "orientation": "any",
             "lang": "es",
             "dir": "ltr",
             "categories": (["food", "shopping", "lifestyle"] if _es_comida else ["shopping", "lifestyle", "business"]),
-            "id": "oxidian-menu",
+            "id": "/",
             "icons": [],
             "shortcuts": shortcuts,
             "screenshots": [
-                {"src": "/static/pwa-screenshot-mobile.png", "sizes": "390x844", "type": "image/png", "form_factor": "narrow", "label": f"{nombre} — {_catalogo_word} online"},
-                {"src": "/static/pwa-screenshot-wide.png", "sizes": "1280x720", "type": "image/png", "form_factor": "wide", "label": f"{nombre} — Pedidos y seguimiento"},
+                {"src": "/static/pwa-screenshot-mobile.png?v=52", "sizes": "390x844", "type": "image/png", "form_factor": "narrow", "label": f"{nombre} — {_catalogo_word} online"},
+                {"src": "/static/pwa-screenshot-wide.png?v=52", "sizes": "1280x720", "type": "image/png", "form_factor": "wide", "label": f"{nombre} — Compra y seguimiento"},
             ],
             "prefer_related_applications": False,
-            "edge_side_panel": {"preferred_width": 400},
-            # Handlers para deep-linking desde iOS/Android intents
+            # Reutiliza la ventana instalada al abrir enlaces internos.
             "launch_handler": {"client_mode": ["navigate-existing", "auto"]},
             "handle_links": "preferred",
-            "protocol_handlers": [
-                {"protocol": "web+order", "url": "/pedido/%s"}
-            ],
-            # Habilita compartir a la app desde el share sheet nativo
-            "share_target": {
-                "action": "/",
-                "method": "GET",
-                "params": {"title": "title", "text": "text", "url": "url"}
-            },
         }
         if profile["app_icon_url"]:
             manifest["icons"].append({
-                "src": profile["app_icon_url"], "sizes": "any", "purpose": "any maskable",
+                "src": profile["app_icon_url"], "sizes": "any", "purpose": "any",
             })
-        else:
-            manifest["icons"].extend([
+        manifest["icons"].extend([
+                # La empanada es el sistema visual seguro cuando no hay marca
+                # y también garantiza un recurso maskable válido si la imagen
+                # subida por el comercio no respeta la zona segura.
                 {"src": "/static/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
                 {"src": "/static/pwa-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
                 {"src": "/static/pwa-icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
                 {"src": "/static/pwa-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
+                {"src": "/static/pwa-icon-monochrome.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "monochrome"},
             ])
         response = app.response_class(
             json.dumps(manifest, ensure_ascii=False),
@@ -311,7 +309,13 @@ def create_app(env="default"):
             "cocina": "/preparador/pedidos",
             "repartidor": "/repartidor/ruta",
         }
-        icon = profile["app_icon_url"] or "/static/pwa-icon-192.png"
+        icons = []
+        if profile["app_icon_url"]:
+            icons.append({"src": profile["app_icon_url"], "sizes": "any", "purpose": "any"})
+        icons.extend([
+            {"src": "/static/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "/static/pwa-icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        ])
         manifest = {
             "name": f"{profile['nombre']} · Trabajo",
             "short_name": f"{profile['nombre'][:10]} Staff",
@@ -323,7 +327,7 @@ def create_app(env="default"):
             "background_color": "#111827",
             "theme_color": profile["color_primario"],
             "orientation": "any",
-            "icons": [{"src": icon, "sizes": "any", "purpose": "any maskable"}],
+            "icons": icons,
         }
         return app.response_class(
             json.dumps(manifest, ensure_ascii=False),
@@ -772,7 +776,14 @@ def create_app(env="default"):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        geolocation_allowed = request.path.startswith(("/repartidor/", "/checkout", "/api/check-address"))
+        geolocation_allowed = request.path.startswith((
+            "/repartidor/",
+            "/checkout",
+            "/api/check-address",
+            "/superadmin/config",
+            "/superadmin/zonas",
+            "/superadmin/zona",
+        ))
         geolocation = "(self)" if geolocation_allowed else "()"
         response.headers["Permissions-Policy"] = (
             f"camera=(), geolocation={geolocation}, microphone=(), payment=(), usb=()"

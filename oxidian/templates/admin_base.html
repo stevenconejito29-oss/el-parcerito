@@ -9,6 +9,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="{{ brand.nombre }} Panel">
   <meta name="robots" content="noindex, nofollow">
+  <meta name="ox-pwa-mode" content="staff">
+  <meta name="ox-push-eligible" content="1">
+  <meta name="ox-pwa-operational" content="{{ '1' if request.blueprint in ('preparador', 'repartidor', 'staff') else '0' }}">
+  <meta name="ox-cart-count" content="0">
+  <meta name="ox-csrf-token" content="{{ csrf_token() }}">
   {% if current_user.is_authenticated and request.blueprint == 'repartidor' %}
   <script nonce="{{ csp_nonce() }}">
     /* Aplicar el tema antes del primer pintado evita el destello blanco al
@@ -446,21 +451,6 @@ function toggleDisponible(url) {
   }).finally(()=>{btn.disabled=false;});
 }
 
-// Instalación del panel como PWA. En iOS no existe beforeinstallprompt, por
-// eso mostramos una instrucción nativa y concreta al pulsar el botón.
-(function(){
-  const button=document.getElementById('ox-staff-install');if(!button)return;
-  const standalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
-  let prompt=null;
-  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
-  if(!standalone()&&ios)button.hidden=false;
-  addEventListener('beforeinstallprompt',e=>{e.preventDefault();prompt=e;button.hidden=false;});
-  addEventListener('appinstalled',()=>{prompt=null;button.hidden=true;});
-  button.addEventListener('click',async()=>{
-    if(prompt){prompt.prompt();await prompt.userChoice.catch(()=>null);prompt=null;return;}
-    alert('En Safari toca Compartir y luego “Añadir a pantalla de inicio”.');
-  });
-})();
 document.querySelectorAll('form[data-ox-validate]').forEach(form=>{
   const fields=form.querySelectorAll('[data-ox-required]');
   const mark=el=>{const ok=!!String(el.value||'').trim();el.classList.toggle('is-invalid',!ok);el.closest('.ox-field')?.classList.toggle('has-error',!ok);return ok;};
@@ -468,99 +458,6 @@ document.querySelectorAll('form[data-ox-validate]').forEach(form=>{
   form.addEventListener('submit',e=>{let v=true;fields.forEach(el=>{if(!mark(el))v=false;});if(!v)e.preventDefault();});
 });
 
-// ── Web Push para staff/admin ─────────────────────────────────────────────
-(async function() {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-  if (Notification.permission === 'denied') return;
-  try {
-    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-    const ensureUpdate = async () => {
-      try {
-        await reg.update();
-        if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-      } catch (e) {}
-    };
-
-    await ensureUpdate();
-    reg.addEventListener('updatefound', () => {
-      const worker = reg.installing;
-      worker?.addEventListener('statechange', () => {
-        if (worker.state === 'installed' && navigator.serviceWorker.controller) {
-          worker.postMessage({ type: 'SKIP_WAITING' });
-        }
-      });
-    });
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') ensureUpdate();
-    });
-    setInterval(ensureUpdate, 5 * 60 * 1000);
-
-    if (Notification.permission !== 'granted') {
-      // Mostrar banner de permiso discreto si no ha decidido aún
-      if (Notification.permission === 'default') {
-        const banner = document.getElementById('ox-push-banner');
-        if (banner && sessionStorage.getItem('ox.pushPromptDismissed') !== '1') {
-          // El aviso forma parte del flujo y empuja el contenido; nunca debe
-          // flotar encima de botones, pedidos o la navegación inferior.
-          const page = document.querySelector('.ox-page');
-          if (page && banner.parentElement !== page) page.prepend(banner);
-          banner.classList.add('is-inline');
-          banner.hidden = false;
-        }
-      }
-      return;
-    }
-    await _oxAdminSubscribePush(reg);
-  } catch(e) {}
-})();
-
-document.querySelector('[data-push-dismiss]')?.addEventListener('click', event => {
-  sessionStorage.setItem('ox.pushPromptDismissed', '1');
-  event.currentTarget.closest('#ox-push-banner')?.setAttribute('hidden', '');
-});
-
-async function _oxAdminSubscribePush(reg) {
-  try {
-    const kr = await fetch('/api/push/vapid-key');
-    if (!kr.ok) return;
-    const { public_key } = await kr.json();
-    if (!public_key) return;
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: _urlB64ToUint8Array(public_key),
-    });
-    await fetch('/api/push/subscribe', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': '{{ csrf_token() }}',
-      },
-      body: JSON.stringify(sub.toJSON()),
-    });
-    const banner = document.getElementById('ox-push-banner');
-    if (banner) banner.hidden = true;
-  } catch(e) {}
-}
-
-window.oxEnablePush = async function() {
-  if (!('Notification' in window)) return;
-  const perm = await Notification.requestPermission();
-  if (perm === 'granted') {
-    const reg = await navigator.serviceWorker.ready;
-    await _oxAdminSubscribePush(reg);
-  } else {
-    const banner = document.getElementById('ox-push-banner');
-    if (banner) banner.hidden = true;
-  }
-};
-document.querySelector('[data-push-enable]')?.addEventListener('click', window.oxEnablePush);
-
-function _urlB64ToUint8Array(b64) {
-  const padding = '='.repeat((4 - b64.length % 4) % 4);
-  const base64 = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
-}
 </script>
 
 <script nonce="{{ csp_nonce() }}">
@@ -697,6 +594,7 @@ function _urlB64ToUint8Array(b64) {
   .oa-btn { min-height: 44px; }
 }
 </style>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/pwa-manager.js', v=asset_version) }}" defer></script>
 {% if operational_view %}
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/operational-roles.js', v=asset_version) }}" defer></script>
 {% endif %}

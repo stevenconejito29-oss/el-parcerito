@@ -737,7 +737,9 @@ button:active, .btn:active { transform: scale(.96) !important; }
     width: min(calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 2rem), 340px);
   }
 }
-.ox-toast { border-radius:var(--r-md); padding:.85rem 1rem; backdrop-filter:blur(12px); box-shadow:var(--shadow-md); animation:toastIn .28s cubic-bezier(.34,1.56,.64,1); pointer-events:all; font-size:.88rem; font-weight:500; }
+.ox-toast { border-radius:var(--r-md); padding:.85rem 1rem; backdrop-filter:blur(12px); box-shadow:var(--shadow-md); animation:toastIn .28s cubic-bezier(.34,1.56,.64,1); pointer-events:all; font-size:.88rem; font-weight:500; display:flex; align-items:center; gap:.75rem; overflow-wrap:anywhere; }
+.ox-toast > span { min-width:0; flex:1; }
+.ox-pwa-toast-action { min-height:36px; flex:0 0 auto; padding:.42rem .7rem; border:1px solid currentColor; border-radius:.65rem; background:color-mix(in srgb,currentColor 12%,transparent); color:inherit; font:inherit; font-size:.76rem; font-weight:900; cursor:pointer; }
 .ox-toast-success { background:color-mix(in srgb,var(--theme-success) 18%,transparent); color:color-mix(in srgb,var(--theme-success) 65%,#fff); border:1px solid color-mix(in srgb,var(--theme-success) 30%,transparent); }
 .ox-toast-danger  { background:color-mix(in srgb,var(--theme-danger) 18%,transparent);  color:color-mix(in srgb,var(--theme-danger) 60%,#fff);  border:1px solid color-mix(in srgb,var(--theme-danger) 30%,transparent); }
 .ox-toast-warning { background:color-mix(in srgb,var(--brand-primary) 18%,transparent); color:color-mix(in srgb,var(--brand-primary) 70%,#fff); border:1px solid color-mix(in srgb,var(--brand-primary) 30%,transparent); }
