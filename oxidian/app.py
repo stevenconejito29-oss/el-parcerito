@@ -221,6 +221,10 @@ def create_app(env="default"):
             return None
 
         from flask import make_response
+        # Esta respuesta corta detiene la cadena de before_request antes del
+        # generador general de CSP, por lo que debe crear su propio nonce.
+        # Aunque la plantilla no ejecuta JS, mantenemos una política válida.
+        g.csp_nonce = secrets.token_urlsafe(18)
         g.preapertura_activa = True
         response = make_response(render_template(
             "public/preapertura.html",
