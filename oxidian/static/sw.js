@@ -27,12 +27,12 @@ const PRECACHE = [
   "/static/js/storefront-toast.js",
   "/static/js/header-modern.js",
   "/static/js/operational-roles.js",
-  "/static/pwa-icon.svg",
-  "/static/pwa-icon-192.png",
-  "/static/pwa-icon-512.png",
-  "/static/pwa-icon-512-maskable.png",
-  "/static/pwa-badge-96.png",
-  "/static/apple-touch-icon.png",
+  "/static/pwa-icon.svg?v=52",
+  "/static/pwa-icon-192.png?v=52",
+  "/static/pwa-icon-512.png?v=52",
+  "/static/pwa-icon-512-maskable.png?v=52",
+  "/static/pwa-badge-96.png?v=52",
+  "/static/apple-touch-icon.png?v=52",
 ];
 
 function isNetworkOnly(pathname) {
@@ -91,7 +91,7 @@ p{font-size:.95rem;color:#6B5A4E;max-width:340px;line-height:1.5}
 a,button{min-height:44px;padding:.75rem 1.5rem;border-radius:.875rem;border:0;
 background:#F4C542;color:#2B2118;font-weight:800;font-size:1rem;text-decoration:none}
 </style></head><body>
-<img class="icon" src="/static/pwa-icon-192.png" alt="">
+<img class="icon" src="/static/pwa-icon-192.png?v=52" alt="">
 <p class="title">Ahora mismo no hay conexión</p>
 <p>Tu app sigue instalada y tus datos están protegidos. Recupera internet para consultar disponibilidad o confirmar cambios.</p>
 <a href="/">Volver a intentar</a>
@@ -185,8 +185,8 @@ self.addEventListener("push", event => {
   const {
     title  = "Mi tienda",
     body   = "",
-    icon   = "/static/pwa-icon-192.png",
-    badge  = "/static/pwa-badge-96.png",
+    icon   = "/static/pwa-icon-192.png?v=52",
+    badge  = "/static/pwa-badge-96.png?v=52",
     url    = "/",
     tag,
     requireInteraction = false,

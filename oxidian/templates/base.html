@@ -30,32 +30,32 @@
   <meta property="og:type" content="website">
   <meta property="og:title" content="{{ brand.nombre }}{% if brand.slogan %} — {{ brand.slogan }}{% endif %}">
   <meta property="og:description" content="{% if brand.slogan %}{{ brand.slogan }} — {% endif %}Pide online en {{ brand.nombre }}">
-  <meta property="og:image" content="{{ brand.hero_image_url or brand.logo_url or url_for('static', filename='pwa-icon-512.png', _external=True) }}">
+  <meta property="og:image" content="{{ brand.hero_image_url or brand.logo_url or url_for('static', filename='pwa-icon-512.png', v=asset_version, _external=True) }}">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:locale" content="es_ES">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{{ brand.nombre }}">
   <meta name="twitter:description" content="{% if brand.slogan %}{{ brand.slogan }} — {% endif %}Pide online.">
-  <meta name="twitter:image" content="{{ brand.hero_image_url or brand.logo_url or url_for('static', filename='pwa-icon-512.png', _external=True) }}">
+  <meta name="twitter:image" content="{{ brand.hero_image_url or brand.logo_url or url_for('static', filename='pwa-icon-512.png', v=asset_version, _external=True) }}">
 
   {# Icons — usa APP_ICON_URL si está configurado, si no los estáticos #}
   {% set _app_icon = brand.app_icon_url if brand.app_icon_url is defined and brand.app_icon_url else (brand.logo_url if brand.logo_url is defined and brand.logo_url else '') %}
-  <link rel="apple-touch-icon" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png') }}">
-  <link rel="apple-touch-icon" sizes="180x180" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png') }}">
-  <link rel="apple-touch-icon" sizes="167x167" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png') }}">
-  <link rel="apple-touch-icon" sizes="152x152" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png') }}">
-  <link rel="icon" type="image/png" sizes="64x64" href="{{ _app_icon or url_for('static', filename='favicon-64.png') }}">
-  <link rel="icon" type="image/png" sizes="32x32" href="{{ _app_icon or url_for('static', filename='favicon-32.png') }}">
-  <link rel="icon" type="image/svg+xml" href="{{ _app_icon or url_for('static', filename='pwa-icon.svg') }}">
-  <link rel="mask-icon" href="{{ url_for('static', filename='pwa-icon.svg') }}" color="{{ brand.color_primario }}">
+  <link rel="apple-touch-icon" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
+  <link rel="apple-touch-icon" sizes="167x167" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
+  <link rel="apple-touch-icon" sizes="152x152" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
+  <link rel="icon" type="image/png" sizes="64x64" href="{{ _app_icon or url_for('static', filename='favicon-64.png', v=asset_version) }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ _app_icon or url_for('static', filename='favicon-32.png', v=asset_version) }}">
+  <link rel="icon" type="image/svg+xml" href="{{ _app_icon or url_for('static', filename='pwa-icon.svg', v=asset_version) }}">
+  <link rel="mask-icon" href="{{ url_for('static', filename='pwa-icon-monochrome.svg', v=asset_version) }}" color="{{ brand.color_primario }}">
 
   <link rel="manifest" href="{{ url_for('web_manifest') }}">
 
   {# Splash screen para iOS (usa el color de marca de fondo con logo centrado) #}
   <meta name="apple-mobile-web-app-orientations" content="portrait">
   <link rel="apple-touch-startup-image"
-        href="{{ _app_icon or url_for('static', filename='pwa-icon-512.png') }}"
+        href="{{ _app_icon or url_for('static', filename='pwa-icon-512.png', v=asset_version) }}"
         media="(prefers-color-scheme: dark)">
 
   {# Tipografía — Inter (cuerpo) carga rápida con display=swap #}
@@ -302,7 +302,7 @@
     <button type="button" class="ox-pwa-close" data-pwa-dismiss aria-label="{{ ui.close }}">×</button>
     <div class="ox-pwa-icon">
       {% if _app_icon %}<img src="{{ _app_icon }}" alt="{{ brand.nombre }} icon">
-      {% else %}<img src="{{ url_for('static', filename='pwa-icon.svg') }}" alt="Icono de empanada">{% endif %}
+      {% else %}<img src="{{ url_for('static', filename='pwa-icon.svg', v=asset_version) }}" alt="Icono de empanada">{% endif %}
     </div>
     <div class="ox-pwa-copy"><p class="ox-pwa-title">{{ brand.nombre }}</p><p class="ox-pwa-text">{{ ui.pwa_description }}</p></div>
     <button type="button" class="ox-pwa-action" data-pwa-install><span class="ox-install-text">{{ ui.pwa_install }}</span></button>

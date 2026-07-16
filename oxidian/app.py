@@ -46,6 +46,17 @@ def _asset_version(app):
     for directory, suffix in (("css", ".css"), ("js", ".js")):
         assets.extend((static_root / directory).rglob(f"*{suffix}"))
     assets.append(static_root / "sw.js")
+    assets.extend(static_root / name for name in (
+        "pwa-icon.svg",
+        "pwa-icon-192.png",
+        "pwa-icon-512.png",
+        "pwa-icon-512-maskable.png",
+        "pwa-icon-monochrome.svg",
+        "pwa-badge-96.png",
+        "apple-touch-icon.png",
+        "pwa-screenshot-mobile.png",
+        "pwa-screenshot-wide.png",
+    ))
 
     for path in sorted(assets, key=lambda item: item.as_posix()):
         relative_path = path.relative_to(static_root).as_posix()
@@ -222,6 +233,9 @@ def create_app(env="default"):
         from store_config import get_store_profile
 
         profile = get_store_profile()
+        asset_v = app.config["ASSET_VERSION"]
+        def pwa_asset(name):
+            return f"/static/{name}?v={asset_v}"
         nombre = profile["nombre"]
         short_name = (nombre[:12] or "Mi tienda").strip()
         _tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
@@ -236,7 +250,7 @@ def create_app(env="default"):
             capabilities.append("pedidos por fecha")
         capabilities_text = ", ".join(capabilities) if capabilities else "compra guiada"
         description = f"{_catalogo_word} online y carrito con {capabilities_text}."
-        shortcut_icon = profile["app_icon_url"] or "/static/pwa-icon-192.png"
+        shortcut_icon = profile["app_icon_url"] or pwa_asset("pwa-icon-192.png")
         shortcuts = [
             {"name": f"Ver {_catalogo_word.lower()}", "short_name": _catalogo_word, "description": "Explora el catalogo", "url": "/", "icons": [{"src": shortcut_icon, "sizes": "any"}]},
             {"name": "Mi carrito", "short_name": "Carrito", "description": "Ver pedido actual", "url": "/carrito", "icons": [{"src": shortcut_icon, "sizes": "any"}]},
@@ -265,8 +279,8 @@ def create_app(env="default"):
             "icons": [],
             "shortcuts": shortcuts,
             "screenshots": [
-                {"src": "/static/pwa-screenshot-mobile.png?v=52", "sizes": "390x844", "type": "image/png", "form_factor": "narrow", "label": f"{nombre} — {_catalogo_word} online"},
-                {"src": "/static/pwa-screenshot-wide.png?v=52", "sizes": "1280x720", "type": "image/png", "form_factor": "wide", "label": f"{nombre} — Compra y seguimiento"},
+                {"src": pwa_asset("pwa-screenshot-mobile.png"), "sizes": "390x844", "type": "image/png", "form_factor": "narrow", "label": f"{nombre} — {_catalogo_word} online"},
+                {"src": pwa_asset("pwa-screenshot-wide.png"), "sizes": "1280x720", "type": "image/png", "form_factor": "wide", "label": f"{nombre} — Compra y seguimiento"},
             ],
             "prefer_related_applications": False,
             # Reutiliza la ventana instalada al abrir enlaces internos.
@@ -281,11 +295,11 @@ def create_app(env="default"):
                 # La empanada es el sistema visual seguro cuando no hay marca
                 # y también garantiza un recurso maskable válido si la imagen
                 # subida por el comercio no respeta la zona segura.
-                {"src": "/static/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-                {"src": "/static/pwa-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-                {"src": "/static/pwa-icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
-                {"src": "/static/pwa-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
-                {"src": "/static/pwa-icon-monochrome.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "monochrome"},
+                {"src": pwa_asset("pwa-icon-192.png"), "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                {"src": pwa_asset("pwa-icon-512.png"), "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                {"src": pwa_asset("pwa-icon-512-maskable.png"), "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+                {"src": pwa_asset("pwa-icon.svg"), "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
+                {"src": pwa_asset("pwa-icon-monochrome.svg"), "sizes": "any", "type": "image/svg+xml", "purpose": "monochrome"},
             ])
         response = app.response_class(
             json.dumps(manifest, ensure_ascii=False),
@@ -302,6 +316,7 @@ def create_app(env="default"):
         from store_config import get_store_profile
 
         profile = get_store_profile()
+        asset_v = app.config["ASSET_VERSION"]
         starts = {
             "super_admin": "/superadmin/dashboard",
             "admin": "/admin/dashboard",
@@ -313,8 +328,8 @@ def create_app(env="default"):
         if profile["app_icon_url"]:
             icons.append({"src": profile["app_icon_url"], "sizes": "any", "purpose": "any"})
         icons.extend([
-            {"src": "/static/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-            {"src": "/static/pwa-icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+            {"src": f"/static/pwa-icon-192.png?v={asset_v}", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": f"/static/pwa-icon-512-maskable.png?v={asset_v}", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
         ])
         manifest = {
             "name": f"{profile['nombre']} · Trabajo",

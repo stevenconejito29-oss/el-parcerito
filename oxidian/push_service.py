@@ -325,15 +325,20 @@ def notify_order_state(pedido) -> None:
 
 def _build_payload(title, body, url, icon=None, badge=None, tag=None,
                    require_interaction=False) -> dict:
+    try:
+        from flask import current_app
+        asset_v = current_app.config.get("ASSET_VERSION", "52")
+    except RuntimeError:
+        asset_v = "52"
     from store_config import get_store_value
     return {
         "title": title,
         "body": body,
         "url": url,
-        "icon": icon or get_store_value("APP_ICON_URL") or "/static/pwa-icon-192.png",
+        "icon": icon or get_store_value("APP_ICON_URL") or f"/static/pwa-icon-192.png?v={asset_v}",
         # Android transforma `badge` en una silueta monocroma; usar el favicon
         # a color producía un cuadrado ilegible en la barra de estado.
-        "badge": badge or "/static/pwa-badge-96.png",
+        "badge": badge or f"/static/pwa-badge-96.png?v={asset_v}",
         "tag": tag,
         "requireInteraction": bool(require_interaction),
         "timestamp": int(__import__("time").time() * 1000),

@@ -78,7 +78,7 @@ class PwaArchitectureContractTest(unittest.TestCase):
         self.assertIn('const CACHE_MEDIA = "ox-media-v52"', worker)
         self.assertIn("trimCache(cache, 80)", worker)
         self.assertIn('type: "OX_PUSH_RECEIVED"', worker)
-        self.assertIn('badge  = "/static/pwa-badge-96.png"', worker)
+        self.assertIn('badge  = "/static/pwa-badge-96.png?v=52"', worker)
         self.assertNotIn("self.skipWaiting();\n});\n\n// ── ACTIVATE", worker)
 
     def test_default_brand_asset_is_an_empanada(self):

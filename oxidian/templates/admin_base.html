@@ -22,8 +22,8 @@
   </script>
   {% endif %}
   <link rel="manifest" href="{{ url_for('staff_web_manifest') }}">
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
-  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='pwa-icon.svg') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='pwa-icon.svg', v=asset_version) }}">
   <title>{% block title %}Panel — {{ brand.nombre }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.generated.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css', v=asset_version) }}">
