@@ -2102,13 +2102,42 @@ def _parsear_campos_producto(form):
             atributos_dict[key] = valor
     atributos_json = json.dumps(atributos_dict, ensure_ascii=False) if atributos_dict else None
 
-    # Validaciones de negocio
+    # Validaciones de negocio. Resolvemos primero la modalidad de canje porque
+    # un producto exclusivo tiene precio 0 por definición; validarlo antes como
+    # venta normal hacía imposible crearlo desde el formulario.
     try:
         precio = float(form.get("precio") or 0)
     except (ValueError, TypeError):
         return None, "El precio debe ser un número válido."
-    if precio <= 0:
-        return None, "El precio debe ser mayor que 0."
+
+    features = get_store_features()
+    producto_actual = None
+    producto_id = form.get("_producto_id", type=int)
+    if producto_id:
+        producto_actual = db.session.get(Product, producto_id)
+    if not features["puntos"] and producto_actual is not None:
+        # Desactivar temporalmente el módulo oculta el canje, pero editar otra
+        # propiedad no debe destruir la configuración que volverá al reactivarlo.
+        canjeable = bool(producto_actual.canjeable_con_puntos)
+        solo_canje = bool(producto_actual.solo_canje)
+        puntos_para_canje = producto_actual.puntos_para_canje
+    else:
+        canjeable = features["puntos"] and bool(form.get("canjeable_con_puntos"))
+        solo_canje = features["puntos"] and bool(form.get("solo_canje"))
+        puntos_para_canje = form.get("puntos_para_canje", type=int)
+    try:
+        politica_canje = Product.normalizar_configuracion_canje(
+            canjeable=canjeable,
+            solo_canje=solo_canje,
+            puntos_para_canje=puntos_para_canje,
+            precio=precio,
+        )
+    except ValueError as exc:
+        return None, str(exc)
+    precio = politica_canje["precio"]
+    canjeable = politica_canje["canjeable_con_puntos"]
+    solo_canje = politica_canje["solo_canje"]
+    puntos_para_canje = politica_canje["puntos_para_canje"]
 
     precio_costo = form.get("precio_costo", type=float)
     if precio_costo is not None and precio_costo < 0:
@@ -2130,7 +2159,6 @@ def _parsear_campos_producto(form):
         canal_preparacion = canal_default
 
     _TIPOS_ENTREGA_VALIDOS = {"inmediato", "programado"}
-    features = get_store_features()
     tipo_entrega = form.get("tipo_entrega", "inmediato")
     if tipo_entrega not in _TIPOS_ENTREGA_VALIDOS:
         tipo_entrega = "inmediato"
@@ -2162,15 +2190,6 @@ def _parsear_campos_producto(form):
     if bool(hora_inicio) != bool(hora_fin):
         return None, "Indica hora de inicio y hora de fin, o deja ambas vacías."
 
-    canjeable = features["puntos"] and bool(form.get("canjeable_con_puntos"))
-    solo_canje = features["puntos"] and bool(form.get("solo_canje"))
-    puntos_para_canje = form.get("puntos_para_canje", type=int)
-    # Un producto solo_canje IMPLICA canjeable_con_puntos y precio=0
-    if solo_canje:
-        canjeable = True
-        precio = 0.0  # no vendible con dinero
-    if canjeable and (not puntos_para_canje or puntos_para_canje <= 0):
-        return None, "Indica cuántos puntos se necesitan para el canje (debe ser > 0)."
     es_hipoalergenico = bool(form.get("es_hipoalergenico"))
     alergenos = [] if es_hipoalergenico else form.getlist("alergenos")
 

@@ -12,9 +12,11 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from flask import Flask
+from werkzeug.datastructures import MultiDict
 
 from extensions import db
 from models import Product, User
+from routes.admin import _parsear_campos_producto
 from routes.public import _canjeables_payload, public_bp
 
 
@@ -65,6 +67,70 @@ class CanjeSoloCanjeTest(unittest.TestCase):
         self.assertTrue(p.canjeable_con_puntos)
         self.assertTrue(p.solo_canje)
         self.assertGreater(int(p.puntos_para_canje or 0), 0)
+
+    def test_admin_parser_creates_exclusive_reward_with_zero_price(self):
+        """Regresión: precio=0 se validaba antes de leer `solo_canje`."""
+        fields, error = _parsear_campos_producto(MultiDict({
+            "nombre": "Empanada de regalo",
+            "precio": "0.00",
+            "modalidad_entrega": "ambas",
+            "canjeable_con_puntos": "on",
+            "solo_canje": "on",
+            "puntos_para_canje": "250",
+        }))
+
+        self.assertIsNone(error)
+        self.assertEqual(fields["precio"], 0.0)
+        self.assertTrue(fields["canjeable_con_puntos"])
+        self.assertTrue(fields["solo_canje"])
+        self.assertEqual(fields["puntos_para_canje"], 250)
+
+    def test_admin_parser_still_rejects_zero_price_for_normal_product(self):
+        fields, error = _parsear_campos_producto(MultiDict({
+            "nombre": "Producto normal",
+            "precio": "0.00",
+            "modalidad_entrega": "ambas",
+        }))
+
+        self.assertIsNone(fields)
+        self.assertIn("mayor que 0", error)
+
+    def test_domain_policy_rejects_invalid_points_and_non_finite_price(self):
+        with self.assertRaisesRegex(ValueError, "puntos"):
+            Product.normalizar_configuracion_canje(
+                canjeable=True,
+                solo_canje=True,
+                puntos_para_canje=0,
+                precio=0,
+            )
+        with self.assertRaisesRegex(ValueError, "precio"):
+            Product.normalizar_configuracion_canje(
+                canjeable=False,
+                solo_canje=False,
+                puntos_para_canje=None,
+                precio="nan",
+            )
+
+    def test_edit_preserves_reward_configuration_while_points_module_is_off(self):
+        reward = self._producto_solo_canje(puntos=300)
+        features = {
+            "puntos": False,
+            "delivery": True,
+            "recogida": True,
+            "pedidos_programados": True,
+        }
+        with patch("routes.admin.get_store_features", return_value=features):
+            fields, error = _parsear_campos_producto(MultiDict({
+                "_producto_id": str(reward.id),
+                "nombre": reward.nombre,
+                "precio": "0.00",
+                "modalidad_entrega": "ambas",
+            }))
+
+        self.assertIsNone(error)
+        self.assertTrue(fields["solo_canje"])
+        self.assertTrue(fields["canjeable_con_puntos"])
+        self.assertEqual(fields["puntos_para_canje"], 300)
 
     def test_solo_canje_cannot_be_added_via_normal_cart(self):
         # Regla en routes/public.py:agregar_carrito (línea 858):

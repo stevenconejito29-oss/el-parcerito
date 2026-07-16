@@ -227,6 +227,7 @@
     'dias_semana': p.dias_semana_json or '[]',
     'stock_mostrar_en_web': p.stock_mostrar_en_web,
     'canjeable_con_puntos': p.canjeable_con_puntos,
+    'solo_canje': p.solo_canje,
     'puntos_para_canje': p.puntos_para_canje or '',
     'es_hipoalergenico': p.es_hipoalergenico,
     'alergenos_json': p.alergenos_json or '[]',
@@ -366,6 +367,7 @@
       'dias_semana': combo.dias_semana_json or '[]',
       'stock_mostrar_en_web': combo.stock_mostrar_en_web,
       'canjeable_con_puntos': combo.canjeable_con_puntos,
+      'solo_canje': combo.solo_canje,
       'puntos_para_canje': combo.puntos_para_canje or '',
       'es_hipoalergenico': combo.es_hipoalergenico,
       'alergenos_json': combo.alergenos_json or '[]',
@@ -588,6 +590,7 @@ function abrirEditar(id) {
   // Checkboxes simples
   const checks = { es_combo: d.es_combo,
                    stock_mostrar_en_web: d.stock_mostrar_en_web, canjeable_con_puntos: d.canjeable_con_puntos,
+                   solo_canje: d.solo_canje,
                    es_hipoalergenico: d.es_hipoalergenico };
   Object.entries(checks).forEach(([k, v]) => {
     const el = f.querySelector(`[name="${k}"]`); if (el) el.checked = !!v;
@@ -624,7 +627,7 @@ function abrirEditar(id) {
 
   // Mostrar/ocultar campos condicionales
   toggleCamposEntrega(f, d.tipo_entrega);
-  toggleCamposPuntos(f, d.canjeable_con_puntos);
+  sincronizarCamposCanje(f);
 
   document.getElementById('modal-editar').classList.remove('hidden');
 }
@@ -638,9 +641,38 @@ function toggleCamposEntrega(form, tipo) {
   if (divLote)  divLote.classList.toggle('hidden', tipo !== 'programado');
 }
 
-function toggleCamposPuntos(form, activo) {
+function sincronizarCamposCanje(form) {
+  if (!form) return;
+  const canjeable = form.querySelector('[name="canjeable_con_puntos"]');
+  const soloCanje = form.querySelector('[name="solo_canje"]');
+  const precio = form.querySelector('[name="precio"]');
+  const puntos = form.querySelector('[name="puntos_para_canje"]');
   const div = form.querySelector('.campo-puntos-canje');
-  if (div) div.classList.toggle('hidden', !activo);
+  const hint = form.querySelector('[data-solo-canje-price-hint]');
+  const esExclusivo = !!soloCanje?.checked;
+
+  if (esExclusivo && canjeable) canjeable.checked = true;
+  const estaHabilitado = !!canjeable?.checked || esExclusivo;
+  if (div) div.classList.toggle('hidden', !estaHabilitado);
+  if (puntos) puntos.required = estaHabilitado;
+
+  if (precio) {
+    if (esExclusivo) {
+      const actual = Number(precio.value);
+      if (actual > 0) {
+        precio.dataset.precioVentaAnterior = precio.value;
+      }
+      precio.value = '0.00';
+      precio.readOnly = true;
+    } else {
+      const eraSoloCanje = precio.readOnly;
+      precio.readOnly = false;
+      if (eraSoloCanje && Number(precio.value) === 0) {
+        precio.value = precio.dataset.precioVentaAnterior || '';
+      }
+    }
+  }
+  if (hint) hint.classList.toggle('hidden', !esExclusivo);
 }
 
 // Evento tipo_entrega
@@ -649,11 +681,13 @@ document.addEventListener('change', e => {
     const form = e.target.closest('form');
     toggleCamposEntrega(form, e.target.value);
   }
-  if (e.target.name === 'canjeable_con_puntos') {
+  if (e.target.name === 'canjeable_con_puntos' || e.target.name === 'solo_canje') {
     const form = e.target.closest('form');
-    toggleCamposPuntos(form, e.target.checked);
+    sincronizarCamposCanje(form);
   }
 });
+
+document.querySelectorAll('#modal-nuevo form, #modal-editar form').forEach(sincronizarCamposCanje);
 
 // ── Preview de imagen ────────────────────────────────────────────────────────
 function previewImagen(input) {

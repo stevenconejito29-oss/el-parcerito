@@ -1071,6 +1071,52 @@ class Product(db.Model):
             return False
         return self.disponible_para_venta(cantidad)
 
+    @staticmethod
+    def normalizar_configuracion_canje(
+        *, canjeable, solo_canje, puntos_para_canje, precio
+    ):
+        """Aplica las invariantes económicas de un producto canjeable.
+
+        Es la única política compartida por creación y edición: un producto
+        exclusivo siempre cuesta 0 €, siempre es canjeable y requiere puntos
+        positivos; cualquier producto vendible normalmente requiere precio
+        positivo. Devuelve valores listos para persistir.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        exclusivo = bool(solo_canje)
+        habilitado = bool(canjeable) or exclusivo
+        try:
+            precio_decimal = Decimal(str(precio or 0))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValueError("El precio debe ser un número válido.")
+        if not precio_decimal.is_finite():
+            raise ValueError("El precio debe ser un número válido.")
+
+        if habilitado:
+            try:
+                puntos = int(puntos_para_canje or 0)
+            except (TypeError, ValueError):
+                puntos = 0
+            if puntos <= 0:
+                raise ValueError(
+                    "Indica cuántos puntos se necesitan para el canje (debe ser > 0)."
+                )
+        else:
+            puntos = None
+
+        if exclusivo:
+            precio_decimal = Decimal("0.00")
+        elif precio_decimal <= 0:
+            raise ValueError("El precio debe ser mayor que 0.")
+
+        return {
+            "canjeable_con_puntos": habilitado,
+            "solo_canje": exclusivo,
+            "puntos_para_canje": puntos,
+            "precio": float(precio_decimal),
+        }
+
     @property
     def precio_final(self):
         return float(self.precio)

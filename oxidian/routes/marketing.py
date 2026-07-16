@@ -135,14 +135,30 @@ def configurar_producto_puntos(producto_id):
         puntos = int(request.form.get("puntos_para_canje") or 0)
     except (TypeError, ValueError):
         puntos = 0
-    if activar and puntos <= 0:
-        flash("Indica una cantidad de puntos mayor que cero.", "danger")
+    if producto.solo_canje and not activar:
+        flash(
+            "Este producto es exclusivo de canje. Para convertirlo en producto de venta, "
+            "edítalo primero y asigna un precio mayor que cero.",
+            "warning",
+        )
         return redirect(url_for("marketing.puntos"))
     if activar and producto.es_combo and producto.combo_items.filter_by(es_seleccionable=True).count():
         flash("Un combo con opciones seleccionables no puede ser canje directo.", "danger")
         return redirect(url_for("marketing.puntos"))
-    producto.canjeable_con_puntos = activar
-    producto.puntos_para_canje = puntos if activar else None
+    try:
+        configuracion = Product.normalizar_configuracion_canje(
+            canjeable=activar,
+            solo_canje=producto.solo_canje,
+            puntos_para_canje=puntos,
+            precio=producto.precio,
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("marketing.puntos"))
+    producto.canjeable_con_puntos = configuracion["canjeable_con_puntos"]
+    producto.solo_canje = configuracion["solo_canje"]
+    producto.puntos_para_canje = configuracion["puntos_para_canje"]
+    producto.precio = configuracion["precio"]
     AuditLog.registrar(current_user.id, "configurar_canje_producto", "product",
                        producto.id, detalle=f"activo={activar}, puntos={puntos}",
                        ip=request.remote_addr)
