@@ -230,6 +230,52 @@ def _complete_login(user):
     session.permanent = True
     login_user(user, remember=False)
     session["mfa_v"] = int(user.mfa_session_version or 0)
+    # Notificación de detección de intrusiones: cuando un admin/super_admin
+    # inicia sesión, avisamos por push web a los DEMÁS admins/super_admins.
+    # Si tu cuenta es comprometida vía SIM-swap o phishing, los otros
+    # admins ven la alerta y pueden pulsar el modo pánico o cambiar
+    # contraseñas antes de que se haga daño. La notificación incluye IP y
+    # user-agent para saber si el login coincide con tu dispositivo real.
+    if user.rol in ("admin", "super_admin"):
+        try:
+            _notificar_login_admin(user)
+        except Exception:
+            # No bloqueamos el login si el push falla — sería un DoS
+            # accidental. Solo se registra el fallo para diagnóstico.
+            from flask import current_app
+            current_app.logger.exception("push notify_admin_login")
+
+
+def _notificar_login_admin(user):
+    """Envía push a los OTROS admins avisando de un login de admin nuevo.
+
+    El usuario que acaba de entrar NO recibe la alerta (redundante), pero
+    todos los demás sí. Ideal para detectar SIM-swap / phishing rápido.
+    """
+    from models import PushSubscription, User as _U
+    from push_service import _build_payload, _dispatch
+    # IP y user-agent para que el receptor pueda validar si es un
+    # dispositivo esperado o algo raro.
+    ip = (request.headers.get("X-Real-IP") or request.remote_addr or "?").strip()
+    ua_raw = (request.headers.get("User-Agent") or "?").strip()
+    # Recortamos el UA para que quepa en la notificación sin cortar palabras.
+    ua = (ua_raw[:80] + "…") if len(ua_raw) > 80 else ua_raw
+    subs = PushSubscription.query.filter(
+        PushSubscription.activo.is_(True),
+        PushSubscription.usuario.has(_U.rol.in_(("admin", "super_admin"))),
+        PushSubscription.user_id != user.id,   # no notificar al propio user
+    ).all()
+    if not subs:
+        return
+    titulo = f"🔐 Login admin: {user.nombre}"
+    cuerpo = f"Desde IP {ip}. Si NO fuiste tú/tu equipo, escribe *!emergency_on* al bot."
+    payload = _build_payload(
+        titulo, cuerpo,
+        url="/admin/dashboard",
+        tag=f"admin-login-{user.id}",   # colapsa alertas repetidas del mismo user
+        require_interaction=False,
+    )
+    _dispatch(subs, payload)
 
 
 def _verify_totp(secret, code):

@@ -3665,6 +3665,42 @@ async function handleAdminChat(jid, ses, text) {
   return sent;
 }
 
+// Comandos que cambian el estado global del bot/tienda o mueven info crítica.
+// Cuando los ejecuta cualquier admin que NO sea el owner, se avisa al owner.
+const CRITICAL_ADMIN_CMDS = new Set([
+  'emergency_on', 'emergency_off', 'panic', 'reanudar',
+  'cerrar-tienda', 'abrir-tienda', 'pausar-tienda', 'reanudar-tienda',
+  'sync', 'bloquear', 'desbloquear',
+]);
+
+async function maybeAlertOwnerOnCriticalCmd(jid, lowerCmd) {
+  // Extraer el "verbo" del comando (parte antes del primer espacio) para
+  // que comandos con argumentos también se detecten (ej. "sync full").
+  const verb = String(lowerCmd || '').split(/\s+/)[0];
+  if (!CRITICAL_ADMIN_CMDS.has(verb)) return;
+  if (isOwnerJid(jid)) return; // el propio owner no se avisa a sí mismo
+  const owner = normalizePhone(OWNER_NUMBER);
+  if (!owner) return; // sin owner configurado no hay a quién avisar
+  const actorPhone = phoneFromJid(jid);
+  const actorMasked = actorPhone
+    ? actorPhone.replace(/(\d{2})\d+(\d{2})$/, '$1***$2')
+    : '¿?';
+  const ownerJid = `${owner}@s.whatsapp.net`;
+  try {
+    await sendText(ownerJid,
+      `🚨 *Comando crítico ejecutado por otro admin*\n\n` +
+      `• Comando: *!${verb}*\n` +
+      `• Ejecutado por: ${actorMasked}\n` +
+      `• Hora: ${new Date().toLocaleString('es-ES')}\n\n` +
+      `Si no lo autorizaste tú, escribe *!emergency_on* y llama al equipo.`
+    );
+    log('info', 'critical_cmd_alert', `${verb} por ${actorMasked}`);
+  } catch (err) {
+    log('warn', 'critical_cmd_alert_fail', String(err?.message || err));
+  }
+}
+
+
 async function handleAdminCmd(jid, text) {
   // Defense-in-depth: aunque los callers ya validan `isAdminJid`, verificamos
   // otra vez aquí para que una corrupción de estado o un futuro caller
@@ -3694,6 +3730,11 @@ async function handleAdminCmd(jid, text) {
     return sendText(jid, `No tienes permiso para ese comando.\n\n${adminMenu(jid)}`);
   }
   bumpStat('admin_cmd');
+  // Detección de intrusiones: cuando un admin/superadmin DISTINTO del owner
+  // ejecuta un comando de alto impacto (pánico, sync, cerrar tienda...) se
+  // avisa al owner. Si el compañero fue víctima de SIM-swap o phishing,
+  // tú te enteras al momento y puedes parar el bot desde el panel web.
+  await maybeAlertOwnerOnCriticalCmd(jid, lowerCmd).catch(() => {});
 
   if (lowerCmd === 'status') {
     const sesiones = db.prepare(`SELECT COUNT(*) as c FROM sessions`).get().c;
