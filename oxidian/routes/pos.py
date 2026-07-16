@@ -538,12 +538,6 @@ def devolver_venta(pedido_id):
             detalle=motivo,
             forzar_desde_entregado=True,
         )
-        # Registrar egreso de caja por devolución
-        registrar_egreso(float(pedido.total),
-                         f"Devolución {pedido.numero_pedido} — {motivo}",
-                         categoria="devolucion",
-                         pedido_id=pedido.id,
-                         registrado_por=current_user.id)
         db.session.commit()
         flash(f"Venta {pedido.numero_pedido} devuelta. Stock repuesto.", "success")
     except ValueError as e:

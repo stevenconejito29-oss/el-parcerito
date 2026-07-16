@@ -4091,6 +4091,7 @@ def bot_admin_pedidos_riesgo():
         sin_repartidor = Order.query.filter(
             Order.estado == "listo",
             Order.repartidor_id.is_(None),
+            Order.tipo_entrega_cliente == "delivery",
         ).order_by(Order.creado_en.asc()).limit(8).all()
         listos_lentos = Order.query.filter(
             Order.estado == "listo",

@@ -354,7 +354,7 @@
         <p class="work-client">{{ pedido.cliente.nombre }}</p>
         <div class="work-payment">
           <span class="work-chip work-payment-method {% if pedido.metodo_pago == 'bizum' %}is-presencial{% endif %}">
-            {% if pedido.metodo_pago == 'bizum' %}📱 Bizum{% else %}💵 Efectivo{% endif %}
+            {% if pedido.metodo_pago == 'bizum' %}📱 Bizum{% elif pedido.metodo_pago == 'tarjeta' %}💳 Tarjeta{% else %}💵 Efectivo{% endif %}
           </span>
           <span class="work-money work-payment-total">€{{ "%.2f"|format(pedido.total) }}</span>
         </div>
@@ -544,7 +544,7 @@
         <p class="work-client">{{ pedido.cliente.nombre }}</p>
         <div class="work-payment">
           <span class="work-chip work-payment-method {% if pedido.metodo_pago == 'bizum' %}is-presencial{% endif %}">
-            {% if pedido.metodo_pago == 'bizum' %}📱 Bizum{% else %}💵 Efectivo{% endif %}
+            {% if pedido.metodo_pago == 'bizum' %}📱 Bizum{% elif pedido.metodo_pago == 'tarjeta' %}💳 Tarjeta{% else %}💵 Efectivo{% endif %}
           </span>
           <span class="work-money work-payment-total">€{{ "%.2f"|format(pedido.total) }}</span>
         </div>
@@ -644,6 +644,25 @@
           </label>
           <input type="text" name="bizum_referencia"
                  placeholder="Referencia opcional: hora, nombre o últimos dígitos"
+                 class="ox-input text-sm mt-2" style="min-height:44px">
+        </div>
+        {% endif %}
+        {% elif pedido.metodo_pago == 'tarjeta' %}
+        {% if pedido.pago_confirmado %}
+        <div class="work-panel work-panel--bizum mb-3">
+          <p class="work-confirm-label">2. Tarjeta ya confirmada</p>
+          <p class="work-confirm-note">Importe: <strong class="work-confirm-amount">€{{ "%.2f"|format(pedido.total) }}</strong></p>
+        </div>
+        {% else %}
+        <div class="work-panel work-panel--bizum mb-3">
+          <p class="work-confirm-label">2. Confirmar cobro con tarjeta</p>
+          <p class="work-confirm-note">Verifica que el terminal muestre la operación aprobada por <strong class="work-confirm-amount">€{{ "%.2f"|format(pedido.total) }}</strong>.</p>
+          <label class="mt-2 flex items-start gap-2 text-sm font-bold" style="color:var(--col-text)">
+            <input type="checkbox" name="tarjeta_cobrada" required class="accent-green-500 w-4 h-4 mt-0.5">
+            <span>Confirmo que el pago fue aprobado antes de entregar.</span>
+          </label>
+          <input type="text" name="tarjeta_referencia" maxlength="80"
+                 placeholder="Referencia opcional del terminal"
                  class="ox-input text-sm mt-2" style="min-height:44px">
         </div>
         {% endif %}

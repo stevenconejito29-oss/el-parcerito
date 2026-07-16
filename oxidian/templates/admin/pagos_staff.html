@@ -93,8 +93,7 @@
         <p class="font-black text-sm text-white">Comisiones repartidores</p>
         <p class="text-xs" style="color:var(--col-muted)">Una liquidación por pedido según el envío cobrado</p>
       </div>
-      <span class="ml-auto text-xs px-2 py-0.5 rounded-full font-bold"
-            class="staff-pill staff-pill-auto">AUTO</span>
+      <span class="ml-auto text-xs px-2 py-0.5 rounded-full font-bold staff-pill staff-pill-auto">AUTO</span>
     </div>
     <form method="POST" action="{{ url_for('admin.generar_comisiones_repartidores') }}" class="space-y-2">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -122,8 +121,7 @@
         <p class="font-black text-sm text-white">Salarios del período</p>
         <p class="text-xs" style="color:var(--col-muted)">Genera salario base para todo el equipo</p>
       </div>
-      <span class="ml-auto text-xs px-2 py-0.5 rounded-full font-bold"
-            class="staff-pill staff-pill-auto-2">AUTO</span>
+      <span class="ml-auto text-xs px-2 py-0.5 rounded-full font-bold staff-pill staff-pill-auto-2">AUTO</span>
     </div>
     <form method="POST" action="{{ url_for('admin.generar_salarios') }}" class="space-y-2">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -149,8 +147,7 @@
 <details class="ox-card p-4 mb-5">
   <summary class="cursor-pointer font-bold text-sm text-white flex items-center gap-2">
     <span>✏️ Registro manual</span>
-    <span class="text-xs px-2 py-0.5 rounded-full"
-          class="staff-pill staff-pill-manual">Bonus · Adelanto · Descuento</span>
+    <span class="text-xs px-2 py-0.5 rounded-full staff-pill staff-pill-manual">Bonus · Adelanto · Descuento</span>
   </summary>
   <form method="POST" action="{{ url_for('admin.crear_pago_staff') }}" class="grid md:grid-cols-3 gap-3 mt-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -190,8 +187,7 @@
       <input type="date" name="periodo_fin" class="ps-input">
     </div>
     <div class="flex items-end">
-      <button type="submit" class="w-full py-2.5 rounded-xl font-bold text-black text-sm"
-              class="staff-btn-create">✓ Crear registro</button>
+      <button type="submit" class="w-full py-2.5 rounded-xl font-bold text-black text-sm staff-btn-create">✓ Crear registro</button>
     </div>
   </form>
 </details>
@@ -298,8 +294,7 @@
             {% if not p.pagado %}
             <form method="POST" action="{{ url_for('admin.marcar_pago_pagado', pago_id=p.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="text-xs px-2 py-1 rounded-lg font-bold"
-                      class="staff-btn-pay">Pagar</button>
+              <button type="submit" class="text-xs px-2 py-1 rounded-lg font-bold staff-btn-pay">Pagar</button>
             </form>
             {% endif %}
           </td>

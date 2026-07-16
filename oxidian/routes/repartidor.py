@@ -479,6 +479,10 @@ def confirmar_entrega(pedido_id):
                     "warning",
                 )
                 return redirect(url_for("repartidor.ruta"))
+    elif metodo_pago == "tarjeta":
+        if not pedido.pago_confirmado and not bool(request.form.get("tarjeta_cobrada")):
+            flash("Confirma el cobro aprobado en el terminal antes de entregar.", "warning")
+            return redirect(url_for("repartidor.ruta"))
     elif not bool(request.form.get("cobro_recibido")):
         flash("Confirma que recibiste el pago en efectivo antes de marcar como entregado.", "warning")
         return redirect(url_for("repartidor.ruta"))
@@ -518,6 +522,11 @@ def confirmar_entrega(pedido_id):
         if metodo_pago == "bizum":
             referencia = (request.form.get("bizum_referencia") or "").strip()
             detalle_pago = "bizum confirmado por repartidor"
+            if referencia:
+                detalle_pago = f"{detalle_pago} ({referencia[:80]})"
+        elif metodo_pago == "tarjeta":
+            referencia = (request.form.get("tarjeta_referencia") or "").strip()
+            detalle_pago = "tarjeta confirmada por repartidor"
             if referencia:
                 detalle_pago = f"{detalle_pago} ({referencia[:80]})"
         registrar_pago_pedido(

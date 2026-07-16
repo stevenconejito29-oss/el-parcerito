@@ -300,9 +300,9 @@ class User(UserMixin, db.Model):
 
 
 def normalizar_metodo_pago(val):
-    """Efectivo / Bizum únicos métodos internos; compatibilidad con valores antiguos."""
+    """Normaliza métodos actuales y migra el alias histórico transferencia."""
     v = (val or "efectivo").strip().lower()
-    if v in ("transferencia", "tarjeta"):
+    if v == "transferencia":
         return "bizum"
     if v in METODOS_PAGO_VALIDOS:
         return v
@@ -368,6 +368,11 @@ class StaffPayment(db.Model):
     def marcar_pagado(self):
         self.pagado = True
         self.fecha_pago = utcnow()
+
+    @property
+    def genera_egreso_caja(self):
+        """Un descuento reduce nómina, pero no representa una salida de dinero."""
+        return self.tipo != "descuento"
 
     @property
     def descripcion_completa(self):
@@ -3162,18 +3167,23 @@ class Caja(db.Model):
             "pedido_id",
             unique=True,
             postgresql_where=text("tipo = 'ingreso' AND pedido_id IS NOT NULL"),
+            sqlite_where=text("tipo = 'ingreso' AND pedido_id IS NOT NULL"),
         ),
         db.Index(
             "uq_caja_staff_payment_expense",
             "staff_payment_id",
             unique=True,
             postgresql_where=text("tipo = 'egreso' AND staff_payment_id IS NOT NULL"),
+            sqlite_where=text("tipo = 'egreso' AND staff_payment_id IS NOT NULL"),
         ),
         db.Index(
             "uq_caja_order_refund",
             "pedido_id",
             unique=True,
             postgresql_where=text(
+                "tipo = 'egreso' AND categoria = 'devolucion' AND pedido_id IS NOT NULL"
+            ),
+            sqlite_where=text(
                 "tipo = 'egreso' AND categoria = 'devolucion' AND pedido_id IS NOT NULL"
             ),
         ),

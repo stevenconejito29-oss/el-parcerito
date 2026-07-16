@@ -138,15 +138,18 @@
   </div>
 
   <div class="flex items-center justify-between gap-3 mt-3 flex-wrap">
+    {% if pedido.estado == 'pendiente' or (pedido.estado == 'listo' and pedido.requiere_reparto and brand.delivery) %}
     <form method="POST" action="{{ url_for('admin.asignar_pedido', pedido_id=pedido.id) }}" class="flex gap-2 flex-wrap">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if pedido.estado == 'pendiente' %}
       <select name="preparador_id" class="ord-select">
         <option value="">Preparador</option>
         {% for u in preparadores %}
         <option value="{{ u.id }}" {% if pedido.preparador_id == u.id %}selected{% endif %}>{{ u.nombre }} · {{ u.pedidos_activos_como_preparador() }} activos</option>
         {% endfor %}
       </select>
-      {% if brand.delivery %}<select name="repartidor_id" class="ord-select">
+      {% endif %}
+      {% if pedido.estado == 'listo' and pedido.requiere_reparto and brand.delivery %}<select name="repartidor_id" class="ord-select">
         <option value="">Repartidor</option>
         {% for u in repartidores %}
         <option value="{{ u.id }}" {% if pedido.repartidor_id == u.id %}selected{% endif %}>{{ u.nombre }} · {{ u.pedidos_activos_como_repartidor() }} activos</option>
@@ -154,6 +157,12 @@
       </select>{% endif %}
       <button type="submit" class="ord-btn">Asignar</button>
     </form>
+    {% else %}
+    <div class="flex gap-2 flex-wrap" aria-label="Responsables del pedido">
+      {% if pedido.preparador %}<span class="ord-chip">Preparó: {{ pedido.preparador.nombre }}</span>{% endif %}
+      {% if pedido.repartidor %}<span class="ord-chip">Reparte: {{ pedido.repartidor.nombre }}</span>{% endif %}
+    </div>
+    {% endif %}
 
     <div class="flex gap-2 flex-wrap">
       {{ ticket_action(pedido, 'ord-btn', 'Reimprimir ticket') }}

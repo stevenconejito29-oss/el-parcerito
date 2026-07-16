@@ -189,15 +189,15 @@ Staff/Admin → GET /pos/              (catálogo + búsqueda)
                  ├── registrar_ingreso() (categoria="venta_presencial")
                  └── db.session.commit()
            → POST /pos/devolver/<id>  (cancela pedido POS)
-                 ├── pedido.cancelar(forzar_desde_entregado=True)
+                 ├── cancelar_pedido_operativo(forzar_desde_entregado=True)
                  ├── restaura stock SOLO de items tipo="inmediato"
-                 └── registrar_egreso() (categoria="gasto_operativo")
+                 └── revierte el ingreso cobrado (categoria="devolucion")
            → POST /pos/movimiento     (entrada/salida manual de caja)
 ```
 
 **Diferencia clave POS vs web/bot:**
 - POS crea el pedido directamente en estado `"entregado"` (sin pasar por la cadena de estados)
-- La devolución POS usa `forzar_desde_entregado=True` en `cancelar()`
+- La devolución POS usa `forzar_desde_entregado=True` en `cancelar_pedido_operativo()`
 
 ---
 
@@ -221,10 +221,19 @@ Cancelación:
   - Restaura stock (solo items "inmediato" en online/whatsapp; todos en presencial)
   - Devuelve puntos_usados al cliente
   - Quita puntos_ganados del cliente (hasta su saldo actual)
+  - Libera cupón/afiliado y comisiones pendientes
+  - Si existía ingreso en Caja, crea una única reversión `devolucion`
+
+Asignación y recuperación:
+  - Preparador: asignación/reasignación únicamente en `pendiente`
+  - Repartidor: asignación/reasignación únicamente en `listo` y delivery
+  - Zona compatible y menor carga tienen prioridad en el reparto automático
+  - El rebalanceo automático solo mueve trabajo no iniciado (`pendiente`/`listo`)
+  - `armando` y `en_ruta` conservan responsable para evitar duplicar trabajo físico
 
 Confirmación pago digital (bizum):
   admin.confirmar_pago_digital() → pago_confirmado=True + notifica WA
-  admin.rechazar_pago_digital()  → cancelar() + notifica WA
+  admin.rechazar_pago_digital()  → cancelar_pedido_operativo() + notifica WA
 ```
 
 **Campos de control en Order:**
@@ -262,7 +271,7 @@ Confirmación pago digital (bizum):
    → opcionalmente añade producto gratis (OrderItem precio=0)
    → limpia OTP usado
 
-5. CANCELAR PEDIDO (Order.cancelar):
+5. CANCELAR PEDIDO (cancelar_pedido_operativo):
    → Quita puntos_ganados (hasta saldo actual): PointsLog(tipo="cancelado")
    → Devuelve puntos_usados: PointsLog(tipo="ganado")
 ```
@@ -400,7 +409,7 @@ Pago de comisión:
 | `comision` | Auto: afiliado | % del pedido por código afiliado |
 | `bonus` | Manual admin | Bono extraordinario |
 | `adelanto` | Manual admin | Anticipo de nómina |
-| `descuento` | Manual admin | Descuento (ej. falta) |
+| `descuento` | Manual admin | Reduce el neto; no genera salida de caja |
 
 ### Flujo de generación automática
 ```
@@ -410,7 +419,7 @@ Entrega completada:
 
 Generación por período:
   admin → POST /admin/pagos-staff/generar-comisiones-repartidores
-    └── Agrupa entregas por repartidor en período, crea un StaffPayment por repartidor
+    └── Completa pedidos delivery históricos sin comisión; una comisión por pedido
 
 Generación de salarios:
   admin → POST /admin/pagos-staff/generar-salarios
@@ -421,6 +430,7 @@ Generación de salarios:
 ```
 admin → POST /admin/pagos-staff/<id>/pagar  → marcar_pagado() + registrar_egreso()
 admin → POST /admin/pagos-staff/pagar-seleccion → batch de IDs → marcar_pagado() + egreso
+Los asientos `descuento` se marcan procesados pero nunca crean `Caja.egreso`.
 ```
 
 ---
@@ -434,6 +444,7 @@ admin → POST /admin/pagos-staff/pagar-seleccion → batch de IDs → marcar_pa
 | `venta_whatsapp` | ingreso | api_bot |
 | `venta_presencial` | ingreso | pos cobrar |
 | `pago_staff` | egreso | marcar pago staff |
+| `devolucion` | egreso | reversión idempotente de un pedido cancelado |
 | `compra_insumos` | egreso | manual admin |
 | `gasto_operativo` | egreso | manual admin, devolución POS |
 | `adelanto` | egreso | adelanto de nómina |
@@ -446,6 +457,9 @@ registrar_ingreso(monto, concepto, categoria, pedido_id, registrado_por)
 
 registrar_egreso(monto, concepto, categoria, staff_payment_id, registrado_por)
   → Caja(tipo="egreso", ...)
+
+cancelar_pedido_operativo(...)
+  → si el pedido tenía un ingreso, registra una sola devolución por pedido
 
 Exportar: GET /admin/caja/exportar → CSV con filtro de fechas
 ```

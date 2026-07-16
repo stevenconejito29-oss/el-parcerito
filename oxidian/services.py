@@ -663,6 +663,8 @@ def reasignar_responsable_pedido(
         raise ValueError("Campo de responsable inválido.")
     if campo == "repartidor_id" and not get_store_features()["delivery"]:
         raise ValueError("El módulo de delivery está desactivado.")
+    if campo == "repartidor_id" and not pedido.requiere_reparto:
+        raise ValueError("Los pedidos para recoger no admiten repartidor.")
 
     anterior_id = getattr(pedido, campo)
     nuevo_id = user_id or None
@@ -877,6 +879,11 @@ def cancelar_pedido_operativo(
     """
     estado_anterior = pedido.estado
     _ejecutar_cancelacion_pedido(pedido, forzar_desde_entregado=forzar_desde_entregado)
+    registrar_reversion_caja_pedido(
+        pedido,
+        motivo=detalle or canal or "cancelación",
+        registrado_por=actor_id,
+    )
     registrar_evento_pedido(
         pedido,
         "pedido_cancelado",
@@ -885,6 +892,39 @@ def cancelar_pedido_operativo(
         estado_nuevo=pedido.estado,
         canal=canal,
         detalle=detalle,
+    )
+
+
+def registrar_reversion_caja_pedido(
+    pedido: Order,
+    motivo: str,
+    registrado_por: int | None = None,
+) -> Caja | None:
+    """Revierte de forma idempotente el ingreso cobrado de un pedido cancelado.
+
+    La cancelación puede originarse en admin, POS, bot, proveedor o reparto;
+    por eso la reversión pertenece al servicio de dominio y no a una ruta.
+    Solo se descuentan devoluciones previas: otros egresos relacionados con el
+    pedido (si los hubiera) no reducen el dinero que corresponde devolver.
+    """
+    ingresos = db.session.query(db.func.coalesce(db.func.sum(Caja.monto), 0)).filter(
+        Caja.pedido_id == pedido.id,
+        Caja.tipo == "ingreso",
+    ).scalar() or 0
+    devoluciones = db.session.query(db.func.coalesce(db.func.sum(Caja.monto), 0)).filter(
+        Caja.pedido_id == pedido.id,
+        Caja.tipo == "egreso",
+        Caja.categoria == "devolucion",
+    ).scalar() or 0
+    monto = Decimal(str(ingresos)) - Decimal(str(devoluciones))
+    if monto <= 0:
+        return None
+    return registrar_egreso(
+        monto.quantize(Decimal("0.01")),
+        f"Reversión {pedido.numero_pedido} — {motivo}"[:200],
+        categoria="devolucion",
+        pedido_id=pedido.id,
+        registrado_por=registrado_por,
     )
 
 
@@ -1524,11 +1564,12 @@ def _elegir_menos_cargado(candidatos: list, cargas: dict[int, int],
 
 
 def rebalancear_pedidos_huerfanos() -> dict:
-    """Reasigna pedidos cuyo preparador/repartidor está offline o inactivo.
+    """Reasigna trabajo no iniciado cuyo responsable está offline o inactivo.
 
-    Escenario: un empleado se cae en medio del turno. Sus pedidos activos
-    quedan bloqueados hasta que alguien los tome manual. Este helper los
-    re-asigna a otros disponibles.
+    Nunca mueve pedidos ``armando`` ni ``en_ruta``: en esos estados el
+    responsable puede tener físicamente el producto y una reasignación
+    automática duplicaría preparación o entrega. Esos incidentes se resuelven
+    explícitamente desde operación.
 
     Ejecutable desde el worker (cron) o desde admin como acción one-shot.
     Devuelve dict con conteos por rol.
@@ -1539,7 +1580,7 @@ def rebalancear_pedidos_huerfanos() -> dict:
     pedidos_prep = (
         Order.query
         .filter(
-            Order.estado.in_(ESTADOS_EN_PREPARACION),
+            Order.estado == "pendiente",
             Order.preparador_id.isnot(None),
         )
         .join(User, Order.preparador_id == User.id)
@@ -1569,7 +1610,7 @@ def rebalancear_pedidos_huerfanos() -> dict:
     pedidos_rep = (
         Order.query
         .filter(
-            Order.estado.in_(ESTADOS_EN_REPARTO),
+            Order.estado == "listo",
             Order.repartidor_id.isnot(None),
             Order.tipo_entrega_cliente == "delivery",
         )
@@ -1817,6 +1858,15 @@ def redistribuir_listos_sin_repartidor() -> int:
     return asignados
 
 
+def pedidos_delivery_sin_repartidor_query():
+    """Fuente única de pedidos realmente repartibles que esperan conductor."""
+    return Order.query.filter(
+        Order.estado == "listo",
+        Order.repartidor_id.is_(None),
+        Order.tipo_entrega_cliente == "delivery",
+    )
+
+
 def estado_cola() -> dict:
     """Snapshot del estado actual de la cola por rol.
     Usa conteos agregados en una sola query para evitar N+1 bajo carga."""
@@ -1841,6 +1891,7 @@ def estado_cola() -> dict:
         ).filter(
             _Order.estado.in_(ESTADOS_EN_REPARTO),
             _Order.repartidor_id.isnot(None),
+            _Order.tipo_entrega_cliente == "delivery",
         ).group_by(_Order.repartidor_id).all()
     }
 
@@ -1979,7 +2030,7 @@ def generar_comision_entrega(pedido: Order) -> StaffPayment | None:
     Usa la tarifa configurada del repartidor. Si no existe, usa el coste de
     entrega cobrado como compatibilidad con instalaciones anteriores.
     """
-    if not pedido.repartidor_id:
+    if not pedido.repartidor_id or not pedido.requiere_reparto:
         return None
     existente = StaffPayment.query.filter_by(
         user_id=pedido.repartidor_id,
@@ -2029,9 +2080,12 @@ def resumen_caja_hoy():
 
 
 def pagos_pendientes_staff():
-    """Devuelve monto total pendiente de pago al staff."""
+    """Devuelve obligaciones pendientes que producirán una salida de caja."""
     from sqlalchemy import func
-    total = db.session.query(func.sum(StaffPayment.monto)).filter_by(pagado=False).scalar() or 0
+    total = db.session.query(func.sum(StaffPayment.monto)).filter(
+        StaffPayment.pagado.is_(False),
+        StaffPayment.tipo != "descuento",
+    ).scalar() or 0
     return float(total)
 
 

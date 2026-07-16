@@ -146,20 +146,51 @@ class WorkloadBalancingTest(unittest.TestCase):
         self.assertEqual(cargas[a.id], 2)
         self.assertEqual(cargas[b.id], 1)
 
+    def test_cola_sin_repartidor_excluye_recogidas(self):
+        from services import pedidos_delivery_sin_repartidor_query
+        delivery = self._mk_pedido("listo", tipo_entrega="delivery")
+        self._mk_pedido("listo", tipo_entrega="recogida")
+
+        ids = {p.id for p in pedidos_delivery_sin_repartidor_query().all()}
+        self.assertEqual(ids, {delivery.id})
+
+    def test_no_se_puede_asignar_repartidor_a_recogida(self):
+        from services import reasignar_responsable_pedido
+        repartidor = self._mk_user("Rider", rol="repartidor")
+        recogida = self._mk_pedido("listo", tipo_entrega="recogida")
+
+        with self.assertRaisesRegex(ValueError, "recoger"):
+            reasignar_responsable_pedido(
+                recogida, "repartidor_id", repartidor.id, canal="test"
+            )
+        self.assertIsNone(recogida.repartidor_id)
+
     # ── Rebalanceo huérfanos ───────────────────────────────────────
 
-    def test_rebalanceo_reasigna_pedidos_de_offline(self):
+    def test_rebalanceo_no_duplica_preparacion_ya_iniciada(self):
         from services import rebalancear_pedidos_huerfanos
-        # Cocinero offline con 1 pedido activo.
+        # Un pedido ya armando puede estar físicamente con el cocinero.
         offline = self._mk_user("Off", rol="cocina", disponible=False)
-        online = self._mk_user("On", rol="cocina", disponible=True)
+        self._mk_user("On", rol="cocina", disponible=True)
         pedido = self._mk_pedido("armando", preparador_id=offline.id)
 
         res = rebalancear_pedidos_huerfanos()
         db.session.refresh(pedido)
 
-        # El pedido debe haberse reasignado o quedado sin preparador.
-        self.assertGreaterEqual(res["preparador"], 0)
+        self.assertEqual(res["preparador"], 0)
+        self.assertEqual(pedido.preparador_id, offline.id)
+
+    def test_rebalanceo_no_mueve_pedido_que_ya_esta_en_ruta(self):
+        from services import rebalancear_pedidos_huerfanos
+        offline = self._mk_user("OffRoute", rol="repartidor", disponible=False)
+        self._mk_user("OnRoute", rol="repartidor", disponible=True)
+        pedido = self._mk_pedido("en_ruta", repartidor_id=offline.id)
+
+        res = rebalancear_pedidos_huerfanos()
+        db.session.refresh(pedido)
+
+        self.assertEqual(res["repartidor"], 0)
+        self.assertEqual(pedido.repartidor_id, offline.id)
 
     def test_rebalanceo_no_toca_pedidos_de_empleados_disponibles(self):
         from services import rebalancear_pedidos_huerfanos

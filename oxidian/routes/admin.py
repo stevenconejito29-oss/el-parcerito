@@ -44,6 +44,7 @@ from services import (estado_cola, registrar_egreso, registrar_ingreso,
                       registrar_ingreso_pedido, procesar_notificaciones_pendientes,
                       registrar_evento_pedido, award_points_on_delivery,
                       reasignar_responsable_pedido,
+                      pedidos_delivery_sin_repartidor_query,
                       pedido_programado_disponible_para_preparar)
 from image_service import save_image, delete_image
 from phone_utils import (
@@ -466,10 +467,7 @@ def dashboard():
         Order.estado.in_(["pendiente", "armando"]),
         Order.preparador_id == None,
     ).count()
-    pedidos_sin_repartidor = Order.query.filter(
-        Order.estado == "listo",
-        Order.repartidor_id == None,
-    ).count()
+    pedidos_sin_repartidor = pedidos_delivery_sin_repartidor_query().count()
     pedidos_sin_asignar = pedidos_sin_preparador + pedidos_sin_repartidor
 
     # Cola de pedidos activos para el panel en vivo
@@ -543,10 +541,7 @@ def cola():
         Order.estado.in_(["pendiente", "armando"]),
         Order.preparador_id == None
     ).all()
-    pedidos_sin_repartidor = Order.query.filter(
-        Order.estado == "listo",
-        Order.repartidor_id == None
-    ).all()
+    pedidos_sin_repartidor = pedidos_delivery_sin_repartidor_query().all()
     return render_template("admin/cola.html",
                            cola=cola_data,
                            sin_asignar=pedidos_sin_asignar,
@@ -588,27 +583,6 @@ def reasignar_pedido(pedido_id):
 
 
 # ─── PEDIDOS ─────────────────────────────────
-
-def _registrar_reversion_caja_pedido(pedido, motivo, user_id):
-    """Registra un egreso por el ingreso neto asociado a un pedido cancelado."""
-    ingresos = db.session.query(db.func.coalesce(db.func.sum(Caja.monto), 0)).filter(
-        Caja.pedido_id == pedido.id,
-        Caja.tipo == "ingreso",
-    ).scalar() or 0
-    egresos = db.session.query(db.func.coalesce(db.func.sum(Caja.monto), 0)).filter(
-        Caja.pedido_id == pedido.id,
-        Caja.tipo == "egreso",
-    ).scalar() or 0
-    monto_revertir = round(float(ingresos) - float(egresos), 2)
-    if monto_revertir <= 0:
-        return None
-    return registrar_egreso(
-        monto_revertir,
-        f"Reversion {pedido.numero_pedido} - {motivo}",
-        categoria="devolucion",
-        pedido_id=pedido.id,
-        registrado_por=user_id,
-    )
 
 @admin_bp.route("/pedidos")
 @admin_required
@@ -754,7 +728,6 @@ def cancelar_pedido(pedido_id):
             canal="admin",
             detalle="cancelacion admin",
         )
-        _registrar_reversion_caja_pedido(pedido, "cancelacion admin", current_user.id)
         enviar_whatsapp_estado(pedido)
         db.session.commit()
         flash(f"Pedido {pedido.numero_pedido} cancelado.", "warning")
@@ -925,7 +898,6 @@ def rechazar_pago_digital(pedido_id):
         db.session.rollback()
         flash(f"No se pudo rechazar el pago: {exc}", "danger")
         return redirect(url_for("admin.pagos_pendientes_digital"))
-    _registrar_reversion_caja_pedido(pedido, "pago rechazado", current_user.id)
     pedido.notas = (pedido.notas or "") + f" [Pago rechazado: {motivo}]"
     AuditLog.registrar(
         current_user.id, "rechazar_pago_digital", "order", pedido.id,
@@ -1090,15 +1062,25 @@ def pagos_staff():
         query = query.filter(StaffPayment.tipo == tipo_f)
 
     pagos = query.all()
-    total_pendiente = sum(float(p.monto or 0) for p in pagos if not p.pagado)
-    total_pagado = sum(float(p.monto or 0) for p in pagos if p.pagado)
+    total_pendiente = sum(
+        float(p.monto or 0) for p in pagos
+        if not p.pagado and p.genera_egreso_caja
+    )
+    total_pagado = sum(
+        float(p.monto or 0) for p in pagos
+        if p.pagado and p.genera_egreso_caja
+    )
     repartidores = [u for u in empleados if u.rol == "repartidor"]
     rep_ids = [r.id for r in repartidores]
     # Single query for all delivered orders across all repartidores
     # costo_envio is a @property so we pull the raw columns and compute in Python
     todos_entregados = (
         Order.query
-        .filter(Order.repartidor_id.in_(rep_ids), Order.estado == "entregado")
+        .filter(
+            Order.repartidor_id.in_(rep_ids),
+            Order.estado == "entregado",
+            Order.tipo_entrega_cliente == "delivery",
+        )
         .with_entities(Order.repartidor_id, Order.total, Order.subtotal, Order.descuento, Order.metodo_pago)
         .all()
     ) if rep_ids else []
@@ -1157,17 +1139,24 @@ def crear_pago_staff():
     periodo_inicio = request.form.get("periodo_inicio")
     periodo_fin = request.form.get("periodo_fin")
 
-    try:
-        monto = float(request.form.get("monto", 0) or 0)
-    except (ValueError, TypeError):
-        monto = 0.0
-    if not user_id or tipo not in TIPOS_STAFF_PAYMENT_MANUAL or monto <= 0:
+    empleado = db.session.get(User, user_id) if user_id else None
+    if (
+        not empleado
+        or not empleado.activo
+        or empleado.rol not in {"cocina", "preparacion", "repartidor"}
+        or tipo not in TIPOS_STAFF_PAYMENT_MANUAL
+    ):
         flash("Datos inválidos.", "danger")
         return redirect(url_for("admin.pagos_staff"))
 
     try:
+        monto = _parse_decimal_no_negativo(request.form.get("monto"), "Monto")
+        if monto <= 0:
+            raise ValueError("Monto debe ser mayor que 0.")
         pi = _parse_date_strict(periodo_inicio) if periodo_inicio else None
         pf = _parse_date_strict(periodo_fin) if periodo_fin else None
+        if pi and pf and pi > pf:
+            raise ValueError("La fecha de inicio debe ser anterior a la fecha fin.")
     except ValueError as e:
         flash(str(e), "danger")
         return redirect(url_for("admin.pagos_staff"))
@@ -1176,7 +1165,7 @@ def crear_pago_staff():
         user_id=user_id,
         tipo=tipo,
         monto=monto,
-        concepto=concepto,
+        concepto=concepto[:200],
         periodo_inicio=pi,
         periodo_fin=pf,
         registrado_por=current_user.id,
@@ -1200,7 +1189,7 @@ def marcar_pago_pagado(pago_id):
         return redirect(url_for("admin.pagos_staff"))
 
     pago.marcar_pagado()
-    if pago.tipo != "descuento":
+    if pago.genera_egreso_caja:
         registrar_egreso(float(pago.monto),
                          f"Pago staff: {pago.empleado.nombre} — {pago.descripcion_completa}",
                          categoria="pago_staff",
@@ -1231,7 +1220,7 @@ def pagar_seleccion():
     procesados = 0
     for pago in pagos:
         pago.marcar_pagado()
-        if pago.tipo != "descuento":
+        if pago.genera_egreso_caja:
             registrar_egreso(float(pago.monto),
                              f"Pago staff: {pago.empleado.nombre} — {pago.descripcion_completa}",
                              categoria="pago_staff",
@@ -1276,6 +1265,7 @@ def generar_comisiones_repartidores():
     pedidos_entregados = Order.query.filter(
         Order.estado == "entregado",
         Order.repartidor_id.isnot(None),
+        Order.tipo_entrega_cliente == "delivery",
         func.date(Order.entregado_en) >= fi,
         func.date(Order.entregado_en) <= ff,
     ).all()
@@ -1398,8 +1388,8 @@ def empleado_resumen(user_id):
     total_devengado = por_tipo["salario"] + por_tipo["comision"] + por_tipo["bonus"]
     total_descontado = por_tipo["adelanto"] + por_tipo["descuento"]
     neto_a_pagar = total_devengado - total_descontado
-    ya_pagado = _sum([p for p in pagos if p.pagado])
-    pendiente = _sum([p for p in pagos if not p.pagado])
+    ya_pagado = _sum([p for p in pagos if p.pagado and p.genera_egreso_caja])
+    pendiente = _sum([p for p in pagos if not p.pagado and p.genera_egreso_caja])
 
     # Entregas si es repartidor
     entregas = []
