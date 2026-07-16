@@ -34,6 +34,7 @@ from models import (Product, Categoria, Order, OrderItem, Review, Coupon,
 from idempotency import (request_idempotency_key, request_body_hash,
                           IDEMPOTENCY_TTL)
 from services import (buscar_cliente_por_telefono, distribuir_pedido,
+                       calcular_puntos_ganados,
                        enviar_whatsapp_estado, validar_radio_entrega,
                        asignar_zona_por_direccion,
                        asignar_zona_por_coordenadas,
@@ -1997,7 +1998,6 @@ def checkout():
         # `puntos_usar` suelto del formulario se ignora silenciosamente.
         puntos_cfg = get_puntos_config()
         ratio = puntos_cfg["ratio"]
-        puntos_por_euro = puntos_cfg["por_euro"]
         puntos_a_canjear = 0  # sin descuento libre; los puntos del producto se cargan más abajo
         cart_puntos = session.get("cart_puntos", {})
         if not puntos_habilitados:
@@ -2062,7 +2062,7 @@ def checkout():
         descuento_afiliado = precio.descuento_afiliado
         total              = precio.total
         puntos_a_canjear   = precio.puntos_usados
-        puntos_ganados     = int(total * puntos_por_euro) if puntos_habilitados else 0
+        puntos_ganados     = calcular_puntos_ganados(total)
         service_fee = get_service_commission(total)
 
         # Registrar uso del cupón — envio_gratis aplica aunque descuento_cupon sea 0

@@ -63,7 +63,7 @@ CLAVES_DEFAULT = [
     ("FEATURE_DELIVERY",       "1",                                  "Permitir pedidos a domicilio"),
     ("FEATURE_RECOGIDA",       "1",                                  "Permitir pedidos para recoger"),
     ("FEATURE_PEDIDOS_PROGRAMADOS", "1",                              "Permitir productos/pedidos con fecha de entrega"),
-    ("FEATURE_PUNTOS",         "1",                                  "Activar club de puntos y canjes"),
+    ("FEATURE_PUNTOS",         "1",                                  "Mostrar saldo y permitir canjes; la acumulación interna continúa siempre"),
     ("SERVICE_COMMISSION_PCT", "0",                                  "Porcentaje ganado por venta en modo servicio"),
     ("BOT_API_KEY",            _eget("BOT_API_KEY"),                "Clave API para el bot de WhatsApp"),
     ("BOT_API_URL",            _eget("BOT_API_URL",    "http://127.0.0.1:3000"),  "URL interna del bot"),

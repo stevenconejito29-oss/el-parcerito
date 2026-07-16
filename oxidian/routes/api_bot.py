@@ -29,7 +29,8 @@ from models import (User, Product, Categoria, Order, OrderItem, OrderProviderSta
                     AuditLog, internal_customer_email)
 from idempotency import request_idempotency_key, request_body_hash, IDEMPOTENCY_TTL
 from services import (distribuir_pedido, registrar_uso_afiliado,
-                      get_puntos_config, enviar_whatsapp_estado, mensaje_estado_pedido,
+                      calcular_puntos_ganados, get_puntos_config,
+                      enviar_whatsapp_estado, mensaje_estado_pedido,
                       registrar_pedido_creado, encolar_whatsapp_generico,
                       validar_radio_entrega, tienda_abierta_en_horario,
                       cancelar_pedido_operativo, lineas_proveedor_pedido,
@@ -1681,7 +1682,6 @@ def crear_pedido():
         cliente = bloquear_cliente_puntos(cliente)
         puntos_cfg = get_puntos_config()
         ratio = puntos_cfg["ratio"]
-        puntos_por_euro = puntos_cfg["por_euro"]
         puntos_usar = min(max(0, int(data.get("puntos_usar", 0))), int(cliente.puntos or 0))
 
         try:
@@ -1698,7 +1698,7 @@ def crear_pedido():
         total = precio.total
         costo_envio = precio.costo_envio
         puntos_a_canjear = precio.puntos_usados
-        puntos_ganados = int(total * puntos_por_euro)
+        puntos_ganados = calcular_puntos_ganados(total)
         service_fee = get_service_commission(total)
 
         # Registrar uso del cupón (incluye envio_gratis donde descuento_cupon puede ser 0)
@@ -3019,9 +3019,11 @@ def menu_flow():
                 "accion": "canje_completado",
             },
         }
+        # El mensaje operativo real viene de ``mensaje_estado_pedido`` y solo
+        # muestra un saldo positivo cuando la consulta/canje está habilitada.
+        # Esta plantilla de ayuda se mantiene neutra para que ningún consumidor
+        # secundario pueda interpolar accidentalmente "0 puntos".
         entregado_msg = "🎉 ¡Pedido *{num}* entregado! Gracias parce 💛"
-        if puntos_on:
-            entregado_msg += "\nGanaste *{puntos}* puntos ⭐"
         flujo_puntos_instrucciones = [
             "1. El módulo de puntos está apagado; no ofrecer consulta ni canje."
         ]

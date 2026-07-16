@@ -13,6 +13,7 @@ from extensions import db, get_or_404
 from models import Product, Categoria, Order, OrderItem, User, Coupon, Caja, ComboItem, AdminFeature, SiteConfig, IdempotencyKey, normalizar_metodo_pago, utcnow, metadata_componente_combo, metadata_item_pedido
 from idempotency import request_idempotency_key, request_body_hash, IDEMPOTENCY_TTL
 from services import (
+    calcular_puntos_ganados,
     cancelar_pedido_operativo,
     registrar_ingreso,
     registrar_egreso,
@@ -453,14 +454,16 @@ def cobrar():
             return jsonify({"ok": False, "msg": str(e)}), 400
 
     # Puntos si el cliente es registrado (no anónimo) — lee ratio desde BD igual que bot y web
-    from services import get_puntos_config
     puntos_ganados = 0
     if cliente_id and cliente.rol == "cliente":
-        puntos_por_euro = get_puntos_config()["por_euro"]
-        puntos_ganados = int(total * puntos_por_euro)
-        cliente.sumar_puntos(puntos_ganados, pedido_id=pedido.id,
-                             descripcion=f"Venta presencial {pedido.numero_pedido}")
+        puntos_ganados = calcular_puntos_ganados(total)
         pedido.puntos_ganados = puntos_ganados
+        if puntos_ganados > 0:
+            cliente.sumar_puntos(
+                puntos_ganados,
+                pedido_id=pedido.id,
+                descripcion=f"Venta presencial {pedido.numero_pedido}",
+            )
 
     registrar_ingreso(total, f"Venta presencial {pedido.numero_pedido}",
                       categoria="venta_presencial", pedido_id=pedido.id,

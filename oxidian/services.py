@@ -937,6 +937,23 @@ def get_puntos_config() -> dict:
     }
 
 
+def calcular_puntos_ganados(total) -> int:
+    """Calcula la acumulación de una compra, independientemente del canje.
+
+    ``FEATURE_PUNTOS`` controla si el cliente puede consultar y canjear su
+    saldo, pero nunca debe detener la acumulación interna. Mantener el cálculo
+    aquí evita reglas distintas entre web, WhatsApp y POS.
+    """
+    try:
+        importe = Decimal(str(total or 0))
+    except (TypeError, ValueError, ArithmeticError):
+        logger.warning("Total inválido para calcular puntos: %r", total)
+        return 0
+    if not importe.is_finite() or importe <= 0:
+        return 0
+    return max(0, int(importe * Decimal(get_puntos_config()["por_euro"])))
+
+
 def get_pedido_minimo() -> float:
     """
     Monto mínimo global de pedido (euros). 0 = sin mínimo.
@@ -1917,12 +1934,12 @@ def registrar_egreso(monto, concepto, categoria="general",
 def award_points_on_delivery(pedido: Order) -> int:
     """
     Otorga al cliente los puntos calculados en pedido.puntos_ganados.
+    Recalcula pedidos pendientes antiguos que se guardaron con cero por tener
+    el canje desactivado en el momento de la compra.
     Se llama SOLO cuando el estado cambia a 'entregado'.
     Idempotente: si ya existe un PointsLog tipo='ganado' para este pedido, no hace nada.
     Retorna la cantidad de puntos otorgados (0 si ya se habían otorgado o no corresponde).
     """
-    if not pedido.puntos_ganados or pedido.puntos_ganados <= 0:
-        return 0
     if not pedido.cliente_id:
         return 0
     from models import PointsLog
@@ -1936,14 +1953,20 @@ def award_points_on_delivery(pedido: Order) -> int:
     cliente = pedido.cliente
     if not cliente:
         return 0
+    puntos = int(pedido.puntos_ganados or 0)
+    if puntos <= 0:
+        puntos = calcular_puntos_ganados(pedido.total)
+        pedido.puntos_ganados = puntos
+    if puntos <= 0:
+        return 0
     cliente.sumar_puntos(
-        pedido.puntos_ganados,
+        puntos,
         pedido_id=pedido.id,
         descripcion=f"Pedido {pedido.numero_pedido} entregado",
     )
     logger.info("Puntos otorgados: %d pts → cliente %s (pedido %s)",
-                pedido.puntos_ganados, pedido.cliente_id, pedido.numero_pedido)
-    return pedido.puntos_ganados
+                puntos, pedido.cliente_id, pedido.numero_pedido)
+    return puntos
 
 
 # ─────────────────────────────────────────────
@@ -2629,7 +2652,7 @@ MENSAJES_ESTADO = {
     "armando":    "🔥 *¡Manos a la obra!*\nTu pedido *{num}* está en preparación en este momento.\nEn breve te avisamos cuando esté listo. ✨",
     "listo":      "✅ *¡Tu pedido está listo!*\nEl pedido *{num}* está perfectamente preparado y en breve sale hacia ti. 📦",
     "en_ruta":    "🚀 *¡En camino!*\nTu pedido *{num}* ya va hacia ti.\n\nCuando el repartidor llegue te enviará el código de entrega. No compartas ningún código antes de recibir tu pedido. 🛵",
-    "entregado":  "🎊 *¡Pedido entregado!*\n¡Esperamos que te haya encantado! 😍\nGanaste *{puntos} puntos* 🌟 — van sumando para tu próximo descuento.\n¡Gracias por elegirnos! 💛",
+    "entregado":  "🎊 *¡Pedido entregado!*\n¡Esperamos que te haya encantado! 😍\n¡Gracias por elegirnos! 💛",
     "cancelado":  "😔 *Pedido cancelado*\nTu pedido *{num}* fue cancelado. Sentimos los inconvenientes.\nSi tienes dudas o quieres más información, escríbenos y lo resolvemos juntos. 💬",
 }
 
@@ -2644,6 +2667,15 @@ def mensaje_estado_pedido(pedido: Order) -> str:
         codigo=pedido.codigo_confirmacion or "------",
         puntos=pedido.puntos_ganados or 0,
     )
+    if (
+        pedido.estado == "entregado"
+        and get_store_features()["puntos"]
+        and int(pedido.puntos_ganados or 0) > 0
+    ):
+        base += (
+            f"\nTu compra sumó *{int(pedido.puntos_ganados)} puntos* 🌟 "
+            "para tu próximo canje."
+        )
     # Verificación pasiva antifraude: cuando el pedido acaba de crearse y
     # el motor de riesgo lo marcó como `pending`, invitamos al cliente a
     # confirmar. Sin bloquear el flujo — el equipo puede empezar igual si

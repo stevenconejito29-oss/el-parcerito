@@ -1014,7 +1014,7 @@ def _seed_admin():
         ("FEATURE_DELIVERY",                  "1", "Permitir pedidos a domicilio"),
         ("FEATURE_RECOGIDA",                  "1", "Permitir pedidos para recoger"),
         ("FEATURE_PEDIDOS_PROGRAMADOS",       "1", "Permitir productos/pedidos con fecha de entrega"),
-        ("FEATURE_PUNTOS",                    "1", "Activar club de puntos y canjes"),
+        ("FEATURE_PUNTOS",                    "1", "Mostrar saldo y permitir canjes; la acumulación interna continúa siempre"),
         ("SERVICE_COMMISSION_PCT",            "0", "Porcentaje ganado por venta en modo servicio"),
         ("CENTRO_LAT",                        _env_default("CENTRO_LAT", ""),      "Latitud del centro de reparto"),
         ("CENTRO_LON",                        _env_default("CENTRO_LON", ""),      "Longitud del centro de reparto"),
