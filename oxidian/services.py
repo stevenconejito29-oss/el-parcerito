@@ -1037,6 +1037,34 @@ def _tiene_calle_nominatim(hit: dict) -> bool:
     )
 
 
+def _bbox_cobertura_activa():
+    """Calcula el rectángulo de búsqueda a partir de las zonas realmente activas."""
+    from models import ZonaEntrega
+    from zone_geometry import limites_cobertura
+
+    bounds = []
+    for zona in ZonaEntrega.query.filter_by(activo=True).all():
+        if zona.tiene_poligono:
+            limit = limites_cobertura(zona.cobertura_geojson)
+            if limit:
+                bounds.append(limit)
+        elif zona.tiene_radio:
+            lat_delta = float(zona.radio_km) / 111.0
+            lon_delta = float(zona.radio_km) / (
+                111.0 * max(0.1, math.cos(math.radians(zona.centro_lat)))
+            )
+            bounds.append((
+                zona.centro_lat - lat_delta, zona.centro_lng - lon_delta,
+                zona.centro_lat + lat_delta, zona.centro_lng + lon_delta,
+            ))
+    if not bounds:
+        return None
+    return (
+        min(item[0] for item in bounds), min(item[1] for item in bounds),
+        max(item[2] for item in bounds), max(item[3] for item in bounds),
+    )
+
+
 def geocodificar_direccion(direccion: str, ciudad: str = "") -> tuple[float, float] | None:
     """
     Geocodifica una dirección dentro del área del negocio. Estrategia de dos pasos:
@@ -1124,12 +1152,22 @@ def geocodificar_direccion(direccion: str, ciudad: str = "") -> tuple[float, flo
         if centro_lat is None or centro_lon is None:
             return None
         margen = geocode_bbox_margin()
-        deg_lat = radio_km / 111.0 * margen
-        deg_lon = radio_km / (111.0 * math.cos(math.radians(centro_lat))) * margen
-        viewbox = (
-            f"{centro_lon - deg_lon:.6f},{centro_lat - deg_lat:.6f},"
-            f"{centro_lon + deg_lon:.6f},{centro_lat + deg_lat:.6f}"
-        )
+        detailed_bbox = _bbox_cobertura_activa()
+        if detailed_bbox:
+            min_lat, min_lon, max_lat, max_lon = detailed_bbox
+            lat_padding = max((max_lat - min_lat) * (margen - 1) / 2, 0.002)
+            lon_padding = max((max_lon - min_lon) * (margen - 1) / 2, 0.002)
+            viewbox = (
+                f"{min_lon - lon_padding:.6f},{min_lat - lat_padding:.6f},"
+                f"{max_lon + lon_padding:.6f},{max_lat + lat_padding:.6f}"
+            )
+        else:
+            deg_lat = radio_km / 111.0 * margen
+            deg_lon = radio_km / (111.0 * math.cos(math.radians(centro_lat))) * margen
+            viewbox = (
+                f"{centro_lon - deg_lon:.6f},{centro_lat - deg_lat:.6f},"
+                f"{centro_lon + deg_lon:.6f},{centro_lat + deg_lat:.6f}"
+            )
         hits2 = _get({"q": calle, "viewbox": viewbox, "bounded": 1})
         if hits2 and _tiene_calle_nominatim(hits2[0]):
             coords = float(hits2[0]["lat"]), float(hits2[0]["lon"])
@@ -1171,16 +1209,8 @@ def asignar_zona_por_direccion(direccion: str, zonas):
         coords = geocodificar_direccion(direccion or "", ciudad=ciudad) if direccion else None
         if coords is None:
             return None
-        lat, lon = coords
-        candidatos = []
-        for z in geo_zonas:
-            d = _haversine_km(z.centro_lat, z.centro_lng, lat, lon)
-            if d <= float(z.radio_km):
-                candidatos.append((d, z))
-        if not candidatos:
-            return None
-        candidatos.sort(key=lambda t: (t[0], t[1].orden or 0, t[1].id))
-        return candidatos[0][1]
+        zona, _ = _resolver_zona_por_coordenadas(coords[0], coords[1], zonas)
+        return zona
 
     # Sin zonas con geodata — intento con el radio global del negocio.
     activas = [z for z in zonas if z.activo]
@@ -1213,6 +1243,15 @@ def asignar_zona_por_coordenadas(lat, lon, zonas):
        (SiteConfig.DIRECCION_NEGOCIO_LAT/LNG + RADIO_ENTREGA_KM), valida
        contra el centro del negocio con ese radio.
     3. Fallback final: primera zona activa (compat con zonas legacy sin geo)."""
+    return _resolver_zona_por_coordenadas(lat, lon, zonas)
+
+
+def _resolver_zona_por_coordenadas(lat, lon, zonas):
+    """Motor único de cobertura usado por web, PWA, checkout y chatbot.
+
+    Los polígonos prevalecen sobre círculos legacy. En solapes del mismo tipo,
+    ``orden`` decide de forma explícita y estable.
+    """
     if not zonas:
         return None, None
     try:
@@ -1222,19 +1261,39 @@ def asignar_zona_por_coordenadas(lat, lon, zonas):
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return None, None
 
-    # 1) Zonas con geo configurado — mejor match por distancia dentro del radio
     geo_zonas = [zona for zona in zonas if zona.activo and zona.tiene_geo]
     if geo_zonas:
+        from zone_geometry import contiene_punto
+
         candidatos = []
+        negocio_lat, negocio_lng, _ = _leer_geo_negocio()
         for zona in geo_zonas:
-            distancia = _haversine_km(zona.centro_lat, zona.centro_lng, lat, lon)
-            if distancia <= float(zona.radio_km):
-                candidatos.append((distancia, zona))
+            if zona.tiene_poligono:
+                contiene = contiene_punto(zona.cobertura_geojson, lat, lon)
+                precision = 0
+            else:
+                contiene = (
+                    _haversine_km(zona.centro_lat, zona.centro_lng, lat, lon)
+                    <= float(zona.radio_km)
+                )
+                precision = 1
+            if not contiene:
+                continue
+            ref_lat = zona.centro_lat if zona.centro_lat is not None else negocio_lat
+            ref_lng = zona.centro_lng if zona.centro_lng is not None else negocio_lng
+            distancia = (
+                _haversine_km(ref_lat, ref_lng, lat, lon)
+                if ref_lat is not None and ref_lng is not None else None
+            )
+            candidatos.append((
+                precision, zona.orden or 0,
+                distancia if distancia is not None else float("inf"), zona.id, zona,
+            ))
         if not candidatos:
             return None, None
-        candidatos.sort(key=lambda row: (row[0], row[1].orden or 0, row[1].id))
-        distancia, zona = candidatos[0]
-        return zona, round(distancia, 2)
+        candidatos.sort(key=lambda row: row[:4])
+        distancia, zona = candidatos[0][2], candidatos[0][4]
+        return zona, None if not math.isfinite(distancia) else round(distancia, 2)
 
     # 2) Sin zonas geo: usa el centro global del negocio como fallback si está
     # configurado. Este es el camino usado por comercios que aún no han creado
@@ -1244,7 +1303,7 @@ def asignar_zona_por_coordenadas(lat, lon, zonas):
         distancia = _haversine_km(neg_lat, neg_lng, lat, lon)
         activas = [zona for zona in zonas if zona.activo]
         if distancia <= neg_radio and activas:
-            activas.sort(key=lambda z: (z.orden or 0, float(z.precio_envio or 0)))
+            activas.sort(key=lambda z: (z.orden or 0, float(z.precio_envio or 0), z.id))
             return activas[0], round(distancia, 2)
         return None, round(distancia, 2)
 
@@ -1296,7 +1355,7 @@ def _leer_geo_negocio() -> tuple[float | None, float | None, float | None]:
 
 
 def validar_radio_entrega(direccion: str) -> dict:
-    """Valida si una dirección cae dentro del radio configurado del negocio.
+    """Valida una dirección contra zonas detalladas o el radio global compatible.
 
     Devuelve dict {"ok": bool, "distancia_km": float|None, "mensaje": str}.
     Diseño **fail-closed**: cualquier ambigüedad devuelve `ok=False` con
@@ -1309,12 +1368,15 @@ def validar_radio_entrega(direccion: str) -> dict:
       - Sin config de centro/radio → rechaza pidiendo configurar.
       - Dirección no geocodificable → rechaza con instrucción, salvo que
         el admin haya bajado el flag `BLOQUEAR_DIRECCION_NO_VERIFICADA=0`.
-      - Fuera del radio → rechaza indicando la distancia.
+      - Fuera de todas las zonas → rechaza y ofrece recogida si está disponible.
     """
-    from models import SiteConfig
+    from models import SiteConfig, ZonaEntrega
 
     if not _to_bool_service(SiteConfig.get("VALIDAR_RADIO_ENTREGA", "1")):
-        return {"ok": True, "distancia_km": None, "mensaje": ""}
+        return {
+            "ok": True, "distancia_km": None, "mensaje": "",
+            "validacion_desactivada": True,
+        }
 
     if not direccion or len(direccion.strip()) < 6:
         return {
@@ -1323,8 +1385,10 @@ def validar_radio_entrega(direccion: str) -> dict:
             "mensaje": "Escribe la dirección completa con calle y número.",
         }
 
+    zonas = ZonaEntrega.query.filter_by(activo=True).all()
+    hay_cobertura_detallada = any(zona.tiene_geo for zona in zonas)
     centro_lat, centro_lon, radio_km = _leer_geo_negocio()
-    if centro_lat is None:
+    if centro_lat is None and not hay_cobertura_detallada:
         # Fail-closed: sin config no aceptamos pedidos aunque el flag esté
         # activo. Mejor no vender un pedido que enviarlo a Sevilla y perder
         # dinero + reputación.
@@ -1337,7 +1401,7 @@ def validar_radio_entrega(direccion: str) -> dict:
     ciudad = SiteConfig.get("CIUDAD_NEGOCIO", "")
     coords = geocodificar_direccion(direccion, ciudad=ciudad)
     if coords is None:
-        if _to_bool_service(SiteConfig.get("BLOQUEAR_DIRECCION_NO_VERIFICADA", "1")):
+        if hay_cobertura_detallada or _to_bool_service(SiteConfig.get("BLOQUEAR_DIRECCION_NO_VERIFICADA", "1")):
             return {
                 "ok": False,
                 "distancia_km": None,
@@ -1351,6 +1415,29 @@ def validar_radio_entrega(direccion: str) -> dict:
         return {"ok": True, "distancia_km": None, "mensaje": "No se pudo verificar la ubicación"}
 
     lat, lon = coords
+    if hay_cobertura_detallada:
+        zona, distancia = _resolver_zona_por_coordenadas(lat, lon, zonas)
+        if zona is None:
+            if centro_lat is not None:
+                distancia = round(_haversine_km(centro_lat, centro_lon, lat, lon), 2)
+            return {
+                "ok": False,
+                "distancia_km": distancia,
+                "mensaje": (
+                    f"Lo sentimos, esa dirección queda fuera de las zonas de reparto"
+                    f"{f' de {ciudad}' if ciudad else ''}. "
+                    "Prueba otra dirección o selecciona recogida en el local."
+                ),
+            }
+        return {
+            "ok": True,
+            "distancia_km": distancia,
+            "mensaje": "",
+            "zona_id": zona.id,
+            "zona_nombre": zona.nombre,
+            "metodo_cobertura": zona.tipo_cobertura,
+        }
+
     distancia = _haversine_km(centro_lat, centro_lon, lat, lon)
 
     if distancia > radio_km:

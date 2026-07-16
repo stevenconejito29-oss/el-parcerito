@@ -22,9 +22,10 @@
     <div class="oa-panel__body" style="display:flex;gap:var(--oa-space-3);align-items:flex-start;">
       <span style="font-size:1.25rem;flex-shrink:0;">📍</span>
       <p style="margin:0;font-size:var(--oa-font-sm);color:var(--col-muted);line-height:1.5;">
-        El <strong style="color:var(--col-text);">radio de entrega</strong> se configura en
-        <a href="{{ url_for('superadmin.config') }}#entregas" style="color:var(--brand-primary);font-weight:700;text-decoration:underline;">Configuración → Cobertura</a>.
-        Las zonas aquí definen el precio y tiempo estimado según el área elegida por el cliente al hacer el pedido.
+        Cada zona puede tener un <strong style="color:var(--col-text);">contorno irregular</strong>
+        que representa las calles alcanzables. El radio global de
+        <a href="{{ url_for('superadmin.config') }}#entregas" style="color:var(--brand-primary);font-weight:700;text-decoration:underline;">Configuración → Cobertura</a>
+        solo sirve como compatibilidad cuando ninguna zona tiene geometría propia.
       </p>
     </div>
   </div>
@@ -76,8 +77,8 @@
         <button type="button" data-zone-geolocation class="oa-btn oa-btn--sm">📍 Usar mi ubicación actual</button>
       </label>
       <p style="font-size:var(--oa-font-xs);color:var(--col-muted);margin:.25rem 0 .6rem;">
-        Si defines centro + radio, los pedidos con geolocalización del cliente se validan contra estas coordenadas.
-        Sin coordenadas, la zona se usa como fallback manual.
+        Puedes crearla con un radio inicial. Al guardar entrarás al mapa para dibujar
+        el contorno preciso; el sistema nunca pide al cliente que elija su zona manualmente.
       </p>
     </div>
     <div class="ox-field">
@@ -137,7 +138,7 @@ document.querySelector('[data-zone-geolocation]')?.addEventListener('click', (ev
 {% if zonas %}
 <div style="display:grid;gap:var(--oa-space-3);">
   {% for z in zonas %}
-  <div class="oa-panel {% if not z.activo %}oa-panel--dim{% endif %}" style="margin:0;">
+  <div id="zona-{{ z.id }}" class="oa-panel {% if not z.activo %}oa-panel--dim{% endif %}" style="margin:0;">
     <div class="oa-panel__body">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--oa-space-3);margin-bottom:var(--oa-space-3);flex-wrap:wrap;">
       <div style="flex:1;min-width:240px;">
@@ -149,6 +150,9 @@ document.querySelector('[data-zone-geolocation]')?.addEventListener('click', (ev
           {% if not z.activo %}
           <span class="oa-badge oa-badge--err">Inactivo</span>
           {% endif %}
+          <span class="oa-badge {{ 'oa-badge--brand' if z.tiene_poligono else ('oa-badge--info' if z.tiene_radio else 'oa-badge--err') }}">
+            {{ 'Contorno preciso' if z.tiene_poligono else ('Radio compatible' if z.tiene_radio else 'Sin cobertura') }}
+          </span>
         </div>
         {% if z.descripcion %}<p style="font-size:var(--oa-font-xs);color:var(--col-faint);margin:2px 0 0;">{{ z.descripcion }}</p>{% endif %}
         <div style="display:flex;gap:var(--oa-space-3);margin-top:var(--oa-space-2);font-size:var(--oa-font-xs);color:var(--col-muted);flex-wrap:wrap;">
@@ -158,6 +162,7 @@ document.querySelector('[data-zone-geolocation]')?.addEventListener('click', (ev
         </div>
       </div>
       <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
+        <a href="{{ url_for('superadmin.editar_zona', zona_id=z.id) }}" class="oa-btn oa-btn--sm oa-btn--brand">Editar mapa</a>
         <form method="POST" action="{{ url_for('superadmin.toggle_zona', zona_id=z.id) }}">
           {{ csrf_field() }}
           <button type="submit" class="oa-btn oa-btn--sm {{ 'oa-btn--danger' if z.activo else 'oa-btn--success' }}">

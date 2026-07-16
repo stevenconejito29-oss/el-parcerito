@@ -301,9 +301,9 @@
     <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="entregas">
       <div class="cfg-grid">
-        {{ cfg_select('VALIDAR_RADIO_ENTREGA', 'Validar distancia', [('1','Sí, comprobar radio'),('0','No comprobar distancia')]) }}
+        {{ cfg_select('VALIDAR_RADIO_ENTREGA', 'Validar cobertura', [('1','Sí, comprobar zonas'),('0','No comprobar cobertura')], 'Usa primero los contornos de las zonas; el radio global solo es el respaldo compatible.') }}
         {{ cfg_select('BLOQUEAR_DIRECCION_NO_VERIFICADA', 'Dirección no verificable', [('1','Bloquear pedido'),('0','Aceptar con advertencia')]) }}
-        {{ cfg_input('RADIO_ENTREGA_KM', 'Radio máximo (km)', type='number', min='0.5', max='50', step='0.5') }}
+        {{ cfg_input('RADIO_ENTREGA_KM', 'Radio global de respaldo (km)', type='number', min='0.5', max='50', step='0.5', help='Solo se aplica cuando no existe ninguna zona con contorno o radio propio.') }}
         {{ cfg_input('CENTRO_LAT', 'Latitud del local', type='number', step='0.000001') }}
         {{ cfg_input('CENTRO_LON', 'Longitud del local', type='number', step='0.000001') }}
         {{ cfg_input('PEDIDO_MINIMO_EUR', 'Pedido mínimo (€) — 0 desactiva', type='number', min='0', step='0.5') }}

@@ -253,6 +253,53 @@ class ZonasCarmonaTest(unittest.TestCase):
         self.assertEqual(asignar_zona_por_coordenadas("x", "y", [z]), (None, None))
         self.assertEqual(asignar_zona_por_coordenadas(None, None, [z]), (None, None))
 
+    def test_poligono_irregular_prevalece_sobre_radio_legacy(self):
+        from services import asignar_zona_por_coordenadas
+        legacy = self._mk_zona("Radio amplio", tiene_geo=True, orden=0)
+        polygon = self._mk_zona("Casco alcanzable", orden=9)
+        polygon.cobertura_geojson = {
+            "type": "Polygon",
+            "coordinates": [[
+                [-5.650, 37.468], [-5.637, 37.468], [-5.637, 37.480],
+                [-5.650, 37.480], [-5.650, 37.468],
+            ]],
+        }
+        db.session.commit()
+        zone, _ = asignar_zona_por_coordenadas(37.474, -5.643, [legacy, polygon])
+        self.assertEqual(zone.id, polygon.id)
+
+    def test_poligono_rechaza_punto_dentro_del_antiguo_radio(self):
+        from services import asignar_zona_por_coordenadas
+        polygon = self._mk_zona("Casco alcanzable")
+        polygon.cobertura_geojson = {
+            "type": "Polygon",
+            "coordinates": [[
+                [-5.650, 37.468], [-5.637, 37.468], [-5.637, 37.480],
+                [-5.650, 37.480], [-5.650, 37.468],
+            ]],
+        }
+        db.session.commit()
+        # Cerca del centro global, pero al norte del contorno autorizado.
+        zone, _ = asignar_zona_por_coordenadas(37.488, -5.643, [polygon])
+        self.assertIsNone(zone)
+
+    def test_validacion_devuelve_zona_autoritativa(self):
+        from services import validar_radio_entrega
+        polygon = self._mk_zona("Casco alcanzable")
+        polygon.cobertura_geojson = {
+            "type": "Polygon",
+            "coordinates": [[
+                [-5.650, 37.468], [-5.637, 37.468], [-5.637, 37.480],
+                [-5.650, 37.480], [-5.650, 37.468],
+            ]],
+        }
+        db.session.commit()
+        with patch("services.geocodificar_direccion", return_value=(37.474, -5.643)):
+            result = validar_radio_entrega("Calle de prueba 1")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["zona_id"], polygon.id)
+        self.assertEqual(result["metodo_cobertura"], "poligono")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3215,15 +3215,34 @@ class ZonaEntrega(db.Model):
     centro_lat = db.Column(db.Float)
     centro_lng = db.Column(db.Float)
     radio_km = db.Column(db.Float)
+    # GeoJSON Polygon/MultiPolygon. Es la cobertura autoritativa cuando existe;
+    # el círculo anterior se conserva para instalaciones aún no migradas.
+    cobertura_geojson = db.Column(db.JSON)
 
     @property
-    def tiene_geo(self) -> bool:
+    def tiene_poligono(self) -> bool:
+        return bool(self.cobertura_geojson)
+
+    @property
+    def tiene_radio(self) -> bool:
         return (
             self.centro_lat is not None
             and self.centro_lng is not None
             and self.radio_km is not None
             and self.radio_km > 0
         )
+
+    @property
+    def tiene_geo(self) -> bool:
+        return self.tiene_poligono or self.tiene_radio
+
+    @property
+    def tipo_cobertura(self) -> str:
+        if self.tiene_poligono:
+            return "poligono"
+        if self.tiene_radio:
+            return "radio"
+        return "sin_geometria"
 
     def __repr__(self):
         return f"<ZonaEntrega {self.nombre}>"

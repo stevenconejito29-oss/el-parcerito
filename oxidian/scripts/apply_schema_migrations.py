@@ -720,6 +720,20 @@ def _migrate_zonas_geo():
         db.session.execute(text("ALTER TABLE zonas_entrega ADD COLUMN radio_km DOUBLE PRECISION"))
 
 
+def _migrate_zonas_cobertura_geojson():
+    """Añade la geometría detallada; JSONB en PostgreSQL, JSON en SQLite."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("zonas_entrega"):
+        return
+    cols = {col["name"] for col in inspector.get_columns("zonas_entrega")}
+    if "cobertura_geojson" in cols:
+        return
+    column_type = "JSONB" if db.engine.dialect.name == "postgresql" else "JSON"
+    db.session.execute(text(
+        f"ALTER TABLE zonas_entrega ADD COLUMN cobertura_geojson {column_type}"
+    ))
+
+
 def _migrate_user_mfa():
     """Añade columnas MFA a users."""
     inspector = inspect(db.engine)
@@ -1334,6 +1348,11 @@ MIGRATIONS = [
         "id": "20260617_03_zonas_geo",
         "description": "Añadir centro_lat/centro_lng/radio_km a zonas_entrega para matching geográfico",
         "fn": _migrate_zonas_geo,
+    },
+    {
+        "id": "20260716_01_zonas_cobertura_geojson",
+        "description": "Añadir Polygon/MultiPolygon GeoJSON para cobertura precisa de reparto",
+        "fn": _migrate_zonas_cobertura_geojson,
     },
     {
         "id": "20260618_01_proveedor_horario",

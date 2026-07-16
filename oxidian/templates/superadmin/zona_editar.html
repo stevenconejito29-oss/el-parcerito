@@ -2,6 +2,10 @@
 {% block title %}Editar zona{% endblock %}
 {% block content %}
 
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/zone-coverage.css') }}">
+
 <div class="flex items-center gap-3 mb-5">
   <a href="{{ url_for('superadmin.zonas') }}" class="ox-btn-ghost text-sm">← Volver</a>
   <div>
@@ -10,7 +14,7 @@
   </div>
 </div>
 
-<form method="POST" action="{{ url_for('superadmin.editar_zona', zona_id=zona.id) }}" class="ox-card p-5 max-w-3xl">
+<form method="POST" action="{{ url_for('superadmin.editar_zona', zona_id=zona.id) }}" class="ox-card p-5 max-w-5xl">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="grid md:grid-cols-2 gap-4">
     <div class="ox-field">
@@ -46,28 +50,48 @@
     </div>
   </div>
 
-  <details class="mt-5 ox-card p-4" {% if zona.tiene_geo %}open{% endif %}>
+  <section class="mt-5 ox-card p-4" data-zone-coverage-editor>
+    <h2 class="font-bold text-white">Cobertura precisa sobre el mapa</h2>
+    <p class="text-xs mt-2" style="color:var(--col-muted)">
+      Marca el perímetro de las calles alcanzables en patinete. La forma puede ser irregular:
+      los pedidos fuera del contorno se rechazarán en web, PWA y chatbot con la misma regla.
+      Si dos zonas se solapan, primero se aplican los polígonos y después el campo «Orden».
+    </p>
+    <textarea name="cobertura_geojson" hidden>{{ zona.cobertura_geojson|tojson if zona.cobertura_geojson else '' }}</textarea>
+    <div class="zone-coverage-editor">
+      <div class="zone-coverage-editor__map" data-zone-map
+           data-center-lat="{{ zona.centro_lat if zona.centro_lat is not none else mapa_lat }}"
+           data-center-lng="{{ zona.centro_lng if zona.centro_lng is not none else mapa_lng }}"></div>
+      <div class="zone-coverage-editor__toolbar">
+        <button type="button" class="oa-btn oa-btn--sm oa-btn--brand" data-zone-locate>Usar mi ubicación</button>
+        <button type="button" class="oa-btn oa-btn--sm" data-zone-undo>Deshacer punto</button>
+        <button type="button" class="oa-btn oa-btn--sm oa-btn--danger" data-zone-clear>Eliminar contorno</button>
+      </div>
+      <span class="zone-coverage-editor__status" data-zone-status aria-live="polite"></span>
+    </div>
+  </section>
+
+  <details class="mt-5 ox-card p-4" {% if zona.tiene_radio and not zona.tiene_poligono %}open{% endif %}>
     <summary class="cursor-pointer font-bold text-white">
-      🗺️ Cobertura geográfica
-      {% if zona.tiene_geo %}<span class="text-xs text-green-400 ml-2">activa</span>{% endif %}
+      Radio compatible
+      {% if zona.tiene_radio %}<span class="text-xs text-green-400 ml-2">configurado</span>{% endif %}
     </summary>
     <p class="text-xs mt-2 mb-3" style="color:var(--col-muted)">
-      Si configuras los tres campos, el checkout asignará automáticamente esta
-      zona a clientes cuya dirección esté dentro del radio. Déjalos en blanco
-      para mantener el comportamiento legacy (asignación por orden).
+      Se conserva para zonas antiguas. Solo se utiliza si no hay un contorno
+      detallado en esta zona. Para Carmona es preferible dibujar el perímetro.
     </p>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
       <div class="ox-field">
         <label class="ox-label">Centro lat</label>
         <input type="number" name="centro_lat" id="centro_lat" step="0.000001" min="-90" max="90"
                value="{{ zona.centro_lat or '' }}" class="ox-input"
-               placeholder="37.4698">
+               placeholder="Latitud del centro">
       </div>
       <div class="ox-field">
         <label class="ox-label">Centro lng</label>
         <input type="number" name="centro_lng" id="centro_lng" step="0.000001" min="-180" max="180"
                value="{{ zona.centro_lng or '' }}" class="ox-input"
-               placeholder="-5.6435">
+               placeholder="Longitud del centro">
       </div>
       <div class="ox-field">
         <label class="ox-label">Radio (km)</label>
@@ -121,5 +145,9 @@
     <a href="{{ url_for('superadmin.zonas') }}" class="ox-btn-ghost">Cancelar</a>
   </div>
 </form>
+
+<script nonce="{{ csp_nonce() }}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/zone-coverage-editor.js') }}"></script>
 
 {% endblock %}

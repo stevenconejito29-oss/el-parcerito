@@ -1,0 +1,26 @@
+.zone-coverage-editor { margin-top: 1rem; }
+.zone-coverage-editor__map {
+  width: 100%;
+  min-height: 25rem;
+  border: 1px solid var(--col-border);
+  border-radius: var(--oa-radius-md, .75rem);
+  overflow: hidden;
+  background: var(--col-surface);
+}
+.zone-coverage-editor__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: .75rem;
+}
+.zone-coverage-editor__status {
+  display: block;
+  margin-top: .65rem;
+  color: var(--col-muted);
+  font-size: var(--oa-font-xs, .78rem);
+}
+.zone-coverage-editor__status[data-tone="success"] { color: var(--status-ok, #16a34a); }
+.zone-coverage-editor__status[data-tone="error"] { color: var(--status-err, #dc2626); }
+@media (max-width: 640px), (max-height: 520px) {
+  .zone-coverage-editor__map { min-height: min(22rem, 52dvh); }
+}

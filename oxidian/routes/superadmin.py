@@ -508,7 +508,11 @@ def _config_section_submission(form):
 
 def _parse_zona_form(form, zona=None):
     nombre = (form.get("nombre") or (zona.nombre if zona else "") or "").strip()
-    descripcion = (form.get("descripcion") or "").strip()
+    descripcion = (
+        form.get("descripcion") if "descripcion" in form
+        else (zona.descripcion if zona else "")
+    ) or ""
+    descripcion = descripcion.strip()
     if not nombre:
         return None, "El nombre de la zona es obligatorio."
     if len(nombre) > 80:
@@ -520,15 +524,16 @@ def _parse_zona_form(form, zona=None):
         precio_envio = float(form.get("precio_envio", zona.precio_envio if zona else 0) or 0)
         tiempo_min = int(form.get("tiempo_estimado_min", zona.tiempo_estimado_min if zona else 30) or 30)
         orden = int(form.get("orden", zona.orden if zona else 0) or 0)
-        gratis_raw = (form.get("gratis_desde") or "").strip()
+        gratis_default = zona.gratis_desde if zona and "gratis_desde" not in form else ""
+        gratis_raw = str(form.get("gratis_desde", gratis_default) or "").strip()
         gratis_desde = float(gratis_raw) if gratis_raw else None
     except (ValueError, TypeError):
         return None, "Precio, tiempo, envío gratis u orden inválidos."
 
-    # Geodata opcional para asignación automática de zona en checkout.
-    # Si dejas los tres campos vacíos, la zona se sigue gestionando con el
-    # comportamiento legacy (zonas[0]) y NO se valida cobertura geográfica.
+    # Radio compatible opcional. Un polígono, si existe, tiene prioridad.
     def _opt_float(name):
+        if name not in form and zona is not None:
+            return getattr(zona, name)
         raw = (form.get(name) or "").strip()
         if not raw:
             return None
@@ -554,6 +559,16 @@ def _parse_zona_form(form, zona=None):
     if 0 < geo_count < 3:
         return None, "Para activar el match geográfico debes informar lat, lng y radio_km."
 
+    cobertura_geojson = zona.cobertura_geojson if zona and "cobertura_geojson" not in form else None
+    if "cobertura_geojson" in form:
+        from zone_geometry import CoverageGeometryError, normalizar_cobertura_geojson
+        try:
+            cobertura_geojson = normalizar_cobertura_geojson(
+                (form.get("cobertura_geojson") or "").strip()
+            )
+        except CoverageGeometryError as exc:
+            return None, f"Cobertura geográfica inválida: {exc}"
+
     if precio_envio < 0 or precio_envio > 100:
         return None, "El precio de envío debe estar entre 0 y 100€."
     if tiempo_min <= 0 or tiempo_min > 180:
@@ -572,6 +587,7 @@ def _parse_zona_form(form, zona=None):
         "centro_lat": centro_lat,
         "centro_lng": centro_lng,
         "radio_km": radio_km,
+        "cobertura_geojson": cobertura_geojson,
     }, None
 
 
@@ -1976,7 +1992,8 @@ def crear_zona():
                        detalle=zona.nombre, ip=request.remote_addr)
     try:
         db.session.commit()
-        flash(f"Zona '{zona.nombre}' creada.", "success")
+        flash(f"Zona '{zona.nombre}' creada. Dibuja ahora su cobertura precisa.", "success")
+        return redirect(url_for("superadmin.editar_zona", zona_id=zona.id))
     except Exception as exc:
         db.session.rollback()
         flash(f"Error al crear zona: {exc}", "danger")
@@ -1989,12 +2006,20 @@ def editar_zona(zona_id):
     _exigir_delivery_para_zonas()
     zona = get_or_404(ZonaEntrega, zona_id)
     if request.method == "GET":
-        return render_template("superadmin/zona_editar.html", zona=zona)
+        try:
+            mapa_lat = float(SiteConfig.get("CENTRO_LAT", "0"))
+            mapa_lng = float(SiteConfig.get("CENTRO_LON", "0"))
+        except (TypeError, ValueError):
+            mapa_lat, mapa_lng = 0.0, 0.0
+        return render_template(
+            "superadmin/zona_editar.html", zona=zona,
+            mapa_lat=mapa_lat, mapa_lng=mapa_lng,
+        )
 
     data, error = _parse_zona_form(request.form, zona=zona)
     if error:
         flash(error, "danger")
-        return redirect(url_for("superadmin.zonas"))
+        return redirect(url_for("superadmin.editar_zona", zona_id=zona.id))
     for campo, valor in data.items():
         setattr(zona, campo, valor)
     AuditLog.registrar(current_user.id, "editar_zona", "zona_entrega",

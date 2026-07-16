@@ -5304,6 +5304,8 @@ def _serializar_zona(z):
         "centro_lat": float(z.centro_lat) if z.centro_lat is not None else None,
         "centro_lng": float(z.centro_lng) if z.centro_lng is not None else None,
         "radio_km": float(z.radio_km) if z.radio_km is not None else None,
+        "cobertura_geojson": z.cobertura_geojson,
+        "tipo_cobertura": z.tipo_cobertura,
         "tiene_geo": bool(z.tiene_geo),
     }
 

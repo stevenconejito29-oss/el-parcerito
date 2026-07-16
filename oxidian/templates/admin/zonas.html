@@ -34,7 +34,7 @@
         <div>
           <h2 style="margin:0;font-size:var(--oa-font-lg);font-weight:900;color:var(--col-text);">Mapa de cobertura</h2>
           <p style="margin:2px 0 0;font-size:var(--oa-font-xs);color:var(--col-muted);">
-            Radios en km leídos de cada zona. Zonas sin coordenadas no aparecen en el mapa.
+            Contornos precisos y radios compatibles. Zonas sin geometría no aparecen en el mapa.
           </p>
         </div>
         <div style="display:flex;gap:var(--oa-space-2);font-size:var(--oa-font-xs);color:var(--col-muted);flex-wrap:wrap;">
@@ -78,8 +78,10 @@
               {% if z.gratis_desde %}
                 <span>Gratis desde: <strong style="color:var(--col-text);">€{{ "%.2f"|format(z.gratis_desde) }}</strong></span>
               {% endif %}
-              {% if z.tiene_geo %}
-                <span>Radio: <strong style="color:var(--col-text);">{{ "%.1f"|format(z.radio_km) }} km</strong></span>
+              {% if z.tiene_poligono %}
+                <span>Cobertura: <strong style="color:var(--col-text);">contorno detallado</strong></span>
+              {% elif z.tiene_radio %}
+                <span>Cobertura: <strong style="color:var(--col-text);">radio {{ "%.1f"|format(z.radio_km) }} km</strong></span>
               {% endif %}
             </div>
           </div>
@@ -91,7 +93,7 @@
               </button>
             </form>
             {% if puede_editar %}
-            <a href="{{ url_for('superadmin.zonas') }}#zona-{{ z.id }}" class="oa-btn oa-btn--sm oa-btn--brand">Editar</a>
+            <a href="{{ url_for('superadmin.editar_zona', zona_id=z.id) }}" class="oa-btn oa-btn--sm oa-btn--brand">Editar cobertura</a>
             {% endif %}
           </div>
         </div>
@@ -175,25 +177,35 @@
       zonas.forEach(z => {
         if (!z.tiene_geo) return;
         const color = z.activo ? '#22c55e' : '#9ca3af';
-        const circle = L.circle([z.centro_lat, z.centro_lng], {
-          radius: (z.radio_km || 0) * 1000,
-          color: color,
-          weight: 2,
-          fillColor: color,
-          fillOpacity: z.activo ? 0.18 : 0.08,
-        }).addTo(map);
+        const layer = z.cobertura_geojson
+          ? L.geoJSON(z.cobertura_geojson, {style: {
+              color: color, weight: 2, fillColor: color,
+              fillOpacity: z.activo ? 0.18 : 0.08
+            }}).addTo(map)
+          : L.circle([z.centro_lat, z.centro_lng], {
+              radius: (z.radio_km || 0) * 1000, color: color, weight: 2,
+              fillColor: color, fillOpacity: z.activo ? 0.18 : 0.08
+            }).addTo(map);
         const gratis = (z.gratis_desde !== null && z.gratis_desde !== undefined)
           ? '<br>Gratis desde: <strong>€' + z.gratis_desde.toFixed(2) + '</strong>' : '';
-        circle.bindPopup(
+        const cobertura = z.tipo_cobertura === 'poligono'
+          ? '<br>Cobertura: <strong>contorno detallado</strong>'
+          : '<br>Radio: <strong>' + Number(z.radio_km || 0).toFixed(1) + ' km</strong>';
+        layer.bindPopup(
           '<strong>' + escapeHtml(z.nombre) + '</strong>' +
           '<br>Envío: <strong>€' + z.precio_envio.toFixed(2) + '</strong>' +
           '<br>Tiempo: <strong>' + z.tiempo_estimado_min + ' min</strong>' +
-          '<br>Radio: <strong>' + z.radio_km.toFixed(1) + ' km</strong>' +
+          cobertura +
           gratis +
           (z.activo ? '' : '<br><em>Zona inactiva</em>')
         );
-        L.marker([z.centro_lat, z.centro_lng]).addTo(map).bindTooltip(z.nombre, {permanent: false});
-        bounds.push([z.centro_lat, z.centro_lng]);
+        if (z.centro_lat !== null && z.centro_lng !== null) {
+          L.marker([z.centro_lat, z.centro_lng]).addTo(map).bindTooltip(z.nombre, {permanent: false});
+        }
+        const layerBounds = layer.getBounds();
+        if (layerBounds.isValid()) {
+          bounds.push(layerBounds.getSouthWest(), layerBounds.getNorthEast());
+        }
         plotted++;
       });
       if (plotted === 0) {

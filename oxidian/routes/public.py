@@ -1438,8 +1438,12 @@ def api_check_address():
         return jsonify({"ok": False, "distancia_km": None, "mensaje": "Dirección demasiado larga"}), 400
     resultado = validar_radio_entrega(direccion)
     if resultado.get("ok"):
-        zonas = ZonaEntrega.query.filter_by(activo=True).order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
-        zona = asignar_zona_por_direccion(direccion, zonas) if zonas else None
+        zona = db.session.get(ZonaEntrega, resultado.get("zona_id")) if resultado.get("zona_id") else None
+        if zona is None:
+            zonas = ZonaEntrega.query.filter_by(activo=True).order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
+            zona = asignar_zona_por_direccion(direccion, zonas) if zonas else None
+            if zona is None and resultado.get("validacion_desactivada") and zonas:
+                zona = zonas[0]
         if zona:
             resultado["zona"] = {
                 "id": zona.id,
@@ -1900,6 +1904,7 @@ def checkout():
         if tipo_entrega_cliente == "delivery" and not direccion and not _skip_val:
             flash("Indica la dirección de entrega.", "danger")
             return redirect(url_for("public.checkout"))
+        geo = None
         if tipo_entrega_cliente == "delivery" and direccion:
             geo = validar_radio_entrega(direccion)
             if not geo["ok"]:
@@ -1912,7 +1917,14 @@ def checkout():
         # Asignación de zona: la decide el servidor matcheando coordenadas. Si
         # alguna zona tiene geodata configurada, intentamos cuadrar al cliente
         # ahí; si ninguna zona tiene geodata, se usa el legacy zonas[0].
-        zona_asignada = asignar_zona_por_direccion(direccion, zonas) if tipo_entrega_cliente == "delivery" and direccion else None
+        zona_asignada = (
+            db.session.get(ZonaEntrega, geo.get("zona_id"))
+            if geo and geo.get("zona_id") else None
+        )
+        if zona_asignada is None and tipo_entrega_cliente == "delivery" and direccion:
+            zona_asignada = asignar_zona_por_direccion(direccion, zonas)
+        if zona_asignada is None and geo and geo.get("validacion_desactivada") and zonas:
+            zona_asignada = zonas[0]
         if zona_asignada:
             zona_id = zona_asignada.id
         else:

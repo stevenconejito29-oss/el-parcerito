@@ -1661,19 +1661,30 @@ def crear_pedido():
                 else:
                     return jsonify({"ok": False, "error": "Código no válido"}), 400
 
-        # ── Zona de entrega — auto-selecciona la primera si el bot no envía zona_id ──
-        zona = None
+        # La cobertura calculada por el servidor es autoritativa. El bot puede
+        # enviar una zona como dato de interfaz, pero nunca imponer una zona
+        # distinta a la que contiene realmente la dirección.
+        zona = db.session.get(ZonaEntrega, geo.get("zona_id")) if geo.get("zona_id") else None
         es_entrega_epicentro = True
         tiempo_estimado = 30
-        if zona_id:
-            zona = db.session.get(ZonaEntrega, zona_id)
-            if not zona or not zona.activo:
-                zona = None
+        if zona is not None and not zona.activo:
+            zona = None
+        if zona is None and zona_id:
+            candidata = db.session.get(ZonaEntrega, zona_id)
+            if candidata and candidata.activo and not any(
+                z.tiene_geo for z in ZonaEntrega.query.filter_by(activo=True).all()
+            ):
+                zona = candidata
         if zona is None:
-            zona = ZonaEntrega.query.filter_by(activo=True)\
-                .order_by(ZonaEntrega.orden, ZonaEntrega.nombre).first()
+            zonas_activas = ZonaEntrega.query.filter_by(activo=True)\
+                .order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
+            if geo.get("validacion_desactivada") or not any(z.tiene_geo for z in zonas_activas):
+                zona = zonas_activas[0] if zonas_activas else None
         if zona is None:
-            return jsonify({"ok": False, "error": "No hay zonas de entrega disponibles"}), 422
+            return jsonify({
+                "ok": False,
+                "error": "No pudimos asociar la dirección a una zona de entrega válida.",
+            }), 422
         if zona:
             es_entrega_epicentro = bool(zona.es_epicentro)
             tiempo_estimado = zona.tiempo_estimado_min
