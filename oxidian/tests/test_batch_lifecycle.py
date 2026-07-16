@@ -160,6 +160,15 @@ class BatchLifecycleTest(unittest.TestCase):
         self.assertEqual(len(lotes), 1)
         self.assertEqual(lotes[0]["tandas_totales"], 5)
         self.assertEqual(lotes[0]["unidades_totales"], 5 * batch.cantidad_por_tanda)
+        self.assertEqual(lotes[0]["pedidos_total"], 2)
+        self.assertEqual(
+            lotes[0]["unidades_por_estado"],
+            {
+                "pendiente": 2 * batch.cantidad_por_tanda,
+                "armando": 3 * batch.cantidad_por_tanda,
+                "listo": 0,
+            },
+        )
 
     # ── integración con el flujo real de cancelación ─────────────
     def test_ejecutar_cancelacion_libera_tandas(self):
@@ -222,6 +231,49 @@ class BatchLifecycleTest(unittest.TestCase):
         self.assertEqual(por_id[prod_lote.id]["unidades_totales"], 8)
         self.assertFalse(por_id[prod_solo.id]["es_lote"])
         self.assertEqual(por_id[prod_solo.id]["unidades_totales"], 5)
+
+    def test_agregado_no_lote_respeta_snapshot_aunque_cambie_catalogo(self):
+        """La planificación pertenece al pedido, no al producto editable."""
+        from routes.preparador import _encargos_agregados_por_fecha
+
+        entrega_original = date.today() + timedelta(days=4)
+        producto = self._mk_producto(por_lote=0)
+        producto.nombre = "Nombre actualizado"
+        producto.fecha_llegada = entrega_original + timedelta(days=10)
+        db.session.commit()
+
+        BatchLifecycleTest._seq += 1
+        pedido = Order(
+            numero_pedido=f"SNAP-{self._seq:04d}",
+            cliente_id=self.cliente.id,
+            total=12,
+            subtotal=12,
+            estado="pendiente",
+        )
+        db.session.add(pedido)
+        db.session.flush()
+        db.session.add(OrderItem(
+            pedido_id=pedido.id,
+            producto_id=producto.id,
+            cantidad=3,
+            precio_unit=4,
+            subtotal=12,
+            metadata_json=json.dumps({
+                "entrega_programada": entrega_original.isoformat(),
+                "producto": {
+                    "nombre": "Producto confirmado",
+                    "tipo_entrega": "programado",
+                    "fecha_llegada": entrega_original.isoformat(),
+                },
+            }),
+        ))
+        db.session.commit()
+
+        agregado = _encargos_agregados_por_fecha(entrega_original)
+        self.assertEqual(len(agregado), 1)
+        self.assertEqual(agregado[0]["producto_nombre"], "Producto confirmado")
+        self.assertEqual(agregado[0]["unidades_totales"], 3)
+        self.assertEqual(agregado[0]["pedidos_total"], 1)
 
     def test_agregado_excluye_cancelados_y_entregados(self):
         from routes.preparador import _lotes_agregados

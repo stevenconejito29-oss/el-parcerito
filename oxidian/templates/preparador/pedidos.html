@@ -561,7 +561,7 @@
 <div class="work-kpis">
   <div class="work-panel work-kpi">
     <span>{{ 'Encargos pendientes' if current_user.rol == 'preparacion' else 'Inmediatos' }}</span>
-    <strong>{{ pendientes|length }}</strong>
+    <strong>{{ pendientes_encargo|length if current_user.rol == 'preparacion' else pendientes|length }}</strong>
     <small>Esperan toma o inicio</small>
   </div>
   <div class="work-panel work-kpi">
@@ -569,7 +569,13 @@
     <strong>{{ armando|length }}</strong>
     <small>Activos hasta despacho</small>
   </div>
-  {% if pendientes_encargo is defined and pendientes_encargo %}
+  {% if current_user.rol == 'preparacion' %}
+  <div class="work-panel work-kpi" style="border-color:color-mix(in srgb,var(--prep-programado) 32%,transparent)">
+    <span>Fechas planificadas</span>
+    <strong style="color:var(--prep-programado)">{{ totales_lote_por_fecha|length }}</strong>
+    <small>Días con producción activa</small>
+  </div>
+  {% elif pendientes_encargo is defined and pendientes_encargo %}
   <div class="work-panel work-kpi" style="border-color:color-mix(in srgb,var(--prep-programado) 32%,transparent)">
     <span>{{ role_label('preparacion', short=True) }}</span>
     <strong style="color:var(--prep-programado)">{{ pendientes_encargo|length }}</strong>
@@ -578,8 +584,81 @@
   {% endif %}
 </div>
 
+{% if current_user.rol == 'preparacion' %}
+<nav class="prep-view-switch" aria-label="Vista de encargos">
+  <a href="{{ url_for('preparador.pedidos', vista='resumen') }}"
+     class="prep-view-switch__item {% if vista_encargos == 'resumen' %}is-active{% endif %}"
+     {% if vista_encargos == 'resumen' %}aria-current="page"{% endif %}>
+    🧮 Resumen por producto
+  </a>
+  <a href="{{ url_for('preparador.pedidos', vista='pedidos') }}"
+     class="prep-view-switch__item {% if vista_encargos == 'pedidos' %}is-active{% endif %}"
+     {% if vista_encargos == 'pedidos' %}aria-current="page"{% endif %}>
+    📋 Pedidos individuales
+  </a>
+</nav>
+
+{% if vista_encargos == 'resumen' %}
+<section aria-labelledby="prep-summary-title">
+  <div class="prep-summary-intro">
+    <div>
+      <h2 id="prep-summary-title">Producción por producto</h2>
+      <p>Totales de pedidos activos. Abre “Pedidos individuales” para clientes, notas y acciones por pedido.</p>
+    </div>
+  </div>
+  {% for _fecha, _productos in totales_lote_por_fecha.items() %}
+  {%- set _dias_hasta = (_fecha - hoy_date).days if hoy_date and _fecha else None -%}
+  <article class="prep-production-date">
+    <header class="prep-production-date__head">
+      <h3>
+        {% if _dias_hasta == 0 %}Hoy{% elif _dias_hasta == 1 %}Mañana{% elif _dias_hasta is not none and _dias_hasta < 0 %}Vencido{% else %}{{ _fecha|weekday_es }}{% endif %}
+        · {{ _fecha.strftime('%d/%m/%Y') }}
+      </h3>
+      <span class="prep-fecha-count">{{ _productos|length }} producto{{ 's' if _productos|length != 1 }}</span>
+    </header>
+    <div class="prep-product-grid">
+      {% for _item in _productos %}
+      <div class="prep-product-total">
+        <span class="prep-product-total__name">{{ _item.producto_nombre }}</span>
+        <strong class="prep-product-total__amount">{{ _item.unidades_totales }} u.</strong>
+        <div class="prep-product-total__meta">
+          <span>{{ _item.pedidos_total }} pedido{{ 's' if _item.pedidos_total != 1 }}</span>
+          {% if _item.es_lote %}<span>{{ _item.tandas_totales }} tanda{{ 's' if _item.tandas_totales != 1 }} × {{ _item.tandas_por_lote }}</span>{% endif %}
+          <span>Pendientes: {{ _item.unidades_por_estado.get('pendiente', 0) }}</span>
+          <span>Preparando: {{ _item.unidades_por_estado.get('armando', 0) }}</span>
+          {% if _item.unidades_por_estado.get('listo', 0) %}<span>Listas: {{ _item.unidades_por_estado.get('listo', 0) }}</span>{% endif %}
+        </div>
+        {% if _item.es_lote and _item.estado_batch != 'listo' %}
+        <form method="post" class="prep-product-total__action"
+              action="{{ url_for('preparador.marcar_lote_listo', batch_id=_item.batch_id) }}"
+              data-confirm="¿Marcar todo este lote como listo? Se avisará a sus clientes.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="work-btn work-btn-success"
+                  {% if not disponible %}disabled aria-disabled="true"{% endif %}>
+            {{ 'Ponte online para cerrar el lote' if not disponible else '✓ Marcar lote listo' }}
+          </button>
+        </form>
+        {% elif _item.estado_batch == 'listo' %}
+        <span class="work-chip prep-product-total__action">✓ Lote listo</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+  {% else %}
+  <div class="work-panel prep-summary-empty">
+    <strong>No hay producción programada activa</strong>
+    <span>Los nuevos encargos aparecerán aquí agrupados por fecha y producto.</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{% endif %}
+
+{% if current_user.rol != 'preparacion' or vista_encargos == 'pedidos' %}
 <div class="work-board">
 
+{% if current_user.rol != 'preparacion' %}
 {# ── Cabecera de sección "Preparar ahora" ── el texto se adapta al rol
    para no confundir al preparador de encargos con "trabajo inmediato". #}
 <div class="prep-section-head" data-kind="ahora" style="grid-column:1/-1">
@@ -703,6 +782,7 @@
   {% endfor %}
   </div>
 </section>
+{% endif %}
 
 {# ── Fase 6: cabecera de sección "Programados" ── #}
 {% if (prep_programados is defined and prep_programados) or (pendientes_encargo is defined and pendientes_encargo) %}
@@ -727,7 +807,7 @@
   <div class="work-lane-head">
     <div>
       <h2 class="work-lane-title" style="color:var(--prep-programado)">📦 {{ role_label('preparacion') }}</h2>
-      <p class="work-lane-sub">Agrupados por fecha para planificar el día. Al marcar listo se avisa por WhatsApp al cliente.</p>
+      <p class="work-lane-sub">Un pedido por tarjeta, con cliente, notas y acciones operativas.</p>
     </div>
     <span class="work-count" style="background:var(--prep-programado-soft);color:var(--prep-programado)">{{ pendientes_encargo|length }}</span>
   </div>
@@ -747,53 +827,9 @@
           {% elif _dias_hasta is not none and _dias_hasta <= 7 %}📅 En {{ _dias_hasta }} días
           {% else %}📅 Futuro{% endif %}
         </span>
-        <span class="prep-fecha-date">{{ _fecha.strftime('%A %d/%m') if _fecha else 'Sin fecha' }}</span>
+        <span class="prep-fecha-date">{{ (_fecha|weekday_es) ~ ' ' ~ _fecha.strftime('%d/%m') if _fecha else 'Sin fecha' }}</span>
         <span class="prep-fecha-count">{{ _grupo|length }} pedido{{ 's' if _grupo|length != 1 }}</span>
       </div>
-      {# TOTAL DEL DÍA — agregado por lote (ProductBatch).
-         Muestra al preparador cuántas unidades reales debe producir para
-         esta fecha, sumando las tandas reservadas por todos los pedidos
-         vivos. El botón "Marcar lote listo" transiciona el batch entero
-         y dispara push web (sin WhatsApp masivo — política anti-baneo). #}
-      {% if totales_lote_por_fecha is defined and totales_lote_por_fecha.get(_fecha) %}
-      <div class="prep-total-dia"
-           style="margin:.5rem 0 .75rem; padding:.6rem .75rem; border-radius:.6rem;
-                  background:color-mix(in srgb,var(--brand-primary) 8%,transparent);
-                  border:1px solid color-mix(in srgb,var(--brand-primary) 25%,transparent)">
-        <div style="font-weight:700; margin-bottom:.35rem; color:var(--brand-primary)">
-          🧮 TOTAL DEL DÍA
-        </div>
-        {% for _item in totales_lote_por_fecha[_fecha] %}
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.25rem 0">
-          <div>
-            <strong>{{ _item.producto_nombre }}</strong>
-            {% if _item.es_lote %}
-              — {{ _item.tandas_totales }} tanda{{ 's' if _item.tandas_totales != 1 }}
-              × {{ _item.tandas_por_lote }} =
-              <strong>{{ _item.unidades_totales }} u.</strong>
-              {% if _item.estado_batch == 'listo' %}
-                <span class="work-chip" style="background:var(--ok-soft,#dcfce7);color:var(--ok,#166534)">✔ Listo</span>
-              {% endif %}
-            {% else %}
-              — <strong>{{ _item.unidades_totales }} u.</strong>
-              <span class="work-chip" style="background:color-mix(in srgb,var(--prep-programado) 15%,transparent);color:var(--prep-programado)">encargo individual</span>
-            {% endif %}
-          </div>
-          {% if _item.es_lote and _item.estado_batch != 'listo' %}
-          <form method="post"
-                action="{{ url_for('preparador.marcar_lote_listo', batch_id=_item.batch_id) }}"
-                data-confirm="¿Marcar TODO el lote como listo? Se notificará por push a los clientes."
-                style="margin:0">
-            <button type="submit" class="btn btn-sm"
-                    style="background:var(--brand-primary);color:#fff;border:none;padding:.3rem .6rem;border-radius:.4rem;cursor:pointer">
-              ✅ Marcar lote listo
-            </button>
-          </form>
-          {% endif %}
-        </div>
-        {% endfor %}
-      </div>
-      {% endif %}
       <div class="work-list">
       {% for pedido in _grupo %}
   {%- set fecha_ent = pedido.fecha_entrega_programada -%}
@@ -1014,6 +1050,7 @@
 </section>
 
 </div>
+{% endif %}
 </div>
 {% endblock %}
 

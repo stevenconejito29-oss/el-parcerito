@@ -10,7 +10,7 @@ import os as _os
 from sqlalchemy.orm import joinedload
 from sqlalchemy import func as _sa_func
 from extensions import db, get_or_404
-from models import (Order, OrderEvent, User, SiteConfig, Product,
+from models import (Order, OrderEvent, OrderItem, User, SiteConfig, Product,
                     ProductBatch, utcnow as _utcnow)
 from services import (avanzar_estado_pedido, distribuir_repartidor,
                       redistribuir_pendientes_sin_asignar,
@@ -63,6 +63,7 @@ preparador_bp = Blueprint("preparador", __name__)
 logger = logging.getLogger(__name__)
 
 ROLES_PREPARADOR = {"admin", "super_admin", "cocina", "preparacion"}
+ESTADOS_ENCARGO_ACTIVOS = ("pendiente", "armando", "listo")
 
 
 @preparador_bp.before_request
@@ -286,12 +287,31 @@ def pedidos():
         else:
             prep_programados_planos.append(p)
 
-    # Totales agregados por fecha para la sección "TOTAL DEL DÍA".
+    # El rol de encargos abre en el resumen de producción. La vista de pedidos
+    # individuales queda a un toque, pero no se mezclan ambos niveles en la
+    # misma pantalla. Admin conserva su cola operativa habitual.
+    vista_encargos = (request.args.get("vista") or "").strip().lower()
+    if vista_encargos not in {"resumen", "pedidos"}:
+        vista_encargos = "resumen" if current_user.rol == "preparacion" else "pedidos"
+
+    # Totales agregados por fecha para el resumen de producción. Incluimos
+    # también las fechas que ya están en preparación: antes desaparecían del
+    # resumen en cuanto el operador iniciaba el pedido.
+    items_encargo_activos = _items_encargo_activos()
+    fechas_resumen = {
+        item.display_fecha_entrega
+        for item in items_encargo_activos
+        if item.display_fecha_entrega is not None
+        and (item.display_tipo_entrega or "").lower() in {"programado", "encargo"}
+    }
     # Incluye TODOS los encargos programados (con y sin lote): los
     # batches muestran tandas, los productos sueltos muestran unidades.
     totales_lote_por_fecha = {}
-    for _fecha in encargos_por_fecha.keys():
-        _agregado = _encargos_agregados_por_fecha(_fecha)
+    for _fecha in sorted(fechas_resumen):
+        _agregado = _encargos_agregados_por_fecha(
+            _fecha,
+            items_activos=items_encargo_activos,
+        )
         if _agregado:
             totales_lote_por_fecha[_fecha] = _agregado
 
@@ -305,6 +325,7 @@ def pedidos():
                            companeros=companeros,
                            disponible=disponible,
                            modo_operativo=modo_operativo,
+                           vista_encargos=vista_encargos,
                            almacen_listo=almacen_listo,
                            lineas_preparacion_interna=lineas_preparacion_interna,
                            # Fase 6
@@ -547,17 +568,18 @@ def _lotes_agregados(fecha=None):
     # por batch_id en Python. Antes ejecutaba el SELECT por batch —
     # O(batches × order_items). Ahora es O(order_items).
     from sqlalchemy import bindparam
-    ESTADOS_VIVOS = ("pendiente", "armando", "listo")
     _stmt = db.text("""
-        SELECT oi.metadata_json, o.numero_pedido
+        SELECT oi.metadata_json, o.numero_pedido, o.estado
           FROM order_items oi
           JOIN orders o ON o.id = oi.pedido_id
          WHERE o.estado IN :estados
     """).bindparams(bindparam("estados", expanding=True))
-    rows = db.session.execute(_stmt, {"estados": list(ESTADOS_VIVOS)}).fetchall()
+    rows = db.session.execute(
+        _stmt, {"estados": list(ESTADOS_ENCARGO_ACTIVOS)}
+    ).fetchall()
 
-    por_batch = {}  # batch_id → {"tandas": int, "pedidos": [num, ...]}
-    for meta_json, num in rows:
+    por_batch = {}
+    for meta_json, num, estado in rows:
         if not meta_json:
             continue
         try:
@@ -570,18 +592,27 @@ def _lotes_agregados(fecha=None):
         t = int(meta.get("tandas_reservadas") or 0)
         if t <= 0:
             continue
-        slot = por_batch.setdefault(bid, {"tandas": 0, "pedidos": []})
+        slot = por_batch.setdefault(bid, {
+            "tandas": 0,
+            "pedidos": set(),
+            "tandas_por_estado": {key: 0 for key in ESTADOS_ENCARGO_ACTIVOS},
+        })
         slot["tandas"] += t
-        slot["pedidos"].append(num)
+        slot["pedidos"].add(num)
+        slot["tandas_por_estado"][estado] += t
 
     resultado = []
     for b in batches:
         prod = productos.get(b.producto_id)
         if prod is None:
             continue
-        slot = por_batch.get(b.id, {"tandas": 0, "pedidos": []})
+        slot = por_batch.get(b.id, {
+            "tandas": 0,
+            "pedidos": set(),
+            "tandas_por_estado": {key: 0 for key in ESTADOS_ENCARGO_ACTIVOS},
+        })
         tandas = slot["tandas"]
-        pedidos = slot["pedidos"]
+        pedidos = sorted(slot["pedidos"])
         if tandas == 0 and b.estado != "listo":
             continue
         resultado.append({
@@ -592,6 +623,11 @@ def _lotes_agregados(fecha=None):
             "tandas_por_lote": b.cantidad_por_tanda,
             "tandas_totales": tandas,
             "unidades_totales": tandas * b.cantidad_por_tanda,
+            "unidades_por_estado": {
+                estado: cantidad * b.cantidad_por_tanda
+                for estado, cantidad in slot["tandas_por_estado"].items()
+            },
+            "pedidos_total": len(pedidos),
             "estado_batch": b.estado,
             "listo_en": b.listo_en.isoformat() if b.listo_en else None,
             "pedidos": pedidos,
@@ -599,7 +635,17 @@ def _lotes_agregados(fecha=None):
     return resultado
 
 
-def _encargos_agregados_por_fecha(fecha):
+def _items_encargo_activos():
+    """Carga una vez las líneas activas con su snapshot y pedido."""
+    return OrderItem.query.options(
+        joinedload(OrderItem.producto),
+        joinedload(OrderItem.pedido),
+    ).join(Order).filter(
+        Order.estado.in_(ESTADOS_ENCARGO_ACTIVOS)
+    ).all()
+
+
+def _encargos_agregados_por_fecha(fecha, items_activos=None):
     """Agregado unificado de TODOS los encargos programados de una fecha.
 
     Fusiona dos fuentes:
@@ -628,69 +674,47 @@ def _encargos_agregados_por_fecha(fecha):
         b.producto_id for b in ProductBatch.query.filter_by(fecha_entrega=fecha).all()
     } if fecha else set()
 
-    # Recolectar encargos sin batch: OrderItems de pedidos vivos cuyo
-    # producto tenga tipo_entrega=programado y fecha_llegada == fecha,
-    # excluyendo los que ya se cuentan por batch.
-    from sqlalchemy import bindparam
-    ESTADOS_VIVOS = ("pendiente", "armando", "listo")
-    # Filtra por fecha_llegada del producto en SQL para no traer TODO el
-    # histórico de order_items — crítico en producción con muchos pedidos.
-    _stmt = db.text("""
-        SELECT oi.metadata_json, oi.cantidad, oi.producto_id,
-               p.nombre AS pnombre, p.fecha_llegada, p.tipo_entrega,
-               o.numero_pedido
-          FROM order_items oi
-          JOIN orders o   ON o.id = oi.pedido_id
-          JOIN products p ON p.id = oi.producto_id
-         WHERE o.estado IN :estados
-           AND p.tipo_entrega = 'programado'
-           AND p.fecha_llegada = :fecha
-    """).bindparams(bindparam("estados", expanding=True))
-    rows = db.session.execute(
-        _stmt, {"estados": list(ESTADOS_VIVOS), "fecha": fecha}
-    ).fetchall()
-
-    from datetime import date as _date_cls
-    def _norm_fecha(v):
-        if isinstance(v, _date_cls):
-            return v
-        try:
-            return _date_cls.fromisoformat(str(v)[:10])
-        except (TypeError, ValueError):
-            return None
+    # Recolectar encargos sin batch desde el snapshot del OrderItem. La fecha,
+    # el nombre y el tipo del producto se congelan al confirmar la compra; usar
+    # aquí el Product vivo movía pedidos históricos si el catálogo se editaba.
+    rows = items_activos if items_activos is not None else _items_encargo_activos()
 
     por_producto = {}
-    for meta_json, cantidad, prod_id, pnombre, fecha_llegada, tipo_entrega, num in rows:
-        if _norm_fecha(fecha_llegada) != fecha:
+    for item in rows:
+        if item.display_fecha_entrega != fecha:
             continue
-        if (tipo_entrega or "").lower() != "programado":
+        if (item.display_tipo_entrega or "").lower() not in {"programado", "encargo"}:
             continue
         # Si el ítem tiene batch, ya está sumado en `_lotes_agregados`.
         batch_id = None
-        if meta_json:
-            try:
-                batch_id = _json.loads(meta_json).get("batch_id")
-            except Exception:
-                batch_id = None
+        meta = item.get_metadata()
+        batch_id = meta.get("batch_id")
         if batch_id and batch_id in ids_ya_agregados:
             continue
         # Si el producto tiene batch en esta fecha (aunque este ítem no lo
         # apunte por algún checkout antiguo), evita doble contabilidad.
-        if prod_id in productos_batch_ids and not batch_id:
+        if item.producto_id in productos_batch_ids and not batch_id:
             continue
-        entry = por_producto.setdefault(prod_id, {
-            "producto_id": prod_id,
-            "producto_nombre": pnombre,
+        entry = por_producto.setdefault(item.producto_id, {
+            "producto_id": item.producto_id,
+            "producto_nombre": item.display_nombre,
             "es_lote": False,
             "batch_id": None,
             "tandas_por_lote": None,
             "tandas_totales": None,
             "unidades_totales": 0,
+            "unidades_por_estado": {key: 0 for key in ESTADOS_ENCARGO_ACTIVOS},
             "estado_batch": None,
-            "pedidos": [],
+            "pedidos": set(),
         })
-        entry["unidades_totales"] += int(cantidad or 0)
-        entry["pedidos"].append(num)
+        cantidad = int(item.cantidad or 0)
+        entry["unidades_totales"] += cantidad
+        entry["unidades_por_estado"][item.pedido.estado] += cantidad
+        entry["pedidos"].add(item.pedido.numero_pedido)
+
+    for entry in por_producto.values():
+        entry["pedidos"] = sorted(entry["pedidos"])
+        entry["pedidos_total"] = len(entry["pedidos"])
 
     # Etiquetar los batches como "es_lote" para el template.
     for r in resultado:
@@ -727,7 +751,12 @@ def marcar_lote_listo(batch_id):
     NO envía WhatsApp masivo (política anti-baneo). Los clientes que
     tengan push web habilitado reciben una notificación individual.
     """
-    from datetime import datetime as _dt
+    if current_user.rol not in {"preparacion", "admin", "super_admin"}:
+        flash("Solo el equipo de encargos puede cerrar un lote programado.", "warning")
+        return redirect(url_for("preparador.pedidos"))
+    if not _requiere_disponible_para_nuevo_trabajo():
+        return redirect(url_for("preparador.pedidos", vista="resumen"))
+
     batch = ProductBatch.query.filter_by(id=batch_id).with_for_update().first_or_404()
     if batch.estado == "listo":
         flash("El lote ya está marcado como listo.", "info")

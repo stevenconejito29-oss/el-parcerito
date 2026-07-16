@@ -504,6 +504,20 @@ def create_app(env="default"):
             return f"{diff // 60}min"
         return f"{diff // 3600}h {(diff % 3600) // 60}min"
 
+    @app.template_filter("weekday_es")
+    def weekday_es_filter(value):
+        """Nombre estable del día en español, independiente del locale del SO."""
+        if value is None or not hasattr(value, "weekday"):
+            return ""
+        dias = (
+            "lunes", "martes", "miércoles", "jueves",
+            "viernes", "sábado", "domingo",
+        )
+        try:
+            return dias[value.weekday()]
+        except (IndexError, TypeError, ValueError):
+            return ""
+
     @app.template_filter("from_json")
     def from_json_filter(value):
         """Parsea un string JSON a dict/list para usar en Jinja.
