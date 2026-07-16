@@ -734,6 +734,66 @@ def _migrate_zonas_cobertura_geojson():
     ))
 
 
+def _migrate_order_zone_snapshots():
+    """Congela coste, nombre, tarifa y SLA de la zona en cada pedido."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("orders"):
+        return
+    cols = {col["name"] for col in inspector.get_columns("orders")}
+    additions = {
+        "costo_envio_snapshot": "NUMERIC(10, 2)",
+        "zona_nombre_snapshot": "VARCHAR(100)",
+        "zona_precio_envio_snapshot": "NUMERIC(10, 2)",
+        "zona_tiempo_estimado_min_snapshot": "INTEGER",
+        "zona_tipo_cobertura_snapshot": "VARCHAR(20)",
+    }
+    for name, sql_type in additions.items():
+        if name not in cols:
+            db.session.execute(text(f"ALTER TABLE orders ADD COLUMN {name} {sql_type}"))
+
+    db.session.execute(text("""
+        UPDATE orders
+        SET costo_envio_snapshot = CASE
+            WHEN COALESCE(total, 0) - COALESCE(subtotal, 0) + COALESCE(descuento, 0) > 0
+            THEN COALESCE(total, 0) - COALESCE(subtotal, 0) + COALESCE(descuento, 0)
+            ELSE 0
+        END
+        WHERE costo_envio_snapshot IS NULL
+    """))
+    if inspector.has_table("zonas_entrega"):
+        db.session.execute(text("""
+            UPDATE orders
+            SET zona_nombre_snapshot = COALESCE(
+                    zona_nombre_snapshot,
+                    (SELECT CASE
+                        WHEN nombre LIKE '[archivada] %'
+                        THEN REPLACE(nombre, '[archivada] ', '')
+                        ELSE nombre
+                     END FROM zonas_entrega WHERE zonas_entrega.id = orders.zona_id)
+                ),
+                zona_precio_envio_snapshot = COALESCE(
+                    zona_precio_envio_snapshot,
+                    (SELECT precio_envio FROM zonas_entrega WHERE zonas_entrega.id = orders.zona_id)
+                ),
+                zona_tiempo_estimado_min_snapshot = COALESCE(
+                    zona_tiempo_estimado_min_snapshot,
+                    (SELECT tiempo_estimado_min FROM zonas_entrega WHERE zonas_entrega.id = orders.zona_id)
+                ),
+                zona_tipo_cobertura_snapshot = COALESCE(
+                    zona_tipo_cobertura_snapshot,
+                    (SELECT CASE
+                        WHEN cobertura_geojson IS NOT NULL THEN 'poligono'
+                        WHEN centro_lat IS NOT NULL AND centro_lng IS NOT NULL AND radio_km IS NOT NULL THEN 'radio'
+                        ELSE 'legacy'
+                     END FROM zonas_entrega WHERE zonas_entrega.id = orders.zona_id)
+                )
+            WHERE zona_id IS NOT NULL
+        """))
+    if db.engine.dialect.name == "postgresql":
+        db.session.execute(text("ALTER TABLE orders ALTER COLUMN costo_envio_snapshot SET DEFAULT 0"))
+        db.session.execute(text("ALTER TABLE orders ALTER COLUMN costo_envio_snapshot SET NOT NULL"))
+
+
 def _migrate_user_mfa():
     """Añade columnas MFA a users."""
     inspector = inspect(db.engine)
@@ -1353,6 +1413,11 @@ MIGRATIONS = [
         "id": "20260716_01_zonas_cobertura_geojson",
         "description": "Añadir Polygon/MultiPolygon GeoJSON para cobertura precisa de reparto",
         "fn": _migrate_zonas_cobertura_geojson,
+    },
+    {
+        "id": "20260717_01_order_zone_snapshots",
+        "description": "Congelar coste, tarifa, nombre y SLA de la zona aplicada al pedido",
+        "fn": _migrate_order_zone_snapshots,
     },
     {
         "id": "20260618_01_proveedor_horario",

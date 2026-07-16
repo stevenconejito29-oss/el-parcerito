@@ -2347,6 +2347,15 @@ class Order(db.Model):
     entregado_en = db.Column(db.DateTime)
 
     zona_id = db.Column(db.Integer, db.ForeignKey("zonas_entrega.id"))
+    # Snapshot de la zona aplicada al confirmar. Evita que un cambio futuro de
+    # nombre, tarifa o SLA reescriba visualmente el historial del pedido.
+    costo_envio_snapshot = db.Column(
+        db.Numeric(10, 2), default=0, server_default="0", nullable=False,
+    )
+    zona_nombre_snapshot = db.Column(db.String(100))
+    zona_precio_envio_snapshot = db.Column(db.Numeric(10, 2))
+    zona_tiempo_estimado_min_snapshot = db.Column(db.Integer)
+    zona_tipo_cobertura_snapshot = db.Column(db.String(20))
     afiliado_codigo_id = db.Column(db.Integer, db.ForeignKey("affiliate_codes.id"))
     es_entrega_epicentro = db.Column(db.Boolean, default=True)
 
@@ -2400,6 +2409,25 @@ class Order(db.Model):
     zona = db.relationship("ZonaEntrega", foreign_keys=[zona_id])
     afiliado_codigo_rel = db.relationship("AffiliateCode", foreign_keys=[afiliado_codigo_id])
     confirmador_pago = db.relationship("User", foreign_keys=[pago_confirmado_por])
+
+    @property
+    def zona_nombre_aplicada(self) -> str:
+        return self.zona_nombre_snapshot or (self.zona.nombre if self.zona else "")
+
+    @property
+    def zona_tiempo_estimado_aplicado(self) -> int | None:
+        if self.zona_tiempo_estimado_min_snapshot is not None:
+            return self.zona_tiempo_estimado_min_snapshot
+        return self.zona.tiempo_estimado_min if self.zona else None
+
+    @property
+    def costo_envio_aplicado(self) -> float:
+        if self.costo_envio_snapshot is not None:
+            return float(self.costo_envio_snapshot)
+        # Compatibilidad para objetos históricos aún no migrados.
+        return max(0.0, round(
+            float(self.total or 0) - float(self.subtotal or 0) + float(self.descuento or 0), 2,
+        ))
 
     __table_args__ = (
         db.Index("ix_orders_estado",        "estado"),

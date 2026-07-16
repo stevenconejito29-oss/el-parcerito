@@ -99,7 +99,7 @@
       </div>
       <p class="text-sm mt-1" style="color:var(--col-muted)">{{ pedido.cliente.nombre }} · {{ pedido.creado_en.strftime('%d/%m/%Y %H:%M') }}</p>
       <p class="text-xs mt-1" style="color:var(--col-faint)">
-        Pago: {{ pedido.metodo_pago or '—' }}{% if pedido.pago_confirmado and pedido.pago_confirmado_en %} · Cobrado {{ pedido.pago_confirmado_en.strftime('%d/%m %H:%M') }}{% endif %}{% if pedido.zona %} · Zona: {{ pedido.zona.nombre }}{% endif %}
+        Pago: {{ pedido.metodo_pago or '—' }}{% if pedido.pago_confirmado and pedido.pago_confirmado_en %} · Cobrado {{ pedido.pago_confirmado_en.strftime('%d/%m %H:%M') }}{% endif %}{% if pedido.zona_id %} · Zona: {{ pedido.zona_nombre_aplicada }}{% endif %}
         {% if pedido.preparador %} · Prep: {{ pedido.preparador.nombre }}{% endif %}
         {% if brand.delivery and pedido.repartidor %} · Reparto: {{ pedido.repartidor.nombre }}{% endif %}
       </p>

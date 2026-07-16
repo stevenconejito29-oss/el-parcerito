@@ -764,7 +764,7 @@
 
       <p class="work-client">{{ pedido.cliente.nombre }}</p>
       <div class="mt-2 flex flex-wrap gap-2">
-        {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
+        {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
         {% if pedido.preparador_id and pedido.preparador_id != current_user.id %}
           <span class="work-badge-assigned">Asignado a {{ pedido.preparador.nombre }}</span>
         {% endif %}
@@ -917,7 +917,7 @@
           {% elif _tipo2 == 'recogida' %}{{ _icon_bag() }} Recogida
           {% else %}{{ _icon_clock() }} Programado{% endif %}
         </span>
-        {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
+        {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
       </div>
       {% if _tipo2 == 'delivery' and pedido.direccion_entrega %}
       <div class="work-address">{{ pedido.direccion_entrega }}</div>
@@ -1028,7 +1028,7 @@
           {% else %}{{ pedido.metodo_pago }}{% endif %}
         </span>
         {% endif %}
-        {% if pedido.zona %}<span class="work-badge-zone">📍 {{ pedido.zona.nombre }}</span>{% endif %}
+        {% if pedido.zona_id %}<span class="work-badge-zone">📍 {{ pedido.zona_nombre_aplicada }}</span>{% endif %}
         {% if pedido.preparador_id and pedido.preparador_id != current_user.id %}
           <span class="work-badge-assigned">Asignado a {{ pedido.preparador.nombre }}</span>
         {% endif %}

@@ -1,5 +1,6 @@
 import unittest
 from decimal import Decimal
+from unittest.mock import patch
 
 from flask import Flask, session
 from werkzeug.datastructures import MultiDict
@@ -19,6 +20,7 @@ from routes.admin import _sync_catalog_extras
 from routes.admin import _parsear_campos_producto
 from routes.public import (
     _build_items_from_carrito,
+    _cart_compatibility,
     _parse_product_extras,
     _product_extras_payload,
     public_bp,
@@ -172,6 +174,44 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
 
         self.assertEqual(by_coordinates.status_code, 403)
         self.assertEqual(by_text.status_code, 403)
+
+    def test_chatbot_coverage_uses_the_same_zone_resolver(self):
+        zone = ZonaEntrega(
+            nombre="Centro bot QA", precio_envio=Decimal("2.75"), activo=True,
+            centro_lat=37.4736, centro_lng=-5.6438, radio_km=2,
+        )
+        db.session.add(zone)
+        SiteConfig.set("VALIDAR_RADIO_ENTREGA", "1")
+        db.session.commit()
+
+        with patch("services.geocodificar_direccion", return_value=(37.474, -5.644)):
+            response = self.client.get(
+                "/api/bot/cobertura?direccion=Calle%20Real%201%2C%20Carmona",
+                headers={"X-Bot-Key": "test-bot-key"},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["cobertura"]["zona_id"], zone.id)
+        self.assertEqual(payload["cobertura"]["zona_nombre"], "Centro bot QA")
+        self.assertEqual(payload["metodo_cobertura"], "radio")
+
+    def test_cart_does_not_offer_delivery_without_an_active_zone(self):
+        SiteConfig.set("FEATURE_DELIVERY", "1")
+        SiteConfig.set("FEATURE_RECOGIDA", "0")
+        db.session.commit()
+
+        compatibility = _cart_compatibility(
+            [self.product], check_zone_availability=True,
+        )
+
+        self.assertFalse(compatibility["ok"])
+        self.assertNotIn("delivery", compatibility["fulfillment_options"])
+        self.assertEqual(
+            compatibility["issues"][0]["code"],
+            "delivery_no_active_zones",
+        )
 
     def test_points_code_verification_does_not_enumerate_customers(self):
         customer = User(

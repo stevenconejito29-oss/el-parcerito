@@ -70,7 +70,7 @@ def _group_orders_by_zone(pedidos):
         z = pedido.zona
         return (
             z.orden if z and z.orden is not None else 9999,
-            z.nombre if z else "Sin zona",
+            pedido.zona_nombre_aplicada or "Sin zona",
             pedido.creado_en,
         )
 
@@ -81,7 +81,7 @@ def _group_orders_by_zone(pedidos):
     current_pedidos = []
 
     for pedido in pedidos_ordenados:
-        zona_nombre = pedido.zona.nombre if pedido.zona else "Sin zona"
+        zona_nombre = pedido.zona_nombre_aplicada or "Sin zona"
         zona_orden = pedido.zona.orden if pedido.zona and pedido.zona.orden is not None else 9999
         if current_zone is None or current_zone != zona_nombre:
             if current_pedidos:

@@ -73,10 +73,12 @@
         <span>Descuento</span><span>-€{{ "%.2f"|format(pedido.descuento) }}</span>
       </div>
       {% endif %}
-      {% if pedido.zona and pedido.zona.precio_envio > 0 %}
+      {% if pedido.zona_id and pedido.costo_envio_aplicado > 0 %}
       <div class="flex justify-between" style="color:var(--col-muted)">
-        <span>Envío ({{ pedido.zona.nombre }})</span><span>€{{ "%.2f"|format(pedido.zona.precio_envio) }}</span>
+        <span>Envío{% if pedido.zona_nombre_aplicada %} ({{ pedido.zona_nombre_aplicada }}){% endif %}</span><span>€{{ "%.2f"|format(pedido.costo_envio_aplicado) }}</span>
       </div>
+      {% elif pedido.zona_id and pedido.zona_precio_envio_snapshot and pedido.zona_precio_envio_snapshot > 0 %}
+      <div class="flex justify-between" style="color:var(--theme-success)"><span>Envío</span><span>Gratis</span></div>
       {% endif %}
       <div class="flex justify-between font-black text-base pt-1" style="border-top:1px solid var(--col-border);color:var(--col-text)">
         <span>Total</span><span style="color:var(--brand-primary,#FCD116)">€{{ "%.2f"|format(pedido.total) }}</span>
@@ -128,12 +130,12 @@
         </div>
       </div>
       {% endif %}
-      {% if pedido.zona %}
+      {% if pedido.zona_id %}
       <div class="flex items-start gap-2">
         <span class="flex-shrink-0">🚴</span>
         <div>
           <span class="font-semibold" style="color:var(--col-text)">Tiempo estimado:</span>
-          <span style="color:var(--col-muted)"> ~{{ pedido.zona.tiempo_estimado_min }} minutos</span>
+          <span style="color:var(--col-muted)"> ~{{ pedido.zona_tiempo_estimado_aplicado }} minutos</span>
         </div>
       </div>
       {% endif %}

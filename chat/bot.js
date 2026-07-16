@@ -5849,11 +5849,15 @@ async function handleCoberturaDelivery(jid, ses, direccion) {
     const distancia = coverage.distancia_km !== null && coverage.distancia_km !== undefined
       ? `\n📏 Distancia aprox.: ${Number(coverage.distancia_km).toFixed(2)} km`
       : '';
-    const radio = data.radio_km ? `\n🗺️ Radio de cobertura: ${data.radio_km} km` : '';
+    const zona = coverage.zona_nombre ? `\n📍 Zona: ${coverage.zona_nombre}` : '';
+    const metodo = data.metodo_cobertura || coverage.metodo || coverage.tipo_cobertura || '';
+    const radio = data.radio_km && (!metodo || metodo === 'radio' || metodo === 'global')
+      ? `\n🗺️ Radio de cobertura: ${data.radio_km} km`
+      : '';
     if (coverage.ok) {
       return sendText(jid,
         `✅ *¡Llegamos a tu zona!*\n\n` +
-        `${coverage.mensaje || '¡Tu dirección está dentro de nuestra área de delivery!'}${distancia}${radio}\n\n` +
+        `${coverage.mensaje || '¡Tu dirección está dentro de nuestra área de delivery!'}${zona}${distancia}${radio}\n\n` +
         `🛵 Para finalizar la compra entra aquí:\n👉 ${getTiendaUrl()}\n\n` +
         `_Escribe *menu* para volver._`
       );

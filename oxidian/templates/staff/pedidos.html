@@ -110,7 +110,7 @@
 
     <p class="work-client">{{ pedido.cliente.nombre if pedido.cliente else '—' }}</p>
     <div class="mt-2 flex flex-wrap gap-2">
-      {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
+      {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
       {% if pedido.preparador_id and pedido.preparador_id != current_user.id %}
         <span class="work-badge-assigned">Asignado a {{ pedido.preparador.nombre }}</span>
       {% endif %}
@@ -170,7 +170,7 @@
 
     <p class="work-client">{{ pedido.cliente.nombre if pedido.cliente else '—' }}</p>
     <div class="mt-2 flex flex-wrap gap-2">
-      {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
+      {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
       {% if pedido.preparador_id and pedido.preparador_id != current_user.id %}
         <span class="work-badge-assigned">Asignado a {{ pedido.preparador.nombre }}</span>
       {% endif %}

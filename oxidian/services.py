@@ -1322,6 +1322,25 @@ def _resolver_zona_por_coordenadas(lat, lon, zonas):
     return None, None
 
 
+def aplicar_snapshot_zona_pedido(pedido, zona, costo_envio=0) -> None:
+    """Congela la decisión geográfica y financiera aplicada al pedido.
+
+    El FK mantiene la relación operativa para reparto; estos campos preservan
+    el recibo histórico aunque la zona se renombre, archive o cambie de precio.
+    """
+    pedido.costo_envio_snapshot = max(0, Decimal(str(costo_envio or 0)))
+    if zona is None:
+        pedido.zona_nombre_snapshot = None
+        pedido.zona_precio_envio_snapshot = None
+        pedido.zona_tiempo_estimado_min_snapshot = None
+        pedido.zona_tipo_cobertura_snapshot = None
+        return
+    pedido.zona_nombre_snapshot = zona.nombre
+    pedido.zona_precio_envio_snapshot = zona.precio_envio
+    pedido.zona_tiempo_estimado_min_snapshot = zona.tiempo_estimado_min
+    pedido.zona_tipo_cobertura_snapshot = zona.tipo_cobertura
+
+
 def _leer_geo_negocio() -> tuple[float | None, float | None, float | None]:
     """Lee (lat, lon, radio_km) del centro del negocio desde SiteConfig.
 

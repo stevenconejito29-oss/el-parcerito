@@ -182,7 +182,11 @@
               id="direccion_input"></textarea>
     <button type="button" class="checkout-location-btn" data-checkout-location>Usar mi ubicación para comprobar cobertura</button>
     <div id="dir-feedback" class="mt-2 text-xs hidden" style="min-height:1.2em"></div>
-    {% if radio_entrega_km %}
+    {% if cobertura_por_zonas %}
+    <p class="text-xs mt-1" style="color:var(--col-muted)">
+      📍 Verificamos la cobertura exacta por calles y asignamos automáticamente la zona correcta.
+    </p>
+    {% elif radio_entrega_km %}
     <p class="text-xs mt-1" style="color:var(--col-muted)">
       📍 Radio de reparto: hasta <strong>{{ '%.1f'|format(radio_entrega_km) }} km</strong>
       {% if brand.ciudad %}desde {{ brand.ciudad }}{% endif %}.
@@ -196,23 +200,17 @@
 
   <!-- ENTREGA (auto-seleccionada por el sistema según dirección) -->
   {% if zonas and 'delivery' in fulfillment_options %}
-  {% set z = zonas[0] %}
   <div class="ox-card p-4 checkout-step" id="delivery-zone-card">
-    <div class="flex items-center justify-between p-3 rounded-xl js-zona-item"
-         data-zona-id="{{ z.id }}" data-precio="{{ z.precio_envio }}" data-gratis-desde="{{ z.gratis_desde or '' }}"
+    <div class="flex items-center justify-between p-3 rounded-xl"
          style="background:var(--col-elevated);border:1.5px solid color-mix(in srgb,var(--status-warn) 28%,var(--col-border))">
       <div class="flex items-center gap-2.5">
         <span class="text-lg">🚚</span>
         <div>
           <p class="font-bold text-sm" id="zona_delivery_title">Entrega a domicilio{% if brand.ciudad %} · {{ brand.ciudad }}{% endif %}</p>
-          <p class="text-xs" id="zona_delivery_meta" style="color:var(--col-muted)">~{{ z.tiempo_estimado_min }} min estimado
-            {% if z.gratis_desde %}· Gratis desde €{{ "%.0f"|format(z.gratis_desde) }}{% endif %}
-          </p>
+          <p class="text-xs" id="zona_delivery_meta" style="color:var(--col-muted)">Escribe tu dirección para calcular zona, tiempo y tarifa.</p>
         </div>
       </div>
-      <span class="font-extrabold text-sm" id="zona_delivery_price" style="color:var(--brand-primary)">
-        {% if z.precio_envio > 0 %}+€{{ "%.2f"|format(z.precio_envio) }}{% else %}Gratis{% endif %}
-      </span>
+      <span class="font-extrabold text-sm" id="zona_delivery_price" style="color:var(--brand-primary)">Por calcular</span>
     </div>
   </div>
   {% endif %}
@@ -622,12 +620,7 @@ function setFulfillmentMode(mode) {
     document.getElementById('dir-feedback')?.classList.add('hidden');
     actualizarTotalEstimado();
   } else {
-    const item = document.querySelector('.js-zona-item');
-    if (item) _updateZonaSummary(
-      parseFloat(item.dataset.precio || 0),
-      parseFloat(item.dataset.gratisDesde || 0),
-      { id: item.dataset.zonaId }
-    );
+    _resetZonaPending();
   }
   // Al cambiar de modo, recalcular estado del botón: en recogida siempre
   // habilitado, en delivery depende del veredicto de dirección.
@@ -1084,14 +1077,22 @@ function _updateZonaSummary(precio, gratisDesde, zona) {
   }
   actualizarTotalEstimado();
 }
-// Zona auto-seleccionada — disparar precio de envío al cargar
-(function() {
-  const item = document.querySelector('.js-zona-item');
-  if (item && fulfillmentMode === 'delivery') _updateZonaSummary(
-    parseFloat(item.dataset.precio || 0),
-    parseFloat(item.dataset.gratisDesde || 0)
-  );
-})();
+
+function _resetZonaPending() {
+  const zonaInput = document.getElementById('zona_id_input');
+  if (zonaInput) zonaInput.value = '';
+  envioActual = 0;
+  document.getElementById('resumen_envio')?.classList.add('hidden');
+  const title = document.getElementById('zona_delivery_title');
+  const meta = document.getElementById('zona_delivery_meta');
+  const price = document.getElementById('zona_delivery_price');
+  if (title) title.textContent = 'Entrega a domicilio';
+  if (meta) meta.textContent = 'Escribe tu dirección para calcular zona, tiempo y tarifa.';
+  if (price) price.textContent = 'Por calcular';
+  actualizarTotalEstimado();
+}
+
+_resetZonaPending();
 
 // Enter en cupón
 document.getElementById('cupon_input')?.addEventListener('keydown', e => { if(e.key==='Enter'){e.preventDefault();validarCupon();} });
@@ -1161,7 +1162,7 @@ if (metodoInicial?.value === 'bizum') toggleBizumInfo(true);
   if (!dirInput || !fb) return;
 
   let _lastDir = '';
-  let _checking = false;
+  let _addressController = null;
   let _addressValid = null; // null=indeterminado, true=ok, false=fuera
 
   function showFeedback(text, color, sticky = false) {
@@ -1192,17 +1193,21 @@ if (metodoInicial?.value === 'bizum') toggleBizumInfo(true);
 
   async function checkAddress(dir) {
     if (fulfillmentMode !== 'delivery') { _addressValid = null; refreshSubmitState(); return; }
-    if (!dir || dir.length < 4 || dir === _lastDir || _checking) return;
+    if (!dir || dir.length < 4 || dir === _lastDir) return;
     _lastDir = dir;
-    _checking = true;
+    if (_addressController) _addressController.abort();
+    const controller = new AbortController();
+    _addressController = controller;
     showFeedback('⏳ Verificando cobertura…', 'var(--col-muted)');
     try {
       const r = await fetch('/api/check-address', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CHECKOUT_CSRF },
         body: JSON.stringify({ direccion: dir }),
+        signal: controller.signal,
       });
       const d = await r.json();
+      if (_addressController !== controller || dirInput.value.trim() !== dir) return;
       if (d.ok) {
         _addressValid = true;
         const dist = d.distancia_km !== null ? ` · ${d.distancia_km} km del local` : '';
@@ -1219,12 +1224,15 @@ if (metodoInicial?.value === 'bizum') toggleBizumInfo(true);
         _addressValid = false;
         showFeedback(`✗ ${d.mensaje}`, 'var(--theme-danger)', true);
       }
-    } catch {
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
       _addressValid = null; // fallo de red — no bloquear preventivamente
       showFeedback('⚠️ No pudimos verificar la ubicación ahora', 'var(--col-muted)');
     } finally {
-      _checking = false;
-      refreshSubmitState();
+      if (_addressController === controller) {
+        _addressController = null;
+        refreshSubmitState();
+      }
     }
   }
   window.checkCheckoutAddress = checkAddress;
@@ -1233,10 +1241,14 @@ if (metodoInicial?.value === 'bizum') toggleBizumInfo(true);
   dirInput.addEventListener('input', () => {
     // El usuario está editando: descarta el veredicto anterior para no
     // bloquearlo mientras corrige la dirección.
-    if (_addressValid === false) {
-      _addressValid = null;
-      refreshSubmitState();
+    _lastDir = '';
+    _addressValid = null;
+    if (_addressController) {
+      _addressController.abort();
+      _addressController = null;
     }
+    _resetZonaPending();
+    refreshSubmitState();
   });
   // Si hay dirección pre-cargada (cliente logueado), verificar al cargar la página
   if (fulfillmentMode === 'delivery' && dirInput.value.trim().length >= 4) {

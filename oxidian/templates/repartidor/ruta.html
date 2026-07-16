@@ -329,7 +329,7 @@
           </span>
         </div>
         <div class="mt-2 flex flex-wrap gap-2">
-          {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
+          {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
           {% if pedido.repartidor_id %}<span class="work-badge-assigned">Asignado</span>{% endif %}
           {% if pedido.es_programado %}<span class="work-chip">📅 {{ pedido.fecha_entrega_programada.strftime('%d/%m/%Y') if pedido.fecha_entrega_programada else 'Fecha por revisar' }}</span>{% endif %}
         </div>
@@ -551,7 +551,7 @@
       </div>
 
       <div class="mt-2 flex flex-wrap gap-2">
-        {% if pedido.zona %}<span class="work-badge-zone">{{ pedido.zona.nombre }}</span>{% endif %}
+        {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
         {% if pedido.es_programado %}<span class="work-chip">📅 {{ pedido.fecha_entrega_programada.strftime('%d/%m/%Y') if pedido.fecha_entrega_programada else 'Fecha por revisar' }}</span>{% endif %}
         {% if pedido.repartidor_id %}
         <span class="work-badge-assigned">Asignado</span>

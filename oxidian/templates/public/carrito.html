@@ -234,10 +234,11 @@
         {% if 'delivery' in fulfillment_options %}<div class="cr-row cr-row--muted">
           <span>{{ ui.cart_shipping }}</span>
           <span>
-            {% if zona_principal %}
-            Desde €{{ "%.2f"|format(zona_principal.precio_envio|float) }}
+            {% if envio_desde is not none and envio_hasta is not none %}
+              {% if envio_desde == envio_hasta %}€{{ "%.2f"|format(envio_desde) }}
+              {% else %}€{{ "%.2f"|format(envio_desde) }}–€{{ "%.2f"|format(envio_hasta) }}{% endif %}
             {% else %}
-            Se calcula en entrega
+            Sin zonas activas
             {% endif %}
           </span>
         </div>{% endif %}
@@ -292,30 +293,17 @@
     </div>
 
     {# ── Preview de zona ── #}
-    {% if 'delivery' in fulfillment_options and zona_principal %}
+    {% if 'delivery' in fulfillment_options and zonas_activas %}
     <div class="cr-zone">
       <div class="cr-zone-row">
         <span>📍</span>
         <span>
-          <strong>{{ zona_principal.nombre }}</strong> ·
-          {{ zona_principal.tiempo_estimado_min }} min ·
-          €{{ "%.2f"|format(zona_principal.precio_envio|float) }} envío
+          <strong>Cobertura por dirección</strong> ·
+          {% if tiempo_desde == tiempo_hasta %}~{{ tiempo_desde }} min
+          {% else %}~{{ tiempo_desde }}–{{ tiempo_hasta }} min{% endif %}
         </span>
       </div>
-      {% if zona_principal.gratis_desde %}
-      {% set falta = (zona_principal.gratis_desde|float) - subtotal %}
-      <p class="cr-zone-free">
-        {% if falta > 0 %}
-        Te faltan <strong>€{{ "%.2f"|format(falta) }}</strong> para envío gratis
-        {% else %}
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14"
-             fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
-             stroke-linejoin="round" style="vertical-align:-2px;margin-right:.35em">
-          <polyline points="20 6 9 17 4 12"/>
-        </svg>Envío gratis desbloqueado
-        {% endif %}
-      </p>
-      {% endif %}
+      <p class="cr-zone-free">Verificaremos la zona, tarifa y tiempo exactos con la dirección antes de confirmar.</p>
     </div>
     {% endif %}
 

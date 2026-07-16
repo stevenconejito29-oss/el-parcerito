@@ -97,8 +97,8 @@
                target="_blank" rel="noopener" class="ord-btn">🗺 Google Maps</a>
             <a href="https://waze.com/ul?q={{ (pedido.direccion_entrega ~ ', ' ~ (brand.ciudad or '')) | urlencode }}"
                target="_blank" rel="noopener" class="ord-btn">🚗 Waze</a>
-            {% if pedido.zona %}
-            <span class="ord-chip">Zona: {{ pedido.zona.nombre }}</span>
+            {% if pedido.zona_id %}
+            <span class="ord-chip">Zona: {{ pedido.zona_nombre_aplicada }}</span>
             {% endif %}
           </div>
         </div>

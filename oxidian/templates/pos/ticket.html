@@ -113,7 +113,7 @@
   {% if pedido.origen != 'presencial' and pedido.direccion_entrega %}
   <div class="row"><span class="muted">Entrega</span><span class="flex-1 right">{{ pedido.direccion_entrega }}</span></div>
   {% endif %}
-  {% if pedido.zona %}<div class="row"><span class="muted">Zona</span><span>{{ pedido.zona.nombre }}</span></div>{% endif %}
+  {% if pedido.zona_id %}<div class="row"><span class="muted">Zona</span><span>{{ pedido.zona_nombre_aplicada }}</span></div>{% endif %}
 </div>
 <div class="dashed"></div>
 {% endif %}
@@ -170,11 +170,10 @@
   <div class="row"><span>Descuento</span><span>- €{{ "%.2f"|format(pedido.descuento) }}</span></div>
   {% endif %}
 
-  {# Envío real cobrado: total - subtotal + descuento. 0 si cupón envio_gratis fue aplicado. #}
-  {% set envio_real = (pedido.total - pedido.subtotal + (pedido.descuento or 0)) | round(2) %}
-  {% if pedido.zona and envio_real > 0.001 %}
-  <div class="row"><span>Envío{% if pedido.zona %} — {{ pedido.zona.nombre }}{% endif %}</span><span>€{{ "%.2f"|format(envio_real) }}</span></div>
-  {% elif pedido.zona and envio_real <= 0.001 and pedido.zona.precio_envio > 0 %}
+  {% set envio_real = pedido.costo_envio_aplicado %}
+  {% if pedido.zona_id and envio_real > 0.001 %}
+  <div class="row"><span>Envío{% if pedido.zona_nombre_aplicada %} — {{ pedido.zona_nombre_aplicada }}{% endif %}</span><span>€{{ "%.2f"|format(envio_real) }}</span></div>
+  {% elif pedido.zona_id and envio_real <= 0.001 and pedido.zona_precio_envio_snapshot and pedido.zona_precio_envio_snapshot > 0 %}
   <div class="row"><span>Envío</span><span class="bold" style="color:green">GRATIS</span></div>
   {% endif %}
   {# Puntos usados como descuento #}

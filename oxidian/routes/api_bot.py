@@ -32,6 +32,7 @@ from services import (distribuir_pedido, registrar_uso_afiliado,
                       calcular_puntos_ganados, get_puntos_config,
                       enviar_whatsapp_estado, mensaje_estado_pedido,
                       registrar_pedido_creado, encolar_whatsapp_generico,
+                      aplicar_snapshot_zona_pedido,
                       validar_radio_entrega, tienda_abierta_en_horario,
                       cancelar_pedido_operativo, lineas_proveedor_pedido,
                       encolar_notificaciones_proveedores_pedido)
@@ -1741,13 +1742,19 @@ def crear_pedido():
             afiliado_codigo_id=afiliado_obj.id if afiliado_obj else None,
             es_entrega_epicentro=es_entrega_epicentro,
         )
+        aplicar_snapshot_zona_pedido(pedido, zona, costo_envio)
         db.session.add(pedido)
         db.session.flush()
         registrar_pedido_creado(
             pedido,
             canal="bot",
             detalle="pedido creado por API bot compat",
-            metadata={"telefono": telefono, "zona_id": zona.id if zona else None},
+            metadata={
+                "telefono": telefono,
+                "zona_id": zona.id if zona else None,
+                "zona_nombre": pedido.zona_nombre_snapshot,
+                "costo_envio": pedido.costo_envio_aplicado,
+            },
         )
 
         for item in items_procesados:
@@ -2888,12 +2895,16 @@ def cobertura_delivery():
             }), 400
 
         resultado = validar_radio_entrega(direccion)
+        metodo = resultado.get("metodo_cobertura")
         return jsonify({
             "ok": bool(resultado.get("ok")),
             "cobertura": resultado,
             "validacion_activa": _config_bool("VALIDAR_RADIO_ENTREGA", "1"),
             "bloqueo_no_verificada": _config_bool("BLOQUEAR_DIRECCION_NO_VERIFICADA", "1"),
+            # Compatibilidad con clientes antiguos. Las interfaces nuevas solo
+            # enseñan el radio si fue el método realmente utilizado.
             "radio_km": SiteConfig.get("RADIO_ENTREGA_KM", "5"),
+            "metodo_cobertura": metodo,
             "ciudad": SiteConfig.get("CIUDAD_NEGOCIO", ""),
         })
     except Exception as e:
@@ -3793,7 +3804,7 @@ def _pedido_admin_riesgo_payload(pedido, now):
         "telefono": cliente.telefono if cliente else "",
         "preparador": pedido.preparador.nombre if getattr(pedido, "preparador", None) else "",
         "repartidor": pedido.repartidor.nombre if getattr(pedido, "repartidor", None) else "",
-        "zona": pedido.zona.nombre if pedido.zona else "",
+        "zona": pedido.zona_nombre_aplicada,
         "creado_en": creado.isoformat() if creado else None,
     }
 

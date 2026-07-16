@@ -41,6 +41,7 @@ from services import (buscar_cliente_por_telefono, distribuir_pedido,
                        registrar_uso_afiliado, get_puntos_config, get_pedido_minimo,
                        registrar_pedido_creado, sincronizar_proveedores_pedido,
                        encolar_notificaciones_proveedores_pedido,
+                       aplicar_snapshot_zona_pedido,
                        tienda_abierta_en_horario)
 from pricing_service import calcular_precio
 from loyalty_service import (
@@ -267,7 +268,7 @@ def _fulfillment_blockers_for_mode(productos, mode):
     ]
 
 
-def _fulfillment_unavailable_reasons(productos):
+def _fulfillment_unavailable_reasons(productos, check_zone_availability=False):
     productos = [p for p in (productos or []) if p]
     reasons = {}
     features = get_store_features()
@@ -277,6 +278,16 @@ def _fulfillment_unavailable_reasons(productos):
             reasons[mode] = {
                 "label": _fulfillment_mode_label(mode),
                 "reason": "El módulo de delivery está desactivado.",
+                "products": [],
+            }
+        elif (
+            mode == "delivery"
+            and check_zone_availability
+            and not ZonaEntrega.query.filter_by(activo=True).first()
+        ):
+            reasons[mode] = {
+                "label": _fulfillment_mode_label(mode),
+                "reason": "El reparto está temporalmente sin zonas activas.",
                 "products": [],
             }
         elif mode == "recogida" and not features.get("recogida", False):
@@ -812,7 +823,12 @@ def _cart_issue_payload(issue, action_url=None, action_label=None):
     }
 
 
-def _cart_compatibility(productos, subtotal=None, pedido_minimo=0):
+def _cart_compatibility(
+    productos,
+    subtotal=None,
+    pedido_minimo=0,
+    check_zone_availability=False,
+):
     """Diagnóstico único para carrito y checkout.
 
     Agrupa las reglas que definen si un conjunto de productos puede convertirse
@@ -917,9 +933,25 @@ def _cart_compatibility(productos, subtotal=None, pedido_minimo=0):
         )
 
     fulfillment_options = _fulfillment_options(productos)
-    fulfillment_unavailable = _fulfillment_unavailable_reasons(productos)
+    fulfillment_unavailable = _fulfillment_unavailable_reasons(
+        productos,
+        check_zone_availability=check_zone_availability,
+    )
+    delivery_sin_zonas = "delivery" in fulfillment_options and "delivery" in fulfillment_unavailable
+    if delivery_sin_zonas:
+        fulfillment_options.remove("delivery")
+    if delivery_sin_zonas and not fulfillment_options:
+        add(
+            "delivery_no_active_zones",
+            "El reparto está temporalmente sin zonas activas. "
+            "Elige recogida en el local si está disponible.",
+            [],
+            "danger",
+        )
     if productos and not fulfillment_options:
-        if not features.get("delivery", False) and not features.get("recogida", False):
+        if delivery_sin_zonas:
+            pass
+        elif not features.get("delivery", False) and not features.get("recogida", False):
             add(
                 "fulfillment_modules_disabled",
                 "La tienda no tiene delivery ni recogida activos. Contacta con el negocio.",
@@ -1283,18 +1315,25 @@ def ver_carrito():
     origen = _carrito_origen(carrito)
     items, subtotal = _build_items_from_carrito(carrito)
     cart_productos = [item["producto"] for item in items if item.get("producto")]
-    compat = _cart_compatibility(cart_productos)
-    zona_principal = ZonaEntrega.query.filter_by(activo=True)\
-        .order_by(ZonaEntrega.orden, ZonaEntrega.nombre).first()
+    zonas_activas = ZonaEntrega.query.filter_by(activo=True)\
+        .order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
+    zona_principal = zonas_activas[0] if zonas_activas else None
+    envio_desde = min((float(z.precio_envio or 0) for z in zonas_activas), default=None)
+    envio_hasta = max((float(z.precio_envio or 0) for z in zonas_activas), default=None)
+    tiempo_desde = min((int(z.tiempo_estimado_min or 0) for z in zonas_activas), default=None)
+    tiempo_hasta = max((int(z.tiempo_estimado_min or 0) for z in zonas_activas), default=None)
     try:
         radio_entrega_km = max(0.0, float(SiteConfig.get("RADIO_ENTREGA_KM", "5") or 5))
     except (TypeError, ValueError):
         radio_entrega_km = 5.0
     cart_max_qty = _cart_max_qty()
-    fulfillment_options = compat["fulfillment_options"]
-    fulfillment_unavailable = compat["fulfillment_unavailable"]
     pedido_minimo = get_pedido_minimo()
-    compat = _cart_compatibility(cart_productos, subtotal=subtotal, pedido_minimo=pedido_minimo)
+    compat = _cart_compatibility(
+        cart_productos,
+        subtotal=subtotal,
+        pedido_minimo=pedido_minimo,
+        check_zone_availability=True,
+    )
     fulfillment_options = compat["fulfillment_options"]
     fulfillment_unavailable = compat["fulfillment_unavailable"]
     cart_issue = compat["message"] if items and not compat["ok"] else None
@@ -1302,6 +1341,11 @@ def ver_carrito():
                            items=items, subtotal=subtotal,
                            pedido_minimo=pedido_minimo,
                            zona_principal=zona_principal,
+                           zonas_activas=zonas_activas,
+                           envio_desde=envio_desde,
+                           envio_hasta=envio_hasta,
+                           tiempo_desde=tiempo_desde,
+                           tiempo_hasta=tiempo_hasta,
                            radio_entrega_km=radio_entrega_km,
                            fulfillment_options=fulfillment_options,
                            fulfillment_unavailable=fulfillment_unavailable,
@@ -1712,7 +1756,12 @@ def checkout():
         return redirect(url_for("public.ver_carrito"))
     pedido_minimo = get_pedido_minimo()
     cart_productos = [item["producto"] for item in items if item.get("producto")]
-    compat = _cart_compatibility(cart_productos, subtotal=subtotal, pedido_minimo=pedido_minimo)
+    compat = _cart_compatibility(
+        cart_productos,
+        subtotal=subtotal,
+        pedido_minimo=pedido_minimo,
+        check_zone_availability=True,
+    )
     if not compat["ok"]:
         flash(compat["message"], compat["issues"][0].get("severity", "warning"))
         return redirect(url_for("public.ver_carrito"))
@@ -2107,6 +2156,7 @@ def checkout():
             es_entrega_epicentro=es_entrega_epicentro,
             afiliado_codigo_id=afiliado_codigo.id if afiliado_codigo else None,
         )
+        aplicar_snapshot_zona_pedido(pedido, zona, precio.costo_envio)
         db.session.add(pedido)
         db.session.flush()
         registrar_pedido_creado(
@@ -2116,6 +2166,8 @@ def checkout():
             detalle="checkout web",
             metadata={
                 "zona_id": zona.id if zona else None,
+                "zona_nombre": pedido.zona_nombre_snapshot,
+                "costo_envio": pedido.costo_envio_aplicado,
                 "tipo_entrega_cliente": tipo_entrega_cliente,
             },
         )
@@ -2344,6 +2396,7 @@ def checkout():
                            origen_actual=origen,
                            establecimiento=establecimiento,
                            radio_entrega_km=radio_entrega_km,
+                           cobertura_por_zonas=any(z.tiene_geo for z in zonas),
                            puntos_sesion=cart_puntos_sesion,
                            producto_canje_seleccionado=session.get("cart_producto_canje_id"))
 

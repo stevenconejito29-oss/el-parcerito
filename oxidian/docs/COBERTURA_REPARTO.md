@@ -77,3 +77,19 @@ conservan la geometría existente en lugar de borrarla.
 
 Los círculos pueden retirarse gradualmente después de verificar el contorno.
 No se eliminan automáticamente para no alterar tarifas o zonas históricas.
+
+## Contrato con pedidos y canales
+
+- Carrito y checkout solo ofrecen delivery cuando existe al menos una zona
+  activa; si recogida sigue disponible, se conserva como alternativa.
+- La tarifa que aparece antes de conocer la dirección es un rango informativo.
+  El total solo incorpora el coste devuelto por la resolución autoritativa.
+- Web y chatbot crean el pedido con el mismo motor de precios y cobertura. El
+  `zona_id` recibido desde un cliente nunca sustituye la decisión del servidor.
+- Al confirmar se congelan en el pedido el coste cobrado, nombre de zona,
+  tarifa base, tiempo estimado y tipo de cobertura. Tickets, historial y vistas
+  de los roles leen ese snapshot, de modo que renombrar o archivar una zona no
+  modifica pedidos anteriores.
+- El `zona_id` se mantiene además como relación operativa para agrupación y
+  reparto. El snapshot conserva la evidencia comercial; la relación permite
+  trabajar el pedido actual.
