@@ -45,12 +45,12 @@
      en <body style="..."> desde base.html y admin_base.html con los
      `COLOR_PRIMARIO/SECUNDARIO/ACENTO` de SiteConfig. Estos defaults
      solo se aplican si el contexto brand no llega (raro, ej. error). */
-  --brand-primary:           #FFC200;
+  --brand-primary:           #F2B705;
   --brand-primary-soft:      color-mix(in srgb, var(--brand-primary) 14%, transparent);
   --brand-primary-contrast:  var(--brand-on-primary, #1A1410);
-  --brand-secondary:         #E84545;
+  --brand-secondary:         #D94F3D;
   --brand-secondary-contrast:#FFFFFF;
-  --brand-accent:            #27AE74;
+  --brand-accent:            #147A55;
   --brand-accent-contrast:   #FFFFFF;
 
   /* Tintas de marca/estado para texto sobre superficies. Un color apto como

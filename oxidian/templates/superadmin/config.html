@@ -177,15 +177,15 @@
         separar promociones, información, estados y destacados sin repetir siempre estos tres tonos.
       </p>
       <div class="cfg-colors">
-        {% for key, label, help_txt, fallback in [
-            ('COLOR_PRIMARIO', 'Principal', 'Identidad, precios y detalles de marca', '#DDAF2B'),
-            ('COLOR_SECUNDARIO', 'Secundario', 'Cabecera, footer y promociones', '#B85C38'),
-            ('COLOR_ACENTO', 'Acción', 'Botones CTA, enlaces y navegación activa', '#315F7D')
+        {% for key, label, help_txt in [
+            ('COLOR_PRIMARIO', 'Principal', 'Identidad, precios y detalles de marca'),
+            ('COLOR_SECUNDARIO', 'Secundario', 'Cabecera, footer y promociones'),
+            ('COLOR_ACENTO', 'Acción', 'Botones CTA, enlaces y navegación activa')
         ] %}
         <label>
           <span>{{ label }}<small style="display:block;font-weight:600;color:var(--col-muted);margin-top:.15rem">{{ help_txt }}</small></span>
           <input type="hidden" name="config_key" value="{{ key }}">
-          <input type="color" name="{{ key }}" value="{{ config_map.get(key, fallback) }}">
+          <input type="color" name="{{ key }}" value="{{ config_map.get(key, brand_color_defaults[key]) }}">
         </label>
         {% endfor %}
       </div>

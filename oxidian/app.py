@@ -16,7 +16,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from config import config
 from extensions import db, login_manager, csrf, limiter
 from flask_login import current_user, login_required
-from store_config import PUBLIC_THEME_DEFAULTS, PUBLIC_UI_DEFAULTS
+from store_config import BRAND_COLOR_DEFAULTS, PUBLIC_THEME_DEFAULTS, PUBLIC_UI_DEFAULTS
 
 
 def _to_bool(val, default=False):
@@ -221,7 +221,7 @@ def create_app(env="default"):
 
         # Background dinamico: dark si la marca tiene fondo oscuro (por defecto sí)
         brand_bg = SiteConfig.get("COLOR_FONDO_APP", "") or "#0F0906"
-        theme_color = SiteConfig.get("COLOR_PRIMARIO", "#DDAF2B")
+        theme_color = SiteConfig.get("COLOR_PRIMARIO", BRAND_COLOR_DEFAULTS["COLOR_PRIMARIO"])
         manifest = {
             "name": nombre,
             "short_name": short_name,
@@ -544,9 +544,9 @@ def create_app(env="default"):
         email = _c("EMAIL_CONTACTO")
         bizum_telefono = _c("BIZUM_TELEFONO")
 
-        color_primario   = _c("COLOR_PRIMARIO",   _env_default("COLOR_PRIMARIO", "#DDAF2B"))
-        color_secundario = _c("COLOR_SECUNDARIO", _env_default("COLOR_SECUNDARIO", "#B85C38"))
-        color_acento     = _c("COLOR_ACENTO",     _env_default("COLOR_ACENTO", "#315F7D"))
+        color_primario   = _c("COLOR_PRIMARIO",   _env_default("COLOR_PRIMARIO", BRAND_COLOR_DEFAULTS["COLOR_PRIMARIO"]))
+        color_secundario = _c("COLOR_SECUNDARIO", _env_default("COLOR_SECUNDARIO", BRAND_COLOR_DEFAULTS["COLOR_SECUNDARIO"]))
+        color_acento     = _c("COLOR_ACENTO",     _env_default("COLOR_ACENTO", BRAND_COLOR_DEFAULTS["COLOR_ACENTO"]))
         theme = {
             key.removeprefix("COLOR_").lower(): _c(key, default)
             for key, default in PUBLIC_THEME_DEFAULTS.items()
@@ -922,9 +922,9 @@ def _seed_admin():
         ("APP_ICON_URL",          _env_default("APP_ICON_URL", ""),          "Icono instalable de la PWA"),
         ("HERO_IMAGE_URL",        _env_default("HERO_IMAGE_URL", ""),        "Imagen principal del menú público"),
         ("TIENDA_URL",            _env_default("TIENDA_URL", ""),            "URL de la tienda web para pedidos (mostrado en WhatsApp)"),
-        ("COLOR_PRIMARIO",        _env_default("COLOR_PRIMARIO", "#DDAF2B"), "Color principal de marca"),
-        ("COLOR_SECUNDARIO",      _env_default("COLOR_SECUNDARIO", "#B85C38"), "Color secundario de marca"),
-        ("COLOR_ACENTO",          _env_default("COLOR_ACENTO", "#315F7D"),   "Color de acento para estado y CTA"),
+        ("COLOR_PRIMARIO",        _env_default("COLOR_PRIMARIO", BRAND_COLOR_DEFAULTS["COLOR_PRIMARIO"]), "Color principal de marca"),
+        ("COLOR_SECUNDARIO",      _env_default("COLOR_SECUNDARIO", BRAND_COLOR_DEFAULTS["COLOR_SECUNDARIO"]), "Color secundario de marca"),
+        ("COLOR_ACENTO",          _env_default("COLOR_ACENTO", BRAND_COLOR_DEFAULTS["COLOR_ACENTO"]),   "Color de acento para estado y CTA"),
         ("HORARIO_APERTURA",      _env_default("HORARIO_APERTURA", "09:00"), "Hora de apertura tienda (HH:MM)"),
         ("HORARIO_CIERRE",        _env_default("HORARIO_CIERRE", "22:30"),   "Hora de cierre tienda (HH:MM)"),
         ("TIENDA_FORZAR_CERRADA", "0",                        "Forzar tienda cerrada (1/0). Prevalece sobre horario y FORZAR_ABIERTA."),

@@ -245,9 +245,9 @@ def replace_catalog() -> dict:
         fecha_fin=today + timedelta(days=45),
     ))
 
-    SiteConfig.set("COLOR_PRIMARIO", "#D9961A")
-    SiteConfig.set("COLOR_SECUNDARIO", "#CE1126")
-    SiteConfig.set("COLOR_ACENTO", "#003087")
+    SiteConfig.set("COLOR_PRIMARIO", "#F2B705")
+    SiteConfig.set("COLOR_SECUNDARIO", "#D94F3D")
+    SiteConfig.set("COLOR_ACENTO", "#147A55")
     SiteConfig.set("PWA_VERSION", today.isoformat())
 
     db.session.commit()

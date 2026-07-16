@@ -16,7 +16,7 @@ from models import (User, Order, Caja, StaffPayment, Product,
                     ZonaEntrega, SiteConfig, AuditLog,
                     AdminFeature, ADMIN_FEATURES, PointsLog, utcnow)
 from phone_utils import normalizar_telefono_cliente, telefono_local_ambiguo, telefono_valido
-from store_config import PUBLIC_THEME_DEFAULTS, PUBLIC_UI_DEFAULTS, get_store_features, get_store_value
+from store_config import BRAND_COLOR_DEFAULTS, PUBLIC_THEME_DEFAULTS, PUBLIC_UI_DEFAULTS, get_store_features, get_store_value
 
 superadmin_bp = Blueprint("superadmin", __name__)
 
@@ -632,9 +632,9 @@ def dashboard():
     brand_config = {
         "nombre":   SiteConfig.get("NOMBRE_NEGOCIO", ""),
         "telefono": SiteConfig.get("TELEFONO_NEGOCIO", ""),
-        "color_primario":   SiteConfig.get("COLOR_PRIMARIO", "#DDAF2B"),
-        "color_secundario": SiteConfig.get("COLOR_SECUNDARIO", "#B85C38"),
-        "color_acento":     SiteConfig.get("COLOR_ACENTO", "#315F7D"),
+        "color_primario":   SiteConfig.get("COLOR_PRIMARIO", BRAND_COLOR_DEFAULTS["COLOR_PRIMARIO"]),
+        "color_secundario": SiteConfig.get("COLOR_SECUNDARIO", BRAND_COLOR_DEFAULTS["COLOR_SECUNDARIO"]),
+        "color_acento":     SiteConfig.get("COLOR_ACENTO", BRAND_COLOR_DEFAULTS["COLOR_ACENTO"]),
         "logo_url":         SiteConfig.get("LOGO_URL", ""),
         "app_icon_url":     SiteConfig.get("APP_ICON_URL", ""),
     }
@@ -1464,7 +1464,7 @@ def config():
     entradas = SiteConfig.query.order_by(SiteConfig.clave).all()
     zonas = ZonaEntrega.query.order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
     config_map = {e.clave: e.valor for e in entradas}
-    for key, value in {**PUBLIC_THEME_DEFAULTS, **PUBLIC_UI_DEFAULTS}.items():
+    for key, value in {**BRAND_COLOR_DEFAULTS, **PUBLIC_THEME_DEFAULTS, **PUBLIC_UI_DEFAULTS}.items():
         config_map.setdefault(key, value)
     public_ui_groups = [
         ("Cabecera", [(key, label) for key, label in PUBLIC_UI_FIELDS if key == "UI_CLOSE" or key.startswith("UI_HEADER_")]),
@@ -1476,6 +1476,7 @@ def config():
     ]
     return render_template("superadmin/config.html", entradas=entradas,
                            config_map=config_map, zonas=zonas,
+                           brand_color_defaults=BRAND_COLOR_DEFAULTS,
                            public_theme_defaults=PUBLIC_THEME_DEFAULTS,
                            public_ui_fields=PUBLIC_UI_FIELDS,
                            public_ui_groups=public_ui_groups,
