@@ -15,7 +15,9 @@ Estrategia de targeting:
 from __future__ import annotations
 import json
 import logging
+import os
 from typing import Optional
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +56,35 @@ def _prepare_vapid_private_key(private_key: str):
     return Vapid.from_pem(value.encode("ascii"))
 
 
+def _vapid_subject() -> str | None:
+    """Contacto VAPID aceptado también por Apple Push Notification service."""
+    from store_config import get_store_value
+
+    email = (get_store_value("EMAIL_CONTACTO") or "").strip()
+    if "@" in email:
+        domain = email.rsplit("@", 1)[-1].strip().lower().rstrip(".")
+        if domain and not domain.endswith((".invalid", ".localhost", ".local", ".test")):
+            return f"mailto:{email}"
+
+    public_url = (
+        get_store_value("OXIDIAN_PUBLIC_URL")
+        or os.environ.get("OXIDIAN_PUBLIC_URL")
+        or get_store_value("TIENDA_URL")
+        or ""
+    ).strip()
+    parsed = urlsplit(public_url)
+    if parsed.scheme == "https" and parsed.hostname:
+        return f"https://{parsed.netloc}"
+    return None
+
+
 def vapid_configuration_error() -> str | None:
     """Devuelve un diagnóstico sin exponer material criptográfico."""
     public_key, private_key = _get_vapid_keys()
     if not public_key or not private_key:
         return "vapid_no_configurado"
+    if not _vapid_subject():
+        return "vapid_subject_invalido"
     try:
         import base64
         import hmac
@@ -103,10 +129,21 @@ def _send_one_result(sub_row, payload: dict, vapid_claims: dict, priv_key: str) 
         return True, False, None
     except WebPushException as e:
         code = e.response.status_code if e.response is not None else 0
+        response_reason = ""
+        if e.response is not None:
+            try:
+                response_body = e.response.json()
+                response_reason = str(response_body.get("reason") or "")[:80]
+            except (TypeError, ValueError):
+                response_reason = (e.response.text or "").strip()[:80]
         if code in (404, 410):
             return False, True, f"push_expired:{code}"
-        logger.warning("WebPush error %s para endpoint %s: %s", code, sub_row.endpoint[:40], e)
-        return False, False, f"webpush_error:{code or 'unknown'}"
+        logger.warning(
+            "WebPush error %s para endpoint %s reason=%s: %s",
+            code, sub_row.endpoint[:40], response_reason or "-", e,
+        )
+        suffix = f":{response_reason}" if response_reason else ""
+        return False, False, f"webpush_error:{code or 'unknown'}{suffix}"
     except Exception as e:
         logger.warning("Error de red enviando push: %s", e)
         return False, False, str(e)
@@ -159,12 +196,13 @@ def send_push_outbox_payload(payload: dict) -> tuple[bool, str | None]:
     if not pub or not priv:
         return False, "vapid_no_configurado"
 
-    from store_config import get_store_value
-    email = get_store_value("EMAIL_CONTACTO") or "admin@example.invalid"
+    subject = _vapid_subject()
+    if not subject:
+        return False, "vapid_subject_invalido"
     ok, expired, error = _send_one_result(
         sub,
         push_payload,
-        vapid_claims={"sub": f"mailto:{email}"},
+        vapid_claims={"sub": subject},
         priv_key=priv,
     )
     if expired:

@@ -1,8 +1,10 @@
 import unittest
+import os
 from pathlib import Path
+from unittest.mock import patch
 
 from routes.push import _validate_subscription
-from push_service import _prepare_vapid_private_key
+from push_service import _prepare_vapid_private_key, _vapid_subject
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +44,21 @@ class PushSubscriptionValidationTest(unittest.TestCase):
 
     def test_raw_vapid_key_remains_compatible(self):
         self.assertEqual(_prepare_vapid_private_key("abc_DEF-123"), "abc_DEF-123")
+
+    def test_vapid_subject_uses_public_https_url_without_real_email(self):
+        with patch("store_config.get_store_value", return_value=""), patch.dict(
+            os.environ, {"OXIDIAN_PUBLIC_URL": "https://tienda.example.com/app"}, clear=False,
+        ):
+            self.assertEqual(_vapid_subject(), "https://tienda.example.com")
+
+    def test_vapid_subject_rejects_placeholder_email_and_insecure_url(self):
+        def value(key):
+            return "admin@example.invalid" if key == "EMAIL_CONTACTO" else ""
+
+        with patch("store_config.get_store_value", side_effect=value), patch.dict(
+            os.environ, {"OXIDIAN_PUBLIC_URL": "http://localhost:5000"}, clear=False,
+        ):
+            self.assertIsNone(_vapid_subject())
 
 
 class PwaArchitectureContractTest(unittest.TestCase):
