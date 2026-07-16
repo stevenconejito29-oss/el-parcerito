@@ -1,25 +1,19 @@
 {
-  "generatedAt": "2026-07-15T15:16:18.984Z",
-  "baseUrl": "http://127.0.0.1:5071",
+  "generatedAt": "2026-07-16T16:21:14.655Z",
+  "baseUrl": "https://elparcerito.com",
   "views": [
     {
       "name": "android-menu",
       "status": 200,
       "consoleErrors": [],
       "failedRequests": [],
-      "title": "Mi tienda — Pide online",
+      "title": "El Parcerito — Pide online",
       "horizontalOverflow": false,
       "scrollWidth": 390,
       "viewportWidth": 390,
-      "products": 74,
-      "visibleProducts": 30,
+      "products": 3,
+      "visibleProducts": 3,
       "smallTargets": [
-        {
-          "tag": "a",
-          "text": "Empleados",
-          "width": 36,
-          "height": 42
-        },
         {
           "tag": "a",
           "text": "Privacidad y condiciones",
@@ -41,19 +35,13 @@
       "status": 200,
       "consoleErrors": [],
       "failedRequests": [],
-      "title": "Mi tienda — Pide online",
+      "title": "El Parcerito — Pide online",
       "horizontalOverflow": false,
       "scrollWidth": 393,
       "viewportWidth": 393,
-      "products": 74,
-      "visibleProducts": 30,
+      "products": 3,
+      "visibleProducts": 3,
       "smallTargets": [
-        {
-          "tag": "a",
-          "text": "Empleados",
-          "width": 38,
-          "height": 42
-        },
         {
           "tag": "a",
           "text": "Privacidad y condiciones",
@@ -75,37 +63,13 @@
       "status": 200,
       "consoleErrors": [],
       "failedRequests": [],
-      "title": "Mi tienda — Pide online",
+      "title": "El Parcerito — Pide online",
       "horizontalOverflow": false,
       "scrollWidth": 1440,
       "viewportWidth": 1440,
-      "products": 74,
-      "visibleProducts": 30,
+      "products": 3,
+      "visibleProducts": 3,
       "smallTargets": [
-        {
-          "tag": "button",
-          "text": "Info y ayuda",
-          "width": 74,
-          "height": 42
-        },
-        {
-          "tag": "button",
-          "text": "Añadir app",
-          "width": 113,
-          "height": 42
-        },
-        {
-          "tag": "a",
-          "text": "Mis puntos y recompensas",
-          "width": 91,
-          "height": 42
-        },
-        {
-          "tag": "a",
-          "text": "Empleados",
-          "width": 113,
-          "height": 42
-        },
         {
           "tag": "a",
           "text": "Privacidad y condiciones",
@@ -113,7 +77,7 @@
           "height": 14
         }
       ],
-      "serviceWorkerControlled": true,
+      "serviceWorkerControlled": false,
       "standalone": false
     }
   ],
@@ -121,20 +85,18 @@
     "status": 200,
     "contentType": "application/manifest+json",
     "data": {
-      "name": "Mi tienda",
-      "short_name": "Mi tienda",
-      "description": "Menu online y carrito con entrega a domicilio, recogida en local, pedidos por fecha.",
+      "name": "El Parcerito",
+      "short_name": "El Parcerito",
+      "description": "Menu online y carrito con entrega a domicilio, pedidos por fecha.",
       "start_url": "/?source=pwa",
       "scope": "/",
       "display": "standalone",
       "display_override": [
-        "window-controls-overlay",
         "standalone",
-        "minimal-ui",
-        "browser"
+        "minimal-ui"
       ],
-      "background_color": "#F7F3EA",
-      "theme_color": "#E8B26C",
+      "background_color": "#FFF9E8",
+      "theme_color": "#F4C542",
       "orientation": "any",
       "lang": "es",
       "dir": "ltr",
@@ -143,7 +105,7 @@
         "shopping",
         "lifestyle"
       ],
-      "id": "oxidian-menu",
+      "id": "/",
       "icons": [
         {
           "src": "/static/pwa-icon-192.png",
@@ -168,6 +130,12 @@
           "sizes": "any",
           "type": "image/svg+xml",
           "purpose": "any"
+        },
+        {
+          "src": "/static/pwa-icon-monochrome.svg",
+          "sizes": "any",
+          "type": "image/svg+xml",
+          "purpose": "monochrome"
         }
       ],
       "shortcuts": [
@@ -179,7 +147,7 @@
           "icons": [
             {
               "src": "/static/pwa-icon-192.png",
-              "sizes": "192x192"
+              "sizes": "any"
             }
           ]
         },
@@ -191,72 +159,42 @@
           "icons": [
             {
               "src": "/static/pwa-icon-192.png",
-              "sizes": "192x192"
-            }
-          ]
-        },
-        {
-          "name": "Mis puntos",
-          "short_name": "Puntos",
-          "description": "Club de fidelizacion",
-          "url": "/club",
-          "icons": [
-            {
-              "src": "/static/pwa-icon-192.png",
-              "sizes": "192x192"
+              "sizes": "any"
             }
           ]
         }
       ],
       "screenshots": [
         {
-          "src": "/static/pwa-screenshot-mobile.png",
+          "src": "/static/pwa-screenshot-mobile.png?v=52",
           "sizes": "390x844",
           "type": "image/png",
           "form_factor": "narrow",
-          "label": "Mi tienda — Menu online"
+          "label": "El Parcerito — Menu online"
         },
         {
-          "src": "/static/pwa-screenshot-wide.png",
+          "src": "/static/pwa-screenshot-wide.png?v=52",
           "sizes": "1280x720",
           "type": "image/png",
           "form_factor": "wide",
-          "label": "Mi tienda — Pedidos y seguimiento"
+          "label": "El Parcerito — Compra y seguimiento"
         }
       ],
       "prefer_related_applications": false,
-      "edge_side_panel": {
-        "preferred_width": 400
-      },
       "launch_handler": {
         "client_mode": [
           "navigate-existing",
           "auto"
         ]
       },
-      "handle_links": "preferred",
-      "protocol_handlers": [
-        {
-          "protocol": "web+order",
-          "url": "/pedido/%s"
-        }
-      ],
-      "share_target": {
-        "action": "/",
-        "method": "GET",
-        "params": {
-          "title": "title",
-          "text": "text",
-          "url": "url"
-        }
-      }
+      "handle_links": "preferred"
     }
   },
   "offline": {
     "error": null,
     "result": {
-      "title": "Mi tienda — Pide online",
-      "bodyText": "🥟\nDELIVERY · RECOGIDA\nMi tienda\nMi tienda\nVer menú completo\n~35 min\nGratis +€25\nAbierto\n🍽️ Nuestras estrellas\nSelección de la casa\n🎁\n🎁 COMBO\nTEST-COMBO-01\n€9.90\n🎁\n🎁 COMBO\nTEST-COMBO-02\n€9.90\n🎁\n🎁 COMBO\nTEST-COMBO-03\n€9.90\nBuscar\n🌎\nTodo\n🎁\nCombos\n7\n⭐\nCanje\n🍽️\nTEST-Cocina\n30\n🍽️\nTEST-Bar\n12\n\ud83c",
+      "title": "El Parcerito — Pide online",
+      "bodyText": "🥟\nDELIVERY\nEl Parcerito\nProductos colombianos y más\nPRODUCTOS COLOMBIANOS Y MÁS\nEl Parcerito\nProductos colombianos y más\n\nPide desde la comodidad de tu hogar ✨\n\nVer menú completo\n~25 min\nDelivery\nAbierto\nBuscar\n🍽️ Nuestras estrellas\nSelección de la casa\nTEST\nSantiago a la naranja\n€100.00\n🍽️\nHhh\n€",
       "controlled": true
     }
   }
