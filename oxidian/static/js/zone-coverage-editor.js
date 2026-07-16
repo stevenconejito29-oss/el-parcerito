@@ -69,6 +69,12 @@
           points[index] = event.target.getLatLng();
           renderDraft();
         });
+        marker.on('click', function (event) {
+          if (event.originalEvent) L.DomEvent.stopPropagation(event.originalEvent);
+          points.splice(index, 1);
+          renderDraft();
+        });
+        marker.bindTooltip('Punto ' + (index + 1) + ' · arrastra para mover · toca para eliminar');
         markers.push(marker);
       });
       if (points.length >= 2) {
@@ -79,9 +85,9 @@
       field.value = geometryFromPoints();
       updateSubmitState(points.length >= 3);
       if (points.length < 3) {
-        setStatus(points.length ? 'Añade ' + (3 - points.length) + ' punto(s) más.' : 'Pulsa el mapa para comenzar.', 'neutral');
+        setStatus(points.length ? 'Añade ' + (3 - points.length) + ' punto(s) más.' : 'Pulsa el mapa para colocar el primer punto.', 'neutral');
       } else {
-        setStatus('Cobertura lista: ' + points.length + ' vértices. Guarda los cambios para aplicarla.', 'success');
+        setStatus('Cobertura lista: ' + points.length + ' puntos. Puedes arrastrarlos o tocarlos para eliminarlos.', 'success');
       }
     }
 

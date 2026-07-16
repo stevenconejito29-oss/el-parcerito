@@ -869,6 +869,12 @@ def create_app(env="default"):
         # `'unsafe-inline'`: XSS clásico bloqueado. Los CDN se mantienen
         # explícitos por si algún template usa <script src="cdn/…">.
         nonce = getattr(g, "csp_nonce", "")
+        # Leaflet usa una hoja con SRI desde unpkg únicamente en las vistas de
+        # zonas. Se permite ahí (y no globalmente) siguiendo mínimo privilegio.
+        zone_map_route = request.path.startswith(("/admin/zonas", "/superadmin/zonas"))
+        style_sources = "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com"
+        if zone_map_route:
+            style_sources += " https://unpkg.com"
         response.headers["Content-Security-Policy"] = "; ".join((
             "default-src 'self'",
             "base-uri 'self'",
@@ -876,7 +882,7 @@ def create_app(env="default"):
             "frame-ancestors 'self'",
             "form-action 'self'",
             f"script-src 'self' 'nonce-{nonce}' 'strict-dynamic' https: 'unsafe-inline'",
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+            style_sources,
             "font-src 'self' data: https://fonts.gstatic.com",
             "img-src 'self' data: blob: https:",
             "connect-src 'self'",

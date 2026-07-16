@@ -61,6 +61,12 @@ class SecurityHeadersTest(unittest.TestCase):
         r = self._get("/health")
         self.assertIn("object-src 'none'", r.headers.get("Content-Security-Policy", ""))
 
+    def test_leaflet_css_solo_se_permite_en_rutas_de_zonas(self):
+        zonas_csp = self._get("/superadmin/zonas").headers.get("Content-Security-Policy", "")
+        health_csp = self._get("/health").headers.get("Content-Security-Policy", "")
+        self.assertIn("https://unpkg.com", zonas_csp)
+        self.assertNotIn("https://unpkg.com", health_csp)
+
     def test_headers_defensa_en_profundidad(self):
         r = self._get("/health")
         self.assertEqual(r.headers.get("X-Content-Type-Options"), "nosniff")
