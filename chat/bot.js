@@ -1689,11 +1689,21 @@ async function oxidianGet(path, opts = {}) {
       throw err;
     }
   }
-  const data = await r.json().catch(() => ({}));
+  let parseFailed = false;
+  const data = await r.json().catch(() => { parseFailed = true; return {}; });
   if (!r.ok) {
     const err = new Error(data.error || `HTTP ${r.status} en GET ${path}`);
     err.status = r.status;
     err.data = data;
+    throw err;
+  }
+  // Antes: si JSON parsea fallaba, devolvíamos {} y los callers accedían a
+  // `data.ok`/`data.productos` como undefined sin distinguir un fallo real.
+  // Ahora lanzamos error explícito para que el caller sepa que Oxidian
+  // respondió pero con cuerpo corrupto (HTML de error, texto plano, etc.).
+  if (parseFailed) {
+    const err = new Error(`Oxidian devolvió respuesta no-JSON en GET ${path}`);
+    err.code = 'BAD_JSON';
     throw err;
   }
   return data;
@@ -1735,11 +1745,17 @@ async function oxidianPost(path, body, opts = {}) {
       throw err;
     }
   }
-  const data = await r.json().catch(() => ({}));
+  let parseFailedPost = false;
+  const data = await r.json().catch(() => { parseFailedPost = true; return {}; });
   if (!r.ok) {
     const err = new Error(data.error || `HTTP ${r.status} en POST ${path}`);
     err.status = r.status;
     err.data = data;
+    throw err;
+  }
+  if (parseFailedPost) {
+    const err = new Error(`Oxidian devolvió respuesta no-JSON en POST ${path}`);
+    err.code = 'BAD_JSON';
     throw err;
   }
   return data;
@@ -3650,6 +3666,13 @@ async function handleAdminChat(jid, ses, text) {
 }
 
 async function handleAdminCmd(jid, text) {
+  // Defense-in-depth: aunque los callers ya validan `isAdminJid`, verificamos
+  // otra vez aquí para que una corrupción de estado o un futuro caller
+  // olvidadizo NO abra un vector de escalada de privilegios.
+  if (!isAdminJid(jid)) {
+    log('warn', 'admin_cmd_denied', jid);
+    return sendText(jid, menuPrincipal());
+  }
   const cmd = text.slice(1).trim();
   const lowerCmd = cmd.toLowerCase();
   // Modo pánico global: si super_admin activó `emergency_on`, cualquier
@@ -4046,9 +4069,14 @@ async function handleAdminCmd(jid, text) {
       if (!r || !r.ok) {
         return sendText(jid, `🤖 No pude consultar la IA: ${r?.error || 'error desconocido'}`);
       }
+      // Antes: si `r.respuesta` era undefined mandábamos "undefined" al chat.
+      const respuesta = typeof r.respuesta === 'string' ? r.respuesta.trim() : '';
+      if (!respuesta) {
+        return sendText(jid, `🤖 La IA no devolvió respuesta. Intenta reformular la pregunta.`);
+      }
       const ctx = r.contexto_resumen || {};
       return sendText(jid,
-        `🤖 *Análisis IA*\n\n${r.respuesta}\n\n` +
+        `🤖 *Análisis IA*\n\n${respuesta}\n\n` +
         `_Contexto: ${ctx.pedidos_30d ?? '?'} pedidos / €${ctx.facturacion_30d ?? '?'} en 30d._`
       );
     } catch (e) {
@@ -5926,6 +5954,13 @@ function formatRiskList(title, rows) {
 
 // Admin interactive menu (numeric choices)
 async function handleAdminMenu(jid, ses, opcion) {
+  // Defense-in-depth: sólo un JID admin puede procesar opciones del menú
+  // admin. Si el estado `admin_menu` se corrompiese o se llegase por otra
+  // vía, aquí se corta el acceso.
+  if (!isAdminJid(jid)) {
+    log('warn', 'admin_menu_denied', jid);
+    return sendText(jid, menuPrincipal());
+  }
   const lower = String(opcion || '').trim();
   const requiredCapability = {
     '1': 'status', '2': 'store', '3': 'products', '4': 'points',
