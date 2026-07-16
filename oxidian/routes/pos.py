@@ -21,6 +21,7 @@ from services import (
     registrar_pago_pedido,
 )
 from pricing_service import calcular_precio
+from permissions import can_read_order_ticket
 
 pos_bp = Blueprint("pos", __name__)
 
@@ -586,14 +587,16 @@ def ticket(pedido_id):
     """El ticket para pegar al pedido tiene que estar disponible para todo
     el staff operativo — cocina, preparación, repartidor, admin y super_admin.
     No es una operación destructiva; solo renderiza para imprimir."""
-    if current_user.rol not in {"admin", "super_admin", "cocina", "preparacion", "repartidor"}:
-        flash("Acceso restringido.", "danger")
-        return redirect(url_for("public.index"))
     pedido = get_or_404(Order, pedido_id)
-    if current_user.rol == "repartidor" and pedido.repartidor_id != current_user.id:
-        flash("Este ticket no está asignado a tu ruta.", "danger")
-        return redirect(url_for("repartidor.ruta"))
-    return render_template("pos/ticket.html", pedido=pedido)
+    if not can_read_order_ticket(current_user, pedido):
+        flash("No tienes acceso a este ticket.", "danger")
+        destino = "repartidor.ruta" if current_user.rol == "repartidor" else "public.index"
+        return redirect(url_for(destino))
+    return render_template(
+        "pos/ticket.html",
+        pedido=pedido,
+        es_reimpresion=request.args.get("reprint") == "1",
+    )
 
 
 # ─── HELPERS ─────────────────────────────────

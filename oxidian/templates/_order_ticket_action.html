@@ -1,0 +1,9 @@
+{% macro ticket_action(pedido, class_name='work-btn work-btn-ghost', label='Reimprimir ticket') -%}
+<a href="{{ url_for('pos.ticket', pedido_id=pedido.id, reprint=1, auto_print=1) }}"
+   target="_blank" rel="noopener"
+   class="{{ class_name }}"
+   title="Volver a imprimir el ticket sin modificar el pedido"
+   aria-label="Reimprimir ticket del pedido {{ pedido.numero_pedido }}">
+  🖨️ {{ label }}
+</a>
+{%- endmacro %}

@@ -1,4 +1,5 @@
 {% extends "admin_base.html" %}
+{% from "_order_ticket_action.html" import ticket_action %}
 {% block title %}{{ pedido.numero_pedido }} — Detalle{% endblock %}
 {% block content %}
 
@@ -19,6 +20,7 @@
       </p>
     </div>
     <div class="work-actions-top">
+      {{ ticket_action(pedido, 'ord-btn', 'Reimprimir ticket') }}
       {% set programado_bloqueado = pedido.estado == 'pendiente' and pedido.es_programado and not puede_preparar_programado(pedido) %}
       {% if pedido.estado not in ('entregado','cancelado') %}
       <form method="POST" action="{{ url_for('admin.avanzar_pedido_admin', pedido_id=pedido.id) }}" style="display:inline;">

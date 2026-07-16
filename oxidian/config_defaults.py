@@ -336,6 +336,24 @@ DEFAULTS: dict[str, dict] = {
             "válidas cerca del borde de cobertura."
         ),
     },
+
+    # ── Reimpresión de tickets operativos ──────────────────────────
+    "TICKET_REPRINT_LOOKBACK_HOURS": {
+        "default": "72",
+        "type": "int",
+        "desc": (
+            "Horas durante las que cocina y preparación pueden recuperar "
+            "tickets que ya salieron de su cola activa. Cap 1-168."
+        ),
+    },
+    "TICKET_REPRINT_RECENT_LIMIT": {
+        "default": "12",
+        "type": "int",
+        "desc": (
+            "Máximo de tickets cerrados recientes mostrados por operador "
+            "para reimpresión. Cap 1-50."
+        ),
+    },
 }
 
 

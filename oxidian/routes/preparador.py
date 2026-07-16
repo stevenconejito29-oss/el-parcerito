@@ -7,11 +7,13 @@ import logging
 import time
 import json as _json
 import os as _os
+from datetime import timedelta
 from sqlalchemy.orm import joinedload
 from sqlalchemy import func as _sa_func
 from extensions import db, get_or_404
 from models import (Order, OrderEvent, OrderItem, User, SiteConfig, Product,
-                    ProductBatch, utcnow as _utcnow)
+                    ProductBatch, ESTADOS_EN_REPARTO, ESTADOS_TERMINALES,
+                    utcnow as _utcnow)
 from services import (avanzar_estado_pedido, distribuir_repartidor,
                       redistribuir_pendientes_sin_asignar,
                       sincronizar_proveedores_pedido, lineas_preparacion_interna,
@@ -58,6 +60,34 @@ def _sse_poll_s():
 
 def _sse_max_lifetime_s():
     return _cfg_int("SSE_MAX_LIFETIME_SECONDS", _DEFAULT_SSE_MAX_LIFETIME_S, 30, 3600)
+
+
+def _tickets_recientes_del_operador():
+    """Pedidos recién cerrados que el operador puede volver a imprimir."""
+    if current_user.rol not in {"cocina", "preparacion"}:
+        return []
+    horas = _cfg_int("TICKET_REPRINT_LOOKBACK_HOURS", 72, 1, 168)
+    limite = _cfg_int("TICKET_REPRINT_RECENT_LIMIT", 12, 1, 50)
+    ultima_actividad = (
+        db.session.query(
+            OrderEvent.pedido_id.label("pedido_id"),
+            _sa_func.max(OrderEvent.creado_en).label("ultima_actividad"),
+        )
+        .group_by(OrderEvent.pedido_id)
+        .subquery()
+    )
+    return (
+        Order.query
+        .join(ultima_actividad, ultima_actividad.c.pedido_id == Order.id)
+        .filter(
+            Order.preparador_id == current_user.id,
+            Order.estado.in_(ESTADOS_EN_REPARTO + ESTADOS_TERMINALES),
+            ultima_actividad.c.ultima_actividad >= _utcnow() - timedelta(hours=horas),
+        )
+        .order_by(ultima_actividad.c.ultima_actividad.desc(), Order.id.desc())
+        .limit(limite)
+        .all()
+    )
 
 preparador_bp = Blueprint("preparador", __name__)
 logger = logging.getLogger(__name__)
@@ -218,6 +248,7 @@ def toggle_disponible():
 @preparador_required
 def pedidos():
     disponible = _esta_disponible()
+    tickets_recientes = _tickets_recientes_del_operador()
     modo_operativo = (
         "inmediato" if current_user.rol == "cocina"
         else "programado" if current_user.rol == "preparacion"
@@ -334,7 +365,8 @@ def pedidos():
                            prep_buffer_min=buffer_min,
                            puede_preparar_encargo=_encargo_disponible_para_preparar,
                            sse_url=url_for("preparador.eventos"),
-                           sse_heartbeat_s=_sse_heartbeat_s())
+                           sse_heartbeat_s=_sse_heartbeat_s(),
+                           tickets_recientes=tickets_recientes)
 
 
 # ─────────────────────────────────────────────────────────────────────

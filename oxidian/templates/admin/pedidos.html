@@ -1,4 +1,5 @@
 {% extends "admin_base.html" %}
+{% from "_order_ticket_action.html" import ticket_action %}
 {% block title %}Pedidos — Admin{% endblock %}
 {% block content %}
 
@@ -154,7 +155,8 @@
       <button type="submit" class="ord-btn">Asignar</button>
     </form>
 
-    <div class="flex gap-2">
+    <div class="flex gap-2 flex-wrap">
+      {{ ticket_action(pedido, 'ord-btn', 'Reimprimir ticket') }}
       {% if pedido.estado not in ('entregado','cancelado') %}
       <form method="POST" action="{{ url_for('admin.avanzar_pedido_admin', pedido_id=pedido.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

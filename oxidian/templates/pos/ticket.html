@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ticket {{ pedido.numero_pedido }}</title>
+  <title>{{ 'Reimpresión' if es_reimpresion else 'Ticket' }} {{ pedido.numero_pedido }}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -38,6 +38,8 @@
     .item-price { font-weight: 700; white-space: nowrap; }
     .total-row { font-size: 15px; font-weight: 700; }
     .points-block { background: #f5f5f5; border: 1px dashed #ccc; padding: 6px 10px; border-radius: 4px; margin: 6px 0; text-align: center; }
+    .ticket-alert { border: 3px solid #111; padding: 7px; margin: 0 0 10px; text-align: center; font-size: 14px; font-weight: 700; }
+    .ticket-alert small { display: block; margin-top: 2px; font-size: 9px; }
     .btn-print { display: block; width: 100%; margin-top: 16px; padding: 12px; background: #111; color: #fff; border: none; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; border-radius: 6px; }
     @media print {
       .btn-print, .no-print { display: none !important; }
@@ -46,6 +48,18 @@
   </style>
 </head>
 <body>
+
+{% if es_reimpresion %}
+<div class="ticket-alert">
+  REIMPRESIÓN · COPIA
+  <small>Estado actual: {{ pedido.estado|upper }}</small>
+</div>
+{% endif %}
+{% if pedido.estado == 'cancelado' %}
+<div class="ticket-alert">CANCELADO · NO PREPARAR</div>
+{% elif pedido.estado == 'entregado' %}
+<div class="ticket-alert">ENTREGADO · COPIA</div>
+{% endif %}
 
 <!-- CABECERA -->
 <div class="logo-block center">
@@ -224,7 +238,7 @@
 
 <!-- BOTÓN IMPRIMIR -->
 <button class="btn-print no-print" data-print>
-  🖨️ Imprimir Ticket
+  🖨️ {{ 'Volver a imprimir' if es_reimpresion else 'Imprimir ticket' }}
 </button>
 
 <script nonce="{{ csp_nonce() }}">

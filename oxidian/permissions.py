@@ -68,6 +68,7 @@ class ACTIONS:
     ZONE_TOGGLE             = "zone.toggle"     # admin puede togglear activo
     ZONE_WRITE              = "zone.write"      # solo super_admin
     STOCK_WRITE             = "stock.write"
+    ORDER_TICKET_READ       = "order.ticket.read"
 
 
 # ── Políticas ────────────────────────────────────────────────────────────
@@ -94,6 +95,8 @@ _POLICY = {
     ACTIONS.ZONE_TOGGLE:             "admin_read",
     ACTIONS.ZONE_WRITE:              "super_only",
     ACTIONS.STOCK_WRITE:             "feature:productos",
+    # Lectura operativa con alcance por pedido en `can_read_order_ticket`.
+    ACTIONS.ORDER_TICKET_READ:        "roles:admin,cocina,preparacion,repartidor",
 }
 
 
@@ -117,6 +120,9 @@ def allow(actor: Optional[Actor], action: str) -> bool:
         return False
     if policy == "admin_read":
         return actor.rol == "admin"
+    if isinstance(policy, str) and policy.startswith("roles:"):
+        roles = {rol.strip() for rol in policy.split(":", 1)[1].split(",")}
+        return actor.rol in roles
     if isinstance(policy, str) and policy.startswith("feature:"):
         if actor.rol != "admin" or actor.user_id is None:
             return False
@@ -140,4 +146,36 @@ def actor_from_user(user) -> Actor:
         rol=getattr(user, "rol", "") or "",
         user_id=getattr(user, "id", None),
         privileged_by_env=False,
+    )
+
+
+def can_read_order_ticket(user, pedido) -> bool:
+    """Autoriza el ticket sin exponer pedidos de otros equipos o rutas.
+
+    Admin y super_admin gestionan cualquier pedido. Los roles operativos solo
+    acceden al pedido asignado o, mientras esté sin asignar, a su propia cola.
+    Esta comprobación por recurso evita que cambiar el ID de la URL revele
+    teléfono, dirección o notas de otro cliente.
+    """
+    actor = actor_from_user(user)
+    if not allow(actor, ACTIONS.ORDER_TICKET_READ):
+        return False
+    if actor.rol in {"admin", "super_admin"}:
+        return True
+    if actor.rol == "repartidor":
+        return getattr(pedido, "repartidor_id", None) == actor.user_id
+
+    preparador_id = getattr(pedido, "preparador_id", None)
+    if preparador_id is not None:
+        return preparador_id == actor.user_id
+
+    # Los pedidos preparados íntegramente por un proveedor externo nunca
+    # pertenecen a las colas internas de cocina o preparación.
+    from services import es_pedido_solo_bar
+    if es_pedido_solo_bar(pedido):
+        return False
+    es_programado = bool(getattr(pedido, "es_programado", False))
+    return (
+        (actor.rol == "cocina" and not es_programado)
+        or (actor.rol == "preparacion" and es_programado)
     )

@@ -6,9 +6,10 @@ suite se aísla incluso cuando el módulo `models` real ya está importado por
 otros tests en el mismo proceso (CI ejecuta la batería completa).
 """
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from permissions import ACTIONS, Actor, allow
+from permissions import ACTIONS, Actor, allow, can_read_order_ticket
 
 
 class _FeatureStub:
@@ -134,6 +135,38 @@ class PermissionsPureLogicTest(unittest.TestCase):
     def test_feature_gate_requires_user_id(self):
         admin = Actor(rol="admin", user_id=None)
         self.assertFalse(allow(admin, ACTIONS.CATALOG_WRITE))
+
+    # ── ticket operativo por rol y recurso ─────────────────────────
+    def test_ticket_action_is_limited_to_operational_roles(self):
+        for rol in ("admin", "super_admin", "cocina", "preparacion", "repartidor"):
+            self.assertTrue(allow(Actor(rol=rol, user_id=1), ACTIONS.ORDER_TICKET_READ))
+        for rol in ("cliente", "proveedor", ""):
+            self.assertFalse(allow(Actor(rol=rol, user_id=1), ACTIONS.ORDER_TICKET_READ))
+
+    @patch("services.es_pedido_solo_bar", return_value=False)
+    def test_unassigned_ticket_follows_kitchen_or_scheduled_queue(self, _bar):
+        cocina = SimpleNamespace(rol="cocina", id=10)
+        preparacion = SimpleNamespace(rol="preparacion", id=20)
+        inmediato = SimpleNamespace(preparador_id=None, repartidor_id=None, es_programado=False)
+        programado = SimpleNamespace(preparador_id=None, repartidor_id=None, es_programado=True)
+
+        self.assertTrue(can_read_order_ticket(cocina, inmediato))
+        self.assertFalse(can_read_order_ticket(cocina, programado))
+        self.assertTrue(can_read_order_ticket(preparacion, programado))
+        self.assertFalse(can_read_order_ticket(preparacion, inmediato))
+
+    def test_assigned_ticket_is_private_to_assigned_operator_or_driver(self):
+        pedido = SimpleNamespace(
+            preparador_id=10,
+            repartidor_id=30,
+            es_programado=False,
+        )
+        self.assertTrue(can_read_order_ticket(SimpleNamespace(rol="cocina", id=10), pedido))
+        self.assertFalse(can_read_order_ticket(SimpleNamespace(rol="cocina", id=11), pedido))
+        self.assertTrue(can_read_order_ticket(SimpleNamespace(rol="repartidor", id=30), pedido))
+        self.assertFalse(can_read_order_ticket(SimpleNamespace(rol="repartidor", id=31), pedido))
+        self.assertTrue(can_read_order_ticket(SimpleNamespace(rol="admin", id=40), pedido))
+        self.assertTrue(can_read_order_ticket(SimpleNamespace(rol="super_admin", id=50), pedido))
 
 
 if __name__ == "__main__":
