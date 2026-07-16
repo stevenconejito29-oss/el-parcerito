@@ -6,10 +6,13 @@
     const mapNode = root.querySelector('[data-zone-map]');
     const field = root.querySelector('[name="cobertura_geojson"]');
     const status = root.querySelector('[data-zone-status]');
+    const submitButton = root.querySelector('[data-zone-submit]');
+    const geometryRequired = root.dataset.requireGeometry === 'true';
     if (!mapNode || !field) return;
 
     const center = [Number(mapNode.dataset.centerLat), Number(mapNode.dataset.centerLng)];
     const map = L.map(mapNode, { center: center, zoom: 14, scrollWheelZoom: true });
+    map.doubleClickZoom.disable();
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
@@ -42,13 +45,31 @@
       return JSON.stringify({ type: 'Polygon', coordinates: [ring] });
     }
 
+    function updateSubmitState(valid) {
+      if (submitButton && geometryRequired) {
+        submitButton.disabled = !valid;
+        submitButton.setAttribute('aria-disabled', valid ? 'false' : 'true');
+      }
+    }
+
     function renderDraft() {
       removeLayer(draftLayer);
       clearMarkers();
       points.forEach(function (point, index) {
-        markers.push(L.circleMarker(point, {
-          radius: 5, color: '#172554', fillColor: '#facc15', fillOpacity: 1, weight: 2
-        }).addTo(map).bindTooltip(String(index + 1)));
+        const marker = L.marker(point, {
+          draggable: true,
+          icon: L.divIcon({
+            className: 'zone-coverage-vertex',
+            html: String(index + 1),
+            iconSize: [26, 26],
+            iconAnchor: [13, 13]
+          })
+        }).addTo(map);
+        marker.on('dragend', function (event) {
+          points[index] = event.target.getLatLng();
+          renderDraft();
+        });
+        markers.push(marker);
       });
       if (points.length >= 2) {
         draftLayer = points.length >= 3
@@ -56,6 +77,7 @@
           : L.polyline(points, { color: '#eab308', weight: 3 }).addTo(map);
       }
       field.value = geometryFromPoints();
+      updateSubmitState(points.length >= 3);
       if (points.length < 3) {
         setStatus(points.length ? 'Añade ' + (3 - points.length) + ' punto(s) más.' : 'Pulsa el mapa para comenzar.', 'neutral');
       } else {
@@ -73,6 +95,7 @@
         const bounds = geometryLayer.getBounds();
         if (bounds.isValid()) map.fitBounds(bounds, { padding: [24, 24] });
         setStatus('Cobertura detallada activa. Pulsa el mapa para sustituirla.', 'success');
+        updateSubmitState(true);
       } catch (_error) {
         field.value = '';
         setStatus('La cobertura anterior no era válida; dibuja una nueva.', 'error');
@@ -102,6 +125,7 @@
       points = [];
       clearMarkers();
       field.value = '';
+      updateSubmitState(false);
       setStatus('Cobertura detallada eliminada. Se usará el radio compatible si está completo.', 'neutral');
     });
     root.querySelector('[data-zone-locate]')?.addEventListener('click', function () {
@@ -117,6 +141,20 @@
       }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
     });
     loadExisting();
+    if (!field.value.trim()) updateSubmitState(false);
+    if (geometryRequired) {
+      root.addEventListener('submit', function (event) {
+        if (!field.value.trim()) {
+          event.preventDefault();
+          setStatus('Marca al menos tres puntos en el mapa antes de guardar.', 'error');
+          mapNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
+    }
+    const disclosure = root.closest('details');
+    disclosure?.addEventListener('toggle', function () {
+      if (disclosure.open) window.setTimeout(function () { map.invalidateSize(); }, 0);
+    });
     window.setTimeout(function () { map.invalidateSize(); }, 0);
   });
 })();

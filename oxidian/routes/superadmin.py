@@ -1975,7 +1975,15 @@ def _exigir_delivery_para_zonas():
 def zonas():
     _exigir_delivery_para_zonas()
     zonas = ZonaEntrega.query.order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
-    return render_template("superadmin/zonas.html", zonas=zonas)
+    try:
+        mapa_lat = float(SiteConfig.get("CENTRO_LAT", "0"))
+        mapa_lng = float(SiteConfig.get("CENTRO_LON", "0"))
+    except (TypeError, ValueError):
+        mapa_lat, mapa_lng = 0.0, 0.0
+    return render_template(
+        "superadmin/zonas.html", zonas=zonas,
+        mapa_lat=mapa_lat, mapa_lng=mapa_lng,
+    )
 
 
 @superadmin_bp.route("/zonas/crear", methods=["POST"])
@@ -1986,6 +1994,11 @@ def crear_zona():
     if error:
         flash(error, "danger")
         return redirect(url_for("superadmin.zonas"))
+    if not data.get("cobertura_geojson") and not all(
+        data.get(field) is not None for field in ("centro_lat", "centro_lng", "radio_km")
+    ):
+        flash("Dibuja la cobertura en el mapa antes de crear la zona.", "danger")
+        return redirect(url_for("superadmin.zonas") + "#form-crear")
     zona = ZonaEntrega(**data)
     db.session.add(zona)
     AuditLog.registrar(current_user.id, "crear_zona", "zona_entrega",

@@ -21,6 +21,70 @@
 }
 .zone-coverage-editor__status[data-tone="success"] { color: var(--status-ok, #16a34a); }
 .zone-coverage-editor__status[data-tone="error"] { color: var(--status-err, #dc2626); }
+.zone-coverage-editor__hint {
+  margin: .5rem 0 0;
+  color: var(--col-faint, var(--col-muted));
+  font-size: var(--oa-font-xs, .78rem);
+  line-height: 1.45;
+}
+.zone-coverage-vertex {
+  display: grid !important;
+  place-items: center;
+  border: 2px solid #172554;
+  border-radius: 50%;
+  background: #facc15;
+  color: #172554;
+  font-size: .72rem;
+  font-weight: 900;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 35%);
+}
+.zone-create-step {
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 1px solid var(--col-border);
+  border-radius: var(--oa-radius-md, .75rem);
+  background: color-mix(in srgb, var(--col-surface) 88%, transparent);
+}
+.zone-create-step__heading {
+  display: flex;
+  gap: .75rem;
+  align-items: center;
+  margin-bottom: .9rem;
+}
+.zone-create-step__heading > span {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  border-radius: 50%;
+  background: var(--brand-primary);
+  color: var(--brand-on-primary, #172554);
+  font-weight: 900;
+}
+.zone-create-step__heading strong,
+.zone-create-step__heading small,
+.zone-create-submit strong,
+.zone-create-submit small { display: block; }
+.zone-create-step__heading strong,
+.zone-create-submit strong { color: var(--col-text); }
+.zone-create-step__heading small,
+.zone-create-submit small { margin-top: .15rem; color: var(--col-muted); }
+.zone-create-advanced { margin: 0 0 1rem; padding: .85rem 1rem; border: 1px dashed var(--col-border); border-radius: .75rem; }
+.zone-create-advanced > summary { cursor: pointer; color: var(--col-muted); font-weight: 750; }
+.zone-create-advanced > p { color: var(--col-muted); font-size: .8rem; }
+.zone-create-submit {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: .75rem;
+  background: color-mix(in srgb, var(--brand-primary) 10%, var(--col-surface));
+}
+.zone-create-submit button:disabled { opacity: .48; cursor: not-allowed; }
 @media (max-width: 640px), (max-height: 520px) {
   .zone-coverage-editor__map { min-height: min(22rem, 52dvh); }
+  .zone-create-submit { align-items: stretch; flex-direction: column; }
+  .zone-create-submit button { width: 100%; }
 }
