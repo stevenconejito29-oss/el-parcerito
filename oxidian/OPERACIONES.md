@@ -206,3 +206,22 @@ correspondiente o lo deja en cola con nuestros agentes propios.
 | `REPORTAR #1024 <texto>` | Reporta sobre un pedido concreto |
 | `AGENTE` o `7` | Pide hablar con persona; el bot deriva al bar correcto o cola general |
 | `SI` / `NO` | Confirma o cancela una acción pendiente |
+
+## 14. Cortina de preapertura
+
+En **Super Admin → Configuración → Operación de la tienda → Próxima apertura**
+se puede ocultar temporalmente todo el escaparate público. La cortina cubre
+menú, productos, carrito, checkout, club y confirmaciones para visitantes
+anónimos, sin alterar datos ni desactivar los paneles de trabajo.
+
+- `PREAPERTURA_ACTIVA=1`: muestra la página de próxima apertura con HTTP 503,
+  `no-store` y `noindex`; evita caché e indexación antes del lanzamiento.
+- `PREAPERTURA_TITULO` y `PREAPERTURA_MENSAJE`: personalizan el texto sin
+  modificar la plantilla.
+- Salud, API, integraciones, archivos estáticos y `/auth/login` siguen
+  disponibles. Un empleado autenticado puede revisar el storefront real.
+- Para impedir pedidos también por WhatsApp durante esta etapa, mantener
+  **Estado manual → Cerrar tienda ahora** hasta el lanzamiento.
+
+Al abrir al público: desactivar la página de preapertura y después devolver el
+estado manual a **Seguir horario normal**.

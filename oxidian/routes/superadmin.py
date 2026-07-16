@@ -17,6 +17,7 @@ from models import (User, Order, Caja, StaffPayment, Product,
                     AdminFeature, ADMIN_FEATURES, PointsLog, utcnow)
 from phone_utils import normalizar_telefono_cliente, telefono_local_ambiguo, telefono_valido
 from store_config import BRAND_COLOR_DEFAULTS, PUBLIC_THEME_DEFAULTS, PUBLIC_UI_DEFAULTS, get_store_features, get_store_value
+from config_defaults import DEFAULTS as RUNTIME_DEFAULTS
 
 superadmin_bp = Blueprint("superadmin", __name__)
 
@@ -94,6 +95,11 @@ CLAVES_DEFAULT = [
 CLAVES_DEFAULT.extend(
     (key, value, "Token visual configurable de la tienda")
     for key, value in PUBLIC_THEME_DEFAULTS.items()
+)
+CLAVES_DEFAULT.extend(
+    (key, meta["default"], meta["desc"])
+    for key, meta in RUNTIME_DEFAULTS.items()
+    if key.startswith("PREAPERTURA_")
 )
 CLAVES_DEFAULT.extend(
     (key, value, "Texto público configurable de la tienda")
@@ -215,7 +221,8 @@ CONFIG_SECTION_KEYS = {
     "tienda-textos": set(PUBLIC_UI_DEFAULTS),
     "operacion-horario": {
         "HORARIO_APERTURA", "HORARIO_CIERRE", "TIENDA_FORZAR_CERRADA",
-        "TIENDA_MENSAJE_CIERRE",
+        "TIENDA_MENSAJE_CIERRE", "PREAPERTURA_ACTIVA",
+        "PREAPERTURA_TITULO", "PREAPERTURA_MENSAJE",
     },
     "operacion-pagos": {"EFECTIVO_HABILITADO", "BIZUM_HABILITADO", "TARJETA_HABILITADA"},
     "operacion-modo": {
@@ -320,6 +327,7 @@ def _validar_config_value(clave, valor):
     if clave in {
         "VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA",
         "TIENDA_FORZAR_CERRADA", "BIZUM_HABILITADO", "EFECTIVO_HABILITADO", "TARJETA_HABILITADA",
+        "PREAPERTURA_ACTIVA",
         "FEATURE_DELIVERY", "FEATURE_RECOGIDA", "FEATURE_PEDIDOS_PROGRAMADOS",
         "FEATURE_PUNTOS",
     }:
@@ -452,6 +460,13 @@ def _validar_config_value(clave, valor):
             return False, clave, valor, "El texto no puede quedar vacío."
         if len(valor) > 240 or any(ord(char) < 32 and char not in "\t" for char in valor):
             return False, clave, valor, "El texto no puede superar 240 caracteres ni contener controles."
+        return True, clave, valor, None
+
+    if clave in {"PREAPERTURA_TITULO", "PREAPERTURA_MENSAJE"}:
+        if not valor or len(valor) > 240:
+            return False, clave, valor, "El texto debe tener entre 1 y 240 caracteres."
+        if any(ord(char) < 32 and char not in "\t" for char in valor):
+            return False, clave, valor, "El texto contiene caracteres de control inválidos."
         return True, clave, valor, None
 
     if clave == "BOT_ADMIN_NUMBERS":

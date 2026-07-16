@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="{{ brand.color_primario }}">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>Próxima apertura — {{ brand.nombre }}</title>
+  <link rel="icon" href="{{ brand.app_icon_url|upload_url if brand.app_icon_url else url_for('static', filename='pwa-icon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/preapertura.css', v=asset_version) }}">
+</head>
+<body style="--launch-primary:{{ brand.color_primario }};--launch-secondary:{{ brand.color_secundario }};--launch-accent:{{ brand.color_acento }}">
+  <main class="launch-shell">
+    <section class="launch-card" aria-labelledby="launch-title">
+      <div class="launch-colombia" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="launch-brand">
+        <div class="launch-logo">
+          <img src="{{ brand.logo_url|upload_url if brand.logo_url else url_for('static', filename='pwa-icon.svg') }}"
+               alt="Logo de {{ brand.nombre }}" width="112" height="112">
+        </div>
+        <p class="launch-status"><span></span> Próxima apertura</p>
+        <p class="launch-name">{{ brand.nombre }}</p>
+      </div>
+
+      <div class="launch-copy">
+        <h1 id="launch-title">{{ preapertura_titulo }}</h1>
+        <p>{{ preapertura_mensaje }}</p>
+      </div>
+
+      {% if brand.telefono or brand.ciudad %}
+      <div class="launch-contact">
+        {% if brand.telefono %}
+        <a href="https://wa.me/{{ brand.telefono|phone_digits }}" rel="noopener">
+          <span aria-hidden="true">◉</span> Escríbenos por WhatsApp
+        </a>
+        {% endif %}
+        {% if brand.ciudad %}<p>{{ brand.ciudad }}{% if brand.pais %}, {{ brand.pais }}{% endif %}</p>{% endif %}
+      </div>
+      {% endif %}
+
+      <footer class="launch-footer">
+        <p>Este sitio utiliza únicamente los recursos técnicos necesarios para mostrar esta página.</p>
+        <a href="{{ url_for('auth.login') }}">Acceso del equipo</a>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

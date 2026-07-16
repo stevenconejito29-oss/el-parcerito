@@ -200,24 +200,65 @@ def create_app(env="default"):
                     db.session.rollback()
                     app.logger.exception("No se pudo actualizar presencia de usuario %s", current_user.id)
 
+    @app.before_request
+    def aplicar_cortina_preapertura():
+        """Oculta el storefront sin interferir con operación ni integraciones."""
+        if current_user.is_authenticated:
+            return None
+        from models import SiteConfig
+        from prelaunch import es_ruta_exenta_preapertura
+
+        if es_ruta_exenta_preapertura(request.path):
+            return None
+        try:
+            activa = _to_bool(SiteConfig.get("PREAPERTURA_ACTIVA", "0"), False)
+        except Exception:
+            # Fallo abierto: una incidencia de configuración no debe ocultar
+            # el diagnóstico real ni convertir todas las rutas en un 503.
+            app.logger.exception("No se pudo consultar el modo de preapertura")
+            return None
+        if not activa:
+            return None
+
+        from flask import make_response
+        g.preapertura_activa = True
+        response = make_response(render_template(
+            "public/preapertura.html",
+            preapertura_titulo=SiteConfig.get(
+                "PREAPERTURA_TITULO", "Estamos preparando algo delicioso"
+            ),
+            preapertura_mensaje=SiteConfig.get(
+                "PREAPERTURA_MENSAJE",
+                "Muy pronto podrás descubrir nuestro menú y hacer tu pedido.",
+            ),
+        ), 503)
+        response.headers["Retry-After"] = "3600"
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+        return response
+
     @app.route("/robots.txt")
     def robots_txt():
         # Bloquea crawlers de rutas operativas (admin, staff, API). El
         # storefront público sí puede indexarse. Sin este archivo un crawler
         # descubridor podría llenar los logs con hits a rutas admin.
-        body = (
-            "User-agent: *\n"
-            "Disallow: /admin/\n"
-            "Disallow: /superadmin/\n"
-            "Disallow: /preparador/\n"
-            "Disallow: /repartidor/\n"
-            "Disallow: /proveedor/\n"
-            "Disallow: /auth/\n"
-            "Disallow: /api/\n"
-            "Disallow: /pos/\n"
-            "Disallow: /pedido/\n"
-            "Allow: /\n"
-        )
+        from models import SiteConfig
+        if _to_bool(SiteConfig.get("PREAPERTURA_ACTIVA", "0"), False):
+            body = "User-agent: *\nDisallow: /\n"
+        else:
+            body = (
+                "User-agent: *\n"
+                "Disallow: /admin/\n"
+                "Disallow: /superadmin/\n"
+                "Disallow: /preparador/\n"
+                "Disallow: /repartidor/\n"
+                "Disallow: /proveedor/\n"
+                "Disallow: /auth/\n"
+                "Disallow: /api/\n"
+                "Disallow: /pos/\n"
+                "Disallow: /pedido/\n"
+                "Allow: /\n"
+            )
         return Response(body, mimetype="text/plain")
 
     @app.route("/sw.js")

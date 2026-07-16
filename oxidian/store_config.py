@@ -323,6 +323,7 @@ LOCKED_CONFIG_KEYS = frozenset({
     "EVOLUTION_API_URL", "EVOLUTION_INSTANCE",
     # Sistema
     "OXIDIAN_PUBLIC_URL", "TIENDA_URL", "ALLOW_DEMO_RESET",
+    "PREAPERTURA_ACTIVA",
     # Reset masivo de puntos (afecta a todos los clientes)
     "POINTS_RESET_PERIOD_DAYS", "POINTS_LAST_RESET_AT",
 })

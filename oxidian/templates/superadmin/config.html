@@ -11,7 +11,7 @@
 {% set is_locked = (not es_super_admin) and (key in (locked_keys or [])) %}
 <label class="cfg-field {% if is_locked %}cfg-field--locked{% endif %}">
   <span>{{ label }}{% if is_locked %} <span class="oa-badge oa-badge--brand">🔒 Super admin</span>{% endif %}</span>
-  <input type="hidden" name="config_key" value="{{ key }}">
+  {% if not is_locked %}<input type="hidden" name="config_key" value="{{ key }}">{% endif %}
   <input type="{{ type }}" name="{{ key }}" value="{{ config_map.get(key, '') }}"
          placeholder="{{ placeholder }}" {% if min != '' %}min="{{ min }}"{% endif %}
          {% if max != '' %}max="{{ max }}"{% endif %} {% if step != '' %}step="{{ step }}"{% endif %}
@@ -24,7 +24,7 @@
 {% set is_locked = (not es_super_admin) and (key in (locked_keys or [])) %}
 <label class="cfg-field cfg-field--full {% if is_locked %}cfg-field--locked{% endif %}">
   <span>{{ label }}{% if is_locked %} <span class="oa-badge oa-badge--brand">🔒 Super admin</span>{% endif %}</span>
-  <input type="hidden" name="config_key" value="{{ key }}">
+  {% if not is_locked %}<input type="hidden" name="config_key" value="{{ key }}">{% endif %}
   <textarea name="{{ key }}" rows="{{ rows }}" placeholder="{{ placeholder }}" {% if is_locked %}disabled aria-disabled="true"{% endif %}>{{ config_map.get(key, '') }}</textarea>
   {% if help %}<small>{{ help }}</small>{% endif %}
 </label>
@@ -33,7 +33,7 @@
 {% set is_locked = (not es_super_admin) and (key in (locked_keys or [])) %}
 <label class="cfg-field {% if is_locked %}cfg-field--locked{% endif %}">
   <span>{{ label }}{% if is_locked %} <span class="oa-badge oa-badge--brand">🔒 Super admin</span>{% endif %}</span>
-  <input type="hidden" name="config_key" value="{{ key }}">
+  {% if not is_locked %}<input type="hidden" name="config_key" value="{{ key }}">{% endif %}
   <select name="{{ key }}" {% if is_locked %}disabled aria-disabled="true"{% endif %}>
     {% for value, text in options %}
     <option value="{{ value }}" {% if config_map.get(key, '') == value %}selected{% endif %}>{{ text }}</option>
@@ -251,6 +251,15 @@
     </div>
     <div class="cfg-grid one">
       {{ cfg_textarea('TIENDA_MENSAJE_CIERRE', 'Mensaje de cierre', placeholder='Estamos cerrados. Abrimos mañana a las 9:00. ¡Gracias!', help='Se muestra en el carrito y el checkout cuando la tienda está cerrada o fuera de horario.', rows=2) }}
+    </div>
+    <h3>Próxima apertura</h3>
+    <p class="cfg-form-note">Oculta menú, carrito, productos y pedidos al público. El equipo y las integraciones conservan su acceso.</p>
+    <div class="cfg-grid">
+      {{ cfg_select('PREAPERTURA_ACTIVA', 'Página de preapertura', [('0','Mostrar tienda normalmente'),('1','Ocultar tienda hasta el lanzamiento')], 'Solo el super admin puede activar o retirar esta cortina.') }}
+      {{ cfg_input('PREAPERTURA_TITULO', 'Título', placeholder='Estamos preparando algo delicioso') }}
+    </div>
+    <div class="cfg-grid one">
+      {{ cfg_textarea('PREAPERTURA_MENSAJE', 'Mensaje', placeholder='Muy pronto podrás descubrir nuestro menú y hacer tu pedido.', rows=2) }}
     </div>
       <button type="submit" class="cfg-save-bottom">Guardar horario</button>
     </form>

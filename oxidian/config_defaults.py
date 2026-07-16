@@ -15,6 +15,23 @@ inserta las claves que aún no existen en SiteConfig. Es idempotente.
 from __future__ import annotations
 
 DEFAULTS: dict[str, dict] = {
+    # ── Lanzamiento público ───────────────────────────────────────────
+    "PREAPERTURA_ACTIVA": {
+        "default": "0",
+        "type": "bool",
+        "desc": "Oculta el escaparate público tras una página de próxima apertura.",
+    },
+    "PREAPERTURA_TITULO": {
+        "default": "Estamos preparando algo delicioso",
+        "type": "str",
+        "desc": "Título principal de la página de próxima apertura.",
+    },
+    "PREAPERTURA_MENSAJE": {
+        "default": "Muy pronto podrás descubrir nuestro menú y hacer tu pedido.",
+        "type": "str",
+        "desc": "Mensaje breve mostrado mientras el escaparate está oculto.",
+    },
+
     # ── Fiscal (España) ────────────────────────────────────────────────
     "IVA_DEFAULT_COMIDA": {
         "default": "10.00",
