@@ -632,9 +632,9 @@ def dashboard():
     brand_config = {
         "nombre":   SiteConfig.get("NOMBRE_NEGOCIO", ""),
         "telefono": SiteConfig.get("TELEFONO_NEGOCIO", ""),
-        "color_primario":   SiteConfig.get("COLOR_PRIMARIO", "#FFD23F"),
-        "color_secundario": SiteConfig.get("COLOR_SECUNDARIO", "#E63946"),
-        "color_acento":     SiteConfig.get("COLOR_ACENTO", "#1769E0"),
+        "color_primario":   SiteConfig.get("COLOR_PRIMARIO", "#DDAF2B"),
+        "color_secundario": SiteConfig.get("COLOR_SECUNDARIO", "#B85C38"),
+        "color_acento":     SiteConfig.get("COLOR_ACENTO", "#315F7D"),
         "logo_url":         SiteConfig.get("LOGO_URL", ""),
         "app_icon_url":     SiteConfig.get("APP_ICON_URL", ""),
     }
