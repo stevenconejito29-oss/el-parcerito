@@ -7,7 +7,7 @@
     <h1 class="text-2xl font-black text-white">🏷️ Categorías</h1>
     <p class="text-xs mt-0.5" style="color:var(--col-muted)">Organiza el catálogo por secciones</p>
   </div>
-  <button onclick="document.getElementById('form-nueva').classList.toggle('hidden')"
+  <button data-toggle-section="form-nueva"
           class="text-sm font-bold px-4 py-2 rounded-xl"
           style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
     + Nueva categoría
@@ -47,7 +47,7 @@
                    style="background:var(--col-elevated);border:1.5px dashed var(--col-border);color:var(--col-muted)">
               <span>📤</span><span>Subir imagen (jpg/png/webp)</span>
               <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="hidden"
-                     onchange="previewCatImg(this, 'cat-img-preview-new')">
+                     data-category-preview="cat-img-preview-new">
             </label>
             <input type="url" name="imagen_url" placeholder="O pegar URL de imagen..."
                    class="w-full text-xs" style="padding:.5rem .75rem;background:var(--col-elevated);border:1.5px solid var(--col-border);border-radius:.65rem;color:#fff">
@@ -58,7 +58,7 @@
     <div class="flex gap-3">
       <button type="submit" class="px-6 py-2 font-bold rounded-xl text-black"
               style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Crear</button>
-      <button type="button" onclick="document.getElementById('form-nueva').classList.add('hidden')"
+      <button type="button" data-hide-section="form-nueva"
               class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
     </div>
   </form>
@@ -130,7 +130,7 @@
       </button>
     </form>
     <form method="POST" action="{{ url_for('admin.eliminar_categoria', cat_id=cat.id) }}"
-          onsubmit="return confirm('¿Eliminar categoría {{ cat.nombre }}?')">
+          data-confirm="¿Eliminar categoría {{ cat.nombre }}?">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="w-full py-1.5 rounded-lg text-xs font-bold transition"
               style="background:rgba(255,59,48,.07);color:#FF6B6B;border:1px solid rgba(255,59,48,.15)">
@@ -160,5 +160,14 @@ function previewCatImg(input, previewId) {
   reader.onload = e => { el.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`; };
   reader.readAsDataURL(input.files[0]);
 }
+document.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-toggle-section]');
+  if (toggle) document.getElementById(toggle.dataset.toggleSection)?.classList.toggle('hidden');
+  const hide = event.target.closest('[data-hide-section]');
+  if (hide) document.getElementById(hide.dataset.hideSection)?.classList.add('hidden');
+});
+document.querySelector('[data-category-preview]')?.addEventListener('change', (event) => {
+  previewCatImg(event.currentTarget, event.currentTarget.dataset.categoryPreview);
+});
 </script>
 {% endblock %}

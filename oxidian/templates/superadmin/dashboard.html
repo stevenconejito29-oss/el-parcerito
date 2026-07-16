@@ -125,8 +125,7 @@
           <li>Bot habla de "{{ 'catálogo' if _es_comida else 'menú' }}"</li>
         </ul>
         <form method="POST" action="{{ url_for('superadmin.toggle_vertical') }}"
-              id="toggle-vertical-form"
-              onsubmit="return window.__confirmToggleVertical && window.__confirmToggleVertical(event);">
+              id="toggle-vertical-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="oa-btn oa-btn--primary oa-vertical-cta">
             {% if _es_comida %}🛍️ Cambiar a Retail{% else %}🍽️ Cambiar a Comida{% endif %}
@@ -154,6 +153,7 @@
             if (window.confirm(msg)) ev.target.submit();
             return false;
           };
+          document.getElementById('toggle-vertical-form')?.addEventListener('submit', window.__confirmToggleVertical);
         })();
         </script>
       </div>
@@ -447,7 +447,7 @@
             </div>
           </div>
           <form method="POST" action="{{ url_for('superadmin.puntos_reset_manual') }}"
-                onsubmit="return confirm('¿Reiniciar los puntos de TODOS los clientes a 0? Esta acción queda registrada en auditoría.');"
+                data-confirm="¿Reiniciar los puntos de TODOS los clientes a 0? Esta acción queda registrada en auditoría."
                 style="margin-top: var(--oa-space-4);">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="oa-btn oa-btn--sm oa-btn--ghost">🗑 Resetear puntos globalmente</button>
@@ -468,7 +468,7 @@
       </summary>
       <div class="oa-panel__body">
         <form method="POST" action="{{ url_for('superadmin.reset_demo') }}"
-              onsubmit="var v=prompt('Escribe RESET para confirmar:');if(v!=='RESET'){alert('Cancelado.');return false;}this.querySelector('[name=confirmacion]').value=v;return true;">
+              data-reset-demo>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="confirmacion" value="">
           <button type="submit" class="oa-btn oa-btn--sm oa-btn--danger">🗑 Reiniciar datos demo</button>
@@ -479,5 +479,18 @@
   {% endif %}
 
 </div>
+
+{% if config.get('ALLOW_DEMO_RESET') %}
+<script nonce="{{ csp_nonce() }}">
+document.querySelector('form[data-reset-demo]')?.addEventListener('submit', (event) => {
+  const value = window.prompt('Escribe RESET para confirmar:');
+  if (value !== 'RESET') {
+    event.preventDefault();
+    return;
+  }
+  event.currentTarget.querySelector('[name="confirmacion"]').value = value;
+});
+</script>
+{% endif %}
 
 {% endblock %}

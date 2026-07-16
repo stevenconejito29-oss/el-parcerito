@@ -135,8 +135,8 @@
         <div>
           <strong>Logo del negocio</strong>
           <div class="cfg-media-actions">
-            <label class="cfg-upload">📤 Subir<input type="file" accept=".jpg,.jpeg,.png,.webp" onchange="uploadBrand(this,'logo')"></label>
-            <button type="button" class="cfg-upload cfg-upload-danger" onclick="clearBrand('logo')" {% if not config_map.get('LOGO_URL') %}disabled{% endif %}>🗑 Quitar</button>
+            <label class="cfg-upload">📤 Subir<input type="file" accept=".jpg,.jpeg,.png,.webp" data-brand-upload="logo"></label>
+            <button type="button" class="cfg-upload cfg-upload-danger" data-brand-clear="logo" {% if not config_map.get('LOGO_URL') %}disabled{% endif %}>🗑 Quitar</button>
           </div>
           <input type="url" name="LOGO_URL" id="logo-url-input" value="{{ config_map.get('LOGO_URL','') }}" placeholder="O pega una URL">
         </div>
@@ -146,8 +146,8 @@
         <div>
           <strong>Icono PWA</strong>
           <div class="cfg-media-actions">
-            <label class="cfg-upload">📤 Subir<input type="file" accept=".jpg,.jpeg,.png,.webp" onchange="uploadBrand(this,'icon')"></label>
-            <button type="button" class="cfg-upload cfg-upload-danger" onclick="clearBrand('icon')" {% if not config_map.get('APP_ICON_URL') %}disabled{% endif %}>🗑 Quitar</button>
+            <label class="cfg-upload">📤 Subir<input type="file" accept=".jpg,.jpeg,.png,.webp" data-brand-upload="icon"></label>
+            <button type="button" class="cfg-upload cfg-upload-danger" data-brand-clear="icon" {% if not config_map.get('APP_ICON_URL') %}disabled{% endif %}>🗑 Quitar</button>
           </div>
           <input type="url" name="APP_ICON_URL" id="icon-url-input" value="{{ config_map.get('APP_ICON_URL','') }}" placeholder="O pega una URL">
         </div>
@@ -158,8 +158,8 @@
           <strong>Imagen de cabecera</strong>
           <small style="display:block;margin:.2rem 0 .5rem;color:var(--col-muted)">Se muestra como fondo del banner principal de la tienda. Recomendado: 1600×900 px.</small>
           <div class="cfg-media-actions">
-            <label class="cfg-upload">📤 Subir<input type="file" accept=".jpg,.jpeg,.png,.webp" onchange="uploadBrand(this,'hero')"></label>
-            <button type="button" class="cfg-upload cfg-upload-danger" onclick="clearBrand('hero')" {% if not config_map.get('HERO_IMAGE_URL') %}disabled{% endif %}>🗑 Quitar</button>
+            <label class="cfg-upload">📤 Subir<input type="file" accept=".jpg,.jpeg,.png,.webp" data-brand-upload="hero"></label>
+            <button type="button" class="cfg-upload cfg-upload-danger" data-brand-clear="hero" {% if not config_map.get('HERO_IMAGE_URL') %}disabled{% endif %}>🗑 Quitar</button>
           </div>
           <input type="url" name="HERO_IMAGE_URL" id="hero-url-input" value="{{ config_map.get('HERO_IMAGE_URL','') }}" placeholder="O pega una URL">
         </div>
@@ -300,8 +300,8 @@
         {{ cfg_input('PEDIDO_MINIMO_EUR', 'Pedido mínimo (€) — 0 desactiva', type='number', min='0', step='0.5') }}
       </div>
       <div style="margin-top:.5rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-        <button type="button" class="cfg-save-bottom" style="background:#334155"
-                onclick="cfgUsarUbicacion(this)">📍 Usar mi ubicación actual</button>
+        <button type="button" class="cfg-save-bottom cfg-geo-button"
+                data-config-geolocation>📍 Usar mi ubicación actual</button>
         <small id="cfg_geo_status" style="color:var(--col-muted)"></small>
       </div>
       <script nonce="{{ csp_nonce() }}">
@@ -332,6 +332,9 @@
             { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
           );
         }
+        document.querySelector('[data-config-geolocation]')?.addEventListener('click', (event) => {
+          cfgUsarUbicacion(event.currentTarget);
+        });
       </script>
       <button type="submit" class="cfg-save-bottom">Guardar cobertura</button>
     </form>
@@ -408,7 +411,7 @@ async function uploadBrand(input, type){
     const preview=document.getElementById(type+'-preview-wrap');
     urlInput.value=data.url;
     preview.innerHTML='<img src="'+data.url+'?t='+Date.now()+'" alt="">';
-    const clearBtn = document.querySelector('button.cfg-upload-danger[onclick*="'+type+'"]');
+    const clearBtn = document.querySelector('[data-brand-clear="'+type+'"]');
     if (clearBtn) clearBtn.disabled = false;
     _brandToast('✓ '+_BRAND_LABELS[type]+' actualizado', 'success');
   }catch(error){_brandToast(error.message || 'Error al subir', 'danger');}
@@ -431,7 +434,7 @@ async function clearBrand(type){
     const preview = document.getElementById(type+'-preview-wrap');
     urlInput.value = '';
     preview.innerHTML = '<span>'+_BRAND_LABELS[type]+'</span>';
-    const clearBtn = document.querySelector('button.cfg-upload-danger[onclick*="'+type+'"]');
+    const clearBtn = document.querySelector('[data-brand-clear="'+type+'"]');
     if (clearBtn) clearBtn.disabled = true;
     _brandToast('✓ '+_BRAND_LABELS[type]+' eliminado', 'success');
   } catch (e) {
@@ -443,6 +446,14 @@ function cfgShowMobileSection(id){
   document.querySelectorAll('.cfg-section').forEach(section=>section.classList.toggle('cfg-active',section.id===id));
   document.querySelectorAll('.cfg-nav a').forEach(link=>link.classList.toggle('active',link.getAttribute('href')==='#'+id));
 }
+document.addEventListener('change', (event) => {
+  const input = event.target.closest('[data-brand-upload]');
+  if (input) uploadBrand(input, input.dataset.brandUpload);
+});
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-brand-clear]');
+  if (button) clearBrand(button.dataset.brandClear);
+});
 document.querySelectorAll('.cfg-nav a').forEach(link=>link.addEventListener('click',event=>{
   if(!window.matchMedia('(max-width:760px)').matches)return;
   event.preventDefault();cfgShowMobileSection(link.getAttribute('href').slice(1));window.scrollTo({top:document.querySelector('.cfg-nav').offsetTop-55,behavior:'smooth'});

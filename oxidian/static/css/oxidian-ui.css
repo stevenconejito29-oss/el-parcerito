@@ -460,7 +460,10 @@ button,a,input,select,textarea{touch-action:manipulation}.ep-card,.ox-card{outli
 }
 
 .points-lookup{max-width:560px;margin:0 auto;display:grid;gap:1rem}
-.points-lookup-back{color:var(--theme-muted, #6b5a4e);font-weight:800;text-decoration:none}
+.points-lookup-back{
+  display:inline-flex;align-items:center;min-height:44px;padding:.45rem .15rem;
+  color:var(--theme-muted, #6b5a4e);font-weight:800;text-decoration:none;
+}
 .points-lookup-hero,.points-lookup-card,.points-lookup-note{background:var(--theme-surface, #fffdf8);border:1px solid rgba(52,37,22,.12);border-radius:8px;padding:1rem;box-shadow:0 8px 24px rgba(38,25,12,.06)}
 .points-lookup-hero{display:grid;grid-template-columns:auto 1fr;gap:.85rem}.points-lookup-hero>span{font-size:2rem}
 .points-lookup-kicker,.points-lookup-card label{font-size:.7rem;font-weight:900;text-transform:uppercase;color:var(--prov-back, #8a5900)}

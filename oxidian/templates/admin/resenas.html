@@ -78,7 +78,7 @@
           <button class="ox-btn-sm-ok">✅ Aprobar</button>
         </form>
         <form method="POST" action="{{ url_for('admin.eliminar_resena', review_id=r.id) }}"
-              onsubmit="return confirm('¿Eliminar esta reseña definitivamente?')">
+              data-confirm="¿Eliminar esta reseña definitivamente?">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="ox-btn-sm-del">🗑️ Rechazar</button>
         </form>
@@ -123,7 +123,7 @@
         </p>
       </div>
       <form method="POST" action="{{ url_for('admin.eliminar_resena', review_id=r.id) }}"
-            onsubmit="return confirm('¿Quitar esta reseña de la tienda?')">
+            data-confirm="¿Quitar esta reseña de la tienda?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="text-xs px-3 py-1.5 rounded-lg transition" style="color:var(--col-faint);background:rgba(255,59,48,.06);border:1px solid rgba(255,59,48,.12)">
           ✕ Quitar

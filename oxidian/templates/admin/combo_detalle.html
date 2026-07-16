@@ -58,13 +58,13 @@
           <label class="cd-mode">
             <input type="radio" name="combo_precio_modo" value="fijo"
                    {% if combo.combo_precio_modo_normalizado == 'fijo' %}checked{% endif %}
-                   onchange="cdPricingMode()">
+                   data-cd-input="pricing">
             <span>Precio fijo</span>
           </label>
           <label class="cd-mode">
             <input type="radio" name="combo_precio_modo" value="descuento_porcentaje"
                    {% if combo.combo_precio_modo_normalizado == 'descuento_porcentaje' %}checked{% endif %}
-                   onchange="cdPricingMode()">
+                   data-cd-input="pricing">
             <span>% descuento</span>
           </label>
         </div>
@@ -72,7 +72,7 @@
           <div id="cd-fijo-blk">
             <label class="cd-label">Precio final (€)</label>
             <input type="number" id="cd-inp-precio" name="precio" value="{{ "%.2f"|format(combo_precio) }}"
-                   step="0.01" min="0.01" class="cd-input" oninput="cdCalcDesc(this.value)">
+                   step="0.01" min="0.01" class="cd-input" data-cd-input="price">
           </div>
           <div id="cd-desc-blk">
             <label class="cd-label">Descuento (%)</label>
@@ -80,7 +80,7 @@
               <input type="number" id="cd-inp-pct" name="combo_descuento_pct"
                      value="{{ '%.1f'|format(combo.combo_descuento_pct_float) if combo.combo_descuento_pct_float else '' }}"
                      step="0.1" min="0" max="{{ combo_limits.max_discount_pct }}" class="cd-input"
-                     placeholder="{{ pct_ahorro }}" oninput="cdCalcPrice(this.value)"
+                     placeholder="{{ pct_ahorro }}" data-cd-input="discount"
                      {% if combo_base == 0 %}disabled title="Añade componentes con precio primero"{% endif %}>
               <span class="cd-pct-sym">%</span>
             </div>
@@ -102,8 +102,8 @@
           Secciones del combo
           <span class="cd-comp-count">{{ componentes|length }} componente{{ 's' if componentes|length != 1 else '' }}</span>
         </h2>
-        <button type="button" class="cd-add-top-btn" onclick="cdOpenPicker(null,'fijo','','1')">📌 + Incluido</button>
-        <button type="button" class="cd-add-top-btn cd-add-top-sel" onclick="cdOpenPicker(null,'sel','',1)">🔄 + Elección</button>
+        <button type="button" class="cd-add-top-btn" data-cd-action="open-picker" data-type="fijo" data-group="" data-max="1">📌 + Incluido</button>
+        <button type="button" class="cd-add-top-btn cd-add-top-sel" data-cd-action="open-picker" data-type="sel" data-group="" data-max="1">🔄 + Elección</button>
       </div>
 
       {% if not componentes %}
@@ -122,7 +122,7 @@
           <span class="cd-step-badge cd-step-badge-f">1</span>
           <span class="cd-sec-badge cd-sec-badge-f">📌 Incluido siempre</span>
           <span class="cd-sec-hint">{{ fijos|length }} producto{{ 's' if fijos|length != 1 else '' }} · el cliente no elige</span>
-          <button type="button" class="cd-sec-add-inline" onclick="cdOpenPicker(null,'fijo','',1)">+ Producto</button>
+          <button type="button" class="cd-sec-add-inline" data-cd-action="open-picker" data-type="fijo" data-group="" data-max="1">+ Producto</button>
         </div>
         <div class="cd-sec-rows">
           {% for item in fijos %}
@@ -140,18 +140,19 @@
             </div>
             <form method="POST" action="{{ url_for('admin.editar_cantidad_combo', producto_id=combo.id, item_id=item.id) }}" class="cd-qty-form">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="button" onclick="cdStepQty(this,-1)" class="cd-qty-btn">−</button>
+              <button type="button" data-cd-action="step-quantity" data-delta="-1" class="cd-qty-btn">−</button>
               <input type="number" name="cantidad" value="{{ item.cantidad }}" min="1" max="{{ combo_limits.max_qty }}" class="cd-qty-inp">
-              <button type="button" onclick="cdStepQty(this,+1)" class="cd-qty-btn">+</button>
+              <button type="button" data-cd-action="step-quantity" data-delta="1" class="cd-qty-btn">+</button>
               <button type="submit" class="cd-qty-save" title="Guardar cantidad">✓</button>
             </form>
             <div class="cd-item-total">
               <span>€{{ "%.2f"|format(item.componente.precio_final * item.cantidad) }}</span>
               <small>×{{ item.cantidad }}</small>
             </div>
-            <form method="POST" action="{{ url_for('admin.quitar_componente_combo', producto_id=combo.id, item_id=item.id) }}" class="cd-del-form">
+            <form method="POST" action="{{ url_for('admin.quitar_componente_combo', producto_id=combo.id, item_id=item.id) }}" class="cd-del-form"
+                  data-confirm="¿Quitar {{ item.componente.nombre|e }}?">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="cd-del-btn" onclick="return confirm('¿Quitar {{ item.componente.nombre|replace("'","") }}?')">×</button>
+              <button type="submit" class="cd-del-btn">×</button>
             </form>
           </div>
           {% endfor %}
@@ -188,7 +189,7 @@
             </form>
           </div>
           <button type="button" class="cd-sec-add-inline cd-sec-add-sel"
-                  onclick="cdOpenPicker(null,'sel','{{ grupo }}',{{ max_sel }})">+ Opción</button>
+                  data-cd-action="open-picker" data-type="sel" data-group="{{ grupo|e }}" data-max="{{ max_sel }}">+ Opción</button>
         </div>
         <div class="cd-sec-rows">
           {% for item in items_g %}
@@ -201,9 +202,10 @@
             {% if item.es_predeterminado %}<span class="cd-opt-tag">recomendada</span>{% endif %}
             {% if item.precio_extra and item.precio_extra > 0 %}<span class="cd-opt-tag">+€{{ "%.2f"|format(item.precio_extra) }}</span>{% endif %}
             <span class="cd-opt-tag">opción</span>
-            <form method="POST" action="{{ url_for('admin.quitar_componente_combo', producto_id=combo.id, item_id=item.id) }}" class="cd-del-form">
+            <form method="POST" action="{{ url_for('admin.quitar_componente_combo', producto_id=combo.id, item_id=item.id) }}" class="cd-del-form"
+                  data-confirm="¿Quitar {{ item.componente.nombre|e }}?">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="cd-del-btn" onclick="return confirm('¿Quitar {{ item.componente.nombre|replace("'","") }}?')">×</button>
+              <button type="submit" class="cd-del-btn">×</button>
             </form>
           </div>
           {% endfor %}
@@ -274,14 +276,14 @@
 </div>
 
 {# ══ MODAL PICKER ══ #}
-<div id="cd-picker" class="cd-picker-ov" style="display:none" onclick="cdPickerBg(event)">
-  <div class="cd-picker-box" onclick="event.stopPropagation()">
+<div id="cd-picker" class="cd-picker-ov" style="display:none" data-cd-picker-backdrop>
+  <div class="cd-picker-box">
     <div class="cd-picker-top">
       <div>
         <p class="cd-picker-ttl" id="cd-picker-ttl">Añadir producto</p>
         <p class="cd-picker-hint" id="cd-picker-hint"></p>
       </div>
-      <button type="button" class="cd-picker-x" onclick="cdClosePicker()">✕</button>
+      <button type="button" class="cd-picker-x" data-cd-action="close-picker">✕</button>
     </div>
 
     {# Contexto de la sección (para elección) #}
@@ -295,9 +297,9 @@
       <div class="cd-picker-ctx-row">
         <label class="cd-picker-ctx-lbl">El cliente elige</label>
         <div style="display:flex;align-items:center;gap:.4rem">
-          <button type="button" class="cd-step-btn" onclick="cdStepMaxSel(-1)">−</button>
+          <button type="button" class="cd-step-btn" data-cd-action="step-max" data-delta="-1">−</button>
           <input type="number" id="cd-picker-maxsel" value="1" min="1" max="{{ combo_limits.max_selections }}" class="cd-picker-maxsel-inp">
-          <button type="button" class="cd-step-btn" onclick="cdStepMaxSel(1)">+</button>
+          <button type="button" class="cd-step-btn" data-cd-action="step-max" data-delta="1">+</button>
           <span style="color:var(--col-muted);font-size:.8rem">opción(es)</span>
         </div>
       </div>
@@ -307,9 +309,9 @@
       <div class="cd-picker-ctx-row">
         <label class="cd-picker-ctx-lbl">Cantidad</label>
         <div style="display:flex;align-items:center;gap:.4rem">
-          <button type="button" class="cd-step-btn" onclick="cdStepPickerQty(-1)">−</button>
+          <button type="button" class="cd-step-btn" data-cd-action="step-picker-quantity" data-delta="-1">−</button>
           <input type="number" id="cd-picker-qty" value="1" min="1" max="{{ combo_limits.max_qty }}" class="cd-picker-maxsel-inp">
-          <button type="button" class="cd-step-btn" onclick="cdStepPickerQty(1)">+</button>
+          <button type="button" class="cd-step-btn" data-cd-action="step-picker-quantity" data-delta="1">+</button>
         </div>
       </div>
     </div>
@@ -330,13 +332,13 @@
     </div>
 
     <input type="search" id="cd-picker-q" class="cd-picker-search" placeholder="Buscar producto..."
-           oninput="cdPickerFilter(this.value)" autocomplete="off">
+           data-cd-input="filter" autocomplete="off">
     <div id="cd-picker-list" class="cd-picker-list">
       {% for p in productos_simples %}
       {% if p.id != combo.id %}
       <button type="button" class="cd-picker-item"
               data-pid="{{ p.id }}" data-name="{{ (p.nombre ~ ' ' ~ p.admin_nombre_operativo)|lower }}"
-              onclick="cdPickerSelect({{ p.id }})">
+              data-cd-action="select-product">
         <span class="cd-picker-item-name">{{ p.nombre }}</span>
         <span class="cd-picker-item-price">
           #{{ p.id }} · {{ p.origen_operativo_label }} · {{ p.canal_preparacion or 'cocina' }} · €{{ "%.2f"|format(p.precio_final) }}
@@ -664,6 +666,39 @@ function cdPickerSelect(pid) {
 
 /* ── Init ── */
 cdPricingMode();
+document.addEventListener('input', event => {
+  const input = event.target.closest('[data-cd-input]');
+  if (!input) return;
+  if (input.dataset.cdInput === 'price') cdCalcDesc(input.value);
+  if (input.dataset.cdInput === 'discount') cdCalcPrice(input.value);
+  if (input.dataset.cdInput === 'filter') cdPickerFilter(input.value);
+});
+document.addEventListener('change', event => {
+  if (event.target.matches('[data-cd-input="pricing"]')) cdPricingMode();
+});
+document.addEventListener('click', event => {
+  const backdrop = event.target.closest('[data-cd-picker-backdrop]');
+  if (backdrop && event.target === backdrop) {
+    cdClosePicker();
+    return;
+  }
+  const action = event.target.closest('[data-cd-action]');
+  if (!action) return;
+  const delta = Number.parseInt(action.dataset.delta || '0', 10);
+  if (action.dataset.cdAction === 'open-picker') {
+    cdOpenPicker(null, action.dataset.type, action.dataset.group, action.dataset.max);
+  } else if (action.dataset.cdAction === 'close-picker') {
+    cdClosePicker();
+  } else if (action.dataset.cdAction === 'step-quantity') {
+    cdStepQty(action, delta);
+  } else if (action.dataset.cdAction === 'step-max') {
+    cdStepMaxSel(delta);
+  } else if (action.dataset.cdAction === 'step-picker-quantity') {
+    cdStepPickerQty(delta);
+  } else if (action.dataset.cdAction === 'select-product') {
+    cdPickerSelect(action.dataset.productId);
+  }
+});
 document.addEventListener('keydown', e => { if (e.key === 'Escape') cdClosePicker(); });
 </script>
 {% endblock %}

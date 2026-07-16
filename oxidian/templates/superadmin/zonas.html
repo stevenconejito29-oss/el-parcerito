@@ -73,7 +73,7 @@
     <div class="sm:col-span-2" style="border-top:1px dashed var(--col-border);padding-top:var(--oa-space-3);margin-top:var(--oa-space-2);">
       <label class="ox-label" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
         <span>🗺️ Cobertura geográfica (opcional)</span>
-        <button type="button" onclick="usarMiUbicacion(this)" class="oa-btn oa-btn--sm">📍 Usar mi ubicación actual</button>
+        <button type="button" data-zone-geolocation class="oa-btn oa-btn--sm">📍 Usar mi ubicación actual</button>
       </label>
       <p style="font-size:var(--oa-font-xs);color:var(--col-muted);margin:.25rem 0 .6rem;">
         Si defines centro + radio, los pedidos con geolocalización del cliente se validan contra estas coordenadas.
@@ -128,6 +128,9 @@ function usarMiUbicacion(btn) {
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
   );
 }
+document.querySelector('[data-zone-geolocation]')?.addEventListener('click', (event) => {
+  usarMiUbicacion(event.currentTarget);
+});
 </script>
 
 {# ── ZONAS EXISTENTES ── #}
@@ -161,8 +164,8 @@ function usarMiUbicacion(btn) {
             {{ '❌ Desactivar' if z.activo else '✓ Activar' }}
           </button>
         </form>
-        <form method="POST" action="{{ url_for('superadmin.eliminar_zona', zona_id=z.id) }}"
-              onsubmit="return confirm('¿Eliminar zona «{{ z.nombre|e }}»? Si tiene pedidos históricos se archivará.');">
+            <form method="POST" action="{{ url_for('superadmin.eliminar_zona', zona_id=z.id) }}"
+              data-confirm="¿Eliminar zona «{{ z.nombre|e }}»? Si tiene pedidos históricos se archivará.">
           {{ csrf_field() }}
           <button type="submit" class="oa-btn oa-btn--sm oa-btn--danger" title="Eliminar zona">
             🗑️

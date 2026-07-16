@@ -6,14 +6,13 @@
     <h1 class="text-2xl font-black text-white">🛍️ Productos & Combos</h1>
     <p class="text-xs mt-0.5" style="color:var(--col-muted)">Gestiona el catálogo de productos y los combos disponibles</p>
   </div>
-  <div class="flex gap-2">
-    <a href="{{ url_for('admin.extras_catalogo') }}" class="text-sm font-bold px-4 py-2 rounded-xl" style="background:color-mix(in srgb,var(--role-super-admin,#A855F7) 14%,transparent);border:1px solid color-mix(in srgb,var(--role-super-admin,#A855F7) 32%,transparent);color:color-mix(in srgb,var(--role-super-admin,#A855F7) 55%,#fff)">Extras</a>
-    <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
-            class="text-sm font-bold px-4 py-2 rounded-xl" style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
+  <div class="flex gap-2 adm-products-actions">
+    <a href="{{ url_for('admin.extras_catalogo') }}" class="text-sm font-bold px-4 py-2 rounded-xl adm-products-action adm-products-action--extras">Extras</a>
+    <button data-dialog-open="modal-nuevo"
+            class="text-sm font-bold px-4 py-2 rounded-xl adm-products-action adm-products-action--new">
       + Nuevo producto
     </button>
-    <a href="{{ url_for('admin.nuevo_combo') }}" class="text-sm font-bold px-4 py-2 rounded-lg"
-       style="background:rgba(10,132,255,.15);border:1px solid rgba(10,132,255,.3);color:#5AC8FA">
+    <a href="{{ url_for('admin.nuevo_combo') }}" class="text-sm font-bold px-4 py-2 rounded-lg adm-products-action adm-products-action--combo">
       + Construir combo
     </a>
   </div>
@@ -48,11 +47,11 @@
 
 {# ── TABS ── #}
 <div class="flex gap-2 mb-4" id="tabs-productos">
-  <button onclick="mostrarTab('productos')" id="tab-productos"
+  <button data-product-tab="productos" id="tab-productos"
           class="px-4 py-2 rounded-xl text-sm font-bold tab-active">
     {{ brand.fallback_emoji or '🍽️' }} Productos ({{ productos|selectattr('es_combo','equalto',false)|list|length }})
   </button>
-  <button onclick="mostrarTab('combos')" id="tab-combos"
+  <button data-product-tab="combos" id="tab-combos"
           class="px-4 py-2 rounded-xl text-sm font-bold tab-inactive">
     🎁 Combos ({{ productos|selectattr('es_combo')|list|length }})
   </button>
@@ -98,7 +97,7 @@
       <a href="{{ url_for('admin.editar_producto', producto_id=p.id) }}">Editar</a>
       <form method="POST"
             action="{{ url_for('admin.eliminar_combo', combo_id=p.id) if p.es_combo else url_for('admin.eliminar_producto', producto_id=p.id) }}"
-            onsubmit="return confirm('¿Eliminar «{{ p.nombre|e }}»? Si tiene pedidos se archivará.');"
+            data-confirm="¿Eliminar «{{ p.nombre|e }}»? Si tiene pedidos se archivará."
             style="display:inline;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" title="Eliminar"
@@ -196,7 +195,7 @@
         <form method="POST"
               action="{{ url_for('admin.eliminar_combo' if p.es_combo else 'admin.eliminar_producto', combo_id=p.id) if p.es_combo else url_for('admin.eliminar_producto', producto_id=p.id) }}"
               class="inline"
-              onsubmit="return confirm('¿Eliminar «{{ p.nombre|e }}»? Si tiene pedidos históricos se archivará en lugar de borrarse.');">
+              data-confirm="¿Eliminar «{{ p.nombre|e }}»? Si tiene pedidos históricos se archivará en lugar de borrarse.">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit"
                   class="text-xs px-2 py-1 rounded-lg font-bold"
@@ -249,7 +248,7 @@
         <h2 class="text-lg font-bold" style="color:var(--col-text)">🛍️ Nuevo Producto</h2>
         <p class="text-xs" style="color:var(--col-muted)">Rellena los datos del producto</p>
       </div>
-      <button onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
+      <button data-dialog-close="modal-nuevo"
               class="w-8 h-8 rounded-lg flex items-center justify-center text-xl transition"
               style="background:var(--col-elevated);color:var(--col-muted);border:1px solid var(--col-border)">&times;</button>
     </div>
@@ -261,7 +260,7 @@
                 style="background:linear-gradient(135deg,var(--brand-primary,#FFAB00),color-mix(in srgb,var(--brand-primary,#FFAB00) 78%,#000));color:var(--brand-on-primary,#000);box-shadow:0 4px 14px color-mix(in srgb,var(--brand-primary,#FFAB00) 30%,transparent)">
           Crear producto →
         </button>
-        <button type="button" onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
+        <button type="button" data-dialog-close="modal-nuevo"
                 class="px-4 py-2.5 rounded-xl text-sm font-semibold"
                 style="background:var(--col-elevated);border:1px solid var(--col-border);color:var(--col-muted)">
           Cancelar
@@ -280,7 +279,7 @@
         <h2 class="text-lg font-bold" style="color:var(--col-text)">✏️ Editar: <span id="editar-titulo"></span></h2>
         <p class="text-xs" style="color:var(--col-muted)">Modifica nombre, precio, imagen, visibilidad y más</p>
       </div>
-      <button onclick="document.getElementById('modal-editar').classList.add('hidden')"
+      <button data-dialog-close="modal-editar"
               class="w-8 h-8 rounded-lg flex items-center justify-center text-xl transition"
               style="background:var(--col-elevated);color:var(--col-muted);border:1px solid var(--col-border)">&times;</button>
     </div>
@@ -301,7 +300,7 @@
                 style="background:linear-gradient(135deg,var(--brand-primary,#FFAB00),color-mix(in srgb,var(--brand-primary,#FFAB00) 78%,#000));color:var(--brand-on-primary,#000);box-shadow:0 4px 14px color-mix(in srgb,var(--brand-primary,#FFAB00) 30%,transparent)">
           Guardar cambios →
         </button>
-        <button type="button" onclick="document.getElementById('modal-editar').classList.add('hidden')"
+        <button type="button" data-dialog-close="modal-editar"
                 class="px-4 py-2.5 rounded-xl text-sm font-semibold"
                 style="background:var(--col-elevated);border:1px solid var(--col-border);color:var(--col-muted)">
           Cancelar
@@ -424,7 +423,7 @@
         </a>
         <form method="POST"
               action="{{ url_for('admin.eliminar_combo', combo_id=combo.id) }}"
-              onsubmit="return confirm('¿Eliminar combo «{{ combo.nombre|e }}»? Si tiene pedidos se archivará.');"
+              data-confirm="¿Eliminar combo «{{ combo.nombre|e }}»? Si tiene pedidos se archivará."
               class="inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" title="Eliminar combo"
@@ -441,6 +440,11 @@
 </div>
 
 <style>
+.adm-products-action{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--col-border)}
+.adm-products-actions{flex-wrap:wrap}
+.adm-products-action--extras{background:color-mix(in srgb,var(--role-super-admin) 12%,var(--col-surface));border-color:color-mix(in srgb,var(--role-super-admin) 30%,var(--col-border));color:color-mix(in srgb,var(--role-super-admin) 45%,var(--col-text))}
+.adm-products-action--new{background:color-mix(in srgb,var(--brand-primary) 13%,var(--col-surface));border-color:color-mix(in srgb,var(--brand-primary) 34%,var(--col-border));color:var(--brand-text)}
+.adm-products-action--combo{background:color-mix(in srgb,var(--role-admin) 11%,var(--col-surface));border-color:color-mix(in srgb,var(--role-admin) 28%,var(--col-border));color:color-mix(in srgb,var(--role-admin) 45%,var(--col-text))}
 /* Admin productos — tokens semánticos que responden al branding */
 .tab-active {
   background: color-mix(in srgb, var(--brand-primary) 15%, transparent);
@@ -487,12 +491,12 @@
   font-weight:900; text-transform:uppercase; letter-spacing:.02em;
 }
 /* Badges semánticos que siguen los tokens del tema. */
-.badge-stock    { background: color-mix(in srgb, var(--theme-success) 14%, transparent); color: color-mix(in srgb, var(--theme-success) 72%, #fff); }
-.badge-channel  { background: color-mix(in srgb, var(--brand-accent) 15%, transparent);  color: color-mix(in srgb, var(--brand-accent) 55%, #bfe4ff); }
-.badge-points   { background: color-mix(in srgb, #C084FC 18%, transparent); color: #C084FC; }
-.badge-hipo     { background: color-mix(in srgb, var(--theme-success) 14%, transparent); color: color-mix(in srgb, var(--theme-success) 68%, #fff); }
-.badge-active   { background: color-mix(in srgb, var(--theme-success) 14%, transparent); color: color-mix(in srgb, var(--theme-success) 70%, #fff); }
-.badge-inactive { background: color-mix(in srgb, var(--theme-danger)  14%, transparent); color: color-mix(in srgb, var(--theme-danger) 65%, #fff); }
+.badge-stock    { background: color-mix(in srgb, var(--theme-success) 14%, transparent); color: var(--status-ok-text); }
+.badge-channel  { background: color-mix(in srgb, var(--brand-accent) 15%, transparent);  color: color-mix(in srgb, var(--brand-accent) 52%, var(--col-text)); }
+.badge-points   { background: color-mix(in srgb, var(--role-super-admin) 18%, transparent); color: color-mix(in srgb, var(--role-super-admin) 52%, var(--col-text)); }
+.badge-hipo     { background: color-mix(in srgb, var(--theme-success) 14%, transparent); color: var(--status-ok-text); }
+.badge-active   { background: color-mix(in srgb, var(--theme-success) 14%, transparent); color: var(--status-ok-text); }
+.badge-inactive { background: color-mix(in srgb, var(--theme-danger)  14%, transparent); color: var(--status-err-text); }
 .admin-product-card-stats {
   display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
   gap:.45rem; margin-top:.75rem;
@@ -503,12 +507,12 @@
   border-radius:.65rem; padding:.45rem; min-width:0;
 }
 .admin-product-card-stats span { display:block; color:var(--col-faint); font-size:.62rem; font-weight:800; text-transform:uppercase; }
-.admin-product-card-stats strong { display:block; color: var(--brand-primary); font-size:.86rem; line-height:1.2; overflow-wrap:anywhere; }
+.admin-product-card-stats strong { display:block; color: var(--brand-text); font-size:.86rem; line-height:1.2; overflow-wrap:anywhere; }
 .admin-product-actions { margin-top:.75rem; display:flex; }
 .admin-product-actions a {
   flex:1; text-align:center; border-radius:.65rem;
   border: 1px solid color-mix(in srgb, var(--brand-primary) 34%, transparent);
-  color: var(--brand-primary);
+  color: var(--brand-text);
   background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
   font-size:.78rem; font-weight:900; padding:.5rem .75rem;
   transition: background .15s;
@@ -535,6 +539,9 @@ function mostrarTab(tab) {
 }
 // Mostrar tab de combos si viene desde URL con #combos
 if (window.location.hash === '#combos') mostrarTab('combos');
+document.querySelectorAll('[data-product-tab]').forEach((button) => {
+  button.addEventListener('click', () => mostrarTab(button.dataset.productTab));
+});
 
 const CATEGORIAS = [{% for cat in categorias %}{ id: {{ cat.id }}, nombre: "{{ cat.nombre }}" },{% endfor %}];
 const DIAS_SEMANA = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -666,12 +673,11 @@ function previewImagen(input) {
   reader.readAsDataURL(input.files[0]);
 }
 
-function previewFromUrl(url) {
-  // Busca el preview del form activo
-  const modal = document.querySelector('#modal-nuevo:not(.hidden), #modal-editar:not(.hidden)');
-  if (!modal) return;
-  const img    = modal.querySelector('#img-preview');
-  const holder = modal.querySelector('#img-placeholder');
+function previewFromUrl(input) {
+  const form = input.closest('form');
+  const url = input.value.trim();
+  const img = form?.querySelector('#img-preview');
+  const holder = form?.querySelector('#img-placeholder');
   if (!img) return;
   if (url && url.startsWith('http')) {
     img.src = url;
@@ -742,6 +748,11 @@ document.addEventListener('change', e => {
   if (e.target.classList.contains('alergen-cb')) {
     e.target.closest('.alergen-btn')?.classList.toggle('alergen-active', e.target.checked);
   }
+  if (e.target.matches('[data-product-image-file]')) previewImagen(e.target);
+  if (e.target.matches('[data-toggle-hypoallergenic]')) toggleHipo(e.target);
+});
+document.addEventListener('input', e => {
+  if (e.target.matches('[data-product-image-url]')) previewFromUrl(e.target);
 });
 document.addEventListener('click', e => {
   const btn = e.target.closest('.alergen-btn');

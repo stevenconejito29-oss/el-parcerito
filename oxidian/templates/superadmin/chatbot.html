@@ -347,7 +347,7 @@
                style="flex:1;min-width:220px;"
                autocomplete="new-password"
                placeholder="{{ '*** clave guardada ***' if bot_ai_api_key_set else 'Pega aquí la API key' }}">
-        <button type="button" class="ox-btn-ghost text-xs" onclick="_togglePwd('bot-ai-api-key', this)">👁 Ver</button>
+        <button type="button" class="ox-btn-ghost text-xs" data-toggle-password="bot-ai-api-key">👁 Ver</button>
       </div>
       <p class="chat-help">
         {% if bot_ai_api_key_set %}
@@ -366,6 +366,9 @@
       el.type = showing ? 'password' : 'text';
       btn.textContent = showing ? '👁 Ver' : '🙈 Ocultar';
     }
+    document.querySelector('[data-toggle-password]')?.addEventListener('click', (event) => {
+      _togglePwd(event.currentTarget.dataset.togglePassword, event.currentTarget);
+    });
     </script>
 
     <div>

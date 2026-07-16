@@ -61,7 +61,7 @@ body.operational-view .work-hero::before {
 }
 
 body.operational-view .work-eyebrow {
-  color: color-mix(in srgb, var(--brand-primary) 82%, var(--col-text)) !important;
+  color: var(--brand-text) !important;
   letter-spacing: .08em;
 }
 

@@ -76,7 +76,7 @@
     Sin historial, la cuenta se borrara definitivamente.
   </p>
   <form method="POST" action="{{ url_for('admin.eliminar_usuario', user_id=usuario.id) }}"
-        onsubmit="return confirm('Esta operacion no se puede deshacer. ¿Continuar?')">
+        data-confirm="Esta operación no se puede deshacer. ¿Continuar?">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label class="ox-label">Escribe ELIMINAR para confirmar</label>
     <div class="flex gap-3 flex-wrap">

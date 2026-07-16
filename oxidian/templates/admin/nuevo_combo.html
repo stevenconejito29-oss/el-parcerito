@@ -27,9 +27,9 @@
   </header>
 
   <nav class="bundle-mobile-tabs" aria-label="Áreas del constructor">
-    <button type="button" data-bundle-tab="catalog" onclick="bundleMobileTab('catalog')">Catálogo</button>
-    <button type="button" class="active" data-bundle-tab="recipe" onclick="bundleMobileTab('recipe')">Composición <b id="mobile-count">0</b></button>
-    <button type="button" data-bundle-tab="summary" onclick="bundleMobileTab('summary')">Precio</button>
+    <button type="button" data-bundle-tab="catalog">Catálogo</button>
+    <button type="button" class="active" data-bundle-tab="recipe">Composición <b id="mobile-count">0</b></button>
+    <button type="button" data-bundle-tab="summary">Precio</button>
   </nav>
 
   <section class="bundle-identity">
@@ -37,7 +37,7 @@
       <label class="bundle-field bundle-name-field">
         <span>Nombre del combo *</span>
         <input type="text" name="nombre" id="bundle-name" maxlength="120" required
-               placeholder="Ej. Combo Arepa Completo" oninput="bundleUpdate()">
+               placeholder="Ej. Combo Arepa Completo" data-bundle-input="update">
       </label>
       <label class="bundle-field">
         <span>Categoría</span>
@@ -61,7 +61,7 @@
       <input type="hidden" name="proveedor_despachador_id" id="bundle-origin" value="">
       <label class="bundle-field">
         <span>Entrega</span>
-        <select name="tipo_entrega" id="bundle-delivery" onchange="bundleDelivery()">
+        <select name="tipo_entrega" id="bundle-delivery" data-bundle-input="delivery">
           <option value="inmediato">Preparación inmediata</option>
           {% if brand.pedidos_programados %}<option value="programado">Entrega en fecha fija</option>{% endif %}
         </select>
@@ -98,10 +98,10 @@
         <label class="bundle-upload">
           <span>Subir imagen</span>
           <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp"
-                 onchange="bundleFilePreview(this)" hidden>
+                 data-bundle-input="file-preview" hidden>
         </label>
         <input type="url" name="imagen_url" placeholder="o URL de imagen"
-               oninput="bundleUrlPreview(this.value)">
+               data-bundle-input="url-preview">
       </div>
     </div>
   </section>
@@ -124,12 +124,12 @@
       <div class="bundle-search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
         <input type="search" id="bundle-search" placeholder="Buscar producto" autocomplete="off"
-               oninput="bundleFilterCatalog()">
+               data-bundle-input="filter">
       </div>
       <div class="bundle-categories" id="bundle-categories">
-        <button type="button" class="active" data-category="" onclick="bundleCategory(this)">Todos</button>
+        <button type="button" class="active" data-category="" data-bundle-action="category">Todos</button>
         {% for cat in categorias %}
-        <button type="button" data-category="{{ cat.id }}" onclick="bundleCategory(this)">{{ cat.nombre }}</button>
+        <button type="button" data-category="{{ cat.id }}" data-bundle-action="category">{{ cat.nombre }}</button>
         {% endfor %}
       </div>
       <div class="bundle-active-target" id="bundle-active-target">
@@ -142,7 +142,7 @@
                 data-product-id="{{ p.id }}"
                 data-name="{{ (p.nombre ~ ' ' ~ p.admin_nombre_operativo)|lower }}"
                 data-category="{{ p.categoria_id or '' }}"
-                onclick="bundleAddProduct({{ p.id }})">
+                data-bundle-action="add-product">
           <span class="bundle-product-image">
             {% if p.imagen_url %}
             <img src="{{ p.imagen_url|upload_url }}" alt="" loading="lazy">
@@ -169,16 +169,16 @@
           <div><h2>Composición</h2><p>Organiza los pasos que verá el cliente</p></div>
         </div>
         <div class="bundle-add-section">
-          <button type="button" onclick="bundleAddSection('fixed')">+ Incluido</button>
-          <button type="button" class="choice" onclick="bundleAddSection('choice')">+ Elección</button>
+          <button type="button" data-bundle-action="add-section" data-section-type="fixed">+ Incluido</button>
+          <button type="button" class="choice" data-bundle-action="add-section" data-section-type="choice">+ Elección</button>
         </div>
       </div>
 
       <div class="bundle-presets">
-        <button type="button" onclick="bundlePreset('classic')"><b>Clásico</b><span>Principal + acompañante + bebida</span></button>
-        <button type="button" onclick="bundlePreset('fixed')"><b>Menú cerrado</b><span>Todo incluido, sin elecciones</span></button>
-        <button type="button" onclick="bundlePreset('share')"><b>Para compartir</b><span>Base fija + varias elecciones</span></button>
-        <button type="button" class="clear" onclick="bundlePreset('clear')" title="Vaciar composición">×</button>
+        <button type="button" data-bundle-action="preset" data-preset="classic"><b>Clásico</b><span>Principal + acompañante + bebida</span></button>
+        <button type="button" data-bundle-action="preset" data-preset="fixed"><b>Menú cerrado</b><span>Todo incluido, sin elecciones</span></button>
+        <button type="button" data-bundle-action="preset" data-preset="share"><b>Para compartir</b><span>Base fija + varias elecciones</span></button>
+        <button type="button" class="clear" data-bundle-action="preset" data-preset="clear" title="Vaciar composición">×</button>
       </div>
 
       <div class="bundle-empty" id="bundle-empty">
@@ -187,7 +187,7 @@
         </div>
         <h3>Empieza por la estructura</h3>
         <p>Usa una plantilla o crea un bloque incluido o de elección.</p>
-        <button type="button" onclick="bundlePreset('classic')">Usar combo clásico</button>
+        <button type="button" data-bundle-action="preset" data-preset="classic">Usar combo clásico</button>
       </div>
 
       <div class="bundle-sections" id="bundle-sections"></div>
@@ -216,24 +216,24 @@
         </div>
         <div class="bundle-price-toggle">
           <label>
-            <input type="radio" name="combo_precio_modo" value="fijo" checked onchange="bundlePricing()">
+            <input type="radio" name="combo_precio_modo" value="fijo" checked data-bundle-input="pricing">
             <span>Fijo</span>
           </label>
           <label>
-            <input type="radio" name="combo_precio_modo" value="descuento_porcentaje" onchange="bundlePricing()">
+            <input type="radio" name="combo_precio_modo" value="descuento_porcentaje" data-bundle-input="pricing">
             <span>% descuento</span>
           </label>
         </div>
         <label class="bundle-price-input" id="bundle-fixed-price">
           <span>Precio final</span>
           <div><b>€</b><input type="number" name="precio" id="bundle-price" min="0.01" step="0.01"
-                             placeholder="0.00" required oninput="bundleUpdate()"></div>
+                             placeholder="0.00" required data-bundle-input="update"></div>
         </label>
         <label class="bundle-price-input" id="bundle-discount-price" hidden>
           <span>Descuento sobre componentes</span>
           <div><input type="number" name="combo_descuento_pct" id="bundle-discount" min="0"
                       max="{{ combo_limits.max_discount_pct }}" step="0.1" placeholder="10"
-                      oninput="bundleUpdate()"><b>%</b></div>
+                      data-bundle-input="update"><b>%</b></div>
         </label>
         <div class="bundle-totals">
           <p><span>Valor de productos</span><b id="total-base">€0.00</b></p>
@@ -247,7 +247,7 @@
         <div>
           <label><input type="checkbox" name="stock_mostrar_en_web"> Mostrar stock en el {% if brand.es_comida %}menú{% else %}catálogo{% endif %}</label>
           {% if brand.puntos %}<label><input type="checkbox" name="canjeable_con_puntos" id="bundle-points"
-                        onchange="bundlePoints()"> Permitir canje con puntos</label>
+                        data-bundle-input="points"> Permitir canje con puntos</label>
           <label class="bundle-points-input" id="bundle-points-wrap" hidden>
             <span>Puntos requeridos</span>
             <input type="number" name="puntos_para_canje" min="1" placeholder="500">
@@ -565,31 +565,31 @@ function bundleRender(){
       return `<div class="bundle-line">
         <div class="bundle-line-image">${product.image?`<img src="${bundleEscape(product.image)}" alt="">`:bundleEscape(product.name.slice(0,1))}</div>
         <div class="bundle-line-copy"><strong>${bundleEscape(product.name)}</strong><small>#${product.id} · ${bundleEscape(product.origin)} · ${bundleEscape(product.channel)} · ${bundleMoney(product.price)}</small></div>
-        <button type="button" class="bundle-line-remove" onclick="bundleRemoveProduct(${section.id},${product.id})" aria-label="Quitar ${bundleEscape(product.name)}">×</button>
+        <button type="button" class="bundle-line-remove" data-bundle-action="remove-product" data-section-id="${section.id}" data-product-id="${product.id}" aria-label="Quitar ${bundleEscape(product.name)}">×</button>
         <div class="bundle-line-controls">
-          ${section.type==='fixed'?`<div class="bundle-qty"><button type="button" onclick="bundleQty(${section.id},${product.id},-1)">−</button><input value="${item.qty}" readonly aria-label="Cantidad"><button type="button" onclick="bundleQty(${section.id},${product.id},1)">+</button></div>`:
-          `<label class="bundle-extra"><span>Suplemento</span><div><b>€</b><input type="number" value="${Number(item.extra||0).toFixed(2)}" min="0" step="0.01" onchange="bundleSetExtra(${section.id},${product.id},this.value)"></div></label>
-           <label class="bundle-default"><input type="checkbox" ${item.isDefault?'checked':''} onchange="bundleSetDefault(${section.id},${product.id},this.checked)"> Predeterminada</label>`}
+          ${section.type==='fixed'?`<div class="bundle-qty"><button type="button" data-bundle-action="quantity" data-section-id="${section.id}" data-product-id="${product.id}" data-delta="-1">−</button><input value="${item.qty}" readonly aria-label="Cantidad"><button type="button" data-bundle-action="quantity" data-section-id="${section.id}" data-product-id="${product.id}" data-delta="1">+</button></div>`:
+          `<label class="bundle-extra"><span>Suplemento</span><div><b>€</b><input type="number" value="${Number(item.extra||0).toFixed(2)}" min="0" step="0.01" data-bundle-input="extra" data-section-id="${section.id}" data-product-id="${product.id}"></div></label>
+           <label class="bundle-default"><input type="checkbox" ${item.isDefault?'checked':''} data-bundle-input="default" data-section-id="${section.id}" data-product-id="${product.id}"> Predeterminada</label>`}
         </div>
-        <label class="bundle-line-note"><input type="text" value="${bundleEscape(item.note)}" maxlength="300" placeholder="Nota opcional para cocina" oninput="bundleSetNote(${section.id},${product.id},this.value)"></label>
+        <label class="bundle-line-note"><input type="text" value="${bundleEscape(item.note)}" maxlength="300" placeholder="Nota opcional para cocina" data-bundle-input="note" data-section-id="${section.id}" data-product-id="${product.id}"></label>
       </div>`;
     }).join('');
-    return `<article class="bundle-section ${section.type==='choice'?'choice':''} ${active?'active':''}" onclick="bundleSelectSection(${section.id})">
+    return `<article class="bundle-section ${section.type==='choice'?'choice':''} ${active?'active':''}" data-section-select="${section.id}">
       <header class="bundle-section-head">
         <span class="bundle-grip">${index+1}</span>
         <div class="bundle-section-title">
           <span class="bundle-section-type">${section.type==='fixed'?'Incluido':'Elección'}</span>
-          <input value="${bundleEscape(section.name)}" maxlength="80" onclick="event.stopPropagation()" oninput="bundleRenameSection(${section.id},this.value)">
+          <input value="${bundleEscape(section.name)}" maxlength="80" data-bundle-input="rename" data-section-id="${section.id}">
         </div>
-        ${section.type==='choice'?`<label class="bundle-select-count">Elige <input type="number" min="1" max="${BUNDLE_LIMITS.maxSelections}" value="${section.maxSelections}" onclick="event.stopPropagation()" onchange="bundleSetMax(${section.id},this.value)"></label>`:'<span></span>'}
+        ${section.type==='choice'?`<label class="bundle-select-count">Elige <input type="number" min="1" max="${BUNDLE_LIMITS.maxSelections}" value="${section.maxSelections}" data-bundle-input="max" data-section-id="${section.id}"></label>`:'<span></span>'}
         <div class="bundle-section-actions">
-          <button type="button" onclick="event.stopPropagation();bundleMoveSection(${section.id},-1)" title="Subir">↑</button>
-          <button type="button" onclick="event.stopPropagation();bundleMoveSection(${section.id},1)" title="Bajar">↓</button>
-          <button type="button" onclick="event.stopPropagation();bundleRemoveSection(${section.id})" title="Eliminar">×</button>
+          <button type="button" data-bundle-action="move-section" data-section-id="${section.id}" data-delta="-1" title="Subir">↑</button>
+          <button type="button" data-bundle-action="move-section" data-section-id="${section.id}" data-delta="1" title="Bajar">↓</button>
+          <button type="button" data-bundle-action="remove-section" data-section-id="${section.id}" title="Eliminar">×</button>
         </div>
       </header>
       <div class="bundle-section-body">${itemRows||'<div class="bundle-section-empty">Selecciona productos del catálogo para añadirlos aquí.</div>'}</div>
-      <footer class="bundle-section-footer"><span>${section.items.length} producto${section.items.length===1?'':'s'} ${active?'· bloque seleccionado':''}</span><button type="button" onclick="event.stopPropagation();bundleSelectSection(${section.id});bundleMobileTab('catalog')">+ Añadir productos</button></footer>
+      <footer class="bundle-section-footer"><span>${section.items.length} producto${section.items.length===1?'':'s'} ${active?'· bloque seleccionado':''}</span><button type="button" data-bundle-action="select-and-add" data-section-id="${section.id}">+ Añadir productos</button></footer>
     </article>`;
   }).join('');
   bundleUpdate();
@@ -682,6 +682,66 @@ function bundleSerialize(){
     });
   });
 }
+
+document.addEventListener('click', (event) => {
+  const tab = event.target.closest('[data-bundle-tab]');
+  if (tab) {
+    bundleMobileTab(tab.dataset.bundleTab);
+    return;
+  }
+  const control = event.target.closest('[data-bundle-action]');
+  if (control) {
+    event.stopPropagation();
+    const action = control.dataset.bundleAction;
+    const sectionId = Number(control.dataset.sectionId || 0);
+    const productId = Number(control.dataset.productId || control.closest('[data-product-id]')?.dataset.productId || 0);
+    if (action === 'category') bundleCategory(control);
+    else if (action === 'add-product') bundleAddProduct(productId);
+    else if (action === 'add-section') bundleAddSection(control.dataset.sectionType);
+    else if (action === 'preset') bundlePreset(control.dataset.preset);
+    else if (action === 'remove-product') bundleRemoveProduct(sectionId, productId);
+    else if (action === 'quantity') bundleQty(sectionId, productId, Number(control.dataset.delta || 0));
+    else if (action === 'move-section') bundleMoveSection(sectionId, Number(control.dataset.delta || 0));
+    else if (action === 'remove-section') bundleRemoveSection(sectionId);
+    else if (action === 'select-and-add') {
+      bundleSelectSection(sectionId);
+      bundleMobileTab('catalog');
+    }
+    return;
+  }
+  const section = event.target.closest('[data-section-select]');
+  if (section && !event.target.closest('input,button,select,textarea,label')) {
+    bundleSelectSection(Number(section.dataset.sectionSelect));
+  }
+});
+
+document.addEventListener('input', (event) => {
+  const control = event.target.closest('[data-bundle-input]');
+  if (!control) return;
+  const action = control.dataset.bundleInput;
+  const sectionId = Number(control.dataset.sectionId || 0);
+  const productId = Number(control.dataset.productId || 0);
+  if (action === 'update') bundleUpdate();
+  else if (action === 'url-preview') bundleUrlPreview(control.value);
+  else if (action === 'filter') bundleFilterCatalog();
+  else if (action === 'note') bundleSetNote(sectionId, productId, control.value);
+  else if (action === 'rename') bundleRenameSection(sectionId, control.value);
+});
+
+document.addEventListener('change', (event) => {
+  const control = event.target.closest('[data-bundle-input]');
+  if (!control) return;
+  const action = control.dataset.bundleInput;
+  const sectionId = Number(control.dataset.sectionId || 0);
+  const productId = Number(control.dataset.productId || 0);
+  if (action === 'delivery') bundleDelivery();
+  else if (action === 'file-preview') bundleFilePreview(control);
+  else if (action === 'pricing') bundlePricing();
+  else if (action === 'points') bundlePoints();
+  else if (action === 'extra') bundleSetExtra(sectionId, productId, control.value);
+  else if (action === 'default') bundleSetDefault(sectionId, productId, control.checked);
+  else if (action === 'max') bundleSetMax(sectionId, control.value);
+});
 
 document.getElementById('bundle-form').addEventListener('submit',event=>{
   if(!bundleValidate()){

@@ -17,7 +17,7 @@
     <h1 class="text-2xl font-black text-white">🎟️ Cupones de descuento</h1>
     <p class="text-xs mt-0.5" style="color:var(--col-muted)">Códigos que los clientes introducen en el carrito para obtener descuento</p>
   </div>
-  <button onclick="document.getElementById('form-nuevo').classList.toggle('hidden')"
+  <button data-toggle-section="form-nuevo"
           class="text-sm font-bold px-4 py-2 rounded-xl" style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
     + Nuevo cupón
   </button>
@@ -37,7 +37,7 @@
       </div>
       <div>
         <label class="cup-label">Tipo *</label>
-        <select name="tipo" required class="cup-select" id="tipo-cupon" onchange="actualizarTipoCupon()">
+        <select name="tipo" required class="cup-select" id="tipo-cupon">
           <option value="porcentaje">% Porcentaje</option>
           <option value="monto_fijo">€ Monto fijo</option>
           <option value="envio_gratis">🚚 Envío gratis</option>
@@ -75,7 +75,7 @@
     <div class="flex gap-3 mt-5">
       <button type="submit" class="px-6 py-2 font-bold rounded-xl text-black"
               style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Crear cupón</button>
-      <button type="button" onclick="document.getElementById('form-nuevo').classList.add('hidden')"
+      <button type="button" data-hide-section="form-nuevo"
               class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
     </div>
   </form>
@@ -152,7 +152,7 @@
          style="background:rgba(90,170,255,.1);color:#60AAFF;border:1px solid rgba(90,170,255,.2)">✏️</a>
       {% if not c.usos_actuales or c.usos_actuales == 0 %}
       <form method="POST" action="{{ url_for('admin.eliminar_cupon', cupon_id=c.id) }}"
-            onsubmit="return confirm('¿Eliminar cupón {{ c.codigo }}? Esta acción no se puede deshacer.')">
+            data-confirm="¿Eliminar cupón {{ c.codigo }}? Esta acción no se puede deshacer.">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="px-3 py-1.5 rounded-lg text-xs font-bold transition"
                 style="background:rgba(255,59,48,.08);color:#FF6B6B;border:1px solid rgba(255,59,48,.15)">🗑️</button>
@@ -163,62 +163,6 @@
   {% endfor %}
 </div>
 {% endif %}
-
-<!-- ── MODAL EDITAR CUPÓN ── -->
-<div id="modal-editar-cupon" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-  <div class="ox-card rounded-2xl p-6 w-full max-w-lg shadow-2xl">
-    <div class="flex justify-between items-center mb-4">
-      <h2 class="font-black text-white">✏️ Editar cupón <span id="edit-cupon-codigo" class="font-mono" style="color:#FFAB00"></span></h2>
-      <button onclick="document.getElementById('modal-editar-cupon').classList.add('hidden')" class="text-2xl" style="color:var(--col-muted)">&times;</button>
-    </div>
-    <form id="form-editar-cupon" method="POST" action="">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="grid md:grid-cols-2 gap-4">
-        <div>
-          <label class="cup-label">Tipo</label>
-          <select name="tipo" id="edit-tipo" class="cup-select" onchange="actualizarTipoEditar()">
-            <option value="porcentaje">% Porcentaje</option>
-            <option value="monto_fijo">€ Monto fijo</option>
-            <option value="envio_gratis">🚚 Envío gratis</option>
-          </select>
-        </div>
-        <div id="edit-campo-valor">
-          <label class="cup-label">Valor</label>
-          <div class="relative">
-            <input type="number" name="valor" id="edit-valor" step="0.01" min="0" class="cup-input">
-            <span id="edit-sufijo" class="absolute right-3 top-1/2 -translate-y-1/2 font-bold text-sm" style="color:var(--col-muted)">%</span>
-          </div>
-        </div>
-        <div>
-          <label class="cup-label">Mínimo de pedido (€)</label>
-          <input type="number" name="minimo_pedido" id="edit-minimo" step="0.01" min="0" class="cup-input">
-        </div>
-        <div>
-          <label class="cup-label">Usos máximos</label>
-          <input type="number" name="usos_maximos" id="edit-usos-max" min="1" placeholder="Sin límite" class="cup-input">
-        </div>
-        <div>
-          <label class="cup-label">Válido desde</label>
-          <input type="date" name="fecha_inicio" id="edit-fecha-inicio" class="cup-input">
-        </div>
-        <div>
-          <label class="cup-label">Válido hasta</label>
-          <input type="date" name="fecha_fin" id="edit-fecha-fin" class="cup-input">
-        </div>
-        <div class="col-span-2">
-          <label class="cup-label">Descripción interna</label>
-          <input type="text" name="descripcion" id="edit-descripcion" placeholder="Nota interna" class="cup-input">
-        </div>
-      </div>
-      <div class="flex gap-3 mt-5">
-        <button type="submit" class="flex-1 px-5 py-2 font-bold rounded-xl text-black"
-                style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Guardar cambios</button>
-        <button type="button" onclick="document.getElementById('modal-editar-cupon').classList.add('hidden')"
-                class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
-      </div>
-    </form>
-  </div>
-</div>
 
 {% endblock %}
 {% block scripts %}
@@ -291,29 +235,12 @@ function actualizarTipoCupon() {
   if (!gratis && suf) suf.textContent = tipo === 'porcentaje' ? '%' : '€';
 }
 
-function abrirEditarCupon(id, data) {
-  document.getElementById('edit-cupon-codigo').textContent = data.codigo;
-  document.getElementById('form-editar-cupon').action = `/admin/cupones/${id}/editar`;
-  document.getElementById('edit-tipo').value = data.tipo || 'porcentaje';
-  document.getElementById('edit-valor').value = data.valor || 0;
-  document.getElementById('edit-minimo').value = data.minimo_pedido || 0;
-  document.getElementById('edit-usos-max').value = data.usos_maximos || '';
-  document.getElementById('edit-fecha-inicio').value = data.fecha_inicio || '';
-  document.getElementById('edit-fecha-fin').value = data.fecha_fin || '';
-  document.getElementById('edit-descripcion').value = data.descripcion || '';
-  actualizarTipoEditar();
-  document.getElementById('modal-editar-cupon').classList.remove('hidden');
-}
-
-function actualizarTipoEditar() {
-  const tipo = document.getElementById('edit-tipo').value;
-  const campo = document.getElementById('edit-campo-valor');
-  const suf = document.getElementById('edit-sufijo');
-  const input = document.getElementById('edit-valor');
-  const gratis = (tipo === 'envio_gratis');
-  campo.style.opacity = gratis ? '.4' : '1';
-  if (input) { input.disabled = gratis; if (gratis) input.value = 0; }
-  if (!gratis && suf) suf.textContent = tipo === 'porcentaje' ? '%' : '€';
-}
+document.getElementById('tipo-cupon')?.addEventListener('change', actualizarTipoCupon);
+document.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-toggle-section]');
+  if (toggle) document.getElementById(toggle.dataset.toggleSection)?.classList.toggle('hidden');
+  const hide = event.target.closest('[data-hide-section]');
+  if (hide) document.getElementById(hide.dataset.hideSection)?.classList.add('hidden');
+});
 </script>
 {% endblock %}

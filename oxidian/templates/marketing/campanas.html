@@ -7,7 +7,7 @@
     <h1 class="text-xl font-extrabold text-white flex items-center gap-2">📲 Campañas de Marketing</h1>
     <p class="text-xs mt-0.5" style="color:var(--col-muted)">Mensajes masivos a clientes vía WhatsApp</p>
   </div>
-  <button onclick="document.getElementById('modal-nueva').classList.remove('hidden')"
+  <button data-dialog-open="modal-nueva"
           class="ox-btn-primary text-sm">
     + Nueva campaña
   </button>
@@ -73,18 +73,18 @@
 
       <div class="flex flex-col gap-2 flex-shrink-0">
         {% if c.estado in ('borrador', 'error') %}
-        <form method="POST" action="{{ url_for('marketing.enviar_campana', campana_id=c.id) }}">
+        <form method="POST" action="{{ url_for('marketing.enviar_campana', campana_id=c.id) }}"
+              data-confirm="¿Enviar esta campaña a todos los clientes del filtro?">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit"
-                  onclick="return confirm('¿Enviar esta campaña a todos los clientes del filtro?')"
                   class="ox-btn-primary text-xs">
             🚀 Enviar
           </button>
         </form>
-        <form method="POST" action="{{ url_for('marketing.eliminar_campana', campana_id=c.id) }}">
+        <form method="POST" action="{{ url_for('marketing.eliminar_campana', campana_id=c.id) }}"
+              data-confirm="¿Eliminar esta campaña?">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit"
-                  onclick="return confirm('¿Eliminar esta campaña?')"
                   class="ox-btn-ghost text-xs" style="color:#FF6B6B">
             🗑️ Borrar
           </button>
@@ -102,7 +102,7 @@
   <p class="text-4xl mb-3">📣</p>
   <p class="font-semibold text-white mb-1">Sin campañas todavía</p>
   <p class="text-sm mb-4" style="color:var(--col-faint)">Crea tu primera campaña masiva de WhatsApp</p>
-  <button onclick="document.getElementById('modal-nueva').classList.remove('hidden')"
+  <button data-dialog-open="modal-nueva"
           class="ox-btn-primary text-sm">
     + Crear primera campaña
   </button>
@@ -111,11 +111,11 @@
 
 {# ── MODAL NUEVA CAMPAÑA ── #}
 <div id="modal-nueva" class="hidden fixed inset-0 z-50 flex items-start justify-center pt-10 pb-10 overflow-y-auto"
-     style="background:rgba(0,0,0,.7)" onclick="if(event.target===this)this.classList.add('hidden')">
-  <div class="ox-card p-6 w-full max-w-lg mx-4 shadow-2xl" onclick="event.stopPropagation()">
+     style="background:rgba(0,0,0,.7)" data-dialog-backdrop>
+  <div class="ox-card p-6 w-full max-w-lg mx-4 shadow-2xl">
     <div class="flex justify-between items-center mb-4">
       <h2 class="font-extrabold text-white text-lg">📲 Nueva Campaña</h2>
-      <button onclick="document.getElementById('modal-nueva').classList.add('hidden')"
+      <button data-dialog-close="modal-nueva"
               class="ox-btn-ghost px-2 py-1 text-lg leading-none">&times;</button>
     </div>
     <form method="POST" action="{{ url_for('marketing.crear_campana') }}" class="space-y-4">
@@ -131,7 +131,7 @@
         <textarea name="mensaje" required rows="5" id="camp-mensaje"
                   placeholder="Escribe el mensaje que recibirán los clientes...&#10;Usa *negrita* y emojis para más engagement 🎉"
                   class="ox-input" style="resize:vertical;font-size:.88rem"
-                  oninput="campContador(this)"></textarea>
+                  data-campaign-message></textarea>
         <div class="flex items-center justify-between mt-1">
           <p class="text-xs" style="color:var(--col-faint)">Usa *negrita*, _cursiva_ y emojis. Sin links largos.</p>
           <span id="camp-chars" class="text-xs font-bold" style="color:var(--col-muted)">0 / 1024</span>
@@ -141,8 +141,7 @@
 
       <div class="ox-field">
         <label class="ox-label">Audiencia</label>
-        <select name="filtro_audiencia" id="sel-filtro" class="ox-input"
-                onchange="document.getElementById('div-zona').classList.toggle('hidden', this.value !== 'por_zona')">
+        <select name="filtro_audiencia" id="sel-filtro" class="ox-input" data-campaign-audience>
           <option value="todos">Todos los clientes</option>
           <option value="con_puntos">Solo clientes con puntos</option>
           <option value="sin_compra_30">Sin compra en 30 días</option>
@@ -191,5 +190,9 @@ function campContador(ta) {
     }
   }
 }
+document.querySelector('[data-campaign-message]')?.addEventListener('input', (event) => campContador(event.currentTarget));
+document.querySelector('[data-campaign-audience]')?.addEventListener('change', (event) => {
+  document.getElementById('div-zona')?.classList.toggle('hidden', event.currentTarget.value !== 'por_zona');
+});
 </script>
 {% endblock %}

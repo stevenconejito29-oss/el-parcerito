@@ -10,7 +10,7 @@
     <h1 class="text-2xl font-black text-white">🎨 Banners & Menú Web</h1>
     <p class="text-xs mt-0.5" style="color:var(--col-muted)">Configura los banners, destacados y secciones de la tienda online</p>
   </div>
-  <button onclick="document.getElementById('form-nuevo').classList.toggle('hidden')"
+  <button data-toggle-section="form-nuevo"
           class="text-sm font-bold px-4 py-2 rounded-xl" style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
     + Nuevo elemento
   </button>
@@ -42,7 +42,7 @@
     <div class="grid md:grid-cols-2 gap-4">
       <div>
         <label class="mc-label">Tipo de elemento</label>
-        <select name="tipo" class="mc-select" id="tipo-nuevo" onchange="actualizarTipo(this.value, 'nuevo')">
+        <select name="tipo" class="mc-select" id="tipo-nuevo" data-menu-type-context="nuevo">
           <option value="banner">🖼️ Banner (imagen)</option>
           <option value="producto_destacado">⭐ Producto destacado</option>
           <option value="texto_promo">📝 Texto promocional</option>
@@ -51,7 +51,7 @@
       </div>
       <div>
         <label class="mc-label">Página donde aparece</label>
-        <select name="pagina" class="mc-select" id="pagina-nuevo" onchange="actualizarVistaPrevia()">
+        <select name="pagina" class="mc-select" id="pagina-nuevo">
           <option value="home" {% if pagina == 'home' %}selected{% endif %}>🏠 Inicio</option>
           <option value="menu" {% if pagina == 'menu' %}selected{% endif %}>📋 Menú</option>
           <option value="checkout" {% if pagina == 'checkout' %}selected{% endif %}>🛒 Checkout</option>
@@ -74,7 +74,7 @@
                style="background:var(--col-elevated);border:1.5px dashed var(--col-border);color:var(--col-muted);font-size:.82rem">
           📤 Subir imagen (jpg/png/webp — recomendado 16:9)
           <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="hidden"
-                 onchange="previewBannerImg(this,'nuevo-img-preview','nuevo-img-preview-img')">
+                 data-banner-preview-wrap="nuevo-img-preview" data-banner-preview-image="nuevo-img-preview-img">
         </label>
         <input type="url" name="imagen_url" placeholder="O pegar URL de imagen: https://..." class="mc-input">
       </div>
@@ -108,7 +108,7 @@
     <div class="flex gap-3 mt-5">
       <button type="submit" class="px-6 py-2 font-bold rounded-xl text-black"
               style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Crear</button>
-      <button type="button" onclick="document.getElementById('form-nuevo').classList.add('hidden')"
+      <button type="button" data-hide-section="form-nuevo"
               class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
     </div>
   </form>
@@ -168,7 +168,7 @@
 
     {# Acciones #}
     <div class="flex items-center gap-1.5 flex-shrink-0">
-      <button type="button" onclick="toggleEdit('mc-edit-{{ item.id }}')"
+      <button type="button" data-toggle-section="mc-edit-{{ item.id }}"
               class="mc-btn mc-btn-edit" title="Editar">✏️</button>
       <form method="POST" action="{{ url_for('admin.toggle_menu_config', item_id=item.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -177,7 +177,7 @@
         </button>
       </form>
       <form method="POST" action="{{ url_for('admin.eliminar_menu_config', item_id=item.id) }}"
-            onsubmit="return confirm('¿Eliminar este elemento?')">
+            data-confirm="¿Eliminar este elemento?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="mc-btn mc-btn-del">🗑️</button>
       </form>
@@ -193,7 +193,7 @@
       <div class="grid md:grid-cols-2 gap-3">
         <div>
           <label class="mc-label">Tipo de elemento</label>
-          <select name="tipo" class="mc-select" onchange="actualizarTipo(this.value, 'edit-{{ item.id }}')">
+          <select name="tipo" class="mc-select" data-menu-type-context="edit-{{ item.id }}">
             <option value="banner" {% if item.tipo == 'banner' %}selected{% endif %}>🖼️ Banner</option>
             <option value="producto_destacado" {% if item.tipo == 'producto_destacado' %}selected{% endif %}>⭐ Producto destacado</option>
             <option value="texto_promo" {% if item.tipo == 'texto_promo' %}selected{% endif %}>📝 Texto promocional</option>
@@ -258,7 +258,7 @@
       <div class="flex gap-2 mt-4">
         <button type="submit" class="px-5 py-2 font-bold rounded-xl text-black text-sm"
                 style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Guardar</button>
-        <button type="button" onclick="toggleEdit('mc-edit-{{ item.id }}')"
+        <button type="button" data-toggle-section="mc-edit-{{ item.id }}"
                 class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
       </div>
     </form>
@@ -314,6 +314,18 @@ function actualizarVistaPrevia() {
 }
 document.querySelectorAll('#form-nuevo input,#form-nuevo textarea,#form-nuevo select').forEach(el => {
   el.addEventListener('input', actualizarVistaPrevia);
+});
+document.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-toggle-section]');
+  if (toggle) toggleEdit(toggle.dataset.toggleSection);
+  const hide = event.target.closest('[data-hide-section]');
+  if (hide) document.getElementById(hide.dataset.hideSection)?.classList.add('hidden');
+});
+document.addEventListener('change', (event) => {
+  const type = event.target.closest('[data-menu-type-context]');
+  if (type) actualizarTipo(type.value, type.dataset.menuTypeContext);
+  const preview = event.target.closest('[data-banner-preview-wrap]');
+  if (preview) previewBannerImg(preview, preview.dataset.bannerPreviewWrap, preview.dataset.bannerPreviewImage);
 });
 actualizarVistaPrevia();
 </script>

@@ -125,7 +125,7 @@
       <form method="POST"
             action="{{ url_for('proveedor.marcar_extraviado', pedido_id=pedido.id) }}"
             class="mt-2"
-            onsubmit="return confirm('¿Confirmas que este pedido se extravió? Se cancelará y devolverá stock.')">
+            data-confirm="¿Confirmas que este pedido se extravió? Se cancelará y devolverá stock.">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="text" name="motivo" placeholder="Motivo opcional (ej. cliente no recogió)"
                class="w-full px-2 py-1 rounded bg-zinc-800 text-white text-xs">

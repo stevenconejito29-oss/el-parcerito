@@ -44,8 +44,8 @@
     <span class="text-xs font-bold" style="color:#C084FC">{{ productos_canjeables|length }} activos</span>
   </div>
   <div class="adm-redeem-toolbar">
-    <input type="search" id="redeem-search" placeholder="Buscar producto" oninput="filterRedeemProducts(this.value)">
-    <button type="button" id="redeem-active-filter" onclick="toggleRedeemActive()">Mostrar solo activos</button>
+    <input type="search" id="redeem-search" placeholder="Buscar producto">
+    <button type="button" id="redeem-active-filter">Mostrar solo activos</button>
   </div>
   <div class="adm-redeem-list" id="redeem-list">
     {% for p in productos %}
@@ -209,5 +209,7 @@ function toggleRedeemActive(){
   button.textContent=redeemOnlyActive?'Mostrar todos':'Mostrar solo activos';
   filterRedeemProducts(document.getElementById('redeem-search').value);
 }
+document.getElementById('redeem-search')?.addEventListener('input', (event) => filterRedeemProducts(event.currentTarget.value));
+document.getElementById('redeem-active-filter')?.addEventListener('click', toggleRedeemActive);
 </script>
 {% endblock %}

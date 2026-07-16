@@ -1,16 +1,28 @@
 {% extends "base.html" %}
 {% block title %}Acceso empleados — {{ brand.nombre }}{% endblock %}
 {% block content %}
+<style nonce="{{ csp_nonce() }}">
+.auth-store-link{
+  display:inline-flex;align-items:center;min-height:44px;padding-inline:.2rem;
+  color:color-mix(in srgb,var(--brand-primary) 58%,var(--col-text));font-weight:800;
+}
+.auth-logo{border:2px solid color-mix(in srgb,var(--brand-primary) 34%,transparent)}
+.auth-title{color:var(--col-text)}
+.auth-submit{
+  background:linear-gradient(135deg,var(--brand-primary),color-mix(in srgb,var(--brand-primary) 72%,var(--brand-secondary)));
+  color:var(--brand-on-primary);box-shadow:0 6px 20px color-mix(in srgb,var(--brand-primary) 28%,transparent);
+}
+</style>
 <div class="min-h-[60vh] flex items-center justify-center py-8">
   <div class="w-full max-w-sm">
 
     <div class="text-center mb-7">
       {% if brand.logo_url %}
-      <img src="{{ brand.logo_url }}" alt="logo" class="w-16 h-16 rounded-2xl object-cover mx-auto mb-3" style="border:2px solid rgba(255,171,0,.3)">
+      <img src="{{ brand.logo_url }}" alt="logo" class="w-16 h-16 rounded-2xl object-cover mx-auto mb-3 auth-logo">
       {% else %}
       <div class="text-6xl mb-3">🍽️</div>
       {% endif %}
-      <h1 class="text-2xl font-extrabold text-white">Acceso interno</h1>
+      <h1 class="text-2xl font-extrabold auth-title">Acceso interno</h1>
       <p class="text-sm mt-1" style="color:var(--col-muted)">{{ brand.nombre }} · Panel de empleados</p>
     </div>
 
@@ -43,15 +55,14 @@
         </div>
 
         <button type="submit"
-                class="w-full font-extrabold py-3 rounded-xl text-base transition"
-                style="background:linear-gradient(135deg,#FFAB00,#FF8C00);color:#000;box-shadow:0 6px 20px rgba(255,171,0,.3)">
+                class="w-full font-extrabold py-3 rounded-xl text-base transition auth-submit">
           Entrar →
         </button>
       </form>
     </div>
 
     <p class="text-xs text-center mt-5" style="color:var(--col-faint)">
-      ¿Quieres hacer un pedido? <a href="{{ url_for('public.index') }}" style="color:#FFAB00">Ver la tienda →</a>
+      ¿Quieres hacer un pedido? <a href="{{ url_for('public.index') }}" class="auth-store-link">Ver la tienda →</a>
     </p>
 
   </div>

@@ -77,7 +77,7 @@
             {% if b.estado != 'agotado' and b.estado != 'listo' %}
             <form method="POST"
                   action="{{ url_for('admin.cerrar_lote', batch_id=b.id) }}"
-                  onsubmit="return confirm('¿Cerrar el lote? No se cancelan los pedidos ya realizados, solo se dejan de aceptar nuevas reservas.');"
+                  data-confirm="¿Cerrar el lote? No se cancelan los pedidos ya realizados, solo se dejan de aceptar nuevas reservas."
                   style="display:inline">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-sm"

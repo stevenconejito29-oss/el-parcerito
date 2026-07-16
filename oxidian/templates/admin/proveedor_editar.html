@@ -144,7 +144,7 @@
       </div>
       <div><span>Stock</span><strong class="{{ 'prov-danger' if (s.stock or 0) == 0 else '' }}">{{ s.stock }} uds</strong></div>
       <div><span>Coste unitario</span><strong>{% if s.precio_costo is not none %}{{ "%.2f"|format(s.precio_costo|float) }} €{% else %}Pendiente{% endif %}</strong></div>
-      <form method="POST" onsubmit="return confirm('¿Borrar este SKU del inventario?')">
+      <form method="POST" data-confirm="¿Borrar este SKU del inventario?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="accion" value="borrar_sku">
         <input type="hidden" name="fila_id" value="{{ s.id }}">

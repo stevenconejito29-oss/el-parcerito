@@ -53,6 +53,14 @@
   --brand-accent:            #27AE74;
   --brand-accent-contrast:   #FFFFFF;
 
+  /* Tintas de marca/estado para texto sobre superficies. Un color apto como
+     fondo no siempre tiene contraste suficiente como tipografía (sobre todo
+     los amarillos); estas mezclas se adaptan al tema claro u oscuro. */
+  --brand-text:      color-mix(in srgb, var(--brand-primary) 58%, var(--col-text));
+  --status-ok-text:  color-mix(in srgb, var(--status-ok) 58%, var(--col-text));
+  --status-warn-text:color-mix(in srgb, var(--status-warn) 56%, var(--col-text));
+  --status-err-text: color-mix(in srgb, var(--status-err) 66%, var(--col-text));
+
   /* Acciones: identidad visual e interacción son responsabilidades distintas.
      El primario puede seguir siendo dorado sin convertir toda acción en oro. */
   --action-primary:          var(--brand-accent);

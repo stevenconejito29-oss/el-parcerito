@@ -210,7 +210,7 @@
           <label class="edit-check">
             <input type="checkbox" name="pres_{{ size }}_activo" value="1"
                    {% if pr and pr.activo %}checked{% endif %}
-                   onchange="epTogglePres(this,'{{ size }}')">
+                   data-presentation-toggle="{{ size }}">
             <span>{{ emoji }} {{ label }}</span>
           </label>
           <label class="edit-label mt-2">Precio extra (€)</label>
@@ -230,6 +230,9 @@
         const inp = document.querySelector('.edit-pres-extra[data-pres="'+size+'"]');
         if (inp) inp.disabled = !cb.checked;
       }
+      document.querySelectorAll('[data-presentation-toggle]').forEach((control) => {
+        control.addEventListener('change', () => epTogglePres(control, control.dataset.presentationToggle));
+      });
       </script>
     </div>
   </section>
@@ -321,9 +324,10 @@
             <td class="px-2 py-1">
               <button type="submit" class="ox-btn-primary text-xs">Guardar</button>
           </form>
-          <form method="POST" action="{{ url_for('admin.eliminar_variante_producto', producto_id=producto.id, variante_id=v.id) }}" style="display:inline">
+          <form method="POST" action="{{ url_for('admin.eliminar_variante_producto', producto_id=producto.id, variante_id=v.id) }}" style="display:inline"
+                data-confirm="¿Desactivar esta variante?">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="ox-btn-ghost text-xs" onclick="return confirm('¿Desactivar esta variante?')">Desactivar</button>
+            <button type="submit" class="ox-btn-ghost text-xs">Desactivar</button>
           </form>
             </td>
         </tr>

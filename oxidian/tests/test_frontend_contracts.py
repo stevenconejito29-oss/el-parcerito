@@ -7,6 +7,28 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendContractsTest(unittest.TestCase):
+    def test_templates_do_not_use_inline_dom_event_attributes(self):
+        """La CSP de producción bloquea onclick/onsubmit aunque el HTML pinte bien."""
+        pattern = re.compile(
+            r"<[^>]+\s(?:onclick|onchange|oninput|onsubmit|onerror|onload)\s*=",
+            re.IGNORECASE,
+        )
+        offenders = []
+        for path in (ROOT / "templates").rglob("*.html"):
+            if pattern.search(path.read_text(encoding="utf-8")):
+                offenders.append(str(path.relative_to(ROOT)))
+        self.assertEqual(offenders, [])
+
+    def test_shared_admin_interactions_load_for_every_internal_role(self):
+        template = (ROOT / "templates" / "admin_base.html").read_text(encoding="utf-8")
+
+        self.assertEqual(template.count("js/admin-interactions.js"), 1)
+        self.assertIn(
+            "{% endif %}\n<script nonce=\"{{ csp_nonce() }}\" "
+            "src=\"{{ url_for('static', filename='js/admin-interactions.js', v=asset_version) }}\" defer></script>",
+            template,
+        )
+
     def test_pos_product_data_is_not_embedded_in_inline_javascript(self):
         template = (ROOT / "templates" / "pos" / "venta.html").read_text(encoding="utf-8")
 
@@ -27,7 +49,9 @@ class FrontendContractsTest(unittest.TestCase):
         template = (ROOT / "templates" / "pos" / "venta.html").read_text(encoding="utf-8")
 
         self.assertEqual(template.count("url_for('pos.historial')"), 1)
-        self.assertEqual(template.count('onclick="limpiarTicket()"'), 1)
+        self.assertEqual(template.count('data-pos-action="new-sale"'), 1)
+        self.assertIn("if (action === 'new-sale') limpiarTicket()", template)
+        self.assertNotIn('onclick="limpiarTicket()"', template)
         self.assertNotIn("pos-link-hist", template)
         self.assertNotIn("pos-btn-clear", template)
 

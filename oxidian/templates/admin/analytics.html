@@ -4,17 +4,16 @@
 
 <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
   <div>
-    <h1 class="text-2xl font-black text-white">📊 Analytics & P&L</h1>
+    <h1 class="text-2xl font-black an-page-title">📊 Analytics & P&L</h1>
     <p class="text-xs mt-0.5" style="color:var(--col-muted)">Rendimiento financiero · pedidos entregados en el período</p>
   </div>
   <form method="GET" class="flex items-center gap-2 flex-wrap">
     <input type="date" name="fecha_ini" value="{{ fecha_ini }}"
-           class="text-sm rounded-lg px-3 py-1.5" style="background:var(--col-elevated);border:1px solid var(--col-border);color:#fff">
+           class="text-sm rounded-lg px-3 py-1.5 an-date-input">
     <span class="text-xs" style="color:var(--col-muted)">→</span>
     <input type="date" name="fecha_fin" value="{{ fecha_fin }}"
-           class="text-sm rounded-lg px-3 py-1.5" style="background:var(--col-elevated);border:1px solid var(--col-border);color:#fff">
-    <button type="submit" class="text-sm font-bold px-4 py-1.5 rounded-lg"
-            style="background:color-mix(in srgb,var(--brand-primary,#FFAB00) 15%,transparent);border:1px solid color-mix(in srgb,var(--brand-primary,#FFAB00) 30%,transparent);color:var(--brand-primary,#FFAB00)">
+           class="text-sm rounded-lg px-3 py-1.5 an-date-input">
+    <button type="submit" class="text-sm font-bold px-4 py-1.5 rounded-lg an-filter-btn">
       Calcular
     </button>
   </form>
@@ -46,57 +45,57 @@
 
 {# ── Cascada P&L ── #}
 <div class="ox-card p-4 mb-5">
-  <h2 class="font-black text-white mb-4">📉 Cascada financiera</h2>
+  <h2 class="font-black an-page-title mb-4">📉 Cascada financiera</h2>
   <div class="an-cascade">
     <div class="an-cas-row">
       <span class="an-cas-label">Ventas brutas</span>
-      <span class="an-cas-val" style="color:#5EF097">€{{ "%.2f"|format(pl.ventas_brutas) }}</span>
+      <span class="an-cas-val an-positive">€{{ "%.2f"|format(pl.ventas_brutas) }}</span>
     </div>
     {% if pl.descuentos_concedidos > 0 %}
     <div class="an-cas-row an-cas-sub">
       <span class="an-cas-label">− Descuentos</span>
-      <span class="an-cas-val" style="color:var(--status-warn,#FFB340)">− €{{ "%.2f"|format(pl.descuentos_concedidos) }}</span>
+      <span class="an-cas-val an-warning">− €{{ "%.2f"|format(pl.descuentos_concedidos) }}</span>
     </div>
     <div class="an-cas-row an-cas-result">
       <span class="an-cas-label">= Ingresos netos</span>
-      <span class="an-cas-val" style="color:#5EF097">€{{ "%.2f"|format(pl.ingresos_netos) }}</span>
+      <span class="an-cas-val an-positive">€{{ "%.2f"|format(pl.ingresos_netos) }}</span>
     </div>
     {% endif %}
     <div class="an-cas-row an-cas-sub">
       <span class="an-cas-label">− Coste de productos (COGS)</span>
-      <span class="an-cas-val" style="color:#FF9F0A">− €{{ "%.2f"|format(pl.cogs) }}</span>
+      <span class="an-cas-val an-warning">− €{{ "%.2f"|format(pl.cogs) }}</span>
     </div>
     <div class="an-cas-row an-cas-result">
       <span class="an-cas-label">= Margen bruto <span class="an-cas-pct">{{ pl.margen_bruto_pct }}%</span></span>
-      <span class="an-cas-val" style="color:{{ '#5EF097' if pl.margen_bruto >= 0 else '#FF6B6B' }}">€{{ "%.2f"|format(pl.margen_bruto) }}</span>
+      <span class="an-cas-val {{ 'an-positive' if pl.margen_bruto >= 0 else 'an-negative' }}">€{{ "%.2f"|format(pl.margen_bruto) }}</span>
     </div>
     {% if pl.nominas > 0 %}
     <div class="an-cas-row an-cas-sub">
       <span class="an-cas-label">− Nóminas y bonos (pagados)</span>
-      <span class="an-cas-val" style="color:#FF6B6B">− €{{ "%.2f"|format(pl.nominas) }}</span>
+      <span class="an-cas-val an-negative">− €{{ "%.2f"|format(pl.nominas) }}</span>
     </div>
     {% endif %}
     {% if pl.comisiones_repartidor > 0 %}
     <div class="an-cas-row an-cas-sub">
       <span class="an-cas-label">− Comisiones repartidores</span>
-      <span class="an-cas-val" style="color:#FF6B6B">− €{{ "%.2f"|format(pl.comisiones_repartidor) }}</span>
+      <span class="an-cas-val an-negative">− €{{ "%.2f"|format(pl.comisiones_repartidor) }}</span>
     </div>
     {% endif %}
     {% if pl.gastos_caja > 0 %}
     <div class="an-cas-row an-cas-sub">
       <span class="an-cas-label">− Gastos operativos (caja)</span>
-      <span class="an-cas-val" style="color:#FF6B6B">− €{{ "%.2f"|format(pl.gastos_caja) }}</span>
+      <span class="an-cas-val an-negative">− €{{ "%.2f"|format(pl.gastos_caja) }}</span>
     </div>
     {% endif %}
     {% if pl.otros_ingresos_caja > 0 %}
     <div class="an-cas-row an-cas-sub">
       <span class="an-cas-label">+ Otros ingresos (caja)</span>
-      <span class="an-cas-val" style="color:#5EF097">+ €{{ "%.2f"|format(pl.otros_ingresos_caja) }}</span>
+      <span class="an-cas-val an-positive">+ €{{ "%.2f"|format(pl.otros_ingresos_caja) }}</span>
     </div>
     {% endif %}
     <div class="an-cas-row an-cas-total">
       <span class="an-cas-label">= Resultado estimado <span class="an-cas-pct">{{ pl.resultado_pct }}%</span></span>
-      <span class="an-cas-val text-lg" style="color:{{ '#5EF097' if pl.resultado >= 0 else '#FF6B6B' }}">
+      <span class="an-cas-val text-lg {{ 'an-positive' if pl.resultado >= 0 else 'an-negative' }}">
         {{ '+' if pl.resultado >= 0 else '' }}€{{ "%.2f"|format(pl.resultado) }}
       </span>
     </div>
@@ -112,9 +111,9 @@
     <div class="space-y-3">
       {# Colores por canal — usan CSS vars con fallback documentado. #}
       {% for label, val, color in [
-        ('Online (web)',    pl.ventas_online,     'var(--role-admin,#5AC8FA)'),
-        ('Presencial',      pl.ventas_presencial, 'var(--brand-primary,#FFAB00)'),
-        ('WhatsApp',        pl.ventas_whatsapp,   'var(--theme-success,#25D366)'),
+        ('Online (web)',    pl.ventas_online,     'var(--role-admin)'),
+        ('Presencial',      pl.ventas_presencial, 'var(--brand-primary)'),
+        ('WhatsApp',        pl.ventas_whatsapp,   'var(--theme-success)'),
       ] %}
       {% if val > 0 or total_canales == 0 %}
       {% set pct = ((val / total_canales * 100)|round(1)) if total_canales > 0 else 0 %}
@@ -123,7 +122,7 @@
           <span style="color:var(--col-muted)">{{ label }}</span>
           <span class="font-bold" style="color:{{ color }}">€{{ "%.2f"|format(val) }}</span>
         </div>
-        <div class="w-full rounded-full h-1.5" style="background:rgba(255,255,255,.08)">
+        <div class="w-full rounded-full h-1.5" style="background:var(--col-border)">
           <div class="h-1.5 rounded-full" style="width:{{ pct }}%;background:{{ color }}"></div>
         </div>
         <p class="text-[11px] mt-0.5" style="color:var(--col-faint)">{{ pct }}%</p>
@@ -142,11 +141,11 @@
       {% set pct = ((r.total_vendido / max_uds * 100)|round(0)|int) %}
       <div>
         <div class="flex justify-between text-sm mb-1">
-          <span class="font-semibold text-white truncate max-w-[65%]">{{ r.producto.nombre }}</span>
-          <span style="color:var(--brand-primary,#FFAB00)">{{ r.total_vendido }} uds</span>
+          <span class="font-semibold an-page-title truncate max-w-[65%]">{{ r.producto.nombre }}</span>
+          <span class="an-brand-value">{{ r.total_vendido }} uds</span>
         </div>
-        <div class="w-full rounded-full h-1.5" style="background:rgba(255,255,255,.08)">
-          <div class="h-1.5 rounded-full" style="width:{{ pct }}%;background:var(--brand-primary,#FFAB00)"></div>
+        <div class="w-full rounded-full h-1.5" style="background:var(--col-border)">
+          <div class="h-1.5 rounded-full" style="width:{{ pct }}%;background:var(--brand-primary)"></div>
         </div>
       </div>
       {% endfor %}
@@ -163,7 +162,8 @@
 <div class="an-chart-card mb-5">
   <h3 class="an-chart-title">📈 Tendencia de ventas</h3>
   <div style="height:220px;position:relative">
-    <canvas id="chartTendencia"></canvas>
+    <canvas id="chartTendencia" role="img"
+            aria-label="Tendencia diaria de ventas y número de pedidos"></canvas>
   </div>
 </div>
 {% endif %}
@@ -171,7 +171,7 @@
 {# ── Categorías ── #}
 {% if por_categoria %}
 <div class="ox-card p-4">
-  <h2 class="font-black text-white mb-4">🏷️ Ventas por categoría</h2>
+  <h2 class="font-black an-page-title mb-4">🏷️ Ventas por categoría</h2>
   <div class="overflow-x-auto">
     <table class="w-full text-sm">
       <thead><tr class="border-b" style="border-color:var(--col-border)">
@@ -182,9 +182,9 @@
       <tbody>
         {% for row in por_categoria %}
         <tr class="border-b" style="border-color:var(--col-border)">
-          <td class="py-2 px-3 font-medium text-white">{{ row.categoria }}</td>
+          <td class="py-2 px-3 font-medium an-page-title">{{ row.categoria }}</td>
           <td class="py-2 px-3 text-right" style="color:var(--col-muted)">{{ row.unidades }}</td>
-          <td class="py-2 px-3 text-right font-bold" style="color:var(--brand-primary,#FFAB00)">€{{ "%.2f"|format(row.ventas) }}</td>
+          <td class="py-2 px-3 text-right font-bold an-brand-value">€{{ "%.2f"|format(row.ventas) }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -196,21 +196,28 @@
 {% endblock %}
 
 {% block scripts %}
-<script
-  src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
-  integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
-  crossorigin="anonymous"></script>
 <style>
+.an-page-title { color: var(--col-text); }
+.an-date-input { background:var(--col-elevated);border:1px solid var(--col-border);color:var(--col-text); }
+.an-filter-btn {
+  background:color-mix(in srgb,var(--brand-primary) 16%,var(--col-surface));
+  border:1px solid color-mix(in srgb,var(--brand-primary) 36%,var(--col-border));
+  color:color-mix(in srgb,var(--brand-primary) 55%,var(--col-text));
+}
+.an-brand-value { color:color-mix(in srgb,var(--brand-primary) 55%,var(--col-text)); }
+.an-positive { color:color-mix(in srgb,var(--theme-success) 62%,var(--col-text)); }
+.an-negative { color:color-mix(in srgb,var(--theme-danger) 72%,var(--col-text)); }
+.an-warning { color:color-mix(in srgb,var(--status-warn) 68%,var(--col-text)); }
 .an-kpi { border-radius:.875rem; padding:1rem 1.25rem; border:1px solid var(--col-border); }
 .an-kpi-green { background:rgba(52,199,89,.08); border-color:rgba(52,199,89,.2); }
 .an-kpi-red   { background:rgba(255,59,48,.08); border-color:rgba(255,59,48,.2); }
 .an-kpi-yellow{ background:rgba(255,171,0,.08); border-color:rgba(255,171,0,.2); }
 .an-kpi-blue  { background:rgba(90,200,250,.08); border-color:rgba(90,200,250,.2); }
-.an-kpi-val   { font-size:1.5rem; font-weight:900; color:#fff; }
-.an-kpi-green .an-kpi-val { color:#5EF097; }
-.an-kpi-red   .an-kpi-val { color:#FF6B6B; }
-.an-kpi-yellow .an-kpi-val{ color:var(--brand-primary,#FFAB00); }
-.an-kpi-blue   .an-kpi-val{ color:#5AC8FA; }
+.an-kpi-val   { font-size:1.5rem; font-weight:900; color:var(--col-text); }
+.an-kpi-green .an-kpi-val { color:color-mix(in srgb,var(--theme-success) 64%,var(--col-text)); }
+.an-kpi-red   .an-kpi-val { color:color-mix(in srgb,var(--theme-danger) 72%,var(--col-text)); }
+.an-kpi-yellow .an-kpi-val{ color:color-mix(in srgb,var(--brand-primary) 56%,var(--col-text)); }
+.an-kpi-blue   .an-kpi-val{ color:color-mix(in srgb,var(--role-admin) 56%,var(--col-text)); }
 .an-kpi-lbl  { font-size:.72rem; font-weight:700; color:var(--col-muted); margin-top:.2rem; }
 .an-kpi-sub  { font-size:.68rem; color:var(--col-faint); margin-top:.15rem; }
 
@@ -218,7 +225,7 @@
   background:var(--col-surface); border:1px solid var(--col-border);
   border-radius:.875rem; padding:1.1rem;
 }
-.an-chart-title { font-size:.82rem; font-weight:800; color:#fff; margin-bottom:.75rem; }
+.an-chart-title { font-size:.82rem; font-weight:800; color:var(--col-text); margin-bottom:.75rem; }
 
 /* Cascada P&L */
 .an-cascade { display:flex; flex-direction:column; gap:.15rem; }
@@ -227,10 +234,10 @@
 .an-cas-sub  { background:rgba(255,255,255,.02); }
 .an-cas-sub .an-cas-label { color:var(--col-muted); padding-left:1rem; }
 .an-cas-result { background:rgba(255,255,255,.04); margin-top:.25rem; }
-.an-cas-result .an-cas-label { font-weight:700; color:#fff; }
+.an-cas-result .an-cas-label { font-weight:700; color:var(--col-text); }
 .an-cas-total { background:rgba(255,171,0,.06); border:1px solid rgba(255,171,0,.15);
                 margin-top:.5rem; }
-.an-cas-total .an-cas-label { font-weight:900; color:#fff; }
+.an-cas-total .an-cas-label { font-weight:900; color:var(--col-text); }
 .an-cas-val  { font-weight:700; white-space:nowrap; }
 .an-cas-pct  { font-size:.7rem; font-weight:600; color:var(--col-muted);
                background:rgba(255,255,255,.06); border-radius:.35rem;
@@ -239,66 +246,96 @@
 
 {% if labels_dias|length > 1 %}
 <script nonce="{{ csp_nonce() }}">
-/* Chart.js necesita colores concretos, no CSS-vars. Leemos los tokens
-   del `computedStyle` del body para que el chart siga la marca actual
-   (si el super_admin cambia COLOR_PRIMARIO, el gráfico lo refleja al
-   recargar). Fallback documentado para no romper si el token falta. */
+/* Gráfico nativo y liviano: elimina la dependencia CDN que quedaba bloqueada
+   por CSP y conserva la paleta configurable del negocio. */
 (function () {
+  const canvas = document.getElementById('chartTendencia');
+  if (!canvas) return;
+  const labels = {{ labels_dias|tojson }};
+  const sales = {{ data_totales|tojson }}.map(Number);
+  const orders = {{ data_pedidos|tojson }}.map(Number);
   const cs = getComputedStyle(document.body);
   const brand   = (cs.getPropertyValue('--brand-primary') || '#FFAB00').trim();
   const accent  = (cs.getPropertyValue('--brand-accent')  || cs.getPropertyValue('--role-admin') || '#5AC8FA').trim();
-  const surface = (cs.getPropertyValue('--col-surface')   || '#1A1410').trim();
   const text    = (cs.getPropertyValue('--col-text')      || '#FFF3E8').trim();
-  const hexToRgba = (hex, a) => {
-    const h = hex.replace('#',''); if (h.length !== 6) return hex;
-    const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
-    return `rgba(${r},${g},${b},${a})`;
-  };
-new Chart(document.getElementById('chartTendencia'), {
-  type: 'line',
-  data: {
-    labels: {{ labels_dias|tojson }},
-    datasets: [
-      {
-        label: 'Ventas (€)',
-        data: {{ data_totales|tojson }},
-        borderColor: brand,
-        backgroundColor: hexToRgba(brand, .1),
-        fill: true, tension: 0.4,
-        pointRadius: {{ '3' if labels_dias|length < 15 else '0' }},
-        pointHoverRadius: 5, borderWidth: 2,
-        yAxisID: 'y',
-      },
-      {
-        label: 'Pedidos',
-        data: {{ data_pedidos|tojson }},
-        borderColor: accent,
-        backgroundColor: hexToRgba(accent, .06),
-        fill: true, tension: 0.4,
-        pointRadius: {{ '3' if labels_dias|length < 15 else '0' }},
-        pointHoverRadius: 5, borderWidth: 1.5,
-        borderDash: [4,2],
-        yAxisID: 'y1',
-      }
-    ]
-  },
-  options: {
-    responsive: true, maintainAspectRatio: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-      legend: { labels: { color: hexToRgba(text, .6), font: { size: 11 } } },
-      tooltip: {
-        backgroundColor: surface, borderColor: hexToRgba(brand, .2), borderWidth: 1,
-        titleColor: brand, bodyColor: text,
-      }
-    },
-    scales: {
-      x: { grid: { color: hexToRgba(text, .04) }, ticks: { color: hexToRgba(text, .5), font: { size: 10 }, maxTicksLimit: 14 } },
-      y:  { position:'left',  grid:{ color: hexToRgba(text, .04) }, ticks:{ color: brand, callback: v => '€'+v } },
-      y1: { position:'right', grid:{ drawOnChartArea:false }, ticks:{ color: accent, stepSize:1 } }
+
+  function draw() {
+    const width = Math.max(280, canvas.parentElement.clientWidth);
+    const height = Math.max(180, canvas.parentElement.clientHeight);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const area = { left: 42, top: 30, right: width - 34, bottom: height - 28 };
+    const plotW = Math.max(1, area.right - area.left);
+    const plotH = Math.max(1, area.bottom - area.top);
+    const salesMax = Math.max(1, ...sales);
+    const ordersMax = Math.max(1, ...orders);
+    const x = (i) => area.left + (labels.length === 1 ? 0 : i * plotW / (labels.length - 1));
+    const y = (value, max) => area.bottom - (value / max) * plotH;
+
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    for (let step = 0; step <= 4; step += 1) {
+      const py = area.top + (plotH * step / 4);
+      ctx.globalAlpha = .12;
+      ctx.strokeStyle = text;
+      ctx.beginPath(); ctx.moveTo(area.left, py); ctx.lineTo(area.right, py); ctx.stroke();
+      ctx.globalAlpha = .72;
+      ctx.fillStyle = brand;
+      ctx.textAlign = 'right';
+      ctx.fillText(`€${(salesMax * (4 - step) / 4).toFixed(0)}`, area.left - 7, py);
     }
+
+    const maxTicks = Math.min(7, labels.length);
+    for (let tick = 0; tick < maxTicks; tick += 1) {
+      const index = Math.round(tick * (labels.length - 1) / Math.max(1, maxTicks - 1));
+      ctx.globalAlpha = .62;
+      ctx.fillStyle = text;
+      ctx.textAlign = tick === 0 ? 'left' : tick === maxTicks - 1 ? 'right' : 'center';
+      ctx.fillText(String(labels[index]), x(index), height - 10);
+    }
+
+    function line(values, color, max, dashed = false, fill = false) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = dashed ? 1.7 : 2.3;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.setLineDash(dashed ? [5, 4] : []);
+      ctx.beginPath();
+      values.forEach((value, index) => {
+        const px = x(index), py = y(value, max);
+        if (index) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      });
+      ctx.stroke();
+      if (fill) {
+        ctx.lineTo(x(values.length - 1), area.bottom);
+        ctx.lineTo(x(0), area.bottom);
+        ctx.closePath();
+        ctx.globalAlpha = .1;
+        ctx.fillStyle = color;
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    line(sales, brand, salesMax, false, true);
+    line(orders, accent, ordersMax, true, false);
+
+    ctx.globalAlpha = 1;
+    ctx.font = '600 11px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = brand; ctx.fillText('● Ventas (€)', area.left, 12);
+    ctx.fillStyle = accent; ctx.fillText('━ Pedidos', area.left + 92, 12);
   }
-});
+
+  draw();
+  new ResizeObserver(draw).observe(canvas.parentElement);
 })();
 </script>
 {% endif %}

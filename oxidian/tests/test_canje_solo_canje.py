@@ -9,12 +9,13 @@ Cubre las reglas críticas del producto `solo_canje`:
 import unittest
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from flask import Flask
 
 from extensions import db
-from models import Product
-from routes.public import public_bp
+from models import Product, User
+from routes.public import _canjeables_payload, public_bp
 
 
 class CanjeSoloCanjeTest(unittest.TestCase):
@@ -100,6 +101,77 @@ class CanjeSoloCanjeTest(unittest.TestCase):
             headers={"X-Ajax": "1"},
         )
         self.assertTrue(response.get_json()["ok"])
+
+    def test_verified_catalog_includes_zero_price_reward(self):
+        """El OTP debe revelar también recompensas exclusivas de precio cero."""
+        reward = self._producto_solo_canje(puntos=200)
+        cliente = User(
+            nombre="Cliente prueba",
+            email="cliente@example.test",
+            rol="cliente",
+            puntos=250,
+        )
+        cliente.set_password("test-only")
+        db.session.add(cliente)
+        db.session.commit()
+
+        with (
+            patch("routes.public._producto_canjeable_en_origen", return_value=True),
+            patch("routes.public.get_puntos_config", return_value={"ratio": 100}),
+        ):
+            payload = _canjeables_payload(cliente, "propio")
+
+        self.assertEqual([item["id"] for item in payload["canjeables"]], [reward.id])
+        self.assertEqual(payload["canjeables"][0]["precio"], 0.0)
+
+    def test_otp_response_lists_zero_price_reward_for_checkout(self):
+        """Reproduce el flujo AJAX que usa el selector tras confirmar código."""
+        cart_product = Product(
+            nombre="Producto del pedido",
+            precio=Decimal("8.00"),
+            activo=True,
+            tipo_entrega="inmediato",
+            modalidad_entrega="ambas",
+        )
+        reward = self._producto_solo_canje(puntos=200)
+        cliente = User(
+            nombre="Cliente con puntos",
+            email="cliente.otp@example.test",
+            telefono="+34600111222",
+            rol="cliente",
+            puntos=250,
+        )
+        cliente.set_password("test-only")
+        db.session.add_all([cart_product, cliente])
+        db.session.commit()
+        code = cliente.generar_cod_puntos()
+        db.session.commit()
+
+        with self.client.session_transaction() as browser_session:
+            browser_session["carrito"] = {str(cart_product.id): 1}
+            browser_session["carrito_origen"] = "propio"
+
+        features = {
+            "puntos": True,
+            "delivery": True,
+            "recogida": True,
+            "pedidos_programados": True,
+        }
+        with (
+            patch("routes.public.buscar_cliente_por_telefono", return_value=(cliente, None)),
+            patch("routes.public.get_store_features", return_value=features),
+            patch("routes.public.get_puntos_config", return_value={"ratio": 100}),
+            patch("loyalty_service.bloquear_cliente_puntos", return_value=cliente),
+        ):
+            response = self.client.post(
+                "/puntos/verificar-codigo",
+                json={"telefono": cliente.telefono, "codigo": code},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual([item["id"] for item in payload["canjeables"]], [reward.id])
 
 
 if __name__ == "__main__":

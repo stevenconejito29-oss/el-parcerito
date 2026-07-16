@@ -11,7 +11,7 @@
   </div>
   <div class="flex gap-2 flex-wrap">
     <a href="{{ url_for('admin.analytics') }}" class="ox-btn-secondary">📊 Analytics</a>
-    <button onclick="window.print()" class="ox-btn-secondary">🖨️ Imprimir</button>
+    <button data-print class="ox-btn-secondary">🖨️ Imprimir</button>
     <a href="{{ url_for('admin.exportar_caja', fecha_ini=fecha_ini, fecha_fin=fecha_fin, categoria=categoria_f) }}" class="ox-btn-secondary">📥 Exportar CSV</a>
   </div>
 </div>

@@ -231,7 +231,7 @@
               {% if not p.preparador_id %}
               <form method="POST" action="{{ url_for('admin.asignar_pedido', pedido_id=p.id) }}" class="dash-assign-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <select name="preparador_id" class="dash-select-mini" onchange="this.form.submit()">
+                <select name="preparador_id" class="dash-select-mini" data-submit-on-change>
                   <option value="">Asignar cocina…</option>
                   {% for prep in preparadores %}
                   <option value="{{ prep.id }}" {% if prep.en_linea %}class="text-green-400"{% endif %}>
@@ -247,7 +247,7 @@
               {% endif %}
               <a href="{{ url_for('admin.pedidos') }}?id={{ p.id }}" class="dash-btn-sm dash-btn-view">Ver</a>
               <form method="POST" action="{{ url_for('admin.cancelar_pedido', pedido_id=p.id) }}"
-                    onsubmit="return confirm('¿Cancelar pedido {{ p.numero_pedido }}?')">
+                    data-confirm="¿Cancelar pedido {{ p.numero_pedido }}?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="dash-btn-sm dash-btn-cancel">Cancelar</button>
               </form>
@@ -324,7 +324,7 @@
             {% if not p.repartidor_id %}
             <form method="POST" action="{{ url_for('admin.asignar_pedido', pedido_id=p.id) }}" class="dash-assign-form">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <select name="repartidor_id" class="dash-select-mini" onchange="this.form.submit()">
+              <select name="repartidor_id" class="dash-select-mini" data-submit-on-change>
                 <option value="">Asignar repartidor…</option>
                 {% for rep in repartidores %}
                 <option value="{{ rep.id }}">{{ '●' if rep.en_linea else '○' }} {{ rep.nombre }}</option>
@@ -384,10 +384,10 @@
     <div class="dash-side-card">
       <p class="dash-side-title">⚡ Acciones rápidas</p>
       <div class="dash-quick-grid">
-        <a href="{{ url_for('pos.venta') }}" class="dash-quick-btn" style="background:color-mix(in srgb,var(--brand-primary,#FFAB00) 15%,transparent);border-color:color-mix(in srgb,var(--brand-primary,#FFAB00) 30%,transparent);color:var(--brand-primary,#FFAB00)">
+        <a href="{{ url_for('pos.venta') }}" class="dash-quick-btn dash-quick-btn--primary">
           🖥️ POS
         </a>
-        <a href="{{ url_for('admin.pedidos') }}" class="dash-quick-btn" style="background:color-mix(in srgb,var(--role-admin,#5AC8FA) 12%,transparent);border-color:color-mix(in srgb,var(--role-admin,#5AC8FA) 26%,transparent);color:var(--role-admin,#5AC8FA)">
+        <a href="{{ url_for('admin.pedidos') }}" class="dash-quick-btn dash-quick-btn--admin">
           📦 Pedidos
         </a>
         <a href="{{ url_for('admin.stock') }}" class="dash-quick-btn {{ 'dash-quick-urgent' if alertas_stock > 0 else '' }}">
@@ -655,6 +655,16 @@
 .dash-quick-btn:hover {
   border-color: color-mix(in srgb, var(--dash-warn) 40%, transparent);
   color: var(--dash-warn);
+}
+.dash-quick-btn--primary {
+  background: color-mix(in srgb, var(--brand-primary) 14%, var(--col-surface));
+  border-color: color-mix(in srgb, var(--brand-primary) 34%, var(--col-border));
+  color: color-mix(in srgb, var(--brand-primary) 58%, var(--col-text));
+}
+.dash-quick-btn--admin {
+  background: color-mix(in srgb, var(--role-admin) 11%, var(--col-surface));
+  border-color: color-mix(in srgb, var(--role-admin) 28%, var(--col-border));
+  color: color-mix(in srgb, var(--role-admin) 48%, var(--col-text));
 }
 .dash-quick-urgent {
   background: var(--dash-danger-soft) !important;

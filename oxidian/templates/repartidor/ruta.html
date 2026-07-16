@@ -77,7 +77,7 @@
 
 /* Tarjeta empleado como toggle Online/Offline (mismo patrón que preparador) */
 .work-employee-toggle {
-  cursor: pointer; transition: border-color .15s, background .15s;
+  transition: border-color .15s, background .15s;
   text-align: left;
 }
 .work-employee-toggle.is-online {
@@ -185,9 +185,10 @@
       {% if current_user.tarifa_entrega and current_user.tarifa_entrega > 0 %} · €{{ "%.2f"|format(current_user.tarifa_entrega) }}/entrega{% endif %}
     </p>
   </div>
-  <button type="submit" class="work-availability-button" aria-pressed="{{ 'true' if disponible else 'false' }}">
+  <button type="submit" class="work-availability-button" aria-pressed="{{ 'true' if disponible else 'false' }}"
+          aria-label="{{ 'Pausar recepción de repartos' if disponible else 'Ponerse online y recibir repartos' }}">
     <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
-    <span><strong>{{ 'Online' if disponible else 'Offline' }}</strong><small>{{ 'Pausar recepción' if disponible else 'Activar recepción' }}</small></span>
+    <span><strong>{{ 'Online' if disponible else 'Offline' }}</strong><small>{{ 'Pausar recepción' if disponible else 'Ponerse online' }}</small></span>
   </button>
 </form>
 
@@ -392,7 +393,7 @@
              class="work-btn work-btn-info flex-1">
             🚗 Waze
           </a>
-          <button type="button" onclick='copiarDireccion({{ pedido.direccion_entrega | tojson }})'
+          <button type="button" data-copy-address="{{ pedido.direccion_entrega|e }}"
                   class="work-btn work-btn-ghost flex-1"
                   aria-label="Copiar dirección al portapapeles">
             📋 Copiar
@@ -691,7 +692,7 @@
       <details class="mt-3 route-no-deliver">
         <summary class="text-sm work-muted-text" style="cursor:pointer">🚫 No pude entregar este pedido</summary>
         <form method="POST" action="{{ url_for('repartidor.marcar_no_entregado', pedido_id=pedido.id) }}"
-              class="mt-2" onsubmit="return confirm('¿Marcar como no entregado?\n\nEl stock volverá al almacén y el pedido se cancelará. Devuelve la mercancía al local. Esta acción se registra en auditoría.');">
+              class="mt-2" data-confirm="¿Marcar como no entregado? El stock volverá al almacén y el pedido se cancelará. Devuelve la mercancía al local. Esta acción se registra en auditoría.">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <label class="work-code-label" style="font-size:.8rem">Motivo (requerido para auditoría)</label>
           <select name="motivo" required class="ox-input" style="width:100%;margin-top:.35rem">
@@ -734,6 +735,10 @@ function copiarDireccion(dir) {
     prompt('Copia esta dirección:', dir);
   });
 }
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-copy-address]');
+  if (button) copiarDireccion(button.dataset.copyAddress || '');
+});
 
 // Semáforo de urgencia: pedidos que llevan demasiado tiempo asignados.
 // Reutiliza el patrón que ya usa el panel de cocina. Umbrales: 15/30 min.

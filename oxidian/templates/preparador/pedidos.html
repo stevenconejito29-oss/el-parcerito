@@ -311,7 +311,7 @@
 
 /* Tarjeta empleado como toggle Online/Offline. Cursor y borde claro. */
 .work-employee-toggle {
-  cursor: pointer; transition: border-color .15s, background .15s;
+  transition: border-color .15s, background .15s;
   text-align: left;
 }
 .work-employee-toggle.is-online {
@@ -523,9 +523,10 @@
       {% if current_user.puesto_trabajo %} · {{ current_user.puesto_trabajo }}{% endif %}
     </p>
   </div>
-  <button type="submit" class="work-availability-button" aria-pressed="{{ 'true' if disponible else 'false' }}">
+  <button type="submit" class="work-availability-button" aria-pressed="{{ 'true' if disponible else 'false' }}"
+          aria-label="{{ 'Pausar recepción de pedidos' if disponible else 'Ponerse online y recibir pedidos' }}">
     <span class="work-dot {% if disponible %}is-on{% endif %}"></span>
-    <span><strong>{{ 'Online' if disponible else 'Offline' }}</strong><small>{{ 'Pausar recepción' if disponible else 'Activar recepción' }}</small></span>
+    <span><strong>{{ 'Online' if disponible else 'Offline' }}</strong><small>{{ 'Pausar recepción' if disponible else 'Ponerse online' }}</small></span>
   </button>
 </form>
 
@@ -559,7 +560,7 @@
 <!-- KPIs rápidos -->
 <div class="work-kpis">
   <div class="work-panel work-kpi">
-    <span>Inmediatos</span>
+    <span>{{ 'Encargos pendientes' if current_user.rol == 'preparacion' else 'Inmediatos' }}</span>
     <strong>{{ pendientes|length }}</strong>
     <small>Esperan toma o inicio</small>
   </div>
@@ -603,7 +604,10 @@
   <div class="work-lane-head">
     <div>
       <h2 class="work-lane-title">Pendientes</h2>
-      <p class="work-lane-sub">{{ 'Preparación propia inmediata' if brand.es_comida else 'Validación y empaque inmediato' }} que espera responsable o arranque.</p>
+      <p class="work-lane-sub">
+        {% if current_user.rol == 'preparacion' %}Pedidos con fecha que esperan responsable o arranque.
+        {% else %}{{ 'Preparación propia inmediata' if brand.es_comida else 'Validación y empaque inmediato' }} que espera responsable o arranque.{% endif %}
+      </p>
     </div>
     <span class="work-count">{{ pendientes|length }}</span>
   </div>
@@ -645,7 +649,7 @@
         <div class="work-item">
           <span class="work-item-thumb" aria-hidden="true">
             {% if item.display_imagen_url %}
-            <img src="{{ item.display_imagen_url|upload_url }}" alt="" loading="lazy" onerror="this.replaceWith(this.nextElementSibling.content.cloneNode(true))">
+            <img src="{{ item.display_imagen_url|upload_url }}" alt="" loading="lazy" data-image-fallback="next-template">
             <template>{{ _icon_placeholder() }}</template>
             {% else %}
             {{ _icon_placeholder() }}
@@ -778,7 +782,7 @@
           {% if _item.es_lote and _item.estado_batch != 'listo' %}
           <form method="post"
                 action="{{ url_for('preparador.marcar_lote_listo', batch_id=_item.batch_id) }}"
-                onsubmit="return confirm('¿Marcar TODO el lote como listo? Se notificará por push a los clientes.');"
+                data-confirm="¿Marcar TODO el lote como listo? Se notificará por push a los clientes."
                 style="margin:0">
             <button type="submit" class="btn btn-sm"
                     style="background:var(--brand-primary);color:#fff;border:none;padding:.3rem .6rem;border-radius:.4rem;cursor:pointer">
@@ -833,7 +837,7 @@
         <div class="work-item">
           <span class="work-item-thumb" aria-hidden="true">
             {% if item.display_imagen_url %}
-            <img src="{{ item.display_imagen_url|upload_url }}" alt="" loading="lazy" onerror="this.replaceWith(this.nextElementSibling.content.cloneNode(true))">
+            <img src="{{ item.display_imagen_url|upload_url }}" alt="" loading="lazy" data-image-fallback="next-template">
             <template>{{ _icon_placeholder() }}</template>
             {% else %}
             {{ _icon_placeholder() }}
@@ -958,7 +962,7 @@
           </label>
           <span class="work-item-thumb" aria-hidden="true">
             {% if item.display_imagen_url %}
-            <img src="{{ item.display_imagen_url|upload_url }}" alt="" loading="lazy" onerror="this.replaceWith(this.nextElementSibling.content.cloneNode(true))">
+            <img src="{{ item.display_imagen_url|upload_url }}" alt="" loading="lazy" data-image-fallback="next-template">
             <template>{{ _icon_placeholder() }}</template>
             {% else %}
             {{ _icon_placeholder() }}
@@ -985,7 +989,7 @@
       <div class="work-action-row work-action-row--ready">
         <form method="POST" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}"
               data-mark-ready data-pedido-id="{{ pedido.id }}"
-              onsubmit="return prepConfirmReady(this);"
+              data-prep-confirm-ready
               class="work-action-row__primary">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="work-btn work-btn-success full-width">
@@ -1069,6 +1073,10 @@ window.prepConfirmReady = function(form) {
   if (pid) { try { localStorage.removeItem(prepStateKey(pid)); } catch (_) {} }
   return true;
 };
+document.addEventListener('submit', (event) => {
+  const form = event.target.closest('form[data-prep-confirm-ready]');
+  if (form && !window.prepConfirmReady(form)) event.preventDefault();
+});
 
 // Urgencia por tiempo transcurrido
 function actualizarUrgencia() {

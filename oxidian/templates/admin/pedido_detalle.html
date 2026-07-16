@@ -29,7 +29,7 @@
         </button>
       </form>
       <form method="POST" action="{{ url_for('admin.cancelar_pedido', pedido_id=pedido.id) }}" style="display:inline;"
-            onsubmit="return confirm('¿Cancelar pedido {{ pedido.numero_pedido }}?');">
+            data-confirm="¿Cancelar pedido {{ pedido.numero_pedido }}?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="ord-btn danger">Cancelar</button>
       </form>

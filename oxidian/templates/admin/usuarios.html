@@ -18,7 +18,7 @@
       Cuentas internas con acceso al sistema. Los clientes no se crean desde este panel.
     </p>
   </div>
-  <button type="button" class="ox-btn-primary" onclick="document.getElementById('nuevo-usuario').showModal()">
+  <button type="button" class="ox-btn-primary" data-dialog-open="nuevo-usuario">
     Nuevo usuario
   </button>
 </div>
@@ -147,7 +147,7 @@
         <h2 class="text-lg font-black text-white">Nueva cuenta interna</h2>
         <p class="text-xs" style="color:var(--col-muted)">Puede haber varias cuentas con el mismo rol.</p>
       </div>
-      <button type="button" class="ox-btn-ghost" onclick="this.closest('dialog').close()">Cerrar</button>
+      <button type="button" class="ox-btn-ghost" data-dialog-close="nuevo-usuario">Cerrar</button>
     </div>
     <div class="grid md:grid-cols-2 gap-4">
       <div class="ox-field">
@@ -189,7 +189,7 @@
       </div>
     </div>
     <div class="flex justify-end gap-3 mt-5">
-      <button type="button" class="ox-btn-ghost" onclick="this.closest('dialog').close()">Cancelar</button>
+      <button type="button" class="ox-btn-ghost" data-dialog-close="nuevo-usuario">Cancelar</button>
       <button type="submit" class="ox-btn-primary">Crear usuario</button>
     </div>
   </form>

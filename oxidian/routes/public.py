@@ -364,21 +364,43 @@ def _descontar_stock_en_origen(producto, origen, cantidad, seleccion_item_ids=No
     return method(origen, cantidad)
 
 
-def _canjeables_payload(cliente, origen=None):
+def _productos_canjeables_disponibles(origen, productos_carrito=None):
+    """Catálogo canónico de recompensas válidas para este pedido.
+
+    ``solo_canje`` implica precio cero por diseño, por lo que el precio nunca
+    puede utilizarse para decidir si una recompensa existe. Además de las
+    reglas propias del producto, filtramos aquí la compatibilidad operativa con
+    el carrito para que GET, verificación OTP y selección presenten exactamente
+    las mismas opciones.
+    """
+    origen = _normalizar_origen(origen)
+    if not origen:
+        return []
+
+    candidatos = (
+        Product.query.filter_by(activo=True, canjeable_con_puntos=True)
+        .filter(Product.puntos_para_canje.isnot(None), Product.puntos_para_canje > 0)
+        .order_by(Product.puntos_para_canje.asc(), Product.nombre.asc())
+        .all()
+    )
+    productos_carrito = [p for p in (productos_carrito or []) if p]
+    disponibles = []
+    for producto in candidatos:
+        if not _producto_canjeable_en_origen(producto, origen):
+            continue
+        if productos_carrito and not _cart_compatibility(
+            productos_carrito + [producto]
+        )["ok"]:
+            continue
+        disponibles.append(producto)
+    return disponibles
+
+
+def _canjeables_payload(cliente, origen=None, productos_carrito=None):
     puntos = max(0, int(cliente.puntos or 0)) if cliente else 0
     cfg = get_puntos_config()
     ratio = max(1, int(cfg["ratio"]))
-    origen = _normalizar_origen(origen)
-    base_q = Product.query.filter_by(activo=True, canjeable_con_puntos=True)\
-                          .filter(Product.puntos_para_canje.isnot(None))\
-                          .filter(Product.precio.isnot(None), Product.precio > 0)\
-                          .order_by(Product.puntos_para_canje.asc(), Product.nombre.asc())
-    candidatos = base_q.all()
-    candidatos = [
-        p for p in candidatos
-        if origen
-        and _producto_canjeable_en_origen(p, origen)
-    ]
+    candidatos = _productos_canjeables_disponibles(origen, productos_carrito)
     canjeables = [p for p in candidatos if (p.puntos_para_canje or 0) <= puntos] if puntos > 0 else []
     proximo = next((p for p in candidatos if (p.puntos_para_canje or 0) > puntos), None)
 
@@ -1284,12 +1306,17 @@ def set_producto_canje():
             return jsonify({"ok": False, "msg": "producto_id inválido"}), 400
         producto = db.session.get(Product, prod_id)
         origen = _carrito_origen()
+        productos_carrito = _cart_products_from_carrito(_get_carrito())
         if (
             not producto
             or not origen
             or not _producto_canjeable_en_origen(producto, origen)
+            or not _cart_compatibility(productos_carrito + [producto])["ok"]
         ):
-            return jsonify({"ok": False, "msg": "Producto no canjeable"}), 400
+            return jsonify({
+                "ok": False,
+                "msg": "Esta recompensa no es compatible con los productos del carrito",
+            }), 400
         cart_puntos = session.get("cart_puntos") or {}
         puntos_disponibles = 0
         if cart_puntos.get("cliente_id") and cart_puntos.get("origen") == origen:
@@ -1537,7 +1564,8 @@ def verificar_codigo_puntos():
     if not origen:
         db.session.rollback()
         return jsonify({"ok": False, "msg": "El carrito no tiene un origen de inventario válido"})
-    _, subtotal = _build_items_from_carrito(_get_carrito())
+    items, _ = _build_items_from_carrito(_get_carrito())
+    productos_carrito = [item["producto"] for item in items if item.get("producto")]
     # Diseño: los puntos SOLO se canjean por productos canjeables (nunca como
     # descuento en euros). Ignoramos cualquier `puntos_usar` suelto sin producto
     # asociado y forzamos que el consumo de puntos venga ligado a un product_id.
@@ -1598,7 +1626,7 @@ def verificar_codigo_puntos():
     }
     session.modified = True
 
-    payload = _canjeables_payload(cliente, origen)
+    payload = _canjeables_payload(cliente, origen, productos_carrito)
     return jsonify({"ok": True, "puntos_verificados": puntos_usar, "descuento": descuento,
                     "msg": "✓ WhatsApp verificado", "puntos_totales": cliente.puntos, **payload})
 
@@ -1675,10 +1703,15 @@ def checkout():
         session.pop("cart_producto_canje_id", None)
 
     canjeables = [
-        p for p in Product.query.filter_by(canjeable_con_puntos=True, activo=True)
-        .filter(Product.puntos_para_canje <= puntos_cliente).all()
-        if _producto_canjeable_en_origen(p, origen)
+        p for p in _productos_canjeables_disponibles(origen, cart_productos)
+        if int(p.puntos_para_canje or 0) <= int(puntos_cliente or 0)
     ] if puntos_habilitados and puntos_cliente > 0 else []
+    canje_seleccionado = session.get("cart_producto_canje_id")
+    if canje_seleccionado and not any(p.id == canje_seleccionado for p in canjeables):
+        # El catálogo, stock o carrito pudo cambiar después de seleccionar. No
+        # conservamos una recompensa que la interfaz ya no puede explicar.
+        session.pop("cart_producto_canje_id", None)
+        session.modified = True
     if request.method == "POST":
         # ── Idempotency guard ──────────────────────────────────────
         # Evita que un double-click o un retry del cliente cree dos pedidos.

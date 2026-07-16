@@ -11,17 +11,17 @@
   <div class="pos-top-actions">
     <span id="pos-clock" class="pos-clock" aria-label="Hora actual"></span>
     <a href="{{ url_for('pos.historial') }}" class="pos-top-btn">Historial</a>
-    <button type="button" class="pos-top-btn" onclick="togglePosFullscreen()">Pantalla completa</button>
-    <button type="button" class="pos-top-btn primary" onclick="limpiarTicket()">Nueva venta</button>
+    <button type="button" class="pos-top-btn" data-pos-action="fullscreen">Pantalla completa</button>
+    <button type="button" class="pos-top-btn primary" data-pos-action="new-sale">Nueva venta</button>
   </div>
 </header>
 
 {# ── Toggle móvil Catálogo / Ticket ── #}
 <div class="pos-mobile-tabs md:hidden">
-  <button class="pos-mtab active" id="mtab-catalogo" onclick="switchPosTab('catalogo')">
+  <button class="pos-mtab active" id="mtab-catalogo" data-pos-action="tab" data-value="catalogo">
     🍽️ Catálogo
   </button>
-  <button class="pos-mtab" id="mtab-ticket" onclick="switchPosTab('ticket')">
+  <button class="pos-mtab" id="mtab-ticket" data-pos-action="tab" data-value="ticket">
     🧾 Ticket
     <span id="pos-ticket-badge" class="pos-ticket-badge" style="display:none">0</span>
   </button>
@@ -39,18 +39,18 @@
       <div class="pos-search-wrap">
         <svg class="pos-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="text" id="buscar" placeholder="Buscar producto o escanear..."
-               class="pos-search" oninput="buscarProducto(this.value)" autocomplete="off">
-        <button onclick="document.getElementById('buscar').value='';filtrarCategoria(null)" class="pos-search-clear" id="btn-clear-search" style="display:none">✕</button>
+               class="pos-search" data-pos-input="search" autocomplete="off">
+        <button data-pos-action="clear-search" class="pos-search-clear" id="btn-clear-search" style="display:none">✕</button>
       </div>
     </div>
 
     {# Tabs categorías #}
     <div class="pos-cats" id="pos-cats">
-      <button onclick="filtrarCategoria(null)" class="pos-cat-btn active" data-cat="">
+      <button data-pos-action="category" class="pos-cat-btn active" data-cat="">
         Todos
       </button>
       {% for cat in categorias %}
-      <button onclick="filtrarCategoria({{ cat.id }})" class="pos-cat-btn" data-cat="{{ cat.id }}">
+      <button data-pos-action="category" class="pos-cat-btn" data-cat="{{ cat.id }}">
         {{ cat.nombre }}
       </button>
       {% endfor %}
@@ -146,7 +146,7 @@
           <div class="flex items-center gap-1">
             <span style="color:var(--col-muted)">-€</span>
             <input type="number" id="descuento_manual" value="0" min="0" step="0.50"
-                   class="pos-desc-input" oninput="recalcular()">
+                   class="pos-desc-input" data-pos-input="discount">
           </div>
         </div>
         <div class="pos-sum-total">
@@ -158,7 +158,7 @@
       {# Cupón #}
       <div class="pos-cupon-row">
         <input type="text" id="cupon_input" placeholder="Código cupón" class="pos-cupon-inp" style="text-transform:uppercase">
-        <button onclick="validarCupon()" class="pos-cupon-btn">Aplicar</button>
+        <button data-pos-action="coupon" class="pos-cupon-btn">Aplicar</button>
       </div>
       <p id="cupon_msg" class="pos-cupon-msg"></p>
 
@@ -176,13 +176,13 @@
         <div class="pos-field">
           <label class="pos-field-lbl">Método de pago</label>
           <div class="pos-pay-grid">
-            <button type="button" onclick="setPago('efectivo', this)" class="pos-pay-btn active" id="pay-efectivo">
+            <button type="button" data-pos-action="payment" data-value="efectivo" class="pos-pay-btn active" id="pay-efectivo">
               Efectivo
             </button>
-            <button type="button" onclick="setPago('tarjeta', this)" class="pos-pay-btn" id="pay-tarjeta">
+            <button type="button" data-pos-action="payment" data-value="tarjeta" class="pos-pay-btn" id="pay-tarjeta">
               Tarjeta
             </button>
-            <button type="button" onclick="setPago('bizum', this)" class="pos-pay-btn" id="pay-bizum">
+            <button type="button" data-pos-action="payment" data-value="bizum" class="pos-pay-btn" id="pay-bizum">
               Bizum
             </button>
           </div>
@@ -199,7 +199,7 @@
       </div>
 
       {# Botón cobrar #}
-      <button onclick="cobrar()" class="pos-btn-cobrar" id="btn-cobrar">
+      <button data-pos-action="charge" class="pos-btn-cobrar" id="btn-cobrar">
         <span>💳 Cobrar</span>
         <span id="btn-cobrar-total">€0.00</span>
       </button>
@@ -245,8 +245,8 @@
       <p id="modal-cambio" class="text-2xl font-black" style="color:#FFAB00"></p>
     </div>
     <div class="flex gap-3 mt-4">
-      <button onclick="verTicket()" class="pos-modal-btn-sec">🖨️ Ticket</button>
-      <button onclick="cerrarModal()" class="pos-modal-btn-pri">➕ Nueva venta</button>
+      <button data-pos-action="ticket" class="pos-modal-btn-sec">🖨️ Ticket</button>
+      <button data-pos-action="close-sale" class="pos-modal-btn-pri">➕ Nueva venta</button>
     </div>
   </div>
 </div>
@@ -259,20 +259,20 @@
     <label class="text-xs mb-1 block" style="color:var(--col-muted)">Efectivo entregado por el cliente</label>
     <input type="number" id="ef-entregado" step="0.01" placeholder="0.00"
            class="pos-select w-full text-xl text-center font-bold mb-3"
-           oninput="calcularCambio()" autofocus>
+           data-pos-input="cash" autofocus>
     <div class="pos-cash-quick" aria-label="Cantidades rápidas">
-      <button type="button" onclick="ponerEfectivoExacto()">Exacto</button>
-      <button type="button" onclick="sumarEfectivo(5)">+5</button>
-      <button type="button" onclick="sumarEfectivo(10)">+10</button>
-      <button type="button" onclick="sumarEfectivo(20)">+20</button>
+      <button type="button" data-pos-action="cash-exact">Exacto</button>
+      <button type="button" data-pos-action="cash-add" data-value="5">+5</button>
+      <button type="button" data-pos-action="cash-add" data-value="10">+10</button>
+      <button type="button" data-pos-action="cash-add" data-value="20">+20</button>
     </div>
     <p id="ef-error" class="pos-cash-error"></p>
     <div class="pos-cambio-preview" id="ef-cambio-preview">
       Cambio: <strong id="ef-cambio">€0.00</strong>
     </div>
     <div class="flex gap-2 mt-3">
-      <button onclick="cerrarModalEfectivo()" class="pos-modal-btn-sec flex-1">Cancelar</button>
-      <button onclick="confirmarCobro()" class="pos-modal-btn-pri flex-1">✓ Confirmar</button>
+      <button data-pos-action="close-cash" class="pos-modal-btn-sec flex-1">Cancelar</button>
+      <button data-pos-action="confirm-cash" class="pos-modal-btn-pri flex-1">✓ Confirmar</button>
     </div>
   </div>
 </div>
@@ -285,12 +285,12 @@
         <p class="pos-combo-kicker">Configurar combo</p>
         <h2 id="pos-combo-name">Combo</h2>
       </div>
-      <button type="button" class="pos-combo-close" onclick="cerrarCombo()" aria-label="Cerrar">×</button>
+      <button type="button" class="pos-combo-close" data-pos-action="close-combo" aria-label="Cerrar">×</button>
     </div>
     <div id="pos-combo-included" class="pos-combo-included"></div>
     <div id="pos-combo-groups" class="pos-combo-groups"></div>
     <p id="pos-combo-error" class="pos-combo-error"></p>
-    <button type="button" class="pos-btn-cobrar" onclick="confirmarCombo()">
+    <button type="button" class="pos-btn-cobrar" data-pos-action="confirm-combo">
       <span>Añadir combo</span><span id="pos-combo-price">€0.00</span>
     </button>
   </div>
@@ -677,11 +677,11 @@ function renderTicket() {
     return `<div class="pos-item-row">
       <span class="pos-item-name" title="${posEsc(it.nombre)}">${it.esCombo ? 'Combo · ' : ''}${posEsc(it.nombre)}${it.comboResumen ? `<small>${posEsc(it.comboResumen)}</small>` : ''}</span>
       <div class="pos-item-controls">
-        <button class="pos-item-btn" onclick='cambiarCantidad(${JSON.stringify(key)},-1)'>−</button>
+        <button class="pos-item-btn" data-pos-action="quantity" data-key="${encodeURIComponent(key)}" data-delta="-1">−</button>
         <span class="pos-item-qty">${it.cantidad}</span>
-        <button class="pos-item-btn" onclick='cambiarCantidad(${JSON.stringify(key)},1)'>+</button>
+        <button class="pos-item-btn" data-pos-action="quantity" data-key="${encodeURIComponent(key)}" data-delta="1">+</button>
         <span class="pos-item-price">€${sub}</span>
-        <button class="pos-item-del" onclick='eliminarItem(${JSON.stringify(key)})' title="Quitar">✕</button>
+        <button class="pos-item-del" data-pos-action="remove" data-key="${encodeURIComponent(key)}" title="Quitar">✕</button>
       </div>
     </div>`;
   }).join('');
@@ -714,7 +714,7 @@ function abrirCombo(id, nombre, precio, stock) {
                data-extra="${option.precio_extra || 0}" data-base-price="${option.precio_base || 0}"
                data-group="${posEsc(group.id)}"
                ${defaultIds.has(option.id) ? 'checked' : ''} ${option.disponible ? '' : 'disabled'}
-               onchange="actualizarComboPrecio(this)">
+               data-pos-input="combo-price">
         <span>${posEsc(option.nombre)}</span>
         <small>${option.disponible ? (option.precio_extra > 0 ? `+€${Number(option.precio_extra).toFixed(2)}` : 'Incluido') : 'Sin stock'}</small>
       </label>`).join('');
@@ -1076,6 +1076,46 @@ function togglePosFullscreen() {
     document.exitFullscreen?.();
   }
 }
+
+document.addEventListener('click', (event) => {
+  const control = event.target.closest('[data-pos-action]');
+  if (!control) return;
+  const action = control.dataset.posAction;
+  if (action === 'fullscreen') togglePosFullscreen();
+  else if (action === 'new-sale') limpiarTicket();
+  else if (action === 'tab') switchPosTab(control.dataset.value);
+  else if (action === 'clear-search') {
+    const search = document.getElementById('buscar');
+    if (search) search.value = '';
+    filtrarCategoria(null);
+  }
+  else if (action === 'category') filtrarCategoria(control.dataset.cat ? Number(control.dataset.cat) : null);
+  else if (action === 'coupon') validarCupon();
+  else if (action === 'payment') setPago(control.dataset.value, control);
+  else if (action === 'charge') cobrar();
+  else if (action === 'ticket') verTicket();
+  else if (action === 'close-sale') cerrarModal();
+  else if (action === 'cash-exact') ponerEfectivoExacto();
+  else if (action === 'cash-add') sumarEfectivo(Number(control.dataset.value || 0));
+  else if (action === 'close-cash') cerrarModalEfectivo();
+  else if (action === 'confirm-cash') confirmarCobro();
+  else if (action === 'close-combo') cerrarCombo();
+  else if (action === 'confirm-combo') confirmarCombo();
+  else if (action === 'quantity') cambiarCantidad(decodeURIComponent(control.dataset.key || ''), Number(control.dataset.delta || 0));
+  else if (action === 'remove') eliminarItem(decodeURIComponent(control.dataset.key || ''));
+});
+
+document.addEventListener('input', (event) => {
+  const control = event.target.closest('[data-pos-input]');
+  if (!control) return;
+  if (control.dataset.posInput === 'search') buscarProducto(control.value);
+  else if (control.dataset.posInput === 'discount') recalcular();
+  else if (control.dataset.posInput === 'cash') calcularCambio();
+});
+document.addEventListener('change', (event) => {
+  const control = event.target.closest('[data-pos-input="combo-price"]');
+  if (control) actualizarComboPrecio(control);
+});
 
 document.addEventListener('keydown', event => {
   if (event.key === 'F2') {

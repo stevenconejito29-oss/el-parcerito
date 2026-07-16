@@ -84,7 +84,7 @@
         <form method="POST" action="{{ url_for('admin.confirmar_pago_digital', pedido_id=p.id) }}" class="mb-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit"
-                  onclick="return confirm('¿Confirmas que recibiste el pago de €{{ '%.2f'|format(p.total) }}?')"
+                  data-confirm-click="¿Confirmas que recibiste el pago de €{{ '%.2f'|format(p.total) }}?"
                   class="ox-btn-primary w-full py-2.5 font-bold text-sm">
             ✓ Bizum recibido ahora
           </button>
@@ -95,7 +95,7 @@
           <input type="text" name="motivo" placeholder="Motivo (opcional)"
                  class="ox-input text-xs mb-1">
           <button type="submit"
-                  onclick="return confirm('¿Cancelar el pedido por incidencia de pago?')"
+                  data-confirm-click="¿Cancelar el pedido por incidencia de pago?"
                   class="ox-btn-ghost w-full py-1.5 text-xs font-bold"
                   style="color:#FF6B6B;border-color:rgba(255,107,107,.3)">
             ✗ Incidencia / Cancelar

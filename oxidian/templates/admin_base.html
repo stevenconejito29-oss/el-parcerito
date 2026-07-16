@@ -83,21 +83,21 @@
     body.ox-body-admin .text-gray-700       { color: var(--col-faint) !important; }
     body.ox-body-admin .text-green-400,
     body.ox-body-admin .text-green-500,
-    body.ox-body-admin .text-emerald-400    { color: var(--theme-success) !important; }
+    body.ox-body-admin .text-emerald-400    { color: var(--status-ok-text) !important; }
     body.ox-body-admin .text-red-400,
     body.ox-body-admin .text-red-500,
-    body.ox-body-admin .text-rose-400       { color: var(--theme-danger) !important; }
+    body.ox-body-admin .text-rose-400       { color: var(--status-err-text) !important; }
     body.ox-body-admin .text-amber-400,
     body.ox-body-admin .text-amber-500,
     body.ox-body-admin .text-yellow-400,
     body.ox-body-admin .text-yellow-500,
-    body.ox-body-admin .text-orange-400     { color: var(--brand-primary) !important; }
+    body.ox-body-admin .text-orange-400     { color: var(--brand-text) !important; }
     body.ox-body-admin .text-blue-400,
     body.ox-body-admin .text-blue-500,
     body.ox-body-admin .text-sky-400        { color: color-mix(in srgb, var(--brand-accent, #003087) 55%, #6bcbff) !important; }
     body.ox-body-admin .text-purple-400,
     body.ox-body-admin .text-violet-400     { color: var(--role-super-admin) !important; }
-    body.ox-body-admin .text-warning        { color: var(--brand-primary) !important; }
+    body.ox-body-admin .text-warning        { color: var(--status-warn-text) !important; }
     body.ox-body-admin .text-muted          { color: var(--col-muted) !important; }
 
     /* Fondos y bordes semi-transparentes de Tailwind más usados. Se remapean
@@ -700,6 +700,7 @@ function _urlB64ToUint8Array(b64) {
 {% if operational_view %}
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/operational-roles.js', v=asset_version) }}" defer></script>
 {% endif %}
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/admin-interactions.js', v=asset_version) }}" defer></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

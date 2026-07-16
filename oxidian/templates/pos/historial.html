@@ -38,7 +38,7 @@
       </a>
       {% if v.estado != 'cancelado' %}
       <form method="POST" action="{{ url_for('pos.devolver_venta', pedido_id=v.id) }}" class="flex-1"
-            onsubmit="return confirm('¿Devolver esta venta?')">
+            data-confirm="¿Devolver esta venta?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="motivo" value="Devolución manual">
         <button type="submit" class="ox-btn-ghost w-full text-xs py-1.5"
@@ -89,7 +89,7 @@
                class="text-xs" style="color:#5AC8FA">Ticket</a>
             {% if v.estado != 'cancelado' %}
             <form method="POST" action="{{ url_for('pos.devolver_venta', pedido_id=v.id) }}" class="inline"
-                  onsubmit="return confirm('¿Devolver esta venta?')">
+                  data-confirm="¿Devolver esta venta?">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="motivo" value="Devolución manual">
               <button type="submit" class="text-xs" style="color:#FF6B6B">Devolver</button>

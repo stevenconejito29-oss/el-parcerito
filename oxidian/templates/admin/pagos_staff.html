@@ -10,7 +10,7 @@
   </div>
   <div class="flex gap-2 flex-wrap">
     <a href="{{ url_for('admin.liquidacion_proveedores') }}" class="ox-btn-secondary">🧾 Liquidar proveedores</a>
-    <button onclick="window.print()" class="ox-btn-secondary">🖨️ Imprimir resumen</button>
+    <button data-print class="ox-btn-secondary">🖨️ Imprimir resumen</button>
   </div>
 </div>
 
@@ -236,7 +236,7 @@
   <div class="flex items-center justify-between mb-2">
     <p class="text-sm" style="color:var(--col-muted)">{{ pagos|length }} registros</p>
     <button type="submit" class="px-4 py-2 rounded-xl text-sm font-bold transition staff-pill staff-pill-auto"
-            onclick="return confirm('¿Pagar todos los seleccionados?')">
+            data-confirm-click="¿Pagar todos los seleccionados?">
       ✓ Pagar seleccionados
     </button>
   </div>
@@ -245,7 +245,7 @@
       <table class="ox-table">
         <thead>
           <tr>
-            <th class="w-6"><input type="checkbox" id="sel_all" onclick="toggleAll(this)" class="staff-check"></th>
+            <th class="w-6"><input type="checkbox" id="sel_all" class="staff-check"></th>
             <th>Empleado</th>
             <th>Tipo</th>
             <th class="text-right">Monto</th>
@@ -384,5 +384,6 @@
 function toggleAll(cb) {
   document.querySelectorAll('input[name="pago_ids"]').forEach(c => c.checked = cb.checked);
 }
+document.getElementById('sel_all')?.addEventListener('change', (event) => toggleAll(event.currentTarget));
 </script>
 {% endblock %}

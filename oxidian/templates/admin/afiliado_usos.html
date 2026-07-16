@@ -31,7 +31,7 @@
   <button type="submit"
           class="ox-btn-ghost px-5 py-2.5 font-bold text-sm"
           style="color:var(--role-super-admin,#C084FC);border-color:color-mix(in srgb,var(--role-super-admin,#C084FC) 40%,transparent)"
-          onclick="return confirm('¿Marcar todas las comisiones pendientes (€{{ "%.2f"|format(pendiente) }}) como pagadas?')">
+          data-confirm-click="¿Marcar todas las comisiones pendientes (€{{ "%.2f"|format(pendiente) }}) como pagadas?">
     ✓ Pagar todas las pendientes (€{{ "%.2f"|format(pendiente) }})
   </button>
 </form>

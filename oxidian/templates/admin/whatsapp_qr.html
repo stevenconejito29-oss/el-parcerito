@@ -4,7 +4,7 @@
 
 <div class="flex items-center justify-between mb-6">
   <h1 class="text-2xl font-bold text-white">Panel WhatsApp Bot</h1>
-  <button onclick="actualizarEstado()" class="ox-btn-ghost text-sm">🔄 Actualizar</button>
+  <button data-refresh-whatsapp class="ox-btn-ghost text-sm">🔄 Actualizar</button>
 </div>
 
 <div class="grid md:grid-cols-2 gap-6">
@@ -165,7 +165,7 @@ async function actualizarEstado() {
 }
 
 let oxWhatsappPolling = null;
-document.querySelector('button[onclick="actualizarEstado()"]')?.addEventListener('click', () => {
+document.querySelector('[data-refresh-whatsapp]')?.addEventListener('click', () => {
   if (!oxWhatsappPolling) {
     oxWhatsappPolling = setInterval(actualizarEstado, 8000);
   }

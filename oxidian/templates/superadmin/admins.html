@@ -12,7 +12,7 @@
       <p class="oa-page-header__subtitle">Crea admins y decide qué módulos puede usar cada uno. Nuevos admins arrancan con el <strong>preset operacional</strong> (9 módulos) — sensibles quedan apagados hasta que los actives.</p>
     </div>
     <div class="oa-page-header__actions">
-      <button type="button" onclick="document.getElementById('modal-nuevo').classList.remove('hidden')" class="oa-btn oa-btn--primary">
+      <button type="button" data-dialog-open="modal-nuevo" class="oa-btn oa-btn--primary">
         + Nuevo admin
       </button>
     </div>
@@ -75,19 +75,21 @@
             ⚡ Features
           </a>
           {% endif %}
-          <button type="button" onclick='abrirEditar({{ u.id }}, {{ u.nombre|tojson }}, {{ u.rol|tojson }}, {{ (u.telefono or "")|tojson }})' class="oa-btn oa-btn--sm">
+          <button type="button" class="oa-btn oa-btn--sm" data-admin-edit
+                  data-admin-id="{{ u.id }}" data-admin-name="{{ u.nombre|e }}"
+                  data-admin-role="{{ u.rol|e }}" data-admin-phone="{{ (u.telefono or '')|e }}">
             ✏️ Editar
           </button>
           {% if u.id != current_user.id %}
           <form method="POST" action="{{ url_for('superadmin.toggle_admin', user_id=u.id) }}"
-                {% if u.activo %}onsubmit="return confirm('¿Desactivar a {{ u.nombre|e }}? Perderá acceso al panel hasta que lo reactives.');"{% endif %}>
+                {% if u.activo %}data-confirm="¿Desactivar a {{ u.nombre|e }}? Perderá acceso al panel hasta que lo reactives."{% endif %}>
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="oa-btn oa-btn--sm {% if u.activo %}oa-btn--danger{% else %}oa-btn--primary{% endif %}">
               {{ '⏸ Desactivar' if u.activo else '▶ Activar' }}
             </button>
           </form>
           <form method="POST" action="{{ url_for('superadmin.eliminar_admin', user_id=u.id) }}"
-                onsubmit="return confirm('¿ELIMINAR permanentemente a {{ u.nombre|e }}? Si tiene registros operativos se desactivará en su lugar. Esta acción no se puede deshacer.');">
+                data-confirm="¿ELIMINAR permanentemente a {{ u.nombre|e }}? Si tiene registros operativos se desactivará en su lugar. Esta acción no se puede deshacer.">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="oa-btn oa-btn--sm oa-btn--danger" title="Eliminar usuario">
               🗑️
@@ -106,7 +108,7 @@
     <p class="oa-empty__title">Sin administradores</p>
     <p class="oa-empty__body">Crea el primer administrador para delegar la operación diaria del panel.</p>
     <div class="oa-empty__cta">
-      <button type="button" onclick="document.getElementById('modal-nuevo').classList.remove('hidden')" class="oa-btn oa-btn--primary">+ Crear primer admin</button>
+      <button type="button" data-dialog-open="modal-nuevo" class="oa-btn oa-btn--primary">+ Crear primer admin</button>
     </div>
   </div>
   {% endif %}
@@ -114,14 +116,14 @@
 </div>
 
 {# ── Modal: Nuevo admin ─────────────────────────────────── #}
-<div id="modal-nuevo" class="oa-dialog hidden" onclick="if(event.target===this)this.classList.add('hidden')">
-  <div class="oa-dialog__panel" onclick="event.stopPropagation()">
+<div id="modal-nuevo" class="oa-dialog hidden" data-dialog-backdrop>
+  <div class="oa-dialog__panel">
     <div class="oa-dialog__head">
       <div>
         <p class="oa-dialog__title">Nuevo administrador</p>
         <p class="oa-dialog__sub">Se creará con el preset operacional activo. Los módulos sensibles requieren tu OK después.</p>
       </div>
-      <button type="button" onclick="document.getElementById('modal-nuevo').classList.add('hidden')" class="oa-dialog__close" aria-label="Cerrar">&times;</button>
+      <button type="button" data-dialog-close="modal-nuevo" class="oa-dialog__close" aria-label="Cerrar">&times;</button>
     </div>
     <form method="POST" action="{{ url_for('superadmin.crear_admin') }}" class="oa-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -158,11 +160,11 @@
 </div>
 
 {# ── Modal: Editar admin ────────────────────────────────── #}
-<div id="modal-editar" class="oa-dialog hidden" onclick="if(event.target===this)this.classList.add('hidden')">
-  <div class="oa-dialog__panel" onclick="event.stopPropagation()">
+<div id="modal-editar" class="oa-dialog hidden" data-dialog-backdrop>
+  <div class="oa-dialog__panel">
     <div class="oa-dialog__head">
       <p class="oa-dialog__title">✏️ Editar: <span id="edit-nombre" style="color:var(--brand-primary);"></span></p>
-      <button type="button" onclick="document.getElementById('modal-editar').classList.add('hidden')" class="oa-dialog__close" aria-label="Cerrar">&times;</button>
+      <button type="button" data-dialog-close="modal-editar" class="oa-dialog__close" aria-label="Cerrar">&times;</button>
     </div>
     <form id="form-editar" method="POST" action="" class="oa-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -204,5 +206,13 @@ function abrirEditar(id, nombre, rol, telefono) {
   document.getElementById('modal-editar').classList.remove('hidden');
   document.getElementById('modal-editar').querySelector('input[name="nombre"]')?.focus();
 }
+
+document.addEventListener('click', (event) => {
+  const edit = event.target.closest('[data-admin-edit]');
+  if (edit) {
+    abrirEditar(edit.dataset.adminId, edit.dataset.adminName,
+      edit.dataset.adminRole, edit.dataset.adminPhone);
+  }
+});
 </script>
 {% endblock %}

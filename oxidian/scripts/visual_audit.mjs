@@ -339,7 +339,7 @@ async function captureSuperadmin(page) {
     await reveal(page, '#modal-nuevo');
   }, false);
   await snap(page, 'administrador-editar', '/superadmin/admins', 'formularios', async () => {
-    const button = page.locator('button[onclick^="abrirEditar("]:visible').first();
+    const button = page.locator('button[data-admin-edit]:visible').first();
     if (await button.count()) await button.click();
     else await reveal(page, '#modal-editar');
   }, false);
@@ -445,6 +445,10 @@ async function snapOrientation(
     viewport: page.viewportSize(),
     horizontalOverflow: false,
     fixedControlOverlaps: [],
+    clippedControls: [],
+    undersizedTargets: [],
+    lowContrastText: [],
+    inlineEventHandlers: [],
     unexpectedAuthRedirect: false,
     consoleErrors: errors,
     failedRequests,
@@ -498,14 +502,108 @@ async function snapOrientation(
         }
         if (overlaps.length >= 12) break;
       }
+
+      const identify = (element) => ({
+        element: element.id || String(element.className || '').trim().split(/\s+/).slice(0, 3).join('.') || element.tagName,
+        text: (element.getAttribute('aria-label') || element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 80),
+      });
+      const clippedControls = controls.filter((element) => {
+        const style = getComputedStyle(element);
+        const horizontalClip = element.scrollWidth > element.clientWidth + 2
+          && ['hidden', 'clip'].includes(style.overflowX);
+        const verticalClip = element.scrollHeight > element.clientHeight + 2
+          && ['hidden', 'clip'].includes(style.overflowY);
+        return horizontalClip || verticalClip;
+      }).slice(0, 16).map(identify);
+      const undersizedTargets = controls.filter((element) => {
+        if (element.matches('input[type="hidden"]')) return false;
+        const rect = element.getBoundingClientRect();
+        return rect.width < 24 || rect.height < 24;
+      }).slice(0, 16).map((element) => ({
+        ...identify(element),
+        width: Math.round(element.getBoundingClientRect().width),
+        height: Math.round(element.getBoundingClientRect().height),
+      }));
+
+      const parseColor = (value) => {
+        const match = String(value || '').match(/rgba?\(([^)]+)\)/i);
+        if (!match) return null;
+        const parts = match[1].split(/[\s,\/]+/).filter(Boolean).map(Number);
+        if (parts.length < 3 || parts.slice(0, 3).some(Number.isNaN)) return null;
+        return { r: parts[0], g: parts[1], b: parts[2], a: Number.isFinite(parts[3]) ? parts[3] : 1 };
+      };
+      const blend = (front, back) => ({
+        r: front.r * front.a + back.r * (1 - front.a),
+        g: front.g * front.a + back.g * (1 - front.a),
+        b: front.b * front.a + back.b * (1 - front.a),
+        a: 1,
+      });
+      const effectiveBackground = (element) => {
+        const layers = [];
+        for (let node = element; node; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          if (style.backgroundImage !== 'none') return null;
+          const color = parseColor(style.backgroundColor);
+          if (color?.a > 0) layers.push(color);
+          if (color?.a >= .995) break;
+        }
+        let result = { r: 255, g: 255, b: 255, a: 1 };
+        for (let index = layers.length - 1; index >= 0; index -= 1) result = blend(layers[index], result);
+        return result;
+      };
+      const luminance = (color) => {
+        const channel = (value) => {
+          const normalized = value / 255;
+          return normalized <= .04045 ? normalized / 12.92 : ((normalized + .055) / 1.055) ** 2.4;
+        };
+        return .2126 * channel(color.r) + .7152 * channel(color.g) + .0722 * channel(color.b);
+      };
+      const contrast = (a, b) => {
+        const l1 = luminance(a), l2 = luminance(b);
+        return (Math.max(l1, l2) + .05) / (Math.min(l1, l2) + .05);
+      };
+      const textElements = [...document.querySelectorAll(
+        'p,span,small,strong,label,a,button,h1,h2,h3,h4,h5,h6,th,td,summary',
+      )].filter((element) => {
+        if (!visible(element) || !(element.textContent || '').trim()) return false;
+        return ![...element.children].some((child) => (child.textContent || '').trim());
+      });
+      const lowContrastText = [];
+      for (const element of textElements) {
+        const style = getComputedStyle(element);
+        const foreground = parseColor(style.color);
+        const background = effectiveBackground(element);
+        if (!foreground || !background || foreground.a < .95) continue;
+        const ratio = contrast(foreground, background);
+        const fontSize = parseFloat(style.fontSize) || 16;
+        const weight = parseInt(style.fontWeight, 10) || 400;
+        const threshold = fontSize >= 24 || (fontSize >= 18.66 && weight >= 700) ? 3 : 4.5;
+        if (ratio + .05 >= threshold) continue;
+        lowContrastText.push({ ...identify(element), ratio: Number(ratio.toFixed(2)), threshold });
+        if (lowContrastText.length >= 20) break;
+      }
+
+      const inlineEventHandlers = [...document.querySelectorAll('body *')]
+        .flatMap((element) => [...element.attributes]
+          .filter((attribute) => /^on/i.test(attribute.name))
+          .map((attribute) => ({ ...identify(element), attribute: attribute.name })))
+        .slice(0, 30);
       return {
         clientWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth,
         fixedControlOverlaps: overlaps,
+        clippedControls,
+        undersizedTargets,
+        lowContrastText,
+        inlineEventHandlers,
       };
     });
     entry.horizontalOverflow = dimensions.scrollWidth > dimensions.clientWidth + 3;
     entry.fixedControlOverlaps = dimensions.fixedControlOverlaps;
+    entry.clippedControls = dimensions.clippedControls;
+    entry.undersizedTargets = dimensions.undersizedTargets;
+    entry.lowContrastText = dimensions.lowContrastText;
+    entry.inlineEventHandlers = dimensions.inlineEventHandlers;
 
     if (fullPage) {
       await page.addStyleTag({
@@ -528,7 +626,10 @@ async function snapOrientation(
     page.off('requestfailed', onRequestFailed);
     report.captures.push(entry);
     const overlap = entry.fixedControlOverlaps.length ? ' [fixed-overlap]' : '';
-    console.log(`${entry.ok ? '✓' : '✗'} ${name}${entry.horizontalOverflow ? ' [overflow]' : ''}${overlap}`);
+    const clipped = entry.clippedControls.length ? ' [clipped]' : '';
+    const contrast = entry.lowContrastText.length ? ' [contrast]' : '';
+    const inline = entry.inlineEventHandlers.length ? ' [inline-events]' : '';
+    console.log(`${entry.ok ? '✓' : '✗'} ${name}${entry.horizontalOverflow ? ' [overflow]' : ''}${overlap}${clipped}${contrast}${inline}`);
   }
 }
 
@@ -588,7 +689,7 @@ function buildReadme(data) {
     `Tablet vertical: ${data.viewports.tablet_vertical.width} x ${data.viewports.tablet_vertical.height}`,
     `Tablet horizontal: ${data.viewports.tablet_horizontal.width} x ${data.viewports.tablet_horizontal.height}`,
     '',
-    'Cada vista fue capturada en teléfono y tablet, tanto en orientación vertical como horizontal, navegando la aplicación real. `audit.json` contiene estado HTTP, URL final, viewport, errores de navegador, desbordamiento horizontal, solapamientos de controles por elementos fijos y redirecciones inesperadas a login/MFA.',
+    'Cada vista fue capturada en teléfono y tablet, tanto en orientación vertical como horizontal, navegando la aplicación real. `audit.json` contiene estado HTTP, URL final, viewport, errores de navegador, desbordamiento horizontal, solapamientos, controles recortados, objetivos táctiles demasiado pequeños, contraste aproximado, eventos inline incompatibles con CSP y redirecciones inesperadas a login/MFA.',
     '',
   ];
   for (const [folder, items] of Object.entries(grouped)) {
@@ -597,7 +698,10 @@ function buildReadme(data) {
       const state = item.ok ? 'OK' : 'ERROR';
       const overflow = item.horizontalOverflow ? ' · desbordamiento horizontal' : '';
       const overlaps = item.fixedControlOverlaps?.length ? ' · controles obstruidos' : '';
-      lines.push(`- [${item.name}](${item.file || '#'}) · ${state} · HTTP ${item.status ?? 'N/A'}${overflow}${overlaps}`);
+      const clipped = item.clippedControls?.length ? ' · controles recortados' : '';
+      const contrast = item.lowContrastText?.length ? ' · contraste por revisar' : '';
+      const inline = item.inlineEventHandlers?.length ? ' · eventos inline bloqueables' : '';
+      lines.push(`- [${item.name}](${item.file || '#'}) · ${state} · HTTP ${item.status ?? 'N/A'}${overflow}${overlaps}${clipped}${contrast}${inline}`);
     }
     lines.push('');
   }

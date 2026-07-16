@@ -16,7 +16,7 @@
     <h1 class="text-2xl font-black text-white">🤝 Afiliados</h1>
     <p class="text-xs mt-0.5" style="color:var(--col-muted)">Códigos de referido con descuento para el cliente y comisión para el afiliado</p>
   </div>
-  <button onclick="toggleForm('form-nuevo')"
+  <button data-toggle-section="form-nuevo"
           class="text-sm font-bold px-4 py-2 rounded-xl" style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
     + Nuevo código
   </button>
@@ -112,7 +112,7 @@
     <div class="flex gap-3 mt-5">
       <button type="submit" class="px-6 py-2 font-bold rounded-xl text-black"
               style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Crear código</button>
-      <button type="button" onclick="toggleForm('form-nuevo')"
+      <button type="button" data-toggle-section="form-nuevo"
               class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
     </div>
   </form>
@@ -161,10 +161,10 @@
       <div class="flex items-center gap-2 flex-shrink-0 flex-wrap">
         <a href="{{ url_for('admin.usos_afiliado', codigo_id=c.id) }}"
            class="af-btn">📊 Usos</a>
-        <form method="POST" action="{{ url_for('admin.pagar_comisiones_afiliado', codigo_id=c.id) }}">
+        <form method="POST" action="{{ url_for('admin.pagar_comisiones_afiliado', codigo_id=c.id) }}"
+              data-confirm="¿Marcar como pagadas todas las comisiones pendientes de {{ c.codigo }}?">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="af-btn af-btn-success"
-                  onclick="return confirm('¿Marcar como pagadas todas las comisiones pendientes de {{ c.codigo }}?')">
+          <button type="submit" class="af-btn af-btn-success">
             💸 Pagar
           </button>
         </form>
@@ -174,12 +174,17 @@
             {{ '⏸ Pausar' if c.activo else '▶ Activar' }}
           </button>
         </form>
-        <button type="button"
-                onclick="abrirEditarAfiliado({{ c.id }}, {{ c.codigo|tojson }}, {{ (c.descripcion or '')|tojson }}, {{ c.tipo|tojson }}, {{ (c.user_id or '')|tojson }}, {{ (c.descuento_tipo or '')|tojson }}, {{ (c.descuento_valor or 0)|tojson }}, {{ (c.comision_tipo or '')|tojson }}, {{ (c.comision_valor or 0)|tojson }}, {{ (c.usos_maximos or '')|tojson }}, {{ (c.fecha_inicio.isoformat() if c.fecha_inicio else '')|tojson }}, {{ (c.fecha_fin.isoformat() if c.fecha_fin else '')|tojson }})"
+        <button type="button" data-affiliate-edit
+                data-id="{{ c.id }}" data-code="{{ c.codigo|e }}" data-description="{{ (c.descripcion or '')|e }}"
+                data-type="{{ c.tipo|e }}" data-user-id="{{ c.user_id or '' }}"
+                data-discount-type="{{ (c.descuento_tipo or '')|e }}" data-discount-value="{{ c.descuento_valor or 0 }}"
+                data-commission-type="{{ (c.comision_tipo or '')|e }}" data-commission-value="{{ c.comision_valor or 0 }}"
+                data-max-uses="{{ c.usos_maximos or '' }}" data-start-date="{{ c.fecha_inicio.isoformat() if c.fecha_inicio else '' }}"
+                data-end-date="{{ c.fecha_fin.isoformat() if c.fecha_fin else '' }}"
                 class="af-btn">✏️ Editar</button>
         {% if not c.usos_actuales %}
         <form method="POST" action="{{ url_for('admin.eliminar_afiliado', codigo_id=c.id) }}"
-              onsubmit="return confirm('¿Eliminar el código {{ c.codigo }}? Esta acción no se puede deshacer.')">
+              data-confirm="¿Eliminar el código {{ c.codigo }}? Esta acción no se puede deshacer.">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="af-btn af-btn-danger">🗑️</button>
         </form>
@@ -193,11 +198,11 @@
 
 {# ── MODAL EDITAR AFILIADO ── #}
 <div id="modal-editar-af" class="hidden fixed inset-0 z-50 flex items-start justify-center pt-10 pb-10 overflow-y-auto"
-     style="background:rgba(0,0,0,.75)" onclick="if(event.target===this)this.classList.add('hidden')">
-  <div class="ox-card p-5 w-full max-w-xl mx-4 shadow-2xl" onclick="event.stopPropagation()">
+     style="background:rgba(0,0,0,.75)" data-dialog-backdrop>
+  <div class="ox-card p-5 w-full max-w-xl mx-4 shadow-2xl">
     <div class="flex justify-between items-center mb-4">
       <h2 class="font-black text-white">✏️ Editar: <span id="af-edit-titulo" class="text-yellow-400 font-mono"></span></h2>
-      <button onclick="document.getElementById('modal-editar-af').classList.add('hidden')"
+      <button data-dialog-close="modal-editar-af"
               class="w-8 h-8 rounded-lg flex items-center justify-center text-xl"
               style="background:var(--col-elevated);color:var(--col-muted);border:1px solid var(--col-border)">&times;</button>
     </div>
@@ -264,7 +269,7 @@
       </div>
       <div class="flex gap-3 pt-2">
         <button type="submit" class="ox-btn-primary flex-1">💾 Guardar cambios</button>
-        <button type="button" onclick="document.getElementById('modal-editar-af').classList.add('hidden')"
+        <button type="button" data-dialog-close="modal-editar-af"
                 class="ox-btn-ghost px-5">Cancelar</button>
       </div>
     </form>
@@ -324,5 +329,17 @@ function abrirEditarAfiliado(id, codigo, desc, tipo, userId, descTipo, descVal, 
   document.getElementById('form-editar-af').action = `/admin/afiliados/${id}/editar`;
   document.getElementById('modal-editar-af').classList.remove('hidden');
 }
+document.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-toggle-section]');
+  if (toggle) toggleForm(toggle.dataset.toggleSection);
+  const edit = event.target.closest('[data-affiliate-edit]');
+  if (!edit) return;
+  abrirEditarAfiliado(
+    edit.dataset.id, edit.dataset.code, edit.dataset.description, edit.dataset.type,
+    edit.dataset.userId, edit.dataset.discountType, edit.dataset.discountValue,
+    edit.dataset.commissionType, edit.dataset.commissionValue, edit.dataset.maxUses,
+    edit.dataset.startDate, edit.dataset.endDate,
+  );
+});
 </script>
 {% endblock %}

@@ -53,12 +53,12 @@
           <span>📤</span>
           <span class="upload-label">Subir imagen (jpg, png, webp — máx 10MB)</span>
           <input type="file" id="file-imagen" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="hidden"
-                 onchange="previewImagen(this)">
+                 data-product-image-file>
         </label>
         <input type="url" name="imagen_url" id="input-imagen-url"
                placeholder="O pega una URL externa: https://..."
                class="fp-input text-xs"
-               oninput="previewFromUrl(this.value)">
+               data-product-image-url>
         <p class="text-xs" style="color:var(--col-faint)">Archivo → se guarda en servidor; URL → referencia externa.</p>
       </div>
     </div>
@@ -338,7 +338,7 @@
     <label class="fp-check-label mb-3 px-3 py-2 rounded-xl"
            style="background:rgba(39,174,116,.08);border:1px solid rgba(39,174,116,.2)">
       <input type="checkbox" name="es_hipoalergenico" id="cb-hipo" style="accent-color:#5EF097"
-             onchange="toggleHipo(this)">
+             data-toggle-hypoallergenic>
       <span style="color:#27AE74">🌿 Apto para todos — sin alérgenos relevantes</span>
     </label>
     <div id="bloque-alergenos" class="fp-allergen-grid grid grid-cols-5 sm:grid-cols-7 gap-1.5">

@@ -11,6 +11,13 @@ body.ox-body-admin {
   --col-gold: var(--brand-primary);
   --col-blue: var(--brand-accent);
   --col-red: var(--brand-secondary);
+  /* Se recalculan en el contexto del panel porque la capa legacy establece
+     su tema claro directamente en `body`; heredar la mezcla calculada en
+     `:root` usaría por error el texto del tema oscuro. */
+  --brand-text: color-mix(in srgb, var(--brand-primary) 58%, var(--col-text));
+  --status-ok-text: color-mix(in srgb, var(--status-ok) 58%, var(--col-text));
+  --status-warn-text: color-mix(in srgb, var(--status-warn) 56%, var(--col-text));
+  --status-err-text: color-mix(in srgb, var(--status-err) 66%, var(--col-text));
   --role-shell-bg: color-mix(in srgb, var(--brand-accent) 9%, #11151b);
   --role-shell-raised: color-mix(in srgb, var(--brand-accent) 13%, #171c24);
   --role-shell-line: color-mix(in srgb, var(--brand-primary) 24%, rgba(255,255,255,.08));
@@ -199,7 +206,15 @@ body.ox-body-admin .work-availability-button small { margin-top: .12rem; color: 
 body.ox-body-admin .work-availability-button:active { transform: scale(.97); }
 body.ox-body-admin .work-availability-button:focus-visible { outline: 3px solid color-mix(in srgb,var(--action-primary) 40%,transparent); outline-offset: 2px; }
 body.ox-body-admin .is-online .work-availability-button { border-color: color-mix(in srgb,var(--theme-success) 45%,transparent); background: color-mix(in srgb,var(--theme-success) 9%,var(--col-surface)); }
-body.ox-body-admin .is-offline .work-availability-button { border-color: color-mix(in srgb,var(--status-warn) 48%,transparent); background: color-mix(in srgb,var(--status-warn) 9%,var(--col-surface)); }
+body.ox-body-admin .is-offline .work-availability-button {
+  border-color: color-mix(in srgb,var(--brand-primary) 78%,var(--col-border));
+  background: var(--brand-primary);
+  color: var(--brand-on-primary);
+  box-shadow: 0 6px 16px color-mix(in srgb,var(--brand-primary) 22%,transparent);
+}
+body.ox-body-admin .is-offline .work-availability-button small {
+  color: color-mix(in srgb,var(--brand-on-primary) 78%,transparent);
+}
 
 @media (max-width: 430px) {
   body.ox-body-admin .work-employee-toggle {
