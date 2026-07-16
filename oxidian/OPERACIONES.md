@@ -101,15 +101,17 @@ Claves importantes:
 | `DIRECCION_NEGOCIO` | Mostrado en /info del bot |
 | `HORARIO_APERTURA` / `HORARIO_CIERRE` | Bloquean pedidos fuera de horario |
 | `TIENDA_FORZAR_CERRADA` | "1" cierra la tienda inmediatamente |
-| `CENTRO_LAT` / `CENTRO_LON` / `RADIO_ENTREGA_KM` | Cobertura geográfica básica |
+| `CENTRO_LAT` / `CENTRO_LON` / `RADIO_ENTREGA_KM` | Centro y radio global de respaldo; las zonas detalladas tienen prioridad |
 | `BOT_API_KEY` | API key compartida Oxidian ↔ bot Node |
 | `PUNTOS_POR_EURO` / `PUNTOS_CANJE_RATIO` | Programa de fidelidad |
 
 ## 8. Zonas de entrega
 
-Super_admin → **Zonas**. Cada zona puede tener su propia geo (lat/lng/radio)
-para asignación automática en checkout, o quedarse sin geo y el sistema usa
-la primera por orden.
+Super_admin → **Zonas**. Cada zona puede tener un contorno irregular dibujado
+sobre el mapa, además del radio compatible anterior. El servidor calcula la
+zona; el cliente y el chatbot no pueden imponerla. La explicación técnica,
+reglas de solape y procedimiento de prueba están en
+[`docs/COBERTURA_REPARTO.md`](docs/COBERTURA_REPARTO.md).
 
 ## 9. Backups
 
