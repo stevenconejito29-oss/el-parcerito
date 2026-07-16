@@ -16,7 +16,7 @@ from functools import wraps
 from datetime import datetime, timedelta, date
 
 from flask import Blueprint, jsonify, request, current_app
-from extensions import db, get_or_404
+from extensions import db, get_or_404, limiter
 from models import (User, Product, Categoria, Order, OrderItem, OrderProviderStatus,
                     ProveedorProducto,
                     Coupon, ComboItem,
@@ -1046,7 +1046,8 @@ def catalogo():
         })
     except Exception as e:
         current_app.logger.error(f"api_bot.catalogo: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @api_bot_bp.route("/producto/<int:producto_id>")
@@ -1193,7 +1194,8 @@ def catalogo_simulador():
         })
     except Exception as e:
         current_app.logger.error(f"api_bot.catalogo_simulador: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── ZONAS ───────────────────────────────────
@@ -1219,7 +1221,8 @@ def zonas():
             ]
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── CLIENTES ────────────────────────────────
@@ -1239,7 +1242,8 @@ def buscar_cliente():
             })
         return jsonify({"ok": True, "existe": False})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @api_bot_bp.route("/cliente/registrar", methods=["POST"])
@@ -1289,7 +1293,7 @@ def registrar_cliente():
                     }
                 })
             # Ni siquiera existía tras el race → error de otra restricción
-            logger.exception("registrar_cliente IntegrityError sin cliente existente tel=%s", telefono)
+            logger.exception("registrar_cliente IntegrityError sin cliente existente tel=%s", _mask_phone(telefono))
             return jsonify({"ok": False, "error": "No se pudo registrar el cliente. Intenta de nuevo."}), 409
         return jsonify({
             "ok": True,
@@ -1386,7 +1390,8 @@ def validar_cupon():
 
         return jsonify({"ok": False, "msg": "Código no encontrado"}), 404
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── CREAR PEDIDO ────────────────────────────
@@ -2608,7 +2613,8 @@ def enviar_mensaje():
         return jsonify({"ok": True, "recibido": True,
                         "telefono": telefono, "chars": len(mensaje)})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── BROADCAST (campaña masiva desde Oxidian) ─
@@ -2696,7 +2702,8 @@ def catalogo_completo():
             ]
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── PROMOCIONES ACTIVAS ─────────────────────
@@ -2804,6 +2811,8 @@ def guardar_resena(pedido_id):
 
 @api_bot_bp.route("/pedidos")
 @bot_required
+@(limiter.limit("30 per minute", key_func=lambda: (request.args.get("telefono") or "anon"))
+  if limiter is not None else (lambda f: f))
 def pedidos_cliente():
     try:
         cliente, _telefono = _cliente_por_telefono(request.args.get("telefono", ""))
@@ -2877,7 +2886,8 @@ def cobertura_delivery():
             "ciudad": SiteConfig.get("CIUDAD_NEGOCIO", ""),
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── FLUJO DE MENÚ DEL BOT (script paso a paso) ──────────────────────────────
@@ -2934,7 +2944,8 @@ def asistente_bot():
             },
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @api_bot_bp.route("/menu-flow")
@@ -3120,7 +3131,8 @@ def menu_flow():
             },
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── CATÁLOGO FILTRADO POR CATEGORÍA ─────────────────────────────────────────
@@ -3158,7 +3170,8 @@ def catalogo_por_categoria(categoria_id):
             ]
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── CUPONES ACTIVOS (para consulta del bot) ──────────────────────────────────
@@ -3191,7 +3204,8 @@ def cupones_info():
             ) if activos else "No hay cupones activos ahora mismo, ¡pero revisa más tarde! 😊"
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── PUNTOS: PRODUCTOS CANJEABLES ────────────────────────────────────────────
@@ -3255,7 +3269,8 @@ def productos_canjeables():
             )
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── PUNTOS: SOLICITAR CÓDIGO DE VERIFICACIÓN ────────────────────────────────
@@ -3465,7 +3480,8 @@ def puntos_saldo_completo():
             "mensaje_bot": mensaje,
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── INFO DEL NEGOCIO ─────────────────────────────────────────────────────────
@@ -3525,7 +3541,8 @@ def info_negocio():
             )
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @api_bot_bp.route("/tienda/status")
@@ -3550,7 +3567,8 @@ def tienda_status():
             ),
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 def _normalizar_telefono_bot(raw):
@@ -3843,7 +3861,8 @@ def bot_admin_tienda():
         })
     except Exception as e:
         db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @api_bot_bp.route("/admin/resumen-hoy")
@@ -3892,7 +3911,8 @@ def bot_admin_resumen_hoy():
             "total_sin_stock": len(agotados),
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── Endpoints exclusivos super_admin desde el bot ──────────────
@@ -3974,7 +3994,8 @@ def bot_admin_forzar_cierre():
         })
     except Exception as e:
         db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @api_bot_bp.route("/admin/salud")
@@ -4105,7 +4126,8 @@ def bot_admin_pedidos_riesgo():
             "ruta_lentos": payload(ruta_lentos),
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @api_bot_bp.route("/admin/productos/buscar")
@@ -4125,7 +4147,8 @@ def bot_admin_buscar_productos():
         productos = query.order_by(Product.activo.desc(), Product.nombre.asc()).limit(8).all()
         return jsonify({"ok": True, "productos": [_producto_admin_payload(p) for p in productos]})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @api_bot_bp.route("/admin/productos/<int:producto_id>/precio", methods=["POST"])
@@ -4161,7 +4184,8 @@ def bot_admin_cambiar_precio(producto_id):
         })
     except Exception as e:
         db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @api_bot_bp.route("/admin/productos/<int:producto_id>/activo", methods=["POST"])
@@ -4186,7 +4210,8 @@ def bot_admin_producto_activo(producto_id):
         return jsonify({"ok": True, "producto": _producto_admin_payload(producto)})
     except Exception as e:
         db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @api_bot_bp.route("/admin/clientes/buscar")
@@ -4210,7 +4235,8 @@ def bot_admin_buscar_cliente():
             },
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @api_bot_bp.route("/admin/clientes/<int:cliente_id>/puntos", methods=["POST"])
@@ -4253,7 +4279,8 @@ def bot_admin_ajustar_puntos(cliente_id):
         })
     except Exception as e:
         db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 @api_bot_bp.route("/admin/clientes/<int:cliente_id>/puntos/historial")
@@ -4279,7 +4306,8 @@ def bot_admin_historial_puntos(cliente_id):
             ],
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.exception("api_bot 500")
+        return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
 
 
 # ─── IA para admin/super_admin vía WhatsApp ─────────────────────────────

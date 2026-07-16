@@ -1843,15 +1843,10 @@ function clearAttempts(ses, key) {
   saveSesion(ses);
 }
 
-/**
- * Modo pánico global: cuando super_admin activa "emergency_on" desde el
- * web (`bot_enabled=0`), todos los handlers admin deben responder con
- * un aviso corto en lugar de ejecutar. Los comandos !status y !sync
- * antes ignoraban este flag.
- */
-function isBotEnabled() {
-  return String(cfg('bot_enabled', '1') || '1').trim() !== '0';
-}
+/* isBotEnabled definido más arriba (línea ~475). El flag `bot_enabled=0` es
+ * el interruptor global de pánico — todos los handlers admin deben
+ * comprobarlo. La comprobación no cachea, así que el cambio desde el
+ * panel toma efecto inmediato en el siguiente mensaje. */
 
 // ─── IA ADMINISTRATIVA ─────────────────────────────────────────────────────
 // La IA NO atiende clientes. Se reserva para admin/super_admin: análisis de

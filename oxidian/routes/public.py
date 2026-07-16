@@ -58,6 +58,12 @@ from store_config import (
 
 public_bp = Blueprint("public", __name__)
 
+# TTL para el token que autoriza ver /pedido/<id>/confirmado desde la sesión
+# del navegador. Suficiente para que el cliente pinche el link del WhatsApp,
+# pero evita que la info del pedido quede accesible indefinidamente si el
+# navegador queda abierto (kioscos, portátiles compartidos, etc.).
+GUEST_ORDER_TOKEN_TTL_S = 24 * 3600
+
 
 def _normalize_phone(raw):
     """Normaliza el teléfono que identifica de forma única a cada cliente."""
@@ -1739,7 +1745,10 @@ def checkout():
                 token = cached.get("token")
                 if token:
                     guest_tokens = session.get("guest_order_tokens", {})
-                    guest_tokens[str(prev.order_id)] = token
+                    guest_tokens[str(prev.order_id)] = {
+                        "token": token,
+                        "exp": int(datetime.utcnow().timestamp()) + GUEST_ORDER_TOKEN_TTL_S,
+                    }
                     session["guest_order_tokens"] = guest_tokens
                     session["last_guest_order_id"] = prev.order_id
                     session["last_guest_order_token"] = token
@@ -2188,7 +2197,11 @@ def checkout():
                 iva_acumulado += iva_importe
             pedido.iva_total = iva_acumulado
         except Exception:
-            # No bloqueamos el checkout si algo va mal calculando IVA.
+            # No bloqueamos el checkout si algo va mal calculando IVA, pero
+            # dejamos rastro para poder diagnosticar en producción.
+            current_app.logger.exception(
+                "checkout: fallo calculando IVA pedido=%s", pedido.id,
+            )
             pedido.iva_total = 0
 
         # ── Canje de puntos unificado via loyalty_service ───────────────
@@ -2225,7 +2238,12 @@ def checkout():
 
         token = uuid.uuid4().hex
         guest_tokens = session.get("guest_order_tokens", {})
-        guest_tokens[str(pedido.id)] = token
+        # TTL 24h — evita que el token quede accesible indefinidamente en la
+        # sesión del navegador (protege info sensible del pedido).
+        guest_tokens[str(pedido.id)] = {
+            "token": token,
+            "exp": int(datetime.utcnow().timestamp()) + GUEST_ORDER_TOKEN_TTL_S,
+        }
         session["guest_order_tokens"] = guest_tokens
         session["last_guest_order_id"] = pedido.id
         session["last_guest_order_token"] = token
@@ -2301,7 +2319,16 @@ def pedido_confirmado(pedido_id):
     pedido = get_or_404(Order, pedido_id)
     token = request.args.get("token", "") or session.get("last_guest_order_token", "")
     guest_tokens = session.get("guest_order_tokens", {})
-    expected = guest_tokens.get(str(pedido_id))
+    slot = guest_tokens.get(str(pedido_id))
+    # Compat: valores antiguos guardaban str; los nuevos guardan dict con TTL.
+    if isinstance(slot, dict):
+        expected = slot.get("token", "")
+        exp = int(slot.get("exp") or 0)
+        if exp and exp < int(datetime.utcnow().timestamp()):
+            flash("Este enlace de pedido ya expiró.", "warning")
+            return redirect(url_for("public.index"))
+    else:
+        expected = slot
     if not token or token != expected:
         flash("Acceso denegado.", "danger")
         return redirect(url_for("public.index"))
