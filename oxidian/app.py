@@ -8,7 +8,7 @@ import hmac
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Flask, render_template, request, send_from_directory, g
+from flask import Flask, Response, render_template, request, send_from_directory, g
 from flask_wtf.csrf import generate_csrf
 from sqlalchemy import text
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -184,6 +184,26 @@ def create_app(env="default"):
                 except Exception:
                     db.session.rollback()
                     app.logger.exception("No se pudo actualizar presencia de usuario %s", current_user.id)
+
+    @app.route("/robots.txt")
+    def robots_txt():
+        # Bloquea crawlers de rutas operativas (admin, staff, API). El
+        # storefront público sí puede indexarse. Sin este archivo un crawler
+        # descubridor podría llenar los logs con hits a rutas admin.
+        body = (
+            "User-agent: *\n"
+            "Disallow: /admin/\n"
+            "Disallow: /superadmin/\n"
+            "Disallow: /preparador/\n"
+            "Disallow: /repartidor/\n"
+            "Disallow: /proveedor/\n"
+            "Disallow: /auth/\n"
+            "Disallow: /api/\n"
+            "Disallow: /pos/\n"
+            "Disallow: /pedido/\n"
+            "Allow: /\n"
+        )
+        return Response(body, mimetype="text/plain")
 
     @app.route("/sw.js")
     def service_worker():
@@ -788,7 +808,18 @@ def create_app(env="default"):
             response.headers["Strict-Transport-Security"] = (
                 "max-age=31536000; includeSubDomains"
             )
-        response.headers["X-Oxidian-Version"] = app.config["ASSET_VERSION"]
+        # X-Oxidian-Version es útil para debug en LAN pero filtra el hash del
+        # commit desplegado — un atacante podría correlacionarlo con CVEs
+        # públicos. Solo lo exponemos a redes internas o cuando DEBUG_HEADERS=1.
+        _debug_hdrs = str(os.environ.get("DEBUG_HEADERS", "0")).strip() == "1"
+        _remote_ip = (request.headers.get("X-Real-IP") or request.remote_addr or "").strip()
+        _is_lan = _remote_ip.startswith(("10.", "127.", "192.168.", "172.16.", "172.17.",
+                                          "172.18.", "172.19.", "172.20.", "172.21.",
+                                          "172.22.", "172.23.", "172.24.", "172.25.",
+                                          "172.26.", "172.27.", "172.28.", "172.29.",
+                                          "172.30.", "172.31."))
+        if _debug_hdrs or _is_lan:
+            response.headers["X-Oxidian-Version"] = app.config["ASSET_VERSION"]
         if request.path in ("/health", "/health/live", "/health/ready", "/manifest.webmanifest", "/sw.js"):
             response.headers["Cache-Control"] = "no-store, max-age=0"
         sensitive_public_paths = (
