@@ -31,9 +31,10 @@
     <div class="grid md:grid-cols-3 gap-4">
       <div>
         <label class="af-label">Código *</label>
-        <input type="text" name="codigo" required placeholder="AMIGO20" data-ox-required
+        <input type="text" name="codigo" required minlength="3" maxlength="30"
+               pattern="[A-Za-z0-9][A-Za-z0-9_-]{2,29}" placeholder="AMIGO20" data-ox-required
                class="af-input" style="text-transform:uppercase;font-weight:900;letter-spacing:.1em">
-        <p class="text-xs mt-1" style="color:var(--col-faint)">Mayúsculas, sin espacios</p>
+        <p class="text-xs mt-1" style="color:var(--col-faint)">3–30 caracteres, sin espacios</p>
       </div>
       <div class="md:col-span-2">
         <label class="af-label">Descripción</label>
@@ -73,6 +74,7 @@
           <div>
             <label class="af-label">Valor</label>
             <input type="number" name="descuento_valor" step="0.01" min="0" value="0" class="af-input">
+            <p class="text-xs mt-1" style="color:var(--col-faint)">En porcentaje, máximo 30%.</p>
           </div>
         </div>
       </div>
@@ -92,6 +94,7 @@
           <div>
             <label class="af-label">Valor</label>
             <input type="number" name="comision_valor" step="0.01" min="0" value="0" class="af-input">
+            <p class="text-xs mt-1" style="color:var(--col-faint)">En porcentaje, máximo 100%.</p>
           </div>
         </div>
       </div>

@@ -1654,9 +1654,14 @@ def crear_pedido():
                 if not ok_c:
                     return jsonify({"ok": False, "error": msg_c}), 400
             else:
-                afiliado_obj = AffiliateCode.query.filter_by(codigo=cupon_codigo).first()
+                afiliado_obj = (
+                    AffiliateCode.query
+                    .filter_by(codigo=cupon_codigo)
+                    .with_for_update()
+                    .first()
+                )
                 if afiliado_obj:
-                    ok_a, msg_a = afiliado_obj.es_valido()
+                    ok_a, msg_a = afiliado_obj.es_valido_para_cliente(cliente.id)
                     if not ok_a:
                         return jsonify({"ok": False, "error": msg_a}), 400
                 else:
@@ -1812,7 +1817,7 @@ def crear_pedido():
             encolar_notificaciones_proveedores_pedido(pedido)
             distribuir_pedido(pedido)
 
-        if afiliado_obj and precio.descuento_afiliado > 0:
+        if afiliado_obj:
             registrar_uso_afiliado(afiliado_obj, pedido, cliente, precio.descuento_afiliado)
 
         enviado_wa = enviar_whatsapp_estado(pedido)

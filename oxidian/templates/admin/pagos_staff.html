@@ -255,7 +255,7 @@
         {% for p in pagos %}
         <tr class="{{ 'opacity-60' if p.pagado }}">
           <td>
-            {% if not p.pagado %}
+            {% if p.disponible_para_pago %}
             <input type="checkbox" name="pago_ids" value="{{ p.id }}" class="staff-check">
             {% endif %}
           </td>
@@ -286,16 +286,16 @@
           <td>
             {% if p.pagado %}
             <span class="text-xs font-bold staff-ok">✓ Pagado{% if p.fecha_pago %} {{ p.fecha_pago.strftime('%d/%m') }}{% endif %}</span>
-            {% else %}
+            {% elif p.disponible_para_pago %}
             <span class="text-xs font-bold staff-danger">⏳ Pendiente</span>
+            {% else %}
+            <span class="text-xs font-bold staff-warn-col">Validando pedido</span>
             {% endif %}
           </td>
           <td>
-            {% if not p.pagado %}
-            <form method="POST" action="{{ url_for('admin.marcar_pago_pagado', pago_id=p.id) }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="text-xs px-2 py-1 rounded-lg font-bold staff-btn-pay">Pagar</button>
-            </form>
+            {% if p.disponible_para_pago %}
+            <button type="submit" formaction="{{ url_for('admin.marcar_pago_pagado', pago_id=p.id) }}"
+                    formmethod="post" class="text-xs px-2 py-1 rounded-lg font-bold staff-btn-pay">Pagar</button>
             {% endif %}
           </td>
         </tr>

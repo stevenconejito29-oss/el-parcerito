@@ -390,11 +390,19 @@ Uso en pedido:
   checkout/bot: registrar_uso_afiliado(codigo, pedido, cliente, descuento_aplicado)
     ├── Crea AffiliateUse(codigo_id, pedido_id, cliente_id, descuento_aplicado, comision_generada)
     ├── codigo.registrar_uso() → usos_actuales++
-    └── Si codigo.user_id y comision > 0: crea StaffPayment(tipo="comision")
+    ├── Funciona también con códigos de solo comisión o solo trazabilidad (descuento €0)
+    ├── Es idempotente por (codigo_id, pedido_id)
+    └── Si codigo.user_id y comision > 0: crea StaffPayment(tipo="comision", origen="affiliate")
 
 Pago de comisión:
-  admin → POST /admin/afiliados/<id>/pagar  → marcar_pagado() + registrar_egreso()
-  admin → POST /admin/afiliados/<id>/pagar-individual → paga un AffiliateUse específico
+  pedido pendiente/listo/en_ruta → comisión visible como "Esperando entrega", no pagable
+  pedido entregado → comisión pendiente habilitada
+  admin → POST /admin/afiliados/<id>/pagar-pendientes → marcar_pagado() + registrar_egreso()
+  admin → POST /admin/afiliados/uso/<id>/pagar → paga un AffiliateUse específico
+
+Cancelación:
+  ├── uso no pagado → revierte contador y elimina la obligación de pago
+  └── liquidación ya pagada → conserva uso/contador como evidencia financiera
 ```
 
 ---

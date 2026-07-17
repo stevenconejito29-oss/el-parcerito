@@ -235,8 +235,7 @@ def create_app(env="default"):
                 "PREAPERTURA_MENSAJE",
                 "Muy pronto podrás descubrir nuestro menú y hacer tu pedido.",
             ),
-        ), 503)
-        response.headers["Retry-After"] = "3600"
+        ), 200)
         response.headers["Cache-Control"] = "no-store, max-age=0"
         response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
         return response

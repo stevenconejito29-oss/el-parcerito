@@ -54,6 +54,7 @@ from phone_utils import (
     telefono_valido,
 )
 from store_config import get_store_features
+from pricing_service import MAX_AFILIADO_PCT
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -1064,7 +1065,7 @@ def pagos_staff():
     pagos = query.all()
     total_pendiente = sum(
         float(p.monto or 0) for p in pagos
-        if not p.pagado and p.genera_egreso_caja
+        if p.disponible_para_pago and p.genera_egreso_caja
     )
     total_pagado = sum(
         float(p.monto or 0) for p in pagos
@@ -1090,6 +1091,7 @@ def pagos_staff():
         .filter(
             StaffPayment.user_id.in_(rep_ids),
             StaffPayment.tipo == "comision",
+            StaffPayment.origen == "delivery",
             StaffPayment.pagado == False,
         )
         .group_by(StaffPayment.user_id)
@@ -1187,6 +1189,9 @@ def marcar_pago_pagado(pago_id):
     if pago.pagado:
         flash("Este pago ya fue marcado como pagado.", "info")
         return redirect(url_for("admin.pagos_staff"))
+    if not pago.disponible_para_pago:
+        flash("Esta comisión se habilitará cuando el pedido esté entregado.", "warning")
+        return redirect(url_for("admin.pagos_staff"))
 
     pago.marcar_pagado()
     if pago.genera_egreso_caja:
@@ -1219,6 +1224,8 @@ def pagar_seleccion():
         .filter(StaffPayment.id.in_(ids), StaffPayment.pagado == False).all()
     procesados = 0
     for pago in pagos:
+        if not pago.disponible_para_pago:
+            continue
         pago.marcar_pagado()
         if pago.genera_egreso_caja:
             registrar_egreso(float(pago.monto),
@@ -4126,12 +4133,95 @@ def _count_alertas_stock():
 
 # ─── AFILIADOS ───────────────────────────────
 
+_AFFILIATE_VALUE_TYPES = {"porcentaje", "monto_fijo"}
+
+
+def _parse_affiliate_form(form, *, existing=None):
+    """Valida la configuración completa de un código de afiliado.
+
+    Mantiene creación y edición bajo el mismo contrato y evita configuraciones
+    que el checkout tendría que reinterpretar o limitar silenciosamente.
+    """
+    tipo = (form.get("tipo") or "externo").strip().lower()
+    if tipo not in {"externo", "staff"}:
+        raise ValueError("Tipo de afiliado no válido.")
+
+    def value_pair(prefix, label, percentage_max):
+        value_type = (form.get(f"{prefix}_tipo") or "").strip().lower() or None
+        if value_type not in _AFFILIATE_VALUE_TYPES | {None}:
+            raise ValueError(f"Tipo de {label.lower()} no válido.")
+        value = _parse_decimal_no_negativo(
+            form.get(f"{prefix}_valor", "0"), label,
+        )
+        if value_type is None:
+            return None, Decimal("0")
+        if value <= 0:
+            raise ValueError(f"{label} debe ser mayor que cero cuando está activado.")
+        if value_type == "porcentaje" and value > Decimal(str(percentage_max)):
+            raise ValueError(f"{label} no puede superar el {percentage_max:g}%.")
+        return value_type, value
+
+    descuento_tipo, descuento_valor = value_pair(
+        "descuento", "Descuento para el cliente", MAX_AFILIADO_PCT * 100,
+    )
+    comision_tipo, comision_valor = value_pair(
+        "comision", "Comisión para el afiliado", 100,
+    )
+
+    raw_user = (form.get("user_id") or "").strip()
+    try:
+        user_id = int(raw_user) if raw_user else None
+    except ValueError:
+        raise ValueError("El usuario asignado no es válido.")
+    if user_id:
+        assigned = db.session.get(User, user_id)
+        if not assigned or not assigned.activo or assigned.rol not in ROLES_AUTENTICABLES:
+            raise ValueError("El usuario asignado no existe o no está activo.")
+    if tipo == "staff" and not user_id:
+        raise ValueError("Un código de staff debe estar asignado a un empleado activo.")
+
+    raw_max = (form.get("usos_maximos") or "").strip()
+    try:
+        usos_maximos = int(raw_max) if raw_max else None
+    except ValueError:
+        raise ValueError("Usos máximos debe ser un número entero.")
+    if usos_maximos is not None and usos_maximos < 1:
+        raise ValueError("Usos máximos debe ser mayor que cero.")
+    if existing and usos_maximos is not None and usos_maximos < int(existing.usos_actuales or 0):
+        raise ValueError("Usos máximos no puede ser menor que los usos ya registrados.")
+
+    fi_raw = (form.get("fecha_inicio") or "").strip()
+    ff_raw = (form.get("fecha_fin") or "").strip()
+    fecha_inicio = _parse_date_strict(fi_raw) if fi_raw else None
+    fecha_fin = _parse_date_strict(ff_raw) if ff_raw else None
+    if fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
+        raise ValueError("La fecha final no puede ser anterior a la fecha inicial.")
+
+    values = {
+        "descripcion": (form.get("descripcion") or "").strip()[:200] or None,
+        "tipo": tipo,
+        "user_id": user_id,
+        "descuento_tipo": descuento_tipo,
+        "descuento_valor": descuento_valor,
+        "comision_tipo": comision_tipo,
+        "comision_valor": comision_valor,
+        "usos_maximos": usos_maximos,
+        "fecha_inicio": fecha_inicio,
+        "fecha_fin": fecha_fin,
+    }
+    if existing is None:
+        codigo = (form.get("codigo") or "").strip().upper()
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{2,29}", codigo):
+            raise ValueError("El código debe tener 3–30 caracteres: letras, números, guion o guion bajo.")
+        values["codigo"] = codigo
+    return values
+
 @admin_bp.route("/afiliados")
 @marketing_or_admin_required
 def afiliados():
     codigos = AffiliateCode.query.order_by(AffiliateCode.creado_en.desc()).all()
     staff_users = User.query.filter(
-        User.rol.in_(["cocina", "preparacion", "repartidor"]),
+        User.rol.in_(sorted(ROLES_AUTENTICABLES)),
         User.activo == True
     ).order_by(User.nombre).all()
     return render_template("admin/afiliados.html", codigos=codigos, staff_users=staff_users)
@@ -4140,38 +4230,17 @@ def afiliados():
 @admin_bp.route("/afiliados/crear", methods=["POST"])
 @marketing_or_admin_required
 def crear_afiliado():
-    fi = request.form.get("fecha_inicio")
-    ff = request.form.get("fecha_fin")
-    codigo = request.form.get("codigo", "").strip().upper()
-    if not codigo:
-        flash("El código no puede estar vacío.", "danger")
+    try:
+        values = _parse_affiliate_form(request.form)
+    except (ValueError, TypeError) as e:
+        flash(str(e), "danger")
         return redirect(url_for("admin.afiliados"))
+    codigo = values["codigo"]
     if AffiliateCode.query.filter_by(codigo=codigo).first():
         flash("Ese código ya existe.", "warning")
         return redirect(url_for("admin.afiliados"))
-    try:
-        desc_valor = float(request.form.get("descuento_valor", 0) or 0)
-        com_valor  = float(request.form.get("comision_valor", 0) or 0)
-        fi_date    = _parse_date_strict(fi) if fi else None
-        ff_date    = _parse_date_strict(ff) if ff else None
-    except (ValueError, TypeError) as e:
-        flash(str(e) or "Valores numéricos o de fecha inválidos.", "danger")
-        return redirect(url_for("admin.afiliados"))
 
-    af = AffiliateCode(
-        codigo=codigo,
-        descripcion=request.form.get("descripcion", "").strip(),
-        tipo=request.form.get("tipo", "externo"),
-        user_id=request.form.get("user_id", type=int) or None,
-        descuento_tipo=request.form.get("descuento_tipo") or None,
-        descuento_valor=desc_valor,
-        comision_tipo=request.form.get("comision_tipo") or None,
-        comision_valor=com_valor,
-        usos_maximos=request.form.get("usos_maximos", type=int) or None,
-        fecha_inicio=fi_date,
-        fecha_fin=ff_date,
-        creado_por=current_user.id,
-    )
+    af = AffiliateCode(**values, creado_por=current_user.id)
     db.session.add(af)
     try:
         db.session.flush()  # obtener af.id antes del AuditLog
@@ -4207,20 +4276,13 @@ def toggle_afiliado(codigo_id):
 @marketing_or_admin_required
 def editar_afiliado(codigo_id):
     af = get_or_404(AffiliateCode, codigo_id)
-    af.descripcion = request.form.get("descripcion", "").strip() or None
-    af.tipo = request.form.get("tipo", "externo")
-    user_id = request.form.get("user_id", type=int)
-    af.user_id = user_id if user_id else None
-    af.descuento_tipo = request.form.get("descuento_tipo") or None
-    af.descuento_valor = request.form.get("descuento_valor", type=float) or 0
-    af.comision_tipo = request.form.get("comision_tipo") or None
-    af.comision_valor = request.form.get("comision_valor", type=float) or 0
-    af.usos_maximos = request.form.get("usos_maximos", type=int) or None
-    fi = request.form.get("fecha_inicio")
-    ff = request.form.get("fecha_fin")
-    from datetime import date as _date
-    af.fecha_inicio = _date.fromisoformat(fi) if fi else None
-    af.fecha_fin = _date.fromisoformat(ff) if ff else None
+    try:
+        values = _parse_affiliate_form(request.form, existing=af)
+    except (ValueError, TypeError) as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("admin.afiliados"))
+    for field, value in values.items():
+        setattr(af, field, value)
     AuditLog.registrar(current_user.id, "editar_afiliado", "affiliate_code",
                        af.id, detalle=af.codigo, ip=request.remote_addr)
     try:
@@ -4259,7 +4321,12 @@ def usos_afiliado(codigo_id):
     usos = AffiliateUse.query.filter_by(codigo_id=codigo_id)\
                              .order_by(AffiliateUse.creado_en.desc()).all()
     total_comisiones = sum(float(u.comision_generada or 0) for u in usos)
-    pendiente = sum(float(u.comision_generada or 0) for u in usos if not u.comision_pagada)
+    pendiente = sum(
+        float(u.comision_generada or 0) for u in usos
+        if not u.comision_pagada
+        and u.pedido is not None
+        and u.pedido.estado == "entregado"
+    )
     return render_template("admin/afiliado_usos.html",
                            codigo=af, usos=usos,
                            total_comisiones=total_comisiones, pendiente=pendiente)
@@ -4269,7 +4336,18 @@ def usos_afiliado(codigo_id):
 @marketing_or_admin_required
 def pagar_comisiones_afiliado(codigo_id):
     af = get_or_404(AffiliateCode, codigo_id)
-    pendientes = AffiliateUse.query.filter_by(codigo_id=codigo_id, comision_pagada=False).all()
+    pendientes = (
+        AffiliateUse.query
+        .join(Order, Order.id == AffiliateUse.pedido_id)
+        .filter(
+            AffiliateUse.codigo_id == codigo_id,
+            AffiliateUse.comision_pagada == False,
+            AffiliateUse.comision_generada > 0,
+            Order.estado == "entregado",
+        )
+        .with_for_update()
+        .all()
+    )
     if not pendientes:
         flash("No hay comisiones pendientes.", "info")
         return redirect(url_for("admin.usos_afiliado", codigo_id=codigo_id))
@@ -4312,9 +4390,15 @@ def pagar_comisiones_afiliado(codigo_id):
 @admin_bp.route("/afiliados/uso/<int:uso_id>/pagar", methods=["POST"])
 @marketing_or_admin_required
 def pagar_comision_individual(uso_id):
-    uso = get_or_404(AffiliateUse, uso_id)
+    uso = AffiliateUse.query.filter_by(id=uso_id).with_for_update().first_or_404()
     if uso.comision_pagada:
         flash("Esta comisión ya estaba pagada.", "info")
+        return redirect(url_for("admin.usos_afiliado", codigo_id=uso.codigo_id))
+    if float(uso.comision_generada or 0) <= 0:
+        flash("Este uso no generó una comisión pagable.", "info")
+        return redirect(url_for("admin.usos_afiliado", codigo_id=uso.codigo_id))
+    if not uso.pedido or uso.pedido.estado != "entregado":
+        flash("La comisión se habilitará cuando el pedido esté entregado.", "warning")
         return redirect(url_for("admin.usos_afiliado", codigo_id=uso.codigo_id))
     uso.comision_pagada = True
     pago = uso.staff_payment

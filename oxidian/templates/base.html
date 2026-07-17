@@ -297,17 +297,7 @@
 {% endif %}
 {% endwith %}
 
-<div class="ox-pwa-sheet" id="ox-pwa-sheet" hidden>
-  <div class="ox-pwa-card">
-    <button type="button" class="ox-pwa-close" data-pwa-dismiss aria-label="{{ ui.close }}">×</button>
-    <div class="ox-pwa-icon">
-      {% if _app_icon %}<img src="{{ _app_icon }}" alt="{{ brand.nombre }} icon">
-      {% else %}<img src="{{ url_for('static', filename='pwa-icon.svg', v=asset_version) }}" alt="Icono de empanada">{% endif %}
-    </div>
-    <div class="ox-pwa-copy"><p class="ox-pwa-title">{{ brand.nombre }}</p><p class="ox-pwa-text">{{ ui.pwa_description }}</p></div>
-    <button type="button" class="ox-pwa-action" data-pwa-install><span class="ox-install-text">{{ ui.pwa_install }}</span></button>
-  </div>
-</div>
+{% include 'partials/pwa_install_sheet.html' %}
 
 {% if session.get('push_cliente_id') %}
 <div class="ox-push-prompt" id="ox-push-prompt" hidden>

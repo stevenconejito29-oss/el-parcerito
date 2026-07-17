@@ -1560,15 +1560,17 @@ def validar_afiliado():
         subtotal = 0.0
     af = AffiliateCode.query.filter_by(codigo=codigo).first()
     if not af:
+        session.pop("cart_afiliado", None)
+        session.modified = True
         return jsonify({"ok": False, "msg": "Código de afiliado no encontrado"})
     ok, reason = af.es_valido_para_cliente(_cliente_id_actual())
     if not ok:
+        session.pop("cart_afiliado", None)
+        session.modified = True
         return jsonify({"ok": False, "msg": reason or "Código no válido o expirado"})
-    descuento = 0.0
-    if af.descuento_tipo == "porcentaje" and af.descuento_valor:
-        descuento = round(subtotal * float(af.descuento_valor) / 100, 2)
-    elif af.descuento_tipo == "monto_fijo" and af.descuento_valor:
-        descuento = min(float(af.descuento_valor), subtotal)
+    # Misma fuente de verdad del pedido. Evita anunciar en pantalla un
+    # descuento distinto al cap realmente aplicado al confirmar.
+    descuento = calcular_precio([], subtotal, afiliado=af).descuento_afiliado
     session["cart_afiliado"] = {"codigo": af.codigo}
     session.modified = True
     return jsonify({"ok": True, "descuento": descuento, "codigo": af.codigo,
@@ -2047,11 +2049,21 @@ def checkout():
 
         afiliado_codigo = None
         if codigo_afiliado_str:
-            afiliado_codigo = AffiliateCode.query.filter_by(codigo=codigo_afiliado_str).first()
-            if afiliado_codigo:
-                ok_a, _ = afiliado_codigo.es_valido_para_cliente(cliente.id if cliente else None)
-                if not ok_a:
-                    afiliado_codigo = None
+            afiliado_codigo = (
+                AffiliateCode.query
+                .filter_by(codigo=codigo_afiliado_str)
+                .with_for_update()
+                .first()
+            )
+            if not afiliado_codigo:
+                session.pop("cart_afiliado", None)
+                flash("El código de afiliado ya no existe. Revísalo antes de continuar.", "danger")
+                return redirect(url_for("public.checkout"))
+            ok_a, msg_a = afiliado_codigo.es_valido_para_cliente(cliente.id if cliente else None)
+            if not ok_a:
+                session.pop("cart_afiliado", None)
+                flash(f"Código de afiliado no válido: {msg_a}", "danger")
+                return redirect(url_for("public.checkout"))
 
         # ── Puntos verificados en sesión ─────────────────────────────────
         # Diseño: los puntos NO reducen el total en euros. Solo se consumen al
@@ -2316,7 +2328,7 @@ def checkout():
         # No se suman aquí para evitar que pedidos cancelados o no entregados acumulen puntos
 
         # Registrar uso de afiliado + generar StaffPayment de comisión automáticamente
-        if afiliado_codigo and descuento_afiliado > 0:
+        if afiliado_codigo:
             registrar_uso_afiliado(afiliado_codigo, pedido, cliente, descuento_afiliado)
 
         if pedido.confirmacion_estado != "pending":

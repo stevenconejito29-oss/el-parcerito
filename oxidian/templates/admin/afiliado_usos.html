@@ -49,6 +49,10 @@
       </span>
       {% if u.comision_pagada %}
       <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:color-mix(in srgb,var(--theme-success) 10%,transparent);color:var(--theme-success);border:1px solid color-mix(in srgb,var(--theme-success) 22%,transparent)">Pagada</span>
+      {% elif not u.comision_generada or u.comision_generada <= 0 %}
+      <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="color:var(--col-muted)">Sin comisión</span>
+      {% elif not u.pedido or u.pedido.estado != 'entregado' %}
+      <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="color:var(--theme-warning)">Esperando entrega</span>
       {% else %}
       <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:color-mix(in srgb,var(--brand-primary,#FFAB00) 10%,transparent);color:var(--brand-primary,#FFAB00);border:1px solid color-mix(in srgb,var(--brand-primary,#FFAB00) 22%,transparent)">Pendiente</span>
       {% endif %}
@@ -66,7 +70,7 @@
     </div>
     <div class="flex justify-between items-center">
       <span class="text-xs" style="color:var(--col-faint)">{{ u.creado_en.strftime('%d/%m/%Y') }}</span>
-      {% if not u.comision_pagada %}
+      {% if not u.comision_pagada and u.comision_generada > 0 and u.pedido and u.pedido.estado == 'entregado' %}
       <form method="POST" action="{{ url_for('admin.pagar_comision_individual', uso_id=u.id) }}" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="text-xs px-3 py-1.5 rounded-lg"
@@ -107,13 +111,17 @@
           <td class="text-center whitespace-nowrap">
             {% if u.comision_pagada %}
             <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:color-mix(in srgb,var(--theme-success) 10%,transparent);color:var(--theme-success);border:1px solid color-mix(in srgb,var(--theme-success) 22%,transparent)">Pagada</span>
+            {% elif not u.comision_generada or u.comision_generada <= 0 %}
+            <span class="text-xs" style="color:var(--col-muted)">Sin comisión</span>
+            {% elif not u.pedido or u.pedido.estado != 'entregado' %}
+            <span class="text-xs font-bold" style="color:var(--theme-warning)">Esperando entrega</span>
             {% else %}
             <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:color-mix(in srgb,var(--brand-primary,#FFAB00) 10%,transparent);color:var(--brand-primary,#FFAB00);border:1px solid color-mix(in srgb,var(--brand-primary,#FFAB00) 22%,transparent)">Pendiente</span>
             {% endif %}
           </td>
           <td class="text-xs whitespace-nowrap" style="color:var(--col-faint)">{{ u.creado_en.strftime('%d/%m/%Y') }}</td>
           <td>
-            {% if not u.comision_pagada %}
+            {% if not u.comision_pagada and u.comision_generada > 0 and u.pedido and u.pedido.estado == 'entregado' %}
             <form method="POST" action="{{ url_for('admin.pagar_comision_individual', uso_id=u.id) }}" class="inline">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="text-xs px-2 py-1 rounded-lg"

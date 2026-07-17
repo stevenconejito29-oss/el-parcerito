@@ -375,6 +375,15 @@ class StaffPayment(db.Model):
         return self.tipo != "descuento"
 
     @property
+    def disponible_para_pago(self):
+        """Impide liquidar referidos antes de completar la venta asociada."""
+        if self.pagado:
+            return False
+        if self.origen == "affiliate":
+            return bool(self.pedido and self.pedido.estado == "entregado")
+        return True
+
+    @property
     def descripcion_completa(self):
         base = f"{self.tipo.capitalize()}"
         if self.periodo_inicio and self.periodo_fin:
@@ -3324,8 +3333,12 @@ class AffiliateCode(db.Model):
             return 0
         return int(
             db.session.query(db.func.count(AffiliateUse.id))
-            .filter(AffiliateUse.codigo_id == self.id,
-                    AffiliateUse.cliente_id == cliente_id)
+            .join(Order, Order.id == AffiliateUse.pedido_id)
+            .filter(
+                AffiliateUse.codigo_id == self.id,
+                AffiliateUse.cliente_id == cliente_id,
+                Order.estado != "cancelado",
+            )
             .scalar() or 0
         )
 

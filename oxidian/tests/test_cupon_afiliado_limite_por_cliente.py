@@ -120,6 +120,22 @@ class CuponAfiliadoLimitTest(unittest.TestCase):
         ok1, _ = af.es_valido_para_cliente(self.cliente.id)
         self.assertTrue(ok1)
 
+    def test_afiliado_cancelado_no_consume_limite_del_cliente(self):
+        from services import registrar_uso_afiliado
+        af = AffiliateCode(
+            codigo="CANCELADO", tipo="externo", activo=True,
+            descuento_tipo="porcentaje", descuento_valor=5,
+            usos_por_cliente=1,
+        )
+        db.session.add(af)
+        db.session.commit()
+        pedido = self._mk_pedido(estado="cancelado")
+        registrar_uso_afiliado(af, pedido, self.cliente, descuento_aplicado=1)
+        db.session.commit()
+
+        valido, _ = af.es_valido_para_cliente(self.cliente.id)
+        self.assertTrue(valido)
+
     # ── Comisión: solo si el cliente es nuevo ──
     def test_comision_solo_primer_pedido(self):
         from services import registrar_uso_afiliado

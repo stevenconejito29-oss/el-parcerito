@@ -127,6 +127,31 @@ body::before {
   text-wrap: pretty;
 }
 
+.launch-install {
+  min-height: 46px;
+  margin-top: 1rem;
+  padding: .7rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--launch-primary, #f4c430) 48%, transparent);
+  border-radius: .9rem;
+  color: #fffaf0;
+  background: color-mix(in srgb, var(--launch-primary, #f4c430) 16%, transparent);
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.launch-install[hidden] { display: none; }
+.launch-install:hover { filter: brightness(1.12); }
+
+.launch-install-note {
+  display: block;
+  max-width: 390px;
+  margin: .6rem auto 0;
+  color: rgba(255,255,255,.48);
+  font-size: .72rem;
+  line-height: 1.45;
+}
+
 .launch-contact { margin-top: clamp(1.4rem, 4vw, 2.25rem); }
 
 .launch-contact a {

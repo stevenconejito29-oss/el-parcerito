@@ -853,7 +853,16 @@ def _ejecutar_cancelacion_pedido(
     if pedido.cupon:
         pedido.cupon.revertir_uso()
     if pedido.afiliado_codigo_rel:
-        pedido.afiliado_codigo_rel.revertir_uso()
+        from models import AffiliateUse
+        uso_pagado = AffiliateUse.query.filter_by(
+            pedido_id=pedido.id,
+            comision_pagada=True,
+        ).first()
+        # Si ya hubo una liquidación irreversible conservamos el uso y su
+        # contador como evidencia financiera. Las cancelaciones normales nunca
+        # llegan aquí porque no se permite pagar antes de entregar.
+        if not uso_pagado:
+            pedido.afiliado_codigo_rel.revertir_uso()
     _revertir_comisiones_pedido(pedido)
     # Un pedido terminal no debe conservar secretos de entrega. Esto también
     # cubre cancelaciones administrativas excepcionales desde reparto.
@@ -2454,6 +2463,13 @@ def registrar_uso_afiliado(codigo, pedido, cliente, descuento_aplicado):
     con `detalle_no_comision` en el motivo del uso (sin StaffPayment).
     """
     from models import AffiliateUse, StaffPayment
+
+    existente = AffiliateUse.query.filter_by(
+        codigo_id=codigo.id,
+        pedido_id=pedido.id,
+    ).first()
+    if existente:
+        return existente
 
     es_nuevo = _cliente_es_referido_nuevo(cliente, pedido)
     comision = float(codigo.calcular_comision(float(pedido.total))) if es_nuevo else 0.0

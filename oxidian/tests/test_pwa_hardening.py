@@ -73,6 +73,13 @@ class PwaArchitectureContractTest(unittest.TestCase):
         manager = (ROOT / "static" / "js" / "pwa-manager.js").read_text(encoding="utf-8")
         self.assertIn("navigator.wakeLock.request('screen')", manager)
 
+    def test_prelaunch_remains_installable_without_an_android_package(self):
+        prelaunch = (ROOT / "templates" / "public" / "preapertura.html").read_text(encoding="utf-8")
+        self.assertIn('rel="manifest"', prelaunch)
+        self.assertIn("js/pwa-manager.js", prelaunch)
+        self.assertIn("partials/pwa_install_sheet.html", prelaunch)
+        self.assertIn("no requiere descargar un APK", prelaunch)
+
     def test_service_worker_uses_safe_bounded_runtime_cache(self):
         worker = (ROOT / "static" / "sw.js").read_text(encoding="utf-8")
         self.assertIn('const CACHE_MEDIA = "ox-media-v52"', worker)
