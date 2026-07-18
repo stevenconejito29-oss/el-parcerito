@@ -1358,6 +1358,50 @@ def _migrate_public_identity_canasta_granitos():
         })
 
 
+def _migrate_public_nostalgia_copy():
+    """Actualiza únicamente la redacción predeterminada, nunca textos propios."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("site_config"):
+        return
+    replacements = {
+        "UI_HEADER_MEMORY_LINE": (
+            "Sabor colombiano, cerquita de ti",
+            "Colombia, cerquita de ti",
+        ),
+        "UI_HERO_EYEBROW": (
+            "De nuestra tierrita para tu mesa",
+            "Hecho con raíces colombianas",
+        ),
+        "UI_HERO_TITLE": (
+            "Sabores que te llevan de vuelta a casa",
+            "Un bocado y vuelves a casa",
+        ),
+        "UI_HERO_SUBTITLE": (
+            "Recetas con memoria, antojos de barrio y ese cariño colombiano que no conoce distancias.",
+            "Sabores que despiertan domingos en familia, charlas de barrio y el orgullo de llevar a Colombia siempre contigo.",
+        ),
+        "UI_MENU_CATALOG_TITLE": (
+            "Antojos que saben a casa",
+            "¿Qué recuerdo se te antoja hoy?",
+        ),
+        "UI_MENU_CATALOG_SUBTITLE": (
+            "Recetas, recuerdos y rinconcitos de Colombia",
+            "Elige ese sabor que por un ratito te devuelve a casa",
+        ),
+    }
+    statement = text("""
+        UPDATE site_config
+           SET valor = :new_value
+         WHERE clave = :key AND valor = :old_value
+    """)
+    for key, (old_value, new_value) in replacements.items():
+        db.session.execute(statement, {
+            "key": key,
+            "old_value": old_value,
+            "new_value": new_value,
+        })
+
+
 MIGRATIONS = [
     {
         "id": "20260526_01_order_events_notification_outbox",
@@ -1649,6 +1693,14 @@ MIGRATIONS = [
             "sin sobrescribir personalizaciones del negocio."
         ),
         "fn": _migrate_public_identity_canasta_granitos,
+    },
+    {
+        "id": "20260718_02_public_nostalgia_copy",
+        "description": (
+            "Mejora los textos públicos predeterminados de identidad colombiana "
+            "sin sobrescribir personalizaciones del negocio."
+        ),
+        "fn": _migrate_public_nostalgia_copy,
     },
 ]
 

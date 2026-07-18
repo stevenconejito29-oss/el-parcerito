@@ -116,6 +116,7 @@ class FrontendContractsTest(unittest.TestCase):
     def test_mobile_menu_and_search_are_distinct_navigation_modes(self):
         template = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
         script = (ROOT / "static" / "js" / "spa-nav.js").read_text(encoding="utf-8")
+        viewport = (ROOT / "static" / "js" / "storefront-viewport.js").read_text(encoding="utf-8")
 
         self.assertIn("data-bnav=\"home\"", template)
         self.assertIn("data-bnav=\"search\"", template)
@@ -134,6 +135,11 @@ class FrontendContractsTest(unittest.TestCase):
         styles = (ROOT / "static" / "css" / "header-modern.css").read_text(encoding="utf-8")
         self.assertIn("color: var(--navigation-active-text) !important", styles)
         self.assertNotIn("color: var(--brand-on-primary, #1B0A00) !important", styles)
+        self.assertNotIn("@view-transition { navigation: auto; }", styles)
+        self.assertIn("body.ox-body-public.ox-keyboard-open .ox-bottom-nav.ox-bnav-v2", styles)
+        self.assertIn("display: grid !important", styles)
+        self.assertIn("classList.toggle('ox-keyboard-open', keyboardOpen)", viewport)
+        self.assertNotIn("var(--brand-secondary, #FF3B30)", styles)
 
     def test_view_transition_names_are_unique_for_both_cart_links(self):
         styles = (ROOT / "static" / "css" / "header-modern.css").read_text(encoding="utf-8")

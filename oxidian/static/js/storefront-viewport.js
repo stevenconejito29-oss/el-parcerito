@@ -39,6 +39,11 @@
       var st = readSafeArea('top');
       root.style.setProperty('--safe-bottom', sb + 'px');
       root.style.setProperty('--safe-top', st + 'px');
+      // visualViewport sí refleja el teclado virtual; innerHeight suele
+      // conservar la altura de layout. Ocultar la navegación evita que tape
+      // el buscador o los formularios en Android/iOS.
+      var keyboardOpen = Boolean(vv && (window.innerHeight - h) > 140);
+      document.body.classList.toggle('ox-keyboard-open', keyboardOpen);
     }
   }
 

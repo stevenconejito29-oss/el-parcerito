@@ -6,7 +6,13 @@ body.ox-body-public {
   --hdr-muted: var(--theme-muted);
   --hdr-line: color-mix(in srgb, var(--theme-header-text) 13%, transparent);
   scroll-padding-top: calc(84px + env(safe-area-inset-top, 0px));
-  background: var(--theme-bg) !important;
+  background-color: var(--theme-bg) !important;
+  background-image:
+    radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--heritage-sun) 4.5%, transparent), transparent 32%),
+    radial-gradient(circle at 88% 72%, color-mix(in srgb, var(--heritage-river) 3.5%, transparent), transparent 30%),
+    repeating-linear-gradient(8deg,
+      transparent 0 10px,
+      color-mix(in srgb, var(--theme-text) 1.1%, transparent) 10px 11px) !important;
   color: var(--theme-text) !important;
 }
 
@@ -698,10 +704,10 @@ body.ox-body-public .ox-bnav-v2 .ox-bnav-badge {
   line-height: 18px;
   text-align: center;
   border-radius: 999px;
-  color: #fff;
+  color: var(--theme-header-text);
   background: linear-gradient(145deg, var(--status-err), color-mix(in srgb, var(--status-err) 75%, var(--theme-text)));
-  border: 2px solid color-mix(in srgb, var(--col-bg, #0F0906) 90%, transparent);
-  box-shadow: 0 3px 10px rgba(0,0,0,.4), 0 0 8px color-mix(in srgb, var(--brand-secondary, #FF3B30) 45%, transparent);
+  border: 2px solid color-mix(in srgb, var(--navigation-surface) 90%, transparent);
+  box-shadow: 0 3px 10px rgba(0,0,0,.4), 0 0 8px color-mix(in srgb, var(--status-err) 45%, transparent);
   animation: bnav-pop .5s cubic-bezier(.34,1.56,.64,1);
 }
 @keyframes bnav-pop {
@@ -759,17 +765,11 @@ body.ox-body-public.ox-has-bottom-nav :is(a, button, input, select, textarea, [t
   body.ox-body-public .ox-bnav-v2 .ox-bnav-label { font-size: 10px; }
 }
 
-/* En landscape móvil, más compacto */
-@media (max-height: 480px) and (orientation: landscape) {
-  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { min-height: 52px; }
-  body.ox-body-public .ox-bnav-v2 .ox-bnav-svg { width: 22px; height: 22px; }
-  body.ox-body-public .ox-bnav-v2 .ox-bnav-svg svg { width: 18px; height: 18px; }
-  body.ox-body-public .ox-bnav-v2 .ox-bnav-label { font-size: 10px; }
-}
-
-/* Ocultar cuando teclado abierto (visualViewport reduce altura) */
-@media (max-height: 480px) {
-  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { opacity: 1; }
+/* El teclado virtual reduce visualViewport, no siempre el media query CSS. */
+body.ox-body-public.ox-keyboard-open .ox-bottom-nav.ox-bnav-v2 {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 /* PWA standalone: extra bottom */
@@ -844,12 +844,36 @@ body.ox-body-public .ep-cats {
 }
 body.ox-body-public .ep-cat { scroll-snap-align: start; }
 
-/* En teléfonos apaisados la cabecera ya ofrece menú, carrito y acceso interno.
-   Ocultar la navegación inferior duplicada recupera una franja crítica de la
-   pantalla y evita que cubra formularios o llamadas a la acción. */
+/* En teléfonos apaisados se conserva una barra compacta: ocultarla eliminaba
+   el acceso directo a Buscar y Granitos. La Canasta se retira de la cabecera
+   para mantener una sola acción por función. */
 @media (orientation: landscape) and (max-height: 500px) {
-  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { display: none !important; }
-  body.ox-body-public { padding-bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important; }
+  body.ox-body-public .ox-header-cart { display: none !important; }
+  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 {
+    display: grid !important;
+    left: auto !important;
+    right: max(8px, env(safe-area-inset-right, 8px)) !important;
+    bottom: max(6px, env(safe-area-inset-bottom, 0px)) !important;
+    width: min(360px, calc(100vw - 16px));
+    min-height: 48px;
+    gap: 3px !important;
+    padding: 4px 6px !important;
+    border-radius: 18px !important;
+  }
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-item {
+    min-height: 40px;
+    gap: 1px;
+    padding: 3px !important;
+    border-radius: 13px !important;
+  }
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-svg,
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-svg svg { width: 17px; height: 17px; }
+  body.ox-body-public .ox-bnav-v2 .ox-bnav-label { font-size: 9px; }
+  body.ox-body-public.ox-has-bottom-nav {
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
+    scroll-padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  }
+  body.ox-body-public.ox-has-bottom-nav main { padding-bottom: 1rem; }
 }
 
 /* prefers-reduced-motion: desactiva aurora, ticker y ripples completamente */
@@ -869,8 +893,6 @@ body.ox-body-public .ep-cat { scroll-snap-align: start; }
 /* Cross-document View Transitions — Chrome 126+, Safari 18+.
    Triggers native fade entre navegaciones same-origin (bottom nav → carrito, etc.).
    Requiere que las páginas destino tengan la misma regla; base.html se encarga. */
-@view-transition { navigation: auto; }
-
 @supports (view-transition-name: none) {
   body.ox-body-public .ox-header-public { view-transition-name: ox-header; }
   body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { view-transition-name: ox-bottom-nav; }
