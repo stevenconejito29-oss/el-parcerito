@@ -1027,6 +1027,8 @@ def _pedido_bot_payload(pedido):
                 "precio_unit": float(oi.precio_unit),
                 "subtotal": float(oi.subtotal),
                 "notas": oi.notas or "",
+                "sabores": oi.selected_flavor_names,
+                "tiene_sabores": oi.display_has_selectable_flavors,
                 "tipo_entrega": oi.display_tipo_entrega,
                 "fecha_entrega": (
                     oi.display_fecha_entrega.isoformat()

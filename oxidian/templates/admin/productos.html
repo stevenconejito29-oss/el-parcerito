@@ -82,6 +82,7 @@
         <div class="admin-product-badges">
           <span class="admin-product-badge badge-stock">Stock propio</span>
           <span class="admin-product-badge badge-channel">{{ p.canal_preparacion or 'cocina' }}</span>
+          {% if p.has_flavors %}<span class="admin-product-badge badge-flavor">🥭 {{ 'Sabor obligatorio' if p.flavors_required else 'Sabores opcionales' }}</span>{% endif %}
           {% if p.canjeable_con_puntos %}<span class="admin-product-badge badge-points">Puntos</span>{% endif %}
           {% if p.es_hipoalergenico %}<span class="admin-product-badge badge-hipo">Hipo</span>{% endif %}
           <span class="admin-product-badge {{ 'badge-active' if p.activo else 'badge-inactive' }}">{{ 'Activo' if p.activo else 'Inactivo' }}</span>
@@ -145,6 +146,7 @@
             {% if p.grupo_pedido %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:color-mix(in srgb,var(--brand-primary,#FFD59A) 55%,#fff);background:color-mix(in srgb,var(--brand-primary,#FFD59A) 14%,transparent)">Pedido: {{ p.grupo_pedido }}</span>{% endif %}
             {% if p.canjeable_con_puntos %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--role-super-admin,#C084FC);background:color-mix(in srgb,var(--role-super-admin,#C084FC) 14%,transparent)">⭐ Puntos</span>{% endif %}
             {% if p.es_hipoalergenico %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--theme-success,#5EF097);background:color-mix(in srgb,var(--theme-success,#5EF097) 12%,transparent)">🌿 Hipo</span>{% endif %}
+            {% if p.has_flavors %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--brand-text);background:color-mix(in srgb,var(--brand-primary) 14%,transparent)">🥭 {{ 'Sabor obligatorio' if p.flavors_required else 'Sabores opcionales' }}</span>{% endif %}
           </div>
         </div>
       </div>
@@ -392,6 +394,7 @@
           <div class="flex items-center gap-2 mb-1">
             <p class="font-bold text-white">{{ combo.nombre }}</p>
             {% if not combo.activo %}<span class="text-xs px-2 py-0.5 rounded-full" style="background:color-mix(in srgb,var(--theme-danger) 10%,transparent);color:var(--theme-danger)">Inactivo</span>{% endif %}
+            {% if combo.has_flavors %}<span class="text-xs px-2 py-0.5 rounded-full" style="background:color-mix(in srgb,var(--brand-primary) 14%,transparent);color:var(--brand-text)">🥭 {{ 'Sabor obligatorio' if combo.flavors_required else 'Sabores opcionales' }}</span>{% endif %}
           </div>
           <p class="text-lg font-black" style="color:var(--brand-primary,#FFAB00)">€{{ "%.2f"|format(combo.precio_final) }}</p>
           {% if combo.descripcion %}<p class="text-xs mt-1" style="color:var(--col-muted)">{{ combo.descripcion[:80] }}</p>{% endif %}
@@ -451,6 +454,7 @@
 .adm-products-action--extras{background:color-mix(in srgb,var(--role-super-admin) 12%,var(--col-surface));border-color:color-mix(in srgb,var(--role-super-admin) 30%,var(--col-border));color:color-mix(in srgb,var(--role-super-admin) 45%,var(--col-text))}
 .adm-products-action--new{background:color-mix(in srgb,var(--brand-primary) 13%,var(--col-surface));border-color:color-mix(in srgb,var(--brand-primary) 34%,var(--col-border));color:var(--brand-text)}
 .adm-products-action--combo{background:color-mix(in srgb,var(--role-admin) 11%,var(--col-surface));border-color:color-mix(in srgb,var(--role-admin) 28%,var(--col-border));color:color-mix(in srgb,var(--role-admin) 45%,var(--col-text))}
+.badge-flavor{color:var(--brand-text);background:color-mix(in srgb,var(--brand-primary) 14%,transparent)}
 /* Admin productos — tokens semánticos que responden al branding */
 .tab-active {
   background: color-mix(in srgb, var(--brand-primary) 15%, transparent);

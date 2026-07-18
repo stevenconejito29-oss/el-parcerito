@@ -19,6 +19,7 @@ from models import (
     ComboItem,
     Product,
     ProductExtraGroup,
+    ProductExtraOption,
     ProductPresentation,
     Proveedor,
     ProveedorProducto,
@@ -34,6 +35,8 @@ class CatalogProductView:
     stock: int = 0
     available: bool = False
     has_extras: bool = False
+    has_flavors: bool = False
+    flavors_required: bool = False
     presentations: list = field(default_factory=list)
     combo_items: list = field(default_factory=list)
     rating: float = 0.0
@@ -130,15 +133,27 @@ def build_catalog_projection(products, origin="propio"):
         provider = db.session.get(Proveedor, provider_id)
         provider_active = bool(provider and provider.activo)
 
-    extras_ids = {
-        row[0]
-        for row in db.session.query(ProductExtraGroup.producto_id)
+    option_group_rows = (
+        db.session.query(
+            ProductExtraGroup.producto_id,
+            ProductExtraGroup.tipo,
+            ProductExtraGroup.min_selecciones,
+        )
         .filter(
             ProductExtraGroup.producto_id.in_(product_ids),
             ProductExtraGroup.activo.is_(True),
+            ProductExtraGroup.opciones.any(ProductExtraOption.activo.is_(True)),
         )
-        .distinct()
         .all()
+    )
+    extras_ids = {row.producto_id for row in option_group_rows}
+    flavor_ids = {
+        row.producto_id for row in option_group_rows if row.tipo == "sabor"
+    }
+    required_flavor_ids = {
+        row.producto_id
+        for row in option_group_rows
+        if row.tipo == "sabor" and int(row.min_selecciones or 0) > 0
     }
     presentations = defaultdict(list)
     for presentation in (
@@ -258,6 +273,8 @@ def build_catalog_projection(products, origin="propio"):
             stock=stock,
             available=available,
             has_extras=product.id in extras_ids,
+            has_flavors=product.id in flavor_ids,
+            flavors_required=product.id in required_flavor_ids,
             presentations=presentations.get(product.id, []),
             combo_items=items,
             rating=ratings.get(product.id, 0.0),

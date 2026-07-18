@@ -1,0 +1,20 @@
+{# Resumen único de sabor para cliente, operación y administración. #}
+{% set flavor_names = item.selected_flavor_names if item else [] %}
+{% set has_flavors = item.display_has_selectable_flavors if item else false %}
+{% if flavor_names or has_flavors %}
+<div class="order-flavor-summary{% if not flavor_names and item.display_flavor_required %} order-flavor-summary--missing{% endif %}" aria-label="Información de sabor">
+  <span class="order-flavor-summary__icon" aria-hidden="true">🥭</span>
+  <span class="order-flavor-summary__copy">
+    {% if flavor_names %}
+    <small>Sabor elegido</small>
+    <strong>{{ flavor_names|join(' · ') }}</strong>
+    {% elif item.display_flavor_required %}
+    <small>Revisión necesaria</small>
+    <strong>Sabor obligatorio no registrado</strong>
+    {% else %}
+    <small>Sabor opcional</small>
+    <strong>Sin sabor seleccionado</strong>
+    {% endif %}
+  </span>
+</div>
+{% endif %}

@@ -5,7 +5,13 @@ from sqlalchemy import event
 
 from catalog_projection import build_catalog_projection
 from extensions import db
-from models import Product, ProductExtraGroup, ProductPresentation, Stock
+from models import (
+    Product,
+    ProductExtraGroup,
+    ProductExtraOption,
+    ProductPresentation,
+    Stock,
+)
 
 
 class CatalogProjectionTest(unittest.TestCase):
@@ -46,15 +52,27 @@ class CatalogProjectionTest(unittest.TestCase):
         )
         db.session.add_all([product, unlimited])
         db.session.flush()
+        sauce_group = ProductExtraGroup(
+            producto_id=product.id,
+            nombre="Salsas",
+            min_selecciones=0,
+            max_selecciones=1,
+            activo=True,
+        )
+        flavor_group = ProductExtraGroup(
+            producto_id=product.id,
+            nombre="Sabores",
+            tipo="sabor",
+            min_selecciones=1,
+            max_selecciones=1,
+            activo=True,
+        )
+        db.session.add_all([sauce_group, flavor_group])
+        db.session.flush()
         db.session.add_all([
             Stock(producto_id=product.id, cantidad=4),
-            ProductExtraGroup(
-                producto_id=product.id,
-                nombre="Salsas",
-                min_selecciones=0,
-                max_selecciones=1,
-                activo=True,
-            ),
+            ProductExtraOption(grupo_id=sauce_group.id, nombre="Ají", activo=True),
+            ProductExtraOption(grupo_id=flavor_group.id, nombre="Mango", activo=True),
             ProductPresentation(
                 producto_id=product.id,
                 tamaño="grande",
@@ -69,6 +87,8 @@ class CatalogProjectionTest(unittest.TestCase):
         self.assertEqual(projection[product.id].stock, 4)
         self.assertTrue(projection[product.id].available)
         self.assertTrue(projection[product.id].has_extras)
+        self.assertTrue(projection[product.id].has_flavors)
+        self.assertTrue(projection[product.id].flavors_required)
         self.assertEqual([p.tamaño for p in projection[product.id].presentations], ["grande"])
         self.assertTrue(projection[unlimited.id].available)
 

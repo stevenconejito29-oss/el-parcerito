@@ -889,6 +889,11 @@ body.ox-body-public .ep-banner-cta {
   color: color-mix(in srgb, var(--status-info) 62%, var(--theme-text));
   border: 1px solid color-mix(in srgb, var(--status-info) 35%, transparent);
 }
+.ep-cbadge-flavor {
+  background: color-mix(in srgb, var(--brand-secondary) 18%, var(--theme-surface));
+  color: color-mix(in srgb, var(--brand-secondary) 58%, var(--theme-text));
+  border: 1px solid color-mix(in srgb, var(--brand-secondary) 34%, transparent);
+}
 .ep-cbadge-promo {
   background: color-mix(in srgb, var(--visual-promo) 16%, var(--theme-surface));
   color: color-mix(in srgb, var(--visual-promo) 62%, var(--theme-text));

@@ -1,3 +1,4 @@
+import json
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
@@ -11,10 +12,12 @@ from models import (
     Product,
     ProductExtraGroup,
     ProductExtraOption,
+    OrderItem,
     SiteConfig,
     Stock,
     User,
     ZonaEntrega,
+    metadata_item_pedido,
 )
 from routes.admin import _sync_catalog_extras, _sync_catalog_flavors
 from routes.admin import _parsear_campos_producto
@@ -205,6 +208,17 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
         self.assertEqual(
             items[0]["metadata"]["sabores"]["opciones"][0]["nombre"], "Mango"
         )
+        snapshot = metadata_item_pedido(self.product, items[0]["metadata"])
+        order_item = OrderItem(
+            producto_id=self.product.id,
+            cantidad=1,
+            precio_unit=Decimal("5"),
+            subtotal=Decimal("5"),
+            metadata_json=json.dumps(snapshot),
+        )
+        self.assertEqual(order_item.selected_flavor_names, ["Mango"])
+        self.assertTrue(order_item.display_has_selectable_flavors)
+        self.assertTrue(order_item.display_flavor_required)
 
         catalog = product_option_catalog_payload(self.product)
         flavor_payload = next(group for group in catalog if group["tipo"] == "sabor")

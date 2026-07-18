@@ -39,6 +39,9 @@
       <span class="ep-cbadge ep-cbadge-fulfillment" title="{{ fb.title }}">{{ fb.emoji }} {{ fb.label }}</span>
       {% if p.grupo_pedido %}<span class="ep-cbadge ep-cbadge-encargo">Pedido: {{ p.grupo_pedido }}</span>{% endif %}
       {% if p.es_combo %}<span class="ep-cbadge ep-cbadge-combo">🎁 COMBO</span>{% endif %}
+      {% if _card.has_flavors %}
+      <span class="ep-cbadge ep-cbadge-flavor">🥭 {{ 'Elige sabor' if _card.flavors_required else 'Sabores disponibles' }}</span>
+      {% endif %}
       {% if p.tipo_entrega in ('programado','encargo') %}
       <span class="ep-cbadge ep-cbadge-encargo">📆 Fecha fija{% if p.fecha_llegada %}: {{ p.fecha_llegada.strftime('%d/%m') }}{% endif %}</span>
       {% endif %}

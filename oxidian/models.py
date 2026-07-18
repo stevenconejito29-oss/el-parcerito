@@ -2731,6 +2731,30 @@ class OrderItem(db.Model):
         return (self.get_metadata().get("producto") or {})
 
     @property
+    def selected_flavors(self):
+        """Sabores elegidos y congelados para esta línea del pedido."""
+        raw = (self.get_metadata().get("sabores") or {}).get("opciones") or []
+        return [row for row in raw if isinstance(row, dict) and row.get("nombre")]
+
+    @property
+    def selected_flavor_names(self):
+        return [str(row["nombre"]) for row in self.selected_flavors]
+
+    @property
+    def display_has_selectable_flavors(self):
+        snapshot = self.producto_snapshot
+        if "tiene_sabores" in snapshot:
+            return bool(snapshot.get("tiene_sabores"))
+        return bool(self.selected_flavors or (self.producto and self.producto.has_flavors))
+
+    @property
+    def display_flavor_required(self):
+        snapshot = self.producto_snapshot
+        if "sabor_requerido" in snapshot:
+            return bool(snapshot.get("sabor_requerido"))
+        return bool(self.producto and self.producto.flavors_required)
+
+    @property
     def display_nombre(self):
         return (
             self.producto_snapshot.get("nombre")
@@ -3061,6 +3085,10 @@ def snapshot_producto_para_pedido(producto, origen_operativo=None):
         "stock_mostrar_en_web": bool(producto.stock_mostrar_en_web),
         "canjeable_con_puntos": bool(producto.canjeable_con_puntos),
         "puntos_para_canje": int(producto.puntos_para_canje or 0),
+        # La capacidad se congela junto al pedido. Así cocina, reparto, soporte
+        # y reimpresiones no dependen de que el admin edite el producto luego.
+        "tiene_sabores": bool(producto.has_flavors),
+        "sabor_requerido": bool(producto.flavors_required),
         "es_hipoalergenico": bool(producto.es_hipoalergenico),
         "alergenos_json": producto.alergenos_json,
         "atributos": producto.get_atributos(),

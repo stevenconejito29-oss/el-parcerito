@@ -74,6 +74,9 @@
           <p class="prov-nota">Parte del combo: {{ item.combo_nombre }}</p>
           {% endif %}
           {% if item.notas %}<p class="prov-nota">{{ item.notas }}</p>{% endif %}
+          {% if not item.es_combo_completo and item['item'] %}
+          {% with item = item['item'] %}{% include "partials/order_item_flavors.html" %}{% endwith %}
+          {% endif %}
         </div>
       </div>
       {% if item.es_combo_completo and item['item'] %}
@@ -182,6 +185,9 @@
           <p class="prov-nota">Parte del combo: {{ item.combo_nombre }}</p>
           {% endif %}
           {% if item.notas %}<p class="prov-nota">{{ item.notas }}</p>{% endif %}
+          {% if not item.es_combo_completo and item['item'] %}
+          {% with item = item['item'] %}{% include "partials/order_item_flavors.html" %}{% endwith %}
+          {% endif %}
         </div>
       </div>
       {% if item.es_combo_completo and item['item'] %}

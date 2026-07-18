@@ -7142,3 +7142,38 @@ body.ox-body-public > .ox-push-prompt .ox-push-prompt-copy small { color: var(--
   body.ox-body-public > .ox-push-prompt,
   body.ox-body-public > .ox-pwa-sheet { margin-top: .4rem; }
 }
+
+/* Snapshot de sabor compartido por cliente y roles operativos. */
+.order-flavor-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  max-width: 100%;
+  margin-top: .35rem;
+  padding: .38rem .55rem;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 30%, var(--col-border));
+  border-radius: .65rem;
+  background: color-mix(in srgb, var(--brand-primary) 8%, var(--col-surface));
+  color: var(--col-text);
+}
+.order-flavor-summary__icon { flex: 0 0 auto; }
+.order-flavor-summary__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.order-flavor-summary__copy small {
+  color: var(--col-muted);
+  font-size: .66rem;
+  font-weight: 750;
+}
+.order-flavor-summary__copy strong {
+  overflow-wrap: anywhere;
+  font-size: .78rem;
+  font-weight: 900;
+}
+.order-flavor-summary--missing {
+  border-color: color-mix(in srgb, var(--theme-danger) 44%, var(--col-border));
+  background: color-mix(in srgb, var(--theme-danger) 9%, var(--col-surface));
+}

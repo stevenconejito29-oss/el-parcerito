@@ -4,7 +4,6 @@
 {% set fijos_meta = combo_meta.get('componentes') or [] %}
 {% set sels_meta  = combo_meta.get('selecciones')  or [] %}
 {% set extras_meta = (item_meta.get('extras') or {}).get('opciones') or [] %}
-{% set flavors_meta = (item_meta.get('sabores') or {}).get('opciones') or [] %}
 {% set pres_meta  = item_meta.get('presentacion') or {} %}
 {# Origen real del item (modelo nuevo): proveedor_despachador del producto vivo,
    con fallback al snapshot por si fue editado después. #}
@@ -13,12 +12,6 @@
   {% set root_proveedor_id = item.producto.proveedor_despachador_id %}
 {% endif %}
 
-{% if flavors_meta %}
-<div class="work-combo-sec work-sec-choice" style="margin-top:.35rem"><div class="work-sec-hd"><strong>🥭 Sabor elegido</strong><span class="work-sec-sub">preparar exactamente así</span></div><div class="work-sec-items">{% for flavor in flavors_meta %}<span class="work-sec-item work-item-choice">{{ flavor.get('nombre','Sabor') }}</span>{% endfor %}</div></div>
-{% endif %}
-{% if extras_meta %}
-<div class="work-combo-sec work-sec-choice" style="margin-top:.35rem"><div class="work-sec-hd"><strong>Ingredientes extra</strong><span class="work-sec-sub">preparar con el producto</span></div><div class="work-sec-items">{% for extra in extras_meta %}<span class="work-sec-item work-item-choice"><span class="work-item-qty">{{ extra.get('cantidad',1) }}×</span>{{ extra.get('nombre','Extra') }}</span>{% endfor %}</div></div>
-{% endif %}
 {% set root_proveedor_nombre = prod_meta.get('proveedor_despachador_nombre') %}
 {% if not root_proveedor_nombre and item.producto and item.producto.proveedor_despachador %}
   {% set root_proveedor_nombre = item.producto.proveedor_despachador.nombre %}
@@ -52,6 +45,11 @@
 	  </span>
 	  <span class="work-qty">× {{ item.cantidad }}</span>
 	</div>
+
+{% include "partials/order_item_flavors.html" %}
+{% if extras_meta %}
+<div class="work-combo-sec work-sec-choice" style="margin-top:.35rem"><div class="work-sec-hd"><strong>Ingredientes extra</strong><span class="work-sec-sub">preparar con el producto</span></div><div class="work-sec-items">{% for extra in extras_meta %}<span class="work-sec-item work-item-choice"><span class="work-item-qty">{{ extra.get('cantidad',1) }}×</span>{{ extra.get('nombre','Extra') }}</span>{% endfor %}</div></div>
+{% endif %}
 
 {% if item.es_canje_puntos %}
 <div class="work-reward-note">

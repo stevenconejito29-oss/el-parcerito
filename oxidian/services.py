@@ -484,6 +484,7 @@ def lineas_proveedor_pedido(pedido: Order, proveedor_id: int | None = None) -> l
             "cantidad": item.cantidad,
             "nombre": item.display_nombre,
             "notas": item.notas,
+            "sabores": item.selected_flavor_names,
             "proveedor_id": item_prov,
             "proveedor_nombre": proveedor_nombre,
             "combo_nombre": None,
@@ -506,7 +507,12 @@ def encolar_notificaciones_proveedores_pedido(pedido: Order) -> int:
         if not lineas:
             continue
         detalle = "\n".join(
-            f"• {linea['cantidad']}× {linea['nombre']}"
+            "• {}× {}{}".format(
+                linea["cantidad"],
+                linea["nombre"],
+                f" · Sabor: {' · '.join(linea['sabores'])}"
+                if linea.get("sabores") else "",
+            )
             for linea in lineas
         )
         operadores = (
