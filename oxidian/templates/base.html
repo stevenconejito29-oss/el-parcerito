@@ -221,7 +221,6 @@
         {% endif %}
       </span>
       <span class="ox-public-copy">
-        <span class="ox-public-origin">{{ heritage_icon('grano') }} {{ ui.header_origin }}</span>
         <span class="ox-public-meta">
           <span class="ox-public-kicker">
             {% if brand.delivery and brand.recogida %}{{ ui.header_mode_both }}{% elif brand.delivery %}{{ ui.header_mode_delivery }}{% else %}{{ ui.header_mode_pickup }}{% endif %}
@@ -259,7 +258,8 @@
       </a>
       {% endif %}
       <a href="{{ url_for('public.ver_carrito') }}"
-         class="ox-header-cart" aria-label="{{ ui.header_cart_action }}">
+         class="ox-header-cart{% if session.get('carrito', {}) %} has-items{% endif %}"
+         aria-label="{{ ui.header_cart_action }}">
         <span class="ox-header-cart-icon">
           {{ heritage_icon('canasto') }}
         </span>
@@ -542,7 +542,7 @@
   {% endif %}
 
   <a href="{{ url_for('public.ver_carrito') }}"
-     class="ox-bnav-item ox-bnav-cart {{ 'is-active' if request.endpoint == 'public.ver_carrito' else '' }}"
+     class="ox-bnav-item ox-bnav-cart{% if session.get('carrito', {}) %} has-items{% endif %} {{ 'is-active' if request.endpoint == 'public.ver_carrito' else '' }}"
      data-bnav="cart">
     <span class="ox-bnav-svg" aria-hidden="true">
       {{ heritage_icon('canasto') }}
@@ -613,6 +613,7 @@ document.addEventListener('error', function(event) {
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/pwa-manager.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/storefront-viewport.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/storefront-toast.js', v=asset_version) }}" defer></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/cart-ui.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/header-modern.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/spa-nav.js', v=asset_version) }}" defer></script>
 

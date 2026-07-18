@@ -54,6 +54,7 @@ from phone_utils import normalizar_telefono_cliente, telefono_local_ambiguo, tel
 from store_config import (
     get_loyalty_terms,
     get_public_store_url,
+    get_store_value,
     get_store_features,
     get_service_commission,
     is_service_mode,
@@ -1019,6 +1020,8 @@ def agregar_carrito_get(producto_id):
 @public_bp.route("/carrito/agregar/<int:producto_id>", methods=["POST"])
 def agregar_carrito(producto_id):
     _ajax = request.headers.get("X-Ajax") == "1"
+    cart_name = str(get_store_value("UI_CART_NAME", "canasta") or "canasta").strip().lower()
+    cart_action = str(get_store_value("UI_CART_VIEW_ACTION", "Ver canasta") or "Ver canasta").strip()
 
     def _err(msg, category="warning", issue=None, action_url=None, action_label=None):
         if _ajax:
@@ -1076,7 +1079,7 @@ def agregar_carrito(producto_id):
     origen_carrito = _carrito_origen(carrito)
     if origen_carrito and origen_solicitado != origen_carrito:
         return _err(
-            "El carrito contiene productos de un origen de inventario incompatible. "
+            f"Tu {cart_name} contiene productos de un origen de inventario incompatible. "
             "Vacíalo y vuelve a añadir los productos."
         )
     key = str(producto_id)
@@ -1094,11 +1097,11 @@ def agregar_carrito(producto_id):
             issue.get("severity", "warning"),
             issue=issue,
             action_url=url_for("public.ver_carrito") if carrito else url_for("public.index"),
-            action_label="Ver carrito" if carrito else "Ver catálogo",
+            action_label=cart_action if carrito else "Ver catálogo",
         )
     if hay_otros_productos and not compat["fulfillment_options"]:
         return _err(
-            "El carrito tiene productos incompatibles entre sí. "
+            f"Tu {cart_name} tiene productos incompatibles entre sí. "
             f"Vacíalo o retira los productos que bloquean a «{producto.nombre}»."
         )
 
@@ -1134,7 +1137,7 @@ def agregar_carrito(producto_id):
         anterior_variant = variantes_carrito.get(key)
         if carrito.get(key) and anterior_variant and int(anterior_variant) != variant_id:
             return _err(
-                "Este producto ya está en el carrito con otra variante. "
+                f"Este producto ya está en tu {cart_name} con otra variante. "
                 "Elimínalo antes de cambiar la selección."
             )
         variantes_carrito[key] = variant_id
@@ -1162,7 +1165,7 @@ def agregar_carrito(producto_id):
         anterior_pres = presentaciones_carrito.get(key)
         if carrito.get(key) and anterior_pres and anterior_pres != presentation_canonico:
             return _err(
-                "Este producto ya está en el carrito con otro tamaño. "
+                f"Este producto ya está en tu {cart_name} con otro tamaño. "
                 "Elimínalo antes de cambiar la presentación."
             )
         presentaciones_carrito[key] = presentation_canonico
@@ -1210,7 +1213,10 @@ def agregar_carrito(producto_id):
     extras_guardados = session.get("extras_selecciones", {})
     anterior = extras_guardados.get(key, {})
     if carrito.get(key) and anterior != extras:
-        return _err("Este producto ya está en el carrito con otros extras. Elimínalo para cambiar su configuración.")
+        return _err(
+            f"Este producto ya está en tu {cart_name} con otros extras. "
+            "Elimínalo para cambiar su configuración."
+        )
     if extras:
         extras_guardados[key] = extras
     else:
@@ -1226,8 +1232,14 @@ def agregar_carrito(producto_id):
         session["notas_combo"] = notas_combo
         session.modified = True
     if _ajax:
-        return jsonify({"ok": True, "nombre": producto.nombre}), 200
-    flash(f"'{producto.nombre}' agregado al carrito.", "success")
+        return jsonify({
+            "ok": True,
+            "nombre": producto.nombre,
+            # Conteo de líneas, igual al badge renderizado por Jinja. El cliente
+            # no debe inferirlo sumando porque repetir un producto no crea otra línea.
+            "cart_count": len(carrito),
+        }), 200
+    flash(f"'{producto.nombre}' añadido a tu {cart_name}.", "success")
     return redirect(request.referrer or url_for("public.index"))
 
 

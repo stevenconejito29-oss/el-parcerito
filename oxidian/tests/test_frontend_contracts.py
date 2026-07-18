@@ -129,6 +129,7 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("scriptContract(document, currentUrl)", script)
         self.assertIn("if (!canSwapDocument(doc, url))", script)
         self.assertIn("nonce=\"{{ csp_nonce() }}\" src=\"{{ url_for('static', filename='js/spa-nav.js'", template)
+        self.assertNotIn("function prefetch(url)", script)
 
         styles = (ROOT / "static" / "css" / "header-modern.css").read_text(encoding="utf-8")
         self.assertIn("color: var(--navigation-active-text) !important", styles)
@@ -300,7 +301,7 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("heritage_sprite.html", base)
         for symbol in ("grano", "canasto", "mariposa", "casita"):
             self.assertIn(f'id="ox-hi-{symbol}"', sprite)
-        self.assertIn(".ep-hero-origin", heritage)
+        self.assertNotIn(".ep-hero-origin", heritage)
         self.assertIn(".ox-modal__heritage", heritage)
         self.assertIn(".ox-toast-v2::after", heritage)
         self.assertIn(".checkout-memory", heritage)
@@ -316,6 +317,20 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("ui.cart_name", cart)
         self.assertIn("ui.cart_add_action", menu)
         self.assertNotIn("Añadir al carrito", menu)
+
+    def test_cart_state_is_synchronized_from_the_server_response(self):
+        base = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
+        menu = (ROOT / "templates" / "public" / "index.html").read_text(encoding="utf-8")
+        cart_ui = (ROOT / "static" / "js" / "cart-ui.js").read_text(encoding="utf-8")
+        styles = (ROOT / "static" / "css" / "header-modern.css").read_text(encoding="utf-8")
+
+        self.assertIn("js/cart-ui.js", base)
+        self.assertIn("window.OxCartUI.setCount(data.cart_count", menu)
+        self.assertIn("headerCart?.classList.toggle('has-items'", cart_ui)
+        self.assertIn("bottomCart?.classList.toggle('has-items'", cart_ui)
+        self.assertIn("navigator.setAppBadge(count)", cart_ui)
+        self.assertIn(".ox-bnav-cart.has-items", styles)
+        self.assertIn("background: var(--status-err) !important", styles)
 
     def test_admin_orders_are_paginated_without_per_card_workload_queries(self):
         route = (ROOT / "routes" / "admin.py").read_text(encoding="utf-8")

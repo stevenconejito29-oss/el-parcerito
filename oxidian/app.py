@@ -293,11 +293,13 @@ def create_app(env="default"):
         if profile["pedidos_programados"]:
             capabilities.append("pedidos por fecha")
         capabilities_text = ", ".join(capabilities) if capabilities else "compra guiada"
-        description = f"{_catalogo_word} online y carrito con {capabilities_text}."
+        cart_name = str(profile["ui"].get("cart_name") or "canasta").strip()
+        cart_title = cart_name[:1].upper() + cart_name[1:]
+        description = f"{_catalogo_word} online y {cart_name.lower()} con {capabilities_text}."
         shortcut_icon = profile["app_icon_url"] or pwa_asset("pwa-icon-192.png")
         shortcuts = [
             {"name": f"Ver {_catalogo_word.lower()}", "short_name": _catalogo_word, "description": "Explora el catalogo", "url": "/", "icons": [{"src": shortcut_icon, "sizes": "any"}]},
-            {"name": "Mi carrito", "short_name": "Carrito", "description": "Ver pedido actual", "url": "/carrito", "icons": [{"src": shortcut_icon, "sizes": "any"}]},
+            {"name": f"Mi {cart_name.lower()}", "short_name": cart_title, "description": "Ver pedido actual", "url": "/carrito", "icons": [{"src": shortcut_icon, "sizes": "any"}]},
         ]
         if profile["puntos"]:
             shortcuts.append({"name": "Mis puntos", "short_name": "Puntos", "description": "Club de fidelizacion", "url": "/club", "icons": [{"src": shortcut_icon, "sizes": "any"}]})

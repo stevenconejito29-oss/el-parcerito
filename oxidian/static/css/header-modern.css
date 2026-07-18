@@ -269,6 +269,14 @@ body.ox-body-public .ox-header-cart:hover {
   box-shadow: 1px 1px 0 color-mix(in srgb, var(--action-primary) 55%, var(--theme-text)) !important;
   filter: brightness(1.05);
 }
+/* Una Canasta con productos es un estado, no otro color de marca. Se deriva
+   del token semántico de alerta configurado por la tienda. */
+body.ox-body-public .ox-header-cart.has-items {
+  border-color: color-mix(in srgb, var(--status-err) 76%, var(--theme-header-text)) !important;
+  background: var(--status-err) !important;
+  color: var(--theme-header-text) !important;
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--status-err) 58%, var(--theme-text)) !important;
+}
 body.ox-body-public .ox-header-cart.is-pressed,
 body.ox-body-public .ox-header-info.is-pressed,
 body.ox-body-public .ox-header-app.is-pressed,
@@ -601,6 +609,25 @@ body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active .ox-bnav-label {
   text-shadow: 0 1px 1px color-mix(in srgb, #000 35%, transparent);
 }
 
+body.ox-body-public .ox-bnav-v2 .ox-bnav-cart.has-items {
+  color: var(--theme-header-text) !important;
+  background: linear-gradient(180deg,
+    var(--status-err),
+    color-mix(in srgb, var(--status-err) 80%, var(--theme-text))) !important;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-header-text) 35%, transparent),
+    0 6px 18px color-mix(in srgb, var(--status-err) 42%, transparent) !important;
+}
+body.ox-body-public .ox-bnav-v2 .ox-bnav-cart.has-items :is(.ox-bnav-svg, .ox-bnav-label) {
+  color: var(--theme-header-text) !important;
+}
+body.ox-body-public .ox-bnav-v2 .ox-bnav-cart.is-bumping {
+  animation: bnav-cart-bump .46s var(--ease-spring);
+}
+@keyframes bnav-cart-bump {
+  50% { transform: translateY(-3px) scale(1.04); }
+}
+
 body.ox-body-public .ox-bnav-v2 .ox-bnav-svg {
   position: relative;
   display: inline-flex;
@@ -672,7 +699,7 @@ body.ox-body-public .ox-bnav-v2 .ox-bnav-badge {
   text-align: center;
   border-radius: 999px;
   color: #fff;
-  background: linear-gradient(145deg, var(--brand-secondary, #FF3B30), color-mix(in srgb, var(--brand-secondary, #FF3B30) 75%, #000));
+  background: linear-gradient(145deg, var(--status-err), color-mix(in srgb, var(--status-err) 75%, var(--theme-text)));
   border: 2px solid color-mix(in srgb, var(--col-bg, #0F0906) 90%, transparent);
   box-shadow: 0 3px 10px rgba(0,0,0,.4), 0 0 8px color-mix(in srgb, var(--brand-secondary, #FF3B30) 45%, transparent);
   animation: bnav-pop .5s cubic-bezier(.34,1.56,.64,1);

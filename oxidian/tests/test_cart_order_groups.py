@@ -93,7 +93,7 @@ class CartOrderGroupTest(unittest.TestCase):
         self.assertFalse(response["ok"])
         self.assertIn("modalidad", response["msg"].lower())
         self.assertEqual(response["issue"]["code"], "fulfillment_conflict")
-        self.assertEqual(response["issue"]["action_label"], "Ver carrito")
+        self.assertEqual(response["issue"]["action_label"], "Ver canasta")
         self.assertIn("Solo llevar", [p["nombre"] for p in response["issue"]["products"]])
         self.assertIn("Solo recoger", [p["nombre"] for p in response["issue"]["products"]])
 
@@ -167,8 +167,17 @@ class CartOrderGroupTest(unittest.TestCase):
         response = self._add(producto).get_json()
 
         self.assertTrue(response["ok"])
+        self.assertEqual(response["cart_count"], 1)
         with self.client.session_transaction() as session:
             self.assertEqual(session["carrito"], {str(producto.id): 1})
+
+    def test_ajax_cart_count_tracks_distinct_lines_not_add_clicks(self):
+        first = self._product("Primero", "cocina", tipo_entrega="inmediato")
+        second = self._product("Segundo", "almacen", tipo_entrega="inmediato")
+
+        self.assertEqual(self._add(first).get_json()["cart_count"], 1)
+        self.assertEqual(self._add(first).get_json()["cart_count"], 1)
+        self.assertEqual(self._add(second).get_json()["cart_count"], 2)
 
     def test_producto_del_vertical_opuesto_no_puede_agregarse(self):
         # Regla nicho: si TIPO_TIENDA=producto (retail), un producto con

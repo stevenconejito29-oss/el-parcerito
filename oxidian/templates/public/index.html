@@ -52,10 +52,6 @@
         Ver {{ brand.vertical_label|lower if brand.vertical_label else 'menú' }} completo
       </a>
     </div>
-    <div class="ep-hero-origin" aria-label="{{ ui.hero_signature }}">
-      {{ heritage_icon('grano', 'ep-hero-origin-icon') }}
-      <span>{{ ui.hero_signature }}</span>
-    </div>
   </div>
   <div class="ep-trust">
     {% if brand.delivery %}
@@ -245,13 +241,13 @@
     </a>
     {% elif item.tipo == 'producto_destacado' and item.producto %}
     <a class="ep-menu-config-product" href="{{ url_for('public.producto_detalle', producto_id=item.producto_id, origen=origen_actual) }}">
-      {% if item.producto.imagen_url %}<img src="{{ item.producto.imagen_url|upload_url }}" alt="" decoding="async">{% endif %}
+      {% if item.producto.imagen_url %}<img src="{{ item.producto.imagen_url|upload_url }}" alt="" loading="lazy" decoding="async">{% endif %}
       <div><small>Recomendado</small><strong>{{ item.titulo or item.producto.nombre }}</strong><span>€{{ "%.2f"|format(item.producto.precio_final) }}</span></div>
     </a>
     {% elif item.tipo == 'banner' and item.imagen_url %}
     <a class="ep-menu-config-banner" href="{{ item.enlace_url or '#catalogo' }}"
        {% if item.enlace_url and item.enlace_url.startswith('http') %}target="_blank" rel="noopener"{% endif %}>
-      <img src="{{ item.imagen_url|upload_url }}" alt="{{ item.titulo or '' }}" decoding="async">
+      <img src="{{ item.imagen_url|upload_url }}" alt="{{ item.titulo or '' }}" loading="lazy" decoding="async">
       {% if item.titulo %}<strong>{{ item.titulo }}</strong>{% endif %}
     </a>
     {% endif %}
@@ -723,7 +719,7 @@ document.getElementById('ep-modal-form')?.addEventListener('submit', async (even
       epConfirmProductAdded(_modalProductId);
       closeModal();
       _epToast(OX_UI.cart_added || 'Añadido a tu canasta');
-      _epBadgeInc();
+      if (window.OxCartUI) window.OxCartUI.setCount(data.cart_count, { bump: true });
     } else if (data?.issue) {
       closeModal();
       await _epShowCartIssue(data.issue, data.msg);
@@ -790,22 +786,6 @@ async function _epShowCartIssue(issue, fallbackMsg) {
     icon: 'canasto',
   });
   if (go && actionUrl) window.location.href = actionUrl;
-}
-
-function _epBadgeInc() {
-  const badge = document.querySelector('[data-cart-badge]');
-  if (badge) {
-    badge.textContent = parseInt(badge.textContent || '0') + 1;
-  } else {
-    const cartLink = document.querySelector('.ox-header-cart');
-    if (cartLink) {
-      const s = document.createElement('span');
-      s.setAttribute('data-cart-badge', '');
-      s.className = 'ox-header-cart-count';
-      s.textContent = '1';
-      cartLink.appendChild(s);
-    }
-  }
 }
 
 function _epToast(msg, type) {
@@ -1080,20 +1060,5 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal()
   document.querySelectorAll('.ep-grid .ep-card').forEach(c => obs.observe(c));
 })();
 
-/* ── Parallax en hero foto ── */
-(function () {
-  const hero = document.querySelector('.ep-hero-photo');
-  if (!hero || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  let tick = false;
-  window.addEventListener('scroll', () => {
-    if (tick) return;
-    tick = true;
-    requestAnimationFrame(() => {
-      const s = window.scrollY;
-      if (s < 700) hero.style.backgroundPositionY = 'calc(35% + ' + (s * 0.24) + 'px)';
-      tick = false;
-    });
-  }, { passive: true });
-})();
 </script>
 {% endblock %}

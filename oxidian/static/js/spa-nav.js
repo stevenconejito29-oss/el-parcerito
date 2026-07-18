@@ -280,23 +280,10 @@
     navigate(a.href);
   }, true);
 
-  // Prefetch on hover/focus/touchstart para calentar cache antes del clic.
-  const prefetched = new Set();
-  function prefetch(url) {
-    if (prefetched.has(url)) return;
-    prefetched.add(url);
-    fetchPage(url).catch(() => prefetched.delete(url));
-  }
-  document.addEventListener('mouseover', (ev) => {
-    const a = ev.target.closest('a[href]');
-    if (a && sameOrigin(a.href) && !HEAVY_RE.test(new URL(a.href).pathname)) {
-      prefetch(a.href);
-    }
-  }, { passive: true });
-  document.addEventListener('touchstart', (ev) => {
-    const a = ev.target.closest('a[href]');
-    if (a && sameOrigin(a.href) && !HEAVY_RE.test(new URL(a.href).pathname)) prefetch(a.href);
-  }, { passive: true });
+  // No se precarga HTML dinámico: estas respuestas contienen sesión, CSRF y
+  // disponibilidad en tiempo real. La implementación anterior descargaba cada
+  // enlace al tocarlo y volvía a descargarlo al navegar (`no-store`), duplicando
+  // tráfico precisamente en móviles. Los recursos estáticos los gestiona el SW.
 
   window.addEventListener('popstate', () => {
     // Un cambio exclusivo de hash (#buscar) conserva el mismo documento.

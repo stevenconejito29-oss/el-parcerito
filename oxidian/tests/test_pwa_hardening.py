@@ -82,11 +82,19 @@ class PwaArchitectureContractTest(unittest.TestCase):
 
     def test_service_worker_uses_safe_bounded_runtime_cache(self):
         worker = (ROOT / "static" / "sw.js").read_text(encoding="utf-8")
-        self.assertIn('const CACHE_MEDIA = "ox-media-v52"', worker)
+        self.assertIn('const CACHE_MEDIA = "ox-media-v53"', worker)
         self.assertIn("trimCache(cache, 80)", worker)
         self.assertIn('type: "OX_PUSH_RECEIVED"', worker)
-        self.assertIn('badge  = "/static/pwa-badge-96.png?v=52"', worker)
+        self.assertIn('badge  = "/static/pwa-badge-96.png?v=53"', worker)
+        self.assertIn('"/static/js/cart-ui.js"', worker)
+        self.assertIn('"/static/js/spa-nav.js"', worker)
+        self.assertIn('"/static/css/heritage.css"', worker)
         self.assertNotIn("self.skipWaiting();\n});\n\n// ── ACTIVATE", worker)
+
+    def test_manifest_uses_configured_canasta_vocabulary(self):
+        app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+        self.assertIn('profile["ui"].get("cart_name")', app_source)
+        self.assertNotIn('{"name": "Mi carrito"', app_source)
 
     def test_default_brand_asset_is_an_empanada(self):
         icon = (ROOT / "static" / "pwa-icon.svg").read_text(encoding="utf-8")

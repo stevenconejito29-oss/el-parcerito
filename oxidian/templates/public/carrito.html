@@ -122,7 +122,7 @@
                 <div class="cr-combo-section cr-combo-section--fixed">📌 {{ ui.cart_combo_base }}</div>
                 {% for d in fijos %}{% set ci = d.item %}
                 <div class="cr-combo-row">
-                  {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="">{% endif %}
+                  {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="" loading="lazy" decoding="async">{% endif %}
                   <span class="cr-combo-row-qty">{{ ci.cantidad }}×</span>
                   <span class="cr-combo-row-name">{{ ci.componente.nombre }}</span>
                   <span class="cr-combo-tag cr-combo-tag--fijo">{{ ui.cart_combo_included }}</span>
@@ -134,7 +134,7 @@
                 <div class="cr-combo-section cr-combo-section--sel">🔄 {{ grp }}</div>
                 {% for d in grp_items %}{% set ci = d.item %}
                 <div class="cr-combo-row">
-                  {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="">{% endif %}
+                  {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="" loading="lazy" decoding="async">{% endif %}
                   <span class="cr-combo-row-qty">{{ ci.cantidad }}×</span>
                   <span class="cr-combo-row-name">{{ ci.componente.nombre }}</span>
                   {% if ci.precio_extra and ci.precio_extra > 0 %}<span class="cr-combo-tag cr-combo-tag--extra">+€{{ "%.2f"|format(ci.precio_extra) }}</span>{% endif %}

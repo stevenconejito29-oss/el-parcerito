@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Oxidian — Service Worker v52
+   Oxidian — Service Worker v53
    • App shell CSS/JS: cache-first + actualización en segundo plano
    • Imágenes: stale-while-revalidate con caché acotada
    • HTML público y datos de sesión: network-only
@@ -7,8 +7,8 @@
    • Push Notifications: Muestra notificaciones + abre URL al click
    ═══════════════════════════════════════════════════════════════ */
 
-const CACHE_STATIC = "ox-static-v52";
-const CACHE_MEDIA = "ox-media-v52";
+const CACHE_STATIC = "ox-static-v53";
+const CACHE_MEDIA = "ox-media-v53";
 const CACHE_PREFIX = "ox-";
 
 const PRECACHE = [
@@ -18,21 +18,25 @@ const PRECACHE = [
   "/static/css/storefront-menu.css",
   "/static/css/storefront-cart.css",
   "/static/css/header-modern.css",
+  "/static/css/heritage.css",
   "/static/css/role-shell.css",
   "/static/css/operational-roles.css",
   "/static/css/tailwind.generated.css",
   "/static/js/carrito.js",
+  "/static/js/cart-ui.js",
   "/static/js/pwa-manager.js",
   "/static/js/storefront-viewport.js",
   "/static/js/storefront-toast.js",
   "/static/js/header-modern.js",
+  "/static/js/spa-nav.js",
   "/static/js/operational-roles.js",
-  "/static/pwa-icon.svg?v=52",
-  "/static/pwa-icon-192.png?v=52",
-  "/static/pwa-icon-512.png?v=52",
-  "/static/pwa-icon-512-maskable.png?v=52",
-  "/static/pwa-badge-96.png?v=52",
-  "/static/apple-touch-icon.png?v=52",
+  "/static/colombia-pattern.svg",
+  "/static/pwa-icon.svg?v=53",
+  "/static/pwa-icon-192.png?v=53",
+  "/static/pwa-icon-512.png?v=53",
+  "/static/pwa-icon-512-maskable.png?v=53",
+  "/static/pwa-badge-96.png?v=53",
+  "/static/apple-touch-icon.png?v=53",
 ];
 
 function isNetworkOnly(pathname) {
@@ -91,7 +95,7 @@ p{font-size:.95rem;color:#6B5A4E;max-width:340px;line-height:1.5}
 a,button{min-height:44px;padding:.75rem 1.5rem;border-radius:.875rem;border:0;
 background:#F4C542;color:#2B2118;font-weight:800;font-size:1rem;text-decoration:none}
 </style></head><body>
-<img class="icon" src="/static/pwa-icon-192.png?v=52" alt="">
+<img class="icon" src="/static/pwa-icon-192.png?v=53" alt="">
 <p class="title">Ahora mismo no hay conexión</p>
 <p>Tu app sigue instalada y tus datos están protegidos. Recupera internet para consultar disponibilidad o confirmar cambios.</p>
 <a href="/">Volver a intentar</a>
@@ -185,8 +189,8 @@ self.addEventListener("push", event => {
   const {
     title  = "Mi tienda",
     body   = "",
-    icon   = "/static/pwa-icon-192.png?v=52",
-    badge  = "/static/pwa-badge-96.png?v=52",
+    icon   = "/static/pwa-icon-192.png?v=53",
+    badge  = "/static/pwa-badge-96.png?v=53",
     url    = "/",
     tag,
     requireInteraction = false,
