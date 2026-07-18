@@ -9,6 +9,7 @@ separar claramente la operación actual de notas históricas y capturas generada
 |---|---|
 | [Estructura del proyecto](PROJECT_STRUCTURE.md) | Componentes, capas, roles y recorrido de una petición. |
 | [Flujo vigente de pedidos](ORDER_FLOW.md) | Estados, destino por rol y barreras operativas. |
+| [Identidad visual colombiana](VISUAL_IDENTITY.md) | Tokens, componentes y criterios culturales del escaparate. |
 | [Desarrollo seguro](DEVELOPMENT.md) | Dónde implementar cada cambio, convenciones y pruebas. |
 | [Operación y despliegue](OPERATIONS.md) | Entornos, despliegue, salud, rollback y datos sensibles. |
 | [Claves configurables](../oxidian/docs/CONFIG_KEYS.md) | Catálogo de claves editables en `SiteConfig`. |

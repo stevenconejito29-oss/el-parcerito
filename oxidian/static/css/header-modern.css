@@ -473,6 +473,60 @@ body.ox-body-public .ox-bottom-nav.ox-bnav-v2 {
   overflow: hidden;
 }
 
+/* Huella colombiana transversal: el tejido casi imperceptible vive en la
+   superficie, no en el contenido, y usa exclusivamente tokens configurables. */
+body.ox-body-public main {
+  background-image:
+    radial-gradient(circle at 8% 18%, color-mix(in srgb, var(--heritage-sun) 5%, transparent), transparent 18%),
+    radial-gradient(circle at 94% 62%, color-mix(in srgb, var(--heritage-river) 4%, transparent), transparent 20%);
+}
+body.ox-body-public .ox-public-logo-frame::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  border: 1px dashed color-mix(in srgb, var(--heritage-sun) 58%, transparent);
+  pointer-events: none;
+}
+body.ox-body-public .ox-bottom-nav.ox-bnav-v2 {
+  border-top-color: color-mix(in srgb, var(--heritage-sun) 52%, transparent) !important;
+}
+body.ox-body-public .ox-bottom-nav.ox-bnav-v2::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  left: 25%;
+  right: 25%;
+  top: 0;
+  height: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg,
+    var(--heritage-sun) 0 50%,
+    var(--heritage-river) 50% 75%,
+    var(--heritage-clay) 75% 100%);
+  opacity: .9;
+  pointer-events: none;
+}
+body.ox-body-public .ox-bnav-v2 .ox-bnav-svg svg {
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.18));
+}
+body.ox-body-public .ep-footer-heritage {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  color: color-mix(in srgb, var(--brand-primary) 72%, #fff) !important;
+  letter-spacing: .015em;
+}
+body.ox-body-public .ep-footer-heritage span {
+  display: inline-grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 35%, transparent);
+  border-radius: 50% 50% 45% 55%;
+  background: color-mix(in srgb, var(--brand-primary) 9%, transparent);
+}
+
 /* Aurora sutil de fondo */
 body.ox-body-public .ox-bottom-nav.ox-bnav-v2::before {
   content: "";

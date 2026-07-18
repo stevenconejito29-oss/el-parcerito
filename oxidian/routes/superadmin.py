@@ -120,6 +120,8 @@ PUBLIC_UI_FIELDS = [
     ("UI_MENU_MEMORY_EYEBROW", "Menú · antetítulo de identidad"),
     ("UI_MENU_MEMORY_TITLE", "Menú · mensaje principal de identidad"),
     ("UI_MENU_MEMORY_TEXT", "Menú · relato breve de identidad"),
+    ("UI_MENU_CATALOG_TITLE", "Menú · título del catálogo"),
+    ("UI_MENU_CATALOG_SUBTITLE", "Menú · subtítulo del catálogo"),
     ("UI_CART_EYEBROW", "Carrito · antetítulo"),
     ("UI_CART_TITLE", "Carrito · título"),
     ("UI_CART_ITEM_ONE", "Carrito · producto singular"),
@@ -158,6 +160,7 @@ PUBLIC_UI_FIELDS = [
     ("UI_CART_EMPTY_TEXT", "Carrito vacío · descripción"),
     ("UI_CART_VIEW_MENU", "Carrito vacío · ver menú"),
     ("UI_CART_MEMORY_NOTE", "Carrito · mensaje emocional"),
+    ("UI_FOOTER_HERITAGE", "Pie · firma de identidad"),
     ("UI_PWA_DESCRIPTION", "PWA · descripción de instalación"),
     ("UI_PWA_IOS_INSTRUCTION", "PWA · instrucción para iOS"),
     ("UI_PWA_INSTALL", "PWA · instalar"),
@@ -1505,6 +1508,7 @@ def config():
         ("Cabecera", [(key, label) for key, label in PUBLIC_UI_FIELDS if key == "UI_CLOSE" or key.startswith("UI_HEADER_")]),
         ("Identidad del menú", [(key, label) for key, label in PUBLIC_UI_FIELDS if key.startswith("UI_MENU_")]),
         ("Carrito", [(key, label) for key, label in PUBLIC_UI_FIELDS if key.startswith("UI_CART_")]),
+        ("Pie de página", [(key, label) for key, label in PUBLIC_UI_FIELDS if key.startswith("UI_FOOTER_")]),
         ("PWA y navegación", [
             (key, label) for key, label in PUBLIC_UI_FIELDS
             if key.startswith(("UI_PWA_", "UI_NAV_", "UI_INFO_"))

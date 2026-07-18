@@ -25,6 +25,21 @@
   padding: 0 .75rem;
   padding-bottom: max(6rem, calc(env(safe-area-inset-bottom) + 6rem));
 }
+.cr-colombia-shell {
+  position: relative;
+  isolation: isolate;
+}
+.cr-colombia-shell::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 -.5rem;
+  pointer-events: none;
+  background:
+    linear-gradient(45deg, transparent 48%, color-mix(in srgb, var(--heritage-coffee) 5%, transparent) 49% 51%, transparent 52%) 0 0/22px 22px;
+  mask-image: linear-gradient(to bottom, #000, transparent 70%);
+  opacity: .8;
+}
 
 /* ═══════ HEADER ═══════ */
 .cr-header {
@@ -75,6 +90,18 @@
   box-shadow: 0 0 0 4px rgba(255,194,0,.12), 0 4px 12px rgba(255,194,0,.4);
   animation: none;
 }
+.cr-badge::after {
+  content: "";
+  position: absolute;
+  width: 13px;
+  height: 4px;
+  margin-top: 40px;
+  border-radius: 99px;
+  background: linear-gradient(90deg,
+    var(--heritage-sun) 0 50%,
+    var(--heritage-river) 50% 75%,
+    var(--heritage-clay) 75%);
+}
 
 /* ═══════ STEPS ═══════ */
 .cr-steps {
@@ -124,6 +151,18 @@
   color: var(--col-muted);
 }
 .cr-memory-note > span { font-size: 1.15rem; line-height: 1; }
+.cr-colombia-emblem {
+  width: 28px;
+  height: 24px;
+  display: grid;
+  grid-template-rows: 2fr 1fr 1fr;
+  overflow: hidden;
+  border-radius: 7px 2px 7px 7px;
+  box-shadow: 2px 2px 0 color-mix(in srgb, var(--heritage-coffee) 25%, transparent);
+}
+.cr-colombia-emblem i:nth-child(1) { background: var(--heritage-sun); }
+.cr-colombia-emblem i:nth-child(2) { background: var(--heritage-river); }
+.cr-colombia-emblem i:nth-child(3) { background: var(--heritage-clay); }
 .cr-memory-note p {
   min-width: 0;
   margin: 0;
@@ -177,6 +216,20 @@
     0 2px 6px rgba(0,0,0,.25);
   border-radius: 1.1rem; overflow: hidden;
   margin-bottom: .85rem;
+}
+.cr-items::before {
+  content: "";
+  display: block;
+  height: 3px;
+  background: linear-gradient(90deg,
+    var(--heritage-sun) 0 50%,
+    var(--heritage-river) 50% 75%,
+    var(--heritage-clay) 75% 100%);
+}
+.cr-thumb {
+  background-image:
+    radial-gradient(circle at 20% 18%, color-mix(in srgb, var(--heritage-sun) 14%, transparent), transparent 42%),
+    repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--heritage-coffee) 5%, transparent) 7px 8px);
 }
 
 /* Cada ítem */
@@ -998,4 +1051,14 @@ body.ox-body-public .cr-summary-title { color: var(--theme-header-text) !importa
   .cr-thumb { width: 62px; height: 62px; }
   .cr-summary { grid-template-columns: 78px minmax(0,1fr); }
   .cr-cta { font-size: .76rem; }
+}
+
+/* Firma visual al final de la cascada: varias capas históricas del carrito
+   usan `background` abreviado, por eso la textura se aplica al cierre. */
+.cr-colombia-shell .cr-badge { position: relative; }
+.cr-colombia-shell .cr-thumb {
+  background:
+    radial-gradient(circle at 20% 18%, color-mix(in srgb, var(--heritage-sun) 14%, transparent), transparent 42%),
+    repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--heritage-coffee) 5%, transparent) 7px 8px),
+    var(--cr-paper-2, var(--col-elevated));
 }

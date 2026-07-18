@@ -43,7 +43,7 @@ services:
     environment:
       APP_ENV: production
       FLASK_ENV: production
-      SECRET_KEY: test-secret-key-do-not-use-in-prod
+      SECRET_KEY: qa-7f3a9c2e8b6d4f1a5c9e2b7d4a8f6c3e1b5d9a2f
       DATABASE_URL: postgresql://oxidian:testpassword@oxidian-test-db:5432/oxidian_test
       OXIDIAN_DB_USER: oxidian
       OXIDIAN_DB_PASSWORD: testpassword
@@ -51,15 +51,17 @@ services:
       SEED_PASSWORD: testpassword
       ADMIN_EMAIL: admin@test.local
       SUPERADMIN_EMAIL: superadmin@test.local
-      OXIDIAN_KEY: test-oxidian-key
-      BOT_API_KEY: test-bot-key
-      BOT_PANEL_KEY: test-panel-key
+      OXIDIAN_KEY: qa-4d8f2a7c9e1b6d3f5a8c2e7b9d4f1a6c
+      BOT_API_KEY: qa-9c4e7a2f6d1b8c3e5a9f2d7b4c6e1a8d
+      BOT_PANEL_KEY: qa-3e8a1d6c9f4b2e7a5d8c1f6b9e3a4d7c
+      WEBHOOK_SECRET: qa-6b2e9d4a7c1f8e3b5d9a2c6f4e7b1d8a
       OWNER_NUMBER: "34600000000"
       SUPERADMINS: "34600000000"
       SKIP_DELIVERY_VALIDATION: "1"
       OXIDIAN_MFA_ENFORCED: "0"
       OXIDIAN_PUBLIC_URL: "http://localhost:5071"
       TIENDA_URL: "http://localhost:5071"
+      SESSION_COOKIE_SECURE: "0"
     ports:
       - "5071:5000"
     networks:

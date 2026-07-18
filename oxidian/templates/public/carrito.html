@@ -5,7 +5,7 @@
 {% endblock %}
 {% block content %}
 
-<div class="cr-wrap">
+<div class="cr-wrap cr-colombia-shell">
 {# ── HEADER ── #}
 <div class="cr-header">
   <a href="{{ establecimiento.url if establecimiento else url_for('public.index') }}" class="cr-back" aria-label="{{ ui.cart_back }}">
@@ -41,7 +41,7 @@
 
 {% if ui.cart_memory_note %}
 <div class="cr-memory-note" role="note">
-  <span aria-hidden="true">🇨🇴</span>
+  <span class="cr-colombia-emblem" aria-hidden="true"><i></i><i></i><i></i></span>
   <p>{{ ui.cart_memory_note }}</p>
 </div>
 {% endif %}

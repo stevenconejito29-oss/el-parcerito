@@ -25,7 +25,9 @@ class StoreConfigTest(unittest.TestCase):
         self.assertIn("cabecera_fondo", profile["theme"])
         self.assertIn("header_cart_action", profile["ui"])
         self.assertIn("menu_memory_title", profile["ui"])
+        self.assertIn("menu_catalog_title", profile["ui"])
         self.assertIn("cart_memory_note", profile["ui"])
+        self.assertIn("footer_heritage", profile["ui"])
 
     def test_public_theme_and_copy_are_read_from_site_config(self):
         values = {

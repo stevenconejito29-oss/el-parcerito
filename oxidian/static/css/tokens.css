@@ -53,6 +53,14 @@
   --brand-accent:            #245A9A;
   --brand-accent-contrast:   #FFFFFF;
 
+  /* Identidad patrimonial: alias configurables, nunca una segunda paleta.
+     Permiten expresar Colombia sin desacoplar la interfaz del panel de marca. */
+  --heritage-sun:   var(--brand-primary);
+  --heritage-river: var(--brand-accent);
+  --heritage-clay:  var(--brand-secondary);
+  --heritage-coffee:color-mix(in srgb, var(--brand-secondary) 42%, #3A2015);
+  --heritage-leaf:  color-mix(in srgb, var(--theme-success, #27875D) 78%, #163F2C);
+
   /* Tintas de marca/estado para texto sobre superficies. Un color apto como
      fondo no siempre tiene contraste suficiente como tipografía (sobre todo
      los amarillos); estas mezclas se adaptan al tema claro u oscuro. */

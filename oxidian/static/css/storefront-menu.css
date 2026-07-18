@@ -3,6 +3,109 @@
    EL PARCERITO — Menu v5 · KFC/BK card grid · Dark warm theme
 ══════════════════════════════════════════════════════════════ */
 
+/* ── Lenguaje visual colombiano ──────────────────────────────
+   Patrones dibujados con CSS/SVG: sin imágenes extra ni coste de red. La
+   opacidad baja evita convertir la identidad en decoración estridente. */
+.ep-hero-cordillera {
+  position: absolute;
+  z-index: 1;
+  inset: auto 0 0;
+  width: 100%;
+  height: clamp(44px, 10vw, 82px);
+  pointer-events: none;
+  opacity: .3;
+}
+.ep-hero-mountain--back { fill: color-mix(in srgb, var(--heritage-river) 32%, transparent); }
+.ep-hero-mountain--front { fill: color-mix(in srgb, var(--heritage-sun) 36%, transparent); }
+.ep-hero-inner,
+.ep-trust { position: relative; z-index: 2; }
+
+/* El buscador recuerda una etiqueta de tienda de barrio mediante el remate
+   tejido, pero conserva el hit-area rectangular y accesible. */
+.ep-search-box::after {
+  content: "";
+  position: absolute;
+  left: .7rem;
+  right: .7rem;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg,
+    var(--heritage-sun) 0 50%,
+    var(--heritage-river) 50% 75%,
+    var(--heritage-clay) 75% 100%);
+  opacity: .55;
+  pointer-events: none;
+}
+.ep-search-submit {
+  clip-path: polygon(8px 0, 100% 0, 100% 100%, 8px 100%, 0 50%);
+  padding-left: 1rem;
+}
+
+.ep-catalog-heading {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: .65rem;
+}
+.ep-catalog-heading > div { min-width: 0; }
+.ep-catalog-heading p {
+  margin: .12rem 0 0;
+  color: var(--theme-muted);
+  font-size: .69rem;
+  font-weight: 720;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.ep-catalog-mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  grid-template-rows: 2fr 1fr 1fr;
+  overflow: hidden;
+  border-radius: 50% 50% 48% 52% / 38% 42% 58% 62%;
+  transform: rotate(-8deg);
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--heritage-coffee) 20%, transparent);
+  border: 2px solid color-mix(in srgb, var(--theme-surface) 72%, transparent);
+}
+.ep-catalog-mark i:nth-child(1) { background: var(--heritage-sun); }
+.ep-catalog-mark i:nth-child(2) { background: var(--heritage-river); }
+.ep-catalog-mark i:nth-child(3) { background: var(--heritage-clay); }
+.ep-cat-icon--colombia {
+  width: 22px;
+  height: 18px;
+  display: grid !important;
+  grid-template-rows: 2fr 1fr 1fr;
+  overflow: hidden;
+  border-radius: 5px 2px 5px 5px;
+  border: 1px solid color-mix(in srgb, var(--theme-text) 18%, transparent);
+  transform: rotate(-3deg);
+}
+.ep-cat-icon--colombia i:nth-child(1) { background: var(--heritage-sun); }
+.ep-cat-icon--colombia i:nth-child(2) { background: var(--heritage-river); }
+.ep-cat-icon--colombia i:nth-child(3) { background: var(--heritage-clay); }
+
+/* Las secciones evocan una cenefa tejida. No cambia el orden ni la densidad
+   del catálogo y desaparece en impresión. */
+.ep-cat-section {
+  position: relative;
+  padding-inline: clamp(.15rem, 1vw, .4rem);
+}
+.ep-cat-title::after {
+  content: "";
+  display: inline-block;
+  width: clamp(26px, 5vw, 52px);
+  height: 5px;
+  margin-left: .55rem;
+  vertical-align: .12em;
+  background:
+    linear-gradient(135deg, transparent 34%, var(--heritage-sun) 35% 65%, transparent 66%) 0 0/8px 5px,
+    color-mix(in srgb, var(--heritage-river) 20%, transparent);
+  border-radius: 99px;
+  opacity: .72;
+}
+
 /* ── Banners MenuConfig ── */
 .ep-banner-section {
   position: relative;
@@ -698,7 +801,38 @@ body.ox-body-public .ep-banner-cta {
   box-shadow: 0 14px 30px rgba(0, 0, 0, .09);
   transition: transform .2s cubic-bezier(.34,1.56,.64,1), box-shadow .2s, border-color .2s;
   -webkit-tap-highlight-color: transparent;
+  isolation: isolate;
 }
+.ep-card::before {
+  content: "";
+  position: absolute;
+  z-index: 7;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg,
+    var(--heritage-sun) 0 50%,
+    var(--heritage-river) 50% 75%,
+    var(--heritage-clay) 75% 100%);
+  opacity: .9;
+  pointer-events: none;
+}
+.ep-card::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  right: -15px;
+  bottom: -15px;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background:
+    repeating-conic-gradient(from 45deg,
+      color-mix(in srgb, var(--heritage-sun) 12%, transparent) 0 10deg,
+      transparent 10deg 20deg);
+  opacity: .62;
+  pointer-events: none;
+}
+.ep-card > * { position: relative; z-index: 1; }
 @media(hover:hover) {
   .ep-card:hover {
     transform: translateY(-4px) scale(1.01);
@@ -729,7 +863,10 @@ body.ox-body-public .ep-banner-cta {
 .ep-card-img-emoji {
   width:100%;height:100%;display:flex;align-items:center;justify-content:center;
   font-size:2.5rem;
-  background: linear-gradient(135deg, var(--col-elevated), var(--col-bg));
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--heritage-sun) 18%, transparent), transparent 38%),
+    repeating-linear-gradient(45deg, transparent 0 8px, color-mix(in srgb, var(--heritage-coffee) 5%, transparent) 8px 9px),
+    linear-gradient(135deg, var(--col-elevated), var(--col-bg));
 }
 
 /* Badges sobre la imagen */
@@ -1013,13 +1150,38 @@ body.ox-body-public .ep-banner-cta {
   background: var(--action-primary);
   color: var(--action-on-primary);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--action-primary) 26%, transparent);
+  box-shadow:
+    0 8px 18px color-mix(in srgb, var(--action-primary) 26%, transparent),
+    0 0 0 3px var(--theme-surface),
+    0 0 0 5px color-mix(in srgb, var(--heritage-sun) 72%, transparent);
   transition: transform .15s, box-shadow .15s, filter .15s;
   -webkit-tap-highlight-color: transparent;
 }
 .ep-btn-add:hover  {
   box-shadow: 0 10px 22px color-mix(in srgb, var(--action-primary) 34%, transparent);
   filter: brightness(1.06);
+}
+.ep-btn-add svg { filter: drop-shadow(0 1px 0 color-mix(in srgb, #000 20%, transparent)); }
+
+@media (max-width: 420px) {
+  .ep-catalog-heading { gap: .48rem; }
+  .ep-catalog-mark { width: 30px; height: 30px; }
+  .ep-catalog-heading p { font-size: .64rem; }
+  .ep-cat-title::after { width: 24px; }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .ep-hero-cordillera { height: 36px; }
+  .ep-catalog-heading p { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ep-card,
+  .ep-card-img img,
+  .ep-btn-add { transition: none !important; }
+}
+@media print {
+  .ep-hero-cordillera,
+  .ep-cat-title::after,
+  .ep-card::after { display: none !important; }
 }
 .ep-btn-add:active { transform: scale(.88); }
 
@@ -1098,6 +1260,20 @@ body.ox-body-public .ep-banner-cta {
   box-shadow: var(--elevation-raised);
 }
 .ep-memory-ribbon__flag { font-size: 1.55rem; line-height: 1; }
+.ep-colombia-emblem {
+  width: 34px;
+  height: 28px;
+  display: grid;
+  grid-template-rows: 2fr 1fr 1fr;
+  overflow: hidden;
+  border: 2px solid color-mix(in srgb, var(--theme-surface) 82%, transparent);
+  border-radius: 8px 3px 8px 8px;
+  box-shadow: 2px 3px 0 color-mix(in srgb, var(--heritage-coffee) 32%, transparent);
+  transform: rotate(-3deg);
+}
+.ep-colombia-emblem i:nth-child(1) { background: var(--heritage-sun); }
+.ep-colombia-emblem i:nth-child(2) { background: var(--heritage-river); }
+.ep-colombia-emblem i:nth-child(3) { background: var(--heritage-clay); }
 .ep-memory-ribbon__copy { min-width: 0; }
 .ep-memory-ribbon__copy > span {
   display: block;

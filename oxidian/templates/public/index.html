@@ -74,11 +74,15 @@
       <span>{{ 'Abierto' if brand.tienda_abierta else 'Cerrado' }}</span>
     </div>
   </div>
+  <svg class="ep-hero-cordillera" viewBox="0 0 900 110" preserveAspectRatio="none" aria-hidden="true">
+    <path class="ep-hero-mountain ep-hero-mountain--back" d="M0 94 92 49l58 29 87-58 76 58 70-40 62 47 92-68 93 71 75-39 75 43 120-31v49H0Z"/>
+    <path class="ep-hero-mountain ep-hero-mountain--front" d="M0 105 118 72l58 22 115-52 94 55 92-36 93 38 116-53 85 47 129-28v45H0Z"/>
+  </svg>
 </section>
 
 {% if ui.menu_memory_title or ui.menu_memory_text %}
 <section class="ep-memory-ribbon" aria-labelledby="ep-memory-title">
-  <span class="ep-memory-ribbon__flag" aria-hidden="true">🇨🇴</span>
+  <span class="ep-memory-ribbon__flag ep-colombia-emblem" aria-hidden="true"><i></i><i></i><i></i></span>
   <div class="ep-memory-ribbon__copy">
     {% if ui.menu_memory_eyebrow %}<span>{{ ui.menu_memory_eyebrow }}</span>{% endif %}
     {% if ui.menu_memory_title %}<strong id="ep-memory-title">{{ ui.menu_memory_title }}</strong>{% endif %}
@@ -272,7 +276,7 @@
   <div class="ep-cats" id="cats-bar" role="navigation" aria-label="Categorías">
     <a href="{{ storefront_url(q=busqueda or None) }}"
        data-category="" class="ep-cat {% if not categoria_activa %}ep-cat-on{% endif %}">
-      <span class="ep-cat-icon">🌎</span><span>Todo</span>
+      <span class="ep-cat-icon ep-cat-icon--colombia" aria-hidden="true"><i></i><i></i><i></i></span><span>Todo</span>
     </a>
     {# Chip especial: Combos — al mismo nivel que las categorías reales. #}
     {% set _combos_count = productos|selectattr('es_combo')|rejectattr('solo_canje')|rejectattr('puntos_para_canje')|list|length %}
@@ -316,7 +320,13 @@
   </div>
   {% if not busqueda and not categoria_activa %}
   <div class="ep-section-head">
-    <h2 class="ep-section-title" data-storefront-title data-default-title="{{ brand.vertical_emoji }} Nuestro {{ brand.vertical_label|lower }}">{{ brand.vertical_emoji }} Nuestro {{ brand.vertical_label|lower }}</h2>
+    <div class="ep-catalog-heading">
+      <span class="ep-catalog-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div>
+        <h2 class="ep-section-title" data-storefront-title data-default-title="{{ ui.menu_catalog_title }}">{{ ui.menu_catalog_title }}</h2>
+        <p>{{ ui.menu_catalog_subtitle }}</p>
+      </div>
+    </div>
     <span class="ep-pill-count" data-storefront-count>{{ productos|length }} productos</span>
   </div>
   {% elif busqueda %}
