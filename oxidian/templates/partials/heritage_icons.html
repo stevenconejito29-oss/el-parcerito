@@ -1,5 +1,5 @@
-{% macro heritage_icon(name, class_name='ox-heritage-icon') -%}
-<svg class="{{ class_name }}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+{% macro heritage_icon(name, class_name='') -%}
+<svg class="ox-heritage-icon{% if class_name %} {{ class_name }}{% endif %}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
   <use href="#ox-hi-{{ name }}"></use>
 </svg>
 {%- endmacro %}

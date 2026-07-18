@@ -1,15 +1,21 @@
 {% extends "base.html" %}
 {% from 'partials/heritage_icons.html' import heritage_icon %}
-{% block title %}Confirmar Pedido — {{ brand.nombre }}{% endblock %}
+{% block title %}{{ ui.checkout_title }} — {{ brand.nombre }}{% endblock %}
 {% block content %}
 <div class="checkout-head flex items-center gap-3 mb-5">
   <a href="{{ url_for('public.ver_carrito') }}"
      class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition"
      style="background:var(--col-surface);border:1px solid var(--col-border);color:var(--col-muted)">←</a>
-  <div>
-    <h1 class="text-xl font-black" style="color:var(--col-text)">Confirmar Pedido</h1>
+  <div class="checkout-head-copy">
+    <span class="checkout-eyebrow">{{ heritage_icon('mariposa') }} {{ ui.checkout_eyebrow }}</span>
+    <h1 class="text-xl font-black" style="color:var(--col-text)">{{ ui.checkout_title }}</h1>
     <p class="text-xs" style="color:var(--col-muted)">{{ items|length }} producto{{ 's' if items|length != 1 else '' }} · €{{ "%.2f"|format(subtotal) }}</p>
   </div>
+</div>
+
+<div class="checkout-memory" role="note">
+  {{ heritage_icon('grano') }}
+  <div><strong>{{ ui.checkout_subtitle }}</strong><span>{{ ui.checkout_memory }}</span></div>
 </div>
 
 {% if fecha_entrega_programada %}
@@ -30,8 +36,8 @@
 <div class="md:col-span-2 order-2 md:order-2 md:sticky md:top-20 md:self-start">
   <details open class="ox-card mb-4">
     <summary class="p-4 cursor-pointer font-bold text-sm flex items-center justify-between select-none">
-      <span>📋 Resumen del pedido</span>
-      <span class="text-yellow-400 font-extrabold">€{{ "%.2f"|format(subtotal) }}</span>
+      <span>{{ heritage_icon('canasto') }} {{ ui.checkout_summary }}</span>
+      <span class="checkout-summary-price">€{{ "%.2f"|format(subtotal) }}</span>
     </summary>
     <div class="px-4 pb-4 border-t" style="border-color:var(--col-border)">
       <ul class="space-y-2 pt-3">
@@ -41,12 +47,12 @@
             <span class="font-semibold">{{ item.producto.nombre }}</span>
             <span class="ml-1" style="color:var(--col-muted)">× {{ item.cantidad }}</span>
             {% if item.producto.tipo_entrega in ('programado','encargo') %}
-              <span class="ml-1 text-xs px-1.5 py-0.5 rounded" style="background:color-mix(in srgb,var(--brand-accent,#7CC7FF) 15%,transparent);color:var(--brand-accent,#7CC7FF)">
+              <span class="ml-1 text-xs px-1.5 py-0.5 rounded checkout-date-badge">
                 fecha fija{% if item.producto.fecha_llegada %}: {{ item.producto.fecha_llegada.strftime('%d/%m') }}{% endif %}
               </span>
             {% endif %}
             {% if item.combo_resumen %}
-              <p class="text-xs mt-0.5" style="color:var(--role-super-admin,#C084FC)">{{ item.combo_resumen }}</p>
+              <p class="text-xs mt-0.5 checkout-combo-summary">{{ item.combo_resumen }}</p>
             {% endif %}
             {% if brand.es_comida %}
               {% set al_icons = item.producto.alergenos_iconos %}
@@ -122,7 +128,7 @@
   <!-- ① IDENTIFICACIÓN POR TELÉFONO -->
   <div class="ox-card p-4 checkout-step">
     <h2 class="text-sm font-extrabold mb-3 flex items-center gap-2">
-      <span class="w-6 h-6 rounded-full text-xs font-black flex items-center justify-center" style="background:var(--brand-primary);color:var(--brand-on-primary,#000)">1</span>
+      <span class="checkout-step-number">1</span>
       📱 Tu número de teléfono
     </h2>
     <p class="text-xs mb-3" style="color:var(--col-muted)">Nos identificamos por teléfono — no hace falta crear cuenta</p>
@@ -146,19 +152,19 @@
   <!-- ② ENTREGA -->
   <div class="ox-card p-4 checkout-step">
     <h2 class="text-sm font-extrabold mb-3 flex items-center gap-2">
-      <span class="w-6 h-6 rounded-full text-xs font-black flex items-center justify-center" style="background:var(--brand-primary);color:var(--brand-on-primary,#000)">2</span>
+      <span class="checkout-step-number">2</span>
       🚚 Tipo de entrega
     </h2>
     <div class="grid grid-cols-{{ fulfillment_options|length if fulfillment_options else 1 }} gap-2 mb-3">
       {% if 'delivery' in fulfillment_options %}
       <label class="flex items-center gap-2.5 p-3 rounded-xl cursor-pointer checkout-choice" style="background:var(--col-elevated);border:1.5px solid var(--col-border)">
-        <input type="radio" name="tipo_entrega_cliente" value="delivery" {% if fulfillment_default == 'delivery' %}checked{% endif %} data-fulfillment-mode class="accent-yellow-500">
+        <input type="radio" name="tipo_entrega_cliente" value="delivery" {% if fulfillment_default == 'delivery' %}checked{% endif %} data-fulfillment-mode class="checkout-radio">
         <span class="font-bold text-sm">{{ fulfillment_mode_label('delivery') }}</span>
       </label>
       {% endif %}
       {% if 'recogida' in fulfillment_options %}
       <label class="flex items-center gap-2.5 p-3 rounded-xl cursor-pointer checkout-choice" style="background:var(--col-elevated);border:1.5px solid var(--col-border)">
-        <input type="radio" name="tipo_entrega_cliente" value="recogida" {% if fulfillment_default == 'recogida' %}checked{% endif %} data-fulfillment-mode class="accent-yellow-500">
+        <input type="radio" name="tipo_entrega_cliente" value="recogida" {% if fulfillment_default == 'recogida' %}checked{% endif %} data-fulfillment-mode class="checkout-radio">
         <span class="font-bold text-sm">{{ fulfillment_mode_label('recogida') }}</span>
       </label>
       {% endif %}
@@ -219,28 +225,28 @@
   <!-- ③ MÉTODO DE PAGO -->
   <div class="ox-card p-4 checkout-step">
     <h2 class="text-sm font-extrabold mb-3 flex items-center gap-2">
-      <span class="w-6 h-6 rounded-full text-xs font-black flex items-center justify-center" style="background:var(--brand-primary);color:var(--brand-on-primary,#000)">3</span>
+      <span class="checkout-step-number">3</span>
       💳 Método de pago
     </h2>
     <div class="grid grid-cols-2 gap-2 mb-3">
       {% if brand.efectivo_habilitado %}
       <label class="flex items-center gap-2.5 p-3 rounded-xl cursor-pointer checkout-pay-label checkout-choice" style="background:var(--col-elevated);border:1.5px solid var(--col-border)">
-        <input type="radio" name="metodo_pago" value="efectivo" checked class="accent-yellow-500" data-payment-method>
+        <input type="radio" name="metodo_pago" value="efectivo" checked class="checkout-radio" data-payment-method>
         <span class="font-bold text-sm">💵 Efectivo</span>
       </label>
       {% endif %}
       {% if brand.bizum_habilitado and brand.bizum_telefono %}
       <label class="flex items-center gap-2.5 p-3 rounded-xl cursor-pointer checkout-pay-label checkout-choice" style="background:var(--col-elevated);border:1.5px solid var(--col-border)">
-        <input type="radio" name="metodo_pago" value="bizum" {% if not brand.efectivo_habilitado %}checked{% endif %} class="accent-yellow-500" data-payment-method>
+        <input type="radio" name="metodo_pago" value="bizum" {% if not brand.efectivo_habilitado %}checked{% endif %} class="checkout-radio" data-payment-method>
         <span class="font-bold text-sm">📱 Bizum</span>
       </label>
       {% endif %}
     </div>
-    <div id="bizum-instructions" class="hidden p-3 rounded-xl text-sm" style="background:color-mix(in srgb,var(--role-super-admin) 8%,transparent);border:1px solid color-mix(in srgb,var(--role-super-admin) 25%,transparent);color:var(--role-super-admin)">
+    <div id="bizum-instructions" class="hidden p-3 rounded-xl text-sm checkout-payment-help">
       <p class="font-bold mb-1">📲 Bizum al recibir:</p>
-      <ol class="space-y-1 text-xs list-decimal list-inside" style="color:rgba(192,132,252,.85)">
+      <ol class="space-y-1 text-xs list-decimal list-inside">
         <li>Tu pedido se prepara sin esperar el pago por adelantado.</li>
-        <li>Cuando llegue el repartidor, envía el importe exacto al número <strong id="bizum-numero" style="color:var(--role-super-admin,#C084FC)">cargando...</strong>.</li>
+        <li>Cuando llegue el repartidor, envía el importe exacto al número <strong id="bizum-numero">cargando...</strong>.</li>
         <li>El repartidor verificará el Bizum recibido y luego pedirá el código de entrega.</li>
       </ol>
       <p class="text-xs mt-2 opacity-75">No compartas el código de entrega hasta tener tu pedido delante.</p>
@@ -285,14 +291,14 @@
   <!-- ⑥ FIDELIDAD: único lugar de verificación y canje durante la compra. -->
   <div class="ox-card p-4 checkout-step checkout-rewards-card" id="puntos-section">
     <h2 class="text-sm font-extrabold mb-1 flex items-center gap-2">
-      <span class="text-base checkout-loyalty-icon">{{ heritage_icon('cafecito') }}</span>
+      <span class="text-base checkout-loyalty-icon">{{ heritage_icon('grano') }}</span>
       Canjear una recompensa <span class="checkout-optional">Opcional</span>
     </h2>
     <p class="text-xs mb-3" style="color:var(--col-muted)">
       Este pedido sumará {{ ui.loyalty_unit_plural }}. Abre esta opción solo si quieres añadir un producto de regalo; el saldo permanece en {{ ui.loyalty_name }}.
     </p>
     <button type="button" class="checkout-rewards-toggle" data-rewards-toggle aria-expanded="{{ 'true' if checkout_canje else 'false' }}">
-      <span aria-hidden="true">{{ heritage_icon('canasto' if checkout_canje else 'cafecito') }}</span>
+      <span aria-hidden="true">{{ heritage_icon('canasto' if checkout_canje else 'grano') }}</span>
       <span><strong id="reward-toggle-title">{% if checkout_canje %}{{ checkout_canje.nombre }} seleccionado{% else %}Quiero usar mis {{ ui.loyalty_unit_plural }}{% endif %}</strong><small id="reward-toggle-subtitle">{% if checkout_canje %}Puedes cambiarlo o quitarlo antes de confirmar{% else %}Verificar por WhatsApp y elegir recompensa{% endif %}</small></span>
       <span class="checkout-rewards-chevron" aria-hidden="true">⌄</span>
     </button>
@@ -339,13 +345,13 @@
 
   <!-- TOTAL Y CONFIRMAR -->
   <div class="ox-card p-4 checkout-submit-card">
-    <div class="text-xs mb-3 p-3 rounded-lg" style="background:rgba(255,255,255,.04);color:var(--col-muted)">
+    <div class="text-xs mb-3 p-3 rounded-lg checkout-legal-note">
       Al confirmar aceptas las condiciones de compra y el tratamiento de datos según RGPD.
     </div>
     <button type="submit" class="ox-btn-primary w-full text-base" id="btn-confirmar" {% if not brand.tienda_abierta %}disabled aria-describedby="store-closed-submit-help"{% endif %}>
       {% if brand.tienda_abierta %}✓ Confirmar pedido{% else %}Tienda cerrada · no se puede enviar{% endif %}
     </button>
-    {% if not brand.tienda_abierta %}<p id="store-closed-submit-help" class="text-xs mt-2 text-center" style="color:var(--theme-danger)">Conservaremos tu carrito para cuando la tienda vuelva a abrir.</p>{% endif %}
+    {% if not brand.tienda_abierta %}<p id="store-closed-submit-help" class="text-xs mt-2 text-center" style="color:var(--theme-danger)">Conservaremos tu {{ ui.cart_name }} para cuando la tienda vuelva a abrir.</p>{% endif %}
   </div>
 </form>
 </div>
@@ -738,7 +744,7 @@ function renderRewardOptions(rewards) {
     const name = document.createElement('strong');
     name.textContent = reward.nombre;
     const points = document.createElement('small');
-    points.textContent = `${reward.puntos} ${OX_UI.loyalty_unit_plural || 'cafecitos'}`;
+    points.textContent = `${reward.puntos} ${OX_UI.loyalty_unit_plural || 'granitos de café'}`;
     copy.append(name, points);
     const action = document.createElement('b');
     action.textContent = Number(reward.id) === selectedId ? 'Elegido' : 'Elegir';
@@ -844,7 +850,7 @@ async function removeReward(clearVerification = false) {
   });
   const remove = document.querySelector('[data-reward-remove]');
   if (remove) remove.hidden = true;
-  document.getElementById('reward-toggle-title').textContent = `Quiero usar mis ${OX_UI.loyalty_unit_plural || 'cafecitos'}`;
+  document.getElementById('reward-toggle-title').textContent = `Quiero usar mis ${OX_UI.loyalty_unit_plural || 'granitos de café'}`;
   document.getElementById('reward-toggle-subtitle').textContent = 'Verificar por WhatsApp y elegir recompensa';
   if (clearVerification) {
     document.getElementById('reward-picker')?.setAttribute('hidden', '');
@@ -877,7 +883,7 @@ function buscarClientePorTelefono(tel) {
       const d = await r.json();
       if (st) {
         if (d.ok) {
-          st.textContent = `✓ Usaremos este WhatsApp para identificar tus ${OX_UI.loyalty_unit_plural || 'cafecitos'} y avisarte del pedido.`;
+          st.textContent = `✓ Usaremos este WhatsApp para identificar tus ${OX_UI.loyalty_unit_plural || 'granitos de café'} y avisarte del pedido.`;
           st.style.color = 'var(--theme-success)';
           st.classList.remove('hidden');
         }

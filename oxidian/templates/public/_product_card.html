@@ -7,7 +7,7 @@
 {% set _tallas = _card.presentations %}
 {% set _vertical = (p.vertical or 'ambos') %}
 {# data-group ayuda al filtro client-side a saber a qué "bloque" pertenece:
-   canje (cafecito), combos o regular. Ver epFilterCategory en index.html. #}
+   canje (granito), combos o regular. Ver epFilterCategory en index.html. #}
 {% set _es_canje = (p.solo_canje or (p.puntos_para_canje and p.puntos_para_canje > 0)) %}
 {% set _card_group = 'canje' if _es_canje else ('combos' if p.es_combo else 'regular') %}
 <div class="ep-card {% if p.es_combo %}ep-card-combo{% endif %} {% if _qty_cart > 0 %}ep-card-in-cart{% endif %}"
@@ -52,7 +52,7 @@
       {% if p.solo_canje %}
         <span class="ep-cbadge ep-cbadge-puntos ep-cbadge-puntos--exclusive">{{ heritage_icon('canasto') }} SOLO CANJE</span>
       {% elif p.canjeable_con_puntos %}
-        <span class="ep-cbadge ep-cbadge-puntos">{{ heritage_icon('cafecito') }} Canjeable</span>
+        <span class="ep-cbadge ep-cbadge-puntos">{{ heritage_icon('grano') }} Canjeable</span>
       {% endif %}
       {% set stock_origen = _card.stock %}
       {% if p.stock_mostrar_en_web and stock_origen <= 5 and stock_origen > 0 %}
@@ -142,7 +142,7 @@
         {% if p.solo_canje %}
           {# Exclusivo canje: NO tiene precio en euros, solo puntos. #}
           <span class="ep-card-price ep-card-price--points">
-            {{ heritage_icon('cafecito') }} {{ p.puntos_para_canje or 0 }} {{ ui.loyalty_unit_plural }}
+            {{ heritage_icon('grano') }} {{ p.puntos_para_canje or 0 }} {{ ui.loyalty_unit_plural }}
           </span>
           <span class="ep-card-price-note">Solo canje</span>
         {% else %}
@@ -178,7 +178,7 @@
            canjea con puntos desde el carrito al hacer un pedido. #}
         <a href="{{ url_for('public.ver_carrito') }}" class="ep-btn-detail"
            title="Solo se canjea con {{ ui.loyalty_unit_plural }} al hacer un pedido">
-          Ver carrito →
+          {{ ui.cart_view_action }} →
         </a>
       {% elif not _card.available %}
         <span class="ep-btn-sold">Agotado</span>

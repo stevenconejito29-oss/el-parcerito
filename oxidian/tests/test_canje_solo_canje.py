@@ -143,7 +143,7 @@ class CanjeSoloCanjeTest(unittest.TestCase):
         )
         payload = response.get_json()
         self.assertFalse(payload["ok"])
-        self.assertIn("Club", payload["msg"])
+        self.assertIn("granitos de café", payload["msg"])
 
     def test_regular_canjeable_product_can_be_added_normally(self):
         # Producto canjeable_con_puntos=True pero solo_canje=False:

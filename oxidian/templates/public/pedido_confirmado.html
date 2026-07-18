@@ -3,35 +3,32 @@
 {% block title %}¡Pedido Confirmado! — {{ brand.nombre }}{% endblock %}
 {% block content %}
 
-<div class="max-w-lg mx-auto pt-2 pb-16">
+<div class="max-w-lg mx-auto pt-2 pb-16 order-confirmation">
 
   {# ── CONFETTI / ÉXITO ── #}
-  <div class="text-center py-6" id="success-top">
-    <div class="mb-2" style="animation:popIn .5s cubic-bezier(.34,1.56,.64,1) both">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="72" height="72"
-           fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-           stroke-linejoin="round" style="color:var(--brand-primary,#FCD116);margin:0 auto;display:block">
-        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-        <polyline points="22 4 12 14.01 9 11.01"/>
-      </svg>
+  <div class="order-success-hero" id="success-top">
+    <span class="order-success-eyebrow">{{ heritage_icon('mariposa') }} {{ ui.order_success_eyebrow }}</span>
+    <div class="order-success-symbol" aria-hidden="true">
+      {{ heritage_icon('canasto') }}
+      <span>{{ heritage_icon('grano') }}</span>
     </div>
-    <h1 class="text-2xl font-black mb-1" style="color:var(--brand-primary,#FCD116)">¡Pedido recibido!</h1>
-    <p class="text-sm" style="color:var(--col-muted)">Pronto recibirás noticias sobre tu pedido</p>
+    <h1>{{ ui.order_success_title }}</h1>
+    <p>{{ ui.order_success_text }}</p>
   </div>
 
   {# ── NÚMERO DE PEDIDO ── #}
-  <div class="ox-card p-5 mb-4 text-center" style="border:2px solid rgba(252,209,22,.25)">
+  <div class="ox-card p-5 mb-4 text-center order-number-ticket">
     <p class="text-xs font-black uppercase tracking-widest mb-1" style="color:var(--col-muted)">Número de pedido</p>
-    <p class="text-4xl font-black font-mono mb-1" style="color:var(--brand-primary,#FCD116)">
+    <p class="text-4xl font-black font-mono mb-1" style="color:var(--brand-primary)">
       {{ pedido.numero_pedido }}
     </p>
-    <p class="text-xs" style="color:var(--col-faint)">Guarda este número para consultas</p>
+    <p class="text-xs" style="color:var(--col-faint)">{{ ui.order_number_help }}</p>
   </div>
 
   {# ── ITEMS DEL PEDIDO ── #}
-  <div class="ox-card p-4 mb-4">
+  <div class="ox-card p-4 mb-4 order-confirm-card">
     <h2 class="text-sm font-black mb-3 flex items-center gap-2" style="color:var(--col-text)">
-      🛒 Tu pedido
+      {{ heritage_icon('canasto') }} Tu pedido
     </h2>
     <div class="space-y-2">
       {% for item in pedido.items %}
@@ -57,7 +54,7 @@
             {% endif %}
           </div>
         </div>
-        <span class="font-black text-sm flex-shrink-0" style="color:var(--brand-primary,#FCD116)">
+        <span class="font-black text-sm flex-shrink-0" style="color:var(--brand-primary)">
           {% if item.es_canje_puntos %}Gratis{% else %}€{{ "%.2f"|format(item.subtotal) }}{% endif %}
         </span>
       </div>
@@ -82,7 +79,7 @@
       <div class="flex justify-between" style="color:var(--theme-success)"><span>Envío</span><span>Gratis</span></div>
       {% endif %}
       <div class="flex justify-between font-black text-base pt-1" style="border-top:1px solid var(--col-border);color:var(--col-text)">
-        <span>Total</span><span style="color:var(--brand-primary,#FCD116)">€{{ "%.2f"|format(pedido.total) }}</span>
+        <span>Total</span><span style="color:var(--brand-primary)">€{{ "%.2f"|format(pedido.total) }}</span>
       </div>
     </div>
   </div>
@@ -95,7 +92,7 @@
     {% endif %}
   {% endfor %}
   <div class="ox-card p-4 mb-4 order-points-used">
-    <span class="text-3xl">🎁</span>
+    <span class="text-3xl">{{ heritage_icon('grano') }}</span>
     <div>
       <p class="font-black">{{ pedido.puntos_usados }} {{ ui.loyalty_unit_plural }} utilizados</p>
       <p class="text-xs">
@@ -155,7 +152,7 @@
   {# ── PUNTOS GANADOS ── #}
   {% if brand.puntos and pedido.puntos_ganados and pedido.puntos_ganados > 0 %}
   <div class="ox-card p-4 mb-4 flex items-center gap-3 order-loyalty-card">
-    <span class="text-3xl">{{ heritage_icon('cafecito') }}</span>
+    <span class="text-3xl">{{ heritage_icon('grano') }}</span>
     <div>
       <p class="font-black order-loyalty-earned">+{{ pedido.puntos_ganados }} {{ ui.loyalty_unit_plural }} al completar el pedido</p>
       <p class="text-xs" style="color:var(--col-muted)">Se añadirán a tu saldo cuando el equipo marque el pedido como entregado.</p>
@@ -165,8 +162,8 @@
 
   {# ── BIZUM: instrucciones si aplica ── #}
   {% if pedido.metodo_pago == 'bizum' %}
-  <div class="ox-card p-4 mb-4" style="background:rgba(168,85,247,.07);border:1px solid rgba(168,85,247,.2)">
-    <p class="font-black mb-2" style="color:#C084FC">📱 Pago con Bizum</p>
+  <div class="ox-card p-4 mb-4 order-payment-card">
+    <p class="font-black mb-2 order-payment-title">📱 Pago con Bizum</p>
     <p class="text-sm" style="color:var(--col-muted)">
       El repartidor confirmará el pago al entregar tu pedido y después te pedirá el código de entrega.
       {% if brand.bizum_telefono %}Envía el Bizum a <strong style="color:var(--col-text)">{{ brand.bizum_telefono }}</strong>.{% endif %}
@@ -176,16 +173,13 @@
 
   {# ── ACCIONES ── #}
   <div class="space-y-3">
-    <a href="{{ url_for('public.index') }}"
-       class="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl font-black text-base"
-       style="background:linear-gradient(135deg,var(--brand-primary,#FCD116),color-mix(in srgb,var(--brand-primary,#FCD116) 80%,#000));color:#18120A;box-shadow:0 4px 18px rgba(252,209,22,.25)">
-      🛒 Seguir comprando
+    <a href="{{ url_for('public.index') }}" class="order-action order-action--primary">
+      {{ heritage_icon('canasto') }} Seguir explorando
     </a>
     {% if brand.telefono %}
     <a href="{{ url_for('public.whatsapp', text='Hola, acabo de hacer el pedido ' ~ pedido.numero_pedido ~ '. Quiero consultar el estado.') }}"
        target="_blank" rel="noopener"
-       class="flex items-center justify-center gap-2 w-full py-3 rounded-2xl font-bold text-sm"
-       style="background:rgba(37,211,102,.1);border:1.5px solid rgba(37,211,102,.3);color:#25D366">
+       class="order-action order-action--whatsapp">
       💬 Consultar por WhatsApp
     </a>
     {% endif %}
@@ -193,34 +187,4 @@
 
 </div>
 
-{% endblock %}
-{% block scripts %}
-<style>
-@keyframes popIn { from{transform:scale(0) rotate(-10deg);opacity:0} 60%{transform:scale(1.15) rotate(3deg)} to{transform:scale(1) rotate(0);opacity:1} }
-</style>
-<script nonce="{{ csp_nonce() }}">
-// Lanzar confetti visual sencillo
-(function() {
-  const colors = ['#FCD116', '#CE1126', '#003087', '#27AE74', '#fff'];
-  const container = document.getElementById('success-top');
-  if (!container) return;
-  for (let i = 0; i < 30; i++) {
-    const dot = document.createElement('span');
-    const size = Math.random() * 8 + 4;
-    dot.style.cssText = `position:fixed;top:${Math.random()*40}%;left:${Math.random()*100}%;
-      width:${size}px;height:${size}px;border-radius:${Math.random()>.5?'50%':'2px'};
-      background:${colors[Math.floor(Math.random()*colors.length)]};
-      animation:confettiFall ${1.5+Math.random()*2}s ease-in ${Math.random()*0.8}s forwards;
-      pointer-events:none;z-index:999;opacity:0`;
-    document.body.appendChild(dot);
-    setTimeout(() => dot.remove(), 4000);
-  }
-})();
-</script>
-<style>
-@keyframes confettiFall {
-  0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
-  100% { transform: translateY(80vh) rotate(720deg); opacity: 0; }
-}
-</style>
 {% endblock %}

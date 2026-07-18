@@ -52,8 +52,8 @@
         Ver {{ brand.vertical_label|lower if brand.vertical_label else 'menú' }} completo
       </a>
     </div>
-    <div class="ep-hero-heritage-seal" aria-label="{{ ui.hero_signature }}">
-      {{ heritage_icon('sombrero', 'ep-hero-sombrero') }}
+    <div class="ep-hero-origin" aria-label="{{ ui.hero_signature }}">
+      {{ heritage_icon('grano', 'ep-hero-origin-icon') }}
       <span>{{ ui.hero_signature }}</span>
     </div>
   </div>
@@ -181,7 +181,7 @@
 {% elif productos_auto_destacados %}
 <section class="ep-mc-destacados-wrap" aria-label="Recomendaciones automáticas">
   <div class="ep-mini-head">
-    <strong>{% if auto_destacados_con_rating %}{{ heritage_icon('mariposa') }} Los favoritos del momento{% else %}{{ heritage_icon('sombrero') }} Recomendados de la casa{% endif %}</strong>
+    <strong>{% if auto_destacados_con_rating %}{{ heritage_icon('mariposa') }} Los favoritos del momento{% else %}{{ heritage_icon('grano') }} Recomendados de la casa{% endif %}</strong>
     <span>{% if auto_destacados_con_rating %}Mejor valorados{% else %}Selección de la casa{% endif %}</span>
   </div>
 <div class="ep-mc-destacados">
@@ -204,7 +204,7 @@
       {% endif %}
       <span class="ep-mc-dest-name">{{ p.nombre }}</span>
       <span class="ep-mc-dest-price">
-        {% if p.solo_canje %}{{ heritage_icon('cafecito') }} {{ p.puntos_para_canje or 0 }} {{ ui.loyalty_unit_plural }}
+        {% if p.solo_canje %}{{ heritage_icon('grano') }} {{ p.puntos_para_canje or 0 }} {{ ui.loyalty_unit_plural }}
         {% else %}€{{ "%.2f"|format(p.precio_final) }}{% endif %}
       </span>
     </span>
@@ -296,7 +296,7 @@
        vista Todo por diseño). #}
     {% if brand.puntos %}
     <a href="#canje" data-category="_canje" class="ep-cat ep-cat-canje">
-      <span class="ep-cat-icon">{{ heritage_icon('cafecito') }}</span><span class="ep-cat-label">Canje</span>
+      <span class="ep-cat-icon">{{ heritage_icon('grano') }}</span><span class="ep-cat-label">Canje</span>
     </a>
     {% endif %}
     {% for cat in categorias %}
@@ -384,7 +384,7 @@
     {# ── 1. Sección Canje con puntos ── #}
     {% if productos_canjeables %}
     <div class="ep-cat-section ep-cat-section-puntos" data-section-cat="_canje" data-palette="promo">
-      <h3 class="ep-cat-title ep-cat-title-puntos">{{ heritage_icon('cafecito') }} Canje con {{ ui.loyalty_unit_plural }}</h3>
+      <h3 class="ep-cat-title ep-cat-title-puntos">{{ heritage_icon('grano') }} Canje con {{ ui.loyalty_unit_plural }}</h3>
       <div class="ep-grid">
         {% for p in productos_canjeables %}{% include "public/_product_card.html" %}{% endfor %}
       </div>
@@ -472,7 +472,7 @@
   <div class="ep-why-grid">
     {% if brand.descripcion %}<div class="ep-why-item"><span class="ep-why-icon">✓</span><div><p class="ep-why-title">Nuestra tienda</p><p class="ep-why-desc">{{ brand.descripcion }}</p></div></div>{% endif %}
     {% if brand.delivery %}<div class="ep-why-item"><span class="ep-why-icon">🚴</span><div><p class="ep-why-title">Delivery ~{{ zona_principal.tiempo_estimado_min if zona_principal else 25 }} min</p><p class="ep-why-desc">Rápido y en tu puerta</p></div></div>{% endif %}
-    {% if brand.puntos %}<div class="ep-why-item"><span class="ep-why-icon">{{ heritage_icon('cafecito') }}</span><div><p class="ep-why-title">Suma {{ ui.loyalty_unit_plural }}</p><p class="ep-why-desc">Canjéalos por productos</p></div></div>{% endif %}
+    {% if brand.puntos %}<div class="ep-why-item"><span class="ep-why-icon">{{ heritage_icon('grano') }}</span><div><p class="ep-why-title">Suma {{ ui.loyalty_unit_plural }}</p><p class="ep-why-desc">Canjéalos por productos</p></div></div>{% endif %}
     <div class="ep-why-item"><span class="ep-why-icon">📱</span><div><p class="ep-why-title">WhatsApp</p><p class="ep-why-desc">Consultas y seguimiento</p></div></div>
   </div>
 </section>
@@ -485,7 +485,7 @@
 <div class="ep-float-cart" id="ep-float-cart">
   <a href="{{ url_for('public.ver_carrito') }}" class="ep-float-inner">
     <span class="ep-float-count">{{ n_cart }}</span>
-    <span class="ep-float-label">Ver carrito</span>
+    <span class="ep-float-label">{{ ui.cart_view_action }}</span>
     <span class="ep-float-total">€{{ "%.2f"|format(carrito_subtotal) }}</span>
   </a>
 </div>
@@ -496,7 +496,7 @@
 ══════════════════════════════════════════ #}
 <div id="ep-modal" class="ep-modal-overlay" data-modal-backdrop role="dialog" aria-modal="true" hidden>
   <div class="ep-modal-panel" tabindex="-1">
-    <div class="ep-modal-heritage-handle" aria-hidden="true">{{ heritage_icon('sombrero') }}</div>
+    <div class="ep-modal-heritage-handle" aria-hidden="true">{{ heritage_icon('canasto') }}</div>
 
     {# Imagen #}
     <div class="ep-modal-img-wrap" id="ep-modal-img-wrap">
@@ -571,7 +571,7 @@
             <button type="button" class="ep-modal-qty-btn" data-modal-qty="1" aria-label="Aumentar cantidad">+</button>
           </div>
           <button type="submit" class="ep-modal-add-btn">
-            🛒 Añadir al carrito
+            {{ heritage_icon('canasto') }} {{ ui.cart_add_action }}
           </button>
         </div>
       </form>
@@ -710,7 +710,7 @@ epFilterCategory({{ (categoria_activa|string if categoria_activa else '')|tojson
 /* ── Cerrar modal al restaurar desde bfcache (botón Atrás del navegador) ── */
 window.addEventListener('pageshow', e => { if (e.persisted) closeModal(); });
 
-/* ── Añadir al carrito vía fetch ── */
+/* ── Añadir a la canasta vía fetch (ruta técnica de carrito) ── */
 document.getElementById('ep-modal-form')?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -734,7 +734,7 @@ document.getElementById('ep-modal-form')?.addEventListener('submit', async (even
     if (data?.ok) {
       epConfirmProductAdded(_modalProductId);
       closeModal();
-      _epToast('✓ Añadido al carrito');
+      _epToast(OX_UI.cart_added || 'Añadido a tu canasta');
       _epBadgeInc();
     } else if (data?.issue) {
       closeModal();
@@ -752,7 +752,15 @@ document.getElementById('ep-modal-form')?.addEventListener('submit', async (even
     btn.disabled = false;
     btn.removeAttribute('aria-busy');
     form.removeAttribute('aria-busy');
-    btn.innerHTML = '🛒 Añadir al carrito';
+    btn.replaceChildren();
+    const basketIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    basketIcon.setAttribute('class', 'ox-heritage-icon');
+    basketIcon.setAttribute('viewBox', '0 0 24 24');
+    basketIcon.setAttribute('aria-hidden', 'true');
+    const basketUse = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    basketUse.setAttribute('href', '#ox-hi-canasto');
+    basketIcon.appendChild(basketUse);
+    btn.append(basketIcon, document.createTextNode(` ${OX_UI.cart_add_action || 'Añadir a la canasta'}`));
   }
 });
 
@@ -768,7 +776,7 @@ function epConfirmProductAdded(productId) {
 }
 
 async function _epShowCartIssue(issue, fallbackMsg) {
-  const title = issue?.title || 'Revisa tu carrito';
+  const title = issue?.title || OX_UI.cart_review_title || 'Revisa tu canasta';
   const products = Array.isArray(issue?.products) ? issue.products : [];
   const productLines = products.slice(0, 5).map(p => {
     const mode = p.modalidad_label ? ` (${p.modalidad_label})` : '';
@@ -779,7 +787,7 @@ async function _epShowCartIssue(issue, fallbackMsg) {
     productLines.length ? `\nProductos afectados:\n${productLines.join('\n')}` : '',
   ].filter(Boolean).join('\n');
   const actionUrl = issue?.action_url || '{{ url_for("public.ver_carrito") }}';
-  const actionLabel = issue?.action_label || 'Ver carrito';
+  const actionLabel = issue?.action_label || OX_UI.cart_view_action || 'Ver canasta';
   const canConfirm = !!(window.OxToast && typeof window.OxToast.confirm === 'function');
   if (!canConfirm) {
     _epToast('⚠ ' + (issue?.message || fallbackMsg || title), 'warn');
@@ -791,6 +799,7 @@ async function _epShowCartIssue(issue, fallbackMsg) {
     confirmText: actionLabel,
     cancelText: 'Seguir viendo',
     danger: issue?.severity === 'danger',
+    icon: 'canasto',
   });
   if (go && actionUrl) window.location.href = actionUrl;
 }
@@ -870,9 +879,9 @@ function openModal(id) {
     loyaltyIcon.setAttribute('viewBox', '0 0 24 24');
     loyaltyIcon.setAttribute('aria-hidden', 'true');
     const loyaltyUse = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    loyaltyUse.setAttribute('href', '#ox-hi-cafecito');
+    loyaltyUse.setAttribute('href', '#ox-hi-grano');
     loyaltyIcon.appendChild(loyaltyUse);
-    _priceEl.append(loyaltyIcon, document.createTextNode(` ${d.puntos_para_canje || 0} ${OX_UI.loyalty_unit_plural || 'cafecitos'}`));
+    _priceEl.append(loyaltyIcon, document.createTextNode(` ${d.puntos_para_canje || 0} ${OX_UI.loyalty_unit_plural || 'granitos de café'}`));
     _priceEl.classList.add('ep-modal-price--points');
   } else {
     _priceEl.textContent = `€${precioFinal.toFixed(2)}`;
@@ -1004,7 +1013,7 @@ function openModal(id) {
     // cuando el cliente hace un pedido. Oculto el form Add-to-cart.
     form.classList.add('hidden');
     detBtn.href = '{{ url_for("public.ver_carrito") }}';
-    detBtn.textContent = '🛒 Ir al carrito para canjear →';
+    detBtn.textContent = `${OX_UI.cart_view_action || 'Ver canasta'} para canjear →`;
   } else if (d.disponible_directo) {
     form.action = d.add_url;
     form.classList.remove('hidden');

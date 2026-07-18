@@ -35,6 +35,9 @@ class StoreConfigTest(unittest.TestCase):
         self.assertIn("footer_heritage", profile["ui"])
         self.assertIn("hero_title", profile["ui"])
         self.assertIn("loyalty_unit_plural", profile["ui"])
+        self.assertIn("cart_name", profile["ui"])
+        self.assertIn("checkout_title", profile["ui"])
+        self.assertIn("order_success_title", profile["ui"])
 
     def test_public_theme_and_copy_are_read_from_site_config(self):
         values = {

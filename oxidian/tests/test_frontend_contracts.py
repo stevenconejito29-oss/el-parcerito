@@ -295,14 +295,24 @@ class FrontendContractsTest(unittest.TestCase):
 
         self.assertIn("css/heritage.css", base)
         self.assertIn("heritage_sprite.html", base)
-        for symbol in ("sombrero", "cafecito", "canasto", "mariposa", "casita"):
+        for symbol in ("grano", "canasto", "mariposa", "casita"):
             self.assertIn(f'id="ox-hi-{symbol}"', sprite)
-        self.assertIn(".ep-hero-heritage-seal", heritage)
+        self.assertIn(".ep-hero-origin", heritage)
         self.assertIn(".ox-modal__heritage", heritage)
         self.assertIn(".ox-toast-v2::after", heritage)
+        self.assertIn(".checkout-memory", heritage)
+        self.assertIn(".order-success-hero", heritage)
+        self.assertNotIn("sombrero", (ROOT / "templates" / "public" / "index.html").read_text(encoding="utf-8"))
         for template in (club, checkout, points):
             self.assertIn("ui.loyalty_unit_plural", template)
             self.assertNotIn("⭐", template)
+            self.assertNotIn("cafecito", template.lower())
+
+        cart = (ROOT / "templates" / "public" / "carrito.html").read_text(encoding="utf-8")
+        menu = (ROOT / "templates" / "public" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("ui.cart_name", cart)
+        self.assertIn("ui.cart_add_action", menu)
+        self.assertNotIn("Añadir al carrito", menu)
 
     def test_admin_orders_are_paginated_without_per_card_workload_queries(self):
         route = (ROOT / "routes" / "admin.py").read_text(encoding="utf-8")

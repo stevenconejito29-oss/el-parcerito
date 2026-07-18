@@ -1317,6 +1317,47 @@ def _migrate_combo_item_variant():
         pass
 
 
+def _migrate_public_identity_canasta_granitos():
+    """Migra únicamente copias exactas de los defaults públicos anteriores.
+
+    Si el negocio personalizó un texto, la condición por valor anterior evita
+    sobrescribirlo. Las claves nuevas siguen usando los defaults de
+    `store_config` hasta que se guarden desde Super Admin.
+    """
+    inspector = inspect(db.engine)
+    if not inspector.has_table("site_config"):
+        return
+    replacements = {
+        "UI_HEADER_CART_LABEL": ("Tu pedido", "Tu canasta"),
+        "UI_HEADER_CART_ACTION": ("Ver carrito", "Abrir canasta"),
+        "UI_HERO_SIGNATURE": ("Tradición que viaja contigo", "Recetas que cruzan fronteras"),
+        "UI_CART_TITLE": ("Tu carrito", "Tu canasta"),
+        "UI_CART_STEP_CART": ("Carrito", "Canasta"),
+        "UI_CART_UPDATE": ("Actualizar carrito", "Actualizar canasta"),
+        "UI_CART_EMPTY_TITLE": ("Tu carrito está vacío", "Tu canasta está esperando antojos"),
+        "UI_NAV_CART": ("Carrito", "Canasta"),
+        "UI_LOYALTY_NAME": ("Club de Cafecitos", "Granitos de café"),
+        "UI_LOYALTY_NAV_LABEL": ("Cafecitos", "Granitos"),
+        "UI_LOYALTY_UNIT": ("cafecito", "granito de café"),
+        "UI_LOYALTY_UNIT_PLURAL": ("cafecitos", "granitos de café"),
+        "UI_LOYALTY_TAGLINE": (
+            "Cada pedido suma un recuerdo y te acerca a tu próximo antojo.",
+            "Cada pedido suma un granito de nuestra tierra y te acerca a tu próximo antojo.",
+        ),
+    }
+    statement = text("""
+        UPDATE site_config
+           SET valor = :new_value
+         WHERE clave = :key AND valor = :old_value
+    """)
+    for key, (old_value, new_value) in replacements.items():
+        db.session.execute(statement, {
+            "key": key,
+            "old_value": old_value,
+            "new_value": new_value,
+        })
+
+
 MIGRATIONS = [
     {
         "id": "20260526_01_order_events_notification_outbox",
@@ -1600,6 +1641,14 @@ MIGRATIONS = [
             "UNIQUE (producto_id, fecha_entrega) — un lote por combinación."
         ),
         "fn": lambda: _migrate_create_product_batches(),
+    },
+    {
+        "id": "20260718_01_public_identity_canasta_granitos",
+        "description": (
+            "Migra defaults públicos heredados a Canasta y Granitos de café "
+            "sin sobrescribir personalizaciones del negocio."
+        ),
+        "fn": _migrate_public_identity_canasta_granitos,
     },
 ]
 

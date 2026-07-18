@@ -39,29 +39,31 @@ PUBLIC_UI_DEFAULTS = {
     "UI_HEADER_OPEN": "Abierto",
     "UI_HEADER_CLOSED": "Cerrado",
     "UI_HEADER_INSTALL": "Añadir app",
-    "UI_HEADER_CART_LABEL": "Tu pedido",
-    "UI_HEADER_CART_ACTION": "Ver carrito",
+    "UI_HEADER_CART_LABEL": "Tu canasta",
+    "UI_HEADER_CART_ACTION": "Abrir canasta",
     "UI_HEADER_STAFF": "Empleados",
+    "UI_HEADER_ORIGIN": "Raíces colombianas",
     "UI_HEADER_MEMORY_LINE": "Sabor colombiano, cerquita de ti",
     "UI_HERO_EYEBROW": "De nuestra tierrita para tu mesa",
     "UI_HERO_TITLE": "Sabores que te llevan de vuelta a casa",
     "UI_HERO_SUBTITLE": "Recetas con memoria, antojos de barrio y ese cariño colombiano que no conoce distancias.",
-    "UI_HERO_SIGNATURE": "Tradición que viaja contigo",
+    "UI_HERO_SIGNATURE": "Recetas que cruzan fronteras",
     "UI_MENU_MEMORY_EYEBROW": "Sabores con memoria",
     "UI_MENU_MEMORY_TITLE": "Un pedacito de Colombia, cerquita de ti",
     "UI_MENU_MEMORY_TEXT": "Antojos que recuerdan la casa, los domingos en familia y esa tierrita que siempre llevamos con nosotros.",
     "UI_MENU_CATALOG_TITLE": "Antojos que saben a casa",
     "UI_MENU_CATALOG_SUBTITLE": "Recetas, recuerdos y rinconcitos de Colombia",
     "UI_CART_EYEBROW": "Revisa tu pedido",
-    "UI_CART_TITLE": "Tu carrito",
+    "UI_CART_NAME": "canasta",
+    "UI_CART_TITLE": "Tu canasta",
     "UI_CART_ITEM_ONE": "producto",
     "UI_CART_ITEM_MANY": "productos",
     "UI_CART_BACK": "Volver",
     "UI_CART_PROCESS": "Proceso de compra",
-    "UI_CART_STEP_CART": "Carrito",
+    "UI_CART_STEP_CART": "Canasta",
     "UI_CART_STEP_FULFILLMENT": "Entrega",
     "UI_CART_STEP_PAYMENT": "Pago",
-    "UI_CART_UPDATE": "Actualizar carrito",
+    "UI_CART_UPDATE": "Actualizar canasta",
     "UI_CART_COMBO_BADGE": "Combo",
     "UI_CART_COMBO_VIEW": "Ver combo",
     "UI_CART_COMBO_ITEMS": "ítems",
@@ -86,16 +88,29 @@ PUBLIC_UI_DEFAULTS = {
     "UI_CART_CHECKOUT_DELIVERY": "Continuar con entrega",
     "UI_CART_CHECKOUT_PICKUP": "Continuar para recoger",
     "UI_CART_CONTINUE": "Seguir comprando",
-    "UI_CART_EMPTY_TITLE": "Tu carrito está vacío",
+    "UI_CART_EMPTY_TITLE": "Tu canasta está esperando antojos",
     "UI_CART_EMPTY_TEXT": "Explora el menú y encuentra tu favorito",
     "UI_CART_VIEW_MENU": "Ver menú completo",
     "UI_CART_MEMORY_NOTE": "Tu pedido lleva un pedacito de casa. Revísalo con calma y nosotros ponemos el cariño.",
     "UI_FOOTER_HERITAGE": "Hecho con sabor colombiano, para sentirnos cerquita de casa.",
-    "UI_LOYALTY_NAME": "Club de Cafecitos",
-    "UI_LOYALTY_NAV_LABEL": "Cafecitos",
-    "UI_LOYALTY_UNIT": "cafecito",
-    "UI_LOYALTY_UNIT_PLURAL": "cafecitos",
-    "UI_LOYALTY_TAGLINE": "Cada pedido suma un recuerdo y te acerca a tu próximo antojo.",
+    "UI_CART_ADD_ACTION": "Añadir a la canasta",
+    "UI_CART_ADDED": "Añadido a tu canasta",
+    "UI_CART_VIEW_ACTION": "Ver canasta",
+    "UI_CART_REVIEW_TITLE": "Revisa tu canasta",
+    "UI_CHECKOUT_EYEBROW": "Último pasito",
+    "UI_CHECKOUT_TITLE": "Finaliza tu pedido",
+    "UI_CHECKOUT_SUBTITLE": "Confirma tus datos y nosotros ponemos el sabor de casa.",
+    "UI_CHECKOUT_SUMMARY": "Lo que llevas en tu canasta",
+    "UI_CHECKOUT_MEMORY": "Ya casi está: un pedacito de Colombia está a punto de llegar hasta ti.",
+    "UI_ORDER_SUCCESS_EYEBROW": "¡Qué alegría tenerte aquí!",
+    "UI_ORDER_SUCCESS_TITLE": "Tu antojo ya va tomando camino",
+    "UI_ORDER_SUCCESS_TEXT": "Te avisaremos cada paso para que solo tengas que prepararte para disfrutar.",
+    "UI_ORDER_NUMBER_HELP": "Guarda este número: es la llave para seguir tu pedido.",
+    "UI_LOYALTY_NAME": "Granitos de café",
+    "UI_LOYALTY_NAV_LABEL": "Granitos",
+    "UI_LOYALTY_UNIT": "granito de café",
+    "UI_LOYALTY_UNIT_PLURAL": "granitos de café",
+    "UI_LOYALTY_TAGLINE": "Cada pedido suma un granito de nuestra tierra y te acerca a tu próximo antojo.",
     "UI_PWA_DESCRIPTION": "Añade la tienda a tu pantalla de inicio para acceder sin abrir el navegador.",
     "UI_PWA_IOS_INSTRUCTION": "En Safari, toca Compartir y luego Añadir a pantalla de inicio.",
     "UI_PWA_INSTALL": "Instalar",
@@ -117,7 +132,7 @@ PUBLIC_UI_DEFAULTS = {
     "UI_NAV_HOME": "Inicio",
     "UI_NAV_SEARCH": "Buscar",
     "UI_NAV_INFO": "Info",
-    "UI_NAV_CART": "Carrito",
+    "UI_NAV_CART": "Canasta",
 }
 
 
@@ -175,9 +190,9 @@ def get_loyalty_terms() -> dict[str, str]:
     Las columnas y contratos internos siguen llamándose `puntos`; solo los
     mensajes dirigidos al cliente usan estas etiquetas configurables.
     """
-    singular = str(get_store_value("UI_LOYALTY_UNIT", "cafecito") or "cafecito").strip()
-    plural = str(get_store_value("UI_LOYALTY_UNIT_PLURAL", "cafecitos") or "cafecitos").strip()
-    name = str(get_store_value("UI_LOYALTY_NAME", "Club de Cafecitos") or "Club de Cafecitos").strip()
+    singular = str(get_store_value("UI_LOYALTY_UNIT", "granito de café") or "granito de café").strip()
+    plural = str(get_store_value("UI_LOYALTY_UNIT_PLURAL", "granitos de café") or "granitos de café").strip()
+    name = str(get_store_value("UI_LOYALTY_NAME", "Granitos de café") or "Granitos de café").strip()
     return {"name": name, "singular": singular, "plural": plural}
 
 

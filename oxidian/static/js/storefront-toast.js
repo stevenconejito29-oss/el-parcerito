@@ -32,7 +32,7 @@
     danger: 'alerta',
     error: 'alerta',
     warning: 'alerta',
-    info: 'cafecito'
+    info: 'grano'
   };
 
   function heritageIcon(name) {
@@ -98,6 +98,9 @@
     var confirmText = opts.confirmText || 'Sí';
     var cancelText = opts.cancelText || 'Cancelar';
     var danger = !!opts.danger;
+    var modalIcon = ['canasto', 'grano', 'mariposa', 'alerta'].includes(opts.icon)
+      ? opts.icon
+      : (danger ? 'alerta' : 'grano');
 
     return new Promise(function (resolve) {
       var backdrop = document.createElement('div');
@@ -106,7 +109,7 @@
       backdrop.setAttribute('aria-modal', 'true');
       backdrop.innerHTML =
         '<div class="ox-modal" role="document">' +
-        '<div class="ox-modal__heritage" aria-hidden="true"><svg class="ox-heritage-icon" viewBox="0 0 24 24"><use href="#ox-hi-sombrero"></use></svg></div>' +
+        '<div class="ox-modal__heritage" aria-hidden="true"></div>' +
         '<h3 class="ox-modal__title"></h3>' +
         '<div class="ox-modal__body"></div>' +
         '<div class="ox-modal__actions">' +
@@ -115,6 +118,7 @@
         '</div>' +
         '</div>';
       backdrop.querySelector('.ox-modal__title').textContent = title;
+      backdrop.querySelector('.ox-modal__heritage').appendChild(heritageIcon(modalIcon));
       backdrop.querySelector('.ox-modal__body').textContent = body;
       backdrop.querySelector('[data-action="cancel"]').textContent = cancelText;
       backdrop.querySelector('[data-action="confirm"]').textContent = confirmText;

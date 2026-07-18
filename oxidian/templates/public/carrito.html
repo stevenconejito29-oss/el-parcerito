@@ -51,7 +51,7 @@
   <span class="cr-scheduled-icon" aria-hidden="true">📅</span>
   <div>
     <strong>Entrega reservada para {{ fecha_entrega_programada.strftime('%d/%m/%Y') }}</strong>
-    <span>Todos los productos de este carrito corresponden a la misma fecha.</span>
+    <span>Todos los productos de esta {{ ui.cart_name }} corresponden a la misma fecha.</span>
   </div>
 </div>
 {% endif %}
@@ -201,7 +201,7 @@
                   formmethod="POST"
                   formaction="{{ url_for('public.eliminar_carrito', producto_id=item.producto.id) }}"
                   aria-label="{{ ui.cart_remove }} {{ item.producto.nombre }}"
-                  data-confirm="¿Quitar «{{ item.producto.nombre|e }}» del carrito?">
+                  data-confirm="¿Quitar «{{ item.producto.nombre|e }}» de tu {{ ui.cart_name }}?">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>
           </button>
         </div>
@@ -289,7 +289,7 @@
       {% endif %}
       <button type="button" class="cr-cta cr-cta--disabled" disabled>{{ ui.cart_incompatible }}</button>
       {% elif not brand.tienda_abierta %}
-      <button type="button" class="cr-cta cr-cta--disabled" disabled>Tienda cerrada · tu carrito queda guardado</button>
+      <button type="button" class="cr-cta cr-cta--disabled" disabled>Tienda cerrada · tu {{ ui.cart_name }} queda guardada</button>
       {% else %}
       <a href="{{ url_for('public.checkout') }}" class="cr-cta" id="btn-checkout">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -418,12 +418,12 @@ document.addEventListener('click', function (ev) {
   if (!btn || btn.dataset.crConfirmed === '1' || btn.disabled) return;
   ev.preventDefault();
   const form = btn.form;
-  const msg = btn.dataset.confirm || '¿Quitar del carrito?';
+  const msg = btn.dataset.confirm || `¿Quitar de tu ${OX_UI.cart_name || 'canasta'}?`;
   btn.disabled = true;
   const ask = window.OxToast?.confirm
     ? window.OxToast.confirm({
         title: 'Quitar producto', body: msg,
-        confirmText: 'Sí, quitar', cancelText: 'Cancelar', danger: true,
+        confirmText: 'Sí, quitar', cancelText: 'Cancelar', danger: true, icon: 'canasto',
       })
     : Promise.resolve(confirm(msg));
   Promise.resolve(ask).then(function (ok) {

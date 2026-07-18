@@ -5,7 +5,7 @@
 <section class="points-lookup">
   <a href="{{ url_for('public.index') }}" class="points-lookup-back">← Volver al menú</a>
   <div class="points-lookup-hero">
-    <span>{{ heritage_icon('cafecito') }}</span>
+    <span>{{ heritage_icon('grano') }}</span>
     <div>
       <p class="points-lookup-kicker">{{ ui.loyalty_name }}</p>
       <h1>Consulta tus {{ ui.loyalty_unit_plural }}</h1>
@@ -19,7 +19,7 @@
   {% if saldo_cliente is not none %}
   <div class="points-lookup-card points-lookup-mine">
     <p class="pc-saldo-label">Tu saldo actual</p>
-    <p class="pc-saldo-num">{{ heritage_icon('cafecito') }} {{ saldo_cliente }} <small>{{ ui.loyalty_unit_plural }}</small></p>
+    <p class="pc-saldo-num">{{ heritage_icon('grano') }} {{ saldo_cliente }} <small>{{ ui.loyalty_unit_plural }}</small></p>
     <p class="pc-saldo-hint">Se aplica automáticamente al confirmar tu pedido.</p>
   </div>
   {% else %}
@@ -59,7 +59,7 @@
         <div class="pc-vitrina-body">
           <h3>{{ p.nombre }}</h3>
           {% if p.descripcion %}<p class="pc-vitrina-desc">{{ p.descripcion[:80] }}</p>{% endif %}
-          <p class="pc-vitrina-pts">{{ heritage_icon('cafecito') }} {{ p.puntos_para_canje }} {{ ui.loyalty_unit_plural }}</p>
+          <p class="pc-vitrina-pts">{{ heritage_icon('grano') }} {{ p.puntos_para_canje }} {{ ui.loyalty_unit_plural }}</p>
           {# Badge de disponibilidad relativo al saldo del cliente. Solo
              aparece si el cliente está logueado (saldo conocido). Para
              visitantes anónimos mostramos el precio en puntos y nada más. #}

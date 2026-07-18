@@ -92,8 +92,8 @@ class PointsAccumulationVisibilityTest(unittest.TestCase):
         pedido_con_puntos = self._pedido(numero="PTS-ON-1", puntos=30)
         pedido_sin_puntos = self._pedido(numero="PTS-ZERO-1", total="0", puntos=0)
 
-        self.assertIn("30 cafecitos", mensaje_estado_pedido(pedido_con_puntos))
-        self.assertNotIn("0 cafecitos", mensaje_estado_pedido(pedido_sin_puntos))
+        self.assertIn("30 granitos de café", mensaje_estado_pedido(pedido_con_puntos))
+        self.assertNotIn("0 granitos de café", mensaje_estado_pedido(pedido_sin_puntos))
 
     def test_invalid_totals_do_not_generate_points(self):
         self._set("PUNTOS_POR_EURO", "2")

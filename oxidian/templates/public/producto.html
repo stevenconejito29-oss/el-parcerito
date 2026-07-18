@@ -45,7 +45,7 @@
     </span>
     {% endif %}
     {% if producto.canjeable_con_puntos %}
-    <span class="pd-badge pd-badge-puntos">{{ heritage_icon('cafecito') }} Canjeable</span>
+    <span class="pd-badge pd-badge-puntos">{{ heritage_icon('grano') }} Canjeable</span>
     {% endif %}
     {% if producto.origen_pais %}
     <span class="pd-badge pd-badge-origin">
@@ -245,10 +245,10 @@
   {# ── Puntos canjeables ── #}
   {% if producto.canjeable_con_puntos and producto.puntos_para_canje %}
   <div class="pd-info-box pd-box-puntos">
-    <span class="pd-box-icon">{{ heritage_icon('cafecito') }}</span>
+    <span class="pd-box-icon">{{ heritage_icon('grano') }}</span>
     <div>
       <p class="pd-box-title">{{ producto.puntos_para_canje }} {{ ui.loyalty_unit_plural }} para canjear</p>
-      <p class="pd-box-sub">Puedes desbloquearlo desde el carrito si tienes suficientes {{ ui.loyalty_unit_plural }}</p>
+      <p class="pd-box-sub">Puedes desbloquearlo desde tu {{ ui.cart_name }} si tienes suficientes {{ ui.loyalty_unit_plural }}</p>
     </div>
   </div>
   {% endif %}
@@ -441,7 +441,7 @@
         {% if producto.fecha_llegada %}
         Se prepara para entregar el {{ producto.fecha_llegada.strftime('%d/%m/%Y') }}. Haz este pedido separado del delivery inmediato.
         {% if producto.cantidad_por_lote and producto.cantidad_por_lote > 0 %}
-        <br><strong>Encargo por lote:</strong> cada unidad del carrito reserva 1 tanda de {{ producto.cantidad_por_lote }} u.
+        <br><strong>Encargo por lote:</strong> cada unidad de tu {{ ui.cart_name }} reserva 1 tanda de {{ producto.cantidad_por_lote }} u.
         {% endif %}
         {% else %}
         Se prepara bajo una fecha definida por el negocio. Haz este pedido separado del delivery inmediato.
@@ -629,7 +629,7 @@ main { padding-top: 0 !important; }
 .pd-badge-promo   { background: var(--flag-red); color: #fff; }
 .pd-badge-combo   { background: var(--flag-blue); color: #fff; }
 .pd-badge-encargo { background: rgba(255,149,0,.9); color: #fff; }
-.pd-badge-puntos  { background: rgba(168,85,247,.85); color: #fff; }
+.pd-badge-puntos  { background: var(--heritage-coffee); color: var(--theme-header-text); }
 .pd-badge-origin  { background: rgba(0,0,0,.65); color: #fff; }
 .pd-badge-fulfillment { background: color-mix(in srgb,var(--brand-primary) 82%,#111); color: #fff; }
 
@@ -689,7 +689,7 @@ main { padding-top: 0 !important; }
 .pd-box-sub   { font-size: .75rem; color: var(--col-muted); line-height: 1.4; }
 .pd-box-label { font-size: .72rem; font-weight: 700; color: var(--col-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .5rem; }
 
-.pd-box-puntos { background: rgba(168,85,247,.07); border: 1px solid rgba(168,85,247,.2); }
+.pd-box-puntos { background: color-mix(in srgb,var(--heritage-sun) 9%,var(--theme-surface)); border: 1px solid color-mix(in srgb,var(--heritage-coffee) 24%,var(--col-border)); }
 .pd-box-alerg  { background: var(--col-surface); border: 1px solid var(--col-border); padding: .85rem; }
 .pd-box-alerg-inner { width: 100%; }
 .pd-box-combo  {

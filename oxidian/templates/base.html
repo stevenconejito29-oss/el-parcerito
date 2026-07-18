@@ -221,6 +221,7 @@
         {% endif %}
       </span>
       <span class="ox-public-copy">
+        <span class="ox-public-origin">{{ heritage_icon('grano') }} {{ ui.header_origin }}</span>
         <span class="ox-public-meta">
           <span class="ox-public-kicker">
             {% if brand.delivery and brand.recogida %}{{ ui.header_mode_both }}{% elif brand.delivery %}{{ ui.header_mode_delivery }}{% else %}{{ ui.header_mode_pickup }}{% endif %}
@@ -253,14 +254,14 @@
          class="ox-header-info hidden md:inline-flex"
          aria-label="{{ ui.loyalty_name }}"
          title="{{ ui.loyalty_name }}">
-        {{ heritage_icon('cafecito') }}
+        {{ heritage_icon('grano') }}
         <span>{{ ui.loyalty_name }}</span>
       </a>
       {% endif %}
       <a href="{{ url_for('public.ver_carrito') }}"
          class="ox-header-cart" aria-label="{{ ui.header_cart_action }}">
         <span class="ox-header-cart-icon">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16l-1.5 10h-13L4 10Z"/><path d="M8 10c0-4 8-4 8 0M7 14h10M8 17h8M10 11l-1 9m5-9 1 9"/></svg>
+          {{ heritage_icon('canasto') }}
         </span>
         <span class="ox-header-cart-copy"><small>{{ ui.header_cart_label }}</small><strong>{{ ui.header_cart_action }}</strong></span>
         {% set n = session.get('carrito', {})|length %}
@@ -348,8 +349,8 @@
         <h4 class="ep-footer-heading">Explorar</h4>
         <ul class="ep-footer-links">
           <li><a href="{{ url_for('public.index') }}">{% if brand.es_comida %}🍽️ Menú completo{% else %}🛍️ Catálogo completo{% endif %}</a></li>
-          <li><a href="{{ url_for('public.ver_carrito') }}">🛒 Mi carrito</a></li>
-          {% if brand.puntos %}<li><a href="{{ url_for('public.club') }}">{{ heritage_icon('cafecito') }} {{ ui.loyalty_name }}</a></li>{% endif %}
+          <li><a href="{{ url_for('public.ver_carrito') }}">{{ heritage_icon('canasto') }} Mi {{ ui.cart_name }}</a></li>
+          {% if brand.puntos %}<li><a href="{{ url_for('public.club') }}">{{ heritage_icon('grano') }} {{ ui.loyalty_name }}</a></li>{% endif %}
         </ul>
       </div>
 
@@ -460,7 +461,7 @@
           <span class="ox-wa-arrow">›</span>
         </a>
         {% if brand.puntos %}<a href="{{ url_for('public.whatsapp', text='Hola, quiero consultar mis ' ~ ui.loyalty_unit_plural ~ ' y recompensas.') }}" target="_blank" rel="noopener">
-          <span class="ox-wa-action-icon">{{ heritage_icon('cafecito') }}</span>
+          <span class="ox-wa-action-icon">{{ heritage_icon('grano') }}</span>
           <span><strong>{{ ui.loyalty_name }}</strong><small>Saldo y productos para canje</small></span>
           <span class="ox-wa-arrow">›</span>
         </a>{% endif %}
@@ -480,8 +481,8 @@
       {# Links útiles #}
       <div class="ox-info-links">
         <a href="{{ url_for('public.index') }}" data-info-close>🍽️ Ver menú</a>
-        <a href="{{ url_for('public.ver_carrito') }}" data-info-close>🛒 Mi carrito</a>
-        {% if brand.puntos %}<a href="{{ url_for('public.club') }}" data-info-close>{{ heritage_icon('cafecito') }} {{ ui.loyalty_name }}</a>{% endif %}
+        <a href="{{ url_for('public.ver_carrito') }}" data-info-close>{{ heritage_icon('canasto') }} Mi {{ ui.cart_name }}</a>
+        {% if brand.puntos %}<a href="{{ url_for('public.club') }}" data-info-close>{{ heritage_icon('grano') }} {{ ui.loyalty_name }}</a>{% endif %}
       </div>
       <div class="ox-app-tools">
         <div><strong>{{ ui.pwa_app_section }}</strong><small>{{ ui.pwa_app_section_text }}</small></div>
@@ -524,7 +525,7 @@
      class="ox-bnav-item {{ 'is-active' if request.endpoint == 'public.club' else '' }}"
      data-bnav="puntos">
     <span class="ox-bnav-svg" aria-hidden="true">
-      {{ heritage_icon('cafecito') }}
+      {{ heritage_icon('grano') }}
     </span>
     <span class="ox-bnav-label">{{ ui.loyalty_nav_label }}</span>
     <span class="ox-bnav-glow" aria-hidden="true"></span>
