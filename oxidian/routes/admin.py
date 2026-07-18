@@ -45,7 +45,8 @@ from services import (estado_cola, registrar_egreso, registrar_ingreso,
                       registrar_evento_pedido, award_points_on_delivery,
                       reasignar_responsable_pedido,
                       pedidos_delivery_sin_repartidor_query,
-                      pedido_programado_disponible_para_preparar)
+                      pedido_programado_disponible_para_preparar,
+                      carga_actual_preparadores, carga_actual_repartidores)
 from image_service import save_image, delete_image
 from phone_utils import (
     normalizar_telefono_cliente,
@@ -603,7 +604,7 @@ def pedidos():
         origen = None
     if confirmacion not in ("", "pending", "confirmed"):
         confirmacion = ""
-    query = Order.query.order_by(Order.creado_en.desc())
+    query = Order.query
     if pedido_id:
         query = query.filter_by(id=pedido_id)
     if estado:
@@ -635,18 +636,48 @@ def pedidos():
     d0 = _parse_date(desde_raw)
     d1 = _parse_date(hasta_raw)
     if d0:
-        query = query.filter(db.func.date(Order.creado_en) >= d0)
+        query = query.filter(Order.creado_en >= _dt.combine(d0, _dt.min.time()))
     if d1:
-        query = query.filter(db.func.date(Order.creado_en) <= d1)
-    todos = query.all()
+        # Límite superior exclusivo: conserva el día completo y permite que
+        # PostgreSQL use el índice de `creado_en` en historiales grandes.
+        query = query.filter(
+            Order.creado_en < _dt.combine(d1 + timedelta(days=1), _dt.min.time())
+        )
+    page = max(1, request.args.get("page", 1, type=int) or 1)
+    try:
+        page_size = int(SiteConfig.get("ADMIN_PEDIDOS_PAGE_SIZE", "30") or 30)
+    except (TypeError, ValueError):
+        page_size = 30
+    page_size = max(10, min(page_size, 100))
+    pagination = query.order_by(Order.creado_en.desc()).paginate(
+        page=page,
+        per_page=page_size,
+        error_out=False,
+        max_per_page=100,
+    )
+    todos = pagination.items
     preparadores = User.query.filter(
         User.rol.in_(["cocina", "preparacion"]), User.activo == True
     ).all()
     repartidores = User.query.filter_by(rol="repartidor", activo=True).all()
+    cargas_preparadores = carga_actual_preparadores([u.id for u in preparadores])
+    cargas_repartidores = carga_actual_repartidores([u.id for u in repartidores])
+
+    def _page_url(target_page):
+        args = request.args.to_dict(flat=True)
+        args["page"] = target_page
+        return url_for("admin.pedidos", **args)
+
     return render_template("admin/pedidos.html",
                            pedidos=todos,
+                           pagination=pagination,
+                           page_size=page_size,
+                           prev_url=_page_url(pagination.prev_num) if pagination.has_prev else None,
+                           next_url=_page_url(pagination.next_num) if pagination.has_next else None,
                            preparadores=preparadores,
                            repartidores=repartidores,
+                           cargas_preparadores=cargas_preparadores,
+                           cargas_repartidores=cargas_repartidores,
                            puede_preparar_programado=pedido_programado_disponible_para_preparar)
 
 

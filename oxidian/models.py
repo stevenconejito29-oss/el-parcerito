@@ -2452,20 +2452,49 @@ class Order(db.Model):
         """Genera un número de pedido corto y memorable, tipo #1024 o #A45.
 
         Estrategia:
-          - Toma el siguiente correlativo desde el id de la última fila + 1.
-            Si el id es 1024 → #1024.
-          - Si ya existe (cola), prueba con +1 hasta encontrar uno libre.
+          - Avanza respecto al mayor entre el id y el correlativo visible.
+          - En PostgreSQL serializa la reserva dentro de la transacción para
+            impedir duplicados cuando coinciden varios checkouts.
+          - Si ya existe un valor legacy, prueba con +1 hasta hallar uno libre.
           - Sin prefijo de fecha porque encarece la lectura por teléfono.
             El origen lo guarda Order.origen, no hace falta meterlo en el número.
         El tope de la columna sigue siendo VARCHAR(20), suficiente para más de
         un millón de pedidos.
         """
-        ultimo = db.session.execute(
+        # Dos checkouts concurrentes no pueden reservar el mismo número. En
+        # PostgreSQL el advisory lock dura exactamente lo que la transacción:
+        # el segundo checkout espera al commit del primero y vuelve a leer MAX.
+        # SQLite se mantiene compatible para las pruebas unitarias aisladas.
+        bind = db.session.get_bind()
+        if bind.dialect.name == "postgresql":
+            db.session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:scope))"),
+                {"scope": "oxidian.orders.numero_pedido"},
+            )
+
+        ultimo_id = db.session.execute(
             text("SELECT COALESCE(MAX(id), 0) FROM orders")
         ).scalar() or 0
-        # Empezamos en max(ultimo+1, 1001) para que los primeros pedidos
-        # tampoco sean #1, #2 (más feos al teléfono).
-        siguiente = max(int(ultimo) + 1, 1001)
+        ultimo_numero = 1000
+        if bind.dialect.name == "postgresql":
+            ultimo_numero = db.session.execute(text(
+                "SELECT COALESCE(MAX(SUBSTRING(numero_pedido FROM 2)::BIGINT), 1000) "
+                "FROM orders WHERE numero_pedido ~ '^#[0-9]+$'"
+            )).scalar() or 1000
+        else:
+            # Compatibilidad de tests/entornos auxiliares: nunca se usa para la
+            # base productiva y evita casts no portables sobre valores legacy.
+            for (valor,) in db.session.query(Order.numero_pedido).filter(
+                Order.numero_pedido.like("#%")
+            ).all():
+                digitos = str(valor or "")[1:]
+                if digitos.isdigit():
+                    ultimo_numero = max(ultimo_numero, int(digitos))
+
+        # El correlativo visible y el id pueden divergir tras restauraciones o
+        # imports. Avanzamos respecto al mayor de ambos para no reutilizar #1001
+        # en las primeras filas de una instalación recién creada.
+        siguiente = max(int(ultimo_id) + 1, int(ultimo_numero) + 1, 1001)
         for _ in range(50):
             numero = f"#{siguiente}"
             existe = db.session.execute(

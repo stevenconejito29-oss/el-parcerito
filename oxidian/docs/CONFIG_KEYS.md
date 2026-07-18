@@ -38,6 +38,7 @@ Sembradas por `config_defaults` desde PR #17. Consumidas por
 | `IDEMPOTENCY_PURGE_ENABLED` | bool | `"1"` | Habilita purga de `idempotency_keys` expiradas junto con la de outbox. `0` para diagnóstico. |
 | `OTP_MIN_RESEND_SECONDS` | int | `60` | Ventana mínima entre 2 solicitudes de OTP de puntos del mismo cliente. Anti-flood. |
 | `ADMIN_CLIENTES_PAGE_SIZE` | int | `40` | Paginación de `/admin/clientes` (cap 10-200). |
+| `ADMIN_PEDIDOS_PAGE_SIZE` | int | `30` | Paginación de `/admin/pedidos` (cap 10-100). |
 
 ## Variables env infraestructura (no SiteConfig — se leen al arranque)
 

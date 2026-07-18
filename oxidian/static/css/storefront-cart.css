@@ -111,6 +111,31 @@
   opacity: .6;
 }
 
+.cr-memory-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: .55rem;
+  margin: -.45rem 0 1rem;
+  padding: .62rem .75rem;
+  border-left: 3px solid var(--brand-primary);
+  border-radius: .7rem;
+  background: color-mix(in srgb, var(--brand-primary) 7%, var(--col-surface));
+  color: var(--col-muted);
+}
+.cr-memory-note > span { font-size: 1.15rem; line-height: 1; }
+.cr-memory-note p {
+  min-width: 0;
+  margin: 0;
+  font-size: .72rem;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .cr-memory-note { margin-bottom: .55rem; padding-block: .45rem; }
+}
+
 .cr-scheduled {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

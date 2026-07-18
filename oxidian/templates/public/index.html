@@ -19,6 +19,10 @@
   {%- elif 'dulce' in nl or 'postre' in nl or 'torta' in nl or 'helado' in nl -%}🍮
   {%- elif 'combo' in nl or 'pack' in nl or 'menu' in nl or 'menú' in nl -%}🎁
   {%- elif 'sopa' in nl or 'caldo' in nl -%}🍲
+  {%- elif 'empanada' in nl or 'arepa' in nl -%}🫓
+  {%- elif 'café' in nl or 'cafe' in nl or 'tinto' in nl -%}☕
+  {%- elif 'pan' in nl or 'buñuelo' in nl or 'pandebono' in nl -%}🥖
+  {%- elif 'tamal' in nl -%}🌿
   {%- elif 'pizza' in nl -%}🍕
   {%- elif 'burger' in nl or 'hambur' in nl -%}🍔
   {%- elif 'ensalada' in nl -%}🥗
@@ -71,6 +75,18 @@
     </div>
   </div>
 </section>
+
+{% if ui.menu_memory_title or ui.menu_memory_text %}
+<section class="ep-memory-ribbon" aria-labelledby="ep-memory-title">
+  <span class="ep-memory-ribbon__flag" aria-hidden="true">🇨🇴</span>
+  <div class="ep-memory-ribbon__copy">
+    {% if ui.menu_memory_eyebrow %}<span>{{ ui.menu_memory_eyebrow }}</span>{% endif %}
+    {% if ui.menu_memory_title %}<strong id="ep-memory-title">{{ ui.menu_memory_title }}</strong>{% endif %}
+    {% if ui.menu_memory_text %}<p>{{ ui.menu_memory_text }}</p>{% endif %}
+  </div>
+  <span class="ep-memory-ribbon__detail" aria-hidden="true">☕ · 🫓 · 🌿</span>
+</section>
+{% endif %}
 
 {# La búsqueda es una acción primaria: debe quedar visible antes de banners y
    contenido editorial variable. Así el botón Buscar de la navegación inferior

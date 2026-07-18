@@ -20,15 +20,15 @@
 </section>
 
 <div class="work-kpis">
-  <div class="work-panel work-kpi"><span>Mostrados</span><strong>{{ pedidos|length }}</strong><small>Según filtros</small></div>
-  <div class="work-panel work-kpi"><span>Activos</span><strong style="color:var(--work-info)">{{ activos|length }}</strong><small>Requieren seguimiento</small></div>
+  <div class="work-panel work-kpi"><span>Resultados</span><strong>{{ pagination.total }}</strong><small>{{ pedidos|length }} en esta página</small></div>
+  <div class="work-panel work-kpi"><span>Activos visibles</span><strong style="color:var(--work-info)">{{ activos|length }}</strong><small>En esta página</small></div>
   <div class="work-panel work-kpi"><span>Bizum por cobrar</span><strong>{{ pendientes_pago|length }}</strong><small>No bloquea preparación</small></div>
   <a href="{{ url_for('admin.pedidos', confirmacion='pending') }}" class="work-panel work-kpi" style="text-decoration:none;color:inherit" title="Filtrar por pedidos sin verificar">
     <span>Sin verificar</span>
     <strong style="color:{{ 'var(--work-warn,#c0850a)' if sin_verificar else 'inherit' }}">{{ sin_verificar|length }}</strong>
     <small>Verificación WhatsApp pendiente</small>
   </a>
-  <div class="work-panel work-kpi"><span>Total visible</span><strong>€{{ "%.2f"|format(pedidos|sum(attribute='total')) }}</strong><small>Importe filtrado</small></div>
+  <div class="work-panel work-kpi"><span>Importe visible</span><strong>€{{ "%.2f"|format(pedidos|sum(attribute='total')) }}</strong><small>En esta página</small></div>
 </div>
 
 <div class="ox-card p-3 mb-4">
@@ -145,14 +145,14 @@
       <select name="preparador_id" class="ord-select">
         <option value="">Preparador</option>
         {% for u in preparadores %}
-        <option value="{{ u.id }}" {% if pedido.preparador_id == u.id %}selected{% endif %}>{{ u.nombre }} · {{ u.pedidos_activos_como_preparador() }} activos</option>
+        <option value="{{ u.id }}" {% if pedido.preparador_id == u.id %}selected{% endif %}>{{ u.nombre }} · {{ cargas_preparadores.get(u.id, 0) }} activos</option>
         {% endfor %}
       </select>
       {% endif %}
       {% if pedido.estado == 'listo' and pedido.requiere_reparto and brand.delivery %}<select name="repartidor_id" class="ord-select">
         <option value="">Repartidor</option>
         {% for u in repartidores %}
-        <option value="{{ u.id }}" {% if pedido.repartidor_id == u.id %}selected{% endif %}>{{ u.nombre }} · {{ u.pedidos_activos_como_repartidor() }} activos</option>
+        <option value="{{ u.id }}" {% if pedido.repartidor_id == u.id %}selected{% endif %}>{{ u.nombre }} · {{ cargas_repartidores.get(u.id, 0) }} activos</option>
         {% endfor %}
       </select>{% endif %}
       <button type="submit" class="ord-btn">Asignar</button>
@@ -197,6 +197,14 @@
 </div>
 {% endfor %}
 </div>
+
+{% if pagination.pages > 1 %}
+<nav class="ord-pagination" aria-label="Paginación de pedidos">
+  {% if prev_url %}<a href="{{ prev_url }}" rel="prev">← Anterior</a>{% else %}<span aria-disabled="true">← Anterior</span>{% endif %}
+  <strong>Página {{ pagination.page }} de {{ pagination.pages }}</strong>
+  {% if next_url %}<a href="{{ next_url }}" rel="next">Siguiente →</a>{% else %}<span aria-disabled="true">Siguiente →</span>{% endif %}
+</nav>
+{% endif %}
 </div>
 
 {% endblock %}
@@ -323,6 +331,29 @@
   border-color: color-mix(in srgb, var(--ord-danger) 25%, transparent);
   color: var(--ord-danger);
 }
+.admin-orders-board .ord-pagination {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: .6rem;
+  margin-top: 1rem;
+  padding: .7rem;
+  border: 1px solid var(--col-border);
+  border-radius: .8rem;
+  background: var(--col-surface);
+  font-size: .78rem;
+}
+.admin-orders-board .ord-pagination :is(a, span) {
+  min-width: 0;
+  color: var(--col-muted);
+  font-weight: 850;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.admin-orders-board .ord-pagination a:last-child,
+.admin-orders-board .ord-pagination span:last-child { text-align: right; }
+.admin-orders-board .ord-pagination strong { color: var(--col-text); text-align: center; }
+.admin-orders-board .ord-pagination [aria-disabled="true"] { opacity: .45; }
 
 /* Identidad de datos clave: número y total muy visibles */
 .admin-orders-board .ord-num   { color: var(--ord-warn); }
@@ -337,6 +368,8 @@
   .admin-orders-board .order-items-grid { grid-template-columns: 1fr; }
   .admin-orders-board .ord-search { width: 100%; }
   .admin-orders-board .ord-search .ord-input { flex: 1 1 auto; min-width: 45%; }
+  .admin-orders-board .ord-pagination { grid-template-columns: 1fr 1fr; }
+  .admin-orders-board .ord-pagination strong { grid-column: 1 / -1; grid-row: 1; }
 }
 
 /* Landscape móvil: KPIs y filtros compactos, header oculto */

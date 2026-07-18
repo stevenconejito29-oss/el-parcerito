@@ -264,6 +264,32 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("body.ox-body-public.ox-modal-open .ox-bottom-nav.ox-bnav-v2", styles)
         self.assertIn("visibility: hidden !important", styles)
 
+    def test_colombian_identity_copy_is_configurable_and_responsive(self):
+        menu = (ROOT / "templates" / "public" / "index.html").read_text(encoding="utf-8")
+        cart = (ROOT / "templates" / "public" / "carrito.html").read_text(encoding="utf-8")
+        menu_css = (ROOT / "static" / "css" / "storefront-menu.css").read_text(encoding="utf-8")
+        cart_css = (ROOT / "static" / "css" / "storefront-cart.css").read_text(encoding="utf-8")
+
+        self.assertIn("ui.menu_memory_title", menu)
+        self.assertIn("ui.menu_memory_text", menu)
+        self.assertIn("ui.cart_memory_note", cart)
+        self.assertIn(".ep-memory-ribbon", menu_css)
+        self.assertIn("grid-template-columns: auto minmax(0, 1fr)", menu_css)
+        self.assertIn(".cr-memory-note", cart_css)
+        self.assertIn("overflow-wrap: anywhere", cart_css)
+
+    def test_admin_orders_are_paginated_without_per_card_workload_queries(self):
+        route = (ROOT / "routes" / "admin.py").read_text(encoding="utf-8")
+        template = (ROOT / "templates" / "admin" / "pedidos.html").read_text(encoding="utf-8")
+
+        self.assertIn('SiteConfig.get("ADMIN_PEDIDOS_PAGE_SIZE", "30")', route)
+        self.assertIn(".paginate(", route)
+        self.assertIn("carga_actual_preparadores", route)
+        self.assertIn("carga_actual_repartidores", route)
+        self.assertNotIn("pedidos_activos_como_preparador()", template)
+        self.assertNotIn("pedidos_activos_como_repartidor()", template)
+        self.assertIn('class="ord-pagination"', template)
+
 
 if __name__ == "__main__":
     unittest.main()

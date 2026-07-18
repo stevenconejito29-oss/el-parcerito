@@ -111,6 +111,13 @@ DEFAULTS: dict[str, dict] = {
             "Tamaño de página del listado /admin/clientes (cap 10-200)."
         ),
     },
+    "ADMIN_PEDIDOS_PAGE_SIZE": {
+        "default": "30",
+        "type": "int",
+        "desc": (
+            "Tamaño de página del listado /admin/pedidos (cap 10-100)."
+        ),
+    },
 
     # ── Workload balancing (no sobrecargar empleados) ────────────────
     # Consumidas por `services.distribuir_pedido` / `distribuir_repartidor`

@@ -117,6 +117,9 @@ PUBLIC_UI_FIELDS = [
     ("UI_HEADER_CART_LABEL", "Etiqueta del pedido"),
     ("UI_HEADER_CART_ACTION", "Acción del carrito"),
     ("UI_HEADER_STAFF", "Acceso de empleados"),
+    ("UI_MENU_MEMORY_EYEBROW", "Menú · antetítulo de identidad"),
+    ("UI_MENU_MEMORY_TITLE", "Menú · mensaje principal de identidad"),
+    ("UI_MENU_MEMORY_TEXT", "Menú · relato breve de identidad"),
     ("UI_CART_EYEBROW", "Carrito · antetítulo"),
     ("UI_CART_TITLE", "Carrito · título"),
     ("UI_CART_ITEM_ONE", "Carrito · producto singular"),
@@ -154,6 +157,7 @@ PUBLIC_UI_FIELDS = [
     ("UI_CART_EMPTY_TITLE", "Carrito vacío · título"),
     ("UI_CART_EMPTY_TEXT", "Carrito vacío · descripción"),
     ("UI_CART_VIEW_MENU", "Carrito vacío · ver menú"),
+    ("UI_CART_MEMORY_NOTE", "Carrito · mensaje emocional"),
     ("UI_PWA_DESCRIPTION", "PWA · descripción de instalación"),
     ("UI_PWA_IOS_INSTRUCTION", "PWA · instrucción para iOS"),
     ("UI_PWA_INSTALL", "PWA · instalar"),
@@ -1499,6 +1503,7 @@ def config():
         config_map.setdefault(key, value)
     public_ui_groups = [
         ("Cabecera", [(key, label) for key, label in PUBLIC_UI_FIELDS if key == "UI_CLOSE" or key.startswith("UI_HEADER_")]),
+        ("Identidad del menú", [(key, label) for key, label in PUBLIC_UI_FIELDS if key.startswith("UI_MENU_")]),
         ("Carrito", [(key, label) for key, label in PUBLIC_UI_FIELDS if key.startswith("UI_CART_")]),
         ("PWA y navegación", [
             (key, label) for key, label in PUBLIC_UI_FIELDS

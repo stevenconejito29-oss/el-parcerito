@@ -1081,6 +1081,67 @@ body.ox-body-public .ep-banner-cta {
 .ep-review-text { font-size:.78rem;color:var(--col-muted);font-style:italic;line-height:1.4;margin-bottom:.3rem; }
 .ep-review-date { font-size:.65rem;color:var(--col-faint); }
 
+/* ── Relato de marca: compacto, configurable y sin imágenes pesadas ── */
+.ep-memory-ribbon {
+  width: min(calc(100% - 2rem), 1180px);
+  margin: .85rem auto .15rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .8rem;
+  padding: .72rem .9rem;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 34%, var(--col-border));
+  border-radius: .95rem;
+  background:
+    linear-gradient(90deg, var(--flag-yellow) 0 33.33%, var(--flag-blue) 33.33% 66.66%, var(--flag-red) 66.66%) top / 100% 3px no-repeat,
+    color-mix(in srgb, var(--brand-primary) 7%, var(--col-surface));
+  box-shadow: var(--elevation-raised);
+}
+.ep-memory-ribbon__flag { font-size: 1.55rem; line-height: 1; }
+.ep-memory-ribbon__copy { min-width: 0; }
+.ep-memory-ribbon__copy > span {
+  display: block;
+  color: var(--brand-text, var(--theme-muted));
+  font-size: .62rem;
+  font-weight: 950;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.ep-memory-ribbon__copy strong {
+  display: block;
+  margin-top: .08rem;
+  color: var(--col-text);
+  font-size: clamp(.9rem, 2vw, 1.05rem);
+  line-height: 1.2;
+}
+.ep-memory-ribbon__copy p {
+  margin: .16rem 0 0;
+  max-width: 72ch;
+  color: var(--col-muted);
+  font-size: .72rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.ep-memory-ribbon__detail {
+  color: var(--col-muted);
+  font-size: .88rem;
+  white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .ep-memory-ribbon {
+    width: calc(100% - 1.5rem);
+    grid-template-columns: auto minmax(0, 1fr);
+    margin-top: .65rem;
+    padding: .68rem .75rem;
+  }
+  .ep-memory-ribbon__detail { display: none; }
+  .ep-memory-ribbon__copy p { font-size: .69rem; }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .ep-memory-ribbon { margin-block: .45rem .1rem; padding-block: .5rem; }
+  .ep-memory-ribbon__copy p { display: none; }
+}
+
 /* ── Por qué ── */
 .ep-why-section { margin-top:.5rem; }
 .ep-why-grid { display:grid;grid-template-columns:repeat(2,1fr);gap:.55rem; }

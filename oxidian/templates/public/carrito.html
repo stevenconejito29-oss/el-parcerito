@@ -39,6 +39,13 @@
   </span>
 </nav>
 
+{% if ui.cart_memory_note %}
+<div class="cr-memory-note" role="note">
+  <span aria-hidden="true">🇨🇴</span>
+  <p>{{ ui.cart_memory_note }}</p>
+</div>
+{% endif %}
+
 {% if fecha_entrega_programada %}
 <div class="cr-scheduled" role="status">
   <span class="cr-scheduled-icon" aria-hidden="true">📅</span>
