@@ -26,6 +26,7 @@ from models import (
     OrderProviderStatus,
     Product,
     ProductVariant,
+    PushBroadcast,
     ExtraCatalogItem,
     ProductExtraGroup,
     ProductExtraOption,
@@ -1702,6 +1703,15 @@ MIGRATIONS = [
         ),
         "fn": _migrate_public_nostalgia_copy,
     },
+    {
+        "id": "20260718_03_push_broadcasts",
+        "description": (
+            "Crea campañas Web Push auditables y vincula cada entrega del "
+            "outbox con su campaña masiva."
+        ),
+        "tables": [PushBroadcast.__table__],
+        "fn": lambda: _migrate_push_broadcasts(),
+    },
 ]
 
 
@@ -1758,6 +1768,36 @@ def _migrate_add_nullable_int_columns(pairs):
         db.session.execute(text(
             f"ALTER TABLE {tabla} ADD COLUMN {col} INTEGER NULL"
         ))
+
+
+def _migrate_push_broadcasts():
+    """Añade el vínculo de campaña a outbox en instalaciones existentes."""
+    inspector = inspect(db.engine)
+    db.metadata.create_all(
+        bind=db.engine,
+        tables=[PushBroadcast.__table__],
+        checkfirst=True,
+    )
+    if not inspector.has_table("notification_outbox"):
+        return
+    columns = {column["name"] for column in inspect(db.engine).get_columns("notification_outbox")}
+    if "push_broadcast_id" not in columns:
+        db.session.execute(text(
+            "ALTER TABLE notification_outbox ADD COLUMN push_broadcast_id INTEGER NULL"
+        ))
+    if db.engine.dialect.name == "postgresql":
+        db.session.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE notification_outbox
+                ADD CONSTRAINT fk_notification_outbox_push_broadcast
+                FOREIGN KEY (push_broadcast_id) REFERENCES push_broadcasts(id);
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
+    db.session.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_notification_outbox_push_broadcast "
+        "ON notification_outbox (push_broadcast_id)"
+    ))
 
 
 def _utcnow():

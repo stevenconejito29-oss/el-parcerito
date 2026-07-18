@@ -15,12 +15,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 import csv, io
 
-from extensions import db, get_or_404
+from extensions import db, get_or_404, limiter
 from models import (ROLES_AUTENTICABLES, TIPOS_STAFF_PAYMENT, TIPOS_STAFF_PAYMENT_MANUAL, User, Product, Categoria, Stock, Order, OrderItem, Review,
                     Coupon, ComboGroup, ComboItem, ExtraCatalogItem, ProductExtraGroup, ProductExtraOption, Caja, PointsLog, StaffPayment,
                     AffiliateCode, AffiliateUse, MenuConfig,
                     PriceHistory, ProductPresentation, ProductVariant, TAMAÑOS_PRESENTACION, SiteConfig, AuditLog,
-                    AdminFeature, NotificationOutbox, ProductBatch, ZonaEntrega, normalizar_metodo_pago, utcnow)
+                    AdminFeature, NotificationOutbox, PushBroadcast, PushSubscription,
+                    ProductBatch, ZonaEntrega, normalizar_metodo_pago, utcnow)
 from combo_validators import (
     ComboLimits,
     validate_component_quantity,
@@ -132,7 +133,6 @@ _FEATURE_URL_MAP = {
     "/admin/empleado/":    "staff_pagos",
     "/admin/analytics":    "reportes",
     "/admin/ia-analisis":  "reportes",
-    "/admin/notificaciones": "whatsapp",
     "/admin/usuarios":     "usuarios",
     "/admin/clientes":            "usuarios",
     "/admin/clientes/editar":     "usuarios",
@@ -4092,6 +4092,29 @@ def notificaciones():
         NotificationOutbox.estado == "failed",
         NotificationOutbox.creado_en >= hace_24h,
     ).count()
+    dispositivos_por_rol = dict(
+        db.session.query(PushSubscription.rol, db.func.count(PushSubscription.id))
+        .filter(PushSubscription.activo.is_(True))
+        .group_by(PushSubscription.rol)
+        .all()
+    )
+    dispositivos_push = sum(dispositivos_por_rol.values())
+    campanas = PushBroadcast.query.order_by(PushBroadcast.creado_en.desc()).limit(12).all()
+    campana_ids = [campana.id for campana in campanas]
+    estados_campanas = defaultdict(dict)
+    if campana_ids:
+        for broadcast_id, job_status, total in db.session.query(
+            NotificationOutbox.push_broadcast_id,
+            NotificationOutbox.estado,
+            db.func.count(NotificationOutbox.id),
+        ).filter(
+            NotificationOutbox.push_broadcast_id.in_(campana_ids)
+        ).group_by(
+            NotificationOutbox.push_broadcast_id,
+            NotificationOutbox.estado,
+        ).all():
+            estados_campanas[broadcast_id][job_status] = total
+    from push_service import vapid_configuration_error
     return render_template(
         "admin/notificaciones.html",
         notificaciones=items,
@@ -4105,7 +4128,69 @@ def notificaciones():
         enviadas_24h=enviadas_24h,
         fallidas_24h=fallidas_24h,
         ahora=ahora,
+        dispositivos_push=dispositivos_push,
+        dispositivos_clientes=dispositivos_por_rol.get("cliente", 0),
+        dispositivos_staff=dispositivos_push - dispositivos_por_rol.get("cliente", 0),
+        campanas=campanas,
+        estados_campanas=estados_campanas,
+        push_config_error=vapid_configuration_error(),
+        broadcast_idempotency_key=str(uuid.uuid4()),
     )
+
+
+@admin_bp.route("/notificaciones/pwa/enviar", methods=["POST"])
+@admin_required
+@(limiter.limit("5 per hour", key_func=lambda: f"push-broadcast:{current_user.id}")
+  if limiter is not None else (lambda f: f))
+def enviar_notificacion_pwa():
+    """Encola una campaña Web Push para los dispositivos autorizados."""
+    from push_service import queue_push_broadcast, vapid_configuration_error
+
+    if vapid_configuration_error():
+        flash("Web Push no está correctamente configurado; no se encoló ningún envío.", "danger")
+        return redirect(url_for("admin.notificaciones"))
+    if request.form.get("confirmar_envio") != "1":
+        flash("Confirma la audiencia antes de realizar un envío masivo.", "warning")
+        return redirect(url_for("admin.notificaciones"))
+
+    try:
+        campana, creada = queue_push_broadcast(
+            creator_id=current_user.id,
+            idempotency_key=request.form.get("idempotency_key") or "",
+            title=request.form.get("titulo") or "",
+            body=request.form.get("cuerpo") or "",
+            url=request.form.get("url") or "/",
+            audience=request.form.get("audiencia") or "all",
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("admin.notificaciones"))
+
+    if not creada:
+        flash(f"La campaña #{campana.id} ya estaba encolada; no se duplicó.", "info")
+        return redirect(url_for("admin.notificaciones", canal="push", estado="all"))
+
+    AuditLog.registrar(
+        current_user.id,
+        "enviar_push_masivo",
+        "push_broadcast",
+        campana.id,
+        detalle=json.dumps({
+            "audiencia": campana.audiencia,
+            "destinatarios": campana.destinatarios,
+            "url": campana.url,
+        }, ensure_ascii=False),
+        ip=request.remote_addr,
+    )
+    db.session.commit()
+    if campana.destinatarios:
+        flash(
+            f"Campaña #{campana.id} encolada para {campana.destinatarios} dispositivo(s).",
+            "success",
+        )
+    else:
+        flash("La campaña quedó registrada, pero esa audiencia no tiene dispositivos activos.", "warning")
+    return redirect(url_for("admin.notificaciones", canal="push", estado="all"))
 
 
 @admin_bp.route("/notificaciones/procesar", methods=["POST"])

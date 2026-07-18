@@ -229,7 +229,7 @@
         <a href="{{ url_for('admin.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📋</span>Pedidos</a>
         <a href="{{ url_for('pos.venta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🖥️</span>Punto de venta</a>
         {% endif %}
-        {% if has_admin_feature('whatsapp') %}<a href="{{ url_for('admin.notificaciones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🔔</span>Notificaciones bot</a>{% endif %}
+        <a href="{{ url_for('admin.notificaciones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🔔</span>Notificaciones</a>
       </div>
       <div class="ox-sb-divider"></div>
 

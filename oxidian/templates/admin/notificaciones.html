@@ -1,5 +1,8 @@
 {% extends "admin_base.html" %}
 {% block title %}Notificaciones - {{ brand.nombre }}{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-notifications.css', v=asset_version) }}">
+{% endblock %}
 {% block content %}
 
 <header class="nt-head">
@@ -18,6 +21,84 @@
     <button type="submit">Procesar pendientes</button>
   </form>
 </header>
+
+<section class="nt-broadcast" aria-labelledby="nt-broadcast-title">
+  <div class="nt-broadcast-copy">
+    <p class="nt-kicker">Web Push</p>
+    <h2 id="nt-broadcast-title">Enviar aviso a las apps instaladas</h2>
+    <p>Se entregará únicamente a dispositivos que aceptaron notificaciones. El envío pasa por la cola segura y no bloquea el panel.</p>
+    <div class="nt-device-counts" aria-label="Dispositivos con avisos activos">
+      <span><strong>{{ dispositivos_push }}</strong> total</span>
+      <span><strong>{{ dispositivos_clientes }}</strong> clientes</span>
+      <span><strong>{{ dispositivos_staff }}</strong> equipo</span>
+    </div>
+    {% if push_config_error %}
+    <p class="nt-config-error" role="alert">Web Push requiere atención de configuración. El formulario queda deshabilitado para evitar campañas fallidas.</p>
+    {% endif %}
+  </div>
+  <form method="POST" action="{{ url_for('admin.enviar_notificacion_pwa') }}" class="nt-broadcast-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="idempotency_key" value="{{ broadcast_idempotency_key }}">
+    <label>
+      <span>Título</span>
+      <input name="titulo" required minlength="3" maxlength="80" placeholder="Ej. Ya abrimos pedidos">
+    </label>
+    <label>
+      <span>Mensaje</span>
+      <textarea name="cuerpo" required minlength="3" maxlength="180" rows="3" placeholder="Escribe una novedad breve y útil para quien la recibe."></textarea>
+      <small>Máximo 180 caracteres, igual que la notificación final.</small>
+    </label>
+    <div class="nt-broadcast-row">
+      <label>
+        <span>Audiencia</span>
+        <select name="audiencia">
+          <option value="all">Todos los dispositivos ({{ dispositivos_push }})</option>
+          <option value="customers">Sólo clientes ({{ dispositivos_clientes }})</option>
+          <option value="staff">Sólo equipo ({{ dispositivos_staff }})</option>
+        </select>
+      </label>
+      <label>
+        <span>Al tocar, abrir</span>
+        <select name="url">
+          <option value="/">Menú principal</option>
+          <option value="/carrito">Canasta</option>
+          <option value="/club">Club y granitos</option>
+          <option value="/admin/dashboard">Panel de administración</option>
+          <option value="/admin/pedidos">Pedidos</option>
+        </select>
+      </label>
+    </div>
+    <label class="nt-confirm">
+      <input type="checkbox" name="confirmar_envio" value="1" required>
+      <span>He revisado el texto y la audiencia. Entiendo que el aviso no se puede retirar una vez enviado.</span>
+    </label>
+    <button type="submit" {% if push_config_error or dispositivos_push == 0 %}disabled{% endif %}>Encolar notificación masiva</button>
+  </form>
+</section>
+
+{% if campanas %}
+<section class="nt-campaigns" aria-labelledby="nt-campaigns-title">
+  <div class="nt-section-head">
+    <h2 id="nt-campaigns-title">Campañas recientes</h2>
+    <span>Auditoría por campaña</span>
+  </div>
+  <div class="nt-campaign-grid">
+    {% for campana in campanas %}
+    {% set cstatus = estados_campanas.get(campana.id, {}) %}
+    <article class="nt-campaign">
+      <div><strong>#{{ campana.id }} · {{ campana.titulo }}</strong><small>{{ campana.creado_en.strftime('%d/%m/%Y %H:%M') }} · {{ campana.creador.nombre if campana.creador else 'Sistema' }}</small></div>
+      <p>{{ campana.cuerpo }}</p>
+      <div class="nt-campaign-metrics">
+        <span>{{ campana.destinatarios }} dispositivos</span>
+        <span class="is-sent">{{ cstatus.get('sent', 0) }} enviadas</span>
+        <span class="is-pending">{{ cstatus.get('pending', 0) + cstatus.get('processing', 0) }} en cola</span>
+        {% if cstatus.get('failed', 0) %}<span class="is-failed">{{ cstatus.get('failed', 0) }} con error</span>{% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 <section class="nt-status" aria-label="Resumen de notificaciones">
   {% for key, label, help in [
@@ -121,41 +202,4 @@
   {% endfor %}
 </div>
 
-<style>
-.nt-head{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;margin-bottom:1rem}
-.nt-kicker{color:#ffab00;font-size:.68rem;font-weight:900;text-transform:uppercase}
-.nt-head h1{color:var(--col-text);font-size:1.45rem;font-weight:950}
-.nt-head p:not(.nt-kicker){color:var(--col-muted);font-size:.82rem;margin-top:.15rem}
-.nt-process{display:flex;align-items:flex-end;gap:.45rem}
-.nt-process label,.nt-filters label{display:grid;gap:.25rem;color:var(--col-muted);font-size:.68rem;font-weight:850;text-transform:uppercase}
-.nt-process input,.nt-filters input,.nt-filters select{background:var(--col-elevated);border:1px solid var(--col-border);border-radius:.5rem;color:var(--col-text);padding:.55rem .65rem;min-height:40px}
-.nt-process input{width:72px}
-.nt-process button,.nt-filters button,.nt-action button{border:0;border-radius:.5rem;background:#ffab00;color:#241500;font-weight:900;padding:.62rem .8rem;cursor:pointer;min-height:40px}
-.nt-status{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.55rem}
-.nt-stat{display:grid;gap:.12rem;padding:.75rem;border:1px solid var(--col-border);background:var(--col-surface);border-radius:.65rem;text-decoration:none;min-width:0}
-.nt-stat.active{border-color:#ffab00;background:rgba(255,171,0,.07)}
-.nt-stat span{color:var(--col-muted);font-size:.72rem;font-weight:850}
-.nt-stat strong{color:var(--col-text);font-size:1.45rem;line-height:1}
-.nt-stat small{color:var(--col-faint);font-size:.65rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.nt-health{display:flex;gap:.4rem;flex-wrap:wrap;margin:.6rem 0 1rem}
-.nt-health div{display:flex;align-items:center;gap:.35rem;padding:.35rem .55rem;border:1px solid var(--col-border);border-radius:.45rem;background:var(--col-elevated)}
-.nt-health strong{color:#5ef097}.nt-health span{color:var(--col-muted);font-size:.7rem}
-.nt-health .warn strong{color:#ffb340}.nt-health .danger strong{color:#ff6b6b}
-.nt-filters{display:grid;grid-template-columns:minmax(190px,1fr) 150px 150px auto auto;gap:.55rem;align-items:end;padding:.75rem;border:1px solid var(--col-border);background:var(--col-surface);border-radius:.65rem;margin-bottom:.75rem}
-.nt-filters>a{color:var(--col-muted);font-size:.76rem;font-weight:850;text-align:center;padding:.65rem;text-decoration:none}
-.nt-list{display:grid;gap:.45rem}
-.nt-item{display:grid;grid-template-columns:130px minmax(0,1fr) 170px 90px;gap:.8rem;align-items:start;padding:.8rem;border:1px solid var(--col-border);border-left:4px solid #ffab00;background:var(--col-surface);border-radius:.55rem}
-.nt-item.status-sent{border-left-color:#36c779}.nt-item.status-failed{border-left-color:#ff6b6b}.nt-item.status-processing{border-left-color:#5ac8fa}
-.nt-state{display:grid;gap:.2rem}.nt-state>span{font-size:.72rem;font-weight:900;color:var(--col-text)}.nt-state small{font-size:.64rem;color:var(--col-muted)}
-.nt-title{display:flex;align-items:center;gap:.45rem}.nt-title strong{font-size:.82rem;color:var(--col-text)}.nt-title span{color:var(--col-faint);font-size:.65rem}
-.nt-destination{color:var(--col-muted);font-size:.76rem;overflow-wrap:anywhere;margin-top:.12rem}
-.nt-order{display:inline-block;color:#5ac8fa;font-size:.7rem;margin-top:.15rem}
-.nt-message{color:var(--col-faint);font-size:.7rem;line-height:1.4;margin-top:.3rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.nt-error{margin-top:.3rem}.nt-error summary{color:#ff6b6b;font-size:.68rem;cursor:pointer}.nt-error p{color:#ff9d9d;font-size:.68rem;overflow-wrap:anywhere;margin-top:.25rem}
-.nt-time{display:grid;gap:.12rem}.nt-time span,.nt-time small{color:var(--col-faint);font-size:.64rem}.nt-time strong{color:var(--col-muted);font-size:.7rem}
-.nt-action{text-align:right}.nt-action button{background:var(--col-elevated);border:1px solid var(--col-border);color:var(--col-text);padding:.45rem .6rem;min-height:34px;font-size:.7rem}.nt-ok{color:#36c779;font-size:.7rem;font-weight:900}
-.nt-empty{text-align:center;padding:2.5rem;border:1px dashed var(--col-border);border-radius:.65rem;color:var(--col-muted)}.nt-empty p{font-size:.75rem;margin-top:.2rem}
-@media(max-width:900px){.nt-item{grid-template-columns:110px minmax(0,1fr) 140px}.nt-action{grid-column:3}.nt-filters{grid-template-columns:1fr 1fr}.nt-search{grid-column:1/-1}}
-@media(max-width:620px){.nt-head{align-items:stretch;flex-direction:column}.nt-process{display:grid;grid-template-columns:72px 1fr}.nt-status{grid-template-columns:1fr 1fr}.nt-filters{grid-template-columns:1fr 1fr}.nt-filters button,.nt-filters>a{width:100%}.nt-item{grid-template-columns:1fr;gap:.45rem}.nt-state{display:flex;justify-content:space-between;gap:.5rem}.nt-time{display:flex;flex-wrap:wrap;gap:.35rem}.nt-action{grid-column:auto;text-align:left}.nt-action button{width:100%}}
-</style>
 {% endblock %}

@@ -2859,6 +2859,36 @@ class OrderEvent(db.Model):
             return {}
 
 
+class PushBroadcast(db.Model):
+    """Campaña Web Push creada manualmente desde el panel.
+
+    Una campaña representa una única intención del operador. Los envíos por
+    dispositivo siguen viviendo en ``NotificationOutbox`` para conservar los
+    reintentos, errores y bajas automáticas ya existentes.
+    """
+    __tablename__ = "push_broadcasts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    idempotency_key = db.Column(db.String(36), nullable=False, unique=True)
+    titulo = db.Column(db.String(80), nullable=False)
+    cuerpo = db.Column(db.String(180), nullable=False)
+    url = db.Column(db.String(500), nullable=False, default="/")
+    audiencia = db.Column(db.String(20), nullable=False, default="all")
+    destinatarios = db.Column(db.Integer, nullable=False, default=0)
+    creado_por_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    creado_en = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    creador = db.relationship("User", foreign_keys=[creado_por_id])
+    notificaciones = db.relationship(
+        "NotificationOutbox", backref="push_broadcast", lazy="dynamic"
+    )
+
+    __table_args__ = (
+        db.Index("ix_push_broadcasts_creado_en", "creado_en"),
+        db.Index("ix_push_broadcasts_creado_por", "creado_por_id"),
+    )
+
+
 class NotificationOutbox(db.Model):
     """Registro persistente de notificaciones externas y sus intentos."""
     __tablename__ = "notification_outbox"
@@ -2875,6 +2905,7 @@ class NotificationOutbox(db.Model):
     ultimo_error = db.Column(db.Text)
     pedido_id = db.Column(db.Integer, db.ForeignKey("orders.id"))
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    push_broadcast_id = db.Column(db.Integer, db.ForeignKey("push_broadcasts.id"))
     creado_en = db.Column(db.DateTime, default=utcnow, nullable=False)
     enviado_en = db.Column(db.DateTime)
 
@@ -2883,6 +2914,7 @@ class NotificationOutbox(db.Model):
     __table_args__ = (
         db.Index("ix_notification_outbox_estado", "estado"),
         db.Index("ix_notification_outbox_pedido_id", "pedido_id"),
+        db.Index("ix_notification_outbox_push_broadcast", "push_broadcast_id"),
         db.Index("ix_notification_outbox_siguiente", "siguiente_intento_en"),
     )
 

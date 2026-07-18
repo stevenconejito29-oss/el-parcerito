@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
 from typing import Optional
 from urllib.parse import urlsplit
 
@@ -155,13 +156,14 @@ def _send_one(sub_row, payload: dict, vapid_claims: dict, priv_key: str) -> bool
     return ok or expired
 
 
-def _dispatch(subscriptions, payload: dict) -> None:
+def _dispatch(subscriptions, payload: dict, *, evento: str = "web_push",
+              push_broadcast_id: int | None = None,
+              commit: bool = True) -> int:
     """Encola push persistente para que lo procese el worker de outbox."""
-    if not subscriptions:
-        return
     from extensions import db
     from models import NotificationOutbox
 
+    total = 0
     for sub in subscriptions:
         job_payload = {
             "subscription_id": sub.id,
@@ -169,13 +171,111 @@ def _dispatch(subscriptions, payload: dict) -> None:
         }
         db.session.add(NotificationOutbox(
             canal="push",
-            evento="web_push",
+            evento=evento,
             destinatario=str(sub.id),
             payload_json=json.dumps(job_payload, ensure_ascii=False, default=str),
             user_id=sub.user_id,
+            push_broadcast_id=push_broadcast_id,
             max_intentos=3,
         ))
+        total += 1
+        # Mantiene acotado el unit-of-work cuando una tienda acumula miles de
+        # dispositivos, pero conserva una única transacción atómica.
+        if total % 500 == 0:
+            db.session.flush()
+    if commit:
+        db.session.commit()
+    return total
+
+
+PUSH_BROADCAST_AUDIENCES = frozenset({"all", "customers", "staff"})
+
+
+def _normalise_broadcast_url(value: str) -> str:
+    """Acepta únicamente destinos internos para evitar redirecciones desde push."""
+    target = (value or "/").strip()
+    parsed = urlsplit(target)
+    if (
+        not target.startswith("/")
+        or target.startswith("//")
+        or parsed.scheme
+        or parsed.netloc
+        or len(target) > 500
+    ):
+        raise ValueError("El destino debe ser una ruta interna de la aplicación.")
+    return target
+
+
+def queue_push_broadcast(*, creator_id: int, idempotency_key: str,
+                         title: str, body: str, url: str = "/",
+                         audience: str = "all"):
+    """Crea una campaña y sus trabajos Web Push en una transacción.
+
+    Devuelve ``(campaña, creada)``. Repetir la misma clave no vuelve a encolar
+    dispositivos, incluso si el navegador reenvía el formulario.
+    """
+    from extensions import db
+    from models import PushBroadcast, PushSubscription
+    from sqlalchemy.exc import IntegrityError
+
+    try:
+        key = str(uuid.UUID(str(idempotency_key)))
+    except (ValueError, TypeError, AttributeError):
+        raise ValueError("La solicitud de envío ha caducado; recarga la página.")
+
+    clean_title = (title or "").strip()
+    clean_body = (body or "").strip()
+    clean_audience = (audience or "all").strip().lower()
+    if not 3 <= len(clean_title) <= 80:
+        raise ValueError("El título debe tener entre 3 y 80 caracteres.")
+    # El Service Worker limita el cuerpo a 180: validar igual aquí evita que el
+    # operador previsualice un texto distinto del que finalmente recibe Android.
+    if not 3 <= len(clean_body) <= 180:
+        raise ValueError("El mensaje debe tener entre 3 y 180 caracteres.")
+    if clean_audience not in PUSH_BROADCAST_AUDIENCES:
+        raise ValueError("La audiencia seleccionada no es válida.")
+    clean_url = _normalise_broadcast_url(url)
+
+    existing = PushBroadcast.query.filter_by(idempotency_key=key).first()
+    if existing:
+        return existing, False
+
+    query = PushSubscription.query.filter(PushSubscription.activo.is_(True))
+    if clean_audience == "customers":
+        query = query.filter(PushSubscription.rol == "cliente")
+    elif clean_audience == "staff":
+        query = query.filter(PushSubscription.rol != "cliente")
+
+    campaign = PushBroadcast(
+        idempotency_key=key,
+        titulo=clean_title,
+        cuerpo=clean_body,
+        url=clean_url,
+        audiencia=clean_audience,
+        creado_por_id=creator_id,
+    )
+    db.session.add(campaign)
+    try:
+        db.session.flush()
+    except IntegrityError:
+        db.session.rollback()
+        return PushBroadcast.query.filter_by(idempotency_key=key).one(), False
+
+    payload = _build_payload(
+        clean_title,
+        clean_body,
+        clean_url,
+        tag=f"broadcast-{campaign.id}",
+    )
+    campaign.destinatarios = _dispatch(
+        query.yield_per(500),
+        payload,
+        evento="pwa_broadcast",
+        push_broadcast_id=campaign.id,
+        commit=False,
+    )
     db.session.commit()
+    return campaign, True
 
 
 def send_push_outbox_payload(payload: dict) -> tuple[bool, str | None]:
