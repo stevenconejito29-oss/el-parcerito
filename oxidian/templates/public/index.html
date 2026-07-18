@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'partials/heritage_icons.html' import heritage_icon %}
 {% block title %}{{ brand.nombre }} — Pide online{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-menu.css', v=asset_version) }}">
@@ -43,13 +44,17 @@
          {% if hero_bg %}style="--ep-hero-image:url('{{ hero_bg }}')"{% endif %}>
   <div class="ep-hero-inner">
     <div class="ep-hero-text">
-      {% if brand.slogan %}<div class="ep-hero-label"><span></span> {{ brand.slogan }}</div>{% endif %}
-      <h1 class="ep-hero-title">{{ brand.nombre }}{% if brand.slogan %}<br><span class="ep-brand-word">{{ brand.slogan }}</span>{% elif brand.descripcion %}<br><span class="ep-brand-word">{{ brand.descripcion }}</span>{% endif %}</h1>
-      {% if brand.descripcion %}<p class="ep-hero-sub">{{ brand.descripcion }}</p>{% elif brand.ciudad %}<p class="ep-hero-sub">{{ brand.ciudad }}</p>{% elif brand.direccion %}<p class="ep-hero-sub">{{ brand.direccion.split(',')[0] }}</p>{% endif %}
+      <div class="ep-hero-label">{{ heritage_icon('mariposa') }} {{ ui.hero_eyebrow or brand.slogan }}</div>
+      <h1 class="ep-hero-title">{{ brand.nombre }}<br><span class="ep-brand-word">{{ ui.hero_title or brand.slogan or brand.descripcion }}</span></h1>
+      <p class="ep-hero-sub">{{ ui.hero_subtitle or brand.descripcion or brand.ciudad or brand.direccion }}</p>
       <a href="#catalogo" class="ep-hero-cta">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12l7 7 7-7"/></svg>
         Ver {{ brand.vertical_label|lower if brand.vertical_label else 'menú' }} completo
       </a>
+    </div>
+    <div class="ep-hero-heritage-seal" aria-label="{{ ui.hero_signature }}">
+      {{ heritage_icon('sombrero', 'ep-hero-sombrero') }}
+      <span>{{ ui.hero_signature }}</span>
     </div>
   </div>
   <div class="ep-trust">
@@ -176,7 +181,7 @@
 {% elif productos_auto_destacados %}
 <section class="ep-mc-destacados-wrap" aria-label="Recomendaciones automáticas">
   <div class="ep-mini-head">
-    <strong>{% if auto_destacados_con_rating %}⭐ Los favoritos del momento{% else %}🍽️ Nuestras estrellas{% endif %}</strong>
+    <strong>{% if auto_destacados_con_rating %}{{ heritage_icon('mariposa') }} Los favoritos del momento{% else %}{{ heritage_icon('sombrero') }} Recomendados de la casa{% endif %}</strong>
     <span>{% if auto_destacados_con_rating %}Mejor valorados{% else %}Selección de la casa{% endif %}</span>
   </div>
 <div class="ep-mc-destacados">
@@ -199,7 +204,7 @@
       {% endif %}
       <span class="ep-mc-dest-name">{{ p.nombre }}</span>
       <span class="ep-mc-dest-price">
-        {% if p.solo_canje %}⭐ {{ p.puntos_para_canje or 0 }} pts
+        {% if p.solo_canje %}{{ heritage_icon('cafecito') }} {{ p.puntos_para_canje or 0 }} {{ ui.loyalty_unit_plural }}
         {% else %}€{{ "%.2f"|format(p.precio_final) }}{% endif %}
       </span>
     </span>
@@ -291,7 +296,7 @@
        vista Todo por diseño). #}
     {% if brand.puntos %}
     <a href="#canje" data-category="_canje" class="ep-cat ep-cat-canje">
-      <span class="ep-cat-icon">⭐</span><span class="ep-cat-label">Canje</span>
+      <span class="ep-cat-icon">{{ heritage_icon('cafecito') }}</span><span class="ep-cat-label">Canje</span>
     </a>
     {% endif %}
     {% for cat in categorias %}
@@ -379,7 +384,7 @@
     {# ── 1. Sección Canje con puntos ── #}
     {% if productos_canjeables %}
     <div class="ep-cat-section ep-cat-section-puntos" data-section-cat="_canje" data-palette="promo">
-      <h3 class="ep-cat-title ep-cat-title-puntos">⭐ Canje con puntos</h3>
+      <h3 class="ep-cat-title ep-cat-title-puntos">{{ heritage_icon('cafecito') }} Canje con {{ ui.loyalty_unit_plural }}</h3>
       <div class="ep-grid">
         {% for p in productos_canjeables %}{% include "public/_product_card.html" %}{% endfor %}
       </div>
@@ -467,7 +472,7 @@
   <div class="ep-why-grid">
     {% if brand.descripcion %}<div class="ep-why-item"><span class="ep-why-icon">✓</span><div><p class="ep-why-title">Nuestra tienda</p><p class="ep-why-desc">{{ brand.descripcion }}</p></div></div>{% endif %}
     {% if brand.delivery %}<div class="ep-why-item"><span class="ep-why-icon">🚴</span><div><p class="ep-why-title">Delivery ~{{ zona_principal.tiempo_estimado_min if zona_principal else 25 }} min</p><p class="ep-why-desc">Rápido y en tu puerta</p></div></div>{% endif %}
-    {% if brand.puntos %}<div class="ep-why-item"><span class="ep-why-icon">⭐</span><div><p class="ep-why-title">Gana puntos</p><p class="ep-why-desc">Canjéalos por productos</p></div></div>{% endif %}
+    {% if brand.puntos %}<div class="ep-why-item"><span class="ep-why-icon">{{ heritage_icon('cafecito') }}</span><div><p class="ep-why-title">Suma {{ ui.loyalty_unit_plural }}</p><p class="ep-why-desc">Canjéalos por productos</p></div></div>{% endif %}
     <div class="ep-why-item"><span class="ep-why-icon">📱</span><div><p class="ep-why-title">WhatsApp</p><p class="ep-why-desc">Consultas y seguimiento</p></div></div>
   </div>
 </section>
@@ -491,6 +496,7 @@
 ══════════════════════════════════════════ #}
 <div id="ep-modal" class="ep-modal-overlay" data-modal-backdrop role="dialog" aria-modal="true" hidden>
   <div class="ep-modal-panel" tabindex="-1">
+    <div class="ep-modal-heritage-handle" aria-hidden="true">{{ heritage_icon('sombrero') }}</div>
 
     {# Imagen #}
     <div class="ep-modal-img-wrap" id="ep-modal-img-wrap">
@@ -858,7 +864,15 @@ function openModal(id) {
   // Precio: canjeables exclusivos muestran puntos, no euros.
   const _priceEl = document.getElementById('ep-modal-price');
   if (d.solo_canje) {
-    _priceEl.textContent = `⭐ ${d.puntos_para_canje || 0} pts`;
+    _priceEl.replaceChildren();
+    const loyaltyIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    loyaltyIcon.setAttribute('class', 'ox-heritage-icon ep-loyalty-icon');
+    loyaltyIcon.setAttribute('viewBox', '0 0 24 24');
+    loyaltyIcon.setAttribute('aria-hidden', 'true');
+    const loyaltyUse = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    loyaltyUse.setAttribute('href', '#ox-hi-cafecito');
+    loyaltyIcon.appendChild(loyaltyUse);
+    _priceEl.append(loyaltyIcon, document.createTextNode(` ${d.puntos_para_canje || 0} ${OX_UI.loyalty_unit_plural || 'cafecitos'}`));
     _priceEl.classList.add('ep-modal-price--points');
   } else {
     _priceEl.textContent = `€${precioFinal.toFixed(2)}`;

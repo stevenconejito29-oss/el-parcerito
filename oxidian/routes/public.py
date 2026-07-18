@@ -52,6 +52,7 @@ from loyalty_service import (
 )
 from phone_utils import normalizar_telefono_cliente, telefono_local_ambiguo, telefono_valido
 from store_config import (
+    get_loyalty_terms,
     get_public_store_url,
     get_store_features,
     get_service_commission,
@@ -1032,8 +1033,11 @@ def agregar_carrito(producto_id):
     # Bloqueo: productos EXCLUSIVOS de canje con puntos no se pueden comprar.
     # Redirige al cliente al club para canjear con puntos.
     if getattr(producto, "solo_canje", False):
+        loyalty_terms = get_loyalty_terms()
         return _err(
-            "«{}» sólo se obtiene canjeando puntos. Ve al Club de puntos.".format(producto.nombre),
+            "«{}» sólo se obtiene canjeando {}. Ve a {}.".format(
+                producto.nombre, loyalty_terms["plural"], loyalty_terms["name"]
+            ),
             "info",
         )
     origen_solicitado = _normalizar_origen(request.form.get("origen"))
@@ -1369,7 +1373,7 @@ def quitar_puntos_carrito():
 @public_bp.route("/carrito/set-producto-canje", methods=["POST"])
 def set_producto_canje():
     if not _feature_enabled("puntos"):
-        return jsonify({"ok": False, "msg": "El club de puntos no está habilitado"}), 403
+        return jsonify({"ok": False, "msg": f'{get_loyalty_terms()["name"]} no está habilitado'}), 403
     data = request.get_json(silent=True) or {}
     prod_id = data.get("producto_id")
     if prod_id:
@@ -1395,7 +1399,7 @@ def set_producto_canje():
         if cart_puntos.get("cliente_id") and cart_puntos.get("origen") == origen:
             puntos_disponibles = int(cart_puntos.get("puntos_totales") or 0)
         if int(producto.puntos_para_canje or 0) > puntos_disponibles:
-            return jsonify({"ok": False, "msg": "No tienes puntos suficientes para este producto"}), 400
+            return jsonify({"ok": False, "msg": f'No tienes suficientes {get_loyalty_terms()["plural"]} para este producto'}), 400
         session["cart_producto_canje_id"] = prod_id
     else:
         session.pop("cart_producto_canje_id", None)
@@ -1426,7 +1430,7 @@ def consultar_saldo_puntos():
     canal de mensajería está caído, para que el usuario reintente más tarde
     en vez de creer que llegará y no llegue nunca."""
     if not _feature_enabled("puntos"):
-        return _json_no_store({"ok": False, "msg": "El club de puntos no está habilitado"}, 403)
+        return _json_no_store({"ok": False, "msg": f'{get_loyalty_terms()["name"]} no está habilitado'}, 403)
     from loyalty_service import messaging_service_available
     if not messaging_service_available():
         return _json_no_store({
@@ -1444,7 +1448,7 @@ def consultar_saldo_puntos():
     return _json_no_store({
         "ok": True,
         "service_available": True,
-        "msg": "Si el número tiene puntos, recibirá el saldo por WhatsApp.",
+        "msg": f'Si el número tiene {get_loyalty_terms()["plural"]}, recibirá el saldo por WhatsApp.',
     })
 
 
@@ -1591,7 +1595,7 @@ def quitar_afiliado_sesion():
 def solicitar_codigo_puntos():
     """Envía un código al WhatsApp que identifica al cliente."""
     if not _feature_enabled("puntos"):
-        return jsonify({"ok": False, "msg": "El club de puntos no está habilitado"}), 403
+        return jsonify({"ok": False, "msg": f'{get_loyalty_terms()["name"]} no está habilitado'}), 403
     data = request.get_json(silent=True) or {}
     telefono = data.get("telefono", "").strip()
     if not telefono:
@@ -1613,7 +1617,7 @@ def solicitar_codigo_puntos():
 def verificar_codigo_puntos():
     """Verifica el código de puntos."""
     if not _feature_enabled("puntos"):
-        return jsonify({"ok": False, "msg": "El club de puntos no está habilitado"}), 403
+        return jsonify({"ok": False, "msg": f'{get_loyalty_terms()["name"]} no está habilitado'}), 403
     msg_invalido = "No se pudo verificar el código. Revisa el WhatsApp y el código recibido."
     data = request.get_json(silent=True) or {}
     telefono = data.get("telefono", "").strip()
@@ -1669,7 +1673,7 @@ def verificar_codigo_puntos():
         puntos_producto = int(producto_canje.puntos_para_canje or 0)
         if puntos_producto <= 0 or puntos_producto > int(cliente.puntos or 0):
             db.session.rollback()
-            return jsonify({"ok": False, "msg": "No tienes puntos suficientes para este producto"})
+            return jsonify({"ok": False, "msg": f'No tienes suficientes {get_loyalty_terms()["plural"]} para este producto'})
 
     # Mismo lock, mismo OTP: la segunda verificación lo consume de forma
     # atómica una vez que todo el contexto resultó válido.
@@ -2091,12 +2095,12 @@ def checkout():
         producto_canje = db.session.get(Product, producto_canje_id) if producto_canje_id else None
         if producto_canje_id:
             if not puntos_habilitados:
-                flash("El club de puntos no está habilitado en esta tienda.", "danger")
+                flash(f'{get_loyalty_terms()["name"]} no está habilitado en esta tienda.', "danger")
                 return redirect(url_for("public.checkout"))
             if (not cart_puntos or cart_puntos.get("cliente_id") != cliente.id
                     or not cart_puntos.get("verificado")
                     or cart_puntos.get("origen") != origen):
-                flash("Verifica tu WhatsApp antes de canjear productos con puntos.", "danger")
+                flash(f'Verifica tu WhatsApp antes de canjear productos con {get_loyalty_terms()["plural"]}.', "danger")
                 return redirect(url_for("public.checkout"))
             if (
                 not producto_canje
@@ -2106,7 +2110,7 @@ def checkout():
                 return redirect(url_for("public.checkout"))
             puntos_producto = int(producto_canje.puntos_para_canje or 0)
             if puntos_producto > int(cliente.puntos or 0):
-                flash("No tienes suficientes puntos para canjear este producto.", "danger")
+                flash(f'No tienes suficientes {get_loyalty_terms()["plural"]} para canjear este producto.', "danger")
                 return redirect(url_for("public.checkout"))
             compat_canje = _cart_compatibility(cart_productos + [producto_canje])
             if not compat_canje["ok"]:
@@ -2440,7 +2444,7 @@ def pedido_confirmado(pedido_id):
 @public_bp.route("/club")
 def club():
     if not _feature_enabled("puntos"):
-        flash("El club de puntos no está habilitado en esta tienda.", "info")
+        flash(f'{get_loyalty_terms()["name"]} no está habilitado en esta tienda.', "info")
         return redirect(url_for("public.index"))
     # Vitrina de canje: productos solo_canje visibles en el catálogo,
     # ordenados por puntos ascendentes para mostrar primero lo más accesible.

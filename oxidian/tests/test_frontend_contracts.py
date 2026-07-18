@@ -285,6 +285,25 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn(".cr-memory-note", cart_css)
         self.assertIn("overflow-wrap: anywhere", cart_css)
 
+    def test_heritage_design_system_reuses_svg_icons_and_configurable_loyalty_copy(self):
+        base = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
+        sprite = (ROOT / "templates" / "partials" / "heritage_sprite.html").read_text(encoding="utf-8")
+        heritage = (ROOT / "static" / "css" / "heritage.css").read_text(encoding="utf-8")
+        club = (ROOT / "templates" / "public" / "club.html").read_text(encoding="utf-8")
+        checkout = (ROOT / "templates" / "public" / "checkout.html").read_text(encoding="utf-8")
+        points = (ROOT / "templates" / "public" / "puntos_consulta.html").read_text(encoding="utf-8")
+
+        self.assertIn("css/heritage.css", base)
+        self.assertIn("heritage_sprite.html", base)
+        for symbol in ("sombrero", "cafecito", "canasto", "mariposa", "casita"):
+            self.assertIn(f'id="ox-hi-{symbol}"', sprite)
+        self.assertIn(".ep-hero-heritage-seal", heritage)
+        self.assertIn(".ox-modal__heritage", heritage)
+        self.assertIn(".ox-toast-v2::after", heritage)
+        for template in (club, checkout, points):
+            self.assertIn("ui.loyalty_unit_plural", template)
+            self.assertNotIn("⭐", template)
+
     def test_admin_orders_are_paginated_without_per_card_workload_queries(self):
         route = (ROOT / "routes" / "admin.py").read_text(encoding="utf-8")
         template = (ROOT / "templates" / "admin" / "pedidos.html").read_text(encoding="utf-8")

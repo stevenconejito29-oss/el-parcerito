@@ -28,7 +28,7 @@ from models import (
     StaffPayment,
     User,
 )
-from store_config import get_store_features
+from store_config import get_loyalty_terms, get_store_features
 
 logger = logging.getLogger(__name__)
 
@@ -2848,8 +2848,9 @@ def mensaje_estado_pedido(pedido: Order) -> str:
         and get_store_features()["puntos"]
         and int(pedido.puntos_ganados or 0) > 0
     ):
+        loyalty_terms = get_loyalty_terms()
         base += (
-            f"\nTu compra sumó *{int(pedido.puntos_ganados)} puntos* 🌟 "
+            f'\nTu compra sumó *{int(pedido.puntos_ganados)} {loyalty_terms["plural"]}* ☕ '
             "para tu próximo canje."
         )
     # Verificación pasiva antifraude: cuando el pedido acaba de crearse y

@@ -22,6 +22,11 @@ from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 
+def _loyalty_terms() -> dict[str, str]:
+    from store_config import get_loyalty_terms
+    return get_loyalty_terms()
+
+
 def _to_int(value, default: int = 0) -> int:
     """Coerción defensiva a int para campos que pueden venir como str/Decimal/None
     desde ORM, formularios o payloads externos. Devuelve `default` ante fallo."""
@@ -78,17 +83,18 @@ def solicitar_codigo(
     # Serializa emisión/reenvío para que dos solicitudes concurrentes no
     # creen códigos distintos ni eludan el throttle usando la misma cuenta.
     cliente = bloquear_cliente_puntos(cliente)
+    terms = _loyalty_terms()
 
     if cliente.puntos <= 0 and not permitir_sin_puntos:
-        return {"ok": False, "msg": "No tienes puntos disponibles", "puntos": 0}
+        return {"ok": False, "msg": f'No tienes {terms["plural"]} disponibles', "puntos": 0}
 
     if producto is not None:
         if not producto.canje_directo_disponible():
-            return {"ok": False, "msg": "Este producto no admite canje de puntos"}
+            return {"ok": False, "msg": f'Este producto no admite canje con {terms["plural"]}'}
         if producto.puntos_para_canje > cliente.puntos:
             return {
                 "ok": False,
-                "msg": f"Puntos insuficientes. Necesitas {producto.puntos_para_canje}, tienes {cliente.puntos}",
+                "msg": f'{terms["plural"].capitalize()} insuficientes. Necesitas {producto.puntos_para_canje}, tienes {cliente.puntos}',
             }
 
     if not cliente.telefono:
@@ -125,11 +131,11 @@ def solicitar_codigo(
     producto_txt = (
         producto.nombre
         if producto
-        else (f"{cliente.puntos} puntos" if cliente.puntos > 0 else "confirmar tu identidad")
+        else (f'{cliente.puntos} {terms["plural"]}' if cliente.puntos > 0 else "confirmar tu identidad")
     )
     mensaje = (
         f"🔐 *Código de verificación — {nombre_negocio}*\n\n"
-        f"Tu código para canjear puntos por *{producto_txt}* es:\n\n"
+        f'Tu código para canjear {terms["plural"]} por *{producto_txt}* es:\n\n'
         f"*{codigo}*\n\n"
         f"⏰ Válido 10 minutos. No lo compartas."
     )
@@ -354,9 +360,10 @@ def enviar_saldo_puntos(cliente, commit: bool = True) -> bool:
     puntos = max(0, int(cliente.puntos or 0))
     valor = puntos / ratio
     nombre_negocio = SiteConfig.get("NOMBRE_NEGOCIO", "Oxidian")
+    terms = _loyalty_terms()
     mensaje = (
-        f"⭐ *Tus puntos en {nombre_negocio}*\n\n"
-        f"Tienes *{puntos} puntos* disponibles.\n"
+        f'☕ *Tus {terms["plural"]} en {nombre_negocio}*\n\n'
+        f'Tienes *{puntos} {terms["plural"]}* disponibles.\n'
         f"Equivalen hasta a *€{valor:.2f}* de descuento.\n\n"
         "Para canjearlos, arma tu pedido en la web y verifica este mismo WhatsApp "
         "durante la confirmación."

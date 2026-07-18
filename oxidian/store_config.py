@@ -42,6 +42,11 @@ PUBLIC_UI_DEFAULTS = {
     "UI_HEADER_CART_LABEL": "Tu pedido",
     "UI_HEADER_CART_ACTION": "Ver carrito",
     "UI_HEADER_STAFF": "Empleados",
+    "UI_HEADER_MEMORY_LINE": "Sabor colombiano, cerquita de ti",
+    "UI_HERO_EYEBROW": "De nuestra tierrita para tu mesa",
+    "UI_HERO_TITLE": "Sabores que te llevan de vuelta a casa",
+    "UI_HERO_SUBTITLE": "Recetas con memoria, antojos de barrio y ese cariño colombiano que no conoce distancias.",
+    "UI_HERO_SIGNATURE": "Tradición que viaja contigo",
     "UI_MENU_MEMORY_EYEBROW": "Sabores con memoria",
     "UI_MENU_MEMORY_TITLE": "Un pedacito de Colombia, cerquita de ti",
     "UI_MENU_MEMORY_TEXT": "Antojos que recuerdan la casa, los domingos en familia y esa tierrita que siempre llevamos con nosotros.",
@@ -86,6 +91,11 @@ PUBLIC_UI_DEFAULTS = {
     "UI_CART_VIEW_MENU": "Ver menú completo",
     "UI_CART_MEMORY_NOTE": "Tu pedido lleva un pedacito de casa. Revísalo con calma y nosotros ponemos el cariño.",
     "UI_FOOTER_HERITAGE": "Hecho con sabor colombiano, para sentirnos cerquita de casa.",
+    "UI_LOYALTY_NAME": "Club de Cafecitos",
+    "UI_LOYALTY_NAV_LABEL": "Cafecitos",
+    "UI_LOYALTY_UNIT": "cafecito",
+    "UI_LOYALTY_UNIT_PLURAL": "cafecitos",
+    "UI_LOYALTY_TAGLINE": "Cada pedido suma un recuerdo y te acerca a tu próximo antojo.",
     "UI_PWA_DESCRIPTION": "Añade la tienda a tu pantalla de inicio para acceder sin abrir el navegador.",
     "UI_PWA_IOS_INSTRUCTION": "En Safari, toca Compartir y luego Añadir a pantalla de inicio.",
     "UI_PWA_INSTALL": "Instalar",
@@ -157,6 +167,18 @@ def get_store_value(key: str, default: str | None = None) -> str:
     fallback = STORE_DEFAULTS.get(key, "") if default is None else default
     env_value = os.environ.get(key, fallback)
     return SiteConfig.get(key, env_value) or fallback
+
+
+def get_loyalty_terms() -> dict[str, str]:
+    """Vocabulario público del programa sin cambiar su modelo técnico.
+
+    Las columnas y contratos internos siguen llamándose `puntos`; solo los
+    mensajes dirigidos al cliente usan estas etiquetas configurables.
+    """
+    singular = str(get_store_value("UI_LOYALTY_UNIT", "cafecito") or "cafecito").strip()
+    plural = str(get_store_value("UI_LOYALTY_UNIT_PLURAL", "cafecitos") or "cafecitos").strip()
+    name = str(get_store_value("UI_LOYALTY_NAME", "Club de Cafecitos") or "Club de Cafecitos").strip()
+    return {"name": name, "singular": singular, "plural": plural}
 
 
 def _absolute_http_url(value: str | None) -> str:

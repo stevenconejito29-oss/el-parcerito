@@ -1,7 +1,12 @@
 import unittest
 from unittest.mock import patch
 
-from store_config import get_public_store_url, get_service_commission, get_store_profile
+from store_config import (
+    get_loyalty_terms,
+    get_public_store_url,
+    get_service_commission,
+    get_store_profile,
+)
 
 
 class StoreConfigTest(unittest.TestCase):
@@ -28,6 +33,8 @@ class StoreConfigTest(unittest.TestCase):
         self.assertIn("menu_catalog_title", profile["ui"])
         self.assertIn("cart_memory_note", profile["ui"])
         self.assertIn("footer_heritage", profile["ui"])
+        self.assertIn("hero_title", profile["ui"])
+        self.assertIn("loyalty_unit_plural", profile["ui"])
 
     def test_public_theme_and_copy_are_read_from_site_config(self):
         values = {
@@ -46,6 +53,21 @@ class StoreConfigTest(unittest.TestCase):
             profile["ui"]["pwa_inapp_instruction"],
             "Abre la tienda en tu navegador principal.",
         )
+
+    def test_loyalty_terms_are_customer_facing_and_configurable(self):
+        values = {
+            "UI_LOYALTY_NAME": "Círculo del Cafetal",
+            "UI_LOYALTY_UNIT": "grano",
+            "UI_LOYALTY_UNIT_PLURAL": "granos",
+        }
+        with patch("models.SiteConfig.get", side_effect=lambda key, default="": values.get(key, default)):
+            terms = get_loyalty_terms()
+
+        self.assertEqual(terms, {
+            "name": "Círculo del Cafetal",
+            "singular": "grano",
+            "plural": "granos",
+        })
 
     def test_service_commission_only_applies_in_service_mode(self):
         values = {

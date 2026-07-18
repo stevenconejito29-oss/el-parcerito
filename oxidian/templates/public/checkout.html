@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'partials/heritage_icons.html' import heritage_icon %}
 {% block title %}Confirmar Pedido — {{ brand.nombre }}{% endblock %}
 {% block content %}
 <div class="checkout-head flex items-center gap-3 mb-5">
@@ -281,23 +282,23 @@
   </div>
 
   {% if puntos_habilitados %}
-  <!-- ⑥ PUNTOS: único lugar de verificación y canje durante la compra. -->
+  <!-- ⑥ FIDELIDAD: único lugar de verificación y canje durante la compra. -->
   <div class="ox-card p-4 checkout-step checkout-rewards-card" id="puntos-section">
     <h2 class="text-sm font-extrabold mb-1 flex items-center gap-2">
-      <span class="text-base">⭐</span>
+      <span class="text-base checkout-loyalty-icon">{{ heritage_icon('cafecito') }}</span>
       Canjear una recompensa <span class="checkout-optional">Opcional</span>
     </h2>
     <p class="text-xs mb-3" style="color:var(--col-muted)">
-      Este pedido acumulará puntos. Abre esta opción solo si quieres añadir un producto gratis; la consulta de saldo permanece en Club.
+      Este pedido sumará {{ ui.loyalty_unit_plural }}. Abre esta opción solo si quieres añadir un producto de regalo; el saldo permanece en {{ ui.loyalty_name }}.
     </p>
     <button type="button" class="checkout-rewards-toggle" data-rewards-toggle aria-expanded="{{ 'true' if checkout_canje else 'false' }}">
-      <span aria-hidden="true">{{ '🎁' if checkout_canje else '⭐' }}</span>
-      <span><strong id="reward-toggle-title">{% if checkout_canje %}{{ checkout_canje.nombre }} seleccionado{% else %}Quiero usar mis puntos{% endif %}</strong><small id="reward-toggle-subtitle">{% if checkout_canje %}Puedes cambiarlo o quitarlo antes de confirmar{% else %}Verificar por WhatsApp y elegir recompensa{% endif %}</small></span>
+      <span aria-hidden="true">{{ heritage_icon('canasto' if checkout_canje else 'cafecito') }}</span>
+      <span><strong id="reward-toggle-title">{% if checkout_canje %}{{ checkout_canje.nombre }} seleccionado{% else %}Quiero usar mis {{ ui.loyalty_unit_plural }}{% endif %}</strong><small id="reward-toggle-subtitle">{% if checkout_canje %}Puedes cambiarlo o quitarlo antes de confirmar{% else %}Verificar por WhatsApp y elegir recompensa{% endif %}</small></span>
       <span class="checkout-rewards-chevron" aria-hidden="true">⌄</span>
     </button>
     <div class="checkout-rewards-flow" id="rewards-flow" {% if not checkout_canje %}hidden{% endif %}>
       <div id="reward-request-step" {% if puntos_sesion and puntos_sesion.get('verificado') %}hidden{% endif %}>
-        <p class="checkout-reward-help">Enviaremos un código al número escrito arriba para proteger tus puntos.</p>
+        <p class="checkout-reward-help">Enviaremos un código al número escrito arriba para proteger tus {{ ui.loyalty_unit_plural }}.</p>
         <button type="button" class="ox-btn-ghost" data-reward-request>Enviar código por WhatsApp</button>
         <p class="checkout-reward-message" id="reward-request-message" role="status"></p>
       </div>
@@ -311,12 +312,12 @@
         <p class="checkout-reward-message" id="reward-code-message" role="status"></p>
       </div>
       <div id="reward-picker" {% if not (puntos_sesion and puntos_sesion.get('verificado')) %}hidden{% endif %}>
-        <div class="checkout-reward-balance"><strong id="reward-balance">{{ puntos_sesion.get('puntos_totales', 0) if puntos_sesion else 0 }}</strong><span>puntos disponibles</span></div>
+        <div class="checkout-reward-balance"><strong id="reward-balance">{{ puntos_sesion.get('puntos_totales', 0) if puntos_sesion else 0 }}</strong><span>{{ ui.loyalty_unit_plural }} disponibles</span></div>
         <div class="checkout-reward-grid" id="reward-options">
           {% for prod in canjeables %}
           <button type="button" class="checkout-reward-option {{ 'is-selected' if producto_canje_seleccionado == prod.id }}"
                   data-reward-id="{{ prod.id }}" data-reward-name="{{ prod.nombre }}" data-reward-points="{{ prod.puntos_para_canje }}">
-            <span aria-hidden="true">🎁</span><span><strong>{{ prod.nombre }}</strong><small>{{ prod.puntos_para_canje }} puntos</small></span><b>{{ 'Elegido' if producto_canje_seleccionado == prod.id else 'Elegir' }}</b>
+            <span aria-hidden="true">{{ heritage_icon('canasto') }}</span><span><strong>{{ prod.nombre }}</strong><small>{{ prod.puntos_para_canje }} {{ ui.loyalty_unit_plural }}</small></span><b>{{ 'Elegido' if producto_canje_seleccionado == prod.id else 'Elegir' }}</b>
           </button>
           {% else %}
           <p class="checkout-reward-empty">Aún no hay recompensas disponibles con este saldo.</p>
@@ -737,7 +738,7 @@ function renderRewardOptions(rewards) {
     const name = document.createElement('strong');
     name.textContent = reward.nombre;
     const points = document.createElement('small');
-    points.textContent = `${reward.puntos} puntos`;
+    points.textContent = `${reward.puntos} ${OX_UI.loyalty_unit_plural || 'cafecitos'}`;
     copy.append(name, points);
     const action = document.createElement('b');
     action.textContent = Number(reward.id) === selectedId ? 'Elegido' : 'Elegir';
@@ -843,7 +844,7 @@ async function removeReward(clearVerification = false) {
   });
   const remove = document.querySelector('[data-reward-remove]');
   if (remove) remove.hidden = true;
-  document.getElementById('reward-toggle-title').textContent = 'Quiero usar mis puntos';
+  document.getElementById('reward-toggle-title').textContent = `Quiero usar mis ${OX_UI.loyalty_unit_plural || 'cafecitos'}`;
   document.getElementById('reward-toggle-subtitle').textContent = 'Verificar por WhatsApp y elegir recompensa';
   if (clearVerification) {
     document.getElementById('reward-picker')?.setAttribute('hidden', '');
@@ -876,7 +877,7 @@ function buscarClientePorTelefono(tel) {
       const d = await r.json();
       if (st) {
         if (d.ok) {
-          st.textContent = '✓ Usaremos este WhatsApp para identificar tus puntos y avisarte del pedido.';
+          st.textContent = `✓ Usaremos este WhatsApp para identificar tus ${OX_UI.loyalty_unit_plural || 'cafecitos'} y avisarte del pedido.`;
           st.style.color = 'var(--theme-success)';
           st.classList.remove('hidden');
         }

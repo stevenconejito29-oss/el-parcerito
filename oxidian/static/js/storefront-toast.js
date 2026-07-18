@@ -28,12 +28,23 @@
   }
 
   var ICONS = {
-    success: '✓',
-    danger: '⚠',
-    error: '⚠',
-    warning: '!',
-    info: 'i'
+    success: 'mariposa',
+    danger: 'alerta',
+    error: 'alerta',
+    warning: 'alerta',
+    info: 'cafecito'
   };
+
+  function heritageIcon(name) {
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'ox-heritage-icon');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    var use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#ox-hi-' + name);
+    svg.appendChild(use);
+    return svg;
+  }
 
   function show(msg, type, ttl) {
     if (!msg) return;
@@ -45,7 +56,7 @@
     el.setAttribute('role', 'status');
     var icon = document.createElement('span');
     icon.className = 'ox-toast-v2__icon';
-    icon.textContent = ICONS[type] || ICONS.info;
+    icon.appendChild(heritageIcon(ICONS[type] || ICONS.info));
     var text = document.createElement('span');
     text.className = 'ox-toast-v2__text';
     text.textContent = String(msg);
@@ -95,6 +106,7 @@
       backdrop.setAttribute('aria-modal', 'true');
       backdrop.innerHTML =
         '<div class="ox-modal" role="document">' +
+        '<div class="ox-modal__heritage" aria-hidden="true"><svg class="ox-heritage-icon" viewBox="0 0 24 24"><use href="#ox-hi-sombrero"></use></svg></div>' +
         '<h3 class="ox-modal__title"></h3>' +
         '<div class="ox-modal__body"></div>' +
         '<div class="ox-modal__actions">' +

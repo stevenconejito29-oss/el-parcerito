@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% from 'partials/heritage_icons.html' import heritage_icon %}
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -201,9 +202,11 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
   {# Cargado AL FINAL para ganar prioridad de cascada sobre todas las hojas anteriores #}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/header-modern.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/heritage.css', v=asset_version) }}">
 </head>
 <body class="ox-body ox-body-public ox-has-bottom-nav min-h-screen"
       style="--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-accent:{{ brand.color_acento }};--brand-on-primary:{{ brand.on_primario }};--brand-on-accent:{{ brand.on_acento }};--col-gold:{{ brand.color_primario }};--theme-bg:{{ brand.theme.fondo_app }};--theme-surface:{{ brand.theme.superficie }};--theme-surface-alt:{{ brand.theme.superficie_alt }};--theme-text:{{ brand.theme.texto }};--theme-muted:{{ brand.theme.texto_suave }};--theme-header-bg:{{ brand.theme.cabecera_fondo }};--theme-header-text:{{ brand.theme.cabecera_texto }};--theme-success:{{ brand.theme.exito }};--theme-danger:{{ brand.theme.alerta }};">
+{% include 'partials/heritage_sprite.html' %}
 
 {# ── HEADER PÚBLICO ── #}
 <header class="ox-header-public">
@@ -227,7 +230,7 @@
           </span>
         </span>
         <span class="ox-public-brand">{{ brand.nombre }}</span>
-        <span class="ox-public-address">{{ brand.slogan or brand.direccion or brand.ciudad }}</span>
+        <span class="ox-public-address">{{ ui.header_memory_line or brand.slogan or brand.direccion or brand.ciudad }}</span>
       </span>
     </a>
     <nav class="ox-public-actions" aria-label="Acciones rápidas">
@@ -248,12 +251,10 @@
       {% if brand.puntos %}
       <a href="{{ url_for('public.club') }}"
          class="ox-header-info hidden md:inline-flex"
-         aria-label="Mis puntos y recompensas"
-         title="Mis puntos y recompensas">
-        <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
-          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77 5.82 21.02 7 14.14 2 9.27l6.91-1.01L12 2z"/>
-        </svg>
-        <span>Puntos</span>
+         aria-label="{{ ui.loyalty_name }}"
+         title="{{ ui.loyalty_name }}">
+        {{ heritage_icon('cafecito') }}
+        <span>{{ ui.loyalty_name }}</span>
       </a>
       {% endif %}
       <a href="{{ url_for('public.ver_carrito') }}"
@@ -348,7 +349,7 @@
         <ul class="ep-footer-links">
           <li><a href="{{ url_for('public.index') }}">{% if brand.es_comida %}🍽️ Menú completo{% else %}🛍️ Catálogo completo{% endif %}</a></li>
           <li><a href="{{ url_for('public.ver_carrito') }}">🛒 Mi carrito</a></li>
-          {% if brand.puntos %}<li><a href="{{ url_for('public.club') }}">⭐ Programa de puntos</a></li>{% endif %}
+          {% if brand.puntos %}<li><a href="{{ url_for('public.club') }}">{{ heritage_icon('cafecito') }} {{ ui.loyalty_name }}</a></li>{% endif %}
         </ul>
       </div>
 
@@ -360,7 +361,7 @@
           <span>💬</span> Escríbenos por WhatsApp
         </a>
         {% endif %}
-        <p class="ep-footer-note">Seguimiento de pedidos{% if brand.puntos %}, consulta de puntos{% endif %} y atención en tiempo real.</p>
+        <p class="ep-footer-note">Seguimiento de pedidos{% if brand.puntos %}, consulta de {{ ui.loyalty_unit_plural }}{% endif %} y atención en tiempo real.</p>
         <p class="ep-footer-legal">{% if brand.es_comida %}Información sobre alérgenos disponible bajo solicitud.<br>{% endif %}RGPD · LSSI-CE · RDL 1/2007</p>
       </div>
 
@@ -458,9 +459,9 @@
           <span><strong>Estado de mi pedido</strong><small>Consulta con tu número de pedido</small></span>
           <span class="ox-wa-arrow">›</span>
         </a>
-        {% if brand.puntos %}<a href="{{ url_for('public.whatsapp', text='Hola, quiero consultar mis puntos y recompensas.') }}" target="_blank" rel="noopener">
-          <span class="ox-wa-action-icon">★</span>
-          <span><strong>Mis puntos</strong><small>Saldo y productos para canje</small></span>
+        {% if brand.puntos %}<a href="{{ url_for('public.whatsapp', text='Hola, quiero consultar mis ' ~ ui.loyalty_unit_plural ~ ' y recompensas.') }}" target="_blank" rel="noopener">
+          <span class="ox-wa-action-icon">{{ heritage_icon('cafecito') }}</span>
+          <span><strong>{{ ui.loyalty_name }}</strong><small>Saldo y productos para canje</small></span>
           <span class="ox-wa-arrow">›</span>
         </a>{% endif %}
         {% if brand.delivery %}<a href="{{ url_for('public.whatsapp', text='Hola, quiero saber zonas de cobertura, precio de envío y horarios.') }}" target="_blank" rel="noopener">
@@ -480,7 +481,7 @@
       <div class="ox-info-links">
         <a href="{{ url_for('public.index') }}" data-info-close>🍽️ Ver menú</a>
         <a href="{{ url_for('public.ver_carrito') }}" data-info-close>🛒 Mi carrito</a>
-        {% if brand.puntos %}<a href="{{ url_for('public.club') }}" data-info-close>⭐ Mis puntos</a>{% endif %}
+        {% if brand.puntos %}<a href="{{ url_for('public.club') }}" data-info-close>{{ heritage_icon('cafecito') }} {{ ui.loyalty_name }}</a>{% endif %}
       </div>
       <div class="ox-app-tools">
         <div><strong>{{ ui.pwa_app_section }}</strong><small>{{ ui.pwa_app_section_text }}</small></div>
@@ -501,7 +502,7 @@
      data-bnav="home"
      aria-label="{{ 'Volver al menú' if brand.es_comida else 'Volver al catálogo' }}">
     <span class="ox-bnav-svg" aria-hidden="true">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10M9 20v-6h6v6"/><path d="M8 9h8M10 7h4"/></svg>
+      {{ heritage_icon('casita') }}
     </span>
     <span class="ox-bnav-label">{{ 'Menú' if brand.es_comida else 'Catálogo' }}</span>
     <span class="ox-bnav-glow" aria-hidden="true"></span>
@@ -512,7 +513,7 @@
      data-bnav="search"
      aria-label="{{ ui.nav_search }} — abre el buscador">
     <span class="ox-bnav-svg" aria-hidden="true">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/><path d="M8.5 13.5c3 .2 5-1.8 5-5-3-.2-5 1.8-5 5Z"/><path d="m9.2 12.8 3.5-3.5"/></svg>
+      {{ heritage_icon('buscar') }}
     </span>
     <span class="ox-bnav-label">{{ ui.nav_search }}</span>
     <span class="ox-bnav-glow" aria-hidden="true"></span>
@@ -523,9 +524,9 @@
      class="ox-bnav-item {{ 'is-active' if request.endpoint == 'public.club' else '' }}"
      data-bnav="puntos">
     <span class="ox-bnav-svg" aria-hidden="true">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      {{ heritage_icon('cafecito') }}
     </span>
-    <span class="ox-bnav-label">Puntos</span>
+    <span class="ox-bnav-label">{{ ui.loyalty_nav_label }}</span>
     <span class="ox-bnav-glow" aria-hidden="true"></span>
   </a>
   {% else %}
@@ -543,7 +544,7 @@
      class="ox-bnav-item ox-bnav-cart {{ 'is-active' if request.endpoint == 'public.ver_carrito' else '' }}"
      data-bnav="cart">
     <span class="ox-bnav-svg" aria-hidden="true">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h16l-1.5 10h-13L4 10Z"/><path d="M8 10c0-4 8-4 8 0M7 14h10M8 17h8M10 11l-1 9m5-9 1 9"/></svg>
+      {{ heritage_icon('canasto') }}
       {% set n = session.get('carrito', {})|length %}
       {% if n > 0 %}<span class="ox-bnav-badge" data-bnav-badge>{{ n }}</span>{% endif %}
     </span>

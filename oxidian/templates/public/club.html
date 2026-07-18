@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Club de Fidelidad — {{ brand.nombre }}{% endblock %}
+{% from 'partials/heritage_icons.html' import heritage_icon %}
+{% block title %}{{ ui.loyalty_name }} — {{ brand.nombre }}{% endblock %}
 {% block content %}
 
 <div class="club-wrap">
@@ -7,18 +8,20 @@
   {# ── TARJETA SALDO ── #}
   <div class="club-hero">
     <div class="club-hero-bg"></div>
+    <div class="club-hero-hat" aria-hidden="true">{{ heritage_icon('sombrero') }}</div>
     <div class="club-hero-inner">
-      <div class="club-hero-icon">⭐</div>
+      <div class="club-hero-icon">{{ heritage_icon('cafecito') }}</div>
       <div>
-        <p class="club-hero-label">Mis puntos</p>
+        <p class="club-hero-label">{{ ui.loyalty_name }}</p>
         <p class="club-hero-pts">{{ puntos }}</p>
-        <p class="club-hero-val">≈ €{{ "%.2f"|format(valor_euros) }} de descuento</p>
+        <p class="club-hero-val">{{ ui.loyalty_unit_plural }} · ≈ €{{ "%.2f"|format(valor_euros) }} de descuento</p>
+        <p class="club-hero-tagline">{{ ui.loyalty_tagline }}</p>
       </div>
     </div>
     <div class="club-hero-stats">
       <div class="club-stat">
         <span class="club-stat-v">{{ ratio }}</span>
-        <span class="club-stat-l">pts = €1</span>
+        <span class="club-stat-l">{{ ui.loyalty_unit_plural }} = €1</span>
       </div>
       <div class="club-stat-sep"></div>
       <div class="club-stat">
@@ -33,29 +36,29 @@
     </div>
   </div>
 
-  {# ── CÓMO GANAR PUNTOS ── #}
+  {# ── CÓMO GANAR RECOMPENSAS ── #}
   <div class="ox-card p-4 mb-4">
-    <h2 class="club-section-title">¿Cómo ganar puntos?</h2>
+    <h2 class="club-section-title">¿Cómo sumar {{ ui.loyalty_unit_plural }}?</h2>
     <div class="club-how-grid">
       <div class="club-how-item">
-        <span class="club-how-icon">🛍️</span>
+        <span class="club-how-icon">{{ heritage_icon('canasto') }}</span>
         <div>
           <p class="club-how-title">Haz pedidos</p>
-          <p class="club-how-desc">Gana puntos automáticamente en cada compra completada.</p>
+          <p class="club-how-desc">Sumas {{ ui.loyalty_unit_plural }} automáticamente en cada compra completada.</p>
         </div>
       </div>
       <div class="club-how-item">
-        <span class="club-how-icon">⭐</span>
+        <span class="club-how-icon">{{ heritage_icon('mariposa') }}</span>
         <div>
           <p class="club-how-title">Deja reseñas</p>
-          <p class="club-how-desc">Puntúa tus pedidos entregados y acumula puntos extra.</p>
+          <p class="club-how-desc">Comparte tu experiencia y suma {{ ui.loyalty_unit_plural }} extra.</p>
         </div>
       </div>
       <div class="club-how-item">
-        <span class="club-how-icon">🎁</span>
+        <span class="club-how-icon">{{ heritage_icon('canasto') }}</span>
         <div>
           <p class="club-how-title">Canjea productos</p>
-          <p class="club-how-desc">Usa tus puntos en el carrito para obtener productos gratis.</p>
+          <p class="club-how-desc">Usa tus {{ ui.loyalty_unit_plural }} en el carrito para llevarte productos.</p>
         </div>
       </div>
     </div>
@@ -78,8 +81,8 @@
         <div class="club-progress-bar">
           <div class="club-progress-fill" style="width:{{ [pct,100]|min }}%"></div>
         </div>
-        <p class="club-next-meta">{{ puntos }} / {{ proximo.puntos_para_canje }} pts
-          <span style="color:var(--col-muted)">— faltan {{ falta }} puntos</span>
+        <p class="club-next-meta">{{ puntos }} / {{ proximo.puntos_para_canje }} {{ ui.loyalty_unit_plural }}
+          <span style="color:var(--col-muted)">— faltan {{ falta }} {{ ui.loyalty_unit_plural }}</span>
         </p>
       </div>
     </div>
@@ -98,27 +101,27 @@
           {% else %}<span>🥟</span>{% endif %}
         </div>
         <p class="club-canje-name">{{ p.nombre }}</p>
-        <span class="club-canje-pts">⭐ {{ p.puntos_para_canje }} pts</span>
+        <span class="club-canje-pts">{{ heritage_icon('cafecito') }} {{ p.puntos_para_canje }} {{ ui.loyalty_unit_plural }}</span>
       </a>
       {% endfor %}
     </div>
-    <p class="text-xs mt-3" style="color:var(--col-muted)">Añade productos al carrito y aplica tus puntos en el checkout.</p>
+    <p class="text-xs mt-3" style="color:var(--col-muted)">Añade productos al carrito y aplica tus {{ ui.loyalty_unit_plural }} al confirmar.</p>
   </div>
   {% elif not proximo %}
   <div class="ox-card p-4 mb-4 text-center">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32"
          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
          stroke-linejoin="round" style="color:var(--col-accent);margin:0 auto .5rem">
-      <polygon points="12 2 15 8.5 22 9.3 17 14 18.2 21 12 17.8 5.8 21 7 14 2 9.3 9 8.5 12 2"/>
+      <use href="#ox-hi-cafecito"/>
     </svg>
-    <p class="font-bold" style="color:var(--col-text)">Sigue acumulando puntos</p>
+    <p class="font-bold" style="color:var(--col-text)">Sigue sumando {{ ui.loyalty_unit_plural }}</p>
     <p class="text-sm mt-1" style="color:var(--col-muted)">Haz más pedidos y canjea productos gratis.</p>
     <a href="{{ url_for('public.index') }}" class="ox-btn-primary inline-flex mt-3">Ver menú</a>
   </div>
   {% endif %}
 
   {# ── HISTORIAL ── #}
-  <h2 class="club-section-title" style="padding:0 .05rem .5rem">Historial de puntos</h2>
+  <h2 class="club-section-title" style="padding:0 .05rem .5rem">Historial de {{ ui.loyalty_unit_plural }}</h2>
   <div class="ox-card overflow-hidden">
     <div class="ox-table-wrap">
     <table class="w-full text-sm">
@@ -126,7 +129,7 @@
         <tr class="border-b" style="border-color:var(--col-border)">
           <th class="text-left p-3 text-xs font-black" style="color:var(--col-muted)">Fecha</th>
           <th class="text-left p-3 text-xs font-black" style="color:var(--col-muted)">Descripción</th>
-          <th class="text-right p-3 text-xs font-black" style="color:var(--col-muted)">Puntos</th>
+          <th class="text-right p-3 text-xs font-black" style="color:var(--col-muted)">{{ ui.loyalty_unit_plural|capitalize }}</th>
         </tr>
       </thead>
       <tbody>

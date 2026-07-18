@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'partials/heritage_icons.html' import heritage_icon %}
 {% block title %}¡Pedido Confirmado! — {{ brand.nombre }}{% endblock %}
 {% block content %}
 
@@ -49,10 +50,10 @@
             </p>
             <p class="text-xs" style="color:var(--col-muted)">× {{ item.cantidad }}</p>
             {% if item.es_canje_puntos %}
-            <p class="order-reward-label">Regalo canjeado · {{ item.reward_metadata.get('puntos', 0) }} puntos</p>
+            <p class="order-reward-label">Regalo canjeado · {{ item.reward_metadata.get('puntos', 0) }} {{ ui.loyalty_unit_plural }}</p>
             {% endif %}
             {% if item.notas %}
-            <p class="text-xs" style="color:#C084FC">{{ item.notas }}</p>
+            <p class="text-xs order-item-note">{{ item.notas }}</p>
             {% endif %}
           </div>
         </div>
@@ -96,12 +97,12 @@
   <div class="ox-card p-4 mb-4 order-points-used">
     <span class="text-3xl">🎁</span>
     <div>
-      <p class="font-black">{{ pedido.puntos_usados }} puntos utilizados</p>
+      <p class="font-black">{{ pedido.puntos_usados }} {{ ui.loyalty_unit_plural }} utilizados</p>
       <p class="text-xs">
         {% if puntos.producto %}
           El producto de canje está incluido y marcado para el equipo.
         {% else %}
-          El descuento por puntos ya fue aplicado al total.
+          La recompensa ya fue aplicada al total.
         {% endif %}
       </p>
     </div>
@@ -153,10 +154,10 @@
 
   {# ── PUNTOS GANADOS ── #}
   {% if brand.puntos and pedido.puntos_ganados and pedido.puntos_ganados > 0 %}
-  <div class="ox-card p-4 mb-4 flex items-center gap-3" style="background:rgba(168,85,247,.07);border:1px solid rgba(168,85,247,.2)">
-    <span class="text-3xl">⭐</span>
+  <div class="ox-card p-4 mb-4 flex items-center gap-3 order-loyalty-card">
+    <span class="text-3xl">{{ heritage_icon('cafecito') }}</span>
     <div>
-      <p class="font-black" style="color:#C084FC">+{{ pedido.puntos_ganados }} puntos al completar el pedido</p>
+      <p class="font-black order-loyalty-earned">+{{ pedido.puntos_ganados }} {{ ui.loyalty_unit_plural }} al completar el pedido</p>
       <p class="text-xs" style="color:var(--col-muted)">Se añadirán a tu saldo cuando el equipo marque el pedido como entregado.</p>
     </div>
   </div>

@@ -25,3 +25,9 @@ Las referencias culturales deben ser detalles de reconocimiento, no obstáculos:
 La navegación usa una casita, un grano de café dentro de la búsqueda y un
 canasto para el carrito. El catálogo combina cordillera, cenefa tejida y una
 firma tricolor discreta en tarjetas; el carrito reutiliza el mismo lenguaje.
+
+Los símbolos se definen una sola vez en
+`templates/partials/heritage_sprite.html`; `heritage.css` controla su forma y
+composición. El programa técnico continúa almacenando puntos, pero la interfaz
+permite darles un nombre propio mediante `UI_LOYALTY_NAME`,
+`UI_LOYALTY_UNIT` y `UI_LOYALTY_UNIT_PLURAL` (por defecto, cafecitos).
