@@ -16,6 +16,41 @@
   vertical-align: -.24em;
 }
 
+/* Papel tapiz decorativo. El SVG solo define las siluetas; el color procede
+ * de los tokens de la tienda y la capa permanece detrás del contenido. */
+body.ox-body-public main {
+  position: relative;
+  isolation: isolate;
+}
+body.ox-body-public main::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  inset-inline: calc(50% - 50vw);
+  pointer-events: none;
+  background: color-mix(in srgb, var(--heritage-coffee) 68%, var(--theme-text));
+  -webkit-mask-image: url("../colombia-pattern.svg");
+  mask-image: url("../colombia-pattern.svg");
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+  -webkit-mask-size: 300px 225px;
+  mask-size: 300px 225px;
+  opacity: .028;
+}
+
+@media (max-width: 560px) {
+  body.ox-body-public main::before {
+    -webkit-mask-size: 250px 188px;
+    mask-size: 250px 188px;
+    opacity: .025;
+  }
+}
+
+@media (prefers-contrast: more) {
+  body.ox-body-public main::before { opacity: .015; }
+}
+
 /* ── Cabecera: una etiqueta de origen, no otra barra decorativa ── */
 body.ox-body-public .ox-public-logo-frame {
   border-radius: 14px 5px 14px 14px;

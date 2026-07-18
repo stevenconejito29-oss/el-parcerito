@@ -29,7 +29,6 @@ class StoreConfigTest(unittest.TestCase):
         self.assertTrue(profile["efectivo_habilitado"])
         self.assertIn("cabecera_fondo", profile["theme"])
         self.assertIn("header_cart_action", profile["ui"])
-        self.assertIn("menu_memory_title", profile["ui"])
         self.assertIn("menu_catalog_title", profile["ui"])
         self.assertIn("cart_memory_note", profile["ui"])
         self.assertIn("footer_heritage", profile["ui"])
@@ -44,14 +43,12 @@ class StoreConfigTest(unittest.TestCase):
             "COLOR_CABECERA_FONDO": "#123456",
             "UI_HEADER_CART_ACTION": "Abrir mi compra",
             "UI_PWA_INAPP_INSTRUCTION": "Abre la tienda en tu navegador principal.",
-            "UI_MENU_MEMORY_TITLE": "Sabor de mi tierra",
         }
         with patch("models.SiteConfig.get", side_effect=lambda key, default="": values.get(key, default)):
             profile = get_store_profile()
 
         self.assertEqual(profile["theme"]["cabecera_fondo"], "#123456")
         self.assertEqual(profile["ui"]["header_cart_action"], "Abrir mi compra")
-        self.assertEqual(profile["ui"]["menu_memory_title"], "Sabor de mi tierra")
         self.assertEqual(
             profile["ui"]["pwa_inapp_instruction"],
             "Abre la tienda en tu navegador principal.",
