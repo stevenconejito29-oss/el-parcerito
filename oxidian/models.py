@@ -664,13 +664,36 @@ class Product(db.Model):
             option.catalog_item_id
             for group in self.extra_groups
             for option in group.opciones
-            if option.catalog_item_id and option.activo
+            if group.tipo == "extra" and option.catalog_item_id and option.activo
         ]
+
+    @property
+    def flavor_catalog_ids(self):
+        return [
+            option.catalog_item_id
+            for group in self.extra_groups
+            for option in group.opciones
+            if group.tipo == "sabor" and option.catalog_item_id and option.activo
+        ]
+
+    @property
+    def flavors_required(self):
+        return bool(self.extra_groups.filter_by(tipo="sabor", activo=True).filter(
+            ProductExtraGroup.min_selecciones > 0
+        ).first())
+
+    @property
+    def has_flavors(self):
+        return bool(self.extra_groups.filter_by(tipo="sabor", activo=True).filter(
+            ProductExtraGroup.opciones.any(ProductExtraOption.activo.is_(True))
+        ).first())
 
     @property
     def extra_catalog_max_selecciones(self):
         for group in self.extra_groups:
-            if group.opciones.filter(ProductExtraOption.catalog_item_id.isnot(None)).first():
+            if group.tipo == "extra" and group.opciones.filter(
+                ProductExtraOption.catalog_item_id.isnot(None)
+            ).first():
                 return int(group.max_selecciones or 1)
         return 1
 
@@ -1921,14 +1944,18 @@ class ComboItem(db.Model):
             return 0.0
 
 
+PRODUCT_OPTION_TYPES = ("extra", "sabor")
+
+
 class ProductExtraGroup(db.Model):
-    """Regla de personalización de un producto (salsas, queso, toppings...)."""
+    """Regla de personalización: suplemento o elección de sabor."""
     __tablename__ = "product_extra_groups"
 
     id = db.Column(db.Integer, primary_key=True)
     producto_id = db.Column(db.Integer, db.ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     nombre = db.Column(db.String(80), nullable=False)
     descripcion = db.Column(db.String(240))
+    tipo = db.Column(db.String(20), nullable=False, default="extra", server_default="extra")
     min_selecciones = db.Column(db.Integer, nullable=False, default=0)
     max_selecciones = db.Column(db.Integer, nullable=False, default=1)
     orden = db.Column(db.Integer, nullable=False, default=0)
@@ -1941,17 +1968,24 @@ class ProductExtraGroup(db.Model):
     __table_args__ = (
         db.CheckConstraint("min_selecciones >= 0", name="ck_extra_group_min"),
         db.CheckConstraint("max_selecciones >= min_selecciones", name="ck_extra_group_range"),
+        db.CheckConstraint("tipo IN ('extra', 'sabor')", name="ck_extra_group_type"),
+        db.CheckConstraint(
+            "tipo != 'sabor' OR (min_selecciones <= 1 AND max_selecciones = 1)",
+            name="ck_flavor_group_single_choice",
+        ),
         db.Index("ix_product_extra_groups_product", "producto_id", "orden"),
+        db.Index("ix_product_extra_groups_type", "producto_id", "tipo", "activo"),
     )
 
 
 class ExtraCatalogItem(db.Model):
-    """Extra reutilizable que el administrador puede asignar a varios productos."""
+    """Opción reutilizable asignable a varios productos."""
     __tablename__ = "extra_catalog_items"
 
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), nullable=False, unique=True)
     descripcion = db.Column(db.String(240))
+    tipo = db.Column(db.String(20), nullable=False, default="extra", server_default="extra")
     precio = db.Column(db.Numeric(10, 2), nullable=False, default=0)
     max_cantidad = db.Column(db.Integer, nullable=False, default=1)
     activo = db.Column(db.Boolean, nullable=False, default=True)
@@ -1966,6 +2000,12 @@ class ExtraCatalogItem(db.Model):
     __table_args__ = (
         db.CheckConstraint("precio >= 0", name="ck_extra_catalog_price"),
         db.CheckConstraint("max_cantidad >= 1", name="ck_extra_catalog_max_qty"),
+        db.CheckConstraint("tipo IN ('extra', 'sabor')", name="ck_extra_catalog_type"),
+        db.CheckConstraint(
+            "tipo != 'sabor' OR (precio = 0 AND max_cantidad = 1)",
+            name="ck_flavor_catalog_invariants",
+        ),
+        db.Index("ix_extra_catalog_type", "tipo", "activo"),
     )
 
     @property

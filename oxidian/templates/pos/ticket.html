@@ -136,6 +136,10 @@
   {% if _pres.get('tamaño') %}
   <div class="small" style="padding:0 0 2px 0;font-weight:700">  📏 {{ _pres.get('tamaño')|string|capitalize }}{% set _pe = _pres.get('extra') or 0 %}{% if _pe and _pe > 0 %} (+€{{ "%.2f"|format(_pe) }}){% elif _pe and _pe < 0 %} (−€{{ "%.2f"|format(_pe|abs) }}){% endif %}</div>
   {% endif %}
+  {% set _flavors = ((item_meta.get('sabores') or {}).get('opciones') or []) if item_meta else [] %}
+  {% if _flavors %}<div class="small" style="padding:0 0 2px 0;font-weight:700">  SABOR: {% for flavor in _flavors %}{{ flavor.get('nombre','?') }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+  {% set _extras = ((item_meta.get('extras') or {}).get('opciones') or []) if item_meta else [] %}
+  {% if _extras %}<div class="small" style="padding:0 0 2px 0">  EXTRAS: {% for extra in _extras %}{{ extra.get('cantidad',1) }}× {{ extra.get('nombre','?') }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
   {% if item.notas %}<div class="small" style="padding:0 0 2px 0;color:#c00;font-weight:700">  📝 Nota: {{ item.notas }}</div>{% endif %}
   {# Alérgenos por línea — solo si la tienda es de comida (crítico para gastronomía) #}
   {% set _alerg_list = item.display_alergenos if item.display_alergenos is defined else [] %}

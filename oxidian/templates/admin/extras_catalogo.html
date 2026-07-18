@@ -1,12 +1,12 @@
 {% extends "admin_base.html" %}
-{% block title %}Biblioteca de extras{% endblock %}
+{% block title %}Biblioteca de opciones{% endblock %}
 {% block content %}
 <div class="max-w-5xl mx-auto space-y-4 extra-library">
   <div class="ox-card p-5 extra-library-head">
     <div>
       <p class="text-xs font-black uppercase tracking-widest" style="color:var(--work-accent)">Catálogo reutilizable</p>
-      <h1 class="text-2xl font-black">Ingredientes y extras</h1>
-      <p class="text-sm" style="color:var(--col-muted)">Crea cada extra una sola vez y asígnalo a los productos o combos que correspondan.</p>
+      <h1 class="text-2xl font-black">Sabores, ingredientes y extras</h1>
+      <p class="text-sm" style="color:var(--col-muted)">Crea cada opción una sola vez y asígnala a los productos correspondientes.</p>
     </div>
     <a href="{{ url_for('admin.productos') }}" class="ox-btn-secondary">Volver a productos</a>
   </div>
@@ -14,10 +14,11 @@
   <form method="post" class="ox-card p-5 grid md:grid-cols-5 gap-3">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="create">
-    <div class="md:col-span-5"><h2 class="font-black text-lg">Nuevo extra</h2></div>
+    <div class="md:col-span-5"><h2 class="font-black text-lg">Nueva opción reutilizable</h2></div>
     <label class="md:col-span-2">Nombre<input class="edit-input" name="nombre" maxlength="100" required placeholder="Ej. Queso extra"></label>
-    <label>Precio (€)<input class="edit-input" type="number" name="precio" min="0" step=".01" value="0" required></label>
-    <label>Máximo por producto<input class="edit-input" type="number" name="max_cantidad" min="1" max="20" value="1" required></label>
+    <label>Tipo<select class="edit-input" name="tipo" data-option-type><option value="extra">Extra o ingrediente</option><option value="sabor">Sabor</option></select></label>
+    <label data-extra-setting>Precio (€)<input class="edit-input" type="number" name="precio" min="0" step=".01" value="0" required></label>
+    <label data-extra-setting>Máximo por producto<input class="edit-input" type="number" name="max_cantidad" min="1" max="20" value="1" required></label>
     <label class="md:col-span-4">Descripción<input class="edit-input" name="descripcion" maxlength="240" placeholder="Información opcional para el equipo"></label>
     <button class="ox-btn-primary">Crear extra</button>
   </form>
@@ -27,9 +28,10 @@
     <form method="post" class="ox-card p-4 extra-library-item {% if not item.activo %}is-inactive{% endif %}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="extra_id" value="{{ item.id }}">
-      <div class="extra-library-status"><span>{{ 'Activo' if item.activo else 'Inactivo' }}</span><b>{{ item.opciones_producto.count() }} asignaciones</b></div>
+      <div class="extra-library-status"><span>{{ 'Activo' if item.activo else 'Inactivo' }} · {{ 'Sabor' if item.tipo == 'sabor' else 'Extra' }}</span><b>{{ item.opciones_producto.count() }} asignaciones</b></div>
       <label>Nombre<input class="edit-input" name="nombre" value="{{ item.nombre }}" maxlength="100" required></label>
-      <div class="grid grid-cols-2 gap-2">
+      <label>Tipo<select class="edit-input" name="tipo" data-option-type><option value="extra" {% if item.tipo == 'extra' %}selected{% endif %}>Extra o ingrediente</option><option value="sabor" {% if item.tipo == 'sabor' %}selected{% endif %}>Sabor</option></select></label>
+      <div class="grid grid-cols-2 gap-2" data-extra-setting>
         <label>Precio<input class="edit-input" type="number" name="precio" min="0" step=".01" value="{{ '%.2f'|format(item.precio_float) }}" required></label>
         <label>Máximo<input class="edit-input" type="number" name="max_cantidad" min="1" max="20" value="{{ item.max_cantidad }}" required></label>
       </div>
@@ -40,7 +42,7 @@
       </div>
     </form>
     {% else %}
-    <div class="ox-card p-8 text-center lg:col-span-2"><p class="font-black">Todavía no hay extras</p><p class="text-sm" style="color:var(--col-muted)">Crea queso, salsas, toppings o cualquier suplemento que vendas.</p></div>
+    <div class="ox-card p-8 text-center lg:col-span-2"><p class="font-black">Todavía no hay opciones</p><p class="text-sm" style="color:var(--col-muted)">Crea sabores, salsas, toppings o cualquier suplemento que vendas.</p></div>
     {% endfor %}
   </div>
 </div>
@@ -52,4 +54,20 @@
 .extra-library-status span{color:var(--work-success)}.is-inactive .extra-library-status span{color:var(--work-danger)}
 @media(max-width:640px){.extra-library-head{align-items:flex-start;flex-direction:column}.extra-library-head .ox-btn-secondary{width:100%}.extra-library-actions{grid-template-columns:1fr 1fr}}
 </style>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce() }}">
+function syncOptionType(select) {
+  const form = select.closest('form');
+  const flavor = select.value === 'sabor';
+  form?.querySelectorAll('[data-extra-setting]').forEach(field => {
+    field.hidden = flavor;
+    field.querySelectorAll('input').forEach(input => { input.disabled = flavor; });
+  });
+}
+document.querySelectorAll('[data-option-type]').forEach(select => {
+  syncOptionType(select);
+  select.addEventListener('change', () => syncOptionType(select));
+});
+</script>
 {% endblock %}

@@ -282,8 +282,8 @@
   <div class="pos-modal-box pos-combo-modal">
     <div class="pos-combo-modal-head">
       <div>
-        <p class="pos-combo-kicker">Configurar combo</p>
-        <h2 id="pos-combo-name">Combo</h2>
+        <p id="pos-combo-kicker" class="pos-combo-kicker">Configurar producto</p>
+        <h2 id="pos-combo-name">Producto</h2>
       </div>
       <button type="button" class="pos-combo-close" data-pos-action="close-combo" aria-label="Cerrar">×</button>
     </div>
@@ -291,7 +291,7 @@
     <div id="pos-combo-groups" class="pos-combo-groups"></div>
     <p id="pos-combo-error" class="pos-combo-error"></p>
     <button type="button" class="pos-btn-cobrar" data-pos-action="confirm-combo">
-      <span>Añadir combo</span><span id="pos-combo-price">€0.00</span>
+      <span id="pos-combo-submit-label">Añadir producto</span><span id="pos-combo-price">€0.00</span>
     </button>
   </div>
 </div>
@@ -599,15 +599,18 @@ let ultimoPedidoId = null;
 let metodoPago = 'efectivo';
 let totalActual = 0;
 const POS_COMBOS = {{ pos_combos|tojson }};
+const POS_PRODUCT_OPTIONS = {{ pos_product_options|tojson }};
 let comboPendiente = null;
 
 // ── Agregar al ticket ──
 function seleccionarProducto(id, nombre, precio, stock, esCombo = false) {
-  if (esCombo && POS_COMBOS[String(id)]?.grupos?.length) {
-    abrirCombo(id, nombre, precio, stock);
+  const hasComboChoices = esCombo && POS_COMBOS[String(id)]?.grupos?.length;
+  const hasProductOptions = POS_PRODUCT_OPTIONS[String(id)]?.grupos?.length;
+  if (hasComboChoices || hasProductOptions) {
+    abrirCombo(id, nombre, precio, stock, esCombo);
     return;
   }
-  agregarItem(id, nombre, precio, stock, false, esCombo, []);
+  agregarItem(id, nombre, precio, stock, false, esCombo, [], {}, '');
 }
 
 // Los datos de producto viajan en atributos HTML escapados por Jinja. Evita
@@ -626,10 +629,14 @@ document.querySelectorAll('.pos-prod-btn[data-product-id]').forEach(button => {
   });
 });
 
-function agregarItem(id, nombre, precio, stock, enPromo, esCombo = false, comboItemIds = [], comboResumen = '') {
+function agregarItem(id, nombre, precio, stock, enPromo, esCombo = false, comboItemIds = [], productOptions = {}, comboResumen = '') {
   const ids = [...comboItemIds].map(Number).sort((a,b) => a-b);
-  const key = esCombo ? `${id}:${ids.join('-')}` : String(id);
-  if (!items[key]) items[key] = {productoId:id, nombre, precio, cantidad:0, stock, enPromo, esCombo, comboItemIds:ids, comboResumen};
+  const optionIds = Object.entries(productOptions || {})
+    .filter(([, qty]) => Number(qty) > 0)
+    .sort(([a], [b]) => Number(a) - Number(b));
+  const optionKey = optionIds.map(([optionId, qty]) => `${optionId}x${qty}`).join('-');
+  const key = `${id}:${ids.join('-')}:${optionKey}`;
+  if (!items[key]) items[key] = {productoId:id, nombre, precio, cantidad:0, stock, enPromo, esCombo, comboItemIds:ids, productOptions:Object.fromEntries(optionIds), comboResumen};
   if (stock <= 0) {
     mostrarMsg(`${nombre} no tiene stock disponible`, 'warn'); return;
   }
@@ -694,9 +701,15 @@ function posEsc(value) {
   }[ch]));
 }
 
-function abrirCombo(id, nombre, precio, stock) {
-  const config = POS_COMBOS[String(id)];
-  comboPendiente = {id, nombre, precio:Number(precio)||0, stock, config};
+function abrirCombo(id, nombre, precio, stock, esCombo = false) {
+  const comboConfig = esCombo ? POS_COMBOS[String(id)] : null;
+  const productConfig = POS_PRODUCT_OPTIONS[String(id)] || {grupos: []};
+  const config = comboConfig
+    ? {...comboConfig, grupos:[...(comboConfig.grupos || []), ...(productConfig.grupos || [])]}
+    : {incluidos:[], grupos:productConfig.grupos || [], precio_modo:'fijo', precio_fijo:Number(precio)||0, base_fija:0};
+  comboPendiente = {id, nombre, precio:Number(precio)||0, stock, config, esCombo};
+  document.getElementById('pos-combo-kicker').textContent = esCombo ? 'Configurar combo' : 'Personalizar producto';
+  document.getElementById('pos-combo-submit-label').textContent = esCombo ? 'Añadir combo' : 'Añadir producto';
   document.getElementById('pos-combo-name').textContent = nombre;
   document.getElementById('pos-combo-error').textContent = '';
   document.getElementById('pos-combo-included').innerHTML = (config.incluidos || [])
@@ -704,7 +717,8 @@ function abrirCombo(id, nombre, precio, stock) {
   document.getElementById('pos-combo-groups').innerHTML = (config.grupos || []).map(group => {
     const type = group.max === 1 ? 'radio' : 'checkbox';
     let defaults = (group.opciones || []).filter(option => option.predeterminado && option.disponible).slice(0, group.max);
-    if (defaults.length < group.min) {
+    const isComboGroup = (group.opciones || []).some(option => option.selection_kind === 'combo');
+    if (isComboGroup && defaults.length < group.min) {
       defaults = (group.opciones || []).filter(option => option.disponible).slice(0, group.min);
     }
     const defaultIds = new Set(defaults.map(option => option.id));
@@ -712,6 +726,7 @@ function abrirCombo(id, nombre, precio, stock) {
       <label class="pos-combo-option">
         <input type="${type}" name="pos-combo-${posEsc(group.id)}" value="${option.id}"
                data-extra="${option.precio_extra || 0}" data-base-price="${option.precio_base || 0}"
+               data-selection-kind="${posEsc(option.selection_kind || 'product')}"
                data-group="${posEsc(group.id)}"
                ${defaultIds.has(option.id) ? 'checked' : ''} ${option.disponible ? '' : 'disabled'}
                data-pos-input="combo-price">
@@ -757,6 +772,7 @@ function precioComboPendiente() {
 function confirmarCombo() {
   if (!comboPendiente) return;
   const selected = [];
+  const productOptions = {};
   const labels = [];
   for (const group of document.querySelectorAll('#pos-combo-groups [data-combo-group]')) {
     const checked = [...group.querySelectorAll('input:checked')];
@@ -769,13 +785,15 @@ function confirmarCombo() {
       return;
     }
     checked.forEach(input => {
-      selected.push(Number(input.value));
+      if (input.dataset.selectionKind === 'combo') selected.push(Number(input.value));
+      else productOptions[String(Number(input.value))] = 1;
       labels.push(input.closest('label')?.querySelector('span')?.textContent || '');
     });
   }
   agregarItem(
     comboPendiente.id, comboPendiente.nombre, precioComboPendiente(),
-    comboPendiente.stock, false, true, selected, labels.filter(Boolean).join(' · ')
+    comboPendiente.stock, false, comboPendiente.esCombo, selected,
+    productOptions, labels.filter(Boolean).join(' · ')
   );
   cerrarCombo();
 }
@@ -850,7 +868,8 @@ function setPago(metodo, btn) {
 // ── Cobrar ──
 function cobrar() {
   const itemsData = Object.values(items).map(it => ({
-    producto_id: it.productoId, cantidad: it.cantidad, combo_item_ids: it.comboItemIds || []
+    producto_id: it.productoId, cantidad: it.cantidad,
+    combo_item_ids: it.comboItemIds || [], opciones_producto: it.productOptions || {}
   }));
   if (itemsData.length === 0) { mostrarMsg('Agrega productos primero', 'warn'); return; }
 
@@ -890,7 +909,8 @@ function sumarEfectivo(cantidad) {
 
 async function confirmarCobro() {
   const itemsData = Object.values(items).map(it => ({
-    producto_id: it.productoId, cantidad: it.cantidad, combo_item_ids: it.comboItemIds || []
+    producto_id: it.productoId, cantidad: it.cantidad,
+    combo_item_ids: it.comboItemIds || [], opciones_producto: it.productOptions || {}
   }));
   const entregado = parseFloat(document.getElementById('ef-entregado')?.value || totalActual);
   if (metodoPago === 'efectivo' && (!Number.isFinite(entregado) || entregado < totalActual)) {

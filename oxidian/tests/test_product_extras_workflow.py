@@ -16,7 +16,7 @@ from models import (
     User,
     ZonaEntrega,
 )
-from routes.admin import _sync_catalog_extras
+from routes.admin import _sync_catalog_extras, _sync_catalog_flavors
 from routes.admin import _parsear_campos_producto
 from routes.public import (
     _build_items_from_carrito,
@@ -26,6 +26,10 @@ from routes.public import (
     public_bp,
 )
 from routes.api_bot import api_bot_bp
+from product_options_service import (
+    product_option_catalog_payload,
+    validate_product_option_selection,
+)
 
 
 class ProductExtrasWorkflowTest(unittest.TestCase):
@@ -130,7 +134,7 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
             headers={"X-Ajax": "1"},
         )
         self.assertFalse(second.get_json()["ok"])
-        self.assertIn("otros extras", second.get_json()["msg"])
+        self.assertIn("otra personalización", second.get_json()["msg"])
 
     def test_catalog_selection_is_reused_by_products_and_keeps_snapshot_fields(self):
         bacon = ExtraCatalogItem(
@@ -151,6 +155,95 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
         self.assertEqual(linked.nombre, "Bacon crujiente")
         self.assertEqual(float(linked.precio), 2.25)
         self.assertEqual(linked.grupo.max_selecciones, 2)
+
+    def test_flavor_is_reusable_required_and_snapshotted_separately(self):
+        mango = ExtraCatalogItem(
+            nombre="Mango", tipo="sabor", precio=Decimal("0"), max_cantidad=1, activo=True
+        )
+        lulo = ExtraCatalogItem(
+            nombre="Lulo", tipo="sabor", precio=Decimal("0"), max_cantidad=1, activo=True
+        )
+        db.session.add_all([mango, lulo])
+        db.session.commit()
+        form = MultiDict([
+            ("flavors_catalog_present", "1"),
+            ("flavor_catalog_ids", str(mango.id)),
+            ("flavor_catalog_ids", str(lulo.id)),
+            ("flavors_required", "1"),
+        ])
+        self.assertIsNone(_sync_catalog_flavors(self.product, form))
+        db.session.commit()
+
+        flavor_group = ProductExtraGroup.query.filter_by(
+            producto_id=self.product.id, tipo="sabor"
+        ).one()
+        self.assertEqual((flavor_group.min_selecciones, flavor_group.max_selecciones), (1, 1))
+        mango_option = ProductExtraOption.query.filter_by(
+            grupo_id=flavor_group.id, catalog_item_id=mango.id
+        ).one()
+        self.assertEqual(float(mango_option.precio), 0.0)
+
+        selected, error = _parse_product_extras(self.product, MultiDict())
+        self.assertEqual(selected, {})
+        self.assertIn("Elige un sabor", error)
+
+        selected, error = _parse_product_extras(
+            self.product,
+            MultiDict({f"flavor_group_{flavor_group.id}": str(mango_option.id)}),
+        )
+        self.assertIsNone(error)
+        rows, total = _product_extras_payload(self.product, selected)
+        self.assertEqual(total, 0.0)
+        self.assertEqual(rows[0]["tipo"], "sabor")
+
+        with self.app.test_request_context():
+            session["carrito"] = {str(self.product.id): 1}
+            session["carrito_origen"] = "propio"
+            session["extras_selecciones"] = {str(self.product.id): selected}
+            items, _ = _build_items_from_carrito(session["carrito"])
+        self.assertEqual(items[0]["sabores"][0]["nombre"], "Mango")
+        self.assertEqual(
+            items[0]["metadata"]["sabores"]["opciones"][0]["nombre"], "Mango"
+        )
+
+        catalog = product_option_catalog_payload(self.product)
+        flavor_payload = next(group for group in catalog if group["tipo"] == "sabor")
+        self.assertEqual(flavor_payload["min"], 1)
+        self.assertEqual({option["nombre"] for option in flavor_payload["opciones"]}, {"Mango", "Lulo"})
+
+        bot_response = self.client.get(
+            f"/api/bot/producto/{self.product.id}",
+            headers={"X-Bot-Key": "test-bot-key"},
+        )
+        self.assertEqual(bot_response.status_code, 200)
+        bot_product = bot_response.get_json()["producto"]
+        self.assertTrue(bot_product["requiere_sabor"])
+        self.assertEqual(
+            {option["nombre"] for option in bot_product["sabores"]},
+            {"Mango", "Lulo"},
+        )
+
+    def test_flavor_selection_cannot_reference_another_product(self):
+        other = Product(nombre="Otro", precio=Decimal("2"), activo=True)
+        db.session.add(other)
+        db.session.flush()
+        group = ProductExtraGroup(
+            producto_id=other.id, nombre="Sabor", tipo="sabor",
+            min_selecciones=1, max_selecciones=1,
+        )
+        db.session.add(group)
+        db.session.flush()
+        option = ProductExtraOption(
+            grupo_id=group.id, nombre="Guayaba", precio=Decimal("0"), max_cantidad=1
+        )
+        db.session.add(option)
+        db.session.commit()
+
+        selected, _, _, error = validate_product_option_selection(
+            self.product, {str(option.id): 1}
+        )
+        self.assertEqual(selected, {})
+        self.assertIn("no está disponible", error)
 
     def test_browser_coordinates_resolve_delivery_zone_without_trusting_an_address(self):
         db.session.add(ZonaEntrega(

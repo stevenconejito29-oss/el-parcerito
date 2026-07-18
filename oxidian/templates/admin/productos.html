@@ -7,7 +7,7 @@
     <p class="text-xs mt-0.5" style="color:var(--col-muted)">Gestiona el catálogo de productos y los combos disponibles</p>
   </div>
   <div class="flex gap-2 adm-products-actions">
-    <a href="{{ url_for('admin.extras_catalogo') }}" class="text-sm font-bold px-4 py-2 rounded-xl adm-products-action adm-products-action--extras">Extras</a>
+    <a href="{{ url_for('admin.extras_catalogo') }}" class="text-sm font-bold px-4 py-2 rounded-xl adm-products-action adm-products-action--extras">Sabores y extras</a>
     <button data-dialog-open="modal-nuevo"
             class="text-sm font-bold px-4 py-2 rounded-xl adm-products-action adm-products-action--new">
       + Nuevo producto
@@ -233,6 +233,8 @@
     'alergenos_json': p.alergenos_json or '[]',
     'extra_catalog_ids': p.extra_catalog_ids,
     'extras_max_selecciones': p.extra_catalog_max_selecciones,
+    'flavor_catalog_ids': p.flavor_catalog_ids,
+    'flavors_required': p.flavors_required,
   }|tojson }};</script>
   {% endfor %}
   </tbody>
@@ -373,6 +375,8 @@
       'alergenos_json': combo.alergenos_json or '[]',
       'extra_catalog_ids': combo.extra_catalog_ids,
       'extras_max_selecciones': combo.extra_catalog_max_selecciones,
+      'flavor_catalog_ids': combo.flavor_catalog_ids,
+      'flavors_required': combo.flavors_required,
     }|tojson }};</script>
     <div class="ox-card p-4">
       <div class="flex items-start gap-3">
@@ -624,6 +628,12 @@ function abrirEditar(id) {
   });
   const extrasMax = f.querySelector('[name="extras_max_selecciones"]');
   if (extrasMax) extrasMax.value = d.extras_max_selecciones || 1;
+  const selectedFlavors = new Set((d.flavor_catalog_ids || []).map(Number));
+  f.querySelectorAll('[name="flavor_catalog_ids"]').forEach(cb => {
+    cb.checked = selectedFlavors.has(Number(cb.value));
+  });
+  const flavorsRequired = f.querySelector('[name="flavors_required"]');
+  if (flavorsRequired) flavorsRequired.checked = !!d.flavors_required;
 
   // Mostrar/ocultar campos condicionales
   toggleCamposEntrega(f, d.tipo_entrega);

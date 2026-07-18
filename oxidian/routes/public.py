@@ -60,6 +60,7 @@ from store_config import (
     is_service_mode,
 )
 from catalog_projection import build_catalog_projection
+from product_options_service import validate_product_option_selection
 
 public_bp = Blueprint("public", __name__)
 
@@ -1214,7 +1215,7 @@ def agregar_carrito(producto_id):
     anterior = extras_guardados.get(key, {})
     if carrito.get(key) and anterior != extras:
         return _err(
-            f"Este producto ya está en tu {cart_name} con otros extras. "
+            f"Este producto ya está en tu {cart_name} con otra personalización. "
             "Elimínalo para cambiar su configuración."
         )
     if extras:
@@ -1352,7 +1353,11 @@ def ver_carrito():
     )
     fulfillment_options = compat["fulfillment_options"]
     fulfillment_unavailable = compat["fulfillment_unavailable"]
-    cart_issue = compat["message"] if items and not compat["ok"] else None
+    option_issue = next(
+        (item.get("product_options_error") for item in items if item.get("product_options_error")),
+        None,
+    )
+    cart_issue = option_issue or (compat["message"] if items and not compat["ok"] else None)
     return render_template("public/carrito.html",
                            items=items, subtotal=subtotal,
                            pedido_minimo=pedido_minimo,
@@ -1768,6 +1773,13 @@ def checkout():
             "Revisa el carrito antes de confirmar.",
             "warning",
         )
+        return redirect(url_for("public.ver_carrito"))
+    option_issue = next(
+        (item.get("product_options_error") for item in items if item.get("product_options_error")),
+        None,
+    )
+    if option_issue:
+        flash(option_issue, "warning")
         return redirect(url_for("public.ver_carrito"))
     if any(not item["producto"].pertenece_a_origen(origen) for item in items):
         flash("Hay productos incompatibles con el origen de inventario del carrito.", "warning")
@@ -2577,53 +2589,37 @@ def _combo_group_key(grupo):
 
 def _parse_product_extras(producto, form):
     groups = ProductExtraGroup.query.filter_by(producto_id=producto.id, activo=True).all()
-    selected = {}
+    raw_selected = {}
     for group in groups:
-        total = 0
-        for option in group.opciones.filter_by(activo=True).all():
-            try:
-                qty = int(form.get(f"extra_qty_{option.id}", 0) or 0)
-            except (TypeError, ValueError):
-                qty = 0
-            if qty < 0 or qty > option.max_cantidad:
-                return {}, f"Cantidad inválida para «{option.nombre}»."
-            if qty:
-                selected[str(option.id)] = qty
-                total += qty
-        if total < group.min_selecciones:
-            return {}, f"Elige al menos {group.min_selecciones} opción(es) en «{group.nombre}»."
-        if total > group.max_selecciones:
-            return {}, f"Puedes elegir hasta {group.max_selecciones} opción(es) en «{group.nombre}»."
-    return selected, None
+        active_options = group.opciones.filter_by(activo=True).all()
+        if group.tipo == "sabor":
+            raw_flavor = form.get(f"flavor_group_{group.id}")
+            if raw_flavor not in (None, ""):
+                try:
+                    flavor_id = int(raw_flavor)
+                except (TypeError, ValueError):
+                    return {}, f"El sabor elegido en «{group.nombre}» no es válido."
+                flavor = next((option for option in active_options if option.id == flavor_id), None)
+                if not flavor:
+                    return {}, f"El sabor elegido en «{group.nombre}» ya no está disponible."
+                raw_selected[str(flavor.id)] = 1
+        else:
+            for option in active_options:
+                try:
+                    qty = int(form.get(f"extra_qty_{option.id}", 0) or 0)
+                except (TypeError, ValueError):
+                    qty = 0
+                if qty < 0 or qty > option.max_cantidad:
+                    return {}, f"Cantidad inválida para «{option.nombre}»."
+                if qty:
+                    raw_selected[str(option.id)] = qty
+    selected, _, _, error = validate_product_option_selection(producto, raw_selected)
+    return selected, error
 
 
 def _product_extras_payload(producto, selected):
-    selected = selected if isinstance(selected, dict) else {}
-    option_ids = []
-    for raw, qty in selected.items():
-        try:
-            if int(qty) > 0:
-                option_ids.append(int(raw))
-        except (TypeError, ValueError):
-            continue
-    options = ProductExtraOption.query.join(ProductExtraGroup).filter(
-        ProductExtraOption.id.in_(option_ids), ProductExtraOption.activo.is_(True),
-        ProductExtraGroup.producto_id == producto.id, ProductExtraGroup.activo.is_(True),
-    ).all() if option_ids else []
-    by_id = {o.id: o for o in options}
-    rows, total = [], 0.0
-    for raw, raw_qty in selected.items():
-        try:
-            option, qty = by_id.get(int(raw)), int(raw_qty)
-        except (TypeError, ValueError):
-            continue
-        if not option or qty < 1 or qty > option.max_cantidad:
-            continue
-        amount = round(option.precio_float * qty, 2)
-        total += amount
-        rows.append({"id": option.id, "grupo": option.grupo.nombre, "nombre": option.nombre,
-                     "cantidad": qty, "precio_unit": option.precio_float, "subtotal": amount})
-    return rows, round(total, 2)
+    _, rows, total, error = validate_product_option_selection(producto, selected)
+    return ([], 0.0) if error else (rows, total)
 
 
 def _combo_selection_ids_from_saved(seleccion_guardada):
@@ -2839,9 +2835,20 @@ def _build_items_from_carrito(carrito):
         seleccion_ids, combo_resumen, metadata = _combo_selection_payload(
             p, selecciones_combo.get(producto_id_str, {})
         )
-        extras_rows, extras_unit = _product_extras_payload(p, extras_selecciones.get(producto_id_str, {}))
+        _, option_rows, product_options_unit, product_options_error = (
+            validate_product_option_selection(
+                p, extras_selecciones.get(producto_id_str, {})
+            )
+        )
+        flavor_rows = [row for row in option_rows if row.get("tipo") == "sabor"]
+        extras_rows = [row for row in option_rows if row.get("tipo") != "sabor"]
         if extras_rows:
-            metadata["extras"] = {"total_unitario": extras_unit, "opciones": extras_rows}
+            metadata["extras"] = {
+                "total_unitario": product_options_unit,
+                "opciones": extras_rows,
+            }
+        if flavor_rows:
+            metadata["sabores"] = {"opciones": flavor_rows}
         try:
             if p.es_combo:
                 p.validar_stock_combo_seleccion(qty, seleccion_ids, origen=origen)
@@ -2853,8 +2860,14 @@ def _build_items_from_carrito(carrito):
             # como zombie en la sesión.
             ids_desaparecidos.append(producto_id_str)
             continue
-        extra_unit = float((metadata.get("combo") or {}).get("extras_total") or 0) if p.es_combo else 0.0
-        precio = (float(p.precio_combo_para_seleccion(seleccion_ids)) if p.es_combo else float(p.precio_final or 0)) + extras_unit
+        combo_extras_unit = (
+            float((metadata.get("combo") or {}).get("extras_total") or 0)
+            if p.es_combo else 0.0
+        )
+        precio = (
+            float(p.precio_combo_para_seleccion(seleccion_ids))
+            if p.es_combo else float(p.precio_final or 0)
+        ) + product_options_unit
         # Presentación (tamaño) opt-in: aplicar precio_extra + registrar tamaño
         presentacion_tamaño = presentaciones_map.get(producto_id_str) or ""
         presentacion_extra = 0.0
@@ -2875,13 +2888,18 @@ def _build_items_from_carrito(carrito):
         nota_cliente_item = (notas_cliente_map.get(producto_id_str) or "").strip()[:240]
         items.append({"producto": p, "cantidad": qty, "subtotal": item_total,
                       "precio_unit": precio,
-                      "combo_extra_unit": extra_unit,
+                      "combo_extra_unit": combo_extras_unit,
                       "combo_items": combo_items,
                       "combo_display_items": _combo_display_items(combo_items, metadata),
                       "combo_seleccion_ids": seleccion_ids,
                       "combo_resumen": combo_resumen,
                       "nota_cliente": nota_cliente_item,
                       "extras": extras_rows,
+                      "sabores": flavor_rows,
+                      "product_options_error": (
+                          f"{p.nombre}: {product_options_error}"
+                          if product_options_error else None
+                      ),
                       "presentacion_tamaño": presentacion_tamaño,
                       "presentacion_extra": presentacion_extra,
                       "metadata": metadata})

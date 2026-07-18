@@ -1712,6 +1712,14 @@ MIGRATIONS = [
         "tables": [PushBroadcast.__table__],
         "fn": lambda: _migrate_push_broadcasts(),
     },
+    {
+        "id": "20260718_04_product_flavors",
+        "description": (
+            "Clasifica grupos y biblioteca de personalización como extras o "
+            "sabores, conservando todos los registros anteriores como extras."
+        ),
+        "fn": lambda: _migrate_product_option_types(),
+    },
 ]
 
 
@@ -1798,6 +1806,64 @@ def _migrate_push_broadcasts():
         "CREATE INDEX IF NOT EXISTS ix_notification_outbox_push_broadcast "
         "ON notification_outbox (push_broadcast_id)"
     ))
+
+
+def _migrate_product_option_types():
+    """Añade discriminadores de dominio sin reinterpretar datos históricos."""
+    inspector = inspect(db.engine)
+    for table_name in ("product_extra_groups", "extra_catalog_items"):
+        if not inspector.has_table(table_name):
+            continue
+        columns = {column["name"] for column in inspect(db.engine).get_columns(table_name)}
+        if "tipo" not in columns:
+            db.session.execute(text(
+                f"ALTER TABLE {table_name} ADD COLUMN tipo VARCHAR(20) "
+                "NOT NULL DEFAULT 'extra'"
+            ))
+        db.session.execute(text(
+            f"UPDATE {table_name} SET tipo='extra' "
+            "WHERE tipo IS NULL OR tipo NOT IN ('extra', 'sabor')"
+        ))
+
+    db.session.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_product_extra_groups_type "
+        "ON product_extra_groups (producto_id, tipo, activo)"
+    ))
+    db.session.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_extra_catalog_type "
+        "ON extra_catalog_items (tipo, activo)"
+    ))
+    if db.engine.dialect.name == "postgresql":
+        db.session.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE product_extra_groups
+                ADD CONSTRAINT ck_extra_group_type CHECK (tipo IN ('extra', 'sabor'));
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
+        db.session.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE extra_catalog_items
+                ADD CONSTRAINT ck_extra_catalog_type CHECK (tipo IN ('extra', 'sabor'));
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
+        db.session.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE product_extra_groups
+                ADD CONSTRAINT ck_flavor_group_single_choice
+                CHECK (tipo != 'sabor' OR (min_selecciones <= 1 AND max_selecciones = 1));
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
+        db.session.execute(text("""
+            DO $$ BEGIN
+                ALTER TABLE extra_catalog_items
+                ADD CONSTRAINT ck_flavor_catalog_invariants
+                CHECK (tipo != 'sabor' OR (precio = 0 AND max_cantidad = 1));
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """))
 
 
 def _utcnow():

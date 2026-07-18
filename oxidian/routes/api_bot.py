@@ -49,6 +49,10 @@ from store_config import (
     get_store_features,
     is_service_mode,
 )
+from product_options_service import (
+    product_option_catalog_payload,
+    validate_product_option_selection,
+)
 
 api_bot_bp = Blueprint("api_bot", __name__)
 logger = logging.getLogger(__name__)
@@ -870,6 +874,7 @@ def _lote_tandas_disponibles(producto):
 
 def _producto_catalogo_payload(producto, incluir_diagnostico=False):
     disponible = _producto_disponible_para_bot(producto)
+    option_groups = product_option_catalog_payload(producto)
     payload = {
         "id": producto.id,
         "nombre": producto.nombre,
@@ -902,6 +907,15 @@ def _producto_catalogo_payload(producto, incluir_diagnostico=False):
         "canjeable_con_puntos": bool(producto.canjeable_con_puntos),
         "puntos_para_canje": producto.puntos_para_canje,
         "badges": producto.badge_info,
+        "personalizaciones": option_groups,
+        "requiere_sabor": any(
+            group["tipo"] == "sabor" and group["min"] > 0 for group in option_groups
+        ),
+        "sabores": [
+            option
+            for group in option_groups if group["tipo"] == "sabor"
+            for option in group["opciones"]
+        ],
     }
     # Variantes retail (talla/color) — solo si el producto las admite y tiene ≥1 activa.
     if producto.tiene_variantes:
@@ -1568,15 +1582,33 @@ def crear_pedido():
                     p.validar_stock_combo_seleccion(cantidad, combo_item_ids)
                 except ValueError as exc:
                     return jsonify({"ok": False, "error": str(exc)}), 400
+            raw_product_options = item_d.get("opciones_producto") or {}
+            if not isinstance(raw_product_options, dict):
+                return jsonify({"ok": False, "error": "opciones_producto debe ser un objeto"}), 400
+            raw_product_options = dict(raw_product_options)
+            if item_d.get("sabor_id") not in (None, ""):
+                raw_product_options[str(item_d.get("sabor_id"))] = 1
+            option_selection, option_rows, option_total, option_error = (
+                validate_product_option_selection(p, raw_product_options)
+            )
+            if option_error:
+                return jsonify({
+                    "ok": False,
+                    "code": "PRODUCT_OPTION_REQUIRED",
+                    "error": f"{p.nombre}: {option_error}",
+                    "personalizaciones": product_option_catalog_payload(p),
+                }), 400
             precio_unit = (
                 float(p.precio_combo_para_seleccion(combo_item_ids))
                 if p.es_combo else float(p.precio_final)
-            )
+            ) + option_total
             item_total = round(precio_unit * cantidad, 2)
             subtotal += item_total
             items_procesados.append({"producto": p, "cantidad": cantidad, "subtotal": item_total,
                                      "precio_unit": precio_unit,
                                      "combo_item_ids": combo_item_ids,
+                                     "option_selection": option_selection,
+                                     "option_rows": option_rows,
                                      "fecha_entrega": fecha_ent.isoformat() if p.tipo_entrega in ("programado", "encargo") else None})
 
         if not items_procesados:
@@ -1771,6 +1803,15 @@ def crear_pedido():
                     item.get("combo_item_ids") or [],
                 )
             item_metadata = dict(item_metadata or {})
+            flavor_rows = [row for row in item.get("option_rows", []) if row.get("tipo") == "sabor"]
+            extra_rows = [row for row in item.get("option_rows", []) if row.get("tipo") != "sabor"]
+            if flavor_rows:
+                item_metadata["sabores"] = {"opciones": flavor_rows}
+            if extra_rows:
+                item_metadata["extras"] = {
+                    "total_unitario": round(sum(row.get("subtotal", 0) for row in extra_rows), 2),
+                    "opciones": extra_rows,
+                }
             if item.get("fecha_entrega"):
                 item_metadata["entrega_programada"] = item["fecha_entrega"]
             oi = OrderItem(
@@ -2720,6 +2761,17 @@ def catalogo_completo():
                     "canjeable":             bool(p.canjeable_con_puntos),
                     "puntos_canje":          p.puntos_para_canje,
                     "badges":                p.badge_info,
+                    "personalizaciones":     (option_groups := product_option_catalog_payload(p)),
+                    "requiere_sabor":        any(
+                        group["tipo"] == "sabor" and group["min"] > 0
+                        for group in option_groups
+                    ),
+                    "sabores": [
+                        option
+                        for group in option_groups
+                        if group["tipo"] == "sabor"
+                        for option in group["opciones"]
+                    ],
                 }
                 for p in visibles
             ]

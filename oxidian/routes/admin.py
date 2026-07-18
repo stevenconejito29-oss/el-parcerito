@@ -21,6 +21,7 @@ from models import (ROLES_AUTENTICABLES, TIPOS_STAFF_PAYMENT, TIPOS_STAFF_PAYMEN
                     AffiliateCode, AffiliateUse, MenuConfig,
                     PriceHistory, ProductPresentation, ProductVariant, TAMAÑOS_PRESENTACION, SiteConfig, AuditLog,
                     AdminFeature, NotificationOutbox, PushBroadcast, PushSubscription,
+                    PRODUCT_OPTION_TYPES,
                     ProductBatch, ZonaEntrega, normalizar_metodo_pago, utcnow)
 from combo_validators import (
     ComboLimits,
@@ -64,8 +65,15 @@ admin_bp = Blueprint("admin", __name__)
 @admin_bp.app_context_processor
 def extra_catalog_template_helpers():
     def extras_catalogo_disponibles():
-        return ExtraCatalogItem.query.filter_by(activo=True).order_by(ExtraCatalogItem.nombre.asc()).all()
-    return {"extras_catalogo_disponibles": extras_catalogo_disponibles}
+        return ExtraCatalogItem.query.filter_by(activo=True, tipo="extra").order_by(ExtraCatalogItem.nombre.asc()).all()
+
+    def sabores_catalogo_disponibles():
+        return ExtraCatalogItem.query.filter_by(activo=True, tipo="sabor").order_by(ExtraCatalogItem.nombre.asc()).all()
+
+    return {
+        "extras_catalogo_disponibles": extras_catalogo_disponibles,
+        "sabores_catalogo_disponibles": sabores_catalogo_disponibles,
+    }
 
 _ROLES_ADMIN = {"admin", "super_admin"}
 _ROLES_USUARIO_BASE = ["cocina", "preparacion", "repartidor"]
@@ -1989,16 +1997,20 @@ def extras_catalogo():
         try:
             if action == "create":
                 nombre = " ".join((request.form.get("nombre") or "").split())[:100]
-                precio = _money(request.form.get("precio") or 0)
-                max_cantidad = request.form.get("max_cantidad", type=int) or 1
+                tipo = (request.form.get("tipo") or "extra").strip().lower()
+                if tipo not in PRODUCT_OPTION_TYPES:
+                    raise ValueError("El tipo de opción no es válido.")
+                precio = _money(request.form.get("precio") or 0) if tipo == "extra" else Decimal("0")
+                max_cantidad = (request.form.get("max_cantidad", type=int) or 1) if tipo == "extra" else 1
                 if not nombre:
-                    raise ValueError("Escribe un nombre para el extra.")
+                    raise ValueError("Escribe un nombre para la opción.")
                 if precio < 0 or not 1 <= max_cantidad <= 20:
                     raise ValueError("Revisa el precio y la cantidad máxima.")
                 if ExtraCatalogItem.query.filter(db.func.lower(ExtraCatalogItem.nombre) == nombre.lower()).first():
                     raise ValueError("Ya existe un extra con ese nombre.")
                 db.session.add(ExtraCatalogItem(
                     nombre=nombre,
+                    tipo=tipo,
                     descripcion=(request.form.get("descripcion") or "").strip()[:240] or None,
                     precio=precio,
                     max_cantidad=max_cantidad,
@@ -2011,8 +2023,11 @@ def extras_catalogo():
                         option.activo = item.activo
                 else:
                     nombre = " ".join((request.form.get("nombre") or "").split())[:100]
-                    precio = _money(request.form.get("precio") or 0)
-                    max_cantidad = request.form.get("max_cantidad", type=int) or 1
+                    tipo = (request.form.get("tipo") or item.tipo or "extra").strip().lower()
+                    if tipo not in PRODUCT_OPTION_TYPES:
+                        raise ValueError("El tipo de opción no es válido.")
+                    precio = _money(request.form.get("precio") or 0) if tipo == "extra" else Decimal("0")
+                    max_cantidad = (request.form.get("max_cantidad", type=int) or 1) if tipo == "extra" else 1
                     duplicate = ExtraCatalogItem.query.filter(
                         db.func.lower(ExtraCatalogItem.nombre) == nombre.lower(),
                         ExtraCatalogItem.id != item.id,
@@ -2022,17 +2037,25 @@ def extras_catalogo():
                     if precio < 0 or not 1 <= max_cantidad <= 20:
                         raise ValueError("Revisa el precio y la cantidad máxima.")
                     item.nombre = nombre
+                    item.tipo = tipo
                     item.descripcion = (request.form.get("descripcion") or "").strip()[:240] or None
                     item.precio = precio
                     item.max_cantidad = max_cantidad
                     for option in item.opciones_producto.all():
+                        # Una opción ya vinculada no puede cambiar de semántica:
+                        # el grupo define sus límites y presentación. El cambio
+                        # de tipo exige desvincularla primero.
+                        if option.grupo and option.grupo.tipo != tipo:
+                            raise ValueError(
+                                "Desvincula esta opción de sus productos antes de cambiar su tipo."
+                            )
                         option.nombre = item.nombre
                         option.precio = item.precio
                         option.max_cantidad = item.max_cantidad
             else:
                 raise ValueError("Acción de extras no reconocida.")
             db.session.commit()
-            flash("Biblioteca de extras actualizada.", "success")
+            flash("Biblioteca de opciones actualizada.", "success")
         except (ValueError, IntegrityError) as exc:
             db.session.rollback()
             flash(str(exc), "danger")
@@ -2611,12 +2634,30 @@ def _sync_presentaciones(producto, form):
             row.activo = False
 
 
-def _sync_catalog_extras(producto, form):
-    """Sincroniza únicamente las opciones procedentes de la biblioteca global."""
-    if form.get("extras_catalog_present") != "1":
+def _sync_catalog_product_options(producto, form, *, option_type):
+    """Sincroniza una familia de opciones reutilizables sin mezclar dominios."""
+    if option_type not in PRODUCT_OPTION_TYPES:
+        return "El tipo de personalización no es válido."
+    config = {
+        "extra": {
+            "present": "extras_catalog_present",
+            "ids": "extra_catalog_ids",
+            "max": "extras_max_selecciones",
+            "name": "Extras disponibles",
+            "description": "Elige los ingredientes adicionales que quieras.",
+        },
+        "sabor": {
+            "present": "flavors_catalog_present",
+            "ids": "flavor_catalog_ids",
+            "required": "flavors_required",
+            "name": "Sabor",
+            "description": "Elige el sabor que quieres recibir.",
+        },
+    }[option_type]
+    if form.get(config["present"]) != "1":
         return None
     selected_ids = []
-    for raw in form.getlist("extra_catalog_ids"):
+    for raw in form.getlist(config["ids"]):
         try:
             item_id = int(raw)
         except (TypeError, ValueError):
@@ -2624,13 +2665,16 @@ def _sync_catalog_extras(producto, form):
         if item_id > 0 and item_id not in selected_ids:
             selected_ids.append(item_id)
     catalog_items = ExtraCatalogItem.query.filter(
-        ExtraCatalogItem.id.in_(selected_ids), ExtraCatalogItem.activo.is_(True)
+        ExtraCatalogItem.id.in_(selected_ids),
+        ExtraCatalogItem.activo.is_(True),
+        ExtraCatalogItem.tipo == option_type,
     ).all() if selected_ids else []
     if len(catalog_items) != len(selected_ids):
-        return "Uno de los extras seleccionados ya no existe o está inactivo."
+        return "Una de las opciones seleccionadas ya no existe, está inactiva o pertenece a otro tipo."
 
     linked_options = ProductExtraOption.query.join(ProductExtraGroup).filter(
         ProductExtraGroup.producto_id == producto.id,
+        ProductExtraGroup.tipo == option_type,
         ProductExtraOption.catalog_item_id.isnot(None),
     ).all()
     by_catalog = {option.catalog_item_id: option for option in linked_options}
@@ -2640,31 +2684,47 @@ def _sync_catalog_extras(producto, form):
             db.session.delete(option)
 
     group = next((option.grupo for option in linked_options), None)
+    if not group:
+        group = ProductExtraGroup.query.filter_by(
+            producto_id=producto.id, tipo=option_type
+        ).order_by(ProductExtraGroup.orden, ProductExtraGroup.id).first()
     if catalog_items and not group:
         group = ProductExtraGroup(
             producto_id=producto.id,
-            nombre="Extras disponibles",
-            descripcion="Elige los ingredientes adicionales que quieras.",
-            min_selecciones=0,
+            nombre=config["name"],
+            descripcion=config["description"],
+            tipo=option_type,
+            min_selecciones=(1 if option_type == "sabor" else 0),
             max_selecciones=1,
-            orden=90,
+            orden=(40 if option_type == "sabor" else 90),
             activo=True,
         )
         db.session.add(group)
         db.session.flush()
 
     if group:
-        try:
-            requested_max = int(form.get("extras_max_selecciones") or 0)
-        except (TypeError, ValueError):
-            requested_max = 0
-        available_max = sum(max(1, int(item.max_cantidad or 1)) for item in catalog_items)
+        group.tipo = option_type
+        requested_max = 1
+        if option_type == "extra":
+            try:
+                requested_max = int(form.get(config["max"]) or 0)
+            except (TypeError, ValueError):
+                requested_max = 0
+        available_max = sum(
+            1 if option_type == "sabor" else max(1, int(item.max_cantidad or 1))
+            for item in catalog_items
+        )
         custom_max = sum(
-            max(1, int(option.max_cantidad or 1))
+            1 if option_type == "sabor" else max(1, int(option.max_cantidad or 1))
             for option in group.opciones.filter(ProductExtraOption.catalog_item_id.is_(None)).all()
         )
         total_max = available_max + custom_max
-        group.max_selecciones = min(max(1, requested_max or total_max), max(1, total_max))
+        group.max_selecciones = 1 if option_type == "sabor" else min(
+            max(1, requested_max or total_max), max(1, total_max)
+        )
+        group.min_selecciones = (
+            1 if option_type == "sabor" and total_max and form.get(config["required"]) else 0
+        ) if option_type == "sabor" else min(group.min_selecciones, group.max_selecciones)
         group.activo = total_max > 0
 
     for order, item in enumerate(catalog_items):
@@ -2673,11 +2733,21 @@ def _sync_catalog_extras(producto, form):
             option = ProductExtraOption(grupo_id=group.id, catalog_item_id=item.id)
             db.session.add(option)
         option.nombre = item.nombre
-        option.precio = item.precio
-        option.max_cantidad = item.max_cantidad
+        option.precio = item.precio if option_type == "extra" else Decimal("0")
+        option.max_cantidad = item.max_cantidad if option_type == "extra" else 1
         option.orden = order * 10
         option.activo = True
     return None
+
+
+def _sync_catalog_extras(producto, form):
+    """Adaptador compatible para suplementos existentes."""
+    return _sync_catalog_product_options(producto, form, option_type="extra")
+
+
+def _sync_catalog_flavors(producto, form):
+    """Asigna sabores reutilizables como una elección única del producto."""
+    return _sync_catalog_product_options(producto, form, option_type="sabor")
 
 
 @admin_bp.route("/productos/crear", methods=["POST"])
@@ -2702,6 +2772,9 @@ def crear_producto():
         extras_error = _sync_catalog_extras(p, request.form)
         if extras_error:
             raise ValueError(extras_error)
+        flavors_error = _sync_catalog_flavors(p, request.form)
+        if flavors_error:
+            raise ValueError(flavors_error)
         db.session.commit()
     except Exception as exc:
         db.session.rollback()
@@ -3105,6 +3178,11 @@ def editar_producto(producto_id):
         db.session.rollback()
         flash(extras_error, "danger")
         return redirect(url_for("admin.productos"))
+    flavors_error = _sync_catalog_flavors(p, request.form)
+    if flavors_error:
+        db.session.rollback()
+        flash(flavors_error, "danger")
+        return redirect(url_for("admin.productos"))
     nuevo_activo = bool(request.form.get("activo"))
     if p.activo and not nuevo_activo:
         combos_afectados = ComboItem.query.filter_by(producto_id=p.id).count()
@@ -3144,19 +3222,25 @@ def gestionar_extras(producto_id):
         try:
             if action == "add_group":
                 nombre = (request.form.get("nombre") or "").strip()[:80]
+                tipo = (request.form.get("tipo") or "extra").strip().lower()
                 minimo = max(0, int(request.form.get("min_selecciones", 0) or 0))
                 maximo = min(20, max(1, int(request.form.get("max_selecciones", 1) or 1)))
+                if tipo not in PRODUCT_OPTION_TYPES:
+                    raise ValueError("El tipo de grupo no es válido.")
+                if tipo == "sabor":
+                    minimo = min(1, minimo)
+                    maximo = 1
                 if not nombre or minimo > maximo:
                     raise ValueError("Revisa el nombre y el rango de selecciones.")
                 db.session.add(ProductExtraGroup(producto_id=producto.id, nombre=nombre,
                     descripcion=(request.form.get("descripcion") or "").strip()[:240] or None,
-                    min_selecciones=minimo, max_selecciones=maximo,
+                    tipo=tipo, min_selecciones=minimo, max_selecciones=maximo,
                     orden=producto.extra_groups.count() * 10))
             elif action == "add_option":
                 group = ProductExtraGroup.query.filter_by(id=request.form.get("grupo_id", type=int), producto_id=producto.id).first()
                 nombre = (request.form.get("nombre") or "").strip()[:100]
-                precio = _money(request.form.get("precio") or 0)
-                max_qty = min(20, max(1, int(request.form.get("max_cantidad", 1) or 1)))
+                precio = _money(request.form.get("precio") or 0) if group and group.tipo == "extra" else Decimal("0")
+                max_qty = min(20, max(1, int(request.form.get("max_cantidad", 1) or 1))) if group and group.tipo == "extra" else 1
                 if not group or not nombre or precio < 0:
                     raise ValueError("Opción de extra inválida.")
                 db.session.add(ProductExtraOption(grupo_id=group.id, nombre=nombre, precio=precio,
@@ -3168,7 +3252,7 @@ def gestionar_extras(producto_id):
                 item = ExtraCatalogItem.query.filter_by(
                     id=request.form.get("catalog_item_id", type=int), activo=True
                 ).first()
-                if not group or not item:
+                if not group or not item or item.tipo != group.tipo:
                     raise ValueError("Grupo o extra de biblioteca inválido.")
                 if ProductExtraOption.query.filter_by(grupo_id=group.id, catalog_item_id=item.id).first():
                     raise ValueError("Ese extra ya está asignado al grupo.")
@@ -3189,12 +3273,14 @@ def gestionar_extras(producto_id):
                 raise ValueError("Acción no válida.")
             db.session.commit()
             flash("Extras actualizados.", "success")
-        except (ValueError, TypeError, InvalidOperation) as exc:
+        except (ValueError, TypeError, InvalidOperation, IntegrityError) as exc:
             db.session.rollback()
             flash(str(exc), "danger")
         return redirect(url_for("admin.gestionar_extras", producto_id=producto.id))
     groups = ProductExtraGroup.query.filter_by(producto_id=producto.id).order_by(ProductExtraGroup.orden, ProductExtraGroup.id).all()
-    catalog_items = ExtraCatalogItem.query.filter_by(activo=True).order_by(ExtraCatalogItem.nombre).all()
+    catalog_items = ExtraCatalogItem.query.filter_by(activo=True).order_by(
+        ExtraCatalogItem.tipo, ExtraCatalogItem.nombre
+    ).all()
     return render_template("admin/producto_extras.html", producto=producto, groups=groups,
                            catalog_items=catalog_items)
 

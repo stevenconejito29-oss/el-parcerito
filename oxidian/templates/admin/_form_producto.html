@@ -289,6 +289,33 @@
     </div>
   </div>
 
+  {% if brand.es_comida %}
+  {% set flavor_catalog = sabores_catalogo_disponibles() %}
+  <div class="fp-span-full col-span-2 fp-section fp-extra-library">
+    <input type="hidden" name="flavors_catalog_present" value="1">
+    <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
+      <div><label class="fp-section-title mb-0">Sabores disponibles</label><p class="text-xs text-gray-500">El cliente elegirá un sabor antes de añadir el producto a su canasta.</p></div>
+      <a href="{{ url_for('admin.extras_catalogo') }}" class="text-xs font-bold" style="color:var(--work-accent)">Gestionar sabores</a>
+    </div>
+    {% if flavor_catalog %}
+    <div class="fp-extra-grid">
+      {% for flavor in flavor_catalog %}
+      <label class="fp-extra-card">
+        <input type="checkbox" name="flavor_catalog_ids" value="{{ flavor.id }}">
+        <span><strong>{{ flavor.nombre }}</strong><small>{{ flavor.descripcion or 'Elección de sabor sin coste adicional' }}</small></span>
+      </label>
+      {% endfor %}
+    </div>
+    <label class="fp-check-label mt-3">
+      <input type="checkbox" name="flavors_required" value="1" checked>
+      Exigir que el cliente elija un sabor
+    </label>
+    {% else %}
+    <p class="fp-extra-empty">Aún no hay sabores. Créelos en la biblioteca de opciones y vuelve a este formulario.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% set extra_catalog = extras_catalogo_disponibles() %}
   <div class="fp-span-full col-span-2 fp-section fp-extra-library">
     <input type="hidden" name="extras_catalog_present" value="1">

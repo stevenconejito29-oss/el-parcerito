@@ -22,6 +22,10 @@ from services import (
 )
 from pricing_service import calcular_precio
 from permissions import can_read_order_ticket
+from product_options_service import (
+    product_option_catalog_payload,
+    validate_product_option_selection,
+)
 
 pos_bp = Blueprint("pos", __name__)
 
@@ -63,12 +67,13 @@ def _pos_combo_config(producto):
         group_name = item.grupo.nombre_publico if item.grupo else (item.grupo_seleccion or "Seleccion")
         group_key = str(item.combo_group_id or group_name)
         group = grupos.setdefault(group_key, {
-            "id": group_key,
+            "id": f"combo-{group_key}",
             "nombre": group_name,
             "min": max(1, int(item.grupo.min_selecciones if item.grupo else 1)),
             "max": max(1, int(item.grupo.max_selecciones if item.grupo else (item.max_selecciones or 1))),
             "opciones": [],
         })
+        option["selection_kind"] = "combo"
         group["opciones"].append(option)
     return {
         "incluidos": incluidos,
@@ -77,6 +82,29 @@ def _pos_combo_config(producto):
         "descuento_pct": producto.combo_descuento_pct_float,
         "precio_fijo": float(producto.precio_final),
         "base_fija": round(fixed_base, 2),
+    }
+
+
+def _pos_product_option_config(producto):
+    """Opciones configurables del producto para la venta presencial."""
+    return {
+        "grupos": [
+            {
+                **group,
+                "id": f"product-{group['id']}",
+                "opciones": [
+                    {
+                        **option,
+                        "selection_kind": "product",
+                        "disponible": True,
+                        "predeterminado": False,
+                        "precio_base": 0.0,
+                    }
+                    for option in group["opciones"]
+                ],
+            }
+            for group in product_option_catalog_payload(producto)
+        ]
     }
 
 
@@ -214,12 +242,18 @@ def venta():
         for producto in productos
         if producto.es_combo
     }
+    pos_product_options = {}
+    for producto in productos:
+        option_config = _pos_product_option_config(producto)
+        if option_config["grupos"]:
+            pos_product_options[str(producto.id)] = option_config
     return render_template("pos/venta.html",
                            productos=productos,
                            categorias=categorias,
                            categoria_activa=categoria_id,
                            clientes=clientes,
                            pos_combos=pos_combos,
+                           pos_product_options=pos_product_options,
                            pos_max_qty=_pos_max_qty())
 
 
@@ -349,17 +383,41 @@ def cobrar():
                 )
             except ValueError as exc:
                 return jsonify({"ok": False, "msg": str(exc)}), 400
-        extra_unit = float(((item_metadata or {}).get("combo") or {}).get("extras_total") or 0)
+        raw_product_options = item_d.get("opciones_producto") or {}
+        if not isinstance(raw_product_options, dict):
+            return jsonify({
+                "ok": False,
+                "msg": f"{p.nombre}: la personalización no tiene un formato válido.",
+            }), 400
+        selected_options, option_rows, option_unit, option_error = (
+            validate_product_option_selection(
+                p, raw_product_options
+            )
+        )
+        if option_error:
+            return jsonify({"ok": False, "msg": f"{p.nombre}: {option_error}"}), 400
+        item_metadata = item_metadata or {}
+        flavor_rows = [row for row in option_rows if row.get("tipo") == "sabor"]
+        extras_rows = [row for row in option_rows if row.get("tipo") != "sabor"]
+        if flavor_rows:
+            item_metadata["sabores"] = {"opciones": flavor_rows}
+        if extras_rows:
+            item_metadata["extras"] = {
+                "total_unitario": option_unit,
+                "opciones": extras_rows,
+            }
         precio_venta = (
             float(p.precio_combo_para_seleccion(item_d.get("combo_item_ids") or []))
             if p.es_combo else float(p.precio_final)
         )
+        precio_venta += option_unit
         precio_venta = round(precio_venta, 2)
         item_total = round(precio_venta * cantidad, 2)
         subtotal += item_total
         items_procesados.append({"producto": p, "cantidad": cantidad, "subtotal": item_total,
                                  "precio_unit": precio_venta,
                                  "combo_item_ids": item_d.get("combo_item_ids") or [],
+                                 "opciones_producto": selected_options,
                                  "combo_notas": item_notas,
                                  "combo_metadata": item_metadata})
 

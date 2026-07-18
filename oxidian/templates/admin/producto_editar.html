@@ -12,7 +12,7 @@
   {% if producto.es_combo %}
   <a href="{{ url_for('admin.gestionar_combo', producto_id=producto.id) }}" class="ox-btn-primary text-sm">Gestionar componentes</a>
   {% endif %}
-  <a href="{{ url_for('admin.gestionar_extras', producto_id=producto.id) }}" class="ox-btn-primary text-sm">{% if brand.es_comida %}Ingredientes extra{% else %}Complementos{% endif %}</a>
+  <a href="{{ url_for('admin.gestionar_extras', producto_id=producto.id) }}" class="ox-btn-primary text-sm">{% if brand.es_comida %}Sabores y extras{% else %}Complementos{% endif %}</a>
 </div>
 
 <form method="POST" action="{{ url_for('admin.editar_producto', producto_id=producto.id) }}" enctype="multipart/form-data" class="grid lg:grid-cols-3 gap-5">
