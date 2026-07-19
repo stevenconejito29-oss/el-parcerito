@@ -64,7 +64,7 @@ class CatalogProjectionTest(unittest.TestCase):
             nombre="Sabores",
             tipo="sabor",
             min_selecciones=1,
-            max_selecciones=1,
+            max_selecciones=3,
             activo=True,
         )
         db.session.add_all([sauce_group, flavor_group])
@@ -89,6 +89,7 @@ class CatalogProjectionTest(unittest.TestCase):
         self.assertTrue(projection[product.id].has_extras)
         self.assertTrue(projection[product.id].has_flavors)
         self.assertTrue(projection[product.id].flavors_required)
+        self.assertEqual(projection[product.id].flavor_catalog_max_selecciones, 3)
         self.assertEqual([p.tamaño for p in projection[product.id].presentations], ["grande"])
         self.assertTrue(projection[unlimited.id].available)
 

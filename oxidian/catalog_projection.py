@@ -37,6 +37,7 @@ class CatalogProductView:
     has_extras: bool = False
     has_flavors: bool = False
     flavors_required: bool = False
+    flavor_catalog_max_selecciones: int = 1
     presentations: list = field(default_factory=list)
     combo_items: list = field(default_factory=list)
     rating: float = 0.0
@@ -138,6 +139,7 @@ def build_catalog_projection(products, origin="propio"):
             ProductExtraGroup.producto_id,
             ProductExtraGroup.tipo,
             ProductExtraGroup.min_selecciones,
+            ProductExtraGroup.max_selecciones,
         )
         .filter(
             ProductExtraGroup.producto_id.in_(product_ids),
@@ -154,6 +156,11 @@ def build_catalog_projection(products, origin="propio"):
         row.producto_id
         for row in option_group_rows
         if row.tipo == "sabor" and int(row.min_selecciones or 0) > 0
+    }
+    flavor_max_selections = {
+        row.producto_id: max(1, int(row.max_selecciones or 1))
+        for row in option_group_rows
+        if row.tipo == "sabor"
     }
     presentations = defaultdict(list)
     for presentation in (
@@ -275,6 +282,7 @@ def build_catalog_projection(products, origin="propio"):
             has_extras=product.id in extras_ids,
             has_flavors=product.id in flavor_ids,
             flavors_required=product.id in required_flavor_ids,
+            flavor_catalog_max_selecciones=flavor_max_selections.get(product.id, 1),
             presentations=presentations.get(product.id, []),
             combo_items=items,
             rating=ratings.get(product.id, 0.0),
