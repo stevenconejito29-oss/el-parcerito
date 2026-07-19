@@ -7177,3 +7177,7 @@ body.ox-body-public > .ox-push-prompt .ox-push-prompt-copy small { color: var(--
   border-color: color-mix(in srgb, var(--theme-danger) 44%, var(--col-border));
   background: color-mix(in srgb, var(--theme-danger) 9%, var(--col-surface));
 }
+.order-presentation-summary {
+  border-color: color-mix(in srgb, var(--theme-info) 34%, var(--col-border));
+  background: color-mix(in srgb, var(--theme-info) 8%, var(--col-surface));
+}

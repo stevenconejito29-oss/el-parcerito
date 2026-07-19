@@ -289,6 +289,35 @@
     </div>
   </div>
 
+  <!-- ── PRESENTACIONES / TAMAÑOS ── -->
+  <div class="fp-span-full col-span-2 fp-section">
+    <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
+      <div>
+        <label class="fp-section-title mb-0">Tamaños disponibles</label>
+        <p class="text-xs text-gray-500">
+          Activa solo los tamaños que vendes. El importe es un ajuste sobre el precio base;
+          puede ser negativo, pero el precio final nunca puede quedar por debajo de €0.
+        </p>
+      </div>
+      <span class="fp-section-note">Sin tamaños activos = presentación única</span>
+    </div>
+    {% set _pres_labels = ([('pequeño','🥣','Pequeño'),('mediano','🍽️','Mediano'),('grande','🍛','Grande')] if brand.es_comida else [('pequeño','👕','S — Pequeña'),('mediano','👔','M — Mediana'),('grande','🧥','L — Grande')]) %}
+    <div class="fp-presentation-grid">
+      {% for size, emoji, label in _pres_labels %}
+      <div class="fp-presentation-card">
+        <label class="fp-check-label">
+          <input type="checkbox" name="pres_{{ size }}_activo" value="1"
+                 data-presentation-toggle="{{ size }}">
+          <strong>{{ emoji }} {{ label }}</strong>
+        </label>
+        <label class="fp-label mt-2">Ajuste de precio (€)</label>
+        <input type="number" step="0.01" name="pres_{{ size }}_extra" value="0.00"
+               class="fp-input" data-presentation-price="{{ size }}" disabled>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
   {% if brand.es_comida %}
   {% set flavor_catalog = sabores_catalogo_disponibles() %}
   <div class="fp-span-full col-span-2 fp-section fp-extra-library">
@@ -442,6 +471,7 @@
 .fp-day-btn { display:flex; align-items:center; gap:.3rem; font-size:.78rem; cursor:pointer; padding:.3rem .55rem; border-radius:.5rem; border:1px solid var(--col-border); background:var(--col-elevated); color:var(--col-muted); }
 .fp-day-btn:hover { border-color:var(--col-gold); color:var(--col-text); }
 .fp-extra-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem}.fp-extra-card{display:flex;align-items:center;gap:.65rem;padding:.65rem;border:1px solid var(--col-border);border-radius:.8rem;background:var(--col-elevated);text-transform:none;letter-spacing:0;cursor:pointer}.fp-extra-card:has(input:checked){border-color:var(--work-accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--work-accent) 18%,transparent)}.fp-extra-card strong,.fp-extra-card small{display:block}.fp-extra-card small{margin-top:.12rem;color:var(--col-muted);font-size:.68rem}.fp-extra-empty{padding:.8rem;border:1px dashed var(--col-border);border-radius:.8rem;color:var(--col-muted);font-size:.78rem}
+.fp-presentation-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.55rem}.fp-presentation-card{padding:.7rem;border:1px solid var(--col-border);border-radius:.8rem;background:var(--col-elevated)}.fp-presentation-card:has(input[type="checkbox"]:checked){border-color:var(--work-accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--work-accent) 16%,transparent)}.fp-presentation-card .fp-input:disabled{opacity:.55;cursor:not-allowed}
 @media (max-width: 640px) {
   .fp-product-grid { grid-template-columns:minmax(0,1fr)!important; }
   .fp-product-grid > *, .fp-span-full { grid-column:1 / -1!important; min-width:0; }
@@ -450,6 +480,7 @@
   .fp-image-row > .flex-1 { width:100%; min-width:0; }
   .fp-allergen-grid { grid-template-columns:repeat(3,minmax(0,1fr))!important; }
   .fp-extra-grid { grid-template-columns:minmax(0,1fr); }
+  .fp-presentation-grid { grid-template-columns:minmax(0,1fr); }
   .fp-label, .upload-label { overflow-wrap:anywhere; }
 }
 </style>

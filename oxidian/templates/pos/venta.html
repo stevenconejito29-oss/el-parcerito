@@ -610,7 +610,7 @@ function seleccionarProducto(id, nombre, precio, stock, esCombo = false) {
     abrirCombo(id, nombre, precio, stock, esCombo);
     return;
   }
-  agregarItem(id, nombre, precio, stock, false, esCombo, [], {}, '');
+  agregarItem(id, nombre, precio, stock, false, esCombo, [], {}, '', null);
 }
 
 // Los datos de producto viajan en atributos HTML escapados por Jinja. Evita
@@ -629,14 +629,15 @@ document.querySelectorAll('.pos-prod-btn[data-product-id]').forEach(button => {
   });
 });
 
-function agregarItem(id, nombre, precio, stock, enPromo, esCombo = false, comboItemIds = [], productOptions = {}, comboResumen = '') {
+function agregarItem(id, nombre, precio, stock, enPromo, esCombo = false, comboItemIds = [], productOptions = {}, comboResumen = '', presentationId = null) {
   const ids = [...comboItemIds].map(Number).sort((a,b) => a-b);
   const optionIds = Object.entries(productOptions || {})
     .filter(([, qty]) => Number(qty) > 0)
     .sort(([a], [b]) => Number(a) - Number(b));
   const optionKey = optionIds.map(([optionId, qty]) => `${optionId}x${qty}`).join('-');
-  const key = `${id}:${ids.join('-')}:${optionKey}`;
-  if (!items[key]) items[key] = {productoId:id, nombre, precio, cantidad:0, stock, enPromo, esCombo, comboItemIds:ids, productOptions:Object.fromEntries(optionIds), comboResumen};
+  const presentationKey = presentationId ? `p${Number(presentationId)}` : '';
+  const key = `${id}:${ids.join('-')}:${optionKey}:${presentationKey}`;
+  if (!items[key]) items[key] = {productoId:id, nombre, precio, cantidad:0, stock, enPromo, esCombo, comboItemIds:ids, productOptions:Object.fromEntries(optionIds), comboResumen, presentationId:Number(presentationId) || null};
   if (stock <= 0) {
     mostrarMsg(`${nombre} no tiene stock disponible`, 'warn'); return;
   }
@@ -773,6 +774,7 @@ function confirmarCombo() {
   if (!comboPendiente) return;
   const selected = [];
   const productOptions = {};
+  let presentationId = null;
   const labels = [];
   for (const group of document.querySelectorAll('#pos-combo-groups [data-combo-group]')) {
     const checked = [...group.querySelectorAll('input:checked')];
@@ -786,6 +788,7 @@ function confirmarCombo() {
     }
     checked.forEach(input => {
       if (input.dataset.selectionKind === 'combo') selected.push(Number(input.value));
+      else if (input.dataset.selectionKind === 'presentation') presentationId = Number(input.value);
       else productOptions[String(Number(input.value))] = 1;
       labels.push(input.closest('label')?.querySelector('span')?.textContent || '');
     });
@@ -793,7 +796,7 @@ function confirmarCombo() {
   agregarItem(
     comboPendiente.id, comboPendiente.nombre, precioComboPendiente(),
     comboPendiente.stock, false, comboPendiente.esCombo, selected,
-    productOptions, labels.filter(Boolean).join(' · ')
+    productOptions, labels.filter(Boolean).join(' · '), presentationId
   );
   cerrarCombo();
 }
@@ -869,7 +872,8 @@ function setPago(metodo, btn) {
 function cobrar() {
   const itemsData = Object.values(items).map(it => ({
     producto_id: it.productoId, cantidad: it.cantidad,
-    combo_item_ids: it.comboItemIds || [], opciones_producto: it.productOptions || {}
+    combo_item_ids: it.comboItemIds || [], opciones_producto: it.productOptions || {},
+    presentation_id: it.presentationId || null
   }));
   if (itemsData.length === 0) { mostrarMsg('Agrega productos primero', 'warn'); return; }
 
@@ -910,7 +914,8 @@ function sumarEfectivo(cantidad) {
 async function confirmarCobro() {
   const itemsData = Object.values(items).map(it => ({
     producto_id: it.productoId, cantidad: it.cantidad,
-    combo_item_ids: it.comboItemIds || [], opciones_producto: it.productOptions || {}
+    combo_item_ids: it.comboItemIds || [], opciones_producto: it.productOptions || {},
+    presentation_id: it.presentationId || null
   }));
   const entregado = parseFloat(document.getElementById('ef-entregado')?.value || totalActual);
   if (metodoPago === 'efectivo' && (!Number.isFinite(entregado) || entregado < totalActual)) {

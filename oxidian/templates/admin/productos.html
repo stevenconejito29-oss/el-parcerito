@@ -83,6 +83,8 @@
           <span class="admin-product-badge badge-stock">Stock propio</span>
           <span class="admin-product-badge badge-channel">{{ p.canal_preparacion or 'cocina' }}</span>
           {% if p.has_flavors %}<span class="admin-product-badge badge-flavor">🥭 {{ 'Sabor obligatorio' if p.flavors_required else 'Sabores opcionales' }}</span>{% endif %}
+          {% set _size_count = p.presentaciones.filter_by(activo=True).count() %}
+          {% if _size_count %}<span class="admin-product-badge">📏 {{ _size_count }} tamaño{{ 's' if _size_count != 1 else '' }}</span>{% endif %}
           {% if p.canjeable_con_puntos %}<span class="admin-product-badge badge-points">Puntos</span>{% endif %}
           {% if p.es_hipoalergenico %}<span class="admin-product-badge badge-hipo">Hipo</span>{% endif %}
           <span class="admin-product-badge {{ 'badge-active' if p.activo else 'badge-inactive' }}">{{ 'Activo' if p.activo else 'Inactivo' }}</span>
@@ -147,6 +149,8 @@
             {% if p.canjeable_con_puntos %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--role-super-admin,#C084FC);background:color-mix(in srgb,var(--role-super-admin,#C084FC) 14%,transparent)">⭐ Puntos</span>{% endif %}
             {% if p.es_hipoalergenico %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--theme-success,#5EF097);background:color-mix(in srgb,var(--theme-success,#5EF097) 12%,transparent)">🌿 Hipo</span>{% endif %}
             {% if p.has_flavors %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--brand-text);background:color-mix(in srgb,var(--brand-primary) 14%,transparent)">🥭 {{ 'Sabor obligatorio' if p.flavors_required else 'Sabores opcionales' }}</span>{% endif %}
+            {% set _size_count_mobile = p.presentaciones.filter_by(activo=True).count() %}
+            {% if _size_count_mobile %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--theme-info);background:color-mix(in srgb,var(--theme-info) 12%,transparent)">📏 {{ _size_count_mobile }} tamaño{{ 's' if _size_count_mobile != 1 else '' }}</span>{% endif %}
           </div>
         </div>
       </div>
@@ -237,6 +241,7 @@
     'extras_max_selecciones': p.extra_catalog_max_selecciones,
     'flavor_catalog_ids': p.flavor_catalog_ids,
     'flavors_required': p.flavors_required,
+    'presentaciones': p.presentation_admin_payload,
   }|tojson }};</script>
   {% endfor %}
   </tbody>
@@ -379,6 +384,7 @@
       'extras_max_selecciones': combo.extra_catalog_max_selecciones,
       'flavor_catalog_ids': combo.flavor_catalog_ids,
       'flavors_required': combo.flavors_required,
+      'presentaciones': combo.presentation_admin_payload,
     }|tojson }};</script>
     <div class="ox-card p-4">
       <div class="flex items-start gap-3">
@@ -395,6 +401,8 @@
             <p class="font-bold text-white">{{ combo.nombre }}</p>
             {% if not combo.activo %}<span class="text-xs px-2 py-0.5 rounded-full" style="background:color-mix(in srgb,var(--theme-danger) 10%,transparent);color:var(--theme-danger)">Inactivo</span>{% endif %}
             {% if combo.has_flavors %}<span class="text-xs px-2 py-0.5 rounded-full" style="background:color-mix(in srgb,var(--brand-primary) 14%,transparent);color:var(--brand-text)">🥭 {{ 'Sabor obligatorio' if combo.flavors_required else 'Sabores opcionales' }}</span>{% endif %}
+            {% set _combo_size_count = combo.presentaciones.filter_by(activo=True).count() %}
+            {% if _combo_size_count %}<span class="text-xs px-2 py-0.5 rounded-full" style="background:color-mix(in srgb,var(--theme-info) 12%,transparent);color:var(--theme-info)">📏 {{ _combo_size_count }} tamaño{{ 's' if _combo_size_count != 1 else '' }}</span>{% endif %}
           </div>
           <p class="text-lg font-black" style="color:var(--brand-primary,#FFAB00)">€{{ "%.2f"|format(combo.precio_final) }}</p>
           {% if combo.descripcion %}<p class="text-xs mt-1" style="color:var(--col-muted)">{{ combo.descripcion[:80] }}</p>{% endif %}
@@ -638,6 +646,16 @@ function abrirEditar(id) {
   });
   const flavorsRequired = f.querySelector('[name="flavors_required"]');
   if (flavorsRequired) flavorsRequired.checked = !!d.flavors_required;
+  const presentations = new Map((d.presentaciones || []).map(row => [String(row.tamaño), row]));
+  f.querySelectorAll('[data-presentation-toggle]').forEach(toggle => {
+    const row = presentations.get(toggle.dataset.presentationToggle);
+    toggle.checked = !!row?.activo;
+    const price = f.querySelector(`[data-presentation-price="${toggle.dataset.presentationToggle}"]`);
+    if (price) {
+      price.value = Number(row?.precio_extra || 0).toFixed(2);
+      price.disabled = !toggle.checked;
+    }
+  });
 
   // Mostrar/ocultar campos condicionales
   toggleCamposEntrega(f, d.tipo_entrega);
@@ -698,6 +716,11 @@ document.addEventListener('change', e => {
   if (e.target.name === 'canjeable_con_puntos' || e.target.name === 'solo_canje') {
     const form = e.target.closest('form');
     sincronizarCamposCanje(form);
+  }
+  if (e.target.matches('[data-presentation-toggle]')) {
+    const form = e.target.closest('form');
+    const price = form?.querySelector(`[data-presentation-price="${e.target.dataset.presentationToggle}"]`);
+    if (price) price.disabled = !e.target.checked;
   }
 });
 

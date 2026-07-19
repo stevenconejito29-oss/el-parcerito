@@ -1,0 +1,17 @@
+{# Resumen único de tamaño para cliente, operación, administración y proveedores. #}
+{% set presentation = item.selected_presentation if item else {} %}
+{% if presentation %}
+{% set presentation_extra = item.selected_presentation_extra %}
+<div class="order-flavor-summary order-presentation-summary" aria-label="Presentación elegida">
+  <span class="order-flavor-summary__icon" aria-hidden="true">📏</span>
+  <span class="order-flavor-summary__copy">
+    <small>Tamaño elegido</small>
+    <strong>
+      {{ item.selected_presentation_label }}
+      {% if presentation_extra > 0 %} · +€{{ "%.2f"|format(presentation_extra) }}
+      {% elif presentation_extra < 0 %} · −€{{ "%.2f"|format(presentation_extra|abs) }}
+      {% endif %}
+    </strong>
+  </span>
+</div>
+{% endif %}

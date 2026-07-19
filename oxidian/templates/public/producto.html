@@ -167,7 +167,7 @@
 
   {# ── Selector de tallas / tamaños (presentaciones activas) ── #}
   {% set _tallas_producto = producto.presentaciones.filter_by(activo=True).all() if producto.presentaciones is defined else [] %}
-  {% if _tallas_producto|length > 0 and not producto.es_combo %}
+  {% if _tallas_producto|length > 0 %}
   <div class="pd-tallas">
     <p class="pd-tallas-lbl">
       {% if brand.es_producto %}👕 Elige tu talla:{% else %}📏 Elige tu tamaño:{% endif %}

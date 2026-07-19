@@ -26,6 +26,11 @@ from product_options_service import (
     product_option_catalog_payload,
     validate_product_option_selection,
 )
+from product_presentations_service import (
+    presentation_metadata,
+    product_presentation_catalog_payload,
+    validate_product_presentation_selection,
+)
 
 pos_bp = Blueprint("pos", __name__)
 
@@ -87,24 +92,46 @@ def _pos_combo_config(producto):
 
 def _pos_product_option_config(producto):
     """Opciones configurables del producto para la venta presencial."""
+    groups = [
+        {
+            **group,
+            "id": f"product-{group['id']}",
+            "opciones": [
+                {
+                    **option,
+                    "selection_kind": "product",
+                    "disponible": True,
+                    "predeterminado": False,
+                    "precio_base": 0.0,
+                }
+                for option in group["opciones"]
+            ],
+        }
+        for group in product_option_catalog_payload(producto)
+    ]
+    presentations = product_presentation_catalog_payload(producto)
+    if presentations:
+        groups.append({
+            "id": "presentation",
+            "nombre": "Tamaño",
+            "min": 1,
+            "max": 1,
+            "tipo": "presentacion",
+            "opciones": [
+                {
+                    "id": row["id"],
+                    "nombre": row["label"],
+                    "precio_extra": row["precio_extra"],
+                    "precio_base": 0.0,
+                    "selection_kind": "presentation",
+                    "disponible": True,
+                    "predeterminado": index == 0,
+                }
+                for index, row in enumerate(presentations)
+            ],
+        })
     return {
-        "grupos": [
-            {
-                **group,
-                "id": f"product-{group['id']}",
-                "opciones": [
-                    {
-                        **option,
-                        "selection_kind": "product",
-                        "disponible": True,
-                        "predeterminado": False,
-                        "precio_base": 0.0,
-                    }
-                    for option in group["opciones"]
-                ],
-            }
-            for group in product_option_catalog_payload(producto)
-        ]
+        "grupos": groups
     }
 
 
@@ -406,11 +433,20 @@ def cobrar():
                 "total_unitario": option_unit,
                 "opciones": extras_rows,
             }
+        presentation, presentation_error = validate_product_presentation_selection(
+            p, item_d.get("presentation_id")
+        )
+        if presentation_error:
+            return jsonify({"ok": False, "msg": f"{p.nombre}: {presentation_error}"}), 400
+        if presentation:
+            item_metadata["presentacion"] = presentation_metadata(presentation)
         precio_venta = (
             float(p.precio_combo_para_seleccion(item_d.get("combo_item_ids") or []))
             if p.es_combo else float(p.precio_final)
         )
-        precio_venta += option_unit
+        precio_venta += option_unit + (
+            presentation.precio_extra_float if presentation else 0.0
+        )
         precio_venta = round(precio_venta, 2)
         item_total = round(precio_venta * cantidad, 2)
         subtotal += item_total
@@ -418,6 +454,7 @@ def cobrar():
                                  "precio_unit": precio_venta,
                                  "combo_item_ids": item_d.get("combo_item_ids") or [],
                                  "opciones_producto": selected_options,
+                                 "presentation_id": presentation.id if presentation else None,
                                  "combo_notas": item_notas,
                                  "combo_metadata": item_metadata})
 

@@ -2607,12 +2607,24 @@ def _sync_presentaciones(producto, form):
       - Si el checkbox NO viene marcado → si existe fila, marcar activo=False
         (no borrar para preservar historial de pedidos que referencian la fila).
     """
+    parsed = []
+    base_price = Decimal(str(producto.precio or 0))
     for idx, size in enumerate(TAMAÑOS_PRESENTACION):
         activo = bool(form.get(f"pres_{size}_activo"))
         try:
-            precio_extra = float(form.get(f"pres_{size}_extra") or 0)
-        except (TypeError, ValueError):
-            precio_extra = 0.0
+            precio_extra = Decimal(str(form.get(f"pres_{size}_extra") or "0"))
+        except (InvalidOperation, TypeError, ValueError):
+            return f"El ajuste de precio para {size} no es válido."
+        if not precio_extra.is_finite():
+            return f"El ajuste de precio para {size} no es válido."
+        precio_extra = precio_extra.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if activo and base_price + precio_extra < 0:
+            return f"El precio final del tamaño {size} no puede ser negativo."
+        if abs(precio_extra) > Decimal("9999999.99"):
+            return f"El ajuste de precio para {size} supera el límite permitido."
+        parsed.append((idx, size, activo, precio_extra))
+
+    for idx, size, activo, precio_extra in parsed:
         row = ProductPresentation.query.filter_by(
             producto_id=producto.id, tamaño=size
         ).first()
@@ -2632,6 +2644,7 @@ def _sync_presentaciones(producto, form):
                 row.orden = idx
         elif row is not None:
             row.activo = False
+    return None
 
 
 def _sync_catalog_product_options(producto, form, *, option_type):
@@ -2688,6 +2701,8 @@ def _sync_catalog_product_options(producto, form, *, option_type):
         group = ProductExtraGroup.query.filter_by(
             producto_id=producto.id, tipo=option_type
         ).order_by(ProductExtraGroup.orden, ProductExtraGroup.id).first()
+    if option_type == "sabor" and form.get(config["required"]) and not catalog_items and not group:
+        return "Selecciona al menos un sabor antes de marcarlo como obligatorio."
     if catalog_items and not group:
         group = ProductExtraGroup(
             producto_id=producto.id,
@@ -2719,6 +2734,8 @@ def _sync_catalog_product_options(producto, form, *, option_type):
             for option in group.opciones.filter(ProductExtraOption.catalog_item_id.is_(None)).all()
         )
         total_max = available_max + custom_max
+        if option_type == "sabor" and form.get(config["required"]) and total_max == 0:
+            return "Selecciona al menos un sabor antes de marcarlo como obligatorio."
         group.max_selecciones = 1 if option_type == "sabor" else min(
             max(1, requested_max or total_max), max(1, total_max)
         )
@@ -2775,6 +2792,9 @@ def crear_producto():
         flavors_error = _sync_catalog_flavors(p, request.form)
         if flavors_error:
             raise ValueError(flavors_error)
+        presentations_error = _sync_presentaciones(p, request.form)
+        if presentations_error:
+            raise ValueError(presentations_error)
         db.session.commit()
     except Exception as exc:
         db.session.rollback()
@@ -3172,7 +3192,11 @@ def editar_producto(producto_id):
     precio_anterior = float(p.precio)
     for attr, val in campos.items():
         setattr(p, attr, val)
-    _sync_presentaciones(p, request.form)
+    presentations_error = _sync_presentaciones(p, request.form)
+    if presentations_error:
+        db.session.rollback()
+        flash(presentations_error, "danger")
+        return redirect(url_for("admin.editar_producto", producto_id=producto_id))
     extras_error = _sync_catalog_extras(p, request.form)
     if extras_error:
         db.session.rollback()

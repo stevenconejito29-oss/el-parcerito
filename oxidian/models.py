@@ -689,6 +689,20 @@ class Product(db.Model):
         ).first())
 
     @property
+    def presentation_admin_payload(self):
+        """Presentaciones serializables para formularios administrativos."""
+        return [
+            {
+                "tamaño": row.tamaño,
+                "precio_extra": row.precio_extra_float,
+                "activo": bool(row.activo),
+            }
+            for row in self.presentaciones.order_by(
+                ProductPresentation.orden, ProductPresentation.id
+            ).all()
+        ]
+
+    @property
     def extra_catalog_max_selecciones(self):
         for group in self.extra_groups:
             if group.tipo == "extra" and group.opciones.filter(
@@ -2086,6 +2100,12 @@ class ProductPresentation(db.Model):
 
     @property
     def label(self) -> str:
+        if self.producto and (self.producto.vertical or "").lower() == "producto":
+            return {
+                "pequeño": "S",
+                "mediano": "M",
+                "grande": "L",
+            }.get((self.tamaño or "").lower(), self.tamaño)
         return self.tamaño.capitalize()
 
     def precio_final(self, precio_base) -> float:
@@ -2739,6 +2759,24 @@ class OrderItem(db.Model):
     @property
     def selected_flavor_names(self):
         return [str(row["nombre"]) for row in self.selected_flavors]
+
+    @property
+    def selected_presentation(self):
+        """Presentación elegida y congelada para esta línea del pedido."""
+        raw = self.get_metadata().get("presentacion") or {}
+        return raw if isinstance(raw, dict) and raw.get("tamaño") else {}
+
+    @property
+    def selected_presentation_label(self):
+        row = self.selected_presentation
+        return str(row.get("label") or row.get("tamaño") or "").strip()
+
+    @property
+    def selected_presentation_extra(self):
+        try:
+            return float(self.selected_presentation.get("extra") or 0)
+        except (TypeError, ValueError):
+            return 0.0
 
     @property
     def display_has_selectable_flavors(self):

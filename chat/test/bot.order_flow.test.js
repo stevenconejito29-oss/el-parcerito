@@ -16,7 +16,7 @@ process.env.BOT_PANEL_KEY = 'test-panel-key';
 process.env.OWNER_NUMBER = '34600000991';
 
 const { _test } = require('../bot');
-const { db, getSesion, handleMessage, saveSesion, setCfg } = _test;
+const { db, formatOrderItemSummaryLine, getSesion, handleMessage, saveSesion, setCfg } = _test;
 const clientJid = '34632907709@s.whatsapp.net';
 const adminJid = '34600000991@s.whatsapp.net';
 const originalFetch = global.fetch;
@@ -147,6 +147,24 @@ test('sin activos muestra el último pedido cerrado y conserva acciones guiadas'
   assert.equal(ses.pending.numero, '#1005');
   const sent = db.prepare(`SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1`).get();
   assert.match(sent.detalle, /No tienes pedidos activos/i);
+});
+
+test('el estado del pedido conserva tamaño y sabor en el resumen al cliente', async () => {
+  orders = [{
+    id: 43, numero: '#1007', estado: 'armando', estado_label: 'En preparación',
+    total: 9.5, pago_confirmado: true, creado_en: new Date().toISOString(),
+    items: [{
+      nombre: 'Lulada', cantidad: 1, notas: '', sabores: ['Mango'],
+      presentacion: { tamaño: 'grande', label: 'Grande', extra: 2.5 },
+    }],
+  }];
+  saveSesion({ jid: clientJid, nombre: 'Danna', role: 'client', estado: 'main_menu', pending: {} });
+
+  await handleMessage(clientJid, 'Estado de mi pedido', 'Danna');
+
+  const line = formatOrderItemSummaryLine(orders[0].items[0]);
+  assert.match(line, /Tamaño: Grande/);
+  assert.match(line, /Sabor: Mango/);
 });
 
 test('tres números de pedido inválidos cierran la espera y vuelven al menú', async () => {

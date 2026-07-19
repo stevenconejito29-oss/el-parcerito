@@ -12,6 +12,7 @@ from models import (
     Product,
     ProductExtraGroup,
     ProductExtraOption,
+    ProductPresentation,
     OrderItem,
     SiteConfig,
     Stock,
@@ -19,7 +20,7 @@ from models import (
     ZonaEntrega,
     metadata_item_pedido,
 )
-from routes.admin import _sync_catalog_extras, _sync_catalog_flavors
+from routes.admin import _sync_catalog_extras, _sync_catalog_flavors, _sync_presentaciones
 from routes.admin import _parsear_campos_producto
 from routes.public import (
     _build_items_from_carrito,
@@ -29,9 +30,14 @@ from routes.public import (
     public_bp,
 )
 from routes.api_bot import api_bot_bp
+from routes.pos import _pos_product_option_config
 from product_options_service import (
     product_option_catalog_payload,
     validate_product_option_selection,
+)
+from product_presentations_service import (
+    product_presentation_catalog_payload,
+    validate_product_presentation_selection,
 )
 
 
@@ -258,6 +264,99 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
         )
         self.assertEqual(selected, {})
         self.assertIn("no está disponible", error)
+
+    def test_required_flavor_cannot_be_saved_without_available_choices(self):
+        product = Product(nombre="Sin sabores", precio=Decimal("3"), activo=True)
+        db.session.add(product)
+        db.session.flush()
+        error = _sync_catalog_flavors(product, MultiDict([
+            ("flavors_catalog_present", "1"),
+            ("flavors_required", "1"),
+        ]))
+        self.assertIn("Selecciona al menos un sabor", error)
+
+    def test_presentation_is_required_priced_snapshotted_and_exposed_to_bot(self):
+        form = MultiDict([
+            ("pres_pequeño_activo", "1"),
+            ("pres_pequeño_extra", "-1.00"),
+            ("pres_grande_activo", "1"),
+            ("pres_grande_extra", "2.50"),
+        ])
+        self.assertIsNone(_sync_presentaciones(self.product, form))
+        db.session.commit()
+        large = ProductPresentation.query.filter_by(
+            producto_id=self.product.id, tamaño="grande", activo=True
+        ).one()
+
+        selected, error = validate_product_presentation_selection(self.product, "")
+        self.assertIsNone(selected)
+        self.assertIn("Elige un tamaño", error)
+        selected, error = validate_product_presentation_selection(self.product, large.id)
+        self.assertIsNone(error)
+        self.assertEqual(selected.tamaño, "grande")
+
+        missing = self.client.post(
+            f"/carrito/agregar/{self.product.id}",
+            data={"cantidad": "1", "origen": "propio"},
+            headers={"X-Ajax": "1"},
+        )
+        self.assertFalse(missing.get_json()["ok"])
+        added = self.client.post(
+            f"/carrito/agregar/{self.product.id}",
+            data={"cantidad": "1", "origen": "propio", "presentation_size": "GRANDE"},
+            headers={"X-Ajax": "1"},
+        )
+        self.assertTrue(added.get_json()["ok"])
+
+        with self.client.session_transaction() as sess:
+            cart = dict(sess["carrito"])
+        with self.app.test_request_context():
+            session["carrito"] = cart
+            session["carrito_origen"] = "propio"
+            session["presentaciones_carrito"] = {str(self.product.id): "grande"}
+            items, subtotal = _build_items_from_carrito(cart)
+        self.assertEqual(items[0]["precio_unit"], 7.5)
+        self.assertEqual(subtotal, 7.5)
+        snapshot = metadata_item_pedido(self.product, items[0]["metadata"])
+        order_item = OrderItem(
+            producto_id=self.product.id,
+            cantidad=1,
+            precio_unit=Decimal("7.50"),
+            subtotal=Decimal("7.50"),
+            metadata_json=json.dumps(snapshot),
+        )
+        self.assertEqual(order_item.selected_presentation_label, "Grande")
+        self.assertEqual(order_item.selected_presentation_extra, 2.5)
+
+        catalog = product_presentation_catalog_payload(self.product)
+        self.assertEqual({row["tamaño"] for row in catalog}, {"pequeño", "grande"})
+        pos_group = next(
+            group for group in _pos_product_option_config(self.product)["grupos"]
+            if group["tipo"] == "presentacion"
+        )
+        self.assertEqual((pos_group["min"], pos_group["max"]), (1, 1))
+        self.assertEqual(
+            {option["selection_kind"] for option in pos_group["opciones"]},
+            {"presentation"},
+        )
+        bot_response = self.client.get(
+            f"/api/bot/producto/{self.product.id}",
+            headers={"X-Bot-Key": "test-bot-key"},
+        )
+        self.assertEqual(
+            {row["tamaño"] for row in bot_response.get_json()["producto"]["presentaciones"]},
+            {"pequeño", "grande"},
+        )
+
+    def test_presentation_rejects_negative_final_price_without_partial_changes(self):
+        error = _sync_presentaciones(self.product, MultiDict([
+            ("pres_pequeño_activo", "1"),
+            ("pres_pequeño_extra", "-6.00"),
+            ("pres_grande_activo", "1"),
+            ("pres_grande_extra", "1.00"),
+        ]))
+        self.assertIn("no puede ser negativo", error)
+        self.assertEqual(ProductPresentation.query.filter_by(producto_id=self.product.id).count(), 0)
 
     def test_browser_coordinates_resolve_delivery_zone_without_trusting_an_address(self):
         db.session.add(ZonaEntrega(

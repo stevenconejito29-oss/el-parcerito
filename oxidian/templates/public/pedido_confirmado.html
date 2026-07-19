@@ -47,6 +47,7 @@
             </p>
             <p class="text-xs" style="color:var(--col-muted)">× {{ item.cantidad }}</p>
             {% include "partials/order_item_flavors.html" %}
+            {% include "partials/order_item_presentation.html" %}
             {% if item.es_canje_puntos %}
             <p class="order-reward-label">Regalo canjeado · {{ item.reward_metadata.get('puntos', 0) }} {{ ui.loyalty_unit_plural }}</p>
             {% endif %}

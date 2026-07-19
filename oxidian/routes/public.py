@@ -61,6 +61,10 @@ from store_config import (
 )
 from catalog_projection import build_catalog_projection
 from product_options_service import validate_product_option_selection
+from product_presentations_service import (
+    presentation_metadata,
+    validate_product_presentation_selection,
+)
 
 public_bp = Blueprint("public", __name__)
 
@@ -1149,19 +1153,13 @@ def agregar_carrito(producto_id):
     # Comparación case-insensitive: retail guarda "S","M","L","XL"; comida
     # guarda "pequeño","mediano","grande". El form puede enviar cualquier case.
     presentation_size_raw = (request.form.get("presentation_size") or "").strip()
-    presentation_size = presentation_size_raw.lower()
-    presentaciones_activas = [
-        pr for pr in producto.presentaciones if pr.activo
-    ] if hasattr(producto, "presentaciones") else []
-    if presentaciones_activas:
-        tamaños_map = {(pr.tamaño or "").strip().lower(): pr.tamaño for pr in presentaciones_activas}
-        if not presentation_size or presentation_size not in tamaños_map:
-            return _err(
-                f"Elige un tamaño para «{producto.nombre}»: "
-                + ", ".join(pr.tamaño for pr in presentaciones_activas) + "."
-            )
-        # Canónico según lo guardado en BD (respeta S/M/L/XL vs pequeño/mediano)
-        presentation_canonico = tamaños_map[presentation_size]
+    presentation, presentation_error = validate_product_presentation_selection(
+        producto, presentation_size_raw
+    )
+    if presentation_error:
+        return _err(presentation_error)
+    if presentation:
+        presentation_canonico = presentation.tamaño
         presentaciones_carrito = session.get("presentaciones_carrito", {})
         anterior_pres = presentaciones_carrito.get(key)
         if carrito.get(key) and anterior_pres and anterior_pres != presentation_canonico:
@@ -1171,7 +1169,7 @@ def agregar_carrito(producto_id):
             )
         presentaciones_carrito[key] = presentation_canonico
         session["presentaciones_carrito"] = presentaciones_carrito
-    elif presentation_size:
+    elif presentation_size_raw:
         # El form envió tamaño pero el producto no tiene presentaciones — ignorar
         pass
     if producto.es_combo:
@@ -2871,15 +2869,15 @@ def _build_items_from_carrito(carrito):
         # Presentación (tamaño) opt-in: aplicar precio_extra + registrar tamaño
         presentacion_tamaño = presentaciones_map.get(producto_id_str) or ""
         presentacion_extra = 0.0
-        if presentacion_tamaño and hasattr(p, "presentaciones"):
-            pr = next(
-                (x for x in p.presentaciones if x.activo and x.tamaño == presentacion_tamaño),
-                None,
+        presentation_error = None
+        if presentacion_tamaño:
+            pr, presentation_error = validate_product_presentation_selection(
+                p, presentacion_tamaño
             )
-            if pr:
+            if pr and not presentation_error:
                 presentacion_extra = pr.precio_extra_float
                 precio += presentacion_extra
-                metadata["presentacion"] = {"tamaño": pr.tamaño, "extra": presentacion_extra}
+                metadata["presentacion"] = presentation_metadata(pr)
             else:
                 presentacion_tamaño = ""
         precio = round(precio, 2)
@@ -2897,8 +2895,8 @@ def _build_items_from_carrito(carrito):
                       "extras": extras_rows,
                       "sabores": flavor_rows,
                       "product_options_error": (
-                          f"{p.nombre}: {product_options_error}"
-                          if product_options_error else None
+                          f"{p.nombre}: {product_options_error or presentation_error}"
+                          if product_options_error or presentation_error else None
                       ),
                       "presentacion_tamaño": presentacion_tamaño,
                       "presentacion_extra": presentacion_extra,

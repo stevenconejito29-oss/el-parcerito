@@ -7063,6 +7063,22 @@ function contextoPedidoConsulta(pedido, esUltimo) {
     : `📚 *No tienes pedidos activos ahora.* Te muestro el último pedido cerrado.\n\n`;
 }
 
+function formatOrderItemSummaryLine(item) {
+  const it = item && typeof item === 'object' ? item : {};
+  const base = `• ${Number(it.cantidad || 0)}× ${String(it.nombre || 'Producto')}`;
+  const opciones = [];
+  const presentationLabel = String(
+    it.presentacion?.label || it.presentacion?.tamaño || ''
+  ).trim();
+  if (presentationLabel) opciones.push(`Tamaño: ${presentationLabel}`);
+  if (Array.isArray(it.sabores) && it.sabores.length) {
+    opciones.push(`Sabor: ${it.sabores.filter(Boolean).join(' · ')}`);
+  }
+  const opcionesTxt = opciones.length ? `\n   ${opciones.join(' · ')}` : '';
+  const nota = it.notas && it.notas.trim() ? `\n   _${it.notas.trim().slice(0, 120)}_` : '';
+  return base + opcionesTxt + nota;
+}
+
 async function handleEstadoPedido(jid, ses, numero) {
   // Escape universal: salir sin dejar la sesión atrapada.
   if (isEscapeWord(numero)) {
@@ -7190,11 +7206,7 @@ async function handleEstadoPedido(jid, ses, numero) {
         // Lista de artículos con notas del cliente si las hay
         let itemsTxt = '';
         if (Array.isArray(pedido.items) && pedido.items.length) {
-          const lineas = pedido.items.slice(0, 10).map(it => {
-            const base = `• ${it.cantidad}× ${it.nombre}`;
-            const nota = it.notas && it.notas.trim() ? `\n   _${it.notas.trim().slice(0, 120)}_` : '';
-            return base + nota;
-          });
+          const lineas = pedido.items.slice(0, 10).map(formatOrderItemSummaryLine);
           itemsTxt = `\n📋 *Resumen:*\n${lineas.slice(0, 4).join('\n')}${pedido.items.length > 4 ? `\n_(+${pedido.items.length - 4} productos más)_` : ''}\n`;
         }
         setClientState(ses, 'pedido_acciones', {
@@ -8966,6 +8978,7 @@ module.exports = {
     resetOperationalPresenceForStartup,
     splitTextForSend,
     seleccionarPedidoConsulta,
+    formatOrderItemSummaryLine,
     contextoPedidoConsulta,
     botMaxPrice,
     botMaxPointsAdjust,

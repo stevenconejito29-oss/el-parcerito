@@ -126,6 +126,7 @@
       <div class="min-w-0 flex-1">
         <p class="text-sm font-bold text-white truncate">{{ item.display_nombre }} × {{ item.cantidad }}</p>
         {% include "partials/order_item_flavors.html" %}
+        {% include "partials/order_item_presentation.html" %}
         {% if item.notas %}<p class="text-xs mt-0.5 ord-note-client">{{ item.notas }}</p>{% endif %}
         {% if item.display_categoria or item.display_origen_pais %}
         <p class="text-[11px] mt-0.5" style="color:var(--col-faint)">

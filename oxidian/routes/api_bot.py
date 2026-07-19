@@ -53,6 +53,11 @@ from product_options_service import (
     product_option_catalog_payload,
     validate_product_option_selection,
 )
+from product_presentations_service import (
+    presentation_metadata,
+    product_presentation_catalog_payload,
+    validate_product_presentation_selection,
+)
 
 api_bot_bp = Blueprint("api_bot", __name__)
 logger = logging.getLogger(__name__)
@@ -925,6 +930,7 @@ def _producto_catalogo_payload(producto, incluir_diagnostico=False):
             for group in option_groups if group["tipo"] == "sabor"
             for option in group["opciones"]
         ],
+        "presentaciones": product_presentation_catalog_payload(producto),
     }
     # Variantes retail (talla/color) — solo si el producto las admite y tiene ≥1 activa.
     if producto.tiene_variantes:
@@ -1038,6 +1044,7 @@ def _pedido_bot_payload(pedido):
                 "notas": oi.notas or "",
                 "sabores": oi.selected_flavor_names,
                 "tiene_sabores": oi.display_has_selectable_flavors,
+                "presentacion": oi.selected_presentation or None,
                 "tipo_entrega": oi.display_tipo_entrega,
                 "fecha_entrega": (
                     oi.display_fecha_entrega.isoformat()
@@ -1609,10 +1616,23 @@ def crear_pedido():
                     "error": f"{p.nombre}: {option_error}",
                     "personalizaciones": product_option_catalog_payload(p),
                 }), 400
+            presentation, presentation_error = validate_product_presentation_selection(
+                p,
+                item_d.get("presentation_id") or item_d.get("presentation_size"),
+            )
+            if presentation_error:
+                return jsonify({
+                    "ok": False,
+                    "code": "PRODUCT_PRESENTATION_REQUIRED",
+                    "error": f"{p.nombre}: {presentation_error}",
+                    "presentaciones": product_presentation_catalog_payload(p),
+                }), 400
             precio_unit = (
                 float(p.precio_combo_para_seleccion(combo_item_ids))
                 if p.es_combo else float(p.precio_final)
-            ) + option_total
+            ) + option_total + (
+                presentation.precio_extra_float if presentation else 0.0
+            )
             item_total = round(precio_unit * cantidad, 2)
             subtotal += item_total
             items_procesados.append({"producto": p, "cantidad": cantidad, "subtotal": item_total,
@@ -1620,6 +1640,7 @@ def crear_pedido():
                                      "combo_item_ids": combo_item_ids,
                                      "option_selection": option_selection,
                                      "option_rows": option_rows,
+                                     "presentation": presentation,
                                      "fecha_entrega": fecha_ent.isoformat() if p.tipo_entrega in ("programado", "encargo") else None})
 
         if not items_procesados:
@@ -1823,6 +1844,8 @@ def crear_pedido():
                     "total_unitario": round(sum(row.get("subtotal", 0) for row in extra_rows), 2),
                     "opciones": extra_rows,
                 }
+            if item.get("presentation"):
+                item_metadata["presentacion"] = presentation_metadata(item["presentation"])
             if item.get("fecha_entrega"):
                 item_metadata["entrega_programada"] = item["fecha_entrega"]
             oi = OrderItem(
@@ -2783,6 +2806,7 @@ def catalogo_completo():
                         if group["tipo"] == "sabor"
                         for option in group["opciones"]
                     ],
+                    "presentaciones": product_presentation_catalog_payload(p),
                 }
                 for p in visibles
             ]

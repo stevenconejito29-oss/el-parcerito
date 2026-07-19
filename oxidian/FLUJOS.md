@@ -141,7 +141,14 @@ Cliente → /carrito/agregar/<id>  (session["carrito"] = {pid: qty})
 - `session["cart_producto_canje_id"]` → int | None
 - `session["notas_combo"]` → `{str(producto_id): notas_personalizacion}`
 - `session["combo_selecciones"]` → `{str(combo_id): {grupo: [combo_item_id, ...]}}`
+- `session["extras_selecciones"]` → opciones validadas, incluidos sabores
+- `session["presentaciones_carrito"]` → `{str(producto_id): tamaño_canonico}`
 - `session["guest_order_tokens"]` → `{str(pedido_id): token_hex}`
+
+Sabores y tamaños se validan de nuevo en servidor antes de calcular el precio.
+La elección queda congelada en `OrderItem.metadata_json` para que cocina,
+almacén, delivery, proveedores, tickets y reimpresiones no dependan de cambios
+posteriores en el producto.
 
 ---
 
@@ -157,6 +164,7 @@ Bot → GET /api/bot/catalogo          (catálogo filtrado por visible_ahora)
     → POST /api/bot/pedido/crear
           ├── Input: telefono_cliente, items[], metodo_pago, direccion_entrega,
           │          zona_id, notas, cupon_codigo, puntos_usar
+          │          items[].opciones_producto, items[].presentation_id|presentation_size
           ├── Valida: cliente existe, items válidos, stock suficiente (solo inmediato)
           ├── calcular_precio() mismo motor que web
           ├── Crea Order (estado="pendiente", origen="whatsapp")
