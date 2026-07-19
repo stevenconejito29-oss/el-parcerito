@@ -254,7 +254,10 @@ class BotHandoffDestinationTest(unittest.TestCase):
             headers={"X-Bot-Key": "test-bot-key"},
         )
         self.assertEqual(response.status_code, 200)
-        profiles = {row["rol"] + ":" + row["telefono"]: row for row in response.get_json()["whatsapp_roles"]}
+        payload = response.get_json()
+        self.assertEqual(payload["bot_flow_limits"]["handoff_inactivity_sec"], "900")
+        self.assertEqual(payload["bot_flow_limits"]["reporte_rate_max_per_window"], "3")
+        profiles = {row["rol"] + ":" + row["telefono"]: row for row in payload["whatsapp_roles"]}
         limited = profiles["admin:+34610000022"]
         self.assertIn("products", limited["capabilities"])
         self.assertIn("handoff", limited["capabilities"])

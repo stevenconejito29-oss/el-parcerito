@@ -52,6 +52,22 @@ Sembradas por `config_defaults` desde PR #17. Consumidas por
 | `BOT_INBOUND_MAX_ATTEMPTS` | `5` | Reintentos del bot antes de dead-letter. |
 | `BOT_INBOUND_RETENTION_SECS` | `86400` | Retención de `inbound_messages` procesados en el bot. |
 
+## Límites de flujo del chatbot
+
+Estas claves se sincronizan con el proceso de WhatsApp cuando cambian desde
+superadmin. El bot conserva valores defensivos de arranque, pero la fuente de
+verdad operativa es `SiteConfig`.
+
+| Clave | Tipo | Default | Qué hace |
+|---|---|---|---|
+| `BOT_REPORT_RATE_WINDOW_SEC` | int | `3600` | Ventana por cliente para limitar el envío repetido de incidencias. |
+| `BOT_REPORT_RATE_MAX` | int | `3` | Máximo de incidencias del mismo cliente dentro de la ventana. |
+| `BOT_HANDOFF_SLA_WARNING_SEC` | int | `600` | Espera que marca una solicitud humana con alerta de SLA. |
+| `BOT_HANDOFF_OWNER_ALERT_THRESHOLD` | int | `3` | Clientes en cola que disparan aviso de saturación al responsable; `0` lo desactiva. |
+| `BOT_HANDOFF_OWNER_ALERT_COOLDOWN_SEC` | int | `600` | Intervalo mínimo entre avisos de saturación. |
+| `BOT_HANDOFF_QUEUE_MAX_SEC` | int | `86400` | Antigüedad máxima de una solicitud abandonada antes de archivarla. |
+| `BOT_HANDOFF_INACTIVITY_SEC` | int | `900` | Inactividad máxima de un chat asignado antes de cerrarlo; `0` lo desactiva. |
+
 ## Claves ya existentes referenciadas (contexto — no nuevas)
 
 Estas ya vivían en `app._seed_admin` antes de la fase 9 y se documentan aquí

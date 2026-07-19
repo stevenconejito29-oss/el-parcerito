@@ -242,6 +242,29 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS ix_handoff_messages_client
     ON handoff_messages (client_jid, created_at);
+  -- Auditoría persistente de conversaciones humanas cerradas.
+  -- Un mismo cliente puede tener N filas históricas (una por sesión de
+  -- handoff). Guardamos el transcript completo en JSON para revisión
+  -- posterior y métricas.
+  CREATE TABLE IF NOT EXISTS handoff_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_jid TEXT NOT NULL,
+    admin_jid TEXT,
+    opened_at INTEGER NOT NULL,
+    assigned_at INTEGER,
+    closed_at INTEGER NOT NULL,
+    close_reason TEXT,
+    waited_sec INTEGER,
+    handled_sec INTEGER,
+    message_count INTEGER NOT NULL DEFAULT 0,
+    transcript_json TEXT NOT NULL DEFAULT '[]'
+  );
+  CREATE INDEX IF NOT EXISTS ix_handoff_history_client
+    ON handoff_history (client_jid, closed_at DESC);
+  CREATE INDEX IF NOT EXISTS ix_handoff_history_admin
+    ON handoff_history (admin_jid, closed_at DESC);
+  CREATE INDEX IF NOT EXISTS ix_handoff_history_closed
+    ON handoff_history (closed_at DESC);
 `);
 
 // Repara asignaciones antiguas duplicadas antes de imponer un chat por admin.
@@ -281,6 +304,9 @@ db.transaction(() => {
   `ALTER TABLE handoffs ADD COLUMN assigned_at INTEGER`,
   `ALTER TABLE handoffs ADD COLUMN scope TEXT DEFAULT 'global'`,
   `ALTER TABLE handoffs ADD COLUMN agents_json TEXT DEFAULT '[]'`,
+  `ALTER TABLE handoffs ADD COLUMN notified_at INTEGER`,
+  `ALTER TABLE handoffs ADD COLUMN last_ack_at INTEGER`,
+  `ALTER TABLE handoffs ADD COLUMN last_activity_at INTEGER`,
   `ALTER TABLE handoff_messages ADD COLUMN delivery_cursor INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE handoff_messages ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE handoff_messages ADD COLUMN next_attempt_at INTEGER`,
@@ -756,11 +782,23 @@ function lockAdmin(jid) {
 const ADMIN_READ_ONLY_CMDS = new Set([
   '0', 'menu', 'menú', 'inicio',
   '!status', 'status',
-  // Bar reading
-  '1', // ver pedidos
-  '3', // ver incidencias
-  '4', // abrir inventario web
+  '1', // estado del bot en el menú administrativo actual
 ]);
+
+/**
+ * Decide si una entrada administrativa es estrictamente de consulta.
+ *
+ * El menú y los comandos con `!` pasan por el mismo criterio para que un
+ * alias directo no pueda saltarse el PIN. La lista es deliberadamente
+ * cerrada: todo comando nuevo se considera escritura hasta clasificarlo aquí.
+ */
+function isAdminPinReadOnlyInput(input) {
+  const raw = String(input || '').trim().toLowerCase();
+  if (ADMIN_READ_ONLY_CMDS.has(raw)) return true;
+  const command = raw.replace(/^!+/, '');
+  if (!command) return false;
+  return /^(?:status|menu|ver-config|verconfig|buscar|buscar-producto|ver-pedidos|pedido|top|stock-bajo|agotandose|diag|diagnostico|ia|hoy|resumen|ventas|buscar-cliente|cliente-buscar|salud|health|pendientes|cola|list|cola-atencion|ver|yo|historia|mis-stats|stats)(?:\s|$)/.test(command);
+}
 
 function normalizeJid(value) {
   const phone = normalizePhone(value);
@@ -1036,17 +1074,69 @@ async function autoAssignPendingHandoff(clientJid) {
   return claimed && getHandoff(clientJid)?.admin_jid === adminJid ? adminJid : null;
 }
 
+// Lista de destinatarios para notificaciones de handoff. Prioriza operadores
+// que se declararon disponibles con !disponible. Si nadie está online, cae
+// a todos los admins con capacidad 'handoff' — sin este fallback los mensajes
+// del cliente quedarían en cola sin que nadie se entere hasta el próximo
+// reintento.
+function handoffNotifiableAdminJids(clientJid) {
+  const online = availableAdminJids().filter(j => j !== clientJid);
+  if (online.length) return { jids: online, fallback: false };
+  const all = adminPhones()
+    .map(phone => `${phone}@s.whatsapp.net`)
+    .filter(jid => jid !== clientJid && adminCan(jid, 'handoff'));
+  return { jids: all, fallback: true };
+}
+
 async function notifyAdminsHandoffQueued(clientJid) {
-  const message =
-    `📨 *Cliente en espera*\n` +
-    `${phoneFromJid(clientJid)} necesita atención humana.\n\n` +
-    `Escribe *!take ${phoneFromJid(clientJid)}* para tomar el chat.`;
-  // Sólo operadores realmente online. Antes se avisaba también a admins
-  // offline y, si uno pedía ayuda en modo cliente, recibía su propio !take.
-  for (const adminJid of availableAdminJids()) {
-    if (adminJid === clientJid) continue;
-    sendText(adminJid, message).catch(() => {});
+  const phone = phoneFromJid(clientJid);
+  const { jids, fallback } = handoffNotifiableAdminJids(clientJid);
+  if (!jids.length) {
+    log('warn', 'handoff_notify_no_admins', clientJid);
+    return { notified: 0, fallback };
   }
+  const header = fallback
+    ? `📨 *Cliente en espera* (sin agentes online)`
+    : `📨 *Cliente en espera*`;
+  const message =
+    `${header}\n` +
+    `${phone} necesita atención humana.\n\n` +
+    `Escribe *!take ${phone}* para tomar el chat.` +
+    (fallback ? `\n\n_Recuerda enviar *!disponible* para recibir asignaciones automáticas._` : '');
+  const results = await Promise.allSettled(jids.map(adminJid => sendText(adminJid, message)));
+  const notified = results.filter(r => r.status === 'fulfilled' && r.value !== false).length;
+  const failed = results.length - notified;
+  if (failed) log('warn', 'handoff_notify_partial', `ok=${notified} fail=${failed}`);
+  if (notified) {
+    try {
+      db.prepare(`UPDATE handoffs SET notified_at = ? WHERE client_jid = ?`)
+        .run(Math.floor(Date.now() / 1000), clientJid);
+    } catch (error) {
+      log('warn', 'handoff_notify_persist_fail', error?.message || String(error));
+    }
+  }
+  return { notified, fallback };
+}
+
+// Rate limit por JID para REPORTAR (evita spam accidental o malicioso al
+// panel del equipo). En memoria; se pierde en reinicio y no es replicable
+// entre instancias — aceptable para uso operativo de un local.
+const _reporteBuckets = new Map();
+
+function _reporteRateHit(clientJid) {
+  const windowSec = Math.max(60, parseInt(cfg('reporte_rate_window_sec', '3600'), 10) || 3600);
+  const maxCount = Math.max(1, parseInt(cfg('reporte_rate_max_per_window', '3'), 10) || 3);
+  const now = Math.floor(Date.now() / 1000);
+  const bucket = _reporteBuckets.get(clientJid) || [];
+  const kept = bucket.filter(ts => now - ts < windowSec);
+  if (kept.length >= maxCount) {
+    const soonest = kept[0] + windowSec - now;
+    _reporteBuckets.set(clientJid, kept);
+    return { blocked: true, retryInSec: Math.max(30, soonest) };
+  }
+  kept.push(now);
+  _reporteBuckets.set(clientJid, kept);
+  return { blocked: false };
 }
 
 async function iniciarReporteNovedad(clientJid, ses, rawTexto) {
@@ -1058,11 +1148,21 @@ async function iniciarReporteNovedad(clientJid, ses, rawTexto) {
     pedidoId = Number(matchId[1]);
     texto = matchId[2].trim();
   }
-  if (!texto || texto.length < 4) {
+  if (!texto || texto.length < 10) {
+    // Antes: mínimo 4 chars. Demasiado permisivo — "hola" o "?" pasaban.
+    // Ahora 10 chars mínimos para asegurar contenido útil para el equipo.
     return sendText(
       clientJid,
       `🙏 Para reportar una novedad necesito un poco más de detalle.\n\n` +
       `Por ejemplo: *REPORTAR La pizza llegó fría* o *REPORTAR 1024 falta un combo*.`,
+    );
+  }
+  const limit = _reporteRateHit(clientJid);
+  if (limit.blocked) {
+    return sendText(
+      clientJid,
+      `Ya registré varias incidencias tuyas recientemente. Espera unos minutos antes de mandar otra.\n\n` +
+      `Si es urgente escribe *AGENTE* y te conecto con una persona.`,
     );
   }
   const phone = phoneFromJid(clientJid);
@@ -1110,7 +1210,512 @@ async function iniciarReporteNovedad(clientJid, ses, rawTexto) {
 }
 
 
+// Snapshot completo de la cola: pendientes con espera + preview + chats
+// activos (ya asignados). Usado por `!list` para dar visibilidad operativa.
+function renderHandoffQueueSnapshot() {
+  const slaSec = Math.max(60, parseInt(cfg('handoff_sla_warning_sec', '600'), 10) || 600);
+  const now = Math.floor(Date.now() / 1000);
+  const pending = db.prepare(`
+    SELECT client_jid, requested_at, notified_at
+    FROM handoffs WHERE admin_jid IS NULL
+    ORDER BY requested_at ASC
+  `).all().filter(row => canBeHandoffClient(row.client_jid));
+  const active = db.prepare(`
+    SELECT client_jid, admin_jid, assigned_at
+    FROM handoffs WHERE admin_jid IS NOT NULL
+    ORDER BY assigned_at ASC
+  `).all();
+  const availableCount = countAvailableAdmins();
+  const partes = [
+    `📋 *Cola de atención*`,
+    `⏳ En espera: *${pending.length}*   ·   👥 Chats activos: *${active.length}*   ·   🟢 Operadores online: *${availableCount}*`,
+  ];
+  if (pending.length) {
+    partes.push(`\n*Pendientes:*`);
+    const items = pending.slice(0, 12);
+    for (let i = 0; i < items.length; i++) {
+      const row = items[i];
+      const waited = now - Number(row.requested_at || now);
+      const alerta = waited >= slaSec ? ' ⚠️' : '';
+      const preview = _handoffLastMessagePreview(row.client_jid, 60);
+      const line = `${i + 1}. *${phoneFromJid(row.client_jid)}* — ${_formatDuration(waited)}${alerta}`;
+      partes.push(line + (preview ? `\n   💬 "${preview}"` : ''));
+    }
+    if (pending.length > items.length) {
+      partes.push(`_(+${pending.length - items.length} más)_`);
+    }
+  }
+  if (active.length) {
+    partes.push(`\n*En atención:*`);
+    for (const row of active.slice(0, 10)) {
+      const dur = row.assigned_at ? _formatDuration(now - Number(row.assigned_at)) : '?';
+      partes.push(`• ${phoneFromJid(row.client_jid)} ← ${phoneFromJid(row.admin_jid)} · ${dur}`);
+    }
+    if (active.length > 10) partes.push(`_(+${active.length - 10} más)_`);
+  }
+  if (!pending.length && !active.length) {
+    partes.push(`\n✅ No hay chats humanos ahora mismo.`);
+  } else {
+    partes.push(`\n_Toma el primero con *!take* o especifica *!take <numero>*._`);
+  }
+  return partes.join('\n');
+}
+
+function _handoffLastMessagePreview(clientJid, maxLen = 60) {
+  try {
+    const row = db.prepare(`
+      SELECT body FROM handoff_messages
+      WHERE client_jid = ? AND sender = 'client'
+      ORDER BY id DESC LIMIT 1
+    `).get(clientJid);
+    if (!row?.body) return '';
+    const text = String(row.body).replace(/\s+/g, ' ').trim();
+    return text.length > maxLen ? text.slice(0, maxLen - 1) + '…' : text;
+  } catch { return ''; }
+}
+
+// Ficha + últimos 5 mensajes del cliente sin tomarlo. `!ver <numero>`.
+async function renderHandoffPreview(clientJid) {
+  const handoff = getHandoff(clientJid);
+  if (!handoff) return `Ese número no está en la cola ni en atención.`;
+  const now = Math.floor(Date.now() / 1000);
+  const waited = now - Number(handoff.requested_at || now);
+  const asignado = handoff.admin_jid
+    ? `Atendido por ${phoneFromJid(handoff.admin_jid)}${handoff.assigned_at ? ` (hace ${_formatDuration(now - Number(handoff.assigned_at))})` : ''}`
+    : `En espera hace ${_formatDuration(waited)}`;
+  const brief = await buildClientBriefForAdmin(clientJid);
+  const mensajes = db.prepare(`
+    SELECT sender, body, created_at
+    FROM handoff_messages
+    WHERE client_jid = ?
+    ORDER BY id DESC LIMIT 5
+  `).all(clientJid).reverse();
+  const lineas = [
+    brief,
+    `\n📌 ${asignado}`,
+  ];
+  if (mensajes.length) {
+    lineas.push(`\n*Últimos mensajes en la cola:*`);
+    for (const m of mensajes) {
+      const rel = _relativeAgo(Number(m.created_at || 0)) || '';
+      const emisor = m.sender === 'client' ? '👤' : '👨‍💼';
+      const body = String(m.body || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      lineas.push(`${emisor} ${body}${rel ? ` _(${rel})_` : ''}`);
+    }
+  }
+  if (!handoff.admin_jid) {
+    lineas.push(`\n_Escribe *!take ${phoneFromJid(clientJid)}* para tomarlo._`);
+  }
+  return lineas.join('\n');
+}
+
+// Transfiere un chat activo de un admin a otro sin cerrar la conversación.
+// Validaciones: origen atiende ese chat, destino es admin con capability
+// handoff, destino no tiene otro chat activo, destino distinto del origen.
+async function transferHandoffToAdmin(fromAdminJid, toAdminRaw) {
+  const toJid = normalizeJid(toAdminRaw);
+  if (!toJid) return { ok: false, reason: `No pude interpretar "${toAdminRaw}" como un número.` };
+  if (toJid === fromAdminJid) {
+    return { ok: false, reason: `Ese eres tú mismo. Usa *!release* si quieres devolverlo a la cola.` };
+  }
+  if (!isAdminJid(toJid) || !adminCan(toJid, 'handoff')) {
+    return { ok: false, reason: `${phoneFromJid(toJid)} no es admin con permiso para atender.` };
+  }
+  const current = db.prepare(`
+    SELECT client_jid FROM handoffs WHERE admin_jid = ? LIMIT 1
+  `).get(fromAdminJid);
+  if (!current?.client_jid) {
+    return { ok: false, reason: `No tienes ningún chat activo para transferir.` };
+  }
+  if (adminHasActiveChat(toJid)) {
+    return { ok: false, reason: `${phoneFromJid(toJid)} ya está atendiendo a otro cliente.` };
+  }
+  const clientJid = current.client_jid;
+  const result = db.transaction(() => {
+    const updated = db.prepare(`
+      UPDATE handoffs
+      SET admin_jid = ?, assigned_at = unixepoch(), last_activity_at = unixepoch()
+      WHERE client_jid = ? AND admin_jid = ?
+    `).run(toJid, clientJid, fromAdminJid);
+    if (!updated.changes) return { ok: false, reason: `El chat cambió de estado; reintenta.` };
+    // Sesiones: liberar al origen del active_client_jid, marcar al destino
+    // con admin_chat listo para recibir mensajes.
+    db.prepare(`
+      UPDATE sessions
+      SET estado='admin_menu', active_client_jid=NULL, updated_at=unixepoch()
+      WHERE jid=? AND active_client_jid=?
+    `).run(fromAdminJid, clientJid);
+    db.prepare(`
+      UPDATE sessions
+      SET role='admin', estado='admin_chat', active_client_jid=?, updated_at=unixepoch()
+      WHERE jid=?
+    `).run(clientJid, toJid);
+    return { ok: true };
+  })();
+  if (!result.ok) return result;
+  log('info', 'handoff_transferred', `${clientJid} ${fromAdminJid} -> ${toJid}`);
+  // Ficha para el destino + aviso al cliente + confirmación al origen.
+  // Todo en paralelo — si Evolution falla en uno, no bloquea al resto.
+  const brief = await buildClientBriefForAdmin(clientJid).catch(() => '');
+  await Promise.allSettled([
+    sendText(toJid,
+      `🔁 *Chat transferido*\n\n` +
+      `Recibiste el chat de *${phoneFromJid(clientJid)}* de parte de ${phoneFromJid(fromAdminJid)}.\n\n` +
+      (brief ? `${brief}\n\n` : '') +
+      `Escribe tu mensaje para responder. */cerrar chat* para finalizar.`),
+    sendText(clientJid,
+      `🔁 *Nuevo agente*\n\n` +
+      `Un compañero del equipo continuará la conversación. No pierdes el historial.`),
+    sendText(fromAdminJid,
+      `✅ Transferí el chat de *${phoneFromJid(clientJid)}* a ${phoneFromJid(toJid)}.`),
+  ]);
+  return { ok: true };
+}
+
+// `!yo`: describe qué chat atiende el admin ahora mismo.
+function renderAdminActiveHandoff(adminJid) {
+  const row = db.prepare(`
+    SELECT client_jid, assigned_at
+    FROM handoffs WHERE admin_jid = ? LIMIT 1
+  `).get(adminJid);
+  if (!row) return `No tienes ningún chat activo. Usa *!list* para ver la cola.`;
+  const now = Math.floor(Date.now() / 1000);
+  const dur = row.assigned_at ? _formatDuration(now - Number(row.assigned_at)) : '?';
+  const preview = _handoffLastMessagePreview(row.client_jid, 90);
+  return (
+    `👤 Estás atendiendo a *${phoneFromJid(row.client_jid)}* desde hace *${dur}*.\n` +
+    (preview ? `\n💬 Último mensaje del cliente:\n"${preview}"\n` : '') +
+    `\n• */cerrar chat* para finalizar\n• *!release* para devolverlo a la cola`
+  );
+}
+
+// Historial de atenciones previas del cliente (últimas N desde
+// `handoff_history`). Muestra tiempos y quién lo atendió. Sin transcript
+// completo — para eso hay que revisar el panel Oxidian.
+function renderClientHandoffHistory(clientJid, limit = 5) {
+  const rows = db.prepare(`
+    SELECT admin_jid, opened_at, closed_at, close_reason,
+           waited_sec, handled_sec, message_count
+    FROM handoff_history
+    WHERE client_jid = ?
+    ORDER BY closed_at DESC
+    LIMIT ?
+  `).all(clientJid, limit);
+  if (!rows.length) {
+    return `📚 Sin atenciones previas registradas para ${phoneFromJid(clientJid)}.`;
+  }
+  const totalRow = db.prepare(`
+    SELECT COUNT(*) AS total FROM handoff_history WHERE client_jid = ?
+  `).get(clientJid);
+  const partes = [
+    `📚 *Atenciones previas — ${phoneFromJid(clientJid)}*`,
+    `Total registradas: ${totalRow?.total || 0} (mostrando últimas ${rows.length}).`,
+    '',
+  ];
+  for (const row of rows) {
+    const cuando = _relativeAgo(Number(row.closed_at || 0)) || '—';
+    const admin = row.admin_jid ? phoneFromJid(row.admin_jid) : 'sin asignar';
+    const waited = row.waited_sec != null ? _formatDuration(row.waited_sec) : '—';
+    const handled = row.handled_sec != null ? _formatDuration(row.handled_sec) : '—';
+    partes.push(
+      `• *${cuando}* · admin: ${admin}\n` +
+      `   ⌛ espera: ${waited}   ·   ⏱️ duración: ${handled}   ·   💬 ${row.message_count || 0} msgs   ·   ${row.close_reason || 'unknown'}`
+    );
+  }
+  return partes.join('\n');
+}
+
+// Estadísticas propias del admin (últimas 24h + acumulado 7 días). Útil
+// para autoconocimiento sin exponer métricas del resto del equipo.
+function renderAdminOwnStats(adminJid) {
+  const stats24 = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      AVG(waited_sec) AS avg_wait,
+      AVG(handled_sec) AS avg_handle,
+      SUM(message_count) AS total_msgs,
+      MIN(handled_sec) AS min_handle,
+      MAX(handled_sec) AS max_handle
+    FROM handoff_history
+    WHERE admin_jid = ? AND closed_at >= unixepoch() - 86400
+  `).get(adminJid);
+  const stats7 = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM handoff_history
+    WHERE admin_jid = ? AND closed_at >= unixepoch() - 7 * 86400
+  `).get(adminJid);
+  const total24 = Number(stats24?.total || 0);
+  if (!total24 && !Number(stats7?.total || 0)) {
+    return `📊 Todavía no tienes chats cerrados en el histórico. Cuando cierres alguno con */cerrar chat* aparecerá aquí.`;
+  }
+  return (
+    `📊 *Tus estadísticas*\n\n` +
+    `*Últimas 24h*\n` +
+    `• Chats atendidos: *${total24}*\n` +
+    `• Mensajes intercambiados: ${stats24?.total_msgs || 0}\n` +
+    `• Duración media: ${_formatDuration(stats24?.avg_handle || 0)}\n` +
+    `• Duración mín/máx: ${_formatDuration(stats24?.min_handle || 0)} / ${_formatDuration(stats24?.max_handle || 0)}\n` +
+    `• Espera media del cliente: ${_formatDuration(stats24?.avg_wait || 0)}\n\n` +
+    `*Últimos 7 días*\n` +
+    `• Total de chats: ${stats7?.total || 0}`
+  );
+}
+
+// Posición del cliente dentro de la cola de handoffs pendientes (1-indexed).
+// 0 si no está en cola. Usa `requested_at` para el orden — mismo criterio
+// que `listPendingHandoffs`.
+function getQueuePosition(clientJid) {
+  const row = db.prepare(`
+    SELECT COUNT(*) AS pos
+    FROM handoffs h
+    WHERE h.admin_jid IS NULL
+      AND h.requested_at <= (SELECT requested_at FROM handoffs WHERE client_jid = ?)
+  `).get(clientJid);
+  return Number(row?.pos || 0);
+}
+
+function countAvailableAdmins() {
+  return availableAdminJids().length;
+}
+
+// Marca actividad del handoff (mensaje del cliente O del admin). Se usa
+// para el auto-cierre por inactividad. Best-effort: si la BD falla no
+// tiramos la conversación.
+function touchHandoffActivity(clientJid) {
+  try {
+    db.prepare(`UPDATE handoffs SET last_activity_at = ? WHERE client_jid = ?`)
+      .run(Math.floor(Date.now() / 1000), clientJid);
+  } catch (error) {
+    log('warn', 'handoff_touch_fail', error?.message || String(error));
+  }
+}
+
+// Ack esporádico al cliente que sigue escribiendo mientras espera en cola.
+// Reglas:
+//  - Solo si no hay admin asignado (sigue en espera).
+//  - Cooldown desde el último ack: `handoff_client_ack_sec` (default 90s).
+//  - Actualiza `last_ack_at` para amortiguar el próximo.
+async function maybeSendQueueAckToClient(clientJid) {
+  const handoff = getHandoff(clientJid);
+  if (!handoff || handoff.admin_jid) return false;
+  const now = Math.floor(Date.now() / 1000);
+  const cooldown = Math.max(30, parseInt(cfg('handoff_client_ack_sec', '90'), 10) || 90);
+  const last = Number(handoff.last_ack_at || 0);
+  if (last && now - last < cooldown) return false;
+  const position = getQueuePosition(clientJid);
+  const total = listPendingHandoffs().length;
+  const partes = [
+    `📩 *Mensaje recibido.*`,
+    position > 0 ? `Sigues en la posición *${position}* de ${total}.` : `Sigues en la cola.`,
+    `Un agente te atenderá en cuanto pueda.`,
+  ];
+  try {
+    db.prepare(`UPDATE handoffs SET last_ack_at = ? WHERE client_jid = ?`).run(now, clientJid);
+  } catch (error) {
+    log('warn', 'handoff_ack_persist_fail', error?.message || String(error));
+  }
+  return sendText(clientJid, partes.join(' '));
+}
+
+// Alerta al owner cuando la cola supera un umbral y no se envió aviso reciente.
+// Umbral y cooldown vienen de cfg — desactivable con umbral 0.
+async function maybeAlertOwnerOnQueuePressure(pendingCount) {
+  const threshold = parseInt(cfg('handoff_owner_alert_threshold', '3'), 10);
+  if (!Number.isFinite(threshold) || threshold <= 0) return false;
+  if (pendingCount < threshold) return false;
+  const cooldown = Math.max(120, parseInt(cfg('handoff_owner_alert_cooldown_sec', '600'), 10) || 600);
+  const now = Math.floor(Date.now() / 1000);
+  const lastRaw = cfg('handoff_owner_alert_at', '');
+  const last = lastRaw ? parseInt(lastRaw, 10) : 0;
+  if (last && now - last < cooldown) return false;
+  const ownerPhone = normalizePhone(OWNER_NUMBER);
+  if (!ownerPhone) return false;
+  const ownerJid = `${ownerPhone}@s.whatsapp.net`;
+  const oldest = db.prepare(`
+    SELECT client_jid, requested_at
+    FROM handoffs WHERE admin_jid IS NULL
+    ORDER BY requested_at ASC LIMIT 1
+  `).get();
+  const waited = oldest ? _formatDuration(now - Number(oldest.requested_at || now)) : '¿?';
+  const available = countAvailableAdmins();
+  const msg =
+    `🚨 *Cola de atención saturada*\n\n` +
+    `• Clientes esperando: *${pendingCount}*\n` +
+    `• Espera del más antiguo: *${waited}*\n` +
+    `• Operadores online: ${available}\n\n` +
+    `Usa *!list* para verlos y *!take* para atender al primero.`;
+  try {
+    await sendText(ownerJid, msg);
+    setCfg('handoff_owner_alert_at', String(now));
+    log('info', 'handoff_owner_alerted', `pending=${pendingCount} available=${available}`);
+    return true;
+  } catch (error) {
+    log('warn', 'handoff_owner_alert_send_fail', error?.message || String(error));
+    return false;
+  }
+}
+
+// Consulta explícita de posición por parte del cliente. Regex enfocadas
+// (no atrapa "cuánto falta para mi pedido" — ese va al flujo de pedido).
+const QUEUE_POSITION_QUERY_RE = new RegExp(
+  '^\\s*/?posici[oó]n\\b' +
+  '|\\bposici[oó]n\\s+(?:en\\s+)?(?:la\\s+)?cola\\b' +
+  '|\\b(?:qu[eé]|cu[aá]l)\\s+(?:es\\s+)?(?:mi\\s+)?posici[oó]n\\b' +
+  '|\\ben\\s+qu[eé]\\s+posici[oó]n\\b' +
+  '|\\bcu[aá]ntos\\s+(?:hay\\s+)?(?:delante|antes|en\\s+cola)\\b' +
+  '|\\bd[oó]nde\\s+voy\\s+en\\s+(?:la\\s+)?cola\\b' +
+  '|\\bmi\\s+turno\\b',
+  'i'
+);
+
+function isQueuePositionQuery(text) {
+  return QUEUE_POSITION_QUERY_RE.test(String(text || ''));
+}
+
+async function replyQueuePosition(clientJid) {
+  const position = getQueuePosition(clientJid);
+  const total = listPendingHandoffs().length;
+  const available = countAvailableAdmins();
+  if (position <= 0 || total === 0) {
+    return sendText(clientJid, `No estás en cola ahora mismo. Escribe *AGENTE* si necesitas hablar con una persona.`);
+  }
+  const partes = [
+    `🔢 Tu posición: *${position}* de *${total}*.`,
+    available > 0
+      ? `👥 Operadores conectados: *${available}*.`
+      : `👥 No hay agentes online — el equipo ya recibió el aviso.`,
+    `Un agente te atenderá en cuanto pueda. Escribe */volver bot* para salir de la cola.`,
+  ];
+  return sendText(clientJid, partes.join('\n\n'));
+}
+
+// Barrido de handoffs en espera abandonados. Un cliente pidió AGENTE, se
+// fue del chat y nunca volvió; el bot re-notifica al equipo indefinidamente.
+// Tras `handoff_queue_max_sec` (default 24h) sin admin asignado y sin
+// mensajes recientes, cerramos silenciosamente y archivamos como
+// `abandoned` para que no bloqueen la cola ni contaminen métricas.
+async function sweepAbandonedQueuedHandoffs() {
+  const maxSec = parseInt(cfg('handoff_queue_max_sec', String(24 * 3600)), 10);
+  if (!Number.isFinite(maxSec) || maxSec <= 0) return 0;
+  const now = Math.floor(Date.now() / 1000);
+  const cutoff = now - maxSec;
+  // Consideramos "abandonado" si:
+  //  - No hay admin asignado.
+  //  - El último mensaje del cliente (si hay) es más antiguo que cutoff.
+  //  - El requested_at también es anterior al cutoff.
+  const stale = db.prepare(`
+    SELECT h.client_jid,
+           h.requested_at,
+           (SELECT MAX(created_at) FROM handoff_messages
+            WHERE client_jid = h.client_jid AND sender = 'client') AS last_msg
+    FROM handoffs h
+    WHERE h.admin_jid IS NULL
+      AND h.requested_at < ?
+  `).all(cutoff);
+  if (!stale.length) return 0;
+  let closed = 0;
+  for (const row of stale) {
+    const lastActivity = Math.max(Number(row.requested_at || 0), Number(row.last_msg || 0));
+    if (lastActivity >= cutoff) continue; // aún hay actividad reciente
+    try {
+      db.transaction(() => {
+        archiveHandoffSnapshot(row.client_jid, 'abandoned');
+        db.prepare(`DELETE FROM handoffs WHERE client_jid = ?`).run(row.client_jid);
+        db.prepare(`DELETE FROM handoff_messages WHERE client_jid = ?`).run(row.client_jid);
+      })();
+      closed++;
+      log('info', 'handoff_abandoned_closed', `${row.client_jid} idle=${now - lastActivity}s`);
+    } catch (error) {
+      log('warn', 'handoff_abandoned_close_fail', `${row.client_jid}: ${error?.message || String(error)}`);
+    }
+  }
+  return closed;
+}
+
+// Barrido de chats activos ociosos. Un chat con ambas partes silenciosas
+// durante `handoff_inactivity_sec` se cierra automáticamente para no
+// bloquear al admin (no puede tomar otro cliente) ni dejar al cliente
+// esperando indefinidamente. Notifica a ambos lados y archiva el
+// transcript. Umbral 0 (o negativo) desactiva la característica.
+async function sweepInactiveActiveHandoffs() {
+  const inactiveSec = parseInt(cfg('handoff_inactivity_sec', '900'), 10);
+  if (!Number.isFinite(inactiveSec) || inactiveSec <= 0) return 0;
+  const now = Math.floor(Date.now() / 1000);
+  const cutoff = now - inactiveSec;
+  const stale = db.prepare(`
+    SELECT client_jid, admin_jid, assigned_at, last_activity_at
+    FROM handoffs
+    WHERE admin_jid IS NOT NULL
+      AND COALESCE(last_activity_at, assigned_at, requested_at) < ?
+  `).all(cutoff);
+  if (!stale.length) return 0;
+  let closed = 0;
+  for (const row of stale) {
+    try {
+      const idleSec = now - Number(row.last_activity_at || row.assigned_at || now);
+      const closedOk = await closeHumanChat(row.admin_jid, row.client_jid, false);
+      if (!closedOk) continue;
+      closed++;
+      const dur = _formatDuration(idleSec);
+      const adminMsg =
+        `⌛ El chat con *${phoneFromJid(row.client_jid)}* se cerró por inactividad ` +
+        `(sin mensajes durante *${dur}*).\n\n` +
+        `Si necesitas retomarlo, escribe *!send ${phoneFromJid(row.client_jid)} <mensaje>*. ` +
+        `El cliente también puede volver a solicitar atención escribiendo *AGENTE*.`;
+      const clientMsg =
+        `⌛ El chat con el equipo se cerró por inactividad (${dur} sin mensajes).\n\n` +
+        `Si necesitas seguir hablando con una persona, escribe *AGENTE* y volvemos a conectarte.`;
+      // Notificaciones en paralelo — un fallo no bloquea al otro.
+      await Promise.allSettled([
+        sendText(row.admin_jid, adminMsg),
+        sendText(row.client_jid, clientMsg),
+      ]);
+      log('info', 'handoff_inactivity_close', `${row.client_jid} admin=${row.admin_jid} idle=${idleSec}s`);
+    } catch (error) {
+      log('warn', 'handoff_inactivity_close_fail',
+        `${row.client_jid}: ${error?.message || String(error)}`);
+    }
+  }
+  return closed;
+}
+
+// Mensaje inicial al cliente cuando entra a cola. Incluye posición, cuántos
+// operadores hay online y hint de escape.
+function _renderQueueEntryMessage({ position, total, availableAdmins, fallback }) {
+  const partes = [`💬 *Te he puesto en cola para hablar con una persona.*`];
+  if (position > 0) {
+    partes.push(`\n🔢 Tu posición: *${position}* de ${total}.`);
+  }
+  if (availableAdmins > 0) {
+    partes.push(`\n👥 Operadores conectados: ${availableAdmins}.`);
+    partes.push(`Un agente te atenderá en cuanto termine el chat actual.`);
+  } else if (fallback) {
+    partes.push(`\nNo hay agentes conectados en este momento, pero ya avisé al equipo por WhatsApp.`);
+    partes.push(`La respuesta puede tardar un poco más de lo habitual.`);
+  } else {
+    partes.push(`\nSeguimos avisando al equipo. En cuanto uno se conecte te atenderá.`);
+  }
+  partes.push(`\n\nMientras tanto puedes seguir escribiendo — todo queda guardado.`);
+  partes.push(`Para volver al asistente escribe */volver bot*.`);
+  return partes.join(' ').replace(/ \n/g, '\n');
+}
+
 async function requestHumanSupport(clientJid, initialText = '') {
+  // Ya hay handoff: no duplicamos. Si tiene admin, encolamos el mensaje
+  // como una nueva línea; si está en espera, mostramos posición sin
+  // reiniciar timers ni gastar notificaciones extra.
+  const existing = getHandoff(clientJid);
+  if (existing) {
+    if (existing.admin_jid) {
+      if (initialText) queueAssignedHandoffMessage(clientJid, existing.admin_jid, 'client', initialText);
+      return sendText(
+        clientJid,
+        `Ya estás en chat con una persona del equipo. Escríbele directamente lo que necesites.`,
+      );
+    }
+    if (initialText) queueHandoffMessage(clientJid, 'client', initialText);
+    return replyQueuePosition(clientJid);
+  }
   let destination = { scope: 'global', agents: adminPhones() };
   try {
     const resolved = await oxidianGet(`/handoff/destination?telefono=${encodeURIComponent(phoneFromJid(clientJid))}`);
@@ -1138,20 +1743,82 @@ async function requestHumanSupport(clientJid, initialText = '') {
     log('error', 'handoff_auto_assign_fail', error?.message || String(error));
   }
   if (assignedAdmin) return true;
+  let notifyResult = { notified: 0, fallback: false };
   try {
-    await notifyAdminsHandoffQueued(clientJid);
+    notifyResult = await notifyAdminsHandoffQueued(clientJid) || notifyResult;
   } catch (error) {
     log('error', 'handoff_notify_admins_fail', error?.message || String(error));
   }
-  return sendText(clientJid, texts.HANDOFF_QUEUED);
+  // Comprobar posición y disparar alerta al owner si la cola supera umbral.
+  const position = getQueuePosition(clientJid);
+  const total = listPendingHandoffs().length;
+  const available = countAvailableAdmins();
+  await maybeAlertOwnerOnQueuePressure(total).catch(() => {});
+  return sendText(
+    clientJid,
+    _renderQueueEntryMessage({
+      position,
+      total,
+      availableAdmins: available,
+      fallback: notifyResult.fallback,
+    }),
+  );
+}
+
+// Archiva una conversación de handoff en `handoff_history` con todo su
+// transcript. Debe llamarse ANTES de borrar filas de `handoffs` /
+// `handoff_messages`, dentro de la misma transacción para atomicidad.
+// `reason` es libre y va al log: "admin_closed", "client_exited",
+// "released_to_queue", "orphaned", etc.
+function archiveHandoffSnapshot(clientJid, reason) {
+  const handoff = db.prepare(`
+    SELECT client_jid, admin_jid, requested_at, assigned_at
+    FROM handoffs WHERE client_jid = ?
+  `).get(clientJid);
+  if (!handoff) return null;
+  const mensajes = db.prepare(`
+    SELECT sender, body, created_at, delivered_at
+    FROM handoff_messages
+    WHERE client_jid = ?
+    ORDER BY id ASC
+  `).all(clientJid);
+  const now = Math.floor(Date.now() / 1000);
+  const openedAt = Number(handoff.requested_at || now);
+  const assignedAt = handoff.assigned_at ? Number(handoff.assigned_at) : null;
+  const waitedSec = assignedAt ? Math.max(0, assignedAt - openedAt) : Math.max(0, now - openedAt);
+  const handledSec = assignedAt ? Math.max(0, now - assignedAt) : null;
+  try {
+    db.prepare(`
+      INSERT INTO handoff_history
+        (client_jid, admin_jid, opened_at, assigned_at, closed_at, close_reason,
+         waited_sec, handled_sec, message_count, transcript_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      clientJid,
+      handoff.admin_jid || null,
+      openedAt,
+      assignedAt,
+      now,
+      String(reason || 'unknown').slice(0, 40),
+      waitedSec,
+      handledSec,
+      mensajes.length,
+      JSON.stringify(mensajes),
+    );
+  } catch (error) {
+    log('warn', 'handoff_archive_fail', `${clientJid}: ${error?.message || String(error)}`);
+  }
+  return { openedAt, assignedAt, waitedSec, handledSec, messageCount: mensajes.length };
 }
 
 async function closeHumanChat(adminJid, clientJid, notifyClient = true) {
   const closed = db.transaction(() => {
     const removed = db.prepare(`
-      DELETE FROM handoffs WHERE client_jid=? AND admin_jid=?
-    `).run(clientJid, adminJid);
-    if (!removed.changes) return false;
+      SELECT client_jid FROM handoffs WHERE client_jid=? AND admin_jid=?
+    `).get(clientJid, adminJid);
+    if (!removed) return false;
+    archiveHandoffSnapshot(clientJid, 'admin_closed');
+    db.prepare(`DELETE FROM handoffs WHERE client_jid=? AND admin_jid=?`).run(clientJid, adminJid);
     db.prepare(`DELETE FROM handoff_messages WHERE client_jid = ?`).run(clientJid);
     db.prepare(`
       UPDATE sessions
@@ -1200,6 +1867,7 @@ function closeHumanChatByClient(clientJid) {
   return db.transaction(() => {
     const handoff = getHandoff(clientJid);
     if (!handoff) return null;
+    archiveHandoffSnapshot(clientJid, 'client_exited');
     db.prepare(`DELETE FROM handoffs WHERE client_jid=?`).run(clientJid);
     db.prepare(`DELETE FROM handoff_messages WHERE client_jid=?`).run(clientJid);
     if (handoff.admin_jid) {
@@ -1265,6 +1933,48 @@ async function retryPendingHandoffMessages() {
           `${row.client_jid}: ${error?.message || String(error)}`);
     }
   }
+  // Handoffs que llevan en cola sin operador. Reintentamos:
+  //   1. Auto-asignación (por si un admin acaba de escribir !disponible).
+  //   2. Si sigue sin admin y ha pasado el cooldown, re-notificamos al
+  //      equipo. Cooldown = HANDOFF_RENOTIFY_SEC (default 120s) para no
+  //      spamear a los operadores mientras el cliente sigue escribiendo.
+  const renotifySec = Math.max(30, parseInt(cfg('handoff_renotify_sec', '120'), 10) || 120);
+  const pending = db.prepare(`
+    SELECT client_jid, requested_at, notified_at
+    FROM handoffs
+    WHERE admin_jid IS NULL
+  `).all().filter(row => canBeHandoffClient(row.client_jid));
+  for (const row of pending) {
+    let assigned = null;
+    try {
+      assigned = await autoAssignPendingHandoff(row.client_jid);
+    } catch (error) {
+      log('warn', 'handoff_retry_assign_fail', error?.message || String(error));
+    }
+    if (assigned) continue;
+    const now = Math.floor(Date.now() / 1000);
+    const lastNotified = Number(row.notified_at || 0);
+    if (lastNotified && now - lastNotified < renotifySec) continue;
+    try {
+      await notifyAdminsHandoffQueued(row.client_jid);
+      db.prepare(`UPDATE handoffs SET notified_at = ? WHERE client_jid = ?`)
+        .run(now, row.client_jid);
+    } catch (error) {
+      log('warn', 'handoff_renotify_fail', error?.message || String(error));
+    }
+  }
+  // Barrido de chats activos ociosos. Best-effort — cualquier fallo aquí
+  // no debe abortar los reintentos de entrega ni los re-avisos anteriores.
+  try {
+    await sweepInactiveActiveHandoffs();
+  } catch (error) {
+    log('warn', 'handoff_sweep_inactivity_fail', error?.message || String(error));
+  }
+  try {
+    await sweepAbandonedQueuedHandoffs();
+  } catch (error) {
+    log('warn', 'handoff_sweep_abandoned_fail', error?.message || String(error));
+  }
 }
 function releaseHandoffByAdmin(adminJid) {
   try {
@@ -1279,7 +1989,13 @@ function deleteHandoffsByAdmin(adminJid) {
   } catch (e) { return null; }
 }
 function deleteHandoff(clientJid) {
-  return db.prepare(`DELETE FROM handoffs WHERE client_jid = ?`).run(clientJid);
+  // Archivamos antes de borrar para no perder auditoría. Los callers que
+  // llegan aquí (superadmin limpieza, deletion masiva por admin) igualmente
+  // aceptan una operación destructiva pero conservar el snapshot es gratis.
+  return db.transaction(() => {
+    archiveHandoffSnapshot(clientJid, 'deleted');
+    return db.prepare(`DELETE FROM handoffs WHERE client_jid = ?`).run(clientJid);
+  })();
 }
 
 function getMutedClient(phone) {
@@ -2573,6 +3289,22 @@ async function syncBranding() {
     if (data.bot_max_points_adjust !== undefined) {
       setCfg('bot_max_points_adjust', String(data.bot_max_points_adjust || '10000'));
     }
+    // Límites de conversación administrados desde SiteConfig. Se copian por
+    // nombre explícito para impedir que una respuesta alterada escriba claves
+    // arbitrarias en la configuración local del bot.
+    const flowLimits = data.bot_flow_limits && typeof data.bot_flow_limits === 'object'
+      ? data.bot_flow_limits
+      : {};
+    for (const key of [
+      'reporte_rate_window_sec', 'reporte_rate_max_per_window',
+      'handoff_sla_warning_sec', 'handoff_owner_alert_threshold',
+      'handoff_owner_alert_cooldown_sec', 'handoff_queue_max_sec',
+      'handoff_inactivity_sec',
+    ]) {
+      if (flowLimits[key] !== undefined && flowLimits[key] !== null) {
+        setCfg(key, String(flowLimits[key]));
+      }
+    }
     setCfg('whatsapp_role_profiles', JSON.stringify(
       Array.isArray(data.whatsapp_roles) ? data.whatsapp_roles : []
     ));
@@ -2702,19 +3434,26 @@ function getSesion(jid) {
 }
 
 function saveSesion(ses) {
-  const role = isAdminJid(ses.jid) ? 'admin' : (ses.role || 'client');
-  _sesUps.run(
-    ses.jid,
-    ses.nombre || null,
-    role,
-    ses.estado,
-    JSON.stringify(ses.carrito || []),
-    JSON.stringify(ses.pending || {}),
-    ses.zona_id ?? null,
-    ses.active_client_jid || null,
-    ses.bar_id ?? null,
-    ses.bar_nombre || null,
-  );
+  // Un fallo al persistir la sesión no debe tirar todo el turn. Preferimos
+  // trabajar con sesión efímera y avisar a logs a "romper" al cliente. La
+  // próxima llamada recreará la sesión desde `getSesion()`.
+  try {
+    const role = isAdminJid(ses.jid) ? 'admin' : (ses.role || 'client');
+    _sesUps.run(
+      ses.jid,
+      ses.nombre || null,
+      role,
+      ses.estado,
+      JSON.stringify(ses.carrito || []),
+      JSON.stringify(ses.pending || {}),
+      ses.zona_id ?? null,
+      ses.active_client_jid || null,
+      ses.bar_id ?? null,
+      ses.bar_nombre || null,
+    );
+  } catch (error) {
+    log('error', 'save_sesion_fail', `${ses?.jid}: ${error?.message || String(error)}`);
+  }
 }
 
 function resetSesion(jid, nombre = null, role = null) {
@@ -3018,7 +3757,7 @@ async function requireAdminPin(jid, ses, text) {
 
   // Solo bloquea acciones de escritura. Lectura libre.
   const cmd = String(text || '').toLowerCase().trim();
-  if (ADMIN_READ_ONLY_CMDS.has(cmd)) return true;
+  if (isAdminPinReadOnlyInput(cmd)) return true;
 
   // Si el usuario está enviando el PIN ahora
   if (ses?.estado === 'awaiting_pin') {
@@ -3055,7 +3794,11 @@ async function requireAdminPin(jid, ses, text) {
       unlockAdmin(jid);
       setSesion(jid, { ...ses, estado: back, pending: clearPin });
       const min = Math.round(ADMIN_PIN_TTL_MS / 60000);
-      await sendText(jid, `🔓 PIN correcto. Sesión segura activa durante ${min} min.`);
+      await sendText(
+        jid,
+        `🔓 PIN correcto. Sesión segura activa durante ${min} min.\n` +
+        `Repite ahora la acción que querías realizar.`,
+      );
       // Re-mostrar menú según rol
       if (isAdminJid(jid)) return await sendText(jid, adminMenu(jid)).then(() => false);
       // Bar operator flow retirado — ver bloque DEAD CODE REMOVED.
@@ -3123,6 +3866,18 @@ async function _handleMessage(jid, text, pushName) {
   const ownerAsClient = isOwner && isAdminClientMode(jid, ses);
   const requestedMode = isOwner ? detectOperationalModeCommand(text) : null;
 
+  // `/volver bot` sólo tiene sentido dentro de un chat humano. Si el cliente
+  // lo escribe fuera de ese contexto, respondemos claramente en vez de
+  // dejar que caiga al fallback del menú principal.
+  if (!isOwner && lower === '/volver bot') {
+    if (!getHandoff(jid)) {
+      return sendText(jid,
+        `Ya estás con el asistente automático — no hay un chat con una persona activo ahora mismo.\n\n` +
+        `Si necesitas hablar con alguien escribe *AGENTE*.`,
+      );
+    }
+  }
+
   if (!isBotEnabled() && (!isOwner || ownerAsClient)) {
     const handoff = getHandoff(jid);
     if (handoff && lower === '/volver bot') {
@@ -3134,8 +3889,10 @@ async function _handleMessage(jid, text, pushName) {
     }
     if (handoff?.admin_jid) return forwardClientToAdmin(jid, handoff.admin_jid, text);
     if (handoff) {
+      if (isQueuePositionQuery(text)) return replyQueuePosition(jid);
       queueHandoffMessage(jid, 'client', text);
-      await autoAssignPendingHandoff(jid);
+      const assigned = await autoAssignPendingHandoff(jid);
+      if (!assigned) await maybeSendQueueAckToClient(jid);
       return true;
     }
     return requestHumanSupport(jid, text);
@@ -3177,11 +3934,14 @@ async function _handleMessage(jid, text, pushName) {
         if (handoff.admin_jid) {
           return forwardClientToAdmin(jid, handoff.admin_jid, text);
         }
+        if (isQueuePositionQuery(text)) return replyQueuePosition(jid);
         queueHandoffMessage(jid, 'client', text);
         const assigned = await autoAssignPendingHandoff(jid);
-        if (!assigned) {
-          return sendText(jid, `🕐 Tu mensaje quedó guardado en la cola. Te responderemos por este mismo chat.`);
-        }
+        if (assigned) return true;
+        // Ack con posición sólo si toca según cooldown. Si no toca, el cliente
+        // simplemente ve el silencio (mensaje ya está en cola y visible al
+        // admin que lo tome).
+        await maybeSendQueueAckToClient(jid);
         return true;
       }
     }
@@ -3235,6 +3995,15 @@ async function _handleMessage(jid, text, pushName) {
     if (waiting && await takeHandoff(jid, next, waiting.client_jid, { automatic: true })) return true;
     await sendText(jid, `🟢 *Modo operativo online.*\nRecibirás chats y alertas compatibles con tus permisos.`);
     return sendText(jid, adminMenu(jid));
+  }
+
+  // `awaiting_pin` es un estado del router, no un submenú. Debe resolverse
+  // antes de cualquier comando o switch administrativo; de lo contrario el
+  // PIN se interpretaba como una opción desconocida y la sesión volvía al
+  // menú sin validar nada.
+  if (isOwner && ses.estado === 'awaiting_pin') {
+    await requireAdminPin(jid, ses, text);
+    return true;
   }
 
   // Durante un handoff, cada mensaje del admin pertenece al chat hasta cerrarlo.
@@ -3292,6 +4061,8 @@ async function _handleMessage(jid, text, pushName) {
   if (isOwner && lower.startsWith('!')
       && !isAdminClientMode(jid, ses)
       && ses.estado !== 'admin_confirm') {
+    const pinOk = await requireAdminPin(jid, ses, text);
+    if (!pinOk) return true;
     return handleAdminCmd(jid, text);
   }
   // El número 7 solo significa "agente" dentro del menú principal. Tratarlo
@@ -3362,7 +4133,7 @@ async function _handleMessage(jid, text, pushName) {
       // Cliente
       'espera_numero_pedido', 'pedido_acciones', 'espera_reporte_pedido',
       'seleccionar_cancelacion', 'confirmar_cancelacion',
-      'espera_direccion_cobertura',
+      'espera_direccion_cobertura', 'info_menu',
       // Admin en modo cliente de prueba
       'confirm', 'store_menu', 'store_close_message',
       'products_menu', 'product_search', 'product_price_wait',
@@ -3477,6 +4248,7 @@ async function _handleMessage(jid, text, pushName) {
     }
     switch (ses.estado) {
       case 'client_main_menu': return handleMainMenu(jid, ses, lower);
+      case 'client_info_menu': return handleClientInfoMenu(jid, ses, text);
       case 'client_espera_numero_pedido': return handleEstadoPedido(jid, ses, text);
       case 'client_pedido_acciones': return handlePedidoActions(jid, ses, text);
       case 'client_espera_reporte_pedido': return handleReportePedido(jid, ses, text);
@@ -3490,6 +4262,14 @@ async function _handleMessage(jid, text, pushName) {
 
   if (isOwner) {
     ses.role = 'admin';
+    // Una confirmación puede sobrevivir más que la ventana de desbloqueo del
+    // PIN. Revalidamos justo antes de aceptar SI/NO para que una sesión vieja
+    // no permita ejecutar la acción a quien tenga el teléfono más tarde.
+    if (ses.estado === 'admin_confirm' && !isAdminUnlocked(jid)) {
+      const pinOk = await requireAdminPin(jid, ses, text);
+      if (!pinOk) return true;
+      ses = getSesion(jid);
+    }
     if (ses.estado === 'admin_chat' && ['/cerrar chat', '/cerrarchat'].includes(lower)) {
       const closed = await closeHumanChat(jid, ses.active_client_jid);
       return closed
@@ -3507,6 +4287,8 @@ async function _handleMessage(jid, text, pushName) {
       if (!adminCan(jid, 'store')) {
         return sendText(jid, '⛔ No tienes permiso para abrir o cerrar la tienda.');
       }
+      const pinOk = await requireAdminPin(jid, ses, lower);
+      if (!pinOk) return true;
       const cerrar = /^\/?cerrar/i.test(lower);
       return askAdminConfirm(
         jid,
@@ -3528,6 +4310,8 @@ async function _handleMessage(jid, text, pushName) {
     }
     if (lower === 'admin') return startAdminMenu(jid, ses.nombre);
     if (lower.startsWith('!') && ses.estado !== 'admin_confirm') {
+      const pinOk = await requireAdminPin(jid, ses, text);
+      if (!pinOk) return true;
       return handleAdminCmd(jid, text);
     }
     // Si intenta comprar o consultar "mi pedido" desde el panel operativo,
@@ -3592,7 +4376,7 @@ async function _handleMessage(jid, text, pushName) {
     return sendText(jid, `Los comandos administrativos no están disponibles para clientes.\n\n${menuPrincipal()}`);
   }
 
-  if (/^(?:agente|persona|humano|asesor)$|(?:hablar|comunicarme|contactar).*(?:agente|persona|humano|asesor)/i.test(lower)) {
+  if (/^(?:agente|persona|humano|asesor|operador)\b|(?:hablar|comunicarme|contactar|quiero|necesito|dame|p[aá]sa(?:me)?)\b[^\n]{0,30}(?:agente|persona|humano|asesor|operador)/i.test(lower)) {
     return requestHumanSupport(jid, text);
   }
 
@@ -3617,6 +4401,7 @@ async function _handleMessage(jid, text, pushName) {
   switch (ses.estado) {
     case 'idle':
     case 'main_menu': return handleMainMenu(jid, ses, lower);
+    case 'info_menu': return handleClientInfoMenu(jid, ses, text);
     case 'espera_numero_pedido': return handleEstadoPedido(jid, ses, text);
     case 'pedido_acciones': return handlePedidoActions(jid, ses, text);
     case 'espera_reporte_pedido': return handleReportePedido(jid, ses, text);
@@ -3634,6 +4419,7 @@ async function forwardClientToAdmin(clientJid, adminJid, text) {
     log('warn', 'handoff_forward_stale', `${clientJid} -> ${adminJid}`);
     return false;
   }
+  touchHandoffActivity(clientJid);
   const forwarded = `💬 Mensaje de ${phoneFromJid(clientJid)}:\n\n${text}`;
   const sent = await sendText(adminJid, forwarded);
   if (sent && queued?.lastInsertRowid) {
@@ -3650,14 +4436,29 @@ async function handleAdminChat(jid, ses, text) {
     saveSesion(ses);
     return sendText(jid, `No tienes un chat humano activo.\n\n${adminMenu(jid)}`);
   }
-  const queued = queueAssignedHandoffMessage(clientJid, jid, 'admin', text);
+  // Blindaje: si el admin escribió un comando (`/algo` o `!algo`) NO se
+  // reenvía al cliente. Antes: un `/cerrar chat` mal tipeado o un `!status`
+  // acababan en la pantalla del cliente. Ahora el admin recibe un aviso y
+  // decide reenviar el mismo texto sin el prefijo si quería literalmente
+  // enviarlo.
+  const trimmed = String(text || '').trim();
+  if (/^[!/]/.test(trimmed)) {
+    return sendText(jid,
+      `⚠️ Ese mensaje empezaba por *${trimmed[0]}* y no se envió al cliente ` +
+      `para evitar filtrar comandos internos.\n\n` +
+      `• Si querías un comando, escríbelo desde el menú (*/cerrar chat*, *!release*, etc.).\n` +
+      `• Si querías enviarlo tal cual, vuelve a escribirlo sin el símbolo inicial.`
+    );
+  }
+  const queued = queueAssignedHandoffMessage(clientJid, jid, 'admin', trimmed);
   if (!queued) {
     ses.estado = 'admin_menu';
     ses.active_client_jid = null;
     saveSesion(ses);
     return sendText(jid, `El chat se cerró antes de enviar el mensaje.\n\n${adminMenu(jid)}`);
   }
-  const sent = await sendText(clientJid, `👤 *Respuesta del equipo:*\n\n${text}`);
+  touchHandoffActivity(clientJid);
+  const sent = await sendText(clientJid, `👤 *Respuesta del equipo:*\n\n${trimmed}`);
   if (sent && queued?.lastInsertRowid) {
     markHandoffTranscriptDelivered(clientJid, [Number(queued.lastInsertRowid)]);
   }
@@ -3723,7 +4524,7 @@ async function handleAdminCmd(jid, text) {
   }
   const requiredCapability = lowerCmd === 'status' ? 'status'
     : lowerCmd === 'sync' ? 'sync'
-    : /^(send|take|release)(\s|$)/.test(lowerCmd) || ['disponible', 'ausente'].includes(lowerCmd)
+    : /^(send|take|release|ver|transfer|historia|mis-stats)(\s|$)/.test(lowerCmd) || ['disponible', 'ausente', 'list', 'cola-atencion', 'yo', 'mis-stats'].includes(lowerCmd)
       ? 'handoff'
       : null;
   if (requiredCapability && !adminCan(jid, requiredCapability)) {
@@ -3744,6 +4545,28 @@ async function handleAdminCmd(jid, text) {
     const assigned = db.prepare(`SELECT COUNT(*) as c FROM handoffs WHERE admin_jid IS NOT NULL`).get().c;
     const logs = db.prepare(`SELECT COUNT(*) as c FROM logs WHERE created_at >= unixepoch()-86400`).get().c;
     const prods = db.prepare(`SELECT COUNT(*) as c FROM productos_cache WHERE activo=1`).get().c;
+    const availableCount = countAvailableAdmins();
+    // Espera del cliente más antiguo en cola.
+    const now = Math.floor(Date.now() / 1000);
+    const oldest = db.prepare(`
+      SELECT requested_at FROM handoffs
+      WHERE admin_jid IS NULL ORDER BY requested_at ASC LIMIT 1
+    `).get();
+    const oldestWait = oldest ? _formatDuration(now - Number(oldest.requested_at || now)) : '—';
+    // Métricas de handoff últimas 24h desde el histórico.
+    const stats24 = db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN admin_jid IS NOT NULL THEN 1 ELSE 0 END) AS atendidos,
+        AVG(waited_sec) AS avg_wait,
+        AVG(handled_sec) AS avg_handle
+      FROM handoff_history
+      WHERE closed_at >= unixepoch() - 86400
+    `).get();
+    const total24 = Number(stats24?.total || 0);
+    const atendidos24 = Number(stats24?.atendidos || 0);
+    const avgWait = total24 ? _formatDuration(stats24.avg_wait || 0) : '—';
+    const avgHandle = atendidos24 ? _formatDuration(stats24.avg_handle || 0) : '—';
     // Reporte de ahorro IA (si hay tráfico).
     const totalMsg = Object.entries(MSG_STATS).filter(([k]) => k !== 'since').reduce((s, [, v]) => s + v, 0);
     const sinIA = MSG_STATS.saludo + MSG_STATS.faq + MSG_STATS.intent + MSG_STATS.ai_cache_hit;
@@ -3751,9 +4574,15 @@ async function handleAdminCmd(jid, text) {
     return sendText(jid,
       `🤖 *Bot Status*\n\n` +
       `Sesiones: ${sesiones} (${clientes} clientes / ${admins} admins)\n` +
-      `Handoffs: ${pending} pendientes / ${assigned} activos\n` +
       `Catálogo cache: ${prods} productos\n` +
       `Logs 24h: ${logs}\n\n` +
+      `👥 *Handoff ahora*\n` +
+      `Pendientes: *${pending}*   ·   Activos: *${assigned}*\n` +
+      `Operadores online: *${availableCount}*\n` +
+      `Espera más antigua: *${oldestWait}*\n\n` +
+      `📈 *Handoff 24h*\n` +
+      `Cerrados: ${total24} (${atendidos24} atendidos)\n` +
+      `Espera media: ${avgWait}   ·   Duración media: ${avgHandle}\n\n` +
       `📊 *Ahorro IA*\n` +
       `Mensajes procesados: ${totalMsg}\n` +
       `Sin IA (FAQ+intent+cache): ${sinIA} (${pctSinIA}%)\n` +
@@ -4149,9 +4978,27 @@ async function handleAdminCmd(jid, text) {
   }
 
   if (lowerCmd === 'sync') {
-    await syncCatalogo();
-    await syncZonas();
+    // Reportamos parcialidad: si sólo falla una de las dos sincronizaciones,
+    // el admin debe saberlo (antes se enviaba "✅ Catálogo sincronizado"
+    // aunque hubiera lanzado excepción y no se hubiese llegado a este
+    // punto — silenciando errores).
+    const fallos = [];
+    try { await syncCatalogo(); } catch (error) {
+      log('warn', 'sync_catalogo_manual_fail', error?.message || String(error));
+      fallos.push(`catálogo (${error?.message || 'error desconocido'})`);
+    }
+    try { await syncZonas(); } catch (error) {
+      log('warn', 'sync_zonas_manual_fail', error?.message || String(error));
+      fallos.push(`zonas (${error?.message || 'error desconocido'})`);
+    }
     const prods = db.prepare(`SELECT COUNT(*) as c FROM productos_cache WHERE activo=1`).get().c;
+    if (fallos.length) {
+      return sendText(jid,
+        `⚠️ Sincronización parcial. ${prods} productos activos ahora en cache.\n\n` +
+        `Fallaron: ${fallos.join('; ')}.\n\n` +
+        `Reintenta *!sync* en unos segundos o revisa el panel de Oxidian.`
+      );
+    }
     return sendText(jid, `✅ Catálogo sincronizado. ${prods} productos activos.`);
   }
 
@@ -4458,9 +5305,66 @@ async function handleAdminCmd(jid, text) {
     return sendText(jid, '✅ Sesiones de clientes y handoffs limpiados. Las sesiones admin se conservan.');
   }
 
-  if (lowerCmd.startsWith('take ')) {
-    const clientJid = normalizeJid(lowerCmd.slice(5));
-    if (!clientJid) return sendText(jid, 'Uso: !take NUMERO');
+  // ── Panorama completo de la cola de atención humana ──
+  // Uso: !list (o !cola-atencion)  → lista pendientes con espera + preview
+  //                                   + chats ya asignados a otros operadores.
+  if (lowerCmd === 'list' || lowerCmd === 'cola-atencion') {
+    return sendText(jid, renderHandoffQueueSnapshot());
+  }
+
+  // ── Preview de un cliente en cola sin tomarlo ──
+  // Uso: !ver 34600123456  → ficha + últimos mensajes del cliente.
+  if (lowerCmd.startsWith('ver ') && !lowerCmd.startsWith('ver-')) {
+    const argRaw = lowerCmd.slice(4).trim();
+    const clientJid = normalizeJid(argRaw);
+    if (!clientJid) return sendText(jid, `Uso: *!ver <numero>*. Ejemplo: *!ver 34600123456*.`);
+    const preview = await renderHandoffPreview(clientJid);
+    return sendText(jid, preview);
+  }
+
+  // ── Chat propio en curso ──
+  // Uso: !yo  → cliente que atiendo y hace cuánto lo tomé.
+  if (lowerCmd === 'yo') {
+    return sendText(jid, renderAdminActiveHandoff(jid));
+  }
+
+  // ── Transferir chat activo a otro admin ──
+  // Uso: !transfer 34600123456
+  if (lowerCmd.startsWith('transfer ')) {
+    const argRaw = lowerCmd.slice(9).trim();
+    if (!argRaw) return sendText(jid, `Uso: *!transfer <numero_admin>*. Ejemplo: *!transfer 34600123456*.`);
+    const result = await transferHandoffToAdmin(jid, argRaw);
+    if (!result.ok) return sendText(jid, `❌ ${result.reason}`);
+    return true;
+  }
+
+  // ── Historia de atenciones previas de un cliente ──
+  // Uso: !historia 34600123456
+  if (lowerCmd.startsWith('historia ') || lowerCmd === 'historia') {
+    const argRaw = lowerCmd === 'historia' ? '' : lowerCmd.slice(9).trim();
+    if (!argRaw) return sendText(jid, `Uso: *!historia <numero>*. Ejemplo: *!historia 34600123456*.`);
+    const clientJid = normalizeJid(argRaw);
+    if (!clientJid) return sendText(jid, `No pude interpretar "${argRaw}" como un número.`);
+    return sendText(jid, renderClientHandoffHistory(clientJid));
+  }
+
+  // ── Estadísticas propias del admin ──
+  // Uso: !mis-stats  → chats atendidos hoy + tiempos medios propios.
+  if (lowerCmd === 'mis-stats' || lowerCmd === 'stats') {
+    return sendText(jid, renderAdminOwnStats(jid));
+  }
+
+  if (lowerCmd === 'take' || lowerCmd.startsWith('take ')) {
+    const argRaw = lowerCmd === 'take' ? '' : lowerCmd.slice(5).trim();
+    // Sin argumento: tomar el primero de la cola. Evita al operador copiar
+    // números a mano cuando ya recibió la notificación.
+    if (!argRaw) {
+      const waiting = listPendingHandoffs()[0];
+      if (!waiting) return sendText(jid, 'No hay clientes en la cola de atención. Escribe *!list* para ver el estado.');
+      return takeHandoff(jid, getSesion(jid), waiting.client_jid);
+    }
+    const clientJid = normalizeJid(argRaw);
+    if (!clientJid) return sendText(jid, `No pude interpretar "${argRaw}" como un número. Ejemplo: *!take 34600123456*.`);
     return takeHandoff(jid, getSesion(jid), clientJid);
   }
 
@@ -4519,6 +5423,98 @@ function clearAdminChatForClient(clientJid) {
   } catch {}
 }
 
+// Construye una ficha resumen del cliente para que el admin arranque el chat
+// con contexto real: nombre, saldo de puntos, últimos pedidos, historial de
+// atenciones previas y tiempo que llevó en cola. Consultas a Oxidian en
+// paralelo con `Promise.allSettled` — si una tarda, no bloquea al resto.
+async function buildClientBriefForAdmin(clientJid) {
+  const phone = phoneFromJid(clientJid);
+  const clientSes = _sesGet.get(clientJid);
+  const nombre = clientSes?.nombre ? String(clientSes.nombre).trim() : '';
+  const puntosOn = String(cfg('loyalty_enabled', '1')) !== '0';
+  const [puntosRes, pedidosRes] = await Promise.allSettled([
+    puntosOn
+      ? oxidianGet(`/puntos?telefono=${phone}`, { timeout: 4000 })
+      : Promise.resolve(null),
+    oxidianGet(`/pedidos?telefono=${phone}&limit=3`, { timeout: 5000 }),
+  ]);
+  const lineas = [
+    `👤 *Ficha del cliente*`,
+    `• 📞 Teléfono: ${phone}`,
+  ];
+  if (nombre) lineas.push(`• 🪪 Nombre: ${nombre}`);
+  if (puntosOn) {
+    if (puntosRes.status === 'fulfilled' && puntosRes.value?.ok && puntosRes.value?.existe !== false) {
+      lineas.push(`• ⭐ Puntos: ${Number(puntosRes.value.puntos ?? 0)}`);
+    } else if (puntosRes.status === 'rejected') {
+      log('warn', 'brief_puntos_fail', puntosRes.reason?.message || String(puntosRes.reason));
+    }
+  }
+  if (pedidosRes.status === 'fulfilled' && pedidosRes.value?.ok && Array.isArray(pedidosRes.value.pedidos)) {
+    const pedidos = pedidosRes.value.pedidos.slice(0, 3);
+    if (pedidos.length) {
+      lineas.push(`• 🧾 Últimos pedidos:`);
+      for (const p of pedidos) {
+        const total = p.total != null ? ` — ${formatPrecio(p.total)}` : '';
+        lineas.push(`   · *${p.numero}* — ${p.estado}${total}`);
+      }
+    } else {
+      lineas.push(`• 🧾 Sin pedidos previos registrados.`);
+    }
+  } else {
+    if (pedidosRes.status === 'rejected') {
+      log('warn', 'brief_pedidos_fail', pedidosRes.reason?.message || String(pedidosRes.reason));
+    }
+    lineas.push(`• 🧾 Historial de pedidos no disponible ahora.`);
+  }
+  // Historial de atenciones previas (auditoría local, siempre disponible).
+  try {
+    const prev = db.prepare(`
+      SELECT COUNT(*) AS c, MAX(closed_at) AS last
+      FROM handoff_history WHERE client_jid = ?
+    `).get(clientJid);
+    if (prev?.c > 0) {
+      const rel = _relativeAgo(Number(prev.last || 0));
+      lineas.push(`• 📚 Atenciones previas: ${prev.c}${rel ? ` (última ${rel})` : ''}`);
+    }
+  } catch { /* histórico opcional */ }
+  // Tiempo real que llevó esperando en cola antes de la asignación.
+  try {
+    const handoff = db.prepare(`
+      SELECT requested_at, assigned_at FROM handoffs WHERE client_jid = ?
+    `).get(clientJid);
+    if (handoff?.requested_at) {
+      const now = Math.floor(Date.now() / 1000);
+      const waited = Math.max(0, (Number(handoff.assigned_at) || now) - Number(handoff.requested_at));
+      if (waited >= 5) lineas.push(`• ⌛ Esperó en cola: ${_formatDuration(waited)}`);
+    }
+  } catch { /* opcional */ }
+  return lineas.join('\n');
+}
+
+// Formatea segundos como "45s", "3m 12s", "1h 05m". Truncado a 2 unidades.
+function _formatDuration(sec) {
+  const s = Math.max(0, Math.floor(Number(sec) || 0));
+  if (s < 60) return `${s}s`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (h) return `${h}h ${String(m).padStart(2, '0')}m`;
+  return `${m}m ${String(ss).padStart(2, '0')}s`;
+}
+
+// "hace 3 min", "hace 2 h", "hace 5 d". null si el timestamp no es válido.
+function _relativeAgo(unixTs) {
+  const ts = Number(unixTs);
+  if (!Number.isFinite(ts) || ts <= 0) return null;
+  const diff = Math.floor(Date.now() / 1000) - ts;
+  if (diff < 0) return null;
+  if (diff < 60) return `hace ${diff}s`;
+  if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`;
+  return `hace ${Math.floor(diff / 86400)} d`;
+}
+
 async function takeHandoff(adminJid, ses, clientJid, options = {}) {
   const manual = !options.automatic;
   if (!clientJid || !canBeHandoffClient(clientJid) || adminJid === clientJid) {
@@ -4556,7 +5552,17 @@ async function takeHandoff(adminJid, ses, clientJid, options = {}) {
   ses.estado = 'admin_chat';
   ses.active_client_jid = clientJid;
   saveSesion(ses);
+  touchHandoffActivity(clientJid);
   await sendText(clientJid, `👨‍💼 *Te hemos conectado con una persona.*\n\nPuedes escribir aquí con normalidad. Para volver al asistente usa */volver bot*.`);
+  // Contexto ANTES del transcript: así el admin ve quién es el cliente antes
+  // de leer los mensajes en cola. Best-effort — si Oxidian falla no rompe el
+  // handoff.
+  try {
+    const brief = await buildClientBriefForAdmin(clientJid);
+    if (brief) await sendText(adminJid, brief);
+  } catch (error) {
+    log('warn', 'client_brief_fail', `${clientJid}: ${error?.message || String(error)}`);
+  }
   await deliverQueuedTranscript(clientJid, adminJid);
   await sendText(adminJid, adminChatMenu(clientJid));
   log('info', options.automatic ? 'handoff_auto_assigned' : 'handoff_taken', `${clientJid} -> ${adminJid}`);
@@ -4667,6 +5673,7 @@ const CLIENT_INTENT_KEYWORDS = {
   '6': ['horario', 'horarios', 'hora', 'abierto', 'cerrado', 'cierran', 'abren',
         'donde estan', 'dónde están', 'donde estais', 'telefono', 'teléfono',
         'contacto', 'numero', 'número', 'info', 'información', 'informacion',
+        'manual', 'guia', 'guía', 'preguntas', 'faq', 'faqs',
         'ubicacion', 'ubicación', 'codigo', 'código', 'codigo de entrega',
         'pago', 'bizum', 'efectivo', 'entrega', 'problema con el codigo'],
   '7': ['agente', 'humano', 'persona', 'ayuda', 'ayudar', 'hablar', 'soporte',
@@ -4714,14 +5721,19 @@ const CLIENT_FAQS = [
   },
   {
     name: 'metodos_pago',
-    match: /\b(formas?\s+de\s+pag(o|ar)|m[eé]todos?\s+de\s+pag(o|ar)|c[oó]mo\s+pago|c[oó]mo\s+pagar|aceptan\s+(efectivo|tarjeta|bizum)|tarjeta|bizum)\b/i,
+    match: /\b(formas?\s+de\s+pag(o|ar)|m[eé]todos?\s+de\s+pag(o|ar)|c[oó]mo\s+pago|c[oó]mo\s+pagar|aceptan\s+(efectivo|tarjeta|bizum)|tarjeta|bizum|paypal|transferencia)\b/i,
     answer: (ctx) => {
       const metodos = [
-        ctx.cash_enabled ? '• Efectivo' : null,
-        ctx.bizum_enabled ? '• Bizum' : null,
+        ctx.cash_enabled ? '• 💵 Efectivo al recibir' : null,
+        ctx.bizum_enabled ? '• 📱 Bizum' : null,
+        ctx.card_enabled ? '• 💳 Tarjeta (online seguro)' : null,
       ].filter(Boolean);
       if (!metodos.length) return `Las formas de pago disponibles se muestran al confirmar en la tienda online: ${ctx.tiendaUrl}`;
-      return `💳 *Formas de pago*\n\n${metodos.join('\n')}\n\nPuedes elegir una al confirmar en la tienda online.`;
+      return (
+        `💳 *Formas de pago*\n\n${metodos.join('\n')}\n\n` +
+        `Se elige la forma al confirmar el pedido en la tienda online.\n` +
+        `👉 ${ctx.tiendaUrl}`
+      );
     },
   },
   {
@@ -4847,13 +5859,12 @@ const CLIENT_FAQS = [
     name: 'metodos_pago_detalle',
     match: /\b(pago\s+contra\s*entrega|pagar\s+al\s+recibir|cobro\s+contra\s*entrega|puedo\s+pagar\s+en\s+efectivo|acepta?n\s+contado|contra\s*reembolso|efectivo\s+al\s+llegar)\b/i,
     answer: (ctx) => {
-      const efect = String(cfg('cash_enabled', '1')) === '1';
-      const bizum = String(cfg('bizum_enabled', '1')) === '1';
       const opts = [];
-      if (efect) opts.push('💵 Efectivo al recibir');
-      if (bizum) opts.push('📱 Bizum al llegar el repartidor');
+      if (ctx.cash_enabled) opts.push('💵 Efectivo al recibir');
+      if (ctx.bizum_enabled) opts.push('📱 Bizum al llegar el repartidor o en el local');
+      if (ctx.card_enabled) opts.push('💳 Tarjeta online al confirmar el pedido');
       if (!opts.length) return `Consulta al llegar los métodos de pago disponibles.`;
-      return `💳 Puedes pagar así:\n${opts.map(o => '· ' + o).join('\n')}\n\n_La confirmación del cobro se hace al recibir el pedido._`;
+      return `💳 Puedes pagar así:\n${opts.map(o => '· ' + o).join('\n')}\n\n_La confirmación del cobro se hace al recibir el pedido, salvo pago online por tarjeta._`;
     },
   },
   {
@@ -4940,7 +5951,15 @@ const CLIENT_FAQS = [
 
 /**
  * Devuelve la respuesta enlatada de la FAQ que matchee, o null.
- * Algunas FAQs consultan Oxidian para no responder con caché obsoleta.
+ *
+ * Orden de prioridad:
+ *   1. `CLIENT_FAQS` — respuestas curadas con lógica personalizada
+ *      (consultan Oxidian, mezclan varias fuentes, tienen fallbacks).
+ *   2. `detectManualTopic` — repositorio unificado de temas del manual.
+ *      Si el cliente escribe algo que matchea una sección con confianza,
+ *      devolvemos su `body` con un hint para explorar más.
+ *
+ * Cero IA: todo es scoring de regex + gates por cfg.
  */
 async function tryCannedFAQ(text, ctx) {
   const t = String(text || '').toLowerCase();
@@ -4949,6 +5968,19 @@ async function tryCannedFAQ(text, ctx) {
       const out = await faq.answer(ctx);
       if (out) return { name: faq.name, text: out };
     }
+  }
+  try {
+    const manualCtx = { ...ctx, horario_apertura: String(cfg('horario_apertura', '') || '').trim(), horario_cierre: String(cfg('horario_cierre', '') || '').trim() };
+    const topic = detectManualTopic(text, manualCtx);
+    if (topic) {
+      const body = await topic.body(manualCtx);
+      if (body) {
+        const hint = `\n\n_¿Necesitas otro tema? Escribe *6* para abrir el índice completo o *AGENTE* si prefieres una persona._`;
+        return { name: `manual:${topic.key}`, text: `${String(body).trim()}${hint}` };
+      }
+    }
+  } catch (error) {
+    log('warn', 'manual_topic_detect_fail', error?.message || String(error));
   }
   return null;
 }
@@ -4979,8 +6011,492 @@ function _buildFaqContext(ses) {
     loyalty_enabled: String(cfg('loyalty_enabled', '1') || '1') !== '0',
     bizum_enabled: String(cfg('bizum_enabled', '1') || '1') !== '0',
     cash_enabled: String(cfg('cash_enabled', '1') || '1') !== '0',
+    card_enabled: String(cfg('card_enabled', '1') || '1') !== '0',
     ses,
   };
+}
+
+// ─── MANUAL DEL CLIENTE (sin IA, 100% data-driven) ─────────────────────────
+// El cliente entra al manual desde la opción "info" del menú principal. Ve un
+// índice numerado y elige una sección. Cada sección es una función que lee
+// SIEMPRE de cfg() o del contexto (nunca hardcoding de datos del negocio).
+//
+// Extensión sin tocar código: `cfg('manual_extras_json')` acepta un array
+// JSON de secciones adicionales `[{ key, label, body }]`. Oxidian puede
+// sincronizarlo como cualquier otra configuración, así el operador añade o
+// edita FAQs desde el panel sin redeploy.
+
+function _manualIsFood(ctx) {
+  return String(ctx.tipo_tienda || 'comida').toLowerCase() !== 'producto';
+}
+
+// Cada entrada es un TEMA (topic) del repositorio de información. Tiene:
+//   key       — id estable para logs y menú
+//   label     — texto visible en el índice del manual
+//   keywords  — array de RegExp que dispara detección por lenguaje natural.
+//              La detección scorea coincidencias (varias regex sumando puntos)
+//              y aplica desempate: si dos temas empatan alto no se contesta,
+//              para no adivinar. Los temas también se muestran en el menú
+//              numerado si `showInMenu` no es `false`.
+//   enabled   — gate por feature (leer siempre desde cfg vía ctx)
+//   body      — generador del mensaje. Recibe el ctx del manual.
+const MANUAL_SECTIONS = [
+  {
+    key: 'metodos_pago',
+    label: '💳 Formas de pago',
+    keywords: [
+      /\b(formas?|m[eé]todos?)\s+de\s+pag(o|ar)\b/i,
+      /\b(c[oó]mo\s+(?:pago|pagar))\b/i,
+      /\b(pago|pagos|cobro|cobros)\b/i,
+      /\b(efectivo|contado|bizum|tarjeta|paypal|transferencia)\b/i,
+      /\b(pago\s+contra\s*entrega|contra\s*reembolso|pagar\s+al\s+recibir)\b/i,
+    ],
+    enabled: () => true,
+    body: (ctx) => {
+      const opts = [];
+      if (ctx.cash_enabled) opts.push('• 💵 *Efectivo* al recibir o en el local.');
+      if (ctx.bizum_enabled) opts.push('• 📱 *Bizum* al confirmar el pedido.');
+      if (ctx.card_enabled) opts.push('• 💳 *Tarjeta* online segura al confirmar.');
+      if (!opts.length) {
+        return `Los métodos de pago se muestran al confirmar el pedido en la tienda online:\n👉 ${ctx.tiendaUrl}`;
+      }
+      return (
+        `💳 *Formas de pago*\n\n${opts.join('\n')}\n\n` +
+        `La opción se elige en el checkout de la tienda:\n👉 ${ctx.tiendaUrl}`
+      );
+    },
+  },
+  {
+    key: 'horario_ubicacion',
+    label: '🕐 Horario y ubicación',
+    keywords: [
+      /\b(horario|horarios|hora)\b/i,
+      /\b(abren|cierran|abierto|cerrado|abren\s+ya|cerraron)\b/i,
+      /\b(hasta\s+qu[eé]\s+hora|a\s+qu[eé]\s+hora)\b/i,
+      /\b(d[oó]nde\s+(est[aá]n|est[aá]is|queda|se\s+encuentran))\b/i,
+      /\b(ubicaci[oó]n|direcci[oó]n\s+(del?\s+)?(local|negocio|tienda)|c[oó]mo\s+llego)\b/i,
+      /\b(tel[eé]fono|contacto|n[uú]mero\s+de\s+contacto)\b/i,
+    ],
+    enabled: () => true,
+    body: (ctx) => {
+      const partes = [];
+      if (ctx.horario_apertura && ctx.horario_cierre) {
+        partes.push(`🕐 *Horario:* ${ctx.horario_apertura} – ${ctx.horario_cierre}`);
+      }
+      const direccion = [ctx.direccion, ctx.ciudad].filter(Boolean).join(', ');
+      if (direccion) partes.push(`📍 *Dirección:* ${direccion}`);
+      if (ctx.telefono) partes.push(`📞 *Teléfono:* ${ctx.telefono}`);
+      if (!partes.length) return `Aún no hay horarios ni dirección configurados para esta tienda.`;
+      return `🕐 *Cuándo y dónde estamos*\n\n${partes.join('\n')}`;
+    },
+  },
+  {
+    key: 'delivery',
+    label: '🚴 Delivery a domicilio',
+    // Keywords generales del servicio. Palabras muy específicas
+    // ("repartidor", "gastos de envío", "mi zona") están en temas propios
+    // para evitar empates. Aquí sólo va la INTENCIÓN de saber si hay
+    // servicio a domicilio.
+    keywords: [
+      /\b(delivery|reparto|domicilio)\b/i,
+      /\b(a\s+domicilio|a\s+casa|hasta\s+casa|env[ií]o\s+a\s+casa)\b/i,
+      /\b(hacen\s+delivery|hacen\s+reparto|hac[eé]is\s+(delivery|reparto))\b/i,
+      /\b(env[ií]an\s+a|traen\s+a\s+(casa|domicilio))\b/i,
+    ],
+    enabled: (ctx) => ctx.delivery_enabled,
+    body: (ctx) => (
+      `🚴 *Entrega a domicilio*\n\n` +
+      `• El coste y el mínimo dependen de la zona. Se calculan al meter tu dirección en el checkout.\n` +
+      `• El repartidor te avisa por WhatsApp cuando esté cerca.\n` +
+      `• Recibirás un *código de entrega* que solo debes compartir al recibir el pedido.\n\n` +
+      `¿Quieres comprobar si llegamos a tu zona? Escribe *cobertura*.\n` +
+      `👉 Pedir ahora: ${ctx.tiendaUrl}`
+    ),
+  },
+  {
+    key: 'pickup',
+    label: '🏪 Recogida en local',
+    keywords: [
+      /\b(recoger|recogida|pasar\s+a\s+(buscar|recoger)|pasar\s+por|para\s+llevar|takeaway|take\s*away|llevar)\b/i,
+      /\b(recogo|paso\s+yo|pasar[eé]\s+yo|voy\s+a\s+recoger)\b/i,
+    ],
+    enabled: (ctx) => ctx.pickup_enabled,
+    body: (ctx) => {
+      const donde = [ctx.direccion, ctx.ciudad].filter(Boolean).join(', ') || 'nuestro local';
+      return (
+        `🏪 *Recogida en local*\n\n` +
+        `• Al confirmar el pedido, elige *Recoger en local*.\n` +
+        `• Te avisaremos por WhatsApp cuando esté listo para pasar a por él.\n` +
+        `• Punto de recogida: ${donde}.\n\n` +
+        `👉 Pedir ahora: ${ctx.tiendaUrl}`
+      );
+    },
+  },
+  {
+    key: 'como_pedir',
+    label: '🛒 Cómo pedir paso a paso',
+    keywords: [
+      /\b(c[oó]mo\s+(pido|pedir|hago\s+un?\s+pedido|se\s+pide|funciona\s+esto))\b/i,
+      /\b(qu[eé]\s+tengo\s+que\s+hacer\s+para\s+pedir)\b/i,
+      /\b(paso\s+a\s+paso|instrucciones\s+para\s+pedir)\b/i,
+    ],
+    enabled: () => true,
+    body: (ctx) => {
+      const pasos = [
+        `1️⃣ Abre la tienda online: ${ctx.tiendaUrl}`,
+        `2️⃣ Elige lo que quieres y añádelo al carrito.`,
+      ];
+      if (ctx.delivery_enabled && ctx.pickup_enabled) {
+        pasos.push(`3️⃣ Escoge *delivery* o *recogida* al confirmar.`);
+      } else if (ctx.delivery_enabled) {
+        pasos.push(`3️⃣ Indica tu dirección para calcular el envío.`);
+      } else if (ctx.pickup_enabled) {
+        pasos.push(`3️⃣ Confirma la hora en que pasarás a recoger.`);
+      }
+      pasos.push(`4️⃣ Paga con la forma que prefieras.`);
+      pasos.push(`5️⃣ Sigue el estado del pedido escribiendo *estado* por aquí.`);
+      return `🛒 *Cómo hacer un pedido*\n\n${pasos.join('\n')}`;
+    },
+  },
+  {
+    key: 'tiempo_entrega',
+    label: '⏱️ Tiempos de entrega',
+    keywords: [
+      /\b(cu[aá]nto\s+(tarda|tardan|demora|demoran|tarda(s|n)))\b/i,
+      /\b(tiempo\s+(de\s+)?(entrega|espera|preparaci[oó]n))\b/i,
+      /\b(cu[aá]ndo\s+llega|en\s+cu[aá]nto\s+llega|ya\s+llega)\b/i,
+      /\b(cu[aá]nto\s+falta|para\s+cu[aá]ndo)\b/i,
+    ],
+    enabled: () => true,
+    body: (ctx) => {
+      if (!ctx.delivery_enabled && ctx.pickup_enabled) {
+        return (
+          `⏱️ *Tiempo de preparación*\n\n` +
+          `Cada pedido tarda distinto según carga y producto. Cuando esté listo para recoger recibirás un aviso por WhatsApp.\n\n` +
+          `Puedes consultar el estado en cualquier momento escribiendo *estado*.`
+        );
+      }
+      return (
+        `⏱️ *Tiempos aproximados*\n\n` +
+        `• El tiempo real depende de tu zona y de la carga del momento.\n` +
+        `• Verás la estimación exacta al meter tu dirección en el checkout.\n` +
+        `• Una vez hecho el pedido, escribe *estado* aquí y te digo en qué fase va.`
+      );
+    },
+  },
+  {
+    key: 'envio_precio_minimo',
+    label: '💶 Precio de envío y mínimo',
+    keywords: [
+      /\b(precio\s+del?\s+env[ií]o|gastos?\s+de\s+env[ií]o|coste\s+del?\s+env[ií]o)\b/i,
+      /\b(cu[aá]nto\s+cuesta\s+el\s+env[ií]o|env[ií]o\s+gratis)\b/i,
+      /\b(m[ií]nimo\s+de?\s+pedido|pedido\s+m[ií]nimo|compra\s+m[ií]nima)\b/i,
+    ],
+    enabled: (ctx) => ctx.delivery_enabled,
+    body: (ctx) => (
+      `💶 *Envío y pedido mínimo*\n\n` +
+      `El coste de envío y el mínimo dependen de tu zona. Al introducir tu dirección en el checkout te aparece el precio exacto:\n` +
+      `👉 ${ctx.tiendaUrl}\n\n` +
+      `_Si quieres validar tu zona antes, escribe *cobertura*._`
+    ),
+  },
+  {
+    key: 'cobertura_zonas',
+    label: '📍 Cobertura y zonas',
+    keywords: [
+      /\bcobertura\b/i,
+      /\b(reparten\s+(aqu[ií]|a\s+mi)|llegan\s+(aqu[ií]|a\s+mi))\b/i,
+      /\b(mi\s+zona|mi\s+barrio|(?:zona|barrio)\s+de\s+reparto)\b/i,
+      /\b(a\s+d[oó]nde\s+(?:reparten|env[ií]an|llegan))\b/i,
+      /\breparten\s+a\b/i,
+    ],
+    enabled: (ctx) => ctx.delivery_enabled,
+    body: (ctx) => (
+      `📍 *Cobertura de reparto*\n\n` +
+      `Cambia por zona y horario del día. Escribe *cobertura* y comprobamos tu dirección al instante.\n\n` +
+      `Puedes ver el detalle en el checkout de la tienda:\n👉 ${ctx.tiendaUrl}`
+    ),
+  },
+  {
+    key: 'puntos',
+    label: '⭐ Programa de puntos',
+    keywords: [
+      /\b(puntos|programa\s+de\s+puntos|club|fidelidad|fidelizaci[oó]n)\b/i,
+      /\b(canje|canjear|recompensa|recompensas|beneficios)\b/i,
+      /\b(mis\s+puntos|cu[aá]ntos\s+puntos)\b/i,
+    ],
+    enabled: (ctx) => ctx.loyalty_enabled,
+    body: (ctx) => (
+      `⭐ *Cómo funcionan los puntos*\n\n` +
+      `• Ganas *1 punto por cada €* gastado en pedidos entregados.\n` +
+      `• Los puntos van asociados a este número de WhatsApp, sin registro.\n` +
+      `• Los canjeas al confirmar tu pedido en la tienda online.\n\n` +
+      `👉 Consultar tu saldo: escribe *puntos*.\n` +
+      `👉 Historial completo: ${ctx.tiendaUrl}/club`
+    ),
+  },
+  {
+    key: 'promociones',
+    label: '🎁 Combos y promociones',
+    keywords: [
+      /\b(combo|combos|pack|packs|paquete|paquetes)\b/i,
+      /\b(ofertas?|promo(?:ci[oó]n(?:es)?)?|descuento(?:s)?|especial(?:es)?|barato|econ[oó]mico)\b/i,
+      /\b(men[uú]\s+del\s+d[ií]a|men[uú]\s+diario)\b/i,
+    ],
+    enabled: () => true,
+    body: (ctx) => (
+      `🎁 *Combos y promociones*\n\n` +
+      `Cambian según el día y la disponibilidad. Los verás siempre actualizados aquí:\n` +
+      `👉 ${ctx.tiendaUrl}\n\n` +
+      `_No siempre podemos anunciar todas las promos por WhatsApp para no saturar tu bandeja._`
+    ),
+  },
+  {
+    key: 'alergenos',
+    label: '🌿 Alérgenos y dietas especiales',
+    keywords: [
+      /\b(al[eé]rgen(o|os)|alergia|alergias|intolerancia|lactosa|gluten|celiac[oa]s?)\b/i,
+      /\b(vegan[oa]s?|vegetarian[oa]s?|kosher|halal|sin\s+az[uú]car)\b/i,
+    ],
+    enabled: (ctx) => _manualIsFood(ctx),
+    body: (ctx) => (
+      `🌿 *Alérgenos e información dietética*\n\n` +
+      `Cada producto muestra sus iconos de alérgenos en la ficha.\n` +
+      `👉 Revísalo aquí: ${ctx.tiendaUrl}\n\n` +
+      `Si tienes una alergia importante indícalo al confirmar el pedido y lo tendremos en cuenta.`
+    ),
+  },
+  {
+    key: 'tracking_repartidor',
+    label: '🛵 Seguir a mi repartidor',
+    keywords: [
+      /\b(d[oó]nde\s+(?:est[aá]|va)\s+(?:el\s+)?repartidor)\b/i,
+      /\b(ya\s+viene\s+el\s+repartidor|tracking|seguimiento)\b/i,
+      /\b(c[oó]digo\s+de\s+entrega|c[oó]digo\s+del?\s+pedido)\b/i,
+    ],
+    enabled: (ctx) => ctx.delivery_enabled,
+    body: () => (
+      `🛵 *Seguir tu pedido*\n\n` +
+      `• Escribe *estado* (o *2*) para ver la fase actual: preparación, listo, en ruta, entregado.\n` +
+      `• Cuando el repartidor esté cerca, recibirás un *código de entrega* por WhatsApp.\n` +
+      `• Compártelo solo al recibir tu pedido — es la prueba de que llegó a la persona correcta.`
+    ),
+  },
+  {
+    key: 'cancelar_info',
+    label: '❌ Cancelar un pedido',
+    keywords: [
+      /\b(cancel(?:o|as|ar|aci[oó]n)|anular)\b/i,
+      /\b(quiero\s+cancelar|c[oó]mo\s+cancelo)\b/i,
+    ],
+    enabled: () => true,
+    body: () => (
+      `❌ *Cancelar un pedido*\n\n` +
+      `• Escribe *CANCELAR* (o *2*) y te muestro los pedidos que se pueden anular.\n` +
+      `• Solo se cancelan pedidos que aún NO se han empezado a preparar.\n` +
+      `• Si ya está en preparación o repartido, escribe *AGENTE* y lo revisa una persona.`
+    ),
+  },
+  {
+    key: 'incidencia',
+    label: '📝 Reportar una incidencia',
+    keywords: [
+      /\b(reportar|incidencia|queja|reclamo|reclamaci[oó]n|problema|fall[oó])\b/i,
+      /\b(mal\s+(?:pedido|servicio)|lleg[oó]\s+mal|est[aá]\s+mal)\b/i,
+    ],
+    enabled: () => true,
+    body: () => (
+      `📝 *Reportar un problema con un pedido*\n\n` +
+      `Escribe *REPORTAR* seguido de tu mensaje. Ejemplos:\n` +
+      `• *REPORTAR la pizza llegó fría*\n` +
+      `• *REPORTAR 1024 falta un combo* (para un pedido concreto)\n\n` +
+      `Se registra directo en el panel del equipo. Si necesitas hablar ya, escribe *AGENTE*.`
+    ),
+  },
+  {
+    key: 'agente',
+    label: '👤 Hablar con una persona',
+    keywords: [
+      /\b(agente|humano|persona|asesor|operador)\b/i,
+      /\b(hablar\s+con\s+alguien|atenci[oó]n\s+humana|ayuda\s+humana)\b/i,
+    ],
+    enabled: () => true,
+    body: () => (
+      `👤 *Atención humana*\n\n` +
+      `Escribe *AGENTE* y te conectamos con la primera persona disponible del equipo.\n\n` +
+      `Guardamos todo lo que escribas mientras esperas para que el agente vea el contexto completo.`
+    ),
+  },
+];
+
+function _buildManualContext(ses) {
+  const base = _buildFaqContext(ses);
+  return {
+    ...base,
+    horario_apertura: String(cfg('horario_apertura', '') || '').trim(),
+    horario_cierre: String(cfg('horario_cierre', '') || '').trim(),
+  };
+}
+
+// Secciones extra publicadas desde Oxidian. Formato:
+//   [{ "key": "franquicias", "label": "🤝 Franquicias",
+//      "keywords": ["franquicia", "abrir\\s+local"],
+//      "body": "..." }, ...]
+// `keywords` es opcional; cada string se compila a RegExp case-insensitive.
+// Si no hay keywords válidos, la sección sólo aparece en el menú numerado.
+function _compileExtraKeywords(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const term of list) {
+    const raw = String(term || '').trim();
+    if (!raw || raw.length > 120) continue;
+    try {
+      out.push(new RegExp(raw, 'i'));
+    } catch (error) {
+      log('warn', 'manual_extra_keyword_invalid', `${raw}: ${error?.message || error}`);
+    }
+  }
+  return out;
+}
+
+function loadManualExtras() {
+  const raw = cfg('manual_extras_json', '') || '';
+  if (!raw) return [];
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch (error) {
+    log('warn', 'manual_extras_invalid_json', error?.message || String(error));
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const seen = new Set(MANUAL_SECTIONS.map(s => s.key));
+  const extras = [];
+  for (const row of parsed) {
+    const key = String(row?.key || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const label = String(row?.label || '').trim();
+    const body = String(row?.body || '').trim();
+    if (!key || !label || !body || seen.has(key)) continue;
+    seen.add(key);
+    extras.push({
+      key,
+      label,
+      keywords: _compileExtraKeywords(row?.keywords),
+      enabled: () => true,
+      body: () => body,
+      isExtra: true,
+    });
+  }
+  return extras;
+}
+
+// Detector natural: recorre todas las secciones activas y las scorea contra
+// el texto del cliente. Cada regex que matchee suma 1 punto (y las regex más
+// específicas cuentan como cualquier otra — el peso viene por cantidad de
+// patterns que matchean). Reglas:
+//   - Umbral mínimo: 1 punto (la sección tiene al menos un match).
+//   - Desempate: si el mejor y el segundo mejor empatan, devolvemos null
+//     para evitar respuestas al azar. Fuerza al fallback (menú numerado).
+//   - Ignoramos textos muy cortos (<3 chars) porque son ambiguos.
+function detectManualTopic(text, ctx) {
+  const raw = String(text || '').trim();
+  if (raw.length < 3) return null;
+  const sections = activeManualSections(ctx);
+  let best = { section: null, score: 0 };
+  let secondScore = 0;
+  for (const sec of sections) {
+    const kws = Array.isArray(sec.keywords) ? sec.keywords : [];
+    if (!kws.length) continue;
+    let score = 0;
+    for (const re of kws) {
+      try { if (re.test(raw)) score++; } catch { /* regex mala, ignorar */ }
+    }
+    if (score > best.score) {
+      secondScore = best.score;
+      best = { section: sec, score };
+    } else if (score > secondScore) {
+      secondScore = score;
+    }
+  }
+  if (best.score < 1) return null;
+  if (best.score === secondScore) return null;
+  return best.section;
+}
+
+function activeManualSections(ctx) {
+  const base = MANUAL_SECTIONS.filter(sec => {
+    try { return sec.enabled(ctx); } catch { return false; }
+  });
+  const extras = loadManualExtras();
+  return [...base, ...extras];
+}
+
+function renderManualIndex(sections) {
+  const lineas = sections.map((sec, idx) => `*${idx + 1}* — ${sec.label}`);
+  return (
+    `📖 *Información y ayuda*\n\n` +
+    `Elige el número del tema del que quieres saber más:\n\n` +
+    `${lineas.join('\n')}\n\n` +
+    `_Escribe *0* o *menú* para volver al menú principal._`
+  );
+}
+
+async function openClientManual(jid, ses) {
+  const ctx = _buildManualContext(ses);
+  const sections = activeManualSections(ctx);
+  if (!sections.length) {
+    // Nunca debería pasar (metodos_pago/horario/como_pedir/incidencia/agente
+    // siempre están enabled), pero fail-safe hacia el menú principal.
+    return sendText(jid, menuPrincipal(ses));
+  }
+  setClientState(ses, 'info_menu', { sectionKeys: sections.map(s => s.key) });
+  return sendText(jid, renderManualIndex(sections));
+}
+
+async function handleClientInfoMenu(jid, ses, opcion) {
+  const raw = String(opcion || '').trim().toLowerCase();
+  // Salidas del sub-menú: 0, "menu", "volver", "atras".
+  if (/^(0|men[uú]|volver|atr[aá]s|salir)$/i.test(raw)) {
+    setClientState(ses, 'main_menu');
+    return sendText(jid, menuPrincipal(ses));
+  }
+  // Escalada directa: si en cualquier momento pide agente, saltamos.
+  if (/^(agente|humano|persona|asesor)$/i.test(raw)) {
+    setClientState(ses, 'main_menu');
+    return requestHumanSupport(jid);
+  }
+  const ctx = _buildManualContext(ses);
+  const sections = activeManualSections(ctx);
+  const keysCache = Array.isArray(ses?.pending?.sectionKeys) ? ses.pending.sectionKeys : null;
+  // Preferimos el orden congelado en la sesión (por si cfg cambió mientras el
+  // cliente estaba mirando el índice). Si no coincide, recalculamos.
+  const orderedSections = keysCache && keysCache.length === sections.length
+    ? keysCache.map(k => sections.find(s => s.key === k)).filter(Boolean)
+    : sections;
+  const numero = parseInt(raw, 10);
+  const cierre = `\n\n_Sigues en el manual. Escribe otro número, *menú* para volver o *AGENTE* si prefieres una persona._`;
+  if (Number.isInteger(numero) && numero >= 1 && numero <= orderedSections.length) {
+    const seccion = orderedSections[numero - 1];
+    try {
+      const texto = await seccion.body(ctx);
+      return sendText(jid, `${String(texto || '').trim()}${cierre}`);
+    } catch (error) {
+      log('warn', 'manual_section_fail', `${seccion.key}: ${error?.message || String(error)}`);
+      return sendText(jid, `No pude cargar esa sección ahora. Prueba otra o escribe *AGENTE*.`);
+    }
+  }
+  // Detección natural dentro del sub-menú: el cliente puede escribir
+  // "pago", "delivery", "puntos" y saltar directo a la sección sin buscar
+  // el número. Reusa el detector con scoring del repositorio.
+  const topic = detectManualTopic(raw, ctx);
+  if (topic) {
+    try {
+      const texto = await topic.body(ctx);
+      return sendText(jid, `${String(texto || '').trim()}${cierre}`);
+    } catch (error) {
+      log('warn', 'manual_topic_fail', `${topic.key}: ${error?.message || String(error)}`);
+    }
+  }
+  // Cualquier otra entrada: reenseñamos el índice sin castigar al usuario.
+  return sendText(jid, renderManualIndex(orderedSections));
 }
 
 /**
@@ -5223,32 +6739,11 @@ async function handleMainMenu(jid, ses, opcion) {
         `_Nota: solo la uso para verificar cobertura, no la guardo._`
       ));
     }
-    case '5': {
-      return sendText(jid,
-        `🌐 *Tienda online — ${getNegocioNombre()}*\n\n` +
-        `👉 ${tiendaUrl}\n\n` +
-        `Catálogo completo, precios actualizados y pago seguro.\n\n` +
-        `¿Necesitas ayuda con el pedido? Escribe *7* y te atendemos. 😊`
-      );
-    }
     case '6': {
-      try {
-        const data = await oxidianGet('/negocio');
-        if (data.ok) {
-          const detalles = [
-            data.horario_apertura && data.horario_cierre ? `🕐 Horario: ${data.horario_apertura} – ${data.horario_cierre}` : null,
-            data.direccion ? `📍 Dirección: ${data.direccion}` : null,
-            data.telefono ? `📞 Teléfono: ${data.telefono}` : null,
-            Array.isArray(data.metodos_pago) && data.metodos_pago.length ? `💳 Pagos: ${data.metodos_pago.join(', ')}` : null,
-          ].filter(Boolean).join('\n');
-          return sendText(jid,
-            `ℹ️ *${data.nombre || getNegocioNombre()}*\n\n` +
-            `${detalles || 'La información de contacto aún no está configurada.'}\n\n` +
-            `🌐 Tienda online: ${tiendaUrl}`
-          );
-        }
-      } catch {}
-      return sendText(jid, `Ahora mismo no pude consultar esa información. Puedes abrir la tienda online aquí: ${tiendaUrl}`);
+      // Abrimos el manual navegable (sub-menú informativo sin IA). El
+      // contenido de cada sección se resuelve al elegir el número; así
+      // mostramos el índice completo sin gastar peticiones a Oxidian.
+      return openClientManual(jid, ses);
     }
     case '7': {
       return requestHumanSupport(jid);
@@ -5544,13 +7039,20 @@ function seleccionarPedidoConsulta(pedidos, consulta) {
 }
 
 function menuSinPedidos() {
+  // Construimos las opciones a partir de las mismas capabilities que decide
+  // `clientMenuLines`, para que si delivery/puntos están desactivados no
+  // se ofrezca aquí una opción que fallaría después.
+  const lineas = [`*1* — 🛒 Abrir la tienda online`];
+  if (String(cfg('delivery_enabled', '1')) !== '0') {
+    lineas.push(`*4* — 📍 Verificar cobertura de entrega`);
+  }
+  lineas.push(`*6* — 📖 Información y ayuda`);
+  lineas.push(`*7* — 👤 Hablar con una persona`);
+  lineas.push(`*0* — 🏠 Volver al inicio`);
   return (
     `📭 *No encontré pedidos asociados a este WhatsApp.*\n\n` +
     `Puedes hacer tu primer pedido o consultar información:\n\n` +
-    `*1* — 🛒 Abrir la tienda online\n` +
-    `*6* — ⏰ Horario y contacto\n` +
-    `*7* — 👤 Hablar con una persona\n` +
-    `*0* — 🏠 Volver al inicio`
+    lineas.join('\n')
   );
 }
 
@@ -5584,6 +7086,31 @@ async function handleEstadoPedido(jid, ses, numero) {
     const phone = phoneFromJid(jid);
     const data  = await oxidianGet(`/pedidos?telefono=${phone}&limit=20`);
     if (data.ok && Array.isArray(data.pedidos)) {
+      // Selector cuando el cliente pide "ULTIMO" y tiene 2+ activos: en vez
+      // de mostrar solo uno silenciosamente, listamos los activos con emoji
+      // de estado y le pedimos que elija.
+      if (esUltimo) {
+        const activos = data.pedidos.filter(p => PEDIDO_ESTADOS_ACTIVOS.has(p.estado));
+        if (activos.length >= 2) {
+          const EMOJIS = {
+            pendiente: '⏳', armando: '🔥', listo: '✅', en_ruta: '🛵',
+          };
+          const items = activos.slice(0, 5);
+          const lineas = items.map(p => {
+            const total = p.total != null ? ` — ${formatPrecio(p.total)}` : '';
+            return `• *${p.numero}* — ${EMOJIS[p.estado] || '•'} ${p.estado.replace('_', ' ')}${total}`;
+          });
+          setClientState(ses, 'espera_numero_pedido', {
+            numeros_activos: items.map(p => String(p.numero)),
+          });
+          return sendText(jid,
+            `📦 *Tienes ${activos.length} pedidos activos.*\n\n` +
+            `¿Cuál quieres consultar? Escribe su número o pega el código:\n\n` +
+            `${lineas.join('\n')}\n\n` +
+            `_También puedes escribir *0* para volver al menú._`
+          );
+        }
+      }
       const pedido = seleccionarPedidoConsulta(data.pedidos, consulta);
       if (pedido) {
         // Estados extendidos: cubren el ciclo completo del pedido.
@@ -5720,7 +7247,12 @@ async function handleEstadoPedido(jid, ses, numero) {
         `Escribe *AGENTE* si necesitas ayuda de una persona.\n\n${menuPrincipal(ses)}`
       );
     }
-    setClientState(ses, 'espera_numero_pedido');
+    // Conservar el contador que acaba de persistir `bumpAttempt`. Antes se
+    // reemplazaba `pending` por `{}` al mantener el estado de espera, de modo
+    // que el límite nunca llegaba a tres y el cliente podía quedar en bucle.
+    setClientState(ses, 'espera_numero_pedido', {
+      _attempts_estado_pedido: Number(ses.pending?._attempts_estado_pedido || 0),
+    });
     return sendText(jid,
       `❓ No encontré el pedido *${raw}* asociado a tu número.\n` +
       listaPedidos +
@@ -6868,6 +8400,18 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Webhook principal de Evolution API
 app.post('/webhook/evolution', (req, res) => {
   if (!requireWebhookSecret(req, res)) return;
+  // Log de diagnóstico: qué evento llega. Útil cuando Evolution cambia el
+  // formato o el bot deja de responder — el payload real se ve al momento
+  // sin tener que interceptar el proxy Flask.
+  try {
+    const ev = req.body?.event || '(sin event)';
+    const msgs = req.body?.data?.messages;
+    const size = Array.isArray(msgs) ? msgs.length : (req.body?.data ? 1 : 0);
+    const jid = Array.isArray(msgs) && msgs[0]?.key?.remoteJid
+      ? msgs[0].key.remoteJid
+      : req.body?.data?.key?.remoteJid || '?';
+    log('info', 'webhook_in', `event=${ev} msgs=${size} jid=${jid}`);
+  } catch (_) { /* nunca romper el webhook por el log */ }
   if (req.body?.event === 'messages.upsert') {
     try {
       const inserted = persistInboundMessages(req.body);

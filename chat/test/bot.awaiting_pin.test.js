@@ -30,7 +30,7 @@ process.env.OWNER_NUMBER = '34600000001';
 process.env.SUPERADMINS = '34600000002';
 
 const { _test } = require('../bot');
-const { requireAdminPin, getSesion, setSesion, setCfg, AWAITING_PIN_TTL_MS } = _test;
+const { handleMessage, requireAdminPin, getSesion, setSesion, setCfg, AWAITING_PIN_TTL_MS } = _test;
 
 // PIN = 1234 → sha256
 const PIN_HASH = require('crypto').createHash('sha256').update('1234').digest('hex');
@@ -76,4 +76,65 @@ test('primera entrada al gate marca awaiting_pin_since', async () => {
   const since = (s.pending || {}).awaiting_pin_since;
   assert.ok(since);
   assert.ok(Date.now() - since < 5000);
+});
+
+test('el router entrega el PIN al estado awaiting_pin y permite continuar', async () => {
+  const jid = '34600000002@s.whatsapp.net';
+  setCfg('admin_pin_hash', PIN_HASH);
+  setCfg('whatsapp_role_profiles', JSON.stringify([{
+    telefono: '34600000002', rol: 'super_admin', capabilities: ['status', 'store'],
+  }]));
+  setSesion(jid, { jid, role: 'admin', estado: 'admin_menu', pending: {} });
+
+  await handleMessage(jid, '2', 'Super Admin');
+  assert.equal(getSesion(jid).estado, 'awaiting_pin');
+
+  await handleMessage(jid, '1234', 'Super Admin');
+  assert.equal(getSesion(jid).estado, 'admin_menu');
+
+  await handleMessage(jid, '2', 'Super Admin');
+  assert.equal(getSesion(jid).estado, 'admin_store_menu');
+});
+
+test('un comando directo de escritura no salta el PIN', async () => {
+  const jid = '34600000005@s.whatsapp.net';
+  setCfg('admin_pin_hash', PIN_HASH);
+  setCfg('whatsapp_role_profiles', JSON.stringify([{
+    telefono: '34600000005', rol: 'admin', capabilities: ['store'],
+  }]));
+  setSesion(jid, { jid, role: 'admin', estado: 'admin_menu', pending: {} });
+  const originalFetch = global.fetch;
+  let backendCalls = 0;
+  global.fetch = async () => {
+    backendCalls += 1;
+    throw new Error('No debe consultar el backend antes del PIN');
+  };
+  try {
+    await handleMessage(jid, '!cerrar-tienda', 'Admin');
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(getSesion(jid).estado, 'awaiting_pin');
+  assert.equal(backendCalls, 0);
+});
+
+test('una confirmación antigua vuelve a exigir PIN antes de ejecutar', async () => {
+  const jid = '34600000006@s.whatsapp.net';
+  setCfg('admin_pin_hash', PIN_HASH);
+  setCfg('whatsapp_role_profiles', JSON.stringify([{
+    telefono: '34600000006', rol: 'admin', capabilities: ['store'],
+  }]));
+  setSesion(jid, {
+    jid, role: 'admin', estado: 'admin_confirm',
+    pending: { action: 'close_store', message: '', _asked_at: Date.now() },
+  });
+
+  await handleMessage(jid, 'SI', 'Admin');
+  assert.equal(getSesion(jid).estado, 'awaiting_pin');
+  assert.equal(getSesion(jid).pending.action, 'close_store');
+
+  await handleMessage(jid, '1234', 'Admin');
+  assert.equal(getSesion(jid).estado, 'admin_confirm');
+  assert.equal(getSesion(jid).pending.action, 'close_store');
 });

@@ -53,6 +53,13 @@ class BotConfigRefreshTest(unittest.TestCase):
                   "TIENDA_FORZAR_CERRADA"):
             self.assertIn(k, CLAVES_QUE_REFRESCAN_BOT)
 
+    def test_whitelist_incluye_limites_de_flujo(self):
+        for key in (
+            "BOT_REPORT_RATE_MAX", "BOT_HANDOFF_SLA_WARNING_SEC",
+            "BOT_HANDOFF_QUEUE_MAX_SEC", "BOT_HANDOFF_INACTIVITY_SEC",
+        ):
+            self.assertIn(key, CLAVES_QUE_REFRESCAN_BOT)
+
     def test_whitelist_no_incluye_defaults_tecnicos(self):
         # Claves de fachada UI o defaults técnicos NO deben pushear al bot
         # cada vez que un admin las toque — sync pasivo de 10 min es suficiente.

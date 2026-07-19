@@ -149,6 +149,26 @@ test('sin activos muestra el último pedido cerrado y conserva acciones guiadas'
   assert.match(sent.detalle, /No tienes pedidos activos/i);
 });
 
+test('tres números de pedido inválidos cierran la espera y vuelven al menú', async () => {
+  orders = [{
+    id: 91, numero: '#CORRECTO-91', estado: 'entregado', estado_label: 'Entregado',
+    total: 12, pago_confirmado: true, items: [],
+  }];
+  saveSesion({
+    jid: clientJid, nombre: 'Danna', role: 'client',
+    estado: 'espera_numero_pedido', pending: {},
+  });
+
+  await handleMessage(clientJid, '1111', 'Danna');
+  assert.equal(getSesion(clientJid).pending._attempts_estado_pedido, 1);
+  await handleMessage(clientJid, '2222', 'Danna');
+  assert.equal(getSesion(clientJid).pending._attempts_estado_pedido, 2);
+  await handleMessage(clientJid, '3333', 'Danna');
+
+  assert.equal(getSesion(clientJid).estado, 'main_menu');
+  assert.equal(getSesion(clientJid).pending._attempts_estado_pedido, undefined);
+});
+
 test('/abrir inicia confirmación y un admin puede ejecutar la apertura', async () => {
   setCfg('whatsapp_role_profiles', JSON.stringify([{
     telefono: '34600000991', rol: 'admin', capabilities: ['store'],

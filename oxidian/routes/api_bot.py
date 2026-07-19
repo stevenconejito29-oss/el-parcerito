@@ -684,6 +684,15 @@ def branding():
         # del contenedor chat.
         "bot_max_price_eur": SiteConfig.get("BOT_MAX_PRICE_EUR", "9999"),
         "bot_max_points_adjust": SiteConfig.get("BOT_MAX_POINTS_ADJUST", "10000"),
+        "bot_flow_limits": {
+            "reporte_rate_window_sec": SiteConfig.get("BOT_REPORT_RATE_WINDOW_SEC", "3600"),
+            "reporte_rate_max_per_window": SiteConfig.get("BOT_REPORT_RATE_MAX", "3"),
+            "handoff_sla_warning_sec": SiteConfig.get("BOT_HANDOFF_SLA_WARNING_SEC", "600"),
+            "handoff_owner_alert_threshold": SiteConfig.get("BOT_HANDOFF_OWNER_ALERT_THRESHOLD", "3"),
+            "handoff_owner_alert_cooldown_sec": SiteConfig.get("BOT_HANDOFF_OWNER_ALERT_COOLDOWN_SEC", "600"),
+            "handoff_queue_max_sec": SiteConfig.get("BOT_HANDOFF_QUEUE_MAX_SEC", "86400"),
+            "handoff_inactivity_sec": SiteConfig.get("BOT_HANDOFF_INACTIVITY_SEC", "900"),
+        },
         "whatsapp_roles": whatsapp_roles,
     })
 

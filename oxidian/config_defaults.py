@@ -300,6 +300,41 @@ DEFAULTS: dict[str, dict] = {
             "que agreguen 100000 en vez de 100. Cap 1-1000000."
         ),
     },
+    "BOT_REPORT_RATE_WINDOW_SEC": {
+        "default": "3600",
+        "type": "int",
+        "desc": "Ventana en segundos del límite de incidencias enviadas por un mismo cliente.",
+    },
+    "BOT_REPORT_RATE_MAX": {
+        "default": "3",
+        "type": "int",
+        "desc": "Máximo de incidencias por cliente dentro de la ventana configurada.",
+    },
+    "BOT_HANDOFF_SLA_WARNING_SEC": {
+        "default": "600",
+        "type": "int",
+        "desc": "Espera en segundos para marcar un chat pendiente con alerta de SLA.",
+    },
+    "BOT_HANDOFF_OWNER_ALERT_THRESHOLD": {
+        "default": "3",
+        "type": "int",
+        "desc": "Clientes en espera que disparan una alerta de saturación al responsable; 0 desactiva.",
+    },
+    "BOT_HANDOFF_OWNER_ALERT_COOLDOWN_SEC": {
+        "default": "600",
+        "type": "int",
+        "desc": "Intervalo mínimo entre alertas de saturación de la cola humana.",
+    },
+    "BOT_HANDOFF_QUEUE_MAX_SEC": {
+        "default": "86400",
+        "type": "int",
+        "desc": "Tiempo máximo de una solicitud humana abandonada antes de archivarla.",
+    },
+    "BOT_HANDOFF_INACTIVITY_SEC": {
+        "default": "900",
+        "type": "int",
+        "desc": "Inactividad máxima de un chat asignado antes de cerrarlo; 0 desactiva.",
+    },
 
     # ── Salud del bot (widget dashboard admin) ──────────────────────
     # Consumidas por `services.consultar_estado_bot`. Antes hardcoded

@@ -87,7 +87,7 @@ function clientMenuLines(ctx) {
   ];
   if (ctx.loyaltyEnabled) lines.push("*3* — ⭐ Mis puntos");
   if (ctx.deliveryEnabled) lines.push("*4* — 📍 Zona de entrega");
-  lines.push("*6* — ⏰ Horario / contacto");
+  lines.push("*6* — 📖 Información y ayuda");
   lines.push("*7* — 👤 Hablar con una persona");
   return lines.join("\n");
 }
