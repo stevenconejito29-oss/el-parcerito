@@ -222,6 +222,31 @@
           <p class="text-xs mt-1" style="color:var(--col-muted)">
             Puede ser negativo (más barato que el base).
           </p>
+          {% if brand.es_comida and producto.has_flavors %}
+          <div class="edit-pres-flavors">
+            <label class="edit-check mt-2">
+              <input type="checkbox" name="pres_{{ size }}_flavor_rules" value="1"
+                     data-edit-flavor-toggle="{{ size }}"
+                     {% if pr and pr.flavor_rules_enabled %}checked{% endif %}
+                     {% if not pr or not pr.activo %}disabled{% endif %}>
+              Reglas propias de sabores
+            </label>
+            <div data-edit-flavor-fields="{{ size }}" {% if not pr or not pr.flavor_rules_enabled %}hidden{% endif %}>
+              <div class="grid grid-cols-2 gap-2 mt-2">
+                <label class="edit-label">Mínimo<input class="edit-input" type="number" min="0" max="100" name="pres_{{ size }}_flavor_min" value="{{ pr.flavor_min_selections if pr and pr.flavor_min_selections is not none else 1 }}"></label>
+                <label class="edit-label">Total a repartir<input class="edit-input" type="number" min="0" max="100" name="pres_{{ size }}_flavor_max" value="{{ pr.flavor_max_selections if pr and pr.flavor_max_selections is not none else 1 }}"></label>
+              </div>
+              <p class="text-xs mt-1" style="color:var(--col-muted)">Permite combinar sabores hasta completar el total.</p>
+              <div class="edit-pres-flavor-list">
+              {% for flavor_group in producto.extra_groups.filter_by(tipo='sabor', activo=True).all() %}
+                {% for option in flavor_group.opciones.filter_by(activo=True).all() %}
+                <label><input type="checkbox" name="pres_{{ size }}_flavor_option_ids" value="{{ option.id }}" {% if pr and option.id in pr.allowed_flavor_option_ids %}checked{% endif %}> {{ option.nombre }}</label>
+                {% endfor %}
+              {% endfor %}
+              </div>
+            </div>
+          </div>
+          {% endif %}
         </div>
         {% endfor %}
       </div>
@@ -229,9 +254,22 @@
       function epTogglePres(cb, size){
         const inp = document.querySelector('.edit-pres-extra[data-pres="'+size+'"]');
         if (inp) inp.disabled = !cb.checked;
+        const flavorToggle = document.querySelector('[data-edit-flavor-toggle="'+size+'"]');
+        if (flavorToggle) {
+          flavorToggle.disabled = !cb.checked;
+          if (!cb.checked) flavorToggle.checked = false;
+          const fields = document.querySelector('[data-edit-flavor-fields="'+size+'"]');
+          if (fields) fields.hidden = !flavorToggle.checked;
+        }
       }
       document.querySelectorAll('[data-presentation-toggle]').forEach((control) => {
         control.addEventListener('change', () => epTogglePres(control, control.dataset.presentationToggle));
+      });
+      document.querySelectorAll('[data-edit-flavor-toggle]').forEach((control) => {
+        control.addEventListener('change', () => {
+          const fields = document.querySelector('[data-edit-flavor-fields="'+control.dataset.editFlavorToggle+'"]');
+          if (fields) fields.hidden = !control.checked;
+        });
       });
       </script>
     </div>
@@ -412,6 +450,8 @@
 .edit-canje-box { border:1px dashed rgba(192,132,252,.4); border-radius:.6rem; padding:.7rem .8rem; background:rgba(139,92,246,.06); }
 .edit-pres-card { border:1px solid var(--col-border); border-radius:.6rem; padding:.7rem .8rem; background:var(--col-elevated); }
 .edit-pres-card input.edit-pres-extra:disabled { opacity:.4; }
+.edit-pres-flavors{margin-top:.65rem;padding-top:.55rem;border-top:1px solid var(--col-border)}
+.edit-pres-flavor-list{display:grid;gap:.3rem;max-height:9rem;overflow:auto;margin-top:.45rem}.edit-pres-flavor-list label{display:flex;align-items:center;gap:.4rem;font-size:.75rem;color:var(--col-muted)}
 </style>
 <script nonce="{{ csp_nonce() }}">
 (function(){

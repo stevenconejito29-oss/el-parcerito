@@ -63,6 +63,7 @@ from catalog_projection import build_catalog_projection
 from product_options_service import validate_product_option_selection
 from product_presentations_service import (
     presentation_metadata,
+    product_presentation_catalog_payload,
     validate_product_presentation_selection,
 )
 
@@ -667,6 +668,7 @@ def producto_detalle(producto_id):
     return render_template("public/producto.html",
                            producto=producto, reviews=reviews, combo_items=combo_items,
                            extra_groups=extra_groups,
+                           presentation_catalog=product_presentation_catalog_payload(producto),
                            combo_fixed_base=round(combo_fixed_base, 2),
                            cart_max_qty=_cart_max_qty(),
                            origen_actual=origen,
@@ -1206,7 +1208,7 @@ def agregar_carrito(producto_id):
         selecciones_combo = session.get("combo_selecciones", {})
         selecciones_combo[key] = seleccion
         session["combo_selecciones"] = selecciones_combo
-    extras, extras_error = _parse_product_extras(producto, request.form)
+    extras, extras_error = _parse_product_extras(producto, request.form, presentation)
     if extras_error:
         return _err(extras_error, "danger")
     extras_guardados = session.get("extras_selecciones", {})
@@ -2585,22 +2587,35 @@ def _combo_group_key(grupo):
     return "".join(ch if ch.isalnum() else "_" for ch in (grupo or "Seleccion")).strip("_") or "Seleccion"
 
 
-def _parse_product_extras(producto, form):
+def _parse_product_extras(producto, form, presentation=None):
     groups = ProductExtraGroup.query.filter_by(producto_id=producto.id, activo=True).all()
     raw_selected = {}
     for group in groups:
         active_options = group.opciones.filter_by(activo=True).all()
         if group.tipo == "sabor":
-            raw_flavor = form.get(f"flavor_group_{group.id}")
-            if raw_flavor not in (None, ""):
+            found_quantity = False
+            for option in active_options:
                 try:
-                    flavor_id = int(raw_flavor)
+                    flavor_qty = int(form.get(f"flavor_qty_{option.id}", 0) or 0)
                 except (TypeError, ValueError):
-                    return {}, f"El sabor elegido en «{group.nombre}» no es válido."
-                flavor = next((option for option in active_options if option.id == flavor_id), None)
-                if not flavor:
-                    return {}, f"El sabor elegido en «{group.nombre}» ya no está disponible."
-                raw_selected[str(flavor.id)] = 1
+                    return {}, f"La cantidad de «{option.nombre}» no es válida."
+                if flavor_qty < 0:
+                    return {}, f"La cantidad de «{option.nombre}» no es válida."
+                if flavor_qty:
+                    raw_selected[str(option.id)] = flavor_qty
+                    found_quantity = True
+            # Compatibilidad con formularios/cache PWA anteriores al selector
+            # por cantidades. El servidor lo normaliza al contrato nuevo.
+            if not found_quantity:
+                raw_flavor = form.get(f"flavor_group_{group.id}")
+                if raw_flavor not in (None, ""):
+                    try:
+                        flavor_id = int(raw_flavor)
+                    except (TypeError, ValueError):
+                        return {}, f"El sabor elegido en «{group.nombre}» no es válido."
+                    if not any(option.id == flavor_id for option in active_options):
+                        return {}, f"El sabor elegido en «{group.nombre}» ya no está disponible."
+                    raw_selected[str(flavor_id)] = 1
         else:
             for option in active_options:
                 try:
@@ -2611,7 +2626,9 @@ def _parse_product_extras(producto, form):
                     return {}, f"Cantidad inválida para «{option.nombre}»."
                 if qty:
                     raw_selected[str(option.id)] = qty
-    selected, _, _, error = validate_product_option_selection(producto, raw_selected)
+    selected, _, _, error = validate_product_option_selection(
+        producto, raw_selected, presentation
+    )
     return selected, error
 
 
@@ -2833,9 +2850,16 @@ def _build_items_from_carrito(carrito):
         seleccion_ids, combo_resumen, metadata = _combo_selection_payload(
             p, selecciones_combo.get(producto_id_str, {})
         )
+        presentacion_tamaño = presentaciones_map.get(producto_id_str) or ""
+        presentation_error = None
+        pr = None
+        if presentacion_tamaño:
+            pr, presentation_error = validate_product_presentation_selection(
+                p, presentacion_tamaño
+            )
         _, option_rows, product_options_unit, product_options_error = (
             validate_product_option_selection(
-                p, extras_selecciones.get(producto_id_str, {})
+                p, extras_selecciones.get(producto_id_str, {}), pr
             )
         )
         flavor_rows = [row for row in option_rows if row.get("tipo") == "sabor"]
@@ -2867,13 +2891,8 @@ def _build_items_from_carrito(carrito):
             if p.es_combo else float(p.precio_final or 0)
         ) + product_options_unit
         # Presentación (tamaño) opt-in: aplicar precio_extra + registrar tamaño
-        presentacion_tamaño = presentaciones_map.get(producto_id_str) or ""
         presentacion_extra = 0.0
-        presentation_error = None
         if presentacion_tamaño:
-            pr, presentation_error = validate_product_presentation_selection(
-                p, presentacion_tamaño
-            )
             if pr and not presentation_error:
                 presentacion_extra = pr.precio_extra_float
                 precio += presentacion_extra

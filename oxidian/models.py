@@ -683,6 +683,13 @@ class Product(db.Model):
         ).first())
 
     @property
+    def flavor_catalog_max_selecciones(self):
+        group = self.extra_groups.filter_by(tipo="sabor", activo=True).order_by(
+            ProductExtraGroup.orden, ProductExtraGroup.id
+        ).first()
+        return max(1, int(group.max_selecciones or 1)) if group else 1
+
+    @property
     def has_flavors(self):
         return bool(self.extra_groups.filter_by(tipo="sabor", activo=True).filter(
             ProductExtraGroup.opciones.any(ProductExtraOption.activo.is_(True))
@@ -696,6 +703,14 @@ class Product(db.Model):
                 "tamaño": row.tamaño,
                 "precio_extra": row.precio_extra_float,
                 "activo": bool(row.activo),
+                "flavor_rules_enabled": bool(row.flavor_rules_enabled),
+                "flavor_min_selections": row.flavor_min_selections,
+                "flavor_max_selections": row.flavor_max_selections,
+                "allowed_flavor_option_ids": row.allowed_flavor_option_ids,
+                "allowed_flavor_catalog_ids": [
+                    option.catalog_item_id for option in row.allowed_flavor_options
+                    if option.catalog_item_id
+                ],
             }
             for row in self.presentaciones.order_by(
                 ProductPresentation.orden, ProductPresentation.id
@@ -1206,7 +1221,11 @@ class Product(db.Model):
             if not componente:
                 continue
             cantidad = max(1, int(getattr(item, "cantidad", 1) or 1))
-            subtotal = self._money(componente.precio_final) * cantidad
+            presentation = getattr(item, "presentacion", None)
+            unit_price = self._money(componente.precio_final) + self._money(
+                presentation.precio_extra if presentation else 0
+            )
+            subtotal = unit_price * cantidad
             if getattr(item, "es_seleccionable", False):
                 grupo = (getattr(item, "grupo_seleccion", None) or "Seleccion").strip() or "Seleccion"
                 grupos.setdefault(grupo.lower(), {
@@ -1267,14 +1286,17 @@ class Product(db.Model):
             if not componente:
                 continue
             cantidad_base = max(1, int(item.cantidad or 1))
+            component_price = self._money(componente.precio_final) + self._money(
+                item.presentacion.precio_extra if item.presentacion else 0
+            )
             if item.es_seleccionable:
                 veces = max(0, int(counts.get(item.id, 0)))
                 if veces <= 0:
                     continue
-                base_seleccion += self._money(componente.precio_final) * cantidad_base * veces
+                base_seleccion += component_price * cantidad_base * veces
                 extras += self._money(item.precio_extra or 0) * veces
             else:
-                base_seleccion += self._money(componente.precio_final) * cantidad_base
+                base_seleccion += component_price * cantidad_base
 
         if self.combo_precio_modo_normalizado == "descuento_porcentaje":
             precio = self.precio_desde_descuento_combo(
@@ -1933,15 +1955,22 @@ class ComboItem(db.Model):
         db.ForeignKey("product_variants.id", ondelete="SET NULL"),
         nullable=True,
     )
+    presentation_id = db.Column(
+        db.Integer,
+        db.ForeignKey("product_presentations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     componente = db.relationship("Product", foreign_keys=[producto_id])
     variante = db.relationship("ProductVariant", foreign_keys=[variant_id])
+    presentacion = db.relationship("ProductPresentation", foreign_keys=[presentation_id])
 
     __table_args__ = (
         db.Index("ix_combo_items_combo_id", "combo_id"),
         db.Index("ix_combo_items_group_id", "combo_group_id"),
         db.Index("ix_combo_items_producto_id", "producto_id"),
         db.Index("ix_combo_items_variant_id", "variant_id"),
+        db.Index("ix_combo_items_presentation_id", "presentation_id"),
     )
 
     @property
@@ -1983,10 +2012,6 @@ class ProductExtraGroup(db.Model):
         db.CheckConstraint("min_selecciones >= 0", name="ck_extra_group_min"),
         db.CheckConstraint("max_selecciones >= min_selecciones", name="ck_extra_group_range"),
         db.CheckConstraint("tipo IN ('extra', 'sabor')", name="ck_extra_group_type"),
-        db.CheckConstraint(
-            "tipo != 'sabor' OR (min_selecciones <= 1 AND max_selecciones = 1)",
-            name="ck_flavor_group_single_choice",
-        ),
         db.Index("ix_product_extra_groups_product", "producto_id", "orden"),
         db.Index("ix_product_extra_groups_type", "producto_id", "tipo", "activo"),
     )
@@ -2065,6 +2090,24 @@ class ProductExtraOption(db.Model):
 TAMAÑOS_PRESENTACION = ("pequeño", "mediano", "grande")
 
 
+product_presentation_flavors = db.Table(
+    "product_presentation_flavors",
+    db.Column(
+        "presentation_id",
+        db.Integer,
+        db.ForeignKey("product_presentations.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    db.Column(
+        "option_id",
+        db.Integer,
+        db.ForeignKey("product_extra_options.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    db.Index("ix_presentation_flavors_option", "option_id"),
+)
+
+
 class ProductPresentation(db.Model):
     __tablename__ = "product_presentations"
 
@@ -2078,6 +2121,11 @@ class ProductPresentation(db.Model):
     precio_extra = db.Column(db.Numeric(10, 2), nullable=False, default=0)
     activo = db.Column(db.Boolean, nullable=False, default=True)
     orden = db.Column(db.Integer, nullable=False, default=0)
+    # Una presentación puede definir su propia capacidad y catálogo de sabores.
+    # NULL/False conserva las reglas generales del producto para compatibilidad.
+    flavor_rules_enabled = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
+    flavor_min_selections = db.Column(db.Integer, nullable=True)
+    flavor_max_selections = db.Column(db.Integer, nullable=True)
 
     producto = db.relationship(
         "Product",
@@ -2088,11 +2136,33 @@ class ProductPresentation(db.Model):
             order_by="ProductPresentation.orden",
         ),
     )
+    allowed_flavor_options = db.relationship(
+        "ProductExtraOption",
+        secondary=product_presentation_flavors,
+        lazy="select",
+    )
 
     __table_args__ = (
         db.UniqueConstraint("producto_id", "tamaño", name="uq_product_presentation"),
+        db.CheckConstraint(
+            "flavor_min_selections IS NULL OR flavor_min_selections >= 0",
+            name="ck_presentation_flavor_min",
+        ),
+        db.CheckConstraint(
+            "flavor_max_selections IS NULL OR flavor_max_selections >= 0",
+            name="ck_presentation_flavor_max",
+        ),
+        db.CheckConstraint(
+            "flavor_min_selections IS NULL OR flavor_max_selections IS NULL "
+            "OR flavor_max_selections >= flavor_min_selections",
+            name="ck_presentation_flavor_range",
+        ),
         db.Index("ix_product_presentations_producto", "producto_id", "activo"),
     )
+
+    @property
+    def allowed_flavor_option_ids(self):
+        return [option.id for option in self.allowed_flavor_options if option.id]
 
     @property
     def precio_extra_float(self) -> float:
@@ -2758,7 +2828,11 @@ class OrderItem(db.Model):
 
     @property
     def selected_flavor_names(self):
-        return [str(row["nombre"]) for row in self.selected_flavors]
+        return [
+            f"{row['nombre']} ×{int(row.get('cantidad') or 1)}"
+            if int(row.get("cantidad") or 1) > 1 else str(row["nombre"])
+            for row in self.selected_flavors
+        ]
 
     @property
     def selected_presentation(self):
@@ -3166,6 +3240,15 @@ def metadata_componente_combo(combo_item, proveedor_despachador_id=None):
         "proveedor_despachador_id": proveedor_despachador_id,
         "origen_operativo": "proveedor" if proveedor_despachador_id else "propio",
         "precio_costo_congelado": None,
+        "presentacion": (
+            {
+                "id": combo_item.presentacion.id,
+                "tamaño": combo_item.presentacion.tamaño,
+                "label": combo_item.presentacion.label,
+                "extra": combo_item.presentacion.precio_extra_float,
+            }
+            if combo_item and combo_item.presentacion else None
+        ),
     }
     if proveedor_despachador_id and componente:
         fila = ProveedorProducto.query.filter_by(

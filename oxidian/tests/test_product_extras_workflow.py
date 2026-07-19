@@ -9,6 +9,7 @@ from werkzeug.datastructures import MultiDict
 from extensions import db
 from models import (
     ExtraCatalogItem,
+    ComboItem,
     Product,
     ProductExtraGroup,
     ProductExtraOption,
@@ -19,6 +20,7 @@ from models import (
     User,
     ZonaEntrega,
     metadata_item_pedido,
+    metadata_componente_combo,
 )
 from routes.admin import _sync_catalog_extras, _sync_catalog_flavors, _sync_presentaciones
 from routes.admin import _parsear_campos_producto
@@ -265,6 +267,102 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
         self.assertEqual(selected, {})
         self.assertIn("no está disponible", error)
 
+    def test_flavor_distribution_and_availability_follow_selected_size(self):
+        flavors = [
+            ExtraCatalogItem(
+                nombre=name, tipo="sabor", precio=Decimal("0"),
+                max_cantidad=1, activo=True,
+            )
+            for name in ("Mango", "Lulo", "Guayaba", "Café", "Maracuyá")
+        ]
+        db.session.add_all(flavors)
+        db.session.commit()
+        flavor_form = MultiDict([
+            ("flavors_catalog_present", "1"),
+            *(("flavor_catalog_ids", str(flavor.id)) for flavor in flavors),
+            ("flavors_required", "1"),
+            ("flavors_max_selecciones", "5"),
+        ])
+        self.assertIsNone(_sync_catalog_flavors(self.product, flavor_form))
+        db.session.flush()
+        options = {
+            option.catalog_item_id: option
+            for option in ProductExtraOption.query.join(ProductExtraGroup).filter(
+                ProductExtraGroup.producto_id == self.product.id,
+                ProductExtraGroup.tipo == "sabor",
+            ).all()
+        }
+        presentation_form = MultiDict([
+            ("pres_pequeño_activo", "1"),
+            ("pres_pequeño_extra", "0"),
+            ("pres_pequeño_flavor_rules", "1"),
+            ("pres_pequeño_flavor_min", "5"),
+            ("pres_pequeño_flavor_max", "5"),
+            *(("pres_pequeño_flavor_catalog_ids", str(flavor.id)) for flavor in flavors),
+            ("pres_mediano_activo", "1"),
+            ("pres_mediano_extra", "1"),
+            ("pres_mediano_flavor_rules", "1"),
+            ("pres_mediano_flavor_min", "4"),
+            ("pres_mediano_flavor_max", "4"),
+            *(("pres_mediano_flavor_catalog_ids", str(flavor.id)) for flavor in flavors[:4]),
+            ("pres_grande_activo", "1"),
+            ("pres_grande_extra", "2"),
+            ("pres_grande_flavor_rules", "1"),
+            ("pres_grande_flavor_min", "2"),
+            ("pres_grande_flavor_max", "2"),
+            *(("pres_grande_flavor_catalog_ids", str(flavor.id)) for flavor in flavors[:2]),
+        ])
+        self.assertIsNone(_sync_presentaciones(self.product, presentation_form))
+        db.session.commit()
+
+        small = ProductPresentation.query.filter_by(
+            producto_id=self.product.id, tamaño="pequeño"
+        ).one()
+        large = ProductPresentation.query.filter_by(
+            producto_id=self.product.id, tamaño="grande"
+        ).one()
+        selection = {
+            str(options[flavors[0].id].id): 2,
+            str(options[flavors[1].id].id): 2,
+            str(options[flavors[2].id].id): 1,
+        }
+        normalized, rows, _, error = validate_product_option_selection(
+            self.product, selection, small
+        )
+        self.assertIsNone(error)
+        self.assertEqual(sum(row["cantidad"] for row in rows), 5)
+        self.assertEqual(normalized, selection)
+
+        _, _, _, error = validate_product_option_selection(
+            self.product, selection, large
+        )
+        self.assertIn("no está disponible", error)
+        _, _, _, error = validate_product_option_selection(
+            self.product, {str(options[flavors[0].id].id): 1}, large
+        )
+        self.assertIn("Distribuye 2", error)
+
+        catalog = product_presentation_catalog_payload(self.product)
+        policies = {row["tamaño"]: row["flavor_policy"] for row in catalog}
+        self.assertEqual(policies["pequeño"]["max"], 5)
+        self.assertEqual(policies["mediano"]["max"], 4)
+        self.assertEqual(policies["grande"]["max"], 2)
+        self.assertEqual(len(policies["grande"]["allowed_option_ids"]), 2)
+
+        self.product.es_combo = True
+        self.product.tipo_producto = "combo"
+        db.session.commit()
+        _, combo_rows, _, combo_error = validate_product_option_selection(
+            self.product,
+            {
+                str(options[flavors[0].id].id): 1,
+                str(options[flavors[1].id].id): 1,
+            },
+            large,
+        )
+        self.assertIsNone(combo_error)
+        self.assertEqual(sum(row["cantidad"] for row in combo_rows), 2)
+
     def test_required_flavor_cannot_be_saved_without_available_choices(self):
         product = Product(nombre="Sin sabores", precio=Decimal("3"), activo=True)
         db.session.add(product)
@@ -357,6 +455,37 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
         ]))
         self.assertIn("no puede ser negativo", error)
         self.assertEqual(ProductPresentation.query.filter_by(producto_id=self.product.id).count(), 0)
+
+    def test_combo_component_keeps_its_configured_presentation_in_snapshot_and_price(self):
+        presentation = ProductPresentation(
+            producto_id=self.product.id, tamaño="grande",
+            precio_extra=Decimal("2.00"), activo=True,
+        )
+        combo = Product(
+            nombre="Combo con tamaño", precio=Decimal("10.00"),
+            combo_precio_base=Decimal("10.00"), combo_precio_modo="descuento_porcentaje",
+            combo_descuento_pct=Decimal("10"), activo=True, es_combo=True,
+            tipo_producto="combo",
+        )
+        db.session.add_all([presentation, combo])
+        db.session.flush()
+        item = ComboItem(
+            combo_id=combo.id, producto_id=self.product.id, cantidad=1,
+            presentation_id=presentation.id, es_seleccionable=False,
+        )
+        db.session.add(item)
+        db.session.commit()
+
+        self.assertEqual(float(combo.calcular_precio_base_componentes()), 7.0)
+        self.assertEqual(float(combo.precio_combo_para_seleccion([])), 6.3)
+        snapshot = metadata_item_pedido(combo, {
+            "combo": {"componentes": [
+                metadata_componente_combo(item)
+            ], "selecciones": []}
+        })
+        component = snapshot["combo"]["componentes"][0]
+        self.assertEqual(component["presentacion"]["label"], "Grande")
+        self.assertEqual(component["presentacion"]["extra"], 2.0)
 
     def test_browser_coordinates_resolve_delivery_zone_without_trusting_an_address(self):
         db.session.add(ZonaEntrega(

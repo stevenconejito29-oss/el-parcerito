@@ -113,6 +113,32 @@
     {% if extra_catalog %}<div class="bundle-extras-grid">{% for extra in extra_catalog %}<label><input type="checkbox" name="extra_catalog_ids" value="{{ extra.id }}"><span><strong>{{ extra.nombre }}</strong><small>+€{{ '%.2f'|format(extra.precio_float) }} · máx. {{ extra.max_cantidad }}</small></span></label>{% endfor %}</div><label class="bundle-extras-max"><span>Máximo total por combo</span><input type="number" name="extras_max_selecciones" min="1" max="20" value="4"></label>{% else %}<p class="bundle-extras-empty">La biblioteca de extras está vacía.</p>{% endif %}
   </section>
 
+  {% if brand.es_comida %}
+  {% set flavor_catalog = sabores_catalogo_disponibles() %}
+  <section class="bundle-extras bundle-flavors">
+    <input type="hidden" name="flavors_catalog_present" value="1">
+    <div class="bundle-extras-head"><div><span>Presentaciones del combo</span><h2>Tamaños y reparto de sabores</h2><p>Estas reglas pertenecen al combo completo y se guardan igual que en cualquier producto.</p></div><a href="{{ url_for('admin.extras_catalogo') }}">Gestionar sabores</a></div>
+    {% if flavor_catalog %}
+    <div class="bundle-extras-grid">{% for flavor in flavor_catalog %}<label><input type="checkbox" name="flavor_catalog_ids" value="{{ flavor.id }}"><span><strong>{{ flavor.nombre }}</strong><small>Disponible para asignar a los tamaños</small></span></label>{% endfor %}</div>
+    <div class="bundle-flavor-defaults">
+      <label><input type="checkbox" name="flavors_required" value="1" checked> Exigir distribución de sabores</label>
+      <label><span>Total general sin tamaño</span><input type="number" name="flavors_max_selecciones" min="1" max="100" value="1"></label>
+    </div>
+    <div class="bundle-size-grid">
+      {% for size, label in [('pequeño','Pequeño'),('mediano','Mediano'),('grande','Grande')] %}
+      <article>
+        <label><input type="checkbox" name="pres_{{ size }}_activo" value="1" data-bundle-size="{{ size }}"> <strong>{{ label }}</strong></label>
+        <label><span>Ajuste €</span><input type="number" step="0.01" name="pres_{{ size }}_extra" value="0"></label>
+        <label><input type="checkbox" name="pres_{{ size }}_flavor_rules" value="1"> Reglas propias</label>
+        <div class="bundle-size-limits"><label><span>Mínimo</span><input type="number" name="pres_{{ size }}_flavor_min" min="0" max="100" value="1"></label><label><span>Total</span><input type="number" name="pres_{{ size }}_flavor_max" min="0" max="100" value="1"></label></div>
+        <div class="bundle-size-flavors">{% for flavor in flavor_catalog %}<label><input type="checkbox" name="pres_{{ size }}_flavor_catalog_ids" value="{{ flavor.id }}"> {{ flavor.nombre }}</label>{% endfor %}</div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}<p class="bundle-extras-empty">Crea sabores en la biblioteca antes de configurar presentaciones.</p>{% endif %}
+  </section>
+  {% endif %}
+
   <div class="bundle-builder">
     <aside class="bundle-catalog bundle-mobile-panel" data-bundle-panel="catalog">
       <div class="bundle-panel-head">
@@ -154,6 +180,8 @@
           <span class="bundle-product-copy">
             <strong>{{ p.nombre }}</strong>
             <small>#{{ p.id }} · Stock propio · {{ p.canal_preparacion or 'cocina' }}</small>
+            {% set _component_sizes = p.presentaciones.filter_by(activo=True).count() %}
+            {% if _component_sizes or p.has_flavors %}<small>{% if _component_sizes %}📏 {{ _component_sizes }} tamaños{% endif %}{% if _component_sizes and p.has_flavors %} · {% endif %}{% if p.has_flavors %}🥭 hasta {{ p.flavor_catalog_max_selecciones }} sabores{% endif %}</small>{% endif %}
             <b>€{{ "%.2f"|format(p.precio_final) }}</b>
           </span>
         </button>
@@ -281,7 +309,8 @@ const BUNDLE_PRODUCTS = [{% for p in productos_simples %}{
   origin:"Stock propio",
   channel:{{ (p.canal_preparacion or 'cocina')|tojson }},
   stock:{{ p.stock_total|int }},
-  image:{{ (p.imagen_url|upload_url if p.imagen_url else '')|tojson }}
+  image:{{ (p.imagen_url|upload_url if p.imagen_url else '')|tojson }},
+  presentations:{{ (presentaciones_por_producto.get(p.id|string, []))|tojson }}
 }{% if not loop.last %},{% endif %}{% endfor %}];
 const BUNDLE_LIMITS = {
   maxQty:{{ combo_limits.max_qty|int }},
@@ -487,7 +516,8 @@ function bundleAddProduct(productId){
     qty:1,
     extra:0,
     isDefault:section.type==='choice' && section.items.length < section.maxSelections,
-    note:''
+    note:'',
+    presentationId:(product.presentations || [])[0]?.id || null
   });
   bundleRender();
   if(navigator.vibrate) navigator.vibrate(10);
@@ -517,6 +547,11 @@ function bundleSetDefault(sectionId,productId,checked){
 function bundleSetNote(sectionId,productId,value){
   const item=bundleFindItem(sectionId,productId); if(item) item.note=value.slice(0,300);
 }
+function bundleSetPresentation(sectionId,productId,value){
+  const item=bundleFindItem(sectionId,productId); if(!item) return;
+  item.presentationId=value ? Number(value) : null;
+  bundleUpdate();
+}
 function bundleFindItem(sectionId,productId){
   return bundleSections.find(item=>item.id===Number(sectionId))?.items.find(item=>item.productId===Number(productId));
 }
@@ -525,7 +560,7 @@ function bundleEstimateBase(){
   let total=0;
   bundleSections.forEach(section=>{
     if(section.type==='fixed'){
-      section.items.forEach(item=>{ const product=bundleProduct(item.productId); if(product) total+=product.price*item.qty; });
+      section.items.forEach(item=>{ const product=bundleProduct(item.productId); if(product){ const presentation=(product.presentations||[]).find(row=>Number(row.id)===Number(item.presentationId)); total+=(product.price+Number(presentation?.precio_extra||0))*item.qty; } });
       return;
     }
     const defaults=section.items.filter(item=>item.isDefault).slice(0,section.maxSelections);
@@ -562,6 +597,7 @@ function bundleRender(){
     const active=section.id===bundleActiveSection;
     const itemRows=section.items.map(item=>{
       const product=bundleProduct(item.productId); if(!product) return '';
+      const presentationControl=(product.presentations||[]).length ? `<label class="bundle-line-presentation"><span>Tamaño incluido</span><select data-bundle-input="presentation" data-section-id="${section.id}" data-product-id="${product.id}">${product.presentations.map(row=>`<option value="${row.id}" ${Number(row.id)===Number(item.presentationId)?'selected':''}>${bundleEscape(row.label)}${Number(row.precio_extra)?` · ${Number(row.precio_extra)>0?'+':''}${bundleMoney(Number(row.precio_extra))}`:''}</option>`).join('')}</select></label>` : '';
       return `<div class="bundle-line">
         <div class="bundle-line-image">${product.image?`<img src="${bundleEscape(product.image)}" alt="">`:bundleEscape(product.name.slice(0,1))}</div>
         <div class="bundle-line-copy"><strong>${bundleEscape(product.name)}</strong><small>#${product.id} · ${bundleEscape(product.origin)} · ${bundleEscape(product.channel)} · ${bundleMoney(product.price)}</small></div>
@@ -571,6 +607,7 @@ function bundleRender(){
           `<label class="bundle-extra"><span>Suplemento</span><div><b>€</b><input type="number" value="${Number(item.extra||0).toFixed(2)}" min="0" step="0.01" data-bundle-input="extra" data-section-id="${section.id}" data-product-id="${product.id}"></div></label>
            <label class="bundle-default"><input type="checkbox" ${item.isDefault?'checked':''} data-bundle-input="default" data-section-id="${section.id}" data-product-id="${product.id}"> Predeterminada</label>`}
         </div>
+        ${presentationControl}
         <label class="bundle-line-note"><input type="text" value="${bundleEscape(item.note)}" maxlength="300" placeholder="Nota opcional para cocina" data-bundle-input="note" data-section-id="${section.id}" data-product-id="${product.id}"></label>
       </div>`;
     }).join('');
@@ -679,6 +716,7 @@ function bundleSerialize(){
       add('comp_precio_extra',section.type==='choice'?item.extra:0);
       add('comp_default',section.type==='choice'&&item.isDefault?'1':'0');
       add('comp_notas_preparacion',item.note||'');
+      add('comp_presentation_id',item.presentationId||'');
     });
   });
 }
@@ -725,6 +763,7 @@ document.addEventListener('input', (event) => {
   else if (action === 'url-preview') bundleUrlPreview(control.value);
   else if (action === 'filter') bundleFilterCatalog();
   else if (action === 'note') bundleSetNote(sectionId, productId, control.value);
+  else if (action === 'presentation') bundleSetPresentation(sectionId, productId, control.value);
   else if (action === 'rename') bundleRenameSection(sectionId, control.value);
 });
 
@@ -741,6 +780,7 @@ document.addEventListener('change', (event) => {
   else if (action === 'extra') bundleSetExtra(sectionId, productId, control.value);
   else if (action === 'default') bundleSetDefault(sectionId, productId, control.checked);
   else if (action === 'max') bundleSetMax(sectionId, control.value);
+  else if (action === 'presentation') bundleSetPresentation(sectionId, productId, control.value);
 });
 
 document.getElementById('bundle-form').addEventListener('submit',event=>{

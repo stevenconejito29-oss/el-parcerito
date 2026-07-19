@@ -86,6 +86,7 @@
 	      <span class="work-sec-item work-item-fixed">
 	        <span class="work-item-qty">{{ comp.get('cantidad', 1) }}×</span>
 	        {{ comp.get('nombre', 'Componente') }}
+	        {% if comp.get('presentacion') %}<em class="work-combo-badge">📏 {{ comp.get('presentacion').get('label') or comp.get('presentacion').get('tamaño') }}</em>{% endif %}
 	        {% if comp.get('proveedor_id') %}
 	        <em class="work-origin-badge work-origin-provider">Proveedor{% if comp.get('proveedor_nombre') %}: {{ comp.get('proveedor_nombre') }}{% endif %}</em>
 	        {% elif comp.get('canal_preparacion', 'cocina') == 'almacen' %}
@@ -113,6 +114,7 @@
       <span class="work-sec-item work-item-choice">
 	        <span class="work-item-qty">{{ op.get('cantidad', op.get('qty', 1)) }}×</span>
 	        {{ op.get('nombre', 'Opción') }}
+	        {% if op.get('presentacion') %}<em class="work-combo-badge">📏 {{ op.get('presentacion').get('label') or op.get('presentacion').get('tamaño') }}</em>{% endif %}
 	        {% if op.get('extra_total') and op.get('extra_total') > 0 %}<em class="work-combo-badge">+€{{ "%.2f"|format(op.get('extra_total')) }}</em>{% endif %}
 	        {% if op.get('proveedor_id') %}
 	        <em class="work-origin-badge work-origin-provider">Proveedor{% if op.get('proveedor_nombre') %}: {{ op.get('proveedor_nombre') }}{% endif %}</em>

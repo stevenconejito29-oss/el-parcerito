@@ -165,6 +165,10 @@ test('el estado del pedido conserva tamaño y sabor en el resumen al cliente', a
   const line = formatOrderItemSummaryLine(orders[0].items[0]);
   assert.match(line, /Tamaño: Grande/);
   assert.match(line, /Sabor: Mango/);
+  const mixed = formatOrderItemSummaryLine({
+    nombre: 'Caja', cantidad: 1, sabores: ['Mango ×2', 'Lulo ×3'],
+  });
+  assert.match(mixed, /Sabores: Mango ×2 · Lulo ×3/);
 });
 
 test('tres números de pedido inválidos cierran la espera y vuelven al menú', async () => {

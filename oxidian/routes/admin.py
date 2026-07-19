@@ -58,6 +58,10 @@ from phone_utils import (
 )
 from store_config import get_store_features
 from pricing_service import MAX_AFILIADO_PCT
+from product_presentations_service import (
+    product_presentation_catalog_payload,
+    validate_product_presentation_selection,
+)
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -73,6 +77,7 @@ def extra_catalog_template_helpers():
     return {
         "extras_catalogo_disponibles": extras_catalogo_disponibles,
         "sabores_catalogo_disponibles": sabores_catalogo_disponibles,
+        "product_presentation_catalog_payload": product_presentation_catalog_payload,
     }
 
 _ROLES_ADMIN = {"admin", "super_admin"}
@@ -2401,7 +2406,10 @@ def _calcular_base_precio_combo(componentes):
                 continue
             es_sel = bool(getattr(item, "es_seleccionable", False))
             cantidad = max(1, int(getattr(item, "cantidad", 1) or 1))
-            precio_unit = _money(componente.precio_final)
+            presentacion = getattr(item, "presentacion", None)
+            precio_unit = _money(componente.precio_final) + _money(
+                presentacion.precio_extra if presentacion else 0
+            )
             precio_extra = _money(getattr(item, "precio_extra", 0) or 0)
             grupo = (getattr(item, "grupo_seleccion", None) or "Seleccion").strip() or "Seleccion"
             max_sel = max(1, int(getattr(item, "max_selecciones", 1) or 1))
@@ -2611,6 +2619,7 @@ def _sync_presentaciones(producto, form):
     base_price = Decimal(str(producto.precio or 0))
     for idx, size in enumerate(TAMAÑOS_PRESENTACION):
         activo = bool(form.get(f"pres_{size}_activo"))
+        flavor_rules_enabled = bool(form.get(f"pres_{size}_flavor_rules"))
         try:
             precio_extra = Decimal(str(form.get(f"pres_{size}_extra") or "0"))
         except (InvalidOperation, TypeError, ValueError):
@@ -2622,9 +2631,40 @@ def _sync_presentaciones(producto, form):
             return f"El precio final del tamaño {size} no puede ser negativo."
         if abs(precio_extra) > Decimal("9999999.99"):
             return f"El ajuste de precio para {size} supera el límite permitido."
-        parsed.append((idx, size, activo, precio_extra))
+        try:
+            flavor_min = int(form.get(f"pres_{size}_flavor_min") or 0)
+            flavor_max = int(form.get(f"pres_{size}_flavor_max") or 0)
+        except (TypeError, ValueError):
+            return f"La cantidad de sabores para {size} no es válida."
+        if flavor_rules_enabled and (flavor_min < 0 or flavor_max < flavor_min or flavor_max > 100):
+            return f"Configura entre 0 y 100 unidades de sabor válidas para {size}."
+        flavor_catalog_ids = []
+        for raw_id in form.getlist(f"pres_{size}_flavor_catalog_ids"):
+            try:
+                catalog_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if catalog_id > 0 and catalog_id not in flavor_catalog_ids:
+                flavor_catalog_ids.append(catalog_id)
+        flavor_option_ids = []
+        for raw_id in form.getlist(f"pres_{size}_flavor_option_ids"):
+            try:
+                option_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if option_id > 0 and option_id not in flavor_option_ids:
+                flavor_option_ids.append(option_id)
+        if activo and flavor_rules_enabled and flavor_max > 0 and not (flavor_catalog_ids or flavor_option_ids):
+            return f"Selecciona al menos un sabor disponible para el tamaño {size}."
+        parsed.append((
+            idx, size, activo, precio_extra, flavor_rules_enabled,
+            flavor_min, flavor_max, flavor_catalog_ids, flavor_option_ids,
+        ))
 
-    for idx, size, activo, precio_extra in parsed:
+    for (
+        idx, size, activo, precio_extra, flavor_rules_enabled,
+        flavor_min, flavor_max, flavor_catalog_ids, flavor_option_ids,
+    ) in parsed:
         row = ProductPresentation.query.filter_by(
             producto_id=producto.id, tamaño=size
         ).first()
@@ -2644,6 +2684,27 @@ def _sync_presentaciones(producto, form):
                 row.orden = idx
         elif row is not None:
             row.activo = False
+        if row is not None:
+            row.flavor_rules_enabled = bool(activo and flavor_rules_enabled)
+            row.flavor_min_selections = flavor_min if row.flavor_rules_enabled else None
+            row.flavor_max_selections = flavor_max if row.flavor_rules_enabled else None
+            if row.flavor_rules_enabled:
+                allowed_query = ProductExtraOption.query.join(ProductExtraGroup).filter(
+                    ProductExtraGroup.producto_id == producto.id,
+                    ProductExtraGroup.tipo == "sabor",
+                    ProductExtraGroup.activo.is_(True),
+                    ProductExtraOption.activo.is_(True),
+                )
+                allowed = allowed_query.filter(db.or_(
+                    ProductExtraOption.catalog_item_id.in_(flavor_catalog_ids) if flavor_catalog_ids else db.false(),
+                    ProductExtraOption.id.in_(flavor_option_ids) if flavor_option_ids else db.false(),
+                )).all() if (flavor_catalog_ids or flavor_option_ids) else []
+                expected = len(set(flavor_catalog_ids)) + len(set(flavor_option_ids))
+                if len(allowed) != expected:
+                    return f"Uno de los sabores configurados para {size} no pertenece al producto."
+                row.allowed_flavor_options = allowed
+            else:
+                row.allowed_flavor_options = []
     return None
 
 
@@ -2663,6 +2724,7 @@ def _sync_catalog_product_options(producto, form, *, option_type):
             "present": "flavors_catalog_present",
             "ids": "flavor_catalog_ids",
             "required": "flavors_required",
+            "max": "flavors_max_selecciones",
             "name": "Sabor",
             "description": "Elige el sabor que quieres recibir.",
         },
@@ -2719,12 +2781,10 @@ def _sync_catalog_product_options(producto, form, *, option_type):
 
     if group:
         group.tipo = option_type
-        requested_max = 1
-        if option_type == "extra":
-            try:
-                requested_max = int(form.get(config["max"]) or 0)
-            except (TypeError, ValueError):
-                requested_max = 0
+        try:
+            requested_max = int(form.get(config["max"]) or 0)
+        except (TypeError, ValueError):
+            requested_max = 0
         available_max = sum(
             1 if option_type == "sabor" else max(1, int(item.max_cantidad or 1))
             for item in catalog_items
@@ -2736,8 +2796,9 @@ def _sync_catalog_product_options(producto, form, *, option_type):
         total_max = available_max + custom_max
         if option_type == "sabor" and form.get(config["required"]) and total_max == 0:
             return "Selecciona al menos un sabor antes de marcarlo como obligatorio."
-        group.max_selecciones = 1 if option_type == "sabor" else min(
-            max(1, requested_max or total_max), max(1, total_max)
+        group.max_selecciones = (
+            min(100, max(1, requested_max or 1)) if option_type == "sabor" else
+            min(max(1, requested_max or total_max), max(1, total_max))
         )
         group.min_selecciones = (
             1 if option_type == "sabor" and total_max and form.get(config["required"]) else 0
@@ -2763,7 +2824,7 @@ def _sync_catalog_extras(producto, form):
 
 
 def _sync_catalog_flavors(producto, form):
-    """Asigna sabores reutilizables como una elección única del producto."""
+    """Asigna sabores reutilizables y su capacidad general de distribución."""
     return _sync_catalog_product_options(producto, form, option_type="sabor")
 
 
@@ -2835,6 +2896,10 @@ def nuevo_combo():
             "proveedores": [],
             "combo_limits": combo_limits,
             "disponibilidad_por_origen": disponibilidad_por_origen,
+            "presentaciones_por_producto": {
+                str(product.id): product_presentation_catalog_payload(product)
+                for product in productos_simples
+            },
         }
         ctx.update(overrides)
         return render_template("admin/nuevo_combo.html", **ctx)
@@ -2882,6 +2947,7 @@ def nuevo_combo():
     extras = request.form.getlist("comp_precio_extra") or []
     defaults = request.form.getlist("comp_default") or []
     notas_prep = request.form.getlist("comp_notas_preparacion") or []
+    presentation_ids = request.form.getlist("comp_presentation_id") or []
     group_uids = request.form.getlist("comp_group_uid") or []
     group_defs = _combo_groups_payload_from_form(request.form)
 
@@ -2895,6 +2961,8 @@ def nuevo_combo():
         parallel_arrays.append(defaults)
     if notas_prep:
         parallel_arrays.append(notas_prep)
+    if presentation_ids:
+        parallel_arrays.append(presentation_ids)
     is_valid, error_msg = validate_parallel_arrays(*parallel_arrays)
     if not is_valid:
         db.session.rollback()
@@ -2979,6 +3047,15 @@ def nuevo_combo():
             flash(f"Componente {i + 1}: {comp_error}", "danger")
             return _render_form()
 
+        presentation_raw = presentation_ids[i] if i < len(presentation_ids) else ""
+        presentation, presentation_error = validate_product_presentation_selection(
+            producto, presentation_raw
+        )
+        if presentation_error:
+            db.session.rollback()
+            flash(f"Componente {i + 1}: {presentation_error}", "danger")
+            return _render_form()
+
         # ── Detectar duplicados (fijos y seleccionables) ──
         if es_sel:
             grupo_key = (grupo or "").strip().lower()
@@ -3007,7 +3084,9 @@ def nuevo_combo():
         componentes_para_agregar.append({
             'combo_id': combo.id,
             'producto_id': producto.id,
-            'precio_unit': float(producto.precio_final or 0),
+            'precio_unit': float(producto.precio_final or 0) + (
+                presentation.precio_extra_float if presentation else 0.0
+            ),
             'precio_extra': precio_extra,
             'cantidad': cant,
             'es_seleccionable': es_sel,
@@ -3017,6 +3096,7 @@ def nuevo_combo():
             'orden': i,
             'es_predeterminado': es_default if es_sel else False,
             'notas_preparacion': nota_prep or None,
+            'presentation_id': presentation.id if presentation else None,
         })
         n_comp += 1
 
@@ -3094,6 +3174,7 @@ def nuevo_combo():
                 "combo_id", "producto_id", "cantidad", "es_seleccionable",
                 "grupo_seleccion", "max_selecciones", "precio_extra",
                 "es_predeterminado", "notas_preparacion",
+                "presentation_id",
             }
         }
         clean_comp_data["combo_group_id"] = group.id
@@ -3105,6 +3186,16 @@ def nuevo_combo():
         db.session.rollback()
         flash(extras_error, "danger")
         return redirect(url_for("admin.nuevo_combo"))
+    flavors_error = _sync_catalog_flavors(combo, request.form)
+    if flavors_error:
+        db.session.rollback()
+        flash(flavors_error, "danger")
+        return _render_form()
+    presentations_error = _sync_presentaciones(combo, request.form)
+    if presentations_error:
+        db.session.rollback()
+        flash(presentations_error, "danger")
+        return _render_form()
 
     # ── Commit de la transacción completa ──
     try:
@@ -3368,6 +3459,12 @@ def agregar_componente_combo(producto_id):
         return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
     es_predeterminado = bool(request.form.get("es_predeterminado"))
     notas_preparacion = (request.form.get("notas_preparacion") or "").strip()[:300] or None
+    presentation, presentation_error = validate_product_presentation_selection(
+        componente, request.form.get("presentation_id")
+    )
+    if presentation_error:
+        flash(presentation_error, "danger")
+        return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
     field_error = _validar_campos_componente_combo(
         es_seleccionable, grupo_seleccion, max_selecciones, cantidad
     )
@@ -3379,6 +3476,7 @@ def agregar_componente_combo(producto_id):
         combo_id=producto_id,
         producto_id=componente.id,
         es_seleccionable=False,
+        presentation_id=presentation.id if presentation else None,
     ).first()
     if not es_seleccionable and existente_fijo:
         nueva_cantidad = existente_fijo.cantidad + cantidad
@@ -3408,6 +3506,7 @@ def agregar_componente_combo(producto_id):
             producto_id=componente.id,
             es_seleccionable=True,
             grupo_seleccion=grupo_seleccion,
+            presentation_id=presentation.id if presentation else None,
         ).first()
         if repetido_grupo:
             flash("Ese producto ya existe dentro de ese grupo seleccionable.", "danger")
@@ -3447,6 +3546,7 @@ def agregar_componente_combo(producto_id):
             precio_extra=precio_extra,
             es_predeterminado=es_predeterminado if es_seleccionable else False,
             notas_preparacion=notas_preparacion,
+            presentation_id=presentation.id if presentation else None,
             es_seleccionable=es_seleccionable,
             grupo_seleccion=grupo_seleccion if es_seleccionable else None,
             max_selecciones=max_selecciones if es_seleccionable else 1,

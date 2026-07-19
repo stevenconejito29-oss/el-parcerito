@@ -19,6 +19,8 @@ def active_product_presentations(product):
 
 def product_presentation_catalog_payload(product):
     """Serializa únicamente datos públicos calculados desde el servidor."""
+    from product_options_service import flavor_policy_for_presentation
+
     base_price = float(getattr(product, "precio_final", 0) or 0)
     return [
         {
@@ -28,6 +30,7 @@ def product_presentation_catalog_payload(product):
             "precio_extra": row.precio_extra_float,
             "precio_final": row.precio_final(base_price),
             "orden": int(row.orden or 0),
+            "flavor_policy": flavor_policy_for_presentation(product, row),
         }
         for row in active_product_presentations(product)
     ]
@@ -70,9 +73,17 @@ def validate_product_presentation_selection(product, raw_selection):
 def presentation_metadata(presentation):
     if not presentation:
         return None
+    from product_options_service import flavor_policy_for_presentation
+
+    policy = flavor_policy_for_presentation(presentation.producto, presentation)
     return {
         "id": presentation.id,
         "tamaño": presentation.tamaño,
         "label": presentation.label,
         "extra": presentation.precio_extra_float,
+        "flavor_policy": {
+            "min": policy["min"],
+            "max": policy["max"],
+            "custom": bool(presentation.flavor_rules_enabled),
+        },
     }

@@ -240,7 +240,8 @@
     'extra_catalog_ids': p.extra_catalog_ids,
     'extras_max_selecciones': p.extra_catalog_max_selecciones,
     'flavor_catalog_ids': p.flavor_catalog_ids,
-    'flavors_required': p.flavors_required,
+      'flavors_required': p.flavors_required,
+      'flavors_max_selecciones': p.flavor_catalog_max_selecciones,
     'presentaciones': p.presentation_admin_payload,
   }|tojson }};</script>
   {% endfor %}
@@ -384,6 +385,7 @@
       'extras_max_selecciones': combo.extra_catalog_max_selecciones,
       'flavor_catalog_ids': combo.flavor_catalog_ids,
       'flavors_required': combo.flavors_required,
+      'flavors_max_selecciones': combo.flavor_catalog_max_selecciones,
       'presentaciones': combo.presentation_admin_payload,
     }|tojson }};</script>
     <div class="ox-card p-4">
@@ -646,6 +648,8 @@ function abrirEditar(id) {
   });
   const flavorsRequired = f.querySelector('[name="flavors_required"]');
   if (flavorsRequired) flavorsRequired.checked = !!d.flavors_required;
+  const flavorsMax = f.querySelector('[name="flavors_max_selecciones"]');
+  if (flavorsMax) flavorsMax.value = d.flavors_max_selecciones || 1;
   const presentations = new Map((d.presentaciones || []).map(row => [String(row.tamaño), row]));
   f.querySelectorAll('[data-presentation-toggle]').forEach(toggle => {
     const row = presentations.get(toggle.dataset.presentationToggle);
@@ -655,6 +659,23 @@ function abrirEditar(id) {
       price.value = Number(row?.precio_extra || 0).toFixed(2);
       price.disabled = !toggle.checked;
     }
+    const flavorToggle = f.querySelector(`[data-presentation-flavor-toggle="${toggle.dataset.presentationToggle}"]`);
+    const flavorFields = f.querySelector(`[data-presentation-flavor-fields="${toggle.dataset.presentationToggle}"]`);
+    if (flavorToggle) {
+      flavorToggle.disabled = !toggle.checked;
+      flavorToggle.checked = !!row?.flavor_rules_enabled;
+    }
+    if (flavorFields) flavorFields.hidden = !flavorToggle?.checked;
+    const minInput = f.querySelector(`[name="pres_${toggle.dataset.presentationToggle}_flavor_min"]`);
+    const maxInput = f.querySelector(`[name="pres_${toggle.dataset.presentationToggle}_flavor_max"]`);
+    if (minInput) minInput.value = row?.flavor_min_selections ?? 1;
+    if (maxInput) maxInput.value = row?.flavor_max_selections ?? 1;
+    const allowed = new Set((row?.allowed_flavor_catalog_ids || []).map(Number));
+    f.querySelectorAll(`[name="pres_${toggle.dataset.presentationToggle}_flavor_catalog_ids"]`).forEach(cb => {
+      const catalogOption = Array.from(f.querySelectorAll('[name="flavor_catalog_ids"]'))
+        .find(source => Number(source.value) === Number(cb.value));
+      cb.checked = allowed.has(Number(cb.value)) || (!row?.flavor_rules_enabled && !!catalogOption?.checked);
+    });
   });
 
   // Mostrar/ocultar campos condicionales
@@ -721,6 +742,18 @@ document.addEventListener('change', e => {
     const form = e.target.closest('form');
     const price = form?.querySelector(`[data-presentation-price="${e.target.dataset.presentationToggle}"]`);
     if (price) price.disabled = !e.target.checked;
+    const flavorToggle = form?.querySelector(`[data-presentation-flavor-toggle="${e.target.dataset.presentationToggle}"]`);
+    if (flavorToggle) {
+      flavorToggle.disabled = !e.target.checked;
+      if (!e.target.checked) flavorToggle.checked = false;
+      const fields = form.querySelector(`[data-presentation-flavor-fields="${e.target.dataset.presentationToggle}"]`);
+      if (fields) fields.hidden = !flavorToggle.checked;
+    }
+  }
+  if (e.target.matches('[data-presentation-flavor-toggle]')) {
+    const form = e.target.closest('form');
+    const fields = form?.querySelector(`[data-presentation-flavor-fields="${e.target.dataset.presentationFlavorToggle}"]`);
+    if (fields) fields.hidden = !e.target.checked;
   }
 });
 

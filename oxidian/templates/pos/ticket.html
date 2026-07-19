@@ -137,7 +137,7 @@
   <div class="small" style="padding:0 0 2px 0;font-weight:700">  📏 {{ _pres.get('tamaño')|string|capitalize }}{% set _pe = _pres.get('extra') or 0 %}{% if _pe and _pe > 0 %} (+€{{ "%.2f"|format(_pe) }}){% elif _pe and _pe < 0 %} (−€{{ "%.2f"|format(_pe|abs) }}){% endif %}</div>
   {% endif %}
   {% set _flavors = ((item_meta.get('sabores') or {}).get('opciones') or []) if item_meta else [] %}
-  {% if _flavors %}<div class="small" style="padding:0 0 2px 0;font-weight:700">  SABOR: {% for flavor in _flavors %}{{ flavor.get('nombre','?') }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+  {% if _flavors %}<div class="small" style="padding:0 0 2px 0;font-weight:700">  SABORES: {% for flavor in _flavors %}{{ flavor.get('nombre','?') }}{% if flavor.get('cantidad',1)|int > 1 %} ×{{ flavor.get('cantidad') }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
   {% set _extras = ((item_meta.get('extras') or {}).get('opciones') or []) if item_meta else [] %}
   {% if _extras %}<div class="small" style="padding:0 0 2px 0">  EXTRAS: {% for extra in _extras %}{{ extra.get('cantidad',1) }}× {{ extra.get('nombre','?') }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
   {% if item.notas %}<div class="small" style="padding:0 0 2px 0;color:#c00;font-weight:700">  📝 Nota: {{ item.notas }}</div>{% endif %}
@@ -154,10 +154,10 @@
   {% if item.display_es_combo and (combo_meta.get('componentes') or combo_meta.get('selecciones')) %}
   <div style="font-size:10px;color:#555;padding:1px 0 5px 6px;line-height:1.7">
     {% if combo_meta.get('componentes') %}
-    <div>Incl: {% for comp in combo_meta.get('componentes') %}{{ comp.get('cantidad',1) }}× {{ comp.get('nombre','?') }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+    <div>Incl: {% for comp in combo_meta.get('componentes') %}{{ comp.get('cantidad',1) }}× {{ comp.get('nombre','?') }}{% if comp.get('presentacion') %} ({{ comp.get('presentacion').get('label') or comp.get('presentacion').get('tamaño') }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>
     {% endif %}
     {% for grupo in combo_meta.get('selecciones') or [] %}
-    <div>{{ grupo.get('grupo','?') }}: {% for op in grupo.get('opciones') or [] %}{{ op.get('cantidad', op.get('qty',1)) }}× {{ op.get('nombre','?') }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+    <div>{{ grupo.get('grupo','?') }}: {% for op in grupo.get('opciones') or [] %}{{ op.get('cantidad', op.get('qty',1)) }}× {{ op.get('nombre','?') }}{% if op.get('presentacion') %} ({{ op.get('presentacion').get('label') or op.get('presentacion').get('tamaño') }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>
     {% endfor %}
   </div>
   {% endif %}

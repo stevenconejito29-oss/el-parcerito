@@ -7072,7 +7072,8 @@ function formatOrderItemSummaryLine(item) {
   ).trim();
   if (presentationLabel) opciones.push(`Tamaño: ${presentationLabel}`);
   if (Array.isArray(it.sabores) && it.sabores.length) {
-    opciones.push(`Sabor: ${it.sabores.filter(Boolean).join(' · ')}`);
+    const sabores = it.sabores.filter(Boolean);
+    opciones.push(`${sabores.length === 1 ? 'Sabor' : 'Sabores'}: ${sabores.join(' · ')}`);
   }
   const opcionesTxt = opciones.length ? `\n   ${opciones.join(' · ')}` : '';
   const nota = it.notas && it.notas.trim() ? `\n   _${it.notas.trim().slice(0, 120)}_` : '';

@@ -56,16 +56,22 @@ def _pos_combo_config(producto):
             continue
         option = {
             "id": item.id,
-            "nombre": item.componente.nombre,
+            "nombre": (
+                f"{item.componente.nombre} · {item.presentacion.label}"
+                if item.presentacion else item.componente.nombre
+            ),
             "precio_extra": float(item.precio_extra or 0),
-            "precio_base": float(item.componente.precio_final) * max(1, int(item.cantidad or 1)),
+            "precio_base": (
+                float(item.componente.precio_final)
+                + (item.presentacion.precio_extra_float if item.presentacion else 0.0)
+            ) * max(1, int(item.cantidad or 1)),
             "predeterminado": bool(item.es_predeterminado),
             "disponible": bool(producto.combo_item_stock_disponible(item)),
         }
         if not item.es_seleccionable:
             fixed_base += option["precio_base"]
             incluidos.append({
-                "nombre": item.componente.nombre,
+                "nombre": option["nombre"],
                 "cantidad": int(item.cantidad or 1),
             })
             continue
@@ -110,6 +116,16 @@ def _pos_product_option_config(producto):
         for group in product_option_catalog_payload(producto)
     ]
     presentations = product_presentation_catalog_payload(producto)
+    max_flavor_capacity = max(
+        [int((row.get("flavor_policy") or {}).get("max") or 0) for row in presentations] or [0]
+    )
+    if max_flavor_capacity:
+        for group in groups:
+            if group.get("tipo") == "sabor":
+                group["min"] = 0
+                group["max"] = max_flavor_capacity
+                for option in group.get("opciones") or []:
+                    option["max_cantidad"] = max_flavor_capacity
     if presentations:
         groups.append({
             "id": "presentation",
@@ -131,7 +147,11 @@ def _pos_product_option_config(producto):
             ],
         })
     return {
-        "grupos": groups
+        "grupos": groups,
+        "presentation_policies": {
+            str(row["id"]): row.get("flavor_policy") or {}
+            for row in presentations
+        },
     }
 
 
@@ -416,9 +436,14 @@ def cobrar():
                 "ok": False,
                 "msg": f"{p.nombre}: la personalización no tiene un formato válido.",
             }), 400
+        presentation, presentation_error = validate_product_presentation_selection(
+            p, item_d.get("presentation_id")
+        )
+        if presentation_error:
+            return jsonify({"ok": False, "msg": f"{p.nombre}: {presentation_error}"}), 400
         selected_options, option_rows, option_unit, option_error = (
             validate_product_option_selection(
-                p, raw_product_options
+                p, raw_product_options, presentation
             )
         )
         if option_error:
@@ -433,11 +458,6 @@ def cobrar():
                 "total_unitario": option_unit,
                 "opciones": extras_rows,
             }
-        presentation, presentation_error = validate_product_presentation_selection(
-            p, item_d.get("presentation_id")
-        )
-        if presentation_error:
-            return jsonify({"ok": False, "msg": f"{p.nombre}: {presentation_error}"}), 400
         if presentation:
             item_metadata["presentacion"] = presentation_metadata(presentation)
         precio_venta = (

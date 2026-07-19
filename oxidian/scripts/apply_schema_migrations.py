@@ -30,6 +30,8 @@ from models import (
     ExtraCatalogItem,
     ProductExtraGroup,
     ProductExtraOption,
+    ProductPresentation,
+    product_presentation_flavors,
     Proveedor,
     ProveedorProducto,
     Stock,
@@ -1720,6 +1722,19 @@ MIGRATIONS = [
         ),
         "fn": lambda: _migrate_product_option_types(),
     },
+    {
+        "id": "20260719_01_presentation_flavor_rules",
+        "description": (
+            "Permite distribuir varias unidades entre sabores y configurar "
+            "capacidad y disponibilidad por presentación."
+        ),
+        "fn": lambda: _migrate_presentation_flavor_rules(),
+    },
+    {
+        "id": "20260719_02_combo_item_presentation",
+        "description": "Vincula cada componente de combo con la presentación incluida.",
+        "fn": lambda: _migrate_combo_item_presentation(),
+    },
 ]
 
 
@@ -1850,20 +1865,73 @@ def _migrate_product_option_types():
         """))
         db.session.execute(text("""
             DO $$ BEGIN
-                ALTER TABLE product_extra_groups
-                ADD CONSTRAINT ck_flavor_group_single_choice
-                CHECK (tipo != 'sabor' OR (min_selecciones <= 1 AND max_selecciones = 1));
-            EXCEPTION WHEN duplicate_object THEN NULL;
-            END $$
-        """))
-        db.session.execute(text("""
-            DO $$ BEGIN
                 ALTER TABLE extra_catalog_items
                 ADD CONSTRAINT ck_flavor_catalog_invariants
                 CHECK (tipo != 'sabor' OR (precio = 0 AND max_cantidad = 1));
             EXCEPTION WHEN duplicate_object THEN NULL;
             END $$
         """))
+
+
+def _migrate_presentation_flavor_rules():
+    """Capacidad y disponibilidad de sabores específica por tamaño."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("product_presentations"):
+        ProductPresentation.__table__.create(bind=db.engine, checkfirst=True)
+    columns = {
+        column["name"] for column in inspect(db.engine).get_columns("product_presentations")
+    }
+    definitions = {
+        "flavor_rules_enabled": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "flavor_min_selections": "INTEGER NULL",
+        "flavor_max_selections": "INTEGER NULL",
+    }
+    for name, definition in definitions.items():
+        if name not in columns:
+            db.session.execute(text(
+                f"ALTER TABLE product_presentations ADD COLUMN {name} {definition}"
+            ))
+    product_presentation_flavors.create(bind=db.engine, checkfirst=True)
+    _migrate_combo_item_presentation()
+    if db.engine.dialect.name == "postgresql":
+        # La regla antigua forzaba un único sabor y contradice la distribución
+        # de varias unidades entre sabores.
+        db.session.execute(text(
+            "ALTER TABLE product_extra_groups DROP CONSTRAINT IF EXISTS ck_flavor_group_single_choice"
+        ))
+        for constraint_name, condition in (
+            ("ck_presentation_flavor_min", "flavor_min_selections IS NULL OR flavor_min_selections >= 0"),
+            ("ck_presentation_flavor_max", "flavor_max_selections IS NULL OR flavor_max_selections >= 0"),
+            (
+                "ck_presentation_flavor_range",
+                "flavor_min_selections IS NULL OR flavor_max_selections IS NULL "
+                "OR flavor_max_selections >= flavor_min_selections",
+            ),
+        ):
+            db.session.execute(text(f"""
+                DO $$ BEGIN
+                    ALTER TABLE product_presentations
+                    ADD CONSTRAINT {constraint_name} CHECK ({condition});
+                EXCEPTION WHEN duplicate_object THEN NULL;
+                END $$
+            """))
+
+
+def _migrate_combo_item_presentation():
+    inspector = inspect(db.engine)
+    combo_columns = {
+        column["name"] for column in inspector.get_columns("combo_items")
+    } if inspector.has_table("combo_items") else set()
+    if "presentation_id" in combo_columns or not combo_columns:
+        return
+    db.session.execute(text(
+        "ALTER TABLE combo_items ADD COLUMN presentation_id INTEGER NULL "
+        "REFERENCES product_presentations(id) ON DELETE SET NULL"
+    ))
+    db.session.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_combo_items_presentation_id "
+        "ON combo_items (presentation_id)"
+    ))
 
 
 def _utcnow():

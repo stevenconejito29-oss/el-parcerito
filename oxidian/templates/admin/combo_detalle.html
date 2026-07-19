@@ -133,6 +133,7 @@
             </div>
             <div class="cd-item-info">
               <strong>{{ item.componente.nombre }}</strong>
+              {% if item.presentacion %}<small class="cd-alergeno">📏 {{ item.presentacion.label }}</small>{% endif %}
               {% if item.notas_preparacion %}<small class="cd-alergeno">Cocina: {{ item.notas_preparacion }}</small>{% endif %}
               {% if item.componente.alergenos_info %}
               <small class="cd-alergeno">⚠ {{ item.componente.alergenos_info }}</small>
@@ -197,6 +198,7 @@
             <div class="cd-item-price"><span>€{{ "%.2f"|format(item.componente.precio_final) }}</span></div>
             <div class="cd-item-info">
               <strong>{{ item.componente.nombre }}</strong>
+              {% if item.presentacion %}<small class="cd-alergeno">📏 {{ item.presentacion.label }}</small>{% endif %}
               {% if item.notas_preparacion %}<small class="cd-alergeno">Cocina: {{ item.notas_preparacion }}</small>{% endif %}
             </div>
             {% if item.es_predeterminado %}<span class="cd-opt-tag">recomendada</span>{% endif %}
@@ -239,7 +241,7 @@
           <div class="cd-prev-sec">
             <p class="cd-prev-sec-ttl">📌 Siempre incluido:</p>
             {% for ci in fijos %}
-            <span class="cd-prev-item">✓ {{ ci.cantidad }}× {{ ci.componente.nombre }}</span>
+            <span class="cd-prev-item">✓ {{ ci.cantidad }}× {{ ci.componente.nombre }}{% if ci.presentacion %} · {{ ci.presentacion.label }}{% endif %}</span>
             {% endfor %}
           </div>
           {% endif %}
@@ -249,7 +251,7 @@
           <div class="cd-prev-sec">
             <p class="cd-prev-sec-ttl" style="color:#C084FC">🔄 {{ grp }} (elige {{ mx }}):</p>
             {% for opt in igs %}
-            <span class="cd-prev-item cd-prev-opt">{{ opt.componente.nombre }}</span>
+            <span class="cd-prev-item cd-prev-opt">{{ opt.componente.nombre }}{% if opt.presentacion %} · {{ opt.presentacion.label }}{% endif %}</span>
             {% endfor %}
           </div>
           {% endfor %}
@@ -330,6 +332,13 @@
         <input type="text" id="cd-picker-note" maxlength="300" class="cd-picker-ctx-inp" placeholder="Ej: servir aparte, bebida fría...">
       </div>
     </div>
+    <div id="cd-picker-presentation" class="cd-picker-ctx" hidden>
+      <div class="cd-picker-ctx-row">
+        <label class="cd-picker-ctx-lbl">Tamaño incluido</label>
+        <select id="cd-picker-presentation-select" class="cd-picker-ctx-inp"></select>
+        <button type="button" class="cd-save-btn" data-cd-action="confirm-product">Añadir con este tamaño</button>
+      </div>
+    </div>
 
     <input type="search" id="cd-picker-q" class="cd-picker-search" placeholder="Buscar producto..."
            data-cd-input="filter" autocomplete="off">
@@ -338,6 +347,7 @@
       {% if p.id != combo.id %}
       <button type="button" class="cd-picker-item"
               data-pid="{{ p.id }}" data-name="{{ (p.nombre ~ ' ' ~ p.admin_nombre_operativo)|lower }}"
+              data-presentations='{{ product_presentation_catalog_payload(p)|tojson }}'
               data-cd-action="select-product">
         <span class="cd-picker-item-name">{{ p.nombre }}</span>
         <span class="cd-picker-item-price">
@@ -361,6 +371,7 @@
       <input type="hidden" name="precio_extra" id="cd-hid-extra">
       <input type="hidden" name="es_predeterminado" id="cd-hid-default">
       <input type="hidden" name="notas_preparacion" id="cd-hid-note">
+      <input type="hidden" name="presentation_id" id="cd-hid-presentation">
     </form>
   </div>
 </div>
@@ -538,6 +549,7 @@ const CD_LIMS = {maxQty:{{ combo_limits.max_qty }},maxSel:{{ combo_limits.max_se
 const CD_GRUPOS_EXISTENTES = {{ grupos|tojson }};
 
 let cdPickCtx = {type:'fijo', grupo:'', maxSel:1};
+let cdPendingProductId = null;
 
 /* ── Pricing mode ── */
 function cdPricingMode() {
@@ -614,6 +626,8 @@ function cdOpenPicker(pid, type, grupo, maxSel) {
 
 function cdClosePicker() {
   document.getElementById('cd-picker').style.display = 'none';
+  cdPendingProductId = null;
+  document.getElementById('cd-picker-presentation').hidden = true;
 }
 function cdPickerBg(e) {
   if (e.target === document.getElementById('cd-picker')) cdClosePicker();
@@ -641,6 +655,21 @@ function cdPickerFilter(q) {
 }
 
 function cdPickerSelect(pid) {
+  const productButton = document.querySelector(`.cd-picker-item[data-pid="${Number(pid)}"]`);
+  let presentations = [];
+  try { presentations = JSON.parse(productButton?.dataset.presentations || '[]'); } catch (_) {}
+  if (presentations.length) {
+    cdPendingProductId = Number(pid);
+    const select = document.getElementById('cd-picker-presentation-select');
+    select.innerHTML = presentations.map(row => `<option value="${row.id}">${row.label}${Number(row.precio_extra) ? ` · ${Number(row.precio_extra) > 0 ? '+' : ''}€${Number(row.precio_extra).toFixed(2)}` : ''}</option>`).join('');
+    document.getElementById('cd-picker-presentation').hidden = false;
+    select.focus();
+    return;
+  }
+  cdSubmitPickerProduct(Number(pid), null);
+}
+
+function cdSubmitPickerProduct(pid, presentationId) {
   const isFijo = cdPickCtx.type === 'fijo';
   const grupo = isFijo ? '' : (document.getElementById('cd-picker-grupo')?.value?.trim() || cdPickCtx.grupo || '');
   const maxSel = isFijo ? 1 : (parseInt(document.getElementById('cd-picker-maxsel')?.value)||1);
@@ -661,6 +690,7 @@ function cdPickerSelect(pid) {
   document.getElementById('cd-hid-extra').value   = extra.toFixed(2);
   document.getElementById('cd-hid-default').value = (!isFijo && document.getElementById('cd-picker-default')?.checked) ? '1' : '';
   document.getElementById('cd-hid-note').value    = document.getElementById('cd-picker-note')?.value || '';
+  document.getElementById('cd-hid-presentation').value = presentationId || '';
   document.getElementById('cd-add-form').submit();
 }
 
@@ -696,7 +726,9 @@ document.addEventListener('click', event => {
   } else if (action.dataset.cdAction === 'step-picker-quantity') {
     cdStepPickerQty(delta);
   } else if (action.dataset.cdAction === 'select-product') {
-    cdPickerSelect(action.dataset.productId);
+    cdPickerSelect(action.dataset.pid);
+  } else if (action.dataset.cdAction === 'confirm-product' && cdPendingProductId) {
+    cdSubmitPickerProduct(cdPendingProductId, document.getElementById('cd-picker-presentation-select').value);
   }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') cdClosePicker(); });

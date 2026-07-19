@@ -151,7 +151,7 @@
             {% if item.combo_resumen %}
             <p class="cr-item-note cr-item-note--gold">{{ item.combo_resumen }}</p>
             {% endif %}
-            {% if item.sabores %}<p class="cr-item-note cr-item-note--gold">🥭 Sabor: {% for flavor in item.sabores %}{{ flavor.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+            {% if item.sabores %}<p class="cr-item-note cr-item-note--gold">🥭 Sabores por unidad: {% for flavor in item.sabores %}{{ flavor.nombre }}{% if flavor.cantidad|int > 1 %} ×{{ flavor.cantidad }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
             {% if item.extras %}<p class="cr-item-note cr-item-note--gold">{{ ui.cart_extras_label }}: {% for extra in item.extras %}{{ extra.cantidad }}× {{ extra.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
             {% if item.producto.grupo_pedido %}<p class="cr-item-note cr-item-note--gold">{{ ui.cart_order_label }}: {{ item.producto.grupo_pedido }}</p>{% endif %}
 

@@ -150,6 +150,14 @@ La elección queda congelada en `OrderItem.metadata_json` para que cocina,
 almacén, delivery, proveedores, tickets y reimpresiones no dependan de cambios
 posteriores en el producto.
 
+`opciones_producto` representa sabores como `{option_id: cantidad}`. Cada
+presentación puede heredar la regla general o definir su propio mínimo, total a
+repartir y sabores permitidos. El servidor resuelve esa política desde la
+presentación elegida y no acepta límites enviados por el navegador o el bot.
+Cuando un producto con tamaños forma parte de un combo, `ComboItem` conserva la
+presentación incluida; el constructor exige seleccionarla y el snapshot la
+muestra en las vistas operativas y en las reimpresiones.
+
 ---
 
 ## 4. Flujo de pedido WhatsApp (bot)

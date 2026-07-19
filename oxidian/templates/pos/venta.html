@@ -706,8 +706,8 @@ function abrirCombo(id, nombre, precio, stock, esCombo = false) {
   const comboConfig = esCombo ? POS_COMBOS[String(id)] : null;
   const productConfig = POS_PRODUCT_OPTIONS[String(id)] || {grupos: []};
   const config = comboConfig
-    ? {...comboConfig, grupos:[...(comboConfig.grupos || []), ...(productConfig.grupos || [])]}
-    : {incluidos:[], grupos:productConfig.grupos || [], precio_modo:'fijo', precio_fijo:Number(precio)||0, base_fija:0};
+    ? {...comboConfig, grupos:[...(comboConfig.grupos || []), ...(productConfig.grupos || [])], presentation_policies:productConfig.presentation_policies || {}}
+    : {incluidos:[], grupos:productConfig.grupos || [], presentation_policies:productConfig.presentation_policies || {}, precio_modo:'fijo', precio_fijo:Number(precio)||0, base_fija:0};
   comboPendiente = {id, nombre, precio:Number(precio)||0, stock, config, esCombo};
   document.getElementById('pos-combo-kicker').textContent = esCombo ? 'Configurar combo' : 'Personalizar producto';
   document.getElementById('pos-combo-submit-label').textContent = esCombo ? 'Añadir combo' : 'Añadir producto';
@@ -723,7 +723,14 @@ function abrirCombo(id, nombre, precio, stock, esCombo = false) {
       defaults = (group.opciones || []).filter(option => option.disponible).slice(0, group.min);
     }
     const defaultIds = new Set(defaults.map(option => option.id));
-    const options = (group.opciones || []).map(option => `
+    const isFlavorDistribution = group.tipo === 'sabor';
+    const options = (group.opciones || []).map(option => isFlavorDistribution ? `
+      <label class="pos-combo-option" data-pos-flavor-option="${option.id}">
+        <span>${posEsc(option.nombre)}</span>
+        <input type="number" min="0" max="${Number(option.max_cantidad || group.max || 1)}" value="0"
+               data-selection-kind="product-flavor" data-group="${posEsc(group.id)}"
+               data-pos-input="combo-price" data-option-id="${option.id}">
+      </label>` : `
       <label class="pos-combo-option">
         <input type="${type}" name="pos-combo-${posEsc(group.id)}" value="${option.id}"
                data-extra="${option.precio_extra || 0}" data-base-price="${option.precio_base || 0}"
@@ -740,7 +747,30 @@ function abrirCombo(id, nombre, precio, stock, esCombo = false) {
     </section>`;
   }).join('');
   document.getElementById('modal-combo').style.display = 'flex';
+  actualizarPoliticaSaboresPos();
   actualizarComboPrecio();
+}
+
+function actualizarPoliticaSaboresPos() {
+  if (!comboPendiente) return;
+  const presentation = document.querySelector('#pos-combo-groups input[data-selection-kind="presentation"]:checked');
+  const policy = presentation ? comboPendiente.config.presentation_policies?.[String(presentation.value)] : null;
+  document.querySelectorAll('#pos-combo-groups [data-combo-group]').forEach(group => {
+    const flavorInputs = [...group.querySelectorAll('input[data-selection-kind="product-flavor"]')];
+    if (!flavorInputs.length || !policy) return;
+    group.dataset.min = String(policy.min ?? 0);
+    group.dataset.max = String(policy.max ?? 0);
+    const allowed = new Set((policy.allowed_option_ids || []).map(Number));
+    flavorInputs.forEach(input => {
+      const available = allowed.has(Number(input.dataset.optionId));
+      input.disabled = !available;
+      input.max = String(policy.max ?? 0);
+      input.closest('[data-pos-flavor-option]').hidden = !available;
+      if (!available) input.value = '0';
+    });
+    const hint = group.querySelector('.pos-combo-group-head small');
+    if (hint) hint.textContent = `Reparte ${policy.min === policy.max ? policy.max : `${policy.min}-${policy.max}`} unidades`;
+  });
 }
 
 function actualizarComboPrecio(changedInput) {
@@ -754,6 +784,15 @@ function actualizarComboPrecio(changedInput) {
     } else {
       document.getElementById('pos-combo-error').textContent = '';
     }
+  }
+  if (changedInput?.dataset.selectionKind === 'presentation') actualizarPoliticaSaboresPos();
+  if (changedInput?.dataset.selectionKind === 'product-flavor') {
+    const group = changedInput.closest('[data-combo-group]');
+    const max = Number(group?.dataset.max || 0);
+    const others = [...group.querySelectorAll('input[data-selection-kind="product-flavor"]')]
+      .filter(input => input !== changedInput && !input.disabled)
+      .reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+    changedInput.value = Math.max(0, Math.min(Number(changedInput.value) || 0, max - others));
   }
   document.getElementById('pos-combo-price').textContent = `€${precioComboPendiente().toFixed(2)}`;
 }
@@ -778,14 +817,25 @@ function confirmarCombo() {
   const labels = [];
   for (const group of document.querySelectorAll('#pos-combo-groups [data-combo-group]')) {
     const checked = [...group.querySelectorAll('input:checked')];
+    const flavorInputs = [...group.querySelectorAll('input[data-selection-kind="product-flavor"]:not(:disabled)')];
     const min = Number(group.dataset.min || 1);
     const max = Number(group.dataset.max || 1);
-    if (checked.length < min || checked.length > max) {
+    const selectionCount = flavorInputs.length
+      ? flavorInputs.reduce((sum, input) => sum + (Number(input.value) || 0), 0)
+      : checked.length;
+    if (selectionCount < min || selectionCount > max) {
       document.getElementById('pos-combo-error').textContent =
         `Revisa "${group.querySelector('strong')?.textContent || 'la sección'}": elige entre ${min} y ${max}.`;
       group.scrollIntoView({behavior:'smooth', block:'center'});
       return;
     }
+    flavorInputs.forEach(input => {
+      const qty = Number(input.value) || 0;
+      if (qty > 0) {
+        productOptions[String(Number(input.dataset.optionId))] = qty;
+        labels.push(`${input.closest('label')?.querySelector('span')?.textContent || 'Sabor'} ×${qty}`);
+      }
+    });
     checked.forEach(input => {
       if (input.dataset.selectionKind === 'combo') selected.push(Number(input.value));
       else if (input.dataset.selectionKind === 'presentation') presentationId = Number(input.value);

@@ -166,7 +166,7 @@
   {% endif %}
 
   {# ── Selector de tallas / tamaños (presentaciones activas) ── #}
-  {% set _tallas_producto = producto.presentaciones.filter_by(activo=True).all() if producto.presentaciones is defined else [] %}
+  {% set _tallas_producto = presentation_catalog|default([]) %}
   {% if _tallas_producto|length > 0 %}
   <div class="pd-tallas">
     <p class="pd-tallas-lbl">
@@ -177,13 +177,14 @@
       <label class="pd-tallas-opt {% if loop.first %}is-selected{% endif %}">
         <input type="radio" name="presentation_size" value="{{ t.tamaño|lower }}"
                form="pd-add-form"
-               data-precio-extra="{{ t.precio_extra_float }}"
+               data-precio-extra="{{ t.precio_extra }}"
+               data-flavor-policy='{{ t.flavor_policy|tojson }}'
                {% if loop.first %}checked{% endif %}>
         <span class="pd-tallas-label">{{ t.label }}</span>
-        {% if t.precio_extra_float and t.precio_extra_float > 0 %}
-        <span class="pd-tallas-plus">+€{{ "%.2f"|format(t.precio_extra_float) }}</span>
-        {% elif t.precio_extra_float and t.precio_extra_float < 0 %}
-        <span class="pd-tallas-minus">−€{{ "%.2f"|format(t.precio_extra_float|abs) }}</span>
+        {% if t.precio_extra and t.precio_extra > 0 %}
+        <span class="pd-tallas-plus">+€{{ "%.2f"|format(t.precio_extra) }}</span>
+        {% elif t.precio_extra and t.precio_extra < 0 %}
+        <span class="pd-tallas-minus">−€{{ "%.2f"|format(t.precio_extra|abs) }}</span>
         {% endif %}
       </label>
       {% endfor %}
@@ -222,6 +223,7 @@
         opts.forEach(o => o.classList.toggle('is-selected', o === opt));
         const extra = parseFloat(radio.dataset.precioExtra || 0);
         if (priceEl) priceEl.textContent = '€' + (basePrice + extra).toFixed(2);
+        if (typeof pdApplyFlavorPolicy === 'function') pdApplyFlavorPolicy();
       });
     });
   })();
@@ -281,14 +283,21 @@
   {% set supplement_groups = extra_groups|rejectattr('tipo','equalto','sabor')|list %}
   <section class="pd-extras" aria-labelledby="pd-extras-title">
     <h2 id="pd-extras-title">{% if flavor_groups and not supplement_groups %}Elige tu sabor{% else %}Personaliza tu pedido{% endif %}</h2>
-    <p>{% if flavor_groups %}Selecciona cómo quieres recibirlo.{% endif %}{% if supplement_groups %} Los suplementos se calculan por cada unidad del producto.{% endif %}</p>
+    <p>{% if flavor_groups %}Distribuye los sabores de cada unidad como prefieras.{% endif %}{% if supplement_groups %} Los suplementos se calculan por cada unidad del producto.{% endif %}</p>
     {% for group in extra_groups %}
     <fieldset class="pd-extra-group {% if group.tipo == 'sabor' %}pd-flavor-group{% endif %}" data-option-type="{{ group.tipo }}" data-min="{{ group.min_selecciones }}" data-max="{{ group.max_selecciones }}">
-      <legend>{% if group.tipo == 'sabor' %}🥭 {% endif %}{{ group.nombre }} <small>{% if group.tipo == 'sabor' %}{{ 'Elige una opción' if group.min_selecciones else 'Opcional · elige una opción' }}{% elif group.min_selecciones %}Elige de {{ group.min_selecciones }} a {{ group.max_selecciones }}{% else %}Opcional · máximo {{ group.max_selecciones }}{% endif %}</small></legend>
+      <legend>{% if group.tipo == 'sabor' %}🥭 {% endif %}{{ group.nombre }} <small>{% if group.tipo == 'sabor' %}{% if group.max_selecciones|int > 1 %}Reparte {{ group.max_selecciones }} unidades entre uno o varios sabores{% else %}{{ 'Elige una opción' if group.min_selecciones else 'Opcional · elige una opción' }}{% endif %}{% elif group.min_selecciones %}Elige de {{ group.min_selecciones }} a {{ group.max_selecciones }}{% else %}Opcional · máximo {{ group.max_selecciones }}{% endif %}</small></legend>
       {% if group.descripcion %}<p>{{ group.descripcion }}</p>{% endif %}
       {% for option in group.opciones.filter_by(activo=True).all() %}
       {% if group.tipo == 'sabor' %}
-      <label class="pd-extra-option pd-flavor-option"><input form="pd-add-form" class="pd-flavor-choice" type="radio" name="flavor_group_{{ group.id }}" value="{{ option.id }}" {% if group.min_selecciones %}required{% endif %}><span><strong>{{ option.nombre }}</strong><small>Elegir este sabor</small></span><span class="pd-flavor-check" aria-hidden="true">✓</span></label>
+      <label class="pd-extra-option pd-flavor-option" data-flavor-option="{{ option.id }}">
+        <span><strong>{{ option.nombre }}</strong><small>Elige cuántas unidades quieres</small></span>
+        <span class="pd-flavor-stepper">
+          <button type="button" data-flavor-delta="-1" aria-label="Quitar {{ option.nombre }}">−</button>
+          <input form="pd-add-form" class="pd-flavor-qty" type="number" inputmode="numeric" name="flavor_qty_{{ option.id }}" value="0" min="0" max="{{ group.max_selecciones }}" aria-label="Cantidad de {{ option.nombre }}">
+          <button type="button" data-flavor-delta="1" aria-label="Añadir {{ option.nombre }}">+</button>
+        </span>
+      </label>
       {% else %}
       <label class="pd-extra-option"><span><strong>{{ option.nombre }}</strong>{% if option.precio_float %}<small>+€{{ '%.2f'|format(option.precio_float) }}</small>{% else %}<small>Sin coste</small>{% endif %}</span><input form="pd-add-form" class="pd-extra-qty" data-extra="{{ option.precio_float }}" type="number" inputmode="numeric" name="extra_qty_{{ option.id }}" value="0" min="0" max="{{ option.max_cantidad }}" aria-label="Cantidad de {{ option.nombre }}"></label>
       {% endif %}
@@ -342,6 +351,7 @@
           <span class="pd-combo-qty">{{ item.cantidad }}×</span>
           <div class="pd-combo-item-info">
             <p class="pd-combo-item-name">{{ item.componente.nombre }}</p>
+            {% if item.presentacion %}<p class="pd-combo-item-desc">📏 {{ item.presentacion.label }}</p>{% endif %}
             {% if item.componente.descripcion %}
             <p class="pd-combo-item-desc">{{ item.componente.descripcion[:80] }}</p>
             {% endif %}
@@ -412,6 +422,7 @@
           </span>
           <span class="pd-combo-opt-body">
             <span class="pd-combo-opt-name">{{ item.componente.nombre }}</span>
+            {% if item.presentacion %}<span class="pd-combo-opt-desc">📏 {{ item.presentacion.label }}</span>{% endif %}
             {% if item.es_predeterminado %}<span class="pd-combo-opt-desc" style="color:var(--theme-success);font-weight:900">Recomendada</span>{% endif %}
             {% if item.precio_extra and item.precio_extra > 0 %}<span class="pd-combo-opt-desc" style="color:var(--brand-primary);font-weight:900">+€{{ "%.2f"|format(item.precio_extra) }}</span>{% endif %}
             {% if item.componente.descripcion %}
@@ -545,7 +556,7 @@
 .pd-extras h2{font-size:1.05rem;font-weight:950;color:var(--col-text)}.pd-extras>p,.pd-extra-group>p{font-size:.76rem;color:var(--col-muted)}
 .pd-extra-group-invalid{border-color:#ce1126!important;box-shadow:0 0 0 3px rgba(206,17,38,.1)}.pd-extra-status{margin:.35rem 0 0!important;text-align:right;font-size:.68rem!important}.pd-extra-group-invalid .pd-extra-status{color:#a30d1d!important;font-weight:850}
 .pd-extra-group{margin-top:.8rem;padding:.7rem;border:1px solid var(--col-border);border-radius:.8rem}.pd-extra-group legend{padding:0 .35rem;font-weight:900;color:var(--col-text)}.pd-extra-group legend small{display:block;font-size:.65rem;color:var(--col-muted)}
-.pd-flavor-group{border-color:color-mix(in srgb,var(--brand-primary) 34%,var(--col-border));background:color-mix(in srgb,var(--brand-primary) 5%,var(--col-surface))}.pd-flavor-option{position:relative;cursor:pointer;display:grid;grid-template-columns:auto minmax(0,1fr) auto}.pd-flavor-option .pd-flavor-choice{inline-size:1.15rem;width:1.15rem;block-size:1.15rem;min-height:1.15rem;accent-color:var(--brand-primary)}.pd-flavor-option .pd-flavor-check{display:grid;place-items:center;inline-size:1.55rem;block-size:1.55rem;border-radius:999px;background:var(--col-elevated);color:transparent;font-weight:950}.pd-flavor-choice:checked~.pd-flavor-check{background:var(--brand-primary);color:var(--brand-on-primary)}.pd-flavor-option:has(.pd-flavor-choice:checked){border-color:var(--brand-primary);background:color-mix(in srgb,var(--brand-primary) 10%,var(--col-surface))}
+.pd-flavor-group{border-color:color-mix(in srgb,var(--brand-primary) 34%,var(--col-border));background:color-mix(in srgb,var(--brand-primary) 5%,var(--col-surface))}.pd-flavor-option{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto}.pd-flavor-option.is-selected{border-color:var(--brand-primary);background:color-mix(in srgb,var(--brand-primary) 10%,var(--col-surface))}.pd-flavor-option[hidden]{display:none}.pd-flavor-stepper{display:grid;grid-template-columns:2.6rem 2.8rem 2.6rem;align-items:center;border:1px solid var(--col-border);border-radius:.7rem;overflow:hidden}.pd-flavor-stepper button{min-height:2.6rem;border:0;background:var(--col-elevated);color:var(--col-text);font-weight:950}.pd-flavor-stepper input{width:100%;min-height:2.6rem;border:0;text-align:center;background:var(--col-surface);color:var(--col-text);font-weight:900;-moz-appearance:textfield}.pd-flavor-stepper input::-webkit-inner-spin-button{display:none}
 .pd-extra-option{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.65rem;margin:.35rem 0;border-radius:.7rem;background:var(--col-elevated);border:1px solid var(--col-border)}.pd-extra-option span{display:flex;flex-direction:column}.pd-extra-option small{color:var(--brand-primary);font-weight:800}.pd-extra-option input{width:56px;min-height:44px;text-align:center;border:1px solid var(--col-border-2);border-radius:.65rem;background:var(--col-surface);color:var(--col-text);font-weight:900}
 /* ═══════════════════════════════════════════════════
    PRODUCTO DETALLE — Oxidian · Mobile-first
@@ -1076,6 +1087,8 @@ const PD_ADD_LABEL = {{ ('Añadir combo' if producto.es_combo else ('Reservar fe
 
 function pdCurrentUnitPrice() {
   let extras = 0;
+  const selectedPresentation = document.querySelector('input[name="presentation_size"]:checked');
+  extras += Number(selectedPresentation?.dataset.precioExtra || 0);
   document.querySelectorAll('.pd-extra-qty').forEach(input => {
     extras += Number(input.dataset.extra || 0) * Math.max(0, Number.parseInt(input.value || '0', 10) || 0);
   });
@@ -1103,7 +1116,9 @@ function pdExtraGroupsValid() {
     const max = Number.parseInt(group.dataset.max || '1', 10);
     const isFlavor = group.dataset.optionType === 'sabor';
     const total = isFlavor
-      ? (group.querySelector('.pd-flavor-choice:checked') ? 1 : 0)
+      ? Array.from(group.querySelectorAll('.pd-flavor-qty')).reduce(
+          (sum, input) => sum + (Number.parseInt(input.value || '0', 10) || 0), 0
+        )
       : Array.from(group.querySelectorAll('.pd-extra-qty')).reduce(
           (sum, input) => sum + (Number.parseInt(input.value || '0', 10) || 0), 0
         );
@@ -1111,8 +1126,8 @@ function pdExtraGroupsValid() {
     group.classList.toggle('pd-extra-group-invalid', !ok);
     const status = group.querySelector('.pd-extra-status');
     if (status) status.textContent = ok
-      ? (isFlavor ? (total ? '✓ Sabor seleccionado' : 'Sin sabor seleccionado') : `${total} de ${max} seleccionados`)
-      : (isFlavor ? 'Elige un sabor para continuar' : `Selecciona entre ${min} y ${max}`);
+      ? (isFlavor ? `${total} de ${max} unidades de sabor distribuidas` : `${total} de ${max} seleccionados`)
+      : (isFlavor ? `Distribuye entre ${min} y ${max} unidades de sabor` : `Selecciona entre ${min} y ${max}`);
     if (!ok) valid = false;
   });
   return valid;
@@ -1132,12 +1147,59 @@ document.querySelectorAll('.pd-extra-qty').forEach(input => {
     pdRenderPrice();
   });
 });
-document.querySelectorAll('.pd-flavor-choice').forEach(input => {
-  input.addEventListener('change', () => {
-    pdExtraGroupsValid();
-    pdRenderPrice();
+function pdSelectedFlavorPolicy() {
+  const selected = document.querySelector('input[name="presentation_size"]:checked');
+  if (!selected?.dataset.flavorPolicy) return null;
+  try { return JSON.parse(selected.dataset.flavorPolicy); } catch (_) { return null; }
+}
+
+function pdApplyFlavorPolicy() {
+  const policy = pdSelectedFlavorPolicy();
+  document.querySelectorAll('.pd-flavor-group').forEach(group => {
+    if (policy) {
+      group.dataset.min = String(policy.min ?? 0);
+      group.dataset.max = String(policy.max ?? 0);
+    }
+    const max = Number.parseInt(group.dataset.max || '0', 10);
+    const allowed = policy ? new Set((policy.allowed_option_ids || []).map(Number)) : null;
+    group.querySelectorAll('[data-flavor-option]').forEach(row => {
+      const input = row.querySelector('.pd-flavor-qty');
+      const available = !allowed || allowed.has(Number(row.dataset.flavorOption));
+      row.hidden = !available;
+      if (input) {
+        input.disabled = !available;
+        input.max = String(max);
+        if (!available) input.value = '0';
+      }
+    });
+  });
+  pdExtraGroupsValid();
+}
+
+function pdSetFlavorQuantity(input, requested) {
+  const group = input.closest('.pd-extra-group');
+  const groupMax = Number.parseInt(group?.dataset.max || '0', 10);
+  const others = Array.from(group?.querySelectorAll('.pd-flavor-qty') || [])
+    .filter(other => other !== input && !other.disabled)
+    .reduce((sum, other) => sum + (Number.parseInt(other.value || '0', 10) || 0), 0);
+  input.value = String(Math.max(0, Math.min(requested, groupMax - others)));
+  input.closest('.pd-flavor-option')?.classList.toggle('is-selected', Number(input.value) > 0);
+  pdExtraGroupsValid();
+}
+
+document.querySelectorAll('.pd-flavor-qty').forEach(input => {
+  input.addEventListener('input', () => pdSetFlavorQuantity(input, Number.parseInt(input.value || '0', 10) || 0));
+});
+document.querySelectorAll('[data-flavor-delta]').forEach(button => {
+  button.addEventListener('click', () => {
+    const input = button.closest('.pd-flavor-option')?.querySelector('.pd-flavor-qty');
+    if (input && !input.disabled) pdSetFlavorQuantity(
+      input,
+      (Number.parseInt(input.value || '0', 10) || 0) + Number(button.dataset.flavorDelta || 0),
+    );
   });
 });
+pdApplyFlavorPolicy();
 pdExtraGroupsValid();
 
 function pdRenderPrice() {

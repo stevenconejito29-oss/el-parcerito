@@ -854,6 +854,7 @@ def _combo_items_payload(producto, incluir_stock=False):
             "es_seleccionable": bool(ci.es_seleccionable),
             "grupo_seleccion": ci.grupo_seleccion,
             "max_selecciones": ci.max_selecciones,
+            "presentacion": presentation_metadata(ci.presentacion) if ci.presentacion else None,
         }
         if incluir_stock:
             item.update({
@@ -1606,16 +1607,6 @@ def crear_pedido():
             raw_product_options = dict(raw_product_options)
             if item_d.get("sabor_id") not in (None, ""):
                 raw_product_options[str(item_d.get("sabor_id"))] = 1
-            option_selection, option_rows, option_total, option_error = (
-                validate_product_option_selection(p, raw_product_options)
-            )
-            if option_error:
-                return jsonify({
-                    "ok": False,
-                    "code": "PRODUCT_OPTION_REQUIRED",
-                    "error": f"{p.nombre}: {option_error}",
-                    "personalizaciones": product_option_catalog_payload(p),
-                }), 400
             presentation, presentation_error = validate_product_presentation_selection(
                 p,
                 item_d.get("presentation_id") or item_d.get("presentation_size"),
@@ -1626,6 +1617,16 @@ def crear_pedido():
                     "code": "PRODUCT_PRESENTATION_REQUIRED",
                     "error": f"{p.nombre}: {presentation_error}",
                     "presentaciones": product_presentation_catalog_payload(p),
+                }), 400
+            option_selection, option_rows, option_total, option_error = (
+                validate_product_option_selection(p, raw_product_options, presentation)
+            )
+            if option_error:
+                return jsonify({
+                    "ok": False,
+                    "code": "PRODUCT_OPTION_REQUIRED",
+                    "error": f"{p.nombre}: {option_error}",
+                    "personalizaciones": product_option_catalog_payload(p, presentation),
                 }), 400
             precio_unit = (
                 float(p.precio_combo_para_seleccion(combo_item_ids))
@@ -2789,6 +2790,7 @@ def catalogo_completo():
                             "nombre":         ci.componente.nombre if ci.componente else "",
                             "cantidad":       ci.cantidad,
                             "es_seleccionable": bool(ci.es_seleccionable),
+                            "presentacion": presentation_metadata(ci.presentacion) if ci.presentacion else None,
                         }
                         for ci in ComboItem.query.filter_by(combo_id=p.id).all()
                     ] if p.es_combo else [],
