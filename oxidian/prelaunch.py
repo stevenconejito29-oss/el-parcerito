@@ -19,6 +19,11 @@ OPERATIONAL_PREFIXES = (
     "/static/",
     "/uploads/",
     "/health",
+    # Integraciones externas: Evolution empuja mensajes de WhatsApp aquí
+    # aunque el escaparate público esté en modo preapertura. Sin esta
+    # excepción, Flask devolvía la página HTML al webhook y todos los
+    # mensajes del cliente se perdían silenciosamente.
+    "/webhook/",
 )
 
 PUBLIC_INFRASTRUCTURE_PATHS = frozenset({

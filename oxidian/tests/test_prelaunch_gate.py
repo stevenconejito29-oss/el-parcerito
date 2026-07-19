@@ -18,6 +18,8 @@ class PrelaunchRoutingTest(unittest.TestCase):
             "/preparador/pedidos",
             "/api/bot/health",
             "/api/push/subscribe",
+            "/webhook/evolution",
+            "/webhook/evolution/messages-upsert",
             "/health",
             "/static/css/app.css",
             "/uploads/productos/a.webp",
