@@ -21,7 +21,7 @@
     <p>
       <span class="cd-badge-combo">Combo</span>
       {{ componentes|length }} componente{{ 's' if componentes|length != 1 else '' }}
-      · Stock estimado: <strong class="cd-stock">{{ combo.combo_stock_total }}</strong>
+      · Stock estimado: <strong class="cd-stock">{{ combo.combo_stock_total|stock_display(singular='combo', plural='combos', unlimited_label='Sin límite operativo') }}</strong>
     </p>
   </div>
   <a href="{{ url_for('admin.editar_producto', producto_id=combo.id) }}" class="cd-edit-link">✏ Editar ficha</a>

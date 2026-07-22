@@ -347,13 +347,28 @@ def create_app(env="default"):
                 {"src": pwa_asset("pwa-icon.svg"), "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
                 {"src": pwa_asset("pwa-icon-monochrome.svg"), "sizes": "any", "type": "image/svg+xml", "purpose": "monochrome"},
             ])
+        body = json.dumps(manifest, ensure_ascii=False)
+        # ETag basado en el contenido del manifest — 304 barato cuando no cambió,
+        # sin invalidar `max-age`. Reemplaza el `no-store` anterior que forzaba
+        # descarga completa en cada visita. Con esto, actualizaciones de marca
+        # (color, nombre, icono) llegan al cliente en < 5 min y consumen 0 bytes
+        # cuando el manifest no ha cambiado. También añade un icono adicional
+        # con hash del contenido para invalidación agresiva por el navegador.
+        manifest_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()[:12]
+        # Si el cliente ya tiene esta versión, respondemos 304 (menos bytes).
+        if request.headers.get("If-None-Match") == f'"{manifest_hash}"':
+            resp304 = app.response_class(status=304)
+            resp304.headers["ETag"] = f'"{manifest_hash}"'
+            resp304.headers["Cache-Control"] = "public, max-age=300, must-revalidate"
+            return resp304
         response = app.response_class(
-            json.dumps(manifest, ensure_ascii=False),
+            body,
             mimetype="application/manifest+json",
         )
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
+        response.headers["ETag"] = f'"{manifest_hash}"'
+        # max-age=300 = validez 5 min sin re-request. Combinado con ETag, tras
+        # el TTL el browser hace GET condicional y recibe 304 en el 99% de casos.
+        response.headers["Cache-Control"] = "public, max-age=300, must-revalidate"
         return response
 
     @app.route("/manifest-staff.webmanifest")
@@ -599,6 +614,65 @@ def create_app(env="default"):
             return "/" + value
         return f"/uploads/{value}"
 
+    # Umbral centinela: los combos con componentes sin gestión de stock (bar
+    # con inventario propio no publicado) y los productos con capacidad virtual
+    # devuelven `999999` desde `Product._combo_stock_total_origen()` y
+    # `catalog_projection.combo_stock()` para significar "unbounded/ilimitado".
+    # Cualquier valor por encima de este umbral debe interpretarse como
+    # "sin límite operativo" y NUNCA renderizarse como cifra al usuario.
+    STOCK_UMBRAL_ILIMITADO = 998
+    app.jinja_env.globals["STOCK_UMBRAL_ILIMITADO"] = STOCK_UMBRAL_ILIMITADO
+
+    @app.template_filter("stock_display")
+    def stock_display_filter(value, unlimited_label="Amplia disponibilidad",
+                             out_of_stock_label="Agotado",
+                             singular="disponible", plural="disponibles",
+                             show_zero=True):
+        """Filtro único de presentación de stock. Traduce el centinela de
+        ilimitado en un label legible y aplica pluralización correcta.
+
+        Uso en templates:
+            {{ combo_stock|stock_display }}                    # → "3 disponibles" | "Amplia disponibilidad" | "Agotado"
+            {{ stock|stock_display(unlimited_label="Muchos") }}
+            {{ stock|stock_display(singular="combo", plural="combos") }}
+            {{ stock|stock_display(show_zero=False) }}         # → '' si 0
+
+        Devuelve siempre un string listo para pintar. Evita repetir lógica
+        de ">= 999" en 15+ templates y elimina el riesgo de olvidar un caso.
+        """
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            return ""
+        if n >= STOCK_UMBRAL_ILIMITADO:
+            return unlimited_label
+        if n <= 0:
+            return out_of_stock_label if show_zero else ""
+        unit = singular if n == 1 else plural
+        return f"{n} {unit}"
+
+    @app.template_filter("stock_is_unlimited")
+    def stock_is_unlimited_filter(value):
+        """Predicado booleano para lógica condicional en templates. Complementa
+        a `stock_display` cuando se necesita ramificar (ej. mostrar un icono
+        distinto o esconder una pill entera)."""
+        try:
+            return int(value) >= STOCK_UMBRAL_ILIMITADO
+        except (TypeError, ValueError):
+            return False
+
+    @app.template_filter("stock_bounded")
+    def stock_bounded_filter(value, cap=99):
+        """Para inputs numéricos (POS, admin) donde necesitamos un `max` que no
+        rompa el widget. Devuelve el valor real o el `cap` si es centinela."""
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            return 0
+        if n >= STOCK_UMBRAL_ILIMITADO:
+            return cap
+        return max(0, n)
+
     @app.context_processor
     def inject_branding_config():
         from models import SiteConfig
@@ -715,6 +789,7 @@ def create_app(env="default"):
                 "bizum_telefono": bizum_telefono,
                 "bizum_habilitado": _to_bool(_c("BIZUM_HABILITADO", "1"), True),
                 "efectivo_habilitado": _to_bool(_c("EFECTIVO_HABILITADO", "1"), True),
+                "tarjeta_habilitada": _to_bool(_c("TARJETA_HABILITADA", "1"), True),
                 "modo_tienda": modo_tienda,
                 "tipo_tienda": tipo_tienda,
                 # Helpers explícitos para templates. Preferir estos flags a
@@ -912,7 +987,11 @@ def create_app(env="default"):
                                           "172.30.", "172.31."))
         if _debug_hdrs or _is_lan:
             response.headers["X-Oxidian-Version"] = app.config["ASSET_VERSION"]
-        if request.path in ("/health", "/health/live", "/health/ready", "/manifest.webmanifest", "/sw.js"):
+        # `/manifest.webmanifest` maneja su propio Cache-Control con ETag para
+        # validación 304 barata. Sobreescribirlo aquí (como hacía antes) forzaba
+        # descarga completa en cada visita, matando el ahorro del ETag.
+        # `/sw.js` sí debe ser `no-store` — el navegador siempre re-descarga el SW.
+        if request.path in ("/health", "/health/live", "/health/ready", "/sw.js"):
             response.headers["Cache-Control"] = "no-store, max-age=0"
         sensitive_public_paths = (
             "/carrito",

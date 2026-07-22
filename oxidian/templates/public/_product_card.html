@@ -77,7 +77,7 @@
         {% elif p.categoria %}{{ p.categoria.nombre }}
         {% else %}Disponible{% endif %}
       </span>
-      {% if p.stock_mostrar_en_web and p.tipo_entrega == 'inmediato' %}
+      {% if p.stock_mostrar_en_web and p.tipo_entrega == 'inmediato' and not _card.stock|stock_is_unlimited %}
       <span class="ep-card-stock-mini">{{ _card.stock }} disp.</span>
       {% endif %}
     </div>
@@ -112,7 +112,9 @@
       <div class="ep-card-combo-actions">
         {% if p.tipo_entrega == 'inmediato' %}
         {% set combo_stock = _card.stock %}
-        <span class="ep-card-combo-stock">{{ combo_stock }} combo{{ 's' if combo_stock != 1 }}</span>
+        {% if not combo_stock|stock_is_unlimited %}
+        <span class="ep-card-combo-stock {% if combo_stock <= 0 %}ep-card-combo-stock-out{% endif %}">{{ combo_stock|stock_display(singular='combo', plural='combos') }}</span>
+        {% endif %}
         {% endif %}
         {% if sels_p %}<span class="ep-card-combo-build">Personalizable</span>{% endif %}
       </div>

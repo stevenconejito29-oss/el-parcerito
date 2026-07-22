@@ -60,7 +60,10 @@
     <div id="grid-productos" class="pos-grid">
       {% for p in productos %}
       {% set pos_stock = p.combo_stock_total if p.es_combo else p.stock_total %}
-      {% set pos_limit = pos_stock if p.tipo_entrega == 'inmediato' else pos_max_qty %}
+      {# `pos_limit` va al atributo `data-product-stock` que el JS lee como tope
+         numérico del stepper. Un centinela 999999 haría que el operador pudiese
+         añadir 999999 al carrito. `stock_bounded` lo acota a `pos_max_qty`. #}
+      {% set pos_limit = (pos_stock|stock_bounded(cap=pos_max_qty)) if p.tipo_entrega == 'inmediato' else pos_max_qty %}
       <button type="button"
               class="pos-prod-btn"
               data-categoria="{{ p.categoria_id or 0 }}"
