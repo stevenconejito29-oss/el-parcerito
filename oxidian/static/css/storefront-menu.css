@@ -476,16 +476,58 @@ body.ox-body-public .ep-banner-cta {
 .ep-hero-text { flex: 1; }
 .ep-hero-label { font-size: .95rem; margin-bottom: .4rem; letter-spacing: .1em; }
 .ep-hero-title {
-  font-size: clamp(1.4rem, 5.5vw, 2rem); font-weight: 900; color: #fff;
-  line-height: 1.1; letter-spacing: -.03em; margin-bottom: .3rem;
+  font-size: clamp(1.5rem, 6.5vw, 2.2rem); font-weight: 900; color: #fff;
+  line-height: 1.05; letter-spacing: -.035em;
+  margin: 0;
+  overflow-wrap: break-word; word-break: break-word;
+  min-width: 0; flex: 1;
 }
+/* Heading branded: logo + nombre alineados. La presencia visual del logo
+   ancla la identidad de la marca sin abrumar el hero. Escala fluida:
+   40px móvil compact → 56px desktop. */
+.ep-hero-heading {
+  display: flex; align-items: center; gap: .75rem;
+  margin: 0 0 .55rem;
+}
+.ep-hero-logo {
+  width: clamp(40px, 11vw, 56px);
+  height: clamp(40px, 11vw, 56px);
+  object-fit: contain;
+  border-radius: .5rem;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.15);
+  padding: .2rem;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+}
+/* Legacy — se conserva por si algún template externo lo referencia. */
 .ep-brand-word {
   background: linear-gradient(90deg,
     var(--brand-primary, var(--flag-yellow)),
     color-mix(in srgb, var(--brand-primary, var(--flag-yellow)) 78%, #000));
   -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
 }
-.ep-hero-sub { font-size: .78rem; color: rgba(255,255,255,.55); }
+/* Sub-eyebrow: 1 sola línea de contexto (slogan o ciudad). Icono heritage
+   pequeño a la izquierda, texto compacto con opacidad para no competir con
+   el título ni con la CTA. */
+.ep-hero-sub {
+  display: inline-flex; align-items: center; gap: .35rem;
+  margin: 0 0 .85rem;
+  font-size: .8rem; color: rgba(255,255,255,.68); font-weight: 700;
+  letter-spacing: -.005em;
+  max-width: 100%; min-width: 0;
+}
+.ep-hero-sub > span:last-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 40ch;
+}
+.ep-hero-sub-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.1rem; height: 1.1rem;
+  color: var(--brand-primary, var(--flag-yellow));
+  flex-shrink: 0; opacity: .9;
+}
+.ep-hero-sub-icon svg { width: 100%; height: 100%; }
 /* Trust strip */
 .ep-trust {
   position: relative; z-index: 1;
@@ -1118,9 +1160,14 @@ body.ox-body-public .ep-banner-cta {
 }
 
 /* Chips de tallas / tamaños (retail y comida con presentaciones) */
+/* Chips de tamaños en tarjeta de menú: nunca desbordan la card.
+   Invariante: cada chip preserva su tamaño natural, la fila wrap si hace
+   falta. En viewport ultra-estrecho el gap se reduce. */
 .ep-card-sizes {
   display: flex; flex-wrap: wrap; gap: .25rem;
   margin-top: .35rem;
+  max-width: 100%;
+  align-content: flex-start;
 }
 .ep-card-size-chip {
   font-size: .68rem; font-weight: 800;
@@ -1130,11 +1177,18 @@ body.ox-body-public .ep-banner-cta {
   border: 1px solid rgba(255,255,255,.1);
   color: var(--col-muted);
   letter-spacing: .02em;
+  flex-shrink: 0; white-space: nowrap;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
 }
 .ep-card-size-more {
   font-size: .68rem; font-weight: 800;
   padding: .12rem .35rem;
   color: var(--col-faint);
+  flex-shrink: 0; white-space: nowrap;
+}
+@media (max-width: 380px) {
+  .ep-card-sizes { gap: .18rem; }
+  .ep-card-size-chip { font-size: .62rem; padding: .1rem .3rem; }
 }
 .ep-card-price-old { font-size: .68rem; color: var(--col-faint); text-decoration: line-through; }
 .ep-card-price-note {
@@ -2964,3 +3018,250 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
   .ep-hero-photo .ep-hero-sub { margin-bottom: .55rem; }
 }
 /* Información esencial visible sin competir con el catálogo. */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   R17 · Perf mobile — desactivar backdrop-filter blur() en scroll.
+   Chrome/Safari mobile recomputa el blur en cada frame de scroll cuando el
+   elemento es fijo/sticky, causando drops 60fps → 20-30fps ("tirones").
+   Fondo sólido casi-opaco reemplaza el efecto glass sin repintes costosos.
+   Desktop mantiene el blur original.
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 900px), (pointer: coarse) {
+  .ep-search-sticky,
+  .ep-cat-sticky,
+  .ep-cat-tabs,
+  .ep-hero-photo-actions,
+  .ep-mega-cats,
+  .ep-hero-cta,
+  .ep-fab-mini,
+  .ep-cover-overlay {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background-color: color-mix(in srgb, var(--theme-surface, #fff) 96%, transparent) !important;
+  }
+  /* Overlays modales (dark) mantienen su blur sólo si vale la pena; en móvil
+     un fondo oscuro sólido es igual de efectivo y no jankea. */
+  .ep-modal-backdrop,
+  .ep-drawer-backdrop {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background-color: rgba(0, 0, 0, .72) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   R18 · Hero redesign — sello, cinta tricolor y composición editorial
+   ─────────────────────────────────────────────────────────────────────
+   El hero anterior (fotografía + gradiente lineal + logo 48px genérico)
+   parecía plantilla. Este bloque REEMPLAZA la superficie sin tocar la
+   estructura HTML: añade una cinta vertical tricolor, un sello con el
+   logo (marca) mucho más protagonista y una jerarquía tipográfica más
+   editorial. Todo desde tokens `--brand-*` / `--heritage-*` — no hay
+   colores ni tamaños hardcoded.
+   ═══════════════════════════════════════════════════════════════════════ */
+.ep-hero-photo {
+  /* Overlay más rico: 3 capas → color de marca a la izquierda que se disuelve,
+     viñeta oscura inferior para que el texto respire, la foto respira arriba. */
+  background-image:
+    linear-gradient(180deg, transparent 0%, transparent 55%, rgba(10,7,4,.62) 100%),
+    linear-gradient(96deg,
+      color-mix(in srgb, var(--brand-secondary, #CE1126) 78%, #0a0605) 0%,
+      color-mix(in srgb, var(--brand-secondary, #CE1126) 30%, transparent) 34%,
+      color-mix(in srgb, var(--brand-accent, #003087) 8%, transparent) 62%,
+      transparent 88%),
+    var(--ep-hero-image);
+  background-size: cover, cover, cover;
+  background-position: center, center, center 30%;
+  border-radius: 1.35rem;
+}
+/* Cinta tricolor vertical a la izquierda: firma visual inequívoca. */
+.ep-hero-photo > .ep-hero-inner::before {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  top: 12%; bottom: 12%; left: 0;
+  width: 5px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg,
+    var(--heritage-sun, #FCD116) 0 33%,
+    var(--heritage-river, #003087) 33% 66%,
+    var(--heritage-clay, #CE1126) 66% 100%);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--heritage-sun, #FCD116) 55%, transparent);
+  opacity: .95;
+}
+/* La tarjeta que envuelve el texto pierde el look "cristal genérico" a favor
+   de un panel editorial con esquinas asimétricas y un borde iluminado. */
+.ep-hero-photo .ep-hero-text {
+  position: relative;
+  padding: clamp(1rem, 3vw, 1.5rem) clamp(1rem, 3.5vw, 1.65rem);
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #FCD116) 32%, rgba(255,255,255,.18));
+  border-radius: 22px 22px 22px 6px;
+  background:
+    linear-gradient(155deg,
+      rgba(18,12,8,.92) 0%,
+      rgba(22,15,10,.78) 55%,
+      rgba(28,18,12,.62) 100%);
+  box-shadow:
+    0 22px 44px rgba(0,0,0,.42),
+    inset 0 1px 0 color-mix(in srgb, var(--brand-primary, #FCD116) 22%, rgba(255,255,255,.08));
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+}
+/* Heading: logo mucho más grande, con marco tipo "sello estampado". */
+.ep-hero-photo .ep-hero-heading {
+  align-items: center;
+  gap: clamp(.8rem, 2.4vw, 1.1rem);
+  margin-bottom: .8rem;
+}
+.ep-hero-photo .ep-hero-logo {
+  width: clamp(58px, 15vw, 84px);
+  height: clamp(58px, 15vw, 84px);
+  padding: 5px;
+  background: color-mix(in srgb, var(--theme-surface, #fff) 92%, transparent);
+  border: 2px solid color-mix(in srgb, var(--brand-primary, #FCD116) 78%, #fff);
+  border-radius: 18px;
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--brand-primary, #FCD116) 28%, transparent),
+    0 12px 28px color-mix(in srgb, var(--brand-secondary, #CE1126) 42%, transparent),
+    0 4px 10px rgba(0,0,0,.32);
+  transform: rotate(-2deg);
+  transition: transform .3s ease;
+}
+.ep-hero-photo .ep-hero-logo:hover { transform: rotate(0deg) scale(1.03); }
+
+/* Título: escala tipográfica editorial + anti-huérfanos. */
+.ep-hero-photo .ep-hero-title {
+  font-size: clamp(1.75rem, 6.8vw, 2.6rem);
+  font-weight: 950;
+  line-height: 1.02;
+  letter-spacing: -.045em;
+  text-shadow: 0 2px 14px rgba(0,0,0,.35);
+  color: #FFFDF6;
+}
+/* Sub-eyebrow: banda dorada de contexto con la palabra clave heritage. */
+.ep-hero-photo .ep-hero-sub {
+  display: inline-flex; align-items: center; gap: .5rem;
+  margin: .35rem 0 .95rem;
+  padding: .32rem .7rem .32rem .55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand-primary, #FCD116) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #FCD116) 36%, transparent);
+  color: color-mix(in srgb, var(--brand-primary, #FCD116) 90%, #fff);
+  font-size: .74rem; font-weight: 800; letter-spacing: .01em;
+}
+.ep-hero-photo .ep-hero-sub-icon {
+  color: var(--brand-primary, #FCD116);
+  opacity: 1;
+}
+/* CTA: pasa de "chip glass" a botón sólido con acento de marca. */
+.ep-hero-photo .ep-hero-cta {
+  margin-top: 1rem;
+  padding: .7rem 1.3rem;
+  border-radius: 14px 14px 4px 14px;
+  border: 1.5px solid color-mix(in srgb, var(--brand-primary, #FCD116) 82%, #fff);
+  background: linear-gradient(135deg,
+    var(--brand-primary, #FCD116),
+    color-mix(in srgb, var(--brand-primary, #FCD116) 82%, #000));
+  color: var(--brand-on-primary, #1B0A00) !important;
+  font-size: .84rem;
+  font-weight: 900;
+  letter-spacing: .01em;
+  box-shadow:
+    0 10px 26px color-mix(in srgb, var(--brand-primary, #FCD116) 45%, transparent),
+    0 3px 8px rgba(0,0,0,.28);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.ep-hero-photo .ep-hero-cta:hover {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--brand-primary, #FCD116) 92%, #fff),
+    var(--brand-primary, #FCD116));
+  transform: translateY(-2px);
+  box-shadow:
+    0 14px 32px color-mix(in srgb, var(--brand-primary, #FCD116) 55%, transparent),
+    0 5px 12px rgba(0,0,0,.32);
+}
+body.ox-body-public .ep-hero-photo .ep-hero-cta { color: var(--brand-on-primary, #1B0A00); }
+
+/* Cordillera: sutil, no compite con la composición nueva. */
+.ep-hero-photo .ep-hero-cordillera {
+  opacity: .22;
+  filter: saturate(1.2);
+}
+/* Trust strip: chips flotantes elegantes en lugar de barra "sub-info". */
+.ep-hero-photo + * .ep-trust,
+.ep-hero-photo .ep-trust {
+  gap: .3rem;
+  padding: .6rem .7rem;
+  background: linear-gradient(180deg, rgba(0,0,0,.42), rgba(0,0,0,.28));
+  border-top: 1px solid color-mix(in srgb, var(--brand-primary, #FCD116) 22%, transparent);
+}
+.ep-hero-photo .ep-trust-item {
+  padding: .28rem .65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.88);
+  font-weight: 750;
+  font-size: .68rem;
+}
+.ep-hero-photo .ep-trust-sep { display: none; }
+
+/* ── Small phones (≤380px: iPhone SE, iPhone 13 mini, iPhone 16 mini) ──
+   Aprieta el hero para que quepa el CTA sin scroll, achica logo con dignidad
+   y reduce padding sin sacrificar el sello visual. */
+@media (max-width: 380px) {
+  .ep-hero-photo { min-height: 320px; border-radius: 1.1rem; }
+  .ep-hero-photo .ep-hero-inner { min-height: clamp(240px, 58svh, 340px); padding: 1rem .85rem .8rem; }
+  .ep-hero-photo .ep-hero-text { padding: .95rem 1rem; border-radius: 18px 18px 18px 5px; }
+  .ep-hero-photo .ep-hero-logo {
+    width: 56px; height: 56px;
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--brand-primary, #FCD116) 26%, transparent),
+      0 8px 20px color-mix(in srgb, var(--brand-secondary, #CE1126) 38%, transparent);
+  }
+  .ep-hero-photo .ep-hero-title { font-size: clamp(1.5rem, 8.5vw, 1.85rem); }
+  .ep-hero-photo .ep-hero-sub { font-size: .68rem; padding: .26rem .58rem; }
+  .ep-hero-photo .ep-hero-cta { padding: .58rem 1rem; font-size: .78rem; }
+  .ep-hero-photo .ep-trust-item { font-size: .62rem; padding: .22rem .55rem; }
+}
+
+/* ── Small phones + interacciones globales ─────────────────────────────
+   Refuerzo responsive para menú, tarjetas, modales y botones. Sin hardcoding:
+   escalas fluidas + touch-targets mínimos 44px en portrait ultra-compacto. */
+@media (max-width: 380px) {
+  /* Sección: menos aire lateral, más contenido a la vista. */
+  body.ox-body-public main { padding-left: .55rem; padding-right: .55rem; }
+  /* Grid: 1 sola columna cuando la pantalla es demasiado estrecha para 2.
+     Antes forzaba minmax(150px,1fr) → cortaba imágenes en iPhone SE. */
+  body.ox-body-public .ep-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: .6rem !important;
+  }
+  /* Botones y CTAs: altura táctil garantizada. */
+  body.ox-body-public .ep-hero-cta,
+  body.ox-body-public .cr-item-action,
+  body.ox-body-public .cr-checkout-btn,
+  body.ox-body-public .ep-card-cta,
+  body.ox-body-public .ep-card-add,
+  body.ox-body-public .ep-primary-btn {
+    min-height: 44px;
+  }
+  /* Modales/drawers: ocupan casi todo el viewport útil sin desbordar. */
+  body.ox-body-public .ep-modal,
+  body.ox-body-public .ep-drawer,
+  body.ox-body-public .ox-info-panel {
+    max-width: calc(100vw - 12px) !important;
+    border-radius: 18px !important;
+  }
+  body.ox-body-public .ox-info-panel { padding: .95rem .85rem !important; }
+  /* Chips de categoría: no wrap → scroll horizontal, más ergonómico. */
+  body.ox-body-public .ep-cats { padding-left: .25rem; padding-right: .25rem; }
+  body.ox-body-public .ep-cat { padding: .38rem .7rem; font-size: .72rem; }
+  /* Carrito: cada línea respira aunque la pantalla sea de 320px. */
+  body.ox-body-public .cr-item { padding: .55rem !important; gap: .55rem !important; }
+  body.ox-body-public .cr-thumb { width: 62px !important; height: 62px !important; }
+  body.ox-body-public .cr-item-name { font-size: .82rem !important; }
+  body.ox-body-public .cr-item-price { font-size: .78rem !important; }
+}
+

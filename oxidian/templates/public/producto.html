@@ -103,7 +103,9 @@
   {% endif %}
 
   {% set fb = fulfillment_badge(producto) %}
-  <div class="pd-info-box" style="border-color:color-mix(in srgb,var(--brand-primary) 30%,var(--col-border))">
+  {# El badge idéntico ya vive en el hero; este box es refuerzo desktop.
+     En móvil se oculta vía CSS (.pd-fulfillment-echo) para no duplicar. #}
+  <div class="pd-info-box pd-fulfillment-echo" style="border-color:color-mix(in srgb,var(--brand-primary) 30%,var(--col-border))">
     <span class="pd-box-icon">{{ fb.emoji }}</span>
     <div><p class="pd-box-title">{{ fb.title }}</p></div>
   </div>
@@ -168,7 +170,11 @@
   {# ── Selector de tallas / tamaños (presentaciones activas) ── #}
   {% set _tallas_producto = presentation_catalog|default([]) %}
   {% if _tallas_producto|length > 0 %}
-  <div class="pd-tallas">
+  {# Cuando sólo hay una presentación, el radio se envía igual pero el
+     selector queda visualmente colapsado (clase `is-single`). El label
+     aparece como micro-chip inline junto al precio, evitando ~90px
+     verticales sin selección real que hacer. #}
+  <div class="pd-tallas {% if _tallas_producto|length == 1 %}is-single{% endif %}">
     <p class="pd-tallas-lbl">
       {% if brand.es_producto %}👕 Elige tu talla:{% else %}📏 Elige tu tamaño:{% endif %}
     </p>
@@ -191,26 +197,60 @@
     </div>
   </div>
   <style>
+  /* Tallas/tamaños: grid uniforme, cada opción táctil (≥52px), estado
+     seleccionado con VISIBILIDAD FUERTE — checkmark, borde grueso y fondo
+     saturado. Antes el "seleccionado" era un cambio de 10% de fondo casi
+     imperceptible; ahora se ve al instante. */
   .pd-tallas { margin:.75rem 0 .5rem; }
   .pd-tallas-lbl { font-size:.85rem; font-weight:800; color:var(--col-text); margin:0 0 .5rem; }
-  .pd-tallas-grid { display:flex; flex-wrap:wrap; gap:.4rem; }
+  .pd-tallas-grid {
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(72px, 1fr));
+    gap:.4rem;
+  }
   .pd-tallas-opt {
     position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    padding:.45rem .7rem; min-width:52px; border-radius:.55rem;
-    background:rgba(255,255,255,.04); border:1.5px solid rgba(255,255,255,.1);
-    cursor:pointer; transition:border-color .15s, transform .15s, background .15s;
+    padding:.6rem .7rem; min-height:56px; border-radius:.7rem;
+    background:rgba(255,255,255,.04);
+    border:2px solid rgba(255,255,255,.1);  /* borde de 2px para acomodar el "grueso" del seleccionado sin salto */
+    cursor:pointer;
+    transition:border-color .18s, transform .12s, background .18s, box-shadow .18s;
     user-select:none;
+    min-width:0; overflow:hidden;
+    touch-action:manipulation; -webkit-tap-highlight-color:transparent;
   }
-  .pd-tallas-opt:hover { border-color:var(--brand-primary, #FFAB00); transform:translateY(-1px); }
+  .pd-tallas-opt:hover { border-color:color-mix(in srgb, var(--brand-primary, #FFAB00) 50%, transparent); transform:translateY(-1px); }
   .pd-tallas-opt.is-selected,
   .pd-tallas-opt:has(input:checked) {
-    background:color-mix(in srgb, var(--brand-primary, #FFAB00) 12%, transparent);
+    background:color-mix(in srgb, var(--brand-primary, #FFAB00) 18%, transparent);
     border-color:var(--brand-primary, #FFAB00);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--brand-primary, #FFAB00) 16%, transparent);
   }
+  /* Checkmark ✓ en la esquina — feedback INEQUÍVOCO de "esta talla está elegida".
+     Aparece con scale-in suave para reforzar el cambio. */
+  .pd-tallas-opt::after {
+    content:"✓";
+    position:absolute; top:.25rem; right:.35rem;
+    width:1.05rem; height:1.05rem; border-radius:50%;
+    background:var(--brand-primary, #FFAB00); color:#1B0A00;
+    font-size:.7rem; font-weight:950; line-height:1.05rem; text-align:center;
+    transform:scale(0); opacity:0;
+    transition:transform .18s cubic-bezier(.34,1.3,.64,1), opacity .18s;
+  }
+  .pd-tallas-opt.is-selected::after,
+  .pd-tallas-opt:has(input:checked)::after { transform:scale(1); opacity:1; }
   .pd-tallas-opt input { position:absolute; opacity:0; pointer-events:none; }
-  .pd-tallas-label { font-size:.9rem; font-weight:900; color:var(--col-text); line-height:1; }
-  .pd-tallas-plus { font-size:.68rem; font-weight:800; color:var(--brand-primary); margin-top:.2rem; }
-  .pd-tallas-minus { font-size:.68rem; font-weight:800; color:var(--theme-success); margin-top:.2rem; }
+  .pd-tallas-label {
+    font-size:.9rem; font-weight:900; color:var(--col-text); line-height:1.05;
+    max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .pd-tallas-plus { font-size:.68rem; font-weight:800; color:var(--brand-primary); margin-top:.2rem; white-space:nowrap; }
+  .pd-tallas-minus { font-size:.68rem; font-weight:800; color:var(--theme-success); margin-top:.2rem; white-space:nowrap; }
+  /* iPhone SE (< 380px): 2 columnas fijas, chip un poco más compacto */
+  @media (max-width:380px) {
+    .pd-tallas-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    .pd-tallas-label { font-size:.85rem; }
+  }
   </style>
   <script nonce="{{ csp_nonce() }}">
   (function(){
@@ -232,6 +272,9 @@
 
   <div class="pd-price-row">
     <span class="pd-price" id="pd-unit-price">€{{ "%.2f"|format(producto.precio_final) }}</span>
+    {% if _tallas_producto and _tallas_producto|length == 1 %}
+    <span class="pd-size-chip" title="Presentación única">📏 {{ _tallas_producto[0].label }}</span>
+    {% endif %}
     {% if producto.es_combo and producto.combo_precio_modo_normalizado == 'descuento_porcentaje' and producto.combo_descuento_pct_float > 0 %}
     <span class="pd-combo-price-note">
       {{ "%.0f"|format(producto.combo_descuento_pct_float) }}% dto sobre tu selección
@@ -255,27 +298,32 @@
   </div>
   {% endif %}
 
-  {# ── Información alimentaria (SOLO en modo comida) ── #}
+  {# ── Información alimentaria (SOLO en modo comida) ──
+     Si hay datos concretos (alérgenos o hipoalergénico) renderizamos el
+     box completo. Si no hay nada útil (sólo el mensaje "no informados"),
+     colapsamos a una línea discreta que no gasta ~70px verticales. #}
   {% if brand.es_comida %}
+  {% set _iconos = producto.alergenos_iconos %}
+  {% if _iconos or producto.es_hipoalergenico %}
   <div class="pd-info-box pd-box-alerg">
     <div class="pd-box-alerg-inner">
       <p class="pd-box-label">Información alimentaria</p>
       {% if producto.es_hipoalergenico %}
       <div class="pd-tag-hipo">🌿 Hipoalergénico — apto para todos</div>
       {% endif %}
-      {% set iconos = producto.alergenos_iconos %}
-      {% if iconos %}
+      {% if _iconos %}
       <p class="pd-alerg-title">⚠️ Contiene:</p>
       <div class="pd-alerg-chips">
-        {% for code, icon, label in iconos %}
+        {% for code, icon, label in _iconos %}
         <span class="pd-alerg-chip">{{ icon }} {{ label }}</span>
         {% endfor %}
       </div>
-      {% elif not producto.es_hipoalergenico %}
-      <p class="pd-no-alerg">Alérgenos no informados. Consulta al negocio si tienes alergias o intolerancias.</p>
       {% endif %}
     </div>
   </div>
+  {% else %}
+  <p class="pd-no-alerg-line">ℹ️ Sin información de alérgenos. Consulta al negocio si tienes intolerancias.</p>
+  {% endif %}
   {% endif %}
 
   {% if extra_groups %}
@@ -283,26 +331,46 @@
   {% set supplement_groups = extra_groups|rejectattr('tipo','equalto','sabor')|list %}
   <section class="pd-extras" aria-labelledby="pd-extras-title">
     <h2 id="pd-extras-title">{% if flavor_groups and not supplement_groups %}Elige tu sabor{% else %}Personaliza tu pedido{% endif %}</h2>
-    <p>{% if flavor_groups %}Distribuye los sabores de cada unidad como prefieras.{% endif %}{% if supplement_groups %} Los suplementos se calculan por cada unidad del producto.{% endif %}</p>
+    <p>{% if flavor_groups %}Toca <strong>+</strong> en cada sabor que quieras. Puedes combinar varios.{% endif %}{% if supplement_groups %} Los extras se suman por cada unidad.{% endif %}</p>
     {% for group in extra_groups %}
     <fieldset class="pd-extra-group {% if group.tipo == 'sabor' %}pd-flavor-group{% endif %}" data-option-type="{{ group.tipo }}" data-min="{{ group.min_selecciones }}" data-max="{{ group.max_selecciones }}">
-      <legend>{% if group.tipo == 'sabor' %}🥭 {% endif %}{{ group.nombre }} <small>{% if group.tipo == 'sabor' %}{% if group.max_selecciones|int > 1 %}Reparte {{ group.max_selecciones }} unidades entre uno o varios sabores{% else %}{{ 'Elige una opción' if group.min_selecciones else 'Opcional · elige una opción' }}{% endif %}{% elif group.min_selecciones %}Elige de {{ group.min_selecciones }} a {{ group.max_selecciones }}{% else %}Opcional · máximo {{ group.max_selecciones }}{% endif %}</small></legend>
+      <legend>
+        {% if group.tipo == 'sabor' %}🥭 {% endif %}{{ group.nombre }}
+        <small>{% if group.tipo == 'sabor' %}{% if group.max_selecciones|int > 1 %}Toca los sabores que quieras · hasta {{ group.max_selecciones }} en total{% else %}{{ 'Obligatorio · elige uno' if group.min_selecciones else 'Opcional · elige uno' }}{% endif %}{% elif group.min_selecciones %}Elige de {{ group.min_selecciones }} a {{ group.max_selecciones }}{% else %}Opcional · máximo {{ group.max_selecciones }}{% endif %}</small>
+      </legend>
       {% if group.descripcion %}<p>{{ group.descripcion }}</p>{% endif %}
+      {% if group.tipo == 'sabor' %}<div class="pd-flavor-chips">{% endif %}
       {% for option in group.opciones.filter_by(activo=True).all() %}
       {% if group.tipo == 'sabor' %}
-      <label class="pd-extra-option pd-flavor-option" data-flavor-option="{{ option.id }}">
-        <span><strong>{{ option.nombre }}</strong><small>Elige cuántas unidades quieres</small></span>
-        <span class="pd-flavor-stepper">
-          <button type="button" data-flavor-delta="-1" aria-label="Quitar {{ option.nombre }}">−</button>
-          <input form="pd-add-form" class="pd-flavor-qty" type="number" inputmode="numeric" name="flavor_qty_{{ option.id }}" value="0" min="0" max="{{ group.max_selecciones }}" aria-label="Cantidad de {{ option.nombre }}">
-          <button type="button" data-flavor-delta="1" aria-label="Añadir {{ option.nombre }}">+</button>
-        </span>
-      </label>
+      {# ═══════ Chip de sabor (patrón KFC / McDonald's / BK) ═══════
+         Un chip compacto. Un tap añade 1. Otro tap añade otro (hasta el max
+         del grupo). Al llegar al mínimo (o si sólo se permite qty 1) muestra
+         un pequeño botón × para quitarlo. Ocupa un tercio del vertical que
+         los steppers anteriores.
+         El input real (numérico) queda oculto pero funcional para el submit
+         del form — todo el resto del backend sigue igual. #}
+      <button type="button" class="pd-flavor-chip" data-flavor-option="{{ option.id }}"
+              data-flavor-max="{{ group.max_selecciones }}"
+              aria-pressed="false" aria-label="Añadir {{ option.nombre }}">
+        <span class="pd-flavor-chip__name">{{ option.nombre }}</span>
+        <span class="pd-flavor-chip__qty" aria-hidden="true">1</span>
+        <span class="pd-flavor-chip__remove" data-flavor-remove aria-label="Quitar {{ option.nombre }}">×</span>
+        <input form="pd-add-form" class="pd-flavor-qty" type="hidden"
+               name="flavor_qty_{{ option.id }}" value="0"
+               data-max="{{ group.max_selecciones }}">
+      </button>
       {% else %}
       <label class="pd-extra-option"><span><strong>{{ option.nombre }}</strong>{% if option.precio_float %}<small>+€{{ '%.2f'|format(option.precio_float) }}</small>{% else %}<small>Sin coste</small>{% endif %}</span><input form="pd-add-form" class="pd-extra-qty" data-extra="{{ option.precio_float }}" type="number" inputmode="numeric" name="extra_qty_{{ option.id }}" value="0" min="0" max="{{ option.max_cantidad }}" aria-label="Cantidad de {{ option.nombre }}"></label>
       {% endif %}
       {% endfor %}
+      {% if group.tipo == 'sabor' %}</div>{# /pd-flavor-chips #}{% endif %}
       <p class="pd-extra-status" aria-live="polite"></p>
+      {# Barra de progreso visual — sólo aparece cuando max>1 (grupos de reparto). #}
+      {% if group.max_selecciones|int > 1 %}
+      <div class="pd-extra-progress" role="presentation">
+        <span class="pd-extra-progress-bar"></span>
+      </div>
+      {% endif %}
     </fieldset>{% endfor %}
   </section>
   {% endif %}
@@ -363,6 +431,25 @@
             {% endif %}
           </div>
           <span class="pd-combo-tag pd-combo-tag-inc">Incluido</span>
+          {% set _sab_opts = item.sabores_disponibles %}
+          {% if item.permite_sabor_cliente and _sab_opts %}
+          <div class="pd-combo-flavor" data-combo-item="{{ item.id }}" data-max-flavors="{{ item.cantidad|int }}">
+            <p class="pd-combo-flavor-ttl">Elige {{ 'el sabor' if item.cantidad|int == 1 else 'los sabores (%s)'|format(item.cantidad) }} de {{ item.componente.nombre }}</p>
+            <div class="pd-combo-flavor-chips">
+              {% for opt in _sab_opts %}
+              <label class="pd-flavor-chip" data-combo-flavor-opt="{{ opt.id }}">
+                <input type="{{ 'radio' if item.cantidad|int == 1 else 'checkbox' }}"
+                       name="combo_flavor_{{ item.id }}{{ '' if item.cantidad|int == 1 else '_' ~ opt.id }}"
+                       value="{{ opt.id if item.cantidad|int == 1 else '1' }}"
+                       class="pd-combo-flavor-input" form="pd-add-form"
+                       data-combo-item="{{ item.id }}" data-opt-id="{{ opt.id }}"
+                       {% if loop.first and item.cantidad|int == 1 %}checked{% endif %}>
+                <span class="pd-flavor-chip__name">{{ opt.nombre }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
         </div>
         {% endfor %}
       </div>
@@ -432,6 +519,23 @@
           {% set al = item.componente.alergenos_iconos %}
           {% if al %}<span class="pd-combo-opt-alerg">⚠️{% for c,i,l in al %} {{ i }}{% endfor %}</span>{% endif %}
           {% if opt_agotada %}<span class="pd-combo-opt-sold">Agotado</span>{% endif %}
+          {% set _sab_opts_s = item.sabores_disponibles %}
+          {% if item.permite_sabor_cliente and _sab_opts_s and not opt_agotada %}
+          <div class="pd-combo-flavor" data-combo-item="{{ item.id }}" data-max-flavors="{{ item.cantidad|int }}">
+            <p class="pd-combo-flavor-ttl">Sabor:</p>
+            <div class="pd-combo-flavor-chips">
+              {% for opt in _sab_opts_s %}
+              <label class="pd-flavor-chip" data-combo-flavor-opt="{{ opt.id }}">
+                <input type="radio" name="combo_flavor_{{ item.id }}" value="{{ opt.id }}"
+                       class="pd-combo-flavor-input" form="pd-add-form"
+                       data-combo-item="{{ item.id }}" data-opt-id="{{ opt.id }}"
+                       {% if loop.first %}checked{% endif %}>
+                <span class="pd-flavor-chip__name">{{ opt.nombre }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
         </label>
         {% endfor %}
       </div>
@@ -541,9 +645,32 @@
       </button>
     </div>
 
+    {# Resumen VIVO de la selección — refuerza el "cierre" (gestalt) mostrando
+       al cliente exactamente qué va a añadir antes de pulsar el botón. Aparece
+       encima del CTA para que el usuario confirme visualmente su elección.
+       Se rellena por JS (`pdRenderSelectionSummary`). Cuando no hay tamaño ni
+       sabor elegido, muestra un placeholder amable. #}
+    {% if _tallas_producto|length > 0 or extra_groups %}
+    <div class="pd-selection-summary is-placeholder" id="pd-selection-summary" aria-live="polite" role="status">
+      <span class="pd-selection-summary__icon" aria-hidden="true">🧾</span>
+      <span class="pd-selection-summary__text" id="pd-selection-summary-text">Elige tu tamaño y sabor arriba…</span>
+    </div>
+    {% endif %}
+
     <button type="submit" class="pd-add-btn" id="pd-add-btn">
       {% if producto.es_combo %}Añadir combo{% elif producto.tipo_entrega in ('programado','encargo') %}Reservar fecha fija{% else %}Añadir{% endif %} · €{{ "%.2f"|format(producto.precio_final) }}
     </button>
+    {# Hint: sólo aparece cuando hay al menos DOS tamaños o hay sabores;
+       si el producto tiene 1 tamaño y ningún sabor no aporta nada útil.
+       Texto corto para ocupar 1 línea en móvil. #}
+    {% set _tiene_variaciones = (_tallas_producto|length > 1) or extra_groups %}
+    {% if _tiene_variaciones %}
+    <p class="pd-multi-hint" role="note">
+      💡
+      {% if _tallas_producto|length > 1 and extra_groups %}Combina tamaño y sabor{% elif _tallas_producto|length > 1 %}Cambia de tamaño{% else %}Cambia de sabor{% endif %}
+      para añadirlo varias veces como líneas distintas.
+    </p>
+    {% endif %}
   </form>
 </div>
 {% endif %}
@@ -555,9 +682,247 @@
 .pd-extras{margin:1rem 0;padding:1rem;border:1px solid color-mix(in srgb,var(--brand-primary) 36%,#ddd);border-radius:1rem;background:var(--col-surface);box-shadow:0 8px 24px rgba(0,0,0,.12)}
 .pd-extras h2{font-size:1.05rem;font-weight:950;color:var(--col-text)}.pd-extras>p,.pd-extra-group>p{font-size:.76rem;color:var(--col-muted)}
 .pd-extra-group-invalid{border-color:#ce1126!important;box-shadow:0 0 0 3px rgba(206,17,38,.1)}.pd-extra-status{margin:.35rem 0 0!important;text-align:right;font-size:.68rem!important}.pd-extra-group-invalid .pd-extra-status{color:#a30d1d!important;font-weight:850}
-.pd-extra-group{margin-top:.8rem;padding:.7rem;border:1px solid var(--col-border);border-radius:.8rem}.pd-extra-group legend{padding:0 .35rem;font-weight:900;color:var(--col-text)}.pd-extra-group legend small{display:block;font-size:.65rem;color:var(--col-muted)}
-.pd-flavor-group{border-color:color-mix(in srgb,var(--brand-primary) 34%,var(--col-border));background:color-mix(in srgb,var(--brand-primary) 5%,var(--col-surface))}.pd-flavor-option{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto}.pd-flavor-option.is-selected{border-color:var(--brand-primary);background:color-mix(in srgb,var(--brand-primary) 10%,var(--col-surface))}.pd-flavor-option[hidden]{display:none}.pd-flavor-stepper{display:grid;grid-template-columns:2.6rem 2.8rem 2.6rem;align-items:center;border:1px solid var(--col-border);border-radius:.7rem;overflow:hidden}.pd-flavor-stepper button{min-height:2.6rem;border:0;background:var(--col-elevated);color:var(--col-text);font-weight:950}.pd-flavor-stepper input{width:100%;min-height:2.6rem;border:0;text-align:center;background:var(--col-surface);color:var(--col-text);font-weight:900;-moz-appearance:textfield}.pd-flavor-stepper input::-webkit-inner-spin-button{display:none}
-.pd-extra-option{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.65rem;margin:.35rem 0;border-radius:.7rem;background:var(--col-elevated);border:1px solid var(--col-border)}.pd-extra-option span{display:flex;flex-direction:column}.pd-extra-option small{color:var(--brand-primary);font-weight:800}.pd-extra-option input{width:56px;min-height:44px;text-align:center;border:1px solid var(--col-border-2);border-radius:.65rem;background:var(--col-surface);color:var(--col-text);font-weight:900}
+/* Barra de progreso visual del reparto — más alta (.65rem vs .4rem) para
+   que sea inequívocamente visible en móvil. Cuando el grupo está incompleto
+   (invalid), pulsa suavemente para llamar la atención sin agobiar. */
+.pd-extra-progress {
+  margin-top: .5rem; height: .65rem; border-radius: .55rem;
+  background: rgba(0,0,0,.14);
+  overflow: hidden;
+  box-shadow: 0 1px 0 rgba(255,255,255,.05);
+}
+.pd-extra-progress-bar {
+  display: block; height: 100%;
+  width: var(--pd-progress-pct, 0%);
+  background: linear-gradient(90deg, var(--brand-primary, #FFAB00), color-mix(in srgb, var(--brand-primary, #FFAB00) 70%, #fff));
+  border-radius: inherit;
+  transition: width .22s ease-out, background .18s;
+}
+.pd-extra-group-invalid .pd-extra-progress-bar {
+  background: linear-gradient(90deg, #ce1126, #a30d1d);
+  animation: pdProgressPulse 1.6s ease-in-out infinite;
+}
+@keyframes pdProgressPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .55; }
+}
+/* Toast "producto añadido" con acción "Añadir otra variación".
+   Respeta safe-area (notch iOS, gestos Android) tanto vertical como horizontal.
+   Los botones son ≥ 44px de alto y usan `touch-action:manipulation`. */
+.pd-added-toast{position:fixed;left:50%;bottom:calc(1rem + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);z-index:9999;max-width:min(92vw, 440px);background:var(--col-surface,#1e1710);color:var(--col-text,#f4e9d4);border:1px solid color-mix(in srgb,var(--brand-primary,#FFAB00) 40%,transparent);border-radius:.9rem;box-shadow:0 12px 36px rgba(0,0,0,.5);padding:.85rem 1rem;display:flex;flex-direction:column;gap:.55rem;animation:pdToastIn .22s ease-out}
+@keyframes pdToastIn{from{opacity:0;transform:translate(-50%, 10px)}to{opacity:1;transform:translate(-50%, 0)}}
+.pd-added-toast__body strong{display:block;font-size:.92rem;margin-bottom:.15rem}
+.pd-added-toast__body p{margin:0;font-size:.78rem;opacity:.82;line-height:1.35}
+.pd-added-toast__actions{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+.pd-added-toast__btn{padding:.6rem 1rem;border-radius:.55rem;font-size:.82rem;font-weight:800;cursor:pointer;border:1px solid transparent;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;min-height:44px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.pd-added-toast__btn--primary{background:var(--brand-primary,#FFAB00);color:#1B0A00;border-color:var(--brand-primary,#FFAB00)}
+.pd-added-toast__btn--primary:hover{filter:brightness(1.08)}
+.pd-added-toast__btn--ghost{background:transparent;color:var(--col-text,#f4e9d4);border-color:color-mix(in srgb,var(--col-text,#f4e9d4) 30%,transparent)}
+.pd-added-toast__close{margin-left:auto;background:transparent;border:none;color:var(--col-muted,#aaa);font-size:1.4rem;line-height:1;cursor:pointer;padding:.4rem .6rem;min-height:44px;min-width:44px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.pd-added-toast__close:hover{color:var(--col-text)}
+/* Móvil vertical estrecho: full-width con safe-area lateral (iPhone landscape con notch) */
+@media (max-width:520px){
+  .pd-added-toast{left:max(.5rem, env(safe-area-inset-left, 0px));right:max(.5rem, env(safe-area-inset-right, 0px));transform:none;max-width:none}
+  @keyframes pdToastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+}
+/* Móvil horizontal (< 500px de alto): toast más compacto para no tapar el
+   contenido bajo el keyboard. Reducimos padding y omitimos la descripción. */
+@media (orientation:landscape) and (max-height:500px){
+  .pd-added-toast{padding:.55rem .75rem;gap:.35rem;flex-direction:row;align-items:center;bottom:.4rem}
+  .pd-added-toast__body p{display:none}
+  .pd-added-toast__actions{margin-left:auto}
+  .pd-added-toast__btn{padding:.4rem .7rem;min-height:38px;font-size:.75rem}
+  .pd-added-toast__close{min-height:38px;min-width:38px;padding:.2rem .5rem}
+}
+.pd-extra-group{margin-top:.8rem;padding:.7rem;border:1px solid var(--col-border);border-radius:.8rem;min-width:0}
+/* Legend con título + subtítulo: ambos rompen palabras largas sin desbordar. */
+.pd-extra-group legend{padding:0 .35rem;font-weight:900;color:var(--col-text);overflow-wrap:break-word;word-break:break-word;line-height:1.3;max-width:100%}
+.pd-extra-group legend small{display:block;font-size:.65rem;color:var(--col-muted);overflow-wrap:break-word;word-break:break-word;line-height:1.35;margin-top:.15rem}
+.pd-flavor-group{border-color:color-mix(in srgb,var(--brand-primary) 34%,var(--col-border));background:color-mix(in srgb,var(--brand-primary) 5%,var(--col-surface))}
+/* ═══════ Chips de sabor — patrón KFC / McDonald's / Burger King ═══════
+   Cada sabor es una pastilla horizontal compacta. Tap → añade 1 unidad.
+   Segundo tap → añade otra (hasta el max). Chip seleccionado se llena en
+   dorado (fondo saturado + borde). Aparece badge de cantidad y botón × sólo
+   cuando qty > 0.
+   Ventaja UX: 6 sabores caben en 2 filas (~120px) vs. 400px+ con steppers
+   verticales. El cliente escanea las opciones de un vistazo. */
+.pd-flavor-chips {
+  display: flex; flex-wrap: wrap;
+  gap: .55rem .5rem;
+  margin: .35rem 0 .1rem;
+}
+.pd-flavor-chip {
+  position: relative;
+  display: inline-flex; align-items: center;
+  gap: .35rem;
+  padding: .6rem .95rem;
+  min-height: 44px;
+  background: var(--col-elevated);
+  border: 2px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 20%, var(--col-border));
+  border-radius: 999px;
+  color: var(--col-text);
+  font-size: .88rem; font-weight: 800;
+  cursor: pointer;
+  transition: background .18s, border-color .18s, transform .12s, box-shadow .18s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  min-width: 0;
+  animation: pdFlavorIn .22s ease-out;
+}
+.pd-flavor-chip:active { transform: scale(.96); }
+.pd-flavor-chip:hover {
+  border-color: color-mix(in srgb, var(--brand-primary, #FFAB00) 55%, var(--col-border));
+}
+/* Seleccionado: fondo dorado saturado, texto oscuro para contraste. */
+.pd-flavor-chip.is-selected {
+  background: var(--brand-primary, #FFAB00);
+  border-color: var(--brand-primary, #FFAB00);
+  color: #1B0A00;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--brand-primary, #FFAB00) 40%, transparent);
+}
+.pd-flavor-chip.is-max {
+  animation: pdChipShake .4s ease-out;
+}
+@keyframes pdChipShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+.pd-flavor-chip__name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 100%;
+}
+/* Badge de cantidad: sólo visible cuando qty > 1. Se muestra a la derecha
+   del nombre, en formato "×2", "×3". Para qty=1 no aparece (queda limpio). */
+.pd-flavor-chip__qty {
+  display: none;
+  font-size: .78rem;
+  font-weight: 950;
+  padding: .05rem .35rem;
+  border-radius: 999px;
+  background: rgba(0,0,0,.18);
+  color: #1B0A00;
+  line-height: 1;
+}
+.pd-flavor-chip[data-qty="2"] .pd-flavor-chip__qty,
+.pd-flavor-chip[data-qty="3"] .pd-flavor-chip__qty,
+.pd-flavor-chip[data-qty="4"] .pd-flavor-chip__qty,
+.pd-flavor-chip[data-qty="5"] .pd-flavor-chip__qty,
+.pd-flavor-chip[data-qty="6"] .pd-flavor-chip__qty,
+.pd-flavor-chip[data-qty="7"] .pd-flavor-chip__qty,
+.pd-flavor-chip[data-qty="8"] .pd-flavor-chip__qty,
+.pd-flavor-chip[data-qty="9"] .pd-flavor-chip__qty { display: inline-flex; }
+/* Botón × para quitar completamente el sabor: sólo visible si qty > 0. */
+.pd-flavor-chip__remove {
+  display: none;
+  width: 20px; height: 20px; line-height: 18px;
+  border-radius: 50%;
+  background: rgba(0,0,0,.28);
+  color: #fff;
+  font-size: .95rem; font-weight: 900;
+  text-align: center;
+  margin-left: .1rem;
+}
+.pd-flavor-chip.is-selected .pd-flavor-chip__remove { display: inline-block; }
+/* Modo radio (max=1): el × no aporta — el swap tap-to-tap ya cubre "cambiar
+   sabor" en 1 solo gesto. Ocultarlo simplifica visualmente y reduce mistaps. */
+.pd-extra-group[data-max="1"] .pd-flavor-chip__remove { display: none !important; }
+.pd-flavor-chip:not(.is-selected) .pd-flavor-chip__qty { display: none !important; }
+.pd-flavor-chip[hidden] { display: none; }
+/* Chips deshabilitados (sabor no permitido en el tamaño elegido). */
+.pd-flavor-chip[disabled],
+.pd-flavor-chip:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+  filter: grayscale(.4);
+  pointer-events: none;
+}
+/* Pantallas estrechas (iPhone SE portrait, la mayoría en landscape con
+   safe-area lateral): chip compacto para que quepan mínimo 3 por fila.
+   Mantiene 44px de altura mínima para accesibilidad táctil. */
+@media (max-width: 380px) {
+  .pd-flavor-chips { gap: .4rem .35rem; }
+  .pd-flavor-chip {
+    padding: .5rem .7rem;
+    font-size: .8rem;
+    gap: .25rem;
+  }
+  .pd-flavor-chip__remove { width: 18px; height: 18px; line-height: 16px; font-size: .85rem; }
+}
+/* Landscape con altura reducida (móvil rotado): reducir padding vertical
+   para que quepa junto con el resto de UI sin scroll excesivo. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .pd-flavor-chips { gap: .35rem .3rem; margin: .2rem 0; }
+  .pd-flavor-chip { padding: .4rem .7rem; min-height: 38px; font-size: .78rem; }
+}
+@keyframes pdFlavorIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+/* Sabor por-componente dentro de combos: chip como label + input radio/checkbox */
+.pd-combo-flavor { margin-top:.5rem; grid-column:1 / -1; }
+.pd-combo-flavor-ttl { font-size:.72rem; color:var(--col-muted); margin:0 0 .3rem; font-weight:800; letter-spacing:.03em; text-transform:uppercase; }
+.pd-combo-flavor-chips { display:flex; flex-wrap:wrap; gap:.35rem; }
+.pd-combo-flavor .pd-flavor-chip { cursor:pointer; position:relative; user-select:none; }
+.pd-combo-flavor .pd-flavor-chip .pd-combo-flavor-input { position:absolute; opacity:0; pointer-events:none; width:1px; height:1px; }
+.pd-combo-flavor .pd-flavor-chip:has(.pd-combo-flavor-input:checked) { background: color-mix(in srgb, var(--brand-primary) 22%, var(--col-elevated)); border-color: var(--brand-primary); color: var(--col-text); }
+/* Steppers touch-friendly: 2.75rem = 44px mínimo iOS/Android. Font 16px evita
+   el zoom automático de Safari en focus. `touch-action:manipulation` quita el
+   delay de 300ms residual y hace los tap responsivos. */
+.pd-flavor-stepper{display:grid;grid-template-columns:2.75rem 3rem 2.75rem;align-items:center;border:1px solid var(--col-border);border-radius:.7rem;overflow:hidden}
+.pd-flavor-stepper button{min-height:2.75rem;min-width:2.75rem;border:0;background:var(--col-elevated);color:var(--col-text);font-weight:950;font-size:1.05rem;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:background .15s, color .15s}
+.pd-flavor-stepper button:active{background:color-mix(in srgb,var(--brand-primary) 24%,var(--col-elevated))}
+/* Estado activo del stepper: cuando la opción está seleccionada, los botones
+   +/− se tiñen en dorado suave y el input muestra el número en dorado más
+   grande. Es el feedback "sí, YA elegiste este sabor". */
+.pd-flavor-option.is-selected .pd-flavor-stepper { border-color:var(--brand-primary); }
+.pd-flavor-option.is-selected .pd-flavor-stepper button { color:var(--brand-primary); }
+.pd-flavor-option.is-selected .pd-flavor-stepper input { color:var(--brand-primary); font-size:18px; }
+.pd-flavor-stepper input{width:100%;min-height:2.75rem;border:0;text-align:center;background:var(--col-surface);color:var(--col-text);font-weight:900;font-size:16px;-moz-appearance:textfield;transition:color .15s, font-size .18s}
+.pd-flavor-stepper input::-webkit-inner-spin-button,.pd-flavor-stepper input::-webkit-outer-spin-button{display:none;-webkit-appearance:none;margin:0}
+/* Sabores/Extras: texto ocupa espacio libre y trunca; el stepper preserva
+   su ancho natural. Invariantes: nombres largos ("Bravas caseras al alioli
+   con salsa brava") no rompen el layout ni tapan al stepper. */
+.pd-extra-option {
+  display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+  padding:.65rem; margin:.35rem 0; border-radius:.7rem;
+  background:var(--col-elevated); border:1px solid var(--col-border);
+}
+.pd-extra-option > span {
+  display:flex; flex-direction:column;
+  flex:1 1 auto; min-width:0;
+}
+.pd-extra-option > span strong {
+  font-weight:900; color:var(--col-text);
+  overflow-wrap:break-word; word-break:break-word;
+  line-height:1.2;
+}
+.pd-extra-option > span small {
+  color:var(--brand-primary); font-weight:800;
+  overflow-wrap:break-word; word-break:break-word;
+  line-height:1.25;
+}
+/* Input numérico ≥ 16px evita el zoom automático de iOS Safari en focus.
+   `flex-shrink:0` garantiza que el stepper nunca se comprime. */
+.pd-extra-option input {
+  width:56px; min-height:44px; text-align:center;
+  border:1px solid var(--col-border-2); border-radius:.65rem;
+  background:var(--col-surface); color:var(--col-text);
+  font-weight:900; font-size:16px;
+  flex-shrink:0;
+}
+.pd-extra-option input::-webkit-inner-spin-button,
+.pd-extra-option input::-webkit-outer-spin-button {
+  display:none; -webkit-appearance:none; margin:0;
+}
+/* Sabor con stepper (3 botones): el label + stepper compiten por ancho.
+   En móvil estrecho el stepper baja a la siguiente línea para no comprimir
+   el nombre del sabor. Se implementa en el grid principal más abajo. */
+@media (max-width:400px) {
+  .pd-flavor-option {
+    grid-template-columns:1fr!important;
+    row-gap:.5rem;
+  }
+  .pd-flavor-option > span { min-width:0; }
+  .pd-flavor-option .pd-flavor-stepper { justify-self:center; }
+}
 /* ═══════════════════════════════════════════════════
    PRODUCTO DETALLE — Oxidian · Mobile-first
 ═══════════════════════════════════════════════════ */
@@ -911,22 +1276,36 @@ main { padding-top: 0 !important; }
 .pd-review-text { font-size: .83rem; color: var(--col-muted); font-style: italic; line-height: 1.45; }
 
 /* ── Barra inferior fija ── */
-.pd-bottom-spacer { height: calc(76px + env(safe-area-inset-bottom, 0px)); }
+.pd-bottom-spacer { height: calc(56px + env(safe-area-inset-bottom, 0px)); }
 .pd-add-bar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 80;
   background: rgba(13,10,8,.97);
   border-top: 1px solid var(--col-border);
-  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-  padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom, 0px));
+  /* blur(20px) causaba tirones al scrollear (Chrome mobile recompone blur
+     por frame). Fondo casi-opaco visualmente equivalente, GPU-friendly. */
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  padding: .4rem .7rem calc(.4rem + env(safe-area-inset-bottom, 0px));
+  /* Promoción a capa GPU propia + contención → repaint del fixed no
+     invalida el scroll del contenido. */
+  transform: translateZ(0);
+  contain: layout paint style;
 }
-.pd-add-bar-form { display: flex; align-items: center; gap: .75rem; max-width: 680px; margin: 0 auto; }
+/* Form barra add-to-cart: fila principal [qty · botón], pero permite
+   `flex-wrap` para que el hint (u otros sub-elementos) caigan a línea
+   propia sin apretar el botón. Sin esto, la nota informativa competía
+   por espacio horizontal con el botón y lo estrujaba. */
+.pd-add-bar-form {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: .35rem .6rem;
+  max-width: 680px; margin: 0 auto;
+}
 .pd-qty-ctrl {
   display: flex; align-items: center; overflow: hidden;
   background: rgba(255,200,120,.07); border: 1.5px solid var(--col-border);
   border-radius: .75rem; flex-shrink: 0;
 }
 .pd-qty-btn {
-  min-width: 46px; min-height: 46px; border: none; background: transparent;
+  min-width: 42px; min-height: 44px; border: none; background: transparent;
   color: var(--col-text); display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background .15s; flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
@@ -934,18 +1313,94 @@ main { padding-top: 0 !important; }
 .pd-qty-btn:hover  { background: rgba(252,209,22,.15); color: var(--flag-yellow); }
 .pd-qty-btn:active { background: rgba(252,209,22,.25); transform: scale(.92); }
 .pd-qty-input {
-  width: 52px; min-height: 46px; background: transparent; border: none; outline: none;
+  width: 46px; min-height: 44px; background: transparent; border: none; outline: none;
   text-align: center; font-size: .95rem; font-weight: 900;
   color: var(--col-text); padding: 0 .3rem; box-shadow: none !important;
 }
+/* Cuando ya hay `.pd-selection-summary` (feedback vivo de lo elegido), el
+   hint informativo pasa a ser redundante en móvil. Ocultamos el hint para
+   mantener la barra en ~90-100px de alto en vez de 180px. */
+.pd-add-bar-form:has(.pd-selection-summary) .pd-multi-hint {
+  display: none;
+}
+@media (min-width: 1024px) {
+  .pd-add-bar-form:has(.pd-selection-summary) .pd-multi-hint { display: block; }
+}
+.pd-multi-hint {
+  /* Ocupa siempre la fila 2 completa del form — nunca compite con el botón
+     por espacio horizontal. `flex-basis: 100%` fuerza el wrap. */
+  flex-basis: 100%; margin: 0;
+  padding: .55rem .75rem;
+  border-radius: .55rem;
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 30%, transparent);
+  font-size: clamp(.72rem, 2.6vw, .78rem);
+  line-height: 1.35; color: var(--col-text);
+  overflow-wrap: break-word; word-break: break-word;
+  min-width: 0;
+}
+.pd-multi-hint strong { font-weight: 900; }
+/* ── Resumen vivo de la selección ─────────────────────────────
+   Aparece siempre arriba del botón "Añadir" y refleja en tiempo real
+   qué está seleccionado (tamaño, sabores). Es el "cierre gestalt" que
+   confirma al cliente lo que va a añadir antes de pulsar. Usa el color
+   dorado como acento pero no compite visualmente con el CTA. */
+.pd-selection-summary {
+  flex-basis: 100%; margin: 0;
+  display: flex; align-items: center; gap: .45rem;
+  padding: .38rem .6rem;
+  border-radius: .55rem;
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 8%, var(--col-surface));
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 32%, transparent);
+  font-size: clamp(.72rem, 2.7vw, .8rem);
+  line-height: 1.25;
+  color: var(--col-text);
+  min-width: 0;
+  transition: background .18s, border-color .18s, opacity .18s;
+}
+/* Estado placeholder (nada seleccionado) → colapsar a línea fina de sugerencia
+   para no comer 40-50px verticales cuando aún no aporta información nueva. */
+.pd-selection-summary.is-placeholder {
+  padding: .2rem .55rem;
+  font-size: .68rem;
+  border-style: dashed;
+  opacity: .78;
+}
+.pd-selection-summary.is-placeholder .pd-selection-summary__icon { font-size: .82rem; }
+.pd-selection-summary.is-complete {
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 15%, var(--col-surface));
+  border-color: var(--brand-primary, #FFAB00);
+}
+.pd-selection-summary.is-incomplete {
+  background: color-mix(in srgb, #ce1126 8%, var(--col-surface));
+  border-color: color-mix(in srgb, #ce1126 45%, transparent);
+}
+.pd-selection-summary__icon {
+  flex-shrink: 0; font-size: .95rem; line-height: 1;
+}
+.pd-selection-summary__text {
+  flex: 1; min-width: 0;
+  font-weight: 700; line-height: 1.35;
+  overflow-wrap: break-word;
+}
+.pd-selection-summary__text strong {
+  color: var(--brand-primary, #FFAB00);
+  font-weight: 900;
+}
 .pd-add-btn {
-  flex: 1; min-height: 52px;
+  flex: 1; min-width: 0;
+  min-height: 44px;
+  padding: 0 clamp(.75rem, 3vw, 1.25rem);
   background: linear-gradient(135deg, var(--flag-yellow), color-mix(in srgb, var(--flag-yellow) 80%, #000));
-  color: #1B0A00; font-weight: 900; font-size: .95rem;
+  color: #1B0A00; font-weight: 900;
+  font-size: clamp(.85rem, 3.5vw, .98rem);
   border: none; border-radius: .875rem; cursor: pointer;
   box-shadow: 0 6px 22px rgba(252,209,22,.32);
   transition: filter .15s, transform .15s;
-  -webkit-tap-highlight-color: transparent;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  /* Escape valve: si el texto del botón es largo (ej. "Añadir combo · €99,99")
+     recorta con ellipsis en vez de romper el layout. */
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .pd-add-btn:hover { filter: brightness(1.07); }
 .pd-add-btn:active { transform: scale(.97); }
@@ -968,10 +1423,44 @@ main { padding-top: 0 !important; }
 @media (max-width: 1023px) {
   .pd-section { margin-bottom: 1rem; }
 }
+/* Presentación única → radio funcional pero visualmente colapsado.
+   El label del tamaño ya aparece como chip inline junto al precio; el
+   fieldset ancho no aporta nada y quita 90px verticales. El radio queda
+   en el DOM `hidden` para que el POST siga enviando `presentation_size`. */
+.pd-tallas.is-single { display: none; }
+.pd-tallas.is-single .pd-tallas-opt { display: none; }
+/* Chip inline con el tamaño único, va pegado al precio. */
+.pd-size-chip {
+  display: inline-flex; align-items: center; gap: .25rem;
+  font-size: .72rem; font-weight: 800; color: var(--col-text);
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 34%, transparent);
+  border-radius: 999px; padding: .18rem .55rem;
+  white-space: nowrap;
+}
+/* Cuando el auto-pick deja el mensaje de estado vacío, colapsa la línea
+   y su margen para no dejar hueco reservado bajo el grupo de sabor. */
+.pd-extra-status:empty { display: none !important; margin: 0 !important; }
+/* Aviso "sin alérgenos" cuando no hay datos: 1 línea discreta en vez de
+   box completo. Aporta la info legal pero sin gastar 70px verticales. */
+.pd-no-alerg-line {
+  display: block; margin: .35rem 0 .85rem;
+  font-size: .72rem; color: var(--col-muted);
+  padding: .45rem .65rem;
+  border-radius: .55rem;
+  background: color-mix(in srgb, var(--col-border) 25%, transparent);
+  line-height: 1.35;
+}
+
 @media (max-width: 767px) {
+  /* Hero más bajo en móvil: aspect 16/10 evita altura fija excesiva. */
   .pd-hero-img {
-    max-height: 300px;
+    aspect-ratio: 16 / 10;
+    max-height: 240px;
   }
+  /* Eco del badge fulfillment: en móvil el badge ya está en el hero,
+     ocultamos el box repetido para ganar aire vertical. */
+  .pd-fulfillment-echo { display: none; }
   .pd-hero-badges {
     left: 10px;
     right: 10px;
@@ -1062,6 +1551,19 @@ main { padding-top: 0 !important; }
     white-space: nowrap;
   }
 }
+/* Pantallas realmente estrechas (≤400px: iPhone SE, iPhone 12/13 mini,
+   Galaxy A14…). Compactamos card, section extras y hint para que TODO
+   quepa junto con hero + tallas + chips + add-bar sin scroll excesivo. */
+@media (max-width: 400px) {
+  .pd-card { padding: .85rem .7rem 1.1rem; border-radius: .9rem .9rem 1.1rem 1.1rem; }
+  .pd-extras { padding: .75rem .7rem; margin: .75rem 0; border-radius: .85rem; }
+  .pd-extras h2 { font-size: .95rem; }
+  .pd-extras > p { font-size: .7rem; margin-bottom: .35rem; }
+  .pd-extra-group { padding: .55rem; margin-top: .55rem; }
+  .pd-info-box { padding: .65rem .7rem; margin-bottom: .55rem; }
+  .pd-tallas { margin: .55rem 0 .35rem; }
+  .pd-multi-hint { padding: .45rem .6rem; font-size: .72rem; }
+}
 @media (max-width: 360px) {
   .pd-add-bar-form {
     gap: .4rem;
@@ -1125,9 +1627,41 @@ function pdExtraGroupsValid() {
     const ok = total >= min && total <= max;
     group.classList.toggle('pd-extra-group-invalid', !ok);
     const status = group.querySelector('.pd-extra-status');
-    if (status) status.textContent = ok
-      ? (isFlavor ? `${total} de ${max} unidades de sabor distribuidas` : `${total} de ${max} seleccionados`)
-      : (isFlavor ? `Distribuye entre ${min} y ${max} unidades de sabor` : `Selecciona entre ${min} y ${max}`);
+    if (status) {
+      const unidadesTxt = isFlavor ? 'unidades de sabor' : 'seleccionados';
+      const faltan = Math.max(0, min - total);
+      const disponibles = Math.max(0, max - total);
+      if (!ok && faltan > 0) {
+        // Lenguaje directo y humano — sin tecnicismos como "unidades de sabor".
+        status.textContent = isFlavor
+          ? (faltan === 1 ? `Te falta 1 sabor por elegir` : `Te faltan ${faltan} sabores por elegir`)
+          : (faltan === 1 ? `Elige 1 opción más` : `Elige ${faltan} opciones más`);
+      } else if (!ok && total > max) {
+        status.textContent = isFlavor
+          ? `Ya llegaste al máximo (${max} sabores)`
+          : `Ya llegaste al máximo (${max})`;
+      } else if (max > min) {
+        // Contador natural sin la palabra técnica "unidades".
+        status.textContent = disponibles > 0
+          ? (isFlavor
+             ? `Ya elegiste ${total} de ${max} sabores · puedes añadir ${disponibles} más`
+             : `${total} de ${max} · puedes añadir ${disponibles} más`)
+          : (isFlavor ? `Completo (${max} sabores elegidos)` : `Completo (${max})`);
+      } else {
+        status.textContent = isFlavor
+          ? `${total} de ${max} sabor${max === 1 ? '' : 'es'} elegidos`
+          : `${total} de ${max}`;
+      }
+    }
+    // Barra de progreso — sólo si el grupo tiene barra (max>1).
+    const bar = group.querySelector('.pd-extra-progress .pd-extra-progress-bar');
+    if (bar && max > 0) {
+      const pct = Math.max(0, Math.min(100, Math.round((total / max) * 100)));
+      bar.style.setProperty('--pd-progress-pct', pct + '%');
+      bar.setAttribute('aria-valuenow', String(total));
+      bar.setAttribute('aria-valuemin', String(min));
+      bar.setAttribute('aria-valuemax', String(max));
+    }
     if (!ok) valid = false;
   });
   return valid;
@@ -1162,44 +1696,147 @@ function pdApplyFlavorPolicy() {
     }
     const max = Number.parseInt(group.dataset.max || '0', 10);
     const allowed = policy ? new Set((policy.allowed_option_ids || []).map(Number)) : null;
+    // El selector genérico funciona tanto para chips nuevos como para el
+    // markup viejo (label.pd-flavor-option) por retro-compat.
     group.querySelectorAll('[data-flavor-option]').forEach(row => {
       const input = row.querySelector('.pd-flavor-qty');
       const available = !allowed || allowed.has(Number(row.dataset.flavorOption));
       row.hidden = !available;
+      // Si el row es un chip <button>, también aplicamos disabled/aria.
+      if (row.tagName === 'BUTTON') {
+        row.disabled = !available;
+        row.setAttribute('aria-disabled', !available);
+      }
       if (input) {
         input.disabled = !available;
         input.max = String(max);
-        if (!available) input.value = '0';
+        if (!available && Number.parseInt(input.value || '0', 10) > 0) {
+          // Reset silenciosamente si el sabor deja de estar permitido tras
+          // cambiar el tamaño y el cliente ya lo tenía elegido.
+          input.value = '0';
+          const chip = input.closest('.pd-flavor-chip');
+          if (chip) { chip.classList.remove('is-selected'); chip.dataset.qty = '0'; chip.setAttribute('aria-pressed', 'false'); }
+        }
       }
     });
   });
   pdExtraGroupsValid();
 }
 
+// pdSetFlavorQuantity: única fuente de verdad de la qty de un sabor.
+// Aplica el máximo del grupo (respeta lo asignado a otros sabores) y refleja
+// el estado en la UI del chip (clase is-selected + data-qty + aria-pressed).
 function pdSetFlavorQuantity(input, requested) {
   const group = input.closest('.pd-extra-group');
   const groupMax = Number.parseInt(group?.dataset.max || '0', 10);
   const others = Array.from(group?.querySelectorAll('.pd-flavor-qty') || [])
     .filter(other => other !== input && !other.disabled)
     .reduce((sum, other) => sum + (Number.parseInt(other.value || '0', 10) || 0), 0);
-  input.value = String(Math.max(0, Math.min(requested, groupMax - others)));
-  input.closest('.pd-flavor-option')?.classList.toggle('is-selected', Number(input.value) > 0);
+  const perChipMax = Number.parseInt(input.dataset.max || String(groupMax || 1), 10) || 1;
+  const finalQty = Math.max(0, Math.min(requested, perChipMax, groupMax - others));
+  input.value = String(finalQty);
+  const chip = input.closest('.pd-flavor-chip');
+  if (chip) {
+    chip.classList.toggle('is-selected', finalQty > 0);
+    chip.setAttribute('aria-pressed', finalQty > 0 ? 'true' : 'false');
+    chip.dataset.qty = String(finalQty);
+    const qtyBadge = chip.querySelector('.pd-flavor-chip__qty');
+    if (qtyBadge) qtyBadge.textContent = '×' + finalQty;
+  }
   pdExtraGroupsValid();
+  pdRenderPrice();
 }
 
-document.querySelectorAll('.pd-flavor-qty').forEach(input => {
-  input.addEventListener('input', () => pdSetFlavorQuantity(input, Number.parseInt(input.value || '0', 10) || 0));
-});
-document.querySelectorAll('[data-flavor-delta]').forEach(button => {
-  button.addEventListener('click', () => {
-    const input = button.closest('.pd-flavor-option')?.querySelector('.pd-flavor-qty');
-    if (input && !input.disabled) pdSetFlavorQuantity(
-      input,
-      (Number.parseInt(input.value || '0', 10) || 0) + Number(button.dataset.flavorDelta || 0),
-    );
+// Click en el chip:
+//   • Modo radio (groupMax == 1): tap chip nuevo → swap directo (deselecciona
+//     el actualmente activo y activa este). Tap chip activo:
+//       - si groupMin == 0 → toggle off.
+//       - si groupMin ≥ 1 → idempotente (no dejar el grupo inválido).
+//     El × no se muestra en este modo (data-max="1" en CSS), porque el swap
+//     ya cubre "cambiar de opción" en 1 solo tap.
+//   • Modo multi (groupMax > 1): tap chip vacío suma +1. Si el grupo está
+//     lleno y el chip tapeado tiene qty=0 → LRU rotate: quitamos 1 al chip
+//     con MÁS unidades y damos 1 al nuevo (swap sin pensar). Si el chip
+//     tapeado YA es el que aporta al total → shake (no hay donante).
+document.querySelectorAll('.pd-flavor-chip').forEach(chip => {
+  chip.addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-flavor-remove]')) return;
+    const input = chip.querySelector('.pd-flavor-qty');
+    if (!input || input.disabled || chip.disabled) return;
+    const group = chip.closest('.pd-extra-group');
+    const groupMax = Number.parseInt(group?.dataset.max || '0', 10);
+    const groupMin = Number.parseInt(group?.dataset.min || '0', 10);
+    const cur = Number.parseInt(input.value || '0', 10) || 0;
+
+    if (groupMax === 1) {
+      if (cur > 0) {
+        if (groupMin === 0) pdSetFlavorQuantity(input, 0);
+        return;
+      }
+      group.querySelectorAll('.pd-flavor-qty').forEach(other => {
+        if (other !== input && !other.disabled && (Number.parseInt(other.value || '0', 10) || 0) > 0) {
+          pdSetFlavorQuantity(other, 0);
+        }
+      });
+      pdSetFlavorQuantity(input, 1);
+      return;
+    }
+
+    const others = Array.from(group.querySelectorAll('.pd-flavor-qty'))
+      .filter(o => o !== input && !o.disabled)
+      .reduce((sum, o) => sum + (Number.parseInt(o.value || '0', 10) || 0), 0);
+    if (cur + 1 + others > groupMax) {
+      if (cur === 0) {
+        const donor = Array.from(group.querySelectorAll('.pd-flavor-qty'))
+          .filter(o => o !== input && !o.disabled && (Number.parseInt(o.value || '0', 10) || 0) > 0)
+          .sort((a, b) => (Number.parseInt(b.value, 10) - Number.parseInt(a.value, 10)))[0];
+        if (donor) {
+          pdSetFlavorQuantity(donor, (Number.parseInt(donor.value || '0', 10) || 0) - 1);
+          pdSetFlavorQuantity(input, 1);
+          return;
+        }
+      }
+      chip.classList.add('is-max');
+      setTimeout(() => chip.classList.remove('is-max'), 400);
+      return;
+    }
+    pdSetFlavorQuantity(input, cur + 1);
   });
 });
+
+// Botón × dentro del chip: quita todas las unidades de ese sabor.
+document.addEventListener('click', (ev) => {
+  const removeBtn = ev.target.closest('[data-flavor-remove]');
+  if (!removeBtn) return;
+  ev.stopPropagation();
+  const chip = removeBtn.closest('.pd-flavor-chip');
+  const input = chip?.querySelector('.pd-flavor-qty');
+  if (input) pdSetFlavorQuantity(input, 0);
+});
+
 pdApplyFlavorPolicy();
+
+/* Auto-selección: si un grupo de sabor tiene min≥1 y nadie está elegido,
+   pre-marcamos los primeros N chips disponibles hasta llegar al mínimo.
+   Evita el estado inicial de error "Faltan X unidades" y respeta el máximo
+   del grupo (nunca sobre-selecciona). */
+(function pdAutoPickRequiredFlavors(){
+  document.querySelectorAll('.pd-extra-group[data-option-type="sabor"]').forEach(group => {
+    const min = Math.max(0, Number.parseInt(group.dataset.min || '0', 10) || 0);
+    if (min < 1) return;
+    const inputs = Array.from(group.querySelectorAll('.pd-flavor-qty'))
+      .filter(inp => !inp.disabled && !inp.closest('[hidden]'));
+    const current = inputs.reduce((s, inp) => s + (Number.parseInt(inp.value || '0', 10) || 0), 0);
+    if (current >= min) return;
+    let need = min - current;
+    for (const inp of inputs) {
+      if (need <= 0) break;
+      pdSetFlavorQuantity(inp, (Number.parseInt(inp.value || '0', 10) || 0) + 1);
+      need--;
+    }
+  });
+})();
+
 pdExtraGroupsValid();
 
 function pdRenderPrice() {
@@ -1210,7 +1847,80 @@ function pdRenderPrice() {
   const button = document.getElementById('pd-add-btn');
   if (price) price.textContent = `€${unit.toFixed(2)}`;
   if (button) button.textContent = `${PD_ADD_LABEL} · €${total.toFixed(2)}`;
+  pdRenderSelectionSummary(unit, qty, total);
 }
+
+// Resumen VIVO de la selección (arriba del CTA). Cambia con cada tap del
+// cliente para reforzar el "cierre" psicológico: ve exactamente qué va a
+// añadir antes de pulsar. Cuando la selección está incompleta, muestra
+// visualmente qué falta (borde rojo + texto directivo).
+function pdRenderSelectionSummary(unit, qty, total) {
+  const summary = document.getElementById('pd-selection-summary');
+  if (!summary) return;
+  const textEl = document.getElementById('pd-selection-summary-text');
+  if (!textEl) return;
+
+  const parts = [];
+  let incomplete = false;
+  const missing = [];
+
+  // Tamaño elegido
+  const sizeRadio = document.querySelector('input[name="presentation_size"]:checked');
+  const sizeLabel = sizeRadio
+    ? sizeRadio.closest('.pd-tallas-opt')?.querySelector('.pd-tallas-label')?.textContent?.trim()
+    : '';
+  if (sizeLabel) {
+    parts.push(`<strong>${sizeLabel}</strong>`);
+  } else if (document.querySelector('.pd-tallas-opt')) {
+    missing.push('tamaño');
+    incomplete = true;
+  }
+
+  // Sabores por unidad
+  document.querySelectorAll('.pd-flavor-group').forEach(group => {
+    const min = Number.parseInt(group.dataset.min || '0', 10);
+    const flavorPicks = [];
+    group.querySelectorAll('.pd-flavor-qty').forEach(input => {
+      const q = Number.parseInt(input.value || '0', 10) || 0;
+      if (q > 0) {
+        const name = (input.closest('.pd-flavor-chip')?.querySelector('.pd-flavor-chip__name')
+                    || input.closest('.pd-flavor-option')?.querySelector('strong'))?.textContent?.trim();
+        if (name) flavorPicks.push(q > 1 ? `${name} ×${q}` : name);
+      }
+    });
+    if (flavorPicks.length) parts.push(flavorPicks.join(', '));
+    else if (min > 0) { missing.push('sabor'); incomplete = true; }
+  });
+
+  // Extras (personalizaciones no-sabor)
+  const extras = [];
+  document.querySelectorAll('.pd-extra-qty').forEach(input => {
+    const q = Number.parseInt(input.value || '0', 10) || 0;
+    if (q > 0) {
+      const name = input.closest('.pd-extra-option')?.querySelector('strong')?.textContent?.trim();
+      if (name) extras.push(q > 1 ? `${name} ×${q}` : name);
+    }
+  });
+  if (extras.length) parts.push('+ ' + extras.join(', '));
+
+  summary.classList.remove('is-complete', 'is-incomplete', 'is-placeholder');
+  if (incomplete && missing.length) {
+    summary.classList.add('is-incomplete');
+    textEl.innerHTML = `Elige ${missing.join(' y ')} para añadir`;
+  } else if (parts.length) {
+    summary.classList.add('is-complete');
+    textEl.innerHTML = `${parts.join(' · ')} <strong>· €${(typeof total === 'number' ? total : 0).toFixed(2)}</strong>`;
+  } else {
+    summary.classList.add('is-placeholder');
+    textEl.textContent = 'Elige tu tamaño y sabor arriba…';
+  }
+}
+// Inicialización + escucha global de cambios que puedan afectar al resumen.
+document.addEventListener('change', (ev) => {
+  if (ev.target?.matches?.('input[name="presentation_size"], .pd-flavor-qty, .pd-extra-qty')) {
+    pdRenderPrice();
+  }
+});
 
 function pdQty(d) {
   const i = document.getElementById('pd-qty');
@@ -1365,5 +2075,151 @@ void document.getElementById('pd-add-form')?.addEventListener('submit', function
     firstInvalid?.querySelector('input:not(:disabled)')?.focus();
   }
 });
+
+// ─── AJAX submit + toast "Añadir otra variación" ───────────────────
+// Objetivo UX: el cliente puede añadir el mismo producto varias veces con
+// distinta selección de tamaño/sabor sin recargar. Se conserva el
+// comportamiento del <form> (submit tradicional) como fallback: si el fetch
+// falla o el navegador no soporta, la página vuelve al postback normal.
+(function pdAjaxAdd(){
+  const form = document.getElementById('pd-add-form');
+  if (!form || !window.fetch) return;
+
+  function pdResetSteppers(f) {
+    f.querySelectorAll('.pd-flavor-qty, .pd-extra-qty').forEach(inp => {
+      inp.value = '0';
+      const chip = inp.closest('.pd-flavor-chip');
+      if (chip) {
+        chip.classList.remove('is-selected');
+        chip.dataset.qty = '0';
+        chip.setAttribute('aria-pressed', 'false');
+      }
+      // Compat con markup viejo si aún queda
+      inp.closest('.pd-flavor-option')?.classList.remove('is-selected');
+    });
+    if (typeof pdApplyFlavorPolicy === 'function') pdApplyFlavorPolicy();
+    if (typeof pdRenderPrice === 'function') pdRenderPrice();
+  }
+
+  function pdUpdateHeaderCount(count) {
+    if (typeof count !== 'number') return;
+    document.querySelectorAll('[data-cart-count]').forEach(el => {
+      el.textContent = String(count);
+      el.setAttribute('data-cart-count', String(count));
+    });
+  }
+
+  function pdCurrentSelectionText() {
+    // Devuelve un string tipo "Grande · Fresa ×2 · +Bacon" o vacío.
+    const parts = [];
+    const sizeRadio = document.querySelector('input[name="presentation_size"]:checked');
+    const sizeLabel = sizeRadio?.closest('.pd-tallas-opt')?.querySelector('.pd-tallas-label')?.textContent?.trim();
+    if (sizeLabel) parts.push(sizeLabel);
+    document.querySelectorAll('.pd-flavor-group').forEach(group => {
+      const flavorPicks = [];
+      group.querySelectorAll('.pd-flavor-qty').forEach(input => {
+        const q = Number.parseInt(input.value || '0', 10) || 0;
+        if (q > 0) {
+          const name = (input.closest('.pd-flavor-chip')?.querySelector('.pd-flavor-chip__name')
+                    || input.closest('.pd-flavor-option')?.querySelector('strong'))?.textContent?.trim();
+          if (name) flavorPicks.push(q > 1 ? `${name} ×${q}` : name);
+        }
+      });
+      if (flavorPicks.length) parts.push(flavorPicks.join(', '));
+    });
+    return parts.join(' · ');
+  }
+
+  function pdShowAddedToast(payload) {
+    const name = (payload && payload.nombre) || 'Producto';
+    const detail = pdCurrentSelectionText();
+    // Construimos un toast custom con acciones inline. `OxToast.show()` no
+    // acepta botones, así que aquí montamos nuestro propio elemento y lo
+    // insertamos en el mismo contenedor (o body) que usa OxToast.
+    const host = document.querySelector('.ox-toast-host') || document.body;
+    // Limpia toasts previos del mismo tipo para no apilar.
+    host.querySelectorAll('.pd-added-toast').forEach(el => el.remove());
+    const wrap = document.createElement('div');
+    wrap.className = 'pd-added-toast';
+    wrap.setAttribute('role', 'status');
+    wrap.setAttribute('aria-live', 'polite');
+    const detailHtml = detail
+      ? `<em style="display:block;font-size:.78rem;color:var(--brand-primary,#FFAB00);font-style:normal;font-weight:800;margin:.1rem 0 .2rem;">${detail.replace(/</g, '&lt;')}</em>`
+      : '';
+    wrap.innerHTML = `
+      <div class="pd-added-toast__body">
+        <strong>✅ ${name.replace(/</g, '&lt;')} añadido</strong>
+        ${detailHtml}
+        <p>Puedes añadir otra variación (otro sabor o tamaño) sin recargar.</p>
+      </div>
+      <div class="pd-added-toast__actions">
+        <button type="button" class="pd-added-toast__btn pd-added-toast__btn--primary" data-action="another">Añadir otra</button>
+        <a class="pd-added-toast__btn pd-added-toast__btn--ghost" href="/carrito">Ver canasta</a>
+        <button type="button" class="pd-added-toast__close" data-action="close" aria-label="Cerrar">×</button>
+      </div>
+    `;
+    host.appendChild(wrap);
+    const dismiss = () => wrap.remove();
+    wrap.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-action]');
+      if (!btn) return;
+      if (btn.dataset.action === 'another') {
+        pdResetSteppers(form);
+        document.querySelector('input[name="presentation_size"]')?.scrollIntoView({behavior:'smooth', block:'center'});
+        dismiss();
+      } else if (btn.dataset.action === 'close') {
+        dismiss();
+      }
+    });
+    // Auto-dismiss tras 8s si el usuario no interactúa.
+    setTimeout(dismiss, 8000);
+  }
+
+  async function pdSubmitAjax(f) {
+    const btn = f.querySelector('#pd-add-btn');
+    const originalLabel = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.textContent = 'Añadiendo…'; }
+    try {
+      const resp = await fetch(f.action, {
+        method: 'POST',
+        headers: { 'X-Ajax': '1', 'Accept': 'application/json' },
+        body: new FormData(f),
+        credentials: 'same-origin',
+      });
+      if (!resp.ok) throw new Error('http-' + resp.status);
+      const data = await resp.json().catch(() => null);
+      if (!data || data.ok !== true) {
+        // El backend devolvió un error validable (ej: origen incompatible).
+        const errMsg = (data && data.msg) || 'No se pudo añadir. Intenta de nuevo.';
+        if (window.OxToast?.show) {
+          window.OxToast.show({ title: '⚠️ ' + errMsg, type: 'warning', duration: 5000 });
+        } else {
+          alert(errMsg);
+        }
+        return;
+      }
+      pdShowAddedToast(data);
+      pdUpdateHeaderCount(data.cart_count);
+    } catch (err) {
+      // Fallback: si fetch falla por red/DNS/JSON, permitimos submit tradicional.
+      console.warn('[pd] AJAX add falló, cae a postback:', err);
+      f.submit();
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        if (originalLabel) btn.textContent = originalLabel;
+      }
+    }
+  }
+
+  form.addEventListener('submit', function(e) {
+    // Respetamos las validaciones previas del form. Si algún handler previo
+    // llamó preventDefault, no interferimos.
+    if (e.defaultPrevented) return;
+    e.preventDefault();
+    pdSubmitAjax(form);
+  });
+})();
 </script>
 {% endblock %}

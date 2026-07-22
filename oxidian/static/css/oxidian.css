@@ -5969,8 +5969,16 @@ body.ox-body-admin table {
 .ox-info-panel {
   position: absolute; left: 50%; bottom: 0;
   transform: translate(-50%, 100%);
-  width: min(480px, 100vw);
-  max-height: 92dvh;
+  /* Ancho respetando safe-area lateral (iPhone landscape con notch) y
+     nunca superando 480px en desktop. */
+  width: min(480px, calc(100vw
+    - max(16px, env(safe-area-inset-left, 0px))
+    - max(16px, env(safe-area-inset-right, 0px))));
+  /* Alto máximo con margen de respiración arriba: 88vh en móvil deja ver
+     el fondo (que era la queja: "las ventanas tapan info del fondo"). */
+  max-height: min(88dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 48px));
+  padding-inline: max(0px, env(safe-area-inset-left, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   background: var(--col-bg, #0F0A05);
   border: 1.5px solid rgba(252,209,22,.22);
   border-bottom: none;
@@ -5979,7 +5987,10 @@ body.ox-body-admin table {
   display: flex; flex-direction: column;
   opacity: 0; transition: transform .25s cubic-bezier(.32,1,.28,1), opacity .2s;
   overflow: hidden;
+  /* Invariante: hijos no desbordan. */
+  min-width: 0;
 }
+.ox-info-panel > * { min-width: 0; max-width: 100%; }
 .ox-info-sheet.is-open .ox-info-backdrop { opacity: 1; }
 .ox-info-sheet.is-open .ox-info-panel {
   transform: translate(-50%, 0);
