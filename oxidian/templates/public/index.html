@@ -998,19 +998,26 @@ function openModal(id) {
   detBtn.href   = d.url;
   /* Cerrar siempre el modal antes de navegar — fixes combo "modal stays open" */
   detBtn.onclick = () => closeModal();
+  // `mode-detail` = el flujo actual NO permite añadir directo (combo, con
+  // sabores, programado, solo-canje). CSS colapsa secciones irrelevantes
+  // (presentación, notas) y promueve el CTA de detalle a botón primario,
+  // eliminando el hueco blanco que dejaba la sticky del qty+add oculto.
+  const panel = document.getElementById('ep-modal');
+  panel?.classList.remove('ep-modal-mode-detail', 'ep-modal-mode-quick');
   if (d.solo_canje) {
-    // Exclusivo canje: NO se compra con dinero, se canjea desde el carrito
-    // cuando el cliente hace un pedido. Oculto el form Add-to-cart.
     form.classList.add('hidden');
     detBtn.href = '{{ url_for("public.ver_carrito") }}';
     detBtn.textContent = `${OX_UI.cart_view_action || 'Ver canasta'} para canjear →`;
+    panel?.classList.add('ep-modal-mode-detail');
   } else if (d.disponible_directo) {
     form.action = d.add_url;
     form.classList.remove('hidden');
     detBtn.textContent = 'Ver detalles completos →';
+    panel?.classList.add('ep-modal-mode-quick');
   } else {
     form.classList.add('hidden');
     detBtn.textContent = d.es_combo ? '🎁 Elegir opciones del combo →' : 'Ver detalles →';
+    panel?.classList.add('ep-modal-mode-detail');
   }
 
   modal.style.display = 'flex';

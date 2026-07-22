@@ -3265,3 +3265,129 @@ body.ox-body-public .ep-hero-photo .ep-hero-cta { color: var(--brand-on-primary,
   body.ox-body-public .cr-item-price { font-size: .78rem !important; }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   R19 · Quick-add modal — compact & context-aware
+   ─────────────────────────────────────────────────────────────────────
+   Bug UX: el modal de "añadir rápido" tenía imagen 16:9 (~180px alto),
+   padding generoso y márgenes acumulados que en combos/sabores dejaban
+   huecos verticales blancos y forzaban ~600-700px de contenido para
+   mostrar sólo un banner + nombre + botón "ver detalles".
+   Este bloque:
+    · Reduce ratio de imagen a 21/9 (~76% del alto anterior)
+    · Compacta paddings y márgenes internos
+    · Activa un modo `ep-modal-mode-detail` cuando el form está oculto
+      (combo/sabor/programado): oculta secciones irrelevantes para ese
+      flujo (presentación, notas) y hace crecer el botón de detalle a
+      CTA primario, sin duplicar CSS.
+    · Reajusta breakpoints ≤400 y ≤340 con dimensiones reales de iPhone
+      SE / mini y evita "espacios blancos" heredados de la variante wide.
+   Sin hardcoding: solo tokens de tema y clamp() sobre viewport.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Imagen del modal: banner más discreto (21:9 en vez de 16:9). Menos
+   protagonismo visual → más rápido llegar al CTA. */
+body.ox-body-public .ep-modal-img-wrap {
+  aspect-ratio: 21/9;
+}
+@media (min-width: 600px) {
+  body.ox-body-public .ep-modal-img-wrap { aspect-ratio: 24/9; }
+}
+
+/* Body compacto: paddings más ceñidos, márgenes internos coordinados. */
+body.ox-body-public .ep-modal-body {
+  padding: .8rem .95rem 1rem;
+}
+body.ox-body-public .ep-modal-name       { font-size: 1.08rem; line-height: 1.15; }
+body.ox-body-public .ep-modal-desc       { font-size: .82rem; margin-bottom: .55rem; }
+body.ox-body-public .ep-modal-combo-info { padding: .55rem .7rem; margin-bottom: .55rem; }
+body.ox-body-public .ep-modal-stock,
+body.ox-body-public .ep-modal-alerg,
+body.ox-body-public .ep-modal-hipo       { padding: .38rem .6rem; margin-bottom: .42rem; font-size: .74rem; }
+body.ox-body-public .ep-modal-price-row  { margin-bottom: .6rem; }
+body.ox-body-public .ep-modal-price      { font-size: 1.5rem; }
+body.ox-body-public .ep-modal-pres       { margin: 0 0 .6rem 0; padding: .45rem .6rem; }
+body.ox-body-public .ep-modal-notas-wrap { margin: 0 0 .55rem 0; }
+body.ox-body-public .ep-modal-notas-input{ min-height: 40px; padding: .48rem .65rem; font-size: .84rem; }
+body.ox-body-public .ep-modal-detail-btn { margin-top: .4rem; min-height: 46px; padding: .6rem .9rem; font-size: .88rem; }
+
+/* Sticky actions con menos pomposidad — el gradiente de fondo se
+   quedaba con 18% blanco visible como "banda" bajo el CTA. */
+@media (max-width: 767px) {
+  body.ox-body-public .ep-modal-actions {
+    margin: .3rem -.95rem 0;
+    padding: .65rem .95rem calc(.65rem + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(180deg, rgba(255,253,248,0), #fffdf8 30%);
+  }
+  body.ox-body-public .ep-modal-qty-btn { width: 38px; height: 44px; }
+  body.ox-body-public .ep-modal-add-btn { min-height: 46px; font-size: .95rem; }
+}
+
+/* Modo detalle (combo, con sabores, programado): el form está oculto,
+   así que la presentación y las notas no aportan nada — el usuario elige
+   todo en la vista de detalle. Colapsamos secciones irrelevantes y
+   promocionamos el botón de detalle como CTA primario. */
+body.ox-body-public .ep-modal-mode-detail .ep-modal-pres        { display: none !important; }
+body.ox-body-public .ep-modal-mode-detail .ep-modal-notas-wrap  { display: none !important; }
+body.ox-body-public .ep-modal-mode-detail .ep-modal-body        { padding-bottom: 1.1rem; }
+body.ox-body-public .ep-modal-mode-detail .ep-modal-detail-btn {
+  min-height: 52px;
+  padding: .8rem 1rem;
+  margin-top: .55rem;
+  font-size: 1rem;
+  color: var(--action-on-primary, #fffdf8);
+  background: linear-gradient(180deg, var(--action-primary), color-mix(in srgb, var(--action-primary) 85%, #000));
+  border: 0;
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--action-primary) 32%, transparent);
+}
+body.ox-body-public .ep-modal-mode-detail .ep-modal-detail-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow: 0 8px 26px color-mix(in srgb, var(--action-primary) 42%, transparent);
+}
+
+/* Panel: menos altura reservada en iPhones estrechos — 90dvh dejaba
+   demasiado espacio blanco cuando el contenido era corto. */
+@media (max-width: 767px) {
+  body.ox-body-public .ep-modal-panel {
+    max-height: min(88dvh, 640px);
+    border-radius: 1.1rem 1.1rem 0 0;
+  }
+  body.ox-body-public .ep-modal-heritage-handle {
+    width: 48px; height: 22px;
+    margin: 0 auto -22px;
+    border-radius: 0 0 18px 18px;
+  }
+  body.ox-body-public .ep-modal-heritage-handle .ox-heritage-icon { width: 26px; height: 18px; }
+}
+
+/* iPhone SE / 13 mini (≤400px): compresión adicional coherente. */
+@media (max-width: 400px) {
+  body.ox-body-public .ep-modal-img-wrap { aspect-ratio: 3/1; }
+  body.ox-body-public .ep-modal-body { padding: .7rem .8rem .85rem; }
+  body.ox-body-public .ep-modal-name { font-size: 1rem; }
+  body.ox-body-public .ep-modal-desc {
+    font-size: .78rem;
+    /* line-clamp: la descripción en descuentos suele repetir la del
+       menú card — 2 líneas + ellipsis alcanza para el gancho sin
+       hacer scroll al usuario para llegar al precio. */
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  body.ox-body-public .ep-modal-price { font-size: 1.35rem; }
+  body.ox-body-public .ep-modal-detail-btn { min-height: 44px; font-size: .86rem; }
+  body.ox-body-public .ep-modal-mode-detail .ep-modal-detail-btn { min-height: 48px; font-size: .94rem; }
+  body.ox-body-public .ep-modal-actions { gap: .5rem; }
+  body.ox-body-public .ep-modal-add-btn { min-height: 44px; font-size: .9rem; }
+  body.ox-body-public .ep-modal-combo-info { padding: .5rem .6rem; }
+  body.ox-body-public .ep-modal-combo-item { font-size: .72rem; }
+  body.ox-body-public .ep-modal-combo-title { font-size: .72rem; margin-bottom: .3rem; }
+}
+
+/* iPhone SE portrait ultra-corto (≤340px o baja altura): último ajuste. */
+@media (max-width: 340px), (max-height: 640px) and (max-width: 500px) {
+  body.ox-body-public .ep-modal-panel { max-height: min(92dvh, 560px); }
+  body.ox-body-public .ep-modal-img-wrap { aspect-ratio: 4/1; }
+  body.ox-body-public .ep-modal-heritage-handle { display: none; }
+  body.ox-body-public .ep-modal-body { padding: .65rem .7rem .75rem; }
+}
+
