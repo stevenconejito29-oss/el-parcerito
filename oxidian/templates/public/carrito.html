@@ -66,8 +66,23 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
       <div class="cr-items">
-        {% for item in items %}
+        {# Agrupación por producto: dos líneas del mismo producto con distinta
+           selección (sabor/tamaño) se muestran anidadas bajo un header común.
+           Un solo item por producto → sin header (fallback al diseño plano). #}
+        {% for pid, lineas in items|groupby('producto.id') %}
+        <div class="cr-group{% if lineas|length > 1 %} cr-group--multi{% endif %}" data-product-group="{{ pid }}">
+          {% if lineas|length > 1 %}
+          <header class="cr-group-hdr">
+            <span class="cr-group-name">{{ lineas[0].producto.nombre }}</span>
+            <span class="cr-group-count">{{ lineas|length }} variaciones</span>
+          </header>
+          {% endif %}
+        {% for item in lineas %}
+        {# `line_key` es la clave de línea (firma de la selección). Dos líneas
+           del mismo producto con distinto sabor/tamaño son items separados. #}
+        {% set _line_key = item.line_key or (item.producto.id|string) %}
         <div class="cr-item" data-product-id="{{ item.producto.id }}"
+             data-line-key="{{ _line_key }}"
              data-price="{{ item.precio_unit }}" data-qty="{{ item.cantidad }}">
 
           {# Imagen #}
@@ -125,6 +140,7 @@
                   {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="" loading="lazy" decoding="async">{% endif %}
                   <span class="cr-combo-row-qty">{{ ci.cantidad }}×</span>
                   <span class="cr-combo-row-name">{{ ci.componente.nombre }}</span>
+                  {% if d.sabor_cliente %}<span class="cr-combo-tag cr-combo-tag--sabor">🎨 {% for s in d.sabor_cliente %}{{ s.get('nombre') }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
                   <span class="cr-combo-tag cr-combo-tag--fijo">{{ ui.cart_combo_included }}</span>
                 </div>
                 {% endfor %}
@@ -137,6 +153,7 @@
                   {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="" loading="lazy" decoding="async">{% endif %}
                   <span class="cr-combo-row-qty">{{ ci.cantidad }}×</span>
                   <span class="cr-combo-row-name">{{ ci.componente.nombre }}</span>
+                  {% if d.sabor_cliente %}<span class="cr-combo-tag cr-combo-tag--sabor">🎨 {% for s in d.sabor_cliente %}{{ s.get('nombre') }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
                   {% if ci.precio_extra and ci.precio_extra > 0 %}<span class="cr-combo-tag cr-combo-tag--extra">+€{{ "%.2f"|format(ci.precio_extra) }}</span>{% endif %}
                   <span class="cr-combo-tag cr-combo-tag--sel">{{ ui.cart_combo_selection }}</span>
                 </div>
@@ -148,11 +165,45 @@
             <p class="cr-item-note">🎁 {{ ui.cart_combo_kitchen }}</p>
             {% endif %}
 
-            {% if item.combo_resumen %}
-            <p class="cr-item-note cr-item-note--gold">{{ item.combo_resumen }}</p>
+            {# `combo_resumen` era un texto plano "Base: X | Bebidas: Y"
+               que duplicaba exactamente el desglose visual `<details>` de
+               arriba. Se elimina para bajar ruido. La info sigue completa
+               en el bloque expandible. #}
+            {# Sabores y extras como CHIPS VISUALES (mismo lenguaje que
+               el selector del producto detalle) — el cliente ve exactamente
+               lo mismo que eligió, sin confusión de "×2" concatenados.
+               Ícono claro + fondo dorado suave por sabor, verde suave por
+               extra. Si un sabor tiene qty > 1, aparece badge "×2". #}
+            {% if item.sabores %}
+            {# Compacto inline cuando hay 1 sabor de 1 unidad (radio mode);
+               fila completa cuando hay reparto o varios sabores. Ahorra
+               ~25px verticales sin perder info. #}
+            {% set _sabor_inline = item.sabores|length == 1 and (item.sabores[0].cantidad|int) == 1 %}
+            <div class="cr-choice-row {% if _sabor_inline %}cr-choice-row--inline{% endif %}">
+              <span class="cr-choice-label">🎨 Sabor{{ 'es' if item.sabores|length > 1 else '' }}</span>
+              <div class="cr-choice-chips">
+                {% for flavor in item.sabores %}
+                <span class="cr-choice-chip cr-choice-chip--flavor">
+                  <span>{{ flavor.nombre }}</span>
+                  {% if flavor.cantidad|int > 1 %}<em>×{{ flavor.cantidad }}</em>{% endif %}
+                </span>
+                {% endfor %}
+              </div>
+            </div>
             {% endif %}
-            {% if item.sabores %}<p class="cr-item-note cr-item-note--gold">🥭 Sabores por unidad: {% for flavor in item.sabores %}{{ flavor.nombre }}{% if flavor.cantidad|int > 1 %} ×{{ flavor.cantidad }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
-            {% if item.extras %}<p class="cr-item-note cr-item-note--gold">{{ ui.cart_extras_label }}: {% for extra in item.extras %}{{ extra.cantidad }}× {{ extra.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+            {% if item.extras %}
+            <div class="cr-choice-row">
+              <span class="cr-choice-label">➕ Extras</span>
+              <div class="cr-choice-chips">
+                {% for extra in item.extras %}
+                <span class="cr-choice-chip cr-choice-chip--extra">
+                  <span>{{ extra.nombre }}</span>
+                  {% if extra.cantidad|int > 1 %}<em>×{{ extra.cantidad }}</em>{% endif %}
+                </span>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
             {% if item.producto.grupo_pedido %}<p class="cr-item-note cr-item-note--gold">{{ ui.cart_order_label }}: {{ item.producto.grupo_pedido }}</p>{% endif %}
 
             {# Alérgenos y origen #}
@@ -181,32 +232,37 @@
                 {% endif %}
               </div>
               <div class="cr-qty" role="group" aria-label="{{ ui.cart_quantity }}">
-                <button type="button" class="cr-qty-btn" data-cart-qty="-1" data-cart-product-id="{{ item.producto.id }}" aria-label="{{ ui.cart_less }}">
+                <button type="button" class="cr-qty-btn" data-cart-qty="-1" data-cart-line-key="{{ _line_key }}" data-cart-product-id="{{ item.producto.id }}" aria-label="{{ ui.cart_less }}">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
-                <input type="number" name="cantidad_{{ item.producto.id }}"
-                       id="qty_{{ item.producto.id }}"
+                <input type="number" name="cantidad_{{ _line_key }}"
+                       id="qty_{{ _line_key }}"
                        value="{{ item.cantidad }}" min="0" max="{{ cart_max_qty }}"
                        class="cr-qty-input ep-qty-input" aria-label="{{ ui.cart_quantity }}">
-                <button type="button" class="cr-qty-btn" data-cart-qty="1" data-cart-product-id="{{ item.producto.id }}" aria-label="{{ ui.cart_more }}">
+                <button type="button" class="cr-qty-btn" data-cart-qty="1" data-cart-line-key="{{ _line_key }}" data-cart-product-id="{{ item.producto.id }}" aria-label="{{ ui.cart_more }}">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
               </div>
-              <span class="cr-subtotal ep-cart-subtotal" id="subtotal_{{ item.producto.id }}">€{{ "%.2f"|format(item.subtotal) }}</span>
+              <span class="cr-subtotal ep-cart-subtotal" id="subtotal_{{ _line_key }}">€{{ "%.2f"|format(item.subtotal) }}</span>
             </div>
           </div>
 
-          {# Eliminar — con confirmación anti mis-tap en mobile #}
+          {# Eliminar — con confirmación anti mis-tap en mobile.
+             Usa /carrito/eliminar_linea con `line_key` para no borrar otras
+             líneas del mismo producto (p.ej. otro sabor). #}
           <button type="submit" class="cr-remove js-cart-remove"
                   title="{{ ui.cart_remove }}"
                   formmethod="POST"
-                  formaction="{{ url_for('public.eliminar_carrito', producto_id=item.producto.id) }}"
+                  formaction="{{ url_for('public.eliminar_linea_carrito') }}"
+                  name="line_key" value="{{ _line_key }}"
                   aria-label="{{ ui.cart_remove }} {{ item.producto.nombre }}"
                   data-confirm="¿Quitar «{{ item.producto.nombre|e }}» de tu {{ ui.cart_name }}?">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>
           </button>
         </div>
-        {% endfor %}
+        {% endfor %}{# líneas del grupo #}
+        </div>{# /.cr-group #}
+        {% endfor %}{# grupos por producto #}
       </div>
 
       {# Botón actualizar (solo aparece si hay cambio) #}
@@ -344,9 +400,10 @@
 const CR_MAX = {{ cart_max_qty|int }};
 let _crAutoSave = null;
 
-/* ── Cambiar cantidad ── */
-function crQty(id, delta) {
-  const inp = document.getElementById('qty_' + id);
+/* ── Cambiar cantidad (por line_key: cada línea = fila propia en carrito) ── */
+function crQty(lineKey, delta) {
+  if (!lineKey) return;
+  const inp = document.getElementById('qty_' + lineKey);
   if (!inp) return;
   let v = parseInt(inp.value || 0) + delta;
   v = Math.max(0, Math.min(CR_MAX, v));
@@ -357,12 +414,12 @@ function crQty(id, delta) {
   _crAutoSave = setTimeout(() => document.getElementById('cr-form-qty').submit(), 1600);
 }
 
-// Delegación declarativa: mantiene todos los controles del carrito activos
-// bajo la CSP estricta y evita un listener distinto por cada producto.
 document.addEventListener('click', function(event) {
   const quantity = event.target.closest('[data-cart-qty]');
   if (quantity) {
-    crQty(Number.parseInt(quantity.dataset.cartProductId, 10), Number.parseInt(quantity.dataset.cartQty, 10));
+    // Prioriza line-key (modelo nuevo); cae a product-id para líneas legacy.
+    const lineKey = quantity.dataset.cartLineKey || quantity.dataset.cartProductId;
+    crQty(String(lineKey), Number.parseInt(quantity.dataset.cartQty, 10));
     return;
   }
   if (event.target.closest('[data-cart-update]')) { document.getElementById('cr-form-qty')?.requestSubmit(); return; }
@@ -375,12 +432,12 @@ function crShowUpdate() {
 
 function crRecalc() {
   let sub = 0;
-  document.querySelectorAll('[data-product-id]').forEach(el => {
-    const id    = el.dataset.productId;
+  document.querySelectorAll('.cr-item').forEach(el => {
+    const key   = el.dataset.lineKey || el.dataset.productId;
     const price = parseFloat(el.dataset.price || 0);
-    const qty   = parseInt(document.getElementById('qty_' + id)?.value || 0);
+    const qty   = parseInt(document.getElementById('qty_' + key)?.value || 0);
     const st    = Math.round(price * qty * 100) / 100;
-    const stEl  = document.getElementById('subtotal_' + id);
+    const stEl  = document.getElementById('subtotal_' + key);
     if (stEl) { stEl.textContent = '€' + st.toFixed(2); crPulse(stEl); }
     sub += st;
   });

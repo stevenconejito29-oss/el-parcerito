@@ -2090,9 +2090,15 @@ function pdComboState() {
       const inputs = fg.querySelectorAll('.pd-combo-flavor-input');
       const checked = Array.from(inputs).filter(i => i.checked);
       if (checked.length === 0) complete = false;
-      else if (checked.length > 0) {
+      // Nombre del componente extraído del `.pd-combo-item-name` más cercano —
+      // así el resumen dice "Arepa: Queso" en lugar de sólo "Queso" y evita
+      // ambigüedad cuando la base fija tiene varios componentes con sabor.
+      const compName = fg.closest('.pd-combo-item')?.querySelector('.pd-combo-item-name')?.textContent?.trim();
+      if (checked.length > 0) {
         const names = checked.map(i => i.closest('.pd-flavor-chip')?.querySelector('.pd-flavor-chip__name')?.textContent?.trim()).filter(Boolean);
-        if (names.length) parts.push(names.join(', '));
+        if (names.length) {
+          parts.push(compName ? `${compName}: ${names.join(', ')}` : names.join(', '));
+        }
       }
       if (maxF > 1 && checked.length < maxF) complete = false;
     });
@@ -2117,20 +2123,31 @@ function pdComboState() {
     const qtyInputs = group.querySelectorAll('.combo-sel-qty');
     let current = 0;
     const parts = [];
+    // Helper: construye "Nombre" o "Nombre (Sabor1, Sabor2)" según los chips de
+    // sabor marcados dentro del `<label>` de esa opción. Reduce fricción: el
+    // cliente lee en el resumen exactamente lo que va a llevar, sabor incluido.
+    const namePlusFlavor = (lbl) => {
+      const name = lbl?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
+      if (!name) return null;
+      const flavorNames = Array.from(lbl.querySelectorAll('.pd-combo-flavor-input:checked'))
+        .map(inp => inp.closest('.pd-flavor-chip')?.querySelector('.pd-flavor-chip__name')?.textContent?.trim())
+        .filter(Boolean);
+      return flavorNames.length ? `${name} (${flavorNames.join(', ')})` : name;
+    };
     if (radios.length) {
       const checked = group.querySelector('.combo-sel-radio:checked');
       current = checked ? 1 : 0;
       if (checked) {
-        const name = checked.closest('label')?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
-        if (name) parts.push(name);
+        const label = namePlusFlavor(checked.closest('label'));
+        if (label) parts.push(label);
       }
     } else {
       qtyInputs.forEach(el => {
         const q = parseInt(el.value) || 0;
         if (q > 0) {
           current += q;
-          const name = el.closest('label')?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
-          if (name) parts.push(q > 1 ? `${name} ×${q}` : name);
+          const label = namePlusFlavor(el.closest('label'));
+          if (label) parts.push(q > 1 ? `${label} ×${q}` : label);
         }
       });
     }

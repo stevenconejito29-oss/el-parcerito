@@ -21,6 +21,7 @@ from models import (
     ComboItem,
     ComboGroup,
     IdempotencyKey,
+    KnowledgeEntry,
     NotificationOutbox,
     OrderEvent,
     OrderProviderStatus,
@@ -1735,6 +1736,17 @@ MIGRATIONS = [
         "description": "Vincula cada componente de combo con la presentación incluida.",
         "fn": lambda: _migrate_combo_item_presentation(),
     },
+    {
+        "id": "20260720_01_knowledge_entries",
+        "description": "Crear tabla knowledge_entries y sembrar respuestas base del chatbot.",
+        "tables": [KnowledgeEntry.__table__],
+        "fn": lambda: _seed_knowledge_entries(),
+    },
+    {
+        "id": "20260722_01_combo_item_permite_sabor_cliente",
+        "description": "Permite marcar por componente de combo si el cliente elige su sabor.",
+        "fn": lambda: _migrate_combo_item_permite_sabor_cliente(),
+    },
 ]
 
 
@@ -1932,6 +1944,132 @@ def _migrate_combo_item_presentation():
         "CREATE INDEX IF NOT EXISTS ix_combo_items_presentation_id "
         "ON combo_items (presentation_id)"
     ))
+
+
+def _migrate_combo_item_permite_sabor_cliente():
+    """Añade `combo_items.permite_sabor_cliente` para que un componente del
+    combo pueda dejar al cliente elegir su sabor (si su producto tiene grupo
+    sabor activo). Default False = comportamiento anterior."""
+    inspector = inspect(db.engine)
+    combo_columns = {
+        column["name"] for column in inspector.get_columns("combo_items")
+    } if inspector.has_table("combo_items") else set()
+    if "permite_sabor_cliente" in combo_columns or not combo_columns:
+        return
+    db.session.execute(text(
+        "ALTER TABLE combo_items ADD COLUMN permite_sabor_cliente BOOLEAN "
+        "NOT NULL DEFAULT false"
+    ))
+
+
+def _seed_knowledge_entries():
+    """Siembra respuestas base editables del chatbot.
+
+    Idempotente por `seed_key`. Si el super_admin edita o borra una entrada
+    sembrada, no se restaura: la ausencia del seed_key en DB indica "el admin
+    decidió no tenerla". Nuevas entradas del seed se añaden en futuras
+    migraciones cuando corresponda.
+
+    Sin hardcoding de valores concretos: los datos volátiles (horario,
+    teléfono, dirección, URL web) van como placeholders `{{clave}}` y se
+    resuelven en tiempo de respuesta desde `SiteConfig`.
+    """
+    from datetime import datetime, timezone as _tz
+    now = datetime.now(_tz.utc).replace(tzinfo=None)
+    # (seed_key, categoria, pregunta, respuesta, keywords_csv, audiencia)
+    seeds = [
+        ("horario_general", "horarios", "¿Cuál es el horario?",
+         "🕐 Horario de atención: {{horario}}. Cualquier duda escríbenos a {{telefono}}.",
+         "horario,horarios,abierto,abren,cerrado,cierran,hora,abrir,cerrar",
+         "cliente"),
+        ("direccion_local", "ubicacion", "¿Dónde están ubicados?",
+         "📍 Nos encuentras en {{direccion}}. Mira el mapa: {{web_url}}.",
+         "direccion,donde,ubicacion,ubicados,local,tienda,como llego,mapa",
+         "cliente"),
+        ("como_pedir", "pedidos", "¿Cómo hago un pedido?",
+         "🛒 Los pedidos se hacen sólo por nuestra web: {{web_url}}. "
+         "Ahí ves el menú completo, personalizas sabores y tamaños, y pagas. "
+         "Aquí en WhatsApp te ayudo con información y consultas.",
+         "pedir,pedido,comprar,ordenar,como pido,quiero pedir,hacer pedido",
+         "cliente"),
+        ("formas_pago", "pagos", "¿Qué formas de pago aceptan?",
+         "💳 Aceptamos tarjeta y efectivo al entregar. El pago online se hace en {{web_url}}.",
+         "pago,pagar,tarjeta,efectivo,bizum,paypal,formas de pago,como pago",
+         "cliente"),
+        ("envio_zonas", "envio", "¿Hacen delivery? ¿A qué zonas?",
+         "🛵 Sí, hacemos delivery. Consulta zonas y costes en {{web_url}}.",
+         "envio,delivery,domicilio,zonas,reparto,llevan,traen",
+         "cliente"),
+        ("cancelar_pedido", "pedidos", "¿Cómo cancelo un pedido?",
+         "❌ Escribe CANCELAR seguido del número de pedido (ej: CANCELAR 123). "
+         "Si ya está en preparación te derivamos al local para gestionar.",
+         "cancelar,anular,retirar pedido,no quiero",
+         "cliente"),
+        ("estado_pedido", "pedidos", "¿Cómo veo el estado de mi pedido?",
+         "📦 Escribe ESTADO y te muestro tus pedidos activos con su situación actual.",
+         "estado,seguimiento,mi pedido,donde va,cuando llega,tracking",
+         "cliente"),
+        ("puntos_fidelidad", "fidelidad", "¿Cómo funcionan los puntos?",
+         "⭐ Cada compra acumula puntos que puedes canjear por productos. "
+         "Consulta tu saldo y recompensas en {{web_url}}.",
+         "puntos,fidelidad,recompensa,recompensas,canje,canjear,acumular",
+         "cliente"),
+        ("alergenos", "productos", "¿Tienen opciones para alérgicos?",
+         "🌿 Sí. Cada producto lista sus alérgenos en la ficha de {{web_url}}. "
+         "Si tienes alergia grave avísanos al hacer el pedido en las notas.",
+         "alergia,alergico,alergenos,gluten,lactosa,celiaco,vegano,vegetariano",
+         "cliente"),
+        ("hablar_persona", "soporte", "Quiero hablar con una persona",
+         "👤 Te derivo con un compañero. Escríbenos por WhatsApp a {{telefono}} "
+         "o usa el comando AGENTE para conectar con el operador correspondiente.",
+         "persona,humano,agente,hablar,ayuda,atencion,operador",
+         "cliente"),
+        ("menu_bot_cliente", "meta", "MENU",
+         "👋 Puedo ayudarte con:\n"
+         "• *ESTADO* — ver tus pedidos\n"
+         "• *CANCELAR <n>* — cancelar un pedido\n"
+         "• *INFO* — buscar información (horario, envío, pagos…)\n"
+         "• *AGENTE* — hablar con una persona\n\n"
+         "🛒 Para *pedir* usa nuestra web: {{web_url}}",
+         "menu,ayuda,opciones,comandos,que puedes,como funciona",
+         "cliente"),
+        ("bot_no_pide", "pedidos", "¿Puedo pedir por aquí?",
+         "🚫 Por WhatsApp no gestionamos pedidos para evitar errores. "
+         "Todos los pedidos se hacen en {{web_url}} donde ves menú completo, "
+         "elegís tamaño y sabores y pagas con seguridad.",
+         "por aqui,por whatsapp,quiero pedir aqui,pedir por chat",
+         "cliente"),
+        # Audiencia super_admin/admin: comandos operativos
+        ("admin_menu", "meta", "MENU admin",
+         "🔧 Comandos operativos:\n"
+         "• *PEDIDOS* — ver pedidos activos\n"
+         "• *INCIDENCIAS* — reportes de clientes\n"
+         "• *STOCK* — enlace al inventario\n"
+         "• *CONFIG* — enlace al panel super_admin\n",
+         "menu,ayuda,comandos,operar",
+         "admin"),
+    ]
+    inserted = 0
+    for seed_key, categoria, pregunta, respuesta, keywords, audiencia in seeds:
+        existing = KnowledgeEntry.query.filter_by(seed_key=seed_key).first()
+        if existing is not None:
+            continue
+        db.session.add(KnowledgeEntry(
+            seed_key=seed_key,
+            categoria=categoria,
+            pregunta=pregunta,
+            respuesta=respuesta,
+            keywords=keywords,
+            audiencia=audiencia,
+            activo=True,
+            orden=0,
+            es_seed=True,
+            creado_en=now,
+            actualizado_en=now,
+        ))
+        inserted += 1
+    if inserted:
+        db.session.commit()
 
 
 def _utcnow():

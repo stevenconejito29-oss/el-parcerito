@@ -1512,15 +1512,35 @@ class Product(db.Model):
         self._restaurar_stock_propio(cantidad)
 
     def restaurar_stock_pedido(self, cantidad, metadata=None):
-        """Restaura stock usando el origen operativo congelado en el pedido."""
+        """Restaura stock usando el origen operativo congelado en el pedido.
+
+        El snapshot (`metadata.producto`) es la fuente de verdad porque el
+        pedido debe restaurarse al inventario que lo consumió, no al que el
+        producto tenga hoy (admin puede cambiar `proveedor_despachador_id`
+        entre pedido y cancelación).
+
+        Si el snapshot está vacío o le falta la clave `proveedor_despachador_id`,
+        registramos una advertencia y caemos al valor vivo — pero eso es señal
+        de metadata corrupta y debe auditarse en logs.
+        """
         snapshot = (metadata or {}).get("producto") if isinstance(metadata, dict) else None
         snapshot = snapshot if isinstance(snapshot, dict) else {}
         es_combo = bool(snapshot.get("es_combo")) if "es_combo" in snapshot else bool(self.es_combo)
-        proveedor_id = (
-            snapshot.get("proveedor_despachador_id")
-            if "proveedor_despachador_id" in snapshot
-            else self.proveedor_despachador_id
-        )
+        if "proveedor_despachador_id" in snapshot:
+            proveedor_id = snapshot.get("proveedor_despachador_id")
+        else:
+            # Metadata sin clave de origen → snapshot dañado o pedido pre-refactor.
+            # Falla defensiva al valor vivo pero deja rastro para auditoría.
+            try:
+                from flask import current_app as _capp
+                _capp.logger.warning(
+                    "restaurar_stock_pedido: metadata sin 'proveedor_despachador_id' "
+                    "para producto %s; usando valor vivo (posible metadata corrupta)",
+                    self.id,
+                )
+            except Exception:
+                pass
+            proveedor_id = self.proveedor_despachador_id
         if es_combo:
             self.restaurar_stock_combo(cantidad, metadata)
             return
@@ -1960,10 +1980,36 @@ class ComboItem(db.Model):
         db.ForeignKey("product_presentations.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # Cuando True, el cliente puede elegir el sabor de ESTE componente en el
+    # checkout del combo — SIEMPRE Y CUANDO el componente (producto suelto)
+    # tenga al menos un ProductExtraGroup tipo="sabor" activo. Si no lo tiene,
+    # el flag se ignora. Por defecto False (comportamiento anterior: componente
+    # sin selección de sabor, herencia del sabor global del combo si existiera).
+    permite_sabor_cliente = db.Column(
+        db.Boolean, nullable=False, default=False,
+        server_default=db.text("false"),
+    )
 
     componente = db.relationship("Product", foreign_keys=[producto_id])
     variante = db.relationship("ProductVariant", foreign_keys=[variant_id])
     presentacion = db.relationship("ProductPresentation", foreign_keys=[presentation_id])
+
+    @property
+    def sabores_disponibles(self):
+        """Devuelve las opciones de sabor del componente (Product) que el
+        cliente podría elegir si `permite_sabor_cliente=True`. Vacío si el
+        componente no tiene grupo sabor activo o el flag está desactivado.
+        """
+        if not self.permite_sabor_cliente or not self.componente:
+            return []
+        grupos = ProductExtraGroup.query.filter_by(
+            producto_id=self.componente.id, tipo="sabor", activo=True,
+        ).order_by(ProductExtraGroup.orden, ProductExtraGroup.id).all()
+        opciones = []
+        for g in grupos:
+            for opt in g.opciones.filter_by(activo=True).all():
+                opciones.append(opt)
+        return opciones
 
     __table_args__ = (
         db.Index("ix_combo_items_combo_id", "combo_id"),
@@ -3985,3 +4031,48 @@ class PushSubscription(db.Model):
         db.Index("ix_push_sub_user_id", "user_id"),
         db.Index("ix_push_sub_rol", "rol"),
     )
+
+
+# ─────────────────────────────────────────────
+# CHATBOT — BASE DE CONOCIMIENTO DETERMINISTA
+# ─────────────────────────────────────────────
+
+class KnowledgeEntry(db.Model):
+    """Respuestas precargadas del chatbot.
+
+    El bot no usa IA: hace matching por palabras clave normalizadas contra
+    estas entradas. Editable en caliente desde el panel super_admin. Placeholders
+    tipo ``{{horario}}`` se sustituyen leyendo ``SiteConfig`` — así la fuente
+    de verdad de horarios/teléfono/dirección sigue siendo única.
+    """
+    __tablename__ = "knowledge_entries"
+
+    id = db.Column(db.Integer, primary_key=True)
+    # Categoría libre — permite agrupar en el panel sin enum fijo, para que el
+    # negocio añada categorías sin migración.
+    categoria = db.Column(db.String(60), nullable=False, default="general", index=True)
+    pregunta = db.Column(db.String(200), nullable=False)
+    respuesta = db.Column(db.Text, nullable=False)
+    # Lista de keywords normalizadas separadas por coma. Se guarda como texto
+    # plano por compatibilidad SQLite/Postgres (sin ARRAY nativo).
+    keywords = db.Column(db.Text, nullable=False, default="")
+    audiencia = db.Column(db.String(20), nullable=False, default="cliente")  # cliente|admin|super_admin|todos
+    activo = db.Column(db.Boolean, default=True, nullable=False)
+    orden = db.Column(db.Integer, default=0, nullable=False)
+    # Marca las entradas del seed inicial. Si el admin la edita, la migración
+    # NO la sobrescribe. Cuando el admin borra una del seed, tampoco vuelve.
+    es_seed = db.Column(db.Boolean, default=False, nullable=False)
+    seed_key = db.Column(db.String(80), unique=True, nullable=True)  # identifica entradas seed
+    creado_en = db.Column(db.DateTime, default=utcnow, nullable=False)
+    actualizado_en = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    actualizado_por = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+
+    editor = db.relationship("User", foreign_keys=[actualizado_por])
+
+    __table_args__ = (
+        db.Index("ix_knowledge_categoria_activo", "categoria", "activo"),
+        db.Index("ix_knowledge_audiencia_activo", "audiencia", "activo"),
+    )
+
+    def keyword_list(self) -> list:
+        return [k.strip() for k in (self.keywords or "").split(",") if k.strip()]

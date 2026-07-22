@@ -61,6 +61,12 @@ from store_config import (
 )
 from catalog_projection import build_catalog_projection
 from product_options_service import validate_product_option_selection
+from cart_lines_service import (
+    line_signature,
+    producto_id_from_line_key,
+    iter_producto_ids,
+    migrate_legacy_session,
+)
 from product_presentations_service import (
     presentation_metadata,
     product_presentation_catalog_payload,
@@ -682,6 +688,14 @@ def producto_detalle(producto_id):
 # ─── CARRITO (sesión Flask) ──────────────────
 
 def _get_carrito():
+    # Migración transparente de sesiones legacy (claves = str(producto_id))
+    # al modelo de líneas (claves = line_key con firma de selección). Idempotente.
+    if session.get("carrito"):
+        try:
+            migrate_legacy_session(session)
+            session.modified = True
+        except Exception:
+            current_app.logger.exception("cart_lines migration failed; sesión legacy conservada")
     return session.get("carrito", {})
 
 def _save_carrito(carrito):
@@ -770,8 +784,29 @@ def _order_group_label(producto):
 
 
 def _cart_products_from_carrito(carrito, exclude_key=None):
-    ids = [int(pid) for pid in (carrito or {})
-           if str(pid) != str(exclude_key) and str(pid).isdigit()]
+    # `exclude_key` puede ser una line_key concreta (nueva) o un producto_id
+    # como string (compat con llamadas legacy). Excluimos la línea exacta si
+    # coincide, o todas las líneas de un producto si es un producto_id.
+    exclude_str = str(exclude_key) if exclude_key is not None else None
+    exclude_pid = None
+    if exclude_str is not None:
+        try:
+            exclude_pid = int(exclude_str)
+        except (TypeError, ValueError):
+            exclude_pid = producto_id_from_line_key(exclude_str)
+    ids = []
+    for key in (carrito or {}).keys():
+        if exclude_str is not None and str(key) == exclude_str:
+            continue
+        pid = producto_id_from_line_key(key)
+        if pid is None:
+            continue
+        # Excluir por producto_id sólo si la exclusión venía como int puro
+        # (mantiene la semántica del llamado legacy `exclude_key=producto_id`).
+        if exclude_pid is not None and str(exclude_key) == str(exclude_pid) and pid == exclude_pid:
+            continue
+        if pid not in ids:
+            ids.append(pid)
     if not ids:
         return []
     productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all()
@@ -1007,10 +1042,16 @@ def _cart_compatibility(
 def _cart_origins(carrito, exclude_key=None):
     if not carrito:
         return set()
-    ids = [
-        int(pid) for pid in carrito.keys()
-        if str(pid) != str(exclude_key) and str(pid).isdigit()
-    ]
+    exclude_str = str(exclude_key) if exclude_key is not None else None
+    ids = []
+    for key in carrito.keys():
+        if exclude_str is not None and str(key) == exclude_str:
+            continue
+        pid = producto_id_from_line_key(key)
+        if pid is None:
+            continue
+        if pid not in ids:
+            ids.append(pid)
     if not ids:
         return set()
     productos = Product.query.filter(Product.id.in_(ids), Product.activo == True).all()
@@ -1089,13 +1130,13 @@ def agregar_carrito(producto_id):
             f"Tu {cart_name} contiene productos de un origen de inventario incompatible. "
             "Vacíalo y vuelve a añadir los productos."
         )
-    key = str(producto_id)
 
-    productos_candidato = _cart_products_from_carrito(carrito, exclude_key=key) + [producto]
+    # --- Compat: chequeo de mezcla de productos (por producto_id, no por línea) ---
+    productos_candidato = _cart_products_from_carrito(carrito) + [producto]
     compat = _cart_compatibility(productos_candidato)
     hay_otros_productos = any(
-        str(pid) != key and str(pid).isdigit() and int(qty or 0) > 0
-        for pid, qty in carrito.items()
+        producto_id_from_line_key(k) not in (None, producto_id) and int(q or 0) > 0
+        for k, q in carrito.items()
     )
     if not compat["ok"]:
         issue = compat["issues"][0]
@@ -1112,17 +1153,11 @@ def agregar_carrito(producto_id):
             f"Vacíalo o retira los productos que bloquean a «{producto.nombre}»."
         )
 
-    nueva_cantidad_total = int(carrito.get(key, 0) or 0) + cantidad
-    if nueva_cantidad_total > cart_max_qty:
-        return _err(f"No puedes añadir más de {cart_max_qty} unidades por producto.")
-    if not producto.disponible_para_venta_en_origen(origen_solicitado, nueva_cantidad_total):
-        return _err("No hay stock suficiente para esa cantidad.")
-
-    # Variantes retail opt-in: si el producto tiene variantes activas,
-    # el cliente debe elegir una. Sigue el patrón de `presentaciones_carrito`:
-    # dict paralelo en session, validación server-side aunque el UI la fuerce.
+    # --- Parseo de TODA la selección antes de calcular la firma ---
+    variant_id = 0
+    variante = None
     if getattr(producto, "tiene_variantes", False):
-        from models import ProductVariant
+        from models import ProductVariant  # noqa: F401
         variant_raw = (request.form.get("variant_id") or "").strip()
         variantes_activas = producto.variantes_activas
         try:
@@ -1135,50 +1170,21 @@ def agregar_carrito(producto_id):
         variante = variantes_map[variant_id]
         if not variante.disponible():
             return _err(f"«{variante.label_publico}» está agotado.")
-        if variante.stock is not None and nueva_cantidad_total > variante.stock:
-            return _err(
-                f"No hay stock suficiente de «{variante.label_publico}» "
-                f"(quedan {variante.stock})."
-            )
-        variantes_carrito = session.get("variantes_carrito", {})
-        anterior_variant = variantes_carrito.get(key)
-        if carrito.get(key) and anterior_variant and int(anterior_variant) != variant_id:
-            return _err(
-                f"Este producto ya está en tu {cart_name} con otra variante. "
-                "Elimínalo antes de cambiar la selección."
-            )
-        variantes_carrito[key] = variant_id
-        session["variantes_carrito"] = variantes_carrito
 
-    # Presentaciones opt-in: si el producto define presentaciones activas,
-    # el cliente debe elegir una. Si no define ninguna → tamaño único (skip).
-    # Comparación case-insensitive: retail guarda "S","M","L","XL"; comida
-    # guarda "pequeño","mediano","grande". El form puede enviar cualquier case.
     presentation_size_raw = (request.form.get("presentation_size") or "").strip()
     presentation, presentation_error = validate_product_presentation_selection(
         producto, presentation_size_raw
     )
     if presentation_error:
         return _err(presentation_error)
-    if presentation:
-        presentation_canonico = presentation.tamaño
-        presentaciones_carrito = session.get("presentaciones_carrito", {})
-        anterior_pres = presentaciones_carrito.get(key)
-        if carrito.get(key) and anterior_pres and anterior_pres != presentation_canonico:
-            return _err(
-                f"Este producto ya está en tu {cart_name} con otro tamaño. "
-                "Elimínalo antes de cambiar la presentación."
-            )
-        presentaciones_carrito[key] = presentation_canonico
-        session["presentaciones_carrito"] = presentaciones_carrito
-    elif presentation_size_raw:
-        # El form envió tamaño pero el producto no tiene presentaciones — ignorar
-        pass
+    presentation_canonico = presentation.tamaño if presentation else ""
+
+    combo_seleccion = {}
     if producto.es_combo:
         seleccion, error = _parse_combo_selection(
             producto,
             request.form,
-            nueva_cantidad_total,
+            cantidad,
             origen_solicitado,
         )
         if error:
@@ -1190,10 +1196,48 @@ def agregar_carrito(producto_id):
                 producto_id=producto_id,
                 origen=origen_solicitado,
             ))
+        combo_seleccion = seleccion
+
+    extras, extras_error = _parse_product_extras(producto, request.form, presentation)
+    if extras_error:
+        return _err(extras_error, "danger")
+
+    notas_personalizacion = request.form.get("notas_personalizacion", "").strip()
+
+    # --- Firma de línea: mismo producto con distinta selección = línea aparte ---
+    key = line_signature(
+        producto_id,
+        presentation_size=presentation_canonico,
+        sabores=extras,          # sabores + extras viven en un solo dict; el hash absorbe todo
+        extras=None,
+        variant_id=variant_id or None,
+        combo_seleccion=combo_seleccion,
+        notas=notas_personalizacion,
+    )
+
+    nueva_cantidad_total = int(carrito.get(key, 0) or 0) + cantidad
+    if nueva_cantidad_total > cart_max_qty:
+        return _err(f"No puedes añadir más de {cart_max_qty} unidades por producto.")
+
+    # Validación de stock con la cantidad total sumando TODAS las líneas del
+    # mismo producto (no sólo esta línea) — el stock es del producto, no de la línea.
+    qty_producto_total = nueva_cantidad_total + sum(
+        int(q or 0)
+        for k, q in carrito.items()
+        if k != key and producto_id_from_line_key(k) == producto_id
+    )
+    if not producto.disponible_para_venta_en_origen(origen_solicitado, qty_producto_total):
+        return _err("No hay stock suficiente para esa cantidad.")
+    if variante is not None and variante.stock is not None and nueva_cantidad_total > variante.stock:
+        return _err(
+            f"No hay stock suficiente de «{variante.label_publico}» "
+            f"(quedan {variante.stock})."
+        )
+    if producto.es_combo:
         try:
             producto.validar_stock_combo_seleccion(
                 nueva_cantidad_total,
-                _combo_selection_ids_from_saved(seleccion),
+                _combo_selection_ids_from_saved(combo_seleccion),
                 origen=origen_solicitado,
             )
         except ValueError as exc:
@@ -1205,40 +1249,41 @@ def agregar_carrito(producto_id):
                 producto_id=producto_id,
                 origen=origen_solicitado,
             ))
+
+    # --- Persistencia: todos los dicts paralelos indexados por line_key ---
+    if variant_id:
+        variantes_carrito = session.get("variantes_carrito", {})
+        variantes_carrito[key] = variant_id
+        session["variantes_carrito"] = variantes_carrito
+    if presentation_canonico:
+        presentaciones_carrito = session.get("presentaciones_carrito", {})
+        presentaciones_carrito[key] = presentation_canonico
+        session["presentaciones_carrito"] = presentaciones_carrito
+    if producto.es_combo:
         selecciones_combo = session.get("combo_selecciones", {})
-        selecciones_combo[key] = seleccion
+        selecciones_combo[key] = combo_seleccion
         session["combo_selecciones"] = selecciones_combo
-    extras, extras_error = _parse_product_extras(producto, request.form, presentation)
-    if extras_error:
-        return _err(extras_error, "danger")
     extras_guardados = session.get("extras_selecciones", {})
-    anterior = extras_guardados.get(key, {})
-    if carrito.get(key) and anterior != extras:
-        return _err(
-            f"Este producto ya está en tu {cart_name} con otra personalización. "
-            "Elimínalo para cambiar su configuración."
-        )
     if extras:
         extras_guardados[key] = extras
     else:
         extras_guardados.pop(key, None)
     session["extras_selecciones"] = extras_guardados
-    carrito[key] = nueva_cantidad_total
-    _set_carrito_origen(origen_solicitado)
-    _save_carrito(carrito)
-    notas_personalizacion = request.form.get("notas_personalizacion", "").strip()
     if notas_personalizacion:
         notas_combo = session.get("notas_combo", {})
         notas_combo[key] = notas_personalizacion
         session["notas_combo"] = notas_combo
-        session.modified = True
+    carrito[key] = nueva_cantidad_total
+    _set_carrito_origen(origen_solicitado)
+    _save_carrito(carrito)
+    session.modified = True
     if _ajax:
         return jsonify({
             "ok": True,
             "nombre": producto.nombre,
-            # Conteo de líneas, igual al badge renderizado por Jinja. El cliente
-            # no debe inferirlo sumando porque repetir un producto no crea otra línea.
+            # Ahora sí es número de líneas — dos sabores del mismo producto = 2 líneas.
             "cart_count": len(carrito),
+            "line_key": key,
         }), 200
     flash(f"'{producto.nombre}' añadido a tu {cart_name}.", "success")
     return redirect(request.referrer or url_for("public.index"))
@@ -1275,7 +1320,8 @@ def actualizar_carrito():
             del carrito[key]
             _cleanup_key(key)
         else:
-            producto = db.session.get(Product, int(key)) if str(key).isdigit() else None
+            pid = producto_id_from_line_key(key)
+            producto = db.session.get(Product, pid) if pid is not None else None
             if not _producto_disponible_en_origen(producto, origen):
                 del carrito[key]
                 _cleanup_key(key)
@@ -1300,27 +1346,53 @@ def actualizar_carrito():
     return redirect(url_for("public.ver_carrito"))
 
 
+def _eliminar_lineas(keys):
+    """Elimina una o varias líneas y todas sus selecciones paralelas."""
+    carrito = _get_carrito()
+    combos = session.get("combo_selecciones", {}) or {}
+    notas = session.get("notas_combo", {}) or {}
+    extras = session.get("extras_selecciones", {}) or {}
+    presentaciones = session.get("presentaciones_carrito", {}) or {}
+    variantes = session.get("variantes_carrito", {}) or {}
+    for k in keys:
+        carrito.pop(k, None)
+        combos.pop(k, None)
+        notas.pop(k, None)
+        extras.pop(k, None)
+        presentaciones.pop(k, None)
+        variantes.pop(k, None)
+    session["combo_selecciones"] = combos
+    session["notas_combo"] = notas
+    session["extras_selecciones"] = extras
+    session["presentaciones_carrito"] = presentaciones
+    session["variantes_carrito"] = variantes
+    _save_carrito(carrito)
+
+
+@public_bp.route("/carrito/eliminar_linea", methods=["POST"])
+def eliminar_linea_carrito():
+    """Elimina una línea concreta del carrito por su `line_key` (firma)."""
+    line_key = (request.form.get("line_key") or "").strip()
+    if not line_key:
+        return (jsonify({"ok": False, "msg": "line_key requerida"}), 400) \
+            if request.headers.get("X-Ajax") == "1" \
+            else redirect(url_for("public.ver_carrito"))
+    _eliminar_lineas([line_key])
+    if request.headers.get("X-Ajax") == "1":
+        return jsonify({"ok": True})
+    return redirect(url_for("public.ver_carrito"))
+
+
 @public_bp.route("/carrito/eliminar/<int:producto_id>", methods=["POST"])
 def eliminar_carrito(producto_id):
-    key = str(producto_id)
+    """Compat: elimina TODAS las líneas de un producto (sin importar sabor/tamaño).
+
+    Endpoint viejo — nuevos flujos deben usar `/carrito/eliminar_linea` con la
+    firma exacta para no borrar el resto de sabores del mismo producto.
+    """
     carrito = _get_carrito()
-    carrito.pop(key, None)
-    selecciones_combo = session.get("combo_selecciones", {})
-    notas_combo = session.get("notas_combo", {})
-    selecciones_combo.pop(key, None)
-    extras = session.get("extras_selecciones", {})
-    extras.pop(key, None)
-    presentaciones = session.get("presentaciones_carrito", {})
-    presentaciones.pop(key, None)
-    session["presentaciones_carrito"] = presentaciones
-    variantes = session.get("variantes_carrito", {})
-    variantes.pop(key, None)
-    session["variantes_carrito"] = variantes
-    session["extras_selecciones"] = extras
-    notas_combo.pop(key, None)
-    session["combo_selecciones"] = selecciones_combo
-    session["notas_combo"] = notas_combo
-    _save_carrito(carrito)
+    keys = [k for k in list(carrito.keys()) if producto_id_from_line_key(k) == producto_id]
+    _eliminar_lineas(keys)
     if request.headers.get("X-Ajax") == "1":
         return jsonify({"ok": True})
     return redirect(url_for("public.ver_carrito"))
@@ -1422,6 +1494,35 @@ def set_producto_canje():
         session.pop("cart_producto_canje_id", None)
     session.modified = True
     return jsonify({"ok": True})
+
+
+@public_bp.route("/api/producto/<int:producto_id>/opciones")
+def api_producto_opciones(producto_id):
+    """Payload público con presentaciones, sabores y política sabor↔tamaño.
+
+    El frontend usa este JSON para filtrar sabores permitidos cuando el cliente
+    cambia el tamaño, y para aplicar min/max por presentación. Fuente de verdad
+    única: se calcula en el servidor a partir del catálogo del producto.
+    """
+    from product_options_service import (
+        product_option_catalog_payload,
+        flavor_policy_for_presentation,
+    )
+    producto = get_or_404(Product, producto_id)
+    presentaciones = product_presentation_catalog_payload(producto)
+    # Política sin tamaño (default) para productos sin presentaciones.
+    if not presentaciones:
+        default_policy = flavor_policy_for_presentation(producto, None)
+    else:
+        default_policy = None
+    return jsonify({
+        "ok": True,
+        "producto_id": producto.id,
+        "nombre": producto.nombre,
+        "presentaciones": presentaciones,
+        "opciones": product_option_catalog_payload(producto, None),
+        "default_flavor_policy": default_policy,
+    })
 
 
 @public_bp.route("/api/public/cliente")
@@ -1894,13 +1995,33 @@ def checkout():
         if tipo_entrega_cliente == "recogida":
             direccion = ""
         metodo_pago = normalizar_metodo_pago(request.form.get("metodo_pago"))
+        # Todos los pagos se cobran al entregar. El cliente sólo indica la
+        # preferencia para que el repartidor lleve el instrumento adecuado
+        # (dinero para cambio, teléfono para Bizum, o datáfono para tarjeta).
         if metodo_pago == "efectivo" and SiteConfig.get("EFECTIVO_HABILITADO", "1") != "1":
-            flash("El pago en efectivo no está habilitado.", "danger")
+            flash("El pago en efectivo no está habilitado ahora mismo. Elige otro método.", "danger")
             return redirect(url_for("public.checkout"))
         if metodo_pago == "bizum":
             if SiteConfig.get("BIZUM_HABILITADO", "1") != "1" or not SiteConfig.get("BIZUM_TELEFONO", ""):
-                flash("El pago mediante Bizum no está habilitado.", "danger")
+                flash("El pago mediante Bizum no está disponible ahora mismo. Elige otro método.", "danger")
                 return redirect(url_for("public.checkout"))
+        if metodo_pago == "tarjeta" and SiteConfig.get("TARJETA_HABILITADA", "1") != "1":
+            flash("El pago con tarjeta (datáfono) no está disponible ahora mismo. Elige otro método.", "danger")
+            return redirect(url_for("public.checkout"))
+        # Defensa: si el cliente manda un método vacío o inválido, forzamos el
+        # primer habilitado como fallback en vez de bloquear el checkout.
+        if not metodo_pago:
+            for _mp, _flag in (
+                ("efectivo", SiteConfig.get("EFECTIVO_HABILITADO", "1") == "1"),
+                ("bizum", SiteConfig.get("BIZUM_HABILITADO", "1") == "1" and SiteConfig.get("BIZUM_TELEFONO", "")),
+                ("tarjeta", SiteConfig.get("TARJETA_HABILITADA", "1") == "1"),
+            ):
+                if _flag:
+                    metodo_pago = _mp
+                    break
+        if not metodo_pago:
+            flash("No hay métodos de pago disponibles ahora mismo. Contacta con la tienda.", "danger")
+            return redirect(url_for("public.checkout"))
         notas = request.form.get("notas", "").strip()[:1000]
         # Agregar personalizaciones de combos a las notas
         notas_combo = session.get("notas_combo", {})
@@ -2580,6 +2701,37 @@ def _parse_combo_selection(producto, form, cantidad=1, origen=None):
             if total_selecciones > max_sel:
                 return {}, f"No puedes elegir más de {max_sel} opción(es) de «{grupo}» para el combo."
             seleccion[grupo] = qty_map
+
+    # ── Sabores por componente (opt-in por ComboItem.permite_sabor_cliente) ──
+    flavors_map = {}
+    for item in componentes:
+        if not getattr(item, "permite_sabor_cliente", False):
+            continue
+        available_ids = {opt.id for opt in item.sabores_disponibles}
+        if not available_ids:
+            continue
+        selected_opts = []
+        # Radio: 1 sabor por componente (name="combo_flavor_<item_id>")
+        raw_single = form.getlist(f"combo_flavor_{item.id}")
+        for val in raw_single:
+            try:
+                oid = int(val)
+            except (TypeError, ValueError):
+                continue
+            if oid in available_ids and oid not in selected_opts:
+                selected_opts.append(oid)
+        # Checkbox multi (name="combo_flavor_<item_id>_<opt_id>")
+        for oid in available_ids:
+            if form.get(f"combo_flavor_{item.id}_{oid}"):
+                if oid not in selected_opts:
+                    selected_opts.append(oid)
+        max_flavors = max(1, int(item.cantidad or 1))
+        if len(selected_opts) > max_flavors:
+            selected_opts = selected_opts[:max_flavors]
+        if selected_opts:
+            flavors_map[str(item.id)] = selected_opts
+    if flavors_map:
+        seleccion["__flavors__"] = flavors_map
     return seleccion, None
 
 
@@ -2641,7 +2793,9 @@ def _combo_selection_ids_from_saved(seleccion_guardada):
     ids = []
     if not isinstance(seleccion_guardada, dict):
         return ids
-    for qty_map in seleccion_guardada.values():
+    for grupo_key, qty_map in seleccion_guardada.items():
+        if isinstance(grupo_key, str) and grupo_key.startswith("__"):
+            continue
         if not isinstance(qty_map, dict):
             continue
         for item_id, qty in qty_map.items():
@@ -2667,6 +2821,33 @@ def _combo_selection_payload(producto, seleccion_guardada):
     seleccion_ids = []
     resumen = []
     grupos_meta = []
+
+    # Sabores elegidos por el cliente por-componente ({item_id: [opt_id,...]}).
+    saved_flavors_raw = (seleccion_guardada or {}).get("__flavors__") if isinstance(seleccion_guardada, dict) else None
+    saved_flavors = {}
+    if isinstance(saved_flavors_raw, dict):
+        for k, v in saved_flavors_raw.items():
+            try:
+                item_key = int(k)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(v, list):
+                saved_flavors[item_key] = [int(x) for x in v if str(x).lstrip("-").isdigit()]
+
+    def _flavor_meta_for(item):
+        if not getattr(item, "permite_sabor_cliente", False):
+            return None
+        chosen = saved_flavors.get(item.id) or []
+        if not chosen:
+            return None
+        opts_by_id = {opt.id: opt for opt in item.sabores_disponibles}
+        out = []
+        for oid in chosen:
+            opt = opts_by_id.get(int(oid))
+            if opt:
+                out.append({"opt_id": opt.id, "nombre": opt.nombre})
+        return out or None
+
     for item in fijos:
         resumen.append(f"{item.cantidad}x {item.componente.nombre}")
 
@@ -2725,6 +2906,7 @@ def _combo_selection_payload(producto, seleccion_guardada):
                 nombres.append(f"{componente.nombre}{extra_txt}")
             else:
                 nombres.append(f"{componente.nombre} ×{qty}{extra_txt}")
+            _sabor_meta = _flavor_meta_for(by_id[item_id])
             opciones_meta.append({
                 **metadata_componente_combo(by_id[item_id], producto.proveedor_despachador_id),
                 "combo_item_id": item_id,
@@ -2737,6 +2919,7 @@ def _combo_selection_payload(producto, seleccion_guardada):
                 "precio_extra": extra_unit,
                 "extra_total": extra_total,
                 "notas_preparacion": by_id[item_id].notas_preparacion or "",
+                **({"sabor_cliente": _sabor_meta} if _sabor_meta else {}),
             })
 
         seleccion_ids.extend(ids)
@@ -2758,8 +2941,8 @@ def _combo_selection_payload(producto, seleccion_guardada):
         for group in grupos_meta
         for option in (group.get("opciones") or [])
     ), 2)
-    metadata = {"combo": {"extras_total": extras_total, "componentes": [
-        {
+    def _fijo_meta(item):
+        base = {
             **metadata_componente_combo(item, producto.proveedor_despachador_id),
             "combo_item_id": item.id,
             "grupo_id": item.combo_group_id,
@@ -2771,7 +2954,13 @@ def _combo_selection_payload(producto, seleccion_guardada):
             "grupo_orden": item.grupo.orden if item.grupo else 0,
             "notas_preparacion": item.notas_preparacion or "",
         }
-        for item in fijos
+        sabor_meta = _flavor_meta_for(item)
+        if sabor_meta:
+            base["sabor_cliente"] = sabor_meta
+        return base
+
+    metadata = {"combo": {"extras_total": extras_total, "componentes": [
+        _fijo_meta(item) for item in fijos
     ], "selecciones": grupos_meta}}
     return seleccion_ids, " | ".join(resumen), metadata
 
@@ -2779,22 +2968,35 @@ def _combo_selection_payload(producto, seleccion_guardada):
 def _combo_display_items(combo_items, metadata):
     combo_meta = (metadata or {}).get("combo", {})
     selected_ids = set()
+    flavor_by_item = {}
     for group in combo_meta.get("selecciones", []):
         for option in group.get("opciones", []):
             try:
-                selected_ids.add(int(option.get("combo_item_id")))
+                cid = int(option.get("combo_item_id"))
             except (TypeError, ValueError):
                 continue
+            selected_ids.add(cid)
+            if option.get("sabor_cliente"):
+                flavor_by_item[cid] = option.get("sabor_cliente")
+    for comp in combo_meta.get("componentes", []):
+        try:
+            cid = int(comp.get("combo_item_id"))
+        except (TypeError, ValueError):
+            continue
+        if comp.get("sabor_cliente"):
+            flavor_by_item[cid] = comp.get("sabor_cliente")
 
     rows = []
     for item in combo_items:
         if not item.es_seleccionable:
-            rows.append({"item": item, "tipo": "Fijo", "seleccionado": False})
+            rows.append({"item": item, "tipo": "Fijo", "seleccionado": False,
+                         "sabor_cliente": flavor_by_item.get(item.id)})
         elif item.id in selected_ids:
             rows.append({
                 "item": item,
                 "tipo": item.grupo.nombre_publico if item.grupo else (item.grupo_seleccion or "Selección"),
                 "seleccionado": True,
+                "sabor_cliente": flavor_by_item.get(item.id),
             })
     return rows
 
@@ -2808,9 +3010,8 @@ def _build_items_from_carrito(carrito):
     if not carrito:
         return [], 0.0
 
-    try:
-        ids = [int(pid) for pid in carrito.keys()]
-    except (ValueError, TypeError):
+    ids = iter_producto_ids(carrito)
+    if not ids:
         return [], 0.0
 
     productos_map = {p.id: p for p in Product.query.filter(Product.id.in_(ids)).all()}
@@ -2822,16 +3023,21 @@ def _build_items_from_carrito(carrito):
     subtotal = 0.0
     selecciones_combo = session.get("combo_selecciones", {})
     extras_selecciones = session.get("extras_selecciones", {})
-    notas_cliente_map = session.get("notas_combo", {})  # notas por producto: "sin cebolla", etc.
-    presentaciones_map = session.get("presentaciones_carrito", {})  # tamaño S/M/L por producto
+    notas_cliente_map = session.get("notas_combo", {})  # notas por línea
+    presentaciones_map = session.get("presentaciones_carrito", {})  # tamaño por línea
+    variantes_map_session = session.get("variantes_carrito", {})
     ids_desaparecidos = []
-    for producto_id_str, cantidad in carrito.items():
+    for line_key, cantidad in carrito.items():
+        pid = producto_id_from_line_key(line_key)
         try:
-            pid = int(producto_id_str)
             qty = int(cantidad)
         except (ValueError, TypeError):
             continue
+        if pid is None:
+            ids_desaparecidos.append(line_key)
+            continue
         p = productos_map.get(pid)
+        producto_id_str = line_key  # alias para las lecturas de dicts paralelos
         if p is None:
             # Producto borrado en admin mientras estaba en carrito. Se marca
             # para limpieza posterior — no hacemos pop dentro del loop para
@@ -2903,7 +3109,8 @@ def _build_items_from_carrito(carrito):
         item_total = round(precio * qty, 2)
         subtotal += item_total
         nota_cliente_item = (notas_cliente_map.get(producto_id_str) or "").strip()[:240]
-        items.append({"producto": p, "cantidad": qty, "subtotal": item_total,
+        items.append({"line_key": line_key,
+                      "producto": p, "cantidad": qty, "subtotal": item_total,
                       "precio_unit": precio,
                       "combo_extra_unit": combo_extras_unit,
                       "combo_items": combo_items,
