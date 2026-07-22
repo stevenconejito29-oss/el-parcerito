@@ -1755,6 +1755,15 @@ MIGRATIONS = [
         ),
         "fn": lambda: _migrate_combo_item_allowed_flavor_options(),
     },
+    {
+        "id": "20260722_03_combo_item_allowed_presentations",
+        "description": (
+            "Junction combo_item_allowed_presentations: subset de tamaños por "
+            "componente. 0-1 fila = tamaño fijo (usa presentation_id), 2+ = "
+            "cliente elige entre esas presentaciones."
+        ),
+        "fn": lambda: _migrate_combo_item_allowed_presentations(),
+    },
 ]
 
 
@@ -2006,6 +2015,46 @@ def _migrate_combo_item_allowed_flavor_options():
         db.session.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_combo_item_flavors_option "
             "ON combo_item_allowed_flavors (option_id)"
+        ))
+
+
+def _migrate_combo_item_allowed_presentations():
+    """Crea la tabla junction `combo_item_allowed_presentations` para permitir
+    al super-admin acotar qué tamaños puede elegir el cliente por componente.
+
+    Semántica: 0-1 filas para un combo_item = tamaño fijo (usa presentation_id
+    del componente). 2+ filas = cliente ve chip picker y elige entre esas.
+    Idempotente + portable Postgres/SQLite.
+    """
+    inspector = inspect(db.engine)
+    if inspector.has_table("combo_item_allowed_presentations"):
+        return
+    dialect = db.engine.dialect.name
+    if dialect == "postgresql":
+        db.session.execute(text("""
+            CREATE TABLE combo_item_allowed_presentations (
+                combo_item_id   INTEGER NOT NULL REFERENCES combo_items(id) ON DELETE CASCADE,
+                presentation_id INTEGER NOT NULL REFERENCES product_presentations(id) ON DELETE CASCADE,
+                PRIMARY KEY (combo_item_id, presentation_id)
+            )
+        """))
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_combo_item_presentations_pres "
+            "ON combo_item_allowed_presentations (presentation_id)"
+        ))
+    else:
+        db.session.execute(text("""
+            CREATE TABLE combo_item_allowed_presentations (
+                combo_item_id   INTEGER NOT NULL,
+                presentation_id INTEGER NOT NULL,
+                PRIMARY KEY (combo_item_id, presentation_id),
+                FOREIGN KEY (combo_item_id)   REFERENCES combo_items(id) ON DELETE CASCADE,
+                FOREIGN KEY (presentation_id) REFERENCES product_presentations(id) ON DELETE CASCADE
+            )
+        """))
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_combo_item_presentations_pres "
+            "ON combo_item_allowed_presentations (presentation_id)"
         ))
 
 

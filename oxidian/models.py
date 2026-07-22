@@ -2038,6 +2038,47 @@ class ComboItem(db.Model):
                     opciones.append(opt)
         return opciones
 
+    # ── Tamaños permitidos (mismo patrón M2M que sabores) ──
+    # Si el M2M está vacío → se usa `presentation_id` fijo (comportamiento
+    # anterior). Con 2+ filas → el cliente elige entre esas presentaciones.
+    allowed_presentations = db.relationship(
+        "ProductPresentation",
+        secondary="combo_item_allowed_presentations",
+        lazy="select",
+    )
+
+    @property
+    def allowed_presentation_ids(self):
+        """IDs de las presentaciones permitidas configuradas por el admin, o
+        `[]` si no hay restricción explícita (modo "tamaño fijo")."""
+        return [p.id for p in self.allowed_presentations if p.id]
+
+    @property
+    def presentaciones_disponibles(self):
+        """Presentaciones que el cliente puede elegir para este componente.
+        Retorna [] cuando el admin NO habilitó "cliente elige tamaño" (o sea,
+        cuando el M2M tiene 0-1 filas). Con 2+ presentaciones el cliente ve
+        un chip picker. Filtra por `activo=True` para no ofrecer tamaños
+        recientemente desactivados en el producto.
+        """
+        if not self.componente:
+            return []
+        allowed_ids = self.allowed_presentation_ids
+        if len(allowed_ids) < 2:
+            return []  # modo fijo o único → sin picker
+        # Cargamos las que siguen activas en el producto — evita ofrecer al
+        # cliente un tamaño que el admin desactivó a posteriori.
+        activas = {
+            p.id: p for p in
+            ProductPresentation.query.filter(
+                ProductPresentation.producto_id == self.componente.id,
+                ProductPresentation.activo.is_(True),
+                ProductPresentation.id.in_(allowed_ids),
+            ).order_by(ProductPresentation.orden, ProductPresentation.id).all()
+        }
+        # Preservamos el orden del catálogo original (por orden, id).
+        return [activas[pid] for pid in sorted(activas.keys(), key=lambda i: (activas[i].orden or 0, i))]
+
     __table_args__ = (
         db.Index("ix_combo_items_combo_id", "combo_id"),
         db.Index("ix_combo_items_group_id", "combo_group_id"),
@@ -2200,6 +2241,34 @@ combo_item_allowed_flavors = db.Table(
         primary_key=True,
     ),
     db.Index("ix_combo_item_flavors_option", "option_id"),
+)
+
+
+# Junction: per-combo-component subset de TAMAÑOS/presentaciones ofrecidos al
+# cliente. Hermano semántico de `combo_item_allowed_flavors`.
+#
+# Semántica:
+#   - 0 filas   → sin M2M; se usa el `presentation_id` fijo del combo item
+#                 (comportamiento anterior a esta feature).
+#   - 1 fila    → equivalente a fijar `presentation_id`; el cliente no elige.
+#   - 2+ filas  → el cliente ve un chip picker y elige entre esas
+#                 presentaciones. `presentation_id` (si existe) actúa como
+#                 default/recomendada, pero el cliente puede cambiar.
+combo_item_allowed_presentations = db.Table(
+    "combo_item_allowed_presentations",
+    db.Column(
+        "combo_item_id",
+        db.Integer,
+        db.ForeignKey("combo_items.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    db.Column(
+        "presentation_id",
+        db.Integer,
+        db.ForeignKey("product_presentations.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    db.Index("ix_combo_item_presentations_pres", "presentation_id"),
 )
 
 

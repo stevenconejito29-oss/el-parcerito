@@ -439,6 +439,25 @@
             {% endif %}
           </div>
           <span class="pd-combo-tag pd-combo-tag-inc">Incluido</span>
+          {# Tamaños seleccionables por el cliente (mismo patrón que sabores) #}
+          {% set _pres_opts = item.presentaciones_disponibles %}
+          {% if _pres_opts and _pres_opts|length > 1 %}
+          <div class="pd-combo-presentation" data-combo-item="{{ item.id }}">
+            <p class="pd-combo-flavor-ttl">Elige el tamaño de {{ item.componente.nombre }}</p>
+            <div class="pd-combo-flavor-chips">
+              {% for pres in _pres_opts %}
+              <label class="pd-flavor-chip pd-combo-pres-chip" data-combo-pres-opt="{{ pres.id }}">
+                <input type="radio" name="combo_presentation_{{ item.id }}"
+                       value="{{ pres.id }}"
+                       class="pd-combo-presentation-input" form="pd-add-form"
+                       data-combo-item="{{ item.id }}" data-pres-id="{{ pres.id }}"
+                       {% if (item.presentacion and item.presentacion.id == pres.id) or (not item.presentacion and loop.first) %}checked{% endif %}>
+                <span class="pd-flavor-chip__name">{{ pres.label }}{% if pres.precio_extra_float %} · {% if pres.precio_extra_float > 0 %}+{% endif %}€{{ "%.2f"|format(pres.precio_extra_float) }}{% endif %}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
           {% set _sab_opts = item.sabores_disponibles %}
           {% if item.permite_sabor_cliente and _sab_opts %}
           <div class="pd-combo-flavor" data-combo-item="{{ item.id }}" data-max-flavors="{{ item.cantidad|int }}">
@@ -530,6 +549,25 @@
           {% set al = item.componente.alergenos_iconos %}
           {% if al %}<span class="pd-combo-opt-alerg">⚠️{% for c,i,l in al %} {{ i }}{% endfor %}</span>{% endif %}
           {% if opt_agotada %}<span class="pd-combo-opt-sold">Agotado</span>{% endif %}
+          {# Tamaños seleccionables por el cliente para esta opción #}
+          {% set _pres_opts_s = item.presentaciones_disponibles %}
+          {% if _pres_opts_s and _pres_opts_s|length > 1 and not opt_agotada %}
+          <div class="pd-combo-presentation" data-combo-item="{{ item.id }}">
+            <p class="pd-combo-flavor-ttl">Tamaño:</p>
+            <div class="pd-combo-flavor-chips">
+              {% for pres in _pres_opts_s %}
+              <label class="pd-flavor-chip pd-combo-pres-chip" data-combo-pres-opt="{{ pres.id }}">
+                <input type="radio" name="combo_presentation_{{ item.id }}"
+                       value="{{ pres.id }}"
+                       class="pd-combo-presentation-input" form="pd-add-form"
+                       data-combo-item="{{ item.id }}" data-pres-id="{{ pres.id }}"
+                       {% if (item.presentacion and item.presentacion.id == pres.id) or (not item.presentacion and loop.first) %}checked{% endif %}>
+                <span class="pd-flavor-chip__name">{{ pres.label }}{% if pres.precio_extra_float %} · {% if pres.precio_extra_float > 0 %}+{% endif %}€{{ "%.2f"|format(pres.precio_extra_float) }}{% endif %}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
           {% set _sab_opts_s = item.sabores_disponibles %}
           {% if item.permite_sabor_cliente and _sab_opts_s and not opt_agotada %}
           <div class="pd-combo-flavor" data-combo-item="{{ item.id }}" data-max-flavors="{{ item.cantidad|int }}">
@@ -881,6 +919,17 @@
 .pd-combo-flavor .pd-flavor-chip { cursor:pointer; position:relative; user-select:none; }
 .pd-combo-flavor .pd-flavor-chip .pd-combo-flavor-input { position:absolute; opacity:0; pointer-events:none; width:1px; height:1px; }
 .pd-combo-flavor .pd-flavor-chip:has(.pd-combo-flavor-input:checked) { background: color-mix(in srgb, var(--brand-primary) 22%, var(--col-elevated)); border-color: var(--brand-primary); color: var(--col-text); }
+/* Chips de tamaño (misma lengua visual que sabor, pero con tinte azul de
+   "acción" para diferenciarlos ópticamente en combos con ambos pickers). */
+.pd-combo-presentation { margin-top:.5rem; grid-column:1 / -1; }
+.pd-combo-presentation .pd-combo-flavor-chips { display:flex; flex-wrap:wrap; gap:.35rem; }
+.pd-combo-presentation .pd-flavor-chip { cursor:pointer; position:relative; user-select:none; }
+.pd-combo-presentation .pd-combo-presentation-input { position:absolute; opacity:0; pointer-events:none; width:1px; height:1px; }
+.pd-combo-presentation .pd-flavor-chip:has(.pd-combo-presentation-input:checked) {
+  background: color-mix(in srgb, var(--brand-accent, #003087) 18%, var(--col-elevated));
+  border-color: var(--brand-accent, #003087);
+  color: var(--col-text);
+}
 /* Steppers touch-friendly: 2.75rem = 44px mínimo iOS/Android. Font 16px evita
    el zoom automático de Safari en focus. `touch-action:manipulation` quita el
    delay de 300ms residual y hace los tap responsivos. */
@@ -2129,10 +2178,21 @@ function pdComboState() {
     const namePlusFlavor = (lbl) => {
       const name = lbl?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
       if (!name) return null;
+      // Recogemos tanto el tamaño elegido como los sabores marcados. Reduce
+      // fricción: el cliente ve "Coca Cola (Grande, Sin gas)" en el resumen
+      // vivo, no tiene que reabrir el detalle para verificar.
+      const bits = [];
+      const presName = lbl.querySelector('.pd-combo-presentation-input:checked')
+        ?.closest('.pd-flavor-chip')?.querySelector('.pd-flavor-chip__name')?.textContent?.trim();
+      if (presName) {
+        // El label del chip trae "Grande · +€2.00"; recortamos la parte del precio.
+        bits.push(presName.split('·')[0].trim());
+      }
       const flavorNames = Array.from(lbl.querySelectorAll('.pd-combo-flavor-input:checked'))
         .map(inp => inp.closest('.pd-flavor-chip')?.querySelector('.pd-flavor-chip__name')?.textContent?.trim())
         .filter(Boolean);
-      return flavorNames.length ? `${name} (${flavorNames.join(', ')})` : name;
+      bits.push(...flavorNames);
+      return bits.length ? `${name} (${bits.join(', ')})` : name;
     };
     if (radios.length) {
       const checked = group.querySelector('.combo-sel-radio:checked');
@@ -2426,8 +2486,15 @@ document.querySelectorAll('.combo-sel-radio').forEach(radio => {
 // llevará. Delegamos en el body para cubrir todos los futuros grupos.
 document.addEventListener('change', ev => {
   const target = ev.target;
-  if (target && target.classList && target.classList.contains('pd-combo-flavor-input')) {
+  if (!target || !target.classList) return;
+  if (target.classList.contains('pd-combo-flavor-input')) {
     pdComboEnforceFlavorMax(target.closest('.pd-combo-flavor')?.parentElement || undefined);
+    pdComboUpdateBadges();
+    pdRenderPrice();
+  } else if (target.classList.contains('pd-combo-presentation-input')) {
+    // Cambiar tamaño de un componente en un combo no necesita enforcement de
+    // límite (siempre es radio, 1 solo elegido), pero sí refresca resumen y
+    // — potencialmente — el precio (si presentacion.precio_extra != 0).
     pdComboUpdateBadges();
     pdRenderPrice();
   }

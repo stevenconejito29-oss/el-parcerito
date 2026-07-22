@@ -2732,6 +2732,34 @@ def _parse_combo_selection(producto, form, cantidad=1, origen=None):
             flavors_map[str(item.id)] = selected_opts
     if flavors_map:
         seleccion["__flavors__"] = flavors_map
+
+    # ── Tamaños por componente (opt-in vía M2M allowed_presentations con ≥2) ──
+    # Semántica idéntica a sabores: el cliente elige entre las presentaciones
+    # que el super-admin declaró en el combo. `presentaciones_disponibles`
+    # devuelve [] cuando el modo es fijo, así que el bucle es no-op en la mayoría
+    # de combos, y sólo captura la elección cuando aplica.
+    pres_map = {}
+    for item in componentes:
+        opts = list(item.presentaciones_disponibles or [])
+        if len(opts) < 2:
+            continue
+        valid_ids = {p.id for p in opts}
+        raw = form.get(f"combo_presentation_{item.id}")
+        try:
+            chosen = int(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            chosen = None
+        # Si el cliente no envió nada (o envió inválido), usamos la
+        # presentation_id del combo como default; si tampoco existe, el primer
+        # tamaño válido. Esto blinda contra POST manipulados o cache PWA
+        # antiguo que no incluye el campo.
+        if chosen not in valid_ids:
+            fallback = getattr(item.presentacion, "id", None)
+            chosen = fallback if fallback in valid_ids else opts[0].id
+        pres_map[str(item.id)] = chosen
+    if pres_map:
+        seleccion["__presentations__"] = pres_map
+
     return seleccion, None
 
 
@@ -2848,6 +2876,29 @@ def _combo_selection_payload(producto, seleccion_guardada):
                 out.append({"opt_id": opt.id, "nombre": opt.nombre})
         return out or None
 
+    # Tamaños elegidos por el cliente por componente ({item_id: presentation_id}).
+    saved_pres_raw = (seleccion_guardada or {}).get("__presentations__") if isinstance(seleccion_guardada, dict) else None
+    saved_presentations = {}
+    if isinstance(saved_pres_raw, dict):
+        for k, v in saved_pres_raw.items():
+            try:
+                saved_presentations[int(k)] = int(v)
+            except (TypeError, ValueError):
+                continue
+
+    def _presentation_meta_for(item):
+        opts = list(item.presentaciones_disponibles or [])
+        if len(opts) < 2:
+            return None  # modo fijo → el snapshot ya lleva la presentacion default
+        chosen_id = saved_presentations.get(item.id)
+        chosen = next((p for p in opts if p.id == chosen_id), opts[0])
+        return {
+            "id": chosen.id,
+            "tamaño": chosen.tamaño,
+            "label": chosen.label,
+            "extra": chosen.precio_extra_float,
+        }
+
     for item in fijos:
         resumen.append(f"{item.cantidad}x {item.componente.nombre}")
 
@@ -2907,8 +2958,17 @@ def _combo_selection_payload(producto, seleccion_guardada):
             else:
                 nombres.append(f"{componente.nombre} ×{qty}{extra_txt}")
             _sabor_meta = _flavor_meta_for(by_id[item_id])
+            _pres_meta = _presentation_meta_for(by_id[item_id])
+            _base_snap = metadata_componente_combo(by_id[item_id], producto.proveedor_despachador_id)
+            # Cuando el cliente eligió tamaño, sobrescribimos el snapshot de
+            # `presentacion` del combo item con el elegido — la cocina + el
+            # ticket verán la presentación real solicitada, no el default del
+            # combo. Retro-compat: si el cliente no eligió (modo fijo), se
+            # queda el snapshot original.
+            if _pres_meta:
+                _base_snap = {**_base_snap, "presentacion": _pres_meta}
             opciones_meta.append({
-                **metadata_componente_combo(by_id[item_id], producto.proveedor_despachador_id),
+                **_base_snap,
                 "combo_item_id": item_id,
                 "grupo_id": by_id[item_id].combo_group_id,
                 "producto_id": by_id[item_id].producto_id,
@@ -2920,6 +2980,7 @@ def _combo_selection_payload(producto, seleccion_guardada):
                 "extra_total": extra_total,
                 "notas_preparacion": by_id[item_id].notas_preparacion or "",
                 **({"sabor_cliente": _sabor_meta} if _sabor_meta else {}),
+                **({"presentation_cliente": _pres_meta} if _pres_meta else {}),
             })
 
         seleccion_ids.extend(ids)
@@ -2957,6 +3018,13 @@ def _combo_selection_payload(producto, seleccion_guardada):
         sabor_meta = _flavor_meta_for(item)
         if sabor_meta:
             base["sabor_cliente"] = sabor_meta
+        pres_meta = _presentation_meta_for(item)
+        if pres_meta:
+            base["presentation_cliente"] = pres_meta
+            # Reflejo también en el snapshot de presentacion para que el
+            # ticket + cocina lean el mismo objeto independiente de qué
+            # canal muestra el pedido.
+            base["presentacion"] = pres_meta
         return base
 
     metadata = {"combo": {"extras_total": extras_total, "componentes": [
@@ -2969,6 +3037,7 @@ def _combo_display_items(combo_items, metadata):
     combo_meta = (metadata or {}).get("combo", {})
     selected_ids = set()
     flavor_by_item = {}
+    presentation_by_item = {}
     for group in combo_meta.get("selecciones", []):
         for option in group.get("opciones", []):
             try:
@@ -2978,6 +3047,8 @@ def _combo_display_items(combo_items, metadata):
             selected_ids.add(cid)
             if option.get("sabor_cliente"):
                 flavor_by_item[cid] = option.get("sabor_cliente")
+            if option.get("presentation_cliente"):
+                presentation_by_item[cid] = option.get("presentation_cliente")
     for comp in combo_meta.get("componentes", []):
         try:
             cid = int(comp.get("combo_item_id"))
@@ -2985,18 +3056,22 @@ def _combo_display_items(combo_items, metadata):
             continue
         if comp.get("sabor_cliente"):
             flavor_by_item[cid] = comp.get("sabor_cliente")
+        if comp.get("presentation_cliente"):
+            presentation_by_item[cid] = comp.get("presentation_cliente")
 
     rows = []
     for item in combo_items:
         if not item.es_seleccionable:
             rows.append({"item": item, "tipo": "Fijo", "seleccionado": False,
-                         "sabor_cliente": flavor_by_item.get(item.id)})
+                         "sabor_cliente": flavor_by_item.get(item.id),
+                         "presentation_cliente": presentation_by_item.get(item.id)})
         elif item.id in selected_ids:
             rows.append({
                 "item": item,
                 "tipo": item.grupo.nombre_publico if item.grupo else (item.grupo_seleccion or "Selección"),
                 "seleccionado": True,
                 "sabor_cliente": flavor_by_item.get(item.id),
+                "presentation_cliente": presentation_by_item.get(item.id),
             })
     return rows
 

@@ -3071,6 +3071,11 @@ def nuevo_combo():
     # Subset opcional de sabores permitidos por componente. Formato: JSON array
     # de option_ids, o string vacío (= sin restricción, todos los activos).
     allowed_flavor_ids_raw = request.form.getlist("comp_allowed_flavor_ids") or []
+    # Modo de tamaño ("fijo" | "cliente_elige") + subset opcional para
+    # "cliente_elige" (mismo formato JSON). Fallback a modo fijo cuando el
+    # subset tiene <2 IDs (defensa contra estados inconsistentes del form).
+    presentation_modes = request.form.getlist("comp_presentation_mode") or []
+    allowed_pres_ids_raw = request.form.getlist("comp_allowed_presentation_ids") or []
     group_uids = request.form.getlist("comp_group_uid") or []
     group_defs = _combo_groups_payload_from_form(request.form)
 
@@ -3090,6 +3095,10 @@ def nuevo_combo():
         parallel_arrays.append(permite_sabores)
     if allowed_flavor_ids_raw:
         parallel_arrays.append(allowed_flavor_ids_raw)
+    if presentation_modes:
+        parallel_arrays.append(presentation_modes)
+    if allowed_pres_ids_raw:
+        parallel_arrays.append(allowed_pres_ids_raw)
     is_valid, error_msg = validate_parallel_arrays(*parallel_arrays)
     if not is_valid:
         db.session.rollback()
@@ -3229,6 +3238,40 @@ def nuevo_combo():
                             and int(x) in _valid_ids
                         ]
 
+        # ── Modo y subset de tamaños ──
+        # Regla defensiva: si el modo declarado es "cliente_elige" pero el
+        # subset tiene <2 IDs válidos, degradamos silenciosamente a "fijo"
+        # (evita mostrar chip picker vacío al cliente).
+        allowed_pres_ids_parsed = []
+        pres_mode_raw = (presentation_modes[i] if i < len(presentation_modes) else "fijo") or "fijo"
+        pres_mode = pres_mode_raw.strip().lower() if isinstance(pres_mode_raw, str) else "fijo"
+        if pres_mode == "cliente_elige":
+            raw_subset_p = allowed_pres_ids_raw[i] if i < len(allowed_pres_ids_raw) else ""
+            if raw_subset_p and raw_subset_p.strip() and raw_subset_p.strip() != "[]":
+                try:
+                    import json as _json_p
+                    candidate_p = _json_p.loads(raw_subset_p)
+                except (ValueError, TypeError):
+                    candidate_p = []
+                if isinstance(candidate_p, list):
+                    # Filtramos por presentaciones REALES y activas del producto.
+                    _valid_pres_ids = {
+                        row.id for row in ProductPresentation.query.filter(
+                            ProductPresentation.producto_id == producto.id,
+                            ProductPresentation.activo.is_(True),
+                        ).all()
+                    }
+                    allowed_pres_ids_parsed = [
+                        int(x) for x in candidate_p
+                        if isinstance(x, (int, str))
+                        and str(x).lstrip("-").isdigit()
+                        and int(x) in _valid_pres_ids
+                    ]
+            # Degradar a fijo si el subset quedó con <2 IDs.
+            if len(allowed_pres_ids_parsed) < 2:
+                pres_mode = "fijo"
+                allowed_pres_ids_parsed = []
+
         # ── Detectar duplicados (fijos y seleccionables) ──
         if es_sel:
             grupo_key = (grupo or "").strip().lower()
@@ -3272,6 +3315,7 @@ def nuevo_combo():
             'presentation_id': presentation.id if presentation else None,
             'permite_sabor_cliente': permite_sabor,
             '_allowed_flavor_option_ids': allowed_flavor_ids_parsed,  # side-channel — no es columna
+            '_allowed_presentation_ids': allowed_pres_ids_parsed,     # side-channel — M2M
         })
         n_comp += 1
 
@@ -3364,6 +3408,13 @@ def nuevo_combo():
             from models import ProductExtraOption as _PEO_bind
             new_item.allowed_flavor_options = _PEO_bind.query.filter(
                 _PEO_bind.id.in_(allowed_ids)
+            ).all()
+        # Análogo para tamaños: 2+ presentaciones habilitan modo "cliente
+        # elige". Con 0-1 el M2M queda vacío y se usa `presentation_id`.
+        allowed_pres = comp_data.get("_allowed_presentation_ids") or []
+        if len(allowed_pres) >= 2:
+            new_item.allowed_presentations = ProductPresentation.query.filter(
+                ProductPresentation.id.in_(allowed_pres)
             ).all()
         db.session.add(new_item)
 

@@ -584,6 +584,38 @@ function bundleSetPresentation(sectionId,productId,value){
   item.presentationId=value ? Number(value) : null;
   bundleUpdate();
 }
+function bundleSetPresentationMode(sectionId,productId,mode){
+  const item=bundleFindItem(sectionId,productId); if(!item) return;
+  item.presentationMode = (mode==='cliente_elige') ? 'cliente_elige' : 'fijo';
+  // Al pasar a "cliente elige" preseleccionamos TODAS las presentaciones del
+  // producto — el patrón más natural (admin destuilda las que no quiere).
+  if(item.presentationMode==='cliente_elige' && (!item.allowedPresentationIds || !item.allowedPresentationIds.length)){
+    const prod=bundleProduct(productId);
+    item.allowedPresentationIds=(prod?.presentations||[]).map(r=>Number(r.id));
+  }
+  // Al volver a "fijo", limpiamos el subset — no queremos huérfanos si el
+  // admin vuelve a "cliente elige" más tarde.
+  if(item.presentationMode==='fijo') item.allowedPresentationIds=[];
+  bundleRender();
+}
+function bundleToggleAllowedPresentation(sectionId,productId,presentationId,checked){
+  const item=bundleFindItem(sectionId,productId); if(!item) return;
+  item.allowedPresentationIds = Array.isArray(item.allowedPresentationIds) ? item.allowedPresentationIds : [];
+  const pid=Number(presentationId);
+  if(!Number.isFinite(pid)) return;
+  if(checked){
+    if(!item.allowedPresentationIds.includes(pid)) item.allowedPresentationIds.push(pid);
+  } else {
+    item.allowedPresentationIds=item.allowedPresentationIds.filter(id=>id!==pid);
+  }
+  bundleRender();
+}
+function bundleSetAllowedPresentationAll(sectionId,productId,all){
+  const item=bundleFindItem(sectionId,productId); if(!item) return;
+  const prod=bundleProduct(productId); if(!prod) return;
+  item.allowedPresentationIds = all ? (prod.presentations||[]).map(r=>Number(r.id)) : [];
+  bundleRender();
+}
 function bundleFindItem(sectionId,productId){
   return bundleSections.find(item=>item.id===Number(sectionId))?.items.find(item=>item.productId===Number(productId));
 }
@@ -629,7 +661,23 @@ function bundleRender(){
     const active=section.id===bundleActiveSection;
     const itemRows=section.items.map(item=>{
       const product=bundleProduct(item.productId); if(!product) return '';
-      const presentationControl=(product.presentations||[]).length ? `<label class="bundle-line-presentation"><span>Tamaño incluido</span><select data-bundle-input="presentation" data-section-id="${section.id}" data-product-id="${product.id}">${product.presentations.map(row=>`<option value="${row.id}" ${Number(row.id)===Number(item.presentationId)?'selected':''}>${bundleEscape(row.label)}${Number(row.precio_extra)?` · ${Number(row.precio_extra)>0?'+':''}${bundleMoney(Number(row.precio_extra))}`:''}</option>`).join('')}</select></label>` : '';
+      // ── Panel de tamaños del componente ────────────────────────────
+      // Dos modos:
+      //   • "fijo"   → un solo tamaño se incluye (mismo comportamiento
+      //     anterior, controlado por `item.presentationId`).
+      //   • "cliente_elige" → el admin marca 2+ tamaños que el cliente podrá
+      //     elegir en la web, se guardan en `item.allowedPresentationIds`.
+      // Sólo aparece si el producto tiene presentaciones activas.
+      const presentationList = product.presentations || [];
+      let presentationControl = '';
+      if (presentationList.length) {
+        const mode = item.presentationMode || 'fijo';
+        const chosenFixed = presentationList.find(row=>Number(row.id)===Number(item.presentationId))?.label || presentationList[0]?.label || '';
+        const modeToggle = `<div class="bundle-line-size-modes"><label class="${mode==='fijo'?'is-active':''}"><input type="radio" name="__size_mode_${section.id}_${product.id}" value="fijo" ${mode==='fijo'?'checked':''} data-bundle-input="presentation-mode" data-section-id="${section.id}" data-product-id="${product.id}"><span>📏 Tamaño fijo</span></label><label class="${mode==='cliente_elige'?'is-active':''}"><input type="radio" name="__size_mode_${section.id}_${product.id}" value="cliente_elige" ${mode==='cliente_elige'?'checked':''} data-bundle-input="presentation-mode" data-section-id="${section.id}" data-product-id="${product.id}"><span>🎛 Cliente elige</span></label></div>`;
+        const fixedPicker = mode==='fijo' ? `<label class="bundle-line-presentation-picker"><span>Tamaño incluido:</span><select data-bundle-input="presentation" data-section-id="${section.id}" data-product-id="${product.id}">${presentationList.map(row=>`<option value="${row.id}" ${Number(row.id)===Number(item.presentationId)?'selected':''}>${bundleEscape(row.label)}${Number(row.precio_extra)?` · ${Number(row.precio_extra)>0?'+':''}${bundleMoney(Number(row.precio_extra))}`:''}</option>`).join('')}</select></label>` : '';
+        const clientPicker = mode==='cliente_elige' ? `<div class="bundle-presentation-subset"><div class="bundle-flavor-subset-head"><span>Tamaños que ofreces al cliente</span><div class="bundle-flavor-subset-tools"><button type="button" data-bundle-action="presentation-all" data-section-id="${section.id}" data-product-id="${product.id}">Todos</button><button type="button" data-bundle-action="presentation-none" data-section-id="${section.id}" data-product-id="${product.id}">Ninguno</button></div></div><div class="bundle-flavor-subset-grid">${presentationList.map(row=>{const checked=(item.allowedPresentationIds||[]).includes(Number(row.id));const priceHint=Number(row.precio_extra)?` <em>${Number(row.precio_extra)>0?'+':''}${bundleMoney(Number(row.precio_extra))}</em>`:'';return `<label class="bundle-flavor-chip ${checked?'is-picked':''}"><input type="checkbox" ${checked?'checked':''} data-bundle-input="allowed-presentation" data-section-id="${section.id}" data-product-id="${product.id}" data-presentation-id="${row.id}"><span>${bundleEscape(row.label)}${priceHint}</span></label>`;}).join('')}</div><p class="bundle-flavor-subset-note">Marca ≥2 para que el cliente pueda elegir. Con 1 marcado o ninguno, se cae a modo fijo con la primera opción.</p></div>` : '';
+        presentationControl = `<div class="bundle-line-size">${modeToggle}${fixedPicker}${clientPicker}</div>`;
+      }
       return `<div class="bundle-line">
         <div class="bundle-line-image">${product.image?`<img src="${bundleEscape(product.image)}" alt="">`:bundleEscape(product.name.slice(0,1))}</div>
         <div class="bundle-line-copy"><strong>${bundleEscape(product.name)}</strong><small>#${product.id} · ${bundleEscape(product.origin)} · ${bundleEscape(product.channel)} · ${bundleMoney(product.price)}</small></div>
@@ -789,6 +837,14 @@ function bundleSerialize(){
       add('comp_allowed_flavor_ids', item.permiteSabor && Array.isArray(item.allowedFlavorIds) && item.allowedFlavorIds.length
         ? JSON.stringify(item.allowedFlavorIds.map(Number).filter(Number.isFinite))
         : '');
+      // Modo de tamaño: "fijo" (usa comp_presentation_id) o "cliente_elige"
+      // (usa comp_allowed_presentation_ids). Sólo se envía el subset cuando
+      // el admin marcó ≥2 tamaños; menos que eso ⇒ el backend cae a modo fijo.
+      add('comp_presentation_mode', item.presentationMode || 'fijo');
+      add('comp_allowed_presentation_ids',
+        (item.presentationMode==='cliente_elige' && Array.isArray(item.allowedPresentationIds) && item.allowedPresentationIds.length >= 2)
+          ? JSON.stringify(item.allowedPresentationIds.map(Number).filter(Number.isFinite))
+          : '');
     });
   });
 }
@@ -819,6 +875,8 @@ document.addEventListener('click', (event) => {
     }
     else if (action === 'flavor-all')  bundleSetAllowedFlavorAll(sectionId, productId, true);
     else if (action === 'flavor-none') bundleSetAllowedFlavorAll(sectionId, productId, false);
+    else if (action === 'presentation-all')  bundleSetAllowedPresentationAll(sectionId, productId, true);
+    else if (action === 'presentation-none') bundleSetAllowedPresentationAll(sectionId, productId, false);
     return;
   }
   const section = event.target.closest('[data-section-select]');
@@ -855,6 +913,8 @@ document.addEventListener('change', (event) => {
   else if (action === 'default') bundleSetDefault(sectionId, productId, control.checked);
   else if (action === 'permite-sabor') bundleSetPermiteSabor(sectionId, productId, control.checked);
   else if (action === 'allowed-flavor') bundleToggleAllowedFlavor(sectionId, productId, control.dataset.flavorId, control.checked);
+  else if (action === 'presentation-mode') bundleSetPresentationMode(sectionId, productId, control.value);
+  else if (action === 'allowed-presentation') bundleToggleAllowedPresentation(sectionId, productId, control.dataset.presentationId, control.checked);
   else if (action === 'max') bundleSetMax(sectionId, control.value);
   else if (action === 'presentation') bundleSetPresentation(sectionId, productId, control.value);
 });

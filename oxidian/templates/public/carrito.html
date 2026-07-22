@@ -140,6 +140,7 @@
                   {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="" loading="lazy" decoding="async">{% endif %}
                   <span class="cr-combo-row-qty">{{ ci.cantidad }}×</span>
                   <span class="cr-combo-row-name">{{ ci.componente.nombre }}</span>
+                  {% if d.presentation_cliente %}<span class="cr-combo-tag cr-combo-tag--pres">📏 {{ d.presentation_cliente.get('label') }}</span>{% endif %}
                   {% if d.sabor_cliente %}<span class="cr-combo-tag cr-combo-tag--sabor">🎨 {% for s in d.sabor_cliente %}{{ s.get('nombre') }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
                   <span class="cr-combo-tag cr-combo-tag--fijo">{{ ui.cart_combo_included }}</span>
                 </div>
@@ -153,6 +154,7 @@
                   {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="" loading="lazy" decoding="async">{% endif %}
                   <span class="cr-combo-row-qty">{{ ci.cantidad }}×</span>
                   <span class="cr-combo-row-name">{{ ci.componente.nombre }}</span>
+                  {% if d.presentation_cliente %}<span class="cr-combo-tag cr-combo-tag--pres">📏 {{ d.presentation_cliente.get('label') }}</span>{% endif %}
                   {% if d.sabor_cliente %}<span class="cr-combo-tag cr-combo-tag--sabor">🎨 {% for s in d.sabor_cliente %}{{ s.get('nombre') }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
                   {% if ci.precio_extra and ci.precio_extra > 0 %}<span class="cr-combo-tag cr-combo-tag--extra">+€{{ "%.2f"|format(ci.precio_extra) }}</span>{% endif %}
                   <span class="cr-combo-tag cr-combo-tag--sel">{{ ui.cart_combo_selection }}</span>
