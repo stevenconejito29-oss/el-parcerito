@@ -396,15 +396,22 @@
 
     {# ── BASE FIJA ── siempre incluida, sin elección #}
     {% if fijos %}
-    <div class="pd-cstep pd-cstep-f">
+    {% set _fijos_con_sabor = fijos|selectattr('permite_sabor_cliente')|selectattr('sabores_disponibles')|list %}
+    <div class="pd-cstep pd-cstep-f" data-cstep-key="_fija" data-cstep-title="Base incluida">
       <div class="pd-cstep-hd">
         <span class="pd-cstep-num pd-cstep-num-f">✓</span>
         <div class="pd-cstep-meta">
           <p class="pd-cstep-ttl">Paso 1 · Base incluida</p>
-          <p class="pd-cstep-sub">Siempre sale con el combo — no necesitas elegir</p>
+          <p class="pd-cstep-sub">
+            {% if _fijos_con_sabor %}Siempre sale con el combo — personaliza el sabor de {{ _fijos_con_sabor|length }} producto{{ 's' if _fijos_con_sabor|length != 1 }}
+            {% else %}Siempre sale con el combo — no necesitas elegir{% endif %}
+          </p>
         </div>
-        <span class="pd-cstep-badge pd-cstep-done">{{ fijos|length }} producto{{ 's' if fijos|length != 1 }}</span>
+        <span class="pd-cstep-badge pd-cstep-done" id="pdst-_fija">{{ fijos|length }} producto{{ 's' if fijos|length != 1 }}</span>
       </div>
+      {% if _fijos_con_sabor %}
+      <p class="pd-cstep-progress" data-cstep-progress="_fija">↓ Elige los sabores de tu base</p>
+      {% endif %}
       <div class="pd-cstep-body">
         {% for item in fijos %}
         <div class="pd-combo-item">
@@ -461,7 +468,7 @@
     {% set opts = seleccionables|selectattr('grupo_display','equalto',grupo)|list %}
     {% set max_sel = opts[0].max_selecciones if opts else 1 %}
     {% set group_key = (grupo or 'Seleccion').replace(' ', '_') %}
-    <div class="pd-cstep pd-cstep-s pd-combo-grupo" data-max-sel="{{ max_sel }}" data-grupo-nombre="{{ grupo or 'Seleccion' }}">
+    <div class="pd-cstep pd-cstep-s pd-combo-grupo" data-max-sel="{{ max_sel }}" data-grupo-nombre="{{ grupo or 'Seleccion' }}" data-cstep-key="{{ group_key }}" data-cstep-title="{{ grupo or 'Elige una opción' }}">
       <div class="pd-cstep-hd">
         <span class="pd-cstep-num pd-cstep-num-s">{{ loop.index }}</span>
         <div class="pd-cstep-meta">
@@ -470,9 +477,12 @@
         </div>
         <span class="pd-cstep-badge pd-cstep-pending" id="pdst-{{ group_key }}">Pendiente</span>
       </div>
-      {% if max_sel > 1 %}
-      <p class="pd-combo-group-note pd-cstep-note">Puedes seleccionar hasta {{ max_sel }} opciones en total para esta sección.</p>
-      {% endif %}
+      {# Hint contextual vivo — el JS lo actualiza a "Elige N más" o "Listo ✓".
+         Reemplaza el `pd-combo-group-note` estático anterior, que repetía la
+         info ya presente en la subtítulo y no reflejaba el estado real. #}
+      <p class="pd-cstep-progress" data-cstep-progress="{{ group_key }}">
+        {% if max_sel == 1 %}↓ Elige tu opción{% else %}↓ Elige {{ max_sel }} en total{% endif %}
+      </p>
       <div class="pd-cstep-body">
         {% for item in opts %}
         {% set opt_agotada = (not item.activo) or (not item.componente.activo) or (not item.componente.visible_ahora) or (item.componente.tipo_entrega == 'inmediato' and stock_en_origen(item.componente, origen_actual) < item.cantidad) %}
@@ -648,12 +658,19 @@
     {# Resumen VIVO de la selección — refuerza el "cierre" (gestalt) mostrando
        al cliente exactamente qué va a añadir antes de pulsar el botón. Aparece
        encima del CTA para que el usuario confirme visualmente su elección.
-       Se rellena por JS (`pdRenderSelectionSummary`). Cuando no hay tamaño ni
-       sabor elegido, muestra un placeholder amable. #}
-    {% if _tallas_producto|length > 0 or extra_groups %}
+       Se rellena por JS (`pdRenderSelectionSummary` para simples,
+       `pdComboRenderSummary` para combos). #}
+    {% if _tallas_producto|length > 0 or extra_groups or producto.es_combo %}
     <div class="pd-selection-summary is-placeholder" id="pd-selection-summary" aria-live="polite" role="status">
       <span class="pd-selection-summary__icon" aria-hidden="true">🧾</span>
-      <span class="pd-selection-summary__text" id="pd-selection-summary-text">Elige tu tamaño y sabor arriba…</span>
+      <span class="pd-selection-summary__text" id="pd-selection-summary-text">
+        {% if producto.es_combo %}Configura tu combo arriba…{% else %}Elige tu tamaño y sabor arriba…{% endif %}
+      </span>
+      {% if producto.es_combo %}
+      {# Botón "ir a lo que falta" — visible solo cuando el summary está en
+         estado incompleto. Se rellena y muestra desde JS. #}
+      <button type="button" class="pd-selection-summary__jump" id="pd-selection-summary-jump" hidden aria-label="Ir a la sección que falta">↓ Ir</button>
+      {% endif %}
     </div>
     {% endif %}
 
@@ -1194,6 +1211,91 @@ main { padding-top: 0 !important; }
   margin: 0 .85rem .3rem;
   font-size: .74rem; color: var(--col-muted);
 }
+/* Hint contextual vivo (state-driven). El JS aplica clases:
+   - .is-pending  → naranja suave, dirige al usuario a completar
+   - .is-ready    → verde suave, confirma que ya está
+   - .is-invalid  → rojo suave, señala validación fallida
+   El objetivo es un microcopy que se lee sin pensar y guía el ojo. */
+.pd-cstep-progress {
+  display: flex; align-items: center; gap: .35rem;
+  margin: .35rem .85rem .1rem;
+  padding: .32rem .6rem;
+  border-radius: .55rem;
+  font-size: .72rem; font-weight: 850; line-height: 1.25;
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 26%, transparent);
+  color: color-mix(in srgb, var(--brand-primary, #FFAB00) 82%, var(--col-text));
+  transition: background .2s, border-color .2s, color .2s, opacity .2s;
+}
+.pd-cstep-progress.is-ready {
+  background: color-mix(in srgb, var(--theme-success, #34C759) 10%, transparent);
+  border-color: color-mix(in srgb, var(--theme-success, #34C759) 32%, transparent);
+  color: color-mix(in srgb, var(--theme-success, #34C759) 86%, var(--col-text));
+}
+.pd-cstep-progress.is-invalid {
+  background: color-mix(in srgb, #ce1126 12%, transparent);
+  border-color: color-mix(in srgb, #ce1126 42%, transparent);
+  color: color-mix(in srgb, #ce1126 88%, var(--col-text));
+  animation: pdComboPulse 1.4s ease-in-out infinite;
+}
+@keyframes pdComboPulse {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(2px); }
+}
+/* Anclaje visual: si la sección se pone en estado inválido, un ligero halo
+   rojo la rodea sin invadir la lectura del resto de la página. */
+.pd-cstep-s.pd-combo-group-invalid {
+  box-shadow: 0 0 0 3px color-mix(in srgb, #ce1126 22%, transparent);
+}
+/* Flash breve tras un scroll-to-section desde el botón "↓ Ir" del resumen:
+   glow dorado que decae en <1s. Ancla la atención sin ser intrusivo. */
+.pd-cstep-flash {
+  animation: pdCstepFlash .9s ease-out;
+}
+@keyframes pdCstepFlash {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand-primary, #FFAB00) 60%, transparent); }
+  50%  { box-shadow: 0 0 0 10px color-mix(in srgb, var(--brand-primary, #FFAB00) 20%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand-primary, #FFAB00) 0%, transparent); }
+}
+/* Chip de sabor bloqueado por tope alcanzado — el cliente entiende que ya
+   no puede añadir más sin quitar uno primero. Estado ≠ deshabilitado por
+   agotado (para eso ya existe el gris + grayscale). */
+.pd-combo-flavor .pd-flavor-chip.is-locked {
+  opacity: .55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.pd-combo-flavor .pd-flavor-chip.is-locked .pd-flavor-chip__name::after {
+  content: " · lleno";
+  font-size: .68em;
+  font-weight: 700;
+  opacity: .7;
+}
+/* CTA en estado "falta algo" — el color de marca sigue, pero un borde
+   punteado suave insinúa que aún no está completo. Al pulsarlo, el submit
+   handler hace scroll al primer bloque incompleto. */
+.pd-add-btn.is-incomplete {
+  filter: saturate(.72);
+  outline: 2px dashed color-mix(in srgb, #ce1126 42%, transparent);
+  outline-offset: -6px;
+}
+/* Botón "Ir a lo que falta" dentro del resumen del combo — solo aparece
+   cuando el JS decide que hay algo por completar. Salto visualmente claro. */
+.pd-selection-summary__jump {
+  flex-shrink: 0;
+  padding: .28rem .58rem;
+  border-radius: .55rem;
+  border: 1.5px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 60%, transparent);
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 18%, transparent);
+  color: var(--brand-primary, #FFAB00);
+  font-size: .7rem; font-weight: 900;
+  cursor: pointer;
+  transition: background .15s, transform .12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.pd-selection-summary__jump:hover { background: color-mix(in srgb, var(--brand-primary, #FFAB00) 28%, transparent); }
+.pd-selection-summary__jump:active { transform: scale(.96); }
+.pd-selection-summary__jump[hidden] { display: none !important; }
 
 /* ── Combo grupos (seleccionables) — mantener para compatibilidad JS ── */
 .pd-combo-grupo {
@@ -1857,6 +1959,10 @@ function pdRenderPrice() {
 function pdRenderSelectionSummary(unit, qty, total) {
   const summary = document.getElementById('pd-selection-summary');
   if (!summary) return;
+  // En combos, la fuente de verdad es `pdComboRenderSummary` — evitamos
+  // sobrescribir el resumen que ya pinta información específica del combo
+  // (paso incompleto, elección efectiva).
+  if (document.querySelector('.pd-box-combo')) return;
   const textEl = document.getElementById('pd-selection-summary-text');
   if (!textEl) return;
 
@@ -1934,30 +2040,240 @@ document.querySelectorAll('[data-pd-qty]').forEach(button => {
   button.addEventListener('click', () => pdQty(Number.parseInt(button.dataset.pdQty, 10)));
 });
 
-function pdComboUpdateBadges() {
+/* ── Estado agregado del combo ────────────────────────────────────────
+   `pdComboState()` calcula el estado real (por sección + base fija con sabor)
+   y devuelve una estructura consumible por badges, hints, summary y CTA.
+   Fuente única de verdad — evita duplicar cálculos en cada handler. */
+function pdComboState() {
+  const sections = [];
+  // Base fija con sabor (paso 1 requerido)
+  const fijaEl = document.querySelector('.pd-cstep-f[data-cstep-key]');
+  if (fijaEl) {
+    const flavorGroups = fijaEl.querySelectorAll('.pd-combo-flavor');
+    let complete = true;
+    const parts = [];
+    flavorGroups.forEach(fg => {
+      const maxF = parseInt(fg.dataset.maxFlavors || '1', 10);
+      const inputs = fg.querySelectorAll('.pd-combo-flavor-input');
+      const checked = Array.from(inputs).filter(i => i.checked);
+      if (checked.length === 0) complete = false;
+      else if (checked.length > 0) {
+        const names = checked.map(i => i.closest('.pd-flavor-chip')?.querySelector('.pd-flavor-chip__name')?.textContent?.trim()).filter(Boolean);
+        if (names.length) parts.push(names.join(', '));
+      }
+      if (maxF > 1 && checked.length < maxF) complete = false;
+    });
+    if (flavorGroups.length) {
+      sections.push({
+        key: '_fija',
+        title: fijaEl.dataset.cstepTitle || 'Base incluida',
+        current: complete ? 1 : 0,
+        max: 1,
+        complete,
+        selectionText: parts.join(' · ') || null,
+        el: fijaEl,
+      });
+    }
+  }
+  // Grupos de elección
   document.querySelectorAll('.pd-combo-grupo').forEach(group => {
-    const groupKey = (group.dataset.grupoNombre || '').replace(/ /g, '_');
-    const badge    = document.getElementById(`pdst-${groupKey}`);
-    if (!badge) return;
-    const maxSel    = parseInt(group.dataset.maxSel || '1', 10);
-    const radios    = group.querySelectorAll('.combo-sel-radio');
+    const key = group.dataset.cstepKey
+      || (group.dataset.grupoNombre || '').replace(/ /g, '_');
+    const maxSel = parseInt(group.dataset.maxSel || '1', 10);
+    const radios = group.querySelectorAll('.combo-sel-radio');
     const qtyInputs = group.querySelectorAll('.combo-sel-qty');
     let current = 0;
+    const parts = [];
     if (radios.length) {
-      current = group.querySelector('.combo-sel-radio:checked') ? 1 : 0;
+      const checked = group.querySelector('.combo-sel-radio:checked');
+      current = checked ? 1 : 0;
+      if (checked) {
+        const name = checked.closest('label')?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
+        if (name) parts.push(name);
+      }
     } else {
-      current = Array.from(qtyInputs).reduce((s, el) => s + (parseInt(el.value) || 0), 0);
+      qtyInputs.forEach(el => {
+        const q = parseInt(el.value) || 0;
+        if (q > 0) {
+          current += q;
+          const name = el.closest('label')?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
+          if (name) parts.push(q > 1 ? `${name} ×${q}` : name);
+        }
+      });
     }
-    if (current >= maxSel) {
-      badge.textContent = '✓ Listo';
-      badge.className   = 'pd-cstep-badge pd-cstep-ready';
-    } else if (current > 0) {
-      badge.textContent = `${current} / ${maxSel}`;
-      badge.className   = 'pd-cstep-badge pd-cstep-pending';
-    } else {
-      badge.textContent = 'Pendiente';
-      badge.className   = 'pd-cstep-badge pd-cstep-pending';
+    // Sabores sub-grupo de la opción ELEGIDA: si el cliente eligió un item que
+    // requiere sabor, exigimos que el sabor esté seleccionado también antes de
+    // marcar la sección como "lista".
+    let flavorPending = false;
+    const activeOpts = radios.length
+      ? Array.from(group.querySelectorAll('.combo-sel-radio:checked'))
+          .map(r => r.closest('label'))
+      : Array.from(group.querySelectorAll('.combo-sel-qty'))
+          .filter(inp => (parseInt(inp.value) || 0) > 0)
+          .map(inp => inp.closest('label'));
+    activeOpts.filter(Boolean).forEach(lbl => {
+      lbl.querySelectorAll('.pd-combo-flavor').forEach(fg => {
+        const maxF = parseInt(fg.dataset.maxFlavors || '1', 10);
+        const checkedFlavors = fg.querySelectorAll('.pd-combo-flavor-input:checked').length;
+        if (checkedFlavors < 1) flavorPending = true;
+        if (maxF > 1 && checkedFlavors < maxF) flavorPending = true;
+      });
+    });
+    const structureOk = current >= maxSel && current <= maxSel;
+    sections.push({
+      key,
+      title: group.dataset.cstepTitle || group.dataset.grupoNombre || 'Sección',
+      current,
+      max: maxSel,
+      complete: structureOk && !flavorPending,
+      overflow: current > maxSel,
+      flavorPending: structureOk && flavorPending,
+      selectionText: parts.join(', ') || null,
+      el: group,
+    });
+  });
+  return sections;
+}
+
+function pdComboUpdateBadges() {
+  const state = pdComboState();
+  state.forEach(sec => {
+    // Badge del header (compatibilidad con el diseño anterior)
+    const badge = document.getElementById(`pdst-${sec.key}`);
+    if (badge) {
+      if (sec.overflow) {
+        badge.textContent = `${sec.current} / ${sec.max}`;
+        badge.className   = 'pd-cstep-badge pd-cstep-pending';
+      } else if (sec.complete) {
+        badge.textContent = '✓ Listo';
+        badge.className   = 'pd-cstep-badge pd-cstep-ready';
+      } else if (sec.current > 0) {
+        badge.textContent = `${sec.current} / ${sec.max}`;
+        badge.className   = 'pd-cstep-badge pd-cstep-pending';
+      } else if (sec.key === '_fija') {
+        // Base fija ya tiene su badge estático "N productos"; sólo lo
+        // repintamos como pending si faltan sabores.
+        badge.textContent = 'Falta sabor';
+        badge.className   = 'pd-cstep-badge pd-cstep-pending';
+      } else {
+        badge.textContent = 'Pendiente';
+        badge.className   = 'pd-cstep-badge pd-cstep-pending';
+      }
     }
+    // Hint contextual dentro del bloque (Elige X más / ✓ Listo / ⚠︎ overflow /
+    // "Falta sabor" cuando estructura ok pero sabor pendiente).
+    const hint = document.querySelector(`[data-cstep-progress="${CSS.escape(sec.key)}"]`);
+    if (hint) {
+      hint.classList.remove('is-ready', 'is-invalid');
+      if (sec.overflow) {
+        hint.textContent = `⚠︎ Máximo ${sec.max} — quita ${sec.current - sec.max}`;
+        hint.classList.add('is-invalid');
+      } else if (sec.flavorPending) {
+        hint.textContent = '↓ Falta elegir el sabor';
+      } else if (sec.complete) {
+        hint.textContent = sec.selectionText
+          ? `✓ ${sec.selectionText}`
+          : '✓ Listo';
+        hint.classList.add('is-ready');
+      } else if (sec.current > 0 && sec.max > 1) {
+        hint.textContent = `↓ Elige ${sec.max - sec.current} más`;
+      } else if (sec.key === '_fija') {
+        hint.textContent = '↓ Elige los sabores de tu base';
+      } else if (sec.max === 1) {
+        hint.textContent = '↓ Elige tu opción';
+      } else {
+        hint.textContent = `↓ Elige ${sec.max} opcion${sec.max === 1 ? '' : 'es'}`;
+      }
+    }
+  });
+  pdComboRenderSummary(state);
+  pdComboUpdateCta(state);
+}
+
+/* Resumen vivo del combo justo encima del CTA — comparte el mismo componente
+   que los productos simples (`#pd-selection-summary`) para no duplicar CSS
+   ni fragmentar el patrón visual. */
+function pdComboRenderSummary(state) {
+  const summary = document.getElementById('pd-selection-summary');
+  const textEl  = document.getElementById('pd-selection-summary-text');
+  const jumpBtn = document.getElementById('pd-selection-summary-jump');
+  if (!summary || !textEl) return;
+  const total    = state.length;
+  const complete = state.filter(s => s.complete && !s.overflow).length;
+  const firstIncomplete = state.find(s => !s.complete || s.overflow);
+  summary.classList.remove('is-complete', 'is-incomplete', 'is-placeholder');
+  if (!total) {
+    summary.classList.add('is-placeholder');
+    textEl.textContent = 'Configura tu combo arriba…';
+    if (jumpBtn) jumpBtn.hidden = true;
+    return;
+  }
+  if (firstIncomplete) {
+    summary.classList.add('is-incomplete');
+    textEl.innerHTML = firstIncomplete.overflow
+      ? `Reduce <strong>${firstIncomplete.title}</strong> — máx ${firstIncomplete.max}`
+      : `Falta <strong>${firstIncomplete.title}</strong> (${complete}/${total} listos)`;
+    if (jumpBtn) {
+      jumpBtn.hidden = false;
+      jumpBtn.dataset.target = firstIncomplete.key;
+    }
+  } else {
+    summary.classList.add('is-complete');
+    const parts = state
+      .map(s => s.selectionText)
+      .filter(Boolean);
+    textEl.innerHTML = parts.length
+      ? parts.map(p => `<strong>${p}</strong>`).join(' · ')
+      : '<strong>Combo listo</strong>';
+    if (jumpBtn) jumpBtn.hidden = true;
+  }
+}
+
+/* CTA dinámico: el botón de "Añadir combo" cambia de copy según el estado
+   agregado — el cliente sabe QUÉ le falta sin descifrar badges. */
+function pdComboUpdateCta(state) {
+  const btn = document.getElementById('pd-add-btn');
+  if (!btn || !btn.dataset) return;
+  if (!btn.dataset.ctaLabelDefault) {
+    btn.dataset.ctaLabelDefault = (btn.textContent || '').trim();
+  }
+  const missing = state.find(s => !s.complete || s.overflow);
+  if (missing) {
+    btn.classList.add('is-incomplete');
+    btn.dataset.ctaMissingKey = missing.key;
+  } else {
+    btn.classList.remove('is-incomplete');
+    delete btn.dataset.ctaMissingKey;
+    // Restauramos el texto original — con precio actualizado por pdRenderPrice
+    // que corre después de esta función.
+  }
+}
+
+/* Enforcement client-side de `data-max-flavors` en combos con cantidad > 1.
+   Antes: el atributo se emitía pero nadie lo leía; el cliente podía marcar
+   5 sabores cuando el combo tenía 2 unidades y el servidor los descartaba
+   silenciosamente. Ahora: al alcanzar el máximo, los chips no marcados se
+   deshabilitan y muestran cursor "not-allowed". */
+function pdComboEnforceFlavorMax(root) {
+  const scope = root || document;
+  scope.querySelectorAll('.pd-combo-flavor').forEach(fg => {
+    const maxF = parseInt(fg.dataset.maxFlavors || '1', 10);
+    if (maxF <= 1) return; // radios no necesitan enforcement
+    const inputs = Array.from(fg.querySelectorAll('.pd-combo-flavor-input'));
+    const checked = inputs.filter(i => i.checked).length;
+    inputs.forEach(input => {
+      const chip = input.closest('.pd-flavor-chip');
+      if (input.checked) {
+        input.disabled = false;
+        chip?.classList.remove('is-locked');
+      } else if (checked >= maxF) {
+        input.disabled = true;
+        chip?.classList.add('is-locked');
+      } else {
+        input.disabled = false;
+        chip?.classList.remove('is-locked');
+      }
+    });
   });
 }
 
@@ -2032,14 +2348,41 @@ document.querySelectorAll('.pd-combo-grupo').forEach(group => {
     radios[0].checked = true;
   }
 });
-// Inicializar badges de estado
+// Enforcement inicial del tope de sabores por componente (combos con qty > 1).
+pdComboEnforceFlavorMax();
+// Inicializar badges + summary + CTA + hints en un solo pase.
 pdComboUpdateBadges();
-// Actualizar badge al cambiar radio
+// Cambios en radios de sección → refrescar todo.
 document.querySelectorAll('.combo-sel-radio').forEach(radio => {
   radio.addEventListener('change', () => {
     pdComboUpdateBadges();
     pdRenderPrice();
   });
+});
+// Cambios en chips de sabor (radios/checkboxes) dentro de combos → re-enforce
+// límite + refrescar el resumen para que el cliente vea al instante qué
+// llevará. Delegamos en el body para cubrir todos los futuros grupos.
+document.addEventListener('change', ev => {
+  const target = ev.target;
+  if (target && target.classList && target.classList.contains('pd-combo-flavor-input')) {
+    pdComboEnforceFlavorMax(target.closest('.pd-combo-flavor')?.parentElement || undefined);
+    pdComboUpdateBadges();
+    pdRenderPrice();
+  }
+});
+// Botón "↓ Ir" del resumen: scroll suave al primer bloque incompleto.
+document.getElementById('pd-selection-summary-jump')?.addEventListener('click', ev => {
+  ev.preventDefault();
+  const key = ev.currentTarget.dataset.target;
+  if (!key) return;
+  const target = document.querySelector(`[data-cstep-key="${CSS.escape(key)}"]`);
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    target.classList.add('pd-cstep-flash');
+    setTimeout(() => target.classList.remove('pd-cstep-flash'), 900);
+    // Foco al primer input interactuable del bloque para acelerar la acción.
+    target.querySelector('input:not(:disabled), button:not(:disabled)')?.focus({ preventScroll: true });
+  }
 });
 pdRenderPrice();
 
@@ -2068,11 +2411,22 @@ void document.getElementById('pd-add-form')?.addEventListener('submit', function
     if (label) sels.push(`${grupo}: ${label}${qty > 1 ? ` ×${qty}` : ''}`);
   });
   notasEl.value = sels.join(' | ');
-  if (!pdComboGroupTotalsValid()) {
+  // Estado agregado ANTES del submit: si algún paso está incompleto (grupo de
+  // elección sin resolver, o base fija con sabores pendientes), bloqueamos el
+  // POST y saltamos al primer bloque con foco. Anima el flash para reforzar.
+  const state = pdComboState();
+  const firstMissing = state.find(s => !s.complete || s.overflow);
+  if (firstMissing || !pdComboGroupTotalsValid()) {
     e.preventDefault();
-    const firstInvalid = document.querySelector('.pd-combo-group-invalid');
-    firstInvalid?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    firstInvalid?.querySelector('input:not(:disabled)')?.focus();
+    const target = firstMissing
+      ? document.querySelector(`[data-cstep-key="${CSS.escape(firstMissing.key)}"]`)
+      : document.querySelector('.pd-combo-group-invalid');
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target.classList.add('pd-cstep-flash');
+      setTimeout(() => target.classList.remove('pd-cstep-flash'), 900);
+      target.querySelector('input:not(:disabled), button:not(:disabled)')?.focus({ preventScroll: true });
+    }
   }
 });
 

@@ -6,9 +6,11 @@
 {% block content %}
 
 <form method="POST" action="{{ url_for('admin.nuevo_combo') }}" enctype="multipart/form-data"
-      id="bundle-form" class="bundle-page" novalidate>
+      id="bundle-form" class="bundle-page" novalidate data-once-submit>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="tipo_producto" value="combo">
+  {# Idempotency: token generado por render; server rechaza reenvíos duplicados. #}
+  <input type="hidden" name="form_token" value="{{ csrf_token()|string ~ ':' ~ range(1,999999)|random }}">
   <div id="bundle-serial" hidden></div>
 
   <header class="bundle-head">
@@ -310,7 +312,9 @@ const BUNDLE_PRODUCTS = [{% for p in productos_simples %}{
   channel:{{ (p.canal_preparacion or 'cocina')|tojson }},
   stock:{{ p.stock_total|int }},
   image:{{ (p.imagen_url|upload_url if p.imagen_url else '')|tojson }},
-  presentations:{{ (presentaciones_por_producto.get(p.id|string, []))|tojson }}
+  presentations:{{ (presentaciones_por_producto.get(p.id|string, []))|tojson }},
+  hasSabor:{{ p.has_flavors|tojson }},
+  flavorCount:{{ flavor_counts_by_product.get(p.id, 0)|int }}
 }{% if not loop.last %},{% endif %}{% endfor %}];
 const BUNDLE_LIMITS = {
   maxQty:{{ combo_limits.max_qty|int }},
@@ -517,7 +521,8 @@ function bundleAddProduct(productId){
     extra:0,
     isDefault:section.type==='choice' && section.items.length < section.maxSelections,
     note:'',
-    presentationId:(product.presentations || [])[0]?.id || null
+    presentationId:(product.presentations || [])[0]?.id || null,
+    permiteSabor:false
   });
   bundleRender();
   if(navigator.vibrate) navigator.vibrate(10);
@@ -543,6 +548,10 @@ function bundleSetDefault(sectionId,productId,checked){
     section.items.filter(entry=>entry.isDefault).slice(0,1).forEach(entry=>entry.isDefault=false);
   }
   item.isDefault=checked; bundleRender();
+}
+function bundleSetPermiteSabor(sectionId,productId,checked){
+  const item=bundleFindItem(sectionId,productId); if(!item) return;
+  item.permiteSabor=!!checked;
 }
 function bundleSetNote(sectionId,productId,value){
   const item=bundleFindItem(sectionId,productId); if(item) item.note=value.slice(0,300);
@@ -608,9 +617,32 @@ function bundleRender(){
            <label class="bundle-default"><input type="checkbox" ${item.isDefault?'checked':''} data-bundle-input="default" data-section-id="${section.id}" data-product-id="${product.id}"> Predeterminada</label>`}
         </div>
         ${presentationControl}
+        ${(product.hasSabor || product.flavorCount>0)?`<label class="bundle-line-flavor ${item.permiteSabor && !product.flavorCount?'is-warning':''} ${item.permiteSabor && product.flavorCount>0?'is-active':''}"><input type="checkbox" ${item.permiteSabor?'checked':''} data-bundle-input="permite-sabor" data-section-id="${section.id}" data-product-id="${product.id}"><span>El cliente elige el sabor de este componente</span>${product.flavorCount>0?`<em class="bundle-flavor-count">${product.flavorCount} sabor${product.flavorCount===1?'':'es'} activo${product.flavorCount===1?'':'s'}</em>`:`<em class="bundle-flavor-count is-empty">⚠︎ Sin sabores activos — configura sabores en el producto antes de habilitar aquí</em>`}</label>`:''}
         <label class="bundle-line-note"><input type="text" value="${bundleEscape(item.note)}" maxlength="300" placeholder="Nota opcional para cocina" data-bundle-input="note" data-section-id="${section.id}" data-product-id="${product.id}"></label>
       </div>`;
     }).join('');
+    // Aviso vivo: sección de elección con `maxSelections` mayor que items → el
+    // admin lo detecta AL VUELO en vez de en el submit. También cubre el caso
+    // opuesto (0 items) para no mostrar sección vacía sin señal.
+    const structureWarning = (() => {
+      if (section.type !== 'choice') return '';
+      if (section.items.length === 0) {
+        return `<p class="bundle-section-warn is-empty">Añade al menos una opción para completar este bloque.</p>`;
+      }
+      if (section.maxSelections > section.items.length) {
+        return `<p class="bundle-section-warn is-invalid">⚠︎ Pides elegir <strong>${section.maxSelections}</strong> pero solo hay <strong>${section.items.length}</strong>. Baja el número o añade más productos.</p>`;
+      }
+      return '';
+    })();
+    // Aviso agregado de sabores: cuenta componentes que tienen permite-sabor
+    // marcado pero cuyo producto no tiene sabores activos (checkbox inerte).
+    const brokenFlavors = section.items.filter(item => {
+      const prod = bundleProduct(item.productId);
+      return item && item.permiteSabor && prod && !prod.flavorCount;
+    }).length;
+    const flavorWarning = brokenFlavors > 0
+      ? `<p class="bundle-section-warn is-invalid">⚠︎ ${brokenFlavors} componente${brokenFlavors===1?'':'s'} con "cliente elige sabor" pero sin sabores activos en el producto — el cliente no verá opciones.</p>`
+      : '';
     return `<article class="bundle-section ${section.type==='choice'?'choice':''} ${active?'active':''}" data-section-select="${section.id}">
       <header class="bundle-section-head">
         <span class="bundle-grip">${index+1}</span>
@@ -625,6 +657,7 @@ function bundleRender(){
           <button type="button" data-bundle-action="remove-section" data-section-id="${section.id}" title="Eliminar">×</button>
         </div>
       </header>
+      ${structureWarning}${flavorWarning}
       <div class="bundle-section-body">${itemRows||'<div class="bundle-section-empty">Selecciona productos del catálogo para añadirlos aquí.</div>'}</div>
       <footer class="bundle-section-footer"><span>${section.items.length} producto${section.items.length===1?'':'s'} ${active?'· bloque seleccionado':''}</span><button type="button" data-bundle-action="select-and-add" data-section-id="${section.id}">+ Añadir productos</button></footer>
     </article>`;
@@ -682,6 +715,15 @@ function bundleValidate(){
     if(!section.name.trim()) errors.push('Todos los bloques necesitan un nombre.');
     if(!section.items.length) errors.push(`"${section.name||'Bloque'}" no tiene productos.`);
     if(section.type==='choice'&&section.maxSelections>section.items.length) errors.push(`"${section.name}" pide elegir ${section.maxSelections}, pero solo tiene ${section.items.length} opciones.`);
+    // Componentes con "permite-sabor" marcado pero sin sabores activos en el
+    // producto → el cliente no verá opciones; equivalente a la casilla sin
+    // efecto. Bloqueamos con mensaje accionable.
+    section.items.forEach(item=>{
+      const prod=bundleProduct(item.productId);
+      if(item.permiteSabor && prod && !prod.flavorCount){
+        errors.push(`"${prod.name}" en "${section.name}" tiene "elige sabor" activo pero no hay sabores configurados en el producto. Añádelos en Productos → editar → Extras/Sabores, o desmarca la casilla.`);
+      }
+    });
   });
   if(bundleIsDiscount()){
     const discount=Number(document.getElementById('bundle-discount').value);
@@ -717,6 +759,7 @@ function bundleSerialize(){
       add('comp_default',section.type==='choice'&&item.isDefault?'1':'0');
       add('comp_notas_preparacion',item.note||'');
       add('comp_presentation_id',item.presentationId||'');
+      add('comp_permite_sabor',item.permiteSabor?'1':'0');
     });
   });
 }
@@ -779,6 +822,7 @@ document.addEventListener('change', (event) => {
   else if (action === 'points') bundlePoints();
   else if (action === 'extra') bundleSetExtra(sectionId, productId, control.value);
   else if (action === 'default') bundleSetDefault(sectionId, productId, control.checked);
+  else if (action === 'permite-sabor') bundleSetPermiteSabor(sectionId, productId, control.checked);
   else if (action === 'max') bundleSetMax(sectionId, control.value);
   else if (action === 'presentation') bundleSetPresentation(sectionId, productId, control.value);
 });

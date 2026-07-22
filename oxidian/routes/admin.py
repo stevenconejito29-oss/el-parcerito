@@ -5,7 +5,7 @@ import uuid
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from urllib.parse import urlparse
-from flask import Blueprint, render_template, request, redirect, url_for, flash, make_response, abort, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, make_response, abort, jsonify, session
 from flask_login import login_required, current_user
 from functools import wraps
 from datetime import datetime, date, timedelta
@@ -407,14 +407,24 @@ def _default_vertical_para_creacion(raw: str | None) -> str:
     return _nicho_activo()
 
 
-def _int_o_none(raw):
+def _int_o_none(raw, *, max_value=None):
+    """Parsea un entero no negativo del form. Rechaza valores fuera de rango.
+
+    Los caps se aplican en el llamador vía ``max_value`` para reflejar el
+    dominio del campo (p.ej. peso ≤ 100 kg = 100000 g). Sin cap, un admin
+    puede escribir un valor absurdo que rompa displays o cálculos.
+    """
     if raw in (None, ""):
         return None
     try:
         n = int(str(raw).strip())
     except (TypeError, ValueError):
         return None
-    return n if n >= 0 else None
+    if n < 0:
+        return None
+    if max_value is not None and n > int(max_value):
+        return None
+    return n
 
 
 def _aplicar_politica_vertical(campos: dict, producto_actual=None) -> None:
@@ -2275,7 +2285,9 @@ def _parsear_campos_producto(form):
         # Un valor > 0 activa el flujo `ProductBatch` (cliente compra tandas,
         # preparador ve el total agregado del día). Vacío o 0 → sin lote.
         "cantidad_por_lote":         (
-            _int_o_none(form.get("cantidad_por_lote"))
+            # Cap 9999: una tanda de encargos por día no debería exceder eso.
+            # Previene inputs absurdos que rompen la vista del preparador.
+            _int_o_none(form.get("cantidad_por_lote"), max_value=9999)
             if tipo_entrega == "programado" else None
         ),
         # visibilidad horaria
@@ -2292,8 +2304,10 @@ def _parsear_campos_producto(form):
         "marca":                     (form.get("marca") or "").strip()[:100] or None,
         "material":                  (form.get("material") or "").strip()[:100] or None,
         "dimensiones":               (form.get("dimensiones") or "").strip()[:80] or None,
-        "peso_gramos":               _int_o_none(form.get("peso_gramos")),
-        "garantia_meses":            _int_o_none(form.get("garantia_meses")),
+        # Caps sanos: peso ≤ 100 kg (100000 g) cubre cualquier producto físico
+        # razonable; garantía ≤ 20 años (240 meses) — evita overflow en tickets.
+        "peso_gramos":               _int_o_none(form.get("peso_gramos"), max_value=100000),
+        "garantia_meses":            _int_o_none(form.get("garantia_meses"), max_value=240),
         # canje con puntos
         "canjeable_con_puntos":      canjeable,
         "puntos_para_canje":         puntos_para_canje if canjeable else None,
@@ -2831,6 +2845,17 @@ def _sync_catalog_flavors(producto, form):
 @admin_bp.route("/productos/crear", methods=["POST"])
 @admin_required
 def crear_producto():
+    # Idempotency: si el admin hace doble submit o F5, el mismo form_token
+    # vuelve a llegar. Guardamos los tokens ya usados en la sesión para no
+    # duplicar. Es más liviano que un round-trip a BD y es suficiente para
+    # una sesión de admin. El cliente-side también deshabilita el botón.
+    form_token = (request.form.get("form_token") or "").strip()[:80]
+    if form_token:
+        tokens_usados = session.setdefault("admin_form_tokens", [])
+        if form_token in tokens_usados:
+            flash("Ya se creó este producto (envío duplicado ignorado).", "info")
+            return redirect(url_for("admin.productos"))
+
     form_producto = request.form.copy()
     form_producto["es_combo"] = ""
     campos, error = _parsear_campos_producto(form_producto)
@@ -2859,8 +2884,25 @@ def crear_producto():
         db.session.commit()
     except Exception as exc:
         db.session.rollback()
+        # Imagen subida antes del rollback → limpiamos disco para no acumular
+        # huérfanos con cada intento fallido. `delete_image` es tolerante a
+        # rutas inexistentes.
+        if ruta_subida:
+            try:
+                delete_image(ruta_subida)
+            except Exception:
+                current_app.logger.exception("no se pudo limpiar imagen huérfana %s", ruta_subida)
         flash(f"Error al crear producto: {exc}", "danger")
         return redirect(url_for("admin.productos"))
+    # Registrar token consumido sólo tras éxito real.
+    if form_token:
+        tokens_usados = session.setdefault("admin_form_tokens", [])
+        tokens_usados.append(form_token)
+        # Cap para no crecer la sesión sin límite.
+        if len(tokens_usados) > 50:
+            del tokens_usados[:-25]
+        session["admin_form_tokens"] = tokens_usados
+        session.modified = True
     notificar_bot_sync()
     flash(f"Producto '{p.nombre}' creado.", "success")
     return redirect(url_for("admin.productos"))
@@ -2882,6 +2924,31 @@ def nuevo_combo():
     disponibilidad_por_origen = _disponibilidad_productos_por_origen()
     combo_limits = _combo_limits_payload()
 
+    # Sabores activos por producto en 1 sola query (evita N+1 en el catálogo del
+    # combo builder). El template usa este dict para mostrar al admin cuántos
+    # sabores tiene cada producto ANTES de marcar "el cliente elige el sabor" —
+    # así detecta al vuelo si su check es inerte porque no hay opciones activas.
+    from sqlalchemy import func
+    flavor_counts_by_product = {}
+    if productos_simples:
+        _ids = [p.id for p in productos_simples]
+        _rows = (
+            db.session.query(
+                ProductExtraGroup.producto_id,
+                func.count(ProductExtraOption.id),
+            )
+            .join(ProductExtraOption, ProductExtraOption.grupo_id == ProductExtraGroup.id)
+            .filter(
+                ProductExtraGroup.tipo == "sabor",
+                ProductExtraGroup.activo.is_(True),
+                ProductExtraOption.activo.is_(True),
+                ProductExtraGroup.producto_id.in_(_ids),
+            )
+            .group_by(ProductExtraGroup.producto_id)
+            .all()
+        )
+        flavor_counts_by_product = {int(pid): int(n) for pid, n in _rows}
+
     def _render_form(**overrides):
         """Renderiza `nuevo_combo.html` con TODO el contexto crítico.
 
@@ -2900,6 +2967,7 @@ def nuevo_combo():
                 str(product.id): product_presentation_catalog_payload(product)
                 for product in productos_simples
             },
+            "flavor_counts_by_product": flavor_counts_by_product,
         }
         ctx.update(overrides)
         return render_template("admin/nuevo_combo.html", **ctx)
@@ -2908,6 +2976,22 @@ def nuevo_combo():
         return _render_form()
 
     # ── POST: Validar y crear combo + componentes en transacción ──
+
+    # Idempotency por sesión de admin: si el form envía un `form_token` ya
+    # consumido, evitamos crear un combo duplicado por doble submit / F5 /
+    # back-button. Los tokens exitosos se registran al final del flujo.
+    form_token = (request.form.get("form_token") or "").strip()[:80]
+    if form_token:
+        tokens_usados = session.setdefault("admin_form_tokens", [])
+        if form_token in tokens_usados:
+            flash("Ya se creó este combo (envío duplicado ignorado).", "info")
+            return redirect(url_for("admin.productos"))
+
+    # NOTA operativa: la imagen se guarda antes de validar componentes. Si la
+    # transacción hace rollback, el archivo queda huérfano en disco (ver
+    # `_guardar_imagen_producto_desde_request`). El impacto es acumulativo
+    # (storage) pero no bloquea la operación. Un cron de limpieza puede
+    # detectar archivos en `productos/` sin FK desde `products.imagen_url`.
 
     # Parsear campos básicos del combo. En modo descuento el precio final se calcula
     # despues de validar componentes, por eso usamos un precio temporal valido.
@@ -2948,6 +3032,10 @@ def nuevo_combo():
     defaults = request.form.getlist("comp_default") or []
     notas_prep = request.form.getlist("comp_notas_preparacion") or []
     presentation_ids = request.form.getlist("comp_presentation_id") or []
+    # Nuevo flag por componente: cliente puede elegir el sabor del componente
+    # (si su producto tiene grupo sabor activo). Se envía como checkbox "on"/""
+    # — vacío en el array = no permitido.
+    permite_sabores = request.form.getlist("comp_permite_sabor") or []
     group_uids = request.form.getlist("comp_group_uid") or []
     group_defs = _combo_groups_payload_from_form(request.form)
 
@@ -2963,6 +3051,8 @@ def nuevo_combo():
         parallel_arrays.append(notas_prep)
     if presentation_ids:
         parallel_arrays.append(presentation_ids)
+    if permite_sabores:
+        parallel_arrays.append(permite_sabores)
     is_valid, error_msg = validate_parallel_arrays(*parallel_arrays)
     if not is_valid:
         db.session.rollback()
@@ -3056,6 +3146,18 @@ def nuevo_combo():
             flash(f"Componente {i + 1}: {presentation_error}", "danger")
             return _render_form()
 
+        # Cliente elige sabor del componente: sólo si el componente TIENE grupo
+        # sabor activo en su producto original. Silenciosamente False si no.
+        permite_sabor_raw = permite_sabores[i] if i < len(permite_sabores) else ""
+        permite_sabor = str(permite_sabor_raw).strip().lower() in ("1", "on", "true", "yes")
+        if permite_sabor:
+            from models import ProductExtraGroup as _PEG
+            _tiene_sabor = _PEG.query.filter_by(
+                producto_id=producto.id, tipo="sabor", activo=True
+            ).first() is not None
+            if not _tiene_sabor:
+                permite_sabor = False  # ignoramos silenciosamente
+
         # ── Detectar duplicados (fijos y seleccionables) ──
         if es_sel:
             grupo_key = (grupo or "").strip().lower()
@@ -3097,6 +3199,7 @@ def nuevo_combo():
             'es_predeterminado': es_default if es_sel else False,
             'notas_preparacion': nota_prep or None,
             'presentation_id': presentation.id if presentation else None,
+            'permite_sabor_cliente': permite_sabor,
         })
         n_comp += 1
 
@@ -3174,7 +3277,7 @@ def nuevo_combo():
                 "combo_id", "producto_id", "cantidad", "es_seleccionable",
                 "grupo_seleccion", "max_selecciones", "precio_extra",
                 "es_predeterminado", "notas_preparacion",
-                "presentation_id",
+                "presentation_id", "permite_sabor_cliente",
             }
         }
         clean_comp_data["combo_group_id"] = group.id
@@ -3201,6 +3304,15 @@ def nuevo_combo():
     try:
         db.session.commit()
         notificar_bot_sync()
+        # Registrar token consumido sólo tras éxito real. Sin cap arbitrario:
+        # limitamos a 50 tokens por sesión para no crecer sin límite.
+        if form_token:
+            tokens_usados = session.setdefault("admin_form_tokens", [])
+            tokens_usados.append(form_token)
+            if len(tokens_usados) > 50:
+                del tokens_usados[:-25]
+            session["admin_form_tokens"] = tokens_usados
+            session.modified = True
         flash(
             f"✓ Combo '{combo.nombre}' creado con {n_comp} componente{'s' if n_comp != 1 else ''}.",
             "success"
