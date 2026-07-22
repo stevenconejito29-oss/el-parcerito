@@ -4,6 +4,14 @@
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-menu.css', v=asset_version) }}">
 {% endblock %}
+{% block preload %}
+{# LCP hint: preload de la imagen del hero para que empiece a bajar mientras
+   el navegador parsea el CSS. Reduce el TTI perceptible en móvil sin cambiar
+   el layout — la imagen se aplica igual vía CSS `background-image`. #}
+{% if brand.hero_image_url %}
+<link rel="preload" as="image" href="{{ brand.hero_image_url }}" fetchpriority="high">
+{% endif %}
+{% endblock %}
 
 {% block content %}
 {# ── Macros ── #}
@@ -44,9 +52,22 @@
          {% if hero_bg %}style="--ep-hero-image:url('{{ hero_bg }}')"{% endif %}>
   <div class="ep-hero-inner">
     <div class="ep-hero-text">
-      <div class="ep-hero-label">{{ heritage_icon('mariposa') }} {{ ui.hero_eyebrow or brand.slogan }}</div>
-      <h1 class="ep-hero-title">{{ brand.nombre }}<br><span class="ep-brand-word">{{ ui.hero_title or brand.slogan or brand.descripcion }}</span></h1>
-      <p class="ep-hero-sub">{{ ui.hero_subtitle or brand.descripcion or brand.ciudad or brand.direccion }}</p>
+      {# Hero despejado con PRESENCIA DE MARCA: si hay logo del negocio,
+         se muestra al lado del nombre (branded storefront pattern). Escala
+         responsive con clamp — nunca abruma pero siempre es visible. #}
+      {% set _hero_sub = ui.hero_eyebrow or brand.slogan or brand.ciudad %}
+      <div class="ep-hero-heading">
+        {% if brand.logo_url %}
+        <img class="ep-hero-logo" src="{{ brand.logo_url }}" alt="" width="48" height="48" fetchpriority="high" decoding="async">
+        {% endif %}
+        <h1 class="ep-hero-title">{{ brand.nombre }}</h1>
+      </div>
+      {% if _hero_sub %}
+      <p class="ep-hero-sub">
+        <span class="ep-hero-sub-icon" aria-hidden="true">{{ heritage_icon('mariposa') }}</span>
+        <span>{{ _hero_sub }}</span>
+      </p>
+      {% endif %}
       <a href="#catalogo" class="ep-hero-cta">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12l7 7 7-7"/></svg>
         Ver {{ brand.vertical_label|lower if brand.vertical_label else 'menú' }} completo
@@ -584,7 +605,8 @@
     "combo_precio_base": {{ p.combo_precio_base|float if p.es_combo else 0 }},
     "tipo_entrega": {{ p.tipo_entrega|tojson }},
     "imagen_url": {{ (p.imagen_url|upload_url)|tojson }},
-    "stock": {{ product_cards[p.id].stock }},
+    "stock": {{ product_cards[p.id].stock|stock_bounded(cap=99) }},
+    "stock_unlimited": {{ 'true' if product_cards[p.id].stock|stock_is_unlimited else 'false' }},
     "stock_mostrar": {{ 'true' if p.stock_mostrar_en_web else 'false' }},
     "disponible_directo": {{ 'true' if establecimiento.abierto and product_cards[p.id].available and p.tipo_entrega == 'inmediato' and not p.es_combo and not product_cards[p.id].has_extras else 'false' }},
     "es_hipo": {{ 'true' if p.es_hipoalergenico else 'false' }},
