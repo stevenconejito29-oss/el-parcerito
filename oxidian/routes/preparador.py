@@ -517,6 +517,12 @@ def empezar_armar(pedido_id):
 @preparador_required
 def marcar_listo(pedido_id):
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
+    # Refresh explícito post-lock. Sin él, SQLAlchemy podía servir el objeto
+    # desde la identity-map con `estado` cacheado de otro request y aprobar
+    # una transición fantasma cuando otro preparador ya había marcado listo
+    # entre nuestras dos primeras queries. Refresh trae la row REAL bajo el
+    # lock que acabamos de tomar.
+    db.session.refresh(pedido)
     if pedido.estado != "armando":
         flash("El pedido debe estar en 'armando'.", "warning")
         return redirect(url_for("preparador.pedidos"))

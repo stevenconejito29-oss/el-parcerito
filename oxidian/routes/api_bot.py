@@ -1542,7 +1542,13 @@ def crear_pedido():
                 return jsonify({"ok": False, "error": "Formato de ítem inválido"}), 400
             if cantidad <= 0:
                 continue
-            p = db.session.get(Product, pid)
+            # Row-level lock del producto para prevenir race condition entre
+            # dos bots pidiendo la última unidad. El lock se libera al commit
+            # o al rollback. Sin esto, ambas requests podían leer stock=1 y
+            # ambas llamar a `descontar_stock()`, corrompiendo el inventario.
+            # `with_for_update=True` funciona en Postgres (SELECT ... FOR UPDATE)
+            # y es no-op en SQLite tests (que se serializan por default).
+            p = db.session.get(Product, pid, with_for_update=True)
             if not p or not p.activo:
                 return jsonify({"ok": False, "error": f"Producto {pid} no disponible"}), 400
             if "delivery" not in _product_fulfillment_modes(p):
