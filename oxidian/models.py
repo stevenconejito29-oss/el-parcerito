@@ -1996,10 +1996,13 @@ class ComboItem(db.Model):
     # Subset de sabores permitidos para ESTE componente en ESTE combo. Si la
     # relación está vacía → "sin restricción, todos los sabores activos del
     # producto están disponibles". Es lazy=select para no penalizar el listado
-    # cuando la mayoría de combos no restringen.
+    # cuando la mayoría de combos no restringen. El `secondary` va por string
+    # porque la Table se declara más abajo en el módulo (evita NameError en
+    # el orden de importación). SQLAlchemy resuelve la referencia en
+    # configure_mappers().
     allowed_flavor_options = db.relationship(
         "ProductExtraOption",
-        secondary=combo_item_allowed_flavors,
+        secondary="combo_item_allowed_flavors",
         lazy="select",
     )
 
