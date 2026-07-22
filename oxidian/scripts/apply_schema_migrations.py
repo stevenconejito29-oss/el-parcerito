@@ -1747,6 +1747,14 @@ MIGRATIONS = [
         "description": "Permite marcar por componente de combo si el cliente elige su sabor.",
         "fn": lambda: _migrate_combo_item_permite_sabor_cliente(),
     },
+    {
+        "id": "20260722_02_combo_item_allowed_flavor_options",
+        "description": (
+            "Junction combo_item_allowed_flavors: subset de sabores por componente "
+            "que el super-admin puede exponer al cliente. Sin filas = todos permitidos."
+        ),
+        "fn": lambda: _migrate_combo_item_allowed_flavor_options(),
+    },
 ]
 
 
@@ -1960,6 +1968,45 @@ def _migrate_combo_item_permite_sabor_cliente():
         "ALTER TABLE combo_items ADD COLUMN permite_sabor_cliente BOOLEAN "
         "NOT NULL DEFAULT false"
     ))
+
+
+def _migrate_combo_item_allowed_flavor_options():
+    """Crea la tabla junction `combo_item_allowed_flavors` para permitir al
+    super-admin acotar el subset de sabores ofrecidos al cliente por
+    componente. Ausencia de filas para un item = sin restricción.
+
+    Idempotente: no toca la tabla si ya existe. Portable Postgres/SQLite.
+    """
+    inspector = inspect(db.engine)
+    if inspector.has_table("combo_item_allowed_flavors"):
+        return
+    dialect = db.engine.dialect.name
+    if dialect == "postgresql":
+        db.session.execute(text("""
+            CREATE TABLE combo_item_allowed_flavors (
+                combo_item_id INTEGER NOT NULL REFERENCES combo_items(id) ON DELETE CASCADE,
+                option_id     INTEGER NOT NULL REFERENCES product_extra_options(id) ON DELETE CASCADE,
+                PRIMARY KEY (combo_item_id, option_id)
+            )
+        """))
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_combo_item_flavors_option "
+            "ON combo_item_allowed_flavors (option_id)"
+        ))
+    else:
+        db.session.execute(text("""
+            CREATE TABLE combo_item_allowed_flavors (
+                combo_item_id INTEGER NOT NULL,
+                option_id     INTEGER NOT NULL,
+                PRIMARY KEY (combo_item_id, option_id),
+                FOREIGN KEY (combo_item_id) REFERENCES combo_items(id) ON DELETE CASCADE,
+                FOREIGN KEY (option_id)     REFERENCES product_extra_options(id) ON DELETE CASCADE
+            )
+        """))
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_combo_item_flavors_option "
+            "ON combo_item_allowed_flavors (option_id)"
+        ))
 
 
 def _seed_knowledge_entries():

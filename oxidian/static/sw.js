@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Oxidian — Service Worker v59
+   Oxidian — Service Worker v60
    • App shell CSS/JS: cache-first + actualización en segundo plano
    • HTML público (menu, producto): NETWORK-FIRST con timeout 1200ms →
      cuando hay red los usuarios reciben SIEMPRE contenido fresco (logos,
@@ -10,13 +10,15 @@
    • Static assets versionados por hash: SWR (cache-first + refresh bg)
    • API / Admin: Network-only (nunca cachear dinámico)
    • Push Notifications: Muestra notificaciones + abre URL al click
-   • v59: elimina staleness Android — HTML y /uploads/ pasan a network-first
-     con fallback a cache. Purga total de buckets v58 y anteriores. Bump icons.
+   • v59: HTML y /uploads/ pasaron a network-first + fallback cache.
+   • v60: purga adicional que fuerza refresh en Android que aún cachean HTML
+     previo a la feature "sabor por componente + subset del super-admin". Con
+     `skipWaiting()` + `clients.claim()` la nueva versión se activa al vuelo.
    ═══════════════════════════════════════════════════════════════ */
 
-const CACHE_STATIC = "ox-static-v59";
-const CACHE_MEDIA = "ox-media-v59";
-const CACHE_HTML = "ox-html-v59";
+const CACHE_STATIC = "ox-static-v60";
+const CACHE_MEDIA = "ox-media-v60";
+const CACHE_HTML = "ox-html-v60";
 const CACHE_PREFIX = "ox-";
 
 const PRECACHE = [
@@ -39,12 +41,12 @@ const PRECACHE = [
   "/static/js/spa-nav.js",
   "/static/js/operational-roles.js",
   "/static/colombia-pattern.svg",
-  "/static/pwa-icon.svg?v=59",
-  "/static/pwa-icon-192.png?v=59",
-  "/static/pwa-icon-512.png?v=59",
-  "/static/pwa-icon-512-maskable.png?v=59",
-  "/static/pwa-badge-96.png?v=59",
-  "/static/apple-touch-icon.png?v=59",
+  "/static/pwa-icon.svg?v=60",
+  "/static/pwa-icon-192.png?v=60",
+  "/static/pwa-icon-512.png?v=60",
+  "/static/pwa-icon-512-maskable.png?v=60",
+  "/static/pwa-badge-96.png?v=60",
+  "/static/apple-touch-icon.png?v=60",
 ];
 
 function isNetworkOnly(pathname) {
@@ -103,7 +105,7 @@ p{font-size:.95rem;color:#6B5A4E;max-width:340px;line-height:1.5}
 a,button{min-height:44px;padding:.75rem 1.5rem;border-radius:.875rem;border:0;
 background:#F4C542;color:#2B2118;font-weight:800;font-size:1rem;text-decoration:none}
 </style></head><body>
-<img class="icon" src="/static/pwa-icon-192.png?v=59" alt="">
+<img class="icon" src="/static/pwa-icon-192.png?v=60" alt="">
 <p class="title">Ahora mismo no hay conexión</p>
 <p>Tu app sigue instalada y tus datos están protegidos. Recupera internet para consultar disponibilidad o confirmar cambios.</p>
 <a href="/">Volver a intentar</a>
@@ -115,7 +117,7 @@ background:#F4C542;color:#2B2118;font-weight:800;font-size:1rem;text-decoration:
 // ── INSTALL ──────────────────────────────────────────────────────────────
 // `skipWaiting()` en install → el SW nuevo se activa YA, sin esperar a que
 // todas las tabs abiertas se cierren. Combinado con `clients.claim()` en
-// activate, garantiza que el bump de versión (ej. v54→v59) sirve al usuario
+// activate, garantiza que el bump de versión (ej. v54→v60) sirve al usuario
 // contenido nuevo en < 1s desde el próximo refresh, sin "datos antiguos".
 self.addEventListener("install", event => {
   self.skipWaiting();
@@ -293,8 +295,8 @@ self.addEventListener("push", event => {
   const {
     title  = "Mi tienda",
     body   = "",
-    icon   = "/static/pwa-icon-192.png?v=59",
-    badge  = "/static/pwa-badge-96.png?v=59",
+    icon   = "/static/pwa-icon-192.png?v=60",
+    badge  = "/static/pwa-badge-96.png?v=60",
     url    = "/",
     tag,
     requireInteraction = false,

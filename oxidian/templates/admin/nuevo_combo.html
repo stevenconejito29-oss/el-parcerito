@@ -314,7 +314,8 @@ const BUNDLE_PRODUCTS = [{% for p in productos_simples %}{
   image:{{ (p.imagen_url|upload_url if p.imagen_url else '')|tojson }},
   presentations:{{ (presentaciones_por_producto.get(p.id|string, []))|tojson }},
   hasSabor:{{ p.has_flavors|tojson }},
-  flavorCount:{{ flavor_counts_by_product.get(p.id, 0)|int }}
+  flavorCount:{{ flavor_counts_by_product.get(p.id, 0)|int }},
+  flavorOptions:{{ (flavor_options_by_product|default({})).get(p.id, [])|tojson }}
 }{% if not loop.last %},{% endif %}{% endfor %}];
 const BUNDLE_LIMITS = {
   maxQty:{{ combo_limits.max_qty|int }},
@@ -552,6 +553,28 @@ function bundleSetDefault(sectionId,productId,checked){
 function bundleSetPermiteSabor(sectionId,productId,checked){
   const item=bundleFindItem(sectionId,productId); if(!item) return;
   item.permiteSabor=!!checked;
+  // Al desactivar, limpiamos el subset — no queremos huérfanos que reaparezcan
+  // si el admin re-activa después.
+  if(!checked) item.allowedFlavorIds=[];
+  bundleRender();
+}
+function bundleToggleAllowedFlavor(sectionId,productId,flavorId,checked){
+  const item=bundleFindItem(sectionId,productId); if(!item) return;
+  item.allowedFlavorIds = Array.isArray(item.allowedFlavorIds) ? item.allowedFlavorIds : [];
+  const fid = Number(flavorId);
+  if(!Number.isFinite(fid)) return;
+  if(checked){
+    if(!item.allowedFlavorIds.includes(fid)) item.allowedFlavorIds.push(fid);
+  } else {
+    item.allowedFlavorIds = item.allowedFlavorIds.filter(id=>id!==fid);
+  }
+  bundleRender();
+}
+function bundleSetAllowedFlavorAll(sectionId,productId,all){
+  const item=bundleFindItem(sectionId,productId); if(!item) return;
+  const product=bundleProduct(productId); if(!product) return;
+  item.allowedFlavorIds = all ? (product.flavorOptions||[]).map(o=>Number(o.id)) : [];
+  bundleRender();
 }
 function bundleSetNote(sectionId,productId,value){
   const item=bundleFindItem(sectionId,productId); if(item) item.note=value.slice(0,300);
@@ -618,6 +641,7 @@ function bundleRender(){
         </div>
         ${presentationControl}
         ${(product.hasSabor || product.flavorCount>0)?`<label class="bundle-line-flavor ${item.permiteSabor && !product.flavorCount?'is-warning':''} ${item.permiteSabor && product.flavorCount>0?'is-active':''}"><input type="checkbox" ${item.permiteSabor?'checked':''} data-bundle-input="permite-sabor" data-section-id="${section.id}" data-product-id="${product.id}"><span>El cliente elige el sabor de este componente</span>${product.flavorCount>0?`<em class="bundle-flavor-count">${product.flavorCount} sabor${product.flavorCount===1?'':'es'} activo${product.flavorCount===1?'':'s'}</em>`:`<em class="bundle-flavor-count is-empty">⚠︎ Sin sabores activos — configura sabores en el producto antes de habilitar aquí</em>`}</label>`:''}
+        ${(item.permiteSabor && product.flavorOptions && product.flavorOptions.length>1)?`<div class="bundle-flavor-subset"><div class="bundle-flavor-subset-head"><span>Sabores permitidos <em>(vacío = todos)</em></span><div class="bundle-flavor-subset-tools"><button type="button" data-bundle-action="flavor-all" data-section-id="${section.id}" data-product-id="${product.id}">Todos</button><button type="button" data-bundle-action="flavor-none" data-section-id="${section.id}" data-product-id="${product.id}">Ninguno</button></div></div><div class="bundle-flavor-subset-grid">${product.flavorOptions.map(opt=>{const checked=(item.allowedFlavorIds||[]).includes(opt.id);return `<label class="bundle-flavor-chip ${checked?'is-picked':''}"><input type="checkbox" ${checked?'checked':''} data-bundle-input="allowed-flavor" data-section-id="${section.id}" data-product-id="${product.id}" data-flavor-id="${opt.id}"><span>${bundleEscape(opt.nombre)}</span></label>`;}).join('')}</div><p class="bundle-flavor-subset-note">Marcados = únicos ofrecidos al cliente. Vacío = todos los ${product.flavorOptions.length} activos.</p></div>`:''}
         <label class="bundle-line-note"><input type="text" value="${bundleEscape(item.note)}" maxlength="300" placeholder="Nota opcional para cocina" data-bundle-input="note" data-section-id="${section.id}" data-product-id="${product.id}"></label>
       </div>`;
     }).join('');
@@ -760,6 +784,11 @@ function bundleSerialize(){
       add('comp_notas_preparacion',item.note||'');
       add('comp_presentation_id',item.presentationId||'');
       add('comp_permite_sabor',item.permiteSabor?'1':'0');
+      // Subset de sabores permitidos: JSON de IDs, o vacío = "sin restricción".
+      // El backend acepta '' o '[]' como equivalente a "no restringir".
+      add('comp_allowed_flavor_ids', item.permiteSabor && Array.isArray(item.allowedFlavorIds) && item.allowedFlavorIds.length
+        ? JSON.stringify(item.allowedFlavorIds.map(Number).filter(Number.isFinite))
+        : '');
     });
   });
 }
@@ -788,6 +817,8 @@ document.addEventListener('click', (event) => {
       bundleSelectSection(sectionId);
       bundleMobileTab('catalog');
     }
+    else if (action === 'flavor-all')  bundleSetAllowedFlavorAll(sectionId, productId, true);
+    else if (action === 'flavor-none') bundleSetAllowedFlavorAll(sectionId, productId, false);
     return;
   }
   const section = event.target.closest('[data-section-select]');
@@ -823,6 +854,7 @@ document.addEventListener('change', (event) => {
   else if (action === 'extra') bundleSetExtra(sectionId, productId, control.value);
   else if (action === 'default') bundleSetDefault(sectionId, productId, control.checked);
   else if (action === 'permite-sabor') bundleSetPermiteSabor(sectionId, productId, control.checked);
+  else if (action === 'allowed-flavor') bundleToggleAllowedFlavor(sectionId, productId, control.dataset.flavorId, control.checked);
   else if (action === 'max') bundleSetMax(sectionId, control.value);
   else if (action === 'presentation') bundleSetPresentation(sectionId, productId, control.value);
 });

@@ -2930,6 +2930,7 @@ def nuevo_combo():
     # así detecta al vuelo si su check es inerte porque no hay opciones activas.
     from sqlalchemy import func
     flavor_counts_by_product = {}
+    flavor_options_by_product = {}  # {producto_id: [{"id": n, "nombre": "..."}]}
     if productos_simples:
         _ids = [p.id for p in productos_simples]
         _rows = (
@@ -2948,6 +2949,36 @@ def nuevo_combo():
             .all()
         )
         flavor_counts_by_product = {int(pid): int(n) for pid, n in _rows}
+
+        # Opciones concretas de sabor por producto — feed del selector "subset"
+        # que el admin usa para restringir qué sabores concretos ofrece al
+        # cliente por componente. 1 sola query con JOIN, sin N+1.
+        _opt_rows = (
+            db.session.query(
+                ProductExtraGroup.producto_id,
+                ProductExtraOption.id,
+                ProductExtraOption.nombre,
+                ProductExtraOption.orden,
+            )
+            .join(ProductExtraOption, ProductExtraOption.grupo_id == ProductExtraGroup.id)
+            .filter(
+                ProductExtraGroup.tipo == "sabor",
+                ProductExtraGroup.activo.is_(True),
+                ProductExtraOption.activo.is_(True),
+                ProductExtraGroup.producto_id.in_(_ids),
+            )
+            .order_by(
+                ProductExtraGroup.producto_id,
+                ProductExtraOption.orden,
+                ProductExtraOption.id,
+            )
+            .all()
+        )
+        for pid, oid, nom, _ in _opt_rows:
+            flavor_options_by_product.setdefault(int(pid), []).append({
+                "id": int(oid),
+                "nombre": nom or "",
+            })
 
     def _render_form(**overrides):
         """Renderiza `nuevo_combo.html` con TODO el contexto crítico.
@@ -2968,6 +2999,7 @@ def nuevo_combo():
                 for product in productos_simples
             },
             "flavor_counts_by_product": flavor_counts_by_product,
+            "flavor_options_by_product": flavor_options_by_product,
         }
         ctx.update(overrides)
         return render_template("admin/nuevo_combo.html", **ctx)
@@ -3036,6 +3068,9 @@ def nuevo_combo():
     # (si su producto tiene grupo sabor activo). Se envía como checkbox "on"/""
     # — vacío en el array = no permitido.
     permite_sabores = request.form.getlist("comp_permite_sabor") or []
+    # Subset opcional de sabores permitidos por componente. Formato: JSON array
+    # de option_ids, o string vacío (= sin restricción, todos los activos).
+    allowed_flavor_ids_raw = request.form.getlist("comp_allowed_flavor_ids") or []
     group_uids = request.form.getlist("comp_group_uid") or []
     group_defs = _combo_groups_payload_from_form(request.form)
 
@@ -3053,6 +3088,8 @@ def nuevo_combo():
         parallel_arrays.append(presentation_ids)
     if permite_sabores:
         parallel_arrays.append(permite_sabores)
+    if allowed_flavor_ids_raw:
+        parallel_arrays.append(allowed_flavor_ids_raw)
     is_valid, error_msg = validate_parallel_arrays(*parallel_arrays)
     if not is_valid:
         db.session.rollback()
@@ -3150,13 +3187,47 @@ def nuevo_combo():
         # sabor activo en su producto original. Silenciosamente False si no.
         permite_sabor_raw = permite_sabores[i] if i < len(permite_sabores) else ""
         permite_sabor = str(permite_sabor_raw).strip().lower() in ("1", "on", "true", "yes")
+        allowed_flavor_ids_parsed = []
         if permite_sabor:
-            from models import ProductExtraGroup as _PEG
+            from models import ProductExtraGroup as _PEG, ProductExtraOption as _PEO
             _tiene_sabor = _PEG.query.filter_by(
                 producto_id=producto.id, tipo="sabor", activo=True
             ).first() is not None
             if not _tiene_sabor:
                 permite_sabor = False  # ignoramos silenciosamente
+            else:
+                # Parseamos el subset de sabores permitidos (JSON array de IDs).
+                # Ausencia o array vacío = "sin restricción" (todos los activos).
+                raw_subset = allowed_flavor_ids_raw[i] if i < len(allowed_flavor_ids_raw) else ""
+                if raw_subset and raw_subset.strip() and raw_subset.strip() != "[]":
+                    try:
+                        import json as _json
+                        candidate = _json.loads(raw_subset)
+                    except (ValueError, TypeError):
+                        candidate = []
+                    if isinstance(candidate, list):
+                        # Validamos que cada opción pertenezca a un grupo sabor
+                        # ACTIVO del producto. Filtramos silenciosamente las que
+                        # ya no cumplan (evita entradas huérfanas si el admin
+                        # desactivó una opción entre form-load y submit).
+                        _valid_ids = {
+                            row.id for row in _PEO.query.filter(
+                                _PEO.activo.is_(True),
+                                _PEO.grupo_id.in_(
+                                    db.session.query(_PEG.id).filter(
+                                        _PEG.producto_id == producto.id,
+                                        _PEG.tipo == "sabor",
+                                        _PEG.activo.is_(True),
+                                    )
+                                ),
+                            ).all()
+                        }
+                        allowed_flavor_ids_parsed = [
+                            int(x) for x in candidate
+                            if isinstance(x, (int, str))
+                            and str(x).lstrip("-").isdigit()
+                            and int(x) in _valid_ids
+                        ]
 
         # ── Detectar duplicados (fijos y seleccionables) ──
         if es_sel:
@@ -3200,6 +3271,7 @@ def nuevo_combo():
             'notas_preparacion': nota_prep or None,
             'presentation_id': presentation.id if presentation else None,
             'permite_sabor_cliente': permite_sabor,
+            '_allowed_flavor_option_ids': allowed_flavor_ids_parsed,  # side-channel — no es columna
         })
         n_comp += 1
 
@@ -3282,7 +3354,18 @@ def nuevo_combo():
         }
         clean_comp_data["combo_group_id"] = group.id
         clean_comp_data["orden"] = comp_data.get("orden", 0)
-        db.session.add(ComboItem(**clean_comp_data))
+        new_item = ComboItem(**clean_comp_data)
+        # Enlazamos el subset de sabores permitidos vía la relación M2M. La
+        # instancia no está persistida aún, pero `db.session.add(new_item)` +
+        # asignar la lista antes del flush produce inserts correctos en el
+        # junction table gracias a SQLAlchemy secondary bookkeeping.
+        allowed_ids = comp_data.get("_allowed_flavor_option_ids") or []
+        if allowed_ids:
+            from models import ProductExtraOption as _PEO_bind
+            new_item.allowed_flavor_options = _PEO_bind.query.filter(
+                _PEO_bind.id.in_(allowed_ids)
+            ).all()
+        db.session.add(new_item)
 
     extras_error = _sync_catalog_extras(combo, request.form)
     if extras_error:

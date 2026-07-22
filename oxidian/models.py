@@ -1993,22 +1993,46 @@ class ComboItem(db.Model):
     componente = db.relationship("Product", foreign_keys=[producto_id])
     variante = db.relationship("ProductVariant", foreign_keys=[variant_id])
     presentacion = db.relationship("ProductPresentation", foreign_keys=[presentation_id])
+    # Subset de sabores permitidos para ESTE componente en ESTE combo. Si la
+    # relación está vacía → "sin restricción, todos los sabores activos del
+    # producto están disponibles". Es lazy=select para no penalizar el listado
+    # cuando la mayoría de combos no restringen.
+    allowed_flavor_options = db.relationship(
+        "ProductExtraOption",
+        secondary=combo_item_allowed_flavors,
+        lazy="select",
+    )
+
+    @property
+    def allowed_flavor_option_ids(self):
+        """IDs de los sabores permitidos configurados por el admin, o `[]` si
+        no hay restricción. Útil para el POST de admin y para el checklist UI."""
+        return [option.id for option in self.allowed_flavor_options if option.id]
 
     @property
     def sabores_disponibles(self):
-        """Devuelve las opciones de sabor del componente (Product) que el
-        cliente podría elegir si `permite_sabor_cliente=True`. Vacío si el
-        componente no tiene grupo sabor activo o el flag está desactivado.
+        """Devuelve las opciones de sabor del componente que el cliente puede
+        elegir cuando `permite_sabor_cliente=True`. Aplica dos filtros:
+          1. Solo grupos `tipo='sabor'` y opciones activas del producto.
+          2. Si el admin definió un subset (allowed_flavor_options), restringe
+             a esa lista. Sin subset ⇒ todas las opciones activas.
+        Vacío si el flag está desactivado o el producto no tiene sabor activo.
         """
         if not self.permite_sabor_cliente or not self.componente:
             return []
+        allowed_ids = set(self.allowed_flavor_option_ids)
         grupos = ProductExtraGroup.query.filter_by(
             producto_id=self.componente.id, tipo="sabor", activo=True,
         ).order_by(ProductExtraGroup.orden, ProductExtraGroup.id).all()
         opciones = []
         for g in grupos:
             for opt in g.opciones.filter_by(activo=True).all():
-                opciones.append(opt)
+                # Sin subset → aceptar todo. Con subset → solo si está en la
+                # lista del admin. Esto blinda contra opciones nuevas del
+                # producto que el admin aún no ha revisado (no se filtran a
+                # menos que exista una restricción explícita).
+                if not allowed_ids or opt.id in allowed_ids:
+                    opciones.append(opt)
         return opciones
 
     __table_args__ = (
@@ -2151,6 +2175,28 @@ product_presentation_flavors = db.Table(
         primary_key=True,
     ),
     db.Index("ix_presentation_flavors_option", "option_id"),
+)
+
+
+# Junction: per-combo-component subset de sabores ofrecidos al cliente.
+# Ausencia de filas para un `combo_item_id` = "sin restricción, todos los
+# sabores activos del producto están disponibles" (retro-compat con el
+# comportamiento anterior a la introducción de esta feature).
+combo_item_allowed_flavors = db.Table(
+    "combo_item_allowed_flavors",
+    db.Column(
+        "combo_item_id",
+        db.Integer,
+        db.ForeignKey("combo_items.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    db.Column(
+        "option_id",
+        db.Integer,
+        db.ForeignKey("product_extra_options.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    db.Index("ix_combo_item_flavors_option", "option_id"),
 )
 
 

@@ -122,3 +122,65 @@ body.ox-body-admin .bundle-preview-product h3{color:#fff!important}
   .bundle-line-flavor{grid-template-columns:auto minmax(0,1fr);row-gap:.35rem}
   .bundle-flavor-count{grid-column:1/-1}
 }
+/* ── Subset de sabores permitidos por componente ──
+   Panel que aparece bajo el check "cliente elige sabor" cuando el producto
+   tiene 2+ sabores activos. El admin marca los sabores que quiere ofrecer.
+   Vacío = "sin restricción, todos" (se muestra tal cual como pill neutra). */
+.bundle-flavor-subset{
+  grid-column:2/-1;
+  display:grid;
+  gap:.4rem;
+  padding:.55rem .7rem;
+  border-radius:.55rem;
+  background:color-mix(in srgb, var(--work-accent, #e9be68) 6%, var(--ox-admin-surface, #1b1f24));
+  border:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 22%, transparent);
+}
+.bundle-flavor-subset-head{
+  display:flex;align-items:center;justify-content:space-between;gap:.6rem;
+  font-size:.68rem;font-weight:800;
+  color:color-mix(in srgb, var(--work-accent, #e9be68) 85%, #fff);
+  letter-spacing:.03em;text-transform:uppercase;
+}
+.bundle-flavor-subset-head em{
+  font-style:italic;font-weight:600;text-transform:none;letter-spacing:0;
+  color:var(--ox-admin-muted, #cbc0b1);
+}
+.bundle-flavor-subset-tools{display:flex;gap:.3rem}
+.bundle-flavor-subset-tools button{
+  padding:.22rem .5rem;border-radius:.4rem;font-size:.62rem;font-weight:850;
+  border:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 32%, transparent);
+  background:transparent;color:color-mix(in srgb, var(--work-accent, #e9be68) 90%, #fff);
+  cursor:pointer;transition:background .15s;
+}
+.bundle-flavor-subset-tools button:hover{background:color-mix(in srgb, var(--work-accent, #e9be68) 15%, transparent)}
+.bundle-flavor-subset-grid{
+  display:flex;flex-wrap:wrap;gap:.35rem;
+}
+.bundle-flavor-chip{
+  display:inline-flex;align-items:center;gap:.25rem;
+  padding:.32rem .58rem;border-radius:999px;cursor:pointer;
+  font-size:.7rem;font-weight:750;
+  background:color-mix(in srgb, var(--ox-admin-surface, #1b1f24) 92%, transparent);
+  border:1px solid color-mix(in srgb, var(--ox-admin-border, rgba(255,255,255,.12)) 100%, transparent);
+  color:var(--ox-admin-muted, #cbc0b1);
+  transition:background .15s, border-color .15s, color .15s;
+  -webkit-tap-highlight-color:transparent;
+  min-height:32px;
+}
+.bundle-flavor-chip input{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+.bundle-flavor-chip.is-picked{
+  background:color-mix(in srgb, var(--work-accent, #e9be68) 22%, transparent);
+  border-color:color-mix(in srgb, var(--work-accent, #e9be68) 60%, transparent);
+  color:color-mix(in srgb, var(--work-accent, #e9be68) 95%, #fff);
+  font-weight:900;
+}
+.bundle-flavor-chip:hover:not(.is-picked){
+  border-color:color-mix(in srgb, var(--work-accent, #e9be68) 35%, transparent);
+}
+.bundle-flavor-subset-note{
+  font-size:.62rem;color:var(--ox-admin-muted, #cbc0b1);line-height:1.35;margin:.15rem 0 0;
+}
+@media(max-width:640px){
+  .bundle-flavor-subset{grid-column:1/-1;padding:.5rem .55rem}
+  .bundle-flavor-subset-head{flex-direction:column;align-items:flex-start;gap:.25rem}
+}
