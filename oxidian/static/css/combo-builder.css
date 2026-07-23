@@ -367,3 +367,61 @@ body.ox-body-admin .bundle-preview-product h3{color:#fff!important}
   font-weight:900;
 }
 @media(max-width:640px){.bundle-tip{font-size:.72rem;padding:.45rem .7rem}}
+
+/* ── Panel de tamaños y sabores del combo — visible por defecto ──
+   Reutiliza la lengua visual del accordion pero abierto por defecto.
+   Título + icono 📏 dejan clarísimo qué configura este panel: el admin
+   ya no piensa "no puedo poner tamaños ni sabores" tras ocultarlo en el
+   accordion de ajustes avanzados. */
+.bundle-flavor-panel{
+  margin:1rem 0;
+  border-radius:1rem;
+  border:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 30%, transparent);
+  background:color-mix(in srgb, var(--work-accent, #e9be68) 4%, var(--ox-admin-surface, #1b1f24));
+  overflow:hidden;
+}
+.bundle-flavor-panel>summary{
+  display:flex;align-items:center;gap:.85rem;
+  padding:.9rem 1.15rem;cursor:pointer;
+  list-style:none;user-select:none;
+  -webkit-tap-highlight-color:transparent;
+  background:color-mix(in srgb, var(--work-accent, #e9be68) 10%, transparent);
+}
+.bundle-flavor-panel>summary::-webkit-details-marker{display:none}
+.bundle-flavor-panel>summary>div{flex:1;min-width:0}
+.bundle-flavor-panel>summary strong{
+  display:block;font-size:.92rem;font-weight:900;
+  color:color-mix(in srgb, var(--work-accent, #e9be68) 96%, #fff);
+}
+.bundle-flavor-panel>summary small{
+  display:block;font-size:.72rem;font-weight:500;
+  color:var(--ox-admin-muted, #cbc0b1);
+  margin-top:.12rem;
+}
+.bundle-flavor-panel[open] .bundle-advanced-chev{transform:rotate(180deg)}
+.bundle-flavor-panel-body{
+  border-top:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 22%, transparent);
+  border-radius:0;
+  padding:1rem 1.15rem 1.15rem;
+}
+.bundle-flavor-panel-head{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;
+}
+.bundle-flavor-panel-head p{
+  margin:0;font-size:.78rem;color:var(--ox-admin-muted, #cbc0b1);line-height:1.4;
+}
+.bundle-flavor-panel-head a{
+  font-size:.72rem;font-weight:900;
+  color:color-mix(in srgb, var(--work-accent, #e9be68) 95%, #fff);
+}
+.bundle-flavor-panel-note{
+  margin:1rem 0 .55rem;font-size:.78rem;font-weight:800;
+  color:var(--ox-admin-text, #fff);
+}
+@media(max-width:640px){
+  .bundle-flavor-panel>summary{padding:.7rem .85rem}
+  .bundle-flavor-panel>summary strong{font-size:.85rem}
+  .bundle-flavor-panel-body{padding:.85rem .85rem 1rem}
+  .bundle-flavor-panel-head{flex-direction:column;align-items:flex-start;gap:.35rem}
+}

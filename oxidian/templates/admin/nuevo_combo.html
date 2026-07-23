@@ -139,20 +139,68 @@
     </details>
   </section>
 
-  {# ── Ajustes avanzados del combo — colapsados por defecto ─────────
-     Estos ajustes aplican al COMBO COMPLETO (extras y sabores globales),
-     NO a componentes individuales. La mayoría de admins no los necesita
-     en un flujo simple: los ocultamos hasta que abran el desplegable.
-     Como los `<input>` viven dentro del `<details>`, siguen entrando en
-     el POST igual — el JS no cambia. #}
   {% set extra_catalog = extras_catalogo_disponibles() %}
   {% if brand.es_comida %}{% set flavor_catalog = sabores_catalogo_disponibles() %}{% else %}{% set flavor_catalog = [] %}{% endif %}
+
+  {# ── Tamaños y sabores del combo — VISIBLE (abierto por defecto en
+     tiendas de comida). Este es el sitio donde el admin define si el
+     combo se vende en pequeño/mediano/grande y qué sabores puede llevar
+     el conjunto. Si lo escondíamos en un accordion, el admin creía que
+     la feature no existía. Ahora se ve de arranque; solo se puede
+     colapsar manualmente. Fuera de tiendas de comida no aparece. #}
+  {% if brand.es_comida %}
+  <details class="bundle-flavor-panel" open>
+    <summary>
+      <span class="bundle-advanced-icon">📏</span>
+      <div>
+        <strong>Tamaños y sabores del combo</strong>
+        <small>Vende el combo en pequeño/mediano/grande y define qué sabores lleva.</small>
+      </div>
+      <span class="bundle-advanced-chev" aria-hidden="true">▾</span>
+    </summary>
+    <section class="bundle-extras bundle-flavors bundle-flavor-panel-body">
+      <input type="hidden" name="flavors_catalog_present" value="1">
+      {% if flavor_catalog %}
+      <div class="bundle-extras-head bundle-flavor-panel-head">
+        <p>Marca los sabores que llevará el combo. Luego, en cada tamaño, decides cuántos permites y cuáles.</p>
+        <a href="{{ url_for('admin.extras_catalogo') }}">Gestionar biblioteca de sabores</a>
+      </div>
+      <div class="bundle-extras-grid">{% for flavor in flavor_catalog %}<label><input type="checkbox" name="flavor_catalog_ids" value="{{ flavor.id }}"><span><strong>{{ flavor.nombre }}</strong><small>Disponible para asignar a los tamaños</small></span></label>{% endfor %}</div>
+      <div class="bundle-flavor-defaults">
+        <label><input type="checkbox" name="flavors_required" value="1" checked> Exigir distribución de sabores</label>
+        <label><span>Total general sin tamaño</span><input type="number" name="flavors_max_selecciones" min="1" max="100" value="1"></label>
+      </div>
+      <p class="bundle-flavor-panel-note">Activa los tamaños que ofreces (puedes activar solo uno si el combo no tiene variantes):</p>
+      <div class="bundle-size-grid">
+        {% for size, label in [('pequeño','Pequeño'),('mediano','Mediano'),('grande','Grande')] %}
+        <article>
+          <label><input type="checkbox" name="pres_{{ size }}_activo" value="1" data-bundle-size="{{ size }}"> <strong>{{ label }}</strong></label>
+          <label><span>Ajuste €</span><input type="number" step="0.01" name="pres_{{ size }}_extra" value="0"></label>
+          <label><input type="checkbox" name="pres_{{ size }}_flavor_rules" value="1"> Reglas propias</label>
+          <div class="bundle-size-limits"><label><span>Mínimo</span><input type="number" name="pres_{{ size }}_flavor_min" min="0" max="100" value="1"></label><label><span>Total</span><input type="number" name="pres_{{ size }}_flavor_max" min="0" max="100" value="1"></label></div>
+          <div class="bundle-size-flavors">{% for flavor in flavor_catalog %}<label><input type="checkbox" name="pres_{{ size }}_flavor_catalog_ids" value="{{ flavor.id }}"> {{ flavor.nombre }}</label>{% endfor %}</div>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="bundle-extras-empty">
+        Todavía no tienes sabores en tu biblioteca. Ve a <a href="{{ url_for('admin.extras_catalogo') }}">Extras y sabores</a> y crea al menos uno para poder configurarlos aquí.
+      </p>
+      {% endif %}
+    </section>
+  </details>
+  {% endif %}
+
+  {# ── Ajustes extra del combo — colapsados por defecto ─────────
+     Sólo los "Extras suplementarios" (bebidas adicionales, salsas, etc.)
+     porque los usa <20% de los combos. Los `<input>` viven dentro del
+     `<details>` — el POST recibe lo mismo, cero cambio de contrato. #}
   <details class="bundle-advanced" id="bundle-advanced-details">
     <summary>
       <span class="bundle-advanced-icon">⚙️</span>
       <div>
-        <strong>Ajustes avanzados del combo</strong>
-        <small>Extras suplementarios y tamaños/sabores del combo completo. Opcional.</small>
+        <strong>Extras del combo</strong>
+        <small>Suplementos opcionales que el cliente puede añadir sobre el precio base (bebidas, salsas…). Opcional.</small>
       </div>
       <span class="bundle-advanced-chev" aria-hidden="true">▾</span>
     </summary>
@@ -163,7 +211,7 @@
         <div>
           <span>Personalización opcional</span>
           <h2>Extras disponibles para este combo</h2>
-          <p>Suplementos del combo completo, distintos de las elecciones de bebida o acompañamiento.</p>
+          <p>Suplementos del combo completo, distintos de las elecciones de bebida o acompañamiento del paso 2.</p>
         </div>
         <a href="{{ url_for('admin.extras_catalogo') }}">Gestionar biblioteca</a>
       </div>
@@ -176,38 +224,6 @@
       <label class="bundle-extras-max"><span>Máximo total por combo</span><input type="number" name="extras_max_selecciones" min="1" max="20" value="4"></label>
       {% else %}<p class="bundle-extras-empty">La biblioteca de extras está vacía.</p>{% endif %}
     </section>
-
-    {% if brand.es_comida %}
-    <section class="bundle-extras bundle-flavors bundle-advanced-block">
-      <input type="hidden" name="flavors_catalog_present" value="1">
-      <div class="bundle-extras-head">
-        <div>
-          <span>Presentaciones del combo</span>
-          <h2>Tamaños y reparto de sabores del combo completo</h2>
-          <p>Reglas que aplican al COMBO como conjunto (no a componentes individuales — eso está en cada tarjeta del producto en el paso 2).</p>
-        </div>
-        <a href="{{ url_for('admin.extras_catalogo') }}">Gestionar sabores</a>
-      </div>
-      {% if flavor_catalog %}
-      <div class="bundle-extras-grid">{% for flavor in flavor_catalog %}<label><input type="checkbox" name="flavor_catalog_ids" value="{{ flavor.id }}"><span><strong>{{ flavor.nombre }}</strong><small>Disponible para asignar a los tamaños</small></span></label>{% endfor %}</div>
-      <div class="bundle-flavor-defaults">
-        <label><input type="checkbox" name="flavors_required" value="1" checked> Exigir distribución de sabores</label>
-        <label><span>Total general sin tamaño</span><input type="number" name="flavors_max_selecciones" min="1" max="100" value="1"></label>
-      </div>
-      <div class="bundle-size-grid">
-        {% for size, label in [('pequeño','Pequeño'),('mediano','Mediano'),('grande','Grande')] %}
-        <article>
-          <label><input type="checkbox" name="pres_{{ size }}_activo" value="1" data-bundle-size="{{ size }}"> <strong>{{ label }}</strong></label>
-          <label><span>Ajuste €</span><input type="number" step="0.01" name="pres_{{ size }}_extra" value="0"></label>
-          <label><input type="checkbox" name="pres_{{ size }}_flavor_rules" value="1"> Reglas propias</label>
-          <div class="bundle-size-limits"><label><span>Mínimo</span><input type="number" name="pres_{{ size }}_flavor_min" min="0" max="100" value="1"></label><label><span>Total</span><input type="number" name="pres_{{ size }}_flavor_max" min="0" max="100" value="1"></label></div>
-          <div class="bundle-size-flavors">{% for flavor in flavor_catalog %}<label><input type="checkbox" name="pres_{{ size }}_flavor_catalog_ids" value="{{ flavor.id }}"> {{ flavor.nombre }}</label>{% endfor %}</div>
-        </article>
-        {% endfor %}
-      </div>
-      {% else %}<p class="bundle-extras-empty">Crea sabores en la biblioteca antes de configurar presentaciones.</p>{% endif %}
-    </section>
-    {% endif %}
   </details>
 
   {# ── Hint contextual para el paso 2 — corto y accionable.
