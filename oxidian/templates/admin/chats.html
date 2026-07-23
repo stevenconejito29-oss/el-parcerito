@@ -1,0 +1,82 @@
+{% extends "admin_base.html" %}
+{% block title %}Chats en vivo — {{ brand.nombre }}{% endblock %}
+{% block content %}
+
+<div class="work-area">
+<section class="work-hero">
+  <div>
+    <span class="work-eyebrow">Panel de conversación</span>
+    <h1 class="work-title">Chats en vivo</h1>
+    <p class="work-subtitle">Retoma chats donde el cliente pidió hablar con una persona. Cuando reclamas un chat, el bot deja de contestar automáticamente en ese hilo.</p>
+  </div>
+</section>
+
+{% if not has_phone %}
+<div class="work-alert work-alert-warning">
+  ⚠️ Tu usuario no tiene teléfono configurado. Sin él no puedes reclamar ni cerrar chats
+  (WhatsApp identifica al admin por su número). Añade tu teléfono en tu perfil y refresca.
+</div>
+{% endif %}
+
+<section class="work-section">
+  <div class="work-section-hd">
+    <h2>🔔 Pendientes ({{ pending|length }})</h2>
+    <p class="work-subtitle">Clientes esperando a un humano. Reclama uno para empezar a hablar.</p>
+  </div>
+  {% if pending %}
+  <div class="work-list">
+    {% for h in pending %}
+    <article class="work-card">
+      <div class="work-card-body">
+        <div>
+          <strong>+{{ h.client_phone }}</strong>
+          <p class="work-subtitle">{{ h.preview or 'Sin mensajes previos' }}</p>
+        </div>
+        <div class="work-actions">
+          <a href="{{ url_for('admin.chats_detalle', client_jid=h.client_jid) }}"
+             class="work-btn work-btn-ghost">Ver historial</a>
+          {% if has_phone %}
+          <form method="POST" action="{{ url_for('admin.chats_claim', client_jid=h.client_jid) }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="work-btn work-btn-primary">Retomar chat →</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="work-empty">Sin chats pendientes.</p>
+  {% endif %}
+</section>
+
+<section class="work-section">
+  <div class="work-section-hd">
+    <h2>💬 Mis chats activos ({{ mine|length }})</h2>
+    <p class="work-subtitle">Conversaciones que ya reclamaste. Solo tú puedes responderlas o cerrarlas.</p>
+  </div>
+  {% if mine %}
+  <div class="work-list">
+    {% for h in mine %}
+    <article class="work-card">
+      <div class="work-card-body">
+        <div>
+          <strong>+{{ h.client_phone }}</strong>
+          <p class="work-subtitle">{{ h.preview or '—' }}</p>
+        </div>
+        <div class="work-actions">
+          <a href="{{ url_for('admin.chats_detalle', client_jid=h.client_jid) }}"
+             class="work-btn work-btn-primary">Abrir chat →</a>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="work-empty">No tienes chats activos. Reclama uno de la lista de pendientes.</p>
+  {% endif %}
+</section>
+
+</div>
+{% endblock %}

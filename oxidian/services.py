@@ -3017,6 +3017,45 @@ def _bot_http_post(path: str, payload: dict, timeout: int = 8) -> bool:
         return False
 
 
+def bot_http_request(method: str, path: str, params: dict | None = None,
+                     json_body: dict | None = None, timeout: int = 8) -> dict | None:
+    """Cliente HTTP genérico Flask → bot Node.
+
+    Hermano de `_bot_http_post` pero retornando la respuesta parseada en
+    lugar de un booleano — necesario para endpoints de LECTURA (`GET
+    /api/bot/handoffs/pending`, `/messages`) donde el consumidor Flask
+    necesita el payload completo, no solo el flag ok.
+
+    Devuelve el dict JSON de la respuesta, o `None` si hay fallo de red o
+    respuesta no-JSON. NO lanza — pensado para invocarse desde vistas HTTP
+    que deben degradar gracefully (mostrar "sin datos" en lugar de 500).
+    """
+    import requests
+    from models import SiteConfig
+
+    bot_url = (SiteConfig.get("BOT_API_URL", os.environ.get("BOT_API_URL", "http://chat:3000")) or "").rstrip("/")
+    api_key = SiteConfig.get("BOT_API_KEY", "")
+    if not bot_url or not api_key:
+        return None
+    headers = {"X-API-Key": api_key, "X-Bot-Key": api_key}
+    try:
+        resp = requests.request(
+            method.upper(),
+            f"{bot_url}{path}",
+            params=params or None,
+            json=json_body if method.upper() != "GET" else None,
+            headers=headers,
+            timeout=timeout,
+        )
+        try:
+            return resp.json()
+        except ValueError:
+            return None
+    except Exception as exc:
+        logger.warning("bot %s %s fallo: %s", method.upper(), path, exc)
+        return None
+
+
 def _registrar_notificacion(
     canal: str,
     evento: str,

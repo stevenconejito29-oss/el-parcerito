@@ -8832,6 +8832,191 @@ app.post('/api/bot/review-request', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// HANDOFF WEB API — permite al panel Flask retomar chats de handoff
+// desde el navegador (además del canal WhatsApp existente). Todas las
+// operaciones pasan por `requireApiKey` + validación de admin_jid.
+// ─────────────────────────────────────────────────────────────────────────
+
+// GET /api/bot/handoffs/pending — handoffs sin admin asignado.
+app.get('/api/bot/handoffs/pending', (req, res) => {
+  try {
+    if (!requireApiKey(req, res)) return;
+    const pending = listPendingHandoffs();
+    // Enriquecemos con el último mensaje del cliente para preview en la UI.
+    const enriched = pending.map(row => ({
+      client_jid: row.client_jid,
+      client_phone: row.client_jid.replace('@s.whatsapp.net', ''),
+      requested_at: row.requested_at,
+      admin_jid: row.admin_jid,
+      preview: _handoffLastMessagePreview(row.client_jid, 80),
+    }));
+    return res.json({ ok: true, handoffs: enriched });
+  } catch (e) {
+    log('error', 'api_handoff_pending', String(e));
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// GET /api/bot/handoffs/mine?admin_jid=… — handoffs asignados a un admin.
+// Filtramos por `admin_jid` en la query para que el panel muestre solo los
+// chats "en curso" del admin logueado. Sin admin_jid → 400.
+app.get('/api/bot/handoffs/mine', (req, res) => {
+  try {
+    if (!requireApiKey(req, res)) return;
+    const raw = String(req.query.admin_jid || '').trim();
+    if (!raw) return res.status(400).json({ ok: false, error: 'admin_jid requerido' });
+    const adminJid = raw.includes('@') ? raw : `${normalizePhone(raw)}@s.whatsapp.net`;
+    const rows = db.prepare(`
+      SELECT client_jid, admin_jid, requested_at, assigned_at
+      FROM handoffs
+      WHERE admin_jid = ?
+      ORDER BY assigned_at DESC NULLS LAST, requested_at DESC
+    `).all(adminJid).filter(h => canBeHandoffClient(h.client_jid));
+    return res.json({
+      ok: true,
+      handoffs: rows.map(row => ({
+        client_jid: row.client_jid,
+        client_phone: row.client_jid.replace('@s.whatsapp.net', ''),
+        requested_at: row.requested_at,
+        assigned_at: row.assigned_at,
+        preview: _handoffLastMessagePreview(row.client_jid, 80),
+      })),
+    });
+  } catch (e) {
+    log('error', 'api_handoff_mine', String(e));
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// GET /api/bot/handoffs/:clientJid/messages — transcript de la conversación
+// activa. Devuelve TODOS los mensajes del handoff (no filtramos por
+// `delivered_at` porque el panel humano necesita ver el histórico completo,
+// no solo lo pendiente de entrega al cliente).
+app.get('/api/bot/handoffs/:clientJid/messages', (req, res) => {
+  try {
+    if (!requireApiKey(req, res)) return;
+    const clientJid = req.params.clientJid.includes('@')
+      ? req.params.clientJid
+      : `${normalizePhone(req.params.clientJid)}@s.whatsapp.net`;
+    const limit = Math.max(1, Math.min(200, parseInt(req.query.limit || '80', 10) || 80));
+    const rows = db.prepare(`
+      SELECT id, sender, body, created_at, delivered_at
+      FROM handoff_messages
+      WHERE client_jid = ?
+      ORDER BY id ASC
+      LIMIT ?
+    `).all(clientJid, limit);
+    const handoff = getHandoff(clientJid);
+    return res.json({
+      ok: true,
+      client_jid: clientJid,
+      handoff: handoff ? {
+        admin_jid: handoff.admin_jid,
+        requested_at: handoff.requested_at,
+        assigned_at: handoff.assigned_at,
+      } : null,
+      messages: rows,
+    });
+  } catch (e) {
+    log('error', 'api_handoff_messages', String(e));
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// POST /api/bot/handoffs/:clientJid/claim — reclama el handoff para el admin.
+// Body: {admin_jid, admin_phone?}. Devuelve `ok:false` si otro admin ya lo
+// tomó (mensaje "conflicto"). La atomicidad la garantiza `assignHandoff`.
+app.post('/api/bot/handoffs/:clientJid/claim', async (req, res) => {
+  try {
+    if (!requireApiKey(req, res)) return;
+    const clientJid = req.params.clientJid.includes('@')
+      ? req.params.clientJid
+      : `${normalizePhone(req.params.clientJid)}@s.whatsapp.net`;
+    const rawAdmin = String(req.body?.admin_jid || req.body?.admin_phone || '').trim();
+    if (!rawAdmin) return res.status(400).json({ ok: false, error: 'admin_jid requerido' });
+    const adminJid = rawAdmin.includes('@') ? rawAdmin : `${normalizePhone(rawAdmin)}@s.whatsapp.net`;
+    const result = assignHandoff(clientJid, adminJid);
+    if (!result || !result.changes) {
+      return res.status(409).json({ ok: false, error: 'conflict', message: 'Otro admin ya tomó este chat o el admin no puede reclamarlo.' });
+    }
+    // Aviso al cliente: ya hay un humano en línea. Inline (no hay
+    // `texts.handoffAssignedMessage` en el módulo por ahora, y no queremos
+    // introducir un módulo compartido solo para esta cadena).
+    try {
+      const adminName = String(req.body?.admin_name || '').trim();
+      const nombreParte = adminName ? ` con ${adminName}` : '';
+      await sendText(
+        clientJid,
+        `👤 *Ya estás hablando con nuestro equipo${nombreParte}.*\nEscríbenos por aquí y te respondemos personalmente. Cuando terminemos, cerraremos el chat y volverás al menú.`,
+        { transactional: true },
+      );
+    } catch (_) { /* no bloqueamos el claim si el aviso falla */ }
+    return res.json({ ok: true, client_jid: clientJid, admin_jid: adminJid });
+  } catch (e) {
+    log('error', 'api_handoff_claim', String(e));
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// POST /api/bot/handoffs/:clientJid/reply — el admin envía un mensaje al
+// cliente vía WhatsApp durante el handoff. Registra el mensaje en la tabla
+// de historial para que quede auditable, luego lo despacha por sendText.
+app.post('/api/bot/handoffs/:clientJid/reply', async (req, res) => {
+  try {
+    if (!requireApiKey(req, res)) return;
+    const clientJid = req.params.clientJid.includes('@')
+      ? req.params.clientJid
+      : `${normalizePhone(req.params.clientJid)}@s.whatsapp.net`;
+    const rawAdmin = String(req.body?.admin_jid || req.body?.admin_phone || '').trim();
+    const body = String(req.body?.mensaje || req.body?.body || '').trim();
+    if (!rawAdmin || !body) return res.status(400).json({ ok: false, error: 'admin_jid y mensaje requeridos' });
+    if (body.length > MAX_OUTBOUND_CHARS) return res.status(400).json({ ok: false, error: 'mensaje demasiado largo' });
+    const adminJid = rawAdmin.includes('@') ? rawAdmin : `${normalizePhone(rawAdmin)}@s.whatsapp.net`;
+    const handoff = getHandoff(clientJid);
+    if (!handoff) return res.status(404).json({ ok: false, error: 'no active handoff' });
+    // Sólo el admin asignado puede responder por seguridad; evita colisiones
+    // si dos admins abren el mismo chat en pestañas paralelas.
+    if (handoff.admin_jid && handoff.admin_jid !== adminJid) {
+      return res.status(403).json({ ok: false, error: 'handoff asignado a otro admin' });
+    }
+    // Si el handoff aún no está reclamado, el reply implicitamente lo reclama
+    // para este admin — evita un click extra desde la UI.
+    if (!handoff.admin_jid) {
+      const claim = assignHandoff(clientJid, adminJid);
+      if (!claim?.changes) return res.status(409).json({ ok: false, error: 'no se pudo reclamar el handoff' });
+    }
+    queueAssignedHandoffMessage(clientJid, adminJid, 'admin', body);
+    const sent = await sendText(clientJid, body, { transactional: true });
+    return res.json({ ok: !!sent });
+  } catch (e) {
+    log('error', 'api_handoff_reply', String(e));
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// POST /api/bot/handoffs/:clientJid/close — cierra el chat. Delega en
+// `closeHumanChat` que archiva snapshot + notifica al cliente + libera
+// sesión del admin. Devuelve ok:false si el admin no era el asignado.
+app.post('/api/bot/handoffs/:clientJid/close', async (req, res) => {
+  try {
+    if (!requireApiKey(req, res)) return;
+    const clientJid = req.params.clientJid.includes('@')
+      ? req.params.clientJid
+      : `${normalizePhone(req.params.clientJid)}@s.whatsapp.net`;
+    const rawAdmin = String(req.body?.admin_jid || req.body?.admin_phone || '').trim();
+    if (!rawAdmin) return res.status(400).json({ ok: false, error: 'admin_jid requerido' });
+    const adminJid = rawAdmin.includes('@') ? rawAdmin : `${normalizePhone(rawAdmin)}@s.whatsapp.net`;
+    const notify = req.body?.notify_client !== false;
+    const closed = await closeHumanChat(adminJid, clientJid, notify);
+    if (!closed) return res.status(409).json({ ok: false, error: 'no eras el admin asignado o el handoff no existe' });
+    return res.json({ ok: true });
+  } catch (e) {
+    log('error', 'api_handoff_close', String(e));
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
 app.post('/api/oxidian/sync', async (req, res) => {
   try {
     if (!requireApiKey(req, res, { panel: true })) return;

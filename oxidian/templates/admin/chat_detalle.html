@@ -1,0 +1,97 @@
+{% extends "admin_base.html" %}
+{% block title %}Chat con +{{ client_phone }} — {{ brand.nombre }}{% endblock %}
+{% block styles %}
+<style>
+.chat-log{display:flex;flex-direction:column;gap:.55rem;padding:.7rem .5rem;max-height:60vh;overflow-y:auto;
+  background:var(--col-elevated);border:1px solid var(--col-border);border-radius:.9rem}
+.chat-msg{padding:.55rem .75rem;border-radius:.7rem;max-width:82%;line-height:1.35;font-size:.9rem;
+  word-break:break-word;white-space:pre-wrap}
+.chat-msg-client{align-self:flex-start;background:#fff;border:1px solid var(--col-border);color:var(--col-text)}
+.chat-msg-admin{align-self:flex-end;background:color-mix(in srgb,var(--brand-primary,#FFAB00) 22%,var(--col-elevated));
+  border:1px solid color-mix(in srgb,var(--brand-primary,#FFAB00) 40%,transparent);color:var(--col-text)}
+.chat-msg-meta{font-size:.62rem;color:var(--col-muted);margin-top:.15rem;font-weight:700}
+.chat-form{display:flex;gap:.5rem;margin-top:.9rem}
+.chat-form textarea{flex:1;min-height:44px;border:1.5px solid var(--col-border);border-radius:.7rem;padding:.55rem .7rem;
+  font-size:.92rem;font-family:inherit;line-height:1.35;resize:vertical;max-height:200px}
+.chat-form textarea:focus{outline:none;border-color:var(--brand-primary,#FFAB00);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--brand-primary,#FFAB00) 22%,transparent)}
+.chat-empty{color:var(--col-muted);font-size:.85rem;text-align:center;padding:1.5rem 0}
+</style>
+{% endblock %}
+{% block content %}
+
+<div class="work-area">
+<section class="work-hero">
+  <div>
+    <a href="{{ url_for('admin.chats_index') }}" class="work-back">← Chats</a>
+    <h1 class="work-title">Chat con +{{ client_phone }}</h1>
+    <p class="work-subtitle">
+      {% if handoff and handoff.admin_jid %}
+        {% if is_mine %}Tomado por ti · en curso{% else %}⚠️ Este chat está asignado a otro admin.{% endif %}
+      {% else %}
+        Sin asignar · pendiente
+      {% endif %}
+    </p>
+  </div>
+  {% if is_mine %}
+  <div class="work-actions-top">
+    <form method="POST" action="{{ url_for('admin.chats_close', client_jid=client_jid) }}"
+          onsubmit="return confirm('¿Cerrar el chat? El cliente vuelve al menú del bot.')" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="work-btn work-btn-ghost">Cerrar chat</button>
+    </form>
+  </div>
+  {% elif not handoff or not handoff.admin_jid %}
+  <div class="work-actions-top">
+    {% if has_phone %}
+    <form method="POST" action="{{ url_for('admin.chats_claim', client_jid=client_jid) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="work-btn work-btn-primary">Retomar chat</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="work-section">
+  <div class="chat-log" id="chat-log">
+    {% if messages %}
+      {% for m in messages %}
+      <div class="chat-msg {% if m.sender == 'admin' %}chat-msg-admin{% else %}chat-msg-client{% endif %}">
+        {{ m.body }}
+        <div class="chat-msg-meta">
+          {% if m.sender == 'admin' %}Tú{% else %}Cliente{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="chat-empty">Sin mensajes todavía en este handoff.</p>
+    {% endif %}
+  </div>
+
+  {% if is_mine %}
+  <form method="POST" action="{{ url_for('admin.chats_reply', client_jid=client_jid) }}" class="chat-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <textarea name="mensaje" required maxlength="1500"
+              placeholder="Escribe tu respuesta (llega al WhatsApp del cliente)…"
+              aria-label="Mensaje al cliente"></textarea>
+    <button type="submit" class="work-btn work-btn-primary">Enviar</button>
+  </form>
+  {% elif has_phone and (not handoff or not handoff.admin_jid) %}
+  <p class="work-subtitle">Retoma el chat para poder responder.</p>
+  {% else %}
+  <p class="work-subtitle">Solo el admin que reclamó este chat puede responder.</p>
+  {% endif %}
+</section>
+
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+// Auto-scroll al último mensaje al abrir la vista.
+(() => {
+  const log = document.getElementById('chat-log');
+  if (log) log.scrollTop = log.scrollHeight;
+})();
+</script>
+
+{% endblock %}

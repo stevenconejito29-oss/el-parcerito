@@ -6300,3 +6300,143 @@ def cerrar_lote(batch_id):
     db.session.commit()
     flash("Lote cerrado — no aceptará nuevas reservas.", "info")
     return redirect(url_for("admin.encargos_lotes"))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# CHATS EN VIVO (handoff) — panel web para retomar conversaciones del bot
+# ─────────────────────────────────────────────────────────────────────────
+# Contrato con el bot Node (chat/bot.js):
+#   GET  /api/bot/handoffs/pending                → lista pendientes
+#   GET  /api/bot/handoffs/mine?admin_jid=…       → asignados a mí
+#   GET  /api/bot/handoffs/:jid/messages          → transcript
+#   POST /api/bot/handoffs/:jid/claim             → reclamar
+#   POST /api/bot/handoffs/:jid/reply             → responder
+#   POST /api/bot/handoffs/:jid/close             → cerrar + notificar
+# Todos requieren `BOT_API_KEY` — inyectada por `bot_http_request` en
+# services.py. El admin_jid se calcula desde `current_user.telefono`, así
+# que un admin sin teléfono configurado NO puede reclamar chats (falla-
+# cerrado, no se permite bypass silencioso).
+# ═══════════════════════════════════════════════════════════════════════
+
+def _current_admin_jid() -> str | None:
+    """Devuelve el JID de WhatsApp del admin logueado, o None si su
+    teléfono no está configurado o el rol no autoriza handoffs.
+
+    Usa `phone_utils.normalizar_telefono_cliente` — el mismo normalizador
+    que aplica el modelo User al persistir teléfonos, para garantizar que
+    el JID coincida con el guardado en la tabla `admin_availability` del
+    bot Node (que a su vez normaliza con la misma regla en el JID handshake)."""
+    if current_user.rol not in _ROLES_ADMIN:
+        return None
+    from phone_utils import normalizar_telefono_cliente
+    telefono = normalizar_telefono_cliente(getattr(current_user, "telefono", "") or "")
+    # `normalizar_telefono_cliente` devuelve una cadena vacía si el input
+    # no es válido — evita que un admin sin teléfono acabe con `@s.whatsapp.net`
+    # colgando y provocando 404 en el bot.
+    if not telefono:
+        return None
+    # Los JIDs de WhatsApp usan solo dígitos (sin `+`), consistente con
+    # `normalizePhone` en bot.js. El normalizador de phone_utils ya
+    # devuelve E.164 con `+` prefijado, lo retiramos aquí.
+    solo_digitos = telefono.lstrip("+")
+    return f"{solo_digitos}@s.whatsapp.net"
+
+
+@admin_bp.route("/chats")
+@admin_required
+def chats_index():
+    """Lista de handoffs pendientes + los que tengo asignados."""
+    from services import bot_http_request
+    admin_jid = _current_admin_jid()
+    pending = (bot_http_request("GET", "/api/bot/handoffs/pending") or {}).get("handoffs") or []
+    mine = []
+    if admin_jid:
+        mine = (bot_http_request(
+            "GET", "/api/bot/handoffs/mine", params={"admin_jid": admin_jid}
+        ) or {}).get("handoffs") or []
+    return render_template(
+        "admin/chats.html",
+        pending=pending,
+        mine=mine,
+        admin_jid=admin_jid,
+        has_phone=bool(admin_jid),
+    )
+
+
+@admin_bp.route("/chats/<path:client_jid>")
+@admin_required
+def chats_detalle(client_jid):
+    """Ver conversación de un handoff (pendiente o asignada)."""
+    from services import bot_http_request
+    admin_jid = _current_admin_jid()
+    data = bot_http_request("GET", f"/api/bot/handoffs/{client_jid}/messages") or {}
+    messages = data.get("messages") or []
+    handoff = data.get("handoff") or {}
+    return render_template(
+        "admin/chat_detalle.html",
+        client_jid=client_jid,
+        client_phone=client_jid.replace("@s.whatsapp.net", ""),
+        messages=messages,
+        handoff=handoff,
+        admin_jid=admin_jid,
+        is_mine=(admin_jid is not None and handoff.get("admin_jid") == admin_jid),
+        has_phone=bool(admin_jid),
+    )
+
+
+@admin_bp.route("/chats/<path:client_jid>/claim", methods=["POST"])
+@admin_required
+def chats_claim(client_jid):
+    from services import bot_http_request
+    admin_jid = _current_admin_jid()
+    if not admin_jid:
+        flash("Configura tu teléfono antes de retomar chats (Perfil).", "warning")
+        return redirect(url_for("admin.chats_index"))
+    resp = bot_http_request(
+        "POST", f"/api/bot/handoffs/{client_jid}/claim",
+        json_body={"admin_jid": admin_jid, "admin_name": current_user.nombre or ""},
+    ) or {}
+    if not resp.get("ok"):
+        flash(resp.get("message") or "No se pudo retomar el chat (conflicto o handoff cerrado).", "warning")
+        return redirect(url_for("admin.chats_index"))
+    return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
+
+
+@admin_bp.route("/chats/<path:client_jid>/reply", methods=["POST"])
+@admin_required
+def chats_reply(client_jid):
+    from services import bot_http_request
+    admin_jid = _current_admin_jid()
+    if not admin_jid:
+        flash("Configura tu teléfono antes de responder chats (Perfil).", "warning")
+        return redirect(url_for("admin.chats_index"))
+    mensaje = (request.form.get("mensaje") or "").strip()
+    if not mensaje:
+        flash("El mensaje no puede estar vacío.", "warning")
+        return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
+    resp = bot_http_request(
+        "POST", f"/api/bot/handoffs/{client_jid}/reply",
+        json_body={"admin_jid": admin_jid, "mensaje": mensaje[:1500]},
+    ) or {}
+    if not resp.get("ok"):
+        flash(resp.get("error") or "No se pudo enviar el mensaje.", "danger")
+    return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
+
+
+@admin_bp.route("/chats/<path:client_jid>/close", methods=["POST"])
+@admin_required
+def chats_close(client_jid):
+    from services import bot_http_request
+    admin_jid = _current_admin_jid()
+    if not admin_jid:
+        flash("Configura tu teléfono antes de cerrar chats (Perfil).", "warning")
+        return redirect(url_for("admin.chats_index"))
+    resp = bot_http_request(
+        "POST", f"/api/bot/handoffs/{client_jid}/close",
+        json_body={"admin_jid": admin_jid},
+    ) or {}
+    if not resp.get("ok"):
+        flash(resp.get("error") or "No se pudo cerrar el chat.", "warning")
+        return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
+    flash("Chat cerrado — el cliente ha vuelto al menú principal.", "success")
+    return redirect(url_for("admin.chats_index"))
