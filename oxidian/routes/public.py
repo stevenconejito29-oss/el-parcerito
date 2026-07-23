@@ -1834,7 +1834,14 @@ def verificar_codigo_puntos():
 
 # ─── CHECKOUT ────────────────────────────────
 
+# Rate limit del POST del checkout: previene doble-tap y scripts que crean
+# pedidos duplicados. Combinado con la idempotency key del carrito, es la
+# doble defensa: idempotency evita el duplicado exacto, el limiter frena la
+# tormenta. Aplicamos por IP del cliente (default de flask-limiter) que es
+# suficiente para el caso legítimo (usuario impaciente clickando). El GET
+# no está afectado — la página del checkout puede recargarse tranquilamente.
 @public_bp.route("/checkout", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"]) if limiter else (lambda f: f)
 def checkout():
     if current_user.is_authenticated:
         flash("Las cuentas internas no compran desde la tienda pública. Usa el módulo POS.", "warning")
@@ -2366,6 +2373,15 @@ def checkout():
                 )
                 db.session.add(oi)
                 if item["producto"].tipo_entrega == "inmediato":
+                    # Row lock del Product antes de descontar. Sin él, dos
+                    # checkouts concurrentes podían leer stock desde la carga
+                    # inicial de `_build_items_from_carrito` (línea 3099,
+                    # bulk SELECT sin lock) y ambos completar el descuento,
+                    # dejando inventario negativo. `with_for_update=True`
+                    # emite SELECT ... FOR UPDATE en Postgres; en SQLite las
+                    # transacciones se serializan por default → no-op.
+                    # El lock se libera al final del `with` (commit/rollback).
+                    db.session.get(Product, item["producto"].id, with_for_update=True)
                     _descontar_stock_en_origen(
                         item["producto"],
                         origen,

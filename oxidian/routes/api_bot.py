@@ -1432,7 +1432,25 @@ def validar_cupon():
 # ─── CREAR PEDIDO ────────────────────────────
 # Compatibilidad interna: desactivado por defecto para clientes de WhatsApp.
 
+# Rate limit por teléfono del cliente: el bot no es un canal público
+# arbitrario — solo el cliente del que ya conocemos el número (WhatsApp
+# inbound) puede desencadenar esto. Limitamos a 10 pedidos/min por
+# teléfono para frenar loops accidentales del bot Node (retry mal
+# configurado, race entre confirmación cliente y timeout). Si no hay
+# teléfono en el payload cae a IP del bot como fallback conservador.
+def _bot_ratekey_pedido():
+    try:
+        data = request.get_json(silent=True) or {}
+        tel = str(data.get("telefono_cliente") or data.get("telefono") or "").strip()
+        if tel:
+            return f"bot:pedido:{tel}"
+    except Exception:
+        pass
+    return f"bot:pedido:{request.remote_addr or 'unknown'}"
+
+
 @api_bot_bp.route("/pedido/crear", methods=["POST"])
+@limiter.limit("10 per minute", key_func=_bot_ratekey_pedido) if limiter else (lambda f: f)
 @bot_required
 def crear_pedido():
     try:
