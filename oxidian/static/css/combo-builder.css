@@ -457,54 +457,51 @@ body.ox-body-admin .bundle-preview-product h3{color:#fff!important}
   .bundle-clarify small{font-size:.7rem}
 }
 
-/* ── Opciones colapsables por componente ──
-   Cada bundle-line con tamaños o sabores muestra un summary compacto
-   ("📏 3 tamaños Fijo · Grande · 🎨 5 sabores Cliente elige · todos ▾")
-   que el admin abre solo cuando quiere configurar. Sin esto, un combo
-   con 5 productos con opciones era un muro de 30 controles apilados. */
+/* ── Opciones por-componente — SIEMPRE VISIBLES ──
+   Panel destacado con marco amarillo dentro de cada bundle-line que
+   tenga producto con tamaños o sabores. El título "🎛 Opciones de
+   este producto" deja claro qué configura. Los chips de estado vivo
+   (📏 Fijo · Grande, 🎨 Cliente elige entre 2) le dicen al admin de un
+   vistazo qué ya está configurado y qué falta. Sin `<details>` — el
+   admin necesita ver los controles para saber que existen. */
 .bundle-line-options{
   grid-column:2/-1;
-  border-radius:.55rem;
-  border:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 24%, transparent);
-  background:color-mix(in srgb, var(--work-accent, #e9be68) 6%, transparent);
+  margin-top:.35rem;
+  border-radius:.65rem;
+  border:2px solid color-mix(in srgb, var(--work-accent, #e9be68) 42%, transparent);
+  background:color-mix(in srgb, var(--work-accent, #e9be68) 8%, transparent);
   overflow:hidden;
 }
-.bundle-line-options[open]{
-  border-color:color-mix(in srgb, var(--work-accent, #e9be68) 42%, transparent);
-}
-.bundle-line-options>summary{
-  display:flex;align-items:center;flex-wrap:wrap;gap:.4rem;
-  padding:.45rem .65rem;cursor:pointer;
-  list-style:none;user-select:none;
-  -webkit-tap-highlight-color:transparent;
-  font-size:.68rem;font-weight:800;
-  color:color-mix(in srgb, var(--work-accent, #e9be68) 88%, #fff);
-}
-.bundle-line-options>summary::-webkit-details-marker{display:none}
-.bundle-line-opt-chip{
-  display:inline-flex;align-items:center;gap:.32rem;
-  padding:.18rem .5rem;border-radius:999px;
+.bundle-line-options-header{
+  display:flex;align-items:center;flex-wrap:wrap;gap:.55rem;
+  padding:.5rem .75rem;
   background:color-mix(in srgb, var(--work-accent, #e9be68) 14%, transparent);
-  border:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 26%, transparent);
-  color:color-mix(in srgb, var(--work-accent, #e9be68) 90%, #fff);
-  font-size:.64rem;
+  border-bottom:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 24%, transparent);
 }
-.bundle-line-opt-chip em{
-  font-style:normal;font-weight:600;opacity:.85;
-  color:var(--ox-admin-muted, #cbc0b1);
-  margin-left:.15rem;
+.bundle-line-options-title{
+  font-size:.74rem;font-weight:900;
+  color:color-mix(in srgb, var(--work-accent, #e9be68) 96%, #fff);
+  letter-spacing:.02em;
 }
-.bundle-line-opt-chev{
-  margin-left:auto;color:var(--ox-admin-muted, #cbc0b1);
-  transition:transform .18s ease;
+.bundle-line-options-chips{
+  display:flex;flex-wrap:wrap;gap:.3rem;margin-left:auto;
 }
-.bundle-line-options[open] .bundle-line-opt-chev{transform:rotate(180deg)}
+.bundle-line-opt-chip{
+  display:inline-flex;align-items:center;
+  padding:.2rem .55rem;border-radius:999px;
+  background:color-mix(in srgb, var(--work-accent, #e9be68) 18%, transparent);
+  border:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 32%, transparent);
+  color:color-mix(in srgb, var(--work-accent, #e9be68) 94%, #fff);
+  font-size:.62rem;font-weight:800;line-height:1.2;
+  white-space:nowrap;
+}
 .bundle-line-options-body{
-  padding:.55rem .65rem .7rem;
-  border-top:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 18%, transparent);
-  display:grid;gap:.5rem;
+  padding:.7rem .75rem .85rem;
+  display:grid;gap:.6rem;
 }
 @media(max-width:640px){
-  .bundle-line-opt-chip{font-size:.6rem;padding:.15rem .42rem}
-  .bundle-line-options>summary{padding:.4rem .55rem}
+  .bundle-line-options-header{flex-direction:column;align-items:flex-start;gap:.35rem;padding:.45rem .6rem}
+  .bundle-line-options-chips{margin-left:0}
+  .bundle-line-opt-chip{font-size:.6rem;padding:.18rem .48rem}
+  .bundle-line-options-body{padding:.6rem .65rem .75rem}
 }

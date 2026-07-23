@@ -698,38 +698,39 @@ function bundleRender(){
         const clientPicker = mode==='cliente_elige' ? `<div class="bundle-presentation-subset"><div class="bundle-flavor-subset-head"><span>Tamaños que ofreces al cliente</span><div class="bundle-flavor-subset-tools"><button type="button" data-bundle-action="presentation-all" data-section-id="${section.id}" data-product-id="${product.id}">Todos</button><button type="button" data-bundle-action="presentation-none" data-section-id="${section.id}" data-product-id="${product.id}">Ninguno</button></div></div><div class="bundle-flavor-subset-grid">${presentationList.map(row=>{const checked=(item.allowedPresentationIds||[]).includes(Number(row.id));const priceHint=Number(row.precio_extra)?` <em>${Number(row.precio_extra)>0?'+':''}${bundleMoney(Number(row.precio_extra))}</em>`:'';return `<label class="bundle-flavor-chip ${checked?'is-picked':''}"><input type="checkbox" ${checked?'checked':''} data-bundle-input="allowed-presentation" data-section-id="${section.id}" data-product-id="${product.id}" data-presentation-id="${row.id}"><span>${bundleEscape(row.label)}${priceHint}</span></label>`;}).join('')}</div><p class="bundle-flavor-subset-note">Marca ≥2 para que el cliente pueda elegir. Con 1 marcado o ninguno, se cae a modo fijo con la primera opción.</p></div>` : '';
         presentationControl = `<div class="bundle-line-size">${modeToggle}${fixedPicker}${clientPicker}</div>`;
       }
-      // Config por-componente (tamaño + sabor) — la envolvemos en un
-      // <details> con summary corto para que un combo con N productos NO
-      // se convierta en un muro vertical de controles. El summary muestra
-      // qué opciones tiene el producto (N tamaños · N sabores) y el
-      // estado actual (fijo/cliente_elige, todos/subset). El admin abre
-      // sólo el componente que quiere configurar. Cuando el producto no
-      // tiene ni tamaños ni sabores, el `<details>` no se renderiza.
+      // Config por-componente (tamaño + sabor) — SIEMPRE visible como
+      // panel destacado cuando el producto tiene opciones. Antes iba en
+      // `<details>` colapsado y el admin no notaba que estaba ahí, así que
+      // ni siquiera intentaba submitear el combo. Ahora es un bloque
+      // amarillo con título claro que anuncia "Opciones de ESTE producto".
       const flavorSubset = (item.permiteSabor && product.flavorOptions && product.flavorOptions.length>1)?`<div class="bundle-flavor-subset"><div class="bundle-flavor-subset-head"><span>Sabores permitidos <em>(vacío = todos)</em></span><div class="bundle-flavor-subset-tools"><button type="button" data-bundle-action="flavor-all" data-section-id="${section.id}" data-product-id="${product.id}">Todos</button><button type="button" data-bundle-action="flavor-none" data-section-id="${section.id}" data-product-id="${product.id}">Ninguno</button></div></div><div class="bundle-flavor-subset-grid">${product.flavorOptions.map(opt=>{const checked=(item.allowedFlavorIds||[]).includes(opt.id);return `<label class="bundle-flavor-chip ${checked?'is-picked':''}"><input type="checkbox" ${checked?'checked':''} data-bundle-input="allowed-flavor" data-section-id="${section.id}" data-product-id="${product.id}" data-flavor-id="${opt.id}"><span>${bundleEscape(opt.nombre)}</span></label>`;}).join('')}</div><p class="bundle-flavor-subset-note">Marcados = únicos ofrecidos al cliente. Vacío = todos los ${product.flavorOptions.length} activos.</p></div>`:'';
       const flavorControl = (product.hasSabor || product.flavorCount>0)?`<label class="bundle-line-flavor ${item.permiteSabor && !product.flavorCount?'is-warning':''} ${item.permiteSabor && product.flavorCount>0?'is-active':''}"><input type="checkbox" ${item.permiteSabor?'checked':''} data-bundle-input="permite-sabor" data-section-id="${section.id}" data-product-id="${product.id}"><span>El cliente elige el sabor de este componente</span>${product.flavorCount>0?`<em class="bundle-flavor-count">${product.flavorCount} sabor${product.flavorCount===1?'':'es'} activo${product.flavorCount===1?'':'s'}</em>`:`<em class="bundle-flavor-count is-empty">⚠︎ Sin sabores activos — configura sabores en el producto antes de habilitar aquí</em>`}</label>`:'';
       const hasSizes = presentationList.length > 0;
       const hasFlavors = product.hasSabor || product.flavorCount > 0;
       let optionsBlock = '';
       if (hasSizes || hasFlavors) {
-        // Summary con estado vivo: "3 tamaños (Cliente elige · 2 permitidos) · 5 sabores (fijo · Fresa)"
+        // Chips resumen con estado vivo, mostrados en la cabecera del panel
+        // para que el admin identifique de un vistazo qué está configurado.
         const summaryBits = [];
         if (hasSizes) {
           const mode = item.presentationMode || 'fijo';
           const nAllowed = (item.allowedPresentationIds || []).length;
           const chosenLabel = presentationList.find(row=>Number(row.id)===Number(item.presentationId))?.label || presentationList[0]?.label || '';
           const detail = mode === 'cliente_elige'
-            ? (nAllowed >= 2 ? `Cliente elige · ${nAllowed} permitidos` : 'Cliente elige · marca ≥2')
+            ? (nAllowed >= 2 ? `Cliente elige entre ${nAllowed}` : 'Cliente elige · marca ≥2')
             : `Fijo · ${chosenLabel}`;
-          summaryBits.push(`<span class="bundle-line-opt-chip">📏 ${presentationList.length} tamaños <em>${detail}</em></span>`);
+          summaryBits.push(`<span class="bundle-line-opt-chip">📏 ${detail}</span>`);
         }
         if (hasFlavors) {
           const nSelected = (item.allowedFlavorIds || []).length;
           const detail = !item.permiteSabor
-            ? 'Sin sabor'
-            : (nSelected > 0 ? `Cliente elige · ${nSelected} permitidos` : `Cliente elige · todos`);
-          summaryBits.push(`<span class="bundle-line-opt-chip">🎨 ${product.flavorCount} sabores <em>${detail}</em></span>`);
+            ? 'Sin sabor elegible'
+            : (nSelected > 0 ? `Cliente elige entre ${nSelected}` : `Cliente elige · todos`);
+          summaryBits.push(`<span class="bundle-line-opt-chip">🎨 ${detail}</span>`);
         }
-        optionsBlock = `<details class="bundle-line-options"><summary>${summaryBits.join('')}<span class="bundle-line-opt-chev">▾</span></summary><div class="bundle-line-options-body">${presentationControl}${flavorControl}${flavorSubset}</div></details>`;
+        // Panel siempre visible (no <details>) cuando el producto tiene
+        // opciones. Título explícito "Opciones de este producto".
+        optionsBlock = `<div class="bundle-line-options"><div class="bundle-line-options-header"><span class="bundle-line-options-title">🎛 Opciones de este producto</span><div class="bundle-line-options-chips">${summaryBits.join('')}</div></div><div class="bundle-line-options-body">${presentationControl}${flavorControl}${flavorSubset}</div></div>`;
       }
       return `<div class="bundle-line">
         <div class="bundle-line-image">${product.image?`<img src="${bundleEscape(product.image)}" alt="">`:bundleEscape(product.name.slice(0,1))}</div>
