@@ -2842,6 +2842,88 @@ MENSAJES_ESTADO = {
 }
 
 
+def _resumen_composicion_pedido(pedido: Order, max_items: int = 8) -> str:
+    """Devuelve un resumen compacto y legible en WhatsApp de qué compone el
+    pedido. Incluye cantidad, nombre y — si aplican — tamaño y sabores
+    elegidos por el cliente para cada línea (y para cada componente del combo
+    si el pedido tiene combos).
+
+    Contrato:
+      * Compacta a `max_items` líneas top-level; si sobran añade "…y N más".
+      * Lee del snapshot metadata_json — no queries adicionales, no consulta
+        catálogo en vivo (retro-compat con pedidos históricos).
+      * Vacío si el pedido no tiene items (no debería, pero defensivo).
+
+    Diseñado para incrustar en la notificación WhatsApp del estado — el
+    cliente confirma visualmente que lo que llega coincide con lo pedido.
+    """
+    items = list(getattr(pedido, "items", []) or [])
+    if not items:
+        return ""
+    lineas = []
+    for oi in items[:max_items]:
+        qty = int(oi.cantidad or 1)
+        nombre = getattr(oi, "producto_nombre_snapshot", None) or (
+            oi.producto.nombre if oi.producto else "Producto"
+        )
+        detalles = []
+        # Tamaño y sabor a nivel de línea (productos simples con tallas/sabores).
+        pres_label = oi.selected_presentation_label
+        if pres_label:
+            detalles.append(f"📏 {pres_label}")
+        flav_names = oi.selected_flavor_names
+        if flav_names:
+            detalles.append("🎨 " + ", ".join(flav_names))
+        sufijo = f" ({' · '.join(detalles)})" if detalles else ""
+        cabecera = f"• {qty}× {nombre}{sufijo}"
+        # Combos: iterar componentes fijos + opciones seleccionadas.
+        meta_combo = (oi.get_metadata() or {}).get("combo") or {}
+        sublineas = []
+        for comp in (meta_combo.get("componentes") or []):
+            sub = _resumen_componente_combo(comp)
+            if sub:
+                sublineas.append(f"   ✔ {sub}")
+        for grupo in (meta_combo.get("selecciones") or []):
+            for op in (grupo.get("opciones") or []):
+                sub = _resumen_componente_combo(op)
+                if sub:
+                    sublineas.append(f"   ✓ {sub}")
+        lineas.append(cabecera)
+        lineas.extend(sublineas)
+    if len(items) > max_items:
+        lineas.append(f"…y {len(items) - max_items} más")
+    return "\n".join(lineas)
+
+
+def _resumen_componente_combo(comp: dict) -> str:
+    """Renderiza una línea 'Nombre (Tamaño, Sabor)' de un componente de combo
+    a partir de su dict de metadata. Devuelve '' si el componente no aporta
+    nada relevante (defensivo contra snapshots incompletos)."""
+    if not isinstance(comp, dict):
+        return ""
+    nombre = comp.get("nombre") or ""
+    if not nombre:
+        return ""
+    qty = int(comp.get("qty") or comp.get("cantidad") or 1)
+    detalles = []
+    presentacion = comp.get("presentation_cliente") or comp.get("presentacion") or {}
+    if isinstance(presentacion, dict):
+        label = presentacion.get("label") or presentacion.get("tamaño")
+        if label:
+            detalles.append(str(label))
+    sabor = comp.get("sabor_cliente") or []
+    if isinstance(sabor, list) and sabor:
+        detalles.append(", ".join(str(s.get("nombre") or "").strip() for s in sabor if isinstance(s, dict)))
+    prefijo = f"{qty}× " if qty > 1 else ""
+    return f"{prefijo}{nombre}" + (f" ({' · '.join(detalles)})" if detalles else "")
+
+
+# Estados donde MOSTRAR la composición completa aporta valor al cliente:
+# `pendiente` (confirma lo que pidió), `en_ruta` (verifica antes de recibir).
+# El resto ya son mensajes cortos de estado; sumarles el resumen sería spam.
+_ESTADOS_INCLUIR_COMPOSICION = frozenset({"pendiente", "en_ruta"})
+
+
 def mensaje_estado_pedido(pedido: Order) -> str:
     plantilla = MENSAJES_ESTADO.get(pedido.estado)
     if not plantilla:
@@ -2852,6 +2934,17 @@ def mensaje_estado_pedido(pedido: Order) -> str:
         codigo=pedido.codigo_confirmacion or "------",
         puntos=pedido.puntos_ganados or 0,
     )
+    # Composición del pedido en estados clave. Se calcula bajo try/except para
+    # NO bloquear la notificación si el snapshot tiene forma inesperada:
+    # preferimos entregar el mensaje base a fallar en silencio la transición.
+    if pedido.estado in _ESTADOS_INCLUIR_COMPOSICION:
+        try:
+            composicion = _resumen_composicion_pedido(pedido)
+        except Exception:
+            logger.exception("Resumen composición falló para pedido %s", pedido.id)
+            composicion = ""
+        if composicion:
+            base = f"{base}\n\n📋 *Tu pedido:*\n{composicion}"
     if (
         pedido.estado == "entregado"
         and get_store_features()["puntos"]
