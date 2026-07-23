@@ -43,63 +43,21 @@
   </nav>
 
   <section class="bundle-identity" data-step="1">
+    {# Sólo lo ESENCIAL visible: nombre (requerido) + descripción corta +
+       imagen. Todos los demás campos (categoría, canal, entrega, modalidad,
+       grupo, origen) se agrupan en `<details>` porque para un combo simple
+       tienen valores por defecto que funcionan. Reduce la pantalla inicial
+       de 9 campos a 3 sin quitar funcionalidad. #}
     <div class="bundle-identity-main">
       <label class="bundle-field bundle-name-field">
         <span>Nombre del combo *</span>
         <input type="text" name="nombre" id="bundle-name" maxlength="120" required
                placeholder="Ej. Combo Arepa Completo" data-bundle-input="update">
       </label>
-      <label class="bundle-field">
-        <span>Categoría</span>
-        <select name="categoria_id">
-          <option value="">Sin categoría</option>
-          {% for cat in categorias %}<option value="{{ cat.id }}">{{ cat.nombre }}</option>{% endfor %}
-        </select>
-      </label>
-      <label class="bundle-field">
-        <span>Canal preparación</span>
-        {% if brand.es_comida %}
-        <select name="canal_preparacion">
-          <option value="cocina">🍳 Cocina</option>
-          <option value="almacen">📦 Almacén</option>
-        </select>
-        {% else %}
-        <input type="hidden" name="canal_preparacion" value="almacen">
-        <span class="bundle-static">📦 Almacén retail</span>
-        {% endif %}
-      </label>
-      <input type="hidden" name="proveedor_despachador_id" id="bundle-origin" value="">
-      <label class="bundle-field">
-        <span>Entrega</span>
-        <select name="tipo_entrega" id="bundle-delivery" data-bundle-input="delivery">
-          <option value="inmediato">Preparación inmediata</option>
-          {% if brand.pedidos_programados %}<option value="programado">Entrega en fecha fija</option>{% endif %}
-        </select>
-      </label>
-      <label class="bundle-field" id="bundle-date-wrap" hidden>
-        <span>Fecha de entrega *</span>
-        <input type="date" name="fecha_llegada" id="bundle-date">
-      </label>
-      <label class="bundle-field">
-        <span>Modalidad para el cliente</span>
-        <select name="modalidad_entrega">
-          {% if brand.delivery and brand.recogida %}<option value="ambas">Delivery o recogida</option>{% endif %}
-          {% if brand.delivery %}<option value="delivery">Solo delivery</option>{% endif %}
-          {% if brand.recogida %}<option value="recogida">Solo recogida</option>{% endif %}
-        </select>
-      </label>
-      <label class="bundle-field">
-        <span>Grupo de pedido</span>
-        <input type="text" name="grupo_pedido" maxlength="80" placeholder="Vacío = pedido general">
-      </label>
       <label class="bundle-field bundle-description">
-        <span>Descripción para el {% if brand.es_comida %}menú{% else %}catálogo{% endif %}</span>
+        <span>Descripción</span>
         <textarea name="descripcion" rows="2" maxlength="600"
-                  placeholder="Explica qué incluye y por qué merece la pena."></textarea>
-      </label>
-      <label class="bundle-field">
-        <span>Origen o estilo</span>
-        <input type="text" name="origen_pais" maxlength="80" placeholder="Colombia, Venezuela...">
+                  placeholder="Explica qué incluye. Aparece en el {% if brand.es_comida %}menú{% else %}catálogo{% endif %}."></textarea>
       </label>
     </div>
     <div class="bundle-image">
@@ -114,6 +72,71 @@
                data-bundle-input="url-preview">
       </div>
     </div>
+
+    {# Configuración operativa — colapsada por defecto. Estos campos tienen
+       valores por defecto sensatos (Sin categoría · Cocina · Inmediato ·
+       Ambas modalidades · Sin grupo · Sin origen). Ese default cubre el
+       90% de los combos; solo se necesita abrir el desplegable cuando el
+       admin quiere afinar. #}
+    <details class="bundle-operational">
+      <summary>
+        <span class="bundle-advanced-icon">🛠️</span>
+        <div>
+          <strong>Configuración operativa</strong>
+          <small>Categoría, canal, entrega, modalidad… valores por defecto para la mayoría de combos.</small>
+        </div>
+        <span class="bundle-advanced-chev" aria-hidden="true">▾</span>
+      </summary>
+      <div class="bundle-operational-grid">
+        <label class="bundle-field">
+          <span>Categoría</span>
+          <select name="categoria_id">
+            <option value="">Sin categoría</option>
+            {% for cat in categorias %}<option value="{{ cat.id }}">{{ cat.nombre }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="bundle-field">
+          <span>Canal preparación</span>
+          {% if brand.es_comida %}
+          <select name="canal_preparacion">
+            <option value="cocina">🍳 Cocina</option>
+            <option value="almacen">📦 Almacén</option>
+          </select>
+          {% else %}
+          <input type="hidden" name="canal_preparacion" value="almacen">
+          <span class="bundle-static">📦 Almacén retail</span>
+          {% endif %}
+        </label>
+        <input type="hidden" name="proveedor_despachador_id" id="bundle-origin" value="">
+        <label class="bundle-field">
+          <span>Entrega</span>
+          <select name="tipo_entrega" id="bundle-delivery" data-bundle-input="delivery">
+            <option value="inmediato">Preparación inmediata</option>
+            {% if brand.pedidos_programados %}<option value="programado">Entrega en fecha fija</option>{% endif %}
+          </select>
+        </label>
+        <label class="bundle-field" id="bundle-date-wrap" hidden>
+          <span>Fecha de entrega *</span>
+          <input type="date" name="fecha_llegada" id="bundle-date">
+        </label>
+        <label class="bundle-field">
+          <span>Modalidad</span>
+          <select name="modalidad_entrega">
+            {% if brand.delivery and brand.recogida %}<option value="ambas">Delivery o recogida</option>{% endif %}
+            {% if brand.delivery %}<option value="delivery">Solo delivery</option>{% endif %}
+            {% if brand.recogida %}<option value="recogida">Solo recogida</option>{% endif %}
+          </select>
+        </label>
+        <label class="bundle-field">
+          <span>Grupo de pedido</span>
+          <input type="text" name="grupo_pedido" maxlength="80" placeholder="Vacío = pedido general">
+        </label>
+        <label class="bundle-field">
+          <span>Origen / estilo</span>
+          <input type="text" name="origen_pais" maxlength="80" placeholder="Colombia, Venezuela…">
+        </label>
+      </div>
+    </details>
   </section>
 
   {# ── Ajustes avanzados del combo — colapsados por defecto ─────────
@@ -186,6 +209,12 @@
     </section>
     {% endif %}
   </details>
+
+  {# ── Hint contextual para el paso 2 — corto y accionable.
+     Solo aparece cuando aún no hay secciones (bundle-empty visible).
+     El JS `bundleUpdate()` gestiona el toggle del bundle-empty; usamos su
+     mismo estado con CSS `:has()` para no añadir lógica extra. #}
+  <p class="bundle-tip">💡 Empieza por añadir un <strong>bloque</strong> a la composición (botón <b>+ Incluir</b> o <b>+ Elección</b>), luego arrastra productos del catálogo al bloque activo.</p>
 
   <div class="bundle-builder" data-step="2">
     <aside class="bundle-catalog bundle-mobile-panel" data-bundle-panel="catalog">

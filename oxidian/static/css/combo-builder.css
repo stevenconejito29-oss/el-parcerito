@@ -305,3 +305,65 @@ body.ox-body-admin .bundle-preview-product h3{color:#fff!important}
   .bundle-advanced>summary small{font-size:.66rem}
   .bundle-advanced-block{padding:.75rem .85rem}
 }
+
+/* ── Configuración operativa colapsable dentro de "Identidad" ──
+   Mismo lenguaje visual que `.bundle-advanced` pero anidado dentro de la
+   sección de identidad para agrupar los campos operativos que tienen
+   valores por defecto sensatos (categoría, canal, entrega, modalidad,
+   grupo, origen). Reduce la pantalla inicial de la identidad de 9
+   campos a 3. */
+.bundle-operational{
+  grid-column:1/-1;
+  margin-top:.85rem;
+  border-radius:.85rem;
+  border:1px solid var(--ox-admin-border, rgba(255,255,255,.12));
+  background:color-mix(in srgb, var(--ox-admin-surface, #1b1f24) 92%, transparent);
+  overflow:hidden;
+  transition:border-color .2s;
+}
+.bundle-operational[open]{
+  border-color:color-mix(in srgb, var(--role-admin, #5AC8FA) 32%, transparent);
+}
+.bundle-operational>summary{
+  display:flex;align-items:center;gap:.85rem;
+  padding:.7rem 1rem;cursor:pointer;
+  list-style:none;user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.bundle-operational>summary::-webkit-details-marker{display:none}
+.bundle-operational>summary>div{flex:1;min-width:0}
+.bundle-operational>summary strong{
+  display:block;font-size:.82rem;font-weight:900;
+  color:var(--ox-admin-text, #fff);
+}
+.bundle-operational>summary small{
+  display:block;font-size:.68rem;font-weight:500;
+  color:var(--ox-admin-muted, #cbc0b1);
+  margin-top:.08rem;
+}
+.bundle-operational[open] .bundle-advanced-chev{transform:rotate(180deg)}
+.bundle-operational-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+  gap:.55rem;padding:.85rem 1rem 1.05rem;
+  border-top:1px solid var(--ox-admin-border, rgba(255,255,255,.08));
+}
+@media(max-width:640px){
+  .bundle-operational>summary{padding:.6rem .8rem}
+  .bundle-operational-grid{grid-template-columns:1fr;padding:.75rem .85rem}
+}
+
+/* ── Tip contextual del paso 2 ── */
+.bundle-tip{
+  margin:.7rem 0 .55rem;padding:.55rem .85rem;
+  border-radius:.55rem;
+  background:color-mix(in srgb, var(--work-accent, #e9be68) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 26%, transparent);
+  color:color-mix(in srgb, var(--work-accent, #e9be68) 88%, #fff);
+  font-size:.76rem;font-weight:600;line-height:1.4;
+}
+.bundle-tip strong,.bundle-tip b{
+  color:color-mix(in srgb, var(--work-accent, #e9be68) 95%, #fff);
+  font-weight:900;
+}
+@media(max-width:640px){.bundle-tip{font-size:.72rem;padding:.45rem .7rem}}
