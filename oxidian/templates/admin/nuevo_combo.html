@@ -1,11 +1,18 @@
 {% extends "admin_base.html" %}
-{% block title %}Crear combo — {{ brand.nombre }}{% endblock %}
+{% set es_edicion = combo_a_editar is defined and combo_a_editar %}
+{% block title %}{{ 'Editar combo' if es_edicion else 'Crear combo' }} — {{ brand.nombre }}{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/combo-builder.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
 
-<form method="POST" action="{{ url_for('admin.nuevo_combo') }}" enctype="multipart/form-data"
+{# Action del form: la misma URL sirve create y edit según haya `combo_a_editar`.
+   No cambiamos el name= de ningún input — el backend usa los mismos arrays
+   paralelos (`comp_*`, `combo_group_*`) y decide crear vs actualizar con la
+   presencia del `<int:combo_id>` en la ruta. #}
+<form method="POST"
+      action="{% if es_edicion %}{{ url_for('admin.nuevo_combo', combo_id=combo_a_editar.id) }}{% else %}{{ url_for('admin.nuevo_combo') }}{% endif %}"
+      enctype="multipart/form-data"
       id="bundle-form" class="bundle-page" novalidate data-once-submit>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="tipo_producto" value="combo">
@@ -17,8 +24,8 @@
     <div class="bundle-head-copy">
       <a href="{{ url_for('admin.productos') }}#combos" class="bundle-back" aria-label="Volver a combos">‹</a>
       <div>
-        <p class="bundle-eyebrow">Constructor guiado</p>
-        <h1>Crear un combo</h1>
+        <p class="bundle-eyebrow">{{ 'Editando combo' if es_edicion else 'Constructor guiado' }}</p>
+        <h1>{{ 'Editar combo' if es_edicion else 'Crear un combo' }}</h1>
         <p>Solo 3 pasos: nombra, compón, publica. Los ajustes avanzados están colapsados hasta que los necesites.</p>
       </div>
     </div>
@@ -52,12 +59,13 @@
       <label class="bundle-field bundle-name-field">
         <span>Nombre del combo *</span>
         <input type="text" name="nombre" id="bundle-name" maxlength="120" required
-               placeholder="Ej. Combo Arepa Completo" data-bundle-input="update">
+               placeholder="Ej. Combo Arepa Completo" data-bundle-input="update"
+               value="{{ combo_a_editar.nombre if es_edicion else '' }}">
       </label>
       <label class="bundle-field bundle-description">
         <span>Descripción</span>
         <textarea name="descripcion" rows="2" maxlength="600"
-                  placeholder="Explica qué incluye. Aparece en el {% if brand.es_comida %}menú{% else %}catálogo{% endif %}."></textarea>
+                  placeholder="Explica qué incluye. Aparece en el {% if brand.es_comida %}menú{% else %}catálogo{% endif %}.">{{ combo_a_editar.descripcion if es_edicion else '' }}</textarea>
       </label>
     </div>
     <div class="bundle-image">
@@ -92,15 +100,15 @@
           <span>Categoría</span>
           <select name="categoria_id">
             <option value="">Sin categoría</option>
-            {% for cat in categorias %}<option value="{{ cat.id }}">{{ cat.nombre }}</option>{% endfor %}
+            {% for cat in categorias %}<option value="{{ cat.id }}" {% if es_edicion and combo_a_editar.categoria_id == cat.id %}selected{% endif %}>{{ cat.nombre }}</option>{% endfor %}
           </select>
         </label>
         <label class="bundle-field">
           <span>Canal preparación</span>
           {% if brand.es_comida %}
           <select name="canal_preparacion">
-            <option value="cocina">🍳 Cocina</option>
-            <option value="almacen">📦 Almacén</option>
+            <option value="cocina" {% if es_edicion and combo_a_editar.canal_preparacion == 'cocina' %}selected{% endif %}>🍳 Cocina</option>
+            <option value="almacen" {% if es_edicion and combo_a_editar.canal_preparacion == 'almacen' %}selected{% endif %}>📦 Almacén</option>
           </select>
           {% else %}
           <input type="hidden" name="canal_preparacion" value="almacen">
@@ -111,29 +119,29 @@
         <label class="bundle-field">
           <span>Entrega</span>
           <select name="tipo_entrega" id="bundle-delivery" data-bundle-input="delivery">
-            <option value="inmediato">Preparación inmediata</option>
-            {% if brand.pedidos_programados %}<option value="programado">Entrega en fecha fija</option>{% endif %}
+            <option value="inmediato" {% if es_edicion and combo_a_editar.tipo_entrega == 'inmediato' %}selected{% endif %}>Preparación inmediata</option>
+            {% if brand.pedidos_programados %}<option value="programado" {% if es_edicion and combo_a_editar.tipo_entrega == 'programado' %}selected{% endif %}>Entrega en fecha fija</option>{% endif %}
           </select>
         </label>
-        <label class="bundle-field" id="bundle-date-wrap" hidden>
+        <label class="bundle-field" id="bundle-date-wrap" {% if not es_edicion or combo_a_editar.tipo_entrega != 'programado' %}hidden{% endif %}>
           <span>Fecha de entrega *</span>
-          <input type="date" name="fecha_llegada" id="bundle-date">
+          <input type="date" name="fecha_llegada" id="bundle-date" value="{{ combo_a_editar.fecha_llegada.isoformat() if es_edicion and combo_a_editar.fecha_llegada else '' }}">
         </label>
         <label class="bundle-field">
           <span>Modalidad</span>
           <select name="modalidad_entrega">
-            {% if brand.delivery and brand.recogida %}<option value="ambas">Delivery o recogida</option>{% endif %}
-            {% if brand.delivery %}<option value="delivery">Solo delivery</option>{% endif %}
-            {% if brand.recogida %}<option value="recogida">Solo recogida</option>{% endif %}
+            {% if brand.delivery and brand.recogida %}<option value="ambas" {% if es_edicion and combo_a_editar.modalidad_entrega == 'ambas' %}selected{% endif %}>Delivery o recogida</option>{% endif %}
+            {% if brand.delivery %}<option value="delivery" {% if es_edicion and combo_a_editar.modalidad_entrega == 'delivery' %}selected{% endif %}>Solo delivery</option>{% endif %}
+            {% if brand.recogida %}<option value="recogida" {% if es_edicion and combo_a_editar.modalidad_entrega == 'recogida' %}selected{% endif %}>Solo recogida</option>{% endif %}
           </select>
         </label>
         <label class="bundle-field">
           <span>Grupo de pedido</span>
-          <input type="text" name="grupo_pedido" maxlength="80" placeholder="Vacío = pedido general">
+          <input type="text" name="grupo_pedido" maxlength="80" placeholder="Vacío = pedido general" value="{{ combo_a_editar.grupo_pedido if es_edicion and combo_a_editar.grupo_pedido else '' }}">
         </label>
         <label class="bundle-field">
           <span>Origen / estilo</span>
-          <input type="text" name="origen_pais" maxlength="80" placeholder="Colombia, Venezuela…">
+          <input type="text" name="origen_pais" maxlength="80" placeholder="Colombia, Venezuela…" value="{{ combo_a_editar.origen_pais if es_edicion and combo_a_editar.origen_pais else '' }}">
         </label>
       </div>
     </details>
@@ -398,6 +406,11 @@ let bundleSections = [];
 let bundleSectionSeq = 0;
 let bundleActiveSection = null;
 let bundleCatalogCategory = '';
+
+// Combo existente serializado por el backend cuando estamos en modo edición.
+// Es null en modo creación. La estructura la genera `_combo_bundle_payload`
+// en `routes/admin.py` (mismo shape que consume `bundleLoadExisting`).
+window.EXISTING_COMBO = {{ (combo_existente_bundle or {})|tojson if combo_existente_bundle else 'null' }};
 
 function bundleMoney(value){ return `€${(Number(value)||0).toFixed(2)}`; }
 function bundleProduct(id){ return BUNDLE_PRODUCTS.find(product => String(product.id) === String(id)); }
@@ -983,8 +996,72 @@ document.getElementById('bundle-form').addEventListener('submit',event=>{
   button.disabled=true; button.querySelector('span').textContent='Creando combo...';
 });
 document.querySelector('textarea[name=descripcion]').addEventListener('input',bundleUpdate);
+
+/**
+ * Precarga el builder desde un combo existente serializado por el backend.
+ * Toca sólo `bundleSections` (y su seq), luego llama `bundleRender()` para
+ * pintar todo el estado. No re-selecciona ni pretende ser exhaustivo con
+ * campos que ya vinieron populados via HTML nativo (nombre, categoría,
+ * canal, entrega, modalidad, grupo, origen). Los reflejos de estado vivo
+ * (health check, precio, chips per-componente) se actualizan
+ * automáticamente por el mismo pipeline de `bundleRender()`.
+ *
+ * Idempotente: si `window.EXISTING_COMBO` es null o no tiene `sections`,
+ * es no-op — el flujo de creación limpio funciona exactamente igual.
+ */
+function bundleLoadExisting(data){
+  if (!data || !Array.isArray(data.sections) || !data.sections.length) return;
+  bundleSections = data.sections.map((sec, idx) => ({
+    id: ++bundleSectionSeq,
+    name: sec.name || (sec.type === 'fixed' ? 'Incluido' : `Elección ${idx + 1}`),
+    type: sec.type === 'choice' ? 'choice' : 'fixed',
+    maxSelections: Math.max(1, Number(sec.maxSelections) || 1),
+    items: (sec.items || []).map(it => ({
+      productId: Number(it.productId),
+      qty: Math.max(1, Number(it.qty) || 1),
+      extra: Number(it.extra) || 0,
+      isDefault: !!it.isDefault,
+      note: String(it.note || ''),
+      presentationId: it.presentationId ? Number(it.presentationId) : null,
+      permiteSabor: !!it.permiteSabor,
+      allowedFlavorIds: Array.isArray(it.allowedFlavorIds) ? it.allowedFlavorIds.map(Number) : [],
+      presentationMode: it.presentationMode === 'cliente_elige' ? 'cliente_elige' : 'fijo',
+      allowedPresentationIds: Array.isArray(it.allowedPresentationIds) ? it.allowedPresentationIds.map(Number) : [],
+    })),
+  }));
+  bundleActiveSection = bundleSections[0]?.id || null;
+
+  // Precio y modo del combo. Ambos vienen del backend en shape unificado.
+  if (data.precio_modo === 'descuento_porcentaje') {
+    const r = document.querySelector('input[name="combo_precio_modo"][value="descuento_porcentaje"]');
+    if (r) { r.checked = true; }
+    const disc = document.getElementById('bundle-discount');
+    if (disc && Number(data.descuento_pct) > 0) disc.value = String(data.descuento_pct);
+  } else {
+    const r = document.querySelector('input[name="combo_precio_modo"][value="fijo"]');
+    if (r) { r.checked = true; }
+    const p = document.getElementById('bundle-price');
+    if (p && Number(data.precio) > 0) p.value = Number(data.precio).toFixed(2);
+  }
+
+  // Imagen: preview desde imagen_url actual (si existe).
+  if (data.imagen_url) {
+    const preview = document.getElementById('bundle-image-preview');
+    if (preview) {
+      preview.style.backgroundImage = `url('${data.imagen_url.replace(/'/g, '%27')}')`;
+      preview.style.backgroundSize = 'cover';
+      preview.style.backgroundPosition = 'center';
+      preview.textContent = '';
+    }
+    const urlInput = document.querySelector('input[name="imagen_url"]');
+    if (urlInput && !urlInput.value) urlInput.value = data.imagen_url;
+  }
+}
+
 bundleDelivery();
 bundlePricing();
+// Precarga ANTES del primer render para evitar flash "empty state".
+bundleLoadExisting(window.EXISTING_COMBO);
 bundleRender();
 bundleOriginChanged();
 bundleMobileTab('recipe', false);

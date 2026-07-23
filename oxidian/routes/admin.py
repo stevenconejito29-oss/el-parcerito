@@ -2908,13 +2908,139 @@ def crear_producto():
     return redirect(url_for("admin.productos"))
 
 
+def _combo_bundle_payload(combo):
+    """Serializa un combo existente al formato que `bundleLoadExisting`
+    espera en el template. Devuelve un dict que se puede pasar por `|tojson`
+    y contiene: campos de la ficha + secciones con sus items + config
+    per-componente (permite-sabor, subset flavors/presentations, notas…).
+
+    Es una función pura (no toca la sesión SQLAlchemy más allá de las
+    lecturas). No lanza — si algún atributo falta, cae a valores por defecto.
+    """
+    if not combo:
+        return None
+    componentes = ComboItem.query.filter_by(combo_id=combo.id).order_by(
+        ComboItem.orden.asc(), ComboItem.id.asc()
+    ).all()
+    grupos = ComboGroup.query.filter_by(combo_id=combo.id).order_by(
+        ComboGroup.orden.asc(), ComboGroup.id.asc()
+    ).all()
+
+    # Cada grupo (fijo o de elección) se convierte en una sección del builder.
+    # Los items dentro de la sección respetan el orden que tenía el ComboItem.
+    sections = []
+    section_by_group_id = {}
+    for idx, grupo in enumerate(grupos):
+        sec = {
+            "id": idx + 1,  # id lógico del bundleSections
+            "name": (grupo.nombre or "").strip() or (
+                "Incluido" if grupo.tipo == "fijo" else f"Elección {idx + 1}"
+            ),
+            "type": "fixed" if grupo.tipo == "fijo" else "choice",
+            "maxSelections": max(1, int(grupo.max_selecciones or 1)),
+            "items": [],
+        }
+        sections.append(sec)
+        section_by_group_id[grupo.id] = sec
+
+    # Fallback: componentes sin grupo asignado — los agrupamos como "Incluido".
+    huerfanos_fijos = []
+    huerfanos_sel_by_name = {}
+    for ci in componentes:
+        section = section_by_group_id.get(ci.combo_group_id)
+        if section is None:
+            if ci.es_seleccionable:
+                key = (ci.grupo_seleccion or f"Elección {len(huerfanos_sel_by_name) + 1}").strip()
+                if key not in huerfanos_sel_by_name:
+                    new_sec = {
+                        "id": len(sections) + 1,
+                        "name": key,
+                        "type": "choice",
+                        "maxSelections": max(1, int(ci.max_selecciones or 1)),
+                        "items": [],
+                    }
+                    sections.append(new_sec)
+                    huerfanos_sel_by_name[key] = new_sec
+                section = huerfanos_sel_by_name[key]
+            else:
+                if not huerfanos_fijos:
+                    new_sec = {
+                        "id": len(sections) + 1,
+                        "name": "Incluido",
+                        "type": "fixed",
+                        "maxSelections": 1,
+                        "items": [],
+                    }
+                    sections.append(new_sec)
+                    huerfanos_fijos.append(new_sec)
+                section = huerfanos_fijos[0]
+
+        # Mapeo de datos M2M (subset sabores + tamaños). `allowed_flavor_option_ids`
+        # y `allowed_presentation_ids` son properties del ComboItem.
+        allowed_flavor_ids = list(ci.allowed_flavor_option_ids or [])
+        allowed_pres_ids = list(ci.allowed_presentation_ids or [])
+        presentation_mode = "cliente_elige" if len(allowed_pres_ids) >= 2 else "fijo"
+        section["items"].append({
+            "productId": int(ci.producto_id),
+            "qty": max(1, int(ci.cantidad or 1)),
+            "extra": float(ci.precio_extra or 0),
+            "isDefault": bool(ci.es_predeterminado),
+            "note": ci.notas_preparacion or "",
+            "presentationId": int(ci.presentation_id) if ci.presentation_id else None,
+            "permiteSabor": bool(getattr(ci, "permite_sabor_cliente", False)),
+            "allowedFlavorIds": allowed_flavor_ids,
+            "presentationMode": presentation_mode,
+            "allowedPresentationIds": allowed_pres_ids,
+        })
+
+    # Precio del combo: se refleja en el toggle "fijo" vs "descuento".
+    precio_modo = (
+        combo.combo_precio_modo_normalizado
+        if hasattr(combo, "combo_precio_modo_normalizado") else "fijo"
+    )
+    return {
+        "id": combo.id,
+        "nombre": combo.nombre or "",
+        "descripcion": combo.descripcion or "",
+        "categoria_id": combo.categoria_id,
+        "imagen_url": combo.imagen_url or "",
+        "canal_preparacion": combo.canal_preparacion or "cocina",
+        "tipo_entrega": combo.tipo_entrega or "inmediato",
+        "modalidad_entrega": combo.modalidad_entrega or "ambas",
+        "fecha_llegada": combo.fecha_llegada.isoformat() if combo.fecha_llegada else "",
+        "grupo_pedido": combo.grupo_pedido or "",
+        "origen_pais": combo.origen_pais or "",
+        "precio_modo": precio_modo,
+        "precio": float(combo.precio or 0),
+        "descuento_pct": float(
+            getattr(combo, "combo_descuento_pct", None)
+            or getattr(combo, "combo_descuento_pct_float", 0)
+            or 0
+        ),
+        "sections": sections,
+    }
+
+
 @admin_bp.route("/combos/nuevo", methods=["GET", "POST"])
+@admin_bp.route("/combos/<int:combo_id>/editar", methods=["GET", "POST"])
 @admin_required
-def nuevo_combo():
+def nuevo_combo(combo_id=None):
     """
-    Crea un nuevo combo con componentes.
-    Usa validadores robustos y configuración dinámica (sin hardcoding).
+    Crea un nuevo combo (sin `combo_id`) o edita uno existente (con `combo_id`).
+
+    Reutilizamos el mismo handler y template para que la UX de crear y editar
+    sea idéntica — mismo builder de bloques, misma config per-componente,
+    mismo cálculo de precio. Al editar, cargamos el combo existente y sus
+    componentes al inicio; el POST reemplaza atómicamente el contenido del
+    combo (borra ComboItems + ComboGroups anteriores y reinserta los nuevos)
+    en la misma transacción.
     """
+    combo_a_editar = None
+    if combo_id is not None:
+        combo_a_editar = get_or_404(Product, combo_id)
+        if not combo_a_editar.es_combo:
+            flash("Este producto no es un combo — usa la ficha del producto.", "warning")
+            return redirect(url_for("admin.editar_producto", producto_id=combo_id))
     categorias = Categoria.query.filter_by(activo=True).order_by(Categoria.nombre).all()
     productos_simples = (
         Product.query.filter_by(activo=True, es_combo=False)
@@ -3000,6 +3126,8 @@ def nuevo_combo():
             },
             "flavor_counts_by_product": flavor_counts_by_product,
             "flavor_options_by_product": flavor_options_by_product,
+            "combo_a_editar": combo_a_editar,
+            "combo_existente_bundle": _combo_bundle_payload(combo_a_editar) if combo_a_editar else None,
         }
         ctx.update(overrides)
         return render_template("admin/nuevo_combo.html", **ctx)
@@ -3048,11 +3176,24 @@ def nuevo_combo():
     if ruta_subida:
         campos["imagen_url"] = ruta_subida
 
-    # Crear objeto combo (sin commit aún)
+    # Crear (o actualizar) el objeto combo — sin commit aún.
     _aplicar_politica_vertical(campos)
-    combo = Product(**campos)
-    db.session.add(combo)
-    db.session.flush()  # Para obtener ID sin commit
+    if combo_a_editar is not None:
+        # Modo EDIT: aplicar campos al combo existente + limpiar componentes
+        # y grupos anteriores para reinsertar en la misma transacción. La
+        # relación M2M `allowed_flavor_options` / `allowed_presentations`
+        # tiene ON DELETE CASCADE, así que el DELETE en cascada limpia las
+        # junction rows sin trabajo manual.
+        combo = combo_a_editar
+        for key, value in campos.items():
+            setattr(combo, key, value)
+        ComboItem.query.filter_by(combo_id=combo.id).delete(synchronize_session=False)
+        ComboGroup.query.filter_by(combo_id=combo.id).delete(synchronize_session=False)
+        db.session.flush()
+    else:
+        combo = Product(**campos)
+        db.session.add(combo)
+        db.session.flush()  # Para obtener ID sin commit
 
     # ── Obtener arrays paralelos del formulario ──
     prod_ids = request.form.getlist("comp_prod_id") or []
@@ -3447,8 +3588,9 @@ def nuevo_combo():
                 del tokens_usados[:-25]
             session["admin_form_tokens"] = tokens_usados
             session.modified = True
+        _verbo = "actualizado" if combo_a_editar is not None else "creado"
         flash(
-            f"✓ Combo '{combo.nombre}' creado con {n_comp} componente{'s' if n_comp != 1 else ''}.",
+            f"✓ Combo '{combo.nombre}' {_verbo} con {n_comp} componente{'s' if n_comp != 1 else ''}.",
             "success"
         )
     except Exception as exc:

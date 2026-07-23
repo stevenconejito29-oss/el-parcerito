@@ -24,7 +24,7 @@
       · Stock estimado: <strong class="cd-stock">{{ combo.combo_stock_total|stock_display(singular='combo', plural='combos', unlimited_label='Sin límite operativo') }}</strong>
     </p>
   </div>
-  <a href="{{ url_for('admin.editar_producto', producto_id=combo.id) }}" class="cd-edit-link">✏ Editar ficha</a>
+  <a href="{{ url_for('admin.nuevo_combo', combo_id=combo.id) }}" class="cd-edit-link">✏ Editar combo completo</a>
 </div>
 
 <div class="cd-layout">

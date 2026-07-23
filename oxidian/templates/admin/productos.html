@@ -432,13 +432,13 @@
 
       {# Acciones #}
       <div class="flex gap-2 mt-3">
-        <a href="{{ url_for('admin.editar_producto', producto_id=combo.id) }}"
+        <a href="{{ url_for('admin.nuevo_combo', combo_id=combo.id) }}"
            class="flex-1 text-xs font-bold py-1.5 rounded-lg text-center" style="background:rgba(255,171,0,.1);border:1px solid rgba(255,171,0,.2);color:#FFAB00">
-          ✏️ Editar
+          ✏️ Editar combo
         </a>
         <a href="{{ url_for('admin.gestionar_combo', producto_id=combo.id) }}"
            class="flex-1 text-xs font-bold py-1.5 rounded-lg text-center" style="background:rgba(10,132,255,.1);border:1px solid rgba(10,132,255,.2);color:#5AC8FA">
-          🧩 Componentes
+          🧩 Vista rápida
         </a>
         <form method="POST"
               action="{{ url_for('admin.eliminar_combo', combo_id=combo.id) }}"
