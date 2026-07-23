@@ -223,3 +223,85 @@ body.ox-body-admin .bundle-preview-product h3{color:#fff!important}
   color:var(--ox-admin-text, #fff);padding:.4rem .5rem;
 }
 .bundle-presentation-subset{display:grid;gap:.4rem}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Rediseño guiado — timeline de pasos + accordion de ajustes avanzados
+   Objetivo: reducir sobrecarga cognitiva del builder. Los 3 pasos son
+   informativos (no interactivos); el `<details>` esconde toda la sección
+   de extras+sabores del combo completo por defecto (solo el 5-10% de
+   los combos los usa).
+   ═══════════════════════════════════════════════════════════════════════ */
+.bundle-steps{
+  display:flex;gap:.4rem;flex-wrap:wrap;
+  margin:.35rem 0 1rem;padding:0;list-style:none;
+  font-size:.72rem;font-weight:800;
+}
+.bundle-steps li{
+  display:inline-flex;align-items:center;gap:.4rem;
+  padding:.35rem .75rem;border-radius:999px;
+  background:color-mix(in srgb, var(--work-accent, #e9be68) 8%, transparent);
+  border:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 20%, transparent);
+  color:var(--ox-admin-muted, #cbc0b1);
+}
+.bundle-steps li span{
+  display:inline-grid;place-items:center;
+  width:1.35rem;height:1.35rem;border-radius:999px;
+  background:color-mix(in srgb, var(--work-accent, #e9be68) 30%, transparent);
+  color:color-mix(in srgb, var(--work-accent, #e9be68) 95%, #fff);
+  font-weight:900;font-size:.68rem;
+}
+
+.bundle-advanced{
+  margin:1rem 0;border-radius:1rem;
+  border:1px solid var(--ox-admin-border, rgba(255,255,255,.12));
+  background:color-mix(in srgb, var(--ox-admin-surface, #1b1f24) 96%, transparent);
+  overflow:hidden;
+  transition:border-color .2s;
+}
+.bundle-advanced[open]{
+  border-color:color-mix(in srgb, var(--work-accent, #e9be68) 32%, transparent);
+}
+.bundle-advanced>summary{
+  display:flex;align-items:center;gap:.85rem;
+  padding:.85rem 1.15rem;cursor:pointer;
+  list-style:none;
+  user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.bundle-advanced>summary::-webkit-details-marker{display:none}
+.bundle-advanced-icon{
+  font-size:1.35rem;line-height:1;
+  filter:grayscale(.15);
+}
+.bundle-advanced>summary>div{flex:1;min-width:0}
+.bundle-advanced>summary strong{
+  display:block;font-size:.86rem;font-weight:900;
+  color:var(--ox-admin-text, #fff);
+}
+.bundle-advanced>summary small{
+  display:block;font-size:.7rem;font-weight:500;
+  color:var(--ox-admin-muted, #cbc0b1);
+  margin-top:.1rem;
+}
+.bundle-advanced-chev{
+  font-size:.9rem;color:var(--ox-admin-muted, #cbc0b1);
+  transition:transform .18s ease;
+}
+.bundle-advanced[open] .bundle-advanced-chev{transform:rotate(180deg)}
+.bundle-advanced-block{
+  margin:0;
+  border-top:1px solid var(--ox-admin-border, rgba(255,255,255,.08));
+  border-radius:0;
+  padding:1rem 1.15rem;
+}
+.bundle-advanced-block:last-of-type{padding-bottom:1.2rem}
+
+@media(max-width:640px){
+  .bundle-steps{gap:.3rem}
+  .bundle-steps li{padding:.28rem .55rem;font-size:.66rem}
+  .bundle-steps li span{width:1.15rem;height:1.15rem;font-size:.62rem}
+  .bundle-advanced>summary{padding:.7rem .85rem;gap:.55rem}
+  .bundle-advanced>summary strong{font-size:.82rem}
+  .bundle-advanced>summary small{font-size:.66rem}
+  .bundle-advanced-block{padding:.75rem .85rem}
+}
