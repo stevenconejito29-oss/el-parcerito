@@ -425,3 +425,86 @@ body.ox-body-admin .bundle-preview-product h3{color:#fff!important}
   .bundle-flavor-panel-body{padding:.85rem .85rem 1rem}
   .bundle-flavor-panel-head{flex-direction:column;align-items:flex-start;gap:.35rem}
 }
+
+/* ── Aclaración conceptual: tamaños/sabores viven en cada producto ──
+   Cuadro informativo antes del builder, con tono azul de rol admin
+   para diferenciarlo del tip amarillo del paso 2. */
+.bundle-clarify{
+  display:grid;grid-template-columns:auto 1fr;gap:.75rem;
+  align-items:center;
+  margin:1rem 0;padding:.75rem 1rem;
+  border-radius:.85rem;
+  background:color-mix(in srgb, var(--role-admin, #5AC8FA) 8%, transparent);
+  border:1px solid color-mix(in srgb, var(--role-admin, #5AC8FA) 22%, transparent);
+}
+.bundle-clarify-icon{
+  width:2rem;height:2rem;font-size:1.35rem;
+  display:grid;place-items:center;border-radius:999px;
+  background:color-mix(in srgb, var(--role-admin, #5AC8FA) 18%, transparent);
+}
+.bundle-clarify strong{
+  display:block;font-size:.86rem;font-weight:900;
+  color:color-mix(in srgb, var(--role-admin, #5AC8FA) 92%, #fff);
+}
+.bundle-clarify small{
+  display:block;margin-top:.15rem;font-size:.74rem;line-height:1.4;
+  color:var(--ox-admin-muted, #cbc0b1);
+}
+@media(max-width:640px){
+  .bundle-clarify{padding:.6rem .85rem;grid-template-columns:1fr}
+  .bundle-clarify-icon{width:1.75rem;height:1.75rem;font-size:1.15rem}
+  .bundle-clarify strong{font-size:.82rem}
+  .bundle-clarify small{font-size:.7rem}
+}
+
+/* ── Opciones colapsables por componente ──
+   Cada bundle-line con tamaños o sabores muestra un summary compacto
+   ("📏 3 tamaños Fijo · Grande · 🎨 5 sabores Cliente elige · todos ▾")
+   que el admin abre solo cuando quiere configurar. Sin esto, un combo
+   con 5 productos con opciones era un muro de 30 controles apilados. */
+.bundle-line-options{
+  grid-column:2/-1;
+  border-radius:.55rem;
+  border:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 24%, transparent);
+  background:color-mix(in srgb, var(--work-accent, #e9be68) 6%, transparent);
+  overflow:hidden;
+}
+.bundle-line-options[open]{
+  border-color:color-mix(in srgb, var(--work-accent, #e9be68) 42%, transparent);
+}
+.bundle-line-options>summary{
+  display:flex;align-items:center;flex-wrap:wrap;gap:.4rem;
+  padding:.45rem .65rem;cursor:pointer;
+  list-style:none;user-select:none;
+  -webkit-tap-highlight-color:transparent;
+  font-size:.68rem;font-weight:800;
+  color:color-mix(in srgb, var(--work-accent, #e9be68) 88%, #fff);
+}
+.bundle-line-options>summary::-webkit-details-marker{display:none}
+.bundle-line-opt-chip{
+  display:inline-flex;align-items:center;gap:.32rem;
+  padding:.18rem .5rem;border-radius:999px;
+  background:color-mix(in srgb, var(--work-accent, #e9be68) 14%, transparent);
+  border:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 26%, transparent);
+  color:color-mix(in srgb, var(--work-accent, #e9be68) 90%, #fff);
+  font-size:.64rem;
+}
+.bundle-line-opt-chip em{
+  font-style:normal;font-weight:600;opacity:.85;
+  color:var(--ox-admin-muted, #cbc0b1);
+  margin-left:.15rem;
+}
+.bundle-line-opt-chev{
+  margin-left:auto;color:var(--ox-admin-muted, #cbc0b1);
+  transition:transform .18s ease;
+}
+.bundle-line-options[open] .bundle-line-opt-chev{transform:rotate(180deg)}
+.bundle-line-options-body{
+  padding:.55rem .65rem .7rem;
+  border-top:1px solid color-mix(in srgb, var(--work-accent, #e9be68) 18%, transparent);
+  display:grid;gap:.5rem;
+}
+@media(max-width:640px){
+  .bundle-line-opt-chip{font-size:.6rem;padding:.15rem .42rem}
+  .bundle-line-options>summary{padding:.4rem .55rem}
+}

@@ -139,92 +139,21 @@
     </details>
   </section>
 
-  {% set extra_catalog = extras_catalogo_disponibles() %}
-  {% if brand.es_comida %}{% set flavor_catalog = sabores_catalogo_disponibles() %}{% else %}{% set flavor_catalog = [] %}{% endif %}
-
-  {# ── Tamaños y sabores del combo — VISIBLE (abierto por defecto en
-     tiendas de comida). Este es el sitio donde el admin define si el
-     combo se vende en pequeño/mediano/grande y qué sabores puede llevar
-     el conjunto. Si lo escondíamos en un accordion, el admin creía que
-     la feature no existía. Ahora se ve de arranque; solo se puede
-     colapsar manualmente. Fuera de tiendas de comida no aparece. #}
-  {% if brand.es_comida %}
-  <details class="bundle-flavor-panel" open>
-    <summary>
-      <span class="bundle-advanced-icon">📏</span>
-      <div>
-        <strong>Tamaños y sabores del combo</strong>
-        <small>Vende el combo en pequeño/mediano/grande y define qué sabores lleva.</small>
-      </div>
-      <span class="bundle-advanced-chev" aria-hidden="true">▾</span>
-    </summary>
-    <section class="bundle-extras bundle-flavors bundle-flavor-panel-body">
-      <input type="hidden" name="flavors_catalog_present" value="1">
-      {% if flavor_catalog %}
-      <div class="bundle-extras-head bundle-flavor-panel-head">
-        <p>Marca los sabores que llevará el combo. Luego, en cada tamaño, decides cuántos permites y cuáles.</p>
-        <a href="{{ url_for('admin.extras_catalogo') }}">Gestionar biblioteca de sabores</a>
-      </div>
-      <div class="bundle-extras-grid">{% for flavor in flavor_catalog %}<label><input type="checkbox" name="flavor_catalog_ids" value="{{ flavor.id }}"><span><strong>{{ flavor.nombre }}</strong><small>Disponible para asignar a los tamaños</small></span></label>{% endfor %}</div>
-      <div class="bundle-flavor-defaults">
-        <label><input type="checkbox" name="flavors_required" value="1" checked> Exigir distribución de sabores</label>
-        <label><span>Total general sin tamaño</span><input type="number" name="flavors_max_selecciones" min="1" max="100" value="1"></label>
-      </div>
-      <p class="bundle-flavor-panel-note">Activa los tamaños que ofreces (puedes activar solo uno si el combo no tiene variantes):</p>
-      <div class="bundle-size-grid">
-        {% for size, label in [('pequeño','Pequeño'),('mediano','Mediano'),('grande','Grande')] %}
-        <article>
-          <label><input type="checkbox" name="pres_{{ size }}_activo" value="1" data-bundle-size="{{ size }}"> <strong>{{ label }}</strong></label>
-          <label><span>Ajuste €</span><input type="number" step="0.01" name="pres_{{ size }}_extra" value="0"></label>
-          <label><input type="checkbox" name="pres_{{ size }}_flavor_rules" value="1"> Reglas propias</label>
-          <div class="bundle-size-limits"><label><span>Mínimo</span><input type="number" name="pres_{{ size }}_flavor_min" min="0" max="100" value="1"></label><label><span>Total</span><input type="number" name="pres_{{ size }}_flavor_max" min="0" max="100" value="1"></label></div>
-          <div class="bundle-size-flavors">{% for flavor in flavor_catalog %}<label><input type="checkbox" name="pres_{{ size }}_flavor_catalog_ids" value="{{ flavor.id }}"> {{ flavor.nombre }}</label>{% endfor %}</div>
-        </article>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="bundle-extras-empty">
-        Todavía no tienes sabores en tu biblioteca. Ve a <a href="{{ url_for('admin.extras_catalogo') }}">Extras y sabores</a> y crea al menos uno para poder configurarlos aquí.
-      </p>
-      {% endif %}
-    </section>
-  </details>
-  {% endif %}
-
-  {# ── Ajustes extra del combo — colapsados por defecto ─────────
-     Sólo los "Extras suplementarios" (bebidas adicionales, salsas, etc.)
-     porque los usa <20% de los combos. Los `<input>` viven dentro del
-     `<details>` — el POST recibe lo mismo, cero cambio de contrato. #}
-  <details class="bundle-advanced" id="bundle-advanced-details">
-    <summary>
-      <span class="bundle-advanced-icon">⚙️</span>
-      <div>
-        <strong>Extras del combo</strong>
-        <small>Suplementos opcionales que el cliente puede añadir sobre el precio base (bebidas, salsas…). Opcional.</small>
-      </div>
-      <span class="bundle-advanced-chev" aria-hidden="true">▾</span>
-    </summary>
-
-    <section class="bundle-extras bundle-advanced-block">
-      <input type="hidden" name="extras_catalog_present" value="1">
-      <div class="bundle-extras-head">
-        <div>
-          <span>Personalización opcional</span>
-          <h2>Extras disponibles para este combo</h2>
-          <p>Suplementos del combo completo, distintos de las elecciones de bebida o acompañamiento del paso 2.</p>
-        </div>
-        <a href="{{ url_for('admin.extras_catalogo') }}">Gestionar biblioteca</a>
-      </div>
-      {% if extra_catalog %}
-      <div class="bundle-extras-grid">
-        {% for extra in extra_catalog %}
-        <label><input type="checkbox" name="extra_catalog_ids" value="{{ extra.id }}"><span><strong>{{ extra.nombre }}</strong><small>+€{{ '%.2f'|format(extra.precio_float) }} · máx. {{ extra.max_cantidad }}</small></span></label>
-        {% endfor %}
-      </div>
-      <label class="bundle-extras-max"><span>Máximo total por combo</span><input type="number" name="extras_max_selecciones" min="1" max="20" value="4"></label>
-      {% else %}<p class="bundle-extras-empty">La biblioteca de extras está vacía.</p>{% endif %}
-    </section>
-  </details>
+  {# ── IMPORTANTE — El combo NO tiene tamaños ni sabores propios.
+     Los tamaños y sabores viven en CADA producto que agregas al combo.
+     Ese cambio lo hace el admin al añadir un producto en el paso 2 —
+     cada componente tiene sus propios controles de "tamaño incluido"
+     y "cliente elige sabor" (con subset por componente).
+     No renderizamos el legacy `flavors_catalog_present` ni
+     `extras_catalog_present` — el backend los procesa opcional y sin
+     esos flags no toca nada del catálogo del combo. #}
+  <div class="bundle-clarify">
+    <span class="bundle-clarify-icon">💡</span>
+    <div>
+      <strong>Los tamaños y sabores viven en cada producto del combo</strong>
+      <small>Cuando añadas un producto en el paso 2, verás sus opciones ahí mismo. Cada componente es independiente: puedes fijar el tamaño de uno, dejar que el cliente elija sabor de otro, etc.</small>
+    </div>
+  </div>
 
   {# ── Hint contextual para el paso 2 — corto y accionable.
      Solo aparece cuando aún no hay secciones (bundle-empty visible).
@@ -769,6 +698,39 @@ function bundleRender(){
         const clientPicker = mode==='cliente_elige' ? `<div class="bundle-presentation-subset"><div class="bundle-flavor-subset-head"><span>Tamaños que ofreces al cliente</span><div class="bundle-flavor-subset-tools"><button type="button" data-bundle-action="presentation-all" data-section-id="${section.id}" data-product-id="${product.id}">Todos</button><button type="button" data-bundle-action="presentation-none" data-section-id="${section.id}" data-product-id="${product.id}">Ninguno</button></div></div><div class="bundle-flavor-subset-grid">${presentationList.map(row=>{const checked=(item.allowedPresentationIds||[]).includes(Number(row.id));const priceHint=Number(row.precio_extra)?` <em>${Number(row.precio_extra)>0?'+':''}${bundleMoney(Number(row.precio_extra))}</em>`:'';return `<label class="bundle-flavor-chip ${checked?'is-picked':''}"><input type="checkbox" ${checked?'checked':''} data-bundle-input="allowed-presentation" data-section-id="${section.id}" data-product-id="${product.id}" data-presentation-id="${row.id}"><span>${bundleEscape(row.label)}${priceHint}</span></label>`;}).join('')}</div><p class="bundle-flavor-subset-note">Marca ≥2 para que el cliente pueda elegir. Con 1 marcado o ninguno, se cae a modo fijo con la primera opción.</p></div>` : '';
         presentationControl = `<div class="bundle-line-size">${modeToggle}${fixedPicker}${clientPicker}</div>`;
       }
+      // Config por-componente (tamaño + sabor) — la envolvemos en un
+      // <details> con summary corto para que un combo con N productos NO
+      // se convierta en un muro vertical de controles. El summary muestra
+      // qué opciones tiene el producto (N tamaños · N sabores) y el
+      // estado actual (fijo/cliente_elige, todos/subset). El admin abre
+      // sólo el componente que quiere configurar. Cuando el producto no
+      // tiene ni tamaños ni sabores, el `<details>` no se renderiza.
+      const flavorSubset = (item.permiteSabor && product.flavorOptions && product.flavorOptions.length>1)?`<div class="bundle-flavor-subset"><div class="bundle-flavor-subset-head"><span>Sabores permitidos <em>(vacío = todos)</em></span><div class="bundle-flavor-subset-tools"><button type="button" data-bundle-action="flavor-all" data-section-id="${section.id}" data-product-id="${product.id}">Todos</button><button type="button" data-bundle-action="flavor-none" data-section-id="${section.id}" data-product-id="${product.id}">Ninguno</button></div></div><div class="bundle-flavor-subset-grid">${product.flavorOptions.map(opt=>{const checked=(item.allowedFlavorIds||[]).includes(opt.id);return `<label class="bundle-flavor-chip ${checked?'is-picked':''}"><input type="checkbox" ${checked?'checked':''} data-bundle-input="allowed-flavor" data-section-id="${section.id}" data-product-id="${product.id}" data-flavor-id="${opt.id}"><span>${bundleEscape(opt.nombre)}</span></label>`;}).join('')}</div><p class="bundle-flavor-subset-note">Marcados = únicos ofrecidos al cliente. Vacío = todos los ${product.flavorOptions.length} activos.</p></div>`:'';
+      const flavorControl = (product.hasSabor || product.flavorCount>0)?`<label class="bundle-line-flavor ${item.permiteSabor && !product.flavorCount?'is-warning':''} ${item.permiteSabor && product.flavorCount>0?'is-active':''}"><input type="checkbox" ${item.permiteSabor?'checked':''} data-bundle-input="permite-sabor" data-section-id="${section.id}" data-product-id="${product.id}"><span>El cliente elige el sabor de este componente</span>${product.flavorCount>0?`<em class="bundle-flavor-count">${product.flavorCount} sabor${product.flavorCount===1?'':'es'} activo${product.flavorCount===1?'':'s'}</em>`:`<em class="bundle-flavor-count is-empty">⚠︎ Sin sabores activos — configura sabores en el producto antes de habilitar aquí</em>`}</label>`:'';
+      const hasSizes = presentationList.length > 0;
+      const hasFlavors = product.hasSabor || product.flavorCount > 0;
+      let optionsBlock = '';
+      if (hasSizes || hasFlavors) {
+        // Summary con estado vivo: "3 tamaños (Cliente elige · 2 permitidos) · 5 sabores (fijo · Fresa)"
+        const summaryBits = [];
+        if (hasSizes) {
+          const mode = item.presentationMode || 'fijo';
+          const nAllowed = (item.allowedPresentationIds || []).length;
+          const chosenLabel = presentationList.find(row=>Number(row.id)===Number(item.presentationId))?.label || presentationList[0]?.label || '';
+          const detail = mode === 'cliente_elige'
+            ? (nAllowed >= 2 ? `Cliente elige · ${nAllowed} permitidos` : 'Cliente elige · marca ≥2')
+            : `Fijo · ${chosenLabel}`;
+          summaryBits.push(`<span class="bundle-line-opt-chip">📏 ${presentationList.length} tamaños <em>${detail}</em></span>`);
+        }
+        if (hasFlavors) {
+          const nSelected = (item.allowedFlavorIds || []).length;
+          const detail = !item.permiteSabor
+            ? 'Sin sabor'
+            : (nSelected > 0 ? `Cliente elige · ${nSelected} permitidos` : `Cliente elige · todos`);
+          summaryBits.push(`<span class="bundle-line-opt-chip">🎨 ${product.flavorCount} sabores <em>${detail}</em></span>`);
+        }
+        optionsBlock = `<details class="bundle-line-options"><summary>${summaryBits.join('')}<span class="bundle-line-opt-chev">▾</span></summary><div class="bundle-line-options-body">${presentationControl}${flavorControl}${flavorSubset}</div></details>`;
+      }
       return `<div class="bundle-line">
         <div class="bundle-line-image">${product.image?`<img src="${bundleEscape(product.image)}" alt="">`:bundleEscape(product.name.slice(0,1))}</div>
         <div class="bundle-line-copy"><strong>${bundleEscape(product.name)}</strong><small>#${product.id} · ${bundleEscape(product.origin)} · ${bundleEscape(product.channel)} · ${bundleMoney(product.price)}</small></div>
@@ -778,9 +740,7 @@ function bundleRender(){
           `<label class="bundle-extra"><span>Suplemento</span><div><b>€</b><input type="number" value="${Number(item.extra||0).toFixed(2)}" min="0" step="0.01" data-bundle-input="extra" data-section-id="${section.id}" data-product-id="${product.id}"></div></label>
            <label class="bundle-default"><input type="checkbox" ${item.isDefault?'checked':''} data-bundle-input="default" data-section-id="${section.id}" data-product-id="${product.id}"> Predeterminada</label>`}
         </div>
-        ${presentationControl}
-        ${(product.hasSabor || product.flavorCount>0)?`<label class="bundle-line-flavor ${item.permiteSabor && !product.flavorCount?'is-warning':''} ${item.permiteSabor && product.flavorCount>0?'is-active':''}"><input type="checkbox" ${item.permiteSabor?'checked':''} data-bundle-input="permite-sabor" data-section-id="${section.id}" data-product-id="${product.id}"><span>El cliente elige el sabor de este componente</span>${product.flavorCount>0?`<em class="bundle-flavor-count">${product.flavorCount} sabor${product.flavorCount===1?'':'es'} activo${product.flavorCount===1?'':'s'}</em>`:`<em class="bundle-flavor-count is-empty">⚠︎ Sin sabores activos — configura sabores en el producto antes de habilitar aquí</em>`}</label>`:''}
-        ${(item.permiteSabor && product.flavorOptions && product.flavorOptions.length>1)?`<div class="bundle-flavor-subset"><div class="bundle-flavor-subset-head"><span>Sabores permitidos <em>(vacío = todos)</em></span><div class="bundle-flavor-subset-tools"><button type="button" data-bundle-action="flavor-all" data-section-id="${section.id}" data-product-id="${product.id}">Todos</button><button type="button" data-bundle-action="flavor-none" data-section-id="${section.id}" data-product-id="${product.id}">Ninguno</button></div></div><div class="bundle-flavor-subset-grid">${product.flavorOptions.map(opt=>{const checked=(item.allowedFlavorIds||[]).includes(opt.id);return `<label class="bundle-flavor-chip ${checked?'is-picked':''}"><input type="checkbox" ${checked?'checked':''} data-bundle-input="allowed-flavor" data-section-id="${section.id}" data-product-id="${product.id}" data-flavor-id="${opt.id}"><span>${bundleEscape(opt.nombre)}</span></label>`;}).join('')}</div><p class="bundle-flavor-subset-note">Marcados = únicos ofrecidos al cliente. Vacío = todos los ${product.flavorOptions.length} activos.</p></div>`:''}
+        ${optionsBlock}
         <label class="bundle-line-note"><input type="text" value="${bundleEscape(item.note)}" maxlength="300" placeholder="Nota opcional para cocina" data-bundle-input="note" data-section-id="${section.id}" data-product-id="${product.id}"></label>
       </div>`;
     }).join('');
