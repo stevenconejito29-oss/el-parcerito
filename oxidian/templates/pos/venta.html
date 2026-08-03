@@ -13,6 +13,14 @@
     <a href="{{ url_for('pos.historial') }}" class="pos-top-btn">Historial</a>
     <button type="button" class="pos-top-btn" data-pos-action="fullscreen">Pantalla completa</button>
     <button type="button" class="pos-top-btn primary" data-pos-action="new-sale">Nueva venta</button>
+    {# Emparejar impresora térmica directa (WebUSB/BT). En la tablet de
+       la oficina la impresora va por cable OTG y sale de aquí; en el PC
+       se usa el flujo IPP y estos botones no se pulsan. #}
+    <button type="button" class="pos-top-btn" data-pair-thermal="usb"
+            title="Emparejar impresora USB">🖨️ USB</button>
+    <button type="button" class="pos-top-btn" data-pair-thermal="bt"
+            title="Emparejar impresora Bluetooth">📶 BT</button>
+    <small data-thermal-status class="pos-clock">Impresora no emparejada</small>
   </div>
 </header>
 

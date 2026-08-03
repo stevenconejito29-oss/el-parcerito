@@ -533,6 +533,21 @@
       <span class="delivery-theme-toggle__icon" data-theme-icon aria-hidden="true">🌙</span>
       <span data-theme-label>Modo noche</span>
     </button>
+    {# Emparejar impresora térmica local — solo hace falta en la tablet
+       de la oficina donde la impresora va enchufada por USB-OTG (o BT).
+       En el PC de casa el ticket se manda por IPP desde el servidor,
+       así que estos botones simplemente no se pulsan. #}
+    <button type="button" class="work-btn work-btn-ghost"
+            data-pair-thermal="usb"
+            title="Emparejar impresora térmica conectada por cable USB (OTG)">
+      🖨️ USB
+    </button>
+    <button type="button" class="work-btn work-btn-ghost"
+            data-pair-thermal="bt"
+            title="Emparejar impresora térmica por Bluetooth">
+      📶 BT
+    </button>
+    <small data-thermal-status class="prep-sse-badge">Impresora no emparejada</small>
   </div>
 </section>
 

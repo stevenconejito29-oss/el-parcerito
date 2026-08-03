@@ -47,10 +47,25 @@
   }
 
   /* Impresión de tickets desde cualquier panel operativo.
-     El <form class="ticket-print-form"> hace POST /pos/ticket/<id>/imprimir.
-     Interceptamos el submit para hacer fetch (evita perder el contexto de la
-     página y muestra feedback inline). Si el servidor no puede alcanzar la
-     impresora, caemos al flujo antiguo abriendo la pestaña con auto_print. */
+     Orden de intento:
+       1. WebUSB / WebBluetooth si el navegador tiene una impresora
+          emparejada (típico en la tablet de la oficina con cable OTG).
+       2. POST /pos/ticket/<id>/imprimir → servidor manda por IPP a la
+          cola CUPS del PC (típico en la ubicación con PC).
+       3. Fallback: abrir pestaña con auto_print=1 y confiar en el
+          diálogo del navegador (peor UX pero garantiza que algo salga).
+  */
+  async function tryThermalDirect(form) {
+    if (!window.ThermalPrinter || !window.ThermalPrinter.isPaired()) return false;
+    const action = form.action || '';
+    const match = action.match(/\/pos\/ticket\/(\d+)\/imprimir/);
+    if (!match) return false;
+    const pedidoId = match[1];
+    const reprint = /reprint=1/.test(action);
+    await window.ThermalPrinter.printTicket(pedidoId, { reprint });
+    return true;
+  }
+
   document.addEventListener('submit', async (event) => {
     const form = event.target.closest('form.ticket-print-form');
     if (!form) return;
@@ -59,6 +74,11 @@
     const originalLabel = button ? button.innerHTML : '';
     if (button) { button.disabled = true; button.innerHTML = '🖨️ Enviando…'; }
     try {
+      if (await tryThermalDirect(form)) {
+        if (button) button.innerHTML = '✅ Impreso (USB)';
+        setTimeout(() => { if (button) { button.innerHTML = originalLabel; button.disabled = false; } }, 2500);
+        return;
+      }
       const resp = await fetch(form.action, {
         method: 'POST',
         body: new FormData(form),
@@ -73,7 +93,7 @@
       }
       throw new Error(data.error || `HTTP ${resp.status}`);
     } catch (err) {
-      console.warn('[ticket] impresión servidor falló, fallback a navegador:', err);
+      console.warn('[ticket] impresión falló, fallback a navegador:', err);
       const fallback = form.dataset.fallbackUrl;
       if (fallback) {
         window.open(fallback, '_blank', 'noopener');
@@ -83,4 +103,42 @@
       if (button) { button.innerHTML = originalLabel; button.disabled = false; }
     }
   });
+
+  /* Botones opcionales para emparejar impresora desde cualquier panel:
+     un <button data-pair-thermal="usb|bt"> dispara el flujo de request
+     de permiso del navegador. Un <span data-thermal-status> se
+     actualiza con el estado actual. */
+  function refreshThermalStatus() {
+    const info = window.ThermalPrinter?.getPairInfo?.();
+    document.querySelectorAll('[data-thermal-status]').forEach(el => {
+      if (info) {
+        el.textContent = `Impresora: ${info.name} (${info.transport.toUpperCase()})`;
+        el.dataset.paired = 'true';
+      } else {
+        el.textContent = 'Impresora no emparejada';
+        el.dataset.paired = 'false';
+      }
+    });
+  }
+  document.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-pair-thermal]');
+    if (!btn) return;
+    const mode = btn.dataset.pairThermal;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Emparejando…';
+    try {
+      const info = mode === 'bt'
+        ? await window.ThermalPrinter.pairBT()
+        : await window.ThermalPrinter.pairUSB();
+      btn.textContent = `✅ ${info.name}`;
+      refreshThermalStatus();
+    } catch (err) {
+      alert(err.message || 'No se pudo emparejar la impresora.');
+      btn.textContent = orig;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  document.addEventListener('DOMContentLoaded', refreshThermalStatus);
 })();

@@ -615,6 +615,7 @@ document.querySelectorAll('form[data-ox-validate]').forEach(form=>{
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/storefront-toast.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/pwa-manager.js', v=asset_version) }}" defer></script>
 {% if operational_view %}
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/thermal-printer.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/operational-roles.js', v=asset_version) }}" defer></script>
 {% endif %}
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/admin-interactions.js', v=asset_version) }}" defer></script>

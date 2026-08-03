@@ -750,6 +750,42 @@ def _thermal_printer_targets():
     return targets
 
 
+@pos_bp.route("/ticket/<int:pedido_id>/escpos", methods=["GET"])
+@login_required
+def ticket_escpos_bytes(pedido_id):
+    """Devuelve los bytes ESC/POS del ticket para que el navegador de la
+    tablet los empuje directamente al puerto USB (WebUSB) o al servicio
+    BT (WebBluetooth) sin pasar por CUPS ni red hacia la impresora.
+
+    Motivación: en la oficina la impresora está enchufada por cable OTG
+    a la tablet, no hay PC ni servidor CUPS accesible. El navegador
+    (Chromium en Android desde 2018) puede hablar directo al periférico
+    con permiso del usuario. El servidor sigue centralizando la lógica
+    (formato, snapshots, comisiones) — solo cambia el último salto."""
+    from escpos_renderer import render_ticket
+    from store_config import get_store_profile
+
+    pedido = get_or_404(Order, pedido_id)
+    if not can_read_order_ticket(current_user, pedido):
+        return {"ok": False, "error": "sin_acceso"}, 403
+
+    es_reimpresion = request.args.get("reprint") == "1"
+    try:
+        brand = get_store_profile()
+    except Exception:
+        brand = {}
+    ui = (brand.get("ui") if isinstance(brand, dict) else None) or {}
+    data = render_ticket(pedido, es_reimpresion=es_reimpresion, brand=brand, ui=ui)
+
+    from flask import Response
+    resp = Response(data, mimetype="application/vnd.escpos")
+    resp.headers["Content-Disposition"] = (
+        f'inline; filename="ticket-{pedido.numero_pedido}.escpos"'
+    )
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @pos_bp.route("/ticket/<int:pedido_id>/imprimir", methods=["POST"])
 @login_required
 def imprimir_ticket(pedido_id):
