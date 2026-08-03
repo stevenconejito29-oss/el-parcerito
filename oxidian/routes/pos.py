@@ -819,8 +819,15 @@ def imprimir_ticket(pedido_id):
                 # plano con Content-Type: application/pdf, que CUPS ignora
                 # devolviendo el HTML del panel). El binario viene del
                 # paquete cups-client instalado en el Dockerfile.
+                # `media=X48MMY210MM` fuerza al driver a usar un papel de
+                # 48×210 mm que coincide con nuestro PDF de 48×200 mm. Sin
+                # esto, la cola usa su default (X48MMY65MM = 65 mm de alto)
+                # y el driver ZJ58 escala el contenido para que quepa en 65
+                # mm → letras diminutas ilegibles.
                 result = subprocess.run(
                     ["lp", "-h", host_port, "-d", cola,
+                     "-o", "media=X48MMY210MM",
+                     "-o", "fit-to-page=false",
                      "-t", f"pedido-{pedido.numero_pedido}", tmp.name],
                     capture_output=True, text=True, timeout=10,
                 )
