@@ -15,7 +15,8 @@ from services import (lineas_proveedor_pedido, registrar_evento_pedido,
                        marcar_pedido_preparado,
                        cancelar_pedido_operativo,
                        calcular_liquidaciones_proveedores,
-                       lineas_socio_pedido)
+                       lineas_socio_pedido,
+                       notificar_bot_sync)
 
 proveedor_bp = Blueprint("proveedor", __name__)
 logger = logging.getLogger(__name__)
@@ -942,6 +943,70 @@ def registrar_producto(producto_id=None, _proveedor=None):
         categorias=categorias,
         stock_actual=fila.stock if fila else 0,
     )
+
+
+@proveedor_bp.route("/productos/<int:producto_id>/publicacion", methods=["POST"])
+@socio_capital_required
+def toggle_publicacion_producto(producto_id, _proveedor=None):
+    """Permite al socio pausar o reanudar la publicación de un producto ya
+    aprobado. La aprobación de super_admin sigue siendo requisito previo:
+    aquí solo se alterna ``Product.activo`` sin tocar el estado de revisión."""
+    proveedor = _proveedor
+    producto = db.session.get(Product, producto_id)
+    _assert_owned_by(proveedor, producto)
+    if producto.partner_submission_status != "approved":
+        flash(
+            "Solo los productos aprobados pueden pausarse o reanudarse.",
+            "warning",
+        )
+        return redirect(url_for("proveedor.inventario"))
+
+    nuevo_activo = not bool(producto.activo)
+    if not nuevo_activo:
+        # Pausar un componente de un combo activo rompería el combo publicado.
+        combos_afectados = (
+            ComboItem.query
+            .filter_by(producto_id=producto.id, activo=True)
+            .join(Product, ComboItem.combo_id == Product.id)
+            .filter(Product.activo.is_(True))
+            .count()
+        )
+        if combos_afectados > 0:
+            flash(
+                f"Este producto forma parte de {combos_afectados} combo(s) "
+                "activo(s). Pausa o modifica esos combos antes de retirarlo.",
+                "warning",
+            )
+            return redirect(url_for("proveedor.inventario"))
+
+    producto.activo = nuevo_activo
+    try:
+        AuditLog.registrar(
+            current_user.id,
+            "socio_producto_publicacion",
+            "producto",
+            producto.id,
+            detalle=(
+                f"Socio #{proveedor.id}: {'activado' if nuevo_activo else 'pausado'}"
+            ),
+            ip=request.remote_addr,
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception(
+            "No se pudo alternar publicación del producto %s", producto.id
+        )
+        flash("No se pudo actualizar la publicación. Reintenta.", "danger")
+        return redirect(url_for("proveedor.inventario"))
+
+    notificar_bot_sync()
+    flash(
+        f"«{producto.nombre}» "
+        + ("está publicado en la tienda." if nuevo_activo else "quedó pausado."),
+        "success",
+    )
+    return redirect(url_for("proveedor.inventario"))
 
 
 def _combo_groups_payload_from_form_socio(form):

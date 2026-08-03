@@ -1301,15 +1301,54 @@ _GEOCODE_TTL = 3600  # 1 hora — direcciones locales no cambian frecuentemente
 _GEOCODE_NEGATIVE_TTL = 60  # un fallo transitorio no bloquea al cliente una hora
 
 
+_OSM_ADDRESS_TAGS_VIA = (
+    # Vías rodadas o peatonales.
+    "road", "pedestrian", "footway", "path", "cycleway",
+    "street", "residential", "living_street",
+    # Cascos históricos: plazas, plazuelas y espacios abiertos con nombre.
+    "square", "plaza", "place",
+    # Referencias puntuales (portal, nombre de casa, edificio con nombre).
+    "house_number", "house_name", "building",
+    # Núcleos urbanos internos: en Carmona muchos domicilios se etiquetan
+    # únicamente con barrio/pedanía en OSM, sin `road`.
+    "neighbourhood", "quarter", "suburb",
+    "hamlet", "isolated_dwelling", "farm", "locality",
+)
+
+_OSM_TYPES_SOLO_ADMINISTRATIVO = {
+    # Resultados que sólo apuntan a un ente administrativo (no a un domicilio).
+    "city", "town", "village", "municipality",
+    "county", "state", "region", "province", "country",
+    "administrative",
+}
+
+
 def _tiene_calle_nominatim(hit: dict) -> bool:
-    """Devuelve True si el resultado de Nominatim contiene una calle real (no solo ciudad)."""
-    address = hit.get("address", {})
-    return bool(
-        address.get("road") or
-        address.get("pedestrian") or
-        address.get("footway") or
-        address.get("house_number")
-    )
+    """Valida que Nominatim devolvió una ubicación resoluble a domicilio.
+
+    El criterio anterior sólo aceptaba `road`, `pedestrian`, `footway` o
+    `house_number`. En cascos históricos como Carmona muchas direcciones
+    reales figuran en OSM únicamente como plaza, barrio, pedanía o edificio
+    con nombre — y quedaban rechazadas aunque la búsqueda ya estuviera
+    acotada por `bounded=1` al polígono de reparto. Aquí ampliamos los tags
+    aceptados y, como salvaguarda, rechazamos resultados cuyo `type`/`class`
+    corresponde a un ente puramente administrativo (ciudad, provincia…).
+    """
+    address = hit.get("address", {}) or {}
+    for tag in _OSM_ADDRESS_TAGS_VIA:
+        if address.get(tag):
+            return True
+    # Sin ningún tag de vía/lugar: rechazamos salvo que el propio hit sea un
+    # punto concreto (edificio, tienda, dirección) dentro del viewbox.
+    hit_class = (hit.get("class") or "").lower()
+    hit_type = (hit.get("type") or "").lower()
+    if hit_type in _OSM_TYPES_SOLO_ADMINISTRATIVO:
+        return False
+    if hit_class in {"building", "amenity", "shop", "office", "tourism", "historic"}:
+        return True
+    if hit_class == "place" and hit_type not in _OSM_TYPES_SOLO_ADMINISTRATIVO:
+        return True
+    return False
 
 
 def _bbox_cobertura_activa():
