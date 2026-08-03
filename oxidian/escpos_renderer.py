@@ -133,13 +133,15 @@ def render_ticket(pedido, es_reimpresion: bool = False, brand=None, ui=None) -> 
     p.set(width=1, height=1, bold=False)
     p.text(_sep_dashes(cols) + "\n")
 
-    # ── Número de pedido (MUY GRANDE — es lo que más consulta cocina) ──
-    p.set(align="center")
+    # ── Número de pedido (XL — es lo que más consulta cocina/repartidor) ──
+    p.set(align="center", bold=True)
     p.text("PEDIDO\n")
-    # width=3, height=3 = 3x el tamaño base en cada eje → letras de ~9 mm
-    # de alto, legibles a 2 m de distancia. Para 5-6 chars ("#1006")
-    # sigue cabiendo en el ancho de 48 mm sin envolver.
-    p.set(bold=True, width=3, height=3)
+    # width=5, height=5 = 5x el tamaño base → letras de ~15 mm de alto
+    # (Font A base = 3 mm). Para números tipo "#1006" (5 chars a 60 dots
+    # cada uno = 300 dots) cabe holgadamente en los 384 dots útiles del
+    # cabezal ZJ-58 (48 mm). Si un día pasamos a numeración >5 chars,
+    # bajar a width=4/height=5 evita que envuelva.
+    p.set(bold=True, width=5, height=5)
     p.text(f"{pedido.numero_pedido}\n")
     p.set(width=1, height=1, bold=False)
     try:
