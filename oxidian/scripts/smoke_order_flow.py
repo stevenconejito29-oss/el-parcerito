@@ -100,6 +100,20 @@ def login(client, email: str, password: str) -> None:
         {"email": email, "password": password},
     )
     require(b"Email o contrase" not in response.data, f"No se pudo iniciar sesion como {email}")
+    # Producción exige MFA al superadmin. El smoke usa el secreto ya
+    # configurado, nunca lo desactiva ni altera, y recorre el challenge real.
+    if response.request.path == "/auth/login/mfa":
+        import pyotp
+
+        user = User.query.filter_by(email=email).first()
+        require(user and user.mfa_enabled and user.mfa_secret, "El challenge MFA no tiene configuración válida")
+        response = post_form(
+            client,
+            "/auth/login/mfa",
+            "/auth/login/mfa",
+            {"code": pyotp.TOTP(user.mfa_secret).now()},
+        )
+        require(response.request.path != "/auth/login/mfa", f"MFA no se pudo completar para {email}")
 
 
 def cleanup(order_ids, customer_id, combo_id, product_ids, category_id, zone_id, created_zone) -> None:
