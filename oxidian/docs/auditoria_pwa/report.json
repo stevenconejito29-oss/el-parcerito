@@ -1,144 +1,114 @@
 {
-  "generatedAt": "2026-08-03T00:27:40.729Z",
-  "baseUrl": "http://127.0.0.1:5071",
+  "generatedAt": "2026-08-03T11:10:50.112Z",
+  "baseUrl": "https://elparcerito.com",
   "views": [
     {
       "name": "android-menu",
       "status": 200,
       "consoleErrors": [],
       "failedRequests": [],
-      "title": "Mi tienda — Pide online",
+      "title": "El Parcerito — Pide online",
       "horizontalOverflow": false,
       "scrollWidth": 390,
       "viewportWidth": 390,
-      "products": 40,
-      "visibleProducts": 19,
+      "products": 14,
+      "visibleProducts": 12,
       "smallTargets": [
         {
           "tag": "a",
-          "text": "TEST-COMBO-01",
-          "width": 124,
-          "height": 17
+          "text": "PANZETA",
+          "width": 63,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-COMBO-02",
-          "width": 127,
-          "height": 17
+          "text": "GALLETAS FESTIVAL",
+          "width": 137,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-COMBO-03",
-          "width": 127,
-          "height": 17
+          "text": "QUIPITOS",
+          "width": 69,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-COMBO-04",
-          "width": 127,
-          "height": 17
+          "text": "bombombum",
+          "width": 97,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-COMBO-05",
-          "width": 127,
-          "height": 17
+          "text": "chocorramo",
+          "width": 86,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-COMBO-06",
-          "width": 127,
-          "height": 17
+          "text": "Hit",
+          "width": 21,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "SOCIO-VISUAL Producto",
-          "width": 175,
-          "height": 17
+          "text": "PONY MALTA",
+          "width": 93,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P01-pro-inm-del-non-com-sv",
-          "width": 202,
-          "height": 34
+          "text": "POSTOBON",
+          "width": 80,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P19-pro-inm-amb-non-com-sv",
-          "width": 202,
-          "height": 34
+          "text": "uva postobon",
+          "width": 97,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P55-pro-inm-del-non-com-sv",
-          "width": 202,
-          "height": 34
+          "text": "CHOCOLATE CORONA",
+          "width": 151,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P73-pro-inm-amb-non-com-sv",
-          "width": 202,
-          "height": 34
+          "text": "PANELA",
+          "width": 56,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P10-pro-inm-rec-non-com-sv",
-          "width": 202,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P64-pro-inm-rec-non-com-sv",
-          "width": 202,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P28-pro-pro-del-non-com-sv",
-          "width": 202,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P37-pro-pro-rec-non-com-sv",
-          "width": 202,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P46-pro-pro-amb-non-com-sv",
-          "width": 202,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P82-pro-pro-del-non-com-sv",
-          "width": 202,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P91-pro-pro-rec-non-com-sv",
-          "width": 202,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "QA-VIS-Producto Bar X",
-          "width": 166,
-          "height": 17
+          "text": "cafe",
+          "width": 30,
+          "height": 32
         },
         {
           "tag": "a",
           "text": "Privacidad y condiciones",
-          "width": 131,
+          "width": 129,
           "height": 14
         },
         {
           "tag": "a",
           "text": "WhatsApp",
-          "width": 59,
+          "width": 57,
           "height": 17
+        },
+        {
+          "tag": "a",
+          "text": "Información legal",
+          "width": 99,
+          "height": 17
+        },
+        {
+          "tag": "a",
+          "text": "Más información",
+          "width": 108,
+          "height": 18
         }
       ],
       "serviceWorkerControlled": true,
@@ -149,141 +119,111 @@
       "status": 200,
       "consoleErrors": [],
       "failedRequests": [],
-      "title": "Mi tienda — Pide online",
+      "title": "El Parcerito — Pide online",
       "horizontalOverflow": false,
       "scrollWidth": 393,
       "viewportWidth": 393,
-      "products": 40,
-      "visibleProducts": 19,
+      "products": 14,
+      "visibleProducts": 12,
       "smallTargets": [
         {
           "tag": "a",
-          "text": "TEST-COMBO-01",
-          "width": 124,
-          "height": 17
+          "text": "PANZETA",
+          "width": 63,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-COMBO-02",
-          "width": 127,
-          "height": 17
+          "text": "GALLETAS FESTIVAL",
+          "width": 137,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-COMBO-03",
-          "width": 127,
-          "height": 17
+          "text": "QUIPITOS",
+          "width": 69,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-COMBO-04",
-          "width": 127,
-          "height": 17
+          "text": "bombombum",
+          "width": 97,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-COMBO-05",
-          "width": 127,
-          "height": 17
+          "text": "chocorramo",
+          "width": 86,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-COMBO-06",
-          "width": 127,
-          "height": 17
+          "text": "Hit",
+          "width": 21,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "SOCIO-VISUAL Producto",
-          "width": 175,
-          "height": 17
+          "text": "PONY MALTA",
+          "width": 93,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P01-pro-inm-del-non-com-sv",
-          "width": 204,
-          "height": 34
+          "text": "POSTOBON",
+          "width": 80,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P19-pro-inm-amb-non-com-sv",
-          "width": 204,
-          "height": 34
+          "text": "uva postobon",
+          "width": 97,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P55-pro-inm-del-non-com-sv",
-          "width": 204,
-          "height": 34
+          "text": "CHOCOLATE CORONA",
+          "width": 151,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P73-pro-inm-amb-non-com-sv",
-          "width": 204,
-          "height": 34
+          "text": "PANELA",
+          "width": 56,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P10-pro-inm-rec-non-com-sv",
-          "width": 204,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P64-pro-inm-rec-non-com-sv",
-          "width": 204,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P28-pro-pro-del-non-com-sv",
-          "width": 204,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P37-pro-pro-rec-non-com-sv",
-          "width": 204,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P46-pro-pro-amb-non-com-sv",
-          "width": 204,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P82-pro-pro-del-non-com-sv",
-          "width": 204,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P91-pro-pro-rec-non-com-sv",
-          "width": 204,
-          "height": 34
-        },
-        {
-          "tag": "a",
-          "text": "QA-VIS-Producto Bar X",
-          "width": 166,
-          "height": 17
+          "text": "cafe",
+          "width": 30,
+          "height": 32
         },
         {
           "tag": "a",
           "text": "Privacidad y condiciones",
-          "width": 131,
+          "width": 129,
           "height": 14
         },
         {
           "tag": "a",
           "text": "WhatsApp",
-          "width": 59,
+          "width": 57,
           "height": 17
+        },
+        {
+          "tag": "a",
+          "text": "Información legal",
+          "width": 99,
+          "height": 17
+        },
+        {
+          "tag": "a",
+          "text": "Más información",
+          "width": 108,
+          "height": 18
         }
       ],
-      "serviceWorkerControlled": true,
+      "serviceWorkerControlled": false,
       "standalone": true
     },
     {
@@ -291,132 +231,96 @@
       "status": 200,
       "consoleErrors": [],
       "failedRequests": [],
-      "title": "Mi tienda — Pide online",
+      "title": "El Parcerito — Pide online",
       "horizontalOverflow": false,
       "scrollWidth": 1440,
       "viewportWidth": 1440,
-      "products": 40,
-      "visibleProducts": 19,
+      "products": 14,
+      "visibleProducts": 12,
       "smallTargets": [
         {
           "tag": "a",
-          "text": "TEST-COMBO-01",
-          "width": 264,
-          "height": 19
+          "text": "PANZETA",
+          "width": 1193,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-COMBO-02",
-          "width": 264,
-          "height": 19
-        },
-        {
-          "tag": "a",
-          "text": "TEST-COMBO-03",
-          "width": 264,
-          "height": 19
-        },
-        {
-          "tag": "a",
-          "text": "TEST-COMBO-04",
-          "width": 264,
-          "height": 19
-        },
-        {
-          "tag": "a",
-          "text": "TEST-COMBO-05",
-          "width": 264,
-          "height": 19
-        },
-        {
-          "tag": "a",
-          "text": "TEST-COMBO-06",
-          "width": 264,
-          "height": 19
-        },
-        {
-          "tag": "a",
-          "text": "SOCIO-VISUAL Producto",
+          "text": "GALLETAS FESTIVAL",
           "width": 267,
-          "height": 19
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P01-pro-inm-del-non-com-sv",
+          "text": "QUIPITOS",
           "width": 267,
-          "height": 38
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P19-pro-inm-amb-non-com-sv",
+          "text": "bombombum",
           "width": 267,
-          "height": 38
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P55-pro-inm-del-non-com-sv",
+          "text": "chocorramo",
           "width": 267,
-          "height": 38
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P73-pro-inm-amb-non-com-sv",
+          "text": "Hit",
           "width": 267,
-          "height": 38
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P10-pro-inm-rec-non-com-sv",
-          "width": 580,
-          "height": 19
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P64-pro-inm-rec-non-com-sv",
-          "width": 580,
-          "height": 19
-        },
-        {
-          "tag": "a",
-          "text": "TEST-P28-pro-pro-del-non-com-sv",
+          "text": "PONY MALTA",
           "width": 267,
-          "height": 38
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P37-pro-pro-rec-non-com-sv",
+          "text": "POSTOBON",
           "width": 267,
-          "height": 38
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P46-pro-pro-amb-non-com-sv",
+          "text": "uva postobon",
           "width": 267,
-          "height": 38
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P82-pro-pro-del-non-com-sv",
-          "width": 267,
-          "height": 38
+          "text": "CHOCOLATE CORONA",
+          "width": 371,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "TEST-P91-pro-pro-rec-non-com-sv",
-          "width": 267,
-          "height": 38
+          "text": "PANELA",
+          "width": 371,
+          "height": 32
         },
         {
           "tag": "a",
-          "text": "QA-VIS-Producto Bar X",
-          "width": 1206,
-          "height": 19
+          "text": "cafe",
+          "width": 371,
+          "height": 32
         },
         {
           "tag": "a",
           "text": "Privacidad y condiciones",
-          "width": 131,
+          "width": 129,
           "height": 14
+        },
+        {
+          "tag": "a",
+          "text": "Más información",
+          "width": 108,
+          "height": 18
         }
       ],
       "serviceWorkerControlled": true,
@@ -427,9 +331,9 @@
     "status": 200,
     "contentType": "application/manifest+json",
     "data": {
-      "name": "Mi tienda",
-      "short_name": "Mi tienda",
-      "description": "Menu online y canasta con entrega a domicilio, recogida en local, pedidos por fecha.",
+      "name": "El Parcerito",
+      "short_name": "El Parcerito",
+      "description": "Menu online y canasta con entrega a domicilio.",
       "start_url": "/?source=pwa",
       "scope": "/",
       "display": "standalone",
@@ -450,31 +354,31 @@
       "id": "/",
       "icons": [
         {
-          "src": "/static/pwa-icon-192.png?v=205999a995d8",
+          "src": "/pwa-assets/05aca016ec09/pwa-icon-192.png",
           "sizes": "192x192",
           "type": "image/png",
           "purpose": "any"
         },
         {
-          "src": "/static/pwa-icon-512.png?v=205999a995d8",
+          "src": "/pwa-assets/05aca016ec09/pwa-icon-512.png",
           "sizes": "512x512",
           "type": "image/png",
           "purpose": "any"
         },
         {
-          "src": "/static/pwa-icon-512-maskable.png?v=205999a995d8",
+          "src": "/pwa-assets/05aca016ec09/pwa-icon-512-maskable.png",
           "sizes": "512x512",
           "type": "image/png",
           "purpose": "maskable"
         },
         {
-          "src": "/static/pwa-icon.svg?v=205999a995d8",
+          "src": "/pwa-assets/05aca016ec09/pwa-icon.svg",
           "sizes": "any",
           "type": "image/svg+xml",
           "purpose": "any"
         },
         {
-          "src": "/static/pwa-icon-monochrome.svg?v=205999a995d8",
+          "src": "/pwa-assets/05aca016ec09/pwa-icon-monochrome.svg",
           "sizes": "any",
           "type": "image/svg+xml",
           "purpose": "monochrome"
@@ -488,7 +392,7 @@
           "url": "/",
           "icons": [
             {
-              "src": "/static/pwa-icon-192.png?v=205999a995d8",
+              "src": "/pwa-assets/05aca016ec09/pwa-icon-192.png",
               "sizes": "any"
             }
           ]
@@ -500,7 +404,7 @@
           "url": "/carrito",
           "icons": [
             {
-              "src": "/static/pwa-icon-192.png?v=205999a995d8",
+              "src": "/pwa-assets/05aca016ec09/pwa-icon-192.png",
               "sizes": "any"
             }
           ]
@@ -512,7 +416,7 @@
           "url": "/club",
           "icons": [
             {
-              "src": "/static/pwa-icon-192.png?v=205999a995d8",
+              "src": "/pwa-assets/05aca016ec09/pwa-icon-192.png",
               "sizes": "any"
             }
           ]
@@ -520,18 +424,18 @@
       ],
       "screenshots": [
         {
-          "src": "/static/pwa-screenshot-mobile.png?v=205999a995d8",
+          "src": "/pwa-assets/05aca016ec09/pwa-screenshot-mobile.png",
           "sizes": "390x844",
           "type": "image/png",
           "form_factor": "narrow",
-          "label": "Mi tienda — Menu online"
+          "label": "El Parcerito — Menu online"
         },
         {
-          "src": "/static/pwa-screenshot-wide.png?v=205999a995d8",
+          "src": "/pwa-assets/05aca016ec09/pwa-screenshot-wide.png",
           "sizes": "1280x720",
           "type": "image/png",
           "form_factor": "wide",
-          "label": "Mi tienda — Compra y seguimiento"
+          "label": "El Parcerito — Compra y seguimiento"
         }
       ],
       "prefer_related_applications": false,
@@ -547,8 +451,8 @@
   "offline": {
     "error": null,
     "result": {
-      "title": "Mi tienda — Pide online",
-      "bodyText": "🥟\nDELIVERY · RECOGIDA\nMi tienda\nColombia, cerquita de ti\nMi tienda\n\nHecho con raíces colombianas\n\n \nVer menú completo\n~25 min\nGratis +€20\nCerrado\nBuscar\nRecomendados de la casa\nSelección de la casa\n🎁\n🎁 COMBO\nTEST-COMBO-01\n€9.90\n🎁\n🎁 COMBO\nTEST-COMBO-02\n€9.90\n🎁\n🎁 COMBO\nTEST-COMBO-03\n€9.90\nTodo\n",
+      "title": "El Parcerito — Pide online",
+      "bodyText": "DELIVERY\nEl Parcerito\nCalidad colombiana, cerquita de ti\n\nTRADICIÓN COLOMBIANA · SERVICIO DE CONFIANZA\n\nEl sabor que recuerda a casa, con la calidad que esperas.\n\nProductos seleccionados, preparación cuidada y un servicio en el que puedes confiar.\n\n \nVer menú completo\n~25 min\nDelivery\nAbierto\nBuscar",
       "controlled": true
     }
   }
