@@ -21,6 +21,7 @@ COPY oxidian/requirements.txt .
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential libpq-dev libffi-dev libssl-dev curl gosu nodejs npm postgresql-client \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libjpeg62-turbo shared-mime-info \
     && pip install --upgrade pip \
     && pip install -r requirements.txt \
     && apt-get clean \

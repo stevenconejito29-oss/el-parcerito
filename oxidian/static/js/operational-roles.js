@@ -45,4 +45,42 @@
       setDeliveryTheme(root.dataset.deliveryTheme === 'dark' ? 'light' : 'dark', true);
     });
   }
+
+  /* Impresión de tickets desde cualquier panel operativo.
+     El <form class="ticket-print-form"> hace POST /pos/ticket/<id>/imprimir.
+     Interceptamos el submit para hacer fetch (evita perder el contexto de la
+     página y muestra feedback inline). Si el servidor no puede alcanzar la
+     impresora, caemos al flujo antiguo abriendo la pestaña con auto_print. */
+  document.addEventListener('submit', async (event) => {
+    const form = event.target.closest('form.ticket-print-form');
+    if (!form) return;
+    event.preventDefault();
+    const button = form.querySelector('button[type="submit"]');
+    const originalLabel = button ? button.innerHTML : '';
+    if (button) { button.disabled = true; button.innerHTML = '🖨️ Enviando…'; }
+    try {
+      const resp = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin',
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data.ok) {
+        if (button) button.innerHTML = '✅ Impreso';
+        setTimeout(() => { if (button) { button.innerHTML = originalLabel; button.disabled = false; } }, 2500);
+        return;
+      }
+      throw new Error(data.error || `HTTP ${resp.status}`);
+    } catch (err) {
+      console.warn('[ticket] impresión servidor falló, fallback a navegador:', err);
+      const fallback = form.dataset.fallbackUrl;
+      if (fallback) {
+        window.open(fallback, '_blank', 'noopener');
+      } else {
+        alert('No se pudo imprimir. Revisa la impresora.');
+      }
+      if (button) { button.innerHTML = originalLabel; button.disabled = false; }
+    }
+  });
 })();

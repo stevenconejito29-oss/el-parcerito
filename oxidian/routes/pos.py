@@ -10,7 +10,7 @@ from flask_login import login_required, current_user
 from functools import wraps
 from sqlalchemy.exc import IntegrityError
 from extensions import db, get_or_404
-from models import Product, Categoria, Order, OrderItem, User, Coupon, Caja, ComboItem, AdminFeature, SiteConfig, IdempotencyKey, normalizar_metodo_pago, utcnow, metadata_componente_combo, metadata_item_pedido
+from models import Product, Categoria, Order, OrderItem, User, Coupon, Caja, ComboItem, AdminFeature, AuditLog, SiteConfig, IdempotencyKey, normalizar_metodo_pago, utcnow, metadata_componente_combo, metadata_item_pedido
 from idempotency import request_idempotency_key, request_body_hash, IDEMPOTENCY_TTL
 from services import (
     calcular_puntos_ganados,
@@ -708,6 +708,85 @@ def ticket(pedido_id):
         pedido=pedido,
         es_reimpresion=request.args.get("reprint") == "1",
     )
+
+
+@pos_bp.route("/ticket/<int:pedido_id>/imprimir", methods=["POST"])
+@login_required
+def imprimir_ticket(pedido_id):
+    """Envía el ticket directamente a la impresora térmica de la caja,
+    sin pasar por el diálogo de impresión del navegador.
+
+    Motivación: el diálogo de Chrome ignora selectivamente el ``@page`` CSS
+    según el navegador, la versión, si el operador tiene "Márgenes:
+    Ninguno" activo, etc. Resultado: tickets desplazados o recortados
+    imprevisiblemente, sobre todo en cocina donde el operador no elige
+    ajustes cada vez. Renderizando el PDF aquí con WeasyPrint (que sí
+    respeta @page al 100%) y enviándolo por IPP a la cola CUPS de la
+    caja, la impresión es idéntica en todos los puestos: caja, cocina y
+    repartidor.
+
+    Configuración por ``SiteConfig['THERMAL_PRINTER_URL']`` (default
+    ``http://192.168.1.41:631/printers/Ticket``). Cambiarla no requiere
+    redeploy — se lee en cada request."""
+    from weasyprint import HTML, CSS
+    import requests as _req
+
+    pedido = get_or_404(Order, pedido_id)
+    if not can_read_order_ticket(current_user, pedido):
+        return {"ok": False, "error": "sin_acceso"}, 403
+
+    printer_url = SiteConfig.get(
+        "THERMAL_PRINTER_URL",
+        "http://192.168.1.41:631/printers/Ticket",
+    )
+    if not printer_url:
+        return {"ok": False, "error": "impresora_no_configurada"}, 503
+
+    es_reimpresion = request.args.get("reprint") == "1"
+    html_str = render_template(
+        "pos/ticket.html",
+        pedido=pedido,
+        es_reimpresion=es_reimpresion,
+    )
+    # 48 mm de ancho = cabezal físico del ZJ-58 (384 puntos a 203 dpi). La
+    # altura la deja WeasyPrint según el contenido; el corte del papel lo
+    # aplica el driver CUPS al final del trabajo.
+    forced_page = CSS(string="@page { size: 48mm auto; margin: 0; }")
+    pdf_bytes = HTML(
+        string=html_str,
+        base_url=request.host_url,
+    ).write_pdf(stylesheets=[forced_page])
+
+    try:
+        resp = _req.post(
+            printer_url,
+            data=pdf_bytes,
+            headers={"Content-Type": "application/pdf"},
+            timeout=8,
+        )
+    except _req.RequestException as exc:
+        current_app.logger.exception(
+            "Fallo enviando ticket #%s a la impresora %s", pedido.numero_pedido, printer_url,
+        )
+        return {"ok": False, "error": "impresora_inalcanzable", "detalle": str(exc)}, 502
+
+    if not resp.ok:
+        current_app.logger.warning(
+            "Impresora rechazó ticket #%s (%s): %s",
+            pedido.numero_pedido, resp.status_code, resp.text[:200],
+        )
+        return {"ok": False, "error": "impresora_error", "status": resp.status_code}, 502
+
+    try:
+        AuditLog.registrar(
+            current_user.id, "ticket_impreso", "pedido", pedido.id,
+            detalle=f"reimpresion={es_reimpresion}",
+            ip=request.remote_addr,
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    return {"ok": True, "pedido": pedido.numero_pedido}
 
 
 # ─── HELPERS ─────────────────────────────────
