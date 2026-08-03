@@ -128,22 +128,22 @@ def render_ticket(pedido, es_reimpresion: bool = False, brand=None, ui=None) -> 
         "recogida": "RECOGIDA",
         "programado": "PROGRAMADO",
     }.get(tipo, tipo.upper())
-    p.set(align="center", bold=True, width=1, height=2)
+    p.set(align="center", bold=True, custom_size=True, width=2, height=2)
     p.text(f"{tipo_label}\n")
-    p.set(width=1, height=1, bold=False)
+    p.set(align="center", custom_size=True, width=1, height=1, bold=False)
     p.text(_sep_dashes(cols) + "\n")
 
     # ── Número de pedido (XL — es lo que más consulta cocina/repartidor) ──
     p.set(align="center", bold=True)
     p.text("PEDIDO\n")
+    # ¡CLAVE! python-escpos IGNORA width/height si no pasas custom_size=True.
     # width=5, height=5 = 5x el tamaño base → letras de ~15 mm de alto
     # (Font A base = 3 mm). Para números tipo "#1006" (5 chars a 60 dots
     # cada uno = 300 dots) cabe holgadamente en los 384 dots útiles del
-    # cabezal ZJ-58 (48 mm). Si un día pasamos a numeración >5 chars,
-    # bajar a width=4/height=5 evita que envuelva.
-    p.set(bold=True, width=5, height=5)
+    # cabezal ZJ-58 (48 mm).
+    p.set(align="center", bold=True, custom_size=True, width=5, height=5)
     p.text(f"{pedido.numero_pedido}\n")
-    p.set(width=1, height=1, bold=False)
+    p.set(align="center", custom_size=True, width=1, height=1, bold=False)
     try:
         fecha = pedido.creado_en.strftime("%d/%m/%Y  %H:%M")
     except Exception:
@@ -239,16 +239,16 @@ def render_ticket(pedido, es_reimpresion: bool = False, brand=None, ui=None) -> 
     # ── TOTAL (doble alto para destacar) ───────────────────────────────
     total = _fmt_money(getattr(pedido, "total", 0))
     p.text(_sep_dashes(cols) + "\n")
-    p.set(bold=True, width=1, height=2)
+    p.set(align="left", bold=True, custom_size=True, width=1, height=2)
     p.text(_line_row("TOTAL", f"{total} EUR", cols) + "\n")
-    p.set(width=1, height=1, bold=False)
+    p.set(align="left", custom_size=True, width=1, height=1, bold=False)
 
     # ── Método de pago (destacado) ─────────────────────────────────────
     metodo = str(getattr(pedido, "metodo_pago", "") or "").upper() or "?"
     p.text(_sep_dashes(cols) + "\n")
-    p.set(bold=True, width=1, height=2)
+    p.set(align="left", bold=True, custom_size=True, width=1, height=2)
     p.text(_line_row("PAGO", metodo, cols) + "\n")
-    p.set(width=1, height=1, bold=False)
+    p.set(align="left", custom_size=True, width=1, height=1, bold=False)
     if metodo == "BIZUM":
         confirmado = bool(getattr(pedido, "pago_confirmado", False))
         p.text(
