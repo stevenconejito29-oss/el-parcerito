@@ -3944,11 +3944,21 @@ textarea {
 
 @media (max-width: 1023px) {
   body.ox-body-public .pd-add-bar {
-    bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+    /* La ficha de producto no renderiza la navegación inferior global. La
+       regla anterior reservaba siempre 64px para una barra inexistente y en
+       iPhone desplazaba el CTA de combo demasiado arriba. El propio padding
+       de `.pd-add-bar` ya protege el indicador Home mediante safe-area. */
+    bottom: 0 !important;
     z-index: 82 !important;
     background: rgba(255, 253, 248, .98) !important;
     border-top: 1px solid rgba(42, 31, 20, .10) !important;
     box-shadow: 0 -10px 28px rgba(31, 22, 12, .14) !important;
+  }
+
+  /* Defensa para futuras superficies que sí combinen ambas barras: el
+     espacio se reserva únicamente cuando el DOM confirma su existencia. */
+  body.ox-body-public.ox-has-bottom-nav .pd-add-bar {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   body.ox-body-public .pd-bottom-spacer {

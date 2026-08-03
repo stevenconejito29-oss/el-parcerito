@@ -21,6 +21,14 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("preferences: !!allowPreferences", privacy)
         self.assertIn("MAX_AGE_MS = 730", privacy)
 
+        consent_css = (ROOT / "static" / "css" / "privacy-consent.css").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "color-mix(in srgb, var(--action-primary) 45%, var(--col-text))",
+            consent_css,
+        )
+
     def test_checkout_requires_terms_and_closed_messages_wrap(self):
         checkout = (ROOT / "templates" / "public" / "checkout.html").read_text(encoding="utf-8")
         menu_css = (ROOT / "static" / "css" / "storefront-menu.css").read_text(encoding="utf-8")
@@ -175,6 +183,21 @@ class FrontendContractsTest(unittest.TestCase):
         )
         self.assertNotIn(
             "body.ox-body-public .ep-modal-detail-btn,\nbody.ox-body-public .ep-btn-detail,\nbody.ox-body-public .ox-btn-ghost",
+            shared,
+        )
+
+    def test_product_detail_cta_only_reserves_space_for_a_real_bottom_nav(self):
+        """La ficha no debe dejar un hueco fantasma bajo el CTA en iPhone."""
+        base = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
+        shared = (ROOT / "static" / "css" / "oxidian.css").read_text(encoding="utf-8")
+
+        self.assertIn("{% if show_bottom_nav %} ox-has-bottom-nav{% endif %}", base)
+        self.assertRegex(
+            shared,
+            r"body\.ox-body-public \.pd-add-bar\s*\{[^}]*bottom:\s*0\s*!important",
+        )
+        self.assertIn(
+            "body.ox-body-public.ox-has-bottom-nav .pd-add-bar",
             shared,
         )
 

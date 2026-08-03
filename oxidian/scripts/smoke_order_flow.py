@@ -453,6 +453,11 @@ def main() -> int:
                     "direccion_precision_m": "10",
                     "metodo_pago": "efectivo",
                     "zona_id": str(zone.id),
+                    # El smoke recorre el mismo contrato legal que el
+                    # formulario público. Si este consentimiento falta, el
+                    # checkout debe fallar cerrado y la prueba no llega a
+                    # validar stock, cola ni finanzas.
+                    "acepta_condiciones": "1",
                     "puntos_usar": "0",
                     "producto_canje_id": str(product_option.id),
                 },
@@ -528,6 +533,17 @@ def main() -> int:
             )
             db.session.expire_all()
             require(db.session.get(Order, order_id).estado == "armando", "No avanzo a armando")
+            # El mismo ticket de 58 mm debe estar disponible desde el puesto
+            # que empaca, conservar la configuración del combo y poder abrirse
+            # en modo reimpresión sin modificar el pedido.
+            ticket = get_ok(
+                prep_client,
+                f"/pos/ticket/{order.id}?reprint=1&auto_print=1",
+                "REIMPRESIÓN · COPIA",
+            )
+            require(b"@page { size: 58mm auto" in ticket.data, "El ticket perdió el formato de 58 mm")
+            require(combo.nombre.encode("utf-8") in ticket.data, "El ticket no muestra el combo")
+            require(b"Acompa" in ticket.data, "El ticket no muestra la selección del combo")
             post_form(
                 prep_client,
                 f"/preparador/pedidos/{order.id}/listo",
@@ -615,10 +631,17 @@ def main() -> int:
                 "Faltan notificaciones de estado en el outbox",
             )
             get_ok(admin_client, "/admin/pedidos", order.numero_pedido)
+            delivered_ticket = get_ok(
+                admin_client,
+                f"/pos/ticket/{order.id}?reprint=1",
+                "ENTREGADO · COPIA",
+            )
+            require(order.numero_pedido.encode("utf-8") in delivered_ticket.data, "La copia final perdió la referencia")
 
             print(
                 "OK: menu, producto, carrito, checkout, POS con combo, superadmin, "
-                "canje por producto, preparacion, reparto, pago, stock, caja, auditoria y notificaciones."
+                "canje por producto, preparacion, ticket 58 mm, reparto, pago, stock, caja, "
+                "auditoria y notificaciones."
             )
             return 0
         finally:

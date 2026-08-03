@@ -22,6 +22,12 @@ const VIEWPORT_FILTER = new Set(
     .map((value) => value.trim())
     .filter(Boolean),
 );
+const ROLE_FILTER = new Set(
+  (process.env.VISUAL_ROLE_FILTER || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 const BROWSER = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
   || '/home/panzeta/.cache/ms-playwright/chromium-1169/chrome-linux/chrome';
 
@@ -157,6 +163,10 @@ async function createPage() {
 }
 
 async function captureAuthenticatedRole(role, email, password, capture, totpSecret = '') {
+  // Una auditoría parcial no debe iniciar sesión en todos los roles: además
+  // de perder tiempo, seis logins consecutivos activan correctamente el rate
+  // limit de producción y convierten el último rol en un falso fallo visual.
+  if (ROLE_FILTER.size && !ROLE_FILTER.has(role)) return;
   const page = await createPage();
   try {
     await login(page, email, password, totpSecret);

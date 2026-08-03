@@ -209,6 +209,14 @@ def seed():
     }
     north = _provider("Bar Norte QA", "stock_proveedor")
     south = _provider("Bar Sur QA", "stock_propio_bar", commission=18)
+    # Los bares externos ejercen los dos modelos logísticos históricos de la
+    # matriz. Las cuentas del rol vigente `socio_producto` necesitan, en
+    # cambio, una entidad de capital (`socio_porcentaje`); enlazarlas a los
+    # bares producía un 403 legítimo y convertía la auditoría visual del rol
+    # en un falso positivo. Mantener entidades separadas también evita mezclar
+    # inventario, despacho y liquidaciones de contratos distintos.
+    capital_north = _provider("Socio Capital Norte QA", "socio_porcentaje", commission=20)
+    capital_south = _provider("Socio Capital Sur QA", "socio_porcentaje", commission=20)
 
     products = {}
     definitions = (
@@ -279,8 +287,17 @@ def seed():
     _account("qa.admin@elparcerito.local", "QA Admin", "admin", credentials)
     _account("qa.preparacion@elparcerito.local", "QA Preparación", "preparacion", credentials)
     _account("qa.repartidor@elparcerito.local", "QA Repartidor", "repartidor", credentials)
-    _account("qa.norte@elparcerito.local", "QA Bar Norte", "proveedor", credentials, north)
-    _account("qa.sur@elparcerito.local", "QA Bar Sur", "proveedor", credentials, south)
+    # `proveedor` es un rol histórico y ya no es autenticable. La matriz debe
+    # ejercer el flujo vigente del socio capital para no reactivar permisos o
+    # navegación legacy accidentalmente durante QA.
+    _account(
+        "qa.norte@elparcerito.local", "QA Socio Norte", "socio_producto",
+        credentials, capital_north,
+    )
+    _account(
+        "qa.sur@elparcerito.local", "QA Socio Sur", "socio_producto",
+        credentials, capital_south,
+    )
 
     db.session.commit()
     if credentials:
@@ -346,17 +363,34 @@ def verify():
     assert own.stock_en_origen(f"proveedor:{south_provider.id}") == south_before
     db.session.rollback()
 
-    expected_roles = {"super_admin", "admin", "preparacion", "repartidor", "proveedor"}
+    expected_roles = {"super_admin", "admin", "preparacion", "repartidor", "socio_producto"}
     qa_roles = {
         user.rol for user in User.query.filter(User.email.like("qa.%@elparcerito.local")).all()
     }
     assert expected_roles.issubset(qa_roles)
     assert "cliente" not in qa_roles
+    assert "proveedor" not in qa_roles
+    socios_qa = User.query.filter(
+        User.email.in_([
+            "qa.norte@elparcerito.local",
+            "qa.sur@elparcerito.local",
+        ])
+    ).all()
+    assert len(socios_qa) == 2
+    assert all(
+        user.proveedor
+        and user.proveedor.activo
+        and user.proveedor.modelo_acuerdo == "socio_porcentaje"
+        for user in socios_qa
+    ), "Las cuentas QA de socio deben usar el contrato de capital vigente"
 
     return {
         "matrix_products": len(matrix_products),
         "public_cards": len(propios),
-        "providers": Proveedor.query.filter(Proveedor.nombre.in_(["Bar Norte QA", "Bar Sur QA"])).count(),
+        "providers": Proveedor.query.filter(Proveedor.nombre.in_([
+            "Bar Norte QA", "Bar Sur QA",
+            "Socio Capital Norte QA", "Socio Capital Sur QA",
+        ])).count(),
         "qa_accounts": User.query.filter(User.email.like("qa.%@elparcerito.local")).count(),
         "credentials_file": str(CREDENTIALS_FILE),
     }

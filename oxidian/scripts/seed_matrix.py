@@ -32,10 +32,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app import create_app
 from extensions import db
 from models import (
+    AffiliateUse,
+    AuditLog,
+    Caja,
     Product,
     Categoria,
     Proveedor,
     ProveedorProducto,
+    NotificationOutbox,
+    Order,
+    OrderEvent,
+    OrderItem,
+    OrderProviderStatus,
+    PointsLog,
+    Review,
+    StaffPayment,
     Stock,
     User,
     ComboGroup,
@@ -66,6 +77,49 @@ def wipe_previous():
     """Borra todo lo etiquetado TEST-*, respetando FKs."""
     print("• Wipe previo TEST-*")
     # Orden: dependencias primero
+    product_ids = [
+        row.id for row in Product.query.filter(Product.nombre.like("TEST-%")).all()
+    ]
+    if product_ids:
+        # Una ejecución anterior puede haber generado pedidos con productos
+        # de esta matriz. Eliminar el Product directamente hace que SQLAlchemy
+        # intente poner order_items.producto_id a NULL (columna NOT NULL). Los
+        # pedidos QA dependientes se retiran completos, en el mismo orden que
+        # el limpiador operativo, antes de reconstruir el catálogo sintético.
+        order_ids = [
+            row[0]
+            for row in db.session.query(OrderItem.pedido_id)
+            .filter(OrderItem.producto_id.in_(product_ids))
+            .distinct()
+            .all()
+        ]
+        Review.query.filter(Review.producto_id.in_(product_ids)).delete(
+            synchronize_session=False,
+        )
+        if order_ids:
+            for model in (
+                NotificationOutbox,
+                Review,
+                AffiliateUse,
+                PointsLog,
+                Caja,
+                StaffPayment,
+                OrderEvent,
+                OrderProviderStatus,
+            ):
+                model.query.filter(model.pedido_id.in_(order_ids)).delete(
+                    synchronize_session=False,
+                )
+            OrderItem.query.filter(OrderItem.pedido_id.in_(order_ids)).delete(
+                synchronize_session=False,
+            )
+            AuditLog.query.filter(
+                AuditLog.recurso == "order",
+                AuditLog.recurso_id.in_(order_ids),
+            ).delete(synchronize_session=False)
+            Order.query.filter(Order.id.in_(order_ids)).delete(
+                synchronize_session=False,
+            )
     for op in ProductExtraOption.query.filter(
         ProductExtraOption.nombre.like("TEST-%")
     ).all():
@@ -93,8 +147,6 @@ def wipe_previous():
         db.session.delete(cat)
     for prov in Proveedor.query.filter(Proveedor.nombre.like("TEST-%")).all():
         db.session.delete(prov)
-    for u in User.query.filter(User.email.like("test-%@test.local")).all():
-        db.session.delete(u)
     db.session.commit()
 
 
@@ -129,17 +181,19 @@ def crear_proveedores():
 
 def crear_cliente_test():
     print("• 1 cliente test")
-    u = User(
-        nombre="Cliente Test",
-        email="test-cliente@test.local",
-        telefono="34611111111",
-        telefono_normalizado="34611111111",
-        rol="cliente",
-        activo=True,
-        puntos=500,
-    )
+    # Se reutiliza para conservar pedidos QA ajenos a la matriz sin romper sus
+    # FKs. El catálogo se regenera, la identidad de prueba no necesita hacerlo.
+    u = User.query.filter_by(email="test-cliente@test.local").first()
+    if not u:
+        u = User(email="test-cliente@test.local")
+        db.session.add(u)
+    u.nombre = "Cliente Test"
+    u.telefono = "34611111111"
+    u.telefono_normalizado = "34611111111"
+    u.rol = "cliente"
+    u.activo = True
+    u.puntos = 500
     u.set_password("test1234")
-    db.session.add(u)
     db.session.flush()
     return u
 

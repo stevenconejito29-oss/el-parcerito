@@ -104,6 +104,29 @@ class ComboFlowFixesTest(unittest.TestCase):
         self.assertIn("Bebida", seleccion)
         self.assertEqual(seleccion["Bebida"], {1: 1})
 
+    def test_id_de_otro_combo_no_se_inyecta_en_la_seleccion(self):
+        """El servidor conserva sólo IDs que pertenecen al grupo consultado."""
+        opciones = [
+            self._mk_item(
+                1, es_seleccionable=True, grupo="Bebida",
+                max_sel=1, stock_ok=True,
+            ),
+        ]
+        producto = self._mk_producto_combo("Combo Menú", opciones)
+        form = MultiDict([
+            ("combo_item_Bebida", "999999"),
+            ("combo_item_Bebida", "1"),
+        ])
+        with patch("routes.public.ComboItem") as mock_combo_item:
+            query_result = MagicMock()
+            query_result.order_by.return_value.all.return_value = opciones
+            mock_combo_item.query.filter_by.return_value = query_result
+            seleccion, error = _parse_combo_selection(producto, form)
+
+        self.assertIsNone(error)
+        self.assertEqual(seleccion["Bebida"], {1: 1})
+        self.assertNotIn(999999, seleccion["Bebida"])
+
     def test_distribucion_sabores_conserva_cantidades(self):
         item = self._mk_item(7, stock_ok=True)
         item.es_seleccionable = False

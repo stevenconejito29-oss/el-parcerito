@@ -1290,7 +1290,13 @@ def agregar_carrito(producto_id):
     if extras_error:
         return _err(extras_error, "danger")
 
-    notas_personalizacion = request.form.get("notas_personalizacion", "").strip()
+    # La nota vive en la cookie de sesión hasta cerrar el pedido. Limitarla en
+    # el punto de entrada (y no sólo al renderizar el carrito) evita inflar la
+    # sesión con payloads manipulados y mantiene el mismo contrato de 240
+    # caracteres que consumen cocina, ticket y checkout.
+    notas_personalizacion = request.form.get(
+        "notas_personalizacion", ""
+    ).strip()[:240]
 
     # --- Firma de línea: mismo producto con distinta selección = línea aparte ---
     key = line_signature(

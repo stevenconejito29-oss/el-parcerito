@@ -18,7 +18,14 @@
 .ox-privacy-banner[hidden], .ox-privacy-layer[hidden] { display: none; }
 .ox-privacy-banner h2 { font-size: 1rem; margin: 0 0 .25rem; }
 .ox-privacy-banner p { margin: 0; color: var(--col-muted); font-size: .8rem; line-height: 1.45; }
-.ox-privacy-banner p a { color: var(--action-primary); text-decoration: underline; }
+.ox-privacy-banner p a {
+  /* El color de acción configurable puede ser demasiado luminoso sobre el
+     panel claro (la paleta actual quedaba en 4.1:1). Mezclarlo con el texto
+     conserva la identidad visual y garantiza lectura del enlace legal. */
+  color: color-mix(in srgb, var(--action-primary) 45%, var(--col-text));
+  font-weight: 750;
+  text-decoration: underline;
+}
 .ox-privacy-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
 .ox-privacy-actions button, .ox-privacy-settings {
   min-height: 44px;
