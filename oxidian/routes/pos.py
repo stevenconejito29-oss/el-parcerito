@@ -784,13 +784,24 @@ def imprimir_ticket(pedido_id):
         es_reimpresion=es_reimpresion,
     )
     # 48 mm de ancho = cabezal físico del ZJ-58 (384 puntos a 203 dpi).
-    # Altura 600 mm ≈ 60 cm — WeasyPrint 69 no acepta `auto` en @page size,
-    # y el driver ZJ58 corta al final del contenido real (rollo continuo).
-    forced_page = CSS(string="@page { size: 48mm 600mm; margin: 0; }")
+    # Altura 200 mm generosa para cualquier ticket real; el driver corta al
+    # final del contenido (rollo continuo). Alturas mucho mayores (600 mm)
+    # hacen que rastertozj tenga que rasterizar bitmaps de ~2 MP, con
+    # resultados a veces glitcheados en algunos filters.
+    forced_page = CSS(string="@page { size: 48mm 200mm; margin: 0; }")
+    # `optimize_size=()` desactiva el subset agresivo de fuentes de
+    # WeasyPrint 61+, que puede confundir al filter rastertozj (los
+    # glyphs subseteados salen como "formas sin sentido" en la térmica).
+    # `uncompressed_pdf=True` deja los streams sin flate — menos parseo
+    # en el pipeline poppler → cairo → raster del driver.
     pdf_bytes = HTML(
         string=html_str,
         base_url=request.host_url,
-    ).write_pdf(stylesheets=[forced_page])
+    ).write_pdf(
+        stylesheets=[forced_page],
+        optimize_size=(),
+        uncompressed_pdf=True,
+    )
 
     import subprocess, tempfile
     intentos = []

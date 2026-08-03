@@ -17,10 +17,10 @@
          térmica se emborrona porque el driver rellena con dots.
        - Fuente sans-serif system: renderiza más nítida que las decorativas.
        - Tamaños ≥ 8 pt (~23 puntos térmicos) para asegurar legibilidad. */
-    /* Ancho fijo 48 mm; alto grande para renderers que no acepten `auto`
-       (WeasyPrint 69 lo rechaza como "invalid value" — el driver ZJ58 corta
-       al final del contenido real, así que la altura no se desperdicia). */
-    @page { size: 48mm 600mm; margin: 0; }
+    /* Ancho fijo 48 mm; alto 200 mm (WeasyPrint 69 no acepta `auto`).
+       200 mm cubre cualquier ticket real; el driver ZJ58 corta al final
+       del contenido, así que el alto extra no gasta rollo. */
+    @page { size: 48mm 200mm; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
       width: 48mm;
