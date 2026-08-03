@@ -5,15 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ 'Reimpresión' if es_reimpresion else 'Ticket' }} {{ pedido.numero_pedido }}</title>
   <style>
-    @page { size: 58mm auto; margin: 2mm; }
+    /* Ancho físico imprimible de las térmicas 58 mm = 48 mm (384 pt @203 dpi).
+       Usar size 48mm y sin márgenes evita que Chrome recorte o escale. La
+       altura auto deja que CUPS use rollo continuo con el corte al final. */
+    @page { size: 48mm auto; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Courier New', Courier, monospace;
-      width: 54mm;
-      max-width: 54mm;
-      margin: 0 auto;
-      padding: 2mm 1mm;
-      font-size: 12px;
+      width: 48mm;
+      max-width: 48mm;
+      margin: 0;
+      padding: 1mm 1mm 2mm;
+      font-size: 11px;
+      line-height: 1.25;
       background: #fff;
       color: #111;
     }
@@ -45,8 +49,8 @@
     .btn-print { display: block; width: 100%; margin-top: 16px; padding: 12px; background: #111; color: #fff; border: none; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; border-radius: 6px; }
     @media print {
       .btn-print, .no-print { display: none !important; }
-      html, body { width: 54mm; max-width: 54mm; }
-      body { padding: 0; margin: 0; }
+      html, body { width: 48mm; max-width: 48mm; }
+      body { padding: 1mm 1mm 2mm; margin: 0; }
     }
   </style>
 </head>
