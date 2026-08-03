@@ -23,6 +23,7 @@ RUN apt-get update \
         build-essential libpq-dev libffi-dev libssl-dev curl gosu nodejs npm postgresql-client \
         libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libjpeg62-turbo shared-mime-info \
         fonts-noto-core fonts-noto-color-emoji \
+        cups-client cups-ipp-utils \
     && pip install --upgrade pip \
     && pip install -r requirements.txt \
     && apt-get clean \

@@ -710,32 +710,44 @@ def ticket(pedido_id):
     )
 
 
-def _thermal_printer_urls():
-    """Lista ordenada de URLs IPP donde puede estar la impresora térmica.
+def _thermal_printer_targets():
+    """Lista ordenada de destinos ``host[:puerto]/cola`` para imprimir tickets.
 
-    La misma impresora física se puede colgar del PC de caja (192.168.1.41),
-    de la tablet Ubuntu Touch por USB-OTG, o de cualquier host que exponga
-    su cola CUPS por IPP. Se prueban en orden y se imprime en la primera
-    que responda. Editable por SiteConfig sin redeploy — separadas por
-    coma o salto de línea. Se acepta también un valor legacy en la clave
-    ``THERMAL_PRINTER_URL`` (una sola URL).
+    La misma impresora física se puede colgar del PC de caja
+    (``192.168.1.41/Ticket``) o de la tablet Ubuntu Touch por USB-OTG
+    (``tablet.local/Ticket``) — cambia dónde está pero mantenemos el mismo
+    nombre de cola. Se intentan en orden y ganamos con el primero que
+    acepte el trabajo. Editable por ``SiteConfig['THERMAL_PRINTER_TARGETS']``
+    sin redeploy — separadas por coma o salto de línea.
+
+    Formato aceptado por elemento: ``host``, ``host:puerto`` o
+    ``host:puerto/cola`` (si se omite la cola, se asume ``Ticket``).
     """
     raw = (
-        SiteConfig.get("THERMAL_PRINTER_URLS", "")
+        SiteConfig.get("THERMAL_PRINTER_TARGETS", "")
+        or SiteConfig.get("THERMAL_PRINTER_URLS", "")
         or SiteConfig.get("THERMAL_PRINTER_URL", "")
     ).strip()
     if not raw:
-        # Defaults razonables: PC de caja primero, tablet detrás.
-        raw = (
-            "http://192.168.1.41:631/printers/Ticket,"
-            "http://tablet.local:631/printers/Ticket"
-        )
-    urls = []
+        raw = "192.168.1.41/Ticket,tablet.local/Ticket"
+    targets = []
     for chunk in raw.replace("\n", ",").split(","):
-        u = chunk.strip()
-        if u and u not in urls:
-            urls.append(u)
-    return urls
+        item = chunk.strip()
+        if not item:
+            continue
+        # Normaliza formatos legacy con esquema http://...:631/printers/X
+        if "://" in item:
+            from urllib.parse import urlparse
+            parsed = urlparse(item)
+            host = parsed.hostname or ""
+            port = parsed.port or 631
+            cola = parsed.path.rstrip("/").split("/")[-1] or "Ticket"
+            item = f"{host}:{port}/{cola}" if host else ""
+        if "/" not in item:
+            item = f"{item}/Ticket"
+        if item and item not in targets:
+            targets.append(item)
+    return targets
 
 
 @pos_bp.route("/ticket/<int:pedido_id>/imprimir", methods=["POST"])
@@ -761,8 +773,8 @@ def imprimir_ticket(pedido_id):
     if not can_read_order_ticket(current_user, pedido):
         return {"ok": False, "error": "sin_acceso"}, 403
 
-    printer_urls = _thermal_printer_urls()
-    if not printer_urls:
+    targets = _thermal_printer_targets()
+    if not targets:
         return {"ok": False, "error": "impresora_no_configurada"}, 503
 
     es_reimpresion = request.args.get("reprint") == "1"
@@ -780,46 +792,68 @@ def imprimir_ticket(pedido_id):
         base_url=request.host_url,
     ).write_pdf(stylesheets=[forced_page])
 
+    import subprocess, tempfile
     intentos = []
-    for url in printer_urls:
+    for target in targets:
+        host_port, _, cola = target.partition("/")
+        cola = cola or "Ticket"
         try:
-            resp = _req.post(
-                url,
-                data=pdf_bytes,
-                headers={"Content-Type": "application/pdf"},
-                timeout=4,
-            )
-        except _req.RequestException as exc:
-            intentos.append({"url": url, "error": type(exc).__name__})
+            with tempfile.NamedTemporaryFile(
+                suffix=".pdf", delete=True,
+            ) as tmp:
+                tmp.write(pdf_bytes)
+                tmp.flush()
+                # `lp -h host[:puerto] -d cola` habla IPP correctamente con
+                # el servidor CUPS remoto (a diferencia de un POST HTTP
+                # plano con Content-Type: application/pdf, que CUPS ignora
+                # devolviendo el HTML del panel). El binario viene del
+                # paquete cups-client instalado en el Dockerfile.
+                result = subprocess.run(
+                    ["lp", "-h", host_port, "-d", cola,
+                     "-t", f"pedido-{pedido.numero_pedido}", tmp.name],
+                    capture_output=True, text=True, timeout=10,
+                )
+        except subprocess.TimeoutExpired:
+            intentos.append({"target": target, "error": "timeout"})
             current_app.logger.info(
-                "Ticket #%s: %s no disponible (%s)", pedido.numero_pedido, url, exc,
+                "Ticket #%s: timeout enviando a %s", pedido.numero_pedido, target,
+            )
+            continue
+        except Exception as exc:
+            intentos.append({"target": target, "error": type(exc).__name__})
+            current_app.logger.exception(
+                "Ticket #%s: excepción con %s", pedido.numero_pedido, target,
             )
             continue
 
-        if resp.ok:
+        if result.returncode == 0:
             current_app.logger.info(
-                "Ticket #%s impreso en %s (%s bytes)",
-                pedido.numero_pedido, url, len(pdf_bytes),
+                "Ticket #%s impreso en %s (%s bytes): %s",
+                pedido.numero_pedido, target, len(pdf_bytes),
+                (result.stdout or "").strip(),
             )
             try:
                 AuditLog.registrar(
                     current_user.id, "ticket_impreso", "pedido", pedido.id,
-                    detalle=f"reimpresion={es_reimpresion} destino={url}",
+                    detalle=f"reimpresion={es_reimpresion} destino={target}",
                     ip=request.remote_addr,
                 )
                 db.session.commit()
             except Exception:
                 db.session.rollback()
-            return {"ok": True, "pedido": pedido.numero_pedido, "destino": url}
+            return {"ok": True, "pedido": pedido.numero_pedido, "destino": target}
 
-        intentos.append({"url": url, "status": resp.status_code})
+        intentos.append({
+            "target": target,
+            "code": result.returncode,
+            "stderr": (result.stderr or "").strip()[:200],
+        })
         current_app.logger.warning(
-            "Ticket #%s: %s rechazó con HTTP %s: %s",
-            pedido.numero_pedido, url, resp.status_code, resp.text[:200],
+            "Ticket #%s: lp rechazó en %s (rc=%s): %s",
+            pedido.numero_pedido, target, result.returncode,
+            (result.stderr or "").strip(),
         )
 
-    # Ninguna URL aceptó el trabajo — devolvemos detalle para que el JS
-    # pueda decidir si abre el fallback de navegador.
     return {
         "ok": False,
         "error": "impresora_inalcanzable",
