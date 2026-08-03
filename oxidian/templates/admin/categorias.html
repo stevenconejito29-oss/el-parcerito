@@ -8,8 +8,7 @@
     <p class="text-xs mt-0.5" style="color:var(--col-muted)">Organiza el catálogo por secciones</p>
   </div>
   <button data-toggle-section="form-nueva"
-          class="text-sm font-bold px-4 py-2 rounded-xl"
-          style="background:rgba(255,171,0,.15);border:1px solid rgba(255,171,0,.3);color:#FFAB00">
+          class="cat-action cat-action--primary text-sm font-bold px-4 py-2 rounded-xl">
     + Nueva categoría
   </button>
 </div>
@@ -49,15 +48,14 @@
               <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="hidden"
                      data-category-preview="cat-img-preview-new">
             </label>
-            <input type="url" name="imagen_url" placeholder="O pegar URL de imagen..."
-                   class="w-full text-xs" style="padding:.5rem .75rem;background:var(--col-elevated);border:1.5px solid var(--col-border);border-radius:.65rem;color:#fff">
+    <input type="url" name="imagen_url" placeholder="O pegar URL de imagen..."
+                   class="w-full text-xs" style="padding:.5rem .75rem;background:var(--col-elevated);border:1.5px solid var(--col-border);border-radius:.65rem;color:var(--col-text)">
           </div>
         </div>
       </div>
     </div>
     <div class="flex gap-3">
-      <button type="submit" class="px-6 py-2 font-bold rounded-xl text-black"
-              style="background:linear-gradient(135deg,#FFAB00,#FF8C00)">✓ Crear</button>
+      <button type="submit" class="ox-btn-primary px-6 py-2 font-bold rounded-xl">✓ Crear</button>
       <button type="button" data-hide-section="form-nueva"
               class="px-4 py-2 rounded-xl text-sm" style="background:var(--col-elevated);color:var(--col-muted)">Cancelar</button>
     </div>
@@ -97,7 +95,7 @@
 
     {# Edit inline #}
     <details class="mb-2">
-      <summary class="text-xs font-bold cursor-pointer px-2 py-1 rounded-lg" style="background:rgba(90,170,255,.1);color:#60AAFF;list-style:none">
+      <summary class="cat-action cat-action--info text-xs font-bold cursor-pointer px-2 py-1 rounded-lg">
         ✏️ Edición rápida
       </summary>
       <form method="POST" action="{{ url_for('admin.editar_categoria', cat_id=cat.id) }}"
@@ -114,8 +112,7 @@
         </label>
         <input type="url" name="imagen_url" value="{{ cat.imagen_url or '' }}" placeholder="URL imagen"
                class="cat-input text-xs">
-        <button type="submit" class="w-full py-1.5 rounded-lg text-xs font-bold"
-                style="background:rgba(90,170,255,.15);color:#60AAFF;border:1px solid rgba(90,170,255,.25)">
+        <button type="submit" class="cat-action cat-action--info w-full py-1.5 rounded-lg text-xs font-bold">
           Guardar cambios
         </button>
       </form>
@@ -124,16 +121,14 @@
     {# Eliminar #}
     <form method="POST" action="{{ url_for('admin.toggle_categoria', cat_id=cat.id) }}" class="mb-2">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="w-full py-1.5 rounded-lg text-xs font-bold transition"
-              style="background:rgba(90,170,255,.08);color:#7CC7FF;border:1px solid rgba(90,170,255,.18)">
+      <button type="submit" class="cat-action cat-action--info w-full py-1.5 rounded-lg text-xs font-bold transition">
         {{ 'Ocultar del menú' if cat.activo else 'Mostrar en menú' }}
       </button>
     </form>
     <form method="POST" action="{{ url_for('admin.eliminar_categoria', cat_id=cat.id) }}"
           data-confirm="¿Eliminar categoría {{ cat.nombre }}?">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="w-full py-1.5 rounded-lg text-xs font-bold transition"
-              style="background:rgba(255,59,48,.07);color:#FF6B6B;border:1px solid rgba(255,59,48,.15)">
+      <button type="submit" class="cat-action cat-action--danger w-full py-1.5 rounded-lg text-xs font-bold transition">
         🗑️ Eliminar
       </button>
     </form>
@@ -146,11 +141,15 @@
 {% block scripts %}
 <style>
 .cat-label { font-size:.72rem; font-weight:700; color:var(--col-muted); display:block; margin-bottom:.25rem; text-transform:uppercase; letter-spacing:.04em; }
-.cat-input { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:#fff; font-size:.88rem; }
-.cat-input:focus { outline:none; border-color:rgba(255,171,0,.5); }
+.cat-input { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:var(--col-text); font-size:.88rem; }
+.cat-input:focus { outline:none; border-color:color-mix(in srgb,var(--brand-primary) 50%,var(--col-border)); }
 .cat-check { display:flex; align-items:center; gap:.45rem; color:var(--col-muted); font-weight:800; font-size:.85rem; text-transform:none; letter-spacing:0; }
 .cat-off { opacity:.68; border-style:dashed; }
-.cat-status { display:inline-flex; margin-top:.15rem; font-size:.65rem; font-weight:900; color:#FFB340; background:rgba(255,179,64,.12); border:1px solid rgba(255,179,64,.24); border-radius:999px; padding:.1rem .45rem; }
+.cat-status { display:inline-flex; margin-top:.15rem; font-size:.65rem; font-weight:900; color:var(--status-warn-text); background:var(--status-warn-soft); border:1px solid color-mix(in srgb,var(--status-warn) 24%,var(--col-border)); border-radius:999px; padding:.1rem .45rem; }
+.cat-action{min-height:36px;border:1px solid var(--col-border);text-decoration:none;list-style:none}
+.cat-action--primary{background:var(--brand-primary-soft);border-color:color-mix(in srgb,var(--brand-primary) 30%,var(--col-border));color:var(--brand-text)}
+.cat-action--info{background:color-mix(in srgb,var(--brand-accent) 10%,var(--col-surface));border-color:color-mix(in srgb,var(--brand-accent) 25%,var(--col-border));color:color-mix(in srgb,var(--brand-accent) 62%,var(--col-text))}
+.cat-action--danger{background:var(--status-err-soft);border-color:color-mix(in srgb,var(--status-err) 24%,var(--col-border));color:var(--status-err-text)}
 </style>
 <script nonce="{{ csp_nonce() }}">
 function previewCatImg(input, previewId) {

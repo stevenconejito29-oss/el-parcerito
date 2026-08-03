@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ 'Reimpresión' if es_reimpresion else 'Ticket' }} {{ pedido.numero_pedido }}</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+    @page { size: 58mm auto; margin: 2mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Space Mono', 'Courier New', monospace;
-      max-width: 320px;
+      font-family: 'Courier New', Courier, monospace;
+      width: 54mm;
+      max-width: 54mm;
       margin: 0 auto;
-      padding: 16px 12px;
+      padding: 2mm 1mm;
       font-size: 12px;
       background: #fff;
       color: #111;
@@ -25,9 +26,10 @@
     .muted { color: #666; }
     .dashed { border-top: 1px dashed #999; margin: 8px 0; }
     .solid { border-top: 2px solid #111; margin: 8px 0; }
-    .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 2px 0; }
-    .row-item { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; }
-    .flex-1 { flex: 1; }
+    .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 2mm; padding: 2px 0; }
+    .row-item { display: flex; justify-content: space-between; gap: 2mm; padding: 4px 0; }
+    .row > span, .row-item > div { min-width: 0; overflow-wrap: anywhere; }
+    .flex-1 { flex: 1; min-width: 0; }
     .logo-block { margin-bottom: 12px; }
     .brand-name { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
     .brand-sub { font-size: 10px; color: #555; margin-top: 2px; }
@@ -43,7 +45,8 @@
     .btn-print { display: block; width: 100%; margin-top: 16px; padding: 12px; background: #111; color: #fff; border: none; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; border-radius: 6px; }
     @media print {
       .btn-print, .no-print { display: none !important; }
-      body { padding: 0; }
+      html, body { width: 54mm; max-width: 54mm; }
+      body { padding: 0; margin: 0; }
     }
   </style>
 </head>
@@ -125,7 +128,7 @@
   {% set combo_meta = (item_meta.get('combo') or {}) if item_meta else {} %}
   <div class="row-item">
     <div class="item-name">
-      {{ item.producto.nombre[:26] }}{% if item.producto.nombre|length > 26 %}…{% endif %}{% if item.display_es_combo %} <span style="font-size:9px;opacity:.6">COMBO</span>{% endif %}
+      {{ item.producto.nombre }}{% if item.display_es_combo %} <span style="font-size:9px;opacity:.6">COMBO</span>{% endif %}
     </div>
     <div class="item-qty">×{{ item.cantidad }}</div>
     <div class="item-price">€{{ "%.2f"|format(item.subtotal) }}</div>
@@ -180,9 +183,9 @@
   {% elif pedido.zona_id and envio_real <= 0.001 and pedido.zona_precio_envio_snapshot and pedido.zona_precio_envio_snapshot > 0 %}
   <div class="row"><span>Envío</span><span class="bold" style="color:green">GRATIS</span></div>
   {% endif %}
-  {# Puntos usados como descuento #}
+  {# Canje de producto: nunca representa un descuento monetario. #}
   {% if pedido.puntos_usados and pedido.puntos_usados > 0 %}
-  <div class="row small"><span class="muted">Puntos usados ({{ pedido.puntos_usados }} pts)</span><span>- €{{ "%.2f"|format(pedido.puntos_usados / 100) }}</span></div>
+  <div class="row small"><span class="muted">Canje de producto</span><span>{{ pedido.puntos_usados }} {{ ui.loyalty_unit_plural or 'puntos' }}</span></div>
   {% endif %}
   {# Cupón aplicado #}
   {% if pedido.cupon %}<div class="row small"><span class="muted">Cupón: {{ pedido.cupon.codigo }}</span><span>✓</span></div>{% endif %}

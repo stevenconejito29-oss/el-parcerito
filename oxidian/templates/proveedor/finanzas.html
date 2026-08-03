@@ -2,133 +2,119 @@
 {% block title %}Finanzas — {{ bar.nombre if bar else 'Resumen global' }}{% endblock %}
 {% block content %}
 
-<header class="prov-page-head prov-detail-head">
-  <div>
-    <span class="prov-eyebrow">{% if bar %}Aliado #{{ bar.id }}{% else %}Administración{% endif %}</span>
-    <h1>Finanzas del proveedor</h1>
-    <p>
+<main class="partner-finance" aria-labelledby="finance-title">
+  <header class="prov-page-head prov-detail-head">
+    <div>
+      <span class="prov-eyebrow">Mi negocio · {{ fecha_inicio.strftime('%d/%m') }}–{{ fecha_fin.strftime('%d/%m/%Y') }}</span>
+      <h1 id="finance-title">Ventas y liquidación</h1>
+      <p>
+        {{ formula }}. Los importes usan las condiciones guardadas cuando se
+        confirmó cada venta, no la configuración actual.
+      </p>
+    </div>
     {% if bar %}
-      <strong>{{ bar.nombre }}</strong> ·
-      {% if modelo == 'stock_propio_bar' %}Comisión del {{ '%.2f'|format(comision_pct|float) }}% del PVP
-      {% else %}Liquidación por coste registrado{% endif %}
-    {% else %}
-      Vista global. Usa Liquidación de proveedores para el desglose por aliado.
+    <a href="{{ url_for('public.menu_bar', proveedor_id=bar.id) }}"
+       class="prov-btn prov-btn-secondary" target="_blank" rel="noopener">Ver mis productos</a>
     {% endif %}
-    </p>
-  </div>
-  {% if bar %}
-  <a href="{{ url_for('public.menu_bar', proveedor_id=bar.id) }}" class="prov-btn prov-btn-secondary" target="_blank" rel="noopener">Ver sección pública</a>
+  </header>
+
+  <form method="GET" class="ops-filter-bar partner-period">
+    <label class="ops-field">
+      <span>Desde</span>
+      <input type="date" name="fecha_inicio" value="{{ fecha_inicio.strftime('%Y-%m-%d') }}">
+    </label>
+    <label class="ops-field">
+      <span>Hasta</span>
+      <input type="date" name="fecha_fin" value="{{ fecha_fin.strftime('%Y-%m-%d') }}">
+    </label>
+    <button type="submit" class="ox-btn-primary">Actualizar período</button>
+  </form>
+
+  <section class="partner-balance-grid" aria-label="Resumen financiero">
+    <article class="ops-kpi">
+      <span class="ops-kpi__label">Vendido y entregado</span>
+      <strong>€{{ "%.2f"|format(bucket.ventas_netas|float) }}</strong>
+      <small>Venta neta de tus productos</small>
+    </article>
+    <article class="ops-kpi ops-kpi--accent">
+      <span class="ops-kpi__label">Generado a tu favor</span>
+      <strong>€{{ "%.2f"|format(bucket.total|float) }}</strong>
+      <small>Entregas + extravíos cubiertos</small>
+    </article>
+    <article class="ops-kpi">
+      <span class="ops-kpi__label">Ya pagado</span>
+      <strong>€{{ "%.2f"|format(bucket.pagado|float) }}</strong>
+      <small>Liquidaciones completadas</small>
+    </article>
+    <article class="ops-kpi">
+      <span class="ops-kpi__label">Pendiente de pago</span>
+      <strong>€{{ "%.2f"|format(bucket.pendiente_pago|float) }}</strong>
+      <small>
+        {% if bucket.programado > 0 %}
+          €{{ "%.2f"|format(bucket.programado|float) }} en trámite
+        {% elif bucket.pendiente_registrar > 0 %}
+          Falta programar €{{ "%.2f"|format(bucket.pendiente_registrar|float) }}
+        {% else %}
+          Todo liquidado
+        {% endif %}
+      </small>
+    </article>
+  </section>
+
+  {% if bucket.total_extraviado > 0 %}
+  <aside class="ops-notice ops-notice--warning">
+    <strong>Extravíos cubiertos: €{{ "%.2f"|format(bucket.total_extraviado|float) }}</strong>
+    <span>Se incluyen en tu saldo porque el producto ya salió de tu inventario.</span>
+  </aside>
   {% endif %}
-</header>
 
-<form method="GET" class="ox-card p-4 mb-5 flex flex-wrap gap-3 items-end">
-  <div class="ox-field">
-    <label class="ox-label">Desde</label>
-    <input type="date" name="fecha_inicio" value="{{ fecha_inicio.strftime('%Y-%m-%d') }}" class="ox-input">
-  </div>
-  <div class="ox-field">
-    <label class="ox-label">Hasta</label>
-    <input type="date" name="fecha_fin" value="{{ fecha_fin.strftime('%Y-%m-%d') }}" class="ox-input">
-  </div>
-  <button type="submit" class="ox-btn-primary">Aplicar</button>
-</form>
+  <section class="ops-section">
+    <div class="ops-section__head">
+      <div>
+        <span class="prov-eyebrow">Trazabilidad</span>
+        <h2>Movimientos del período</h2>
+      </div>
+      <span class="ops-count">{{ bucket.lineas|length }} líneas</span>
+    </div>
 
-<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-  <div class="ox-card p-4">
-    <p class="text-xs uppercase" style="color:var(--col-muted)">Vendido (entregado)</p>
-    <p class="text-2xl font-black text-green-400">€{{ "%.2f"|format(pvp_vendido|float) }}</p>
-    <p class="text-xs mt-1" style="color:var(--col-muted)">{{ vendidos|length }} pedido(s)</p>
-  </div>
-  <div class="ox-card p-4">
-    <p class="text-xs uppercase" style="color:var(--col-muted)">Cancelado</p>
-    <p class="text-2xl font-black text-yellow-400">€{{ "%.2f"|format(pvp_cancelado|float) }}</p>
-    <p class="text-xs mt-1" style="color:var(--col-muted)">{{ cancelados|length }} pedido(s)</p>
-  </div>
-  <div class="ox-card p-4">
-    <p class="text-xs uppercase" style="color:var(--col-muted)">Extraviado</p>
-    <p class="text-2xl font-black text-red-400">€{{ "%.2f"|format(pvp_extraviado|float) }}</p>
-    <p class="text-xs mt-1" style="color:var(--col-muted)">{{ extraviados|length }} pedido(s)</p>
-  </div>
-  <div class="ox-card p-4">
-    <p class="text-xs uppercase" style="color:var(--col-muted)">A pagar al bar</p>
-    <p class="text-2xl font-black" style="color:var(--col-gold)">€{{ "%.2f"|format(a_pagar_bar|float) }}</p>
-    <p class="text-xs mt-1" style="color:var(--col-muted)">{{ formula }}</p>
-  </div>
-</div>
-
-<div class="ox-card p-4 mb-5">
-  <h3 class="text-sm font-bold text-white mb-2">💼 Reparto del dinero (período)</h3>
-  <div class="overflow-x-auto">
-  <table class="w-full text-sm min-w-full">
-    <tr class="border-b border-zinc-800">
-      <td class="py-2">PVP cobrado al cliente (vendido)</td>
-      <td class="text-right text-white font-mono">€{{ "%.2f"|format(pvp_vendido|float) }}</td>
-    </tr>
-    <tr class="border-b border-zinc-800">
-      <td class="py-2">Coste registrado por el bar</td>
-      <td class="text-right text-white font-mono">€{{ "%.2f"|format(coste_bar_vendido|float) }}</td>
-    </tr>
-    <tr class="border-b border-zinc-800">
-      <td class="py-2"><strong>Para el bar</strong></td>
-      <td class="text-right text-yellow-400 font-mono">€{{ "%.2f"|format(a_pagar_bar|float) }}</td>
-    </tr>
-    <tr>
-      <td class="py-2"><strong>Para {{ brand.nombre }}</strong></td>
-      <td class="text-right text-green-400 font-mono">€{{ "%.2f"|format(ingreso_marketplace|float) }}</td>
-    </tr>
-  </table>
-  </div>
-  <p class="text-xs mt-3" style="color:var(--col-muted)">
-    Extraviados y cancelados <strong>no entran</strong> en lo que se paga al bar.
-  </p>
-</div>
-
-{% if vendidos %}
-<details class="ox-card p-4 mb-3" open>
-  <summary class="cursor-pointer font-bold text-white">✅ Pedidos vendidos ({{ vendidos|length }})</summary>
-  <div class="overflow-x-auto mt-3">
-  <table class="w-full text-sm min-w-full">
-    <thead class="text-xs uppercase" style="color:var(--col-muted)">
-      <tr><th class="text-left py-1">Pedido</th><th class="text-right">PVP</th><th class="text-right">Coste bar</th></tr>
-    </thead>
-    <tbody>
-      {% for v in vendidos %}
-      <tr class="border-t border-zinc-800">
-        <td class="py-1">{{ v.pedido.numero_pedido }} · {{ v.pedido.creado_en.strftime('%d/%m %H:%M') if v.pedido.creado_en else '' }}</td>
-        <td class="text-right text-white font-mono">€{{ "%.2f"|format(v.total|float) }}</td>
-        <td class="text-right text-white font-mono">€{{ "%.2f"|format(v.coste_bar|float) }}</td>
-      </tr>
+    {% if bucket.lineas %}
+    <div class="partner-ledger">
+      {% for linea in bucket.lineas|sort(attribute='fecha_operacion', reverse=true) %}
+      <article class="partner-ledger__row">
+        <div class="partner-ledger__main">
+          <div class="partner-ledger__order">
+            <strong>#{{ linea.pedido.numero_pedido }}</strong>
+            <span class="ops-status ops-status--{{ linea.situacion }}">
+              {{ 'Entregado' if linea.situacion == 'entregado' else 'Extravío cubierto' }}
+            </span>
+          </div>
+          <p>{{ linea.nombre }} <span>×{{ linea.cantidad }}</span></p>
+          <small>
+            {{ linea.fecha_operacion.strftime('%d/%m/%Y · %H:%M') if linea.fecha_operacion else 'Sin fecha operativa' }}
+            · venta neta €{{ "%.2f"|format(linea.venta_neta|float) }}
+            {% if linea.estimado %} · coste estimado{% endif %}
+          </small>
+        </div>
+        <div class="partner-ledger__amount">
+          <span>Tu parte</span>
+          <strong>€{{ "%.2f"|format(linea.subtotal|float) }}</strong>
+        </div>
+      </article>
       {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</details>
-{% endif %}
+    </div>
+    {% else %}
+    <div class="ops-empty">
+      <strong>No hay movimientos liquidados en este período</strong>
+      <p>Los pedidos en preparación no aparecen aquí hasta entregarse.</p>
+    </div>
+    {% endif %}
+  </section>
 
-{% if cancelados %}
-<details class="ox-card p-4 mb-3">
-  <summary class="cursor-pointer font-bold text-white">⚠️ Cancelados ({{ cancelados|length }})</summary>
-  <ul class="text-sm mt-3 space-y-1">
-    {% for c in cancelados %}
-    <li class="border-t border-zinc-800 py-1">
-      {{ c.pedido.numero_pedido }} — €{{ "%.2f"|format(c.total|float) }}
-    </li>
-    {% endfor %}
-  </ul>
-</details>
-{% endif %}
-
-{% if extraviados %}
-<details class="ox-card p-4 mb-3" open>
-  <summary class="cursor-pointer font-bold text-red-400">🚨 Extraviados ({{ extraviados|length }})</summary>
-  <ul class="text-sm mt-3 space-y-1">
-    {% for e in extraviados %}
-    <li class="border-t border-zinc-800 py-1">
-      {{ e.pedido.numero_pedido }} — €{{ "%.2f"|format(e.total|float) }} (coste perdido: €{{ "%.2f"|format(e.coste_bar|float) }})
-    </li>
-    {% endfor %}
-  </ul>
-</details>
-{% endif %}
-
+  {% if bucket.sin_costo %}
+  <aside class="ops-notice ops-notice--danger">
+    <strong>{{ bucket.sin_costo|length }} línea(s) necesitan revisión contable</strong>
+    <span>Falta el coste congelado. Administración debe completarlo antes de liquidar.</span>
+  </aside>
+  {% endif %}
+</main>
 {% endblock %}

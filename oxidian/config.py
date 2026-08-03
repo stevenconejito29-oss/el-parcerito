@@ -29,7 +29,6 @@ class Config:
     WTF_CSRF_ENABLED = True
 
     PUNTOS_POR_EURO = int(os.environ.get("PUNTOS_POR_EURO", 1))
-    PUNTOS_CANJE_RATIO = int(os.environ.get("PUNTOS_CANJE_RATIO", 100))
     ALERTA_CADUCIDAD_DIAS = int(os.environ.get("ALERTA_CADUCIDAD_DIAS", 7))
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024
 

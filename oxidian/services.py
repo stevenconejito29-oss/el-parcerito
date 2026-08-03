@@ -15,7 +15,7 @@ import logging
 import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from sqlalchemy import and_, or_, case
+from sqlalchemy import and_, or_, case, text
 from extensions import db
 from models import (
     Caja,
@@ -25,8 +25,11 @@ from models import (
     NotificationOutbox,
     Order,
     OrderEvent,
+    OrderItem,
+    Product,
     StaffPayment,
     User,
+    normalizar_metodo_pago,
 )
 from store_config import get_loyalty_terms, get_store_features
 
@@ -35,6 +38,37 @@ logger = logging.getLogger(__name__)
 
 def utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def pedidos_activos_que_bloquean_modulo(modulo: str) -> int:
+    """Cuenta trabajo vendido que debe terminar antes de apagar un módulo.
+
+    Los feature flags controlan nuevas ventas, pero nunca deben esconder las
+    herramientas necesarias para completar pedidos existentes.
+    """
+    modulo = (modulo or "").strip().lower()
+    activos = Order.query.filter(Order.estado.in_(ESTADOS_ACTIVOS))
+    if modulo == "delivery":
+        return activos.filter(Order.tipo_entrega_cliente == "delivery").count()
+    if modulo == "recogida":
+        return activos.filter(Order.tipo_entrega_cliente == "recogida").count()
+    if modulo != "programados":
+        return 0
+
+    # El tipo histórico vive en el snapshot del OrderItem. Sus propiedades
+    # encapsulan el fallback para pedidos legacy y funcionan también en SQLite.
+    pedidos_programados = set()
+    items_activos = (
+        OrderItem.query
+        .join(Order, Order.id == OrderItem.pedido_id)
+        .filter(Order.estado.in_(ESTADOS_ACTIVOS))
+        .all()
+    )
+    for item in items_activos:
+        tipo = (item.display_tipo_entrega or "").strip().lower()
+        if tipo in {"programado", "encargo"}:
+            pedidos_programados.add(item.pedido_id)
+    return len(pedidos_programados)
 
 
 def minutos_anticipacion_pedido_programado() -> int:
@@ -66,10 +100,15 @@ def pedido_programado_disponible_para_preparar(
     fecha = pedido.fecha_entrega_programada
     if not fecha:
         return False
+    # Los timestamps operativos se guardan en UTC, pero la fecha prometida al
+    # cliente es un día civil de la tienda. Usar ``datetime.date()`` sobre UTC
+    # abría o retenía encargos en la franja próxima a medianoche.
+    from business_time import business_today
+
     referencia = ahora or utcnow()
-    corte = (
+    corte = business_today(
         referencia + timedelta(minutes=minutos_anticipacion_pedido_programado())
-    ).date()
+    )
     return fecha <= corte
 
 
@@ -124,6 +163,90 @@ def registrar_pedido_creado(
         detalle=detalle,
         metadata=metadata,
     )
+
+
+def marcar_hito_operativo_pedido(
+    pedido: Order,
+    hito: str,
+    cuando: datetime | None = None,
+) -> datetime:
+    """Persiste una marca temporal operativa una sola vez.
+
+    Los hitos no se sobrescriben al reintentar una petición. Esto evita que un
+    doble toque en la PWA o un reintento HTTP mejore artificialmente los
+    tiempos. La asignación es la excepción: si cambia el repartidor se reinicia
+    su ciclo mediante :func:`asignar_repartidor_pedido`.
+    """
+    campos = {
+        "preparado": "preparado_en",
+        "repartidor_asignado": "repartidor_asignado_en",
+        "repartidor_tomado": "repartidor_tomado_en",
+        "en_ruta": "en_ruta_en",
+        "entregado": "entregado_en",
+    }
+    campo = campos.get((hito or "").strip().lower())
+    if not campo:
+        raise ValueError(f"Hito operativo desconocido: {hito!r}")
+    existente = getattr(pedido, campo, None)
+    if existente is not None:
+        return existente
+    marca = cuando or utcnow()
+    setattr(pedido, campo, marca)
+    return marca
+
+
+def asignar_repartidor_pedido(
+    pedido: Order,
+    repartidor_id: int | None,
+    *,
+    actor_id: int | None = None,
+    canal: str | None = None,
+    aceptado: bool = False,
+) -> tuple[int | None, int | None]:
+    """Centraliza asignación y aceptación de reparto con trazabilidad.
+
+    ``aceptado=False`` representa una asignación automática o administrativa.
+    ``aceptado=True`` indica que el repartidor tomó conscientemente el pedido.
+    Al cambiar de repartidor se reinician las marcas de aceptación/salida para
+    que las métricas describan al responsable vigente, no al anterior.
+    """
+    anterior_id = pedido.repartidor_id
+    nuevo_id = repartidor_id or None
+    ahora = utcnow()
+
+    if anterior_id != nuevo_id:
+        pedido.repartidor_id = nuevo_id
+        pedido.repartidor_asignado_en = ahora if nuevo_id else None
+        pedido.repartidor_tomado_en = None
+        pedido.en_ruta_en = None if pedido.estado == "listo" else pedido.en_ruta_en
+        registrar_evento_pedido(
+            pedido,
+            "repartidor_asignado" if nuevo_id else "repartidor_desasignado",
+            actor_id=actor_id,
+            estado_anterior=pedido.estado,
+            estado_nuevo=pedido.estado,
+            canal=canal,
+            metadata={
+                "repartidor_anterior_id": anterior_id,
+                "repartidor_nuevo_id": nuevo_id,
+            },
+        )
+    elif nuevo_id and pedido.repartidor_asignado_en is None:
+        # Compatibilidad con pedidos asignados antes de existir este hito.
+        pedido.repartidor_asignado_en = ahora
+
+    if aceptado and nuevo_id and pedido.repartidor_tomado_en is None:
+        pedido.repartidor_tomado_en = ahora
+        registrar_evento_pedido(
+            pedido,
+            "repartidor_tomado",
+            actor_id=actor_id or nuevo_id,
+            estado_anterior=pedido.estado,
+            estado_nuevo=pedido.estado,
+            canal=canal,
+            metadata={"repartidor_id": nuevo_id},
+        )
+    return anterior_id, nuevo_id
 
 
 # ─────────────────────────────────────────────
@@ -370,18 +493,31 @@ def marcar_pedido_confirmado(pedido: Order) -> bool:
 
 
 def _coalesce_proveedor_id(snapshot: dict, item) -> int | None:
-    """Resuelve el proveedor despachador de un item (suelto o combo).
+    """Resuelve únicamente el proveedor que participa en la preparación.
 
-    Prioridad: snapshot nuevo (`proveedor_despachador_id`) → producto vivo
-    (`Product.proveedor_despachador_id`). Aplica tanto a SKUs sueltos como a
-    combos: si el campo está informado, el bar es quien despacha el item.
-    Devuelve None para pedidos legacy con snapshot sin equivalente."""
+    ``proveedor_despachador_id`` también conserva, por compatibilidad, al dueño
+    financiero del stock. Si el acuerdo congelado es ``socio_porcentaje`` el
+    producto se prepara en la operación interna y por tanto devuelve ``None``.
+    Los proveedores externos históricos mantienen el comportamiento anterior.
+    """
     snapshot_tiene_origen = (
         isinstance(snapshot, dict)
         and "proveedor_despachador_id" in snapshot
     )
+    modelo = (
+        (snapshot.get("proveedor_modelo_acuerdo") or "").strip()
+        if isinstance(snapshot, dict) else ""
+    )
+    if modelo == "socio_porcentaje":
+        return None
     raw = snapshot.get("proveedor_despachador_id") if snapshot_tiene_origen else None
     if not snapshot_tiene_origen and item is not None and item.producto:
+        propietario = getattr(item.producto, "proveedor_despachador", None)
+        if (
+            propietario
+            and getattr(propietario, "modelo_acuerdo", None) == "socio_porcentaje"
+        ):
+            return None
         raw = item.producto.proveedor_despachador_id
     try:
         return int(raw) if raw is not None else None
@@ -416,7 +552,7 @@ def _snapshot_producto_item(item) -> dict:
 
 
 def sincronizar_proveedores_pedido(pedido: Order) -> int:
-    """Garantiza un OrderProviderStatus por cada proveedor que despacha items."""
+    """Crea estados solo para proveedores externos que realmente preparan."""
     from models import OrderProviderStatus
 
     if not pedido or not pedido.id:
@@ -495,6 +631,43 @@ def lineas_proveedor_pedido(pedido: Order, proveedor_id: int | None = None) -> l
     return lineas
 
 
+def lineas_socio_pedido(
+    pedido: Order,
+    proveedor_id: int,
+    *,
+    items: list[OrderItem] | None = None,
+) -> list[dict]:
+    """Líneas que pertenecen financieramente a un socio de productos.
+
+    Es deliberadamente distinta de ``lineas_proveedor_pedido``: el socio es
+    dueño del stock pero no prepara ni necesita datos personales del cliente.
+    """
+    try:
+        proveedor_id = int(proveedor_id)
+    except (TypeError, ValueError):
+        return []
+    lineas = []
+    for item in (items if items is not None else (pedido.items if pedido else [])):
+        snapshot = _snapshot_producto_item(item)
+        try:
+            propietario_id = int(snapshot.get("proveedor_despachador_id") or 0)
+        except (TypeError, ValueError):
+            propietario_id = 0
+        if propietario_id != proveedor_id:
+            continue
+        lineas.append({
+            "item": item,
+            "nombre": item.display_nombre,
+            "cantidad": max(1, int(item.cantidad or 1)),
+            "presentacion": item.selected_presentation_label,
+            "sabores": item.selected_flavor_names,
+            "subtotal": Decimal(str(item.subtotal or 0)).quantize(Decimal("0.01")),
+            "fecha_entrega": item.display_fecha_entrega,
+            "es_combo": bool(item.display_es_combo),
+        })
+    return lineas
+
+
 def encolar_notificaciones_proveedores_pedido(pedido: Order) -> int:
     """Avisa a cada operador WhatsApp solo sobre las líneas de su bar."""
     from models import NotificationOutbox, OrderProviderStatus, User
@@ -520,7 +693,11 @@ def encolar_notificaciones_proveedores_pedido(pedido: Order) -> int:
         )
         operadores = (
             User.query
-            .filter_by(rol="proveedor", proveedor_id=estado.proveedor_id, activo=True)
+            .filter(
+                User.rol.in_(("socio_producto", "proveedor")),
+                User.proveedor_id == estado.proveedor_id,
+                User.activo.is_(True),
+            )
             .filter(User.telefono_normalizado.isnot(None))
             .all()
         )
@@ -600,12 +777,43 @@ def avanzar_estado_pedido(
     return pedido.estado
 
 
-def es_pedido_solo_bar(pedido: Order) -> bool:
-    """True si TODOS los items del pedido tienen proveedor_despachador_id.
+def marcar_pedido_preparado(
+    pedido: Order,
+    actor_id: int | None = None,
+    canal: str | None = None,
+    detalle: str | None = None,
+) -> str:
+    """Cierra preparación incluso en flujos externos que saltan ``armando``.
 
-    En ese caso el pedido no necesita preparador interno: el bar (o bares) lo
-    preparan, nuestra cocina/almacén no participa. Repartidor y avance los
-    sigue gestionando Oxidian normalmente."""
+    Un socio que prepara el pedido fuera del local puede pasar directamente de
+    pendiente a listo. Esta operación conserva ese contrato, pero registra el
+    mismo hito y evento que el flujo interno.
+    """
+    if pedido.estado == "listo":
+        marcar_hito_operativo_pedido(pedido, "preparado")
+        return pedido.estado
+    if pedido.estado not in ESTADOS_EN_PREPARACION:
+        raise ValueError("El pedido ya no está en preparación.")
+    estado_anterior = pedido.estado
+    pedido.estado = "listo"
+    marcar_hito_operativo_pedido(pedido, "preparado")
+    registrar_evento_pedido(
+        pedido,
+        "estado_cambiado",
+        actor_id=actor_id,
+        estado_anterior=estado_anterior,
+        estado_nuevo="listo",
+        canal=canal,
+        detalle=detalle,
+    )
+    return pedido.estado
+
+
+def es_pedido_solo_bar(pedido: Order) -> bool:
+    """True si TODOS los items los prepara un establecimiento externo.
+
+    La propiedad de inventario de un socio porcentual no cuenta: esos artículos
+    sí pasan por preparación interna."""
     if not pedido or not pedido.items.count():
         return False
     for item in pedido.items:
@@ -625,6 +833,38 @@ def lineas_preparacion_interna(pedido: Order) -> list:
         if not _coalesce_proveedor_id(snapshot, item):
             lineas.append(item)
     return lineas
+
+
+def agrupar_items_por_producto(items) -> list[dict]:
+    """Agrupa líneas por producto sin perder sus variaciones operativas.
+
+    La tarjeta compacta muestra un total por producto, pero conserva cada
+    ``OrderItem`` para que tamaño, sabores, extras y elecciones de combo sigan
+    visibles. El orden de primera aparición se mantiene para que cocina vea el
+    mismo orden del ticket.
+    """
+    grupos: dict[object, dict] = {}
+    for item in items or ():
+        producto_id = getattr(item, "producto_id", None)
+        # Los snapshots históricos pueden sobrevivir a un producto eliminado.
+        # La clave secundaria evita mezclar dos líneas huérfanas distintas.
+        clave = ("producto", producto_id) if producto_id is not None else ("linea", getattr(item, "id", id(item)))
+        grupo = grupos.get(clave)
+        if grupo is None:
+            grupo = {
+                "producto_id": producto_id if producto_id is not None else getattr(item, "id", "historico"),
+                "producto_nombre": getattr(item, "display_nombre", None) or "Producto histórico",
+                "cantidad_total": 0,
+                "lineas": [],
+            }
+            grupos[clave] = grupo
+        try:
+            cantidad = int(getattr(item, "cantidad", 0) or 0)
+        except (TypeError, ValueError):
+            cantidad = 0
+        grupo["cantidad_total"] += max(0, cantidad)
+        grupo["lineas"].append(item)
+    return list(grupos.values())
 
 
 def validar_avance_operativo(pedido: Order) -> None:
@@ -703,6 +943,14 @@ def reasignar_responsable_pedido(
         elif asignado.rol != "repartidor":
             raise ValueError("El usuario seleccionado no tiene rol de repartidor.")
 
+    if campo == "repartidor_id":
+        return asignar_repartidor_pedido(
+            pedido,
+            nuevo_id,
+            actor_id=actor_id,
+            canal=canal,
+        )
+
     setattr(pedido, campo, nuevo_id)
     registrar_evento_pedido(
         pedido,
@@ -774,8 +1022,8 @@ def _revertir_puntos_pedido(pedido: Order) -> None:
     - Puntos ``ganados``: solo se restan si realmente hubo un ``PointsLog`` de
       tipo ``ganado`` para este pedido (protege ante cancelaciones antes de
       la entrega, cuando aún no se han otorgado).
-    - Puntos ``usados``: se devuelven íntegros. Cliente los canjeó como
-      descuento y el pedido no llegó a fin.
+    - Puntos ``usados``: se devuelven íntegros. El cliente los entregó por un
+      producto de recompensa y el pedido no llegó a fin.
 
     Se toma un lock sobre el ``User`` para evitar que dos cancelaciones
     concurrentes del mismo cliente pisen el saldo.
@@ -952,6 +1200,12 @@ def registrar_pago_pedido(
     canal: str | None = None,
     detalle: str | None = None,
 ) -> OrderEvent | None:
+    metodo = normalizar_metodo_pago(pedido.metodo_pago)
+    if not metodo:
+        raise ValueError("El pedido no tiene un método de pago válido.")
+    # Normaliza también el alias histórico para que el asiento posterior y los
+    # reportes lean exactamente el mismo valor.
+    pedido.metodo_pago = metodo
     pedido.pago_confirmado = True
     pedido.pago_confirmado_por = actor_id
     pedido.pago_confirmado_en = utcnow()
@@ -977,9 +1231,12 @@ def registrar_pago_pedido(
 
 def get_puntos_config() -> dict:
     """
-    Lee PUNTOS_POR_EURO y PUNTOS_CANJE_RATIO siempre desde SiteConfig (BD).
+    Lee la tasa de acumulación desde SiteConfig (BD).
     Único punto de verdad para todos los canales (web, bot, POS).
-    Devuelve {'por_euro': int, 'ratio': int}.
+
+    ``ratio`` se mantiene temporalmente en la respuesta para compatibilidad con
+    extensiones antiguas, pero no se utiliza para calcular precios: el canje es
+    exclusivamente por productos.
     """
     from models import SiteConfig
     def _int_config(clave, default):
@@ -991,7 +1248,6 @@ def get_puntos_config() -> dict:
             return default
     return {
         "por_euro": max(0, _int_config("PUNTOS_POR_EURO", 1)),
-        "ratio":    max(1, _int_config("PUNTOS_CANJE_RATIO", 100)),
     }
 
 
@@ -1042,6 +1298,7 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 # Caché en memoria para geocodificación: {clave: (coords, timestamp)}
 _geocode_cache: dict = {}
 _GEOCODE_TTL = 3600  # 1 hora — direcciones locales no cambian frecuentemente
+_GEOCODE_NEGATIVE_TTL = 60  # un fallo transitorio no bloquea al cliente una hora
 
 
 def _tiene_calle_nominatim(hit: dict) -> bool:
@@ -1132,7 +1389,8 @@ def geocodificar_direccion(direccion: str, ciudad: str = "") -> tuple[float, flo
         cached = _geocode_cache.get(cache_key)
         if cached:
             coords, ts = cached
-            if time.time() - ts < _GEOCODE_TTL:
+            ttl = _GEOCODE_TTL if coords is not None else _GEOCODE_NEGATIVE_TTL
+            if time.time() - ts < ttl:
                 logger.debug("Geocoding cache hit '%s'", direccion)
                 return coords
 
@@ -1204,11 +1462,9 @@ def geocodificar_direccion(direccion: str, ciudad: str = "") -> tuple[float, flo
 def asignar_zona_por_direccion(direccion: str, zonas):
     """Devuelve la ZonaEntrega que mejor se ajusta a la dirección del cliente.
 
-    Diseño **fail-closed** (2026-07-13): ante ausencia de geodata o dirección
-    no geocodificable, devolvemos None en vez de aceptar el pedido con
-    fallback ciego. El fallback legacy (primera zona activa sin verificar
-    geografía) solo se activa si `ALLOW_LEGACY_ZONE_FALLBACK` está a 1 en
-    SiteConfig — por defecto está desactivado.
+    Diseño **fail-closed**: ante ausencia de geodata o dirección no
+    geocodificable, devolvemos None en vez de aceptar el pedido con un
+    fallback ciego. Las banderas legacy se ignoran deliberadamente.
 
     Reglas:
     - Si HAY zonas con geodata: match por distancia dentro del radio, o
@@ -1239,15 +1495,9 @@ def asignar_zona_por_direccion(direccion: str, zonas):
         activas.sort(key=lambda z: (z.orden or 0, float(z.precio_envio or 0)))
         return activas[0]
 
-    # Último recurso: fallback legacy sin verificación geográfica. Deshabilitado
-    # por defecto — solo lo activa un admin con conocimiento de causa cuando
-    # todavía no ha configurado geodata pero necesita seguir vendiendo.
-    if _to_bool_service(SiteConfig.get("ALLOW_LEGACY_ZONE_FALLBACK", "0")):
-        logger.warning(
-            "asignar_zona_por_direccion: fallback LEGACY activo, aceptando %r sin geocode",
-            (direccion or "")[:60],
-        )
-        return activas[0]
+    # Nunca asignamos una zona sin una comprobación geográfica positiva. Las
+    # instalaciones antiguas podían activar un fallback ciego; se ignora aquí
+    # porque una dirección fuera de cobertura no puede convertirse en pedido.
     return None
 
 
@@ -1320,23 +1570,14 @@ def _resolver_zona_por_coordenadas(lat, lon, zonas):
     if neg_lat is not None:
         distancia = _haversine_km(neg_lat, neg_lng, lat, lon)
         activas = [zona for zona in zonas if zona.activo]
-        if distancia <= neg_radio and activas:
-            activas.sort(key=lambda z: (z.orden or 0, float(z.precio_envio or 0), z.id))
+        # El radio global solo puede representar de forma inequívoca una zona.
+        # Con varias zonas sin geometría, escoger la primera mezclaría tarifas,
+        # tiempos y repartidores; se rechaza hasta que se dibujen sus áreas.
+        if distancia <= neg_radio and len(activas) == 1:
             return activas[0], round(distancia, 2)
         return None, round(distancia, 2)
 
-    # 3) Sin geodata en zonas ni en negocio: fail-closed. El fallback legacy
-    # sin verificar geografía solo se activa si el admin lo pidió
-    # explícitamente vía `ALLOW_LEGACY_ZONE_FALLBACK`.
-    from models import SiteConfig
-    if _to_bool_service(SiteConfig.get("ALLOW_LEGACY_ZONE_FALLBACK", "0")):
-        activas = [zona for zona in zonas if zona.activo]
-        if activas:
-            logger.warning(
-                "asignar_zona_por_coordenadas: fallback LEGACY activo (%.4f, %.4f)",
-                lat, lon,
-            )
-            return activas[0], None
+    # 3) Sin geodata en zonas ni en negocio: fail-closed.
     return None, None
 
 
@@ -1391,7 +1632,15 @@ def _leer_geo_negocio() -> tuple[float | None, float | None, float | None]:
     return lat, lon, radio
 
 
-def validar_radio_entrega(direccion: str) -> dict:
+def validar_radio_entrega(
+    direccion: str,
+    *,
+    lat=None,
+    lon=None,
+    precision_m=None,
+    exigir_precision=False,
+    exigir_direccion=False,
+) -> dict:
     """Valida una dirección contra zonas detalladas o el radio global compatible.
 
     Devuelve dict {"ok": bool, "distancia_km": float|None, "mensaje": str}.
@@ -1400,19 +1649,124 @@ def validar_radio_entrega(direccion: str) -> dict:
     daño de un pedido a 30km es mayor que la fricción de re-teclear.
 
     Escenarios cubiertos:
-      - Validación desactivada (`VALIDAR_RADIO_ENTREGA=0`) → acepta.
       - Dirección demasiado corta (<6 chars) → rechaza con instrucción.
       - Sin config de centro/radio → rechaza pidiendo configurar.
-      - Dirección no geocodificable → rechaza con instrucción, salvo que
-        el admin haya bajado el flag `BLOQUEAR_DIRECCION_NO_VERIFICADA=0`.
+      - Dirección no geocodificable → rechaza con instrucción.
       - Fuera de todas las zonas → rechaza y ofrece recogida si está disponible.
+
+    Las banderas legacy que permitían saltarse la validación se ignoran
+    deliberadamente. Delivery siempre requiere una comprobación positiva.
     """
     from models import SiteConfig, ZonaEntrega
 
-    if not _to_bool_service(SiteConfig.get("VALIDAR_RADIO_ENTREGA", "1")):
+    zonas = ZonaEntrega.query.filter_by(activo=True).all()
+    try:
+        precision_max_m = float(
+            SiteConfig.get("DELIVERY_GPS_MAX_ACCURACY_M", "200") or 200
+        )
+    except (TypeError, ValueError):
+        precision_max_m = 200.0
+    precision_max_m = max(20.0, min(2000.0, precision_max_m))
+
+    # Cuando el cliente concede su ubicación, estas coordenadas son la fuente
+    # más precisa para cobertura. La dirección escrita sigue siendo obligatoria
+    # en checkout para que el repartidor identifique portal, piso y referencias.
+    coordenadas_enviadas = lat not in (None, "") or lon not in (None, "")
+    if coordenadas_enviadas:
+        if exigir_direccion and (not direccion or len(direccion.strip()) < 6):
+            return {
+                "ok": False,
+                "distancia_km": None,
+                "mensaje": "Escribe la dirección completa con calle y número.",
+            }
+        if exigir_precision and precision_m in (None, ""):
+            return {
+                "ok": False,
+                "distancia_km": None,
+                "mensaje": (
+                    "No pudimos comprobar la precisión de tu ubicación. "
+                    "Activa la ubicación precisa y vuelve a intentarlo."
+                ),
+            }
+        try:
+            lat_n = float(lat)
+            lon_n = float(lon)
+            precision_n = (
+                max(0.0, float(precision_m))
+                if precision_m not in (None, "") else None
+            )
+        except (TypeError, ValueError):
+            return {
+                "ok": False,
+                "distancia_km": None,
+                "mensaje": "La ubicación recibida no es válida. Vuelve a compartirla.",
+            }
+        if not (-90 <= lat_n <= 90 and -180 <= lon_n <= 180):
+            return {
+                "ok": False,
+                "distancia_km": None,
+                "mensaje": "La ubicación recibida está fuera de rango. Vuelve a compartirla.",
+            }
+        if precision_n is not None and precision_n > precision_max_m:
+            return {
+                "ok": False,
+                "distancia_km": None,
+                "mensaje": (
+                    "La ubicación no tiene suficiente precisión para confirmar "
+                    "la cobertura. Activa la ubicación precisa y vuelve a intentarlo."
+                ),
+                "precision_m": precision_n,
+                "precision_max_m": precision_max_m,
+            }
+        # Si también recibimos una dirección, detectamos discrepancias grandes
+        # entre lo escrito y la posición compartida. Esto evita validar con el
+        # GPS de una calle y enviar el pedido a otra distinta.
+        if direccion and len(direccion.strip()) >= 6:
+            ciudad = SiteConfig.get("CIUDAD_NEGOCIO", "")
+            coords_direccion = geocodificar_direccion(direccion, ciudad=ciudad)
+            if coords_direccion is not None:
+                try:
+                    max_desvio_km = float(
+                        SiteConfig.get(
+                            "DELIVERY_ADDRESS_GPS_MAX_DISTANCE_KM", "1"
+                        ) or 1
+                    )
+                except (TypeError, ValueError):
+                    max_desvio_km = 1.0
+                max_desvio_km = max(0.1, min(5.0, max_desvio_km))
+                desvio_km = _haversine_km(
+                    lat_n, lon_n, coords_direccion[0], coords_direccion[1]
+                )
+                if desvio_km > max_desvio_km:
+                    return {
+                        "ok": False,
+                        "distancia_km": None,
+                        "mensaje": (
+                            "La ubicación compartida no coincide con la dirección "
+                            "escrita. Revisa la calle o vuelve a compartir tu ubicación."
+                        ),
+                        "desvio_direccion_km": round(desvio_km, 2),
+                    }
+        zona, distancia = _resolver_zona_por_coordenadas(lat_n, lon_n, zonas)
+        if zona is not None:
+            return {
+                "ok": True,
+                "distancia_km": distancia,
+                "mensaje": "",
+                "zona_id": zona.id,
+                "zona_nombre": zona.nombre,
+                "metodo_cobertura": "ubicacion_dispositivo",
+                "lat": lat_n,
+                "lon": lon_n,
+                "precision_m": precision_n,
+            }
         return {
-            "ok": True, "distancia_km": None, "mensaje": "",
-            "validacion_desactivada": True,
+            "ok": False,
+            "distancia_km": distancia,
+            "mensaje": (
+                "Tu ubicación está fuera de las zonas de reparto. "
+                "Prueba otra dirección o selecciona recogida en el local."
+            ),
         }
 
     if not direccion or len(direccion.strip()) < 6:
@@ -1422,7 +1776,6 @@ def validar_radio_entrega(direccion: str) -> dict:
             "mensaje": "Escribe la dirección completa con calle y número.",
         }
 
-    zonas = ZonaEntrega.query.filter_by(activo=True).all()
     hay_cobertura_detallada = any(zona.tiene_geo for zona in zonas)
     centro_lat, centro_lon, radio_km = _leer_geo_negocio()
     if centro_lat is None and not hay_cobertura_detallada:
@@ -1438,18 +1791,15 @@ def validar_radio_entrega(direccion: str) -> dict:
     ciudad = SiteConfig.get("CIUDAD_NEGOCIO", "")
     coords = geocodificar_direccion(direccion, ciudad=ciudad)
     if coords is None:
-        if hay_cobertura_detallada or _to_bool_service(SiteConfig.get("BLOQUEAR_DIRECCION_NO_VERIFICADA", "1")):
-            return {
-                "ok": False,
-                "distancia_km": None,
-                "mensaje": (
-                    f"No encontramos esa dirección{f' en {ciudad}' if ciudad else ''}. "
-                    "Escribe la calle y número tal como aparece en el callejero, "
-                    "por ejemplo «Calle Mayor 5»."
-                ),
-            }
-        logger.warning("No se pudo geocodificar '%s'. Pedido aceptado con advertencia.", direccion)
-        return {"ok": True, "distancia_km": None, "mensaje": "No se pudo verificar la ubicación"}
+        return {
+            "ok": False,
+            "distancia_km": None,
+            "mensaje": (
+                f"No encontramos esa dirección{f' en {ciudad}' if ciudad else ''}. "
+                "Escribe la calle y número tal como aparece en el callejero, "
+                "por ejemplo «Calle Mayor 5», o comparte tu ubicación precisa."
+            ),
+        }
 
     lat, lon = coords
     if hay_cobertura_detallada:
@@ -1473,6 +1823,9 @@ def validar_radio_entrega(direccion: str) -> dict:
             "zona_id": zona.id,
             "zona_nombre": zona.nombre,
             "metodo_cobertura": zona.tipo_cobertura,
+            "lat": lat,
+            "lon": lon,
+            "precision_m": None,
         }
 
     distancia = _haversine_km(centro_lat, centro_lon, lat, lon)
@@ -1488,7 +1841,24 @@ def validar_radio_entrega(direccion: str) -> dict:
             ),
         }
 
-    return {"ok": True, "distancia_km": round(distancia, 2), "mensaje": ""}
+    zona_global, _ = _resolver_zona_por_coordenadas(lat, lon, zonas)
+    if zona_global is None:
+        return {
+            "ok": False,
+            "distancia_km": round(distancia, 2),
+            "mensaje": "No hay una zona de entrega activa para asignar el pedido.",
+        }
+    return {
+        "ok": True,
+        "distancia_km": round(distancia, 2),
+        "mensaje": "",
+        "metodo_cobertura": "direccion_geocodificada",
+        "zona_id": zona_global.id,
+        "zona_nombre": zona_global.nombre,
+        "lat": lat,
+        "lon": lon,
+        "precision_m": None,
+    }
 
 
 def _to_bool_service(val):
@@ -1501,6 +1871,8 @@ def tienda_abierta_en_horario(
     ahora: str | None = None,
     forzada_cerrada: bool = False,
     forzada_abierta: bool = False,
+    horario_semanal=None,
+    fecha_hora: datetime | None = None,
 ) -> bool:
     """Evalua estado de tienda combinando overrides manuales + horario.
 
@@ -1517,6 +1889,23 @@ def tienda_abierta_en_horario(
         return False
     if forzada_abierta:
         return True
+    if horario_semanal is None:
+        try:
+            from models import SiteConfig
+            horario_semanal = SiteConfig.get("HORARIO_SEMANAL_JSON", "")
+        except Exception:
+            horario_semanal = ""
+    if horario_semanal:
+        from schedule_service import normalize_weekly_schedule, schedule_is_open
+        try:
+            schedule = normalize_weekly_schedule(horario_semanal)
+            when = fecha_hora or datetime.now()
+            if ahora:
+                hour, minute = (int(part) for part in ahora.split(":", 1))
+                when = when.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            return schedule_is_open(schedule, when)
+        except (TypeError, ValueError):
+            logger.exception("HORARIO_SEMANAL_JSON inválido; se usa el horario legado")
     ahora = ahora or datetime.now().strftime("%H:%M")
     apertura = (apertura or "00:00").strip()
     cierre = (cierre or "23:59").strip()
@@ -1667,9 +2056,10 @@ def _elegir_menos_cargado(candidatos: list, cargas: dict[int, int],
                           tope: int) -> tuple | None:
     """Elige el candidato menos cargado que aún tenga margen bajo el tope.
 
-    Si TODOS los candidatos están al tope o por encima, devuelve el menos
-    cargado igualmente (política pragmática: mejor asignar tarde que dejar
-    huérfano). Retorna (usuario, carga_actual, overloaded_flag).
+    Si TODOS los candidatos están al tope o por encima, deja el pedido en la
+    cola. Sobrecargar silenciosamente a un repartidor/preparador hace que el
+    panel parezca atendido aunque el SLA real ya sea imposible de cumplir.
+    Retorna (usuario, carga_actual, overloaded_flag).
     """
     if not candidatos:
         return None
@@ -1678,13 +2068,35 @@ def _elegir_menos_cargado(candidatos: list, cargas: dict[int, int],
     if con_margen:
         elegido = con_margen[0]
         return (elegido, cargas.get(elegido.id, 0), False)
-    elegido = ordenados[0]
     logger.warning(
-        "workload: TODOS los candidatos (%d) están al tope (%d). Asigno al "
-        "menos cargado igualmente: %s con %d pedidos activos.",
-        len(candidatos), tope, elegido.nombre, cargas.get(elegido.id, 0),
+        "workload: TODOS los candidatos (%d) están al tope (%d). "
+        "El pedido queda en cola hasta liberar capacidad.",
+        len(candidatos), tope,
     )
-    return (elegido, cargas.get(elegido.id, 0), True)
+    return None
+
+
+def _serializar_asignacion_workload(alcance: str) -> None:
+    """Serializa el cálculo carga→asignación en PostgreSQL.
+
+    Dos pedidos que pasan a ``listo`` al mismo tiempo podían leer la misma
+    carga y elegir al mismo repartidor. El advisory lock es transaccional:
+    no requiere una tabla auxiliar, se libera en commit/rollback y mantiene
+    SQLite compatible para tests y desarrollo.
+    """
+    bind = db.session.get_bind()
+    if bind.dialect.name == "postgresql":
+        db.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:alcance))"),
+            {"alcance": f"oxidian:workload:{alcance}"},
+        )
+
+
+def capacidad_repartidor(user_id: int) -> int:
+    """Capacidad libre autoritativa para tomar pedidos en la transacción."""
+    _serializar_asignacion_workload("reparto")
+    carga = carga_actual_repartidores([user_id]).get(user_id, 0)
+    return max(0, max_pedidos_por_repartidor() - carga)
 
 
 def rebalancear_pedidos_huerfanos() -> dict:
@@ -1746,7 +2158,11 @@ def rebalancear_pedidos_huerfanos() -> dict:
     for pedido in pedidos_rep:
         try:
             rep_anterior_id = pedido.repartidor_id
-            pedido.repartidor_id = None
+            asignar_repartidor_pedido(
+                pedido,
+                None,
+                canal="rebalanceo_automatico",
+            )
             db.session.flush()
             nuevo = distribuir_repartidor(pedido)
             if nuevo and nuevo.id != rep_anterior_id:
@@ -1822,10 +2238,12 @@ def distribuir_pedido(pedido: Order) -> User | None:
       3. Admin disponible como comodín
       4. Si nadie está online, el pedido queda sin asignar para la cola/admin
 
-    Si el pedido es 100% del bar (todos sus items tienen
-    proveedor_despachador_id), no se asigna preparador interno: el bar lo
-    prepara y nuestro personal solo gestiona el reparto.
+    Si el pedido es 100% de un proveedor externo, no se asigna preparador
+    interno. La mercancía financiada por socios porcentuales sí se asigna a
+    nuestra preparación normal.
     """
+    _serializar_asignacion_workload("preparacion")
+
     if pedido.confirmacion_estado == "pending":
         logger.info(
             "distribuir_pedido: pedido %s espera confirmación de WhatsApp.",
@@ -1918,6 +2336,8 @@ def distribuir_repartidor(pedido: Order) -> User | None:
     repartidores asignados a esa zona. Si no hay ninguno online, cae al pool
     global (sin zona o cualquier zona) para no bloquear entregas.
     """
+    _serializar_asignacion_workload("reparto")
+
     if not get_store_features()["delivery"]:
         return None
     if not getattr(pedido, "requiere_reparto", True):
@@ -1935,28 +2355,40 @@ def distribuir_repartidor(pedido: Order) -> User | None:
         )
         return None
 
-    # Preferencia por zona: especialistas primero, comodines después, pool
-    # completo solo si no hay ninguno de los dos (evita entregas huérfanas).
+    # Preferencia por zona: especialistas primero, comodines después y resto
+    # del pool como último recurso. Cada nivel también comprueba capacidad:
+    # que exista un especialista no debe bloquear a un comodín libre cuando
+    # el primero ya alcanzó su ruta máxima.
     zona_pedido = getattr(pedido, "zona_id", None)
     if zona_pedido is not None:
         de_zona = [u for u in candidatos
                    if getattr(u, "zona_repartidor_id", None) == zona_pedido]
         sin_zona = [u for u in candidatos
                     if getattr(u, "zona_repartidor_id", None) is None]
-        pool = de_zona or sin_zona or candidatos
+        pools = [de_zona, sin_zona, candidatos]
     else:
-        pool = candidatos
+        pools = [candidatos]
 
     # Workload balancing: menor carga primero, respeta tope configurable.
     # Bulk query en vez de N queries del sort key.
     tope = max_pedidos_por_repartidor()
-    cargas = carga_actual_repartidores([u.id for u in pool])
-    resultado = _elegir_menos_cargado(pool, cargas, tope)
-    if not resultado:
-        return None
-    asignado, _, _ = resultado
-    pedido.repartidor_id = asignado.id
-    return asignado
+    evaluados = set()
+    for pool in pools:
+        pool_unico = [u for u in pool if u.id not in evaluados]
+        evaluados.update(u.id for u in pool)
+        if not pool_unico:
+            continue
+        cargas = carga_actual_repartidores([u.id for u in pool_unico])
+        resultado = _elegir_menos_cargado(pool_unico, cargas, tope)
+        if resultado:
+            asignado, _, _ = resultado
+            asignar_repartidor_pedido(
+                pedido,
+                asignado.id,
+                canal="distribucion_automatica",
+            )
+            return asignado
+    return None
 
 
 def redistribuir_listos_sin_repartidor() -> int:
@@ -2069,7 +2501,14 @@ def registrar_ingreso_pedido(pedido: Order, registrado_por=None):
     existente = Caja.query.filter_by(pedido_id=pedido.id, tipo="ingreso").first()
     if existente:
         return existente
-    if (pedido.metodo_pago or "").lower() == "bizum" and not pedido.pago_confirmado:
+    metodo_pago = normalizar_metodo_pago(pedido.metodo_pago)
+    if not metodo_pago:
+        logger.error(
+            "registrar_ingreso_pedido bloqueado: pedido %s sin método de pago válido",
+            pedido.numero_pedido,
+        )
+        raise ValueError("El pedido no tiene un método de pago válido.")
+    if metodo_pago == "bizum" and not pedido.pago_confirmado:
         logger.warning(
             "registrar_ingreso_pedido bloqueado: pedido %s es Bizum sin pago_confirmado",
             pedido.numero_pedido,
@@ -2191,14 +2630,15 @@ def generar_comision_entrega(pedido: Order) -> StaffPayment | None:
 # ─────────────────────────────────────────────
 
 def resumen_caja_hoy():
-    from datetime import date
     from sqlalchemy import func
-    hoy = date.today()
+    from business_time import business_today, utc_naive_bounds
+
+    inicio, fin = utc_naive_bounds(business_today())
     ingresos = db.session.query(func.sum(Caja.monto)).filter(
-        db.func.date(Caja.fecha) == hoy, Caja.tipo == "ingreso"
+        Caja.fecha >= inicio, Caja.fecha < fin, Caja.tipo == "ingreso"
     ).scalar() or 0
     egresos = db.session.query(func.sum(Caja.monto)).filter(
-        db.func.date(Caja.fecha) == hoy, Caja.tipo == "egreso"
+        Caja.fecha >= inicio, Caja.fecha < fin, Caja.tipo == "egreso"
     ).scalar() or 0
     return float(ingresos), float(egresos)
 
@@ -2608,28 +3048,382 @@ def metricas_antifraude(dias: int = 30) -> dict:
     }
 
 
+def _costo_item_pedido(item):
+    """Coste total congelado de una línea y calidad de ese dato.
+
+    Los combos se calculan desde sus componentes. Para snapshots antiguos se
+    permite usar el coste actual como estimación, pero se informa al panel para
+    que nunca presente una ganancia incompleta como definitiva.
+    """
+    metadata = item.get_metadata() or {}
+    product_snapshot = metadata.get("producto") or {}
+    combo = metadata.get("combo") or {}
+    quantity = max(1, int(item.cantidad or 1))
+    if product_snapshot.get("proveedor_modelo_acuerdo") == "socio_porcentaje":
+        commission_pct = Decimal(str(
+            product_snapshot.get("proveedor_comision_pct") or 0
+        ))
+        sale = Decimal(str(
+            item.precio_unit
+            or product_snapshot.get("precio_final")
+            or product_snapshot.get("precio")
+            or 0
+        ))
+        partner_share = (
+            sale * (Decimal("100") - commission_pct) / Decimal("100")
+        ).quantize(Decimal("0.01"))
+        return float(partner_share * quantity), False, False
+    components = list(combo.get("componentes") or [])
+    for group in combo.get("selecciones") or []:
+        components.extend(group.get("opciones") or [])
+
+    if components:
+        total = 0.0
+        missing = False
+        estimated = False
+        for component in components:
+            if not isinstance(component, dict):
+                continue
+            raw_cost = component.get("precio_costo_congelado")
+            if raw_cost is None:
+                component_product = db.session.get(
+                    Product, component.get("producto_id")
+                )
+                raw_cost = (
+                    component_product.precio_costo
+                    if component_product
+                    and component_product.precio_costo is not None
+                    else None
+                )
+                estimated = raw_cost is not None
+            if raw_cost is None:
+                missing = True
+                continue
+            units = max(1, int(component.get("cantidad") or 1))
+            total += float(raw_cost) * units
+        if missing and total == 0 and product_snapshot.get("precio_costo") is not None:
+            total = float(product_snapshot["precio_costo"])
+            missing = False
+            estimated = True
+        return round(total * quantity, 2), missing, estimated
+
+    raw_cost = product_snapshot.get("precio_costo")
+    estimated = False
+    if raw_cost is None and item.producto and item.producto.precio_costo is not None:
+        raw_cost = item.producto.precio_costo
+        estimated = True
+    if raw_cost is None:
+        return 0.0, True, False
+    return round(float(raw_cost) * quantity, 2), False, estimated
+
+
+def origen_liquidacion_proveedor(proveedor_id: int) -> str:
+    """Identificador estable que vincula una liquidación con su proveedor.
+
+    ``StaffPayment`` pertenece formalmente al operador que recibe el pago. El
+    origen evita inferir el socio por el nombre escrito en ``concepto`` y
+    permite calcular saldos aunque cambie el operador principal.
+    """
+    return f"provider:{int(proveedor_id)}"
+
+
+def _obligacion_linea_proveedor(item, venta_neta: Decimal) -> dict | None:
+    """Calcula la obligación congelada de una línea hacia su propietario.
+
+    Nunca usa la comisión contractual actual para pedidos históricos. Para
+    costes antiguos sin snapshot se admite un fallback explícitamente marcado
+    como estimado; un coste ausente permanece visible y no se presenta como
+    margen confirmado.
+    """
+    from models import ProveedorProducto
+
+    metadata = item.get_metadata() or {}
+    snapshot = metadata.get("producto") or {}
+    try:
+        proveedor_id = int(snapshot.get("proveedor_despachador_id") or 0)
+    except (TypeError, ValueError):
+        proveedor_id = 0
+    if not proveedor_id:
+        return None
+
+    cantidad = max(1, int(item.cantidad or 1))
+    modelo = (snapshot.get("proveedor_modelo_acuerdo") or "stock_proveedor").strip()
+    comision = Decimal(str(snapshot.get("proveedor_comision_pct") or 0))
+    comision = min(Decimal("100"), max(Decimal("0"), comision))
+    obligacion = Decimal("0")
+    estimado = False
+    incompleto = False
+
+    if modelo == "socio_porcentaje":
+        obligacion = venta_neta * (Decimal("100") - comision) / Decimal("100")
+    elif modelo == "stock_propio_bar":
+        obligacion = venta_neta * comision / Decimal("100")
+    else:
+        componentes = _combo_componentes_snapshot(metadata)
+        if componentes:
+            for componente in componentes:
+                unidades = max(1, int(componente.get("cantidad") or 1))
+                coste = componente.get("precio_costo_congelado")
+                if coste is None and componente.get("producto_id"):
+                    fila = ProveedorProducto.query.filter_by(
+                        proveedor_id=proveedor_id,
+                        producto_id=componente["producto_id"],
+                    ).first()
+                    coste = fila.precio_costo if fila else None
+                    estimado = estimado or coste is not None
+                if coste is None:
+                    incompleto = True
+                    continue
+                obligacion += Decimal(str(coste)) * unidades * cantidad
+        else:
+            coste = snapshot.get("precio_costo")
+            if coste is None and item.producto_id:
+                fila = ProveedorProducto.query.filter_by(
+                    proveedor_id=proveedor_id,
+                    producto_id=item.producto_id,
+                ).first()
+                coste = fila.precio_costo if fila else None
+                estimado = coste is not None
+            if coste is None:
+                incompleto = True
+            else:
+                obligacion = Decimal(str(coste)) * cantidad
+
+    return {
+        "proveedor_id": proveedor_id,
+        "modelo": modelo,
+        "comision_pct": comision,
+        "obligacion": obligacion.quantize(Decimal("0.01")),
+        "estimado": estimado,
+        "incompleto": incompleto,
+    }
+
+
+def calcular_liquidaciones_proveedores(
+    fecha_inicio,
+    fecha_fin,
+    *,
+    proveedor_id: int | None = None,
+) -> dict:
+    """Fuente única del cierre financiero de socios y proveedores.
+
+    El período usa la fecha real de entrega y, para extravíos, la fecha del
+    evento. Las ventas se distribuyen por línea después del descuento del
+    pedido. La comisión/modelo y los costes proceden del snapshot de venta.
+    """
+    from models import Proveedor
+    from business_time import utc_naive_bounds
+
+    inicio, fin = utc_naive_bounds(fecha_inicio, fecha_fin)
+    entregados = Order.query.filter(
+        Order.estado == "entregado",
+        Order.entregado_en >= inicio,
+        Order.entregado_en < fin,
+    ).all()
+    eventos_extravio = OrderEvent.query.filter(
+        OrderEvent.tipo == "pedido_extraviado",
+        OrderEvent.creado_en >= inicio,
+        OrderEvent.creado_en < fin,
+    ).all()
+    fecha_extravio = {evento.pedido_id: evento.creado_en for evento in eventos_extravio}
+    extraviados = (
+        Order.query.filter(Order.id.in_(fecha_extravio)).all()
+        if fecha_extravio else []
+    )
+
+    pedidos = [(pedido, "entregado", pedido.entregado_en) for pedido in entregados]
+    pedidos.extend(
+        (pedido, "extraviado", fecha_extravio.get(pedido.id))
+        for pedido in extraviados
+        if pedido.id not in {entregado.id for entregado in entregados}
+    )
+    pedidos_ids = [pedido.id for pedido, _situacion, _fecha in pedidos]
+    items_por_pedido = {}
+    if pedidos_ids:
+        for item in OrderItem.query.filter(
+            OrderItem.pedido_id.in_(pedidos_ids)
+        ).all():
+            items_por_pedido.setdefault(item.pedido_id, []).append(item)
+    por_proveedor = {}
+    total_ingresos = sum(
+        (Decimal(str(pedido.total or 0)) for pedido in entregados),
+        Decimal("0"),
+    )
+
+    for pedido, situacion, fecha_operacion in pedidos:
+        items_pedido = items_por_pedido.get(pedido.id, [])
+        bruto_items = sum(Decimal(str(item.subtotal or 0)) for item in items_pedido)
+        descuento = min(Decimal(str(pedido.descuento or 0)), bruto_items)
+        for item in items_pedido:
+            bruto = Decimal(str(item.subtotal or 0))
+            descuento_linea = (
+                (descuento * bruto / bruto_items)
+                if bruto_items > 0 else Decimal("0")
+            )
+            venta_neta = max(Decimal("0"), bruto - descuento_linea)
+            obligacion = _obligacion_linea_proveedor(item, venta_neta)
+            if not obligacion:
+                continue
+            pid = obligacion["proveedor_id"]
+            if proveedor_id is not None and pid != int(proveedor_id):
+                continue
+            bucket = por_proveedor.setdefault(pid, {
+                "proveedor": None,
+                "lineas": [],
+                "sin_costo": [],
+                "total": Decimal("0"),
+                "total_entregado": Decimal("0"),
+                "total_extraviado": Decimal("0"),
+                "ventas_netas": Decimal("0"),
+                "ventas_extraviadas": Decimal("0"),
+                "registrado": Decimal("0"),
+                "pagado": Decimal("0"),
+                "programado": Decimal("0"),
+                "pendiente_registrar": Decimal("0"),
+                "pendiente_pago": Decimal("0"),
+            })
+            linea = {
+                "pedido": pedido,
+                "nombre": item.display_nombre,
+                "cantidad": max(1, int(item.cantidad or 1)),
+                "venta_neta": venta_neta.quantize(Decimal("0.01")),
+                "costo_unit": (
+                    obligacion["obligacion"] / max(1, int(item.cantidad or 1))
+                ).quantize(Decimal("0.01")),
+                "subtotal": obligacion["obligacion"],
+                "modo": obligacion["modelo"],
+                "situacion": situacion,
+                "fecha_operacion": fecha_operacion,
+                "estimado": obligacion["estimado"],
+                "incompleto": obligacion["incompleto"],
+            }
+            if obligacion["incompleto"]:
+                bucket["sin_costo"].append(linea)
+            else:
+                bucket["lineas"].append(linea)
+                bucket["total"] += obligacion["obligacion"]
+                clave_total = (
+                    "total_entregado" if situacion == "entregado"
+                    else "total_extraviado"
+                )
+                bucket[clave_total] += obligacion["obligacion"]
+            clave_venta = (
+                "ventas_netas" if situacion == "entregado"
+                else "ventas_extraviadas"
+            )
+            bucket[clave_venta] += venta_neta
+
+    if por_proveedor:
+        proveedores = {
+            proveedor.id: proveedor
+            for proveedor in Proveedor.query.filter(
+                Proveedor.id.in_(por_proveedor)
+            ).all()
+        }
+        for pid, bucket in por_proveedor.items():
+            bucket["proveedor"] = proveedores.get(pid)
+            propietario = bucket["proveedor"]
+            filtro_propietario = (
+                StaffPayment.origen == origen_liquidacion_proveedor(pid)
+            )
+            # Compatibilidad con liquidaciones creadas antes de disponer de un
+            # origen estructurado. Sólo se aceptan si coinciden período,
+            # operador enlazado y la etiqueta histórica completa del socio.
+            if propietario:
+                operadores_ids = [
+                    row[0]
+                    for row in db.session.query(User.id).filter(
+                        User.proveedor_id == pid
+                    ).all()
+                ]
+                if operadores_ids:
+                    filtro_propietario = or_(
+                        filtro_propietario,
+                        and_(
+                            StaffPayment.origen == "manual",
+                            StaffPayment.user_id.in_(operadores_ids),
+                            StaffPayment.concepto.contains(
+                                f"(proveedor: {propietario.nombre})",
+                                autoescape=True,
+                            ),
+                        ),
+                    )
+            pagos = StaffPayment.query.filter(
+                StaffPayment.tipo == "liquidacion_proveedor",
+                filtro_propietario,
+                StaffPayment.periodo_inicio == fecha_inicio,
+                StaffPayment.periodo_fin == fecha_fin,
+            ).all()
+            bucket["registrado"] = sum(
+                Decimal(str(pago.monto or 0)) for pago in pagos
+            )
+            bucket["pagado"] = sum(
+                Decimal(str(pago.monto or 0)) for pago in pagos if pago.pagado
+            )
+            bucket["programado"] = bucket["registrado"] - bucket["pagado"]
+            bucket["pendiente_registrar"] = max(
+                Decimal("0"), bucket["total"] - bucket["registrado"]
+            )
+            bucket["pendiente_pago"] = max(
+                Decimal("0"), bucket["total"] - bucket["pagado"]
+            )
+
+    obligacion_total = sum(
+        (bucket["total"] for bucket in por_proveedor.values()),
+        Decimal("0"),
+    )
+    perdida_extravios = sum(
+        (bucket["total_extraviado"] for bucket in por_proveedor.values()),
+        Decimal("0"),
+    )
+    return {
+        "por_proveedor": por_proveedor,
+        "total_ingresos": total_ingresos.quantize(Decimal("0.01")),
+        "total_obligacion": obligacion_total.quantize(Decimal("0.01")),
+        "saldo_tras_obligaciones": (
+            total_ingresos - obligacion_total
+        ).quantize(Decimal("0.01")),
+        "perdida_extravios": perdida_extravios.quantize(Decimal("0.01")),
+        "n_extraviados": len(extraviados),
+    }
+
+
 def calcular_pl(fecha_ini, fecha_fin):
-    """P&L entre dos date objects. Devuelve dict con la cascada financiera completa."""
+    """Control financiero entre dos fechas.
+
+    Separa rentabilidad (ventas entregadas y costes consumidos) de caja
+    (movimientos de dinero registrados) y devuelve cobertura de costes para
+    evitar que un margen incompleto parezca una ganancia real.
+    """
     from sqlalchemy import func
     from models import Caja, Order, OrderItem, StaffPayment
-    from datetime import timedelta as _td
+    from business_time import utc_naive_bounds
 
-    fi = datetime(fecha_ini.year, fecha_ini.month, fecha_ini.day, 0, 0, 0)
-    ff = datetime(fecha_fin.year, fecha_fin.month, fecha_fin.day, 0, 0, 0) + _td(days=1)
+    fi, ff = utc_naive_bounds(fecha_ini, fecha_fin)
 
-    # ── Ventas (fuente: pedidos entregados, fecha de entrega) ──────────
-    ventas_online = db.session.query(func.sum(Order.total)).filter(
-        Order.entregado_en >= fi, Order.entregado_en < ff,
-        Order.estado == "entregado", Order.origen == "online"
-    ).scalar() or 0
-    ventas_presencial = db.session.query(func.sum(Order.total)).filter(
-        Order.entregado_en >= fi, Order.entregado_en < ff,
-        Order.estado == "entregado", Order.origen == "presencial"
-    ).scalar() or 0
-    ventas_whatsapp = db.session.query(func.sum(Order.total)).filter(
-        Order.entregado_en >= fi, Order.entregado_en < ff,
-        Order.estado == "entregado", Order.origen == "whatsapp"
-    ).scalar() or 0
+    pedidos_entregados = (
+        Order.query.filter(
+            Order.entregado_en >= fi,
+            Order.entregado_en < ff,
+            Order.estado == "entregado",
+        )
+        .all()
+    )
+    items_por_pedido = {}
+    if pedidos_entregados:
+        for item in OrderItem.query.filter(
+            OrderItem.pedido_id.in_([order.id for order in pedidos_entregados])
+        ).all():
+            items_por_pedido.setdefault(item.pedido_id, []).append(item)
+    ventas_por_canal = {"online": 0.0, "presencial": 0.0, "whatsapp": 0.0}
+    for order in pedidos_entregados:
+        ventas_por_canal[order.origen or "online"] = (
+            ventas_por_canal.get(order.origen or "online", 0.0)
+            + float(order.total or 0)
+        )
+    ventas_online = ventas_por_canal.get("online", 0.0)
+    ventas_presencial = ventas_por_canal.get("presencial", 0.0)
+    ventas_whatsapp = ventas_por_canal.get("whatsapp", 0.0)
 
     ventas_epicentro = db.session.query(func.sum(Order.total)).filter(
         Order.entregado_en >= fi, Order.entregado_en < ff,
@@ -2640,42 +3434,105 @@ def calcular_pl(fecha_ini, fecha_fin):
         Order.estado == "entregado", Order.es_entrega_epicentro.is_(False),
     ).scalar() or 0
 
-    total_pedidos = Order.query.filter(
-        Order.entregado_en >= fi, Order.entregado_en < ff,
-        Order.estado == "entregado"
-    ).count()
+    total_pedidos = len(pedidos_entregados)
     pedidos_cancelados = Order.query.filter(
         Order.creado_en >= fi, Order.creado_en < ff, Order.estado == "cancelado"
     ).count()
-    descuentos = db.session.query(func.sum(Order.descuento)).filter(
-        Order.entregado_en >= fi, Order.entregado_en < ff, Order.estado == "entregado"
-    ).scalar() or 0
-    service_commission = db.session.query(func.sum(Order.service_commission_amount)).filter(
-        Order.entregado_en >= fi, Order.entregado_en < ff, Order.estado == "entregado"
-    ).scalar() or 0
-    merchant_net = db.session.query(func.sum(Order.merchant_net_amount)).filter(
-        Order.entregado_en >= fi, Order.entregado_en < ff, Order.estado == "entregado"
-    ).scalar() or 0
+    descuentos = sum(float(order.descuento or 0) for order in pedidos_entregados)
+    service_commission = sum(
+        float(order.service_commission_amount or 0) for order in pedidos_entregados
+    )
+    merchant_net = sum(
+        float(order.merchant_net_amount or 0) for order in pedidos_entregados
+    )
+    ingresos_netos = sum(float(order.total or 0) for order in pedidos_entregados)
+    ingreso_envios = sum(order.costo_envio_aplicado for order in pedidos_entregados)
 
-    # Order.total ya contiene descuentos y envío: es el importe realmente
-    # cobrado. Los descuentos se muestran aparte, sin restarlos dos veces.
-    ingresos_netos = float(ventas_online) + float(ventas_presencial) + float(ventas_whatsapp)
-    ventas_brutas = ingresos_netos + float(descuentos)
-
-    # ── COGS — coste de productos vendidos (snapshot del precio de costo) ──
+    productos = {}
     cogs = 0.0
-    ids_entregados = [
-        row[0] for row in db.session.query(Order.id).filter(
-            Order.entregado_en >= fi, Order.entregado_en < ff, Order.estado == "entregado"
-        ).all()
-    ]
-    if ids_entregados:
-        for item in OrderItem.query.filter(OrderItem.pedido_id.in_(ids_entregados)).all():
-            costo_u = (item.producto_snapshot or {}).get("precio_costo") or 0
-            cogs += float(costo_u) * int(item.cantidad)
+    ventas_productos_brutas = 0.0
+    ventas_productos_netas = 0.0
+    ventas_sin_coste = 0.0
+    lineas_sin_coste = 0
+    lineas_coste_estimado = 0
+    for order in pedidos_entregados:
+        order_items = items_por_pedido.get(order.id, [])
+        gross_order_items = sum(float(item.subtotal or 0) for item in order_items)
+        discount = min(float(order.descuento or 0), gross_order_items)
+        if not order_items:
+            # Compatibilidad con ventas legacy/importadas sin líneas. Conserva
+            # el ingreso, pero marca el coste como desconocido.
+            legacy_gross = float(order.subtotal or order.total or 0)
+            legacy_net = max(0.0, legacy_gross - float(order.descuento or 0))
+            ventas_productos_brutas += legacy_gross
+            ventas_productos_netas += legacy_net
+            ventas_sin_coste += legacy_net
+            lineas_sin_coste += 1
+            continue
+        for item in order_items:
+            gross = float(item.subtotal or 0)
+            allocated_discount = (
+                discount * gross / gross_order_items if gross_order_items > 0 else 0.0
+            )
+            net_sales = max(0.0, gross - allocated_discount)
+            cost, missing_cost, estimated_cost = _costo_item_pedido(item)
+            cogs += cost
+            ventas_productos_brutas += gross
+            ventas_productos_netas += net_sales
+            if missing_cost:
+                ventas_sin_coste += net_sales
+                lineas_sin_coste += 1
+            if estimated_cost:
+                lineas_coste_estimado += 1
+            snapshot = item.producto_snapshot or {}
+            product_id = item.producto_id or snapshot.get("id") or 0
+            row = productos.setdefault(product_id, {
+                "producto_id": product_id,
+                "nombre": snapshot.get("nombre") or (
+                    item.producto.nombre if item.producto else "Producto archivado"
+                ),
+                "categoria": snapshot.get("categoria_nombre") or "Sin categoría",
+                "unidades": 0,
+                "ventas_brutas": 0.0,
+                "descuentos": 0.0,
+                "ventas_netas": 0.0,
+                "coste": 0.0,
+                "coste_incompleto": False,
+                "coste_estimado": False,
+            })
+            row["unidades"] += int(item.cantidad or 0)
+            row["ventas_brutas"] += gross
+            row["descuentos"] += allocated_discount
+            row["ventas_netas"] += net_sales
+            row["coste"] += cost
+            row["coste_incompleto"] = row["coste_incompleto"] or missing_cost
+            row["coste_estimado"] = row["coste_estimado"] or estimated_cost
 
-    margen_bruto = ingresos_netos - cogs
-    margen_bruto_pct = round(margen_bruto / ingresos_netos * 100, 1) if ingresos_netos > 0 else 0.0
+    productos_rentabilidad = []
+    for row in productos.values():
+        row["ganancia"] = row["ventas_netas"] - row["coste"]
+        row["margen_pct"] = (
+            round(row["ganancia"] / row["ventas_netas"] * 100, 1)
+            if row["ventas_netas"] > 0 else 0.0
+        )
+        for key in ("ventas_brutas", "descuentos", "ventas_netas", "coste", "ganancia"):
+            row[key] = round(row[key], 2)
+        productos_rentabilidad.append(row)
+    productos_rentabilidad.sort(
+        key=lambda row: (row["coste_incompleto"], -row["ventas_netas"], row["nombre"])
+    )
+
+    ventas_brutas = ventas_productos_brutas + ingreso_envios
+    margen_bruto = ventas_productos_netas - cogs
+    margen_bruto_pct = (
+        round(margen_bruto / ventas_productos_netas * 100, 1)
+        if ventas_productos_netas > 0 else 0.0
+    )
+    cobertura_costes_pct = (
+        round(max(0.0, ventas_productos_netas - ventas_sin_coste)
+              / ventas_productos_netas * 100, 1)
+        if ventas_productos_netas > 0 else 100.0
+    )
 
     # ── Personal (pagos registrados y pagados en el período) ──────────
     nominas = db.session.query(func.sum(StaffPayment.monto)).filter(
@@ -2688,17 +3545,44 @@ def calcular_pl(fecha_ini, fecha_fin):
         StaffPayment.pagado == True,
         StaffPayment.tipo == "comision"
     ).scalar() or 0
+    anticipos_pagados = db.session.query(func.sum(StaffPayment.monto)).filter(
+        StaffPayment.fecha_pago >= fi, StaffPayment.fecha_pago < ff,
+        StaffPayment.pagado == True,
+        StaffPayment.tipo == "adelanto",
+    ).scalar() or 0
+    liquidaciones_proveedor = db.session.query(func.sum(StaffPayment.monto)).filter(
+        StaffPayment.fecha_pago >= fi, StaffPayment.fecha_pago < ff,
+        StaffPayment.pagado == True,
+        StaffPayment.tipo == "liquidacion_proveedor",
+    ).scalar() or 0
 
     # ── Gastos operativos manuales ────────────────────────────────────
     # Los pagos de nómina/comisión ya se restan arriba y las reversiones de
     # pedidos no son gasto operativo porque esos pedidos no forman ventas.
-    gastos_caja = db.session.query(func.sum(Caja.monto)).filter(
+    movimientos_manuales_egreso = Caja.query.filter(
         Caja.fecha >= fi,
         Caja.fecha < ff,
         Caja.tipo == "egreso",
         Caja.staff_payment_id.is_(None),
         Caja.pedido_id.is_(None),
-    ).scalar() or 0
+    ).all()
+    compras_inventario = sum(
+        float(row.monto or 0)
+        for row in movimientos_manuales_egreso
+        if (row.categoria or "").lower() == "compra_insumos"
+    )
+    gastos_por_categoria = {}
+    for row in movimientos_manuales_egreso:
+        category = (row.categoria or "general").lower()
+        gastos_por_categoria[category] = (
+            gastos_por_categoria.get(category, 0.0) + float(row.monto or 0)
+        )
+    # Comprar inventario es salida de caja, pero su consumo ya aparece como
+    # COGS al venderlo. Excluirlo aquí evita restarlo dos veces del beneficio.
+    gastos_caja = sum(
+        amount for category, amount in gastos_por_categoria.items()
+        if category != "compra_insumos"
+    )
     # Las ventas ya provienen de pedidos entregados; sumar sus movimientos de
     # caja duplicaría ingresos. Aquí solo entran ingresos manuales no ligados.
     otros_ingresos_caja = db.session.query(func.sum(Caja.monto)).filter(
@@ -2708,8 +3592,41 @@ def calcular_pl(fecha_ini, fecha_fin):
         Caja.pedido_id.is_(None),
     ).scalar() or 0
 
+    caja_ingresos = db.session.query(func.sum(Caja.monto)).filter(
+        Caja.fecha >= fi, Caja.fecha < ff, Caja.tipo == "ingreso",
+    ).scalar() or 0
+    caja_egresos = db.session.query(func.sum(Caja.monto)).filter(
+        Caja.fecha >= fi, Caja.fecha < ff, Caja.tipo == "egreso",
+    ).scalar() or 0
+    pagos_pendientes = db.session.query(func.sum(StaffPayment.monto)).filter(
+        StaffPayment.pagado == False,
+        StaffPayment.tipo != "descuento",
+    ).scalar() or 0
+    productos_activos = Product.query.filter_by(activo=True).all()
+    productos_sin_coste = []
+    for product in productos_activos:
+        # En el acuerdo por porcentaje no falta un coste: la obligación del
+        # socio se deriva del PVP y queda congelada en cada línea vendida.
+        if (
+            product.proveedor_despachador
+            and product.proveedor_despachador.modelo_acuerdo == "socio_porcentaje"
+        ):
+            continue
+        combo_items = list(product.combo_items) if product.es_combo else []
+        combo_cost_complete = bool(combo_items) and all(
+            item.componente and item.componente.precio_costo is not None
+            for item in combo_items
+        )
+        if product.precio_costo is None and not combo_cost_complete:
+            productos_sin_coste.append({
+                "id": product.id,
+                "nombre": product.nombre,
+                "es_combo": bool(product.es_combo),
+            })
+
     # ── Cascada final ─────────────────────────────────────────────────
     resultado = (margen_bruto
+                 + float(ingreso_envios)
                  - float(service_commission)
                  - float(nominas)
                  - float(comisiones)
@@ -2725,6 +3642,9 @@ def calcular_pl(fecha_ini, fecha_fin):
         "descuentos_concedidos": float(descuentos),
         "ingresos_netos": ingresos_netos,
         "cogs": cogs,
+        "ventas_productos_brutas": ventas_productos_brutas,
+        "ventas_productos_netas": ventas_productos_netas,
+        "ingreso_envios": float(ingreso_envios),
         "margen_bruto": margen_bruto,
         "margen_bruto_pct": margen_bruto_pct,
         "nominas": float(nominas),
@@ -2732,7 +3652,26 @@ def calcular_pl(fecha_ini, fecha_fin):
         "service_commission": float(service_commission),
         "merchant_net": float(merchant_net),
         "gastos_caja": float(gastos_caja),
+        "compras_inventario": float(compras_inventario),
+        "gastos_por_categoria": [
+            {"categoria": category, "monto": round(amount, 2)}
+            for category, amount in sorted(
+                gastos_por_categoria.items(), key=lambda row: -row[1]
+            )
+        ],
         "otros_ingresos_caja": float(otros_ingresos_caja),
+        "anticipos_pagados": float(anticipos_pagados),
+        "liquidaciones_proveedor": float(liquidaciones_proveedor),
+        "caja_ingresos": float(caja_ingresos),
+        "caja_egresos": float(caja_egresos),
+        "saldo_caja": float(caja_ingresos) - float(caja_egresos),
+        "pagos_pendientes": float(pagos_pendientes),
+        "productos_rentabilidad": productos_rentabilidad,
+        "productos_sin_coste": productos_sin_coste,
+        "lineas_sin_coste": lineas_sin_coste,
+        "lineas_coste_estimado": lineas_coste_estimado,
+        "cobertura_costes_pct": cobertura_costes_pct,
+        "resultado_provisional": bool(lineas_sin_coste),
         "resultado": resultado,
         "resultado_pct": resultado_pct,
         "ticket_medio": ticket_medio,
@@ -2905,6 +3844,24 @@ def _resumen_componente_combo(comp: dict) -> str:
     if not nombre:
         return ""
     qty = int(comp.get("qty") or comp.get("cantidad") or 1)
+    units = comp.get("unidades_cliente") or []
+    if isinstance(units, list) and units:
+        unit_labels = []
+        for index, unit in enumerate(units, start=1):
+            if not isinstance(unit, dict):
+                continue
+            details = []
+            presentation = unit.get("presentacion") or {}
+            if isinstance(presentation, dict):
+                label = presentation.get("label") or presentation.get("tamaño")
+                if label:
+                    details.append(str(label))
+            flavor = unit.get("sabor") or {}
+            if isinstance(flavor, dict) and flavor.get("nombre"):
+                details.append(str(flavor["nombre"]))
+            unit_labels.append(f"#{unit.get('unidad') or index} {' · '.join(details)}".strip())
+        if unit_labels:
+            return f"{qty}× {nombre} ({'; '.join(unit_labels)})"
     detalles = []
     presentacion = comp.get("presentation_cliente") or comp.get("presentacion") or {}
     if isinstance(presentacion, dict):

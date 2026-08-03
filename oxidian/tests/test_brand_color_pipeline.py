@@ -73,11 +73,30 @@ class BrandColorPipelineTest(unittest.TestCase):
         self.assertEqual(p["color_acento"].upper(), "#0000FF")
 
     def _on_color(self, hex_str):
-        """Helper que replica la fórmula de app._on_color para test aislado."""
+        """Replica la selección WCAG de texto claro/oscuro de ``app``."""
         raw = str(hex_str or "").lstrip("#")
         r, g, b = int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16)
-        luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
-        return "#18120A" if luminance > 0.58 else "#FFFFFF"
+
+        def luminance(rgb):
+            channels = []
+            for channel in rgb:
+                normalized = channel / 255
+                channels.append(
+                    normalized / 12.92
+                    if normalized <= 0.04045
+                    else ((normalized + 0.055) / 1.055) ** 2.4
+                )
+            return (
+                0.2126 * channels[0]
+                + 0.7152 * channels[1]
+                + 0.0722 * channels[2]
+            )
+
+        background = luminance((r, g, b))
+        dark = luminance((24, 18, 10))
+        contrast_dark = (max(background, dark) + 0.05) / (min(background, dark) + 0.05)
+        contrast_light = (max(background, 1.0) + 0.05) / (min(background, 1.0) + 0.05)
+        return "#18120A" if contrast_dark >= contrast_light else "#FFFFFF"
 
     def test_on_primario_claro_sobre_fondo_oscuro(self):
         self.assertEqual(self._on_color("#000000"), "#FFFFFF")
@@ -86,6 +105,11 @@ class BrandColorPipelineTest(unittest.TestCase):
         # El amarillo Parcerito debe llevar texto oscuro para contraste.
         self.assertEqual(self._on_color("#FFC200"), "#18120A")
         self.assertEqual(self._on_color("#FFFF00"), "#18120A")
+
+    def test_on_secundario_elige_el_mejor_contraste_para_el_rojo_de_marca(self):
+        # #DA4D40 queda justo por debajo de 4.5:1 con blanco y por encima con
+        # el texto oscuro. La antigua heurística de brillo elegía mal.
+        self.assertEqual(self._on_color("#DA4D40"), "#18120A")
 
     def test_theme_dict_contiene_todos_los_tokens_visuales(self):
         """El objeto brand.theme debe exponer los tokens del tema

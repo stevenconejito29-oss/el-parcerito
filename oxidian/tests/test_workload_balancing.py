@@ -93,15 +93,13 @@ class WorkloadBalancingTest(unittest.TestCase):
         self.assertEqual(res[0].id, b.id)
         self.assertFalse(res[2])  # not overloaded
 
-    def test_elegir_menos_cargado_fallback_si_todos_sobre_tope(self):
+    def test_elegir_menos_cargado_deja_en_cola_si_todos_sobre_tope(self):
         from services import _elegir_menos_cargado
         a = self._mk_user("Ana")
         b = self._mk_user("Ben")
-        # Ambos sobre tope → gana el menor (Ana con 9 < Ben con 10).
+        # Ambos sobre tope → no se oculta la sobrecarga asignando más trabajo.
         cargas = {a.id: 9, b.id: 10}
-        res = _elegir_menos_cargado([a, b], cargas, tope=8)
-        self.assertEqual(res[0].id, a.id)
-        self.assertTrue(res[2])  # overloaded flag True
+        self.assertIsNone(_elegir_menos_cargado([a, b], cargas, tope=8))
 
     def test_elegir_menos_cargado_lista_vacia(self):
         from services import _elegir_menos_cargado

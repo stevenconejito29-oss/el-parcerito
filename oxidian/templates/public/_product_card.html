@@ -1,7 +1,8 @@
-{# ── Tarjeta de producto — KFC/BK grid style ── #}
+{# ── Tarjeta editorial de producto ── #}
 {% from 'partials/heritage_icons.html' import heritage_icon %}
 {# Variable esperada: p (Product) #}
-{% set _qty_cart = (carrito.get(p.id|string, 0) if carrito is defined and carrito_origen == origen_actual else 0)|int %}
+{% set _product_origin = product_origins.get(p.id, origen_actual) if product_origins is defined else origen_actual %}
+{% set _qty_cart = (carrito.get(p.id|string, 0) if carrito is defined and carrito_origen == _product_origin else 0)|int %}
 {% set _card = product_cards[p.id] %}
 {% set _has_extras = _card.has_extras %}
 {% set _tallas = _card.presentations %}
@@ -10,14 +11,15 @@
    canje (granito), combos o regular. Ver epFilterCategory en index.html. #}
 {% set _es_canje = (p.solo_canje or (p.puntos_para_canje and p.puntos_para_canje > 0)) %}
 {% set _card_group = 'canje' if _es_canje else ('combos' if p.es_combo else 'regular') %}
-<div class="ep-card {% if p.es_combo %}ep-card-combo{% endif %} {% if _qty_cart > 0 %}ep-card-in-cart{% endif %}"
+{% set _image_fit = p.get_atributos().get('image_fit', 'contain') %}
+<div class="ep-card {{ 'ep-card-image-cover' if _image_fit == 'cover' else 'ep-card-image-contain' }} {% if p.es_combo %}ep-card-combo{% endif %} {% if _qty_cart > 0 %}ep-card-in-cart{% endif %}"
      data-product-card="{{ p.id }}"
      data-category-id="{{ p.categoria_id or '' }}"
      data-card-group="{{ _card_group }}">
 
   {# ── Imagen ── #}
   <a class="ep-card-img"
-     href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=origen_actual) }}"
+     href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=_product_origin) }}"
      {% if establecimiento.abierto and p.tipo_entrega == 'inmediato' and not p.es_combo and not _has_extras and _card.available %}data-modal-open="{{ p.id }}"{% endif %}
      tabindex="-1" aria-hidden="true">
     {% if p.imagen_url %}
@@ -36,11 +38,16 @@
     {# Badges sobre imagen #}
     <div class="ep-card-badges">
       {% set fb = fulfillment_badge(p) %}
-      <span class="ep-cbadge ep-cbadge-fulfillment" title="{{ fb.title }}">{{ fb.emoji }} {{ fb.label }}</span>
+      <span class="ep-cbadge ep-cbadge-fulfillment" title="{{ fb.title }}">
+        <span aria-hidden="true">{{ fb.emoji }}</span>
+        <span class="ep-cbadge-label">{{ fb.label }}</span>
+      </span>
       {% if p.grupo_pedido %}<span class="ep-cbadge ep-cbadge-encargo">Pedido: {{ p.grupo_pedido }}</span>{% endif %}
       {% if p.es_combo %}<span class="ep-cbadge ep-cbadge-combo">🎁 COMBO</span>{% endif %}
-      {% if _card.has_flavors %}
-      <span class="ep-cbadge ep-cbadge-flavor">🥭 {% if _card.flavor_catalog_max_selecciones > 1 %}Combina {{ _card.flavor_catalog_max_selecciones }} unidades de sabor{% else %}{{ 'Elige sabor' if _card.flavors_required else 'Sabores disponibles' }}{% endif %}</span>
+      {% if p.proveedor_despachador %}
+      <span class="ep-cbadge ep-cbadge-partner" title="Producto respaldado por un socio comercial verificado">
+        🤝 Socio verificado
+      </span>
       {% endif %}
       {% if p.tipo_entrega in ('programado','encargo') %}
       <span class="ep-cbadge ep-cbadge-encargo">📆 Fecha fija{% if p.fecha_llegada %}: {{ p.fecha_llegada.strftime('%d/%m') }}{% endif %}</span>
@@ -81,7 +88,10 @@
       <span class="ep-card-stock-mini">{{ _card.stock }} disp.</span>
       {% endif %}
     </div>
-    <p class="ep-card-name">{{ p.nombre }}</p>
+    <a class="ep-card-title-link"
+       href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=_product_origin) }}">
+      <p class="ep-card-name">{{ p.nombre }}</p>
+    </a>
 
     {% if p.descripcion %}
     <p class="ep-card-desc">{{ p.descripcion }}</p>
@@ -95,6 +105,21 @@
     {% set sels_p  = preview|selectattr('es_seleccionable')|list %}
     {% set gs = sels_p|map(attribute='grupo_display')|unique|list %}
     <div class="ep-card-combo-panel">
+      <div class="ep-card-combo-overview">
+        <div class="ep-card-combo-thumbs" aria-hidden="true">
+          {% for ci in preview[:4] %}
+          <span class="ep-card-combo-thumb">
+            {% if ci.componente.imagen_url %}
+            <img src="{{ ci.componente.imagen_url|upload_url }}" alt="" loading="lazy" decoding="async">
+            {% else %}
+            <span>🎁</span>
+            {% endif %}
+          </span>
+          {% endfor %}
+          {% if preview|length > 4 %}<span class="ep-card-combo-more">+{{ preview|length - 4 }}</span>{% endif %}
+        </div>
+        <span class="ep-card-combo-count">{{ preview|sum(attribute='cantidad') }} productos</span>
+      </div>
       {% if fijos_p %}
       <div class="ep-card-combo-line">
         <span class="ep-card-combo-label">Incluye</span>
@@ -126,19 +151,24 @@
     {% endif %}
     {% endif %}
 
-    {# Alérgenos / hipo (solo en tienda de comida — se ocultan si es catálogo genérico) #}
-    {% if brand.es_comida is not defined or brand.es_comida %}
+    {# Atributos decisivos agrupados: ayudan a elegir sin competir con la foto. #}
+    {% if _card.has_flavors or _card.rating or (brand.es_comida is not defined or brand.es_comida) %}
+    <div class="ep-card-highlights" aria-label="Características del producto">
+      {% if _card.has_flavors %}
+      <span class="ep-card-highlight ep-card-highlight-flavor">🥭 {% if _card.flavor_catalog_max_selecciones > 1 %}Combina sabores{% else %}{{ 'Elige sabor' if _card.flavors_required else 'Con sabores' }}{% endif %}</span>
+      {% endif %}
+      {% if brand.es_comida is not defined or brand.es_comida %}
       {% if p.es_hipoalergenico %}
-      <span class="ep-card-hipo">🌿 Sin alérgenos</span>
+      <span class="ep-card-highlight ep-card-hipo">🌿 Sin alérgenos</span>
       {% else %}
       {% set al = p.alergenos_iconos %}
-      {% if al %}<span class="ep-card-alerg">⚠️ {% for c,i,l in al[:4] %}<span title="{{ l }}">{{ i }}</span>{% endfor %}{% if al|length > 4 %} +{{ al|length - 4 }}{% endif %}</span>{% endif %}
+      {% if al %}<span class="ep-card-highlight ep-card-alerg">⚠️ {% for c,i,l in al[:4] %}<span title="{{ l }}">{{ i }}</span>{% endfor %}{% if al|length > 4 %} +{{ al|length - 4 }}{% endif %}</span>{% endif %}
       {% endif %}
-    {% endif %}
-
-    {# Rating #}
-    {% if _card.rating %}
-    <span class="ep-card-rating">★ {{ "%.1f"|format(_card.rating) }}</span>
+      {% endif %}
+      {% if _card.rating %}
+      <span class="ep-card-highlight ep-card-rating">★ {{ "%.1f"|format(_card.rating) }}</span>
+      {% endif %}
+    </div>
     {% endif %}
 
     {# Footer: precio + acción #}
@@ -164,6 +194,11 @@
           <span class="ep-card-price-note">Precio fijo</span>
           {% endif %}
         {% endif %}
+        {% if _qty_cart > 0 %}
+        <span class="ep-card-cart-state" aria-label="Este producto ya está en tu canasta">
+          ✓ En tu canasta
+        </span>
+        {% endif %}
       </div>
 
       {# Chips de tallas (retail) o tamaños (comida) — solo si hay presentaciones #}
@@ -188,13 +223,14 @@
       {% elif not _card.available %}
         <span class="ep-btn-sold">Agotado</span>
       {% elif p.tipo_entrega in ('encargo','programado') or p.es_combo or _has_extras %}
-        <a href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=origen_actual) }}" class="ep-btn-detail">
-          {% if p.es_combo or _has_extras %}Personalizar{% else %}Ver fecha{% endif %}
+        <a href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=_product_origin) }}" class="ep-btn-detail">
+          {% if p.es_combo %}Armar combo{% elif _has_extras %}Personalizar{% else %}Ver fecha{% endif %}
         </a>
       {% else %}
-        <button type="button" class="ep-btn-add" aria-label="Añadir {{ p.nombre }}"
-                data-modal-open="{{ p.id }}">
+        <button type="button" class="ep-btn-add" aria-label="{{ 'Añadir otra unidad de ' if _qty_cart > 0 else 'Añadir ' }}{{ p.nombre }}"
+                data-modal-open="{{ p.id }}" data-product-name="{{ p.nombre }}">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span class="ep-btn-add-label">{{ ui.product_add_short }}</span>
         </button>
       {% endif %}
     </div>

@@ -11,6 +11,7 @@ class EmployeeAuthBoundaryTest(unittest.TestCase):
     def test_only_internal_roles_are_authenticable(self):
         expected = {
             "super_admin", "admin", "preparacion", "repartidor", "cocina",
+            "socio_producto", "proveedor",
         }
         self.assertEqual(set(ROLES_AUTENTICABLES), expected)
 

@@ -7,6 +7,7 @@ from sqlalchemy.orm import joinedload
 from extensions import db, get_or_404
 from models import Order, OrderEvent, OrderItem, User, AuditLog, StaffPayment, normalizar_metodo_pago
 from services import (
+    asignar_repartidor_pedido,
     avanzar_estado_pedido,
     generar_comision_entrega,
     award_points_on_delivery,
@@ -15,7 +16,9 @@ from services import (
     registrar_pago_pedido,
     registrar_ingreso_pedido,
     redistribuir_listos_sin_repartidor,
+    capacidad_repartidor,
     solicitar_resena_pedido,
+    pedidos_activos_que_bloquean_modulo,
 )
 
 repartidor_bp = Blueprint("repartidor", __name__)
@@ -26,7 +29,10 @@ logger = logging.getLogger(__name__)
 def exigir_delivery_habilitado():
     from store_config import get_store_features
 
-    if not get_store_features()["delivery"]:
+    if (
+        not get_store_features()["delivery"]
+        and pedidos_activos_que_bloquean_modulo("delivery") == 0
+    ):
         flash("El módulo de delivery está desactivado para esta tienda.", "info")
         if current_user.is_authenticated and current_user.rol in ("admin", "super_admin"):
             return redirect(url_for("admin.dashboard"))
@@ -172,27 +178,14 @@ def ruta():
         else:
             listos = []
 
+        # Un pedido ya despachado sólo es visible para quien asumió la ruta.
+        # Mostrar en_ruta sin asignar a todos los repartidores exponía datos
+        # del cliente y permitía que dos personas intentaran gestionarlo.
         filtros_en_ruta = [
             Order.estado == "en_ruta",
             Order.repartidor_id == current_user.id,
             Order.tipo_entrega_cliente == "delivery",
         ]
-        if disponible:
-            filtros_en_ruta = [
-                Order.estado == "en_ruta",
-                db.or_(
-                    Order.repartidor_id == current_user.id,
-                    Order.repartidor_id.is_(None),
-                ),
-                Order.tipo_entrega_cliente == "delivery",
-            ]
-            if aplicar_filtro_zona:
-                filtros_en_ruta.append(
-                    db.or_(
-                        Order.repartidor_id == current_user.id,
-                        Order.zona_id == zona_asignada_id,
-                    )
-                )
         en_ruta = Order.query.options(_eager_zona).filter(
             *filtros_en_ruta
         ).order_by(Order.creado_en).all()
@@ -233,7 +226,21 @@ def tomar_pedido(pedido_id):
     if pedido.repartidor_id and pedido.repartidor_id != current_user.id and not _es_admin_operativo():
         flash("Este pedido ya está asignado a otro repartidor.", "warning")
         return redirect(url_for("repartidor.ruta"))
-    pedido.repartidor_id = current_user.id
+    if not pedido.repartidor_id:
+        if capacidad_repartidor(current_user.id) <= 0:
+            flash(
+                "Tu ruta alcanzó el máximo de pedidos simultáneos. "
+                "Completa una entrega antes de tomar otra.",
+                "warning",
+            )
+            return redirect(url_for("repartidor.ruta"))
+    asignar_repartidor_pedido(
+        pedido,
+        current_user.id,
+        actor_id=current_user.id,
+        canal="repartidor",
+        aceptado=True,
+    )
     db.session.commit()
     flash(f"Pedido {pedido.numero_pedido} asignado a ti.", "success")
     return redirect(url_for("repartidor.ruta"))
@@ -273,6 +280,7 @@ def tomar_multiples():
     if not _requiere_disponible_para_nuevo_trabajo():
         return redirect(url_for("repartidor.ruta"))
     asignados, omitidos = 0, 0
+    capacidad = capacidad_repartidor(current_user.id)
     for pid in ids:
         pedido = Order.query.filter_by(id=pid).with_for_update().first()
         if pedido is None or pedido.estado != "listo" or not pedido.requiere_reparto:
@@ -281,7 +289,18 @@ def tomar_multiples():
         if pedido.repartidor_id not in (None, current_user.id):
             omitidos += 1
             continue
-        pedido.repartidor_id = current_user.id
+        if pedido.repartidor_id is None and capacidad <= 0:
+            omitidos += 1
+            continue
+        if pedido.repartidor_id is None:
+            capacidad -= 1
+        asignar_repartidor_pedido(
+            pedido,
+            current_user.id,
+            actor_id=current_user.id,
+            canal="repartidor_lote",
+            aceptado=True,
+        )
         asignados += 1
     db.session.commit()
     if asignados:
@@ -309,7 +328,10 @@ def salir_multiples():
     if not ids:
         flash("No seleccionaste ningún pedido.", "warning")
         return redirect(url_for("repartidor.ruta"))
+    if not _es_admin_operativo() and not _requiere_disponible_para_nuevo_trabajo():
+        return redirect(url_for("repartidor.ruta"))
     despachados, fallidos = 0, []
+    capacidad = None if _es_admin_operativo() else capacidad_repartidor(current_user.id)
     for pid in ids:
         pedido = Order.query.filter_by(id=pid).with_for_update().first()
         if pedido is None or pedido.estado != "listo" or not pedido.requiere_reparto:
@@ -322,7 +344,25 @@ def salir_multiples():
             if _es_admin_operativo():
                 fallidos.append(pedido.numero_pedido)
                 continue
-            pedido.repartidor_id = current_user.id
+            if capacidad <= 0:
+                fallidos.append(pedido.numero_pedido)
+                continue
+            asignar_repartidor_pedido(
+                pedido,
+                current_user.id,
+                actor_id=current_user.id,
+                canal="repartidor_lote",
+                aceptado=True,
+            )
+            capacidad -= 1
+        elif not _es_admin_operativo():
+            asignar_repartidor_pedido(
+                pedido,
+                current_user.id,
+                actor_id=current_user.id,
+                canal="repartidor_lote",
+                aceptado=True,
+            )
         try:
             avanzar_estado_pedido(pedido, actor_id=current_user.id, canal="repartidor")
             enviar_whatsapp_estado(pedido)
@@ -368,7 +408,28 @@ def salir_entregar(pedido_id):
         if _es_admin_operativo():
             flash("Asigna un repartidor antes de despachar el pedido.", "warning")
             return redirect(url_for("repartidor.ruta"))
-        pedido.repartidor_id = current_user.id
+        if capacidad_repartidor(current_user.id) <= 0:
+            flash(
+                "Tu ruta alcanzó el máximo de pedidos simultáneos. "
+                "Completa una entrega antes de iniciar otra.",
+                "warning",
+            )
+            return redirect(url_for("repartidor.ruta"))
+        asignar_repartidor_pedido(
+            pedido,
+            current_user.id,
+            actor_id=current_user.id,
+            canal="repartidor",
+            aceptado=True,
+        )
+    elif not _es_admin_operativo():
+        asignar_repartidor_pedido(
+            pedido,
+            current_user.id,
+            actor_id=current_user.id,
+            canal="repartidor",
+            aceptado=True,
+        )
 
     try:
         avanzar_estado_pedido(pedido, actor_id=current_user.id, canal="repartidor")
@@ -411,7 +472,13 @@ def enviar_codigo_entrega(pedido_id):
             return redirect(url_for("repartidor.ruta"))
         if not _requiere_disponible_para_nuevo_trabajo():
             return redirect(url_for("repartidor.ruta"))
-        pedido.repartidor_id = current_user.id
+        asignar_repartidor_pedido(
+            pedido,
+            current_user.id,
+            actor_id=current_user.id,
+            canal="repartidor",
+            aceptado=True,
+        )
     if not pedido.cliente or not pedido.cliente.telefono:
         flash("Este cliente no tiene teléfono para enviar el código.", "warning")
         return redirect(url_for("repartidor.ruta"))
@@ -462,6 +529,12 @@ def confirmar_entrega(pedido_id):
     codigo_ingresado = request.form.get("codigo_confirmacion", "").strip()
 
     metodo_pago = normalizar_metodo_pago(pedido.metodo_pago)
+    if not metodo_pago:
+        flash(
+            "El pedido no tiene un método de pago válido. Operación debe corregirlo antes de entregar.",
+            "danger",
+        )
+        return redirect(url_for("repartidor.ruta"))
     if metodo_pago == "bizum":
         bizum_recibido = bool(request.form.get("bizum_recibido"))
         if not pedido.pago_confirmado and not bizum_recibido:

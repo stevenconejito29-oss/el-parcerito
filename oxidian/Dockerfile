@@ -29,6 +29,16 @@ RUN apt-get update \
 # ── Código fuente Python ──────────────────────────────────────
 COPY --chown=oxidian:oxidian oxidian/ .
 
+# Leaflet se sirve desde el propio dominio. Evita que el editor de cobertura
+# dependa de un CDN en producción y mantiene JS, CSS e iconos en la misma
+# versión declarada por package-lock.json.
+RUN npm ci --omit=dev --no-audit --no-fund \
+    && mkdir -p /app/static/vendor/leaflet/images \
+    && cp node_modules/leaflet/dist/leaflet.css /app/static/vendor/leaflet/ \
+    && cp node_modules/leaflet/dist/leaflet.js /app/static/vendor/leaflet/ \
+    && cp node_modules/leaflet/dist/images/* /app/static/vendor/leaflet/images/ \
+    && rm -rf node_modules
+
 # ── Chatbot Node en el mismo contenedor ───────────────────────
 WORKDIR /app/chat
 COPY --chown=oxidian:oxidian chat/package*.json ./

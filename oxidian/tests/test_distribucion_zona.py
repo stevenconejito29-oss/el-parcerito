@@ -13,7 +13,7 @@ from flask import Flask
 from unittest.mock import patch
 
 from extensions import db
-from models import Order, User, ZonaEntrega
+from models import Order, SiteConfig, User, ZonaEntrega
 
 
 class DistribucionRepartidorZonaTest(unittest.TestCase):
@@ -73,7 +73,7 @@ class DistribucionRepartidorZonaTest(unittest.TestCase):
 
     def _mk_pedido(self, zona_id):
         o = Order(
-            numero_pedido=f"TEST-Z-{zona_id or 'none'}",
+            numero_pedido=f"TEST-Z-{zona_id or 'none'}-{Order.query.count() + 1}",
             cliente_id=self.cliente.id,
             total=10,
             subtotal=10,
@@ -116,6 +116,16 @@ class DistribucionRepartidorZonaTest(unittest.TestCase):
         db.session.commit()
         asignado = self._distribuir(self._mk_pedido(self.zona_norte.id))
         self.assertEqual(asignado.id, self.rep_sur.id)
+
+    def test_especialista_saturado_cae_a_comodin_con_capacidad(self):
+        SiteConfig.set("MAX_PEDIDOS_POR_REPARTIDOR", "1", descripcion="test")
+        ocupado = self._mk_pedido(self.zona_norte.id)
+        ocupado.repartidor_id = self.rep_norte.id
+        db.session.commit()
+
+        asignado = self._distribuir(self._mk_pedido(self.zona_norte.id))
+
+        self.assertEqual(asignado.id, self.rep_libre.id)
 
 
 if __name__ == "__main__":

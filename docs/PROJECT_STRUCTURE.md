@@ -68,11 +68,14 @@ La fuente de verdad es `models.ROLES` y `models.ROLES_AUTENTICABLES`.
 | `cocina` | Login | Pedidos inmediatos de comida o almacén según el nicho activo. |
 | `preparacion` | Login | Pedidos programados, encargos y preparación retail. |
 | `repartidor` | Login | Ruta, contacto operativo, entrega y comisiones. |
+| `socio_producto` | Login | Propone catálogo propio, consulta stock bajo custodia y sus liquidaciones separadas. |
 | `cliente` | Sin panel autenticado | Identidad comercial asociada al teléfono y a sus pedidos. |
 
-`staff` es un alias de compatibilidad para preparación. `marketing` y
-`proveedor` conservan rutas/modelos históricos, pero no son roles autenticables
-vigentes. No deben reactivarse accidentalmente desde navegación o seeds.
+`staff` es un alias de compatibilidad para preparación. `marketing` y el
+operador clásico `proveedor` conservan rutas/modelos históricos, pero no son
+roles autenticables vigentes. `socio_producto` sí es el rol actual del socio
+capital y usa el módulo de proveedor con aislamiento por entidad. Los roles
+legacy no deben reactivarse accidentalmente desde navegación o seeds.
 
 ## Áreas HTTP
 

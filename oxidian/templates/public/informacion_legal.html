@@ -1,12 +1,76 @@
 {% extends "base.html" %}
-{% block title %}Privacidad y condiciones — {{ brand.nombre }}{% endblock %}
+{% block title %}Información legal y privacidad — {{ brand.nombre }}{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/legal-public.css', v=asset_version) }}">{% endblock %}
 {% block content %}
-<main class="legal-page"><header class="legal-head"><span>Información de confianza</span><h1>Privacidad, cookies y condiciones</h1><p>Cómo utilizamos la información necesaria para preparar, cobrar y entregar tu pedido.</p></header><div class="legal-grid">
-<section><h2>Responsable y contacto</h2><p>El responsable es {{ brand.nombre }}.{% if brand.telefono %} Atención: {{ brand.telefono }}.{% endif %}</p></section>
-<section><h2>Datos del pedido</h2><p>Usamos nombre, teléfono, dirección y contenido del pedido para gestionarlo, informar de su estado, entregarlo y resolver incidencias.</p></section>
-<section><h2>Pago seguro</h2><p>Nunca te pediremos contraseñas, claves bancarias ni códigos de acceso por WhatsApp.</p></section>
-<section><h2>Cookies y almacenamiento</h2><p>La sesión, la {{ ui.cart_name }}, la seguridad y las preferencias requieren almacenamiento técnico. Cualquier uso no esencial deberá solicitar permiso antes de activarse.</p></section>
-<section><h2>Conservación y derechos</h2><p>Los datos se conservan durante los plazos necesarios. Puedes solicitar acceso, rectificación o supresión cuando corresponda.</p></section>
-{% if brand.es_comida %}<section><h2>Alérgenos</h2><p>Contacta con la tienda antes de comprar si tienes alergias o intolerancias.</p></section>{% endif %}
-</div><p class="legal-update">Información revisada en julio de 2026. El titular debe completar sus datos fiscales y condiciones particulares aplicables.</p></main>
+<article class="legal-page">
+  <header class="legal-hero">
+    <p>Información transparente</p>
+    <h1>Privacidad, almacenamiento y condiciones de compra</h1>
+    <span>Versión {{ legal.version }}</span>
+  </header>
+
+  {% if legal.faltantes %}
+  <aside class="legal-warning" role="status">
+    <strong>Información del titular pendiente de completar</strong>
+    <p>Antes de la apertura pública, el responsable debe configurar: {{ legal.faltantes|join(', ') }}.</p>
+  </aside>
+  {% endif %}
+
+  <nav class="legal-index" aria-label="Contenido legal">
+    <a href="#aviso-legal">Aviso legal</a><a href="#privacidad">Privacidad</a>
+    <a href="#almacenamiento">Cookies y almacenamiento</a><a href="#condiciones-compra">Condiciones de compra</a>
+  </nav>
+
+  <section id="aviso-legal" class="legal-card">
+    <h2>1. Titular y contacto</h2>
+    <dl>
+      <div><dt>Titular</dt><dd>{{ legal.titular or 'Pendiente de configurar' }}</dd></div>
+      {% if legal.nombre_comercial and legal.nombre_comercial != legal.titular %}<div><dt>Nombre comercial</dt><dd>{{ legal.nombre_comercial }}</dd></div>{% endif %}
+      <div><dt>NIF/CIF</dt><dd>{{ legal.nif or 'Pendiente de configurar' }}</dd></div>
+      <div><dt>Domicilio</dt><dd>{{ legal.direccion or 'Pendiente de configurar' }}</dd></div>
+      <div><dt>Correo</dt><dd>{% if legal.email %}<a href="mailto:{{ legal.email }}">{{ legal.email }}</a>{% else %}Pendiente de configurar{% endif %}</dd></div>
+      {% if legal.telefono %}<div><dt>Teléfono</dt><dd>{{ legal.telefono }}</dd></div>{% endif %}
+      {% if legal.registro %}<div><dt>Registro</dt><dd>{{ legal.registro }}</dd></div>{% endif %}
+    </dl>
+    <p>El acceso y uso de esta tienda están sujetos a esta información, a las condiciones mostradas durante la compra y a la normativa española y europea aplicable.</p>
+  </section>
+
+  <section id="privacidad" class="legal-card">
+    <h2>2. Protección de datos</h2>
+    <h3>Qué tratamos y para qué</h3>
+    <p>Tratamos nombre, teléfono, dirección o ubicación de entrega, contenido del pedido, método de pago elegido, comunicaciones e incidencias para tramitar y entregar pedidos, atender consultas, prevenir fraude y cumplir obligaciones fiscales y contables.</p>
+    <h3>Base jurídica</h3>
+    <p>La ejecución del pedido sustenta los datos necesarios para comprar; las obligaciones legales sustentan la conservación fiscal; la seguridad y defensa de reclamaciones se apoyan en interés legítimo. Las preferencias opcionales del dispositivo se guardan únicamente con tu consentimiento.</p>
+    <h3>Destinatarios y transferencias</h3>
+    <p>Acceden solo el personal y proveedores necesarios para alojamiento, mensajería, reparto o cobro, bajo sus funciones y contratos. No vendemos datos. Si un proveedor trata datos fuera del Espacio Económico Europeo, debe existir una garantía válida conforme al RGPD.</p>
+    <h3>Conservación</h3>
+    <p>{{ legal.retencion }}</p>
+    <h3>Tus derechos</h3>
+    <p>Puedes solicitar acceso, rectificación, supresión, oposición, limitación o portabilidad y retirar consentimientos sin afectar al tratamiento previo. Escríbenos a {% if legal.email_privacidad %}<a href="mailto:{{ legal.email_privacidad }}">{{ legal.email_privacidad }}</a>{% else %}la dirección de contacto pendiente de configurar{% endif %}. También puedes reclamar ante la Agencia Española de Protección de Datos.</p>
+  </section>
+
+  <section id="almacenamiento" class="legal-card">
+    <h2>3. Cookies y almacenamiento del dispositivo</h2>
+    <div class="legal-storage-grid">
+      <div><strong>Necesario</strong><p>Sesión, seguridad, protección CSRF, contenido de la canasta y la propia decisión de privacidad. Es imprescindible para prestar la tienda y no se usa para publicidad.</p></div>
+      <div><strong>Preferencias · opcional</strong><p>Permite recordar en este dispositivo los datos de contacto y entrega del checkout. Está desactivado hasta que lo aceptes y puedes retirarlo en cualquier momento.</p></div>
+    </div>
+    <p>Actualmente la tienda no instala analítica ni publicidad de terceros. Si esto cambia, aparecerán nuevas categorías desactivadas por defecto y se actualizará esta política.</p>
+    <button type="button" class="legal-privacy-button" data-privacy-open>Configurar privacidad</button>
+  </section>
+
+  <section id="condiciones-compra" class="legal-card">
+    <h2>4. Condiciones de compra</h2>
+    <h3>Pedido, precios y pago</h3>
+    <p>Antes de confirmar se muestran las características seleccionadas, cantidades, precio total, impuestos incluidos cuando corresponda, entrega y método de pago. Pulsar “Confirmar pedido con obligación de pago” envía un pedido vinculante. La confirmación y el número de pedido se muestran al finalizar y pueden comunicarse por WhatsApp.</p>
+    <h3>Disponibilidad y entrega</h3>
+    <p>La aceptación depende del horario, stock, fecha programada y cobertura vigentes. La estimación de entrega puede variar por volumen, tráfico o incidencias; cualquier cambio relevante se comunica al cliente.</p>
+    <h3>Cancelaciones, desistimiento e incidencias</h3>
+    <p>{{ legal.devoluciones }}</p>
+    <h3>Alérgenos y seguridad</h3>
+    <p>La información de alérgenos disponible acompaña al producto cuando aplica. Si tienes alergias o intolerancias, consulta con el establecimiento antes de confirmar: la manipulación compartida puede implicar trazas.</p>
+    <h3>Reclamaciones</h3>
+    <p>Comunica cualquier error o defecto con el número de pedido mediante los datos de contacto del titular. Se aplicarán las garantías legales de conformidad que correspondan.</p>
+  </section>
+</article>
 {% endblock %}

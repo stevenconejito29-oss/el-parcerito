@@ -1,0 +1,75 @@
+.ox-privacy-banner {
+  position: fixed;
+  z-index: 9500;
+  inset: auto max(12px, env(safe-area-inset-right, 0px)) max(12px, calc(env(safe-area-inset-bottom, 0px) + 10px)) max(12px, env(safe-area-inset-left, 0px));
+  max-width: 52rem;
+  margin-inline: auto;
+  padding: clamp(.9rem, 3vw, 1.2rem);
+  border: 1px solid var(--col-border-2);
+  border-radius: 1rem;
+  background: var(--col-elevated);
+  color: var(--col-text);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .3);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .85rem;
+  align-items: center;
+}
+.ox-privacy-banner[hidden], .ox-privacy-layer[hidden] { display: none; }
+.ox-privacy-banner h2 { font-size: 1rem; margin: 0 0 .25rem; }
+.ox-privacy-banner p { margin: 0; color: var(--col-muted); font-size: .8rem; line-height: 1.45; }
+.ox-privacy-banner p a { color: var(--action-primary); text-decoration: underline; }
+.ox-privacy-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
+.ox-privacy-actions button, .ox-privacy-settings {
+  min-height: 44px;
+  padding: .55rem .8rem;
+  border-radius: .7rem;
+  border: 1px solid var(--action-primary);
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+/* Aceptar y rechazar tienen idéntico peso visual; configurar es secundaria. */
+.ox-privacy-actions button { background: var(--action-primary); color: var(--action-on-primary); }
+.ox-privacy-actions .ox-privacy-settings { border-color: var(--col-border); background: transparent; color: var(--col-text); }
+.ox-privacy-layer {
+  position: fixed;
+  z-index: 9600;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  background: rgba(0, 0, 0, .62);
+}
+.ox-privacy-dialog {
+  width: min(34rem, 100%);
+  max-height: min(88dvh, 42rem);
+  overflow: auto;
+  border: 1px solid var(--col-border-2);
+  border-radius: 1rem;
+  padding: clamp(1rem, 4vw, 1.4rem);
+  background: var(--col-elevated);
+  color: var(--col-text);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, .45);
+}
+.ox-privacy-dialog h2 { font-size: 1.25rem; margin: 0; }
+.ox-privacy-dialog > p { color: var(--col-muted); font-size: .84rem; line-height: 1.5; }
+.ox-privacy-option { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .75rem; padding: .85rem 0; border-top: 1px solid var(--col-border); }
+.ox-privacy-option strong, .ox-privacy-option span { display: block; }
+.ox-privacy-option span { margin-top: .2rem; color: var(--col-muted); font-size: .76rem; line-height: 1.4; }
+.ox-privacy-required { color: var(--theme-success) !important; font-weight: 850; }
+.ox-privacy-switch { width: 48px; height: 28px; accent-color: var(--action-primary); }
+.ox-privacy-dialog .ox-privacy-actions { margin-top: 1rem; }
+.ox-privacy-open { overflow: hidden; }
+.ep-footer-mobile-links button { appearance: none; border: 0; padding: 0; background: transparent; color: var(--brand-primary); font: inherit; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+@media (max-width: 640px) {
+  .ox-privacy-banner { grid-template-columns: 1fr; }
+  .ox-privacy-actions { display: grid; grid-template-columns: 1fr 1fr; justify-content: stretch; }
+  .ox-privacy-settings { grid-column: 1 / -1; }
+  .ox-privacy-actions button { width: 100%; }
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  .ox-privacy-banner { max-height: calc(100dvh - 20px); overflow: auto; grid-template-columns: minmax(0, 1fr) minmax(15rem, .65fr); padding: .75rem; }
+  .ox-privacy-dialog { max-height: calc(100dvh - 20px); }
+}

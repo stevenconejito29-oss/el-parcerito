@@ -10,6 +10,8 @@
     <p class="text-sm mt-1" style="color:var(--col-muted)">Gestiona la conexión, estado, QR y configuración técnica del bot.</p>
   </div>
   <div class="flex flex-wrap gap-2">
+    <a class="ox-btn-ghost text-sm" href="{{ url_for('superadmin.chatbot_faq_lista') }}">📚 Base de conocimiento</a>
+    <a class="ox-btn-ghost text-sm" href="{{ url_for('superadmin.chatbot_simulador') }}">🧪 Simulador</a>
     <form method="POST" action="{{ url_for('superadmin.sincronizar_chatbot') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="ox-btn-primary text-sm" type="submit">🔄 Sincronizar credenciales</button>

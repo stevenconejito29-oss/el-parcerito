@@ -22,7 +22,27 @@
   if (typeof window === 'undefined') return;
 
   const supportsVT = typeof document.startViewTransition === 'function';
-  const SCROLL_HISTORY = new Map(); // href → { top, left }
+  // LRU: SCROLL_HISTORY nunca crece sin control (evita GC pauses en Android
+  // low-end tras 100+ navegaciones en una sesión de shopping).
+  function createLRU(max) {
+    const map = new Map();
+    return {
+      get(k) { return map.get(k); },
+      set(k, v) {
+        if (map.has(k)) map.delete(k);
+        map.set(k, v);
+        if (map.size > max) {
+          // Elimina la clave más antigua (primera del iterador).
+          map.delete(map.keys().next().value);
+        }
+      },
+      has(k) { return map.has(k); },
+      size() { return map.size; },
+    };
+  }
+  const SCROLL_HISTORY = createLRU(50); // href → { top, left } capado a 50
+  const PREFETCH_CACHE = createLRU(15); // href → { doc, t } capado a 15 páginas
+  const PREFETCH_TTL_MS = 45 * 1000;    // 45s de frescura para HTML público
   const parser = new DOMParser();
   let renderedRoute = normalizePath(location.pathname) + location.search;
 
@@ -52,15 +72,40 @@
     return true;
   }
 
-  async function fetchPage(url) {
+  async function fetchPage(url, { fromCache = true } = {}) {
+    // Cache hit dentro de TTL: respuesta instantánea, sin fetch. Cuando el
+    // usuario navega Menu→Producto→Menu→Producto (patrón típico), la vuelta
+    // es ~0ms en vez de ~200-400ms de round-trip.
+    if (fromCache) {
+      const cached = PREFETCH_CACHE.get(url);
+      if (cached && (Date.now() - cached.t) < PREFETCH_TTL_MS) {
+        return cached.doc;
+      }
+    }
     const res = await fetch(url, {
       headers: { 'X-SPA-Nav': '1', 'Accept': 'text/html' },
       credentials: 'same-origin',
-      cache: 'no-store',
+      // Quitamos `no-store` para permitir que el SW SWR sirva desde su cache
+      // HTML si la ruta es fresca. Combined with server ETag + max-age del SW.
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const html = await res.text();
-    return parser.parseFromString(html, 'text/html');
+    const doc = parser.parseFromString(html, 'text/html');
+    PREFETCH_CACHE.set(url, { doc, t: Date.now() });
+    return doc;
+  }
+
+  // Prefetch en touchstart/mouseenter: cuando el usuario apunta a un enlace,
+  // ya empezamos a bajar el HTML antes de que suelte el dedo. Sin JS bloqueo:
+  // el fetch va a background con `Priority: low` implícito. Cero coste de UX
+  // si el usuario cancela — el HTML queda en PREFETCH_CACHE para uso futuro.
+  const prefetching = new Set();
+  function prefetchLink(href) {
+    if (prefetching.has(href) || PREFETCH_CACHE.has(href)) return;
+    prefetching.add(href);
+    fetchPage(href, { fromCache: false })
+      .catch(() => {})
+      .finally(() => prefetching.delete(href));
   }
 
   function sameOrderedValues(left, right) {
@@ -280,10 +325,20 @@
     navigate(a.href);
   }, true);
 
-  // No se precarga HTML dinámico: estas respuestas contienen sesión, CSRF y
-  // disponibilidad en tiempo real. La implementación anterior descargaba cada
-  // enlace al tocarlo y volvía a descargarlo al navegar (`no-store`), duplicando
-  // tráfico precisamente en móviles. Los recursos estáticos los gestiona el SW.
+  // Prefetch inteligente para HTML público (menu, producto/N): al primer
+  // touchstart o mouseenter sobre un enlace elegible, empezamos a bajar el
+  // HTML en background. Cuando el usuario suelta el dedo y suelta el click,
+  // `navigate()` lo encuentra ya cacheado en PREFETCH_CACHE.
+  // No se precarga HTML SESSION-SPECIFIC (carrito/checkout/admin) — esos
+  // contienen CSRF y disponibilidad en vivo y están en HEAVY_RE. `shouldIntercept`
+  // ya los filtra.
+  const prefetchHandler = (ev) => {
+    const a = ev.target.closest ? ev.target.closest('a[href]') : null;
+    if (!a || !shouldIntercept(a, { defaultPrevented: false, button: 0 })) return;
+    prefetchLink(a.href);
+  };
+  document.addEventListener('touchstart', prefetchHandler, { passive: true, capture: true });
+  document.addEventListener('mouseenter', prefetchHandler, { capture: true });
 
   window.addEventListener('popstate', () => {
     // Un cambio exclusivo de hash (#buscar) conserva el mismo documento.

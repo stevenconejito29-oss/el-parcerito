@@ -170,6 +170,23 @@ class BatchLifecycleTest(unittest.TestCase):
             },
         )
 
+    def test_agregado_excluye_pedido_que_aun_no_confirmo_telefono(self):
+        from routes.preparador import _lotes_agregados
+
+        prod = self._mk_producto()
+        batch = self._mk_batch(prod, maximo=20)
+        confirmado = self._mk_pedido_con_tandas(prod, batch, 2, estado="pendiente")
+        confirmado.confirmacion_estado = "confirmed"
+        sin_confirmar = self._mk_pedido_con_tandas(prod, batch, 3, estado="pendiente")
+        sin_confirmar.confirmacion_estado = "pending"
+        db.session.commit()
+
+        lotes = _lotes_agregados(fecha=batch.fecha_entrega)
+
+        self.assertEqual(len(lotes), 1)
+        self.assertEqual(lotes[0]["tandas_totales"], 2)
+        self.assertEqual(lotes[0]["pedidos"], [confirmado.numero_pedido])
+
     # ── integración con el flujo real de cancelación ─────────────
     def test_ejecutar_cancelacion_libera_tandas(self):
         """Cierra el ciclo: cancelar pedido de lote via el flujo real
@@ -274,6 +291,53 @@ class BatchLifecycleTest(unittest.TestCase):
         self.assertEqual(agregado[0]["producto_nombre"], "Producto confirmado")
         self.assertEqual(agregado[0]["unidades_totales"], 3)
         self.assertEqual(agregado[0]["pedidos_total"], 1)
+
+    def test_agregado_no_pierde_linea_legacy_de_producto_con_batch(self):
+        """Una línea antigua sin batch_id sigue contando; no puede desaparecer.
+
+        La presencia de un ProductBatch del mismo producto/fecha no demuestra
+        que la línea ya esté incluida: la fuente canónica es el batch_id
+        congelado en el OrderItem.
+        """
+        from routes.preparador import _encargos_agregados_por_fecha
+
+        producto = self._mk_producto(por_lote=4)
+        batch = self._mk_batch(producto, maximo=10)
+        BatchLifecycleTest._seq += 1
+        pedido = Order(
+            numero_pedido=f"LEGACY-{self._seq:04d}",
+            cliente_id=self.cliente.id,
+            total=12,
+            subtotal=12,
+            estado="pendiente",
+        )
+        db.session.add(pedido)
+        db.session.flush()
+        db.session.add(OrderItem(
+            pedido_id=pedido.id,
+            producto_id=producto.id,
+            cantidad=3,
+            precio_unit=4,
+            subtotal=12,
+            metadata_json=json.dumps({
+                "entrega_programada": batch.fecha_entrega.isoformat(),
+                "producto": {
+                    "nombre": producto.nombre,
+                    "tipo_entrega": "programado",
+                    "fecha_llegada": batch.fecha_entrega.isoformat(),
+                },
+            }),
+        ))
+        db.session.commit()
+
+        agregado = _encargos_agregados_por_fecha(batch.fecha_entrega)
+        self.assertEqual(len(agregado), 1)
+        self.assertFalse(agregado[0]["es_lote"])
+        self.assertEqual(agregado[0]["unidades_totales"], 3)
+        self.assertEqual(
+            agregado[0]["variaciones"],
+            [{"nombre": "Sin variante", "unidades": 3}],
+        )
 
     def test_agregado_excluye_cancelados_y_entregados(self):
         from routes.preparador import _lotes_agregados

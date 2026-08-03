@@ -26,7 +26,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from extensions import db, get_or_404, limiter, csrf
 from models import (Product, Categoria, Order, OrderItem, Review, Coupon,
-                     ComboItem, ProductExtraGroup, ProductExtraOption, SiteConfig,
+                     ComboItem, ProductExtraGroup, ProductExtraOption,
+                     ProductPresentation, SiteConfig,
                      ZonaEntrega, MenuConfig, User, Proveedor, normalizar_metodo_pago,
                      AffiliateCode, IdempotencyKey, metadata_componente_combo,
                      metadata_item_pedido, utcnow as _utcnow,
@@ -131,6 +132,13 @@ def _normalizar_origen(raw):
     origen = str(raw or "").strip().lower()
     if origen == "propio":
         return origen
+    if origen.startswith("proveedor:"):
+        try:
+            provider_id = int(origen.split(":", 1)[1])
+        except (TypeError, ValueError):
+            return None
+        if provider_id > 0:
+            return f"proveedor:{provider_id}"
     return None
 
 
@@ -139,6 +147,23 @@ def _proveedor_id_origen(origen):
     if not origen or origen == "propio":
         return None
     return int(origen.split(":", 1)[1])
+
+
+def _origen_logistico(origen):
+    """Separa el dueño del stock del establecimiento que prepara el pedido."""
+    origen = _normalizar_origen(origen) or "propio"
+    proveedor_id = _proveedor_id_origen(origen)
+    if not proveedor_id:
+        return "propio"
+    proveedor = db.session.get(Proveedor, proveedor_id)
+    return "propio" if proveedor and proveedor.es_socio_capital else origen
+
+
+def _origen_inventario_producto(producto):
+    return (
+        f"proveedor:{producto.proveedor_despachador_id}"
+        if producto and producto.proveedor_despachador_id else "propio"
+    )
 
 
 def _establecimiento_para_origen(origen):
@@ -151,7 +176,7 @@ def _establecimiento_para_origen(origen):
         return {
             "origen": origen,
             "nombre": proveedor.nombre,
-            "abierto": bool(proveedor.activo and proveedor.esta_abierto_ahora),
+            "abierto": bool(proveedor.disponible_para_venta),
             "url": url_for("public.menu_bar", proveedor_id=proveedor.id),
         }
     if origen == "propio":
@@ -343,10 +368,11 @@ def _fulfillment_from_request(default=None, options=None):
 
 
 def _establecimiento_abierto_checkout(origen, proveedor=None):
+    origen = _origen_logistico(origen)
     proveedor_id = _proveedor_id_origen(origen)
     if proveedor_id:
         proveedor = proveedor or db.session.get(Proveedor, proveedor_id)
-        return bool(proveedor and proveedor.activo and proveedor.esta_abierto_ahora), (
+        return bool(proveedor and proveedor.disponible_para_venta), (
             "El establecimiento de este pedido está cerrado o ya no está activo."
         )
     cfg = {r.clave: r.valor for r in SiteConfig.query.filter(
@@ -362,7 +388,12 @@ def _establecimiento_abierto_checkout(origen, proveedor=None):
     if tienda_abierta_en_horario(apertura, cierre, ahora, forzada, forzada_ab):
         return True, ""
     mensaje = (cfg.get("TIENDA_MENSAJE_CIERRE") or "").strip()
-    return False, mensaje or f"La tienda está cerrada ahora. Horario: {apertura}–{cierre}."
+    from schedule_service import configured_schedule_context
+    schedule = configured_schedule_context()
+    fallback = f"La tienda está cerrada ahora. {schedule['today']}."
+    if schedule["next_opening"]:
+        fallback += f" Próxima apertura: {schedule['next_opening']}."
+    return False, mensaje or fallback
 
 
 def _metadata_item_con_origen(producto, metadata, origen):
@@ -431,8 +462,6 @@ def _productos_canjeables_disponibles(origen, productos_carrito=None):
 
 def _canjeables_payload(cliente, origen=None, productos_carrito=None):
     puntos = max(0, int(cliente.puntos or 0)) if cliente else 0
-    cfg = get_puntos_config()
-    ratio = max(1, int(cfg["ratio"]))
     candidatos = _productos_canjeables_disponibles(origen, productos_carrito)
     canjeables = [p for p in candidatos if (p.puntos_para_canje or 0) <= puntos] if puntos > 0 else []
     proximo = next((p for p in candidatos if (p.puntos_para_canje or 0) > puntos), None)
@@ -451,8 +480,6 @@ def _canjeables_payload(cliente, origen=None, productos_carrito=None):
 
     return {
         "puntos": puntos,
-        "ratio": ratio,
-        "valor_euros": round(puntos / ratio, 2),
         "canjeables": [_prod(p) for p in canjeables],
         "proximo_canje": _prod(proximo) if proximo else None,
     }
@@ -467,8 +494,34 @@ def index():
 
 @public_bp.route("/informacion-legal")
 def informacion_legal():
-    """Resumen accesible de privacidad, cookies y condiciones de compra."""
-    return render_template("public/informacion_legal.html")
+    """Información legal alimentada por configuración, sin identidades ficticias."""
+    fiscal_name = (SiteConfig.get("NOMBRE_FISCAL", "") or "").strip()
+    business_name = (SiteConfig.get("NOMBRE_NEGOCIO", "") or "").strip()
+    contact_email = (SiteConfig.get("EMAIL_CONTACTO", "") or "").strip()
+    privacy_email = (SiteConfig.get("EMAIL_PRIVACIDAD", "") or "").strip() or contact_email
+    legal = {
+        "titular": fiscal_name or business_name,
+        "nombre_comercial": business_name,
+        "nif": (SiteConfig.get("NIF_NEGOCIO", "") or "").strip(),
+        "direccion": ((SiteConfig.get("DIRECCION_FISCAL", "") or "").strip()
+                      or (SiteConfig.get("DIRECCION_NEGOCIO", "") or "").strip()),
+        "email": contact_email,
+        "email_privacidad": privacy_email,
+        "telefono": (SiteConfig.get("TELEFONO_NEGOCIO", "") or "").strip(),
+        "registro": (SiteConfig.get("REGISTRO_MERCANTIL", "") or "").strip(),
+        "version": (SiteConfig.get("LEGAL_VERSION", "1.0") or "1.0").strip(),
+        "retencion": SiteConfig.get("LEGAL_RETENCION_PEDIDOS", ""),
+        "devoluciones": SiteConfig.get("LEGAL_CONDICIONES_DEVOLUCION", ""),
+    }
+    legal["faltantes"] = [
+        label for value, label in (
+            (legal["titular"], "titular o razón social"),
+            (legal["nif"], "NIF/CIF"),
+            (legal["direccion"], "domicilio fiscal"),
+            (legal["email_privacidad"], "correo de privacidad"),
+        ) if not value
+    ]
+    return render_template("public/informacion_legal.html", legal=legal)
 
 
 @public_bp.route("/bar/<int:proveedor_id>")
@@ -492,7 +545,20 @@ def _render_catalogo(origen, proveedor=None):
         _q_norm = _strip_accents(busqueda)
         if _q_norm:
             todos = [p for p in todos if _q_norm in _strip_accents(p.nombre or "")]
-    projection = build_catalog_projection(todos, origen)
+    # La tienda pública reúne producto propio y de socios. Cada tarjeta conserva
+    # su origen real para que inventario, pedido y liquidación nunca se mezclen.
+    product_origins = {
+        product.id: (
+            f"proveedor:{product.proveedor_despachador_id}"
+            if product.proveedor_despachador_id else "propio"
+        )
+        for product in todos
+    }
+    projection = {}
+    origins = sorted(set(product_origins.values()))
+    for product_origin in origins:
+        group = [p for p in todos if product_origins[p.id] == product_origin]
+        projection.update(build_catalog_projection(group, product_origin))
     store_features = get_store_features()
     active_vertical = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
 
@@ -543,7 +609,7 @@ def _render_catalogo(origen, proveedor=None):
             item.producto
             and item.producto.activo
             and item.producto.visible_ahora
-            and item.producto.pertenece_a_origen(origen)
+            and item.producto.pertenece_a_origen(product_origins.get(item.producto.id, "propio"))
             and projection.get(item.producto.id)
             and catalog_eligible(item.producto)
         )
@@ -559,7 +625,7 @@ def _render_catalogo(origen, proveedor=None):
     establecimiento = {
         "origen": origen,
         "nombre": proveedor.nombre if proveedor else (SiteConfig.get("NOMBRE_NEGOCIO", "") or "Mi tienda"),
-        "abierto": proveedor.esta_abierto_ahora if proveedor else True,
+        "abierto": proveedor.disponible_para_venta if proveedor else True,
         "url": url_for("public.index"),
     }
 
@@ -624,6 +690,7 @@ def _render_catalogo(origen, proveedor=None):
                            bares=bares,
                            proveedor_actual=proveedor,
                            product_cards=projection,
+                           product_origins=product_origins,
                            fulfillment_badge=_product_fulfillment_badge)
 
 
@@ -671,6 +738,9 @@ def producto_detalle(producto_id):
     )
     extra_groups = ProductExtraGroup.query.filter_by(producto_id=producto.id, activo=True)\
         .order_by(ProductExtraGroup.orden, ProductExtraGroup.id).all()
+    establecimiento_abierto, mensaje_cierre = _establecimiento_abierto_checkout(
+        origen, proveedor
+    )
     return render_template("public/producto.html",
                            producto=producto, reviews=reviews, combo_items=combo_items,
                            extra_groups=extra_groups,
@@ -678,7 +748,8 @@ def producto_detalle(producto_id):
                            combo_fixed_base=round(combo_fixed_base, 2),
                            cart_max_qty=_cart_max_qty(),
                            origen_actual=origen,
-                           establecimiento_abierto=proveedor.esta_abierto_ahora if proveedor else True,
+                           establecimiento_abierto=establecimiento_abierto,
+                           mensaje_cierre=mensaje_cierre,
                            volver_url=url_for("public.menu_bar", proveedor_id=proveedor.id)
                            if proveedor else url_for("public.index"),
                            stock_en_origen=_stock_en_origen,
@@ -724,11 +795,23 @@ def _save_carrito(carrito):
 def _carrito_origen(carrito=None):
     carrito = _get_carrito() if carrito is None else carrito
     origen = _normalizar_origen(session.get("carrito_origen"))
-    if origen or not carrito:
-        return origen
+    if origen:
+        logistico = _origen_logistico(origen)
+        if logistico != origen:
+            session["carrito_origen"] = logistico
+            session.modified = True
+        return logistico
+    if not carrito:
+        return None
 
     # Compatibilidad para sesiones creadas antes de que el origen fuera explícito.
     origenes = _cart_origins(carrito)
+    origenes_logisticos = {_origen_logistico(item) for item in origenes}
+    if len(origenes_logisticos) == 1:
+        origen = next(iter(origenes_logisticos))
+        session["carrito_origen"] = origen
+        session.modified = True
+        return origen
     if len(origenes) == 1:
         origen = next(iter(origenes))
         session["carrito_origen"] = origen
@@ -764,7 +847,8 @@ def _programmed_date_expired(producto):
     if not producto or _delivery_family(producto) != "programado":
         return False
     fecha = getattr(producto, "fecha_llegada", None)
-    return bool(fecha and fecha < date.today())
+    from business_time import business_today
+    return bool(fecha and fecha < business_today())
 
 
 def _order_group(producto):
@@ -1108,14 +1192,17 @@ def agregar_carrito(producto_id):
         )
     if not _producto_disponible_en_origen(producto, origen_solicitado):
         return _err("Este producto no está disponible ahora.")
-    if proveedor_id and (
-        not proveedor or not proveedor.activo or not proveedor.esta_abierto_ahora
-    ):
+    if proveedor_id and (not proveedor or not proveedor.disponible_para_venta):
         return _err("El establecimiento que prepara este producto está cerrado ahora.")
-    if not proveedor_id and not current_app.config.get("SKIP_DELIVERY_VALIDATION", False):
+    origen_logistico = _origen_logistico(origen_solicitado)
+    skip_delivery_validation = bool(
+        current_app.testing
+        and current_app.config.get("SKIP_DELIVERY_VALIDATION", False)
+    )
+    if origen_logistico == "propio" and not skip_delivery_validation:
         # Bloqueo temprano cuando la tienda propia está cerrada por horario:
         # antes solo se detectaba en checkout, dejando llenar el carrito en vano.
-        abierto_local, msg_cierre = _establecimiento_abierto_checkout(origen_solicitado, None)
+        abierto_local, msg_cierre = _establecimiento_abierto_checkout(origen_logistico, None)
         if not abierto_local:
             return _err(msg_cierre or "La tienda está cerrada ahora, no podemos añadir productos, parce.")
     cart_max_qty = _cart_max_qty()
@@ -1125,10 +1212,11 @@ def agregar_carrito(producto_id):
         cantidad = 1
     carrito = _get_carrito()
     origen_carrito = _carrito_origen(carrito)
-    if origen_carrito and origen_solicitado != origen_carrito:
+    if origen_carrito and origen_logistico != origen_carrito:
         return _err(
-            f"Tu {cart_name} contiene productos de un origen de inventario incompatible. "
-            "Vacíalo y vuelve a añadir los productos."
+            f"Tu {cart_name} ya contiene productos de otro responsable. "
+            "Para proteger el stock, el despacho y la liquidación de cada socio, "
+            f"finaliza primero esa compra o vacía la {cart_name} antes de cambiar."
         )
 
     # --- Compat: chequeo de mezcla de productos (por producto_id, no por línea) ---
@@ -1274,7 +1362,7 @@ def agregar_carrito(producto_id):
         notas_combo[key] = notas_personalizacion
         session["notas_combo"] = notas_combo
     carrito[key] = nueva_cantidad_total
-    _set_carrito_origen(origen_solicitado)
+    _set_carrito_origen(origen_logistico)
     _save_carrito(carrito)
     session.modified = True
     if _ajax:
@@ -1322,7 +1410,8 @@ def actualizar_carrito():
         else:
             pid = producto_id_from_line_key(key)
             producto = db.session.get(Product, pid) if pid is not None else None
-            if not _producto_disponible_en_origen(producto, origen):
+            origen_item = _origen_inventario_producto(producto)
+            if not _producto_disponible_en_origen(producto, origen_item):
                 del carrito[key]
                 _cleanup_key(key)
                 continue
@@ -1331,9 +1420,9 @@ def actualizar_carrito():
                     producto.validar_stock_combo_seleccion(
                         nueva_cantidad,
                         _combo_selection_ids_from_saved(selecciones_combo.get(key, {})),
-                        origen=origen,
+                        origen=origen_item,
                     )
-                elif not producto.disponible_para_venta_en_origen(origen, nueva_cantidad):
+                elif not producto.disponible_para_venta_en_origen(origen_item, nueva_cantidad):
                     raise ValueError(f"No hay stock suficiente para {producto.nombre}.")
             except ValueError as exc:
                 flash(str(exc), "warning")
@@ -1402,6 +1491,11 @@ def eliminar_carrito(producto_id):
 def ver_carrito():
     carrito = _get_carrito()
     origen = _carrito_origen(carrito)
+    proveedor_id = _proveedor_id_origen(origen)
+    proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
+    establecimiento_abierto, mensaje_cierre = _establecimiento_abierto_checkout(
+        origen or "propio", proveedor
+    )
     items, subtotal = _build_items_from_carrito(carrito)
     cart_productos = [item["producto"] for item in items if item.get("producto")]
     zonas_activas = ZonaEntrega.query.filter_by(activo=True)\
@@ -1448,6 +1542,8 @@ def ver_carrito():
                            fecha_entrega_programada=compat.get("scheduled_date"),
                            cart_max_qty=cart_max_qty,
                            origen_actual=origen,
+                           establecimiento_abierto=establecimiento_abierto,
+                           mensaje_cierre=mensaje_cierre,
                            establecimiento=_establecimiento_para_origen(origen))
 
 
@@ -1581,16 +1677,30 @@ def api_check_address():
     if not _feature_enabled("delivery"):
         return jsonify({"ok": False, "mensaje": "El delivery no está habilitado."}), 403
     if data.get("lat") is not None and data.get("lng") is not None:
-        zonas = ZonaEntrega.query.filter_by(activo=True).order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
-        zona, distancia = asignar_zona_por_coordenadas(data.get("lat"), data.get("lng"), zonas)
-        if not zona:
-            return jsonify({"ok": False, "distancia_km": None,
-                            "mensaje": "Tu ubicación está fuera de las zonas configuradas."})
-        return jsonify({"ok": True, "distancia_km": distancia, "mensaje": "Ubicación comprobada.",
-                        "zona": {"id": zona.id, "nombre": zona.nombre,
-                                 "precio_envio": float(zona.precio_envio or 0),
-                                 "gratis_desde": float(zona.gratis_desde) if zona.gratis_desde is not None else None,
-                                 "tiempo_estimado_min": zona.tiempo_estimado_min}})
+        resultado = validar_radio_entrega(
+            (data.get("direccion") or "").strip(),
+            lat=data.get("lat"),
+            lon=data.get("lng"),
+            precision_m=data.get("accuracy"),
+            exigir_precision=True,
+            exigir_direccion=True,
+        )
+        zona = (
+            db.session.get(ZonaEntrega, resultado.get("zona_id"))
+            if resultado.get("zona_id") else None
+        )
+        if zona:
+            resultado["zona"] = {
+                "id": zona.id,
+                "nombre": zona.nombre,
+                "precio_envio": float(zona.precio_envio or 0),
+                "gratis_desde": (
+                    float(zona.gratis_desde)
+                    if zona.gratis_desde is not None else None
+                ),
+                "tiempo_estimado_min": zona.tiempo_estimado_min,
+            }
+        return jsonify(resultado)
     direccion = (data.get("direccion") or "").strip()
     if not direccion:
         return jsonify({"ok": True, "distancia_km": None, "mensaje": ""})
@@ -1608,8 +1718,6 @@ def api_check_address():
         if zona is None:
             zonas = ZonaEntrega.query.filter_by(activo=True).order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
             zona = asignar_zona_por_direccion(direccion, zonas) if zonas else None
-            if zona is None and resultado.get("validacion_desactivada") and zonas:
-                zona = zonas[0]
         if zona:
             resultado["zona"] = {
                 "id": zona.id,
@@ -1740,11 +1848,6 @@ def verificar_codigo_puntos():
     data = request.get_json(silent=True) or {}
     telefono = data.get("telefono", "").strip()
     codigo = data.get("codigo", "").strip()
-    try:
-        puntos_usar = int(data.get("puntos", 0))
-    except (ValueError, TypeError):
-        puntos_usar = 0
-
     if telefono:
         cliente, _ = buscar_cliente_por_telefono(telefono)
     else:
@@ -1803,8 +1906,6 @@ def verificar_codigo_puntos():
     # simultáneas del navegador.
     db.session.commit()
 
-    ratio = max(1, get_puntos_config()["ratio"])
-
     puntos_usar = 0
     descuento = 0.0  # los puntos nunca reducen el total en euros
     if producto_canje_id:
@@ -1859,11 +1960,12 @@ def checkout():
         return redirect(url_for("public.ver_carrito"))
     proveedor_id = _proveedor_id_origen(origen)
     proveedor = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
-    if proveedor_id and (
-        not proveedor or not proveedor.activo or not proveedor.esta_abierto_ahora
-    ):
+    if proveedor_id and (not proveedor or not proveedor.disponible_para_venta):
         flash("El establecimiento de este pedido está cerrado o ya no está activo.", "warning")
         return redirect(establecimiento["url"])
+    establecimiento_abierto, mensaje_cierre = _establecimiento_abierto_checkout(
+        origen, proveedor
+    )
 
     items, subtotal = _build_items_from_carrito(carrito)
     if not items:
@@ -1933,6 +2035,12 @@ def checkout():
         session.pop("cart_producto_canje_id", None)
         session.modified = True
     if request.method == "POST":
+        if request.form.get("acepta_condiciones") != "1":
+            flash(
+                "Para confirmar el pedido debes aceptar las condiciones de compra y declarar que has leído la información de privacidad.",
+                "warning",
+            )
+            return redirect(url_for("public.checkout"))
         # ── Idempotency guard ──────────────────────────────────────
         # Evita que un double-click o un retry del cliente cree dos pedidos.
         # Si la misma combinación (user/telefono + body) llegó hace <30 s,
@@ -1973,15 +2081,19 @@ def checkout():
                     confirm_args["token"] = token
                 return redirect(url_for("public.pedido_confirmado", **confirm_args))
 
-        _skip_val = current_app.config.get("SKIP_DELIVERY_VALIDATION", False)
+        # Atajo exclusivo de pruebas automatizadas. Una variable accidental en
+        # producción nunca puede desactivar la cobertura.
+        _skip_val = bool(current_app.testing and current_app.config.get(
+            "SKIP_DELIVERY_VALIDATION", False
+        ))
         abierto, msg_cierre = _establecimiento_abierto_checkout(origen, proveedor)
         if not _skip_val and not abierto:
             flash(msg_cierre, "warning")
             return redirect(url_for("public.checkout"))
         if proveedor_id:
             proveedor = db.session.get(Proveedor, proveedor_id)
-            if not proveedor or not proveedor.activo or not proveedor.esta_abierto_ahora:
-                flash("El bar cerró antes de confirmar el pedido. Tu carrito se conserva.", "warning")
+            if not proveedor or not proveedor.disponible_para_venta:
+                flash("El establecimiento cerró antes de confirmar el pedido. Tu carrito se conserva.", "warning")
                 return redirect(establecimiento["url"])
 
         tipo_entrega_cliente = _fulfillment_from_request(fulfillment_default, fulfillment_options)
@@ -1999,8 +2111,12 @@ def checkout():
                 flash("La modalidad seleccionada ya no está disponible.", "danger")
             return redirect(url_for("public.ver_carrito"))
         direccion = request.form.get("direccion", "").strip()
+        ubicacion_lat = request.form.get("direccion_lat")
+        ubicacion_lng = request.form.get("direccion_lng")
+        ubicacion_precision = request.form.get("direccion_precision_m")
         if tipo_entrega_cliente == "recogida":
             direccion = ""
+            ubicacion_lat = ubicacion_lng = ubicacion_precision = None
         metodo_pago = normalizar_metodo_pago(request.form.get("metodo_pago"))
         # Todos los pagos se cobran al entregar. El cliente sólo indica la
         # preferencia para que el repartidor lleve el instrumento adecuado
@@ -2091,7 +2207,8 @@ def checkout():
                 )
                 return redirect(url_for("public.ver_carrito"))
             if _delivery_family(producto) == "programado":
-                if not producto.fecha_llegada or producto.fecha_llegada < datetime.now().date():
+                from business_time import business_today
+                if not producto.fecha_llegada or producto.fecha_llegada < business_today():
                     flash(
                         f"'{producto.nombre}' ya no tiene una fecha de entrega válida. "
                         "Retíralo del carrito o espera una nueva fecha.",
@@ -2113,7 +2230,14 @@ def checkout():
             return redirect(url_for("public.checkout"))
         geo = None
         if tipo_entrega_cliente == "delivery" and direccion:
-            geo = validar_radio_entrega(direccion)
+            geo = validar_radio_entrega(
+                direccion,
+                lat=ubicacion_lat,
+                lon=ubicacion_lng,
+                precision_m=ubicacion_precision,
+                exigir_precision=bool(ubicacion_lat or ubicacion_lng),
+                exigir_direccion=True,
+            )
             if not geo["ok"]:
                 if _skip_val and geo.get("distancia_km") is None:
                     geo = {"ok": True, "distancia_km": None, "mensaje": ""}
@@ -2130,13 +2254,10 @@ def checkout():
         )
         if zona_asignada is None and tipo_entrega_cliente == "delivery" and direccion:
             zona_asignada = asignar_zona_por_direccion(direccion, zonas)
-        if zona_asignada is None and geo and geo.get("validacion_desactivada") and zonas:
-            zona_asignada = zonas[0]
         if zona_asignada:
             zona_id = zona_asignada.id
         else:
-            cualquier_geo = any(z.tiene_geo for z in zonas if z.activo)
-            if tipo_entrega_cliente == "delivery" and cualquier_geo and not _skip_val:
+            if tipo_entrega_cliente == "delivery" and not _skip_val:
                 # Si la recogida en local está activa, ofrecemos ese camino
                 # como escape en lugar de dejar al cliente sin salida.
                 if _feature_enabled("recogida"):
@@ -2153,7 +2274,11 @@ def checkout():
                         "danger",
                     )
                 return redirect(url_for("public.checkout"))
-            zona_id = zonas[0].id if tipo_entrega_cliente == "delivery" and zonas else None
+            zona_id = (
+                zonas[0].id
+                if tipo_entrega_cliente == "delivery" and zonas and _skip_val
+                else None
+            )
 
         # ── Resolver cliente ────────────────────────────────────────────
         # ValueError se lanza para errores de validación (mensaje ya legible).
@@ -2225,8 +2350,6 @@ def checkout():
         # Diseño: los puntos NO reducen el total en euros. Solo se consumen al
         # canjearlos por un producto canjeable dentro del carrito. Cualquier
         # `puntos_usar` suelto del formulario se ignora silenciosamente.
-        puntos_cfg = get_puntos_config()
-        ratio = puntos_cfg["ratio"]
         puntos_a_canjear = 0  # sin descuento libre; los puntos del producto se cargan más abajo
         cart_puntos = session.get("cart_puntos", {})
         if not puntos_habilitados:
@@ -2278,9 +2401,7 @@ def checkout():
                 items, subtotal,
                 cupon=cupon,
                 afiliado=afiliado_codigo,
-                puntos_usar=puntos_a_canjear,
                 zona=zona,
-                ratio_puntos=ratio,
             )
         except ValueError as exc:
             db.session.rollback()
@@ -2319,6 +2440,18 @@ def checkout():
             metodo_pago=metodo_pago,
             tipo_entrega_cliente=tipo_entrega_cliente,
             direccion_entrega=direccion,
+            direccion_lat=(
+                Decimal(str(geo["lat"]))
+                if geo and geo.get("lat") is not None else None
+            ),
+            direccion_lng=(
+                Decimal(str(geo["lon"]))
+                if geo and geo.get("lon") is not None else None
+            ),
+            direccion_precision_m=(
+                Decimal(str(geo["precision_m"]))
+                if geo and geo.get("precision_m") is not None else None
+            ),
             notas=notas,
             zona_id=zona.id if zona else None,
             es_entrega_epicentro=es_entrega_epicentro,
@@ -2337,6 +2470,12 @@ def checkout():
                 "zona_nombre": pedido.zona_nombre_snapshot,
                 "costo_envio": pedido.costo_envio_aplicado,
                 "tipo_entrega_cliente": tipo_entrega_cliente,
+                "condiciones_compra_aceptadas": True,
+                "version_legal": SiteConfig.get("LEGAL_VERSION", "1.0"),
+                "ubicacion_cliente": bool(
+                    pedido.direccion_lat is not None
+                    and pedido.direccion_lng is not None
+                ),
             },
         )
 
@@ -2366,7 +2505,7 @@ def checkout():
                         _metadata_item_con_origen(
                             item["producto"],
                             item_metadata,
-                            origen,
+                            item["origen"],
                         ),
                         ensure_ascii=False,
                     ),
@@ -2384,7 +2523,7 @@ def checkout():
                     db.session.get(Product, item["producto"].id, with_for_update=True)
                     _descontar_stock_en_origen(
                         item["producto"],
-                        origen,
+                        item["origen"],
                         item["cantidad"],
                         item.get("combo_seleccion_ids") or [],
                     )
@@ -2472,7 +2611,6 @@ def checkout():
         try:
             aplicar_canje_en_pedido(
                 cliente, pedido,
-                puntos_usar=puntos_a_canjear,
                 producto_canje_id=producto_canje_id,
                 origen_operativo=origen,
             )
@@ -2552,7 +2690,7 @@ def checkout():
 
         return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id, token=token))
 
-    precio_preview = calcular_precio(items, subtotal, ratio_puntos=get_puntos_config()["ratio"])
+    precio_preview = calcular_precio(items, subtotal)
     checkout_items = MenuConfig.query.filter_by(pagina="checkout", activo=True)\
         .order_by(MenuConfig.orden.asc(), MenuConfig.id.asc()).all()
     try:
@@ -2572,6 +2710,8 @@ def checkout():
                            checkout_items=checkout_items,
                            origen_actual=origen,
                            establecimiento=establecimiento,
+                           establecimiento_abierto=establecimiento_abierto,
+                           mensaje_cierre=mensaje_cierre,
                            radio_entrega_km=radio_entrega_km,
                            cobertura_por_zonas=any(z.tiene_geo for z in zonas),
                            puntos_sesion=cart_puntos_sesion,
@@ -2581,7 +2721,6 @@ def checkout():
 @public_bp.route("/pedido/<int:pedido_id>/confirmado")
 def pedido_confirmado(pedido_id):
     pedido = get_or_404(Order, pedido_id)
-    token = request.args.get("token", "") or session.get("last_guest_order_token", "")
     guest_tokens = session.get("guest_order_tokens", {})
     slot = guest_tokens.get(str(pedido_id))
     # Compat: valores antiguos guardaban str; los nuevos guardan dict con TTL.
@@ -2593,6 +2732,10 @@ def pedido_confirmado(pedido_id):
             return redirect(url_for("public.index"))
     else:
         expected = slot
+    # Un push no debe incluir secretos en su URL. Para abrir un pedido anterior
+    # del mismo dispositivo recuperamos su token específico de la sesión; antes
+    # se usaba siempre el token del último pedido y los avisos antiguos fallaban.
+    token = request.args.get("token", "") or expected
     if not token or token != expected:
         flash("Acceso denegado.", "danger")
         return redirect(url_for("public.index"))
@@ -2718,46 +2861,111 @@ def _parse_combo_selection(producto, form, cantidad=1, origen=None):
                 return {}, f"No puedes elegir más de {max_sel} opción(es) de «{grupo}» para el combo."
             seleccion[grupo] = qty_map
 
-    # ── Sabores por componente (opt-in por ComboItem.permite_sabor_cliente) ──
-    flavors_map = {}
-    for item in componentes:
-        if not getattr(item, "permite_sabor_cliente", False):
-            continue
-        available_ids = {opt.id for opt in item.sabores_disponibles}
-        if not available_ids:
-            continue
-        selected_opts = []
-        # Radio: 1 sabor por componente (name="combo_flavor_<item_id>")
-        raw_single = form.getlist(f"combo_flavor_{item.id}")
-        for val in raw_single:
-            try:
-                oid = int(val)
-            except (TypeError, ValueError):
-                continue
-            if oid in available_ids and oid not in selected_opts:
-                selected_opts.append(oid)
-        # Checkbox multi (name="combo_flavor_<item_id>_<opt_id>")
-        for oid in available_ids:
-            if form.get(f"combo_flavor_{item.id}_{oid}"):
-                if oid not in selected_opts:
-                    selected_opts.append(oid)
-        max_flavors = max(1, int(item.cantidad or 1))
-        if len(selected_opts) > max_flavors:
-            selected_opts = selected_opts[:max_flavors]
-        if selected_opts:
-            flavors_map[str(item.id)] = selected_opts
-    if flavors_map:
-        seleccion["__flavors__"] = flavors_map
+    def _component_units(item):
+        if not item.es_seleccionable:
+            return max(1, int(item.cantidad or 1))
+        group_name = (
+            item.grupo.nombre_publico
+            if item.grupo else (item.grupo_seleccion or "Seleccion")
+        )
+        group_selection = seleccion.get(group_name, {})
+        return max(0, int(group_selection.get(item.id, 0) or 0)) * max(
+            1, int(item.cantidad or 1)
+        )
 
-    # ── Tamaños por componente (opt-in vía M2M allowed_presentations con ≥2) ──
-    # Semántica idéntica a sabores: el cliente elige entre las presentaciones
-    # que el super-admin declaró en el combo. `presentaciones_disponibles`
-    # devuelve [] cuando el modo es fijo, así que el bucle es no-op en la mayoría
-    # de combos, y sólo captura la elección cuando aplica.
-    pres_map = {}
+    # ── Configuración por unidad ──
+    # Un componente fijo con varias unidades puede mezclar tamaños y sabores:
+    # p.ej. Festival pequeña/fresa + Festival grande/chocolate. El par queda
+    # unido en el snapshot; no se reconstruye después a partir de dos totales.
+    units_map = {}
+    unit_managed_items = set()
     for item in componentes:
+        units = _component_units(item)
+        opts = list(item.presentaciones_disponibles or [])
+        supports_unit_choice = (
+            not item.es_seleccionable
+            and units > 1
+            and (
+                len(opts) > 1
+                or getattr(item, "permite_sabor_cliente", False) is True
+                or getattr(item, "fixed_flavor_option_id", None)
+            )
+        )
+        if not supports_unit_choice:
+            continue
+        has_unit_fields = any(
+            f"combo_unit_presentation_{item.id}_{index}" in form
+            or f"combo_unit_flavor_{item.id}_{index}" in form
+            for index in range(1, units + 1)
+        )
+        if not has_unit_fields:
+            continue  # compatibilidad con formularios cacheados/antiguos
+
+        valid_presentations = {presentation.id: presentation for presentation in opts}
+        fixed_flavor = getattr(item, "fixed_flavor_option", None)
+        rows = []
+        for index in range(1, units + 1):
+            if len(opts) > 1:
+                try:
+                    presentation_id = int(
+                        form.get(f"combo_unit_presentation_{item.id}_{index}")
+                    )
+                except (TypeError, ValueError):
+                    presentation_id = 0
+                presentation = valid_presentations.get(presentation_id)
+                if presentation is None:
+                    return {}, (
+                        f"Elige un tamaño válido para la unidad {index} de "
+                        f"«{item.componente.nombre}»."
+                    )
+            else:
+                presentation = item.presentacion or (opts[0] if opts else None)
+                presentation_id = presentation.id if presentation else None
+
+            available = item.sabores_disponibles_para(presentation)
+            available_by_id = {option.id: option for option in available}
+            flavor_id = None
+            if fixed_flavor is not None:
+                if fixed_flavor.id not in available_by_id:
+                    return {}, (
+                        f"El sabor incluido de «{item.componente.nombre}» no "
+                        f"está disponible en la unidad {index}."
+                    )
+                flavor_id = fixed_flavor.id
+            elif getattr(item, "permite_sabor_cliente", False) is True:
+                try:
+                    flavor_id = int(
+                        form.get(f"combo_unit_flavor_{item.id}_{index}")
+                    )
+                except (TypeError, ValueError):
+                    flavor_id = 0
+                if flavor_id not in available_by_id:
+                    return {}, (
+                        f"Elige un sabor válido para la unidad {index} de "
+                        f"«{item.componente.nombre}» y su tamaño."
+                    )
+            row = {}
+            if presentation_id:
+                row["presentation_id"] = int(presentation_id)
+            if flavor_id:
+                row["flavor_option_id"] = int(flavor_id)
+            rows.append(row)
+        units_map[str(item.id)] = rows
+        unit_managed_items.add(item.id)
+    if units_map:
+        seleccion["__units__"] = units_map
+
+    # ── Tamaños por componente (contrato anterior y componentes unitarios) ──
+    # Se resuelven antes que los sabores: la presentación determina qué sabores
+    # existen y cuántas unidades se pueden distribuir.
+    pres_map = {}
+    resolved_presentations = {}
+    for item in componentes:
+        if item.id in unit_managed_items:
+            continue
         opts = list(item.presentaciones_disponibles or [])
         if len(opts) < 2:
+            resolved_presentations[item.id] = item.presentacion
             continue
         valid_ids = {p.id for p in opts}
         raw = form.get(f"combo_presentation_{item.id}")
@@ -2765,16 +2973,92 @@ def _parse_combo_selection(producto, form, cantidad=1, origen=None):
             chosen = int(raw) if raw is not None else None
         except (TypeError, ValueError):
             chosen = None
-        # Si el cliente no envió nada (o envió inválido), usamos la
-        # presentation_id del combo como default; si tampoco existe, el primer
-        # tamaño válido. Esto blinda contra POST manipulados o cache PWA
-        # antiguo que no incluye el campo.
         if chosen not in valid_ids:
-            fallback = getattr(item.presentacion, "id", None)
-            chosen = fallback if fallback in valid_ids else opts[0].id
+            return {}, (
+                f"Elige un tamaño válido para «{item.componente.nombre}» "
+                f"dentro del combo."
+            )
         pres_map[str(item.id)] = chosen
+        resolved_presentations[item.id] = next(p for p in opts if p.id == chosen)
     if pres_map:
         seleccion["__presentations__"] = pres_map
+
+    # ── Sabores por componente ──
+    # El valor persistido es {item_id: {option_id: cantidad}}. Se conserva
+    # lectura de los campos antiguos durante la transición de PWA/cache.
+    flavors_map = {}
+    for item in componentes:
+        if item.id in unit_managed_items:
+            continue
+        raw_fixed_flavor_id = getattr(item, "fixed_flavor_option_id", 0)
+        fixed_flavor_id = (
+            int(raw_fixed_flavor_id)
+            if isinstance(raw_fixed_flavor_id, int) and raw_fixed_flavor_id > 0
+            else 0
+        )
+        fixed_flavor = (
+            getattr(item, "fixed_flavor_option", None)
+            if fixed_flavor_id > 0 else None
+        )
+        if (
+            getattr(item, "permite_sabor_cliente", False) is not True
+            and fixed_flavor is None
+        ):
+            continue
+        units = _component_units(item)
+        if units <= 0:
+            continue
+        presentation = resolved_presentations.get(item.id, item.presentacion)
+        available = item.sabores_disponibles_para(presentation)
+        available_ids = {opt.id for opt in available}
+        if not available_ids:
+            return {}, (
+                f"«{item.componente.nombre}» no tiene sabores disponibles "
+                "para el tamaño seleccionado."
+            )
+        if fixed_flavor is not None:
+            if fixed_flavor.id not in available_ids:
+                return {}, (
+                    f"El sabor incluido de «{item.componente.nombre}» ya no "
+                    "está disponible para el tamaño seleccionado."
+                )
+            flavors_map[str(item.id)] = {str(fixed_flavor.id): units}
+            continue
+        qty_map = {}
+        for oid in available_ids:
+            raw_qty = form.get(f"combo_flavor_qty_{item.id}_{oid}")
+            if raw_qty not in (None, ""):
+                try:
+                    qty = int(raw_qty)
+                except (TypeError, ValueError):
+                    return {}, "La distribución de sabores no tiene un formato válido."
+                if qty < 0 or qty > units:
+                    return {}, f"Cantidad inválida para un sabor de «{item.componente.nombre}»."
+                if qty:
+                    qty_map[str(oid)] = qty
+
+        # Compatibilidad temporal con formularios almacenados por una PWA vieja.
+        if not qty_map:
+            for val in form.getlist(f"combo_flavor_{item.id}"):
+                try:
+                    oid = int(val)
+                except (TypeError, ValueError):
+                    continue
+                if oid in available_ids:
+                    qty_map[str(oid)] = qty_map.get(str(oid), 0) + 1
+            for oid in available_ids:
+                if form.get(f"combo_flavor_{item.id}_{oid}"):
+                    qty_map[str(oid)] = qty_map.get(str(oid), 0) + 1
+
+        total = sum(qty_map.values())
+        if total != units:
+            return {}, (
+                f"Distribuye las {units} unidad(es) de «{item.componente.nombre}» "
+                "entre los sabores disponibles."
+            )
+        flavors_map[str(item.id)] = qty_map
+    if flavors_map:
+        seleccion["__flavors__"] = flavors_map
 
     return seleccion, None
 
@@ -2875,21 +3159,45 @@ def _combo_selection_payload(producto, seleccion_guardada):
                 item_key = int(k)
             except (TypeError, ValueError):
                 continue
-            if isinstance(v, list):
-                saved_flavors[item_key] = [int(x) for x in v if str(x).lstrip("-").isdigit()]
+            if isinstance(v, dict):
+                saved_flavors[item_key] = {
+                    int(option_id): int(qty)
+                    for option_id, qty in v.items()
+                    if str(option_id).lstrip("-").isdigit()
+                    and str(qty).lstrip("-").isdigit()
+                    and int(qty) > 0
+                }
+            elif isinstance(v, list):
+                # Formato legacy: cada ID representaba una unidad.
+                quantities = {}
+                for option_id in v:
+                    if str(option_id).lstrip("-").isdigit():
+                        option_id = int(option_id)
+                        quantities[option_id] = quantities.get(option_id, 0) + 1
+                saved_flavors[item_key] = quantities
 
     def _flavor_meta_for(item):
-        if not getattr(item, "permite_sabor_cliente", False):
+        if (
+            not getattr(item, "permite_sabor_cliente", False)
+            and not getattr(item, "fixed_flavor_option_id", None)
+        ):
             return None
-        chosen = saved_flavors.get(item.id) or []
+        chosen = saved_flavors.get(item.id) or {}
         if not chosen:
             return None
-        opts_by_id = {opt.id: opt for opt in item.sabores_disponibles}
+        presentation = _resolved_presentation_for(item)
+        opts_by_id = {
+            opt.id: opt for opt in item.sabores_disponibles_para(presentation)
+        }
         out = []
-        for oid in chosen:
+        for oid, qty in chosen.items():
             opt = opts_by_id.get(int(oid))
             if opt:
-                out.append({"opt_id": opt.id, "nombre": opt.nombre})
+                out.append({
+                    "opt_id": opt.id,
+                    "nombre": opt.nombre,
+                    "cantidad": int(qty),
+                })
         return out or None
 
     # Tamaños elegidos por el cliente por componente ({item_id: presentation_id}).
@@ -2901,6 +3209,28 @@ def _combo_selection_payload(producto, seleccion_guardada):
                 saved_presentations[int(k)] = int(v)
             except (TypeError, ValueError):
                 continue
+
+    saved_units_raw = (
+        (seleccion_guardada or {}).get("__units__")
+        if isinstance(seleccion_guardada, dict) else None
+    )
+    saved_units = {}
+    if isinstance(saved_units_raw, dict):
+        for raw_item_id, rows in saved_units_raw.items():
+            try:
+                item_id = int(raw_item_id)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(rows, list):
+                saved_units[item_id] = [
+                    row for row in rows if isinstance(row, dict)
+                ]
+
+    def _resolved_presentation_for(item):
+        chosen_id = saved_presentations.get(item.id)
+        if chosen_id:
+            return db.session.get(ProductPresentation, chosen_id)
+        return item.presentacion
 
     def _presentation_meta_for(item):
         opts = list(item.presentaciones_disponibles or [])
@@ -2914,6 +3244,46 @@ def _combo_selection_payload(producto, seleccion_guardada):
             "label": chosen.label,
             "extra": chosen.precio_extra_float,
         }
+
+    def _unit_meta_for(item):
+        rows = saved_units.get(item.id) or []
+        if not rows:
+            return None
+        presentations = {
+            presentation.id: presentation
+            for presentation in item.presentaciones_disponibles
+        }
+        output = []
+        for index, row in enumerate(rows, start=1):
+            try:
+                presentation_id = int(row.get("presentation_id") or 0)
+            except (TypeError, ValueError):
+                presentation_id = 0
+            presentation = presentations.get(presentation_id, item.presentacion)
+            available_flavors = {
+                option.id: option
+                for option in item.sabores_disponibles_para(presentation)
+            }
+            try:
+                flavor_id = int(row.get("flavor_option_id") or 0)
+            except (TypeError, ValueError):
+                flavor_id = 0
+            flavor = available_flavors.get(flavor_id)
+            unit = {"unidad": index}
+            if presentation:
+                unit["presentacion"] = {
+                    "id": presentation.id,
+                    "tamaño": presentation.tamaño,
+                    "label": presentation.label,
+                    "extra": presentation.precio_extra_float,
+                }
+            if flavor:
+                unit["sabor"] = {
+                    "opt_id": flavor.id,
+                    "nombre": flavor.nombre,
+                }
+            output.append(unit)
+        return output or None
 
     for item in fijos:
         resumen.append(f"{item.cantidad}x {item.componente.nombre}")
@@ -2975,6 +3345,7 @@ def _combo_selection_payload(producto, seleccion_guardada):
                 nombres.append(f"{componente.nombre} ×{qty}{extra_txt}")
             _sabor_meta = _flavor_meta_for(by_id[item_id])
             _pres_meta = _presentation_meta_for(by_id[item_id])
+            _units_meta = _unit_meta_for(by_id[item_id])
             _base_snap = metadata_componente_combo(by_id[item_id], producto.proveedor_despachador_id)
             # Cuando el cliente eligió tamaño, sobrescribimos el snapshot de
             # `presentacion` del combo item con el elegido — la cocina + el
@@ -2997,6 +3368,7 @@ def _combo_selection_payload(producto, seleccion_guardada):
                 "notas_preparacion": by_id[item_id].notas_preparacion or "",
                 **({"sabor_cliente": _sabor_meta} if _sabor_meta else {}),
                 **({"presentation_cliente": _pres_meta} if _pres_meta else {}),
+                **({"unidades_cliente": _units_meta} if _units_meta else {}),
             })
 
         seleccion_ids.extend(ids)
@@ -3032,10 +3404,13 @@ def _combo_selection_payload(producto, seleccion_guardada):
             "notas_preparacion": item.notas_preparacion or "",
         }
         sabor_meta = _flavor_meta_for(item)
-        if sabor_meta:
+        units_meta = _unit_meta_for(item)
+        if units_meta:
+            base["unidades_cliente"] = units_meta
+        elif sabor_meta:
             base["sabor_cliente"] = sabor_meta
         pres_meta = _presentation_meta_for(item)
-        if pres_meta:
+        if pres_meta and not units_meta:
             base["presentation_cliente"] = pres_meta
             # Reflejo también en el snapshot de presentacion para que el
             # ticket + cocina lean el mismo objeto independiente de qué
@@ -3054,6 +3429,7 @@ def _combo_display_items(combo_items, metadata):
     selected_ids = set()
     flavor_by_item = {}
     presentation_by_item = {}
+    units_by_item = {}
     for group in combo_meta.get("selecciones", []):
         for option in group.get("opciones", []):
             try:
@@ -3065,6 +3441,8 @@ def _combo_display_items(combo_items, metadata):
                 flavor_by_item[cid] = option.get("sabor_cliente")
             if option.get("presentation_cliente"):
                 presentation_by_item[cid] = option.get("presentation_cliente")
+            if option.get("unidades_cliente"):
+                units_by_item[cid] = option.get("unidades_cliente")
     for comp in combo_meta.get("componentes", []):
         try:
             cid = int(comp.get("combo_item_id"))
@@ -3074,13 +3452,16 @@ def _combo_display_items(combo_items, metadata):
             flavor_by_item[cid] = comp.get("sabor_cliente")
         if comp.get("presentation_cliente"):
             presentation_by_item[cid] = comp.get("presentation_cliente")
+        if comp.get("unidades_cliente"):
+            units_by_item[cid] = comp.get("unidades_cliente")
 
     rows = []
     for item in combo_items:
         if not item.es_seleccionable:
             rows.append({"item": item, "tipo": "Fijo", "seleccionado": False,
                          "sabor_cliente": flavor_by_item.get(item.id),
-                         "presentation_cliente": presentation_by_item.get(item.id)})
+                         "presentation_cliente": presentation_by_item.get(item.id),
+                         "unidades_cliente": units_by_item.get(item.id)})
         elif item.id in selected_ids:
             rows.append({
                 "item": item,
@@ -3088,6 +3469,7 @@ def _combo_display_items(combo_items, metadata):
                 "seleccionado": True,
                 "sabor_cliente": flavor_by_item.get(item.id),
                 "presentation_cliente": presentation_by_item.get(item.id),
+                "unidades_cliente": units_by_item.get(item.id),
             })
     return rows
 
@@ -3106,8 +3488,8 @@ def _build_items_from_carrito(carrito):
         return [], 0.0
 
     productos_map = {p.id: p for p in Product.query.filter(Product.id.in_(ids)).all()}
-    origen = _carrito_origen(carrito)
-    if not origen:
+    origen_logistico = _carrito_origen(carrito)
+    if not origen_logistico:
         return [], 0.0
 
     items = []
@@ -3135,7 +3517,8 @@ def _build_items_from_carrito(carrito):
             # no mutar la sesión mientras iteramos.
             ids_desaparecidos.append(producto_id_str)
             continue
-        if not _producto_disponible_en_origen(p, origen, qty):
+        origen_item = _origen_inventario_producto(p)
+        if not _producto_disponible_en_origen(p, origen_item, qty):
             # Producto desactivado/agotado en admin mientras estaba en carrito.
             # Se marca para limpieza igual que si se hubiese borrado, para que la
             # sesión no arrastre un ID inválido y el cliente vea claramente que
@@ -3170,8 +3553,8 @@ def _build_items_from_carrito(carrito):
             metadata["sabores"] = {"opciones": flavor_rows}
         try:
             if p.es_combo:
-                p.validar_stock_combo_seleccion(qty, seleccion_ids, origen=origen)
-            elif not p.disponible_para_venta_en_origen(origen, qty):
+                p.validar_stock_combo_seleccion(qty, seleccion_ids, origen=origen_item)
+            elif not p.disponible_para_venta_en_origen(origen_item, qty):
                 raise ValueError("stock")
         except ValueError:
             # No renderiza pero además lo marca para cleanup: si el combo
@@ -3184,7 +3567,19 @@ def _build_items_from_carrito(carrito):
             if p.es_combo else 0.0
         )
         precio = (
-            float(p.precio_combo_para_seleccion(seleccion_ids))
+            float(p.precio_combo_para_seleccion(
+                seleccion_ids,
+                (
+                    selecciones_combo.get(producto_id_str, {}).get("__presentations__", {})
+                    if isinstance(selecciones_combo.get(producto_id_str, {}), dict)
+                    else {}
+                ),
+                (
+                    selecciones_combo.get(producto_id_str, {}).get("__units__", {})
+                    if isinstance(selecciones_combo.get(producto_id_str, {}), dict)
+                    else {}
+                ),
+            ))
             if p.es_combo else float(p.precio_final or 0)
         ) + product_options_unit
         # Presentación (tamaño) opt-in: aplicar precio_extra + registrar tamaño
@@ -3202,6 +3597,7 @@ def _build_items_from_carrito(carrito):
         nota_cliente_item = (notas_cliente_map.get(producto_id_str) or "").strip()[:240]
         items.append({"line_key": line_key,
                       "producto": p, "cantidad": qty, "subtotal": item_total,
+                      "origen": origen_item,
                       "precio_unit": precio,
                       "combo_extra_unit": combo_extras_unit,
                       "combo_items": combo_items,

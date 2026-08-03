@@ -1,5 +1,9 @@
 {% extends "admin_base.html" %}
-{% block title %}Proveedor #{{ proveedor.id }} · {{ proveedor.nombre }}{% endblock %}
+{% from "admin/_partner_schedule_editor.html" import partner_schedule_editor %}
+{% block title %}Socio #{{ proveedor.id }} · {{ proveedor.nombre }}{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/partner-schedule-editor.css', v=asset_version) }}">
+{% endblock %}
 {% block content %}
 
 {% set ops = proveedor.operadores.all() %}
@@ -30,9 +34,7 @@
   <div><span>Stock total</span><strong>{{ stock_total.value }}</strong><small>unidades disponibles</small></div>
   <div><span>Operadores</span><strong>{{ active_ops }}</strong><small>{{ ops|length }} vinculados</small></div>
   <div><span>Horario</span><strong class="prov-kpi-text">
-    {% if proveedor.hora_apertura and proveedor.hora_cierre %}
-      {{ proveedor.hora_apertura.strftime('%H:%M') }}-{{ proveedor.hora_cierre.strftime('%H:%M') }}
-    {% else %}24 horas{% endif %}
+    {{ proveedor.horario_resumen }}
   </strong><small>{{ 'Abierto ahora' if proveedor.activo and proveedor.esta_abierto_ahora else 'No disponible ahora' }}</small></div>
 </div>
 
@@ -66,7 +68,7 @@
     </label>
     <label class="prov-toggle prov-span-2">
       <input type="checkbox" name="activo" {% if proveedor.activo %}checked{% endif %}>
-      <span><strong>Proveedor activo</strong><small>Permite mostrar su catálogo en `/bar/{{ proveedor.id }}` cuando esté dentro de horario.</small></span>
+      <span><strong>Socio activo</strong><small>Permite vender sus productos y recibir nuevos pedidos.</small></span>
     </label>
   </fieldset>
 
@@ -86,28 +88,36 @@
 
   <fieldset class="ox-card prov-form-section">
     <legend>Horario y disponibilidad</legend>
+    {% if proveedor.es_socio_capital %}
+    <div class="prov-inline-note prov-span-2">
+      Este socio es dueño financiero del inventario, pero la tienda prepara y despacha. Sus productos siguen el horario general de la tienda.
+    </div>
+    {% else %}
     <label class="prov-field prov-span-2">Horario descriptivo
       <input name="horario" value="{{ proveedor.horario or '' }}" placeholder="Ej. L-V 09:00-22:00; S-D 11:00-23:00">
     </label>
-    <label class="prov-field">Apertura
-      <input type="time" name="hora_apertura" value="{{ proveedor.hora_apertura.strftime('%H:%M') if proveedor.hora_apertura else '' }}">
-    </label>
-    <label class="prov-field">Cierre
-      <input type="time" name="hora_cierre" value="{{ proveedor.hora_cierre.strftime('%H:%M') if proveedor.hora_cierre else '' }}">
-    </label>
-    <p class="prov-section-help prov-span-2">Configura ambas horas. Si falta una, el escaparate se considera abierto 24 horas. Se admiten horarios que cruzan medianoche.</p>
+    {{ partner_schedule_editor(
+      proveedor.horario_semanal_json,
+      proveedor.hora_apertura.strftime('%H:%M') if proveedor.hora_apertura else '00:00',
+      proveedor.hora_cierre.strftime('%H:%M') if proveedor.hora_cierre else '23:59',
+      'edit-partner-schedule'
+    ) }}
+    {% endif %}
+    <input type="hidden" name="hora_apertura" value="{{ proveedor.hora_apertura.strftime('%H:%M') if proveedor.hora_apertura else '' }}">
+    <input type="hidden" name="hora_cierre" value="{{ proveedor.hora_cierre.strftime('%H:%M') if proveedor.hora_cierre else '' }}">
   </fieldset>
 
   <fieldset class="ox-card prov-form-section">
-    <legend>Modelo financiero</legend>
+    <legend>Reparto económico</legend>
     <label class="prov-field prov-span-2">Acuerdo
       <select name="modelo_acuerdo">
-        <option value="stock_proveedor" {% if proveedor.modelo_acuerdo == 'stock_proveedor' %}selected{% endif %}>El proveedor pone el stock: se liquida el coste registrado</option>
+        <option value="socio_porcentaje" {% if proveedor.modelo_acuerdo == 'socio_porcentaje' %}selected{% endif %}>Socio por porcentaje</option>
+        <option value="stock_proveedor" {% if proveedor.modelo_acuerdo == 'stock_proveedor' %}selected{% endif %}>Legado: liquidación por coste registrado</option>
         <option value="stock_propio_bar" {% if proveedor.modelo_acuerdo == 'stock_propio_bar' %}selected{% endif %}>La plataforma pone el stock: se liquida una comisión del PVP</option>
       </select>
       <small>El cambio afecta a pedidos futuros; los anteriores conservan las condiciones de su snapshot.</small>
     </label>
-    <label class="prov-field">Comisión % <span>(solo segundo modelo)</span>
+    <label class="prov-field">Porcentaje de la tienda
       <input type="number" step="0.01" min="0" max="100" name="comision_pct" value="{{ "%.2f"|format(proveedor.comision_pct|float) }}" inputmode="decimal">
     </label>
     <label class="prov-field">IBAN
@@ -129,7 +139,7 @@
     <div>
       <span class="prov-eyebrow">Catálogo del aliado</span>
       <h2>Productos y stock</h2>
-      <p>El stock controla la venta pública. El coste se usa en liquidaciones cuando el proveedor aporta el producto.</p>
+      <p>Este inventario pertenece al socio y nunca se mezcla con el stock propio de la tienda.</p>
     </div>
     <span class="prov-status">{{ skus|length }} SKU</span>
   </div>
@@ -143,7 +153,13 @@
         <small>Producto #{{ s.producto.id }}{% if not s.producto.activo %} · inactivo en catálogo{% endif %}</small>
       </div>
       <div><span>Stock</span><strong class="{{ 'prov-danger' if (s.stock or 0) == 0 else '' }}">{{ s.stock }} uds</strong></div>
-      <div><span>Coste unitario</span><strong>{% if s.precio_costo is not none %}{{ "%.2f"|format(s.precio_costo|float) }} €{% else %}Pendiente{% endif %}</strong></div>
+      <div>
+        {% if proveedor.modelo_acuerdo == 'socio_porcentaje' %}
+        <span>Liquidación</span><strong>{{ "%.2f"|format(100 - (proveedor.comision_pct|float)) }}% del PVP</strong>
+        {% else %}
+        <span>Coste unitario</span><strong>{% if s.precio_costo is not none %}{{ "%.2f"|format(s.precio_costo|float) }} €{% else %}Pendiente{% endif %}</strong>
+        {% endif %}
+      </div>
       <form method="POST" data-confirm="¿Borrar este SKU del inventario?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="accion" value="borrar_sku">
@@ -175,7 +191,7 @@
     <label class="prov-field">Stock inicial
       <input type="number" min="0" name="stock" value="0" required inputmode="numeric">
     </label>
-    <label class="prov-field">Coste unitario (€)
+    <label class="prov-field" {% if proveedor.modelo_acuerdo == 'socio_porcentaje' %}hidden{% endif %}>Coste unitario (€)
       <input type="number" step="0.01" min="0" name="precio_costo" inputmode="decimal">
     </label>
     <button type="submit" class="prov-btn prov-btn-primary">Añadir producto</button>
@@ -208,9 +224,12 @@
   {% else %}
   <div class="prov-empty">
     <strong>Sin operadores vinculados</strong>
-    <p>Crea o edita un usuario con rol Proveedor y asígnale el aliado #{{ proveedor.id }}.</p>
+    <p>Crea o edita un usuario con rol Socio de productos y asígnale el socio #{{ proveedor.id }}.</p>
   </div>
   {% endif %}
 </section>
 
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/partner-schedule-editor.js', v=asset_version) }}" defer></script>
 {% endblock %}

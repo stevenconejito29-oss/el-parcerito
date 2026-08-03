@@ -234,7 +234,6 @@ def seed_config(preserved: dict[str, str]) -> None:
         "TARJETA_HABILITADA": "0",
         "PEDIDO_MINIMO_EUR": "10.00",
         "PUNTOS_POR_EURO": "1",
-        "PUNTOS_RATIO": "20",
         "SERVICE_COMMISSION_PCT": "12.00",
         "HORARIO_APERTURA": "09:00",
         "HORARIO_CIERRE": "23:30",

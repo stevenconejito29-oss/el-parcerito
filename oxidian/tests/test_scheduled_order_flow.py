@@ -84,6 +84,19 @@ class ScheduledOrderFlowTest(unittest.TestCase):
         self.assertTrue(pedido_programado_disponible_para_preparar(today, ahora=now))
         self.assertFalse(pedido_programado_disponible_para_preparar(future, ahora=now))
 
+    def test_preparation_window_uses_business_day_near_utc_midnight(self):
+        # 22:30 UTC en julio ya es 00:30 del día siguiente en Europe/Madrid.
+        # La promesa al cliente usa el día de la tienda, no el día UTC.
+        now = datetime(2026, 7, 14, 22, 30)
+        next_local_day = self._scheduled_order(date(2026, 7, 15))
+
+        self.assertTrue(
+            pedido_programado_disponible_para_preparar(
+                next_local_day,
+                ahora=now,
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

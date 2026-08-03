@@ -22,7 +22,7 @@
 // disparadores reales (`menu`, `0`, `inicio`, `hola`, `hi`, `start`) están
 // centralizados en el catch global de `_handleMessage` — este texto solo
 // documenta los dos más memorables para el cliente final.
-const ESCAPE_HINT = "_Escribe *MENU* o *0* para volver al inicio._";
+const ESCAPE_HINT = "_Escribe *ATRÁS* para volver un paso o *MENU* / *0* para ir al inicio._";
 
 // Texto que se muestra cuando el bot no entiende la intención del cliente
 // dentro de un submenú donde SÍ acepta texto libre. No aplicar en menú
@@ -36,7 +36,7 @@ const FALLBACK_HINT = "No estoy seguro de qué necesitas. " + ESCAPE_HINT;
  */
 function withEscapeHint(body) {
   const text = String(body || "").trimEnd();
-  if (text.includes("*MENU*") || text.includes("*0*")) return text;
+  if (text.includes("*ATRÁS*") || text.includes("*MENU*") || text.includes("*0*")) return text;
   return `${text}\n\n${ESCAPE_HINT}`;
 }
 
@@ -152,14 +152,9 @@ function barMenu(ctx) {
 // ─── Menú admin / super_admin ──────────────────────────────────────────
 
 /**
- * Renderiza el panel completo del admin/super_admin agrupando los comandos
- * por dominio funcional. Sin secciones el operador veía 30+ líneas planas
- * y buscar "¿cómo cambio el precio?" era mirar un chorro. Ahora:
- *
- *   1. Encabezado con modo (propio vs bar_servicio).
- *   2. Bloque de secciones numeradas (submenús).
- *   3. Grupos de comandos por dominio, cada uno con su emoji identificador.
- *   4. Bloque exclusivo super_admin al final.
+ * Renderiza el panel operativo reducido de admin/super_admin. WhatsApp se
+ * reserva para acciones del turno y atención humana; la configuración del
+ * negocio permanece en el panel web, con formularios y auditoría.
  *
  * Recibe `sections` y varias capabilities booleanas — no consulta ni cfg()
  * ni la BD. El llamador (bot.js) resuelve las capabilities y arma el ctx.
@@ -184,9 +179,7 @@ function barMenu(ctx) {
 function adminMenu(ctx) {
   const header = (
     `🔐 *Panel ${ctx.rolLabel} — ${ctx.nombreNegocio}*\n` +
-    (ctx.barServicio
-      ? `_🏪 Modo servicio · gestión completa desde WhatsApp._`
-      : `_🏠 Modo propio · usa el panel web para gestión avanzada._`)
+    `_🟢 Modo operativo · solo acciones inmediatas y seguras._`
   );
 
   const sectionsBlock = ctx.sections.length
@@ -195,82 +188,19 @@ function adminMenu(ctx) {
       }`
     : "";
 
-  // Agrupamos comandos por dominio. Cada grupo solo aparece si el operador
-  // tiene al menos un comando dentro — evita bloques vacíos con el título.
-  const grupos = [];
-
-  const consulta = [
-    ctx.can.status ? "`!status` estado del bot" : null,
-    ctx.can.store  ? "`!hoy` resumen del día" : null,
-    "`!diag` diagnóstico completo",
-  ].filter(Boolean);
-  if (consulta.length) {
-    grupos.push(`📊 *Consulta rápida*\n${consulta.join("\n")}`);
-  }
-
-  const clientes = [
-    ctx.can.points ? "`!buscar-cliente 34XXXXXXXXX` ver perfil" : null,
-    ctx.can.points ? "`!cliente Nombre 34XXXXXXXXX` registrar" : null,
-    ctx.can.points ? "`!puntos 34XXXXXXXXX +50 motivo` ajustar puntos" : null,
-  ].filter(Boolean);
-  if (clientes.length) {
-    grupos.push(`👥 *Clientes y fidelidad*\n${clientes.join("\n")}`);
-  }
-
-  const atencion = [
-    (ctx.can.store || ctx.can.points) ? "`!pendientes` cola tiempo real" : null,
-    ctx.can.handoff ? "`!take N` tomar chat · `!release` soltar" : null,
-    ctx.can.handoff ? "`!disponible` marcar disponible/ausente" : null,
-    ctx.can.handoff ? "`!send NUMERO mensaje` enviar directo" : null,
-  ].filter(Boolean);
-  if (atencion.length) {
-    grupos.push(`💬 *Atención humana*\n${atencion.join("\n")}`);
-  }
-
-  const catalogo = [
-    "`!buscar <texto>` encontrar producto",
-    ctx.can.sync ? "`!sync` sincronizar catálogo" : null,
-    ctx.can.ai ? "`!ia <pregunta>` análisis IA del negocio" : null,
-  ].filter(Boolean);
-  if (catalogo.length) {
-    grupos.push(`🛍️ *Catálogo e IA*\n${catalogo.join("\n")}`);
-  }
-
-  // Comandos avanzados de tienda — solo tiene sentido exponerlos cuando el
-  // admin gestiona su negocio íntegramente desde WhatsApp (bar_servicio).
-  if (ctx.barServicio) {
-    const tienda = [
-      "`!pausar-tienda` / `!reanudar-tienda`",
-      "`!producto <id> activar|desactivar`",
-      "`!precio <id> <euros>` cambiar precio",
-      "`!stock <id> +N | -N | =N` ajustar inventario",
-      "`!crear-producto <nombre>|<precio>|<categoria>`",
-      "`!ver-pedidos [estado]` listar con detalle",
-      "`!horario HH:MM-HH:MM` fijar apertura/cierre",
-      "`!minimo <euros>` pedido mínimo",
-      "`!nombre <texto>` cambiar nombre del negocio",
-      "`!nicho comida|producto` cambiar nicho",
-      "`!config <CLAVE> <valor>` cualquier ajuste runtime",
-      "`!ver-config <PREFIJO>` listar config",
-    ];
-    grupos.push(`🏪 *Gestión de tienda (modo servicio)*\n${tienda.join("\n")}`);
-  }
-
-  // Solo super_admin ve estos — corresponden a control estratégico global.
-  if (ctx.isSuperAdmin) {
-    const sa = [
-      "`!modo-tienda` alternar propio ↔ servicio",
-      "`!modulo delivery|recogida|puntos|programados on|off`",
-      "`!cerrar-tienda` / `!abrir-tienda`",
-      "`!salud` snapshot del sistema",
-      "`!limpiar` reset sesiones clientes",
-    ];
-    grupos.push(`👑 *Solo Super Admin*\n${sa.join("\n")}`);
-  }
-
   const parts = [header];
   if (sectionsBlock) parts.push(sectionsBlock);
-  parts.push(...grupos);
+  if (ctx.can.handoff) {
+    parts.push(
+      `💬 *Atajos de atención*\n` +
+      `Escribe *TOMAR* para atender al primero\n` +
+      `Escribe *COLA* para elegir un cliente`,
+    );
+  }
+  parts.push(
+    `🔁 */offline* — comprar como cliente\n` +
+    `🌐 _Productos, clientes, puntos, roles, finanzas y configuración: panel web._`,
+  );
   return parts.join("\n\n");
 }
 
@@ -310,10 +240,10 @@ const ADMIN_SUB_MENUS = {
     `_0 · volver al menú principal_`
   ),
   handoff: (
-    `💬 *Atención humana (handoff)*\n\n` +
-    `1️⃣  Ver clientes en espera\n` +
-    `2️⃣  Soltar mi chat activo\n` +
-    `3️⃣  Cerrar todos mis chats\n\n` +
+    `💬 *Atención a clientes*\n\n` +
+    `1️⃣  Tomar el primero en espera\n` +
+    `2️⃣  Elegir cliente de la cola\n` +
+    `3️⃣  Ver mi chat activo\n\n` +
     `_0 · volver al menú principal_`
   ),
   security: (

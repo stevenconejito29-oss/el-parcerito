@@ -46,14 +46,15 @@
     return svg;
   }
 
-  function show(msg, type, ttl) {
+  function show(msg, type, options) {
     if (!msg) return;
     type = type || 'info';
-    if (typeof ttl !== 'number') ttl = 3200;
+    var opts = typeof options === 'number' ? { ttl: options } : (options || {});
+    var ttl = typeof opts.ttl === 'number' ? opts.ttl : 4200;
     var host = ensureStack();
     var el = document.createElement('div');
     el.className = 'ox-toast-v2 ox-toast-v2-' + type;
-    el.setAttribute('role', 'status');
+    el.setAttribute('role', ['danger', 'error'].includes(type) ? 'alert' : 'status');
     var icon = document.createElement('span');
     icon.className = 'ox-toast-v2__icon';
     icon.appendChild(heritageIcon(ICONS[type] || ICONS.info));
@@ -67,6 +68,17 @@
     close.textContent = '×';
     el.appendChild(icon);
     el.appendChild(text);
+    if (opts.action && opts.action.label && typeof opts.action.run === 'function') {
+      var action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'ox-toast-v2__action';
+      action.textContent = String(opts.action.label);
+      action.addEventListener('click', function () {
+        opts.action.run();
+        dismiss();
+      }, { once: true });
+      el.appendChild(action);
+    }
     el.appendChild(close);
     host.appendChild(el);
 
@@ -87,8 +99,19 @@
       }, 260);
     }
     close.addEventListener('click', dismiss);
-    if (ttl > 0) timer = setTimeout(dismiss, ttl);
-    return { dismiss: dismiss };
+    function startTimer() {
+      if (ttl > 0 && !timer) timer = setTimeout(dismiss, ttl);
+    }
+    function pauseTimer() {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    }
+    el.addEventListener('mouseenter', pauseTimer);
+    el.addEventListener('mouseleave', startTimer);
+    el.addEventListener('focusin', pauseTimer);
+    el.addEventListener('focusout', startTimer);
+    startTimer();
+    return { dismiss: dismiss, remove: dismiss, element: el };
   }
 
   function confirmDialog(opts) {
@@ -150,17 +173,21 @@
     });
   }
 
-  // Migración suave: los flash messages viejos (con .ox-toast) se autodismissan.
   document.addEventListener('DOMContentLoaded', function () {
-    var legacy = document.querySelectorAll('#ox-toasts .ox-toast');
-    legacy.forEach(function (n, i) {
-      setTimeout(function () {
-        n.style.transition = 'opacity .25s, transform .25s';
-        n.style.opacity = '0';
-        n.style.transform = 'translateY(-8px)';
-        setTimeout(function () { n.remove(); }, 280);
-      }, 4200 + i * 250);
-    });
+    var source = document.getElementById('ox-flash-data');
+    if (!source) return;
+    try {
+      var messages = JSON.parse(source.textContent || '[]');
+      messages.forEach(function (entry, index) {
+        var category = Array.isArray(entry) ? entry[0] : 'info';
+        var message = Array.isArray(entry) ? entry[1] : entry;
+        show(message, ['success', 'danger', 'warning', 'info'].includes(category)
+          ? category : 'info', { ttl: 4800 + index * 300 });
+      });
+    } catch (_) {
+      show('No se pudo mostrar un aviso del sistema.', 'warning');
+    }
+    source.remove();
   });
 
   window.OxToast = { show: show, confirm: confirmDialog };

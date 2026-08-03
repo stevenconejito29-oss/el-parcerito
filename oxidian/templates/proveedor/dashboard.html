@@ -1,0 +1,80 @@
+{% extends "admin_base.html" %}
+{% block title %}Mi resumen — {{ proveedor.nombre }}{% endblock %}
+{% block content %}
+<header class="prov-page-head prov-detail-head">
+  <div>
+    <span class="prov-eyebrow">Socio #{{ proveedor.id }}</span>
+    <h1>Hola, {{ proveedor.nombre }}</h1>
+    <p>Este es tu resumen. Tú propones el catálogo y consultas resultados; la tienda custodia el stock, atiende al cliente y gestiona la logística.</p>
+  </div>
+  <span class="prov-status {{ 'is-active' if proveedor.activo else 'is-inactive' }}">{{ 'Activo' if proveedor.activo else 'Inactivo' }}</span>
+</header>
+
+<div class="prov-kpis prov-kpis-compact">
+  <div>
+    <span>Propuestas en revisión</span>
+    <strong class="{{ 'prov-warning' if conteo.pending else '' }}">{{ conteo.pending }}</strong>
+    <small>{{ conteo.combos_pending }} son combos</small>
+  </div>
+  <div>
+    <span>Aprobadas</span>
+    <strong>{{ conteo.approved }}</strong>
+    <small>publicadas en el menú</small>
+  </div>
+  <div>
+    <span>Requieren cambios</span>
+    <strong class="{{ 'prov-danger' if conteo.rejected else '' }}">{{ conteo.rejected }}</strong>
+    <small>rechazadas por revisión</small>
+  </div>
+  <div>
+    <span>Ventas en curso</span>
+    <strong>{{ unidades_activas }}</strong>
+    <small>unidades comprometidas</small>
+  </div>
+</div>
+
+<section class="ox-card" style="margin-top:1.25rem;">
+  <div class="partner-form-heading">
+    <span>€</span>
+    <div>
+      <strong>Este mes ({{ inicio_mes.strftime('%d/%m') }} – {{ hoy.strftime('%d/%m') }})</strong>
+      <small>Se recalcula desde el mismo cierre que usa administración.</small>
+    </div>
+  </div>
+  <div class="prov-kpis prov-kpis-compact" style="margin-top:0.75rem;">
+    <div><span>Ventas netas</span><strong>€{{ "%.2f"|format(ventas_mes|float) }}</strong><small>tus productos vendidos</small></div>
+    <div><span>Pendiente de liquidar</span><strong class="{{ 'prov-warning' if saldo_pendiente|float > 0 else '' }}">€{{ "%.2f"|format(saldo_pendiente|float) }}</strong><small>obligación de la tienda contigo</small></div>
+    <div><span>Ya pagado</span><strong>€{{ "%.2f"|format(saldo_pagado|float) }}</strong><small>liquidaciones cerradas</small></div>
+  </div>
+  <div class="partner-form-actions" style="margin-top:1rem;">
+    <a href="{{ url_for('proveedor.finanzas') }}" class="prov-btn prov-btn-secondary">Ver detalle de liquidación</a>
+  </div>
+</section>
+
+<section class="ox-card" style="margin-top:1.25rem;">
+  <div class="partner-form-heading">
+    <span>⚡</span>
+    <div><strong>Acciones rápidas</strong><small>Lo que sueles usar cada semana.</small></div>
+  </div>
+  <div class="partner-form-actions" style="margin-top:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+    <a href="{{ url_for('proveedor.registrar_producto') }}" class="prov-btn prov-btn-primary">+ Registrar producto</a>
+    <a href="{{ url_for('proveedor.registrar_combo') }}" class="prov-btn prov-btn-secondary">+ Crear combo</a>
+    <a href="{{ url_for('proveedor.inventario') }}" class="prov-btn prov-btn-secondary">📦 Ver existencias</a>
+    <a href="{{ url_for('proveedor.pedidos') }}" class="prov-btn prov-btn-secondary">↗ Ventas en curso</a>
+    <a href="{{ url_for('proveedor.incidencias') }}" class="prov-btn prov-btn-secondary">⚠️ Incidencias</a>
+  </div>
+</section>
+
+{% if conteo.pending or conteo.rejected %}
+<aside class="prov-alert-panel" style="margin-top:1.25rem;">
+  {% if conteo.rejected %}
+  <strong>Tienes {{ conteo.rejected }} propuesta{{ 's' if conteo.rejected != 1 else '' }} con cambios solicitados</strong>
+  <p>Revísalas en tu inventario y reenvíalas con la corrección.</p>
+  {% else %}
+  <strong>Tienes {{ conteo.pending }} propuesta{{ 's' if conteo.pending != 1 else '' }} en revisión</strong>
+  <p>Super Administración las revisará y completará su ficha antes de publicarlas.</p>
+  {% endif %}
+  <a href="{{ url_for('proveedor.inventario') }}" class="prov-btn prov-btn-secondary">Abrir inventario</a>
+</aside>
+{% endif %}
+{% endblock %}

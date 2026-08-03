@@ -86,6 +86,11 @@ No se eliminan automáticamente para no alterar tarifas o zonas históricas.
   El total solo incorpora el coste devuelto por la resolución autoritativa.
 - Web y chatbot crean el pedido con el mismo motor de precios y cobertura. El
   `zona_id` recibido desde un cliente nunca sustituye la decisión del servidor.
+- En web/PWA, una ubicación del dispositivo sólo se admite junto a una
+  dirección completa y a la precisión informada por el navegador. Si la
+  precisión es insuficiente o la calle geocodificada queda demasiado lejos del
+  GPS, se rechaza y se solicita repetir la comprobación. WhatsApp conserva su
+  contrato propio porque una ubicación compartida no siempre incluye precisión.
 - Al confirmar se congelan en el pedido el coste cobrado, nombre de zona,
   tarifa base, tiempo estimado y tipo de cobertura. Tickets, historial y vistas
   de los roles leen ese snapshot, de modo que renombrar o archivar una zona no

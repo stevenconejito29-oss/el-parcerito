@@ -1,0 +1,76 @@
+{% extends "admin_base.html" %}
+{% block title %}Ventas activas — {{ socio.nombre }}{% endblock %}
+{% block content %}
+{% set estados = {
+  'pendiente': ('Pedido recibido', 'La tienda aún no inicia la preparación', 1),
+  'armando': ('En preparación', 'El equipo está preparando el pedido', 2),
+  'listo': ('Listo para salir', 'Preparado y esperando reparto o recogida', 3),
+  'en_ruta': ('En reparto', 'El pedido está camino al cliente', 4)
+} %}
+
+<main class="partner-orders" aria-labelledby="partner-orders-title">
+  <header class="prov-page-head">
+    <div>
+      <span class="prov-eyebrow">Socio de productos · {{ socio.nombre }}</span>
+      <h1 id="partner-orders-title">Ventas en curso</h1>
+      <p>Sigue el movimiento de tu mercancía. La tienda prepara y despacha; aquí no necesitas tomar ninguna acción.</p>
+    </div>
+    <a href="{{ url_for('proveedor.finanzas') }}" class="prov-btn prov-btn-primary">Ver finanzas</a>
+  </header>
+
+  <section class="partner-orders__summary" aria-label="Resumen de ventas activas">
+    <article>
+      <span>Pedidos activos</span>
+      <strong>{{ ventas_activas|length }}</strong>
+    </article>
+    <article>
+      <span>Unidades comprometidas</span>
+      <strong>{{ unidades_activas }}</strong>
+      <small>Reservadas en pedidos aún activos</small>
+    </article>
+  </section>
+
+  <section class="partner-orders__list">
+    {% for venta in ventas_activas %}
+    {% set pedido = venta.pedido %}
+    {% set estado = estados.get(pedido.estado, (pedido.estado, '', 1)) %}
+    <article class="partner-order-card">
+      <header>
+        <div>
+          <span class="prov-eyebrow">Pedido</span>
+          <strong>#{{ pedido.numero_pedido }}</strong>
+        </div>
+        <span class="partner-order-state partner-order-state--{{ pedido.estado }}">{{ estado[0] }}</span>
+      </header>
+      <div class="partner-order-progress" aria-label="Paso {{ estado[2] }} de 4">
+        {% for paso in range(1, 5) %}<span class="{{ 'is-complete' if paso <= estado[2] else '' }}"></span>{% endfor %}
+      </div>
+      <p class="partner-order-help">{{ estado[1] }}</p>
+      <div class="partner-order-lines">
+        {% for linea in venta.lineas %}
+        <div>
+          <strong>×{{ linea.cantidad }}</strong>
+          <p>
+            {{ linea.nombre }}
+            {% if linea.presentacion %}<small>{{ linea.presentacion }}</small>{% endif %}
+            {% if linea.sabores %}<small>{{ linea.sabores|join(' · ') }}</small>{% endif %}
+            {% if linea.fecha_entrega %}<small>Entrega {{ linea.fecha_entrega.strftime('%d/%m/%Y') }}</small>{% endif %}
+          </p>
+          <span>€{{ "%.2f"|format(linea.subtotal|float) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <footer>
+        <span>Registrado {{ pedido.creado_en.strftime('%d/%m · %H:%M') if pedido.creado_en else '' }}</span>
+        <span>El saldo se reconoce al entregar</span>
+      </footer>
+    </article>
+    {% else %}
+    <div class="ops-empty">
+      <strong>No tienes ventas activas ahora</strong>
+      <p>Cuando se venda uno de tus productos aparecerá aquí hasta su entrega.</p>
+    </div>
+    {% endfor %}
+  </section>
+</main>
+{% endblock %}

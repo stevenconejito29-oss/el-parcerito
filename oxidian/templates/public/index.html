@@ -3,6 +3,8 @@
 {% block title %}{{ brand.nombre }} — Pide online{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-menu.css', v=asset_version) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-product-card.css', v=asset_version) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-product-modal.css', v=asset_version) }}">
 {% endblock %}
 {% block preload %}
 {# LCP hint: preload de la imagen del hero para que empiece a bajar mientras
@@ -55,12 +57,17 @@
       {# Hero despejado con PRESENCIA DE MARCA: si hay logo del negocio,
          se muestra al lado del nombre (branded storefront pattern). Escala
          responsive con clamp — nunca abruma pero siempre es visible. #}
-      {% set _hero_sub = ui.hero_eyebrow or brand.slogan or brand.ciudad %}
+      {% set _hero_eyebrow = ui.hero_eyebrow or brand.slogan or brand.ciudad %}
+      {% set _hero_title = ui.hero_title or brand.slogan or brand.nombre %}
+      {% set _hero_sub = ui.hero_subtitle or brand.descripcion %}
+      {% if _hero_eyebrow %}
+      <p class="ep-hero-eyebrow">{{ _hero_eyebrow }}</p>
+      {% endif %}
       <div class="ep-hero-heading">
         {% if brand.logo_url %}
         <img class="ep-hero-logo" src="{{ brand.logo_url }}" alt="" width="48" height="48" fetchpriority="high" decoding="async">
         {% endif %}
-        <h1 class="ep-hero-title">{{ brand.nombre }}</h1>
+        <h1 class="ep-hero-title">{{ _hero_title }}</h1>
       </div>
       {% if _hero_sub %}
       <p class="ep-hero-sub">
@@ -165,7 +172,7 @@
 <div class="ep-mc-destacados">
   {% for mc in dest_mc %}
   {% if mc.producto %}
-  <a href="{{ url_for('public.producto_detalle', producto_id=mc.producto_id, origen=origen_actual) }}" class="ep-mc-dest-card">
+  <a href="{{ url_for('public.producto_detalle', producto_id=mc.producto_id, origen=product_origins.get(mc.producto_id, origen_actual)) }}" class="ep-mc-dest-card">
     <span class="ep-mc-dest-img">
       {% if mc.producto.imagen_url %}
         <img src="{{ img_url(mc.producto.imagen_url) }}" alt="{{ mc.producto.nombre }}" loading="lazy">
@@ -191,7 +198,7 @@
   </div>
 <div class="ep-mc-destacados">
   {% for p in productos_auto_destacados %}
-  <a href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=origen_actual) }}" class="ep-mc-dest-card">
+  <a href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=product_origins.get(p.id, origen_actual)) }}" class="ep-mc-dest-card">
     <span class="ep-mc-dest-img">
       {% if p.imagen_url %}
         <img src="{{ img_url(p.imagen_url) }}" alt="{{ p.nombre }}" loading="lazy">
@@ -261,7 +268,7 @@
       <span>{{ item.titulo or item.categoria.nombre }}</span><small>{{ item.contenido or 'Ver categoría' }}</small>
     </a>
     {% elif item.tipo == 'producto_destacado' and item.producto %}
-    <a class="ep-menu-config-product" href="{{ url_for('public.producto_detalle', producto_id=item.producto_id, origen=origen_actual) }}">
+    <a class="ep-menu-config-product" href="{{ url_for('public.producto_detalle', producto_id=item.producto_id, origen=product_origins.get(item.producto_id, origen_actual)) }}">
       {% if item.producto.imagen_url %}<img src="{{ item.producto.imagen_url|upload_url }}" alt="" loading="lazy" decoding="async">{% endif %}
       <div><small>Recomendado</small><strong>{{ item.titulo or item.producto.nombre }}</strong><span>€{{ "%.2f"|format(item.producto.precio_final) }}</span></div>
     </a>
@@ -559,7 +566,7 @@
       {# Acciones — add directo #}
       <form id="ep-modal-form" method="POST" action="" class="hidden" data-no-guard>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="origen" value="{{ origen_actual }}">
+        <input type="hidden" name="origen" id="ep-modal-origin" value="{{ origen_actual }}">
         <input type="hidden" name="cantidad" id="ep-modal-qty-val" value="1">
         <input type="hidden" name="presentation_size" id="ep-modal-pres-val" value="">
         {# Notas del cliente por producto. #}
@@ -605,6 +612,7 @@
     "combo_precio_base": {{ p.combo_precio_base|float if p.es_combo else 0 }},
     "tipo_entrega": {{ p.tipo_entrega|tojson }},
     "imagen_url": {{ (p.imagen_url|upload_url)|tojson }},
+    "image_fit": {{ p.get_atributos().get('image_fit', 'contain')|tojson }},
     "stock": {{ product_cards[p.id].stock|stock_bounded(cap=99) }},
     "stock_unlimited": {{ 'true' if product_cards[p.id].stock|stock_is_unlimited else 'false' }},
     "stock_mostrar": {{ 'true' if p.stock_mostrar_en_web else 'false' }},
@@ -616,7 +624,8 @@
     "alergenos": {{ p.alergenos_iconos|list|tojson }},
     "categoria": {{ (p.categoria.nombre if p.categoria else '')|tojson }},
     "rating": {{ product_cards[p.id].rating|float }},
-    "url": {{ url_for('public.producto_detalle', producto_id=p.id, origen=origen_actual)|tojson }},
+    "origin": {{ product_origins.get(p.id, origen_actual)|tojson }},
+    "url": {{ url_for('public.producto_detalle', producto_id=p.id, origen=product_origins.get(p.id, origen_actual))|tojson }},
     "add_url": {{ url_for('public.agregar_carrito', producto_id=p.id)|tojson }},
     "combo_preview": [{% if p.es_combo %}{% for ci in product_cards[p.id].combo_items[:5] %}{{ {"nombre": ci.componente.nombre, "qty": ci.cantidad, "sel": ci.es_seleccionable, "grupo": ci.grupo_display, "extra": ci.precio_extra_float}|tojson }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %}],
     "presentaciones": [{% for pr in product_cards[p.id].presentations %}{{ {"tamaño": pr.tamaño, "extra": pr.precio_extra_float, "orden": pr.orden}|tojson }}{% if not loop.last %},{% endif %}{% endfor %}]
@@ -775,6 +784,19 @@ function epConfirmProductAdded(productId) {
   const selector = `[data-product-card="${CSS.escape(String(productId))}"]`;
   const card = document.querySelector(selector);
   if (!card) return;
+  const priceBlock = card.querySelector('.ep-card-prices');
+  if (priceBlock && !priceBlock.querySelector('.ep-card-cart-state')) {
+    const state = document.createElement('span');
+    state.className = 'ep-card-cart-state';
+    state.setAttribute('aria-label', 'Este producto ya está en tu canasta');
+    state.textContent = '✓ En tu canasta';
+    priceBlock.appendChild(state);
+  }
+  const addButton = card.querySelector('.ep-btn-add');
+  if (addButton) {
+    const productName = addButton.dataset.productName || 'este producto';
+    addButton.setAttribute('aria-label', `Añadir otra unidad de ${productName}`);
+  }
   card.classList.remove('is-just-added');
   card.classList.add('ep-card-in-cart');
   requestAnimationFrame(() => card.classList.add('is-just-added'));
@@ -811,20 +833,37 @@ async function _epShowCartIssue(issue, fallbackMsg) {
 }
 
 function _epToast(msg, type) {
+  if (window.OxToast?.show) {
+    return window.OxToast.show(msg, type === 'warn' ? 'warning' : (type || 'success'), {
+      ttl: type === 'warn' ? 8000 : 3200,
+    });
+  }
   const t = Object.assign(document.createElement('div'), {
     className: 'ep-toast' + (type === 'warn' ? ' ep-toast--warn' : ''),
     textContent: msg,
   });
   document.body.appendChild(t);
   requestAnimationFrame(() => t.classList.add('is-on'));
-  const dur = type === 'warn' ? 3800 : 2200;
+  const dur = type === 'warn' ? 8000 : 3200;
   setTimeout(() => { t.classList.remove('is-on'); setTimeout(() => t.remove(), 340); }, dur);
+}
+
+/* El modal se renderiza junto al catálogo por cohesión de plantilla, pero
+   funciona como una capa global. Portalarlo al body evita que el contexto
+   aislado de <main> lo sitúe detrás de la cabecera en móviles horizontales. */
+const epModalPortal = document.getElementById('ep-modal');
+let epModalPreviousFocus = null;
+let epModalInerted = [];
+if (epModalPortal && epModalPortal.parentElement !== document.body) {
+  document.body.appendChild(epModalPortal);
 }
 
 function openModal(id) {
   const d = EP_DATA[String(id)];
   if (!d) return;
   _modalProductId = d.id;
+  const modalOrigin = document.getElementById('ep-modal-origin');
+  if (modalOrigin) modalOrigin.value = d.origin || 'propio';
   const rating = Number(d.rating || 0);
   const precioFinal = Number(d.precio_final ?? d.precio ?? 0);
 
@@ -839,6 +878,8 @@ function openModal(id) {
   const modal  = document.getElementById('ep-modal');
   const imgEl  = document.getElementById('ep-modal-img');
   const fbEl   = document.getElementById('ep-modal-img-fb');
+  const imgWrap = document.getElementById('ep-modal-img-wrap');
+  imgWrap?.classList.toggle('is-cover', d.image_fit === 'cover');
 
   // Imagen
   if (d.imagen_url) {
@@ -964,6 +1005,7 @@ function openModal(id) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'ep-modal-pres-pill' + (idx === 0 ? ' is-active' : '');
+      btn.setAttribute('aria-pressed', idx === 0 ? 'true' : 'false');
       const extra = Number(pres.extra || 0);
       const emoji = presEmojis[pres.tamaño] || '📦';
       const labelExtra = extra === 0 ? '' : (extra > 0 ? ` (+€${extra.toFixed(2)})` : ` (−€${Math.abs(extra).toFixed(2)})`);
@@ -972,8 +1014,12 @@ function openModal(id) {
       btn.dataset.size = pres.tamaño;
       btn.dataset.extra = extra;
       btn.onclick = () => {
-        presList.querySelectorAll('.ep-modal-pres-pill').forEach(x => x.classList.remove('is-active'));
+        presList.querySelectorAll('.ep-modal-pres-pill').forEach(x => {
+          x.classList.remove('is-active');
+          x.setAttribute('aria-pressed', 'false');
+        });
         btn.classList.add('is-active');
+        btn.setAttribute('aria-pressed', 'true');
         presVal.value = pres.tamaño;
         priceEl.textContent = `€${(precioBase + extra).toFixed(2)}`;
       };
@@ -1024,6 +1070,14 @@ function openModal(id) {
   document.body.style.overflow = 'hidden';
   document.body.classList.add('ox-modal-open');
   modal.removeAttribute('hidden');
+  epModalPreviousFocus = document.activeElement;
+  epModalInerted = [...document.body.children].filter((element) => (
+    element !== modal
+    && !element.inert
+    && !['SCRIPT', 'STYLE', 'LINK'].includes(element.tagName)
+  ));
+  epModalInerted.forEach((element) => { element.inert = true; });
+  requestAnimationFrame(() => modal.querySelector('[data-modal-close]')?.focus());
 }
 
 function closeModal() {
@@ -1032,6 +1086,10 @@ function closeModal() {
   modal.classList.add('ep-modal--closing');
   document.body.style.overflow = '';
   document.body.classList.remove('ox-modal-open');
+  epModalInerted.forEach((element) => { element.inert = false; });
+  epModalInerted = [];
+  if (epModalPreviousFocus instanceof HTMLElement) epModalPreviousFocus.focus();
+  epModalPreviousFocus = null;
   _closeTimer = setTimeout(() => {
     modal.style.display = 'none';
     modal.setAttribute('hidden', '');

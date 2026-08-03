@@ -221,11 +221,13 @@ function ctxAdmin(overrides = {}) {
     barServicio: false,
     isSuperAdmin: false,
     sections: [
-      { n: '1️⃣', label: 'Estado del bot y WhatsApp' },
+      { n: '1️⃣', label: 'Resumen operativo' },
       { n: '2️⃣', label: 'Abrir / cerrar tienda' },
-      { n: '3️⃣', label: 'Productos y precios' },
+      { n: '3️⃣', label: 'Pedidos en riesgo' },
+      { n: '4️⃣', label: 'Atención humana' },
+      { n: '5️⃣', label: 'Pasar a modo cliente' },
     ],
-    can: { status: true, store: true, products: true, points: true, handoff: true, sync: true, ai: false },
+    can: { status: true, store: true, handoff: true },
     ...overrides,
   };
 }
@@ -236,42 +238,31 @@ test('adminMenu incluye header con rol y nombre negocio', () => {
   assert.match(out, /El Parcerito/);
 });
 
-test('adminMenu marca modo propio cuando barServicio es false', () => {
+test('adminMenu muestra modo operativo seguro', () => {
   const out = texts.adminMenu(ctxAdmin({ barServicio: false }));
-  assert.match(out, /Modo propio/);
-  assert.doesNotMatch(out, /Modo servicio/);
+  assert.match(out, /Modo operativo/);
+  assert.match(out, /acciones inmediatas y seguras/);
 });
 
-test('adminMenu marca modo servicio cuando barServicio es true', () => {
-  const out = texts.adminMenu(ctxAdmin({ barServicio: true }));
-  assert.match(out, /Modo servicio/);
-  assert.doesNotMatch(out, /Modo propio/);
-});
-
-test('adminMenu agrupa por dominios con emojis identificadores', () => {
+test('adminMenu limita los atajos a atención humana', () => {
   const out = texts.adminMenu(ctxAdmin());
-  assert.match(out, /📊 \*Consulta rápida\*/);
-  assert.match(out, /👥 \*Clientes y fidelidad\*/);
-  assert.match(out, /💬 \*Atención humana\*/);
-  assert.match(out, /🛍️ \*Catálogo e IA\*/);
+  assert.match(out, /💬 \*Atajos de atención\*/);
+  assert.match(out, /\*TOMAR\*/);
+  assert.match(out, /\*COLA\*/);
+  assert.doesNotMatch(out, /!take|!release|<numero>/);
+  assert.doesNotMatch(out, /!send|!puntos|!precio|!config|!ia/);
 });
 
-test('adminMenu NO muestra bloque tienda avanzada cuando no está en bar_servicio', () => {
-  const out = texts.adminMenu(ctxAdmin({ barServicio: false }));
-  assert.doesNotMatch(out, /Gestión de tienda \(modo servicio\)/);
-});
-
-test('adminMenu SÍ muestra bloque tienda avanzada en bar_servicio', () => {
+test('adminMenu no expone gestión avanzada aunque el tenant sea bar_servicio', () => {
   const out = texts.adminMenu(ctxAdmin({ barServicio: true }));
-  assert.match(out, /🏪 \*Gestión de tienda \(modo servicio\)\*/);
-  assert.match(out, /!crear-producto/);
-  assert.match(out, /!precio/);
+  assert.doesNotMatch(out, /!crear-producto|!precio|!stock|!nicho/);
+  assert.match(out, /panel web/);
 });
 
-test('adminMenu añade bloque Solo Super Admin cuando isSuperAdmin', () => {
+test('adminMenu no sobrecarga al super admin con configuración estratégica', () => {
   const out = texts.adminMenu(ctxAdmin({ isSuperAdmin: true }));
-  assert.match(out, /👑 \*Solo Super Admin\*/);
-  assert.match(out, /!modo-tienda/);
+  assert.doesNotMatch(out, /Solo Super Admin|!modo-tienda|!modulo|!limpiar/);
+  assert.match(out, /roles, finanzas y configuración: panel web/);
 });
 
 test('adminMenu oculta bloque Solo Super Admin para admin normal', () => {
@@ -282,26 +273,26 @@ test('adminMenu oculta bloque Solo Super Admin para admin normal', () => {
 test('adminMenu oculta comandos de dominios sin permiso', () => {
   // Admin sin permiso de handoff no debe ver los comandos de handoff.
   const out = texts.adminMenu(ctxAdmin({
-    can: { status: true, store: true, products: false, points: false, handoff: false, sync: false, ai: false },
+    can: { status: true, store: true, handoff: false },
   }));
   assert.doesNotMatch(out, /!take/);
   assert.doesNotMatch(out, /!send/);
   assert.doesNotMatch(out, /!sync/);
 });
 
-test('adminMenu oculta grupo entero si ninguno de sus comandos aplica', () => {
-  // Sin ninguna capability de clientes → no aparece el header "Clientes y fidelidad".
+test('adminMenu oculta atajos de atención sin capability handoff', () => {
   const out = texts.adminMenu(ctxAdmin({
-    can: { status: true, store: true, products: false, points: false, handoff: false, sync: false, ai: false },
+    can: { status: true, store: true, handoff: false },
   }));
-  assert.doesNotMatch(out, /Clientes y fidelidad/);
+  assert.doesNotMatch(out, /Atajos de atención|!take|!release/);
 });
 
 test('adminMenu renderiza las secciones numeradas del bloque superior', () => {
   const out = texts.adminMenu(ctxAdmin());
   assert.match(out, /📂 \*Secciones\*/);
-  assert.match(out, /1️⃣ Estado del bot/);
-  assert.match(out, /Productos y precios/);
+  assert.match(out, /1️⃣ Resumen operativo/);
+  assert.match(out, /3️⃣ Pedidos en riesgo/);
+  assert.match(out, /5️⃣ Pasar a modo cliente/);
 });
 
 // ─── ADMIN_SUB_MENUS ─────────────────────────────────────────────────

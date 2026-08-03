@@ -1,0 +1,73 @@
+{% extends "admin_base.html" %}
+{% block title %}{{ 'Editar' if entry.id else 'Nueva' }} FAQ — Super Admin{% endblock %}
+{% block content %}
+<div class="oa-page">
+
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Chatbot · FAQ</p>
+      <h1 class="oa-page-header__title">{{ 'Editar entrada' if entry.id else 'Nueva entrada' }}</h1>
+      <p class="oa-page-header__subtitle">Placeholders disponibles: <code>{{ '{{horario}}' }}</code>, <code>{{ '{{telefono}}' }}</code>, <code>{{ '{{direccion}}' }}</code>, <code>{{ '{{web_url}}' }}</code>, <code>{{ '{{nombre_negocio}}' }}</code>.</p>
+    </div>
+    <div class="oa-page-header__actions">
+      <a href="{{ url_for('superadmin.chatbot_faq_lista') }}" class="oa-btn">← Volver</a>
+    </div>
+  </header>
+
+  <form method="POST" class="oa-panel" style="margin:0;">
+    <div class="oa-panel__body" style="display:grid; gap:1rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <label>
+        <span style="display:block; font-weight:700; margin-bottom:.35rem;">Pregunta (resumen mostrado al admin)</span>
+        <input type="text" name="pregunta" value="{{ entry.pregunta or '' }}"
+               required maxlength="200" style="width:100%; padding:.6rem; border-radius:.4rem;">
+      </label>
+
+      <label>
+        <span style="display:block; font-weight:700; margin-bottom:.35rem;">Respuesta (lo que el bot envía por WhatsApp)</span>
+        <textarea name="respuesta" required rows="6"
+                  style="width:100%; padding:.6rem; border-radius:.4rem; font-family:inherit;">{{ entry.respuesta or '' }}</textarea>
+        <small style="opacity:.65;">Usa emojis, saltos de línea y placeholders. Ej: <code>Horario: {{ '{{horario}}' }}</code>.</small>
+      </label>
+
+      <label>
+        <span style="display:block; font-weight:700; margin-bottom:.35rem;">Palabras clave (separadas por coma)</span>
+        <input type="text" name="keywords" value="{{ entry.keywords or '' }}"
+               placeholder="horario, abren, cierran, hora" style="width:100%; padding:.6rem; border-radius:.4rem;">
+        <small style="opacity:.65;">El bot compara el mensaje del cliente con estas palabras. Incluye variantes comunes.</small>
+      </label>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem;">
+        <label>
+          <span style="display:block; font-weight:700; margin-bottom:.35rem;">Categoría</span>
+          <input type="text" name="categoria" value="{{ entry.categoria or 'general' }}"
+                 maxlength="60" style="width:100%; padding:.6rem; border-radius:.4rem;">
+        </label>
+        <label>
+          <span style="display:block; font-weight:700; margin-bottom:.35rem;">Audiencia</span>
+          <select name="audiencia" style="width:100%; padding:.6rem; border-radius:.4rem;">
+            {% for a in ['cliente','admin','super_admin','todos'] %}
+              <option value="{{ a }}" {% if entry.audiencia == a %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span style="display:block; font-weight:700; margin-bottom:.35rem;">Orden</span>
+          <input type="number" name="orden" value="{{ entry.orden or 0 }}" style="width:100%; padding:.6rem; border-radius:.4rem;">
+        </label>
+      </div>
+
+      <label style="display:flex; gap:.5rem; align-items:center;">
+        <input type="checkbox" name="activo" value="1" {% if entry.activo or not entry.id %}checked{% endif %}>
+        <span>Activa (el bot la puede devolver)</span>
+      </label>
+
+      <div style="display:flex; gap:.5rem;">
+        <button type="submit" class="oa-btn oa-btn--primary">Guardar</button>
+        <a href="{{ url_for('superadmin.chatbot_faq_lista') }}" class="oa-btn">Cancelar</a>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

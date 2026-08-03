@@ -30,6 +30,7 @@ PUBLIC_INFRASTRUCTURE_PATHS = frozenset({
     "/favicon.ico",
     "/manifest.webmanifest",
     "/robots.txt",
+    "/sitemap.xml",
     "/sw.js",
 })
 

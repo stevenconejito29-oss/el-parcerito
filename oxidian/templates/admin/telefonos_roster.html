@@ -107,7 +107,7 @@
         </td>
         <td class="p-2 phone-email" data-label="Email" style="color:var(--col-muted);font-size:.8rem;">{{ u.email or '' }}</td>
         <td class="p-2 text-center" data-label="Estado">
-          {% if u.activo %}<span style="color:#22c55e;">✓ Activo</span>
+          {% if u.activo %}<span class="status-badge-ok">✓ Activo</span>
           {% else %}<span style="color:var(--col-muted);">Inactivo</span>{% endif %}
         </td>
         <td class="p-2 text-right phone-action" data-label="Acción">
@@ -174,7 +174,7 @@
   <p style="color:var(--col-muted);font-size:.8rem;margin:0;">
     <strong style="color:var(--col-text);">Seguridad:</strong> el rol y el estado del
     perfil determinan sus permisos. Gestiona los teléfonos de clientes desde
-    <a href="{{ url_for('admin.clientes') }}" style="color:var(--brand-primary);">Clientes</a>.
+    <a href="{{ url_for('admin.clientes') }}" style="color:var(--brand-text);">Clientes</a>.
   </p>
 </div>
 

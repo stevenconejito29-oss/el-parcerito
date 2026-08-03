@@ -96,7 +96,7 @@
 {# ── Salud del bot de WhatsApp ── #}
 {% if bot_health %}
 {% set _salud = bot_health.salud or 'unknown' %}
-{% set _color = {'up': 'var(--col-success,#087A48)', 'degraded': 'var(--work-warn,#c0850a)', 'down': 'var(--col-alert,#B42318)', 'unknown': 'var(--work-muted)'}.get(_salud, 'var(--work-muted)') %}
+{% set _color = {'up': 'var(--status-ok-text)', 'degraded': 'var(--status-warn-text)', 'down': 'var(--status-err-text)', 'unknown': 'var(--work-muted)'}.get(_salud, 'var(--work-muted)') %}
 {% set _label = {'up': 'Operativo', 'degraded': 'Degradado', 'down': 'Caído', 'unknown': 'Sin datos'}.get(_salud, 'Sin datos') %}
 {% set _dot = {'up': '🟢', 'degraded': '🟡', 'down': '🔴', 'unknown': '⚪'}.get(_salud, '⚪') %}
 <div class="work-panel p-3 mb-4 dash-support-card" style="border-left:4px solid {{ _color }}">
@@ -489,16 +489,21 @@
    Tokens locales que mapean a los globales de branding. Cambiar los COLOR_*
    en /superadmin/config actualiza automáticamente todo el dashboard. */
 .admin-dashboard-board {
-  --dash-danger: var(--theme-danger, #FF6B6B);
-  --dash-danger-soft: color-mix(in srgb, var(--theme-danger, #FF6B6B) 12%, transparent);
-  --dash-info: color-mix(in srgb, var(--brand-accent, #003087) 55%, #6bcbff);
-  --dash-info-soft: color-mix(in srgb, var(--brand-accent, #003087) 12%, transparent);
-  --dash-ok: var(--theme-success, #5EF097);
-  --dash-ok-soft: color-mix(in srgb, var(--theme-success, #5EF097) 12%, transparent);
-  --dash-warn: var(--brand-primary, #FFAB00);
-  --dash-warn-soft: color-mix(in srgb, var(--brand-primary, #FFAB00) 12%, transparent);
-  --dash-route: var(--role-super-admin, #C084FC);
-  --dash-route-soft: color-mix(in srgb, var(--role-super-admin, #C084FC) 12%, transparent);
+  --dash-danger-base: var(--theme-danger);
+  --dash-danger: var(--status-err-text);
+  --dash-danger-soft: color-mix(in srgb, var(--dash-danger-base) 12%, transparent);
+  --dash-info-base: var(--brand-accent);
+  --dash-info: color-mix(in srgb, var(--dash-info-base) 62%, var(--col-text));
+  --dash-info-soft: color-mix(in srgb, var(--dash-info-base) 12%, transparent);
+  --dash-ok-base: var(--theme-success);
+  --dash-ok: var(--status-ok-text);
+  --dash-ok-soft: color-mix(in srgb, var(--dash-ok-base) 12%, transparent);
+  --dash-warn-base: var(--brand-primary);
+  --dash-warn: var(--brand-text);
+  --dash-warn-soft: color-mix(in srgb, var(--dash-warn-base) 12%, transparent);
+  --dash-route-base: var(--role-super-admin);
+  --dash-route: color-mix(in srgb, var(--dash-route-base) 52%, var(--col-text));
+  --dash-route-soft: color-mix(in srgb, var(--dash-route-base) 12%, transparent);
 }
 .dash-kpi-bar {
   display: flex; align-items: center; gap: .35rem;
@@ -672,7 +677,7 @@
   color: var(--dash-danger) !important;
 }
 .dash-badge-num {
-  background: var(--dash-danger); color: #fff; font-size: .55rem; font-weight: 900;
+  background: var(--dash-danger-base); color: #fff !important; font-size: .55rem; font-weight: 900;
   padding: 0 4px; border-radius: 999px; min-width: 16px; height: 16px;
   display: inline-flex; align-items: center; justify-content: center;
 }

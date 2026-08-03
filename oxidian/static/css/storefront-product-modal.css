@@ -1,0 +1,322 @@
+/*
+ * Vista rápida de producto.
+ *
+ * Conserva el modal y su comportamiento existente, pero ordena la información
+ * como una ficha de compra compacta. Las superficies y colores derivan de los
+ * tokens de marca; el tamaño de la imagen responde al espacio útil del equipo.
+ */
+
+body.ox-body-public .ep-modal-overlay {
+  padding:
+    max(.65rem, env(safe-area-inset-top))
+    max(.65rem, env(safe-area-inset-right))
+    max(.65rem, env(safe-area-inset-bottom))
+    max(.65rem, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--theme-text) 72%, transparent);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+body.ox-body-public .ep-modal-panel {
+  width: min(100%, 34rem);
+  max-height: min(92dvh, 46rem);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: 1.35rem !important;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 28%, var(--col-border)) !important;
+  box-shadow:
+    0 26px 70px color-mix(in srgb, var(--theme-text) 34%, transparent),
+    0 0 0 1px color-mix(in srgb, #fff 45%, transparent) inset !important;
+}
+
+body.ox-body-public .ep-modal-img-wrap {
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 16 / 7 !important;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--theme-surface-alt) 72%, #fff);
+}
+
+body.ox-body-public .ep-modal-img-wrap::after {
+  display: none;
+}
+
+body.ox-body-public .ep-modal-img {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  object-fit: contain;
+  padding: clamp(.45rem, 2.5vw, .85rem);
+  filter: drop-shadow(0 7px 9px color-mix(in srgb, var(--theme-text) 14%, transparent));
+  mix-blend-mode: normal;
+}
+
+body.ox-body-public .ep-modal-img-wrap.is-cover .ep-modal-img {
+  object-fit: cover;
+  padding: 0;
+  filter: none;
+  mix-blend-mode: normal;
+}
+
+body.ox-body-public .ep-modal-body {
+  position: relative;
+  z-index: 2;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: clamp(.72rem, 2.5vw, 1rem);
+  scrollbar-gutter: stable;
+  margin-top: -.15rem;
+  border-radius: 1.05rem 1.05rem 0 0;
+  background: var(--theme-surface);
+}
+
+body.ox-body-public .ep-modal-name-row {
+  margin-bottom: .25rem;
+}
+
+body.ox-body-public .ep-modal-name {
+  font-size: clamp(1rem, 3.7vw, 1.25rem);
+  letter-spacing: -.025em;
+  text-wrap: balance;
+}
+
+body.ox-body-public .ep-modal-desc {
+  margin-bottom: .55rem;
+  font-size: .8rem;
+  line-height: 1.42;
+}
+
+body.ox-body-public .ep-modal-price-row {
+  margin-block: .42rem .65rem;
+}
+
+body.ox-body-public .ep-modal-price {
+  font-size: clamp(1.3rem, 4.6vw, 1.7rem);
+  letter-spacing: -.04em;
+  color: color-mix(in srgb, var(--brand-accent) 76%, var(--theme-text));
+  text-shadow: 0 4px 18px color-mix(in srgb, var(--brand-accent) 15%, transparent);
+}
+
+body.ox-body-public .ep-modal-pres {
+  padding: .65rem !important;
+  border-color: color-mix(in srgb, var(--brand-accent) 24%, transparent) !important;
+  background: color-mix(in srgb, var(--brand-accent) 6%, var(--theme-surface)) !important;
+}
+
+body.ox-body-public .ep-modal-pres-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
+}
+
+body.ox-body-public .ep-modal-pres-pill {
+  position: relative;
+  min-width: 0;
+  min-height: 46px;
+  padding: .55rem .75rem;
+  border-radius: .72rem;
+  background: var(--theme-surface);
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--theme-text) 6%, transparent);
+}
+
+body.ox-body-public .ep-modal-pres-pill.is-active {
+  padding-right: 2rem;
+  border-color: var(--brand-accent);
+  background: linear-gradient(145deg,
+    color-mix(in srgb, var(--brand-accent) 14%, var(--theme-surface)),
+    color-mix(in srgb, var(--brand-primary) 8%, var(--theme-surface)));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--brand-accent) 10%, transparent),
+    0 8px 18px color-mix(in srgb, var(--brand-accent) 13%, transparent);
+}
+
+body.ox-body-public .ep-modal-pres-pill.is-active::after {
+  content: "✓";
+  position: absolute;
+  top: 50%;
+  right: .62rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--brand-accent);
+  color: var(--theme-header-text, #fff);
+  font-size: .65rem;
+  transform: translateY(-50%);
+}
+
+body.ox-body-public .ep-modal-notas-wrap {
+  margin-bottom: .65rem;
+  padding: .6rem;
+  border: 1px solid color-mix(in srgb, var(--theme-text) 9%, transparent);
+  border-radius: .78rem;
+  background: color-mix(in srgb, var(--theme-text) 3%, var(--theme-surface));
+}
+
+body.ox-body-public .ep-modal-notas-input {
+  min-height: 3.1rem;
+  max-height: 5.5rem;
+  resize: vertical;
+  background: var(--theme-surface) !important;
+}
+
+body.ox-body-public .ep-modal-actions {
+  position: sticky;
+  bottom: -.05rem;
+  z-index: 2;
+  padding-top: .25rem;
+  background: linear-gradient(to bottom, transparent, var(--theme-surface) 24%);
+}
+
+body.ox-body-public .ep-modal-add-btn {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 48px;
+  border-radius: .85rem !important;
+  letter-spacing: -.01em;
+  box-shadow:
+    0 11px 26px color-mix(in srgb, var(--action-primary) 30%, transparent),
+    0 1px 0 color-mix(in srgb, #fff 25%, transparent) inset !important;
+}
+
+body.ox-body-public .ep-modal-add-btn::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,.22) 43%, transparent 62%);
+  transform: translateX(-115%);
+  transition: transform .55s ease;
+}
+
+body.ox-body-public .ep-modal-add-btn:is(:hover, :focus-visible)::before {
+  transform: translateX(115%);
+}
+
+@media (max-width: 420px) {
+  body.ox-body-public .ep-modal-panel {
+    max-height: calc(100dvh - max(1rem, env(safe-area-inset-top)) - max(1rem, env(safe-area-inset-bottom)));
+  }
+
+  body.ox-body-public .ep-modal-img-wrap {
+    aspect-ratio: 5 / 2 !important;
+  }
+
+  body.ox-body-public .ep-modal-body {
+    padding: .68rem .75rem .78rem;
+  }
+
+  body.ox-body-public .ep-modal-actions {
+    grid-template-columns: 100px minmax(0, 1fr);
+  }
+
+  body.ox-body-public .ep-modal-desc {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  body.ox-body-public .ep-modal-panel {
+    width: min(94vw, 47rem);
+    max-width: 47rem;
+    max-height: calc(100dvh - 1rem);
+    grid-template-columns: minmax(12rem, 38%) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  /* El asa decorativa es un overlay, no una columna del grid. Si participa
+     en el auto-placement desplaza la imagen y comprime el formulario. */
+  body.ox-body-public .ep-modal-heritage-handle {
+    position: absolute;
+    top: 0;
+    left: 19%;
+    z-index: 4;
+    transform: translateX(-50%);
+  }
+
+  body.ox-body-public .ep-modal-img-wrap {
+    grid-column: 1;
+    grid-row: 1;
+    height: 100%;
+    aspect-ratio: auto !important;
+  }
+
+  body.ox-body-public .ep-modal-body {
+    grid-column: 2;
+    grid-row: 1;
+    padding: .58rem .78rem .65rem;
+  }
+
+  body.ox-body-public .ep-modal-name {
+    font-size: 1.12rem;
+  }
+
+  body.ox-body-public .ep-modal-desc {
+    margin-bottom: .3rem;
+    font-size: .75rem;
+  }
+
+  body.ox-body-public .ep-modal-price-row {
+    margin-block: .25rem .4rem;
+  }
+
+  body.ox-body-public .ep-modal-price {
+    font-size: 1.55rem;
+  }
+
+  body.ox-body-public .ep-modal-pres {
+    margin-bottom: .42rem !important;
+    padding: .4rem .5rem !important;
+  }
+
+  body.ox-body-public .ep-modal-pres-pill {
+    min-height: 44px;
+    padding-block: .42rem;
+  }
+
+  body.ox-body-public .ep-modal-notas-wrap {
+    margin-bottom: .42rem;
+    padding: .42rem;
+  }
+
+  body.ox-body-public .ep-modal-notas-input {
+    min-height: 44px;
+    max-height: 50px;
+  }
+
+  /* En una pantalla apaisada baja, sticky colocaba el CTA encima de las
+     notas. En este layout compacto cabe en el flujo y nada queda oculto. */
+  body.ox-body-public .ep-modal-actions {
+    position: static;
+    padding-top: 0;
+    background: none;
+  }
+
+  body.ox-body-public .ep-modal-add-btn {
+    min-height: 48px;
+  }
+
+  body.ox-body-public .ep-modal-detail-btn {
+    min-height: 42px;
+    margin-top: .32rem;
+    padding-block: .45rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.ox-body-public .ep-modal-panel,
+  body.ox-body-public .ep-modal-overlay {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  body.ox-body-public .ep-modal-add-btn::before {
+    display: none;
+  }
+}

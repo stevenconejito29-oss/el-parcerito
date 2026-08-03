@@ -61,10 +61,10 @@ class SecurityHeadersTest(unittest.TestCase):
         r = self._get("/health")
         self.assertIn("object-src 'none'", r.headers.get("Content-Security-Policy", ""))
 
-    def test_leaflet_css_solo_se_permite_en_rutas_de_zonas(self):
+    def test_leaflet_se_sirve_local_sin_ampliar_csp(self):
         zonas_csp = self._get("/superadmin/zonas").headers.get("Content-Security-Policy", "")
         health_csp = self._get("/health").headers.get("Content-Security-Policy", "")
-        self.assertIn("https://unpkg.com", zonas_csp)
+        self.assertNotIn("https://unpkg.com", zonas_csp)
         self.assertNotIn("https://unpkg.com", health_csp)
 
     def test_headers_defensa_en_profundidad(self):
@@ -74,6 +74,14 @@ class SecurityHeadersTest(unittest.TestCase):
         self.assertEqual(r.headers.get("Referrer-Policy"), "strict-origin-when-cross-origin")
         self.assertEqual(r.headers.get("Cross-Origin-Opener-Policy"), "same-origin")
         self.assertIn("camera=()", r.headers.get("Permissions-Policy", ""))
+
+    def test_geolocalizacion_solo_se_habilita_en_flujos_que_la_necesitan(self):
+        health_policy = self._get("/health").headers.get("Permissions-Policy", "")
+        checkout_policy = self._get("/checkout").headers.get("Permissions-Policy", "")
+        delivery_policy = self._get("/repartidor/ruta").headers.get("Permissions-Policy", "")
+        self.assertIn("geolocation=()", health_policy)
+        self.assertIn("geolocation=(self)", checkout_policy)
+        self.assertIn("geolocation=(self)", delivery_policy)
 
     def test_hsts_no_se_emite_en_http(self):
         # Test client emula HTTP local (no https, no forwarded_proto).
@@ -89,6 +97,24 @@ class SecurityHeadersTest(unittest.TestCase):
         # test client — verificamos solo que el header no explota.
         # Cubierto por manual test / staging.
         self.assertIn(r.status_code, (200, 302, 404))
+
+    def test_public_identity_exposes_sitemap_and_absolute_urls(self):
+        sitemap = self.client.get(
+            "/sitemap.xml", base_url="https://elparcerito.com"
+        )
+        self.assertEqual(sitemap.status_code, 200)
+        self.assertIn("application/xml", sitemap.content_type)
+        self.assertIn(
+            "<loc>https://elparcerito.com/</loc>",
+            sitemap.get_data(as_text=True),
+        )
+        robots = self.client.get(
+            "/robots.txt", base_url="https://elparcerito.com"
+        )
+        self.assertIn(
+            "Sitemap: https://elparcerito.com/sitemap.xml",
+            robots.get_data(as_text=True),
+        )
 
 
 class NonceInjectionTest(unittest.TestCase):
@@ -116,6 +142,19 @@ class NonceInjectionTest(unittest.TestCase):
                 '<script nonce="{{ csp_nonce() }}">code</script>'
             )
             self.assertIn('nonce="TEST-NONCE-XYZ"', out)
+
+
+class ApiBotRateLimitContractTest(unittest.TestCase):
+    def test_blueprint_is_not_globally_exempt_from_rate_limits(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
+        self.assertNotIn("limiter.exempt(api_bot_bp)", source)
+
+    def test_sensitive_bot_flows_have_explicit_limits(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] / "routes" / "api_bot.py").read_text(encoding="utf-8")
+        for scope in ("cancel", "confirmation", "broadcast", "points-otp", "points-verify"):
+            self.assertIn(f'_bot_ratekey("{scope}")', source)
 
 
 if __name__ == "__main__":

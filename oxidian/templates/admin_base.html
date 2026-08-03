@@ -11,9 +11,12 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="ox-pwa-mode" content="staff">
   <meta name="ox-push-eligible" content="1">
-  <meta name="ox-pwa-operational" content="{{ '1' if request.blueprint in ('preparador', 'repartidor', 'staff') else '0' }}">
+  <meta name="ox-pwa-operational" content="{{ '1' if request.blueprint in ('preparador', 'repartidor', 'staff', 'proveedor') else '0' }}">
   <meta name="ox-cart-count" content="0">
   <meta name="ox-csrf-token" content="{{ csrf_token() }}">
+  <meta name="ox-asset-version" content="{{ asset_version }}">
+  {% set _staff_icon = brand.app_icon_url or brand.logo_url %}
+  {% set _app_icon = _staff_icon|upload_url if _staff_icon else '' %}
   {% if current_user.is_authenticated and request.blueprint == 'repartidor' %}
   <script nonce="{{ csp_nonce() }}">
     /* Aplicar el tema antes del primer pintado evita el destello blanco al
@@ -21,15 +24,19 @@
     (()=>{try{const k='oxidian.delivery.theme',s=localStorage.getItem(k);document.documentElement.dataset.deliveryTheme=(s==='dark'||s==='light')?s:(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}catch(_){document.documentElement.dataset.deliveryTheme='light';}})();
   </script>
   {% endif %}
-  <link rel="manifest" href="{{ url_for('staff_web_manifest') }}">
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
+  <link rel="manifest" href="{{ url_for('staff_web_manifest', v=asset_version) }}">
+  <link rel="apple-touch-icon" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
+  {% if _staff_icon %}
+  <link rel="icon" href="{{ _app_icon }}">
+  {% else %}
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='pwa-icon.svg', v=asset_version) }}">
+  {% endif %}
   <title>{% block title %}Panel — {{ brand.nombre }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.generated.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian.css', v=asset_version) }}">
   <style>
-    :root{--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-accent:{{ brand.color_acento }};--brand-on-primary:{{ brand.on_primario }};--brand-on-accent:{{ brand.on_acento }};--theme-success:{{ brand.theme.exito }};--theme-danger:{{ brand.theme.alerta }};--theme-info:{{ brand.theme.informativo }};--theme-warning:{{ brand.theme.advertencia }};--theme-promo:{{ brand.theme.promocion }};--theme-highlight:{{ brand.theme.destacado }};}
+    :root{--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-accent:{{ brand.color_acento }};--brand-on-primary:{{ brand.on_primario }};--brand-on-secondary:{{ brand.on_secundario }};--brand-on-accent:{{ brand.on_acento }};--theme-success:{{ brand.theme.exito }};--theme-danger:{{ brand.theme.alerta }};--theme-info:{{ brand.theme.informativo }};--theme-warning:{{ brand.theme.advertencia }};--theme-promo:{{ brand.theme.promocion }};--theme-highlight:{{ brand.theme.destacado }};}
     .sb-alert { color: var(--col-primary, #D9961A) !important; }
     .sb-alert:hover { background: rgba(217,150,26,.12) !important; }
     /* Safe-area para Dynamic Island iOS / notch Android — el topbar y el brand
@@ -169,15 +176,15 @@
   {# Shell realmente al final: navegación, marca y responsive no dependen del orden
      de los estilos específicos de cada vista histórica. #}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/role-shell.css', v=asset_version) }}">
-  {% if current_user.is_authenticated and request.blueprint in ('preparador','repartidor','staff') %}
-  {# Componentes operativos compartidos: cocina, encargos, reparto y almacén. #}
+  {% if current_user.is_authenticated and request.blueprint in ('preparador','repartidor','staff','proveedor') %}
+  {# Componentes operativos compartidos: cocina, encargos, reparto y socios. #}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/operational-roles.css', v=asset_version) }}">
   {% endif %}
 </head>
 {% set rol = current_user.rol if current_user.is_authenticated else '' %}
-{% set operational_view = request.blueprint in ('preparador','repartidor','staff') %}
+{% set operational_view = request.blueprint in ('preparador','repartidor','staff','proveedor') %}
 <body class="ox-body ox-body-admin role-{{ rol|replace('_','-') }} view-{{ request.blueprint|default('general', true)|replace('_','-') }} {{ 'operational-view' if operational_view else '' }} role-single-nav"
-      style="--brand-primary:{{ brand.color_primario }};--brand-on-primary:{{ brand.on_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-accent:{{ brand.color_acento }};--brand-on-accent:{{ brand.on_acento }};--col-gold:{{ brand.color_primario }};--theme-success:{{ brand.theme.exito }};--theme-danger:{{ brand.theme.alerta }};--theme-info:{{ brand.theme.informativo }};--theme-warning:{{ brand.theme.advertencia }};--theme-promo:{{ brand.theme.promocion }};--theme-highlight:{{ brand.theme.destacado }};--role-super-admin:#C084FC;--role-preparacion:#22C5A0;--role-admin:#3B82F6;--role-cocina:#FF7043;--role-repartidor:#27AE74;--role-marketing:#F43F5E;--role-staff:#A18C80;">
+      style="--brand-primary:{{ brand.color_primario }};--brand-on-primary:{{ brand.on_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-on-secondary:{{ brand.on_secundario }};--brand-accent:{{ brand.color_acento }};--brand-on-accent:{{ brand.on_acento }};--col-gold:{{ brand.color_primario }};--theme-success:{{ brand.theme.exito }};--theme-danger:{{ brand.theme.alerta }};--theme-info:{{ brand.theme.informativo }};--theme-warning:{{ brand.theme.advertencia }};--theme-promo:{{ brand.theme.promocion }};--theme-highlight:{{ brand.theme.destacado }};--role-super-admin:#C084FC;--role-preparacion:#22C5A0;--role-admin:#3B82F6;--role-cocina:#FF7043;--role-repartidor:#27AE74;--role-marketing:#F43F5E;--role-staff:#A18C80;">
 <div class="ox-admin-layout">
 
   <aside class="ox-sidebar" id="ox-sidebar">
@@ -240,6 +247,7 @@
         <a href="{{ url_for('admin.productos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ brand.fallback_emoji or '🥟' }}</span>Productos</a>
         <a href="{{ url_for('admin.categorias') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏷️</span>Categorías</a>
         <a href="{{ url_for('admin.nuevo_combo') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎁</span>Combos</a>
+        {% if rol == 'super_admin' %}<a href="{{ url_for('admin.proveedores') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤝</span>Socios de productos</a>{% endif %}
         {% endif %}
         {% if has_admin_feature('stock') %}<a href="{{ url_for('admin.stock') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Stock</a>{% endif %}
         {% if has_admin_feature('productos') %}<a href="{{ url_for('admin.encargos_lotes') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🍽️</span>Lotes de encargos</a>{% endif %}
@@ -248,9 +256,13 @@
 
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">💰 Finanzas y análisis</span>
+        {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.finanzas') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📊</span>Resumen financiero</a>{% endif %}
         {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.caja') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Caja diaria</a>{% endif %}
+        {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.cierres_lista') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🔒</span>Cierres de caja</a>{% endif %}
         {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.pagos_pendientes_digital') }}" class="ox-sb-item"><span class="ox-sb-item-icon">✅</span>Pagos pendientes</a>{% endif %}
         {% if has_admin_feature('staff_pagos') %}<a href="{{ url_for('admin.pagos_staff') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💸</span>Nómina y liquidaciones</a>{% endif %}
+        {% if rol == 'super_admin' %}<a href="{{ url_for('admin.liquidacion_proveedores') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🧾</span>Liquidar socios</a>{% endif %}
+        {% if has_admin_feature('reportes') %}<a href="{{ url_for('admin.analytics') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📈</span>Ganancias y costes</a>{% endif %}
         {% if has_admin_feature('reportes') %}<a href="{{ url_for('admin.ia_analisis') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤖</span>Análisis con IA</a>{% endif %}
       </div>
       <div class="ox-sb-divider"></div>
@@ -319,6 +331,22 @@
         <a href="{{ url_for('repartidor.mis_comisiones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Mis comisiones</a>
       </div>
 
+      {% elif rol in ('socio_producto', 'proveedor') %}
+      <div class="ox-sb-section">
+        <span class="ox-sb-section-label">Mis productos</span>
+        {% if rol == 'socio_producto' %}
+        <a href="{{ url_for('proveedor.dashboard') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏠</span>Resumen</a>
+        <a href="{{ url_for('proveedor.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">↗</span>Ventas en curso</a>
+        {% else %}
+        <a href="{{ url_for('proveedor.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📋</span>Pedidos por preparar</a>
+        {% endif %}
+        <a href="{{ url_for('proveedor.registrar_producto') }}" class="ox-sb-item"><span class="ox-sb-item-icon">➕</span>Registrar producto</a>
+        <a href="{{ url_for('proveedor.registrar_combo') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎁</span>Crear combo</a>
+        <a href="{{ url_for('proveedor.inventario') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Mi inventario</a>
+        <a href="{{ url_for('proveedor.finanzas') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Ventas y saldo</a>
+        <a href="{{ url_for('proveedor.incidencias') }}" class="ox-sb-item"><span class="ox-sb-item-icon">⚠️</span>Incidencias</a>
+      </div>
+
       {% endif %}
     </nav>
 
@@ -348,11 +376,7 @@
 
     {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-    <div class="ox-toast-wrap" id="ox-toasts">
-      {% for category, msg in messages %}
-      <div class="ox-toast ox-toast-{{ category if category in ('success','danger','warning','info') else 'info' }}">{{ msg }}</div>
-      {% endfor %}
-    </div>
+    <script type="application/json" id="ox-flash-data">{{ messages|tojson }}</script>
     {% endif %}
     {% endwith %}
 
@@ -375,12 +399,6 @@
 </div>
 
 <script nonce="{{ csp_nonce() }}">
-setTimeout(() => {
-  document.querySelectorAll('.ox-toast').forEach((el,i) => {
-    setTimeout(() => { el.style.transition='opacity .25s,transform .25s'; el.style.opacity='0'; el.style.transform='translateY(-6px)'; setTimeout(() => el.remove(), 280); }, 4000 + i * 400);
-  });
-}, 200);
-
 function sidebarOpen() {
   const sidebar=document.getElementById('ox-sidebar'), overlay=document.getElementById('ox-overlay');
   if(!sidebar||!overlay)return;
@@ -447,8 +465,7 @@ function toggleDisponible(url) {
     if(txt) txt.textContent=on?'Online':'Offline';
     document.querySelectorAll('.js-availability-form').forEach(form=>form.dataset.availability=on?'online':'offline');
   }).catch(err=>{
-    const toast=document.createElement('div');toast.className='ox-toast ox-toast-danger';toast.textContent=err.message||'Sin conexión. Inténtalo de nuevo.';
-    (document.getElementById('ox-toasts')||document.body).appendChild(toast);setTimeout(()=>toast.remove(),4500);
+    window.OxToast?.show(err.message||'Sin conexión. Inténtalo de nuevo.','danger');
   }).finally(()=>{btn.disabled=false;});
 }
 
@@ -595,6 +612,7 @@ document.querySelectorAll('form[data-ox-validate]').forEach(form=>{
   .oa-btn { min-height: 44px; }
 }
 </style>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/storefront-toast.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/pwa-manager.js', v=asset_version) }}" defer></script>
 {% if operational_view %}
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/operational-roles.js', v=asset_version) }}" defer></script>

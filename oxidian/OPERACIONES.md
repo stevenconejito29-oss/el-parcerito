@@ -103,7 +103,7 @@ Claves importantes:
 | `TIENDA_FORZAR_CERRADA` | "1" cierra la tienda inmediatamente |
 | `CENTRO_LAT` / `CENTRO_LON` / `RADIO_ENTREGA_KM` | Centro y radio global de respaldo; las zonas detalladas tienen prioridad |
 | `BOT_API_KEY` | API key compartida Oxidian ↔ bot Node |
-| `PUNTOS_POR_EURO` / `PUNTOS_CANJE_RATIO` | Programa de fidelidad |
+| `PUNTOS_POR_EURO` | Acumulación del programa; los canjes son exclusivamente por productos |
 
 ## 8. Zonas de entrega
 

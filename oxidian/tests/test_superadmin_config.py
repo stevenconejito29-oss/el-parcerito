@@ -102,6 +102,7 @@ class SuperadminConfigTest(unittest.TestCase):
         config_get.side_effect = lambda key, default="": {
             "EFECTIVO_HABILITADO": "1",
             "BIZUM_HABILITADO": "0",
+            "TARJETA_HABILITADA": "0",
         }.get(key, default)
 
         response = self.client.post(
@@ -174,6 +175,26 @@ class SuperadminConfigTest(unittest.TestCase):
                 ok, _, _, error = _validar_config_value(key, raw)
                 self.assertFalse(ok)
                 self.assertTrue(error)
+
+    def test_legal_section_accepts_real_contact_and_detailed_conditions(self):
+        conditions = "Condiciones de devolución e incidencias. " * 20
+        form = MultiDict([
+            ("section", "tienda-legal"),
+            ("config_key", "EMAIL_PRIVACIDAD"),
+            ("EMAIL_PRIVACIDAD", "Privacidad@Ejemplo.com"),
+            ("config_key", "LEGAL_VERSION"),
+            ("LEGAL_VERSION", "2026-08"),
+            ("config_key", "LEGAL_CONDICIONES_DEVOLUCION"),
+            ("LEGAL_CONDICIONES_DEVOLUCION", conditions),
+        ])
+
+        section, changes, errors = _config_section_submission(form)
+
+        self.assertEqual(section, "tienda-legal")
+        self.assertEqual(errors, [])
+        self.assertIn(("EMAIL_PRIVACIDAD", "privacidad@ejemplo.com"), changes)
+        self.assertIn(("LEGAL_VERSION", "2026-08"), changes)
+        self.assertIn(("LEGAL_CONDICIONES_DEVOLUCION", conditions.strip()), changes)
 
 
 if __name__ == "__main__":

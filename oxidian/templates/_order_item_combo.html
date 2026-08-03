@@ -25,7 +25,7 @@
 	    {% if item.display_es_combo %}<em class="work-combo-badge">Combo</em>{% endif %}
 	    {% if item.display_tipo_entrega in ('programado','encargo') %}<em class="work-combo-badge work-badge-prog">Fecha fija</em>{% endif %}
 	    {% if root_proveedor_id %}
-	    <em class="work-origin-badge work-origin-provider">🏪 {% if root_proveedor_nombre %}{{ root_proveedor_nombre }}{% else %}Bar externo{% endif %}</em>
+	    <em class="work-origin-badge work-origin-provider">🤝 {% if root_proveedor_nombre %}Socio · {{ root_proveedor_nombre }}{% else %}Socio de productos{% endif %}</em>
 	    {% elif root_canal == 'almacen' %}
 	    <em class="work-origin-badge work-origin-stock">Stock propio</em>
 	    {% else %}
@@ -86,10 +86,11 @@
 	      <span class="work-sec-item work-item-fixed">
 	        <span class="work-item-qty">{{ comp.get('cantidad', 1) }}×</span>
 	        {{ comp.get('nombre', 'Componente') }}
-	        {% if comp.get('sabor_cliente') %}<em class="work-combo-badge work-badge-sabor">🎨 {% for s in comp.get('sabor_cliente') %}{{ s.get('nombre') }}{% if not loop.last %}, {% endif %}{% endfor %}</em>{% endif %}
-	        {% if comp.get('presentacion') %}<em class="work-combo-badge">📏 {{ comp.get('presentacion').get('label') or comp.get('presentacion').get('tamaño') }}</em>{% endif %}
+	        {% if comp.get('unidades_cliente') %}{% for unit in comp.get('unidades_cliente') %}<em class="work-combo-badge">#{{ unit.get('unidad', loop.index) }}{% if unit.get('presentacion') %} · {{ unit.get('presentacion').get('label') or unit.get('presentacion').get('tamaño') }}{% endif %}{% if unit.get('sabor') %} · {{ unit.get('sabor').get('nombre') }}{% endif %}</em>{% endfor %}{% endif %}
+	        {% if comp.get('sabor_cliente') %}<em class="work-combo-badge work-badge-sabor">🎨 {% for s in comp.get('sabor_cliente') %}{{ s.get('cantidad', 1) }}× {{ s.get('nombre') }}{% if not loop.last %}, {% endif %}{% endfor %}</em>{% endif %}
+	        {% if comp.get('presentacion') and not comp.get('unidades_cliente') %}<em class="work-combo-badge">📏 {{ comp.get('presentacion').get('label') or comp.get('presentacion').get('tamaño') }}</em>{% endif %}
 	        {% if comp.get('proveedor_id') %}
-	        <em class="work-origin-badge work-origin-provider">Proveedor{% if comp.get('proveedor_nombre') %}: {{ comp.get('proveedor_nombre') }}{% endif %}</em>
+	        <em class="work-origin-badge work-origin-provider">Socio{% if comp.get('proveedor_nombre') %}: {{ comp.get('proveedor_nombre') }}{% endif %}</em>
 	        {% elif comp.get('canal_preparacion', 'cocina') == 'almacen' %}
 	        <em class="work-origin-badge work-origin-stock">Stock</em>
 	        {% else %}
@@ -115,8 +116,9 @@
       <span class="work-sec-item work-item-choice">
 	        <span class="work-item-qty">{{ op.get('cantidad', op.get('qty', 1)) }}×</span>
 	        {{ op.get('nombre', 'Opción') }}
-	        {% if op.get('sabor_cliente') %}<em class="work-combo-badge work-badge-sabor">🎨 {% for s in op.get('sabor_cliente') %}{{ s.get('nombre') }}{% if not loop.last %}, {% endif %}{% endfor %}</em>{% endif %}
-	        {% if op.get('presentacion') %}<em class="work-combo-badge">📏 {{ op.get('presentacion').get('label') or op.get('presentacion').get('tamaño') }}</em>{% endif %}
+	        {% if op.get('unidades_cliente') %}{% for unit in op.get('unidades_cliente') %}<em class="work-combo-badge">#{{ unit.get('unidad', loop.index) }}{% if unit.get('presentacion') %} · {{ unit.get('presentacion').get('label') or unit.get('presentacion').get('tamaño') }}{% endif %}{% if unit.get('sabor') %} · {{ unit.get('sabor').get('nombre') }}{% endif %}</em>{% endfor %}{% endif %}
+	        {% if op.get('sabor_cliente') %}<em class="work-combo-badge work-badge-sabor">🎨 {% for s in op.get('sabor_cliente') %}{{ s.get('cantidad', 1) }}× {{ s.get('nombre') }}{% if not loop.last %}, {% endif %}{% endfor %}</em>{% endif %}
+	        {% if op.get('presentacion') and not op.get('unidades_cliente') %}<em class="work-combo-badge">📏 {{ op.get('presentacion').get('label') or op.get('presentacion').get('tamaño') }}</em>{% endif %}
 	        {% if op.get('extra_total') and op.get('extra_total') > 0 %}<em class="work-combo-badge">+€{{ "%.2f"|format(op.get('extra_total')) }}</em>{% endif %}
 	        {% if op.get('proveedor_id') %}
 	        <em class="work-origin-badge work-origin-provider">Proveedor{% if op.get('proveedor_nombre') %}: {{ op.get('proveedor_nombre') }}{% endif %}</em>

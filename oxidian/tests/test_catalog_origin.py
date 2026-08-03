@@ -47,9 +47,9 @@ class CatalogOriginTest(unittest.TestCase):
         self.app = Flask(__name__)
         self.app.secret_key = "test-only"
 
-    def test_normalizes_only_supported_origin_keys(self):
+    def test_normalizes_own_and_valid_partner_origin_keys(self):
         self.assertEqual(_normalizar_origen(" PROPIO "), "propio")
-        self.assertIsNone(_normalizar_origen("proveedor:007"))
+        self.assertEqual(_normalizar_origen("proveedor:007"), "proveedor:7")
         self.assertIsNone(_normalizar_origen("proveedor:x"))
         self.assertIsNone(_normalizar_origen("otro:7"))
 

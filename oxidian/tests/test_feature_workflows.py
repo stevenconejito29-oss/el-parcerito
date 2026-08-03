@@ -6,6 +6,7 @@ from flask import Flask
 from extensions import db
 from models import Order, SiteConfig, User, utcnow
 from services import calcular_pl, distribuir_repartidor, estado_cola
+from business_time import business_today
 
 
 class FeatureWorkflowTest(unittest.TestCase):
@@ -105,7 +106,7 @@ class FeatureWorkflowTest(unittest.TestCase):
         self.assertNotIn("staff", estado_cola())
 
     def test_service_commission_is_subtracted_from_pl_result(self):
-        today = utcnow().date()
+        today = business_today()
         order = Order(
             numero_pedido="#PL-SERVICE",
             cliente_id=self.customer.id,

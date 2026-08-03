@@ -1,26 +1,26 @@
 import logging
 from decimal import Decimal, InvalidOperation
-from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask import Blueprint, abort, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from functools import wraps
 from extensions import db, get_or_404
-from models import (ESTADOS_EN_PREPARACION, Order, OrderEvent,
-                    OrderProviderStatus, Product, Proveedor, ProveedorProducto,
-                    User, utcnow)
+from models import (AuditLog, Categoria, ComboGroup, ComboItem,
+                    ESTADOS_EN_PREPARACION, Order, OrderEvent,
+                    OrderItem, OrderProviderStatus, Product, Proveedor, ProveedorProducto,
+                    SiteConfig, User, utcnow)
+from image_service import delete_image, save_image
+from combo_validators import ComboLimits
 from services import (lineas_proveedor_pedido, registrar_evento_pedido,
                        es_pedido_solo_bar, distribuir_repartidor,
-                       cancelar_pedido_operativo)
+                       marcar_pedido_preparado,
+                       cancelar_pedido_operativo,
+                       calcular_liquidaciones_proveedores,
+                       lineas_socio_pedido)
 
 proveedor_bp = Blueprint("proveedor", __name__)
 logger = logging.getLogger(__name__)
 
-ROLES_PROVEEDOR = {"admin", "super_admin"}
-
-
-@proveedor_bp.before_request
-def proveedor_flow_disabled():
-    flash("El flujo proveedor/bar externo está desactivado. Usa el panel Admin de la tienda.", "info")
-    return redirect(url_for("admin.dashboard"))
+ROLES_PROVEEDOR = {"admin", "super_admin", "socio_producto", "proveedor"}
 
 
 def proveedor_required(f):
@@ -30,8 +30,8 @@ def proveedor_required(f):
         if current_user.rol not in ROLES_PROVEEDOR:
             flash("Acceso restringido.", "danger")
             return redirect(url_for("public.index"))
-        if current_user.rol == "proveedor" and not current_user.proveedor_id:
-            flash("Tu cuenta de proveedor no está enlazada a ningún bar.", "warning")
+        if current_user.rol in {"socio_producto", "proveedor"} and not current_user.proveedor_id:
+            flash("Tu cuenta no está enlazada a ningún socio de productos.", "warning")
             return redirect(url_for("public.index"))
         return f(*args, **kwargs)
     return decorated
@@ -40,9 +40,8 @@ def proveedor_required(f):
 def _proveedor_id_efectivo():
     """Devuelve el proveedor (entidad) al que pertenece el usuario actual.
 
-    Para admin/super_admin sin un proveedor enlazado, retorna None (no filtra y
-    el listado muestra todos los proveedores). Para un user con rol='proveedor',
-    retorna su `User.proveedor_id` (FK a tabla `proveedores`)."""
+    Para admin/super_admin sin socio enlazado retorna None (vista global). Para
+    un socio retorna exclusivamente su entidad, evitando cruces de pedidos."""
     if current_user.rol in ("admin", "super_admin") and not current_user.proveedor_id:
         return None
     return current_user.proveedor_id
@@ -78,6 +77,109 @@ def _entero_no_negativo(valor, campo):
     return numero
 
 
+def _socio_actual():
+    """Resuelve exclusivamente el socio del operador autenticado.
+
+    Las vistas globales de admin pueden reutilizar el módulo operativo, pero
+    nunca deben poder dar de alta un producto sin propietario por esta ruta.
+    """
+    if current_user.rol not in {"socio_producto", "proveedor"}:
+        return None
+    proveedor = db.session.get(Proveedor, current_user.proveedor_id)
+    if (
+        not proveedor
+        or not proveedor.activo
+        or proveedor.modelo_acuerdo != "socio_porcentaje"
+    ):
+        return None
+    return proveedor
+
+
+def socio_capital_required(f):
+    """Decorator que garantiza que el operador es un socio-capital activo.
+
+    Cualquier endpoint que dependa del contrato ``socio_porcentaje`` (dar de alta
+    productos, combos, editar inventario propio) debe declararlo. Al fallar
+    devuelve 403 y registra el intento en AuditLog para dejar huella del bloqueo.
+    Inyecta el objeto ``Proveedor`` resuelto como primer argumento posicional
+    del handler (``proveedor`` kwarg no colisiona con parámetros de ruta).
+    """
+
+    @wraps(f)
+    @login_required
+    def decorated(*args, **kwargs):
+        proveedor = _socio_actual()
+        if proveedor is None:
+            try:
+                AuditLog.registrar(
+                    current_user.id if current_user.is_authenticated else None,
+                    "socio_capital_denegado",
+                    "proveedor",
+                    getattr(current_user, "proveedor_id", None),
+                    detalle=f"rol={getattr(current_user, 'rol', None)} ruta={request.path}",
+                    ip=request.remote_addr,
+                )
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                logger.exception("No se pudo auditar denegación socio_capital")
+            abort(403)
+        kwargs.setdefault("_proveedor", proveedor)
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def _assert_owned_by(proveedor, producto):
+    """Rechaza cualquier cross-socio: si el producto/combo no pertenece al
+    proveedor autenticado, abortamos con 404 (no revelamos existencia)."""
+    if producto is None or producto.proveedor_despachador_id != proveedor.id:
+        abort(404)
+
+
+def _campos_producto_socio(form, *, incluir_stock=True):
+    """Valida la ficha comercial que un socio está autorizado a proponer."""
+    nombre = (form.get("nombre") or "").strip()
+    descripcion = (form.get("descripcion") or "").strip()
+    origen_pais = (form.get("origen_pais") or "").strip()
+    if len(nombre) < 3 or len(nombre) > 150:
+        raise ValueError("El nombre debe tener entre 3 y 150 caracteres.")
+    if len(descripcion) > 2000:
+        raise ValueError("La descripción no puede superar 2.000 caracteres.")
+    if len(origen_pais) > 50:
+        raise ValueError("El país de origen no puede superar 50 caracteres.")
+    precio = _decimal_no_negativo(form.get("precio"), "El precio de venta")
+    if precio <= 0:
+        raise ValueError("El precio de venta debe ser mayor que 0.")
+    stock = (
+        _entero_no_negativo(form.get("stock"), "El stock")
+        if incluir_stock else 0
+    )
+    categoria_id = form.get("categoria_id", type=int)
+    categoria = (
+        Categoria.query.filter_by(id=categoria_id, activo=True).first()
+        if categoria_id else None
+    )
+    if not categoria:
+        raise ValueError("Selecciona una categoría activa.")
+    modalidad = (form.get("modalidad_entrega") or "ambas").strip().lower()
+    if modalidad not in {"ambas", "delivery", "recogida"}:
+        raise ValueError("La modalidad de entrega no es válida.")
+    vertical = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").strip().lower()
+    if vertical not in {"comida", "producto"}:
+        vertical = "comida"
+    return {
+        "nombre": nombre,
+        "descripcion": descripcion or None,
+        "origen_pais": origen_pais or None,
+        "precio": precio,
+        "categoria_id": categoria.id,
+        "modalidad_entrega": modalidad,
+        "vertical": vertical,
+        "stock": stock,
+    }
+
+
 def _notificar_preparador(pedido, titulo, mensaje):
     if not pedido.preparador_id:
         return
@@ -93,19 +195,138 @@ def _notificar_preparador(pedido, titulo, mensaje):
         logger.exception("No se pudo notificar al preparador del pedido %s", pedido.id)
 
 
+@proveedor_bp.route("/")
+@socio_capital_required
+def dashboard(_proveedor=None):
+    """Landing del socio con contadores de propuestas, ventas del mes y saldo.
+
+    Solo aplica al rol ``socio_producto``. Bares clásicos (``proveedor``)
+    caen directamente en ``/pedidos`` desde el login (ver ``auth.py``).
+    """
+    from business_time import business_today
+
+    proveedor = _proveedor
+    propuestas = (
+        db.session.query(
+            Product.partner_submission_status,
+            Product.es_combo,
+            db.func.count(Product.id),
+        )
+        .filter(Product.proveedor_despachador_id == proveedor.id)
+        .group_by(Product.partner_submission_status, Product.es_combo)
+        .all()
+    )
+    conteo = {"pending": 0, "approved": 0, "rejected": 0, "combos_pending": 0}
+    for estado, es_combo, n in propuestas:
+        clave = estado or "approved"
+        if clave in conteo:
+            conteo[clave] += int(n)
+        if es_combo and clave == "pending":
+            conteo["combos_pending"] += int(n)
+
+    hoy = business_today()
+    inicio_mes = hoy.replace(day=1)
+    cierre = calcular_liquidaciones_proveedores(
+        inicio_mes, hoy, proveedor_id=proveedor.id,
+    )
+    bucket = cierre["por_proveedor"].get(proveedor.id) or {}
+    ventas_mes = bucket.get("ventas_netas") or Decimal("0")
+    saldo_pendiente = bucket.get("pendiente_pago") or Decimal("0")
+    saldo_ya_pagado = bucket.get("pagado") or Decimal("0")
+
+    unidades_activas = 0
+    if proveedor.es_socio_capital:
+        candidatos = (
+            Order.query
+            .filter(
+                Order.estado.in_(["pendiente", "armando", "listo", "en_ruta"]),
+                db.or_(
+                    Order.confirmacion_estado.is_(None),
+                    Order.confirmacion_estado != "pending",
+                ),
+            )
+            .all()
+        )
+        for pedido in candidatos:
+            for linea in lineas_socio_pedido(pedido, proveedor.id):
+                unidades_activas += int(linea.get("cantidad") or 0)
+
+    return render_template(
+        "proveedor/dashboard.html",
+        proveedor=proveedor,
+        conteo=conteo,
+        ventas_mes=ventas_mes,
+        saldo_pendiente=saldo_pendiente,
+        saldo_pagado=saldo_ya_pagado,
+        unidades_activas=unidades_activas,
+        inicio_mes=inicio_mes,
+        hoy=hoy,
+    )
+
+
 @proveedor_bp.route("/pedidos")
 @proveedor_required
 def pedidos():
     prov_id = _proveedor_id_efectivo()
+    socio = db.session.get(Proveedor, prov_id) if prov_id else None
+
+    # El socio de productos no prepara pedidos. Su vista es de seguimiento de
+    # mercancía, sin dirección, teléfono ni otros datos personales del cliente.
+    if socio and socio.es_socio_capital:
+        candidatos = (
+            Order.query
+            .filter(
+                Order.estado.in_(["pendiente", "armando", "listo", "en_ruta"]),
+                db.or_(
+                    Order.confirmacion_estado.is_(None),
+                    Order.confirmacion_estado != "pending",
+                ),
+            )
+            .order_by(Order.creado_en.asc())
+            .all()
+        )
+        items_por_pedido = {}
+        if candidatos:
+            for item in OrderItem.query.filter(
+                OrderItem.pedido_id.in_([pedido.id for pedido in candidatos])
+            ).all():
+                items_por_pedido.setdefault(item.pedido_id, []).append(item)
+        ventas_activas = []
+        for pedido in candidatos:
+            lineas = lineas_socio_pedido(
+                pedido,
+                socio.id,
+                items=items_por_pedido.get(pedido.id, []),
+            )
+            if lineas:
+                ventas_activas.append({"pedido": pedido, "lineas": lineas})
+        return render_template(
+            "proveedor/ventas_activas.html",
+            socio=socio,
+            ventas_activas=ventas_activas,
+            unidades_activas=sum(
+                linea["cantidad"]
+                for venta in ventas_activas
+                for linea in venta["lineas"]
+            ),
+        )
 
     if prov_id:
         base = Order.query.join(OrderProviderStatus).filter(
             Order.estado.in_(ESTADOS_EN_PREPARACION),
+            db.or_(
+                Order.confirmacion_estado.is_(None),
+                Order.confirmacion_estado != "pending",
+            ),
             OrderProviderStatus.proveedor_id == prov_id,
         )
     else:
         base = Order.query.join(OrderProviderStatus).filter(
             Order.estado.in_(ESTADOS_EN_PREPARACION),
+            db.or_(
+                Order.confirmacion_estado.is_(None),
+                Order.confirmacion_estado != "pending",
+            ),
         ).distinct()
 
     pendientes = base.filter(Order.estado == "pendiente").order_by(Order.creado_en).all()
@@ -183,22 +404,35 @@ def marcar_preparado(pedido_id):
     # avanzamos el estado nosotros y asignamos repartidor.
     db.session.expire(pedido, ["estados_proveedor"])
     todos_listos = bool(pedido.estados_proveedor) and not pedido.proveedores_pendientes
+    hizo_auto_advance = False
+    repartidor = None
     if todos_listos and es_pedido_solo_bar(pedido) and pedido.estado in ESTADOS_EN_PREPARACION:
-        registrar_evento_pedido(
+        hizo_auto_advance = True
+        marcar_pedido_preparado(
             pedido,
-            "estado_cambiado",
             actor_id=current_user.id,
-            estado_anterior=pedido.estado,
-            estado_nuevo="listo",
             canal="proveedor",
             detalle="Auto-advance: pedido 100% del bar con todos los proveedores listos.",
         )
-        pedido.estado = "listo"
         try:
             repartidor = distribuir_repartidor(pedido)
         except Exception:
             repartidor = None
             logger.exception("No se pudo asignar repartidor automático al pedido %s", pedido.id)
+        # Si el pedido requiere reparto y no se asignó nadie, avisamos a admin
+        # con un evento explícito para que aparezca destacado en la cola sin
+        # repartidor. Sin este marcador, el pedido queda "listo" pero solo se
+        # detecta mediante la query de pedidos_delivery_sin_repartidor_query.
+        if pedido.requiere_reparto and not repartidor:
+            registrar_evento_pedido(
+                pedido,
+                "reparto_sin_asignar",
+                actor_id=current_user.id,
+                estado_anterior=pedido.estado,
+                estado_nuevo=pedido.estado,
+                canal="proveedor",
+                detalle="Auto-advance a listo pero no hay repartidor disponible.",
+            )
     try:
         db.session.commit()
         try:
@@ -214,7 +448,14 @@ def marcar_preparado(pedido_id):
             )
         except Exception:
             logger.exception("No se pudo avisar a preparación del pedido %s", pedido.id)
-        flash(f"Pedido {pedido.numero_pedido} marcado como preparado.", "success")
+        if hizo_auto_advance and pedido.requiere_reparto and not repartidor:
+            flash(
+                f"Pedido {pedido.numero_pedido} está listo pero no hay repartidor libre. "
+                "Admin debe asignarlo manualmente.",
+                "warning",
+            )
+        else:
+            flash(f"Pedido {pedido.numero_pedido} marcado como preparado.", "success")
     except Exception as exc:
         db.session.rollback()
         logger.exception("Error marcando pedido %s como preparado", pedido_id)
@@ -231,15 +472,13 @@ def marcar_preparado(pedido_id):
 @proveedor_bp.route("/finanzas")
 @proveedor_required
 def finanzas():
-    """Resumen contable del bar: vendido, cancelado, extraviado y reparto del
-    dinero entre el bar y el marketplace según el modelo_acuerdo del proveedor."""
-    from datetime import date, datetime, timedelta
-    from decimal import Decimal
-    from models import Proveedor as _Prov, ProveedorProducto as _ProvProd
+    """Resumen contable del socio basado en el mismo cierre que administración."""
+    from datetime import datetime
+    from business_time import business_today
 
     prov_id = _proveedor_id_efectivo()
     es_admin_general = not prov_id and current_user.rol in ("admin", "super_admin")
-    bar = db.session.get(_Prov, prov_id) if prov_id else None
+    bar = db.session.get(Proveedor, prov_id) if prov_id else None
     if not bar and not es_admin_general:
         flash("Tu cuenta no está enlazada a ningún bar.", "warning")
         return redirect(url_for("public.index"))
@@ -258,120 +497,48 @@ def finanzas():
     fecha_inicio_str = (request.args.get("fecha_inicio") or "").strip()
     fecha_fin_str = (request.args.get("fecha_fin") or "").strip()
     try:
+        hoy_negocio = business_today()
         fecha_inicio = (datetime.strptime(fecha_inicio_str, "%Y-%m-%d").date()
-                        if fecha_inicio_str else date.today().replace(day=1))
+                        if fecha_inicio_str else hoy_negocio.replace(day=1))
         fecha_fin = (datetime.strptime(fecha_fin_str, "%Y-%m-%d").date()
-                     if fecha_fin_str else date.today())
+                     if fecha_fin_str else hoy_negocio)
     except ValueError:
         flash("Fechas inválidas, mostrando mes actual.", "warning")
-        fecha_inicio = date.today().replace(day=1)
-        fecha_fin = date.today()
+        hoy_negocio = business_today()
+        fecha_inicio = hoy_negocio.replace(day=1)
+        fecha_fin = hoy_negocio
     if fecha_inicio > fecha_fin:
         fecha_inicio, fecha_fin = fecha_fin, fecha_inicio
 
-    # Trae pedidos con OPS del bar en el rango (vendidos = entregados,
-    # cancelados normales y extravíos van por OrderEvent posterior).
-    q = (
-        Order.query
-        .join(OrderProviderStatus, OrderProviderStatus.pedido_id == Order.id)
-        .filter(db.func.date(Order.creado_en) >= fecha_inicio)
-        .filter(db.func.date(Order.creado_en) <= fecha_fin)
+    cierre = calcular_liquidaciones_proveedores(
+        fecha_inicio,
+        fecha_fin,
+        proveedor_id=bar.id if bar else None,
     )
-    if bar:
-        q = q.filter(OrderProviderStatus.proveedor_id == bar.id)
-    pedidos = q.order_by(Order.creado_en.desc()).all()
-
-    # Buscar qué pedidos tienen evento extraviado
-    extraviados_ids = set()
-    if pedidos:
-        ids = [p.id for p in pedidos]
-        ext_eventos = OrderEvent.query.filter(
-            OrderEvent.tipo == "pedido_extraviado",
-            OrderEvent.pedido_id.in_(ids),
-        ).all()
-        extraviados_ids = {e.pedido_id for e in ext_eventos}
-
-    # Clasificación + cálculo
-    def _coste_pedido_bar(pedido, bar_id):
-        """Coste del pedido para el bar = suma(precio_costo congelado × cantidad).
-        Si no hay congelado, fallback a ProveedorProducto vivo."""
-        total = Decimal("0")
-        for oi in pedido.items:
-            metadata = oi.get_metadata() if hasattr(oi, "get_metadata") else {}
-            combo = (metadata or {}).get("combo") or {}
-            componentes = list(combo.get("componentes") or [])
-            for grp in combo.get("selecciones") or []:
-                componentes.extend(grp.get("opciones") or [])
-            if componentes:
-                # Es combo: sumamos precio_costo de cada componente
-                for c in componentes:
-                    cant = max(1, int(c.get("cantidad") or 1)) * int(oi.cantidad or 1)
-                    congelado = c.get("precio_costo_congelado")
-                    if congelado is not None:
-                        total += Decimal(str(congelado)) * cant
-                    elif c.get("producto_id"):
-                        fila = _ProvProd.query.filter_by(
-                            proveedor_id=bar_id, producto_id=c["producto_id"]).first()
-                        if fila and fila.precio_costo is not None:
-                            total += Decimal(str(fila.precio_costo)) * cant
-            else:
-                # Item suelto del bar
-                fila = _ProvProd.query.filter_by(
-                    proveedor_id=bar_id, producto_id=oi.producto_id).first()
-                if fila and fila.precio_costo is not None:
-                    total += Decimal(str(fila.precio_costo)) * int(oi.cantidad or 1)
-        return total
-
-    vendidos, cancelados, extraviados = [], [], []
-    pvp_vendido = Decimal("0")
-    coste_bar_vendido = Decimal("0")
-    pvp_extraviado = Decimal("0")
-    coste_bar_extraviado = Decimal("0")
-    pvp_cancelado = Decimal("0")
-
-    for p in pedidos:
-        # Determinar el bar específico de cada OPS para cálculos correctos
-        # cuando admin general mira sin filtro
-        ops_bar_ids = [ops.proveedor_id for ops in p.estados_proveedor]
-        bar_id_calc = bar.id if bar else (ops_bar_ids[0] if ops_bar_ids else None)
-        if not bar_id_calc:
-            continue
-        coste_p = _coste_pedido_bar(p, bar_id_calc)
-        total_p = Decimal(str(p.total or 0))
-        item = {
-            "pedido": p,
-            "total": total_p,
-            "coste_bar": coste_p,
+    bucket = cierre["por_proveedor"].get(bar.id) if bar else None
+    if not bucket:
+        bucket = {
+            "lineas": [],
+            "sin_costo": [],
+            "total": Decimal("0"),
+            "total_entregado": Decimal("0"),
+            "total_extraviado": Decimal("0"),
+            "ventas_netas": Decimal("0"),
+            "ventas_extraviadas": Decimal("0"),
+            "registrado": Decimal("0"),
+            "pagado": Decimal("0"),
+            "programado": Decimal("0"),
+            "pendiente_registrar": Decimal("0"),
+            "pendiente_pago": Decimal("0"),
         }
-        if p.estado == "entregado":
-            vendidos.append(item)
-            pvp_vendido += total_p
-            coste_bar_vendido += coste_p
-        elif p.id in extraviados_ids:
-            extraviados.append(item)
-            pvp_extraviado += total_p
-            coste_bar_extraviado += coste_p
-        elif p.estado == "cancelado":
-            cancelados.append(item)
-            pvp_cancelado += total_p
-        # En otros estados (pendiente/armando/listo/en_ruta) no entran al
-        # resumen — son "en curso" y se ven en /proveedor/pedidos.
-
-    # Liquidación según modelo del bar
-    bar_para_calculo = bar if bar else None
-    modelo = bar_para_calculo.modelo_acuerdo if bar_para_calculo else "stock_proveedor"
-    comision_pct = Decimal(str(bar_para_calculo.comision_pct or 0)) if bar_para_calculo else Decimal("0")
-
-    if modelo == "stock_propio_bar":
-        # Nosotros ponemos stock; al bar le pagamos comision% del PVP por preparar.
-        a_pagar_bar = (pvp_vendido * comision_pct / Decimal("100")).quantize(Decimal("0.01"))
-        ingreso_marketplace = (pvp_vendido - a_pagar_bar).quantize(Decimal("0.01"))
-        formula = f"{comision_pct}% del PVP vendido"
+    modelo = bar.modelo_acuerdo if bar else "stock_proveedor"
+    comision_pct = Decimal(str(bar.comision_pct or 0)) if bar else Decimal("0")
+    if modelo == "socio_porcentaje":
+        formula = f"Socio {Decimal('100') - comision_pct}% · tienda {comision_pct}%"
+    elif modelo == "stock_propio_bar":
+        formula = f"{comision_pct}% del PVP neto vendido"
     else:
-        # Bar pone stock; le pagamos precio_costo por unidad despachada.
-        a_pagar_bar = coste_bar_vendido.quantize(Decimal("0.01"))
-        ingreso_marketplace = (pvp_vendido - a_pagar_bar).quantize(Decimal("0.01"))
-        formula = "Coste registrado por componente"
+        formula = "Coste congelado por producto o componente"
 
     return render_template(
         "proveedor/finanzas.html",
@@ -379,16 +546,13 @@ def finanzas():
         es_admin_general=es_admin_general,
         fecha_inicio=fecha_inicio,
         fecha_fin=fecha_fin,
-        vendidos=vendidos,
-        cancelados=cancelados,
-        extraviados=extraviados,
-        pvp_vendido=pvp_vendido,
-        pvp_cancelado=pvp_cancelado,
-        pvp_extraviado=pvp_extraviado,
-        coste_bar_vendido=coste_bar_vendido,
-        coste_bar_extraviado=coste_bar_extraviado,
-        a_pagar_bar=a_pagar_bar,
-        ingreso_marketplace=ingreso_marketplace,
+        bucket=bucket,
+        pvp_vendido=bucket["ventas_netas"],
+        pvp_extraviado=bucket["ventas_extraviadas"],
+        a_pagar_bar=bucket["total"],
+        ingreso_marketplace=(
+            bucket["ventas_netas"] - bucket["total_entregado"]
+        ),
         formula=formula,
         modelo=modelo,
         comision_pct=comision_pct,
@@ -531,7 +695,7 @@ def incidencias():
 @proveedor_bp.route("/inventario", methods=["GET", "POST"])
 @proveedor_required
 def inventario():
-    """Vista del operador del proveedor para ajustar stock y precio_costo de sus SKUs."""
+    """Inventario separado: el socio solo opera los SKU de los que es dueño."""
     prov_id = _proveedor_id_efectivo()
     if not prov_id:
         flash("Tu cuenta no está enlazada a ningún proveedor.", "warning")
@@ -542,7 +706,26 @@ def inventario():
         flash("Proveedor no encontrado.", "danger")
         return redirect(url_for("public.index"))
 
+    if current_user.rol == "socio_producto":
+        if (not proveedor or not proveedor.activo
+                or proveedor.modelo_acuerdo != "socio_porcentaje"):
+            try:
+                AuditLog.registrar(
+                    current_user.id, "socio_capital_denegado", "proveedor",
+                    prov_id, detalle=f"ruta={request.path}",
+                    ip=request.remote_addr,
+                )
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+            abort(403)
+
     if request.method == "POST":
+        # El socio financia la mercancía, pero el stock físico lo custodia y
+        # opera la tienda. Impedir la mutación también en backend evita que un
+        # formulario antiguo o una petición manual desincronicen existencias.
+        if current_user.rol == "socio_producto":
+            abort(403)
         accion = request.form.get("accion", "actualizar_sku")
         if accion == "actualizar_sku":
             fila_id = request.form.get("fila_id", type=int)
@@ -558,21 +741,23 @@ def inventario():
                 return redirect(url_for("proveedor.inventario"))
             try:
                 stock = _entero_no_negativo(request.form.get("stock"), "El stock")
-                precio_costo = _decimal_no_negativo(
-                    request.form.get("precio_costo"),
-                    "El coste",
-                    opcional=True,
-                )
             except ValueError as exc:
                 db.session.rollback()
                 flash(str(exc), "danger")
                 return redirect(url_for("proveedor.inventario"))
-            if fila.producto.es_combo or fila.producto.proveedor_despachador_id is not None:
+            if (
+                fila.producto.es_combo
+                or fila.producto.proveedor_despachador_id != prov_id
+            ):
                 db.session.rollback()
-                flash("El inventario del proveedor solo admite productos simples del catálogo maestro.", "danger")
+                flash("Ese producto no pertenece al inventario de este socio.", "danger")
                 return redirect(url_for("proveedor.inventario"))
+            if current_user.rol == "socio_producto":
+                _assert_owned_by(proveedor, fila.producto)
             fila.stock = stock
-            fila.precio_costo = precio_costo
+            # En reparto porcentual no existe coste para la tienda: el socio
+            # recibe su participación y conserva la propiedad del inventario.
+            fila.precio_costo = None
             try:
                 db.session.commit()
                 flash(f"«{fila.producto.nombre}» actualizado.", "success")
@@ -587,15 +772,410 @@ def inventario():
         .join(Product, ProveedorProducto.producto_id == Product.id)
         .filter(
             Product.es_combo.is_(False),
-            Product.proveedor_despachador_id.is_(None),
+            Product.proveedor_despachador_id == prov_id,
         )
         .order_by(Product.nombre)
         .all()
     )
+    combos = Product.query.filter_by(
+        proveedor_despachador_id=prov_id,
+        es_combo=True,
+    ).order_by(Product.nombre).all()
     return render_template(
         "proveedor/inventario.html",
         proveedor=proveedor,
         skus=skus,
+        combos=combos,
+    )
+
+
+@proveedor_bp.route("/productos/nuevo", methods=["GET", "POST"])
+@proveedor_bp.route("/productos/<int:producto_id>/editar", methods=["GET", "POST"])
+@socio_capital_required
+def registrar_producto(producto_id=None, _proveedor=None):
+    """Registra o corrige una propuesta, siempre ligada al socio autenticado."""
+    proveedor = _proveedor
+
+    producto = None
+    if producto_id is not None:
+        producto = db.session.get(Product, producto_id)
+        _assert_owned_by(proveedor, producto)
+        if producto.es_combo:
+            abort(404)
+        if producto.partner_submission_status not in {"pending", "rejected"}:
+            flash(
+                "Un producto ya aprobado se actualiza desde inventario. "
+                "Los cambios comerciales deben revisarse con administración.",
+                "warning",
+            )
+            return redirect(url_for("proveedor.inventario"))
+
+    if request.method == "POST":
+        nueva_imagen = None
+        imagen_anterior = producto.imagen_url if producto else None
+        try:
+            campos = _campos_producto_socio(request.form)
+            archivo = request.files.get("imagen_archivo")
+            if archivo and getattr(archivo, "filename", None):
+                if not archivo.filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                    raise ValueError("La imagen debe ser JPG, PNG o WebP.")
+                nueva_imagen = save_image(archivo, "productos")
+
+            if producto is None:
+                producto = Product(
+                    nombre=campos["nombre"],
+                    descripcion=campos["descripcion"],
+                    precio=campos["precio"],
+                    precio_costo=None,
+                    categoria_id=campos["categoria_id"],
+                    imagen_url=nueva_imagen,
+                    origen_pais=campos["origen_pais"],
+                    es_combo=False,
+                    tipo_producto="simple",
+                    activo=False,
+                    vertical=campos["vertical"],
+                    canal_preparacion="almacen",
+                    proveedor_despachador_id=proveedor.id,
+                    tipo_entrega="inmediato",
+                    modalidad_entrega=campos["modalidad_entrega"],
+                    stock_mostrar_en_web=True,
+                    partner_submitted_by=current_user.id,
+                    partner_submitted_at=utcnow(),
+                    partner_submission_status="pending",
+                )
+                db.session.add(producto)
+                db.session.flush()
+                db.session.add(ProveedorProducto(
+                    proveedor_id=proveedor.id,
+                    producto_id=producto.id,
+                    stock=campos["stock"],
+                    precio_costo=None,
+                    activo=True,
+                ))
+                accion_auditoria = "socio_producto_registrado"
+            else:
+                producto.nombre = campos["nombre"]
+                producto.descripcion = campos["descripcion"]
+                producto.precio = campos["precio"]
+                producto.precio_costo = None
+                producto.categoria_id = campos["categoria_id"]
+                producto.origen_pais = campos["origen_pais"]
+                producto.modalidad_entrega = campos["modalidad_entrega"]
+                producto.activo = False
+                producto.partner_submission_status = "pending"
+                producto.partner_submitted_by = current_user.id
+                producto.partner_submitted_at = utcnow()
+                producto.partner_reviewed_by = None
+                producto.partner_reviewed_at = None
+                producto.partner_review_note = None
+                if nueva_imagen:
+                    producto.imagen_url = nueva_imagen
+                fila = ProveedorProducto.query.filter_by(
+                    proveedor_id=proveedor.id,
+                    producto_id=producto.id,
+                ).with_for_update().first()
+                if not fila:
+                    fila = ProveedorProducto(
+                        proveedor_id=proveedor.id,
+                        producto_id=producto.id,
+                        precio_costo=None,
+                        activo=True,
+                    )
+                    db.session.add(fila)
+                fila.stock = campos["stock"]
+                fila.precio_costo = None
+                fila.activo = True
+                accion_auditoria = "socio_producto_reenviado"
+
+            AuditLog.registrar(
+                current_user.id,
+                accion_auditoria,
+                "producto",
+                producto.id,
+                detalle=f"Socio #{proveedor.id}: {producto.nombre}",
+                ip=request.remote_addr,
+            )
+            db.session.commit()
+            if nueva_imagen and imagen_anterior and imagen_anterior != nueva_imagen:
+                delete_image(imagen_anterior)
+        except ValueError as exc:
+            db.session.rollback()
+            if nueva_imagen:
+                delete_image(nueva_imagen)
+            flash(str(exc), "danger")
+        except Exception:
+            db.session.rollback()
+            if nueva_imagen:
+                delete_image(nueva_imagen)
+            logger.exception("Error registrando producto del socio %s", proveedor.id)
+            flash("No se pudo registrar el producto. Inténtalo de nuevo.", "danger")
+        else:
+            try:
+                from push_service import notify_roles
+                notify_roles(
+                    ["super_admin"],
+                    "Producto de socio pendiente",
+                    f"{proveedor.nombre} envió «{producto.nombre}» para revisión.",
+                    url="/admin/productos?revision=pending",
+                    tag=f"partner-product-{producto.id}",
+                )
+            except Exception:
+                logger.exception("No se pudo notificar la propuesta %s", producto.id)
+            flash(
+                "Producto enviado a revisión. Podrás gestionar su stock cuando sea aprobado.",
+                "success",
+            )
+            return redirect(url_for("proveedor.inventario"))
+
+    categorias = Categoria.query.filter_by(activo=True).order_by(Categoria.nombre).all()
+    fila = (
+        ProveedorProducto.query.filter_by(
+            proveedor_id=proveedor.id,
+            producto_id=producto.id,
+        ).first()
+        if producto else None
+    )
+    return render_template(
+        "proveedor/producto_form.html",
+        proveedor=proveedor,
+        producto=producto,
+        categorias=categorias,
+        stock_actual=fila.stock if fila else 0,
+    )
+
+
+def _combo_groups_payload_from_form_socio(form):
+    """Idéntico contrato al helper del admin; duplicado local para evitar
+    importaciones cruzadas entre blueprints. Lee los mismos names que
+    ``admin._combo_groups_payload_from_form``."""
+    uids = form.getlist("combo_group_uid") or []
+    names = form.getlist("combo_group_name") or []
+    types = form.getlist("combo_group_type") or []
+    max_sels = form.getlist("combo_group_max_sel") or []
+    orders = form.getlist("combo_group_order") or []
+    payload = {}
+    for i, uid in enumerate(uids):
+        uid = (uid or "").strip()
+        if not uid:
+            continue
+        tipo_raw = (types[i] if i < len(types) else "fijo").strip().lower()
+        tipo = "seleccion" if tipo_raw in ("sel", "seleccion", "choice") else "fijo"
+        try:
+            max_sel = int(max_sels[i]) if i < len(max_sels) and max_sels[i] else 1
+        except (TypeError, ValueError):
+            max_sel = 1
+        try:
+            orden = int(orders[i]) if i < len(orders) and orders[i] else i
+        except (TypeError, ValueError):
+            orden = i
+        nombre_raw = (names[i] if i < len(names) else "").strip()[:80]
+        if not nombre_raw:
+            nombre_raw = "Base incluida" if tipo == "fijo" else "Eleccion"
+        payload[uid] = {
+            "tipo": tipo,
+            "nombre": nombre_raw,
+            "max_selecciones": max_sel,
+            "orden": orden,
+        }
+    return payload
+
+
+@proveedor_bp.route("/combos/nuevo", methods=["GET", "POST"])
+@proveedor_bp.route("/combos/<int:combo_id>/editar", methods=["GET", "POST"])
+@socio_capital_required
+def registrar_combo(combo_id=None, _proveedor=None):
+    """Permite al socio proponer combos formados solo por su propio inventario."""
+    proveedor = _proveedor
+
+    combo = None
+    if combo_id is not None:
+        combo = db.session.get(Product, combo_id)
+        _assert_owned_by(proveedor, combo)
+        if not combo.es_combo:
+            abort(404)
+        if combo.partner_submission_status not in {"pending", "rejected"}:
+            flash("Los cambios de un combo aprobado deben revisarse con administración.", "warning")
+            return redirect(url_for("proveedor.inventario"))
+
+    productos_propios = Product.query.filter(
+        Product.proveedor_despachador_id == proveedor.id,
+        Product.es_combo.is_(False),
+        Product.activo.is_(True),
+    ).order_by(Product.nombre).all()
+
+    productos_permitidos = {p.id: p for p in productos_propios}
+
+    if request.method == "POST":
+        from combo_form_parser import parse_componentes, ComboParseError
+        from combo_builder import build_combo
+
+        nueva_imagen = None
+        imagen_anterior = combo.imagen_url if combo else None
+        try:
+            campos = _campos_producto_socio(request.form, incluir_stock=False)
+            archivo = request.files.get("imagen_archivo")
+            if archivo and getattr(archivo, "filename", None):
+                if not archivo.filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                    raise ValueError("La imagen debe ser JPG, PNG o WebP.")
+                nueva_imagen = save_image(archivo, "productos")
+
+            if combo is None:
+                combo = Product(
+                    nombre=campos["nombre"],
+                    descripcion=campos["descripcion"],
+                    precio=campos["precio"],
+                    precio_costo=None,
+                    categoria_id=campos["categoria_id"],
+                    imagen_url=nueva_imagen,
+                    origen_pais=campos["origen_pais"],
+                    es_combo=True,
+                    tipo_producto="combo",
+                    activo=False,
+                    vertical=campos["vertical"],
+                    canal_preparacion="almacen",
+                    proveedor_despachador_id=proveedor.id,
+                    tipo_entrega="inmediato",
+                    modalidad_entrega=campos["modalidad_entrega"],
+                    stock_mostrar_en_web=True,
+                    combo_precio_modo="fijo",
+                    combo_precio_base=campos["precio"],
+                )
+                db.session.add(combo)
+                db.session.flush()
+                audit_action = "socio_combo_registrado"
+            else:
+                combo.nombre = campos["nombre"]
+                combo.descripcion = campos["descripcion"]
+                combo.precio = campos["precio"]
+                combo.combo_precio_base = campos["precio"]
+                combo.categoria_id = campos["categoria_id"]
+                combo.origen_pais = campos["origen_pais"]
+                combo.modalidad_entrega = campos["modalidad_entrega"]
+                if nueva_imagen:
+                    combo.imagen_url = nueva_imagen
+                audit_action = "socio_combo_reenviado"
+
+            # ── Parser + builder compartidos con admin ──
+            group_defs_socio = _combo_groups_payload_from_form_socio(request.form)
+            try:
+                componentes_parsed = parse_componentes(
+                    request.form,
+                    productos_permitidos=productos_permitidos,
+                    group_defs=group_defs_socio,
+                    parent_vertical=combo.vertical,
+                    combo_id=combo.id,
+                    enforce_owner_id=proveedor.id,
+                )
+            except ComboParseError as exc:
+                raise ValueError(str(exc))
+
+            build_combo(
+                combo,
+                componentes_parsed,
+                group_defs=group_defs_socio,
+                autor_role="socio_producto",
+                actor_user_id=current_user.id,
+            )
+            AuditLog.registrar(
+                current_user.id,
+                audit_action,
+                "producto",
+                combo.id,
+                detalle=f"Socio #{proveedor.id}: {combo.nombre}",
+                ip=request.remote_addr,
+            )
+            db.session.commit()
+            if nueva_imagen and imagen_anterior and nueva_imagen != imagen_anterior:
+                delete_image(imagen_anterior)
+        except ValueError as exc:
+            db.session.rollback()
+            if nueva_imagen:
+                delete_image(nueva_imagen)
+            flash(str(exc), "danger")
+        except Exception:
+            db.session.rollback()
+            if nueva_imagen:
+                delete_image(nueva_imagen)
+            logger.exception("Error registrando combo del socio %s", proveedor.id)
+            flash("No se pudo registrar el combo. Revisa la composición.", "danger")
+        else:
+            try:
+                from push_service import notify_roles
+                notify_roles(
+                    ["super_admin"],
+                    "Combo de socio pendiente",
+                    f"{proveedor.nombre} envió «{combo.nombre}» para revisión.",
+                    url="/admin/productos?revision=pending",
+                    tag=f"partner-product-{combo.id}",
+                )
+            except Exception:
+                logger.exception("No se pudo notificar el combo %s", combo.id)
+            flash("Combo enviado a revisión.", "success")
+            return redirect(url_for("proveedor.inventario"))
+
+    selected = {}
+    if combo:
+        for item in ComboItem.query.filter_by(combo_id=combo.id).all():
+            selected[item.producto_id] = {
+                "cantidad": item.cantidad,
+                "modo": "eleccion" if item.es_seleccionable else "fijo",
+                "grupo": item.grupo_seleccion or "",
+            }
+    categorias = Categoria.query.filter_by(activo=True).order_by(Categoria.nombre).all()
+
+    # ── Precarga anti-N+1: tamaños y sabores por producto, mismo payload
+    #    que consume el builder del admin (nuevo_combo.html) ──
+    from product_presentations_service import product_presentation_catalog_payload
+    from models import ProductExtraGroup, ProductExtraOption
+    from sqlalchemy import func
+
+    presentaciones_por_producto = {
+        str(p.id): product_presentation_catalog_payload(p) for p in productos_propios
+    }
+    flavor_options_by_product = {}
+    flavor_counts_by_product = {}
+    if productos_propios:
+        _ids = [p.id for p in productos_propios]
+        rows = (
+            db.session.query(
+                ProductExtraGroup.producto_id,
+                ProductExtraOption.id,
+                ProductExtraOption.nombre,
+                ProductExtraOption.orden,
+            )
+            .join(ProductExtraOption, ProductExtraOption.grupo_id == ProductExtraGroup.id)
+            .filter(
+                ProductExtraGroup.tipo == "sabor",
+                ProductExtraGroup.activo.is_(True),
+                ProductExtraOption.activo.is_(True),
+                ProductExtraGroup.producto_id.in_(_ids),
+            )
+            .order_by(
+                ProductExtraGroup.producto_id,
+                ProductExtraOption.orden,
+                ProductExtraOption.id,
+            )
+            .all()
+        )
+        for pid, oid, nom, _ in rows:
+            flavor_options_by_product.setdefault(int(pid), []).append(
+                {"id": int(oid), "nombre": nom or ""}
+            )
+        flavor_counts_by_product = {
+            pid: len(opts) for pid, opts in flavor_options_by_product.items()
+        }
+
+    return render_template(
+        "proveedor/combo_form.html",
+        proveedor=proveedor,
+        combo=combo,
+        categorias=categorias,
+        productos_propios=productos_propios,
+        selected=selected,
+        max_qty=ComboLimits.max_qty_per_component(),
+        presentaciones_por_producto=presentaciones_por_producto,
+        flavor_options_by_product=flavor_options_by_product,
+        flavor_counts_by_product=flavor_counts_by_product,
     )
 
 

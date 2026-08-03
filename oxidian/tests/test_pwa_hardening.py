@@ -82,14 +82,30 @@ class PwaArchitectureContractTest(unittest.TestCase):
 
     def test_service_worker_uses_safe_bounded_runtime_cache(self):
         worker = (ROOT / "static" / "sw.js").read_text(encoding="utf-8")
-        self.assertIn('const CACHE_MEDIA = "ox-media-v53"', worker)
+        self.assertIn('const APP_VERSION = "__ASSET_VERSION__"', worker)
+        self.assertIn('const CACHE_MEDIA = `ox-media-${APP_VERSION}`', worker)
         self.assertIn("trimCache(cache, 80)", worker)
         self.assertIn('type: "OX_PUSH_RECEIVED"', worker)
-        self.assertIn('badge  = "/static/pwa-badge-96.png?v=53"', worker)
+        self.assertIn('badge  = `/static/pwa-badge-96.png?v=${APP_VERSION}`', worker)
+        self.assertIn('"setAppBadge" in self.navigator', worker)
+        self.assertIn('self.navigator.setAppBadge', worker)
+        self.assertIn('self.navigator.clearAppBadge', worker)
+        self.assertNotIn('self.registration.setAppBadge', worker)
         self.assertIn('"/static/js/cart-ui.js"', worker)
         self.assertIn('"/static/js/spa-nav.js"', worker)
         self.assertIn('"/static/css/heritage.css"', worker)
         self.assertNotIn("self.skipWaiting();\n});\n\n// ── ACTIVATE", worker)
+
+    def test_worker_and_manifests_follow_the_real_asset_fingerprint(self):
+        app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+        public = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
+        staff = (ROOT / "templates" / "admin_base.html").read_text(encoding="utf-8")
+        manager = (ROOT / "static" / "js" / "pwa-manager.js").read_text(encoding="utf-8")
+        self.assertIn('.replace(\n            "__ASSET_VERSION__", app.config["ASSET_VERSION"]', app_source)
+        self.assertIn('name="ox-asset-version"', public)
+        self.assertIn('name="ox-asset-version"', staff)
+        self.assertIn("`/sw.js?v=${encodeURIComponent(assetVersion", manager)
+        self.assertIn('private, no-store, max-age=0', app_source)
 
     def test_manifest_uses_configured_canasta_vocabulary(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")

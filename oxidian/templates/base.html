@@ -23,55 +23,96 @@
   <meta name="ox-push-eligible" content="{{ '1' if session.get('push_cliente_id') else '0' }}">
   <meta name="ox-cart-count" content="{{ session.get('carrito', {})|length }}">
   <meta name="ox-csrf-token" content="{{ csrf_token() }}">
+  <meta name="ox-asset-version" content="{{ asset_version }}">
 
-  {# SEO básico #}
+  {# SEO básico: solo el catálogo y la ficha de producto son indexables.
+     Carrito, checkout, puntos y confirmaciones contienen estado de sesión. #}
+  {% set _seo_indexable = request.endpoint in ('public.index', 'public.producto_detalle') %}
+  {% set _seo_image_raw = brand.hero_image_url or brand.logo_url or url_for('static', filename='pwa-icon-512.png', v=asset_version) %}
+  {% set _seo_image = _seo_image_raw|absolute_url %}
+  {% set _canonical_url = request.base_url %}
   <meta name="description" content="{{ brand.nombre }}{% if brand.slogan %} — {{ brand.slogan }}{% elif brand.descripcion %} — {{ brand.descripcion }}{% elif brand.delivery %} — Haz tu pedido online con entrega o recogida.{% else %} — Haz tu pedido online para recoger.{% endif %}">
-  <meta name="robots" content="index, follow">
+  <meta name="robots" content="{{ 'index, follow, max-image-preview:large' if _seo_indexable else 'noindex, nofollow, noarchive' }}">
+  {% if _seo_indexable %}<link rel="canonical" href="{{ _canonical_url }}">{% endif %}
   {# Open Graph — cuando se comparte por WhatsApp / redes sale la card bonita #}
   <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ _canonical_url }}">
+  <meta property="og:site_name" content="{{ brand.nombre }}">
   <meta property="og:title" content="{{ brand.nombre }}{% if brand.slogan %} — {{ brand.slogan }}{% endif %}">
   <meta property="og:description" content="{% if brand.slogan %}{{ brand.slogan }} — {% endif %}Pide online en {{ brand.nombre }}">
-  <meta property="og:image" content="{{ brand.hero_image_url or brand.logo_url or url_for('static', filename='pwa-icon-512.png', v=asset_version, _external=True) }}">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
+  <meta property="og:image" content="{{ _seo_image }}">
+  <meta property="og:image:alt" content="{{ brand.nombre }}{% if brand.slogan %} — {{ brand.slogan }}{% endif %}">
   <meta property="og:locale" content="es_ES">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{{ brand.nombre }}">
   <meta name="twitter:description" content="{% if brand.slogan %}{{ brand.slogan }} — {% endif %}Pide online.">
-  <meta name="twitter:image" content="{{ brand.hero_image_url or brand.logo_url or url_for('static', filename='pwa-icon-512.png', v=asset_version, _external=True) }}">
+  <meta name="twitter:image" content="{{ _seo_image }}">
+  <meta name="twitter:image:alt" content="{{ brand.nombre }}">
+
+  {% if _seo_indexable %}
+  <script type="application/ld+json">{{ {
+    "@context": "https://schema.org",
+    "@type": "Restaurant",
+    "@id": request.url_root ~ "#restaurant",
+    "name": brand.nombre,
+    "url": request.url_root,
+    "logo": (brand.app_icon_url or brand.logo_url or url_for('static', filename='pwa-icon-512.png', v=asset_version))|absolute_url,
+    "image": _seo_image,
+    "description": brand.descripcion or brand.slogan or ("Pide online en " ~ brand.nombre),
+    "telephone": brand.telefono or none,
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": brand.direccion or none,
+      "addressLocality": brand.ciudad or none,
+      "addressRegion": brand.provincia or none,
+      "addressCountry": brand.pais or none
+    },
+    "servesCuisine": "Colombiana"
+  }|tojson }}</script>
+  {% endif %}
 
   {# Icons — usa APP_ICON_URL si está configurado, si no los estáticos #}
-  {% set _app_icon = brand.app_icon_url if brand.app_icon_url is defined and brand.app_icon_url else (brand.logo_url if brand.logo_url is defined and brand.logo_url else '') %}
+  {% set _app_icon_raw = brand.app_icon_url if brand.app_icon_url is defined and brand.app_icon_url else (brand.logo_url if brand.logo_url is defined and brand.logo_url else '') %}
+  {% set _app_icon = _app_icon_raw|upload_url if _app_icon_raw else '' %}
   <link rel="apple-touch-icon" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
   <link rel="apple-touch-icon" sizes="167x167" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
   <link rel="apple-touch-icon" sizes="152x152" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
+  {% if _app_icon %}
+  <link rel="icon" href="{{ _app_icon|upload_url }}">
+  {% else %}
   <link rel="icon" type="image/png" sizes="64x64" href="{{ _app_icon or url_for('static', filename='favicon-64.png', v=asset_version) }}">
   <link rel="icon" type="image/png" sizes="32x32" href="{{ _app_icon or url_for('static', filename='favicon-32.png', v=asset_version) }}">
   <link rel="icon" type="image/svg+xml" href="{{ _app_icon or url_for('static', filename='pwa-icon.svg', v=asset_version) }}">
+  {% endif %}
   <link rel="mask-icon" href="{{ url_for('static', filename='pwa-icon-monochrome.svg', v=asset_version) }}" color="{{ brand.color_primario }}">
 
-  <link rel="manifest" href="{{ url_for('web_manifest') }}">
+  <link rel="manifest" href="{{ url_for('web_manifest', v=asset_version) }}">
 
-  {# Splash screen para iOS (usa el color de marca de fondo con logo centrado) #}
-  <meta name="apple-mobile-web-app-orientations" content="portrait">
+  {# Splash screen para iOS (usa el color de marca de fondo con logo centrado).
+     Permite ambas orientaciones — antes se forzaba portrait, bloqueando el uso
+     natural en tablets horizontales y móviles rotados durante el pedido. #}
+  <meta name="apple-mobile-web-app-orientations" content="any">
   <link rel="apple-touch-startup-image"
         href="{{ _app_icon or url_for('static', filename='pwa-icon-512.png', v=asset_version) }}"
         media="(prefers-color-scheme: dark)">
 
-  {# Tipografía — Inter (cuerpo) carga rápida con display=swap #}
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
+  {# Tipografía del sistema: evita solicitudes a terceros antes de consentimiento. #}
+
+  {# Bloque opcional: cada template puede añadir preloads críticos (LCP image,
+     hero background, etc.) para reducir el tiempo hasta el contentful paint. #}
+  {% block preload %}{% endblock %}
 
   <title>{% block title %}{{ brand.nombre }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.generated.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/privacy-consent.css', v=asset_version) }}">
   <style>
     :root {
       --brand-primary:   {{ brand.color_primario }};
       --brand-secondary: {{ brand.color_secundario }};
+      --brand-on-secondary: {{ brand.on_secundario }};
       --brand-accent:    {{ brand.color_acento }};
       --brand-on-primary: {{ brand.on_primario }};
       --brand-on-accent: {{ brand.on_acento }};
@@ -204,8 +245,12 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/header-modern.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/heritage.css', v=asset_version) }}">
 </head>
-<body class="ox-body ox-body-public ox-has-bottom-nav min-h-screen"
-      style="--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-accent:{{ brand.color_acento }};--brand-on-primary:{{ brand.on_primario }};--brand-on-accent:{{ brand.on_acento }};--col-gold:{{ brand.color_primario }};--theme-bg:{{ brand.theme.fondo_app }};--theme-surface:{{ brand.theme.superficie }};--theme-surface-alt:{{ brand.theme.superficie_alt }};--theme-text:{{ brand.theme.texto }};--theme-muted:{{ brand.theme.texto_suave }};--theme-header-bg:{{ brand.theme.cabecera_fondo }};--theme-header-text:{{ brand.theme.cabecera_texto }};--theme-success:{{ brand.theme.exito }};--theme-danger:{{ brand.theme.alerta }};">
+{# El detalle ya tiene navegación de regreso y una barra de compra fija.
+   Apilar además la navegación inferior duplicaba controles y cubría el
+   configurador en móviles pequeños. #}
+{% set show_bottom_nav = request.endpoint in ('public.index', 'public.ver_carrito', 'public.club', 'public.whatsapp') %}
+<body class="ox-body ox-body-public{% if show_bottom_nav %} ox-has-bottom-nav{% endif %} min-h-screen"
+      style="--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-on-secondary:{{ brand.on_secundario }};--brand-accent:{{ brand.color_acento }};--brand-on-primary:{{ brand.on_primario }};--brand-on-accent:{{ brand.on_acento }};--col-gold:{{ brand.color_primario }};--theme-bg:{{ brand.theme.fondo_app }};--theme-surface:{{ brand.theme.superficie }};--theme-surface-alt:{{ brand.theme.superficie_alt }};--theme-text:{{ brand.theme.texto }};--theme-muted:{{ brand.theme.texto_suave }};--theme-header-bg:{{ brand.theme.cabecera_fondo }};--theme-header-text:{{ brand.theme.cabecera_texto }};--theme-success:{{ brand.theme.exito }};--theme-danger:{{ brand.theme.alerta }};">
 {% include 'partials/heritage_sprite.html' %}
 
 {# ── HEADER PÚBLICO ── #}
@@ -291,11 +336,7 @@
 {# Flash messages #}
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
-<div class="ox-toast-wrap" id="ox-toasts">
-  {% for category, msg in messages %}
-  <div class="ox-toast ox-toast-{{ category if category in ('success','danger','warning','info') else 'info' }}">{{ msg }}</div>
-  {% endfor %}
-</div>
+<script type="application/json" id="ox-flash-data">{{ messages|tojson }}</script>
 {% endif %}
 {% endwith %}
 
@@ -382,6 +423,8 @@
       <nav class="ep-footer-mobile-links" aria-label="Ayuda y condiciones">
         {% if brand.telefono %}<a href="{{ url_for('public.whatsapp') }}" target="_blank" rel="noopener">WhatsApp</a>{% endif %}
         {% if brand.es_comida %}<span>Alérgenos: consúltanos</span>{% endif %}
+        <a href="{{ url_for('public.informacion_legal') }}">Información legal</a>
+        <button type="button" data-privacy-open>Configurar privacidad</button>
       </nav>
     </div>
   </div>
@@ -392,6 +435,20 @@
     </div>
   </div>
 </footer>
+
+<section class="ox-privacy-banner" id="ox-privacy-banner" aria-labelledby="ox-privacy-title" hidden>
+  <div><h2 id="ox-privacy-title">Tu privacidad, en claro</h2><p>Usamos almacenamiento necesario para seguridad y tu {{ ui.cart_name }}. Con tu permiso podemos recordar los datos del checkout en este dispositivo. No usamos publicidad ni analítica de terceros. <a href="{{ url_for('public.informacion_legal') }}#almacenamiento">Más información</a>.</p></div>
+  <div class="ox-privacy-actions"><button type="button" data-privacy-reject>Solo necesarias</button><button type="button" data-privacy-accept>Aceptar preferencias</button><button type="button" class="ox-privacy-settings" data-privacy-open>Configurar</button></div>
+</section>
+<div class="ox-privacy-layer" id="ox-privacy-dialog" hidden>
+  <section class="ox-privacy-dialog" role="dialog" aria-modal="true" aria-labelledby="ox-privacy-dialog-title">
+    <h2 id="ox-privacy-dialog-title">Configurar privacidad</h2>
+    <p>Elige qué puede guardarse en este dispositivo. Puedes cambiarlo cuando quieras desde el pie de página.</p>
+    <div class="ox-privacy-option"><div><strong>Almacenamiento necesario</strong><span>Seguridad, sesión, canasta y decisión de privacidad.</span></div><span class="ox-privacy-required">Siempre activo</span></div>
+    <label class="ox-privacy-option" for="ox-privacy-preferences"><div><strong>Preferencias del checkout</strong><span>Recuerda nombre, teléfono y dirección solo en este dispositivo.</span></div><input class="ox-privacy-switch" id="ox-privacy-preferences" type="checkbox"></label>
+    <div class="ox-privacy-actions"><button type="button" data-privacy-reject>Solo necesarias</button><button type="button" data-privacy-save>Guardar selección</button><button type="button" class="ox-privacy-settings" data-privacy-close>Cancelar</button></div>
+  </section>
+</div>
 
 {# ── PANEL DE INFORMACIÓN (siempre disponible) ── #}
 <div class="ox-info-sheet" id="ox-info-sheet" hidden>
@@ -490,6 +547,8 @@
           <button type="button" data-pwa-install><span class="ox-install-text">{{ ui.pwa_install }}</span></button>
           <button type="button" data-storage-prepare>{{ ui.pwa_offline }}</button>
           {% if session.get('push_cliente_id') %}<button type="button" data-push-activate>{{ ui.pwa_notifications }}</button>{% endif %}
+          <button type="button" data-pwa-check-update>Buscar actualización</button>
+          {% if session.get('push_cliente_id') %}<button type="button" data-push-sound-test>Probar aviso y sonido</button>{% endif %}
         </div>
         <p id="ox-app-tools-status" aria-live="polite"></p>
       </div>
@@ -497,6 +556,7 @@
   </section>
 </div>
 
+{% if show_bottom_nav %}
 <nav class="ox-bottom-nav ox-bnav-v2 md:hidden" aria-label="Navegación principal">
   <a href="{{ url_for('public.index') }}"
      class="ox-bnav-item {{ 'is-active' if request.endpoint == 'public.index' and 'q' not in request.args else '' }}"
@@ -553,18 +613,10 @@
     <span class="ox-bnav-glow" aria-hidden="true"></span>
   </a>
 </nav>
+{% endif %}
 
 <script nonce="{{ csp_nonce() }}">
 const OX_UI = {{ ui|tojson }};
-setTimeout(() => {
-  document.querySelectorAll('.ox-toast').forEach((el, i) => {
-    setTimeout(() => {
-      el.style.transition = 'opacity .25s, transform .25s';
-      el.style.opacity = '0'; el.style.transform = 'translateY(-6px)';
-      setTimeout(() => el.remove(), 280);
-    }, 4000 + i * 400);
-  });
-}, 200);
 
 const infoSheet = document.getElementById('ox-info-sheet');
 const openInfoSheet = () => {
@@ -610,9 +662,10 @@ document.addEventListener('error', function(event) {
 }, true);
 
 </script>
-<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/pwa-manager.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/storefront-viewport.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/storefront-toast.js', v=asset_version) }}" defer></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/privacy-consent.js', v=asset_version) }}" defer></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/pwa-manager.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/cart-ui.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/header-modern.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/spa-nav.js', v=asset_version) }}" defer></script>

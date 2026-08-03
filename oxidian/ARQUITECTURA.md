@@ -280,7 +280,7 @@ internamente pedidos, puntos y comunicaciones.
 [/carrito — Carrito]
     ├─ Lista de ítems: cantidad editable, eliminar
     ├─ Campo "Código de cupón" → validación AJAX → aplica descuento
-    ├─ Campo "Usar puntos" → descuento por puntos del club
+    ├─ Canje de producto → OTP por WhatsApp y producto elegible gratuito
     ├─ Resumen: subtotal, descuento, total
     └─→ [/checkout — Confirmación]
             ├─ Nombre, teléfono y dirección recordados en el dispositivo
@@ -291,7 +291,7 @@ internamente pedidos, puntos y comunicaciones.
             │    ├─ Crea registros en `order_items`
             │    ├─ Descuenta stock (stock.cantidad -= item.cantidad)
             │    ├─ Registra ingreso en `caja`
-            │    ├─ Calcula y suma puntos_ganados (1 punto por cada €1)
+            │    ├─ Calcula y suma puntos_ganados con la tasa configurada
             │    └─ Registra en `points_log`
             └─→ [/pedido-confirmado/<id>]
                     └─ Número de pedido, resumen, puntos ganados
@@ -307,9 +307,10 @@ internamente pedidos, puntos y comunicaciones.
     ├─ El saldo se envía al propio número, no se revela en el navegador
     └─ Para canjear en carrito/checkout se exige un código OTP por WhatsApp
 
-Reglas de puntos (configurables en config.py):
-    - 1 punto por cada €1 gastado
-    - 100 puntos = €1 de descuento
+Reglas de puntos (configurables en SiteConfig):
+    - La tasa de acumulación se define con PUNTOS_POR_EURO
+    - Los puntos solo se canjean por productos marcados como canjeables
+    - El coste del producto se define en puntos; nunca se convierte en dinero
     - No se pueden ganar y canjear en el mismo pedido
 ```
 
@@ -460,7 +461,6 @@ email-validator==2.2.0
 SECRET_KEY=oxidian-super-secret-key-cambiar-en-produccion
 DATABASE_URL=postgresql://usuario:password@host:5432/oxidian
 PUNTOS_POR_EURO=1
-PUNTOS_CANJE_RATIO=100
 ALERTA_CADUCIDAD_DIAS=7
 DEBUG=True
 ```

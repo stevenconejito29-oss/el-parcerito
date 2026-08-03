@@ -36,7 +36,7 @@
   {% if is_mine %}
   <div class="work-actions-top">
     <form method="POST" action="{{ url_for('admin.chats_close', client_jid=client_jid) }}"
-          onsubmit="return confirm('¿Cerrar el chat? El cliente vuelve al menú del bot.')" style="display:inline">
+          data-confirm="¿Cerrar el chat? El cliente vuelve al menú del bot." style="display:inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="work-btn work-btn-ghost">Cerrar chat</button>
     </form>

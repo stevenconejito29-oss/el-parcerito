@@ -1,0 +1,196 @@
+{% extends "admin_base.html" %}
+{% block title %}{{ 'Corregir' if combo else 'Crear' }} combo — {{ proveedor.nombre }}{% endblock %}
+{% block content %}
+<header class="prov-page-head prov-detail-head">
+  <div>
+    <a class="prov-back" href="{{ url_for('proveedor.inventario') }}">← Mi inventario</a>
+    <span class="prov-eyebrow">Combo de {{ proveedor.nombre }}</span>
+    <h1>{{ 'Corregir combo' if combo else 'Crear un combo' }}</h1>
+    <p>Combina únicamente mercancía de tu propiedad. Puedes configurar tamaños y sabores por componente igual que lo hace administración.</p>
+  </div>
+  <span class="prov-status {{ 'is-inactive' if combo else 'is-active' }}">{{ 'Revisión pendiente' if combo else 'Nueva propuesta' }}</span>
+</header>
+
+{% if combo and combo.partner_review_note %}
+<aside class="prov-alert-panel"><strong>Qué debes revisar</strong><p>{{ combo.partner_review_note }}</p></aside>
+{% endif %}
+
+{% if productos_propios|length < 2 %}
+<aside class="prov-alert-panel">
+  <strong>Necesitas al menos dos productos aprobados</strong>
+  <p>Registra primero tus productos. Cuando estén aprobados podrás utilizarlos como componentes.</p>
+  <a href="{{ url_for('proveedor.registrar_producto') }}" class="prov-btn prov-btn-primary">Registrar producto</a>
+</aside>
+{% else %}
+<form method="post" enctype="multipart/form-data" class="ox-card partner-product-form partner-combo-form" data-partner-combo-form>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <section class="partner-form-section">
+    <div class="partner-form-heading"><span>1</span><div><strong>Ficha del combo</strong><small>Nombre, precio e imagen que verá el cliente.</small></div></div>
+    <div class="partner-form-grid">
+      <label class="partner-field partner-field-wide">
+        <span>Nombre del combo *</span>
+        <input name="nombre" required minlength="3" maxlength="150" value="{{ request.form.get('nombre', combo.nombre if combo else '') }}" placeholder="Ej. Combo antojo colombiano">
+      </label>
+      <label class="partner-field">
+        <span>Categoría *</span>
+        {% set category_value = request.form.get('categoria_id', combo.categoria_id if combo else '')|string %}
+        <select name="categoria_id" required>
+          <option value="">Selecciona una categoría</option>
+          {% for category in categorias %}
+          <option value="{{ category.id }}" {{ 'selected' if category_value == category.id|string else '' }}>{{ category.nombre }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="partner-field">
+        <span>Precio final (€) *</span>
+        <input type="number" name="precio" required min=".01" max="999999.99" step=".01" value="{{ request.form.get('precio', ('%.2f'|format(combo.precio|float)) if combo else '') }}">
+      </label>
+      <label class="partner-field">
+        <span>Origen</span>
+        <input name="origen_pais" maxlength="50" value="{{ request.form.get('origen_pais', combo.origen_pais if combo else 'Colombia') }}">
+      </label>
+      <label class="partner-field">
+        <span>Entrega *</span>
+        {% set mode = request.form.get('modalidad_entrega', combo.modalidad_entrega if combo else 'ambas') %}
+        <select name="modalidad_entrega">
+          <option value="ambas" {{ 'selected' if mode == 'ambas' else '' }}>Domicilio y recogida</option>
+          <option value="delivery" {{ 'selected' if mode == 'delivery' else '' }}>Solo domicilio</option>
+          <option value="recogida" {{ 'selected' if mode == 'recogida' else '' }}>Solo recogida</option>
+        </select>
+      </label>
+      <label class="partner-field partner-field-wide">
+        <span>Descripción</span>
+        <textarea name="descripcion" maxlength="2000" rows="3">{{ request.form.get('descripcion', combo.descripcion if combo else '') }}</textarea>
+      </label>
+      <label class="partner-field partner-field-wide">
+        <span>Imagen {{ '' if combo and combo.imagen_url else '*' }}</span>
+        <input type="file" name="imagen_archivo" accept="image/jpeg,image/png,image/webp" {{ '' if combo and combo.imagen_url else 'required' }}>
+      </label>
+    </div>
+  </section>
+
+  <section class="partner-form-section">
+    <div class="partner-form-heading">
+      <span>2</span>
+      <div><strong>Composición</strong><small>Añade cada componente y configura si el cliente puede elegir el tamaño o el sabor.</small></div>
+    </div>
+    <div class="partner-combo-counter"><strong data-selected-count>0</strong><span>componentes añadidos</span></div>
+
+    <div data-partner-rows class="partner-rows"></div>
+    <div class="partner-form-actions" style="justify-content:flex-start;margin-top:8px;">
+      <button type="button" class="prov-btn prov-btn-secondary" data-partner-add-row>+ Añadir componente</button>
+    </div>
+
+    <p class="partner-combo-help">Añade al menos 2 componentes. Los tamaños y sabores dependen de cada producto: solo se muestran si el producto los tiene configurados.</p>
+  </section>
+
+  <aside class="partner-ownership-note">
+    <strong>Operación compartida, finanzas separadas</strong>
+    <p>La tienda prepara y despacha el pedido normalmente. El consumo se descuenta de tu inventario y la liquidación mantiene tu participación de {{ "%.2f"|format(100 - proveedor.comision_pct|float) }}%.</p>
+  </aside>
+  <div class="partner-form-actions">
+    <a href="{{ url_for('proveedor.inventario') }}" class="prov-btn prov-btn-secondary">Cancelar</a>
+    <button type="submit" class="prov-btn prov-btn-primary">{{ 'Guardar y reenviar' if combo else 'Enviar combo a revisión' }}</button>
+  </div>
+
+  {# Zona interna donde el JS inyecta los <input type="hidden"> con arrays paralelos comp_*. #}
+  <div data-partner-serial hidden></div>
+</form>
+
+{# ── Template de fila (clonado por JS) ─────────────────────────────────── #}
+<template id="partner-combo-row-template">
+  <div class="partner-row" data-row-id>
+    <div class="partner-row-head">
+      <label class="partner-field partner-field-wide">
+        <span>Producto *</span>
+        <select data-field="productId" required></select>
+      </label>
+      <label class="partner-field">
+        <span>Cantidad</span>
+        <input type="number" data-field="qty" min="1" max="{{ max_qty }}" value="1">
+      </label>
+      <button type="button" class="prov-btn prov-btn-secondary" data-partner-remove-row aria-label="Eliminar componente">✕</button>
+    </div>
+    <div class="partner-row-config">
+      <label class="partner-field">
+        <span>Cómo participa</span>
+        <select data-field="mode">
+          <option value="fijo">Siempre incluido</option>
+          <option value="eleccion">El cliente elige</option>
+        </select>
+      </label>
+      <div data-block="group" class="partner-row-subgroup hidden">
+        <label class="partner-field">
+          <span>Grupo de elección</span>
+          <input data-field="groupName" maxlength="50" placeholder="Ej. Bebida">
+        </label>
+        <label class="partner-field">
+          <span>Máx. selecciones</span>
+          <input type="number" data-field="maxSel" min="1" max="10" value="1">
+        </label>
+      </div>
+      <div data-block="pres" class="partner-row-subgroup hidden">
+        <label class="partner-field">
+          <span>Tamaño</span>
+          <select data-field="presMode">
+            <option value="fijo">Fijo</option>
+            <option value="cliente_elige">El cliente elige</option>
+          </select>
+        </label>
+        <div data-block="pres-fijo" class="partner-field">
+          <span>Presentación</span>
+          <select data-field="presFixed"></select>
+        </div>
+        <div data-block="pres-multi" class="partner-check-list hidden"></div>
+      </div>
+      <div data-block="flavor" class="partner-row-subgroup hidden">
+        <label class="partner-field">
+          <span>Sabor</span>
+          <select data-field="flavorMode">
+            <option value="sin_sabor">Sin sabor</option>
+            <option value="fijo">Fijo</option>
+            <option value="cliente_elige">El cliente elige</option>
+          </select>
+        </label>
+        <div data-block="flavor-fijo" class="partner-field hidden">
+          <span>Sabor fijo</span>
+          <select data-field="fixedFlavor"></select>
+        </div>
+        <div data-block="flavor-multi" class="partner-check-list hidden"></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+{# ── Payloads JSON para el JS ─────────────────────────────────────────── #}
+{% set _productos_payload = [] %}
+{% for p in productos_propios %}{% set _ = _productos_payload.append({"id": p.id, "nombre": p.nombre}) %}{% endfor %}
+<script id="partner-combo-products" type="application/json">{{ _productos_payload|tojson }}</script>
+<script id="partner-combo-presentations" type="application/json">{{ presentaciones_por_producto|tojson }}</script>
+<script id="partner-combo-flavors" type="application/json">{{ flavor_options_by_product|tojson }}</script>
+{% set _initial = [] %}
+{% if combo %}
+  {% for item in combo.combo_items %}
+    {% set _row = {
+      "productId": item.producto_id,
+      "qty": item.cantidad,
+      "mode": "eleccion" if item.es_seleccionable else "fijo",
+      "groupName": item.grupo_seleccion or "",
+      "maxSel": item.max_selecciones or 1,
+      "presMode": "cliente_elige" if item.allowed_presentations and item.allowed_presentations|length >= 2 else "fijo",
+      "presId": item.presentation_id or "",
+      "allowedPres": item.allowed_presentations|map(attribute='id')|list if item.allowed_presentations else [],
+      "flavorMode": ("cliente_elige" if item.permite_sabor_cliente else ("fijo" if item.fixed_flavor_option_id else "sin_sabor")),
+      "fixedFlavorId": item.fixed_flavor_option_id or "",
+      "allowedFlavors": item.allowed_flavor_options|map(attribute='id')|list if item.allowed_flavor_options else []
+    } %}
+    {% set _ = _initial.append(_row) %}
+  {% endfor %}
+{% endif %}
+<script id="partner-combo-initial" type="application/json">{{ _initial|tojson }}</script>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/partner-combo-form.js', v=asset_version) }}" defer></script>
+{% endblock %}

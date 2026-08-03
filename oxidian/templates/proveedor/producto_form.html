@@ -1,0 +1,108 @@
+{% extends "admin_base.html" %}
+{% block title %}{{ 'Corregir' if producto else 'Registrar' }} producto — {{ proveedor.nombre }}{% endblock %}
+{% block content %}
+<header class="prov-page-head prov-detail-head">
+  <div>
+    <a class="prov-back" href="{{ url_for('proveedor.inventario') }}">← Mi inventario</a>
+    <span class="prov-eyebrow">Catálogo de {{ proveedor.nombre }}</span>
+    <h1>{{ 'Corregir propuesta' if producto else 'Registrar un producto' }}</h1>
+    <p>La propiedad y el stock se asignan automáticamente a tu socio. Super Administración revisará la ficha antes de publicarla.</p>
+  </div>
+  <span class="prov-status {{ 'is-inactive' if producto else 'is-active' }}">
+    {{ 'Revisión pendiente' if producto else 'Nueva propuesta' }}
+  </span>
+</header>
+
+{% if producto and producto.partner_review_note %}
+<aside class="prov-alert-panel">
+  <strong>Qué debes revisar</strong>
+  <p>{{ producto.partner_review_note }}</p>
+</aside>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="ox-card partner-product-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <section class="partner-form-section">
+    <div class="partner-form-heading">
+      <span>1</span>
+      <div><strong>Ficha comercial</strong><small>Lo que verá el cliente en el menú.</small></div>
+    </div>
+    <div class="partner-form-grid">
+      <label class="partner-field partner-field-wide">
+        <span>Nombre del producto *</span>
+        <input name="nombre" required minlength="3" maxlength="150"
+               value="{{ request.form.get('nombre', producto.nombre if producto else '') }}"
+               placeholder="Ej. Café colombiano premium">
+      </label>
+      <label class="partner-field">
+        <span>Categoría *</span>
+        {% set selected_category = request.form.get('categoria_id', producto.categoria_id if producto else '')|string %}
+        <select name="categoria_id" required>
+          <option value="">Selecciona una categoría</option>
+          {% for categoria in categorias %}
+          <option value="{{ categoria.id }}" {{ 'selected' if selected_category == categoria.id|string else '' }}>{{ categoria.nombre }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="partner-field">
+        <span>Origen</span>
+        <input name="origen_pais" maxlength="50"
+               value="{{ request.form.get('origen_pais', producto.origen_pais if producto else 'Colombia') }}"
+               placeholder="Ej. Colombia">
+      </label>
+      <label class="partner-field partner-field-wide">
+        <span>Descripción</span>
+        <textarea name="descripcion" maxlength="2000" rows="4"
+                  placeholder="Características, contenido, ingredientes o información útil.">{{ request.form.get('descripcion', producto.descripcion if producto else '') }}</textarea>
+      </label>
+      <label class="partner-field partner-field-wide">
+        <span>Imagen del producto {{ '' if producto and producto.imagen_url else '*' }}</span>
+        <input type="file" name="imagen_archivo" accept="image/jpeg,image/png,image/webp"
+               {{ '' if producto and producto.imagen_url else 'required' }}>
+        <small>JPG, PNG o WebP. Usa una foto nítida y sin datos personales.</small>
+      </label>
+    </div>
+  </section>
+
+  <section class="partner-form-section">
+    <div class="partner-form-heading">
+      <span>2</span>
+      <div><strong>Venta e inventario</strong><small>Tu stock siempre permanece separado del inventario propio de la tienda.</small></div>
+    </div>
+    <div class="partner-form-grid">
+      <label class="partner-field">
+        <span>Precio de venta (€) *</span>
+        <input type="number" name="precio" required min="0.01" max="999999.99" step="0.01"
+               value="{{ request.form.get('precio', ('%.2f'|format(producto.precio|float)) if producto else '') }}">
+      </label>
+      <label class="partner-field">
+        <span>Unidades disponibles *</span>
+        <input type="number" name="stock" required min="0" max="999999"
+               value="{{ request.form.get('stock', stock_actual) }}">
+      </label>
+      <label class="partner-field partner-field-wide">
+        <span>Modalidad de entrega *</span>
+        {% set selected_mode = request.form.get('modalidad_entrega', producto.modalidad_entrega if producto else 'ambas') %}
+        <select name="modalidad_entrega" required>
+          <option value="ambas" {{ 'selected' if selected_mode == 'ambas' else '' }}>Domicilio y recogida</option>
+          <option value="delivery" {{ 'selected' if selected_mode == 'delivery' else '' }}>Solo domicilio</option>
+          <option value="recogida" {{ 'selected' if selected_mode == 'recogida' else '' }}>Solo recogida</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <aside class="partner-ownership-note">
+    <strong>Propiedad protegida</strong>
+    <p>Este producto quedará identificado como propiedad de <b>{{ proveedor.nombre }}</b>. Tu participación es {{ "%.2f"|format(100 - proveedor.comision_pct|float) }}% y la comisión de la tienda es {{ "%.2f"|format(proveedor.comision_pct|float) }}% sobre cada venta.</p>
+  </aside>
+
+  <div class="partner-form-actions">
+    <a href="{{ url_for('proveedor.inventario') }}" class="prov-btn prov-btn-secondary">Cancelar</a>
+    <button class="prov-btn prov-btn-primary" type="submit">
+      {{ 'Guardar y reenviar' if producto else 'Enviar a revisión' }}
+    </button>
+  </div>
+</form>
+{% endblock %}

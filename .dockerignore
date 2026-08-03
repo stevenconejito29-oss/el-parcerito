@@ -9,6 +9,8 @@
 **/node_modules
 **/.venv
 **/backups
+**/docs
+**/tests
 **/*.db
 **/*.db-shm
 **/*.db-wal

@@ -1,0 +1,18 @@
+{% macro partner_schedule_editor(value='', legacy_open='', legacy_close='', editor_id='partner-schedule') -%}
+<input type="hidden" id="{{ editor_id }}-value" name="horario_semanal_json"
+       value="{{ value|default('', true)|e }}">
+<div class="partner-schedule"
+     data-partner-schedule
+     data-input-id="{{ editor_id }}-value"
+     data-legacy-open="{{ legacy_open|default('', true)|e }}"
+     data-legacy-close="{{ legacy_close|default('', true)|e }}">
+  <div class="partner-schedule__head">
+    <div>
+      <strong>Franjas por día</strong>
+      <small>Sin franjas significa cerrado. Puedes añadir mañana y tarde.</small>
+    </div>
+    <button type="button" data-schedule-copy>Copiar lunes</button>
+  </div>
+  <div class="partner-schedule__days" data-schedule-days></div>
+</div>
+{%- endmacro %}

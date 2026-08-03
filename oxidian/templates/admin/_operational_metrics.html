@@ -1,0 +1,88 @@
+<section class="ops-metrics" aria-labelledby="ops-metrics-title">
+  <header class="ops-metrics__head">
+    <div>
+      <p class="ops-metrics__eyebrow">RENDIMIENTO OPERATIVO</p>
+      <h2 id="ops-metrics-title">¿Dónde se está demorando el pedido?</h2>
+      <p>Las horas se guardan en UTC. El panel compara cada etapa sin incluir ventas presenciales.</p>
+    </div>
+    <a class="ops-metrics__export"
+       href="{{ url_for('admin.exportar_tiempos_operativos', fecha_ini=fecha_ini, fecha_fin=fecha_fin) }}">
+      Descargar tiempos CSV
+    </a>
+  </header>
+
+  <div class="ops-metrics__summary">
+    <article>
+      <span>Pedidos analizados</span>
+      <strong>{{ metricas_operativas.total_operativos }}</strong>
+      <small>{{ metricas_operativas.entregados }} entregados · {{ metricas_operativas.activos }} activos</small>
+    </article>
+    <article>
+      <span>Tiempo total promedio</span>
+      <strong>
+        {% if metricas_operativas.total.promedio is not none %}
+          {{ metricas_operativas.total.promedio|round(0)|int }} min
+        {% else %}Sin datos{% endif %}
+      </strong>
+      <small>Mediana:
+        {{ (metricas_operativas.total.mediana|round(0)|int ~ ' min') if metricas_operativas.total.mediana is not none else '—' }}
+      </small>
+    </article>
+    <article class="{{ 'ops-metrics__bottleneck' if metricas_operativas.cuello_botella }}">
+      <span>Posible cuello de botella</span>
+      {% if metricas_operativas.cuello_botella %}
+        <strong>{{ metricas_operativas.cuello_botella.label }}</strong>
+        <small>{{ metricas_operativas.cuello_botella.promedio }} min de promedio</small>
+      {% else %}
+        <strong>Sin datos</strong>
+        <small>Completa algunos pedidos para comparar.</small>
+      {% endif %}
+    </article>
+  </div>
+
+  <div class="ops-metrics__stages" aria-label="Tiempos por etapa">
+    {% set max_stage = metricas_operativas.etapas
+      |selectattr('promedio', 'ne', none)|map(attribute='promedio')|max|default(1, true) %}
+    {% for etapa in metricas_operativas.etapas %}
+      <article class="ops-stage">
+        <div class="ops-stage__copy">
+          <strong>{{ etapa.label }}</strong>
+          <small>{{ etapa.description }}</small>
+        </div>
+        <div class="ops-stage__value">
+          <strong>{{ (etapa.promedio ~ ' min') if etapa.promedio is not none else '—' }}</strong>
+          <small>P90 {{ (etapa.p90 ~ ' min') if etapa.p90 is not none else '—' }}</small>
+        </div>
+        <div class="ops-stage__track" aria-hidden="true">
+          <span style="--ops-width: {{ ((etapa.promedio or 0) / max_stage * 100)|round(1) }}%"></span>
+        </div>
+        <small class="ops-stage__coverage">
+          {{ etapa.muestras }}/{{ etapa.elegibles }} pedidos con datos · {{ etapa.cobertura_pct }}%
+        </small>
+      </article>
+    {% endfor %}
+  </div>
+
+  {% if metricas_operativas.tendencia %}
+  <details class="ops-metrics__trend">
+    <summary>Tiempo total por día <span>promedio y volumen</span></summary>
+    <div class="ops-trend-list">
+      {% set max_daily = metricas_operativas.tendencia
+        |selectattr('promedio', 'ne', none)|map(attribute='promedio')|max|default(1, true) %}
+      {% for dia in metricas_operativas.tendencia %}
+      <div class="ops-trend-row">
+        <span>{{ dia.label }}</span>
+        <div aria-hidden="true"><i style="--ops-width: {{ ((dia.promedio or 0) / max_daily * 100)|round(1) }}%"></i></div>
+        <strong>{{ (dia.promedio ~ ' min') if dia.promedio is not none else '—' }}</strong>
+        <small>{{ dia.pedidos }} pedidos</small>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+  <p class="ops-metrics__note">
+    “Pedido → preparado” incluye la espera previa a cocina. La cobertura indica cuántos pedidos poseen ambos hitos;
+    así un dato faltante nunca se interpreta como cero minutos.
+  </p>
+</section>

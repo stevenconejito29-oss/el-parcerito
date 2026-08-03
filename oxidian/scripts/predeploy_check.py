@@ -112,7 +112,11 @@ elif not public_url.startswith(('http://', 'https://')):
     errors.append('OXIDIAN_PUBLIC_URL must be an absolute HTTP(S) URL')
 
 if not public_url.startswith('https://'):
-    warnings.append('Production PWA, push and HSTS require a final HTTPS public URL')
+    errors.append('Production PWA, push and HSTS require a final HTTPS public URL')
+
+redis_url = (os.environ.get('REDIS_URL') or '').strip()
+if not redis_url.startswith(('redis://', 'rediss://')):
+    errors.append('REDIS_URL must use Redis in production so rate limits work across workers')
 
 for artifact in (
     'static/sw.js',
@@ -139,7 +143,18 @@ if 'event.request.mode === "navigate"' not in sw_source:
 check_duplicate_route_endpoints()
 
 if os.environ.get('SIMULATE_EVO_SEND', '').strip() == '1':
-    warnings.append('SIMULATE_EVO_SEND=1; WhatsApp sends are simulated, not real')
+    errors.append('SIMULATE_EVO_SEND=1; WhatsApp sends are simulated, not real')
+
+# Contratos críticos que no dependen de la base de datos.
+ticket_source = (root / 'templates' / 'pos' / 'ticket.html').read_text(encoding='utf-8')
+if '@page { size: 58mm auto' not in ticket_source or 'width: 54mm' not in ticket_source:
+    errors.append('ticket template is not physically configured for 58mm paper')
+if 'pedido.puntos_usados /' in ticket_source:
+    errors.append('ticket still converts loyalty points to money')
+
+app_source = (root / 'app.py').read_text(encoding='utf-8')
+if 'limiter.exempt(api_bot_bp)' in app_source:
+    errors.append('bot API blueprint bypasses production rate limiting')
 
 # Output summary
 print('\nPre-deploy check summary:')

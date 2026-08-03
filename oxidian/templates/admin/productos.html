@@ -23,6 +23,9 @@
   <div><span>Activos</span><strong>{{ resumen.activos }}</strong></div>
   <div><span>Combos</span><strong>{{ resumen.combos }}</strong></div>
   <div><span>Canjeables</span><strong>{{ resumen.canjeables }}</strong></div>
+  {% if resumen.revision_pendiente %}
+  <a href="{{ url_for('admin.productos', revision='pending') }}" class="adm-kpi-review"><span>Por revisar</span><strong>{{ resumen.revision_pendiente }}</strong></a>
+  {% endif %}
 </div>
 
 <form method="GET" class="adm-toolbar">
@@ -41,9 +44,52 @@
     <option value="activo" {% if estado == 'activo' %}selected{% endif %}>Activos</option>
     <option value="inactivo" {% if estado == 'inactivo' %}selected{% endif %}>Inactivos</option>
   </select>
+  <select name="revision">
+    <option value="">Cualquier procedencia</option>
+    <option value="pending" {% if revision == 'pending' %}selected{% endif %}>Socio: por revisar</option>
+    <option value="approved" {% if revision == 'approved' %}selected{% endif %}>Socio: aprobado</option>
+    <option value="rejected" {% if revision == 'rejected' %}selected{% endif %}>Socio: requiere cambios</option>
+  </select>
   <button type="submit">Filtrar</button>
-  {% if q or categoria_id or tipo or estado %}<a href="{{ url_for('admin.productos') }}">Limpiar</a>{% endif %}
+  {% if q or categoria_id or tipo or estado or revision %}<a href="{{ url_for('admin.productos') }}">Limpiar</a>{% endif %}
 </form>
+
+{% set pendientes_socio = productos|selectattr('partner_submission_status', 'equalto', 'pending')|list %}
+{% if pendientes_socio %}
+<section class="partner-review-queue">
+  <div class="partner-review-head">
+    <div><strong>Productos enviados por socios</strong><small>Revisa ficha, precio y procedencia antes de hacerlos visibles.</small></div>
+    <span>{{ pendientes_socio|length }} pendiente{{ 's' if pendientes_socio|length != 1 else '' }}</span>
+  </div>
+  <div class="partner-review-list">
+    {% for p in pendientes_socio %}
+    <article class="partner-review-card">
+      {% if p.imagen_url %}<img src="{{ p.imagen_url|upload_url }}" alt="{{ p.nombre }}">{% else %}<div class="partner-review-image">📦</div>{% endif %}
+      <div class="partner-review-copy">
+        <strong>{{ p.nombre }}</strong>
+        <span>{{ p.proveedor_despachador.nombre if p.proveedor_despachador else 'Socio no disponible' }} · €{{ "%.2f"|format(p.precio) }} · {{ p.stock_para_origen() }} uds</span>
+        <small>{{ p.descripcion or 'Sin descripción comercial.' }}</small>
+      </div>
+      {% if current_user.rol == 'super_admin' %}
+      <form method="post" action="{{ url_for('admin.revisar_producto_socio', producto_id=p.id) }}" class="partner-review-actions">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input name="nota" maxlength="500" placeholder="Observación si requiere cambios">
+        <button type="submit" name="accion" value="aprobar" class="is-approve">Aprobar</button>
+        <button type="submit" name="accion" value="rechazar" class="is-reject">Solicitar cambios</button>
+      </form>
+      {% if p.es_combo %}
+      <a href="{{ url_for('admin.gestionar_combo', producto_id=p.id) }}" class="partner-review-config">Revisar composición, tamaños y sabores</a>
+      {% else %}
+      <a href="{{ url_for('admin.editar_producto', producto_id=p.id) }}" class="partner-review-config">Revisar ficha completa</a>
+      {% endif %}
+      {% else %}
+      <span class="admin-product-badge badge-channel">Solo Super Admin puede revisar</span>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 {# ── TABS ── #}
 <div class="flex gap-2 mb-4" id="tabs-productos">
@@ -80,7 +126,10 @@
           {% endif %}
         </div>
         <div class="admin-product-badges">
-          <span class="admin-product-badge badge-stock">Stock propio</span>
+          <span class="admin-product-badge badge-stock">{{ 'Socio: ' ~ p.proveedor_despachador.nombre if p.proveedor_despachador else 'Stock propio' }}</span>
+          {% if p.partner_submission_status == 'pending' %}<span class="admin-product-badge badge-channel">Por revisar</span>
+          {% elif p.partner_submission_status == 'rejected' %}<span class="admin-product-badge badge-inactive">Requiere cambios</span>
+          {% elif p.partner_submission_status == 'approved' %}<span class="admin-product-badge badge-active">Aprobado</span>{% endif %}
           <span class="admin-product-badge badge-channel">{{ p.canal_preparacion or 'cocina' }}</span>
           {% if p.has_flavors %}<span class="admin-product-badge badge-flavor">🥭 {{ 'Sabor obligatorio' if p.flavors_required else 'Sabores opcionales' }}</span>{% endif %}
           {% set _size_count = p.presentaciones.filter_by(activo=True).count() %}
@@ -93,7 +142,7 @@
     </div>
     <div class="admin-product-card-stats">
       <div><span>Precio</span><strong>€{{ "%.2f"|format(p.precio) }}</strong></div>
-      <div><span>Stock</span><strong>{{ p.stock_total }}</strong></div>
+      <div><span>{{ 'Stock socio' if p.proveedor_despachador_id else 'Stock' }}</span><strong>{{ p.stock_para_origen() }}</strong></div>
       <div><span>Visible</span><strong>{% if p.hora_inicio_visibilidad %}{{ p.hora_inicio_visibilidad.strftime('%H:%M') }}{% else %}Siempre{% endif %}</strong></div>
     </div>
     <div class="admin-product-actions" style="display:flex;gap:.35rem;flex-wrap:wrap;">
@@ -143,14 +192,16 @@
         <div class="min-w-0">
           <p class="font-semibold text-white truncate">{{ p.nombre }}</p>
           <div class="flex gap-1 mt-0.5 flex-wrap">
-            <span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--theme-success,#5EF097);background:color-mix(in srgb,var(--theme-success,#5EF097) 12%,transparent)">Stock propio</span>
-            <span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--role-admin,#5AC8FA);background:color-mix(in srgb,var(--role-admin,#5AC8FA) 12%,transparent)">{{ p.canal_preparacion or 'cocina' }}</span>
-            {% if p.grupo_pedido %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:color-mix(in srgb,var(--brand-primary,#FFD59A) 55%,#fff);background:color-mix(in srgb,var(--brand-primary,#FFD59A) 14%,transparent)">Pedido: {{ p.grupo_pedido }}</span>{% endif %}
-            {% if p.canjeable_con_puntos %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--role-super-admin,#C084FC);background:color-mix(in srgb,var(--role-super-admin,#C084FC) 14%,transparent)">⭐ Puntos</span>{% endif %}
-            {% if p.es_hipoalergenico %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--theme-success,#5EF097);background:color-mix(in srgb,var(--theme-success,#5EF097) 12%,transparent)">🌿 Hipo</span>{% endif %}
-            {% if p.has_flavors %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--brand-text);background:color-mix(in srgb,var(--brand-primary) 14%,transparent)">🥭 {{ 'Sabor obligatorio' if p.flavors_required else 'Sabores opcionales' }}</span>{% endif %}
+            <span class="admin-product-badge badge-stock">
+              {{ 'Socio: ' ~ p.proveedor_despachador.nombre if p.proveedor_despachador else 'Stock propio' }}
+            </span>
+            <span class="admin-product-badge badge-channel">{{ p.canal_preparacion or 'cocina' }}</span>
+            {% if p.grupo_pedido %}<span class="admin-product-badge badge-flavor">Pedido: {{ p.grupo_pedido }}</span>{% endif %}
+            {% if p.canjeable_con_puntos %}<span class="admin-product-badge badge-points">⭐ Puntos</span>{% endif %}
+            {% if p.es_hipoalergenico %}<span class="admin-product-badge badge-hipo">🌿 Hipo</span>{% endif %}
+            {% if p.has_flavors %}<span class="admin-product-badge badge-flavor">🥭 {{ 'Sabor obligatorio' if p.flavors_required else 'Sabores opcionales' }}</span>{% endif %}
             {% set _size_count_mobile = p.presentaciones.filter_by(activo=True).count() %}
-            {% if _size_count_mobile %}<span class="text-xs px-1.5 rounded-full font-bold" style="color:var(--theme-info);background:color-mix(in srgb,var(--theme-info) 12%,transparent)">📏 {{ _size_count_mobile }} tamaño{{ 's' if _size_count_mobile != 1 else '' }}</span>{% endif %}
+            {% if _size_count_mobile %}<span class="admin-product-badge badge-channel">📏 {{ _size_count_mobile }} tamaño{{ 's' if _size_count_mobile != 1 else '' }}</span>{% endif %}
           </div>
         </div>
       </div>
@@ -158,17 +209,18 @@
     <td class="text-center text-sm" style="color:var(--col-muted)">{{ p.categoria.nombre if p.categoria else '—' }}</td>
     <td class="text-center">
       {% if p.tipo_entrega in ('programado', 'encargo') %}
-        <span class="text-xs font-bold px-2 py-0.5 rounded-full" style="color:var(--role-admin,#5AC8FA);background:color-mix(in srgb,var(--role-admin,#5AC8FA) 12%,transparent)">📅 {{ p.fecha_llegada.strftime('%d/%m') if p.fecha_llegada else 'Sin fecha' }}</span>
+        <span class="admin-product-badge badge-channel">📅 {{ p.fecha_llegada.strftime('%d/%m') if p.fecha_llegada else 'Sin fecha' }}</span>
       {% else %}
-        <span class="text-xs font-bold px-2 py-0.5 rounded-full" style="color:var(--theme-success,#5EF097);background:color-mix(in srgb,var(--theme-success,#5EF097) 10%,transparent)">⚡ Inmediato</span>
+        <span class="admin-product-badge badge-stock">⚡ Inmediato</span>
       {% endif %}
     </td>
     <td class="text-center font-mono font-bold" style="color:var(--brand-primary,#FFAB00)">
       €{{ "%.2f"|format(p.precio) }}
     </td>
+    {% set _origin_stock = p.stock_para_origen() %}
     <td class="text-center font-mono font-bold"
-        style="color:{{ 'var(--theme-danger,#FF6B6B)' if p.stock_total <= 5 else ('var(--brand-primary,#FFAB00)' if p.stock_total <= 20 else 'var(--col-text)') }}">
-      {{ p.stock_total }}
+        style="color:{{ 'var(--theme-danger,#FF6B6B)' if _origin_stock <= 5 else ('var(--brand-primary,#FFAB00)' if _origin_stock <= 20 else 'var(--col-text)') }}">
+      {{ _origin_stock }}
       {% if p.stock_mostrar_en_web %}<span class="text-xs ml-1" style="color:var(--col-faint)" title="Visible en web">👁</span>{% endif %}
     </td>
     <td class="text-center text-xs" style="color:var(--col-muted)">
@@ -179,22 +231,19 @@
       {% endif %}
     </td>
     <td class="text-center">
-      <span class="text-xs px-2 py-0.5 rounded-full font-bold"
-            style="{{ 'background:color-mix(in srgb,var(--theme-success) 12%,transparent);color:var(--theme-success);border:1px solid color-mix(in srgb,var(--theme-success) 22%,transparent)' if p.activo else 'background:color-mix(in srgb,var(--theme-danger) 10%,transparent);color:var(--theme-danger);border:1px solid color-mix(in srgb,var(--theme-danger) 22%,transparent)' }}">
+      <span class="text-xs px-2 py-0.5 rounded-full font-bold {{ 'status-badge-ok' if p.activo else 'status-badge-error' }}">
         {{ 'Activo' if p.activo else 'Inactivo' }}
       </span>
     </td>
     <td class="text-center">
       <div class="flex items-center justify-center gap-1 flex-wrap">
         <a href="{{ url_for('admin.editar_producto', producto_id=p.id) }}"
-           class="text-xs px-2 py-1 rounded-lg font-bold"
-           style="background:rgba(255,171,0,.1);color:#FFAB00;border:1px solid rgba(255,171,0,.2)">
+           class="admin-row-action text-xs px-2 py-1 rounded-lg">
           ✏️ Editar
         </a>
         {% if p.es_combo %}
         <a href="{{ url_for('admin.gestionar_combo', producto_id=p.id) }}"
-           class="text-xs px-2 py-1 rounded-lg font-bold"
-           style="background:rgba(90,200,250,.1);color:#5AC8FA;border:1px solid rgba(90,200,250,.2)">
+           class="admin-row-action admin-row-action--info text-xs px-2 py-1 rounded-lg">
           🧩 Items
         </a>
         {% endif %}
@@ -204,8 +253,7 @@
               data-confirm="¿Eliminar «{{ p.nombre|e }}»? Si tiene pedidos históricos se archivará en lugar de borrarse.">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit"
-                  class="text-xs px-2 py-1 rounded-lg font-bold"
-                  style="background:color-mix(in srgb,var(--theme-danger) 10%,transparent);color:color-mix(in srgb,var(--theme-danger) 72%,#fff);border:1px solid color-mix(in srgb,var(--theme-danger) 26%,transparent)"
+                  class="admin-row-action admin-row-action--danger text-xs px-2 py-1 rounded-lg"
                   title="Eliminar (archiva si hay pedidos)">
             🗑️
           </button>
@@ -222,7 +270,8 @@
     'atributos_json': p.atributos_json or '',
     'es_combo': p.es_combo, 'activo': p.activo,
     'canal_preparacion': p.canal_preparacion or 'cocina',
-    'proveedor_despachador_id': '',
+    'proveedor_despachador_id': p.proveedor_despachador_id or '',
+    'stock_socio_inicial': p.stock_para_origen() if p.proveedor_despachador_id else '',
     'tipo_entrega': p.tipo_entrega or 'inmediato',
     'modalidad_entrega': p.modalidad_entrega or 'ambas',
     'grupo_pedido': p.grupo_pedido or '',
@@ -327,8 +376,8 @@
   <form method="POST" action="{{ url_for('admin.crear_categoria') }}" class="admin-inline-form flex gap-2 mt-3">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="text" name="nombre" placeholder="Ej: Sopas & Cremas" required
-           class="flex-1 rounded-lg px-3 py-2 text-sm" style="background:var(--col-surface);border:1px solid var(--col-border);color:#fff">
-    <button type="submit" class="px-4 py-2 rounded-lg text-sm font-bold" style="background:var(--brand-primary,#FFAB00);color:var(--brand-on-primary,#000)">Crear</button>
+           class="flex-1 rounded-lg px-3 py-2 text-sm" style="background:var(--col-surface);border:1px solid var(--col-border);color:var(--col-text)">
+    <button type="submit" class="ox-btn-primary px-4 py-2 rounded-lg text-sm font-bold">Crear</button>
   </form>
 </details>
 
@@ -469,7 +518,7 @@
 .tab-active {
   background: color-mix(in srgb, var(--brand-primary) 15%, transparent);
   border: 1.5px solid color-mix(in srgb, var(--brand-primary) 35%, transparent);
-  color: var(--brand-primary);
+  color: var(--brand-text);
 }
 .tab-inactive {
   background: var(--col-elevated); border:1.5px solid var(--col-border);
@@ -628,6 +677,11 @@ function abrirEditar(id) {
   if (selCat) selCat.value = d.categoria_id;
   const selProveedor = f.querySelector('[name="proveedor_despachador_id"]');
   if (selProveedor) selProveedor.value = d.proveedor_despachador_id || '';
+  const stockSocio = f.querySelector('[name="stock_socio_inicial"]');
+  if (stockSocio) {
+    stockSocio.value = d.stock_socio_inicial === '' ? 0 : d.stock_socio_inicial;
+    selProveedor?.dispatchEvent(new Event('change', {bubbles:true}));
+  }
 
   // Días de semana
   let diasActivos = [];

@@ -12,6 +12,16 @@ const OUTPUT_DIR = path.join(OUTPUT_ROOT, RUN_ID);
 const ENV = loadEnv(path.join(ROOT, '.env.cosmos.local'));
 const PASSWORD = process.env.VISUAL_PASSWORD || ENV.SEED_PASSWORD;
 const POINTS_ENABLED = process.env.VISUAL_POINTS_ENABLED !== '0';
+const NAME_FILTER = (process.env.VISUAL_NAME_FILTER || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+const VIEWPORT_FILTER = new Set(
+  (process.env.VISUAL_VIEWPORT_FILTER || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 const BROWSER = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
   || '/home/panzeta/.cache/ms-playwright/chromium-1169/chrome-linux/chrome';
 
@@ -36,10 +46,15 @@ const report = {
   baseUrl: BASE_URL,
   outputDir: OUTPUT_DIR,
   viewports: {
+    // iPhone SE — el móvil más pequeño que todavía usa la gente. Si algo cabe
+    // aquí, cabe en todo lo demás.
+    iphone_se: { width: 375, height: 812 },
     phone_vertical: { width: 393, height: 852 },
     phone_horizontal: { width: 852, height: 393 },
     tablet_vertical: { width: 768, height: 1024 },
     tablet_horizontal: { width: 1024, height: 768 },
+    // Desktop HD para detectar layouts que se rompen a más ancho.
+    desktop_hd: { width: 1440, height: 900 },
   },
   captures: [],
 };
@@ -73,6 +88,7 @@ try {
       ['admin-real-dashboard', '/admin/dashboard'],
       ['admin-real-cola', '/admin/cola'],
       ['admin-real-pedidos', '/admin/pedidos'],
+      ['admin-liquidaciones-socios', '/admin/liquidacion-proveedores'],
     ]),
     process.env.VISUAL_ADMIN_TOTP_SECRET || '',
   );
@@ -96,6 +112,16 @@ try {
     (page) => captureRole(page, [
       ['repartidor-ruta', '/repartidor/ruta'],
       ['repartidor-comisiones', '/repartidor/mis-comisiones'],
+    ]),
+  );
+  await captureAuthenticatedRole(
+    'socio_producto',
+    process.env.VISUAL_SOCIO_EMAIL || 'socio-producto@oxidian.com',
+    process.env.VISUAL_SOCIO_PASSWORD || PASSWORD,
+    (page) => captureRole(page, [
+      ['socio-inventario', '/proveedor/inventario'],
+      ['socio-ventas-activas', '/proveedor/pedidos'],
+      ['socio-finanzas', '/proveedor/finanzas'],
     ]),
   );
 } finally {
@@ -249,12 +275,8 @@ async function capturePublic(page) {
     await phone.fill('699 111 222');
     await phone.dispatchEvent('input');
     await phone.dispatchEvent('blur');
-    await page.evaluate(() => document.getElementById('puntos-verificando')?.classList.remove('hidden'));
-    await page.locator('#cod_puntos_input').fill('123456');
-    await page.evaluate(() => verificarCodigoPuntos());
-    // Un código inventado nunca debe desbloquear recompensas. La captura audita
-    // el estado de error/validación; el panel sólo se abre con un OTP real.
-    await page.waitForTimeout(900);
+    const toggle = page.locator('[data-rewards-toggle]');
+    if (await toggle.count()) await toggle.click();
     await page.locator('#puntos-section').scrollIntoViewIfNeeded();
   });
   await snap(page, 'club-puntos', '/club', 'vistas');
@@ -398,6 +420,7 @@ async function captureRole(page, views) {
 
 async function snap(page, name, route, folder, prepare = null, fullPage = true) {
   for (const [orientation, viewport] of Object.entries(report.viewports)) {
+    if (VIEWPORT_FILTER.size && !VIEWPORT_FILTER.has(orientation)) continue;
     await page.setViewportSize(viewport);
     await snapOrientation(
       page,
@@ -420,6 +443,7 @@ async function snapOrientation(
   fullPage = true,
   orientation = 'vertical',
 ) {
+  if (NAME_FILTER.length && !NAME_FILTER.some((value) => name.startsWith(value))) return;
   const errors = [];
   const failedRequests = [];
   const onConsole = (message) => {
@@ -486,7 +510,7 @@ async function snapOrientation(
       ));
       const controls = [...document.querySelectorAll(
         'main a[href], main button, main input, main select, main textarea, main [role="button"]',
-      )].filter(visible);
+      )].filter((element) => visible(element) && !element.closest('[inert]'));
       const overlaps = [];
       for (const overlay of fixed) {
         const overlayRect = overlay.getBoundingClientRect();
@@ -565,7 +589,10 @@ async function snapOrientation(
       const textElements = [...document.querySelectorAll(
         'p,span,small,strong,label,a,button,h1,h2,h3,h4,h5,h6,th,td,summary',
       )].filter((element) => {
-        if (!visible(element) || !(element.textContent || '').trim()) return false;
+        const copy = (element.textContent || '').trim();
+        // Un emoji se pinta con su propio glifo multicolor: comparar el color
+        // CSS heredado contra el fondo produce falsos positivos de contraste.
+        if (!visible(element) || !copy || !/[\p{L}\p{N}]/u.test(copy)) return false;
         return ![...element.children].some((child) => (child.textContent || '').trim());
       });
       const lowContrastText = [];

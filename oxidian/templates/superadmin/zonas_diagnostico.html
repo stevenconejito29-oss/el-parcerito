@@ -1,0 +1,49 @@
+{% extends "admin_base.html" %}
+{% block title %}Diagnóstico cobertura reparto — Super Admin{% endblock %}
+{% block content %}
+<div class="oa-page">
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Super administración</p>
+      <h1 class="oa-page-header__title">🩺 Diagnóstico de cobertura</h1>
+      <p class="oa-page-header__subtitle">Salud del sistema que detecta dónde está el cliente y qué zona aplica.</p>
+    </div>
+    <div class="oa-page-header__actions">
+      <a href="{{ url_for('superadmin.zonas') }}" class="oa-btn oa-btn--ghost">← Volver a zonas</a>
+      <a href="{{ url_for('superadmin.probar_zona') }}" class="oa-btn oa-btn--brand">Probar una dirección</a>
+    </div>
+  </header>
+
+  {% set banner_bg = {'danger':'#fee2e2','warning':'#fef3c7','ok':'#dcfce7'} %}
+  {% set banner_bd = {'danger':'#b02020','warning':'#c07000','ok':'#0a7f3b'} %}
+  <div class="oa-panel" style="border-left:4px solid {{ banner_bd[resumen_severidad] }};background:{{ banner_bg[resumen_severidad] }};">
+    <div class="oa-panel__body">
+      <strong style="color:{{ banner_bd[resumen_severidad] }};font-size:1.05rem;">
+        {% if resumen_severidad == 'danger' %}🔴 Hay problemas críticos que impiden detectar la ubicación del cliente.
+        {% elif resumen_severidad == 'warning' %}🟡 Hay avisos que degradan la precisión de la detección.
+        {% else %}🟢 Todo OK — la detección de ubicación funciona correctamente.
+        {% endif %}
+      </strong>
+    </div>
+  </div>
+
+  <div style="display:grid;gap:var(--oa-space-3);margin-top:var(--oa-space-3);">
+    {% for c in checks %}
+    {% set icon = {'danger':'❌','warning':'⚠️','ok':'✅'}[c.severidad] %}
+    {% set color = banner_bd[c.severidad] %}
+    <div class="oa-panel" style="margin:0;border-left:4px solid {{ color }};">
+      <div class="oa-panel__body" style="display:flex;gap:var(--oa-space-3);align-items:flex-start;">
+        <span style="font-size:1.3rem;flex-shrink:0;">{{ icon }}</span>
+        <div style="flex:1;min-width:0;">
+          <strong style="color:{{ color }};display:block;">{{ c.titulo }}</strong>
+          <p style="margin:.35rem 0 0;color:var(--col-muted);font-size:var(--oa-font-sm);line-height:1.5;">{{ c.detalle }}</p>
+          {% if c.accion_texto %}
+          <a href="{{ c.accion_url }}" class="oa-btn oa-btn--sm oa-btn--brand" style="margin-top:.5rem;display:inline-block;">{{ c.accion_texto }} →</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

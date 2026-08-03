@@ -67,6 +67,8 @@ class DeliveryFinanceInvariantsTest(unittest.TestCase):
     def test_tarjeta_no_se_reclasifica_como_bizum(self):
         self.assertEqual(normalizar_metodo_pago("tarjeta"), "tarjeta")
         self.assertEqual(normalizar_metodo_pago("transferencia"), "bizum")
+        self.assertIsNone(normalizar_metodo_pago("bitcoin"))
+        self.assertIsNone(normalizar_metodo_pago(None))
 
     def test_cancelacion_revierte_ingreso_desde_cualquier_canal(self):
         pedido = self._pedido()
@@ -88,6 +90,15 @@ class DeliveryFinanceInvariantsTest(unittest.TestCase):
         ).all()
         self.assertEqual(len(devoluciones), 1)
         self.assertEqual(float(devoluciones[0].monto), 25.0)
+
+    def test_pedido_con_metodo_invalido_no_contamina_efectivo(self):
+        pedido = self._pedido()
+        pedido.metodo_pago = "cripto"
+        db.session.commit()
+
+        with self.assertRaisesRegex(ValueError, "método de pago válido"):
+            registrar_ingreso_pedido(pedido)
+        self.assertEqual(Caja.query.count(), 0)
 
     def test_descuento_no_infla_obligaciones_de_caja(self):
         db.session.add_all([

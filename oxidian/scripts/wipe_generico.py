@@ -55,9 +55,8 @@ CONFIG_MINIMA = {
     "HORARIO_APERTURA":    "09:00",
     "HORARIO_CIERRE":      "22:00",
     "PEDIDO_MINIMO":       "0.00",
-    # Puntos: 1 punto por euro, ratio 20 pts = 1€ (configurable)
+    # Puntos: tasa de acumulación; los canjes se definen por producto
     "PUNTOS_POR_EURO":     "1",
-    "PUNTOS_RATIO":        "20",
     # Comisión servicio (solo se aplica en modo bar_servicio)
     "SERVICE_COMMISSION_PCT": "0.00",
     # Pagos por default ambos ON

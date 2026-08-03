@@ -31,14 +31,15 @@
       </div>
       <div>
         <label class="edit-label">Precio de venta (€) *</label>
-        <input type="number" id="ep-precio" name="precio" step="0.01" min="0" required value="{{ '%.2f'|format(producto.precio|float) }}" class="edit-input">
+        <input type="number" id="ep-precio" name="precio" step="0.01" min="0" required value="{{ '%.2f'|format(producto.precio|float) }}" class="edit-input js-sale-price">
         <p id="ep-precio-hint" class="text-xs mt-1" style="color:var(--col-muted);display:none">
           Modo solo-canje: el precio queda en €0 automáticamente.
         </p>
       </div>
       <div>
-        <label class="edit-label">Precio de costo (€)</label>
-        <input type="number" name="precio_costo" step="0.01" min="0" value="{{ '%.2f'|format(producto.precio_costo|float) if producto.precio_costo else '' }}" class="edit-input">
+        <label class="edit-label" data-own-cost-label>Lo que nos cuesta (€)</label>
+        <input type="number" name="precio_costo" step="0.01" min="0" value="{{ '%.2f'|format(producto.precio_costo|float) if producto.precio_costo is not none else '' }}" class="edit-input js-cost-price">
+        <p class="text-xs mt-1 js-margin-preview" style="color:var(--col-muted)">Añade el coste para calcular la ganancia real.</p>
       </div>
       <div>
         <label class="edit-label">Categoría</label>
@@ -67,6 +68,25 @@
       </div>
       {% if producto.es_combo %}
       <input type="hidden" name="proveedor_despachador_id" value="">
+      {% elif current_user.rol == 'super_admin' and proveedores %}
+      <div class="md:col-span-2 rounded-xl p-3" style="border:1px solid var(--col-border);background:var(--col-elevated)">
+        <label class="edit-label">Responsable económico del producto</label>
+        <select name="proveedor_despachador_id" class="edit-input" data-socio-select>
+          <option value="">Producto propio de la tienda</option>
+          {% for proveedor in proveedores %}
+          <option value="{{ proveedor.id }}" {% if producto.proveedor_despachador_id == proveedor.id %}selected{% endif %}>
+            {{ proveedor.nombre }} · comisión tienda {{ "%.2f"|format(proveedor.comision_pct|float) }}%{{ ' · inactivo' if not proveedor.activo else '' }}
+          </option>
+          {% endfor %}
+        </select>
+        <label data-socio-stock {% if not producto.proveedor_despachador_id %}hidden{% endif %}>
+          <span class="edit-label mt-2">Stock del socio</span>
+          <input class="edit-input" type="number" name="stock_socio_inicial" min="0" step="1"
+                 value="{{ producto.stock_para_origen() if producto.proveedor_despachador_id else 0 }}"
+                 {% if not producto.proveedor_despachador_id %}disabled{% endif %}>
+        </label>
+        <p class="text-xs mt-2" style="color:var(--col-muted)">No forma parte del stock propio. Los pedidos y liquidaciones se separan automáticamente.</p>
+      </div>
       {% endif %}
     </div>
 
@@ -289,6 +309,13 @@
       <input type="file" name="imagen_archivo" accept=".jpg,.jpeg,.png,.webp" class="edit-input">
       <label class="edit-label mt-3">URL de imagen</label>
       <input type="url" name="imagen_url" value="{{ producto.imagen_url if producto.imagen_url and producto.imagen_url.startswith('http') else '' }}" class="edit-input">
+      {% set _product_attrs = producto.get_atributos() %}
+      <label class="edit-label mt-3">Encuadre en el menú</label>
+      <select name="attr_image_fit" class="edit-input">
+        <option value="contain" {% if _product_attrs.get('image_fit', 'contain') == 'contain' %}selected{% endif %}>Mostrar producto completo</option>
+        <option value="cover" {% if _product_attrs.get('image_fit') == 'cover' %}selected{% endif %}>Llenar la fotografía</option>
+      </select>
+      <p class="text-xs mt-1" style="color:var(--col-muted)">Completo para empaques; llenar para platos y fotografías ambientales.</p>
     </div>
 
     <div>
@@ -487,6 +514,31 @@
   }
   cbSolo.addEventListener('change', refresh);
   cbCanje.addEventListener('change', refresh);
+  refresh();
+})();
+(function(){
+  const select = document.querySelector('[data-socio-select]');
+  const stock = document.querySelector('[data-socio-stock]');
+  const input = stock?.querySelector('input');
+  const cost = document.querySelector('[name="precio_costo"]');
+  const costLabel = document.querySelector('[data-own-cost-label]');
+  if (!select || !stock || !input) return;
+  const refresh = () => {
+    const enabled = Boolean(select.value);
+    stock.hidden = !enabled;
+    input.disabled = !enabled;
+    input.required = enabled;
+    if (cost) {
+      cost.disabled = enabled;
+      if (enabled) cost.value = '';
+    }
+    if (costLabel) {
+      costLabel.textContent = enabled
+        ? 'Coste asumido por el socio'
+        : 'Lo que nos cuesta (€)';
+    }
+  };
+  select.addEventListener('change', refresh);
   refresh();
 })();
 </script>

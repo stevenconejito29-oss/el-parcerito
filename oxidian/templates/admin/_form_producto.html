@@ -1,5 +1,6 @@
 {# Partial reutilizable: formulario de producto (crear y editar) #}
 {# Se espera que el form padre tenga el csrf_token y el action correctos #}
+{% set _es_super = current_user.is_authenticated and current_user.rol == 'super_admin' %}
 <div class="fp-product-grid grid grid-cols-1 md:grid-cols-2 gap-3">
 
   <!-- Nombre -->
@@ -17,15 +18,73 @@
   <!-- Precios -->
   <div>
     <label class="fp-label">Precio de venta (€) *</label>
-    <input type="number" name="precio" step="0.01" min="0" required placeholder="0.00" class="fp-input">
+    <input type="number" name="precio" step="0.01" min="0" required placeholder="0.00" class="fp-input js-sale-price" inputmode="decimal">
     <p class="text-xs mt-1 hidden" data-solo-canje-price-hint style="color:var(--col-muted)">
       El precio se fija en €0 porque este producto sólo se obtiene mediante canje.
     </p>
   </div>
   <div>
-    <label class="fp-label">Precio de costo (€)</label>
-    <input type="number" name="precio_costo" step="0.01" min="0" placeholder="0.00" class="fp-input">
+    <label class="fp-label" data-own-cost-label>Lo que nos cuesta (€)</label>
+    <input type="number" name="precio_costo" step="0.01" min="0" placeholder="0.00" class="fp-input js-cost-price" inputmode="decimal">
+    <p class="text-xs mt-1 js-margin-preview" style="color:var(--col-muted)">Añade el coste para calcular la ganancia real.</p>
   </div>
+
+  {% if _es_super and proveedores %}
+  <div class="fp-span-full col-span-2 fp-section" data-socio-product-section>
+    <label class="fp-section-title">Propiedad y liquidación</label>
+    <p class="text-xs text-gray-500 mb-3">
+      Un producto de socio usa inventario separado. La tienda solo reconoce su
+      comisión y el resto queda pendiente de liquidación al socio.
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <label>
+        <span class="fp-label">Responsable del producto</span>
+        <select name="proveedor_despachador_id" class="fp-input" data-socio-select>
+          <option value="">Producto propio de la tienda</option>
+          {% for proveedor in proveedores %}
+          <option value="{{ proveedor.id }}" {% if not proveedor.activo %}disabled{% endif %}>
+            {{ proveedor.nombre }} · tienda {{ "%.2f"|format(proveedor.comision_pct|float) }}%{{ ' · inactivo' if not proveedor.activo else '' }}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label data-socio-stock hidden>
+        <span class="fp-label">Stock inicial del socio</span>
+        <input type="number" name="stock_socio_inicial" min="0" step="1"
+               inputmode="numeric" class="fp-input" value="0" disabled>
+        <small class="text-xs" style="color:var(--col-muted)">No modifica el stock propio de la tienda.</small>
+      </label>
+    </div>
+  </div>
+  <script nonce="{{ csp_nonce() }}">
+  (() => {
+    const form = document.currentScript.closest('form');
+    const select = form?.querySelector('[data-socio-select]');
+    const stock = form?.querySelector('[data-socio-stock]');
+    const input = stock?.querySelector('input');
+    const cost = form?.querySelector('[name="precio_costo"]');
+    const costLabel = form?.querySelector('[data-own-cost-label]');
+    if (!select || !stock || !input) return;
+    const sync = () => {
+      const enabled = Boolean(select.value);
+      stock.hidden = !enabled;
+      input.disabled = !enabled;
+      input.required = enabled;
+      if (cost) {
+        cost.disabled = enabled;
+        if (enabled) cost.value = '';
+      }
+      if (costLabel) {
+        costLabel.textContent = enabled
+          ? 'Coste asumido por el socio'
+          : 'Lo que nos cuesta (€)';
+      }
+    };
+    select.addEventListener('change', sync);
+    sync();
+  })();
+  </script>
+  {% endif %}
 
   <!-- Categoría y origen -->
   <div>
@@ -63,6 +122,12 @@
                class="fp-input text-xs"
                data-product-image-url>
         <p class="text-xs" style="color:var(--col-faint)">Archivo → se guarda en servidor; URL → referencia externa.</p>
+        <label class="fp-label mt-2" for="attr-image-fit-create">Encuadre en el menú</label>
+        <select name="attr_image_fit" id="attr-image-fit-create" class="fp-input">
+          <option value="contain" selected>Mostrar producto completo</option>
+          <option value="cover">Llenar la fotografía</option>
+        </select>
+        <p class="text-xs" style="color:var(--col-faint)">Completo funciona mejor para empaques; llenar es ideal para platos y fotos ambientales.</p>
       </div>
     </div>
   </div>
@@ -70,7 +135,6 @@
   <!-- ── VERTICAL / NICHO — separación estricta comida vs retail ── -->
   {# Nicho activo de la tienda para el default cuando el producto es nuevo o legacy 'ambos'. #}
   {% set _v_actual = (producto.vertical if producto is defined and producto and producto.vertical in ('comida','producto') else (brand.tipo_tienda or 'comida')) %}
-  {% set _es_super = current_user.is_authenticated and current_user.rol == 'super_admin' %}
   <div class="fp-span-full col-span-2 fp-section">
     <label class="fp-section-title">Nicho del producto</label>
     {% if _es_super %}
@@ -130,14 +194,14 @@
       </label>
       <label class="block">
         <span class="text-xs text-gray-600">Peso (gramos)</span>
-        <input type="number" name="peso_gramos" min="0" step="1"
+        <input type="number" name="peso_gramos" min="0" step="1" inputmode="numeric"
                value="{{ producto.peso_gramos if producto is defined and producto and producto.peso_gramos else '' }}"
                class="w-full mt-1 rounded border-gray-300"
                placeholder="500">
       </label>
       <label class="block">
         <span class="text-xs text-gray-600">Garantía (meses)</span>
-        <input type="number" name="garantia_meses" min="0" step="1"
+        <input type="number" name="garantia_meses" min="0" step="1" inputmode="numeric"
                value="{{ producto.garantia_meses if producto is defined and producto and producto.garantia_meses else '' }}"
                class="w-full mt-1 rounded border-gray-300"
                placeholder="24">
@@ -245,7 +309,7 @@
   <div class="campo-cantidad-lote hidden fp-span-full col-span-2 fp-section">
     <label class="fp-section-title">Encargo por lote <span class="fp-section-note">solo productos programados con fecha</span></label>
     <label class="fp-label">Unidades por tanda</label>
-    <input type="number" name="cantidad_por_lote" min="0" step="1" class="fp-input"
+    <input type="number" name="cantidad_por_lote" min="0" step="1" max="9999" inputmode="numeric" class="fp-input"
            placeholder="Ej: 4 (deja vacío o 0 para desactivar)">
     <p class="text-xs text-gray-500 mt-2">
       Ejemplo: "4 empanadas por 5€ para el día 18" → introduce 4.
@@ -294,15 +358,21 @@
   <div class="fp-span-full col-span-2 fp-section">
     <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
       <div>
-        <label class="fp-section-title mb-0">Tamaños disponibles</label>
+        <label class="fp-section-title mb-0">Tamaños disponibles <span class="text-xs font-normal" style="opacity:.7">(opcional)</span></label>
         <p class="text-xs text-gray-500">
-          Activa solo los tamaños que vendes. El importe es un ajuste sobre el precio base;
-          puede ser negativo, pero el precio final nunca puede quedar por debajo de €0.
+          Sección <strong>opcional</strong>: si tu producto tiene un único tamaño, déjala vacía —
+          aparecerá en el menú con su precio base. Actívala sólo cuando ofrezcas varios tamaños
+          (pequeño/mediano/grande) con precios distintos. Los ajustes de precio se suman/restan al base.
         </p>
       </div>
-      <span class="fp-section-note">Sin tamaños activos = presentación única</span>
+      <span class="fp-section-note">✓ Sin tamaños activos = tamaño único (correcto)</span>
     </div>
     {% set _pres_labels = ([('pequeño','🥣','Pequeño'),('mediano','🍽️','Mediano'),('grande','🍛','Grande')] if brand.es_comida else [('pequeño','👕','S — Pequeña'),('mediano','👔','M — Mediana'),('grande','🧥','L — Grande')]) %}
+    {# Preview inline: se rellena por JS con lo que verá el cliente para cada
+       tamaño activo. Sirve para que el admin valide sin salir del form. #}
+    <div id="fp-flavor-preview" class="fp-flavor-preview" aria-live="polite" role="note">
+      <span class="fp-flavor-preview__empty">Marca un tamaño para ver aquí un preview de lo que verá el cliente.</span>
+    </div>
     <div class="fp-presentation-grid">
       {% for size, emoji, label in _pres_labels %}
       <div class="fp-presentation-card">
@@ -312,7 +382,7 @@
           <strong>{{ emoji }} {{ label }}</strong>
         </label>
         <label class="fp-label mt-2">Ajuste de precio (€)</label>
-        <input type="number" step="0.01" name="pres_{{ size }}_extra" value="0.00"
+        <input type="number" step="0.01" name="pres_{{ size }}_extra" value="0.00" inputmode="decimal"
                class="fp-input" data-presentation-price="{{ size }}" disabled>
         {% if brand.es_comida and flavor_catalog %}
         <div class="fp-presentation-flavors" data-presentation-flavors="{{ size }}">
@@ -323,8 +393,8 @@
           </label>
           <div data-presentation-flavor-fields="{{ size }}" hidden>
             <div class="grid grid-cols-2 gap-2 mt-2">
-              <label class="fp-label">Mínimo<input class="fp-input" type="number" min="0" max="100" value="1" name="pres_{{ size }}_flavor_min"></label>
-              <label class="fp-label">Total a repartir<input class="fp-input" type="number" min="0" max="100" value="1" name="pres_{{ size }}_flavor_max"></label>
+              <label class="fp-label">Mínimo<input class="fp-input" type="number" min="0" max="100" value="1" inputmode="numeric" name="pres_{{ size }}_flavor_min"></label>
+              <label class="fp-label">Total a repartir<input class="fp-input" type="number" min="0" max="100" value="1" inputmode="numeric" name="pres_{{ size }}_flavor_max"></label>
             </div>
             <p class="text-xs text-gray-500 mt-1">El cliente distribuye ese total entre uno o varios sabores.</p>
             <div class="fp-flavor-size-options mt-2">
@@ -344,8 +414,15 @@
   <div class="fp-span-full col-span-2 fp-section fp-extra-library">
     <input type="hidden" name="flavors_catalog_present" value="1">
     <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
-      <div><label class="fp-section-title mb-0">Sabores disponibles</label><p class="text-xs text-gray-500">El cliente elegirá un sabor antes de añadir el producto a su canasta.</p></div>
+      <div><label class="fp-section-title mb-0">Sabores base del producto <span class="text-xs font-normal" style="opacity:.7">(opcional)</span></label><p class="text-xs text-gray-500">Sección <strong>opcional</strong>: sólo marca sabores si tu producto se ofrece en varios. Si lo dejas vacío, se venderá como sabor único con el nombre y precio base.</p></div>
       <a href="{{ url_for('admin.extras_catalogo') }}" class="text-xs font-bold" style="color:var(--work-accent)">Gestionar sabores</a>
+    </div>
+    {# Aviso: la config por tamaño (arriba) sobreescribe estos sabores base
+       para el tamaño concreto donde se active. Sin esto el admin puede
+       creer que la base siempre gana. #}
+    <div class="fp-banner-warn" role="note">
+      ⚠️ Si activas <strong>"Configurar reparto de sabores"</strong> en un tamaño concreto (sección de arriba),
+      esa configuración <strong>reemplaza</strong> los sabores base sólo para ese tamaño.
     </div>
     {% if flavor_catalog %}
     <div class="fp-extra-grid">
@@ -361,7 +438,7 @@
       Exigir que el cliente elija un sabor
     </label>
     <label class="fp-label mt-3">Unidades de sabor a repartir si no hay una regla por tamaño
-      <input class="fp-input" type="number" name="flavors_max_selecciones" min="1" max="100" value="1">
+      <input class="fp-input" type="number" name="flavors_max_selecciones" min="1" max="100" value="1" inputmode="numeric">
     </label>
     {% else %}
     <p class="fp-extra-empty">Aún no hay sabores. Créelos en la biblioteca de opciones y vuelve a este formulario.</p>
@@ -386,7 +463,7 @@
       {% endfor %}
     </div>
     <label class="fp-label mt-3">Máximo total de extras por unidad</label>
-    <input type="number" name="extras_max_selecciones" min="1" max="20" value="4" class="fp-input" style="max-width:8rem">
+    <input type="number" name="extras_max_selecciones" min="1" max="20" value="4" inputmode="numeric" class="fp-input" style="max-width:8rem">
     {% else %}
     <p class="fp-extra-empty">La biblioteca está vacía. Crea primero los extras reutilizables.</p>
     {% endif %}
@@ -487,16 +564,34 @@
 .fp-label { font-size:.72rem; font-weight:700; color:var(--col-muted); display:block; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.04em; }
 .fp-input { width:100%; background:var(--col-elevated); border:1.5px solid var(--col-border); border-radius:.65rem; padding:.5rem .75rem; color:var(--col-text); font-size:.88rem; transition:border-color .15s; }
 .fp-input:focus { outline:none; border-color:var(--col-gold); box-shadow:0 0 0 3px rgba(252,209,22,.12); }
+/* Móvil: los inputs deben ser >= 16px de font-size para evitar el zoom
+   automático de iOS Safari en focus. También aumentamos padding vertical
+   para llegar a los 44px de altura recomendados. */
+@media (max-width: 640px) {
+  .fp-input { font-size: 16px; padding: .6rem .75rem; min-height: 44px; }
+  .fp-input[type="number"] { min-width: 0; }
+}
 .fp-section { border-top:1px solid var(--col-border); padding-top:.85rem; margin-top:.25rem; }
 .fp-section-title { font-size:.78rem; font-weight:800; color:var(--col-text); display:block; margin-bottom:.6rem; }
 .fp-section-note { font-size:.72rem; font-weight:400; color:var(--col-muted); margin-left:.4rem; text-transform:none; letter-spacing:0; }
+.fp-banner-warn { margin:.35rem 0 .75rem; padding:.55rem .75rem; border-radius:.55rem; background:color-mix(in srgb, #f4c542 12%, transparent); border:1px solid color-mix(in srgb, #f4c542 40%, transparent); color:var(--col-text); font-size:.78rem; line-height:1.4; }
 .fp-radio-label { display:flex; align-items:center; gap:.4rem; font-size:.85rem; cursor:pointer; color:var(--col-text); }
 .fp-check-label { display:flex; align-items:center; gap:.5rem; font-size:.85rem; cursor:pointer; color:var(--col-text); }
 .fp-day-btn { display:flex; align-items:center; gap:.3rem; font-size:.78rem; cursor:pointer; padding:.3rem .55rem; border-radius:.5rem; border:1px solid var(--col-border); background:var(--col-elevated); color:var(--col-muted); }
 .fp-day-btn:hover { border-color:var(--col-gold); color:var(--col-text); }
 .fp-extra-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem}.fp-extra-card{display:flex;align-items:center;gap:.65rem;padding:.65rem;border:1px solid var(--col-border);border-radius:.8rem;background:var(--col-elevated);text-transform:none;letter-spacing:0;cursor:pointer}.fp-extra-card:has(input:checked){border-color:var(--work-accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--work-accent) 18%,transparent)}.fp-extra-card strong,.fp-extra-card small{display:block}.fp-extra-card small{margin-top:.12rem;color:var(--col-muted);font-size:.68rem}.fp-extra-empty{padding:.8rem;border:1px dashed var(--col-border);border-radius:.8rem;color:var(--col-muted);font-size:.78rem}
 .fp-presentation-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.55rem}.fp-presentation-card{padding:.7rem;border:1px solid var(--col-border);border-radius:.8rem;background:var(--col-elevated)}.fp-presentation-card:has(input[type="checkbox"]:checked){border-color:var(--work-accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--work-accent) 16%,transparent)}.fp-presentation-card .fp-input:disabled{opacity:.55;cursor:not-allowed}
-.fp-presentation-flavors{margin-top:.65rem;padding-top:.55rem;border-top:1px solid var(--col-border)}.fp-flavor-size-options{display:grid;gap:.3rem;max-height:9rem;overflow:auto}.fp-flavor-size-options label{display:flex;align-items:center;gap:.4rem;font-size:.75rem;color:var(--col-muted)}
+.fp-presentation-flavors{margin-top:.65rem;padding-top:.55rem;border-top:1px solid var(--col-border)}
+/* iOS momentum scroll + rebote nativo; overscroll-behavior contiene el scroll
+   dentro del container y evita que el body salte cuando el usuario llega al
+   final de la lista con inercia. */
+.fp-flavor-size-options{display:grid;gap:.35rem;max-height:11rem;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-right:.2rem}
+.fp-flavor-size-options label{display:flex;align-items:center;gap:.5rem;font-size:.82rem;color:var(--col-text);min-height:32px;padding:.2rem .1rem}
+.fp-flavor-size-options input[type="checkbox"]{min-width:20px;min-height:20px}
+.fp-flavor-preview{margin:.5rem 0 .75rem;padding:.6rem .75rem;border-radius:.6rem;background:color-mix(in srgb,var(--work-accent) 6%,transparent);border:1px dashed color-mix(in srgb,var(--work-accent) 40%,transparent);font-size:.78rem;line-height:1.4;color:var(--col-text)}
+.fp-flavor-preview__empty{color:var(--col-muted);font-style:italic}
+.fp-flavor-preview__size{display:block;margin:.15rem 0}
+.fp-flavor-preview__size strong{color:var(--work-accent)}
 @media (max-width: 640px) {
   .fp-product-grid { grid-template-columns:minmax(0,1fr)!important; }
   .fp-product-grid > *, .fp-span-full { grid-column:1 / -1!important; min-width:0; }
@@ -509,3 +604,108 @@
   .fp-label, .upload-label { overflow-wrap:anywhere; }
 }
 </style>
+
+<script nonce="{{ csp_nonce() }}">
+// Preview inline del comportamiento de sabores por tamaño + habilita/deshabilita
+// inputs dependientes cuando el admin marca/desmarca `pres_<size>_activo`.
+// 100% delegado — funciona tanto en el modal "Nuevo" como en "Editar" porque
+// ambos incluyen este partial.
+(function fpFormProductoUX(){
+  const preview = document.getElementById('fp-flavor-preview');
+  if (!preview) return;
+
+  const SIZE_LABELS = {'pequeño':'Pequeño','mediano':'Mediano','grande':'Grande'};
+
+  function fpBuildPresentationSummary(size) {
+    const activo = !!document.querySelector('input[name="pres_'+size+'_activo"]:checked');
+    if (!activo) return null;
+    const extra = parseFloat(document.querySelector('input[name="pres_'+size+'_extra"]')?.value || '0') || 0;
+    const flavorRules = !!document.querySelector('input[name="pres_'+size+'_flavor_rules"]:checked');
+    const minSab = parseInt(document.querySelector('input[name="pres_'+size+'_flavor_min"]')?.value || '0', 10) || 0;
+    const maxSab = parseInt(document.querySelector('input[name="pres_'+size+'_flavor_max"]')?.value || '0', 10) || 0;
+    let sabores = [];
+    if (flavorRules) {
+      document.querySelectorAll('input[name="pres_'+size+'_flavor_catalog_ids"]:checked').forEach(cb => {
+        const label = cb.closest('label')?.textContent?.trim();
+        if (label) sabores.push(label);
+      });
+    }
+    return {activo, extra, flavorRules, minSab, maxSab, sabores};
+  }
+
+  function fpFormatExtra(extra) {
+    if (!extra) return '';
+    return extra > 0 ? ' (+€'+extra.toFixed(2)+')' : ' (−€'+Math.abs(extra).toFixed(2)+')';
+  }
+
+  function fpRenderFlavorPreview() {
+    const parts = [];
+    Object.keys(SIZE_LABELS).forEach(size => {
+      const s = fpBuildPresentationSummary(size);
+      if (!s) return;
+      const label = SIZE_LABELS[size];
+      let line = '<span class="fp-flavor-preview__size"><strong>'+label+fpFormatExtra(s.extra)+'</strong>: ';
+      if (s.flavorRules) {
+        if (s.sabores.length === 0) {
+          line += 'reparto activado pero sin sabores seleccionados';
+        } else if (s.maxSab > 1) {
+          line += 'hasta '+s.maxSab+' unidades repartidas entre '+s.sabores.join(', ');
+          if (s.minSab > 0 && s.minSab !== s.maxSab) line += ' (mínimo '+s.minSab+')';
+        } else {
+          line += 'elegir 1 de: '+s.sabores.join(', ');
+        }
+      } else {
+        line += 'usa los sabores base del producto';
+      }
+      line += '</span>';
+      parts.push(line);
+    });
+    if (parts.length === 0) {
+      preview.innerHTML = '<span class="fp-flavor-preview__empty">Marca un tamaño para ver aquí un preview de lo que verá el cliente.</span>';
+    } else {
+      preview.innerHTML = parts.join('');
+    }
+  }
+
+  function fpToggleDependentInputs(size) {
+    const activo = !!document.querySelector('input[name="pres_'+size+'_activo"]:checked');
+    const extraInp = document.querySelector('input[name="pres_'+size+'_extra"]');
+    const flavorRulesCb = document.querySelector('input[name="pres_'+size+'_flavor_rules"]');
+    const flavorFields = document.querySelector('[data-presentation-flavor-fields="'+size+'"]');
+    if (extraInp) extraInp.disabled = !activo;
+    if (flavorRulesCb) {
+      flavorRulesCb.disabled = !activo;
+      if (!activo) flavorRulesCb.checked = false;
+    }
+    if (flavorFields) {
+      const useRules = activo && flavorRulesCb?.checked;
+      flavorFields.hidden = !useRules;
+    }
+  }
+
+  function fpSyncAll() {
+    ['pequeño','mediano','grande'].forEach(fpToggleDependentInputs);
+    fpRenderFlavorPreview();
+  }
+
+  // Delegación de change events sobre el fieldset entero: cubre todos los
+  // inputs (checkbox activo, extra, flavor_rules, min/max, catalog_ids).
+  document.addEventListener('change', (ev) => {
+    const target = ev.target;
+    if (!target || !target.name) return;
+    if (target.name.startsWith('pres_')) fpSyncAll();
+  });
+  // Input event para reflejar cambio de precio_extra en tiempo real.
+  document.addEventListener('input', (ev) => {
+    const target = ev.target;
+    if (!target || !target.name) return;
+    if (target.name.startsWith('pres_')) fpRenderFlavorPreview();
+  });
+
+  // Estado inicial (al abrir el modal o al cargar la página de editar).
+  fpSyncAll();
+  // Re-sync cuando se muestra un modal (por si Alpine u otro framework
+  // renderiza el partial diferido).
+  document.addEventListener('dialog:opened', fpSyncAll);
+})();
+</script>

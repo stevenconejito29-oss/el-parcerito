@@ -7,6 +7,7 @@ import time
 import hmac
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urljoin
 
 from flask import Flask, Response, render_template, request, send_from_directory, g
 from flask_wtf.csrf import generate_csrf
@@ -261,14 +262,55 @@ def create_app(env="default"):
                 "Disallow: /pos/\n"
                 "Disallow: /pedido/\n"
                 "Allow: /\n"
+                f"Sitemap: {urljoin(request.url_root, 'sitemap.xml')}\n"
             )
         return Response(body, mimetype="text/plain")
 
+    @app.route("/sitemap.xml")
+    def sitemap_xml():
+        """Mapa público mínimo, generado desde el catálogo vigente.
+
+        Nunca enumera rutas de sesión ni paneles. Durante preapertura devuelve
+        un mapa vacío coherente con el ``Disallow: /`` de robots.txt.
+        """
+        from markupsafe import escape
+        from models import Product, SiteConfig
+
+        urls = []
+        if not _to_bool(SiteConfig.get("PREAPERTURA_ACTIVA", "0"), False):
+            urls.append(urljoin(request.url_root, ""))
+            product_ids = [
+                row.id for row in Product.query.filter_by(activo=True).order_by(Product.id).all()
+            ]
+            urls.extend(
+                urljoin(request.url_root, f"producto/{product_id}")
+                for product_id in product_ids
+            )
+        nodes = "".join(
+            f"<url><loc>{escape(url)}</loc></url>" for url in urls
+        )
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f"{nodes}</urlset>"
+        )
+        response = Response(body, mimetype="application/xml")
+        response.headers["Cache-Control"] = "public, max-age=900"
+        return response
+
     @app.route("/sw.js")
     def service_worker():
-        response = send_from_directory(app.static_folder, "sw.js")
+        # El SW participa en la misma huella de assets que CSS/JS/iconos. Se
+        # inyecta aquí para que cada despliegue real cree nombres de caché
+        # nuevos sin depender de un contador manual dentro del JavaScript.
+        worker_path = Path(app.static_folder) / "sw.js"
+        worker_source = worker_path.read_text(encoding="utf-8").replace(
+            "__ASSET_VERSION__", app.config["ASSET_VERSION"],
+        )
+        response = app.response_class(worker_source, mimetype="application/javascript")
         response.headers["Service-Worker-Allowed"] = "/"
-        response.headers["Cache-Control"] = "no-cache"
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
     @app.route("/manifest.webmanifest")
@@ -403,12 +445,21 @@ def create_app(env="default"):
             "background_color": "#111827",
             "theme_color": profile["color_primario"],
             "orientation": "any",
+            "lang": "es",
+            "dir": "ltr",
+            "categories": ["business", "productivity"],
+            "prefer_related_applications": False,
             "icons": icons,
         }
-        return app.response_class(
+        response = app.response_class(
             json.dumps(manifest, ensure_ascii=False),
             mimetype="application/manifest+json",
         )
+        # El manifiesto depende del rol autenticado. Nunca debe quedar en una
+        # caché compartida ni reaparecer tras cambiar de cuenta en el dispositivo.
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
+        response.headers["Vary"] = "Cookie"
+        return response
 
     @app.route("/health/live")
     def health_live():
@@ -614,6 +665,14 @@ def create_app(env="default"):
             return "/" + value
         return f"/uploads/{value}"
 
+    @app.template_filter("absolute_url")
+    def absolute_url_filter(path):
+        """Convierte assets configurables en URL canónica para SEO/social."""
+        value = upload_url_filter(path)
+        if not value:
+            return ""
+        return urljoin(request.url_root, value)
+
     # Umbral centinela: los combos con componentes sin gestión de stock (bar
     # con inventario propio no publicado) y los productos con capacidad virtual
     # devuelven `999999` desde `Product._combo_stock_total_origen()` y
@@ -689,7 +748,8 @@ def create_app(env="default"):
                 "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
                 "COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO",
                 *PUBLIC_THEME_DEFAULTS.keys(), *PUBLIC_UI_DEFAULTS.keys(),
-                "HORARIO_APERTURA", "HORARIO_CIERRE", "TIENDA_FORZAR_CERRADA",
+                "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON",
+                "TIENDA_FORZAR_CERRADA",
                 "TIENDA_MENSAJE_CIERRE",
                 "APP_ICON_URL", "HERO_IMAGE_URL",
                 "SLOGAN_NEGOCIO", "DESCRIPCION_NEGOCIO",
@@ -736,11 +796,31 @@ def create_app(env="default"):
                 r, gr, b = (int(raw[i:i + 2], 16) for i in (0, 2, 4))
             except ValueError:
                 return "#FFFFFF"
-            luminance = (0.2126 * r + 0.7152 * gr + 0.0722 * b) / 255
-            return "#18120A" if luminance > 0.58 else "#FFFFFF"
+
+            def _luminance(rgb):
+                channels = []
+                for channel in rgb:
+                    normalized = channel / 255
+                    channels.append(
+                        normalized / 12.92
+                        if normalized <= 0.04045
+                        else ((normalized + 0.055) / 1.055) ** 2.4
+                    )
+                return (
+                    0.2126 * channels[0]
+                    + 0.7152 * channels[1]
+                    + 0.0722 * channels[2]
+                )
+
+            background = _luminance((r, gr, b))
+            dark = _luminance((24, 18, 10))
+            contrast_dark = (max(background, dark) + 0.05) / (min(background, dark) + 0.05)
+            contrast_light = (max(background, 1.0) + 0.05) / (min(background, 1.0) + 0.05)
+            return "#18120A" if contrast_dark >= contrast_light else "#FFFFFF"
 
         horario_apertura      = _c("HORARIO_APERTURA", _env_default("HORARIO_APERTURA", "09:00"))
         horario_cierre        = _c("HORARIO_CIERRE",   _env_default("HORARIO_CIERRE", "22:30"))
+        horario_semanal_json  = _c("HORARIO_SEMANAL_JSON", "")
         tienda_mensaje_cierre = _c("TIENDA_MENSAJE_CIERRE", "")
         tienda_forzada_cerrada = _to_bool(_c("TIENDA_FORZAR_CERRADA", "0"), False)
         tienda_forzada_abierta = _to_bool(_c("TIENDA_FORZAR_ABIERTA", "0"), False)
@@ -769,6 +849,8 @@ def create_app(env="default"):
             forzada_cerrada=tienda_forzada_cerrada,
             forzada_abierta=tienda_forzada_abierta,
         )
+        from schedule_service import configured_schedule_context
+        horario_contexto = configured_schedule_context()
 
         slogan      = _c("SLOGAN_NEGOCIO", "")
         descripcion = _c("DESCRIPCION_NEGOCIO", "")
@@ -809,11 +891,16 @@ def create_app(env="default"):
                 "color_primario": color_primario,
                 "on_primario": _on_color(color_primario),
                 "color_secundario": color_secundario,
+                "on_secundario": _on_color(color_secundario),
                 "color_acento": color_acento,
                 "on_acento": _on_color(color_acento),
                 "theme": theme,
                 "horario_apertura": horario_apertura,
                 "horario_cierre": horario_cierre,
+                "horario_semanal_json": horario_semanal_json,
+                "horario_hoy": horario_contexto["today"],
+                "horario_semanal": horario_contexto["weekly"],
+                "proxima_apertura": horario_contexto["next_opening"],
                 "tienda_mensaje_cierre": tienda_mensaje_cierre,
                 "tienda_abierta": tienda_abierta,
             }
@@ -845,6 +932,8 @@ def create_app(env="default"):
                     "Encargos con fecha" if es_comida else "Preparación de pedidos con fecha"
                 ),
                 "repartidor": "Repartidor",
+                "socio_producto": "Socio de productos",
+                "proveedor": "Socio de productos (legado)",
                 "cliente": "Cliente",
             }
             return labels.get(role, str(role or "").replace("_", " ").title())
@@ -867,8 +956,9 @@ def create_app(env="default"):
     from routes.proveedor import proveedor_bp
 
     csrf.exempt(api_bot_bp)
-    if limiter is not None:
-        limiter.exempt(api_bot_bp)
+    # La API interna usa clave HMAC-safe en cada endpoint, pero no se exime
+    # del limiter: los límites por teléfono protegen OTP, pedidos y mensajes
+    # frente a loops del bot o abuso si una credencial llegara a filtrarse.
 
     app.register_blueprint(auth_bp,        url_prefix="/auth")
     app.register_blueprint(public_bp,      url_prefix="/")
@@ -945,12 +1035,7 @@ def create_app(env="default"):
         # `'unsafe-inline'`: XSS clásico bloqueado. Los CDN se mantienen
         # explícitos por si algún template usa <script src="cdn/…">.
         nonce = getattr(g, "csp_nonce", "")
-        # Leaflet usa una hoja con SRI desde unpkg únicamente en las vistas de
-        # zonas. Se permite ahí (y no globalmente) siguiendo mínimo privilegio.
-        zone_map_route = request.path.startswith(("/admin/zonas", "/superadmin/zonas"))
         style_sources = "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com"
-        if zone_map_route:
-            style_sources += " https://unpkg.com"
         response.headers["Content-Security-Policy"] = "; ".join((
             "default-src 'self'",
             "base-uri 'self'",
@@ -1097,7 +1182,6 @@ def _seed_admin():
 
     _defaults = [
         ("PUNTOS_POR_EURO",       "1",                        "Puntos por euro gastado"),
-        ("PUNTOS_CANJE_RATIO",    "100",                      "100 puntos = 1 euro de descuento"),
         ("CART_MAX_QTY",          "99",                       "Cantidad máxima por producto en carrito"),
         ("COMBO_MIN_COMPONENTS",  "1",                        "Mínimo de componentes requeridos para crear un combo"),
         ("COMBO_MAX_COMPONENTS",  "30",                       "Máximo de componentes permitidos por combo"),
@@ -1129,6 +1213,7 @@ def _seed_admin():
         ("COLOR_ACENTO",          _env_default("COLOR_ACENTO", BRAND_COLOR_DEFAULTS["COLOR_ACENTO"]),   "Color de acento para estado y CTA"),
         ("HORARIO_APERTURA",      _env_default("HORARIO_APERTURA", "09:00"), "Hora de apertura tienda (HH:MM)"),
         ("HORARIO_CIERRE",        _env_default("HORARIO_CIERRE", "22:30"),   "Hora de cierre tienda (HH:MM)"),
+        ("HORARIO_SEMANAL_JSON",  "", "Franjas de apertura semanales por día"),
         ("TIENDA_FORZAR_CERRADA", "0",                        "Forzar tienda cerrada (1/0). Prevalece sobre horario y FORZAR_ABIERTA."),
         ("TIENDA_FORZAR_ABIERTA", "0",                        "Forzar tienda abierta (1/0), ignorando horario. Útil para servicios fuera de franja horaria."),
         # Geo-validación de radio de entrega
@@ -1152,6 +1237,8 @@ def _seed_admin():
         ("RADIO_ENTREGA_KM",                  _env_default("RADIO_ENTREGA_KM", "5"),      "Radio máximo de entrega en km desde el centro"),
         ("VALIDAR_RADIO_ENTREGA",             "1",          "Activar validación de radio de entrega (1/0)"),
         ("BLOQUEAR_DIRECCION_NO_VERIFICADA",  "1",          "Bloquear pedido si no se puede geocodificar la dirección (1/0)"),
+        ("DELIVERY_GPS_MAX_ACCURACY_M",        "200",        "Precisión GPS máxima aceptada en metros"),
+        ("DELIVERY_ADDRESS_GPS_MAX_DISTANCE_KM", "1",         "Desvío máximo entre la dirección escrita y el GPS"),
     ]
     _defaults.extend(
         (key, value, "Token visual configurable de la tienda")

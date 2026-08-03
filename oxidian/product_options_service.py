@@ -51,6 +51,61 @@ def flavor_policy_for_presentation(producto, presentation=None) -> dict:
     }
 
 
+def validate_combo_component_flavors(
+    producto,
+    presentations,
+    *,
+    flavor_mode: str,
+    allowed_flavor_ids=None,
+    fixed_flavor_id=None,
+) -> str | None:
+    """Valida que un componente de combo sea comprable en cada tamaño ofrecido.
+
+    El producto es la fuente de verdad: el combo puede reducir sus sabores,
+    nunca ampliar los que admite una presentación. Si algún tamaño exige sabor,
+    ``sin_sabor`` no es una configuración válida. Para elección del cliente,
+    cada tamaño debe conservar al menos una opción tras aplicar la intersección.
+    """
+    rows = list(presentations or [None])
+    selected_ids = {
+        int(option_id)
+        for option_id in (allowed_flavor_ids or [])
+        if str(option_id).lstrip("-").isdigit() and int(option_id) > 0
+    }
+    try:
+        fixed_id = int(fixed_flavor_id or 0)
+    except (TypeError, ValueError):
+        fixed_id = 0
+    mode = (flavor_mode or "sin_sabor").strip().lower()
+
+    for presentation in rows:
+        policy = flavor_policy_for_presentation(producto, presentation)
+        label = getattr(presentation, "label", None) or "presentación estándar"
+        available_ids = set(policy["allowed_option_ids"])
+        required = int(policy["min"] or 0) > 0
+
+        if mode == "sin_sabor":
+            if required:
+                return (
+                    f"«{producto.nombre}» exige sabor en «{label}». "
+                    "Configura un sabor fijo o permite que el cliente lo elija."
+                )
+            continue
+        if mode == "fijo":
+            if not fixed_id or fixed_id not in available_ids:
+                return (
+                    f"El sabor fijo de «{producto.nombre}» no está disponible "
+                    f"en «{label}»."
+                )
+            continue
+        if mode == "cliente_elige" and not (selected_ids & available_ids):
+            return (
+                f"«{producto.nombre}» queda sin sabores elegibles en «{label}». "
+                "Incluye al menos un sabor compatible con ese tamaño."
+            )
+    return None
+
+
 def product_option_catalog_payload(producto, presentation=None) -> list[dict]:
     flavor_policy = flavor_policy_for_presentation(producto, presentation)
     groups = ProductExtraGroup.query.filter_by(

@@ -123,6 +123,35 @@ function extractText(msg) {
 }
 
 /**
+ * Extrae una ubicación compartida por WhatsApp sin convertirla en texto.
+ * Evolution/Baileys ha usado ambos nombres (`degreesLatitude` y `latitude`)
+ * según la versión, por eso normalizamos aquí el contrato.
+ */
+function extractLocation(msg) {
+  const location = (
+    msg?.message?.locationMessage
+    || msg?.message?.liveLocationMessage
+    || null
+  );
+  if (!location) return null;
+  const latitude = Number(location.degreesLatitude ?? location.latitude);
+  const longitude = Number(location.degreesLongitude ?? location.longitude);
+  if (
+    !Number.isFinite(latitude)
+    || !Number.isFinite(longitude)
+    || latitude < -90 || latitude > 90
+    || longitude < -180 || longitude > 180
+  ) return null;
+  const rawAccuracy = location.accuracyInMeters ?? location.accuracy ?? null;
+  const accuracy = rawAccuracy === null ? null : Number(rawAccuracy);
+  return {
+    latitude,
+    longitude,
+    accuracy: Number.isFinite(accuracy) && accuracy >= 0 ? accuracy : null,
+  };
+}
+
+/**
  * Devuelve el array de mensajes de un payload `messages.upsert`. Evolution
  * a veces envía `data.messages` como array y a veces `data` ES el mensaje
  * directo — normalizamos las dos variantes aquí.
@@ -165,6 +194,7 @@ module.exports = {
   asQrDataUrl,
   extractQrDataUrl,
   extractText,
+  extractLocation,
   getMessagesFromPayload,
   getMessageMeta,
 };

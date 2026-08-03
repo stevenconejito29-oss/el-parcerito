@@ -58,6 +58,29 @@ test('extractText devuelve "" cuando no hay ni texto ni adjunto reconocible', ()
   assert.equal(evolution.extractText(null), '');
 });
 
+test('extractLocation normaliza coordenadas y precisión de WhatsApp', () => {
+  const location = evolution.extractLocation({
+    message: {
+      locationMessage: {
+        degreesLatitude: 37.4736,
+        degreesLongitude: -5.6438,
+        accuracyInMeters: 18,
+      },
+    },
+  });
+  assert.deepEqual(location, {
+    latitude: 37.4736,
+    longitude: -5.6438,
+    accuracy: 18,
+  });
+});
+
+test('extractLocation rechaza coordenadas fuera de rango', () => {
+  assert.equal(evolution.extractLocation({
+    message: { locationMessage: { degreesLatitude: 100, degreesLongitude: 0 } },
+  }), null);
+});
+
 // ─── extractQrDataUrl ───────────────────────────────────────────────────
 
 test('extractQrDataUrl detecta un data URL ya formado en payload.qrcode', () => {

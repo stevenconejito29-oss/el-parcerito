@@ -1,0 +1,62 @@
+{% extends "admin_base.html" %}
+{% block title %}FAQ Chatbot — Super Admin{% endblock %}
+{% block content %}
+<div class="oa-page">
+
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Chatbot · sin IA</p>
+      <h1 class="oa-page-header__title">Base de conocimiento (FAQ)</h1>
+      <p class="oa-page-header__subtitle">
+        Respuestas precargadas que el chatbot devuelve cuando el cliente pregunta.
+        Usa <code>{{ '{{horario}}' }}</code>, <code>{{ '{{telefono}}' }}</code>,
+        <code>{{ '{{direccion}}' }}</code>, <code>{{ '{{web_url}}' }}</code>,
+        <code>{{ '{{nombre_negocio}}' }}</code> como placeholders — se sustituyen
+        con los valores actuales de <em>Configuración</em>, así no duplicas info.
+      </p>
+    </div>
+    <div class="oa-page-header__actions">
+      <a href="{{ url_for('superadmin.chatbot_simulador') }}" class="oa-btn">🧪 Simulador</a>
+      <a href="{{ url_for('superadmin.chatbot_faq_nueva') }}" class="oa-btn oa-btn--primary">+ Nueva entrada</a>
+    </div>
+  </header>
+
+  {% if entries %}
+  <div style="display:grid; gap:var(--oa-space-3);">
+    {% for e in entries %}
+    <div class="oa-panel" style="margin:0;">
+      <div class="oa-panel__body">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap;">
+          <div style="flex:1; min-width:260px;">
+            <div style="display:flex; gap:.5rem; align-items:center; margin-bottom:.35rem;">
+              <span style="font-size:.7rem; padding:.15rem .5rem; border-radius:.4rem; background:rgba(255,255,255,.08);">{{ e.categoria }}</span>
+              <span style="font-size:.7rem; padding:.15rem .5rem; border-radius:.4rem; background:rgba(80,180,255,.15); color:#7bcaff;">{{ e.audiencia }}</span>
+              {% if e.es_seed %}<span style="font-size:.65rem; opacity:.6;" title="Sembrada por el sistema (editable)">🌱 seed</span>{% endif %}
+              {% if not e.activo %}<span style="font-size:.7rem; color:#ffb84d;">⏸️ inactivo</span>{% endif %}
+            </div>
+            <p style="font-weight:700; margin:0 0 .25rem;">{{ e.pregunta }}</p>
+            <p style="white-space:pre-wrap; font-size:.85rem; opacity:.85; margin:0 0 .35rem;">{{ e.respuesta }}</p>
+            {% if e.keywords %}
+            <p style="font-size:.72rem; opacity:.6; margin:0;">🔑 {{ e.keywords }}</p>
+            {% endif %}
+          </div>
+          <div style="display:flex; gap:.4rem; align-items:flex-start;">
+            <a href="{{ url_for('superadmin.chatbot_faq_editar', entry_id=e.id) }}" class="oa-btn oa-btn--sm">Editar</a>
+            <form method="POST" action="{{ url_for('superadmin.chatbot_faq_eliminar', entry_id=e.id) }}"
+                  data-confirm="¿Eliminar «{{ e.pregunta|e }}»?" style="margin:0;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="oa-btn oa-btn--sm oa-btn--danger">Borrar</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="oa-panel"><div class="oa-panel__body">
+    <p>Aún no hay entradas. Crea la primera para que el chatbot pueda responder.</p>
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

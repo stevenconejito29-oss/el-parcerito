@@ -326,6 +326,12 @@ function setCfg(key, value) {
   _cfgSet.run(key, String(value ?? ''));
 }
 
+function pointsEarnRateText() {
+  const value = Math.max(0, Number.parseInt(cfg('points_per_euro', '1'), 10) || 0);
+  if (value === 0) return 'La acumulación está pausada temporalmente.';
+  return `Ganas *${value} ${value === 1 ? 'punto' : 'puntos'} por cada €* gastado en pedidos entregados.`;
+}
+
 function cleanBaseUrl(value, fallback = '') {
   return String(value || fallback || '').trim().replace(/\/$/, '');
 }
@@ -520,11 +526,13 @@ function whatsappRoleProfiles() {
     if (!Array.isArray(rows)) return [];
     return rows.map(row => ({
       telefono: normalizePhone(row?.telefono),
+      phone_hash: String(row?.phone_hash || '').trim().toLowerCase(),
+      nombre: String(row?.nombre || '').trim(),
       rol: row?.rol === 'super_admin' ? 'super_admin' : 'admin',
       capabilities: Array.isArray(row?.capabilities)
         ? [...new Set(row.capabilities.map(String))]
         : [],
-    })).filter(row => row.telefono);
+    })).filter(row => row.telefono || /^[a-f0-9]{32}$/.test(row.phone_hash));
   } catch {
     return [];
   }
@@ -532,7 +540,15 @@ function whatsappRoleProfiles() {
 
 function whatsappRoleProfile(phone) {
   const clean = normalizePhone(phone);
-  return whatsappRoleProfiles().find(row => row.telefono === clean) || null;
+  if (!clean) return null;
+  const key = getOxidianKey();
+  const phoneHash = key
+    ? crypto.createHmac('sha256', key).update(clean).digest('hex').slice(0, 32)
+    : '';
+  return whatsappRoleProfiles().find(row =>
+    (row.telefono && row.telefono === clean)
+    || (phoneHash && row.phone_hash && row.phone_hash === phoneHash)
+  ) || null;
 }
 
 function adminPhones() {
@@ -541,6 +557,10 @@ function adminPhones() {
     ...runtimeAdminPhones(),
     ...whatsappRoleProfiles().map(row => row.telefono),
   ]);
+}
+
+function isProfileAdminPhone(phone) {
+  return Boolean(whatsappRoleProfile(phone));
 }
 
 function setRuntimeAdmins(list) {
@@ -696,7 +716,7 @@ function adminBody(jid, body = {}) {
 
 function isAdminPhone(phone) {
   const clean = normalizePhone(phone);
-  return adminPhones().includes(clean);
+  return adminPhones().includes(clean) || isProfileAdminPhone(clean);
 }
 
 function isAdminJid(jid) {
@@ -782,8 +802,17 @@ function lockAdmin(jid) {
 const ADMIN_READ_ONLY_CMDS = new Set([
   '0', 'menu', 'menú', 'inicio',
   '!status', 'status',
-  '1', // estado del bot en el menú administrativo actual
+  'cola', 'ver cola', 'clientes esperando',
+  'tomar', 'tomar chat', 'atender',
+  // Todas las opciones del panel principal son consulta/navegación. Las
+  // mutaciones de tienda piden PIN al confirmar la acción concreta.
+  '1', '3', '4', '5',
 ]);
+
+function isWebOnlyAdminCommand(input) {
+  const command = String(input || '').trim().toLowerCase().replace(/^!+/, '');
+  return /^(?:nicho|config|ver-config|verconfig|pausar-tienda|pausa|reanudar-tienda|reanuda|buscar|buscar-producto|producto|precio|stock|crear-producto|ver-pedidos|nombre|horario|minimo|pedido|aviso|cupon|cupón|top|stock-bajo|agotandose|diag|diagnostico|ia|sync|send|cliente|puntos|buscar-cliente|cliente-buscar|modo-tienda|modulo|cerrar-tienda|abrir-tienda|limpiar)(?:\s|$)/.test(command);
+}
 
 /**
  * Decide si una entrada administrativa es estrictamente de consulta.
@@ -1064,16 +1093,6 @@ function splitTextForSend(text, maxLength) {
   return chunks;
 }
 
-async function autoAssignPendingHandoff(clientJid) {
-  const handoff = getHandoff(clientJid);
-  if (!handoff || handoff.admin_jid) return handoff?.admin_jid || null;
-  const adminJid = availableAdminJids()[0];
-  if (!adminJid) return null;
-  const adminSession = getSesion(adminJid);
-  const claimed = await takeHandoff(adminJid, adminSession, clientJid, { automatic: true });
-  return claimed && getHandoff(clientJid)?.admin_jid === adminJid ? adminJid : null;
-}
-
 // Lista de destinatarios para notificaciones de handoff. Prioriza operadores
 // que se declararon disponibles con !disponible. Si nadie está online, cae
 // a todos los admins con capacidad 'handoff' — sin este fallback los mensajes
@@ -1089,20 +1108,23 @@ function handoffNotifiableAdminJids(clientJid) {
 }
 
 async function notifyAdminsHandoffQueued(clientJid) {
-  const phone = phoneFromJid(clientJid);
   const { jids, fallback } = handoffNotifiableAdminJids(clientJid);
   if (!jids.length) {
     log('warn', 'handoff_notify_no_admins', clientJid);
     return { notified: 0, fallback };
   }
+  const identity = await resolveClientIdentity(clientJid);
   const header = fallback
     ? `📨 *Cliente en espera* (sin agentes online)`
     : `📨 *Cliente en espera*`;
   const message =
     `${header}\n` +
-    `${phone} necesita atención humana.\n\n` +
-    `Escribe *!take ${phone}* para tomar el chat.` +
-    (fallback ? `\n\n_Recuerda enviar *!disponible* para recibir asignaciones automáticas._` : '');
+    `*${identity.label}* necesita atención humana.\n` +
+    (_handoffLastMessagePreview(clientJid, 90)
+      ? `💬 “${_handoffLastMessagePreview(clientJid, 90)}”\n\n`
+      : `\n`) +
+    `Responde *TOMAR* para atender al primero o *COLA* para elegir.` +
+    (fallback ? `\n\n_Estás recibiendo el aviso aunque no haya agentes online; ningún chat se asignará solo._` : '');
   const results = await Promise.allSettled(jids.map(adminJid => sendText(adminJid, message)));
   const notified = results.filter(r => r.status === 'fulfilled' && r.value !== false).length;
   const failed = results.length - notified;
@@ -1212,7 +1234,25 @@ async function iniciarReporteNovedad(clientJid, ses, rawTexto) {
 
 // Snapshot completo de la cola: pendientes con espera + preview + chats
 // activos (ya asignados). Usado por `!list` para dar visibilidad operativa.
-function renderHandoffQueueSnapshot() {
+async function resolveClientIdentity(clientJid) {
+  const local = _sesGet.get(clientJid);
+  let name = String(local?.nombre || '').trim();
+  if (!name) {
+    try {
+      const response = await oxidianGet(
+        `/ai/cliente-context?telefono=${encodeURIComponent(phoneFromJid(clientJid))}`,
+      );
+      name = String(response?.cliente?.nombre || '').trim();
+    } catch (error) {
+      log('warn', 'handoff_identity_lookup_fail', error?.message || String(error));
+    }
+  }
+  const phone = phoneFromJid(clientJid);
+  const suffix = phone ? `•••• ${phone.slice(-4)}` : 'número no disponible';
+  return { name, label: name ? `${name} · ${suffix}` : `Cliente · ${suffix}` };
+}
+
+async function renderHandoffQueueSnapshot() {
   const slaSec = Math.max(60, parseInt(cfg('handoff_sla_warning_sec', '600'), 10) || 600);
   const now = Math.floor(Date.now() / 1000);
   const pending = db.prepare(`
@@ -1233,12 +1273,16 @@ function renderHandoffQueueSnapshot() {
   if (pending.length) {
     partes.push(`\n*Pendientes:*`);
     const items = pending.slice(0, 12);
+    const identities = await Promise.all(
+      items.map(row => resolveClientIdentity(row.client_jid)),
+    );
     for (let i = 0; i < items.length; i++) {
       const row = items[i];
       const waited = now - Number(row.requested_at || now);
       const alerta = waited >= slaSec ? ' ⚠️' : '';
       const preview = _handoffLastMessagePreview(row.client_jid, 60);
-      const line = `${i + 1}. *${phoneFromJid(row.client_jid)}* — ${_formatDuration(waited)}${alerta}`;
+      const identity = identities[i];
+      const line = `${i + 1}. *${identity.label}* — ${_formatDuration(waited)}${alerta}`;
       partes.push(line + (preview ? `\n   💬 "${preview}"` : ''));
     }
     if (pending.length > items.length) {
@@ -1247,16 +1291,23 @@ function renderHandoffQueueSnapshot() {
   }
   if (active.length) {
     partes.push(`\n*En atención:*`);
-    for (const row of active.slice(0, 10)) {
+    const activeItems = active.slice(0, 10);
+    const identities = await Promise.all(
+      activeItems.map(row => resolveClientIdentity(row.client_jid)),
+    );
+    for (let index = 0; index < activeItems.length; index++) {
+      const row = activeItems[index];
       const dur = row.assigned_at ? _formatDuration(now - Number(row.assigned_at)) : '?';
-      partes.push(`• ${phoneFromJid(row.client_jid)} ← ${phoneFromJid(row.admin_jid)} · ${dur}`);
+      const client = identities[index];
+      const agent = whatsappRoleProfile(phoneFromJid(row.admin_jid));
+      partes.push(`• ${client.label} ← ${agent?.nombre || adminRoleLabel(row.admin_jid)} · ${dur}`);
     }
     if (active.length > 10) partes.push(`_(+${active.length - 10} más)_`);
   }
   if (!pending.length && !active.length) {
     partes.push(`\n✅ No hay chats humanos ahora mismo.`);
   } else {
-    partes.push(`\n_Toma el primero con *!take* o especifica *!take <numero>*._`);
+    partes.push(`\n_Responde *TOMAR* para atender al primero o *COLA* para elegir._`);
   }
   return partes.join('\n');
 }
@@ -1304,7 +1355,7 @@ async function renderHandoffPreview(clientJid) {
     }
   }
   if (!handoff.admin_jid) {
-    lineas.push(`\n_Escribe *!take ${phoneFromJid(clientJid)}* para tomarlo._`);
+    lineas.push(`\n_Abre *COLA* y elige este cliente para tomarlo._`);
   }
   return lineas.join('\n');
 }
@@ -1316,7 +1367,7 @@ async function transferHandoffToAdmin(fromAdminJid, toAdminRaw) {
   const toJid = normalizeJid(toAdminRaw);
   if (!toJid) return { ok: false, reason: `No pude interpretar "${toAdminRaw}" como un número.` };
   if (toJid === fromAdminJid) {
-    return { ok: false, reason: `Ese eres tú mismo. Usa *!release* si quieres devolverlo a la cola.` };
+    return { ok: false, reason: `Ese eres tú mismo. Usa */cola* si quieres devolverlo a la cola.` };
   }
   if (!isAdminJid(toJid) || !adminCan(toJid, 'handoff')) {
     return { ok: false, reason: `${phoneFromJid(toJid)} no es admin con permiso para atender.` };
@@ -1345,11 +1396,19 @@ async function transferHandoffToAdmin(fromAdminJid, toAdminRaw) {
       SET estado='admin_menu', active_client_jid=NULL, updated_at=unixepoch()
       WHERE jid=? AND active_client_jid=?
     `).run(fromAdminJid, clientJid);
-    db.prepare(`
-      UPDATE sessions
-      SET role='admin', estado='admin_chat', active_client_jid=?, updated_at=unixepoch()
-      WHERE jid=?
-    `).run(clientJid, toJid);
+    const destination = getSesion(toJid);
+    _sesUps.run(
+      toJid,
+      destination.nombre || whatsappRoleProfile(phoneFromJid(toJid))?.nombre || adminRoleLabel(toJid),
+      'admin',
+      'admin_chat',
+      '[]',
+      '{}',
+      null,
+      clientJid,
+      null,
+      null,
+    );
     return { ok: true };
   })();
   if (!result.ok) return result;
@@ -1360,14 +1419,14 @@ async function transferHandoffToAdmin(fromAdminJid, toAdminRaw) {
   await Promise.allSettled([
     sendText(toJid,
       `🔁 *Chat transferido*\n\n` +
-      `Recibiste el chat de *${phoneFromJid(clientJid)}* de parte de ${phoneFromJid(fromAdminJid)}.\n\n` +
+      `Recibiste una conversación de parte de ${whatsappRoleProfile(phoneFromJid(fromAdminJid))?.nombre || adminRoleLabel(fromAdminJid)}.\n\n` +
       (brief ? `${brief}\n\n` : '') +
-      `Escribe tu mensaje para responder. */cerrar chat* para finalizar.`),
+      `Escribe tu mensaje para responder. Usa */opciones* para gestionar el chat.`),
     sendText(clientJid,
       `🔁 *Nuevo agente*\n\n` +
       `Un compañero del equipo continuará la conversación. No pierdes el historial.`),
     sendText(fromAdminJid,
-      `✅ Transferí el chat de *${phoneFromJid(clientJid)}* a ${phoneFromJid(toJid)}.`),
+      `✅ Conversación transferida a *${whatsappRoleProfile(phoneFromJid(toJid))?.nombre || adminRoleLabel(toJid)}*.`),
   ]);
   return { ok: true };
 }
@@ -1543,7 +1602,7 @@ async function maybeAlertOwnerOnQueuePressure(pendingCount) {
     `• Clientes esperando: *${pendingCount}*\n` +
     `• Espera del más antiguo: *${waited}*\n` +
     `• Operadores online: ${available}\n\n` +
-    `Usa *!list* para verlos y *!take* para atender al primero.`;
+    `Responde *TOMAR* para atender al primero o *COLA* para elegir.`;
   try {
     await sendText(ownerJid, msg);
     setCfg('handoff_owner_alert_at', String(now));
@@ -1733,16 +1792,9 @@ async function requestHumanSupport(clientJid, initialText = '') {
     );
   }
   if (initialText) queueHandoffMessage(clientJid, 'client', initialText);
-  // Auto-asignación es best-effort: si Evolution está caído o la BD del bot
-  // falla al escribir, el cliente igual debe recibir el mensaje de cola. No
-  // dejamos que un fallo aquí bloquee el turn.
-  let assignedAdmin = null;
-  try {
-    assignedAdmin = await autoAssignPendingHandoff(clientJid);
-  } catch (error) {
-    log('error', 'handoff_auto_assign_fail', error?.message || String(error));
-  }
-  if (assignedAdmin) return true;
+  // La disponibilidad sólo controla quién recibe alertas. La asignación
+  // siempre requiere una elección explícita del operador para evitar cruces
+  // de conversaciones y sorpresas al cambiar a modo online.
   let notifyResult = { notified: 0, fallback: false };
   try {
     notifyResult = await notifyAdminsHandoffQueued(clientJid) || notifyResult;
@@ -1881,12 +1933,6 @@ function closeHumanChatByClient(clientJid) {
   })();
 }
 
-async function takeNextQueuedHandoff(adminJid) {
-  const waiting = listPendingHandoffs()[0];
-  if (!waiting) return false;
-  return takeHandoff(adminJid, getSesion(adminJid), waiting.client_jid, { automatic: true });
-}
-
 function recoverOrphanedHandoffs(force = false) {
   const cutoff = Math.floor(Date.now() / 1000) - HANDOFF_LEASE_SEC;
   const stale = db.prepare(`
@@ -1933,9 +1979,8 @@ async function retryPendingHandoffMessages() {
           `${row.client_jid}: ${error?.message || String(error)}`);
     }
   }
-  // Handoffs que llevan en cola sin operador. Reintentamos:
-  //   1. Auto-asignación (por si un admin acaba de escribir !disponible).
-  //   2. Si sigue sin admin y ha pasado el cooldown, re-notificamos al
+  // Handoffs que llevan en cola sin operador. Si ha pasado el cooldown,
+  // re-notificamos al
   //      equipo. Cooldown = HANDOFF_RENOTIFY_SEC (default 120s) para no
   //      spamear a los operadores mientras el cliente sigue escribiendo.
   const renotifySec = Math.max(30, parseInt(cfg('handoff_renotify_sec', '120'), 10) || 120);
@@ -1945,13 +1990,6 @@ async function retryPendingHandoffMessages() {
     WHERE admin_jid IS NULL
   `).all().filter(row => canBeHandoffClient(row.client_jid));
   for (const row of pending) {
-    let assigned = null;
-    try {
-      assigned = await autoAssignPendingHandoff(row.client_jid);
-    } catch (error) {
-      log('warn', 'handoff_retry_assign_fail', error?.message || String(error));
-    }
-    if (assigned) continue;
     const now = Math.floor(Date.now() / 1000);
     const lastNotified = Number(row.notified_at || 0);
     if (lastNotified && now - lastNotified < renotifySec) continue;
@@ -2542,9 +2580,14 @@ function friendlyOxidianError(err, contexto = '') {
 /** Palabras que salen de cualquier submenu al menú principal.
  *  Antes: cada handler comprobaba su propia lista, con drift y omisiones. */
 const _ESCAPE_WORDS = /^(?:0|menu|menú|inicio|salir|cancelar)$/i;
+const _BACK_WORDS = /^(?:atrás|atras|regresar|retroceder|volver)$/i;
 
 function isEscapeWord(text) {
   return _ESCAPE_WORDS.test(String(text || '').trim());
+}
+
+function isBackWord(text) {
+  return _BACK_WORDS.test(String(text || '').trim());
 }
 
 /**
@@ -3275,6 +3318,7 @@ async function syncBranding() {
     setCfg('delivery_enabled',  !!data.delivery_enabled  ? '1' : '0');
     setCfg('pickup_enabled',    !!data.pickup_enabled    ? '1' : '0');
     setCfg('loyalty_enabled',   !!data.points_enabled    ? '1' : '0');
+    setCfg('points_per_euro', String(Math.max(0, Number.parseInt(data.points_per_euro, 10) || 0)));
     setCfg('scheduled_enabled', !!data.scheduled_enabled ? '1' : '0');
     setCfg('bizum_enabled',     !!data.bizum_enabled     ? '1' : '0');
     setCfg('cash_enabled',      !!data.cash_enabled      ? '1' : '0');
@@ -3466,6 +3510,7 @@ function resetSesion(jid, nombre = null, role = null) {
 // chat/evolution.js. Se reexporta como nombre local para preservar
 // callsites internos y el export histórico (usado por tests y bot API).
 const extractText = evolution.extractText;
+const extractLocation = evolution.extractLocation;
 
 function formatPrecio(n) { return `€${parseFloat(n).toFixed(2)}`; }
 
@@ -3550,17 +3595,11 @@ function clientCapabilityText() {
 // y armamos el ctx para no acoplar el renderizado con el runtime.
 function adminMenu(jid) {
   const sections = [
-    adminCan(jid, 'status')      ? { n: '1️⃣',  label: 'Estado del bot y WhatsApp' } : null,
-    adminCan(jid, 'store')       ? { n: '2️⃣',  label: 'Abrir / cerrar tienda' } : null,
-    adminCan(jid, 'products')    ? { n: '3️⃣',  label: 'Productos y precios' } : null,
-    adminCan(jid, 'points')      ? { n: '4️⃣',  label: 'Clientes y puntos' } : null,
-    adminCan(jid, 'admins')      ? { n: '5️⃣',  label: 'Administradores WhatsApp' } : null,
-    adminCan(jid, 'handoff')     ? { n: '6️⃣',  label: 'Atención humana' } : null,
-    adminCan(jid, 'sync')        ? { n: '7️⃣',  label: 'Sincronizar catálogo' } : null,
-    adminCan(jid, 'security')    ? { n: '8️⃣',  label: 'Seguridad de conversaciones' } : null,
-    adminCan(jid, 'emergency')   ? { n: '9️⃣',  label: 'Modo emergencia' } : null,
-    adminCan(jid, 'risks')       ? { n: '🔟',  label: 'Pedidos en riesgo' } : null,
-    adminCan(jid, 'client_mode') ? { n: '*11*', label: 'Modo cliente de prueba' } : null,
+    adminCan(jid, 'status')      ? { n: '1️⃣', label: 'Resumen operativo' } : null,
+    adminCan(jid, 'store')       ? { n: '2️⃣', label: 'Abrir / cerrar tienda' } : null,
+    adminCan(jid, 'risks')       ? { n: '3️⃣', label: 'Pedidos en riesgo' } : null,
+    adminCan(jid, 'handoff')     ? { n: '4️⃣', label: 'Atención humana' } : null,
+    adminCan(jid, 'client_mode') ? { n: '5️⃣', label: 'Pasar a modo cliente' } : null,
   ].filter(Boolean);
 
   return texts.adminMenu({
@@ -3572,11 +3611,7 @@ function adminMenu(jid) {
     can: {
       status:   adminCan(jid, 'status'),
       store:    adminCan(jid, 'store'),
-      products: adminCan(jid, 'products'),
-      points:   adminCan(jid, 'points'),
       handoff:  adminCan(jid, 'handoff'),
-      sync:     adminCan(jid, 'sync'),
-      ai:       adminCan(jid, 'ai'),
     },
   });
 }
@@ -3592,12 +3627,18 @@ const adminSecurityMenu  = () => texts.ADMIN_SUB_MENUS.security;
 const adminEmergencyMenu = () => texts.ADMIN_SUB_MENUS.emergency;
 
 function adminChatMenu(clientJid) {
+  const row = _sesGet.get(clientJid);
+  const name = String(row?.nombre || '').trim() || 'Cliente';
+  const phone = phoneFromJid(clientJid);
+  const suffix = phone ? ` · •••• ${phone.slice(-4)}` : '';
   return (
     `💬 *Chat activo con cliente*\n\n` +
-    `👤 ${phoneFromJid(clientJid)}\n\n` +
+    `👤 *${name}${suffix}*\n\n` +
     `Todo lo que escribas se enviará directamente a este cliente.\n` +
-    `• Escribe */cerrar chat* para finalizar y volver al panel\n` +
-    `• También puedes usar *!release*`
+    `• */fin* — finalizar la atención\n` +
+    `• */cola* — devolverla a la cola\n` +
+    `• */transferir* — elegir otro agente\n` +
+    `• */opciones* — volver a ver estas acciones`
   );
 }
 
@@ -3614,8 +3655,11 @@ function bareClientState(ses) {
 }
 
 function isOrderStatusIntent(text) {
-  const value = _stripAccents(String(text || '').toLowerCase().trim());
-  return /^(?:estado|estado (?:de |del )?(?:mi )?pedido|mi pedido|mis pedidos|seguimiento|rastrear pedido|consultar pedido|donde (?:esta|va|anda) (?:mi )?pedido|como va (?:mi )?pedido|cuanto falta(?: para (?:mi )?pedido)?|a que hora llega(?: (?:mi )?pedido)?)$/.test(value);
+  const value = _stripAccents(String(text || '').toLowerCase())
+    .replace(/[?¿!¡.,;:]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return /^(?:estado|estado (?:de |del )?(?:mi )?pedido|mi pedido|mis pedidos|seguimiento|rastrear (?:mi )?pedido|consultar (?:mi )?pedido|donde (?:esta|va|anda|viene) (?:mi )?pedido|como va (?:mi )?(?:pedido|entrega)|cuanto falta(?: para (?:mi )?(?:pedido|entrega))?|a que hora llega(?: (?:mi )?pedido)?|ya (?:viene|sale|llega)(?: (?:mi )?pedido)?|quien (?:trae|reparte) (?:mi )?pedido|(?:hay|tiene|tengo) repartidor(?: asignado)?|informacion (?:de |del )?(?:mi )?(?:pedido|entrega))$/.test(value);
 }
 
 function setClientState(ses, estado, pending = {}) {
@@ -3745,6 +3789,60 @@ function startAdminMenu(jid, nombre = null) {
 }
 
 /**
+ * Vuelve exactamente un nivel dentro del flujo actual. MENU/0 continúan
+ * siendo el escape al inicio. La separación evita perder un pedido o una
+ * búsqueda por escribir "atrás", y evita ejecutar confirmaciones pendientes.
+ */
+async function navigateBack(jid, ses) {
+  const clientState = bareClientState(ses);
+  if (!isAdminJid(jid) || isAdminClientMode(jid, ses)) {
+    if (['espera_reporte_pedido', 'seleccionar_cancelacion', 'confirmar_cancelacion'].includes(clientState)) {
+      const identifier = ses.pending?.numero || ses.pending?.pedido_numero || 'ULTIMO';
+      return handleEstadoPedido(jid, ses, String(identifier));
+    }
+    setClientState(ses, 'main_menu');
+    return sendText(jid, menuPrincipal(ses));
+  }
+
+  let parent = {
+    admin_store_close_message: 'admin_store_menu',
+    admin_product_search: 'admin_products_menu',
+    admin_product_price_wait: 'admin_products_menu',
+    admin_product_toggle_wait: 'admin_products_menu',
+    admin_customer_search: 'admin_points_menu',
+    admin_points_adjust_wait: 'admin_points_menu',
+    admin_points_history_wait: 'admin_points_menu',
+    admin_admin_add_wait: 'admin_admins_menu',
+    admin_admin_remove_wait: 'admin_admins_menu',
+    admin_take_wait: 'admin_handoff_menu',
+    admin_transfer_wait: 'admin_handoff_menu',
+    admin_mute_wait: 'admin_security_menu',
+  }[ses.estado] || 'admin_menu';
+
+  if (ses.estado === 'admin_confirm') {
+    const action = String(ses.pending?.action || '');
+    if (['open_store', 'close_store'].includes(action)) parent = 'admin_store_menu';
+    else if (action.startsWith('product_')) parent = 'admin_products_menu';
+    else if (action === 'points_adjust') parent = 'admin_points_menu';
+    else if (action.startsWith('admin_')) parent = 'admin_admins_menu';
+    else if (action === 'mute_client') parent = 'admin_security_menu';
+    else if (action.startsWith('emergency_')) parent = 'admin_emergency_menu';
+  }
+
+  const views = {
+    admin_store_menu: adminStoreMenu,
+    admin_products_menu: adminProductsMenu,
+    admin_points_menu: adminPointsMenu,
+    admin_admins_menu: adminAdminsMenu,
+    admin_handoff_menu: adminHandoffMenu,
+    admin_security_menu: adminSecurityMenu,
+    admin_emergency_menu: adminEmergencyMenu,
+  };
+  setAdminState(ses, parent);
+  return sendText(jid, parent === 'admin_menu' ? adminMenu(jid) : views[parent]());
+}
+
+/**
  * Gate de PIN para acciones admin/bar.
  * Si el PIN está configurado y la sesión no está desbloqueada, pide PIN
  * antes de ejecutar la acción solicitada. Devuelve `true` si la acción
@@ -3774,7 +3872,7 @@ async function requireAdminPin(jid, ses, text) {
     // Escape explícito: si escribe salir/menu/cancelar, salimos del gate y
     // volvemos al menú correspondiente sin ejecutar la acción original.
     const escape = String(text || '').toLowerCase().trim();
-    if (/^(?:salir|cancelar|menu|menú|inicio|0)$/.test(escape)) {
+    if (/^(?:salir|cancelar|menu|menú|inicio|0|atrás|atras|regresar|volver)$/.test(escape)) {
       setSesion(jid, { ...ses, estado: back, pending: clearPin });
       await sendText(jid, `Cancelado. Vuelves al menú.`);
       if (isAdminJid(jid)) await sendText(jid, adminMenu(jid));
@@ -3826,7 +3924,7 @@ async function requireAdminPin(jid, ses, text) {
 }
 
 // ─── ESTADO PRINCIPAL: ROUTER DE MENSAJES ────────────────────────────────────
-async function _handleMessage(jid, text, pushName) {
+async function _handleMessage(jid, text, pushName, context = {}) {
   const ses = getSesion(jid);
   // No confiar en pushName para admins/SA: WhatsApp broadcasts el nombre
   // configurado en el contacto del emisor, que no coincide con el rol interno.
@@ -3891,8 +3989,7 @@ async function _handleMessage(jid, text, pushName) {
     if (handoff) {
       if (isQueuePositionQuery(text)) return replyQueuePosition(jid);
       queueHandoffMessage(jid, 'client', text);
-      const assigned = await autoAssignPendingHandoff(jid);
-      if (!assigned) await maybeSendQueueAckToClient(jid);
+      await maybeSendQueueAckToClient(jid);
       return true;
     }
     return requestHumanSupport(jid, text);
@@ -3936,8 +4033,6 @@ async function _handleMessage(jid, text, pushName) {
         }
         if (isQueuePositionQuery(text)) return replyQueuePosition(jid);
         queueHandoffMessage(jid, 'client', text);
-        const assigned = await autoAssignPendingHandoff(jid);
-        if (assigned) return true;
         // Ack con posición sólo si toca según cooldown. Si no toca, el cliente
         // simplemente ve el silencio (mensaje ya está en cola y visible al
         // admin que lo tome).
@@ -3971,12 +4066,12 @@ async function _handleMessage(jid, text, pushName) {
     };
     saveSesion(next);
     log('info', 'operational_mode_changed', `${phoneFromJid(jid)} -> offline/client`);
-    await sendText(jid,
+    return sendText(jid,
       `⏸️ *Modo cliente activado.*\n\n` +
       `Quedaste offline para atención y ahora puedes comprar o consultar pedidos como cualquier cliente.\n` +
-      `Escribe */online* cuando quieras volver al panel operativo.`
+      `Escribe */online* cuando quieras volver al panel operativo.\n\n` +
+      `${menuPrincipal(next)}`
     );
-    return startClientMenu(jid, next.nombre);
   }
 
   if (requestedMode === 'online') {
@@ -3991,10 +4086,14 @@ async function _handleMessage(jid, text, pushName) {
     };
     saveSesion(next);
     log('info', 'operational_mode_changed', `${phoneFromJid(jid)} -> online/admin`);
-    const waiting = listPendingHandoffs()[0];
-    if (waiting && await takeHandoff(jid, next, waiting.client_jid, { automatic: true })) return true;
-    await sendText(jid, `🟢 *Modo operativo online.*\nRecibirás chats y alertas compatibles con tus permisos.`);
-    return sendText(jid, adminMenu(jid));
+    const waitingCount = listPendingHandoffs().length;
+    return sendText(
+      jid,
+      `🟢 *Modo operativo online.*\n` +
+      `Recibirás alertas, pero ningún chat se tomará sin que tú lo elijas.` +
+      (waitingCount ? ` Hay *${waitingCount}* cliente${waitingCount === 1 ? '' : 's'} en espera.` : '') +
+      `\n\n${adminMenu(jid)}`,
+    );
   }
 
   // `awaiting_pin` es un estado del router, no un submenú. Debe resolverse
@@ -4008,18 +4107,23 @@ async function _handleMessage(jid, text, pushName) {
 
   // Durante un handoff, cada mensaje del admin pertenece al chat hasta cerrarlo.
   if (isOwner && ses.estado === 'admin_chat') {
-    if (['!release', '/soltar chat', '/soltar'].includes(lower)) {
+    if (['!release', '/soltar chat', '/soltar', '/cola'].includes(lower)) {
       const released = await releaseHumanChat(jid, ses.active_client_jid);
       return released
         ? sendText(jid, `✅ Chat devuelto a la cola.\n\n${adminMenu(jid)}`)
         : sendText(jid, `No tienes un chat activo.\n\n${adminMenu(jid)}`);
     }
-    if (['/cerrar chat', '/cerrarchat'].includes(lower)) {
+    if (['/cerrar chat', '/cerrarchat', '/fin'].includes(lower)) {
       const closed = await closeHumanChat(jid, ses.active_client_jid);
-      if (closed && await takeNextQueuedHandoff(jid)) return true;
       return closed
         ? sendText(jid, `✅ Chat finalizado.\n\n${adminMenu(jid)}`)
         : sendText(jid, `No tienes un chat activo.\n\n${adminMenu(jid)}`);
+    }
+    if (['/opciones', '/ayuda'].includes(lower)) {
+      return sendText(jid, adminChatMenu(ses.active_client_jid));
+    }
+    if (lower === '/transferir') {
+      return startAdminTransfer(jid, ses);
     }
     return handleAdminChat(jid, ses, text);
   }
@@ -4048,7 +4152,18 @@ async function _handleMessage(jid, text, pushName) {
   // de los submenús — ambos deben mantenerse sincronizados si se amplían.
   // Sólo comandos de salida inequívocos rompen un subflujo. Un saludo o una
   // palabra inesperada debe recibir ayuda contextual, no borrar la operación.
-  if (['menu', 'menú', 'inicio', '0', 'salir', 'volver'].includes(lower)) {
+  if (isBackWord(lower)) {
+    return navigateBack(jid, ses);
+  }
+  if (isOwner && ses.estado === 'admin_transfer_wait'
+      && ['menu', 'menú', 'inicio', '0', 'salir'].includes(lower)) {
+    return handleAdminTransferWait(jid, ses, '0');
+  }
+  if (isOwner && ses.estado === 'admin_take_wait'
+      && ['menu', 'menú', 'inicio', '0', 'salir'].includes(lower)) {
+    return handleAdminTakeWait(jid, ses, '0');
+  }
+  if (['menu', 'menú', 'inicio', '0', 'salir'].includes(lower)) {
     if (isOwner && !isAdminClientMode(jid, ses)) {
       return startAdminMenu(jid, ses.nombre);
     }
@@ -4057,10 +4172,23 @@ async function _handleMessage(jid, text, pushName) {
     return startClientMenu(jid, ses.nombre, null, { showActiveOrder: false });
   }
 
+  // Los avisos de atención usan palabras naturales y funcionan desde las
+  // pantallas de cola, no sólo desde el panel principal. No interrumpimos
+  // confirmaciones ni formularios administrativos en curso.
+  if (isOwner && !isAdminClientMode(jid, ses)
+      && ['admin_menu', 'admin_handoff_menu', 'admin_take_wait'].includes(ses.estado)
+      && /^(?:tomar|tomar chat|atender|cola|ver cola|clientes esperando)$/.test(lower)) {
+    ses.estado = 'admin_menu';
+    ses.pending = {};
+    saveSesion(ses);
+    return handleAdminMenu(jid, ses, lower);
+  }
+
   // Las intenciones críticas deben funcionar también en una sesión nueva.
   if (isOwner && lower.startsWith('!')
       && !isAdminClientMode(jid, ses)
       && ses.estado !== 'admin_confirm') {
+    if (isWebOnlyAdminCommand(text)) return handleAdminCmd(jid, text);
     const pinOk = await requireAdminPin(jid, ses, text);
     if (!pinOk) return true;
     return handleAdminCmd(jid, text);
@@ -4085,7 +4213,7 @@ async function _handleMessage(jid, text, pushName) {
   const passiveConfirmationStates = new Set(['idle', 'main_menu', 'pedido_acciones']);
   if (clientConversation && passiveConfirmationStates.has(clientState)
       && /^(?:si|sí|s|ok|vale|confirmo|confirmar(?: pedido)?|no|n)$/i.test(lower)) {
-    const consumed = await tryHandleConfirmationReply(jid, lower);
+    const consumed = await tryHandleConfirmationReply(jid, lower, ses);
     if (consumed) return true;
     // sin pedido pendiente → cae al flujo normal (cancelar, menú, etc.)
   }
@@ -4102,93 +4230,14 @@ async function _handleMessage(jid, text, pushName) {
     return handleEstadoPedido(jid, ses, 'ULTIMO');
   }
 
-  // ── Enrutado DETERMINÍSTICO antes de invocar la IA ─────────────────
-  // La IA sigue disponible para preguntas de forma libre, pero NUNCA debe
-  // procesar entradas cortas o submenús esperando input concreto: si el
-  // cliente está eligiendo entre 7 opciones o tecleando un número de
-  // pedido, la respuesta debe ser 100% predecible por el state machine.
-  //
-  // Reglas del guard (todas para no-admin):
-  //   1. Estado de submenú activo (espera_numero_pedido, confirmar_
-  //      cancelacion, espera_direccion_cobertura) → salta la IA y deja
-  //      que el switch de estado maneje el input tal cual llegó.
-  //   2. Mensaje de solo dígitos o ≤3 chars ("2", "ok", "si", "hola") →
-  //      salta la IA. Estos casos los resuelven handleMainMenu (saludos,
-  //      selección numérica) o el catch de escape (menu/0/salir).
-  //   3. En cualquier otro caso (frase libre ≥4 chars con letras) → la
-  //      IA puede intentar routear como antes.
-  //
-  // Sin este guard, el AI autorouter interceptaba el "2" del cliente y
-  // le devolvía "no pude entender tu consulta" en vez de abrir el flujo
-  // de estado de pedido.
-  const skipIA = !isOwner && (function () {
-    const trimmed = String(text || '').trim();
-    if (trimmed.length <= 3) return true;
-    if (/^\d+$/.test(trimmed)) return true;
-    // Ampliado: TODO estado que espera input concreto (cliente O admin
-    // en modo cliente de prueba) salta la IA para que la respuesta no se
-    // interprete como consulta general.
-    const stateSinPrefijo = String(ses?.estado || '').replace(/^client_/, '').replace(/^admin_/, '');
-    const submenuStates = [
-      // Cliente
-      'espera_numero_pedido', 'pedido_acciones', 'espera_reporte_pedido',
-      'seleccionar_cancelacion', 'confirmar_cancelacion',
-      'espera_direccion_cobertura', 'info_menu',
-      // Admin en modo cliente de prueba
-      'confirm', 'store_menu', 'store_close_message',
-      'products_menu', 'product_search', 'product_price_wait',
-      'product_toggle_wait', 'points_menu', 'points_adjust_wait',
-      'points_history_wait', 'admins_menu', 'admin_add_wait',
-      'admin_remove_wait', 'handoff_menu', 'take_wait', 'chat',
-      'security_menu', 'mute_wait', 'emergency_menu',
-      // Wait states del bar operator (código legacy pero por seguridad)
-      'bar_preparar_pide_id', 'bar_estado_tienda',
-      'bar_agotado_pide_id', 'bar_precio_pide_id',
-    ];
-    if (submenuStates.includes(stateSinPrefijo)) return true;
-    // Fallback genérico: cualquier estado que acabe en `_wait` o `_espera_*`.
-    if (/(_wait|_espera_|_pide_)/.test(String(ses?.estado || ''))) return true;
-    return false;
-  })();
-
-  if (!isOwner && !skipIA) {
-    try {
-      const decision = await _aiAutoRoute(jid, text);
-      if (decision) {
-        if (decision.route === 'ai') {
-          const smart = await aiSmartReply(jid, ses, text).catch((err) => {
-            log('warn', 'ai_autorouter_fail', err?.message || String(err));
-            return null;
-          });
-          if (smart && smart.reply && smart.reply.length > 1) {
-            if (typeof bumpStat === 'function') bumpStat('ai_fresh');
-            return sendText(jid, smart.reply);
-          }
-          // IA falló silenciosamente: fallback graceful.
-          return sendText(jid, 'No pude entender tu consulta ahora mismo. Escribe *MENU* para ver las opciones.');
-        }
-        if (decision.route === 'handoff') {
-          const msg = decision.message
-            || 'Estamos recibiendo muchas consultas. Te contactamos en breve.';
-          await sendText(jid, msg);
-          return requestHumanSupport(jid, `Auto-router IA (rate limit): "${text.slice(0, 80)}"`);
-        }
-        if (decision.route === 'menu' && decision.message) {
-          // El back sugiere que enseñemos el menú; el flujo normal ya lo hace.
-          // Solo mostramos mensaje si viene explícito (p.ej. IA deshabilitada).
-        }
-      }
-    } catch (_err) {
-      // Failure abierto: seguimos con el flujo estándar sin ruido.
-    }
-  }
+  // El flujo de cliente es deliberadamente determinista. Las respuestas
+  // libres pasan por FAQ, detector de intención, catálogo y fallback guiado;
+  // nunca por un modelo que pueda cambiar de ruta o inventar una operación.
 
   if (!ses || !ses.estado || ses.estado === 'idle') {
     if (isOwner) {
-      // Owner/admin sin sesión → si escribe una pregunta natural (≥3 palabras
-      // o interrogación), inicializamos sesión admin y le pasamos el mensaje
-      // al handler admin, que caerá en el default con IA. Si escribe algo
-      // corto o un número, se le muestra el menú admin clásico.
+      // Owner/admin sin sesión → una frase natural abre el panel sin intentar
+      // interpretar ni ejecutar una operación administrativa ambigua.
       const looksNatural = typeof _looksLikeNaturalQuestion === 'function'
         ? _looksLikeNaturalQuestion(lower)
         : false;
@@ -4209,8 +4258,7 @@ async function _handleMessage(jid, text, pushName) {
       saveSesion(ses);
       return handleMainMenu(jid, ses, lower);
     }
-    // Pasamos el primer mensaje para que si es una pregunta natural, se responda
-    // con FAQ/IA en el mismo turno en vez de solo un saludo aislado.
+    // Pasamos el primer mensaje para responder FAQ/intención en el mismo turno.
     return startClientMenu(jid, ses?.nombre || pushName || null, text);
   }
 
@@ -4246,6 +4294,14 @@ async function _handleMessage(jid, text, pushName) {
       const identifier = text.match(/^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i)?.[1] || '';
       return iniciarCancelacionPedido(jid, ses, identifier);
     }
+    if (
+      context?.location
+      && ['client_main_menu', 'client_espera_direccion_cobertura'].includes(ses.estado)
+      && String(cfg('delivery_enabled', '1')) === '1'
+    ) {
+      setClientState(ses, 'espera_direccion_cobertura');
+      return handleCoberturaDelivery(jid, ses, text, context);
+    }
     switch (ses.estado) {
       case 'client_main_menu': return handleMainMenu(jid, ses, lower);
       case 'client_info_menu': return handleClientInfoMenu(jid, ses, text);
@@ -4254,7 +4310,7 @@ async function _handleMessage(jid, text, pushName) {
       case 'client_espera_reporte_pedido': return handleReportePedido(jid, ses, text);
       case 'client_seleccionar_cancelacion': return handleSeleccionCancelacion(jid, ses, text);
       case 'client_confirmar_cancelacion': return confirmarCancelacionPedido(jid, ses, lower);
-      case 'client_espera_direccion_cobertura': return handleCoberturaDelivery(jid, ses, text);
+      case 'client_espera_direccion_cobertura': return handleCoberturaDelivery(jid, ses, text, context);
       default:
         return startClientMenu(jid, ses.nombre);
     }
@@ -4310,6 +4366,7 @@ async function _handleMessage(jid, text, pushName) {
     }
     if (lower === 'admin') return startAdminMenu(jid, ses.nombre);
     if (lower.startsWith('!') && ses.estado !== 'admin_confirm') {
+      if (isWebOnlyAdminCommand(text)) return handleAdminCmd(jid, text);
       const pinOk = await requireAdminPin(jid, ses, text);
       if (!pinOk) return true;
       return handleAdminCmd(jid, text);
@@ -4332,7 +4389,7 @@ async function _handleMessage(jid, text, pushName) {
       admin_points_adjust_wait: 'points', admin_points_history_wait: 'points',
       admin_admins_menu: 'admins', admin_admin_add_wait: 'admins',
       admin_admin_remove_wait: 'admins', admin_handoff_menu: 'handoff',
-      admin_take_wait: 'handoff', admin_chat: 'handoff',
+      admin_take_wait: 'handoff', admin_transfer_wait: 'handoff', admin_chat: 'handoff',
       admin_security_menu: 'security', admin_mute_wait: 'security',
       admin_emergency_menu: 'emergency',
     }[ses.estado];
@@ -4361,6 +4418,7 @@ async function _handleMessage(jid, text, pushName) {
       case 'admin_emergency_menu': return handleAdminEmergencyMenu(jid, ses, lower);
       case 'admin_confirm': return handleAdminConfirm(jid, ses, lower);
       case 'admin_take_wait': return handleAdminTakeWait(jid, ses, lower);
+      case 'admin_transfer_wait': return handleAdminTransferWait(jid, ses, lower);
       case 'admin_chat': return handleAdminChat(jid, ses, text);
       default:
         return startAdminMenu(jid, ses.nombre);
@@ -4383,6 +4441,14 @@ async function _handleMessage(jid, text, pushName) {
   if (/^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i.test(lower)) {
     const identifier = text.match(/^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i)?.[1] || '';
     return iniciarCancelacionPedido(jid, ses, identifier);
+  }
+  if (
+    context?.location
+    && ['idle', 'main_menu', 'espera_direccion_cobertura'].includes(ses.estado)
+    && String(cfg('delivery_enabled', '1')) === '1'
+  ) {
+    setClientState(ses, 'espera_direccion_cobertura');
+    return handleCoberturaDelivery(jid, ses, text, context);
   }
 
   // Reportar una novedad sobre un pedido. Formato libre:
@@ -4407,7 +4473,7 @@ async function _handleMessage(jid, text, pushName) {
     case 'espera_reporte_pedido': return handleReportePedido(jid, ses, text);
     case 'seleccionar_cancelacion': return handleSeleccionCancelacion(jid, ses, text);
     case 'confirmar_cancelacion': return confirmarCancelacionPedido(jid, ses, lower);
-    case 'espera_direccion_cobertura': return handleCoberturaDelivery(jid, ses, text);
+    case 'espera_direccion_cobertura': return handleCoberturaDelivery(jid, ses, text, context);
     default:
       return startClientMenu(jid, ses.nombre);
   }
@@ -4420,7 +4486,11 @@ async function forwardClientToAdmin(clientJid, adminJid, text) {
     return false;
   }
   touchHandoffActivity(clientJid);
-  const forwarded = `💬 Mensaje de ${phoneFromJid(clientJid)}:\n\n${text}`;
+  const row = _sesGet.get(clientJid);
+  const name = String(row?.nombre || '').trim() || 'Cliente';
+  const phone = phoneFromJid(clientJid);
+  const suffix = phone ? ` · •••• ${phone.slice(-4)}` : '';
+  const forwarded = `💬 *${name}${suffix}:*\n\n${text}`;
   const sent = await sendText(adminJid, forwarded);
   if (sent && queued?.lastInsertRowid) {
     markHandoffTranscriptDelivered(clientJid, [Number(queued.lastInsertRowid)]);
@@ -4463,7 +4533,15 @@ async function handleAdminChat(jid, ses, text) {
     markHandoffTranscriptDelivered(clientJid, [Number(queued.lastInsertRowid)]);
   }
   saveSesion(ses);
-  return sent;
+  if (!sent) {
+    await sendText(
+      jid,
+      `⚠️ El mensaje quedó guardado, pero WhatsApp no confirmó la entrega. ` +
+      `El sistema lo reintentará automáticamente; no necesitas enviarlo otra vez.`,
+    );
+    return false;
+  }
+  return true;
 }
 
 // Comandos que cambian el estado global del bot/tienda o mueven info crítica.
@@ -4512,6 +4590,18 @@ async function handleAdminCmd(jid, text) {
   }
   const cmd = text.slice(1).trim();
   const lowerCmd = cmd.toLowerCase();
+  // WhatsApp queda reservado para operaciones urgentes y consultas del
+  // turno. Catálogo, precios, puntos, roles y configuración se gestionan en
+  // el panel web, donde hay validaciones, contexto y trazabilidad visual.
+  if (isWebOnlyAdminCommand(lowerCmd)) {
+    return sendText(
+      jid,
+      `🔒 *Esta gestión se realiza en el panel web.*\n\n` +
+      `Así evitamos cambios incompletos o enviados al chat equivocado.\n` +
+      `👉 ${getTiendaUrl()}/admin\n\n` +
+      `_En WhatsApp conserva: estado del turno, abrir/cerrar con confirmación, pedidos en riesgo y atención humana._`,
+    );
+  }
   // Modo pánico global: si super_admin activó `emergency_on`, cualquier
   // comando (incluidos !status y !sync que antes se colaban) responde
   // solo con aviso. Excepción explícita: !emergency_off para poder
@@ -4567,10 +4657,9 @@ async function handleAdminCmd(jid, text) {
     const atendidos24 = Number(stats24?.atendidos || 0);
     const avgWait = total24 ? _formatDuration(stats24.avg_wait || 0) : '—';
     const avgHandle = atendidos24 ? _formatDuration(stats24.avg_handle || 0) : '—';
-    // Reporte de ahorro IA (si hay tráfico).
+    // Resumen del enrutado conversacional determinista.
     const totalMsg = Object.entries(MSG_STATS).filter(([k]) => k !== 'since').reduce((s, [, v]) => s + v, 0);
-    const sinIA = MSG_STATS.saludo + MSG_STATS.faq + MSG_STATS.intent + MSG_STATS.ai_cache_hit;
-    const pctSinIA = totalMsg > 0 ? Math.round((sinIA / totalMsg) * 100) : 0;
+    const resueltos = MSG_STATS.saludo + MSG_STATS.faq + MSG_STATS.intent;
     return sendText(jid,
       `🤖 *Bot Status*\n\n` +
       `Sesiones: ${sesiones} (${clientes} clientes / ${admins} admins)\n` +
@@ -4583,10 +4672,10 @@ async function handleAdminCmd(jid, text) {
       `📈 *Handoff 24h*\n` +
       `Cerrados: ${total24} (${atendidos24} atendidos)\n` +
       `Espera media: ${avgWait}   ·   Duración media: ${avgHandle}\n\n` +
-      `📊 *Ahorro IA*\n` +
+      `🧭 *Enrutado conversacional*\n` +
       `Mensajes procesados: ${totalMsg}\n` +
-      `Sin IA (FAQ+intent+cache): ${sinIA} (${pctSinIA}%)\n` +
-      `IA fresca: ${MSG_STATS.ai_fresh} · Cache hit: ${MSG_STATS.ai_cache_hit}\n\n` +
+      `Resueltos por saludo, FAQ o intención: ${resueltos}\n` +
+      `Fallback guiado: ${MSG_STATS.fallback}\n\n` +
       `Evolution: ${getEvolutionUrl()}\n` +
       `Instancia: ${getEvolutionInstance()}\n` +
       `Oxidian: ${getOxidianUrl()}`
@@ -5309,7 +5398,7 @@ async function handleAdminCmd(jid, text) {
   // Uso: !list (o !cola-atencion)  → lista pendientes con espera + preview
   //                                   + chats ya asignados a otros operadores.
   if (lowerCmd === 'list' || lowerCmd === 'cola-atencion') {
-    return sendText(jid, renderHandoffQueueSnapshot());
+    return sendText(jid, await renderHandoffQueueSnapshot());
   }
 
   // ── Preview de un cliente en cola sin tomarlo ──
@@ -5397,9 +5486,12 @@ async function handleAdminCmd(jid, text) {
     ses.estado = 'admin_menu';
     saveSesion(ses);
     setAdminAvailability(jid, true);
-    const waiting = listPendingHandoffs()[0];
-    if (waiting) return takeHandoff(jid, ses, waiting.client_jid, { automatic: true });
-    return sendText(jid, '✅ Estás disponible. Te asignaré el próximo cliente automáticamente.');
+    const waitingCount = listPendingHandoffs().length;
+    return sendText(
+      jid,
+      `✅ Estás online para recibir alertas. Ningún chat se asignará sin que lo elijas.` +
+      (waitingCount ? `\n\nHay *${waitingCount}* cliente${waitingCount === 1 ? '' : 's'} esperando. Responde *TOMAR* o *COLA*.` : ''),
+    );
   }
 
   if (lowerCmd === 'ausente') {
@@ -5407,11 +5499,26 @@ async function handleAdminCmd(jid, text) {
     if (ses.active_client_jid || adminHasActiveChat(jid)) {
       return sendText(jid, 'Cierra tu chat activo antes de marcarte como ausente.');
     }
+    // ``ausente`` y ``/offline`` deben representar el mismo estado real.
+    // El antiguo ``admin_away`` no tenía handler: al siguiente mensaje se
+    // reparaba visualmente a admin_menu aunque la disponibilidad siguiera
+    // apagada, dejando panel y enrutamiento en desacuerdo.
+    // Conservamos la identidad administrativa; el prefijo ``client_`` es el
+    // contexto operativo que impide ejecutar acciones de trabajo offline.
     ses.role = 'admin';
-    ses.estado = 'admin_away';
+    ses.estado = clientStateFor(jid, 'main_menu');
+    ses.pending = {};
+    ses.carrito = [];
+    ses.zona_id = null;
+    ses.active_client_jid = null;
     saveSesion(ses);
     setAdminAvailability(jid, false);
-    return sendText(jid, '⏸️ Quedaste como ausente. Usa *!disponible* para volver.');
+    return sendText(
+      jid,
+      `⏸️ *Modo cliente activado.*\n\n` +
+      `Quedaste offline para atención y puedes comprar o consultar pedidos. ` +
+      `Escribe */online* para volver al panel.\n\n${menuPrincipal(ses)}`,
+    );
   }
 
   return sendText(jid, `Ese comando no está disponible para tu rol.\n\n${adminMenu(jid)}`);
@@ -5569,7 +5676,7 @@ async function takeHandoff(adminJid, ses, clientJid, options = {}) {
   return true;
 }
 
-async function handleMessage(jid, text, pushName) {
+async function handleMessage(jid, text, pushName, context = {}) {
   const admin = isAdminJid(jid);
   if (!inboundAllowed(jid, admin)) return false;
   const adminSession = admin ? getSesion(jid) : null;
@@ -5583,7 +5690,7 @@ async function handleMessage(jid, text, pushName) {
   const previous = messageQueues.get(queueKey) || Promise.resolve();
   const current = previous
     .catch(() => {})
-    .then(() => _handleMessage(jid, text, pushName));
+    .then(() => _handleMessage(jid, text, pushName, context));
   messageQueues.set(queueKey, current);
   try {
     return await current;
@@ -5875,7 +5982,7 @@ const CLIENT_FAQS = [
       if (!on) return `El programa de puntos está desactivado en esta tienda.`;
       return (
         `⭐ *Programa de puntos*\n\n` +
-        `· Ganas *1 punto por cada €* gastado en pedidos entregados.\n` +
+        `· ${pointsEarnRateText()}\n` +
         `· Puedes canjearlos por productos exclusivos disponibles en la tienda.\n\n` +
         `Escribe *3* o *"mis puntos"* para consultar tu saldo.`
       );
@@ -6228,7 +6335,7 @@ const MANUAL_SECTIONS = [
     enabled: (ctx) => ctx.loyalty_enabled,
     body: (ctx) => (
       `⭐ *Cómo funcionan los puntos*\n\n` +
-      `• Ganas *1 punto por cada €* gastado en pedidos entregados.\n` +
+      `• ${pointsEarnRateText()}\n` +
       `• Los puntos van asociados a este número de WhatsApp, sin registro.\n` +
       `• Los canjeas al confirmar tu pedido en la tienda online.\n\n` +
       `👉 Consultar tu saldo: escribe *puntos*.\n` +
@@ -6593,26 +6700,57 @@ function _catalogSearchQuery(texto) {
 async function _tryCatalogSearchReply(textoLibre, tiendaUrl) {
   const qBusqueda = _catalogSearchQuery(textoLibre);
   if (!qBusqueda || qBusqueda.length < 3) return null;
+  const normalizedQuery = _stripAccents(qBusqueda.toLowerCase());
+  const tokens = normalizedQuery
+    .split(/[^a-z0-9]+/)
+    .filter(token => token.length >= 3);
+  if (!tokens.length) return null;
+
+  // Solo hablamos de catálogo cuando existe una coincidencia real en la
+  // caché sincronizada. Antes cualquier frase desconocida terminaba con un
+  // enlace al menú, aunque el cliente estuviera preguntando otra cosa.
+  const productos = db.prepare(`
+    SELECT nombre, categoria
+    FROM productos_cache
+    WHERE activo = 1
+    ORDER BY nombre COLLATE NOCASE
+    LIMIT 500
+  `).all();
+  const matches = productos.filter(producto => {
+    const searchable = _stripAccents(
+      `${producto.nombre || ''} ${producto.categoria || ''}`.toLowerCase(),
+    );
+    return normalizedQuery.includes(_stripAccents(String(producto.nombre || '').toLowerCase()))
+      || tokens.some(token => searchable.includes(token));
+  });
+  if (!matches.length) return null;
+
   const catalogoLabel = String(cfg('vertical_label', 'Menú')).toLowerCase();
+  const encontrados = matches
+    .slice(0, 3)
+    .map(producto => `• ${producto.nombre}`)
+    .join('\n');
   return (
-    `Para ver disponibilidad, precios, fotos, opciones y combos abre el ${catalogoLabel} online:\n` +
+    `🔎 *Encontré ${matches.length === 1 ? 'esta opción' : 'estas opciones'}:*\n` +
+    `${encontrados}\n\n` +
+    `Comprueba disponibilidad, tamaños, sabores y combos en el ${catalogoLabel} online:\n` +
     `👉 ${tiendaUrl}\n\n` +
-    `Por aquí puedo ayudarte con horario, estado de pedido, cobertura, puntos o atención humana.`
+    `_El catálogo web es la fuente actual de precio y stock._`
   );
 }
 
 // ─── MENÚ CLIENTE ────────────────────────────────────────────────────────────
 async function handleMainMenu(jid, ses, opcion) {
   // Si el cliente escribió una palabra natural en vez de "1", "2"…, intentamos
-  // resolver en este orden (sin gastar API hasta agotar las opciones locales):
+  // resolver en este orden:
   //   1. Saludos / despedidas (canned, instantáneo)
   //   2. FAQs comunes (horario, dirección, pago, tiempo) — canned
   //   3. Detección de intención por keywords + fuzzy match
-  //   4. AI fallback en rama `default` si nada matchea
+  //   4. Coincidencia real de catálogo
+  //   5. Menú guiado o atención humana si hay frustración/repetición
   let textoLibre = String(opcion || '').trim();
 
-  // 0) Frustración explícita → agente humano AL INSTANTE, sin gastar AI ni
-  //    presentar el menú (que sería percibido como "sigue sin entenderme").
+  // 0) Frustración explícita → agente humano sin repetir el menú.
   if (esFrustracion(textoLibre)) {
     bumpStat('handoff_frustracion_early');
     log('info', 'handoff_frustracion_early', textoLibre.slice(0, 40));
@@ -6734,7 +6872,7 @@ async function handleMainMenu(jid, ses, opcion) {
       setClientState(ses, 'espera_direccion_cobertura');
       return sendText(jid, texts.withEscapeHint(
         `🗺️ *¿Llegamos a tu zona?*\n\n` +
-        `Escribe tu dirección completa y la verificamos ahora mismo.\n\n` +
+        `Escribe tu dirección completa o comparte tu ubicación desde *Adjuntar → Ubicación*.\n\n` +
         `📍 Ejemplo: ${getEjemploDireccion()}\n\n` +
         `_Nota: solo la uso para verificar cobertura, no la guardo._`
       ));
@@ -6810,7 +6948,7 @@ async function handleMainMenu(jid, ses, opcion) {
  * responde `sin_pendiente` cuando no hay nada que confirmar — en ese caso
  * dejamos que el cliente siga por el flujo normal (menú, cancelar, etc).
  */
-async function tryHandleConfirmationReply(jid, respuesta) {
+async function tryHandleConfirmationReply(jid, respuesta, ses = null) {
   try {
     const resp = await oxidianPost('/confirmacion/responder', {
       telefono: phoneFromJid(jid),
@@ -6820,8 +6958,14 @@ async function tryHandleConfirmationReply(jid, respuesta) {
     if (resp.accion === 'sin_pendiente' || resp.accion === 'respuesta_invalida') {
       return false;
     }
-    // "confirmado" o "cancelado" → tenemos mensaje listo del backend
-    if (resp.mensaje) await sendText(jid, resp.mensaje);
+    // La confirmación cierra el subflujo. No conservamos botones ni datos del
+    // pedido anterior: así un número posterior no ejecuta una acción obsoleta.
+    const current = ses || getSesion(jid);
+    setClientState(current, 'main_menu');
+    const nextStep = resp.accion === 'confirmado'
+      ? `\n\nEscribe *2* para consultar su estado o *MENU* para ver todas las opciones.`
+      : `\n\nEscribe *1* para volver a la tienda o *MENU* para ver las opciones.`;
+    if (resp.mensaje) await sendText(jid, `${resp.mensaje}${nextStep}`);
     return true;
   } catch (err) {
     log('warn', 'confirmacion_reply_fail', err?.message || String(err));
@@ -6948,6 +7092,13 @@ async function handleSeleccionCancelacion(jid, ses, answer) {
   }
   const index = Number.parseInt(String(answer || '').trim(), 10) - 1;
   if (!Number.isInteger(index) || index < 0 || index >= opciones.length) {
+    if (bumpAttempt(ses, 'seleccionar_cancelacion', 3)) {
+      clearAttempts(ses, 'seleccionar_cancelacion');
+      setClientState(ses, 'main_menu');
+      return sendText(jid,
+        `No pude reconocer la selección y no cambié ningún pedido.\n\n${menuPrincipal(ses)}`
+      );
+    }
     return sendText(jid,
       `No cambié ningún pedido. Responde con una opción entre *1* y *${opciones.length}*, o escribe *0* para volver.`
     );
@@ -6966,6 +7117,13 @@ async function confirmarCancelacionPedido(jid, ses, answer) {
     return sendText(jid, `De acuerdo, el pedido se conserva.\n\n${menuPrincipal()}`);
   }
   if (!['1', 'si', 'sí', 's', 'confirmar'].includes(lower)) {
+    if (bumpAttempt(ses, 'confirmar_cancelacion', 3)) {
+      clearAttempts(ses, 'confirmar_cancelacion');
+      setClientState(ses, 'main_menu');
+      return sendText(jid,
+        `No recibí una confirmación clara, así que conservé el pedido.\n\n${menuPrincipal(ses)}`
+      );
+    }
     return sendText(jid,
       `No cambié el pedido. Elige una opción:\n\n` +
       `*1* o *SI* — cancelar\n` +
@@ -7319,6 +7477,14 @@ async function handlePedidoActions(jid, ses, input) {
   if (value === agentOption || /agente|persona|humano|asesor/.test(value)) {
     return requestHumanSupport(jid, `Ayuda con pedido ${pending.numero}`);
   }
+  if (bumpAttempt(ses, 'pedido_acciones', 3)) {
+    clearAttempts(ses, 'pedido_acciones');
+    setClientState(ses, 'main_menu');
+    return sendText(jid,
+      `No pude reconocer la opción y prefiero no dejarte en un bucle.\n\n` +
+      `${menuPrincipal(ses)}`
+    );
+  }
   return sendText(jid,
     `No reconocí esa opción. Responde con uno de estos números:\n\n` +
     texts.orderFollowupActions({ cancelable: Boolean(pending.cancelable) })
@@ -7378,18 +7544,34 @@ async function handleReportePedido(jid, ses, input) {
   }
 }
 
-async function handleCoberturaDelivery(jid, ses, direccion) {
-  setClientState(ses, 'main_menu');
+async function handleCoberturaDelivery(jid, ses, direccion, context = {}) {
+  const location = context?.location || null;
   const clean = String(direccion || '').trim().slice(0, 240);
-  if (clean.length < 6) {
+  if (!location && clean.length < 6) {
+    if (bumpAttempt(ses, 'cobertura', 3)) {
+      clearAttempts(ses, 'cobertura');
+      setClientState(ses, 'main_menu');
+      return sendText(jid,
+        `No pude reconocer una dirección válida. Volvemos al inicio para que no quedes atascado.\n\n` +
+        `${menuPrincipal(ses)}`
+      );
+    }
     return sendText(jid,
       `Necesito una dirección un poco más completa para verificarla. 📍\n\n` +
-      `Ejemplo: ${getEjemploDireccion()}\n\n` +
-      `${menuPrincipal()}`
+      `Puedes escribirla (ejemplo: ${getEjemploDireccion()}) o usar *Adjuntar → Ubicación*.\n\n` +
+      `_Responde aquí o escribe *0* para volver._`
     );
   }
   try {
-    const data = await oxidianGet(`/cobertura?direccion=${encodeURIComponent(clean)}`);
+    const query = location
+      ? new URLSearchParams({
+          lat: String(location.latitude),
+          lon: String(location.longitude),
+          ...(location.accuracy !== null && location.accuracy !== undefined
+            ? { accuracy: String(location.accuracy) } : {}),
+        })
+      : new URLSearchParams({ direccion: clean });
+    const data = await oxidianGet(`/cobertura?${query.toString()}`);
     const coverage = data.cobertura || data;
     const distancia = coverage.distancia_km !== null && coverage.distancia_km !== undefined
       ? `\n📏 Distancia aprox.: ${Number(coverage.distancia_km).toFixed(2)} km`
@@ -7400,6 +7582,8 @@ async function handleCoberturaDelivery(jid, ses, direccion) {
       ? `\n🗺️ Radio de cobertura: ${data.radio_km} km`
       : '';
     if (coverage.ok) {
+      clearAttempts(ses, 'cobertura');
+      setClientState(ses, 'main_menu');
       return sendText(jid,
         `✅ *¡Llegamos a tu zona!*\n\n` +
         `${coverage.mensaje || '¡Tu dirección está dentro de nuestra área de delivery!'}${zona}${distancia}${radio}\n\n` +
@@ -7407,6 +7591,8 @@ async function handleCoberturaDelivery(jid, ses, direccion) {
         `_Escribe *menu* para volver._`
       );
     }
+    clearAttempts(ses, 'cobertura');
+    setClientState(ses, 'main_menu');
     return sendText(jid,
       `😔 *Lo sentimos, aún no llegamos ahí*\n\n` +
       `${coverage.mensaje || coverage.error || 'La dirección parece estar fuera de nuestra zona de cobertura actual.'}${distancia}${radio}\n\n` +
@@ -7414,10 +7600,19 @@ async function handleCoberturaDelivery(jid, ses, direccion) {
       `_Escribe *menu* para volver._`
     );
   } catch (e) {
+    if (bumpAttempt(ses, 'cobertura_error', 2)) {
+      clearAttempts(ses, 'cobertura_error');
+      setClientState(ses, 'main_menu');
+      return sendText(jid,
+        `La consulta de cobertura sigue temporalmente sin responder. No crearé un pedido sin verificarla.\n\n` +
+        `Puedes intentarlo desde la tienda o pedir ayuda con *7*:\n👉 ${getTiendaUrl()}\n\n` +
+        `${menuPrincipal(ses)}`
+      );
+    }
     return sendText(jid,
       `No pude validar la dirección ahora mismo. ⚠️\n\n` +
-      `La tienda verificará la cobertura antes de confirmar el pedido:\n👉 ${getTiendaUrl()}\n\n` +
-      `_Escribe *menu* para volver._`
+      `No crearé el pedido sin verificarla. Intenta de nuevo con otra dirección o ubicación.\n\n` +
+      `_Escribe *0* para volver o *7* para hablar con el equipo._`
     );
   }
 }
@@ -7552,10 +7747,17 @@ async function handleAdminMenu(jid, ses, opcion) {
     return sendText(jid, menuPrincipal());
   }
   const lower = String(opcion || '').trim();
+  const naturalHandoff = /^(?:tomar|tomar chat|atender)$/.test(lower)
+    ? 'take'
+    : /^(?:cola|ver cola|clientes esperando)$/.test(lower)
+      ? 'queue'
+      : null;
+  if (naturalHandoff && !adminCan(jid, 'handoff')) {
+    return sendText(jid, `No tienes permiso para atender chats.\n\n${adminMenu(jid)}`);
+  }
   const requiredCapability = {
-    '1': 'status', '2': 'store', '3': 'products', '4': 'points',
-    '5': 'admins', '6': 'handoff', '7': 'sync', '8': 'security',
-    '9': 'emergency', '10': 'risks', '🔟': 'risks', '11': 'client_mode',
+    '1': 'status', '2': 'store', '3': 'risks', '4': 'handoff',
+    '5': 'client_mode',
   }[lower];
   if (requiredCapability && !adminCan(jid, requiredCapability)) {
     return sendText(jid, `No tienes permiso para esa función.\n\n${adminMenu(jid)}`);
@@ -7570,6 +7772,15 @@ async function handleAdminMenu(jid, ses, opcion) {
     const ok = await requireAdminPin(jid, ses, lower);
     if (!ok) return;
   }
+  if (naturalHandoff === 'take') {
+    const waiting = listPendingHandoffs()[0];
+    if (!waiting) return sendText(jid, `✅ No hay clientes esperando.\n\n${adminMenu(jid)}`);
+    return takeHandoff(jid, ses, waiting.client_jid);
+  }
+  if (naturalHandoff === 'queue') {
+    setAdminState(ses, 'admin_handoff_menu');
+    return showHandoffChoices(jid, ses);
+  }
   switch (lower) {
     case '1':
       return handleAdminCmd(jid, '!status');
@@ -7577,49 +7788,15 @@ async function handleAdminMenu(jid, ses, opcion) {
       setAdminState(ses, 'admin_store_menu');
       return sendText(jid, adminStoreMenu());
     case '3':
-      setAdminState(ses, 'admin_products_menu');
-      return sendText(jid, adminProductsMenu());
+      return handleAdminRiskOrders(jid, ses);
     case '4':
-      setAdminState(ses, 'admin_points_menu');
-      return sendText(jid, adminPointsMenu());
-    case '5':
-      setAdminState(ses, 'admin_admins_menu');
-      return sendText(jid, adminAdminsMenu(jid));
-    case '6':
       setAdminState(ses, 'admin_handoff_menu');
       return sendText(jid, adminHandoffMenu());
-    case '7':
-      return handleAdminCmd(jid, '!sync');
-    case '8':
-      setAdminState(ses, 'admin_security_menu');
-      return sendText(jid, adminSecurityMenu());
-    case '9':
-      setAdminState(ses, 'admin_emergency_menu');
-      return sendText(jid, adminEmergencyMenu());
-    case '10':
-    case '🔟':
-      return handleAdminRiskOrders(jid, ses);
-    case '11': {
-      deleteHandoff(jid);
-      clearAdminChatForClient(jid);
-      const clientSes = { jid, nombre: ses.nombre, role: 'client', estado: clientStateFor(jid, 'main_menu'), carrito: [], pending: {}, zona_id: null, active_client_jid: null };
-      saveSesion(clientSes);
-      return sendText(jid, `🧪 *Modo cliente de prueba activado.*\nEscribe *admin* para volver al panel.\n\n${menuPrincipal()}`);
-    }
+    case '5':
+      return _handleMessage(jid, '/offline', ses.nombre);
     default:
-      // Si es un comando corto (word/short) → probablemente típo, mostrar menú.
-      // Si es una pregunta natural (>= 3 palabras o interrogación) → IA fallback.
-      if (_looksLikeNaturalQuestion(lower)) {
-        if (typeof bumpStat === 'function') bumpStat('ai_fresh');
-        try {
-          const smart = await aiSmartReplyAdmin(jid, ses, lower);
-          if (smart && smart.reply && smart.reply.length > 1) {
-            return sendText(jid, `${smart.reply}\n\n_Escribe *menu* para ver opciones admin._`);
-          }
-        } catch (err) {
-          log('warn', 'ai_admin_fail', err?.message || String(err));
-        }
-      }
+      // El panel operativo también es determinista: una frase ambigua no
+      // ejecuta ni propone cambios administrativos.
       return sendText(jid, adminMenu(jid));
   }
 }
@@ -7931,27 +8108,120 @@ async function handleAdminHandoffMenu(jid, ses, opcion) {
       return startAdminMenu(jid, ses.nombre);
     case '1': {
       const pending = listPendingHandoffs();
-      if (!pending.length) return sendText(jid, `✅ No hay chats pendientes.\n\n${adminHandoffMenu()}`);
-      const lista = pending.map((p, i) => `${i + 1}. ${phoneFromJid(p.client_jid)} — solicitado`).join('\n');
-      setAdminState(ses, 'admin_take_wait', {
-        handoff_client_jids: pending.map(row => row.client_jid),
-      });
-      return sendText(jid, `📨 Chats pendientes:\n\n${lista}\n\nResponde con el número para tomar el chat.`);
+      if (!pending.length) return sendText(jid, `✅ No hay clientes esperando.\n\n${adminHandoffMenu()}`);
+      return takeHandoff(jid, ses, pending[0].client_jid);
     }
     case '2':
-      return handleAdminCmd(jid, '!release');
-    case '3':
-      for (const row of db.prepare(`SELECT client_jid FROM handoffs WHERE admin_jid=?`).all(jid)) {
-        await closeHumanChat(jid, row.client_jid);
-      }
-      ses.estado = 'admin_handoff_menu';
-      ses.active_client_jid = null;
+      return showHandoffChoices(jid, ses);
+    case '3': {
+      const active = db.prepare(`
+        SELECT client_jid FROM handoffs WHERE admin_jid = ? LIMIT 1
+      `).get(jid);
+      if (!active) return sendText(jid, `No tienes un chat activo.\n\n${adminHandoffMenu()}`);
+      ses.estado = 'admin_chat';
+      ses.active_client_jid = active.client_jid;
       ses.pending = {};
       saveSesion(ses);
-      return sendText(jid, `✅ Chats asignados a ti cerrados.\n\n${adminHandoffMenu()}`);
+      return sendText(jid, adminChatMenu(active.client_jid));
+    }
     default:
       return sendText(jid, adminHandoffMenu());
   }
+}
+
+async function showHandoffChoices(jid, ses) {
+  const pending = listPendingHandoffs();
+  if (!pending.length) {
+    setAdminState(ses, 'admin_handoff_menu');
+    return sendText(jid, `✅ No hay clientes esperando.\n\n${adminHandoffMenu()}`);
+  }
+  const rows = await Promise.all(pending.slice(0, 12).map(async (row, index) => {
+    const identity = await resolveClientIdentity(row.client_jid);
+    const waited = Math.max(0, Math.floor(Date.now() / 1000) - Number(row.requested_at || 0));
+    const preview = _handoffLastMessagePreview(row.client_jid, 55);
+    return `${index + 1}. *${identity.label}* · ${_formatDuration(waited)}` +
+      (preview ? `\n   💬 “${preview}”` : '');
+  }));
+  const snapshot = pending.slice(0, 12).map(row => row.client_jid);
+  setAdminState(ses, 'admin_take_wait', { handoff_client_jids: snapshot });
+  return sendText(
+    jid,
+    `📨 *Clientes en espera*\n\n${rows.join('\n\n')}\n\n` +
+    `Responde con el número de la persona que quieres atender.\n` +
+    `_0 · volver sin tomar ningún chat_`,
+  );
+}
+
+function transferableAdminProfiles(fromAdminJid) {
+  return adminPhones()
+    .map(phone => ({ jid: `${phone}@s.whatsapp.net`, profile: whatsappRoleProfile(phone) }))
+    .filter(row =>
+      row.jid !== fromAdminJid
+      && adminCan(row.jid, 'handoff')
+      && !adminHasActiveChat(row.jid)
+    );
+}
+
+async function startAdminTransfer(jid, ses) {
+  const active = ses.active_client_jid && getHandoff(ses.active_client_jid);
+  if (!active || active.admin_jid !== jid) {
+    return sendText(jid, `No tienes un chat activo para transferir.\n\n${adminMenu(jid)}`);
+  }
+  const candidates = transferableAdminProfiles(jid);
+  if (!candidates.length) {
+    return sendText(jid, `No hay otro agente disponible para recibir este chat.\n\n${adminChatMenu(ses.active_client_jid)}`);
+  }
+  setAdminState(ses, 'admin_transfer_wait', {
+    transfer_admin_jids: candidates.map(row => row.jid),
+    transfer_client_jid: ses.active_client_jid,
+  });
+  const rows = candidates.map((row, index) => {
+    const name = row.profile?.nombre || adminRoleLabel(row.jid);
+    return `${index + 1}. *${name}*${isAdminAvailable(row.jid) ? ' · 🟢 online' : ' · ⚪ sin disponibilidad marcada'}`;
+  });
+  return sendText(
+    jid,
+    `🔁 *Transferir conversación*\n\n${rows.join('\n')}\n\n` +
+    `Responde con el número del agente.\n_0 · cancelar y seguir atendiendo_`,
+  );
+}
+
+async function handleAdminTransferWait(jid, ses, opcion) {
+  const clientJid = ses.pending?.transfer_client_jid;
+  if (String(opcion || '').trim() === '0') {
+    ses.estado = 'admin_chat';
+    ses.active_client_jid = clientJid || null;
+    ses.pending = {};
+    saveSesion(ses);
+    return sendText(jid, clientJid ? adminChatMenu(clientJid) : adminMenu(jid));
+  }
+  const index = Number.parseInt(String(opcion || '').trim(), 10);
+  const snapshot = Array.isArray(ses.pending?.transfer_admin_jids)
+    ? ses.pending.transfer_admin_jids
+    : [];
+  if (!Number.isInteger(index) || index < 1 || index > snapshot.length) {
+    return sendText(jid, `Elige un número de la lista o escribe *0* para cancelar.`);
+  }
+  const targetJid = snapshot[index - 1];
+  if (!transferableAdminProfiles(jid).some(row => row.jid === targetJid)) {
+    ses.estado = 'admin_chat';
+    ses.active_client_jid = clientJid || null;
+    ses.pending = {};
+    saveSesion(ses);
+    return sendText(
+      jid,
+      `Ese agente ya no está disponible. La conversación sigue contigo.\n\n${adminChatMenu(clientJid)}`,
+    );
+  }
+  const result = await transferHandoffToAdmin(jid, targetJid);
+  if (!result.ok) {
+    ses.estado = 'admin_chat';
+    ses.active_client_jid = clientJid || null;
+    ses.pending = {};
+    saveSesion(ses);
+    return sendText(jid, `No se pudo transferir: ${result.reason}\n\n${adminChatMenu(clientJid)}`);
+  }
+  return true;
 }
 
 async function handleAdminSecurityMenu(jid, ses, opcion) {
@@ -8096,6 +8366,13 @@ async function handleAdminConfirm(jid, ses, text) {
     return sendText(jid, `❌ Acción cancelada.\n\n${adminMenu(jid)}`);
   }
   if (!isYes(text)) {
+    if (bumpAttempt(ses, 'admin_confirm', 3)) {
+      clearAttempts(ses, 'admin_confirm');
+      setAdminState(ses, 'admin_menu');
+      return sendText(jid,
+        `No recibí una confirmación inequívoca. Cancelé la acción por seguridad.\n\n${adminMenu(jid)}`
+      );
+    }
     return sendText(jid, `Responde *SI* para confirmar o *NO* para cancelar.`);
   }
 
@@ -8235,6 +8512,10 @@ async function handleAdminConfirm(jid, ses, text) {
 }
 
 async function handleAdminTakeWait(jid, ses, opcion) {
+  if (String(opcion || '').trim() === '0') {
+    setAdminState(ses, 'admin_handoff_menu');
+    return sendText(jid, adminHandoffMenu());
+  }
   const idx = parseInt(String(opcion || '').trim(), 10);
   if (isNaN(idx)) {
     ses.estado = 'admin_menu'; saveSesion(ses);
@@ -8277,7 +8558,10 @@ async function handleEvolutionEvent(payload, messageHandler = handleMessage) {
       }
 
       log('info', 'message_in', `${meta.jid} → ${text.slice(0, 50)}`);
-      await messageHandler(meta.jid, text, meta.senderName);
+      await messageHandler(meta.jid, text, meta.senderName, {
+        location: extractLocation(msg),
+        messageId: meta.messageId,
+      });
     }
   }
 
@@ -9142,7 +9426,11 @@ module.exports = {
     deliverQueuedTranscript,
     drainInboundMessages,
     detectClientIntent,
+    isOrderStatusIntent,
+    tryHandleConfirmationReply,
+    _tryCatalogSearchReply,
     extractText,
+    extractLocation,
     getHandoff,
     getSesion,
     handleEvolutionEvent,
@@ -9156,6 +9444,8 @@ module.exports = {
     menuPrincipal,
     adminMenu,
     adminCan,
+    isAdminJid,
+    isSuperAdminJid,
     setCfg,
     setAdminState,
     setAdminAvailability,
@@ -9177,6 +9467,8 @@ module.exports = {
     friendlyOxidianError,
     sendText,
     isEscapeWord,
+    isBackWord,
+    navigateBack,
     bumpAttempt,
     clearAttempts,
     isBotEnabled,

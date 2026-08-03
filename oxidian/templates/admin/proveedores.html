@@ -1,13 +1,17 @@
 {% extends "admin_base.html" %}
-{% block title %}Proveedores{% endblock %}
+{% from "admin/_partner_schedule_editor.html" import partner_schedule_editor %}
+{% block title %}Socios de productos{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/partner-schedule-editor.css', v=asset_version) }}">
+{% endblock %}
 {% block content %}
 
 {% set total_activos = proveedores|selectattr('activo')|list|length %}
 <header class="prov-page-head">
   <div>
     <span class="prov-eyebrow">Red de aliados</span>
-    <h1>Proveedores</h1>
-    <p>Identidad comercial, operación, catálogo y condiciones económicas en un solo lugar.</p>
+    <h1>Socios de productos</h1>
+    <p>Productos de terceros vendidos en tu página, con inventario y liquidaciones completamente separados.</p>
   </div>
   <div class="prov-head-stats" aria-label="Resumen de proveedores">
     <span><strong>{{ proveedores|length }}</strong> registrados</span>
@@ -18,8 +22,8 @@
 <details class="ox-card prov-create">
   <summary>
     <span>
-      <strong>Nuevo proveedor</strong>
-      <small>Registra el aliado y completa después su inventario y operadores.</small>
+      <strong>Nuevo socio de productos</strong>
+      <small>Define su comisión, vincula una cuenta y asigna sus productos.</small>
     </span>
     <span class="prov-summary-action">Abrir formulario</span>
   </summary>
@@ -50,34 +54,31 @@
         <input type="email" name="email" autocomplete="email">
       </label>
       <div class="prov-inline-note prov-span-2">
-        Los operadores del chatbot se crean aparte en Usuarios, con rol Proveedor y este aliado asignado.
+        Las cuentas se crean aparte en Usuarios, con rol Socio de productos y este aliado asignado.
       </div>
     </fieldset>
 
     <fieldset class="prov-form-section">
-      <legend>Horario del escaparate</legend>
-      <label class="prov-field prov-span-2">Descripción para el equipo
-        <input name="horario" placeholder="Ej. L-V 09:00-22:00; S-D 11:00-23:00">
-      </label>
-      <label class="prov-field">Apertura
-        <input type="time" name="hora_apertura">
-      </label>
-      <label class="prov-field">Cierre
-        <input type="time" name="hora_cierre">
-      </label>
-      <p class="prov-section-help prov-span-2">Las horas controlan la disponibilidad pública. Sin ambas, el catálogo se considera abierto 24 horas.</p>
+      <legend>Operación de venta</legend>
+      <div class="prov-inline-note prov-span-2">
+        El socio aporta el capital y el inventario; la tienda prepara y despacha sus ventas en el horario general. No necesita un horario operativo independiente.
+      </div>
+      <input type="hidden" name="hora_apertura" value="">
+      <input type="hidden" name="hora_cierre" value="">
     </fieldset>
 
     <fieldset class="prov-form-section">
-      <legend>Modelo financiero</legend>
+      <legend>Reparto económico</legend>
       <label class="prov-field prov-span-2">Acuerdo
         <select name="modelo_acuerdo">
-          <option value="stock_proveedor" selected>El proveedor pone el stock: se liquida el coste registrado</option>
+          <option value="socio_porcentaje" selected>Socio por porcentaje</option>
+          <option value="stock_proveedor">Legado: liquidación por coste registrado</option>
           <option value="stock_propio_bar">La plataforma pone el stock: se liquida una comisión del PVP</option>
         </select>
       </label>
-      <label class="prov-field">Comisión % <span>(solo segundo modelo)</span>
+      <label class="prov-field">Porcentaje de la tienda
         <input type="number" step="0.01" min="0" max="100" name="comision_pct" value="0" inputmode="decimal">
+        <small>El socio recibe automáticamente el porcentaje restante.</small>
       </label>
       <label class="prov-field">IBAN
         <input name="iban" autocomplete="off" placeholder="ES00 0000 0000 0000 0000 0000">
@@ -88,14 +89,14 @@
     </fieldset>
 
     <div class="prov-form-actions">
-      <button type="submit" class="prov-btn prov-btn-primary">Crear proveedor</button>
+      <button type="submit" class="prov-btn prov-btn-primary">Crear socio</button>
     </div>
   </form>
 </details>
 
 {% if not proveedores %}
 <div class="ox-card prov-empty">
-  <strong>No hay proveedores registrados</strong>
+  <strong>No hay socios registrados</strong>
   <p>Abre el formulario superior para crear el primer aliado.</p>
 </div>
 {% else %}
@@ -129,13 +130,12 @@
       </div>
     </div>
 
-    {% if not prov.activo or not active_op_count or not sku_count or not prov.telefono or not (prov.hora_apertura and prov.hora_cierre) %}
+    {% if not prov.activo or not active_op_count or not sku_count or not prov.telefono %}
     <div class="prov-warnings" aria-label="Advertencias de configuración">
       {% if not prov.activo %}<span class="is-danger">No aparece en la tienda pública</span>{% endif %}
       {% if not active_op_count %}<span>Sin operador activo para el chatbot</span>{% endif %}
       {% if not sku_count %}<span>Sin productos asignados</span>{% endif %}
       {% if not prov.telefono %}<span>Sin contacto comercial</span>{% endif %}
-      {% if not (prov.hora_apertura and prov.hora_cierre) %}<span>Horario público 24 h</span>{% endif %}
     </div>
     {% endif %}
 
@@ -152,18 +152,14 @@
         <h3>Operación chatbot</h3>
         <dl class="prov-facts">
           <div><dt>Operadores activos</dt><dd>{{ active_op_count }} de {{ op_count }}</dd></div>
-          <div><dt>Horario público</dt><dd>
-            {% if prov.hora_apertura and prov.hora_cierre %}
-              {{ prov.hora_apertura.strftime('%H:%M') }}-{{ prov.hora_cierre.strftime('%H:%M') }}
-            {% else %}24 horas{% endif %}
-          </dd></div>
-          <div><dt>Estado ahora</dt><dd class="{{ 'prov-ok' if prov.activo and prov.esta_abierto_ahora else 'prov-danger' }}">
-            {% if not prov.activo %}Desactivado{% elif prov.esta_abierto_ahora %}Abierto{% else %}Fuera de horario{% endif %}
+          <div><dt>Horario</dt><dd>{{ 'Horario general de tienda' if prov.es_socio_capital else prov.horario_resumen }}</dd></div>
+          <div><dt>Estado ahora</dt><dd class="{{ 'prov-ok' if prov.disponible_para_venta else 'prov-danger' }}">
+            {% if not prov.activo %}Desactivado{% elif prov.disponible_para_venta %}Disponible{% else %}Fuera de horario{% endif %}
           </dd></div>
         </dl>
       </section>
       <section>
-        <h3>Productos y stock</h3>
+        <h3>Productos e inventario separado</h3>
         <dl class="prov-facts">
           <div><dt>SKUs</dt><dd>{{ sku_count }}</dd></div>
           <div><dt>Unidades</dt><dd>{{ stock_total.value }}</dd></div>
@@ -173,7 +169,11 @@
       <section>
         <h3>Modelo financiero</h3>
         <dl class="prov-facts">
-          {% if prov.modelo_acuerdo == 'stock_propio_bar' %}
+          {% if prov.modelo_acuerdo == 'socio_porcentaje' %}
+          <div><dt>Propiedad</dt><dd>Productos del socio</dd></div>
+          <div><dt>Comisión tienda</dt><dd>{{ "%.2f"|format(prov.comision_pct|float) }}% del PVP</dd></div>
+          <div><dt>Saldo socio</dt><dd>{{ "%.2f"|format(100 - (prov.comision_pct|float)) }}% del PVP</dd></div>
+          {% elif prov.modelo_acuerdo == 'stock_propio_bar' %}
           <div><dt>Stock</dt><dd>Lo aporta la plataforma</dd></div>
           <div><dt>Liquidación</dt><dd>{{ "%.2f"|format(prov.comision_pct|float) }}% del PVP</dd></div>
           {% else %}
@@ -189,4 +189,7 @@
 </div>
 {% endif %}
 
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/partner-schedule-editor.js', v=asset_version) }}" defer></script>
 {% endblock %}

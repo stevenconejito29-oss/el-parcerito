@@ -7,8 +7,12 @@ Usado por: web checkout, POS, API bot.
 Reglas de stacking (en orden de aplicación):
   1. Cupón de descuento        — máx. MAX_CUPON_PCT del subtotal
   2. Código de afiliado        — máx. MAX_AFILIADO_PCT del subtotal
-  3. Puntos de fidelidad       — convertidos según ratio configurado
+  3. Descuento manual del POS
   Cap final: descuento total ≤ subtotal; total mínimo = 0.01 €
+
+Los puntos de fidelidad solo se canjean por productos. Este motor rechaza
+explícitamente cualquier intento de convertirlos en dinero para que ningún
+canal antiguo pueda reactivar esa regla por accidente.
 
 Este módulo es PURO: no tiene efectos secundarios (no persiste nada).
 El llamador es responsable de registrar usos de cupón, afiliado y puntos.
@@ -16,7 +20,7 @@ El llamador es responsable de registrar usos de cupón, afiliado y puntos.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 # ── Límites de política ─────────────────────────────────────────────────────
 MAX_CUPON_PCT     = 0.50   # cupón ≤ 50 % del subtotal
@@ -66,9 +70,9 @@ def calcular_precio(
         subtotal      — suma de items (precio × cantidad)
         cupon         — objeto Coupon o None (ya validado por el llamador)
         afiliado      — objeto AffiliateCode o None (ya validado por el llamador)
-        puntos_usar   — puntos a canjear como descuento
+        puntos_usar   — parámetro legado; cualquier valor positivo se rechaza
         zona          — objeto ZonaEntrega o None
-        ratio_puntos  — puntos necesarios para 1 € de descuento
+        ratio_puntos  — parámetro legado, conservado por compatibilidad de API
     """
     sub = _dec(subtotal)
 
@@ -91,24 +95,15 @@ def calcular_precio(
         d_afiliado = min(raw, sub * _dec(MAX_AFILIADO_PCT))
         afiliado_id = afiliado.id
 
-    # 4. Puntos
-    puntos_usar = max(0, int(puntos_usar))
-    ratio_puntos = max(1, int(ratio_puntos))  # nunca dividir por cero
-    puntos_usados_reales = 0
+    # Los puntos no son dinero. Fallar cerrado evita que un endpoint legado o
+    # un payload manipulado altere el total del pedido.
+    try:
+        puntos_solicitados = int(puntos_usar or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Cantidad de puntos no válida") from exc
+    if puntos_solicitados > 0:
+        raise ValueError("Los puntos solo pueden canjearse por productos")
     d_puntos = _dec(0)
-    if puntos_usar > 0:
-        descuento_pre_puntos = min(d_promo + d_cupon + d_afiliado, sub)
-        max_descuento_puntos = max(_dec(0), sub - descuento_pre_puntos)
-        descuento_solicitado = (_dec(puntos_usar) / _dec(ratio_puntos)).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
-        d_puntos = min(descuento_solicitado, max_descuento_puntos)
-        if d_puntos == descuento_solicitado:
-            puntos_usados_reales = puntos_usar
-        else:
-            puntos_usados_reales = int(
-                (d_puntos * _dec(ratio_puntos)).to_integral_value(rounding=ROUND_FLOOR)
-            )
 
     # Costo de envío — cupón envio_gratis lo anula directamente
     costo_envio = _dec(0)
@@ -141,7 +136,7 @@ def calcular_precio(
         promos_aplicadas=tuple(promos_aplicadas),
         cupon_id=cupon_id,
         afiliado_codigo_id=afiliado_id,
-        puntos_usados=puntos_usados_reales,
+        puntos_usados=0,
     )
 
 

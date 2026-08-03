@@ -323,11 +323,9 @@ def marcar_listo(pedido_id):
         flash(f"No se pudo marcar como listo: {e}", "danger")
         return redirect(url_for("staff.pedidos"))
     try:
-        from push_service import notify_order_state, notify_roles
+        from push_service import notify_delivery_ready, notify_order_state
         notify_order_state(pedido)
-        if pedido.requiere_reparto:
-            notify_roles(["repartidor"], "📦 Pedido listo para recoger",
-                         f"#{pedido.numero_pedido} empacado y listo.", url="/repartidor/ruta")
+        notify_delivery_ready(pedido)
     except Exception:
         logger.exception("No se pudo enviar push al marcar listo pedido %s", pedido.id)
     if not pedido.requiere_reparto:

@@ -67,6 +67,10 @@ class PricingPuntosNoDescuentoEurosTest(unittest.TestCase):
         self.assertEqual(int(res.puntos_usados), 0)
         self.assertEqual(float(res.total), 100.0)
 
+    def test_puntos_monetarios_se_rechazan_en_el_dominio(self):
+        with self.assertRaisesRegex(ValueError, "solo pueden canjearse por productos"):
+            calcular_precio([], subtotal=100.0, puntos_usar=100)
+
     def test_cupon_solo_aplica_su_descuento(self):
         cupon = FakeCupon(tipo="porcentaje", valor=10)
         res = calcular_precio([], subtotal=100.0, cupon=cupon)

@@ -30,7 +30,7 @@ process.env.OWNER_NUMBER = '34600000001';
 process.env.SUPERADMINS = '34600000002';
 
 const { _test } = require('../bot');
-const { handleMessage, requireAdminPin, getSesion, setSesion, setCfg, AWAITING_PIN_TTL_MS } = _test;
+const { db, handleMessage, requireAdminPin, getSesion, setSesion, setCfg, AWAITING_PIN_TTL_MS } = _test;
 
 // PIN = 1234 → sha256
 const PIN_HASH = require('crypto').createHash('sha256').update('1234').digest('hex');
@@ -96,7 +96,7 @@ test('el router entrega el PIN al estado awaiting_pin y permite continuar', asyn
   assert.equal(getSesion(jid).estado, 'admin_store_menu');
 });
 
-test('un comando directo de escritura no salta el PIN', async () => {
+test('un comando web-only no ejecuta escritura ni abre un flujo de PIN inútil', async () => {
   const jid = '34600000005@s.whatsapp.net';
   setCfg('admin_pin_hash', PIN_HASH);
   setCfg('whatsapp_role_profiles', JSON.stringify([{
@@ -115,8 +115,10 @@ test('un comando directo de escritura no salta el PIN', async () => {
     global.fetch = originalFetch;
   }
 
-  assert.equal(getSesion(jid).estado, 'awaiting_pin');
+  assert.equal(getSesion(jid).estado, 'admin_menu');
   assert.equal(backendCalls, 0);
+  const sent = db.prepare(`SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1`).get();
+  assert.match(sent.detalle, /panel web/i);
 });
 
 test('una confirmación antigua vuelve a exigir PIN antes de ejecutar', async () => {

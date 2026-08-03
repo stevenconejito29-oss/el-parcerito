@@ -8,6 +8,7 @@
   'cocina': role_label('cocina'),
   'preparacion': role_label('preparacion'),
   'repartidor': 'Repartidor',
+  'socio_producto': 'Socio de productos',
   'staff': 'Staff (legado)'
 } %}
 
@@ -67,7 +68,11 @@
             <span class="ox-role-badge ox-role-{{ u.rol }}">{{ role_labels.get(u.rol, u.rol) }}</span>
           </td>
           <td class="text-sm" style="color:var(--col-muted)">
-            {{ u.puesto_trabajo or 'Sin puesto indicado' }}
+            {% if u.rol == 'socio_producto' %}
+              {{ u.proveedor.nombre if u.proveedor else 'Socio sin vincular' }}
+            {% else %}
+              {{ u.puesto_trabajo or 'Sin puesto indicado' }}
+            {% endif %}
           </td>
           <td class="text-center">
             <span class="usr-state {{ 'is-active' if u.activo else 'is-inactive' }}">
@@ -170,6 +175,40 @@
           {% endfor %}
         </select>
       </div>
+      <div class="ox-field" data-socio-field hidden>
+        <label class="ox-label">Ficha del socio *</label>
+        {% if proveedores %}
+        <div class="usr-partner-mode" role="radiogroup" aria-label="Forma de vincular el socio">
+          <label><input type="radio" name="socio_vinculo" value="existente" checked> Vincular existente</label>
+          <label><input type="radio" name="socio_vinculo" value="nuevo"> Crear ficha nueva</label>
+        </div>
+        <div data-partner-existing>
+          <select class="ox-input" name="proveedor_id" disabled>
+            <option value="">Selecciona el socio</option>
+            {% for proveedor in proveedores %}
+            <option value="{{ proveedor.id }}">{{ proveedor.nombre }} · tienda {{ "%.2f"|format(proveedor.comision_pct|float) }}%</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% else %}
+        <input type="hidden" name="socio_vinculo" value="nuevo" disabled>
+        <p class="usr-partner-empty">Es el primer socio: su ficha financiera se creará junto con la cuenta.</p>
+        {% endif %}
+        <div data-partner-new {% if proveedores %}hidden{% endif %}>
+          <label class="ox-label" for="nuevo-socio-nombre">Nombre comercial *</label>
+          <input class="ox-input" id="nuevo-socio-nombre" name="nuevo_socio_nombre"
+                 disabled maxlength="150" placeholder="Ej. Productos de Juan">
+          <label class="ox-label" for="nuevo-socio-comision">Porcentaje para la tienda *</label>
+          <div class="usr-percent-field">
+            <input class="ox-input" id="nuevo-socio-comision" type="number"
+                   name="nuevo_socio_comision" disabled min="0" max="100"
+                   step="0.01" value="15" inputmode="decimal">
+            <span>%</span>
+          </div>
+          <small style="color:var(--col-muted)">El socio recibe el porcentaje restante; su stock y liquidación quedan separados.</small>
+        </div>
+        <small style="color:var(--col-muted)">La cuenta solo verá productos, ventas y liquidaciones de esta ficha.</small>
+      </div>
       <div class="ox-field">
         <label class="ox-label">Teléfono WhatsApp *</label>
         <input class="ox-input" type="tel" name="telefono" required autocomplete="tel" placeholder="+34 600 000 000">
@@ -199,8 +238,15 @@
 {% block scripts %}
 <style>
 .usr-actions{display:flex;justify-content:flex-end;gap:.4rem;align-items:center;flex-wrap:wrap}.usr-actions form{margin:0}
-.usr-state{display:inline-flex;padding:.25rem .55rem;border-radius:999px;font-size:.7rem;font-weight:800}.usr-state.is-active{color:#5EF097;background:rgba(52,199,89,.1)}.usr-state.is-inactive{color:var(--col-muted);background:var(--col-elevated)}
+.usr-state{display:inline-flex;padding:.25rem .55rem;border-radius:999px;font-size:.7rem;font-weight:800}.usr-state.is-active{color:var(--status-ok-text);background:var(--status-ok-soft)}.usr-state.is-inactive{color:var(--col-muted);background:var(--col-elevated)}
 .usr-dialog{width:min(94vw,720px);padding:0;border:0;background:transparent;color:inherit}.usr-dialog::backdrop{background:rgba(0,0,0,.78)}
+.usr-partner-mode{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.45rem;margin-bottom:.55rem}
+.usr-partner-mode label{display:flex;align-items:center;gap:.4rem;min-height:42px;padding:.5rem .65rem;border:1px solid var(--col-border);border-radius:.65rem;color:var(--col-text);font-size:.78rem;font-weight:750;cursor:pointer}
+.usr-partner-mode label:has(input:checked){border-color:var(--brand-primary);background:color-mix(in srgb,var(--brand-primary) 10%,var(--col-elevated))}
+.usr-partner-empty{margin:0 0 .55rem;padding:.55rem .65rem;border-radius:.65rem;background:var(--status-info-soft);color:var(--status-info-text);font-size:.76rem}
+.usr-percent-field{position:relative}.usr-percent-field input{padding-right:2rem}.usr-percent-field span{position:absolute;right:.75rem;top:50%;transform:translateY(-50%);color:var(--col-muted);font-weight:900}
+[data-partner-new]{display:grid;gap:.35rem;margin-top:.5rem}
+[data-socio-field][hidden],[data-partner-existing][hidden],[data-partner-new][hidden]{display:none}
 .usr-mobile-list{display:none}
 @media(max-width:767px){
   .usr-desktop-table{display:none}
@@ -216,4 +262,43 @@
   .usr-actions a,.usr-actions form,.usr-actions button{flex:1;width:100%;text-align:center}
 }
 </style>
+<script nonce="{{ csp_nonce() }}">
+function syncSocioField(scope) {
+  const role = scope?.querySelector('[name="rol"]');
+  const field = scope?.querySelector('[data-socio-field]');
+  if (!role || !field) return;
+  const enabled = role.value === 'socio_producto';
+  field.hidden = !enabled;
+  field.querySelectorAll('input, select').forEach(control => {
+    control.disabled = !enabled;
+  });
+  if (enabled) syncPartnerMode(scope);
+}
+function syncPartnerMode(scope) {
+  const field = scope?.querySelector('[data-socio-field]');
+  if (!field || field.hidden) return;
+  const mode = field.querySelector('[name="socio_vinculo"]:checked')?.value
+    || field.querySelector('[name="socio_vinculo"]')?.value
+    || 'nuevo';
+  const existing = field.querySelector('[data-partner-existing]');
+  const fresh = field.querySelector('[data-partner-new]');
+  const partnerSelect = existing?.querySelector('[name="proveedor_id"]');
+  const freshInputs = fresh?.querySelectorAll('input') || [];
+  if (existing) existing.hidden = mode !== 'existente';
+  if (fresh) fresh.hidden = mode !== 'nuevo';
+  if (partnerSelect) {
+    partnerSelect.disabled = mode !== 'existente';
+    partnerSelect.required = mode === 'existente';
+  }
+  freshInputs.forEach(input => {
+    input.disabled = mode !== 'nuevo';
+    input.required = mode === 'nuevo';
+  });
+}
+document.querySelectorAll('form').forEach(syncSocioField);
+document.addEventListener('change', event => {
+  if (event.target.matches('[name="rol"]')) syncSocioField(event.target.form);
+  if (event.target.matches('[name="socio_vinculo"]')) syncPartnerMode(event.target.form);
+});
+</script>
 {% endblock %}

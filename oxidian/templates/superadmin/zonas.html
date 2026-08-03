@@ -1,8 +1,7 @@
 {% extends "admin_base.html" %}
 {% block title %}Zonas de Entrega — Super Admin{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css', v=asset_version) }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/zone-coverage.css', v=asset_version) }}">
 {% macro csrf_field() -%}
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -16,9 +15,35 @@
       <p class="oa-page-header__subtitle">{{ brand.ciudad or 'Tu área de reparto' }} — configura precios, tiempos y cobertura por zona.</p>
     </div>
     <div class="oa-page-header__actions">
+      <a href="{{ url_for('superadmin.diagnostico_zonas') }}" class="oa-btn oa-btn--ghost">🩺 Diagnóstico</a>
+      <a href="{{ url_for('superadmin.probar_zona') }}" class="oa-btn oa-btn--brand">🔎 Probar dirección</a>
       <a href="{{ url_for('superadmin.dashboard') }}" class="oa-btn oa-btn--ghost">← Volver</a>
     </div>
   </header>
+
+  {# ── BANNER DE SALUD ── #}
+  {% if diag_severidad != 'ok' %}
+  {% set bar_bg = {'danger':'#fee2e2','warning':'#fef3c7'} %}
+  {% set bar_bd = {'danger':'#b02020','warning':'#c07000'} %}
+  <div class="oa-panel" style="border-left:4px solid {{ bar_bd[diag_severidad] }};background:{{ bar_bg[diag_severidad] }};">
+    <div class="oa-panel__body">
+      <strong style="color:{{ bar_bd[diag_severidad] }};display:block;margin-bottom:.35rem;">
+        {% if diag_severidad == 'danger' %}🔴 La detección de ubicación del cliente no funciona correctamente.
+        {% else %}🟡 La detección de ubicación funciona pero con avisos.
+        {% endif %}
+      </strong>
+      <ul style="margin:.35rem 0 0;padding-left:1.25rem;font-size:var(--oa-font-sm);color:var(--col-text);">
+        {% for c in diag_checks if c.severidad != 'ok' %}
+        <li style="margin:.15rem 0;">
+          <strong>{{ c.titulo }}:</strong> {{ c.detalle }}
+          {% if c.accion_texto %}<a href="{{ c.accion_url }}" style="color:{{ bar_bd[diag_severidad] }};font-weight:700;">{{ c.accion_texto }} →</a>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      <a href="{{ url_for('superadmin.diagnostico_zonas') }}" class="oa-btn oa-btn--sm" style="margin-top:.5rem;">Ver diagnóstico completo</a>
+    </div>
+  </div>
+  {% endif %}
 
   {# ── INFO GEO-VALIDACIÓN ── #}
   <div class="oa-panel" style="border-color: color-mix(in srgb, var(--brand-primary) 30%, var(--col-border));">
@@ -27,7 +52,7 @@
       <p style="margin:0;font-size:var(--oa-font-sm);color:var(--col-muted);line-height:1.5;">
         Cada zona puede tener un <strong style="color:var(--col-text);">contorno irregular</strong>
         que representa las calles alcanzables. El radio global de
-        <a href="{{ url_for('superadmin.config') }}#entregas" style="color:var(--brand-primary);font-weight:700;text-decoration:underline;">Configuración → Cobertura</a>
+        <a href="{{ url_for('superadmin.config') }}#entregas" style="color:var(--brand-text);font-weight:700;text-decoration:underline;">Configuración → Cobertura</a>
         solo sirve como compatibilidad cuando ninguna zona tiene geometría propia.
       </p>
     </div>
@@ -81,6 +106,7 @@
       <div class="zone-coverage-editor">
         <div class="zone-coverage-editor__map" data-zone-map
              data-center-lat="{{ mapa_lat }}" data-center-lng="{{ mapa_lng }}"
+             data-center-configured="{{ 'true' if mapa_lat and mapa_lng else 'false' }}"
              aria-label="Mapa para dibujar la cobertura"></div>
         <div class="zone-coverage-editor__toolbar">
           <button type="button" class="oa-btn oa-btn--sm oa-btn--brand" data-zone-locate>Céntrame en el mapa</button>
@@ -98,7 +124,7 @@
       <div class="grid sm:grid-cols-3 gap-3">
         <div class="ox-field"><label class="ox-label">Latitud del centro</label><input type="number" step="0.000001" min="-90" max="90" name="centro_lat" class="ox-input"></div>
         <div class="ox-field"><label class="ox-label">Longitud del centro</label><input type="number" step="0.000001" min="-180" max="180" name="centro_lng" class="ox-input"></div>
-        <div class="ox-field"><label class="ox-label">Radio compatible (km)</label><input type="number" step="0.1" min="0.1" max="200" name="radio_km" class="ox-input"></div>
+        <div class="ox-field"><label class="ox-label">Radio compatible (km)</label><input type="number" step="0.1" min="0.1" max="25" name="radio_km" class="ox-input"></div>
       </div>
     </details>
 
@@ -137,8 +163,9 @@
         </div>
       </div>
       <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
-        <a href="{{ url_for('superadmin.editar_zona', zona_id=z.id) }}" class="oa-btn oa-btn--sm oa-btn--brand">Editar mapa</a>
-        <form method="POST" action="{{ url_for('superadmin.toggle_zona', zona_id=z.id) }}">
+        <a href="{{ url_for('superadmin.editar_zona', zona_id=z.id) }}" class="oa-btn oa-btn--sm oa-btn--brand">Editar zona y cobertura</a>
+        <form method="POST" action="{{ url_for('superadmin.toggle_zona', zona_id=z.id) }}"
+              {% if z.activo %}data-confirm="¿Desactivar la zona «{{ z.nombre|e }}»? Los clientes de esa área dejarán de poder seleccionarla."{% endif %}>
           {{ csrf_field() }}
           <button type="submit" class="oa-btn oa-btn--sm {{ 'oa-btn--danger' if z.activo else 'oa-btn--success' }}">
             {{ '❌ Desactivar' if z.activo else '✓ Activar' }}
@@ -154,46 +181,6 @@
       </div>
     </div>
 
-    <details>
-      <summary class="text-xs cursor-pointer select-none font-semibold" style="color:var(--col-muted)">✏️ Editar zona</summary>
-      <form method="POST" action="{{ url_for('superadmin.editar_zona', zona_id=z.id) }}" class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
-        {{ csrf_field() }}
-        <div class="ox-field">
-          <label class="ox-label">Nombre</label>
-          <input type="text" name="nombre" value="{{ z.nombre }}" required class="ox-input">
-        </div>
-        <div class="ox-field">
-          <label class="ox-label">Descripción</label>
-          <input type="text" name="descripcion" value="{{ z.descripcion or '' }}" class="ox-input">
-        </div>
-        <div class="ox-field">
-          <label class="ox-label">Ámbito</label>
-          <select name="es_epicentro" class="ox-input">
-            <option value="1" {% if z.es_epicentro %}selected{% endif %}>Epicentro</option>
-            <option value="0" {% if not z.es_epicentro %}selected{% endif %}>Periferia</option>
-          </select>
-        </div>
-        <div class="ox-field">
-          <label class="ox-label">Precio envío (€)</label>
-          <input type="number" name="precio_envio" value="{{ z.precio_envio }}" step="0.01" min="0" class="ox-input">
-        </div>
-        <div class="ox-field">
-          <label class="ox-label">Tiempo estimado (min)</label>
-          <input type="number" name="tiempo_estimado_min" value="{{ z.tiempo_estimado_min }}" min="1" class="ox-input">
-        </div>
-        <div class="ox-field">
-          <label class="ox-label">Gratis desde (€)</label>
-          <input type="number" name="gratis_desde" value="{{ z.gratis_desde or '' }}" step="0.01" min="0" class="ox-input" placeholder="—">
-        </div>
-        <div class="ox-field">
-          <label class="ox-label">Orden</label>
-          <input type="number" name="orden" value="{{ z.orden }}" class="ox-input">
-        </div>
-        <div class="sm:col-span-2 flex items-end">
-          <button type="submit" class="ox-btn-primary text-sm">Guardar cambios</button>
-        </div>
-      </form>
-    </details>
   </div>
   {% endfor %}
 </div>
@@ -207,20 +194,6 @@
 
 </div>{# oa-page #}
 
-<script nonce="{{ csp_nonce() }}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='vendor/leaflet/leaflet.js', v=asset_version) }}"></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/zone-coverage-editor.js', v=asset_version) }}"></script>
-<script nonce="{{ csp_nonce() }}">
-// Confirmación defensiva antes de desactivar una zona
-// (evita clics accidentales que rompen la cobertura del área).
-document.querySelectorAll('form[action*="/toggle_zona"]').forEach(f => {
-  f.addEventListener('submit', ev => {
-    const btn = f.querySelector('button');
-    const esDesactivar = btn && btn.textContent.includes('Desactivar');
-    if (esDesactivar && !confirm('¿Desactivar esta zona? Los clientes de ese área ya no podrán elegirla al hacer el pedido.')) {
-      ev.preventDefault();
-    }
-  });
-});
-</script>
 {% endblock %}

@@ -134,6 +134,7 @@
 /* Cola operativa admin: tokens semánticos consistentes con dashboard/pedidos */
 .queue-page {
   --q-warn: var(--brand-primary);
+  --q-warn-text: var(--brand-text);
   --q-warn-soft: color-mix(in srgb, var(--brand-primary) 12%, transparent);
   --q-info: color-mix(in srgb, var(--brand-accent, #003087) 55%, #6bcbff);
   --q-ok:   var(--theme-success, #5EF097);
@@ -144,7 +145,7 @@
 .queue-kpi span, .queue-kpi small { display:block; color:var(--col-muted); font-size:.75rem; font-weight:800; text-transform:uppercase; }
 .queue-kpi strong { display:block; color:var(--col-text); font-size:2rem; line-height:1; font-weight:950; margin:.25rem 0; }
 .queue-kpi.warn { border-color: color-mix(in srgb, var(--q-warn) 35%, transparent); box-shadow: 0 0 0 1px var(--q-warn-soft); }
-.queue-kpi.warn strong { color: var(--q-warn); }
+.queue-kpi.warn strong { color: var(--q-warn-text); }
 .queue-layout { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:1rem; }
 .queue-main { display:grid; gap:1rem; }
 .queue-section, .queue-team { background:var(--col-surface); border:1px solid var(--col-border); border-radius:14px; padding:1rem; }
@@ -155,7 +156,7 @@
 .queue-section-head span { min-width:2.2rem; height:2.2rem; border-radius:999px; background:var(--col-elevated); display:flex; align-items:center; justify-content:center; font-weight:950; color:var(--col-text); }
 .queue-list { display:grid; gap:.55rem; }
 .queue-order { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.75rem; align-items:center; background: color-mix(in srgb, var(--col-text) 3%, transparent); border:1px solid var(--col-border); border-radius:10px; padding:.75rem; }
-.queue-order strong { color: var(--q-warn); font-family: ui-monospace, SFMono-Regular, monospace; }
+.queue-order strong { color: var(--q-warn-text); font-family: ui-monospace, SFMono-Regular, monospace; }
 .queue-order p { font-size:.78rem; color:var(--col-muted); margin-top:.15rem; }
 .queue-assign { display:flex; gap:.45rem; align-items:center; }
 .queue-assign select { min-width:190px; border-radius:8px; padding:.5rem .7rem; background:var(--col-elevated); border:1px solid var(--col-border); color:var(--col-text); }

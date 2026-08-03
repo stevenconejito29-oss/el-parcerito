@@ -142,7 +142,15 @@ def admin_required_upload(f):
 
 @uploads_bp.route("/uploads/<subcarpeta>/<filename>")
 def serve_image(subcarpeta, filename):
-    """Sirve cualquier imagen del directorio de imágenes compartido."""
+    """Sirve cualquier imagen del directorio de imágenes compartido.
+
+    Las URLs de imagen incluyen un UUID o hash en el nombre (ver `image_service.
+    save_image` que usa `prod_{uuid.uuid4().hex[:12]}.jpg`), lo que las hace
+    inmutables por diseño: si el admin sube una imagen nueva, el nombre
+    cambia y la URL es distinta. Aplicamos `Cache-Control: immutable` para que
+    el navegador y el SW las cacheen 1 año sin re-validar — cero requests
+    innecesarios y sensación de app nativa al reabrir el menu.
+    """
     if subcarpeta not in MAX_SIZES and subcarpeta not in ("misc", "icon"):
         abort(404)
     # secure_filename previene path traversal en el nombre de archivo
@@ -150,7 +158,10 @@ def serve_image(subcarpeta, filename):
     if not safe:
         abort(404)
     folder = IMAGES_DIR / subcarpeta
-    return send_from_directory(str(folder), safe)
+    response = send_from_directory(str(folder), safe)
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    response.headers["Vary"] = "Accept-Encoding"
+    return response
 
 
 # ── Subir imagen de producto ──────────────────────────────────────────────────

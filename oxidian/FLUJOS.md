@@ -137,7 +137,7 @@ Cliente → /carrito/agregar/<id>  (session["carrito"] = {pid: qty})
 
 **Variables de sesión usadas:**
 - `session["carrito"]` → `{str(producto_id): cantidad}`
-- `session["cart_puntos"]` → `{cliente_id, puntos_usados, descuento, puntos_totales}`
+- `session["cart_puntos"]` → verificación OTP y producto de canje elegido
 - `session["cart_producto_canje_id"]` → int | None
 - `session["notas_combo"]` → `{str(producto_id): notas_personalizacion}`
 - `session["combo_selecciones"]` → `{str(combo_id): {grupo: [combo_item_id, ...]}}`
@@ -171,7 +171,7 @@ Bot → GET /api/bot/catalogo          (catálogo filtrado por visible_ahora)
     → POST /api/bot/validar-cupon     (valida cupón o código afiliado)
     → POST /api/bot/pedido/crear
           ├── Input: telefono_cliente, items[], metodo_pago, direccion_entrega,
-          │          zona_id, notas, cupon_codigo, puntos_usar
+          │          zona_id, notas, cupon_codigo
           │          items[].opciones_producto, items[].presentation_id|presentation_size
           ├── Valida: cliente existe, items válidos, stock suficiente (solo inmediato)
           ├── calcular_precio() mismo motor que web
@@ -279,12 +279,13 @@ Confirmación pago digital (bizum):
 
 3. VERIFICAR CÓDIGO (verificar_codigo):
    → verifica OTP sin descontar todavía
-   → guarda en session["cart_puntos"] (web) o responde JSON (bot)
+   → guarda la verificación en session["cart_puntos"] (web) o responde JSON (bot)
 
 4. APLICAR CANJE (aplicar_canje_en_pedido) — ÚNICO PUNTO DE DEDUCCIÓN:
    → llamado DESPUÉS de crear el pedido en BD
-   → canjear_puntos(puntos_usar) → registra PointsLog(tipo="canjeado")
-   → opcionalmente añade producto gratis (OrderItem precio=0)
+   → valida el producto elegido y su coste fijo en puntos
+   → canjear_puntos(coste_producto) → registra PointsLog(tipo="canjeado")
+   → añade el producto canjeado (OrderItem precio=0)
    → limpia OTP usado
 
 5. CANCELAR PEDIDO (cancelar_pedido_operativo):
@@ -293,10 +294,11 @@ Confirmación pago digital (bizum):
 ```
 
 ### Reglas de puntos
-- 1 punto = 1/PUNTOS_CANJE_RATIO euros de descuento (default: 100 puntos = 1€)
-- PUNTOS_POR_EURO y PUNTOS_CANJE_RATIO se leen SIEMPRE desde SiteConfig (BD), no Flask config
+- Los puntos nunca reducen el importe en euros; solo canjean productos elegibles
+- La tasa de acumulación PUNTOS_POR_EURO se lee desde SiteConfig (BD)
+- Cada producto canjeable define su propio `puntos_para_canje`
 - Ajuste manual desde `/marketing/puntos/ajustar` (admin/marketing)
-- Pre-canje bot (sin pedido): `api_bot/puntos/verificar-codigo` descuenta directamente con `canjear_puntos()` — NO pasa por loyalty_service (flujo distinto)
+- El bot informa saldo y catálogo; el canje se verifica y finaliza en el carrito web
 
 ---
 
@@ -371,7 +373,7 @@ Orden de aplicación (todos los canales: web, bot, POS):
    └── descuento_tipo="monto_fijo": min(descuento_valor, subtotal)
 
 4. Puntos de fidelidad:
-   descuento_puntos = puntos_usar / PUNTOS_CANJE_RATIO
+   no modifican el precio; un producto de canje se agrega con precio cero
 
 5. Costo de envío (ZonaEntrega):
    ├── gratis_desde: si subtotal >= gratis_desde → envío=0
@@ -658,14 +660,13 @@ Disparado por repartidor.confirmar_entrega() después del commit.
 | Clave | Descripción | Default |
 |-------|-------------|---------|
 | `PUNTOS_POR_EURO` | Puntos por cada euro de compra | 1 |
-| `PUNTOS_CANJE_RATIO` | Puntos necesarios para 1€ de descuento | 100 |
 | `BOT_API_KEY` | Clave de autenticación Flask ↔ Bot | UUID aleatorio |
 | `BOT_API_URL` | URL del bot WhatsApp | http://chatbot:3000 |
 | `NOMBRE_NEGOCIO` | Nombre del negocio | Oxidian |
 | `TELEFONO_NEGOCIO` | Teléfono para contacto | — |
 | `VALIDAR_RADIO_ENTREGA` | Activa validación geográfica | 0 |
 | `RADIO_ENTREGA_KM` | Radio máximo de entrega | 5 |
-| `CENTRO_LAT/LON` | Coordenadas del negocio | 37.4698, -5.6435 |
+| `CENTRO_LAT/LON` | Coordenadas de respaldo del negocio | sin valor; deben configurarse |
 | `HORARIO_APERTURA/CIERRE` | Para el bot | 09:00 / 22:30 |
 | `LOGO_URL` | URL del logo del negocio | — |
 

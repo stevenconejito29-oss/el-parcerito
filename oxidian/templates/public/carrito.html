@@ -140,6 +140,9 @@
                   {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="" loading="lazy" decoding="async">{% endif %}
                   <span class="cr-combo-row-qty">{{ ci.cantidad }}×</span>
                   <span class="cr-combo-row-name">{{ ci.componente.nombre }}</span>
+                  {% if d.unidades_cliente %}{% for unit in d.unidades_cliente %}
+                  <span class="cr-combo-tag cr-combo-tag--pres">#{{ unit.get('unidad', loop.index) }}{% if unit.get('presentacion') %} · {{ unit.get('presentacion').get('label') }}{% endif %}{% if unit.get('sabor') %} · {{ unit.get('sabor').get('nombre') }}{% endif %}</span>
+                  {% endfor %}{% endif %}
                   {% if d.presentation_cliente %}<span class="cr-combo-tag cr-combo-tag--pres">📏 {{ d.presentation_cliente.get('label') }}</span>{% endif %}
                   {% if d.sabor_cliente %}<span class="cr-combo-tag cr-combo-tag--sabor">🎨 {% for s in d.sabor_cliente %}{{ s.get('nombre') }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
                   <span class="cr-combo-tag cr-combo-tag--fijo">{{ ui.cart_combo_included }}</span>
@@ -154,6 +157,9 @@
                   {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="" loading="lazy" decoding="async">{% endif %}
                   <span class="cr-combo-row-qty">{{ ci.cantidad }}×</span>
                   <span class="cr-combo-row-name">{{ ci.componente.nombre }}</span>
+                  {% if d.unidades_cliente %}{% for unit in d.unidades_cliente %}
+                  <span class="cr-combo-tag cr-combo-tag--pres">#{{ unit.get('unidad', loop.index) }}{% if unit.get('presentacion') %} · {{ unit.get('presentacion').get('label') }}{% endif %}{% if unit.get('sabor') %} · {{ unit.get('sabor').get('nombre') }}{% endif %}</span>
+                  {% endfor %}{% endif %}
                   {% if d.presentation_cliente %}<span class="cr-combo-tag cr-combo-tag--pres">📏 {{ d.presentation_cliente.get('label') }}</span>{% endif %}
                   {% if d.sabor_cliente %}<span class="cr-combo-tag cr-combo-tag--sabor">🎨 {% for s in d.sabor_cliente %}{{ s.get('nombre') }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
                   {% if ci.precio_extra and ci.precio_extra > 0 %}<span class="cr-combo-tag cr-combo-tag--extra">+€{{ "%.2f"|format(ci.precio_extra) }}</span>{% endif %}
@@ -222,6 +228,9 @@
               {% endif %}
               {% if item.producto.origen_pais %}
               <span class="cr-tag">{{ item.producto.origen_pais }}</span>
+              {% endif %}
+              {% if item.producto.proveedor_despachador %}
+              <span class="cr-tag cr-tag--partner">🤝 Socio: {{ item.producto.proveedor_despachador.nombre }}</span>
               {% endif %}
             </div>
 
@@ -347,8 +356,11 @@
       </div>
       {% endif %}
       <button type="button" class="cr-cta cr-cta--disabled" disabled>{{ ui.cart_incompatible }}</button>
-      {% elif not brand.tienda_abierta %}
-      <button type="button" class="cr-cta cr-cta--disabled" disabled>Tienda cerrada · tu {{ ui.cart_name }} queda guardada</button>
+      {% elif not establecimiento_abierto %}
+      <button type="button" class="cr-cta cr-cta--disabled" disabled aria-describedby="cart-store-closed">
+        Establecimiento cerrado · tu {{ ui.cart_name }} queda guardada
+      </button>
+      <div id="cart-store-closed" class="cr-store-closed" role="status"><strong>Ahora no podemos recibir el pedido</strong><span>{{ mensaje_cierre }}</span></div>
       {% else %}
       <a href="{{ url_for('public.checkout') }}" class="cr-cta" id="btn-checkout">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>

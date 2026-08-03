@@ -17,6 +17,15 @@ en BD).
 | `NOMBRE_FISCAL` | str | `""` | Cabeceras de factura y export CSV | Razón social. Cae a `NOMBRE_NEGOCIO` si vacío. |
 | `NIF_NEGOCIO` | str | `""` | Cabecera de factura fiscal | NIF/CIF del negocio. Obligatorio para facturar en España. |
 | `DIRECCION_FISCAL` | str | `""` | Cabecera de factura | Domicilio fiscal completo. |
+| `EMAIL_PRIVACIDAD` | str | `""` | Página legal y ejercicio de derechos | Correo específico; cae a `EMAIL_CONTACTO` si está vacío. |
+| `REGISTRO_MERCANTIL` | str | `""` | Aviso legal | Datos registrales cuando correspondan a la forma jurídica. |
+| `LEGAL_VERSION` | str | `1.0` | Checkout, evento del pedido y página legal | Versión de condiciones que aceptó el cliente. |
+| `LEGAL_RETENCION_PEDIDOS` | str | criterio legal general | Página de privacidad | Plazo o criterio de conservación comunicado. |
+| `LEGAL_CONDICIONES_DEVOLUCION` | str | política general | Condiciones de compra | Cancelaciones, desistimiento, devoluciones e incidencias. |
+
+Estas claves se editan como una sola tarjeta en
+`/superadmin/config#tienda`. La página pública marca de forma visible los
+datos obligatorios que sigan vacíos, evitando publicar una identidad ficticia.
 
 ## Claves anti-hardcoding — Fase 9
 
@@ -76,7 +85,7 @@ para consulta rápida:
 | Clave | Uso resumido |
 |---|---|
 | `NOMBRE_NEGOCIO`, `DIRECCION_NEGOCIO`, `TELEFONO_NEGOCIO`, `EMAIL_CONTACTO` | Datos públicos del negocio (branding + contacto). |
-| `PUNTOS_POR_EURO`, `PUNTOS_CANJE_RATIO` | Reglas del club de puntos. |
+| `PUNTOS_POR_EURO` | Tasa de acumulación; el coste de cada canje vive en el producto elegible. |
 | `HORARIO_APERTURA`, `HORARIO_CIERRE`, `TIENDA_FORZAR_CERRADA` | Ventana operativa. |
 | `CENTRO_LAT`, `CENTRO_LON`, `RADIO_ENTREGA_KM` | Geo-validación de radio. |
 | `SERVICE_COMMISSION_PCT` | Comisión de servicio en modo white-label. |

@@ -232,6 +232,61 @@
     repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--heritage-coffee) 5%, transparent) 7px 8px);
 }
 
+/* ═══════ GRUPOS DE ITEMS (por producto) ═══════
+   Dos líneas del mismo producto con distinta selección (sabor/tamaño) van
+   bajo un header común. Cuando un producto tiene una sola línea, `.cr-group`
+   es transparente (sin borde, sin header) — el layout luce plano como antes. */
+.cr-group { display: block; }
+.cr-group + .cr-group { border-top: 1px solid rgba(255,200,120,.06); }
+.cr-group--multi {
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 3%, transparent);
+  padding-top: .1rem;
+  padding-bottom: .1rem;
+}
+.cr-group-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .55rem 1rem .3rem;
+  gap: .5rem;
+}
+.cr-group-name {
+  font-size: .82rem; font-weight: 900; color: var(--col-text);
+  letter-spacing: -.005em;
+}
+.cr-group-count {
+  font-size: .68rem; font-weight: 700;
+  padding: .18rem .55rem; border-radius: 999px;
+  color: color-mix(in srgb, var(--brand-primary, #FFAB00) 90%, #000);
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #FFAB00) 38%, transparent);
+  text-transform: none;
+}
+/* Nombres largos: en un grupo con label + count, el nombre debe truncar antes
+   de romper el layout con nombres tipo "Hamburguesa clásica con doble carne". */
+.cr-group-name {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cr-group-count { flex-shrink: 0; }
+/* Móvil pequeño (< 400px iPhone SE): reducir indentación y padding lateral
+   del grupo para no comer espacio del contenido del item. */
+@media (max-width: 400px) {
+  .cr-group-hdr { padding: .5rem .65rem .25rem; gap: .35rem; }
+  .cr-group-name { font-size: .78rem; }
+  .cr-group-count { font-size: .62rem; padding: .12rem .4rem; }
+}
+/* Sub-cards dentro del grupo: mantienen el look pero con indentación sutil */
+.cr-group--multi .cr-item {
+  padding-left: 1.4rem;
+}
+.cr-group--multi .cr-item::before {
+  left: .35rem;
+}
+/* Móvil estrecho: menor indentación para no comer espacio del thumb+info */
+@media (max-width: 400px) {
+  .cr-group--multi .cr-item { padding-left: .85rem; padding-right: .65rem; }
+  .cr-group--multi .cr-item::before { left: .2rem; }
+}
+
 /* Cada ítem */
 .cr-item {
   display: flex; align-items: flex-start; gap: .75rem;
@@ -277,15 +332,81 @@
   box-shadow: 0 2px 6px rgba(0,0,0,.45);
 }
 
-/* Info del ítem */
+/* ═══════ Invariantes de texto del ítem ═══════
+   Todo texto dinámico (nombre, notas, sabores, extras, dirección) rompe
+   palabras largas y respeta el `min-width: 0` del padre flex. Sin esto,
+   un nombre como "Hamburguesa clásica con doble carne extra queso" o una
+   nota como "sincebolla,pocasal,entrocitospequeños" desbordan el layout. */
 .cr-item-info { flex: 1; min-width: 0; }
+.cr-item-info > * { min-width: 0; max-width: 100%; }
 .cr-item-name {
   font-size: .94rem; font-weight: 850; color: var(--col-text);
   line-height: 1.28; margin-bottom: .28rem;
   letter-spacing: -.01em;
+  overflow-wrap: break-word; word-break: break-word;
 }
-.cr-item-note       { font-size: .68rem; color: var(--col-muted); margin-bottom: .18rem; line-height: 1.4; }
+.cr-item-note {
+  font-size: .68rem; color: var(--col-muted); margin-bottom: .18rem; line-height: 1.4;
+  overflow-wrap: break-word; word-break: break-word;
+}
 .cr-item-note--gold { color: rgba(255,194,0,.8); }
+
+/* ═══════ Chips de sabor/extra en el carrito ═══════
+   Coherente con el selector del producto detalle (patrón KFC/McD): el
+   cliente ve chips visuales en vez de un párrafo de texto plano. Cada chip
+   contiene el nombre + badge de cantidad si es > 1. Wrap natural en móvil. */
+.cr-choice-row {
+  display: flex; align-items: flex-start; gap: .4rem;
+  margin: .35rem 0 .1rem; flex-wrap: wrap;
+  min-width: 0;
+}
+.cr-choice-label {
+  flex-shrink: 0;
+  font-size: .68rem; font-weight: 900;
+  color: var(--col-muted);
+  text-transform: uppercase; letter-spacing: .05em;
+  padding-top: .25rem;
+}
+.cr-choice-chips {
+  display: flex; flex-wrap: wrap; gap: .25rem;
+  flex: 1; min-width: 0;
+}
+.cr-choice-chip {
+  display: inline-flex; align-items: center; gap: .25rem;
+  padding: .18rem .55rem;
+  border-radius: 999px;
+  font-size: .72rem; font-weight: 800;
+  line-height: 1.35;
+  border: 1px solid transparent;
+  max-width: 100%;
+  overflow: hidden;
+}
+.cr-choice-chip > span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 12rem;
+}
+.cr-choice-chip > em {
+  font-style: normal; font-weight: 950; font-size: .7rem;
+  padding: 0 .28rem; border-radius: 999px;
+  background: rgba(0,0,0,.22); color: #fff;
+  flex-shrink: 0;
+}
+.cr-choice-chip--flavor {
+  background: color-mix(in srgb, var(--brand-primary, #FFAB00) 18%, transparent);
+  border-color: color-mix(in srgb, var(--brand-primary, #FFAB00) 42%, transparent);
+  color: color-mix(in srgb, var(--brand-primary, #FFAB00) 92%, #fff);
+}
+.cr-choice-chip--extra {
+  background: color-mix(in srgb, #5EF097 14%, transparent);
+  border-color: color-mix(in srgb, #5EF097 32%, transparent);
+  color: color-mix(in srgb, #5EF097 88%, #fff);
+}
+@media (max-width: 420px) {
+  .cr-choice-row { gap: .3rem; }
+  .cr-choice-label { font-size: .62rem; padding-top: .28rem; }
+  .cr-choice-chip { font-size: .68rem; padding: .16rem .5rem; }
+  .cr-choice-chip > span { max-width: 9rem; }
+}
 .cr-compat-warning {
   margin-bottom:.65rem; padding:.75rem .85rem; border-radius:.75rem;
   border:1px solid rgba(255,179,64,.4); background:rgba(255,179,64,.1);
@@ -316,6 +437,7 @@
   color: #FFAB00;
 }
 .cr-cta--disabled { opacity:.5; cursor:not-allowed; filter:grayscale(.4); }
+.cr-store-closed{display:grid;gap:.2rem;width:100%;padding:.75rem;border:1px solid color-mix(in srgb,var(--theme-danger) 34%,var(--col-border));border-radius:.8rem;background:color-mix(in srgb,var(--theme-danger) 8%,var(--theme-surface));color:var(--theme-danger);font-size:.76rem;line-height:1.45;text-align:left;overflow-wrap:anywhere}.cr-store-closed span{color:color-mix(in srgb,var(--theme-danger) 72%,var(--theme-text))}
 .cr-min-order {
   display:flex; align-items:center; justify-content:space-between; gap:.6rem;
   margin:.4rem 0 .65rem; padding:.55rem .8rem; border-radius:.7rem;
@@ -358,6 +480,15 @@
   border-radius: .6rem; padding: .5rem .65rem; margin-top: .28rem;
   display: flex; flex-direction: column; gap: .25rem;
   animation: cr-fade-in .18s ease;
+  /* Combos con muchos componentes (8+) hacían crecer la card entera. Ahora
+     el bloque tiene scroll interno con momentum iOS y contención de scroll. */
+  max-height: 60vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+@media (max-width: 480px) {
+  .cr-combo-rows { max-height: 40vh; padding: .4rem .5rem; }
 }
 .cr-combo-section {
   font-size: .58rem; font-weight: 900; text-transform: uppercase;
@@ -366,39 +497,98 @@
 }
 .cr-combo-section--fixed { background: rgba(255,194,0,.09); color: rgba(255,194,0,.8); }
 .cr-combo-section--sel   { background: rgba(255,112,67,.09); color: rgba(255,112,67,.85); }
-.cr-combo-row { display: flex; align-items: center; gap: .35rem; font-size: .72rem; color: var(--col-text); }
+.cr-combo-row {
+  display: flex; align-items: center; gap: .35rem; font-size: .72rem;
+  color: var(--col-text);
+  flex-wrap: wrap;  /* si un tag no cabe, salta a línea nueva sin desbordar */
+}
 .cr-combo-row-img   { width: 24px; height: 24px; object-fit: cover; border-radius: .35rem; flex-shrink: 0; border: 1px solid rgba(255,200,120,.08); }
 .cr-combo-row-qty   { font-weight: 950; color: rgba(255,194,0,.8); min-width: 18px; flex-shrink: 0; }
-.cr-combo-row-name  { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--col-muted); }
+.cr-combo-row-name  { flex: 1 1 auto; min-width: 0; overflow-wrap: break-word; word-break: break-word; color: var(--col-muted); }
 .cr-combo-tag { font-size: .58rem; font-weight: 800; border-radius: 999px; padding: 1px 5px; flex-shrink: 0; }
 .cr-combo-tag--fijo  { background: rgba(255,194,0,.1); color: rgba(255,194,0,.8); }
 .cr-combo-tag--sel   { background: rgba(255,112,67,.1); color: rgba(255,112,67,.85); }
 .cr-combo-tag--extra { background: rgba(94,240,151,.1); color: #5EF097; }
+.cr-combo-tag--sabor { background: color-mix(in srgb, var(--brand-primary, #ffc200) 20%, transparent); color: color-mix(in srgb, var(--brand-primary, #ffc200) 75%, var(--theme-text, #111)); }
 
 /* Tags/badges de alérgenos */
-.cr-item-tags { display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .28rem; }
-.cr-tag { font-size: .62rem; font-weight: 700; padding: .1rem .38rem; border-radius: .35rem; color: var(--col-muted); }
+/* Tags de alérgenos + fulfillment: wrap sano con altura consistente.
+   Cada tag ocupa su ancho natural; el conjunto va a línea nueva si no cabe. */
+.cr-item-tags {
+  display: flex; flex-wrap: wrap; gap: .3rem .35rem; margin-bottom: .35rem;
+  align-content: flex-start;
+  max-width: 100%; min-width: 0;
+}
+.cr-tag {
+  font-size: .62rem; font-weight: 700; padding: .16rem .45rem; border-radius: .4rem;
+  color: var(--col-muted);
+  /* Tag simple: no se parte por medio de palabra corta ni se comprime. */
+  flex-shrink: 0; white-space: nowrap;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.3;
+  display: inline-flex; align-items: center; gap: .2rem;
+}
 .cr-tag--hipo  { background: rgba(39,174,96,.08); color: #5EF097; border: 1px solid rgba(39,174,96,.15); }
-.cr-tag--alerg { color: rgba(255,179,64,.8); font-weight: 800; }
+/* Alérgenos: el tag CONTIENE varios spans (uno por alérgeno). En lugar de
+   dejarlos en línea nowrap (que causa solapes con muchos alérgenos), permite
+   wrap interno: cada icono es su propia célula flex y salta a la línea
+   siguiente si el ancho del tag no da más de sí. */
+.cr-tag--alerg {
+  color: rgba(255,179,64,.9); font-weight: 800;
+  background: rgba(255,179,64,.08); border: 1px solid rgba(255,179,64,.18);
+  white-space: normal;              /* permite wrap del bloque de iconos */
+  flex-wrap: wrap;                  /* iconos internos wrappean */
+  row-gap: .1rem; column-gap: .15rem;
+  max-width: 100%;
+}
+.cr-tag--alerg > span {
+  display: inline-block; line-height: 1;
+  padding: 0; margin: 0;
+}
 .cr-tag--fulfillment { background: rgba(90,170,255,.1); color: #60AAFF; border: 1px solid rgba(90,170,255,.18); }
 
 /* Footer: precio + qty + subtotal */
+/* ═══════ Footer del ítem (precio + cantidad + subtotal) ═══════
+   Invariante: los controles de cantidad NUNCA se comprimen. El precio
+   unitario y el subtotal SÍ pueden truncar. En viewport estrecho, los
+   controles se reordenan con `order` sin tocar HTML. */
 .cr-item-footer {
   display: flex; align-items: center; gap: .5rem;
   flex-wrap: wrap; margin-top: .38rem;
   padding-top: .38rem;
   border-top: 1px solid rgba(255,200,120,.05);
 }
-.cr-price-block { display: flex; align-items: baseline; gap: .2rem; flex-shrink: 0; }
-.cr-unit-price  { font-size: .86rem; font-weight: 850; color: rgba(255,194,0,.7); }
-.cr-subtotal    {
-  font-size: .98rem; font-weight: 950; color: var(--col-text);
+.cr-price-block {
+  display: flex; align-items: baseline; gap: .2rem;
+  flex-shrink: 1; min-width: 0;
+  max-width: 100%;
+}
+/* Precio unitario + subtotal: TIENEN escape valve.
+   `flex-shrink: 1` permite comprimirse si compiten con qty; `overflow` +
+   `text-overflow: ellipsis` corta con "…" en vez de romper el layout.
+   `clamp()` en tamaño evita saltos abruptos entre 400px y 600px. */
+.cr-unit-price {
+  font-size: clamp(.76rem, 2.5vw, .86rem);
+  font-weight: 850; color: rgba(255,194,0,.7);
+  white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+  flex-shrink: 1;
+}
+.cr-subtotal {
+  font-size: clamp(.9rem, 3vw, .98rem);
+  font-weight: 950; color: var(--col-text);
   margin-left: auto; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+  flex-shrink: 1;
 }
 .cr-subtotal.cr-pulse,
 .cr-total-val.cr-pulse { animation: cr-pulse .3s ease; }
 
-/* Controles de cantidad */
+/* Cantidad: bloque atómico que preserva su ancho natural.
+   `min-width: max-content` fuerza que el navegador reserve el ancho de los
+   3 controles combinados; si no cabe, hace wrap en línea nueva. */
 .cr-qty {
   display: flex; align-items: center; overflow: hidden;
   background: var(--col-elevated);
@@ -406,6 +596,8 @@
   box-shadow: 0 1px 0 rgba(255,200,120,.05) inset;
   border-radius: 999px;
   transition: border-color .2s;
+  flex-shrink: 0;
+  min-width: max-content;
 }
 .cr-qty:focus-within {
   border-color: rgba(255,194,0,.4);
@@ -416,16 +608,27 @@
   color: var(--col-muted); display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background .15s, color .15s;
   -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  flex-shrink: 0;
 }
 .cr-qty-btn:hover  { background: rgba(255,194,0,.1); color: var(--col-gold); }
 .cr-qty-btn:active { transform: scale(.82); }
 .cr-qty-input, .ep-qty-input {
   width: 44px; min-height: 44px; background: transparent; border: none; outline: none;
-  text-align: center; font-size: .88rem; font-weight: 950;
+  text-align: center; font-weight: 950;
   color: var(--col-text); padding: 0; box-shadow: none !important; font-family: inherit;
+  /* 16px = mínimo para no disparar zoom automático de iOS Safari en focus. */
+  font-size: 16px;
+  flex-shrink: 0;
+  -moz-appearance: textfield;
+}
+.cr-qty-input::-webkit-inner-spin-button,
+.cr-qty-input::-webkit-outer-spin-button,
+.ep-qty-input::-webkit-inner-spin-button,
+.ep-qty-input::-webkit-outer-spin-button {
+  -webkit-appearance: none; margin: 0;
 }
 
-/* Botón eliminar */
+/* Botón eliminar: mismo tratamiento — nunca comprime, siempre 44×44. */
 .cr-remove {
   flex-shrink: 0; align-self: flex-start;
   width: 44px; height: 44px; border: none; border-radius: .75rem;
@@ -437,6 +640,41 @@
 }
 .cr-remove:hover  { background: rgba(206,17,38,.1); color: #FF453A; }
 .cr-remove:active { transform: scale(.84); }
+
+/* Viewport estrecho (≤ 420px, cubre iPhone 15/16, Galaxy S23, Pixel 8, etc.):
+   Rediseño del footer a GRID (más robusto que flex-wrap+order).
+     Fila 1: [precio-block]  ......  [subtotal]
+     Fila 2: [       cantidad centrada        ]
+   `minmax(0, 1fr)` en las celdas garantiza que precio o subtotal se puedan
+   comprimir con ellipsis si el precio es enorme (€1.234,56). El qty siempre
+   está en su fila propia — no compite por espacio con nada. */
+@media (max-width: 420px) {
+  .cr-item-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    gap: .3rem .5rem;
+    align-items: center;
+  }
+  .cr-price-block { grid-column: 1; grid-row: 1; }
+  .cr-subtotal { grid-column: 2; grid-row: 1; margin-left: 0; justify-self: end; }
+  .cr-qty {
+    grid-column: 1 / -1; grid-row: 2;
+    justify-self: center;
+    margin-top: .1rem;
+    /* Anula `flex: 1 0 100%` heredado del antiguo layout. */
+    flex: none;
+  }
+}
+/* iPhone SE (< 380px): botón eliminar absoluto para liberar el ancho
+   del contenido del ítem. El `padding-right` reserva el espacio. */
+@media (max-width: 380px) {
+  .cr-item { position: relative; padding-right: 3rem; }
+  .cr-remove {
+    position: absolute; top: .55rem; right: .55rem;
+    width: 40px; height: 40px; margin-top: 0;
+  }
+}
 
 /* Actualizar carrito */
 .cr-update-row { display: flex; justify-content: flex-end; margin-bottom: .65rem; }
@@ -496,26 +734,37 @@
   font-weight: 750;
   line-height: 1.4;
 }
+/* Filas de summary: label a la izquierda, valor a la derecha. Ambos truncan
+   antes de romper el layout. En móvil estrecho las etiquetas largas hacen
+   wrap sin empujar el valor. */
 .cr-row {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: .5rem;
   font-size: .84rem; color: var(--col-muted);
 }
+.cr-row > span:first-child { min-width: 0; overflow-wrap: break-word; }
+.cr-row > span:last-child { flex-shrink: 0; white-space: nowrap; }
 .cr-row--green {
   color: #5EF097; font-weight: 700;
 }
-.cr-row--muted span:last-child { font-size: .7rem; color: var(--col-faint); }
+.cr-row--muted span:last-child { font-size: .7rem; color: var(--col-faint); white-space: nowrap; }
 
 .cr-total-row {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: .5rem;
   border-top: 1px solid rgba(255,200,120,.08); padding-top: .8rem;
   margin-bottom: .85rem;
 }
-.cr-total-label { font-size: .86rem; font-weight: 800; color: var(--col-text); }
+.cr-total-label {
+  font-size: .86rem; font-weight: 800; color: var(--col-text);
+  min-width: 0; overflow-wrap: break-word;
+}
 .cr-total-val {
-  font-size: 1.55rem; font-weight: 950; color: var(--col-gold);
+  font-size: clamp(1.2rem, 4.5vw, 1.55rem); font-weight: 950; color: var(--col-gold);
   letter-spacing: -.03em;
   /* Glow text suave — respeta el brand primary. */
   text-shadow: 0 0 20px color-mix(in srgb, var(--brand-primary, var(--col-gold)) 30%, transparent);
+  flex-shrink: 0; white-space: nowrap;
 }
 
 /* ── CTA principal ── */
@@ -956,7 +1205,7 @@ body.ox-body-public .cr-summary-title { color: var(--theme-header-text) !importa
 .cr-row[hidden] { display: none !important; }
 .cr-row { color: color-mix(in srgb, var(--theme-header-text) 78%, var(--theme-header-bg)); border-color: color-mix(in srgb, var(--theme-header-text) 10%, transparent); }
 .cr-row > :last-child { color: var(--theme-header-text); font-weight: 800; }
-.cr-row--muted { color: color-mix(in srgb, var(--theme-header-text) 60%, var(--theme-header-bg)); }
+.cr-row--muted { color: color-mix(in srgb, var(--theme-header-text) 78%, var(--theme-header-bg)); }
 .cr-row--green,
 .cr-row--green > :last-child { color: var(--theme-success); }
 .cr-total-row { border-top-color: color-mix(in srgb, var(--theme-header-text) 16%, transparent); }
@@ -970,7 +1219,14 @@ body.ox-body-public .cr-summary-title { color: var(--theme-header-text) !importa
   box-shadow: 3px 3px 0 color-mix(in srgb, var(--action-primary) 45%, var(--theme-text));
 }
 .cr-cta:hover { filter: brightness(1.05); transform: translate(1px, 1px); box-shadow: 1px 1px 0 color-mix(in srgb, var(--action-primary) 45%, var(--theme-text)); }
-.cr-continue { color: color-mix(in srgb, var(--theme-header-text) 72%, var(--theme-header-bg)); }
+.cr-continue {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: .55rem;
+  color: color-mix(in srgb, var(--theme-header-text) 82%, var(--theme-header-bg));
+}
 .cr-continue:hover { color: var(--theme-header-text); }
 .cr-zone { margin-top: 1rem; }
 .cr-zone-row { color: var(--cr-muted); }
@@ -989,7 +1245,12 @@ body.ox-body-public .cr-summary-title { color: var(--theme-header-text) !importa
 .cr-empty-sub { color: var(--cr-muted); }
 
 @media (max-width: 719px) {
-  .cr-wrap { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 8.5rem); }
+  /* La canasta conserva la navegación de la app. El resumen permanece como
+     acción contextual, inmediatamente encima, sin competir ni taparla. */
+  .cr-wrap { padding-bottom: calc(184px + env(safe-area-inset-bottom, 0px)); }
+  .cr-panel {
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  }
   .cr-step-l { display: inline; font-size: .65rem; }
   .cr-steps { padding-inline: .65rem; }
   .cr-step-sep { margin-inline: .35rem; }
@@ -1006,7 +1267,7 @@ body.ox-body-public .cr-summary-title { color: var(--theme-header-text) !importa
   .cr-summary {
     grid-template-columns: minmax(82px, .7fr) minmax(0, 1.6fr);
     gap: .65rem;
-    padding: .72rem .75rem calc(.72rem + env(safe-area-inset-bottom, 0px));
+    padding: .72rem .75rem;
     border-radius: 15px 5px 15px 15px;
     background: color-mix(in srgb, var(--theme-header-bg) 97%, transparent);
     box-shadow: 0 -10px 30px color-mix(in srgb, var(--theme-text) 22%, transparent), 4px 4px 0 color-mix(in srgb, var(--brand-primary) 62%, var(--theme-text));
@@ -1022,6 +1283,7 @@ body.ox-body-public .cr-summary-title { color: var(--theme-header-text) !importa
   .cr-total-label { color: color-mix(in srgb, var(--theme-header-text) 68%, var(--theme-header-bg)); }
   .cr-total-val { color: var(--theme-header-text); font-size: 1.3rem; }
   .cr-cta { min-height: 50px; font-size: .84rem; padding-inline: .55rem; }
+  .cr-continue { display: none; }
 }
 
 @media (max-width: 430px) {
@@ -1030,6 +1292,38 @@ body.ox-body-public .cr-summary-title { color: var(--theme-header-text) !importa
   .cr-badge { min-width: 36px; height: 34px; }
   .cr-step { gap: .25rem; }
   .cr-step-n { width: 23px; height: 23px; }
+  /* Franja compacta: total y acción permanecen visibles sin cubrir media
+     pantalla. Las dos columnas son flexibles y el CTA admite dos líneas. */
+  .cr-summary {
+    grid-template-columns: minmax(78px, .62fr) minmax(0, 1.7fr);
+    gap: .45rem;
+    padding: .55rem .65rem;
+  }
+  .cr-total-row {
+    grid-column: 1;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: .18rem;
+    min-width: 0;
+  }
+  .cr-cta {
+    grid-column: 2;
+    width: 100%;
+    min-height: 50px;
+    padding: .65rem .5rem;
+    font-size: clamp(.78rem, 3.35vw, .9rem);
+    line-height: 1.2;
+    text-align: center;
+    white-space: normal;
+    gap: clamp(.25rem, 1.5vw, .45rem);
+  }
+  .cr-cta svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .cr-total-val {
+    font-size: clamp(1.05rem, 5.5vw, 1.35rem);
+  }
   .cr-thumb { width: 70px; height: 70px; }
   .cr-item { gap: .7rem; padding: .8rem .72rem; }
   .cr-item-name { padding-right: 1.8rem; }
@@ -1049,8 +1343,8 @@ body.ox-body-public .cr-summary-title { color: var(--theme-header-text) !importa
 @media (max-width: 350px) {
   .cr-step-l { display: none; }
   .cr-thumb { width: 62px; height: 62px; }
-  .cr-summary { grid-template-columns: 78px minmax(0,1fr); }
-  .cr-cta { font-size: .76rem; }
+  .cr-total-val { font-size: 1rem; }
+  .cr-cta { font-size: .82rem; padding-inline: .5rem; }
 }
 
 /* Firma visual al final de la cascada: varias capas históricas del carrito
@@ -1061,4 +1355,45 @@ body.ox-body-public .cr-summary-title { color: var(--theme-header-text) !importa
     radial-gradient(circle at 20% 18%, color-mix(in srgb, var(--heritage-sun) 14%, transparent), transparent 42%),
     repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--heritage-coffee) 5%, transparent) 7px 8px),
     var(--cr-paper-2, var(--col-elevated));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   R17 · Perf mobile — mismo criterio que en menu: sin blur en sticky/fixed
+   elements en móviles. Mantiene la sensación de "layer flotante" con un
+   fondo sólido de alta opacidad + sombra suave.
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 900px), (pointer: coarse) {
+  .cr-header,
+  .cr-summary-sticky,
+  .cr-checkout-bar,
+  .cr-floating-total {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background-color: color-mix(in srgb, var(--theme-surface, #fff) 96%, transparent) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   R17 · Carrito — fila de sabor compacta cuando hay 1 solo sabor de 1 unidad
+   (radio mode, el 90% de los productos). El chip aparece INLINE tras la
+   label en lugar de en fila propia, ahorrando ~20-25px verticales por item.
+   Cuando hay múltiples sabores o qty>1 mantiene el layout original en fila.
+   ═══════════════════════════════════════════════════════════════════════ */
+.cr-choice-row.cr-choice-row--inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .35rem .5rem;
+  margin: .25rem 0;
+}
+.cr-choice-row.cr-choice-row--inline .cr-choice-label {
+  margin: 0;
+  font-size: .72rem;
+  color: var(--col-muted, #6B5B4D);
+  font-weight: 700;
+}
+.cr-choice-row.cr-choice-row--inline .cr-choice-chips {
+  display: inline-flex;
+  gap: .3rem;
+  flex-wrap: wrap;
 }

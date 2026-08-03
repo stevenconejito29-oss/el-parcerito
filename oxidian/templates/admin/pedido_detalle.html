@@ -89,13 +89,14 @@
         </div>
 
         {% if pedido.tipo_entrega_cliente == 'delivery' and pedido.direccion_entrega %}
+        {% set destino_mapa = ((pedido.direccion_lat|string) ~ ',' ~ (pedido.direccion_lng|string)) if pedido.direccion_lat is not none and pedido.direccion_lng is not none else (pedido.direccion_entrega ~ ', ' ~ (brand.ciudad or '')) %}
         <div class="detail-address mt-3">
           <span class="detail-info-lbl">Dirección de entrega</span>
           <p class="detail-address-val">{{ pedido.direccion_entrega }}</p>
           <div class="flex gap-2 flex-wrap mt-2">
-            <a href="https://www.google.com/maps/dir/?api=1&destination={{ (pedido.direccion_entrega ~ ', ' ~ (brand.ciudad or '')) | urlencode }}"
+            <a href="https://www.google.com/maps/dir/?api=1&destination={{ destino_mapa | urlencode }}"
                target="_blank" rel="noopener" class="ord-btn">🗺 Google Maps</a>
-            <a href="https://waze.com/ul?q={{ (pedido.direccion_entrega ~ ', ' ~ (brand.ciudad or '')) | urlencode }}"
+            <a href="https://waze.com/ul?q={{ destino_mapa | urlencode }}"
                target="_blank" rel="noopener" class="ord-btn">🚗 Waze</a>
             {% if pedido.zona_id %}
             <span class="ord-chip">Zona: {{ pedido.zona_nombre_aplicada }}</span>
@@ -151,7 +152,7 @@
 
       {# ── Items del pedido ── #}
       <section class="ox-card p-4 mt-3">
-        <h2 class="detail-section-title">📦 Items ({{ pedido.items|length }})</h2>
+        <h2 class="detail-section-title">📦 Items ({{ pedido.items.count() }})</h2>
         <div class="work-items">
           {% for item in pedido.items %}
           <div class="work-item">

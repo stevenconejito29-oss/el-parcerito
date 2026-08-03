@@ -7,6 +7,30 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendContractsTest(unittest.TestCase):
+    def test_privacy_choices_are_balanced_and_optional_storage_is_gated(self):
+        base = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
+        checkout = (ROOT / "templates" / "public" / "checkout.html").read_text(encoding="utf-8")
+        privacy = (ROOT / "static" / "js" / "privacy-consent.js").read_text(encoding="utf-8")
+
+        self.assertIn("data-privacy-reject", base)
+        self.assertIn("data-privacy-accept", base)
+        self.assertIn("data-privacy-open", base)
+        self.assertNotIn("fonts.googleapis.com", base)
+        self.assertIn("OxPrivacy?.has('preferences')", checkout)
+        self.assertIn("localStorage.removeItem('oxCheckoutGuest')", checkout)
+        self.assertIn("preferences: !!allowPreferences", privacy)
+        self.assertIn("MAX_AGE_MS = 730", privacy)
+
+    def test_checkout_requires_terms_and_closed_messages_wrap(self):
+        checkout = (ROOT / "templates" / "public" / "checkout.html").read_text(encoding="utf-8")
+        menu_css = (ROOT / "static" / "css" / "storefront-menu.css").read_text(encoding="utf-8")
+        route = (ROOT / "routes" / "public.py").read_text(encoding="utf-8")
+
+        self.assertIn('name="acepta_condiciones" value="1" required', checkout)
+        self.assertIn('request.form.get("acepta_condiciones") != "1"', route)
+        self.assertIn('data-store-open=', checkout)
+        self.assertNotIn("white-space: nowrap;\n}", menu_css[menu_css.index(".ep-toast {"):menu_css.index(".ep-toast.is-on")])
+
     def test_templates_do_not_use_inline_dom_event_attributes(self):
         """La CSP de producción bloquea onclick/onsubmit aunque el HTML pinte bien."""
         pattern = re.compile(
@@ -88,6 +112,23 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertNotIn("url_for('repartidor.mis_comisiones')", template)
         self.assertIn("data-delivery-theme-toggle", template)
 
+    def test_preparation_compact_view_has_route_and_explicit_context(self):
+        template = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")
+        route = (ROOT / "routes" / "preparador.py").read_text(encoding="utf-8")
+
+        self.assertIn("preparador.toggle_vista_compacta", template)
+        self.assertIn('name="vista" value="{{ vista_encargos }}"', template)
+        self.assertIn('def toggle_vista_compacta():', route)
+        self.assertIn('prep_vista_compacta=prep_vista_compacta', route)
+
+    def test_preparation_fallback_work_is_not_hidden_by_scheduled_summary(self):
+        template = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")
+        route = (ROOT / "routes" / "preparador.py").read_text(encoding="utf-8")
+
+        self.assertIn("current_user.rol != 'preparacion' or pendientes", template)
+        self.assertIn("tiene_inmediato_asignado = any(", route)
+        self.assertIn("or tiene_inmediato_asignado", route)
+
     def test_public_navigation_does_not_prefetch_session_documents(self):
         script = (ROOT / "static" / "js" / "header-modern.js").read_text(encoding="utf-8")
         template = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
@@ -106,12 +147,54 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("@media (min-width: 761px)", styles)
         self.assertIn(".ox-bottom-nav.ox-bnav-v2 { display: none !important; }", styles)
 
-    def test_portrait_phone_does_not_repeat_cart_navigation(self):
+    def test_portrait_phone_keeps_one_cart_access_and_cart_keeps_app_navigation(self):
+        template = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
         styles = (ROOT / "static" / "css" / "header-modern.css").read_text(encoding="utf-8")
+        cart_styles = (ROOT / "static" / "css" / "storefront-cart.css").read_text(encoding="utf-8")
 
         self.assertIn("@media (max-width: 760px) and (orientation: portrait)", styles)
         self.assertIn(".ox-header-cart { display: none !important; }", styles)
         self.assertIn("@media (orientation: landscape) and (max-height: 500px)", styles)
+        self.assertIn("'public.ver_carrito'", template)
+        self.assertIn("bottom: calc(76px + env(safe-area-inset-bottom, 0px))", cart_styles)
+
+    def test_mobile_product_card_has_explicit_configurable_purchase_action(self):
+        card = (ROOT / "templates" / "public" / "_product_card.html").read_text(encoding="utf-8")
+        config = (ROOT / "store_config.py").read_text(encoding="utf-8")
+        styles = (ROOT / "static" / "css" / "storefront-menu.css").read_text(encoding="utf-8")
+        shared = (ROOT / "static" / "css" / "oxidian.css").read_text(encoding="utf-8")
+
+        self.assertIn("ep-card-title-link", card)
+        self.assertIn("ui.product_add_short", card)
+        self.assertIn('"UI_PRODUCT_ADD_SHORT":', config)
+        self.assertIn(".ep-btn-add-label", styles)
+        self.assertIn("body.ox-body-public .ep-btn-detail,", shared)
+        self.assertNotIn(
+            "body.ox-body-public .ep-modal-detail-btn,\nbody.ox-body-public .ep-btn-detail {",
+            shared,
+        )
+        self.assertNotIn(
+            "body.ox-body-public .ep-modal-detail-btn,\nbody.ox-body-public .ep-btn-detail,\nbody.ox-body-public .ox-btn-ghost",
+            shared,
+        )
+
+    def test_product_cards_use_truthful_feedback_and_configurable_visual_tokens(self):
+        card = (ROOT / "templates" / "public" / "_product_card.html").read_text(encoding="utf-8")
+        page = (ROOT / "templates" / "public" / "index.html").read_text(encoding="utf-8")
+        styles = (ROOT / "static" / "css" / "storefront-product-card.css").read_text(encoding="utf-8")
+
+        self.assertIn("ep-card-cart-state", card)
+        self.assertIn("ep-card-cart-state", page)
+        for token in (
+            "var(--heritage-sun)",
+            "var(--heritage-clay)",
+            "var(--heritage-river)",
+            "var(--heritage-leaf)",
+            "var(--action-primary)",
+        ):
+            self.assertIn(token, styles)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
+        self.assertNotIn("countdown", card.lower())
 
     def test_mobile_menu_and_search_are_distinct_navigation_modes(self):
         template = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
@@ -258,6 +341,17 @@ class FrontendContractsTest(unittest.TestCase):
             template = template_path.read_text(encoding="utf-8")
             self.assertIsNone(inline_handler.search(template), template_path.name)
 
+    def test_kitchen_queue_sync_does_not_reserve_gunicorn_threads(self):
+        template = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(
+            encoding="utf-8"
+        )
+        route = (ROOT / "routes" / "preparador.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("new EventSource", template)
+        self.assertNotIn("stream_with_context", route)
+        self.assertIn("document.visibilityState", template)
+        self.assertIn('"signature": _cola_signature()', route)
+
     def test_mobile_navigation_uses_one_configurable_contrast_pair(self):
         tokens = (ROOT / "static" / "css" / "tokens.css").read_text(encoding="utf-8")
         styles = (ROOT / "static" / "css" / "header-modern.css").read_text(encoding="utf-8")
@@ -349,6 +443,76 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertNotIn("pedidos_activos_como_preparador()", template)
         self.assertNotIn("pedidos_activos_como_repartidor()", template)
         self.assertIn('class="ord-pagination"', template)
+
+    def test_product_cards_use_one_responsive_editorial_component(self):
+        menu = (ROOT / "templates" / "public" / "index.html").read_text(encoding="utf-8")
+        card = (ROOT / "templates" / "public" / "_product_card.html").read_text(encoding="utf-8")
+        styles = (
+            ROOT / "static" / "css" / "storefront-product-card.css"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(menu.count("css/storefront-product-card.css"), 1)
+        self.assertIn("ep-card-image-cover", card)
+        self.assertIn("ep-card-image-contain", card)
+        self.assertIn("ep-card-highlights", card)
+        self.assertIn("grid-template-areas:", styles)
+        self.assertIn('"price action"', styles)
+        self.assertIn("object-fit: contain", styles)
+        self.assertIn("object-fit: cover", styles)
+        self.assertIn("@media (max-width: 560px)", styles)
+        self.assertIn("ep-card-combo-overview", card)
+        self.assertIn("ep-card-combo-thumb", styles)
+        self.assertIn("Armar combo", card)
+        self.assertNotIn("#CE1126", styles)
+
+    def test_product_combo_is_a_state_driven_guided_flow(self):
+        menu = (ROOT / "templates" / "public" / "index.html").read_text(encoding="utf-8")
+        detail = (ROOT / "templates" / "public" / "producto.html").read_text(encoding="utf-8")
+        modal_styles = (
+            ROOT / "static" / "css" / "storefront-product-modal.css"
+        ).read_text(encoding="utf-8")
+        detail_styles = (
+            ROOT / "static" / "css" / "storefront-product-detail.css"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(menu.count("css/storefront-product-modal.css"), 1)
+        self.assertEqual(detail.count("css/storefront-product-detail.css"), 1)
+        self.assertIn('"image_fit":', menu)
+        self.assertIn("pd-combo-guide", detail)
+        self.assertIn("pdComboRenderWizard(state)", detail)
+        self.assertIn("pdComboState()", detail)
+        self.assertIn("data-combo-next", detail)
+        self.assertIn("aria-valuenow", detail)
+        self.assertIn("pdComboEnhanceUnitSelect", detail)
+        self.assertIn("pd-combo-unit-choice", detail)
+        self.assertIn("aria-pressed", detail)
+        self.assertIn("document.body.appendChild(epModalPortal)", menu)
+        self.assertIn("env(safe-area-inset-top)", modal_styles)
+        self.assertIn("minmax(0, 1fr)", modal_styles)
+        self.assertIn("grid-template-columns: minmax(12rem, 38%) minmax(0, 1fr)", modal_styles)
+        self.assertIn(".pd-combo-unit-choice", detail_styles)
+        self.assertIn(".pd-cstep:not(.is-open)", detail_styles)
+        self.assertIn("@media (orientation: landscape)", detail_styles)
+        self.assertNotIn("pdAutoPickRequiredFlavors", detail)
+        self.assertIn('role="button" tabindex="0" aria-pressed="false"', detail)
+        self.assertNotIn(
+            "position:static; width:3.35rem; height:2.35rem",
+            detail,
+        )
+
+    def test_checkout_persists_consent_location_for_server_validation(self):
+        checkout = (
+            ROOT / "templates" / "public" / "checkout.html"
+        ).read_text(encoding="utf-8")
+        route = (
+            ROOT / "routes" / "public.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('name="direccion_lat"', checkout)
+        self.assertIn('name="direccion_lng"', checkout)
+        self.assertIn("position.coords.accuracy", checkout)
+        self.assertIn("direccion_lat=(", route)
+        self.assertIn("precision_m=ubicacion_precision", route)
 
 
 if __name__ == "__main__":

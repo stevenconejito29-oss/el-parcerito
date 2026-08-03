@@ -41,7 +41,6 @@ def _eget(key, fallback=""):
 
 CLAVES_DEFAULT = [
     ("PUNTOS_POR_EURO",        "1",    "Puntos que gana el cliente por cada euro gastado"),
-    ("PUNTOS_CANJE_RATIO",     "100",  "Puntos necesarios para obtener 1€ de descuento"),
     ("ALERTA_CADUCIDAD_DIAS",  "7",    "Días antes de caducidad para mostrar alerta de stock"),
     ("NOMBRE_NEGOCIO",         _eget("NOMBRE_NEGOCIO"),            "Nombre del negocio"),
     ("SLOGAN_NEGOCIO",         "",                                  "Eslogan o tagline del negocio"),
@@ -78,9 +77,12 @@ CLAVES_DEFAULT = [
     ("WEBHOOK_SECRET",         _eget("WEBHOOK_SECRET"),             "Secreto del webhook Evolution -> Oxidian"),
     ("HORARIO_APERTURA",       "09:00", "Hora de apertura (HH:MM)"),
     ("HORARIO_CIERRE",         "22:30", "Hora de cierre (HH:MM)"),
+    ("HORARIO_SEMANAL_JSON",    "",      "Franjas semanales por día en JSON"),
     ("TIENDA_MENSAJE_CIERRE",  "",      "Mensaje que se muestra cuando la tienda está cerrada"),
     ("VALIDAR_RADIO_ENTREGA",  "1",     "Activar validación de distancia para checkout"),
     ("BLOQUEAR_DIRECCION_NO_VERIFICADA", "1", "Bloquear checkout si la dirección no se puede geocodificar"),
+    ("DELIVERY_GPS_MAX_ACCURACY_M", "200", "Precisión GPS máxima aceptada en metros"),
+    ("DELIVERY_ADDRESS_GPS_MAX_DISTANCE_KM", "1", "Desvío máximo entre dirección y GPS"),
     ("RADIO_ENTREGA_KM",       "5",     "Radio máximo de entrega en km"),
     ("PEDIDO_MINIMO_EUR",      "0",     "Monto mínimo de pedido en euros (0 = sin mínimo)"),
     ("AUTO_DESTACADOS_ENABLED", "1",    "Mostrar recomendaciones automáticas si no hay destacados configurados"),
@@ -162,6 +164,7 @@ PUBLIC_UI_FIELDS = [
     ("UI_CART_EMPTY_TEXT", "Canasta vacía · descripción"),
     ("UI_CART_VIEW_MENU", "Canasta vacía · ver menú"),
     ("UI_CART_MEMORY_NOTE", "Canasta · mensaje emocional"),
+    ("UI_PRODUCT_ADD_SHORT", "Producto · acción corta para agregar"),
     ("UI_CART_ADD_ACTION", "Canasta · acción para añadir"),
     ("UI_CART_ADDED", "Canasta · confirmación al añadir"),
     ("UI_CART_VIEW_ACTION", "Canasta · acción para abrir"),
@@ -233,6 +236,11 @@ CONFIG_SECTION_KEYS = {
         "TELEFONO_NEGOCIO", "EMAIL_CONTACTO", "BIZUM_TELEFONO",
         "WHATSAPP_COUNTRY_CODE",
     },
+    "tienda-legal": {
+        "NOMBRE_FISCAL", "NIF_NEGOCIO", "DIRECCION_FISCAL",
+        "EMAIL_PRIVACIDAD", "REGISTRO_MERCANTIL", "LEGAL_VERSION",
+        "LEGAL_RETENCION_PEDIDOS", "LEGAL_CONDICIONES_DEVOLUCION",
+    },
     "tienda-ubicacion": {
         "DIRECCION_NEGOCIO", "CIUDAD_NEGOCIO", "PROVINCIA_NEGOCIO",
         "PAIS_NEGOCIO", "PAIS_CODIGO_ISO",
@@ -247,7 +255,8 @@ CONFIG_SECTION_KEYS = {
     "tienda-tema": set(PUBLIC_THEME_DEFAULTS),
     "tienda-textos": set(PUBLIC_UI_DEFAULTS),
     "operacion-horario": {
-        "HORARIO_APERTURA", "HORARIO_CIERRE", "TIENDA_FORZAR_CERRADA",
+        "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON",
+        "TIENDA_FORZAR_CERRADA",
         "TIENDA_MENSAJE_CIERRE", "PREAPERTURA_ACTIVA",
         "PREAPERTURA_TITULO", "PREAPERTURA_MENSAJE",
     },
@@ -259,11 +268,12 @@ CONFIG_SECTION_KEYS = {
         "SERVICE_COMMISSION_PCT",
     },
     "entregas": {
-        "VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA",
         "RADIO_ENTREGA_KM", "CENTRO_LAT", "CENTRO_LON",
+        "DELIVERY_GPS_MAX_ACCURACY_M",
+        "DELIVERY_ADDRESS_GPS_MAX_DISTANCE_KM",
         "PEDIDO_MINIMO_EUR",
     },
-    "puntos": {"PUNTOS_POR_EURO", "PUNTOS_CANJE_RATIO"},
+    "puntos": {"PUNTOS_POR_EURO"},
     "integraciones": {
         "BOT_API_URL", "BOT_OXIDIAN_URL", "EVOLUTION_API_URL",
         "EVOLUTION_INSTANCE",
@@ -348,8 +358,11 @@ def _validar_config_value(clave, valor):
     valor = (valor or "").strip()
     if not _CONFIG_KEY_RE.match(clave):
         return False, clave, valor, "La clave debe usar solo MAYÚSCULAS, números y guion bajo."
-    if len(valor) > 500:
-        return False, clave, valor, "El valor no puede superar 500 caracteres."
+    max_length = 2000 if clave in {
+        "LEGAL_RETENCION_PEDIDOS", "LEGAL_CONDICIONES_DEVOLUCION",
+    } else 500
+    if len(valor) > max_length:
+        return False, clave, valor, f"El valor no puede superar {max_length} caracteres."
 
     if clave in {
         "VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA",
@@ -367,13 +380,21 @@ def _validar_config_value(clave, valor):
             return False, clave, valor, "Modo de tienda no válido."
         return True, clave, valor, None
 
-    if clave in {"PUNTOS_POR_EURO", "PUNTOS_CANJE_RATIO", "ALERTA_CADUCIDAD_DIAS"}:
+    if clave in {
+        "PUNTOS_POR_EURO", "ALERTA_CADUCIDAD_DIAS",
+        "DELIVERY_GPS_MAX_ACCURACY_M",
+    }:
         try:
             numero = int(valor)
         except (TypeError, ValueError):
             return False, clave, valor, "Este ajuste debe ser un número entero."
-        if numero <= 0 or numero > 100000:
-            return False, clave, valor, "El número debe estar entre 1 y 100000."
+        min_val, max_val = (
+            (20, 2000)
+            if clave == "DELIVERY_GPS_MAX_ACCURACY_M"
+            else (1, 100000)
+        )
+        if numero < min_val or numero > max_val:
+            return False, clave, valor, f"El número debe estar entre {min_val} y {max_val}."
         return True, clave, str(numero), None
 
     combo_int_limits = {
@@ -409,8 +430,17 @@ def _validar_config_value(clave, valor):
             numero = float(valor)
         except (TypeError, ValueError):
             return False, clave, valor, "El radio debe ser un número."
-        if numero < 0.5 or numero > 50:
-            return False, clave, valor, "El radio debe estar entre 0.5 y 50 km."
+        if numero < 0.5 or numero > 25:
+            return False, clave, valor, "El radio debe estar entre 0.5 y 25 km."
+        return True, clave, f"{numero:g}", None
+
+    if clave == "DELIVERY_ADDRESS_GPS_MAX_DISTANCE_KM":
+        try:
+            numero = float(valor)
+        except (TypeError, ValueError):
+            return False, clave, valor, "La tolerancia debe ser un número."
+        if numero < 0.1 or numero > 5:
+            return False, clave, valor, "La tolerancia debe estar entre 0.1 y 5 km."
         return True, clave, f"{numero:g}", None
 
     if clave == "CENTRO_LAT":
@@ -439,6 +469,13 @@ def _validar_config_value(clave, valor):
         if not _TIME_RE.match(valor):
             return False, clave, valor, "El horario debe tener formato HH:MM."
         return True, clave, valor, None
+
+    if clave == "HORARIO_SEMANAL_JSON":
+        from schedule_service import schedule_json
+        try:
+            return True, clave, schedule_json(valor), None
+        except ValueError as exc:
+            return False, clave, valor, str(exc)
 
     if clave in {"COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO", *PUBLIC_THEME_DEFAULTS}:
         if not _HEX_COLOR_RE.match(valor):
@@ -471,10 +508,20 @@ def _validar_config_value(clave, valor):
         digits = re.sub(r"\D+", "", valor)
         return True, clave, digits, None
 
-    if clave == "EMAIL_CONTACTO":
+    if clave in {"EMAIL_CONTACTO", "EMAIL_PRIVACIDAD"}:
         if valor and (len(valor) > 254 or not _EMAIL_RE.fullmatch(valor)):
             return False, clave, valor, "El correo de contacto no tiene un formato válido."
         return True, clave, valor.lower(), None
+
+    if clave in {"LEGAL_RETENCION_PEDIDOS", "LEGAL_CONDICIONES_DEVOLUCION"}:
+        if not valor or len(valor) > 2000:
+            return False, clave, valor, "El texto debe tener entre 1 y 2000 caracteres."
+        return True, clave, valor, None
+
+    if clave == "LEGAL_VERSION":
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,24}", valor):
+            return False, clave, valor, "Usa una versión corta, por ejemplo 1.0 o 2026-08."
+        return True, clave, valor, None
 
     if clave == "PAIS_CODIGO_ISO":
         code = valor.lower()
@@ -579,8 +626,8 @@ def _parse_zona_form(form, zona=None):
         return None, "centro_lat debe estar entre -90 y 90."
     if centro_lng is not None and not (-180 <= centro_lng <= 180):
         return None, "centro_lng debe estar entre -180 y 180."
-    if radio_km is not None and not (0 < radio_km <= 200):
-        return None, "radio_km debe estar entre 0 y 200."
+    if radio_km is not None and not (0 < radio_km <= 25):
+        return None, "radio_km debe estar entre 0 y 25."
     # Geodata es todo-o-nada: si pones uno, pon los tres.
     geo_count = sum(1 for v in (centro_lat, centro_lng, radio_km) if v is not None)
     if 0 < geo_count < 3:
@@ -1638,8 +1685,9 @@ def guardar_config_seccion():
         section == "operacion-pagos"
         and propuestos.get("EFECTIVO_HABILITADO", "1") == "0"
         and propuestos.get("BIZUM_HABILITADO", "1") == "0"
+        and propuestos.get("TARJETA_HABILITADA", "1") == "0"
     ):
-        flash("Debe quedar habilitado al menos un método de pago.", "danger")
+        flash("Debe quedar habilitado al menos un método de pago (efectivo, Bizum o tarjeta).", "danger")
         return redirect(url_for("superadmin.config", section=parent_section))
     if (
         section == "operacion-modo"
@@ -1650,6 +1698,7 @@ def guardar_config_seccion():
         return redirect(url_for("superadmin.config", section=parent_section))
     if (
         section == "operacion-horario"
+        and not propuestos.get("HORARIO_SEMANAL_JSON")
         and propuestos.get("HORARIO_APERTURA")
         and propuestos.get("HORARIO_APERTURA") == propuestos.get("HORARIO_CIERRE")
     ):
@@ -2015,9 +2064,215 @@ def zonas():
         mapa_lng = float(SiteConfig.get("CENTRO_LON", "0"))
     except (TypeError, ValueError):
         mapa_lat, mapa_lng = 0.0, 0.0
+    # Health check inline: si algo está mal el operador lo ve al entrar sin
+    # tener que abrir otra pestaña. Reutiliza el mismo motor de diagnóstico.
+    diag = _diagnostico_zonas_payload()
     return render_template(
         "superadmin/zonas.html", zonas=zonas,
         mapa_lat=mapa_lat, mapa_lng=mapa_lng,
+        diag_checks=diag["checks"],
+        diag_severidad=diag["resumen_severidad"],
+    )
+
+
+def _diagnostico_zonas_payload():
+    """Recolecta el estado real del sistema de cobertura de reparto.
+
+    Devuelve una lista de checks (uno por línea del panel) con severidad
+    ``ok`` / ``warning`` / ``danger``. La UI los pinta con color y ofrece
+    el link directo a la config para arreglarlos. Sin adivinaciones: cada
+    check consulta el estado actual del SiteConfig o de las zonas.
+    """
+    checks = []
+    zonas = ZonaEntrega.query.order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
+    activas = [z for z in zonas if z.activo]
+
+    # 1) Fallback legacy: el motor actual siempre lo ignora. Aun así lo
+    # señalamos para que instalaciones actualizadas limpien esa configuración.
+    legacy = str(SiteConfig.get("ALLOW_LEGACY_ZONE_FALLBACK", "0") or "0").strip().lower()
+    legacy_on = legacy in {"1", "true", "yes", "si", "sí"}
+    checks.append({
+        "clave": "legacy_fallback",
+        "titulo": "Fallback legacy sin geocode",
+        "severidad": "danger" if legacy_on else "ok",
+        "detalle": (
+            "La configuración antigua ALLOW_LEGACY_ZONE_FALLBACK sigue activa. "
+            "El motor seguro ya la ignora, pero conviene eliminarla para evitar "
+            "confusión operativa."
+            if legacy_on
+            else "Desactivado: las direcciones fuera de zona se rechazan como debe."
+        ),
+        "accion_url": url_for("superadmin.config"),
+        "accion_texto": "Ir a Configuración" if legacy_on else None,
+    })
+
+    # 2) Centro del negocio + radio global. Sin esto, el geocoding libre por
+    # bounding box no funciona (services.py:1256) y solo entran calles
+    # exactamente indexadas en OSM.
+    try:
+        centro_lat_val = float(SiteConfig.get("CENTRO_LAT", "") or 0)
+        centro_lon_val = float(SiteConfig.get("CENTRO_LON", "") or 0)
+    except (TypeError, ValueError):
+        centro_lat_val, centro_lon_val = 0, 0
+    try:
+        radio_km_val = float(SiteConfig.get("RADIO_ENTREGA_KM", "0") or 0)
+    except (TypeError, ValueError):
+        radio_km_val = 0
+    centro_ok = centro_lat_val != 0 and centro_lon_val != 0 and radio_km_val > 0
+    checks.append({
+        "clave": "geo_negocio",
+        "titulo": "Coordenadas y radio del negocio",
+        "severidad": "ok" if centro_ok else "danger",
+        "detalle": (
+            f"CENTRO_LAT={centro_lat_val}, CENTRO_LON={centro_lon_val}, "
+            f"RADIO_ENTREGA_KM={radio_km_val}. Sin estos valores, el "
+            "geocoding libre no puede acotar la búsqueda y las direcciones "
+            "no indexadas exactamente en OSM se rechazan."
+        ) if not centro_ok else (
+            f"Centro: ({centro_lat_val}, {centro_lon_val}) · radio {radio_km_val} km"
+        ),
+        "accion_url": url_for("superadmin.config") + "#entregas",
+        "accion_texto": "Configurar" if not centro_ok else None,
+    })
+
+    # 3) Al menos una zona activa.
+    checks.append({
+        "clave": "hay_zonas",
+        "titulo": "Zonas activas configuradas",
+        "severidad": "ok" if activas else "danger",
+        "detalle": (
+            f"{len(activas)} zona{'s' if len(activas) != 1 else ''} activa{'s' if len(activas) != 1 else ''}."
+            if activas else
+            "No hay ninguna zona activa. El checkout rechazará todos los pedidos delivery."
+        ),
+        "accion_url": url_for("superadmin.zonas") + "#form-crear",
+        "accion_texto": "Crear zona" if not activas else None,
+    })
+
+    # 4) Cobertura geo por zona activa. Cualquier zona sin polígono ni
+    # círculo cae al fallback global; si legacy está OFF, es un agujero.
+    sin_geo = [z for z in activas if not (z.tiene_geo)]
+    checks.append({
+        "clave": "zonas_sin_geo",
+        "titulo": "Cobertura geográfica por zona",
+        "severidad": "ok" if not sin_geo else "warning",
+        "detalle": (
+            f"{len(sin_geo)} zona{'s' if len(sin_geo) != 1 else ''} activa{'s' if len(sin_geo) != 1 else ''} sin polígono ni círculo: "
+            + ", ".join(z.nombre for z in sin_geo) + ". "
+            "Estas zonas dependen del radio global y no distinguen barrios."
+            if sin_geo else
+            "Todas las zonas activas tienen polígono o círculo definido."
+        ),
+        "accion_url": url_for("superadmin.zonas"),
+        "accion_texto": "Editar zonas" if sin_geo else None,
+    })
+
+    # 5) El motor seguro bloquea siempre las direcciones no verificadas.
+    bloqueo = str(
+        SiteConfig.get("BLOQUEAR_DIRECCION_NO_VERIFICADA", "1") or "1"
+    ).strip().lower()
+    bloqueo_on = bloqueo in {"1", "true", "yes", "si", "sí"}
+    checks.append({
+        "clave": "bloqueo_direcciones",
+        "titulo": "Bloqueo de direcciones no verificadas",
+        "severidad": "ok",
+        "detalle": (
+            "Activo: las direcciones que no se pueden geocodificar se rechazan."
+            if bloqueo_on else
+            "La configuración antigua está desactivada, pero el motor seguro la ignora: "
+            "las direcciones no verificables siguen rechazándose."
+        ),
+        "accion_url": url_for("superadmin.config") + "#entregas",
+        "accion_texto": None,
+    })
+
+    return {
+        "checks": checks,
+        "resumen_severidad": (
+            "danger" if any(c["severidad"] == "danger" for c in checks)
+            else "warning" if any(c["severidad"] == "warning" for c in checks)
+            else "ok"
+        ),
+    }
+
+
+@superadmin_bp.route("/zonas/diagnostico")
+@superadmin_required
+def diagnostico_zonas():
+    """Panel de salud del sistema de cobertura de reparto."""
+    _exigir_delivery_para_zonas()
+    payload = _diagnostico_zonas_payload()
+    return render_template("superadmin/zonas_diagnostico.html", **payload)
+
+
+@superadmin_bp.route("/zonas/probar", methods=["GET", "POST"])
+@superadmin_required
+def probar_zona():
+    """Prueba una dirección real contra el sistema de cobertura.
+
+    Muestra paso a paso: (1) qué coordenadas devolvió OSM, (2) qué zona
+    resolvió el motor de matching, (3) qué precio y tiempo aplicaría el
+    checkout. Sin esta herramienta el operador tiene que crear un pedido
+    real para saber si su config funciona.
+    """
+    _exigir_delivery_para_zonas()
+    from services import geocodificar_direccion, asignar_zona_por_coordenadas
+
+    resultado = None
+    direccion = ""
+    if request.method == "POST":
+        direccion = (request.form.get("direccion") or "").strip()
+        if not direccion:
+            flash("Escribe una dirección para probar.", "warning")
+        else:
+            zonas = ZonaEntrega.query.filter_by(activo=True).all()
+            coords = geocodificar_direccion(direccion)
+            if not coords:
+                resultado = {
+                    "ok": False,
+                    "direccion": direccion,
+                    "coords": None,
+                    "zona": None,
+                    "distancia_km": None,
+                    "mensaje": (
+                        "OSM Nominatim no encontró esta dirección. Prueba a "
+                        "escribirla con más contexto (calle, número, localidad) "
+                        "o verifica CENTRO_LAT/LON en Configuración."
+                    ),
+                }
+            else:
+                lat, lon = coords
+                zona, distancia = asignar_zona_por_coordenadas(lat, lon, zonas)
+                if zona:
+                    resultado = {
+                        "ok": True,
+                        "direccion": direccion,
+                        "coords": (lat, lon),
+                        "zona": zona,
+                        "distancia_km": distancia,
+                        "mensaje": (
+                            f"Match: zona «{zona.nombre}» · envío €{float(zona.precio_envio or 0):.2f} "
+                            f"· tiempo ~{zona.tiempo_estimado_min} min"
+                        ),
+                    }
+                else:
+                    resultado = {
+                        "ok": False,
+                        "direccion": direccion,
+                        "coords": (lat, lon),
+                        "zona": None,
+                        "distancia_km": distancia,
+                        "mensaje": (
+                            "Coordenadas resueltas pero ninguna zona cubre "
+                            "este punto. Dibuja el polígono de la zona que "
+                            "debería alcanzar aquí, o aumenta el radio de la "
+                            "zona más cercana."
+                        ),
+                    }
+    return render_template(
+        "superadmin/zona_probar.html",
+        direccion=direccion,
+        resultado=resultado,
     )
 
 
@@ -2068,6 +2323,15 @@ def editar_zona(zona_id):
     if error:
         flash(error, "danger")
         return redirect(url_for("superadmin.editar_zona", zona_id=zona.id))
+    if zona.activo and not data.get("cobertura_geojson") and not all(
+        data.get(field) is not None
+        for field in ("centro_lat", "centro_lng", "radio_km")
+    ):
+        flash(
+            "Una zona activa debe tener un contorno o un centro y radio completos.",
+            "danger",
+        )
+        return redirect(url_for("superadmin.editar_zona", zona_id=zona.id))
     for campo, valor in data.items():
         setattr(zona, campo, valor)
     AuditLog.registrar(current_user.id, "editar_zona", "zona_entrega",
@@ -2086,6 +2350,12 @@ def editar_zona(zona_id):
 def toggle_zona(zona_id):
     _exigir_delivery_para_zonas()
     zona = get_or_404(ZonaEntrega, zona_id)
+    if not zona.activo and not zona.tiene_geo:
+        flash(
+            "No puedes activar una zona sin cobertura. Dibuja el contorno o configura su radio.",
+            "danger",
+        )
+        return redirect(url_for("superadmin.editar_zona", zona_id=zona.id))
     if zona.activo:
         activas_restantes = ZonaEntrega.query.filter(
             ZonaEntrega.activo == True,
@@ -2119,45 +2389,19 @@ def pl():
         ff = date.fromisoformat(fecha_fin)
     except (ValueError, TypeError):
         fi, ff = primer_dia, ultimo_dia
-        fecha_ini, fecha_fin = fi.isoformat(), ff.isoformat()
+    if fi > ff:
+        fi, ff = ff, fi
+    fecha_ini, fecha_fin = fi.isoformat(), ff.isoformat()
 
-    from collections import defaultdict
     from services import calcular_pl
 
     datos = calcular_pl(fi, ff)
-    fi_dt = datetime(fi.year, fi.month, fi.day, 0, 0, 0)
-    ff_dt = datetime(ff.year, ff.month, ff.day, 23, 59, 59)
-    movimientos = Caja.query.filter(Caja.fecha.between(fi_dt, ff_dt)).all()
-    por_categoria = defaultdict(lambda: {"ingreso": 0.0, "egreso": 0.0})
-    for m in movimientos:
-        cat = (m.categoria or "sin_categoria").lower()
-        por_categoria[cat][m.tipo] += float(m.monto)
-
-    pagos_pendientes_equipo = StaffPayment.query.filter_by(pagado=False)\
-        .order_by(StaffPayment.creado_en.asc()).all()
 
     return render_template("superadmin/pl.html",
-                           ventas_brutas=datos["ventas_brutas"],
-                           descuentos=datos["descuentos_concedidos"],
-                           ingresos_netos=datos["ingresos_netos"],
-                           cogs=datos["cogs"],
-                           margen_bruto=datos["margen_bruto"],
-                           margen_bruto_pct=datos["margen_bruto_pct"],
-                           nominas=datos["nominas"],
-                           comisiones=datos["comisiones_repartidor"],
-                           service_commission=datos["service_commission"],
-                           merchant_net=datos["merchant_net"],
-                           gastos_caja=datos["gastos_caja"],
-                           otros_ingresos_caja=datos["otros_ingresos_caja"],
-                           resultado=datos["resultado"],
-                           resultado_pct=datos["resultado_pct"],
-                           ticket_medio=datos["ticket_medio"],
-                           ventas_online=datos["ventas_online"],
-                           ventas_presencial=datos["ventas_presencial"],
-                           ventas_whatsapp=datos["ventas_whatsapp"],
-                           total_pedidos=datos["total_pedidos"],
-                           por_categoria=dict(por_categoria),
-                           pagos_pendientes_equipo=pagos_pendientes_equipo,
+                           pl=datos,
+                           hoy_iso=hoy.isoformat(),
+                           semana_ini=(hoy - timedelta(days=6)).isoformat(),
+                           mes_ini=primer_dia.isoformat(),
                            fecha_ini=fecha_ini, fecha_fin=fecha_fin)
 
 
@@ -2484,3 +2728,104 @@ def finanzas_export():
     resp = Response(buf.getvalue(), mimetype="text/csv; charset=utf-8")
     resp.headers["Content-Disposition"] = f'attachment; filename="{nombre_archivo}"'
     return resp
+
+
+# ─── CHATBOT · BASE DE CONOCIMIENTO (FAQ) ─────────────────────────────
+# Panel para gestionar las respuestas precargadas del chatbot.
+# El chatbot NO usa IA: sirve exclusivamente lo que se define aquí.
+
+def _knowledge_entry_from_form(entry, form, editor_id):
+    from models import KnowledgeEntry
+    from chat_router_service import AUDIENCIAS_VALIDAS
+    entry.categoria = (form.get("categoria") or "general").strip()[:60] or "general"
+    entry.pregunta = (form.get("pregunta") or "").strip()[:200]
+    entry.respuesta = (form.get("respuesta") or "").strip()
+    entry.keywords = (form.get("keywords") or "").strip()
+    audiencia = (form.get("audiencia") or "cliente").strip().lower()
+    entry.audiencia = audiencia if audiencia in AUDIENCIAS_VALIDAS else "cliente"
+    entry.activo = form.get("activo") in ("1", "true", "on", "True")
+    try:
+        entry.orden = int(form.get("orden") or 0)
+    except (TypeError, ValueError):
+        entry.orden = 0
+    entry.actualizado_por = editor_id
+    if not entry.pregunta or not entry.respuesta:
+        return "La pregunta y la respuesta son obligatorias."
+    return None
+
+
+@superadmin_bp.route("/chatbot/faq")
+@superadmin_required
+def chatbot_faq_lista():
+    from models import KnowledgeEntry
+    entries = KnowledgeEntry.query.order_by(
+        KnowledgeEntry.categoria, KnowledgeEntry.orden, KnowledgeEntry.id
+    ).all()
+    return render_template("superadmin/chatbot_faq.html", entries=entries)
+
+
+@superadmin_bp.route("/chatbot/faq/nueva", methods=["GET", "POST"])
+@superadmin_required
+def chatbot_faq_nueva():
+    from models import KnowledgeEntry
+    if request.method == "POST":
+        entry = KnowledgeEntry(es_seed=False)
+        err = _knowledge_entry_from_form(entry, request.form, current_user.id)
+        if err:
+            flash(err, "danger")
+            return render_template("superadmin/chatbot_faq_form.html", entry=entry)
+        db.session.add(entry)
+        db.session.commit()
+        flash("Entrada creada.", "success")
+        return redirect(url_for("superadmin.chatbot_faq_lista"))
+    entry = KnowledgeEntry(audiencia="cliente", activo=True, orden=0, categoria="general")
+    return render_template("superadmin/chatbot_faq_form.html", entry=entry)
+
+
+@superadmin_bp.route("/chatbot/faq/<int:entry_id>/editar", methods=["GET", "POST"])
+@superadmin_required
+def chatbot_faq_editar(entry_id):
+    from models import KnowledgeEntry
+    entry = get_or_404(KnowledgeEntry, entry_id)
+    if request.method == "POST":
+        err = _knowledge_entry_from_form(entry, request.form, current_user.id)
+        if err:
+            flash(err, "danger")
+            return render_template("superadmin/chatbot_faq_form.html", entry=entry)
+        db.session.commit()
+        flash("Entrada actualizada.", "success")
+        return redirect(url_for("superadmin.chatbot_faq_lista"))
+    return render_template("superadmin/chatbot_faq_form.html", entry=entry)
+
+
+@superadmin_bp.route("/chatbot/faq/<int:entry_id>/eliminar", methods=["POST"])
+@superadmin_required
+def chatbot_faq_eliminar(entry_id):
+    from models import KnowledgeEntry
+    entry = get_or_404(KnowledgeEntry, entry_id)
+    db.session.delete(entry)
+    db.session.commit()
+    flash("Entrada eliminada.", "success")
+    return redirect(url_for("superadmin.chatbot_faq_lista"))
+
+
+@superadmin_bp.route("/chatbot/simulador", methods=["GET", "POST"])
+@superadmin_required
+def chatbot_simulador():
+    """Prueba la respuesta del chatbot sin necesidad de WhatsApp real."""
+    from chat_router_service import match_query, fallback_message, AUDIENCIAS_VALIDAS
+    resultado = None
+    texto = ""
+    audiencia = "cliente"
+    if request.method == "POST":
+        texto = (request.form.get("texto") or "").strip()
+        audiencia = (request.form.get("audiencia") or "cliente").strip().lower()
+        if audiencia not in AUDIENCIAS_VALIDAS:
+            audiencia = "cliente"
+        matches = match_query(texto, audiencia=audiencia, limit=3)
+        resultado = {
+            "matches": matches,
+            "fallback": fallback_message(audiencia) if not matches else None,
+        }
+    return render_template("superadmin/chatbot_simulador.html",
+                           texto=texto, audiencia=audiencia, resultado=resultado)

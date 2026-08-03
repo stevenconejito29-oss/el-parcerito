@@ -1,0 +1,88 @@
+{% extends "admin_base.html" %}
+{% block title %}Probar dirección — Super Admin{% endblock %}
+{% block content %}
+<div class="oa-page">
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Super administración</p>
+      <h1 class="oa-page-header__title">🔎 Probar una dirección</h1>
+      <p class="oa-page-header__subtitle">Simula el flujo del checkout: geocodifica la dirección y muestra qué zona resolvería el sistema.</p>
+    </div>
+    <div class="oa-page-header__actions">
+      <a href="{{ url_for('superadmin.zonas') }}" class="oa-btn oa-btn--ghost">← Volver a zonas</a>
+      <a href="{{ url_for('superadmin.diagnostico_zonas') }}" class="oa-btn oa-btn--brand">Ver diagnóstico</a>
+    </div>
+  </header>
+
+  <div class="oa-panel">
+    <div class="oa-panel__body">
+      <form method="post" action="{{ url_for('superadmin.probar_zona') }}" style="display:flex;gap:.5rem;flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="text" name="direccion" value="{{ direccion|e }}"
+               placeholder="Ej: Calle San Pedro 15, Carmona"
+               required style="flex:1;min-width:280px;padding:.5rem;">
+        <button type="submit" class="oa-btn oa-btn--brand">Probar</button>
+      </form>
+    </div>
+  </div>
+
+  {% if resultado %}
+  {% set border_color = '#0a7f3b' if resultado.ok else '#b02020' %}
+  <div class="oa-panel" style="margin-top:var(--oa-space-3);border-left:4px solid {{ border_color }};">
+    <div class="oa-panel__body">
+      <strong style="color:{{ border_color }};display:block;font-size:1.05rem;">
+        {{ '✅' if resultado.ok else '❌' }} {{ resultado.mensaje }}
+      </strong>
+      <table style="width:100%;margin-top:.75rem;font-size:var(--oa-font-sm);border-collapse:collapse;">
+        <tbody>
+          <tr style="border-bottom:1px solid #eee;">
+            <td style="padding:.4rem 0;color:var(--col-muted);width:180px;">Dirección probada</td>
+            <td style="padding:.4rem 0;"><code>{{ resultado.direccion }}</code></td>
+          </tr>
+          <tr style="border-bottom:1px solid #eee;">
+            <td style="padding:.4rem 0;color:var(--col-muted);">Coordenadas OSM</td>
+            <td style="padding:.4rem 0;">
+              {% if resultado.coords %}
+              <code>{{ "%.6f"|format(resultado.coords[0]) }}, {{ "%.6f"|format(resultado.coords[1]) }}</code>
+              <a href="https://www.openstreetmap.org/?mlat={{ resultado.coords[0] }}&mlon={{ resultado.coords[1] }}&zoom=17" target="_blank" rel="noopener" style="margin-left:.5rem;">ver en OSM</a>
+              {% else %}
+              <em style="color:#b02020;">no resuelto</em>
+              {% endif %}
+            </td>
+          </tr>
+          <tr style="border-bottom:1px solid #eee;">
+            <td style="padding:.4rem 0;color:var(--col-muted);">Zona asignada</td>
+            <td style="padding:.4rem 0;">
+              {% if resultado.zona %}
+              <strong>{{ resultado.zona.nombre }}</strong>
+              {% if resultado.zona.tiene_poligono %}<span class="oa-badge oa-badge--brand">Polígono</span>
+              {% elif resultado.zona.tiene_radio %}<span class="oa-badge oa-badge--info">Radio</span>
+              {% else %}<span class="oa-badge oa-badge--err">Sin geo</span>{% endif %}
+              {% else %}
+              <em style="color:#b02020;">ninguna cubre este punto</em>
+              {% endif %}
+            </td>
+          </tr>
+          {% if resultado.distancia_km is not none %}
+          <tr style="border-bottom:1px solid #eee;">
+            <td style="padding:.4rem 0;color:var(--col-muted);">Distancia al centro de la zona</td>
+            <td style="padding:.4rem 0;">{{ "%.2f"|format(resultado.distancia_km) }} km</td>
+          </tr>
+          {% endif %}
+          {% if resultado.zona %}
+          <tr style="border-bottom:1px solid #eee;">
+            <td style="padding:.4rem 0;color:var(--col-muted);">Precio de envío</td>
+            <td style="padding:.4rem 0;">€{{ "%.2f"|format(resultado.zona.precio_envio|float) }}</td>
+          </tr>
+          <tr>
+            <td style="padding:.4rem 0;color:var(--col-muted);">Tiempo estimado</td>
+            <td style="padding:.4rem 0;">{{ resultado.zona.tiempo_estimado_min }} min</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

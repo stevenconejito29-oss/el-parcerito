@@ -350,13 +350,104 @@ body.ox-body-public .ox-info-panel .ox-heritage-icon { width: 1.25rem; height: 1
   font-weight: 950;
 }
 .checkout-radio { accent-color: var(--action-primary); }
-.checkout-payment-help {
-  color: var(--heritage-river) !important;
-  border: 1px solid color-mix(in srgb, var(--heritage-river) 25%, var(--col-border)) !important;
-  background: color-mix(in srgb, var(--heritage-river) 7%, var(--theme-surface)) !important;
+/* ═══════ Bloque preferencia de pago al repartidor ═══════
+   Sistema integral: subtítulo claro, grid responsive de 3 opciones que
+   colapsan a 1 columna en < 400px, icono grande + label + descripción,
+   panel de instrucciones por método que aparece sólo cuando corresponde. */
+.checkout-pay-block { }
+.checkout-pay-sub {
+  font-size: .8rem; color: var(--theme-muted); line-height: 1.4;
+  margin: 0 0 .85rem;
 }
-.checkout-payment-help ol { color: color-mix(in srgb, var(--heritage-river) 72%, var(--theme-text)); }
+.checkout-pay-grid {
+  display: grid;
+  /* 3 columnas fluidas cuando cabe, wrap natural cuando no. */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: .5rem;
+  margin: 0 0 .75rem;
+  padding: 0;
+  border: none;
+}
+.checkout-pay-opt {
+  display: flex; align-items: center; gap: .65rem;
+  padding: .85rem .8rem;
+  border-radius: .85rem;
+  cursor: pointer;
+  background: var(--col-elevated, var(--theme-surface));
+  border: 1.5px solid var(--col-border, transparent);
+  transition: border-color .18s ease, background .18s ease, transform .12s ease;
+  min-height: 64px;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  /* Invariante: label nunca desborda su celda */
+  min-width: 0;
+}
+.checkout-pay-opt:hover { border-color: color-mix(in srgb, var(--heritage-coffee, #FFAB00) 40%, var(--col-border)); }
+.checkout-pay-opt:active { transform: scale(.985); }
+.checkout-pay-opt:has(input:checked) {
+  border-color: var(--heritage-coffee, #FFAB00);
+  background: color-mix(in srgb, var(--heritage-sun, #FFAB00) 14%, var(--theme-surface));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--heritage-sun, #FFAB00) 16%, transparent);
+}
+.checkout-pay-opt input[type="radio"] {
+  position: absolute; opacity: 0; pointer-events: none;
+}
+.checkout-pay-icon { font-size: 1.6rem; line-height: 1; flex-shrink: 0; }
+.checkout-pay-body {
+  display: flex; flex-direction: column; gap: .12rem;
+  min-width: 0; flex: 1;
+}
+.checkout-pay-body strong {
+  font-size: .92rem; font-weight: 900; color: var(--theme-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.checkout-pay-body small {
+  font-size: .68rem; color: var(--theme-muted); line-height: 1.3;
+  overflow-wrap: break-word;
+}
+.checkout-payment-single {
+  padding: .85rem 1rem; border-radius: .8rem;
+  background: color-mix(in srgb, var(--heritage-sun, #FFAB00) 8%, var(--theme-surface));
+  border: 1px solid color-mix(in srgb, var(--heritage-sun, #FFAB00) 24%, var(--col-border));
+  color: var(--theme-text); font-size: .9rem;
+}
+
+/* Instrucciones por método: sólo el panel activo se muestra. */
+.checkout-payment-help {
+  display: none;
+  margin-top: .6rem;
+  padding: .75rem .9rem;
+  border-radius: .8rem;
+  color: var(--heritage-river);
+  border: 1px solid color-mix(in srgb, var(--heritage-river) 25%, var(--col-border));
+  background: color-mix(in srgb, var(--heritage-river) 7%, var(--theme-surface));
+  font-size: .82rem; line-height: 1.45;
+  overflow-wrap: break-word; word-break: break-word;
+}
+.checkout-payment-help.is-active { display: block; }
+.checkout-payment-help--warn {
+  color: color-mix(in srgb, #ffb84d 90%, var(--theme-text)) !important;
+  border-color: color-mix(in srgb, #ffb84d 40%, var(--col-border)) !important;
+  background: color-mix(in srgb, #ffb84d 12%, var(--theme-surface)) !important;
+  display: block;
+}
+.checkout-pay-help-title {
+  font-weight: 800; font-size: .84rem; margin: 0 0 .4rem;
+  color: var(--heritage-river);
+}
+.checkout-pay-help-list { margin: 0; padding-left: 1.15rem; list-style: disc; }
+.checkout-pay-help-list li { margin-bottom: .18rem; }
+.checkout-pay-help-list ol,
+ol.checkout-pay-help-list { list-style: decimal; }
+.checkout-pay-help-note { font-size: .72rem; margin: .4rem 0 0; opacity: .78; }
 .checkout-payment-help strong { color: var(--heritage-river); }
+
+/* Móvil estrecho: apila las 3 opciones en 2 columnas ≥ 380px, 1 columna < 380px.
+   El grid con auto-fit `minmax(140px, 1fr)` ya cae naturalmente, aquí forzamos
+   el min a 100% en viewports muy estrechos para que cada opción se lea grande. */
+@media (max-width: 380px) {
+  .checkout-pay-grid { grid-template-columns: 1fr; }
+  .checkout-pay-opt { min-height: 60px; }
+}
 .checkout-legal-note { color: var(--theme-muted); background: var(--theme-surface-alt); }
 .checkout-eyebrow {
   display: inline-flex;

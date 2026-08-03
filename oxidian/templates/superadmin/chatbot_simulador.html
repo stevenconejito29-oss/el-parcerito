@@ -1,0 +1,62 @@
+{% extends "admin_base.html" %}
+{% block title %}Simulador Chatbot — Super Admin{% endblock %}
+{% block content %}
+<div class="oa-page">
+
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Chatbot · pruebas</p>
+      <h1 class="oa-page-header__title">Simulador de mensajes</h1>
+      <p class="oa-page-header__subtitle">Escribe lo que un cliente diría en WhatsApp para ver qué respondería el bot.
+        Sin llamar a WhatsApp real ni consumir créditos.</p>
+    </div>
+    <div class="oa-page-header__actions">
+      <a href="{{ url_for('superadmin.chatbot_faq_lista') }}" class="oa-btn">📚 FAQ</a>
+    </div>
+  </header>
+
+  <form method="POST" class="oa-panel" style="margin:0 0 1rem;">
+    <div class="oa-panel__body" style="display:grid; gap:1rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>
+        <span style="display:block; font-weight:700; margin-bottom:.35rem;">Mensaje del cliente</span>
+        <textarea name="texto" rows="3" required autofocus
+                  style="width:100%; padding:.6rem; border-radius:.4rem; font-family:inherit;"
+                  placeholder="Ej: ¿A qué hora abren?">{{ texto or '' }}</textarea>
+      </label>
+      <div style="display:flex; gap:1rem; align-items:end;">
+        <label style="flex:1;">
+          <span style="display:block; font-weight:700; margin-bottom:.35rem;">Audiencia</span>
+          <select name="audiencia" style="width:100%; padding:.6rem; border-radius:.4rem;">
+            {% for a in ['cliente','admin','super_admin'] %}
+              <option value="{{ a }}" {% if audiencia == a %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="oa-btn oa-btn--primary">Probar</button>
+      </div>
+    </div>
+  </form>
+
+  {% if resultado %}
+  <div class="oa-panel" style="margin:0;">
+    <div class="oa-panel__body">
+      <h2 style="margin:0 0 .75rem; font-size:1rem;">Respuesta del bot</h2>
+      {% if resultado.matches %}
+        {% for m in resultado.matches %}
+        <div style="border-left:3px solid #7bcaff; padding:.5rem .75rem; margin-bottom:.75rem; background:rgba(255,255,255,.03);">
+          <p style="font-size:.72rem; opacity:.6; margin:0 0 .25rem;">Score {{ m.score }} · {{ m.categoria }} · «{{ m.pregunta }}»</p>
+          <p style="white-space:pre-wrap; margin:0;">{{ m.respuesta }}</p>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p style="opacity:.75; margin:0 0 .5rem;">Sin coincidencias. El bot mostraría el mensaje de fallback:</p>
+        <div style="border-left:3px solid #ffb84d; padding:.5rem .75rem; background:rgba(255,255,255,.03);">
+          <p style="white-space:pre-wrap; margin:0;">{{ resultado.fallback }}</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

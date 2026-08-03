@@ -58,6 +58,31 @@ DEFAULTS: dict[str, dict] = {
         "type": "str",
         "desc": "Domicilio fiscal completo (para exportación al gestor).",
     },
+    "EMAIL_PRIVACIDAD": {
+        "default": "",
+        "type": "str",
+        "desc": "Correo para ejercer derechos de protección de datos y reclamaciones.",
+    },
+    "REGISTRO_MERCANTIL": {
+        "default": "",
+        "type": "str",
+        "desc": "Datos registrales del titular, cuando legalmente correspondan.",
+    },
+    "LEGAL_VERSION": {
+        "default": "1.0",
+        "type": "str",
+        "desc": "Versión publicada de privacidad y condiciones de compra.",
+    },
+    "LEGAL_RETENCION_PEDIDOS": {
+        "default": "Los datos del pedido se conservan durante los plazos fiscales, contables y de defensa de reclamaciones aplicables; después se bloquean o eliminan de forma segura.",
+        "type": "str",
+        "desc": "Plazo o criterio de conservación comunicado al cliente.",
+    },
+    "LEGAL_CONDICIONES_DEVOLUCION": {
+        "default": "Las incidencias deben comunicarse cuanto antes. El derecho de desistimiento puede quedar excluido en alimentos perecederos, productos desprecintados por higiene, bienes personalizados y servicios de restauración con fecha concreta, sin afectar a la garantía por producto defectuoso o pedido incorrecto.",
+        "type": "str",
+        "desc": "Política de cancelación, desistimiento, devoluciones e incidencias.",
+    },
 
     # ── Confirmación de entrega / OTP ──────────────────────────────────
     "DELIVERY_CODE_MAX_INTENTOS": {
@@ -103,6 +128,11 @@ DEFAULTS: dict[str, dict] = {
             "Ventana mínima (segundos) entre 2 solicitudes de OTP de puntos "
             "del mismo cliente. Anti-flood — consumida por loyalty_service."
         ),
+    },
+    "BOT_BROADCAST_MAX_RECIPIENTS": {
+        "default": "500",
+        "type": "int",
+        "desc": "Máximo de destinatarios permitidos en un lote masivo de WhatsApp.",
     },
     "ADMIN_CLIENTES_PAGE_SIZE": {
         "default": "40",
@@ -194,39 +224,46 @@ DEFAULTS: dict[str, dict] = {
     # global en `asignar_zona_por_coordenadas`. Configurar SIEMPRE en
     # producción — sin CENTRO_LAT/LON el servicio queda fail-closed.
     "CENTRO_LAT": {
-        "default": "37.4736",
+        "default": "",
         "type": "float",
         "desc": (
-            "Latitud del centro del negocio. Default apunta a Carmona "
-            "(37.4736, -5.6438). Se usa como origen para calcular distancia "
-            "en km y validar cobertura de delivery."
+            "Latitud del centro del negocio. Debe configurarse expresamente "
+            "antes de habilitar delivery."
         ),
     },
     "CENTRO_LON": {
-        "default": "-5.6438",
+        "default": "",
         "type": "float",
         "desc": (
-            "Longitud del centro del negocio (Carmona por defecto). "
-            "Emparejar siempre con CENTRO_LAT."
+            "Longitud del centro del negocio. Emparejar siempre con CENTRO_LAT."
         ),
     },
     "RADIO_ENTREGA_KM": {
-        "default": "3",
+        "default": "5",
         "type": "float",
         "desc": (
-            "Radio máximo de entrega en kilómetros. Carmona centro cabe en "
-            "~1.5km; 3km cubre urbanizaciones cercanas sin alcanzar Sevilla. "
-            "Cap 0.5-25. Ajustar según capacidad de reparto real."
+            "Radio máximo de entrega en kilómetros. Ajustar según la "
+            "capacidad de reparto real y comprobarlo con el diagnóstico de zonas."
         ),
     },
     "CIUDAD_NEGOCIO": {
-        "default": "Carmona",
+        "default": "",
         "type": "str",
         "desc": (
             "Ciudad para desambiguar direcciones al geocodificar. Se envía "
             "a Nominatim como bias para que 'Calle Mayor 5' no acabe "
             "resolviendo en otra provincia."
         ),
+    },
+    "DELIVERY_GPS_MAX_ACCURACY_M": {
+        "default": "200",
+        "type": "int",
+        "desc": "Precisión GPS máxima aceptada para validar una ubicación compartida.",
+    },
+    "DELIVERY_ADDRESS_GPS_MAX_DISTANCE_KM": {
+        "default": "1",
+        "type": "float",
+        "desc": "Distancia máxima permitida entre la dirección escrita y el GPS del cliente.",
     },
 
     # ── Combos (fuente única de límites) ─────────────────────────────

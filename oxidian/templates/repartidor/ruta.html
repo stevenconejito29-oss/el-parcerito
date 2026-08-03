@@ -1,4 +1,5 @@
 {% extends "admin_base.html" %}
+{% from "_order_ticket_action.html" import ticket_action %}
 {% block title %}Mi Ruta — Repartidor{% endblock %}
 {% block styles %}
 <style>
@@ -15,6 +16,7 @@
   --route-bar: #fb923c;      /* bar externo — semántico */
   --route-kitchen: #e85d04;  /* cocina interna */
   --route-cash:   var(--brand-primary);
+  --route-cash-text: var(--brand-text);
   --route-cash-soft: color-mix(in srgb, var(--brand-primary) 16%, transparent);
 }
 
@@ -39,10 +41,10 @@
   border-radius: .55rem;
   background: var(--route-cash-soft);
   border: 1.5px solid color-mix(in srgb, var(--route-cash) 40%, transparent);
-  color: color-mix(in srgb, var(--route-cash) 72%, var(--col-text));
+  color: var(--route-cash-text);
   font-size: .82rem; font-weight: 800;
 }
-.route-cash-alert strong { color: var(--route-cash); font-weight: 900; }
+.route-cash-alert strong { color: var(--route-cash-text); font-weight: 900; }
 
 /* Panel de código de confirmación */
 .route-confirm-block {
@@ -377,18 +379,19 @@
 
       <!-- Dirección + GPS -->
       {% if pedido.direccion_entrega %}
+      {% set destino_mapa = ((pedido.direccion_lat|string) ~ ',' ~ (pedido.direccion_lng|string)) if pedido.direccion_lat is not none and pedido.direccion_lng is not none else (pedido.direccion_entrega ~ ', ' ~ (brand.ciudad or '')) %}
       <div class="work-box mt-2">
         <p class="work-address">
           <span class="work-address-label">Entregar en:</span>
           <span>{{ pedido.direccion_entrega }}</span>
         </p>
         <div class="flex gap-2 mt-2">
-          <a href="https://www.google.com/maps/dir/?api=1&destination={{ (pedido.direccion_entrega + ", " + (brand.ciudad or '')) | urlencode }}"
+          <a href="https://www.google.com/maps/dir/?api=1&destination={{ destino_mapa | urlencode }}"
              target="_blank" rel="noopener"
              class="work-btn work-btn-info flex-1">
             🧭 Maps
           </a>
-          <a href="https://waze.com/ul?q={{ (pedido.direccion_entrega + ", " + (brand.ciudad or '')) | urlencode }}"
+          <a href="https://waze.com/ul?q={{ destino_mapa | urlencode }}"
              target="_blank" rel="noopener"
              class="work-btn work-btn-info flex-1">
             🚗 Waze
@@ -402,14 +405,21 @@
       </div>
       {% endif %}
 
-      <!-- Productos -->
-      <div class="work-items mt-2">
+      <!-- Contenido bajo demanda: la dirección y el cobro siguen siendo la
+           prioridad de la ruta, sin perder la verificación del paquete. -->
+      <details class="route-contents mt-2">
+        <summary>
+          <span>Contenido del pedido</span>
+          <strong>{{ pedido.items|sum(attribute='cantidad') }} unidad(es)</strong>
+        </summary>
+        <div class="work-items">
         {% for item in pedido.items %}
         <div class="work-item">
           {% include "_order_item_combo.html" %}
         </div>
         {% endfor %}
-      </div>
+        </div>
+      </details>
 
       <!-- Teléfono -->
       {% if pedido.cliente.telefono %}
@@ -431,21 +441,11 @@
       {% if listos_count and listos_count > 1 %}
       <label class="route-multi-check" style="display:flex;gap:.4rem;align-items:center;margin:.3rem 0;font-size:.9em">
         <input type="checkbox" name="pedido_ids" value="{{ pedido.id }}"
-               form="ruta-tomar-form">
+               form="ruta-tomar-form" data-route-select="{{ pedido.id }}">
         <input type="checkbox" name="pedido_ids" value="{{ pedido.id }}"
-               form="ruta-salir-form" hidden>
+               form="ruta-salir-form" data-route-mirror="{{ pedido.id }}" hidden>
         <span>Incluir en ruta múltiple</span>
       </label>
-      <script>
-        // Sincroniza el checkbox visible con el "espejo" oculto del form de
-        // salida. Sin esto el usuario tendría que marcar dos veces cada card.
-        (function(){
-          var els = document.currentScript.parentElement.querySelectorAll('input[type=checkbox]');
-          if (els.length === 2) {
-            els[0].addEventListener('change', function(){ els[1].checked = els[0].checked; });
-          }
-        })();
-      </script>
       {% endif %}
 
       <!-- Botones de acción -->
@@ -460,6 +460,9 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="work-btn work-btn-info full-width">Salir a entregar</button>
         </form>
+        {% if current_user.rol in ('admin', 'super_admin') or pedido.repartidor_id == current_user.id %}
+          {{ ticket_action(pedido, label='Imprimir ticket 58 mm') }}
+        {% endif %}
       </div>
     </article>
     {% endfor %}
@@ -567,13 +570,14 @@
 
       <!-- Dirección + GPS -->
       {% if pedido.direccion_entrega %}
+      {% set destino_mapa = ((pedido.direccion_lat|string) ~ ',' ~ (pedido.direccion_lng|string)) if pedido.direccion_lat is not none and pedido.direccion_lng is not none else (pedido.direccion_entrega ~ ', ' ~ (brand.ciudad or '')) %}
       <div class="work-box mt-2">
         <p class="work-address">
           <span class="work-address-label is-info">Entregar en:</span>
           <span>{{ pedido.direccion_entrega }}</span>
         </p>
         <div class="flex gap-2 mt-2">
-          <a href="https://www.google.com/maps/dir/?api=1&destination={{ (pedido.direccion_entrega + ", " + brand.ciudad) | urlencode }}"
+          <a href="https://www.google.com/maps/dir/?api=1&destination={{ destino_mapa | urlencode }}"
              target="_blank" rel="noopener"
              class="work-btn work-btn-info flex-1">
             🧭 Navegar ahora
@@ -582,14 +586,19 @@
       </div>
       {% endif %}
 
-      <!-- Productos -->
-      <div class="work-items mt-2">
+      <details class="route-contents mt-2">
+        <summary>
+          <span>Contenido del pedido</span>
+          <strong>{{ pedido.items|sum(attribute='cantidad') }} unidad(es)</strong>
+        </summary>
+        <div class="work-items">
         {% for item in pedido.items %}
         <div class="work-item">
           {% include "_order_item_combo.html" %}
         </div>
         {% endfor %}
-      </div>
+        </div>
+      </details>
 
       <!-- Teléfono -->
       {% if pedido.cliente.telefono %}
@@ -602,6 +611,12 @@
            class="work-btn work-btn-ghost flex-1">
           WhatsApp
         </a>
+      </div>
+      {% endif %}
+
+      {% if current_user.rol in ('admin', 'super_admin') or pedido.repartidor_id == current_user.id %}
+      <div class="work-cta-group mt-2">
+        {{ ticket_action(pedido, label='Reimprimir ticket 58 mm') }}
       </div>
       {% endif %}
 
@@ -757,6 +772,14 @@ function copiarDireccion(dir) {
 document.addEventListener('click', (event) => {
   const button = event.target.closest('[data-copy-address]');
   if (button) copiarDireccion(button.dataset.copyAddress || '');
+});
+document.addEventListener('change', (event) => {
+  const selector = event.target.closest('[data-route-select]');
+  if (!selector) return;
+  const mirror = document.querySelector(
+    `[data-route-mirror="${CSS.escape(selector.dataset.routeSelect)}"]`
+  );
+  if (mirror) mirror.checked = selector.checked;
 });
 
 // Semáforo de urgencia: pedidos que llevan demasiado tiempo asignados.

@@ -58,9 +58,9 @@ class PermissionsPureLogicTest(unittest.TestCase):
         admin = Actor(rol="admin", user_id=1)
         self.assertFalse(allow(admin, "action.that.does.not.exist"))
 
-    def test_unknown_action_allowed_for_super_admin(self):
+    def test_unknown_action_denied_for_super_admin(self):
         sa = Actor(rol="super_admin", user_id=9)
-        self.assertTrue(allow(sa, "action.that.does.not.exist"))
+        self.assertFalse(allow(sa, "action.that.does.not.exist"))
 
     # ── super_admin bypass ──────────────────────────────────────────
     def test_super_admin_allowed_everywhere(self):

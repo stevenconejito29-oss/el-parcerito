@@ -215,16 +215,21 @@
 /* Tokens locales de estado. Mismos que el admin dashboard para coherencia
    visual entre la landing y la lista completa de pedidos. */
 .admin-orders-board {
-  --ord-warn:   var(--brand-primary);
-  --ord-warn-soft: color-mix(in srgb, var(--brand-primary) 14%, transparent);
-  --ord-info:   color-mix(in srgb, var(--brand-accent, #003087) 55%, #6bcbff);
-  --ord-info-soft: color-mix(in srgb, var(--brand-accent, #003087) 12%, transparent);
-  --ord-ok:     var(--theme-success, #5EF097);
-  --ord-ok-soft: color-mix(in srgb, var(--theme-success, #5EF097) 12%, transparent);
-  --ord-danger: var(--theme-danger, #FF6B6B);
-  --ord-danger-soft: color-mix(in srgb, var(--theme-danger, #FF6B6B) 12%, transparent);
-  --ord-route:  #C084FC;
-  --ord-route-soft: color-mix(in srgb, #C084FC 14%, transparent);
+  --ord-warn-base: var(--brand-primary);
+  --ord-warn: var(--brand-text);
+  --ord-warn-soft: color-mix(in srgb, var(--ord-warn-base) 14%, transparent);
+  --ord-info-base: var(--brand-accent);
+  --ord-info: color-mix(in srgb, var(--ord-info-base) 62%, var(--col-text));
+  --ord-info-soft: color-mix(in srgb, var(--ord-info-base) 12%, transparent);
+  --ord-ok-base: var(--theme-success);
+  --ord-ok: var(--status-ok-text);
+  --ord-ok-soft: color-mix(in srgb, var(--ord-ok-base) 12%, transparent);
+  --ord-danger-base: var(--theme-danger);
+  --ord-danger: var(--status-err-text);
+  --ord-danger-soft: color-mix(in srgb, var(--ord-danger-base) 12%, transparent);
+  --ord-route-base: var(--role-super-admin);
+  --ord-route: color-mix(in srgb, var(--ord-route-base) 52%, var(--col-text));
+  --ord-route-soft: color-mix(in srgb, var(--ord-route-base) 14%, transparent);
 }
 
 .admin-orders-board .ord-filter {

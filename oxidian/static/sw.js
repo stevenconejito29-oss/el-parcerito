@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Oxidian — Service Worker v60
+   Oxidian — Service Worker (versión inyectada por el servidor)
    • App shell CSS/JS: cache-first + actualización en segundo plano
    • HTML público (menu, producto): NETWORK-FIRST con timeout 1200ms →
      cuando hay red los usuarios reciben SIEMPRE contenido fresco (logos,
@@ -11,14 +11,15 @@
    • API / Admin: Network-only (nunca cachear dinámico)
    • Push Notifications: Muestra notificaciones + abre URL al click
    • v59: HTML y /uploads/ pasaron a network-first + fallback cache.
-   • v60: purga adicional que fuerza refresh en Android que aún cachean HTML
-     previo a la feature "sabor por componente + subset del super-admin". Con
-     `skipWaiting()` + `clients.claim()` la nueva versión se activa al vuelo.
+   La versión no se mantiene a mano: Flask sustituye __ASSET_VERSION__ por la
+   huella real de CSS, JS, iconos y capturas. Así cualquier cambio genera un
+   worker/cache distinto y no depende de recordar incrementar un número.
    ═══════════════════════════════════════════════════════════════ */
 
-const CACHE_STATIC = "ox-static-v60";
-const CACHE_MEDIA = "ox-media-v60";
-const CACHE_HTML = "ox-html-v60";
+const APP_VERSION = "__ASSET_VERSION__";
+const CACHE_STATIC = `ox-static-${APP_VERSION}`;
+const CACHE_MEDIA = `ox-media-${APP_VERSION}`;
+const CACHE_HTML = `ox-html-${APP_VERSION}`;
 const CACHE_PREFIX = "ox-";
 
 const PRECACHE = [
@@ -41,12 +42,12 @@ const PRECACHE = [
   "/static/js/spa-nav.js",
   "/static/js/operational-roles.js",
   "/static/colombia-pattern.svg",
-  "/static/pwa-icon.svg?v=60",
-  "/static/pwa-icon-192.png?v=60",
-  "/static/pwa-icon-512.png?v=60",
-  "/static/pwa-icon-512-maskable.png?v=60",
-  "/static/pwa-badge-96.png?v=60",
-  "/static/apple-touch-icon.png?v=60",
+  `/static/pwa-icon.svg?v=${APP_VERSION}`,
+  `/static/pwa-icon-192.png?v=${APP_VERSION}`,
+  `/static/pwa-icon-512.png?v=${APP_VERSION}`,
+  `/static/pwa-icon-512-maskable.png?v=${APP_VERSION}`,
+  `/static/pwa-badge-96.png?v=${APP_VERSION}`,
+  `/static/apple-touch-icon.png?v=${APP_VERSION}`,
 ];
 
 function isNetworkOnly(pathname) {
@@ -105,7 +106,7 @@ p{font-size:.95rem;color:#6B5A4E;max-width:340px;line-height:1.5}
 a,button{min-height:44px;padding:.75rem 1.5rem;border-radius:.875rem;border:0;
 background:#F4C542;color:#2B2118;font-weight:800;font-size:1rem;text-decoration:none}
 </style></head><body>
-<img class="icon" src="/static/pwa-icon-192.png?v=60" alt="">
+<img class="icon" src="/static/pwa-icon-192.png?v=${APP_VERSION}" alt="">
 <p class="title">Ahora mismo no hay conexión</p>
 <p>Tu app sigue instalada y tus datos están protegidos. Recupera internet para consultar disponibilidad o confirmar cambios.</p>
 <a href="/">Volver a intentar</a>
@@ -115,12 +116,10 @@ background:#F4C542;color:#2B2118;font-weight:800;font-size:1rem;text-decoration:
 }
 
 // ── INSTALL ──────────────────────────────────────────────────────────────
-// `skipWaiting()` en install → el SW nuevo se activa YA, sin esperar a que
-// todas las tabs abiertas se cierren. Combinado con `clients.claim()` en
-// activate, garantiza que el bump de versión (ej. v54→v60) sirve al usuario
-// contenido nuevo en < 1s desde el próximo refresh, sin "datos antiguos".
+// El worker espera confirmación del usuario antes de sustituir al activo. Esto
+// evita recargar a mitad de un checkout o de una operación de cocina/reparto.
+// pwa-manager muestra la actualización y envía SKIP_WAITING al aceptarla.
 self.addEventListener("install", event => {
-  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_STATIC).then(async cache => {
       await Promise.allSettled(
@@ -158,9 +157,8 @@ self.addEventListener("message", event => {
 
 // ── FETCH ────────────────────────────────────────────────────────────────
 // Estrategias:
-//   - navigate (HTML público catalogo/producto/carrito): stale-while-revalidate
-//     con TTL corto → sensación de app nativa (respuesta instantánea desde
-//     cache local) + fresh network en background para el próximo hit.
+//   - navigate (HTML público catálogo/producto): network-first con fallback
+//     offline. Prioriza marca, disponibilidad y precios actuales.
 //   - API/admin/auth: siempre network-only (datos dinámicos, sensibles).
 //   - Static assets: SWR estándar (cache-first + refresh en background).
 //   - Media/uploads: SWR con trim (max 80 entries).
@@ -295,8 +293,8 @@ self.addEventListener("push", event => {
   const {
     title  = "Mi tienda",
     body   = "",
-    icon   = "/static/pwa-icon-192.png?v=60",
-    badge  = "/static/pwa-badge-96.png?v=60",
+    icon   = `/static/pwa-icon-192.png?v=${APP_VERSION}`,
+    badge  = `/static/pwa-badge-96.png?v=${APP_VERSION}`,
     url    = "/",
     tag,
     requireInteraction = false,
@@ -333,8 +331,8 @@ self.addEventListener("push", event => {
       type: "OX_PUSH_RECEIVED",
       payload: { title: safeTitle, body: safeBody, url: options.data.url },
     }));
-    if ("setAppBadge" in self.registration && Number(badgeCount) > 0) {
-      await self.registration.setAppBadge(Number(badgeCount)).catch(() => {});
+    if ("setAppBadge" in self.navigator && Number(badgeCount) > 0) {
+      await self.navigator.setAppBadge(Number(badgeCount)).catch(() => {});
     }
     await self.registration.showNotification(safeTitle, options);
   })());
@@ -353,8 +351,8 @@ self.addEventListener("notificationclick", event => {
     : self.location.origin + "/";
 
   event.waitUntil(
-    Promise.resolve("clearAppBadge" in self.registration
-      ? self.registration.clearAppBadge().catch(() => {})
+    Promise.resolve("clearAppBadge" in self.navigator
+      ? self.navigator.clearAppBadge().catch(() => {})
       : null).then(() => clients.matchAll({ type: "window", includeUncontrolled: true })).then(list => {
       // Si ya hay una ventana abierta con esa URL, enfocarla
       for (const client of list) {

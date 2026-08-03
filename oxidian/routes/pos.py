@@ -362,6 +362,8 @@ def cobrar():
     data = request.json or {}
     items_data = data.get("items", [])
     metodo_pago = normalizar_metodo_pago(data.get("metodo_pago"))
+    if not metodo_pago:
+        return jsonify({"ok": False, "msg": "Método de pago inválido"}), 400
     try:
         descuento_manual = float(data.get("descuento_manual", 0))
     except (TypeError, ValueError):

@@ -104,7 +104,15 @@ def login(client, email: str, password: str) -> None:
 
 def cleanup(order_ids, customer_id, combo_id, product_ids, category_id, zone_id, created_zone) -> None:
     db.session.rollback()
-    for order_id in [oid for oid in (order_ids or []) if oid]:
+    cleanup_order_ids = {oid for oid in (order_ids or []) if oid}
+    # Si el smoke abortó después del commit del checkout pero antes de capturar
+    # su ID, localizar todos los pedidos del cliente QA evita dejar residuos o
+    # fallar al borrar el usuario por la FK de orders.cliente_id.
+    if customer_id:
+        cleanup_order_ids.update(
+            row.id for row in Order.query.filter_by(cliente_id=customer_id).all()
+        )
+    for order_id in sorted(cleanup_order_ids):
         db.session.execute(
             text("DELETE FROM audit_log WHERE recurso = 'order' AND recurso_id = :id"),
             {"id": order_id},
@@ -193,7 +201,15 @@ def main() -> int:
                 ).all()
             ]
 
-            for user in (preparador, repartidor):
+            # Aislar el balanceador de cualquier fixture visual/QA que haya
+            # quedado online: de lo contrario el checkout puede asignarse a
+            # otro empleado y el smoke deja de comprobar al usuario que opera
+            # las rutas HTTP de esta ejecución.
+            operational_users = User.query.filter(
+                User.rol.in_(["cocina", "preparacion", "admin", "repartidor"]),
+                User.activo.is_(True),
+            ).all()
+            for user in operational_users:
                 staff_original[user.id] = (user.en_linea, user.last_seen)
                 user.en_linea = False
                 user.last_seen = None
@@ -203,19 +219,23 @@ def main() -> int:
                 config_original[key] = (entry is not None, entry.valor if entry else None)
                 SiteConfig.set(key, value)
 
-            zone = ZonaEntrega.query.filter_by(activo=True).order_by(ZonaEntrega.orden).first()
-            if zone is None:
-                zone = ZonaEntrega(
-                    nombre=f"QA {marker}",
-                    activo=True,
-                    es_epicentro=True,
-                    precio_envio=Decimal("0"),
-                    tiempo_estimado_min=30,
-                    orden=9999,
-                )
-                db.session.add(zone)
-                db.session.flush()
-                created_zone = True
+            # Zona aislada con geodata real: el smoke debe recorrer la misma
+            # validación fail-closed que producción, no depender de la
+            # configuración de cobertura que ya tenga la base de pruebas.
+            zone = ZonaEntrega(
+                nombre=f"QA {marker}",
+                activo=True,
+                es_epicentro=True,
+                precio_envio=Decimal("0"),
+                tiempo_estimado_min=30,
+                orden=-9999,
+                centro_lat=37.4736,
+                centro_lng=-5.6438,
+                radio_km=1.0,
+            )
+            db.session.add(zone)
+            db.session.flush()
+            created_zone = True
             zone_id = zone.id
 
             category = Categoria(nombre=f"QA {marker}", activo=True, orden=9999)
@@ -378,7 +398,13 @@ def main() -> int:
                 },
             )
             get_ok(public, "/carrito", combo.nombre)
-            checkout = get_ok(public, "/checkout", "Confirmar Pedido")
+            # Verificar el contrato estable del formulario, no el copy visible:
+            # los textos del checkout cambian con la personalización de marca.
+            checkout = get_ok(public, "/checkout", 'id="form-checkout"')
+            require(
+                b'id="btn-confirmar"' in checkout.data,
+                "El checkout no expuso la acción final de confirmar",
+            )
             checkout_csrf = csrf_from(checkout)
 
             reset_request_cache()
@@ -422,6 +448,9 @@ def main() -> int:
                     "telefono_invitado": customer_phone,
                     "nombre_invitado": f"Cliente QA {marker}",
                     "direccion": "Calle QA 1, Carmona",
+                    "direccion_lat": "37.4736",
+                    "direccion_lng": "-5.6438",
+                    "direccion_precision_m": "10",
                     "metodo_pago": "efectivo",
                     "zona_id": str(zone.id),
                     "puntos_usar": "0",
@@ -431,6 +460,17 @@ def main() -> int:
                 environ_overrides=public.qa_environ,
             )
             require(response.status_code == 200, f"Checkout: HTTP {response.status_code}")
+            final_path = response.request.path
+            if not re.fullmatch(r"/pedido/\d+/confirmado", final_path):
+                flash_match = re.search(
+                    rb'<script type="application/json" id="ox-flash-data">(.*?)</script>',
+                    response.data,
+                    re.DOTALL,
+                )
+                flash_data = flash_match.group(1).decode("utf-8", "replace") if flash_match else "sin mensaje"
+                raise AssertionError(
+                    f"Checkout no completo el pedido (ruta final {final_path}): {flash_data}"
+                )
 
             order_item = OrderItem.query.filter_by(producto_id=combo.id).order_by(OrderItem.id.desc()).first()
             require(order_item is not None, "Checkout no creo la linea del pedido")
@@ -518,6 +558,28 @@ def main() -> int:
             order = db.session.get(Order, order_id)
             require(order.estado == "en_ruta", "No avanzo a en_ruta")
             require(order.codigo_confirmacion, "No se genero codigo de entrega")
+            post_form(
+                delivery_client,
+                f"/repartidor/pedidos/{order.id}/enviar-codigo",
+                "/repartidor/ruta",
+                {},
+            )
+            db.session.expire_all()
+            order = db.session.get(Order, order_id)
+            require(
+                NotificationOutbox.query.filter_by(
+                    pedido_id=order.id,
+                    evento="delivery_code",
+                ).count() == 1,
+                "El código no quedó registrado en el outbox de WhatsApp",
+            )
+            require(
+                OrderEvent.query.filter_by(
+                    pedido_id=order.id,
+                    tipo="codigo_entrega_enviado",
+                ).count() == 1,
+                "Falta la trazabilidad del envío del código de entrega",
+            )
             post_form(
                 delivery_client,
                 f"/repartidor/pedidos/{order.id}/entregar",

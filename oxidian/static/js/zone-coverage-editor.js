@@ -2,7 +2,6 @@
   'use strict';
 
   document.querySelectorAll('[data-zone-coverage-editor]').forEach(function (root) {
-    if (typeof window.L === 'undefined') return;
     const mapNode = root.querySelector('[data-zone-map]');
     const field = root.querySelector('[name="cobertura_geojson"]');
     const status = root.querySelector('[data-zone-status]');
@@ -10,24 +9,42 @@
     const geometryRequired = root.dataset.requireGeometry === 'true';
     if (!mapNode || !field) return;
 
-    const center = [Number(mapNode.dataset.centerLat), Number(mapNode.dataset.centerLng)];
-    const map = L.map(mapNode, { center: center, zoom: 14, scrollWheelZoom: true });
-    map.doubleClickZoom.disable();
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-
-    let points = [];
-    let geometryLayer = null;
-    let draftLayer = null;
-    let markers = [];
-
     function setStatus(text, tone) {
       if (!status) return;
       status.textContent = text;
       status.dataset.tone = tone || 'neutral';
     }
+
+    if (typeof window.L === 'undefined') {
+      setStatus('El mapa no pudo iniciarse. Recarga la página; si persiste, revisa los recursos del despliegue.', 'error');
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.setAttribute('aria-disabled', 'true');
+      }
+      mapNode.dataset.loadError = 'true';
+      return;
+    }
+
+    const configuredCenter = mapNode.dataset.centerConfigured === 'true';
+    const lat = Number(mapNode.dataset.centerLat);
+    const lng = Number(mapNode.dataset.centerLng);
+    const centerIsValid = configuredCenter && Number.isFinite(lat) && Number.isFinite(lng);
+    const map = L.map(mapNode, {
+      center: centerIsValid ? [lat, lng] : [0, 0],
+      zoom: centerIsValid ? 14 : 2,
+      scrollWheelZoom: true
+    });
+    map.doubleClickZoom.disable();
+    const tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    });
+    tiles.addTo(map);
+
+    let points = [];
+    let geometryLayer = null;
+    let draftLayer = null;
+    let markers = [];
 
     function removeLayer(layer) {
       if (layer) map.removeLayer(layer);
@@ -92,7 +109,12 @@
     }
 
     function loadExisting() {
-      if (!field.value.trim()) return;
+      if (!field.value.trim()) {
+        if (!centerIsValid) {
+          setStatus('Primero pulsa «Céntrame» o configura la ubicación del local; después marca el contorno.', 'neutral');
+        }
+        return;
+      }
       try {
         const geometry = JSON.parse(field.value);
         geometryLayer = L.geoJSON(geometry, {
@@ -145,6 +167,13 @@
       }, function () {
         setStatus('No fue posible obtener tu ubicación.', 'error');
       }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+    });
+    let tileErrors = 0;
+    tiles.on('tileerror', function () {
+      tileErrors += 1;
+      if (tileErrors === 3) {
+        setStatus('No se pudo cargar el fondo cartográfico. Comprueba la conexión antes de dibujar la cobertura.', 'error');
+      }
     });
     loadExisting();
     if (!field.value.trim()) updateSubmitState(false);

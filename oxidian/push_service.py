@@ -215,7 +215,7 @@ def queue_push_broadcast(*, creator_id: int, idempotency_key: str,
     dispositivos, incluso si el navegador reenvía el formulario.
     """
     from extensions import db
-    from models import PushBroadcast, PushSubscription
+    from models import PushBroadcast, PushSubscription, User
     from sqlalchemy.exc import IntegrityError
 
     try:
@@ -240,11 +240,18 @@ def queue_push_broadcast(*, creator_id: int, idempotency_key: str,
     if existing:
         return existing, False
 
-    query = PushSubscription.query.filter(PushSubscription.activo.is_(True))
+    # La audiencia se resuelve con el rol ACTUAL de la cuenta, no con el
+    # snapshot `PushSubscription.rol` tomado al suscribir el navegador. Así un
+    # cambio cliente↔staff no filtra campañas a la audiencia anterior.
+    query = (
+        PushSubscription.query
+        .join(User, PushSubscription.user_id == User.id)
+        .filter(PushSubscription.activo.is_(True), User.activo.is_(True))
+    )
     if clean_audience == "customers":
-        query = query.filter(PushSubscription.rol == "cliente")
+        query = query.filter(User.rol == "cliente")
     elif clean_audience == "staff":
-        query = query.filter(PushSubscription.rol != "cliente")
+        query = query.filter(User.rol != "cliente")
 
     campaign = PushBroadcast(
         idempotency_key=key,
@@ -322,7 +329,9 @@ def notify_roles(roles: list[str], title: str, body: str, url: str = "/",
     from models import PushSubscription, User
     subs = PushSubscription.query.filter(
         PushSubscription.activo.is_(True),
-        PushSubscription.usuario.has(User.rol.in_(roles)),
+        PushSubscription.usuario.has(
+            User.rol.in_(roles) & User.activo.is_(True),
+        ),
     ).all()
     if not subs:
         return
@@ -341,6 +350,23 @@ def notify_user(user_id: int, title: str, body: str, url: str = "/",
         return
     payload = _build_payload(title, body, url, icon, badge, tag, require_interaction)
     _dispatch(subs, payload)
+
+
+def notify_delivery_ready(pedido) -> None:
+    """Avisa al responsable real o, si aún no existe, al pool de reparto."""
+    if not getattr(pedido, "requiere_reparto", False):
+        return
+    title = "📦 Pedido listo para recoger"
+    body = f"#{pedido.numero_pedido} está listo para despacho."
+    kwargs = {
+        "url": "/repartidor/ruta",
+        "tag": f"reparto-listo-{pedido.id}",
+        "require_interaction": True,
+    }
+    if pedido.repartidor_id:
+        notify_user(pedido.repartidor_id, title, body, **kwargs)
+    else:
+        notify_roles(["repartidor"], title, body, **kwargs)
 
 
 def notify_new_order(pedido) -> None:
@@ -387,14 +413,25 @@ def notify_new_order(pedido) -> None:
         require_interaction=True,
     )
     if prep_role:
-        notify_roles(
-            [prep_role],
-            title=f"{prep_prefix} — {origen_label}",
-            body=f"#{num} · {total}",
-            url=prep_url,
-            tag=f"nuevo-pedido-{pedido.id}",
-            require_interaction=True,
-        )
+        kwargs = {
+            "url": prep_url,
+            "tag": f"nuevo-pedido-{pedido.id}",
+            "require_interaction": True,
+        }
+        if pedido.preparador_id:
+            notify_user(
+                pedido.preparador_id,
+                title=f"{prep_prefix} — {origen_label}",
+                body=f"#{num} · {total}",
+                **kwargs,
+            )
+        else:
+            notify_roles(
+                [prep_role],
+                title=f"{prep_prefix} — {origen_label}",
+                body=f"#{num} · {total}",
+                **kwargs,
+            )
 
 
 def notify_order_state(pedido) -> None:
@@ -418,7 +455,8 @@ def notify_order_state(pedido) -> None:
         return
     title, body = entry
     notify_user(
-        pedido.cliente_id, title, body, url="/",
+        pedido.cliente_id, title, body,
+        url=f"/pedido/{pedido.id}/confirmado",
         tag=f"pedido-{pedido.id}",
     )
 

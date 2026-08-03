@@ -26,6 +26,7 @@ class PrelaunchRoutingTest(unittest.TestCase):
             "/sw.js",
             "/manifest.webmanifest",
             "/robots.txt",
+            "/sitemap.xml",
         ):
             with self.subTest(path=path):
                 self.assertTrue(es_ruta_exenta_preapertura(path))

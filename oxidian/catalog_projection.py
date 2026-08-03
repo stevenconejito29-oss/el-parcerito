@@ -132,7 +132,7 @@ def build_catalog_projection(products, origin="propio"):
     provider_active = True
     if provider_id is not None:
         provider = db.session.get(Proveedor, provider_id)
-        provider_active = bool(provider and provider.activo)
+        provider_active = bool(provider and provider.disponible_para_venta)
 
     option_group_rows = (
         db.session.query(

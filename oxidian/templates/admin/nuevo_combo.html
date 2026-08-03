@@ -26,7 +26,7 @@
       <div>
         <p class="bundle-eyebrow">{{ 'Editando combo' if es_edicion else 'Constructor guiado' }}</p>
         <h1>{{ 'Editar combo' if es_edicion else 'Crear un combo' }}</h1>
-        <p>Solo 3 pasos: nombra, compón, publica. Los ajustes avanzados están colapsados hasta que los necesites.</p>
+        <p>Solo 3 pasos: nombra, compón y publica. Cada producto conserva sus propias reglas de tamaño y sabor.</p>
       </div>
     </div>
     <div class="bundle-health" id="bundle-health">
@@ -343,7 +343,8 @@ const BUNDLE_PRODUCTS = [{% for p in productos_simples %}{
   presentations:{{ (presentaciones_por_producto.get(p.id|string, []))|tojson }},
   hasSabor:{{ p.has_flavors|tojson }},
   flavorCount:{{ flavor_counts_by_product.get(p.id, 0)|int }},
-  flavorOptions:{{ (flavor_options_by_product|default({})).get(p.id, [])|tojson }}
+  flavorOptions:{{ (flavor_options_by_product|default({})).get(p.id, [])|tojson }},
+  flavorPolicy:{{ (flavor_policy_by_product|default({})).get(p.id, {})|tojson }}
 }{% if not loop.last %},{% endif %}{% endfor %}];
 const BUNDLE_LIMITS = {
   maxQty:{{ combo_limits.max_qty|int }},
@@ -556,7 +557,12 @@ function bundleAddProduct(productId){
     isDefault:section.type==='choice' && section.items.length < section.maxSelections,
     note:'',
     presentationId:(product.presentations || [])[0]?.id || null,
-    permiteSabor:false
+    presentationMode:'fijo',
+    allowedPresentationIds:[],
+    permiteSabor:Boolean(product.flavorCount),
+    flavorMode:product.flavorCount?'cliente_elige':'sin_sabor',
+    fixedFlavorId:null,
+    allowedFlavorIds:(product.flavorOptions||[]).map(option=>Number(option.id))
   });
   bundleRender();
   if(navigator.vibrate) navigator.vibrate(10);
@@ -586,10 +592,40 @@ function bundleSetDefault(sectionId,productId,checked){
 function bundleSetPermiteSabor(sectionId,productId,checked){
   const item=bundleFindItem(sectionId,productId); if(!item) return;
   item.permiteSabor=!!checked;
-  // Al desactivar, limpiamos el subset — no queremos huérfanos que reaparezcan
-  // si el admin re-activa después.
-  if(!checked) item.allowedFlavorIds=[];
+  const product=bundleProduct(productId);
+  // Estado explícito: al activar se ofrecen todos los sabores actuales y el
+  // admin puede reducir el conjunto. Vacío nunca significa a la vez
+  // "ninguno" y "todos".
+  item.allowedFlavorIds=checked
+    ? (product?.flavorOptions||[]).map(option=>Number(option.id))
+    : [];
   bundleRender();
+}
+function bundleSetFlavorMode(sectionId,productId,mode){
+  const item=bundleFindItem(sectionId,productId); if(!item) return;
+  const product=bundleProduct(productId);
+  item.flavorMode=['sin_sabor','fijo','cliente_elige'].includes(mode)
+    ? mode : 'sin_sabor';
+  item.permiteSabor=item.flavorMode==='cliente_elige';
+  if(item.flavorMode==='cliente_elige'){
+    item.fixedFlavorId=null;
+    if(!(item.allowedFlavorIds||[]).length){
+      item.allowedFlavorIds=(product?.flavorOptions||[]).map(option=>Number(option.id));
+    }
+  } else if(item.flavorMode==='fijo'){
+    item.allowedFlavorIds=[];
+    item.fixedFlavorId=Number(item.fixedFlavorId)
+      || Number(product?.flavorOptions?.[0]?.id) || null;
+  } else {
+    item.allowedFlavorIds=[];
+    item.fixedFlavorId=null;
+  }
+  bundleRender();
+}
+function bundleSetFixedFlavor(sectionId,productId,value){
+  const item=bundleFindItem(sectionId,productId); if(!item) return;
+  item.fixedFlavorId=value ? Number(value) : null;
+  bundleUpdate();
 }
 function bundleToggleAllowedFlavor(sectionId,productId,flavorId,checked){
   const item=bundleFindItem(sectionId,productId); if(!item) return;
@@ -606,7 +642,11 @@ function bundleToggleAllowedFlavor(sectionId,productId,flavorId,checked){
 function bundleSetAllowedFlavorAll(sectionId,productId,all){
   const item=bundleFindItem(sectionId,productId); if(!item) return;
   const product=bundleProduct(productId); if(!product) return;
-  item.allowedFlavorIds = all ? (product.flavorOptions||[]).map(o=>Number(o.id)) : [];
+  item.allowedFlavorIds = all
+    ? (product.flavorOptions||[])
+        .filter(option=>bundleFlavorCoverage(item,product,option.id).length)
+        .map(option=>Number(option.id))
+    : [];
   bundleRender();
 }
 function bundleSetNote(sectionId,productId,value){
@@ -653,18 +693,48 @@ function bundleFindItem(sectionId,productId){
   return bundleSections.find(item=>item.id===Number(sectionId))?.items.find(item=>item.productId===Number(productId));
 }
 
+function bundleOfferedPresentations(item, product){
+  const rows=product?.presentations||[];
+  if(!rows.length){
+    return [{id:null,label:'Presentación estándar',flavor_policy:product?.flavorPolicy||{min:0,max:0,allowed_option_ids:[]}}];
+  }
+  if(item.presentationMode==='cliente_elige'){
+    const allowed=new Set((item.allowedPresentationIds||[]).map(Number));
+    return rows.filter(row=>allowed.has(Number(row.id)));
+  }
+  return [rows.find(row=>Number(row.id)===Number(item.presentationId))||rows[0]];
+}
+
+function bundleFlavorCoverage(item, product, flavorId){
+  const offered=bundleOfferedPresentations(item,product);
+  return offered.filter(row=>(row.flavor_policy?.allowed_option_ids||[]).map(Number).includes(Number(flavorId)));
+}
+
+function bundleFlavorIsRequired(item, product){
+  return bundleOfferedPresentations(item,product).some(row=>Number(row.flavor_policy?.min||0)>0);
+}
+
 function bundleEstimateBase(){
   let total=0;
+  const itemPrice=item=>{
+    const product=bundleProduct(item.productId); if(!product) return null;
+    const presentations=product.presentations||[];
+    const selected=presentations.find(row=>Number(row.id)===Number(item.presentationId))
+      || presentations.find(row=>(item.allowedPresentationIds||[]).includes(Number(row.id)))
+      || presentations[0];
+    return (product.price+Number(selected?.precio_extra||0))*Math.max(1,Number(item.qty)||1)
+      + Math.max(0,Number(item.extra)||0);
+  };
   bundleSections.forEach(section=>{
     if(section.type==='fixed'){
-      section.items.forEach(item=>{ const product=bundleProduct(item.productId); if(product){ const presentation=(product.presentations||[]).find(row=>Number(row.id)===Number(item.presentationId)); total+=(product.price+Number(presentation?.precio_extra||0))*item.qty; } });
+      section.items.forEach(item=>{ const price=itemPrice(item); if(price!==null) total+=price; });
       return;
     }
     const defaults=section.items.filter(item=>item.isDefault).slice(0,section.maxSelections);
     if(defaults.length){
-      defaults.forEach(item=>{ const product=bundleProduct(item.productId); if(product) total+=product.price; });
+      defaults.forEach(item=>{ const price=itemPrice(item); if(price!==null) total+=price; });
     } else {
-      const prices=section.items.map(item=>bundleProduct(item.productId)?.price).filter(value=>Number.isFinite(value));
+      const prices=section.items.map(item=>itemPrice(item)).filter(value=>Number.isFinite(value));
       prices.sort((a,b)=>a-b);
       total+=prices.slice(0,Math.min(section.maxSelections,prices.length)).reduce((sum,value)=>sum+value,0);
     }
@@ -708,7 +778,7 @@ function bundleRender(){
         const chosenFixed = presentationList.find(row=>Number(row.id)===Number(item.presentationId))?.label || presentationList[0]?.label || '';
         const modeToggle = `<div class="bundle-line-size-modes"><label class="${mode==='fijo'?'is-active':''}"><input type="radio" name="__size_mode_${section.id}_${product.id}" value="fijo" ${mode==='fijo'?'checked':''} data-bundle-input="presentation-mode" data-section-id="${section.id}" data-product-id="${product.id}"><span>📏 Tamaño fijo</span></label><label class="${mode==='cliente_elige'?'is-active':''}"><input type="radio" name="__size_mode_${section.id}_${product.id}" value="cliente_elige" ${mode==='cliente_elige'?'checked':''} data-bundle-input="presentation-mode" data-section-id="${section.id}" data-product-id="${product.id}"><span>🎛 Cliente elige</span></label></div>`;
         const fixedPicker = mode==='fijo' ? `<label class="bundle-line-presentation-picker"><span>Tamaño incluido:</span><select data-bundle-input="presentation" data-section-id="${section.id}" data-product-id="${product.id}">${presentationList.map(row=>`<option value="${row.id}" ${Number(row.id)===Number(item.presentationId)?'selected':''}>${bundleEscape(row.label)}${Number(row.precio_extra)?` · ${Number(row.precio_extra)>0?'+':''}${bundleMoney(Number(row.precio_extra))}`:''}</option>`).join('')}</select></label>` : '';
-        const clientPicker = mode==='cliente_elige' ? `<div class="bundle-presentation-subset"><div class="bundle-flavor-subset-head"><span>Tamaños que ofreces al cliente</span><div class="bundle-flavor-subset-tools"><button type="button" data-bundle-action="presentation-all" data-section-id="${section.id}" data-product-id="${product.id}">Todos</button><button type="button" data-bundle-action="presentation-none" data-section-id="${section.id}" data-product-id="${product.id}">Ninguno</button></div></div><div class="bundle-flavor-subset-grid">${presentationList.map(row=>{const checked=(item.allowedPresentationIds||[]).includes(Number(row.id));const priceHint=Number(row.precio_extra)?` <em>${Number(row.precio_extra)>0?'+':''}${bundleMoney(Number(row.precio_extra))}</em>`:'';return `<label class="bundle-flavor-chip ${checked?'is-picked':''}"><input type="checkbox" ${checked?'checked':''} data-bundle-input="allowed-presentation" data-section-id="${section.id}" data-product-id="${product.id}" data-presentation-id="${row.id}"><span>${bundleEscape(row.label)}${priceHint}</span></label>`;}).join('')}</div><p class="bundle-flavor-subset-note">Marca ≥2 para que el cliente pueda elegir. Con 1 marcado o ninguno, se cae a modo fijo con la primera opción.</p></div>` : '';
+        const clientPicker = mode==='cliente_elige' ? `<div class="bundle-presentation-subset"><div class="bundle-flavor-subset-head"><span>Tamaños que ofreces al cliente</span><div class="bundle-flavor-subset-tools"><button type="button" data-bundle-action="presentation-all" data-section-id="${section.id}" data-product-id="${product.id}">Seleccionar todos</button></div></div><div class="bundle-flavor-subset-grid">${presentationList.map(row=>{const checked=(item.allowedPresentationIds||[]).includes(Number(row.id));const priceHint=Number(row.precio_extra)?` <em>${Number(row.precio_extra)>0?'+':''}${bundleMoney(Number(row.precio_extra))}</em>`:'';return `<label class="bundle-flavor-chip ${checked?'is-picked':''}"><input type="checkbox" ${checked?'checked':''} data-bundle-input="allowed-presentation" data-section-id="${section.id}" data-product-id="${product.id}" data-presentation-id="${row.id}"><span>${bundleEscape(row.label)}${priceHint}</span></label>`;}).join('')}</div><p class="bundle-flavor-subset-note">Selecciona dos o más tamaños. Si quieres uno solo, usa “Tamaño fijo”.</p></div>` : '';
         presentationControl = `<div class="bundle-line-size">${modeToggle}${fixedPicker}${clientPicker}</div>`;
       }
       // Config por-componente (tamaño + sabor) — SIEMPRE visible como
@@ -716,8 +786,14 @@ function bundleRender(){
       // `<details>` colapsado y el admin no notaba que estaba ahí, así que
       // ni siquiera intentaba submitear el combo. Ahora es un bloque
       // amarillo con título claro que anuncia "Opciones de ESTE producto".
-      const flavorSubset = (item.permiteSabor && product.flavorOptions && product.flavorOptions.length>1)?`<div class="bundle-flavor-subset"><div class="bundle-flavor-subset-head"><span>Sabores permitidos <em>(vacío = todos)</em></span><div class="bundle-flavor-subset-tools"><button type="button" data-bundle-action="flavor-all" data-section-id="${section.id}" data-product-id="${product.id}">Todos</button><button type="button" data-bundle-action="flavor-none" data-section-id="${section.id}" data-product-id="${product.id}">Ninguno</button></div></div><div class="bundle-flavor-subset-grid">${product.flavorOptions.map(opt=>{const checked=(item.allowedFlavorIds||[]).includes(opt.id);return `<label class="bundle-flavor-chip ${checked?'is-picked':''}"><input type="checkbox" ${checked?'checked':''} data-bundle-input="allowed-flavor" data-section-id="${section.id}" data-product-id="${product.id}" data-flavor-id="${opt.id}"><span>${bundleEscape(opt.nombre)}</span></label>`;}).join('')}</div><p class="bundle-flavor-subset-note">Marcados = únicos ofrecidos al cliente. Vacío = todos los ${product.flavorOptions.length} activos.</p></div>`:'';
-      const flavorControl = (product.hasSabor || product.flavorCount>0)?`<label class="bundle-line-flavor ${item.permiteSabor && !product.flavorCount?'is-warning':''} ${item.permiteSabor && product.flavorCount>0?'is-active':''}"><input type="checkbox" ${item.permiteSabor?'checked':''} data-bundle-input="permite-sabor" data-section-id="${section.id}" data-product-id="${product.id}"><span>El cliente elige el sabor de este componente</span>${product.flavorCount>0?`<em class="bundle-flavor-count">${product.flavorCount} sabor${product.flavorCount===1?'':'es'} activo${product.flavorCount===1?'':'s'}</em>`:`<em class="bundle-flavor-count is-empty">⚠︎ Sin sabores activos — configura sabores en el producto antes de habilitar aquí</em>`}</label>`:'';
+      const flavorMode=item.flavorMode || (item.permiteSabor?'cliente_elige':'sin_sabor');
+      const offeredPresentations=bundleOfferedPresentations(item,product);
+      const flavorRequired=bundleFlavorIsRequired(item,product);
+      const flavorSubset = (flavorMode==='cliente_elige' && product.flavorOptions?.length)?`<div class="bundle-flavor-subset"><div class="bundle-flavor-subset-head"><span>Sabores que podrá elegir el cliente</span><div class="bundle-flavor-subset-tools"><button type="button" data-bundle-action="flavor-all" data-section-id="${section.id}" data-product-id="${product.id}">Seleccionar compatibles</button></div></div><div class="bundle-flavor-subset-grid">${product.flavorOptions.map(opt=>{const coverage=bundleFlavorCoverage(item,product,opt.id);const checked=(item.allowedFlavorIds||[]).includes(opt.id);const disabled=!coverage.length;const coverageText=coverage.length===offeredPresentations.length?'Todos los tamaños':coverage.map(row=>row.label).join(', ');return `<label class="bundle-flavor-chip ${checked&&!disabled?'is-picked':''} ${disabled?'is-disabled':''}"><input type="checkbox" ${checked&&!disabled?'checked':''} ${disabled?'disabled':''} data-bundle-input="allowed-flavor" data-section-id="${section.id}" data-product-id="${product.id}" data-flavor-id="${opt.id}"><span><b>${bundleEscape(opt.nombre)}</b><small>${bundleEscape(coverageText||'No compatible')}</small></span></label>`;}).join('')}</div><p class="bundle-flavor-subset-note">Cada tamaño debe conservar al menos un sabor. En el menú solo aparecerán los compatibles con el tamaño elegido.</p></div>`:'';
+      const fixedFlavorPicker=flavorMode==='fijo'
+        ? `<label class="bundle-line-presentation-picker"><span>Sabor incluido:</span><select data-bundle-input="fixed-flavor" data-section-id="${section.id}" data-product-id="${product.id}"><option value="">Selecciona un sabor</option>${(product.flavorOptions||[]).map(opt=>{const valid=bundleFlavorCoverage(item,product,opt.id).length===offeredPresentations.length;return `<option value="${opt.id}" ${Number(opt.id)===Number(item.fixedFlavorId)?'selected':''} ${valid?'':'disabled'}>${bundleEscape(opt.nombre)}${valid?'':' · no sirve en todos los tamaños'}</option>`;}).join('')}</select></label>`
+        : '';
+      const flavorControl = (product.hasSabor || product.flavorCount>0)?`<div class="bundle-line-size"><div class="bundle-control-label"><strong>Sabor de este producto</strong>${flavorRequired?'<span>Obligatorio</span>':'<span>Opcional</span>'}</div><div class="bundle-line-size-modes"><label class="${flavorMode==='sin_sabor'?'is-active':''} ${flavorRequired?'is-disabled':''}"><input type="radio" name="__flavor_mode_${section.id}_${product.id}" value="sin_sabor" ${flavorMode==='sin_sabor'?'checked':''} ${flavorRequired?'disabled':''} data-bundle-input="flavor-mode" data-section-id="${section.id}" data-product-id="${product.id}"><span>Sin sabor</span></label><label class="${flavorMode==='fijo'?'is-active':''}"><input type="radio" name="__flavor_mode_${section.id}_${product.id}" value="fijo" ${flavorMode==='fijo'?'checked':''} data-bundle-input="flavor-mode" data-section-id="${section.id}" data-product-id="${product.id}"><span>Incluido por la tienda</span></label><label class="${flavorMode==='cliente_elige'?'is-active':''}"><input type="radio" name="__flavor_mode_${section.id}_${product.id}" value="cliente_elige" ${flavorMode==='cliente_elige'?'checked':''} data-bundle-input="flavor-mode" data-section-id="${section.id}" data-product-id="${product.id}"><span>Lo elige el cliente</span></label></div>${fixedFlavorPicker}</div>`:'';
       const hasSizes = presentationList.length > 0;
       const hasFlavors = product.hasSabor || product.flavorCount > 0;
       let optionsBlock = '';
@@ -736,9 +812,12 @@ function bundleRender(){
         }
         if (hasFlavors) {
           const nSelected = (item.allowedFlavorIds || []).length;
-          const detail = !item.permiteSabor
-            ? 'Sin sabor elegible'
-            : (nSelected > 0 ? `Cliente elige entre ${nSelected}` : `Cliente elige · todos`);
+          const fixedName=(product.flavorOptions||[]).find(opt=>Number(opt.id)===Number(item.fixedFlavorId))?.nombre;
+          const detail = flavorMode==='sin_sabor'
+            ? 'Sin sabor'
+            : flavorMode==='fijo'
+              ? `Fijo · ${fixedName||'selecciona uno'}`
+              : (nSelected > 0 ? `Cliente elige entre ${nSelected}` : `Cliente elige · incompleto`);
           summaryBits.push(`<span class="bundle-line-opt-chip">🎨 ${detail}</span>`);
         }
         // Panel siempre visible (no <details>) cuando el producto tiene
@@ -860,6 +939,30 @@ function bundleValidate(){
       if(item.permiteSabor && prod && !prod.flavorCount){
         errors.push(`"${prod.name}" en "${section.name}" tiene "elige sabor" activo pero no hay sabores configurados en el producto. Añádelos en Productos → editar → Extras/Sabores, o desmarca la casilla.`);
       }
+      if(item.permiteSabor && prod?.flavorCount && !(item.allowedFlavorIds||[]).length){
+        errors.push(`Selecciona al menos un sabor de "${prod.name}" en "${section.name}".`);
+      }
+      if(item.flavorMode==='fijo' && !Number(item.fixedFlavorId)){
+        errors.push(`Selecciona el sabor fijo de "${prod?.name||'este producto'}" en "${section.name}".`);
+      }
+      if(item.presentationMode==='cliente_elige' && (item.allowedPresentationIds||[]).length<2){
+        errors.push(`Selecciona al menos dos tamaños de "${prod?.name||'este producto'}" o cambia a “Tamaño fijo”.`);
+      }
+      const offered=bundleOfferedPresentations(item,prod);
+      if(bundleFlavorIsRequired(item,prod) && item.flavorMode==='sin_sabor'){
+        errors.push(`"${prod?.name||'Este producto'}" exige sabor en uno de los tamaños ofrecidos.`);
+      }
+      if(item.flavorMode==='cliente_elige'){
+        const selected=new Set((item.allowedFlavorIds||[]).map(Number));
+        offered.forEach(row=>{
+          const valid=(row.flavor_policy?.allowed_option_ids||[]).map(Number).some(id=>selected.has(id));
+          if(!valid) errors.push(`"${prod?.name||'Este producto'}" queda sin sabores para el tamaño "${row.label}".`);
+        });
+      }
+      if(item.flavorMode==='fijo' && Number(item.fixedFlavorId)){
+        const incompatible=offered.find(row=>!(row.flavor_policy?.allowed_option_ids||[]).map(Number).includes(Number(item.fixedFlavorId)));
+        if(incompatible) errors.push(`El sabor fijo de "${prod?.name||'este producto'}" no está disponible en "${incompatible.label}".`);
+      }
     });
   });
   if(bundleIsDiscount()){
@@ -897,8 +1000,9 @@ function bundleSerialize(){
       add('comp_notas_preparacion',item.note||'');
       add('comp_presentation_id',item.presentationId||'');
       add('comp_permite_sabor',item.permiteSabor?'1':'0');
-      // Subset de sabores permitidos: JSON de IDs, o vacío = "sin restricción".
-      // El backend acepta '' o '[]' como equivalente a "no restringir".
+      add('comp_flavor_mode',item.flavorMode || (item.permiteSabor?'cliente_elige':'sin_sabor'));
+      add('comp_fixed_flavor_id',item.flavorMode==='fijo' ? (item.fixedFlavorId||'') : '');
+      // Subset explícito de sabores permitidos.
       add('comp_allowed_flavor_ids', item.permiteSabor && Array.isArray(item.allowedFlavorIds) && item.allowedFlavorIds.length
         ? JSON.stringify(item.allowedFlavorIds.map(Number).filter(Number.isFinite))
         : '');
@@ -977,6 +1081,8 @@ document.addEventListener('change', (event) => {
   else if (action === 'extra') bundleSetExtra(sectionId, productId, control.value);
   else if (action === 'default') bundleSetDefault(sectionId, productId, control.checked);
   else if (action === 'permite-sabor') bundleSetPermiteSabor(sectionId, productId, control.checked);
+  else if (action === 'flavor-mode') bundleSetFlavorMode(sectionId, productId, control.value);
+  else if (action === 'fixed-flavor') bundleSetFixedFlavor(sectionId, productId, control.value);
   else if (action === 'allowed-flavor') bundleToggleAllowedFlavor(sectionId, productId, control.dataset.flavorId, control.checked);
   else if (action === 'presentation-mode') bundleSetPresentationMode(sectionId, productId, control.value);
   else if (action === 'allowed-presentation') bundleToggleAllowedPresentation(sectionId, productId, control.dataset.presentationId, control.checked);
@@ -1024,6 +1130,9 @@ function bundleLoadExisting(data){
       note: String(it.note || ''),
       presentationId: it.presentationId ? Number(it.presentationId) : null,
       permiteSabor: !!it.permiteSabor,
+      flavorMode: ['sin_sabor','fijo','cliente_elige'].includes(it.flavorMode)
+        ? it.flavorMode : (it.permiteSabor ? 'cliente_elige' : 'sin_sabor'),
+      fixedFlavorId: it.fixedFlavorId ? Number(it.fixedFlavorId) : null,
       allowedFlavorIds: Array.isArray(it.allowedFlavorIds) ? it.allowedFlavorIds.map(Number) : [],
       presentationMode: it.presentationMode === 'cliente_elige' ? 'cliente_elige' : 'fijo',
       allowedPresentationIds: Array.isArray(it.allowedPresentationIds) ? it.allowedPresentationIds.map(Number) : [],

@@ -10,6 +10,10 @@
     <p class="nt-kicker">Entregas externas</p>
     <h1>Centro de notificaciones</h1>
     <p>Comprueba qué mensajes salieron, cuáles esperan turno y cuáles necesitan atención.</p>
+    <div class="nt-device-tools" aria-label="Herramientas de esta aplicación">
+      <button type="button" data-push-sound-test>Probar aviso y sonido</button>
+      <button type="button" data-pwa-check-update>Buscar actualización</button>
+    </div>
   </div>
   <form method="POST" action="{{ url_for('admin.procesar_notificaciones') }}" class="nt-process">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

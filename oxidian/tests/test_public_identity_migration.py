@@ -7,6 +7,7 @@ from models import SiteConfig
 from scripts.apply_schema_migrations import (
     _migrate_public_identity_canasta_granitos,
     _migrate_public_nostalgia_copy,
+    _migrate_public_professional_first_impression,
 )
 
 
@@ -55,6 +56,28 @@ class PublicIdentityMigrationTest(unittest.TestCase):
             "Colombia, cerquita de ti",
         )
         self.assertEqual(SiteConfig.get("UI_HERO_TITLE"), "Mi eslogan propio")
+
+    def test_professional_copy_updates_defaults_and_preserves_custom_copy(self):
+        SiteConfig.set("UI_HEADER_MEMORY_LINE", "Colombia, cerquita de ti")
+        SiteConfig.set("UI_HERO_TITLE", "Un bocado y vuelves a casa")
+        SiteConfig.set("UI_HERO_SUBTITLE", "Mi descripción propia")
+        db.session.commit()
+
+        _migrate_public_professional_first_impression()
+        db.session.commit()
+
+        self.assertEqual(
+            SiteConfig.get("UI_HEADER_MEMORY_LINE"),
+            "Calidad colombiana, cerquita de ti",
+        )
+        self.assertEqual(
+            SiteConfig.get("UI_HERO_TITLE"),
+            "El sabor que recuerda a casa, con la calidad que esperas.",
+        )
+        self.assertEqual(
+            SiteConfig.get("UI_HERO_SUBTITLE"),
+            "Mi descripción propia",
+        )
 
 
 if __name__ == "__main__":

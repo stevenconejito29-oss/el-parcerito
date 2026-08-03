@@ -4,7 +4,7 @@ from pathlib import Path
 from flask import Flask
 
 from extensions import db, login_manager
-from models import Proveedor, SiteConfig, StaffPayment, User
+from models import Product, Proveedor, ProveedorProducto, SiteConfig, StaffPayment, User
 from routes.admin import admin_bp
 
 
@@ -127,6 +127,122 @@ class AdminUsersCrudTest(unittest.TestCase):
             },
         )
         self.assertIsNone(User.query.filter_by(email="operador@test.invalid").first())
+
+    def test_product_partner_role_requires_and_keeps_partner_assignment(self):
+        partner = Proveedor(
+            nombre="Socio catálogo",
+            activo=True,
+            modelo_acuerdo="socio_porcentaje",
+            comision_pct=20,
+        )
+        db.session.add(partner)
+        db.session.commit()
+
+        response = self.client.post(
+            "/admin/usuarios/crear",
+            data={
+                "nombre": "Operador socio",
+                "email": "socio@test.invalid",
+                "password": "secret1",
+                "rol": "socio_producto",
+                "telefono": "+34 620 222 444",
+                "proveedor_id": str(partner.id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        operator = User.query.filter_by(email="socio@test.invalid").first()
+        self.assertIsNotNone(operator)
+        self.assertEqual(operator.rol, "socio_producto")
+        self.assertEqual(operator.proveedor_id, partner.id)
+
+    def test_first_product_partner_account_creates_financial_owner_atomically(self):
+        self.assertEqual(Proveedor.query.count(), 0)
+
+        response = self.client.post(
+            "/admin/usuarios/crear",
+            data={
+                "nombre": "Operador primer socio",
+                "email": "primer.socio@test.invalid",
+                "password": "secret1",
+                "rol": "socio_producto",
+                "telefono": "+34 620 222 445",
+                "socio_vinculo": "nuevo",
+                "nuevo_socio_nombre": "Capital del primer socio",
+                "nuevo_socio_comision": "17.5",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        partner = Proveedor.query.one()
+        operator = User.query.filter_by(email="primer.socio@test.invalid").one()
+        self.assertEqual(partner.nombre, "Capital del primer socio")
+        self.assertEqual(partner.modelo_acuerdo, "socio_porcentaje")
+        self.assertAlmostEqual(float(partner.comision_pct), 17.5)
+        self.assertEqual(operator.proveedor_id, partner.id)
+
+    def test_product_partner_account_rejects_non_capital_agreement(self):
+        legacy_partner = Proveedor(
+            nombre="Proveedor histórico",
+            activo=True,
+            modelo_acuerdo="stock_proveedor",
+            comision_pct=20,
+        )
+        db.session.add(legacy_partner)
+        db.session.commit()
+
+        self.client.post(
+            "/admin/usuarios/crear",
+            data={
+                "nombre": "Operador inválido",
+                "email": "socio.invalido@test.invalid",
+                "password": "secret1",
+                "rol": "socio_producto",
+                "telefono": "+34 620 222 446",
+                "socio_vinculo": "existente",
+                "proveedor_id": str(legacy_partner.id),
+            },
+        )
+
+        self.assertIsNone(
+            User.query.filter_by(email="socio.invalido@test.invalid").first()
+        )
+
+    def test_superadmin_creates_partner_product_with_isolated_inventory(self):
+        partner = Proveedor(
+            nombre="Socio inventario",
+            activo=True,
+            modelo_acuerdo="socio_porcentaje",
+            comision_pct=18,
+        )
+        db.session.add(partner)
+        db.session.commit()
+
+        response = self.client.post(
+            "/admin/productos/crear",
+            data={
+                "nombre": "Producto del socio",
+                "precio": "10.00",
+                "precio_costo": "7.00",
+                "activo": "1",
+                "tipo_entrega": "inmediato",
+                "modalidad_entrega": "ambas",
+                "proveedor_despachador_id": str(partner.id),
+                "stock_socio_inicial": "12",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        product = Product.query.filter_by(nombre="Producto del socio").one()
+        self.assertEqual(product.proveedor_despachador_id, partner.id)
+        self.assertIsNone(product.precio_costo)
+        self.assertTrue(product.stock_mostrar_en_web)
+        inventory = ProveedorProducto.query.filter_by(
+            proveedor_id=partner.id,
+            producto_id=product.id,
+        ).one()
+        self.assertEqual(inventory.stock, 12)
+        self.assertIsNone(inventory.precio_costo)
 
     def test_internal_accounts_require_unique_phone_for_bot_permissions(self):
         response = self.client.post(

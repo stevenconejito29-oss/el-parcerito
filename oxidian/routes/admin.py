@@ -22,7 +22,11 @@ from models import (ROLES_AUTENTICABLES, TIPOS_STAFF_PAYMENT, TIPOS_STAFF_PAYMEN
                     PriceHistory, ProductPresentation, ProductVariant, TAMAÑOS_PRESENTACION, SiteConfig, AuditLog,
                     AdminFeature, NotificationOutbox, PushBroadcast, PushSubscription,
                     PRODUCT_OPTION_TYPES,
-                    ProductBatch, ZonaEntrega, normalizar_metodo_pago, utcnow)
+                    ProductBatch, ZonaEntrega, Proveedor, ProveedorProducto,
+                    CATEGORIAS_CAJA, CATEGORIAS_CAJA_MANUAL_INGRESO,
+                    CATEGORIAS_CAJA_MANUAL_EGRESO, caja_categoria_meta,
+                    DailyClosure,
+                    normalizar_metodo_pago, utcnow)
 from combo_validators import (
     ComboLimits,
     validate_component_quantity,
@@ -48,7 +52,9 @@ from services import (estado_cola, registrar_egreso, registrar_ingreso,
                       reasignar_responsable_pedido,
                       pedidos_delivery_sin_repartidor_query,
                       pedido_programado_disponible_para_preparar,
-                      carga_actual_preparadores, carga_actual_repartidores)
+                      carga_actual_preparadores, carga_actual_repartidores,
+                      calcular_liquidaciones_proveedores,
+                      origen_liquidacion_proveedor)
 from image_service import save_image, delete_image
 from phone_utils import (
     normalizar_telefono_cliente,
@@ -61,6 +67,11 @@ from pricing_service import MAX_AFILIADO_PCT
 from product_presentations_service import (
     product_presentation_catalog_payload,
     validate_product_presentation_selection,
+)
+from product_options_service import flavor_policy_for_presentation
+from operational_metrics_service import (
+    calcular_metricas_operativas,
+    filas_tiempos_operativos,
 )
 
 admin_bp = Blueprint("admin", __name__)
@@ -173,10 +184,13 @@ def verificar_feature_acceso():
     """
     if not current_user.is_authenticated:
         return
-    if request.path.startswith("/admin/proveedores") or request.path.startswith("/admin/liquidacion-proveedores"):
-        flash("El flujo de proveedores externos está desactivado en esta versión.", "info")
+    if (
+        request.path.startswith("/admin/proveedores")
+        or request.path.startswith("/admin/liquidacion-proveedores")
+    ) and current_user.rol != "super_admin":
+        flash("Los socios de productos y sus liquidaciones los gestiona el super admin.", "warning")
         return redirect(url_for("admin.dashboard"))
-    if current_user.rol == "super_admin":
+    if getattr(current_user, "rol", None) == "super_admin":
         return
     if current_user.rol != "admin":
         return
@@ -289,10 +303,83 @@ def _roles_editables_usuario(rol_actual=None):
         roles = [rol for rol in roles if rol != "repartidor"]
     if not features["pedidos_programados"]:
         roles = [rol for rol in roles if rol != "preparacion"]
+    if current_user.rol == "super_admin" and "socio_producto" not in roles:
+        roles.append("socio_producto")
     # Conserva editable una cuenta histórica sin habilitar su rol para altas nuevas.
     if rol_actual in ROLES_AUTENTICABLES and rol_actual not in roles:
         roles.append(rol_actual)
     return roles
+
+
+def _socios_asignables():
+    """Socios de capital activos que pueden recibir una cuenta operadora."""
+    return (
+        Proveedor.query.filter_by(
+            activo=True,
+            modelo_acuerdo="socio_porcentaje",
+        )
+        .order_by(Proveedor.nombre)
+        .all()
+    )
+
+
+def _resolver_socio_cuenta(form):
+    """Resuelve o crea la ficha financiera de una cuenta de socio.
+
+    La ficha y la cuenta se confirman en una única transacción. Esto permite
+    crear el primer socio desde Usuarios sin dejar cuentas huérfanas.
+    """
+    modo = (form.get("socio_vinculo") or "existente").strip()
+    proveedor_id = form.get("proveedor_id", type=int)
+
+    if modo == "existente" and proveedor_id:
+        socio = db.session.get(Proveedor, proveedor_id)
+        if (
+            not socio
+            or not socio.activo
+            or socio.modelo_acuerdo != "socio_porcentaje"
+        ):
+            raise ValueError(
+                "El socio seleccionado no está activo o no usa el acuerdo por porcentaje."
+            )
+        return socio
+
+    if modo not in {"nuevo", "existente"}:
+        raise ValueError("La forma de vincular el socio no es válida.")
+
+    nombre = (form.get("nuevo_socio_nombre") or "").strip()
+    if not nombre:
+        if modo == "existente":
+            raise ValueError("Selecciona un socio existente o crea uno nuevo.")
+        raise ValueError("Escribe el nombre comercial del nuevo socio.")
+    if len(nombre) > 150:
+        raise ValueError("El nombre comercial del socio no puede superar 150 caracteres.")
+
+    comision = _parse_decimal_no_negativo(
+        form.get("nuevo_socio_comision") or "0",
+        "El porcentaje de la tienda",
+    )
+    if comision > 100:
+        raise ValueError("El porcentaje de la tienda debe estar entre 0 y 100.")
+
+    socio = Proveedor(
+        nombre=nombre,
+        email=(form.get("email") or "").strip().lower() or None,
+        modelo_acuerdo="socio_porcentaje",
+        comision_pct=comision,
+        activo=True,
+    )
+    db.session.add(socio)
+    db.session.flush()
+    AuditLog.registrar(
+        current_user.id,
+        "proveedor_comision_inicial",
+        "proveedor",
+        socio.id,
+        detalle=f"nombre={socio.nombre} comision=None→{comision}",
+        ip=request.remote_addr,
+    )
+    return socio
 
 
 def _es_cuenta_gestionable(usuario):
@@ -448,14 +535,23 @@ def _aplicar_politica_vertical(campos: dict, producto_actual=None) -> None:
 def dashboard():
     from datetime import timedelta
     ingresos_hoy, egresos_hoy = resumen_caja_hoy()
-    hoy = date.today()
+    from business_time import business_today, utc_naive_bounds
+
+    hoy = business_today()
     ayer = hoy - timedelta(days=1)
-    pedidos_hoy = Order.query.filter(db.func.date(Order.creado_en) == hoy).count()
+    inicio_hoy, fin_hoy = utc_naive_bounds(hoy)
+    inicio_ayer, fin_ayer = utc_naive_bounds(ayer)
+    pedidos_hoy = Order.query.filter(
+        Order.creado_en >= inicio_hoy, Order.creado_en < fin_hoy,
+    ).count()
 
     # Comparativa con ayer para lectura rápida de tendencia
-    pedidos_ayer = Order.query.filter(db.func.date(Order.creado_en) == ayer).count()
+    pedidos_ayer = Order.query.filter(
+        Order.creado_en >= inicio_ayer, Order.creado_en < fin_ayer,
+    ).count()
     ingresos_ayer_q = db.session.query(db.func.coalesce(db.func.sum(Order.total), 0)).filter(
-        db.func.date(Order.creado_en) == ayer,
+        Order.creado_en >= inicio_ayer,
+        Order.creado_en < fin_ayer,
         Order.estado.in_(["entregado", "listo", "en_ruta"]),
     ).scalar() or 0
     ingresos_ayer = float(ingresos_ayer_q)
@@ -476,7 +572,7 @@ def dashboard():
 
     # Clientes únicos que hicieron pedido hoy (proxy de "actividad de clientes")
     clientes_hoy = db.session.query(db.func.count(db.func.distinct(Order.cliente_id))).filter(
-        db.func.date(Order.creado_en) == hoy
+        Order.creado_en >= inicio_hoy, Order.creado_en < fin_hoy,
     ).scalar() or 0
 
     pendientes_count = Order.query.filter_by(estado="pendiente").count()
@@ -508,7 +604,8 @@ def dashboard():
     # Últimos pedidos entregados hoy
     entregados_hoy = Order.query.filter(
         Order.estado == "entregado",
-        db.func.date(Order.creado_en) == date.today()
+        Order.entregado_en >= inicio_hoy,
+        Order.entregado_en < fin_hoy,
     ).order_by(Order.entregado_en.desc()).limit(5).all()
 
     # Preparadores y repartidores para asignación manual
@@ -785,6 +882,11 @@ def cancelar_pedido(pedido_id):
         )
         enviar_whatsapp_estado(pedido)
         db.session.commit()
+        try:
+            from push_service import notify_order_state
+            notify_order_state(pedido)
+        except Exception:
+            current_app.logger.exception("No se pudo enviar push al cancelar pedido %s", pedido.id)
         flash(f"Pedido {pedido.numero_pedido} cancelado.", "warning")
     except ValueError as e:
         db.session.rollback()
@@ -868,6 +970,14 @@ def avanzar_pedido_admin(pedido_id):
         db.session.rollback()
         flash(f"Error al avanzar pedido: {exc}", "danger")
         return redirect(url_for("admin.pedidos"))
+
+    try:
+        from push_service import notify_delivery_ready, notify_order_state
+        notify_order_state(pedido)
+        if pedido.estado == "listo":
+            notify_delivery_ready(pedido)
+    except Exception:
+        current_app.logger.exception("No se pudo enviar push del estado de pedido %s", pedido.id)
 
     flash(f"{pedido.numero_pedido} ahora está en estado {pedido.estado}.", "success")
     return redirect(url_for("admin.pedidos"))
@@ -965,6 +1075,11 @@ def rechazar_pago_digital(pedido_id):
         db.session.rollback()
         flash(f"Error al rechazar pago: {exc}", "danger")
         return redirect(url_for("admin.pagos_pendientes_digital"))
+    try:
+        from push_service import notify_order_state
+        notify_order_state(pedido)
+    except Exception:
+        current_app.logger.exception("No se pudo enviar push del pago rechazado %s", pedido.id)
     flash(f"Pedido {pedido.numero_pedido} cancelado por pago rechazado.", "warning")
     return redirect(url_for("admin.pagos_pendientes_digital"))
 
@@ -994,6 +1109,354 @@ def reset_codigo_confirmacion(pedido_id):
 
 
 # ─── CAJA ────────────────────────────────────
+
+@admin_bp.route("/finanzas")
+@admin_required
+def finanzas():
+    """Dashboard financiero centralizado.
+
+    Concentra en una sola vista las 3 dimensiones que necesita el operador
+    para llevar contabilidad sin saltar entre pestañas:
+      1. **Entradas** — ventas del período por método de pago (efectivo/
+         bizum/tarjeta), con desglose "caja real vs sistema".
+      2. **Salidas** — nóminas, comisiones a repartidores, liquidaciones a
+         socios/bares, gastos operativos y devoluciones, agrupados por
+         concepto contable.
+      3. **Pendientes** — pagos que aún no se han cerrado (Bizum sin
+         confirmar, tarjeta sin confirmar, pagos al staff pendientes,
+         liquidaciones a socios sin ejecutar).
+
+    El resultado neto se muestra como ganancia/pérdida operativa. Las cifras
+    salen del mismo libro mayor (`Caja`) que usa el resto del panel, no de
+    fuentes paralelas — no puede haber discrepancias entre esta vista y
+    `/admin/caja`.
+    """
+    # ── Rango de fechas: hoy por defecto, con presets ─────────────────
+    from business_time import business_today, utc_naive_bounds
+
+    preset = (request.args.get("preset") or "hoy").strip().lower()
+    hoy = business_today()
+    if preset == "semana":
+        fi_date = hoy - timedelta(days=hoy.weekday())
+        ff_date = hoy
+    elif preset == "mes":
+        fi_date = hoy.replace(day=1)
+        ff_date = hoy
+    elif preset == "personalizado":
+        try:
+            fi_date = date.fromisoformat(request.args.get("fecha_ini") or hoy.isoformat())
+            ff_date = date.fromisoformat(request.args.get("fecha_fin") or hoy.isoformat())
+        except ValueError:
+            fi_date = ff_date = hoy
+            preset = "hoy"
+    else:
+        preset = "hoy"
+        fi_date = ff_date = hoy
+    if fi_date > ff_date:
+        fi_date, ff_date = ff_date, fi_date
+    fi, ff = utc_naive_bounds(fi_date, ff_date)
+
+    # ── Libro mayor del período ─────────────────────────────────────────
+    # Eager-load `pedido` para el desglose por método de pago (evita N+1: cada
+    # movimiento vinculado a un pedido dispararía una query separada al leer
+    # `mov.pedido.metodo_pago` en el loop de más abajo).
+    movimientos = (
+        Caja.query
+        .options(joinedload(Caja.pedido))
+        .filter(Caja.fecha >= fi, Caja.fecha < ff)
+        .order_by(Caja.fecha.desc())
+        .all()
+    )
+    ingresos_total = Decimal("0")
+    egresos_total = Decimal("0")
+    por_grupo = defaultdict(lambda: {"ingreso": Decimal("0"), "egreso": Decimal("0")})
+    por_categoria = defaultdict(lambda: {
+        "ingreso": Decimal("0"), "egreso": Decimal("0"), "label": "", "grupo": "otros",
+    })
+    for mov in movimientos:
+        meta = caja_categoria_meta(mov.categoria)
+        monto = Decimal(str(mov.monto or 0))
+        if mov.tipo == "ingreso":
+            ingresos_total += monto
+            por_grupo[meta["grupo"]]["ingreso"] += monto
+        else:
+            egresos_total += monto
+            por_grupo[meta["grupo"]]["egreso"] += monto
+        cat = por_categoria[mov.categoria]
+        cat[mov.tipo] += monto
+        cat["label"] = meta["label"]
+        cat["grupo"] = meta["grupo"]
+
+    saldo_neto = ingresos_total - egresos_total
+
+    # ── Ventas por método de pago (ingresos vinculados a pedidos) ──────
+    metodos = defaultdict(lambda: Decimal("0"))
+    for mov in movimientos:
+        if mov.tipo != "ingreso" or not mov.pedido_id:
+            continue
+        metodo = normalizar_metodo_pago(getattr(mov.pedido, "metodo_pago", None)) or "otro"
+        metodos[metodo] += Decimal(str(mov.monto or 0))
+    ventas_por_metodo = dict(metodos)
+    efectivo_cobrado = ventas_por_metodo.get("efectivo", Decimal("0"))
+
+    # ── Pendientes de confirmar cobro (Bizum/tarjeta sin `pago_confirmado`) ─
+    # Solo estados vivos: un pedido `entregado` con `pago_confirmado=False` es
+    # legacy (cliente rechazó tras entrega) y no debe contar como pendiente
+    # de cobro — inflaría el KPI del dashboard.
+    pendientes_pago_qs = (
+        Order.query
+        .filter(
+            Order.creado_en >= fi,
+            Order.creado_en < ff,
+            Order.metodo_pago.in_(["bizum", "tarjeta"]),
+            Order.pago_confirmado.is_(False),
+            Order.estado.in_(["pendiente", "armando", "listo", "en_ruta"]),
+        )
+        .order_by(Order.creado_en.desc())
+        .limit(50)
+        .all()
+    )
+    pendientes_pago_total = sum(
+        (Decimal(str(o.total or 0)) for o in pendientes_pago_qs),
+        Decimal("0"),
+    )
+
+    # ── Pagos al staff pendientes (nóminas/comisiones sin liquidar) ────
+    pagos_staff_pendientes_qs = (
+        StaffPayment.query
+        .filter(
+            StaffPayment.pagado.is_(False),
+            StaffPayment.tipo != "liquidacion_proveedor",
+        )
+        .order_by(StaffPayment.creado_en.desc())
+        .limit(50)
+        .all()
+    )
+    pagos_staff_pendientes_total = sum(
+        (Decimal(str(p.monto or 0)) for p in pagos_staff_pendientes_qs),
+        Decimal("0"),
+    )
+
+    # ── Liquidaciones pendientes a socios/bares ────────────────────────
+    liquidaciones_pendientes_qs = (
+        StaffPayment.query
+        .filter(
+            StaffPayment.pagado.is_(False),
+            StaffPayment.tipo == "liquidacion_proveedor",
+        )
+        .order_by(StaffPayment.creado_en.desc())
+        .limit(50)
+        .all()
+    )
+    liquidaciones_pendientes_total = sum(
+        (Decimal(str(p.monto or 0)) for p in liquidaciones_pendientes_qs),
+        Decimal("0"),
+    )
+
+    # ── Movimientos recientes (top 15 para vista rápida) ───────────────
+    recientes = movimientos[:15]
+
+    return render_template(
+        "admin/finanzas.html",
+        preset=preset,
+        fecha_ini=fi_date.isoformat(),
+        fecha_fin=ff_date.isoformat(),
+        ingresos_total=ingresos_total,
+        egresos_total=egresos_total,
+        saldo_neto=saldo_neto,
+        por_grupo=dict(por_grupo),
+        por_categoria=dict(por_categoria),
+        ventas_por_metodo=ventas_por_metodo,
+        efectivo_cobrado=efectivo_cobrado,
+        pendientes_pago=pendientes_pago_qs,
+        pendientes_pago_total=pendientes_pago_total,
+        pagos_staff_pendientes=pagos_staff_pendientes_qs,
+        pagos_staff_pendientes_total=pagos_staff_pendientes_total,
+        liquidaciones_pendientes=liquidaciones_pendientes_qs,
+        liquidaciones_pendientes_total=liquidaciones_pendientes_total,
+        movimientos_recientes=recientes,
+        categorias_manual_ingreso=[
+            (c, caja_categoria_meta(c)) for c in CATEGORIAS_CAJA_MANUAL_INGRESO
+        ],
+        categorias_manual_egreso=[
+            (c, caja_categoria_meta(c)) for c in CATEGORIAS_CAJA_MANUAL_EGRESO
+        ],
+    )
+
+
+def _snapshot_dia_desde_caja(fecha_dia):
+    """Calcula el snapshot financiero de una fecha concreta desde `Caja`.
+
+    Es la fuente de verdad reutilizada por el dashboard y por el cierre de
+    día: no hay dos caminos que puedan discrepar. Devuelve un dict con los
+    mismos totales que persistirá ``DailyClosure`` para esa fecha.
+    """
+    from business_time import utc_naive_bounds
+
+    fi, ff = utc_naive_bounds(fecha_dia)
+    movimientos = (
+        Caja.query
+        .options(joinedload(Caja.pedido))
+        .filter(Caja.fecha >= fi, Caja.fecha < ff)
+        .all()
+    )
+    metodos = {"efectivo": Decimal("0"), "bizum": Decimal("0"),
+               "tarjeta": Decimal("0"), "otros": Decimal("0")}
+    grupos_egreso = {"nominas": Decimal("0"), "liquidaciones": Decimal("0"),
+                     "gastos": Decimal("0"), "devoluciones": Decimal("0"),
+                     "otros": Decimal("0")}
+    ingresos_total = Decimal("0")
+    egresos_total = Decimal("0")
+    for mov in movimientos:
+        monto = Decimal(str(mov.monto or 0))
+        if mov.tipo == "ingreso":
+            ingresos_total += monto
+            if mov.pedido_id and mov.pedido:
+                metodo = normalizar_metodo_pago(mov.pedido.metodo_pago)
+                if metodo in metodos:
+                    metodos[metodo] += monto
+                else:
+                    metodos["otros"] += monto
+            else:
+                metodos["otros"] += monto
+        else:
+            egresos_total += monto
+            grupo = caja_categoria_meta(mov.categoria)["grupo"]
+            if grupo not in grupos_egreso:
+                grupo = "otros"
+            grupos_egreso[grupo] += monto
+    return {
+        "ingresos_efectivo": metodos["efectivo"],
+        "ingresos_bizum": metodos["bizum"],
+        "ingresos_tarjeta": metodos["tarjeta"],
+        "ingresos_otros": metodos["otros"],
+        "egresos_nominas": grupos_egreso["nominas"],
+        "egresos_liquidaciones": grupos_egreso["liquidaciones"],
+        "egresos_gastos": grupos_egreso["gastos"],
+        "egresos_devoluciones": grupos_egreso["devoluciones"],
+        "egresos_otros": grupos_egreso["otros"],
+        "saldo_neto": ingresos_total - egresos_total,
+    }
+
+
+@admin_bp.route("/finanzas/cerrar-dia", methods=["POST"])
+@admin_required
+def cerrar_dia():
+    """Congela un snapshot inmutable del día en `daily_closures`.
+
+    Idempotente por fecha: si ya hay un cierre para ese día, rechaza. El
+    operador puede opcionalmente introducir ``efectivo_declarado`` (cuenta
+    de caja física) para que quede registrado el descuadre vs lo calculado.
+    """
+    from business_time import business_today
+
+    hoy_negocio = business_today()
+    fecha_str = (request.form.get("fecha") or hoy_negocio.isoformat()).strip()
+    try:
+        fecha_dia = date.fromisoformat(fecha_str)
+    except ValueError:
+        flash("Fecha inválida para cierre.", "danger")
+        return redirect(url_for("admin.finanzas"))
+    if fecha_dia > hoy_negocio:
+        flash("No se puede cerrar una fecha futura.", "danger")
+        return redirect(url_for("admin.finanzas"))
+
+    existente = DailyClosure.query.filter_by(fecha=fecha_dia).first()
+    if existente:
+        flash(
+            f"El día {fecha_dia.isoformat()} ya está cerrado (id #{existente.id}). "
+            "Bórralo primero si necesitas recalcularlo.",
+            "warning",
+        )
+        return redirect(url_for("admin.cierres_lista"))
+
+    notas = (request.form.get("notas") or "").strip()[:1000]
+    efectivo_raw = (request.form.get("efectivo_declarado") or "").strip()
+    efectivo_declarado = None
+    if efectivo_raw:
+        try:
+            efectivo_declarado = Decimal(efectivo_raw.replace(",", "."))
+            if efectivo_declarado < 0:
+                raise InvalidOperation
+        except (InvalidOperation, ValueError):
+            flash("Efectivo declarado inválido.", "danger")
+            return redirect(url_for("admin.finanzas"))
+
+    snap = _snapshot_dia_desde_caja(fecha_dia)
+    descuadre = None
+    if efectivo_declarado is not None:
+        descuadre = efectivo_declarado - snap["ingresos_efectivo"]
+
+    cierre = DailyClosure(
+        fecha=fecha_dia,
+        efectivo_declarado=efectivo_declarado,
+        descuadre_efectivo=descuadre,
+        notas=notas or None,
+        cerrado_por=current_user.id,
+        **snap,
+    )
+    db.session.add(cierre)
+    try:
+        AuditLog.registrar(
+            current_user.id,
+            "cierre_dia",
+            "daily_closure",
+            None,
+            detalle=(
+                f"fecha={fecha_dia.isoformat()} ingresos=€{snap['ingresos_efectivo'] + snap['ingresos_bizum'] + snap['ingresos_tarjeta'] + snap['ingresos_otros']:.2f} "
+                f"egresos_total=€{sum([snap['egresos_nominas'], snap['egresos_liquidaciones'], snap['egresos_gastos'], snap['egresos_devoluciones'], snap['egresos_otros']]):.2f} "
+                f"descuadre={descuadre if descuadre is not None else 'n/d'}"
+            ),
+            ip=request.remote_addr,
+        )
+        db.session.commit()
+        flash(f"Día {fecha_dia.isoformat()} cerrado correctamente.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Error al cerrar el día: {exc}", "danger")
+        return redirect(url_for("admin.finanzas"))
+    return redirect(url_for("admin.cierres_lista"))
+
+
+@admin_bp.route("/finanzas/cierres")
+@admin_required
+def cierres_lista():
+    """Historial de cierres diarios con export."""
+    cierres = (
+        DailyClosure.query
+        .order_by(DailyClosure.fecha.desc())
+        .limit(90)
+        .all()
+    )
+    return render_template("admin/cierres_lista.html", cierres=cierres)
+
+
+@admin_bp.route("/finanzas/cierres/<int:cierre_id>/borrar", methods=["POST"])
+@super_admin_required
+def borrar_cierre(cierre_id):
+    """Solo super_admin puede borrar un cierre (para recalcular). Auditado."""
+    cierre = db.session.get(DailyClosure, cierre_id)
+    if not cierre:
+        flash("Cierre no encontrado.", "danger")
+        return redirect(url_for("admin.cierres_lista"))
+    fecha_str = cierre.fecha.isoformat()
+    AuditLog.registrar(
+        current_user.id,
+        "cierre_dia_borrado",
+        "daily_closure",
+        cierre_id,
+        detalle=f"fecha={fecha_str}",
+        ip=request.remote_addr,
+    )
+    db.session.delete(cierre)
+    try:
+        db.session.commit()
+        flash(f"Cierre del {fecha_str} eliminado. Puedes recalcularlo.", "warning")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Error al borrar el cierre: {exc}", "danger")
+    return redirect(url_for("admin.cierres_lista"))
+
 
 @admin_bp.route("/caja")
 @admin_required
@@ -1037,7 +1500,7 @@ def caja():
 def registrar_movimiento():
     tipo = request.form.get("tipo")
     concepto = request.form.get("concepto", "").strip()
-    categoria = request.form.get("categoria", "general")
+    categoria = (request.form.get("categoria") or "otro").strip()
     try:
         monto = float(request.form.get("monto", 0) or 0)
     except (ValueError, TypeError):
@@ -1046,6 +1509,22 @@ def registrar_movimiento():
     if tipo not in ("ingreso", "egreso") or monto <= 0 or not concepto:
         flash("Datos inválidos. Verifica tipo, importe y concepto.", "danger")
         return redirect(url_for("admin.caja"))
+
+    # Validación de categoría contra el catálogo autorizado para altas manuales.
+    # Evita que se ensucie el libro mayor con etiquetas ad-hoc que rompen los
+    # agrupados del dashboard. Categorías del sistema (venta_online, pago_staff,
+    # liquidacion_socio...) tienen su propio flujo y no se aceptan aquí.
+    permitidas = set(
+        CATEGORIAS_CAJA_MANUAL_INGRESO if tipo == "ingreso"
+        else CATEGORIAS_CAJA_MANUAL_EGRESO
+    )
+    if categoria not in permitidas:
+        flash(
+            f"La categoría «{categoria}» no está permitida para altas manuales de "
+            f"{tipo}. Elige una del desplegable.",
+            "danger",
+        )
+        return redirect(request.referrer or url_for("admin.finanzas"))
 
     if tipo == "ingreso":
         registrar_ingreso(monto, concepto, categoria=categoria,
@@ -1059,7 +1538,12 @@ def registrar_movimiento():
     except Exception as exc:
         db.session.rollback()
         flash(f"Error al registrar movimiento: {exc}", "danger")
-    return redirect(url_for("admin.caja"))
+    # Volver a la vista desde la que se envió el form (finanzas o caja); así
+    # el operador ve el KPI recalculado sin perder contexto.
+    destino = request.referrer or url_for("admin.finanzas")
+    if "/admin/caja" in destino or "/admin/finanzas" in destino:
+        return redirect(destino)
+    return redirect(url_for("admin.finanzas"))
 
 
 @admin_bp.route("/caja/exportar")
@@ -1078,13 +1562,29 @@ def exportar_caja():
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Fecha", "Tipo", "Categoria", "Monto", "Concepto", "Pedido"])
+    # Columnas ampliadas para asesoría contable: grupo permite pivotar rápido
+    # (nóminas vs gastos vs ventas), método de pago cuadra con el banco, y el
+    # staff_payment_id da trazabilidad para las nóminas.
+    writer.writerow([
+        "Fecha", "Tipo", "Grupo", "Categoria", "Categoria_display",
+        "Metodo_pago", "Monto", "Concepto", "Pedido", "Staff_payment",
+    ])
     for m in movimientos:
+        meta = caja_categoria_meta(m.categoria)
+        metodo_pago = ""
+        if m.pedido_id and m.pedido:
+            metodo_pago = normalizar_metodo_pago(m.pedido.metodo_pago) or ""
         writer.writerow([
             m.fecha.strftime("%Y-%m-%d %H:%M"),
-            m.tipo, m.categoria,
-            float(m.monto), m.concepto,
-            m.pedido_id or ""
+            m.tipo,
+            meta["grupo"],
+            m.categoria,
+            meta["label"],
+            metodo_pago,
+            float(m.monto),
+            m.concepto,
+            m.pedido_id or "",
+            m.staff_payment_id or "",
         ])
     response = make_response(output.getvalue())
     response.headers["Content-Disposition"] = f"attachment; filename=caja_{fecha_ini}_{fecha_fin}.csv"
@@ -1410,28 +1910,32 @@ def empleado_resumen(user_id):
 
     Agrega TODOS los tipos de StaffPayment (salario, comisión, bonus,
     adelanto, descuento) y muestra neto a pagar / ya pagado / pendiente."""
-    from datetime import datetime as _dt, date as _date
+    from datetime import datetime as _dt
+    from business_time import business_today, utc_naive_bounds
 
     empleado = get_or_404(User, user_id)
     fecha_inicio_str = request.args.get("fecha_inicio", "")
     fecha_fin_str = request.args.get("fecha_fin", "")
     try:
+        hoy_negocio = business_today()
         fecha_inicio = (_dt.strptime(fecha_inicio_str, "%Y-%m-%d").date()
-                        if fecha_inicio_str else _date.today().replace(day=1))
+                        if fecha_inicio_str else hoy_negocio.replace(day=1))
         fecha_fin = (_dt.strptime(fecha_fin_str, "%Y-%m-%d").date()
-                     if fecha_fin_str else _date.today())
+                     if fecha_fin_str else hoy_negocio)
     except ValueError:
         flash("Fechas inválidas, mostrando mes actual.", "warning")
-        fecha_inicio = _date.today().replace(day=1)
-        fecha_fin = _date.today()
+        hoy_negocio = business_today()
+        fecha_inicio = hoy_negocio.replace(day=1)
+        fecha_fin = hoy_negocio
     if fecha_inicio > fecha_fin:
         fecha_inicio, fecha_fin = fecha_fin, fecha_inicio
 
+    inicio_utc, fin_utc = utc_naive_bounds(fecha_inicio, fecha_fin)
     pagos = (
         StaffPayment.query
         .filter_by(user_id=user_id)
-        .filter(db.func.date(StaffPayment.creado_en) >= fecha_inicio)
-        .filter(db.func.date(StaffPayment.creado_en) <= fecha_fin)
+        .filter(StaffPayment.creado_en >= inicio_utc)
+        .filter(StaffPayment.creado_en < fin_utc)
         .order_by(StaffPayment.creado_en.desc())
         .all()
     )
@@ -1459,8 +1963,8 @@ def empleado_resumen(user_id):
         entregas_q = (
             Order.query
             .filter(Order.repartidor_id == empleado.id, Order.estado == "entregado")
-            .filter(db.func.date(Order.entregado_en) >= fecha_inicio)
-            .filter(db.func.date(Order.entregado_en) <= fecha_fin)
+            .filter(Order.entregado_en >= inicio_utc)
+            .filter(Order.entregado_en < fin_utc)
             .order_by(Order.entregado_en.desc())
         )
         entregas = entregas_q.all()
@@ -1492,176 +1996,50 @@ def empleado_resumen(user_id):
 @admin_required
 def liquidacion_proveedores():
     from datetime import datetime as _dt
+    from business_time import business_today
 
     fecha_inicio_str = request.values.get("fecha_inicio", "")
     fecha_fin_str    = request.values.get("fecha_fin", "")
 
     try:
-        fecha_inicio = _dt.strptime(fecha_inicio_str, "%Y-%m-%d").date() if fecha_inicio_str else date.today().replace(day=1)
-        fecha_fin    = _dt.strptime(fecha_fin_str,    "%Y-%m-%d").date() if fecha_fin_str    else date.today()
+        hoy_negocio = business_today()
+        fecha_inicio = _dt.strptime(fecha_inicio_str, "%Y-%m-%d").date() if fecha_inicio_str else hoy_negocio.replace(day=1)
+        fecha_fin    = _dt.strptime(fecha_fin_str,    "%Y-%m-%d").date() if fecha_fin_str    else hoy_negocio
     except ValueError:
         flash("Fechas inválidas.", "danger")
-        fecha_inicio = date.today().replace(day=1)
-        fecha_fin    = date.today()
+        hoy_negocio = business_today()
+        fecha_inicio = hoy_negocio.replace(day=1)
+        fecha_fin    = hoy_negocio
 
     if fecha_inicio > fecha_fin:
         flash("La fecha de inicio debe ser anterior o igual a la fecha fin.", "warning")
         fecha_inicio, fecha_fin = fecha_fin, fecha_inicio
 
-    # Pedidos a pagar al bar = ENTREGADOS + EXTRAVIADOS en el período.
-    # Los extraviados se prepararon (el bar ya invirtió ingredientes), aunque
-    # nunca llegaron al cliente — el riesgo de transporte es del marketplace,
-    # no del bar. Los cancelados normales NO se pagan (cliente canceló antes
-    # de empezar a preparar).
-    from models import OrderEvent as _OrderEvent
-    pedidos_entregados = Order.query.filter(
-        Order.estado == "entregado",
-        db.func.date(Order.entregado_en) >= fecha_inicio,
-        db.func.date(Order.entregado_en) <= fecha_fin,
-    ).all()
-    # Extraviados: estado=cancelado con evento pedido_extraviado en el período.
-    extraviados_ids = {
-        e.pedido_id for e in _OrderEvent.query.filter(
-            _OrderEvent.tipo == "pedido_extraviado",
-            db.func.date(_OrderEvent.creado_en) >= fecha_inicio,
-            db.func.date(_OrderEvent.creado_en) <= fecha_fin,
-        ).all()
-    }
-    pedidos_extraviados = (
-        Order.query.filter(Order.id.in_(extraviados_ids)).all()
-        if extraviados_ids else []
-    )
-    pedidos = pedidos_entregados + pedidos_extraviados
-
-    # Agrupar por proveedor despachador del combo. El costo se calcula sumando
-    # el precio_costo congelado de cada componente del combo (snapshot guardado
-    # al crear el pedido). Para combos sin congelar, fallback a ProveedorProducto vivo.
-    from models import Proveedor as _Prov, ProveedorProducto as _ProvProd
-    por_proveedor = {}
-    total_ingresos = Decimal("0")
-    total_costo_proveedores = Decimal("0")
-
-    def _costo_componentes(componentes_meta, prov_id):
-        total = Decimal("0")
-        producto_ids_sin_congelar = []
-        for comp in componentes_meta or []:
-            cant = max(1, int(comp.get("cantidad") or 1))
-            congelado = comp.get("precio_costo_congelado")
-            if congelado is not None:
-                total += Decimal(str(congelado)) * cant
-            elif comp.get("producto_id"):
-                producto_ids_sin_congelar.append((comp["producto_id"], cant))
-        if producto_ids_sin_congelar:
-            filas = _ProvProd.query.filter(
-                _ProvProd.proveedor_id == prov_id,
-                _ProvProd.producto_id.in_([pid for pid, _ in producto_ids_sin_congelar]),
-            ).all()
-            costo_por_prod = {f.producto_id: (f.precio_costo or 0) for f in filas}
-            for prod_id, cant in producto_ids_sin_congelar:
-                total += Decimal(str(costo_por_prod.get(prod_id, 0))) * cant
-        return total
-
-    for pedido in pedidos:
-        total_ingresos += Decimal(str(pedido.total or 0))
-        for item in pedido.items:
-            snap = item.producto_snapshot
-            pid = snap.get("proveedor_despachador_id")
-            if not pid:
-                continue
-            # Modo y comisión vienen congelados del snapshot (se decidieron al
-            # crear el pedido). Si faltan (pedido anterior a este cambio),
-            # caemos al modo por defecto 'stock_proveedor'.
-            modo = snap.get("proveedor_modelo_acuerdo") or "stock_proveedor"
-            comision_pct = Decimal(str(snap.get("proveedor_comision_pct") or 0))
-
-            bucket = por_proveedor.setdefault(pid, {
-                "proveedor": None,
-                "modo": modo,
-                "lineas": [],
-                "sin_costo": [],
-                "total": Decimal("0"),
-            })
-            # Si en un mismo proveedor hubo cambios de modo durante el período,
-            # nos quedamos con el primer modo observado (los pedidos individuales
-            # se calculan con su modo congelado de todas formas).
-            bucket.setdefault("modo", modo)
-
-            if modo == "stock_propio_bar":
-                # Fee = PVP del combo × cantidad × comision_pct/100
-                pvp_unit = Decimal(str(item.precio_unit or item.producto_snapshot.get("precio_final") or 0))
-                fee_unit = (pvp_unit * comision_pct / Decimal("100")).quantize(Decimal("0.0001"))
-                subtotal = fee_unit * item.cantidad
-                if subtotal <= 0:
-                    bucket["sin_costo"].append({
-                        "pedido": pedido,
-                        "nombre": item.display_nombre,
-                        "cantidad": item.cantidad,
-                        "motivo": "comision_pct=0 o PVP=0",
-                    })
-                    continue
-                bucket["lineas"].append({
-                    "pedido": pedido,
-                    "nombre": item.display_nombre,
-                    "cantidad": item.cantidad,
-                    "costo_unit": fee_unit,
-                    "subtotal": subtotal,
-                    "modo": "stock_propio_bar",
-                })
-                bucket["total"] += subtotal
-                total_costo_proveedores += subtotal
-                continue
-
-            # Modo 'stock_proveedor' (default): coste por suma de componentes
-            metadata = item.get_metadata() if hasattr(item, "get_metadata") else {}
-            combo_meta = (metadata or {}).get("combo") or {}
-            componentes = list(combo_meta.get("componentes") or [])
-            for grp in combo_meta.get("selecciones") or []:
-                componentes.extend(grp.get("opciones") or [])
-            costo_combo = _costo_componentes(componentes, pid)
-            subtotal_costo = costo_combo * item.cantidad
-            if subtotal_costo <= 0:
-                bucket["sin_costo"].append({
-                    "pedido": pedido,
-                    "nombre": item.display_nombre,
-                    "cantidad": item.cantidad,
-                    "motivo": "componentes sin precio_costo",
-                })
-                continue
-            bucket["lineas"].append({
-                "pedido": pedido,
-                "nombre": item.display_nombre,
-                "cantidad": item.cantidad,
-                "costo_unit": costo_combo,
-                "subtotal": subtotal_costo,
-                "modo": "stock_proveedor",
-            })
-            bucket["total"] += subtotal_costo
-            total_costo_proveedores += subtotal_costo
-
-    if por_proveedor:
-        proveedores_dict = {
-            p.id: p
-            for p in _Prov.query.filter(_Prov.id.in_(list(por_proveedor.keys()))).all()
-        }
-        for pid, bucket in por_proveedor.items():
-            bucket["proveedor"] = proveedores_dict.get(pid)
-
-    margen_neto = total_ingresos - total_costo_proveedores
-
-    proveedores_activos = _Prov.query.filter_by(activo=True).order_by(_Prov.nombre).all()
+    cierre = calcular_liquidaciones_proveedores(fecha_inicio, fecha_fin)
+    por_proveedor = cierre["por_proveedor"]
+    total_ingresos = cierre["total_ingresos"]
+    total_costo_proveedores = cierre["total_obligacion"]
+    margen_neto = cierre["saldo_tras_obligaciones"]
+    proveedores_activos = Proveedor.query.filter_by(activo=True).order_by(Proveedor.nombre).all()
 
     if request.method == "POST" and request.form.get("accion") == "registrar_liquidacion":
         prov_id = request.form.get("prov_liquidar_id", type=int)
         monto   = request.form.get("prov_liquidar_monto")
         concepto = request.form.get("prov_liquidar_concepto", "").strip() or f"Liquidación {fecha_inicio}–{fecha_fin}"
         try:
-            monto_f = float(monto or 0)
-        except ValueError:
-            monto_f = 0.0
-        if not prov_id or monto_f <= 0:
+            monto_decimal = Decimal(str(monto or "0")).quantize(Decimal("0.01"))
+        except (InvalidOperation, ValueError):
+            monto_decimal = Decimal("0")
+        if not monto_decimal.is_finite():
+            monto_decimal = Decimal("0")
+        if not prov_id or monto_decimal <= 0:
             flash("Selecciona un proveedor y un monto válido.", "danger")
         else:
-            proveedor = db.session.get(_Prov, prov_id)
+            proveedor = (
+                Proveedor.query.filter_by(id=prov_id, activo=True)
+                .with_for_update()
+                .first()
+            )
             if not proveedor or not proveedor.activo:
                 flash("El destinatario debe ser un proveedor activo.", "danger")
                 return redirect(url_for(
@@ -1677,13 +2055,37 @@ def liquidacion_proveedores():
                     fecha_inicio=fecha_inicio_str,
                     fecha_fin=fecha_fin_str,
                 ))
+            # Recalculamos dentro del bloqueo para que un doble clic o dos
+            # administradores nunca registren más de lo realmente pendiente.
+            bucket = calcular_liquidaciones_proveedores(
+                fecha_inicio, fecha_fin, proveedor_id=prov_id
+            )["por_proveedor"].get(prov_id)
+            pendiente = bucket["pendiente_registrar"] if bucket else Decimal("0")
+            if pendiente <= 0:
+                flash("Este período ya está totalmente liquidado.", "info")
+                return redirect(url_for(
+                    "admin.liquidacion_proveedores",
+                    fecha_inicio=fecha_inicio_str,
+                    fecha_fin=fecha_fin_str,
+                ))
+            if monto_decimal > pendiente:
+                flash(
+                    f"El monto supera el saldo pendiente (€{pendiente:.2f}).",
+                    "danger",
+                )
+                return redirect(url_for(
+                    "admin.liquidacion_proveedores",
+                    fecha_inicio=fecha_inicio_str,
+                    fecha_fin=fecha_fin_str,
+                ))
             pago = StaffPayment(
                 user_id=operador.id,
                 tipo="liquidacion_proveedor",
-                monto=monto_f,
+                monto=monto_decimal,
                 concepto=f"{concepto} (proveedor: {proveedor.nombre})",
                 periodo_inicio=fecha_inicio,
                 periodo_fin=fecha_fin,
+                origen=origen_liquidacion_proveedor(proveedor.id),
                 registrado_por=current_user.id,
             )
             db.session.add(pago)
@@ -1705,7 +2107,8 @@ def liquidacion_proveedores():
         fecha_inicio=fecha_inicio,
         fecha_fin=fecha_fin,
         proveedores_activos=proveedores_activos,
-        n_extraviados=len(pedidos_extraviados),
+        perdida_extravios=cierre["perdida_extravios"],
+        n_extraviados=cierre["n_extraviados"],
     )
 
 
@@ -1725,6 +2128,7 @@ def proveedores():
                 return redirect(url_for("admin.proveedores"))
             try:
                 modelo, comision = _parse_acuerdo_proveedor(request.form)
+                horario_semanal_json = _parse_partner_schedule(request.form)
             except ValueError as exc:
                 flash(str(exc), "danger")
                 return redirect(url_for("admin.proveedores"))
@@ -1741,6 +2145,7 @@ def proveedores():
                 telefono=telefono_prov,
                 email=request.form.get("email", "").strip() or None,
                 horario=request.form.get("horario", "").strip() or None,
+                horario_semanal_json=horario_semanal_json,
                 hora_apertura=_parse_time_form(request.form.get("hora_apertura")),
                 hora_cierre=_parse_time_form(request.form.get("hora_cierre")),
                 modelo_acuerdo=modelo,
@@ -1750,6 +2155,14 @@ def proveedores():
                 activo=True,
             )
             db.session.add(prov)
+            AuditLog.registrar(
+                current_user.id,
+                "proveedor_comision_inicial",
+                "proveedor",
+                None,  # sin id aún; lo resolvemos tras commit
+                detalle=f"nombre={prov.nombre} modelo={modelo} comision=None→{comision}",
+                ip=request.remote_addr,
+            )
             try:
                 db.session.commit()
                 flash(f"Proveedor «{prov.nombre}» creado.", "success")
@@ -1761,7 +2174,12 @@ def proveedores():
     proveedores_list = _Prov.query.order_by(
         _Prov.activo.desc(), _Prov.nombre
     ).all()
-    return render_template("admin/proveedores.html", proveedores=proveedores_list)
+    from schedule_service import configured_schedule, schedule_json
+    return render_template(
+        "admin/proveedores.html",
+        proveedores=proveedores_list,
+        default_partner_schedule=schedule_json(configured_schedule()),
+    )
 
 
 @admin_bp.route("/proveedores/<int:proveedor_id>/editar", methods=["GET", "POST"])
@@ -1783,6 +2201,7 @@ def editar_proveedor(proveedor_id):
                 return redirect(url_for("admin.editar_proveedor", proveedor_id=proveedor_id))
             try:
                 modelo, comision = _parse_acuerdo_proveedor(request.form)
+                horario_semanal_json = _parse_partner_schedule(request.form)
             except ValueError as exc:
                 flash(str(exc), "danger")
                 return redirect(url_for("admin.editar_proveedor", proveedor_id=proveedor_id))
@@ -1798,10 +2217,22 @@ def editar_proveedor(proveedor_id):
             prov.telefono = telefono_prov
             prov.email = request.form.get("email", "").strip() or None
             prov.horario = request.form.get("horario", "").strip() or None
+            prov.horario_semanal_json = horario_semanal_json
             prov.hora_apertura = _parse_time_form(request.form.get("hora_apertura"))
             prov.hora_cierre = _parse_time_form(request.form.get("hora_cierre"))
+            old_modelo = prov.modelo_acuerdo
+            old_comision = prov.comision_pct
             prov.modelo_acuerdo = modelo
             prov.comision_pct = comision
+            if old_comision != comision or old_modelo != modelo:
+                AuditLog.registrar(
+                    current_user.id,
+                    "proveedor_comision_actualizada",
+                    "proveedor",
+                    prov.id,
+                    detalle=f"modelo {old_modelo}→{modelo} comision {old_comision}→{comision}",
+                    ip=request.remote_addr,
+                )
             prov.iban = request.form.get("iban", "").strip() or None
             prov.notas = request.form.get("notas", "").strip() or None
             prov.activo = bool(request.form.get("activo"))
@@ -1829,10 +2260,13 @@ def editar_proveedor(proveedor_id):
                 return redirect(url_for("admin.editar_proveedor", proveedor_id=proveedor_id))
             try:
                 stock = _parse_entero_no_negativo(request.form.get("stock"), "El stock")
-                precio_costo = _parse_decimal_no_negativo(
-                    request.form.get("precio_costo"),
-                    "El coste",
-                    opcional=True,
+                precio_costo = (
+                    None if prov.modelo_acuerdo == "socio_porcentaje"
+                    else _parse_decimal_no_negativo(
+                        request.form.get("precio_costo"),
+                        "El coste",
+                        opcional=True,
+                    )
                 )
             except ValueError as exc:
                 flash(str(exc), "danger")
@@ -1843,6 +2277,10 @@ def editar_proveedor(proveedor_id):
             if existente:
                 flash(f"El proveedor ya tenía «{producto.nombre}» registrado.", "info")
             else:
+                if prov.modelo_acuerdo == "socio_porcentaje":
+                    producto.proveedor_despachador_id = prov.id
+                    producto.precio_costo = None
+                    producto.stock_mostrar_en_web = True
                 db.session.add(_ProvProd(
                     proveedor_id=prov.id,
                     producto_id=producto_id,
@@ -1881,6 +2319,8 @@ def editar_proveedor(proveedor_id):
                         "danger",
                     )
                     return redirect(url_for("admin.editar_proveedor", proveedor_id=proveedor_id))
+                if fila.producto.proveedor_despachador_id == prov.id:
+                    fila.producto.proveedor_despachador_id = None
                 db.session.delete(fila)
                 try:
                     db.session.commit()
@@ -2087,6 +2527,7 @@ def productos():
     categoria_id = request.args.get("categoria_id", type=int)
     estado = request.args.get("estado", "")
     tipo = request.args.get("tipo", "")
+    revision = request.args.get("revision", "")
     query = Product.query
     if q:
         query = query.filter(or_(Product.nombre.ilike(f"%{q}%"),
@@ -2101,6 +2542,8 @@ def productos():
         query = query.filter(Product.es_combo == False)
     elif tipo == "combo":
         query = query.filter(Product.es_combo == True)
+    if revision in {"pending", "approved", "rejected"}:
+        query = query.filter(Product.partner_submission_status == revision)
     prods = query.order_by(Product.nombre).all()
     categorias = Categoria.query.filter_by(activo=True).order_by(Categoria.nombre).all()
     resumen = {
@@ -2108,11 +2551,196 @@ def productos():
         "activos": Product.query.filter_by(activo=True).count(),
         "combos": Product.query.filter_by(es_combo=True).count(),
         "canjeables": Product.query.filter_by(canjeable_con_puntos=True, activo=True).count(),
+        "revision_pendiente": Product.query.filter_by(
+            partner_submission_status="pending"
+        ).count(),
     }
+    proveedores = (
+        Proveedor.query.filter_by(modelo_acuerdo="socio_porcentaje")
+        .order_by(Proveedor.nombre).all()
+        if current_user.rol == "super_admin" else []
+    )
     return render_template("admin/productos.html", productos=prods, categorias=categorias,
-                           proveedores=[],
+                           proveedores=proveedores,
                            resumen=resumen, q=q, categoria_id=categoria_id,
-                           estado=estado, tipo=tipo)
+                           estado=estado, tipo=tipo, revision=revision)
+
+
+@admin_bp.route("/productos/<int:producto_id>/revision-socio", methods=["POST"])
+@super_admin_required
+def revisar_producto_socio(producto_id):
+    """Aprueba o devuelve una propuesta sin alterar su propietario ni stock."""
+    producto = Product.query.filter_by(id=producto_id).with_for_update().first_or_404()
+    if (
+        not producto.proveedor_despachador_id
+        or producto.partner_submission_status != "pending"
+    ):
+        flash("Este producto no tiene una revisión de socio pendiente.", "warning")
+        return redirect(url_for("admin.productos"))
+
+    accion = (request.form.get("accion") or "").strip().lower()
+    nota = (request.form.get("nota") or "").strip()
+    if len(nota) > 500:
+        flash("La observación no puede superar 500 caracteres.", "danger")
+        return redirect(url_for("admin.productos", revision="pending"))
+    if accion not in {"aprobar", "rechazar"}:
+        flash("La acción de revisión no es válida.", "danger")
+        return redirect(url_for("admin.productos", revision="pending"))
+    if accion == "rechazar" and len(nota) < 5:
+        flash("Explica brevemente qué debe corregir el socio.", "danger")
+        return redirect(url_for("admin.productos", revision="pending"))
+
+    proveedor = db.session.get(Proveedor, producto.proveedor_despachador_id)
+    fila_stock = (
+        ProveedorProducto.query.filter_by(
+            proveedor_id=producto.proveedor_despachador_id,
+            producto_id=producto.id,
+            activo=True,
+        ).first()
+        if not producto.es_combo else None
+    )
+    combo_valido = True
+    combo_error_detalle = None
+    if producto.es_combo:
+        items_combo = ComboItem.query.filter_by(
+            combo_id=producto.id,
+            activo=True,
+        ).all()
+        combo_valido = len(items_combo) >= ComboLimits.min_components()
+        grupos_seleccion = defaultdict(list)
+        for item in items_combo:
+            componente = item.componente
+            if (
+                not componente
+                or not componente.activo
+                or componente.es_combo
+                or componente.proveedor_despachador_id
+                != producto.proveedor_despachador_id
+            ):
+                combo_valido = False
+            # Variante/presentación/sabor fijos deben seguir activos. Si un
+            # tamaño o sabor se desactivó entre la propuesta y la aprobación,
+            # publicarlo generaría carritos rotos: es más seguro pedir al socio
+            # que reenvíe con la configuración vigente.
+            if item.variante is not None and not getattr(item.variante, "activo", True):
+                combo_valido = False
+                combo_error_detalle = (
+                    combo_error_detalle
+                    or f"la variante de «{componente.nombre if componente else '¿?'}» está inactiva"
+                )
+            if item.presentacion is not None and not getattr(item.presentacion, "activo", True):
+                combo_valido = False
+                combo_error_detalle = (
+                    combo_error_detalle
+                    or f"un tamaño fijo de «{componente.nombre if componente else '¿?'}» está inactivo"
+                )
+            if item.fixed_flavor_option_id and item.fixed_flavor_option is not None and not getattr(item.fixed_flavor_option, "activo", True):
+                combo_valido = False
+                combo_error_detalle = (
+                    combo_error_detalle
+                    or f"el sabor fijo de «{componente.nombre if componente else '¿?'}» ya no está activo"
+                )
+            # M2M de sabores/presentaciones permitidas: si alguno del subset
+            # dejó de estar activo, el picker del cliente se descuadraría.
+            for option in list(item.allowed_flavor_options or []):
+                if option is not None and not getattr(option, "activo", True):
+                    combo_valido = False
+                    combo_error_detalle = (
+                        combo_error_detalle
+                        or f"un sabor permitido de «{componente.nombre if componente else '¿?'}» está inactivo"
+                    )
+                    break
+            for pres in list(item.allowed_presentations or []):
+                if pres is not None and not getattr(pres, "activo", True):
+                    combo_valido = False
+                    combo_error_detalle = (
+                        combo_error_detalle
+                        or f"un tamaño permitido de «{componente.nombre if componente else '¿?'}» está inactivo"
+                    )
+                    break
+            if item.es_seleccionable:
+                grupos_seleccion[(item.grupo_seleccion or "").casefold()].append(item)
+        if any(not nombre or len(items) < 2 for nombre, items in grupos_seleccion.items()):
+            combo_valido = False
+    # Producto simple: exigimos coherencia stock/visibilidad. Un producto con
+    # stock=0 pero `stock_mostrar_en_web=True` aparecerá en el catálogo como
+    # agotado y frustrará al cliente. El socio puede optar por preventa
+    # marcando `stock_mostrar_en_web=False`.
+    stock_coherente = True
+    if accion == "aprobar" and not producto.es_combo and fila_stock is not None:
+        if (fila_stock.stock or 0) <= 0 and producto.stock_mostrar_en_web:
+            stock_coherente = False
+    if accion == "aprobar" and (
+        not proveedor
+        or not proveedor.activo
+        or proveedor.modelo_acuerdo != "socio_porcentaje"
+        or (not producto.es_combo and not fila_stock)
+        or (producto.es_combo and not combo_valido)
+        or not stock_coherente
+    ):
+        if not stock_coherente:
+            flash(
+                "No se puede publicar con stock 0 y visibilidad activa. "
+                "Pide al socio que cargue stock o desmarque la visibilidad web (preventa).",
+                "danger",
+            )
+        elif combo_error_detalle:
+            flash(
+                f"No se puede publicar el combo: {combo_error_detalle}. "
+                "Pide al socio que reenvíe con la configuración vigente.",
+                "danger",
+            )
+        else:
+            flash(
+                "No se puede publicar: verifica el socio, su inventario y que todos "
+                "los componentes del combo sean productos activos del mismo propietario.",
+                "danger",
+            )
+        return redirect(url_for("admin.productos", revision="pending"))
+
+    producto.partner_reviewed_by = current_user.id
+    producto.partner_reviewed_at = utcnow()
+    producto.partner_review_note = nota or None
+    if accion == "aprobar":
+        producto.partner_submission_status = "approved"
+        producto.activo = True
+        mensaje = f"«{producto.nombre}» fue aprobado y ya puede publicarse."
+        audit_action = "socio_producto_aprobado"
+    else:
+        producto.partner_submission_status = "rejected"
+        producto.activo = False
+        mensaje = f"«{producto.nombre}» requiere cambios antes de publicarse."
+        audit_action = "socio_producto_devuelto"
+
+    AuditLog.registrar(
+        current_user.id,
+        audit_action,
+        "producto",
+        producto.id,
+        detalle=(
+            f"Socio #{producto.proveedor_despachador_id}"
+            + (f": {nota}" if nota else "")
+        ),
+        ip=request.remote_addr,
+    )
+    db.session.commit()
+    if producto.partner_submitted_by:
+        try:
+            from push_service import notify_user
+            notify_user(
+                producto.partner_submitted_by,
+                "Revisión de producto",
+                mensaje,
+                url="/proveedor/inventario",
+                tag=f"partner-product-{producto.id}",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "No se pudo notificar la revisión del producto %s", producto.id
+            )
+    notificar_bot_sync()
+    flash(mensaje, "success" if accion == "aprobar" else "warning")
+    return redirect(url_for("admin.productos", revision="pending"))
 
 
 def _parse_time_form(val):
@@ -2124,6 +2752,15 @@ def _parse_time_form(val):
         return _dt.strptime(val.strip(), "%H:%M").time()
     except ValueError:
         return None
+
+
+def _parse_partner_schedule(form):
+    """Valida las franjas del socio y permite fallback de registros antiguos."""
+    raw = (form.get("horario_semanal_json") or "").strip()
+    if not raw:
+        return None
+    from schedule_service import schedule_json
+    return schedule_json(raw)
 
 
 def _parsear_campos_producto(form):
@@ -2166,6 +2803,11 @@ def _parsear_campos_producto(form):
         valor = (form.get(f"attr_{key}") or "").strip()
         if valor:
             atributos_dict[key] = valor
+    if "attr_image_fit" in form:
+        image_fit = (form.get("attr_image_fit") or "contain").strip().lower()
+        if image_fit not in {"contain", "cover"}:
+            return None, "El encuadre de imagen no es válido."
+        atributos_dict["image_fit"] = image_fit
     atributos_json = json.dumps(atributos_dict, ensure_ascii=False) if atributos_dict else None
 
     # Validaciones de negocio. Resolvemos primero la modalidad de canje porque
@@ -2261,12 +2903,31 @@ def _parsear_campos_producto(form):
 
     es_combo = bool(form.get("es_combo"))
     proveedor_despachador_id = None
+    requested_partner_id = form.get("proveedor_despachador_id", type=int)
+    if getattr(current_user, "rol", None) == "super_admin":
+        if requested_partner_id:
+            partner = db.session.get(Proveedor, requested_partner_id)
+            same_existing_partner = (
+                producto_actual is not None
+                and producto_actual.proveedor_despachador_id == requested_partner_id
+            )
+            if not partner or (not partner.activo and not same_existing_partner):
+                return None, "El socio de productos seleccionado no existe o está inactivo."
+            if partner.modelo_acuerdo != "socio_porcentaje":
+                return None, "El aliado seleccionado no está configurado como socio por porcentaje."
+            proveedor_despachador_id = partner.id
+    elif producto_actual is not None:
+        # Un admin operativo puede editar descripción o disponibilidad sin
+        # apropiarse ni desvincular accidentalmente productos de un socio.
+        proveedor_despachador_id = producto_actual.proveedor_despachador_id
 
     return {
         "nombre":                    nombre,
         "descripcion":               form.get("descripcion", "").strip(),
         "precio":                    precio,
-        "precio_costo":              precio_costo,
+        # El socio asume compra y stock. Para esos productos la obligación
+        # financiera se calcula por porcentaje, nunca como coste propio.
+        "precio_costo":              None if proveedor_despachador_id else precio_costo,
         "categoria_id":              categoria_id,
         "origen_pais":               form.get("origen_pais", "").strip(),
         "tipo_producto":             (form.get("tipo_producto") or "simple").strip(),
@@ -2295,7 +2956,12 @@ def _parsear_campos_producto(form):
         "hora_fin_visibilidad":      hora_fin,
         "dias_semana_json":          dias_json,
         # visualización stock
-        "stock_mostrar_en_web":      bool(form.get("stock_mostrar_en_web")),
+        # Un producto de socio siempre publica disponibilidad desde su
+        # inventario independiente para evitar ventas sin existencias.
+        "stock_mostrar_en_web":      (
+            True if proveedor_despachador_id
+            else bool(form.get("stock_mostrar_en_web"))
+        ),
         # vertical / nicho: comida | producto. Default = nicho activo de la
         # tienda (evita productos huérfanos "ambos" que aparecen en los dos
         # catálogos). Valores válidos: exactamente comida o producto.
@@ -2383,19 +3049,23 @@ def _combo_limits_payload():
     }
 
 
-def _disponibilidad_productos_por_origen():
+def _disponibilidad_productos_por_origen(proveedor_id=None):
     """Mapa de productos disponibles para combos del flujo vigente.
 
     El sistema actual opera como tienda única: propia o servicio para un único
     negocio. Por eso el constructor de combos solo puede usar stock propio.
     """
-    propios = [
-        pid for pid, in db.session.query(Product.id)
-        .filter(Product.activo.is_(True), Product.es_combo.is_(False))
-        .filter(Product.proveedor_despachador_id.is_(None))
-        .all()
-    ]
-    return {"propio": propios}
+    query = db.session.query(Product.id).filter(
+        Product.activo.is_(True),
+        Product.es_combo.is_(False),
+    )
+    if proveedor_id:
+        query = query.filter(Product.proveedor_despachador_id == proveedor_id)
+        key = f"proveedor:{proveedor_id}"
+    else:
+        query = query.filter(Product.proveedor_despachador_id.is_(None))
+        key = "propio"
+    return {key: [pid for pid, in query.all()]}
 
 
 def _money(value):
@@ -2872,6 +3542,18 @@ def crear_producto():
     db.session.add(p)
     try:
         db.session.flush()
+        if p.proveedor_despachador_id:
+            from models import ProveedorProducto
+            stock_socio = request.form.get("stock_socio_inicial", type=int)
+            if stock_socio is None or stock_socio < 0:
+                raise ValueError("Indica un stock inicial válido para el socio.")
+            db.session.add(ProveedorProducto(
+                proveedor_id=p.proveedor_despachador_id,
+                producto_id=p.id,
+                stock=stock_socio,
+                precio_costo=None,
+                activo=True,
+            ))
         extras_error = _sync_catalog_extras(p, request.form)
         if extras_error:
             raise ValueError(extras_error)
@@ -2980,6 +3662,11 @@ def _combo_bundle_payload(combo):
         allowed_flavor_ids = list(ci.allowed_flavor_option_ids or [])
         allowed_pres_ids = list(ci.allowed_presentation_ids or [])
         presentation_mode = "cliente_elige" if len(allowed_pres_ids) >= 2 else "fijo"
+        flavor_mode = (
+            "cliente_elige" if bool(getattr(ci, "permite_sabor_cliente", False))
+            else "fijo" if getattr(ci, "fixed_flavor_option_id", None)
+            else "sin_sabor"
+        )
         section["items"].append({
             "productId": int(ci.producto_id),
             "qty": max(1, int(ci.cantidad or 1)),
@@ -2988,6 +3675,11 @@ def _combo_bundle_payload(combo):
             "note": ci.notas_preparacion or "",
             "presentationId": int(ci.presentation_id) if ci.presentation_id else None,
             "permiteSabor": bool(getattr(ci, "permite_sabor_cliente", False)),
+            "flavorMode": flavor_mode,
+            "fixedFlavorId": (
+                int(ci.fixed_flavor_option_id)
+                if getattr(ci, "fixed_flavor_option_id", None) else None
+            ),
             "allowedFlavorIds": allowed_flavor_ids,
             "presentationMode": presentation_mode,
             "allowedPresentationIds": allowed_pres_ids,
@@ -3041,13 +3733,25 @@ def nuevo_combo(combo_id=None):
         if not combo_a_editar.es_combo:
             flash("Este producto no es un combo — usa la ficha del producto.", "warning")
             return redirect(url_for("admin.editar_producto", producto_id=combo_id))
+        if _combo_socio_requiere_superadmin(combo_a_editar):
+            flash("La propuesta de un socio solo puede revisarla Super Administración.", "warning")
+            return redirect(url_for(
+                "admin.productos",
+                revision=combo_a_editar.partner_submission_status,
+            ))
     categorias = Categoria.query.filter_by(activo=True).order_by(Categoria.nombre).all()
-    productos_simples = (
-        Product.query.filter_by(activo=True, es_combo=False)
-        .filter(Product.proveedor_despachador_id.is_(None))
-        .order_by(Product.nombre).all()
-    )
-    disponibilidad_por_origen = _disponibilidad_productos_por_origen()
+    productos_query = Product.query.filter_by(activo=True, es_combo=False)
+    owner_id = combo_a_editar.proveedor_despachador_id if combo_a_editar else None
+    if owner_id:
+        productos_query = productos_query.filter(
+            Product.proveedor_despachador_id == owner_id
+        )
+    else:
+        productos_query = productos_query.filter(
+            Product.proveedor_despachador_id.is_(None)
+        )
+    productos_simples = productos_query.order_by(Product.nombre).all()
+    disponibilidad_por_origen = _disponibilidad_productos_por_origen(owner_id)
     combo_limits = _combo_limits_payload()
 
     # Sabores activos por producto en 1 sola query (evita N+1 en el catálogo del
@@ -3057,6 +3761,7 @@ def nuevo_combo(combo_id=None):
     from sqlalchemy import func
     flavor_counts_by_product = {}
     flavor_options_by_product = {}  # {producto_id: [{"id": n, "nombre": "..."}]}
+    flavor_policy_by_product = {}
     if productos_simples:
         _ids = [p.id for p in productos_simples]
         _rows = (
@@ -3105,6 +3810,10 @@ def nuevo_combo(combo_id=None):
                 "id": int(oid),
                 "nombre": nom or "",
             })
+        flavor_policy_by_product = {
+            product.id: flavor_policy_for_presentation(product)
+            for product in productos_simples
+        }
 
     def _render_form(**overrides):
         """Renderiza `nuevo_combo.html` con TODO el contexto crítico.
@@ -3126,6 +3835,7 @@ def nuevo_combo(combo_id=None):
             },
             "flavor_counts_by_product": flavor_counts_by_product,
             "flavor_options_by_product": flavor_options_by_product,
+            "flavor_policy_by_product": flavor_policy_by_product,
             "combo_a_editar": combo_a_editar,
             "combo_existente_bundle": _combo_bundle_payload(combo_a_editar) if combo_a_editar else None,
         }
@@ -3171,328 +3881,93 @@ def nuevo_combo(combo_id=None):
 
     campos["es_combo"] = True
     campos["tipo_producto"] = "combo"
-
-    ruta_subida = _guardar_imagen_producto_desde_request(request.files)
-    if ruta_subida:
-        campos["imagen_url"] = ruta_subida
+    if combo_a_editar and combo_a_editar.proveedor_despachador_id:
+        # Super Admin puede completar la configuración comercial, pero la
+        # propiedad del capital no se transfiere desde este formulario.
+        campos["proveedor_despachador_id"] = combo_a_editar.proveedor_despachador_id
+        campos["precio_costo"] = None
+        campos["stock_mostrar_en_web"] = True
 
     # Crear (o actualizar) el objeto combo — sin commit aún.
     _aplicar_politica_vertical(campos)
     if combo_a_editar is not None:
-        # Modo EDIT: aplicar campos al combo existente + limpiar componentes
-        # y grupos anteriores para reinsertar en la misma transacción. La
-        # relación M2M `allowed_flavor_options` / `allowed_presentations`
-        # tiene ON DELETE CASCADE, así que el DELETE en cascada limpia las
-        # junction rows sin trabajo manual.
+        # Modo EDIT: aplicar campos al combo existente. La limpieza de
+        # ComboItem+ComboGroup la hace el builder unificado (idempotente).
         combo = combo_a_editar
         for key, value in campos.items():
             setattr(combo, key, value)
-        ComboItem.query.filter_by(combo_id=combo.id).delete(synchronize_session=False)
-        ComboGroup.query.filter_by(combo_id=combo.id).delete(synchronize_session=False)
         db.session.flush()
     else:
         combo = Product(**campos)
         db.session.add(combo)
         db.session.flush()  # Para obtener ID sin commit
 
-    # ── Obtener arrays paralelos del formulario ──
-    prod_ids = request.form.getlist("comp_prod_id") or []
-    cantidades = request.form.getlist("comp_cantidad") or []
-    tipos = request.form.getlist("comp_tipo") or []       # "fijo" | "sel"
-    grupos = request.form.getlist("comp_grupo") or []
-    max_sels = request.form.getlist("comp_max_sel") or []
-    extras = request.form.getlist("comp_precio_extra") or []
-    defaults = request.form.getlist("comp_default") or []
-    notas_prep = request.form.getlist("comp_notas_preparacion") or []
-    presentation_ids = request.form.getlist("comp_presentation_id") or []
-    # Nuevo flag por componente: cliente puede elegir el sabor del componente
-    # (si su producto tiene grupo sabor activo). Se envía como checkbox "on"/""
-    # — vacío en el array = no permitido.
-    permite_sabores = request.form.getlist("comp_permite_sabor") or []
-    # Subset opcional de sabores permitidos por componente. Formato: JSON array
-    # de option_ids, o string vacío (= sin restricción, todos los activos).
-    allowed_flavor_ids_raw = request.form.getlist("comp_allowed_flavor_ids") or []
-    # Modo de tamaño ("fijo" | "cliente_elige") + subset opcional para
-    # "cliente_elige" (mismo formato JSON). Fallback a modo fijo cuando el
-    # subset tiene <2 IDs (defensa contra estados inconsistentes del form).
-    presentation_modes = request.form.getlist("comp_presentation_mode") or []
-    allowed_pres_ids_raw = request.form.getlist("comp_allowed_presentation_ids") or []
-    group_uids = request.form.getlist("comp_group_uid") or []
-    group_defs = _combo_groups_payload_from_form(request.form)
+    # ── Parsing unificado (mismo parser que socio_producto) ──
+    from combo_form_parser import parse_componentes, ComboParseError
+    from combo_builder import build_combo
 
-    # ── Validar consistencia de arrays paralelos ──
-    parallel_arrays = [prod_ids, cantidades, tipos, grupos, max_sels]
-    if group_uids:
-        parallel_arrays.append(group_uids)
-    if extras:
-        parallel_arrays.append(extras)
-    if defaults:
-        parallel_arrays.append(defaults)
-    if notas_prep:
-        parallel_arrays.append(notas_prep)
-    if presentation_ids:
-        parallel_arrays.append(presentation_ids)
-    if permite_sabores:
-        parallel_arrays.append(permite_sabores)
-    if allowed_flavor_ids_raw:
-        parallel_arrays.append(allowed_flavor_ids_raw)
-    if presentation_modes:
-        parallel_arrays.append(presentation_modes)
-    if allowed_pres_ids_raw:
-        parallel_arrays.append(allowed_pres_ids_raw)
-    is_valid, error_msg = validate_parallel_arrays(*parallel_arrays)
-    if not is_valid:
-        db.session.rollback()
-        flash(f"Error en validación: {error_msg}", "danger")
-        return _render_form()
+    # Validar que los productos referenciados sean del catálogo permitido para
+    # este combo (mismo origen que el combo). El parser rechaza cualquier ID
+    # fuera de este mapa.
+    prod_ids_raw = request.form.getlist("comp_prod_id") or []
+    prod_ids_int = []
+    for raw in prod_ids_raw:
+        try:
+            prod_ids_int.append(int(raw))
+        except (TypeError, ValueError):
+            continue
 
-    externos = _componentes_externos_en_combo_propio(prod_ids)
+    externos = (
+        _componentes_externos_en_combo_propio(prod_ids_raw)
+        if not combo.proveedor_despachador_id else []
+    )
     if externos:
         db.session.rollback()
         flash(_mensaje_componentes_externos_combo_propio(externos), "danger")
         return _render_form()
 
-    # ── Procesar componentes ──
-    componentes_para_agregar = []
-    componentes_fijos = set()
-    componentes_seleccionables = {}  # {grupo_lower: {prod_id, ...}}
-    n_comp = 0
+    productos_permitidos_qs = Product.query.filter(
+        Product.id.in_(prod_ids_int)
+    ).all() if prod_ids_int else []
+    productos_permitidos = {p.id: p for p in productos_permitidos_qs}
 
-    for i, raw_id in enumerate(prod_ids):
-        try:
-            prod_id = int(raw_id)
-        except (ValueError, TypeError):
-            continue
-
-        # Parsear valores individual del componente
-        try:
-            cant = int(cantidades[i]) if i < len(cantidades) and cantidades[i] else 1
-        except (ValueError, TypeError):
-            cant = 1
-
-        tipo = tipos[i] if i < len(tipos) else "fijo"
-        es_sel = tipo in ("sel", "1", "true", "True")
-        group_uid = (group_uids[i].strip() if i < len(group_uids) and group_uids[i] else "")
-        grupo = (grupos[i].strip() if i < len(grupos) and grupos[i] else "") or None
-        group_def = group_defs.get(group_uid) if group_uid else None
-        if group_def:
-            es_sel = group_def["tipo"] == "seleccion"
-            grupo = group_def["nombre"] if es_sel else None
-
-        try:
-            max_sel = int(max_sels[i]) if i < len(max_sels) and max_sels[i] else 1
-        except (ValueError, TypeError):
-            max_sel = 1
-        if group_def:
-            max_sel = int(group_def["max_selecciones"] or max_sel or 1)
-        try:
-            precio_extra = _money(extras[i] if i < len(extras) and extras[i] else 0)
-        except Exception:
-            precio_extra = Decimal("0.00")
-        if precio_extra < 0:
-            db.session.rollback()
-            flash(f"Componente {i + 1}: el suplemento no puede ser negativo.", "danger")
-            return _render_form()
-        es_default = (defaults[i] if i < len(defaults) else "").strip().lower() in ("1", "true", "on", "si", "sí")
-        nota_prep = (notas_prep[i].strip() if i < len(notas_prep) and notas_prep[i] else "")[:300]
-
-        # ── Validar cantidad ──
-        is_valid, error_msg = validate_component_quantity(cant, es_sel)
-        if not is_valid:
-            db.session.rollback()
-            flash(f"Componente {i + 1}: {error_msg}", "danger")
-            return _render_form()
-
-        # ── Validar grupo y selecciones (si es seleccionable) ──
-        if es_sel:
-            is_valid, error_msg = validate_selections_per_group(max_sel)
-            if not is_valid:
-                db.session.rollback()
-                flash(f"Componente {i + 1}: {error_msg}", "danger")
-                return _render_form()
-
-            is_valid, error_msg = validate_group_name(grupo, True)
-            if not is_valid:
-                db.session.rollback()
-                flash(f"Componente {i + 1}: {error_msg}", "danger")
-                return _render_form()
-
-        # ── Validar producto como componente ──
-        producto, comp_error = _validar_producto_componente_combo(combo.id, prod_id)
-        if comp_error:
-            db.session.rollback()
-            flash(f"Componente {i + 1}: {comp_error}", "danger")
-            return _render_form()
-
-        presentation_raw = presentation_ids[i] if i < len(presentation_ids) else ""
-        presentation, presentation_error = validate_product_presentation_selection(
-            producto, presentation_raw
+    group_defs = _combo_groups_payload_from_form(request.form)
+    try:
+        componentes_parsed = parse_componentes(
+            request.form,
+            productos_permitidos=productos_permitidos,
+            group_defs=group_defs,
+            parent_vertical=(combo.vertical if combo else None),
+            combo_id=combo.id,
+            enforce_owner_id=combo.proveedor_despachador_id,
         )
-        if presentation_error:
-            db.session.rollback()
-            flash(f"Componente {i + 1}: {presentation_error}", "danger")
-            return _render_form()
-
-        # Cliente elige sabor del componente: sólo si el componente TIENE grupo
-        # sabor activo en su producto original. Silenciosamente False si no.
-        permite_sabor_raw = permite_sabores[i] if i < len(permite_sabores) else ""
-        permite_sabor = str(permite_sabor_raw).strip().lower() in ("1", "on", "true", "yes")
-        allowed_flavor_ids_parsed = []
-        if permite_sabor:
-            from models import ProductExtraGroup as _PEG, ProductExtraOption as _PEO
-            _tiene_sabor = _PEG.query.filter_by(
-                producto_id=producto.id, tipo="sabor", activo=True
-            ).first() is not None
-            if not _tiene_sabor:
-                permite_sabor = False  # ignoramos silenciosamente
-            else:
-                # Parseamos el subset de sabores permitidos (JSON array de IDs).
-                # Ausencia o array vacío = "sin restricción" (todos los activos).
-                raw_subset = allowed_flavor_ids_raw[i] if i < len(allowed_flavor_ids_raw) else ""
-                if raw_subset and raw_subset.strip() and raw_subset.strip() != "[]":
-                    try:
-                        import json as _json
-                        candidate = _json.loads(raw_subset)
-                    except (ValueError, TypeError):
-                        candidate = []
-                    if isinstance(candidate, list):
-                        # Validamos que cada opción pertenezca a un grupo sabor
-                        # ACTIVO del producto. Filtramos silenciosamente las que
-                        # ya no cumplan (evita entradas huérfanas si el admin
-                        # desactivó una opción entre form-load y submit).
-                        _valid_ids = {
-                            row.id for row in _PEO.query.filter(
-                                _PEO.activo.is_(True),
-                                _PEO.grupo_id.in_(
-                                    db.session.query(_PEG.id).filter(
-                                        _PEG.producto_id == producto.id,
-                                        _PEG.tipo == "sabor",
-                                        _PEG.activo.is_(True),
-                                    )
-                                ),
-                            ).all()
-                        }
-                        allowed_flavor_ids_parsed = [
-                            int(x) for x in candidate
-                            if isinstance(x, (int, str))
-                            and str(x).lstrip("-").isdigit()
-                            and int(x) in _valid_ids
-                        ]
-
-        # ── Modo y subset de tamaños ──
-        # Regla defensiva: si el modo declarado es "cliente_elige" pero el
-        # subset tiene <2 IDs válidos, degradamos silenciosamente a "fijo"
-        # (evita mostrar chip picker vacío al cliente).
-        allowed_pres_ids_parsed = []
-        pres_mode_raw = (presentation_modes[i] if i < len(presentation_modes) else "fijo") or "fijo"
-        pres_mode = pres_mode_raw.strip().lower() if isinstance(pres_mode_raw, str) else "fijo"
-        if pres_mode == "cliente_elige":
-            raw_subset_p = allowed_pres_ids_raw[i] if i < len(allowed_pres_ids_raw) else ""
-            if raw_subset_p and raw_subset_p.strip() and raw_subset_p.strip() != "[]":
-                try:
-                    import json as _json_p
-                    candidate_p = _json_p.loads(raw_subset_p)
-                except (ValueError, TypeError):
-                    candidate_p = []
-                if isinstance(candidate_p, list):
-                    # Filtramos por presentaciones REALES y activas del producto.
-                    _valid_pres_ids = {
-                        row.id for row in ProductPresentation.query.filter(
-                            ProductPresentation.producto_id == producto.id,
-                            ProductPresentation.activo.is_(True),
-                        ).all()
-                    }
-                    allowed_pres_ids_parsed = [
-                        int(x) for x in candidate_p
-                        if isinstance(x, (int, str))
-                        and str(x).lstrip("-").isdigit()
-                        and int(x) in _valid_pres_ids
-                    ]
-            # Degradar a fijo si el subset quedó con <2 IDs.
-            if len(allowed_pres_ids_parsed) < 2:
-                pres_mode = "fijo"
-                allowed_pres_ids_parsed = []
-
-        # ── Detectar duplicados (fijos y seleccionables) ──
-        if es_sel:
-            grupo_key = (grupo or "").strip().lower()
-            if grupo_key not in componentes_seleccionables:
-                componentes_seleccionables[grupo_key] = set()
-
-            if producto.id in componentes_seleccionables[grupo_key]:
-                db.session.rollback()
-                flash(
-                    f"El producto '{producto.nombre}' está repetido dentro del grupo '{grupo}'.",
-                    "danger"
-                )
-                return _render_form()
-            componentes_seleccionables[grupo_key].add(producto.id)
-        else:
-            if producto.id in componentes_fijos:
-                db.session.rollback()
-                flash(
-                    f"El producto '{producto.nombre}' ya está como componente fijo. Ajusta la cantidad en una sola línea.",
-                    "danger"
-                )
-                return _render_form()
-            componentes_fijos.add(producto.id)
-
-        # ── Agregar a lista para insertar después ──
-        componentes_para_agregar.append({
-            'combo_id': combo.id,
-            'producto_id': producto.id,
-            'precio_unit': float(producto.precio_final or 0) + (
-                presentation.precio_extra_float if presentation else 0.0
-            ),
-            'precio_extra': precio_extra,
-            'cantidad': cant,
-            'es_seleccionable': es_sel,
-            'grupo_seleccion': grupo if es_sel else None,
-            'max_selecciones': max_sel if es_sel else 1,
-            'group_uid': group_uid,
-            'orden': i,
-            'es_predeterminado': es_default if es_sel else False,
-            'notas_preparacion': nota_prep or None,
-            'presentation_id': presentation.id if presentation else None,
-            'permite_sabor_cliente': permite_sabor,
-            '_allowed_flavor_option_ids': allowed_flavor_ids_parsed,  # side-channel — no es columna
-            '_allowed_presentation_ids': allowed_pres_ids_parsed,     # side-channel — M2M
-        })
-        n_comp += 1
-
-    # ── Validar cantidad mínima de componentes ──
-    if n_comp < combo_limits["min_components"]:
+    except ComboParseError as exc:
         db.session.rollback()
-        flash(
-            f"Añade al menos {combo_limits['min_components']} componente para crear un combo funcional.",
-            "danger"
-        )
+        flash(str(exc), "danger")
         return _render_form()
 
-    # ── Validar máximo de componentes ──
-    if n_comp > combo_limits["max_components"]:
-        db.session.rollback()
-        flash(
-            f"No puedes añadir más de {combo_limits['max_components']} componentes.",
-            "danger"
-        )
-        return _render_form()
-
-    is_valid, error_msg = validate_combo_structure(
-        componentes_para_agregar, combo.id,
-        parent_vertical=(combo.vertical if combo else None),
-    )
-    if not is_valid:
-        db.session.rollback()
-        flash(error_msg, "danger")
-        return _render_form()
+    # ── Convertir a dicts para pricing/canje (compatibilidad con helpers legacy) ──
+    componentes_para_agregar = [
+        {
+            "producto_id": c.producto_id,
+            "cantidad": c.cantidad,
+            "es_seleccionable": c.es_seleccionable,
+            "grupo_seleccion": c.grupo,
+            "max_selecciones": c.max_selecciones,
+            "precio_extra": c.precio_extra,
+            "es_predeterminado": c.es_default,
+            "precio_unit": c.precio_unit,
+        }
+        for c in componentes_parsed
+    ]
+    n_comp = len(componentes_parsed)
 
     # ── Validar restricción: combo con seleccionables no puede ser canje directo ──
-    if combo.canjeable_con_puntos and componentes_seleccionables:
+    if combo.canjeable_con_puntos and any(c.es_seleccionable for c in componentes_parsed):
         db.session.rollback()
         flash(
             "Los combos con grupos seleccionables no pueden marcarse como canje directo con puntos.",
-            "danger"
+            "danger",
         )
         return _render_form()
 
@@ -3507,73 +3982,25 @@ def nuevo_combo(combo_id=None):
         flash(pricing_error, "danger")
         return _render_form()
 
-    # ── Crear secciones formales del combo y luego insertar componentes ──
-    groups_by_uid = {}
-    for uid, data in group_defs.items():
-        groups_by_uid[uid] = _find_or_create_combo_group(
-            combo.id,
-            tipo=data["tipo"],
-            nombre=data["nombre"],
-            max_selecciones=data["max_selecciones"],
-            orden=data["orden"],
-        )
+    # ── Persistir composición mediante builder unificado ──
+    build_combo(combo, componentes_parsed, group_defs=group_defs)
 
-    for comp_data in componentes_para_agregar:
-        group = groups_by_uid.get(comp_data.get("group_uid"))
-        if not group:
-            group = _find_or_create_combo_group(
-                combo.id,
-                tipo="seleccion" if comp_data.get("es_seleccionable") else "fijo",
-                nombre=comp_data.get("grupo_seleccion"),
-                max_selecciones=comp_data.get("max_selecciones") or 1,
-                orden=len(groups_by_uid),
-            )
-        clean_comp_data = {
-            key: value for key, value in comp_data.items()
-            if key in {
-                "combo_id", "producto_id", "cantidad", "es_seleccionable",
-                "grupo_seleccion", "max_selecciones", "precio_extra",
-                "es_predeterminado", "notas_preparacion",
-                "presentation_id", "permite_sabor_cliente",
-            }
-        }
-        clean_comp_data["combo_group_id"] = group.id
-        clean_comp_data["orden"] = comp_data.get("orden", 0)
-        new_item = ComboItem(**clean_comp_data)
-        # Enlazamos el subset de sabores permitidos vía la relación M2M. La
-        # instancia no está persistida aún, pero `db.session.add(new_item)` +
-        # asignar la lista antes del flush produce inserts correctos en el
-        # junction table gracias a SQLAlchemy secondary bookkeeping.
-        allowed_ids = comp_data.get("_allowed_flavor_option_ids") or []
-        if allowed_ids:
-            from models import ProductExtraOption as _PEO_bind
-            new_item.allowed_flavor_options = _PEO_bind.query.filter(
-                _PEO_bind.id.in_(allowed_ids)
-            ).all()
-        # Análogo para tamaños: 2+ presentaciones habilitan modo "cliente
-        # elige". Con 0-1 el M2M queda vacío y se usa `presentation_id`.
-        allowed_pres = comp_data.get("_allowed_presentation_ids") or []
-        if len(allowed_pres) >= 2:
-            new_item.allowed_presentations = ProductPresentation.query.filter(
-                ProductPresentation.id.in_(allowed_pres)
-            ).all()
-        db.session.add(new_item)
+    # El combo padre no tiene tamaños, sabores ni extras propios. Conservamos
+    # las filas legacy desactivadas para no alterar snapshots históricos, pero
+    # ningún canal de venta volverá a interpretarlas como opciones actuales.
+    ProductExtraGroup.query.filter_by(producto_id=combo.id, activo=True).update(
+        {"activo": False}, synchronize_session=False
+    )
+    ProductPresentation.query.filter_by(producto_id=combo.id, activo=True).update(
+        {"activo": False}, synchronize_session=False
+    )
 
-    extras_error = _sync_catalog_extras(combo, request.form)
-    if extras_error:
-        db.session.rollback()
-        flash(extras_error, "danger")
-        return redirect(url_for("admin.nuevo_combo"))
-    flavors_error = _sync_catalog_flavors(combo, request.form)
-    if flavors_error:
-        db.session.rollback()
-        flash(flavors_error, "danger")
-        return _render_form()
-    presentations_error = _sync_presentaciones(combo, request.form)
-    if presentations_error:
-        db.session.rollback()
-        flash(presentations_error, "danger")
-        return _render_form()
+    # La imagen se persiste únicamente después de validar toda la composición.
+    # Antes se guardaba al inicio y cualquier error posterior dejaba archivos
+    # huérfanos en almacenamiento.
+    ruta_subida = _guardar_imagen_producto_desde_request(request.files)
+    if ruta_subida:
+        combo.imagen_url = ruta_subida
 
     # ── Commit de la transacción completa ──
     try:
@@ -3595,6 +4022,14 @@ def nuevo_combo(combo_id=None):
         )
     except Exception as exc:
         db.session.rollback()
+        if ruta_subida:
+            try:
+                delete_image(ruta_subida)
+            except Exception:
+                current_app.logger.exception(
+                    "no se pudo limpiar imagen huérfana de combo %s",
+                    ruta_subida,
+                )
         flash(f"❌ Error al crear combo: {exc}", "danger")
         return _render_form()
 
@@ -3605,6 +4040,12 @@ def nuevo_combo(combo_id=None):
 @admin_required
 def editar_producto(producto_id):
     p = get_or_404(Product, producto_id)
+    if (
+        p.partner_submission_status in {"pending", "rejected"}
+        and current_user.rol != "super_admin"
+    ):
+        flash("La propuesta de un socio solo puede revisarla Super Administración.", "warning")
+        return redirect(url_for("admin.productos", revision=p.partner_submission_status))
     if request.method == "GET":
         categorias = Categoria.query.filter_by(activo=True).order_by(Categoria.nombre).all()
         try:
@@ -3616,13 +4057,18 @@ def editar_producto(producto_id):
         except (json.JSONDecodeError, TypeError):
             alergenos_activos = []
         usado_en_combos = ComboItem.query.filter_by(producto_id=p.id).count()
+        proveedores = (
+            Proveedor.query.filter_by(modelo_acuerdo="socio_porcentaje")
+            .order_by(Proveedor.nombre).all()
+            if current_user.rol == "super_admin" else []
+        )
         return render_template("admin/producto_editar.html",
                                producto=p,
                                categorias=categorias,
                                dias_activos=dias_activos,
                                alergenos_activos=alergenos_activos,
                                usado_en_combos=usado_en_combos,
-                               proveedores=[])
+                               proveedores=proveedores)
     form_con_id = request.form.copy()
     form_con_id["_producto_id"] = str(producto_id)
     campos, error = _parsear_campos_producto(form_con_id)
@@ -3652,7 +4098,14 @@ def editar_producto(producto_id):
     if p.es_combo:
         campos["es_combo"] = True
         campos["tipo_producto"] = "combo"
-        campos["proveedor_despachador_id"] = None
+        # La ficha genérica también es accesible para combos. Nunca debe
+        # convertir silenciosamente un combo financiado por socio en stock
+        # propio: la propiedad financiera se conserva y sus componentes
+        # deben seguir perteneciendo al mismo socio.
+        campos["proveedor_despachador_id"] = p.proveedor_despachador_id
+        if p.proveedor_despachador_id:
+            campos["precio_costo"] = None
+            campos["stock_mostrar_en_web"] = True
         componentes_ids = [
             item.producto_id for item in ComboItem.query.filter_by(combo_id=p.id).all()
         ]
@@ -3661,16 +4114,61 @@ def editar_producto(producto_id):
         ).first():
             flash("Los combos con grupos seleccionables no pueden marcarse como canje directo con puntos.", "danger")
             return redirect(url_for("admin.productos"))
-        externos = _componentes_externos_en_combo_propio(componentes_ids)
-        if externos:
-            flash(_mensaje_componentes_externos_combo_propio(externos), "danger")
-            return redirect(url_for("admin.productos"))
+        if p.proveedor_despachador_id:
+            componentes_incoherentes = Product.query.filter(
+                Product.id.in_(componentes_ids),
+                or_(
+                    Product.proveedor_despachador_id.is_(None),
+                    Product.proveedor_despachador_id != p.proveedor_despachador_id,
+                ),
+            ).all() if componentes_ids else []
+            if componentes_incoherentes:
+                flash(
+                    "El combo contiene productos que no pertenecen al mismo socio. "
+                    "Corrige su composición antes de editar la ficha.",
+                    "danger",
+                )
+                return redirect(url_for("admin.productos"))
+        else:
+            externos = _componentes_externos_en_combo_propio(componentes_ids)
+            if externos:
+                flash(_mensaje_componentes_externos_combo_propio(externos), "danger")
+                return redirect(url_for("admin.productos"))
     else:
-        campos["proveedor_despachador_id"] = None
+        previous_partner_id = p.proveedor_despachador_id
     _aplicar_politica_vertical(campos, producto_actual=p)
     precio_anterior = float(p.precio)
     for attr, val in campos.items():
         setattr(p, attr, val)
+    if not p.es_combo and current_user.rol == "super_admin":
+        from models import ProveedorProducto
+        new_partner_id = p.proveedor_despachador_id
+        if previous_partner_id and previous_partner_id != new_partner_id:
+            previous_row = ProveedorProducto.query.filter_by(
+                proveedor_id=previous_partner_id, producto_id=p.id
+            ).first()
+            if previous_row:
+                previous_row.activo = False
+        if new_partner_id:
+            row = ProveedorProducto.query.filter_by(
+                proveedor_id=new_partner_id, producto_id=p.id
+            ).first()
+            stock_sent = request.form.get("stock_socio_inicial", type=int)
+            if stock_sent is not None and stock_sent < 0:
+                flash("El stock del socio no puede ser negativo.", "danger")
+                return redirect(url_for("admin.editar_producto", producto_id=producto_id))
+            if row:
+                row.activo = True
+                if stock_sent is not None:
+                    row.stock = stock_sent
+            else:
+                db.session.add(ProveedorProducto(
+                    proveedor_id=new_partner_id,
+                    producto_id=p.id,
+                    stock=max(0, stock_sent or 0),
+                    precio_costo=None,
+                    activo=True,
+                ))
     presentations_error = _sync_presentaciones(p, request.form)
     if presentations_error:
         db.session.rollback()
@@ -3687,6 +4185,10 @@ def editar_producto(producto_id):
         flash(flavors_error, "danger")
         return redirect(url_for("admin.productos"))
     nuevo_activo = bool(request.form.get("activo"))
+    if p.partner_submission_status in {"pending", "rejected"}:
+        # Editar la ficha no equivale a aprobarla. La activación solo ocurre
+        # en `revisar_producto_socio`, donde queda actor y fecha auditables.
+        nuevo_activo = False
     if p.activo and not nuevo_activo:
         combos_afectados = ComboItem.query.filter_by(producto_id=p.id).count()
         if combos_afectados > 0:
@@ -3790,6 +4292,15 @@ def gestionar_extras(producto_id):
 
 # ─── COMBOS ──────────────────────────────────
 
+def _combo_socio_requiere_superadmin(combo):
+    return bool(
+        combo
+        and combo.proveedor_despachador_id
+        and combo.partner_submission_status in {"pending", "rejected"}
+        and current_user.rol != "super_admin"
+    )
+
+
 @admin_bp.route("/productos/<int:producto_id>/combo", methods=["GET"])
 @admin_required
 def gestionar_combo(producto_id):
@@ -3798,15 +4309,22 @@ def gestionar_combo(producto_id):
     if not combo.es_combo:
         flash("Este producto no es un combo.", "warning")
         return redirect(url_for("admin.productos"))
+    if _combo_socio_requiere_superadmin(combo):
+        flash("La propuesta de un socio solo puede revisarla Super Administración.", "warning")
+        return redirect(url_for("admin.productos", revision=combo.partner_submission_status))
     componentes = ComboItem.query.filter_by(combo_id=producto_id).all()
     combo_groups = ComboGroup.query.filter_by(combo_id=producto_id)\
         .order_by(ComboGroup.orden.asc(), ComboGroup.id.asc()).all()
-    productos_simples = (
-        Product.query.filter_by(activo=True, es_combo=False)
-        .filter(Product.proveedor_despachador_id.is_(None))
-        .order_by(Product.nombre)
-        .all()
-    )
+    productos_query = Product.query.filter_by(activo=True, es_combo=False)
+    if combo.proveedor_despachador_id:
+        productos_query = productos_query.filter(
+            Product.proveedor_despachador_id == combo.proveedor_despachador_id
+        )
+    else:
+        productos_query = productos_query.filter(
+            Product.proveedor_despachador_id.is_(None)
+        )
+    productos_simples = productos_query.order_by(Product.nombre).all()
 
     combo_limits = _combo_limits_payload()
 
@@ -3824,9 +4342,9 @@ def agregar_componente_combo(producto_id):
     combo = get_or_404(Product, producto_id)
     if not combo.es_combo:
         return redirect(url_for("admin.productos"))
-    if combo.proveedor_despachador_id:
-        combo.proveedor_despachador_id = None
-        db.session.flush()
+    if _combo_socio_requiere_superadmin(combo):
+        flash("Esta propuesta requiere Super Administración.", "warning")
+        return redirect(url_for("admin.productos", revision=combo.partner_submission_status))
     combo_limits = _combo_limits_payload()
     comp_id = request.form.get("producto_id", type=int)
     cantidad = request.form.get("cantidad", 1, type=int)
@@ -3835,8 +4353,11 @@ def agregar_componente_combo(producto_id):
     if comp_error:
         flash(comp_error, "danger")
         return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
-    if componente.proveedor_despachador_id:
-        flash(_mensaje_componentes_externos_combo_propio([componente]), "danger")
+    if componente.proveedor_despachador_id != combo.proveedor_despachador_id:
+        flash(
+            "El componente y el combo deben pertenecer al mismo propietario de inventario.",
+            "danger",
+        )
         return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
     es_seleccionable = bool(request.form.get("es_seleccionable"))
     grupo_seleccion = request.form.get("grupo_seleccion", "").strip() or None
@@ -3961,6 +4482,9 @@ def quitar_componente_combo(producto_id, item_id):
         flash("Operación no permitida.", "danger")
         return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
     combo = db.session.get(Product, producto_id)
+    if _combo_socio_requiere_superadmin(combo):
+        flash("Esta propuesta requiere Super Administración.", "warning")
+        return redirect(url_for("admin.productos", revision=combo.partner_submission_status))
     restantes = _payload_estructura_combo(
         ComboItem.query.filter(
             ComboItem.combo_id == producto_id,
@@ -4000,6 +4524,10 @@ def editar_cantidad_combo(producto_id, item_id):
     if item.combo_id != producto_id:
         flash("Operación no permitida.", "danger")
         return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
+    combo = db.session.get(Product, producto_id)
+    if _combo_socio_requiere_superadmin(combo):
+        flash("Esta propuesta requiere Super Administración.", "warning")
+        return redirect(url_for("admin.productos", revision=combo.partner_submission_status))
     nueva_cantidad = request.form.get("cantidad", type=int)
     is_valid, error_msg = validate_component_quantity(
         nueva_cantidad if nueva_cantidad is not None else 0,
@@ -4009,7 +4537,6 @@ def editar_cantidad_combo(producto_id, item_id):
         flash(error_msg, "warning")
         return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
     item.cantidad = nueva_cantidad
-    combo = db.session.get(Product, producto_id)
     try:
         db.session.flush()
         _recalcular_precio_combo_si_descuento(combo)
@@ -4027,6 +4554,9 @@ def actualizar_precio_combo(producto_id):
     combo = get_or_404(Product, producto_id)
     if not combo.es_combo:
         return redirect(url_for("admin.productos"))
+    if _combo_socio_requiere_superadmin(combo):
+        flash("Esta propuesta requiere Super Administración.", "warning")
+        return redirect(url_for("admin.productos", revision=combo.partner_submission_status))
     componentes = ComboItem.query.filter_by(combo_id=producto_id).all()
     pricing_error = _aplicar_precio_combo_desde_form(
         combo,
@@ -4053,6 +4583,9 @@ def editar_grupo_combo(producto_id):
     combo = get_or_404(Product, producto_id)
     if not combo.es_combo:
         return redirect(url_for("admin.productos"))
+    if _combo_socio_requiere_superadmin(combo):
+        flash("Esta propuesta requiere Super Administración.", "warning")
+        return redirect(url_for("admin.productos", revision=combo.partner_submission_status))
     grupo = request.form.get("grupo_nombre", "").strip()
     max_sel = request.form.get("max_selecciones", 1, type=int)
     if not grupo:
@@ -4392,9 +4925,10 @@ def usuarios():
     elif estado == "inactivo":
         query = query.filter(User.activo == False)
     users = query.order_by(User.rol, User.nombre).all()
+    proveedores = _socios_asignables() if current_user.rol == "super_admin" else []
     return render_template("admin/usuarios.html", users=users, q=q, rol_f=rol,
                            estado_f=estado, roles_validos=_roles_editables_usuario(),
-                           proveedores=[],
+                           proveedores=proveedores,
                            roles_legacy=_ROLES_USUARIO_LEGACY)
 
 
@@ -4438,6 +4972,16 @@ def crear_usuario():
         flash(str(exc), "danger")
         return redirect(url_for("admin.usuarios"))
 
+    proveedor_id = None
+    if rol == "socio_producto":
+        try:
+            socio = _resolver_socio_cuenta(request.form)
+            proveedor_id = socio.id
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+            return redirect(url_for("admin.usuarios"))
+
     u = User(
         nombre=nombre,
         email=email,
@@ -4446,7 +4990,7 @@ def crear_usuario():
         puesto_trabajo=request.form.get("puesto_trabajo", "").strip() or None,
         salario_base=salario_base,
         tarifa_entrega=tarifa_entrega,
-        proveedor_id=None,
+        proveedor_id=proveedor_id,
     )
     u.set_password(password)
     db.session.add(u)
@@ -4476,8 +5020,9 @@ def editar_usuario(user_id):
         abort(403)
     roles_validos = _roles_editables_usuario(u.rol)
     if request.method == "GET":
+        proveedores = _socios_asignables() if current_user.rol == "super_admin" else []
         return render_template("admin/usuario_editar.html", usuario=u, roles_validos=roles_validos,
-                               proveedores=[])
+                               proveedores=proveedores)
 
     nombre = request.form.get("nombre", "").strip()
     email = request.form.get("email", "").strip().lower()
@@ -4522,8 +5067,20 @@ def editar_usuario(user_id):
 
     u.nombre = nombre
     u.email = email
+    proveedor_id = request.form.get("proveedor_id", type=int)
+    if nuevo_rol == "socio_producto":
+        socio = db.session.get(Proveedor, proveedor_id) if proveedor_id else None
+        if (
+            not socio
+            or not socio.activo
+            or socio.modelo_acuerdo != "socio_porcentaje"
+        ):
+            flash("Selecciona un socio de productos activo con acuerdo por porcentaje.", "danger")
+            return redirect(url_for("admin.editar_usuario", user_id=u.id))
+    else:
+        proveedor_id = None
     u.rol = nuevo_rol
-    u.proveedor_id = None
+    u.proveedor_id = proveedor_id
     u.telefono = telefono_form
     u.puesto_trabajo = request.form.get("puesto_trabajo", "").strip() or None
     u.salario_base = salario_base
@@ -4691,9 +5248,13 @@ def notificaciones():
         NotificationOutbox.creado_en >= hace_24h,
     ).count()
     dispositivos_por_rol = dict(
-        db.session.query(PushSubscription.rol, db.func.count(PushSubscription.id))
-        .filter(PushSubscription.activo.is_(True))
-        .group_by(PushSubscription.rol)
+        db.session.query(User.rol, db.func.count(PushSubscription.id))
+        .join(User, PushSubscription.user_id == User.id)
+        .filter(
+            PushSubscription.activo.is_(True),
+            User.activo.is_(True),
+        )
+        .group_by(User.rol)
         .all()
     )
     dispositivos_push = sum(dispositivos_por_rol.values())
@@ -5369,44 +5930,69 @@ def analytics():
         ff = date.fromisoformat(fecha_fin)
     except (ValueError, TypeError):
         fi, ff = primer_dia, ultimo_dia
-        fecha_ini, fecha_fin = fi.isoformat(), ff.isoformat()
+    if fi > ff:
+        fi, ff = ff, fi
+    if (ff - fi).days > 365:
+        fi = ff - timedelta(days=365)
+        flash("El análisis se limitó a los últimos 366 días para mantener el panel ágil.", "info")
+    fecha_ini, fecha_fin = fi.isoformat(), ff.isoformat()
 
     pl = calcular_pl(fi, ff)
-    por_categoria = resumen_ventas_por_categoria(fi, ff)
-    top_prods = top_productos(limit=10, fecha_ini=fi, fecha_fin=ff)
-
-    # Ventas diarias para gráfico de tendencia (fecha de entrega)
-    from sqlalchemy import func as sqlfunc
-    ventas_diarias = {}
-    resultado_dia = db.session.query(
-        sqlfunc.date(Order.entregado_en).label("dia"),
-        sqlfunc.count(Order.id).label("pedidos"),
-        sqlfunc.sum(Order.total).label("total"),
-    ).filter(
-        Order.estado == "entregado",
-        sqlfunc.date(Order.entregado_en) >= fi,
-        sqlfunc.date(Order.entregado_en) <= ff,
-    ).group_by("dia").all()
-    for row in resultado_dia:
-        ventas_diarias[str(row.dia)] = {"pedidos": row.pedidos, "total": float(row.total or 0)}
-
-    # Rellenar días sin ventas
-    labels_dias, data_pedidos, data_totales = [], [], []
-    d = fi
-    while d <= ff:
-        ds = d.isoformat()
-        labels_dias.append(d.strftime("%d/%m"))
-        data_pedidos.append(ventas_diarias.get(ds, {}).get("pedidos", 0))
-        data_totales.append(round(ventas_diarias.get(ds, {}).get("total", 0), 2))
-        d += timedelta(days=1)
+    metricas_operativas = calcular_metricas_operativas(fi, ff)
 
     return render_template("admin/analytics.html",
-                           pl=pl, por_categoria=por_categoria,
-                           top_prods=top_prods,
+                           pl=pl,
+                           metricas_operativas=metricas_operativas,
                            fecha_ini=fecha_ini, fecha_fin=fecha_fin,
-                           labels_dias=labels_dias,
-                           data_pedidos=data_pedidos,
-                           data_totales=data_totales)
+                           hoy_iso=hoy.isoformat(),
+                           semana_ini=(hoy - timedelta(days=6)).isoformat(),
+                           mes_ini=primer_dia.isoformat())
+
+
+@admin_bp.route("/analytics/tiempos.csv")
+@admin_required
+def exportar_tiempos_operativos():
+    """Exporta hitos UTC y duraciones sin exponer datos personales."""
+    hoy = date.today()
+    try:
+        fi = date.fromisoformat(request.args.get("fecha_ini", hoy.isoformat()))
+        ff = date.fromisoformat(request.args.get("fecha_fin", hoy.isoformat()))
+    except (ValueError, TypeError):
+        abort(400, description="Rango de fechas inválido.")
+    if fi > ff:
+        fi, ff = ff, fi
+    if (ff - fi).days > 365:
+        abort(400, description="El rango máximo de exportación es de 366 días.")
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "pedido", "estado", "origen", "tipo_entrega", "zona", "repartidor",
+        "pedido_utc", "preparado_utc", "asignado_utc", "tomado_utc",
+        "en_ruta_utc", "entregado_utc", "min_preparacion", "min_asignacion",
+        "min_aceptacion", "min_despacho", "min_reparto", "min_total",
+    ])
+
+    def iso(valor):
+        return valor.isoformat(sep=" ", timespec="seconds") if valor else ""
+
+    for fila in filas_tiempos_operativos(fi, ff):
+        writer.writerow([
+            fila["numero_pedido"], fila["estado"], fila["origen"],
+            fila["tipo_entrega"], fila["zona"], fila["repartidor"],
+            iso(fila["creado_en"]), iso(fila["preparado_en"]),
+            iso(fila["repartidor_asignado_en"]),
+            iso(fila["repartidor_tomado_en"]), iso(fila["en_ruta_en"]),
+            iso(fila["entregado_en"]), fila["min_preparacion"],
+            fila["min_asignacion"], fila["min_aceptacion"],
+            fila["min_despacho"], fila["min_reparto"], fila["min_total"],
+        ])
+    response = make_response("\ufeff" + output.getvalue())
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename=tiempos_pedidos_{fi.isoformat()}_{ff.isoformat()}.csv"
+    )
+    response.headers["Content-Type"] = "text/csv; charset=utf-8"
+    return response
 
 
 # ─── ROSTER DE TELÉFONOS POR ROL ──────────────
@@ -6143,6 +6729,12 @@ def toggle_zona_admin(zona_id):
         flash("El módulo de delivery está desactivado.", "info")
         return redirect(url_for("admin.dashboard"))
     zona = get_or_404(ZonaEntrega, zona_id)
+    if not zona.activo and not zona.tiene_geo:
+        flash(
+            "No puedes activar una zona sin cobertura geográfica configurada.",
+            "danger",
+        )
+        return redirect(url_for("admin.zonas"))
     if zona.activo:
         activas_restantes = ZonaEntrega.query.filter(
             ZonaEntrega.activo == True,  # noqa: E712

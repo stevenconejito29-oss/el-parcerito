@@ -188,7 +188,7 @@ def aplicar_canje_en_pedido(
     Parámetros:
         cliente          — User del cliente
         pedido           — Order ya persistido (tiene .id)
-        puntos_usar      — puntos a convertir en descuento (puede ser 0)
+        puntos_usar      — parámetro legado; un valor positivo se rechaza
         producto_canje_id — ID de producto a añadir gratis (puede ser None)
         origen_operativo  — inventario del establecimiento del pedido
 
@@ -211,21 +211,10 @@ def aplicar_canje_en_pedido(
         )
         return resultado
 
-    # 4a. Descuento monetario por puntos
-    if puntos_usar > 0:
-        puntos_real = min(puntos_usar, cliente.puntos)
-        if puntos_real > 0:
-            try:
-                cliente.canjear_puntos(puntos_real, pedido_id=pedido.id)
-                pedido.puntos_usados = puntos_real  # marcar en el pedido para idempotencia
-                resultado["puntos_descontados"] = puntos_real
-                logger.info(
-                    "Canje de %d puntos para cliente %s en pedido %s",
-                    puntos_real, cliente.id, pedido.numero_pedido,
-                )
-            except ValueError as e:
-                logger.warning("canjear_puntos falló: %s", e)
-                raise
+    # Contrato de dominio: los puntos nunca reducen dinero. Se conserva el
+    # argumento para detectar integraciones antiguas y fallar de forma visible.
+    if _to_int(puntos_usar) > 0:
+        raise ValueError("Los puntos solo pueden canjearse por productos")
 
     # 4b. Producto gratuito por canje
     if producto_canje_id:
@@ -256,6 +245,7 @@ def aplicar_canje_en_pedido(
                 if prod.tipo_entrega == "inmediato":
                     prod.descontar_stock_en_origen(origen_canje, 1)
                 pedido.puntos_usados = int(pedido.puntos_usados or 0) + puntos_producto
+                resultado["puntos_descontados"] = puntos_producto
                 extra_metadata = {
                     "reward": {
                         "tipo": "producto_puntos",
@@ -354,17 +344,15 @@ def messaging_service_available() -> bool:
 def enviar_saldo_puntos(cliente, commit: bool = True) -> bool:
     """Envía el saldo al WhatsApp propietario sin exponerlo en la respuesta web."""
     from models import SiteConfig
-    from services import enviar_whatsapp_generico, get_puntos_config
+    from services import enviar_whatsapp_generico
 
-    ratio = max(1, int(get_puntos_config()["ratio"]))
     puntos = max(0, int(cliente.puntos or 0))
-    valor = puntos / ratio
     nombre_negocio = SiteConfig.get("NOMBRE_NEGOCIO", "Oxidian")
     terms = _loyalty_terms()
     mensaje = (
         f'☕ *Tus {terms["plural"]} en {nombre_negocio}*\n\n'
         f'Tienes *{puntos} {terms["plural"]}* disponibles.\n'
-        f"Equivalen hasta a *€{valor:.2f}* de descuento.\n\n"
+        "Puedes cambiarlos por los productos de recompensa disponibles.\n\n"
         "Para canjearlos, arma tu pedido en la web y verifica este mismo WhatsApp "
         "durante la confirmación."
     )
@@ -378,11 +366,6 @@ def enviar_saldo_puntos(cliente, commit: bool = True) -> bool:
         from extensions import db
         db.session.commit()
     return ok
-
-
-def euros_por_puntos(puntos: int, ratio: int = 100) -> float:
-    """Convierte puntos a euros según el ratio configurado."""
-    return round(puntos / ratio, 2) if ratio > 0 else 0.0
 
 
 # ── Reset periódico de puntos ────────────────────────────────────────────────

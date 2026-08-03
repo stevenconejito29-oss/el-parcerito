@@ -124,7 +124,7 @@
     </form>
     {% if pedido.estados_proveedor|length == 1 and es_pedido_solo_bar(pedido) %}
     <details class="mt-2">
-      <summary class="text-xs cursor-pointer" style="color:var(--col-muted)">⚠️ Reportar pedido extraviado / perdido</summary>
+      <summary class="text-xs cursor-pointer work-muted-text">Reportar pedido extraviado o perdido</summary>
       <form method="POST"
             action="{{ url_for('proveedor.marcar_extraviado', pedido_id=pedido.id) }}"
             class="mt-2"
@@ -132,7 +132,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="text" name="motivo" placeholder="Motivo opcional (ej. cliente no recogió)"
                class="w-full px-2 py-1 rounded bg-zinc-800 text-white text-xs">
-        <button type="submit" class="work-btn full-width mt-1" style="background:#7f1d1d; color:#fff">
+        <button type="submit" class="work-btn work-btn-danger full-width mt-1">
           Marcar como extraviado
         </button>
       </form>
@@ -230,55 +230,6 @@
 </div>
 </div>
 
-<style>
-.prov-item {
-  display: flex;
-  align-items: baseline;
-  gap: .6rem;
-  padding: .5rem 0;
-  border-bottom: 1px solid var(--col-border);
-}
-.prov-item:last-child { border-bottom: none; }
-.prov-qty {
-  font-size: 1.6rem;
-  font-weight: 900;
-  color: var(--col-gold);
-  min-width: 2.8rem;
-  text-align: right;
-  flex-shrink: 0;
-}
-.prov-name { font-size: 1rem; font-weight: 700; color: var(--col-text); }
-.prov-line-copy { min-width: 0; }
-.prov-nota { font-size: .8rem; color: var(--col-muted); margin: .2rem 0 0; }
-.prov-chip {
-  display: inline-flex;
-  margin-left: .35rem;
-  padding: .1rem .4rem;
-  border-radius: 999px;
-  font-size: .68rem;
-  font-weight: 800;
-  color: var(--col-muted);
-  border: 1px solid var(--col-border);
-}
-.prov-combo-detail {
-  margin: -.25rem 0 .75rem 3.4rem;
-  padding: .65rem;
-  border: 1px solid var(--col-border);
-  border-radius: .75rem;
-  background: rgba(255,255,255,.03);
-}
-.prov-cta { font-size: 1rem; font-weight: 800; padding: .85rem; letter-spacing: .02em; }
-.prov-done-badge {
-  margin-top: .75rem;
-  text-align: center;
-  color: #2b9348;
-  font-weight: 700;
-  font-size: .9rem;
-  background: rgba(43,147,72,.1);
-  border-radius: .5rem;
-  padding: .5rem;
-}
-</style>
 {% endblock %}
 
 {% block scripts %}

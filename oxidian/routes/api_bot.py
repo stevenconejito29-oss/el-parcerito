@@ -58,6 +58,7 @@ from product_presentations_service import (
     product_presentation_catalog_payload,
     validate_product_presentation_selection,
 )
+from schedule_service import configured_schedule_context
 
 api_bot_bp = Blueprint("api_bot", __name__)
 logger = logging.getLogger(__name__)
@@ -338,8 +339,7 @@ def ai_memory():
 def ai_cliente_context():
     cliente, _ = _cliente_por_telefono(request.args.get("telefono"))
     features = get_store_features()
-    apertura = (SiteConfig.get("HORARIO_APERTURA", "") or "").strip()
-    cierre = (SiteConfig.get("HORARIO_CIERRE", "") or "").strip()
+    schedule_context = configured_schedule_context()
     metodos_pago = []
     if _config_bool("EFECTIVO_HABILITADO", "1"):
         metodos_pago.append("efectivo")
@@ -348,7 +348,9 @@ def ai_cliente_context():
     negocio = {
         "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda"),
         "direccion": SiteConfig.get("DIRECCION_NEGOCIO", ""),
-        "horario": f"{apertura}-{cierre}" if apertura and cierre else "",
+        "horario": schedule_context["weekly"],
+        "horario_hoy": schedule_context["today"],
+        "proxima_apertura": schedule_context["next_opening"],
         "metodos_pago": metodos_pago,
         "delivery": features["delivery"],
         "recogida": features["recogida"],
@@ -617,7 +619,7 @@ def branding():
     # `expose_full_phone` controla si mandamos el teléfono en claro (para
     # compat con bots antiguos que aún no consumen `phone_hash`). Default
     # `1` para no romper hoy; poner `0` cuando el bot Node migre al hash.
-    expose_full = _config_bool("BRANDING_EXPOSE_FULL_PHONE", "1")
+    expose_full = _config_bool("BRANDING_EXPOSE_FULL_PHONE", "0")
     whatsapp_roles = []
     for user in User.query.filter(
         User.activo.is_(True),
@@ -647,6 +649,11 @@ def branding():
             if "reportes" in enabled:
                 capabilities.append("ai")
         entry = {
+            # Nombre operativo para que el bot pueda presentar listas de
+            # agentes sin obligar a copiar ni reconocer teléfonos.
+            "nombre": (user.nombre or "").strip() or (
+                "Super administrador" if user.rol == "super_admin" else "Administrador"
+            ),
             "rol": user.rol,
             "capabilities": sorted(set(capabilities)),
             # `phone_hash` es HMAC-SHA256(BOT_API_KEY, teléfono). El bot
@@ -679,10 +686,12 @@ def branding():
         "pickup_enabled": features["recogida"],
         "scheduled_enabled": features["pedidos_programados"],
         "points_enabled": features["puntos"],
+        "points_per_euro": get_puntos_config()["por_euro"],
         "bizum_enabled": _config_bool("BIZUM_HABILITADO", "1"),
         "cash_enabled": _config_bool("EFECTIVO_HABILITADO", "1"),
         "horario_apertura": SiteConfig.get("HORARIO_APERTURA", ""),
         "horario_cierre": SiteConfig.get("HORARIO_CIERRE", ""),
+        "horario_semanal_json": SiteConfig.get("HORARIO_SEMANAL_JSON", ""),
         # Límites operativos del bot admin. Antes hardcoded en bot.js
         # (1000, 9999, 10000); ahora ida-vuelta desde SiteConfig para que
         # los ajustes en /superadmin/config surtan efecto sin redeploy
@@ -717,6 +726,16 @@ def _combo_order_payload(producto, seleccion_item_ids):
     for item in seleccionables:
         grupos.setdefault(item.grupo_seleccion or "Seleccion", []).append(item)
 
+    def _fixed_flavor_snapshot(item):
+        option = getattr(item, "fixed_flavor_option", None)
+        if not option:
+            return None
+        return [{
+            "opt_id": option.id,
+            "nombre": option.nombre,
+            "cantidad": max(1, int(item.cantidad or 1)),
+        }]
+
     for grupo, opciones in grupos.items():
         max_sel = max(1, opciones[0].max_selecciones or 1)
         elegidos = [item for item in opciones if item.id in seleccion_item_ids]
@@ -746,6 +765,7 @@ def _combo_order_payload(producto, seleccion_item_ids):
                         "producto_id": item.producto_id,
                         "nombre": item.componente.nombre if item.componente else "",
                         "cantidad": item.cantidad,
+                        "sabor_cliente": _fixed_flavor_snapshot(item),
                     }
                     for item in elegidos
                 ],
@@ -761,6 +781,7 @@ def _combo_order_payload(producto, seleccion_item_ids):
                     "nombre": item.componente.nombre if item.componente else "",
                     "cantidad": item.cantidad,
                     "fijo": True,
+                    "sabor_cliente": _fixed_flavor_snapshot(item),
                 }
                 for item in fijos
             ],
@@ -768,6 +789,21 @@ def _combo_order_payload(producto, seleccion_item_ids):
         }
     }
     return " | ".join(resumen), metadata
+
+
+def _combo_requires_web_configuration(producto):
+    """True cuando la API legacy no puede expresar toda la personalización."""
+    if not producto or not producto.es_combo:
+        return False
+    return any(
+        bool(item.permite_sabor_cliente)
+        or len(item.allowed_presentation_ids) >= 2
+        for item in producto.combo_items
+    )
+
+
+def _combo_configuration_url(producto):
+    return f"{get_public_store_url().rstrip('/')}/producto/{producto.id}"
 
 
 def _producto_disponible_para_bot(producto):
@@ -855,6 +891,26 @@ def _combo_items_payload(producto, incluir_stock=False):
             "grupo_seleccion": ci.grupo_seleccion,
             "max_selecciones": ci.max_selecciones,
             "presentacion": presentation_metadata(ci.presentacion) if ci.presentacion else None,
+            "presentaciones_permitidas": [
+                presentation_metadata(row)
+                for row in ci.presentaciones_disponibles
+            ],
+            "modo_sabor": (
+                "cliente_elige" if ci.permite_sabor_cliente
+                else "fijo" if ci.fixed_flavor_option_id
+                else "sin_sabor"
+            ),
+            "sabor_fijo": (
+                {
+                    "id": ci.fixed_flavor_option.id,
+                    "nombre": ci.fixed_flavor_option.nombre,
+                }
+                if ci.fixed_flavor_option else None
+            ),
+            "sabores_permitidos": [
+                {"id": option.id, "nombre": option.nombre}
+                for option in ci.sabores_configurados
+            ] if ci.permite_sabor_cliente else [],
         }
         if incluir_stock:
             item.update({
@@ -889,7 +945,12 @@ def _lote_tandas_disponibles(producto):
 
 def _producto_catalogo_payload(producto, incluir_diagnostico=False):
     disponible = _producto_disponible_para_bot(producto)
-    option_groups = product_option_catalog_payload(producto)
+    # Las opciones del combo viven en sus componentes. Exponer aquí los
+    # tamaños/sabores legacy del producto padre hacía que el bot pidiera una
+    # personalización que el menú moderno no utiliza.
+    option_groups = (
+        [] if producto.es_combo else product_option_catalog_payload(producto)
+    )
     payload = {
         "id": producto.id,
         "nombre": producto.nombre,
@@ -913,14 +974,26 @@ def _producto_catalogo_payload(producto, incluir_diagnostico=False):
         "combo_precio_base": float(producto.combo_precio_base or 0) if producto.es_combo else 0,
         "combo_stock_disponible": int(producto.combo_stock_total) if producto.es_combo else None,
         "combo_items": _combo_items_payload(producto, incluir_stock=incluir_diagnostico) if producto.es_combo else [],
+        "configuracion_web_requerida": (
+            _combo_requires_web_configuration(producto)
+            if producto.es_combo else False
+        ),
+        "url_configuracion": (
+            _combo_configuration_url(producto)
+            if producto.es_combo else None
+        ),
         "atributos": producto.get_atributos() if hasattr(producto, "get_atributos") else {},
         "categoria_id": producto.categoria_id,
         "categoria_nombre": producto.categoria.nombre if producto.categoria else "",
+        "categoria": producto.categoria.nombre if producto.categoria else "",
         "stock_disponible": producto.stock_operativo_total,
+        "stock": producto.stock_operativo_total,
         "stock_mostrar_en_web": bool(producto.stock_mostrar_en_web),
         "imagen_url": producto.imagen_url or "",
         "canjeable_con_puntos": bool(producto.canjeable_con_puntos),
+        "canjeable": bool(producto.canjeable_con_puntos),
         "puntos_para_canje": producto.puntos_para_canje,
+        "puntos_canje": producto.puntos_para_canje,
         "badges": producto.badge_info,
         "personalizaciones": option_groups,
         "requiere_sabor": any(
@@ -931,7 +1004,10 @@ def _producto_catalogo_payload(producto, incluir_diagnostico=False):
             for group in option_groups if group["tipo"] == "sabor"
             for option in group["opciones"]
         ],
-        "presentaciones": product_presentation_catalog_payload(producto),
+        "presentaciones": (
+            [] if producto.es_combo
+            else product_presentation_catalog_payload(producto)
+        ),
     }
     # Variantes retail (talla/color) — solo si el producto las admite y tiene ≥1 activa.
     if producto.tiene_variantes:
@@ -1198,7 +1274,6 @@ def catalogo_simulador():
         site_keys = [
             "NOMBRE_NEGOCIO", "BOT_API_URL",
             "TIENDA_URL", "OXIDIAN_PUBLIC_URL", "PUNTOS_POR_EURO",
-            "PUNTOS_CANJE_RATIO",
         ]
         return jsonify({
             "ok": True,
@@ -1353,7 +1428,6 @@ def consultar_puntos():
                 "error": "El club de puntos no está habilitado.",
                 "code": "FEATURE_DISABLED",
                 "puntos": 0,
-                "valor_euro": 0,
             }), 403
         cliente, _telefono = _cliente_por_telefono(request.args.get("telefono", ""))
         if not cliente:
@@ -1361,9 +1435,7 @@ def consultar_puntos():
                 "ok": True,
                 "existe": False,
                 "puntos": 0,
-                "valor_euro": 0,
             })
-        ratio = get_puntos_config()["ratio"]
         # Consultar el saldo es una operación de lectura. El OTP se emite
         # exclusivamente al iniciar un canje desde checkout y nunca se
         # devuelve el secreto dentro de una respuesta API.
@@ -1372,8 +1444,6 @@ def consultar_puntos():
             "existe": True,
             "nombre": cliente.nombre or "",
             "puntos": cliente.puntos,
-            "valor_euro": round(cliente.puntos / ratio, 2),
-            "ratio": ratio,
         })
     except Exception as e:
         # Log el error real con traceback para debugging server-side,
@@ -1449,6 +1519,19 @@ def _bot_ratekey_pedido():
     return f"bot:pedido:{request.remote_addr or 'unknown'}"
 
 
+def _bot_ratekey(scope: str):
+    """Clave estable por cliente para limitar flujos internos sensibles."""
+    try:
+        data = request.get_json(silent=True) or {}
+        phone = normalizar_telefono_cliente(
+            data.get("telefono_cliente") or data.get("telefono") or ""
+        )
+    except Exception:
+        phone = ""
+    identity = phone or (request.remote_addr or "unknown")
+    return f"bot:{scope}:{identity}"
+
+
 @api_bot_bp.route("/pedido/crear", methods=["POST"])
 @limiter.limit("10 per minute", key_func=_bot_ratekey_pedido) if limiter else (lambda f: f)
 @bot_required
@@ -1467,6 +1550,35 @@ def crear_pedido():
                 "code": "DELIVERY_DISABLED",
                 "error": "El delivery está desactivado para esta tienda.",
             }), 403
+        if not (
+            current_app.testing
+            and current_app.config.get("SKIP_DELIVERY_VALIDATION", False)
+        ):
+            apertura = SiteConfig.get("HORARIO_APERTURA", "09:00")
+            cierre = SiteConfig.get("HORARIO_CIERRE", "22:30")
+            if not tienda_abierta_en_horario(
+                apertura,
+                cierre,
+                ahora=datetime.now().strftime("%H:%M"),
+                forzada_cerrada=_config_bool("TIENDA_FORZAR_CERRADA", "0"),
+                forzada_abierta=_config_bool("TIENDA_FORZAR_ABIERTA", "0"),
+            ):
+                schedule_context = configured_schedule_context()
+                return jsonify({
+                    "ok": False,
+                    "code": "STORE_CLOSED",
+                    "error": (
+                        SiteConfig.get("TIENDA_MENSAJE_CIERRE", "")
+                        or (
+                            f"La tienda está cerrada ahora. {schedule_context['today']}. "
+                            + (
+                                f"Próxima apertura: {schedule_context['next_opening']}. "
+                                if schedule_context["next_opening"] else ""
+                            )
+                            + "Conserva tu selección y vuelve durante una franja de atención."
+                        )
+                    ),
+                }), 409
 
         # ── Idempotency guard ────────────────────────────────────
         # El bot DEBE enviar Idempotency-Key (UUID por intento). Si no la envía,
@@ -1503,6 +1615,23 @@ def crear_pedido():
         )
         items_data = data.get("items")
         metodo_pago = normalizar_metodo_pago(data.get("metodo_pago"))
+        metodos_habilitados = []
+        if _config_bool("EFECTIVO_HABILITADO", "1"):
+            metodos_habilitados.append("efectivo")
+        if (
+            _config_bool("BIZUM_HABILITADO", "1")
+            and (SiteConfig.get("BIZUM_TELEFONO", "") or "").strip()
+        ):
+            metodos_habilitados.append("bizum")
+        if _config_bool("TARJETA_HABILITADA", "1"):
+            metodos_habilitados.append("tarjeta")
+        if metodo_pago not in metodos_habilitados:
+            return jsonify({
+                "ok": False,
+                "code": "PAYMENT_METHOD_UNAVAILABLE",
+                "error": "Ese método de pago no está disponible ahora.",
+                "metodos_disponibles": metodos_habilitados,
+            }), 409
         direccion = (data.get("direccion_entrega") or "").strip()
         zona_id = data.get("zona_id")
         notas = (data.get("notas") or "").strip()
@@ -1591,7 +1720,8 @@ def crear_pedido():
                         "code": "SCHEDULED_DATE_MISSING",
                         "error": f"'{p.nombre}' todavía no tiene una fecha de entrega definida.",
                     }), 409
-                if fecha_ent < date.today():
+                from business_time import business_today
+                if fecha_ent < business_today():
                     return jsonify({
                         "ok": False,
                         "code": "SCHEDULED_DATE_EXPIRED",
@@ -1621,6 +1751,16 @@ def crear_pedido():
                         }), 409
             combo_item_ids = item_d.get("combo_item_ids") or []
             if p.es_combo:
+                if _combo_requires_web_configuration(p):
+                    return jsonify({
+                        "ok": False,
+                        "code": "COMBO_WEB_CONFIGURATION_REQUIRED",
+                        "error": (
+                            f"«{p.nombre}» necesita elegir tamaños o distribuir "
+                            "sabores en la tienda online."
+                        ),
+                        "url": _combo_configuration_url(p),
+                    }), 409
                 try:
                     p.validar_stock_combo_seleccion(cantidad, combo_item_ids)
                 except ValueError as exc:
@@ -1631,9 +1771,12 @@ def crear_pedido():
             raw_product_options = dict(raw_product_options)
             if item_d.get("sabor_id") not in (None, ""):
                 raw_product_options[str(item_d.get("sabor_id"))] = 1
-            presentation, presentation_error = validate_product_presentation_selection(
-                p,
-                item_d.get("presentation_id") or item_d.get("presentation_size"),
+            presentation, presentation_error = (
+                (None, None)
+                if p.es_combo else validate_product_presentation_selection(
+                    p,
+                    item_d.get("presentation_id") or item_d.get("presentation_size"),
+                )
             )
             if presentation_error:
                 return jsonify({
@@ -1643,7 +1786,10 @@ def crear_pedido():
                     "presentaciones": product_presentation_catalog_payload(p),
                 }), 400
             option_selection, option_rows, option_total, option_error = (
-                validate_product_option_selection(p, raw_product_options, presentation)
+                ({}, [], 0.0, None)
+                if p.es_combo else validate_product_option_selection(
+                    p, raw_product_options, presentation
+                )
             )
             if option_error:
                 return jsonify({
@@ -1697,17 +1843,22 @@ def crear_pedido():
                 "code": "MIXED_ORDER_GROUPS",
                 "error": "Los productos seleccionados requieren pedidos separados.",
             }), 400
-        origenes = {
-            item["producto"].origen_operativo_key
-            for item in items_procesados
-        }
-        if len(origenes) > 1:
+        origenes_logisticos = set()
+        for item in items_procesados:
+            product = item["producto"]
+            owner = product.proveedor_despachador
+            origenes_logisticos.add(
+                "propio"
+                if owner and owner.modelo_acuerdo == "socio_porcentaje"
+                else product.origen_operativo_key
+            )
+        if len(origenes_logisticos) > 1:
             return jsonify({
                 "ok": False,
                 "code": "MIXED_FULFILLMENT_ORIGINS",
                 "error": (
-                    "Cada pedido debe salir completo de un solo establecimiento. "
-                    "Crea un pedido independiente para cada origen."
+                    "Estos productos sí salen de establecimientos distintos. "
+                    "Crea un pedido independiente para cada punto de preparación."
                 ),
             }), 400
 
@@ -1764,17 +1915,6 @@ def crear_pedido():
         tiempo_estimado = 30
         if zona is not None and not zona.activo:
             zona = None
-        if zona is None and zona_id:
-            candidata = db.session.get(ZonaEntrega, zona_id)
-            if candidata and candidata.activo and not any(
-                z.tiene_geo for z in ZonaEntrega.query.filter_by(activo=True).all()
-            ):
-                zona = candidata
-        if zona is None:
-            zonas_activas = ZonaEntrega.query.filter_by(activo=True)\
-                .order_by(ZonaEntrega.orden, ZonaEntrega.nombre).all()
-            if geo.get("validacion_desactivada") or not any(z.tiene_geo for z in zonas_activas):
-                zona = zonas_activas[0] if zonas_activas else None
         if zona is None:
             return jsonify({
                 "ok": False,
@@ -1786,24 +1926,17 @@ def crear_pedido():
 
         # ── Motor de pricing unificado (mismas reglas que web) ──
         cliente = bloquear_cliente_puntos(cliente)
-        puntos_cfg = get_puntos_config()
-        ratio = puntos_cfg["ratio"]
-        puntos_usar = min(max(0, int(data.get("puntos_usar", 0))), int(cliente.puntos or 0))
-
         try:
             precio = calcular_precio(
                 items_procesados, subtotal,
                 cupon=cupon_obj,
                 afiliado=afiliado_obj,
-                puntos_usar=puntos_usar,
                 zona=zona,
-                ratio_puntos=ratio,
             )
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         total = precio.total
         costo_envio = precio.costo_envio
-        puntos_a_canjear = precio.puntos_usados
         puntos_ganados = calcular_puntos_ganados(total)
         service_fee = get_service_commission(total)
 
@@ -1906,7 +2039,6 @@ def crear_pedido():
         aplicar_canje_en_pedido(
             cliente,
             pedido,
-            puntos_usar=puntos_a_canjear,
             producto_canje_id=producto_canje_id,
         )
         db.session.flush()
@@ -2284,6 +2416,7 @@ def bar_marcar_preparado(pedido_id):
 
     from services import (
         registrar_evento_pedido, es_pedido_solo_bar, distribuir_repartidor,
+        marcar_pedido_preparado,
     )
     estado.preparado = True
     estado.preparado_en = _utcnow()
@@ -2303,7 +2436,12 @@ def bar_marcar_preparado(pedido_id):
     if (not pedido.proveedores_pendientes
             and es_pedido_solo_bar(pedido)
             and pedido.estado in ESTADOS_EN_PREPARACION):
-        pedido.estado = "listo"
+        marcar_pedido_preparado(
+            pedido,
+            actor_id=operador.id,
+            canal="bot_bar",
+            detalle="Pedido 100% del socio preparado desde WhatsApp.",
+        )
         try:
             repartidor_asignado = distribuir_repartidor(pedido)
         except Exception:
@@ -2484,6 +2622,7 @@ def estado_pedido_buscar():
 
 
 @api_bot_bp.route("/pedido/<int:pedido_id>/cancelar", methods=["POST"])
+@limiter.limit("10 per minute", key_func=lambda: _bot_ratekey("cancel")) if limiter else (lambda f: f)
 @bot_required
 def cancelar_pedido_cliente(pedido_id):
     """Cancela un pedido propio únicamente antes de iniciar preparación."""
@@ -2539,6 +2678,7 @@ def cancelar_pedido_cliente(pedido_id):
 
 
 @api_bot_bp.route("/confirmacion/responder", methods=["POST"])
+@limiter.limit("10 per minute", key_func=lambda: _bot_ratekey("confirmation")) if limiter else (lambda f: f)
 @bot_required
 def responder_confirmacion_pedido():
     """El bot delega la resolución de la respuesta del cliente en Oxidian.
@@ -2718,6 +2858,7 @@ def confirmar_pedido_cliente(pedido_id):
 # ─── ENVIAR MENSAJE AL CLIENTE (Oxidian → Bot) ─
 
 @api_bot_bp.route("/message", methods=["POST"])
+@limiter.limit("120 per minute", key_func=lambda: _bot_ratekey("message")) if limiter else (lambda f: f)
 @bot_required
 def enviar_mensaje():
     """
@@ -2743,6 +2884,7 @@ def enviar_mensaje():
 # ─── BROADCAST (campaña masiva desde Oxidian) ─
 
 @api_bot_bp.route("/broadcast", methods=["POST"])
+@limiter.limit("5 per hour", key_func=lambda: _bot_ratekey("broadcast")) if limiter else (lambda f: f)
 @bot_required
 def broadcast():
     """
@@ -2753,8 +2895,19 @@ def broadcast():
     try:
         data = request.json or {}
         mensajes = data.get("mensajes", [])
-        if not mensajes:
+        if not isinstance(mensajes, list) or not mensajes:
             return jsonify({"ok": False, "error": "mensajes[] requerido"}), 400
+        try:
+            max_destinatarios = max(1, min(5000, int(
+                SiteConfig.get("BOT_BROADCAST_MAX_RECIPIENTS", "500") or 500
+            )))
+        except (TypeError, ValueError):
+            max_destinatarios = 500
+        if len(mensajes) > max_destinatarios:
+            return jsonify({
+                "ok": False,
+                "error": f"El envío supera el máximo de {max_destinatarios} destinatarios por lote",
+            }), 413
 
         validos = [
             m for m in mensajes
@@ -2795,47 +2948,7 @@ def catalogo_completo():
         return jsonify({
             "ok": True,
             "total": len(visibles),
-            "productos": [
-                {
-                    "id":                    p.id,
-                    "nombre":                p.nombre,
-                    "descripcion":           p.descripcion or "",
-                    "precio":                float(p.precio_final),
-                    "tipo_entrega":          p.tipo_entrega or "inmediato",
-                    "modalidad_entrega":     p.modalidad_entrega or "ambas",
-                    "fecha_llegada":         p.fecha_llegada.isoformat() if p.fecha_llegada else None,
-                    "categoria":             p.categoria.nombre if p.categoria else "",
-                    "stock":                 p.stock_operativo_total,
-                    "es_combo":              bool(p.es_combo),
-                    "combo_items": [
-                        {
-                            "combo_item_id":  ci.id,
-                            "producto_id":    ci.producto_id,
-                            "nombre":         ci.componente.nombre if ci.componente else "",
-                            "cantidad":       ci.cantidad,
-                            "es_seleccionable": bool(ci.es_seleccionable),
-                            "presentacion": presentation_metadata(ci.presentacion) if ci.presentacion else None,
-                        }
-                        for ci in ComboItem.query.filter_by(combo_id=p.id).all()
-                    ] if p.es_combo else [],
-                    "canjeable":             bool(p.canjeable_con_puntos),
-                    "puntos_canje":          p.puntos_para_canje,
-                    "badges":                p.badge_info,
-                    "personalizaciones":     (option_groups := product_option_catalog_payload(p)),
-                    "requiere_sabor":        any(
-                        group["tipo"] == "sabor" and group["min"] > 0
-                        for group in option_groups
-                    ),
-                    "sabores": [
-                        option
-                        for group in option_groups
-                        if group["tipo"] == "sabor"
-                        for option in group["opciones"]
-                    ],
-                    "presentaciones": product_presentation_catalog_payload(p),
-                }
-                for p in visibles
-            ]
+            "productos": [_producto_catalogo_payload(p) for p in visibles],
         })
     except Exception as e:
         current_app.logger.exception("api_bot 500")
@@ -2995,11 +3108,21 @@ def cobertura_delivery():
     try:
         data = request.get_json(silent=True) or {}
         direccion = (request.args.get("direccion") or data.get("direccion") or "").strip()
-        if not direccion:
+        lat = request.args.get("lat", data.get("lat"))
+        lon = request.args.get("lon", request.args.get("lng", data.get("lon", data.get("lng"))))
+        precision = request.args.get(
+            "accuracy", request.args.get("precision_m", data.get("accuracy", data.get("precision_m")))
+        )
+        tiene_coordenadas = lat not in (None, "") or lon not in (None, "")
+        if not direccion and not tiene_coordenadas:
             return jsonify({
                 "ok": False,
-                "cobertura": {"ok": False, "distancia_km": None, "mensaje": "Dirección requerida"},
-                "error": "Dirección requerida",
+                "cobertura": {
+                    "ok": False,
+                    "distancia_km": None,
+                    "mensaje": "Escribe una dirección o comparte tu ubicación.",
+                },
+                "error": "Dirección o ubicación requerida",
             }), 400
         if len(direccion) > 220:
             return jsonify({
@@ -3012,13 +3135,15 @@ def cobertura_delivery():
                 "error": "Dirección demasiado larga",
             }), 400
 
-        resultado = validar_radio_entrega(direccion)
+        resultado = validar_radio_entrega(
+            direccion, lat=lat, lon=lon, precision_m=precision
+        )
         metodo = resultado.get("metodo_cobertura")
         return jsonify({
             "ok": bool(resultado.get("ok")),
             "cobertura": resultado,
-            "validacion_activa": _config_bool("VALIDAR_RADIO_ENTREGA", "1"),
-            "bloqueo_no_verificada": _config_bool("BLOQUEAR_DIRECCION_NO_VERIFICADA", "1"),
+            "validacion_activa": True,
+            "bloqueo_no_verificada": True,
             # Compatibilidad con clientes antiguos. Las interfaces nuevas solo
             # enseñan el radio si fue el método realmente utilizado.
             "radio_km": SiteConfig.get("RADIO_ENTREGA_KM", "5"),
@@ -3041,6 +3166,7 @@ def asistente_bot():
         tienda_url = get_public_store_url(request.url_root)
         telefono = SiteConfig.get("TELEFONO_NEGOCIO", "")
         features = get_store_features()
+        schedule_context = configured_schedule_context()
         menu = [
             {"key": "1", "label": "Ver menu y combos en la web", "endpoint": "GET /api/bot/catalogo/completo"},
             {"key": "2", "label": "Estado de pedido", "endpoint": "GET /api/bot/pedido/estado"},
@@ -3064,10 +3190,9 @@ def asistente_bot():
                 "pickup_enabled": features["recogida"],
                 "points_enabled": features["puntos"],
                 "order_create_enabled": False,
-                "horario": {
-                    "apertura": SiteConfig.get("HORARIO_APERTURA", "09:00"),
-                    "cierre": SiteConfig.get("HORARIO_CIERRE", "22:30"),
-                },
+                "horario": schedule_context["weekly"],
+                "horario_hoy": schedule_context["today"],
+                "proxima_apertura": schedule_context["next_opening"],
             },
             "menu": menu,
             "reglas": {
@@ -3098,8 +3223,7 @@ def menu_flow():
     try:
         nombre = SiteConfig.get("NOMBRE_NEGOCIO", "Mi tienda")
         telefono_negocio = SiteConfig.get("TELEFONO_NEGOCIO", "")
-        horario_ap = SiteConfig.get("HORARIO_APERTURA", "09:00")
-        horario_ci = SiteConfig.get("HORARIO_CIERRE", "22:30")
+        schedule_context = configured_schedule_context()
         tipo_tienda = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
         features = get_store_features()
         es_comida = (tipo_tienda == "comida")
@@ -3107,6 +3231,13 @@ def menu_flow():
         catalogo_emoji = "🍽️" if es_comida else "🛍️"
         preparando_emoji = "👨‍🍳" if es_comida else "📦"
         puntos_on = bool(features.get("puntos"))
+        puntos_por_euro = get_puntos_config()["por_euro"]
+        acumulacion_puntos_txt = (
+            f"En cada compra entregada ganas *{puntos_por_euro} "
+            f"{'punto' if puntos_por_euro == 1 else 'puntos'} por €*."
+            if puntos_por_euro > 0
+            else "La acumulación de puntos está pausada temporalmente."
+        )
         delivery_on = bool(features.get("delivery"))
 
         menu_opciones = [
@@ -3135,11 +3266,15 @@ def menu_flow():
                 "accion": "pedir_telefono" if puntos_on else "volver_menu",
             },
             "paso_2_con_puntos": {
-                "mensaje": "¡Tienes *{puntos}* puntos! 🌟\nEquivalen a *€{valor_euro}* de descuento.\n\nEscribe *CANJEAR* para ver los productos que puedes conseguir con tus puntos\nO *MENU* para volver al inicio",
+                "mensaje": "¡Tienes *{puntos}* puntos! 🌟\nPuedes cambiarlos por productos de recompensa.\n\nEscribe *CANJEAR* para ver los disponibles\nO *MENU* para volver al inicio",
                 "accion": "mostrar_opciones_puntos",
             },
             "paso_2_sin_puntos": {
-                "mensaje": "Aún no tienes puntos acumulados 😅\nPero en cada compra ganas *1 punto por €* gastado.\n¿Quieres ver el menú para pedir? 🛒",
+                "mensaje": (
+                    f"Aún no tienes puntos acumulados 😅\n"
+                    f"{acumulacion_puntos_txt}\n"
+                    "¿Quieres ver el menú para pedir? 🛒"
+                ),
                 "accion": "ir_al_menu",
             },
             "paso_3_productos": {
@@ -3147,16 +3282,16 @@ def menu_flow():
                 "accion": "abrir_tienda",
             },
             "paso_4_confirmar": {
-                "mensaje": "🔐 Para confirmar el canje de *{puntos_necesarios}* puntos por *{producto_nombre}*, te enviaremos un código a este WhatsApp.\n\n¿Lo confirmas? Responde *SÍ* para recibir el código",
+                "mensaje": "🔐 Para verificar que eres tú antes de reservar *{producto_nombre}* por *{puntos_necesarios}* puntos, te enviaremos un código a este WhatsApp.\n\nResponde *SÍ* para recibirlo. Los puntos no se descontarán todavía.",
                 "accion": "pedir_confirmacion_canje",
             },
             "paso_5_codigo": {
-                "mensaje": "📱 Te hemos enviado un código de 6 dígitos.\nEscríbelo aquí para confirmar el canje:",
+                "mensaje": "📱 Te enviamos un código de 6 dígitos.\nEscríbelo aquí para verificar el canje; después tendrás que confirmarlo dentro de tu pedido web:",
                 "accion": "pedir_codigo_verificacion",
             },
             "paso_6_exito": {
-                "mensaje": "✅ ¡Listo parce! *{puntos_descontados}* puntos canjeados.\nTu *{producto_nombre}* está incluido en tu próximo pedido.\n\nTe quedan *{puntos_restantes}* puntos 🌟",
-                "accion": "canje_completado",
+                "mensaje": "✅ Identidad verificada. Abre la tienda, añade tu pedido y selecciona *{producto_nombre}* en el último paso. Solo al confirmar el pedido se descontarán *{puntos_necesarios}* puntos.",
+                "accion": "abrir_checkout_canje",
             },
         }
         # El mensaje operativo real viene de ``mensaje_estado_pedido`` y solo
@@ -3209,7 +3344,9 @@ def menu_flow():
         return jsonify({
             "ok": True,
             "negocio": nombre,
-            "horario": f"{horario_ap} – {horario_ci}",
+            "horario": schedule_context["weekly"],
+            "horario_hoy": schedule_context["today"],
+            "proxima_apertura": schedule_context["next_opening"],
             "telefono_agente": telefono_negocio,
 
             # ── MENÚ PRINCIPAL ──
@@ -3374,8 +3511,6 @@ def productos_canjeables():
             return jsonify({"ok": False, "error": "Cliente no encontrado", "puntos": 0}), 404
 
         puntos = cliente.puntos
-        ratio = get_puntos_config()["ratio"]
-
         # Productos marcados como canjeables con los puntos suficientes
         productos = Product.query.filter_by(
             activo=True, canjeable_con_puntos=True
@@ -3389,7 +3524,7 @@ def productos_canjeables():
 
         return jsonify({
             "ok": True,
-            "cliente": {"nombre": cliente.nombre, "puntos": puntos, "valor_euro": round(puntos / ratio, 2)},
+            "cliente": {"nombre": cliente.nombre, "puntos": puntos},
             "puede_canjear": len(productos) > 0,
             "productos_canjeables": [
                 {
@@ -3418,6 +3553,7 @@ def productos_canjeables():
 # ─── PUNTOS: SOLICITAR CÓDIGO DE VERIFICACIÓN ────────────────────────────────
 
 @api_bot_bp.route("/puntos/solicitar-codigo", methods=["POST"])
+@limiter.limit("5 per minute", key_func=lambda: _bot_ratekey("points-otp")) if limiter else (lambda f: f)
 @bot_required
 def bot_solicitar_codigo_puntos():
     """
@@ -3464,6 +3600,7 @@ def bot_solicitar_codigo_puntos():
 # ─── PUNTOS: VERIFICAR CÓDIGO Y CANJEAR ──────────────────────────────────────
 
 @api_bot_bp.route("/puntos/verificar-codigo", methods=["POST"])
+@limiter.limit("10 per minute", key_func=lambda: _bot_ratekey("points-verify")) if limiter else (lambda f: f)
 @bot_required
 def bot_verificar_codigo_puntos():
     """
@@ -3558,9 +3695,7 @@ def puntos_saldo_completo():
                 )
             })
 
-        ratio = get_puntos_config()["ratio"]
         puntos = cliente.puntos
-        valor_euro = round(puntos / ratio, 2)
 
         # Productos canjeables
         canjeables = Product.query.filter_by(
@@ -3579,8 +3714,6 @@ def puntos_saldo_completo():
                                     .order_by(PointsLog.creado_en.desc()).limit(3).all()
 
         mensaje = f"⭐ *{cliente.nombre}*, tienes *{puntos} puntos*"
-        if valor_euro > 0:
-            mensaje += f" (€{valor_euro} de descuento)"
         mensaje += "\n"
 
         if canjeables:
@@ -3598,7 +3731,6 @@ def puntos_saldo_completo():
                 "id": cliente.id,
                 "nombre": cliente.nombre,
                 "puntos": puntos,
-                "valor_euro": valor_euro,
             },
             "puede_canjear": len(canjeables) > 0,
             "productos_canjeables": [
@@ -3640,6 +3772,7 @@ def info_negocio():
         forzada_ab = str(SiteConfig.get("TIENDA_FORZAR_ABIERTA", "0")).strip().lower() in {"1", "true", "yes", "on"}
         ahora_str  = datetime.now().strftime("%H:%M")
         is_open    = tienda_abierta_en_horario(apertura, cierre, ahora=ahora_str, forzada_cerrada=forzada, forzada_abierta=forzada_ab)
+        schedule_context = configured_schedule_context()
         features = get_store_features()
         metodos_pago = []
         if _config_bool("EFECTIVO_HABILITADO", "1"):
@@ -3661,11 +3794,20 @@ def info_negocio():
             "ciudad": SiteConfig.get("CIUDAD_NEGOCIO", ""),
             "horario_apertura": apertura,
             "horario_cierre": cierre,
+            "horario_hoy": schedule_context["today"],
+            "horario_semanal": schedule_context["weekly"],
+            "proxima_apertura": schedule_context["next_opening"],
             "is_open": is_open,
             "forzar_cerrada": forzada,
             "hora_actual": ahora_str,
             "mensaje_cierre": (
-                mensaje_cierre or f"Cerrado. Horario: {apertura}–{cierre}"
+                mensaje_cierre or (
+                    f"Cerrado. {schedule_context['today']}. "
+                    + (
+                        f"Próxima apertura: {schedule_context['next_opening']}."
+                        if schedule_context["next_opening"] else ""
+                    )
+                ).strip()
             ) if not is_open else "",
             "metodos_pago": metodos_pago,
             "delivery_enabled": features["delivery"],
@@ -3698,14 +3840,23 @@ def tienda_status():
         forzada_ab = str(SiteConfig.get("TIENDA_FORZAR_ABIERTA", "0")).strip().lower() in {"1", "true", "yes", "on"}
         ahora    = datetime.now().strftime("%H:%M")
         is_open  = tienda_abierta_en_horario(apertura, cierre, ahora=ahora, forzada_cerrada=forzada, forzada_abierta=forzada_ab)
+        schedule_context = configured_schedule_context()
         mensaje_cierre = (SiteConfig.get("TIENDA_MENSAJE_CIERRE", "") or "").strip()
         return jsonify({
             "ok": True,
             "is_open": is_open,
             "hora_actual": ahora,
-            "horario": f"{apertura} – {cierre}",
+            "horario": schedule_context["weekly"],
+            "horario_hoy": schedule_context["today"],
+            "proxima_apertura": schedule_context["next_opening"],
             "mensaje": "Abierto ahora" if is_open else (
-                mensaje_cierre or f"Cerrado. Horario: {apertura}–{cierre}"
+                mensaje_cierre or (
+                    f"Cerrado. {schedule_context['today']}. "
+                    + (
+                        f"Próxima apertura: {schedule_context['next_opening']}."
+                        if schedule_context["next_opening"] else ""
+                    )
+                ).strip()
             ),
         })
     except Exception as e:

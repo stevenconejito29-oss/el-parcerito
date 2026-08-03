@@ -117,6 +117,33 @@ class RepartidorBatchTest(unittest.TestCase):
         self.assertEqual(p_mio.repartidor_id, self.rep.id)
         self.assertEqual(p_otro.repartidor_id, otro.id, "no puede robar pedidos")
 
+    def test_tomar_multiples_respeta_capacidad_de_ruta(self):
+        SiteConfig.set("MAX_PEDIDOS_POR_REPARTIDOR", "2", descripcion="test")
+        db.session.commit()
+        ya_asignado = self._pedido(repartidor_id=self.rep.id)
+        candidato_a = self._pedido()
+        candidato_b = self._pedido()
+
+        response = self.client.post(
+            "/repartidor/ruta/tomar-multiples",
+            data={"pedido_ids": [candidato_a.id, candidato_b.id]},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        db.session.refresh(ya_asignado)
+        db.session.refresh(candidato_a)
+        db.session.refresh(candidato_b)
+        asignados = [
+            pedido for pedido in (candidato_a, candidato_b)
+            if pedido.repartidor_id == self.rep.id
+        ]
+        self.assertEqual(len(asignados), 1)
+        self.assertEqual(
+            Order.query.filter_by(repartidor_id=self.rep.id)
+            .filter(Order.estado.in_(["listo", "en_ruta"])).count(),
+            2,
+        )
+
     def test_tomar_multiples_sin_seleccion_devuelve_warning(self):
         r = self.client.post("/repartidor/ruta/tomar-multiples", data={})
         self.assertEqual(r.status_code, 302)
@@ -156,6 +183,40 @@ class RepartidorBatchTest(unittest.TestCase):
         db.session.refresh(p1); db.session.refresh(p2)
         self.assertEqual(p1.estado, "listo", "p1 quedó como estaba")
         self.assertEqual(p2.estado, "en_ruta", "p2 avanzó pese al fallo de p1")
+
+    def test_salir_multiples_rechaza_nuevo_trabajo_estando_offline(self):
+        pedido = self._pedido(repartidor_id=self.rep.id)
+        self.rep.en_linea = False
+        db.session.commit()
+
+        with patch("routes.repartidor.avanzar_estado_pedido") as avanzar:
+            response = self.client.post(
+                "/repartidor/ruta/salir-multiples",
+                data={"pedido_ids": [pedido.id]},
+            )
+
+        self.assertEqual(response.status_code, 302)
+        db.session.refresh(pedido)
+        self.assertEqual(pedido.estado, "listo")
+        avanzar.assert_not_called()
+
+    def test_ruta_no_expone_entrega_asignada_a_otro_repartidor(self):
+        otro = self._user(
+            "Otro en ruta",
+            "otro-ruta@t.invalid",
+            "repartidor",
+            telefono="+34600000098",
+        )
+        propio = self._pedido(estado="en_ruta", repartidor_id=self.rep.id)
+        ajeno = self._pedido(estado="en_ruta", repartidor_id=otro.id)
+
+        with patch("routes.repartidor.render_template", return_value="ok") as render:
+            response = self.client.get("/repartidor/ruta")
+
+        self.assertEqual(response.status_code, 200)
+        ids_visibles = {pedido.id for pedido in render.call_args.kwargs["en_ruta"]}
+        self.assertEqual(ids_visibles, {propio.id})
+        self.assertNotIn(ajeno.id, ids_visibles)
 
 
 if __name__ == "__main__":

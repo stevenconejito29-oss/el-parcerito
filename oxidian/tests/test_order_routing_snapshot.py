@@ -24,6 +24,20 @@ class OrderRoutingSnapshotTest(unittest.TestCase):
 
         self.assertEqual(_coalesce_proveedor_id({}, item), 42)
 
+    def test_capital_partner_is_not_treated_as_external_preparer(self):
+        item = SimpleNamespace(producto=None)
+        self.assertIsNone(_coalesce_proveedor_id({
+            "proveedor_despachador_id": 42,
+            "proveedor_modelo_acuerdo": "socio_porcentaje",
+        }, item))
+
+    def test_external_provider_keeps_operational_routing(self):
+        item = SimpleNamespace(producto=None)
+        self.assertEqual(_coalesce_proveedor_id({
+            "proveedor_despachador_id": 42,
+            "proveedor_modelo_acuerdo": "stock_propio_bar",
+        }, item), 42)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,6 +15,8 @@ REDIRECT_POR_ROL = {
     "preparacion":  "preparador.pedidos",
     "repartidor":   "repartidor.ruta",
     "cocina":       "preparador.pedidos",
+    "socio_producto": "proveedor.dashboard",
+    "proveedor":      "proveedor.pedidos",
 }
 
 # Tras un password válido, el usuario tiene N segundos para introducir el TOTP.

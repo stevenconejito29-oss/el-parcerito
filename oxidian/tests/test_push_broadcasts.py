@@ -6,7 +6,7 @@ from flask import Flask
 
 from extensions import db
 from models import NotificationOutbox, PushBroadcast, PushSubscription, User
-from push_service import queue_push_broadcast
+from push_service import notify_roles, queue_push_broadcast
 
 
 class PushBroadcastServiceTest(unittest.TestCase):
@@ -23,9 +23,9 @@ class PushBroadcastServiceTest(unittest.TestCase):
         db.create_all()
         self.admin = self._user("Admin", "admin")
         customer = self._user("Cliente", "cliente")
-        staff = self._user("Cocina", "cocina")
+        self.staff = self._user("Cocina", "cocina")
         self._subscription(customer, "cliente", "customer")
-        self._subscription(staff, "cocina", "staff")
+        self._subscription(self.staff, "cocina", "staff")
         self._subscription(customer, "cliente", "inactive", active=False)
         db.session.commit()
 
@@ -79,7 +79,18 @@ class PushBroadcastServiceTest(unittest.TestCase):
         payload = json.loads(jobs[0].payload_json)["payload"]
         self.assertEqual(payload["tag"], f"broadcast-{campaign.id}")
 
-    def test_audience_is_applied_from_subscription_role_snapshot(self):
+    def test_audience_is_applied_from_current_account_role(self):
+        customers, _ = self._queue(audience="customers")
+        staff, _ = self._queue(audience="staff")
+
+        self.assertEqual(customers.destinatarios, 1)
+        self.assertEqual(staff.destinatarios, 1)
+
+    def test_audience_uses_current_account_role_not_stale_subscription_role(self):
+        customer_sub = PushSubscription.query.filter_by(endpoint="https://push.example.test/customer").one()
+        customer_sub.rol = "cocina"  # snapshot antiguo o manipulado
+        db.session.commit()
+
         customers, _ = self._queue(audience="customers")
         staff, _ = self._queue(audience="staff")
 
@@ -103,6 +114,14 @@ class PushBroadcastServiceTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._queue(body="x" * 181)
         self.assertEqual(PushBroadcast.query.count(), 0)
+
+    def test_role_notification_excludes_disabled_accounts(self):
+        self.staff.activo = False
+        db.session.commit()
+
+        notify_roles(["cocina"], "Pedido", "Hay trabajo")
+
+        self.assertEqual(NotificationOutbox.query.count(), 0)
 
 
 if __name__ == "__main__":

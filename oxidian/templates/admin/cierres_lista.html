@@ -1,0 +1,74 @@
+{% extends "admin_base.html" %}
+{% block title %}Cierres de caja — {{ brand.nombre or 'El Parcerito' }}{% endblock %}
+{% block content %}
+
+<header class="prov-page-head prov-detail-head">
+  <div>
+    <span class="prov-eyebrow">Contabilidad</span>
+    <h1>Cierres de caja diarios</h1>
+    <p>Snapshots inmutables por día. Se congelan al cerrar; sirven de fuente autoritativa para la asesoría contable.</p>
+  </div>
+  <a href="{{ url_for('admin.finanzas') }}" class="prov-btn prov-btn-secondary">← Volver a Finanzas</a>
+</header>
+
+{% if not cierres %}
+<div class="ox-card prov-empty" style="margin-top:1rem;">
+  <strong>Aún no hay cierres registrados</strong>
+  <p>Cuando cierres el día desde el dashboard financiero aparecerán aquí.</p>
+</div>
+{% else %}
+<section class="ox-card" style="margin-top:1rem;">
+  <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+    <thead>
+      <tr style="text-align:left; border-bottom:1px solid #ddd;">
+        <th style="padding:0.5rem 0;">Fecha</th>
+        <th style="text-align:right;">Efectivo</th>
+        <th style="text-align:right;">Bizum</th>
+        <th style="text-align:right;">Tarjeta</th>
+        <th style="text-align:right;">Egresos</th>
+        <th style="text-align:right;">Neto</th>
+        <th style="text-align:right;">Descuadre</th>
+        <th>Cerrado por</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in cierres %}
+      {% set egresos_total = (c.egresos_nominas|float) + (c.egresos_liquidaciones|float) + (c.egresos_gastos|float) + (c.egresos_devoluciones|float) + (c.egresos_otros|float) %}
+      <tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:0.5rem 0.25rem 0.5rem 0;"><strong>{{ c.fecha.strftime('%d/%m/%Y') }}</strong></td>
+        <td style="text-align:right;">€{{ "%.2f"|format(c.ingresos_efectivo|float) }}</td>
+        <td style="text-align:right;">€{{ "%.2f"|format(c.ingresos_bizum|float) }}</td>
+        <td style="text-align:right;">€{{ "%.2f"|format(c.ingresos_tarjeta|float) }}</td>
+        <td style="text-align:right; color:#b02020;">€{{ "%.2f"|format(egresos_total) }}</td>
+        <td style="text-align:right; color:{{ '#0a7f3b' if c.saldo_neto|float >= 0 else '#b02020' }};"><strong>€{{ "%.2f"|format(c.saldo_neto|float) }}</strong></td>
+        <td style="text-align:right;">
+          {% if c.descuadre_efectivo is not none %}
+            {% set desc = c.descuadre_efectivo|float %}
+            <span style="color:{{ '#0a7f3b' if desc == 0 else ('#b02020' if desc < 0 else '#c07000') }};">
+              {{ '+' if desc > 0 else '' }}€{{ "%.2f"|format(desc) }}
+            </span>
+          {% else %}
+            <small style="color:#999;">no declarado</small>
+          {% endif %}
+        </td>
+        <td><small>{{ c.autor.nombre if c.autor else '—' }} · {{ c.cerrado_en.strftime('%d/%m %H:%M') }}</small></td>
+        <td>
+          {% if rol == 'super_admin' %}
+          <form method="post" action="{{ url_for('admin.borrar_cierre', cierre_id=c.id) }}" data-confirm="¿Borrar el cierre del {{ c.fecha.strftime('%d/%m/%Y') }}? Esta acción queda auditada." style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="prov-btn prov-btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.8rem;">Borrar</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% if c.notas %}
+      <tr><td colspan="9" style="padding:0 0 0.5rem 0.5rem; color:#666; font-size:0.85rem;"><em>{{ c.notas }}</em></td></tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% endblock %}

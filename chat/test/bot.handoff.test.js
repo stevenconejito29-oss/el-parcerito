@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const test = require('node:test');
 
 const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'oxidian-bot-test-'));
@@ -39,6 +40,8 @@ const {
   menuPrincipal,
   adminMenu,
   adminCan,
+  isAdminJid,
+  isSuperAdminJid,
   setCfg,
   seleccionarPedidoConsulta,
   contextoPedidoConsulta,
@@ -119,7 +122,9 @@ test('los menús públicos y admin están separados por rol', () => {
   assert.match(clientMenu, /respondiendo con su número/i);
   assert.doesNotMatch(clientMenu, /Productos y precios/);
   assert.match(globalMenu, /Panel Super Admin/);
-  assert.match(globalMenu, /Productos y precios/);
+  assert.match(globalMenu, /Resumen operativo/);
+  assert.match(globalMenu, /Pedidos en riesgo/);
+  assert.doesNotMatch(globalMenu, /!precio|!config|!puntos/);
 });
 
 test('el menú administrativo respeta rol y módulos sincronizados', () => {
@@ -132,13 +137,30 @@ test('el menú administrativo respeta rol y módulos sincronizados', () => {
 
   const menu = adminMenu(normalAdmin);
   assert.match(menu, /Panel Admin/);
-  assert.match(menu, /Productos y precios/);
+  assert.match(menu, /Pedidos en riesgo/);
   assert.match(menu, /Atención humana/);
   assert.doesNotMatch(menu, /Administradores WhatsApp/);
   assert.doesNotMatch(menu, /Modo emergencia/);
   assert.equal(adminCan(normalAdmin, 'products'), true);
   assert.equal(adminCan(normalAdmin, 'admins'), false);
 
+  setCfg('whatsapp_role_profiles', '[]');
+});
+
+test('identifica admin y super_admin por HMAC sin recibir teléfonos en claro', () => {
+  const key = 'test-key-value';
+  const hash = phone => crypto.createHmac('sha256', key).update(phone).digest('hex').slice(0, 32);
+  setCfg('oxidian_key', key);
+  setCfg('whatsapp_role_profiles', JSON.stringify([
+    { phone_hash: hash('34600000021'), rol: 'super_admin', capabilities: ['handoff'] },
+    { phone_hash: hash('34600000022'), rol: 'admin', capabilities: ['status'] },
+  ]));
+
+  assert.equal(isSuperAdminJid('34600000021@s.whatsapp.net'), true);
+  assert.equal(isAdminJid('34600000022@s.whatsapp.net'), true);
+  assert.equal(adminCan('34600000022@s.whatsapp.net', 'status'), true);
+  assert.equal(adminCan('34600000022@s.whatsapp.net', 'store'), false);
+  assert.equal(isAdminJid('34600000023@s.whatsapp.net'), false);
   setCfg('whatsapp_role_profiles', '[]');
 });
 
@@ -311,6 +333,82 @@ test('la seleccion numerica usa el snapshot mostrado al administrador', async ()
   assert.equal(getHandoff(clientB).admin_jid, adminA);
 });
 
+test('TOMAR reclama el primer cliente sin copiar teléfonos', async () => {
+  createHandoffRequest(clientA);
+  saveSesion({
+    jid: adminA, nombre: 'Responsable', role: 'admin', estado: 'admin_menu',
+    carrito: [], pending: {}, zona_id: null, active_client_jid: null,
+  });
+
+  await _test.handleMessage(adminA, 'TOMAR', 'Responsable');
+
+  assert.equal(getHandoff(clientA).admin_jid, adminA);
+  assert.equal(getSesion(adminA).estado, 'admin_chat');
+});
+
+test('COLA muestra identidad de base y conserva un snapshot numérico', async () => {
+  createHandoffRequest(clientA);
+  saveSesion({
+    jid: clientA, nombre: 'Danna Cliente', role: 'client', estado: 'main_menu',
+    carrito: [], pending: {}, zona_id: null, active_client_jid: null,
+  });
+  saveSesion({
+    jid: adminA, nombre: 'Responsable', role: 'admin', estado: 'admin_menu',
+    carrito: [], pending: {}, zona_id: null, active_client_jid: null,
+  });
+  db.exec('DELETE FROM logs;');
+
+  await _test.handleMessage(adminA, 'COLA', 'Responsable');
+
+  const session = getSesion(adminA);
+  assert.equal(session.estado, 'admin_take_wait');
+  assert.deepEqual(session.pending.handoff_client_jids, [clientA]);
+  const sent = db.prepare(`
+    SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1
+  `).get()?.detalle || '';
+  assert.match(sent, /Danna Cliente/);
+  assert.match(sent, /•••• 0001/);
+  assert.doesNotMatch(sent, /34610000001/);
+});
+
+test('/fin cierra sólo el chat actual y nunca toma el siguiente automáticamente', async () => {
+  createHandoffRequest(clientA);
+  createHandoffRequest(clientB);
+  assert.equal(assignHandoff(clientA, adminA).changes, 1);
+  saveSesion({
+    jid: adminA, nombre: 'Responsable', role: 'admin', estado: 'admin_chat',
+    carrito: [], pending: {}, zona_id: null, active_client_jid: clientA,
+  });
+
+  await _test.handleMessage(adminA, '/fin', 'Responsable');
+
+  assert.equal(getHandoff(clientA), null);
+  assert.equal(getHandoff(clientB).admin_jid, null);
+  assert.equal(getSesion(adminA).estado, 'admin_menu');
+});
+
+test('/transferir elige agente por nombre y crea su sesión de chat', async () => {
+  setCfg('whatsapp_role_profiles', JSON.stringify([
+    { telefono: '34600000001', nombre: 'Ana', rol: 'super_admin', capabilities: ['handoff'] },
+    { telefono: '34600000002', nombre: 'Bruno', rol: 'admin', capabilities: ['handoff'] },
+  ]));
+  createHandoffRequest(clientA);
+  assert.equal(assignHandoff(clientA, adminA).changes, 1);
+  saveSesion({
+    jid: adminA, nombre: 'Ana', role: 'admin', estado: 'admin_chat',
+    carrito: [], pending: {}, zona_id: null, active_client_jid: clientA,
+  });
+
+  await _test.handleMessage(adminA, '/transferir', 'Ana');
+  assert.equal(getSesion(adminA).estado, 'admin_transfer_wait');
+  await _test.handleMessage(adminA, '1', 'Ana');
+
+  assert.equal(getHandoff(clientA).admin_jid, adminB);
+  assert.equal(getSesion(adminB).estado, 'admin_chat');
+  assert.equal(getSesion(adminB).active_client_jid, clientA);
+  setCfg('whatsapp_role_profiles', '[]');
+});
+
 test('eventos inbound repetidos se persisten una sola vez', () => {
   const payload = {
     event: 'messages.upsert',
@@ -381,6 +479,33 @@ test('los fallos del manejador se propagan y el drenador reintenta el inbound', 
   `).get();
   assert.equal(row.attempts, 2);
   assert.ok(row.processed_at);
+});
+
+test('handleEvolutionEvent entrega la ubicación normalizada al router', async () => {
+  let received = null;
+  await handleEvolutionEvent({
+    event: 'messages.upsert',
+    data: {
+      key: { id: 'location-context', remoteJid: clientA },
+      pushName: 'Cliente',
+      message: {
+        locationMessage: {
+          degreesLatitude: 37.4736,
+          degreesLongitude: -5.6438,
+          accuracyInMeters: 25,
+        },
+      },
+    },
+  }, async (jid, text, pushName, context) => {
+    received = { jid, text, pushName, context };
+  });
+  assert.equal(received.jid, clientA);
+  assert.match(received.text, /ubicacion/i);
+  assert.deepEqual(received.context.location, {
+    latitude: 37.4736,
+    longitude: -5.6438,
+    accuracy: 25,
+  });
 });
 
 test('un inbound corrupto pasa a dead letter y no bloquea indefinidamente', async () => {

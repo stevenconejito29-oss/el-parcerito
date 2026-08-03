@@ -112,6 +112,51 @@ class NotifyNewOrderTest(unittest.TestCase):
         # Aún debe notificar a admin aunque el helper de rol falle
         self.assertTrue(any("admin" in r for r in capturado))
 
+    def test_assigned_preparer_receives_direct_notification(self):
+        import push_service
+        cocina = self._mk_user("Cocina", "cocina", "+34622222222")
+        pedido = self._mk_pedido()
+        pedido.preparador_id = cocina.id
+        db.session.commit()
+
+        with patch("services._tipo_pedido", return_value="inmediato"), \
+             patch.object(push_service, "notify_roles") as roles, \
+             patch.object(push_service, "notify_user") as user:
+            push_service.notify_new_order(pedido)
+
+        user.assert_called_once()
+        self.assertEqual(user.call_args.args[0], cocina.id)
+        self.assertFalse(any("cocina" in call.args[0] for call in roles.call_args_list))
+
+    def test_ready_delivery_targets_assigned_driver_only(self):
+        import push_service
+        driver = self._mk_user("Reparto", "repartidor", "+34633333333")
+        pedido = self._mk_pedido()
+        pedido.estado = "listo"
+        pedido.repartidor_id = driver.id
+        db.session.commit()
+
+        with patch.object(push_service, "notify_roles") as roles, \
+             patch.object(push_service, "notify_user") as user:
+            push_service.notify_delivery_ready(pedido)
+
+        user.assert_called_once()
+        self.assertEqual(user.call_args.args[0], driver.id)
+        roles.assert_not_called()
+
+    def test_customer_state_push_opens_the_matching_order(self):
+        import push_service
+        pedido = self._mk_pedido()
+        pedido.estado = "armando"
+        db.session.commit()
+
+        with patch.object(push_service, "notify_user") as user:
+            push_service.notify_order_state(pedido)
+
+        self.assertEqual(user.call_args.args[0], self.cliente.id)
+        self.assertEqual(user.call_args.kwargs["url"], f"/pedido/{pedido.id}/confirmado")
+        self.assertEqual(user.call_args.kwargs["tag"], f"pedido-{pedido.id}")
+
 
 if __name__ == "__main__":
     unittest.main()

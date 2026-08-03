@@ -11,6 +11,7 @@
   const pushEligible = meta('ox-push-eligible') === '1';
   const operational = meta('ox-pwa-operational') === '1';
   const csrfToken = meta('ox-csrf-token');
+  const assetVersion = meta('ox-asset-version');
   const cartCount = Number.parseInt(meta('ox-cart-count') || '0', 10) || 0;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const isInAppBrowser = /Instagram|FBAN|FBAV|Line\/|TikTok|Twitter/i.test(navigator.userAgent);
@@ -24,6 +25,14 @@
   let offlineNotice = null;
 
   function toast(message, type = 'info', action = null, duration = 5200) {
+    if (window.OxToast?.show) {
+      return window.OxToast.show(message, type, {
+        ttl: duration,
+        action: action ? { label: action.label, run: action.run } : null
+      });
+    }
+    /* Fallback exclusivo para páginas mínimas (p. ej. preapertura) que no
+       cargan el sistema visual completo. */
     let wrap = document.getElementById('ox-toasts');
     if (!wrap) {
       wrap = document.createElement('div');
@@ -167,6 +176,19 @@
 
     const storageButton = event.target.closest('[data-storage-prepare]');
     if (storageButton) await prepareStorage(storageButton);
+
+    const updateButton = event.target.closest('[data-pwa-check-update]');
+    if (updateButton) {
+      event.preventDefault();
+      await checkForUpdate(updateButton);
+      return;
+    }
+
+    const soundButton = event.target.closest('[data-push-sound-test]');
+    if (soundButton) {
+      event.preventDefault();
+      await testPushAndSound(soundButton);
+    }
   });
 
   function urlB64ToBytes(value) {
@@ -346,13 +368,90 @@
         reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
       },
     }, 0);
-    notice.dataset.pwaUpdateToast = '1';
+    notice?.element?.setAttribute('data-pwa-update-toast', '');
+  }
+
+  async function checkForUpdate(button) {
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Comprobando…';
+    try {
+      const reg = registration || await navigator.serviceWorker?.ready;
+      if (!reg) throw new Error('El modo app no está disponible en este navegador.');
+      await reg.update();
+      // `update()` termina al detectar el script, pero la instalación puede
+      // completar unos milisegundos después. Esperar el worker evita responder
+      // falsamente “actualizada” cuando ya existe una versión descargándose.
+      const candidate = reg.installing;
+      if (candidate && candidate.state !== 'installed') {
+        await new Promise(resolve => {
+          const timeout = window.setTimeout(resolve, 4000);
+          candidate.addEventListener('statechange', () => {
+            if (candidate.state === 'installed' || candidate.state === 'redundant') {
+              window.clearTimeout(timeout);
+              resolve();
+            }
+          });
+        });
+      }
+      if (reg.waiting) announceUpdate(reg);
+      else toast('La aplicación ya tiene la versión más reciente.', 'success');
+    } catch (error) {
+      toast(error.message || 'No se pudo comprobar la actualización.', 'warning');
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+
+  async function testPushAndSound(button) {
+    if (!window.isSecureContext || !('Notification' in window) || !('serviceWorker' in navigator)) {
+      toast('Los avisos requieren HTTPS y un navegador compatible.', 'warning');
+      return;
+    }
+    if (isIOS && !isStandalone()) {
+      showInstallSheet({ force: true });
+      toast('En iPhone, instala y abre primero la app desde la pantalla de inicio.', 'info', null, 8000);
+      return;
+    }
+    if (Notification.permission !== 'granted') {
+      await enablePush(button);
+      return;
+    }
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Probando…';
+    try {
+      unlockAudio();
+      const reg = registration || await navigator.serviceWorker.ready;
+      await subscribePush(reg);
+      const icon = document.querySelector('link[rel="apple-touch-icon"]')?.href ||
+        `/static/pwa-icon-192.png?v=${encodeURIComponent(assetVersion)}`;
+      await reg.showNotification(document.title.split('—')[0].trim() || 'Mi tienda', {
+        body: 'Avisos activos en este dispositivo.',
+        icon,
+        badge: `/static/pwa-badge-96.png?v=${encodeURIComponent(assetVersion)}`,
+        tag: 'ox-push-self-test',
+        renotify: true,
+        silent: false,
+        vibrate: [120, 60, 120],
+        data: { url: location.pathname || '/' },
+      });
+      chime();
+      toast('Prueba enviada. El sonido externo depende del volumen y ajustes del sistema.', 'success', null, 8000);
+    } catch (error) {
+      toast(error.message || 'No se pudo completar la prueba.', 'danger');
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
   }
 
   async function registerServiceWorker() {
     if (!window.isSecureContext || !('serviceWorker' in navigator)) return;
     try {
-      registration = await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
+      const workerUrl = `/sw.js?v=${encodeURIComponent(assetVersion || 'current')}`;
+      registration = await navigator.serviceWorker.register(workerUrl, { scope: '/', updateViaCache: 'none' });
       announceUpdate(registration);
       registration.addEventListener('updatefound', () => {
         const worker = registration.installing;
@@ -363,16 +462,25 @@
       if (pushEligible && Notification.permission === 'granted') {
         await subscribePush(registration).catch(error => setPushUi('error', error.message));
       }
+      // Update policy: revisa nuevas versiones del SW con más frecuencia para
+      // que las mejoras del backend (nuevos precios, ajustes de menú, cambios
+      // de config) se propaguen en < 5 min sin perder la sensación de app
+      // nativa. Antes: 1h + on-visibility. Ahora: 5 min + on-visibility.
       let lastUpdate = 0;
       const update = () => {
-        if (Date.now() - lastUpdate < 60000) return;
+        if (Date.now() - lastUpdate < 30000) return;  // throttle 30s
         lastUpdate = Date.now();
         registration.update().then(() => announceUpdate(registration)).catch(() => {});
       };
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') update();
       });
-      window.setInterval(update, 60 * 60 * 1000);
+      // 5 minutos de intervalo (antes 1h) — el navegador skipea si tab no
+      // está visible, así que impacto en batería es mínimo.
+      window.setInterval(update, 5 * 60 * 1000);
+      // También cuando el usuario vuelve online tras estar offline (típico en
+      // móviles con señal intermitente).
+      window.addEventListener('online', update, { passive: true });
     } catch (error) {
       if (isStandalone()) toast('No se pudo iniciar el modo app. Comprueba la conexión.', 'warning');
     }

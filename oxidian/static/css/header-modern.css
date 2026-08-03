@@ -112,9 +112,9 @@ body.ox-body-public .ox-public-logo-frame {
   /* Logo más protagonista: 62px en móvil estrecho → 82px en desktop.
      Antes 54-72 con clamp. Añadir 8-10px lo eleva a "hero" visual sin
      desplazar el resto de la nav. */
-  width: clamp(62px, 15.5vw, 82px);
-  height: clamp(62px, 15.5vw, 82px);
-  flex: 0 0 clamp(62px, 15.5vw, 82px);
+  width: clamp(68px, 15.5vw, 88px);
+  height: clamp(68px, 15.5vw, 88px);
+  flex: 0 0 clamp(68px, 15.5vw, 88px);
   padding: 3px;
   background: var(--hdr-paper);
   border: 2px solid color-mix(in srgb, var(--theme-header-text) 88%, transparent);
@@ -421,9 +421,9 @@ body.ox-body-public .ox-header-public.is-scrolled {
   body.ox-body-public .ox-public-header-inner::before { inset-inline: 10px; }
   body.ox-body-public .ox-public-identity { max-width: calc(100% - 98px); gap: 9px !important; }
   body.ox-body-public .ox-public-logo-frame {
-    width: 62px;
-    height: 62px;
-    flex-basis: 62px;
+    width: 66px;
+    height: 66px;
+    flex-basis: 66px;
     border-radius: 16px;
     box-shadow:
       0 0 0 3px color-mix(in srgb, var(--brand-primary) 22%, transparent),
@@ -960,17 +960,9 @@ body.ox-body-public .ep-cat { scroll-snap-align: start; }
    Nombres únicos para elementos que persisten entre páginas.
    Chrome/Edge/Safari 18+ hacen fade cruzado automático.
    ══════════════════════════════════════════════════════════════ */
-/* Cross-document View Transitions — Chrome 126+, Safari 18+.
-   Triggers native fade entre navegaciones same-origin (bottom nav → carrito, etc.).
-   Requiere que las páginas destino tengan la misma regla; base.html se encarga. */
-/* Opt-in a Cross-Document View Transitions (Chrome 126+, Safari 18+).
-   Sin esta regla los `view-transition-name` de abajo solo actúan cuando el
-   swap ocurre vía `document.startViewTransition()` (SPA same-doc), no en una
-   navegación real. Con `navigation: auto` el navegador hace crossfade nativo
-   entre páginas same-origin y trata los `view-transition-name` como elementos
-   persistentes → menú↔carrito deja de "saltar" (esas rutas caen por HEAVY_RE
-   a `location.assign`, que es full-nav). */
-@view-transition { navigation: auto; }
+/* Las transiciones se activan únicamente durante el intercambio SPA
+   controlado por `spa-nav.js`. El opt-in cross-document provocaba un segundo
+   crossfade en navegaciones completas y tirones perceptibles en iOS. */
 
 @supports (view-transition-name: none) {
   body.ox-body-public .ox-header-public { view-transition-name: ox-header; }

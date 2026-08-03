@@ -1,10 +1,9 @@
 from flask import (Blueprint, render_template, redirect, url_for, flash,
-                   jsonify, Response, stream_with_context, current_app,
-                   request)
+                   jsonify, request, session)
 from flask_login import login_required, current_user
 from functools import wraps
 import logging
-import time
+import hashlib
 import json as _json
 import os as _os
 from datetime import timedelta
@@ -17,6 +16,7 @@ from models import (Order, OrderEvent, OrderItem, User, SiteConfig, Product,
 from services import (avanzar_estado_pedido, distribuir_repartidor,
                       redistribuir_pendientes_sin_asignar,
                       sincronizar_proveedores_pedido, lineas_preparacion_interna,
+                      agrupar_items_por_producto,
                       pedido_programado_disponible_para_preparar,
                       minutos_anticipacion_pedido_programado)
 
@@ -26,9 +26,7 @@ from services import (avanzar_estado_pedido, distribuir_repartidor,
 # Fuentes en cascada: SiteConfig → env → default.
 # Cambiar en /superadmin/config sin redeploy.
 # ─────────────────────────────────────────────────────────────────────
-_DEFAULT_SSE_HEARTBEAT_S = 15          # keep-alive del stream (segundos)
-_DEFAULT_SSE_POLL_S = 3                # cada cuánto miramos cambios reales
-_DEFAULT_SSE_MAX_LIFETIME_S = 300      # cerramos y el cliente reconecta
+_DEFAULT_QUEUE_REFRESH_S = 6
 
 def _cfg_int(clave, default, minimo=1, maximo=None):
     """Lee int desde SiteConfig → env → default con clamps defensivos."""
@@ -50,16 +48,14 @@ def _cfg_int(clave, default, minimo=1, maximo=None):
     return n
 
 
-def _sse_heartbeat_s():
-    return _cfg_int("SSE_HEARTBEAT_SECONDS", _DEFAULT_SSE_HEARTBEAT_S, 3, 120)
-
-
-def _sse_poll_s():
-    return _cfg_int("SSE_POLL_SECONDS", _DEFAULT_SSE_POLL_S, 1, 30)
-
-
-def _sse_max_lifetime_s():
-    return _cfg_int("SSE_MAX_LIFETIME_SECONDS", _DEFAULT_SSE_MAX_LIFETIME_S, 30, 3600)
+def _queue_refresh_s():
+    """Cadencia de sincronización sin reservar un thread de Gunicorn."""
+    return _cfg_int(
+        "PREP_QUEUE_REFRESH_SECONDS",
+        _DEFAULT_QUEUE_REFRESH_S,
+        3,
+        60,
+    )
 
 
 def _tickets_recientes_del_operador():
@@ -105,8 +101,10 @@ def exigir_modulo_del_rol():
         and current_user.rol == "preparacion"
         and not get_store_features()["pedidos_programados"]
     ):
-        flash("Los pedidos por fecha están desactivados para esta tienda.", "info")
-        return redirect(url_for("public.index"))
+        from services import pedidos_activos_que_bloquean_modulo
+        if pedidos_activos_que_bloquean_modulo("programados") == 0:
+            flash("Los pedidos por fecha están desactivados para esta tienda.", "info")
+            return redirect(url_for("public.index"))
 
 
 def _es_admin_operativo():
@@ -143,6 +141,11 @@ def _encargo_disponible_para_preparar(pedido):
 
 
 def _puede_operar_pedido(pedido):
+    # Un pedido pendiente de validar puede consultarse desde administración,
+    # pero todavía no es trabajo de cocina. Ocultarlo de la cola evita que se
+    # asigne manualmente o contamine los totales antes de confirmar el teléfono.
+    if pedido.confirmacion_estado == "pending":
+        return False
     # Pedidos 100% del bar externo no aparecen en la cola del preparador interno:
     # el bar los prepara y nuestro personal solo gestiona el reparto.
     from services import es_pedido_solo_bar
@@ -244,6 +247,19 @@ def toggle_disponible():
     return jsonify({"ok": True, "en_linea": current_user.en_linea, "pedidos_asignados": pedidos_asignados})
 
 
+@preparador_bp.route("/vista-compacta", methods=["POST"])
+@preparador_required
+def toggle_vista_compacta():
+    """Alterna la densidad de la cola sin modificar pedidos ni preferencias globales."""
+    session["prep_vista_compacta"] = not bool(
+        session.get("prep_vista_compacta", True)
+    )
+    session.modified = True
+    vista = (request.form.get("vista") or "").strip().lower()
+    redirect_args = {"vista": vista} if vista in {"resumen", "pedidos"} else {}
+    return redirect(url_for("preparador.pedidos", **redirect_args))
+
+
 @preparador_bp.route("/pedidos")
 @preparador_required
 def pedidos():
@@ -303,7 +319,8 @@ def pedidos():
     for p in pendientes_encargo:
         fecha = _fecha_encargo(p) or p.creado_en.date()
         encargos_por_fecha.setdefault(fecha, []).append(p)
-    hoy_date = _utcnow().date()
+    from business_time import business_today
+    hoy_date = business_today()
 
     # ── Fase 6: partición "Preparar ahora" vs "Programados" ──────────
     # "Ahora" = inmediatos + encargos con fecha ≤ hoy + buffer(min).
@@ -323,7 +340,22 @@ def pedidos():
     # misma pantalla. Admin conserva su cola operativa habitual.
     vista_encargos = (request.args.get("vista") or "").strip().lower()
     if vista_encargos not in {"resumen", "pedidos"}:
-        vista_encargos = "resumen" if current_user.rol == "preparacion" else "pedidos"
+        # Preparación suele abrir en el resumen de encargos. Si el balanceador
+        # le asignó excepcionalmente un pedido inmediato por falta de cocina,
+        # abrir ese tablero directamente evita esconder trabajo ya asignado.
+        tiene_inmediato_asignado = any(
+            pedido.preparador_id == current_user.id
+            for pedido in pendientes_inmediato
+        ) or any(
+            pedido.preparador_id == current_user.id and not _es_encargo(pedido)
+            for pedido in armando
+        )
+        vista_encargos = (
+            "pedidos"
+            if current_user.rol != "preparacion" or tiene_inmediato_asignado
+            else "resumen"
+        )
+    prep_vista_compacta = bool(session.get("prep_vista_compacta", True))
 
     # Totales agregados por fecha para el resumen de producción. Incluimos
     # también las fechas que ya están en preparación: antes desaparecían del
@@ -357,93 +389,56 @@ def pedidos():
                            disponible=disponible,
                            modo_operativo=modo_operativo,
                            vista_encargos=vista_encargos,
+                           prep_vista_compacta=prep_vista_compacta,
                            almacen_listo=almacen_listo,
                            lineas_preparacion_interna=lineas_preparacion_interna,
+                           agrupar_items_por_producto=agrupar_items_por_producto,
                            # Fase 6
                            prep_ahora=prep_ahora,
                            prep_programados=prep_programados_planos,
                            prep_buffer_min=buffer_min,
                            puede_preparar_encargo=_encargo_disponible_para_preparar,
-                           sse_url=url_for("preparador.eventos"),
-                           sse_heartbeat_s=_sse_heartbeat_s(),
+                           queue_status_url=url_for("preparador.eventos"),
+                           queue_refresh_s=_queue_refresh_s(),
                            tickets_recientes=tickets_recientes)
 
 
 # ─────────────────────────────────────────────────────────────────────
-# SSE — cambios en la cola del preparador
-# El cliente escucha /preparador/eventos y recibe un `ping` heartbeat y
-# `refresh` cuando cambia el conjunto de pedidos pendientes/armando.
+# Sincronización de cola sin conexiones persistentes.
+#
+# Cada SSE ocupaba un thread durante minutos. Con 2 workers × 2 threads,
+# cuatro tablets podían agotar la concurrencia de toda la aplicación.
 # ─────────────────────────────────────────────────────────────────────
 def _cola_signature():
-    """Firma barata del estado observable de la cola.
-
-    Combina COUNT + MAX(id) + MAX(creado_en) + suma de hashes de estado
-    para detectar cambios sin cargar toda la lista.
-    """
-    row = db.session.execute(db.text("""
-        SELECT COALESCE(COUNT(*),0),
-               COALESCE(MAX(id),0),
-               COALESCE(MAX(EXTRACT(EPOCH FROM creado_en))::bigint, 0),
-               COALESCE(SUM(('x'||substr(md5(estado),1,8))::bit(32)::bigint), 0)
-          FROM orders
-         WHERE estado IN ('pendiente','armando')
-    """)).first()
-    if not row:
-        return "0"
-    return "|".join(str(v) for v in row)
+    """Firma portable del estado y responsable de cada pedido activo."""
+    rows = (
+        db.session.query(
+            Order.id,
+            Order.estado,
+            Order.preparador_id,
+            Order.confirmacion_estado,
+        )
+        .filter(Order.estado.in_(ESTADOS_ENCARGO_ACTIVOS))
+        .order_by(Order.id)
+        .all()
+    )
+    payload = "|".join(
+        f"{order_id}:{estado}:{preparador_id or 0}:{confirmacion or '-'}"
+        for order_id, estado, preparador_id, confirmacion in rows
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
 
 
 @preparador_bp.route("/eventos")
 @preparador_required
 def eventos():
-    """Server-Sent Events: notifica cambios en la cola del preparador.
-
-    Contrato con el cliente:
-      - `event: ping`  → keep-alive, ignorar
-      - `event: refresh` → recargar la vista (el HTML manda)
-    El cliente reconecta automáticamente (EventSource) al desconectar.
-    """
-    heartbeat = _sse_heartbeat_s()
-    poll = _sse_poll_s()
-    lifetime = _sse_max_lifetime_s()
-    app = current_app._get_current_object()
-
-    @stream_with_context
-    def gen():
-        # Firma inicial: dentro del app_context (stream_with_context lo garantiza).
-        try:
-            last_sig = _cola_signature()
-        except Exception:
-            logger.exception("SSE: no se pudo calcular firma inicial")
-            last_sig = ""
-        # Aviso inicial para que el cliente sepa que está enganchado.
-        yield f"retry: 5000\nevent: hello\ndata: {_json.dumps({'heartbeat': heartbeat})}\n\n"
-        started = time.monotonic()
-        last_beat = started
-        while True:
-            now = time.monotonic()
-            if now - started > lifetime:
-                # Cerramos: el navegador reconectará solo.
-                yield "event: bye\ndata: {}\n\n"
-                return
-            try:
-                sig = _cola_signature()
-            except Exception:
-                logger.exception("SSE: error calculando firma; seguimos vivos")
-                sig = last_sig
-            if sig != last_sig:
-                last_sig = sig
-                yield f"event: refresh\ndata: {_json.dumps({'sig': sig})}\n\n"
-                last_beat = now
-            elif now - last_beat >= heartbeat:
-                yield f"event: ping\ndata: {int(now - started)}\n\n"
-                last_beat = now
-            time.sleep(poll)
-
-    resp = Response(gen(), mimetype="text/event-stream")
-    resp.headers["Cache-Control"] = "no-cache, no-transform"
-    resp.headers["X-Accel-Buffering"] = "no"  # nginx: no bufferizar
-    resp.headers["Connection"] = "keep-alive"
+    """Devuelve una versión corta; el cliente consulta sólo cuando está visible."""
+    resp = jsonify({
+        "ok": True,
+        "signature": _cola_signature(),
+        "refresh_seconds": _queue_refresh_s(),
+    })
+    resp.headers["Cache-Control"] = "no-store"
     return resp
 
 
@@ -558,11 +553,9 @@ def marcar_listo(pedido_id):
         )
         return redirect(url_for("preparador.pedidos"))
     try:
-        from push_service import notify_order_state, notify_roles
+        from push_service import notify_delivery_ready, notify_order_state
         notify_order_state(pedido)
-        if pedido.requiere_reparto:
-            notify_roles(["repartidor"], "📦 Pedido listo para recoger",
-                         f"#{pedido.numero_pedido} está listo.", url="/repartidor/ruta")
+        notify_delivery_ready(pedido)
     except Exception:
         logger.exception("No se pudo enviar push al marcar listo pedido %s", pedido.id)
     if not pedido.requiere_reparto:
@@ -611,6 +604,7 @@ def _lotes_agregados(fecha=None):
           FROM order_items oi
           JOIN orders o ON o.id = oi.pedido_id
          WHERE o.estado IN :estados
+           AND (o.confirmacion_estado IS NULL OR o.confirmacion_estado <> 'pending')
     """).bindparams(bindparam("estados", expanding=True))
     rows = db.session.execute(
         _stmt, {"estados": list(ESTADOS_ENCARGO_ACTIVOS)}
@@ -679,7 +673,11 @@ def _items_encargo_activos():
         joinedload(OrderItem.producto),
         joinedload(OrderItem.pedido),
     ).join(Order).filter(
-        Order.estado.in_(ESTADOS_ENCARGO_ACTIVOS)
+        Order.estado.in_(ESTADOS_ENCARGO_ACTIVOS),
+        db.or_(
+            Order.confirmacion_estado.is_(None),
+            Order.confirmacion_estado != "pending",
+        ),
     ).all()
 
 
@@ -708,10 +706,6 @@ def _encargos_agregados_por_fecha(fecha, items_activos=None):
     """
     resultado = list(_lotes_agregados(fecha=fecha))
     ids_ya_agregados = {r["batch_id"] for r in resultado if r.get("batch_id")}
-    productos_batch_ids = {
-        b.producto_id for b in ProductBatch.query.filter_by(fecha_entrega=fecha).all()
-    } if fecha else set()
-
     # Recolectar encargos sin batch desde el snapshot del OrderItem. La fecha,
     # el nombre y el tipo del producto se congelan al confirmar la compra; usar
     # aquí el Product vivo movía pedidos históricos si el catálogo se editaba.
@@ -729,10 +723,6 @@ def _encargos_agregados_por_fecha(fecha, items_activos=None):
         batch_id = meta.get("batch_id")
         if batch_id and batch_id in ids_ya_agregados:
             continue
-        # Si el producto tiene batch en esta fecha (aunque este ítem no lo
-        # apunte por algún checkout antiguo), evita doble contabilidad.
-        if item.producto_id in productos_batch_ids and not batch_id:
-            continue
         entry = por_producto.setdefault(item.producto_id, {
             "producto_id": item.producto_id,
             "producto_nombre": item.display_nombre,
@@ -744,15 +734,29 @@ def _encargos_agregados_por_fecha(fecha, items_activos=None):
             "unidades_por_estado": {key: 0 for key in ESTADOS_ENCARGO_ACTIVOS},
             "estado_batch": None,
             "pedidos": set(),
+            "variaciones": {},
         })
         cantidad = int(item.cantidad or 0)
         entry["unidades_totales"] += cantidad
         entry["unidades_por_estado"][item.pedido.estado] += cantidad
         entry["pedidos"].add(item.pedido.numero_pedido)
+        partes = []
+        if item.selected_presentation_label:
+            partes.append(item.selected_presentation_label)
+        if item.selected_flavor_names:
+            partes.append(", ".join(item.selected_flavor_names))
+        etiqueta_variacion = " · ".join(partes) if partes else "Sin variante"
+        entry["variaciones"][etiqueta_variacion] = (
+            entry["variaciones"].get(etiqueta_variacion, 0) + cantidad
+        )
 
     for entry in por_producto.values():
         entry["pedidos"] = sorted(entry["pedidos"])
         entry["pedidos_total"] = len(entry["pedidos"])
+        entry["variaciones"] = [
+            {"nombre": nombre, "unidades": unidades}
+            for nombre, unidades in sorted(entry["variaciones"].items())
+        ]
 
     # Etiquetar los batches como "es_lote" para el template.
     for r in resultado:

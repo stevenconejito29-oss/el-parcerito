@@ -186,12 +186,12 @@ Estado:
 - Cerrada tecnicamente.
 
 Hecho:
-- El motor de pricing ahora devuelve `puntos_usados` coherentes con el descuento real aplicado, incluso cuando los puntos solicitados superan el subtotal disponible.
-- La API del bot limita `puntos_usar` al saldo real del cliente antes de calcular el precio.
+- El motor de pricing rechaza cualquier intento de convertir puntos en descuento monetario.
+- La API del bot deriva el canje al flujo web con OTP y producto elegible.
 - La cancelacion de pedidos revierte el uso de cupones para no consumir cupos en pedidos anulados.
 - La cancelacion de pedidos revierte usos de afiliado y elimina comisiones pendientes no pagadas asociadas al pedido cancelado.
 - Se mantuvo el canje real de puntos centralizado en `loyalty_service.aplicar_canje_en_pedido`.
-- Se agregaron pruebas para cap de puntos en pricing, cap de puntos desde bot y reversion de cupon/afiliado pendiente al cancelar.
+- Se agregaron pruebas para impedir descuentos monetarios con puntos y para revertir cupón/afiliado pendiente al cancelar.
 
 Verificacion:
 - `./venv/bin/python -m py_compile pricing_service.py loyalty_service.py models.py routes/api_bot.py tests/test_pricing.py tests/test_loyalty.py tests/test_integration.py` -> ok.

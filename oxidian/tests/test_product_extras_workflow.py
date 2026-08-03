@@ -14,6 +14,8 @@ from models import (
     ProductExtraGroup,
     ProductExtraOption,
     ProductPresentation,
+    Proveedor,
+    ProveedorProducto,
     OrderItem,
     SiteConfig,
     Stock,
@@ -35,6 +37,7 @@ from routes.api_bot import api_bot_bp
 from routes.pos import _pos_product_option_config
 from product_options_service import (
     product_option_catalog_payload,
+    validate_combo_component_flavors,
     validate_product_option_selection,
 )
 from product_presentations_service import (
@@ -115,6 +118,60 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
         self.assertEqual(items[0]["subtotal"], 16.0)
         self.assertEqual(subtotal, 16.0)
 
+    def test_store_cart_can_mix_own_and_capital_partner_inventory(self):
+        partner = Proveedor(
+            nombre="Socio capital QA",
+            activo=True,
+            modelo_acuerdo="socio_porcentaje",
+            comision_pct=20,
+        )
+        partner_product = Product(
+            nombre="Producto financiado",
+            precio=Decimal("4.00"),
+            activo=True,
+            tipo_entrega="inmediato",
+            modalidad_entrega="ambas",
+            canal_preparacion="almacen",
+            proveedor_despachador=partner,
+            stock_mostrar_en_web=True,
+        )
+        db.session.add_all([partner, partner_product])
+        db.session.flush()
+        db.session.add(ProveedorProducto(
+            proveedor_id=partner.id,
+            producto_id=partner_product.id,
+            stock=8,
+            activo=True,
+        ))
+        db.session.commit()
+
+        own_response = self.client.post(
+            f"/carrito/agregar/{self.product.id}",
+            data={"cantidad": "1", "origen": "propio"},
+            headers={"X-Ajax": "1"},
+        )
+        partner_response = self.client.post(
+            f"/carrito/agregar/{partner_product.id}",
+            data={"cantidad": "1", "origen": f"proveedor:{partner.id}"},
+            headers={"X-Ajax": "1"},
+        )
+        self.assertTrue(own_response.get_json()["ok"])
+        self.assertTrue(partner_response.get_json()["ok"])
+        with self.client.session_transaction() as browser_session:
+            cart = dict(browser_session["carrito"])
+            self.assertEqual(browser_session["carrito_origen"], "propio")
+
+        with self.app.test_request_context():
+            session["carrito"] = cart
+            session["carrito_origen"] = "propio"
+            items, subtotal = _build_items_from_carrito(cart)
+        self.assertEqual(len(items), 2)
+        self.assertEqual(
+            {item["origen"] for item in items},
+            {"propio", f"proveedor:{partner.id}"},
+        )
+        self.assertEqual(subtotal, 9.0)
+
     def test_group_and_option_limits_reject_invalid_quantities(self):
         _, error = _parse_product_extras(
             self.product,
@@ -132,7 +189,53 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
         db.session.commit()
         self.assertFalse(self.product.canje_directo_disponible())
 
-    def test_same_product_cannot_silently_replace_a_saved_configuration(self):
+    def test_combo_requires_compatible_flavor_for_every_offered_size(self):
+        self.group.tipo = "sabor"
+        self.group.min_selecciones = 1
+        self.group.max_selecciones = 1
+        small = ProductPresentation(
+            producto_id=self.product.id,
+            tamaño="pequeño",
+            activo=True,
+            flavor_rules_enabled=True,
+            flavor_min_selections=1,
+            flavor_max_selections=1,
+        )
+        large = ProductPresentation(
+            producto_id=self.product.id,
+            tamaño="grande",
+            activo=True,
+            flavor_rules_enabled=True,
+            flavor_min_selections=1,
+            flavor_max_selections=1,
+        )
+        db.session.add_all([small, large])
+        db.session.flush()
+        small.allowed_flavor_options = [self.cheese]
+        large.allowed_flavor_options = [self.sauce]
+        db.session.commit()
+
+        error = validate_combo_component_flavors(
+            self.product,
+            [small, large],
+            flavor_mode="cliente_elige",
+            allowed_flavor_ids=[self.cheese.id],
+        )
+        self.assertIn("Grande", error)
+
+        self.assertIsNone(validate_combo_component_flavors(
+            self.product,
+            [small, large],
+            flavor_mode="cliente_elige",
+            allowed_flavor_ids=[self.cheese.id, self.sauce.id],
+        ))
+        self.assertIn("exige sabor", validate_combo_component_flavors(
+            self.product,
+            [small],
+            flavor_mode="sin_sabor",
+        ))
+
+    def test_same_product_keeps_each_configuration_as_a_separate_line(self):
         first = self.client.post(
             f"/carrito/agregar/{self.product.id}",
             data={"cantidad": "1", "origen": "propio", f"extra_qty_{self.cheese.id}": "1"},
@@ -144,8 +247,10 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
             data={"cantidad": "1", "origen": "propio", f"extra_qty_{self.sauce.id}": "1"},
             headers={"X-Ajax": "1"},
         )
-        self.assertFalse(second.get_json()["ok"])
-        self.assertIn("otra personalización", second.get_json()["msg"])
+        self.assertTrue(second.get_json()["ok"])
+        with self.client.session_transaction() as sess:
+            self.assertEqual(len(sess["carrito"]), 2)
+            self.assertEqual(len(sess["extras_selecciones"]), 2)
 
     def test_catalog_selection_is_reused_by_products_and_keeps_snapshot_fields(self):
         bacon = ExtraCatalogItem(
@@ -408,10 +513,11 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
 
         with self.client.session_transaction() as sess:
             cart = dict(sess["carrito"])
+        line_key = next(iter(cart))
         with self.app.test_request_context():
             session["carrito"] = cart
             session["carrito_origen"] = "propio"
-            session["presentaciones_carrito"] = {str(self.product.id): "grande"}
+            session["presentaciones_carrito"] = {line_key: "grande"}
             items, subtotal = _build_items_from_carrito(cart)
         self.assertEqual(items[0]["precio_unit"], 7.5)
         self.assertEqual(subtotal, 7.5)
@@ -493,18 +599,26 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
             centro_lat=37.3891, centro_lng=-5.9845, radio_km=5,
         ))
         db.session.commit()
-        inside = self.client.post("/api/check-address", json={"lat": 37.39, "lng": -5.98})
+        with patch("services.geocodificar_direccion", return_value=(37.39, -5.98)):
+            inside = self.client.post("/api/check-address", json={
+                "direccion": "Calle Mayor 5", "lat": 37.39, "lng": -5.98, "accuracy": 15,
+            })
         self.assertEqual(inside.status_code, 200)
         self.assertTrue(inside.get_json()["ok"])
         self.assertEqual(inside.get_json()["zona"]["nombre"], "Centro QA")
-        outside = self.client.post("/api/check-address", json={"lat": 40.4168, "lng": -3.7038})
+        with patch("services.geocodificar_direccion", return_value=(40.4168, -3.7038)):
+            outside = self.client.post("/api/check-address", json={
+                "direccion": "Calle Mayor 5", "lat": 40.4168, "lng": -3.7038, "accuracy": 15,
+            })
         self.assertFalse(outside.get_json()["ok"])
 
     def test_check_address_blocks_all_branches_when_delivery_is_disabled(self):
         SiteConfig.set("FEATURE_DELIVERY", "0")
         db.session.commit()
 
-        by_coordinates = self.client.post("/api/check-address", json={"lat": 37.39, "lng": -5.98})
+        by_coordinates = self.client.post("/api/check-address", json={
+            "direccion": "Calle Mayor 5", "lat": 37.39, "lng": -5.98, "accuracy": 15,
+        })
         by_text = self.client.post("/api/check-address", json={"direccion": "Calle Sierpes 1, Sevilla"})
 
         self.assertEqual(by_coordinates.status_code, 403)
@@ -531,6 +645,28 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
         self.assertEqual(payload["cobertura"]["zona_id"], zone.id)
         self.assertEqual(payload["cobertura"]["zona_nombre"], "Centro bot QA")
         self.assertEqual(payload["metodo_cobertura"], "radio")
+
+    def test_chatbot_coverage_accepts_shared_whatsapp_location(self):
+        zone = ZonaEntrega(
+            nombre="Ubicación WhatsApp QA", precio_envio=Decimal("2.75"), activo=True,
+            centro_lat=37.4736, centro_lng=-5.6438, radio_km=2,
+        )
+        db.session.add(zone)
+        db.session.commit()
+
+        response = self.client.get(
+            "/api/bot/cobertura?lat=37.474&lon=-5.644&accuracy=25",
+            headers={"X-Bot-Key": "test-bot-key"},
+        )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["cobertura"]["zona_id"], zone.id)
+        self.assertEqual(
+            payload["cobertura"]["metodo_cobertura"],
+            "ubicacion_dispositivo",
+        )
 
     def test_cart_does_not_offer_delivery_without_an_active_zone(self):
         SiteConfig.set("FEATURE_DELIVERY", "1")

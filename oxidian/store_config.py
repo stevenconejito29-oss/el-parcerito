@@ -42,10 +42,10 @@ PUBLIC_UI_DEFAULTS = {
     "UI_HEADER_CART_LABEL": "Tu canasta",
     "UI_HEADER_CART_ACTION": "Abrir canasta",
     "UI_HEADER_STAFF": "Empleados",
-    "UI_HEADER_MEMORY_LINE": "Colombia, cerquita de ti",
-    "UI_HERO_EYEBROW": "Hecho con raíces colombianas",
-    "UI_HERO_TITLE": "Un bocado y vuelves a casa",
-    "UI_HERO_SUBTITLE": "Sabores que despiertan domingos en familia, charlas de barrio y el orgullo de llevar a Colombia siempre contigo.",
+    "UI_HEADER_MEMORY_LINE": "Calidad colombiana, cerquita de ti",
+    "UI_HERO_EYEBROW": "Tradición colombiana · servicio de confianza",
+    "UI_HERO_TITLE": "El sabor que recuerda a casa, con la calidad que esperas.",
+    "UI_HERO_SUBTITLE": "Productos seleccionados, preparación cuidada y un servicio en el que puedes confiar.",
     "UI_MENU_CATALOG_TITLE": "¿Qué recuerdo se te antoja hoy?",
     "UI_MENU_CATALOG_SUBTITLE": "Elige ese sabor que por un ratito te devuelve a casa",
     "UI_CART_EYEBROW": "Revisa tu pedido",
@@ -88,6 +88,7 @@ PUBLIC_UI_DEFAULTS = {
     "UI_CART_VIEW_MENU": "Ver menú completo",
     "UI_CART_MEMORY_NOTE": "Tu pedido lleva un pedacito de casa. Revísalo con calma y nosotros ponemos el cariño.",
     "UI_FOOTER_HERITAGE": "Hecho con sabor colombiano, para sentirnos cerquita de casa.",
+    "UI_PRODUCT_ADD_SHORT": "Agregar",
     "UI_CART_ADD_ACTION": "Añadir a la canasta",
     "UI_CART_ADDED": "Añadido a tu canasta",
     "UI_CART_VIEW_ACTION": "Ver canasta",
@@ -162,6 +163,8 @@ STORE_DEFAULTS = {
     **PUBLIC_UI_DEFAULTS,
     "HORARIO_APERTURA": "09:00",
     "HORARIO_CIERRE": "22:30",
+    "HORARIO_SEMANAL_JSON": "",
+    "TIMEZONE_NEGOCIO": "Europe/Madrid",
     "TIENDA_FORZAR_CERRADA": "0",
     "TIENDA_MENSAJE_CIERRE": "",
     "CENTRO_LAT": "",
@@ -269,7 +272,7 @@ def get_store_features() -> dict:
         "recogida": recogida,
         "pedidos_programados": get_store_bool("FEATURE_PEDIDOS_PROGRAMADOS", "1"),
         "puntos": get_store_bool("FEATURE_PUNTOS", "1"),
-        "proveedores": False,
+        "proveedores": True,
     }
 
 
@@ -324,6 +327,7 @@ def get_store_profile() -> dict:
         "fallback_emoji": get_store_value("BRAND_FALLBACK_EMOJI", "🥟") or "🥟",
         "horario_apertura": get_store_value("HORARIO_APERTURA"),
         "horario_cierre": get_store_value("HORARIO_CIERRE"),
+        "horario_semanal_json": get_store_value("HORARIO_SEMANAL_JSON", ""),
         "tienda_mensaje_cierre": get_store_value("TIENDA_MENSAJE_CIERRE"),
     }
     profile["theme"] = {
@@ -400,7 +404,7 @@ CLAVES_QUE_REFRESCAN_BOT = frozenset({
     "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
     # Horario y forzado de cierre → el bot debe reflejarlos al instante
     # para no aceptar pedidos fuera de ventana.
-    "HORARIO_APERTURA", "HORARIO_CIERRE",
+    "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON",
     "TIENDA_FORZAR_CERRADA", "MENSAJE_CIERRE",
     # Números administrativos y IA → cambios raros pero críticos.
     "BOT_ADMIN_NUMBERS",

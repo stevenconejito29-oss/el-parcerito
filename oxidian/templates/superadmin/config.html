@@ -109,6 +109,24 @@
 
     <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="section" value="tienda-legal">
+      <h3>Información fiscal, privacidad y condiciones</h3>
+      <p class="cfg-empty">Completa datos reales del titular antes de abrir al público. Estos datos alimentan automáticamente el aviso legal y las condiciones de compra.</p>
+      <div class="cfg-grid">
+        {{ cfg_input('NOMBRE_FISCAL', 'Titular / razón social', placeholder='Nombre completo o sociedad') }}
+        {{ cfg_input('NIF_NEGOCIO', 'NIF / CIF', placeholder='Documento fiscal') }}
+        {{ cfg_input('DIRECCION_FISCAL', 'Domicilio fiscal', placeholder='Calle, número, CP, localidad y país') }}
+        {{ cfg_input('EMAIL_PRIVACIDAD', 'Correo de privacidad y reclamaciones', type='email', placeholder='privacidad@midominio.com') }}
+        {{ cfg_input('REGISTRO_MERCANTIL', 'Datos registrales', placeholder='Tomo, folio, hoja…', help='Déjalo vacío si no corresponde a la forma jurídica.') }}
+        {{ cfg_input('LEGAL_VERSION', 'Versión legal publicada', placeholder='1.0', help='Cámbiala cuando modifiques materialmente las condiciones.') }}
+        {{ cfg_textarea('LEGAL_RETENCION_PEDIDOS', 'Conservación de datos', rows=4) }}
+        {{ cfg_textarea('LEGAL_CONDICIONES_DEVOLUCION', 'Cancelaciones, desistimiento e incidencias', rows=5) }}
+      </div>
+      <button type="submit" class="cfg-save-bottom">Guardar información legal</button>
+    </form>
+
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="section" value="tienda-ubicacion">
       <h3>Ubicación</h3>
       <div class="cfg-grid">
@@ -244,9 +262,40 @@
     <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="operacion-horario">
       <h3>Horario y cierre</h3>
-    <div class="cfg-grid three">
-      {{ cfg_input('HORARIO_APERTURA', 'Hora de apertura', type='time') }}
-      {{ cfg_input('HORARIO_CIERRE', 'Hora de cierre', type='time') }}
+    <input type="hidden" name="config_key" value="HORARIO_SEMANAL_JSON">
+    <input type="hidden" name="HORARIO_SEMANAL_JSON" id="cfg-weekly-schedule-value"
+           value="{{ config_map.get('HORARIO_SEMANAL_JSON', '')|e }}">
+    <div class="cfg-weekly-schedule" data-weekly-schedule
+         data-legacy-open="{{ config_map.get('HORARIO_APERTURA', '09:00')|e }}"
+         data-legacy-close="{{ config_map.get('HORARIO_CIERRE', '22:30')|e }}">
+      <div class="cfg-weekly-head">
+        <div>
+          <strong>Franjas semanales</strong>
+          <p>Agrega todas las aperturas de cada día. Un día sin franjas permanece cerrado.</p>
+        </div>
+        <button type="button" class="ox-btn-secondary" data-schedule-copy-week>
+          Copiar lunes a toda la semana
+        </button>
+      </div>
+      <div class="cfg-weekly-days" data-schedule-days></div>
+      <template id="cfg-schedule-window-template">
+        <div class="cfg-schedule-window">
+          <label><span>Abre</span><input type="time" data-window-start required></label>
+          <span aria-hidden="true">→</span>
+          <label><span>Cierra</span><input type="time" data-window-end required></label>
+          <button type="button" data-window-remove aria-label="Eliminar franja">×</button>
+        </div>
+      </template>
+    </div>
+    <details class="cfg-legacy-schedule">
+      <summary>Compatibilidad con horario anterior</summary>
+      <p>Solo se usa si se elimina la programación semanal.</p>
+      <div class="cfg-grid">
+        {{ cfg_input('HORARIO_APERTURA', 'Apertura anterior', type='time') }}
+        {{ cfg_input('HORARIO_CIERRE', 'Cierre anterior', type='time') }}
+      </div>
+    </details>
+    <div class="cfg-grid">
       {{ cfg_select('TIENDA_FORZAR_CERRADA', 'Estado manual', [('0','Seguir horario normal'),('1','Cerrar tienda ahora')], 'El cierre manual bloquea nuevos pedidos.') }}
     </div>
     <div class="cfg-grid one">
@@ -266,9 +315,11 @@
     <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="operacion-pagos">
       <h3>Métodos de pago</h3>
+    <p class="cfg-help" style="margin:.15rem 0 .75rem;font-size:.78rem;opacity:.75">Todos los pagos son <strong>al entregar</strong>. El cliente elige la preferencia en el checkout para que el repartidor prepare lo que necesita.</p>
     <div class="cfg-grid">
-      {{ cfg_select('EFECTIVO_HABILITADO', 'Pago en efectivo', [('1','Habilitado'),('0','Deshabilitado')]) }}
-      {{ cfg_select('BIZUM_HABILITADO', 'Pago mediante Bizum', [('1','Habilitado'),('0','Deshabilitado')], 'Requiere configurar el número Bizum en Marca y tienda.') }}
+      {{ cfg_select('EFECTIVO_HABILITADO', '💵 Efectivo', [('1','Habilitado'),('0','Deshabilitado')]) }}
+      {{ cfg_select('BIZUM_HABILITADO', '📱 Bizum', [('1','Habilitado'),('0','Deshabilitado')], 'Requiere configurar el número Bizum en Marca y tienda.') }}
+      {{ cfg_select('TARJETA_HABILITADA', '💳 Tarjeta (datáfono)', [('1','Habilitado'),('0','Deshabilitado')], 'El repartidor lleva un datáfono al entregar. Contactless o inserción.') }}
     </div>
       <button type="submit" class="cfg-save-bottom">Guardar métodos de pago</button>
     </form>
@@ -300,12 +351,13 @@
     </div>
     <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="entregas">
+      <p class="cfg-empty" role="status">La cobertura está protegida: un pedido a domicilio solo se acepta cuando su dirección o ubicación coincide con una zona activa.</p>
       <div class="cfg-grid">
-        {{ cfg_select('VALIDAR_RADIO_ENTREGA', 'Validar cobertura', [('1','Sí, comprobar zonas'),('0','No comprobar cobertura')], 'Usa primero los contornos de las zonas; el radio global solo es el respaldo compatible.') }}
-        {{ cfg_select('BLOQUEAR_DIRECCION_NO_VERIFICADA', 'Dirección no verificable', [('1','Bloquear pedido'),('0','Aceptar con advertencia')]) }}
-        {{ cfg_input('RADIO_ENTREGA_KM', 'Radio global de respaldo (km)', type='number', min='0.5', max='50', step='0.5', help='Solo se aplica cuando no existe ninguna zona con contorno o radio propio.') }}
+        {{ cfg_input('RADIO_ENTREGA_KM', 'Radio global de respaldo (km)', type='number', min='0.5', max='25', step='0.5', help='Solo se aplica cuando no existe ninguna zona con contorno o radio propio.') }}
         {{ cfg_input('CENTRO_LAT', 'Latitud del local', type='number', step='0.000001') }}
         {{ cfg_input('CENTRO_LON', 'Longitud del local', type='number', step='0.000001') }}
+        {{ cfg_input('DELIVERY_GPS_MAX_ACCURACY_M', 'Precisión GPS máxima (m)', type='number', min='20', max='2000', step='10', help='Rechaza ubicaciones demasiado imprecisas. 200 m funciona bien en la mayoría de móviles.') }}
+        {{ cfg_input('DELIVERY_ADDRESS_GPS_MAX_DISTANCE_KM', 'Coincidencia dirección/GPS (km)', type='number', min='0.1', max='5', step='0.1', help='Distancia máxima permitida entre la calle geocodificada y la ubicación compartida.') }}
         {{ cfg_input('PEDIDO_MINIMO_EUR', 'Pedido mínimo (€) — 0 desactiva', type='number', min='0', step='0.5') }}
       </div>
       <div style="margin-top:.5rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
@@ -354,8 +406,8 @@
     <div class="cfg-section-head"><div><span>4</span><h2>Club de puntos</h2><p>Reglas globales. Los productos canjeables se gestionan en Marketing.</p></div><button type="submit">Guardar puntos</button></div>
     <div class="cfg-grid">
       {{ cfg_input('PUNTOS_POR_EURO', 'Puntos ganados por euro', type='number', min='1', max='100000') }}
-      {{ cfg_input('PUNTOS_CANJE_RATIO', 'Puntos equivalentes a 1 €', type='number', min='1', max='100000') }}
     </div>
+    <p class="cfg-help">Los puntos se canjean exclusivamente por productos; nunca reducen el importe en euros.</p>
     <a href="{{ url_for('marketing.puntos') }}" class="cfg-inline-link">Configurar productos canjeables</a>
   </form>{% endif %}
 
@@ -400,6 +452,98 @@
 
 {% block scripts %}
 <script nonce="{{ csp_nonce() }}">
+(() => {
+  const root = document.querySelector('[data-weekly-schedule]');
+  if (!root) return;
+  const valueInput = document.getElementById('cfg-weekly-schedule-value');
+  const daysHost = root.querySelector('[data-schedule-days]');
+  const template = document.getElementById('cfg-schedule-window-template');
+  const dayNames = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  let schedule;
+  try {
+    schedule = JSON.parse(valueInput.value || '{}');
+  } catch (_) {
+    schedule = {};
+  }
+  const hasWeekly = Object.keys(schedule).some(key => Array.isArray(schedule[key]));
+  if (!hasWeekly) {
+    schedule = Object.fromEntries(dayNames.map((_, day) => [
+      String(day),
+      [[root.dataset.legacyOpen || '09:00', root.dataset.legacyClose || '22:30']]
+    ]));
+  }
+
+  function serialize() {
+    const result = {};
+    daysHost.querySelectorAll('[data-schedule-day]').forEach(day => {
+      result[day.dataset.scheduleDay] = [...day.querySelectorAll('.cfg-schedule-window')]
+        .map(row => [
+          row.querySelector('[data-window-start]').value,
+          row.querySelector('[data-window-end]').value
+        ])
+        .filter(([start, end]) => start && end);
+    });
+    valueInput.value = JSON.stringify(result);
+  }
+
+  function addWindow(dayCard, values = ['09:00', '22:30']) {
+    const row = template.content.firstElementChild.cloneNode(true);
+    row.querySelector('[data-window-start]').value = values[0] || '';
+    row.querySelector('[data-window-end]').value = values[1] || '';
+    row.querySelector('[data-window-remove]').addEventListener('click', () => {
+      row.remove();
+      updateEmpty(dayCard);
+      serialize();
+    });
+    row.querySelectorAll('input').forEach(input => input.addEventListener('change', serialize));
+    dayCard.querySelector('[data-day-windows]').appendChild(row);
+    updateEmpty(dayCard);
+  }
+
+  function updateEmpty(dayCard) {
+    const empty = dayCard.querySelector('[data-day-closed]');
+    empty.hidden = Boolean(dayCard.querySelector('.cfg-schedule-window'));
+  }
+
+  dayNames.forEach((name, day) => {
+    const card = document.createElement('section');
+    card.className = 'cfg-schedule-day';
+    card.dataset.scheduleDay = String(day);
+    card.innerHTML = `
+      <header>
+        <div><strong>${name}</strong><small data-day-closed>Cerrado</small></div>
+        <button type="button" data-window-add>+ Añadir franja</button>
+      </header>
+      <div class="cfg-schedule-windows" data-day-windows></div>`;
+    daysHost.appendChild(card);
+    card.querySelector('[data-window-add]').addEventListener('click', () => {
+      addWindow(card, ['', '']);
+      card.querySelector('.cfg-schedule-window:last-child input')?.focus();
+      serialize();
+    });
+    (schedule[String(day)] || []).forEach(values => addWindow(card, values));
+    updateEmpty(card);
+  });
+
+  root.querySelector('[data-schedule-copy-week]')?.addEventListener('click', () => {
+    const monday = [...daysHost.querySelector('[data-schedule-day="0"]')
+      .querySelectorAll('.cfg-schedule-window')]
+      .map(row => [
+        row.querySelector('[data-window-start]').value,
+        row.querySelector('[data-window-end]').value
+      ]);
+    daysHost.querySelectorAll('[data-schedule-day]').forEach((card, day) => {
+      if (day === 0) return;
+      card.querySelector('[data-day-windows]').replaceChildren();
+      monday.forEach(values => addWindow(card, values));
+      updateEmpty(card);
+    });
+    serialize();
+  });
+  root.closest('form')?.addEventListener('submit', serialize);
+  serialize();
+})();
+
 const _BRAND_KEYS = { logo: 'LOGO_URL', icon: 'APP_ICON_URL', hero: 'HERO_IMAGE_URL' };
 const _BRAND_LABELS = { logo: 'Logo', icon: 'Icono', hero: 'Cabecera' };
 function _brandToast(msg, kind){

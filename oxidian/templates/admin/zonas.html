@@ -144,23 +144,25 @@
 </div>
 
 {# ── Leaflet CDN ── #}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-      crossorigin=""/>
-<script nonce="{{ csp_nonce() }}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-        crossorigin=""></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css', v=asset_version) }}">
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='vendor/leaflet/leaflet.js', v=asset_version) }}"></script>
 
 <script nonce="{{ csp_nonce() }}">
 (function(){
   const mapEl = document.getElementById('zonas-map');
   const emptyMsg = document.getElementById('zonas-map-empty');
-  if (!mapEl || typeof L === 'undefined') return;
+  if (!mapEl) return;
+  if (typeof L === 'undefined') {
+    if (emptyMsg) {
+      emptyMsg.textContent = 'El componente del mapa no pudo iniciarse. Recarga la página; si persiste, revisa el despliegue de recursos estáticos.';
+      emptyMsg.style.display = 'block';
+    }
+    return;
+  }
 
   const map = L.map('zonas-map', {
-    center: [{{ (brand.centro_lat if brand and brand.centro_lat else 37.4703) }},
-             {{ (brand.centro_lng if brand and brand.centro_lng else -5.6435) }}],
-    zoom: 13,
+    center: [0, 0],
+    zoom: 2,
     scrollWheelZoom: true,
   });
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {

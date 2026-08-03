@@ -474,6 +474,15 @@ body.ox-body-public .ep-banner-cta {
   padding: 1.35rem 1.1rem 1rem;
 }
 .ep-hero-text { flex: 1; }
+.ep-hero-eyebrow {
+  margin: 0 0 .45rem;
+  color: color-mix(in srgb, var(--brand-primary) 88%, #fff);
+  font-size: .68rem;
+  font-weight: 850;
+  line-height: 1.25;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
 .ep-hero-label { font-size: .95rem; margin-bottom: .4rem; letter-spacing: .1em; }
 .ep-hero-title {
   font-size: clamp(1.5rem, 6.5vw, 2.2rem); font-weight: 900; color: #fff;
@@ -511,15 +520,15 @@ body.ox-body-public .ep-banner-cta {
    pequeño a la izquierda, texto compacto con opacidad para no competir con
    el título ni con la CTA. */
 .ep-hero-sub {
-  display: inline-flex; align-items: center; gap: .35rem;
+  display: flex; align-items: flex-start; gap: .4rem;
   margin: 0 0 .85rem;
-  font-size: .8rem; color: rgba(255,255,255,.68); font-weight: 700;
+  font-size: clamp(.78rem, 1.6vw, .9rem); color: rgba(255,255,255,.78); font-weight: 650;
+  line-height: 1.45;
   letter-spacing: -.005em;
-  max-width: 100%; min-width: 0;
+  max-width: 58ch; min-width: 0;
 }
 .ep-hero-sub > span:last-child {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  max-width: 40ch;
+  overflow-wrap: anywhere;
 }
 .ep-hero-sub-icon {
   display: inline-flex; align-items: center; justify-content: center;
@@ -959,9 +968,8 @@ body.ox-body-public .ep-banner-cta {
 }
 .ep-cbadge-urgente {
   background: var(--brand-secondary, var(--flag-red));
-  color: #fff; animation: urgPulse 1.4s infinite;
+  color: #fff;
 }
-@keyframes urgPulse { 0%,100%{opacity:1}50%{opacity:.6} }
 
 /* Cantidad en carrito por producto */
 .ep-card-cart-qty {
@@ -2858,6 +2866,18 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
 .ep-grid .ep-card-name,
 .ep-grid .ep-card-desc,
 .ep-grid .ep-card-combo-copy { display: block; }
+.ep-card-title-link {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: .35rem;
+}
+.ep-card-title-link:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ep-card-accent, var(--brand-primary)) 58%, transparent);
+  outline-offset: 3px;
+}
 .ep-grid .ep-card-prices { flex-wrap: wrap; }
 .ep-grid .ep-card-price-note {
   overflow-wrap: anywhere;
@@ -2875,28 +2895,63 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
   }
 }
 
-/* Menú móvil vertical: una tarjeta legible por fila. La antigua rejilla de
-   dos columnas dejaba apenas 150 px de ancho útil y recortaba descripciones,
-   combos, precios y acciones. El formato horizontal aprovecha mejor la altura
-   sin ocultar información y mantiene targets táctiles de 44 px. */
+/* Menú móvil vertical: cada producto se presenta como una pequeña pieza
+   editorial. La fotografía abre el apetito; el cuerpo concentra nombre,
+   descripción, precio y una acción explícita. El acento de categoría proviene
+   de los tokens configurables, no de colores fijados por producto. */
 @media (max-width: 560px) and (orientation: portrait) {
-  .ep-grid { grid-template-columns: minmax(0, 1fr); gap: .72rem; }
+  .ep-grid { grid-template-columns: minmax(0, 1fr); gap: .82rem; }
   .ep-card,
   .ep-card-combo {
     display: grid;
-    grid-template-columns: clamp(104px, 31vw, 132px) minmax(0, 1fr);
-    min-height: 168px;
+    grid-template-columns: clamp(126px, 36vw, 148px) minmax(0, 1fr);
+    min-height: 190px;
+    border: 1px solid color-mix(in srgb, var(--ep-card-accent, var(--brand-primary)) 24%, var(--col-border)) !important;
+    border-radius: 1.15rem .42rem 1.15rem 1.15rem;
+    background: var(--theme-surface) !important;
+    box-shadow:
+      0 10px 26px color-mix(in srgb, var(--theme-text) 10%, transparent),
+      0 2px 0 color-mix(in srgb, var(--ep-card-accent, var(--brand-primary)) 34%, transparent) !important;
   }
   .ep-card .ep-card-img,
   .ep-card-combo .ep-card-img {
     width: 100%;
     height: 100%;
-    min-height: 168px;
+    min-height: 190px;
     aspect-ratio: auto;
-    border-radius: .85rem 0 0 .85rem;
+    border-radius: 1.08rem 0 0 1.08rem;
+  }
+  .ep-card .ep-card-img::after,
+  .ep-card-combo .ep-card-img::after {
+    box-shadow:
+      inset -28px 0 30px -34px color-mix(in srgb, var(--theme-text) 48%, transparent),
+      inset 0 -42px 34px -42px color-mix(in srgb, var(--theme-text) 42%, transparent);
   }
   .ep-card-body,
-  .ep-card-combo .ep-card-body { min-width: 0; padding: .7rem; }
+  .ep-card-combo .ep-card-body {
+    min-width: 0;
+    padding: .82rem .78rem .78rem;
+    border-left: 3px solid color-mix(in srgb, var(--ep-card-accent, var(--brand-primary)) 72%, transparent);
+    background:
+      radial-gradient(circle at 100% 0,
+        color-mix(in srgb, var(--ep-card-accent, var(--brand-primary)) 13%, transparent),
+        transparent 48%),
+      var(--theme-surface);
+  }
+  .ep-card-kicker-row { align-items: flex-start; }
+  .ep-card-kicker {
+    max-width: 100%;
+    padding: .2rem .45rem;
+    color: color-mix(in srgb, var(--ep-card-accent, var(--brand-primary)) 64%, var(--theme-text));
+    background: color-mix(in srgb, var(--ep-card-accent, var(--brand-primary)) 10%, var(--theme-surface));
+    border-color: color-mix(in srgb, var(--ep-card-accent, var(--brand-primary)) 25%, transparent);
+  }
+  .ep-card-title-link { width: fit-content; max-width: 100%; }
+  .ep-card-name {
+    font-size: clamp(.94rem, 4vw, 1.06rem);
+    line-height: 1.12;
+    letter-spacing: -.015em;
+  }
   .ep-card-name,
   .ep-card-desc,
   .ep-card-combo-copy,
@@ -2907,20 +2962,50 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
     white-space: normal;
     -webkit-line-clamp: unset;
   }
-  .ep-card-desc { display: block; line-height: 1.38; }
+  .ep-card-desc {
+    display: -webkit-box;
+    line-height: 1.35;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
   .ep-card-combo-copy { display: block; }
-  .ep-card-footer { flex-wrap: wrap; gap: .45rem; }
+  .ep-card-footer {
+    flex-wrap: wrap;
+    gap: .5rem;
+    padding-top: .62rem;
+    border-top-color: color-mix(in srgb, var(--ep-card-accent, var(--brand-primary)) 18%, var(--col-border));
+  }
   .ep-card-prices { flex: 1 1 88px; }
+  .ep-card-price {
+    color: color-mix(in srgb, var(--ep-card-accent, var(--brand-secondary)) 62%, var(--theme-text));
+    font-size: 1.08rem;
+  }
+  .ep-btn-add {
+    width: auto;
+    min-width: 46px;
+    padding-inline: .78rem;
+    gap: .38rem;
+    border-radius: 999px;
+  }
+  .ep-btn-add-label {
+    display: inline;
+    font-size: .72rem;
+    font-weight: 950;
+    line-height: 1;
+  }
   .ep-btn-detail { max-width: none; white-space: normal; text-align: center; }
   .ep-card-sizes { flex-basis: 100%; }
 }
 
 @media (max-width: 350px) and (orientation: portrait) {
   .ep-card,
-  .ep-card-combo { grid-template-columns: 96px minmax(0, 1fr); }
+  .ep-card-combo { grid-template-columns: 104px minmax(0, 1fr); }
   .ep-card-body,
   .ep-card-combo .ep-card-body { padding: .6rem; }
   .ep-cbadge-fulfillment { max-width: 100%; padding-inline: 3px; font-size: .44rem; }
+  .ep-btn-add { width: 46px; padding-inline: 0; }
+  .ep-btn-add-label { display: none; }
 }
 
 @media (max-width: 767px), (pointer: coarse) {
@@ -2984,10 +3069,12 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
   box-shadow: 0 8px 28px rgba(0,0,0,.55), 0 0 0 1px color-mix(in srgb, var(--brand-primary) 10%, transparent) inset;
   pointer-events: none; z-index: 9999;
   opacity: 0; transition: opacity .28s, transform .28s cubic-bezier(.34,1.56,.64,1);
-  white-space: nowrap;
+  width: min(30rem, calc(100vw - max(24px, env(safe-area-inset-left, 0px)) - max(24px, env(safe-area-inset-right, 0px))));
+  max-height: min(45dvh, 14rem); overflow-y: auto;
+  white-space: normal; overflow-wrap: anywhere; line-height: 1.4; text-align: center;
 }
 .ep-toast.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
-.ep-toast--warn { border-color: rgba(255,165,0,.4); background: #2a1a00; color: #ffcc55; }
+.ep-toast--warn { border-color: color-mix(in srgb,var(--theme-warning) 42%,transparent); background:color-mix(in srgb,var(--theme-warning) 12%,var(--col-elevated));color:var(--col-text); }
 
 /* ── Spinner del botón añadir ── */
 .ep-btn-spin {
@@ -3390,4 +3477,3 @@ body.ox-body-public .ep-modal-mode-detail .ep-modal-detail-btn:hover {
   body.ox-body-public .ep-modal-heritage-handle { display: none; }
   body.ox-body-public .ep-modal-body { padding: .65rem .7rem .75rem; }
 }
-

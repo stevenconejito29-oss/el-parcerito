@@ -4,8 +4,7 @@ Cubre:
 - `validar_radio_entrega`: fail-closed sin config, con config buena y con
   direcciones fuera del radio.
 - `asignar_zona_por_direccion`: prioriza zonas con geodata, cae al radio
-  global si no hay geo por zona, respeta el flag legacy solo cuando está
-  activo.
+  global si no hay geo por zona y nunca acepta un fallback ciego.
 - `asignar_zona_por_coordenadas`: idéntica lógica de fallback.
 - `_leer_geo_negocio`: cap defensivo del radio + valida rangos lat/lon.
 
@@ -128,12 +127,17 @@ class ZonasCarmonaTest(unittest.TestCase):
 
     def test_validar_acepta_direccion_dentro_del_radio(self):
         from services import validar_radio_entrega
+        zona = self._mk_zona("Zona global", tiene_geo=False)
         with patch("services.geocodificar_direccion",
                    return_value=(self.CERCA_CARMONA_LAT, self.CERCA_CARMONA_LON)):
             r = validar_radio_entrega("Calle Mayor 5, Carmona")
         self.assertTrue(r["ok"])
+        self.assertEqual(r["zona_id"], zona.id)
         self.assertIsNotNone(r["distancia_km"])
         self.assertLess(r["distancia_km"], 3)
+        self.assertEqual(r["metodo_cobertura"], "direccion_geocodificada")
+        self.assertAlmostEqual(r["lat"], self.CERCA_CARMONA_LAT)
+        self.assertAlmostEqual(r["lon"], self.CERCA_CARMONA_LON)
 
     def test_validar_rechaza_direccion_fuera_del_radio(self):
         from services import validar_radio_entrega
@@ -144,6 +148,97 @@ class ZonasCarmonaTest(unittest.TestCase):
         self.assertGreater(r["distancia_km"], 25)
         self.assertIn("fuera de nuestra zona", r["mensaje"])
 
+    def test_validar_usa_ubicacion_concedida_sin_geocodificar_texto(self):
+        from services import validar_radio_entrega
+        zona = self._mk_zona("Centro por GPS", tiene_geo=True)
+        with patch(
+            "services.geocodificar_direccion",
+            return_value=(self.CERCA_CARMONA_LAT, self.CERCA_CARMONA_LON),
+        ) as geocode:
+            resultado = validar_radio_entrega(
+                "Calle escrita por el cliente 1",
+                lat=self.CERCA_CARMONA_LAT,
+                lon=self.CERCA_CARMONA_LON,
+                precision_m=12.5,
+            )
+        self.assertTrue(resultado["ok"])
+        self.assertEqual(resultado["zona_id"], zona.id)
+        self.assertEqual(resultado["metodo_cobertura"], "ubicacion_dispositivo")
+        self.assertEqual(resultado["precision_m"], 12.5)
+        geocode.assert_called_once()
+
+    def test_validar_rechaza_ubicacion_fuera_aunque_el_texto_parezca_local(self):
+        from services import validar_radio_entrega
+        self._mk_zona("Centro por GPS", tiene_geo=True)
+        with patch(
+            "services.geocodificar_direccion",
+            return_value=(self.SEVILLA_LAT, self.SEVILLA_LON),
+        ):
+            resultado = validar_radio_entrega(
+                "Calle Mayor 5, Carmona",
+                lat=self.SEVILLA_LAT,
+                lon=self.SEVILLA_LON,
+            )
+        self.assertFalse(resultado["ok"])
+        self.assertIn("fuera de las zonas", resultado["mensaje"])
+
+    def test_validar_rechaza_gps_demasiado_impreciso(self):
+        from services import validar_radio_entrega
+        self._mk_zona("Centro por GPS", tiene_geo=True)
+        SiteConfig.set("DELIVERY_GPS_MAX_ACCURACY_M", "200", descripcion="test")
+        db.session.commit()
+        resultado = validar_radio_entrega(
+            "Calle Mayor 5, Carmona",
+            lat=self.CERCA_CARMONA_LAT,
+            lon=self.CERCA_CARMONA_LON,
+            precision_m=850,
+        )
+        self.assertFalse(resultado["ok"])
+        self.assertIn("precisión", resultado["mensaje"])
+
+    def test_web_rechaza_gps_sin_precision(self):
+        from services import validar_radio_entrega
+        self._mk_zona("Centro por GPS", tiene_geo=True)
+        resultado = validar_radio_entrega(
+            "Calle Mayor 5, Carmona",
+            lat=self.CERCA_CARMONA_LAT,
+            lon=self.CERCA_CARMONA_LON,
+            exigir_precision=True,
+            exigir_direccion=True,
+        )
+        self.assertFalse(resultado["ok"])
+        self.assertIn("precisión", resultado["mensaje"])
+
+    def test_web_rechaza_gps_sin_direccion_completa(self):
+        from services import validar_radio_entrega
+        self._mk_zona("Centro por GPS", tiene_geo=True)
+        resultado = validar_radio_entrega(
+            "x",
+            lat=self.CERCA_CARMONA_LAT,
+            lon=self.CERCA_CARMONA_LON,
+            precision_m=15,
+            exigir_precision=True,
+            exigir_direccion=True,
+        )
+        self.assertFalse(resultado["ok"])
+        self.assertIn("dirección completa", resultado["mensaje"])
+
+    def test_validar_rechaza_direccion_que_no_coincide_con_gps(self):
+        from services import validar_radio_entrega
+        self._mk_zona("Centro por GPS", tiene_geo=True)
+        with patch(
+            "services.geocodificar_direccion",
+            return_value=(self.SEVILLA_LAT, self.SEVILLA_LON),
+        ):
+            resultado = validar_radio_entrega(
+                "Calle escrita distinta 10",
+                lat=self.CERCA_CARMONA_LAT,
+                lon=self.CERCA_CARMONA_LON,
+                precision_m=20,
+            )
+        self.assertFalse(resultado["ok"])
+        self.assertIn("no coincide", resultado["mensaje"])
+
     def test_validar_rechaza_no_geocodificable_con_bloqueo(self):
         # BLOQUEAR_DIRECCION_NO_VERIFICADA=1 (default) → sin geocode, rechaza.
         from services import validar_radio_entrega
@@ -152,20 +247,21 @@ class ZonasCarmonaTest(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertIn("No encontramos", r["mensaje"])
 
-    def test_validar_permite_no_geocodificable_si_flag_off(self):
+    def test_validar_rechaza_no_geocodificable_aunque_flag_legacy_este_off(self):
         from services import validar_radio_entrega
         SiteConfig.set("BLOQUEAR_DIRECCION_NO_VERIFICADA", "0", descripcion="test")
         db.session.commit()
         with patch("services.geocodificar_direccion", return_value=None):
             r = validar_radio_entrega("XXXNoExisteXXX 999")
-        self.assertTrue(r["ok"])
+        self.assertFalse(r["ok"])
 
-    def test_validar_desactivado_globalmente(self):
+    def test_validar_no_se_puede_desactivar_globalmente(self):
         from services import validar_radio_entrega
         SiteConfig.set("VALIDAR_RADIO_ENTREGA", "0", descripcion="test")
         db.session.commit()
-        r = validar_radio_entrega("cualquier cosa")
-        self.assertTrue(r["ok"])
+        with patch("services.geocodificar_direccion", return_value=None):
+            r = validar_radio_entrega("cualquier cosa")
+        self.assertFalse(r["ok"])
 
     # ── asignar_zona_por_direccion ────────────────────────────────
 
@@ -199,6 +295,17 @@ class ZonasCarmonaTest(unittest.TestCase):
             r = asignar_zona_por_direccion("Calle Mayor 5", [z])
         self.assertEqual(r.id, z.id)
 
+    def test_asignar_no_adivina_entre_varias_zonas_sin_geometria(self):
+        from services import asignar_zona_por_direccion
+        z1 = self._mk_zona("Sin geometría 1", tiene_geo=False)
+        z2 = self._mk_zona("Sin geometría 2", tiene_geo=False)
+        with patch(
+            "services.geocodificar_direccion",
+            return_value=(self.CERCA_CARMONA_LAT, self.CERCA_CARMONA_LON),
+        ):
+            result = asignar_zona_por_direccion("Calle Mayor 5", [z1, z2])
+        self.assertIsNone(result)
+
     def test_asignar_none_si_zona_sin_geo_y_fuera_del_radio_global(self):
         from services import asignar_zona_por_direccion
         z = self._mk_zona("Zona única", tiene_geo=False)
@@ -207,16 +314,14 @@ class ZonasCarmonaTest(unittest.TestCase):
             r = asignar_zona_por_direccion("Sevilla centro", [z])
         self.assertIsNone(r)
 
-    def test_asignar_fallback_legacy_solo_si_flag_activo(self):
-        # Sin geo en zona ni en negocio, con flag ON → devuelve zona (peligroso
-        # pero explícitamente pedido por el admin).
+    def test_asignar_ignora_fallback_legacy_aunque_este_activo(self):
         from services import asignar_zona_por_direccion
         SiteConfig.set("CENTRO_LAT", "", descripcion="test")
         SiteConfig.set("ALLOW_LEGACY_ZONE_FALLBACK", "1", descripcion="test")
         db.session.commit()
         z = self._mk_zona("Legacy", tiene_geo=False)
         r = asignar_zona_por_direccion("cualquier cosa", [z])
-        self.assertEqual(r.id, z.id)
+        self.assertIsNone(r)
 
     def test_asignar_none_sin_geo_negocio_ni_flag_legacy(self):
         # Fail-closed: cualquier ambigüedad → None.

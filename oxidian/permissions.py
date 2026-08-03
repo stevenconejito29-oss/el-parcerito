@@ -30,7 +30,7 @@ Cada `action` es un identificador namespaced tipo `dominio.verbo[.subdominio]`:
 
 Política por rol
 ----------------
-- `super_admin` — siempre allow. Sin excepciones.
+- `super_admin` — allow para toda acción declarada en la matriz.
 - `admin` — allow si la acción está mapeada a una `feature` que tiene
   concedida en `AdminFeature`, o si es una acción de lectura operativa.
 - Cualquier otro rol — deny por defecto salvo overrides explícitos.
@@ -113,9 +113,13 @@ def allow(actor: Optional[Actor], action: str) -> bool:
     """Autoriza una acción para un actor. Deny by default."""
     if actor is None:
         return False
+    policy = _POLICY.get(action)
+    # Incluso super_admin falla cerrado ante una acción no registrada. Esto
+    # detecta typos y endpoints nuevos que olvidaron declarar su política.
+    if policy is None:
+        return False
     if actor.privileged_by_env or actor.rol == "super_admin":
         return True
-    policy = _POLICY.get(action)
     if policy == "super_only":
         return False
     if policy == "admin_read":

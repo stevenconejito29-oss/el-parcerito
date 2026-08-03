@@ -449,6 +449,52 @@
     gap: .55rem;
   }
 }
+/* Toggle vista compacta ↔ detallada — botón cerca del control de disponibilidad.
+   Botón >= 44px de alto para tap táctil en tablets de cocina. */
+.work-vista-toggle { margin: .5rem 0 0; }
+.work-vista-btn {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .6rem 1rem; font-size: .85rem; font-weight: 800;
+  min-height: 44px;
+  color: var(--col-text); background: var(--col-elevated);
+  border: 1px solid var(--col-border); border-radius: .55rem;
+  cursor: pointer; transition: border-color .15s, background .15s;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.work-vista-btn:hover { border-color: var(--col-gold); }
+.work-vista-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--col-gold) 14%, transparent); border-color: var(--col-gold); }
+
+/* Grupos por producto en vista compacta */
+.work-prod-group { padding: .35rem 0; }
+.work-prod-group + .work-prod-group { border-top: 1px dashed color-mix(in srgb, var(--col-border) 60%, transparent); margin-top: .3rem; padding-top: .5rem; }
+.work-prod-group-hdr {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .1rem 0 .3rem;
+}
+.work-prod-group-qty {
+  font-size: 1.15rem; font-weight: 950; color: var(--col-gold);
+  min-width: 2.2rem; text-align: right;
+}
+.work-prod-group-name { font-size: .95rem; font-weight: 900; color: var(--col-text); flex: 1; min-width: 0; }
+.work-prod-group-count {
+  font-size: .68rem; font-weight: 800;
+  padding: .12rem .5rem; border-radius: 999px;
+  color: color-mix(in srgb, var(--col-gold) 90%, #000);
+  background: color-mix(in srgb, var(--col-gold) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--col-gold) 36%, transparent);
+}
+.work-prod-group-items { padding-left: .5rem; min-width: 0; }
+.work-prod-group--multi .work-prod-group-items { border-left: 2px solid color-mix(in srgb, var(--col-gold) 30%, transparent); }
+.work-item--in-group { padding: .35rem 0 .35rem .5rem; }
+/* Nombres largos en el header del grupo: truncan antes de romper la grilla */
+.work-prod-group-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Móvil vertical estrecho o tablet horizontal apretada */
+@media (max-width: 480px), (orientation: landscape) and (max-width: 900px) {
+  .work-prod-group-hdr { flex-wrap: wrap; gap: .35rem; }
+  .work-prod-group-qty { min-width: 1.8rem; font-size: 1rem; }
+  .work-prod-group-name { font-size: .88rem; flex: 1 1 100%; order: 2; white-space: normal; }
+  .work-prod-group-count { order: 3; }
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -462,8 +508,8 @@
       {% else %}Operación de pedidos{% endif %}
     </span>
     <h1 class="work-title">
-      {% if current_user.rol == 'cocina' %}{{ '🍳' if brand.es_comida else '📦' }} {{ role_label('cocina', short=True) }}
-      {% elif current_user.rol == 'preparacion' %}📆 {{ role_label('preparacion', short=True) }}
+      {% if current_user.rol == 'cocina' %}{{ role_label('cocina', short=True) }}
+      {% elif current_user.rol == 'preparacion' %}{{ role_label('preparacion', short=True) }}
       {% else %}Cola de Pedidos{% endif %}
     </h1>
     <p class="work-subtitle">
@@ -474,7 +520,7 @@
   </div>
   <div class="work-actions-top">
     <span id="prep-sse-indicator" class="prep-sse-indicator" data-state="init"
-          title="Conexión en vivo con la cola de pedidos">
+          title="Sincronización automática de la cola de pedidos">
       <span class="prep-sse-dot" aria-hidden="true"></span>
       <span id="prep-sse-label">Conectando…</span>
     </span>
@@ -520,26 +566,6 @@
 </svg>
 {% endmacro %}
 
-{# Banner explicativo del reparto de responsabilidades entre roles. Ayuda a
-   entender por qué esta cola muestra un subconjunto de pedidos. Solo se
-   muestra a los roles operativos, no a admin/super_admin que ven todo. #}
-{% if current_user.rol in ('cocina', 'preparacion') %}
-<aside class="prep-scope-banner" data-rol="{{ current_user.rol }}">
-  <span class="prep-scope-icon">
-    {% if current_user.rol == 'cocina' %}🚀{% else %}📆{% endif %}
-  </span>
-  <div class="prep-scope-txt">
-    {% if current_user.rol == 'cocina' %}
-    <strong>Tu cola muestra solo pedidos inmediatos.</strong>
-    Los pedidos con fecha de entrega van al rol <em>{{ role_label('preparacion', short=True) }}</em>.
-    {% else %}
-    <strong>Tu cola muestra solo pedidos con fecha de entrega.</strong>
-    Los pedidos inmediatos van al rol <em>{{ role_label('cocina', short=True) }}</em>.
-    {% endif %}
-  </div>
-</aside>
-{% endif %}
-
 <!-- Identidad + control explícito; no hacemos pasar toda la tarjeta por botón. -->
 <form method="POST" action="{{ url_for('preparador.toggle_disponible') }}"
       class="js-availability-form work-employee-card work-employee-toggle {% if disponible %}is-online{% else %}is-offline{% endif %}"
@@ -562,6 +588,20 @@
     <span><strong>{{ 'Online' if disponible else 'Offline' }}</strong><small>{{ 'Pausar recepción' if disponible else 'Ponerse online' }}</small></span>
   </button>
 </form>
+
+{# Alterna vista compacta ↔ detallada. La compacta agrupa por producto ("3×
+   Hamburguesa" con variaciones anidadas) y ayuda cuando hay muchas líneas
+   del mismo producto con distintas selecciones. Se persiste por sesión. #}
+{% if current_user.rol != 'preparacion' or vista_encargos == 'pedidos' %}
+<form method="POST" action="{{ url_for('preparador.toggle_vista_compacta') }}" class="work-vista-toggle">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="vista" value="{{ vista_encargos }}">
+  <button type="submit" class="work-vista-btn" aria-pressed="{{ 'true' if prep_vista_compacta else 'false' }}"
+          title="{{ 'Cambiar a vista detallada (una fila por variación)' if prep_vista_compacta else 'Cambiar a vista compacta (agrupada por producto)' }}">
+    {% if prep_vista_compacta %}📋 Vista compacta{% else %}📄 Vista detallada{% endif %}
+  </button>
+</form>
+{% endif %}
 
 
 <!-- Compañeros activos -->
@@ -641,7 +681,8 @@
   </div>
   {% for _fecha, _productos in totales_lote_por_fecha.items() %}
   {%- set _dias_hasta = (_fecha - hoy_date).days if hoy_date and _fecha else None -%}
-  <article class="prep-production-date">
+  <article class="prep-production-date"
+           data-date-state="{% if _dias_hasta is not none and _dias_hasta < 0 %}late{% elif _dias_hasta == 0 %}today{% elif _dias_hasta == 1 %}tomorrow{% else %}future{% endif %}">
     <header class="prep-production-date__head">
       <h3>
         {% if _dias_hasta == 0 %}Hoy{% elif _dias_hasta == 1 %}Mañana{% elif _dias_hasta is not none and _dias_hasta < 0 %}Vencido{% else %}{{ _fecha|weekday_es }}{% endif %}
@@ -661,6 +702,13 @@
           <span>Preparando: {{ _item.unidades_por_estado.get('armando', 0) }}</span>
           {% if _item.unidades_por_estado.get('listo', 0) %}<span>Listas: {{ _item.unidades_por_estado.get('listo', 0) }}</span>{% endif %}
         </div>
+        {% if _item.variaciones %}
+        <div class="prep-product-total__variants" aria-label="Desglose por tamaño y sabor">
+          {% for _variation in _item.variaciones %}
+          <span><strong>{{ _variation.unidades }}×</strong> {{ _variation.nombre }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
         {% if _item.es_lote and _item.estado_batch != 'listo' %}
         <form method="post" class="prep-product-total__action"
               action="{{ url_for('preparador.marcar_lote_listo', batch_id=_item.batch_id) }}"
@@ -711,26 +759,7 @@
 {% if current_user.rol != 'preparacion' or vista_encargos == 'pedidos' %}
 <div class="work-board">
 
-{% if current_user.rol != 'preparacion' %}
-{# ── Cabecera de sección "Preparar ahora" ── el texto se adapta al rol
-   para no confundir al preparador de encargos con "trabajo inmediato". #}
-<div class="prep-section-head" data-kind="ahora" style="grid-column:1/-1">
-  {{ _icon_clock() }}
-  <div>
-    {% if current_user.rol == 'preparacion' %}
-    <h2>Encargos para preparar hoy</h2>
-    <p class="prep-section-sub">Pedidos con fecha que ya entran en ventana de preparación.</p>
-    {% elif current_user.rol == 'cocina' %}
-    <h2>Preparar ahora</h2>
-    <p class="prep-section-sub">Pedidos inmediatos en cola de cocina.</p>
-    {% else %}
-    <h2>Preparar ahora</h2>
-    <p class="prep-section-sub">Trabajo inmediato disponible para tomar o continuar.</p>
-    {% endif %}
-  </div>
-  <span class="prep-section-count">{{ pendientes|length }}</span>
-</div>
-
+{% if current_user.rol != 'preparacion' or pendientes %}
 <!-- ── PENDIENTES ── -->
 <section class="work-lane work-lane--pendientes">
   <div class="work-lane-head">
@@ -776,8 +805,13 @@
       </div>
 
       <div class="work-items">
-
-        {% for item in lineas_preparacion_interna(pedido) %}
+        {% set _prep_items = lineas_preparacion_interna(pedido) %}
+        {% if prep_vista_compacta %}
+          {% for grupo in agrupar_items_por_producto(_prep_items) %}
+            {% include "preparador/_prod_grupo.html" %}
+          {% endfor %}
+        {% else %}
+        {% for item in _prep_items %}
         <div class="work-item">
           <span class="work-item-thumb" aria-hidden="true">
             {% if item.display_imagen_url %}
@@ -793,6 +827,7 @@
           </div>
         </div>
         {% endfor %}
+        {% endif %}
       </div>
 
       {% if pedido.notas %}
@@ -903,7 +938,7 @@
           <span class="work-time">{{ pedido.creado_en.strftime('%H:%M') }}</span>
           {% if fecha_ent %}
           <span class="work-muted-text" style="font-size:.68rem">
-            {% set dias = (fecha_ent - now().date()).days if fecha_ent else 0 %}
+            {% set dias = (fecha_ent - hoy_date).days if fecha_ent else 0 %}
             {% if dias == 0 %}HOY{% elif dias == 1 %}Mañana{% elif dias > 0 %}en {{ dias }}d{% else %}VENCIDO{% endif %}
           </span>
           {% endif %}
@@ -919,11 +954,14 @@
         </span>
         {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
       </div>
-      {% if _tipo2 == 'delivery' and pedido.direccion_entrega %}
-      <div class="work-address">{{ pedido.direccion_entrega }}</div>
-      {% endif %}
       <div class="work-items">
-        {% for item in lineas_preparacion_interna(pedido) %}
+        {% set _prep_items = lineas_preparacion_interna(pedido) %}
+        {% if prep_vista_compacta %}
+          {% for grupo in agrupar_items_por_producto(_prep_items) %}
+            {% include "preparador/_prod_grupo.html" %}
+          {% endfor %}
+        {% else %}
+        {% for item in _prep_items %}
         <div class="work-item">
           <span class="work-item-thumb" aria-hidden="true">
             {% if item.display_imagen_url %}
@@ -937,6 +975,7 @@
           <div style="min-width:0">{% include "_order_item_combo.html" %}</div>
         </div>
         {% endfor %}
+        {% endif %}
       </div>
       {% if pedido.notas %}<div class="work-note">Nota: {{ pedido.notas }}</div>{% endif %}
       <div class="work-action-row work-cta-group">
@@ -960,7 +999,7 @@
           <button type="submit" class="work-btn work-btn-primary full-width"
                   {% if not disponible or not puede_preparar_encargo(pedido) %}disabled aria-disabled="true"{% endif %}>
             {% if not disponible %}Ponte online para tomar
-            {% elif not puede_preparar_encargo(pedido) %}{% set _dias_falta = ((fecha_ent - now().date()).days) if fecha_ent else None %}{% if _dias_falta is not none and _dias_falta <= 0 %}Disponible en unos minutos{% elif _dias_falta == 1 %}⏳ Se abre mañana{% elif _dias_falta is not none %}⏳ Se abre en {{ _dias_falta }} días ({{ fecha_ent.strftime('%d/%m') }}){% else %}Fecha de entrega no fijada{% endif %}
+            {% elif not puede_preparar_encargo(pedido) %}{% set _dias_falta = ((fecha_ent - hoy_date).days) if fecha_ent else None %}{% if _dias_falta is not none and _dias_falta <= 0 %}Disponible en unos minutos{% elif _dias_falta == 1 %}⏳ Se abre mañana{% elif _dias_falta is not none %}⏳ Se abre en {{ _dias_falta }} días ({{ fecha_ent.strftime('%d/%m') }}){% else %}Fecha de entrega no fijada{% endif %}
             {% elif pedido.preparador_id == current_user.id %}▶ Empezar a preparar
             {% else %}🍳 Tomar y empezar{% endif %}</button>
         </form>
@@ -1005,7 +1044,6 @@
 
       <p class="work-client">
         {{ pedido.cliente.nombre }}
-        {% if pedido.cliente.telefono %}<a href="tel:{{ pedido.cliente.telefono }}" class="work-tel-link" title="Llamar al cliente">📞 {{ pedido.cliente.telefono }}</a>{% endif %}
         {% set _mins_prep = ((now() - pedido.creado_en).total_seconds() / 60) if now is defined else 0 %}
         {% if pedido.estado == 'armando' and _mins_prep > 15 %}
         <span class="prep-badge-urgent" title="Lleva más de 15 min en preparación">URGENTE</span>
@@ -1019,15 +1057,6 @@
           {% elif _tipo == 'recogida' %}{{ _icon_bag() }} Recogida
           {% else %}{{ _icon_clock() }} Programado{% endif %}
         </span>
-        {# Método de pago — crítico para que el repartidor sepa si debe cobrar #}
-        {% if pedido.metodo_pago %}
-        <span class="work-badge-pago work-badge-pago-{{ pedido.metodo_pago }}">
-          {% if pedido.metodo_pago == 'efectivo' %}💵 Efectivo
-          {% elif pedido.metodo_pago == 'bizum' %}📱 Bizum{% if not pedido.pago_confirmado %} · POR COBRAR{% endif %}
-          {% elif pedido.metodo_pago == 'tarjeta' %}💳 Tarjeta al entregar
-          {% else %}{{ pedido.metodo_pago }}{% endif %}
-        </span>
-        {% endif %}
         {% if pedido.zona_id %}<span class="work-badge-zone">📍 {{ pedido.zona_nombre_aplicada }}</span>{% endif %}
         {% if pedido.preparador_id and pedido.preparador_id != current_user.id %}
           <span class="work-badge-assigned">Asignado a {{ pedido.preparador.nombre }}</span>
@@ -1038,11 +1067,10 @@
         <span class="work-badge-assigned">⏳ Bar pendiente</span>
         {% endif %}
       </div>
-      {# Dirección — solo delivery, para que el repartidor no tenga que abrir el pedido #}
-      {% if _tipo == 'delivery' and pedido.direccion_entrega %}
-      <div class="work-address">🏠 {{ pedido.direccion_entrega }}</div>
-      {% endif %}
-
+      {# Nota: esta vista es la de "armando" con checkboxes por línea. La vista
+         compacta NO se aplica aquí — perderíamos el chequeo operativo por
+         variación. El preparador SIEMPRE ve una fila por variación cuando
+         está preparando. #}
       <div class="work-items" data-check-list>
         {% for item in lineas_preparacion_interna(pedido) %}
         <div class="work-item">
@@ -1194,19 +1222,20 @@ actualizarUrgencia();
 setInterval(actualizarUrgencia, 60000);
 prepRestoreChecks();
 
-// ── Real-time (SSE) con fallback a polling ────────────────────────
-// Objetivo: cocina ve cambios cuando ocurren, no cada 30s.
-// El backend expone `event: refresh` cuando cambia el conjunto de
-// pedidos pendiente/armando. Si el navegador o la red bloquean SSE,
-// caemos a poll cada 30s. En cualquier caso `location.reload()` es
-// suficiente: el server-side renderer es la fuente de verdad.
-(function initPrepStream() {
-  var url = {{ (sse_url or '/preparador/eventos')|tojson }};
-  var heartbeat = {{ (sse_heartbeat_s or 15)|int }};
-  var pollFallbackMs = 30000;
+// ── Sincronización de cola consciente de visibilidad ──────────────
+// Las conexiones SSE persistentes agotaban los threads del servidor cuando
+// había varias tablets abiertas. Esta consulta corta mantiene la vista al día,
+// no trabaja en segundo plano y nunca reserva una conexión.
+(function initPrepQueueSync() {
+  var url = {{ (queue_status_url or '/preparador/eventos')|tojson }};
+  var pollMs = {{ (queue_refresh_s or 6)|int }} * 1000;
   var indicator = document.getElementById('prep-sse-indicator');
   var label = document.getElementById('prep-sse-label');
+  var lastSignature = null;
+  var timer = null;
+  var requestRunning = false;
   var reloadPending = false;
+
   function setState(state, text) {
     if (indicator) indicator.setAttribute('data-state', state);
     if (label && text) label.textContent = text;
@@ -1214,54 +1243,52 @@ prepRestoreChecks();
   function scheduleReload() {
     if (reloadPending) return;
     reloadPending = true;
-    // Debounce corto para agrupar ráfagas de eventos.
     setTimeout(function () { location.reload(); }, 400);
   }
-  var supportsSse = ('EventSource' in window);
-  if (!supportsSse) {
-    setState('poll', 'Sin SSE · recargando cada 30s');
-    setInterval(function () { location.reload(); }, pollFallbackMs);
-    return;
+
+  function schedule(delay) {
+    clearTimeout(timer);
+    if (document.visibilityState === 'visible') {
+      timer = setTimeout(checkQueue, delay == null ? pollMs : delay);
+    }
   }
-  var es;
-  var fallbackTimer = null;
-  function armFallback() {
-    // Si en 3× heartbeat no llega nada, asumimos SSE muerto y hacemos poll.
-    if (fallbackTimer) clearTimeout(fallbackTimer);
-    fallbackTimer = setTimeout(function () {
-      setState('poll', 'Sin señal · recargando');
-      location.reload();
-    }, Math.max(30, heartbeat * 3) * 1000);
+
+  async function checkQueue() {
+    if (requestRunning || document.visibilityState !== 'visible') return;
+    requestRunning = true;
+    try {
+      var response = await fetch(url, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      var payload = await response.json();
+      if (!payload.ok || !payload.signature) throw new Error('Respuesta inválida');
+      if (lastSignature !== null && payload.signature !== lastSignature) {
+        setState('live', 'Cambio detectado');
+        scheduleReload();
+        return;
+      }
+      lastSignature = payload.signature;
+      if (payload.refresh_seconds) {
+        pollMs = Math.max(3000, Math.min(60000, Number(payload.refresh_seconds) * 1000));
+      }
+      setState('live', 'Sincronizado');
+    } catch (error) {
+      setState('poll', 'Reconectando…');
+    } finally {
+      requestRunning = false;
+      if (!reloadPending) schedule();
+    }
   }
-  try {
-    es = new EventSource(url);
-  } catch (err) {
-    setState('poll', 'SSE bloqueado · poll 30s');
-    setInterval(function () { location.reload(); }, pollFallbackMs);
-    return;
-  }
-  es.addEventListener('hello', function () {
-    setState('live', 'En vivo');
-    armFallback();
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') schedule(0);
+    else clearTimeout(timer);
   });
-  es.addEventListener('ping', function () {
-    setState('live', 'En vivo');
-    armFallback();
-  });
-  es.addEventListener('refresh', function () {
-    setState('live', 'Cambio detectado');
-    scheduleReload();
-  });
-  es.addEventListener('bye', function () {
-    // El server nos cierra tras SSE_MAX_LIFETIME. EventSource reconecta solo.
-    setState('live', 'Reanudando…');
-  });
-  es.onerror = function () {
-    setState('off', 'Reconectando…');
-    // No cerramos: EventSource intentará reconectar solo.
-    armFallback();
-  };
-  armFallback();
+  window.addEventListener('pagehide', function () { clearTimeout(timer); });
+  schedule(0);
 })();
 
 // Ping presencia cada 90s

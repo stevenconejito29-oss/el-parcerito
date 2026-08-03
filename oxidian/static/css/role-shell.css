@@ -14,10 +14,13 @@ body.ox-body-admin {
   /* Se recalculan en el contexto del panel porque la capa legacy establece
      su tema claro directamente en `body`; heredar la mezcla calculada en
      `:root` usaría por error el texto del tema oscuro. */
-  --brand-text: color-mix(in srgb, var(--brand-primary) 58%, var(--col-text));
-  --status-ok-text: color-mix(in srgb, var(--status-ok) 58%, var(--col-text));
-  --status-warn-text: color-mix(in srgb, var(--status-warn) 56%, var(--col-text));
-  --status-err-text: color-mix(in srgb, var(--status-err) 66%, var(--col-text));
+  /* Tintas accesibles sobre las superficies claras del panel. El color de
+     marca puro sigue reservado para fondos/bordes; como texto se mezcla con
+     la tinta principal para mantener WCAG AA incluso si la marca es amarilla. */
+  --brand-text: color-mix(in srgb, var(--brand-primary) 38%, var(--col-text));
+  --status-ok-text: color-mix(in srgb, var(--status-ok) 44%, var(--col-text));
+  --status-warn-text: color-mix(in srgb, var(--status-warn) 40%, var(--col-text));
+  --status-err-text: color-mix(in srgb, var(--status-err) 58%, var(--col-text));
   --role-shell-bg: color-mix(in srgb, var(--brand-accent) 9%, #11151b);
   --role-shell-raised: color-mix(in srgb, var(--brand-accent) 13%, #171c24);
   --role-shell-line: color-mix(in srgb, var(--brand-primary) 24%, rgba(255,255,255,.08));
@@ -99,7 +102,11 @@ body.ox-body-admin .ox-topbar {
 body.ox-body-admin .ox-topbar-title { color: #fff !important; }
 body.ox-body-admin .ox-topbar-mark {
   color: var(--brand-primary) !important;
+  background: transparent !important;
   text-shadow: 0 0 12px color-mix(in srgb, var(--brand-primary) 55%, transparent);
+}
+body.ox-body-admin:not(.operational-view) .work-eyebrow {
+  color: var(--brand-text) !important;
 }
 body.ox-body-admin .ox-topbar-role {
   color: #fff !important;

@@ -32,18 +32,25 @@ def utcnow():
 #  - repartidor: entrega los pedidos.
 #  - cliente: identidad comercial interna para pedidos, puntos y marketing.
 #    No es una cuenta autenticable ni dispone de panel público.
-ROLES = ["super_admin", "admin", "cocina", "preparacion", "repartidor", "cliente"]
+ROLES = [
+    "super_admin", "admin", "cocina", "preparacion", "repartidor",
+    "socio_producto", "cliente",
+]
 ROLES_AUTENTICABLES = frozenset({
     "super_admin", "admin", "preparacion", "repartidor", "cocina",
+    "socio_producto", "proveedor",
 })
 ROLES_LEGACY_PREPARACION = {"staff"}
 METODOS_PAGO_VALIDOS = ("efectivo", "bizum", "tarjeta")
 CUSTOMER_INTERNAL_EMAIL_DOMAIN = "customers.oxidian.internal"
 
-# LEGACY: modelo de acuerdo del flujo multi-proveedor/bar aliado.
-# El flujo operativo vigente no usa proveedores como rol ni como origen público;
-# se conserva para leer datos históricos hasta una migración de limpieza.
-MODELOS_ACUERDO_PROVEEDOR = ("stock_proveedor", "stock_propio_bar")
+# Acuerdos de socios de producto. Los dos últimos valores conservan contratos
+# históricos; las altas nuevas usan ``socio_porcentaje``.
+MODELOS_ACUERDO_PROVEEDOR = (
+    "socio_porcentaje",
+    "stock_proveedor",
+    "stock_propio_bar",
+)
 
 # 14 alérgenos de declaración obligatoria según Reglamento UE 1169/2011
 ALERGENOS_EU = [
@@ -300,13 +307,17 @@ class User(UserMixin, db.Model):
 
 
 def normalizar_metodo_pago(val):
-    """Normaliza métodos actuales y migra el alias histórico transferencia."""
-    v = (val or "efectivo").strip().lower()
+    """Normaliza métodos actuales sin convertir datos inválidos en efectivo.
+
+    ``None`` obliga a cada canal a elegir o rechazar explícitamente un método;
+    así un typo o payload manipulado no altera la conciliación de caja.
+    """
+    v = str(val or "").strip().lower()
     if v == "transferencia":
         return "bizum"
     if v in METODOS_PAGO_VALIDOS:
         return v
-    return "efectivo"
+    return None
 
 
 # ─────────────────────────────────────────────
@@ -330,6 +341,89 @@ TIPOS_STAFF_PAYMENT = frozenset({
 # debe ser insertable a mano — se excluye explícitamente aquí para no
 # tener que recordarlo en cada form.
 TIPOS_STAFF_PAYMENT_MANUAL = TIPOS_STAFF_PAYMENT - {"liquidacion_proveedor"}
+
+
+# ─────────────────────────────────────────────
+# CAJA — taxonomía de categorías
+# ─────────────────────────────────────────────
+#
+# El libro mayor (`Caja`) agrupa cada movimiento por categoría. Este catálogo
+# es la fuente única de verdad para el dashboard financiero: mapea cada
+# categoría al grupo contable (Ventas/Nóminas/Gastos/Liquidaciones/Devoluciones/
+# Otros), su etiqueta legible y el ícono.
+#
+# Convención de datos legacy: categorías escritas antes de esta refactorización
+# (`general`, `pago_staff`, `venta`, `devolucion`) siguen apareciendo en BD.
+# Se conservan aquí como aliases para que las vistas históricas no muestren
+# huecos. Cuando se registra un nuevo movimiento manual desde el panel, el
+# dropdown fuerza uno de los `CATEGORIAS_CAJA_MANUAL`.
+#
+# Grupos:
+#   ventas       — entradas por venta de producto (web, presencial, whatsapp)
+#   nominas      — pagos al staff propio (salarios, comisiones, bonus)
+#   liquidaciones — pagos a socios de capital y bares
+#   gastos       — costes operativos (insumos, alquiler, servicios…)
+#   devoluciones — reversas por cancelación o extravío
+#   otros        — ajustes, adelantos, sin clasificar
+
+CATEGORIAS_CAJA = {
+    # Ingresos
+    "venta_online":       {"grupo": "ventas", "label": "Venta online",         "tipo": "ingreso"},
+    "venta_whatsapp":     {"grupo": "ventas", "label": "Venta WhatsApp",       "tipo": "ingreso"},
+    "venta_presencial":   {"grupo": "ventas", "label": "Venta presencial (POS)", "tipo": "ingreso"},
+    "venta":              {"grupo": "ventas", "label": "Venta (legacy)",       "tipo": "ingreso"},
+    "comision_servicio":  {"grupo": "ventas", "label": "Comisión de servicio", "tipo": "ingreso"},
+    # Egresos — nóminas
+    "salario":            {"grupo": "nominas", "label": "Salario",             "tipo": "egreso"},
+    "comision_repartidor": {"grupo": "nominas", "label": "Comisión repartidor", "tipo": "egreso"},
+    "bonus":              {"grupo": "nominas", "label": "Bonus",               "tipo": "egreso"},
+    "pago_staff":         {"grupo": "nominas", "label": "Pago staff (mixto)",  "tipo": "egreso"},
+    # Egresos — liquidaciones a proveedores/socios
+    "liquidacion_socio":  {"grupo": "liquidaciones", "label": "Liquidación a socio", "tipo": "egreso"},
+    "liquidacion_bar":    {"grupo": "liquidaciones", "label": "Liquidación a bar",   "tipo": "egreso"},
+    # Egresos — gastos operativos
+    "compra_insumos":     {"grupo": "gastos", "label": "Compra de insumos",   "tipo": "egreso"},
+    "alquiler":           {"grupo": "gastos", "label": "Alquiler",             "tipo": "egreso"},
+    "servicios":          {"grupo": "gastos", "label": "Servicios (luz/agua/internet)", "tipo": "egreso"},
+    "gasto_operativo":    {"grupo": "gastos", "label": "Gasto operativo",      "tipo": "egreso"},
+    "impuestos":          {"grupo": "gastos", "label": "Impuestos y tasas",    "tipo": "egreso"},
+    "marketing":          {"grupo": "gastos", "label": "Marketing y publicidad", "tipo": "egreso"},
+    "mantenimiento":      {"grupo": "gastos", "label": "Mantenimiento y reparaciones", "tipo": "egreso"},
+    # Egresos — devoluciones
+    "devolucion":         {"grupo": "devoluciones", "label": "Devolución a cliente", "tipo": "egreso"},
+    "devolucion_proveedor": {"grupo": "devoluciones", "label": "Devolución a proveedor", "tipo": "egreso"},
+    # Ambos — otros
+    "adelanto":           {"grupo": "otros",  "label": "Adelanto",             "tipo": "egreso"},
+    "general":            {"grupo": "otros",  "label": "Sin clasificar",       "tipo": None},
+    "otro":               {"grupo": "otros",  "label": "Otro",                 "tipo": None},
+}
+
+# Categorías permitidas al registrar manualmente desde el panel admin.
+# Se excluyen las que crea el sistema automáticamente para no duplicar entradas
+# (venta_online/venta_whatsapp/venta_presencial vienen del checkout; pago_staff
+# y liquidaciones vienen de sus flujos dedicados; devoluciones vienen de la
+# cancelación).
+CATEGORIAS_CAJA_MANUAL_INGRESO = (
+    "otro",
+)
+CATEGORIAS_CAJA_MANUAL_EGRESO = (
+    "salario", "compra_insumos", "alquiler", "servicios", "gasto_operativo",
+    "impuestos", "marketing", "mantenimiento", "devolucion_proveedor",
+    "adelanto", "otro",
+)
+
+
+def caja_categoria_meta(categoria):
+    """Devuelve metadatos ``{grupo, label, tipo}`` de una categoría.
+
+    Categorías desconocidas (por si aparece una legacy no listada) caen a
+    ``otros`` con label = raw. Evita romper vistas históricas si alguien
+    escribió una categoría a mano en BD.
+    """
+    meta = CATEGORIAS_CAJA.get(categoria)
+    if meta:
+        return meta
+    return {"grupo": "otros", "label": (categoria or "sin clasificar").replace("_", " ").capitalize(), "tipo": None}
 
 
 class StaffPayment(db.Model):
@@ -394,11 +488,11 @@ class StaffPayment(db.Model):
 
 
 # ─────────────────────────────────────────────
-# PROVEEDORES (RESTAURANTES TERCEROS)
+# SOCIOS DE PRODUCTOS (tabla histórica ``proveedores``)
 # ─────────────────────────────────────────────
 
 class Proveedor(db.Model):
-    """Restaurante o tercero que prepara y despacha mercancía bajo nuestra marca.
+    """Socio que vende y despacha mercancía en el marketplace.
 
     Un proveedor:
     - tiene su propio stock por SKU (tabla `proveedor_productos`)
@@ -414,7 +508,8 @@ class Proveedor(db.Model):
     telefono = db.Column(db.String(20))
     email = db.Column(db.String(120))
     horario = db.Column(db.Text)
-    # Horario operativo del bar. Si están informados, los productos del bar
+    horario_semanal_json = db.Column(db.Text)
+    # Horario operativo histórico del socio. Si están informados, sus productos
     # se ocultan del catálogo público fuera de este rango. Si quedan NULL,
     # el bar se considera operativo 24h (sus productos siempre disponibles
     # según `Product.visible_ahora`).
@@ -427,8 +522,8 @@ class Proveedor(db.Model):
         default="stock_proveedor",
         server_default="stock_proveedor",
     )
-    # En modo 'stock_proveedor': sin uso para liquidación (margen = PVP − precio_costo).
-    # En modo 'stock_propio_bar': % del PVP que le pagamos al bar como fee de preparación.
+    # En ``socio_porcentaje`` es el porcentaje del PVP que conserva la tienda.
+    # Los otros significados se mantienen solo para acuerdos históricos.
     comision_pct = db.Column(db.Numeric(5, 2), default=0, server_default="0", nullable=False)
     iban = db.Column(db.String(40))
     notas = db.Column(db.Text)
@@ -454,11 +549,17 @@ class Proveedor(db.Model):
 
     @property
     def esta_abierto_ahora(self):
-        """True si ahora estamos dentro del horario operativo del bar.
+        """True si ahora estamos dentro del horario operativo del socio.
 
-        Si el bar no tiene hora_apertura/hora_cierre configurados, se considera
-        siempre abierto (devuelve True). Soporta horarios que cruzan medianoche
-        (ej: 18:00 a 02:00)."""
+        La programación semanal tiene prioridad. El par de horas histórico se
+        conserva como fallback y también soporta cruces de medianoche.
+        """
+        if self.horario_semanal_json:
+            try:
+                from schedule_service import schedule_is_open
+                return schedule_is_open(self.horario_semanal_json)
+            except ValueError:
+                return False
         if not self.hora_apertura or not self.hora_cierre:
             return True
         ahora = datetime.now().time()
@@ -466,6 +567,39 @@ class Proveedor(db.Model):
             return self.hora_apertura <= ahora <= self.hora_cierre
         # Cruza medianoche
         return ahora >= self.hora_apertura or ahora <= self.hora_cierre
+
+    @property
+    def es_socio_capital(self):
+        """El socio aporta inventario, pero la tienda opera su preparación."""
+        return (self.modelo_acuerdo or "").strip() == "socio_porcentaje"
+
+    @property
+    def disponible_para_venta(self):
+        """Disponibilidad comercial de la entidad propietaria.
+
+        Los horarios pertenecen únicamente a proveedores que despachan desde
+        un establecimiento externo. Un socio de capital vende durante el
+        horario general de la tienda, porque no prepara ni entrega el pedido.
+        """
+        return bool(
+            self.activo
+            and (self.es_socio_capital or self.esta_abierto_ahora)
+        )
+
+    @property
+    def horario_resumen(self):
+        if self.horario_semanal_json:
+            try:
+                from schedule_service import weekly_schedule_text
+                return weekly_schedule_text(self.horario_semanal_json)
+            except ValueError:
+                return "Horario inválido"
+        if self.hora_apertura and self.hora_cierre:
+            return (
+                f"Todos los días: {self.hora_apertura.strftime('%H:%M')}–"
+                f"{self.hora_cierre.strftime('%H:%M')}"
+            )
+        return "24 horas"
 
     def __repr__(self):
         return f"<Proveedor {self.nombre}>"
@@ -580,6 +714,20 @@ class Product(db.Model):
     proveedor_despachador_id = db.Column(
         db.Integer, db.ForeignKey("proveedores.id"), nullable=True
     )
+    # ── Alta de catálogo propuesta por socio ─────────────────────────
+    # NULL identifica productos creados directamente por administración.
+    # Un socio nunca puede publicar por sí mismo: registra una propuesta
+    # ligada a su entidad y Super Admin la aprueba o devuelve con observación.
+    partner_submission_status = db.Column(db.String(20), nullable=True)
+    partner_submitted_by = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=True
+    )
+    partner_submitted_at = db.Column(db.DateTime, nullable=True)
+    partner_reviewed_by = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=True
+    )
+    partner_reviewed_at = db.Column(db.DateTime, nullable=True)
+    partner_review_note = db.Column(db.Text, nullable=True)
 
     # LEGACY: proveedor_id apuntaba a users(id) con rol='proveedor'.
     # Mantenido para no romper datos antiguos durante la transición; la lógica
@@ -640,6 +788,12 @@ class Product(db.Model):
     proveedor = db.relationship("User", foreign_keys=[proveedor_id], backref="productos_proveedor")
     proveedor_despachador = db.relationship(
         "Proveedor", foreign_keys=[proveedor_despachador_id], backref="combos_despachados"
+    )
+    partner_submitter = db.relationship(
+        "User", foreign_keys=[partner_submitted_by]
+    )
+    partner_reviewer = db.relationship(
+        "User", foreign_keys=[partner_reviewed_by]
     )
     stock_entries = db.relationship("Stock", backref="producto", lazy="dynamic")
     reviews = db.relationship("Review", backref="producto", lazy="dynamic")
@@ -911,7 +1065,7 @@ class Product(db.Model):
             return False
         if proveedor_id is not None:
             proveedor = db.session.get(Proveedor, proveedor_id)
-            if not proveedor or not proveedor.activo:
+            if not proveedor or not proveedor.disponible_para_venta:
                 return False
         if self.es_combo:
             componentes = list(self.combo_items)
@@ -1247,8 +1401,15 @@ class Product(db.Model):
 
         return self._money(total)
 
-    def precio_combo_para_seleccion(self, seleccion_item_ids=None):
-        """Calcula el precio unitario real de un combo para una selección concreta."""
+    def precio_combo_para_seleccion(
+        self, seleccion_item_ids=None, presentation_ids_by_item=None,
+        unit_options_by_item=None,
+    ):
+        """Calcula el precio unitario real del combo y sus opciones por unidad.
+
+        ``unit_options_by_item`` conserva cada par tamaño/sabor por separado.
+        Los argumentos anteriores siguen admitidos para carritos y PWA viejas.
+        """
         if not self.es_combo:
             return self._money(self.precio_final)
 
@@ -1280,23 +1441,76 @@ class Product(db.Model):
                     counts[item.id] = counts.get(item.id, 0) + 1
 
         extras = Decimal("0.00")
+        presentation_adjustments = Decimal("0.00")
         base_seleccion = Decimal("0.00")
+        presentation_ids_by_item = presentation_ids_by_item or {}
+        unit_options_by_item = unit_options_by_item or {}
         for item in componentes:
             componente = item.componente
             if not componente:
                 continue
             cantidad_base = max(1, int(item.cantidad or 1))
-            component_price = self._money(componente.precio_final) + self._money(
-                item.presentacion.precio_extra if item.presentacion else 0
+            selected_presentation = item.presentacion
+            raw_presentation_id = (
+                presentation_ids_by_item.get(str(item.id))
+                if isinstance(presentation_ids_by_item, dict) else None
             )
+            if raw_presentation_id is None and isinstance(presentation_ids_by_item, dict):
+                raw_presentation_id = presentation_ids_by_item.get(item.id)
+            if raw_presentation_id:
+                try:
+                    selected_id = int(raw_presentation_id)
+                except (TypeError, ValueError):
+                    selected_id = 0
+                selected_presentation = next(
+                    (
+                        presentation for presentation in item.presentaciones_disponibles
+                        if presentation.id == selected_id
+                    ),
+                    selected_presentation,
+                )
             if item.es_seleccionable:
                 veces = max(0, int(counts.get(item.id, 0)))
                 if veces <= 0:
                     continue
-                base_seleccion += component_price * cantidad_base * veces
                 extras += self._money(item.precio_extra or 0) * veces
             else:
-                base_seleccion += component_price * cantidad_base
+                veces = 1
+
+            raw_units = None
+            if isinstance(unit_options_by_item, dict):
+                raw_units = (
+                    unit_options_by_item.get(str(item.id))
+                    or unit_options_by_item.get(item.id)
+                )
+            expected_units = cantidad_base * veces
+            selected_units = []
+            if isinstance(raw_units, list) and len(raw_units) == expected_units:
+                available_by_id = {
+                    presentation.id: presentation
+                    for presentation in item.presentaciones_disponibles
+                }
+                for row in raw_units:
+                    raw_id = row.get("presentation_id") if isinstance(row, dict) else None
+                    try:
+                        presentation_id = int(raw_id)
+                    except (TypeError, ValueError):
+                        presentation_id = 0
+                    selected_units.append(
+                        available_by_id.get(presentation_id, selected_presentation)
+                    )
+            else:
+                selected_units = [selected_presentation] * expected_units
+
+            default_extra = self._money(
+                item.presentacion.precio_extra if item.presentacion else 0
+            )
+            for presentation in selected_units:
+                chosen_extra = self._money(
+                    presentation.precio_extra if presentation else 0
+                )
+                base_seleccion += self._money(componente.precio_final) + chosen_extra
+                presentation_adjustments += chosen_extra - default_extra
 
         if self.combo_precio_modo_normalizado == "descuento_porcentaje":
             precio = self.precio_desde_descuento_combo(
@@ -1308,7 +1522,9 @@ class Product(db.Model):
         # (Decimal), NO de `precio_final` (float, refleja el campo `precio`).
         # Mezclar float con Decimal reventaba con TypeError cuando había extras.
         base_fijo = self._money(self.combo_precio_base or self.precio_final)
-        return self._money(base_fijo + self._money(extras))
+        return self._money(
+            base_fijo + self._money(extras) + self._money(presentation_adjustments)
+        )
 
     def precio_desde_descuento_combo(self, base=None, descuento_pct=None):
         base_money = self._money(base if base is not None else self.combo_precio_base)
@@ -1327,10 +1543,21 @@ class Product(db.Model):
 
     @property
     def visible_ahora(self):
-        """True si el producto debe mostrarse según horario y día de semana."""
+        """True si el producto debe mostrarse según horario y día de semana.
+
+        Zona horaria fijada a Europe/Madrid: los administradores escriben las
+        franjas pensando en la hora de la tienda, no en la del servidor. Si
+        `zoneinfo` no está disponible (Python <3.9 o sin tzdata), cae a hora
+        local como último recurso — el warning queda en logs, no rompe UX.
+        """
         if not self.hora_inicio_visibilidad or not self.hora_fin_visibilidad:
             return True
-        ahora = datetime.now().time()
+        try:
+            from zoneinfo import ZoneInfo
+            ahora_dt = datetime.now(ZoneInfo("Europe/Madrid"))
+        except Exception:
+            ahora_dt = datetime.now()
+        ahora = ahora_dt.time()
         if self.hora_inicio_visibilidad <= self.hora_fin_visibilidad:
             en_horario = self.hora_inicio_visibilidad <= ahora <= self.hora_fin_visibilidad
         else:
@@ -1341,7 +1568,7 @@ class Product(db.Model):
         if self.dias_semana_json:
             try:
                 dias = json.loads(self.dias_semana_json)
-                dia_actual = datetime.now().weekday()  # 0=lun, 6=dom
+                dia_actual = ahora_dt.weekday()  # 0=lun, 6=dom
                 if dia_actual not in dias:
                     return False
             except (json.JSONDecodeError, TypeError):
@@ -1980,6 +2207,11 @@ class ComboItem(db.Model):
         db.ForeignKey("product_presentations.id", ondelete="SET NULL"),
         nullable=True,
     )
+    fixed_flavor_option_id = db.Column(
+        db.Integer,
+        db.ForeignKey("product_extra_options.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # Cuando True, el cliente puede elegir el sabor de ESTE componente en el
     # checkout del combo — SIEMPRE Y CUANDO el componente (producto suelto)
     # tenga al menos un ProductExtraGroup tipo="sabor" activo. Si no lo tiene,
@@ -1993,6 +2225,9 @@ class ComboItem(db.Model):
     componente = db.relationship("Product", foreign_keys=[producto_id])
     variante = db.relationship("ProductVariant", foreign_keys=[variant_id])
     presentacion = db.relationship("ProductPresentation", foreign_keys=[presentation_id])
+    fixed_flavor_option = db.relationship(
+        "ProductExtraOption", foreign_keys=[fixed_flavor_option_id]
+    )
     # Subset de sabores permitidos para ESTE componente en ESTE combo. Si la
     # relación está vacía → "sin restricción, todos los sabores activos del
     # producto están disponibles". Es lazy=select para no penalizar el listado
@@ -2021,9 +2256,27 @@ class ComboItem(db.Model):
              a esa lista. Sin subset ⇒ todas las opciones activas.
         Vacío si el flag está desactivado o el producto no tiene sabor activo.
         """
-        if not self.permite_sabor_cliente or not self.componente:
+        return self.sabores_disponibles_para(self.presentacion)
+
+    def sabores_disponibles_para(self, presentation=None):
+        """Sabores válidos para este componente y tamaño.
+
+        Intersecta la política del producto/tamaño con el subconjunto definido
+        en el combo. Así ningún canal ofrece un sabor que el producto no admite
+        en la presentación seleccionada.
+        """
+        if (
+            not self.permite_sabor_cliente
+            and not self.fixed_flavor_option_id
+        ) or not self.componente:
             return []
+        from product_options_service import flavor_policy_for_presentation
+
         allowed_ids = set(self.allowed_flavor_option_ids)
+        presentation_policy = flavor_policy_for_presentation(
+            self.componente, presentation
+        )
+        policy_ids = set(presentation_policy["allowed_option_ids"])
         grupos = ProductExtraGroup.query.filter_by(
             producto_id=self.componente.id, tipo="sabor", activo=True,
         ).order_by(ProductExtraGroup.orden, ProductExtraGroup.id).all()
@@ -2034,9 +2287,39 @@ class ComboItem(db.Model):
                 # lista del admin. Esto blinda contra opciones nuevas del
                 # producto que el admin aún no ha revisado (no se filtran a
                 # menos que exista una restricción explícita).
-                if not allowed_ids or opt.id in allowed_ids:
+                if opt.id in policy_ids and (not allowed_ids or opt.id in allowed_ids):
                     opciones.append(opt)
         return opciones
+
+    @property
+    def sabores_configurados(self):
+        """Unión de sabores configurados para renderizar selectores dinámicos."""
+        if (
+            not self.permite_sabor_cliente
+            and not self.fixed_flavor_option_id
+        ) or not self.componente:
+            return []
+        allowed_ids = set(self.allowed_flavor_option_ids)
+        grupos = ProductExtraGroup.query.filter_by(
+            producto_id=self.componente.id, tipo="sabor", activo=True,
+        ).order_by(ProductExtraGroup.orden, ProductExtraGroup.id).all()
+        return [
+            option
+            for group in grupos
+            for option in group.opciones.filter_by(activo=True).all()
+            if not allowed_ids or option.id in allowed_ids
+        ]
+
+    def presentation_ids_for_flavor(self, option):
+        """Presentaciones seleccionables en las que el sabor sigue permitido."""
+        rows = list(self.presentaciones_disponibles or [])
+        if not rows:
+            return []
+        return [
+            presentation.id
+            for presentation in rows
+            if option in self.sabores_disponibles_para(presentation)
+        ]
 
     # ── Tamaños permitidos (mismo patrón M2M que sabores) ──
     # Si el M2M está vacío → se usa `presentation_id` fijo (comportamiento
@@ -2629,6 +2912,12 @@ class Order(db.Model):
     metodo_pago = db.Column(db.String(30))
     tipo_entrega_cliente = db.Column(db.String(20), default="delivery", server_default="delivery", nullable=False)
     direccion_entrega = db.Column(db.Text)
+    # Coordenadas concedidas expresamente por el cliente en checkout. Son un
+    # snapshot operativo: permiten comprobar la cobertura sin depender de que
+    # un geocodificador interprete correctamente el texto y guían al reparto.
+    direccion_lat = db.Column(db.Numeric(9, 6))
+    direccion_lng = db.Column(db.Numeric(9, 6))
+    direccion_precision_m = db.Column(db.Numeric(10, 2))
     notas = db.Column(db.Text)
 
     # Staff asignado
@@ -2647,6 +2936,13 @@ class Order(db.Model):
     proveedor_preparado_en = db.Column(db.DateTime)
 
     creado_en = db.Column(db.DateTime, default=utcnow)
+    # Hitos operativos estructurados. `OrderEvent` conserva el detalle
+    # auditable, mientras estas columnas permiten analizar tiempos sin inferir
+    # el proceso desde textos o estados actuales.
+    preparado_en = db.Column(db.DateTime)
+    repartidor_asignado_en = db.Column(db.DateTime)
+    repartidor_tomado_en = db.Column(db.DateTime)
+    en_ruta_en = db.Column(db.DateTime)
     entregado_en = db.Column(db.DateTime)
 
     zona_id = db.Column(db.Integer, db.ForeignKey("zonas_entrega.id"))
@@ -2945,10 +3241,15 @@ class Order(db.Model):
             raise ValueError(f"No se puede avanzar un pedido en estado '{self.estado}'")
         idx = ESTADOS_PEDIDO.index(self.estado)
         self.estado = ESTADOS_PEDIDO[idx + 1]
+        ahora = utcnow()
+        if self.estado == "listo" and self.preparado_en is None:
+            self.preparado_en = ahora
         if self.estado == "en_ruta":
+            if self.en_ruta_en is None:
+                self.en_ruta_en = ahora
             self.generar_codigo_confirmacion()
         if self.estado == "entregado":
-            self.entregado_en = utcnow()
+            self.entregado_en = ahora
 
     # La cancelación de un pedido vive en `services.cancelar_pedido_operativo`
     # — toca stock, puntos, cupones, afiliados y comisiones. Mantenerla como
@@ -3311,13 +3612,28 @@ def snapshot_producto_para_pedido(producto, origen_operativo=None):
         }
         if proveedor else None
     )
+    precio_costo_snapshot = producto.precio_costo
+    precio_costo_fuente = "producto" if precio_costo_snapshot is not None else None
+    if proveedor_id:
+        fila_origen = ProveedorProducto.query.filter_by(
+            proveedor_id=proveedor_id,
+            producto_id=producto.id,
+            activo=True,
+        ).first()
+        if fila_origen and fila_origen.precio_costo is not None:
+            precio_costo_snapshot = fila_origen.precio_costo
+            precio_costo_fuente = "proveedor"
     return {
         "id": producto.id,
         "nombre": producto.nombre,
         "descripcion": producto.descripcion,
         "precio": float(producto.precio or 0),
         "precio_final": float(producto.precio_final or 0),
-        "precio_costo": float(producto.precio_costo or 0) if producto.precio_costo is not None else None,
+        "precio_costo": (
+            float(precio_costo_snapshot)
+            if precio_costo_snapshot is not None else None
+        ),
+        "precio_costo_fuente": precio_costo_fuente,
         "categoria_id": producto.categoria_id,
         "categoria_nombre": producto.categoria.nombre if producto.categoria else None,
         "imagen_url": producto.imagen_url,
@@ -3403,7 +3719,14 @@ def metadata_componente_combo(combo_item, proveedor_despachador_id=None):
         ) or "ambas",
         "proveedor_despachador_id": proveedor_despachador_id,
         "origen_operativo": "proveedor" if proveedor_despachador_id else "propio",
-        "precio_costo_congelado": None,
+        "precio_costo_congelado": (
+            float(componente.precio_costo)
+            if componente and componente.precio_costo is not None else None
+        ),
+        "precio_costo_fuente": (
+            "producto"
+            if componente and componente.precio_costo is not None else None
+        ),
         "presentacion": (
             {
                 "id": combo_item.presentacion.id,
@@ -3421,6 +3744,7 @@ def metadata_componente_combo(combo_item, proveedor_despachador_id=None):
         ).first()
         if fila and fila.precio_costo is not None:
             snapshot["precio_costo_congelado"] = float(fila.precio_costo)
+            snapshot["precio_costo_fuente"] = "proveedor"
     return snapshot
 
 
@@ -3639,6 +3963,54 @@ class Caja(db.Model):
             ),
         ),
     )
+
+
+# ─────────────────────────────────────────────
+# CIERRE DE CAJA DIARIO
+# ─────────────────────────────────────────────
+#
+# Snapshot inmutable de los números del día. Se congelan al cerrar; una vez
+# creado el registro para una fecha, no se puede recalcular (el operador
+# tendría que borrar y volver a cerrar manualmente, dejando huella en
+# auditoría). Sirve como fuente autoritativa para la asesoría contable —
+# el libro mayor `Caja` puede recibir ajustes posteriores, pero los cierres
+# ya emitidos conservan la fotografía del momento.
+
+class DailyClosure(db.Model):
+    __tablename__ = "daily_closures"
+
+    id = db.Column(db.Integer, primary_key=True)
+    # Fecha contable cerrada. Único por día — evita cierres duplicados.
+    fecha = db.Column(db.Date, nullable=False, unique=True, index=True)
+
+    # Ingresos por método de pago (solo vinculados a pedidos).
+    ingresos_efectivo = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    ingresos_bizum    = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    ingresos_tarjeta  = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    # Ingresos manuales o legacy sin método definido.
+    ingresos_otros    = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+
+    # Egresos agrupados por concepto contable (usando la taxonomía CATEGORIAS_CAJA).
+    egresos_nominas      = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    egresos_liquidaciones = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    egresos_gastos       = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    egresos_devoluciones = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    egresos_otros        = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+
+    # Saldo neto = ingresos_total - egresos_total, calculado al cerrar.
+    saldo_neto = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+
+    # Conciliación de efectivo físico: el operador cuenta la caja real y lo
+    # escribe aquí; el descuadre queda registrado (puede ser + o -).
+    efectivo_declarado = db.Column(db.Numeric(10, 2))
+    descuadre_efectivo = db.Column(db.Numeric(10, 2))
+
+    notas = db.Column(db.Text)
+
+    cerrado_por = db.Column(db.Integer, db.ForeignKey("users.id"))
+    cerrado_en  = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    autor = db.relationship("User", foreign_keys=[cerrado_por])
 
 
 # ─────────────────────────────────────────────

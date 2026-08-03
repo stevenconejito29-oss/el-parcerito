@@ -53,19 +53,23 @@ def chk(cond, msg):
 
 def setup_pedido(cliente, producto, cantidad, *, repartidor=None,
                  metodo_pago="efectivo", pago_confirmado=True,
-                 puntos_por_euro=None):
+                 puntos_por_euro=None, costo_envio=Decimal("3.00")):
     """Construye un pedido en estado 'en_ruta' listo para entrega."""
     ts = str(int(time.time() * 1000))[-7:]
     pvp = float(producto.precio_final)
+    subtotal = Decimal(str(pvp)) * cantidad
+    envio = Decimal(str(costo_envio or 0))
     p = Order(
         numero_pedido=f"FIN-{ts}",
         cliente_id=cliente.id,
         estado="en_ruta",
-        subtotal=pvp * cantidad,
-        total=pvp * cantidad,
+        subtotal=subtotal,
+        total=subtotal + envio,
+        costo_envio_snapshot=envio,
         metodo_pago=metodo_pago,
         pago_confirmado=pago_confirmado,
         origen="online",
+        tipo_entrega_cliente="delivery",
         repartidor_id=repartidor.id if repartidor else None,
     )
     db.session.add(p)

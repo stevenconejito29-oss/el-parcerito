@@ -2,8 +2,7 @@
 {% block title %}Editar zona{% endblock %}
 {% block content %}
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css', v=asset_version) }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/zone-coverage.css') }}">
 
 <div class="flex items-center gap-3 mb-5">
@@ -61,7 +60,8 @@
     <div class="zone-coverage-editor">
       <div class="zone-coverage-editor__map" data-zone-map
            data-center-lat="{{ zona.centro_lat if zona.centro_lat is not none else mapa_lat }}"
-           data-center-lng="{{ zona.centro_lng if zona.centro_lng is not none else mapa_lng }}"></div>
+           data-center-lng="{{ zona.centro_lng if zona.centro_lng is not none else mapa_lng }}"
+           data-center-configured="{{ 'true' if (zona.centro_lat is not none and zona.centro_lng is not none) or (mapa_lat and mapa_lng) else 'false' }}"></div>
       <div class="zone-coverage-editor__toolbar">
         <button type="button" class="oa-btn oa-btn--sm oa-btn--brand" data-zone-locate>Usar mi ubicación</button>
         <button type="button" class="oa-btn oa-btn--sm" data-zone-undo>Deshacer punto</button>
@@ -78,7 +78,7 @@
     </summary>
     <p class="text-xs mt-2 mb-3" style="color:var(--col-muted)">
       Se conserva para zonas antiguas. Solo se utiliza si no hay un contorno
-      detallado en esta zona. Para Carmona es preferible dibujar el perímetro.
+      detallado en esta zona. Para una cobertura urbana irregular es preferible dibujar el perímetro.
     </p>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
       <div class="ox-field">
@@ -95,7 +95,7 @@
       </div>
       <div class="ox-field">
         <label class="ox-label">Radio (km)</label>
-        <input type="number" name="radio_km" step="0.1" min="0" max="200"
+        <input type="number" name="radio_km" step="0.1" min="0.1" max="25"
                value="{{ zona.radio_km or '' }}" class="ox-input"
                placeholder="5">
       </div>
@@ -146,8 +146,7 @@
   </div>
 </form>
 
-<script nonce="{{ csp_nonce() }}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/zone-coverage-editor.js') }}"></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='vendor/leaflet/leaflet.js', v=asset_version) }}"></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/zone-coverage-editor.js', v=asset_version) }}"></script>
 
 {% endblock %}

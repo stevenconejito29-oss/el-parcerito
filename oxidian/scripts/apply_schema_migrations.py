@@ -20,6 +20,7 @@ from extensions import db
 from models import (
     ComboItem,
     ComboGroup,
+    DailyClosure,
     IdempotencyKey,
     KnowledgeEntry,
     NotificationOutbox,
@@ -202,6 +203,83 @@ def _migrate_order_confirmacion_estado():
         db.session.execute(text(
             "ALTER TABLE orders ADD COLUMN confirmacion_en TIMESTAMP"
         ))
+
+
+def _migrate_order_operational_timestamps():
+    """Añade hitos medibles y reconstruye únicamente datos demostrables.
+
+    Los cambios de estado históricos contienen la hora real de preparado y
+    salida. Para pedidos antiguos sin evento de aceptación usamos la salida
+    como límite superior: sabemos que el repartidor ya lo había tomado en ese
+    instante, pero no inventamos una hora anterior.
+    """
+    inspector = inspect(db.engine)
+    if not inspector.has_table("orders"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("orders")}
+    for column_name in (
+        "preparado_en",
+        "repartidor_asignado_en",
+        "repartidor_tomado_en",
+        "en_ruta_en",
+    ):
+        if column_name not in existing:
+            db.session.execute(text(
+                f"ALTER TABLE orders ADD COLUMN {column_name} TIMESTAMP"
+            ))
+
+    if not inspector.has_table("order_events"):
+        return
+    db.session.execute(text("""
+        UPDATE orders
+           SET preparado_en = (
+               SELECT MIN(order_events.creado_en)
+                 FROM order_events
+                WHERE order_events.pedido_id = orders.id
+                  AND order_events.estado_nuevo = 'listo'
+           )
+         WHERE preparado_en IS NULL
+    """))
+    db.session.execute(text("""
+        UPDATE orders
+           SET en_ruta_en = (
+               SELECT MIN(order_events.creado_en)
+                 FROM order_events
+                WHERE order_events.pedido_id = orders.id
+                  AND order_events.estado_nuevo = 'en_ruta'
+           )
+         WHERE en_ruta_en IS NULL
+    """))
+    db.session.execute(text("""
+        UPDATE orders
+           SET repartidor_asignado_en = (
+               SELECT MIN(order_events.creado_en)
+                 FROM order_events
+                WHERE order_events.pedido_id = orders.id
+                  AND (
+                      order_events.tipo = 'repartidor_asignado'
+                      OR (
+                          order_events.tipo = 'responsable_reasignado'
+                          AND order_events.metadata_json LIKE '%repartidor_id%'
+                      )
+                  )
+           )
+         WHERE repartidor_asignado_en IS NULL
+    """))
+    db.session.execute(text("""
+        UPDATE orders
+           SET repartidor_tomado_en = COALESCE(
+               (
+                   SELECT MIN(order_events.creado_en)
+                     FROM order_events
+                    WHERE order_events.pedido_id = orders.id
+                      AND order_events.tipo = 'repartidor_tomado'
+               ),
+               en_ruta_en
+           )
+         WHERE repartidor_tomado_en IS NULL
+           AND en_ruta_en IS NOT NULL
+    """))
 
 
 def _migrate_order_confirmacion_nivel():
@@ -690,6 +768,79 @@ def _migrate_proveedor_horario():
         db.session.execute(text("ALTER TABLE proveedores ADD COLUMN hora_cierre TIME"))
 
 
+def _migrate_partner_weekly_schedule():
+    """Añade franjas semanales sin alterar el horario histórico."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("proveedores"):
+        return
+    cols = {col["name"] for col in inspector.get_columns("proveedores")}
+    if "horario_semanal_json" not in cols:
+        db.session.execute(text(
+            "ALTER TABLE proveedores ADD COLUMN horario_semanal_json TEXT"
+        ))
+
+
+def _migrate_partner_product_submissions():
+    """Añade trazabilidad explícita al alta de productos propuesta por socios."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("products"):
+        return
+    cols = {col["name"] for col in inspector.get_columns("products")}
+    definitions = {
+        "partner_submission_status": "VARCHAR(20)",
+        "partner_submitted_by": "INTEGER",
+        "partner_submitted_at": "TIMESTAMP",
+        "partner_reviewed_by": "INTEGER",
+        "partner_reviewed_at": "TIMESTAMP",
+        "partner_review_note": "TEXT",
+    }
+    for name, sql_type in definitions.items():
+        if name not in cols:
+            db.session.execute(text(
+                f"ALTER TABLE products ADD COLUMN {name} {sql_type}"
+            ))
+    db.session.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_products_partner_submission_status "
+        "ON products (partner_submission_status)"
+    ))
+    if db.engine.dialect.name == "postgresql":
+        db.session.execute(text("""
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'products_partner_submitted_by_fkey'
+              ) THEN
+                ALTER TABLE products
+                  ADD CONSTRAINT products_partner_submitted_by_fkey
+                  FOREIGN KEY (partner_submitted_by) REFERENCES users(id)
+                  ON DELETE SET NULL;
+              END IF;
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'products_partner_reviewed_by_fkey'
+              ) THEN
+                ALTER TABLE products
+                  ADD CONSTRAINT products_partner_reviewed_by_fkey
+                  FOREIGN KEY (partner_reviewed_by) REFERENCES users(id)
+                  ON DELETE SET NULL;
+              END IF;
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'ck_products_partner_submission_status'
+              ) THEN
+                ALTER TABLE products
+                  ADD CONSTRAINT ck_products_partner_submission_status
+                  CHECK (
+                    partner_submission_status IS NULL OR
+                    partner_submission_status IN ('pending', 'approved', 'rejected')
+                  );
+              END IF;
+            END
+            $$;
+        """))
+
+
 def _migrate_provider_operator_phones():
     """Conserva acceso legacy solo cuando el enlace proveedor-operador es inequívoco."""
     if not inspect(db.engine).has_table("proveedores"):
@@ -996,6 +1147,24 @@ def _migrate_service_commission_snapshots():
         "WHERE merchant_net_amount = 0 AND COALESCE(total, 0) <> 0 "
         "AND service_commission_amount = 0"
     ))
+
+
+def _migrate_order_delivery_coordinates():
+    """Persiste la ubicación consentida usada para validar y ejecutar reparto."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("orders"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("orders")}
+    columns = {
+        "direccion_lat": "NUMERIC(9, 6)",
+        "direccion_lng": "NUMERIC(9, 6)",
+        "direccion_precision_m": "NUMERIC(10, 2)",
+    }
+    for name, definition in columns.items():
+        if name not in existing:
+            db.session.execute(text(
+                f"ALTER TABLE orders ADD COLUMN {name} {definition}"
+            ))
 
 
 def _migrate_reusable_extra_catalog():
@@ -1406,6 +1575,42 @@ def _migrate_public_nostalgia_copy():
         })
 
 
+def _migrate_public_professional_first_impression():
+    """Actualiza solo la copia pública estándar; conserva la personalizada."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("site_config"):
+        return
+    replacements = {
+        "UI_HEADER_MEMORY_LINE": (
+            "Colombia, cerquita de ti",
+            "Calidad colombiana, cerquita de ti",
+        ),
+        "UI_HERO_EYEBROW": (
+            "Hecho con raíces colombianas",
+            "Tradición colombiana · servicio de confianza",
+        ),
+        "UI_HERO_TITLE": (
+            "Un bocado y vuelves a casa",
+            "El sabor que recuerda a casa, con la calidad que esperas.",
+        ),
+        "UI_HERO_SUBTITLE": (
+            "Sabores que despiertan domingos en familia, charlas de barrio y el orgullo de llevar a Colombia siempre contigo.",
+            "Productos seleccionados, preparación cuidada y un servicio en el que puedes confiar.",
+        ),
+    }
+    statement = text("""
+        UPDATE site_config
+           SET valor = :new_value
+         WHERE clave = :key AND valor = :old_value
+    """)
+    for key, (old_value, new_value) in replacements.items():
+        db.session.execute(statement, {
+            "key": key,
+            "old_value": old_value,
+            "new_value": new_value,
+        })
+
+
 MIGRATIONS = [
     {
         "id": "20260526_01_order_events_notification_outbox",
@@ -1507,6 +1712,16 @@ MIGRATIONS = [
         "id": "20260717_01_order_zone_snapshots",
         "description": "Congelar coste, tarifa, nombre y SLA de la zona aplicada al pedido",
         "fn": _migrate_order_zone_snapshots,
+    },
+    {
+        "id": "20260729_01_order_delivery_coordinates",
+        "description": "Guardar ubicación consentida y precisión para cobertura y reparto",
+        "fn": _migrate_order_delivery_coordinates,
+    },
+    {
+        "id": "20260729_02_order_operational_timestamps",
+        "description": "Guardar hitos de preparación, asignación, aceptación y salida del pedido",
+        "fn": _migrate_order_operational_timestamps,
     },
     {
         "id": "20260618_01_proveedor_horario",
@@ -1764,6 +1979,37 @@ MIGRATIONS = [
         ),
         "fn": lambda: _migrate_combo_item_allowed_presentations(),
     },
+    {
+        "id": "20260724_01_combo_item_fixed_flavor",
+        "description": (
+            "Permite fijar un sabor concreto por componente de combo, separado "
+            "del modo en que el cliente distribuye sabores."
+        ),
+        "fn": lambda: _migrate_combo_item_fixed_flavor(),
+    },
+    {
+        "id": "20260727_01_partner_weekly_schedule",
+        "description": "Añade múltiples franjas horarias por día a socios de productos.",
+        "fn": lambda: _migrate_partner_weekly_schedule(),
+    },
+    {
+        "id": "20260727_02_partner_product_submissions",
+        "description": "Añade revisión y trazabilidad a productos registrados por socios.",
+        "fn": lambda: _migrate_partner_product_submissions(),
+    },
+    {
+        "id": "20260729_01_daily_closures",
+        "description": "Snapshot inmutable del cierre de caja diario para contabilidad.",
+        "tables": [DailyClosure.__table__],
+    },
+    {
+        "id": "20260803_01_public_professional_first_impression",
+        "description": (
+            "Mejora la primera impresión del menú con una voz profesional "
+            "sin sobrescribir textos personalizados."
+        ),
+        "fn": _migrate_public_professional_first_impression,
+    },
 ]
 
 
@@ -1977,6 +2223,38 @@ def _migrate_combo_item_permite_sabor_cliente():
         "ALTER TABLE combo_items ADD COLUMN permite_sabor_cliente BOOLEAN "
         "NOT NULL DEFAULT false"
     ))
+
+
+def _migrate_combo_item_fixed_flavor():
+    inspector = inspect(db.engine)
+    combo_columns = {
+        column["name"] for column in inspector.get_columns("combo_items")
+    } if inspector.has_table("combo_items") else set()
+    if not combo_columns:
+        return
+    if "fixed_flavor_option_id" not in combo_columns:
+        db.session.execute(text(
+            "ALTER TABLE combo_items ADD COLUMN fixed_flavor_option_id INTEGER NULL "
+            "REFERENCES product_extra_options(id) ON DELETE SET NULL"
+        ))
+        db.session.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_combo_items_fixed_flavor "
+            "ON combo_items (fixed_flavor_option_id)"
+        ))
+    # Limpieza lógica del modelo antiguo: se conservan las filas para
+    # trazabilidad, pero dejan de aparecer como opciones del combo padre.
+    db.session.execute(text("""
+        UPDATE product_extra_groups
+        SET activo = false
+        WHERE activo = true
+          AND producto_id IN (SELECT id FROM products WHERE es_combo = true)
+    """))
+    db.session.execute(text("""
+        UPDATE product_presentations
+        SET activo = false
+        WHERE activo = true
+          AND producto_id IN (SELECT id FROM products WHERE es_combo = true)
+    """))
 
 
 def _migrate_combo_item_allowed_flavor_options():

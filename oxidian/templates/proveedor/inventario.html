@@ -12,16 +12,27 @@
   <div>
     <span class="prov-eyebrow">Aliado #{{ proveedor.id }}</span>
     <h1>Inventario de {{ proveedor.nombre }}</h1>
-    <p>Actualiza las unidades disponibles y el coste unitario. Administración gestiona qué productos tienes asignados.</p>
+    <p>
+      Tú financias estas existencias.
+      {% if current_user.rol == 'socio_producto' %}
+      La tienda las custodia y actualiza; aquí puedes consultar su estado en tiempo real.
+      {% else %}
+      Actualiza las unidades disponibles sin mezclarlas con el stock de la tienda.
+      {% endif %}
+    </p>
   </div>
   <div class="prov-card-actions">
     <span class="prov-status {{ 'is-active' if proveedor.activo else 'is-inactive' }}">{{ 'Activo' if proveedor.activo else 'Inactivo' }}</span>
+    {% if current_user.rol in ('socio_producto', 'proveedor') %}
+    <a href="{{ url_for('proveedor.registrar_producto') }}" class="prov-btn prov-btn-primary">+ Registrar producto</a>
+    <a href="{{ url_for('proveedor.registrar_combo') }}" class="prov-btn prov-btn-secondary">+ Crear combo</a>
+    {% endif %}
     <a href="{{ url_for('public.menu_bar', proveedor_id=proveedor.id) }}" class="prov-btn prov-btn-secondary" target="_blank" rel="noopener">Ver mi sección pública</a>
   </div>
 </header>
 
 <div class="prov-kpis prov-kpis-compact">
-  <div><span>Productos</span><strong>{{ skus|length }}</strong><small>SKUs asignados</small></div>
+  <div><span>Catálogo</span><strong>{{ skus|length + combos|length }}</strong><small>productos y combos</small></div>
   <div><span>Stock total</span><strong>{{ stock_total.value }}</strong><small>unidades</small></div>
   <div><span>Agotados</span><strong class="{{ 'prov-danger' if stock_total.agotados else '' }}">{{ stock_total.agotados }}</strong><small>requieren revisión</small></div>
 </div>
@@ -30,49 +41,165 @@
 <aside class="prov-alert-panel"><strong>Proveedor inactivo</strong><p>Tu sección pública no está disponible aunque haya productos con stock.</p></aside>
 {% endif %}
 
-{% if not skus %}
+{% if not skus and not combos %}
 <div class="ox-card prov-empty">
-  <strong>Aún no tienes productos asignados</strong>
-  <p>Pide a administración que registre productos para este aliado desde el panel de Proveedores.</p>
+  <strong>Aún no tienes productos registrados</strong>
+  <p>Registra tu primera propuesta. Quedará ligada automáticamente a {{ proveedor.nombre }} y se publicará tras la revisión.</p>
+  {% if current_user.rol in ('socio_producto', 'proveedor') %}
+  <a href="{{ url_for('proveedor.registrar_producto') }}" class="prov-btn prov-btn-primary">Registrar mi primer producto</a>
+  {% endif %}
 </div>
 {% else %}
+{# Solo el socio_producto necesita segmentar por estado de propuesta; los
+   bares clásicos venden desde inventario directamente sin ese ciclo. #}
+{% set estado_activo = request.args.get('estado', 'todos') %}
+{% if current_user.rol == 'socio_producto' %}
+{% set skus_pending = skus|selectattr('producto.partner_submission_status', 'equalto', 'pending')|list %}
+{% set skus_rejected = skus|selectattr('producto.partner_submission_status', 'equalto', 'rejected')|list %}
+{% set skus_approved = skus|rejectattr('producto.partner_submission_status', 'in', ['pending', 'rejected'])|list %}
+{% set combos_pending = combos|selectattr('partner_submission_status', 'equalto', 'pending')|list %}
+{% set combos_rejected = combos|selectattr('partner_submission_status', 'equalto', 'rejected')|list %}
+{% set combos_approved = combos|rejectattr('partner_submission_status', 'in', ['pending', 'rejected'])|list %}
+{% if estado_activo == 'pending' %}
+  {% set skus = skus_pending %}{% set combos = combos_pending %}
+{% elif estado_activo == 'rejected' %}
+  {% set skus = skus_rejected %}{% set combos = combos_rejected %}
+{% elif estado_activo == 'approved' %}
+  {% set skus = skus_approved %}{% set combos = combos_approved %}
+{% endif %}
+<nav class="prov-tabs" style="display:flex; gap:0.5rem; margin:1rem 0; flex-wrap:wrap;">
+  <a href="{{ url_for('proveedor.inventario') }}"
+     class="prov-btn {{ 'prov-btn-primary' if estado_activo == 'todos' else 'prov-btn-secondary' }}">
+    Todos ({{ skus_pending|length + skus_approved|length + skus_rejected|length + combos_pending|length + combos_approved|length + combos_rejected|length }})
+  </a>
+  <a href="{{ url_for('proveedor.inventario', estado='approved') }}"
+     class="prov-btn {{ 'prov-btn-primary' if estado_activo == 'approved' else 'prov-btn-secondary' }}">
+    Publicados ({{ skus_approved|length + combos_approved|length }})
+  </a>
+  <a href="{{ url_for('proveedor.inventario', estado='pending') }}"
+     class="prov-btn {{ 'prov-btn-primary' if estado_activo == 'pending' else 'prov-btn-secondary' }}">
+    En revisión ({{ skus_pending|length + combos_pending|length }})
+  </a>
+  <a href="{{ url_for('proveedor.inventario', estado='rejected') }}"
+     class="prov-btn {{ 'prov-btn-primary' if estado_activo == 'rejected' else 'prov-btn-secondary' }}">
+    Requieren cambios ({{ skus_rejected|length + combos_rejected|length }})
+  </a>
+</nav>
+{% endif %}
+{% if skus %}
 <div class="prov-stock-list">
   {% for s in skus %}
+  {% if current_user.rol == 'socio_producto' %}
+  <article class="prov-stock-card">
+  {% else %}
   <form method="POST" class="prov-stock-card">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="accion" value="actualizar_sku">
     <input type="hidden" name="fila_id" value="{{ s.id }}">
+  {% endif %}
     <div class="prov-stock-main">
       <div class="prov-stock-name">
         <span class="prov-stock-label">Producto</span>
         <strong>{{ s.producto.nombre }}</strong>
-        <small>Producto #{{ s.producto.id }} · {{ 'Visible en tienda' if s.producto.activo else 'Inactivo en tienda' }}</small>
+        <small>
+          Producto #{{ s.producto.id }} ·
+          {% if s.producto.partner_submission_status == 'pending' %}En revisión
+          {% elif s.producto.partner_submission_status == 'rejected' %}Requiere cambios
+          {% elif s.producto.activo %}Publicado
+          {% else %}Inactivo en tienda{% endif %}
+        </small>
       </div>
+      {% if s.producto.partner_submission_status == 'pending' %}
+      <span class="prov-review-chip is-pending">En revisión</span>
+      {% elif s.producto.partner_submission_status == 'rejected' %}
+      <span class="prov-review-chip is-rejected">Requiere cambios</span>
+      {% elif s.producto.partner_submission_status == 'approved' %}
+      <span class="prov-review-chip is-approved">Aprobado</span>
+      {% endif %}
       <span class="prov-stock-chip {{ 'is-low' if (s.stock or 0) <= 3 else '' }}">
         {{ s.stock }} uds
       </span>
     </div>
     <div class="prov-stock-fields">
+      {% if current_user.rol != 'socio_producto' %}
       <label>
         <span>Stock disponible</span>
         <input type="number" min="0" name="stock" value="{{ s.stock }}">
       </label>
-      <label>
-        <span>Coste unitario (€)</span>
-        <input type="number" step="0.01" min="0" name="precio_costo"
-               value="{% if s.precio_costo is not none %}{{ "%.2f"|format(s.precio_costo|float) }}{% endif %}"
-               placeholder="—">
-      </label>
+      {% else %}
+      <div class="prov-stock-share">
+        <span>Existencias bajo custodia de la tienda</span>
+        <strong>{{ s.stock }} unidades</strong>
+        <small>Si detectas una diferencia, comunícala como incidencia para conservar la trazabilidad.</small>
+      </div>
+      {% endif %}
+      <div class="prov-stock-share">
+        <span>Tu participación</span>
+        <strong>{{ "%.2f"|format(100 - proveedor.comision_pct|float) }}%</strong>
+        <small>La tienda retiene {{ "%.2f"|format(proveedor.comision_pct|float) }}% por venta.</small>
+      </div>
     </div>
+    {% if s.producto.partner_submission_status == 'rejected' %}
+    <p class="prov-stock-warning"><strong>Observación:</strong> {{ s.producto.partner_review_note or 'Revisa la ficha comercial.' }}</p>
+    <a href="{{ url_for('proveedor.registrar_producto', producto_id=s.producto.id) }}" class="prov-btn prov-btn-secondary">Corregir y reenviar</a>
+    {% elif s.producto.partner_submission_status == 'pending' %}
+    <a href="{{ url_for('proveedor.registrar_producto', producto_id=s.producto.id) }}" class="prov-btn prov-btn-secondary">Editar propuesta</a>
+    {% endif %}
     {% if (s.stock or 0) == 0 %}
     <p class="prov-stock-warning">Sin unidades: este producto no puede venderse desde tu sección.</p>
-    {% elif s.precio_costo is none and proveedor.modelo_acuerdo == 'stock_proveedor' %}
-    <p class="prov-stock-warning">Falta el coste unitario usado para la liquidación.</p>
     {% endif %}
+    {% if current_user.rol == 'socio_producto' %}
+    <a href="{{ url_for('proveedor.incidencias') }}" class="prov-btn prov-btn-secondary">Reportar diferencia</a>
+  </article>
+    {% else %}
     <button type="submit" class="prov-stock-save">Guardar {{ s.producto.nombre }}</button>
   </form>
+    {% endif %}
   {% endfor %}
 </div>
+{% endif %}
+
+{% if combos %}
+<section class="partner-combo-list">
+  <div class="partner-combo-list-head">
+    <div><strong>Mis combos</strong><small>La disponibilidad se calcula desde el stock de sus productos.</small></div>
+    {% if current_user.rol in ('socio_producto', 'proveedor') %}
+    <a href="{{ url_for('proveedor.registrar_combo') }}" class="prov-btn prov-btn-primary">+ Nuevo combo</a>
+    {% endif %}
+  </div>
+  <div class="prov-stock-list">
+    {% for combo in combos %}
+    <article class="prov-stock-card">
+      <div class="prov-stock-main">
+        <div class="prov-stock-name">
+          <span class="prov-stock-label">Combo</span>
+          <strong>{{ combo.nombre }}</strong>
+          <small>{{ combo.combo_items.count() }} componentes · €{{ "%.2f"|format(combo.precio|float) }}</small>
+        </div>
+        {% if combo.partner_submission_status == 'pending' %}
+        <span class="prov-review-chip is-pending">En revisión</span>
+        {% elif combo.partner_submission_status == 'rejected' %}
+        <span class="prov-review-chip is-rejected">Requiere cambios</span>
+        {% elif combo.partner_submission_status == 'approved' %}
+        <span class="prov-review-chip is-approved">Aprobado</span>
+        {% endif %}
+      </div>
+      <div class="prov-stock-share">
+        <span>Disponibilidad estimada</span>
+        <strong>{{ combo.stock_para_origen() }} combos</strong>
+        <small>Se descuenta automáticamente de tus productos al vender.</small>
+      </div>
+      {% if combo.partner_submission_status == 'rejected' %}
+      <p class="prov-stock-warning"><strong>Observación:</strong> {{ combo.partner_review_note or 'Revisa la composición.' }}</p>
+      <a href="{{ url_for('proveedor.registrar_combo', combo_id=combo.id) }}" class="prov-btn prov-btn-secondary">Corregir y reenviar</a>
+      {% elif combo.partner_submission_status == 'pending' %}
+      <a href="{{ url_for('proveedor.registrar_combo', combo_id=combo.id) }}" class="prov-btn prov-btn-secondary">Editar propuesta</a>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 {% endif %}
 
 {% endblock %}

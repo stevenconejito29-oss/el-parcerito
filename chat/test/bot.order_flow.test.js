@@ -16,7 +16,16 @@ process.env.BOT_PANEL_KEY = 'test-panel-key';
 process.env.OWNER_NUMBER = '34600000991';
 
 const { _test } = require('../bot');
-const { db, formatOrderItemSummaryLine, getSesion, handleMessage, saveSesion, setCfg } = _test;
+const {
+  _tryCatalogSearchReply,
+  db,
+  formatOrderItemSummaryLine,
+  getSesion,
+  handleMessage,
+  isOrderStatusIntent,
+  saveSesion,
+  setCfg,
+} = _test;
 const clientJid = '34632907709@s.whatsapp.net';
 const adminJid = '34600000991@s.whatsapp.net';
 const originalFetch = global.fetch;
@@ -37,9 +46,26 @@ test.beforeEach(() => {
   global.fetch = async (url, options = {}) => {
     const parsed = new URL(String(url));
     const route = parsed.pathname.replace(/^\/api\/bot/, '');
-    calls.push({ route, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null });
+    calls.push({
+      route,
+      query: Object.fromEntries(parsed.searchParams.entries()),
+      method: options.method || 'GET',
+      body: options.body ? JSON.parse(options.body) : null,
+    });
     if (route === '/ai/cliente-context') return jsonResponse({ ok: true, cliente: { nombre: 'Danna', pedidos_recientes: [] } });
     if (route === '/pedidos') return jsonResponse({ ok: true, pedidos: orders });
+    if (route === '/cobertura') {
+      return jsonResponse({
+        ok: true,
+        cobertura: {
+          ok: true,
+          zona_nombre: 'Centro QA',
+          distancia_km: 0.4,
+          metodo_cobertura: 'ubicacion_dispositivo',
+        },
+        metodo_cobertura: 'ubicacion_dispositivo',
+      });
+    }
     if (/^\/pedido\/\d+\/cancelar$/.test(route)) {
       return jsonResponse({ ok: true, pedido: { numero: '#1006', estado: 'cancelado' } });
     }
@@ -66,6 +92,26 @@ test('SI dentro de confirmar cancelación cancela y no confirma antifraude', asy
   assert.equal(calls.some(c => c.route === '/pedido/42/cancelar' && c.method === 'POST'), true);
 });
 
+test('una ubicación compartida desde el menú consulta cobertura sin atascar la sesión', async () => {
+  setCfg('delivery_enabled', '1');
+  saveSesion({
+    jid: clientJid,
+    nombre: 'Danna',
+    role: 'client',
+    estado: 'main_menu',
+    pending: {},
+  });
+  await handleMessage(clientJid, '[Adjunto recibido: ubicacion]', 'Danna', {
+    location: { latitude: 37.4736, longitude: -5.6438, accuracy: 25 },
+  });
+  const request = calls.find(call => call.route === '/cobertura');
+  assert.ok(request);
+  assert.equal(request.query.lat, '37.4736');
+  assert.equal(request.query.lon, '-5.6438');
+  assert.equal(request.query.accuracy, '25');
+  assert.equal(getSesion(clientJid).estado, 'main_menu');
+});
+
 test('entrada inesperada no rompe ni abandona la confirmación de cancelación', async () => {
   saveSesion({
     jid: clientJid, nombre: 'Danna', role: 'client', estado: 'confirmar_cancelacion',
@@ -74,6 +120,30 @@ test('entrada inesperada no rompe ni abandona la confirmación de cancelación',
   await handleMessage(clientJid, 'hola, no sé qué poner', 'Danna');
   assert.equal(getSesion(clientJid).estado, 'confirmar_cancelacion');
   assert.equal(calls.some(c => c.route === '/pedido/42/cancelar'), false);
+});
+
+test('ATRÁS vuelve de la cancelación al pedido sin ejecutar cambios', async () => {
+  const backJid = '34632907710@s.whatsapp.net';
+  orders = [{
+    id: 42, numero: '#1006', estado: 'pendiente', estado_label: 'Pendiente',
+    total: 103, metodo_pago: 'efectivo', pago_confirmado: false,
+  }];
+  saveSesion({
+    jid: backJid, nombre: 'Danna', role: 'client', estado: 'confirmar_cancelacion',
+    pending: { pedido_id: 42, numero: '#1006' },
+  });
+  await handleMessage(backJid, 'atrás', 'Danna');
+  assert.equal(getSesion(backJid).estado, 'pedido_acciones');
+  assert.equal(calls.some(c => c.route.endsWith('/cancelar')), false);
+});
+
+test('MENU sigue siendo escape al inicio y no se confunde con ATRÁS', async () => {
+  const menuJid = '34632907711@s.whatsapp.net';
+  saveSesion({
+    jid: menuJid, nombre: 'Danna', role: 'client', estado: 'info_menu', pending: {},
+  });
+  await handleMessage(menuJid, 'MENU', 'Danna');
+  assert.equal(getSesion(menuJid).estado, 'main_menu');
 });
 
 test('varios pendientes exigen elegir uno y nunca usan coincidencia parcial', async () => {
@@ -133,6 +203,49 @@ test('NO dentro de un reporte no cancela la verificación pendiente', async () =
   assert.equal(getSesion(clientJid).estado, 'espera_reporte_pedido');
   assert.equal(calls.some(c => c.route === '/confirmacion/responder'), false);
   assert.equal(calls.some(c => c.route.endsWith('/cancelar')), false);
+});
+
+test('confirmar la primera compra limpia acciones antiguas y ofrece el siguiente paso', async () => {
+  saveSesion({
+    jid: clientJid, nombre: 'Danna', role: 'client', estado: 'pedido_acciones',
+    pending: { pedido_id: 42, numero: '#1006', cancelable: true },
+  });
+
+  await handleMessage(clientJid, 'SI', 'Danna');
+
+  assert.equal(getSesion(clientJid).estado, 'main_menu');
+  assert.deepEqual(getSesion(clientJid).pending, {});
+  const sent = db.prepare(`SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1`).get();
+  assert.match(sent.detalle, /confirmado/i);
+  assert.match(sent.detalle, /Escribe \*2\*/i);
+});
+
+test('reconoce preguntas naturales sobre entrega y repartidor como estado de pedido', () => {
+  for (const phrase of [
+    '¿Ya viene mi pedido?',
+    'Quién trae mi pedido',
+    'Tengo repartidor asignado',
+    'Información de mi entrega',
+    'Cómo va mi entrega',
+  ]) {
+    assert.equal(isOrderStatusIntent(phrase), true, phrase);
+  }
+  assert.equal(isOrderStatusIntent('¿Llegan a mi barrio?'), false);
+});
+
+test('catálogo responde solo cuando existe una coincidencia real', async () => {
+  db.prepare(`
+    INSERT INTO productos_cache
+      (id, nombre, descripcion, precio, categoria, stock, tipo_entrega, activo)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+  `).run(9001, 'Galletas Festival', '', 2, 'Dulces', 10, 'inmediato');
+
+  const found = await _tryCatalogSearchReply('¿Tienen galletas Festival?', 'https://elparcerito.com');
+  const unknown = await _tryCatalogSearchReply('esto no tiene ningún sentido', 'https://elparcerito.com');
+
+  assert.match(found, /Galletas Festival/);
+  assert.match(found, /fuente actual de precio y stock/);
+  assert.equal(unknown, null);
 });
 
 test('sin activos muestra el último pedido cerrado y conserva acciones guiadas', async () => {

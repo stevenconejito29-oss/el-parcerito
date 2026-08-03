@@ -10,14 +10,15 @@
   <meta name="application-name" content="{{ brand.nombre }}">
   <meta name="ox-pwa-mode" content="public">
   <meta name="ox-push-eligible" content="0">
+  <meta name="ox-asset-version" content="{{ asset_version }}">
   <meta name="ox-cart-count" content="0">
   <meta name="ox-csrf-token" content="{{ csrf_token() }}">
   <meta name="robots" content="noindex,nofollow,noarchive">
   <title>Próxima apertura — {{ brand.nombre }}</title>
   <link rel="icon" href="{{ brand.app_icon_url|upload_url if brand.app_icon_url else url_for('static', filename='pwa-icon.svg') }}">
-  {% set _app_icon = brand.app_icon_url if brand.app_icon_url else '' %}
+  {% set _app_icon = brand.app_icon_url|upload_url if brand.app_icon_url else '' %}
   <link rel="apple-touch-icon" sizes="180x180" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
-  <link rel="manifest" href="{{ url_for('web_manifest') }}">
+  <link rel="manifest" href="{{ url_for('web_manifest', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/preapertura.css', v=asset_version) }}">
 </head>

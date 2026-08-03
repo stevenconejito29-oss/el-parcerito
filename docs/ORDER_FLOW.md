@@ -33,6 +33,20 @@ de entrega no se omiten por ocultar o mostrar un botón.
 - El correlativo visible se reserva bajo un bloqueo transaccional de PostgreSQL,
   evitando números repetidos cuando entran pedidos concurrentes.
 
+## Hitos y métricas operativas
+
+Cada pedido conserva columnas UTC para `creado_en`, `preparado_en`,
+`repartidor_asignado_en`, `repartidor_tomado_en`, `en_ruta_en` y
+`entregado_en`. La asignación y la aceptación son hitos distintos: el primero
+indica cuándo el sistema eligió responsable; el segundo, cuándo el repartidor
+asumió el pedido. Los reintentos no sobrescriben una marca ya registrada.
+
+`/admin/analytics` compara promedios, medianas, P90 y cobertura de cada etapa.
+La cobertura evita interpretar un dato ausente como una duración de cero. El
+CSV de tiempos usa los mismos campos, no contiene datos personales del cliente
+y complementa el respaldo completo de PostgreSQL, que ya incluye estas
+columnas y el historial `order_events`.
+
 ## Presentación responsive
 
 Las vistas operativas separan planificación, trabajo activo y cierre. En móvil

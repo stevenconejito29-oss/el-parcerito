@@ -55,6 +55,35 @@ test('/online restaura el contexto operativo y disponibilidad', async () => {
   assert.equal(isAdminAvailable(jid), true);
 });
 
+test('!ausente usa el mismo modo cliente que /offline y no deja estado huérfano', async () => {
+  await handleMessage(jid, '!ausente', 'Responsable');
+  const ses = getSesion(jid);
+  assert.equal(ses.role, 'admin');
+  assert.equal(ses.estado, 'client_main_menu');
+  assert.equal(isAdminAvailable(jid), false);
+
+  await handleMessage(jid, '0', 'Responsable');
+  assert.equal(getSesion(jid).estado, 'client_main_menu');
+  assert.equal(isAdminAvailable(jid), false);
+});
+
+test('/online no toma automáticamente un chat pendiente', async () => {
+  const waitingJid = '34610000992@s.whatsapp.net';
+  db.prepare(`
+    INSERT INTO handoffs (client_jid, requested_at)
+    VALUES (?, unixepoch())
+  `).run(waitingJid);
+
+  await handleMessage(jid, '/offline', 'Responsable');
+  db.exec('DELETE FROM logs;');
+  await handleMessage(jid, '/online', 'Responsable');
+
+  assert.equal(getHandoff(waitingJid).admin_jid, null);
+  assert.equal(getSesion(jid).estado, 'admin_menu');
+  const last = db.prepare(`SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1`).get();
+  assert.match(last.detalle, /ningún chat se tomará/i);
+});
+
 test('modo cliente también implica offline para evitar asignaciones accidentales', async () => {
   await handleMessage(jid, 'modo cliente', 'Responsable');
   assert.equal(getSesion(jid).estado, 'client_main_menu');
@@ -107,6 +136,16 @@ test('Pedido desde modo online explica cómo cambiar a cliente', async () => {
   // El detalle de auditoría conserva deliberadamente solo los primeros 100 caracteres.
   assert.match(last.detalle, /Ahora estás \*online como/i);
   assert.match(last.detalle, /Para comprar o consultar tus pedidos personales/i);
+});
+
+test('ATRÁS vuelve al submenú administrativo padre sin ejecutar la acción', async () => {
+  setSesion(jid, {
+    jid, nombre: 'Responsable', role: 'admin', estado: 'admin_product_price_wait',
+    pending: { productId: 99 },
+  });
+  await handleMessage(jid, 'volver', 'Responsable');
+  assert.equal(getSesion(jid).estado, 'admin_products_menu');
+  assert.deepEqual(getSesion(jid).pending, {});
 });
 
 test('un comando administrativo no rompe el contexto cliente offline', async () => {

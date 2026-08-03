@@ -196,7 +196,7 @@ class BotHandoffDestinationTest(unittest.TestCase):
         self.assertTrue(payload["negocio"]["delivery"])
         self.assertIn("efectivo", payload["negocio"]["metodos_pago"])
 
-    def test_ai_context_does_not_invent_an_unconfigured_schedule(self):
+    def test_ai_context_uses_legacy_schedule_when_weekly_is_unconfigured(self):
         response = self.client.get(
             "/api/bot/ai/cliente-context?telefono=+34619999999",
             headers={"X-Bot-Key": "test-bot-key"},
@@ -204,7 +204,7 @@ class BotHandoffDestinationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertIsNone(payload["cliente"])
-        self.assertEqual(payload["negocio"]["horario"], "")
+        self.assertEqual(payload["negocio"]["horario"], "Lunes–Domingo: 09:00–22:30")
 
     def test_customer_bot_contract_is_informational_only(self):
         headers = {"X-Bot-Key": "test-bot-key"}
@@ -257,13 +257,15 @@ class BotHandoffDestinationTest(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["bot_flow_limits"]["handoff_inactivity_sec"], "900")
         self.assertEqual(payload["bot_flow_limits"]["reporte_rate_max_per_window"], "3")
-        profiles = {row["rol"] + ":" + row["telefono"]: row for row in payload["whatsapp_roles"]}
-        limited = profiles["admin:+34610000022"]
+        profiles = payload["whatsapp_roles"]
+        limited = next(row for row in profiles if row["nombre"] == "Admin limitado")
+        self.assertNotIn("telefono", limited)
+        self.assertRegex(limited["phone_hash"], r"^[a-f0-9]{32}$")
         self.assertIn("products", limited["capabilities"])
         self.assertIn("handoff", limited["capabilities"])
         self.assertIn("ai", limited["capabilities"])
         self.assertNotIn("points", limited["capabilities"])
-        super_profile = next(row for row in profiles.values() if row["rol"] == "super_admin")
+        super_profile = next(row for row in profiles if row["rol"] == "super_admin")
         self.assertIn("admins", super_profile["capabilities"])
         self.assertIn("emergency", super_profile["capabilities"])
         self.assertIn("ai", super_profile["capabilities"])

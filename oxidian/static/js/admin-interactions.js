@@ -15,6 +15,23 @@
     }
   });
 
+  // Doble submit guard: al enviar un form marcado con `data-once-submit`,
+  // deshabilita los botones y da feedback visual. Complementa la protección
+  // server-side (form_token) para que el admin no pueda disparar el envío
+  // dos veces (doble click, Enter rápido) y vea que algo está pasando.
+  document.addEventListener('submit', (event) => {
+    const form = event.target.closest('form[data-once-submit]');
+    if (!form || form.dataset.submitDone === '1') return;
+    form.dataset.submitDone = '1';
+    form.querySelectorAll('button[type="submit"], input[type="submit"], .js-submit-once')
+        .forEach((btn) => {
+          btn.disabled = true;
+          btn.setAttribute('aria-busy', 'true');
+          btn.style.opacity = '0.7';
+          btn.style.cursor = 'wait';
+        });
+  }, true);
+
   document.addEventListener('click', (event) => {
     const confirmation = event.target.closest('[data-confirm-click]');
     if (confirmation && !window.confirm(confirmation.dataset.confirmClick || '¿Continuar?')) {
@@ -54,6 +71,31 @@
   document.addEventListener('change', (event) => {
     const control = event.target.closest('[data-submit-on-change]');
     if (control?.form) control.form.requestSubmit();
+  });
+
+  function refreshMarginPreview(form) {
+    const sale = form?.querySelector('.js-sale-price');
+    const cost = form?.querySelector('.js-cost-price');
+    const output = form?.querySelector('.js-margin-preview');
+    if (!sale || !cost || !output) return;
+    const saleValue = Number.parseFloat(sale.value);
+    const costValue = Number.parseFloat(cost.value);
+    if (!Number.isFinite(costValue) || !Number.isFinite(saleValue) || saleValue <= 0) {
+      output.textContent = 'Añade el coste para calcular la ganancia real.';
+      output.style.color = 'var(--col-muted)';
+      return;
+    }
+    const profit = saleValue - costValue;
+    const margin = profit / saleValue * 100;
+    output.textContent = `${profit >= 0 ? 'Ganancia' : 'Pérdida'} estimada: €${Math.abs(profit).toFixed(2)} · ${margin.toFixed(1)}%`;
+    output.style.color = profit >= 0 ? 'var(--theme-success)' : 'var(--theme-danger)';
+  }
+
+  document.querySelectorAll('form:has(.js-margin-preview)').forEach(refreshMarginPreview);
+  document.addEventListener('input', (event) => {
+    if (event.target.matches('.js-sale-price, .js-cost-price')) {
+      refreshMarginPreview(event.target.form);
+    }
   });
 
   // `error` de imágenes no burbujea; se escucha durante captura.

@@ -49,7 +49,7 @@
   --brand-primary-soft:      color-mix(in srgb, var(--brand-primary) 14%, transparent);
   --brand-primary-contrast:  var(--brand-on-primary, #1A1410);
   --brand-secondary:         #DA4D40;
-  --brand-secondary-contrast:#FFFFFF;
+  --brand-secondary-contrast:var(--brand-on-secondary, #FFFFFF);
   --brand-accent:            #245A9A;
   --brand-accent-contrast:   #FFFFFF;
 
@@ -73,7 +73,7 @@
      El primario puede seguir siendo dorado sin convertir toda acción en oro. */
   --action-primary:          var(--brand-secondary);
   --action-primary-soft:     color-mix(in srgb, var(--action-primary) 12%, transparent);
-  --action-on-primary:       var(--theme-text, var(--brand-primary-contrast));
+  --action-on-primary:       var(--brand-secondary-contrast);
 
   /* Navegación: fondo y texto proceden del mismo par configurable validado. */
   --navigation-surface:      var(--theme-header-bg, var(--col-surface));
@@ -163,6 +163,51 @@ html[data-theme="light"] {
   transform: translateY(-1px);
 }
 
+/* Acciones administrativas reutilizables. Evitan repetir colores literales
+   en plantillas y conservan contraste cuando cambia la marca. */
+.admin-action-create,
+.admin-row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 32%, var(--col-border));
+  background: color-mix(in srgb, var(--brand-primary) 12%, var(--col-surface));
+  color: var(--brand-text);
+  font-weight: 800;
+  text-decoration: none;
+}
+.admin-action-create { min-height: 44px; }
+.admin-row-action { min-height: 36px; }
+.admin-row-action--info {
+  border-color: color-mix(in srgb, var(--status-info) 30%, var(--col-border));
+  background: color-mix(in srgb, var(--status-info) 10%, var(--col-surface));
+  color: color-mix(in srgb, var(--status-info) 55%, var(--col-text));
+}
+.admin-row-action--danger {
+  border-color: color-mix(in srgb, var(--status-err) 28%, var(--col-border));
+  background: color-mix(in srgb, var(--status-err) 9%, var(--col-surface));
+  color: var(--status-err-text);
+}
+.status-badge-ok,
+.status-badge-error {
+  display: inline-flex;
+  align-items: center;
+  padding: .16rem .42rem;
+  border: 1px solid;
+  border-radius: var(--radius-pill);
+  font-weight: 800;
+}
+.status-badge-ok {
+  border-color: color-mix(in srgb, var(--status-ok) 28%, var(--col-border));
+  background: color-mix(in srgb, var(--status-ok) 10%, var(--col-surface));
+  color: var(--status-ok-text);
+}
+.status-badge-error {
+  border-color: color-mix(in srgb, var(--status-err) 28%, var(--col-border));
+  background: color-mix(in srgb, var(--status-err) 9%, var(--col-surface));
+  color: var(--status-err-text);
+}
+
 .ox-btn-primary:disabled,
 .ox-btn-primary[disabled] {
   opacity: 0.45;
@@ -176,33 +221,41 @@ html[data-theme="light"] {
    ───────────────────────────────────────────── */
 .ox-toast-stack {
   position: fixed;
-  left: 50%;
-  bottom: calc(var(--safe-bottom) + 84px); /* sobre bottom nav */
-  transform: translateX(-50%);
+  top: max(14px, calc(env(safe-area-inset-top, 0px) + 10px));
+  right: max(14px, env(safe-area-inset-right, 0px));
+  left: auto;
+  bottom: auto;
+  transform: none;
   z-index: 9000;
   display: flex;
   flex-direction: column;
   gap: 8px;
   pointer-events: none;
-  width: min(420px, calc(100vw - 24px));
+  /* Ancho respetando safe-area lateral: en iPhone 15+ landscape el notch
+     lateral come varios pixels que antes se ignoraban. */
+  width: min(420px, calc(100vw
+    - max(12px, env(safe-area-inset-left, 0px))
+    - max(12px, env(safe-area-inset-right, 0px))));
 }
 
 .ox-toast-v2 {
   display: grid;
-  grid-template-columns: 24px 1fr auto;
+  grid-template-columns: 24px minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 10px;
+  gap: clamp(6px, 2vw, 10px);
   background: var(--col-elevated);
   border: 1px solid var(--col-border-2);
   border-radius: var(--radius-2);
-  padding: 10px 12px;
+  padding: clamp(9px, 2.5vw, 10px) clamp(10px, 3vw, 12px);
   color: var(--col-text);
-  font-size: 14px;
+  font-size: clamp(13px, 3.5vw, 14px);
   box-shadow: var(--shadow-3);
   opacity: 0;
   transform: translateY(12px);
   transition: opacity .26s cubic-bezier(.2,.7,.2,1), transform .26s cubic-bezier(.2,.7,.2,1);
   pointer-events: auto;
+  min-width: 0;
+  max-height: min(45dvh, 16rem);
 }
 
 .ox-toast-v2.is-in { opacity: 1; transform: translateY(0); }
@@ -226,24 +279,108 @@ html[data-theme="light"] {
 .ox-toast-v2-info .ox-toast-v2__icon    { background: var(--status-info-soft); color: var(--status-info); }
 .ox-toast-v2-info    { border-color: color-mix(in srgb, var(--status-info) 32%, transparent); }
 
-.ox-toast-v2__text { line-height: 1.35; }
+.ox-toast-v2__text {
+  line-height: 1.35;
+  /* Sin esto, un mensaje sin espacios largos empujaba el botón cerrar fuera
+     de la caja o forzaba scroll horizontal en 393px. */
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+  max-height: min(10rem, 32dvh);
+  overflow-y: auto;
+}
 .ox-toast-v2__close {
-  background: transparent; border: 0; color: var(--col-faint);
-  font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 6px;
+  background: transparent; border: 0; color: var(--col-muted);
+  font-size: 22px; line-height: 1; cursor: pointer;
+  padding: 4px 6px;
   border-radius: 6px;
+  /* Nunca se comprime aunque el texto sea largo. */
+  flex-shrink: 0;
+  min-width: 32px; min-height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
 .ox-toast-v2__close:hover { color: var(--col-text); background: var(--col-hover); }
+.ox-toast-v2__action {
+  min-height: 36px;
+  max-width: 11rem;
+  padding: 7px 11px;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 34%, var(--col-border-2));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--brand-primary) 12%, var(--col-elevated));
+  color: var(--col-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.15;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  touch-action: manipulation;
+}
+.ox-toast-v2__action:hover,
+.ox-toast-v2__action:focus-visible {
+  background: color-mix(in srgb, var(--brand-primary) 20%, var(--col-elevated));
+  outline: 2px solid color-mix(in srgb, var(--brand-primary) 54%, transparent);
+  outline-offset: 2px;
+}
+
+/* En el escaparate los avisos quedan encima de la navegación inferior; en
+   paneles operativos se mantienen bajo la zona segura superior y el topbar. */
+@media (max-width: 760px) {
+  body.ox-body-public .ox-toast-stack {
+    top: auto;
+    right: auto;
+    bottom: calc(var(--safe-bottom) + 82px);
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  body:not(.ox-body-public) .ox-toast-stack {
+    top: max(66px, calc(env(safe-area-inset-top, 0px) + 62px));
+    right: max(10px, env(safe-area-inset-right, 0px));
+  }
+}
+
+@media (max-width: 420px) {
+  .ox-toast-v2 {
+    grid-template-columns: 22px minmax(0, 1fr) 32px;
+  }
+  .ox-toast-v2__action {
+    grid-column: 2 / -1;
+    justify-self: stretch;
+    max-width: none;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  body.ox-body-public .ox-toast-stack {
+    bottom: calc(var(--safe-bottom) + 58px);
+  }
+}
 
 /* ─────────────────────────────────────────────
    Modal de confirmación
    ───────────────────────────────────────────── */
+/* ─── Sistema de modal (invariantes responsive) ──────────────────
+   Reglas invariantes que todo modal futuro hereda automáticamente:
+   1. El backdrop respeta safe-area (notch iOS, gestos Android).
+   2. El modal nunca supera el viewport útil (padding+safe-area).
+   3. Todo texto interno rompe palabras largas (`overflow-wrap: anywhere`).
+   4. En viewports muy estrechos (<380px), los botones apilan verticalmente
+      con el confirm arriba para que el pulgar caiga naturalmente sobre él.
+   5. `min-height: 44px` en botones garantiza el target táctil iOS/Android.
+   ------------------------------------------------------------- */
 .ox-modal-backdrop {
   position: fixed; inset: 0;
   background: rgba(0, 0, 0, 0.62);
   z-index: 9500;
   display: flex; align-items: center; justify-content: center;
-  padding: 16px;
+  /* Padding respeta safe-area para no quedar pegado al notch/borde. */
+  padding: max(16px, env(safe-area-inset-top, 0px))
+           max(16px, env(safe-area-inset-right, 0px))
+           max(16px, env(safe-area-inset-bottom, 0px))
+           max(16px, env(safe-area-inset-left, 0px));
   opacity: 0; transition: opacity .2s;
+  overscroll-behavior: contain;
 }
 .ox-modal-backdrop.is-in { opacity: 1; }
 
@@ -253,17 +390,53 @@ html[data-theme="light"] {
   border: 1px solid var(--col-border-2);
   border-radius: var(--radius-3);
   box-shadow: var(--shadow-3);
-  padding: 20px;
-  max-width: 420px; width: 100%;
+  /* Padding fluido: 12px en móvil ultra-estrecho, 20px en desktop. Sin
+     saltos abruptos entre breakpoints — clamp() interpola por viewport. */
+  padding: clamp(12px, 4vw, 20px);
+  /* Ancho: máx 420px, respetando safe-area lateral del backdrop. */
+  width: 100%;
+  max-width: min(420px, 100%);
+  /* Altura máxima con scroll interno para modales muy largos */
+  max-height: min(85vh, calc(100vh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Todo el contenido interno respeta el ancho del modal — sin desbordes. */
+  min-width: 0;
 }
-.ox-modal__title { font-size: 18px; font-weight: 800; margin: 0 0 8px; }
-.ox-modal__body  { font-size: 14px; color: var(--col-muted); margin-bottom: 18px; line-height: 1.45; white-space: pre-line; }
-.ox-modal__actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.ox-modal * { min-width: 0; }
+.ox-modal__title {
+  /* Font fluido: 14px en 393px, 18px en desktop. Sin cortes ni tallas medias
+     desagradables. */
+  font-size: clamp(14px, 4.5vw, 18px);
+  font-weight: 800; margin: 0 0 8px;
+  overflow-wrap: anywhere; word-break: break-word; line-height: 1.25;
+}
+.ox-modal__body {
+  font-size: clamp(13px, 3.5vw, 14px);
+  color: var(--col-muted); margin-bottom: clamp(12px, 3vw, 18px);
+  line-height: 1.45; white-space: pre-line;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.ox-modal__actions {
+  display: flex; gap: clamp(6px, 2vw, 10px);
+  justify-content: flex-end; flex-wrap: wrap;
+}
 .ox-modal__btn {
-  min-height: 44px; padding: 0 18px;
+  min-height: 44px;
+  padding: 0 clamp(12px, 3vw, 18px);
   border-radius: var(--radius-pill);
-  font-weight: 700; font-size: 14px; border: 1px solid transparent;
+  font-weight: 700; font-size: clamp(13px, 3.5vw, 14px);
+  border: 1px solid transparent;
   cursor: pointer;
+  /* Overflow ellipsis como escape valve si el label es enorme. */
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  flex-shrink: 0; white-space: nowrap;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.ox-modal__btn:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
 }
 .ox-modal__btn--ghost {
   background: transparent; color: var(--col-text);
@@ -277,6 +450,27 @@ html[data-theme="light"] {
 .ox-modal__btn--danger {
   background: var(--status-err);
   color: #fff;
+}
+/* Viewports estrechos (< 400px, cubre iPhone SE, iPhone 12/13 mini,
+   iPhone 15/16 y equivalentes Android): botones apilan verticalmente con
+   el confirmar arriba para tap más natural con el pulgar. */
+@media (max-width: 400px) {
+  .ox-modal { padding: 14px; }
+  .ox-modal__title { font-size: 15px; }
+  .ox-modal__body { font-size: 13px; margin-bottom: 14px; }
+  .ox-modal__actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .ox-modal__btn { width: 100%; }
+}
+/* Móvil en landscape muy bajo (< 500px alto): modal con scroll interno,
+   sin colapsar el layout. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .ox-modal { padding: 14px 18px; max-height: calc(100vh - 24px); }
+  .ox-modal__title { font-size: 15px; margin-bottom: 4px; }
+  .ox-modal__body { margin-bottom: 10px; }
 }
 
 /* ─────────────────────────────────────────────

@@ -1,0 +1,274 @@
+{% extends "admin_base.html" %}
+{% block title %}Finanzas — {{ brand.nombre or 'El Parcerito' }}{% endblock %}
+{% block content %}
+
+<header class="prov-page-head prov-detail-head">
+  <div>
+    <span class="prov-eyebrow">Contabilidad</span>
+    <h1>Finanzas</h1>
+    <p>Entradas y salidas centralizadas. Todo lo que entra, todo lo que sale, y lo que queda por cerrar.</p>
+  </div>
+</header>
+
+{# ── Selector de rango ────────────────────────────────────────────── #}
+<nav class="prov-tabs" style="display:flex; gap:0.5rem; margin:1rem 0; flex-wrap:wrap;">
+  <a href="{{ url_for('admin.finanzas', preset='hoy') }}"
+     class="prov-btn {{ 'prov-btn-primary' if preset == 'hoy' else 'prov-btn-secondary' }}">Hoy</a>
+  <a href="{{ url_for('admin.finanzas', preset='semana') }}"
+     class="prov-btn {{ 'prov-btn-primary' if preset == 'semana' else 'prov-btn-secondary' }}">Esta semana</a>
+  <a href="{{ url_for('admin.finanzas', preset='mes') }}"
+     class="prov-btn {{ 'prov-btn-primary' if preset == 'mes' else 'prov-btn-secondary' }}">Este mes</a>
+  <form method="get" action="{{ url_for('admin.finanzas') }}" style="display:inline-flex; gap:0.25rem; align-items:center;">
+    <input type="hidden" name="preset" value="personalizado">
+    <input type="date" name="fecha_ini" value="{{ fecha_ini }}" style="padding:0.35rem;">
+    <input type="date" name="fecha_fin" value="{{ fecha_fin }}" style="padding:0.35rem;">
+    <button type="submit" class="prov-btn {{ 'prov-btn-primary' if preset == 'personalizado' else 'prov-btn-secondary' }}">Aplicar</button>
+  </form>
+</nav>
+
+{# ── KPIs principales ──────────────────────────────────────────────── #}
+<div class="prov-kpis prov-kpis-compact">
+  <div>
+    <span>Ingresos</span>
+    <strong style="color:#0a7f3b;">€{{ "%.2f"|format(ingresos_total|float) }}</strong>
+    <small>{{ fecha_ini }} → {{ fecha_fin }}</small>
+  </div>
+  <div>
+    <span>Salidas</span>
+    <strong style="color:#b02020;">€{{ "%.2f"|format(egresos_total|float) }}</strong>
+    <small>nóminas + gastos + liquidaciones</small>
+  </div>
+  <div>
+    <span>Resultado</span>
+    <strong class="{{ 'prov-danger' if saldo_neto|float < 0 else '' }}"
+            style="{{ 'color:#0a7f3b;' if saldo_neto|float >= 0 else '' }}">
+      €{{ "%.2f"|format(saldo_neto|float) }}
+    </strong>
+    <small>{{ 'Ganancia' if saldo_neto|float >= 0 else 'Pérdida' }} del período</small>
+  </div>
+  <div>
+    <span>Efectivo cobrado</span>
+    <strong>€{{ "%.2f"|format(efectivo_cobrado|float) }}</strong>
+    <small>debe cuadrar con caja física</small>
+  </div>
+</div>
+
+{# ── Entradas: ventas por método de pago ─────────────────────────── #}
+<section class="ox-card" style="margin-top:1.25rem;">
+  <div class="partner-form-heading">
+    <span>↓</span>
+    <div><strong>Ventas por método de pago</strong><small>Solo cobros ya confirmados. Ver "Pendientes" abajo para lo que aún está sin cerrar.</small></div>
+  </div>
+  <table style="width:100%; margin-top:0.75rem; border-collapse:collapse;">
+    <thead>
+      <tr style="text-align:left; border-bottom:1px solid #ddd;">
+        <th style="padding:0.5rem 0;">Método</th>
+        <th style="text-align:right; padding:0.5rem 0;">Cobrado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for metodo in ['efectivo', 'bizum', 'tarjeta'] %}
+      <tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:0.5rem 0;">{{ metodo.capitalize() }}</td>
+        <td style="text-align:right; padding:0.5rem 0;">€{{ "%.2f"|format((ventas_por_metodo.get(metodo, 0))|float) }}</td>
+      </tr>
+      {% endfor %}
+      {% for metodo, monto in ventas_por_metodo.items() if metodo not in ['efectivo', 'bizum', 'tarjeta'] %}
+      <tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:0.5rem 0;">{{ metodo }}</td>
+        <td style="text-align:right; padding:0.5rem 0;">€{{ "%.2f"|format(monto|float) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{# ── Salidas: agrupadas por concepto contable ───────────────────── #}
+<section class="ox-card" style="margin-top:1.25rem;">
+  <div class="partner-form-heading">
+    <span>↑</span>
+    <div><strong>Salidas del período</strong><small>Agrupadas por concepto contable. Cada grupo enlaza al detalle.</small></div>
+  </div>
+  {% set grupos_orden = [
+      ('nominas',      'Nóminas y comisiones',   url_for('admin.pagos_staff')),
+      ('liquidaciones','Liquidaciones a socios', url_for('admin.liquidacion_proveedores')),
+      ('gastos',       'Gastos operativos',      url_for('admin.caja') ~ '?categoria=gasto_operativo'),
+      ('devoluciones', 'Devoluciones',           url_for('admin.caja') ~ '?categoria=devolucion'),
+      ('otros',        'Otros / ajustes',        url_for('admin.caja') ~ '?categoria=general'),
+  ] %}
+  <table style="width:100%; margin-top:0.75rem; border-collapse:collapse;">
+    <thead>
+      <tr style="text-align:left; border-bottom:1px solid #ddd;">
+        <th style="padding:0.5rem 0;">Concepto</th>
+        <th style="text-align:right; padding:0.5rem 0;">Total</th>
+        <th style="padding:0.5rem 0; width:1%;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for clave, label, enlace in grupos_orden %}
+      {% set egreso = por_grupo.get(clave, {}).get('egreso', 0)|float %}
+      <tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:0.5rem 0;">{{ label }}</td>
+        <td style="text-align:right; padding:0.5rem 0;">€{{ "%.2f"|format(egreso) }}</td>
+        <td style="text-align:right; padding:0.5rem 0;"><a href="{{ enlace }}" class="prov-btn prov-btn-secondary">Ver</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{# ── Pendientes: cosas que aún no cierran ──────────────────────── #}
+<section class="ox-card" style="margin-top:1.25rem;">
+  <div class="partner-form-heading">
+    <span>⏳</span>
+    <div><strong>Pendientes de cerrar</strong><small>Estas cifras aún no aparecen arriba porque su cobro/pago está sin confirmar.</small></div>
+  </div>
+  <div class="prov-kpis prov-kpis-compact" style="margin-top:0.75rem;">
+    <div>
+      <span>Bizum/tarjeta sin confirmar</span>
+      <strong class="{{ 'prov-warning' if pendientes_pago_total|float > 0 else '' }}">€{{ "%.2f"|format(pendientes_pago_total|float) }}</strong>
+      <small>{{ pendientes_pago|length }} pedido{{ 's' if pendientes_pago|length != 1 else '' }}</small>
+    </div>
+    <div>
+      <span>Pagos al staff pendientes</span>
+      <strong class="{{ 'prov-warning' if pagos_staff_pendientes_total|float > 0 else '' }}">€{{ "%.2f"|format(pagos_staff_pendientes_total|float) }}</strong>
+      <small>{{ pagos_staff_pendientes|length }} asiento{{ 's' if pagos_staff_pendientes|length != 1 else '' }}</small>
+    </div>
+    <div>
+      <span>Liquidaciones a socios</span>
+      <strong class="{{ 'prov-warning' if liquidaciones_pendientes_total|float > 0 else '' }}">€{{ "%.2f"|format(liquidaciones_pendientes_total|float) }}</strong>
+      <small>{{ liquidaciones_pendientes|length }} pendiente{{ 's' if liquidaciones_pendientes|length != 1 else '' }}</small>
+    </div>
+  </div>
+  <div class="partner-form-actions" style="margin-top:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+    <a href="{{ url_for('admin.pagos_pendientes') }}" class="prov-btn prov-btn-secondary">Confirmar cobros pendientes</a>
+    <a href="{{ url_for('admin.pagos_staff') }}?pagado=0" class="prov-btn prov-btn-secondary">Cerrar pagos al staff</a>
+    <a href="{{ url_for('admin.liquidacion_proveedores') }}" class="prov-btn prov-btn-secondary">Liquidar socios</a>
+  </div>
+</section>
+
+{# ── Registro manual: gasto / ingreso ─────────────────────────── #}
+<section class="ox-card" style="margin-top:1.25rem;">
+  <div class="partner-form-heading">
+    <span>+</span>
+    <div><strong>Registrar movimiento manual</strong><small>Para gastos que no vienen del sistema (alquiler, servicios, compras…) o ingresos externos.</small></div>
+  </div>
+  <form method="post" action="{{ url_for('admin.registrar_movimiento') }}" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-top:0.75rem;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>
+      <span>Tipo</span>
+      <select name="tipo" required style="width:100%;">
+        <option value="egreso">Salida (gasto)</option>
+        <option value="ingreso">Entrada (ingreso extra)</option>
+      </select>
+    </label>
+    <label>
+      <span>Categoría</span>
+      <select name="categoria" required style="width:100%;">
+        <optgroup label="Gastos">
+          {% for cat, meta in categorias_manual_egreso if meta.grupo == 'gastos' %}
+          <option value="{{ cat }}">{{ meta.label }}</option>
+          {% endfor %}
+        </optgroup>
+        <optgroup label="Nóminas">
+          {% for cat, meta in categorias_manual_egreso if meta.grupo == 'nominas' %}
+          <option value="{{ cat }}">{{ meta.label }}</option>
+          {% endfor %}
+        </optgroup>
+        <optgroup label="Devoluciones">
+          {% for cat, meta in categorias_manual_egreso if meta.grupo == 'devoluciones' %}
+          <option value="{{ cat }}">{{ meta.label }}</option>
+          {% endfor %}
+        </optgroup>
+        <optgroup label="Otros">
+          {% for cat, meta in categorias_manual_egreso if meta.grupo == 'otros' %}
+          <option value="{{ cat }}">{{ meta.label }}</option>
+          {% endfor %}
+          {% for cat, meta in categorias_manual_ingreso %}
+          <option value="{{ cat }}">{{ meta.label }} (ingreso)</option>
+          {% endfor %}
+        </optgroup>
+      </select>
+    </label>
+    <label>
+      <span>Importe (€)</span>
+      <input type="number" name="monto" step="0.01" min="0.01" required style="width:100%;">
+    </label>
+    <label style="grid-column:1/-1;">
+      <span>Concepto</span>
+      <input type="text" name="concepto" maxlength="200" required placeholder="Ej. Alquiler local julio · Factura #123" style="width:100%;">
+    </label>
+    <div style="grid-column:1/-1;">
+      <button type="submit" class="prov-btn prov-btn-primary">Registrar movimiento</button>
+    </div>
+  </form>
+</section>
+
+{# ── Movimientos recientes ────────────────────────────────────── #}
+<section class="ox-card" style="margin-top:1.25rem;">
+  <div class="partner-form-heading">
+    <span>📒</span>
+    <div><strong>Últimos movimientos del período</strong><small>Detalle completo en <a href="{{ url_for('admin.caja') }}">/admin/caja</a>.</small></div>
+  </div>
+  {% if movimientos_recientes %}
+  <table style="width:100%; margin-top:0.75rem; border-collapse:collapse; font-size:0.9rem;">
+    <thead>
+      <tr style="text-align:left; border-bottom:1px solid #ddd;">
+        <th style="padding:0.5rem 0;">Fecha</th>
+        <th>Concepto</th>
+        <th>Categoría</th>
+        <th style="text-align:right;">Importe</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in movimientos_recientes %}
+      {% set meta = por_categoria.get(m.categoria, {'label': m.categoria, 'grupo': 'otros'}) %}
+      <tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:0.5rem 0.25rem 0.5rem 0;">{{ m.fecha.strftime('%d/%m %H:%M') }}</td>
+        <td style="padding:0.5rem 0.25rem;">{{ m.concepto or '—' }}</td>
+        <td style="padding:0.5rem 0.25rem;"><small>{{ meta.label }}</small></td>
+        <td style="text-align:right; padding:0.5rem 0; color:{{ '#0a7f3b' if m.tipo == 'ingreso' else '#b02020' }};">
+          {{ '+' if m.tipo == 'ingreso' else '-' }}€{{ "%.2f"|format(m.monto|float) }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="margin-top:0.75rem; color:#666;">Sin movimientos en este período.</p>
+  {% endif %}
+  <div class="partner-form-actions" style="margin-top:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+    <a href="{{ url_for('admin.caja', fecha_ini=fecha_ini, fecha_fin=fecha_fin) }}" class="prov-btn prov-btn-secondary">Ver libro mayor completo</a>
+    <a href="{{ url_for('admin.exportar_caja', fecha_ini=fecha_ini, fecha_fin=fecha_fin) }}" class="prov-btn prov-btn-secondary">Exportar CSV</a>
+  </div>
+</section>
+
+{# ── Cierre de caja diario ──────────────────────────────────────── #}
+<section class="ox-card" style="margin-top:1.25rem;">
+  <div class="partner-form-heading">
+    <span>🔒</span>
+    <div><strong>Cierre de caja diario</strong><small>Congela un snapshot inmutable del día. Sirve como fuente autoritativa para la asesoría — el libro mayor puede recibir ajustes posteriores, los cierres no cambian.</small></div>
+  </div>
+  <form method="post" action="{{ url_for('admin.cerrar_dia') }}" data-confirm="¿Cerrar el día seleccionado? Solo podrá recalcularse si un super_admin lo borra manualmente." style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-top:0.75rem;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>
+      <span>Fecha a cerrar</span>
+      <input type="date" name="fecha" value="{{ fecha_fin }}" required style="width:100%;">
+    </label>
+    <label>
+      <span>Efectivo declarado (€)</span>
+      <input type="number" name="efectivo_declarado" step="0.01" min="0" placeholder="cuenta manual de la caja" style="width:100%;">
+      <small style="color:#666;">opcional — para registrar descuadre</small>
+    </label>
+    <label style="grid-column:1/-1;">
+      <span>Notas</span>
+      <input type="text" name="notas" maxlength="1000" placeholder="Ej. Descuadre justificado por vuelta pendiente" style="width:100%;">
+    </label>
+    <div style="grid-column:1/-1;">
+      <button type="submit" class="prov-btn prov-btn-primary">Cerrar día</button>
+      <a href="{{ url_for('admin.cierres_lista') }}" class="prov-btn prov-btn-secondary">Ver historial de cierres</a>
+    </div>
+  </form>
+</section>
+
+{% endblock %}

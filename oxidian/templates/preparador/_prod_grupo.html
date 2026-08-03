@@ -1,0 +1,39 @@
+{# Partial: renderiza un grupo de items del mismo producto en la vista compacta
+   del preparador. Espera `grupo` como dict devuelto por `agrupar_items_por_producto`. #}
+<div class="work-prod-group{% if grupo.lineas|length > 1 %} work-prod-group--multi{% endif %}"
+     data-prod-group="{{ grupo.producto_id }}">
+  <header class="work-prod-group-hdr">
+    <span class="work-prod-group-qty" title="Total de unidades del producto en este pedido">
+      {{ grupo.cantidad_total }}×
+    </span>
+    <span class="work-prod-group-name">{{ grupo.producto_nombre }}</span>
+    {% if grupo.lineas|length > 1 %}
+    <span class="work-prod-group-count" title="Variaciones distintas (tamaño/sabor/extras)">
+      {{ grupo.lineas|length }} variacion{{ 'es' if grupo.lineas|length > 1 else '' }}
+    </span>
+    {% endif %}
+  </header>
+
+  {# Cada item del grupo mantiene su tamaño+sabores+extras propios.
+     `_order_item_combo.html` lee `item.get_metadata()` y renderiza los partials
+     de sabor y presentación. Con esto la cocina ve el detalle por variación
+     dentro del grupo. #}
+  <div class="work-prod-group-items">
+    {% for item in grupo.lineas %}
+    <div class="work-item work-item--in-group">
+      <span class="work-item-thumb" aria-hidden="true">
+        {% if item.display_imagen_url %}
+        <img src="{{ item.display_imagen_url|upload_url }}" alt="" loading="lazy" data-image-fallback="next-template">
+        <template>{{ _icon_placeholder() }}</template>
+        {% else %}
+        {{ _icon_placeholder() }}
+        {% endif %}
+      </span>
+      <span class="work-item-qty-big" title="Cantidad de esta variación">{{ item.cantidad }}×</span>
+      <div style="min-width:0">
+        {% include "_order_item_combo.html" %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>

@@ -1,0 +1,173 @@
+<section class="fin-control" aria-labelledby="fin-title">
+  <header class="fin-head">
+    <div>
+      <p class="fin-eyebrow">CONTROL DEL NEGOCIO</p>
+      <h1 id="fin-title">Ganancias, costes y gastos</h1>
+      <p>Pedidos entregados del {{ fecha_ini }} al {{ fecha_fin }}. Las ventas canceladas no se cuentan.</p>
+    </div>
+    <div class="fin-head-actions">
+      <a href="{{ url_for('admin.caja') }}" class="fin-export">Registrar ingreso o gasto</a>
+      {% if current_user.rol == 'super_admin' %}
+        <a href="{{ url_for('superadmin.finanzas_export', desde=fecha_ini, hasta=fecha_fin) }}"
+           class="fin-export">Descargar CSV</a>
+      {% endif %}
+    </div>
+  </header>
+
+  <nav class="fin-presets" aria-label="Períodos rápidos">
+    <a href="?fecha_ini={{ hoy_iso }}&fecha_fin={{ hoy_iso }}">Hoy</a>
+    <a href="?fecha_ini={{ semana_ini }}&fecha_fin={{ hoy_iso }}">Últimos 7 días</a>
+    <a href="?fecha_ini={{ mes_ini }}&fecha_fin={{ hoy_iso }}">Este mes</a>
+  </nav>
+
+  <form method="GET" class="fin-filter">
+    <label><span>Desde</span><input type="date" name="fecha_ini" value="{{ fecha_ini }}" required></label>
+    <label><span>Hasta</span><input type="date" name="fecha_fin" value="{{ fecha_fin }}" required></label>
+    <button type="submit">Actualizar</button>
+  </form>
+
+  {% if pl.resultado_provisional %}
+  <div class="fin-alert fin-alert--danger" role="alert">
+    <div>
+      <strong>La ganancia todavía es provisional</strong>
+      <p>{{ pl.lineas_sin_coste }} línea(s) vendida(s) no tienen un coste conocido. Las ventas son correctas, pero la ganancia aparece más alta de lo real.</p>
+    </div>
+    <a href="{{ url_for('admin.productos') }}">Completar costes</a>
+  </div>
+  {% elif pl.productos_sin_coste %}
+  <div class="fin-alert fin-alert--warning">
+    <div>
+      <strong>{{ pl.productos_sin_coste|length }} producto(s) activos aún no tienen coste</strong>
+      <p>No afectan este período si no se vendieron, pero conviene completarlos antes de la próxima venta.</p>
+    </div>
+    <a href="{{ url_for('admin.productos') }}">Revisar catálogo</a>
+  </div>
+  {% else %}
+  <div class="fin-alert fin-alert--ok">
+    <div><strong>Costes completos</strong><p>La cobertura de costes vendidos es del {{ pl.cobertura_costes_pct }}%.</p></div>
+  </div>
+  {% endif %}
+
+  <div class="fin-kpis">
+    <article>
+      <span>Entró por ventas</span>
+      <strong>€{{ "%.2f"|format(pl.ingresos_netos) }}</strong>
+      <small>{{ pl.total_pedidos }} pedidos entregados</small>
+    </article>
+    <article>
+      <span>Costó lo vendido</span>
+      <strong>€{{ "%.2f"|format(pl.cogs) }}</strong>
+      <small>{{ pl.cobertura_costes_pct }}% con coste conocido</small>
+    </article>
+    <article>
+      <span>Gastos del período</span>
+      {% set gastos_periodo = pl.nominas + pl.comisiones_repartidor + pl.gastos_caja + pl.service_commission %}
+      <strong>€{{ "%.2f"|format(gastos_periodo) }}</strong>
+      <small>Personal, operación y comisiones</small>
+    </article>
+    <article class="{{ 'is-provisional' if pl.resultado_provisional else 'is-positive' if pl.resultado >= 0 else 'is-negative' }}">
+      <span>{{ 'Resultado provisional' if pl.resultado_provisional else 'Te queda' if pl.resultado >= 0 else 'Pérdida estimada' }}</span>
+      {% if pl.resultado_provisional %}
+        <strong>Máx. €{{ "%.2f"|format(pl.resultado) }}</strong>
+        <small>Faltan costes: no usar como ganancia real</small>
+      {% else %}
+        <strong>{{ '+' if pl.resultado >= 0 else '−' }}€{{ "%.2f"|format(pl.resultado|abs) }}</strong>
+        <small>{{ pl.resultado_pct }}% de las ventas</small>
+      {% endif %}
+    </article>
+  </div>
+
+  <div class="fin-equation" aria-label="Cómo se calcula el resultado">
+    <span><b>€{{ "%.2f"|format(pl.ventas_productos_netas) }}</b> productos</span>
+    <i>+</i>
+    <span><b>€{{ "%.2f"|format(pl.ingreso_envios) }}</b> envíos</span>
+    <i>−</i>
+    <span><b>€{{ "%.2f"|format(pl.cogs) }}</b> coste vendido</span>
+    <i>−</i>
+    <span><b>€{{ "%.2f"|format(gastos_periodo) }}</b> gastos</span>
+    {% if pl.otros_ingresos_caja %}<i>+</i><span><b>€{{ "%.2f"|format(pl.otros_ingresos_caja) }}</b> otros ingresos</span>{% endif %}
+  </div>
+
+  <details class="fin-section" open>
+    <summary>
+      <span><b>Rentabilidad por producto</b><small>Qué vende, cuánto cuesta y cuánto deja</small></span>
+      <em>{{ pl.productos_rentabilidad|length }} productos</em>
+    </summary>
+    <div class="fin-section-body">
+      {% if pl.productos_rentabilidad %}
+      <div class="fin-product-head" aria-hidden="true">
+        <span>Producto</span><span>Ventas</span><span>Coste</span><span>Ganancia</span><span>Margen</span>
+      </div>
+      <div class="fin-products">
+        {% for row in pl.productos_rentabilidad %}
+        <article class="fin-product {{ 'has-missing-cost' if row.coste_incompleto }}">
+          <div class="fin-product-name">
+            <strong>{{ row.nombre }}</strong>
+            <small>{{ row.unidades }} uds. · {{ row.categoria }}</small>
+            {% if row.coste_incompleto %}<a href="{{ url_for('admin.editar_producto', producto_id=row.producto_id) }}">Falta coste</a>
+            {% elif row.coste_estimado %}<em>Coste actual estimado</em>{% endif %}
+          </div>
+          <div data-label="Ventas"><strong>€{{ "%.2f"|format(row.ventas_netas) }}</strong>{% if row.descuentos %}<small>−€{{ "%.2f"|format(row.descuentos) }} dto.</small>{% endif %}</div>
+          <div data-label="Coste"><strong>{{ 'Pendiente' if row.coste_incompleto else '€%.2f'|format(row.coste) }}</strong></div>
+          <div data-label="Ganancia"><strong class="{{ 'fin-positive' if row.ganancia >= 0 and not row.coste_incompleto else 'fin-negative' if row.ganancia < 0 else '' }}">{{ '—' if row.coste_incompleto else '€%.2f'|format(row.ganancia) }}</strong></div>
+          <div data-label="Margen"><strong>{{ '—' if row.coste_incompleto else '%.1f%%'|format(row.margen_pct) }}</strong></div>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="fin-empty">Todavía no hay productos entregados en este período.</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <div class="fin-details-grid">
+    <details class="fin-section">
+      <summary><span><b>¿En qué se fue el dinero?</b><small>Desglose de costes y gastos</small></span><em>Ver detalle</em></summary>
+      <div class="fin-section-body fin-breakdown">
+        <p><span>Coste de productos vendidos</span><b>€{{ "%.2f"|format(pl.cogs) }}</b></p>
+        <p><span>Nóminas y bonos pagados</span><b>€{{ "%.2f"|format(pl.nominas) }}</b></p>
+        <p><span>Comisiones pagadas</span><b>€{{ "%.2f"|format(pl.comisiones_repartidor) }}</b></p>
+        <p><span>Gastos operativos manuales</span><b>€{{ "%.2f"|format(pl.gastos_caja) }}</b></p>
+        {% if pl.service_commission %}<p><span>Comisión del servicio</span><b>€{{ "%.2f"|format(pl.service_commission) }}</b></p>{% endif %}
+        {% for row in pl.gastos_por_categoria %}
+        <p class="is-sub"><span>{{ row.categoria.replace('_', ' ')|capitalize }}</span><b>€{{ "%.2f"|format(row.monto) }}</b></p>
+        {% endfor %}
+        {% if pl.compras_inventario %}
+        <aside><strong>Compras de inventario: €{{ "%.2f"|format(pl.compras_inventario) }}</strong><br>Es una salida de caja. No se resta otra vez de la ganancia porque el coste se reconoce cuando se vende el producto.</aside>
+        {% endif %}
+      </div>
+    </details>
+
+    <details class="fin-section">
+      <summary><span><b>Dinero registrado en caja</b><small>Entradas y salidas reales del período</small></span><em>Ver detalle</em></summary>
+      <div class="fin-section-body fin-breakdown">
+        <p><span>Entradas registradas</span><b class="fin-positive">€{{ "%.2f"|format(pl.caja_ingresos) }}</b></p>
+        <p><span>Salidas registradas</span><b class="fin-negative">€{{ "%.2f"|format(pl.caja_egresos) }}</b></p>
+        <p class="is-total"><span>Movimiento neto de caja</span><b class="{{ 'fin-positive' if pl.saldo_caja >= 0 else 'fin-negative' }}">{{ '+' if pl.saldo_caja >= 0 else '−' }}€{{ "%.2f"|format(pl.saldo_caja|abs) }}</b></p>
+        {% if pl.anticipos_pagados %}<p><span>Anticipos pagados</span><b>€{{ "%.2f"|format(pl.anticipos_pagados) }}</b></p>{% endif %}
+        {% if pl.liquidaciones_proveedor %}<p><span>Liquidaciones a proveedores</span><b>€{{ "%.2f"|format(pl.liquidaciones_proveedor) }}</b></p>{% endif %}
+        <aside><strong>Pendiente de pagar al equipo: €{{ "%.2f"|format(pl.pagos_pendientes) }}</strong><br>No se descuenta del flujo de caja hasta que se marque como pagado.</aside>
+      </div>
+    </details>
+
+    <details class="fin-section">
+      <summary><span><b>Ventas y descuentos</b><small>Origen de los ingresos</small></span><em>Ver detalle</em></summary>
+      <div class="fin-section-body fin-breakdown">
+        <p><span>Web</span><b>€{{ "%.2f"|format(pl.ventas_online) }}</b></p>
+        <p><span>WhatsApp</span><b>€{{ "%.2f"|format(pl.ventas_whatsapp) }}</b></p>
+        <p><span>Presencial</span><b>€{{ "%.2f"|format(pl.ventas_presencial) }}</b></p>
+        <p><span>Descuentos concedidos</span><b>€{{ "%.2f"|format(pl.descuentos_concedidos) }}</b></p>
+        <p><span>Ticket medio</span><b>€{{ "%.2f"|format(pl.ticket_medio) }}</b></p>
+      </div>
+    </details>
+  </div>
+
+  <p class="fin-footnote">Rentabilidad y caja responden preguntas distintas: la primera indica si el negocio gana con lo vendido; la segunda muestra cuánto dinero entró y salió en las fechas seleccionadas.</p>
+</section>
+
+<style>
+.fin-control{display:grid;gap:1rem;color:var(--col-text);max-width:1400px;margin:0 auto}.fin-head{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}.fin-head-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.45rem}.fin-head h1{font-size:clamp(1.45rem,3vw,2rem);font-weight:950;line-height:1.1}.fin-head p{color:var(--col-muted);font-size:.8rem;margin-top:.35rem}.fin-eyebrow{color:var(--brand-primary)!important;font-weight:900;letter-spacing:.08em;font-size:.68rem!important}.fin-export,.fin-presets a,.fin-alert a{border:1px solid color-mix(in srgb,var(--brand-primary) 38%,var(--col-border));background:color-mix(in srgb,var(--brand-primary) 10%,var(--col-surface));color:color-mix(in srgb,var(--brand-primary) 62%,var(--col-text));font-size:.75rem;font-weight:850;border-radius:.7rem;padding:.55rem .75rem;white-space:nowrap}.fin-presets{display:flex;gap:.45rem;overflow-x:auto;padding-bottom:.1rem}.fin-filter{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) auto;gap:.6rem;padding:.8rem;background:var(--col-surface);border:1px solid var(--col-border);border-radius:.9rem}.fin-filter label{display:grid;gap:.25rem}.fin-filter label span{font-size:.68rem;font-weight:800;color:var(--col-muted)}.fin-filter input{min-width:0;border:1px solid var(--col-border);background:var(--col-elevated);color:var(--col-text);border-radius:.65rem;padding:.55rem}.fin-filter button{align-self:end;min-height:42px;border:0;border-radius:.65rem;background:var(--brand-primary);color:var(--brand-on-primary);font-weight:900;padding:0 1rem}.fin-alert{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.85rem 1rem;border:1px solid;border-radius:.9rem}.fin-alert strong{font-size:.84rem}.fin-alert p{font-size:.72rem;color:var(--col-muted);margin-top:.15rem}.fin-alert--danger{border-color:color-mix(in srgb,var(--theme-danger) 42%,transparent);background:color-mix(in srgb,var(--theme-danger) 8%,var(--col-surface))}.fin-alert--warning{border-color:color-mix(in srgb,var(--status-warn) 42%,transparent);background:color-mix(in srgb,var(--status-warn) 8%,var(--col-surface))}.fin-alert--ok{border-color:color-mix(in srgb,var(--theme-success) 35%,transparent);background:color-mix(in srgb,var(--theme-success) 7%,var(--col-surface))}.fin-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem}.fin-kpis article{display:grid;gap:.2rem;min-width:0;padding:1rem;background:var(--col-surface);border:1px solid var(--col-border);border-radius:1rem}.fin-kpis span{font-size:.7rem;font-weight:800;color:var(--col-muted)}.fin-kpis strong{font-size:clamp(1.2rem,3vw,1.75rem);overflow-wrap:anywhere}.fin-kpis small{font-size:.65rem;color:var(--col-faint)}.fin-kpis .is-positive{border-color:color-mix(in srgb,var(--theme-success) 38%,var(--col-border));background:color-mix(in srgb,var(--theme-success) 7%,var(--col-surface))}.fin-kpis .is-negative{border-color:color-mix(in srgb,var(--theme-danger) 42%,var(--col-border));background:color-mix(in srgb,var(--theme-danger) 7%,var(--col-surface))}.fin-equation{display:flex;align-items:center;gap:.45rem;overflow-x:auto;padding:.7rem .8rem;border-radius:.8rem;background:var(--col-elevated);font-size:.68rem;color:var(--col-muted)}.fin-equation span{white-space:nowrap}.fin-equation b{color:var(--col-text)}.fin-equation i{font-style:normal;color:var(--brand-primary);font-weight:900}.fin-section{background:var(--col-surface);border:1px solid var(--col-border);border-radius:1rem;overflow:hidden}.fin-section summary{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:1rem;cursor:pointer;list-style:none}.fin-section summary::-webkit-details-marker{display:none}.fin-section summary span{display:grid;gap:.15rem}.fin-section summary b{font-size:.88rem}.fin-section summary small{color:var(--col-muted);font-size:.68rem}.fin-section summary em{font-style:normal;color:var(--brand-primary);font-size:.68rem;font-weight:850}.fin-section[open] summary{border-bottom:1px solid var(--col-border)}.fin-section-body{padding:.75rem}.fin-product-head,.fin-product{display:grid;grid-template-columns:minmax(13rem,2fr) repeat(4,minmax(5rem,.75fr));gap:.65rem;align-items:center}.fin-product-head{padding:.3rem .65rem;color:var(--col-faint);font-size:.62rem;font-weight:800;text-transform:uppercase}.fin-product{padding:.7rem .65rem;border-radius:.7rem}.fin-product:nth-child(odd){background:var(--col-elevated)}.fin-product>div:not(.fin-product-name){text-align:right;font-size:.78rem}.fin-product-name{display:grid;min-width:0}.fin-product-name strong{overflow-wrap:anywhere;font-size:.8rem}.fin-product-name small{font-size:.63rem;color:var(--col-muted)}.fin-product-name a,.fin-product-name em{width:max-content;margin-top:.2rem;font-size:.62rem;font-style:normal;font-weight:850;color:var(--theme-danger)}.fin-product.has-missing-cost{border:1px solid color-mix(in srgb,var(--theme-danger) 25%,transparent)}.fin-positive{color:color-mix(in srgb,var(--theme-success) 68%,var(--col-text))!important}.fin-negative{color:color-mix(in srgb,var(--theme-danger) 72%,var(--col-text))!important}.fin-empty{text-align:center;padding:1.5rem;color:var(--col-muted);font-size:.8rem}.fin-details-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.8rem}.fin-breakdown{display:grid;gap:.25rem}.fin-breakdown p{display:flex;justify-content:space-between;gap:.6rem;padding:.45rem .25rem;border-bottom:1px solid var(--col-border);font-size:.72rem}.fin-breakdown p span{color:var(--col-muted)}.fin-breakdown .is-sub{padding-left:1rem;font-size:.67rem}.fin-breakdown .is-total{font-weight:900;font-size:.78rem}.fin-breakdown aside{margin-top:.55rem;padding:.65rem;border-radius:.65rem;background:var(--col-elevated);font-size:.66rem;color:var(--col-muted);line-height:1.45}.fin-breakdown aside strong{color:var(--col-text)}.fin-footnote{font-size:.68rem;color:var(--col-faint);text-align:center;padding:.25rem}
+.fin-eyebrow{color:var(--brand-text)!important}
+@media(max-width:900px){.fin-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.fin-details-grid{grid-template-columns:1fr}.fin-product-head{display:none}.fin-product{grid-template-columns:repeat(4,minmax(0,1fr))}.fin-product-name{grid-column:1/-1}.fin-product>div:not(.fin-product-name){text-align:left}.fin-product>div:not(.fin-product-name)::before{content:attr(data-label);display:block;font-size:.58rem;color:var(--col-faint);margin-bottom:.1rem}}
+@media(max-width:520px){.fin-head{display:grid}.fin-export{width:max-content}.fin-filter{grid-template-columns:1fr 1fr}.fin-filter button{grid-column:1/-1}.fin-alert{align-items:flex-start;display:grid}.fin-alert a{width:max-content}.fin-kpis{gap:.5rem}.fin-kpis article{padding:.75rem}.fin-kpis strong{font-size:1.15rem}.fin-product{grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem}.fin-equation{margin-inline:-.25rem}}
+</style>

@@ -7,7 +7,8 @@
   'admin': 'Administrador',
   'cocina': role_label('cocina'),
   'preparacion': role_label('preparacion'),
-  'repartidor': 'Repartidor'
+  'repartidor': 'Repartidor',
+  'socio_producto': 'Socio de productos'
 } %}
 
 <div class="flex items-center gap-3 mb-5">
@@ -45,6 +46,19 @@
       <input class="ox-input" type="tel" name="telefono" value="{{ usuario.telefono or '' }}" required autocomplete="tel">
       <small style="color:var(--col-muted)">No lo dejes vacío: el bot usa este número para reconocer roles y permisos.</small>
     </div>
+    {% if proveedores %}
+    <div class="ox-field md:col-span-2" data-socio-field {% if usuario.rol != 'socio_producto' %}hidden{% endif %}>
+      <label class="ox-label">Socio vinculado *</label>
+      <select class="ox-input" name="proveedor_id"
+              {% if usuario.rol != 'socio_producto' %}disabled{% endif %}>
+        <option value="">Selecciona el socio</option>
+        {% for proveedor in proveedores %}
+        <option value="{{ proveedor.id }}" {% if usuario.proveedor_id == proveedor.id %}selected{% endif %}>{{ proveedor.nombre }}</option>
+        {% endfor %}
+      </select>
+      <small style="color:var(--col-muted)">Esta cuenta solo accederá a pedidos y finanzas de ese socio.</small>
+    </div>
+    {% endif %}
     <div class="ox-field md:col-span-2">
       <label class="ox-label">Puesto de trabajo</label>
       <input class="ox-input" name="puesto_trabajo" value="{{ usuario.puesto_trabajo or '' }}">
@@ -87,4 +101,22 @@
 </section>
 {% endif %}
 
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce() }}">
+(() => {
+  const role = document.getElementById('edit-role');
+  const field = document.querySelector('[data-socio-field]');
+  const select = field?.querySelector('[name="proveedor_id"]');
+  if (!role || !field || !select) return;
+  const sync = () => {
+    const enabled = role.value === 'socio_producto';
+    field.hidden = !enabled;
+    select.disabled = !enabled;
+    select.required = enabled;
+  };
+  role.addEventListener('change', sync);
+  sync();
+})();
+</script>
 {% endblock %}

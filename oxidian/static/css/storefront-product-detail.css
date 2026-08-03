@@ -1,0 +1,531 @@
+/*
+ * Detalle y configurador público de producto.
+ *
+ * Esta capa contiene únicamente composición visual. El estado, los precios y
+ * la validación permanecen en la fuente de verdad del formulario existente.
+ */
+
+/* `overflow-x:hidden` convierte implícitamente el eje Y en `auto` y crea un
+   scroll-container que impide el sticky del asistente. `clip` recorta el eje
+   horizontal sin secuestrar el desplazamiento vertical de la página. */
+body.ox-body-public main {
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+body.ox-body-public .pd-hero-img-contain {
+  background: color-mix(in srgb, var(--theme-surface-alt) 72%, #fff);
+}
+
+body.ox-body-public .pd-hero-img-contain .pd-hero-img-el {
+  box-sizing: border-box;
+  object-fit: contain;
+  padding: clamp(.7rem, 4vw, 1.8rem);
+  filter: drop-shadow(0 10px 12px color-mix(in srgb, var(--theme-text) 16%, transparent));
+  mix-blend-mode: normal;
+}
+
+body.ox-body-public .pd-hero-img-cover .pd-hero-img-el {
+  object-fit: cover;
+}
+
+body.ox-body-public .pd-box-combo {
+  padding: clamp(.78rem, 2.4vw, 1.1rem);
+  overflow: visible;
+  background:
+    linear-gradient(155deg,
+      color-mix(in srgb, var(--brand-primary) 7%, var(--theme-surface)),
+      var(--theme-surface) 34%) !important;
+}
+
+/* La elección principal debe leerse completa incluso en 320 px. El grid
+   reparte el ancho real disponible y permite dos líneas; nunca recorta el
+   nombre de una presentación. */
+body.ox-body-public .pd-tallas-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr));
+  gap: .42rem;
+}
+
+body.ox-body-public .pd-tallas-opt {
+  min-height: 44px;
+  padding: .4rem 1.4rem .4rem .62rem;
+  overflow: visible;
+}
+
+body.ox-body-public .pd-tallas-label {
+  max-width: 100%;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+  line-height: 1.15;
+}
+
+body.ox-body-public .pd-price-row {
+  margin-bottom: .65rem;
+}
+
+body.ox-body-public .pd-price {
+  font-size: clamp(1.45rem, 6vw, 1.8rem);
+}
+
+body.ox-body-public .pd-no-alerg-line {
+  margin-block: .35rem .6rem;
+  font-size: .7rem;
+  line-height: 1.35;
+}
+
+body.ox-body-public .pd-extras {
+  margin: .65rem 0;
+  padding: .68rem;
+  border-color: color-mix(in srgb, var(--theme-text) 11%, transparent);
+  background: var(--theme-surface);
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--theme-text) 7%, transparent);
+}
+
+body.ox-body-public .pd-extras > h2 {
+  margin: 0;
+  font-size: .98rem;
+}
+
+body.ox-body-public .pd-extras > p {
+  margin: .12rem 0 .45rem;
+  line-height: 1.35;
+}
+
+body.ox-body-public .pd-extra-group {
+  margin-top: .45rem;
+  padding: .52rem;
+  border-color: color-mix(in srgb, var(--theme-text) 10%, transparent);
+  background: color-mix(in srgb, var(--theme-text) 2.5%, var(--theme-surface));
+}
+
+body.ox-body-public .pd-flavor-group {
+  border-color: color-mix(in srgb, var(--brand-primary) 22%, var(--col-border));
+}
+
+body.ox-body-public .pd-flavor-chips {
+  gap: .4rem;
+}
+
+body.ox-body-public .pd-flavor-chip {
+  min-height: 40px;
+  padding: .45rem .72rem;
+  border-width: 1.5px;
+  font-size: .8rem;
+}
+
+body.ox-body-public .pd-combo-guide {
+  position: sticky;
+  top: calc(84px + env(safe-area-inset-top, 0px));
+  z-index: 8;
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "copy steps"
+    "track track";
+  gap: .4rem .65rem;
+  margin: .2rem 0 .6rem;
+  padding: .55rem .65rem;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 25%, var(--col-border));
+  border-radius: .95rem;
+  background: color-mix(in srgb, var(--theme-surface) 94%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--theme-text) 10%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  scroll-margin-top: calc(var(--header-height, 0px) + .75rem);
+}
+
+body.ox-body-public .pd-combo-guide-copy {
+  grid-area: copy;
+  min-width: 0;
+}
+
+body.ox-body-public .pd-combo-guide-eyebrow {
+  display: block;
+  color: var(--theme-muted);
+  font-size: .61rem;
+  font-weight: 850;
+  letter-spacing: .075em;
+  text-transform: uppercase;
+}
+
+body.ox-body-public .pd-combo-guide-copy strong {
+  display: block;
+  color: var(--theme-text);
+  font-size: .82rem;
+  line-height: 1.25;
+}
+
+body.ox-body-public .pd-combo-guide-track {
+  grid-area: track;
+  height: .42rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-text) 12%, transparent);
+}
+
+body.ox-body-public .pd-combo-guide-track > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg,
+    var(--brand-primary),
+    color-mix(in srgb, var(--theme-success) 75%, var(--brand-primary)));
+  transition: width .22s ease;
+}
+
+body.ox-body-public .pd-combo-guide-steps {
+  grid-area: steps;
+  display: flex;
+  align-items: center;
+  gap: .28rem;
+}
+
+body.ox-body-public .pd-combo-guide-step {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--theme-text) 14%, transparent);
+  border-radius: 50%;
+  background: var(--theme-surface-alt);
+  color: var(--theme-muted);
+  font-size: .69rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+body.ox-body-public .pd-combo-guide-step.is-current {
+  border-color: var(--brand-primary);
+  color: var(--theme-text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 16%, transparent);
+}
+
+body.ox-body-public .pd-combo-guide-step.is-complete {
+  border-color: color-mix(in srgb, var(--theme-success) 42%, transparent);
+  background: color-mix(in srgb, var(--theme-success) 13%, var(--theme-surface));
+  color: color-mix(in srgb, var(--theme-success) 72%, var(--theme-text));
+}
+
+body.ox-body-public .pd-cstep {
+  margin-top: .62rem;
+  border: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent);
+  border-radius: 1rem !important;
+  background: var(--theme-surface);
+  box-shadow: 0 7px 18px color-mix(in srgb, var(--theme-text) 6%, transparent);
+}
+
+body.ox-body-public .pd-cstep-hd {
+  min-height: 3.2rem;
+  padding: .55rem .65rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+body.ox-body-public .pd-cstep-hd::after {
+  content: "⌄";
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  flex: 0 0 1.5rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--theme-text) 7%, transparent);
+  color: var(--theme-muted);
+  font-size: .82rem;
+  transition: transform .18s ease;
+}
+
+body.ox-body-public .pd-cstep.is-open .pd-cstep-hd::after {
+  transform: rotate(180deg);
+}
+
+body.ox-body-public .pd-cstep.is-complete:not(.is-open) {
+  border-color: color-mix(in srgb, var(--theme-success) 30%, transparent);
+}
+
+body.ox-body-public .pd-cstep.is-complete .pd-cstep-num {
+  background: color-mix(in srgb, var(--theme-success) 17%, var(--theme-surface));
+  color: color-mix(in srgb, var(--theme-success) 74%, var(--theme-text));
+}
+
+body.ox-body-public .pd-cstep:not(.is-open) > :is(.pd-cstep-progress, .pd-cstep-body) {
+  display: none;
+}
+
+body.ox-body-public .pd-cstep-body {
+  gap: .5rem;
+  padding: .55rem;
+  border-top: 1px solid color-mix(in srgb, var(--theme-text) 8%, transparent);
+}
+
+body.ox-body-public .pd-combo-item,
+body.ox-body-public .pd-combo-opcion {
+  border: 1px solid color-mix(in srgb, var(--theme-text) 11%, transparent);
+  border-radius: .85rem;
+  background: color-mix(in srgb, var(--theme-surface-alt) 45%, var(--theme-surface));
+  box-shadow: none;
+}
+
+/* Resumen de componentes: una línea escaneable. La antigua remaquetación
+   móvil dejaba cada hijo en una fila implícita y convertía seis productos
+   sencillos en más de una pantalla completa. Las configuraciones reales de
+   tamaño/sabor siguen ocupando una fila completa debajo cuando existen. */
+body.ox-body-public .pd-cstep-body > .pd-combo-item {
+  display: grid;
+  grid-template-columns: 42px 2rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .42rem;
+  min-height: 58px;
+  padding: .45rem;
+}
+
+body.ox-body-public .pd-cstep-body > .pd-combo-item .pd-combo-thumb {
+  width: 42px;
+  height: 42px;
+}
+
+body.ox-body-public .pd-cstep-body > .pd-combo-item .pd-combo-tag {
+  grid-column: auto;
+  max-width: 5.4rem;
+  white-space: normal;
+  text-align: center;
+}
+
+body.ox-body-public .pd-cstep-body > .pd-combo-item :is(
+  .pd-combo-units,
+  .pd-combo-flavor,
+  .pd-combo-presentation
+) {
+  grid-column: 1 / -1;
+}
+
+body.ox-body-public .pd-combo-item-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+body.ox-body-public .pd-combo-opcion:has(.combo-sel-radio:checked),
+body.ox-body-public .pd-combo-opcion:has(.combo-sel-qty:not([value="0"])) {
+  border-color: color-mix(in srgb, var(--brand-primary) 52%, transparent);
+  background: color-mix(in srgb, var(--brand-primary) 7%, var(--theme-surface));
+}
+
+body.ox-body-public .pd-combo-units {
+  margin-top: .4rem;
+  padding: .48rem;
+  border: 0;
+  border-radius: .75rem;
+  background: color-mix(in srgb, var(--brand-primary) 6%, var(--theme-surface));
+}
+
+body.ox-body-public .pd-combo-unit-row {
+  grid-template-columns: minmax(4.6rem, .7fr) repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: .5rem;
+}
+
+body.ox-body-public .pd-combo-unit-field {
+  align-content: start;
+}
+
+body.ox-body-public .pd-combo-unit-field > span {
+  color: var(--theme-muted);
+  font-size: .62rem;
+  font-weight: 950;
+  letter-spacing: .065em;
+  text-transform: uppercase;
+}
+
+/* El select continúa en el DOM y en el FormData, pero la interacción visual se
+   realiza con botones. No usamos display:none para conservar validación y
+   compatibilidad con lectores de pantalla. */
+body.ox-body-public .pd-combo-native-select {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+body.ox-body-public .pd-combo-unit-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.4rem), 1fr));
+  gap: .38rem;
+  min-width: 0;
+}
+
+body.ox-body-public .pd-combo-unit-choice {
+  position: relative;
+  min-width: 0;
+  min-height: 44px;
+  padding: .52rem .58rem;
+  overflow-wrap: anywhere;
+  border: 1.5px solid color-mix(in srgb, var(--theme-text) 14%, transparent);
+  border-radius: .72rem;
+  background: var(--theme-surface);
+  color: var(--theme-text);
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--theme-text) 5%, transparent);
+  font-size: .72rem;
+  font-weight: 850;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease, box-shadow .16s ease;
+}
+
+body.ox-body-public .pd-combo-unit-choice:is(:hover, :focus-visible):not(:disabled) {
+  border-color: color-mix(in srgb, var(--brand-primary) 52%, transparent);
+  transform: translateY(-1px);
+}
+
+body.ox-body-public .pd-combo-unit-choice.is-selected {
+  padding-right: 1.55rem;
+  border-color: color-mix(in srgb, var(--brand-accent) 72%, var(--brand-primary));
+  background:
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--brand-accent) 13%, var(--theme-surface)),
+      color-mix(in srgb, var(--brand-primary) 9%, var(--theme-surface)));
+  color: color-mix(in srgb, var(--brand-accent) 74%, var(--theme-text));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--brand-accent) 11%, transparent),
+    0 7px 16px color-mix(in srgb, var(--brand-accent) 13%, transparent);
+}
+
+body.ox-body-public .pd-combo-unit-choice.is-selected::after {
+  content: "✓";
+  position: absolute;
+  top: 50%;
+  right: .52rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--brand-accent);
+  color: var(--theme-header-text, #fff);
+  font-size: .58rem;
+  transform: translateY(-50%);
+}
+
+body.ox-body-public .pd-combo-unit-choice:disabled {
+  opacity: .38;
+  cursor: not-allowed;
+}
+
+body.ox-body-public .pd-cstep-next {
+  width: 100%;
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  margin-top: .15rem;
+  padding: .62rem .9rem;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 36%, transparent);
+  border-radius: .75rem;
+  background: color-mix(in srgb, var(--brand-primary) 10%, var(--theme-surface));
+  color: color-mix(in srgb, var(--brand-primary) 72%, var(--theme-text));
+  font-size: .78rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+body.ox-body-public .pd-cstep-next.is-finish {
+  border-color: color-mix(in srgb, var(--theme-success) 34%, transparent);
+  background: color-mix(in srgb, var(--theme-success) 10%, var(--theme-surface));
+  color: color-mix(in srgb, var(--theme-success) 74%, var(--theme-text));
+}
+
+@media (max-width: 520px) {
+  body.ox-body-public .pd-combo-guide {
+    top: calc(80px + env(safe-area-inset-top, 0px));
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "copy steps"
+      "track track";
+  }
+
+  body.ox-body-public .pd-combo-guide-steps {
+    justify-content: flex-end;
+    overflow-x: auto;
+    max-width: 7.5rem;
+    padding: 0;
+  }
+
+  body.ox-body-public .pd-combo-unit-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .42rem;
+    padding: .48rem;
+    border: 1px solid color-mix(in srgb, var(--theme-text) 9%, transparent);
+    border-radius: .78rem;
+    background: color-mix(in srgb, var(--theme-surface) 78%, transparent);
+  }
+
+  body.ox-body-public .pd-combo-unit-label {
+    grid-column: 1 / -1;
+    width: fit-content;
+    padding: .2rem .5rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--brand-primary) 13%, var(--theme-surface));
+    color: color-mix(in srgb, var(--brand-primary) 72%, var(--theme-text));
+  }
+
+  body.ox-body-public .pd-combo-unit-row + .pd-combo-unit-row {
+    margin-top: .58rem;
+    padding-top: .58rem;
+    border-top-style: solid;
+  }
+}
+
+@media (max-width: 350px) {
+  body.ox-body-public .pd-cstep-body > .pd-combo-item {
+    grid-template-columns: 38px 1.7rem minmax(0, 1fr);
+  }
+
+  body.ox-body-public .pd-cstep-body > .pd-combo-item .pd-combo-thumb {
+    width: 38px;
+    height: 38px;
+  }
+
+  body.ox-body-public .pd-cstep-body > .pd-combo-item .pd-combo-tag {
+    grid-column: 3;
+    justify-self: start;
+  }
+
+  body.ox-body-public .pd-combo-unit-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body.ox-body-public .pd-combo-unit-label {
+    grid-column: auto;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  body.ox-body-public .pd-combo-guide {
+    position: relative;
+    top: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.ox-body-public .pd-combo-guide-track > span,
+  body.ox-body-public .pd-cstep-hd::after {
+    transition: none;
+  }
+}

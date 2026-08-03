@@ -1,0 +1,27 @@
+.legal-page { max-width: 920px; margin: 0 auto; display: grid; gap: 1rem; }
+.legal-hero, .legal-card, .legal-warning, .legal-index { background: var(--theme-surface); border: 1px solid var(--col-border); border-radius: 1rem; padding: clamp(1rem, 3vw, 1.5rem); box-shadow: var(--shadow-1); }
+.legal-hero { background: linear-gradient(135deg, var(--theme-header-bg), color-mix(in srgb, var(--theme-header-bg) 76%, var(--brand-primary))); color: var(--theme-header-text); }
+.legal-hero p { font-size: .75rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.legal-hero h1 { font-size: clamp(1.55rem, 5vw, 2.35rem); line-height: 1.08; margin: .35rem 0; }
+.legal-hero span { font-size: .78rem; opacity: .82; }
+.legal-warning { border-color: var(--theme-warning); background: color-mix(in srgb, var(--theme-warning) 10%, var(--theme-surface)); }
+.legal-warning p { margin: .25rem 0 0; }
+.legal-index { display: flex; flex-wrap: wrap; gap: .5rem; }
+.legal-index a, .legal-privacy-button { border: 1px solid var(--col-border); border-radius: .7rem; padding: .55rem .75rem; font-weight: 800; color: var(--action-primary); background: var(--theme-surface); }
+.legal-card { scroll-margin-top: 6rem; }
+.legal-card h2 { font-size: 1.2rem; margin: 0 0 .8rem; }
+.legal-card h3 { font-size: .9rem; margin: 1rem 0 .25rem; }
+.legal-card p { color: var(--theme-muted); line-height: 1.65; overflow-wrap: anywhere; }
+.legal-card a { text-decoration: underline; color: var(--action-primary); }
+.legal-card dl { display: grid; gap: .5rem; margin-bottom: 1rem; }
+.legal-card dl div { display: grid; grid-template-columns: minmax(7rem, .35fr) minmax(0, 1fr); gap: .6rem; padding: .55rem; border-bottom: 1px solid var(--col-border); }
+.legal-card dt { font-weight: 850; }
+.legal-card dd { min-width: 0; overflow-wrap: anywhere; }
+.legal-storage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.legal-storage-grid > div { border: 1px solid var(--col-border); border-radius: .8rem; padding: .85rem; }
+.legal-privacy-button { margin-top: .75rem; cursor: pointer; }
+@media (max-width: 560px) {
+  .legal-storage-grid { grid-template-columns: 1fr; }
+  .legal-card dl div { grid-template-columns: 1fr; gap: .1rem; }
+  .legal-page { gap: .7rem; }
+}
