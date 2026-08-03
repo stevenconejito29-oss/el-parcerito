@@ -748,10 +748,12 @@ def imprimir_ticket(pedido_id):
         pedido=pedido,
         es_reimpresion=es_reimpresion,
     )
-    # 48 mm de ancho = cabezal físico del ZJ-58 (384 puntos a 203 dpi). La
-    # altura la deja WeasyPrint según el contenido; el corte del papel lo
-    # aplica el driver CUPS al final del trabajo.
-    forced_page = CSS(string="@page { size: 48mm auto; margin: 0; }")
+    # 48 mm de ancho = cabezal físico del ZJ-58 (384 puntos a 203 dpi).
+    # Altura fija generosa (600 mm ≈ 60 cm de rollo): WeasyPrint 69 no acepta
+    # `auto` en `@page size`, y necesitamos una altura suficiente para que
+    # tickets largos quepan en una sola página lógica; el driver ZJ58 corta
+    # al final del contenido real (rollo continuo), no en el borde de página.
+    forced_page = CSS(string="@page { size: 48mm 600mm; margin: 0; }")
     pdf_bytes = HTML(
         string=html_str,
         base_url=request.host_url,
