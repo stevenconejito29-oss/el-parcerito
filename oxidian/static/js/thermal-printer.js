@@ -36,11 +36,22 @@
     { vendorId: 0x0a5f },  // Zebra
     { classCode: 7 },      // Cualquier device clase 7 (Printer)
   ];
-  // Servicio BT genérico "Serial Port" (SPP) que usan las térmicas BT
-  // clásicas + servicios comunes de fabricantes chinos.
+  // Servicios BLE conocidos de térmicas 58 mm chinas. Chrome solo puede
+  // ver un servicio si aparece en `optionalServices` al pedir el
+  // dispositivo, así que esta lista debe ser lo más amplia posible.
   const BT_SERVICES = [
-    '000018f0-0000-1000-8000-00805f9b34fb', // Common thermal printer service
-    '49535343-fe7d-4ae5-8fa9-9fafd205e455', // Cypress / Xprinter BT
+    '000018f0-0000-1000-8000-00805f9b34fb', // Common thermal printer
+    '49535343-fe7d-4ae5-8fa9-9fafd205e455', // Cypress CYSPP / Xprinter
+    '0000ffb0-0000-1000-8000-00805f9b34fb', // Xprinter genérico
+    '0000ff00-0000-1000-8000-00805f9b34fb', // POS-58 clones / RD
+    '0000fee7-0000-1000-8000-00805f9b34fb', // Xiaomi / POS chino
+    '0000fee0-0000-1000-8000-00805f9b34fb', // Xiaomi mfg
+    '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART Service (NUS)
+    'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Casio-like BT printers
+    '0000fff0-0000-1000-8000-00805f9b34fb', // MTP-58 y clones
+    '0000ffe0-0000-1000-8000-00805f9b34fb', // HC-05/HC-06 modules
+    '0000af30-0000-1000-8000-00805f9b34fb', // Pyle/AGPtEK
+    '0000fef8-0000-1000-8000-00805f9b34fb', // Star Micronics BLE
   ];
 
   let device = null;
@@ -107,17 +118,45 @@
     });
     const server = await dev.gatt.connect();
     let writeChar = null;
+    // Paso 1: intentar los servicios conocidos primero (más rápido).
     for (const svcUuid of BT_SERVICES) {
       try {
         const svc = await server.getPrimaryService(svcUuid);
         const chars = await svc.getCharacteristics();
-        writeChar = chars.find(c => c.properties.write || c.properties.writeWithoutResponse);
-        if (writeChar) break;
+        writeChar = chars.find(
+          c => c.properties.write || c.properties.writeWithoutResponse,
+        );
+        if (writeChar) {
+          console.info('[thermal-BT] servicio conocido:', svcUuid);
+          break;
+        }
       } catch (_) { /* probamos siguiente */ }
+    }
+    // Paso 2 (fallback): descubrir TODOS los servicios y buscar cualquier
+    // característica escribible. Cubre impresoras con UUIDs propietarios
+    // que no están en nuestra lista.
+    if (!writeChar) {
+      try {
+        const services = await server.getPrimaryServices();
+        for (const svc of services) {
+          const chars = await svc.getCharacteristics();
+          writeChar = chars.find(
+            c => c.properties.write || c.properties.writeWithoutResponse,
+          );
+          if (writeChar) {
+            console.info('[thermal-BT] servicio detectado por scan:', svc.uuid);
+            break;
+          }
+        }
+      } catch (err) {
+        console.warn('[thermal-BT] getPrimaryServices falló:', err);
+      }
     }
     if (!writeChar) {
       await server.disconnect();
-      throw new Error('La impresora BT no expone característica de escritura conocida.');
+      throw new Error(
+        'La impresora BT no expone característica de escritura. Prueba a apagar y reencender la impresora, o dime el modelo exacto para añadir su servicio.',
+      );
     }
     device = dev;
     btChar = writeChar;
