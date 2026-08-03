@@ -169,8 +169,10 @@ test('admin offline puede pedir ayuda sin notificarse ni tomarse su propio chat'
   assert.equal(handoff.admin_jid, null);
   const selfTakeAlerts = db.prepare(`
     SELECT COUNT(*) c FROM logs
-    WHERE evento='send_attempt' AND detalle LIKE '%Cliente en espera%'
-  `).get().c;
+    WHERE evento='send_attempt'
+      AND detalle LIKE ?
+      AND detalle LIKE '%Cliente en espera%'
+  `).get(`${jid.split('@')[0]}:%`).c;
   assert.equal(selfTakeAlerts, 0);
 });
 

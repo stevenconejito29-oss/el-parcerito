@@ -27,9 +27,22 @@ OXIDIAN_APP="${OXIDIAN_APP:-oxidian}"
 
 TS="$(date +%Y%m%d-%H%M%S)"
 DEST="$BACKUP_DIR/$TS"
+FAILURES=0
 
 log() { printf '[%s] %s\n' "$(date -Is)" "$*"; }
 warn() { log "WARN: $*" >&2; }
+
+fail() {
+  log "ERROR: $*" >&2
+  FAILURES=$((FAILURES + 1))
+}
+
+verify_dump() {
+  local dump_path="$1"
+  [[ -s "$dump_path" ]] || return 1
+  docker run --rm -v "$(dirname "$dump_path"):/backup:ro" postgres:15-alpine \
+    pg_restore --list "/backup/$(basename "$dump_path")" >/dev/null
+}
 
 mkdir -p "$DEST"
 
@@ -38,25 +51,29 @@ log "Backup destino: $DEST"
 # ─── pg_dump oxidian ──────────────────────────────────────────────
 if docker ps --format '{{.Names}}' | grep -q "^${OXIDIAN_DB}$"; then
   log "pg_dump oxidian…"
-  if docker exec "$OXIDIAN_DB" pg_dump -U oxidian -Fc oxidian > "$DEST/oxidian.dump"; then
+  if docker exec "$OXIDIAN_DB" pg_dump -U oxidian -Fc oxidian > "$DEST/oxidian.dump" \
+      && verify_dump "$DEST/oxidian.dump"; then
     log "  OK ($(du -h "$DEST/oxidian.dump" | cut -f1))"
   else
-    warn "pg_dump oxidian falló"
+    rm -f "$DEST/oxidian.dump"
+    fail "pg_dump/validación de oxidian falló"
   fi
 else
-  warn "$OXIDIAN_DB no está corriendo"
+  fail "$OXIDIAN_DB no está corriendo"
 fi
 
 # ─── pg_dump evolution ────────────────────────────────────────────
 if docker ps --format '{{.Names}}' | grep -q "^${EVOLUTION_DB}$"; then
   log "pg_dump evolution…"
-  if docker exec "$EVOLUTION_DB" pg_dump -U evolution -Fc evolution > "$DEST/evolution.dump"; then
+  if docker exec "$EVOLUTION_DB" pg_dump -U evolution -Fc evolution > "$DEST/evolution.dump" \
+      && verify_dump "$DEST/evolution.dump"; then
     log "  OK ($(du -h "$DEST/evolution.dump" | cut -f1))"
   else
-    warn "pg_dump evolution falló"
+    rm -f "$DEST/evolution.dump"
+    fail "pg_dump/validación de evolution falló"
   fi
 else
-  warn "$EVOLUTION_DB no está corriendo"
+  fail "$EVOLUTION_DB no está corriendo"
 fi
 
 # ─── volumes críticos: images (fotos de productos) + chatbot_data ─
@@ -68,16 +85,30 @@ for vol_name in oxidian_images chatbot_data; do
          tar czf "/backup/${vol_name}.tar.gz" -C /data . 2>/dev/null; then
       log "  OK ($(du -h "$DEST/${vol_name}.tar.gz" | cut -f1))"
     else
-      warn "tarball $vol_name falló"
+      rm -f "$DEST/${vol_name}.tar.gz"
+      fail "tarball $vol_name falló"
     fi
   else
-    warn "volumen $vol_name no encontrado"
+    fail "volumen $vol_name no encontrado"
   fi
 done
 
 # ─── Integridad: sha256 de todos los archivos ─────────────────────
 log "SHA256SUMS…"
-( cd "$DEST" && sha256sum ./* > SHA256SUMS 2>/dev/null || true )
+if ! ( cd "$DEST" && sha256sum ./* > SHA256SUMS ); then
+  fail "no se pudo generar SHA256SUMS"
+fi
+
+cat > "$DEST/BACKUP_STATUS" <<EOF
+created_at=$(date -Is)
+host=$(hostname)
+failures=$FAILURES
+EOF
+
+if (( FAILURES > 0 )); then
+  log "Backup INCOMPLETO · fallos=$FAILURES · no se aplicará retención"
+  exit 1
+fi
 
 # ─── Retención: borrar backups más viejos que RETAIN_DAYS ─────────
 log "Retención: borrando >${RETAIN_DAYS} días…"
@@ -95,4 +126,4 @@ log "  $BORRADOS backups viejos eliminados."
 # ─── Resumen ──────────────────────────────────────────────────────
 TOTAL_MB=$(du -sm "$DEST" 2>/dev/null | cut -f1)
 FREE_HDD=$(df -h "$BACKUP_DIR" | tail -1 | awk '{print $4}')
-log "Backup $TS OK · tamaño=${TOTAL_MB}MB · HDD libre=$FREE_HDD"
+log "Backup $TS VERIFICADO · tamaño=${TOTAL_MB}MB · HDD libre=$FREE_HDD"

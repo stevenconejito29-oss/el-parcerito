@@ -18,6 +18,7 @@ OPERATIONAL_PREFIXES = (
     "/api/",
     "/static/",
     "/uploads/",
+    "/pwa-assets/",
     "/health",
     # Integraciones externas: Evolution empuja mensajes de WhatsApp aquí
     # aunque el escaparate público esté en modo preapertura. Sin esta

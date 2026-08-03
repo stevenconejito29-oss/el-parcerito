@@ -106,6 +106,14 @@ class PwaArchitectureContractTest(unittest.TestCase):
         self.assertIn('name="ox-asset-version"', staff)
         self.assertIn("`/sw.js?v=${encodeURIComponent(assetVersion", manager)
         self.assertIn('private, no-store, max-age=0', app_source)
+        self.assertIn('/pwa-assets/{asset_v}/{name}', app_source)
+
+    def test_android_install_assets_use_versioned_paths(self):
+        app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+        self.assertIn('@app.route("/pwa-assets/<version>/<path:filename>")', app_source)
+        self.assertIn('len(version) == 12', app_source)
+        self.assertIn('max-age=31536000, immutable', app_source)
+        self.assertNotIn('f"/static/pwa-icon-192.png?v={asset_v}"', app_source)
 
     def test_manifest_uses_configured_canasta_vocabulary(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")

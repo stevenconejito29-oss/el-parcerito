@@ -55,14 +55,33 @@ CHATBOT_VOLUME="${OXIDIAN_CHATBOT_VOLUME:-oxidian_chatbot_data}"
 mkdir -p "$DEST"
 echo "[$(date -Is)] backup → $DEST" | tee -a "$LOG"
 
+cleanup_incomplete() {
+    status=$?
+    if [ "$status" -ne 0 ]; then
+        printf 'created_at=%s\nstatus=failed\n' "$(date -Is)" > "$DEST/BACKUP_STATUS"
+        echo "[$(date -Is)] ERROR — backup incompleto en $DEST" | tee -a "$LOG" >&2
+    fi
+    exit "$status"
+}
+trap cleanup_incomplete EXIT
+
+verify_dump() {
+    local dump_path="$1"
+    test -s "$dump_path"
+    docker run --rm -v "$(dirname "$dump_path"):/backup:ro" postgres:15-alpine \
+        pg_restore --list "/backup/$(basename "$dump_path")" >/dev/null
+}
+
 # ── 1. Dump PostgreSQL ──────────────────────────────────────────────────────
 echo "  · pg_dump oxidian..."
 docker exec "$OXIDIAN_DB_CONTAINER" pg_dump -U "$OXIDIAN_DB_USER" -Fc "$OXIDIAN_DB_NAME" \
     > "$DEST/oxidian.dump"
+verify_dump "$DEST/oxidian.dump"
 
 echo "  · pg_dump evolution..."
 docker exec "$EVOLUTION_DB_CONTAINER" pg_dump -U "$EVOLUTION_DB_USER" -Fc "$EVOLUTION_DB_NAME" \
     > "$DEST/evolution.dump"
+verify_dump "$DEST/evolution.dump"
 
 # ── 2. Volúmenes (tar.gz) ──────────────────────────────────────────────────
 # Usamos un contenedor efímero que monta el volumen Docker y devuelve un tar
@@ -74,6 +93,8 @@ docker run --rm -v "$IMAGES_VOLUME:/data:ro" alpine:3.20 \
 echo "  · tar volumen $CHATBOT_VOLUME..."
 docker run --rm -v "$CHATBOT_VOLUME:/data:ro" alpine:3.20 \
     tar -czf - -C /data . > "$DEST/chatbot_data.tar.gz"
+tar -tzf "$DEST/images.tar.gz" >/dev/null
+tar -tzf "$DEST/chatbot_data.tar.gz" >/dev/null
 
 # ── 3. Manifest y hashes ───────────────────────────────────────────────────
 {
@@ -91,6 +112,8 @@ docker run --rm -v "$CHATBOT_VOLUME:/data:ro" alpine:3.20 \
 } > "$DEST/manifest.txt"
 
 (cd "$DEST" && sha256sum *.dump *.tar.gz manifest.txt > SHA256SUMS)
+(cd "$DEST" && sha256sum --check SHA256SUMS >/dev/null)
+printf 'created_at=%s\nstatus=verified\n' "$(date -Is)" > "$DEST/BACKUP_STATUS"
 
 # ── 4. Rotación ─────────────────────────────────────────────────────────────
 find "$OXIDIAN_BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d \
@@ -100,3 +123,4 @@ find "$OXIDIAN_BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d \
 TOTAL="$(du -sh "$DEST" | awk '{print $1}')"
 echo "[$(date -Is)] OK  — $DEST ($TOTAL)" | tee -a "$LOG"
 echo "$DEST"
+trap - EXIT

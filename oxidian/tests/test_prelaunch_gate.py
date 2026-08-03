@@ -25,6 +25,7 @@ class PrelaunchRoutingTest(unittest.TestCase):
             "/uploads/productos/a.webp",
             "/sw.js",
             "/manifest.webmanifest",
+            "/pwa-assets/version/pwa-icon-192.png",
             "/robots.txt",
             "/sitemap.xml",
         ):

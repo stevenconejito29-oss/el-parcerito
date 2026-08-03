@@ -313,6 +313,35 @@ def create_app(env="default"):
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
+    @app.route("/pwa-assets/<version>/<path:filename>")
+    def pwa_versioned_asset(version, filename):
+        """Sirve recursos de instalación con una URL que cambia por contenido.
+
+        Algunos launchers Android conservan el icono de una WebAPK aunque el
+        query string del manifest cambie. Incluir la huella en el *path* hace
+        inequívoca la actualización sin cambiar el ``id`` de la aplicación ni
+        crear una segunda instalación. La lista cerrada evita convertir esta
+        ruta pública en un explorador del directorio ``static``.
+        """
+        allowed = {
+            "pwa-icon.svg",
+            "pwa-icon-192.png",
+            "pwa-icon-512.png",
+            "pwa-icon-512-maskable.png",
+            "pwa-icon-monochrome.svg",
+            "pwa-badge-96.png",
+            "apple-touch-icon.png",
+            "pwa-screenshot-mobile.png",
+            "pwa-screenshot-wide.png",
+        }
+        valid_version = len(version) == 12 and all(ch in "0123456789abcdef" for ch in version.lower())
+        if not valid_version or filename not in allowed:
+            return {"error": "asset not found"}, 404
+        response = send_from_directory(app.static_folder, filename)
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
     @app.route("/manifest.webmanifest")
     def web_manifest():
         from models import SiteConfig
@@ -321,7 +350,7 @@ def create_app(env="default"):
         profile = get_store_profile()
         asset_v = app.config["ASSET_VERSION"]
         def pwa_asset(name):
-            return f"/static/{name}?v={asset_v}"
+            return f"/pwa-assets/{asset_v}/{name}"
         nombre = profile["nombre"]
         short_name = (nombre[:12] or "Mi tienda").strip()
         _tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
@@ -431,8 +460,9 @@ def create_app(env="default"):
         if profile["app_icon_url"]:
             icons.append({"src": profile["app_icon_url"], "sizes": "any", "purpose": "any"})
         icons.extend([
-            {"src": f"/static/pwa-icon-192.png?v={asset_v}", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-            {"src": f"/static/pwa-icon-512-maskable.png?v={asset_v}", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+            {"src": f"/pwa-assets/{asset_v}/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": f"/pwa-assets/{asset_v}/pwa-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": f"/pwa-assets/{asset_v}/pwa-icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
         ])
         manifest = {
             "name": f"{profile['nombre']} · Trabajo",
@@ -468,7 +498,16 @@ def create_app(env="default"):
     @app.route("/health")
     @app.route("/health/ready")
     def health_ready():
-        checks = {"db": "unknown", "redis": "skipped", "outbox_stuck": 0}
+        import shutil
+
+        checks = {
+            "status": "ok",
+            "db": "unknown",
+            "redis": "skipped",
+            "outbox_pending": 0,
+            "outbox_stuck": 0,
+            "disk_free_percent": None,
+        }
         overall_ok = True
         try:
             db.session.execute(text("SELECT 1"))
@@ -478,17 +517,19 @@ def create_app(env="default"):
             app.logger.exception("health_check: DB no disponible")
             checks["db"] = "unreachable"
             overall_ok = False
-        # Redis (opcional): si REDIS_URL está definida, comprobamos ping. Si
-        # está caída avisamos pero no marcamos 503 — la web funciona sin él,
-        # solo pierde rate limiting y algún caché de sesión.
+        # Redis es parte de la protección distribuida en producción. Si está
+        # configurado pero no responde, readiness debe decirlo con un 503 para
+        # que un monitor alerte; liveness continúa independiente en /health/live.
         redis_url = os.environ.get("REDIS_URL", "")
-        if redis_url.startswith("redis://"):
+        if redis_url.startswith(("redis://", "rediss://")):
             try:
                 import redis as _redis  # type: ignore
                 _r = _redis.Redis.from_url(redis_url, socket_connect_timeout=1.5, socket_timeout=1.5)
                 checks["redis"] = "ok" if _r.ping() else "unreachable"
             except Exception:
                 checks["redis"] = "unreachable"
+            if checks["redis"] != "ok":
+                overall_ok = False
         # Outbox atascado: mensajes pending con >1h sin procesar indican que
         # el worker de notificaciones no está corriendo o WhatsApp está caído.
         try:
@@ -499,9 +540,31 @@ def create_app(env="default"):
                      "WHERE estado = 'pending' AND creado_en < :t"),
                 {"t": hora_atras},
             ).scalar() or 0
+            pending = db.session.execute(
+                text("SELECT COUNT(*) FROM notification_outbox WHERE estado = 'pending'")
+            ).scalar() or 0
+            checks["outbox_pending"] = int(pending)
             checks["outbox_stuck"] = int(stuck)
+            stuck_max = max(0, int(os.environ.get("HEALTH_OUTBOX_STUCK_MAX", "0") or 0))
+            if checks["outbox_stuck"] > stuck_max:
+                overall_ok = False
         except Exception:
             db.session.rollback()
+            checks["outbox_stuck"] = "unknown"
+            overall_ok = False
+
+        try:
+            usage = shutil.disk_usage("/")
+            free_percent = round((usage.free / usage.total) * 100, 1) if usage.total else 0.0
+            checks["disk_free_percent"] = free_percent
+            minimum_free = max(1.0, float(os.environ.get("HEALTH_DISK_FREE_PERCENT_MIN", "10") or 10))
+            if free_percent < minimum_free:
+                overall_ok = False
+        except OSError:
+            checks["disk_free_percent"] = "unknown"
+            overall_ok = False
+
+        checks["status"] = "ok" if overall_ok else "degraded"
         return checks, (200 if overall_ok else 503)
 
     @app.route("/health/integrations")
@@ -529,7 +592,7 @@ def create_app(env="default"):
             result["evolution"] = "unreachable"
         if result["bot"] != "ok" or result["evolution"] != "ok":
             result["status"] = "degraded"
-        return result, 200
+        return result, (200 if result["status"] == "ok" else 503)
 
     @app.route("/webhook/evolution", methods=["POST"])
     @csrf.exempt
