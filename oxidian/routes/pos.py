@@ -710,24 +710,50 @@ def ticket(pedido_id):
     )
 
 
+def _thermal_printer_urls():
+    """Lista ordenada de URLs IPP donde puede estar la impresora térmica.
+
+    La misma impresora física se puede colgar del PC de caja (192.168.1.41),
+    de la tablet Ubuntu Touch por USB-OTG, o de cualquier host que exponga
+    su cola CUPS por IPP. Se prueban en orden y se imprime en la primera
+    que responda. Editable por SiteConfig sin redeploy — separadas por
+    coma o salto de línea. Se acepta también un valor legacy en la clave
+    ``THERMAL_PRINTER_URL`` (una sola URL).
+    """
+    raw = (
+        SiteConfig.get("THERMAL_PRINTER_URLS", "")
+        or SiteConfig.get("THERMAL_PRINTER_URL", "")
+    ).strip()
+    if not raw:
+        # Defaults razonables: PC de caja primero, tablet detrás.
+        raw = (
+            "http://192.168.1.41:631/printers/Ticket,"
+            "http://tablet.local:631/printers/Ticket"
+        )
+    urls = []
+    for chunk in raw.replace("\n", ",").split(","):
+        u = chunk.strip()
+        if u and u not in urls:
+            urls.append(u)
+    return urls
+
+
 @pos_bp.route("/ticket/<int:pedido_id>/imprimir", methods=["POST"])
 @login_required
 def imprimir_ticket(pedido_id):
-    """Envía el ticket directamente a la impresora térmica de la caja,
-    sin pasar por el diálogo de impresión del navegador.
+    """Envía el ticket directamente a la impresora térmica, saltándose el
+    diálogo de impresión del navegador.
 
-    Motivación: el diálogo de Chrome ignora selectivamente el ``@page`` CSS
-    según el navegador, la versión, si el operador tiene "Márgenes:
-    Ninguno" activo, etc. Resultado: tickets desplazados o recortados
-    imprevisiblemente, sobre todo en cocina donde el operador no elige
-    ajustes cada vez. Renderizando el PDF aquí con WeasyPrint (que sí
-    respeta @page al 100%) y enviándolo por IPP a la cola CUPS de la
-    caja, la impresión es idéntica en todos los puestos: caja, cocina y
-    repartidor.
+    Motivación: Chrome (y variantes) ignora selectivamente ``@page`` según
+    versión y ajustes que el operador debía marcar cada vez. Renderizamos
+    el PDF con WeasyPrint (respeta @page al 100 %) y lo enviamos por IPP a
+    la cola CUPS. Idéntico layout desde caja, cocina, repartidor o tablet.
 
-    Configuración por ``SiteConfig['THERMAL_PRINTER_URL']`` (default
-    ``http://192.168.1.41:631/printers/Ticket``). Cambiarla no requiere
-    redeploy — se lee en cada request."""
+    Configuración de destino en ``SiteConfig['THERMAL_PRINTER_URLS']``:
+    lista de URLs separadas por coma; se prueba cada una hasta que
+    alguna acepta el trabajo. Por defecto contempla el PC de la caja y
+    la tablet, así que si mueves el cable USB no hace falta tocar nada
+    siempre que ambos hosts publiquen la cola con nombre ``Ticket``."""
     from weasyprint import HTML, CSS
     import requests as _req
 
@@ -735,11 +761,8 @@ def imprimir_ticket(pedido_id):
     if not can_read_order_ticket(current_user, pedido):
         return {"ok": False, "error": "sin_acceso"}, 403
 
-    printer_url = SiteConfig.get(
-        "THERMAL_PRINTER_URL",
-        "http://192.168.1.41:631/printers/Ticket",
-    )
-    if not printer_url:
+    printer_urls = _thermal_printer_urls()
+    if not printer_urls:
         return {"ok": False, "error": "impresora_no_configurada"}, 503
 
     es_reimpresion = request.args.get("reprint") == "1"
@@ -749,46 +772,59 @@ def imprimir_ticket(pedido_id):
         es_reimpresion=es_reimpresion,
     )
     # 48 mm de ancho = cabezal físico del ZJ-58 (384 puntos a 203 dpi).
-    # Altura fija generosa (600 mm ≈ 60 cm de rollo): WeasyPrint 69 no acepta
-    # `auto` en `@page size`, y necesitamos una altura suficiente para que
-    # tickets largos quepan en una sola página lógica; el driver ZJ58 corta
-    # al final del contenido real (rollo continuo), no en el borde de página.
+    # Altura 600 mm ≈ 60 cm — WeasyPrint 69 no acepta `auto` en @page size,
+    # y el driver ZJ58 corta al final del contenido real (rollo continuo).
     forced_page = CSS(string="@page { size: 48mm 600mm; margin: 0; }")
     pdf_bytes = HTML(
         string=html_str,
         base_url=request.host_url,
     ).write_pdf(stylesheets=[forced_page])
 
-    try:
-        resp = _req.post(
-            printer_url,
-            data=pdf_bytes,
-            headers={"Content-Type": "application/pdf"},
-            timeout=8,
-        )
-    except _req.RequestException as exc:
-        current_app.logger.exception(
-            "Fallo enviando ticket #%s a la impresora %s", pedido.numero_pedido, printer_url,
-        )
-        return {"ok": False, "error": "impresora_inalcanzable", "detalle": str(exc)}, 502
+    intentos = []
+    for url in printer_urls:
+        try:
+            resp = _req.post(
+                url,
+                data=pdf_bytes,
+                headers={"Content-Type": "application/pdf"},
+                timeout=4,
+            )
+        except _req.RequestException as exc:
+            intentos.append({"url": url, "error": type(exc).__name__})
+            current_app.logger.info(
+                "Ticket #%s: %s no disponible (%s)", pedido.numero_pedido, url, exc,
+            )
+            continue
 
-    if not resp.ok:
+        if resp.ok:
+            current_app.logger.info(
+                "Ticket #%s impreso en %s (%s bytes)",
+                pedido.numero_pedido, url, len(pdf_bytes),
+            )
+            try:
+                AuditLog.registrar(
+                    current_user.id, "ticket_impreso", "pedido", pedido.id,
+                    detalle=f"reimpresion={es_reimpresion} destino={url}",
+                    ip=request.remote_addr,
+                )
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+            return {"ok": True, "pedido": pedido.numero_pedido, "destino": url}
+
+        intentos.append({"url": url, "status": resp.status_code})
         current_app.logger.warning(
-            "Impresora rechazó ticket #%s (%s): %s",
-            pedido.numero_pedido, resp.status_code, resp.text[:200],
+            "Ticket #%s: %s rechazó con HTTP %s: %s",
+            pedido.numero_pedido, url, resp.status_code, resp.text[:200],
         )
-        return {"ok": False, "error": "impresora_error", "status": resp.status_code}, 502
 
-    try:
-        AuditLog.registrar(
-            current_user.id, "ticket_impreso", "pedido", pedido.id,
-            detalle=f"reimpresion={es_reimpresion}",
-            ip=request.remote_addr,
-        )
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-    return {"ok": True, "pedido": pedido.numero_pedido}
+    # Ninguna URL aceptó el trabajo — devolvemos detalle para que el JS
+    # pueda decidir si abre el fallback de navegador.
+    return {
+        "ok": False,
+        "error": "impresora_inalcanzable",
+        "intentos": intentos,
+    }, 502
 
 
 # ─── HELPERS ─────────────────────────────────
