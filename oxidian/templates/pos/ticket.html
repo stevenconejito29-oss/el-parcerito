@@ -60,13 +60,22 @@
     .brand-name { font-size: 12pt; font-weight: 800; line-height: 1.1; }
     .brand-sub { font-size: 7pt; margin-top: 0.2mm; }
     .order-num {
-      font-size: 10pt; font-weight: 800;
-      border: 1pt solid #000;
-      padding: 0.5mm 2.5mm;
+      font-size: 18pt; font-weight: 900;
+      border: 1.5pt solid #000;
+      padding: 1mm 4mm;
       display: inline-block;
-      margin: 0.5mm 0;
-      letter-spacing: 0.2pt;
+      margin: 1mm 0;
+      letter-spacing: 0.5pt;
+      line-height: 1;
     }
+    .pay-method {
+      display: flex; justify-content: space-between; align-items: center;
+      border-top: 1px dashed #000; border-bottom: 1px dashed #000;
+      padding: 1mm 0; margin: 1mm 0;
+      font-size: 10pt;
+    }
+    .pay-method .pay-label { font-weight: 700; }
+    .pay-method .pay-value { font-weight: 800; text-transform: uppercase; }
     .type-badge {
       font-size: 7.5pt; font-weight: 700;
       text-transform: uppercase; letter-spacing: 0.3pt;
@@ -244,14 +253,14 @@
     <span>TOTAL</span>
     <span>€{{ "%.2f"|format(pedido.total) }}</span>
   </div>
-  <div class="row small">
-    <span class="muted">Método de pago</span>
-    <span class="bold">{{ pedido.metodo_pago | capitalize }}</span>
+  <div class="pay-method">
+    <span class="pay-label">Método de pago</span>
+    <span class="pay-value">{{ pedido.metodo_pago | capitalize }}</span>
   </div>
   {% if pedido.metodo_pago == 'bizum' %}
   <div class="row small">
     <span class="muted">Estado pago</span>
-    <span class="bold" style="color:{% if pedido.pago_confirmado %}green{% else %}orange{% endif %}">
+    <span class="bold">
       {% if pedido.pago_confirmado %}✓ Confirmado{% else %}⏳ Pendiente{% endif %}
     </span>
   </div>
