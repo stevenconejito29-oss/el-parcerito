@@ -5,52 +5,96 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ 'Reimpresión' if es_reimpresion else 'Ticket' }} {{ pedido.numero_pedido }}</title>
   <style>
-    /* Ancho físico imprimible de las térmicas 58 mm = 48 mm (384 pt @203 dpi).
-       Usar size 48mm y sin márgenes evita que Chrome recorte o escale. La
-       altura auto deja que CUPS use rollo continuo con el corte al final. */
+    /* ── Optimización para térmica 58 mm (chip GDMicroelectronics / ZJ-58) ──
+       Ancho útil real del cabezal: 48 mm = 384 puntos a 203 dpi.
+       Papel físico 55–60 mm; los 6 mm sobrantes son margen mecánico.
+
+       Reglas para que NO se vea borroso al pasar por el driver raster:
+       - Unidades en pt/mm (no px): 1 pt ≈ 2.82 puntos térmicos, escala limpia.
+       - Anti-alias apagado: al binarizar a 1-bit el suavizado gris se convierte
+         en dithering "sucio"; sin suavizado quedan trazos negros nítidos.
+       - Sin fondos oscuros ni texto en negativo (blanco sobre negro): en
+         térmica se emborrona porque el driver rellena con dots.
+       - Fuente sans-serif system: renderiza más nítida que las decorativas.
+       - Tamaños ≥ 8 pt (~23 puntos térmicos) para asegurar legibilidad. */
     @page { size: 48mm auto; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Courier New', Courier, monospace;
+    html, body {
       width: 48mm;
       max-width: 48mm;
-      margin: 0;
-      padding: 1mm 1mm 2mm;
-      font-size: 11px;
-      line-height: 1.25;
+    }
+    body {
+      font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+      font-size: 9pt;
+      line-height: 1.35;
+      color: #000;
       background: #fff;
-      color: #111;
+      padding: 2mm 2mm 4mm;
+      -webkit-font-smoothing: none;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: geometricPrecision;
+      font-variant-ligatures: none;
     }
     .center { text-align: center; }
     .right { text-align: right; }
     .bold { font-weight: 700; }
-    .big { font-size: 18px; font-weight: 700; }
-    .medium { font-size: 14px; font-weight: 700; }
-    .small { font-size: 10px; }
-    .muted { color: #666; }
-    .dashed { border-top: 1px dashed #999; margin: 8px 0; }
-    .solid { border-top: 2px solid #111; margin: 8px 0; }
-    .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 2mm; padding: 2px 0; }
-    .row-item { display: flex; justify-content: space-between; gap: 2mm; padding: 4px 0; }
+    .big { font-size: 13pt; font-weight: 700; }
+    .medium { font-size: 11pt; font-weight: 700; }
+    .small { font-size: 8pt; }
+    .muted { color: #000; }  /* En térmica el gris se emborrona: todo negro. */
+    .dashed { border-top: 1px dashed #000; margin: 2mm 0; }
+    .solid { border-top: 1px solid #000; margin: 2mm 0; }
+    .row {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 1.5mm; padding: 0.6mm 0;
+    }
+    .row-item {
+      display: flex; justify-content: space-between; gap: 1.5mm;
+      padding: 0.8mm 0;
+    }
     .row > span, .row-item > div { min-width: 0; overflow-wrap: anywhere; }
     .flex-1 { flex: 1; min-width: 0; }
-    .logo-block { margin-bottom: 12px; }
-    .brand-name { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
-    .brand-sub { font-size: 10px; color: #555; margin-top: 2px; }
-    .order-num { font-size: 15px; font-weight: 700; background: #111; color: #fff; padding: 4px 12px; display: inline-block; border-radius: 4px; margin: 4px 0; }
-    .type-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; border: 1.5px solid #111; padding: 2px 8px; display: inline-block; border-radius: 3px; margin: 4px 0; }
+    .logo-block { margin-bottom: 2mm; }
+    .brand-name { font-size: 14pt; font-weight: 800; letter-spacing: 0; }
+    .brand-sub { font-size: 8pt; margin-top: 0.4mm; }
+    /* Numero de pedido: recuadro negro con texto negro (sin negativo) */
+    .order-num {
+      font-size: 12pt; font-weight: 800;
+      border: 1.2pt solid #000;
+      padding: 0.8mm 3mm;
+      display: inline-block;
+      margin: 1mm 0;
+      letter-spacing: 0.3pt;
+    }
+    .type-badge {
+      font-size: 8pt; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.5pt;
+      border: 1pt solid #000;
+      padding: 0.5mm 2mm; display: inline-block; margin: 0.8mm 0;
+    }
     .item-name { flex: 1; }
-    .item-qty { color: #555; font-size: 11px; white-space: nowrap; }
+    .item-qty { font-size: 9pt; white-space: nowrap; }
     .item-price { font-weight: 700; white-space: nowrap; }
-    .total-row { font-size: 15px; font-weight: 700; }
-    .points-block { background: #f5f5f5; border: 1px dashed #ccc; padding: 6px 10px; border-radius: 4px; margin: 6px 0; text-align: center; }
-    .ticket-alert { border: 3px solid #111; padding: 7px; margin: 0 0 10px; text-align: center; font-size: 14px; font-weight: 700; }
-    .ticket-alert small { display: block; margin-top: 2px; font-size: 9px; }
-    .btn-print { display: block; width: 100%; margin-top: 16px; padding: 12px; background: #111; color: #fff; border: none; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; border-radius: 6px; }
+    .total-row { font-size: 12pt; font-weight: 800; padding: 1mm 0; }
+    .points-block {
+      border: 1px dashed #000; padding: 1.5mm; margin: 1.5mm 0;
+      text-align: center;
+    }
+    .ticket-alert {
+      border: 1.5pt solid #000; padding: 1.5mm;
+      margin: 0 0 2mm; text-align: center;
+      font-size: 10pt; font-weight: 800;
+    }
+    .ticket-alert small { display: block; margin-top: 0.4mm; font-size: 7.5pt; }
+    .btn-print {
+      display: block; width: 100%; margin-top: 4mm; padding: 3mm;
+      background: #111; color: #fff; border: none; font-family: inherit;
+      font-size: 11pt; font-weight: 700; cursor: pointer; border-radius: 6px;
+    }
     @media print {
       .btn-print, .no-print { display: none !important; }
       html, body { width: 48mm; max-width: 48mm; }
-      body { padding: 1mm 1mm 2mm; margin: 0; }
+      body { padding: 2mm 2mm 4mm; margin: 0; }
     }
   </style>
 </head>
@@ -89,8 +133,8 @@
   {% endif %}
   {# Modalidad de entrega — DESTACADA arriba para que el repartidor la vea al pegar el ticket #}
   {% set _tipo = pedido.tipo_entrega_cliente or 'recogida' %}
-  <div style="margin-top:6px;">
-    <span class="type-badge" style="font-size:12px;background:#111;color:#fff;">
+  <div style="margin-top:1mm;">
+    <span class="type-badge" style="font-size:10pt;border-width:1.5pt;padding:0.8mm 3mm;">
       {% if _tipo == 'delivery' %}🛵 DELIVERY
       {% elif _tipo == 'recogida' %}🏬 RECOGIDA
       {% else %}📆 PROGRAMADO{% endif %}
