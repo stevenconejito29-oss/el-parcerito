@@ -354,20 +354,40 @@
   </div>
 
   <!-- ── PRESENTACIONES / TAMAÑOS ── -->
+  {# Modelo mental: el producto siempre se ofrece en su tamaño "Normal"
+     al precio base (el campo Precio de arriba). Aquí el admin AÑADE
+     alternativas — una versión más pequeña (típicamente con descuento)
+     o más grande (con recargo). El cliente elegirá entre Normal y las
+     que actives. El slot "mediano" existe en el modelo por compat
+     histórica; se oculta del form nuevo salvo que ya estuviera activo
+     en BD, así no bloqueamos productos que lo tenían configurado. #}
   {% set flavor_catalog = sabores_catalogo_disponibles() if brand.es_comida else [] %}
+  {% set _mediano_activo_bd = producto and producto.presentaciones.filter_by(tamaño='mediano', activo=True).first() %}
   <div class="fp-span-full col-span-2 fp-section">
     <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
       <div>
-        <label class="fp-section-title mb-0">Tamaños disponibles <span class="text-xs font-normal" style="opacity:.7">(opcional)</span></label>
+        <label class="fp-section-title mb-0">Tamaños alternativos <span class="text-xs font-normal" style="opacity:.7">(opcional)</span></label>
         <p class="text-xs text-gray-500">
-          Sección <strong>opcional</strong>: si tu producto tiene un único tamaño, déjala vacía —
-          aparecerá en el menú con su precio base. Actívala sólo cuando ofrezcas varios tamaños
-          (pequeño/mediano/grande) con precios distintos. Los ajustes de precio se suman/restan al base.
+          Tu producto se vende en su tamaño <strong>Normal</strong> al precio base.
+          Aquí puedes <strong>añadir</strong> versiones alternativas: una más pequeña
+          (descuento) o más grande (recargo). El cliente elegirá entre
+          <strong>Normal</strong> y las que actives. Los ajustes de precio se suman
+          o restan al precio base.
         </p>
       </div>
-      <span class="fp-section-note">✓ Sin tamaños activos = tamaño único (correcto)</span>
+      <span class="fp-section-note">✓ Sin tamaños alternativos = solo Normal (correcto)</span>
     </div>
-    {% set _pres_labels = ([('pequeño','🥣','Pequeño'),('mediano','🍽️','Mediano'),('grande','🍛','Grande')] if brand.es_comida else [('pequeño','👕','S — Pequeña'),('mediano','👔','M — Mediana'),('grande','🧥','L — Grande')]) %}
+    {% set _pres_labels = (
+        [('pequeño','🥣','Más pequeño'),('grande','🍛','Más grande')]
+        if brand.es_comida else
+        [('pequeño','👕','Talla S — más pequeña'),('grande','🧥','Talla L — más grande')]
+    ) %}
+    {% if _mediano_activo_bd %}
+      {# Legacy: solo se muestra si el producto ya lo tenía activo, para
+         permitir desactivarlo o editar su precio_extra. Nuevos productos
+         no ven este slot — el Normal ya cubre "tamaño mediano/estándar". #}
+      {% set _pres_labels = _pres_labels + [('mediano','🍽️','Mediano (legado)')] %}
+    {% endif %}
     {# Preview inline: se rellena por JS con lo que verá el cliente para cada
        tamaño activo. Sirve para que el admin valide sin salir del form. #}
     <div id="fp-flavor-preview" class="fp-flavor-preview" aria-live="polite" role="note">

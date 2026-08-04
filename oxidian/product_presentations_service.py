@@ -18,11 +18,21 @@ def active_product_presentations(product):
 
 
 def product_presentation_catalog_payload(product):
-    """Serializa únicamente datos públicos calculados desde el servidor."""
+    """Serializa las opciones de tamaño que verá el cliente.
+
+    Modelo mental: el producto SIEMPRE tiene un tamaño "Normal" al precio
+    base — es lo que el admin definió como precio del producto. Cuando el
+    admin activa variantes en admin, son ALTERNATIVAS al Normal, no lo
+    reemplazan. Por eso, cuando hay ≥1 variante activa, prependemos un
+    ítem sintético `id=0, tamaño="normal", label="Normal"` para que el
+    cliente pueda elegir Normal explícitamente. Cuando no hay variantes,
+    el payload queda vacío y el UI no muestra selector (el producto se
+    vende directo al precio base — comportamiento actual).
+    """
     from product_options_service import flavor_policy_for_presentation
 
     base_price = float(getattr(product, "precio_final", 0) or 0)
-    return [
+    payload = [
         {
             "id": row.id,
             "tamaño": row.tamaño,
@@ -34,6 +44,17 @@ def product_presentation_catalog_payload(product):
         }
         for row in active_product_presentations(product)
     ]
+    if payload:
+        payload.insert(0, {
+            "id": 0,
+            "tamaño": "normal",
+            "label": "Normal",
+            "precio_extra": 0.0,
+            "precio_final": base_price,
+            "orden": -1,
+            "flavor_policy": flavor_policy_for_presentation(product, None),
+        })
+    return payload
 
 
 def validate_product_presentation_selection(product, raw_selection):
@@ -50,6 +71,12 @@ def validate_product_presentation_selection(product, raw_selection):
     raw = str(raw_selection or "").strip()
     if not raw:
         return None, f"Elige un tamaño para «{product.nombre}»."
+
+    # Pseudo-opción "Normal" (id=0, tamaño="normal") = precio base del
+    # producto, sin variante concreta. Emparejada con el prepend que hace
+    # `product_presentation_catalog_payload` cuando hay ≥1 variante activa.
+    if raw == "0" or raw.casefold() == "normal":
+        return None, None
 
     selected = None
     try:
