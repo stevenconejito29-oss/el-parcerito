@@ -220,16 +220,13 @@ def empacar_pedido(pedido_id):
         db.session.rollback()
         flash(f"No se pudo iniciar el empaque: {e}", "danger")
         return redirect(url_for("staff.pedidos"))
-    # Print flow unificado: redirigimos con `?print_after=<id>` y el JS
-    # de operational-roles.js decide qué hacer al cargar la página:
-    # 1. Si hay BT emparejado → imprime silencioso vía WebBluetooth.
-    # 2. Si no → muestra el modal con el diálogo nativo de Chrome
-    #    para que el operador elija impresora.
-    # Antes hacíamos server-side IPP a CUPS, pero el setup del usuario
-    # es BT-en-tablet: los jobs se encolaban en CUPS sin salir. Ahora
-    # el print es 100% client-side, coincidente con el hardware real.
+    # Sin auto-print aquí: el operador quiere el ticket sólo al pulsar
+    # "Listo para despacho" (marcar_listo), no al iniciar el empaque.
+    # Motivo operativo: al empacar todavía se puede modificar el pedido
+    # o cancelarlo; imprimir prematuramente gastaría papel y crearía
+    # tickets fantasma para incidencias.
     flash(f"Empacando {pedido.numero_pedido}.", "info")
-    return redirect(url_for("staff.pedidos", print_after=pedido.id))
+    return redirect(url_for("staff.pedidos"))
 
 
 @staff_bp.route("/pedidos/<int:pedido_id>/almacen-listo", methods=["POST"])

@@ -331,13 +331,32 @@
   // del navegador. Para USB seguimos esperando gesto del usuario o el
   // reintento lazy dentro de `printTicket`, para no robar el device a la
   // cola CUPS local.
-  document.addEventListener('DOMContentLoaded', () => {
+  // Promise que expone el ciclo de restore inicial. Los consumers
+  // (operational-roles.js:openBTPickModal, print_after handler) esperan
+  // este `ready` antes de decidir si mostrar el modal manual o imprimir
+  // silencioso. Sin awaited, había un race: 100ms no bastaba porque el
+  // GATT connect en Android puede tardar 500-1500ms — el chequeo
+  // `isPaired()` corría antes y aparecía el modal aunque hubiera
+  // pairing persistido, incluso en tablets modernas (ej. Samsung 2026
+  // con Chrome 150+).
+  let _readyResolve = null;
+  window.ThermalPrinter.ready = new Promise((resolve) => { _readyResolve = resolve; });
+  document.addEventListener('DOMContentLoaded', async () => {
     const hint = getPairInfo();
-    if (hint && hint.transport === 'bt'
-        && 'bluetooth' in navigator
-        && typeof navigator.bluetooth.getDevices === 'function') {
-      _restoreBT().catch(() => {});
+    const canRestore = hint && hint.transport === 'bt'
+      && 'bluetooth' in navigator
+      && typeof navigator.bluetooth.getDevices === 'function';
+    if (canRestore) {
+      try {
+        await _restoreBT();
+        console.info('[thermal-BT] restore OK — device:', device ? (device.name || '?') : 'none');
+      } catch (err) {
+        console.warn('[thermal-BT] restore falló:', err);
+      }
+    } else {
+      console.info('[thermal-BT] sin hint o sin getDevices — pairing manual requerido');
     }
+    if (_readyResolve) _readyResolve({ paired: device !== null });
   });
 
   // Antes de descargar la página soltamos el device USB/BT si lo teníamos

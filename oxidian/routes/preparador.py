@@ -504,13 +504,12 @@ def empezar_armar(pedido_id):
         notify_order_state(pedido)
     except Exception:
         logger.exception("No se pudo enviar push al iniciar pedido %s", pedido.id)
-    # Print flow unificado: redirigimos con `?print_after=<id>` y el JS
-    # decide (BT silencioso si está emparejado / modal si no). El
-    # server-side IPP a CUPS se eliminó porque en este setup la
-    # impresora vive en la tablet vía BT — no en un dispositivo con
-    # CUPS reachable desde el servidor.
+    # Sin auto-print aquí: la impresión sale sólo al marcar Listo /
+    # enviar a repartidor (`preparador.marcar_listo`), nunca al iniciar
+    # el armado. Evita tickets prematuros que se descartan si el pedido
+    # cambia o se cancela mientras se prepara.
     flash(f"Armando {pedido.numero_pedido}.", "info")
-    return redirect(url_for("preparador.pedidos", print_after=pedido.id))
+    return redirect(url_for("preparador.pedidos"))
 
 
 @preparador_bp.route("/pedidos/<int:pedido_id>/listo", methods=["POST"])

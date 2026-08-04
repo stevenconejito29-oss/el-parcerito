@@ -313,10 +313,15 @@
     if (!pedidoRaw) return;
     const pedidoId = parseInt(pedidoRaw, 10);
 
-    // Espera brevísima para dar tiempo a que _restoreBT termine si el
-    // navegador es moderno y hay hint en localStorage. thermal-printer.js
-    // lo dispara en DOMContentLoaded también — micro-cola de tareas.
-    await new Promise(r => setTimeout(r, 100));
+    // Espera al ciclo de restore inicial de ThermalPrinter (Promise
+    // expuesta por thermal-printer.js). Sin esto había race: 100ms no
+    // bastaba porque el GATT connect en Android puede tardar 500-1500ms
+    // → el chequeo isPaired() corría antes y aparecía el modal aunque
+    // hubiera pairing persistido (síntoma típico de "Samsung 2026 no
+    // imprime automáticamente").
+    if (window.ThermalPrinter && window.ThermalPrinter.ready) {
+      try { await window.ThermalPrinter.ready; } catch (_) {}
+    }
 
     // Path silencioso.
     if (window.ThermalPrinter && window.ThermalPrinter.isPaired()) {
