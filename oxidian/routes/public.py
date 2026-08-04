@@ -1997,7 +1997,30 @@ def checkout():
     if option_issue:
         flash(option_issue, "warning")
         return redirect(url_for("public.ver_carrito"))
-    if any(not item["producto"].pertenece_a_origen(origen) for item in items):
+    # Compatibilidad de origen: comparamos el origen LOGÍSTICO (el que
+    # despacha la tienda) — no el origen de inventario crudo. Un producto
+    # de socio-capital (`modelo_acuerdo="socio_porcentaje"`) tiene inventario
+    # en `proveedor:X` pero se despacha como "propio" porque la tienda lo
+    # opera y solo cobra comisión al socio. Antes usábamos
+    # `pertenece_a_origen(origen)` que compara estrictamente por
+    # `proveedor_despachador_id` y bloqueaba con "Hay productos
+    # incompatibles..." cualquier carrito que mezclara propios con
+    # socio-capital (o incluso 1 producto de socio solo), redirigiendo
+    # silenciosamente al carrito sin poder llegar a checkout. La
+    # coerción vía `_origen_logistico(_origen_inventario_producto(item))`
+    # replica exactamente la misma normalización que `_carrito_origen`
+    # aplica al guardar el carrito, así el chequeo queda consistente.
+    incompat = [
+        item["producto"]
+        for item in items
+        if _origen_logistico(_origen_inventario_producto(item["producto"])) != origen
+    ]
+    if incompat:
+        current_app.logger.warning(
+            "checkout incompat: carrito_origen=%r items_offending=%s",
+            origen,
+            [(p.id, _origen_inventario_producto(p)) for p in incompat],
+        )
         flash("Hay productos incompatibles con el origen de inventario del carrito.", "warning")
         return redirect(url_for("public.ver_carrito"))
     pedido_minimo = get_pedido_minimo()

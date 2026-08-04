@@ -67,10 +67,21 @@
 {# ── TARJETA INFO ── #}
 <div class="pd-card">
   {% if not establecimiento_abierto %}
-  <div class="pd-info-box pd-box-encargo">
+  {# Layout defensivo: el mensaje de cierre (horarios + próxima apertura)
+     se genera dinámicamente y puede llegar a 200+ caracteres. Sin estas
+     reglas se desbordaba lateralmente en móvil (500px). #}
+  <div class="pd-info-box pd-box-encargo pd-store-closed" role="status">
     <strong>Este establecimiento está cerrado ahora.</strong>
     <span>{{ mensaje_cierre or 'Puedes consultar el menú; vuelve durante el horario de atención para añadir productos.' }}</span>
   </div>
+  <style>
+    .pd-store-closed { display: grid; gap: .25rem; min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; hyphens: auto; line-height: 1.4; font-size: clamp(.78rem, 2.4vw, .9rem); }
+    .pd-store-closed strong { font-size: clamp(.85rem, 2.6vw, .95rem); display: block; }
+    .pd-store-closed span { display: block; min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; hyphens: auto; }
+    @media (max-width: 380px) {
+      .pd-store-closed { padding: .7rem .8rem !important; }
+    }
+  </style>
   {% endif %}
 
   {# ── Nombre + categoría + rating ── #}
