@@ -220,6 +220,30 @@ def empacar_pedido(pedido_id):
         db.session.rollback()
         flash(f"No se pudo iniciar el empaque: {e}", "danger")
         return redirect(url_for("staff.pedidos"))
+    # Auto-print al INICIAR el empaque: el operador necesita el ticket
+    # para leer qué empacar y luego pegarlo al pedido terminado. Best-
+    # effort: si CUPS no responde no revertimos la transición — siempre
+    # queda la reimpresión manual desde el POS.
+    try:
+        from routes.pos import imprimir_ticket as _imprimir_ticket_view
+        _print_result = _imprimir_ticket_view(pedido.id)
+        if isinstance(_print_result, tuple):
+            _body, _status = _print_result
+        else:
+            _body, _status = _print_result, 200
+        _body_json = getattr(_body, "json", None) or (
+            _body if isinstance(_body, dict) else {}
+        )
+        if not (isinstance(_body_json, dict) and _body_json.get("ok")):
+            logger.warning(
+                "Auto-print pedido %s (empacar START): status=%s body=%s",
+                pedido.numero_pedido, _status, _body_json,
+            )
+    except Exception:
+        logger.exception(
+            "Auto-print pedido %s (empacar START): excepción no bloqueante",
+            pedido.numero_pedido,
+        )
     flash(f"Empacando {pedido.numero_pedido}.", "info")
     return redirect(url_for("staff.pedidos"))
 
@@ -322,30 +346,11 @@ def marcar_listo(pedido_id):
         db.session.rollback()
         flash(f"No se pudo marcar como listo: {e}", "danger")
         return redirect(url_for("staff.pedidos"))
-    # Auto-print del ticket al marcar el pedido empacado. Best-effort:
-    # si CUPS o la red están caídos NO revertimos la transición, el
-    # operador puede reimprimir manualmente. Post-commit para que el
-    # ticket refleje repartidor asignado.
-    try:
-        from routes.pos import imprimir_ticket as _imprimir_ticket_view
-        _print_result = _imprimir_ticket_view(pedido.id)
-        if isinstance(_print_result, tuple):
-            _body, _status = _print_result
-        else:
-            _body, _status = _print_result, 200
-        _body_json = getattr(_body, "json", None) or (
-            _body if isinstance(_body, dict) else {}
-        )
-        if not (isinstance(_body_json, dict) and _body_json.get("ok")):
-            logger.warning(
-                "Auto-print pedido %s (empaque): status=%s body=%s",
-                pedido.numero_pedido, _status, _body_json,
-            )
-    except Exception:
-        logger.exception(
-            "Auto-print pedido %s (empaque): excepción no bloqueante",
-            pedido.numero_pedido,
-        )
+    # Auto-print vive en `empacar_pedido` (transición pendiente→armando)
+    # para que el operador tenga el ticket DURANTE el empaque y lo pegue
+    # al pedido antes de cerrarlo. Aquí (armando→listo) ya no imprimimos
+    # para evitar tickets duplicados. El botón "Reimprimir" del POS
+    # cubre el caso de que se pierda el ticket original.
     try:
         from push_service import notify_delivery_ready, notify_order_state
         notify_order_state(pedido)

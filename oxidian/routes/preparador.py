@@ -498,6 +498,30 @@ def empezar_armar(pedido_id):
         db.session.rollback()
         flash(f"No se pudo iniciar el armado: {e}", "danger")
         return redirect(url_for("preparador.pedidos"))
+    # Auto-print al INICIAR el armado: el preparador necesita el ticket
+    # para leer qué componer y luego lo pega al pedido cerrado. Best-
+    # effort: si CUPS no responde no revertimos la transición — siempre
+    # queda la reimpresión manual desde el POS.
+    try:
+        from routes.pos import imprimir_ticket as _imprimir_ticket_view
+        _print_result = _imprimir_ticket_view(pedido.id)
+        if isinstance(_print_result, tuple):
+            _body, _status = _print_result
+        else:
+            _body, _status = _print_result, 200
+        _body_json = getattr(_body, "json", None) or (
+            _body if isinstance(_body, dict) else {}
+        )
+        if not (isinstance(_body_json, dict) and _body_json.get("ok")):
+            logger.warning(
+                "Auto-print pedido %s (armar START): status=%s body=%s",
+                pedido.numero_pedido, _status, _body_json,
+            )
+    except Exception:
+        logger.exception(
+            "Auto-print pedido %s (armar START): excepción no bloqueante",
+            pedido.numero_pedido,
+        )
     _notificar_proveedores_pendientes(pedido)
     try:
         from push_service import notify_order_state
@@ -535,31 +559,10 @@ def marcar_listo(pedido_id):
         from services import enviar_whatsapp_estado
         enviar_whatsapp_estado(pedido)
         db.session.commit()
-        # Auto-print del ticket al marcar el pedido armado. Best-effort:
-        # si CUPS o la red están caídos NO revertimos la transición — el
-        # operador siempre puede reimprimir manualmente desde el POS. Se
-        # ejecuta después del commit para que el ticket refleje el estado
-        # ya persistido (repartidor asignado incluido).
-        try:
-            from routes.pos import imprimir_ticket as _imprimir_ticket_view
-            print_result = _imprimir_ticket_view(pedido.id)
-            if isinstance(print_result, tuple):
-                print_body, print_status = print_result
-            else:
-                print_body, print_status = print_result, 200
-            body = getattr(print_body, "json", None) or (
-                print_body if isinstance(print_body, dict) else {}
-            )
-            if not (isinstance(body, dict) and body.get("ok")):
-                logger.warning(
-                    "Auto-print pedido %s: status=%s body=%s",
-                    pedido.numero_pedido, print_status, body,
-                )
-        except Exception:
-            logger.exception(
-                "Auto-print pedido %s: excepción no bloqueante",
-                pedido.numero_pedido,
-            )
+        # Auto-print vive en `empezar_armar` (transición pendiente→armando)
+        # para que el preparador tenga el ticket DURANTE el armado. Aquí
+        # (armando→listo) ya no imprimimos para evitar duplicados. Si el
+        # ticket se perdió, el POS tiene botón "Reimprimir".
     except ValueError as e:
         # Errores de negocio con mensaje intencional (proveedor pendiente,
         # responsable no asignado, etc.) → se muestra al usuario tal cual.
