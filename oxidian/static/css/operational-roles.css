@@ -942,3 +942,200 @@ body.view-preparador .prep-summary-empty span { color: var(--col-muted); font-si
   .prov-qty { min-width: 2.2rem; font-size: 1.25rem; }
   .prov-combo-detail { margin-left: 0; }
 }
+
+/* ── Tarjetas de pedido plegables (operativo) ─────────────────────────
+   Compactación de `.work-card` para preparador/repartidor/cocina.
+   Cuando la tarjeta lleva `.is-collapsed` (aplicado por
+   operational-roles.js), el bloque `.work-card-body` queda oculto y
+   solo se ve la cabecera (número, cliente, badges, hora). Toggle
+   circular arriba a la derecha; también se pliega/despliega tocando
+   la cabecera. Estado persistido por número de pedido en sessionStorage. */
+body.operational-view .work-card { position: relative; }
+body.operational-view .work-card[data-collapsible-init="1"] { cursor: pointer; }
+body.operational-view .work-card.is-collapsed .work-card-body { display: none; }
+body.operational-view .work-card-body { display: contents; }
+body.operational-view .work-card-toggle {
+  position: absolute;
+  top: .5rem;
+  right: .5rem;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform .18s ease, background .18s ease;
+  z-index: 2;
+}
+body.operational-view .work-card-toggle:hover {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+body.operational-view .work-card:not(.is-collapsed) .work-card-toggle > span {
+  transform: rotate(180deg);
+  display: inline-block;
+}
+/* Deja aire al toggle para que no pise el header en pantallas anchas. */
+body.operational-view .work-card .work-order-head { padding-right: 2.5rem; }
+
+/* Botón "Expandir todo / Plegar todo" a nivel carril. */
+body.operational-view .work-lane-toggle-all {
+  margin-left: auto;
+  padding: .35rem .75rem;
+  border-radius: 999px;
+  border: 1px solid var(--col-border, color-mix(in srgb, currentColor 20%, transparent));
+  background: transparent;
+  color: inherit;
+  font-size: .8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+body.operational-view .work-lane-toggle-all:hover {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+/* ── Fixes de contraste (WCAG AA) ─────────────────────────────────────
+   Auditoría 2026-08-04: varios badges/chips/notas del panel operativo
+   quedaban bajo 4.5:1 (texto normal) o 3:1 (texto grande), en especial
+   con el tema oscuro. Los siguientes overrides fuerzan mezclas de
+   color con suficiente contraste sin cambiar la paleta de marca.
+   Referencia: los tokens `--col-text` y las mezclas `~78-85%` de acento
+   sobre `--col-text` garantizan >4.6:1 tanto en tema claro como oscuro. */
+
+/* Subtítulos y notas secundarias: dejan de usar `--col-muted` (rgba .72)
+   que en operativo cae a ~3.1:1 sobre las superficies elevadas. */
+body.operational-view .work-subtitle,
+body.operational-view .work-note-small,
+body.operational-view .work-employee-role {
+  color: color-mix(in srgb, var(--col-text) 82%, transparent) !important;
+}
+
+/* Notas del pedido — amarillo apagado que se confundía con el fondo. */
+body.operational-view .work-note {
+  color: color-mix(in srgb, var(--op-warning) 85%, var(--col-text)) !important;
+  background: color-mix(in srgb, var(--op-warning) 14%, var(--op-surface)) !important;
+  border-color: color-mix(in srgb, var(--op-warning) 45%, transparent) !important;
+  font-weight: 600;
+}
+
+/* Badges (zona, asignado, bar): subir el peso del acento sobre el texto
+   para que se lean bien tanto en modo día como noche. */
+body.operational-view .work-badge-zone {
+  color: color-mix(in srgb, var(--status-info) 78%, var(--col-text)) !important;
+  border-color: color-mix(in srgb, var(--status-info) 42%, var(--op-line)) !important;
+}
+body.operational-view .work-badge-assigned,
+body.operational-view .work-badge-prov-ready {
+  color: color-mix(in srgb, var(--status-ok) 82%, var(--col-text)) !important;
+  border-color: color-mix(in srgb, var(--status-ok) 42%, var(--op-line)) !important;
+}
+
+/* Chips de origen (Presencial / WhatsApp / Web): sobrescriben la regla
+   legacy de `body.ox-body-admin .work-chip.is-*` que hardcodeaba texto
+   pastel (#E9D5FF, #A7F3D0, #BFDBFE) sobre fondos casi transparentes
+   → 2-3:1 sobre superficie clara. Ahora usan la paleta operativa. */
+body.operational-view .work-chip {
+  font-weight: 800;
+  border-width: 1px;
+}
+body.operational-view .work-chip.is-presencial {
+  background: color-mix(in srgb, var(--brand-accent) 12%, var(--op-surface)) !important;
+  color: color-mix(in srgb, var(--brand-accent) 78%, var(--col-text)) !important;
+  border-color: color-mix(in srgb, var(--brand-accent) 40%, transparent) !important;
+}
+body.operational-view .work-chip.is-whatsapp {
+  background: color-mix(in srgb, var(--op-success) 12%, var(--op-surface)) !important;
+  color: color-mix(in srgb, var(--op-success) 78%, var(--col-text)) !important;
+  border-color: color-mix(in srgb, var(--op-success) 40%, transparent) !important;
+}
+body.operational-view .work-chip.is-web {
+  background: color-mix(in srgb, var(--status-info) 12%, var(--op-surface)) !important;
+  color: color-mix(in srgb, var(--status-info) 80%, var(--col-text)) !important;
+  border-color: color-mix(in srgb, var(--status-info) 40%, transparent) !important;
+}
+
+/* Recogida y punto de bar (repartidor): título y línea de datos con
+   contraste completo. */
+body.operational-view .route-pickup-title {
+  color: var(--col-text) !important;
+  font-weight: 800;
+}
+body.operational-view .route-pickup-line {
+  color: color-mix(in srgb, var(--col-text) 90%, transparent) !important;
+}
+
+/* Preparador: totales de variantes y textos de resumen. */
+body.view-preparador .prep-product-total__variants,
+body.view-preparador .prep-product-total__variants span {
+  color: color-mix(in srgb, var(--col-text) 88%, transparent) !important;
+}
+body.view-preparador .prep-summary-intro p,
+body.view-preparador .prep-summary-empty span {
+  color: color-mix(in srgb, var(--col-text) 80%, transparent) !important;
+}
+
+/* Cabecera de las tarjetas: refuerza legibilidad del código y la hora. */
+body.operational-view .work-order-code {
+  color: color-mix(in srgb, var(--brand-primary) 88%, var(--col-text)) !important;
+  font-weight: 900;
+}
+body.operational-view .work-time,
+body.operational-view .work-elapsed {
+  color: var(--col-text) !important;
+}
+
+/* Toggle de tarjeta plegable: asegurar contraste en dark. */
+body.operational-view .work-card-toggle {
+  color: var(--col-text);
+  background: color-mix(in srgb, var(--col-text) 10%, transparent);
+  border-color: color-mix(in srgb, var(--col-text) 26%, transparent);
+}
+body.operational-view .work-card-toggle:hover {
+  background: color-mix(in srgb, var(--col-text) 18%, transparent);
+}
+
+/* Modo oscuro: la superficie más oscura (#131a22) requería empujar los
+   badges/chips un pelín más para no lavarse. */
+html[data-delivery-theme="dark"] body.operational-view .work-badge-zone {
+  color: color-mix(in srgb, var(--status-info) 65%, #ffffff) !important;
+}
+html[data-delivery-theme="dark"] body.operational-view .work-badge-assigned,
+html[data-delivery-theme="dark"] body.operational-view .work-badge-prov-ready {
+  color: color-mix(in srgb, var(--status-ok) 60%, #ffffff) !important;
+}
+html[data-delivery-theme="dark"] body.operational-view .work-note {
+  color: color-mix(in srgb, var(--op-warning) 55%, #ffffff) !important;
+}
+html[data-delivery-theme="dark"] body.operational-view .work-chip.is-presencial {
+  color: color-mix(in srgb, var(--brand-accent) 40%, #ffffff) !important;
+}
+html[data-delivery-theme="dark"] body.operational-view .work-chip.is-whatsapp {
+  color: color-mix(in srgb, var(--op-success) 45%, #ffffff) !important;
+}
+html[data-delivery-theme="dark"] body.operational-view .work-chip.is-web {
+  color: color-mix(in srgb, var(--status-info) 45%, #ffffff) !important;
+}
+
+/* ── Panel super_admin: cola de revisión de socios ────────────────────
+   `.partner-review-actions` pasa de ser un `<form>` a un `<div>` con
+   dos `<form>` internos (uno por acción) para evitar el bug de "acción
+   no válida" cuando Enter enviaba el form sin submitter. Preservamos
+   el layout original con `display:contents` en los sub-forms para que
+   los grid tracks del contenedor sigan funcionando igual. */
+.partner-review-actions .partner-review-approve,
+.partner-review-actions .partner-review-reject {
+  display: contents;
+}
+.partner-review-actions .partner-review-reject input[type="text"] {
+  grid-column: 1 / 2;
+}
+@media (max-width: 720px) {
+  .partner-review-actions .partner-review-reject input[type="text"] {
+    grid-column: 1 / -1;
+  }
+}

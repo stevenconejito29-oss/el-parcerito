@@ -71,12 +71,24 @@
         <small>{{ p.descripcion or 'Sin descripción comercial.' }}</small>
       </div>
       {% if current_user.rol == 'super_admin' %}
-      <form method="post" action="{{ url_for('admin.revisar_producto_socio', producto_id=p.id) }}" class="partner-review-actions">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input name="nota" maxlength="500" placeholder="Observación si requiere cambios">
-        <button type="submit" name="accion" value="aprobar" class="is-approve">Aprobar</button>
-        <button type="submit" name="accion" value="rechazar" class="is-reject">Solicitar cambios</button>
-      </form>
+      {# Dos formularios independientes: garantiza que `accion` siempre
+         viaje sin depender del submitter que activó el submit. La CSP
+         del proyecto (app.py:1108) prohíbe `onkeydown`/`onsubmit`
+         inline, así que un guard JS inline es descartado por el
+         navegador y Enter en el input dispararía un POST sin `accion`. #}
+      <div class="partner-review-actions">
+        <form method="post" action="{{ url_for('admin.revisar_producto_socio', producto_id=p.id) }}" class="partner-review-approve">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="accion" value="aprobar">
+          <button type="submit" class="is-approve">Aprobar</button>
+        </form>
+        <form method="post" action="{{ url_for('admin.revisar_producto_socio', producto_id=p.id) }}" class="partner-review-reject">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="accion" value="rechazar">
+          <input type="text" name="nota" maxlength="500" placeholder="Motivo del rechazo (obligatorio)">
+          <button type="submit" class="is-reject">Solicitar cambios</button>
+        </form>
+      </div>
       {% if p.es_combo %}
       <a href="{{ url_for('admin.gestionar_combo', producto_id=p.id) }}" class="partner-review-config">Revisar composición, tamaños y sabores</a>
       {% else %}

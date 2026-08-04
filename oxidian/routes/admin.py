@@ -2571,11 +2571,22 @@ def productos():
 def revisar_producto_socio(producto_id):
     """Aprueba o devuelve una propuesta sin alterar su propietario ni stock."""
     producto = Product.query.filter_by(id=producto_id).with_for_update().first_or_404()
-    if (
-        not producto.proveedor_despachador_id
-        or producto.partner_submission_status != "pending"
-    ):
-        flash("Este producto no tiene una revisión de socio pendiente.", "warning")
+    if not producto.proveedor_despachador_id:
+        # La propuesta perdió su enlace con el socio (típicamente por un
+        # guardado previo del formulario que envió el select vacío). Sin dueño
+        # no se puede aprobar: hay que reasignarla desde la ficha del socio.
+        flash(
+            f"«{producto.nombre}» no tiene socio propietario asignado. "
+            "Vincúlalo desde /admin/proveedores antes de aprobarlo.",
+            "warning",
+        )
+        return redirect(url_for("admin.productos", revision="pending"))
+    if producto.partner_submission_status != "pending":
+        flash(
+            "Este producto ya no está en revisión "
+            f"(estado actual: {producto.partner_submission_status or 'sin propuesta'}).",
+            "warning",
+        )
         return redirect(url_for("admin.productos"))
 
     accion = (request.form.get("accion") or "").strip().lower()
@@ -2584,7 +2595,14 @@ def revisar_producto_socio(producto_id):
         flash("La observación no puede superar 500 caracteres.", "danger")
         return redirect(url_for("admin.productos", revision="pending"))
     if accion not in {"aprobar", "rechazar"}:
-        flash("La acción de revisión no es válida.", "danger")
+        # Diagnóstico específico: el error genérico anterior confundía al
+        # super_admin. Casi siempre pasa porque pulsó Enter dentro del
+        # campo "nota" en vez de tocar uno de los dos botones.
+        flash(
+            "Para revisar el producto pulsa el botón «Aprobar» o "
+            "«Solicitar cambios» (no envíes el formulario con Enter).",
+            "warning",
+        )
         return redirect(url_for("admin.productos", revision="pending"))
     if accion == "rechazar" and len(nota) < 5:
         flash("Explica brevemente qué debe corregir el socio.", "danger")
@@ -2670,33 +2688,47 @@ def revisar_producto_socio(producto_id):
     if accion == "aprobar" and not producto.es_combo and fila_stock is not None:
         if (fila_stock.stock or 0) <= 0 and producto.stock_mostrar_en_web:
             stock_coherente = False
-    if accion == "aprobar" and (
-        not proveedor
-        or not proveedor.activo
-        or proveedor.modelo_acuerdo != "socio_porcentaje"
-        or (not producto.es_combo and not fila_stock)
-        or (producto.es_combo and not combo_valido)
-        or not stock_coherente
-    ):
-        if not stock_coherente:
-            flash(
+    if accion == "aprobar":
+        # Diagnóstico específico: un único flash genérico enmascaraba qué
+        # condición falló y bloqueaba al super_admin sin pistas para resolver.
+        motivo = None
+        if not proveedor:
+            motivo = (
+                "El socio propietario ya no existe. Reasigna el producto desde "
+                "/admin/proveedores antes de aprobarlo."
+            )
+        elif not proveedor.activo:
+            motivo = (
+                f"El socio «{proveedor.nombre}» está desactivado. Actívalo en "
+                "/admin/proveedores para poder publicar sus productos."
+            )
+        elif proveedor.modelo_acuerdo != "socio_porcentaje":
+            motivo = (
+                f"El socio «{proveedor.nombre}» tiene modelo de acuerdo "
+                f"«{proveedor.modelo_acuerdo}»; el flujo de aprobación de "
+                "propuestas solo aplica a «socio_porcentaje». Cambia el "
+                "modelo en /admin/proveedores o edita el producto manualmente."
+            )
+        elif not producto.es_combo and not fila_stock:
+            motivo = (
+                "No hay inventario activo del socio para este producto "
+                "(ProveedorProducto ausente o inactivo). Pide al socio que "
+                "reenvíe la propuesta cargando stock."
+            )
+        elif producto.es_combo and not combo_valido:
+            motivo = (
+                f"El combo no es válido: {combo_error_detalle or 'faltan componentes o algún componente/variante está inactivo o no pertenece al mismo socio'}. "
+                "Pide al socio que reenvíe con la configuración vigente."
+            )
+        elif not stock_coherente:
+            motivo = (
                 "No se puede publicar con stock 0 y visibilidad activa. "
-                "Pide al socio que cargue stock o desmarque la visibilidad web (preventa).",
-                "danger",
+                "Pide al socio que cargue stock o desmarque la visibilidad web "
+                "(preventa)."
             )
-        elif combo_error_detalle:
-            flash(
-                f"No se puede publicar el combo: {combo_error_detalle}. "
-                "Pide al socio que reenvíe con la configuración vigente.",
-                "danger",
-            )
-        else:
-            flash(
-                "No se puede publicar: verifica el socio, su inventario y que todos "
-                "los componentes del combo sean productos activos del mismo propietario.",
-                "danger",
-            )
-        return redirect(url_for("admin.productos", revision="pending"))
+        if motivo:
+            flash(motivo, "danger")
+            return redirect(url_for("admin.productos", revision="pending"))
 
     producto.partner_reviewed_by = current_user.id
     producto.partner_reviewed_at = utcnow()
@@ -2704,6 +2736,13 @@ def revisar_producto_socio(producto_id):
     if accion == "aprobar":
         producto.partner_submission_status = "approved"
         producto.activo = True
+        # Reactivación defensiva del inventario del socio. Si entre la
+        # propuesta y la aprobación el socio marcó su ProveedorProducto
+        # como inactivo (p.ej. desde /proveedor/inventario), aprobar el
+        # Product dejaría la ficha visible pero sin stock vendible. Al
+        # aprobar reafirmamos la disponibilidad.
+        if not producto.es_combo and fila_stock is not None:
+            fila_stock.activo = True
         mensaje = f"«{producto.nombre}» fue aprobado y ya puede publicarse."
         audit_action = "socio_producto_aprobado"
     else:
@@ -2916,6 +2955,13 @@ def _parsear_campos_producto(form):
             if partner.modelo_acuerdo != "socio_porcentaje":
                 return None, "El aliado seleccionado no está configurado como socio por porcentaje."
             proveedor_despachador_id = partner.id
+        elif producto_actual is not None:
+            # Sin socio nuevo válido en el POST preservamos el dueño existente.
+            # Desvincular en silencio dejaba propuestas pending huérfanas que
+            # `revisar_producto_socio` rechazaba con «no está en revisión» y no
+            # podían activarse. La desvinculación intencional se hace desde la
+            # ficha del socio (`admin.editar_proveedor`).
+            proveedor_despachador_id = producto_actual.proveedor_despachador_id
     elif producto_actual is not None:
         # Un admin operativo puede editar descripción o disponibilidad sin
         # apropiarse ni desvincular accidentalmente productos de un socio.

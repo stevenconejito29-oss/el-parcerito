@@ -344,7 +344,7 @@
             <strong>🏪 {{ _bar_info.nombre }}</strong>
             {% if _bar_info.direccion %} · {{ _bar_info.direccion }}{% endif %}
             {% if _bar_info.telefono %}
-            · <a href="tel:{{ _bar_info.telefono }}" style="color:var(--col-gold)">📞 {{ _bar_info.telefono }}</a>
+            · <a href="tel:{{ _bar_info.telefono }}" style="color:var(--brand-primary);font-weight:700">📞 {{ _bar_info.telefono }}</a>
             {% endif %}
           </p>
           {% endfor %}
@@ -535,7 +535,7 @@
           <strong>🏪 {{ _bar_info.nombre }}</strong>
           {% if _bar_info.direccion %} · {{ _bar_info.direccion }}{% endif %}
           {% if _bar_info.telefono %}
-          · <a href="tel:{{ _bar_info.telefono }}" style="color:var(--col-gold)">📞 {{ _bar_info.telefono }}</a>
+          · <a href="tel:{{ _bar_info.telefono }}" style="color:var(--brand-primary);font-weight:700">📞 {{ _bar_info.telefono }}</a>
           {% endif %}
         </p>
         {% endfor %}
@@ -691,13 +691,13 @@
         {% if pedido.codigo_confirmacion %}
         {% if pedido.codigo_confirmacion_bloqueado %}
         <div class="work-panel work-panel--locked mb-3">
-          <p class="work-confirm-label" style="color:#ef4444">Código bloqueado</p>
+          <p class="work-confirm-label" style="color:var(--status-err);font-weight:800">Código bloqueado</p>
           <p class="work-confirm-note">Se agotaron los {{ pedido.max_intentos_entrega }} intentos. Contacta al admin para regenerar el código antes de entregar.</p>
           <input type="hidden" name="codigo_confirmacion" value="">
         </div>
         {% elif pedido.codigo_confirmacion_expirado %}
         <div class="work-panel work-panel--locked mb-3">
-          <p class="work-confirm-label" style="color:#ef4444">Código expirado</p>
+          <p class="work-confirm-label" style="color:var(--status-err);font-weight:800">Código expirado</p>
           <p class="work-confirm-note">El código de entrega ha caducado. Contacta al admin para regenerarlo antes de entregar.</p>
           <input type="hidden" name="codigo_confirmacion" value="">
         </div>

@@ -56,7 +56,13 @@
           diálogo del navegador (peor UX pero garantiza que algo salga).
   */
   async function tryThermalDirect(form) {
-    if (!window.ThermalPrinter || !window.ThermalPrinter.isPaired()) return false;
+    if (!window.ThermalPrinter) return false;
+    // Aceptamos también el caso "no emparejado en memoria pero sí en
+    // localStorage" — printTicket() intentará restore automáticamente
+    // (impresora fija). Si no hay hint alguno, nunca hubo emparejamiento
+    // en este navegador; caemos al fallback IPP.
+    const hint = window.ThermalPrinter.getPairInfo && window.ThermalPrinter.getPairInfo();
+    if (!window.ThermalPrinter.isPaired() && !hint) return false;
     const action = form.action || '';
     const match = action.match(/\/pos\/ticket\/(\d+)\/imprimir/);
     if (!match) return false;
@@ -141,4 +147,122 @@
     }
   });
   document.addEventListener('DOMContentLoaded', refreshThermalStatus);
+
+  /* Compactación de tarjetas operativas.
+     Cada `.work-card` en un panel operativo se pliega mostrando solo la
+     cabecera (número, cliente, hora, badges); items, notas y acciones se
+     ocultan tras un toggle. Motivación: preparador y repartidor ven decenas
+     de pedidos y se abruman. Estado (abierto/cerrado) persiste en
+     sessionStorage por número de pedido para que un F5 no cambie lo que el
+     operador ya había expandido.
+     NO altera la estructura HTML por servidor — es progressive enhancement,
+     así si el JS falla la pantalla sigue funcional. */
+  const DETAIL_SELECTOR = [
+    '.work-items',
+    '.work-box',
+    '.work-note',
+    '.work-note-small',
+    '.work-action-row',
+    '.work-cta-group',
+    'details.route-contents',
+    'details.route-no-deliver',
+  ].join(',');
+
+  function collapseKey(card) {
+    const codeEl = card.querySelector('.work-order-code');
+    const code = codeEl ? codeEl.textContent.trim() : '';
+    if (code) return 'oxidian.card.open:' + code;
+    // Fallback: created timestamp + path (peor, pero no crashea).
+    return 'oxidian.card.open:' + location.pathname + ':' + (card.dataset.created || '');
+  }
+
+  function ensureLaneToggleAll(lane) {
+    if (!lane || lane.dataset.laneToggleInit === '1') return;
+    const head = lane.querySelector('.work-lane-head');
+    if (!head) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'work-lane-toggle-all';
+    btn.dataset.cardsToggleAll = '1';
+    btn.textContent = 'Expandir todo';
+    head.appendChild(btn);
+    lane.dataset.laneToggleInit = '1';
+  }
+
+  function initCollapsibleCards(scope) {
+    if (!body.classList.contains('operational-view')) return;
+    const root = scope || document;
+    root.querySelectorAll('.work-lane').forEach(ensureLaneToggleAll);
+    root.querySelectorAll('.work-card').forEach((card) => {
+      if (card.dataset.collapsibleInit === '1') return;
+      const detailNodes = Array.from(card.children).filter(
+        (child) => child.matches && child.matches(DETAIL_SELECTOR),
+      );
+      if (!detailNodes.length) return; // Sin detalle: no vale la pena colapsar.
+      card.dataset.collapsibleInit = '1';
+
+      const bodyWrap = document.createElement('div');
+      bodyWrap.className = 'work-card-body';
+      detailNodes.forEach((n) => bodyWrap.appendChild(n));
+      card.appendChild(bodyWrap);
+
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'work-card-toggle';
+      toggle.setAttribute('aria-label', 'Mostrar u ocultar detalle del pedido');
+      toggle.innerHTML = '<span aria-hidden="true">▾</span>';
+      card.appendChild(toggle);
+
+      const key = collapseKey(card);
+      let open = false;
+      try { open = sessionStorage.getItem(key) === '1'; } catch (_) {}
+      applyState(card, toggle, open);
+
+      // Click en el área de resumen (cualquier lugar de la tarjeta EXCEPTO
+      // dentro del body de detalle o de un control interactivo interno).
+      card.addEventListener('click', (event) => {
+        if (event.target.closest('.work-card-body')) return;
+        if (event.target.closest('form, button, a, input, label, select, textarea')) return;
+        const nextOpen = card.classList.contains('is-collapsed');
+        applyState(card, toggle, nextOpen);
+        try { sessionStorage.setItem(key, nextOpen ? '1' : '0'); } catch (_) {}
+      });
+      toggle.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const nextOpen = card.classList.contains('is-collapsed');
+        applyState(card, toggle, nextOpen);
+        try { sessionStorage.setItem(key, nextOpen ? '1' : '0'); } catch (_) {}
+      });
+    });
+  }
+
+  function applyState(card, toggle, open) {
+    card.classList.toggle('is-collapsed', !open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => initCollapsibleCards());
+  // Re-inicializar tras auto-refresh que reemplace nodos por AJAX (repartidor
+  // y preparador aún recargan la página entera, pero por si en el futuro se
+  // introduce swap parcial dejamos este hook idempotente).
+  document.addEventListener('oxidian:cards-updated', (event) => {
+    initCollapsibleCards(event.detail && event.detail.scope);
+  });
+
+  /* Botón "Expandir/Plegar todo" por carril: al pulsarlo se cambia el estado
+     de todas las tarjetas del `.work-lane` en el que vive el botón. */
+  document.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-cards-toggle-all]');
+    if (!btn) return;
+    const scope = btn.closest('.work-lane') || document;
+    const cards = scope.querySelectorAll('.work-card');
+    const anyCollapsed = Array.from(cards).some((c) => c.classList.contains('is-collapsed'));
+    cards.forEach((card) => {
+      const toggle = card.querySelector('.work-card-toggle');
+      if (!toggle) return;
+      applyState(card, toggle, anyCollapsed);
+      try { sessionStorage.setItem(collapseKey(card), anyCollapsed ? '1' : '0'); } catch (_) {}
+    });
+    btn.textContent = anyCollapsed ? 'Plegar todo' : 'Expandir todo';
+  });
 })();

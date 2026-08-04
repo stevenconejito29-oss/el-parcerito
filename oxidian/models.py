@@ -519,8 +519,8 @@ class Proveedor(db.Model):
     modelo_acuerdo = db.Column(
         db.String(30),
         nullable=False,
-        default="stock_proveedor",
-        server_default="stock_proveedor",
+        default="socio_porcentaje",
+        server_default="socio_porcentaje",
     )
     # En ``socio_porcentaje`` es el porcentaje del PVP que conserva la tienda.
     # Los otros significados se mantienen solo para acuerdos históricos.

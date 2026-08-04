@@ -322,6 +322,30 @@ def marcar_listo(pedido_id):
         db.session.rollback()
         flash(f"No se pudo marcar como listo: {e}", "danger")
         return redirect(url_for("staff.pedidos"))
+    # Auto-print del ticket al marcar el pedido empacado. Best-effort:
+    # si CUPS o la red están caídos NO revertimos la transición, el
+    # operador puede reimprimir manualmente. Post-commit para que el
+    # ticket refleje repartidor asignado.
+    try:
+        from routes.pos import imprimir_ticket as _imprimir_ticket_view
+        _print_result = _imprimir_ticket_view(pedido.id)
+        if isinstance(_print_result, tuple):
+            _body, _status = _print_result
+        else:
+            _body, _status = _print_result, 200
+        _body_json = getattr(_body, "json", None) or (
+            _body if isinstance(_body, dict) else {}
+        )
+        if not (isinstance(_body_json, dict) and _body_json.get("ok")):
+            logger.warning(
+                "Auto-print pedido %s (empaque): status=%s body=%s",
+                pedido.numero_pedido, _status, _body_json,
+            )
+    except Exception:
+        logger.exception(
+            "Auto-print pedido %s (empaque): excepción no bloqueante",
+            pedido.numero_pedido,
+        )
     try:
         from push_service import notify_delivery_ready, notify_order_state
         notify_order_state(pedido)

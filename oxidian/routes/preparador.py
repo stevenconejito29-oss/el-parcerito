@@ -535,6 +535,31 @@ def marcar_listo(pedido_id):
         from services import enviar_whatsapp_estado
         enviar_whatsapp_estado(pedido)
         db.session.commit()
+        # Auto-print del ticket al marcar el pedido armado. Best-effort:
+        # si CUPS o la red están caídos NO revertimos la transición — el
+        # operador siempre puede reimprimir manualmente desde el POS. Se
+        # ejecuta después del commit para que el ticket refleje el estado
+        # ya persistido (repartidor asignado incluido).
+        try:
+            from routes.pos import imprimir_ticket as _imprimir_ticket_view
+            print_result = _imprimir_ticket_view(pedido.id)
+            if isinstance(print_result, tuple):
+                print_body, print_status = print_result
+            else:
+                print_body, print_status = print_result, 200
+            body = getattr(print_body, "json", None) or (
+                print_body if isinstance(print_body, dict) else {}
+            )
+            if not (isinstance(body, dict) and body.get("ok")):
+                logger.warning(
+                    "Auto-print pedido %s: status=%s body=%s",
+                    pedido.numero_pedido, print_status, body,
+                )
+        except Exception:
+            logger.exception(
+                "Auto-print pedido %s: excepción no bloqueante",
+                pedido.numero_pedido,
+            )
     except ValueError as e:
         # Errores de negocio con mensaje intencional (proveedor pendiente,
         # responsable no asignado, etc.) → se muestra al usuario tal cual.
