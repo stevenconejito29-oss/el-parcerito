@@ -249,4 +249,7 @@ document.querySelectorAll('.js-availability-form').forEach(form => {
   });
 });
 </script>
+{# Modal de impresión manual (fallback del auto-print server-side).
+   Se activa cuando `marcar_listo` redirige con `?print_after=<id>`. #}
+{% include "_print_after_modal.html" %}
 {% endblock %}

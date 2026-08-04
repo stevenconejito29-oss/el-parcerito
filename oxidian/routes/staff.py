@@ -363,7 +363,12 @@ def marcar_listo(pedido_id):
         flash(f"Pedido {pedido.numero_pedido} listo para despacho.", "success")
     else:
         flash(f"Pedido {pedido.numero_pedido} listo, pendiente de repartidor disponible.", "warning")
-    return redirect(url_for("staff.pedidos"))
+    # Fallback manual: al volver a la lista abrimos el diálogo nativo de
+    # impresión del navegador con el ticket ya renderizado. Cubre el caso
+    # en que el auto-print server-side falló (CUPS caído, impresora
+    # desenchufada) — el operador imprime desde Chrome apuntando a la
+    # cola BT/USB que tenga configurada localmente en su dispositivo.
+    return redirect(url_for("staff.pedidos", print_after=pedido.id))
 
 
 # ─── TOGGLE DISPONIBLE ────────────────────────────────────────────────────────

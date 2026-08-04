@@ -592,7 +592,11 @@ def marcar_listo(pedido_id):
         flash(f"Pedido {pedido.numero_pedido} listo. Repartidor asignado automáticamente.", "success")
     else:
         flash(f"Pedido {pedido.numero_pedido} listo, pendiente de repartidor disponible.", "warning")
-    return redirect(url_for("preparador.pedidos"))
+    # Fallback manual: abre el diálogo nativo de impresión del navegador
+    # al volver a la lista. Complementa el auto-print server-side (CUPS)
+    # cuando la impresora está en un dispositivo distinto (BT en tablet,
+    # OTG, etc.) o cuando CUPS falló.
+    return redirect(url_for("preparador.pedidos", print_after=pedido.id))
 
 
 # ─────────────────────────────────────────────────────────────────────

@@ -1387,4 +1387,7 @@ document.querySelectorAll('form[data-mark-ready]').forEach(form => {
   100% { box-shadow: 0 0 0 22px rgba(94,240,151,0),   0 20px 42px rgba(94,240,151,.02); }
 }
 </style>
+{# Modal de impresión manual (fallback del auto-print server-side).
+   Se activa cuando `marcar_listo` redirige con `?print_after=<id>`. #}
+{% include "_print_after_modal.html" %}
 {% endblock %}
