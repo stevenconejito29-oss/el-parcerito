@@ -217,12 +217,29 @@ def _producto_disponible_en_origen(producto, origen, cantidad=1):
         return False
     if not _producto_pertenece_al_vertical(producto):
         return False
+    # Coerción socio-capital: `_carrito_origen()` y otros callers pasan
+    # "propio" como origen logístico (porque la tienda despacha), pero
+    # `Product.pertenece_a_origen("propio")` chequea estrictamente
+    # `proveedor_despachador_id`. Para socio-capital, la fila real vive
+    # en ProveedorProducto → resolvemos al origen de INVENTARIO real del
+    # producto para los chequeos de pertenencia y stock. Sin esto, cada
+    # producto de socio devolvía "no está disponible" en checkout y en
+    # todo call site que pase el origen logístico del carrito.
+    origen_real = origen
+    if (
+        producto
+        and origen == "propio"
+        and getattr(producto, "proveedor_despachador_id", None)
+    ):
+        prov = producto.proveedor_despachador
+        if prov and getattr(prov, "es_socio_capital", False):
+            origen_real = f"proveedor:{producto.proveedor_despachador_id}"
     return bool(
         producto
         and producto.activo
         and producto.visible_ahora
-        and producto.pertenece_a_origen(origen)
-        and producto.disponible_para_venta_en_origen(origen, cantidad)
+        and producto.pertenece_a_origen(origen_real)
+        and producto.disponible_para_venta_en_origen(origen_real, cantidad)
     )
 
 
