@@ -251,20 +251,35 @@
   // habilitada, o el permiso permanente ya concedido. Si el navegador no
   // expone `getDevices`, no podemos reconectar sin gesto del usuario.
   async function _restoreBT() {
-    if (!('bluetooth' in navigator) || typeof navigator.bluetooth.getDevices !== 'function') return;
+    if (!('bluetooth' in navigator) || typeof navigator.bluetooth.getDevices !== 'function') {
+      console.info('[thermal-BT] getDevices no disponible — sin restore');
+      return;
+    }
+    let list;
     try {
-      const list = await navigator.bluetooth.getDevices();
-      if (!list.length) return;
-      // El primero que responda gana. En la práctica el operador solo
-      // tiene una impresora emparejada por tablet.
-      for (const dev of list) {
+      list = await navigator.bluetooth.getDevices();
+    } catch (err) {
+      console.warn('[thermal-BT] getDevices falló:', err);
+      return;
+    }
+    if (!list.length) {
+      console.info('[thermal-BT] getDevices devolvió 0 devices autorizados');
+      return;
+    }
+    // Retry con backoff: en Android el subsistema BT puede tardar en
+    // despertar. Un gatt.connect() puede fallar en el primer intento
+    // (device dormido / GATT server ocupado) y funcionar al segundo.
+    const RETRY_DELAYS_MS = [0, 400, 900, 1800];
+    for (const dev of list) {
+      for (let i = 0; i < RETRY_DELAYS_MS.length; i++) {
+        if (RETRY_DELAYS_MS[i] > 0) await new Promise(r => setTimeout(r, RETRY_DELAYS_MS[i]));
         try {
           const server = await dev.gatt.connect();
           const writeChar = await _findBTWriteChar(server);
           if (writeChar) {
             device = dev; btChar = writeChar; transport = 'bt';
             setPaired({ transport: 'bt', name: dev.name || 'BT Printer' });
-            // Auto-reconexión cuando el device se cae (out of range, sleep).
+            console.info('[thermal-BT] restore OK en intento', i + 1, '- device:', dev.name);
             if (!dev.__oxidianDisconnectHooked) {
               dev.addEventListener('gattserverdisconnected', () => {
                 console.info('[thermal-BT] desconectado — reintentaré al próximo print.');
@@ -274,9 +289,15 @@
             return;
           }
           try { server.disconnect(); } catch (_) {}
-        } catch (_) { /* probar siguiente */ }
+          console.warn('[thermal-BT] conectado pero sin writeChar en', dev.name);
+          break;  // no reintentar en este device, probar siguiente
+        } catch (err) {
+          console.info('[thermal-BT] intento', i + 1, 'falló para', dev.name || '?', ':', err && err.message);
+          // Sigue reintentando con el siguiente delay.
+        }
       }
-    } catch (_) { /* silencio */ }
+    }
+    console.warn('[thermal-BT] restore falló tras', RETRY_DELAYS_MS.length, 'intentos por device');
   }
 
   async function _findBTWriteChar(server) {
@@ -359,24 +380,30 @@
     if (_readyResolve) _readyResolve({ paired: device !== null });
   });
 
-  // Antes de descargar la página soltamos el device USB/BT si lo teníamos
-  // reclamado. Sin esto, en tablets Android donde el mismo host publica
-  // la cola CUPS `Ticket` con la impresora USB, el navegador conserva el
-  // `claim` sobre /dev/usb/lpX y CUPS reporta "Waiting for printer to
-  // become available" (los jobs se encolan pero no se imprimen). Al
-  // liberar en `beforeunload` la próxima navegación deja el device
-  // libre para CUPS. La info de emparejamiento en localStorage se
-  // conserva — solo cerramos el handle activo.
+  // Antes de descargar la página SOLO liberamos USB si lo teníamos
+  // reclamado — el resource USB compite con CUPS en Ubuntu/Linux (si
+  // el mismo host publica la cola `Ticket`, el navegador conserva el
+  // `claim` sobre /dev/usb/lpX y CUPS reporta "Waiting for printer").
+  //
+  // NO desconectamos BT en pagehide: hacerlo forzaba a `_restoreBT()`
+  // a reconectar GATT desde cero en cada F5, y en Android eso falla
+  // frecuentemente por timing, sleep del device o permisos — síntoma:
+  // "cada vez que se refresca la página ambas tablets se desconectan".
+  // Al no cerrar manualmente, el navegador tiene oportunidad de
+  // preservar el GATT server durante navegación same-origin. El event
+  // handler `gattserverdisconnected` (line 269) detecta si el device
+  // se cae por otro motivo (out of range, sleep) para logs.
   function _releaseDevice() {
     try {
-      if (device && transport === 'bt' && device.gatt && device.gatt.connected) {
-        device.gatt.disconnect();
-      }
       if (device && transport === 'usb' && device.opened) {
         device.close();
       }
     } catch (_) { /* silencio: la página está a punto de morir */ }
-    device = null; btChar = null; outEndpoint = null;
+    // Solo limpiar refs si era USB. Para BT dejamos las refs para que
+    // subsecuentes pageloads puedan reutilizar el GATT si sigue abierto.
+    if (transport === 'usb') {
+      device = null; outEndpoint = null;
+    }
   }
   window.addEventListener('pagehide', _releaseDevice);
   window.addEventListener('beforeunload', _releaseDevice);
