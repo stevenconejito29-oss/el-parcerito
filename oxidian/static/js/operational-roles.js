@@ -189,14 +189,24 @@
           return;
         }
       }
-      // Prioridad 3: modal con diálogo nativo de Chrome. Siempre funciona
-      // porque no depende de emparejamiento previo ni de que CUPS alcance
-      // la impresora — el usuario elige del diálogo la impresora que quiera.
-      openPrintModal(pedidoId, reprint);
+      // Prioridad 3: modal BT-pick con la MISMA función del chip 🔵.
+      // Un click empareja/reutiliza el device y dispara el ticket. Es
+      // consistente con el flujo tras marcar Listo (DOMContentLoaded).
+      // Si el navegador no tiene WebBluetooth en absoluto, caemos al
+      // modal Chrome dialog como último recurso.
+      if ('bluetooth' in navigator && window.ThermalPrinter) {
+        openBTPickModal(pedidoId, reprint);
+      } else {
+        openPrintModal(pedidoId, reprint);
+      }
       if (button) { button.innerHTML = originalLabel; button.disabled = false; }
     } catch (err) {
       console.warn('[ticket] impresión falló, abriendo modal:', err);
-      openPrintModal(pedidoId, reprint);
+      if ('bluetooth' in navigator && window.ThermalPrinter) {
+        openBTPickModal(pedidoId, reprint);
+      } else {
+        openPrintModal(pedidoId, reprint);
+      }
       if (button) { button.innerHTML = originalLabel; button.disabled = false; }
     }
   });
@@ -212,30 +222,103 @@
       && typeof navigator.bluetooth.getDevices === 'function';
   }
 
-  /* Auto-disparo tras `?print_after=<id>` (tras marcar Listo/Empacar):
-     Regla simple y única:
-       - Si la impresora está emparejada en esta sesión → imprime
-         silencioso vía WebBluetooth. Sin UI, sin diálogo.
-       - Si NO está emparejada → aparece el modal con el diálogo nativo
-         de Chrome para que el operador elija la impresora manualmente
-         y confirme el trabajo.
+  /* Modal para el flujo manual BT — un click, un pedido, un ticket.
+     Reutiliza la MISMA función `pairBT()` que dispara el chip flotante
+     🔵. En navegadores viejos (Chrome 108, sin `getDevices`) el operador
+     ve este modal en cada `?print_after` porque el navegador olvida el
+     pairing tras F5. En navegadores modernos (Chromium ≥122) sólo lo
+     ve la primera vez que estrena la app — luego `_restoreBT` mantiene
+     el pairing y todos los siguientes prints salen silenciosos. */
+  function openBTPickModal(pedidoId, reprint) {
+    let modal = document.getElementById('bt-pick-modal');
+    if (modal) modal.remove();
+    modal = document.createElement('div');
+    modal.id = 'bt-pick-modal';
+    modal.className = 'print-after-overlay';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.innerHTML = `
+      <div class="print-after-content" style="text-align:center">
+        <h3>🖨️ Selecciona tu impresora</h3>
+        <p>Pulsa el botón y elige tu impresora Bluetooth en el diálogo del sistema. El ticket se enviará al confirmar.</p>
+        <button type="button" class="print-after-btn print-after-btn-close" data-bt-pick
+                style="font-size:1rem;padding:1rem;min-height:64px;width:100%">
+          🔵 Seleccionar impresora e imprimir
+        </button>
+        <div class="print-after-actions" style="margin-top:.7rem">
+          <button type="button" class="print-after-btn" data-bt-fallback-chrome>🖨️ Prefiero el diálogo de Chrome</button>
+          <button type="button" class="print-after-btn" data-bt-skip>Saltar</button>
+        </div>
+        <p id="bt-pick-status" style="margin-top:.5rem;font-size:.75rem;min-height:1em;opacity:.7"></p>
+      </div>`;
+    document.body.appendChild(modal);
+    const status = modal.querySelector('#bt-pick-status');
+    const close = () => {
+      modal.remove();
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.delete('print_after');
+        window.history.replaceState({}, '', u);
+      } catch (_) {}
+    };
+    modal.querySelector('[data-bt-skip]').addEventListener('click', close);
+    modal.querySelector('[data-bt-fallback-chrome]').addEventListener('click', () => {
+      close();
+      openPrintModal(pedidoId, reprint);
+    });
+    modal.querySelector('[data-bt-pick]').addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;
+      status.textContent = 'Abriendo selector Bluetooth…';
+      try {
+        // Misma función que usa el chip flotante 🔵. Si el navegador ya
+        // tiene la autorización de esta sesión, reutiliza sin volver a
+        // pedir permiso; si no, dispara el diálogo nativo del sistema.
+        if (!window.ThermalPrinter.isPaired()) {
+          await window.ThermalPrinter.pairBT();
+        }
+        status.textContent = 'Imprimiendo…';
+        await window.ThermalPrinter.printTicket(pedidoId, { reprint });
+        status.textContent = '✅ Ticket enviado';
+        refreshThermalStatus();
+        setTimeout(close, 900);
+      } catch (err) {
+        console.warn('[ticket] BT pick falló:', err);
+        status.textContent = err && err.message ? err.message : 'No se pudo. Prueba el diálogo de Chrome.';
+        btn.disabled = false;
+      }
+    });
+  }
 
-     La diferencia práctica entre tablet vieja y moderna:
-       - Moderna (Chromium ≥122): `_restoreBT` reconecta al cargar la
-         página → `isPaired()` = true → prints silencioso siempre.
-       - Vieja (Chrome 108 del Huawei): pairing sólo dura hasta el
-         siguiente F5. Tras cada F5 → `isPaired()` = false → aparece
-         el diálogo de Chrome cuando marca Listo. Si el operador
-         pulsa el chip 🔵 al inicio de la sesión, el pairing dura
-         mientras no recargue la app entre pedidos → prints silencioso
-         durante ese lapso. */
+  /* Auto-disparo tras `?print_after=<id>` (después de marcar Listo/Empacar):
+     - Si ThermalPrinter.isPaired() → imprime silencioso vía WebBluetooth.
+     - Si NO → muestra `openBTPickModal` con la MISMA función que el chip
+       🔵: un click empareja/reutiliza el device y dispara el ticket. Si
+       el operador prefiere no usar BT hay atajo al diálogo Chrome.
+
+     Cadena de eventos que hace que la moderna sea "para siempre":
+     1. Primera vez: usuario pulsa chip 🔵 → pairBT() → localStorage
+        guarda `{transport:"bt", name:"..."}`.
+     2. F5 (o cargar app tras reboot): thermal-printer.js corre
+        `_restoreBT()` en DOMContentLoaded → detecta hint en
+        localStorage → llama `navigator.bluetooth.getDevices()`
+        (Chromium ≥122) → recupera el device autorizado sin pedir
+        permiso → conecta GATT → isPaired() = true.
+     3. Al pulsar Listo → path silencioso, sin modal.
+     Sin `getDevices` (Chrome 108 vieja): paso 2 falla silenciosamente
+     y en cada F5 sale el modal BT pick al pulsar Listo. */
   document.addEventListener('DOMContentLoaded', async () => {
     const params = new URLSearchParams(window.location.search);
     const pedidoRaw = params.get('print_after');
     if (!pedidoRaw) return;
     const pedidoId = parseInt(pedidoRaw, 10);
 
-    // Path silencioso: impresora emparejada en esta sesión.
+    // Espera brevísima para dar tiempo a que _restoreBT termine si el
+    // navegador es moderno y hay hint en localStorage. thermal-printer.js
+    // lo dispara en DOMContentLoaded también — micro-cola de tareas.
+    await new Promise(r => setTimeout(r, 100));
+
+    // Path silencioso.
     if (window.ThermalPrinter && window.ThermalPrinter.isPaired()) {
       if (await tryBluetooth(pedidoId, false)) {
         const modal = document.getElementById('print-after-modal');
@@ -249,11 +332,20 @@
       }
     }
 
-    // Path modal Chrome dialog: sin pairing en memoria. El partial
-    // `_print_after_modal.html` ya está inyectado en el DOM cuando la
-    // URL trae ?print_after — su iframe interno dispara window.print()
-    // automáticamente y Chrome abre el diálogo nativo para elegir
-    // impresora. Nada más que hacer aquí: el modal se auto-gestiona.
+    // Path manual: cerramos el modal Chrome-dialog inyectado por el
+    // partial (no lo mostramos en este caso; será el fallback secundario
+    // si el usuario prefiere Chrome dialog en vez de BT) y mostramos
+    // el modal BT-pick que usa la misma función que el chip flotante.
+    const chromeModal = document.getElementById('print-after-modal');
+    if (chromeModal) chromeModal.remove();
+    if ('bluetooth' in navigator && window.ThermalPrinter) {
+      openBTPickModal(pedidoId, false);
+    } else {
+      // Sin WebBluetooth disponible en absoluto (iOS Safari): último
+      // recurso es el diálogo de Chrome (aunque en iOS Safari también
+      // fallará; ahí el usuario compra tablet nueva o usa Chrome).
+      openPrintModal(pedidoId, false);
+    }
   });
 
   /* Chip flotante para emparejar impresora BT desde cualquier panel
