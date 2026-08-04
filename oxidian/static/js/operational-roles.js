@@ -48,19 +48,23 @@
 
   /* Impresión de tickets desde cualquier panel operativo.
      Orden de intento:
-       1. WebUSB / WebBluetooth si el navegador tiene una impresora
-          emparejada (típico en la tablet de la oficina con cable OTG).
-       2. POST /pos/ticket/<id>/imprimir → servidor manda por IPP a la
-          cola CUPS del PC (típico en la ubicación con PC).
-       3. Fallback: abrir pestaña con auto_print=1 y confiar en el
-          diálogo del navegador (peor UX pero garantiza que algo salga).
-  */
-  async function tryThermalDirect(form) {
+       1. POST /pos/ticket/<id>/imprimir → servidor manda por IPP a la
+          cola CUPS. Es el camino por defecto porque no depende del
+          navegador (funciona igual en Android 8/Chrome 108 y en Chrome
+          151 desktop) y no compite con CUPS por el device físico. Si
+          el usuario tiene la impresora colgada al mismo host donde
+          corre CUPS, usar WebUSB desde el navegador ROBABA el device
+          a la cola. Con CUPS como default eso ya no puede pasar.
+       2. WebUSB / WebBluetooth como fallback si CUPS es inalcanzable
+          (impresora_no_configurada, impresora_inalcanzable o red caída).
+       3. Último recurso: abrir pestaña con auto_print=1.
+     Se puede forzar la ruta WebUSB añadiendo `data-force-webusb="1"` al
+     `<form>` — útil para setups donde el device solo es visible al
+     navegador y no hay CUPS. */
+  const FORCE_WEBUSB_ATTR = 'forceWebusb';
+
+  async function tryThermalWebUSB(form) {
     if (!window.ThermalPrinter) return false;
-    // Aceptamos también el caso "no emparejado en memoria pero sí en
-    // localStorage" — printTicket() intentará restore automáticamente
-    // (impresora fija). Si no hay hint alguno, nunca hubo emparejamiento
-    // en este navegador; caemos al fallback IPP.
     const hint = window.ThermalPrinter.getPairInfo && window.ThermalPrinter.getPairInfo();
     if (!window.ThermalPrinter.isPaired() && !hint) return false;
     const action = form.action || '';
@@ -79,12 +83,10 @@
     const button = form.querySelector('button[type="submit"]');
     const originalLabel = button ? button.innerHTML : '';
     if (button) { button.disabled = true; button.innerHTML = '🖨️ Enviando…'; }
-    try {
-      if (await tryThermalDirect(form)) {
-        if (button) button.innerHTML = '✅ Impreso (USB)';
-        setTimeout(() => { if (button) { button.innerHTML = originalLabel; button.disabled = false; } }, 2500);
-        return;
-      }
+
+    const forceWebUSB = form.dataset[FORCE_WEBUSB_ATTR] === '1';
+
+    async function attemptCUPS() {
       const resp = await fetch(form.action, {
         method: 'POST',
         body: new FormData(form),
@@ -92,19 +94,48 @@
         credentials: 'same-origin',
       });
       const data = await resp.json().catch(() => ({}));
-      if (resp.ok && data.ok) {
+      if (resp.ok && data.ok) return { ok: true, via: 'cups' };
+      return { ok: false, error: data.error || `HTTP ${resp.status}`, via: 'cups' };
+    }
+
+    try {
+      // Ruta WebUSB si el operador la fuerza (setups sin CUPS reachable).
+      if (forceWebUSB) {
+        if (await tryThermalWebUSB(form)) {
+          if (button) button.innerHTML = '✅ Impreso (USB)';
+          setTimeout(() => { if (button) { button.innerHTML = originalLabel; button.disabled = false; } }, 2500);
+          return;
+        }
+      }
+      // Por defecto: CUPS primero. Es el camino robusto en el 99% de
+      // los setups (incluye el nuestro: cola `Ticket` en 192.168.1.41).
+      const cupsResult = await attemptCUPS();
+      if (cupsResult.ok) {
         if (button) button.innerHTML = '✅ Impreso';
         setTimeout(() => { if (button) { button.innerHTML = originalLabel; button.disabled = false; } }, 2500);
         return;
       }
-      throw new Error(data.error || `HTTP ${resp.status}`);
+      // Fallback WebUSB si CUPS no responde (impresora_inalcanzable,
+      // impresora_no_configurada, red caída).
+      if (!forceWebUSB) {
+        try {
+          if (await tryThermalWebUSB(form)) {
+            if (button) button.innerHTML = '✅ Impreso (USB)';
+            setTimeout(() => { if (button) { button.innerHTML = originalLabel; button.disabled = false; } }, 2500);
+            return;
+          }
+        } catch (webusbErr) {
+          console.warn('[ticket] WebUSB fallback también falló:', webusbErr);
+        }
+      }
+      throw new Error(cupsResult.error);
     } catch (err) {
       console.warn('[ticket] impresión falló, fallback a navegador:', err);
       const fallback = form.dataset.fallbackUrl;
       if (fallback) {
         window.open(fallback, '_blank', 'noopener');
       } else {
-        alert('No se pudo imprimir. Revisa la impresora.');
+        alert('No se pudo imprimir. Revisa la impresora o la cola CUPS.');
       }
       if (button) { button.innerHTML = originalLabel; button.disabled = false; }
     }

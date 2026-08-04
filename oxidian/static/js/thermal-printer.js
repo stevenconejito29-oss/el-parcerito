@@ -324,14 +324,41 @@
   };
   // Restauración transparente al cargar la página, PERO solo para BT
   // (que no interfiere con CUPS porque el device es un GATT server BLE,
-  // no /dev/usb/lpX). Para USB seguimos esperando gesto del usuario o
-  // el reintento lazy dentro de `printTicket`, para no robar el device
-  // a la cola CUPS local. Así conseguimos "impresora fija" en BT sin
-  // penalizar al setup USB+CUPS del pos.
+  // no /dev/usb/lpX). Además la reconexión BT solo la intentamos si el
+  // navegador soporta `getDevices()` (Chrome ≥122). En Chrome más antiguo
+  // (Android 8 y similares) queda como no-op silencioso: la ruta CUPS
+  // server-side de `operational-roles.js` cubre la impresión sin depender
+  // del navegador. Para USB seguimos esperando gesto del usuario o el
+  // reintento lazy dentro de `printTicket`, para no robar el device a la
+  // cola CUPS local.
   document.addEventListener('DOMContentLoaded', () => {
     const hint = getPairInfo();
-    if (hint && hint.transport === 'bt') {
+    if (hint && hint.transport === 'bt'
+        && 'bluetooth' in navigator
+        && typeof navigator.bluetooth.getDevices === 'function') {
       _restoreBT().catch(() => {});
     }
   });
+
+  // Antes de descargar la página soltamos el device USB/BT si lo teníamos
+  // reclamado. Sin esto, en tablets Android donde el mismo host publica
+  // la cola CUPS `Ticket` con la impresora USB, el navegador conserva el
+  // `claim` sobre /dev/usb/lpX y CUPS reporta "Waiting for printer to
+  // become available" (los jobs se encolan pero no se imprimen). Al
+  // liberar en `beforeunload` la próxima navegación deja el device
+  // libre para CUPS. La info de emparejamiento en localStorage se
+  // conserva — solo cerramos el handle activo.
+  function _releaseDevice() {
+    try {
+      if (device && transport === 'bt' && device.gatt && device.gatt.connected) {
+        device.gatt.disconnect();
+      }
+      if (device && transport === 'usb' && device.opened) {
+        device.close();
+      }
+    } catch (_) { /* silencio: la página está a punto de morir */ }
+    device = null; btChar = null; outEndpoint = null;
+  }
+  window.addEventListener('pagehide', _releaseDevice);
+  window.addEventListener('beforeunload', _releaseDevice);
 })();

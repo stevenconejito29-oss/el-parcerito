@@ -2570,6 +2570,13 @@ def productos():
 @super_admin_required
 def revisar_producto_socio(producto_id):
     """Aprueba o devuelve una propuesta sin alterar su propietario ni stock."""
+    # Instrumentación de diagnóstico: registra qué llegó al backend para
+    # poder rastrear cualquier "no se aprueba" reportado en producción.
+    current_app.logger.info(
+        "revisar_producto_socio: producto_id=%s form_keys=%s accion=%r nota_len=%s",
+        producto_id, sorted(request.form.keys()),
+        request.form.get("accion"), len(request.form.get("nota", "")),
+    )
     producto = Product.query.filter_by(id=producto_id).with_for_update().first_or_404()
     if not producto.proveedor_despachador_id:
         # La propuesta perdió su enlace con el socio (típicamente por un
