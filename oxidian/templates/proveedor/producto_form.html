@@ -20,7 +20,12 @@
 </aside>
 {% endif %}
 
-<form method="post" enctype="multipart/form-data" class="ox-card partner-product-form">
+<form method="post" enctype="multipart/form-data" class="ox-card partner-product-form" novalidate>
+  {# `novalidate`: la validación HTML5 nativa (especialmente en Safari iOS)
+     bloqueaba el submit sin feedback visible cuando faltaba imagen o
+     cuando el teclado español devolvía "9,99" en un <input type="number">.
+     El resultado era "el botón no hace nada". Ahora validamos íntegramente
+     en el servidor (_campos_producto_socio) y devolvemos flash claro. #}
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   <section class="partner-form-section">
@@ -31,14 +36,14 @@
     <div class="partner-form-grid">
       <label class="partner-field partner-field-wide">
         <span>Nombre del producto *</span>
-        <input name="nombre" required minlength="3" maxlength="150"
+        <input name="nombre" minlength="3" maxlength="150"
                value="{{ request.form.get('nombre', producto.nombre if producto else '') }}"
                placeholder="Ej. Café colombiano premium">
       </label>
       <label class="partner-field">
         <span>Categoría *</span>
         {% set selected_category = request.form.get('categoria_id', producto.categoria_id if producto else '')|string %}
-        <select name="categoria_id" required>
+        <select name="categoria_id">
           <option value="">Selecciona una categoría</option>
           {% for categoria in categorias %}
           <option value="{{ categoria.id }}" {{ 'selected' if selected_category == categoria.id|string else '' }}>{{ categoria.nombre }}</option>
@@ -57,10 +62,9 @@
                   placeholder="Características, contenido, ingredientes o información útil.">{{ request.form.get('descripcion', producto.descripcion if producto else '') }}</textarea>
       </label>
       <label class="partner-field partner-field-wide">
-        <span>Imagen del producto {{ '' if producto and producto.imagen_url else '*' }}</span>
-        <input type="file" name="imagen_archivo" accept="image/jpeg,image/png,image/webp"
-               {{ '' if producto and producto.imagen_url else 'required' }}>
-        <small>JPG, PNG o WebP. Usa una foto nítida y sin datos personales.</small>
+        <span>Imagen del producto {{ '(opcional)' if producto and producto.imagen_url else '(recomendada)' }}</span>
+        <input type="file" name="imagen_archivo" accept="image/jpeg,image/png,image/webp">
+        <small>JPG, PNG o WebP. Usa una foto nítida y sin datos personales. Si aún no la tienes, puedes añadirla más tarde desde tu inventario.</small>
       </label>
     </div>
   </section>
@@ -73,18 +77,25 @@
     <div class="partner-form-grid">
       <label class="partner-field">
         <span>Precio de venta (€) *</span>
-        <input type="number" name="precio" required min="0.01" max="999999.99" step="0.01"
-               value="{{ request.form.get('precio', ('%.2f'|format(producto.precio|float)) if producto else '') }}">
+        {# `type="text" inputmode="decimal"` acepta decimales con coma o
+           punto en todos los teclados móviles (iOS/Android). El servidor
+           normaliza "9,99" → "9.99" (routes/proveedor.py:_decimal_no_negativo). #}
+        <input type="text" name="precio" inputmode="decimal" autocomplete="off"
+               pattern="[0-9]+([.,][0-9]{1,2})?"
+               value="{{ request.form.get('precio', ('%.2f'|format(producto.precio|float)) if producto else '') }}"
+               placeholder="9.99">
       </label>
       <label class="partner-field">
         <span>Unidades disponibles *</span>
-        <input type="number" name="stock" required min="0" max="999999"
-               value="{{ request.form.get('stock', stock_actual) }}">
+        <input type="text" name="stock" inputmode="numeric" autocomplete="off"
+               pattern="[0-9]+"
+               value="{{ request.form.get('stock', stock_actual) }}"
+               placeholder="0">
       </label>
       <label class="partner-field partner-field-wide">
         <span>Modalidad de entrega *</span>
         {% set selected_mode = request.form.get('modalidad_entrega', producto.modalidad_entrega if producto else 'ambas') %}
-        <select name="modalidad_entrega" required>
+        <select name="modalidad_entrega">
           <option value="ambas" {{ 'selected' if selected_mode == 'ambas' else '' }}>Domicilio y recogida</option>
           <option value="delivery" {{ 'selected' if selected_mode == 'delivery' else '' }}>Solo domicilio</option>
           <option value="recogida" {{ 'selected' if selected_mode == 'recogida' else '' }}>Solo recogida</option>

@@ -54,8 +54,13 @@ def _decimal_no_negativo(valor, campo, *, opcional=False):
         if opcional:
             return None
         raise ValueError(f"{campo} es obligatorio.")
+    # Locale-tolerant: iOS Safari con teclado español devuelve "9,99" para
+    # <input type="number">. Sin normalización el navegador tampoco muestra
+    # error visible y el POST parece "no hacer nada". Si hay una única coma
+    # y ningún punto, tratamos la coma como decimal.
+    normalizado = raw.replace(",", ".") if ("," in raw and "." not in raw) else raw
     try:
-        numero = Decimal(raw)
+        numero = Decimal(normalizado)
     except (InvalidOperation, ValueError):
         raise ValueError(f"{campo} debe ser un número válido.")
     if not numero.is_finite() or numero < 0:
@@ -812,6 +817,17 @@ def registrar_producto(producto_id=None, _proveedor=None):
             return redirect(url_for("proveedor.inventario"))
 
     if request.method == "POST":
+        # Instrumentación de diagnóstico: registra qué campos llegaron. Sin
+        # esto no podíamos distinguir "el navegador bloqueó el submit" de
+        # "el submit llegó pero un valor era inválido".
+        current_app.logger.info(
+            "socio.registrar_producto POST proveedor=%s producto_id=%s "
+            "form_keys=%s files_keys=%s content_length=%s",
+            proveedor.id, producto_id,
+            sorted(request.form.keys()),
+            sorted(request.files.keys()),
+            request.content_length,
+        )
         nueva_imagen = None
         imagen_anterior = producto.imagen_url if producto else None
         try:
