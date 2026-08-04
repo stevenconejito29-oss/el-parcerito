@@ -498,38 +498,19 @@ def empezar_armar(pedido_id):
         db.session.rollback()
         flash(f"No se pudo iniciar el armado: {e}", "danger")
         return redirect(url_for("preparador.pedidos"))
-    # Auto-print al INICIAR el armado: el preparador necesita el ticket
-    # para leer qué componer y luego lo pega al pedido cerrado. Best-
-    # effort: si CUPS no responde no revertimos la transición — siempre
-    # queda la reimpresión manual desde el POS.
-    try:
-        from routes.pos import imprimir_ticket as _imprimir_ticket_view
-        _print_result = _imprimir_ticket_view(pedido.id)
-        if isinstance(_print_result, tuple):
-            _body, _status = _print_result
-        else:
-            _body, _status = _print_result, 200
-        _body_json = getattr(_body, "json", None) or (
-            _body if isinstance(_body, dict) else {}
-        )
-        if not (isinstance(_body_json, dict) and _body_json.get("ok")):
-            logger.warning(
-                "Auto-print pedido %s (armar START): status=%s body=%s",
-                pedido.numero_pedido, _status, _body_json,
-            )
-    except Exception:
-        logger.exception(
-            "Auto-print pedido %s (armar START): excepción no bloqueante",
-            pedido.numero_pedido,
-        )
     _notificar_proveedores_pendientes(pedido)
     try:
         from push_service import notify_order_state
         notify_order_state(pedido)
     except Exception:
         logger.exception("No se pudo enviar push al iniciar pedido %s", pedido.id)
+    # Print flow unificado: redirigimos con `?print_after=<id>` y el JS
+    # decide (BT silencioso si está emparejado / modal si no). El
+    # server-side IPP a CUPS se eliminó porque en este setup la
+    # impresora vive en la tablet vía BT — no en un dispositivo con
+    # CUPS reachable desde el servidor.
     flash(f"Armando {pedido.numero_pedido}.", "info")
-    return redirect(url_for("preparador.pedidos"))
+    return redirect(url_for("preparador.pedidos", print_after=pedido.id))
 
 
 @preparador_bp.route("/pedidos/<int:pedido_id>/listo", methods=["POST"])

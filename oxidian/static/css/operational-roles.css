@@ -1139,3 +1139,103 @@ html[data-delivery-theme="dark"] body.operational-view .work-chip.is-web {
     grid-column: 1 / -1;
   }
 }
+
+/* ── Modal de impresión (fallback Chrome dialog) ─────────────────────
+   Estilos permanentes porque el modal se crea dinámicamente desde JS
+   (`operational-roles.js:openPrintModal`) tanto para Reimprimir como
+   para el auto-disparo tras marcar_listo. Antes vivían inline en el
+   partial `_print_after_modal.html` — pero el partial solo se
+   renderiza cuando la URL trae ?print_after y no cubría el caso JS. */
+.print-after-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 16, 22, .72);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: pa-fadein .15s ease-out;
+}
+@keyframes pa-fadein { from { opacity: 0; } to { opacity: 1; } }
+.print-after-content {
+  background: var(--col-surface, #fff);
+  color: var(--col-text, #111);
+  border-radius: 1rem;
+  padding: 1.2rem 1.3rem;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+}
+.print-after-content h3 {
+  margin: 0 0 .5rem;
+  font-size: 1.1rem;
+  font-weight: 900;
+}
+.print-after-content p {
+  margin: 0 0 1rem;
+  font-size: .85rem;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--col-text, #111) 70%, transparent);
+}
+.print-after-frame {
+  width: 1px;
+  height: 1px;
+  border: 0;
+  opacity: 0;
+  position: absolute;
+  pointer-events: none;
+}
+.print-after-actions {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.print-after-btn {
+  flex: 1 1 140px;
+  min-height: 46px;
+  padding: .55rem .75rem;
+  border-radius: .7rem;
+  border: 1px solid var(--col-border, rgba(0, 0, 0, .18));
+  background: var(--col-elevated, #f4f4f5);
+  color: inherit;
+  font-size: .85rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform .1s, background .15s;
+}
+.print-after-btn:hover { transform: translateY(-1px); }
+.print-after-btn-close {
+  background: var(--brand-primary, #F4C542);
+  color: var(--brand-on-primary, #1a1410);
+  border-color: transparent;
+}
+
+/* Chip flotante de estado + emparejamiento de impresora BT.
+   Aparece siempre en los paneles operativos para que el operador pueda
+   emparejar la impresora BT en 1 clic (necesario en Chrome viejo que no
+   auto-restaura tras F5). Cuando ya está paired muestra el nombre. */
+.thermal-pair-chip {
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  z-index: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .5rem .8rem;
+  min-height: 42px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #F4C542) 40%, var(--col-border, rgba(0,0,0,.2)));
+  background: color-mix(in srgb, var(--brand-primary, #F4C542) 14%, var(--col-surface, #fff));
+  color: var(--col-text, #111);
+  font-size: .78rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0,0,0,.15);
+}
+.thermal-pair-chip[data-paired="true"] {
+  background: color-mix(in srgb, var(--op-success, #16a34a) 14%, var(--col-surface, #fff));
+  border-color: color-mix(in srgb, var(--op-success, #16a34a) 40%, var(--col-border, rgba(0,0,0,.2)));
+}
+.thermal-pair-chip:hover { transform: translateY(-1px); }

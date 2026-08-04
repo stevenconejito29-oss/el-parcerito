@@ -220,32 +220,16 @@ def empacar_pedido(pedido_id):
         db.session.rollback()
         flash(f"No se pudo iniciar el empaque: {e}", "danger")
         return redirect(url_for("staff.pedidos"))
-    # Auto-print al INICIAR el empaque: el operador necesita el ticket
-    # para leer qué empacar y luego pegarlo al pedido terminado. Best-
-    # effort: si CUPS no responde no revertimos la transición — siempre
-    # queda la reimpresión manual desde el POS.
-    try:
-        from routes.pos import imprimir_ticket as _imprimir_ticket_view
-        _print_result = _imprimir_ticket_view(pedido.id)
-        if isinstance(_print_result, tuple):
-            _body, _status = _print_result
-        else:
-            _body, _status = _print_result, 200
-        _body_json = getattr(_body, "json", None) or (
-            _body if isinstance(_body, dict) else {}
-        )
-        if not (isinstance(_body_json, dict) and _body_json.get("ok")):
-            logger.warning(
-                "Auto-print pedido %s (empacar START): status=%s body=%s",
-                pedido.numero_pedido, _status, _body_json,
-            )
-    except Exception:
-        logger.exception(
-            "Auto-print pedido %s (empacar START): excepción no bloqueante",
-            pedido.numero_pedido,
-        )
+    # Print flow unificado: redirigimos con `?print_after=<id>` y el JS
+    # de operational-roles.js decide qué hacer al cargar la página:
+    # 1. Si hay BT emparejado → imprime silencioso vía WebBluetooth.
+    # 2. Si no → muestra el modal con el diálogo nativo de Chrome
+    #    para que el operador elija impresora.
+    # Antes hacíamos server-side IPP a CUPS, pero el setup del usuario
+    # es BT-en-tablet: los jobs se encolaban en CUPS sin salir. Ahora
+    # el print es 100% client-side, coincidente con el hardware real.
     flash(f"Empacando {pedido.numero_pedido}.", "info")
-    return redirect(url_for("staff.pedidos"))
+    return redirect(url_for("staff.pedidos", print_after=pedido.id))
 
 
 @staff_bp.route("/pedidos/<int:pedido_id>/almacen-listo", methods=["POST"])

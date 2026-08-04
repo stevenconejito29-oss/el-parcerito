@@ -1,19 +1,19 @@
 {# Modal fallback de impresión del navegador.
    Aparece cuando la URL trae `?print_after=<pedido_id>`, típicamente
-   después de un `marcar_listo`. Carga la página del ticket en un iframe
-   invisible; el JS interno del ticket (con `?auto_print=1`) dispara
-   window.print() automáticamente, así el diálogo nativo de Chrome se
-   abre solo. El operador elige su impresora (USB, BT, OTG, cualquiera
-   configurada en Chrome), confirma y cierra el aviso. Complementa el
-   auto-print server-side vía CUPS que ya se dispara en `empacar_pedido`
-   / `empezar_armar`. Doble red de seguridad.
-   Sin dependencias externas. Compatible con CSP nonce. #}
+   después de `marcar_listo`. Carga el ticket en un iframe invisible;
+   el JS interno del ticket (con `?auto_print=1`) dispara window.print()
+   automáticamente → Chrome abre su diálogo nativo. El operador elige
+   su impresora (BT emparejada al OS, USB, o cualquier configurada) y
+   confirma. Complementa el auto-print server-side de CUPS y el intento
+   BT client-side que hace `operational-roles.js:DOMContentLoaded`.
+   Los estilos y el manejo dinámico viven en operational-roles.css/.js
+   para poder crearlo también en caliente desde Reimprimir. #}
 {% if request.args.get('print_after') %}
 <div class="print-after-overlay" id="print-after-modal"
      role="dialog" aria-modal="true" aria-label="Imprimir ticket del pedido">
   <div class="print-after-content">
     <h3>🖨️ Imprime el ticket</h3>
-    <p>El diálogo de impresión de Chrome se abrirá solo. Elige tu impresora térmica, confirma y cierra este aviso.</p>
+    <p>Chrome abrirá su diálogo de impresión. Elige tu impresora (Bluetooth, USB o cualquiera configurada) y confirma.</p>
     <iframe title="Ticket para imprimir"
             src="{{ url_for('pos.ticket', pedido_id=request.args.get('print_after')|int) }}?auto_print=1"
             class="print-after-frame"></iframe>
@@ -23,110 +23,27 @@
     </div>
   </div>
 </div>
-<style>
-  .print-after-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(11, 16, 22, .72);
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1rem;
-    animation: pa-fadein .15s ease-out;
-  }
-  @keyframes pa-fadein { from { opacity: 0; } to { opacity: 1; } }
-  .print-after-content {
-    background: var(--col-surface, #fff);
-    color: var(--col-text, #111);
-    border-radius: 1rem;
-    padding: 1.2rem 1.3rem;
-    max-width: 480px;
-    width: 100%;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
-  }
-  .print-after-content h3 {
-    margin: 0 0 .5rem;
-    font-size: 1.1rem;
-    font-weight: 900;
-  }
-  .print-after-content p {
-    margin: 0 0 1rem;
-    font-size: .85rem;
-    line-height: 1.4;
-    color: color-mix(in srgb, var(--col-text, #111) 70%, transparent);
-  }
-  /* Iframe invisible: solo lo necesitamos cargado para que su JS interno
-     ejecute window.print() sobre su propio documento. El @page 48mm de
-     la plantilla `pos/ticket.html` se aplica al iframe, no al padre. */
-  .print-after-frame {
-    width: 1px;
-    height: 1px;
-    border: 0;
-    opacity: 0;
-    position: absolute;
-    pointer-events: none;
-  }
-  .print-after-actions {
-    display: flex;
-    gap: .5rem;
-    flex-wrap: wrap;
-  }
-  .print-after-btn {
-    flex: 1 1 140px;
-    min-height: 46px;
-    padding: .55rem .75rem;
-    border-radius: .7rem;
-    border: 1px solid var(--col-border, rgba(0, 0, 0, .18));
-    background: var(--col-elevated, #f4f4f5);
-    color: inherit;
-    font-size: .85rem;
-    font-weight: 800;
-    cursor: pointer;
-    transition: transform .1s, background .15s;
-  }
-  .print-after-btn:hover { transform: translateY(-1px); }
-  .print-after-btn-close {
-    background: var(--brand-primary, #F4C542);
-    color: var(--brand-on-primary, #1a1410);
-    border-color: transparent;
-  }
-</style>
 <script nonce="{{ csp_nonce() }}">
 (function () {
   const modal = document.getElementById('print-after-modal');
   if (!modal) return;
   const frame = modal.querySelector('.print-after-frame');
-
   function closeModal() {
     modal.remove();
     try {
       const url = new URL(window.location.href);
       url.searchParams.delete('print_after');
       window.history.replaceState({}, '', url);
-    } catch (_) { /* si no se puede, el modal ya está fuera del DOM y basta */ }
+    } catch (_) {}
   }
-
-  const closeBtn = modal.querySelector('[data-print-close]');
-  const againBtn = modal.querySelector('[data-print-again]');
-  if (closeBtn) closeBtn.addEventListener('click', closeModal);
-  if (againBtn && frame) {
-    againBtn.addEventListener('click', function () {
-      // Recarga el iframe → su JS vuelve a disparar window.print().
-      frame.src = frame.src;
-    });
-  }
-  // Escape cierra; click fuera del contenido también.
-  function onKey(e) {
-    if (e.key === 'Escape') {
-      closeModal();
-      document.removeEventListener('keydown', onKey);
-    }
-  }
-  document.addEventListener('keydown', onKey);
-  modal.addEventListener('click', function (e) {
-    if (e.target === modal) closeModal();
+  modal.querySelector('[data-print-close]')?.addEventListener('click', closeModal);
+  modal.querySelector('[data-print-again]')?.addEventListener('click', function () {
+    if (frame) frame.src = frame.src;
   });
+  document.addEventListener('keydown', function onKey(e) {
+    if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', onKey); }
+  });
+  modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
 })();
 </script>
 {% endif %}
