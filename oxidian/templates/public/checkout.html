@@ -210,11 +210,153 @@
     {% endif %}
     <div id="delivery-address-block">
     <label class="ox-label">Dirección de entrega</label>
-    <textarea name="direccion" {% if fulfillment_default == 'delivery' %}required{% endif %} rows="2"
-              placeholder="Calle, número, piso{% if brand.ciudad %} · {{ brand.ciudad }}{% endif %}"
-              id="direccion_input"></textarea>
-    <button type="button" class="checkout-location-btn" data-checkout-location>Usar mi ubicación para comprobar cobertura</button>
+    <div class="addr-autocomplete-wrap" style="position:relative">
+      <textarea name="direccion" {% if fulfillment_default == 'delivery' %}required{% endif %} rows="2"
+                placeholder="Empieza a escribir tu calle{% if brand.ciudad %} en {{ brand.ciudad }}{% endif %}…"
+                id="direccion_input"
+                autocomplete="street-address"></textarea>
+      {# Dropdown de sugerencias reales (Nominatim OSM acotado al bbox del
+         negocio). El widget rellena lat/lng al elegir → la validación
+         server-side siempre pasa porque las coords vienen del propio geocoder. #}
+      <ul id="direccion-sugerencias" class="addr-suggest-list" role="listbox" hidden></ul>
+    </div>
+    <button type="button" class="checkout-location-btn" data-checkout-location>Usar mi ubicación GPS para comprobar cobertura</button>
     <div id="dir-feedback" class="mt-2 text-xs hidden" style="min-height:1.2em"></div>
+    <style>
+      .addr-suggest-list {
+        position: absolute; top: 100%; left: 0; right: 0;
+        z-index: 30; margin: .2rem 0 0; padding: 0;
+        list-style: none;
+        max-height: 280px; overflow-y: auto;
+        background: var(--col-surface, #fff);
+        border: 1px solid var(--col-border, rgba(0,0,0,.18));
+        border-radius: .55rem;
+        box-shadow: 0 10px 30px rgba(0,0,0,.15);
+      }
+      .addr-suggest-list li {
+        padding: .65rem .8rem; cursor: pointer;
+        font-size: .85rem; line-height: 1.35;
+        border-bottom: 1px solid color-mix(in srgb, var(--col-border, rgba(0,0,0,.1)) 40%, transparent);
+      }
+      .addr-suggest-list li:last-child { border-bottom: none; }
+      .addr-suggest-list li:hover,
+      .addr-suggest-list li[aria-selected="true"] {
+        background: color-mix(in srgb, var(--brand-primary, #F4C542) 20%, transparent);
+      }
+      .addr-suggest-list li[data-empty="1"] {
+        color: var(--col-muted, #666); cursor: default; font-style: italic;
+      }
+    </style>
+    <script nonce="{{ csp_nonce() }}">
+    (function () {
+      const input = document.getElementById('direccion_input');
+      const list = document.getElementById('direccion-sugerencias');
+      const latInput = document.getElementById('direccion_lat_input');
+      const lngInput = document.getElementById('direccion_lng_input');
+      const precInput = document.getElementById('direccion_precision_input');
+      if (!input || !list) return;
+
+      let timer = null;
+      let lastQuery = '';
+      let selectedIdx = -1;
+
+      function hide() {
+        list.hidden = true;
+        list.innerHTML = '';
+        selectedIdx = -1;
+      }
+      function show(results) {
+        list.innerHTML = '';
+        if (!results || !results.length) {
+          const li = document.createElement('li');
+          li.textContent = 'Sin coincidencias. Sigue escribiendo o comparte tu ubicación GPS.';
+          li.dataset.empty = '1';
+          li.setAttribute('aria-disabled', 'true');
+          list.appendChild(li);
+          list.hidden = false;
+          return;
+        }
+        results.forEach((r, i) => {
+          const li = document.createElement('li');
+          li.setAttribute('role', 'option');
+          li.dataset.lat = r.lat;
+          li.dataset.lng = r.lon;
+          li.dataset.label = r.label;
+          li.textContent = r.label;
+          li.addEventListener('mousedown', (ev) => {
+            ev.preventDefault();  // preserva foco del input
+            choose(i);
+          });
+          list.appendChild(li);
+        });
+        list.hidden = false;
+      }
+      function choose(idx) {
+        const li = list.children[idx];
+        if (!li || li.dataset.empty === '1') return;
+        input.value = li.dataset.label;
+        if (latInput) latInput.value = li.dataset.lat;
+        if (lngInput) lngInput.value = li.dataset.lng;
+        // Precisión "buena" (10m) porque viene de geocoding, no de GPS del user.
+        // Esto permite que validar_radio_entrega no exija precision_m del GPS.
+        if (precInput) precInput.value = '10';
+        hide();
+        input.focus();
+        // Dispara `input` para que otros listeners (feedback de cobertura,
+        // botón de comprobar) reaccionen al valor nuevo.
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      async function fetchSuggest(q) {
+        try {
+          const resp = await fetch('/api/geocode/suggest?q=' + encodeURIComponent(q), {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' },
+          });
+          if (!resp.ok) { hide(); return; }
+          const data = await resp.json();
+          if (!data.ok) { hide(); return; }
+          if (input.value.trim() !== q) return;  // el user siguió escribiendo
+          show(data.results || []);
+        } catch (_) { hide(); }
+      }
+
+      input.addEventListener('input', () => {
+        // Al escribir a mano, invalidamos coordenadas previas — si el user
+        // eligió una sugerencia y luego editó, las coords antiguas ya no
+        // corresponden. Si escribe algo nuevo tiene que elegir de nuevo.
+        if (latInput && latInput.value) latInput.value = '';
+        if (lngInput && lngInput.value) lngInput.value = '';
+        if (precInput && precInput.value === '10') precInput.value = '';
+        const q = input.value.trim();
+        if (q === lastQuery) return;
+        lastQuery = q;
+        if (q.length < 4) { hide(); return; }
+        clearTimeout(timer);
+        timer = setTimeout(() => fetchSuggest(q), 350);
+      });
+      input.addEventListener('blur', () => setTimeout(hide, 180));
+      input.addEventListener('keydown', (ev) => {
+        if (list.hidden) return;
+        const items = Array.from(list.children).filter(li => li.dataset.empty !== '1');
+        if (!items.length) return;
+        if (ev.key === 'ArrowDown') {
+          ev.preventDefault();
+          selectedIdx = Math.min(items.length - 1, selectedIdx + 1);
+          items.forEach((li, i) => li.setAttribute('aria-selected', i === selectedIdx ? 'true' : 'false'));
+        } else if (ev.key === 'ArrowUp') {
+          ev.preventDefault();
+          selectedIdx = Math.max(0, selectedIdx - 1);
+          items.forEach((li, i) => li.setAttribute('aria-selected', i === selectedIdx ? 'true' : 'false'));
+        } else if (ev.key === 'Enter' && selectedIdx >= 0) {
+          ev.preventDefault();
+          const domIdx = Array.from(list.children).indexOf(items[selectedIdx]);
+          choose(domIdx);
+        } else if (ev.key === 'Escape') {
+          hide();
+        }
+      });
+    })();
+    </script>
     {% if cobertura_por_zonas %}
     <p class="text-xs mt-1" style="color:var(--col-muted)">
       📍 Verificamos la cobertura exacta por calles y asignamos automáticamente la zona correcta.

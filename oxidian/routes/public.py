@@ -1765,6 +1765,106 @@ def api_check_address():
     return jsonify(resultado)
 
 
+# ─── SUGERENCIAS DE DIRECCIÓN (autocompletado) ──────────────────
+@public_bp.route("/api/geocode/suggest", methods=["GET"])
+@csrf.exempt
+@limiter.limit("30 per minute") if limiter else (lambda f: f)
+def api_geocode_suggest():
+    """Proxy a Nominatim para autocompletado de direcciones en checkout.
+
+    Devuelve hasta 5 sugerencias acotadas al bbox del negocio (viewbox
+    calculado desde CENTRO_LAT/CENTRO_LON + RADIO_ENTREGA_KM en SiteConfig).
+    El cliente escribe → widget muestra sugerencias reales → al elegir una,
+    el input queda relleno y sus coordenadas viajan como hidden fields en
+    el POST del checkout. Así la validación server-side pasa siempre — no
+    hay margen para "Calle Falsa 123".
+
+    No cacheamos aquí porque el propio Nominatim ya cachea las respuestas
+    populares y el rate-limit local (30/min) blinda contra abuso.
+    """
+    if not _feature_enabled("delivery"):
+        return jsonify({"ok": False, "mensaje": "El delivery no está habilitado."}), 403
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 4:
+        return jsonify({"ok": True, "results": []})
+    if len(q) > 220:
+        return jsonify({"ok": False, "mensaje": "Consulta demasiado larga"}), 400
+    try:
+        import requests as _req
+        ciudad = (SiteConfig.get("CIUDAD_NEGOCIO", "") or "").strip()
+        pais = (SiteConfig.get("PAIS_NEGOCIO", "") or "").strip()
+        pais_iso = (SiteConfig.get("PAIS_CODIGO_ISO", "") or "").lower().strip()
+        nombre_neg = SiteConfig.get("NOMBRE_NEGOCIO", "Oxidian")
+        user_agent = f"{nombre_neg.replace(' ', '')}/1.0 (autocomplete)"
+        try:
+            centro_lat = float(SiteConfig.get("CENTRO_LAT", ""))
+            centro_lon = float(SiteConfig.get("CENTRO_LON", ""))
+            radio_km = float(SiteConfig.get("RADIO_ENTREGA_KM", "10") or 10)
+        except (ValueError, TypeError):
+            centro_lat = centro_lon = None
+            radio_km = 10.0
+        params = {"q": q, "format": "json", "limit": 5, "addressdetails": 1}
+        if pais_iso:
+            params["countrycodes"] = pais_iso
+        # Acotamos al área del negocio para no sugerir calles a 300 km.
+        # 1 grado ≈ 111 km → convertimos radio_km a grados con margen 1.3x.
+        if centro_lat is not None and centro_lon is not None and radio_km > 0:
+            import math
+            delta_lat = (radio_km * 1.3) / 111.0
+            delta_lon = (radio_km * 1.3) / (111.0 * max(0.2, math.cos(math.radians(centro_lat))))
+            left = centro_lon - delta_lon
+            right = centro_lon + delta_lon
+            top = centro_lat + delta_lat
+            bottom = centro_lat - delta_lat
+            params["viewbox"] = f"{left},{top},{right},{bottom}"
+            params["bounded"] = 1
+        resp = _req.get(
+            "https://nominatim.openstreetmap.org/search",
+            params=params,
+            headers={"User-Agent": user_agent, "Accept-Language": "es"},
+            timeout=5,
+        )
+        if not resp.ok:
+            return jsonify({"ok": False, "results": [], "mensaje": "Servicio no disponible"}), 503
+        hits = resp.json() or []
+    except Exception:
+        current_app.logger.exception("api_geocode_suggest falló")
+        return jsonify({"ok": False, "results": []}), 503
+
+    # Compactamos la respuesta: sólo campos que el widget necesita.
+    results = []
+    seen = set()
+    for h in hits:
+        try:
+            lat = float(h.get("lat"))
+            lon = float(h.get("lon"))
+        except (TypeError, ValueError):
+            continue
+        addr = h.get("address", {}) or {}
+        street = (addr.get("road") or addr.get("pedestrian") or "").strip()
+        house = (addr.get("house_number") or "").strip()
+        # Filtramos resultados sin calle real (ej. localidad, punto de interés)
+        # para no dejar al cliente elegir "Sevilla" como dirección de entrega.
+        if not street:
+            continue
+        label_parts = []
+        if street:
+            label_parts.append(f"{street} {house}".strip())
+        localidad = (addr.get("city") or addr.get("town") or addr.get("village")
+                     or addr.get("municipality") or "").strip()
+        if localidad and (not ciudad or localidad.casefold() != ciudad.casefold()):
+            label_parts.append(localidad)
+        elif ciudad and not localidad:
+            label_parts.append(ciudad)
+        label = ", ".join(label_parts) or (h.get("display_name") or "").strip()
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append({"label": label, "lat": lat, "lon": lon, "value": label})
+    return jsonify({"ok": True, "results": results})
+
+
 # ─── VALIDAR CUPÓN (AJAX) ────────────────────
 
 def _cliente_id_actual():
@@ -2333,9 +2433,21 @@ def checkout():
                         "danger",
                     )
                 return redirect(url_for("public.checkout"))
+            # Defensa en profundidad: incluso en modo testing con
+            # SKIP_DELIVERY_VALIDATION=1 sólo asignamos zona por defecto
+            # cuando la dirección PASÓ la validación geo (zona_asignada
+            # habría sido no-None) o cuando explícitamente hay geo.ok
+            # con distancia_km calculada. Antes: se asignaba zonas[0]
+            # aunque la dirección fuera inválida, permitiendo crear
+            # pedidos "en zona 1" con direcciones inventadas si alguien
+            # ponía la flag por error en prod.
+            valid_geo = bool(geo and geo.get("ok"))
             zona_id = (
                 zonas[0].id
-                if tipo_entrega_cliente == "delivery" and zonas and _skip_val
+                if tipo_entrega_cliente == "delivery"
+                    and zonas
+                    and _skip_val
+                    and valid_geo
                 else None
             )
 
