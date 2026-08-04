@@ -1,6 +1,6 @@
 import logging
 from decimal import Decimal, InvalidOperation
-from flask import Blueprint, abort, render_template, redirect, url_for, flash, request
+from flask import Blueprint, abort, current_app, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from functools import wraps
 from extensions import db, get_or_404
