@@ -64,6 +64,14 @@
     {# ── Lista de productos ── #}
     <form method="POST" action="{{ url_for('public.actualizar_carrito') }}" id="cr-form-qty">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {# Hidden input que el JS setea antes de submit para eliminar_linea.
+         Motivo: iOS Safari con `form.submit()` (fallback cuando
+         requestSubmit no está o falla) NO incluye el name/value del
+         submitter — el botón `<button name="line_key" value="X">` no
+         viajaba en el POST y llegaba `line_key=''` al backend
+         (rastreado con instrumentación en eliminar_linea_carrito).
+         Un hidden input dedicado sí se serializa siempre. #}
+      <input type="hidden" name="line_key" id="cr-line-key-to-delete" value="">
 
       <div class="cr-items">
         {# Agrupación por producto: dos líneas del mismo producto con distinta
@@ -259,13 +267,15 @@
           </div>
 
           {# Eliminar — con confirmación anti mis-tap en mobile.
-             Usa /carrito/eliminar_linea con `line_key` para no borrar otras
-             líneas del mismo producto (p.ej. otro sabor). #}
+             Usa /carrito/eliminar_linea con `line_key`. El JS setea el
+             hidden `#cr-line-key-to-delete` antes de submit para que
+             iOS Safari serialice el line_key correctamente (el name/
+             value del submitter no viaja fiable en form.submit()). #}
           <button type="submit" class="cr-remove js-cart-remove"
                   title="{{ ui.cart_remove }}"
                   formmethod="POST"
                   formaction="{{ url_for('public.eliminar_linea_carrito') }}"
-                  name="line_key" value="{{ _line_key }}"
+                  data-line-key="{{ _line_key }}"
                   aria-label="{{ ui.cart_remove }} {{ item.producto.nombre }}"
                   data-confirm="¿Quitar «{{ item.producto.nombre|e }}» de tu {{ ui.cart_name }}?">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>
@@ -501,8 +511,16 @@ document.addEventListener('click', function (ev) {
   Promise.resolve(ask).then(function (ok) {
     if (!ok) { btn.disabled = false; return; }
     btn.dataset.crConfirmed = '1';
+    // Copiamos el line_key del botón al hidden input dedicado. Sin esto
+    // iOS Safari con `form.submit()` (fallback) omite el name/value del
+    // submitter y el backend recibía line_key='' — el producto no se
+    // eliminaba (bug rastreado en logs para productos de socios y
+    // cualquier línea con firma compleja).
+    const lineKey = btn.getAttribute('data-line-key') || '';
+    const hidden = document.getElementById('cr-line-key-to-delete');
+    if (hidden) hidden.value = lineKey;
     if (form && typeof form.requestSubmit === 'function') {
-      // requestSubmit respeta el formaction del botón que disparó el submit
+      // requestSubmit respeta el formaction del botón que disparó el submit.
       form.requestSubmit(btn);
     } else if (form) {
       form.action = btn.getAttribute('formaction') || form.action;
