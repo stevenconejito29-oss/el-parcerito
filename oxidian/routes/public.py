@@ -1484,11 +1484,24 @@ def _eliminar_lineas(keys):
 @public_bp.route("/carrito/eliminar_linea", methods=["POST"])
 def eliminar_linea_carrito():
     """Elimina una línea concreta del carrito por su `line_key` (firma)."""
+    # Instrumentación diagnóstico: bug reportado "no se pueden eliminar
+    # productos de socios". Registra qué llegó al backend para poder
+    # rastrear si el bug es del JS (no envía line_key) o del backend.
     line_key = (request.form.get("line_key") or "").strip()
+    carrito_actual = _get_carrito()
+    current_app.logger.info(
+        "eliminar_linea_carrito: line_key=%r keys_form=%s carrito_keys=%s",
+        line_key, sorted(request.form.keys()), sorted(carrito_actual.keys()),
+    )
     if not line_key:
         return (jsonify({"ok": False, "msg": "line_key requerida"}), 400) \
             if request.headers.get("X-Ajax") == "1" \
             else redirect(url_for("public.ver_carrito"))
+    if line_key not in carrito_actual:
+        current_app.logger.warning(
+            "eliminar_linea_carrito: line_key=%r NO existe en carrito (keys=%s)",
+            line_key, sorted(carrito_actual.keys()),
+        )
     _eliminar_lineas([line_key])
     if request.headers.get("X-Ajax") == "1":
         return jsonify({"ok": True})
