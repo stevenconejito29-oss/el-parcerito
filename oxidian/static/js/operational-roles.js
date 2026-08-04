@@ -159,6 +159,10 @@
     const originalLabel = button ? button.innerHTML : '';
     if (button) { button.disabled = true; button.innerHTML = '🖨️ Enviando…'; }
 
+    if (window.ThermalPrinter && window.ThermalPrinter.ready) {
+      try { await window.ThermalPrinter.ready; } catch (_) {}
+    }
+
     const action = form.action || '';
     const match = action.match(/\/pos\/ticket\/(\d+)\/imprimir/);
     if (!match) {
@@ -319,12 +323,24 @@
     // → el chequeo isPaired() corría antes y aparecía el modal aunque
     // hubiera pairing persistido (síntoma típico de "Samsung 2026 no
     // imprime automáticamente").
-    if (window.ThermalPrinter && window.ThermalPrinter.ready) {
-      try { await window.ThermalPrinter.ready; } catch (_) {}
+    const tp = window.ThermalPrinter;
+    if (tp && tp.ready) {
+      try { await tp.ready; } catch (_) {}
+    }
+
+    // Segunda oportunidad: si hay hint guardado pero el restore inicial
+    // no dejó paired (BT dormido, ready resolvió antes de que el device
+    // respondiera, etc.), intentamos UN reconnect más aquí — antes de
+    // decidir mostrar modal. En Android con Chromium ≥122 este segundo
+    // intento suele funcionar porque el subsistema BT ya despertó.
+    if (tp && !tp.isPaired() && tp.getPairInfo && tp.getPairInfo()
+        && browserSupportsPersistentBT() && tp.restoreBT) {
+      console.info('[thermal] segundo intento de restore antes del modal');
+      try { await tp.restoreBT(); } catch (_) {}
     }
 
     // Path silencioso.
-    if (window.ThermalPrinter && window.ThermalPrinter.isPaired()) {
+    if (tp && tp.isPaired()) {
       if (await tryBluetooth(pedidoId, false)) {
         const modal = document.getElementById('print-after-modal');
         if (modal) modal.remove();
@@ -376,49 +392,118 @@
   }
 
   function refreshThermalStatus() {
-    const info = window.ThermalPrinter?.getPairInfo?.();
+    const tp = window.ThermalPrinter;
+    if (!tp) return;
+    const info = tp.getPairInfo?.();
     const persistent = browserSupportsPersistentBT();
+    const connected = tp.isPaired?.();  // device en memoria = GATT abierto
     document.querySelectorAll('[data-thermal-status]').forEach(el => {
-      if (info) {
-        // En navegadores modernos el pairing sobrevive a F5 vía
-        // _restoreBT(). En viejos, sólo mientras el navegador tenga
-        // el device en memoria de la sesión — al recargar se pierde
-        // y hay que reconectar (modal manual por pedido).
-        el.textContent = persistent
-          ? `🖨️ ${info.name}`
-          : `🖨️ ${info.name} · sesión`;
+      if (connected && info) {
+        // Verde: emparejada y conectada. En cualquier ?print_after el
+        // ticket sale silencioso sin ninguna interacción.
+        el.textContent = `🟢 ${info.name}`;
         el.dataset.paired = 'true';
-      } else {
-        el.textContent = persistent
-          ? '🔵 Emparejar impresora BT'
-          : '🔵 Emparejar BT (esta sesión)';
+        el.title = 'Impresora conectada. Los tickets salen automáticos.';
+      } else if (info) {
+        // Amarillo: hay hint guardado (se emparejó alguna vez) pero
+        // ahora no hay conexión activa. En moderna, un toque intenta
+        // restore; en vieja, un toque re-pairea rápido.
+        el.textContent = persistent ? `🟡 ${info.name} · reconectar` : `🟡 ${info.name} · reconectar`;
         el.dataset.paired = 'false';
+        el.title = 'Impresora recordada pero desconectada. Toca para reconectar.';
+      } else {
+        // Azul: nunca se emparejó. Toca para emparejar por primera vez.
+        el.textContent = '🔵 Emparejar impresora';
+        el.dataset.paired = 'false';
+        el.title = persistent
+          ? 'Toca para emparejar. Tras la primera vez, tu tablet reconecta sola tras F5.'
+          : 'Toca para emparejar. Este navegador olvida el emparejamiento al recargar la página.';
       }
     });
+  }
+
+  /* Detección del entorno para logs y decisiones de flujo. Volcado a
+     consola en cada carga operativa — útil para diagnosticar por qué
+     un dispositivo no auto-imprime. */
+  function logPrintEnvironment() {
+    if (!body.classList.contains('operational-view')) return;
+    const ua = navigator.userAgent || '';
+    const androidM = ua.match(/Android (\d+(?:\.\d+)?)/);
+    const chromeM = ua.match(/Chrom(?:e|ium)\/(\d+)/);
+    const info = {
+      ua,
+      android: androidM ? androidM[1] : null,
+      chromium: chromeM ? parseInt(chromeM[1], 10) : null,
+      webBluetooth: 'bluetooth' in navigator,
+      getDevices: !!(navigator.bluetooth && typeof navigator.bluetooth.getDevices === 'function'),
+      persistente: browserSupportsPersistentBT(),
+      hint: window.ThermalPrinter?.getPairInfo?.() || null,
+    };
+    console.info('[thermal-env]', info);
+    if (info.webBluetooth && !info.getDevices) {
+      console.warn(
+        '[thermal-env] Este navegador NO soporta reconexión BT automática.',
+        'Considera activar chrome://flags/#enable-web-bluetooth-new-permissions-backend',
+        'o instalar Cromite / Brave / Chrome 122+ para auto-print sin re-pairing.',
+      );
+    }
   }
   document.addEventListener('click', async (event) => {
     const btn = event.target.closest('[data-pair-thermal]');
     if (!btn) return;
     const mode = btn.dataset.pairThermal;
+    const tp = window.ThermalPrinter;
+    if (!tp) return;
     btn.disabled = true;
     const orig = btn.textContent;
-    btn.textContent = 'Emparejando…';
     try {
-      const info = mode === 'bt'
-        ? await window.ThermalPrinter.pairBT()
-        : await window.ThermalPrinter.pairUSB();
+      // Optimización: si ya está conectada, no hacemos nada — sólo
+      // confirmamos visualmente.
+      if (tp.isPaired && tp.isPaired()) {
+        btn.textContent = '🟢 Ya conectada';
+        refreshThermalStatus();
+        setTimeout(() => { btn.textContent = orig; }, 1400);
+        return;
+      }
+      // Si hay hint guardado + soporte de getDevices, primer intento
+      // es restore silencioso (sin diálogo BT). Sólo si eso falla
+      // caemos a pairBT que sí muestra el selector nativo.
+      const hint = tp.getPairInfo && tp.getPairInfo();
+      if (mode === 'bt' && hint && browserSupportsPersistentBT() && tp.restoreBT) {
+        btn.textContent = 'Reconectando…';
+        try {
+          await tp.restoreBT();
+          if (tp.isPaired && tp.isPaired()) {
+            btn.textContent = `🟢 ${(tp.getPairInfo() || {}).name || 'BT'}`;
+            refreshThermalStatus();
+            setTimeout(() => { btn.textContent = orig; refreshThermalStatus(); }, 1400);
+            return;
+          }
+        } catch (_) { /* fallback a pairBT */ }
+      }
+      btn.textContent = 'Emparejando…';
+      const info = mode === 'bt' ? await tp.pairBT() : await tp.pairUSB();
       btn.textContent = `✅ ${info.name}`;
       refreshThermalStatus();
+      setTimeout(() => { btn.textContent = orig; refreshThermalStatus(); }, 1400);
     } catch (err) {
+      console.warn('[thermal-pair] falló:', err);
       alert(err.message || 'No se pudo emparejar la impresora.');
       btn.textContent = orig;
     } finally {
       btn.disabled = false;
     }
   });
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     ensureThermalPairChip();
+    logPrintEnvironment();
+    // Refresh inicial inmediato (aún sin restore) para mostrar algo.
     refreshThermalStatus();
+    // Después esperamos al restore para reflejar el estado real.
+    if (window.ThermalPrinter?.ready) {
+      try { await window.ThermalPrinter.ready; } catch (_) {}
+      refreshThermalStatus();
+    }
   });
 
   /* Compactación de tarjetas operativas.
