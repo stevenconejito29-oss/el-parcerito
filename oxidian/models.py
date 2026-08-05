@@ -3801,6 +3801,14 @@ class Review(db.Model):
 # CUPONES
 # ─────────────────────────────────────────────
 
+# Whitelist de tipos de cupón. Cualquier valor fuera de este set es
+# tratado como "sin descuento" por `calcular_descuento` — antes: un
+# valor desconocido devolvía 0 silenciosamente y `envio_gratis` no se
+# aplicaba, dejando al cliente pagando el envío mientras el admin
+# creía que estaba activo.
+TIPOS_CUPON_VALIDOS = frozenset({"porcentaje", "monto_fijo", "envio_gratis"})
+
+
 class Coupon(db.Model):
     __tablename__ = "coupons"
 
@@ -3824,6 +3832,11 @@ class Coupon(db.Model):
         hoy = date.today()
         if not self.activo:
             return False, "Cupón inactivo"
+        # Whitelist: tipo desconocido → rechaza antes de cualquier cálculo.
+        # Evita silenciar "envio_gratis" mal escrito (ej. "envio-gratis")
+        # que devolvía descuento=0 sin señal al admin.
+        if self.tipo not in TIPOS_CUPON_VALIDOS:
+            return False, f"Tipo de cupón desconocido: {self.tipo!r}. Válidos: {sorted(TIPOS_CUPON_VALIDOS)}"
         if self.fecha_inicio and hoy < self.fecha_inicio:
             return False, "Cupón no vigente aún"
         if self.fecha_fin and hoy > self.fecha_fin:

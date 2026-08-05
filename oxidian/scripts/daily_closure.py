@@ -20,8 +20,16 @@ Se ejecuta a las 04:05 — ventana segura después del cruce de medianoche
 para asegurar que `business_today()` ya rotó y no hay pedidos activos
 que puedan cambiar los totales del día anterior.
 """
+import os
 import sys
 from datetime import date
+
+# Auto-inyecta el directorio de la app al sys.path para que `from app import
+# create_app` funcione sin necesidad de PYTHONPATH ni cwd específico.
+# Estructura esperada: `scripts/daily_closure.py` dentro del root de la app.
+_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _APP_DIR not in sys.path:
+    sys.path.insert(0, _APP_DIR)
 
 
 def main():

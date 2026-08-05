@@ -3457,12 +3457,19 @@ def calcular_liquidaciones_proveedores(
                 bucket["sin_costo"].append(linea)
             else:
                 bucket["lineas"].append(linea)
-                bucket["total"] += obligacion["obligacion"]
                 clave_total = (
                     "total_entregado" if situacion == "entregado"
                     else "total_extraviado"
                 )
                 bucket[clave_total] += obligacion["obligacion"]
+                # Política: extravíos son riesgo del socio (la tienda
+                # reembolsa al cliente y no le paga al socio esa venta).
+                # `total` solo acumula entregados. `total_extraviado`
+                # queda como métrica separada para trazabilidad. Antes:
+                # `total += obligacion` para cualquier situación → socio
+                # cobraba por extravíos + tienda perdía margen doble.
+                if situacion == "entregado":
+                    bucket["total"] += obligacion["obligacion"]
             clave_venta = (
                 "ventas_netas" if situacion == "entregado"
                 else "ventas_extraviadas"
