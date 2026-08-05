@@ -2236,10 +2236,20 @@ function _hashText(t) {
 function outboundAllowed(target, text) {
   const now = Date.now();
 
+  // Warm-up: si el bot está en período de calentamiento, los tops por
+  // destinatario y globales se aprietan según perfil del día. WhatsApp
+  // trata números nuevos con más suspicacia — mejor ir despacio.
+  const warmup = _warmupCapForToday();
+  const capPerTarget = warmup ? warmup.perTarget : MAX_OUTBOUND_PER_TARGET;
+  const capGlobal = warmup ? warmup.perGlobal : MAX_OUTBOUND_GLOBAL_PER_MIN;
+
   // (1) por destinatario
-  const hit = hitWindow(outboundBuckets, target, OUTBOUND_WINDOW_MS, MAX_OUTBOUND_PER_TARGET);
+  const hit = hitWindow(outboundBuckets, target, OUTBOUND_WINDOW_MS, capPerTarget);
   if (!hit.allowed) {
-    log('warn', 'outbound_target_limited', `${target} excedio ${hit.count}/${MAX_OUTBOUND_PER_TARGET}`);
+    log('warn', 'outbound_target_limited',
+      `${target} excedio ${hit.count}/${capPerTarget}` +
+      (warmup ? ` [warmup día ${warmup.day}/${warmup.total}]` : '')
+    );
     return false;
   }
 
@@ -2247,8 +2257,11 @@ function outboundAllowed(target, text) {
   while (_globalOutboundTimes.length && now - _globalOutboundTimes[0] > 60_000) {
     _globalOutboundTimes.shift();
   }
-  if (_globalOutboundTimes.length >= MAX_OUTBOUND_GLOBAL_PER_MIN) {
-    log('warn', 'outbound_global_burst', `${_globalOutboundTimes.length} en 60s — corte por seguridad`);
+  if (_globalOutboundTimes.length >= capGlobal) {
+    log('warn', 'outbound_global_burst',
+      `${_globalOutboundTimes.length} en 60s — corte por seguridad` +
+      (warmup ? ` [warmup día ${warmup.day}/${warmup.total}]` : '')
+    );
     return false;
   }
 
@@ -2313,6 +2326,151 @@ function canRunAdminAction(jid, action, minMs = MIN_ADMIN_ACTION_MS) {
   return true;
 }
 
+// ─── ANTI-BAN: DETECCIÓN DE BAN / WARM-UP / VENTANA HORARIA / VARIANTES ─────
+//
+// Extensiones defensivas anti-ban de WhatsApp:
+//
+// (A) DETECCIÓN DE BAN: si Evolution/WhatsApp responde con 401/403 más de N
+//     veces en M minutos, activamos panic mode automáticamente (bot_enabled=0)
+//     y avisamos al owner por WhatsApp propio (si sobrevive). Antes: el bot
+//     seguía intentando enviar y empeoraba el ban.
+//
+// (B) WARM-UP: los primeros N días desde que se registra el número, aplicamos
+//     límites reducidos por destinatario y globales. WhatsApp banea agresiva-
+//     mente números nuevos con tráfico alto. Se registra `warmup_started_at`
+//     en tabla `logs` (evento único `bot_warmup_start`) para no reiniciar el
+//     contador si el bot reinicia.
+//
+// (C) VENTANA HORARIA: env `BOT_QUIET_HOURS_UTC="00:00-05:00"` bloquea envíos
+//     no transaccionales en horario silencioso (patrón bot típico). Los
+//     transaccionales (pedido listo, en_ruta, entregado) siempre pasan porque
+//     el cliente los espera.
+//
+// (D) VARIANTES DE MENSAJE: helper `pickVariant()` rota entre plantillas
+//     para evitar que WhatsApp detecte texto exacto repetido a distintos
+//     números. Se aplica en respuestas comunes (saludos, "recibido", etc).
+
+// (A) Detección de ban ──────────────────────────────────────────────────────
+const BAN_SIGNAL_WINDOW_MS = parseInt(process.env.BOT_BAN_SIGNAL_WINDOW_MS || (10 * 60 * 1000), 10);
+const BAN_SIGNAL_THRESHOLD = parseInt(process.env.BOT_BAN_SIGNAL_THRESHOLD || '5', 10);
+const _banSignalTimes = [];
+let _banAutoTriggered = false;
+
+function _registerBanSignal(status, bodySnippet) {
+  const now = Date.now();
+  while (_banSignalTimes.length && now - _banSignalTimes[0] > BAN_SIGNAL_WINDOW_MS) {
+    _banSignalTimes.shift();
+  }
+  _banSignalTimes.push(now);
+  log('warn', 'ban_signal', `HTTP ${status} (${_banSignalTimes.length}/${BAN_SIGNAL_THRESHOLD} en ventana) — ${String(bodySnippet).slice(0, 160)}`);
+  if (_banSignalTimes.length >= BAN_SIGNAL_THRESHOLD && !_banAutoTriggered) {
+    _banAutoTriggered = true;
+    try {
+      setCfg('bot_enabled', '0');
+      log('error', 'ban_auto_panic',
+        `Umbral de señales de ban alcanzado (${BAN_SIGNAL_THRESHOLD} en ${Math.round(BAN_SIGNAL_WINDOW_MS/60000)}min). ` +
+        'Bot desactivado automáticamente. Revisa manualmente y usa RESUME si es falso positivo.');
+    } catch (e) {
+      log('error', 'ban_auto_panic_fail', String(e));
+    }
+  }
+}
+
+// (B) Warm-up ───────────────────────────────────────────────────────────────
+const WARMUP_ENABLED = String(process.env.BOT_WARMUP_ENABLED || '1') !== '0';
+const WARMUP_DAYS = Math.max(0, parseInt(process.env.BOT_WARMUP_DAYS || '7', 10));
+// Perfiles de límite por día de warm-up. Día 0 (recién arrancado) más
+// restrictivo; sube gradualmente hasta día WARMUP_DAYS-1. Formato: cada
+// entrada [max_per_target_per_hour, max_global_per_min].
+const WARMUP_PROFILE = [
+  [10, 8],    // Día 0-1
+  [15, 12],   // Día 2
+  [22, 18],   // Día 3
+  [30, 24],   // Día 4
+  [38, 30],   // Día 5
+  [42, 34],   // Día 6
+  [44, 38],   // Día 7
+];
+
+let _warmupStartedAt = null;
+
+function _initWarmup() {
+  if (!WARMUP_ENABLED || WARMUP_DAYS === 0) return;
+  try {
+    const row = db.prepare(
+      "SELECT MIN(timestamp) AS ts FROM logs WHERE evento = 'bot_warmup_start'"
+    ).get();
+    if (row && row.ts) {
+      _warmupStartedAt = new Date(row.ts).getTime();
+    } else {
+      _warmupStartedAt = Date.now();
+      log('info', 'bot_warmup_start', `Warm-up de ${WARMUP_DAYS} días iniciado`);
+    }
+  } catch (e) {
+    // Si la tabla no existe aún o hay error, tratamos warm-up como completado
+    // (mejor no bloquear al bot). Se reintenta al próximo restart.
+    log('warn', 'bot_warmup_init_fail', String(e));
+  }
+}
+
+function _warmupDayIndex() {
+  if (!WARMUP_ENABLED || !_warmupStartedAt) return null;
+  const elapsedDays = Math.floor((Date.now() - _warmupStartedAt) / (24 * 60 * 60 * 1000));
+  if (elapsedDays >= WARMUP_DAYS) return null; // warm-up completado
+  return Math.min(elapsedDays, WARMUP_PROFILE.length - 1);
+}
+
+function _warmupCapForToday() {
+  const idx = _warmupDayIndex();
+  if (idx === null) return null;
+  const [perTarget, perGlobal] = WARMUP_PROFILE[idx];
+  return { perTarget, perGlobal, day: idx + 1, total: WARMUP_DAYS };
+}
+
+// (C) Ventana horaria ───────────────────────────────────────────────────────
+// Formato env: "HH:MM-HH:MM" en zona UTC. Ej: "01:00-06:00" = 01:00 a 06:00 UTC.
+// Si empty, no hay restricción horaria.
+function _parseQuietHours() {
+  const raw = String(process.env.BOT_QUIET_HOURS_UTC || '').trim();
+  if (!raw) return null;
+  const m = raw.match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return {
+    startMin: parseInt(m[1], 10) * 60 + parseInt(m[2], 10),
+    endMin: parseInt(m[3], 10) * 60 + parseInt(m[4], 10),
+  };
+}
+const _QUIET_HOURS = _parseQuietHours();
+
+function _isQuietHourNow() {
+  if (!_QUIET_HOURS) return false;
+  const now = new Date();
+  const curMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const { startMin, endMin } = _QUIET_HOURS;
+  if (startMin <= endMin) {
+    return curMin >= startMin && curMin < endMin;
+  }
+  // Cruce de medianoche (ej. 22:00-06:00)
+  return curMin >= startMin || curMin < endMin;
+}
+
+// (D) Variantes de mensaje ──────────────────────────────────────────────────
+// Rotación basada en día+número: mismo cliente el mismo día ve la misma
+// variante (coherencia conversacional); distintos días o distintos clientes
+// ven distinto. Evita "Hola" idéntico a 1000 números el mismo minuto.
+function pickVariant(key, jid, ...variants) {
+  if (!variants || variants.length === 0) return '';
+  if (variants.length === 1) return variants[0];
+  const target = normalizePhone(phoneFromJid(jid) || 'anon');
+  const dayIndex = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+  const seed = `${key}:${target}:${dayIndex}`;
+  let hash = 5381;
+  for (let i = 0; i < seed.length; i++) hash = ((hash * 33) ^ seed.charCodeAt(i)) >>> 0;
+  return variants[hash % variants.length];
+}
+
+_initWarmup();
+
 // ─── EVOLUTION API: ENVIAR MENSAJE ────────────────────────────────────────────
 //
 // Opciones avanzadas (segundo argumento):
@@ -2361,6 +2519,16 @@ async function sendText(jid, text, opts = {}) {
     log('warn', 'send_force_bypass', `to ${target}: bypass de gates por flag force`);
   }
 
+  // ── Ventana horaria (quiet hours UTC): silencia envíos no transaccionales
+  // en horas nocturnas típicas donde un bot activo levanta sospecha. Los
+  // transaccionales (estado de pedido, verificación) sí pasan porque el
+  // cliente los espera y son en respuesta a su acción.
+  if (!opts.force && !opts.transactional && _isQuietHourNow()) {
+    log('warn', 'quiet_hours_blocked',
+      `to ${target}: dentro de ventana silenciosa BOT_QUIET_HOURS_UTC (${process.env.BOT_QUIET_HOURS_UTC})`);
+    return false;
+  }
+
   if (!outboundAllowed(target, safeText)) {
     return false;
   }
@@ -2393,9 +2561,15 @@ async function sendText(jid, text, opts = {}) {
         log('info', 'send_ok', `${r.status} ${JSON.stringify(parsed) || bodyText}`);
         return true;
       }
-      // Do not retry on 4xx (bad request) — log and abort
+      // Do not retry on 4xx (bad request) — log and abort.
+      // Además: 401/403 son señales típicas de ban del número — las
+      // contamos en `_registerBanSignal` y si superan umbral activamos
+      // panic mode automático para no empeorar la situación.
       if (r.status >= 400 && r.status < 500) {
         log('warn', 'send_fail', `${r.status} ${bodyText.slice(0,200)}`);
+        if (r.status === 401 || r.status === 403) {
+          _registerBanSignal(r.status, bodyText);
+        }
         return false;
       }
       // 5xx — retry with backoff
