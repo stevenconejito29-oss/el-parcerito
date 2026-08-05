@@ -4586,3 +4586,71 @@ def solicitar_resena_pedido(pedido: Order) -> bool:
     except Exception:
         logger.exception("No se pudo encolar reseña para pedido %s", pedido.id)
         return False
+
+
+# ─────────────────────────────────────────────
+# CIERRE DIARIO AUTOMÁTICO
+# ─────────────────────────────────────────────
+def cerrar_dia_automatico(fecha_dia=None):
+    """Persiste el DailyClosure de una fecha (default: día anterior de negocio).
+
+    Diseñado para ejecutarse desde cron sin necesidad de admin logueado.
+    Idempotente: si el cierre ya existe para esa fecha, retorna dict con
+    `ok=True, skipped=True` sin errores. Reutiliza `_snapshot_dia_desde_caja`
+    de routes.admin (misma fuente de verdad que el cierre manual).
+
+    Uso desde CLI:
+        python3 scripts/daily_closure.py [YYYY-MM-DD]
+
+    Uso desde cron (crontab -e):
+        5 0 * * * cd /opt/oxidian-workspace/el-parcerito/oxidian && \\
+                  /path/to/venv/bin/python scripts/daily_closure.py
+
+    Retorna dict {ok, skipped, fecha, cierre_id, saldo_neto, mensaje}.
+    """
+    from models import DailyClosure
+    from business_time import business_today
+    if fecha_dia is None:
+        # Día ANTERIOR al de negocio actual — los movimientos ya no
+        # cambian (business_today ha rotado a la nueva jornada).
+        fecha_dia = business_today() - timedelta(days=1)
+    existente = DailyClosure.query.filter_by(fecha=fecha_dia).first()
+    if existente:
+        return {
+            "ok": True, "skipped": True, "fecha": fecha_dia.isoformat(),
+            "cierre_id": existente.id,
+            "mensaje": f"Ya existe cierre id #{existente.id} para {fecha_dia.isoformat()}",
+        }
+    # Import lazy para no crear dependencia circular routes.admin → services.
+    from routes.admin import _snapshot_dia_desde_caja
+    snap = _snapshot_dia_desde_caja(fecha_dia)
+    cierre = DailyClosure(
+        fecha=fecha_dia,
+        efectivo_declarado=None,  # cron no puede contar caja física
+        descuadre_efectivo=None,
+        notas="Cerrado automáticamente por cron",
+        cerrado_por=None,  # sin usuario → cron/sistema
+        **snap,
+    )
+    db.session.add(cierre)
+    try:
+        db.session.commit()
+        logger.info(
+            "cierre automático OK fecha=%s ingresos_total=%s saldo=%s",
+            fecha_dia.isoformat(),
+            (snap["ingresos_efectivo"] + snap["ingresos_bizum"]
+             + snap["ingresos_tarjeta"] + snap["ingresos_otros"]),
+            snap["saldo_neto"],
+        )
+        return {
+            "ok": True, "skipped": False, "fecha": fecha_dia.isoformat(),
+            "cierre_id": cierre.id, "saldo_neto": float(snap["saldo_neto"]),
+            "mensaje": "Cierre automático registrado",
+        }
+    except Exception as exc:
+        db.session.rollback()
+        logger.exception("cierre automático FALLÓ fecha=%s", fecha_dia.isoformat())
+        return {
+            "ok": False, "skipped": False, "fecha": fecha_dia.isoformat(),
+            "mensaje": f"Error: {exc}",
+        }
