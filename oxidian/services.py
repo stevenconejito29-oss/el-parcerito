@@ -1658,6 +1658,14 @@ def _resolver_zona_por_coordenadas(lat, lon, zonas):
 
     Los polígonos prevalecen sobre círculos legacy. En solapes del mismo tipo,
     ``orden`` decide de forma explícita y estable.
+
+    Fallback opt-in vía SiteConfig["DELIVERY_ZONE_RADIUS_FALLBACK"]="1":
+    si el punto NO cae en ningún polígono activo pero SÍ dentro del radio
+    global (`RADIO_ENTREGA_KM` desde `CENTRO_LAT/LON`), asigna la primera
+    zona activa. Sirve para rescatar direcciones válidas cuando el polígono
+    dibujado por el admin es incompleto (típico primer setup). Off por
+    default para no relajar la política si el admin quiso exclusiones
+    específicas dentro del polígono.
     """
     if not zonas:
         return None, None
@@ -1697,6 +1705,23 @@ def _resolver_zona_por_coordenadas(lat, lon, zonas):
                 distancia if distancia is not None else float("inf"), zona.id, zona,
             ))
         if not candidatos:
+            # Fallback opt-in: si el polígono dice "no" pero el radio global
+            # dice "sí", aceptamos la primera zona activa. Cubre el caso
+            # "polígono mal dibujado" sin exigir al admin re-editarlo antes
+            # de poder aceptar pedidos.
+            fallback_on = str(SiteConfig.get("DELIVERY_ZONE_RADIUS_FALLBACK", "0")).strip() in ("1", "true", "yes", "on")
+            if fallback_on:
+                negocio_lat_f, negocio_lng_f, radio_km_f = _leer_geo_negocio()
+                if negocio_lat_f is not None and radio_km_f is not None and radio_km_f > 0:
+                    distancia_neg = _haversine_km(negocio_lat_f, negocio_lng_f, lat, lon)
+                    if distancia_neg <= radio_km_f:
+                        primera = sorted(geo_zonas, key=lambda z: (z.orden or 0, z.id))[0]
+                        logger.info(
+                            "zona fallback por radio: punto (%.5f,%.5f) fuera de polígonos "
+                            "pero dentro de radio_km=%.2f (distancia=%.2f) → zona %s",
+                            lat, lon, radio_km_f, distancia_neg, primera.nombre,
+                        )
+                        return primera, round(distancia_neg, 2)
             return None, None
         candidatos.sort(key=lambda row: row[:4])
         distancia, zona = candidatos[0][2], candidatos[0][4]

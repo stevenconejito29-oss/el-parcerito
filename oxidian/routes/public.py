@@ -1791,7 +1791,9 @@ def api_geocode_suggest():
         return jsonify({"ok": False, "mensaje": "Consulta demasiado larga"}), 400
     try:
         import requests as _req
+        import re as _re
         ciudad = (SiteConfig.get("CIUDAD_NEGOCIO", "") or "").strip()
+        provincia = (SiteConfig.get("PROVINCIA_NEGOCIO", "") or "").strip()
         pais = (SiteConfig.get("PAIS_NEGOCIO", "") or "").strip()
         pais_iso = (SiteConfig.get("PAIS_CODIGO_ISO", "") or "").lower().strip()
         nombre_neg = SiteConfig.get("NOMBRE_NEGOCIO", "Oxidian")
@@ -1803,30 +1805,57 @@ def api_geocode_suggest():
         except (ValueError, TypeError):
             centro_lat = centro_lon = None
             radio_km = 10.0
-        params = {"q": q, "format": "json", "limit": 5, "addressdetails": 1}
-        if pais_iso:
-            params["countrycodes"] = pais_iso
-        # Acotamos al área del negocio para no sugerir calles a 300 km.
-        # 1 grado ≈ 111 km → convertimos radio_km a grados con margen 1.3x.
+        # Bbox × 2.0 (antes 1.3): garantiza que direcciones en el borde
+        # de la zona de reparto salgan en el autocompletado. El bbox es
+        # para SUGERENCIAS, la validación real de cobertura la hace
+        # /api/check-address con el polígono estricto.
+        import math
+        bbox_params = None
         if centro_lat is not None and centro_lon is not None and radio_km > 0:
-            import math
-            delta_lat = (radio_km * 1.3) / 111.0
-            delta_lon = (radio_km * 1.3) / (111.0 * max(0.2, math.cos(math.radians(centro_lat))))
+            delta_lat = (radio_km * 2.0) / 111.0
+            delta_lon = (radio_km * 2.0) / (111.0 * max(0.2, math.cos(math.radians(centro_lat))))
             left = centro_lon - delta_lon
             right = centro_lon + delta_lon
             top = centro_lat + delta_lat
             bottom = centro_lat - delta_lat
-            params["viewbox"] = f"{left},{top},{right},{bottom}"
-            params["bounded"] = 1
-        resp = _req.get(
-            "https://nominatim.openstreetmap.org/search",
-            params=params,
-            headers={"User-Agent": user_agent, "Accept-Language": "es"},
-            timeout=5,
-        )
-        if not resp.ok:
-            return jsonify({"ok": False, "results": [], "mensaje": "Servicio no disponible"}), 503
-        hits = resp.json() or []
+            bbox_params = {"viewbox": f"{left},{top},{right},{bottom}", "bounded": 1}
+
+        def _do_nominatim(params):
+            merged = {"format": "json", "limit": 5, "addressdetails": 1, **params}
+            if pais_iso:
+                merged["countrycodes"] = pais_iso
+            if bbox_params:
+                merged.update(bbox_params)
+            r = _req.get(
+                "https://nominatim.openstreetmap.org/search",
+                params=merged,
+                headers={"User-Agent": user_agent, "Accept-Language": "es"},
+                timeout=5,
+            )
+            return r.json() if r.ok else []
+
+        # Estrategia dual — Nominatim retorna resultados MUCHO más precisos
+        # (con `house_number` poblado) usando búsqueda ESTRUCTURADA cuando
+        # detectamos un número al final del texto del cliente.
+        # 1. Extraemos número si existe: "Calle Andalucía 20" → street="20 Calle Andalucía"
+        # 2. Búsqueda estructurada preferente
+        # 3. Fallback libre si estructurada devolvió 0 resultados
+        num_match = _re.search(r"(.+?)\s+(\d+[a-zA-Z]?)\s*$", q)
+        hits = []
+        if num_match:
+            calle_raw = num_match.group(1).strip()
+            numero = num_match.group(2).strip()
+            structured = {"street": f"{numero} {calle_raw}"}
+            if ciudad:
+                structured["city"] = ciudad
+            if provincia:
+                structured["state"] = provincia
+            if pais:
+                structured["country"] = pais
+            hits = _do_nominatim(structured) or []
+        # Fallback / búsqueda sin número
+        if not hits:
+            hits = _do_nominatim({"q": q}) or []
     except Exception:
         current_app.logger.exception("api_geocode_suggest falló")
         return jsonify({"ok": False, "results": []}), 503
@@ -1866,10 +1895,10 @@ def api_geocode_suggest():
         if localidades_ok and localidad and localidad.casefold() not in localidades_ok:
             continue
         label_parts = []
-        label_parts.append(f"{street} {house}".strip())
+        # Muestra "Calle X 20" si Nominatim confirmó house_number,
+        # o solo "Calle X" si es un match genérico.
+        label_parts.append(f"{street} {house}".strip() if house else street)
         if localidad and (not ciudad or localidad.casefold() != ciudad.casefold()):
-            # Sólo añade "otra localidad" si es una de las aceptadas
-            # (pedanía / núcleo próximo). Nunca "Sevilla".
             label_parts.append(localidad)
         elif ciudad and not localidad:
             label_parts.append(ciudad)
@@ -1878,7 +1907,13 @@ def api_geocode_suggest():
         if key in seen:
             continue
         seen.add(key)
-        results.append({"label": label, "lat": lat, "lon": lon, "value": label})
+        results.append({
+            "label": label, "lat": lat, "lon": lon, "value": label,
+            "has_number": bool(house),  # flag para ranking en el widget
+        })
+    # Ranking: sugerencias con número exacto primero (más útiles), luego
+    # genéricas. Estable por orden original de Nominatim dentro de cada grupo.
+    results.sort(key=lambda r: (0 if r.get("has_number") else 1))
     return jsonify({"ok": True, "results": results})
 
 
