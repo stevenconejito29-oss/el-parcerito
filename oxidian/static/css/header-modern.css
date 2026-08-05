@@ -1008,3 +1008,33 @@ body.ox-body-public.is-navigating::after {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* ── Login staff: presencia sutil en el header ──────────────────────
+   Feedback usuario: "el botón de login puede ser un poco más sutil".
+   Es un CTA para operarios internos (staff/admin), no para clientes
+   públicos, así que no debe competir visualmente con "Info"/"App" ni
+   con el carrito. Bajamos opacidad + fondo transparente + borde
+   fantasma. Al hover recupera protagonismo. En móvil ya se oculta el
+   texto (regla existente ~L456); aquí sólo reducimos peso visual. */
+body.ox-body-public .ox-employee-login {
+  opacity: .55 !important;
+  background: transparent !important;
+  border-color: color-mix(in srgb, var(--theme-header-text) 18%, transparent) !important;
+  font-weight: 700 !important;
+  padding: 0 10px !important;
+  min-height: 38px !important;
+  font-size: .64rem !important;
+  letter-spacing: .02em;
+}
+body.ox-body-public .ox-employee-login svg {
+  width: 14px !important;
+  height: 14px !important;
+  stroke-width: 1.7 !important;
+}
+body.ox-body-public .ox-employee-login:hover,
+body.ox-body-public .ox-employee-login:focus-visible {
+  opacity: 1 !important;
+  background: color-mix(in srgb, var(--brand-primary) 10%, transparent) !important;
+  border-color: color-mix(in srgb, var(--brand-primary) 42%, transparent) !important;
+  transform: translateY(-1px);
+}

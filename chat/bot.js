@@ -7198,6 +7198,36 @@ async function handleMainMenu(jid, ses, opcion) {
         );
       }
 
+      // Contador de intents fallidos consecutivos: si el bot cae al
+      // fallback N veces sin resolver en una ventana corta, deriva a
+      // humano SIN mencionar la opción. Es el último recurso sutil.
+      // Reset por tiempo: si pasan >5 minutos desde el último fallback
+      // el contador se resetea a 0 — evita acumular "streaks" por
+      // typos aislados que ocurren en distintas visitas a lo largo del
+      // día. Cuenta solo fallbacks consecutivos en la misma sesión
+      // conversacional activa.
+      const INTENT_FAIL_THRESHOLD = parseInt(process.env.BOT_INTENT_FAIL_THRESHOLD || '3', 10);
+      const INTENT_FAIL_RESET_MS = parseInt(process.env.BOT_INTENT_FAIL_RESET_MS || (5 * 60 * 1000), 10);
+      const nowTs = Date.now();
+      const lastFallbackTs = Number(ses._intent_fail_last_ts || 0);
+      if (!lastFallbackTs || (nowTs - lastFallbackTs) > INTENT_FAIL_RESET_MS) {
+        ses._intent_fail_streak = 0;
+      }
+      ses._intent_fail_streak = (Number(ses._intent_fail_streak) || 0) + 1;
+      ses._intent_fail_last_ts = nowTs;
+      if (ses._intent_fail_streak >= INTENT_FAIL_THRESHOLD) {
+        ses._intent_fail_streak = 0;
+        ses._intent_fail_last_ts = 0;
+        bumpStat('handoff_intent_fail');
+        log('info', 'handoff_intent_fail',
+          `${INTENT_FAIL_THRESHOLD} intents no reconocidos seguidos. Último: "${textoLibre.slice(0,60)}"`
+        );
+        return requestHumanSupport(
+          jid,
+          `El bot no encontró respuesta tras ${INTENT_FAIL_THRESHOLD} intentos. Último: "${textoLibre}"`
+        );
+      }
+
       // Fallback final: menú numerado explícito. Sin variantes vagas ni
       // frases divagativas — el cliente ve SIEMPRE la misma estructura
       // clara de opciones, y sabe exactamente qué escribir (un número).
@@ -7208,10 +7238,15 @@ async function handleMainMenu(jid, ses, opcion) {
       const adminHint = isAdminJid(jid)
         ? `\n🔒 _Eres admin en modo prueba. Escribe *admin* para volver al panel._`
         : '';
+      // Fallback silencioso: no ofrecemos "AGENTE" explícito. Si el
+      // cliente sigue sin encontrar lo que busca, el contador de intent
+      // fallidos (`intent_fail_streak`) más abajo dispara handoff
+      // automático a la 3a fallback consecutiva sin que el cliente lo
+      // pida. Es "el último recurso sutil" del negocio.
       return sendText(jid,
         `👇 *Elige una opción respondiendo con el número:*\n\n` +
         `${clientMenuLines()}\n\n` +
-        `_También puedes escribir *AGENTE* para hablar con una persona._` +
+        `_También puedes escribir lo que necesitas con tus palabras._` +
         adminHint
       );
     }

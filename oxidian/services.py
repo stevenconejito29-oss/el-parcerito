@@ -1970,13 +1970,17 @@ def validar_radio_entrega(
     distancia = _haversine_km(centro_lat, centro_lon, lat, lon)
 
     if distancia > radio_km:
+        # No revelamos ni la distancia calculada ni el radio de cobertura.
+        # Antes: "queda fuera (X.X km del centro). Solo entregamos dentro
+        # de Y.Y km." — dos datos operativos innecesarios y explotables.
+        # Ahora: mensaje neutro que sugiere alternativas sin leak.
         return {
             "ok": False,
-            "distancia_km": round(distancia, 2),
+            "distancia_km": round(distancia, 2),  # se mantiene en el dict server-side
             "mensaje": (
-                f"Lo sentimos, tu dirección queda fuera de nuestra zona de reparto"
-                f"{f' en {ciudad}' if ciudad else ''} "
-                f"({distancia:.1f} km del centro). Solo entregamos dentro de {radio_km:.1f} km."
+                f"Esa dirección está fuera de nuestra zona de entrega"
+                f"{f' en {ciudad}' if ciudad else ''}. "
+                "Prueba otra dirección o elige recogida en el local si está disponible."
             ),
         }
 

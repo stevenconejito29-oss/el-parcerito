@@ -1834,6 +1834,18 @@ def api_geocode_suggest():
     # Compactamos la respuesta: sólo campos que el widget necesita.
     results = []
     seen = set()
+    # Whitelist estricta de localidades: aceptamos sólo direcciones cuya
+    # localidad coincida con `CIUDAD_NEGOCIO` (o incluidas en la env opcional
+    # `BOT_LOCALIDADES_ADICIONALES` separadas por coma — pedanías o núcleos
+    # próximos que también entran en zona). Sin esto, el cliente podía
+    # elegir "Calle Real, Sevilla" cuando el negocio está en Carmona y
+    # llegaba a checkout para que server-side lo rechazara — mala UX.
+    localidades_ok = {ciudad.casefold()} if ciudad else set()
+    extras_env = (SiteConfig.get("LOCALIDADES_ADICIONALES", "") or "").strip()
+    for extra in extras_env.split(","):
+        extra = extra.strip().casefold()
+        if extra:
+            localidades_ok.add(extra)
     for h in hits:
         try:
             lat = float(h.get("lat"))
@@ -1847,12 +1859,17 @@ def api_geocode_suggest():
         # para no dejar al cliente elegir "Sevilla" como dirección de entrega.
         if not street:
             continue
-        label_parts = []
-        if street:
-            label_parts.append(f"{street} {house}".strip())
         localidad = (addr.get("city") or addr.get("town") or addr.get("village")
                      or addr.get("municipality") or "").strip()
+        # Rechaza direcciones de otras localidades aunque estén en el bbox.
+        # Si no configuraste CIUDAD_NEGOCIO, todas pasan (retrocompatible).
+        if localidades_ok and localidad and localidad.casefold() not in localidades_ok:
+            continue
+        label_parts = []
+        label_parts.append(f"{street} {house}".strip())
         if localidad and (not ciudad or localidad.casefold() != ciudad.casefold()):
+            # Sólo añade "otra localidad" si es una de las aceptadas
+            # (pedanía / núcleo próximo). Nunca "Sevilla".
             label_parts.append(localidad)
         elif ciudad and not localidad:
             label_parts.append(ciudad)

@@ -302,9 +302,40 @@
         if (precInput) precInput.value = '10';
         hide();
         input.focus();
-        // Dispara `input` para que otros listeners (feedback de cobertura,
-        // botón de comprobar) reaccionen al valor nuevo.
-        input.dispatchEvent(new Event('input', { bubbles: true }));
+        // Validación INMEDIATA de cobertura tras seleccionar sugerencia.
+        // El cliente sabe en <1s si su dirección entra en la zona antes
+        // de rellenar el resto del checkout. Sin esto, el error solo
+        // aparecía al pulsar "Confirmar pedido" con toda la info completa
+        // — mala UX (le hacíamos rellenar teléfono/pago para nada).
+        validateSelectedAddress(li.dataset.label, li.dataset.lat, li.dataset.lng);
+        // NO disparamos input event porque nuestro handler limpiaría las coords.
+      }
+      async function validateSelectedAddress(direccion, lat, lng) {
+        const fb = document.getElementById('dir-feedback');
+        if (!fb) return;
+        fb.classList.remove('hidden');
+        fb.style.color = 'var(--col-muted)';
+        fb.textContent = 'Comprobando cobertura…';
+        try {
+          const resp = await fetch('/api/check-address', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ direccion, lat: parseFloat(lat), lng: parseFloat(lng), accuracy: 10 }),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (data && data.ok) {
+            fb.style.color = 'var(--theme-success, #16a34a)';
+            const zonaLabel = (data.zona && data.zona.nombre) ? ` · ${data.zona.nombre}` : '';
+            fb.textContent = `✓ Dirección cubierta${zonaLabel}`;
+          } else {
+            fb.style.color = 'var(--theme-danger, #dc2626)';
+            fb.textContent = (data && data.mensaje) || 'Esa dirección está fuera de nuestra zona de entrega. Prueba otra o elige recogida.';
+          }
+        } catch (_) {
+          fb.style.color = 'var(--col-muted)';
+          fb.textContent = 'No pudimos comprobar la cobertura ahora. Continúa y validamos al confirmar.';
+        }
       }
       async function fetchSuggest(q) {
         try {
@@ -357,16 +388,9 @@
       });
     })();
     </script>
-    {% if cobertura_por_zonas %}
     <p class="text-xs mt-1" style="color:var(--col-muted)">
-      📍 Verificamos la cobertura exacta por calles y asignamos automáticamente la zona correcta.
+      📍 Verificamos la cobertura por calle. Empieza a escribir y elige tu dirección de la lista.
     </p>
-    {% elif radio_entrega_km %}
-    <p class="text-xs mt-1" style="color:var(--col-muted)">
-      📍 Radio de reparto: hasta <strong>{{ '%.1f'|format(radio_entrega_km) }} km</strong>
-      {% if brand.ciudad %}desde {{ brand.ciudad }}{% endif %}.
-    </p>
-    {% endif %}
     </div>
     <div id="pickup-info-block" class="p-3 rounded-xl text-sm {% if fulfillment_default != 'recogida' %}hidden{% endif %}" style="background:color-mix(in srgb,var(--theme-success) 8%,transparent);border:1px solid color-mix(in srgb,var(--theme-success) 25%,transparent);color:var(--theme-success)">
       Recoge tu pedido en <strong>{{ establecimiento.nombre }}</strong>{% if brand.direccion %}, {{ brand.direccion }}{% endif %}. Te avisaremos por WhatsApp cuando esté listo.

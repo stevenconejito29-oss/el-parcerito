@@ -88,7 +88,12 @@ function clientMenuLines(ctx) {
   if (ctx.loyaltyEnabled) lines.push("*3* — ⭐ Mis puntos");
   if (ctx.deliveryEnabled) lines.push("*4* — 📍 Zona de entrega");
   lines.push("*6* — 📖 Información y ayuda");
-  lines.push("*7* — 👤 Hablar con una persona");
+  // Opción 7 ("Hablar con una persona") oculta del menú principal.
+  // Sigue funcionando como keyword (cliente que escribe AGENTE / persona /
+  // ayuda es detectado por `CLIENT_INTENT_KEYWORDS['7']` en bot.js y va a
+  // handoff), pero el bot no la ofrece como primera opción — se reserva
+  // para cuando el cliente demuestre que no encontró la info que buscaba
+  // (detección de loop de intents no reconocidos → derivación silenciosa).
   return lines.join("\n");
 }
 
