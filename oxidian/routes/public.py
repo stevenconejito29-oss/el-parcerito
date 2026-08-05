@@ -1839,7 +1839,7 @@ def api_geocode_suggest():
             # para autocompletado en tiempo real. Sesga por lat/lon → puntúa mejor
             # las direcciones cercanas al negocio. Devuelve GeoJSON; lo mapeamos
             # al formato de Nominatim para reutilizar el pipeline de filtrado.
-            params = {"q": query, "limit": 8, "lang": "es"}
+            params = {"q": query, "limit": 15, "lang": "es"}
             if centro_lat is not None and centro_lon is not None:
                 params["lat"] = centro_lat
                 params["lon"] = centro_lon
@@ -1905,18 +1905,22 @@ def api_geocode_suggest():
     # Compactamos la respuesta: sólo campos que el widget necesita.
     results = []
     seen = set()
-    # Whitelist estricta de localidades: aceptamos sólo direcciones cuya
-    # localidad coincida con `CIUDAD_NEGOCIO` (o incluidas en la env opcional
-    # `BOT_LOCALIDADES_ADICIONALES` separadas por coma — pedanías o núcleos
-    # próximos que también entran en zona). Sin esto, el cliente podía
-    # elegir "Calle Real, Sevilla" cuando el negocio está en Carmona y
-    # llegaba a checkout para que server-side lo rechazara — mala UX.
-    localidades_ok = {ciudad.casefold()} if ciudad else set()
-    extras_env = (SiteConfig.get("LOCALIDADES_ADICIONALES", "") or "").strip()
-    for extra in extras_env.split(","):
-        extra = extra.strip().casefold()
-        if extra:
-            localidades_ok.add(extra)
+    # Filtro geométrico: aceptamos cualquier calle a ≤ radio_km × 2 del centro
+    # del negocio. Antes filtrábamos por `addr.city == CIUDAD_NEGOCIO`, pero
+    # Photon/Nominatim etiquetan calles periféricas con la pedanía (Guadajoz,
+    # etc.) o dejan `city` vacío, y se perdían direcciones reales de reparto.
+    # La distancia al centro es el criterio verdadero: si el repartidor llega,
+    # es válida. `/api/check-address` sigue aplicando el polígono estricto
+    # después.
+    def _dist_km(la, lo):
+        import math as _m
+        if centro_lat is None or centro_lon is None:
+            return 0.0
+        dlat = _m.radians(la - centro_lat)
+        dlon = _m.radians(lo - centro_lon)
+        a = _m.sin(dlat/2)**2 + _m.cos(_m.radians(centro_lat)) * _m.cos(_m.radians(la)) * _m.sin(dlon/2)**2
+        return 6371.0 * 2 * _m.asin(min(1.0, _m.sqrt(a)))
+    limite_km = radio_km * 2.0 if radio_km else 999.0
     for h in hits:
         try:
             lat = float(h.get("lat"))
@@ -1926,15 +1930,13 @@ def api_geocode_suggest():
         addr = h.get("address", {}) or {}
         street = (addr.get("road") or addr.get("pedestrian") or "").strip()
         house = (addr.get("house_number") or "").strip()
-        # Filtramos resultados sin calle real (ej. localidad, punto de interés)
-        # para no dejar al cliente elegir "Sevilla" como dirección de entrega.
         if not street:
             continue
         localidad = (addr.get("city") or addr.get("town") or addr.get("village")
                      or addr.get("municipality") or "").strip()
-        # Rechaza direcciones de otras localidades aunque estén en el bbox.
-        # Si no configuraste CIUDAD_NEGOCIO, todas pasan (retrocompatible).
-        if localidades_ok and localidad and localidad.casefold() not in localidades_ok:
+        # Bloquea resultados lejos del radio de reparto (ej. otra "Calle Real"
+        # en Sevilla). Distancia geométrica > filtro por nombre de ciudad.
+        if _dist_km(lat, lon) > limite_km:
             continue
         label_parts = []
         # Muestra "Calle X 20" si Nominatim confirmó house_number,
@@ -1951,12 +1953,16 @@ def api_geocode_suggest():
         seen.add(key)
         results.append({
             "label": label, "lat": lat, "lon": lon, "value": label,
-            "has_number": bool(house),  # flag para ranking en el widget
+            "has_number": bool(house),
+            "_dist": _dist_km(lat, lon),
         })
-    # Ranking: sugerencias con número exacto primero (más útiles), luego
-    # genéricas. Estable por orden original de Nominatim dentro de cada grupo.
-    results.sort(key=lambda r: (0 if r.get("has_number") else 1))
-    return jsonify({"ok": True, "results": results})
+    # Ranking: has_number primero (más útil para el repartidor), luego por
+    # distancia al centro del negocio (calles del casco urbano antes que
+    # periféricas).
+    results.sort(key=lambda r: (0 if r.get("has_number") else 1, r.get("_dist", 0)))
+    for r in results:
+        r.pop("_dist", None)
+    return jsonify({"ok": True, "results": results[:8]})
 
 
 # ─── VALIDAR CUPÓN (AJAX) ────────────────────

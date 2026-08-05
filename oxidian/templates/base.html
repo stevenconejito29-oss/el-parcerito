@@ -322,9 +322,8 @@
           </button>
         </form>
       {% else %}
-        <a href="{{ url_for('auth.login') }}" class="ox-employee-login" title="{{ ui.header_staff }}">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/></svg>
-          <span class="ox-employee-login-text">{{ ui.header_staff }}</span>
+        <a href="{{ url_for('auth.login') }}" class="ox-employee-login" title="{{ ui.header_staff }}" aria-label="{{ ui.header_staff }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/><circle cx="5" cy="12" r="1.5"/></svg>
         </a>
       {% endif %}
     </nav>

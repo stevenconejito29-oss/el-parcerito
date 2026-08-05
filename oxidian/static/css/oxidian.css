@@ -289,52 +289,38 @@ button:active, .btn:active { transform: scale(.96) !important; }
   font-size: .72rem;
   line-height: 1;
 }
+/* Acceso staff: discreto a propósito. El cliente no debe verlo como CTA;
+   solo el equipo sabe que está ahí. Icono pequeño, sin fondo, opacidad
+   baja que sube en hover. Sin texto visible en ningún viewport. */
 .ox-employee-login {
-  min-height: 44px;
-  min-width: 44px;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: .35rem;
-  padding: .45rem .72rem;
-  border-radius: .8rem;
-  background: color-mix(in srgb, var(--theme-text, #344054) 8%, transparent);
-  color: var(--theme-text, #3F3328);
-  border: 1px solid color-mix(in srgb, var(--theme-text, #344054) 18%, transparent);
-  font-size: .76rem;
-  font-weight: 900;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: background .2s, transform .2s;
-}
-.ox-employee-login:hover {
-  background: color-mix(in srgb, var(--theme-text, #344054) 12%, transparent);
-  transform: translateY(-1px);
-}
-.ox-employee-login-icon {
-  width: 1rem;
-  height: 1rem;
+  padding: 0;
   border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--theme-text, #344054);
-  color: var(--theme-surface, #fff);
-  font-size: .68rem;
-  line-height: 1;
+  background: transparent;
+  color: color-mix(in srgb, var(--theme-text, #344054) 55%, transparent);
+  border: none;
+  text-decoration: none;
+  opacity: .35;
+  transition: opacity .2s;
 }
+.ox-employee-login svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.8;
+}
+.ox-employee-login:hover,
+.ox-employee-login:focus-visible {
+  opacity: .85;
+}
+.ox-employee-login-icon,
 .ox-employee-login-text {
-  display: inline;
-}
-@media (max-width: 768px) {
-  .ox-employee-login {
-    width: 44px;
-    padding: 0;
-    border-radius: 999px;
-  }
-  .ox-employee-login-text {
-    display: none;
-  }
+  display: none;
 }
 @media (max-width: 360px) {
   .ox-install-btn {
@@ -6273,11 +6259,11 @@ body.ox-body-public .ox-header-public {
 .ox-header-app{align-items:center;gap:.45rem;min-height:38px;padding:.45rem .72rem;border:1px solid color-mix(in srgb,var(--brand-primary) 35%,rgba(255,255,255,.12));border-radius:999px;background:color-mix(in srgb,var(--brand-primary) 10%,rgba(255,255,255,.04));color:#fff;font-size:.7rem;font-weight:900}.ox-header-app-dot{width:7px;height:7px;border-radius:50%;background:var(--brand-primary);box-shadow:0 0 12px var(--brand-primary)}
 [data-pwa-install][hidden]{display:none!important}
 .ox-header-status{min-height:36px;background:rgba(26,190,100,.1)!important;border-color:rgba(94,240,151,.2)!important;color:#a7f3d0!important}.ox-header-cart{color:#fff!important;background:rgba(255,255,255,.07)!important;border:1px solid rgba(255,255,255,.13);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
-.ox-header-public .ox-employee-login{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.12);color:rgba(255,255,255,.78)}.ox-header-public .ox-employee-login-icon{background:var(--brand-primary);color:var(--brand-on-primary,#111)}
+.ox-header-public .ox-employee-login{background:transparent;border:none;color:rgba(255,255,255,.55);opacity:.35}.ox-header-public .ox-employee-login:hover,.ox-header-public .ox-employee-login:focus-visible{opacity:.85}
 
 .ox-push-prompt-close{flex:0 0 38px;width:38px;height:38px;border-radius:50%;border:1px solid var(--col-border);background:var(--col-surface);color:var(--col-muted);font-size:1.05rem}
 .ox-app-tools{margin-top:1rem;padding:.9rem;border:1px solid rgba(52,37,22,.12);border-radius:1rem;background:linear-gradient(135deg,rgba(217,150,26,.08),rgba(39,103,177,.06))}.ox-app-tools>div:first-child strong,.ox-app-tools>div:first-child small{display:block}.ox-app-tools>div:first-child strong{color:#18120a;font-size:.86rem}.ox-app-tools>div:first-child small{margin-top:.15rem;color:#6b5a4e;font-size:.7rem}.ox-app-tools-actions{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.7rem}.ox-app-tools-actions button{min-height:40px;padding:.5rem .7rem;border:1px solid rgba(52,37,22,.14);border-radius:.7rem;background:#fff;color:#3f3328;font-size:.7rem;font-weight:900}.ox-app-tools-status{min-height:1em;margin-top:.4rem;color:#2767b1;font-size:.68rem}
-@media(max-width:639px){.ox-public-header-inner{min-height:64px!important}.ox-public-actions{gap:.35rem}.ox-header-status{width:34px;min-height:34px;padding:0!important;justify-content:center}.ox-header-cart{width:38px!important;height:38px!important}.ox-header-public .ox-employee-login{width:34px;min-width:34px;height:34px;min-height:34px;padding:0}.ox-header-public .ox-employee-login-text{display:none}.ox-public-header-inner::after{left:3.8rem;right:3.8rem}.ox-push-prompt-close{grid-column:3;grid-row:1}}
+@media(max-width:639px){.ox-public-header-inner{min-height:64px!important}.ox-public-actions{gap:.35rem}.ox-header-status{width:34px;min-height:34px;padding:0!important;justify-content:center}.ox-header-cart{width:38px!important;height:38px!important}.ox-header-public .ox-employee-login{width:28px;min-width:28px;height:28px;min-height:28px;padding:0}.ox-public-header-inner::after{left:3.8rem;right:3.8rem}.ox-push-prompt-close{grid-column:3;grid-row:1}}
 
 body.ox-body-public .ox-bottom-nav {
   background: rgba(255,253,248,.95);
@@ -7129,6 +7115,31 @@ body.ox-body-public .ep-footer-body h4 { color: #fff !important; }
   gap: .6rem;
   margin-top: 1rem;
 }
+.partner-days-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin-top: .35rem;
+}
+.partner-day-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  min-height: 40px;
+  padding: .4rem .6rem;
+  border: 1px solid var(--col-border);
+  border-radius: 999px;
+  background: var(--col-surface);
+  color: var(--col-text);
+  font-size: .73rem;
+  font-weight: 800;
+}
+.partner-day-chip input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand-primary);
+}
+.partner-day-chip span { display: inline-block; }
 .partner-combo-list { margin-top: 1rem; }
 .partner-combo-list-head {
   display: flex;
