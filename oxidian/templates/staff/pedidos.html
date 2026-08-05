@@ -249,7 +249,7 @@ document.querySelectorAll('.js-availability-form').forEach(form => {
   });
 });
 </script>
-{# Modal de impresión manual (fallback del auto-print server-side).
-   Se activa cuando `marcar_listo` redirige con `?print_after=<id>`. #}
-{% include "_print_after_modal.html" %}
+{# Modal de impresión: manejo íntegro en JS (operational-roles.js).
+   El handler `?print_after=<id>` decide silenciosamente (BT paired →
+   print silent; no paired → modal manual con botón de emparejar). #}
 {% endblock %}

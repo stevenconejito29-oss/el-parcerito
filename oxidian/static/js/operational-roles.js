@@ -36,7 +36,6 @@
   }
 
   // Aplica a cualquier rol operativo (repartidor, preparación, cocina, staff).
-  // Antes: solo repartidor. Los otros tenían pantalla clara incluso de noche.
   if (body.classList.contains('operational-view')) {
     setDeliveryTheme(preferredDeliveryTheme(), false);
     document.addEventListener('click', (event) => {
@@ -46,217 +45,71 @@
     });
   }
 
-  /* Impresión de tickets desde cualquier panel operativo.
-     Orden de intento:
-       1. POST /pos/ticket/<id>/imprimir → servidor manda por IPP a la
-          cola CUPS. Es el camino por defecto porque no depende del
-          navegador (funciona igual en Android 8/Chrome 108 y en Chrome
-          151 desktop) y no compite con CUPS por el device físico. Si
-          el usuario tiene la impresora colgada al mismo host donde
-          corre CUPS, usar WebUSB desde el navegador ROBABA el device
-          a la cola. Con CUPS como default eso ya no puede pasar.
-       2. WebUSB / WebBluetooth como fallback si CUPS es inalcanzable
-          (impresora_no_configurada, impresora_inalcanzable o red caída).
-       3. Último recurso: abrir pestaña con auto_print=1.
-     Se puede forzar la ruta WebUSB añadiendo `data-force-webusb="1"` al
-     `<form>` — útil para setups donde el device solo es visible al
-     navegador y no hay CUPS. */
-  const FORCE_WEBUSB_ATTR = 'forceWebusb';
+  /* ────────────────────────────────────────────────────────────────
+     IMPRESIÓN DE TICKETS
+     Un solo flujo, un solo path:
+       - Reimprimir / Listo → si BT emparejado en la sesión, imprime
+         silencioso vía ThermalPrinter.printTicket(). Si no, abre el
+         modal BT-pick con UN botón: "🔵 Seleccionar impresora e
+         imprimir" — pair + print en un click.
+       - Sin WebBluetooth (iOS Safari): botón deshabilitado con mensaje
+         claro. La operación fluye por otros canales (Pi print-server
+         en la LAN, app nativa, etc — no responsabilidad del navegador).
+     Fuera del scope: WebUSB (impresora POS58 dual USB+BT usa BT
+     desde el navegador), CUPS server-side (opt-in por form attr).
+  ─────────────────────────────────────────────────────────────────*/
+  const log = (...a) => console.info('[thermal]', ...a);
 
-  async function tryThermalWebUSB(form) {
-    if (!window.ThermalPrinter) return false;
-    const hint = window.ThermalPrinter.getPairInfo && window.ThermalPrinter.getPairInfo();
-    if (!window.ThermalPrinter.isPaired() && !hint) return false;
-    const action = form.action || '';
-    const match = action.match(/\/pos\/ticket\/(\d+)\/imprimir/);
-    if (!match) return false;
-    const pedidoId = match[1];
-    const reprint = /reprint=1/.test(action);
-    await window.ThermalPrinter.printTicket(pedidoId, { reprint });
-    return true;
+  function hasBT() {
+    return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+  }
+  function hasPersistentBT() {
+    return hasBT() && typeof navigator.bluetooth.getDevices === 'function';
   }
 
-  /* Orden de prioridad al imprimir un ticket desde cualquier botón:
-       1. WebBluetooth via ThermalPrinter.printTicket() — impresora emparejada
-          al navegador (BT). Silencioso, sin diálogos. Funciona en tablets
-          modernas de forma persistente (Chromium ≥122 auto-reconecta) y en
-          Chrome 108 una vez que el operador haya pulsado "Emparejar" en la
-          sesión actual.
-       2. Diálogo nativo de Chrome vía openPrintModal() — abre el modal con
-          iframe al ticket con ?auto_print=1, Chrome lanza su print dialog
-          y el operador puede elegir CUALQUIER impresora que su sistema
-          tenga configurada (incluye BT emparejada a nivel OS/CUPS).
-       3. CUPS server-side vía IPP — SOLO si el operador añade
-          `data-server-cups="1"` al form. Deshabilitado por defecto porque
-          en el setup del usuario la impresora es BT en la tablet, no USB
-          conectada al servidor. Se mantiene el código por si otro operario
-          usa un setup diferente. */
-  async function tryBluetooth(pedidoId, reprint) {
-    if (!window.ThermalPrinter) return false;
-    const hint = window.ThermalPrinter.getPairInfo && window.ThermalPrinter.getPairInfo();
-    if (!window.ThermalPrinter.isPaired() && !hint) return false;
+  async function tryPrintSilent(pedidoId, reprint) {
+    const tp = window.ThermalPrinter;
+    if (!tp || !tp.isPaired()) return false;
     try {
-      await window.ThermalPrinter.printTicket(pedidoId, { reprint });
+      await tp.printTicket(pedidoId, { reprint });
       return true;
     } catch (err) {
-      console.warn('[ticket] BT falló:', err);
+      log('print silent falló:', err && err.message);
       return false;
     }
   }
 
   function openPrintModal(pedidoId, reprint) {
-    // Reutilizamos el mismo modal que sirve `_print_after_modal.html`
-    // (creado por el server tras `marcar_listo`). Aquí lo montamos en
-    // caliente desde JS para que también funcione con Reimprimir sin
-    // navegar. Si ya existe, sólo cambiamos el src del iframe.
-    let modal = document.getElementById('print-after-modal');
-    const url = `/pos/ticket/${pedidoId}?auto_print=1${reprint ? '&reprint=1' : ''}`;
-    if (modal) {
-      const frame = modal.querySelector('.print-after-frame');
-      if (frame) frame.src = url;
-      return;
-    }
-    modal = document.createElement('div');
-    modal.id = 'print-after-modal';
+    // Modal único con un botón grande "Seleccionar impresora e imprimir".
+    // Reutiliza `pairBT()` (misma función del chip flotante) → un click
+    // dispara el diálogo BT del sistema + `printTicket()` en secuencia.
+    const existing = document.getElementById('thermal-modal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'thermal-modal';
     modal.className = 'print-after-overlay';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
-    modal.innerHTML = `
-      <div class="print-after-content">
-        <h3>🖨️ Imprime el ticket</h3>
-        <p>Chrome abrirá su diálogo de impresión. Elige tu impresora (Bluetooth, USB o la que tengas configurada) y confirma.</p>
-        <iframe title="Ticket" src="${url}" class="print-after-frame"></iframe>
-        <div class="print-after-actions">
-          <button type="button" class="print-after-btn print-after-btn-print" data-print-again>🔁 Volver a imprimir</button>
-          <button type="button" class="print-after-btn print-after-btn-close" data-print-close>✅ Ya imprimí — cerrar</button>
-        </div>
-      </div>`;
-    document.body.appendChild(modal);
-    const close = () => {
-      modal.remove();
-      try {
-        const u = new URL(window.location.href);
-        u.searchParams.delete('print_after');
-        window.history.replaceState({}, '', u);
-      } catch (_) {}
-    };
-    modal.querySelector('[data-print-close]').addEventListener('click', close);
-    modal.querySelector('[data-print-again]').addEventListener('click', () => {
-      const f = modal.querySelector('.print-after-frame');
-      if (f) f.src = f.src;
-    });
-    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-    document.addEventListener('keydown', function onEsc(e) {
-      if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); }
-    });
-  }
-
-  document.addEventListener('submit', async (event) => {
-    const form = event.target.closest('form.ticket-print-form');
-    if (!form) return;
-    event.preventDefault();
-    const button = form.querySelector('button[type="submit"]');
-    const originalLabel = button ? button.innerHTML : '';
-    if (button) { button.disabled = true; button.innerHTML = '🖨️ Enviando…'; }
-
-    if (window.ThermalPrinter && window.ThermalPrinter.ready) {
-      try { await window.ThermalPrinter.ready; } catch (_) {}
-    }
-
-    const action = form.action || '';
-    const match = action.match(/\/pos\/ticket\/(\d+)\/imprimir/);
-    if (!match) {
-      if (button) { button.innerHTML = originalLabel; button.disabled = false; }
-      return;
-    }
-    const pedidoId = match[1];
-    const reprint = /reprint=1/.test(action);
-    const serverCups = form.dataset.serverCups === '1';
-
-    try {
-      // Prioridad 1: Bluetooth silencioso si ya está emparejada.
-      if (await tryBluetooth(pedidoId, reprint)) {
-        if (button) button.innerHTML = '✅ Impreso (BT)';
-        setTimeout(() => { if (button) { button.innerHTML = originalLabel; button.disabled = false; } }, 2500);
-        return;
-      }
-      // Prioridad 2: si el operador pide expresamente CUPS del servidor.
-      if (serverCups) {
-        const resp = await fetch(form.action, {
-          method: 'POST', body: new FormData(form),
-          headers: { 'Accept': 'application/json' }, credentials: 'same-origin',
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (resp.ok && data.ok) {
-          if (button) button.innerHTML = '✅ Impreso';
-          setTimeout(() => { if (button) { button.innerHTML = originalLabel; button.disabled = false; } }, 2500);
-          return;
-        }
-      }
-      // Prioridad 3: modal BT-pick con la MISMA función del chip 🔵.
-      // Un click empareja/reutiliza el device y dispara el ticket. Es
-      // consistente con el flujo tras marcar Listo (DOMContentLoaded).
-      // Si el navegador no tiene WebBluetooth en absoluto, caemos al
-      // modal Chrome dialog como último recurso.
-      if ('bluetooth' in navigator && window.ThermalPrinter) {
-        openBTPickModal(pedidoId, reprint);
-      } else {
-        openPrintModal(pedidoId, reprint);
-      }
-      if (button) { button.innerHTML = originalLabel; button.disabled = false; }
-    } catch (err) {
-      console.warn('[ticket] impresión falló, abriendo modal:', err);
-      if ('bluetooth' in navigator && window.ThermalPrinter) {
-        openBTPickModal(pedidoId, reprint);
-      } else {
-        openPrintModal(pedidoId, reprint);
-      }
-      if (button) { button.innerHTML = originalLabel; button.disabled = false; }
-    }
-  });
-
-  /* Detecta si el navegador soporta reconexión Bluetooth persistente.
-     `navigator.bluetooth.getDevices()` llegó en Chromium 122 (enero
-     2024). Con esa API `_restoreBT()` de thermal-printer.js reengancha
-     el device autorizado en cada carga de página sin gesto humano →
-     el pairing efectivamente persiste toda la sesión y más allá. */
-  function browserSupportsPersistentBT() {
-    return typeof navigator !== 'undefined'
-      && 'bluetooth' in navigator
-      && typeof navigator.bluetooth.getDevices === 'function';
-  }
-
-  /* Modal para el flujo manual BT — un click, un pedido, un ticket.
-     Reutiliza la MISMA función `pairBT()` que dispara el chip flotante
-     🔵. En navegadores viejos (Chrome 108, sin `getDevices`) el operador
-     ve este modal en cada `?print_after` porque el navegador olvida el
-     pairing tras F5. En navegadores modernos (Chromium ≥122) sólo lo
-     ve la primera vez que estrena la app — luego `_restoreBT` mantiene
-     el pairing y todos los siguientes prints salen silenciosos. */
-  function openBTPickModal(pedidoId, reprint) {
-    let modal = document.getElementById('bt-pick-modal');
-    if (modal) modal.remove();
-    modal = document.createElement('div');
-    modal.id = 'bt-pick-modal';
-    modal.className = 'print-after-overlay';
-    modal.setAttribute('role', 'dialog');
-    modal.setAttribute('aria-modal', 'true');
+    const btAvailable = hasBT();
     modal.innerHTML = `
       <div class="print-after-content" style="text-align:center">
-        <h3>🖨️ Selecciona tu impresora</h3>
-        <p>Pulsa el botón y elige tu impresora Bluetooth en el diálogo del sistema. El ticket se enviará al confirmar.</p>
-        <button type="button" class="print-after-btn print-after-btn-close" data-bt-pick
+        <h3>🖨️ Imprimir ticket</h3>
+        <p>${btAvailable
+          ? 'Pulsa el botón, elige tu impresora Bluetooth y confirma. El ticket se enviará al conectar.'
+          : 'Este navegador no soporta Bluetooth. Usa Chrome/Chromium en Android o Desktop, o pide impresora en red al equipo técnico.'
+        }</p>
+        <button type="button" class="print-after-btn print-after-btn-close" data-thermal-do
+                ${btAvailable ? '' : 'disabled'}
                 style="font-size:1rem;padding:1rem;min-height:64px;width:100%">
           🔵 Seleccionar impresora e imprimir
         </button>
         <div class="print-after-actions" style="margin-top:.7rem">
-          <button type="button" class="print-after-btn" data-bt-fallback-chrome>🖨️ Prefiero el diálogo de Chrome</button>
-          <button type="button" class="print-after-btn" data-bt-skip>Saltar</button>
+          <button type="button" class="print-after-btn" data-thermal-close>Cerrar</button>
         </div>
-        <p id="bt-pick-status" style="margin-top:.5rem;font-size:.75rem;min-height:1em;opacity:.7"></p>
+        <p id="thermal-status" style="margin-top:.5rem;font-size:.75rem;min-height:1em;opacity:.7"></p>
       </div>`;
     document.body.appendChild(modal);
-    const status = modal.querySelector('#bt-pick-status');
+    const status = modal.querySelector('#thermal-status');
     const close = () => {
       modal.remove();
       try {
@@ -265,256 +118,198 @@
         window.history.replaceState({}, '', u);
       } catch (_) {}
     };
-    modal.querySelector('[data-bt-skip]').addEventListener('click', close);
-    modal.querySelector('[data-bt-fallback-chrome]').addEventListener('click', () => {
-      close();
-      openPrintModal(pedidoId, reprint);
+    modal.querySelector('[data-thermal-close]').addEventListener('click', close);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    document.addEventListener('keydown', function onKey(e) {
+      if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); }
     });
-    modal.querySelector('[data-bt-pick]').addEventListener('click', async (ev) => {
-      const btn = ev.currentTarget;
-      btn.disabled = true;
-      status.textContent = 'Abriendo selector Bluetooth…';
-      try {
-        // Misma función que usa el chip flotante 🔵. Si el navegador ya
-        // tiene la autorización de esta sesión, reutiliza sin volver a
-        // pedir permiso; si no, dispara el diálogo nativo del sistema.
-        if (!window.ThermalPrinter.isPaired()) {
-          await window.ThermalPrinter.pairBT();
+    const doBtn = modal.querySelector('[data-thermal-do]');
+    if (btAvailable && doBtn) {
+      doBtn.addEventListener('click', async () => {
+        doBtn.disabled = true;
+        status.textContent = 'Abriendo selector Bluetooth…';
+        try {
+          const tp = window.ThermalPrinter;
+          if (!tp.isPaired()) await tp.pairBT();
+          status.textContent = 'Imprimiendo…';
+          await tp.printTicket(pedidoId, { reprint });
+          status.textContent = '✅ Ticket enviado';
+          refreshChip();
+          setTimeout(close, 800);
+        } catch (err) {
+          log('modal print falló:', err && err.message);
+          status.textContent = (err && err.message) || 'No se pudo imprimir.';
+          doBtn.disabled = false;
         }
-        status.textContent = 'Imprimiendo…';
-        await window.ThermalPrinter.printTicket(pedidoId, { reprint });
-        status.textContent = '✅ Ticket enviado';
-        refreshThermalStatus();
-        setTimeout(close, 900);
-      } catch (err) {
-        console.warn('[ticket] BT pick falló:', err);
-        status.textContent = err && err.message ? err.message : 'No se pudo. Prueba el diálogo de Chrome.';
-        btn.disabled = false;
-      }
-    });
+      });
+    }
   }
 
-  /* Auto-disparo tras `?print_after=<id>` (después de marcar Listo/Empacar):
-     - Si ThermalPrinter.isPaired() → imprime silencioso vía WebBluetooth.
-     - Si NO → muestra `openBTPickModal` con la MISMA función que el chip
-       🔵: un click empareja/reutiliza el device y dispara el ticket. Si
-       el operador prefiere no usar BT hay atajo al diálogo Chrome.
+  // Interceptor único para formularios de imprimir/reimprimir ticket.
+  // Prioridad: BT silencioso si paired → modal manual si no.
+  document.addEventListener('submit', async (event) => {
+    const form = event.target.closest('form.ticket-print-form');
+    if (!form) return;
+    event.preventDefault();
+    const match = (form.action || '').match(/\/pos\/ticket\/(\d+)\/imprimir/);
+    if (!match) return;
+    const pedidoId = parseInt(match[1], 10);
+    const reprint = /reprint=1/.test(form.action);
+    const btn = form.querySelector('button[type="submit"]');
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '🖨️ Enviando…'; }
+    try {
+      if (await tryPrintSilent(pedidoId, reprint)) {
+        if (btn) btn.innerHTML = '✅ Impreso';
+        setTimeout(() => { if (btn) { btn.innerHTML = orig; btn.disabled = false; } }, 2000);
+        return;
+      }
+      openPrintModal(pedidoId, reprint);
+    } finally {
+      if (btn && btn.innerHTML !== '✅ Impreso') { btn.innerHTML = orig; btn.disabled = false; }
+    }
+  });
 
-     Cadena de eventos que hace que la moderna sea "para siempre":
-     1. Primera vez: usuario pulsa chip 🔵 → pairBT() → localStorage
-        guarda `{transport:"bt", name:"..."}`.
-     2. F5 (o cargar app tras reboot): thermal-printer.js corre
-        `_restoreBT()` en DOMContentLoaded → detecta hint en
-        localStorage → llama `navigator.bluetooth.getDevices()`
-        (Chromium ≥122) → recupera el device autorizado sin pedir
-        permiso → conecta GATT → isPaired() = true.
-     3. Al pulsar Listo → path silencioso, sin modal.
-     Sin `getDevices` (Chrome 108 vieja): paso 2 falla silenciosamente
-     y en cada F5 sale el modal BT pick al pulsar Listo. */
+  // Auto-disparo tras marcar Listo (?print_after=<id>): espera a que
+  // termine el restore inicial (Promise `ThermalPrinter.ready`), y luego
+  // decide: paired → print silent; no paired → modal manual.
   document.addEventListener('DOMContentLoaded', async () => {
     const params = new URLSearchParams(window.location.search);
-    const pedidoRaw = params.get('print_after');
-    if (!pedidoRaw) return;
-    const pedidoId = parseInt(pedidoRaw, 10);
-
-    // Espera al ciclo de restore inicial de ThermalPrinter (Promise
-    // expuesta por thermal-printer.js). Sin esto había race: 100ms no
-    // bastaba porque el GATT connect en Android puede tardar 500-1500ms
-    // → el chequeo isPaired() corría antes y aparecía el modal aunque
-    // hubiera pairing persistido (síntoma típico de "Samsung 2026 no
-    // imprime automáticamente").
+    const raw = params.get('print_after');
+    if (!raw) return;
+    const pedidoId = parseInt(raw, 10);
     const tp = window.ThermalPrinter;
     if (tp && tp.ready) {
       try { await tp.ready; } catch (_) {}
     }
-
-    // Segunda oportunidad: si hay hint guardado pero el restore inicial
-    // no dejó paired (BT dormido, ready resolvió antes de que el device
-    // respondiera, etc.), intentamos UN reconnect más aquí — antes de
-    // decidir mostrar modal. En Android con Chromium ≥122 este segundo
-    // intento suele funcionar porque el subsistema BT ya despertó.
-    if (tp && !tp.isPaired() && tp.getPairInfo && tp.getPairInfo()
-        && browserSupportsPersistentBT() && tp.restoreBT) {
-      console.info('[thermal] segundo intento de restore antes del modal');
-      try { await tp.restoreBT(); } catch (_) {}
+    if (await tryPrintSilent(pedidoId, false)) {
+      // Silent OK: retira el modal server-side (partial) y limpia URL.
+      const partial = document.getElementById('print-after-modal');
+      if (partial) partial.remove();
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.delete('print_after');
+        window.history.replaceState({}, '', u);
+      } catch (_) {}
+      return;
     }
-
-    // Path silencioso.
-    if (tp && tp.isPaired()) {
-      if (await tryBluetooth(pedidoId, false)) {
-        const modal = document.getElementById('print-after-modal');
-        if (modal) modal.remove();
-        try {
-          const u = new URL(window.location.href);
-          u.searchParams.delete('print_after');
-          window.history.replaceState({}, '', u);
-        } catch (_) {}
-        return;
-      }
-    }
-
-    // Path manual: cerramos el modal Chrome-dialog inyectado por el
-    // partial (no lo mostramos en este caso; será el fallback secundario
-    // si el usuario prefiere Chrome dialog en vez de BT) y mostramos
-    // el modal BT-pick que usa la misma función que el chip flotante.
-    const chromeModal = document.getElementById('print-after-modal');
-    if (chromeModal) chromeModal.remove();
-    if ('bluetooth' in navigator && window.ThermalPrinter) {
-      openBTPickModal(pedidoId, false);
-    } else {
-      // Sin WebBluetooth disponible en absoluto (iOS Safari): último
-      // recurso es el diálogo de Chrome (aunque en iOS Safari también
-      // fallará; ahí el usuario compra tablet nueva o usa Chrome).
-      openPrintModal(pedidoId, false);
-    }
+    // No silent: quitamos el partial (si el server lo pintó) y mostramos
+    // nuestro modal BT-pick unificado.
+    const partial = document.getElementById('print-after-modal');
+    if (partial) partial.remove();
+    openPrintModal(pedidoId, false);
   });
 
-  /* Chip flotante para emparejar impresora BT desde cualquier panel
-     operativo. Aparece en la esquina inferior derecha, siempre visible.
-     En tablets con Chromium ≥122, `_restoreBT()` (thermal-printer.js)
-     reconecta al cargar la página. En tablets con Chrome viejo (Huawei
-     Android 8/Chrome 108), el operador pulsa este chip una vez por
-     sesión para volver a autorizar el device. Es idempotente:
-     `ThermalPrinter.pairBT()` reutiliza la autorización previa si el
-     navegador la conserva. */
-  function ensureThermalPairChip() {
+  /* Chip flotante: 2 estados. Verde = conectada; Azul = tocar para
+     emparejar. El estado "amarillo reconectar" se eliminó — al pulsar
+     azul, si hay hint persistido en localStorage se intenta primero
+     `restoreBT()` silencioso; si falla, cae a `pairBT()` con diálogo. */
+  function ensureChip() {
     if (!body.classList.contains('operational-view')) return;
-    if (!('bluetooth' in navigator)) return;
+    if (!hasBT()) return;
     if (document.querySelector('.thermal-pair-chip')) return;
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'thermal-pair-chip';
-    chip.dataset.pairThermal = 'bt';
     chip.setAttribute('data-thermal-status', '');
-    chip.setAttribute('aria-label', 'Emparejar o ver estado de la impresora Bluetooth');
-    chip.textContent = 'Impresora BT…';
+    chip.setAttribute('aria-label', 'Estado de la impresora Bluetooth');
+    chip.textContent = '🔵 Emparejar impresora';
     document.body.appendChild(chip);
   }
 
-  function refreshThermalStatus() {
+  function refreshChip() {
     const tp = window.ThermalPrinter;
-    if (!tp) return;
-    const info = tp.getPairInfo?.();
-    const persistent = browserSupportsPersistentBT();
-    const connected = tp.isPaired?.();  // device en memoria = GATT abierto
     document.querySelectorAll('[data-thermal-status]').forEach(el => {
-      if (connected && info) {
-        // Verde: emparejada y conectada. En cualquier ?print_after el
-        // ticket sale silencioso sin ninguna interacción.
-        el.textContent = `🟢 ${info.name}`;
+      if (tp && tp.isPaired()) {
+        const info = tp.getPairInfo() || {};
+        el.textContent = `🟢 ${info.name || 'BT'}`;
         el.dataset.paired = 'true';
         el.title = 'Impresora conectada. Los tickets salen automáticos.';
-      } else if (info) {
-        // Amarillo: hay hint guardado (se emparejó alguna vez) pero
-        // ahora no hay conexión activa. En moderna, un toque intenta
-        // restore; en vieja, un toque re-pairea rápido.
-        el.textContent = persistent ? `🟡 ${info.name} · reconectar` : `🟡 ${info.name} · reconectar`;
-        el.dataset.paired = 'false';
-        el.title = 'Impresora recordada pero desconectada. Toca para reconectar.';
       } else {
-        // Azul: nunca se emparejó. Toca para emparejar por primera vez.
         el.textContent = '🔵 Emparejar impresora';
         el.dataset.paired = 'false';
-        el.title = persistent
+        el.title = hasPersistentBT()
           ? 'Toca para emparejar. Tras la primera vez, tu tablet reconecta sola tras F5.'
-          : 'Toca para emparejar. Este navegador olvida el emparejamiento al recargar la página.';
+          : 'Toca para emparejar. Este navegador olvida el emparejamiento al recargar.';
       }
     });
   }
 
-  /* Detección del entorno para logs y decisiones de flujo. Volcado a
-     consola en cada carga operativa — útil para diagnosticar por qué
-     un dispositivo no auto-imprime. */
-  function logPrintEnvironment() {
-    if (!body.classList.contains('operational-view')) return;
-    const ua = navigator.userAgent || '';
-    const androidM = ua.match(/Android (\d+(?:\.\d+)?)/);
-    const chromeM = ua.match(/Chrom(?:e|ium)\/(\d+)/);
-    const info = {
-      ua,
-      android: androidM ? androidM[1] : null,
-      chromium: chromeM ? parseInt(chromeM[1], 10) : null,
-      webBluetooth: 'bluetooth' in navigator,
-      getDevices: !!(navigator.bluetooth && typeof navigator.bluetooth.getDevices === 'function'),
-      persistente: browserSupportsPersistentBT(),
-      hint: window.ThermalPrinter?.getPairInfo?.() || null,
-    };
-    console.info('[thermal-env]', info);
-    if (info.webBluetooth && !info.getDevices) {
-      console.warn(
-        '[thermal-env] Este navegador NO soporta reconexión BT automática.',
-        'Considera activar chrome://flags/#enable-web-bluetooth-new-permissions-backend',
-        'o instalar Cromite / Brave / Chrome 122+ para auto-print sin re-pairing.',
-      );
-    }
-  }
   document.addEventListener('click', async (event) => {
-    const btn = event.target.closest('[data-pair-thermal]');
+    const btn = event.target.closest('.thermal-pair-chip');
     if (!btn) return;
-    const mode = btn.dataset.pairThermal;
     const tp = window.ThermalPrinter;
     if (!tp) return;
+    if (tp.isPaired()) {
+      // Ya conectada: dar feedback y salir.
+      const orig = btn.textContent;
+      btn.textContent = '🟢 Conectada';
+      setTimeout(() => { btn.textContent = orig; refreshChip(); }, 1200);
+      return;
+    }
     btn.disabled = true;
     const orig = btn.textContent;
     try {
-      // Optimización: si ya está conectada, no hacemos nada — sólo
-      // confirmamos visualmente.
-      if (tp.isPaired && tp.isPaired()) {
-        btn.textContent = '🟢 Ya conectada';
-        refreshThermalStatus();
-        setTimeout(() => { btn.textContent = orig; }, 1400);
-        return;
-      }
-      // Si hay hint guardado + soporte de getDevices, primer intento
-      // es restore silencioso (sin diálogo BT). Sólo si eso falla
-      // caemos a pairBT que sí muestra el selector nativo.
-      const hint = tp.getPairInfo && tp.getPairInfo();
-      if (mode === 'bt' && hint && browserSupportsPersistentBT() && tp.restoreBT) {
+      // Primer intento: restore silencioso si tenemos hint.
+      if (tp.getPairInfo() && hasPersistentBT()) {
         btn.textContent = 'Reconectando…';
-        try {
-          await tp.restoreBT();
-          if (tp.isPaired && tp.isPaired()) {
-            btn.textContent = `🟢 ${(tp.getPairInfo() || {}).name || 'BT'}`;
-            refreshThermalStatus();
-            setTimeout(() => { btn.textContent = orig; refreshThermalStatus(); }, 1400);
-            return;
-          }
-        } catch (_) { /* fallback a pairBT */ }
+        try { await tp.restoreBT(); } catch (_) {}
+        if (tp.isPaired()) {
+          refreshChip();
+          return;
+        }
       }
+      // Segundo intento: pairBT() abre el diálogo BT del sistema.
       btn.textContent = 'Emparejando…';
-      const info = mode === 'bt' ? await tp.pairBT() : await tp.pairUSB();
-      btn.textContent = `✅ ${info.name}`;
-      refreshThermalStatus();
-      setTimeout(() => { btn.textContent = orig; refreshThermalStatus(); }, 1400);
+      await tp.pairBT();
+      refreshChip();
     } catch (err) {
-      console.warn('[thermal-pair] falló:', err);
-      alert(err.message || 'No se pudo emparejar la impresora.');
+      alert(err.message || 'No se pudo emparejar.');
       btn.textContent = orig;
     } finally {
       btn.disabled = false;
     }
   });
+
+  // Logging de entorno en cada carga operativa. Volcamos a consola para
+  // diagnóstico sin acceso remoto al device.
+  function logEnv() {
+    if (!body.classList.contains('operational-view')) return;
+    const ua = navigator.userAgent || '';
+    const android = (ua.match(/Android (\d+(?:\.\d+)?)/) || [])[1] || null;
+    const chromium = parseInt((ua.match(/Chrom(?:e|ium)\/(\d+)/) || [])[1] || '0', 10) || null;
+    const info = {
+      android, chromium,
+      webBluetooth: hasBT(),
+      getDevices: hasPersistentBT(),
+      hint: window.ThermalPrinter?.getPairInfo?.() || null,
+    };
+    log('env', info);
+    if (info.webBluetooth && !info.getDevices) {
+      console.warn('[thermal] Este navegador NO soporta reconexión BT automática. '
+        + 'Activa chrome://flags/#enable-web-bluetooth-new-permissions-backend '
+        + 'o usa Chrome 122+ / Cromite / Brave.');
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', async () => {
-    ensureThermalPairChip();
-    logPrintEnvironment();
-    // Refresh inicial inmediato (aún sin restore) para mostrar algo.
-    refreshThermalStatus();
-    // Después esperamos al restore para reflejar el estado real.
+    ensureChip();
+    logEnv();
+    // Esperamos al restore inicial y actualizamos el chip UNA vez con
+    // el estado real. Antes hacíamos 2 refreshes (antes y después) que
+    // solo servía para parpadear del azul al verde.
     if (window.ThermalPrinter?.ready) {
       try { await window.ThermalPrinter.ready; } catch (_) {}
-      refreshThermalStatus();
     }
+    refreshChip();
   });
 
-  /* Compactación de tarjetas operativas.
+  /* ────────────────────────────────────────────────────────────────
+     COMPACTACIÓN DE TARJETAS OPERATIVAS
      Cada `.work-card` en un panel operativo se pliega mostrando solo la
-     cabecera (número, cliente, hora, badges); items, notas y acciones se
-     ocultan tras un toggle. Motivación: preparador y repartidor ven decenas
-     de pedidos y se abruman. Estado (abierto/cerrado) persiste en
-     sessionStorage por número de pedido para que un F5 no cambie lo que el
-     operador ya había expandido.
-     NO altera la estructura HTML por servidor — es progressive enhancement,
-     así si el JS falla la pantalla sigue funcional. */
+     cabecera; items/notas/acciones ocultas tras un toggle. Progressive
+     enhancement: si el JS falla la pantalla sigue funcional.
+  ─────────────────────────────────────────────────────────────────*/
   const DETAIL_SELECTOR = [
     '.work-items',
     '.work-box',
@@ -530,7 +325,6 @@
     const codeEl = card.querySelector('.work-order-code');
     const code = codeEl ? codeEl.textContent.trim() : '';
     if (code) return 'oxidian.card.open:' + code;
-    // Fallback: created timestamp + path (peor, pero no crashea).
     return 'oxidian.card.open:' + location.pathname + ':' + (card.dataset.created || '');
   }
 
@@ -549,14 +343,14 @@
 
   function initCollapsibleCards(scope) {
     if (!body.classList.contains('operational-view')) return;
-    const root = scope || document;
-    root.querySelectorAll('.work-lane').forEach(ensureLaneToggleAll);
-    root.querySelectorAll('.work-card').forEach((card) => {
+    const rootScope = scope || document;
+    rootScope.querySelectorAll('.work-lane').forEach(ensureLaneToggleAll);
+    rootScope.querySelectorAll('.work-card').forEach((card) => {
       if (card.dataset.collapsibleInit === '1') return;
       const detailNodes = Array.from(card.children).filter(
         (child) => child.matches && child.matches(DETAIL_SELECTOR),
       );
-      if (!detailNodes.length) return; // Sin detalle: no vale la pena colapsar.
+      if (!detailNodes.length) return;
       card.dataset.collapsibleInit = '1';
 
       const bodyWrap = document.createElement('div');
@@ -574,41 +368,34 @@
       const key = collapseKey(card);
       let open = false;
       try { open = sessionStorage.getItem(key) === '1'; } catch (_) {}
-      applyState(card, toggle, open);
+      applyCardState(card, toggle, open);
 
-      // Click en el área de resumen (cualquier lugar de la tarjeta EXCEPTO
-      // dentro del body de detalle o de un control interactivo interno).
       card.addEventListener('click', (event) => {
         if (event.target.closest('.work-card-body')) return;
         if (event.target.closest('form, button, a, input, label, select, textarea')) return;
         const nextOpen = card.classList.contains('is-collapsed');
-        applyState(card, toggle, nextOpen);
+        applyCardState(card, toggle, nextOpen);
         try { sessionStorage.setItem(key, nextOpen ? '1' : '0'); } catch (_) {}
       });
       toggle.addEventListener('click', (event) => {
         event.stopPropagation();
         const nextOpen = card.classList.contains('is-collapsed');
-        applyState(card, toggle, nextOpen);
+        applyCardState(card, toggle, nextOpen);
         try { sessionStorage.setItem(key, nextOpen ? '1' : '0'); } catch (_) {}
       });
     });
   }
 
-  function applyState(card, toggle, open) {
+  function applyCardState(card, toggle, open) {
     card.classList.toggle('is-collapsed', !open);
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
   document.addEventListener('DOMContentLoaded', () => initCollapsibleCards());
-  // Re-inicializar tras auto-refresh que reemplace nodos por AJAX (repartidor
-  // y preparador aún recargan la página entera, pero por si en el futuro se
-  // introduce swap parcial dejamos este hook idempotente).
   document.addEventListener('oxidian:cards-updated', (event) => {
     initCollapsibleCards(event.detail && event.detail.scope);
   });
 
-  /* Botón "Expandir/Plegar todo" por carril: al pulsarlo se cambia el estado
-     de todas las tarjetas del `.work-lane` en el que vive el botón. */
   document.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-cards-toggle-all]');
     if (!btn) return;
@@ -618,7 +405,7 @@
     cards.forEach((card) => {
       const toggle = card.querySelector('.work-card-toggle');
       if (!toggle) return;
-      applyState(card, toggle, anyCollapsed);
+      applyCardState(card, toggle, anyCollapsed);
       try { sessionStorage.setItem(collapseKey(card), anyCollapsed ? '1' : '0'); } catch (_) {}
     });
     btn.textContent = anyCollapsed ? 'Plegar todo' : 'Expandir todo';
