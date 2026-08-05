@@ -1770,7 +1770,7 @@ def api_check_address():
 @csrf.exempt
 @limiter.limit("30 per minute") if limiter else (lambda f: f)
 def api_geocode_suggest():
-    """Proxy a Nominatim para autocompletado de direcciones en checkout.
+    """Proxy Photon + Nominatim (OSM, ambos gratis) para autocompletado.
 
     Devuelve hasta 5 sugerencias acotadas al bbox del negocio (viewbox
     calculado desde CENTRO_LAT/CENTRO_LON + RADIO_ENTREGA_KM en SiteConfig).
@@ -1834,15 +1834,58 @@ def api_geocode_suggest():
             )
             return r.json() if r.ok else []
 
-        # Estrategia dual — Nominatim retorna resultados MUCHO más precisos
-        # (con `house_number` poblado) usando búsqueda ESTRUCTURADA cuando
-        # detectamos un número al final del texto del cliente.
-        # 1. Extraemos número si existe: "Calle Andalucía 20" → street="20 Calle Andalucía"
-        # 2. Búsqueda estructurada preferente
-        # 3. Fallback libre si estructurada devolvió 0 resultados
+        def _do_photon(query):
+            # Photon (photon.komoot.io) es gratis, opensource y está optimizado
+            # para autocompletado en tiempo real. Sesga por lat/lon → puntúa mejor
+            # las direcciones cercanas al negocio. Devuelve GeoJSON; lo mapeamos
+            # al formato de Nominatim para reutilizar el pipeline de filtrado.
+            params = {"q": query, "limit": 8, "lang": "es"}
+            if centro_lat is not None and centro_lon is not None:
+                params["lat"] = centro_lat
+                params["lon"] = centro_lon
+            try:
+                r = _req.get(
+                    "https://photon.komoot.io/api/",
+                    params=params,
+                    headers={"User-Agent": user_agent, "Accept-Language": "es"},
+                    timeout=5,
+                )
+                if not r.ok:
+                    return []
+                data = r.json() or {}
+            except Exception:
+                return []
+            out = []
+            for feat in data.get("features", []) or []:
+                props = feat.get("properties", {}) or {}
+                coords = (feat.get("geometry") or {}).get("coordinates") or []
+                if len(coords) < 2:
+                    continue
+                lon, lat = coords[0], coords[1]
+                out.append({
+                    "lat": lat, "lon": lon,
+                    "display_name": ", ".join(filter(None, [
+                        props.get("name"), props.get("street"),
+                        props.get("housenumber"), props.get("city") or props.get("town"),
+                    ])),
+                    "address": {
+                        "road": props.get("street") or props.get("name"),
+                        "house_number": props.get("housenumber"),
+                        "city": props.get("city"),
+                        "town": props.get("town"),
+                        "village": props.get("village"),
+                        "municipality": props.get("county"),
+                    },
+                })
+            return out
+
+        # Estrategia en cascada — Photon (autocompletado real) primero,
+        # Nominatim estructurada después (si hay número), Nominatim libre
+        # como último recurso. Photon puntúa por proximidad al centro del
+        # negocio así que ya llega ordenado por relevancia local.
         num_match = _re.search(r"(.+?)\s+(\d+[a-zA-Z]?)\s*$", q)
-        hits = []
-        if num_match:
+        hits = _do_photon(q) or []
+        if not hits and num_match:
             calle_raw = num_match.group(1).strip()
             numero = num_match.group(2).strip()
             structured = {"street": f"{numero} {calle_raw}"}
@@ -1853,7 +1896,6 @@ def api_geocode_suggest():
             if pais:
                 structured["country"] = pais
             hits = _do_nominatim(structured) or []
-        # Fallback / búsqueda sin número
         if not hits:
             hits = _do_nominatim({"q": q}) or []
     except Exception:
