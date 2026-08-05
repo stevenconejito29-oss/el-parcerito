@@ -234,6 +234,19 @@ class User(UserMixin, db.Model):
         db.session.add(log)
 
     def canjear_puntos(self, cantidad, pedido_id=None):
+        # Re-fetch bajo lock para evitar race condition: dos checkouts del
+        # mismo cliente en paralelo veían el mismo `self.puntos` inicial y
+        # ambos restaban, permitiendo canjear el doble de lo disponible.
+        # `SELECT ... FOR UPDATE` serializa las dos transacciones a nivel
+        # BD hasta commit. Si `self` ya fue leído con FOR UPDATE en el
+        # request actual, la segunda llamada es un no-op del lock (mismo
+        # tx). Si se llamó sin lock, esto lo repara.
+        locked = User.query.filter_by(id=self.id).with_for_update().first()
+        if locked is None:
+            raise ValueError("Cliente no encontrado para canje.")
+        # Sincronizamos el atributo `puntos` con la lectura fresca bajo
+        # lock — si el ORM tenía un valor obsoleto en caché, se refresca.
+        self.puntos = locked.puntos
         if cantidad > self.puntos:
             raise ValueError("Puntos insuficientes")
         self.puntos -= cantidad
