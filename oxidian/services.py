@@ -27,6 +27,7 @@ from models import (
     OrderEvent,
     OrderItem,
     Product,
+    Proveedor,
     StaffPayment,
     User,
     normalizar_metodo_pago,
@@ -1089,6 +1090,91 @@ def _revertir_comisiones_pedido(pedido: Order) -> None:
         db.session.delete(pago)
 
 
+def _revertir_liquidacion_socio_pedido(pedido: Order) -> None:
+    """Registra una reversión de la obligación al socio para un pedido
+    cancelado POST-ENTREGA.
+
+    Escenario: pedido entregado el 1-agosto → se le liquidó al socio €80
+    en el cierre del 5-agosto → cliente reclama el 10-agosto → admin
+    cancela con `forzar_desde_entregado=True` → caja se revierte al
+    cliente. Antes: el StaffPayment histórico se quedaba intacto y el
+    próximo cálculo de liquidación no restaba nada porque el pedido ya
+    no aparecía como "entregado" en la ventana. Resultado: descuadre
+    permanente del importe pagado al socio por una venta reembolsada.
+
+    Ahora: creamos un `StaffPayment(tipo="liquidacion_reverso")` con la
+    obligación exacta calculada del snapshot del pedido, apuntando al
+    mismo período histórico. `calcular_liquidaciones_proveedores` lo
+    resta del `bucket["registrado"]` en ese período.
+
+    Idempotente: si ya existe un reverso para este pedido no crea otro.
+    Silencioso: si el pedido no tuvo obligación al socio (venta 100%
+    propia) no hace nada.
+    """
+    from models import StaffPayment
+    items = OrderItem.query.filter_by(pedido_id=pedido.id).all()
+    if not items:
+        return
+    bruto_items = sum(Decimal(str(item.subtotal or 0)) for item in items)
+    descuento = min(Decimal(str(pedido.descuento or 0)), bruto_items)
+    # Agrupa la obligación por proveedor (un pedido puede tener items
+    # de propio + socio + otro bar mixto, aunque hoy la mezcla del socio
+    # se coerciona a "propio" — de todos modos calculamos por seguridad).
+    obligaciones_por_prov = {}
+    for item in items:
+        bruto = Decimal(str(item.subtotal or 0))
+        descuento_linea = (
+            (descuento * bruto / bruto_items) if bruto_items > 0 else Decimal("0")
+        )
+        venta_neta = max(Decimal("0"), bruto - descuento_linea)
+        obl = _obligacion_linea_proveedor(item, venta_neta)
+        if not obl or obl["incompleto"]:
+            continue
+        pid = obl["proveedor_id"]
+        obligaciones_por_prov[pid] = (
+            obligaciones_por_prov.get(pid, Decimal("0")) + obl["obligacion"]
+        )
+    if not obligaciones_por_prov:
+        return
+    fecha_ref = pedido.entregado_en or utcnow()
+    concepto_ref = f"Reverso cancel post-entrega pedido #{pedido.numero_pedido}"
+    for pid, total in obligaciones_por_prov.items():
+        if total <= 0:
+            continue
+        proveedor = db.session.get(Proveedor, pid)
+        if not proveedor:
+            continue
+        operador = proveedor.operadores.filter_by(activo=True).order_by(User.id).first()
+        if not operador:
+            # Sin operador al que descontar, dejamos evidencia en log —
+            # el admin lo verá al re-calcular liquidaciones (aparecerá
+            # como pendiente_registrar de importe negativo).
+            logger.warning(
+                "reverso liquidacion pedido %s prov %s: sin operador activo, "
+                "no se registra StaffPayment (descuadre pendiente de resolver)",
+                pedido.id, pid,
+            )
+            continue
+        # Idempotencia: si ya existe un reverso para este pedido y este
+        # proveedor, no lo duplicamos.
+        existe = StaffPayment.query.filter(
+            StaffPayment.tipo == "liquidacion_reverso",
+            StaffPayment.user_id == operador.id,
+            StaffPayment.concepto.contains(f"pedido #{pedido.numero_pedido}"),
+        ).first()
+        if existe:
+            continue
+        db.session.add(StaffPayment(
+            user_id=operador.id,
+            tipo="liquidacion_reverso",
+            monto=total.quantize(Decimal("0.01")),
+            concepto=concepto_ref + f" (proveedor: {proveedor.nombre})",
+            periodo_inicio=fecha_ref.date() if hasattr(fecha_ref, "date") else fecha_ref,
+            periodo_fin=fecha_ref.date() if hasattr(fecha_ref, "date") else fecha_ref,
+            origen=origen_liquidacion_proveedor(proveedor.id),
+        ))
+
+
 def _ejecutar_cancelacion_pedido(
     pedido: Order,
     forzar_desde_entregado: bool = False,
@@ -1104,6 +1190,7 @@ def _ejecutar_cancelacion_pedido(
         raise ValueError("El pedido ya está cancelado")
     if pedido.estado == "entregado" and not forzar_desde_entregado:
         raise ValueError("No se puede cancelar un pedido ya entregado")
+    fue_entregado = (pedido.estado == "entregado")
     _restaurar_stock_pedido(pedido)
     _liberar_tandas_pedido(pedido)
     _revertir_puntos_pedido(pedido)
@@ -1121,6 +1208,19 @@ def _ejecutar_cancelacion_pedido(
         if not uso_pagado:
             pedido.afiliado_codigo_rel.revertir_uso()
     _revertir_comisiones_pedido(pedido)
+    # Reverso de liquidación al socio SOLO si estaba entregado: para
+    # pedidos pre-entrega la obligación aún no se registró como pago,
+    # así que basta con restaurar stock. Post-entrega ya pudo haberse
+    # liquidado y hay que compensar contablemente.
+    if fue_entregado and forzar_desde_entregado:
+        try:
+            _revertir_liquidacion_socio_pedido(pedido)
+        except Exception:
+            logger.exception(
+                "reverso liquidacion pedido %s falló — descuadre potencial "
+                "pendiente de conciliación manual",
+                pedido.id,
+            )
     # Un pedido terminal no debe conservar secretos de entrega. Esto también
     # cubre cancelaciones administrativas excepcionales desde reparto.
     pedido.codigo_confirmacion = None
@@ -3182,6 +3282,21 @@ def _obligacion_linea_proveedor(item, venta_neta: Decimal) -> dict | None:
         proveedor_id = int(snapshot.get("proveedor_despachador_id") or 0)
     except (TypeError, ValueError):
         proveedor_id = 0
+    # Fallback: si el snapshot no congeló proveedor (típico de pedidos
+    # anteriores al fix del snapshot 2026-07 o metadata dañada), leemos
+    # del producto vivo como referencia. Marcamos `sin_snapshot=True`
+    # para que la línea aparezca en el bucket de revisión del admin en
+    # vez de desaparecer silenciosamente. Antes se retornaba None → el
+    # cliente pagó, el socio nunca cobró, la tienda se quedaba con el
+    # 100% por accidente. Ahora la línea es visible y el admin decide
+    # si liquidarla manualmente o dejarla pendiente.
+    sin_snapshot = False
+    if not proveedor_id and item.producto_id:
+        from models import Product as _Product
+        _p = db.session.get(_Product, item.producto_id)
+        if _p and _p.proveedor_despachador_id:
+            proveedor_id = _p.proveedor_despachador_id
+            sin_snapshot = True
     if not proveedor_id:
         return None
 
@@ -3233,8 +3348,9 @@ def _obligacion_linea_proveedor(item, venta_neta: Decimal) -> dict | None:
         "modelo": modelo,
         "comision_pct": comision,
         "obligacion": obligacion.quantize(Decimal("0.01")),
-        "estimado": estimado,
-        "incompleto": incompleto,
+        "estimado": estimado or sin_snapshot,
+        "incompleto": incompleto or sin_snapshot,
+        "sin_snapshot": sin_snapshot,
     }
 
 
@@ -3335,6 +3451,7 @@ def calcular_liquidaciones_proveedores(
                 "fecha_operacion": fecha_operacion,
                 "estimado": obligacion["estimado"],
                 "incompleto": obligacion["incompleto"],
+                "sin_snapshot": obligacion.get("sin_snapshot", False),
             }
             if obligacion["incompleto"]:
                 bucket["sin_costo"].append(linea)
@@ -3393,12 +3510,31 @@ def calcular_liquidaciones_proveedores(
                 StaffPayment.periodo_inicio == fecha_inicio,
                 StaffPayment.periodo_fin == fecha_fin,
             ).all()
-            bucket["registrado"] = sum(
+            # Reversos por cancelaciones post-entrega: monto positivo pero
+            # restado. Filtro por concepto (contiene "pedido #") + tipo
+            # dedicado. NO exige coincidencia estricta de período porque
+            # el reverso se registra con la fecha original de entrega del
+            # pedido cancelado, que puede caer fuera del período que el
+            # admin visualiza actualmente.
+            reversos = StaffPayment.query.filter(
+                StaffPayment.tipo == "liquidacion_reverso",
+                filtro_propietario,
+                StaffPayment.periodo_inicio >= fecha_inicio,
+                StaffPayment.periodo_fin <= fecha_fin,
+            ).all()
+            total_registrado = sum(
                 Decimal(str(pago.monto or 0)) for pago in pagos
             )
+            total_reversos = sum(
+                Decimal(str(pago.monto or 0)) for pago in reversos
+            )
+            bucket["registrado"] = total_registrado - total_reversos
             bucket["pagado"] = sum(
                 Decimal(str(pago.monto or 0)) for pago in pagos if pago.pagado
+            ) - sum(
+                Decimal(str(pago.monto or 0)) for pago in reversos if pago.pagado
             )
+            bucket["reversos"] = total_reversos
             bucket["programado"] = bucket["registrado"] - bucket["pagado"]
             bucket["pendiente_registrar"] = max(
                 Decimal("0"), bucket["total"] - bucket["registrado"]

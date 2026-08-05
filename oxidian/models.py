@@ -334,13 +334,20 @@ TIPOS_STAFF_PAYMENT = frozenset({
     "adelanto",
     "descuento",
     "liquidacion_proveedor",
+    # Reverso positivo: mismo `monto >= 0` que las demás filas pero la
+    # query de liquidaciones lo SUMA con signo negativo al `registrado`.
+    # Se genera automáticamente cuando un pedido ya entregado se cancela
+    # (refund post-entrega), evitando que el socio quede con dinero por
+    # una venta que se reembolsó al cliente.
+    "liquidacion_reverso",
 })
 
 # Subconjunto autorizado para creación manual desde el panel admin.
-# `liquidacion_proveedor` la genera el sistema al cerrar liquidaciones y no
-# debe ser insertable a mano — se excluye explícitamente aquí para no
-# tener que recordarlo en cada form.
-TIPOS_STAFF_PAYMENT_MANUAL = TIPOS_STAFF_PAYMENT - {"liquidacion_proveedor"}
+# `liquidacion_proveedor` y `liquidacion_reverso` los genera el sistema
+# — no deben ser insertables desde el form.
+TIPOS_STAFF_PAYMENT_MANUAL = TIPOS_STAFF_PAYMENT - {
+    "liquidacion_proveedor", "liquidacion_reverso",
+}
 
 
 # ─────────────────────────────────────────────

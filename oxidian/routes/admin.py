@@ -2035,6 +2035,23 @@ def liquidacion_proveedores():
         if not prov_id or monto_decimal <= 0:
             flash("Selecciona un proveedor y un monto válido.", "danger")
         else:
+            # Advisory lock por proveedor: serializa cualquier liquidación
+            # concurrente sobre el mismo proveedor a nivel BD. Sin esto, dos
+            # admins pulsando "Liquidar" simultáneamente veían ambos el
+            # mismo `pendiente=€100` y creaban 2 StaffPayment de €100 cada
+            # uno → socio cobraba €200 por €100 reales. El
+            # `with_for_update()` sobre `Proveedor` no bastaba porque el
+            # cálculo agregado hace SELECT sobre Order/OrderItem/StaffPayment
+            # sin lock. `pg_advisory_xact_lock` se auto-libera al COMMIT o
+            # ROLLBACK. Hash consistente entre procesos: mismo prov_id →
+            # misma clave numérica.
+            from sqlalchemy import text as _sqltext
+            _lock_key = (0x4C495155 << 32) | (int(prov_id) & 0xFFFFFFFF)
+            # LIQU en ASCII como namespace + prov_id en los bits bajos.
+            # Convertimos a int64 con signo (PostgreSQL bigint).
+            if _lock_key >= (1 << 63):
+                _lock_key -= (1 << 64)
+            db.session.execute(_sqltext("SELECT pg_advisory_xact_lock(:k)"), {"k": _lock_key})
             proveedor = (
                 Proveedor.query.filter_by(id=prov_id, activo=True)
                 .with_for_update()
@@ -2055,8 +2072,9 @@ def liquidacion_proveedores():
                     fecha_inicio=fecha_inicio_str,
                     fecha_fin=fecha_fin_str,
                 ))
-            # Recalculamos dentro del bloqueo para que un doble clic o dos
-            # administradores nunca registren más de lo realmente pendiente.
+            # Recalculamos dentro del lock advisory + row-level. Cualquier
+            # otra tx que intente pg_advisory_xact_lock del mismo prov_id
+            # se bloquea aquí hasta que hagamos commit.
             bucket = calcular_liquidaciones_proveedores(
                 fecha_inicio, fecha_fin, proveedor_id=prov_id
             )["por_proveedor"].get(prov_id)
