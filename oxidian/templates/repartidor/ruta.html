@@ -269,6 +269,9 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="work-btn work-btn-info">Salir con seleccionados</button>
       </form>
+      <button type="button" class="work-btn work-btn-info" data-open-maps-route="listos">
+        🧭 Ruta en Maps
+      </button>
       <span class="text-sm text-muted" style="margin-left:auto">Marca los pedidos de tu ruta y elige la acción.</span>
     </div>
     {% endif %}
@@ -308,7 +311,11 @@
         {%- endif -%}
       {%- endfor -%}
       <article class="work-card work-card--tight is-success"
-               data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+               data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+               data-pedido-id="{{ pedido.id }}"
+               data-lat="{{ pedido.direccion_lat if pedido.direccion_lat is not none else '' }}"
+               data-lng="{{ pedido.direccion_lng if pedido.direccion_lng is not none else '' }}"
+               data-address="{{ pedido.direccion_entrega or '' }}">
         <div class="work-order-head">
           <div>
             <span class="work-order-code is-success">{{ pedido.numero_pedido }}</span>
@@ -483,6 +490,15 @@
       </div>
       <span class="work-count">{{ en_ruta|length }}</span>
     </div>
+    {% if en_ruta|length > 1 %}
+    <div class="route-multi-bar" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.25rem 0 .75rem;padding:.55rem .7rem;border-radius:.55rem;background:color-mix(in srgb,var(--brand-accent,#003087) 8%,transparent);border:1px solid color-mix(in srgb,var(--brand-accent,#003087) 22%,transparent)">
+      <span style="font-weight:700">🗺️ Ruta múltiple ({{ en_ruta|length }} paradas):</span>
+      <button type="button" class="work-btn work-btn-info" data-open-maps-route="en_ruta">
+        🧭 Abrir ruta completa en Maps
+      </button>
+      <span class="text-sm text-muted" style="margin-left:auto">Se optimiza el orden desde tu ubicación actual.</span>
+    </div>
+    {% endif %}
     <div class="work-list">
 
     {% for pedido in en_ruta %}
@@ -506,7 +522,11 @@
       {%- endif -%}
     {%- endfor -%}
     <article class="work-card work-card--tight is-info"
-             data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+             data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+             data-pedido-id="{{ pedido.id }}"
+             data-lat="{{ pedido.direccion_lat if pedido.direccion_lat is not none else '' }}"
+             data-lng="{{ pedido.direccion_lng if pedido.direccion_lng is not none else '' }}"
+             data-address="{{ pedido.direccion_entrega or '' }}">
       <div class="work-order-head">
         <div class="flex items-center gap-2">
           <span class="work-order-code is-info">{{ pedido.numero_pedido }}</span>
@@ -780,6 +800,136 @@ document.addEventListener('change', (event) => {
     `[data-route-mirror="${CSS.escape(selector.dataset.routeSelect)}"]`
   );
   if (mirror) mirror.checked = selector.checked;
+});
+
+/* ──────────────────────────────────────────────────────────────
+   RUTA MÚLTIPLE EN GOOGLE MAPS
+   El botón "🧭 Abrir ruta en Maps" recopila las paradas del scope
+   ("listos" = pedidos marcados con checkbox / "en_ruta" = todas las
+   cards de la sección En ruta), optimiza el orden por vecino más
+   cercano desde la posición GPS del repartidor si la concede, y
+   abre la app de Maps con los waypoints. Dentro de Maps el driver
+   puede pulsar "Optimizar" para re-ordenar si lo desea.
+   ────────────────────────────────────────────────────────────── */
+function collectStopsFromScope(scope) {
+  let cards = [];
+  if (scope === 'listos') {
+    // Solo los pedidos con checkbox marcado
+    const ids = Array.from(document.querySelectorAll(
+      '[data-route-select]:checked'
+    )).map(cb => cb.value);
+    if (!ids.length) return [];
+    ids.forEach(id => {
+      const card = document.querySelector(
+        `[data-pedido-id="${CSS.escape(id)}"]`
+      );
+      if (card) cards.push(card);
+    });
+  } else if (scope === 'en_ruta') {
+    // Todas las cards dentro del panel "En ruta"
+    const lane = document.querySelector('.route-lane--active');
+    if (!lane) return [];
+    cards = Array.from(lane.querySelectorAll('[data-pedido-id]'));
+  }
+  return cards.map(c => ({
+    id: c.dataset.pedidoId,
+    lat: parseFloat(c.dataset.lat),
+    lng: parseFloat(c.dataset.lng),
+    address: c.dataset.address || '',
+  })).filter(s => (Number.isFinite(s.lat) && Number.isFinite(s.lng)) || s.address);
+}
+
+function haversineKm(a, b) {
+  const R = 6371, toR = d => d * Math.PI / 180;
+  const dLat = toR(b.lat - a.lat), dLng = toR(b.lng - a.lng);
+  const h = Math.sin(dLat/2)**2 +
+            Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function nearestNeighborOrder(origin, stops) {
+  // Greedy TSP heurístico: siempre elige la parada más cercana. Rápido y
+  // suficientemente bueno para 2–8 paradas (Maps luego permite "Optimizar").
+  const remaining = stops.slice();
+  const ordered = [];
+  let current = origin;
+  while (remaining.length) {
+    let bestIdx = 0, bestD = Infinity;
+    remaining.forEach((s, i) => {
+      if (!Number.isFinite(s.lat) || !Number.isFinite(s.lng)) return;
+      const d = haversineKm(current, s);
+      if (d < bestD) { bestD = d; bestIdx = i; }
+    });
+    const next = remaining.splice(bestIdx, 1)[0];
+    ordered.push(next);
+    if (Number.isFinite(next.lat) && Number.isFinite(next.lng)) current = next;
+  }
+  return ordered;
+}
+
+function stopToParam(s) {
+  // Preferimos coords (precisas); si no hay, la dirección literal.
+  if (Number.isFinite(s.lat) && Number.isFinite(s.lng)) return `${s.lat},${s.lng}`;
+  return s.address;
+}
+
+function buildMapsRouteUrl(origin, stops) {
+  if (!stops.length) return null;
+  const dest = stops[stops.length - 1];
+  const waypoints = stops.slice(0, -1);
+  const params = new URLSearchParams({
+    api: '1',
+    destination: stopToParam(dest),
+    travelmode: 'driving',
+  });
+  if (waypoints.length) {
+    params.set('waypoints', waypoints.map(stopToParam).join('|'));
+  }
+  if (origin) params.set('origin', `${origin.lat},${origin.lng}`);
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+function openMultiStopRoute(scope) {
+  const stops = collectStopsFromScope(scope);
+  if (!stops.length) {
+    alert(scope === 'listos'
+      ? 'Marca al menos un pedido de la lista para incluir en la ruta.'
+      : 'No hay pedidos en ruta ahora mismo.');
+    return;
+  }
+  if (stops.length === 1) {
+    // Un solo destino: sin waypoints, ruta directa
+    const url = buildMapsRouteUrl(null, stops);
+    if (url) window.open(url, '_blank', 'noopener');
+    return;
+  }
+  const openWith = origin => {
+    const ordered = origin
+      ? nearestNeighborOrder(origin, stops)
+      : stops;  // sin GPS respetamos el orden natural (por creación)
+    const url = buildMapsRouteUrl(origin, ordered);
+    if (url) window.open(url, '_blank', 'noopener');
+  };
+  if (!navigator.geolocation) { openWith(null); return; }
+  // Timeout corto: si el GPS tarda, abrimos sin optimizar para no bloquear
+  let done = false;
+  const fallback = setTimeout(() => { if (!done) { done = true; openWith(null); } }, 3500);
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      if (done) return;
+      done = true; clearTimeout(fallback);
+      openWith({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    },
+    _err => { if (done) return; done = true; clearTimeout(fallback); openWith(null); },
+    { enableHighAccuracy: true, timeout: 3000, maximumAge: 30000 }
+  );
+}
+
+document.addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-open-maps-route]');
+  if (!btn) return;
+  event.preventDefault();
+  openMultiStopRoute(btn.dataset.openMapsRoute);
 });
 
 // Semáforo de urgencia: pedidos que llevan demasiado tiempo asignados.
