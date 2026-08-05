@@ -2114,18 +2114,107 @@ async function humanizedTypingDelay(target, text, evolutionUrl, evolutionInstanc
   const totalMs = Math.min(HUMANIZE_MAX_MS, Math.floor(raw * jitterFactor));
   if (totalMs <= 0) return;
 
-  // Presencia "composing" en Evolution — fire-and-forget, no bloquea si falla.
-  try {
-    const presenceUrl = `${evolutionUrl}/chat/sendPresence/${evolutionInstance}`;
-    fetch(presenceUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: evolutionKey },
-      body: JSON.stringify({ number: target, presence: 'composing', delay: totalMs }),
-      signal: AbortSignal.timeout(2000),
-    }).catch(() => {});
-  } catch (_) { /* silent */ }
+  const presenceUrl = `${evolutionUrl}/chat/sendPresence/${evolutionInstance}`;
+  const sendPresence = (presence, delay) => {
+    try {
+      fetch(presenceUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: evolutionKey },
+        body: JSON.stringify({ number: target, presence, delay }),
+        signal: AbortSignal.timeout(2000),
+      }).catch(() => {});
+    } catch (_) { /* silent */ }
+  };
 
+  // Para mensajes largos (>150 chars): typing en dos bursts con pausa
+  // de 400-900ms en medio. Humanos escribimos, paramos a leer/pensar,
+  // seguimos. El typing continuo de 4s ya empieza a parecer bot.
+  const BURST_THRESHOLD = 150;
+  if (length > BURST_THRESHOLD && totalMs > 1500) {
+    const firstMs = Math.floor(totalMs * (0.4 + Math.random() * 0.2)); // 40-60%
+    const pauseMs = 400 + Math.floor(Math.random() * 500); // 400-900ms
+    const secondMs = Math.max(300, totalMs - firstMs - pauseMs);
+    sendPresence('composing', firstMs);
+    await sleep(firstMs);
+    sendPresence('paused', pauseMs);
+    await sleep(pauseMs);
+    sendPresence('composing', secondMs);
+    await sleep(secondMs);
+    return;
+  }
+
+  sendPresence('composing', totalMs);
   await sleep(totalMs);
+}
+
+// ─── ANTI-BAN: LECTURA DE MENSAJES (SEEN) + READING DELAY + FIRST TOUCH ─────
+//
+// (E) READ RECEIPTS: envía "seen" al mensaje entrante después de un pequeño
+//     delay (200-800ms). Un bot que NUNCA marca leído es más sospechoso que
+//     un humano típico que abre el chat y ve el mensaje.
+//
+// (F) READING DELAY: antes de contestar, esperamos ms proporcional al
+//     texto del cliente (base 300 + 15/char, cap 4s). Simula que "leemos"
+//     antes de responder.
+//
+// (G) FIRST-TOUCH DELAY: la primera respuesta a un cliente en una sesión
+//     lleva 800-2500ms extra. Los humanos tardan más en el "hola" inicial
+//     (revisan quién es, contexto) que en respuestas ya en flujo.
+const READ_RECEIPT_ENABLED = String(process.env.BOT_READ_RECEIPT || '1') !== '0';
+const READING_DELAY_ENABLED = String(process.env.BOT_READING_DELAY || '1') !== '0';
+const READING_BASE_MS = parseInt(process.env.BOT_READING_BASE_MS || '300', 10);
+const READING_PER_CHAR_MS = parseInt(process.env.BOT_READING_PER_CHAR_MS || '15', 10);
+const READING_MAX_MS = parseInt(process.env.BOT_READING_MAX_MS || '4000', 10);
+const FIRST_TOUCH_MIN_MS = parseInt(process.env.BOT_FIRST_TOUCH_MIN_MS || '800', 10);
+const FIRST_TOUCH_MAX_MS = parseInt(process.env.BOT_FIRST_TOUCH_MAX_MS || '2500', 10);
+
+const _lastBotReplyAt = new Map(); // jid → timestamp last bot reply
+
+async function markInboundRead(jid, messageId) {
+  if (!READ_RECEIPT_ENABLED || !messageId) return;
+  const evolutionKey = getEvolutionKey();
+  const evolutionUrl = getEvolutionUrl();
+  const evolutionInstance = getEvolutionInstance();
+  if (!evolutionKey || !messageId) return;
+  // Delay 200-800ms antes de marcar leído — humano abre chat, tarda un
+  // momento en verlo. `read` inmediato o siempre igual = señal de bot.
+  const delayMs = 200 + Math.floor(Math.random() * 600);
+  setTimeout(() => {
+    try {
+      const url = `${evolutionUrl}/chat/markMessageAsRead/${evolutionInstance}`;
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: evolutionKey },
+        body: JSON.stringify({ readMessages: [{ id: messageId, remoteJid: jid, fromMe: false }] }),
+        signal: AbortSignal.timeout(3000),
+      }).catch((e) => log('info', 'read_receipt_fail', String(e).slice(0, 100)));
+    } catch (_) { /* silent */ }
+  }, delayMs);
+}
+
+async function simulateReadingDelay(inboundText) {
+  if (!READING_DELAY_ENABLED) return;
+  const len = String(inboundText || '').length;
+  if (len === 0) return;
+  const raw = READING_BASE_MS + len * READING_PER_CHAR_MS;
+  const jitter = 0.85 + Math.random() * 0.30;
+  const ms = Math.min(READING_MAX_MS, Math.floor(raw * jitter));
+  if (ms > 0) await sleep(ms);
+}
+
+function _isFirstTouchIn(jid, sessionWindowMs = 10 * 60 * 1000) {
+  // Se considera "first touch" si el bot no ha respondido a este jid en
+  // los últimos `sessionWindowMs` (default 10 min). Una nueva conversación
+  // efectiva merece un delay inicial más humano.
+  const last = _lastBotReplyAt.get(jid) || 0;
+  return (Date.now() - last) > sessionWindowMs;
+}
+
+async function maybeFirstTouchDelay(jid) {
+  if (!_isFirstTouchIn(jid)) return;
+  const extra = FIRST_TOUCH_MIN_MS +
+    Math.floor(Math.random() * Math.max(1, FIRST_TOUCH_MAX_MS - FIRST_TOUCH_MIN_MS));
+  await sleep(extra);
 }
 
 // Patrones de secretos que NUNCA deben salir del bot al cliente/admin.
@@ -2541,6 +2630,11 @@ async function sendText(jid, text, opts = {}) {
   // Se desactiva con opts.humanize=false o opts.transactional=true.
   const humanize = opts.humanize !== false && !opts.transactional && !opts.force;
   if (humanize) {
+    // First-touch delay: si es una conversación nueva (sin respuesta del
+    // bot en 10min), agregamos 800-2500ms extra ANTES del typing indicator.
+    // Los humanos tardan más en el "hola" inicial (contexto, quién es)
+    // que en respuestas ya en flujo conversacional.
+    await maybeFirstTouchDelay(jid);
     await humanizedTypingDelay(target, safeText, evolutionUrl, evolutionInstance, evolutionKey);
   }
 
@@ -2559,6 +2653,9 @@ async function sendText(jid, text, opts = {}) {
       try { parsed = JSON.parse(bodyText); } catch {}
       if (r.ok) {
         log('info', 'send_ok', `${r.status} ${JSON.stringify(parsed) || bodyText}`);
+        // Registrar timestamp para first-touch detection en próxima
+        // respuesta al mismo jid.
+        _lastBotReplyAt.set(jid, Date.now());
         return true;
       }
       // Do not retry on 4xx (bad request) — log and abort.
@@ -5864,7 +5961,18 @@ async function handleMessage(jid, text, pushName, context = {}) {
   const previous = messageQueues.get(queueKey) || Promise.resolve();
   const current = previous
     .catch(() => {})
-    .then(() => _handleMessage(jid, text, pushName, context));
+    .then(async () => {
+      // Anti-ban (F): simulamos "leer" el mensaje antes de responder.
+      // Delay proporcional a la longitud del texto del cliente (300ms
+      // base + 15/char, cap 4s). Cero riesgo: si el usuario espera 2s
+      // más por su respuesta, no lo nota — pero WhatsApp deja de ver
+      // "respuesta exacta 200ms después del inbound" que es señal bot
+      // clásica. Solo aplica a mensajes de clientes (no admin).
+      if (!admin) {
+        await simulateReadingDelay(text);
+      }
+      return _handleMessage(jid, text, pushName, context);
+    });
   messageQueues.set(queueKey, current);
   try {
     return await current;
@@ -8770,6 +8878,7 @@ function persistInboundMessages(payload) {
     INSERT OR IGNORE INTO inbound_messages (message_id, payload_json)
     VALUES (?, ?)
   `);
+  const pendingReadReceipts = [];
   const persistBatch = db.transaction(batch => {
     let changes = 0;
     for (const msg of batch) {
@@ -8782,16 +8891,27 @@ function persistInboundMessages(payload) {
         meta.messageId
         || crypto.createHash('sha256').update(JSON.stringify(msg)).digest('hex')
       );
-      changes += insert.run(messageId, JSON.stringify({
+      const inserted = insert.run(messageId, JSON.stringify({
         event: evolution.EVENT_MESSAGE_UPSERT,
         data: msg,
       })).changes;
+      changes += inserted;
+      // Anti-ban (E): marcar como leído los mensajes NUEVOS (no ya
+      // procesados). Un bot que jamás emite read-receipt levanta señal.
+      // Solo si es mensaje del CLIENTE (isFromMe=false) y tiene jid+id.
+      if (inserted > 0 && meta.jid && !meta.isFromMe && meta.messageId) {
+        pendingReadReceipts.push({ jid: meta.jid, messageId: meta.messageId });
+      }
     }
     return changes;
   });
   let inserted = 0;
   for (let offset = 0; offset < msgs.length; offset += MAX_WEBHOOK_MESSAGES) {
     inserted += persistBatch(msgs.slice(offset, offset + MAX_WEBHOOK_MESSAGES));
+  }
+  // Fire-and-forget read receipts, cada uno con su micro-delay interno.
+  for (const rr of pendingReadReceipts) {
+    markInboundRead(rr.jid, rr.messageId);
   }
   return inserted;
 }
