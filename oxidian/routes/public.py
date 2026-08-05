@@ -2287,11 +2287,22 @@ def checkout():
                 flash("La modalidad seleccionada ya no está disponible.", "danger")
             return redirect(url_for("public.ver_carrito"))
         direccion = request.form.get("direccion", "").strip()
+        # Campo separado "piso/puerta/referencias". Se mantiene APARTE de la
+        # dirección de calle+número que se pasa al geocoder — Nominatim NO
+        # reconoce "1º bajo" ni "portal B" (son datos internos del edificio,
+        # no del callejero). La composición final para el pedido se hace
+        # tras la validación de zona → así el repartidor recibe la dirección
+        # completa "Calle Andalucía 20, 1º bajo" pero la validación pasa
+        # sólo por "Calle Andalucía 20".
+        direccion_detalles = (request.form.get("direccion_detalles") or "").strip()
+        if len(direccion_detalles) > 120:
+            direccion_detalles = direccion_detalles[:120]
         ubicacion_lat = request.form.get("direccion_lat")
         ubicacion_lng = request.form.get("direccion_lng")
         ubicacion_precision = request.form.get("direccion_precision_m")
         if tipo_entrega_cliente == "recogida":
             direccion = ""
+            direccion_detalles = ""
             ubicacion_lat = ubicacion_lng = ubicacion_precision = None
         metodo_pago = normalizar_metodo_pago(request.form.get("metodo_pago"))
         # Todos los pagos se cobran al entregar. El cliente sólo indica la
@@ -2472,8 +2483,14 @@ def checkout():
         # ValueError se lanza para errores de validación (mensaje ya legible).
         # SQLAlchemyError puede aparecer si otro request creó al mismo cliente
         # a la vez (race condition en unique constraint sobre teléfono).
+        # Persistimos la dirección COMPLETA (calle+número + detalles) para
+        # que el cliente no tenga que reescribir el piso en el próximo pedido.
+        _direccion_persistir = (
+            f"{direccion}, {direccion_detalles}"
+            if direccion and direccion_detalles else direccion
+        )
         try:
-            cliente = _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion)
+            cliente = _resolve_checkout_customer(nombre_invitado, telefono_invitado, _direccion_persistir)
         except ValueError as exc:
             flash(str(exc), "danger")
             return redirect(url_for("public.checkout"))
@@ -2611,6 +2628,13 @@ def checkout():
                 flash("El cupón ya no está disponible. Inténtalo sin cupón.", "danger")
                 return redirect(url_for("public.checkout"))
 
+        # Componemos la dirección final para persistir: calle+número + detalles.
+        # La validación de zona ya pasó con solo la calle+número (Nominatim
+        # no reconoce "1º bajo"). El repartidor sí necesita el detalle.
+        direccion_entrega_final = direccion
+        if direccion and direccion_detalles:
+            direccion_entrega_final = f"{direccion}, {direccion_detalles}"
+
         pedido = Order(
             numero_pedido=Order.generar_numero("online"),
             cliente_id=cliente.id,
@@ -2627,7 +2651,7 @@ def checkout():
             puntos_ganados=puntos_ganados,
             metodo_pago=metodo_pago,
             tipo_entrega_cliente=tipo_entrega_cliente,
-            direccion_entrega=direccion,
+            direccion_entrega=direccion_entrega_final,
             direccion_lat=(
                 Decimal(str(geo["lat"]))
                 if geo and geo.get("lat") is not None else None

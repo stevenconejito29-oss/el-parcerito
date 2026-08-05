@@ -220,6 +220,19 @@
          server-side siempre pasa porque las coords vienen del propio geocoder. #}
       <ul id="direccion-sugerencias" class="addr-suggest-list" role="listbox" hidden></ul>
     </div>
+    {# Segundo campo — piso, puerta, letra, bajo, escalera, timbre. Nominatim
+       no devuelve estos datos (son internos del edificio). Sin este campo, el
+       cliente tenía que meterlo en el textarea principal, lo que invalidaba
+       las coords del autocompletado. Al aislarlo, el textarea de calle+número
+       queda "limpio" con sus coords geocodificadas y este detalle se
+       concatena en el server al crear el pedido, así el repartidor ve todo
+       junto: "Calle Andalucía 20, 1º bajo". #}
+    <label class="ox-label mt-2" for="direccion_detalles_input" style="font-size:.75rem;color:var(--col-muted)">
+      Piso / puerta / referencias (opcional)
+    </label>
+    <input type="text" name="direccion_detalles" id="direccion_detalles_input"
+           maxlength="120" autocomplete="address-line2"
+           placeholder="Ej: 1º bajo · 3ºA · portal B · timbre Pérez">
     <button type="button" class="checkout-location-btn" data-checkout-location>Usar mi ubicación GPS para comprobar cobertura</button>
     <div id="dir-feedback" class="mt-2 text-xs hidden" style="min-height:1.2em"></div>
     <style>
