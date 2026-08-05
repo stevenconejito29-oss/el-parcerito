@@ -1839,7 +1839,10 @@ def api_geocode_suggest():
             # para autocompletado en tiempo real. Sesga por lat/lon → puntúa mejor
             # las direcciones cercanas al negocio. Devuelve GeoJSON; lo mapeamos
             # al formato de Nominatim para reutilizar el pipeline de filtrado.
-            params = {"q": query, "limit": 15, "lang": "es"}
+            # Photon soporta idiomas limitados (default/de/en/fr). No pasamos
+            # `lang=es` porque devuelve 400; con default los nombres vienen
+            # tal como están en OSM (calle Andalucía sale igual).
+            params = {"q": query, "limit": 15}
             if centro_lat is not None and centro_lon is not None:
                 params["lat"] = centro_lat
                 params["lon"] = centro_lon
