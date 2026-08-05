@@ -897,23 +897,40 @@ function openMultiStopRoute(scope) {
       : 'No hay pedidos en ruta ahora mismo.');
     return;
   }
+  // iOS Safari solo permite window.open dentro del gesto del click. Si lo
+  // llamáramos dentro del callback de getCurrentPosition el popup queda
+  // bloqueado y en el iPhone del repartidor "no pasa nada". Solución:
+  // abrimos ya una pestaña placeholder de forma síncrona y le cambiamos
+  // la URL cuando el GPS resuelve (o el timeout dispara).
+  const navigate = url => {
+    if (!url) { if (win && !win.closed) win.close(); return; }
+    if (win && !win.closed) {
+      try { win.location.href = url; return; } catch (_) { /* fallback abajo */ }
+    }
+    // Fallback: mismo tab (funciona siempre en iOS, aunque salga de la app)
+    window.location.href = url;
+  };
+  const win = window.open('about:blank', '_blank');
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
   if (stops.length === 1) {
-    // Un solo destino: sin waypoints, ruta directa
-    const url = buildMapsRouteUrl(null, stops);
-    if (url) window.open(url, '_blank', 'noopener');
+    navigate(buildMapsRouteUrl(null, stops));
     return;
   }
+
   const openWith = origin => {
-    const ordered = origin
-      ? nearestNeighborOrder(origin, stops)
-      : stops;  // sin GPS respetamos el orden natural (por creación)
-    const url = buildMapsRouteUrl(origin, ordered);
-    if (url) window.open(url, '_blank', 'noopener');
+    const ordered = origin ? nearestNeighborOrder(origin, stops) : stops;
+    navigate(buildMapsRouteUrl(origin, ordered));
   };
+
+  // En iOS damos GPS un margen muy corto (o lo saltamos) porque cada
+  // segundo con la pestaña placeholder vacía se percibe como "no funciona".
+  // Sin GPS, Maps abre igual y el driver puede pulsar "Optimizar" dentro.
   if (!navigator.geolocation) { openWith(null); return; }
-  // Timeout corto: si el GPS tarda, abrimos sin optimizar para no bloquear
+  const timeoutMs = isIOS ? 1500 : 3000;
   let done = false;
-  const fallback = setTimeout(() => { if (!done) { done = true; openWith(null); } }, 3500);
+  const fallback = setTimeout(() => { if (!done) { done = true; openWith(null); } }, timeoutMs + 500);
   navigator.geolocation.getCurrentPosition(
     pos => {
       if (done) return;
@@ -921,7 +938,7 @@ function openMultiStopRoute(scope) {
       openWith({ lat: pos.coords.latitude, lng: pos.coords.longitude });
     },
     _err => { if (done) return; done = true; clearTimeout(fallback); openWith(null); },
-    { enableHighAccuracy: true, timeout: 3000, maximumAge: 30000 }
+    { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60000 }
   );
 }
 
