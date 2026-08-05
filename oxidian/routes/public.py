@@ -1926,6 +1926,13 @@ def api_geocode_suggest():
             hits = _do_nominatim(structured) or []
         if not hits:
             hits = _do_nominatim({"q": q}) or []
+        # Último recurso: si el cliente escribió calle+número y nada devolvió
+        # nada (OSM no tiene el número mapeado), buscamos solo la calle. El
+        # widget deja al cliente añadir el número al final del label elegido
+        # sin perder las coords.
+        if not hits and num_match:
+            calle_solo = num_match.group(1).strip()
+            hits = _do_photon(calle_solo) or _do_nominatim({"q": calle_solo}) or []
     except Exception:
         current_app.logger.exception("api_geocode_suggest falló")
         return jsonify({"ok": False, "results": []}), 503
