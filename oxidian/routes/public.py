@@ -1894,15 +1894,23 @@ def api_geocode_suggest():
         # nombre de calle para que el repartidor no reciba una dirección que
         # no corresponde a lo escrito.
         if num_match and hits:
-            calle_query = num_match.group(1).strip().casefold()
-            palabras_query = {w for w in _re.findall(r"[a-záéíóúñü]+", calle_query) if len(w) > 3}
+            import unicodedata as _ud
+            STOP = {"calle", "c", "avenida", "avda", "av", "plaza", "pza",
+                    "paseo", "camino", "carretera", "ctra", "callejon",
+                    "travesia", "ronda", "glorieta", "alameda",
+                    "de", "del", "la", "el", "los", "las", "y"}
+            def _norm(s):
+                s = _ud.normalize("NFD", s.casefold())
+                return "".join(c for c in s if _ud.category(c) != "Mn")
+            def _tokens(s):
+                return {w for w in _re.findall(r"[a-z]+", _norm(s))
+                        if len(w) > 2 and w not in STOP}
+            palabras_query = _tokens(num_match.group(1))
             def _street_matches(h):
                 addr = h.get("address", {}) or {}
-                st = (addr.get("road") or addr.get("pedestrian") or "").casefold()
+                st = addr.get("road") or addr.get("pedestrian") or ""
                 if not st: return False
-                palabras_st = set(_re.findall(r"[a-záéíóúñü]+", st))
-                # Al menos una palabra significativa del query aparece en la calle
-                return bool(palabras_query & palabras_st) if palabras_query else True
+                return bool(palabras_query & _tokens(st)) if palabras_query else True
             hits_filtrados = [h for h in hits if _street_matches(h)]
             hits = hits_filtrados or []
         if not hits and num_match:
