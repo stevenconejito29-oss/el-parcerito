@@ -1926,20 +1926,11 @@ def api_geocode_suggest():
             hits = _do_nominatim(structured) or []
         if not hits:
             hits = _do_nominatim({"q": q}) or []
-        # Último recurso: si el cliente escribió calle+número y nada devolvió
-        # nada (OSM no tiene el número mapeado), buscamos solo la calle. El
-        # widget deja al cliente añadir el número al final del label elegido
-        # sin perder las coords.
-        if not hits and num_match:
-            calle_solo = num_match.group(1).strip()
-            hits = _do_photon(calle_solo) or _do_nominatim({"q": calle_solo}) or []
     except Exception:
         current_app.logger.exception("api_geocode_suggest falló")
         return jsonify({"ok": False, "results": []}), 503
 
     # Compactamos la respuesta: sólo campos que el widget necesita.
-    results = []
-    seen = set()
     # Filtro geométrico: aceptamos cualquier calle a ≤ radio_km × 2 del centro
     # del negocio. Antes filtrábamos por `addr.city == CIUDAD_NEGOCIO`, pero
     # Photon/Nominatim etiquetan calles periféricas con la pedanía (Guadajoz,
@@ -1956,41 +1947,55 @@ def api_geocode_suggest():
         a = _m.sin(dlat/2)**2 + _m.cos(_m.radians(centro_lat)) * _m.cos(_m.radians(la)) * _m.sin(dlon/2)**2
         return 6371.0 * 2 * _m.asin(min(1.0, _m.sqrt(a)))
     limite_km = radio_km * 2.0 if radio_km else 999.0
-    for h in hits:
+
+    def _shape(raw_hits):
+        out = []
+        seen_local = set()
+        for h in raw_hits:
+            try:
+                lat = float(h.get("lat"))
+                lon = float(h.get("lon"))
+            except (TypeError, ValueError):
+                continue
+            addr = h.get("address", {}) or {}
+            street = (addr.get("road") or addr.get("pedestrian") or "").strip()
+            house = (addr.get("house_number") or "").strip()
+            if not street:
+                continue
+            localidad = (addr.get("city") or addr.get("town") or addr.get("village")
+                         or addr.get("municipality") or "").strip()
+            if _dist_km(lat, lon) > limite_km:
+                continue
+            label_parts = [f"{street} {house}".strip() if house else street]
+            if localidad and (not ciudad or localidad.casefold() != ciudad.casefold()):
+                label_parts.append(localidad)
+            elif ciudad and not localidad:
+                label_parts.append(ciudad)
+            label = ", ".join(label_parts) or (h.get("display_name") or "").strip()
+            key = label.casefold()
+            if key in seen_local:
+                continue
+            seen_local.add(key)
+            out.append({
+                "label": label, "lat": lat, "lon": lon, "value": label,
+                "has_number": bool(house),
+                "_dist": _dist_km(lat, lon),
+            })
+        return out
+
+    results = _shape(hits)
+
+    # Retry con solo el nombre de calle si el número mató todos los resultados
+    # (OSM rara vez tiene números mapeados en pueblos pequeños). El widget deja
+    # al cliente añadir el número al label sin perder coordenadas.
+    if not results and num_match:
         try:
-            lat = float(h.get("lat"))
-            lon = float(h.get("lon"))
-        except (TypeError, ValueError):
-            continue
-        addr = h.get("address", {}) or {}
-        street = (addr.get("road") or addr.get("pedestrian") or "").strip()
-        house = (addr.get("house_number") or "").strip()
-        if not street:
-            continue
-        localidad = (addr.get("city") or addr.get("town") or addr.get("village")
-                     or addr.get("municipality") or "").strip()
-        # Bloquea resultados lejos del radio de reparto (ej. otra "Calle Real"
-        # en Sevilla). Distancia geométrica > filtro por nombre de ciudad.
-        if _dist_km(lat, lon) > limite_km:
-            continue
-        label_parts = []
-        # Muestra "Calle X 20" si Nominatim confirmó house_number,
-        # o solo "Calle X" si es un match genérico.
-        label_parts.append(f"{street} {house}".strip() if house else street)
-        if localidad and (not ciudad or localidad.casefold() != ciudad.casefold()):
-            label_parts.append(localidad)
-        elif ciudad and not localidad:
-            label_parts.append(ciudad)
-        label = ", ".join(label_parts) or (h.get("display_name") or "").strip()
-        key = label.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        results.append({
-            "label": label, "lat": lat, "lon": lon, "value": label,
-            "has_number": bool(house),
-            "_dist": _dist_km(lat, lon),
-        })
+            calle_solo = num_match.group(1).strip()
+            hits2 = _do_photon(calle_solo) or _do_nominatim({"q": calle_solo}) or []
+            results = _shape(hits2)
+        except Exception:
+            current_app.logger.exception("api_geocode_suggest retry sin número falló")
+
     # Ranking: has_number primero (más útil para el repartidor), luego por
     # distancia al centro del negocio (calles del casco urbano antes que
     # periféricas).
