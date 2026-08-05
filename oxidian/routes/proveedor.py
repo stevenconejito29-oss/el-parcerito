@@ -1,3 +1,4 @@
+import json
 import logging
 from decimal import Decimal, InvalidOperation
 from flask import Blueprint, abort, current_app, render_template, redirect, url_for, flash, request
@@ -143,6 +144,17 @@ def _assert_owned_by(proveedor, producto):
         abort(404)
 
 
+def _parse_time_form(val):
+    """Parsea 'HH:MM' del formulario a `datetime.time` o None si está vacío."""
+    from datetime import datetime as _dt
+    if not val or not val.strip():
+        return None
+    try:
+        return _dt.strptime(val.strip(), "%H:%M").time()
+    except ValueError:
+        return None
+
+
 def _campos_producto_socio(form, *, incluir_stock=True):
     """Valida la ficha comercial que un socio está autorizado a proponer."""
     nombre = (form.get("nombre") or "").strip()
@@ -171,6 +183,22 @@ def _campos_producto_socio(form, *, incluir_stock=True):
     modalidad = (form.get("modalidad_entrega") or "ambas").strip().lower()
     if modalidad not in {"ambas", "delivery", "recogida"}:
         raise ValueError("La modalidad de entrega no es válida.")
+
+    hora_inicio = _parse_time_form(form.get("hora_inicio_visibilidad"))
+    hora_fin = _parse_time_form(form.get("hora_fin_visibilidad"))
+    if bool(hora_inicio) != bool(hora_fin):
+        raise ValueError("Indica la franja de visibilidad completa o deja ambas vacías.")
+
+    dias = []
+    for raw in form.getlist("dias_semana"):
+        try:
+            dia = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= dia <= 6 and dia not in dias:
+            dias.append(dia)
+    dias_json = json.dumps(dias) if dias else None
+
     vertical = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").strip().lower()
     if vertical not in {"comida", "producto"}:
         vertical = "comida"
@@ -183,6 +211,10 @@ def _campos_producto_socio(form, *, incluir_stock=True):
         "modalidad_entrega": modalidad,
         "vertical": vertical,
         "stock": stock,
+        "hora_inicio_visibilidad": hora_inicio,
+        "hora_fin_visibilidad": hora_fin,
+        "dias_semana_json": dias_json,
+        "stock_mostrar_en_web": True,
     }
 
 
@@ -855,7 +887,10 @@ def registrar_producto(producto_id=None, _proveedor=None):
                     proveedor_despachador_id=proveedor.id,
                     tipo_entrega="inmediato",
                     modalidad_entrega=campos["modalidad_entrega"],
-                    stock_mostrar_en_web=True,
+                    hora_inicio_visibilidad=campos["hora_inicio_visibilidad"],
+                    hora_fin_visibilidad=campos["hora_fin_visibilidad"],
+                    dias_semana_json=campos["dias_semana_json"],
+                    stock_mostrar_en_web=campos["stock_mostrar_en_web"],
                     partner_submitted_by=current_user.id,
                     partner_submitted_at=utcnow(),
                     partner_submission_status="pending",
@@ -878,6 +913,10 @@ def registrar_producto(producto_id=None, _proveedor=None):
                 producto.categoria_id = campos["categoria_id"]
                 producto.origen_pais = campos["origen_pais"]
                 producto.modalidad_entrega = campos["modalidad_entrega"]
+                producto.hora_inicio_visibilidad = campos["hora_inicio_visibilidad"]
+                producto.hora_fin_visibilidad = campos["hora_fin_visibilidad"]
+                producto.dias_semana_json = campos["dias_semana_json"]
+                producto.stock_mostrar_en_web = campos["stock_mostrar_en_web"]
                 producto.activo = False
                 producto.partner_submission_status = "pending"
                 producto.partner_submitted_by = current_user.id
@@ -935,6 +974,10 @@ def registrar_producto(producto_id=None, _proveedor=None):
                     f"{proveedor.nombre} envió «{producto.nombre}» para revisión.",
                     url="/admin/productos?revision=pending",
                     tag=f"partner-product-{producto.id}",
+                    # Excluye al propio socio (si por casualidad tiene rol
+                    # super_admin además de socio_producto) para no auto-
+                    # notificarse su propia submisión.
+                    exclude_user_ids=[current_user.id],
                 )
             except Exception:
                 logger.exception("No se pudo notificar la propuesta %s", producto.id)
@@ -1188,6 +1231,7 @@ def registrar_combo(combo_id=None, _proveedor=None):
                     f"{proveedor.nombre} envió «{combo.nombre}» para revisión.",
                     url="/admin/productos?revision=pending",
                     tag=f"partner-product-{combo.id}",
+                    exclude_user_ids=[current_user.id],
                 )
             except Exception:
                 logger.exception("No se pudo notificar el combo %s", combo.id)

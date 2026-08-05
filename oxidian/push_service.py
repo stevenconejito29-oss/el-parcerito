@@ -324,15 +324,26 @@ def send_push_outbox_payload(payload: dict) -> tuple[bool, str | None]:
 def notify_roles(roles: list[str], title: str, body: str, url: str = "/",
                  icon: Optional[str] = None, badge: Optional[str] = None,
                  *, tag: Optional[str] = None,
-                 require_interaction: bool = False) -> None:
-    """Envía notificación push a todos los usuarios con los roles indicados."""
+                 require_interaction: bool = False,
+                 exclude_user_ids: Optional[list[int]] = None) -> None:
+    """Envía notificación push a todos los usuarios con los roles indicados.
+
+    `exclude_user_ids`: excluye usuarios concretos (típicamente el actor de
+    la acción). Sin esto, un admin/super_admin que crea un pedido para sí
+    mismo recibía la notif de "🔔 Nuevo pedido" en su propio dispositivo
+    junto con la notif de "Preparando tu pedido" del rol cliente — se
+    veía como spam en tablets compartidas.
+    """
     from models import PushSubscription, User
-    subs = PushSubscription.query.filter(
+    q = PushSubscription.query.filter(
         PushSubscription.activo.is_(True),
         PushSubscription.usuario.has(
             User.rol.in_(roles) & User.activo.is_(True),
         ),
-    ).all()
+    )
+    if exclude_user_ids:
+        q = q.filter(~PushSubscription.user_id.in_(exclude_user_ids))
+    subs = q.all()
     if not subs:
         return
     payload = _build_payload(title, body, url, icon, badge, tag, require_interaction)
@@ -404,6 +415,12 @@ def notify_new_order(pedido) -> None:
     except Exception:
         logger.exception("notify_new_order: no se pudo determinar rol operativo")
 
+    # Excluimos al propio cliente del broadcast de "nuevo pedido" cuando
+    # el cliente tiene rol interno (admin/super_admin ordenando para sí
+    # mismo desde el mismo dispositivo). Sin esto ese admin recibía dos
+    # notifs superpuestas en su iPhone/tablet: la de "nuevo pedido" que
+    # va al rol staff + la de "preparando tu pedido" que va al cliente.
+    exclude = [pedido.cliente_id] if pedido.cliente_id else None
     notify_roles(
         ["admin", "super_admin"],
         title=f"🔔 Nuevo pedido {origen_label}",
@@ -411,6 +428,7 @@ def notify_new_order(pedido) -> None:
         url="/admin/pedidos",
         tag=f"nuevo-pedido-{pedido.id}",
         require_interaction=True,
+        exclude_user_ids=exclude,
     )
     if prep_role:
         kwargs = {
@@ -430,6 +448,7 @@ def notify_new_order(pedido) -> None:
                 [prep_role],
                 title=f"{prep_prefix} — {origen_label}",
                 body=f"#{num} · {total}",
+                exclude_user_ids=exclude,
                 **kwargs,
             )
 

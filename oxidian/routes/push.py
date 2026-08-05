@@ -85,11 +85,35 @@ def subscribe():
     if not user_id:
         return jsonify({"ok": False, "error": "Completa un pedido antes de activar avisos"}), 403
     ua = request.headers.get("User-Agent", "")[:300]
-    rol = current_user.rol if current_user.is_authenticated else "cliente"
+    # Rol snapshot: si estamos autenticados, el rol real del usuario. Si
+    # no (guest checkout), miramos el rol REAL del user_id en BD — antes
+    # asumíamos "cliente" a ciegas, y si el user_id de sesión resultaba
+    # ser un admin (caso: admin checkoutea como guest en su iPhone),
+    # quedaba `sub_rol='cliente'` mientras User.rol='super_admin'. Ese
+    # snapshot inconsistente confundía diagnóstico. `notify_roles` usa
+    # User.rol real (JOIN) así que el bug funcional no existía, pero
+    # ensuciaba la señal para debug.
+    if current_user.is_authenticated:
+        rol = current_user.rol
+    else:
+        from models import User as _User
+        _u = db.session.get(_User, user_id)
+        rol = _u.rol if _u else "cliente"
 
-    # Upsert: si el endpoint ya existe, actualizar keys y user
+    # Upsert por endpoint. Web Push spec: un browser/origen = un endpoint.
+    # Si dos usuarios usan el mismo browser (tablet compartida) reasignamos
+    # el endpoint al user actual — pero logueamos WARNING para poder
+    # diagnosticar por qué un admin "perdió" sus notifs. En dispositivos
+    # dedicados (uno por operario) este warning nunca aparece.
     sub = PushSubscription.query.filter_by(endpoint=endpoint).first()
+    from flask import current_app
     if sub:
+        if sub.user_id and sub.user_id != user_id:
+            current_app.logger.warning(
+                "push.subscribe: endpoint reasignado de user %s → user %s "
+                "(rol previo=%r, nuevo=%r) — típico en tablet compartida",
+                sub.user_id, user_id, sub.rol, rol,
+            )
         sub.user_id  = user_id
         sub.p256dh   = p256dh
         sub.auth     = auth_key
