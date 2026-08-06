@@ -13,26 +13,34 @@
 
 @media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen) {
 
-  /* ── Scroll táctil garantizado ──
-     Raíz del problema: oxidian-ui.css:104 pone `overflow-x: clip` en
-     body. Safari WebKit lo promueve a scroll-container implícito y
-     rompe el pan táctil vertical (tanto en menú como en carrito,
-     buscar, etc). Además, si Y no está definido explícitamente,
-     algunos motores lo coercitan a clip también, bloqueando el scroll.
-     Fix: html toma el scroll (auto), body queda visible (no crea
-     scroll-container), y todo pasa a scroll nativo del viewport. */
-  html {
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    -webkit-overflow-scrolling: touch !important;
-    height: auto !important;
-  }
+  /* ── Scroll táctil garantizado — RAÍZ del problema ──
+     oxidian-ui.css:104 y base.html:198 ponen `overflow-x: clip|hidden`
+     en body. Cualquiera de esos valores (según spec CSS Overflow L3)
+     coerce Y a `auto` si es `visible`, convirtiendo el BODY en
+     scroll-container. En iOS PWA con bottom-nav `position: fixed`,
+     Safari ata la inercia del scroll al body y la nav (que flota en
+     viewport) intercepta eventos táctiles del pan → scroll intermitente
+     y "atascos" al pasar cerca de zonas fijas.
+     Fix definitivo: `overflow: visible` fuerza que body NO sea scroll
+     container; el viewport toma el scroll, los fixed quedan aparte
+     y no interfieren. Nada de height/overflow en html — defaults. */
   body.ox-body-public {
-    overflow-x: hidden !important;   /* evita scroll horizontal accidental */
-    overflow-y: visible !important;  /* deja que el html haga el scroll */
-    -webkit-overflow-scrolling: touch !important;
+    overflow: visible !important;
     height: auto !important;
     min-height: 100dvh !important;
+  }
+  /* Aislar la bottom-nav del sistema de layout/paint para que Safari
+     no la considere parte del contexto scrolleable del body. */
+  body.ox-body-public .ox-bottom-nav {
+    contain: layout paint !important;
+    touch-action: manipulation !important;
+    -webkit-transform: translateZ(0) !important;  /* forzar composite layer */
+    transform: translateZ(0) !important;
+  }
+  /* Los ítems del bottom-nav explícitamente sólo aceptan tap, jamás
+     retienen pan vertical. */
+  body.ox-body-public .ox-bnav-item {
+    touch-action: manipulation !important;
   }
   body.ox-body-public .ox-header-public,
   body.ox-body-public .ox-header-sub,
