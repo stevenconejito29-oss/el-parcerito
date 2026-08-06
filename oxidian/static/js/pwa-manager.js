@@ -640,6 +640,21 @@
      pero el modal (dentro de main) desaparece sin ejecutar closeModal →
      inert queda en la bottom-nav → el botón Menú y otros items dejan de
      responder. Aquí se limpia siempre tras navegación o back/forward. */
+  /* Al navegar entre vistas, iOS a veces mantiene el foco en el input
+     de búsqueda y "ancla" el scroll para mantenerlo visible → sensación
+     de página pegada al buscador. Fix: blur cualquier elemento activo
+     antes de la limpieza post-nav. */
+  function blurAndRelease() {
+    const ae = document.activeElement;
+    if (ae && ae !== document.body && typeof ae.blur === 'function') {
+      try { ae.blur(); } catch (_) {}
+    }
+    releaseStuckModalState();
+    // Doble scroll a top: cancela cualquier "smooth" en curso y asegura
+    // que iOS suelte el ancla del input.
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }
+
   function releaseStuckModalState() {
     // Limpia clases y estilos residuales del modal quick-add
     if (document.body.classList.contains('ox-modal-open')) {
@@ -676,9 +691,9 @@
       dupModals.forEach(m => { if (m !== keep) m.remove(); });
     }
   }
-  document.addEventListener('spa:navigated', releaseStuckModalState);
-  window.addEventListener('pageshow', releaseStuckModalState);
-  window.addEventListener('popstate', releaseStuckModalState);
+  document.addEventListener('spa:navigated', blurAndRelease);
+  window.addEventListener('pageshow', blurAndRelease);
+  window.addEventListener('popstate', blurAndRelease);
   // Doble red: si el usuario vuelve a poner la app en foreground tras estar
   // fuera un rato con estado stuck, limpiamos.
   document.addEventListener('visibilitychange', () => {

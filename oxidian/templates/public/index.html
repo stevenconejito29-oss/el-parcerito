@@ -640,6 +640,15 @@
 {% block scripts %}
 
 <script nonce="{{ csp_nonce() }}">
+/* IIFE crítico para SPA-nav: sin él, al volver al menú via SPA-nav este
+   script se re-ejecuta y colisionan los `const` top-level (SyntaxError
+   silencioso). Consecuencia: el binding del modal se rompe y la vieja
+   openModal marca <main> como inert → iOS deja de procesar touch en
+   main → scroll bloqueado. La IIFE aísla el scope: cada re-ejecución
+   crea su propio contexto sin colisión. Los listeners globales se
+   guardan con flag para no duplicarse. */
+(function () {
+'use strict';
 const EP_DATA = JSON.parse(document.getElementById('ep-data')?.textContent || '{}');
 const EP_CART_MAX_QTY = {{ cart_max_qty|default(99)|int }};
 let _modalQty = 1;
@@ -1104,21 +1113,33 @@ function modalQty(delta) {
   document.getElementById('ep-modal-qty-val').value = _modalQty;
 }
 
-document.addEventListener('click', event => {
-  const opener = event.target.closest('[data-modal-open]');
-  if (opener) {
-    event.preventDefault();
-    openModal(Number.parseInt(opener.dataset.modalOpen, 10));
-    return;
-  }
-  if (event.target.closest('[data-modal-close]')) { closeModal(); return; }
-  const quantity = event.target.closest('[data-modal-qty]');
-  if (quantity) { modalQty(Number.parseInt(quantity.dataset.modalQty, 10)); return; }
-  const backdrop = event.target.closest('[data-modal-backdrop]');
-  if (backdrop && event.target === backdrop) closeModal();
-});
-
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+/* Los listeners globales (document/window) sólo se bindean UNA vez por
+   sesión. Cada re-ejecución del script (SPA-nav vuelve al menú) actualiza
+   las referencias en window._epMenuActive para que los listeners únicos
+   usen las funciones frescas del scope actual — nunca operan sobre DOM
+   muerto de la ejecución anterior. */
+window._epMenuActive = { openModal, closeModal, modalQty };
+if (!window._epMenuGlobalsBound) {
+  window._epMenuGlobalsBound = true;
+  document.addEventListener('click', event => {
+    const api = window._epMenuActive;
+    if (!api) return;
+    const opener = event.target.closest('[data-modal-open]');
+    if (opener) {
+      event.preventDefault();
+      api.openModal(Number.parseInt(opener.dataset.modalOpen, 10));
+      return;
+    }
+    if (event.target.closest('[data-modal-close]')) { api.closeModal(); return; }
+    const quantity = event.target.closest('[data-modal-qty]');
+    if (quantity) { api.modalQty(Number.parseInt(quantity.dataset.modalQty, 10)); return; }
+    const backdrop = event.target.closest('[data-modal-backdrop]');
+    if (backdrop && event.target === backdrop) api.closeModal();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') window._epMenuActive?.closeModal();
+  });
+}
 
 /* ── Auto-scroll al pill activo de categorías ── */
 (function() {
@@ -1147,5 +1168,6 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal()
   document.querySelectorAll('.ep-grid .ep-card').forEach(c => obs.observe(c));
 })();
 
+})();  /* fin IIFE — aísla scope para SPA-nav (evita colisión de const al re-ejecutar) */
 </script>
 {% endblock %}

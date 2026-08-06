@@ -811,20 +811,30 @@
     -webkit-backdrop-filter: blur(8px) saturate(1.1) !important;
   }
   body.ox-body-public .ep-modal-panel {
-    width: 100% !important;
-    max-width: none !important;
-    height: 94dvh !important;
+    /* Responsive: en móvil llena todo el ancho; en tablet+ un sheet
+       centrado que no supere 520px (patrón nativo Wolt/UberEats iPad). */
+    width: min(100%, 520px) !important;
+    max-width: 520px !important;
+    margin: 0 auto !important;
+    height: min(94dvh, 780px) !important;
     max-height: 94dvh !important;
     border-radius: 24px 24px 0 0 !important;
     border: 0 !important;
     background: var(--theme-surface) !important;
     box-shadow:
-      0 -12px 40px -12px rgba(0,0,0,.35),
+      0 -12px 40px -12px rgba(0,0,0,.4),
       0 -1px 0 color-mix(in srgb, #fff 22%, transparent) inset !important;
     grid-template-rows: auto minmax(0, 1fr) !important;
     overflow: hidden !important;
     padding-top: 0 !important;
     animation: ox-sheet-in .32s cubic-bezier(.2,.9,.3,1.05);
+  }
+  /* En pantallas anchas (tablet horizontal), esquinas totalmente redondeadas */
+  @media (min-width: 600px) {
+    body.ox-body-public .ep-modal-panel {
+      border-radius: 24px !important;
+      margin-bottom: 2vh !important;
+    }
   }
   @keyframes ox-sheet-in {
     from { transform: translateY(6%); opacity: .4; }
@@ -850,13 +860,12 @@
     pointer-events: none !important;
   }
 
-  /* Imagen: producto COMPLETO visible (contain), fondo cálido con halo
-     radial primario para que resalte sin recortarlo. Altura 48dvh:
-     protagonista pero deja aire para el body y CTA sin scroll. */
+  /* Imagen: responsive con clamp() → 220px en pantallas mínimas hasta 55dvh.
+     Producto COMPLETO (contain) con padding pequeño para que respire. */
   body.ox-body-public .ep-modal-img-wrap {
     aspect-ratio: auto !important;
-    height: 48dvh !important;
-    min-height: 260px !important;
+    height: clamp(220px, 45dvh, 480px) !important;
+    min-height: 220px !important;
     max-height: 55dvh !important;
     background:
       radial-gradient(ellipse at 50% 45%,
@@ -868,16 +877,41 @@
     position: relative !important;
     border-radius: 24px 24px 0 0 !important;
     overflow: hidden !important;
-    padding: 1rem !important;   /* aire para que el producto no toque el borde */
+    padding: .5rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
   }
   body.ox-body-public .ep-modal-img {
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: contain !important;   /* PRODUCTO COMPLETO — no se recorta */
+    display: block !important;     /* vence a display inline por defecto de <img> */
+    max-width: 100% !important;
+    max-height: 100% !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
     object-position: center !important;
-    /* Ken-burns muy sutil al abrir → sensación premium */
     animation: ox-modal-img-in .9s cubic-bezier(.2,.7,.2,1) both;
     filter: drop-shadow(0 12px 24px color-mix(in srgb, var(--theme-text) 22%, transparent));
+  }
+  /* Fallback (emoji) también centrado y grande */
+  body.ox-body-public .ep-modal-img-fb {
+    font-size: clamp(3rem, 12vw, 5rem) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+  /* Modo cover: cuando el producto tiene image_fit='cover' (fotografía a
+     sangre estilo Rappi), sí llenamos toda la caja recortando. */
+  body.ox-body-public .ep-modal-img-wrap.is-cover { padding: 0 !important; }
+  body.ox-body-public .ep-modal-img-wrap.is-cover .ep-modal-img {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    object-fit: cover !important;
+    filter: none !important;
   }
   @keyframes ox-modal-img-in {
     from { transform: scale(1.06); }
