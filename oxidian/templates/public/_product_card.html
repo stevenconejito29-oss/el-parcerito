@@ -4,10 +4,13 @@
 {% set _product_origin = product_origins.get(p.id, origen_actual) if product_origins is defined else origen_actual %}
 {# Suma cantidades en canasta para este producto: hay que agregar la clave
    legacy `"123"` Y todas las firmas de línea `"123#..."` (productos con
-   presentación, sabores, extras o selección de combo). Antes solo se leía
-   la legacy — combos y variantes nunca marcaban el card como "En canasta". #}
+   presentación, sabores, extras o selección de combo). Compara por origen
+   LOGÍSTICO — `carrito_origen` viene resuelto en logístico (socio-capital
+   despacha como "propio"), así que el producto también debe reducirse a su
+   origen logístico o los productos de socios-capital nunca coincidirían. #}
+{% set _product_origin_logistico = product_logistic_origins.get(p.id, _product_origin) if product_logistic_origins is defined else _product_origin %}
 {% set _qty_ns = namespace(v=0) %}
-{% if carrito is defined and carrito_origen == _product_origin %}
+{% if carrito is defined and carrito_origen == _product_origin_logistico %}
   {% set _pid_str = p.id|string %}
   {% set _pid_prefix = _pid_str ~ '#' %}
   {% for _k, _q in carrito.items() %}

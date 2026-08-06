@@ -571,6 +571,15 @@ def _render_catalogo(origen, proveedor=None):
         )
         for product in todos
     }
+    # Origen LOGÍSTICO por producto: si el proveedor es socio-capital, el
+    # despacho es "propio" aunque el inventario cuelgue de proveedor:X.
+    # `_carrito_origen()` devuelve el origen logístico (por diseño), así que
+    # la comparación en la tarjeta de producto debe usar el logístico también
+    # — con inventario directo, un producto de socio-capital nunca coincidía
+    # con carrito_origen y NUNCA se marcaba como "En canasta".
+    product_logistic_origins = {
+        pid: _origen_logistico(origen) for pid, origen in product_origins.items()
+    }
     projection = {}
     origins = sorted(set(product_origins.values()))
     for product_origin in origins:
@@ -708,6 +717,7 @@ def _render_catalogo(origen, proveedor=None):
                            proveedor_actual=proveedor,
                            product_cards=projection,
                            product_origins=product_origins,
+                           product_logistic_origins=product_logistic_origins,
                            fulfillment_badge=_product_fulfillment_badge)
 
 
