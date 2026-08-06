@@ -195,16 +195,30 @@ def main() -> int:
             return 0
 
         # ── 2. Borrado en transacción ─────────────────────────────
-        print("\n🧹 Aplicando limpieza (transacción atómica)…")
+        # IMPORTANTE: usar DELETE FROM (NO TRUNCATE CASCADE). CASCADE
+        # sigue el grafo de FKs y puede arrastrar tablas que queremos
+        # PRESERVAR (aprendido a las malas: site_config, users y
+        # admin_features quedaron vacías por una cadena de FKs indirecta).
+        # DELETE FROM sin WHERE respeta las FKs (falla si algo depende) y
+        # nos obliga a orden explícito hijo→padre.
+        print("\n🧹 Aplicando limpieza (transacción atómica, sin CASCADE)…")
         for tabla in TABLAS_A_LIMPIAR:
             if not _table_exists(conn, tabla):
                 continue
             try:
-                # TRUNCATE ... RESTART IDENTITY CASCADE — resetea seq y arrastra FKs
-                conn.execute(text(f"TRUNCATE {tabla} RESTART IDENTITY CASCADE"))
-                print(f"  ✓ {tabla} truncada")
+                result = conn.execute(text(f"DELETE FROM {tabla}"))
+                # Reset de la secuencia serial si existe
+                try:
+                    conn.execute(text(
+                        f"SELECT setval(pg_get_serial_sequence('{tabla}','id'), 1, false)"
+                    ))
+                except Exception:
+                    pass
+                print(f"  ✓ {tabla}: {result.rowcount} eliminadas")
             except Exception as exc:
                 print(f"  ⚠ {tabla}: {exc}")
+                # Si un DELETE falla es por FK — algo depende de esta tabla.
+                # No abortamos: seguimos y el usuario verá el detalle final.
 
         # Users no-admin: DELETE explícito preservando super_admin y admin
         try:
