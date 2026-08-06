@@ -761,6 +761,93 @@
     50%      { filter: brightness(1.18); transform: translateY(-1px); }
   }
 
+  /* ══════════════════════════════════════════════════════════════
+     MODAL DE PRODUCTO — estilo bottom-sheet nativo.
+     La imagen ocupa la mitad superior del viewport (protagonismo),
+     el panel llega casi al top con safe-area y el body scrollea
+     internamente. Antes: aspect-ratio 16/7 dejaba una foto pequeña
+     con mucho aire abajo — cliente no "veía" el producto.
+     ══════════════════════════════════════════════════════════════ */
+  body.ox-body-public .ep-modal-overlay {
+    padding: 0 !important;
+    align-items: stretch !important;
+  }
+  body.ox-body-public .ep-modal-panel {
+    width: 100% !important;
+    max-width: none !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    padding-top: env(safe-area-inset-top, 0px) !important;
+  }
+  /* Imagen: retrato/paisaje generoso — 48dvh, cover, sin borde */
+  body.ox-body-public .ep-modal-img-wrap {
+    aspect-ratio: auto !important;
+    height: 48dvh !important;
+    min-height: 260px !important;
+    max-height: 62dvh !important;
+    background: color-mix(in srgb, var(--theme-surface-alt) 40%, #fff) !important;
+    position: relative !important;
+  }
+  body.ox-body-public .ep-modal-img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+  /* Vignette sutil abajo de la imagen para que el nombre resalte */
+  body.ox-body-public .ep-modal-img-wrap::after {
+    content: "" !important;
+    position: absolute !important;
+    inset: auto 0 0 0 !important;
+    height: 60px !important;
+    background: linear-gradient(180deg,
+      transparent 0%,
+      color-mix(in srgb, var(--theme-surface) 92%, transparent) 100%) !important;
+    pointer-events: none !important;
+  }
+  /* Cuerpo scrolleable con más aire y CTA anclado abajo */
+  body.ox-body-public .ep-modal-body {
+    padding: 1rem 1.15rem calc(1.1rem + env(safe-area-inset-bottom, 0px)) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  body.ox-body-public .ep-modal-name {
+    font-size: 1.3rem !important;
+    font-weight: 900 !important;
+    line-height: 1.12 !important;
+    letter-spacing: -.015em !important;
+  }
+  body.ox-body-public .ep-modal-price {
+    font-size: 1.35rem !important;
+    font-weight: 900 !important;
+    color: var(--brand-primary) !important;
+  }
+  body.ox-body-public .ep-modal-desc {
+    font-size: .92rem !important;
+    line-height: 1.45 !important;
+  }
+  /* CTA "Añadir" pegado al pie con safe-area y sombra que lo eleva */
+  body.ox-body-public .ep-modal-actions {
+    position: sticky !important;
+    bottom: 0 !important;
+    padding: .8rem 0 calc(.4rem + env(safe-area-inset-bottom, 0px)) !important;
+    background: linear-gradient(180deg,
+      transparent 0%,
+      var(--theme-surface) 24%,
+      var(--theme-surface) 100%) !important;
+    z-index: 2 !important;
+  }
+  body.ox-body-public .ep-modal-add-btn {
+    min-height: 52px !important;
+    font-size: 1rem !important;
+    font-weight: 900 !important;
+    border-radius: 16px !important;
+    box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--brand-primary) 55%, transparent) !important;
+  }
+
   /* ── Carrito (página completa): totales más protagonistas ── */
   body.ox-body-public .cr-body [data-cart-total],
   body.ox-body-public .cr-body [class*="total"] strong {
