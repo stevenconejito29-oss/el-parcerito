@@ -550,6 +550,88 @@
     }
   }
 
+  /* Al cerrar sesión: apagar la suscripción push de ESTE dispositivo. Adjunta
+     el `endpoint` al form para que el backend soft-delete solo esta entrada
+     (no las de otros dispositivos del mismo user). Best-effort: si algo falla,
+     el logout sigue — el backend también hace fail-safe apagando todas las
+     suscripciones del user si no recibe endpoint. Ejecutado en captura para
+     terminar antes del submit sin bloquear el navegador si algo se cuelga. */
+  async function detachPushForLogout(form) {
+    if (form.dataset._pushDetached === '1') return;
+    form.dataset._pushDetached = '1';
+    try {
+      const reg = registration || (navigator.serviceWorker && await navigator.serviceWorker.ready);
+      const sub = reg && await reg.pushManager.getSubscription();
+      if (!sub) return;
+      const hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'push_endpoint';
+      hidden.value = sub.endpoint;
+      form.appendChild(hidden);
+      try {
+        await fetch('/api/push/unsubscribe', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+          keepalive: true,
+        });
+      } catch (_) { /* red caída: el logout aún avisa al backend */ }
+      await sub.unsubscribe().catch(() => {});
+      localStorage.removeItem('oxPushEnabled');
+    } catch (_) {
+      // Silencioso: el logout no debe bloquearse por push.
+    }
+  }
+
+  document.addEventListener('submit', event => {
+    const form = event.target;
+    if (!form || form.tagName !== 'FORM') return;
+    const action = form.getAttribute('action') || '';
+    if (!/\/logout(\?|$)/.test(action)) return;
+    // No bloqueamos el submit; corremos en paralelo. keepalive garantiza que
+    // el POST /unsubscribe se completa incluso si el navegador cambia de página.
+    detachPushForLogout(form);
+  }, true);
+
+  /* Si el backend responde 401 en cualquier fetch relevante, la sesión ya
+     no es válida — desuscribimos localmente para no seguir recibiendo push
+     en un dispositivo cuya sesión caducó (además del soft-delete server-side). */
+  const _origFetch = window.fetch;
+  window.fetch = async function (input, init) {
+    const response = await _origFetch.apply(this, arguments);
+    if (response && response.status === 401) {
+      try {
+        const reg = registration || (navigator.serviceWorker && await navigator.serviceWorker.ready);
+        const sub = reg && await reg.pushManager.getSubscription();
+        if (sub) {
+          await sub.unsubscribe().catch(() => {});
+          localStorage.removeItem('oxPushEnabled');
+        }
+      } catch (_) { /* sin acción — el server ya cortó la fuente */ }
+    }
+    return response;
+  };
+
+  /* Micro-feedback dopamínico al añadir al carrito, SOLO en app instalada.
+     Aprovecha el evento `oxcart:updated` que ya emite cart-ui.js y el chime()
+     con AudioContext ya desbloqueado por el primer pointerdown. Vibración
+     ligera (10ms) — dentro del budget que iOS/Android permiten sin gesto
+     adicional. Silencioso si el navegador no soporta vibrate/AudioContext. */
+  let _lastCartCount = cartCount;
+  document.addEventListener('oxcart:updated', event => {
+    const next = Number(event?.detail?.count || 0);
+    const grew = next > _lastCartCount;
+    _lastCartCount = next;
+    setAppBadge(next);
+    if (!grew || !isStandalone()) return;
+    if ('vibrate' in navigator) { try { navigator.vibrate(10); } catch (_) {} }
+    if (localStorage.getItem('oxPushSound') === '1') chime();
+  });
+
   prepareInstallUi();
   preparePushUi();
   setAppBadge(cartCount);

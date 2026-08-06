@@ -244,6 +244,9 @@
   {# Cargado AL FINAL para ganar prioridad de cascada sobre todas las hojas anteriores #}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/header-modern.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/heritage.css', v=asset_version) }}">
+  {# Overrides "sensación app nativa" — solo tienen efecto en display-mode:
+     standalone|minimal-ui|fullscreen. En navegador la web sigue idéntica. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/pwa-native.css', v=asset_version) }}">
 </head>
 {# El detalle ya tiene navegación de regreso y una barra de compra fija.
    Apilar además la navegación inferior duplicaba controles y cubría el

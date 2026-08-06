@@ -144,11 +144,37 @@ def _clear_mfa_pending():
 @login_required
 def logout():
     current_user.en_linea = False
+    _desactivar_push_del_dispositivo(current_user.id,
+                                     (request.form.get("push_endpoint") or "").strip())
     db.session.commit()
     logout_user()
     session.pop("mfa_v", None)
     _clear_mfa_pending()
     return redirect(url_for("public.index"))
+
+
+def _desactivar_push_del_dispositivo(user_id: int, endpoint: str) -> None:
+    """Soft-delete de la suscripción push al cerrar sesión.
+
+    El front envía `push_endpoint` con la suscripción de ESTE navegador para
+    que solo se apague el dispositivo que hace logout — así un empleado con
+    dos móviles no pierde avisos en el otro. Si no llega endpoint (JS
+    desactivado, navegador viejo, request programático), fail-safe: apagamos
+    TODAS las suscripciones del user. Mejor no notificar un rato que enviar
+    un push a un navegador que ya no controla el usuario.
+
+    `notify_user` y `notify_roles` filtran por `activo=True`, con lo que la
+    fuente queda cortada sin necesidad de tocar el service worker. Al volver
+    a iniciar sesión, `pwa-manager` re-suscribe y el registro se reactiva.
+    """
+    from models import PushSubscription
+    try:
+        q = PushSubscription.query.filter_by(user_id=user_id)
+        if endpoint:
+            q = q.filter_by(endpoint=endpoint)
+        q.update({"activo": False}, synchronize_session=False)
+    except Exception:
+        current_app.logger.exception("logout: desactivando push suscripciones")
 
 
 # ── MFA SETUP / DISABLE ─────────────────────────────────────────────────────

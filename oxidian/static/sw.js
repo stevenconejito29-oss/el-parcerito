@@ -26,6 +26,7 @@ const PRECACHE = [
   "/static/css/tokens.css",
   "/static/css/oxidian.css",
   "/static/css/oxidian-ui.css",
+  "/static/css/pwa-native.css",
   "/static/css/storefront-menu.css",
   "/static/css/storefront-cart.css",
   "/static/css/header-modern.css",
