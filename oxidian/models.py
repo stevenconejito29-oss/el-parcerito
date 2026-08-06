@@ -3240,8 +3240,15 @@ class Order(db.Model):
             return False, "Demasiados intentos fallidos. Contacta al admin."
         if self.codigo_confirmacion_expirado:
             return False, "El código ha expirado. Regenéralo desde el panel."
-        import hmac as _hmac
+        import hmac as _hmac, re as _re
         recibido = str(codigo_ingresado or "").strip()
+        # No contamos como intento un formato inválido (vacío o no-6-dígitos).
+        # Antes el repartidor perdía intentos si pulsaba "entregar" con el
+        # input vacío o mal escrito, y en 3 pulsaciones ciegas bloqueaba
+        # el pedido sin haber probado ni un código real. Formato correcto:
+        # exactamente 6 dígitos.
+        if not _re.fullmatch(r"\d{6}", recibido):
+            return False, "Introduce el código de 6 dígitos que el cliente te dictó."
         codigo = str(self.codigo_confirmacion or "")
         if codigo and _hmac.compare_digest(codigo, recibido):
             self.codigo_confirmado_en = utcnow()

@@ -726,10 +726,12 @@
           <label class="work-code-label">3. Código de confirmación del cliente</label>
           <p class="work-code-help">Pide el código que se envió al llegar. Verifica pedido, cliente y cobro antes de entregarlo.</p>
           <input type="text" name="codigo_confirmacion"
-                 required maxlength="8" inputmode="numeric"
+                 required maxlength="6" minlength="6"
+                 inputmode="numeric" pattern="\d{6}"
                  placeholder="_ _ _ _ _ _"
                  class="work-code-input"
-                 autocomplete="off">
+                 autocomplete="one-time-code"
+                 title="6 dígitos numéricos que recibió el cliente por WhatsApp">
           {% if pedido.intentos_codigo > 0 %}
           <p class="work-code-attempts">{{ pedido.intentos_codigo_restantes }} intento(s) restante(s)</p>
           {% endif %}
