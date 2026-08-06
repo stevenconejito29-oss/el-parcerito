@@ -9765,6 +9765,58 @@ function startServer() {
     setInterval(() => drainInboundMessages().catch(
       error => log('warn', 'inbound_drain_fail', String(error))
     ), 10_000);
+
+    // ── Purga de sesiones zombis ────────────────────────────────────
+    // Sin esto la tabla `sessions` crece sin cota (1 fila por cliente
+    // que haya chateado, indefinidamente). En producción con flujo real
+    // crece rápido y degrada las queries de lookup por jid.
+    // Barre cada 5 minutos las sesiones cuyo `updated_at` supera SESSION_TTL.
+    const SESSION_PURGE_MS = 5 * 60 * 1000;
+    setInterval(() => {
+      try {
+        const cutoff = Math.floor(Date.now() / 1000) - Math.floor(SESSION_TTL / 1000);
+        const info = db.prepare('DELETE FROM sessions WHERE updated_at < ?').run(cutoff);
+        if (info.changes > 0) log('info', 'session_purge', `removed=${info.changes}`);
+      } catch (e) {
+        log('warn', 'session_purge_fail', String(e));
+      }
+    }, SESSION_PURGE_MS);
+
+    // ── Watchdog de conexión Evolution API ─────────────────────────
+    // Si Evolution reporta un estado distinto de 'open' (close, connecting,
+    // desconectado), forzamos POST /instance/connect para pedir reconexión.
+    // Sin esto el bot queda mudo cuando Evolution se cae y solo se recupera
+    // por intervención manual → cliente escribe, no le responde nadie →
+    // WhatsApp lo interpreta como negocio muerto.
+    let evoReconnectInflight = false;
+    let evoLastState = null;
+    setInterval(async () => {
+      if (evoReconnectInflight) return;
+      try {
+        const stateRes = await fetch(
+          `${getEvolutionUrl()}/instance/connectionState/${getEvolutionInstance()}`,
+          { headers: { apikey: getEvolutionKey() }, signal: AbortSignal.timeout(3500) }
+        );
+        const payload = stateRes.ok ? await stateRes.json() : {};
+        const state = payload.instance?.state || payload.state || 'unknown';
+        if (state !== evoLastState) {
+          log('info', 'evo_state', `state=${state}`);
+          evoLastState = state;
+        }
+        if (state === 'open') return;
+        // Intento de reconexión (idempotente en Evolution)
+        evoReconnectInflight = true;
+        log('warn', 'evo_reconnect_attempt', `state=${state}`);
+        await fetch(
+          `${getEvolutionUrl()}/instance/connect/${getEvolutionInstance()}`,
+          { method: 'GET', headers: { apikey: getEvolutionKey() }, signal: AbortSignal.timeout(6000) }
+        ).catch(err => log('warn', 'evo_reconnect_fail', String(err)));
+      } catch (err) {
+        log('warn', 'evo_watchdog_fail', String(err));
+      } finally {
+        evoReconnectInflight = false;
+      }
+    }, 30_000);
   });
 }
 
