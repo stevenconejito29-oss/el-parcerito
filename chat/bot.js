@@ -4235,6 +4235,20 @@ async function _handleMessage(jid, text, pushName, context = {}) {
   const ownerAsClient = isOwner && isAdminClientMode(jid, ses);
   const requestedMode = isOwner ? detectOperationalModeCommand(text) : null;
 
+  /* Auditoría defensiva: si un remitente NO-admin escribe algo con
+     forma de comando administrativo (empieza por `!` o por `/config`,
+     `/precio`, etc.), lo logueamos silenciosamente sin responder para
+     no revelar la existencia del panel — pero sí queremos detectar
+     patrones de sondeo antes de que escalen. El cliente sigue por el
+     flujo normal (menú/intent) sin recibir nada especial. */
+  if (!isOwner) {
+    const adminProbe = /^(?:!|\/(?:config|precio|stock|pedidos|cliente|puntos|admin|emergency|pausa|resumir|crear-|borrar-|reset|nicho|modulo))/i;
+    if (adminProbe.test(lower)) {
+      log('warn', 'admin_probe_attempt',
+        `from=${phoneFromJid(jid) || jid} text=${text.slice(0, 60)}`);
+    }
+  }
+
   // `/volver bot` sólo tiene sentido dentro de un chat humano. Si el cliente
   // lo escribe fuera de ese contexto, respondemos claramente en vez de
   // dejar que caiga al fallback del menú principal.
