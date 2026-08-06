@@ -700,6 +700,31 @@
     if (document.visibilityState === 'visible') releaseStuckModalState();
   });
 
+  /* Contra el "no me deja scrollear en la barra de búsqueda": iOS Safari
+     al iniciar un pan cerca de <input type=search> intenta darle focus,
+     lo que ancla el viewport al input y bloquea la inercia del scroll.
+     Estrategia: cualquier touchstart sobre elementos del catálogo activa
+     body.is-scrolling inmediatamente (antes de que se dispare ningún
+     scroll event) — y el CSS pausa pointer-events en la barra de
+     búsqueda mientras la clase esté activa. Si fue un tap real (short
+     touch, no scroll), el timeout la retira ~200ms después y el input
+     vuelve a responder. Sin esperar a que scroll se produzca, iOS no
+     puede robar focus. */
+  document.addEventListener('touchstart', (ev) => {
+    // Si el touch empieza sobre la propia barra de búsqueda (tap
+    // intencional para escribir), NO activamos is-scrolling: el usuario
+    // quiere focus. Solo si empieza fuera de la barra.
+    if (ev.target && ev.target.closest && ev.target.closest('.ep-search-wrap')) return;
+    if (!document.body.classList.contains('is-scrolling')) {
+      document.body.classList.add('is-scrolling');
+    }
+    // Reset timer para que la clase se retire tras el gesto
+    clearTimeout(window._epScrollGuardTimer);
+    window._epScrollGuardTimer = window.setTimeout(() => {
+      document.body.classList.remove('is-scrolling');
+    }, 220);
+  }, { passive: true, capture: true });
+
   /* Pausar animaciones infinitas durante el scroll → GPU libre para el
      pan táctil, evita el bug de scroll intermitente en iOS PWA. Se añade
      body.is-scrolling con listener passive y se retira 150ms tras el

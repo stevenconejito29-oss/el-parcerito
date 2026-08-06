@@ -621,6 +621,18 @@
   body.ox-body-public .ep-search-box {
     touch-action: pan-y !important;   /* la barra deja pasar el pan vertical */
   }
+  /* CRÍTICO iOS PWA: mientras el usuario scrollea, la barra de búsqueda
+     queda TOTALMENTE inerte al touch → iOS no puede robar focus al input
+     ni al botón Buscar durante el pan. Cuando is-scrolling se retira
+     (~150ms tras el último scroll event) la barra vuelve a ser
+     interactiva. Sin esto: cualquier swipe cerca del input activa el
+     focus del <input type=search>, iOS ancla el viewport al input y
+     bloquea el resto del pan → "no me deja scrollear". */
+  body.ox-body-public.is-scrolling .ep-search-wrap,
+  body.ox-body-public.is-scrolling .ep-search-wrap * {
+    pointer-events: none !important;
+    touch-action: none !important;
+  }
 
   /* ── Ritmo vertical: separación clara entre bloques ── */
   body.ox-body-public main > section,
