@@ -1282,18 +1282,18 @@
   }
 
   /* ══════════════════════════════════════════════════════════════
-     PAUSA GLOBAL DE ANIMACIONES DURANTE SCROLL
-     La clase body.is-scrolling la añade pwa-manager.js durante el
-     scroll y la retira ~150ms tras detenerse. Todas las animaciones
-     infinitas (pulse, spin, hover halos) se congelan mientras el
-     usuario scrollea → GPU/CPU libres para el pan táctil → sin
-     tearing ni bug intermitente.
+     PAUSA DE ANIMACIONES DURANTE SCROLL (NARROW)
+     Antes usábamos `*` global + transition:none — matando también
+     la fade-in/out del SPA-nav y las micro-transiciones útiles →
+     percepción de atascos al tocar Menú. Ahora se pausan sólo las
+     animaciones INFINITAS conocidas por causar repaint durante scroll.
+     Las transitions no se tocan.
      ══════════════════════════════════════════════════════════════ */
-  body.ox-body-public.is-scrolling *,
-  body.ox-body-public.is-scrolling *::before,
-  body.ox-body-public.is-scrolling *::after {
+  body.ox-body-public.is-scrolling .ep-cbadge-puntos--exclusive,
+  body.ox-body-public.is-scrolling .ox-bnav-cart.has-items .ox-bnav-svg,
+  body.ox-body-public.is-scrolling .ox-bnav-item[data-bnav="puntos"].is-active .ox-bnav-svg,
+  body.ox-body-public.is-scrolling .ox-public-status.is-open > span[aria-hidden] {
     animation-play-state: paused !important;
-    transition: none !important;
   }
 }
 

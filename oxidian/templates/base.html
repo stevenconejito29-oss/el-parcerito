@@ -770,7 +770,19 @@ document.addEventListener('error', function(event) {
         const noQuery = !url.search && !window.location.search;
         if (samePath && noQuery) {
           ev.preventDefault();
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+          // En PWA instalada (iOS especialmente) el smooth-scroll compite
+          // con la inercia del pan del usuario y con la bottom-nav fija
+          // → sensación de atasco. Se usa scroll instantáneo: mismo
+          // resultado sin conflicto de gestos. En navegador web el
+          // smooth-scroll nativo sigue siendo suave (scroll-behavior CSS).
+          const isStandalone = matchMedia('(display-mode: standalone)').matches
+                            || matchMedia('(display-mode: minimal-ui)').matches
+                            || navigator.standalone === true;
+          if (isStandalone) {
+            window.scrollTo(0, 0);
+          } else {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }
           // Si venimos de #buscar, limpiamos el hash para que Buscar no
           // quede "activado" al scrollear.
           if (window.location.hash) {
