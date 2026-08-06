@@ -710,21 +710,42 @@
     overlay.id = 'ox-search-overlay';
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'Buscar productos');
+    // Sugerencias rápidas: si estamos con contexto de comida ofrecemos
+    // términos típicos; el usuario tocará uno y se envía como query.
+    const quick = ['Combos', 'Bebidas', 'Postres', 'Sin lactosa', 'Sin gluten'];
     overlay.innerHTML =
-      '<form class="ox-search-panel" method="GET" action="/">' +
-        '<input type="text" name="q" placeholder="Buscar productos, combos…" ' +
-               'autocomplete="off" autocapitalize="off" inputmode="search" ' +
-               'enterkeyhint="search" aria-label="Buscar">' +
-        '<button type="submit">Buscar</button>' +
-        '<button type="button" data-search-close aria-label="Cerrar">✕</button>' +
-      '</form>';
+      '<div class="ox-search-stack">' +
+        '<div class="ox-search-top">' +
+          '<span class="ox-search-hint">Buscar</span>' +
+          '<button type="button" data-search-close aria-label="Cerrar búsqueda">✕</button>' +
+        '</div>' +
+        '<form class="ox-search-panel" method="GET" action="/" role="search">' +
+          '<span class="ox-search-icon" aria-hidden="true">' +
+            '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>' +
+          '</span>' +
+          '<input type="text" name="q" placeholder="Busca platos, combos, bebidas…" ' +
+                 'autocomplete="off" autocapitalize="off" spellcheck="false" ' +
+                 'inputmode="search" enterkeyhint="search" aria-label="Término de búsqueda">' +
+          '<button type="submit" aria-label="Buscar">›</button>' +
+        '</form>' +
+        '<div class="ox-search-quick" role="group" aria-label="Sugerencias">' +
+          quick.map(q => '<button type="button" data-search-quick="' + q + '">' + q + '</button>').join('') +
+        '</div>' +
+      '</div>';
     document.body.appendChild(overlay);
     const input = overlay.querySelector('input');
+    const form = overlay.querySelector('form');
     // Focus tras el frame para que la animación no bloquee el keyboard.
     requestAnimationFrame(() => input?.focus());
     overlay.addEventListener('click', (ev) => {
-      if (ev.target === overlay) closeSearchOverlay();
-      if (ev.target?.closest?.('[data-search-close]')) closeSearchOverlay();
+      if (ev.target === overlay) return closeSearchOverlay();
+      if (ev.target?.closest?.('[data-search-close]')) return closeSearchOverlay();
+      const quickBtn = ev.target?.closest?.('[data-search-quick]');
+      if (quickBtn && input && form) {
+        input.value = quickBtn.dataset.searchQuick;
+        form.submit();
+      }
     });
     document.addEventListener('keydown', escCloseSearch);
   }

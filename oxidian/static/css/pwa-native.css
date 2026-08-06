@@ -588,7 +588,15 @@
     display: none !important;
   }
   body.ox-body-public .ep-search-state { display: block !important; }  /* si hay búsqueda activa (?q=), mostrar chip */
-  /* ── OVERLAY de búsqueda (aparece cuando se toca 🔍 en bottom-nav) ── */
+  /* ══════════════════════════════════════════════════════════════
+     OVERLAY DE BÚSQUEDA — diseño 2025
+     · Backdrop con gradiente vertical (no solo negro plano)
+     · Glass panel: multi-layer shadow + border sutil + halo primario
+     · Icono lupa dentro del input, animación de aparición
+     · Botón CTA circular con flecha (más "app", menos "web form")
+     · Chip cerrar minimalista arriba
+     · Animación spring de entrada
+     ══════════════════════════════════════════════════════════════ */
   #ox-search-overlay {
     position: fixed !important;
     inset: 0 !important;
@@ -596,34 +604,129 @@
     display: flex !important;
     align-items: flex-start !important;
     justify-content: center !important;
-    padding: calc(env(safe-area-inset-top, 0px) + .75rem) .9rem 0 !important;
-    background: color-mix(in srgb, #000 55%, transparent) !important;
-    backdrop-filter: blur(6px) !important;
-    -webkit-backdrop-filter: blur(6px) !important;
-    animation: ox-search-in .18s ease-out;
+    padding: calc(env(safe-area-inset-top, 0px) + .9rem) 1rem 0 !important;
+    /* Backdrop en dos capas: tinte cálido brand + oscurecido → profundidad */
+    background:
+      radial-gradient(ellipse at 50% 0%,
+        color-mix(in srgb, var(--brand-primary) 22%, transparent) 0%,
+        transparent 60%),
+      color-mix(in srgb, #000 60%, transparent) !important;
+    backdrop-filter: blur(10px) saturate(1.3) !important;
+    -webkit-backdrop-filter: blur(10px) saturate(1.3) !important;
+    animation: ox-search-backdrop-in .22s ease-out;
   }
   #ox-search-overlay[hidden] { display: none !important; }
-  @keyframes ox-search-in {
-    from { opacity: 0; }
-    to   { opacity: 1; }
+  @keyframes ox-search-backdrop-in {
+    from { opacity: 0; backdrop-filter: blur(0px); }
+    to   { opacity: 1; backdrop-filter: blur(10px) saturate(1.3); }
   }
-  #ox-search-overlay .ox-search-panel {
+
+  /* Contenedor de dos filas: chip cerrar + panel principal */
+  #ox-search-overlay .ox-search-stack {
     width: 100%;
-    max-width: 500px;
-    background: var(--theme-surface);
-    border-radius: 20px;
-    box-shadow: 0 20px 50px -10px rgba(0,0,0,.4);
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: .75rem;
+  }
+
+  /* Chip cerrar minimalista arriba-derecha */
+  #ox-search-overlay .ox-search-top {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: .5rem;
+  }
+  #ox-search-overlay .ox-search-hint {
+    font-size: .7rem;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,.72);
+    padding: .35rem .7rem;
+    border-radius: 999px;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.14);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  #ox-search-overlay [data-search-close] {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid rgba(255,255,255,.16);
+    background: rgba(255,255,255,.1);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 1.15rem;
+    line-height: 1;
+    display: grid;
+    place-items: center;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition: transform .12s ease, background .15s ease;
+  }
+  #ox-search-overlay [data-search-close]:active {
+    transform: scale(.9);
+    background: rgba(255,255,255,.18);
+  }
+
+  /* Panel principal con glass sutil + halo brand */
+  #ox-search-overlay .ox-search-panel {
     display: flex;
     align-items: center;
     gap: .5rem;
-    padding: .55rem .75rem;
-    border: 1px solid color-mix(in srgb, var(--brand-primary) 22%, transparent);
-    animation: ox-search-panel-in .25s cubic-bezier(.2,.9,.3,1.05);
+    padding: .35rem .35rem .35rem 1.1rem;
+    background: color-mix(in srgb, var(--theme-surface) 96%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 30%, transparent);
+    border-radius: 22px;
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--brand-primary) 12%, transparent),
+      0 30px 60px -18px rgba(0,0,0,.45),
+      0 10px 24px -10px color-mix(in srgb, var(--brand-primary) 30%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent);
+    animation: ox-search-panel-in .32s cubic-bezier(.2,.9,.3,1.15);
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  #ox-search-overlay .ox-search-panel:focus-within {
+    border-color: color-mix(in srgb, var(--brand-primary) 70%, transparent);
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--brand-primary) 20%, transparent),
+      0 30px 60px -18px rgba(0,0,0,.5),
+      0 12px 30px -10px color-mix(in srgb, var(--brand-primary) 40%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #fff 50%, transparent);
   }
   @keyframes ox-search-panel-in {
-    from { transform: translateY(-8px); opacity: 0; }
-    to   { transform: translateY(0); opacity: 1; }
+    0%   { transform: translateY(-16px) scale(.96); opacity: 0; }
+    60%  { transform: translateY(2px)   scale(1.01); opacity: 1; }
+    100% { transform: translateY(0)     scale(1);    opacity: 1; }
   }
+  @media (prefers-reduced-motion: reduce) {
+    #ox-search-overlay,
+    #ox-search-overlay .ox-search-panel { animation: none; }
+  }
+
+  /* Icono lupa como prefijo del input */
+  #ox-search-overlay .ox-search-icon {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    color: color-mix(in srgb, var(--brand-primary) 78%, var(--theme-text));
+    display: grid;
+    place-items: center;
+  }
+  #ox-search-overlay .ox-search-icon svg {
+    width: 100%;
+    height: 100%;
+    stroke: currentColor;
+    stroke-width: 2.4;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* Input: sin cromo, tipografía prominente */
   #ox-search-overlay input[type="text"] {
     flex: 1;
     min-width: 0;
@@ -631,28 +734,72 @@
     outline: 0;
     background: transparent;
     color: var(--theme-text);
-    font-size: 16px;    /* evita zoom auto de iOS al focus */
-    font-weight: 700;
-    padding: .5rem 0;
+    font-size: 16px;        /* evita zoom auto iOS */
+    font-weight: 800;
+    letter-spacing: -.01em;
+    padding: .7rem 0;
+    caret-color: var(--brand-primary);
   }
-  #ox-search-overlay button {
+  #ox-search-overlay input[type="text"]::placeholder {
+    color: color-mix(in srgb, var(--theme-text) 40%, transparent);
+    font-weight: 700;
+  }
+
+  /* CTA circular con flecha (más "app", menos "form web") */
+  #ox-search-overlay button[type="submit"] {
     flex: 0 0 auto;
-    min-height: 40px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
     border: 0;
-    border-radius: 12px;
-    padding: 0 .9rem;
-    font-size: .85rem;
-    font-weight: 900;
+    border-radius: 50%;
     color: var(--brand-on-primary);
     background: linear-gradient(135deg, var(--brand-primary),
       color-mix(in srgb, var(--brand-primary) 78%, var(--brand-accent)));
-    box-shadow: 0 4px 12px -3px color-mix(in srgb, var(--brand-primary) 55%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, #fff 40%, transparent),
+      0 6px 16px -4px color-mix(in srgb, var(--brand-primary) 60%, transparent);
+    display: grid;
+    place-items: center;
+    font-size: 1.25rem;
+    line-height: 1;
+    transition: transform .12s ease, box-shadow .18s ease;
   }
-  #ox-search-overlay [data-search-close] {
-    background: color-mix(in srgb, var(--theme-text) 8%, transparent) !important;
-    color: var(--theme-text) !important;
-    padding: 0 .7rem !important;
-    box-shadow: none !important;
+  #ox-search-overlay button[type="submit"]:active {
+    transform: scale(.92);
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent),
+      0 3px 8px -2px color-mix(in srgb, var(--brand-primary) 55%, transparent);
+  }
+
+  /* Chips de sugerencias rápidas bajo el panel — invitan al tap */
+  #ox-search-overlay .ox-search-quick {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    padding: 0 .25rem;
+    animation: ox-search-quick-in .4s ease-out .12s both;
+  }
+  @keyframes ox-search-quick-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  #ox-search-overlay .ox-search-quick button {
+    flex: 0 0 auto;
+    padding: .45rem .8rem;
+    border-radius: 999px;
+    font-size: .78rem;
+    font-weight: 800;
+    color: #fff;
+    background: rgba(255,255,255,.1);
+    border: 1px solid rgba(255,255,255,.18);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition: transform .12s ease, background .15s ease;
+  }
+  #ox-search-overlay .ox-search-quick button:active {
+    transform: scale(.94);
+    background: rgba(255,255,255,.2);
   }
 
   /* ══════════════════════════════════════════════════════════════
