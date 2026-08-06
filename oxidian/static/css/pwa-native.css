@@ -850,28 +850,34 @@
     pointer-events: none !important;
   }
 
-  /* Imagen: dominante — 54dvh, ocupa más de la mitad superior para
-     que el producto sea el protagonista visual (patrón Rappi/Wolt). */
+  /* Imagen: producto COMPLETO visible (contain), fondo cálido con halo
+     radial primario para que resalte sin recortarlo. Altura 48dvh:
+     protagonista pero deja aire para el body y CTA sin scroll. */
   body.ox-body-public .ep-modal-img-wrap {
     aspect-ratio: auto !important;
-    height: 54dvh !important;
-    min-height: 280px !important;
-    max-height: 62dvh !important;
+    height: 48dvh !important;
+    min-height: 260px !important;
+    max-height: 55dvh !important;
     background:
-      radial-gradient(circle at 50% 40%,
-        color-mix(in srgb, var(--brand-primary) 12%, transparent) 0%,
-        transparent 60%),
-      color-mix(in srgb, var(--theme-surface-alt) 60%, #fff) !important;
+      radial-gradient(ellipse at 50% 45%,
+        color-mix(in srgb, var(--brand-primary) 14%, transparent) 0%,
+        transparent 65%),
+      linear-gradient(180deg,
+        color-mix(in srgb, var(--theme-surface-alt) 70%, #fff) 0%,
+        color-mix(in srgb, var(--theme-surface-alt) 40%, #fff) 100%) !important;
     position: relative !important;
     border-radius: 24px 24px 0 0 !important;
     overflow: hidden !important;
+    padding: 1rem !important;   /* aire para que el producto no toque el borde */
   }
   body.ox-body-public .ep-modal-img {
     width: 100% !important;
     height: 100% !important;
-    object-fit: cover !important;
+    object-fit: contain !important;   /* PRODUCTO COMPLETO — no se recorta */
+    object-position: center !important;
     /* Ken-burns muy sutil al abrir → sensación premium */
     animation: ox-modal-img-in .9s cubic-bezier(.2,.7,.2,1) both;
+    filter: drop-shadow(0 12px 24px color-mix(in srgb, var(--theme-text) 22%, transparent));
   }
   @keyframes ox-modal-img-in {
     from { transform: scale(1.06); }
@@ -880,20 +886,9 @@
   @media (prefers-reduced-motion: reduce) {
     body.ox-body-public .ep-modal-img { animation: none; }
   }
-  /* Fade fuerte hacia el surface: permite que el nombre "levite" sobre la
-     imagen sin necesidad de fondo sólido → producto sigue siendo protagonista. */
-  body.ox-body-public .ep-modal-img-wrap::after {
-    content: "" !important;
-    position: absolute !important;
-    inset: auto 0 -1px 0 !important;
-    height: 130px !important;
-    background: linear-gradient(180deg,
-      transparent 0%,
-      color-mix(in srgb, var(--theme-surface) 50%, transparent) 45%,
-      var(--theme-surface) 100%) !important;
-    pointer-events: none !important;
-    z-index: 1 !important;
-  }
+  /* Sin fade sobre la imagen (dejaba menos espacio útil visible del
+     producto). La separación con el body se hace con el borde radius. */
+  body.ox-body-public .ep-modal-img-wrap::after { content: none !important; }
 
   /* Botón cerrar (×) flotante sobre la foto, esquina superior derecha */
   body.ox-body-public .ep-modal-panel [data-modal-close],
@@ -918,20 +913,16 @@
     box-shadow: 0 4px 14px rgba(0,0,0,.35) !important;
   }
 
-  /* Cuerpo scrolleable con jerarquía cuidada — el body sube -34px para
-     que el nombre "monte" sobre la imagen (efecto Wolt/Deliveroo) */
+  /* Cuerpo scrolleable directamente bajo la imagen (sin overlap para
+     no recortar el producto). Padding cómodo, gap coherente. */
   body.ox-body-public .ep-modal-body {
-    padding: 1.15rem 1.2rem calc(1.2rem + env(safe-area-inset-bottom, 0px)) !important;
+    padding: 1rem 1.2rem calc(1.2rem + env(safe-area-inset-bottom, 0px)) !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
     display: flex !important;
     flex-direction: column !important;
-    gap: .85rem !important;
-    margin-top: -34px !important;
-    position: relative !important;
-    z-index: 2 !important;
+    gap: .75rem !important;
     background: var(--theme-surface) !important;
-    border-radius: 24px 24px 0 0 !important;
   }
   body.ox-body-public .ep-modal-name-row {
     display: flex !important;
@@ -1009,37 +1000,25 @@
       0 6px 18px -4px color-mix(in srgb, var(--brand-primary) 65%, transparent) !important;
     text-shadow: 0 1px 1px rgba(0,0,0,.18) !important;
   }
-  /* Precio flotante glossy sobre la imagen (patrón Wolt/Rappi):
-     top-right, gradiente marca, sombra elevada — imposible ignorar. */
+  /* Precio en fila propia dentro del body: precio grande en primario,
+     precio-old tachado. No compite con la imagen ni la tapa. */
   body.ox-body-public .ep-modal-panel { position: relative !important; }
   body.ox-body-public .ep-modal-price-row {
-    position: absolute !important;
-    top: calc(env(safe-area-inset-top, 0px) + 14px) !important;
-    right: 60px !important;   /* deja hueco para el botón cerrar (34px + margen) */
-    z-index: 7 !important;
-    padding: .5rem .9rem !important;
-    border-radius: 999px !important;
-    background: linear-gradient(135deg, var(--brand-primary),
-      color-mix(in srgb, var(--brand-primary) 78%, var(--brand-accent))) !important;
-    color: var(--brand-on-primary) !important;
-    display: inline-flex !important;
+    display: flex !important;
     align-items: baseline !important;
-    gap: .4rem !important;
-    box-shadow:
-      0 1px 0 color-mix(in srgb, #fff 42%, transparent) inset,
-      0 8px 22px -6px color-mix(in srgb, var(--brand-primary) 60%, transparent) !important;
-    text-shadow: 0 1px 1px rgba(0,0,0,.22) !important;
+    gap: .55rem !important;
+    padding: .1rem 0 !important;
   }
   body.ox-body-public .ep-modal-price-row .ep-modal-price {
-    color: inherit !important;
-    font-size: 1.05rem !important;
+    font-size: 1.5rem !important;
     font-weight: 900 !important;
-    letter-spacing: -.01em !important;
+    color: var(--brand-primary) !important;
+    letter-spacing: -.015em !important;
   }
   body.ox-body-public .ep-modal-price-row .ep-modal-price-old {
-    color: color-mix(in srgb, #fff 78%, transparent) !important;
+    color: color-mix(in srgb, var(--theme-text) 42%, transparent) !important;
     text-decoration: line-through !important;
-    font-size: .78rem !important;
+    font-size: .95rem !important;
     font-weight: 700 !important;
   }
 
