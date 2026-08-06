@@ -641,22 +641,49 @@
      inert queda en la bottom-nav → el botón Menú y otros items dejan de
      responder. Aquí se limpia siempre tras navegación o back/forward. */
   function releaseStuckModalState() {
+    // Limpia clases y estilos residuales del modal quick-add
     if (document.body.classList.contains('ox-modal-open')) {
       document.body.classList.remove('ox-modal-open');
     }
     if (document.body.style.overflow === 'hidden') {
       document.body.style.overflow = '';
     }
-    // Limpia inert en cualquier hijo de body — sólo el modal debería tenerlo
-    // y ya se ha desmontado. Iterar directos evita tocar aria-hidden diálogos
-    // activos legítimos anidados en <main>.
+    // Limpia el estado is-navigating por si SPA-nav cayó en un fallback y no
+    // llegó al finally. Sin esto: .ox-bnav-item { pointer-events: none } se
+    // queda activo y los botones del bottom-nav no responden.
+    if (document.body.classList.contains('is-navigating')) {
+      document.body.classList.remove('is-navigating');
+    }
+    if (document.body.classList.contains('spa-fade-out')) {
+      document.body.classList.remove('spa-fade-out');
+    }
+    // inert quita pointer events. El modal lo pone en TODOS los hijos de body
+    // (header, nav, footer). Si el usuario navegó antes de cerrar, queda pegado.
     Array.from(document.body.children).forEach(el => {
       if (el.inert) el.inert = false;
     });
+    // Deduplica #ep-modal: el script inline portala el modal a body en cada
+    // ejecución. Si SPA-nav re-inserta un <main> que contiene otro #ep-modal,
+    // quedan dos nodos con el mismo id → getElementById devuelve el equivocado,
+    // formularios colisionan y los listeners de tap no funcionan como se espera.
+    // Nos quedamos con el más nuevo (el que está en <main>) y eliminamos el
+    // portalado antiguo, o al revés si el nuevo aún no fue portalado.
+    const dupModals = document.querySelectorAll('#ep-modal');
+    if (dupModals.length > 1) {
+      // Preferimos el que esté DENTRO de <main> (más reciente del render actual).
+      const inMain = Array.from(dupModals).find(m => m.closest('main'));
+      const keep = inMain || dupModals[dupModals.length - 1];
+      dupModals.forEach(m => { if (m !== keep) m.remove(); });
+    }
   }
   document.addEventListener('spa:navigated', releaseStuckModalState);
   window.addEventListener('pageshow', releaseStuckModalState);
   window.addEventListener('popstate', releaseStuckModalState);
+  // Doble red: si el usuario vuelve a poner la app en foreground tras estar
+  // fuera un rato con estado stuck, limpiamos.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') releaseStuckModalState();
+  });
 
   /* Pausar animaciones infinitas durante el scroll → GPU libre para el
      pan táctil, evita el bug de scroll intermitente en iOS PWA. Se añade
