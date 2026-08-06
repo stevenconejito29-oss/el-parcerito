@@ -333,6 +333,43 @@
   </div>
   {# Progreso de lectura integrado en el borde inferior #}
   <div class="ox-hdr-progress" aria-hidden="true"></div>
+
+  {# Sub-barra "estilo app delivery" — solo visible en PWA instalada
+     (display-mode: standalone). En navegador queda display:none via CSS. #}
+  <div class="ox-header-sub" role="group" aria-label="Información de la tienda">
+    <div class="ox-header-sub-scroll">
+      {% if brand.delivery %}
+      <button type="button" class="ox-header-sub-item" data-info-open>
+        <span class="ox-header-sub-ico" aria-hidden="true">🛵</span>
+        <span>Entrega a domicilio</span>
+      </button>
+      {% endif %}
+      {% if brand.recogida %}
+      <button type="button" class="ox-header-sub-item" data-info-open>
+        <span class="ox-header-sub-ico" aria-hidden="true">🏪</span>
+        <span>Recoger en local</span>
+      </button>
+      {% endif %}
+      {% if brand.horario_apertura and brand.horario_cierre %}
+      <button type="button" class="ox-header-sub-item" data-info-open>
+        <span class="ox-header-sub-ico" aria-hidden="true">🕐</span>
+        <span>{{ brand.horario_apertura }}–{{ brand.horario_cierre }}</span>
+      </button>
+      {% endif %}
+      {% if brand.puntos %}
+      <a href="{{ url_for('public.club') }}" class="ox-header-sub-item ox-header-sub-item--puntos">
+        <span class="ox-header-sub-ico" aria-hidden="true">{{ heritage_icon('grano') }}</span>
+        <span>{{ ui.loyalty_name }}</span>
+      </a>
+      {% endif %}
+      {% if brand.telefono %}
+      <a href="{{ url_for('public.whatsapp') }}" class="ox-header-sub-item" target="_blank" rel="noopener">
+        <span class="ox-header-sub-ico" aria-hidden="true">💬</span>
+        <span>WhatsApp</span>
+      </a>
+      {% endif %}
+    </div>
+  </div>
 </header>
 
 {# Flash messages #}
