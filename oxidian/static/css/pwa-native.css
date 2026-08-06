@@ -880,15 +880,19 @@
   @media (prefers-reduced-motion: reduce) {
     body.ox-body-public .ep-modal-img { animation: none; }
   }
+  /* Fade fuerte hacia el surface: permite que el nombre "levite" sobre la
+     imagen sin necesidad de fondo sólido → producto sigue siendo protagonista. */
   body.ox-body-public .ep-modal-img-wrap::after {
     content: "" !important;
     position: absolute !important;
-    inset: auto 0 0 0 !important;
-    height: 90px !important;
+    inset: auto 0 -1px 0 !important;
+    height: 130px !important;
     background: linear-gradient(180deg,
       transparent 0%,
-      color-mix(in srgb, var(--theme-surface) 96%, transparent) 100%) !important;
+      color-mix(in srgb, var(--theme-surface) 50%, transparent) 45%,
+      var(--theme-surface) 100%) !important;
     pointer-events: none !important;
+    z-index: 1 !important;
   }
 
   /* Botón cerrar (×) flotante sobre la foto, esquina superior derecha */
@@ -914,7 +918,8 @@
     box-shadow: 0 4px 14px rgba(0,0,0,.35) !important;
   }
 
-  /* Cuerpo scrolleable con jerarquía cuidada */
+  /* Cuerpo scrolleable con jerarquía cuidada — el body sube -34px para
+     que el nombre "monte" sobre la imagen (efecto Wolt/Deliveroo) */
   body.ox-body-public .ep-modal-body {
     padding: 1.15rem 1.2rem calc(1.2rem + env(safe-area-inset-bottom, 0px)) !important;
     overflow-y: auto !important;
@@ -922,6 +927,11 @@
     display: flex !important;
     flex-direction: column !important;
     gap: .85rem !important;
+    margin-top: -34px !important;
+    position: relative !important;
+    z-index: 2 !important;
+    background: var(--theme-surface) !important;
+    border-radius: 24px 24px 0 0 !important;
   }
   body.ox-body-public .ep-modal-name-row {
     display: flex !important;
@@ -980,13 +990,13 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 18%, transparent) !important;
   }
 
-  /* Badge sobre la imagen (descuento / solo canje / etc.) — pop-in dopamínico */
+  /* Badge (descuento/canje) — pill glossy top-left */
   body.ox-body-public .ep-modal-badge {
     position: absolute !important;
     top: calc(env(safe-area-inset-top, 0px) + 14px) !important;
     left: 14px !important;
     z-index: 6 !important;
-    padding: .35rem .7rem !important;
+    padding: .38rem .75rem !important;
     border-radius: 999px !important;
     background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent)) !important;
     color: var(--brand-on-primary) !important;
@@ -994,7 +1004,43 @@
     font-weight: 900 !important;
     letter-spacing: .04em !important;
     text-transform: uppercase !important;
-    box-shadow: 0 4px 14px -4px color-mix(in srgb, var(--brand-primary) 55%, transparent) !important;
+    box-shadow:
+      0 1px 0 color-mix(in srgb, #fff 40%, transparent) inset,
+      0 6px 18px -4px color-mix(in srgb, var(--brand-primary) 65%, transparent) !important;
+    text-shadow: 0 1px 1px rgba(0,0,0,.18) !important;
+  }
+  /* Precio flotante glossy sobre la imagen (patrón Wolt/Rappi):
+     top-right, gradiente marca, sombra elevada — imposible ignorar. */
+  body.ox-body-public .ep-modal-panel { position: relative !important; }
+  body.ox-body-public .ep-modal-price-row {
+    position: absolute !important;
+    top: calc(env(safe-area-inset-top, 0px) + 14px) !important;
+    right: 60px !important;   /* deja hueco para el botón cerrar (34px + margen) */
+    z-index: 7 !important;
+    padding: .5rem .9rem !important;
+    border-radius: 999px !important;
+    background: linear-gradient(135deg, var(--brand-primary),
+      color-mix(in srgb, var(--brand-primary) 78%, var(--brand-accent))) !important;
+    color: var(--brand-on-primary) !important;
+    display: inline-flex !important;
+    align-items: baseline !important;
+    gap: .4rem !important;
+    box-shadow:
+      0 1px 0 color-mix(in srgb, #fff 42%, transparent) inset,
+      0 8px 22px -6px color-mix(in srgb, var(--brand-primary) 60%, transparent) !important;
+    text-shadow: 0 1px 1px rgba(0,0,0,.22) !important;
+  }
+  body.ox-body-public .ep-modal-price-row .ep-modal-price {
+    color: inherit !important;
+    font-size: 1.05rem !important;
+    font-weight: 900 !important;
+    letter-spacing: -.01em !important;
+  }
+  body.ox-body-public .ep-modal-price-row .ep-modal-price-old {
+    color: color-mix(in srgb, #fff 78%, transparent) !important;
+    text-decoration: line-through !important;
+    font-size: .78rem !important;
+    font-weight: 700 !important;
   }
 
   /* Categoría sobre el nombre (kicker sutil, no compite) */
@@ -1020,19 +1066,8 @@
     gap: .25rem !important;
   }
 
-  /* Precio row: precio grande + tachado sutil si hay descuento */
-  body.ox-body-public .ep-modal-price-row {
-    display: flex !important;
-    align-items: baseline !important;
-    gap: .55rem !important;
-    padding: .25rem 0 !important;
-  }
-  body.ox-body-public .ep-modal-price-old {
-    font-size: .95rem !important;
-    color: color-mix(in srgb, var(--theme-text) 45%, transparent) !important;
-    text-decoration: line-through !important;
-    font-weight: 700 !important;
-  }
+  /* (Reglas antiguas de .ep-modal-price-row eliminadas — el precio ahora
+     flota sobre la imagen; el bloque definitivo está más arriba.) */
 
   /* Presentaciones (tamaños): grid de pills grandes, más tocables */
   body.ox-body-public .ep-modal-pres-ttl {

@@ -632,6 +632,32 @@
     if (localStorage.getItem('oxPushSound') === '1') chime();
   });
 
+  /* Limpieza de estado modal huérfano tras SPA-nav / pageshow / popstate.
+     Bug: el modal quick-add (index.html) hace body.style.overflow='hidden',
+     body.classList.add('ox-modal-open') y element.inert=true en todos los
+     hermanos de body (incluyendo <nav.ox-bottom-nav>, <header>, <footer>).
+     Si el usuario navega antes de cerrar el modal, SPA-nav reemplaza <main>
+     pero el modal (dentro de main) desaparece sin ejecutar closeModal →
+     inert queda en la bottom-nav → el botón Menú y otros items dejan de
+     responder. Aquí se limpia siempre tras navegación o back/forward. */
+  function releaseStuckModalState() {
+    if (document.body.classList.contains('ox-modal-open')) {
+      document.body.classList.remove('ox-modal-open');
+    }
+    if (document.body.style.overflow === 'hidden') {
+      document.body.style.overflow = '';
+    }
+    // Limpia inert en cualquier hijo de body — sólo el modal debería tenerlo
+    // y ya se ha desmontado. Iterar directos evita tocar aria-hidden diálogos
+    // activos legítimos anidados en <main>.
+    Array.from(document.body.children).forEach(el => {
+      if (el.inert) el.inert = false;
+    });
+  }
+  document.addEventListener('spa:navigated', releaseStuckModalState);
+  window.addEventListener('pageshow', releaseStuckModalState);
+  window.addEventListener('popstate', releaseStuckModalState);
+
   /* Pausar animaciones infinitas durante el scroll → GPU libre para el
      pan táctil, evita el bug de scroll intermitente en iOS PWA. Se añade
      body.is-scrolling con listener passive y se retira 150ms tras el
