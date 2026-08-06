@@ -356,7 +356,8 @@
     padding: clamp(1.1rem, 3.5vw, 1.6rem) clamp(1rem, 4vw, 1.75rem) clamp(1.15rem, 3.5vw, 1.65rem) !important;
     min-height: 0 !important;
     max-height: none !important;
-    max-width: 640px !important;   /* nunca se estira demasiado en tablets */
+    /* Estrecho intencionalmente: parece una tarjeta editorial, no una banda */
+    max-width: clamp(260px, 78vw, 420px) !important;
     border-radius: 20px !important;
     overflow: hidden !important;
     display: block !important;

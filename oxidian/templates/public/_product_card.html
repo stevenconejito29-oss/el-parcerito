@@ -2,7 +2,21 @@
 {% from 'partials/heritage_icons.html' import heritage_icon %}
 {# Variable esperada: p (Product) #}
 {% set _product_origin = product_origins.get(p.id, origen_actual) if product_origins is defined else origen_actual %}
-{% set _qty_cart = (carrito.get(p.id|string, 0) if carrito is defined and carrito_origen == _product_origin else 0)|int %}
+{# Suma cantidades en canasta para este producto: hay que agregar la clave
+   legacy `"123"` Y todas las firmas de línea `"123#..."` (productos con
+   presentación, sabores, extras o selección de combo). Antes solo se leía
+   la legacy — combos y variantes nunca marcaban el card como "En canasta". #}
+{% set _qty_ns = namespace(v=0) %}
+{% if carrito is defined and carrito_origen == _product_origin %}
+  {% set _pid_str = p.id|string %}
+  {% set _pid_prefix = _pid_str ~ '#' %}
+  {% for _k, _q in carrito.items() %}
+    {% if _k == _pid_str or _k is string and _k.startswith(_pid_prefix) %}
+      {% set _qty_ns.v = _qty_ns.v + (_q|int) %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+{% set _qty_cart = _qty_ns.v %}
 {% set _card = product_cards[p.id] %}
 {% set _has_extras = _card.has_extras %}
 {% set _tallas = _card.presentations %}
