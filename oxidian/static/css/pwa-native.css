@@ -13,15 +13,16 @@
 
 @media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen) {
 
-  /* ── Sensación nativa: sin bounce ──
-     IMPORTANTE: `user-select:none` y `touch-callout:none` NO se aplican
-     al html/body — en iOS eso rompe el scroll táctil. Solo se aplican al
-     "chrome" no scrolleable (header, sub-barra, bottom-nav, botones). */
+  /* ── Scroll táctil garantizado ──
+     Iteración anterior: user-select:none / touch-action:pan-y /
+     overscroll-behavior:contain aplicados a html/body bloqueaban el
+     scroll en iOS PWA. Se han retirado todas esas reglas globales.
+     Aquí forzamos explícitamente el comportamiento de scroll nativo
+     por si `overflow-x:clip` u otras reglas del stack legacy dejan
+     el body en estado inconsistente. */
   html, body.ox-body-public {
-    overscroll-behavior-y: contain;
-    /* touch-action: pan-y explícito garantiza que Safari permita el pan
-       vertical incluso si algún ancestro tiene reglas conflictivas. */
-    touch-action: pan-y;
+    overflow-y: visible !important;
+    -webkit-overflow-scrolling: touch !important;
   }
   body.ox-body-public .ox-header-public,
   body.ox-body-public .ox-header-sub,
@@ -613,10 +614,10 @@
   /* ── Grid: gaps más generosos → "aire" nativo tipo Glovo/UberEats ── */
   body.ox-body-public .ep-grid { gap: .85rem !important; }
 
-  /* ── Primer bloque después del header: aire respetando safe-area ── */
-  body.ox-body-public main {
-    padding-top: max(.6rem, env(safe-area-inset-top, 0px)) !important;
-  }
+  /* Aire tras el header sin duplicar safe-area (body ya lo aplica en
+     oxidian-ui.css:104). Duplicarlo empujaba contenido y podía dejar
+     el body más corto que el viewport, colapsando el scroll. */
+  body.ox-body-public main { padding-top: .6rem !important; }
 
   /* ── Producto: tarjeta más viva, con relieve táctil ── */
   body.ox-body-public .ep-card {
