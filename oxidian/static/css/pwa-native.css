@@ -13,23 +13,26 @@
 
 @media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen) {
 
-  /* ── Sensación nativa: sin bounce, sin selección accidental ── */
+  /* ── Sensación nativa: sin bounce ──
+     IMPORTANTE: `user-select:none` y `touch-callout:none` NO se aplican
+     al html/body — en iOS eso rompe el scroll táctil. Solo se aplican al
+     "chrome" no scrolleable (header, sub-barra, bottom-nav, botones). */
   html, body.ox-body-public {
     overscroll-behavior-y: contain;
+    /* touch-action: pan-y explícito garantiza que Safari permita el pan
+       vertical incluso si algún ancestro tiene reglas conflictivas. */
+    touch-action: pan-y;
+  }
+  body.ox-body-public .ox-header-public,
+  body.ox-body-public .ox-header-sub,
+  body.ox-body-public .ox-bottom-nav,
+  body.ox-body-public .ox-bnav-item,
+  body.ox-body-public .ep-hero-cta,
+  body.ox-body-public .ox-header-sub-item {
     -webkit-user-select: none;
        -moz-user-select: none;
             user-select: none;
     -webkit-touch-callout: none;
-  }
-  /* Inputs SIEMPRE seleccionables (checkout, teléfono, búsqueda, notas). */
-  body.ox-body-public input,
-  body.ox-body-public textarea,
-  body.ox-body-public [contenteditable="true"],
-  body.ox-body-public [contenteditable=""] {
-    -webkit-user-select: text;
-       -moz-user-select: text;
-            user-select: text;
-    -webkit-touch-callout: default;
   }
 
   /* ── Retirar CTA de instalar (ya está instalada) ── */
