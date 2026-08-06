@@ -343,9 +343,12 @@
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + .4rem);
     box-shadow: 0 -10px 24px -12px color-mix(in srgb, var(--theme-text) 24%, transparent);
   }
-  /* Reserva espacio para que el bottom-nav no tape el último producto. */
+  /* Reserva espacio para que el bottom-nav no tape el último producto.
+     Se ajusta a la altura REAL del bnav (~66px + 8px sombra) + safe-area
+     del home indicator iOS. Antes 88px + safe → dejaba ~200px de aire
+     muerto y sensación de "scroll que no llega al final". */
   body.ox-body-public.ox-has-bottom-nav main {
-    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(74px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   /* ── Carrito con items: pulso sutil para invitar al checkout ── */

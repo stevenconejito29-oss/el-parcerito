@@ -247,13 +247,24 @@
     const form = document.getElementById('buscar');
     const input = form?.querySelector('.ep-search-input');
     if (!form || !input) return;
+    // En PWA instalada (iOS) el `smooth` compite con la inercia del pan y
+    // el `input.focus()` ancla el viewport al input aunque uses
+    // `preventScroll:true` — resultado: al volver al menú tras usar la nav
+    // el scroll se pega en la barra de búsqueda. Fix: en standalone
+    // hacemos scroll INSTANT y NO robamos focus. El usuario sigue viendo
+    // la barra resaltada por `.is-search-target`. Si necesita escribir,
+    // toca el input él mismo.
+    const isStandalone = matchMedia('(display-mode: standalone)').matches
+                      || matchMedia('(display-mode: minimal-ui)').matches
+                      || navigator.standalone === true;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     form.classList.add('is-search-target');
     form.scrollIntoView({
-      behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      behavior: (isStandalone || reduce) ? 'auto' : 'smooth',
       block: 'start',
     });
     window.setTimeout(() => {
-      input.focus({ preventScroll: true });
+      if (!isStandalone) input.focus({ preventScroll: true });
       form.classList.remove('is-search-target');
     }, 180);
   }
