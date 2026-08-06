@@ -555,33 +555,65 @@
 
 @media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen) {
 
-  /* ── Buscador sticky bajo el header: siempre a mano en scroll ── */
+  /* ── Buscador: NO sticky en app instalada (el hero está oculto y
+     tener dos barras persistentes — header+sub y search — se veía
+     sobrepuesto/pesado). El buscador scrollea con el contenido y
+     el botón "Buscar" del bottom-nav le hace focus vía #buscar. */
   body.ox-body-public .ep-search-wrap {
-    position: sticky;
-    top: calc(env(safe-area-inset-top, 0px) + 112px);
-    z-index: 30;
-    padding: .5rem 0;
-    background: linear-gradient(180deg,
-      color-mix(in srgb, var(--theme-bg) 96%, transparent) 0%,
-      color-mix(in srgb, var(--theme-bg) 88%, transparent) 100%);
-    backdrop-filter: saturate(1.4) blur(10px);
-    -webkit-backdrop-filter: saturate(1.4) blur(10px);
+    position: static !important;
+    top: auto !important;
+    z-index: auto !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    padding: .35rem 0 !important;
+    margin: .5rem 0 .9rem !important;
+    scroll-margin-top: 128px !important;   /* para hash #buscar tras el header sticky */
   }
   body.ox-body-public .ep-search-box {
-    box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--brand-primary) 40%, transparent),
-                0 2px 4px color-mix(in srgb, var(--theme-text) 8%, transparent);
-    border-radius: 14px;
+    box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--brand-primary) 30%, transparent),
+                0 2px 4px color-mix(in srgb, var(--theme-text) 8%, transparent) !important;
+    border-radius: 14px !important;
+    border: 1px solid color-mix(in srgb, var(--theme-text) 10%, transparent) !important;
+  }
+  body.ox-body-public .ep-search-box:focus-within {
+    box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--brand-primary) 45%, transparent),
+                0 0 0 3px color-mix(in srgb, var(--brand-primary) 18%, transparent) !important;
   }
 
-  /* ── Category headings: más presencia (guía visual del recorrido) ── */
-  body.ox-body-public .ep-section-title {
-    font-size: 1.18rem;
-    letter-spacing: -.01em;
+  /* ── Ritmo vertical: separación clara entre bloques ── */
+  body.ox-body-public main > section,
+  body.ox-body-public main > form.ep-search-wrap {
+    scroll-margin-top: 128px !important;
   }
-  body.ox-body-public .ep-cat-section { scroll-margin-top: 130px; }
+  body.ox-body-public .ep-banner-section,
+  body.ox-body-public .ep-mc-destacados-wrap {
+    margin-top: .25rem !important;
+    margin-bottom: 1.15rem !important;
+  }
+
+  /* ── Category headings: presencia + "sticky suave" con offset del header ── */
+  body.ox-body-public .ep-section-title {
+    font-size: 1.18rem !important;
+    letter-spacing: -.01em !important;
+  }
+  body.ox-body-public .ep-cat-section {
+    scroll-margin-top: 128px !important;
+    margin-bottom: 1.5rem !important;
+  }
+  body.ox-body-public .ep-cat-title,
+  body.ox-body-public .ep-section-head {
+    margin-top: .25rem !important;
+    padding-top: .25rem !important;
+  }
 
   /* ── Grid: gaps más generosos → "aire" nativo tipo Glovo/UberEats ── */
-  body.ox-body-public .ep-grid { gap: .85rem; }
+  body.ox-body-public .ep-grid { gap: .85rem !important; }
+
+  /* ── Primer bloque después del header: aire respetando safe-area ── */
+  body.ox-body-public main {
+    padding-top: max(.6rem, env(safe-area-inset-top, 0px)) !important;
+  }
 
   /* ── Producto: tarjeta más viva, con relieve táctil ── */
   body.ox-body-public .ep-card {
