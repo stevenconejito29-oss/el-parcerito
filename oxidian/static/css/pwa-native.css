@@ -580,58 +580,79 @@
 
 @media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen) {
 
-  /* ── Buscador: NO sticky en app instalada (el hero está oculto y
-     tener dos barras persistentes — header+sub y search — se veía
-     sobrepuesto/pesado). El buscador scrollea con el contenido y
-     el botón "Buscar" del bottom-nav le hace focus vía #buscar. */
+  /* ── Barra de búsqueda: OCULTA en PWA — la búsqueda vive en el
+     bottom-nav (icono lupa) que abre un overlay dedicado. Así no hay
+     un input inline en el flujo del catálogo que iOS pueda enfocar
+     durante el pan → scroll totalmente fluido en el menú. */
   body.ox-body-public .ep-search-wrap {
-    position: static !important;
-    top: auto !important;
-    z-index: auto !important;
-    background: transparent !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    padding: .35rem 0 !important;
-    margin: .5rem 0 .9rem !important;
-    scroll-margin-top: 128px !important;   /* para hash #buscar tras el header sticky */
+    display: none !important;
   }
-  body.ox-body-public .ep-search-box {
-    box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--brand-primary) 30%, transparent),
-                0 2px 4px color-mix(in srgb, var(--theme-text) 8%, transparent) !important;
-    border-radius: 14px !important;
-    border: 1px solid color-mix(in srgb, var(--theme-text) 10%, transparent) !important;
+  body.ox-body-public .ep-search-state { display: block !important; }  /* si hay búsqueda activa (?q=), mostrar chip */
+  /* ── OVERLAY de búsqueda (aparece cuando se toca 🔍 en bottom-nav) ── */
+  #ox-search-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 100 !important;
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: center !important;
+    padding: calc(env(safe-area-inset-top, 0px) + .75rem) .9rem 0 !important;
+    background: color-mix(in srgb, #000 55%, transparent) !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+    animation: ox-search-in .18s ease-out;
   }
-  body.ox-body-public .ep-search-box:focus-within {
-    box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--brand-primary) 45%, transparent),
-                0 0 0 3px color-mix(in srgb, var(--brand-primary) 18%, transparent) !important;
+  #ox-search-overlay[hidden] { display: none !important; }
+  @keyframes ox-search-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
   }
-  /* Fix scroll "pegado a la barra de búsqueda": iOS Safari captura el
-     touch al pasar por encima del <input type="search"> tratando de
-     enfocarlo, y suelta la inercia del pan vertical. `touch-action:
-     manipulation` permite el pan/tap pero desactiva doble-tap zoom;
-     Safari deja pasar el gesto de scroll al viewport en lugar de
-     retenerlo para focus. Se replica en textarea y select. */
-  body.ox-body-public .ep-search-input,
-  body.ox-body-public .ep-search-wrap input,
-  body.ox-body-public .ep-search-wrap textarea,
-  body.ox-body-public .ep-search-wrap select {
-    touch-action: manipulation !important;
+  #ox-search-overlay .ox-search-panel {
+    width: 100%;
+    max-width: 500px;
+    background: var(--theme-surface);
+    border-radius: 20px;
+    box-shadow: 0 20px 50px -10px rgba(0,0,0,.4);
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .55rem .75rem;
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 22%, transparent);
+    animation: ox-search-panel-in .25s cubic-bezier(.2,.9,.3,1.05);
   }
-  body.ox-body-public .ep-search-wrap,
-  body.ox-body-public .ep-search-box {
-    touch-action: pan-y !important;   /* la barra deja pasar el pan vertical */
+  @keyframes ox-search-panel-in {
+    from { transform: translateY(-8px); opacity: 0; }
+    to   { transform: translateY(0); opacity: 1; }
   }
-  /* CRÍTICO iOS PWA: mientras el usuario scrollea, la barra de búsqueda
-     queda TOTALMENTE inerte al touch → iOS no puede robar focus al input
-     ni al botón Buscar durante el pan. Cuando is-scrolling se retira
-     (~150ms tras el último scroll event) la barra vuelve a ser
-     interactiva. Sin esto: cualquier swipe cerca del input activa el
-     focus del <input type=search>, iOS ancla el viewport al input y
-     bloquea el resto del pan → "no me deja scrollear". */
-  body.ox-body-public.is-scrolling .ep-search-wrap,
-  body.ox-body-public.is-scrolling .ep-search-wrap * {
-    pointer-events: none !important;
-    touch-action: none !important;
+  #ox-search-overlay input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--theme-text);
+    font-size: 16px;    /* evita zoom auto de iOS al focus */
+    font-weight: 700;
+    padding: .5rem 0;
+  }
+  #ox-search-overlay button {
+    flex: 0 0 auto;
+    min-height: 40px;
+    border: 0;
+    border-radius: 12px;
+    padding: 0 .9rem;
+    font-size: .85rem;
+    font-weight: 900;
+    color: var(--brand-on-primary);
+    background: linear-gradient(135deg, var(--brand-primary),
+      color-mix(in srgb, var(--brand-primary) 78%, var(--brand-accent)));
+    box-shadow: 0 4px 12px -3px color-mix(in srgb, var(--brand-primary) 55%, transparent);
+  }
+  #ox-search-overlay [data-search-close] {
+    background: color-mix(in srgb, var(--theme-text) 8%, transparent) !important;
+    color: var(--theme-text) !important;
+    padding: 0 .7rem !important;
+    box-shadow: none !important;
   }
 
   /* ══════════════════════════════════════════════════════════════
@@ -720,6 +741,32 @@
        el navegador re-layouta durante scroll y el scrollbar salta cada
        pocos segundos → sensación de "pillada". Mejor renderizar todo y
        ganar suavidad. */
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     OPTIMIZACIONES DE FLUIDEZ (sensación app nativa)
+     · GPU compositing en elementos sticky/fixed → menos repaint
+     · CSS containment en cards y grids → aísla layouts
+     · will-change controlado sólo donde aporta
+     ══════════════════════════════════════════════════════════════ */
+  /* Header sticky → propio compositor layer, no repinta al scroll */
+  body.ox-body-public .ox-header-public {
+    transform: translateZ(0);
+    will-change: transform;
+    contain: layout paint;
+  }
+  /* Grids de producto: layout aislado, sombras no propagan */
+  body.ox-body-public .ep-grid,
+  body.ox-body-public .ep-cat-section {
+    contain: layout style;
+  }
+  /* Card individual: paint aislado por card (sombras propias contenidas) */
+  body.ox-body-public .ep-card {
+    contain: layout style paint;
+  }
+  /* Imágenes: preservan aspect ratio y evitan reflows durante lazy-load */
+  body.ox-body-public .ep-card-img img {
+    contain: strict;   /* size + layout + style + paint */
   }
 
   /* En primera carga PWA, el scroll-reveal (storefront-menu.css:2795)

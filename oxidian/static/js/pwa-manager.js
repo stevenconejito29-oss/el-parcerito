@@ -700,30 +700,49 @@
     if (document.visibilityState === 'visible') releaseStuckModalState();
   });
 
-  /* Contra el "no me deja scrollear en la barra de búsqueda": iOS Safari
-     al iniciar un pan cerca de <input type=search> intenta darle focus,
-     lo que ancla el viewport al input y bloquea la inercia del scroll.
-     Estrategia: cualquier touchstart sobre elementos del catálogo activa
-     body.is-scrolling inmediatamente (antes de que se dispare ningún
-     scroll event) — y el CSS pausa pointer-events en la barra de
-     búsqueda mientras la clase esté activa. Si fue un tap real (short
-     touch, no scroll), el timeout la retira ~200ms después y el input
-     vuelve a responder. Sin esperar a que scroll se produzca, iOS no
-     puede robar focus. */
-  document.addEventListener('touchstart', (ev) => {
-    // Si el touch empieza sobre la propia barra de búsqueda (tap
-    // intencional para escribir), NO activamos is-scrolling: el usuario
-    // quiere focus. Solo si empieza fuera de la barra.
-    if (ev.target && ev.target.closest && ev.target.closest('.ep-search-wrap')) return;
-    if (!document.body.classList.contains('is-scrolling')) {
-      document.body.classList.add('is-scrolling');
-    }
-    // Reset timer para que la clase se retire tras el gesto
-    clearTimeout(window._epScrollGuardTimer);
-    window._epScrollGuardTimer = window.setTimeout(() => {
-      document.body.classList.remove('is-scrolling');
-    }, 220);
-  }, { passive: true, capture: true });
+  /* Overlay de búsqueda (reemplaza a la barra inline que se ocultó en PWA).
+     Se abre al pulsar el botón 🔍 del bottom-nav (`data-bnav="search"`).
+     Envía a `/?q=<term>` — mismo endpoint que la barra web. Ligero y sólo
+     se monta cuando el usuario lo pide (no infla el DOM del menú). */
+  function openSearchOverlay() {
+    if (document.getElementById('ox-search-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'ox-search-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.innerHTML =
+      '<form class="ox-search-panel" method="GET" action="/">' +
+        '<input type="text" name="q" placeholder="Buscar productos, combos…" ' +
+               'autocomplete="off" autocapitalize="off" inputmode="search" ' +
+               'enterkeyhint="search" aria-label="Buscar">' +
+        '<button type="submit">Buscar</button>' +
+        '<button type="button" data-search-close aria-label="Cerrar">✕</button>' +
+      '</form>';
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('input');
+    // Focus tras el frame para que la animación no bloquee el keyboard.
+    requestAnimationFrame(() => input?.focus());
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) closeSearchOverlay();
+      if (ev.target?.closest?.('[data-search-close]')) closeSearchOverlay();
+    });
+    document.addEventListener('keydown', escCloseSearch);
+  }
+  function closeSearchOverlay() {
+    const overlay = document.getElementById('ox-search-overlay');
+    if (overlay) overlay.remove();
+    document.removeEventListener('keydown', escCloseSearch);
+  }
+  function escCloseSearch(e) { if (e.key === 'Escape') closeSearchOverlay(); }
+  // Interceptar el botón "Buscar" del bottom-nav en modo PWA: en vez de
+  // navegar a `/#buscar` (que ya no existe visualmente), abrir el overlay.
+  document.addEventListener('click', (ev) => {
+    const btn = ev.target.closest?.('.ox-bnav-item[data-bnav="search"]');
+    if (!btn) return;
+    if (!isStandalone()) return;
+    ev.preventDefault();
+    openSearchOverlay();
+  }, true);
 
   /* Pausar animaciones infinitas durante el scroll → GPU libre para el
      pan táctil, evita el bug de scroll intermitente en iOS PWA. Se añade
