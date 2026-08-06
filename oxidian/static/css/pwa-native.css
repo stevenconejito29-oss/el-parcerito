@@ -651,10 +651,12 @@
   /* ── Grid: gaps más generosos → "aire" nativo tipo Glovo/UberEats ── */
   body.ox-body-public .ep-grid { gap: .85rem !important; }
 
-  /* Aire tras el header sin duplicar safe-area (body ya lo aplica en
-     oxidian-ui.css:104). Duplicarlo empujaba contenido y podía dejar
-     el body más corto que el viewport, colapsando el scroll. */
-  body.ox-body-public main { padding-top: .6rem !important; }
+  /* Aire tras el header. Con el hero oculto, el .ep-search-wrap (input)
+     quedaba pegado al borde inferior del header sticky. Al iniciar un
+     pan desde ahí iOS interpretaba tap sobre el input y le daba focus
+     → viewport se anclaba al input. Aire adicional (1.1rem) mueve el
+     input fuera de la zona directamente-bajo-header y libera el touch. */
+  body.ox-body-public main { padding-top: 1.1rem !important; }
 
   /* ── Producto: tarjeta más viva, con relieve táctil ── */
   body.ox-body-public .ep-card {

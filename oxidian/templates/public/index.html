@@ -721,18 +721,30 @@ function epFilterCategory(categoryId, updateUrl = true) {
     history.pushState({ category: value }, '', url);
   }
 }
-document.addEventListener('click', event => {
-  const link = event.target.closest('.ep-cat[data-category]');
-  if (!link) return;
-  event.preventDefault();
-  epFilterCategory(link.dataset.category);
-  document.getElementById('catalogo')?.scrollIntoView({behavior:'smooth', block:'start'});
-}, true);
-window.addEventListener('popstate', () => epFilterCategory(new URL(location.href).searchParams.get('categoria'), false));
+/* Los listeners globales de document/window persisten entre navegaciones
+   SPA. La IIFE se re-ejecuta al volver al menú, así que sin este guard
+   los listeners se acumulan y cada click / popstate / pageshow dispara
+   N veces (visible como jank, scrolls dobles y closeModal fantasmas).
+   Los rebindings a DOM concreto (form submit del modal) siguen fuera
+   del guard porque el DOM es fresco cada vez. */
+window._epMenuFilterActive = { epFilterCategory };
+if (!window._epMenuBound) {
+  window._epMenuBound = true;
+  document.addEventListener('click', event => {
+    const link = event.target.closest('.ep-cat[data-category]');
+    if (!link) return;
+    event.preventDefault();
+    window._epMenuFilterActive?.epFilterCategory(link.dataset.category);
+    document.getElementById('catalogo')?.scrollIntoView({behavior:'auto', block:'start'});
+  }, true);
+  window.addEventListener('popstate', () => {
+    window._epMenuFilterActive?.epFilterCategory(new URL(location.href).searchParams.get('categoria'), false);
+  });
+  window.addEventListener('pageshow', e => {
+    if (e.persisted) window._epMenuActive?.closeModal();
+  });
+}
 epFilterCategory({{ (categoria_activa|string if categoria_activa else '')|tojson }}, false);
-
-/* ── Cerrar modal al restaurar desde bfcache (botón Atrás del navegador) ── */
-window.addEventListener('pageshow', e => { if (e.persisted) closeModal(); });
 
 /* ── Añadir a la canasta vía fetch (ruta técnica de carrito) ── */
 document.getElementById('ep-modal-form')?.addEventListener('submit', async (event) => {
