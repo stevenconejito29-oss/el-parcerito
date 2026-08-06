@@ -351,35 +351,53 @@
      ══════════════════════════════════════════════════════════════ */
   body.ox-body-public .ep-hero {
     position: relative !important;
-    margin: .35rem 0 1.1rem !important;
-    padding: 1rem 1.2rem 1.05rem !important;
+    /* Centrado real dentro del main y con márgenes fluidos por viewport */
+    margin: clamp(.35rem, 1.2vw, .75rem) auto clamp(.9rem, 3vw, 1.3rem) !important;
+    padding: clamp(1.1rem, 3.5vw, 1.6rem) clamp(1rem, 4vw, 1.75rem) clamp(1.15rem, 3.5vw, 1.65rem) !important;
     min-height: 0 !important;
     max-height: none !important;
-    border-radius: 18px !important;
+    max-width: 640px !important;   /* nunca se estira demasiado en tablets */
+    border-radius: 20px !important;
     overflow: hidden !important;
     display: block !important;
     isolation: isolate;
     color: var(--theme-text) !important;
-    /* Superficie cálida integrada con el body — no rompe la textura heritage */
+    /* Capas: base cálida + veladura radial suave que da profundidad sin foto */
     background:
+      radial-gradient(120% 90% at 50% 0%,
+        color-mix(in srgb, var(--brand-primary) 10%, transparent) 0%,
+        transparent 60%),
+      radial-gradient(80% 60% at 50% 100%,
+        color-mix(in srgb, var(--brand-accent) 8%, transparent) 0%,
+        transparent 70%),
       linear-gradient(180deg,
-        color-mix(in srgb, var(--theme-surface) 92%, var(--brand-primary)) 0%,
-        var(--theme-surface) 100%) !important;
-    border: 1px solid color-mix(in srgb, var(--brand-primary) 22%, transparent) !important;
+        color-mix(in srgb, var(--theme-surface) 96%, var(--brand-primary)) 0%,
+        var(--theme-surface) 55%,
+        color-mix(in srgb, var(--theme-surface) 96%, var(--brand-accent)) 100%) !important;
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 26%, transparent) !important;
+    /* Doble sombra + brillo interno superior = relieve (no plano) */
     box-shadow:
+      inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent),
+      inset 0 -1px 0 color-mix(in srgb, var(--brand-primary) 12%, transparent),
       0 1px 2px color-mix(in srgb, var(--theme-text) 6%, transparent),
-      0 8px 22px -14px color-mix(in srgb, var(--brand-primary) 22%, transparent) !important;
+      0 12px 28px -18px color-mix(in srgb, var(--brand-primary) 30%, transparent) !important;
     text-align: center !important;
   }
-  /* Sin foto — se ignora hero_image_url en modo instalado */
   body.ox-body-public .ep-hero.ep-hero-photo {
     background:
+      radial-gradient(120% 90% at 50% 0%,
+        color-mix(in srgb, var(--brand-primary) 10%, transparent) 0%,
+        transparent 60%),
+      radial-gradient(80% 60% at 50% 100%,
+        color-mix(in srgb, var(--brand-accent) 8%, transparent) 0%,
+        transparent 70%),
       linear-gradient(180deg,
-        color-mix(in srgb, var(--theme-surface) 92%, var(--brand-primary)) 0%,
-        var(--theme-surface) 100%) !important;
+        color-mix(in srgb, var(--theme-surface) 96%, var(--brand-primary)) 0%,
+        var(--theme-surface) 55%,
+        color-mix(in srgb, var(--theme-surface) 96%, var(--brand-accent)) 100%) !important;
   }
 
-  /* Filete decorativo superior: recuerda a un mantel bordado (nostalgia) */
+  /* Filete decorativo superior tipo bordado */
   body.ox-body-public .ep-hero::before {
     content: "" !important;
     position: absolute !important;
@@ -387,32 +405,71 @@
     height: 3px !important;
     background: linear-gradient(90deg,
       transparent 0%,
-      color-mix(in srgb, var(--brand-primary) 60%, transparent) 20%,
-      color-mix(in srgb, var(--brand-accent) 70%, transparent) 50%,
-      color-mix(in srgb, var(--brand-primary) 60%, transparent) 80%,
+      color-mix(in srgb, var(--brand-primary) 65%, transparent) 22%,
+      color-mix(in srgb, var(--brand-accent) 75%, transparent) 50%,
+      color-mix(in srgb, var(--brand-primary) 65%, transparent) 78%,
       transparent 100%) !important;
-    opacity: .8 !important;
+    opacity: .85 !important;
     pointer-events: none !important;
   }
-  body.ox-body-public .ep-hero::after { content: none !important; }
+  /* Textura sutil de granos (matches heritage.css del body): mismos radial-
+     gradients diminutos → parece que el hero es "un trozo del mismo mantel". */
+  body.ox-body-public .ep-hero::after {
+    content: "" !important;
+    position: absolute !important;
+    inset: 3px 0 0 !important;
+    background-image:
+      radial-gradient(circle at 15% 30%,
+        color-mix(in srgb, var(--brand-primary) 8%, transparent) 0,
+        transparent 3px),
+      radial-gradient(circle at 82% 65%,
+        color-mix(in srgb, var(--brand-accent) 9%, transparent) 0,
+        transparent 3px),
+      radial-gradient(circle at 48% 88%,
+        color-mix(in srgb, var(--brand-primary) 6%, transparent) 0,
+        transparent 2.5px);
+    background-size: 140px 140px, 180px 180px, 120px 120px !important;
+    opacity: .55 !important;
+    pointer-events: none !important;
+    z-index: 0 !important;
+  }
 
   body.ox-body-public .ep-hero-inner {
     position: relative !important;
     z-index: 1 !important;
     padding: 0 !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     width: 100% !important;
     display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
     justify-content: center !important;
   }
   body.ox-body-public .ep-hero-text {
     flex: 0 1 auto !important;
     min-width: 0 !important;
-    max-width: 34ch !important;
+    width: 100% !important;
+    max-width: clamp(260px, 42ch, 480px) !important;
+    margin: 0 auto !important;
     display: flex !important;
     flex-direction: column !important;
     align-items: center !important;
-    gap: .55rem !important;
+    justify-content: center !important;
+    gap: clamp(.4rem, 1.4vw, .65rem) !important;
+    text-align: center !important;
+  }
+
+  /* Ornamento decorativo antes del eslogan (heritage: grano de café bailando) */
+  body.ox-body-public .ep-hero-text::before {
+    content: "❦" !important;   /* floron tipográfico — cocina de siempre */
+    display: block !important;
+    font-family: Georgia, "Times New Roman", serif !important;
+    font-size: clamp(1rem, 3vw, 1.3rem) !important;
+    line-height: 1 !important;
+    color: color-mix(in srgb, var(--brand-primary) 55%, transparent) !important;
+    letter-spacing: .5em !important;
+    text-indent: .5em !important;   /* compensa el espaciado a la derecha */
+    opacity: .8 !important;
   }
 
   /* Solo el eslogan. Todo lo demás fuera. */
@@ -429,38 +486,42 @@
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    gap: .55rem !important;
-    margin: 0 !important;
+    gap: .5rem !important;
+    margin: 0 auto !important;
     padding: 0 !important;
+    width: 100% !important;
   }
   /* Comillas tipográficas decorativas a los lados del eslogan */
   body.ox-body-public .ep-hero-heading::before,
   body.ox-body-public .ep-hero-heading::after {
-    color: color-mix(in srgb, var(--brand-primary) 55%, transparent) !important;
+    color: color-mix(in srgb, var(--brand-primary) 60%, transparent) !important;
     font-family: Georgia, "Times New Roman", ui-serif, serif !important;
-    font-size: 1.6rem !important;
-    line-height: 1 !important;
+    font-size: clamp(1.4rem, 4.5vw, 2rem) !important;
+    line-height: .7 !important;
     font-style: normal !important;
-    opacity: .85 !important;
+    opacity: .9 !important;
+    flex: 0 0 auto !important;
   }
-  body.ox-body-public .ep-hero-heading::before { content: "“" !important; margin-top: -.35rem; }
-  body.ox-body-public .ep-hero-heading::after  { content: "”" !important; margin-top: -.35rem; }
+  body.ox-body-public .ep-hero-heading::before { content: "“" !important; }
+  body.ox-body-public .ep-hero-heading::after  { content: "”" !important; }
 
   body.ox-body-public .ep-hero-title {
     font-family: Georgia, "Times New Roman", ui-serif, serif !important;
     font-style: italic !important;
-    font-size: 1.08rem !important;
+    font-size: clamp(1rem, 3.4vw, 1.24rem) !important;
     font-weight: 500 !important;
     line-height: 1.35 !important;
     color: color-mix(in srgb, var(--theme-text) 88%, var(--brand-primary)) !important;
-    text-shadow: none !important;
+    text-shadow: 0 1px 0 color-mix(in srgb, #fff 60%, transparent) !important;  /* leve relieve tipográfico */
     letter-spacing: 0 !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     display: -webkit-box !important;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden !important;
     text-wrap: balance;
+    text-align: center !important;
+    max-width: 100% !important;
   }
 
   /* ── Footer legal comprimido: solo el enlace, sin bloques largos ── */
