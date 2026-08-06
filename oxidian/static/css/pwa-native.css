@@ -664,10 +664,10 @@
     transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
     box-shadow: 0 1px 2px color-mix(in srgb, var(--theme-text) 6%, transparent),
                 0 8px 22px -14px color-mix(in srgb, var(--theme-text) 30%, transparent);
-    /* Viewport-culling nativo: cards fuera del viewport no se pintan.
-       contain-intrinsic-size reserva espacio para que el scroll no salte. */
-    content-visibility: auto;
-    contain-intrinsic-size: 280px 340px;
+    /* NO content-visibility:auto: en iOS Safari con card heights variables
+       el navegador re-layouta durante scroll y el scrollbar salta cada
+       pocos segundos → sensación de "pillada". Mejor renderizar todo y
+       ganar suavidad. */
   }
   body.ox-body-public .ep-card:active {
     transform: scale(.975);
@@ -1235,6 +1235,116 @@
     font-size: .92rem !important;
     font-weight: 800 !important;
     text-decoration: none !important;
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     MODAL RESPONSIVE — ajustes por viewport
+     · Landscape mobile (altura <500px): imagen compacta + body denso
+     · Portrait mobile pequeño (<380px ancho): compacto
+     · Tablet (>=700px alto, >=600px ancho): card centrada con márgenes
+     · Tablet landscape amplio: side-by-side image+body
+     ══════════════════════════════════════════════════════════════ */
+
+  /* Landscape móvil: pantalla baja de altura, imagen se comprime */
+  @media (max-height: 500px) and (orientation: landscape) {
+    body.ox-body-public .ep-modal-panel {
+      height: 100dvh !important;
+      max-height: 100dvh !important;
+      border-radius: 0 !important;
+      display: grid !important;
+      grid-template-columns: 44% 1fr !important;
+      grid-template-rows: 1fr !important;
+    }
+    body.ox-body-public .ep-modal-panel::before { display: none !important; }
+    body.ox-body-public .ep-modal-img-wrap {
+      height: 100% !important;
+      max-height: none !important;
+      min-height: 0 !important;
+      border-radius: 0 !important;
+      grid-column: 1 !important;
+      grid-row: 1 !important;
+    }
+    body.ox-body-public .ep-modal-body {
+      grid-column: 2 !important;
+      grid-row: 1 !important;
+      padding: .85rem 1rem calc(.85rem + env(safe-area-inset-bottom, 0px)) !important;
+      gap: .55rem !important;
+    }
+    body.ox-body-public .ep-modal-name { font-size: 1.05rem !important; }
+    body.ox-body-public .ep-modal-price { font-size: 1.1rem !important; }
+    body.ox-body-public .ep-modal-price-row .ep-modal-price { font-size: 1.15rem !important; }
+    body.ox-body-public .ep-modal-actions { padding: .7rem 0 calc(.5rem + env(safe-area-inset-bottom, 0px)) !important; }
+    body.ox-body-public .ep-modal-add-btn { height: 46px !important; min-height: 46px !important; font-size: .95rem !important; }
+    body.ox-body-public .ep-modal-qty-ctrl { height: 46px !important; }
+  }
+
+  /* Portrait mobile ultra pequeño */
+  @media (max-width: 380px) {
+    body.ox-body-public .ep-modal-img-wrap {
+      height: clamp(200px, 42dvh, 320px) !important;
+      padding: .35rem !important;
+    }
+    body.ox-body-public .ep-modal-body { padding: .85rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px)) !important; }
+    body.ox-body-public .ep-modal-name { font-size: 1.15rem !important; }
+    body.ox-body-public .ep-modal-price-row .ep-modal-price { font-size: 1.35rem !important; }
+    body.ox-body-public .ep-modal-add-btn { height: 50px !important; min-height: 50px !important; }
+    body.ox-body-public .ep-modal-qty-ctrl { height: 50px !important; }
+  }
+
+  /* Tablet portrait: sheet centrado más compacto verticalmente */
+  @media (min-width: 600px) and (min-height: 700px) and (orientation: portrait) {
+    body.ox-body-public .ep-modal-panel {
+      width: min(92vw, 480px) !important;
+      max-width: 480px !important;
+      height: auto !important;
+      max-height: min(88dvh, 720px) !important;
+      border-radius: 24px !important;
+      margin: auto !important;
+    }
+    body.ox-body-public .ep-modal-overlay {
+      align-items: center !important;
+      padding: 3vh 0 !important;
+    }
+    body.ox-body-public .ep-modal-img-wrap {
+      height: clamp(280px, 36dvh, 400px) !important;
+    }
+  }
+
+  /* Tablet landscape amplio: side-by-side */
+  @media (min-width: 900px) and (orientation: landscape) {
+    body.ox-body-public .ep-modal-panel {
+      width: min(88vw, 780px) !important;
+      max-width: 780px !important;
+      height: auto !important;
+      max-height: min(84dvh, 640px) !important;
+      border-radius: 24px !important;
+      margin: auto !important;
+      display: grid !important;
+      grid-template-columns: 46% 1fr !important;
+      grid-template-rows: 1fr !important;
+    }
+    body.ox-body-public .ep-modal-overlay {
+      align-items: center !important;
+      padding: 4vh 0 !important;
+    }
+    body.ox-body-public .ep-modal-panel::before { display: none !important; }
+    body.ox-body-public .ep-modal-img-wrap {
+      height: 100% !important;
+      max-height: none !important;
+      min-height: 0 !important;
+      border-radius: 24px 0 0 24px !important;
+      grid-column: 1 !important;
+      grid-row: 1 !important;
+    }
+    body.ox-body-public .ep-modal-body {
+      grid-column: 2 !important;
+      grid-row: 1 !important;
+    }
+    body.ox-body-public .ep-modal-price-row {
+      /* En layout side-by-side, el precio flotante top-right del panel
+         quedaría sobre la imagen — lo reposicionamos sobre el body. */
+      right: 1rem !important;
+    }
   }
 
   /* ── Carrito (página completa): totales más protagonistas ── */
