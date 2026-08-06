@@ -343,68 +343,134 @@
   }
 
   /* ══════════════════════════════════════════════════════════════
-     HERO — en la app instalada NO es una portada, es una banda
-     promocional compacta (tipo Rappi/Glovo). El logo y el nombre
-     ya son dominantes en el header, así que aquí sólo queda una
-     línea con el eslogan (o el nombre si no hay eslogan) y CTA
-     "Ver menú". Alto máx ~110px. Imagen de fondo con overlay
-     oscuro para máximo contraste del texto.
-     Se ocultan: eyebrow, logo (duplica el del header), sub-copy,
-     trust bar (ya está la sub-barra del header) y la cordillera SVG.
+     HERO — "banner card premium" alineado a los product cards.
+     Sin foto (los overlays sobre foto se ven genéricos): gradiente
+     de marca + geometría decorativa (blobs suaves) + mismo radius
+     y sombra que las tarjetas de producto → integración visual.
+     Layout: kicker · título · strapline · CTA pill · heritage icon
+     de acento a la derecha.
      ══════════════════════════════════════════════════════════════ */
   body.ox-body-public .ep-hero {
     position: relative !important;
-    margin: .55rem .75rem .35rem !important;
-    padding: .7rem .85rem !important;
-    min-height: 82px !important;
-    max-height: 108px !important;
-    border-radius: 16px !important;
+    /* Sin margen lateral: hereda el padding del <main> como los product cards → integrado */
+    margin: .25rem 0 1rem !important;
+    padding: 1rem 1.15rem !important;
+    min-height: 104px !important;
+    max-height: 132px !important;
+    border-radius: 18px !important;
     overflow: hidden !important;
     display: flex !important;
     align-items: center !important;
-    box-shadow: 0 6px 18px -10px rgba(0,0,0,.35) !important;
     isolation: isolate;
+    color: var(--brand-on-primary) !important;
+    /* Gradiente de marca — SIEMPRE, aunque haya hero_image_url (más limpio) */
+    background: linear-gradient(135deg,
+      color-mix(in srgb, var(--brand-primary) 100%, #000) 0%,
+      color-mix(in srgb, var(--brand-primary) 78%, var(--brand-accent)) 55%,
+      color-mix(in srgb, var(--brand-accent) 88%, var(--brand-primary)) 100%) !important;
+    /* Misma familia de sombra que .ep-card → integración */
+    box-shadow:
+      0 1px 2px color-mix(in srgb, var(--theme-text) 6%, transparent),
+      0 14px 34px -18px color-mix(in srgb, var(--brand-primary) 60%, transparent) !important;
+    border: 1px solid color-mix(in srgb, #fff 12%, transparent) !important;
   }
-  body.ox-body-public .ep-hero::before,
+
+  /* Blob decorativo superior derecha (halo blanco suave) */
+  body.ox-body-public .ep-hero::before {
+    content: "" !important;
+    position: absolute !important;
+    top: -55px !important;
+    right: -40px !important;
+    width: 180px !important;
+    height: 180px !important;
+    border-radius: 50% !important;
+    background: radial-gradient(circle,
+      color-mix(in srgb, #fff 22%, transparent) 0%,
+      transparent 68%) !important;
+    pointer-events: none !important;
+    z-index: 0 !important;
+  }
+  /* Blob inferior (acento cálido difuso) */
   body.ox-body-public .ep-hero::after {
-    content: none !important;
+    content: "" !important;
+    position: absolute !important;
+    bottom: -45px !important;
+    left: 42% !important;
+    width: 130px !important;
+    height: 130px !important;
+    border-radius: 50% !important;
+    background: color-mix(in srgb, var(--brand-accent) 55%, transparent) !important;
+    filter: blur(28px) !important;
+    opacity: .55 !important;
+    pointer-events: none !important;
+    z-index: 0 !important;
   }
-  /* Overlay oscuro (foto o color plano) para legibilidad del texto. */
+
+  /* Cuando hay foto: la usamos como textura muy suave detrás del gradiente. */
   body.ox-body-public .ep-hero.ep-hero-photo {
     background:
-      linear-gradient(90deg,
-        color-mix(in srgb, var(--theme-header-bg) 78%, #000) 0%,
-        color-mix(in srgb, var(--theme-header-bg) 40%, transparent) 70%),
+      linear-gradient(135deg,
+        color-mix(in srgb, var(--brand-primary) 92%, transparent) 0%,
+        color-mix(in srgb, var(--brand-primary) 74%, var(--brand-accent)) 55%,
+        color-mix(in srgb, var(--brand-accent) 78%, transparent) 100%),
       var(--ep-hero-image) center/cover no-repeat !important;
-  }
-  body.ox-body-public .ep-hero:not(.ep-hero-photo) {
-    background: linear-gradient(135deg,
-      var(--brand-primary),
-      color-mix(in srgb, var(--brand-primary) 70%, var(--brand-accent))) !important;
-    color: var(--brand-on-primary) !important;
+    background-blend-mode: multiply, normal !important;
   }
 
   body.ox-body-public .ep-hero-inner {
+    position: relative !important;
+    z-index: 1 !important;
     padding: 0 !important;
     margin: 0 !important;
-    flex: 1 1 auto !important;
+    width: 100% !important;
     display: flex !important;
     align-items: center !important;
     justify-content: space-between !important;
-    gap: .6rem !important;
+    gap: .75rem !important;
   }
   body.ox-body-public .ep-hero-text {
     flex: 1 1 auto !important;
     min-width: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: .4rem !important;
   }
 
-  /* Ocultos: duplicados del header o ruido en modo app */
-  body.ox-body-public .ep-hero-eyebrow,
+  /* Se ocultan duplicados con el header, ruido y decoración legacy */
   body.ox-body-public .ep-hero-heading .ep-hero-logo,
   body.ox-body-public .ep-hero-sub,
   body.ox-body-public .ep-hero .ep-trust,
   body.ox-body-public .ep-hero-cordillera {
     display: none !important;
+  }
+
+  /* Kicker: micro-etiqueta tipo "Chip" (misma familia que sub-barra) */
+  body.ox-body-public .ep-hero-eyebrow {
+    display: inline-flex !important;
+    align-self: flex-start !important;
+    align-items: center !important;
+    gap: .3rem !important;
+    padding: 2px 8px !important;
+    margin: 0 !important;
+    font-size: .58rem !important;
+    font-weight: 900 !important;
+    letter-spacing: .14em !important;
+    text-transform: uppercase !important;
+    color: var(--brand-on-primary) !important;
+    background: color-mix(in srgb, #fff 22%, transparent) !important;
+    border: 1px solid color-mix(in srgb, #fff 32%, transparent) !important;
+    border-radius: 999px !important;
+    backdrop-filter: blur(4px) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+    white-space: nowrap !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  body.ox-body-public .ep-hero-eyebrow::before {
+    content: "✦" !important;
+    font-size: .7rem !important;
+    line-height: 1 !important;
   }
 
   body.ox-body-public .ep-hero-heading {
@@ -413,39 +479,50 @@
     padding: 0 !important;
   }
   body.ox-body-public .ep-hero-title {
-    font-size: 1.05rem !important;
+    font-size: 1.28rem !important;
     font-weight: 900 !important;
-    line-height: 1.15 !important;
-    color: #fff !important;
-    text-shadow: 0 1px 3px rgba(0,0,0,.55) !important;
-    letter-spacing: -.01em !important;
-    margin: 0 0 .1rem !important;
+    line-height: 1.08 !important;
+    color: var(--brand-on-primary) !important;
+    text-shadow: 0 1px 2px rgba(0,0,0,.28) !important;
+    letter-spacing: -.02em !important;
+    margin: 0 !important;
     display: -webkit-box !important;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden !important;
   }
 
+  /* CTA pill: fondo blanco sólido → contraste máximo con el gradiente */
   body.ox-body-public .ep-hero-cta {
-    flex: 0 0 auto !important;
+    align-self: flex-start !important;
     display: inline-flex !important;
     align-items: center !important;
-    gap: .3rem !important;
-    padding: .45rem .8rem !important;
-    min-height: 38px !important;
+    gap: .35rem !important;
+    padding: .5rem .9rem !important;
+    min-height: 40px !important;
     border-radius: 999px !important;
-    font-size: .78rem !important;
+    font-size: .8rem !important;
     font-weight: 900 !important;
     background: #fff !important;
     color: var(--brand-primary) !important;
     text-decoration: none !important;
-    box-shadow: 0 4px 12px -4px rgba(0,0,0,.35) !important;
+    box-shadow:
+      0 2px 4px rgba(0,0,0,.12),
+      0 8px 20px -8px rgba(0,0,0,.35) !important;
     white-space: nowrap !important;
+    transition: transform .12s ease, box-shadow .18s ease !important;
   }
   body.ox-body-public .ep-hero-cta:active {
-    transform: scale(.96);
+    transform: scale(.96) !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,.15) !important;
   }
-  body.ox-body-public .ep-hero-cta svg { display: none !important; }
+  body.ox-body-public .ep-hero-cta svg {
+    display: inline-block !important;
+    width: 12px !important;
+    height: 12px !important;
+    transform: rotate(-90deg) !important;
+    stroke: currentColor !important;
+  }
 
   /* ── Footer legal comprimido: solo el enlace, sin bloques largos ── */
   body.ox-body-public .ep-footer-assurance,
