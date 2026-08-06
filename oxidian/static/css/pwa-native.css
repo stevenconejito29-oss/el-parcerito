@@ -14,15 +14,25 @@
 @media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen) {
 
   /* ── Scroll táctil garantizado ──
-     Iteración anterior: user-select:none / touch-action:pan-y /
-     overscroll-behavior:contain aplicados a html/body bloqueaban el
-     scroll en iOS PWA. Se han retirado todas esas reglas globales.
-     Aquí forzamos explícitamente el comportamiento de scroll nativo
-     por si `overflow-x:clip` u otras reglas del stack legacy dejan
-     el body en estado inconsistente. */
-  html, body.ox-body-public {
-    overflow-y: visible !important;
+     Raíz del problema: oxidian-ui.css:104 pone `overflow-x: clip` en
+     body. Safari WebKit lo promueve a scroll-container implícito y
+     rompe el pan táctil vertical (tanto en menú como en carrito,
+     buscar, etc). Además, si Y no está definido explícitamente,
+     algunos motores lo coercitan a clip también, bloqueando el scroll.
+     Fix: html toma el scroll (auto), body queda visible (no crea
+     scroll-container), y todo pasa a scroll nativo del viewport. */
+  html {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
     -webkit-overflow-scrolling: touch !important;
+    height: auto !important;
+  }
+  body.ox-body-public {
+    overflow-x: hidden !important;   /* evita scroll horizontal accidental */
+    overflow-y: visible !important;  /* deja que el html haga el scroll */
+    -webkit-overflow-scrolling: touch !important;
+    height: auto !important;
+    min-height: 100dvh !important;
   }
   body.ox-body-public .ox-header-public,
   body.ox-body-public .ox-header-sub,
@@ -762,90 +772,225 @@
   }
 
   /* ══════════════════════════════════════════════════════════════
-     MODAL DE PRODUCTO — estilo bottom-sheet nativo.
-     La imagen ocupa la mitad superior del viewport (protagonismo),
-     el panel llega casi al top con safe-area y el body scrollea
-     internamente. Antes: aspect-ratio 16/7 dejaba una foto pequeña
-     con mucho aire abajo — cliente no "veía" el producto.
+     MODAL DE PRODUCTO — bottom-sheet iOS-style.
+     · Overlay oscuro con blur, contenido pegado al bottom
+     · Panel 94dvh, esquinas superiores redondeadas 24px, handle
+       (grabber) al top como los sheets nativos de iOS
+     · Cerrar (×) flotante blanco sobre la foto, siempre visible
+     · Imagen 46dvh cover con vignette hacia el fondo del panel
+     · Cuerpo scrolleable con jerarquía tipográfica pulida
+     · CTA sticky abajo con doble sombra elevada
+     · Fade+slide in con view transitions suaves
      ══════════════════════════════════════════════════════════════ */
   body.ox-body-public .ep-modal-overlay {
     padding: 0 !important;
-    align-items: stretch !important;
+    align-items: flex-end !important;    /* pegado al bottom */
+    justify-content: stretch !important;
+    background: color-mix(in srgb, #000 55%, transparent) !important;
+    backdrop-filter: blur(8px) saturate(1.1) !important;
+    -webkit-backdrop-filter: blur(8px) saturate(1.1) !important;
   }
   body.ox-body-public .ep-modal-panel {
     width: 100% !important;
     max-width: none !important;
-    height: 100dvh !important;
-    max-height: 100dvh !important;
-    border-radius: 0 !important;
+    height: 94dvh !important;
+    max-height: 94dvh !important;
+    border-radius: 24px 24px 0 0 !important;
     border: 0 !important;
-    box-shadow: none !important;
+    background: var(--theme-surface) !important;
+    box-shadow:
+      0 -12px 40px -12px rgba(0,0,0,.35),
+      0 -1px 0 color-mix(in srgb, #fff 22%, transparent) inset !important;
     grid-template-rows: auto minmax(0, 1fr) !important;
-    padding-top: env(safe-area-inset-top, 0px) !important;
+    overflow: hidden !important;
+    padding-top: 0 !important;
+    animation: ox-sheet-in .32s cubic-bezier(.2,.9,.3,1.05);
   }
-  /* Imagen: retrato/paisaje generoso — 48dvh, cover, sin borde */
+  @keyframes ox-sheet-in {
+    from { transform: translateY(6%); opacity: .4; }
+    to   { transform: translateY(0);  opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body.ox-body-public .ep-modal-panel { animation: none; }
+  }
+
+  /* Handle (grabber) tipo iOS — visualmente indica que es un sheet */
+  body.ox-body-public .ep-modal-panel::before {
+    content: "" !important;
+    position: absolute !important;
+    top: 8px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: 40px !important;
+    height: 4px !important;
+    border-radius: 999px !important;
+    background: color-mix(in srgb, #fff 82%, transparent) !important;
+    box-shadow: 0 0 0 1px color-mix(in srgb, #000 8%, transparent) !important;
+    z-index: 5 !important;
+    pointer-events: none !important;
+  }
+
+  /* Imagen: ocupa la parte superior con generosidad */
   body.ox-body-public .ep-modal-img-wrap {
     aspect-ratio: auto !important;
-    height: 48dvh !important;
-    min-height: 260px !important;
-    max-height: 62dvh !important;
-    background: color-mix(in srgb, var(--theme-surface-alt) 40%, #fff) !important;
+    height: 46dvh !important;
+    min-height: 240px !important;
+    max-height: 58dvh !important;
+    background: color-mix(in srgb, var(--theme-surface-alt) 50%, #fff) !important;
     position: relative !important;
+    border-radius: 24px 24px 0 0 !important;
+    overflow: hidden !important;
   }
   body.ox-body-public .ep-modal-img {
     width: 100% !important;
     height: 100% !important;
     object-fit: cover !important;
+    /* Ken-burns muy sutil al abrir → sensación premium */
+    animation: ox-modal-img-in .9s cubic-bezier(.2,.7,.2,1) both;
   }
-  /* Vignette sutil abajo de la imagen para que el nombre resalte */
+  @keyframes ox-modal-img-in {
+    from { transform: scale(1.06); }
+    to   { transform: scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body.ox-body-public .ep-modal-img { animation: none; }
+  }
   body.ox-body-public .ep-modal-img-wrap::after {
     content: "" !important;
     position: absolute !important;
     inset: auto 0 0 0 !important;
-    height: 60px !important;
+    height: 90px !important;
     background: linear-gradient(180deg,
       transparent 0%,
-      color-mix(in srgb, var(--theme-surface) 92%, transparent) 100%) !important;
+      color-mix(in srgb, var(--theme-surface) 96%, transparent) 100%) !important;
     pointer-events: none !important;
   }
-  /* Cuerpo scrolleable con más aire y CTA anclado abajo */
+
+  /* Botón cerrar (×) flotante sobre la foto, esquina superior derecha */
+  body.ox-body-public .ep-modal-panel [data-modal-close],
+  body.ox-body-public .ep-modal-panel .ep-modal-close {
+    position: absolute !important;
+    top: calc(env(safe-area-inset-top, 0px) + 14px) !important;
+    right: 14px !important;
+    z-index: 6 !important;
+    width: 34px !important;
+    height: 34px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    background: rgba(0,0,0,.55) !important;
+    color: #fff !important;
+    border: 1px solid rgba(255,255,255,.18) !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+    display: grid !important;
+    place-items: center !important;
+    font-size: 1.1rem !important;
+    line-height: 1 !important;
+    box-shadow: 0 4px 14px rgba(0,0,0,.35) !important;
+  }
+
+  /* Cuerpo scrolleable con jerarquía cuidada */
   body.ox-body-public .ep-modal-body {
-    padding: 1rem 1.15rem calc(1.1rem + env(safe-area-inset-bottom, 0px)) !important;
+    padding: 1.15rem 1.2rem calc(1.2rem + env(safe-area-inset-bottom, 0px)) !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: .85rem !important;
+  }
+  body.ox-body-public .ep-modal-name-row {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: .75rem !important;
   }
   body.ox-body-public .ep-modal-name {
-    font-size: 1.3rem !important;
-    font-weight: 900 !important;
-    line-height: 1.12 !important;
-    letter-spacing: -.015em !important;
-  }
-  body.ox-body-public .ep-modal-price {
     font-size: 1.35rem !important;
     font-weight: 900 !important;
+    line-height: 1.1 !important;
+    letter-spacing: -.02em !important;
+    color: var(--theme-text) !important;
+  }
+  body.ox-body-public .ep-modal-price {
+    font-size: 1.28rem !important;
+    font-weight: 900 !important;
     color: var(--brand-primary) !important;
+    white-space: nowrap !important;
   }
   body.ox-body-public .ep-modal-desc {
     font-size: .92rem !important;
-    line-height: 1.45 !important;
+    line-height: 1.5 !important;
+    color: color-mix(in srgb, var(--theme-text) 75%, transparent) !important;
   }
-  /* CTA "Añadir" pegado al pie con safe-area y sombra que lo eleva */
+
+  /* Pills de presentación */
+  body.ox-body-public .ep-modal-pres-pill {
+    padding: .55rem .85rem !important;
+    border-radius: 12px !important;
+    font-size: .85rem !important;
+    font-weight: 700 !important;
+    border: 1px solid color-mix(in srgb, var(--theme-text) 12%, transparent) !important;
+    transition: transform .12s ease, border-color .12s ease, background .12s ease !important;
+  }
+  body.ox-body-public .ep-modal-pres-pill.is-active {
+    border-color: var(--brand-primary) !important;
+    background: color-mix(in srgb, var(--brand-primary) 12%, transparent) !important;
+    color: var(--brand-primary) !important;
+  }
+  body.ox-body-public .ep-modal-pres-pill:active {
+    transform: scale(.96) !important;
+  }
+
+  /* Notas input */
+  body.ox-body-public .ep-modal-notas-input {
+    border-radius: 12px !important;
+    padding: .75rem .9rem !important;
+    border: 1px solid color-mix(in srgb, var(--theme-text) 14%, transparent) !important;
+    background: color-mix(in srgb, var(--theme-surface-alt) 60%, transparent) !important;
+    font-size: .92rem !important;
+  }
+  body.ox-body-public .ep-modal-notas-input:focus {
+    outline: none !important;
+    border-color: var(--brand-primary) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 18%, transparent) !important;
+  }
+
+  /* CTA "Añadir" — barra sticky elevada al pie */
   body.ox-body-public .ep-modal-actions {
     position: sticky !important;
     bottom: 0 !important;
-    padding: .8rem 0 calc(.4rem + env(safe-area-inset-bottom, 0px)) !important;
+    margin: 0 -1.2rem -1.2rem !important;
+    padding: .9rem 1.2rem calc(.9rem + env(safe-area-inset-bottom, 0px)) !important;
     background: linear-gradient(180deg,
-      transparent 0%,
-      var(--theme-surface) 24%,
+      color-mix(in srgb, var(--theme-surface) 0%, transparent) 0%,
+      var(--theme-surface) 32%,
       var(--theme-surface) 100%) !important;
+    border-top: 1px solid color-mix(in srgb, var(--theme-text) 8%, transparent) !important;
     z-index: 2 !important;
   }
   body.ox-body-public .ep-modal-add-btn {
-    min-height: 52px !important;
-    font-size: 1rem !important;
+    width: 100% !important;
+    min-height: 54px !important;
+    font-size: 1.02rem !important;
     font-weight: 900 !important;
+    letter-spacing: -.005em !important;
     border-radius: 16px !important;
-    box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--brand-primary) 55%, transparent) !important;
+    background: linear-gradient(135deg,
+      var(--brand-primary),
+      color-mix(in srgb, var(--brand-primary) 78%, var(--brand-accent))) !important;
+    color: var(--brand-on-primary) !important;
+    border: 0 !important;
+    box-shadow:
+      0 1px 0 color-mix(in srgb, #fff 40%, transparent) inset,
+      0 6px 16px -4px color-mix(in srgb, var(--brand-primary) 55%, transparent),
+      0 12px 30px -12px color-mix(in srgb, var(--brand-primary) 45%, transparent) !important;
+    transition: transform .12s ease, box-shadow .18s ease !important;
+  }
+  body.ox-body-public .ep-modal-add-btn:active {
+    transform: scale(.98) !important;
+    box-shadow:
+      0 1px 0 color-mix(in srgb, #fff 30%, transparent) inset,
+      0 3px 8px -2px color-mix(in srgb, var(--brand-primary) 55%, transparent) !important;
   }
 
   /* ── Carrito (página completa): totales más protagonistas ── */
