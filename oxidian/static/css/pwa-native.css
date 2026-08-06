@@ -635,7 +635,10 @@
     transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
     box-shadow: 0 1px 2px color-mix(in srgb, var(--theme-text) 6%, transparent),
                 0 8px 22px -14px color-mix(in srgb, var(--theme-text) 30%, transparent);
-    will-change: transform;
+    /* Viewport-culling nativo: cards fuera del viewport no se pintan.
+       contain-intrinsic-size reserva espacio para que el scroll no salte. */
+    content-visibility: auto;
+    contain-intrinsic-size: 280px 340px;
   }
   body.ox-body-public .ep-card:active {
     transform: scale(.975);
@@ -707,11 +710,7 @@
     background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
     color: var(--brand-on-primary);
     box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--brand-primary) 55%, transparent);
-    animation: ox-combo-shimmer 3.4s ease-in-out infinite;
-  }
-  @keyframes ox-combo-shimmer {
-    0%, 100% { filter: brightness(1); }
-    50%      { filter: brightness(1.15); }
+    /* Sin filter-brightness infinito — causaba repaint por frame al scrollear */
   }
 
   /* ── Granitos: badges vivos + halo — canje irresistible ── */
@@ -724,10 +723,12 @@
   }
   body.ox-body-public .ep-cbadge-puntos--exclusive {
     animation: ox-grano-pulse 1.9s ease-in-out infinite;
+    will-change: transform;
   }
+  /* Transform+opacity → animación en composite layer (GPU), sin repaint */
   @keyframes ox-grano-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand-primary) 40%, transparent); }
-    50%      { box-shadow: 0 0 0 8px color-mix(in srgb, var(--brand-primary) 0%, transparent); }
+    0%, 100% { transform: scale(1);     opacity: 1;   }
+    50%      { transform: scale(1.09);  opacity: .88; }
   }
   /* Icono de granos en el bottom-nav: leve resplandor para llamar al canje. */
   body.ox-body-public .ox-bnav-item[data-bnav="puntos"] .ox-bnav-svg {
@@ -762,14 +763,9 @@
   /* ── Trust bar debajo del hero: menos ruido, más pedido ── */
   body.ox-body-public .ep-trust { padding: .35rem .5rem; font-size: .78rem; }
 
-  /* ── Stock urgente: rojo cálido más visible ── */
-  body.ox-body-public .ep-cbadge-urgente {
-    animation: ox-urgent-flash 2.2s ease-in-out infinite;
-  }
-  @keyframes ox-urgent-flash {
-    0%, 100% { filter: brightness(1); transform: translateY(0); }
-    50%      { filter: brightness(1.18); transform: translateY(-1px); }
-  }
+  /* ── Stock urgente: rojo cálido más visible (sin flash infinito) ── */
+  /* Se retira ox-urgent-flash: usaba filter+transform en loop y forzaba
+     repaint continuo en scroll. La visibilidad ya viene del color rojo. */
 
   /* ══════════════════════════════════════════════════════════════
      MODAL DE PRODUCTO — bottom-sheet iOS-style.
@@ -999,6 +995,110 @@
     font-size: 1.35rem;
     font-weight: 900;
     color: var(--brand-primary);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     BANNERS (MenuConfig — Recomendado para ti)
+     Rediseño para app instalada: sin backdrop-filter (rompe el fps
+     durante scroll al haber varios visibles), aspect ratio más
+     grande para el móvil, snap suave, sombra alineada al sistema
+     de cards.
+     ══════════════════════════════════════════════════════════════ */
+  body.ox-body-public .ep-banner-section {
+    margin: .3rem 0 1.1rem !important;
+  }
+  body.ox-body-public .ep-banner-head {
+    padding: 0 .15rem !important;
+  }
+  body.ox-body-public .ep-banner-head span {
+    font-size: 1rem !important;
+    font-weight: 900 !important;
+    letter-spacing: -.01em !important;
+  }
+  body.ox-body-public .ep-banner-head small {
+    font-size: .7rem !important;
+    padding: 3px 8px !important;
+    background: color-mix(in srgb, var(--brand-primary) 12%, transparent) !important;
+    color: color-mix(in srgb, var(--brand-primary) 100%, transparent) !important;
+    border-radius: 999px !important;
+    text-transform: uppercase !important;
+  }
+  body.ox-body-public .ep-banners {
+    /* Scroll horizontal contenido: evita que "coma" el pan vertical
+       (bug histórico iOS con scrollers anidados). */
+    overscroll-behavior: contain !important;
+    scroll-padding: 0 .5rem !important;
+    padding: .1rem .1rem .45rem !important;
+    gap: .7rem !important;
+    grid-auto-columns: minmax(88%, 1fr) !important;
+    touch-action: pan-x !important;   /* solo pan horizontal aquí */
+  }
+  body.ox-body-public .ep-banner-slide {
+    aspect-ratio: 2.35/1 !important;
+    border-radius: 18px !important;
+    box-shadow:
+      0 1px 2px color-mix(in srgb, var(--theme-text) 6%, transparent),
+      0 12px 28px -14px color-mix(in srgb, var(--theme-text) 30%, transparent) !important;
+    border: 1px solid color-mix(in srgb, #fff 12%, transparent) !important;
+  }
+  body.ox-body-public .ep-banner-shade {
+    background:
+      linear-gradient(90deg, rgba(12,6,2,.85) 0%, rgba(12,6,2,.28) 55%, transparent 100%),
+      linear-gradient(0deg, rgba(0,0,0,.42), transparent 60%) !important;
+  }
+  /* Copy sin backdrop-filter (killer de FPS) — fondo sólido semitransparente */
+  body.ox-body-public .ep-banner-copy {
+    background: linear-gradient(135deg, rgba(15,8,3,.72), rgba(15,8,3,.48)) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: 1px solid rgba(255,255,255,.08) !important;
+    border-radius: 12px !important;
+    padding: .65rem .8rem !important;
+    width: min(78%, 460px) !important;
+  }
+  body.ox-body-public .ep-banner-tag {
+    background: var(--brand-primary) !important;
+    color: var(--brand-on-primary) !important;
+    font-size: .58rem !important;
+    padding: 2px 8px !important;
+    border-radius: 999px !important;
+    letter-spacing: .1em !important;
+    text-transform: uppercase !important;
+    font-weight: 900 !important;
+  }
+  body.ox-body-public .ep-banner-copy strong {
+    font-size: 1rem !important;
+    line-height: 1.15 !important;
+    margin-top: .25rem !important;
+  }
+  body.ox-body-public .ep-banner-copy small {
+    font-size: .78rem !important;
+    line-height: 1.35 !important;
+    opacity: .92 !important;
+  }
+  body.ox-body-public .ep-banner-cta {
+    margin-top: .35rem !important;
+    font-size: .78rem !important;
+    font-weight: 900 !important;
+    color: #fff !important;
+  }
+  body.ox-body-public .ep-banner-cta::after {
+    content: " ›" !important;
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     PAUSA GLOBAL DE ANIMACIONES DURANTE SCROLL
+     La clase body.is-scrolling la añade pwa-manager.js durante el
+     scroll y la retira ~150ms tras detenerse. Todas las animaciones
+     infinitas (pulse, spin, hover halos) se congelan mientras el
+     usuario scrollea → GPU/CPU libres para el pan táctil → sin
+     tearing ni bug intermitente.
+     ══════════════════════════════════════════════════════════════ */
+  body.ox-body-public.is-scrolling *,
+  body.ox-body-public.is-scrolling *::before,
+  body.ox-body-public.is-scrolling *::after {
+    animation-play-state: paused !important;
+    transition: none !important;
   }
 }
 

@@ -632,6 +632,33 @@
     if (localStorage.getItem('oxPushSound') === '1') chime();
   });
 
+  /* Pausar animaciones infinitas durante el scroll → GPU libre para el
+     pan táctil, evita el bug de scroll intermitente en iOS PWA. Se añade
+     body.is-scrolling con listener passive y se retira 150ms tras el
+     último scroll event. rAF-throttled para no ejecutar más de 60 veces
+     por segundo. Silencioso si el navegador no soporta el patrón. */
+  (function bindScrollPauseAnimations() {
+    let scrollTimer = 0;
+    let scheduled = false;
+    let scrolling = false;
+    const onScroll = () => {
+      if (!scrolling) {
+        scrolling = true;
+        document.body.classList.add('is-scrolling');
+      }
+      if (scrollTimer) clearTimeout(scrollTimer);
+      scrollTimer = window.setTimeout(() => {
+        scrolling = false;
+        document.body.classList.remove('is-scrolling');
+      }, 150);
+    };
+    window.addEventListener('scroll', () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => { scheduled = false; onScroll(); });
+    }, { passive: true });
+  })();
+
   prepareInstallUi();
   preparePushUi();
   setAppBadge(cartCount);
