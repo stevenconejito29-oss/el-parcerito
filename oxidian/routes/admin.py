@@ -3928,11 +3928,9 @@ def nuevo_combo(combo_id=None):
             flash("Ya se creó este combo (envío duplicado ignorado).", "info")
             return redirect(url_for("admin.productos"))
 
-    # NOTA operativa: la imagen se guarda antes de validar componentes. Si la
-    # transacción hace rollback, el archivo queda huérfano en disco (ver
-    # `_guardar_imagen_producto_desde_request`). El impacto es acumulativo
-    # (storage) pero no bloquea la operación. Un cron de limpieza puede
-    # detectar archivos en `productos/` sin FK desde `products.imagen_url`.
+    # La imagen se guarda al final del flujo (tras validar componentes,
+    # pricing y canje) y se limpia con `delete_image` si el commit falla —
+    # no hay riesgo de archivos huérfanos por rollbacks tempranos.
 
     # Parsear campos básicos del combo. En modo descuento el precio final se calcula
     # despues de validar componentes, por eso usamos un precio temporal valido.
