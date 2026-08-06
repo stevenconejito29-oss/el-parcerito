@@ -44,15 +44,192 @@
      cliente ese icono no aporta y quita foco al pedido. */
   body.ox-body-public .ox-employee-login { display: none !important; }
 
-  /* ── Header más compacto: cede espacio a los productos ── */
+  /* ══════════════════════════════════════════════════════════════
+     HEADER — rediseño "app de delivery" solo en modo instalado.
+     Logo dominante + nombre alto contraste sobre fondo de marca +
+     línea de estado clara ("Abierto · Entrega"). Sin franja
+     decorativa ni dirección ni CTA de instalar. Info accesible
+     desde el bottom-nav para las tiendas sin programa de puntos.
+     ══════════════════════════════════════════════════════════════ */
   body.ox-body-public .ox-header-public {
-    position: sticky; top: 0; z-index: 40;
+    position: sticky;
+    top: 0;
+    z-index: 40;
     padding-top: env(safe-area-inset-top, 0px);
+    background:
+      linear-gradient(180deg,
+        var(--theme-header-bg) 0%,
+        color-mix(in srgb, var(--theme-header-bg) 92%, #000) 100%);
+    color: var(--theme-header-text);
+    box-shadow: 0 8px 24px -18px rgba(0,0,0,.55);
+    border-bottom: 1px solid color-mix(in srgb, var(--theme-header-text) 14%, transparent);
   }
-  body.ox-body-public .ox-header-stripe { display: none; }
+  body.ox-body-public .ox-header-stripe,
+  body.ox-body-public .ox-header-public .ox-hdr-progress {
+    display: none;
+  }
+
+  /* Interior: alto suficiente para logo grande + una sub-línea legible */
+  body.ox-body-public .ox-public-header-inner {
+    padding: .55rem .9rem;
+    gap: .75rem;
+    min-height: 68px;
+    align-items: center;
+  }
+
+  /* ── Identidad: logo dominante ── */
+  body.ox-body-public .ox-public-identity {
+    gap: .7rem;
+    align-items: center;
+    text-decoration: none;
+  }
+  body.ox-body-public .ox-public-logo-frame {
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border-radius: 50%;
+    background: #fff;
+    display: grid;
+    place-items: center;
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--brand-primary) 65%, transparent),
+      0 6px 18px -6px rgba(0,0,0,.35);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  body.ox-body-public .ox-public-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+  body.ox-body-public .ox-public-logo-fallback {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    font-size: 1.8rem;
+    background: transparent;
+    color: var(--brand-primary);
+  }
+
+  /* ── Copy: nombre grande, estado legible, sin dirección ── */
+  body.ox-body-public .ox-public-copy {
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+    min-width: 0;
+    flex: 1;
+  }
   body.ox-body-public .ox-public-address { display: none; }
-  body.ox-body-public .ox-public-kicker { font-size: .68rem; letter-spacing: .04em; }
-  body.ox-body-public .ox-public-brand { font-size: 1rem; line-height: 1.15; }
+  body.ox-body-public .ox-public-brand {
+    order: 1;
+    font-size: 1.22rem;
+    font-weight: 900;
+    line-height: 1.1;
+    color: var(--theme-header-text);
+    letter-spacing: -.01em;
+    text-shadow: 0 1px 0 rgba(0,0,0,.15);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* La meta (kicker + estado) baja bajo el nombre en una sola línea legible. */
+  body.ox-body-public .ox-public-meta {
+    order: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+  body.ox-body-public .ox-public-kicker {
+    font-size: .74rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--theme-header-text) 78%, transparent);
+    padding: 0;
+    background: transparent;
+    white-space: nowrap;
+  }
+  body.ox-public-status,
+  body.ox-body-public .ox-public-status {
+    font-size: .74rem;
+    font-weight: 800;
+    padding: .18rem .55rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    background: color-mix(in srgb, var(--theme-header-text) 12%, transparent);
+    color: var(--theme-header-text);
+    white-space: nowrap;
+  }
+  body.ox-body-public .ox-public-status.is-open {
+    background: color-mix(in srgb, var(--theme-success, #35A164) 22%, transparent);
+    color: color-mix(in srgb, var(--theme-success, #35A164) 100%, #fff);
+    color: #fff;
+  }
+  body.ox-body-public .ox-public-status.is-open > span[aria-hidden] {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--theme-success, #35A164);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--theme-success, #35A164) 60%, transparent);
+    animation: ox-status-live 1.8s ease-in-out infinite;
+  }
+  body.ox-body-public .ox-public-status.is-closed > span[aria-hidden] {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: color-mix(in srgb, var(--theme-danger, #E15854) 90%, #fff);
+  }
+  @keyframes ox-status-live {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--theme-success, #35A164) 55%, transparent); }
+    50%      { box-shadow: 0 0 0 6px color-mix(in srgb, var(--theme-success, #35A164) 0%, transparent); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body.ox-body-public .ox-public-status.is-open > span[aria-hidden] { animation: none; }
+  }
+
+  /* ── Acciones: solo carrito visible, iconos con contraste ── */
+  body.ox-body-public .ox-public-actions {
+    gap: .35rem;
+  }
+  /* Info accesible desde bottom-nav; en el header roba foco al logo. */
+  body.ox-body-public .ox-header-info { display: none; }
+
+  body.ox-body-public .ox-header-cart {
+    background: color-mix(in srgb, var(--theme-header-text) 12%, transparent);
+    color: var(--theme-header-text);
+    border-radius: 14px;
+    padding: .45rem .7rem;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    border: 1px solid color-mix(in srgb, var(--theme-header-text) 18%, transparent);
+  }
+  body.ox-body-public .ox-header-cart.has-items {
+    background: linear-gradient(135deg, var(--brand-primary),
+      color-mix(in srgb, var(--brand-primary) 78%, var(--brand-accent)));
+    color: var(--brand-on-primary);
+    border-color: transparent;
+    box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--brand-primary) 60%, transparent);
+  }
+  body.ox-body-public .ox-header-cart-copy small { opacity: .75; font-size: .68rem; }
+  body.ox-body-public .ox-header-cart-copy strong { font-size: .82rem; font-weight: 800; }
+  body.ox-body-public .ox-header-cart-count {
+    background: #fff;
+    color: var(--brand-primary);
+    font-weight: 900;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .72rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,.2);
+  }
 
   /* ── Bottom nav: safe-area iOS + siempre presente donde ya lo hay ── */
   body.ox-body-public.ox-has-bottom-nav .ox-bottom-nav {
@@ -120,7 +297,7 @@
   /* ── Buscador sticky bajo el header: siempre a mano en scroll ── */
   body.ox-body-public .ep-search-wrap {
     position: sticky;
-    top: calc(env(safe-area-inset-top, 0px) + 56px);
+    top: calc(env(safe-area-inset-top, 0px) + 68px);
     z-index: 30;
     padding: .5rem 0;
     background: linear-gradient(180deg,
