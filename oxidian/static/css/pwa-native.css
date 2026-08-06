@@ -349,9 +349,12 @@
      hairline con el color primario y una tipografía serif itálica
      que evoca "cocina de siempre". Solo aparece el eslogan.
      ══════════════════════════════════════════════════════════════ */
-  body.ox-body-public .ep-hero {
+  /* Hero completamente fuera en PWA — el usuario ya tiene marca (header),
+     estado (sub-barra) y quiere ver productos. La banda vacía blanca
+     entre header y catálogo se elimina. */
+  body.ox-body-public .ep-hero { display: none !important; }
+  body.ox-body-public .ep-hero-legacy-off {
     position: relative !important;
-    /* Centrado real dentro del main y con márgenes fluidos por viewport */
     margin: clamp(.35rem, 1.2vw, .75rem) auto clamp(.9rem, 3vw, 1.3rem) !important;
     padding: clamp(1.1rem, 3.5vw, 1.6rem) clamp(1rem, 4vw, 1.75rem) clamp(1.15rem, 3.5vw, 1.65rem) !important;
     min-height: 0 !important;

@@ -7151,12 +7151,42 @@ async function handleMainMenu(jid, ses, opcion) {
       if (String(cfg('delivery_enabled', '1')) !== '1') {
         return sendText(jid, `Esa opción no está disponible en esta tienda.\n\n${menuPrincipal(ses)}`);
       }
+      // El texto que envía la web es "cobertura, precio de envío y horarios",
+      // así que damos primero horario + zonas con tarifa y sólo después
+      // pedimos la dirección para verificar. Antes solo pedíamos la dirección
+      // y prometíamos zonas/precio sin entregarlos.
       setClientState(ses, 'espera_direccion_cobertura');
+      const hApert = cfg('horario_apertura', '');
+      const hCier  = cfg('horario_cierre', '');
+      const horarioLinea = (hApert && hCier)
+        ? `🕐 *Horario:* ${hApert} – ${hCier}\n\n`
+        : '';
+      let zonasBloque = '';
+      try {
+        const zRes = await oxidianGet('/zonas');
+        const zonas = Array.isArray(zRes?.zonas) ? zRes.zonas : [];
+        if (zonas.length) {
+          const lineas = zonas.slice(0, 6).map(z => {
+            const precio = Number(z.precio_envio || 0);
+            const precioTxt = precio > 0 ? `${precio.toFixed(2)}€` : 'Gratis';
+            const gratis = z.gratis_desde
+              ? ` · gratis desde ${Number(z.gratis_desde).toFixed(0)}€`
+              : '';
+            const tiempo = z.tiempo_estimado_min
+              ? ` · ~${z.tiempo_estimado_min} min`
+              : '';
+            return `• *${z.nombre}*: ${precioTxt}${gratis}${tiempo}`;
+          }).join('\n');
+          zonasBloque = `🛵 *Zonas y tarifas:*\n${lineas}\n\n`;
+        }
+      } catch (_) { /* si /zonas falla, seguimos sin bloque de tarifas */ }
       return sendText(jid, texts.withEscapeHint(
-        `🗺️ *¿Llegamos a tu zona?*\n\n` +
-        `Escribe tu dirección completa o comparte tu ubicación desde *Adjuntar → Ubicación*.\n\n` +
+        `🗺️ *Cobertura, envío y horario*\n\n` +
+        horarioLinea +
+        zonasBloque +
+        `Para confirmar si llegamos a tu dirección, *escríbela completa*.\n` +
         `📍 Ejemplo: ${getEjemploDireccion()}\n\n` +
-        `_Nota: solo la uso para verificar cobertura, no la guardo._`
+        `_Solo la uso para verificar cobertura, no la guardo._`
       ));
     }
     case '6': {
@@ -7875,7 +7905,7 @@ async function handleCoberturaDelivery(jid, ses, direccion, context = {}) {
     }
     return sendText(jid,
       `Necesito una dirección un poco más completa para verificarla. 📍\n\n` +
-      `Puedes escribirla (ejemplo: ${getEjemploDireccion()}) o usar *Adjuntar → Ubicación*.\n\n` +
+      `Escríbela con calle, número y localidad (ejemplo: ${getEjemploDireccion()}).\n\n` +
       `_Responde aquí o escribe *0* para volver._`
     );
   }
