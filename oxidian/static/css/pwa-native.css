@@ -634,6 +634,46 @@
     touch-action: none !important;
   }
 
+  /* ══════════════════════════════════════════════════════════════
+     CATEGORÍAS — .ep-cats-wrapper era el CULPABLE del atasco en menú.
+     La regla web (storefront-menu.css:680) le pone position:sticky con
+     backdrop-filter:blur(20px) + contiene un scroller horizontal
+     (.ep-cats) → combinación tóxica en iOS Safari PWA:
+     · backdrop-filter en sticky repinta la zona en cada frame de scroll
+     · scroller horizontal anidado en vertical confunde el touch-router
+     · sticky con blur crea composite layer costosa
+     Resultado: al pasar el dedo sobre las categorías el scroll vertical
+     se atasca (solo en menú porque solo aquí existe este wrapper).
+     Fix: en PWA standalone la retiramos del sticky, sin blur, y le
+     damos touch-action pan-x (sólo horizontal) — el pan vertical fluye
+     al viewport sin conflicto. La barra sigue funcionando y navegando
+     categorías, pero deja de bloquear el scroll de la página. */
+  body.ox-body-public .ep-cats-wrapper {
+    position: static !important;
+    top: auto !important;
+    z-index: auto !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--theme-text) 8%, transparent) !important;
+    background: transparent !important;
+    border-bottom: 0 !important;
+    /* El wrap deja pasar el pan vertical al viewport */
+    touch-action: pan-y !important;
+  }
+  /* El scroller horizontal interno sí acepta pan-x, pero contain para
+     no propagar el over-scroll horizontal al viewport. */
+  body.ox-body-public .ep-cats-wrapper .ep-cats {
+    touch-action: pan-x !important;
+    overscroll-behavior-inline: contain !important;
+    overscroll-behavior-block: auto !important;
+  }
+  /* Mientras el usuario scrollea verticalmente, cats no acepta touch
+     — evita cualquier residual de intercepción del scroller horizontal. */
+  body.ox-body-public.is-scrolling .ep-cats-wrapper * {
+    pointer-events: none !important;
+    touch-action: none !important;
+  }
+
   /* ── Ritmo vertical: separación clara entre bloques ── */
   body.ox-body-public main > section,
   body.ox-body-public main > form.ep-search-wrap {
