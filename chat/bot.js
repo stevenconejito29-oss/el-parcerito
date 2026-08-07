@@ -696,6 +696,59 @@ function adminActorPhone(jid) {
   return normalizePhone(phoneFromJid(jid));
 }
 
+/**
+ * Defensa-en-profundidad contra fugas de datos entre clientes.
+ *
+ * Cada estado de sesión que apunta a un pedido concreto (`pending.pedido_id`)
+ * debe llevar sellado el `owner_phone` del cliente que lo originó. Aunque
+ * el backend Python valida ownership en cada endpoint (`/pedido/<id>` con
+ * 403 si el `cliente_id` no coincide), esta capa de sesión evita que un
+ * bug de código o una corrupción de `ses.pending` en memoria/SQLite dispare
+ * respuestas con datos del pedido de otro cliente antes de que la request
+ * al backend siquiera se produzca.
+ *
+ * Uso:
+ *   1. Al escribir un pending que apunte a un pedido, llamar
+ *      `stampPendingOwner(jid, pending)` — devuelve el objeto con
+ *      `owner_phone` inyectado.
+ *   2. Al leer el pending en un handler de acción, llamar
+ *      `assertPendingOwnership(jid, ses)` — devuelve `true` si es válido;
+ *      si no, ya limpió el pending, escribió un audit log crítico y el
+ *      llamador debe abortar inmediatamente devolviendo un mensaje neutro.
+ */
+function stampPendingOwner(jid, pending) {
+  return { ...(pending || {}), owner_phone: phoneFromJid(jid) };
+}
+
+function assertPendingOwnership(jid, ses) {
+  const pending = ses?.pending || {};
+  // Sin pedido_id no hay riesgo: nada apunta a datos de un cliente concreto.
+  if (!pending.pedido_id) return true;
+  const expected = phoneFromJid(jid);
+  const owner = pending.owner_phone;
+  if (!owner) {
+    // Pending sin sellar: se creó antes de este cambio o desde una ruta
+    // que aún no está migrada. Log defensivo (WARN, no CRITICAL) y aceptamos
+    // por retrocompatibilidad — el backend sigue como último gate.
+    log('warn', 'pending_ownership_unstamped',
+      `jid=${jid} pedido_id=${pending.pedido_id} estado=${ses?.estado}`);
+    return true;
+  }
+  if (owner !== expected) {
+    // Mismatch real: alguien está intentando actuar sobre un pedido que
+    // no le pertenece o hay corrupción de sesión. AUDIT crítico y limpieza.
+    log('error', 'pending_ownership_mismatch',
+      `jid=${jid} expected=${expected} owner=${owner} pedido_id=${pending.pedido_id} estado=${ses?.estado}`);
+    ses.pending = {};
+    if (ses.estado && ses.estado !== 'idle' && ses.estado !== 'main_menu') {
+      ses.estado = clientStateFor(jid, 'main_menu');
+    }
+    saveSesion(ses);
+    return false;
+  }
+  return true;
+}
+
 function appendQuery(path, params = {}) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -2752,6 +2805,13 @@ async function oxidianGet(path, opts = {}) {
   let parseFailed = false;
   const data = await r.json().catch(() => { parseFailed = true; return {}; });
   if (!r.ok) {
+    // Audit de aislamiento: un 403 en un endpoint de pedido significa que
+    // el backend rechazó la operación por ownership mismatch. Rara vez debe
+    // ocurrir en tráfico normal — puede indicar bug del bot, sesión
+    // corrupta o intento de acceso a datos ajenos. Log crítico dedicado.
+    if (r.status === 403 && /\/pedido/i.test(path)) {
+      log('error', 'oxidian_403_pedido', `GET ${path} — posible acceso a pedido de otro cliente`);
+    }
     const err = new Error(data.error || `HTTP ${r.status} en GET ${path}`);
     err.status = r.status;
     err.data = data;
@@ -2808,6 +2868,9 @@ async function oxidianPost(path, body, opts = {}) {
   let parseFailedPost = false;
   const data = await r.json().catch(() => { parseFailedPost = true; return {}; });
   if (!r.ok) {
+    if (r.status === 403 && /\/pedido/i.test(path)) {
+      log('error', 'oxidian_403_pedido', `POST ${path} — posible acceso a pedido de otro cliente`);
+    }
     const err = new Error(data.error || `HTTP ${r.status} en POST ${path}`);
     err.status = r.status;
     err.data = data;
@@ -4059,12 +4122,12 @@ async function resumenPedidoActivo(clientJid, ses) {
         ? `\n⚠️ *Falta confirmar tu primera compra.*\n` +
           `Responde *SI* para verificar este WhatsApp y habilitar la preparación, o *NO* para anular el pedido.\n`
         : '';
-      setClientState(ses, 'pedido_acciones', {
+      setClientState(ses, 'pedido_acciones', stampPendingOwner(clientJid, {
         pedido_id: p.id,
         numero: p.numero,
         estado: p.estado,
         cancelable,
-      });
+      }));
       return (
         `${saludo}\n\n` +
         `Tienes un pedido en curso:\n` +
@@ -7620,11 +7683,11 @@ async function iniciarCancelacionPedido(jid, ses, identifier = '') {
       return requestHumanSupport(jid, `Necesito cancelar el pedido ${pedido.numero}; el Bizum ya está confirmado.`);
     }
 
-    setClientState(ses, 'confirmar_cancelacion', {
+    setClientState(ses, 'confirmar_cancelacion', stampPendingOwner(jid, {
       pedido_id: pedido.id,
       numero: pedido.numero,
       _asked_at: Date.now(),
-    });
+    }));
     return sendText(jid, texts.withEscapeHint(
       `⚠️ *Confirmar cancelación*\n\n` +
       `Pedido: *${pedido.numero}*\n` +
@@ -7700,6 +7763,12 @@ async function confirmarCancelacionPedido(jid, ses, answer) {
   if (!pending.pedido_id) {
     setClientState(ses, 'main_menu');
     return sendText(jid, `La confirmación venció. Vuelve a escribir *CANCELAR*.\n\n${menuPrincipal()}`);
+  }
+  // Guard de aislamiento: nunca cancelar un pedido cuyo pending viene de
+  // otro cliente. `assertPendingOwnership` limpia + audita si detecta
+  // mismatch — respondemos con mensaje neutro sin exponer el número.
+  if (!assertPendingOwnership(jid, ses)) {
+    return sendText(jid, `La confirmación anterior expiró. Vuelve a escribir *CANCELAR* para intentarlo de nuevo.`);
   }
   const askedAt = Number(pending._asked_at || 0);
   if (!askedAt || (Date.now() - askedAt) > CLIENT_CANCEL_CONFIRM_TTL_MS) {
@@ -7933,13 +8002,13 @@ async function handleEstadoPedido(jid, ses, numero) {
           const lineas = pedido.items.slice(0, 10).map(formatOrderItemSummaryLine);
           itemsTxt = `\n📋 *Resumen:*\n${lineas.slice(0, 4).join('\n')}${pedido.items.length > 4 ? `\n_(+${pedido.items.length - 4} productos más)_` : ''}\n`;
         }
-        setClientState(ses, 'pedido_acciones', {
+        setClientState(ses, 'pedido_acciones', stampPendingOwner(jid, {
           pedido_id: pedido.id,
           numero: pedido.numero,
           estado: pedido.estado,
           cancelable: pedido.estado === 'pendiente',
           era_ultimo_cerrado: esUltimo && !hayActivo,
-        });
+        }));
         return sendText(jid,
           contextoConsulta +
           `${est.emoji} *Pedido ${pedido.numero}*\n\n` +
@@ -8015,6 +8084,12 @@ async function handlePedidoActions(jid, ses, input) {
     setClientState(ses, 'main_menu');
     return sendText(jid, menuPrincipal(ses));
   }
+  // Guard de aislamiento: el pending debe pertenecer al mismo teléfono
+  // que abrió el estado. Si no coincide, `assertPendingOwnership` ya
+  // limpió el pending y logueó CRITICAL — respondemos neutro y volvemos.
+  if (!assertPendingOwnership(jid, ses)) {
+    return sendText(jid, `La consulta anterior expiró. Vuelve a empezar desde el menú.\n\n${menuPrincipal(ses)}`);
+  }
 
   if (value === '1' || /actualizar|refrescar|como va|cómo va/.test(value)) {
     return handleEstadoPedido(jid, ses, pending.numero);
@@ -8033,7 +8108,9 @@ async function handlePedidoActions(jid, ses, input) {
     return iniciarCancelacionPedido(jid, ses, pending.numero);
   }
   if (value === reportOption || /reportar|problema|incidencia|novedad|queja/.test(value)) {
-    setClientState(ses, 'espera_reporte_pedido', pending);
+    // El pending fue leído del state anterior — re-sellamos con el jid
+    // actual para preservar el invariante de owner_phone en el nuevo estado.
+    setClientState(ses, 'espera_reporte_pedido', stampPendingOwner(jid, pending));
     return sendText(jid, texts.withEscapeHint(
       `📝 *Reportar un problema — pedido ${pending.numero}*\n\n` +
       `Cuéntame brevemente qué ocurrió. Enviaré el mensaje al equipo responsable.`
@@ -8069,6 +8146,10 @@ async function handleReportePedido(jid, ses, input) {
   if (!pending.pedido_id || !pending.numero) {
     setClientState(ses, 'main_menu');
     return sendText(jid, `La consulta venció. Escribe *2* para buscar nuevamente tu pedido.`);
+  }
+  // Guard de aislamiento antes de reportar sobre un pedido concreto.
+  if (!assertPendingOwnership(jid, ses)) {
+    return sendText(jid, `La consulta anterior expiró. Escribe *2* para buscar tu pedido nuevamente.`);
   }
   if (texto.length < 4) {
     // Reintentos limitados: sin este cap, un cliente que responde "ok"
