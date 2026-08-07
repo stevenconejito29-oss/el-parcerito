@@ -4189,11 +4189,30 @@ class AffiliateCode(db.Model):
         return 0
 
     def calcular_comision(self, total_pedido):
+        """Devuelve la comisión que corresponde al afiliado por un pedido.
+
+        Interpretación depende de `comision_tipo`:
+          - "porcentaje"  → EUROS (float con 2 decimales)
+          - "monto_fijo"  → EUROS (float, valor exacto configurado)
+          - "puntos"      → GRANOS de café (int, valor entero configurado)
+
+        El llamador (`registrar_uso_afiliado`) decide cómo materializar
+        el pago: euros → `StaffPayment(tipo=comision)`, puntos →
+        `User.sumar_puntos()` sobre el usuario afiliado.
+        """
         if self.comision_tipo == "porcentaje":
             return round(float(total_pedido) * float(self.comision_valor) / 100, 2)
         elif self.comision_tipo == "monto_fijo":
             return float(self.comision_valor)
+        elif self.comision_tipo == "puntos":
+            # Puntos son enteros — cast defensivo para tolerar valores
+            # legacy cargados como Decimal con parte fraccional (ej. 100.00).
+            return int(float(self.comision_valor or 0))
         return 0
+
+    @property
+    def comision_es_puntos(self) -> bool:
+        return self.comision_tipo == "puntos"
 
     def registrar_uso(self):
         if self.usos_maximos:

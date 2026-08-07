@@ -5891,7 +5891,13 @@ def _count_alertas_stock():
 
 # ─── AFILIADOS ───────────────────────────────
 
-_AFFILIATE_VALUE_TYPES = {"porcentaje", "monto_fijo"}
+# Tipos válidos para descuento y comisión de un código afiliado.
+# Nota: "puntos" SOLO es válido para `comision_tipo` (el descuento al
+# cliente siempre es en €). La validación finer-grained la hace
+# `_parse_affiliate_form` cuando lo procesa por campo.
+_AFFILIATE_VALUE_TYPES = {"porcentaje", "monto_fijo", "puntos"}
+_AFFILIATE_DESCUENTO_TYPES = {"porcentaje", "monto_fijo"}
+_AFFILIATE_COMISION_TYPES = {"porcentaje", "monto_fijo", "puntos"}
 
 
 def _parse_affiliate_form(form, *, existing=None):
@@ -5904,10 +5910,13 @@ def _parse_affiliate_form(form, *, existing=None):
     if tipo not in {"externo", "staff"}:
         raise ValueError("Tipo de afiliado no válido.")
 
-    def value_pair(prefix, label, percentage_max):
+    def value_pair(prefix, label, percentage_max, allowed_types):
         value_type = (form.get(f"{prefix}_tipo") or "").strip().lower() or None
-        if value_type not in _AFFILIATE_VALUE_TYPES | {None}:
-            raise ValueError(f"Tipo de {label.lower()} no válido.")
+        if value_type is not None and value_type not in allowed_types:
+            raise ValueError(
+                f"Tipo de {label.lower()} no válido "
+                f"(permitidos: {', '.join(sorted(allowed_types))})."
+            )
         value = _parse_decimal_no_negativo(
             form.get(f"{prefix}_valor", "0"), label,
         )
@@ -5917,13 +5926,28 @@ def _parse_affiliate_form(form, *, existing=None):
             raise ValueError(f"{label} debe ser mayor que cero cuando está activado.")
         if value_type == "porcentaje" and value > Decimal(str(percentage_max)):
             raise ValueError(f"{label} no puede superar el {percentage_max:g}%.")
+        # Puntos: valor entero, sin decimales — un usuario con "100.5 pts"
+        # no tiene sentido operativo y el `sumar_puntos` los persiste como
+        # int. Redondeamos y validamos que no perdemos precisión.
+        if value_type == "puntos":
+            if value != value.to_integral_value():
+                raise ValueError(f"{label} en puntos debe ser un número entero.")
+            if value > Decimal("10000"):
+                raise ValueError(f"{label} en puntos no puede superar 10.000 por uso.")
         return value_type, value
 
+    # Descuento al cliente: solo € (porcentaje o monto). NUNCA en puntos —
+    # el cliente paga euros en el checkout, no puntos como pago recibido.
     descuento_tipo, descuento_valor = value_pair(
         "descuento", "Descuento para el cliente", MAX_AFILIADO_PCT * 100,
+        _AFFILIATE_DESCUENTO_TYPES,
     )
+    # Comisión al afiliado: € o puntos. Por decisión de producto los
+    # afiliados/referidos de El Parcerito ganan GRANOS DE CAFÉ (puntos)
+    # canjeables; los códigos legacy con % o monto siguen funcionando.
     comision_tipo, comision_valor = value_pair(
         "comision", "Comisión para el afiliado", 100,
+        _AFFILIATE_COMISION_TYPES,
     )
 
     raw_user = (form.get("user_id") or "").strip()
@@ -5933,8 +5957,18 @@ def _parse_affiliate_form(form, *, existing=None):
         raise ValueError("El usuario asignado no es válido.")
     if user_id:
         assigned = db.session.get(User, user_id)
-        if not assigned or not assigned.activo or assigned.rol not in ROLES_AUTENTICABLES:
+        if not assigned or not assigned.activo:
             raise ValueError("El usuario asignado no existe o no está activo.")
+        # Si la comisión es en PUNTOS, cualquier usuario activo puede
+        # ser el afiliado (incluidos clientes registrados que quieran
+        # referir). Si es €, exigimos rol staff — un cliente no
+        # recibe StaffPayment por defecto, evita ambigüedad contable.
+        if comision_tipo != "puntos" and assigned.rol not in ROLES_AUTENTICABLES:
+            raise ValueError(
+                "Para comisión en euros el afiliado debe ser un usuario "
+                "con rol staff (admin/preparación/repartidor/proveedor). "
+                "Usa comisión en puntos para asignar a clientes."
+            )
     if tipo == "staff" and not user_id:
         raise ValueError("Un código de staff debe estar asignado a un empleado activo.")
 

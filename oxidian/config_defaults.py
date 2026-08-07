@@ -519,6 +519,16 @@ DEFAULTS: dict[str, dict] = {
             "recolección y respuesta a la reseña."
         ),
     },
+    "AFILIADO_COMISION_PUNTOS_DEFAULT": {
+        "default": "100",
+        "type": "int",
+        "desc": (
+            "Puntos por defecto que el super_admin puede pre-cargar al crear "
+            "un código de afiliado con comisión en puntos (granos de café). "
+            "100 pts ≈ 1€ con la equivalencia estándar. El valor final es "
+            "editable por afiliado desde /admin/afiliados."
+        ),
+    },
 }
 
 

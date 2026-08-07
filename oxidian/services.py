@@ -3089,30 +3089,63 @@ def registrar_uso_afiliado(codigo, pedido, cliente, descuento_aplicado):
         return existente
 
     es_nuevo = _cliente_es_referido_nuevo(cliente, pedido)
-    comision = float(codigo.calcular_comision(float(pedido.total))) if es_nuevo else 0.0
+    # Nota: `calcular_comision` devuelve int cuando tipo="puntos", float
+    # cuando es "porcentaje"/"monto_fijo". Persistimos siempre en la
+    # columna `comision_generada` (Decimal 10,2) para uniformidad — un
+    # valor 100 puntos queda como 100.00 en BD sin ambigüedad.
+    comision = codigo.calcular_comision(float(pedido.total)) if es_nuevo else 0
 
     uso = AffiliateUse(
         codigo_id=codigo.id,
         pedido_id=pedido.id,
         cliente_id=cliente.id,
         descuento_aplicado=descuento_aplicado,
-        comision_generada=comision,
+        comision_generada=float(comision),
     )
     db.session.add(uso)
     codigo.registrar_uso()
 
     if codigo.user_id and comision > 0:
-        pago = StaffPayment(
-            user_id=codigo.user_id,
-            tipo="comision",
-            origen="affiliate",
-            monto=comision,
-            concepto=f"Comisión afiliado {codigo.codigo} — {pedido.numero_pedido}",
-            pedido_id=pedido.id,
-        )
-        db.session.add(pago)
-        db.session.flush()
-        uso.staff_payment_id = pago.id
+        if codigo.comision_es_puntos:
+            # Comisión en GRANOS DE CAFÉ: sumar puntos al usuario
+            # afiliado (referente). NO se crea StaffPayment — los puntos
+            # son una moneda interna canjeable, no un pago contable.
+            # `sumar_puntos` inserta PointsLog(tipo='ganado', pedido_id=X)
+            # que ya tiene UNIQUE INDEX (cliente_id, pedido_id, tipo) —
+            # idempotente frente a reintentos.
+            referente = db.session.get(User, codigo.user_id)
+            if referente:
+                referente.sumar_puntos(
+                    int(comision),
+                    pedido_id=pedido.id,
+                    descripcion=f"Comisión afiliado {codigo.codigo}",
+                )
+                logger.info(
+                    "registrar_uso_afiliado: %d puntos → referente %s por %s (pedido %s)",
+                    int(comision), codigo.user_id, codigo.codigo,
+                    getattr(pedido, "numero_pedido", pedido.id),
+                )
+            else:
+                logger.warning(
+                    "registrar_uso_afiliado: user_id=%s del código %s no existe; "
+                    "no se acreditan puntos.",
+                    codigo.user_id, codigo.codigo,
+                )
+        else:
+            # Comisión en € (porcentaje o monto_fijo): flujo legacy con
+            # StaffPayment para conservar el histórico y liquidación
+            # existente para códigos staff/externos monetizados.
+            pago = StaffPayment(
+                user_id=codigo.user_id,
+                tipo="comision",
+                origen="affiliate",
+                monto=comision,
+                concepto=f"Comisión afiliado {codigo.codigo} — {pedido.numero_pedido}",
+                pedido_id=pedido.id,
+            )
+            db.session.add(pago)
+            db.session.flush()
+            uso.staff_payment_id = pago.id
     elif not es_nuevo:
         logger.info(
             "registrar_uso_afiliado: cliente %s NO es referido nuevo — "
