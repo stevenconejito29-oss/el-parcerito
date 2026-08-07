@@ -506,6 +506,24 @@ const CURIOSIDAD_BOT_RE = new RegExp(
 );
 function esCuriosidadBot(text) { return CURIOSIDAD_BOT_RE.test(String(text || '').trim()); }
 
+// Repetir último pedido — intent explícito del cliente. Es la vía más
+// rápida para conversión recurrente: cliente escribe UNA palabra y el
+// bot le devuelve el link para reordenar. Palabras cubiertas cubren
+// desde el imperativo directo ("repetir", "otra vez") hasta la frase
+// coloquial ("lo de siempre", "el mismo de antes", "el pedido de la
+// última vez"). No incluimos "pedir" a secas para no colisionar con
+// clientes que expresan intención genérica de compra ("quiero pedir").
+const REPETIR_RE = new RegExp(
+  '^\\s*(?:repet(?:ir|imos|imelo)|(?:pedir\\s+)?(?:lo\\s+)?de\\s+siempre|'
+  + '(?:pedir\\s+|quiero\\s+)?otra\\s+vez\\s+lo\\s+mismo|el\\s+mismo\\s+de\\s+(?:antes|siempre)|'
+  + 'el\\s+(?:pedido|mismo)\\s+de\\s+(?:la\\s+)?[uú]ltima\\s+vez|'
+  + 'repite(?:me)?\\s+(?:el|mi)\\s+(?:pedido|[uú]ltimo)|'
+  + '(?:mi\\s+)?[uú]ltimo\\s+pedido\\s+de\\s+nuevo|'
+  + 'como\\s+la\\s+[uú]ltima\\s+vez)\\s*[!.?]?\\s*$',
+  'i'
+);
+function esRepetirPedido(text) { return REPETIR_RE.test(String(text || '').trim()); }
+
 // Detección de LOOP: si el cliente envía prácticamente el mismo mensaje
 // más de una vez en la misma sesión, el bot debe reconocer que no está
 // resolviendo y derivar a agente. Guardamos hash normalizado en la sesión.
@@ -7986,6 +8004,15 @@ async function handleMainMenu(jid, ses, opcion) {
   //   5. Menú guiado o atención humana si hay frustración/repetición
   let textoLibre = String(opcion || '').trim();
 
+  // 0z) Repetir último pedido — atajo de 1 palabra ("repetir", "lo de
+  //     siempre") que devuelve un link firmado al carrito web pre-cargado
+  //     con el último pedido entregado del cliente. Es el intent de mayor
+  //     conversión recurrente — resolvámoslo antes de cualquier otra
+  //     rama (saludo, FAQ, etc.) para no perder el momento.
+  if (esRepetirPedido(textoLibre)) {
+    return handleRepetirPedido(jid, ses);
+  }
+
   // 0a) Curiosidad sobre el bot ("¿eres un bot?", "¿es automático?").
   //     Respondemos con TRANSPARENCIA: sí somos automáticos y podemos
   //     resolver casi todo. No derivamos a humano — el cliente solo
@@ -8559,6 +8586,68 @@ function formatOrderItemSummaryLine(item) {
   const opcionesTxt = opciones.length ? `\n   ${opciones.join(' · ')}` : '';
   const nota = it.notas && it.notas.trim() ? `\n   _${it.notas.trim().slice(0, 120)}_` : '';
   return base + opcionesTxt + nota;
+}
+
+/**
+ * Handler del intent "repetir último pedido".
+ *
+ * Consulta el endpoint backend `/pedido/repetir-link` con el teléfono
+ * del cliente, que devuelve un link firmado al carrito web pre-cargado.
+ * El bot renderiza el mensaje con el link + preview de items + total
+ * estimado + call-to-action.
+ *
+ * Casos:
+ *   - OK: manda link con lista de items disponibles.
+ *   - `sin_historial`: cliente sin pedidos entregados aún — mensaje
+ *     amable invitando a hacer el primero.
+ *   - `sin_disponibles`: los productos del último pedido ya no
+ *     existen — invitar a explorar el catálogo actual.
+ *   - Fallo backend: fallback amable con link genérico a la tienda.
+ */
+async function handleRepetirPedido(jid, ses) {
+  const phone = phoneFromJid(jid);
+  if (!phone) return sendText(jid, `Necesito tu número para buscar tu último pedido. Escribe *MENU* para las opciones.`);
+  bumpStat('repetir_pedido');
+  let data;
+  try {
+    data = await oxidianPost('/pedido/repetir-link', { telefono: phone });
+  } catch (err) {
+    log('warn', 'repetir_pedido_backend_fail', err?.message || String(err));
+    const tiendaUrl = getTiendaUrl();
+    return sendText(jid,
+      `No pude cargar tu último pedido ahora mismo 😅\n\n` +
+      `Entra a la tienda y arma tu carrito:\n👉 ${tiendaUrl}`
+    );
+  }
+  if (!data || data.ok === false) {
+    // Errores esperados con mensaje del backend (sin_historial, sin_disponibles)
+    if (data?.mensaje) {
+      const tiendaUrl = getTiendaUrl();
+      return sendText(jid, `${data.mensaje}\n\n👉 ${tiendaUrl}`);
+    }
+    const tiendaUrl = getTiendaUrl();
+    return sendText(jid,
+      `No pude repetir tu pedido ahora mismo. Entra a la tienda:\n👉 ${tiendaUrl}`
+    );
+  }
+  const items = Array.isArray(data.items) ? data.items : [];
+  const preview = items
+    .slice(0, 6)
+    .map(it => `• ${it.nombre} × ${it.cantidad}${it.disponible ? '' : ' _(ya no disponible)_'}`)
+    .join('\n');
+  const mas = items.length > 6 ? `\n_...y ${items.length - 6} producto(s) más_` : '';
+  const totalTxt = data.total_estimado
+    ? `\n💰 *Total estimado:* ${Number(data.total_estimado).toFixed(2)} €`
+    : '';
+  const indispTxt = data.indisponibles_count
+    ? `\n⚠️ _${data.indisponibles_count} producto(s) ya no están disponibles — se omitirán del carrito._`
+    : '';
+  return sendText(jid,
+    `🔁 *Repetir pedido ${data.numero_pedido || ''}*\n\n` +
+    `${preview}${mas}${totalTxt}${indispTxt}\n\n` +
+    `Toca aquí para llegar al checkout con todo listo:\n👉 ${data.link}\n\n` +
+    `_El link es válido por 5 minutos. Ajusta cantidades o quita algo antes de pagar._`
+  );
 }
 
 async function handleEstadoPedido(jid, ses, numero) {
