@@ -4593,6 +4593,58 @@ async function _handleMessage(jid, text, pushName, context = {}) {
   const ownerAsClient = isOwner && isAdminClientMode(jid, ses);
   const requestedMode = isOwner ? detectOperationalModeCommand(text) : null;
 
+  // ── Contenido no interpretable ─────────────────────────────────────────
+  // Media (audio/imagen/sticker sin caption), emoji suelto sin palabras,
+  // mensajes solo con puntuación o espacios. Antes: caían al flow normal
+  // como "texto raro" y el cliente recibía un fallback frío ("no entendí").
+  // Ahora: respuesta amable pidiendo texto, sin gastar intento del state
+  // handler y sin cambiar el estado activo.
+  //
+  // Solo aplica a clientes en estados de espera de texto real. Admins con
+  // sus propios estados y clientes en `main_menu`/`idle` siguen su flow
+  // (main_menu puede recibir emoji suelto para saludo natural).
+  if (!isOwner) {
+    // Adjunto explícito: extractText devuelve "[Adjunto recibido: ...]"
+    // cuando no hay caption. Interceptamos ese patrón concreto.
+    const adjuntoMatch = /^\[Adjunto recibido:\s*(\w+)/i.exec(text);
+    if (adjuntoMatch) {
+      const tipo = adjuntoMatch[1].toLowerCase();
+      const etiqueta = ({
+        audio: 'audio 🎤', imagen: 'imagen 🖼️', video: 'vídeo 📹',
+        documento: 'documento 📄', sticker: 'sticker', contacto: 'contacto',
+        ubicacion: 'ubicación',
+      })[tipo] || 'archivo';
+      bumpStat('inbound_media');
+      return sendText(jid,
+        `Recibí tu ${etiqueta}, pero por aquí solo puedo leer *mensajes de texto*. ` +
+        `Cuéntame en palabras qué necesitas y te ayudo. 📝\n\n` +
+        `_Si es urgente y prefieres hablar con una persona, escribe *AGENTE*._`
+      );
+    }
+    // Mensaje sin contenido interpretable: sin letras ni números, o texto
+    // completamente vacío (Evolution manda vacío en algunos eventos de
+    // reacción/edición). Solo respondemos si hay algún carácter — un evento
+    // completamente vacío se ignora (probable ruido de webhook).
+    const hasLetterOrDigit = /\p{L}|\p{N}/u.test(text);
+    const soloEmojiOPuntuacion = !hasLetterOrDigit && /\S/.test(text);
+    if (soloEmojiOPuntuacion) {
+      // No responder desde estados que ya tienen su propio handler contextual
+      // (main_menu del cliente sí sabe manejar emoji-only con FAQ/intent).
+      const estadosSensibles = new Set([
+        'espera_numero_pedido', 'espera_reporte_pedido',
+        'seleccionar_cancelacion', 'confirmar_cancelacion',
+        'espera_direccion_cobertura', 'pedido_acciones',
+      ]);
+      if (estadosSensibles.has(ses.estado)) {
+        bumpStat('inbound_emoji_only_midflow');
+        return sendText(jid,
+          `Recibí tu mensaje pero solo veo emojis 😊 — necesito unas palabras para entenderte.\n\n` +
+          `_Escribe *0* para volver al inicio._`
+        );
+      }
+    }
+  }
+
   /* Auditoría defensiva: si un remitente NO-admin escribe algo con
      forma de comando administrativo (empieza por `!` o por `/config`,
      `/precio`, etc.), lo logueamos silenciosamente sin responder para
