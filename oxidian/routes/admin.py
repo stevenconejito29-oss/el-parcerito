@@ -1270,6 +1270,12 @@ def finanzas():
     # proyección de arriba — mira PASADO real, no potencial.
     margen_real = _margen_real_periodo(fi, ff)
 
+    # ── Desglose de cupones y combos del período ──────────────────────
+    # Responde a dos preguntas operativas típicas:
+    #   * "¿Qué cupón me está costando más y qué ventas trae?"
+    #   * "¿Los combos me dan más ticket medio o me queman margen?"
+    analisis_promos = _analisis_cupones_y_combos(fi, ff)
+
     return render_template(
         "admin/finanzas.html",
         preset=preset,
@@ -1297,6 +1303,7 @@ def finanzas():
         ],
         proyeccion=proyeccion,
         margen_real=margen_real,
+        analisis_promos=analisis_promos,
     )
 
 
@@ -1563,6 +1570,123 @@ def _margen_real_periodo(fi, ff):
         # Ticket medio útil para narrativa del panel:
         "ticket_medio": (ventas_netas / len(pedidos)).quantize(Decimal("0.01"))
                          if pedidos else Decimal("0"),
+    }
+
+
+def _analisis_cupones_y_combos(fi, ff):
+    """Desglose de promociones aplicadas en el período.
+
+    Devuelve dos vistas complementarias para decidir si las herramientas
+    de marketing están funcionando:
+
+    1. `cupones`: por cupón usado en el rango, cuántas veces se aplicó,
+       cuánto descuento generó y qué ventas trajo (SUM total). Con el
+       "coste_pct" (descuento / ventas del cupón) el operador ve de un
+       vistazo si un cupón está sobre-descontando (>20% = agresivo).
+
+    2. `combos`: segmenta los pedidos en dos grupos — con al menos 1
+       combo, y solo productos simples. Para cada segmento: nº pedidos,
+       ventas netas totales, ticket medio. Ayuda a saber si los combos
+       aumentan volumen (ticket medio superior) o queman margen.
+
+    Excluye cancelados en ambos análisis para no ensuciar la señal.
+    """
+    from collections import defaultdict as _dd
+    from models import Coupon as _Coupon
+
+    pedidos = (
+        Order.query
+        .options(joinedload(Order.items))
+        .filter(
+            Order.creado_en >= fi,
+            Order.creado_en < ff,
+            Order.estado != "cancelado",
+        )
+        .all()
+    )
+
+    # ── Cupones ──────────────────────────────────────────────────────
+    agg_cupon = _dd(lambda: {
+        "usos": 0, "descuento": Decimal("0"), "ventas": Decimal("0"),
+    })
+    for pedido in pedidos:
+        if not pedido.cupon_id:
+            continue
+        entry = agg_cupon[pedido.cupon_id]
+        entry["usos"] += 1
+        entry["descuento"] += Decimal(str(pedido.descuento or 0))
+        entry["ventas"] += Decimal(str(pedido.total or 0))
+
+    cupones = []
+    if agg_cupon:
+        rows = _Coupon.query.filter(_Coupon.id.in_(list(agg_cupon.keys()))).all()
+        for cupon in rows:
+            data = agg_cupon[cupon.id]
+            coste_pct = float(data["descuento"] / data["ventas"] * 100) if data["ventas"] > 0 else 0.0
+            cupones.append({
+                "id": cupon.id,
+                "codigo": cupon.codigo,
+                "tipo": cupon.tipo,
+                "valor_config": float(cupon.valor or 0),
+                "usos": data["usos"],
+                "descuento_total": data["descuento"],
+                "ventas_generadas": data["ventas"],
+                "coste_pct": coste_pct,
+            })
+        cupones.sort(key=lambda r: r["descuento_total"], reverse=True)
+
+    # ── Combos vs productos simples ──────────────────────────────────
+    # Un pedido cuenta como "con combo" si al menos un OrderItem tiene
+    # el flag es_combo=True en su producto (o lo indica el snapshot).
+    seg_combo = {"pedidos": 0, "ventas": Decimal("0"), "cogs": Decimal("0")}
+    seg_simple = {"pedidos": 0, "ventas": Decimal("0"), "cogs": Decimal("0")}
+    for pedido in pedidos:
+        tiene_combo = False
+        cogs_pedido = Decimal("0")
+        cogs_incompleto = False
+        for item in pedido.items or []:
+            cantidad = int(item.cantidad or 0)
+            if cantidad <= 0:
+                continue
+            meta = item.get_metadata() if hasattr(item, "get_metadata") else {}
+            snapshot_prod = (meta or {}).get("producto") if isinstance(meta, dict) else None
+            snapshot_prod = snapshot_prod if isinstance(snapshot_prod, dict) else {}
+            es_combo = bool(snapshot_prod.get("es_combo")) if "es_combo" in snapshot_prod else bool(
+                getattr(item.producto, "es_combo", False)
+            )
+            if es_combo:
+                tiene_combo = True
+            costo = snapshot_prod.get("precio_costo")
+            if costo is None and item.producto is not None and item.producto.precio_costo is not None:
+                costo = float(item.producto.precio_costo)
+            if costo is None:
+                cogs_incompleto = True
+                continue
+            cogs_pedido += Decimal(str(costo)) * cantidad
+        target = seg_combo if tiene_combo else seg_simple
+        target["pedidos"] += 1
+        target["ventas"] += Decimal(str(pedido.total or 0))
+        if not cogs_incompleto:
+            target["cogs"] += cogs_pedido
+
+    def _finalizar(seg):
+        ventas = seg["ventas"]
+        pedidos_n = seg["pedidos"]
+        margen = ventas - seg["cogs"]
+        return {
+            "pedidos": pedidos_n,
+            "ventas": ventas,
+            "cogs": seg["cogs"],
+            "margen_bruto": margen,
+            "ticket_medio": (ventas / pedidos_n).quantize(Decimal("0.01")) if pedidos_n else Decimal("0"),
+            "margen_pct": float(margen / ventas * 100) if ventas > 0 else 0.0,
+        }
+
+    return {
+        "cupones": cupones[:8],
+        "cupones_extra": max(0, len(cupones) - 8),
+        "seg_combo": _finalizar(seg_combo),
+        "seg_simple": _finalizar(seg_simple),
     }
 
 

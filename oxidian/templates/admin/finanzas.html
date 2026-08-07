@@ -419,6 +419,139 @@
   {% endif %}
 </section>
 
+{# ── Análisis de promociones: cupones y combos ── #}
+{# Doble vista para el operador de marketing:
+   1. Cupones — cuál cuesta más en descuento y qué ventas trae, con un
+      "coste_pct" que hace obvio si un cupón está sobre-descontando.
+   2. Combos vs simples — segmenta los pedidos por si llevaron combo
+      para ver si aumentan ticket medio o queman margen. #}
+{% set ap = analisis_promos %}
+{% if ap.cupones or ap.seg_combo.pedidos > 0 or ap.seg_simple.pedidos > 0 %}
+<section class="partner-form-card">
+  <header style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem;">
+    <span style="font-size:1.6rem;">🎟️</span>
+    <div>
+      <h2 style="margin:0; font-size:1.15rem;">Cupones y combos del período</h2>
+      <small style="color:#666;">Qué promociones se aplicaron y cómo impactan tu margen</small>
+    </div>
+  </header>
+
+  <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:1rem;">
+
+    {# ── Tabla de cupones ── #}
+    <div>
+      <h3 style="margin:0 0 0.5rem 0; font-size:1rem;">🎟️ Cupones usados</h3>
+      {% if ap.cupones %}
+        <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+          <thead>
+            <tr style="background:#f7f7f7; text-align:left;">
+              <th style="padding:6px;">Código</th>
+              <th style="padding:6px; text-align:right;">Usos</th>
+              <th style="padding:6px; text-align:right;">Descontado</th>
+              <th style="padding:6px; text-align:right;">Ventas</th>
+              <th style="padding:6px; text-align:right;">Coste</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for cup in ap.cupones %}
+              <tr style="border-bottom:1px solid #eee;">
+                <td style="padding:6px;">
+                  <strong>{{ cup.codigo }}</strong>
+                  <br><small style="color:#888;">{{ cup.tipo }}</small>
+                </td>
+                <td style="padding:6px; text-align:right;">{{ cup.usos }}</td>
+                <td style="padding:6px; text-align:right; color:#c0392b;">
+                  −{{ '%.2f'|format(cup.descuento_total) }} €
+                </td>
+                <td style="padding:6px; text-align:right;">
+                  {{ '%.2f'|format(cup.ventas_generadas) }} €
+                </td>
+                <td style="padding:6px; text-align:right;">
+                  <strong style="color:{% if cup.coste_pct >= 25 %}#c0392b{% elif cup.coste_pct >= 15 %}#e07b00{% else %}#1c8b4a{% endif %};">
+                    {{ '%.1f'|format(cup.coste_pct) }}%
+                  </strong>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if ap.cupones_extra > 0 %}
+          <small style="color:#888; display:block; margin-top:0.35rem;">
+            +{{ ap.cupones_extra }} cupón(es) adicionales con menos descuento.
+          </small>
+        {% endif %}
+        <small style="color:#888; display:block; margin-top:0.5rem;">
+          <strong>Coste</strong> = descuento / ventas generadas. <span style="color:#1c8b4a;">Verde</span> &lt;15%, <span style="color:#e07b00;">naranja</span> 15–25%, <span style="color:#c0392b;">rojo</span> ≥25% (agresivo).
+        </small>
+      {% else %}
+        <p style="color:#666; font-size:0.9rem;">Ningún cupón aplicado en este período.</p>
+      {% endif %}
+    </div>
+
+    {# ── Segmentación combos vs simples ── #}
+    <div>
+      <h3 style="margin:0 0 0.5rem 0; font-size:1rem;">🍔 Combos vs productos simples</h3>
+      {% set sc = ap.seg_combo %}
+      {% set ss = ap.seg_simple %}
+      {% if sc.pedidos > 0 or ss.pedidos > 0 %}
+        <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+          <thead>
+            <tr style="background:#f7f7f7; text-align:left;">
+              <th style="padding:6px;">Segmento</th>
+              <th style="padding:6px; text-align:right;">Pedidos</th>
+              <th style="padding:6px; text-align:right;">Ticket</th>
+              <th style="padding:6px; text-align:right;">Margen%</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom:1px solid #eee;">
+              <td style="padding:6px;">🍔 Con combo</td>
+              <td style="padding:6px; text-align:right;">{{ sc.pedidos }}</td>
+              <td style="padding:6px; text-align:right;"><strong>{{ '%.2f'|format(sc.ticket_medio) }} €</strong></td>
+              <td style="padding:6px; text-align:right;">
+                <strong style="color:{% if sc.margen_pct < 25 %}#c0392b{% elif sc.margen_pct < 40 %}#e07b00{% else %}#1c8b4a{% endif %};">
+                  {{ '%.1f'|format(sc.margen_pct) }}%
+                </strong>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:6px;">🛒 Solo simples</td>
+              <td style="padding:6px; text-align:right;">{{ ss.pedidos }}</td>
+              <td style="padding:6px; text-align:right;"><strong>{{ '%.2f'|format(ss.ticket_medio) }} €</strong></td>
+              <td style="padding:6px; text-align:right;">
+                <strong style="color:{% if ss.margen_pct < 25 %}#c0392b{% elif ss.margen_pct < 40 %}#e07b00{% else %}#1c8b4a{% endif %};">
+                  {{ '%.1f'|format(ss.margen_pct) }}%
+                </strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        {% if sc.pedidos > 0 and ss.pedidos > 0 %}
+          {% set diff_ticket = sc.ticket_medio - ss.ticket_medio %}
+          {% set diff_margen = sc.margen_pct - ss.margen_pct %}
+          <div style="margin-top:0.75rem; padding:0.6rem; background:#f7f9fc; border-radius:4px; font-size:0.85rem;">
+            <strong>Lectura:</strong>
+            {% if diff_ticket > 0 %}
+              Los combos suben el ticket medio en <strong style="color:#1c8b4a;">+{{ '%.2f'|format(diff_ticket) }} €</strong>
+            {% else %}
+              Los combos NO suben el ticket medio (diferencia {{ '%.2f'|format(diff_ticket) }} €)
+            {% endif %}
+            {% if diff_margen < 0 %}
+              pero <strong style="color:#c0392b;">reducen el margen en {{ '%.1f'|format(diff_margen) }} puntos</strong> — evalúa el trade-off.
+            {% else %}
+              y <strong style="color:#1c8b4a;">mantienen o mejoran el margen ({{ '+%.1f'|format(diff_margen) }} pts)</strong>.
+            {% endif %}
+          </div>
+        {% endif %}
+      {% else %}
+        <p style="color:#666; font-size:0.9rem;">Sin pedidos suficientes para segmentar.</p>
+      {% endif %}
+    </div>
+
+  </div>
+</section>
+{% endif %}
+
 {# ── Proyección de rentabilidad del stock actual ── #}
 {# Foto instantánea: cuánto tengo invertido HOY en stock y cuánto ganaría
    si lo vendiera todo a precios actuales. Independiente del rango de
