@@ -674,6 +674,101 @@ function adminCan(jid, capability) {
  * outage). En handleAdminConfirm elegimos fail-closed para acciones
  * destructivas: si no podemos verificar, no ejecutamos.
  */
+/**
+ * Reporte compacto de sesiones activas para el super_admin. Cruza:
+ *   - Tabla SQLite `sessions` (jid + role + estado + updated_at)
+ *   - Perfiles admin cacheados desde /branding (whatsappRoleProfiles)
+ *   - Handoffs activos (con admin asignado y sin asignar en cola)
+ *
+ * Se agrupa por rol (super_admin, admin, agente handoff, bar, cliente)
+ * y se ordena por última actividad descendente. Cap por sección para
+ * no exceder MAX_MESSAGE_CHARS de WhatsApp.
+ *
+ * Datos sensibles: teléfonos parcialmente enmascarados en la salida
+ * (últimos 3 dígitos) — el super_admin ya conoce a su equipo por nombre;
+ * la máscara evita filtración accidental si comparte el screenshot.
+ */
+function buildActiveSessionsReport(callerJid) {
+  const now = Math.floor(Date.now() / 1000);
+  const rows = db.prepare(`
+    SELECT jid, role, estado, nombre, active_client_jid, bar_id, bar_nombre, updated_at
+    FROM sessions
+    ORDER BY updated_at DESC
+    LIMIT 200
+  `).all();
+  const perfiles = new Map();
+  for (const row of whatsappRoleProfiles()) {
+    if (row.telefono) perfiles.set(row.telefono, row);
+  }
+  const handoffs = db.prepare(`
+    SELECT client_jid, admin_jid, created_at, assigned_at
+    FROM handoffs
+    ORDER BY created_at DESC
+    LIMIT 50
+  `).all();
+
+  const fmtAgo = (ts) => {
+    const secs = Math.max(0, now - Number(ts || 0));
+    if (secs < 60) return `${secs}s`;
+    if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+    if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
+    return `${Math.floor(secs / 86400)}d`;
+  };
+  const maskJid = (jid) => {
+    const phone = phoneFromJid(jid || '');
+    if (!phone) return '???';
+    return `***${phone.slice(-3)}`;
+  };
+
+  const grupos = { super_admin: [], admin: [], agente: [], bar: [], cliente: [] };
+  for (const row of rows) {
+    const phone = normalizePhone(phoneFromJid(row.jid));
+    const perfil = perfiles.get(phone);
+    let grupo;
+    if (perfil?.rol === 'super_admin') grupo = 'super_admin';
+    else if (perfil?.rol === 'admin') grupo = 'admin';
+    else if (row.role === 'bar' || row.bar_id) grupo = 'bar';
+    else if (String(row.role || '').startsWith('admin') || String(row.estado || '').startsWith('admin_')) grupo = 'agente';
+    else grupo = 'cliente';
+    grupos[grupo].push({
+      jid: row.jid,
+      nombre: (perfil?.nombre || row.nombre || '').trim() || 'sin nombre',
+      estado: row.estado || 'idle',
+      ago: fmtAgo(row.updated_at),
+      activeClient: row.active_client_jid || null,
+      barNombre: row.bar_nombre || null,
+    });
+  }
+
+  const CAP = { super_admin: 5, admin: 8, agente: 8, bar: 8, cliente: 10 };
+  const seccion = (titulo, key) => {
+    const items = grupos[key].slice(0, CAP[key]);
+    if (!items.length) return `${titulo}: —`;
+    const lineas = items.map((s) => {
+      const chat = s.activeClient ? ` → chat con ${maskJid(s.activeClient)}` : '';
+      const bar = s.barNombre ? ` (${s.barNombre})` : '';
+      return `  • ${s.nombre} ${maskJid(s.jid)}${bar} · ${s.estado} · hace ${s.ago}${chat}`;
+    });
+    const extra = grupos[key].length > CAP[key] ? `\n  _(+${grupos[key].length - CAP[key]} más)_` : '';
+    return `${titulo}:\n${lineas.join('\n')}${extra}`;
+  };
+
+  const handoffsAsignados = handoffs.filter(h => h.admin_jid).length;
+  const handoffsCola = handoffs.filter(h => !h.admin_jid).length;
+
+  return (
+    `🧭 *Sesiones activas del bot*\n` +
+    `_Consultado por ${maskJid(callerJid)}._\n\n` +
+    `${seccion('👑 Super admin', 'super_admin')}\n\n` +
+    `${seccion('🔐 Admin', 'admin')}\n\n` +
+    `${seccion('💬 Agentes de handoff', 'agente')}\n\n` +
+    `${seccion('🏪 Bares (socios)', 'bar')}\n\n` +
+    `${seccion('👤 Clientes recientes', 'cliente')}\n\n` +
+    `📞 *Handoffs vivos:* ${handoffsAsignados} asignados · ${handoffsCola} en cola.\n\n` +
+    `_Estados admin_ empiezan por *admin_*. Teléfonos enmascarados (últimos 3)._`
+  );
+}
+
 async function verifyAdminIdentityFresh(jid, requiredRole = null) {
   const phone = phoneFromJid(jid);
   if (!phone) return { ok: false, motivo: 'phone_vacio' };
@@ -4857,6 +4952,16 @@ async function _handleMessage(jid, text, pushName, context = {}) {
 
   if (isOwner) {
     ses.role = 'admin';
+    // Comando de auditoría en vivo: reservado a super_admin. Lista todas
+    // las sesiones activas del bot con rol, estado y última actividad,
+    // más los handoffs vivos y los perfiles admin cacheados. Sirve para
+    // verificar quién está conectado y detectar sesiones huérfanas.
+    if (['/sesiones', '/sessions', '/quien', '/whoami'].includes(lower)) {
+      if (!isSuperAdminJid(jid)) {
+        return sendText(jid, `Solo el super administrador puede consultar sesiones activas.`);
+      }
+      return sendText(jid, buildActiveSessionsReport(jid));
+    }
     // Una confirmación puede sobrevivir más que la ventana de desbloqueo del
     // PIN. Revalidamos justo antes de aceptar SI/NO para que una sesión vieja
     // no permita ejecutar la acción a quien tenga el teléfono más tarde.
