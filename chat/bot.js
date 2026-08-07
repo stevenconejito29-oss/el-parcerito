@@ -7001,6 +7001,78 @@ const CLIENT_FAQS = [
     ),
   },
   {
+    // "¿Y si no estoy en casa?" — pregunta clásica del cliente que
+    // pide y luego duda. Respuesta clara sin escalar a humano.
+    name: 'no_estoy_en_casa',
+    match: /\b(no\s+estoy\s+en\s+casa|no\s+voy\s+a\s+estar|no\s+estar[eé]|(?:que|qu[eé])\s+(?:pasa|ocurre)\s+si\s+no\s+estoy|si\s+no\s+estoy|si\s+no\s+abro|no\s+abro\s+la\s+puerta|dejar\s+(?:el\s+)?pedido\s+(?:en|con)|d[eé]jalo\s+(?:en|con))\b/i,
+    answer: () => (
+      `📞 *Si no estás en casa cuando llega el repartidor:*\n\n` +
+      `1. Te llamará por teléfono al número del pedido.\n` +
+      `2. Si no contestas, espera unos minutos e intenta de nuevo.\n` +
+      `3. Puede dejarlo con un vecino o portero *solo si tú lo autorizas por WhatsApp o llamada*.\n\n` +
+      `Para evitar el problema, deja *instrucciones* al hacer el pedido ("timbre 2ºB", "dejar en portería", etc.).`
+    ),
+  },
+  {
+    // Cambiar/modificar un pedido ya hecho. Respuesta clara según el
+    // estado — solo se puede cambiar mientras esté 'pendiente' (sin
+    // preparar). Después, agente. Explicamos por qué.
+    name: 'cambiar_pedido',
+    // \b al final falla tras carácter Unicode (é). Usamos anclas por
+    // alternancia con lookAhead o final de string en vez de \b cerrado.
+    match: /\b(cambiar\s+(?:el|mi)?\s*pedido|modificar\s+(?:el|mi)?\s*pedido|agregar\s+algo|a[nñ]adir\s+algo|quit(?:ar|o)\s+algo|olvid[eé]\s+(?:algo|pedir)|me\s+equivoqu[eé](?![a-z])|correcci[oó]n|corregir\s+(?:el|mi)?\s*pedido)/i,
+    answer: () => (
+      `✏️ *Cambiar un pedido ya hecho*\n\n` +
+      `• Si aún está *pendiente* (sin preparar), puedes *cancelarlo* con *CANCELAR* y hacer uno nuevo con los cambios.\n` +
+      `• Si ya entró en preparación, la cocina está trabajando en él y no podemos modificarlo — pero puedes hacer un pedido adicional para lo que falta.\n\n` +
+      `Consulta el estado escribiendo *ESTADO* o *2*.`
+    ),
+  },
+  {
+    // Tiempo de entrega — pregunta clásica sin agente. Respuesta con
+    // orientación honesta (depende de zona/carga) para no crear
+    // expectativas falsas.
+    name: 'tiempo_estimado',
+    match: /\b(cu[aá]nto\s+(?:tardan|tarda|se\s+demora|demora|tardar[aá]s|tardar[eé]is)|en\s+cu[aá]nto(?:\s+tiempo)?\s+llega|tiempo\s+(?:aproximado|estimado|de\s+entrega|de\s+espera)|hora\s+aprox|para\s+cu[aá]ndo\s+llega)\b/i,
+    answer: (ctx) => {
+      const base = ctx.delivery_enabled
+        ? `🛵 *Tiempo de entrega*\n\nDepende de tu zona y de la carga de cocina en ese momento. Al confirmar tu pedido, el sistema muestra la estimación real (típicamente entre 30 y 60 min en zona urbana).\n\nUna vez confirmado, escribe *ESTADO* o *2* para ver el minuto exacto en que se prepara y sale.`
+        : `🏪 Ahora mismo no ofrecemos entrega a domicilio, solo recogida. Cuando tu pedido esté listo te avisaremos para pasar a buscarlo.`;
+      return ctx.tiendaUrl ? `${base}\n\n👉 ${ctx.tiendaUrl}` : base;
+    },
+  },
+  {
+    // Descuento primera compra / código bienvenida. Cliente nuevo
+    // curioso. Sin cupón: respuesta honesta que redirige a redes.
+    name: 'descuento_bienvenida',
+    match: /\b(descuento\s+(?:primera|primer|1a|nueva?)|primer\s+pedido|c[oó]digo\s+bienvenida|welcome|cup[oó]n\s+(?:bienvenida|primera|nuevo)|regalo\s+primera)\b/i,
+    answer: (ctx) => {
+      const partes = [
+        `🎁 *Descuentos y ofertas*\n\nLas promociones activas cambian cada semana. Míralas actualizadas en la tienda:`,
+      ];
+      if (ctx.tiendaUrl) partes.push(`👉 ${ctx.tiendaUrl}`);
+      const redes = [];
+      if (ctx.url_instagram) redes.push(`Instagram: ${ctx.url_instagram}`);
+      if (ctx.url_facebook)  redes.push(`Facebook: ${ctx.url_facebook}`);
+      if (redes.length) {
+        partes.push(`\nY las novedades se anuncian primero en nuestras redes:\n${redes.join('\n')}`);
+      }
+      return partes.join('\n\n');
+    },
+  },
+  {
+    // Mínimo de pedido — pregunta operativa que hoy no cubríamos
+    // explícita (envio_precio_minimo cubre "gasto envío mínimo" pero
+    // no "cuánto tengo que pedir mínimo"). Respuesta redirige a web.
+    name: 'minimo_compra',
+    match: /\b(pedido\s+m[ií]nimo|m[ií]nimo\s+(?:de\s+)?(?:pedido|compra|para\s+pedir)|cu[aá]nto\s+tengo\s+que\s+pedir|desde\s+cu[aá]nto\s+puedo\s+pedir|c[uú]anto\s+m[ií]nimo|cu[aá]l\s+es\s+el\s+m[ií]nimo|(?:hay|existe)\s+(?:un\s+)?m[ií]nimo)\b/i,
+    answer: (ctx) => (
+      `🛒 *Mínimo de pedido*\n\n` +
+      `Depende de tu zona — el sistema te avisa al meter tu dirección si necesitas añadir algo más para llegar al mínimo.\n\n` +
+      (ctx.tiendaUrl ? `Compruébalo directo aquí 👉 ${ctx.tiendaUrl}` : '')
+    ).trimEnd(),
+  },
+  {
     // Mini App (PWA) — invitación con tutorial de instalación Android/iPhone.
     // Solo se dispara si MINIAPP_ENABLED=1 en SiteConfig. La FAQ devuelve
     // null si el super_admin desactivó la mini-app, dejando que el motor
