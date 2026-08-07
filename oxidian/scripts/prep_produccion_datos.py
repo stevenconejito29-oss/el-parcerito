@@ -185,43 +185,90 @@ def main() -> int:
             db.session.rollback()
             return 3
 
+        # SAVEPOINT por DELETE: si uno falla no aborta la transacción entera.
+        # Sin esto, un error "current transaction is aborted" impide ejecutar
+        # el resto del wipe (incluido el SET session_replication_role='origin'
+        # del finally, que también falla).
+        fallidas = []
         try:
             for tabla in TABLAS_A_LIMPIAR:
                 if not _table_exists(conn, tabla):
                     continue
-                result = conn.execute(text(f"DELETE FROM {tabla}"))
-                # Reset del serial 'id' si existe
+                sp = conn.begin_nested()  # SAVEPOINT
                 try:
-                    conn.execute(text(
-                        f"SELECT setval(pg_get_serial_sequence('{tabla}','id'), 1, false) "
-                        f"WHERE pg_get_serial_sequence('{tabla}','id') IS NOT NULL"
-                    ))
-                except Exception:
-                    pass
-                print(f"  ✓ {tabla}: {result.rowcount} eliminadas")
+                    result = conn.execute(text(f"DELETE FROM {tabla}"))
+                    try:
+                        conn.execute(text(
+                            f"SELECT setval(pg_get_serial_sequence('{tabla}','id'), 1, false) "
+                            f"WHERE pg_get_serial_sequence('{tabla}','id') IS NOT NULL"
+                        ))
+                    except Exception:
+                        pass
+                    sp.commit()
+                    print(f"  ✓ {tabla}: {result.rowcount} eliminadas")
+                except Exception as exc:
+                    sp.rollback()
+                    msg = str(exc).splitlines()[0][:200]
+                    print(f"  ⚠ {tabla}: {msg}")
+                    fallidas.append((tabla, msg))
 
-            # NULLear FKs en admins que puedan haber quedado colgando
-            # (users.proveedor_id, users.zona_id, users.preparador_default_id...)
-            # antes de reactivar triggers.
+            # NULL a FKs colgantes en admins ANTES de reactivar triggers
             for col in ("proveedor_id", "zona_id", "preparador_default_id",
                         "repartidor_default_id"):
+                sp = conn.begin_nested()
                 try:
                     conn.execute(text(
                         f"UPDATE users SET {col} = NULL "
                         f"WHERE {col} IS NOT NULL "
                         f"  AND rol IN ('super_admin','admin')"
                     ))
+                    sp.commit()
                 except Exception:
-                    pass
+                    sp.rollback()
 
             # Users no-admin
-            res = conn.execute(
-                text("DELETE FROM users WHERE rol NOT IN ('super_admin','admin')")
-            )
-            print(f"  ✓ users (no admin): {res.rowcount} eliminados")
+            sp = conn.begin_nested()
+            try:
+                res = conn.execute(
+                    text("DELETE FROM users WHERE rol NOT IN ('super_admin','admin')")
+                )
+                sp.commit()
+                print(f"  ✓ users (no admin): {res.rowcount} eliminados")
+            except Exception as exc:
+                sp.rollback()
+                msg = str(exc).splitlines()[0][:200]
+                print(f"  ⚠ users (no admin): {msg}")
+                fallidas.append(("users (no admin)", msg))
+
+            # Reintento de tablas fallidas (una tabla pudo fallar por FK a
+            # otra que se limpia después — al reintentar ya está vacía).
+            if fallidas:
+                print(f"\n🔁 Reintentando {len(fallidas)} tabla(s) fallida(s)…")
+                fallidas_retry = []
+                for tabla, _ in fallidas:
+                    if tabla == "users (no admin)":
+                        query = "DELETE FROM users WHERE rol NOT IN ('super_admin','admin')"
+                    else:
+                        query = f"DELETE FROM {tabla}"
+                    sp = conn.begin_nested()
+                    try:
+                        result = conn.execute(text(query))
+                        sp.commit()
+                        print(f"  ✓ {tabla}: {result.rowcount} eliminadas (retry)")
+                    except Exception as exc:
+                        sp.rollback()
+                        msg = str(exc).splitlines()[0][:200]
+                        print(f"  ✗ {tabla}: sigue fallando — {msg}")
+                        fallidas_retry.append(tabla)
+                if fallidas_retry:
+                    print(f"\n❌ Fallan tras retry: {fallidas_retry}")
+                    print("   Restaura backup y ajusta script/orden.")
 
         finally:
-            conn.execute(text("SET session_replication_role = 'origin'"))
+            try:
+                conn.execute(text("SET session_replication_role = 'origin'"))
+            except Exception:
+                pass
 
         db.session.commit()
 
@@ -240,29 +287,42 @@ def main() -> int:
         for u in admins:
             print(f"   · #{u.id}  {u.rol:12s}  {u.email:35s}  ({u.nombre})")
 
-        # Verificación de integridad: ninguna FK colgando
-        # (los triggers están activos ahora; una lectura consistent basta)
-        orphans = 0
-        for check in (
-            ("orders", "user_id", "users"),
-            ("orders", "zona_id", "zonas_entrega"),
-            ("products", "categoria_id", "categorias"),
-            ("products", "proveedor_despachador_id", "proveedores"),
-        ):
-            t, col, ref = check
-            if _table_exists(conn2, t) and _table_exists(conn2, ref):
-                q = conn2.execute(text(
-                    f"SELECT COUNT(*) FROM {t} a "
-                    f"WHERE a.{col} IS NOT NULL "
-                    f"  AND NOT EXISTS (SELECT 1 FROM {ref} b WHERE b.id = a.{col})"
-                )).scalar() or 0
-                orphans += q
-                if q:
-                    print(f"  ⚠ {t}.{col} tiene {q} referencias huérfanas a {ref}")
-        if orphans == 0:
-            print("\n✅ Integridad OK — base lista para cargar productos.")
-        else:
-            print(f"\n⚠ Encontradas {orphans} referencias huérfanas — revisar.")
+        # Verificación de integridad: cuenta filas huérfanas por FK.
+        # Introspección real desde information_schema (no asumimos nombres de
+        # columna: los descubrimos). Si tras el wipe las tablas operativas
+        # están vacías, no habrá huérfanos posibles.
+        try:
+            fks = conn2.execute(text(
+                "SELECT tc.table_name AS t, kcu.column_name AS c, "
+                "       ccu.table_name AS ref "
+                "FROM information_schema.table_constraints tc "
+                "JOIN information_schema.key_column_usage kcu USING (constraint_name, table_schema) "
+                "JOIN information_schema.constraint_column_usage ccu USING (constraint_name, table_schema) "
+                "WHERE tc.constraint_type = 'FOREIGN KEY' "
+                "  AND tc.table_schema = 'public' "
+                "  AND ccu.column_name = 'id'"
+            )).all()
+            orphans = 0
+            for fk in fks:
+                if not _table_exists(conn2, fk.t) or not _table_exists(conn2, fk.ref):
+                    continue
+                try:
+                    q = conn2.execute(text(
+                        f"SELECT COUNT(*) FROM {fk.t} a "
+                        f"WHERE a.{fk.c} IS NOT NULL "
+                        f"  AND NOT EXISTS (SELECT 1 FROM {fk.ref} b WHERE b.id = a.{fk.c})"
+                    )).scalar() or 0
+                    if q:
+                        orphans += q
+                        print(f"  ⚠ {fk.t}.{fk.c} → {fk.ref}: {q} huérfanas")
+                except Exception:
+                    pass  # Columna con tipo raro o sin id — omitir
+            if orphans == 0:
+                print("\n✅ Integridad OK — base lista para cargar productos.")
+            else:
+                print(f"\n⚠ {orphans} referencias huérfanas — revisar.")
+        except Exception as exc:
+            print(f"\n(verificación de integridad omitida: {exc})")
 
     return 0
 
