@@ -2520,6 +2520,38 @@ function sanitizeOutgoingText(value) {
     : text;
 }
 
+/**
+ * Sanitiza texto INBOUND del cliente antes de procesarlo o reenviarlo.
+ * Un cliente puede mandar caracteres de control invisibles, RTL overrides
+ * (U+202E), zero-width joiners y otros no-imprimibles que:
+ *   - Ensucian logs (rompen la visualización, mezclan idiomas).
+ *   - Aparecen raros en el panel admin al mostrar reportes o incidencias
+ *     (el operador ve texto "invertido" o con anomalías).
+ *   - Se prestan a spoof visual (nombre parece "juan" pero es
+ *     "‮nauj" = "nauj" leído derecha-izquierda).
+ *
+ * Reglas:
+ *   - Se remueven caracteres de control (\p{Cc}) EXCEPTO \n y \t.
+ *   - Se remueven caracteres de formato invisibles (\p{Cf}) — RTL,
+ *     ZWJ, BOM. Los emojis compuestos con ZWJ (👨‍👩‍👧) se ven
+ *     afectados (queda solo el primer componente) — trade-off aceptable:
+ *     el bot es operativo, no editor rico; y el operador lee texto plano.
+ *   - Cap de longitud a MAX_MESSAGE_CHARS como defensa doble: el
+ *     webhook ya rechaza, pero cualquier callsite intermedio queda
+ *     protegido igual.
+ */
+function sanitizeInboundText(value) {
+  const raw = String(value || '');
+  if (!raw) return '';
+  const cleaned = raw
+    .replace(/[\p{Cc}]/gu, (ch) => (ch === '\n' || ch === '\t' ? ch : ''))
+    .replace(/[\p{Cf}]/gu, '')
+    .trim();
+  return cleaned.length > MAX_MESSAGE_CHARS
+    ? cleaned.slice(0, MAX_MESSAGE_CHARS)
+    : cleaned;
+}
+
 function pruneMap(map, maxEntries = 2000) {
   if (map.size <= maxEntries) return;
   const overflow = map.size - maxEntries;
@@ -8474,7 +8506,11 @@ async function handlePedidoActions(jid, ses, input) {
 
 async function handleReportePedido(jid, ses, input) {
   const pending = { ...(ses.pending || {}) };
-  const texto = String(input || '').trim().slice(0, 500);
+  // Doble sanitización: sanitizeInboundText ya se aplicó al recibir,
+  // pero re-aplicamos aquí porque este texto se persiste como incidencia
+  // en el panel admin — cualquier control char / RTL / ZWJ que se
+  // colara ensuciaría el visualizador del operador.
+  const texto = sanitizeInboundText(input).slice(0, 500);
   // Escape universal: el cliente puede abandonar el flujo con cualquier
   // palabra-escape sin que el bot le repita "necesito más detalle".
   if (isEscapeWord(input)) {
@@ -9580,12 +9616,18 @@ async function handleEvolutionEvent(payload, messageHandler = handleMessage) {
       if (meta.isFromMe) continue;             // ignorar propios (echo)
       if (!meta.jid || meta.isGroup) continue; // ignorar grupos
 
-      const text = extractText(msg);
-      if (!text) continue;
-      if (text.length > MAX_MESSAGE_CHARS) {
-        log('warn', 'message_too_long_skip', `${meta.jid} chars=${text.length}`);
+      const textRaw = extractText(msg);
+      if (!textRaw) continue;
+      if (textRaw.length > MAX_MESSAGE_CHARS) {
+        log('warn', 'message_too_long_skip', `${meta.jid} chars=${textRaw.length}`);
         continue;
       }
+      // Sanitización global: quitar control chars, RTL overrides, ZWJ, etc.
+      // Un mensaje cuyo contenido sea puro noise (ej. solo un U+202E)
+      // queda vacío tras la limpieza — lo descartamos como si no hubiera
+      // llegado nada, no reservamos slot de sesión ni disparamos handlers.
+      const text = sanitizeInboundText(textRaw);
+      if (!text) continue;
 
       log('info', 'message_in', `${meta.jid} → ${text.slice(0, 50)}`);
       await messageHandler(meta.jid, text, meta.senderName, {
