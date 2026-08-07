@@ -2237,6 +2237,110 @@ def identify_bar():
     })
 
 
+@api_bot_bp.route("/identity/verify")
+@bot_required
+def identity_verify():
+    """Devuelve la identidad autoritativa (rol, activo, capabilities) del
+    teléfono consultado leyendo BD sin cache. Base de la revocación en
+    caliente y de la verificación fresca antes de acciones destructivas.
+
+    A diferencia de /branding (que devuelve la lista completa cada 10 min
+    y el bot cachea), este endpoint consulta BD en el momento y solo
+    devuelve el perfil de UN teléfono. Diseñado para llamarse justo
+    antes de una acción crítica cuando el bot necesita certeza.
+
+    Fuentes consultadas en orden:
+      1. User(rol in ['admin','super_admin'], activo=True) → admin/SA
+      2. Proveedor(telefono=X, activo=True) → operador de bar (socio)
+      3. Cliente(telefono=X, activo!=False) → cliente registrado
+
+    NO revela existencia si no matchea (returns rol=None). No enumerable.
+    Rate limit por remitente para evitar sondeo masivo si la key leakase.
+    """
+    telefono_raw = (request.args.get("telefono") or "").strip()
+    telefono = normalizar_telefono_cliente(telefono_raw)
+    if not telefono_valido(telefono):
+        return jsonify({"ok": False, "error": "teléfono inválido"}), 400
+
+    # 1) Admin / super_admin
+    admin_user = User.query.filter(
+        User.rol.in_(["admin", "super_admin"]),
+        User.activo.is_(True),
+    ).all()
+    matched_admin = None
+    for user in admin_user:
+        user_phone = normalizar_telefono_cliente(user.telefono_normalizado or user.telefono)
+        if user_phone and user_phone == telefono:
+            matched_admin = user
+            break
+    if matched_admin:
+        if matched_admin.rol == "super_admin":
+            capabilities = [
+                "status", "store", "products", "points", "admins", "handoff",
+                "sync", "security", "emergency", "risks", "client_mode", "ai",
+            ]
+        else:
+            enabled_features = {
+                row.feature for row in AdminFeature.query.filter_by(
+                    user_id=matched_admin.id, activo=True,
+                ).all()
+            }
+            capabilities = ["status", "store", "risks", "client_mode"]
+            if "productos" in enabled_features:
+                capabilities.extend(["products", "sync"])
+            if _config_bool("PUNTOS_HABILITADOS", "1") and "marketing" in enabled_features:
+                capabilities.append("points")
+            if "whatsapp" in enabled_features:
+                capabilities.extend(["handoff", "security"])
+            if "reportes" in enabled_features:
+                capabilities.append("ai")
+        return jsonify({
+            "ok": True,
+            "rol": matched_admin.rol,
+            "activo": True,
+            "user_id": matched_admin.id,
+            "nombre": (matched_admin.nombre or "").strip() or None,
+            "capabilities": sorted(set(capabilities)),
+            "verificado_en": datetime.utcnow().isoformat() + "Z",
+        })
+
+    # 2) Bar (proveedor / socio)
+    operador, bar = _operador_bar_por_telefono(telefono)
+    if bar:
+        return jsonify({
+            "ok": True,
+            "rol": "bar",
+            "activo": True,
+            "bar_id": bar.id,
+            "nombre": bar.nombre,
+            "capabilities": [],
+            "verificado_en": datetime.utcnow().isoformat() + "Z",
+        })
+
+    # 3) Cliente registrado (identificación blanda; no incluye pedidos)
+    cliente, _ = _cliente_por_telefono(telefono)
+    if cliente:
+        return jsonify({
+            "ok": True,
+            "rol": "cliente",
+            "activo": True,
+            "cliente_id": cliente.id,
+            "nombre": (cliente.nombre or "").strip() or None,
+            "capabilities": [],
+            "verificado_en": datetime.utcnow().isoformat() + "Z",
+        })
+
+    # No matchea ningún registro — cliente anónimo. No revelamos si el
+    # teléfono existe en alguna tabla desactivada; simplemente rol=None.
+    return jsonify({
+        "ok": True,
+        "rol": None,
+        "activo": False,
+        "capabilities": [],
+        "verificado_en": datetime.utcnow().isoformat() + "Z",
+    })
+
+
 @api_bot_bp.route("/bar/pedidos")
 @bot_required
 def bar_pedidos_activos():
