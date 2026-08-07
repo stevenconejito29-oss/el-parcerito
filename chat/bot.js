@@ -4280,11 +4280,20 @@ function bienvenidaConversacional(ses) {
   const banner = isAdminClientMode(ses?.jid, ses)
     ? `🛒 *Modo cliente activo.* Estás offline para atención. Usa */online* para volver al panel.\n\n`
     : '';
+  // Hint de "repetir" solo para clientes con ≥1 pedido histórico —
+  // los que aún no han pedido no tienen qué repetir; mostrarlo les
+  // añadiría ruido y confusión. Es el atajo de mayor conversión
+  // recurrente; que aparezca discreto en la bienvenida asegura que
+  // el cliente lo descubra sin recibir un tutorial.
+  const puedeRepetir = Number(ses?.cliente_pedidos_recientes || 0) >= 1;
+  const repetirHint = puedeRepetir
+    ? `\n💡 _Escribe *repetir* para pedir lo mismo que la última vez._`
+    : '';
   return (
     `${banner}${pick(aperturas)}\n\n` +
     `¿Qué necesitas? Responde con un número:\n\n` +
     `${clientMenuLines()}\n\n` +
-    `_También puedes escribir tu pregunta con tus palabras._`
+    `_También puedes escribir tu pregunta con tus palabras._${repetirHint}`
   );
 }
 
@@ -8765,7 +8774,11 @@ async function handleEstadoPedido(jid, ses, numero) {
           armando: `Siguiente paso: marcarlo como listo.`,
           listo: pedido.repartidor_id ? `Siguiente paso: comenzar la ruta.` : `Siguiente paso: asignar o iniciar el reparto.`,
           en_ruta: `Siguiente paso: confirmar la entrega. No compartas códigos antes de recibirla.`,
-          entregado: `Si hubo algún inconveniente, escribe *AGENTE*.`,
+          // Pedido entregado → oportunidad natural de recompra. Antes solo
+          // mencionaba AGENTE (contradicción con "agente último recurso").
+          // Ahora invita a repetir de forma amable y menciona AGENTE al
+          // final como opción secundaria por si hubo problema real.
+          entregado: `¿Te gustó? Escribe *repetir* para pedir lo mismo otra vez 🔁 · Si hubo algún inconveniente, escribe *AGENTE*.`,
           cancelado: `Si necesitas conocer el motivo, escribe *AGENTE*.`,
         }[pedido.estado] || '';
         const cancelHint = pedido.estado === 'pendiente'
