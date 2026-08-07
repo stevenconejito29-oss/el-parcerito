@@ -4766,6 +4766,63 @@ async function _handleMessage(jid, text, pushName, context = {}) {
     return iniciarReporteNovedad(jid, ses, reportarMatch[2]);
   }
 
+  // ── Interceptor "no salirse del flujo" ─────────────────────────────────
+  // Si el cliente está mid-flow (esperando dato concreto: número de pedido,
+  // dirección, texto de reporte, sí/no de confirmación) y en vez de eso
+  // pregunta algo genérico (redes, mini-app, horario, "sois de fiar?"),
+  // el state handler tradicional ignoraba la pregunta o pedía repetir el
+  // input esperado — el cliente sentía que el bot no escuchaba.
+  //
+  // Nuevo comportamiento: respondemos la FAQ + hint corto recordando qué
+  // input esperábamos, SIN mover el estado. El siguiente mensaje del
+  // cliente sigue el flujo natural del state handler original.
+  //
+  // Aplica solo a estados que esperan input libre. No aplica a `main_menu`
+  // ni `idle` (ya despachan FAQs) ni a `info_menu` (ya es un submenú info
+  // con sus propias opciones — meter otra FAQ crearía bucle visual).
+  const CLIENT_MID_FLOW_STATES = {
+    espera_numero_pedido:
+      '📌 _Sigo esperando el número de pedido (o escribe *0* para volver al inicio)._',
+    espera_reporte_pedido:
+      '📌 _Sigo esperando que me cuentes qué pasó (o *0* para cancelar el reporte)._',
+    seleccionar_cancelacion:
+      '📌 _Elige el pedido a cancelar respondiendo con su número (o *0* para volver)._',
+    confirmar_cancelacion:
+      '📌 _Sigo esperando *SÍ* o *NO* para confirmar la cancelación._',
+    espera_direccion_cobertura:
+      '📌 _Sigo esperando la dirección para verificar la cobertura (o *0* para volver)._',
+    pedido_acciones:
+      '📌 _Elige una opción del pedido (o *0* para volver al inicio)._',
+  };
+  const midFlowHint = CLIENT_MID_FLOW_STATES[ses.estado];
+  if (midFlowHint) {
+    // Guard doble para no romper la semántica del state handler:
+    //  1. No hacemos nada si el mensaje parece la respuesta esperada
+    //     (número, sí/no, dirección con calle+número). Los state handlers
+    //     ya validan; solo interceptamos si es CLARAMENTE una pregunta.
+    //  2. Solo despachamos si la FAQ realmente matchea — un mensaje que
+    //     no matchea ninguna FAQ sigue al state handler para que este
+    //     produzca su propia respuesta de "no entiendo" contextualizada.
+    const looksLikeExpectedInput = (
+      /^\d+$/.test(lower.trim()) ||            // número puro (pedido / opción)
+      /^(?:s[ií]|no|cancelar|0|volver)\b/i.test(lower) ||  // sí/no/salida
+      /(?:calle|avenida|avda|c\/|plaza|paseo|carretera)/i.test(lower)  // dirección típica
+    );
+    if (!looksLikeExpectedInput) {
+      try {
+        const faq = await tryCannedFAQ(text, _buildFaqContext(ses));
+        if (faq) {
+          bumpStat('faq_mid_flow');
+          log('info', 'faq_mid_flow', `${faq.name} state=${ses.estado}`);
+          return sendText(jid, `${faq.text}\n\n${midFlowHint}`);
+        }
+      } catch (err) {
+        // Falla FAQ mid-flow no debe bloquear el flujo. Caemos al state handler.
+        log('warn', 'faq_mid_flow_fail', err?.message || String(err));
+      }
+    }
+  }
+
   // ── Estado de cliente ──────────────────────────────────────────────────
   switch (ses.estado) {
     case 'idle':
