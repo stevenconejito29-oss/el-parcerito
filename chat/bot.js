@@ -6512,8 +6512,21 @@ const CLIENT_INTENT_KEYWORDS = {
 // ─── FAST-PATH: SALUDOS Y DESPEDIDAS (sin AI, sin tokens) ───────────────────
 const SALUDOS_RE = /^(?:hola|holaa+|holi+|holaaa|hey+|ey|wenas|buenas?|saludos|qu[eé] tal|que onda|que pasa|que hay|que pasoo+|q\s*tal|q\s*onda)\b/i;
 const DESPEDIDAS_RE = /^(?:adi[oó]s|chao|chau|hasta\s+(luego|pronto|ma[ñn]ana)|nos\s+vemos|gracias|muchas\s+gracias|mil\s+gracias|grax|thx|thank\s*you|ok\s+gracias|todo\s+bien|listo\s+gracias|perfecto\s+gracias)\b/i;
-const SI_RE = /^(?:s[ií]|si\s*por\s*favor|claro|dale|ok+|okay|vale|por\s*supuesto|af[ií]rmativo|👍)\b/i;
-const NO_RE = /^(?:no+|nop|nope|negativo|para\s*nada|👎)\b/i;
+// Detección amplia de sí/no. Cubre variantes ES coloquiales (`SII`, `SIII`,
+// `sipi`, `sip`, `dale`, `vale`, `claro`, `👍`) porque un cliente ansioso
+// suele repetir letras o abreviar. Cada variante fallando desperdiciaba
+// un intento en admin_confirm y confirmar_cancelacion.
+//
+// Usamos lookAhead `(?=$|\s|[!?.,;:])` en lugar de `\b` porque `\b` con
+// caracteres Unicode (`sí`, `👍`) da falsos negativos en JS: `\b` es
+// ASCII-only por defecto y no reconoce boundary tras `í` o emoji. El
+// lookAhead exige final de texto, espacio o puntuación — funciona igual
+// con ASCII y con Unicode.
+//
+// Emojis van como alternativa raíz (no necesitan lookAhead: son mensajes
+// completos por sí solos y no colisionan con palabras).
+const SI_RE = /^(?:👍|✅|🆗|(?:s[ií]+p*i?|s[ií]\s*por\s*favor|claro(?:\s+que\s+s[ií])?|dale|okey|okay|ok+|vale+|correcto|confirmo|de\s+acuerdo|por\s+supuesto|af[ií]rmativo)(?=$|\s|[!?.,;:]))/i;
+const NO_RE = /^(?:👎|❌|🚫|(?:no+p?e?|nop|nope|negativo|para\s+nada|niet|nel|jam[aá]s)(?=$|\s|[!?.,;:]))/i;
 
 function esSaludo(text) { return SALUDOS_RE.test(String(text || '').trim()); }
 function esDespedida(text) { return DESPEDIDAS_RE.test(String(text || '').trim()); }
@@ -8532,12 +8545,24 @@ function askAdminConfirm(jid, ses, pending, message) {
   );
 }
 
+// isYes/isNo delegan en las regex SI_RE/NO_RE ya definidas para el resto
+// del bot. Antes eran arrays cerrados de 5 tokens (`si|sí|s|confirmar|ok`)
+// que no aceptaban `SII`, `sipi`, `dale`, `vale`, `claro`, `👍` — cada
+// variante desperdiciaba un intento en admin_confirm y confirmar_cancelacion.
+// Además soportamos `n1|n2` (cliente que escribe el número junto con la
+// palabra: "1 SI" para confirmar la opción 1) sin cambiar la semántica.
 function isYes(text) {
-  return ['si', 'sí', 's', 'confirmar', 'ok'].includes(String(text || '').trim().toLowerCase());
+  const raw = String(text || '').trim().toLowerCase();
+  if (!raw) return false;
+  if (raw === 's' || raw === '1') return true; // atajos numéricos comunes
+  return SI_RE.test(raw);
 }
 
 function isNo(text) {
-  return ['no', 'n', 'cancelar', 'salir', '0'].includes(String(text || '').trim().toLowerCase());
+  const raw = String(text || '').trim().toLowerCase();
+  if (!raw) return false;
+  if (raw === 'n' || raw === '2' || raw === '0' || raw === 'cancelar' || raw === 'salir') return true;
+  return NO_RE.test(raw);
 }
 
 function parsePrice(value) {
