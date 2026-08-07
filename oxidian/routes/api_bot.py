@@ -729,6 +729,11 @@ def branding():
                 "cobertura": (SiteConfig.get("ZONA_COBERTURA_RESUMEN", "") or "").strip(),
                 "descripcion": (SiteConfig.get("DESCRIPCION_NEGOCIO", "") or "").strip(),
             },
+            # Flag para modo "tienda 100% online sin sede física". El bot lo
+            # usa para ocultar dirección (que en modo online es solo cobertura),
+            # ajustar labels ("horario y ubicación" → "horario y cobertura")
+            # y adaptar FAQs de recogida/dirección.
+            "sin_sede": _config_bool("TIENDA_SIN_SEDE", "0"),
         },
     })
 

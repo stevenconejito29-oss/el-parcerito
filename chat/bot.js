@@ -4010,6 +4010,7 @@ async function syncBranding() {
     setCfg('mensaje_confianza',      String(confianza.mensaje     || '').trim());
     setCfg('zona_cobertura_resumen', String(confianza.cobertura   || '').trim());
     setCfg('descripcion_negocio',    String(confianza.descripcion || '').trim());
+    setCfg('tienda_sin_sede', presencia.sin_sede ? '1' : '0');
     sanitizeRuntimeState();
     log('info', 'sync_branding', `nombre=${data.nombre} modo=${data.tenant_mode} loyalty=${data.points_enabled}`);
     return true;
@@ -6707,6 +6708,18 @@ const CLIENT_FAQS = [
     name: 'direccion',
     match: /\b(d[oó]nde\s+est[aá]n|d[oó]nde\s+est[aá]is|ubicaci[oó]n|d[oó]nde\s+queda|ubicados|d[oó]nde\s+los?\s+encuentro|c[oó]mo\s+llego|direcci[oó]n\s+del?\s*(local|negocio|tienda|sitio))\b/i,
     answer: (ctx) => {
+      // Tienda sin sede: nunca damos "dirección" como si fuera local
+      // presencial — reformulamos como cobertura de reparto para no
+      // llevar tráfico físico a una dirección administrativa.
+      if (ctx.tienda_sin_sede) {
+        const zona = ctx.zona_cobertura_resumen || ctx.ciudad || 'nuestra zona';
+        return (
+          `🛵 *Somos una tienda 100% online*\n\n` +
+          `No tenemos local físico donde recojas — el pedido llega a tu puerta.\n\n` +
+          `📍 *Repartimos en:* ${zona}\n\n` +
+          `_Escribe *cobertura* para comprobar tu dirección._`
+        );
+      }
       if (!ctx.direccion && !ctx.ciudad) return null;
       const partes = [ctx.direccion, ctx.ciudad].filter(Boolean);
       return `📍 *${ctx.negocio}*\n\n${partes.join(', ')}\n\n_Escribe *cobertura* para ver si llegamos a tu zona._`;
@@ -6730,8 +6743,15 @@ const CLIENT_FAQS = [
         ctx.card_enabled ? '• 💳 Tarjeta (online seguro)' : null,
       ].filter(Boolean);
       if (!metodos.length) return `Las formas de pago disponibles se muestran al confirmar en la tienda online: ${ctx.tiendaUrl}`;
+      // Trust reinforcement en tienda sin sede: cliente que compra online
+      // por primera vez necesita saber que NO le van a pedir tarjeta ni
+      // por WhatsApp ni por la web. Se añade la aclaración solo en este
+      // modo — con local físico el cliente puede ver el datáfono.
+      const disclaimer = ctx.tienda_sin_sede
+        ? `\n\n🔒 *Nunca pedimos datos de tarjeta anticipada* — ni por WhatsApp ni al confirmar. Todo se cobra al recibir el pedido.`
+        : '';
       return (
-        `💳 *Formas de pago*\n\n${metodos.join('\n')}\n\n` +
+        `💳 *Formas de pago*\n\n${metodos.join('\n')}${disclaimer}\n\n` +
         `Se elige la forma al confirmar el pedido en la tienda online.\n` +
         `👉 ${ctx.tiendaUrl}`
       );
@@ -6751,6 +6771,16 @@ const CLIENT_FAQS = [
     name: 'pickup',
     match: /\b(puedo\s+recoger|pasar\s+a\s+(buscar|recoger)|llevar|para\s+llevar|take\s*away|takeaway|recogida\s+en\s+local|recoger\s+en\s+(la\s+)?tienda)\b/i,
     answer: (ctx) => {
+      // Sin sede física: no ofrecer recogida bajo ningún flag. Mensaje
+      // más claro que "solo a domicilio" — explica que somos online.
+      if (ctx.tienda_sin_sede) {
+        return (
+          `🛵 *Somos tienda 100% online*\n\n` +
+          `No tenemos local físico donde recoger — todos los pedidos se ` +
+          `entregan en la puerta de tu casa.\n\n` +
+          `Empieza aquí 👉 ${ctx.tiendaUrl}`
+        );
+      }
       if (!ctx.pickup_enabled) {
         return `🚴 *Solo a domicilio*\n\nEn este momento no aceptamos recogida en local — todos los pedidos se entregan a domicilio. Escribe *menú* para hacer un pedido.`;
       }
@@ -7107,6 +7137,7 @@ function _buildFaqContext(ses) {
     mensaje_confianza:      String(cfg('mensaje_confianza',      '') || '').trim(),
     zona_cobertura_resumen: String(cfg('zona_cobertura_resumen', '') || '').trim(),
     descripcion_negocio:    String(cfg('descripcion_negocio',    '') || '').trim(),
+    tienda_sin_sede:        String(cfg('tienda_sin_sede', '0') || '0') === '1',
     ses,
   };
 }
@@ -7162,14 +7193,23 @@ const MANUAL_SECTIONS = [
     },
   },
   {
+    // Label y contenido dinámicos según TIENDA_SIN_SEDE:
+    //   - Con sede: "Horario y ubicación" + dirección + horario + tel.
+    //   - Sin sede: "Horario y cobertura" + horario + zona + tel. Nunca
+    //     mostramos DIRECCION_NEGOCIO como "📍 Dirección" — en modo online
+    //     eso confunde al cliente ("¿dónde está el local?"), y peor,
+    //     puede llevar tráfico presencial a una dirección que solo es
+    //     administrativa. Toda la mención a "dónde estamos" se reformula
+    //     como "dónde repartimos".
     key: 'horario_ubicacion',
-    label: '🕐 Horario y ubicación',
+    label: '🕐 Horario y cobertura',
     keywords: [
       /\b(horario|horarios|hora)\b/i,
       /\b(abren|cierran|abierto|cerrado|abren\s+ya|cerraron)\b/i,
       /\b(hasta\s+qu[eé]\s+hora|a\s+qu[eé]\s+hora)\b/i,
       /\b(d[oó]nde\s+(est[aá]n|est[aá]is|queda|se\s+encuentran))\b/i,
       /\b(ubicaci[oó]n|direcci[oó]n\s+(del?\s+)?(local|negocio|tienda)|c[oó]mo\s+llego)\b/i,
+      /\b(cobertura|zona|reparto|repartis|repartimos)\b/i,
       /\b(tel[eé]fono|contacto|n[uú]mero\s+de\s+contacto)\b/i,
     ],
     enabled: () => true,
@@ -7178,6 +7218,21 @@ const MANUAL_SECTIONS = [
       if (ctx.horario_apertura && ctx.horario_cierre) {
         partes.push(`🕐 *Horario:* ${ctx.horario_apertura} – ${ctx.horario_cierre}`);
       }
+      if (ctx.tienda_sin_sede) {
+        // Tienda 100% online: cobertura + teléfono. Sin dirección física.
+        if (ctx.zona_cobertura_resumen) {
+          partes.push(`🛵 *Cobertura de reparto:* ${ctx.zona_cobertura_resumen}`);
+        } else if (ctx.ciudad) {
+          partes.push(`🛵 *Cobertura:* ${ctx.ciudad}`);
+        }
+        if (ctx.telefono) partes.push(`📞 *Teléfono:* ${ctx.telefono}`);
+        if (!partes.length) return `Aún no hay horarios ni zona configurados para esta tienda.`;
+        return (
+          `🕐 *Cuándo y dónde repartimos*\n\n${partes.join('\n')}\n\n` +
+          `_Somos una tienda 100% online — no hay local físico donde recoger._`
+        );
+      }
+      // Comportamiento clásico: negocio con sede.
       const direccion = [ctx.direccion, ctx.ciudad].filter(Boolean).join(', ');
       if (direccion) partes.push(`📍 *Dirección:* ${direccion}`);
       if (ctx.telefono) partes.push(`📞 *Teléfono:* ${ctx.telefono}`);

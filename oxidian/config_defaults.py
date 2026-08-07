@@ -498,6 +498,16 @@ DEFAULTS: dict[str, dict] = {
         "type": "str",
         "desc": "Resumen breve de cobertura de reparto para respuestas rápidas del chatbot.",
     },
+    "TIENDA_SIN_SEDE": {
+        "default": "0",
+        "type": "bool",
+        "desc": (
+            "Si activo, el chatbot trata el negocio como tienda 100% online: "
+            "oculta la dirección como si fuera local físico, cambia 'Horario "
+            "y ubicación' por 'Horario y cobertura', y adapta las FAQs de "
+            "dirección/recogida para NO sugerir sede presencial."
+        ),
+    },
 }
 
 
