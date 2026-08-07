@@ -5159,6 +5159,28 @@ async function _handleMessage(jid, text, pushName, context = {}) {
       /(?:calle|avenida|avda|c\/|plaza|paseo|carretera)/i.test(lower)  // dirección típica
     );
     if (!looksLikeExpectedInput) {
+      // Despedida / agradecimiento mid-flow: antes desperdiciaba un intento
+      // porque el state handler exigía número/dirección/sí-no y "gracias"
+      // no matcheaba nada. Ahora respondemos con cortesía y mantenemos el
+      // estado — el cliente puede continuar o abandonar cuando quiera.
+      // No aplicamos a confirmar_cancelacion: si el cliente dice "gracias"
+      // sin responder si/no, es mejor NO cerrar en falso una confirmación
+      // pendiente — se deja al state handler que tiene TTL de 10 min.
+      if (esDespedida(text) && text.length < 60 && ses.estado !== 'confirmar_cancelacion') {
+        bumpStat('despedida_mid_flow');
+        return sendText(jid,
+          `¡De nada! 💛\n\n${midFlowHint}`,
+        );
+      }
+      // Saludo mid-flow ("hola" o "buenas" mientras pide algo): reconocemos
+      // sin abrumar y recordamos qué esperábamos. Cliente que abre el chat
+      // dos veces por costumbre no debería agotar sus 3 intentos.
+      if (esSaludo(text) && text.length < 40) {
+        bumpStat('saludo_mid_flow');
+        return sendText(jid,
+          `¡Hola de nuevo! 👋\n\n${midFlowHint}`,
+        );
+      }
       try {
         const faq = await tryCannedFAQ(text, _buildFaqContext(ses));
         if (faq) {
