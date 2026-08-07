@@ -508,6 +508,17 @@ DEFAULTS: dict[str, dict] = {
             "dirección/recogida para NO sugerir sede presencial."
         ),
     },
+    "RESENA_HABILITADA": {
+        "default": "0",
+        "type": "bool",
+        "desc": (
+            "Envía un WhatsApp automático 90s después de entregar cada pedido "
+            "pidiendo una reseña 1-5. Desactivado por defecto — muchos negocios "
+            "prefieren evitar el mensaje adicional (percibido como intrusivo o "
+            "poco profesional). Activar solo si se han preparado los flujos de "
+            "recolección y respuesta a la reseña."
+        ),
+    },
 }
 
 

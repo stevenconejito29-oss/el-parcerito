@@ -4596,7 +4596,17 @@ def solicitar_resena_pedido(pedido: Order) -> bool:
     Encola una solicitud de reseña via WhatsApp.
     Se dispara después de marcar el pedido como 'entregado'.
     No bloquea el flujo y queda persistida para reintento por worker.
+
+    Feature-flag RESENA_HABILITADA en SiteConfig (default OFF). Muchos
+    negocios prefieren evitar el mensaje automático: se percibe como
+    intrusivo, agrega ruido al chat de WhatsApp del cliente, y genera
+    expectativa de respuesta que puede quedar sin gestión adecuada.
+    Cuando el flujo de recolección/moderación esté cerrado, el super_admin
+    activa la clave y este helper vuelve a encolar sin más cambios.
     """
+    from models import SiteConfig
+    if str(SiteConfig.get("RESENA_HABILITADA", "0") or "0").strip().lower() not in {"1", "true", "yes", "on"}:
+        return False
     if not pedido.cliente or not pedido.cliente.telefono:
         return False
     if getattr(pedido, 'resena_enviada', False):
