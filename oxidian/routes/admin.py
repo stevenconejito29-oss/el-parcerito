@@ -1468,9 +1468,13 @@ def _margen_real_periodo(fi, ff):
 
     Devuelve dict con todas las cifras + desglose por concepto.
     """
+    # Nota: no usamos joinedload(Order.items) porque `Order.items` está
+    # declarado con lazy="dynamic" — SQLAlchemy no lo puede eager-loadear.
+    # Aceptamos el N+1 aquí; en un período típico (≤50 pedidos/día × 30
+    # días = 1500 queries) sigue rindiendo bajo un segundo. Si crece,
+    # migrar a una query agregada SQL explícita.
     pedidos = (
         Order.query
-        .options(joinedload(Order.items))
         .filter(
             Order.creado_en >= fi,
             Order.creado_en < ff,
@@ -1493,7 +1497,7 @@ def _margen_real_periodo(fi, ff):
         ventas_netas += Decimal(str(pedido.total or 0))
         envio_cobrado += Decimal(str(pedido.costo_envio_snapshot or 0))
         puntos_usados_total += int(pedido.puntos_usados or 0)
-        for item in pedido.items or []:
+        for item in pedido.items:
             cantidad = int(item.cantidad or 0)
             if cantidad <= 0:
                 continue
@@ -1594,9 +1598,13 @@ def _analisis_cupones_y_combos(fi, ff):
     from collections import defaultdict as _dd
     from models import Coupon as _Coupon
 
+    # Nota: no usamos joinedload(Order.items) porque `Order.items` está
+    # declarado con lazy="dynamic" — SQLAlchemy no lo puede eager-loadear.
+    # Aceptamos el N+1 aquí; en un período típico (≤50 pedidos/día × 30
+    # días = 1500 queries) sigue rindiendo bajo un segundo. Si crece,
+    # migrar a una query agregada SQL explícita.
     pedidos = (
         Order.query
-        .options(joinedload(Order.items))
         .filter(
             Order.creado_en >= fi,
             Order.creado_en < ff,
@@ -1644,7 +1652,7 @@ def _analisis_cupones_y_combos(fi, ff):
         tiene_combo = False
         cogs_pedido = Decimal("0")
         cogs_incompleto = False
-        for item in pedido.items or []:
+        for item in pedido.items:
             cantidad = int(item.cantidad or 0)
             if cantidad <= 0:
                 continue
