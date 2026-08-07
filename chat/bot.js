@@ -2093,6 +2093,29 @@ async function paceOutbound() {
   lastOutboundAt = Date.now();
 }
 
+/**
+ * Mutex global para serializar el bloque paceOutbound → fetch a
+ * Evolution API. Sin este mutex, con 10+ clientes concurrentes
+ * (que es el escenario real de este proyecto), múltiples sendText
+ * paralelos leen el mismo `lastOutboundAt` viejo, calculan `wait=0`
+ * y disparan simultáneamente — destruyendo el pacing y elevando
+ * el riesgo de baneo. Una cuenta WhatsApp humana envía SERIAL por
+ * naturaleza: replicamos ese comportamiento en el bot.
+ *
+ * Implementación: promise-chain estilo `messageQueues` pero global.
+ * Cada llamada a `withSendMutex(fn)` encola `fn` para ejecutarse en
+ * cuanto termine la anterior. No introduce dependencia extra; no
+ * bloquea otras partes del bot (solo la sección crítica del envío).
+ */
+let _sendMutex = Promise.resolve();
+function withSendMutex(fn) {
+  const runNext = _sendMutex.catch(() => {}).then(fn);
+  // Aislamos rechazos del siguiente en la cola: si `fn` throwea, el
+  // próximo `withSendMutex` recibe una cola resuelta, no un rejected.
+  _sendMutex = runNext.catch(() => {});
+  return runNext;
+}
+
 /* ── Simulación de escritura humana ────────────────────────────────────
  * Antes de enviar la respuesta al cliente, emitimos presencia "composing"
  * a través de Evolution y esperamos un tiempo proporcional a la longitud
@@ -2638,44 +2661,56 @@ async function sendText(jid, text, opts = {}) {
     await humanizedTypingDelay(target, safeText, evolutionUrl, evolutionInstance, evolutionKey);
   }
 
+  // Envío serializado por mutex global — ver `withSendMutex` para el
+  // motivo. Cada intento consume paceOutbound+fetch dentro del mismo
+  // slot para que la cola no se reordene entre reintentos: si el 1er
+  // intento consumió el pacing y luego 5xx, el retry con backoff debe
+  // volver a tomar el mutex (nueva llamada a `withSendMutex`) — no
+  // adelantar a mensajes que llegaron mientras esperábamos backoff.
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      await paceOutbound();
-      const r = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: evolutionKey },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(8000),
-      });
-      const bodyText = await r.text().catch(() => '');
-      let parsed = null;
-      try { parsed = JSON.parse(bodyText); } catch {}
-      if (r.ok) {
-        log('info', 'send_ok', `${r.status} ${JSON.stringify(parsed) || bodyText}`);
-        // Registrar timestamp para first-touch detection en próxima
-        // respuesta al mismo jid.
-        _lastBotReplyAt.set(jid, Date.now());
-        return true;
-      }
-      // Do not retry on 4xx (bad request) — log and abort.
-      // Además: 401/403 son señales típicas de ban del número — las
-      // contamos en `_registerBanSignal` y si superan umbral activamos
-      // panic mode automático para no empeorar la situación.
-      if (r.status >= 400 && r.status < 500) {
-        log('warn', 'send_fail', `${r.status} ${bodyText.slice(0,200)}`);
-        if (r.status === 401 || r.status === 403) {
-          _registerBanSignal(r.status, bodyText);
+    const result = await withSendMutex(async () => {
+      try {
+        await paceOutbound();
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: evolutionKey },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(8000),
+        });
+        const bodyText = await r.text().catch(() => '');
+        let parsed = null;
+        try { parsed = JSON.parse(bodyText); } catch {}
+        if (r.ok) {
+          log('info', 'send_ok', `${r.status} ${JSON.stringify(parsed) || bodyText}`);
+          // Registrar timestamp para first-touch detection en próxima
+          // respuesta al mismo jid.
+          _lastBotReplyAt.set(jid, Date.now());
+          return { done: true, ok: true };
         }
-        return false;
+        // Do not retry on 4xx (bad request) — log and abort.
+        // Además: 401/403 son señales típicas de ban del número — las
+        // contamos en `_registerBanSignal` y si superan umbral activamos
+        // panic mode automático para no empeorar la situación.
+        if (r.status >= 400 && r.status < 500) {
+          log('warn', 'send_fail', `${r.status} ${bodyText.slice(0,200)}`);
+          if (r.status === 401 || r.status === 403) {
+            _registerBanSignal(r.status, bodyText);
+          }
+          return { done: true, ok: false };
+        }
+        // 5xx — retry with backoff (fuera del mutex, para no bloquear
+        // otros envíos mientras esperamos que Evolution se recupere).
+        log('warn', 'send_fail', `${r.status} ${bodyText.slice(0,200)} (attempt ${attempt})`);
+        return { done: false };
+      } catch (e) {
+        log('warn', 'send_error', `${String(e)} (attempt ${attempt})`);
+        return { done: false };
       }
-      // 5xx — retry with backoff
-      log('warn', 'send_fail', `${r.status} ${bodyText.slice(0,200)} (attempt ${attempt})`);
-    } catch (e) {
-      log('warn', 'send_error', `${String(e)} (attempt ${attempt})`);
-    }
-    // backoff
-    await new Promise(res => setTimeout(res, 500 * attempt));
+    });
+    if (result.done) return result.ok;
+    // backoff fuera del mutex — otros clientes pueden enviar mientras esperamos.
+    await sleep(500 * attempt);
   }
   log('error', 'send_failed_all', `all attempts failed for ${target}`);
   return false;
