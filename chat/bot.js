@@ -3623,6 +3623,24 @@ async function syncBranding() {
     setCfg('whatsapp_role_profiles', JSON.stringify(
       Array.isArray(data.whatsapp_roles) ? data.whatsapp_roles : []
     ));
+    // Presencia pública (Mini App / PWA + redes + confianza). Se copian
+    // por nombre explícito — mismo criterio defensivo que flowLimits:
+    // impide que un payload alterado escriba claves arbitrarias en cfg().
+    // Todas se persisten aunque vengan vacías para que borrar la URL desde
+    // /superadmin/config surta efecto sin arrastrar el valor viejo.
+    const presencia = data.presencia && typeof data.presencia === 'object' ? data.presencia : {};
+    const miniapp   = presencia.miniapp && typeof presencia.miniapp === 'object' ? presencia.miniapp : {};
+    const redes     = presencia.redes   && typeof presencia.redes   === 'object' ? presencia.redes   : {};
+    const confianza = presencia.confianza && typeof presencia.confianza === 'object' ? presencia.confianza : {};
+    setCfg('miniapp_enabled', miniapp.enabled ? '1' : '0');
+    setCfg('miniapp_url',     String(miniapp.url    || '').trim());
+    setCfg('miniapp_nombre',  String(miniapp.nombre || 'Mini App').trim() || 'Mini App');
+    setCfg('url_instagram',   String(redes.instagram || '').trim());
+    setCfg('url_facebook',    String(redes.facebook  || '').trim());
+    setCfg('url_tiktok',      String(redes.tiktok    || '').trim());
+    setCfg('mensaje_confianza',      String(confianza.mensaje     || '').trim());
+    setCfg('zona_cobertura_resumen', String(confianza.cobertura   || '').trim());
+    setCfg('descripcion_negocio',    String(confianza.descripcion || '').trim());
     sanitizeRuntimeState();
     log('info', 'sync_branding', `nombre=${data.nombre} modo=${data.tenant_mode} loyalty=${data.points_enabled}`);
     return true;
@@ -6350,6 +6368,84 @@ const CLIENT_FAQS = [
       `Compártelo solo al recibir tu pedido.`
     ),
   },
+  {
+    // Mini App (PWA) — invitación con tutorial de instalación Android/iPhone.
+    // Solo se dispara si MINIAPP_ENABLED=1 en SiteConfig. La FAQ devuelve
+    // null si el super_admin desactivó la mini-app, dejando que el motor
+    // continúe al siguiente detector (manual, IA, fallback) — no bloquea.
+    // No se llama "PWA" al cliente por decisión de branding: el término
+    // técnico reduce confianza; "Mini App" es familiar por WhatsApp/Telegram.
+    name: 'mini_app_install',
+    match: /\b(mini\s*app|instalar\s+(?:la\s+)?(?:mini\s*)?app|(?:como|c[oó]mo)\s+instal(?:o|ar)|(?:c[oó]mo\s+)?(?:descargo|descargar)\s+(?:la\s+)?app|(?:vuestra|su|tu|la)\s+app|acceso\s+directo|atajo\s+(?:en|de)\s+(?:el\s+)?m[oó]vil|a[nñ]adir\s+(?:a\s+)?(?:la\s+)?pantalla|icono\s+en\s+(?:el\s+)?m[oó]vil|pedir\s+m[aá]s\s+r[aá]pido)\b/i,
+    answer: (ctx) => {
+      if (!ctx.miniapp_enabled) return null;
+      return texts.miniAppInvite({
+        nombreNegocio: ctx.negocio,
+        miniappNombre: ctx.miniapp_nombre,
+        miniappUrl: ctx.miniapp_url,
+      });
+    },
+  },
+  {
+    // Redes sociales — Instagram/Facebook/TikTok según lo que esté configurado.
+    // Devuelve null si NINGUNA red está fijada; así el motor cae al siguiente
+    // handler en vez de mostrar un mensaje vacío. El sub-módulo redesSociales
+    // ya omite líneas por red no configurada.
+    name: 'redes_sociales',
+    match: /\b(redes\s+sociales?|instagram|insta(?:gram)?|@?ig|facebook|fb|tik\s*tok|s[ií]guenos|s[ií]guenme|nos\s+segu[ií]s|publicaciones?)\b/i,
+    answer: (ctx) => texts.redesSociales({
+      nombreNegocio: ctx.negocio,
+      instagram: ctx.url_instagram,
+      facebook: ctx.url_facebook,
+      tiktok: ctx.url_tiktok,
+    }),
+  },
+  {
+    // "Sobre nosotros" / quiénes somos / confianza. Cliente nuevo que
+    // duda si somos serios. Se apoya en DESCRIPCION_NEGOCIO +
+    // MENSAJE_CONFIANZA + cobertura, todo desde SiteConfig.
+    name: 'sobre_nosotros',
+    match: (function() {
+      // El patrón cubre variantes de "sois/son/somos/es" + "de fiar / serios /
+      // confiable / seguros / una estafa". Deliberadamente amplio para captar
+      // dudas de confianza del cliente nuevo — un falso positivo aquí manda un
+      // mensaje inofensivo (presentación + trust), no bloquea ningún flujo.
+      const sujetos = '(?:s(?:o[iy]s|on|omos|e[rn])|es)';
+      return new RegExp(
+        '\\b(?:' +
+          'qui[eé]n(?:es)?\\s+' + sujetos + '|' +
+          'sobre\\s+(?:vosotros|ustedes|nosotros)|' +
+          'acerca\\s+de|' +
+          'de\\s+d[oó]nde\\s+' + sujetos + '|' +
+          sujetos + '\\s+(?:de\\s+fiar|fiables?|serios?|confiables?|seguros?|reales?|una?\\s+estafa)|' +
+          'se\\s+puede\\s+confiar|' +
+          'empresa\\s+(?:real|seria|establecida)|' +
+          'est[aá]is?\\s+establecidos?|' +
+          'llev[aá]is?\\s+(?:mucho|tiempo)|' +
+          'presenta(?:os|te|ci[oó]n)' +
+        ')\\b',
+        'i',
+      );
+    })(),
+    answer: (ctx) => texts.sobreNosotros({
+      nombreNegocio: ctx.negocio,
+      descripcion: ctx.descripcion_negocio,
+      mensajeConfianza: ctx.mensaje_confianza,
+      cobertura: ctx.zona_cobertura_resumen,
+      telefono: ctx.telefono,
+      ciudad: ctx.ciudad,
+    }),
+  },
+  {
+    // Pago contra entrega — refuerzo de confianza. Cliente ansioso que
+    // teme dar la tarjeta por WhatsApp. Complementa a metodos_pago (que
+    // enumera bizum/efectivo/tarjeta) subrayando que NUNCA pedimos tarjeta
+    // anticipada. Se dispara ANTES de metodos_pago si el mensaje mezcla
+    // "tarjeta" con "seguro/miedo/contra entrega".
+    name: 'pago_contra_entrega',
+    match: /\b(contra\s+entrega|contra\s*reembolso|al\s+recibir(?:lo)?|pago\s+al\s+(?:recibir|final|entregar)|no\s+quiero\s+dar\s+.*tarjeta|(?:es\s+)?seguro\s+(?:pagar|dar\s+.*tarjeta)|pagar?\s+en\s+efectivo\s+al\s+recibir|me\s+da\s+miedo\s+.*tarjeta|estafa|es\s+fiable|dat[aoá]fono)\b/i,
+    answer: (ctx) => texts.pagoContraEntregaTrust({ tiendaUrl: ctx.tiendaUrl }),
+  },
 ];
 
 /**
@@ -6415,6 +6511,22 @@ function _buildFaqContext(ses) {
     bizum_enabled: String(cfg('bizum_enabled', '1') || '1') !== '0',
     cash_enabled: String(cfg('cash_enabled', '1') || '1') !== '0',
     card_enabled: String(cfg('card_enabled', '1') || '1') !== '0',
+    // Presencia pública — todo opcional. Los renderers de texts.js omiten
+    // silenciosamente los campos vacíos (redes sin URL, sin descripción)
+    // para que las respuestas nunca contengan enlaces rotos ni líneas
+    // huérfanas cuando el super_admin aún no configuró alguna clave.
+    miniapp_enabled: String(cfg('miniapp_enabled', '1') || '1') !== '0',
+    miniapp_url: (function() {
+      const url = String(cfg('miniapp_url', '') || '').trim();
+      return url || getTiendaUrl();
+    })(),
+    miniapp_nombre: String(cfg('miniapp_nombre', 'Mini App') || 'Mini App').trim(),
+    url_instagram: String(cfg('url_instagram', '') || '').trim(),
+    url_facebook:  String(cfg('url_facebook',  '') || '').trim(),
+    url_tiktok:    String(cfg('url_tiktok',    '') || '').trim(),
+    mensaje_confianza:      String(cfg('mensaje_confianza',      '') || '').trim(),
+    zona_cobertura_resumen: String(cfg('zona_cobertura_resumen', '') || '').trim(),
+    descripcion_negocio:    String(cfg('descripcion_negocio',    '') || '').trim(),
     ses,
   };
 }
