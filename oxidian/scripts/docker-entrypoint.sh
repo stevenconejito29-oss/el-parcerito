@@ -31,6 +31,16 @@ if [ "${RUN_BOOTSTRAP:-1}" = "1" ]; then
   gosu oxidian python scripts/cosmos_bootstrap.py
 fi
 
+# Purga fail-safe de idempotency_keys expiradas al arranque. La tabla
+# crece indefinidamente (~100 filas/día) porque cada checkout deja una
+# fila con expira_en (30s) y nada la limpia. En despliegues con cron
+# externo esto es redundante, pero garantiza que aunque el cron no
+# esté configurado, cada restart del contenedor limpia lo acumulado.
+# No bloqueante — si falla, el arranque sigue.
+if [ "${RUN_PURGE_IDEMPOTENCY:-1}" = "1" ]; then
+  gosu oxidian python scripts/purge_expired_idempotency.py || true
+fi
+
 if [ "$1" = "gunicorn" ] || [ "$#" -eq 0 ]; then
   export OXIDIAN_SKIP_STARTUP_DB="${OXIDIAN_SKIP_STARTUP_DB:-1}"
 
