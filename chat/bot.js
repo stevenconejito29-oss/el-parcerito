@@ -835,9 +835,39 @@ function adminBody(jid, body = {}) {
   return { ...body, actor_telefono: adminActorPhone(jid) };
 }
 
+// Modo estricto: si `BOT_STRICT_DB_ROLE=1` (default), un teléfono solo se
+// considera admin si tiene perfil en BD (whatsappRoleProfile). El env
+// (OWNER_NUMBER / SUPERADMINS) se degrada a whitelist de arranque
+// bootstrap — cuando la BD aún no está seedeada — pero no otorga acceso
+// admin en runtime normal. Antes: un phone borrado de BD pero que seguía
+// en env conservaba capacidad de handoff (podía leer chats de clientes).
+//
+// Set a 0 solo si estás migrando y necesitas retrocompatibilidad temporal.
+const STRICT_DB_ROLE = String(process.env.BOT_STRICT_DB_ROLE || '1').trim() !== '0';
+let _strictDbRoleWarned = false;
+
 function isAdminPhone(phone) {
   const clean = normalizePhone(phone);
-  return adminPhones().includes(clean) || isProfileAdminPhone(clean);
+  const dbProfile = isProfileAdminPhone(clean);
+  const envMatched = adminPhones().includes(clean);
+  if (STRICT_DB_ROLE) {
+    // Bootstrap safety: si el cache de perfiles BD está VACÍO, todavía
+    // no corrió `syncBranding` con éxito o el backend está caído. En ese
+    // caso caemos a env para no dejar al super_admin fuera durante el
+    // primer arranque del contenedor. Una vez que el sync trae al menos
+    // 1 perfil, entramos en modo estricto real.
+    const bdCargada = whatsappRoleProfiles().length > 0;
+    if (!bdCargada) return envMatched;
+    // Modo estricto real: solo BD otorga rol admin. Divergencia logueada.
+    if (envMatched && !dbProfile && !_strictDbRoleWarned) {
+      log('warn', 'admin_env_without_db_profile',
+          `phone=***${clean.slice(-3)} en env pero sin perfil BD — ignorado (STRICT_DB_ROLE=1)`);
+      _strictDbRoleWarned = true;
+    }
+    return dbProfile;
+  }
+  // Modo legacy: cualquiera de las dos fuentes concede acceso.
+  return envMatched || dbProfile;
 }
 
 function isAdminJid(jid) {
