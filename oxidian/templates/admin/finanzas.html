@@ -271,6 +271,154 @@
   </form>
 </section>
 
+{# ── Margen REAL del período (ventas ya materializadas) ── #}
+{# Contraparte contable de la proyección: mira lo que ya se vendió y
+   descuenta uno a uno los conceptos que erosionan el margen — descuentos
+   por cupón, canje de puntos, coste real de mercancía, comisiones a
+   repartidores y liquidaciones a socios. La cifra final ("margen
+   operativo") es lo que efectivamente queda para pagar gastos fijos y
+   generar beneficio. #}
+{% set m = margen_real %}
+<section class="partner-form-card fin-margin-real">
+  <header style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem;">
+    <span style="font-size:1.6rem;">💼</span>
+    <div style="flex:1;">
+      <h2 style="margin:0; font-size:1.15rem;">Margen real del período</h2>
+      <small style="color:#666;">Cuánto quedó de verdad en {{ m.pedidos_count }} pedido{{ 's' if m.pedidos_count != 1 else '' }} del rango — descontando cupones, puntos, coste de mercancía y comisiones.</small>
+    </div>
+  </header>
+
+  {% if m.pedidos_count == 0 %}
+    <p style="color:#666; margin:0;">Aún no hay pedidos en este rango. Cambia el preset arriba para ver otros períodos.</p>
+  {% else %}
+    {# ── KPI headline: 3 cifras que responden "¿ganamos o no?" ── #}
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.75rem;">
+      <div class="partner-balance-item" style="border-left:4px solid #2b7cff;">
+        <span>🏷️ Ventas netas cobradas</span>
+        <strong>{{ '%.2f'|format(m.ventas_netas) }} €</strong>
+        <small>{{ m.pedidos_count }} pedidos · ticket medio {{ '%.2f'|format(m.ticket_medio) }} €</small>
+      </div>
+      <div class="partner-balance-item" style="border-left:4px solid #e07b00;">
+        <span>📦 Coste de mercancía (COGS)</span>
+        <strong>{{ '%.2f'|format(m.cogs) }} €</strong>
+        <small>coste real de lo vendido{% if m.cogs_sin_dato_items %} · <em>{{ m.cogs_sin_dato_items }} ítems sin coste</em>{% endif %}</small>
+      </div>
+      <div class="partner-balance-item" style="border-left:4px solid {% if m.margen_operativo >= 0 %}#1c8b4a{% else %}#c0392b{% endif %};">
+        <span>💰 Margen operativo</span>
+        <strong>{{ '%.2f'|format(m.margen_operativo) }} €</strong>
+        <small>{{ '%.1f'|format(m.margen_operativo_pct) }}% sobre ventas</small>
+      </div>
+    </div>
+
+    {# ── Cascada visual: ventas brutas → descuentos → COGS → comisiones → margen ── #}
+    {# Waterfall en HTML/CSS: cada fila es un ancho relativo al total bruto, con
+       color por naturaleza (verde=ingreso, rojo=coste, azul=neto). Deja claro
+       en un vistazo dónde se están comiendo los euros. #}
+    {% set base = m.ventas_brutas if m.ventas_brutas > 0 else 1 %}
+    {% set pct_desc = ((m.descuentos_cupon / base * 100)|round(1)) if base > 0 else 0 %}
+    {% set pct_pts  = ((m.coste_puntos    / base * 100)|round(1)) if base > 0 else 0 %}
+    {% set pct_cogs = ((m.cogs            / base * 100)|round(1)) if base > 0 else 0 %}
+    {% set pct_com  = (((m.comisiones_repartidor + m.liquidaciones_socios) / base * 100)|round(1)) if base > 0 else 0 %}
+    {% set pct_marg = ((m.margen_operativo / base * 100)|round(1)) if base > 0 else 0 %}
+    <div style="margin-top:1.25rem;">
+      <h3 style="margin:0 0 0.75rem 0; font-size:0.95rem; color:#555;">📉 De ventas brutas a margen operativo</h3>
+      <div style="display:grid; gap:0.35rem;">
+
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <span style="min-width:170px; font-size:0.85rem; color:#333;">Ventas brutas (subtotal)</span>
+          <div style="flex:1; background:#f0f0f0; border-radius:6px; overflow:hidden; height:24px;">
+            <div style="width:100%; background:linear-gradient(90deg, #2b7cff, #56a2ff); height:100%; display:flex; align-items:center; justify-content:flex-end; padding:0 0.5rem; color:#fff; font-weight:700; font-size:0.85rem;">
+              {{ '%.2f'|format(m.ventas_brutas) }} €
+            </div>
+          </div>
+        </div>
+
+        {% if m.descuentos_cupon > 0 %}
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <span style="min-width:170px; font-size:0.85rem; color:#c0392b;">− Descuentos cupón</span>
+          <div style="flex:1; background:#f0f0f0; border-radius:6px; overflow:hidden; height:24px;">
+            <div style="width:{{ pct_desc }}%; min-width:80px; background:linear-gradient(90deg, #c0392b, #e74c3c); height:100%; display:flex; align-items:center; justify-content:flex-end; padding:0 0.5rem; color:#fff; font-weight:700; font-size:0.85rem;">
+              −{{ '%.2f'|format(m.descuentos_cupon) }} € ({{ '%.1f'|format(pct_desc) }}%)
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if m.coste_puntos > 0 %}
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <span style="min-width:170px; font-size:0.85rem; color:#c0392b;">− Puntos canjeados</span>
+          <div style="flex:1; background:#f0f0f0; border-radius:6px; overflow:hidden; height:24px;">
+            <div style="width:{{ pct_pts }}%; min-width:80px; background:linear-gradient(90deg, #c0392b, #e74c3c); height:100%; display:flex; align-items:center; justify-content:flex-end; padding:0 0.5rem; color:#fff; font-weight:700; font-size:0.85rem;">
+              −{{ '%.2f'|format(m.coste_puntos) }} € · {{ m.puntos_usados_total }} pts
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <span style="min-width:170px; font-size:0.85rem; color:#333;">= Ventas netas cobradas</span>
+          <div style="flex:1; background:#f0f0f0; border-radius:6px; overflow:hidden; height:24px;">
+            {% set pct_neto = ((m.ventas_netas / base * 100)|round(1)) if base > 0 else 0 %}
+            <div style="width:{{ pct_neto }}%; background:linear-gradient(90deg, #1e5aa7, #2b7cff); height:100%; display:flex; align-items:center; justify-content:flex-end; padding:0 0.5rem; color:#fff; font-weight:700; font-size:0.85rem;">
+              {{ '%.2f'|format(m.ventas_netas) }} €
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <span style="min-width:170px; font-size:0.85rem; color:#e07b00;">− Coste mercancía (COGS)</span>
+          <div style="flex:1; background:#f0f0f0; border-radius:6px; overflow:hidden; height:24px;">
+            <div style="width:{{ pct_cogs }}%; min-width:60px; background:linear-gradient(90deg, #e07b00, #f39c12); height:100%; display:flex; align-items:center; justify-content:flex-end; padding:0 0.5rem; color:#fff; font-weight:700; font-size:0.85rem;">
+              −{{ '%.2f'|format(m.cogs) }} € ({{ '%.1f'|format(pct_cogs) }}%)
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <span style="min-width:170px; font-size:0.85rem; color:#333;">= Margen bruto</span>
+          <div style="flex:1; background:#f0f0f0; border-radius:6px; overflow:hidden; height:24px;">
+            {% set pct_bruto = ((m.margen_bruto / base * 100)|round(1)) if base > 0 else 0 %}
+            <div style="width:{{ pct_bruto if pct_bruto > 0 else 0 }}%; background:linear-gradient(90deg, #1c8b4a, #2ecc71); height:100%; display:flex; align-items:center; justify-content:flex-end; padding:0 0.5rem; color:#fff; font-weight:700; font-size:0.85rem;">
+              {{ '%.2f'|format(m.margen_bruto) }} € ({{ '%.1f'|format(m.margen_bruto_pct) }}%)
+            </div>
+          </div>
+        </div>
+
+        {% if m.comisiones_repartidor > 0 or m.liquidaciones_socios > 0 %}
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <span style="min-width:170px; font-size:0.85rem; color:#c0392b;">− Comisiones + socios</span>
+          <div style="flex:1; background:#f0f0f0; border-radius:6px; overflow:hidden; height:24px;">
+            <div style="width:{{ pct_com }}%; min-width:60px; background:linear-gradient(90deg, #c0392b, #e74c3c); height:100%; display:flex; align-items:center; justify-content:flex-end; padding:0 0.5rem; color:#fff; font-weight:700; font-size:0.85rem;">
+              −{{ '%.2f'|format(m.comisiones_repartidor + m.liquidaciones_socios) }} €
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; gap:1rem; margin-left:170px; font-size:0.75rem; color:#666;">
+          <span>Repartidor: {{ '%.2f'|format(m.comisiones_repartidor) }} €</span>
+          <span>Socios: {{ '%.2f'|format(m.liquidaciones_socios) }} €</span>
+        </div>
+        {% endif %}
+
+        <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.35rem;">
+          <span style="min-width:170px; font-size:0.9rem; font-weight:700; color:#333;">💰 Margen operativo</span>
+          <div style="flex:1; background:#f0f0f0; border-radius:6px; overflow:hidden; height:28px; border:2px solid {% if m.margen_operativo >= 0 %}#1c8b4a{% else %}#c0392b{% endif %};">
+            <div style="width:{{ pct_marg if pct_marg > 0 else 0 }}%; background:linear-gradient(90deg, {% if m.margen_operativo >= 0 %}#0e6b3a, #1c8b4a{% else %}#8b1e15, #c0392b{% endif %}); height:100%; display:flex; align-items:center; justify-content:flex-end; padding:0 0.5rem; color:#fff; font-weight:800; font-size:0.95rem;">
+              {{ '%.2f'|format(m.margen_operativo) }} € ({{ '%.1f'|format(m.margen_operativo_pct) }}%)
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <small style="color:#888; display:block; margin-top:0.75rem;">
+        Fuente: pedidos NO cancelados del rango. COGS desde snapshot congelado en cada ítem (precio de coste al momento de vender). Comisiones estimadas por <em>creado_en</em> del pago para no ocultar coste devengado.
+        {% if m.cogs_sin_dato_items %}
+        <br><strong style="color:#e07b00;">Aviso:</strong> {{ m.cogs_sin_dato_items }} ítem(s) sin precio de coste en el snapshot — el COGS real puede ser mayor. Registra <em>precio_costo</em> en tus productos para que la cifra sea exacta.
+        {% endif %}
+      </small>
+    </div>
+  {% endif %}
+</section>
+
 {# ── Proyección de rentabilidad del stock actual ── #}
 {# Foto instantánea: cuánto tengo invertido HOY en stock y cuánto ganaría
    si lo vendiera todo a precios actuales. Independiente del rango de

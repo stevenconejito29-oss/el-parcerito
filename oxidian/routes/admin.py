@@ -1263,6 +1263,13 @@ def finanzas():
     # ya materializadas en `Caja` que muestra el bloque de arriba.
     proyeccion = _proyeccion_rentabilidad_stock()
 
+    # ── Margen real del período (ventas ya materializadas) ─────────────
+    # Responde: "de lo que vendí en este rango, cuánto me quedó de
+    # verdad después de restar coste de mercancía, descuentos, envíos
+    # bonificados y comisiones". Es la contraparte contable de la
+    # proyección de arriba — mira PASADO real, no potencial.
+    margen_real = _margen_real_periodo(fi, ff)
+
     return render_template(
         "admin/finanzas.html",
         preset=preset,
@@ -1289,6 +1296,7 @@ def finanzas():
             (c, caja_categoria_meta(c)) for c in CATEGORIAS_CAJA_MANUAL_EGRESO
         ],
         proyeccion=proyeccion,
+        margen_real=margen_real,
     )
 
 
@@ -1426,6 +1434,135 @@ def _proyeccion_rentabilidad_stock():
         "peor_margen": peor_margen,
         "sin_coste": sin_coste_unique,
         "sin_coste_extra_count": max(0, len(sin_coste) - len(sin_coste_unique)),
+    }
+
+
+def _margen_real_periodo(fi, ff):
+    """Calcula el margen operativo REAL del período (ventas materializadas).
+
+    A diferencia de `_proyeccion_rentabilidad_stock` (que mira el stock
+    presente y proyecta si se vendiera todo), este helper mira las
+    ventas YA cobradas y descuenta uno a uno los conceptos que erosionan
+    el margen:
+
+        Ventas brutas (SUM Order.subtotal, no cancelados)
+        - Descuentos aplicados (SUM Order.descuento)
+        - Canje de puntos (SUM Order.puntos_usados × valor_por_punto)
+        = Ventas netas cobradas (= SUM Order.total)
+        - COGS real (SUM item.cantidad × precio_costo_snapshot)
+        = Margen bruto
+        - Comisiones a repartidores del período
+        - Liquidaciones a socios del período
+        = Margen operativo
+
+    Excluye pedidos cancelados: no se cobraron, no aportan ni cuestan.
+    Los pedidos aún no entregados PERO ya cobrados (bizum confirmado)
+    sí cuentan como ventas del período para no subestimar el flujo.
+
+    Devuelve dict con todas las cifras + desglose por concepto.
+    """
+    pedidos = (
+        Order.query
+        .options(joinedload(Order.items))
+        .filter(
+            Order.creado_en >= fi,
+            Order.creado_en < ff,
+            Order.estado != "cancelado",
+        )
+        .all()
+    )
+
+    ventas_brutas = Decimal("0")   # subtotal antes de descuento
+    descuentos_cupon = Decimal("0")
+    ventas_netas = Decimal("0")    # total cobrado (con descuentos aplicados)
+    envio_cobrado = Decimal("0")
+    puntos_usados_total = 0
+    cogs = Decimal("0")            # coste real de mercancía vendida
+    cogs_sin_dato = 0              # items sin precio_costo en snapshot
+
+    for pedido in pedidos:
+        ventas_brutas += Decimal(str(pedido.subtotal or 0))
+        descuentos_cupon += Decimal(str(pedido.descuento or 0))
+        ventas_netas += Decimal(str(pedido.total or 0))
+        envio_cobrado += Decimal(str(pedido.costo_envio_snapshot or 0))
+        puntos_usados_total += int(pedido.puntos_usados or 0)
+        for item in pedido.items or []:
+            cantidad = int(item.cantidad or 0)
+            if cantidad <= 0:
+                continue
+            # El coste debe leerse del SNAPSHOT congelado en metadata,
+            # NO del producto vivo — un cambio de coste posterior no debe
+            # reescribir el margen histórico de un pedido ya cerrado.
+            meta = item.get_metadata() if hasattr(item, "get_metadata") else {}
+            snapshot_prod = (meta or {}).get("producto") if isinstance(meta, dict) else None
+            snapshot_prod = snapshot_prod if isinstance(snapshot_prod, dict) else {}
+            precio_costo = snapshot_prod.get("precio_costo")
+            if precio_costo is None and item.producto is not None:
+                # Fallback: pedidos pre-refactor sin snapshot. Usa el
+                # coste vivo (mejor estimación que 0) y lo contamos aparte.
+                precio_costo = float(item.producto.precio_costo or 0) if item.producto.precio_costo is not None else None
+            if precio_costo is None:
+                cogs_sin_dato += 1
+                continue
+            cogs += Decimal(str(precio_costo)) * cantidad
+
+    # Valor monetario de los puntos canjeados. Config: `PUNTOS_VALOR_EUR`
+    # (€ por punto). Si no está definido, no restamos nada — mejor no
+    # inventar coste que sumar uno equivocado.
+    try:
+        valor_punto = Decimal(str(SiteConfig.get("PUNTOS_VALOR_EUR", "0") or "0"))
+    except Exception:
+        valor_punto = Decimal("0")
+    coste_puntos = (Decimal(puntos_usados_total) * valor_punto).quantize(Decimal("0.01"))
+
+    # Comisiones a staff en el período (fecha_pago dentro del rango si
+    # ya pagadas; si no, se estima con creado_en para no ocultar coste).
+    comisiones_repartidor = (
+        db.session.query(db.func.coalesce(db.func.sum(StaffPayment.monto), 0))
+        .filter(
+            StaffPayment.tipo == "comision",
+            StaffPayment.origen == "delivery",
+            StaffPayment.creado_en >= fi,
+            StaffPayment.creado_en < ff,
+        )
+        .scalar() or 0
+    )
+    liquidaciones_socios = (
+        db.session.query(db.func.coalesce(db.func.sum(StaffPayment.monto), 0))
+        .filter(
+            StaffPayment.tipo == "liquidacion_proveedor",
+            StaffPayment.creado_en >= fi,
+            StaffPayment.creado_en < ff,
+        )
+        .scalar() or 0
+    )
+    comisiones_repartidor = Decimal(str(comisiones_repartidor))
+    liquidaciones_socios = Decimal(str(liquidaciones_socios))
+
+    margen_bruto = ventas_netas - cogs
+    margen_operativo = margen_bruto - comisiones_repartidor - liquidaciones_socios - coste_puntos
+    margen_bruto_pct = float(margen_bruto / ventas_netas * 100) if ventas_netas > 0 else 0.0
+    margen_operativo_pct = float(margen_operativo / ventas_netas * 100) if ventas_netas > 0 else 0.0
+
+    return {
+        "pedidos_count": len(pedidos),
+        "ventas_brutas": ventas_brutas,
+        "descuentos_cupon": descuentos_cupon,
+        "coste_puntos": coste_puntos,
+        "puntos_usados_total": puntos_usados_total,
+        "ventas_netas": ventas_netas,
+        "envio_cobrado": envio_cobrado,
+        "cogs": cogs,
+        "cogs_sin_dato_items": cogs_sin_dato,
+        "margen_bruto": margen_bruto,
+        "margen_bruto_pct": margen_bruto_pct,
+        "comisiones_repartidor": comisiones_repartidor,
+        "liquidaciones_socios": liquidaciones_socios,
+        "margen_operativo": margen_operativo,
+        "margen_operativo_pct": margen_operativo_pct,
+        # Ticket medio útil para narrativa del panel:
+        "ticket_medio": (ventas_netas / len(pedidos)).quantize(Decimal("0.01"))
+                         if pedidos else Decimal("0"),
     }
 
 
