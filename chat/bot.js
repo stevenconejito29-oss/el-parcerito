@@ -7409,6 +7409,103 @@ const MANUAL_SECTIONS = [
     ),
   },
   {
+    // Instalación de la Mini App (PWA) con tutorial Android/iPhone. Se
+    // apoya en la plantilla pura texts.miniAppInvite ya definida para no
+    // duplicar copy. Deshabilitada si MINIAPP_ENABLED=0 en SiteConfig.
+    key: 'mini_app',
+    label: '📱 Cómo instalar la Mini App',
+    keywords: [
+      /\bmini\s*app\b/i,
+      /\binstalar\s+(?:la\s+)?(?:mini\s*)?app\b/i,
+      /\b(?:c[oó]mo\s+)?(?:descargo|descargar)\s+(?:la\s+)?app\b/i,
+      /\b(?:vuestra|su|tu|la)\s+app\b/i,
+      /\bacceso\s+directo|atajo\s+en\s+(?:el\s+)?m[oó]vil|icono\s+en\s+(?:el\s+)?m[oó]vil\b/i,
+      /\ba[nñ]adir\s+(?:a\s+)?(?:la\s+)?pantalla\b/i,
+      /\bpedir\s+m[aá]s\s+r[aá]pido\b/i,
+      /\bpwa\b/i,
+    ],
+    enabled: (ctx) => Boolean(ctx.miniapp_enabled),
+    body: (ctx) => texts.miniAppInvite({
+      nombreNegocio: ctx.negocio,
+      miniappNombre: ctx.miniapp_nombre,
+      miniappUrl: ctx.miniapp_url,
+    }),
+  },
+  {
+    // Sobre nosotros / confianza / quiénes somos. Combina DESCRIPCION_NEGOCIO,
+    // MENSAJE_CONFIANZA, cobertura y contacto. Refuerza que somos tienda
+    // online sin sede física y pago 100% contra entrega.
+    key: 'sobre_nosotros',
+    label: '🤝 Sobre nosotros',
+    keywords: [
+      /\bqui[eé]n(?:es)?\s+s(?:o[iy]s|on|omos)\b/i,
+      /\bsobre\s+(?:vosotros|ustedes|nosotros)\b/i,
+      /\bacerca\s+de\b/i,
+      /\b(?:s(?:o[iy]s|on|omos|e[rn])|es)\s+(?:de\s+fiar|fiables?|serios?|confiables?|seguros?|reales?|una?\s+estafa)\b/i,
+      /\bse\s+puede\s+confiar\b/i,
+      /\bempresa\s+(?:real|seria|establecida)\b/i,
+      /\bconfianza\b/i,
+    ],
+    enabled: () => true,
+    body: (ctx) => texts.sobreNosotros({
+      nombreNegocio: ctx.negocio,
+      descripcion: ctx.descripcion_negocio,
+      mensajeConfianza: ctx.mensaje_confianza,
+      cobertura: ctx.zona_cobertura_resumen,
+      telefono: ctx.telefono,
+      // No pasamos `ciudad` para no sugerir sede física — la cobertura
+      // ya comunica dónde repartimos sin implicar "estamos aquí".
+    }),
+  },
+  {
+    // Pago 100% contra entrega. Bloque de seguridad separado que refuerza
+    // la promesa "nunca pedimos tarjeta anticipada". Antes vivía solo en la
+    // FAQ pago_contra_entrega — el cliente que llega al menú también debe
+    // encontrarlo listado explícitamente.
+    key: 'pago_contra_entrega',
+    label: '🔒 Pago 100% contra entrega',
+    keywords: [
+      /\bcontra\s+entrega\b/i,
+      /\bcontra\s*reembolso\b/i,
+      /\bpag(?:o|ar)\s+al\s+(?:recibir|final|entregar)\b/i,
+      /\bno\s+quiero\s+dar\s+.*tarjeta\b/i,
+      /\bes\s+(?:seguro|fiable)\s+(?:pagar|dar\s+.*tarjeta)\b/i,
+      /\bdat[aoá]fono\b/i,
+    ],
+    enabled: () => true,
+    body: (ctx) => texts.pagoContraEntregaTrust({ tiendaUrl: ctx.tiendaUrl }),
+  },
+  {
+    // Redes sociales. Se muestra en el índice SIEMPRE (aunque no haya
+    // ninguna configurada) porque es la fila lógica que el cliente busca
+    // — el body devuelve un fallback amable cuando no hay red aún, en
+    // vez de esconder la sección (que confundiría al usuario).
+    key: 'redes_sociales',
+    label: '🌐 Redes sociales',
+    keywords: [
+      /\bredes\s+sociales?\b/i,
+      /\binstagram\b/i,
+      /\bfacebook\b/i,
+      /\btik\s*tok\b/i,
+      /\bs[ií]guenos\b/i,
+    ],
+    enabled: () => true,
+    body: (ctx) => {
+      const rendered = texts.redesSociales({
+        nombreNegocio: ctx.negocio,
+        instagram: ctx.url_instagram,
+        facebook: ctx.url_facebook,
+        tiktok: ctx.url_tiktok,
+      });
+      if (rendered) return rendered;
+      return (
+        `🌐 *Redes sociales*\n\n` +
+        `Aún no publicamos en redes sociales — por aquí (WhatsApp) es la vía ` +
+        `más rápida para pedir y consultar.`
+      );
+    },
+  },
+  {
     key: 'agente',
     label: '👤 Hablar con una persona',
     keywords: [
