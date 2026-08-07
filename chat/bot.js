@@ -656,6 +656,52 @@ function adminCan(jid, capability) {
   return capability === 'handoff';
 }
 
+/**
+ * Verificación fresca contra BD (sin cache) del rol de un admin antes
+ * de ejecutar una acción destructiva. Complementa a adminCan/isSuperAdminJid
+ * — esos leen del perfil cacheado que puede tener hasta 10 min de retraso
+ * respecto a un cambio en /superadmin/usuarios. En acciones que modifican
+ * estado del negocio (cerrar tienda, ajustar puntos, cambiar precios,
+ * activar emergencia) queremos certeza en el momento.
+ *
+ * Devuelve:
+ *   { ok: true, rol, capabilities, nombre }  → autoritativo desde BD
+ *   { ok: false, motivo }                     → revocado, degradado o red caída
+ *
+ * En caso de red caída/timeout, `ok: false` con `motivo='no_verificable'`.
+ * El llamador decide si operar en fail-open (cuando cache dice OK y BD no
+ * responde) o fail-closed (más seguro pero puede bloquear al admin en un
+ * outage). En handleAdminConfirm elegimos fail-closed para acciones
+ * destructivas: si no podemos verificar, no ejecutamos.
+ */
+async function verifyAdminIdentityFresh(jid, requiredRole = null) {
+  const phone = phoneFromJid(jid);
+  if (!phone) return { ok: false, motivo: 'phone_vacio' };
+  try {
+    const data = await oxidianGet(
+      `/identity/verify?telefono=${encodeURIComponent(phone)}`,
+      { timeout: 4000 },
+    );
+    if (!data || !data.ok) return { ok: false, motivo: 'respuesta_invalida' };
+    const rol = data.rol || null;
+    if (!rol || (rol !== 'admin' && rol !== 'super_admin')) {
+      return { ok: false, motivo: 'no_es_admin', rol };
+    }
+    if (requiredRole === 'super_admin' && rol !== 'super_admin') {
+      return { ok: false, motivo: 'requiere_super_admin', rol };
+    }
+    return {
+      ok: true,
+      rol,
+      capabilities: Array.isArray(data.capabilities) ? data.capabilities : [],
+      nombre: data.nombre || null,
+    };
+  } catch (err) {
+    log('warn', 'identity_verify_fail', `jid=${jid} err=${err?.message || err}`);
+    return { ok: false, motivo: 'no_verificable' };
+  }
+}
+
 function adminRoleLabel(jid) {
   if (isSuperAdminJid(jid)) return 'Super Admin';
   return whatsappRoleProfile(phoneFromJid(jid)) ? 'Admin' : 'Agente de atención';
@@ -9082,6 +9128,39 @@ async function handleAdminConfirm(jid, ses, text) {
       );
     }
     return sendText(jid, `Responde *SI* para confirmar o *NO* para cancelar.`);
+  }
+
+  // Verificación FRESCA contra BD antes de ejecutar la acción destructiva.
+  // adminCan() ya validó arriba contra el perfil cacheado (max 10 min de
+  // retraso). Aquí re-validamos sin cache: si el rol fue revocado en BD
+  // entre que se pidió confirmación y el "SI", no ejecutamos y wipeamos.
+  // Fail-closed: si el endpoint no responde en 4s tampoco ejecutamos —
+  // en caso de duda con una acción destructiva, mejor bloquear al admin
+  // por 30s que operar sobre un permiso que quizá ya no tiene.
+  const requiereSuperAdmin = new Set([
+    'emergency_on', 'emergency_off', 'admin_add', 'admin_remove',
+  ]).has(pending.action);
+  const fresh = await verifyAdminIdentityFresh(jid, requiereSuperAdmin ? 'super_admin' : null);
+  if (!fresh.ok) {
+    log('warn', 'admin_action_blocked_fresh_check',
+        `jid=${jid} action=${pending.action} motivo=${fresh.motivo} rol=${fresh.rol || 'null'}`);
+    setAdminState(ses, 'admin_menu');
+    if (fresh.motivo === 'no_es_admin' || fresh.motivo === 'requiere_super_admin') {
+      // Rol revocado o insuficiente: además de bloquear la acción,
+      // dejamos la sesión limpia — el próximo mensaje re-evalúa
+      // identidad desde cero. La revocación en caliente (commit 7)
+      // ya podría haber hecho esto vía syncBranding, pero llegamos
+      // aquí si el sync aún no corrió; lo cerramos ahora.
+      revokeAdminAccess(phoneFromJid(jid));
+      return sendText(jid,
+        `🚫 Tu cuenta ya no tiene los permisos necesarios para esta acción.\n` +
+        `Contacta con el super administrador si crees que es un error.`
+      );
+    }
+    return sendText(jid,
+      `⚠️ No pude verificar tu identidad ahora mismo. La acción NO se ejecutó por seguridad.\n` +
+      `Vuelve a intentarlo en un momento.\n\n${adminMenu(jid)}`
+    );
   }
 
   try {
