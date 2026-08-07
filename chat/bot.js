@@ -8063,8 +8063,11 @@ async function handleMainMenu(jid, ses, opcion) {
   if (esDespedida(textoLibre) && textoLibre.length < 50) {
     bumpStat('saludo');
     const nombre = _primerNombre(ses?.nombre);
-    const cierre = nombre ? `¡Hasta pronto, ${nombre}! 💛` : `¡Hasta pronto! 💛`;
-    return sendText(jid, `${cierre}\n\nEscríbeme cuando quieras. Estaré por aquí. 🍽️`);
+    // Pool de despedidas rotativas (commit 28) — evita que el bot
+    // suene siempre igual cuando el cliente cierra el chat con
+    // "gracias" o "adiós". Cada variante ya incluye recordatorio
+    // suave de disponibilidad ("aquí estoy cuando lo necesites").
+    return sendText(jid, pick(texts.farewellVariants({ nombre })));
   }
 
   // 3) FAQ canned (horario, dirección, pago, tiempo entrega, take-away, "cómo pedir",
@@ -8956,12 +8959,14 @@ async function handleReportePedido(jid, ses, input) {
     });
     if (!resp || resp.ok === false) throw new Error(resp?.error || 'Sin respuesta del servidor');
     setClientState(ses, 'main_menu');
+    // Ack rotativo (commit 28) para no siempre abrir con "✅ Problema
+    // registrado". El pool ackVariants aporta 5 variantes cortas.
+    const ack = pick(texts.ackVariants());
     return sendText(jid,
-      `✅ *Problema registrado para el pedido ${pending.numero}.*\n\n` +
+      `${ack} — *problema registrado para el pedido ${pending.numero}.*\n\n` +
       `El equipo recibió tu mensaje: «${texto}».\n\n` +
       `*1* — 🛒 Abrir la tienda\n` +
       `*2* — 📦 Consultar pedidos\n` +
-      `*7* — 👤 Hablar con una persona\n` +
       `*0* — 🏠 Volver al inicio`
     );
   } catch (error) {
