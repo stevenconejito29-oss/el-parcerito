@@ -271,4 +271,162 @@
   </form>
 </section>
 
+{# ── Proyección de rentabilidad del stock actual ── #}
+{# Foto instantánea: cuánto tengo invertido HOY en stock y cuánto ganaría
+   si lo vendiera todo a precios actuales. Independiente del rango de
+   fechas del resto del panel (no depende de ventas ya materializadas). #}
+{% set p = proyeccion %}
+<section class="partner-form-card fin-projection">
+  <header style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem;">
+    <span style="font-size:1.6rem;">📈</span>
+    <div>
+      <h2 style="margin:0; font-size:1.15rem;">Proyección de rentabilidad del stock</h2>
+      <small style="color:#666;">Si vendieras todo el stock actual a precio de hoy</small>
+    </div>
+  </header>
+
+  {% if p.invertido == 0 %}
+    <p style="color:#666;">
+      Aún no hay stock con precio de coste definido para calcular la proyección.
+      Registra <em>precio de coste</em> en tus productos (o en el inventario de cada socio)
+      para que aparezca aquí.
+    </p>
+  {% else %}
+    {# ── 3 KPIs grandes ── #}
+    <div class="fin-projection-kpis" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem;">
+      <div class="partner-balance-item" style="border-left:4px solid #e07b00;">
+        <span>💰 Invertido en stock</span>
+        <strong>{{ '%.2f'|format(p.invertido) }} €</strong>
+        <small>coste actual del inventario</small>
+      </div>
+      <div class="partner-balance-item" style="border-left:4px solid #2b7cff;">
+        <span>🏷️ Valor de venta potencial</span>
+        <strong>{{ '%.2f'|format(p.venta_potencial) }} €</strong>
+        <small>si se vende todo a precio actual</small>
+      </div>
+      <div class="partner-balance-item" style="border-left:4px solid {% if p.margen >= 0 %}#1c8b4a{% else %}#c0392b{% endif %};">
+        <span>📊 Margen bruto proyectado</span>
+        <strong>{{ '%.2f'|format(p.margen) }} €</strong>
+        <small>{{ '%.1f'|format(p.margen_pct) }}% sobre lo invertido</small>
+      </div>
+    </div>
+
+    {# ── Gráfica de barras SVG (sin dependencias) ──
+       Comparación visual invertido vs venta potencial. Anchos proporcionales
+       al valor mayor (venta_potencial en cualquier caso realista) para que
+       ambas barras se lean sin escalado logarítmico ni ejes.
+       Se calcula con Jinja para no meter JS. Todos los valores > 0 por
+       la guarda `if p.invertido == 0` de arriba. #}
+    {% set max_val = p.venta_potencial if p.venta_potencial > p.invertido else p.invertido %}
+    {% set w_inv = (p.invertido / max_val * 100)|round(1) if max_val > 0 else 0 %}
+    {% set w_pot = (p.venta_potencial / max_val * 100)|round(1) if max_val > 0 else 0 %}
+    <div style="margin-top:1.25rem;">
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.35rem;">
+        <span style="min-width:110px; font-size:0.85rem; color:#555;">💰 Invertido</span>
+        <div style="flex:1; background:#f0f0f0; border-radius:6px; overflow:hidden; height:26px;">
+          <div style="width:{{ w_inv }}%; background:linear-gradient(90deg, #e07b00, #f39c12); height:100%; display:flex; align-items:center; justify-content:flex-end; padding:0 0.5rem; color:#fff; font-weight:700; font-size:0.85rem;">
+            {{ '%.0f'|format(p.invertido) }} €
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.35rem;">
+        <span style="min-width:110px; font-size:0.85rem; color:#555;">🏷️ Venta pot.</span>
+        <div style="flex:1; background:#f0f0f0; border-radius:6px; overflow:hidden; height:26px;">
+          <div style="width:{{ w_pot }}%; background:linear-gradient(90deg, #2b7cff, #56a2ff); height:100%; display:flex; align-items:center; justify-content:flex-end; padding:0 0.5rem; color:#fff; font-weight:700; font-size:0.85rem;">
+            {{ '%.0f'|format(p.venta_potencial) }} €
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:0.5rem;">
+        <span style="min-width:110px; font-size:0.85rem; color:#555;">📊 Margen</span>
+        <div style="flex:1; background:#f0f0f0; border-radius:6px; overflow:hidden; height:26px;">
+          {% set w_marg = ((p.margen / max_val * 100)|round(1)) if p.margen > 0 else 0 %}
+          <div style="width:{{ w_marg }}%; background:linear-gradient(90deg, {% if p.margen >= 0 %}#1c8b4a, #2ecc71{% else %}#c0392b, #e74c3c{% endif %}); height:100%; display:flex; align-items:center; justify-content:flex-end; padding:0 0.5rem; color:#fff; font-weight:700; font-size:0.85rem;">
+            {{ '%.0f'|format(p.margen) }} € ({{ '%.1f'|format(p.margen_pct) }}%)
+          </div>
+        </div>
+      </div>
+      <small style="color:#888; display:block; margin-top:0.5rem;">
+        Barras a escala relativa al mayor valor. La proyección asume vender el 100% del stock al precio actual —
+        margen operativo real será menor por mermas, descuentos y coste de reparto.
+      </small>
+    </div>
+
+    {# ── Top rentables (por € absolutos) y peor margen (por %) ── #}
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-top:1.25rem;">
+      <div>
+        <h3 style="margin:0 0 0.5rem 0; font-size:1rem;">🏆 Top rentables (margen €)</h3>
+        {% if p.top_rentables %}
+          <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+            <thead>
+              <tr style="background:#f7f7f7; text-align:left;">
+                <th style="padding:6px;">Producto</th>
+                <th style="padding:6px; text-align:right;">Stock</th>
+                <th style="padding:6px; text-align:right;">Margen</th>
+                <th style="padding:6px; text-align:right;">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in p.top_rentables %}
+                <tr style="border-bottom:1px solid #eee;">
+                  <td style="padding:6px;">{{ row.nombre }}{% if row.fuente == 'socio' %} <small style="color:#888;">(socio)</small>{% endif %}</td>
+                  <td style="padding:6px; text-align:right;">{{ row.cantidad }}</td>
+                  <td style="padding:6px; text-align:right;"><strong style="color:#1c8b4a;">{{ '%.2f'|format(row.margen) }} €</strong></td>
+                  <td style="padding:6px; text-align:right;">{{ '%.1f'|format(row.margen_pct) }}%</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p style="color:#666;">Sin datos suficientes.</p>
+        {% endif %}
+      </div>
+      <div>
+        <h3 style="margin:0 0 0.5rem 0; font-size:1rem;">⚠️ Peor margen (% sobre coste)</h3>
+        {% if p.peor_margen %}
+          <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+            <thead>
+              <tr style="background:#f7f7f7; text-align:left;">
+                <th style="padding:6px;">Producto</th>
+                <th style="padding:6px; text-align:right;">Coste</th>
+                <th style="padding:6px; text-align:right;">Venta</th>
+                <th style="padding:6px; text-align:right;">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in p.peor_margen %}
+                <tr style="border-bottom:1px solid #eee;">
+                  <td style="padding:6px;">{{ row.nombre }}{% if row.fuente == 'socio' %} <small style="color:#888;">(socio)</small>{% endif %}</td>
+                  <td style="padding:6px; text-align:right;">{{ '%.2f'|format(row.precio_costo) }} €</td>
+                  <td style="padding:6px; text-align:right;">{{ '%.2f'|format(row.precio_venta) }} €</td>
+                  <td style="padding:6px; text-align:right;">
+                    <strong style="color:{% if row.margen_pct < 20 %}#c0392b{% elif row.margen_pct < 40 %}#e07b00{% else %}#1c8b4a{% endif %};">
+                      {{ '%.1f'|format(row.margen_pct) }}%
+                    </strong>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p style="color:#666;">Sin datos suficientes.</p>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if p.sin_coste %}
+    <div style="margin-top:1rem; padding:0.75rem; background:#fff8e6; border-left:3px solid #e07b00; border-radius:4px;">
+      <strong>⚠️ Precios de coste sin definir</strong>
+      <small style="display:block; color:#666; margin-top:0.25rem;">
+        Estos productos tienen stock pero NO figuran en la proyección porque falta su precio de coste:
+      </small>
+      <div style="margin-top:0.5rem; font-size:0.85rem;">
+        {{ p.sin_coste|join(', ') }}{% if p.sin_coste_extra_count > 0 %} <em>(+{{ p.sin_coste_extra_count }} más)</em>{% endif %}.
+      </div>
+      <a href="{{ url_for('admin.productos') }}" style="display:inline-block; margin-top:0.5rem; font-size:0.85rem;">→ Corregir precios de coste</a>
+    </div>
+  {% endif %}
+</section>
+
 {% endblock %}

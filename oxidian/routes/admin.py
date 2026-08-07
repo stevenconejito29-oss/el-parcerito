@@ -1256,6 +1256,13 @@ def finanzas():
     # ── Movimientos recientes (top 15 para vista rápida) ───────────────
     recientes = movimientos[:15]
 
+    # ── Proyección de rentabilidad del stock actual ─────────────────────
+    # Fotografía instantánea que responde: "¿cuánto tengo invertido en
+    # stock hoy, y cuánto ganaría si lo vendiera todo a precio actual?".
+    # Es una proyección FUTURA (potencial), independiente de las ventas
+    # ya materializadas en `Caja` que muestra el bloque de arriba.
+    proyeccion = _proyeccion_rentabilidad_stock()
+
     return render_template(
         "admin/finanzas.html",
         preset=preset,
@@ -1281,7 +1288,145 @@ def finanzas():
         categorias_manual_egreso=[
             (c, caja_categoria_meta(c)) for c in CATEGORIAS_CAJA_MANUAL_EGRESO
         ],
+        proyeccion=proyeccion,
     )
+
+
+def _proyeccion_rentabilidad_stock():
+    """Calcula la proyección de rentabilidad futura del stock actual.
+
+    Devuelve un dict con:
+      - `invertido`      : Decimal — €coste de todo el stock hoy
+      - `venta_potencial`: Decimal — €si se vende todo a precio actual
+      - `margen`         : Decimal — venta_potencial - invertido
+      - `margen_pct`     : float   — margen / invertido * 100 (0 si invertido=0)
+      - `por_producto`   : list[dict] — desglose por SKU (ordenado por margen desc)
+      - `top_rentables`  : top 5 por margen absoluto
+      - `peor_margen`    : bottom 5 por margen_pct (los que menos dejan o pierden)
+      - `sin_coste`      : list[str] — nombres de productos con stock >0 pero sin
+                           precio_costo definido — el operador debe corregirlos
+                           para que la proyección sea real.
+
+    Fuentes:
+      * Stock propio (`Stock.cantidad * Product.precio_costo`)
+      * Stock de socios (`ProveedorProducto.stock * ProveedorProducto.precio_costo`)
+    Combos NO se incluyen: su valor viene del stock de sus componentes,
+    contarlos sería doble contabilidad.
+    """
+    filas = []
+    sin_coste = []
+
+    # Stock propio agregado por producto.
+    stock_propio = (
+        db.session.query(
+            Stock.producto_id,
+            db.func.sum(Stock.cantidad).label("cantidad"),
+        )
+        .group_by(Stock.producto_id)
+        .all()
+    )
+    productos_propios = {
+        p.id: p for p in Product.query.filter(
+            Product.id.in_([s.producto_id for s in stock_propio]),
+            Product.es_combo.is_(False),
+        ).all()
+    } if stock_propio else {}
+    for row in stock_propio:
+        prod = productos_propios.get(row.producto_id)
+        if not prod:
+            continue
+        cantidad = int(row.cantidad or 0)
+        if cantidad <= 0:
+            continue
+        precio_venta = Decimal(str(prod.precio or 0))
+        precio_costo = Decimal(str(prod.precio_costo or 0)) if prod.precio_costo is not None else None
+        if precio_costo is None:
+            sin_coste.append(prod.nombre)
+            continue
+        invertido = precio_costo * cantidad
+        potencial = precio_venta * cantidad
+        margen = potencial - invertido
+        margen_pct = float(margen / invertido * 100) if invertido > 0 else 0.0
+        filas.append({
+            "producto_id": prod.id,
+            "nombre": prod.nombre,
+            "fuente": "propio",
+            "cantidad": cantidad,
+            "precio_costo": precio_costo,
+            "precio_venta": precio_venta,
+            "invertido": invertido,
+            "potencial": potencial,
+            "margen": margen,
+            "margen_pct": margen_pct,
+        })
+
+    # Stock de socios (ProveedorProducto).
+    prov_rows = (
+        ProveedorProducto.query
+        .filter(ProveedorProducto.stock > 0, ProveedorProducto.activo.is_(True))
+        .options(joinedload(ProveedorProducto.producto))
+        .all()
+    )
+    for pp in prov_rows:
+        prod = pp.producto
+        if not prod or prod.es_combo:
+            continue
+        cantidad = int(pp.stock or 0)
+        if cantidad <= 0:
+            continue
+        precio_venta = Decimal(str(prod.precio or 0))
+        precio_costo = Decimal(str(pp.precio_costo or 0)) if pp.precio_costo is not None else None
+        if precio_costo is None:
+            sin_coste.append(f"{prod.nombre} (socio)")
+            continue
+        invertido = precio_costo * cantidad
+        potencial = precio_venta * cantidad
+        margen = potencial - invertido
+        margen_pct = float(margen / invertido * 100) if invertido > 0 else 0.0
+        filas.append({
+            "producto_id": prod.id,
+            "nombre": prod.nombre,
+            "fuente": "socio",
+            "cantidad": cantidad,
+            "precio_costo": precio_costo,
+            "precio_venta": precio_venta,
+            "invertido": invertido,
+            "potencial": potencial,
+            "margen": margen,
+            "margen_pct": margen_pct,
+        })
+
+    filas.sort(key=lambda r: r["margen"], reverse=True)
+    invertido_total = sum((r["invertido"] for r in filas), Decimal("0"))
+    potencial_total = sum((r["potencial"] for r in filas), Decimal("0"))
+    margen_total = potencial_total - invertido_total
+    margen_pct_total = float(margen_total / invertido_total * 100) if invertido_total > 0 else 0.0
+
+    top_rentables = filas[:5]
+    peor_margen = sorted(filas, key=lambda r: r["margen_pct"])[:5]
+
+    # Dedupe sin_coste preservando orden y cap a 20 para no reventar la UI.
+    vistos = set()
+    sin_coste_unique = []
+    for nombre in sin_coste:
+        if nombre in vistos:
+            continue
+        vistos.add(nombre)
+        sin_coste_unique.append(nombre)
+        if len(sin_coste_unique) >= 20:
+            break
+
+    return {
+        "invertido": invertido_total,
+        "venta_potencial": potencial_total,
+        "margen": margen_total,
+        "margen_pct": margen_pct_total,
+        "por_producto": filas,
+        "top_rentables": top_rentables,
+        "peor_margen": peor_margen,
+        "sin_coste": sin_coste_unique,
+        "sin_coste_extra_count": max(0, len(sin_coste) - len(sin_coste_unique)),
+    }
 
 
 def _snapshot_dia_desde_caja(fecha_dia):
