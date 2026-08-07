@@ -5347,6 +5347,19 @@ async function _handleMessage(jid, text, pushName, context = {}) {
       /(?:calle|avenida|avda|c\/|plaza|paseo|carretera)/i.test(lower)  // dirección típica
     );
     if (!looksLikeExpectedInput) {
+      // Repetir pedido mid-flow: si el cliente escribe "repetir" desde
+      // un estado sensible (típicamente consultando el estado de un
+      // pedido entregado, en `pedido_acciones`), es una nueva intención
+      // de compra clara — cambio de contexto explícito. Rompemos el
+      // estado actual y ejecutamos el atajo. Excepción: NO desde
+      // `confirmar_cancelacion` — evitamos abandonar accidentalmente
+      // una confirmación pendiente si el cliente cambia de idea sin
+      // decir NO explícitamente. Ese caso el TTL de 10 min lo cierra.
+      if (esRepetirPedido(text) && ses.estado !== 'confirmar_cancelacion') {
+        bumpStat('repetir_pedido_mid_flow');
+        setClientState(ses, 'main_menu');
+        return handleRepetirPedido(jid, ses);
+      }
       // Despedida / agradecimiento mid-flow: antes desperdiciaba un intento
       // porque el state handler exigía número/dirección/sí-no y "gracias"
       // no matcheaba nada. Ahora respondemos con cortesía y mantenemos el
