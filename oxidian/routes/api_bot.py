@@ -3187,6 +3187,140 @@ def guardar_resena(pedido_id):
         return jsonify({"ok": False, "error": "No se pudo guardar la reseña"}), 500
 
 
+# ─── REPETIR ÚLTIMO PEDIDO ───────────────
+#
+# Devuelve un link firmado al cliente para pre-cargar su último pedido
+# entregado en el carrito web. Diseñado para invocarse desde el bot
+# WhatsApp cuando el cliente escribe "repetir", "lo de siempre",
+# "otra vez", etc.
+#
+# Contrato:
+#   IN:  telefono (query o body)
+#   OUT: {ok, link, numero_pedido, items:[{nombre, cantidad, disponible}],
+#         indisponibles_count, total_estimado, mensaje}
+#
+# El link tiene expiry corto (5 min) porque el cliente lo va a usar
+# inmediatamente desde WhatsApp; si expira, simplemente pide "repetir"
+# de nuevo. Firmado con HMAC-SHA256 sobre BOT_API_KEY para que la ruta
+# pública /carrito/repetir verifique sin sesión de admin.
+
+_REPETIR_LINK_TTL_SEC = 300   # 5 minutos
+
+
+def _sign_repetir_token(pedido_id: int, telefono: str, expiry_ts: int) -> str:
+    """HMAC-SHA256 truncado de (pedido_id, telefono, expiry) con la
+    BOT_API_KEY. La ruta pública recomputa el mismo HMAC y compara
+    en tiempo constante (`hmac.compare_digest`).
+    """
+    key = str(_get_api_key() or "").encode("utf-8")
+    if not key:
+        return ""
+    payload = f"{int(pedido_id)}|{str(telefono or '').strip()}|{int(expiry_ts)}"
+    return hmac.new(key, payload.encode("utf-8"), "sha256").hexdigest()[:24]
+
+
+@api_bot_bp.route("/pedido/repetir-link", methods=["POST", "GET"])
+@bot_required
+def pedido_repetir_link():
+    """Genera un link firmado para pre-cargar el último pedido del cliente."""
+    from urllib.parse import urlencode
+    try:
+        payload = request.get_json(silent=True) or {}
+        telefono_raw = (
+            payload.get("telefono")
+            or request.args.get("telefono")
+            or ""
+        )
+        cliente, telefono = _cliente_por_telefono(telefono_raw)
+        if not cliente or not telefono_valido(telefono):
+            return jsonify({"ok": False, "error": "Cliente no encontrado"}), 404
+
+        # Último pedido entregado (no cancelado). Consultamos por
+        # entregado_en desc y con fallback a creado_en si por alguna
+        # razón no hay timestamp de entrega.
+        pedido = (
+            Order.query
+            .filter(
+                Order.cliente_id == cliente.id,
+                Order.estado == "entregado",
+            )
+            .order_by(
+                Order.entregado_en.desc().nullslast(),
+                Order.creado_en.desc(),
+            )
+            .first()
+        )
+        if not pedido:
+            return jsonify({
+                "ok": False,
+                "error": "sin_historial",
+                "mensaje": (
+                    "Aún no tienes un pedido entregado que podamos repetir. "
+                    "¡Anímate a hacer tu primer pedido!"
+                ),
+            }), 200
+
+        # Preview de items — filtramos por producto activo para no
+        # invitar al cliente a un carrito que fallará al abrir.
+        items_preview = []
+        disponibles = 0
+        indisponibles = 0
+        for item in pedido.items:
+            producto = item.producto
+            nombre = (producto.nombre if producto else None) or getattr(item, "nombre_snapshot", None) or "Producto"
+            activo = bool(producto and producto.activo)
+            items_preview.append({
+                "producto_id": getattr(item, "producto_id", None),
+                "nombre": nombre,
+                "cantidad": int(item.cantidad or 0),
+                "disponible": activo,
+            })
+            if activo:
+                disponibles += 1
+            else:
+                indisponibles += 1
+
+        if disponibles == 0:
+            return jsonify({
+                "ok": False,
+                "error": "sin_disponibles",
+                "mensaje": (
+                    "Los productos de tu último pedido ya no están disponibles. "
+                    "Explora el catálogo actual para pedir algo nuevo."
+                ),
+                "numero_pedido": pedido.numero_pedido,
+            }), 200
+
+        expiry_ts = int(datetime.utcnow().timestamp()) + _REPETIR_LINK_TTL_SEC
+        token = _sign_repetir_token(pedido.id, telefono, expiry_ts)
+        if not token:
+            # Sin BOT_API_KEY no podemos firmar — situación anómala.
+            return jsonify({"ok": False, "error": "server_no_key"}), 500
+
+        tienda_url = get_public_store_url(request.url_root).rstrip("/")
+        query = urlencode({
+            "pedido": pedido.id,
+            "tel": telefono,
+            "exp": expiry_ts,
+            "sig": token,
+        })
+        link = f"{tienda_url}/carrito/repetir?{query}"
+
+        return jsonify({
+            "ok": True,
+            "link": link,
+            "numero_pedido": pedido.numero_pedido,
+            "items": items_preview[:20],
+            "disponibles": disponibles,
+            "indisponibles_count": indisponibles,
+            "total_estimado": float(pedido.total or 0),
+            "expira_en_seg": _REPETIR_LINK_TTL_SEC,
+        })
+    except Exception:
+        current_app.logger.exception("pedido_repetir_link: fallo")
+        return jsonify({"ok": False, "error": "server_error"}), 500
+
+
 # ─── HISTORIAL PEDIDOS CLIENTE ───────────────
 
 @api_bot_bp.route("/pedidos")

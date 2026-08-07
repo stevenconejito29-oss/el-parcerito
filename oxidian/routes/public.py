@@ -1533,6 +1533,158 @@ def eliminar_carrito(producto_id):
     return redirect(url_for("public.ver_carrito"))
 
 
+@public_bp.route("/carrito/repetir", methods=["GET"])
+def repetir_pedido():
+    """Pre-carga el carrito con el último pedido entregado del cliente.
+
+    Se accede via un link firmado que el bot WhatsApp genera cuando el
+    cliente escribe "repetir" (endpoint api_bot./pedido/repetir-link).
+    Este endpoint valida la firma HMAC, verifica que el pedido siga
+    perteneciendo al cliente y añade sus productos SIMPLES al carrito
+    actual (los productos con extras/sabores/combo/variantes se omiten
+    con aviso — reconstruir el estado de selecciones complejo es
+    frágil y podría generar carritos inconsistentes; el cliente los
+    rehace manualmente).
+
+    Se hace merge con lo que YA tuviera el cliente en el carrito
+    (no lo borra) — quizás estaba armando algo distinto en paralelo.
+    Las cantidades se suman.
+    """
+    import hmac
+    import hashlib
+
+    try:
+        pedido_id = int(request.args.get("pedido") or 0)
+    except (TypeError, ValueError):
+        pedido_id = 0
+    telefono_raw = (request.args.get("tel") or "").strip()
+    try:
+        expiry_ts = int(request.args.get("exp") or 0)
+    except (TypeError, ValueError):
+        expiry_ts = 0
+    signature = (request.args.get("sig") or "").strip()
+
+    if not pedido_id or not telefono_raw or not expiry_ts or not signature:
+        flash("Enlace incompleto. Vuelve a WhatsApp y pide *repetir* de nuevo.", "warning")
+        return redirect(url_for("public.ver_carrito"))
+
+    # Expiry: si el link tiene >5min, el bot debe generar uno nuevo.
+    now_ts = int(datetime.utcnow().timestamp())
+    if now_ts > expiry_ts:
+        flash("El enlace expiró (dura 5 min). Escribe *repetir* de nuevo en WhatsApp.", "warning")
+        return redirect(url_for("public.ver_carrito"))
+
+    # Verificación HMAC en tiempo constante — sin exponer si es firma
+    # inválida o pedido inexistente para no dar señal a un atacante
+    # que pruebe combinaciones.
+    api_key = str(SiteConfig.get("BOT_API_KEY", "") or "").encode("utf-8")
+    if not api_key:
+        current_app.logger.warning("repetir_pedido: BOT_API_KEY vacía; rechazo por seguridad")
+        flash("El enlace no se puede validar ahora mismo.", "warning")
+        return redirect(url_for("public.ver_carrito"))
+    payload = f"{pedido_id}|{telefono_raw}|{expiry_ts}".encode("utf-8")
+    expected = hmac.new(api_key, payload, "sha256").hexdigest()[:24]
+    if not hmac.compare_digest(expected, signature):
+        current_app.logger.warning(
+            "repetir_pedido: firma inválida pedido=%s tel=***%s",
+            pedido_id, telefono_raw[-3:],
+        )
+        flash("Enlace inválido o modificado.", "danger")
+        return redirect(url_for("public.ver_carrito"))
+
+    pedido = db.session.get(Order, pedido_id)
+    if not pedido:
+        flash("No encontré ese pedido para repetir.", "warning")
+        return redirect(url_for("public.ver_carrito"))
+
+    # Doble verificación de ownership: la firma ya vincula el teléfono
+    # al pedido, pero comprobamos que el cliente actual del pedido siga
+    # siendo el mismo (por si borrado/reasignado).
+    from models import normalizar_telefono_cliente
+    tel_norm = normalizar_telefono_cliente(telefono_raw)
+    cliente_pedido = pedido.cliente
+    tel_cliente = normalizar_telefono_cliente(
+        (cliente_pedido.telefono_normalizado or cliente_pedido.telefono) if cliente_pedido else ""
+    )
+    if not tel_cliente or tel_cliente != tel_norm:
+        current_app.logger.warning(
+            "repetir_pedido: ownership mismatch pedido=%s tel_link=***%s tel_pedido=***%s",
+            pedido_id, tel_norm[-3:] if tel_norm else "?",
+            tel_cliente[-3:] if tel_cliente else "?",
+        )
+        flash("Este enlace no coincide con tu cuenta.", "danger")
+        return redirect(url_for("public.ver_carrito"))
+
+    # Reconstrucción del carrito — merge con lo que ya haya.
+    carrito = session.get("carrito", {}) or {}
+    if not isinstance(carrito, dict):
+        carrito = {}
+
+    añadidos = []
+    omitidos_complejos = []
+    omitidos_inactivos = []
+    for item in pedido.items:
+        producto = item.producto
+        if not producto or not producto.activo:
+            omitidos_inactivos.append(
+                (producto.nombre if producto else None) or f"#{getattr(item, 'producto_id', '?')}"
+            )
+            continue
+        # Detección de item "complejo": si tiene combo, extras, sabores,
+        # variant o notas → no lo reconstruimos automáticamente.
+        # La forma segura de detectarlo es leer metadata_json del snapshot.
+        meta = item.get_metadata() if hasattr(item, "get_metadata") else {}
+        meta = meta if isinstance(meta, dict) else {}
+        tiene_combo = bool(meta.get("combo"))
+        tiene_extras = bool(meta.get("extras"))
+        tiene_sabores = bool(meta.get("sabores"))
+        tiene_variante = bool(meta.get("variant_id") or getattr(item, "variant_id", None))
+        es_complejo = tiene_combo or tiene_extras or tiene_sabores or tiene_variante
+        if es_complejo:
+            omitidos_complejos.append(producto.nombre)
+            continue
+        # Producto simple → line_key legacy = str(producto_id). Sumamos
+        # cantidad al carrito existente si ya lo tenía.
+        line_key = str(int(producto.id))
+        prev = int(carrito.get(line_key, 0) or 0)
+        nueva = prev + int(item.cantidad or 0)
+        if nueva <= 0:
+            continue
+        carrito[line_key] = nueva
+        añadidos.append(f"{producto.nombre} × {int(item.cantidad or 0)}")
+
+    if not añadidos:
+        flash(
+            "No pudimos añadir productos del pedido anterior — puede que ya no estén "
+            "disponibles o tuvieran personalizaciones. Explora el catálogo y pide algo nuevo.",
+            "warning",
+        )
+        return redirect(url_for("public.index"))
+
+    _save_carrito(carrito)
+    session.modified = True
+
+    resumen = ", ".join(añadidos[:6])
+    mas = f" y {len(añadidos) - 6} más" if len(añadidos) > 6 else ""
+    flash(
+        f"✅ Añadido a tu carrito del pedido {pedido.numero_pedido}: {resumen}{mas}.",
+        "success",
+    )
+    if omitidos_complejos:
+        flash(
+            "Tu pedido anterior tenía productos con personalizaciones "
+            f"({', '.join(omitidos_complejos[:5])}) — por favor añádelos manualmente "
+            "para elegir opciones (sabores, extras, etc.).",
+            "info",
+        )
+    if omitidos_inactivos:
+        flash(
+            f"Algunos productos ya no están disponibles: {', '.join(omitidos_inactivos[:5])}.",
+            "info",
+        )
+    return redirect(url_for("public.ver_carrito"))
+
+
 @public_bp.route("/carrito")
 def ver_carrito():
     carrito = _get_carrito()
