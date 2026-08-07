@@ -10027,6 +10027,25 @@ app.get('/health', async (req, res) => {
     const payload = response.ok ? await response.json() : {};
     evolutionState = payload.instance?.state || payload.state || evolutionState;
   } catch (_) {}
+  // Snapshot de concurrencia — útil para monitorización operativa y para
+  // diagnosticar si el bot está saturado (10+ clientes simultáneos que era
+  // el escenario del prelaunch). Todos son contadores in-memory O(1).
+  const now = Date.now();
+  const outboundLastMin = _globalOutboundTimes.filter(t => now - t < 60_000).length;
+  const inboundBlockedCount = Array.from(blockedInboundUntil.values())
+    .filter(until => until > now).length;
+  const sesionesActivas = (() => {
+    try {
+      return db.prepare("SELECT COUNT(*) as c FROM sessions WHERE updated_at > ?").get(
+        Math.floor((now - SESSION_TTL) / 1000)
+      )?.c || 0;
+    } catch { return null; }
+  })();
+  const handoffsActivos = (() => {
+    try {
+      return db.prepare("SELECT COUNT(*) as c FROM handoffs").get()?.c || 0;
+    } catch { return null; }
+  })();
   res.json({
     ok: true,
     service: 'chatbot',
@@ -10036,6 +10055,22 @@ app.get('/health', async (req, res) => {
     simulate_send: SIMULATE_EVO_SEND,
     evolution_state: evolutionState,
     whatsapp_connected: SIMULATE_EVO_SEND || evolutionState === 'open',
+    concurrency: {
+      // Colas per-JID que están esperando su turno para _handleMessage.
+      // >5 sostenido = pico de tráfico; >20 = investigar bloqueos.
+      pending_message_queues: messageQueues.size,
+      // Envíos globales en los últimos 60s. Cap MAX_OUTBOUND_GLOBAL_PER_MIN.
+      outbound_last_min: outboundLastMin,
+      outbound_cap_per_min: MAX_OUTBOUND_GLOBAL_PER_MIN,
+      // Números que están cumpliendo penalización por inundar el bot.
+      inbound_blocked: inboundBlockedCount,
+      // Sesiones activas dentro de SESSION_TTL (default 45 min).
+      sesiones_activas: sesionesActivas,
+      // Handoffs vivos (asignados + en cola).
+      handoffs: handoffsActivos,
+    },
+    stats: MSG_STATS,
+    uptime_sec: Math.floor((now - MSG_STATS.since) / 1000),
     ts: new Date().toISOString(),
   });
 });
@@ -10049,15 +10084,35 @@ app.get('/health', async (req, res) => {
 const MSG_STATS = {
   since: Date.now(),
   saludo: 0,        // Respondido con canned de saludo/despedida
-  faq: 0,           // Respondido con CLIENT_FAQS
+  faq: 0,           // Respondido con CLIENT_FAQS en main_menu
   intent: 0,        // Resuelto con detectClientIntent (keywords + fuzzy)
   ai_cache_hit: 0,  // Respondido desde LRU cache de IA
   ai_fresh: 0,      // Llamada nueva a la IA
   ai_fail: 0,       // IA falló o burst limiter cortó
   admin_cmd: 0,     // Comando ejecutado por admin/super_admin
   fallback: 0,      // Ni FAQ ni intent ni IA — mensaje genérico
+  // Métricas UX del cliente confuso (commits 3, 13, 14):
+  faq_mid_flow: 0,           // FAQ respondida mid-flow sin salir del estado
+  despedida_mid_flow: 0,     // Cliente dijo "gracias" en estado activo
+  saludo_mid_flow: 0,        // Cliente re-saludó en estado activo
+  inbound_media: 0,          // Adjunto (audio/imagen/etc.) sin caption
+  inbound_emoji_only_midflow: 0,  // Emoji-only en estado sensible
+  // Derivaciones a humano por tipo (útil para calibrar):
+  handoff_frustracion_early: 0,   // Frustración detectada al entrar
+  handoff_frustracion: 0,         // Frustración tras varios fallbacks
+  handoff_loop: 0,                // Mensaje casi idéntico 3+ veces
+  handoff_intent_fail: 0,         // 3 fallbacks seguidos sin resolver
 };
-function bumpStat(k) { if (MSG_STATS[k] !== undefined) MSG_STATS[k]++; }
+function bumpStat(k) {
+  if (MSG_STATS[k] !== undefined) {
+    MSG_STATS[k]++;
+  } else {
+    // Auto-registro defensivo: si aparece una key nueva no listada,
+    // la contamos en vez de perderla silenciosamente. Facilita ver en
+    // /health si algún handler está incrementando una key desconocida.
+    MSG_STATS[k] = 1;
+  }
+}
 try { globalThis.bumpStat = bumpStat; } catch (_) {}
 
 app.get('/api/metrics', (req, res) => {
