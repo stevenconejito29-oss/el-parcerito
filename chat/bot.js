@@ -39,6 +39,12 @@ const blockedInboundUntil = new Map();
 const outboundBuckets = new Map();
 const recentOutboundTexts = new Map();
 const apiBuckets = new Map();
+// Dedup del log admin_probe_attempt: 1 entrada por JID cada 10 min.
+// Sin esto, un atacante que manda `!x` en bucle satura el log (hasta
+// 18 líneas/min por JID). El primer probe queda registrado; el resto
+// se sigue detectando y bloqueando silenciosamente en flujo pero sin
+// duplicar la entrada de auditoría hasta que pase el cooldown.
+const _adminProbeLastLogAt = new Map();
 let lastOutboundAt = 0;
 const MIN_INBOUND_MS = parseInt(process.env.BOT_MIN_INBOUND_MS || '900', 10);
 const MIN_ADMIN_ACTION_MS = parseInt(process.env.BOT_MIN_ADMIN_ACTION_MS || '2500', 10);
@@ -4714,12 +4720,28 @@ async function _handleMessage(jid, text, pushName, context = {}) {
      `/precio`, etc.), lo logueamos silenciosamente sin responder para
      no revelar la existencia del panel — pero sí queremos detectar
      patrones de sondeo antes de que escalen. El cliente sigue por el
-     flujo normal (menú/intent) sin recibir nada especial. */
+     flujo normal (menú/intent) sin recibir nada especial.
+
+     Dedup: rate-limitamos a 1 log por JID cada 10 min. Sin esto un
+     atacante que manda `!x` en bucle inunda el log con hasta
+     MAX_INBOUND_PER_WINDOW=18 entradas/min por JID = 25920 líneas/día.
+     La primera detección es la informativa; las siguientes suman
+     ruido sin aportar señal (misma persona, mismo patrón). */
   if (!isOwner) {
     const adminProbe = /^(?:!|\/(?:config|precio|stock|pedidos|cliente|puntos|admin|emergency|pausa|resumir|crear-|borrar-|reset|nicho|modulo))/i;
     if (adminProbe.test(lower)) {
-      log('warn', 'admin_probe_attempt',
-        `from=${phoneFromJid(jid) || jid} text=${text.slice(0, 60)}`);
+      const nowSec = Math.floor(Date.now() / 1000);
+      const lastAt = _adminProbeLastLogAt.get(jid) || 0;
+      const PROBE_LOG_COOLDOWN_SEC = 600;
+      if (nowSec - lastAt >= PROBE_LOG_COOLDOWN_SEC) {
+        _adminProbeLastLogAt.set(jid, nowSec);
+        // GC ligero: si el Map crece mucho, prunamos los más antiguos.
+        if (_adminProbeLastLogAt.size > 500) {
+          pruneMap(_adminProbeLastLogAt, 400);
+        }
+        log('warn', 'admin_probe_attempt',
+          `from=${phoneFromJid(jid) || jid} text=${text.slice(0, 60)}`);
+      }
     }
   }
 
