@@ -381,6 +381,14 @@ function sobreNosotros(ctx) {
   bloques.push(
     `✅ *Pago 100% contra entrega.* No pedimos datos de tarjeta ni por WhatsApp ni por la web.`
   );
+  // Sale-CTA suave al final: cerrar "sobre nosotros" con un impulso a
+  // acción evita que la respuesta se sienta "meramente informativa".
+  // Solo se añade si hay tiendaUrl configurada — sin URL no hay dónde
+  // enviar al cliente y forzar un CTA vacío sonaría inseguro.
+  const tiendaUrl = String(ctx.tiendaUrl || "").trim();
+  if (tiendaUrl) {
+    bloques.push(`¿Empezamos tu pedido? 👉 ${tiendaUrl}`);
+  }
   return bloques.join("\n\n");
 }
 
@@ -432,6 +440,115 @@ function pagoContraEntregaTrust(ctx) {
   ).trimEnd();
 }
 
+// ─── Pools de mensajes rotativos ────────────────────────────────────────
+//
+// Variar frases evita el efecto "bot repetitivo" que percibe el cliente
+// tras ~3 interacciones idénticas. Cada helper devuelve un ARRAY que el
+// llamador elige con su función `pick()` — mantenemos el módulo puro
+// (sin dependencias) para poder testear sin arrancar el bot.
+//
+// Reglas de contenido:
+//   1. Impulso de venta suave: cada frase tiene el link a la tienda o
+//      un call-to-action ("¿Empezamos?", "Un clic 🛵") — sin agresividad.
+//   2. Confianza: mencionar "reparto propio", "contra entrega", nombre
+//      del negocio cuando ayude. Evitar promesas huecas.
+//   3. Longitud corta: cliente de WhatsApp lee líneas, no párrafos.
+
+/**
+ * Aperturas de bienvenida — pool amplio para no repetir. La firma
+ * recibe `ctx` con `nombre`, `hora` (Buenos días / Buenas tardes /
+ * Buenas noches), `esRecurrente` (bool), y `banner` opcional.
+ *
+ * @param {{nombre?:string, hora:string, esRecurrente?:boolean}} ctx
+ * @returns {string[]} pool listo para `pick()`
+ */
+function welcomeVariants(ctx) {
+  const nombre = String(ctx?.nombre || '').trim();
+  const hora   = String(ctx?.hora || 'Hola').trim();
+  const recurrente = Boolean(ctx?.esRecurrente);
+  const pool = [];
+  // Aperturas base (siempre presentes)
+  if (nombre) {
+    pool.push(`${hora}, ${nombre} 👋`);
+    pool.push(`¡Hola de nuevo, ${nombre}! 🙌`);
+    pool.push(`${hora}, ${nombre}. Me alegra verte por aquí.`);
+    pool.push(`¡${nombre}, qué bueno saludarte! 💛`);
+  } else {
+    pool.push(`${hora} 👋`);
+    pool.push(`¡Hola! Encantados de saludarte 🙌`);
+    pool.push(`${hora}. Bienvenid@ 💛`);
+    pool.push(`¡Hola! Aquí estamos para tu pedido.`);
+  }
+  // Aperturas específicas para cliente recurrente (ya conocido)
+  if (recurrente) {
+    pool.push(nombre ? `¡${nombre}, siempre un gusto! 🌟` : `¡Siempre un gusto verte! 🌟`);
+    pool.push(nombre ? `${nombre}, ¿lo de siempre? 😊` : `¿Preparamos lo de siempre? 😊`);
+  }
+  return pool;
+}
+
+/**
+ * Call-to-actions de venta suave para cerrar respuestas informativas
+ * (horario, cobertura, pago, "sobre nosotros"). Se añaden al final del
+ * mensaje para reconducir hacia la compra sin ser insistentes.
+ *
+ * Evita "¡COMPRA YA!" — cliente WhatsApp se aleja. Tono conversacional.
+ *
+ * @param {{tiendaUrl?:string}} ctx
+ * @returns {string[]}
+ */
+function saleCTAVariants(ctx) {
+  const url = String(ctx?.tiendaUrl || '').trim();
+  const link = url ? ` 👉 ${url}` : '';
+  return [
+    `¿Empezamos tu pedido?${link}`,
+    `Un clic y te llega a casa 🛵${link}`,
+    `Cuando quieras pedir, aquí estamos.${link}`,
+    `¿Te preparamos algo hoy?${link}`,
+    `Pedir es rápido — 2 minutos y listo.${link}`,
+    `Cuando lo pidas, te llega calentito 🔥${link}`,
+  ];
+}
+
+/**
+ * Frases de fallback ("no entendí") con variantes para no repetir la
+ * misma línea si el cliente insiste. El llamador ya limita reintentos
+ * vía `bumpAttempt`; el pool solo evita la sensación de "bot pegado".
+ */
+function fallbackVariants() {
+  return [
+    'No estoy seguro de qué necesitas. Escribe *MENU* para ver opciones o *AGENTE* para hablar con una persona.',
+    'No lo entendí bien 😅 Puedes escribir *MENU* para ver las opciones o *AGENTE* si prefieres una persona.',
+    'Perdona, no capté eso. Prueba con *MENU* para ver qué puedo hacer.',
+    'No lo tengo claro. Escribe *MENU* para las opciones disponibles.',
+  ];
+}
+
+/**
+ * Despedidas variadas — se pican cuando el cliente cierra el chat con
+ * "gracias" o "hasta luego". Suave impulso: mencionar que estamos aquí
+ * cuando quiera pedir.
+ *
+ * @param {{nombre?:string}} ctx
+ */
+function farewellVariants(ctx) {
+  const nombre = String(ctx?.nombre || '').trim();
+  const con = nombre ? `, ${nombre}` : '';
+  return [
+    `¡Hasta pronto${con}! 💛 Escríbeme cuando quieras pedir 🛵`,
+    `¡Un placer${con}! 😊 Aquí estoy cuando lo necesites.`,
+    `¡Chao${con}! 👋 Cuando te apetezca algo rico, ya sabes 🔥`,
+    `¡Gracias a ti${con}! 💛 Vuelve cuando quieras — el pedido siempre te está esperando.`,
+  ];
+}
+
+/**
+ * Rota confirmaciones ("recibido", "listo") para no sonar robótico.
+ */
+function ackVariants() {
+  return ['Recibido ✅', 'Perfecto ✨', 'Listo 👍', 'Anotado ✍️', 'Vamos a ello 🚀'];
+}
+
 module.exports = {
   ESCAPE_HINT,
   FALLBACK_HINT,
@@ -451,4 +568,9 @@ module.exports = {
   sobreNosotros,
   redesSociales,
   pagoContraEntregaTrust,
+  welcomeVariants,
+  saleCTAVariants,
+  fallbackVariants,
+  farewellVariants,
+  ackVariants,
 };

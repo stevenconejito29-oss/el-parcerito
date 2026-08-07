@@ -4230,12 +4230,13 @@ function _primerNombre(raw) {
 function bienvenidaConversacional(ses) {
   const nombre = _primerNombre(ses?.nombre);
   const hora = saludoHora();
-  // Pool de aperturas para no sonar repetitivo (humano).
-  const aperturas = [
-    nombre ? `${hora}, ${nombre} 👋` : `${hora} 👋`,
-    nombre ? `¡Hola ${nombre}!` : `¡Hola!`,
-    nombre ? `${hora}, ${nombre}. Me alegra verte por aquí.` : `${hora}. Encantado de saludarte.`,
-  ];
+  // Cliente recurrente: enriquecido desde /ai/cliente-context (ver
+  // `cliente_pedidos_recientes` en `_handleMessage`). Si es la primera
+  // vez que llega, `esRecurrente=false` → pool de aperturas más neutro.
+  const esRecurrente = Number(ses?.cliente_pedidos_recientes || 0) >= 2;
+  // Pool amplio desde texts.js (variantes por nombre + hora + tipo de
+  // cliente). Evita el efecto "bot repetitivo" tras varias visitas.
+  const aperturas = texts.welcomeVariants({ nombre, hora, esRecurrente });
   // La identidad operativa se conserva, pero el contexto actual es cliente.
   const banner = isAdminClientMode(ses?.jid, ses)
     ? `🛒 *Modo cliente activo.* Estás offline para atención. Usa */online* para volver al panel.\n\n`
@@ -7044,6 +7045,7 @@ const CLIENT_FAQS = [
       cobertura: ctx.zona_cobertura_resumen,
       telefono: ctx.telefono,
       ciudad: ctx.ciudad,
+      tiendaUrl: ctx.tiendaUrl,
     }),
   },
   {
@@ -7508,6 +7510,7 @@ const MANUAL_SECTIONS = [
       mensajeConfianza: ctx.mensaje_confianza,
       cobertura: ctx.zona_cobertura_resumen,
       telefono: ctx.telefono,
+      tiendaUrl: ctx.tiendaUrl,
       // No pasamos `ciudad` para no sugerir sede física — la cobertura
       // ya comunica dónde repartimos sin implicar "estamos aquí".
     }),
