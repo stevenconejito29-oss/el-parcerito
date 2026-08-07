@@ -571,6 +571,39 @@ function setRuntimeAdmins(list) {
   return runtime;
 }
 
+/**
+ * Revoca en caliente el acceso de un teléfono admin: cierra handoffs
+ * asignados, borra su disponibilidad y wipe su sesión. Idempotente y
+ * transaccional (todo o nada por teléfono). No borra datos históricos
+ * de conversaciones ni logs — solo el estado vivo.
+ *
+ * Devuelve `{ handoffsUnassigned }` para que el llamador pueda
+ * auditar el alcance del cambio. Se usa desde:
+ *   - replaceRuntimeAdmins (cambio manual de runtime admins).
+ *   - syncBranding cuando detecta que un admin/super_admin quedó
+ *     fuera de la lista o cambió de rol respecto al sync anterior.
+ */
+function revokeAdminAccess(phone) {
+  const clean = normalizePhone(phone);
+  if (!clean) return { handoffsUnassigned: 0 };
+  const adminJid = `${clean}@s.whatsapp.net`;
+  let assigned = [];
+  db.transaction(() => {
+    assigned = db.prepare(
+      `SELECT client_jid FROM handoffs WHERE admin_jid = ?`
+    ).all(adminJid);
+    db.prepare(`
+      UPDATE handoffs
+      SET admin_jid = NULL, assigned_at = NULL
+      WHERE admin_jid = ?
+    `).run(adminJid);
+    for (const row of assigned) clearAdminChatForClient(row.client_jid);
+    db.prepare(`DELETE FROM admin_availability WHERE admin_jid = ?`).run(adminJid);
+    db.prepare(`DELETE FROM sessions WHERE jid = ?`).run(adminJid);
+  })();
+  return { handoffsUnassigned: assigned.length };
+}
+
 function replaceRuntimeAdmins(list) {
   const previous = new Set(runtimeAdminPhones());
   const runtime = setRuntimeAdmins(list);
@@ -579,18 +612,7 @@ function replaceRuntimeAdmins(list) {
 
   db.transaction(() => {
     for (const phone of removed) {
-      const adminJid = `${phone}@s.whatsapp.net`;
-      const assigned = db.prepare(
-        `SELECT client_jid FROM handoffs WHERE admin_jid = ?`
-      ).all(adminJid);
-      db.prepare(`
-        UPDATE handoffs
-        SET admin_jid = NULL, assigned_at = NULL
-        WHERE admin_jid = ?
-      `).run(adminJid);
-      for (const row of assigned) clearAdminChatForClient(row.client_jid);
-      db.prepare(`DELETE FROM admin_availability WHERE admin_jid = ?`).run(adminJid);
-      db.prepare(`DELETE FROM sessions WHERE jid = ?`).run(adminJid);
+      revokeAdminAccess(phone);
     }
   })();
 
@@ -3717,6 +3739,46 @@ async function syncBranding() {
       if (flowLimits[key] !== undefined && flowLimits[key] !== null) {
         setCfg(key, String(flowLimits[key]));
       }
+    }
+    // Revocación en caliente de acceso admin: comparamos el perfil viejo
+    // (lo que estaba cacheado antes de este sync) contra el nuevo (BD).
+    // Cualquier teléfono que:
+    //   - Estaba y ya NO está: super_admin/admin desactivado o eliminado.
+    //   - Cambió de rol (super_admin → admin, por ejemplo): la caída de
+    //     capabilities debe surtir efecto inmediato — su sesión actual
+    //     podría estar en un estado que ya no le corresponde.
+    // Se le wipe sesión + handoff activo + audit critical. Sin esto, la
+    // ventana de exposición es hasta BRANDING_SYNC_INTERVAL_MS (10 min)
+    // desde que el super_admin cambió el rol en /superadmin/usuarios.
+    try {
+      const nuevos = Array.isArray(data.whatsapp_roles) ? data.whatsapp_roles : [];
+      const anteriorRaw = String(cfg('whatsapp_role_profiles', '[]') || '[]');
+      let anteriores = [];
+      try { anteriores = JSON.parse(anteriorRaw) || []; } catch { anteriores = []; }
+      if (Array.isArray(anteriores) && anteriores.length) {
+        const byPhone = new Map();
+        for (const row of nuevos) {
+          const tel = normalizePhone(row?.telefono);
+          if (tel) byPhone.set(tel, row);
+        }
+        for (const prev of anteriores) {
+          const tel = normalizePhone(prev?.telefono);
+          if (!tel) continue;
+          const now = byPhone.get(tel);
+          const rolCambiado = now && now.rol !== prev.rol;
+          const desaparecido = !now;
+          if (desaparecido || rolCambiado) {
+            const razon = desaparecido ? 'removido_de_bd' : `rol_cambiado:${prev.rol}->${now?.rol || 'ninguno'}`;
+            const result = revokeAdminAccess(tel);
+            log('warn', 'admin_revoked_by_branding',
+                `phone=***${tel.slice(-3)} razon=${razon} handoffs_liberados=${result.handoffsUnassigned}`);
+          }
+        }
+      }
+    } catch (revokeErr) {
+      // Fallo en revocación NO debe bloquear el sync: mejor sync parcial
+      // que sync abortado. Log warn y seguimos.
+      log('warn', 'admin_revoke_diff_fail', revokeErr?.message || String(revokeErr));
     }
     setCfg('whatsapp_role_profiles', JSON.stringify(
       Array.isArray(data.whatsapp_roles) ? data.whatsapp_roles : []
