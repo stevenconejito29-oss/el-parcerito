@@ -4092,8 +4092,25 @@ const _sesUps = db.prepare(`
     bar_nombre=excluded.bar_nombre, updated_at=unixepoch()
 `);
 
+/**
+ * Cap defensivo: JSON.parse sobre strings gigantes bloquea el event loop
+ * y come memoria. Un `pending_json` corrupto en BD (bug, escritura manual,
+ * o antojo de un backup mal restaurado) podría llegar a MB y colgar el
+ * bot durante segundos por sesión. Rechazar >32KB devuelve el fallback y
+ * loguea — el estado de la sesión se pierde pero el proceso sobrevive.
+ * 32KB es 8× el mayor pending observado y 2× cualquier caso legítimo
+ * plausible (lista de pedidos activos, contexto de un flujo largo).
+ */
+const _PARSE_JSON_MAX_CHARS = 32 * 1024;
+
 function parseJsonSafe(value, fallback) {
-  try { return JSON.parse(value || ''); } catch { return fallback; }
+  const s = String(value || '');
+  if (s.length > _PARSE_JSON_MAX_CHARS) {
+    log('warn', 'parse_json_too_large',
+        `chars=${s.length} cap=${_PARSE_JSON_MAX_CHARS} — devolviendo fallback`);
+    return fallback;
+  }
+  try { return JSON.parse(s); } catch { return fallback; }
 }
 
 function getSesion(jid) {
@@ -4129,19 +4146,34 @@ function getSesion(jid) {
   };
 }
 
+// Cap de tamaño de pending serializado: previene que un bug de código
+// hinche el pending con datos grandes (respuestas de API cacheadas por
+// error, contexto AI, etc.) y que esa cifra se persista sesión tras
+// sesión hasta que sea patológica. Si se supera → guardamos pending
+// vacío y log critical para investigar la causa. La sesión pierde su
+// contexto activo pero el bot no se ahoga.
+const _PENDING_MAX_CHARS = 8 * 1024;
+
 function saveSesion(ses) {
   // Un fallo al persistir la sesión no debe tirar todo el turn. Preferimos
   // trabajar con sesión efímera y avisar a logs a "romper" al cliente. La
   // próxima llamada recreará la sesión desde `getSesion()`.
   try {
     const role = isAdminJid(ses.jid) ? 'admin' : (ses.role || 'client');
+    const carritoStr = JSON.stringify(ses.carrito || []);
+    let pendingStr = JSON.stringify(ses.pending || {});
+    if (pendingStr.length > _PENDING_MAX_CHARS) {
+      log('error', 'pending_too_large',
+          `jid=${ses.jid} chars=${pendingStr.length} cap=${_PENDING_MAX_CHARS} — reset a {}`);
+      pendingStr = '{}';
+    }
     _sesUps.run(
       ses.jid,
       ses.nombre || null,
       role,
       ses.estado,
-      JSON.stringify(ses.carrito || []),
-      JSON.stringify(ses.pending || {}),
+      carritoStr,
+      pendingStr,
       ses.zona_id ?? null,
       ses.active_client_jid || null,
       ses.bar_id ?? null,
