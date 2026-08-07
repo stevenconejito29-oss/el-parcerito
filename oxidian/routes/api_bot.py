@@ -708,6 +708,28 @@ def branding():
             "handoff_inactivity_sec": SiteConfig.get("BOT_HANDOFF_INACTIVITY_SEC", "900"),
         },
         "whatsapp_roles": whatsapp_roles,
+        # Presencia pública + confianza. Todo opt-in vía SiteConfig: si
+        # una URL está vacía el bot omite ese canal en las respuestas —
+        # no manda enlaces rotos ni menciones huérfanas.
+        "presencia": {
+            "miniapp": {
+                "enabled": _config_bool("MINIAPP_ENABLED", "1"),
+                # Fallback deliberado a tienda_url para que activar
+                # MINIAPP_ENABLED sin fijar MINIAPP_URL siga funcionando.
+                "url": (SiteConfig.get("MINIAPP_URL", "") or "").strip() or tienda_url,
+                "nombre": (SiteConfig.get("MINIAPP_NOMBRE", "Mini App") or "Mini App").strip(),
+            },
+            "redes": {
+                "instagram": (SiteConfig.get("URL_INSTAGRAM", "") or "").strip(),
+                "facebook": (SiteConfig.get("URL_FACEBOOK", "") or "").strip(),
+                "tiktok": (SiteConfig.get("URL_TIKTOK", "") or "").strip(),
+            },
+            "confianza": {
+                "mensaje": (SiteConfig.get("MENSAJE_CONFIANZA", "") or "").strip(),
+                "cobertura": (SiteConfig.get("ZONA_COBERTURA_RESUMEN", "") or "").strip(),
+                "descripcion": (SiteConfig.get("DESCRIPCION_NEGOCIO", "") or "").strip(),
+            },
+        },
     })
 
 

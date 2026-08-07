@@ -450,6 +450,54 @@ DEFAULTS: dict[str, dict] = {
             "para reimpresión. Cap 1-50."
         ),
     },
+
+    # ── Presencia pública y confianza (Mini App + redes) ───────────────
+    # Estas claves alimentan al chatbot vía /api/bot/branding para que
+    # pueda invitar al cliente a instalar la Mini App (PWA), enlazar
+    # redes sociales y reforzar mensajes de confianza sin hardcoding.
+    "MINIAPP_ENABLED": {
+        "default": "1",
+        "type": "bool",
+        "desc": "Activa la invitación a instalar la Mini App (PWA) en respuestas del chatbot.",
+    },
+    "MINIAPP_URL": {
+        "default": "",
+        "type": "str",
+        "desc": "URL pública de la Mini App. Si vacío, el bot usa TIENDA_URL.",
+    },
+    "MINIAPP_NOMBRE": {
+        "default": "Mini App",
+        "type": "str",
+        "desc": "Nombre visible de la Mini App en mensajes al cliente (ej: Mini App, Atajo, App).",
+    },
+    "URL_INSTAGRAM": {
+        "default": "",
+        "type": "str",
+        "desc": "URL completa de Instagram (ej: https://instagram.com/elparcerito.carmona). Vacío = no se ofrece.",
+    },
+    "URL_FACEBOOK": {
+        "default": "",
+        "type": "str",
+        "desc": "URL completa de Facebook. Vacío = no se ofrece en respuestas del chatbot.",
+    },
+    "URL_TIKTOK": {
+        "default": "",
+        "type": "str",
+        "desc": "URL de TikTok (opcional). Vacío = no se ofrece.",
+    },
+    "MENSAJE_CONFIANZA": {
+        "default": (
+            "Somos un equipo local de Carmona con reparto propio a toda la zona urbana. "
+            "Pago 100% contra entrega — nunca pedimos datos de tarjeta por WhatsApp."
+        ),
+        "type": "str",
+        "desc": "Frase corta de confianza que el bot añade en respuestas 'sobre nosotros' y pago.",
+    },
+    "ZONA_COBERTURA_RESUMEN": {
+        "default": "Toda la zona urbana de Carmona.",
+        "type": "str",
+        "desc": "Resumen breve de cobertura de reparto para respuestas rápidas del chatbot.",
+    },
 }
 
 

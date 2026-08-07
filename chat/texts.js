@@ -301,6 +301,130 @@ const HANDOFF_REQUEUED = (
   `Conservamos el historial y otro agente podrá continuar la conversación.`
 );
 
+// ─── Presencia pública, confianza y Mini App ────────────────────────────
+//
+// La "Mini App" es cómo llamamos internamente a la PWA de la tienda —
+// deliberadamente evitamos las palabras "PWA", "webapp" o "atajo" en
+// mensajes al cliente. El cliente medio no reconoce esos términos y
+// baja la confianza. "Mini App" transmite algo ligero, oficial y
+// familiar (mismo naming que WhatsApp, Telegram y Google usan hoy).
+//
+// Estas funciones son puras: reciben el `ctx` ya resuelto por el bot
+// desde `/branding` (`presencia.miniapp`, `presencia.redes`,
+// `presencia.confianza`) y devuelven la cadena final. Los campos
+// opcionales (redes vacías, sin descripción) se omiten limpiamente en
+// vez de mostrar líneas huérfanas — así el mismo texto sirve para
+// tiendas que aún no configuraron su Instagram.
+
+/**
+ * Invitación a instalar la Mini App con tutorial paso a paso Android/iOS.
+ * Se ofrece al final de respuestas donde el cliente pregunta por la app,
+ * la web o cómo hacer un pedido más cómodo.
+ *
+ * @param {{
+ *   nombreNegocio: string,
+ *   miniappNombre: string,    // "Mini App" por defecto
+ *   miniappUrl: string,       // Fallback a tienda_url ya resuelto en el backend
+ * }} ctx
+ */
+function miniAppInvite(ctx) {
+  const nombreApp = String(ctx.miniappNombre || "Mini App").trim() || "Mini App";
+  return (
+    `📱 *La ${nombreApp} de ${ctx.nombreNegocio}*\n\n` +
+    `Es una versión ligera de nuestra tienda que se instala en tu móvil ` +
+    `en 10 segundos. No pasa por Google Play ni App Store, no ocupa espacio ` +
+    `y no pide permisos raros.\n\n` +
+    `👉 Ábrela primero aquí: ${ctx.miniappUrl}\n\n` +
+    `*Cómo instalarla:*\n` +
+    `📱 *Android (Chrome):* toca los ⋮ arriba a la derecha → *"Añadir a pantalla ` +
+    `de inicio"* o *"Instalar app"*.\n` +
+    `🍎 *iPhone (Safari):* toca el botón compartir ⬆️ abajo → *"Añadir a ` +
+    `pantalla de inicio"*.\n\n` +
+    `Aparecerá como un icono más en tu móvil. Al abrirlo verás el catálogo ` +
+    `completo, tus puntos y podrás pedir en dos toques.`
+  );
+}
+
+/**
+ * Bloque de confianza / "quiénes somos". Combina la descripción configurada
+ * en admin con la frase corporativa de confianza y la cobertura, evitando
+ * repetir información ya visible en otras respuestas.
+ *
+ * @param {{
+ *   nombreNegocio: string,
+ *   descripcion?: string,     // DESCRIPCION_NEGOCIO desde SiteConfig
+ *   mensajeConfianza?: string,// MENSAJE_CONFIANZA
+ *   cobertura?: string,       // ZONA_COBERTURA_RESUMEN
+ *   telefono?: string,
+ *   ciudad?: string,
+ * }} ctx
+ */
+function sobreNosotros(ctx) {
+  const bloques = [`🤝 *Sobre ${ctx.nombreNegocio}*`];
+  const desc = String(ctx.descripcion || "").trim();
+  if (desc) bloques.push(desc);
+  const confianza = String(ctx.mensajeConfianza || "").trim();
+  if (confianza) bloques.push(confianza);
+  const detalles = [];
+  const cobertura = String(ctx.cobertura || "").trim();
+  if (cobertura) detalles.push(`🛵 *Cobertura:* ${cobertura}`);
+  if (ctx.telefono) detalles.push(`📞 *Teléfono:* ${ctx.telefono}`);
+  if (ctx.ciudad) detalles.push(`📍 *Base:* ${ctx.ciudad}`);
+  if (detalles.length) bloques.push(detalles.join("\n"));
+  bloques.push(
+    `✅ *Pago 100% contra entrega.* No pedimos datos de tarjeta ni por WhatsApp ni por la web.`
+  );
+  return bloques.join("\n\n");
+}
+
+/**
+ * Enlaces a redes sociales. Se omiten silenciosamente las redes sin URL
+ * configurada. Devuelve `null` si no hay ni una red — el llamador decide
+ * qué mostrar en ese caso (típicamente un fallback a "aún no publicamos
+ * en redes").
+ *
+ * @param {{
+ *   nombreNegocio: string,
+ *   instagram?: string,
+ *   facebook?: string,
+ *   tiktok?: string,
+ * }} ctx
+ * @returns {string|null}
+ */
+function redesSociales(ctx) {
+  const items = [];
+  if (ctx.instagram) items.push(`📸 *Instagram:* ${ctx.instagram}`);
+  if (ctx.facebook)  items.push(`👥 *Facebook:* ${ctx.facebook}`);
+  if (ctx.tiktok)    items.push(`🎵 *TikTok:* ${ctx.tiktok}`);
+  if (!items.length) return null;
+  return (
+    `🌐 *Síguenos en redes*\n\n` +
+    `Novedades, promociones y platos del día:\n\n` +
+    `${items.join("\n")}\n\n` +
+    `Un mensaje directo por aquí siempre es la vía más rápida para tu pedido.`
+  );
+}
+
+/**
+ * Refuerzo de confianza específico para el mensaje de pago. Se usa como
+ * complemento a la FAQ existente `metodos_pago`, no la sustituye — el
+ * objetivo es reducir la ansiedad del cliente que nunca ha comprado con
+ * nosotros dejando explícito que NO se pide tarjeta anticipada.
+ *
+ * @param {{ tiendaUrl?: string }} ctx
+ */
+function pagoContraEntregaTrust(ctx) {
+  return (
+    `🔒 *Cómo se paga*\n\n` +
+    `Pago *100% contra entrega* — cuando el pedido llega a tu puerta.\n` +
+    `• Nunca pedimos número de tarjeta por WhatsApp.\n` +
+    `• Nunca pedimos datos anticipados por la web.\n` +
+    `• Si quieres tarjeta al recibir, dilo al confirmar el pedido y el ` +
+    `repartidor lleva datáfono.\n\n` +
+    (ctx.tiendaUrl ? `Empieza tu pedido aquí 👉 ${ctx.tiendaUrl}` : "")
+  ).trimEnd();
+}
+
 module.exports = {
   ESCAPE_HINT,
   FALLBACK_HINT,
@@ -316,4 +440,8 @@ module.exports = {
   adminMenu,
   handoffClosedMessage,
   withEscapeHint,
+  miniAppInvite,
+  sobreNosotros,
+  redesSociales,
+  pagoContraEntregaTrust,
 };
