@@ -169,6 +169,12 @@ function barMenu(ctx) {
  *   nombreNegocio: string,
  *   barServicio: boolean,
  *   isSuperAdmin: boolean,
+ *   nombreAdmin?: string,         // Nombre real del admin (resuelto desde BD).
+ *                                 // Cuando hay varios super_admin conviven en
+ *                                 // el mismo bot; mostrar el nombre real
+ *                                 // (en vez de solo "Super Admin") aclara
+ *                                 // quién está usando el panel y sirve de
+ *                                 // recordatorio de identidad.
  *   sections: Array<{n: string|number, label: string}>,  // 1-11
  *   can: {                        // permisos ya resueltos por adminCan()
  *     status: boolean,
@@ -182,10 +188,11 @@ function barMenu(ctx) {
  * }} ctx
  */
 function adminMenu(ctx) {
-  const header = (
-    `🔐 *Panel ${ctx.rolLabel} — ${ctx.nombreNegocio}*\n` +
-    `_🟢 Modo operativo · solo acciones inmediatas y seguras._`
-  );
+  const saludoNombre = String(ctx.nombreAdmin || '').trim();
+  const linea1 = `🔐 *Panel ${ctx.rolLabel} — ${ctx.nombreNegocio}*`;
+  const linea2 = saludoNombre ? `👋 Hola, *${saludoNombre}*.` : '';
+  const linea3 = `_🟢 Modo operativo · solo acciones inmediatas y seguras._`;
+  const header = [linea1, linea2, linea3].filter(Boolean).join('\n');
 
   const sectionsBlock = ctx.sections.length
     ? `📂 *Secciones* _(responde con el número)_\n${

@@ -4222,11 +4222,20 @@ function adminMenu(jid) {
     adminCan(jid, 'client_mode') ? { n: '5️⃣', label: 'Pasar a modo cliente' } : null,
   ].filter(Boolean);
 
+  // Nombre real del admin desde perfil BD. Cuando hay varios super_admin
+  // conviviendo (Panzeta + pirris, por ejemplo), mostrar el nombre real
+  // en la cabecera del menú aclara quién está usando el panel y ayuda a
+  // detectar si alguien más entró desde el mismo teléfono por error.
+  // Fallback: si aún no hay perfil BD cacheado (bootstrap), pasamos vacío
+  // y la plantilla omite silenciosamente la línea de saludo.
+  const perfil = whatsappRoleProfile(phoneFromJid(jid));
+  const nombreAdmin = (perfil?.nombre || '').trim();
   return texts.adminMenu({
     rolLabel: adminRoleLabel(jid),
     nombreNegocio: getNegocioNombre(),
     barServicio: isBarServicio(),
     isSuperAdmin: isSuperAdminJid(jid),
+    nombreAdmin,
     sections,
     can: {
       status:   adminCan(jid, 'status'),
