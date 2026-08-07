@@ -79,7 +79,9 @@
         </div>
       </div>
 
-      {# Comisión para el afiliado #}
+      {# Comisión para el afiliado — soporta puntos (granos de café) además
+         de € para retrocompat. Puntos = moneda interna canjeable, se
+         acreditan directo al User del afiliado sin StaffPayment. #}
       <div class="md:col-span-3">
         <p class="text-xs font-bold mb-2 uppercase tracking-wide" style="color:#5EF097">💚 Comisión para el AFILIADO por cada pedido</p>
         <div class="grid grid-cols-2 gap-3">
@@ -87,16 +89,21 @@
             <label class="af-label">Tipo de comisión</label>
             <select name="comision_tipo" class="af-select">
               <option value="">Sin comisión</option>
-              <option value="porcentaje">% del pedido</option>
+              <option value="puntos">🌱 Puntos (granos de café)</option>
+              <option value="porcentaje">% del pedido (€)</option>
               <option value="monto_fijo">€ por pedido</option>
             </select>
           </div>
           <div>
             <label class="af-label">Valor</label>
             <input type="number" name="comision_valor" step="0.01" min="0" value="0" class="af-input">
-            <p class="text-xs mt-1" style="color:var(--col-faint)">En porcentaje, máximo 100%.</p>
+            <p class="text-xs mt-1" style="color:var(--col-faint)">Porcentaje ≤100. Puntos: entero, ≤10.000 por uso.</p>
           </div>
         </div>
+        <p class="text-xs mt-2" style="color:var(--col-faint)">
+          <strong style="color:#5EF097">🌱 Puntos:</strong> el afiliado los recibe canjeables en su próximo pedido — permite asignar el código a un cliente registrado.<br>
+          <strong>€ (porcentaje/monto):</strong> genera pago liquidable — requiere usuario staff (admin/preparación/repartidor/proveedor).
+        </p>
       </div>
 
       <div>
@@ -153,7 +160,15 @@
           <span style="color:#5AC8FA">💙 Cliente: {{ c.descuento_valor }}{{ '%' if c.descuento_tipo == 'porcentaje' else '€' }}</span>
           {% endif %}
           {% if c.comision_tipo %}
-          <span style="color:#5EF097">💚 Afiliado: {{ c.comision_valor }}{{ '%' if c.comision_tipo == 'porcentaje' else '€' }}</span>
+          <span style="color:#5EF097">💚 Afiliado:
+            {%- if c.comision_tipo == 'puntos' -%}
+              {{ ' ' }}🌱 {{ c.comision_valor|int }} granos
+            {%- elif c.comision_tipo == 'porcentaje' -%}
+              {{ ' ' }}{{ c.comision_valor }}%
+            {%- else -%}
+              {{ ' ' }}{{ c.comision_valor }}€
+            {%- endif -%}
+          </span>
           {% endif %}
           <span>Usos: {{ c.usos_actuales }}{% if c.usos_maximos %}/{{ c.usos_maximos }}{% endif %}</span>
           {% if c.fecha_fin %}<span>Hasta {{ c.fecha_fin.strftime('%d/%m/%Y') }}</span>{% endif %}
@@ -248,7 +263,8 @@
           <label class="af-label">Tipo comisión afiliado</label>
           <select name="comision_tipo" id="af-edit-com-tipo" class="af-select">
             <option value="">Sin comisión</option>
-            <option value="porcentaje">% del pedido</option>
+            <option value="puntos">🌱 Puntos (granos)</option>
+            <option value="porcentaje">% del pedido (€)</option>
             <option value="monto_fijo">€ por pedido</option>
           </select>
         </div>
