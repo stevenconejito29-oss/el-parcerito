@@ -591,6 +591,14 @@
         </div>
         <p id="ox-app-tools-status" aria-live="polite"></p>
       </div>
+      {# Acceso staff discreto: solo visible dentro del info-sheet, en el pie.
+         No lo ve un cliente casual — hay que abrir el panel de información
+         y llegar al final. Complementa el long-press sobre el logo del header. #}
+      {% if not current_user.is_authenticated %}
+      <a href="{{ url_for('auth.login') }}" class="ox-staff-hidden-link" data-info-close>
+        · Acceso equipo ·
+      </a>
+      {% endif %}
     </div>
   </section>
 </div>

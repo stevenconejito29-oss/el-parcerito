@@ -1186,6 +1186,33 @@
 }
 
 /* ══════════════════════════════════════════════════════════════
+   ACCESO STAFF DISCRETO
+   Se aplica en web y PWA. No lo ven clientes casuales — hay que
+   abrir el info-sheet y llegar al final. Complementa el long-press
+   sobre el logo del header (bindStaffLongPress en pwa-manager.js).
+   ══════════════════════════════════════════════════════════════ */
+.ox-staff-hidden-link {
+  display: block;
+  text-align: center;
+  margin-top: 1.5rem;
+  padding: .5rem .75rem;
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--theme-muted, #7A6252) 70%, transparent);
+  text-decoration: none;
+  border-top: 1px solid color-mix(in srgb, var(--theme-text, #18120A) 6%, transparent);
+  opacity: .6;
+  transition: opacity .15s ease;
+}
+.ox-staff-hidden-link:hover,
+.ox-staff-hidden-link:focus-visible {
+  opacity: 1;
+  color: color-mix(in srgb, var(--brand-primary) 85%, var(--theme-text));
+}
+
+/* ══════════════════════════════════════════════════════════════
    MENSAJES DE "TIENDA CERRADA" — responsive y sin desborde
    Se aplican SIEMPRE (web y PWA) porque el bug afecta a ambas.
    · .cr-store-closed ya tenía CSS pero sin control de ancho fluido

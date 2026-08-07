@@ -700,6 +700,42 @@
     if (document.visibilityState === 'visible') releaseStuckModalState();
   });
 
+  /* Acceso discreto para empleados en PWA: long-press de 1.5s sobre el logo
+     del header (.ox-public-identity) navega a /auth/login. Los clientes que
+     tocan/tapean brevemente van al menú (comportamiento normal del enlace).
+     No hay botón visible → los clientes que urgan no descubren que existe
+     acceso interno. El punto de entrada es la misma marca (memorizado por
+     el empleado como "manten pulsado el logo"). */
+  (function bindStaffLongPress() {
+    let pressTimer = 0;
+    let longPressed = false;
+    const THRESHOLD_MS = 1500;
+    document.addEventListener('pointerdown', (ev) => {
+      const target = ev.target.closest?.('.ox-public-identity, .ox-public-logo-frame, .ox-public-logo');
+      if (!target) return;
+      longPressed = false;
+      clearTimeout(pressTimer);
+      pressTimer = window.setTimeout(() => {
+        longPressed = true;
+        try { if (navigator.vibrate) navigator.vibrate([20, 40, 20]); } catch (_) {}
+        window.location.href = '/auth/login';
+      }, THRESHOLD_MS);
+    }, { passive: true });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(evt => {
+      document.addEventListener(evt, () => { clearTimeout(pressTimer); }, { passive: true });
+    });
+    // Si el long-press disparó, cancelamos el click natural del <a> para
+    // no disparar navegación a "/" tras haber navegado a login.
+    document.addEventListener('click', (ev) => {
+      if (!longPressed) return;
+      const target = ev.target.closest?.('.ox-public-identity');
+      if (!target) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      longPressed = false;
+    }, true);
+  })();
+
   /* Overlay de búsqueda (reemplaza a la barra inline que se ocultó en PWA).
      Se abre al pulsar el botón 🔍 del bottom-nav (`data-bnav="search"`).
      Envía a `/?q=<term>` — mismo endpoint que la barra web. Ligero y sólo
