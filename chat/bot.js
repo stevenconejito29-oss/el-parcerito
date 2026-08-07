@@ -471,19 +471,40 @@ const FRASES_NO_ENTENDI = [
   'No estoy seguro de qué necesitas. Prueba con *menú* para ver lo que puedo hacer.',
 ];
 
-// Frustración explícita del cliente → deriva a agente HUMANO SIN insistir con
-// el bot. Evita bucles donde el cliente repite "no me entiendes" y el bot
-// vuelve a ofrecer opciones que no le sirven.
+// Frustración EXPLÍCITA del cliente → deriva a agente HUMANO. Antes se
+// derivaba también con patrones ambiguos ("eres un bot", "no era eso")
+// que un cliente CURIOSO o CORRIGIENDO su input casual disparaba sin
+// querer — y quedaba en cola de handoff cuando solo preguntaba. Se han
+// sacado esos patrones al pool `CURIOSIDAD_BOT_RE` (respondemos con
+// transparencia sin escalar) y se ha exigido al resto una intención
+// clara de frustración/petición de humano.
 const FRUSTRACION_RE = new RegExp(
-  '(?:no\\s+me\\s+entiendes|no\\s+entiendes|eres\\s+un\\s+bot|eres\\s+in[uú]til|'
-  + 'quiero\\s+(?:hablar|comunicarme)\\s+con\\s+(?:una\\s+)?persona|'
+  '(?:no\\s+me\\s+(?:entiendes|entend[eé]s|entiende)|no\\s+entiendes\\s+nada|'
+  + 'eres\\s+in[uú]til|no\\s+sirves\\s+para\\s+nada|no\\s+sirves|'
+  + 'quiero\\s+(?:hablar|comunicarme|habar)\\s+con\\s+(?:una\\s+)?persona|'
   + 'quiero\\s+hablar\\s+con\\s+(?:un\\s+)?humano|dame\\s+un\\s+humano|'
-  + 'll[aá]mame|que\\s+alguien\\s+me\\s+atienda|otra\\s+vez\\s+lo\\s+mismo|'
-  + 'ya\\s+te\\s+dije|no\\s+sirves|eso\\s+no\\s+(?:es|responde)|'
-  + 'no\\s+(?:es|era)\\s+eso|est[aá]s\\s+(?:mal|equivocado|roto))',
+  + 'p[aá]sa(?:me)?\\s+(?:con\\s+)?(?:una\\s+)?persona|'
+  + 'll[aá]mame|que\\s+alguien\\s+me\\s+atienda|que\\s+me\\s+atienda\\s+alguien|'
+  + 'otra\\s+vez\\s+lo\\s+mismo|ya\\s+te\\s+lo\\s+dije|'
+  + 'est[aá]s\\s+(?:mal|equivocado|roto|fallando)|'
+  + 'esto\\s+no\\s+(?:funciona|sirve|va))',
   'i'
 );
 function esFrustracion(text) { return FRUSTRACION_RE.test(String(text || '')); }
+
+// Cliente que pregunta por curiosidad si el bot es un bot / humano.
+// Antes: se trataba como frustración y saltaba a handoff. Ahora:
+// respondemos con transparencia y seguimos ofreciendo ayuda del bot.
+// Solo escala si el cliente insiste ("quiero humano" tras la explicación).
+const CURIOSIDAD_BOT_RE = new RegExp(
+  '(?:eres\\s+un\\s+bot\\??|sos\\s+un\\s+bot\\??|es\\s+un\\s+bot\\??|'
+  + 'eres\\s+persona|eres\\s+humano|con\\s+qui[eé]n\\s+hablo|'
+  + 'con\\s+qu[eé]\\s+hablo|hablo\\s+con\\s+una\\s+persona\\?|'
+  + 'esto\\s+es\\s+autom[aá]tico|es\\s+autom[aá]tico|'
+  + 'me\\s+lees|est[aá]s\\s+ah[ií])',
+  'i'
+);
+function esCuriosidadBot(text) { return CURIOSIDAD_BOT_RE.test(String(text || '').trim()); }
 
 // Detección de LOOP: si el cliente envía prácticamente el mismo mensaje
 // más de una vez en la misma sesión, el bot debe reconocer que no está
@@ -7893,7 +7914,23 @@ async function handleMainMenu(jid, ses, opcion) {
   //   5. Menú guiado o atención humana si hay frustración/repetición
   let textoLibre = String(opcion || '').trim();
 
-  // 0) Frustración explícita → agente humano sin repetir el menú.
+  // 0a) Curiosidad sobre el bot ("¿eres un bot?", "¿es automático?").
+  //     Respondemos con TRANSPARENCIA: sí somos automáticos y podemos
+  //     resolver casi todo. No derivamos a humano — el cliente solo
+  //     preguntaba, no está frustrado. Si insiste tras esto y suelta
+  //     una frase de FRUSTRACION_RE, ahí sí escala.
+  if (esCuriosidadBot(textoLibre)) {
+    bumpStat('curiosidad_bot');
+    return sendText(jid,
+      `Soy el asistente automático de *${getNegocioNombre()}* 🤖 — pero puedo ayudarte con casi todo: hacer pedidos, ver el estado, cobertura, horarios, pago y cualquier duda que tengas.\n\n` +
+      `¿Qué necesitas? Cuéntamelo con tus palabras y te lo resuelvo.\n\n` +
+      `_Si en algún momento prefieres a una persona del equipo, escríbeme *AGENTE*._`
+    );
+  }
+
+  // 0b) Frustración explícita ("no me entiendes", "quiero un humano") →
+  //     agente humano sin insistir con el menú. Ojo: patrones ambiguos
+  //     como "¿eres un bot?" ya se filtran arriba y NO caen aquí.
   if (esFrustracion(textoLibre)) {
     bumpStat('handoff_frustracion_early');
     log('info', 'handoff_frustracion_early', textoLibre.slice(0, 40));
