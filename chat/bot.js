@@ -524,6 +524,21 @@ const REPETIR_RE = new RegExp(
 );
 function esRepetirPedido(text) { return REPETIR_RE.test(String(text || '').trim()); }
 
+// Petición explícita de ayuda ("ayuda", "?", "help", "opciones", "qué
+// puedes hacer"). Antes: caía al fallback genérico y consumía intent
+// fail streak. Ahora: respuesta directa con menú principal — es la
+// intención más obvia y merece resolución instantánea.
+// Se anchea a inicio/fin de mensaje para evitar disparos accidentales
+// (ej. "tengo un problema con mi pedido, necesito ayuda" NO cae aquí:
+// hay contenido explícito antes; que sí matchee el intent real).
+const AYUDA_RE = new RegExp(
+  '^\\s*(?:ayuda|ayudame|ayúdame|help|opciones|op\\s*ciones|men[uú]|'
+  + '\\?+|qu[eé]\\s+puedes?\\s+hacer|qu[eé]\\s+haces|c[oó]mo\\s+funciona[s]?|'
+  + 'guia|gu[ií]a|info|informaci[oó]n)\\s*[!.?]?\\s*$',
+  'i'
+);
+function esPeticionAyuda(text) { return AYUDA_RE.test(String(text || '').trim()); }
+
 // Detección de LOOP: si el cliente envía prácticamente el mismo mensaje
 // más de una vez en la misma sesión, el bot debe reconocer que no está
 // resolviendo y derivar a agente. Guardamos hash normalizado en la sesión.
@@ -8033,6 +8048,16 @@ async function handleMainMenu(jid, ses, opcion) {
   //     rama (saludo, FAQ, etc.) para no perder el momento.
   if (esRepetirPedido(textoLibre)) {
     return handleRepetirPedido(jid, ses);
+  }
+
+  // 0y) Petición explícita de ayuda ("ayuda", "?", "opciones", "que
+  //     puedes hacer"). Antes caía al fallback y consumía intent-fail
+  //     streak — un cliente que pide ayuda no debería quedar más cerca
+  //     del handoff por hacerlo. Respondemos con la bienvenida
+  //     completa (menú + hint natural + hint repetir si aplica).
+  if (esPeticionAyuda(textoLibre)) {
+    bumpStat('ayuda_explicita');
+    return sendText(jid, bienvenidaConversacional(ses));
   }
 
   // 0a) Curiosidad sobre el bot ("¿eres un bot?", "¿es automático?").
