@@ -7977,6 +7977,25 @@ function _stripAccents(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
+/**
+ * Singularización ligera para matchear plurales sin inflar el diccionario.
+ * "pedidos" → "pedido", "envios" → "envio", "ordenes" → "orden".
+ * Solo actúa sobre palabras > 4 chars para no destruir "los", "mas", etc.
+ * Se aplica a ambos lados (cliente y keyword) durante la comparación —
+ * así "pedido" y "pedidos" cuentan como iguales sin listar ambos.
+ *
+ * Reglas conservadoras (español):
+ *   - termina en "es" con >=6 chars    → -es    (ordenes → orden)
+ *   - termina en "s" con >=5 chars     → -s     (pedidos → pedido, envios → envio)
+ *   - no toca palabras <=4 chars.
+ */
+function _singularize(w) {
+  const s = String(w || '');
+  if (s.length >= 6 && s.endsWith('es')) return s.slice(0, -2);
+  if (s.length >= 5 && s.endsWith('s'))  return s.slice(0, -1);
+  return s;
+}
+
 function detectClientIntent(text) {
   const normalized = _stripAccents(String(text || '').toLowerCase().trim());
   if (!normalized) return null;
@@ -7991,10 +8010,13 @@ function detectClientIntent(text) {
   // Match por keyword + tolerancia a typos en palabras largas.
   // Estrategia:
   //  - keyword corta (≤4 letras): exigimos palabra entera (regex \b).
-  //  - keyword larga: contains substring directo (score 3), o si el cliente
-  //    escribió una palabra similar (Levenshtein ≤ 2), score 2.
+  //  - keyword larga: contains substring directo (score 3), o si la
+  //    forma singularizada del cliente coincide con la de la keyword
+  //    (score 2 — "pedidos" ↔ "pedido"), o si el cliente escribió una
+  //    palabra similar (Levenshtein ≤ 2, keywords >= 5 chars, score 2).
   //  - todo se compara sin tildes en ambos lados para robustez.
   const palabrasCliente = normalized.split(/[\s,.!?¡¿]+/).filter(w => w.length >= 3);
+  const palabrasSingular = palabrasCliente.map(_singularize);
   let mejor = { opcion: null, score: 0, segundo: 0 };
   for (const [opt, keywords] of Object.entries(CLIENT_INTENT_KEYWORDS)) {
     let score = 0;
@@ -8005,8 +8027,18 @@ function detectClientIntent(text) {
         if (re.test(normalized)) score += 2;
       } else if (normalized.includes(kw)) {
         score += 3;
-      } else if (kw.length >= 6 && !kw.includes(' ')) {
-        // Tolerancia a typos solo en keywords largas single-word.
+      } else if (kw.length >= 5 && !kw.includes(' ')) {
+        // Match singular/plural: la raíz del cliente coincide con la de la
+        // keyword. Cubre "pedidos"↔"pedido", "envios"↔"envio", "ordenes"↔
+        // "orden" sin necesidad de enumerar cada forma en el diccionario.
+        const kwSing = _singularize(kw);
+        if (kwSing.length >= 4 && palabrasSingular.includes(kwSing)) {
+          score += 2;
+          continue;
+        }
+        // Tolerancia a typos: Levenshtein ≤ 2 en la palabra completa.
+        // Umbral bajado de 6 a 5 chars — captura "envio" vs "envío"/
+        // "envios" y variantes con un carácter cambiado.
         for (const pal of palabrasCliente) {
           if (Math.abs(pal.length - kw.length) <= 2 && _levenshteinLE(pal, kw, 2) <= 2) {
             score += 2;
@@ -11127,6 +11159,7 @@ module.exports = {
     deliverQueuedTranscript,
     drainInboundMessages,
     detectClientIntent,
+    _singularize,
     isOrderStatusIntent,
     tryHandleConfirmationReply,
     _tryCatalogSearchReply,
