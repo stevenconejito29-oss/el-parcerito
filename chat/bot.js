@@ -1509,7 +1509,10 @@ async function iniciarReporteNovedad(clientJid, ses, rawTexto) {
       pedidoId = pedidos[0].id;
     } catch (error) {
       log('warn', 'reporte_busca_pedido_falla', error?.message || String(error));
-      return sendText(clientJid, `No pude consultar tus pedidos ahora mismo. Inténtalo en un par de minutos.`);
+      return sendText(clientJid, texts.errorTransitorio({
+        contexto: 'tus pedidos',
+        tiendaUrl: getTiendaUrl(),
+      }));
     }
   }
 
@@ -1521,7 +1524,12 @@ async function iniciarReporteNovedad(clientJid, ses, rawTexto) {
     if (!resp || resp.ok === false) {
       const msg = (resp && resp.error) ? resp.error : 'Sin respuesta del servidor';
       log('warn', 'reporte_incidencia_falla', `${pedidoId}: ${msg}`);
-      return sendText(clientJid, `No pude registrar tu incidencia ahora (${msg}). Por favor, escribe *AGENTE* y te ayudamos.`);
+      // Sí mencionamos AGENTE aquí — es un caso donde el bot realmente
+      // no pudo guardar el reporte y el cliente necesita respaldo.
+      return sendText(clientJid, texts.errorTransitorio({
+        contexto: 'tu incidencia',
+        mostrarAgente: true,
+      }));
     }
     return sendText(
       clientJid,
@@ -8186,12 +8194,11 @@ async function handleMainMenu(jid, ses, opcion) {
         );
       } catch (err) {
         console.error('[bot] puntos_consulta_fail', err?.message || err);
-        return sendText(jid,
-          `⚠️ No pude consultar tus puntos ahora mismo.\n\n` +
-          `Puede ser un problema temporal de conexión. Por favor:\n` +
-          `• Espera 30 segundos y escribe *3* de nuevo.\n` +
-          `• Si sigue fallando, escribe *AGENTE* para hablar con nosotros.\n\n` +
-          `_Escribe *menu* para volver._`);
+        return sendText(jid, texts.errorTransitorio({
+          contexto: 'tus puntos',
+          tiendaUrl: getTiendaUrl(),
+          mostrarAgente: true,
+        }));
       }
     }
     case '4': {
@@ -8468,7 +8475,7 @@ async function iniciarCancelacionPedido(jid, ses, identifier = '') {
     if (error?.status === 404) {
       return sendText(jid, menuSinPedidos());
     }
-    return sendText(jid, `No pude consultar tus pedidos ahora mismo. Intenta de nuevo o escribe *AGENTE*.\n\n${menuPrincipal()}`);
+    return sendText(jid, `${texts.errorTransitorio({ contexto: 'tus pedidos', mostrarAgente: true })}\n\n${menuPrincipal()}`);
   }
 }
 
@@ -8663,11 +8670,10 @@ async function handleRepetirPedido(jid, ses) {
     data = await oxidianPost('/pedido/repetir-link', { telefono: phone });
   } catch (err) {
     log('warn', 'repetir_pedido_backend_fail', err?.message || String(err));
-    const tiendaUrl = getTiendaUrl();
-    return sendText(jid,
-      `No pude cargar tu último pedido ahora mismo 😅\n\n` +
-      `Entra a la tienda y arma tu carrito:\n👉 ${tiendaUrl}`
-    );
+    return sendText(jid, texts.errorTransitorio({
+      contexto: 'tu último pedido',
+      tiendaUrl: getTiendaUrl(),
+    }));
   }
   if (!data || data.ok === false) {
     // Errores esperados con mensaje del backend (sin_historial, sin_disponibles)
@@ -8675,10 +8681,10 @@ async function handleRepetirPedido(jid, ses) {
       const tiendaUrl = getTiendaUrl();
       return sendText(jid, `${data.mensaje}\n\n👉 ${tiendaUrl}`);
     }
-    const tiendaUrl = getTiendaUrl();
-    return sendText(jid,
-      `No pude repetir tu pedido ahora mismo. Entra a la tienda:\n👉 ${tiendaUrl}`
-    );
+    return sendText(jid, texts.errorTransitorio({
+      contexto: 'tu último pedido',
+      tiendaUrl: getTiendaUrl(),
+    }));
   }
   const items = Array.isArray(data.items) ? data.items : [];
   const preview = items

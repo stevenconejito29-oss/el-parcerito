@@ -549,6 +549,38 @@ function ackVariants() {
   return ['Recibido ✅', 'Perfecto ✨', 'Listo 👍', 'Anotado ✍️', 'Vamos a ello 🚀'];
 }
 
+/**
+ * Mensajes de error TRANSITORIO (backend caído, timeout, red).
+ * NUNCA se muestra el error técnico al cliente — solo un mensaje
+ * cálido con opción concreta de seguimiento. El caller decide qué
+ * hint dar según el contexto (`retry`, `web`, `both`).
+ *
+ * Diseño:
+ *   - Sin "❌" — el ícono de error asusta al cliente sin aportar.
+ *   - Frase corta, humana, primera persona: "no pude" > "el sistema
+ *     ha fallado" (más cercano y menos culpabilizador).
+ *   - Sugerencia de acción positiva SIEMPRE: reintentar, web, etc.
+ *   - AGENTE nunca es la primera sugerencia — se menciona como
+ *     escape secundario solo si el modo lo pide.
+ *
+ * @param {{contexto:string, tiendaUrl?:string, mostrarAgente?:boolean}} opts
+ */
+function errorTransitorio(opts = {}) {
+  const contexto = String(opts.contexto || 'la operación').trim();
+  const tienda = String(opts.tiendaUrl || '').trim();
+  const partes = [
+    `Ups, no pude cargar ${contexto} en este momento 😅`,
+    `Ha sido un problema puntual — vuelve a intentarlo en unos segundos.`,
+  ];
+  if (tienda) {
+    partes.push(`Mientras tanto puedes usar la tienda: 👉 ${tienda}`);
+  }
+  if (opts.mostrarAgente) {
+    partes.push(`_Si el problema sigue, escribe *AGENTE* y te ayudamos._`);
+  }
+  return partes.join('\n\n');
+}
+
 module.exports = {
   ESCAPE_HINT,
   FALLBACK_HINT,
@@ -573,4 +605,5 @@ module.exports = {
   fallbackVariants,
   farewellVariants,
   ackVariants,
+  errorTransitorio,
 };
