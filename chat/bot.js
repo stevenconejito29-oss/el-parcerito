@@ -7012,7 +7012,7 @@ const CLIENT_FAQS = [
         `🛍️ *Disponibilidad, tallas y cambios*\n\n` +
         `La ficha de cada producto muestra las opciones disponibles. Para elegir talla, color o presentación entra aquí:\n` +
         `👉 ${ctx.tiendaUrl}\n\n` +
-        `Si necesitas cambiar algo de un pedido ya hecho, escribe *AGENTE* y te conecto con una persona.`
+        `Para cambiar algo de un pedido ya hecho, escribe *2* — te muestro su estado y las acciones disponibles.`
       );
     },
   },
@@ -7022,7 +7022,7 @@ const CLIENT_FAQS = [
     answer: (ctx) => (
       `Para evitar errores, los pedidos se hacen directamente en la tienda online:\n` +
       `👉 ${ctx.tiendaUrl}\n\n` +
-      `Por aquí puedo ayudarte con estado del pedido, horario, puntos, dudas generales o pasarte con una persona.`
+      `Por aquí puedo ayudarte con estado del pedido, horario, puntos y dudas generales.`
     ),
   },
   {
@@ -7040,7 +7040,7 @@ const CLIENT_FAQS = [
     answer: (ctx) => (
       `Soy el asistente de *${ctx.negocio}* por WhatsApp. 🤖\n\n` +
       `Puedo ayudarte con ${clientCapabilityText()}. ` +
-      `Si necesitas hablar con una persona escribe *AGENTE* y te conecto.`
+      `Cuéntame qué necesitas con tus palabras y te lo resuelvo.`
     ),
   },
   {
@@ -7618,7 +7618,7 @@ const MANUAL_SECTIONS = [
       `Escribe *REPORTAR* seguido de tu mensaje. Ejemplos:\n` +
       `• *REPORTAR la pizza llegó fría*\n` +
       `• *REPORTAR 1024 falta un combo* (para un pedido concreto)\n\n` +
-      `Se registra directo en el panel del equipo. Si necesitas hablar ya, escribe *AGENTE*.`
+      `Se registra directo en el panel del equipo y lo revisan cuanto antes.`
     ),
   },
   {
@@ -7886,7 +7886,10 @@ async function handleClientInfoMenu(jid, ses, opcion) {
       return sendText(jid, `${String(texto || '').trim()}${cierre}`);
     } catch (error) {
       log('warn', 'manual_section_fail', `${seccion.key}: ${error?.message || String(error)}`);
-      return sendText(jid, `No pude cargar esa sección ahora. Prueba otra o escribe *AGENTE*.`);
+      return sendText(jid, texts.errorTransitorio({
+        contexto: 'esa sección',
+        tiendaUrl: getTiendaUrl(),
+      }));
     }
   }
   // Detección natural dentro del sub-menú: el cliente puede escribir
