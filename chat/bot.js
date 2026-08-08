@@ -8,6 +8,7 @@ const crypto   = require('crypto');
 const Database = require('better-sqlite3');
 const texts     = require('./texts');
 const evolution = require('./evolution');
+const variantPicker = require('./utils/variantPicker');
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const EVO_URL        = (process.env.EVOLUTION_API_URL  || 'http://localhost:8080').replace(/\/$/, '');
@@ -6786,7 +6787,15 @@ const CLIENT_FAQS = [
     match: /\b(horario|abren|cierran|abierto|cerrado|hasta\s+qu[eé]\s+hora|a\s+qu[eé]\s+hora|cu[aá]ndo\s+abren|cu[aá]ndo\s+cierran|hora\s+de\s+cierre|hora\s+de\s+apertura)\b/i,
     answer: (ctx) => {
       if (!ctx.horario) return null;
-      return `🕐 *Horario de ${ctx.negocio}*\n\n${ctx.horario}\n\n_Escribe *menú* para más opciones._`;
+      // Pool de 4 variantes: el variantPicker las rota por cliente
+      // para no mandar el mismo string a 5 personas seguidas cuando
+      // la pregunta es popular (evita fingerprint spam de WhatsApp).
+      return [
+        `🕐 *Horario de ${ctx.negocio}*\n\n${ctx.horario}\n\n_Escribe *menú* para más opciones._`,
+        `⏰ Nuestro horario: ${ctx.horario}.\n\n¿Quieres pedir? Escribe *menú*.`,
+        `🕐 En ${ctx.negocio} atendemos ${ctx.horario.toLowerCase()}.\n\nEscribe *menú* si quieres empezar un pedido.`,
+        `Hola 👋 Nuestros horarios son ${ctx.horario.toLowerCase()}.\n_Escribe *menú* para opciones._`,
+      ];
     },
   },
   {
@@ -6815,7 +6824,11 @@ const CLIENT_FAQS = [
     match: /\b(tel[eé]fono|llamar|contacto|n[uú]mero\s+(de\s+)?(tel[eé]fono|contacto))\b/i,
     answer: (ctx) => {
       if (!ctx.telefono) return null;
-      return `📞 Puedes llamar al *${ctx.telefono}*\n\nAunque por aquí también te ayudamos. Escribe *menú* para opciones.`;
+      return [
+        `📞 Puedes llamar al *${ctx.telefono}*\n\nAunque por aquí también te ayudamos. Escribe *menú* para opciones.`,
+        `📞 Nuestro teléfono es *${ctx.telefono}*.\n\n_También puedes seguir por aquí — escribe *menú*._`,
+        `Aquí lo tienes: *${ctx.telefono}* 📞\n\nY si te resulta más cómodo, seguimos por WhatsApp (*menú*).`,
+      ];
     },
   },
   {
@@ -6847,9 +6860,17 @@ const CLIENT_FAQS = [
     match: /\b(cu[aá]nto\s+(tarda|tardan|tarda(s|n))|tiempo\s+de?\s+entrega|cu[aá]ndo\s+llega|en\s+cu[aá]nto\s+llega|cu[aá]nto\s+demora)\b/i,
     answer: (ctx) => {
       if (!ctx.delivery_enabled) {
-        return `🏪 *Solo recogida en local*\n\nAhora mismo no ofrecemos entrega a domicilio. Cuando hagas tu pedido te avisaremos por aquí cuando esté listo para que pases a recogerlo.`;
+        return [
+          `🏪 *Solo recogida en local*\n\nAhora mismo no ofrecemos entrega a domicilio. Cuando hagas tu pedido te avisaremos por aquí cuando esté listo para que pases a recogerlo.`,
+          `🏪 De momento hacemos solo *recogida en tienda* — no delivery. Te avisamos por aquí cuando esté listo tu pedido.`,
+          `Ahora mismo trabajamos solo recogida en local 🏪. Al hacer tu pedido te confirmamos por aquí cuando puedes pasar.`,
+        ];
       }
-      return `El tiempo de entrega depende de tu zona y del pedido. Verás la estimación real al indicar la dirección en la tienda online: ${ctx.tiendaUrl}`;
+      return [
+        `El tiempo de entrega depende de tu zona y del pedido. Verás la estimación real al indicar la dirección en la tienda online: ${ctx.tiendaUrl}`,
+        `⏱️ La estimación exacta te sale al meter tu dirección en el pedido — depende de zona y de lo que lleves.\n👉 ${ctx.tiendaUrl}`,
+        `Depende de tu zona 🛵. En la web te sale el tiempo estimado al confirmar la dirección:\n${ctx.tiendaUrl}`,
+      ];
     },
   },
   {
@@ -6876,22 +6897,30 @@ const CLIENT_FAQS = [
   {
     name: 'modo_funciona',
     match: /\b(c[oó]mo\s+(funciona|pido|hago\s+un?\s+pedido)|c[oó]mo\s+puedo\s+pedir|qu[eé]\s+tengo\s+que\s+hacer|c[oó]mo\s+se\s+usa)\b/i,
-    answer: (ctx) => (
+    answer: (ctx) => [
       `🛒 *Cómo pedir*\n\n` +
       `1. Escribe *menú* para ver opciones del bot, o\n` +
       `2. Entra directamente a la tienda online:\n   👉 ${ctx.tiendaUrl}\n\n` +
-      `Elige los productos, indica si quieres delivery o pasar a recoger, y listo.`
-    ),
+      `Elige los productos, indica si quieres delivery o pasar a recoger, y listo.`,
+
+      `🛒 Es muy fácil: entra en ${ctx.tiendaUrl}, elige lo que quieras, marca si es delivery o recogida y pagas al recibir.\n\n_Escribe *menú* si prefieres empezar desde aquí._`,
+
+      `Para pedir tienes dos opciones:\n• *Menú* aquí en el chat.\n• Directo en la web: 👉 ${ctx.tiendaUrl}\n\nEliges productos, forma de entrega y listo.`,
+    ],
   },
   {
     // Combos y ofertas — muy consultado. Redirige a tienda para ver actual.
     name: 'combos_ofertas',
     match: /\b(combo|combos|ofert(a|as)|promo(ci[oó]n(es)?)?|descuento|especial(es)?|pack|packs|men[uú]\s+del\s+d[ií]a|barato|econ[oó]mico|paquete)\b/i,
-    answer: (ctx) => (
+    answer: (ctx) => [
       `🎁 *Combos y ofertas de hoy*\n\n` +
       `Las promos cambian según disponibilidad. Míralas actualizadas aquí:\n👉 ${ctx.tiendaUrl}\n\n` +
-      `_Escribe *menú* para más opciones._`
-    ),
+      `_Escribe *menú* para más opciones._`,
+
+      `🎁 Las ofertas del día están en la tienda — cambian a diario según lo que haya.\n👉 ${ctx.tiendaUrl}`,
+
+      `Tenemos combos y promos rotando cada día. La versión al momento la ves aquí:\n${ctx.tiendaUrl}\n\n_Escribe *menú* para más._`,
+    ],
   },
   {
     // Alérgenos y dietas — típico de una pregunta a IA. Respuesta corta.
@@ -7232,7 +7261,13 @@ async function tryCannedFAQ(text, ctx) {
   const t = String(text || '').toLowerCase();
   for (const faq of CLIENT_FAQS) {
     if (faq.match.test(t)) {
-      const out = await faq.answer(ctx);
+      const raw = await faq.answer(ctx);
+      // Retro-compat: si answer devuelve string → se envía tal cual.
+      // Nuevo: si answer devuelve array de strings → variantPicker
+      // elige uno evitando repetir el último al mismo cliente. Reduce
+      // la señal "el bot manda siempre lo mismo" que WhatsApp usa para
+      // clasificar cuentas como spam automatizado.
+      const out = variantPicker.resolveAnswer(raw, ctx.jid, faq.name);
       if (out) return { name: faq.name, text: out };
     }
   }
@@ -7258,6 +7293,9 @@ async function tryCannedFAQ(text, ctx) {
  */
 function _buildFaqContext(ses) {
   return {
+    // jid del cliente: lo consume el variantPicker en tryCannedFAQ para
+    // no repetir la misma variante al mismo cliente dos veces seguidas.
+    jid: ses && ses.jid ? ses.jid : null,
     negocio: getNegocioNombre(),
     telefono: String(cfg('telefono_negocio', '') || '').trim(),
     direccion: String(cfg('direccion_negocio', '') || '').trim(),
