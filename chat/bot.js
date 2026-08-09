@@ -4802,9 +4802,8 @@ async function _handleMessage(jid, text, pushName, context = {}) {
       })[tipo] || 'archivo';
       bumpStat('inbound_media');
       return sendText(jid,
-        `Recibí tu ${etiqueta}, pero por aquí solo puedo leer *mensajes de texto*. ` +
-        `Cuéntame en palabras qué necesitas y te ayudo. 📝\n\n` +
-        `_Si es urgente y prefieres hablar con una persona, escribe *AGENTE*._`
+        `Recibí tu ${etiqueta}, pero por aquí solo leo *mensajes de texto*. ` +
+        `Cuéntame en palabras qué necesitas y te ayudo. 📝`
       );
     }
     // Mensaje sin contenido interpretable: sin letras ni números, o texto
@@ -8207,8 +8206,7 @@ async function handleMainMenu(jid, ses, opcion) {
     bumpStat('curiosidad_bot');
     return sendText(jid,
       `Soy el asistente automático de *${getNegocioNombre()}* 🤖 — pero puedo ayudarte con casi todo: hacer pedidos, ver el estado, cobertura, horarios, pago y cualquier duda que tengas.\n\n` +
-      `¿Qué necesitas? Cuéntamelo con tus palabras y te lo resuelvo.\n\n` +
-      `_Si en algún momento prefieres a una persona del equipo, escríbeme *AGENTE*._`
+      `¿Qué necesitas? Cuéntamelo con tus palabras y te lo resuelvo.`
     );
   }
 
@@ -8391,6 +8389,41 @@ async function handleMainMenu(jid, ses, opcion) {
 
       const catalogReply = await _tryCatalogSearchReply(textoLibre, tiendaUrl);
       if (catalogReply) return sendText(jid, catalogReply);
+
+      // ── LENGUAJE NATURAL VIA LLM ────────────────────────────────────
+      // Si SiteConfig tiene la IA habilitada, el LLM intenta responder
+      // usando el contexto real del cliente (pedidos, puntos, dirección)
+      // y del negocio (horarios, cobertura, políticas). El bot INVITA al
+      // cliente a escribir con sus palabras ("cuéntame qué necesitas");
+      // este paso es lo que HONORA esa invitación en vez de mandarlo al
+      // menú numérico. Si la IA no responde (deshabilitada, rate limit,
+      // burst, error), degradamos silenciosamente al pipeline original.
+      //
+      // Debe ir ANTES de las escaladas por frustración/loop/intent-fail:
+      // así una respuesta útil resetea los contadores y no acumulamos
+      // "fails" cuando el bot ha respondido bien vía IA.
+      if (textoLibre && textoLibre.length >= 3 && !isAdminJid(jid)) {
+        try {
+          const ai = await aiSmartReply(jid, ses, textoLibre);
+          if (ai && ai.reply) {
+            bumpStat('ai_smart_reply');
+            log('info', 'ai_smart_reply', `action=${ai.action} conf=${ai.confidence.toFixed(2)}`);
+            // Resetea streak de fallbacks — el cliente FUE atendido.
+            ses._intent_fail_streak = 0;
+            ses._intent_fail_last_ts = 0;
+            if (ai.action === 'agente') {
+              // El LLM detecta que el caso amerita persona: enviamos su
+              // respuesta empática Y escalamos con el mensaje original
+              // como contexto para el agente humano.
+              await sendText(jid, ai.reply);
+              return requestHumanSupport(jid, `IA sugiere agente. Cliente: "${textoLibre}"`);
+            }
+            return sendText(jid, ai.reply);
+          }
+        } catch (err) {
+          log('warn', 'ai_smart_reply_error', err?.message || String(err));
+        }
+      }
 
       // Dos verificaciones ANTES del fallback guiado:
       //  1) ¿El cliente está frustrado explícitamente?
