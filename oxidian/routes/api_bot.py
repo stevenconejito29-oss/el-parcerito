@@ -2659,6 +2659,184 @@ def estado_pedido(pedido_id):
         return jsonify({"ok": False, "error": "No se pudo consultar el pedido"}), 500
 
 
+@api_bot_bp.route("/pedido/<int:pedido_id>/cambiar-direccion", methods=["POST"])
+@bot_required
+def cambiar_direccion_pedido(pedido_id):
+    """Cliente cambia la dirección de entrega de un pedido en curso.
+
+    Reglas:
+      * Solo delivery (tipo_entrega_cliente == "delivery"). Los de recogida
+        no tienen dirección editable.
+      * Solo mientras el pedido esté en un estado seguro para cambiar:
+        ``pendiente`` o ``armando``. En ``listo`` el ticket ya se imprimió
+        y el rider puede haberlo tomado; en ``en_ruta`` está de camino.
+        Devolvemos motivo explícito para que el bot escale a agente.
+      * Se geocodifica la nueva dirección; si no es geocodificable dentro
+        del área de reparto, se rechaza (Oxidian no acepta direcciones
+        fuera de cobertura para no crear un pedido no-entregable).
+      * Se registra un OrderEvent para trazabilidad y auditoría.
+
+    Body JSON: ``{"telefono": "+34...", "nueva_direccion": "Calle X, 5"}``.
+    Respuesta: ``{"ok": True, "pedido": "1234", "direccion": "...",
+    "lat": ..., "lng": ..., "zona_id": ...}`` o
+    ``{"ok": False, "motivo": "estado_bloqueado" | "no_delivery" |
+    "no_autorizado" | "fuera_cobertura" | ...}``.
+    """
+    try:
+        pedido = get_or_404(Order, pedido_id)
+        data = request.get_json(silent=True) or {}
+        telefono = (data.get("telefono") or "").strip()
+        nueva = (data.get("nueva_direccion") or data.get("direccion") or "").strip()
+        if not nueva or len(nueva) < 6:
+            return jsonify({"ok": False, "motivo": "direccion_invalida"}), 400
+        if len(nueva) > 250:
+            nueva = nueva[:250]
+
+        cliente, _ = _cliente_por_telefono(telefono)
+        if not cliente or cliente.id != pedido.cliente_id:
+            return jsonify({"ok": False, "motivo": "no_autorizado"}), 403
+
+        if (pedido.tipo_entrega_cliente or "").lower() != "delivery":
+            return jsonify({"ok": False, "motivo": "no_delivery",
+                            "mensaje": "Este pedido es para recoger; no tiene dirección editable."}), 400
+
+        estado_ok = ("pendiente", "armando")
+        if pedido.estado not in estado_ok:
+            return jsonify({
+                "ok": False,
+                "motivo": "estado_bloqueado",
+                "estado_actual": pedido.estado,
+                "mensaje": (
+                    "El pedido ya está listo o en camino — un agente puede "
+                    "ayudarte a coordinar el cambio con el repartidor."
+                ),
+            }), 409
+
+        # Geocodifica dentro del área de reparto configurada. La función
+        # ya rechaza direcciones fuera de la ciudad/viewbox: nos vale
+        # su devolución None como "no cobertura".
+        from services import geocodificar_direccion
+        coords = geocodificar_direccion(nueva)
+        if not coords:
+            return jsonify({"ok": False, "motivo": "fuera_cobertura",
+                            "mensaje": "No pude ubicar esa dirección dentro de nuestra zona de reparto."}), 400
+
+        direccion_anterior = pedido.direccion_entrega or ""
+        pedido.direccion_entrega = nueva
+        pedido.direccion_lat = coords[0]
+        pedido.direccion_lng = coords[1]
+
+        from services import registrar_evento_pedido
+        registrar_evento_pedido(
+            pedido,
+            "cliente_cambio_direccion",
+            actor_id=pedido.cliente_id,
+            estado_anterior=pedido.estado,
+            estado_nuevo=pedido.estado,
+            canal="cliente_whatsapp",
+            detalle=nueva[:200],
+            metadata={
+                "direccion_anterior": direccion_anterior[:250],
+                "direccion_nueva": nueva,
+                "lat": coords[0],
+                "lng": coords[1],
+            },
+        )
+        db.session.commit()
+
+        return jsonify({
+            "ok": True,
+            "pedido": pedido.numero_pedido,
+            "direccion": nueva,
+            "lat": coords[0],
+            "lng": coords[1],
+        })
+    except _HTTPExc:
+        db.session.rollback()
+        raise
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "cambiar_direccion_pedido: fallo pedido=%s", pedido_id
+        )
+        return jsonify({"ok": False, "motivo": "error_interno"}), 500
+
+
+@api_bot_bp.route("/pedido/<int:pedido_id>/tracking")
+@bot_required
+def tracking_pedido(pedido_id):
+    """Devuelve el seguimiento del pedido: estado + (si en_ruta) última
+    posición conocida del repartidor.
+
+    Reutiliza ``RiderLocation`` (feature/delivery-hardening) sin tocar
+    su modelo. Si el rider no tiene ping reciente (o el tracking está
+    desactivado globalmente), degrada a mostrar solo el estado —
+    nunca inventa una ubicación falsa.
+
+    Query: ``?telefono=+34...``.
+    Respuesta: ``{"ok": True, "pedido": "...", "estado": "...",
+    "rider": {"nombre": "...", "lat": ..., "lng": ..., "hace_min": 2,
+    "maps_url": "..."} | null}``.
+    """
+    try:
+        pedido = get_or_404(Order, pedido_id)
+        cliente, _ = _cliente_por_telefono(request.args.get("telefono") or "")
+        if not cliente or cliente.id != pedido.cliente_id:
+            return jsonify({"ok": False, "motivo": "no_autorizado"}), 403
+
+        payload = {
+            "ok": True,
+            "pedido": pedido.numero_pedido,
+            "estado": pedido.estado,
+            "rider": None,
+        }
+
+        # Solo perseguimos coord del rider si el pedido está en camino
+        # activo. Antes (pendiente/armando/listo) no aporta información
+        # útil al cliente y expondría al rider innecesariamente.
+        if pedido.estado == "en_ruta" and pedido.repartidor_id:
+            from models import RiderLocation
+            from datetime import datetime, timezone
+            loc = db.session.get(RiderLocation, pedido.repartidor_id)
+            # Umbral defensivo: 15 min. Si el ping es más viejo, no
+            # mostramos la coord — puede que el rider haya perdido GPS
+            # o cerrado la app; una posición vieja despista al cliente.
+            if loc and loc.updated_at:
+                ahora = datetime.now(timezone.utc).replace(tzinfo=None)
+                try:
+                    hace_s = int((ahora - loc.updated_at).total_seconds())
+                except Exception:
+                    hace_s = None
+                if hace_s is not None and 0 <= hace_s <= 15 * 60:
+                    lat = float(loc.lat)
+                    lng = float(loc.lng)
+                    nombre_rider = ""
+                    try:
+                        rider = db.session.get(User, pedido.repartidor_id)
+                        nombre_rider = (rider.nombre or "").split(" ", 1)[0] if rider else ""
+                    except Exception:
+                        nombre_rider = ""
+                    payload["rider"] = {
+                        "nombre": nombre_rider,
+                        "lat": lat,
+                        "lng": lng,
+                        "hace_min": max(0, hace_s // 60),
+                        "maps_url": (
+                            f"https://www.google.com/maps/search/?api=1"
+                            f"&query={lat},{lng}"
+                        ),
+                    }
+
+        return jsonify(payload)
+    except _HTTPExc:
+        raise
+    except Exception:
+        current_app.logger.exception(
+            "tracking_pedido: fallo pedido=%s", pedido_id
+        )
+        return jsonify({"ok": False, "motivo": "error_interno"}), 500
+
+
 @api_bot_bp.route("/pedido/<int:pedido_id>/incidencia", methods=["POST"])
 @bot_required
 def reportar_incidencia(pedido_id):

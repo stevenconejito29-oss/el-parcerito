@@ -525,6 +525,23 @@ const REPETIR_RE = new RegExp(
 );
 function esRepetirPedido(text) { return REPETIR_RE.test(String(text || '').trim()); }
 
+// Petición explícita de cambiar la dirección de entrega del pedido actual.
+// Se distingue de una consulta de estado genérica: aquí el cliente
+// EXPRESA que la dirección está mal ("no es esa dirección", "cambia la
+// dirección", "mejor entregarlo en..."). Cuando matchea, el bot dispara
+// el flujo espera_nueva_direccion en vez de mostrar estado.
+const CAMBIAR_DIRECCION_RE = new RegExp(
+  '\\b(?:cambia(?:r)?\\s+(?:la|mi|el|tu|una)?\\s*(?:direcci[oó]n|domicilio)|'
+  + 'modifica(?:r)?\\s+(?:la|mi|el|una)?\\s*direcci[oó]n|'
+  + 'otra\\s+direcci[oó]n|'
+  + 'no\\s+es\\s+esa\\s+(?:la\\s+)?direcci[oó]n|'
+  + 'me\\s+equivoqu[eé]\\s+(?:de|con)\\s+(?:la\\s+)?direcci[oó]n|'
+  + 'mejor\\s+(?:me|lo|la)\\s+(?:lo\\s+)?(?:entregan|manda[ns]?|env[ií]a[ns]?)\\s+(?:a|en)|'
+  + 'entrega[dr]?(?:lo|melo)?\\s+en\\s+otra)\\b',
+  'i'
+);
+function esCambiarDireccion(text) { return CAMBIAR_DIRECCION_RE.test(String(text || '')); }
+
 // Petición explícita de ayuda ("ayuda", "?", "help", "opciones", "qué
 // puedes hacer"). Antes: caía al fallback genérico y consumía intent
 // fail streak. Ahora: respuesta directa con menú principal — es la
@@ -5504,6 +5521,7 @@ async function _handleMessage(jid, text, pushName, context = {}) {
     case 'seleccionar_cancelacion': return handleSeleccionCancelacion(jid, ses, text);
     case 'confirmar_cancelacion': return confirmarCancelacionPedido(jid, ses, lower);
     case 'espera_direccion_cobertura': return handleCoberturaDelivery(jid, ses, text, context);
+    case 'espera_nueva_direccion': return handleNuevaDireccion(jid, ses, text);
     default:
       return startClientMenu(jid, ses.nombre);
   }
@@ -8219,6 +8237,14 @@ async function handleMainMenu(jid, ses, opcion) {
     return handleRepetirPedido(jid, ses);
   }
 
+  // 0z2) Cambiar dirección del pedido activo. Es petición frecuente
+  //      (el cliente escribió mal la calle o le viene mejor otra dirección)
+  //      y hasta hoy caía a "escribe AGENTE". Ahora se resuelve por bot
+  //      cuando el pedido está en un estado seguro (pendiente/armando).
+  if (esCambiarDireccion(textoLibre)) {
+    return handleIniciarCambioDireccion(jid, ses);
+  }
+
   // 0y) Petición explícita de ayuda ("ayuda", "?", "opciones", "que
   //     puedes hacer"). Antes caía al fallback y consumía intent-fail
   //     streak — un cliente que pide ayuda no debería quedar más cerca
@@ -8901,6 +8927,151 @@ async function handleRepetirPedido(jid, ses) {
   );
 }
 
+/**
+ * Inicia el flujo conversacional para cambiar la dirección del pedido
+ * activo del cliente. Reglas:
+ *   1. Cliente debe tener un pedido delivery en estado seguro
+ *      (pendiente/armando). Si no, se le explica y se sugiere agente
+ *      para casos ya en preparación avanzada.
+ *   2. Si hay varios activos, se coge el más reciente delivery — el
+ *      caso raro de 2 delivery activos simultáneos se resuelve
+ *      preguntando el número (pero por ahora priorizamos simplicidad
+ *      con el más reciente).
+ *   3. El estado espera_nueva_direccion guarda el pedido_id en pending
+ *      para no depender del contexto entre mensajes.
+ */
+async function handleIniciarCambioDireccion(jid, ses) {
+  const phone = phoneFromJid(jid);
+  if (!phone) {
+    return sendText(jid, `Necesito tu número para localizar el pedido. Escribe *MENU* para volver.`);
+  }
+  bumpStat('cambiar_direccion_intento');
+  let data;
+  try {
+    data = await oxidianGet(`/pedidos?telefono=${encodeURIComponent(phone)}&limit=5`);
+  } catch (err) {
+    log('warn', 'cambiar_direccion_lookup_fail', err?.message || String(err));
+    return sendText(jid, texts.errorTransitorio({
+      contexto: 'tu pedido activo',
+      tiendaUrl: getTiendaUrl(),
+    }));
+  }
+  const pedidos = (data && Array.isArray(data.pedidos)) ? data.pedidos : [];
+  // Buscamos el pedido delivery más reciente en un estado editable.
+  const editable = pedidos.find(p =>
+    (p.tipo_entrega_cliente || '').toLowerCase() === 'delivery'
+    && ['pendiente', 'armando'].includes(p.estado)
+  );
+  if (!editable) {
+    // Caso educado: hay pedido pero no editable (listo/en_ruta) o solo
+    // recogida. Mensaje específico según situación para no sonar genérico.
+    const enCamino = pedidos.find(p => ['listo', 'en_ruta'].includes(p.estado));
+    if (enCamino) {
+      return sendText(jid,
+        `El pedido *${enCamino.numero}* ya está preparado (o en camino), ` +
+        `así que un cambio de dirección necesita coordinarse con el repartidor.\n\n` +
+        `Escribe *AGENTE* y te ayudamos a resolverlo.`
+      );
+    }
+    const recogida = pedidos.find(p => (p.tipo_entrega_cliente || '').toLowerCase() === 'recogida');
+    if (recogida) {
+      return sendText(jid,
+        `Tu pedido *${recogida.numero}* es para recogida en tienda — no tiene dirección de entrega.\n\n` +
+        `Si quieres cambiarlo a delivery, escribe *AGENTE*.`
+      );
+    }
+    return sendText(jid,
+      `No encuentro un pedido delivery en curso para cambiarle la dirección.\n\n` +
+      `Si acabas de hacer el pedido y no aparece, espera unos segundos y vuelve a intentarlo, o escribe *MENU*.`
+    );
+  }
+  setClientState(ses, 'espera_nueva_direccion', stampPendingOwner(jid, {
+    pedido_id: editable.id,
+    numero: editable.numero,
+    estado_anterior: editable.estado,
+  }));
+  return sendText(jid,
+    `🏠 *Cambio de dirección — pedido ${editable.numero}*\n\n` +
+    `Escribe la nueva dirección completa (calle, número, piso si corresponde).\n\n` +
+    `_Para cancelar y volver al menú, escribe *0*._`
+  );
+}
+
+/**
+ * Handler del estado espera_nueva_direccion. Recibe el texto de la
+ * nueva dirección, la envía al endpoint /pedido/:id/cambiar-direccion
+ * y responde según el resultado. Nunca deja al cliente atrapado: si
+ * hay error, sale al menú principal.
+ */
+async function handleNuevaDireccion(jid, ses, text) {
+  if (isEscapeWord(text)) {
+    setClientState(ses, 'main_menu');
+    return sendText(jid, `De acuerdo, no hago cambios.\n\n${menuPrincipal(ses)}`);
+  }
+  const pending = ses.pending || {};
+  const pedidoId = pending.pedido_id;
+  const numero = pending.numero || '';
+  if (!pedidoId) {
+    setClientState(ses, 'main_menu');
+    return sendText(jid, `La sesión de cambio expiró. Vuelve a escribir *cambiar dirección* si aún lo necesitas.`);
+  }
+  const nueva = String(text || '').trim();
+  if (nueva.length < 6) {
+    return sendText(jid,
+      `Necesito una dirección algo más completa (calle y número al menos). Escríbela otra vez, o escribe *0* para cancelar.`
+    );
+  }
+  const phone = phoneFromJid(jid);
+  let resp;
+  try {
+    resp = await oxidianPost(`/pedido/${pedidoId}/cambiar-direccion`, {
+      telefono: phone,
+      nueva_direccion: nueva,
+    });
+  } catch (err) {
+    log('warn', 'cambiar_direccion_backend_fail', err?.message || String(err));
+    setClientState(ses, 'main_menu');
+    return sendText(jid, texts.errorTransitorio({
+      contexto: 'la dirección del pedido',
+      tiendaUrl: getTiendaUrl(),
+    }));
+  }
+  if (resp && resp.ok) {
+    bumpStat('cambiar_direccion_ok');
+    setClientState(ses, 'main_menu');
+    return sendText(jid,
+      `✅ *Dirección actualizada en el pedido ${numero}.*\n\n` +
+      `📍 ${resp.direccion}\n\n` +
+      `El equipo ya ve la dirección nueva. Si necesitas algo más, escribe *menú*.`
+    );
+  }
+  // Errores previsibles del backend — mensajes contextuales, no fríos.
+  const motivo = resp?.motivo || 'error_interno';
+  const mensajeBackend = resp?.mensaje || '';
+  setClientState(ses, 'main_menu');
+  if (motivo === 'estado_bloqueado') {
+    return sendText(jid,
+      `${mensajeBackend || 'El pedido ya está listo o en camino.'}\n\n` +
+      `Escribe *AGENTE* y te ayudamos a coordinar con el repartidor.`
+    );
+  }
+  if (motivo === 'fuera_cobertura') {
+    return sendText(jid,
+      `${mensajeBackend || 'Esa dirección queda fuera de nuestra zona de reparto.'}\n\n` +
+      `Prueba con otra dirección o escribe *cobertura* para ver las zonas donde llegamos.`
+    );
+  }
+  if (motivo === 'no_delivery') {
+    return sendText(jid, mensajeBackend || `Ese pedido es para recogida, no tiene dirección editable.`);
+  }
+  if (motivo === 'no_autorizado') {
+    return sendText(jid, `No pude verificar el pedido con tu número. Escribe *menú* para volver.`);
+  }
+  return sendText(jid,
+    `No pude actualizar la dirección ahora mismo. Intenta más tarde o escribe *AGENTE* si es urgente.`
+  );
+}
+
 async function handleEstadoPedido(jid, ses, numero) {
   // Escape universal: salir sin dejar la sesión atrapada.
   if (isEscapeWord(numero)) {
@@ -9042,6 +9213,26 @@ async function handleEstadoPedido(jid, ses, numero) {
           cancelable: pedido.estado === 'pendiente',
           era_ultimo_cerrado: esUltimo && !hayActivo,
         }));
+
+        // Seguimiento GPS del rider — solo si el pedido está en_ruta y el
+        // backend tiene un ping reciente del repartidor (feature GPS
+        // tracking del delivery-hardening). Degrada silenciosamente si
+        // el endpoint falla o no hay coord fresca: nunca inventamos
+        // posición ni ensuciamos el mensaje con un link roto.
+        let riderLinea = '';
+        if (pedido.estado === 'en_ruta') {
+          try {
+            const t = await oxidianGet(
+              `/pedido/${pedido.id}/tracking?telefono=${encodeURIComponent(phone)}`
+            );
+            if (t && t.ok && t.rider) {
+              const nombre = t.rider.nombre ? ` *${t.rider.nombre}*` : '';
+              const hace = t.rider.hace_min === 0 ? 'ahora mismo' : `hace ${t.rider.hace_min} min`;
+              riderLinea = `\n🛵 Repartidor${nombre} · última posición ${hace}\n📍 ${t.rider.maps_url}\n`;
+            }
+          } catch (_) { /* tracking opcional — no rompe el flujo */ }
+        }
+
         return sendText(jid,
           contextoConsulta +
           `${est.emoji} *Pedido ${pedido.numero}*\n\n` +
@@ -9050,6 +9241,7 @@ async function handleEstadoPedido(jid, ses, numero) {
           `${contexto}${tiempoTxt}\n` +
           confirmationHint +
           (siguiente ? `${siguiente}\n` : '') +
+          riderLinea +
           `Total: *${formatPrecio(pedido.total)}*\n` +
           `Pago: *${pedido.pago_confirmado ? 'confirmado' : 'pendiente o contra entrega'}*\n` +
           itemsTxt +
@@ -11282,6 +11474,8 @@ module.exports = {
     drainInboundMessages,
     detectClientIntent,
     _singularize,
+    esCambiarDireccion,
+    esRepetirPedido,
     isOrderStatusIntent,
     tryHandleConfirmationReply,
     _tryCatalogSearchReply,
