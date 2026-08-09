@@ -170,21 +170,52 @@
 }
 .club-hero-inner {
   position: relative; z-index: 1;
-  display: flex; align-items: center; gap: 1.1rem; margin-bottom: 1.1rem;
+  display: flex; align-items: center; gap: clamp(.6rem, 3vw, 1.1rem);
+  margin-bottom: 1.1rem; flex-wrap: wrap;
 }
-.club-hero-icon { font-size: 3rem; filter: drop-shadow(0 4px 14px color-mix(in srgb, var(--brand-primary) 45%, transparent)); }
-.club-hero-label { font-size: .75rem; font-weight: 700; color: rgba(255,255,255,.55); text-transform: uppercase; letter-spacing: .06em; }
-.club-hero-pts { font-size: 3rem; font-weight: 950; color: var(--brand-primary); line-height: 1; letter-spacing: -.04em; }
-.club-hero-val { font-size: .8rem; font-weight: 600; color: rgba(255,255,255,.6); margin-top: .2rem; }
+/* 2026-08-10: escalas hardcoded en rem convertidas a clamp() —
+   evita overflow en móviles <380px sin cambiar el look en desktop.
+   Contraste subido en labels/valores (.55/.60/.45 → .82/.85/.72). */
+.club-hero-icon {
+  font-size: clamp(2rem, 8vw, 3rem);
+  filter: drop-shadow(0 4px 14px color-mix(in srgb, var(--brand-primary) 45%, transparent));
+}
+.club-hero-label {
+  font-size: clamp(.7rem, 2.6vw, .78rem);
+  font-weight: 700; color: rgba(255,255,255,.82);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.club-hero-pts {
+  font-size: clamp(2.1rem, 9vw, 3rem);
+  font-weight: 950; color: var(--brand-primary);
+  line-height: 1; letter-spacing: -.04em;
+  overflow-wrap: anywhere;
+}
+.club-hero-val {
+  font-size: clamp(.75rem, 3vw, .85rem);
+  font-weight: 600; color: rgba(255,255,255,.85); margin-top: .2rem;
+}
 .club-hero-stats {
   position: relative; z-index: 1;
   display: flex; align-items: center;
-  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
-  border-radius: .75rem; padding: .65rem .9rem; gap: .8rem;
+  background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.16);
+  border-radius: .75rem; padding: .65rem .9rem;
+  gap: clamp(.5rem, 2vw, .8rem);
+  flex-wrap: wrap;
 }
-.club-stat { display: flex; flex-direction: column; align-items: center; gap: .1rem; flex: 1; }
-.club-stat-v { font-size: 1.1rem; font-weight: 950; color: #fff; }
-.club-stat-l { font-size: .62rem; font-weight: 700; color: rgba(255,255,255,.45); text-transform: uppercase; }
+.club-stat {
+  display: flex; flex-direction: column; align-items: center;
+  gap: .1rem; flex: 1 1 auto; min-width: 0;
+}
+.club-stat-v {
+  font-size: clamp(.95rem, 3.5vw, 1.15rem);
+  font-weight: 950; color: #fff;
+}
+.club-stat-l {
+  font-size: clamp(.58rem, 2.2vw, .66rem);
+  font-weight: 700; color: rgba(255,255,255,.72);
+  text-transform: uppercase; text-align: center;
+}
 .club-stat-sep { width: 1px; height: 32px; background: rgba(255,255,255,.1); flex-shrink: 0; }
 .club-section-title { font-size: .85rem; font-weight: 900; color: var(--col-text); margin-bottom: .8rem; }
 .club-how-grid { display: grid; gap: .75rem; }
