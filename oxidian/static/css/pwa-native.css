@@ -123,32 +123,30 @@
   }
 
   body.ox-body-public .ox-public-logo-frame {
-    width: 56px !important;
-    height: 56px !important;
-    flex: 0 0 56px !important;
-    padding: 3px !important;
-    background: #fff !important;
+    width: 76px !important;
+    height: 64px !important;
+    flex: 0 0 76px !important;
+    padding: 0 !important;
+    background: transparent !important;
     border: 0 !important;
-    border-radius: 16px !important;
+    border-radius: 0 !important;
     transform: none !important;
-    box-shadow:
-      0 0 0 2px color-mix(in srgb, var(--brand-primary) 55%, transparent),
-      0 8px 20px -6px rgba(0,0,0,.4) !important;
+    box-shadow: none !important;
     display: grid !important;
     place-items: center !important;
-    overflow: hidden !important;
+    overflow: visible !important;
   }
   body.ox-body-public .ox-public-identity:hover .ox-public-logo-frame {
-    transform: scale(1.03) !important;
-    box-shadow:
-      0 0 0 3px color-mix(in srgb, var(--brand-primary) 70%, transparent),
-      0 10px 22px -6px rgba(0,0,0,.45) !important;
+    transform: none !important;
+    box-shadow: none !important;
   }
+  body.ox-body-public .ox-public-logo-frame::before,
+  body.ox-body-public .ox-public-logo-frame::after { content: none !important; display: none !important; }
   body.ox-body-public .ox-public-logo {
     width: 100% !important;
     height: 100% !important;
     object-fit: contain !important;
-    border-radius: 12px !important;
+    border-radius: 0 !important;
     background: transparent !important;
   }
   body.ox-body-public .ox-public-logo-fallback {
@@ -281,13 +279,13 @@
         color-mix(in srgb, var(--theme-header-bg) 88%, #000) 0%,
         color-mix(in srgb, var(--theme-header-bg) 78%, #000) 100%) !important;
     border-top: 1px solid color-mix(in srgb, var(--theme-header-text) 10%, transparent) !important;
-    padding: .35rem 0 !important;
+    padding: .18rem 0 !important;
   }
   body.ox-body-public .ox-header-sub-scroll {
     display: flex !important;
     align-items: center !important;
-    gap: .4rem !important;
-    padding: .1rem .95rem calc(.1rem + env(safe-area-inset-bottom, 0px)*0) !important;
+    gap: .32rem !important;
+    padding: .06rem .8rem !important;
     overflow-x: auto !important;
     scroll-snap-type: x proximity !important;
     scrollbar-width: none !important;
@@ -299,13 +297,14 @@
     flex: 0 0 auto !important;
     display: inline-flex !important;
     align-items: center !important;
-    gap: .35rem !important;
-    padding: .32rem .65rem !important;
+    gap: .28rem !important;
+    min-height: 30px !important;
+    padding: .22rem .55rem !important;
     border: 1px solid color-mix(in srgb, var(--theme-header-text) 18%, transparent) !important;
     background: color-mix(in srgb, var(--theme-header-text) 8%, transparent) !important;
     color: var(--theme-header-text) !important;
     border-radius: 999px !important;
-    font-size: .74rem !important;
+    font-size: .68rem !important;
     font-weight: 700 !important;
     line-height: 1 !important;
     white-space: nowrap !important;
@@ -580,14 +579,71 @@
 
 @media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen) {
 
-  /* ── Barra de búsqueda: OCULTA en PWA — la búsqueda vive en el
-     bottom-nav (icono lupa) que abre un overlay dedicado. Así no hay
-     un input inline en el flujo del catálogo que iOS pueda enfocar
-     durante el pan → scroll totalmente fluido en el menú. */
+  /* Buscador PWA visible y directo: una sola barra, sin modal intermedio. */
   body.ox-body-public .ep-search-wrap {
-    display: none !important;
+    display: block !important;
+    position: relative !important;
+    top: auto !important;
+    z-index: 2 !important;
+    margin: .35rem 0 1rem !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
-  body.ox-body-public .ep-search-state { display: block !important; }  /* si hay búsqueda activa (?q=), mostrar chip */
+  body.ox-body-public .ep-search-wrap + :is(.ep-banner-section,.ep-mc-destacados-wrap) {
+    position: relative !important;
+    z-index: 1 !important;
+    clear: both;
+  }
+  @media (max-width: 420px) {
+    body.ox-body-public .ep-search-box { min-height: 50px !important; padding-left: .75rem !important; }
+    body.ox-body-public .ep-search-input { min-height: 42px !important; font-size: 16px !important; }
+    body.ox-body-public .ep-search-submit { min-width: 48px !important; min-height: 42px !important; padding: 0 .72rem !important; }
+    body.ox-body-public .ep-search-submit span { font-size: 0 !important; }
+    body.ox-body-public .ep-search-submit span::after { content: 'Ir'; font-size: .78rem; }
+  }
+  body.ox-body-public .ep-search-box {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 56px !important;
+    gap: .62rem !important;
+    padding: .3rem .34rem .3rem 1rem !important;
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 24%, var(--col-border)) !important;
+    border-radius: 1.15rem !important;
+    background: var(--theme-surface) !important;
+    box-shadow: 0 9px 26px color-mix(in srgb, var(--theme-text) 9%, transparent) !important;
+    overflow: hidden !important;
+  }
+  body.ox-body-public .ep-search-box::after { content: none !important; display: none !important; }
+  body.ox-body-public .ep-search-box:focus-within {
+    border-color: var(--brand-primary) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 16%, transparent) !important;
+  }
+  body.ox-body-public .ep-search-icon { width: 20px !important; height: 20px !important; color: var(--brand-primary) !important; }
+  body.ox-body-public .ep-search-input { width: 100% !important; min-width: 0 !important; min-height: 46px !important; padding: .55rem 0 !important; font-size: 1rem !important; font-weight: 720 !important; }
+  body.ox-body-public .ep-search-submit {
+    width: auto !important;
+    min-width: 88px !important;
+    min-height: 46px !important;
+    padding: 0 1rem !important;
+    clip-path: none !important;
+    border-radius: .86rem !important;
+    color: var(--action-on-primary) !important;
+    font-weight: 900 !important;
+  }
+  body.ox-body-public .ep-search-submit span { display: inline !important; }
+  body.ox-body-public .ep-search-submit::after { content: none !important; display: none !important; }
+  body.ox-body-public .ep-search-clear { min-width: 40px; min-height: 40px; display: grid; place-items: center; }
+  body.ox-body-public .ep-search-state { display: block !important; }
+
+  @media (max-width: 380px) {
+    body.ox-body-public .ep-search-box { padding-left: .78rem !important; gap: .42rem !important; }
+    body.ox-body-public .ep-search-submit { min-width: 48px !important; width: 48px !important; padding: 0 !important; }
+    body.ox-body-public .ep-search-submit span { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip-path: inset(50%) !important; }
+    body.ox-body-public .ep-search-submit::after { content: '→' !important; display: grid !important; place-items: center !important; color: var(--action-on-primary) !important; font-size: 1.2rem !important; }
+  }
   /* ══════════════════════════════════════════════════════════════
      OVERLAY DE BÚSQUEDA — diseño 2025
      · Backdrop con gradiente vertical (no solo negro plano)
@@ -802,6 +858,73 @@
     background: rgba(255,255,255,.2);
   }
 
+  /* Buscador PWA: hoja clara, jerarquía de catálogo y CTA legible. */
+  #ox-search-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+    background: rgba(20, 14, 9, .58) !important;
+    backdrop-filter: blur(5px) !important;
+    -webkit-backdrop-filter: blur(5px) !important;
+  }
+  #ox-search-overlay .ox-search-stack {
+    max-width: 680px;
+    max-height: min(78dvh, 620px);
+    padding: 1.15rem 1rem calc(1.15rem + env(safe-area-inset-bottom, 0px));
+    gap: .85rem;
+    overflow-y: auto;
+    border: 1px solid color-mix(in srgb, var(--theme-text) 10%, transparent);
+    border-bottom: 0;
+    border-radius: 1.5rem 1.5rem 0 0;
+    background: var(--theme-surface, #fffdf8);
+    box-shadow: 0 -20px 60px rgba(20, 12, 5, .24);
+    animation: ox-search-sheet-in .26s cubic-bezier(.2,.85,.3,1);
+  }
+  @keyframes ox-search-sheet-in {
+    from { transform: translateY(28px); opacity: .45; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  #ox-search-overlay .ox-search-top { justify-content: space-between; align-items: flex-start; }
+  #ox-search-overlay .ox-search-top > div { display: grid; gap: .12rem; min-width: 0; }
+  #ox-search-overlay .ox-search-top strong { color: var(--theme-text); font-size: 1.25rem; letter-spacing: -.025em; }
+  #ox-search-overlay .ox-search-top small { color: var(--theme-muted); font-size: .78rem; }
+  #ox-search-overlay .ox-search-hint {
+    width: max-content; padding: 0; border: 0; background: none;
+    color: var(--brand-primary); font-size: .66rem;
+  }
+  #ox-search-overlay [data-search-close] {
+    width: 44px; height: 44px; flex: 0 0 auto;
+    border-color: var(--col-border); background: var(--col-elevated);
+    color: var(--theme-text); backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  #ox-search-overlay .ox-search-panel {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: .3rem .3rem .3rem .9rem;
+    border-radius: 1rem; background: var(--col-elevated);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 8%, transparent);
+    animation: none;
+  }
+  #ox-search-overlay input[type="search"] {
+    min-width: 0; width: 100%; padding: .78rem .35rem; border: 0; outline: 0;
+    background: transparent; color: var(--theme-text); font-size: 16px; font-weight: 750;
+  }
+  #ox-search-overlay input[type="search"]::placeholder { color: var(--theme-muted); font-weight: 650; }
+  #ox-search-overlay button[type="submit"] {
+    width: auto; min-width: 92px; height: 46px; padding: 0 .9rem;
+    display: inline-flex; gap: .42rem; border-radius: .8rem; font-size: .78rem; font-weight: 950;
+  }
+  #ox-search-overlay button[type="submit"] b { font-size: 1rem; }
+  #ox-search-overlay .ox-search-quick-label { margin: .1rem 0 -.35rem; color: var(--theme-muted); font-size: .72rem; font-weight: 850; }
+  #ox-search-overlay .ox-search-quick { padding: 0; gap: .5rem; animation: none; }
+  #ox-search-overlay .ox-search-quick button {
+    min-height: 42px; padding: .5rem .8rem;
+    color: var(--theme-text); background: var(--col-elevated); border-color: var(--col-border);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  @media (max-width: 380px) {
+    #ox-search-overlay button[type="submit"] { min-width: 48px; width: 48px; padding: 0; }
+    #ox-search-overlay button[type="submit"] span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  }
+
   /* ══════════════════════════════════════════════════════════════
      CATEGORÍAS — .ep-cats-wrapper era el CULPABLE del atasco en menú.
      La regla web (storefront-menu.css:680) le pone position:sticky con
@@ -877,6 +1000,54 @@
      → viewport se anclaba al input. Aire adicional (1.1rem) mueve el
      input fuera de la zona directamente-bajo-header y libera el touch. */
   body.ox-body-public main { padding-top: 1.1rem !important; }
+
+  /* ── EDGE-TO-EDGE en modo PWA (2026-08-10) ─────────────────────────
+     El template global aplica `<main class="max-w-screen-xl mx-auto
+     px-3 sm:px-4 ...">` — pensado para navegador web donde los 12-16px
+     de padding lateral dan un margen natural. En modo PWA (app
+     instalada) esos 12-16px dejan ver el fondo crema del body como
+     "franjas laterales" contra las cards blancas del contenido — el
+     usuario lo percibe como bordes decorativos innecesarios.
+
+     Solución: en modo PWA, main pasa a full-width (padding lateral 0).
+     Las secciones internas (.ep-section, .ep-hero, .ep-search-wrap,
+     .ep-banner-section) recuperan un pequeño padding propio (~12px)
+     para no pegar textos al borde absoluto — el look final es "app
+     nativa edge-to-edge" tipo Uber Eats / Glovo. */
+  body.ox-body-public main {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    /* max-width del template (Tailwind max-w-screen-xl = 1280px) se
+       anula en modo PWA para que en pantallas >1280px (iPad Pro
+       landscape, PWA instalada en desktop) el contenido llene todo
+       el viewport y no aparezcan franjas laterales de 360px+ a cada
+       lado. La legibilidad se mantiene porque .ep-grid ya usa
+       repeat(auto-fit, minmax(240px, 1fr)) y crece en columnas
+       en vez de estirar tarjetas. */
+    max-width: 100% !important;
+  }
+  /* El HERO en modo PWA va edge-to-edge sin border-radius lateral:
+     así ocupa todo el ancho del viewport como un banner de app,
+     igual que Uber Eats o Glovo. Solo redondeo abajo para separar
+     visualmente del contenido siguiente. */
+  body.ox-body-public main > .ep-hero,
+  body.ox-body-public main > .ep-hero-photo {
+    border-radius: 0 0 1rem 1rem !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+  /* El resto de secciones top-level (buscador, banners, secciones de
+     productos, destacados) recuperan un pequeño padding lateral
+     interno para no pegar textos y grids al borde absoluto del
+     viewport. 0.6rem = ~10px, suficiente para lectura sin volver a
+     crear la sensación de "franjas". */
+  body.ox-body-public main > .ep-search-wrap,
+  body.ox-body-public main > .ep-banner-section,
+  body.ox-body-public main > .ep-section,
+  body.ox-body-public main > .ep-mc-destacados-wrap {
+    padding-left: .6rem !important;
+    padding-right: .6rem !important;
+  }
 
   /* ── Producto: tarjeta más viva, con relieve táctil ── */
   body.ox-body-public .ep-card {
@@ -1285,6 +1456,61 @@ body.ox-body-public #btn-confirmar[disabled] {
 /* ── Sub-barra: oculta por defecto (solo aparece en display-mode instalado) ── */
 .ox-header-sub { display: none; }
 
+/* El costal vive en una capa fija del viewport: no se estira con la altura
+   del catálogo, no repite juntas y el contenido se desplaza por encima. */
+body.ox-body-public {
+  position: relative;
+  isolation: isolate;
+  background: transparent !important;
+}
+
+body.ox-body-public::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background-color: #d1b585;
+  background-image:
+    linear-gradient(rgba(255, 250, 239, .66), rgba(255, 250, 239, .66)),
+    url("../coffee-burlap-texture-v2.webp");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  filter: saturate(.72) contrast(.86) brightness(1.03);
+  transform: translateZ(0);
+}
+
+body.ox-body-public main {
+  background: transparent !important;
+}
+body.ox-body-public main::before { display: none !important; }
+
+/* Los textos editoriales nunca quedan directamente sobre las fibras. */
+body.ox-body-public :is(.ep-section-head,.ep-cat-title) {
+  padding: .55rem .68rem;
+  border: 1px solid color-mix(in srgb, var(--theme-text) 10%, transparent);
+  border-radius: .85rem;
+  background: color-mix(in srgb, var(--theme-surface) 88%, transparent);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--theme-text) 7%, transparent);
+  -webkit-backdrop-filter: blur(9px) saturate(1.05);
+  backdrop-filter: blur(9px) saturate(1.05);
+}
+body.ox-body-public .ep-cat-title { color: var(--theme-text); }
+body.ox-body-public .ep-cat-title::after {
+  background: color-mix(in srgb, var(--theme-text) 18%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  body.ox-body-public::before {
+    background-color: #24170e;
+    background-image:
+      linear-gradient(rgba(18, 12, 8, .72), rgba(18, 12, 8, .72)),
+      url("../coffee-burlap-texture-v2.webp");
+    filter: saturate(.62) contrast(.82) brightness(.78);
+  }
+}
+
 /* ── iOS notch: color de status bar coherente con el header también en
       landscape. Aplica siempre — no interfiere con la versión navegador. */
 @supports (padding: max(0px)) {
@@ -1292,4 +1518,32 @@ body.ox-body-public #btn-confirmar[disabled] {
     padding-left: max(1rem, env(safe-area-inset-left));
     padding-right: max(1rem, env(safe-area-inset-right));
   }
+}
+
+/* PWA en teléfonos apaisados: prioriza catálogo sin reducir controles por
+   debajo de 44 px. También respeta los laterales del notch. */
+@media (display-mode: standalone) and (orientation: landscape) and (max-height: 520px),
+       (display-mode: minimal-ui) and (orientation: landscape) and (max-height: 520px),
+       (display-mode: fullscreen) and (orientation: landscape) and (max-height: 520px) {
+  body.ox-body-public main {
+    padding-top: .55rem !important;
+    padding-inline: max(.75rem, env(safe-area-inset-left)) max(.75rem, env(safe-area-inset-right)) !important;
+  }
+  body.ox-body-public .ep-search-wrap {
+    margin: .15rem 0 .6rem !important;
+  }
+  body.ox-body-public .ep-search-box {
+    min-height: 48px !important;
+    border-radius: .95rem !important;
+  }
+  body.ox-body-public .ep-search-input,
+  body.ox-body-public .ep-search-submit {
+    min-height: 44px !important;
+  }
+  body.ox-body-public .ep-banner-section,
+  body.ox-body-public .ep-mc-destacados-wrap,
+  body.ox-body-public .ep-cat-section {
+    margin-bottom: .7rem !important;
+  }
+  body.ox-body-public .ep-section-title { font-size: 1.02rem !important; }
 }
