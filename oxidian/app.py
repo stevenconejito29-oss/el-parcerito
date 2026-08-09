@@ -1287,7 +1287,9 @@ def _seed_admin():
         ("EMAIL_CONTACTO",                    _env_default("EMAIL_CONTACTO", ""), "Correo público de contacto"),
         ("WHATSAPP_COUNTRY_CODE",             _env_default("WHATSAPP_COUNTRY_CODE", ""), "Prefijo telefónico internacional"),
         ("BIZUM_TELEFONO",                    _env_default("BIZUM_TELEFONO", ""), "Número que recibe Bizum"),
-        ("BIZUM_HABILITADO",                  "1", "Permitir Bizum"),
+        # Bizum retirado del catálogo por defecto (2026-08-09). Cambiar
+        # a "1" en /superadmin/config para reactivarlo puntualmente.
+        ("BIZUM_HABILITADO",                  "0", "Permitir Bizum"),
         ("EFECTIVO_HABILITADO",               "1", "Permitir efectivo"),
         ("MODO_TIENDA",                       "propia", "Modo comercial: propia o bar_servicio"),
         ("FEATURE_DELIVERY",                  "1", "Permitir pedidos a domicilio"),

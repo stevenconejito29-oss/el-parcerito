@@ -145,7 +145,12 @@ STORE_DEFAULTS = {
     "EMAIL_CONTACTO": "",
     "WHATSAPP_COUNTRY_CODE": "",
     "BIZUM_TELEFONO": "",
-    "BIZUM_HABILITADO": "1",
+    # Bizum retirado como método aceptado por defecto (decisión de negocio
+    # 2026-08-09). El código de rendering de pedidos históricos se mantiene
+    # para no romper visualización de cierres/tickets/comisiones ya
+    # cerrados con metodo_pago='bizum'. Para reactivarlo puntualmente en
+    # una tienda, cambiar a "1" desde /superadmin/config sin redeploy.
+    "BIZUM_HABILITADO": "0",
     "EFECTIVO_HABILITADO": "1",
     "TARJETA_HABILITADA": "1",
     "MODO_TIENDA": "propia",

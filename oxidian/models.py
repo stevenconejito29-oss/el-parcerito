@@ -324,6 +324,13 @@ def normalizar_metodo_pago(val):
 
     ``None`` obliga a cada canal a elegir o rechazar explícitamente un método;
     así un typo o payload manipulado no altera la conciliación de caja.
+
+    NOTA: esta función NO verifica si el método está HABILITADO en la
+    tienda — solo si es un valor de la tupla conocida. La habilitación
+    depende de SiteConfig y se comprueba con ``metodo_pago_aceptado`` en
+    los endpoints de creación de pedido. Separamos las dos operaciones
+    para que la lectura de pedidos históricos siga funcionando aunque
+    el método se haya retirado del catálogo activo.
     """
     v = str(val or "").strip().lower()
     if v == "transferencia":
@@ -331,6 +338,40 @@ def normalizar_metodo_pago(val):
     if v in METODOS_PAGO_VALIDOS:
         return v
     return None
+
+
+def metodo_pago_aceptado(val):
+    """Devuelve el método normalizado si está habilitado en SiteConfig,
+    o ``None`` si no lo está o es inválido.
+
+    Se usa en los endpoints de creación de pedido (POS, checkout, bot)
+    como defensa en profundidad: aunque un cliente/JS obsoleto envíe
+    ``metodo_pago='bizum'``, si el super_admin lo desactivó en
+    ``/superadmin/config`` el pedido no llega a crearse con ese método.
+
+    IMPORTANTE: NO llames a esta función al leer pedidos ya guardados —
+    devolvería None para métodos retirados y romperías cierres/tickets
+    históricos. Para eso está ``normalizar_metodo_pago`` sin gate.
+    """
+    normalizado = normalizar_metodo_pago(val)
+    if normalizado is None:
+        return None
+    # Cada método tiene su propia clave de habilitación en SiteConfig.
+    # Default = "1" para efectivo/tarjeta (métodos base) y "0" para bizum
+    # (retirado 2026-08-09). Coincide con los defaults en store_config.py.
+    flags = {
+        "efectivo": ("EFECTIVO_HABILITADO", "1"),
+        "tarjeta":  ("TARJETA_HABILITADA", "1"),
+        "bizum":    ("BIZUM_HABILITADO", "0"),
+    }
+    if normalizado not in flags:
+        return normalizado  # método sin flag conocido — permitido por compat
+    clave, default = flags[normalizado]
+    try:
+        raw = SiteConfig.get(clave, default)
+    except Exception:
+        raw = default
+    return normalizado if str(raw).strip() == "1" else None
 
 
 # ─────────────────────────────────────────────

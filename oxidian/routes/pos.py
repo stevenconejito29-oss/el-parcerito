@@ -10,7 +10,7 @@ from flask_login import login_required, current_user
 from functools import wraps
 from sqlalchemy.exc import IntegrityError
 from extensions import db, get_or_404
-from models import Product, Categoria, Order, OrderItem, User, Coupon, Caja, ComboItem, AdminFeature, AuditLog, SiteConfig, IdempotencyKey, normalizar_metodo_pago, utcnow, metadata_componente_combo, metadata_item_pedido
+from models import Product, Categoria, Order, OrderItem, User, Coupon, Caja, ComboItem, AdminFeature, AuditLog, SiteConfig, IdempotencyKey, normalizar_metodo_pago, metodo_pago_aceptado, utcnow, metadata_componente_combo, metadata_item_pedido
 from idempotency import request_idempotency_key, request_body_hash, IDEMPOTENCY_TTL
 from services import (
     calcular_puntos_ganados,
@@ -294,6 +294,14 @@ def venta():
         option_config = _pos_product_option_config(producto)
         if option_config["grupos"]:
             pos_product_options[str(producto.id)] = option_config
+    # Métodos de pago disponibles en la caja presencial: se leen de
+    # SiteConfig para que el super_admin pueda apagar/encender canales
+    # sin redeploy. Bizum queda apagado por defecto (2026-08-09).
+    metodos_pago_disponibles = {
+        "efectivo": SiteConfig.get("EFECTIVO_HABILITADO", "1") == "1",
+        "tarjeta":  SiteConfig.get("TARJETA_HABILITADA", "1") == "1",
+        "bizum":    SiteConfig.get("BIZUM_HABILITADO", "0") == "1",
+    }
     return render_template("pos/venta.html",
                            productos=productos,
                            categorias=categorias,
@@ -301,7 +309,8 @@ def venta():
                            clientes=clientes,
                            pos_combos=pos_combos,
                            pos_product_options=pos_product_options,
-                           pos_max_qty=_pos_max_qty())
+                           pos_max_qty=_pos_max_qty(),
+                           metodos_pago_disponibles=metodos_pago_disponibles)
 
 
 # ─── BUSCAR PRODUCTO (AJAX) ──────────────────
@@ -361,9 +370,12 @@ def cobrar():
 
     data = request.json or {}
     items_data = data.get("items", [])
-    metodo_pago = normalizar_metodo_pago(data.get("metodo_pago"))
+    # Se valida contra SiteConfig para rechazar métodos deshabilitados
+    # (p.ej. Bizum retirado 2026-08-09) aunque el JS del navegador esté
+    # cacheado y todavía los envíe.
+    metodo_pago = metodo_pago_aceptado(data.get("metodo_pago"))
     if not metodo_pago:
-        return jsonify({"ok": False, "msg": "Método de pago inválido"}), 400
+        return jsonify({"ok": False, "msg": "Método de pago inválido o no disponible"}), 400
     try:
         descuento_manual = float(data.get("descuento_manual", 0))
     except (TypeError, ValueError):

@@ -187,22 +187,33 @@
         <div class="pos-field">
           <label class="pos-field-lbl">Método de pago</label>
           <div class="pos-pay-grid">
+            {% if metodos_pago_disponibles.efectivo %}
             <button type="button" data-pos-action="payment" data-value="efectivo" class="pos-pay-btn active" id="pay-efectivo">
               Efectivo
             </button>
+            {% endif %}
+            {% if metodos_pago_disponibles.tarjeta %}
             <button type="button" data-pos-action="payment" data-value="tarjeta" class="pos-pay-btn" id="pay-tarjeta">
               Tarjeta
             </button>
+            {% endif %}
+            {# Bizum solo aparece si la tienda lo tiene activo en SiteConfig.
+               El bloque bizum-info que muestra el número al operador va
+               igualmente detrás del mismo condicional. #}
+            {% if metodos_pago_disponibles.bizum %}
             <button type="button" data-pos-action="payment" data-value="bizum" class="pos-pay-btn" id="pay-bizum">
               Bizum
             </button>
+            {% endif %}
           </div>
         </div>
+        {% if metodos_pago_disponibles.bizum %}
         <div class="pos-field" id="bizum-info" style="display:none">
           <div class="pos-bizum-box">
             📲 Bizum al: <strong id="bizum-tel">cargando...</strong>
           </div>
         </div>
+        {% endif %}
         <div class="pos-field">
           <label class="pos-field-lbl">📝 Notas</label>
           <textarea id="notas" rows="2" class="pos-textarea" placeholder="Notas del cliente..."></textarea>
@@ -915,10 +926,13 @@ function setPago(metodo, btn) {
   metodoPago = metodo;
   document.querySelectorAll('.pos-pay-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  // Bloque bizum-info puede no existir cuando la tienda tiene Bizum
+  // deshabilitado — el template lo oculta detrás del mismo condicional
+  // que el botón, así que null-check antes de tocar el DOM.
   const bizumInfo = document.getElementById('bizum-info');
+  if (!bizumInfo) return;
   if (metodo === 'bizum') {
     bizumInfo.style.display = '';
-    // Cargar teléfono de bizum desde config
     fetch('/api/bot/config-publica').then(r => r.json()).then(d => {
       if (d.telefono) document.getElementById('bizum-tel').textContent = d.telefono;
     }).catch(() => {
