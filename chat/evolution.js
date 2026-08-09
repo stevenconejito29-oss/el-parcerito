@@ -178,8 +178,17 @@ function getMessagesFromPayload(payload) {
  */
 function getMessageMeta(msg) {
   const remoteJid = msg?.key?.remoteJid || null;
+  // WhatsApp multi-device puede identificar al contacto mediante un LID
+  // opaco y entregar el número real en remoteJidAlt/participantAlt. Para
+  // permisos y sesiones preferimos siempre el JID telefónico, sin afectar
+  // grupos ni mensajes de instalaciones Evolution antiguas.
+  const alternateJid = msg?.key?.remoteJidAlt || msg?.key?.participantAlt || null;
+  const phoneJid = [remoteJid, alternateJid].find(value =>
+    typeof value === 'string' && value.endsWith('@s.whatsapp.net')
+  );
+  const effectiveJid = phoneJid || remoteJid;
   return {
-    jid:        remoteJid,
+    jid:        effectiveJid,
     messageId:  msg?.key?.id || null,
     senderName: msg?.pushName || msg?.key?.participant || "",
     isFromMe:   Boolean(msg?.key?.fromMe),

@@ -38,7 +38,7 @@ process.env.SUPERADMINS = '34600000002';
 process.env.BOT_MIN_OUTBOUND_MS = '0';
 
 const { _test } = require('../bot');
-const { setCfg } = _test;
+const { setCfg, _resetProviderCircuit } = _test;
 
 // Permitir que sendText pase el gate 24h (necesitamos que el cliente
 // haya escrito antes). Como no hay `sendText` exportado directamente,
@@ -76,6 +76,7 @@ globalThis.fetch = async (url, opts) => {
 };
 
 test.after(() => { globalThis.fetch = _origFetch; });
+test.beforeEach(() => _resetProviderCircuit());
 
 // Necesitamos el sendText real. Está fuera de _test — lo obtenemos por
 // require.cache.
@@ -107,6 +108,21 @@ test('HTTP 4xx no reintenta y devuelve false', async () => {
   const ok = await _sendText('34611111112@s.whatsapp.net', 'hola', { transactional: true, humanize: false });
   assert.equal(ok, false);
   assert.equal(_fetchCalls, 1, 'no debería reintentar en 4xx');
+});
+
+test('HTTP 429 abre el cortacircuitos y evita insistir', async () => {
+  _fetchMode = '429'; _fetchCalls = 0;
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    _fetchCalls++;
+    return new Response('{"error":"rate limit"}', { status: 429, headers: { 'Retry-After': '60' } });
+  };
+  const first = await _sendText('34611111116@s.whatsapp.net', 'hola', { transactional: true, humanize: false });
+  const second = await _sendText('34611111117@s.whatsapp.net', 'hola', { transactional: true, humanize: false });
+  globalThis.fetch = previousFetch;
+  assert.equal(first, false);
+  assert.equal(second, false);
+  assert.equal(_fetchCalls, 1, 'la segunda llamada debe quedar bloqueada localmente');
 });
 
 test('HTTP 5xx reintenta y agota (≤3 intentos)', async () => {

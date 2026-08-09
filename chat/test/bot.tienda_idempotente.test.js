@@ -44,7 +44,12 @@ let currentEstado = 'abierta';
 let postCount = 0;
 
 server.on('request', (req, res) => {
-  if (req.url.startsWith('/api/bot/admin/tienda')) {
+  if (req.url.startsWith('/api/bot/identity/verify')) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      ok: true, rol: 'super_admin', nombre: 'Owner', capabilities: ['store', 'emergency'],
+    }));
+  } else if (req.url.startsWith('/api/bot/admin/tienda')) {
     if (req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, estado: currentEstado, mensaje_cierre: '' }));

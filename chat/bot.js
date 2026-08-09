@@ -2202,6 +2202,49 @@ function archiveHandoffSnapshot(clientJid, reason) {
   return { openedAt, assignedAt, waitedSec, handledSec, messageCount: mensajes.length };
 }
 
+// 2026-08-10: helper compartido para resetear la sesión del CLIENTE al
+// menú principal cuando el handoff termina. Antes closeHumanChat y
+// releaseHumanChat solo actualizaban la sesión del admin — la del
+// cliente quedaba en un estado zombie ('handoff' o similar) que el
+// router principal no manejaba explícitamente, y aunque getHandoff
+// devolviera null tras el DELETE, algunas ramas del pipeline seguían
+// consumiendo el mensaje sin producir respuesta al cliente. Resultado
+// reportado: "cuando el cliente deja de hablar con un admin, el bot
+// no le vuelve a contestar". Con este reset la próxima interacción
+// entra limpia por main_menu.
+function _resetClientSessionToMenu(clientJid) {
+  try {
+    db.prepare(`
+      UPDATE sessions
+      SET estado='main_menu',
+          role='client',
+          active_client_jid=NULL,
+          pending_json='{}',
+          carrito_json='[]',
+          updated_at=unixepoch()
+      WHERE jid=?
+    `).run(clientJid);
+  } catch (error) {
+    // Fallback: si el schema difiere (por ejemplo no existe carrito_json
+    // como columna), reintenta el UPDATE mínimo — sin carrito reset.
+    log('warn', '_resetClientSessionToMenu_partial',
+      `${clientJid}: ${error?.message || String(error)} — retry sin carrito`);
+    try {
+      db.prepare(`
+        UPDATE sessions
+        SET estado='main_menu',
+            active_client_jid=NULL,
+            pending_json='{}',
+            updated_at=unixepoch()
+        WHERE jid=?
+      `).run(clientJid);
+    } catch (retryError) {
+      log('error', '_resetClientSessionToMenu_fail',
+        `${clientJid}: ${retryError?.message || String(retryError)}`);
+    }
+  }
+}
+
 async function closeHumanChat(adminJid, clientJid, notifyClient = true) {
   const closed = db.transaction(() => {
     const removed = db.prepare(`
@@ -2211,11 +2254,14 @@ async function closeHumanChat(adminJid, clientJid, notifyClient = true) {
     archiveHandoffSnapshot(clientJid, 'admin_closed');
     db.prepare(`DELETE FROM handoffs WHERE client_jid=? AND admin_jid=?`).run(clientJid, adminJid);
     db.prepare(`DELETE FROM handoff_messages WHERE client_jid = ?`).run(clientJid);
+    // Sesión del admin: vuelve al panel operativo.
     db.prepare(`
       UPDATE sessions
       SET estado='admin_menu', active_client_jid=NULL, pending_json='{}', updated_at=unixepoch()
       WHERE jid=? AND active_client_jid=?
     `).run(adminJid, clientJid);
+    // Sesión del CLIENTE: vuelve a main_menu (bug fix 2026-08-10).
+    _resetClientSessionToMenu(clientJid);
     return true;
   })();
   if (!closed) return false;
@@ -2239,6 +2285,12 @@ async function releaseHumanChat(adminJid, clientJid, notifyClient = true) {
       SET estado='admin_menu', active_client_jid=NULL, pending_json='{}', updated_at=unixepoch()
       WHERE jid=? AND active_client_jid=?
     `).run(adminJid, clientJid);
+    // El cliente vuelve a la cola de handoff (sin admin asignado) pero
+    // mientras espera puede querer usar el bot con normalidad — cambia
+    // de opinión, consulta estado, etc. Se resetea al main_menu; la
+    // rama de handoff sin admin_jid del router pone su mensaje en cola
+    // igual, sin que el estado de sesión lo bloquee.
+    _resetClientSessionToMenu(clientJid);
     return true;
   })();
   if (!released) return false;
@@ -2268,6 +2320,9 @@ function closeHumanChatByClient(clientJid) {
         WHERE jid=? AND active_client_jid=?
       `).run(handoff.admin_jid, clientJid);
     }
+    // Cliente también se resetea aquí — coherente con el caso admin_closed
+    // aunque este flujo lo dispara el propio cliente escribiendo /volver bot.
+    _resetClientSessionToMenu(clientJid);
     return handoff;
   })();
 }
@@ -2839,6 +2894,40 @@ const BAN_SIGNAL_THRESHOLD = parseInt(process.env.BOT_BAN_SIGNAL_THRESHOLD || '5
 const _banSignalTimes = [];
 let _banAutoTriggered = false;
 
+// Cortacircuitos de proveedor: evita seguir golpeando Evolution cuando el
+// propio servicio pide bajar el ritmo (429) o está fallando de forma seguida.
+// No intenta "esquivar" controles de WhatsApp: pausa y exige recuperación.
+const PROVIDER_FAILURE_THRESHOLD = Math.max(2, parseInt(process.env.BOT_PROVIDER_FAILURE_THRESHOLD || '4', 10));
+const PROVIDER_FAILURE_PAUSE_MS = Math.max(5_000, parseInt(process.env.BOT_PROVIDER_FAILURE_PAUSE_MS || '120000', 10));
+const PROVIDER_RATE_LIMIT_PAUSE_MS = Math.max(5_000, parseInt(process.env.BOT_PROVIDER_RATE_LIMIT_PAUSE_MS || '300000', 10));
+let _providerConsecutiveFailures = 0;
+let _providerPausedUntil = 0;
+
+function _retryAfterMs(response) {
+  const raw = String(response?.headers?.get?.('retry-after') || '').trim();
+  if (!raw) return PROVIDER_RATE_LIMIT_PAUSE_MS;
+  if (/^\d+$/.test(raw)) return Math.max(1_000, Number(raw) * 1000);
+  const dateMs = Date.parse(raw);
+  return Number.isFinite(dateMs) ? Math.max(1_000, dateMs - Date.now()) : PROVIDER_RATE_LIMIT_PAUSE_MS;
+}
+
+function _pauseProvider(ms, reason) {
+  _providerPausedUntil = Math.max(_providerPausedUntil, Date.now() + Math.max(1_000, ms));
+  log('warn', 'provider_circuit_open', `${reason}; pausa hasta ${new Date(_providerPausedUntil).toISOString()}`);
+}
+
+function _registerProviderFailure(reason) {
+  _providerConsecutiveFailures++;
+  if (_providerConsecutiveFailures >= PROVIDER_FAILURE_THRESHOLD) {
+    _pauseProvider(PROVIDER_FAILURE_PAUSE_MS, `${_providerConsecutiveFailures} fallos consecutivos (${reason})`);
+  }
+}
+
+function _registerProviderSuccess() {
+  _providerConsecutiveFailures = 0;
+  _providerPausedUntil = 0;
+}
+
 function _registerBanSignal(status, bodySnippet) {
   const now = Date.now();
   while (_banSignalTimes.length && now - _banSignalTimes[0] > BAN_SIGNAL_WINDOW_MS) {
@@ -2881,10 +2970,11 @@ function _initWarmup() {
   if (!WARMUP_ENABLED || WARMUP_DAYS === 0) return;
   try {
     const row = db.prepare(
-      "SELECT MIN(timestamp) AS ts FROM logs WHERE evento = 'bot_warmup_start'"
+      "SELECT MIN(created_at) AS ts FROM logs WHERE evento = 'bot_warmup_start'"
     ).get();
     if (row && row.ts) {
-      _warmupStartedAt = new Date(row.ts).getTime();
+      // SQLite guarda `created_at` como Unix epoch en segundos.
+      _warmupStartedAt = Number(row.ts) * 1000;
     } else {
       _warmupStartedAt = Date.now();
       log('info', 'bot_warmup_start', `Warm-up de ${WARMUP_DAYS} días iniciado`);
@@ -2989,6 +3079,11 @@ async function sendText(jid, text, opts = {}) {
     return false;
   }
 
+  if (!opts.force && _providerPausedUntil > Date.now()) {
+    log('warn', 'provider_circuit_blocked', `to ${target}; faltan ${Math.ceil((_providerPausedUntil - Date.now()) / 1000)}s`);
+    return false;
+  }
+
   // ── Ventana 24h: bloquea cold-messaging para reducir riesgo de baneo.
   if (!opts.force && !opts.transactional) {
     const lastIn = lastInboundAt.get(jid) || 0;
@@ -3053,6 +3148,7 @@ async function sendText(jid, text, opts = {}) {
         let parsed = null;
         try { parsed = JSON.parse(bodyText); } catch {}
         if (r.ok) {
+          _registerProviderSuccess();
           log('info', 'send_ok', `${r.status} ${JSON.stringify(parsed) || bodyText}`);
           // Registrar timestamp para first-touch detection en próxima
           // respuesta al mismo jid.
@@ -3067,19 +3163,25 @@ async function sendText(jid, text, opts = {}) {
           log('warn', 'send_fail', `${r.status} ${bodyText.slice(0,200)}`);
           if (r.status === 401 || r.status === 403) {
             _registerBanSignal(r.status, bodyText);
+            _registerProviderFailure(`HTTP ${r.status}`);
+          } else if (r.status === 429) {
+            _pauseProvider(_retryAfterMs(r), 'HTTP 429 / rate limit');
           }
           return { done: true, ok: false };
         }
         // 5xx — retry with backoff (fuera del mutex, para no bloquear
         // otros envíos mientras esperamos que Evolution se recupere).
         log('warn', 'send_fail', `${r.status} ${bodyText.slice(0,200)} (attempt ${attempt})`);
+        _registerProviderFailure(`HTTP ${r.status}`);
         return { done: false };
       } catch (e) {
         log('warn', 'send_error', `${String(e)} (attempt ${attempt})`);
+        _registerProviderFailure(e?.name || 'network');
         return { done: false };
       }
     });
     if (result.done) return result.ok;
+    if (_providerPausedUntil > Date.now()) return false;
     // backoff fuera del mutex — otros clientes pueden enviar mientras esperamos.
     await sleep(500 * attempt);
   }
@@ -3825,6 +3927,11 @@ function _sanitizeReply(reply, cfg) {
 // tarda o está caído. En caso de error, devolvemos null y el caller sigue
 // con el flujo estándar (menú / FAQ) — nunca rompemos el chat por IA.
 async function _aiAutoRoute(jid, mensajeUsuario) {
+  // Decisión de producto: la IA externa guía al negocio en el panel interno,
+  // nunca redacta mensajes directos para clientes de WhatsApp.
+  return null;
+
+  /* istanbul ignore next -- contrato legado deliberadamente inaccesible */
   if (!mensajeUsuario || typeof mensajeUsuario !== 'string') return null;
   const phone = phoneFromJid(jid);
   if (!phone) return null;
@@ -3846,6 +3953,10 @@ async function _aiAutoRoute(jid, mensajeUsuario) {
 /* IA cliente: gated por SiteConfig. El endpoint /api/bot/ai/route decide
    cuándo se invoca; aquí solo generamos la respuesta si está habilitada. */
 async function aiSmartReply(jid, ses, mensajeUsuario) {
+  log('warn', 'ai_cliente_bloqueada', `jid=${jid}`);
+  return null;
+
+  /* istanbul ignore next -- contrato legado deliberadamente inaccesible */
   const cfg = await getAIConfig();
   if (!cfg || !cfg.habilitado) return null;
 
@@ -4456,7 +4567,7 @@ function isOrderStatusIntent(text) {
     .replace(/[?¿!¡.,;:]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return /^(?:estado|estado (?:de |del )?(?:mi )?pedido|mi pedido|mis pedidos|seguimiento|rastrear (?:mi )?pedido|consultar (?:mi )?pedido|donde (?:esta|va|anda|viene) (?:mi )?pedido|como va (?:mi )?(?:pedido|entrega)|cuanto falta(?: para (?:mi )?(?:pedido|entrega))?|a que hora llega(?: (?:mi )?pedido)?|ya (?:viene|sale|llega)(?: (?:mi )?pedido)?|quien (?:trae|reparte) (?:mi )?pedido|(?:hay|tiene|tengo) repartidor(?: asignado)?|informacion (?:de |del )?(?:mi )?(?:pedido|entrega))$/.test(value);
+  return /^(?:estado|estado (?:de |del )?(?:mi )?pedido|mi pedido|mis pedidos|seguimiento|rastrear (?:mi )?pedido|consultar (?:mi )?pedido|donde (?:esta|va|anda|viene) (?:mi )?pedido|donde (?:esta|va|anda|viene) (?:mi |el )?repartidor|ya viene (?:mi |el )?repartidor|seguimiento (?:de |del )?(?:mi |el )?repartidor|como va (?:mi )?(?:pedido|entrega)|cuanto falta(?: para (?:mi )?(?:pedido|entrega))?|a que hora llega(?: (?:mi )?pedido)?|ya (?:viene|sale|llega)(?: (?:mi )?pedido)?|quien (?:trae|reparte) (?:mi )?pedido|(?:hay|tiene|tengo) repartidor(?: asignado)?|informacion (?:de |del )?(?:mi )?(?:pedido|entrega))$/.test(value);
 }
 
 function setClientState(ses, estado, pending = {}) {
@@ -4844,6 +4955,12 @@ async function _handleMessage(jid, text, pushName, context = {}) {
     const adjuntoMatch = /^\[Adjunto recibido:\s*(\w+)/i.exec(text);
     if (adjuntoMatch) {
       const tipo = adjuntoMatch[1].toLowerCase();
+      // Una ubicación sí es información estructurada útil: debe llegar al
+      // flujo de cobertura que aparece más abajo, no tratarse como media que
+      // el bot no sabe leer.
+      if (tipo === 'ubicacion' && context?.location) {
+        // continuar con el router contextual
+      } else {
       const etiqueta = ({
         audio: 'audio 🎤', imagen: 'imagen 🖼️', video: 'vídeo 📹',
         documento: 'documento 📄', sticker: 'sticker', contacto: 'contacto',
@@ -4854,6 +4971,7 @@ async function _handleMessage(jid, text, pushName, context = {}) {
         `Recibí tu ${etiqueta}, pero por aquí solo leo *mensajes de texto*. ` +
         `Cuéntame en palabras qué necesitas y te ayudo. 📝`
       );
+      }
     }
     // Mensaje sin contenido interpretable: sin letras ni números, o texto
     // completamente vacío (Evolution manda vacío en algunos eventos de
@@ -6726,6 +6844,25 @@ async function takeHandoff(adminJid, ses, clientJid, options = {}) {
 
 async function handleMessage(jid, text, pushName, context = {}) {
   const admin = isAdminJid(jid);
+  // Consentimiento conversacional, antes del filtro de silencios: un cliente
+  // siempre puede pedir la baja o volver a activar el servicio por sí mismo.
+  const consentText = _stripAccents(String(text || '').trim().toLowerCase());
+  if (!admin && /^(?:stop|baja|cancelar suscripcion|no (?:quiero|deseo) (?:mas )?mensajes)$/.test(consentText)) {
+    unmuteClient(phoneFromJid(jid));
+    const acknowledged = await sendText(
+      jid,
+      'Entendido. No recibirás más mensajes automáticos. Si cambias de opinión, escribe *ALTA*.',
+      { transactional: true, humanize: false },
+    );
+    muteClient(phoneFromJid(jid), 365 * 24 * 60 * 60 * 1000, 'Baja solicitada por el cliente', 'self-service');
+    bumpStat('opt_out');
+    return acknowledged;
+  }
+  if (!admin && /^(?:alta|start|iniciar mensajes|reactivar)$/.test(consentText)) {
+    unmuteClient(phoneFromJid(jid));
+    bumpStat('opt_in');
+    return sendText(jid, 'Listo: mensajes reactivados. Escribe *MENÚ* para ver lo que puedo hacer.', { transactional: true });
+  }
   if (!inboundAllowed(jid, admin)) return false;
   const adminSession = admin ? getSesion(jid) : null;
   const adminAsClient = admin && isAdminClientMode(jid, adminSession);
@@ -7161,6 +7298,62 @@ const CLIENT_FAQS = [
     ),
   },
   {
+    name: 'factura_ticket',
+    match: /\b(factura|facturar|ticket\s+(?:de\s+)?compra|recibo|comprobante|justificante|iva|datos\s+fiscales|nif|cif)\b/i,
+    answer: () => (
+      `🧾 *Factura o comprobante*\n\n` +
+      `Escribe *AGENTE* e indica el número de pedido y los datos fiscales necesarios. ` +
+      `No envíes datos bancarios ni documentos sensibles por este chat.`
+    ),
+  },
+  {
+    name: 'codigo_entrega_seguridad',
+    match: /\b(c[oó]digo\s+(?:de\s+)?entrega|pin\s+(?:de\s+)?entrega|para\s+qu[eé]\s+(?:sirve|es)\s+(?:el\s+)?c[oó]digo|me\s+lleg[oó]\s+un\s+c[oó]digo|compartir\s+(?:el\s+)?c[oó]digo)\b/i,
+    answer: () => (
+      `🔐 *Código de entrega*\n\n` +
+      `Sirve para confirmar que recibiste el pedido correcto. Compártelo únicamente con el repartidor, ` +
+      `en persona y después de comprobar la entrega. El equipo nunca te lo pedirá antes por llamada o chat.`
+    ),
+  },
+  {
+    name: 'pedido_incompleto_incorrecto',
+    match: /(?:\bfalta(?:n|ba)?\s+(?:un|una|algo|producto)\b|\bpedido[^\n]{0,24}\b(?:incompleto|equivocado|incorrecto)\b|\bme\s+lleg[oó]\s+(?:mal|otro)\b|\bproducto\s+(?:roto|da[nñ]ado|derramado|fr[ií]o)\b|\bno\s+es\s+lo\s+que\s+ped[ií]\b|\berror\s+en\s+(?:mi\s+)?pedido\b)/i,
+    answer: () => (
+      `Lo siento, vamos a revisarlo. Escribe *ESTADO* para abrir tu pedido y usa la opción de reportar un problema. ` +
+      `Describe qué falta o qué llegó incorrecto; si puedes, conserva el producto y el embalaje hasta que el equipo responda. ` +
+      `También puedes escribir *AGENTE* para atención humana.`
+    ),
+  },
+  {
+    name: 'cubiertos_salsas_instrucciones',
+    match: /\b(cubiertos?|servilletas?|salsas?|sin\s+cubiertos|instrucciones?\s+(?:para|de)\s+(?:cocina|entrega)|nota\s+(?:al|para\s+el)\s+(?:pedido|repartidor)|timbre|porter[ií]a)\b/i,
+    answer: (ctx) => (
+      `Puedes escribir instrucciones de preparación o entrega en el campo de notas antes de confirmar. ` +
+      `Las opciones que tengan coste deben elegirse desde la ficha del producto, no solo escribirse como nota.\n\n` +
+      (ctx.tiendaUrl ? `Tienda: ${ctx.tiendaUrl}` : '')
+    ).trim(),
+  },
+  {
+    name: 'contacto_ubicacion',
+    match: /\b(tel[eé]fono\s+(?:del\s+)?local|n[uú]mero\s+(?:de\s+)?contacto|c[oó]mo\s+(?:os|les)\s+contacto|d[oó]nde\s+(?:est[aá]is|est[aá]n|queda)|direcci[oó]n\s+(?:del\s+)?local|ubicaci[oó]n\s+(?:del\s+)?local)\b/i,
+    answer: (ctx) => {
+      const lines = [`📍 *Contacto de ${ctx.negocio}*`];
+      if (ctx.direccion && !ctx.tienda_sin_sede) lines.push(`Dirección: ${ctx.direccion}${ctx.ciudad ? `, ${ctx.ciudad}` : ''}`);
+      if (ctx.telefono) lines.push(`Teléfono: ${ctx.telefono}`);
+      if (ctx.horario) lines.push(ctx.horario);
+      if (lines.length === 1) return `No tengo una dirección o teléfono público configurado. Escribe *AGENTE* para contactar con el equipo.`;
+      return lines.join('\n');
+    },
+  },
+  {
+    name: 'privacidad_datos',
+    match: /\b(privacidad|protecci[oó]n\s+de\s+datos|borrar\s+(?:mis\s+)?datos|eliminar\s+(?:mi\s+)?cuenta|qu[eé]\s+datos\s+guardan|rgpd|lopd)\b/i,
+    answer: () => (
+      `🔒 Para consultar, corregir o eliminar tus datos escribe *AGENTE*. ` +
+      `El equipo verificará tu identidad antes de realizar cambios y nunca te pedirá contraseñas ni datos bancarios por WhatsApp.`
+    ),
+  },
+  {
     name: 'gracias_positivo',
     match: /\b(muchas\s+gracias|super|excelente|genial|perfect(o|as)|de\s+lujo|estupendo|estupenda|bien|muy\s+bien|todo\s+bien|👍|❤️|💛|💯)\b/i,
     answer: (ctx) => {
@@ -7193,7 +7386,8 @@ const CLIENT_FAQS = [
     name: 'donde_va_repartidor',
     match: /\b(d[oó]nde\s+(?:est[aá]|va)\s+el\s+repartidor|ya\s+viene\s+el\s+repartidor|tracking|seguimiento\s+del?\s+repartidor|d[oó]nde\s+est[aá]\s+mi\s+repartidor)\b/i,
     answer: () => (
-      `📍 Puedes ver el estado en tiempo real escribiendo *ESTADO* (o *2*).\n\n` +
+      `📍 Puedes consultar el estado actualizado escribiendo *ESTADO* (o *2*).\n\n` +
+      `Si el repartidor comparte GPS durante la ruta, te mostraremos su última posición reciente.\n` +
       `Cuando el repartidor esté cerca, recibirás por WhatsApp el *código de entrega*. ` +
       `Compártelo solo al recibir tu pedido.`
     ),
@@ -7730,6 +7924,7 @@ const MANUAL_SECTIONS = [
     body: () => (
       `🛵 *Seguir tu pedido*\n\n` +
       `• Escribe *estado* (o *2*) para ver la fase actual: preparación, listo, en ruta, entregado.\n` +
+      `• Si el repartidor activa el GPS, verás su última posición reciente; si no, mostraremos el estado sin inventar una ubicación.\n` +
       `• Cuando el repartidor esté cerca, recibirás un *código de entrega* por WhatsApp.\n` +
       `• Compártelo solo al recibir tu pedido — es la prueba de que llegó a la persona correcta.`
     ),
@@ -8175,6 +8370,32 @@ function _catalogSearchQuery(texto) {
     .trim();
 }
 
+function _extractCatalogBudget(texto) {
+  const normalized = _stripAccents(String(texto || '').toLowerCase()).replace(',', '.');
+  const budgetIntent = /(?:€|eur(?:os?)?|\bcon\b|\bhasta\b|maximo|menos de|presupuesto|barat[oa])/.test(normalized);
+  if (!budgetIntent) return null;
+  const amount = normalized.match(/(\d{1,3}(?:\.\d{1,2})?)/);
+  if (amount && Number(amount[1]) > 0) return Math.min(Number(amount[1]), 500);
+  return /barat[oa]/.test(normalized) ? 5 : null;
+}
+
+function _tryBudgetCatalogReply(textoLibre, tiendaUrl) {
+  const budget = _extractCatalogBudget(textoLibre);
+  if (!budget) return null;
+  const products = db.prepare(`
+    SELECT nombre, precio, categoria
+    FROM productos_cache
+    WHERE activo = 1 AND precio > 0 AND precio <= ? AND (stock IS NULL OR stock != 0)
+    ORDER BY precio DESC, nombre COLLATE NOCASE
+    LIMIT 5
+  `).all(budget);
+  if (!products.length) {
+    return `No encontré productos activos por hasta *${budget.toFixed(2)} €* ahora mismo. Comprueba el catálogo actualizado:\n👉 ${tiendaUrl}`;
+  }
+  const lines = products.map((p) => `• ${p.nombre} — *${Number(p.precio).toFixed(2)} €*`).join('\n');
+  return `💡 *Opciones por hasta ${budget.toFixed(2)} €*\n\n${lines}\n\nStock, variantes y precio final:\n👉 ${tiendaUrl}`;
+}
+
 async function _tryCatalogSearchReply(textoLibre, tiendaUrl) {
   const qBusqueda = _catalogSearchQuery(textoLibre);
   if (!qBusqueda || qBusqueda.length < 3) return null;
@@ -8325,6 +8546,14 @@ async function handleMainMenu(jid, ses, opcion) {
   if (detectada) { bumpStat('intent'); opcion = detectada; }
   log('info', 'main_menu_choice', String(opcion));
   const tiendaUrl = getTiendaUrl();
+
+  // Recomendador local por presupuesto: consulta SQLite, cuesta cero tokens
+  // y solo promete datos que existen en el catálogo sincronizado.
+  const budgetReply = _tryBudgetCatalogReply(textoLibre, tiendaUrl);
+  if (budgetReply) {
+    bumpStat('catalog_budget');
+    return sendText(jid, budgetReply);
+  }
 
   // 4b) Si el cliente escribió texto libre buscando un producto concreto,
   //     no devolvemos catálogo ni precios por WhatsApp: redirigimos a la web,
@@ -9221,6 +9450,7 @@ async function handleEstadoPedido(jid, ses, numero) {
         // posición ni ensuciamos el mensaje con un link roto.
         let riderLinea = '';
         if (pedido.estado === 'en_ruta') {
+          riderLinea = `\n🛵 El pedido está en ruta. La posición GPS no está disponible ahora; el repartidor puede llamarte al llegar.\n`;
           try {
             const t = await oxidianGet(
               `/pedido/${pedido.id}/tracking?telefono=${encodeURIComponent(phone)}`
@@ -9591,6 +9821,7 @@ function formatAntiBanStatus() {
   const inboundLimited = logCount('message_rate_limited', 3600) + logCount('message_abuse_cooldown', 3600);
   const apiLimited = logCount('api_rate_limited', 3600);
   const broadcastRejected = logCount('broadcast_rejected', 3600);
+  const providerPausedSeconds = Math.max(0, Math.ceil((_providerPausedUntil - Date.now()) / 1000));
   const pressure = sends >= 35 || failed >= 5 || duplicates >= 3 || targetLimited >= 1 || inboundLimited >= 10;
   return (
     `🛡️ *Estado Anti-ban / Reputación*\n\n` +
@@ -9604,6 +9835,7 @@ function formatAntiBanStatus() {
     `APIs limitadas: ${apiLimited}\n\n` +
     `Cooldowns activos: ${cooldowns}\n` +
     `Clientes silenciados: ${muted}\n` +
+    `Proveedor: ${providerPausedSeconds ? `pausado (${providerPausedSeconds}s)` : 'disponible'}\n` +
     `Bot automático: ${isBotEnabled() ? 'activo' : 'pausado'}\n\n` +
     `Lectura: *${pressure ? 'vigilar / bajar ritmo' : 'estable'}*`
   );
@@ -10767,7 +10999,9 @@ app.get('/api/metrics', (req, res) => {
   const total = Object.entries(MSG_STATS)
     .filter(([k]) => k !== 'since')
     .reduce((s, [, v]) => s + v, 0);
-  const sinIA = MSG_STATS.saludo + MSG_STATS.faq + MSG_STATS.intent + MSG_STATS.ai_cache_hit;
+  const sinIA = MSG_STATS.saludo + MSG_STATS.faq + MSG_STATS.intent +
+    (MSG_STATS.catalog_budget || 0) + (MSG_STATS.opt_out || 0) +
+    (MSG_STATS.opt_in || 0) + MSG_STATS.ai_cache_hit;
   const conIA = MSG_STATS.ai_fresh;
   const pct = (v) => total > 0 ? +((v / total) * 100).toFixed(1) : 0;
   res.json({
@@ -11479,6 +11713,7 @@ module.exports = {
     isOrderStatusIntent,
     tryHandleConfirmationReply,
     _tryCatalogSearchReply,
+    _tryBudgetCatalogReply,
     extractText,
     extractLocation,
     getHandoff,
@@ -11516,11 +11751,18 @@ module.exports = {
     ADMIN_CONFIRM_TTL_MS,
     friendlyOxidianError,
     sendText,
+    _resetProviderCircuit: () => {
+      _providerConsecutiveFailures = 0;
+      _providerPausedUntil = 0;
+      _banSignalTimes.length = 0;
+      _banAutoTriggered = false;
+    },
     isEscapeWord,
     isBackWord,
     navigateBack,
     bumpAttempt,
     clearAttempts,
     isBotEnabled,
+    tryCannedFAQ,
   },
 };

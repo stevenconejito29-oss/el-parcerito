@@ -151,6 +151,18 @@ test('getMessageMeta extrae jid, id y sender del formato Baileys estándar', () 
   assert.equal(meta.isGroup, false);
 });
 
+test('getMessageMeta usa remoteJidAlt telefónico cuando Evolution entrega un LID', () => {
+  const meta = evolution.getMessageMeta({
+    key: {
+      remoteJid: '123456789012345@lid',
+      remoteJidAlt: '34600123456@s.whatsapp.net',
+      id: 'LID-1',
+    },
+  });
+  assert.equal(meta.jid, '34600123456@s.whatsapp.net');
+  assert.equal(meta.isGroup, false);
+});
+
 test('getMessageMeta marca isGroup=true para JIDs terminados en @g.us', () => {
   const meta = evolution.getMessageMeta({ key: { remoteJid: '120363000000000000@g.us' } });
   assert.equal(meta.isGroup, true);

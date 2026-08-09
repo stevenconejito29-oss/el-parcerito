@@ -83,18 +83,19 @@ test('menuPrincipal es retro-compatible: sin scheduledEnabled no aparece', () =>
   assert.doesNotMatch(out, /reservar/);
 });
 
-test('clientMenuLines muestra opciones 1, 2, 6 y 7 siempre', () => {
+test('clientMenuLines mantiene el menú principal corto y reserva agente para escalado', () => {
   const out = texts.clientMenuLines({
     verticalLabel: 'Menú',
     loyaltyEnabled: false,
     deliveryEnabled: false,
   });
-  for (const opt of ['*1*', '*2*', '*6*', '*7*']) {
+  for (const opt of ['*1*', '*2*', '*6*']) {
     assert.match(out, new RegExp(opt.replace(/\*/g, '\\*')));
   }
   // 3 y 4 solo aparecen cuando el feature está activo
   assert.doesNotMatch(out, /\*3\*/);
   assert.doesNotMatch(out, /\*4\*/);
+  assert.doesNotMatch(out, /\*7\*/);
 });
 
 test('clientMenuLines añade 3 y 4 cuando corresponde', () => {

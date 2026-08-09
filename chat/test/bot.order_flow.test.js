@@ -17,6 +17,7 @@ process.env.OWNER_NUMBER = '34600000991';
 
 const { _test } = require('../bot');
 const {
+  _tryBudgetCatalogReply,
   _tryCatalogSearchReply,
   db,
   formatOrderItemSummaryLine,
@@ -53,6 +54,9 @@ test.beforeEach(() => {
       body: options.body ? JSON.parse(options.body) : null,
     });
     if (route === '/ai/cliente-context') return jsonResponse({ ok: true, cliente: { nombre: 'Danna', pedidos_recientes: [] } });
+    if (route === '/identity/verify') return jsonResponse({
+      ok: true, rol: 'admin', nombre: 'Admin', capabilities: ['store'],
+    });
     if (route === '/pedidos') return jsonResponse({ ok: true, pedidos: orders });
     if (route === '/cobertura') {
       return jsonResponse({
@@ -227,6 +231,9 @@ test('reconoce preguntas naturales sobre entrega y repartidor como estado de ped
     'Tengo repartidor asignado',
     'Información de mi entrega',
     'Cómo va mi entrega',
+    'Dónde está mi repartidor',
+    'Ya viene el repartidor',
+    'Seguimiento del repartidor',
   ]) {
     assert.equal(isOrderStatusIntent(phrase), true, phrase);
   }
@@ -246,6 +253,23 @@ test('catálogo responde solo cuando existe una coincidencia real', async () => 
   assert.match(found, /Galletas Festival/);
   assert.match(found, /fuente actual de precio y stock/);
   assert.equal(unknown, null);
+});
+
+test('recomendador por presupuesto consulta catálogo local y no requiere IA', () => {
+  const reply = _tryBudgetCatalogReply('¿Qué puedo comprar con 5 euros?', 'https://elparcerito.com');
+  assert.match(reply, /hasta 5\.00 €/i);
+  assert.match(reply, /Galletas Festival/i);
+  assert.match(reply, /https:\/\/elparcerito\.com/);
+  assert.equal(_tryBudgetCatalogReply('cuéntame un chiste', 'https://elparcerito.com'), null);
+  assert.equal(_tryBudgetCatalogReply('un pedido para 2 personas', 'https://elparcerito.com'), null);
+});
+
+test('STOP y ALTA gestionan consentimiento sin dejar al cliente atrapado', async () => {
+  const jid = '34632907788@s.whatsapp.net';
+  await handleMessage(jid, 'STOP', 'Cliente');
+  assert.ok(db.prepare('SELECT 1 FROM muted_clients WHERE phone = ?').get('34632907788'));
+  await handleMessage(jid, 'ALTA', 'Cliente');
+  assert.equal(db.prepare('SELECT 1 FROM muted_clients WHERE phone = ?').get('34632907788'), undefined);
 });
 
 test('sin activos muestra el último pedido cerrado y conserva acciones guiadas', async () => {
