@@ -255,7 +255,11 @@
   }
   body.ox-body-public .ox-header-cart-icon { color: inherit !important; }
   body.ox-body-public .ox-header-cart-copy small {
-    color: color-mix(in srgb, currentColor 65%, transparent) !important;
+    /* 2026-08-10: 65% transparente daba un texto casi ilegible sobre
+       el fondo oscuro del header. Subido a 85% opaco (WCAG-AA con
+       tamaño 0.62rem). Mantiene la jerarquía visual (aún es más suave
+       que el <strong> hermano) sin desaparecer. */
+    color: color-mix(in srgb, currentColor 85%, transparent) !important;
     font-size: .62rem !important;
   }
   body.ox-body-public .ox-header-cart-copy strong { font-size: .8rem !important; font-weight: 900 !important; }
@@ -797,7 +801,11 @@
     caret-color: var(--brand-primary);
   }
   #ox-search-overlay input[type="text"]::placeholder {
-    color: color-mix(in srgb, var(--theme-text) 40%, transparent);
+    /* 2026-08-10: 40% del text con transparencia daba un placeholder
+       casi invisible en el overlay de búsqueda (contraste <2:1).
+       Subido a 62% opaco — legible sin competir visualmente con el
+       texto que teclea el usuario cuando empieza a escribir. */
+    color: color-mix(in srgb, var(--theme-text) 62%, transparent);
     font-weight: 700;
   }
 
@@ -1512,14 +1520,31 @@ body.ox-body-public::before {
   z-index: -1;
   inset: 0;
   pointer-events: none;
-  background-color: #d1b585;
+  /* 2026-08-10: base más luminosa (beige claro en vez de crudo),
+     overlay blanco al 84% (antes 66% dejaba la textura muy visible
+     y con tono café oscurecía la app en zonas amplias), filter con
+     brightness +15% y contrast subido a .95 para eliminar el efecto
+     vignette percibido en los laterales (el contrast .86 antiguo
+     hacía que los bordes se percibieran más oscuros que el centro,
+     simulando una "curvatura de pantalla" que el usuario reportó). */
+  background-color: #efe4d1;
   background-image:
-    linear-gradient(rgba(255, 250, 239, .66), rgba(255, 250, 239, .66)),
+    /* 2026-08-10: radial-gradient extra que aclara +22% los bordes
+       y esquinas de la capa fija — cancela el efecto "vignette lateral"
+       que la textura burlap producía sobre los bordes del viewport
+       (el usuario lo describía como "borde que imita curvatura de
+       pantalla"). El centro queda casi transparente para no alterar
+       la lectura de las cards. */
+    radial-gradient(ellipse 105% 105% at center,
+      transparent 45%,
+      rgba(255, 252, 245, .28) 78%,
+      rgba(255, 252, 245, .38) 100%),
+    linear-gradient(rgba(255, 252, 245, .84), rgba(255, 252, 245, .84)),
     url("../coffee-burlap-texture-v2.webp");
   background-repeat: no-repeat;
   background-position: center;
   background-size: cover;
-  filter: saturate(.72) contrast(.86) brightness(1.03);
+  filter: saturate(.85) contrast(.95) brightness(1.15);
   transform: translateZ(0);
 }
 
