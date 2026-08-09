@@ -200,7 +200,14 @@ def _hmac_phone(phone: str) -> str:
     key = str(_get_api_key() or "").encode("utf-8")
     if not key:
         return ""
-    return hmac.new(key, str(phone or "").encode("utf-8"), "sha256").hexdigest()[:32]
+    # Node normaliza el JID a dígitos (`346...`) antes de firmarlo. Firmar
+    # aquí el E.164 con `+` producía un HMAC distinto y hacía que un perfil
+    # super_admin válido pareciera cliente. Un único formato canónico en
+    # ambos lados evita esa divergencia silenciosa.
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    if digits.startswith("00"):
+        digits = digits[2:]
+    return hmac.new(key, digits.encode("utf-8"), "sha256").hexdigest()[:32]
 
 
 def _mask_phone(phone: str) -> str:
@@ -229,19 +236,29 @@ def _bot_order_create_enabled():
     return False
 
 
+def _client_generative_ai_enabled():
+    """La IA generativa nunca conversa directamente con clientes.
+
+    Groq/Claude enriquecen únicamente el asesor comercial autenticado. El
+    WhatsApp público usa intents, FAQs, catálogo y derivación humana, incluso
+    si quedaron claves BOT_AI_* antiguas en SiteConfig.
+    """
+    return False
+
+
 @api_bot_bp.route("/ai/config")
 @bot_required
 def ai_config():
-    """Configuración opcional del asistente; desactivada sin clave explícita."""
-    provider = (SiteConfig.get("BOT_AI_PROVIDER", "") or "").strip().lower()
-    api_key = SiteConfig.get("BOT_AI_API_KEY", "") or ""
-    enabled = _config_bool("BOT_AI_ENABLED") and provider in {"openai", "groq"} and bool(api_key)
+    """Contrato legado: nunca entrega credenciales generativas al chatbot."""
+    provider = ""
+    api_key = ""
+    enabled = _client_generative_ai_enabled()
     return jsonify({
         "ok": True, "habilitado": enabled, "proveedor": provider,
         "api_key": api_key if enabled else "",
-        "modelo": SiteConfig.get("BOT_AI_MODEL", "") or "",
+        "modelo": "",
         "temperature": 0.2, "max_tokens": 220,
-        "reglas_extra": SiteConfig.get("BOT_AI_RULES", "") or "",
+        "reglas_extra": "",
         "memoria_mensajes": 4,
         "system_prompt": (
             "Eres el asistente informativo de {NEGOCIO}. No tomas ni creas pedidos. "
@@ -502,6 +519,39 @@ def _client_ai_hourly_count(phone_hash):
     ).count()
 
 
+@api_bot_bp.route("/learning/signal", methods=["POST"])
+@bot_required
+def bot_learning_signal():
+    """Registra una señal de auto-aprendizaje: mensaje que el LLM
+    resolvió y que puede indicar un gap en el sistema determinista.
+
+    Fire-and-forget desde chat/bot.js — este endpoint nunca falla
+    "duro" (siempre 200) para no arrastrar la conversación del cliente
+    ante cualquier problema de infra. Idempotente por hash del mensaje
+    normalizado en ``bot_learning_service.registrar_signal``.
+
+    Payload JSON:
+        {"mensaje": str, "action": str?, "reply_snippet": str?,
+         "telefono": str?, "intent_matched": bool?}
+
+    Respuesta: ``{"ok": bool}``. Nunca 5xx.
+    """
+    try:
+        from bot_learning_service import registrar_signal
+        data = request.get_json(silent=True) or {}
+        saved = registrar_signal(
+            mensaje=data.get("mensaje") or "",
+            action_llm=data.get("action") or None,
+            reply_snippet=data.get("reply_snippet") or data.get("reply") or None,
+            telefono=data.get("telefono") or None,
+            intent_matched=bool(data.get("intent_matched", False)),
+        )
+        return jsonify({"ok": bool(saved)}), 200
+    except Exception:
+        current_app.logger.info("learning_signal: exception ignorada", exc_info=True)
+        return jsonify({"ok": False}), 200
+
+
 @api_bot_bp.route("/ai/route", methods=["POST"])
 @bot_required
 def ai_route():
@@ -540,11 +590,7 @@ def ai_route():
     if force_ai:
         provider = (SiteConfig.get("BOT_AI_PROVIDER", "") or "").strip().lower()
         api_key = SiteConfig.get("BOT_AI_API_KEY", "") or ""
-        ai_enabled = (
-            _config_bool("BOT_AI_ENABLED")
-            and provider in {"openai", "groq"}
-            and bool(api_key)
-        )
+        ai_enabled = _client_generative_ai_enabled()
         if not ai_enabled:
             return jsonify({
                 "ok": True, "route": "noop", "reason": "ai_disabled",
@@ -563,11 +609,7 @@ def ai_route():
     # 5. IA no configurada → noop + mensaje de fallback amable.
     provider = (SiteConfig.get("BOT_AI_PROVIDER", "") or "").strip().lower()
     api_key = SiteConfig.get("BOT_AI_API_KEY", "") or ""
-    ai_enabled = (
-        _config_bool("BOT_AI_ENABLED")
-        and provider in {"openai", "groq"}
-        and bool(api_key)
-    )
+    ai_enabled = _client_generative_ai_enabled()
     if not ai_enabled:
         return jsonify({
             "ok": True, "route": "noop", "reason": "ai_disabled",
@@ -4421,11 +4463,11 @@ def _resolver_actor_admin_bot(telefono_raw):
     candidatos = User.query.filter(
         User.activo == True,  # noqa
         User.rol.in_(["admin", "super_admin"]),
-        User.telefono_normalizado.isnot(None),
     ).all()
     user = None
     for u in candidatos:
-        if re.sub(r"\D", "", u.telefono_normalizado or "") == digits:
+        candidate = normalizar_telefono_cliente(u.telefono_normalizado or u.telefono)
+        if re.sub(r"\D", "", candidate or "") == digits:
             user = u
             break
 

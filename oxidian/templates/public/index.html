@@ -109,9 +109,8 @@
   </svg>
 </section>
 
-{# La búsqueda es una acción primaria: debe quedar visible antes de banners y
-   contenido editorial variable. Así el botón Buscar de la navegación inferior
-   siempre lleva a un control despejado, también en móviles con poca altura. #}
+{# La búsqueda es una acción primaria y única: permanece visible antes del
+   contenido variable, sin duplicarse en la navegación inferior. #}
 <form method="GET" action="{{ establecimiento.url }}" class="ep-search-wrap" id="buscar">
   {% if categoria_activa %}<input type="hidden" name="categoria" value="{{ categoria_activa }}">{% endif %}
   <div class="ep-search-box">
@@ -120,7 +119,7 @@
            placeholder="{{ 'Busca platos, bebidas o combos' if brand.es_comida else 'Busca productos, tallas o packs' }}"
            class="ep-search-input" autocomplete="off" aria-label="Buscar productos">
     {% if busqueda %}<a href="{{ storefront_url() }}" class="ep-search-clear" aria-label="Limpiar">✕</a>{% endif %}
-    <button type="submit" class="ep-search-submit" aria-label="Buscar">Buscar</button>
+    <button type="submit" class="ep-search-submit" aria-label="Buscar productos"><span>Buscar</span></button>
   </div>
   {% if busqueda %}
   <p class="ep-search-state">Mostrando resultados para <strong>{{ busqueda }}</strong></p>

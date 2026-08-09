@@ -92,8 +92,9 @@ class PwaArchitectureContractTest(unittest.TestCase):
         self.assertIn('self.navigator.clearAppBadge', worker)
         self.assertNotIn('self.registration.setAppBadge', worker)
         self.assertIn('"/static/js/cart-ui.js"', worker)
-        self.assertIn('"/static/js/spa-nav.js"', worker)
+        self.assertNotIn('"/static/js/spa-nav.js"', worker)
         self.assertIn('"/static/css/heritage.css"', worker)
+        self.assertIn('"/static/coffee-burlap-texture-v2.webp"', worker)
         self.assertNotIn("self.skipWaiting();\n});\n\n// ── ACTIVATE", worker)
 
     def test_worker_and_manifests_follow_the_real_asset_fingerprint(self):

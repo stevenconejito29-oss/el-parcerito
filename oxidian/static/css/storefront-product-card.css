@@ -12,25 +12,29 @@ body.ox-body-public .ep-grid {
   align-items: stretch;
 }
 
+/* El render diferido dejaba rectángulos vacíos al hacer scroll rápido en PWA. */
+body.ox-body-public .ep-grid .ep-card {
+  content-visibility: visible !important;
+  contain: layout paint !important;
+  contain-intrinsic-size: none !important;
+}
+
 body.ox-body-public .ep-card {
-  --ep-card-accent: var(--heritage-sun);
+  --ep-card-accent: var(--brand-primary);
   min-width: 0;
-  border-radius: 1.2rem .55rem 1.2rem 1.2rem;
-  border-color: color-mix(
-    in srgb,
-    var(--ep-card-accent, var(--brand-primary)) 20%,
-    var(--col-border)
-  );
+  overflow: hidden;
+  border-radius: 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--theme-text) 9%, var(--col-border));
   background:
     radial-gradient(
       circle at 100% 100%,
-      color-mix(in srgb, var(--ep-card-accent, var(--brand-primary)) 9%, transparent),
+      color-mix(in srgb, var(--brand-primary) 6%, transparent),
       transparent 38%
     ),
     var(--theme-surface);
   box-shadow:
-    0 12px 30px color-mix(in srgb, var(--theme-text) 9%, transparent),
-    0 1px 0 color-mix(in srgb, #fff 72%, transparent) inset;
+    0 10px 26px color-mix(in srgb, var(--theme-text) 8%, transparent),
+    0 1px 0 color-mix(in srgb, #fff 82%, transparent) inset;
   transition:
     transform var(--motion-base) var(--ease-emphasized),
     border-color var(--motion-base) var(--ease-standard),
@@ -40,36 +44,23 @@ body.ox-body-public .ep-card {
 /* Ritmo cromático controlado: usa exclusivamente la paleta configurable.
  * La variedad ayuda a recorrer el catálogo sin asignar significados falsos
  * (oferta, popularidad o escasez) a ningún producto. */
-body.ox-body-public .ep-grid > .ep-card:nth-child(4n + 2) {
-  --ep-card-accent: var(--heritage-clay);
-}
-
-body.ox-body-public .ep-grid > .ep-card:nth-child(4n + 3) {
-  --ep-card-accent: var(--heritage-river);
-}
-
-body.ox-body-public .ep-grid > .ep-card:nth-child(4n + 4) {
-  --ep-card-accent: var(--heritage-leaf);
-}
-
 body.ox-body-public .ep-card::before {
   inset: 0 auto auto 0;
-  width: 42%;
-  height: 4px;
-  border-radius: 0 0 999px;
-  background: var(--ep-card-accent, var(--brand-primary));
+  width: 100%;
+  height: 3px;
+  border-radius: 0;
+  background: linear-gradient(90deg,var(--brand-primary),color-mix(in srgb,var(--brand-primary) 56%,var(--brand-accent)));
 }
 
 body.ox-body-public .ep-card-img {
   min-height: 0;
-  aspect-ratio: 1.18 / 1;
+  aspect-ratio: 1.28 / 1;
   isolation: isolate;
   background:
-    radial-gradient(
-      circle at 50% 44%,
-      color-mix(in srgb, var(--ep-card-accent) 18%, var(--theme-surface)),
-      var(--theme-surface-alt) 68%
-    );
+    radial-gradient(circle at 50% 48%, #fff 0 38%, transparent 68%),
+    linear-gradient(155deg,
+      color-mix(in srgb, var(--brand-primary) 7%, var(--theme-surface)),
+      var(--theme-surface-alt));
 }
 
 body.ox-body-public .ep-card-img::before {
@@ -83,7 +74,7 @@ body.ox-body-public .ep-card-img::before {
   border-radius: 50%;
   background: color-mix(in srgb, var(--theme-text) 20%, transparent);
   filter: blur(10px);
-  opacity: .38;
+  opacity: .25;
   pointer-events: none;
 }
 
@@ -111,8 +102,8 @@ body.ox-body-public .ep-card-img-emoji {
 body.ox-body-public .ep-card-image-contain .ep-card-img img {
   box-sizing: border-box;
   object-fit: contain;
-  padding: clamp(.55rem, 2.3vw, 1rem);
-  filter: drop-shadow(0 10px 9px color-mix(in srgb, var(--theme-text) 18%, transparent));
+  padding: clamp(.42rem, 1.8vw, .78rem);
+  filter: drop-shadow(0 9px 8px color-mix(in srgb, var(--theme-text) 16%, transparent));
   mix-blend-mode: normal;
 }
 
@@ -129,7 +120,7 @@ body.ox-body-public .ep-card-badges {
   left: .58rem;
   right: .58rem;
   gap: .28rem;
-  max-height: 3.3rem;
+  max-height: 2.7rem;
   overflow: hidden;
 }
 
@@ -155,7 +146,7 @@ body.ox-body-public .ep-cbadge-fulfillment {
 body.ox-body-public .ep-card-body {
   min-width: 0;
   padding: .82rem .85rem .88rem;
-  gap: .38rem;
+  gap: .34rem;
 }
 
 body.ox-body-public .ep-card-kicker {
@@ -163,20 +154,22 @@ body.ox-body-public .ep-card-kicker {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: color-mix(
-    in srgb,
-    var(--ep-card-accent, var(--brand-primary)) 68%,
-    var(--theme-text)
-  );
+  color: color-mix(in srgb, var(--brand-primary) 62%, var(--theme-text));
   letter-spacing: .075em;
 }
 
 body.ox-body-public .ep-card-name {
+  display: -webkit-box;
   margin-top: .04rem;
+  overflow: hidden;
   color: var(--theme-text);
-  font-size: clamp(.92rem, 1.4vw, 1.04rem);
+  font-size: clamp(.98rem, 1.5vw, 1.12rem);
+  font-weight: 950;
   line-height: 1.13;
   letter-spacing: -.018em;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 body.ox-body-public .ep-card-desc {
@@ -247,8 +240,9 @@ body.ox-body-public .ep-card-prices {
 
 body.ox-body-public .ep-card-price {
   color: var(--theme-text);
-  font-size: clamp(1.08rem, 2vw, 1.22rem);
+  font-size: clamp(1.18rem, 2.2vw, 1.36rem);
   letter-spacing: -.02em;
+  font-weight: 950;
 }
 
 body.ox-body-public .ep-card-cart-state {
@@ -258,12 +252,12 @@ body.ox-body-public .ep-card-cart-state {
   align-items: center;
   min-height: 22px;
   padding: .18rem .42rem;
-  border: 1px solid color-mix(in srgb, var(--status-ok) 30%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-ok) 52%, var(--theme-text));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--status-ok) 11%, var(--theme-surface));
-  color: var(--status-ok-text);
-  font-size: .58rem;
-  font-weight: 900;
+  background: color-mix(in srgb, var(--status-ok) 24%, var(--theme-surface));
+  color: color-mix(in srgb, var(--status-ok) 28%, var(--theme-text));
+  font-size: .62rem;
+  font-weight: 950;
   line-height: 1.1;
 }
 
@@ -300,7 +294,7 @@ body.ox-body-public .ep-btn-detail {
   height: 46px;
   gap: .35rem;
   padding-inline: .78rem;
-  border-radius: 999px;
+  border-radius: .9rem;
   white-space: nowrap;
   box-shadow:
     0 8px 18px color-mix(in srgb, var(--action-primary) 24%, transparent),
@@ -316,6 +310,20 @@ body.ox-body-public .ep-btn-add {
     );
   color: var(--action-on-primary);
   border-color: color-mix(in srgb, var(--action-primary) 72%, var(--theme-text));
+}
+
+body.ox-body-public .ep-btn-detail,
+body.ox-body-public .ep-card-combo .ep-btn-detail {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--action-primary) 88%, #fff),
+    var(--action-primary)
+  ) !important;
+  border-color: color-mix(in srgb, var(--action-primary) 72%, var(--theme-text)) !important;
+  color: var(--action-on-primary) !important;
+  box-shadow:
+    0 8px 18px color-mix(in srgb, var(--action-primary) 24%, transparent),
+    0 1px 0 color-mix(in srgb, #fff 30%, transparent) inset !important;
 }
 
 body.ox-body-public .ep-card-in-cart .ep-btn-add {
@@ -340,6 +348,14 @@ body.ox-body-public .ep-card-combo {
       transparent 42%
     ),
     var(--theme-surface);
+}
+
+body.ox-body-public .ep-card[data-card-group="canje"] {
+  --ep-card-accent: var(--heritage-sun);
+  border-color: color-mix(in srgb, var(--heritage-sun) 45%, var(--col-border));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--heritage-sun) 12%, transparent),
+    0 12px 28px color-mix(in srgb, var(--theme-text) 9%, transparent);
 }
 
 body.ox-body-public .ep-card-combo .ep-card-img {
@@ -403,12 +419,6 @@ body.ox-body-public .ep-card-combo-count {
   white-space: nowrap;
 }
 
-body.ox-body-public .ep-card-combo .ep-btn-detail {
-  background: color-mix(in srgb, var(--visual-promo) 12%, var(--theme-surface)) !important;
-  border-color: color-mix(in srgb, var(--visual-promo) 30%, transparent) !important;
-  color: color-mix(in srgb, var(--visual-promo) 72%, var(--theme-text)) !important;
-}
-
 @media (hover: hover) {
   body.ox-body-public .ep-card:hover {
     transform: translateY(-4px);
@@ -438,31 +448,57 @@ body.ox-body-public .ep-card.is-just-added {
 
 @media (max-width: 560px) and (orientation: portrait) {
   body.ox-body-public .ep-grid {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .62rem;
   }
 
   body.ox-body-public .ep-card,
   body.ox-body-public .ep-card-combo {
-    display: grid;
-    grid-template-columns: clamp(118px, 34vw, 145px) minmax(0, 1fr);
-    min-height: 188px;
-    border-radius: 1.12rem .45rem 1.12rem 1.12rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-radius: 1rem .38rem 1rem 1rem;
   }
 
   body.ox-body-public .ep-card .ep-card-img,
   body.ox-body-public .ep-card-combo .ep-card-img {
     width: 100%;
-    height: 100%;
-    min-height: 188px;
-    aspect-ratio: auto;
-    border-radius: 1.05rem 0 0 1.05rem;
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 1 / .9;
+    border-radius: .94rem .32rem 0 0;
+  }
+
+  body.ox-body-public .ep-card-image-contain .ep-card-img img {
+    padding: .36rem;
+    transform: scale(1.035);
   }
 
   body.ox-body-public .ep-card-body,
   body.ox-body-public .ep-card-combo .ep-card-body {
-    padding: .72rem;
-    border-left: 0;
+    flex: 1;
+    padding: .62rem;
+    gap: .28rem;
   }
+
+  body.ox-body-public .ep-card-combo {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(132px, 42%) minmax(0, 1fr);
+    min-height: 210px;
+  }
+
+  body.ox-body-public .ep-card-combo .ep-card-img {
+    width: 100%;
+    height: 100%;
+    min-height: 210px;
+    aspect-ratio: auto;
+    border-radius: .94rem 0 0 .94rem;
+  }
+
+  body.ox-body-public .ep-card-combo .ep-card-desc { display: none; }
+  body.ox-body-public .ep-card-combo .ep-card-combo-panel { margin-top: .1rem; }
+  body.ox-body-public .ep-card-combo .ep-card-combo-line { font-size: .6rem; }
 
   body.ox-body-public .ep-card-combo-overview {
     margin-bottom: .34rem;
@@ -477,15 +513,70 @@ body.ox-body-public .ep-card.is-just-added {
 
   body.ox-body-public .ep-card-desc {
     min-height: 0;
+    font-size: .68rem;
+    line-height: 1.25;
+    -webkit-line-clamp: 2;
+  }
+
+  body.ox-body-public .ep-card-kicker-row { min-height: 1rem; }
+  body.ox-body-public .ep-card-kicker { font-size: .54rem; }
+  body.ox-body-public .ep-card-stock-mini { font-size: .5rem; }
+
+  body.ox-body-public .ep-card-name {
+    display: -webkit-box;
+    min-height: 2.1em;
+    overflow: hidden;
+    font-size: .9rem;
+    line-height: 1.08;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  body.ox-body-public .ep-card-highlights {
+    display: none;
+  }
+
+  body.ox-body-public .ep-cbadge {
+    min-height: 20px;
+    padding: .2rem .36rem;
+    font-size: .52rem;
+  }
+
+  body.ox-body-public .ep-cbadge-fulfillment .ep-cbadge-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  body.ox-body-public .ep-cbadge-fulfillment {
+    width: 25px;
+    min-height: 25px;
+    justify-content: center;
+    padding: 0;
+    border-radius: 50%;
   }
 
   body.ox-body-public .ep-card-footer {
+    align-items: end;
     gap: .34rem .42rem;
+    margin-top: auto;
+    padding-top: .36rem;
+    border-top-width: 1px;
+  }
+
+  body.ox-body-public .ep-card-price {
+    font-size: 1.04rem;
   }
 
   body.ox-body-public .ep-btn-add {
-    width: 46px;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    height: 44px;
     padding-inline: 0;
+    border-radius: 50%;
   }
 
   body.ox-body-public .ep-btn-add-label {
@@ -493,21 +584,39 @@ body.ox-body-public .ep-card.is-just-added {
   }
 
   body.ox-body-public .ep-btn-detail {
-    width: auto;
-    min-width: 88px;
-    height: auto;
-    min-height: 46px;
-    padding: .5rem .62rem;
-    white-space: normal;
-    text-align: center;
-    line-height: 1.08;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    border-radius: 50%;
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  body.ox-body-public .ep-btn-detail::after {
+    content: '+';
+    font-size: 1.25rem;
+    font-weight: 950;
   }
 }
 
+@media (max-width: 420px) and (orientation: portrait) {
+  body.ox-body-public .ep-card:not(.ep-card-combo) .ep-card-desc { display: none; }
+}
+
 @media (max-width: 350px) and (orientation: portrait) {
+  body.ox-body-public .ep-grid { grid-template-columns: minmax(0, 1fr); }
   body.ox-body-public .ep-card,
   body.ox-body-public .ep-card-combo {
-    grid-template-columns: 104px minmax(0, 1fr);
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr);
+  }
+  body.ox-body-public .ep-card .ep-card-img,
+  body.ox-body-public .ep-card-combo .ep-card-img {
+    height: 100%;
+    aspect-ratio: auto;
+    border-radius: .94rem 0 0 .94rem;
   }
 
   body.ox-body-public .ep-cbadge-label {
@@ -525,8 +634,32 @@ body.ox-body-public .ep-card.is-just-added {
 
 @media (orientation: landscape) and (max-height: 500px) {
   body.ox-body-public .ep-grid {
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
+    gap: .7rem;
   }
+  body.ox-body-public .ep-card,
+  body.ox-body-public .ep-card-combo {
+    border-radius: 1rem .4rem 1rem 1rem;
+  }
+  body.ox-body-public .ep-card-img,
+  body.ox-body-public .ep-card-combo .ep-card-img {
+    aspect-ratio: 16 / 9;
+  }
+  body.ox-body-public .ep-card-body,
+  body.ox-body-public .ep-card-combo .ep-card-body {
+    gap: .28rem;
+    padding: .62rem;
+  }
+  body.ox-body-public .ep-card-desc {
+    -webkit-line-clamp: 1;
+  }
+  body.ox-body-public .ep-card-footer {
+    margin-top: .2rem;
+  }
+}
+
+@media (max-width: 560px) and (orientation: portrait) {
+  body.ox-body-public .ep-card:active { transform: scale(.992); }
 }
 
 @media (prefers-reduced-motion: reduce) {

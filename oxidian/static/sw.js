@@ -17,6 +17,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 const APP_VERSION = "__ASSET_VERSION__";
+const BRAND_ICON = __BRAND_ICON_JSON__;
 const CACHE_STATIC = `ox-static-${APP_VERSION}`;
 const CACHE_MEDIA = `ox-media-${APP_VERSION}`;
 const CACHE_HTML = `ox-html-${APP_VERSION}`;
@@ -40,9 +41,9 @@ const PRECACHE = [
   "/static/js/storefront-viewport.js",
   "/static/js/storefront-toast.js",
   "/static/js/header-modern.js",
-  "/static/js/spa-nav.js",
   "/static/js/operational-roles.js",
   "/static/colombia-pattern.svg",
+  "/static/coffee-burlap-texture-v2.webp",
   `/static/pwa-icon.svg?v=${APP_VERSION}`,
   `/static/pwa-icon-192.png?v=${APP_VERSION}`,
   `/static/pwa-icon-512.png?v=${APP_VERSION}`,
@@ -107,7 +108,7 @@ p{font-size:.95rem;color:#6B5A4E;max-width:340px;line-height:1.5}
 a,button{min-height:44px;padding:.75rem 1.5rem;border-radius:.875rem;border:0;
 background:#F4C542;color:#2B2118;font-weight:800;font-size:1rem;text-decoration:none}
 </style></head><body>
-<img class="icon" src="/static/pwa-icon-192.png?v=${APP_VERSION}" alt="">
+<img class="icon" src="${BRAND_ICON}" alt="">
 <p class="title">Ahora mismo no hay conexión</p>
 <p>Tu app sigue instalada y tus datos están protegidos. Recupera internet para consultar disponibilidad o confirmar cambios.</p>
 <a href="/">Volver a intentar</a>
@@ -294,7 +295,7 @@ self.addEventListener("push", event => {
   const {
     title  = "Mi tienda",
     body   = "",
-    icon   = `/static/pwa-icon-192.png?v=${APP_VERSION}`,
+    icon   = BRAND_ICON,
     badge  = `/static/pwa-badge-96.png?v=${APP_VERSION}`,
     url    = "/",
     tag,

@@ -147,8 +147,8 @@ if os.environ.get('SIMULATE_EVO_SEND', '').strip() == '1':
 
 # Contratos críticos que no dependen de la base de datos.
 ticket_source = (root / 'templates' / 'pos' / 'ticket.html').read_text(encoding='utf-8')
-if '@page { size: 58mm auto' not in ticket_source or 'width: 54mm' not in ticket_source:
-    errors.append('ticket template is not physically configured for 58mm paper')
+if '@page { size: 48mm 200mm' not in ticket_source or 'width: 48mm' not in ticket_source:
+    errors.append('ticket template is not configured for the 48mm printable head of 58mm paper')
 if 'pedido.puntos_usados /' in ticket_source:
     errors.append('ticket still converts loyalty points to money')
 

@@ -486,6 +486,7 @@
 .work-prod-group-items { padding-left: .5rem; min-width: 0; }
 .work-prod-group--multi .work-prod-group-items { border-left: 2px solid color-mix(in srgb, var(--col-gold) 30%, transparent); }
 .work-item--in-group { padding: .35rem 0 .35rem .5rem; }
+.work-prod-group .work-item-main .work-qty { display: none; }
 /* Nombres largos en el header del grupo: truncan antes de romper la grilla */
 .work-prod-group-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Móvil vertical estrecho o tablet horizontal apretada */
@@ -1088,12 +1089,12 @@
          está preparando. #}
       <div class="work-items" data-check-list>
         {% for item in lineas_preparacion_interna(pedido) %}
-        <div class="work-item">
+        <label class="work-item work-item--tap" title="Toca toda la fila para marcar {{ item.display_nombre }} como preparado">
           {# Checkbox mental para tachar el ítem cuando se prepara #}
-          <label class="work-item-check" title="Marcar como preparado">
+          <span class="work-item-check">
             <input type="checkbox" data-item-check aria-label="Marcar {{ item.display_nombre }} como preparado">
             <span aria-hidden="true"></span>
-          </label>
+          </span>
           <span class="work-item-thumb" aria-hidden="true">
             {% if item.display_imagen_url %}
             <img src="{{ item.display_imagen_url|upload_url }}" alt="" loading="lazy" data-image-fallback="next-template">
@@ -1106,7 +1107,7 @@
           <div style="min-width:0">
             {% include "_order_item_combo.html" %}
           </div>
-        </div>
+        </label>
         {% endfor %}
       </div>
 

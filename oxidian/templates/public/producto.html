@@ -2618,7 +2618,7 @@ function pdComboUpdateBadges() {
     // Memoria de "estado alcanzado" por sección — sobrevive deselect y permite
     // decir "vuelve a elegir" en vez de "elige tu opción" (más directivo,
     // reconoce lo que el cliente ya había hecho). Se guarda en `dataset` para
-    // que también sobreviva a un swap de <main> por spa-nav.
+    // que también sobreviva a una navegación o restauración del navegador.
     if (sec.el && sec.complete && !sec.overflow) sec.el.dataset.cstepReached = '1';
     const wasReached = sec.el?.dataset.cstepReached === '1';
     // Hint contextual dentro del bloque (Elige X más / ✓ Listo / ⚠︎ overflow /

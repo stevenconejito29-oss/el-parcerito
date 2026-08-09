@@ -2,6 +2,7 @@
 {% from "_order_ticket_action.html" import ticket_action %}
 {% block title %}Mi Ruta — Repartidor{% endblock %}
 {% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css', v=asset_version) }}">
 <style>
 /* Tokens locales del panel de repartidor. Cambiar aquí propaga en todo. */
 .route-board {
@@ -45,6 +46,17 @@
   font-size: .82rem; font-weight: 800;
 }
 .route-cash-alert strong { color: var(--route-cash-text); font-weight: 900; }
+.route-map-panel { margin:0 0 .75rem; padding:.65rem; border:1px solid var(--employee-line,var(--col-border)); border-radius:12px; background:var(--employee-card,var(--col-surface)); }
+.route-map-panel[hidden] { display:none; }
+.route-map-head { display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin-bottom:.55rem; }
+.route-map-head strong { color:var(--col-text); }
+.route-map-head small { display:block; margin-top:.1rem; color:var(--col-muted); }
+.route-map-actions { display:flex; gap:.4rem; flex-wrap:wrap; }
+.route-map { width:100%; height:clamp(260px,42dvh,480px); border-radius:9px; background:#dce5eb; overflow:hidden; }
+.route-map-stop { width:30px;height:30px;display:grid;place-items:center;border:2px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#111827;color:#fff;font-weight:950;box-shadow:0 2px 8px #0005; }
+.route-map-stop span { transform:rotate(45deg); }
+html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;background:#121922; }
+@media(max-width:520px){.route-map-head{align-items:stretch;flex-direction:column}.route-map-actions>*{flex:1}.route-map{height:38dvh;min-height:250px}}
 
 /* Panel de código de confirmación */
 .route-confirm-block {
@@ -132,6 +144,60 @@
   .route-board .work-address { word-break: break-word; overflow-wrap: anywhere; }
 }
 
+/* Móvil operativo: una pantalla de decisiones, no un informe. Se conserva
+   dirección, cobro, contacto y acción; el contexto secundario se compacta. */
+@media (max-width: 620px) and (orientation: portrait) {
+  .route-board { display: grid; gap: .55rem; }
+  .route-board .work-hero { min-height: 0; margin: 0; padding: .62rem .72rem; border-radius: .85rem; }
+  .route-board .work-title { font-size: 1.15rem; line-height: 1; }
+  .route-board .work-eyebrow,
+  .route-board .work-subtitle { display: none; }
+  .route-board .work-actions-top .work-btn { min-height: 42px; padding: .45rem .62rem; font-size: .76rem; }
+  .route-board .route-gps { grid-template-columns: auto minmax(0,1fr) auto; gap: .5rem; margin: 0; padding: .58rem .65rem; }
+  .route-board .route-gps strong { font-size: .78rem; }
+  .route-board .route-gps small { display: -webkit-box; overflow: hidden; font-size: .64rem; line-height: 1.2; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .route-board .route-gps .work-btn { width: auto; min-height: 42px; padding: .42rem .55rem; font-size: .68rem; }
+  .route-board .work-employee-card { grid-template-columns: 34px minmax(0,1fr) auto; gap: .5rem; margin: 0; padding: .58rem; }
+  .route-board .work-employee-avatar { width: 34px; height: 34px; }
+  .route-board .work-employee-name { font-size: .82rem; }
+  .route-board .work-employee-role { font-size: .62rem; }
+  .route-board .work-availability-button { min-height: 42px; padding: .38rem .5rem; }
+  .route-board .work-availability-button small { display: none; }
+  .route-board .work-team-details { margin: 0; }
+  .route-board .work-team-summary { padding: .45rem .15rem; font-size: .72rem; }
+  .route-board .work-kpis { gap: .4rem; margin: 0; }
+  .route-board .work-kpi { min-height: 58px; padding: .5rem .58rem; }
+  .route-board .work-kpi span { font-size: .57rem; }
+  .route-board .work-kpi strong { font-size: 1.25rem; line-height: 1; }
+  .route-board .work-kpi small { display: none; }
+  .route-board .work-board { gap: .55rem; }
+  .route-board .work-lane { padding: .55rem; border-radius: .85rem; }
+  .route-board .work-lane-head { gap: .45rem; padding-bottom: .45rem; }
+  .route-board .work-lane-title { font-size: 1rem; }
+  .route-board .work-lane-sub { display: none; }
+  .route-board .work-lane-toggle-all { min-height: 38px; padding: .3rem .55rem; font-size: .68rem; }
+  .route-board .work-zone-header { margin-bottom: .45rem !important; padding: .45rem .55rem; }
+  .route-board .work-zone-header .text-sm { display: none; }
+  .route-board .work-zone-header h3 { font-size: .82rem; }
+  .route-board .work-card { padding: .62rem; border-radius: .8rem; }
+  .route-board .work-card .work-order-head { padding-right: 2.1rem; }
+  .route-board .work-card-toggle { top: .38rem; right: .38rem; width: 1.8rem; height: 1.8rem; }
+  .route-board .work-order-code { font-size: .84rem; }
+  .route-board .work-chip,
+  .route-board .work-badge-zone,
+  .route-board .work-badge-assigned { padding: .22rem .42rem; font-size: .61rem; }
+  .route-board .route-order-summary { margin-top: .42rem !important; padding: .5rem .58rem; }
+  .route-board .work-client { font-size: .88rem; }
+  .route-board .route-cash-alert,
+  .route-board .work-note,
+  .route-board .work-box { margin-top: .42rem !important; padding: .52rem .58rem; font-size: .72rem; }
+  .route-board .work-address { font-size: .78rem; }
+  .route-board .work-btn { min-height: 44px; padding: .48rem .58rem; font-size: .76rem; }
+  .route-board .work-cta-group { gap: .38rem; margin-top: .55rem !important; }
+  .route-board .route-contents { margin-top: .42rem !important; }
+  .route-board .route-contents summary { min-height: 42px; padding: .48rem .58rem; font-size: .7rem; }
+}
+
 /* Landscape (menos común pero soportado): compactar hero y avatar, y
    permitir 2 columnas de pedidos si hay ancho suficiente. Nunca ocultar
    info crítica (dirección, código, botones). */
@@ -168,6 +234,38 @@
       <span data-theme-label>Modo noche</span>
     </button>
   </div>
+</section>
+
+{% if current_user.rol == 'repartidor' %}
+<section class="route-gps" data-rider-tracking
+         data-endpoint="{{ url_for('repartidor.actualizar_ubicacion') }}"
+         data-has-route="{{ '1' if en_ruta else '0' }}"
+         data-auto-start="{{ '1' if en_ruta else '0' }}"
+         aria-labelledby="route-gps-title">
+  <span class="route-gps__signal" data-rider-tracking-signal aria-hidden="true"></span>
+  <div>
+    <strong id="route-gps-title">Ubicación de ruta</strong>
+    <small data-rider-tracking-copy>
+      {% if en_ruta %}Iniciando GPS para que el cliente pueda seguir la entrega.
+      {% else %}Se habilitará cuando salgas con un pedido.{% endif %}
+    </small>
+  </div>
+  <button type="button" class="work-btn work-btn-info" data-rider-tracking-toggle
+          {% if not en_ruta %}disabled{% endif %} aria-pressed="false">
+    {{ 'Activar GPS' if en_ruta else 'Sin ruta activa' }}
+  </button>
+</section>
+{% endif %}
+
+<section class="route-map-panel" data-route-map-panel hidden aria-labelledby="route-map-title">
+  <div class="route-map-head">
+    <div><strong id="route-map-title">Ruta dentro de la app</strong><small data-route-map-summary>Selecciona pedidos para preparar el recorrido.</small></div>
+    <div class="route-map-actions">
+      <a class="work-btn work-btn-ghost" data-route-map-external href="#" target="_blank" rel="noopener">Abrir navegación</a>
+      <button type="button" class="work-btn work-btn-ghost" data-route-map-close>Cerrar mapa</button>
+    </div>
+  </div>
+  <div class="route-map" data-route-map aria-label="Mapa de paradas"></div>
 </section>
 
 <!-- Identidad + control explícito. La tarjeta ya no finge ser un botón: antes
@@ -270,7 +368,7 @@
         <button type="submit" class="work-btn work-btn-info">Salir con seleccionados</button>
       </form>
       <button type="button" class="work-btn work-btn-info" data-open-maps-route="listos">
-        🧭 Ruta en Maps
+        🧭 Ver ruta aquí
       </button>
       <span class="text-sm text-muted" style="margin-left:auto">Marca los pedidos de tu ruta y elige la acción.</span>
     </div>
@@ -359,7 +457,7 @@
         {%- endif -%}
 
       <!-- Cliente + Pago visible desde el inicio -->
-      <div class="work-client-payment mt-1">
+      <div class="work-client-payment route-order-summary mt-1">
         <p class="work-client">{{ pedido.cliente.nombre }}</p>
         <div class="work-payment">
           <span class="work-chip work-payment-method {% if pedido.metodo_pago == 'bizum' %}is-presencial{% endif %}">
@@ -393,11 +491,10 @@
           <span>{{ pedido.direccion_entrega }}</span>
         </p>
         <div class="flex gap-2 mt-2">
-          <a href="https://www.google.com/maps/dir/?api=1&destination={{ destino_mapa | urlencode }}"
-             target="_blank" rel="noopener"
-             class="work-btn work-btn-info flex-1">
-            🧭 Maps
-          </a>
+          <button type="button" data-open-maps-route="pedido-{{ pedido.id }}"
+                  class="work-btn work-btn-info flex-1">
+            🧭 Ver mapa aquí
+          </button>
           <a href="https://waze.com/ul?q={{ destino_mapa | urlencode }}"
              target="_blank" rel="noopener"
              class="work-btn work-btn-info flex-1">
@@ -494,9 +591,9 @@
     <div class="route-multi-bar" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.25rem 0 .75rem;padding:.55rem .7rem;border-radius:.55rem;background:color-mix(in srgb,var(--brand-accent,#003087) 8%,transparent);border:1px solid color-mix(in srgb,var(--brand-accent,#003087) 22%,transparent)">
       <span style="font-weight:700">🗺️ Ruta múltiple ({{ en_ruta|length }} paradas):</span>
       <button type="button" class="work-btn work-btn-info" data-open-maps-route="en_ruta">
-        🧭 Abrir ruta completa en Maps
+        🧭 Ver ruta completa
       </button>
-      <span class="text-sm text-muted" style="margin-left:auto">Se optimiza el orden desde tu ubicación actual.</span>
+      <span class="text-sm text-muted" style="margin-left:auto">Orden vial con tráfico; si el servicio no responde se usa proximidad.</span>
     </div>
     {% endif %}
     <div class="work-list">
@@ -527,6 +624,9 @@
              data-lat="{{ pedido.direccion_lat if pedido.direccion_lat is not none else '' }}"
              data-lng="{{ pedido.direccion_lng if pedido.direccion_lng is not none else '' }}"
              data-address="{{ pedido.direccion_entrega or '' }}">
+      <div class="route-stop-marker" data-route-stop aria-label="Parada {{ loop.index }}">
+        <span>{{ loop.index }}</span><small>parada</small>
+      </div>
       <div class="work-order-head">
         <div class="flex items-center gap-2">
           <span class="work-order-code is-info">{{ pedido.numero_pedido }}</span>
@@ -563,7 +663,7 @@
       {%- endif -%}
 
       <!-- Cliente + Cobro bien visible -->
-      <div class="work-client-payment mt-1">
+      <div class="work-client-payment route-order-summary mt-1">
         <p class="work-client">{{ pedido.cliente.nombre }}</p>
         <div class="work-payment">
           <span class="work-chip work-payment-method {% if pedido.metodo_pago == 'bizum' %}is-presencial{% endif %}">
@@ -573,7 +673,7 @@
         </div>
       </div>
 
-      <div class="mt-2 flex flex-wrap gap-2">
+      <div class="route-meta-row mt-2 flex flex-wrap gap-2">
         {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
         {% if pedido.es_programado %}<span class="work-chip">📅 {{ pedido.fecha_entrega_programada.strftime('%d/%m/%Y') if pedido.fecha_entrega_programada else 'Fecha por revisar' }}</span>{% endif %}
         {% if pedido.repartidor_id %}
@@ -591,17 +691,16 @@
       <!-- Dirección + GPS -->
       {% if pedido.direccion_entrega %}
       {% set destino_mapa = ((pedido.direccion_lat|string) ~ ',' ~ (pedido.direccion_lng|string)) if pedido.direccion_lat is not none and pedido.direccion_lng is not none else (pedido.direccion_entrega ~ ', ' ~ (brand.ciudad or '')) %}
-      <div class="work-box mt-2">
+      <div class="work-box route-destination mt-2">
         <p class="work-address">
           <span class="work-address-label is-info">Entregar en:</span>
           <span>{{ pedido.direccion_entrega }}</span>
         </p>
         <div class="flex gap-2 mt-2">
-          <a href="https://www.google.com/maps/dir/?api=1&destination={{ destino_mapa | urlencode }}"
-             target="_blank" rel="noopener"
-             class="work-btn work-btn-info flex-1">
-            🧭 Navegar ahora
-          </a>
+          <button type="button" class="work-btn work-btn-info flex-1"
+                  data-open-maps-route="pedido-{{ pedido.id }}">
+            🧭 Abrir mapa aquí
+          </button>
         </div>
       </div>
       {% endif %}
@@ -622,7 +721,7 @@
 
       <!-- Teléfono -->
       {% if pedido.cliente.telefono %}
-      <div class="flex gap-2 mt-2">
+      <div class="route-contact-actions flex gap-2 mt-2">
         <a href="tel:{{ pedido.cliente.telefono }}"
            class="work-btn work-btn-ghost flex-1">
           📞 {{ pedido.cliente.telefono }}
@@ -640,7 +739,7 @@
       </div>
       {% endif %}
 
-      <div class="work-panel route-confirm-block mb-3 mt-3">
+      <div class="work-panel route-confirm-block route-operation-step route-operation-step--code mb-3 mt-3">
         <p class="work-confirm-label">1. Código al llegar</p>
         {% if pedido.id in codigo_enviado_ids %}
         <p class="work-confirm-note">Código enviado al cliente. Puedes reenviarlo si el cliente no lo encuentra.</p>
@@ -656,7 +755,7 @@
       </div>
 
       <!-- Formulario de confirmación de entrega -->
-      <form method="POST" action="{{ url_for('repartidor.confirmar_entrega', pedido_id=pedido.id) }}" class="mt-3">
+      <form method="POST" action="{{ url_for('repartidor.confirmar_entrega', pedido_id=pedido.id) }}" class="route-delivery-form mt-3">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         {% if pedido.metodo_pago == 'bizum' %}
@@ -779,6 +878,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='vendor/leaflet/leaflet.js', v=asset_version) }}"></script>
 <script nonce="{{ csp_nonce() }}">
 function copiarDireccion(dir) {
   navigator.clipboard.writeText(dir).then(() => {
@@ -805,13 +905,13 @@ document.addEventListener('change', (event) => {
 });
 
 /* ──────────────────────────────────────────────────────────────
-   RUTA MÚLTIPLE EN GOOGLE MAPS
-   El botón "🧭 Abrir ruta en Maps" recopila las paradas del scope
+   RUTA MÚLTIPLE DENTRO DEL PWA
+   El botón de ruta recopila las paradas del scope
    ("listos" = pedidos marcados con checkbox / "en_ruta" = todas las
-   cards de la sección En ruta), optimiza el orden por vecino más
-   cercano desde la posición GPS del repartidor si la concede, y
-   abre la app de Maps con los waypoints. Dentro de Maps el driver
-   puede pulsar "Optimizar" para re-ordenar si lo desea.
+   cards de la sección En ruta), sugiere un orden por cercanía desde
+   la posición GPS del repartidor si la concede y dibuja dentro del PWA los
+   puntos en ese orden. Primero solicita optimización vial al servidor y
+   conserva una aproximación geográfica como fallback si no está disponible.
    ────────────────────────────────────────────────────────────── */
 function collectStopsFromScope(scope) {
   let cards = [];
@@ -832,6 +932,10 @@ function collectStopsFromScope(scope) {
     const lane = document.querySelector('.route-lane--active');
     if (!lane) return [];
     cards = Array.from(lane.querySelectorAll('[data-pedido-id]'));
+  } else if (String(scope).startsWith('pedido-')) {
+    const id = String(scope).slice(7);
+    const card = document.querySelector(`[data-pedido-id="${CSS.escape(id)}"]`);
+    if (card) cards = [card];
   }
   return cards.map(c => ({
     id: c.dataset.pedidoId,
@@ -891,6 +995,87 @@ function buildMapsRouteUrl(origin, stops) {
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 
+async function optimizeRoadOrder(origin, stops) {
+  if (!origin || stops.length < 2 || stops.some(s => !Number.isFinite(s.lat) || !Number.isFinite(s.lng))) {
+    return null;
+  }
+  const csrf = document.querySelector('meta[name="ox-csrf-token"]')?.content || '';
+  try {
+    const response = await fetch('{{ url_for("repartidor.optimizar_ruta") }}', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf, Accept: 'application/json'},
+      body: JSON.stringify({
+        origin,
+        pedido_ids: stops.map(stop => Number(stop.id)),
+      }),
+    });
+    if (!response.ok) return null;
+    const result = await response.json();
+    if (!result.ok || !Array.isArray(result.pedido_ids)) return null;
+    const byId = new Map(stops.map(stop => [Number(stop.id), stop]));
+    const ordered = result.pedido_ids.map(id => byId.get(Number(id))).filter(Boolean);
+    return ordered.length === stops.length ? ordered : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function renderRouteSequence(orderedStops) {
+  const list = document.querySelector('.route-lane--active .work-list');
+  orderedStops.forEach((stop, index) => {
+    const card = document.querySelector(`.route-lane--active [data-pedido-id="${CSS.escape(String(stop.id))}"]`);
+    const marker = card?.querySelector('[data-route-stop] span');
+    const label = card?.querySelector('[data-route-stop]');
+    if (marker) marker.textContent = String(index + 1);
+    if (label) label.setAttribute('aria-label', `Parada ${index + 1}`);
+    if (list && card) list.appendChild(card);
+  });
+}
+
+let embeddedRouteMap = null;
+let embeddedRouteLayer = null;
+
+function showEmbeddedRoute(origin, stops) {
+  const panel = document.querySelector('[data-route-map-panel]');
+  const canvas = document.querySelector('[data-route-map]');
+  if (!panel || !canvas || typeof L === 'undefined') return false;
+  panel.hidden = false;
+  if (!embeddedRouteMap) {
+    embeddedRouteMap = L.map(canvas, { zoomControl: true, attributionControl: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap',
+    }).addTo(embeddedRouteMap);
+  }
+  if (embeddedRouteLayer) embeddedRouteLayer.remove();
+  embeddedRouteLayer = L.featureGroup().addTo(embeddedRouteMap);
+  const points = [];
+  if (origin && Number.isFinite(origin.lat) && Number.isFinite(origin.lng)) {
+    const point = [origin.lat, origin.lng]; points.push(point);
+    L.circleMarker(point, {radius:8,color:'#fff',weight:3,fillColor:'#1769e0',fillOpacity:1})
+      .bindTooltip('Tu ubicación').addTo(embeddedRouteLayer);
+  }
+  stops.forEach((stop, index) => {
+    if (!Number.isFinite(stop.lat) || !Number.isFinite(stop.lng)) return;
+    const point = [stop.lat, stop.lng]; points.push(point);
+    const icon = L.divIcon({className:'',html:`<div class="route-map-stop"><span>${index + 1}</span></div>`,iconSize:[32,38],iconAnchor:[16,38]});
+    L.marker(point,{icon}).bindPopup(`<strong>Parada ${index + 1}</strong><br>${escapeRouteText(stop.address || 'Dirección del pedido')}`).addTo(embeddedRouteLayer);
+  });
+  if (points.length > 1) L.polyline(points,{color:'#1769e0',weight:5,opacity:.78,dashArray:'10 7'}).addTo(embeddedRouteLayer);
+  if (points.length) embeddedRouteMap.fitBounds(L.latLngBounds(points).pad(.18),{maxZoom:16});
+  else embeddedRouteMap.setView([37.3891,-5.9845],12);
+  panel.querySelector('[data-route-map-summary]').textContent = `${stops.length} parada${stops.length === 1 ? '' : 's'} · orden optimizado disponible sin salir del PWA.`;
+  panel.querySelector('[data-route-map-external]').href = buildMapsRouteUrl(origin, stops);
+  window.setTimeout(()=>embeddedRouteMap.invalidateSize(),80);
+  panel.scrollIntoView({behavior:'smooth',block:'start'});
+  return true;
+}
+
+function escapeRouteText(value) {
+  const node = document.createElement('span'); node.textContent = String(value || ''); return node.innerHTML;
+}
+
 function openMultiStopRoute(scope) {
   const stops = collectStopsFromScope(scope);
   if (!stops.length) {
@@ -899,36 +1084,34 @@ function openMultiStopRoute(scope) {
       : 'No hay pedidos en ruta ahora mismo.');
     return;
   }
-  // iOS Safari solo permite window.open dentro del gesto del click. Si lo
-  // llamáramos dentro del callback de getCurrentPosition el popup queda
-  // bloqueado y en el iPhone del repartidor "no pasa nada". Solución:
-  // abrimos ya una pestaña placeholder de forma síncrona y le cambiamos
-  // la URL cuando el GPS resuelve (o el timeout dispara).
-  const navigate = url => {
-    if (!url) { if (win && !win.closed) win.close(); return; }
-    if (win && !win.closed) {
-      try { win.location.href = url; return; } catch (_) { /* fallback abajo */ }
-    }
-    // Fallback: mismo tab (funciona siempre en iOS, aunque salga de la app)
-    window.location.href = url;
-  };
-  const win = window.open('about:blank', '_blank');
-
+  // Maps URLs admite menos puntos en navegadores móviles que en escritorio.
+  // Bloqueamos antes de abrir para no perder entregas silenciosamente.
+  const mobileRoute = matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+  const maxStops = mobileRoute ? 4 : 10;
+  if (stops.length > maxStops) {
+    alert(`Esta ruta tiene ${stops.length} paradas. Maps admite de forma fiable hasta ${maxStops} en este dispositivo. Divide la selección en dos rutas para no perder direcciones.`);
+    return;
+  }
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
   if (stops.length === 1) {
-    navigate(buildMapsRouteUrl(null, stops));
+    showEmbeddedRoute(null, stops);
     return;
   }
 
-  const openWith = origin => {
-    const ordered = origin ? nearestNeighborOrder(origin, stops) : stops;
-    navigate(buildMapsRouteUrl(origin, ordered));
+  const openWith = async origin => {
+    // El servidor usa tráfico y red vial si Google Routes está configurado.
+    // Si falta la clave, una coordenada o la red, conservamos un fallback
+    // local por proximidad y nunca dejamos al repartidor sin navegación.
+    const roadOrdered = await optimizeRoadOrder(origin, stops);
+    const ordered = roadOrdered || (origin ? nearestNeighborOrder(origin, stops) : stops);
+    if (scope === 'en_ruta') renderRouteSequence(ordered);
+    showEmbeddedRoute(origin, ordered);
   };
 
   // En iOS damos GPS un margen muy corto (o lo saltamos) porque cada
   // segundo con la pestaña placeholder vacía se percibe como "no funciona".
-  // Sin GPS, Maps abre igual y el driver puede pulsar "Optimizar" dentro.
+  // Sin GPS, Maps abre igualmente respetando el orden visible del panel.
   if (!navigator.geolocation) { openWith(null); return; }
   const timeoutMs = isIOS ? 1500 : 3000;
   let done = false;
@@ -943,6 +1126,10 @@ function openMultiStopRoute(scope) {
     { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60000 }
   );
 }
+
+document.addEventListener('click', event => {
+  if (event.target.closest('[data-route-map-close]')) document.querySelector('[data-route-map-panel]').hidden = true;
+});
 
 document.addEventListener('click', (event) => {
   const btn = event.target.closest('[data-open-maps-route]');

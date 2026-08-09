@@ -251,6 +251,29 @@ body.operational-view .work-btn-ghost {
 .route-board .route-lane--ready,
 .staff-orders-board .staff-lane--pending { order: 2; }
 
+/* Tracking explícito: nunca queda escondido detrás de un icono ambiguo. */
+.route-gps {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .75rem;
+  margin: 0 0 var(--op-space);
+  padding: .75rem .85rem;
+  border: 1px solid var(--op-line);
+  border-radius: var(--op-radius);
+  background: var(--op-surface);
+}
+.route-gps__signal { width: 12px; height: 12px; border-radius: 50%; background: var(--col-faint); box-shadow: 0 0 0 5px color-mix(in srgb, var(--col-faint) 12%, transparent); }
+.route-gps strong, .route-gps small { display: block; }
+.route-gps small { margin-top: .12rem; color: var(--col-muted); font-size: .74rem; }
+.route-gps[data-state="active"] { border-color: color-mix(in srgb, var(--op-success) 38%, var(--op-line)); background: color-mix(in srgb, var(--op-success) 5%, var(--op-surface)); }
+.route-gps[data-state="active"] .route-gps__signal { background: var(--op-success); animation: prep-sse-live 2s ease-out infinite; }
+.route-gps[data-state="error"] .route-gps__signal { background: var(--op-danger); }
+@media (max-width: 520px) {
+  .route-gps { grid-template-columns: auto minmax(0, 1fr); }
+  .route-gps .work-btn { grid-column: 1 / -1; width: 100%; }
+}
+
 /* Inventario: semántica reusable, sin colores embebidos en la plantilla. */
 .work-critical-alert {
   display: flex;

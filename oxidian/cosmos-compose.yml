@@ -75,6 +75,8 @@ services:
     depends_on:
       oxidian-db:
         condition: service_healthy
+      oxidian-redis:
+        condition: service_started
     environment:
       APP_ENV: production
       FLASK_ENV: production

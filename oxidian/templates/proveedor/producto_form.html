@@ -104,6 +104,38 @@
     </div>
   </section>
 
+  <section class="partner-form-section">
+    <div class="partner-form-heading">
+      <span>3</span>
+      <div><strong>Publicación manual</strong><small>Define la franja y los días en los que el producto estará visible para la tienda. Si lo dejas vacío, se publicará siempre.</small></div>
+    </div>
+    <div class="partner-form-grid">
+      <label class="partner-field">
+        <span>Hora inicio</span>
+        <input type="time" name="hora_inicio_visibilidad"
+               value="{{ request.form.get('hora_inicio_visibilidad', producto.hora_inicio_visibilidad.strftime('%H:%M') if producto and producto.hora_inicio_visibilidad else '') }}">
+      </label>
+      <label class="partner-field">
+        <span>Hora fin</span>
+        <input type="time" name="hora_fin_visibilidad"
+               value="{{ request.form.get('hora_fin_visibilidad', producto.hora_fin_visibilidad.strftime('%H:%M') if producto and producto.hora_fin_visibilidad else '') }}">
+      </label>
+      <div class="partner-field partner-field-wide">
+        <span>Días de publicación</span>
+        <div class="partner-days-grid">
+          {% for idx, dia in [('0','Lun'),('1','Mar'),('2','Mié'),('3','Jue'),('4','Vie'),('5','Sáb'),('6','Dom')] %}
+          {% set dias_guardados = (producto.dias_semana_json|from_json) if producto and producto.dias_semana_json else [] %}
+          <label class="partner-day-chip">
+            <input type="checkbox" name="dias_semana" value="{{ idx }}" {% if idx|string in dias_guardados|map('string') %}checked{% endif %}>
+            <span>{{ dia }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <small>Si no marcas ningún día, la franja será válida todos los días. La franja nocturna funciona igual: por ejemplo 22:00–02:00.</small>
+      </div>
+    </div>
+  </section>
+
   <aside class="partner-ownership-note">
     <strong>Propiedad protegida</strong>
     <p>Este producto quedará identificado como propiedad de <b>{{ proveedor.nombre }}</b>. Tu participación es {{ "%.2f"|format(100 - proveedor.comision_pct|float) }}% y la comisión de la tienda es {{ "%.2f"|format(proveedor.comision_pct|float) }}% sobre cada venta.</p>

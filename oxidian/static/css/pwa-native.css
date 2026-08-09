@@ -1556,34 +1556,19 @@ body.ox-body-public::before {
   z-index: -1;
   inset: 0;
   pointer-events: none;
-  /* 2026-08-10: base más luminosa (beige claro en vez de crudo),
-     overlay blanco al 84% (antes 66% dejaba la textura muy visible
-     y con tono café oscurecía la app en zonas amplias), filter con
-     brightness +15% y contrast subido a .95 para eliminar el efecto
-     vignette percibido en los laterales (el contrast .86 antiguo
-     hacía que los bordes se percibieran más oscuros que el centro,
-     simulando una "curvatura de pantalla" que el usuario reportó). */
-  /* Base cambiada a un crema muy claro (antes #efe4d1 = beige oscuro).
-     Con overlay 90% blanco, la textura burlap queda como una veladura
-     casi imperceptible que da PROFUNDIDAD sin oscurecer. */
-  background-color: #f9f4e9;
+  /* 2026-08-10: eliminado el radial-gradient laterales que producía
+     dos franjas blancas verticales con efecto curvo/reflejo en PWA
+     (solo visible en display-mode instalado). Overlay blanco subido
+     a .95 y brightness a 1.45 para aclarar la textura burlap, que
+     se percibía oscura. Sin radial, el fondo queda uniforme. */
+  background-color: #fbf7ee;
   background-image:
-    /* Radial suave que aclara aún más los bordes (elimina vignette). */
-    radial-gradient(ellipse 105% 105% at center,
-      transparent 45%,
-      rgba(255, 253, 248, .38) 78%,
-      rgba(255, 253, 248, .52) 100%),
-    /* Overlay principal subido de .84 a .90 → la textura casi
-       desaparece, quedando solo como sensación de "papel artesanal". */
-    linear-gradient(rgba(255, 253, 248, .90), rgba(255, 253, 248, .90)),
+    linear-gradient(rgba(255, 253, 248, .95), rgba(255, 253, 248, .95)),
     url("../coffee-burlap-texture-v2.webp");
   background-repeat: no-repeat;
   background-position: center;
   background-size: cover;
-  /* Filter completamente reformulado: brightness +32% (antes +15%
-     era imperceptible), contrast neutro (antes .95 seguía apagando).
-     Saturación bajada más para que el matiz beige no domine. */
-  filter: saturate(.65) contrast(1) brightness(1.32);
+  filter: saturate(.6) contrast(1) brightness(1.45);
   transform: translateZ(0);
 }
 

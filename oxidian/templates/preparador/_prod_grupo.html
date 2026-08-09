@@ -2,6 +2,7 @@
    del preparador. Espera `grupo` como dict devuelto por `agrupar_items_por_producto`. #}
 <div class="work-prod-group{% if grupo.lineas|length > 1 %} work-prod-group--multi{% endif %}"
      data-prod-group="{{ grupo.producto_id }}">
+  {% if grupo.lineas|length > 1 %}
   <header class="work-prod-group-hdr">
     <span class="work-prod-group-qty" title="Total de unidades del producto en este pedido">
       {{ grupo.cantidad_total }}×
@@ -13,6 +14,7 @@
     </span>
     {% endif %}
   </header>
+  {% endif %}
 
   {# Cada item del grupo mantiene su tamaño+sabores+extras propios.
      `_order_item_combo.html` lee `item.get_metadata()` y renderiza los partials

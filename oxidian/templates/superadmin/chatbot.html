@@ -23,6 +23,14 @@
   </div>
 </div>
 
+{% if admins_sin_telefono %}
+<aside class="ox-card p-4 mb-4" style="border-color:rgba(255,171,0,.45);background:rgba(255,171,0,.07)" role="alert">
+  <strong style="color:#FFAB00">⚠ {{ admins_sin_telefono|length }} cuenta{{ 's' if admins_sin_telefono|length != 1 else '' }} administrativa{{ 's' if admins_sin_telefono|length != 1 else '' }} sin teléfono WhatsApp</strong>
+  <p class="text-sm mt-1" style="color:var(--col-muted)">El chatbot no puede reconocer su rol hasta asociar un número internacional único a cada cuenta: {{ admins_sin_telefono|map(attribute='nombre')|join(', ') }}.</p>
+  <a href="{{ url_for('superadmin.admins') }}" class="ox-btn-ghost text-sm mt-3">Corregir cuentas y teléfonos</a>
+</aside>
+{% endif %}
+
 {# ── SECCIÓN 1: CONEXIÓN Y QR ── #}
 <div class="cb-section-label">1 · Estado de conexión y QR</div>
 <div class="grid xl:grid-cols-2 gap-4 mb-2">
@@ -311,12 +319,13 @@
     </div>
 
     {# ───────────────────────── IA ADMINISTRATIVA ───────────────────────── #}
-    <div class="lg:col-span-2" style="border-top:1px solid var(--col-border); padding-top:1rem; margin-top:.75rem">
-      <h3 class="cb-section-title" style="font-size:1rem; margin-bottom:.4rem">🧠 IA administrativa</h3>
+    <div class="lg:col-span-2" id="asesor-comercial" style="border-top:1px solid var(--col-border); padding-top:1rem; margin-top:.75rem;scroll-margin-top:1rem">
+      <h3 class="cb-section-title" style="font-size:1rem; margin-bottom:.4rem">🧠 Asesor financiero y comercial</h3>
       <p class="chat-help" style="margin-bottom:.9rem">
         Uso interno para admin y super admin: analiza datos agregados de la tienda, ventas,
-        productos, combos y módulos activos. El chatbot del cliente no usa IA generativa;
-        responde con opciones, FAQs, palabras clave, búsqueda de catálogo y atención humana.
+        productos, costes, combos y módulos activos. Esta configuración está aislada del
+        chatbot: el bot del cliente funciona sin Groq ni Claude mediante menús, intenciones,
+        catálogo, seguimiento de pedidos y atención humana.
       </p>
     </div>
 
@@ -326,7 +335,7 @@
         <option value="0" {% if bot_ai_enabled != '1' %}selected{% endif %}>No</option>
         <option value="1" {% if bot_ai_enabled == '1' %}selected{% endif %}>Sí, solo para consultas internas</option>
       </select>
-      <p class="chat-help">Activa consultas como “top productos”, “mejora del ticket medio” o “combos sugeridos” desde panel o WhatsApp admin.</p>
+      <p class="chat-help">Activa el enriquecimiento externo. El análisis local de márgenes, precios, combos y ticket medio funciona siempre, sin API.</p>
       {% if bot_ai_enabled == '1' %}
       <button type="submit" formaction="{{ url_for('superadmin.chatbot_test_ai') }}" formmethod="post" class="ox-btn-ghost text-sm mt-2">Probar conexión IA</button>
       {% endif %}
@@ -336,10 +345,11 @@
       <label class="chat-label">Proveedor IA</label>
       <select name="bot_ai_provider" class="chat-input">
         <option value="">— ninguno —</option>
+        <option value="anthropic" {% if bot_ai_provider == 'anthropic' %}selected{% endif %}>Anthropic · Claude</option>
         <option value="groq" {% if bot_ai_provider == 'groq' %}selected{% endif %}>Groq</option>
         <option value="openai" {% if bot_ai_provider == 'openai' %}selected{% endif %}>OpenAI</option>
       </select>
-      <p class="chat-help">Selecciona el proveedor correspondiente a tu API key.</p>
+      <p class="chat-help">Groq usa su endpoint compatible con Chat Completions; Claude usa Messages API. La clave nunca se envía al navegador ni al chatbot.</p>
     </div>
 
     <div>
@@ -354,9 +364,9 @@
       <p class="chat-help">
         {% if bot_ai_api_key_set %}
         ✓ Clave guardada. Déjalo vacío para conservarla; escribe algo solo para sobrescribir.
-        Prueba con <code>!ia</code> desde WhatsApp o desde <a href="{{ url_for('admin.ia_analisis') }}">Consulta IA</a>.
+        Usa <a href="{{ url_for('admin.ia_analisis') }}">Consulta IA</a> para analizar productos y campañas.
         {% else %}
-        ⚠ Sin clave configurada — <strong>!ia</strong> y el panel Consulta IA responderán con un mensaje de error hasta que la configures.
+        ✓ Sin clave externa — el asesor comercial utiliza el motor local. Puedes añadir una API más adelante para enriquecer la redacción y el análisis.
         {% endif %}
       </p>
     </div>
@@ -375,8 +385,8 @@
 
     <div>
       <label class="chat-label">Modelo</label>
-      <input name="bot_ai_model" value="{{ bot_ai_model }}" class="chat-input" placeholder="Modelo habilitado en tu proveedor">
-      <p class="chat-help">Usa el identificador exacto del modelo disponible en tu cuenta.</p>
+      <input name="bot_ai_model" value="{{ bot_ai_model }}" class="chat-input" placeholder="Identificador exacto habilitado en tu proveedor">
+      <p class="chat-help">Usa el modelo disponible en tu cuenta Groq o Anthropic; no se fija uno oculto para evitar depender de modelos retirados.</p>
     </div>
 
     <div class="lg:col-span-2">

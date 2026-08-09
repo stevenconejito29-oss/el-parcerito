@@ -36,25 +36,28 @@ git pull --ff-only origin main
 echo "[$(date -Is)] rebuild oxidian..."
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build oxidian
 
-echo "[$(date -Is)] recreate oxidian..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d oxidian
+echo "[$(date -Is)] recreate oxidian + redis..."
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d oxidian-redis oxidian
 
 echo "[$(date -Is)] esperando health..."
 for i in {1..15}; do
-    sleep 1
-    code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5070/health || true)
-    if [[ "$code" == "200" ]]; then
-        echo "[$(date -Is)] ✅ HTTP 200 tras ${i}s"
+    if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T oxidian curl -fsS http://localhost:5000/health >/dev/null 2>&1; then
+        echo "[$(date -Is)] ✅ health OK tras ${i}s"
         exit 0
     fi
+    sleep 1
     # Si a los 5s seguimos en 502, restart del gateway suele repararlo
     # (bind mount + DNS cachea IPs viejas).
-    if [[ "$i" == "5" && "$code" == "502" ]]; then
-        echo "[$(date -Is)] 502 persistente → restart gateway..."
-        docker restart oxidian-gateway
+    if [[ "$i" == "5" ]]; then
+        if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps oxidian --format json 2>/dev/null | grep -q '"Health":"healthy"'; then
+            echo "[$(date -Is)] ✅ servicio reporta healthy"
+            exit 0
+        fi
+        echo "[$(date -Is)] 502/health pendiente → restart gateway..."
+        docker restart oxidian-gateway || true
     fi
 done
 
-echo "[$(date -Is)] ❌ health check falló: última respuesta HTTP $code" >&2
-docker logs oxidian --tail 20 >&2
+echo "[$(date -Is)] ❌ health check falló: servicio no respondió en http://localhost:5000/health" >&2
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs oxidian --tail 20 >&2 || true
 exit 1

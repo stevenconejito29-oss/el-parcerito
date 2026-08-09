@@ -1,15 +1,21 @@
 {% extends "base.html" %}
 {% from 'partials/heritage_icons.html' import heritage_icon %}
 {% block title %}{{ ui.loyalty_name }} — {{ brand.nombre }}{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/loyalty-showcase.css', v=asset_version) }}">
+{% endblock %}
 {% block content %}
 <section class="points-lookup">
   <a href="{{ url_for('public.index') }}" class="points-lookup-back">← Volver al menú</a>
   <div class="points-lookup-hero">
-    <span>{{ heritage_icon('grano') }}</span>
+    <span class="pc-beans-flag points-hero-beans" aria-hidden="true"><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i></span>
     <div>
-      <p class="points-lookup-kicker">{{ ui.loyalty_name }}</p>
-      <h1>Consulta tus {{ ui.loyalty_unit_plural }}</h1>
-      <p>Tu número de WhatsApp es tu identificación. No necesitas cuenta ni contraseña.</p>
+      <p class="points-lookup-kicker">Club de recompensas · {{ brand.nombre }}</p>
+      <h1>Tus compras se convierten en antojos</h1>
+      <p>Consulta tus {{ ui.loyalty_unit_plural }}, descubre cuánto te falta y desbloquea tu próximo regalo.</p>
+      <div class="pc-hero-benefits" aria-label="Beneficios del club">
+        <span>✓ Saldo protegido</span><span>✓ Canje en checkout</span><span>✓ Regalos reales</span>
+      </div>
     </div>
   </div>
 
@@ -19,8 +25,8 @@
   {% if saldo_cliente is not none %}
   <div class="points-lookup-card points-lookup-mine">
     <p class="pc-saldo-label">Tu saldo actual</p>
-    <p class="pc-saldo-num">{{ heritage_icon('grano') }} {{ saldo_cliente }} <small>{{ ui.loyalty_unit_plural }}</small></p>
-    <p class="pc-saldo-hint">Se aplica automáticamente al confirmar tu pedido.</p>
+    <p class="pc-saldo-num"><span class="pc-beans-flag pc-beans-flag--mini" aria-hidden="true"><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i></span> {{ saldo_cliente }} <small>{{ ui.loyalty_unit_plural }}</small></p>
+    <p class="pc-saldo-hint">En el checkout podrás verificar tu teléfono y elegir tu regalo.</p>
   </div>
   {% else %}
   <form id="points-lookup-form" class="points-lookup-card">
@@ -33,10 +39,16 @@
   </form>
   {% endif %}
 
-  <div class="points-lookup-note">
+  <div class="points-lookup-note pc-redeem-callout">
     <strong>¿Quieres usarlos?</strong>
     <p>Arma tu pedido normalmente. Al confirmar verificaremos este mismo WhatsApp y podrás elegir tu regalo.</p>
     <a href="{{ url_for('public.index') }}">Ver productos</a>
+  </div>
+
+  <div class="pc-steps" aria-label="Cómo canjear tus granitos">
+    <div><b>1</b><span><strong>Elige tu pedido</strong><small>Añade al menos un producto</small></span></div>
+    <div><b>2</b><span><strong>Verifica tu WhatsApp</strong><small>Protegemos tu saldo con código</small></span></div>
+    <div><b>3</b><span><strong>Escoge tu regalo</strong><small>Se añade gratis al pedido</small></span></div>
   </div>
 
   {# ── Vitrina de canje: productos solo_canje ── #}
@@ -45,8 +57,9 @@
     <div class="pc-vitrina-hd">
       <span>{{ heritage_icon('canasto') }}</span>
       <div>
-        <h2>Regalos disponibles con tus {{ ui.loyalty_unit_plural }}</h2>
-        <p>Al finalizar el pedido eliges cuál canjear.</p>
+        <p class="pc-vitrina-kicker">Vitrina de recompensas</p>
+        <h2>Elige tu próximo regalo</h2>
+        <p>Productos disponibles para canjear al finalizar tu pedido.</p>
       </div>
     </div>
     <div class="pc-vitrina-grid">
@@ -55,63 +68,34 @@
         <div class="pc-vitrina-thumb">
           {% if p.imagen_url %}<img src="{{ p.imagen_url|upload_url }}" alt="{{ p.nombre }}">
           {% else %}<span>🎁</span>{% endif %}
+          <span class="pc-reward-type">{{ 'Sólo canje' if p.solo_canje else 'También canjeable' }}</span>
+          <span class="pc-reward-value">Recompensa</span>
         </div>
         <div class="pc-vitrina-body">
           <h3>{{ p.nombre }}</h3>
           {% if p.descripcion %}<p class="pc-vitrina-desc">{{ p.descripcion[:80] }}</p>{% endif %}
-          <p class="pc-vitrina-pts">{{ heritage_icon('grano') }} {{ p.puntos_para_canje }} {{ ui.loyalty_unit_plural }}</p>
+          <p class="pc-vitrina-pts"><span class="pc-beans-flag pc-beans-flag--mini" aria-hidden="true"><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i></span> {{ p.puntos_para_canje }} {{ ui.loyalty_unit_plural }}</p>
           {# Badge de disponibilidad relativo al saldo del cliente. Solo
              aparece si el cliente está logueado (saldo conocido). Para
              visitantes anónimos mostramos el precio en puntos y nada más. #}
           {% if saldo_cliente is not none %}
             {% set faltan = (p.puntos_para_canje or 0) - saldo_cliente %}
+            {% set avance = ((saldo_cliente / p.puntos_para_canje * 100)|round(0)) if p.puntos_para_canje else 100 %}
+            <div class="pc-reward-progress" role="progressbar" aria-label="Progreso para canjear {{ p.nombre }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [avance, 100]|min }}"><i style="width:{{ [avance, 100]|min }}%"></i></div>
+            <small class="pc-reward-progress-label">{{ saldo_cliente }} de {{ p.puntos_para_canje }} {{ ui.loyalty_unit_plural }}</small>
             {% if faltan <= 0 %}
-              <span class="pc-vitrina-badge pc-vitrina-badge--ok">✓ Puedes canjearlo</span>
+              <span class="pc-vitrina-badge pc-vitrina-badge--ok">✓ Disponible con tu saldo</span>
+              <a class="pc-reward-cta" href="{{ url_for('public.index') }}">Armar pedido para canjear</a>
             {% else %}
               <span class="pc-vitrina-badge pc-vitrina-badge--wait">Te faltan {{ faltan }} {{ ui.loyalty_unit_plural }}</span>
             {% endif %}
           {% endif %}
+          {% if saldo_cliente is none %}<a class="pc-reward-cta pc-reward-cta--soft" href="{{ url_for('public.index') }}">Comprar y acumular <span>→</span></a>{% endif %}
         </div>
       </article>
       {% endfor %}
     </div>
   </div>
-  <style>
-  .pc-vitrina { margin-top: 1.5rem; }
-  .pc-vitrina-hd { display: flex; gap: .75rem; align-items: center; margin-bottom: .75rem; }
-  .pc-vitrina-hd span { font-size: 2rem; }
-  .pc-vitrina-hd h2 { font-size: 1.05rem; font-weight: 900; color: var(--col-text); margin: 0; }
-  .pc-vitrina-hd p { font-size: .82rem; color: var(--col-muted); margin: 0; }
-  .pc-vitrina-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: .6rem; }
-  .pc-vitrina-card { background: rgba(255,255,255,.04); border: 1px solid rgba(255,171,0,.15); border-radius: .8rem; overflow: hidden; display: flex; flex-direction: column; transition: transform .15s ease, border-color .15s ease; }
-  .pc-vitrina-card:hover { transform: translateY(-2px); border-color: rgba(255,171,0,.4); }
-  .pc-vitrina-thumb { aspect-ratio: 4/3; background: rgba(255,171,0,.06); display: grid; place-items: center; font-size: 2.5rem; overflow: hidden; }
-  .pc-vitrina-thumb img { width: 100%; height: 100%; object-fit: cover; }
-  .pc-vitrina-body { padding: .55rem .65rem .7rem; display: flex; flex-direction: column; gap: .3rem; flex: 1; }
-  .pc-vitrina-body h3 { font-size: .82rem; font-weight: 800; color: var(--col-text); margin: 0; line-height: 1.2; }
-  .pc-vitrina-desc { font-size: .72rem; color: var(--col-muted); margin: 0; line-height: 1.3; }
-  .pc-vitrina-pts { font-size: .82rem; font-weight: 900; color: var(--brand-primary); margin-top: auto; letter-spacing: -.01em; }
-  .pc-vitrina-badge {
-    display: inline-block; margin-top: .3rem; font-size: .68rem; font-weight: 800;
-    padding: .18rem .45rem; border-radius: 999px; letter-spacing: .01em;
-  }
-  .pc-vitrina-badge--ok {
-    background: color-mix(in srgb, var(--theme-success) 14%, transparent);
-    color: var(--theme-success);
-    border: 1px solid color-mix(in srgb, var(--theme-success) 32%, transparent);
-  }
-  .pc-vitrina-badge--wait {
-    background: color-mix(in srgb, var(--col-muted) 14%, transparent);
-    color: var(--col-muted);
-    border: 1px solid color-mix(in srgb, var(--col-muted) 25%, transparent);
-  }
-  /* Card del saldo real del cliente logueado */
-  .points-lookup-mine { text-align: center; padding: 1.2rem 1rem; }
-  .pc-saldo-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--col-muted); margin: 0 0 .35rem; }
-  .pc-saldo-num { font-size: 2.2rem; font-weight: 950; color: var(--brand-primary); line-height: 1; margin: 0; letter-spacing: -.03em; }
-  .pc-saldo-num small { font-size: .85rem; color: var(--col-muted); font-weight: 700; margin-left: .25rem; }
-  .pc-saldo-hint { font-size: .78rem; color: var(--col-muted); margin-top: .5rem; }
-  </style>
   {% endif %}
 </section>
 {% endblock %}

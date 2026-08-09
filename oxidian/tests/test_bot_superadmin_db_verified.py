@@ -72,6 +72,14 @@ class BotSuperadminDBVerifiedAuthTest(unittest.TestCase):
             self.assertEqual(actor.rol, "admin")
             self.assertFalse(actor.privileged_by_env)
 
+    def test_perfil_legacy_sin_telefono_normalizado_sigue_identificando_superadmin(self):
+        user = self._mk("+34600777888", rol="super_admin")
+        user.telefono_normalizado = None
+        db.session.commit()
+        actor = _resolver_actor_admin_bot("+34600777888")
+        self.assertIsNotNone(actor)
+        self.assertEqual(actor.rol, "super_admin")
+
     def test_user_inactivo_deny(self):
         """Usuario existe pero inactivo → deny aunque env autorice."""
         self._mk("+34600555666", rol="super_admin", activo=False)

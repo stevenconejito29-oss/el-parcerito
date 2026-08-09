@@ -1667,6 +1667,8 @@ def _resolver_zona_por_coordenadas(lat, lon, zonas):
     default para no relajar la política si el admin quiso exclusiones
     específicas dentro del polígono.
     """
+    from models import SiteConfig
+
     if not zonas:
         return None, None
     try:

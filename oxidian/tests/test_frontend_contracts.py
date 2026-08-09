@@ -7,6 +7,133 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendContractsTest(unittest.TestCase):
+    def test_staff_pwa_embeds_route_map_and_modules_hide_disabled_surfaces(self):
+        route = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
+        dashboard = (ROOT / "templates" / "superadmin" / "dashboard.html").read_text(encoding="utf-8")
+        sidebar = (ROOT / "templates" / "admin_base.html").read_text(encoding="utf-8")
+        config = (ROOT / "store_config.py").read_text(encoding="utf-8")
+
+        self.assertIn("data-route-map-panel", route)
+        self.assertIn("vendor/leaflet/leaflet.js", route)
+        self.assertIn("showEmbeddedRoute(origin, ordered)", route)
+        self.assertIn("Abrir navegación", route)
+        self.assertNotIn("window.open('about:blank'", route)
+        for module in ("efectivo", "bizum", "tarjeta"):
+            self.assertIn(f"'{module}'", dashboard)
+        self.assertIn("brand.pedidos_programados", sidebar)
+        self.assertIn("brand.bizum_habilitado or brand.tarjeta_habilitada", sidebar)
+        self.assertIn('"vertical": (get_store_value("TIPO_TIENDA"', config)
+
+        kitchen = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")
+        employee_css = (ROOT / "static" / "css" / "employee-app.css").read_text(encoding="utf-8")
+        self.assertIn('class="work-item work-item--tap"', kitchen)
+        self.assertIn("min-width: 48px; min-height: 48px", employee_css)
+        self.assertIn('data-open-maps-route="pedido-', route)
+        self.assertNotIn('target="_blank" rel="noopener"\n             class="work-btn work-btn-info flex-1">\n            🧭 Navegar ahora', route)
+
+    def test_pwa_search_does_not_float_over_recommendations(self):
+        css = (ROOT / "static" / "css" / "pwa-native.css").read_text(encoding="utf-8")
+        self.assertIn("position: relative !important", css)
+        self.assertIn(".ep-search-wrap + :is(.ep-banner-section,.ep-mc-destacados-wrap)", css)
+
+    def test_kitchen_printer_uses_server_hint_and_browser_permission(self):
+        thermal = (ROOT / "static" / "js" / "thermal-printer.js").read_text(encoding="utf-8")
+        roles = (ROOT / "static" / "js" / "operational-roles.js").read_text(encoding="utf-8")
+        self.assertIn("/preparador/impresora", thermal)
+        self.assertIn("device_id: dev.id", thermal)
+        self.assertIn("navigator.bluetooth.getDevices", thermal)
+        self.assertIn("[data-pair-thermal=\"bt\"]", roles)
+
+    def test_operational_themes_and_rider_tracking_are_real_modes(self):
+        styles = (ROOT / "static" / "css" / "employee-app.css").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "js" / "operational-roles.js").read_text(encoding="utf-8")
+        route = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
+
+        self.assertIn('html[data-delivery-theme="light"] body.view-preparador', styles)
+        self.assertIn('html[data-delivery-theme="dark"] body.view-repartidor', styles)
+        self.assertIn('background: #080d13 !important', styles)
+        self.assertIn('data-auto-start="{{ \'1\' if en_ruta else \'0\' }}"', route)
+        self.assertIn("window.setTimeout(start, 350)", script)
+        self.assertIn("navigator.geolocation.watchPosition", script)
+
+    def test_first_order_confirmation_has_real_whatsapp_gate(self):
+        route = (ROOT / "routes" / "public.py").read_text(encoding="utf-8")
+        template = (ROOT / "templates" / "public" / "pedido_confirmado.html").read_text(encoding="utf-8")
+        styles = (ROOT / "static" / "css" / "order-confirmation.css").read_text(encoding="utf-8")
+
+        self.assertIn('requiere_confirmacion_whatsapp=(pedido.confirmacion_estado == "pending")', route)
+        self.assertIn("{% if requiere_confirmacion_whatsapp %}", template)
+        self.assertIn("Confirma el pedido desde tu WhatsApp", template)
+        self.assertIn("hasta entonces el pedido queda protegido", template)
+        self.assertIn("order-verify-cta", template)
+        self.assertIn("@media(max-width:420px)", styles)
+        self.assertIn("@media(prefers-reduced-motion:reduce)", styles)
+
+    def test_pwa_search_is_visible_and_bottom_action_focuses_it(self):
+        native = (ROOT / "static" / "css" / "pwa-native.css").read_text(encoding="utf-8")
+        template = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
+        menu = (ROOT / "templates" / "public" / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn("display: block !important", native)
+        self.assertIn("min-height: 56px !important", native)
+        self.assertIn("clip-path: none !important", native)
+        self.assertIn('data-bnav="search"', template)
+        self.assertIn('class="ep-search-wrap" id="buscar"', menu)
+
+    def test_pwa_logo_is_only_the_image_without_frame_decoration(self):
+        native = (ROOT / "static" / "css" / "pwa-native.css").read_text(encoding="utf-8")
+
+        self.assertIn("background: transparent !important", native)
+        self.assertIn("box-shadow: none !important", native)
+        self.assertIn(".ox-public-logo-frame::after { content: none !important", native)
+        self.assertIn("object-fit: contain !important", native)
+
+        worker = (ROOT / "static" / "sw.js").read_text(encoding="utf-8")
+        app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+        self.assertIn("const BRAND_ICON = __BRAND_ICON_JSON__", worker)
+        self.assertIn("icon   = BRAND_ICON", worker)
+        self.assertIn('${BRAND_ICON}', worker)
+        self.assertIn('"__BRAND_ICON_JSON__", json.dumps(brand_icon', app_source)
+
+    def test_loyalty_lookup_shows_all_redeemable_products_with_colombia_beans(self):
+        template = (ROOT / "templates" / "public" / "puntos_consulta.html").read_text(
+            encoding="utf-8"
+        )
+        css = (ROOT / "static" / "css" / "loyalty-showcase.css").read_text(
+            encoding="utf-8"
+        )
+        route = (ROOT / "routes" / "public.py").read_text(encoding="utf-8")
+
+        self.assertIn("css/loyalty-showcase.css", template)
+        self.assertIn("pc-beans-flag", template)
+        self.assertIn("#ffcd00", css)
+        self.assertIn("#003087", css)
+        self.assertIn("#ce1126", css)
+        club_source = route[route.index('def club():'):route.index('# ─── HELPERS', route.index('def club():'))]
+        self.assertIn("canjeable_con_puntos=True", club_source)
+        self.assertNotIn("filter_by(activo=True, solo_canje=True)", club_source)
+
+    def test_pwa_brand_icon_does_not_mix_with_legacy_fallbacks(self):
+        app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn('@app.route("/favicon.ico")', app_source)
+        self.assertIn('manifest["icons"] = [{', app_source)
+        self.assertIn('"purpose": "any maskable"', app_source)
+        self.assertIn('if profile["app_icon_url"]:', app_source)
+        self.assertIn("else:\n            manifest[\"icons\"].extend", app_source)
+
+    def test_finance_dashboard_loads_its_responsive_stylesheet(self):
+        template = (ROOT / "templates" / "admin" / "finanzas.html").read_text(
+            encoding="utf-8"
+        )
+        css = (ROOT / "static" / "css" / "admin-finance.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("css/admin-finance.css", template)
+        self.assertIn("@media (max-width: 520px)", css)
+        self.assertIn("grid-template-columns: 1fr", css)
+
     def test_privacy_choices_are_balanced_and_optional_storage_is_gated(self):
         base = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
         checkout = (ROOT / "templates" / "public" / "checkout.html").read_text(encoding="utf-8")
@@ -120,6 +247,27 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertNotIn("url_for('repartidor.mis_comisiones')", template)
         self.assertIn("data-delivery-theme-toggle", template)
 
+    def test_delivery_route_uses_server_optimizer_with_fallback_and_guards_limits(self):
+        template = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
+
+        self.assertIn("Orden vial con tráfico", template)
+        self.assertIn("optimizeRoadOrder", template)
+        self.assertIn("nearestNeighborOrder", template)
+        self.assertIn("data-route-stop", template)
+        self.assertIn("const maxStops = mobileRoute ? 4 : 10", template)
+        self.assertIn("para no perder direcciones", template)
+        self.assertNotIn('puede pulsar "Optimizar"', template)
+
+    def test_admin_finance_has_a_decision_focused_responsive_layer(self):
+        template = (ROOT / "templates" / "admin" / "finanzas.html").read_text(encoding="utf-8")
+        base = (ROOT / "templates" / "admin_base.html").read_text(encoding="utf-8")
+        styles = (ROOT / "static" / "css" / "admin-finance.css").read_text(encoding="utf-8")
+
+        self.assertIn('class="finance-dashboard"', template)
+        self.assertIn('id="pendientes-financieros"', template)
+        self.assertIn("filename='css/admin-finance.css'", base)
+        self.assertIn("@media (max-width: 520px)", styles)
+
     def test_preparation_compact_view_has_route_and_explicit_context(self):
         template = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")
         route = (ROOT / "routes" / "preparador.py").read_text(encoding="utf-8")
@@ -210,33 +358,36 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("ep-card-cart-state", page)
         for token in (
             "var(--heritage-sun)",
-            "var(--heritage-clay)",
-            "var(--heritage-river)",
-            "var(--heritage-leaf)",
+            "var(--brand-primary)",
             "var(--action-primary)",
         ):
             self.assertIn(token, styles)
+        self.assertIn("content-visibility: visible !important", styles)
         self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
         self.assertNotIn("countdown", card.lower())
 
-    def test_mobile_menu_and_search_are_distinct_navigation_modes(self):
+    def test_public_pwa_uses_the_optimized_coffee_burlap_texture(self):
+        styles = (ROOT / "static" / "css" / "pwa-native.css").read_text(encoding="utf-8")
+        texture = ROOT / "static" / "coffee-burlap-texture-v2.webp"
+
+        self.assertTrue(texture.is_file())
+        self.assertLess(texture.stat().st_size, 400_000)
+        self.assertIn('url("../coffee-burlap-texture-v2.webp")', styles)
+        self.assertIn("body.ox-body-public main::before { display: none !important; }", styles)
+
+    def test_mobile_menu_and_search_use_native_navigation(self):
         template = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
-        script = (ROOT / "static" / "js" / "spa-nav.js").read_text(encoding="utf-8")
+        manager = (ROOT / "static" / "js" / "pwa-manager.js").read_text(encoding="utf-8")
+        worker = (ROOT / "static" / "sw.js").read_text(encoding="utf-8")
         viewport = (ROOT / "static" / "js" / "storefront-viewport.js").read_text(encoding="utf-8")
 
         self.assertIn("data-bnav=\"home\"", template)
         self.assertIn("data-bnav=\"search\"", template)
-        self.assertIn("current.hash === '#buscar'", script)
-        self.assertIn("a.dataset.bnav === 'search'", script)
-        self.assertIn("activateSearchTarget(url)", script)
-        self.assertIn("window.addEventListener('hashchange'", script)
-        self.assertIn("if (targetRoute === renderedRoute)", script)
-        self.assertIn("function canSwapDocument(doc, targetUrl)", script)
-        self.assertIn("stylesheetContract(document, currentUrl)", script)
-        self.assertIn("scriptContract(document, currentUrl)", script)
-        self.assertIn("if (!canSwapDocument(doc, url))", script)
-        self.assertIn("nonce=\"{{ csp_nonce() }}\" src=\"{{ url_for('static', filename='js/spa-nav.js'", template)
-        self.assertNotIn("function prefetch(url)", script)
+        self.assertIn("url_for('public.index') }}#buscar", template)
+        self.assertNotIn("spa-nav.js", template)
+        self.assertNotIn('"/static/js/spa-nav.js"', worker)
+        self.assertNotIn("pwaSearch", manager)
+        self.assertNotIn("spa:navigated", manager)
 
         styles = (ROOT / "static" / "css" / "header-modern.css").read_text(encoding="utf-8")
         self.assertIn("color: var(--navigation-active-text) !important", styles)

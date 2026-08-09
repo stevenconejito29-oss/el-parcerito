@@ -34,9 +34,25 @@
       window.setTimeout(function () { badge.classList.remove('is-bumping'); }, 520);
     }
 
+    function syncNativeNavigationState() {
+      var searchActive = window.location.pathname === '/' && window.location.hash === '#buscar';
+      document.querySelectorAll('.ox-bottom-nav [data-bnav]').forEach(function (item) {
+        var active = item.dataset.bnav === 'search'
+          ? searchActive
+          : item.dataset.bnav === 'home' && window.location.pathname === '/' && !searchActive;
+        if (item.dataset.bnav === 'search' || item.dataset.bnav === 'home') {
+          item.classList.toggle('is-active', active);
+          if (active) item.setAttribute('aria-current', 'page');
+          else item.removeAttribute('aria-current');
+        }
+      });
+    }
+
     window.addEventListener('scroll', queueUpdate, { passive: true });
     window.addEventListener('resize', queueUpdate, { passive: true });
+    window.addEventListener('hashchange', syncNativeNavigationState);
     updateHeader();
+    syncNativeNavigationState();
 
     if ('MutationObserver' in window) {
       // RAF throttle: el observer se dispara MUY frecuentemente durante scroll
@@ -74,8 +90,5 @@
   else init();
 })();
 
-/* ══════════════════════════════════════════════════════════════
-   La navegación pública tiene una sola autoridad: spa-nav.js.
-
-   Este módulo se limita a interacciones visuales de la cabecera.
-   ══════════════════════════════════════════════════════════════ */
+/* La cabecera solo aporta interacciones visuales. Los enlaces conservan la
+   navegación nativa del navegador/PWA para máxima compatibilidad. */

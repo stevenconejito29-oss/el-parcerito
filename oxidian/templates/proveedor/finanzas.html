@@ -39,7 +39,7 @@
     <article class="ops-kpi ops-kpi--accent">
       <span class="ops-kpi__label">Generado a tu favor</span>
       <strong>€{{ "%.2f"|format(bucket.total|float) }}</strong>
-      <small>Entregas + extravíos cubiertos</small>
+      <small>Solo entregas liquidadas</small>
     </article>
     <article class="ops-kpi">
       <span class="ops-kpi__label">Ya pagado</span>
@@ -63,8 +63,8 @@
 
   {% if bucket.total_extraviado > 0 %}
   <aside class="ops-notice ops-notice--warning">
-    <strong>Extravíos cubiertos: €{{ "%.2f"|format(bucket.total_extraviado|float) }}</strong>
-    <span>Se incluyen en tu saldo porque el producto ya salió de tu inventario.</span>
+    <strong>Extravíos no liquidables: €{{ "%.2f"|format(bucket.total_extraviado|float) }}</strong>
+    <span>Se muestran para trazabilidad, pero no se suman al saldo a pagar según la política vigente.</span>
   </aside>
   {% endif %}
 
@@ -85,7 +85,7 @@
           <div class="partner-ledger__order">
             <strong>#{{ linea.pedido.numero_pedido }}</strong>
             <span class="ops-status ops-status--{{ linea.situacion }}">
-              {{ 'Entregado' if linea.situacion == 'entregado' else 'Extravío cubierto' }}
+              {{ 'Entregado' if linea.situacion == 'entregado' else 'Extravío no liquidable' }}
             </span>
           </div>
           <p>{{ linea.nombre }} <span>×{{ linea.cantidad }}</span></p>

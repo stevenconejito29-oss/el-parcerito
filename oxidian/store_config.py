@@ -278,6 +278,10 @@ def get_store_features() -> dict:
         "pedidos_programados": get_store_bool("FEATURE_PEDIDOS_PROGRAMADOS", "1"),
         "puntos": get_store_bool("FEATURE_PUNTOS", "1"),
         "proveedores": True,
+        "efectivo": get_store_bool("EFECTIVO_HABILITADO", "1"),
+        "bizum": get_store_bool("BIZUM_HABILITADO", "0"),
+        "tarjeta": get_store_bool("TARJETA_HABILITADA", "1"),
+        "vertical": (get_store_value("TIPO_TIENDA", "comida") or "comida").strip().lower(),
     }
 
 
@@ -362,6 +366,7 @@ LOCKED_CONFIG_KEYS = frozenset({
     # Toggles de features del producto (super_admin decide qué contrata)
     "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
     "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
+    "EFECTIVO_HABILITADO", "BIZUM_HABILITADO", "TARJETA_HABILITADA",
     # Integraciones y bot (super_admin gestiona el WhatsApp central)
     "BOT_API_URL", "BOT_OXIDIAN_URL", "BOT_API_KEY", "BOT_PANEL_KEY",
     "BOT_ADMIN_NUMBERS", "BOT_AI_ENABLED", "BOT_AI_API_KEY",

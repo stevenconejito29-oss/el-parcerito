@@ -17,7 +17,7 @@
   <meta name="ox-asset-version" content="{{ asset_version }}">
   {% set _staff_icon = brand.app_icon_url or brand.logo_url %}
   {% set _app_icon = _staff_icon|upload_url if _staff_icon else '' %}
-  {% if current_user.is_authenticated and request.blueprint == 'repartidor' %}
+  {% if current_user.is_authenticated and request.blueprint in ('preparador', 'repartidor') %}
   <script nonce="{{ csp_nonce() }}">
     /* Aplicar el tema antes del primer pintado evita el destello blanco al
        abrir delivery de noche. La interacción vive en operational-roles.js. */
@@ -172,6 +172,9 @@
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-ui.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian-admin.css', v=asset_version) }}">
+  {% if request.endpoint == 'admin.finanzas' %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-finance.css', v=asset_version) }}">
+  {% endif %}
   {% block styles %}{% endblock %}
   {# Shell realmente al final: navegación, marca y responsive no dependen del orden
      de los estilos específicos de cada vista histórica. #}
@@ -179,6 +182,9 @@
   {% if current_user.is_authenticated and request.blueprint in ('preparador','repartidor','staff','proveedor') %}
   {# Componentes operativos compartidos: cocina, encargos, reparto y socios. #}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/operational-roles.css', v=asset_version) }}">
+  {% endif %}
+  {% if current_user.is_authenticated and request.blueprint in ('preparador','repartidor') %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/employee-app.css', v=asset_version) }}">
   {% endif %}
 </head>
 {% set rol = current_user.rol if current_user.is_authenticated else '' %}
@@ -247,10 +253,10 @@
         <a href="{{ url_for('admin.productos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ brand.fallback_emoji or '🥟' }}</span>Productos</a>
         <a href="{{ url_for('admin.categorias') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🏷️</span>Categorías</a>
         <a href="{{ url_for('admin.nuevo_combo') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🎁</span>Combos</a>
-        {% if rol == 'super_admin' %}<a href="{{ url_for('admin.proveedores') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤝</span>Socios de productos</a>{% endif %}
+        {% if rol == 'super_admin' and brand.proveedores %}<a href="{{ url_for('admin.proveedores') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤝</span>Socios de productos</a>{% endif %}
         {% endif %}
         {% if has_admin_feature('stock') %}<a href="{{ url_for('admin.stock') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📦</span>Stock</a>{% endif %}
-        {% if has_admin_feature('productos') %}<a href="{{ url_for('admin.encargos_lotes') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🍽️</span>Lotes de encargos</a>{% endif %}
+        {% if has_admin_feature('productos') and brand.pedidos_programados %}<a href="{{ url_for('admin.encargos_lotes') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📅</span>Lotes programados</a>{% endif %}
       </div>
       <div class="ox-sb-divider"></div>
 
@@ -259,7 +265,7 @@
         {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.finanzas') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📊</span>Resumen financiero</a>{% endif %}
         {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.caja') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Caja diaria</a>{% endif %}
         {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.cierres_lista') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🔒</span>Cierres de caja</a>{% endif %}
-        {% if has_admin_feature('caja') %}<a href="{{ url_for('admin.pagos_pendientes_digital') }}" class="ox-sb-item"><span class="ox-sb-item-icon">✅</span>Pagos pendientes</a>{% endif %}
+        {% if has_admin_feature('caja') and (brand.bizum_habilitado or brand.tarjeta_habilitada) %}<a href="{{ url_for('admin.pagos_pendientes_digital') }}" class="ox-sb-item"><span class="ox-sb-item-icon">✅</span>Pagos pendientes</a>{% endif %}
         {% if has_admin_feature('staff_pagos') %}<a href="{{ url_for('admin.pagos_staff') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💸</span>Nómina y liquidaciones</a>{% endif %}
         {% if rol == 'super_admin' %}<a href="{{ url_for('admin.liquidacion_proveedores') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🧾</span>Liquidar socios</a>{% endif %}
         {% if has_admin_feature('reportes') %}<a href="{{ url_for('admin.analytics') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📈</span>Ganancias y costes</a>{% endif %}
@@ -391,8 +397,18 @@
 <div id="ox-push-banner" class="ox-push-prompt" hidden>
   <span class="ox-push-prompt__icon" aria-hidden="true">🔔</span>
   <div class="ox-push-prompt__copy">
-    <p>Activar notificaciones</p>
-    <small>Recibe nuevos pedidos incluso fuera del panel.</small>
+    <p>
+      {% if rol == 'cocina' %}Avisos de nuevos pedidos
+      {% elif rol == 'preparacion' %}Avisos de encargos
+      {% elif rol == 'repartidor' %}Avisos de reparto
+      {% else %}Activar notificaciones{% endif %}
+    </p>
+    <small>
+      {% if rol == 'cocina' %}Te avisaremos cuando entre trabajo para cocina.
+      {% elif rol == 'preparacion' %}Te avisaremos de nuevos encargos y cambios importantes.
+      {% elif rol == 'repartidor' %}Te avisaremos cuando haya pedidos listos o asignados.
+      {% else %}Recibe avisos importantes incluso fuera del panel.{% endif %}
+    </small>
   </div>
   <button type="button" class="ox-push-prompt__activate" data-push-enable>Activar</button>
   <button type="button" class="ox-push-prompt__dismiss" data-push-dismiss aria-label="Recordármelo en otra sesión">×</button>

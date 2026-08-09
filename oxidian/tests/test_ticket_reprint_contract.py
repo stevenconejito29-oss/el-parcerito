@@ -24,16 +24,21 @@ class TicketReprintTemplateContractTest(unittest.TestCase):
         self.assertIn("CANCELADO · NO PREPARAR", source)
         self.assertIn("ENTREGADO · COPIA", source)
 
-    def test_reprint_action_uses_single_canonical_query_contract(self):
+    def test_reprint_action_uses_secure_post_with_manual_fallback(self):
         source = (TEMPLATES / "_order_ticket_action.html").read_text(encoding="utf-8")
+        self.assertIn('<form method="POST"', source)
+        self.assertIn("pos.imprimir_ticket", source)
+        self.assertIn('name="csrf_token"', source)
         self.assertIn("reprint=1", source)
         self.assertIn("auto_print=1", source)
-        self.assertIn("rel=\"noopener\"", source)
+        self.assertIn("data-fallback-url", source)
 
-    def test_ticket_is_offline_safe_and_physically_sized_for_58mm(self):
+    def test_ticket_is_offline_safe_and_uses_58mm_printer_head_width(self):
         source = (TEMPLATES / "pos/ticket.html").read_text(encoding="utf-8")
-        self.assertIn("@page { size: 58mm auto", source)
-        self.assertIn("width: 54mm", source)
+        # El papel es de 58 mm, pero el cabezal imprimible real es 48 mm.
+        # WeasyPrint 69 no admite altura `auto`, por eso se usa un lienzo fijo.
+        self.assertIn("@page { size: 48mm 200mm", source)
+        self.assertIn("width: 48mm", source)
         self.assertNotIn("fonts.googleapis.com", source)
 
     def test_ticket_never_represents_points_as_money(self):

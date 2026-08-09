@@ -663,15 +663,6 @@
     if (document.body.style.overflow === 'hidden') {
       document.body.style.overflow = '';
     }
-    // Limpia el estado is-navigating por si SPA-nav cayó en un fallback y no
-    // llegó al finally. Sin esto: .ox-bnav-item { pointer-events: none } se
-    // queda activo y los botones del bottom-nav no responden.
-    if (document.body.classList.contains('is-navigating')) {
-      document.body.classList.remove('is-navigating');
-    }
-    if (document.body.classList.contains('spa-fade-out')) {
-      document.body.classList.remove('spa-fade-out');
-    }
     // inert quita pointer events. El modal lo pone en TODOS los hijos de body
     // (header, nav, footer). Si el usuario navegó antes de cerrar, queda pegado.
     Array.from(document.body.children).forEach(el => {
@@ -691,7 +682,6 @@
       dupModals.forEach(m => { if (m !== keep) m.remove(); });
     }
   }
-  document.addEventListener('spa:navigated', blurAndRelease);
   window.addEventListener('pageshow', blurAndRelease);
   window.addEventListener('popstate', blurAndRelease);
   // Doble red: si el usuario vuelve a poner la app en foreground tras estar
@@ -735,71 +725,6 @@
       longPressed = false;
     }, true);
   })();
-
-  /* Overlay de búsqueda (reemplaza a la barra inline que se ocultó en PWA).
-     Se abre al pulsar el botón 🔍 del bottom-nav (`data-bnav="search"`).
-     Envía a `/?q=<term>` — mismo endpoint que la barra web. Ligero y sólo
-     se monta cuando el usuario lo pide (no infla el DOM del menú). */
-  function openSearchOverlay() {
-    if (document.getElementById('ox-search-overlay')) return;
-    const overlay = document.createElement('div');
-    overlay.id = 'ox-search-overlay';
-    overlay.setAttribute('role', 'dialog');
-    overlay.setAttribute('aria-modal', 'true');
-    overlay.setAttribute('aria-label', 'Buscar productos');
-    // Sugerencias rápidas: si estamos con contexto de comida ofrecemos
-    // términos típicos; el usuario tocará uno y se envía como query.
-    const quick = ['Combos', 'Bebidas', 'Postres', 'Sin lactosa', 'Sin gluten'];
-    overlay.innerHTML =
-      '<div class="ox-search-stack">' +
-        '<div class="ox-search-top">' +
-          '<span class="ox-search-hint">Buscar</span>' +
-          '<button type="button" data-search-close aria-label="Cerrar búsqueda">✕</button>' +
-        '</div>' +
-        '<form class="ox-search-panel" method="GET" action="/" role="search">' +
-          '<span class="ox-search-icon" aria-hidden="true">' +
-            '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>' +
-          '</span>' +
-          '<input type="text" name="q" placeholder="Busca platos, combos, bebidas…" ' +
-                 'autocomplete="off" autocapitalize="off" spellcheck="false" ' +
-                 'inputmode="search" enterkeyhint="search" aria-label="Término de búsqueda">' +
-          '<button type="submit" aria-label="Buscar">›</button>' +
-        '</form>' +
-        '<div class="ox-search-quick" role="group" aria-label="Sugerencias">' +
-          quick.map(q => '<button type="button" data-search-quick="' + q + '">' + q + '</button>').join('') +
-        '</div>' +
-      '</div>';
-    document.body.appendChild(overlay);
-    const input = overlay.querySelector('input');
-    const form = overlay.querySelector('form');
-    // Focus tras el frame para que la animación no bloquee el keyboard.
-    requestAnimationFrame(() => input?.focus());
-    overlay.addEventListener('click', (ev) => {
-      if (ev.target === overlay) return closeSearchOverlay();
-      if (ev.target?.closest?.('[data-search-close]')) return closeSearchOverlay();
-      const quickBtn = ev.target?.closest?.('[data-search-quick]');
-      if (quickBtn && input && form) {
-        input.value = quickBtn.dataset.searchQuick;
-        form.submit();
-      }
-    });
-    document.addEventListener('keydown', escCloseSearch);
-  }
-  function closeSearchOverlay() {
-    const overlay = document.getElementById('ox-search-overlay');
-    if (overlay) overlay.remove();
-    document.removeEventListener('keydown', escCloseSearch);
-  }
-  function escCloseSearch(e) { if (e.key === 'Escape') closeSearchOverlay(); }
-  // Interceptar el botón "Buscar" del bottom-nav en modo PWA: en vez de
-  // navegar a `/#buscar` (que ya no existe visualmente), abrir el overlay.
-  document.addEventListener('click', (ev) => {
-    const btn = ev.target.closest?.('.ox-bnav-item[data-bnav="search"]');
-    if (!btn) return;
-    if (!isStandalone()) return;
-    ev.preventDefault();
-    openSearchOverlay();
-  }, true);
 
   /* Pausar animaciones infinitas durante el scroll → GPU libre para el
      pan táctil, evita el bug de scroll intermitente en iOS PWA. Se añade

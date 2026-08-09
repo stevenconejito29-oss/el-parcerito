@@ -139,6 +139,16 @@
         <small>La tienda retiene {{ "%.2f"|format(proveedor.comision_pct|float) }}% por venta.</small>
       </div>
     </div>
+    {% set horario_vis = s.producto.hora_inicio_visibilidad and s.producto.hora_fin_visibilidad %}
+    {% if horario_vis %}
+    <p class="prov-stock-warning">
+      <strong>Franja de publicación:</strong>
+      {{ s.producto.hora_inicio_visibilidad.strftime('%H:%M') }}–{{ s.producto.hora_fin_visibilidad.strftime('%H:%M') }}
+      {% if s.producto.dias_semana_json %}
+      · días {{ s.producto.dias_semana_json }}
+      {% endif %}
+    </p>
+    {% endif %}
     {% if s.producto.partner_submission_status == 'rejected' %}
     <p class="prov-stock-warning"><strong>Observación:</strong> {{ s.producto.partner_review_note or 'Revisa la ficha comercial.' }}</p>
     <a href="{{ url_for('proveedor.registrar_producto', producto_id=s.producto.id) }}" class="prov-btn prov-btn-secondary">Corregir y reenviar</a>

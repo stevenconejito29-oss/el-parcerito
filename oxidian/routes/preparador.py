@@ -1,5 +1,5 @@
 from flask import (Blueprint, render_template, redirect, url_for, flash,
-                   jsonify, request, session)
+                   jsonify, request, session, g)
 from flask_login import login_required, current_user
 from functools import wraps
 import logging
@@ -87,8 +87,61 @@ def _tickets_recientes_del_operador():
 
 preparador_bp = Blueprint("preparador", __name__)
 logger = logging.getLogger(__name__)
-
 ROLES_PREPARADOR = {"admin", "super_admin", "cocina", "preparacion"}
+
+
+def preparador_required(f):
+    @wraps(f)
+    @login_required
+    def decorated(*args, **kwargs):
+        if current_user.rol not in ROLES_PREPARADOR:
+            flash("Acceso restringido.", "danger")
+            return redirect(url_for("public.index"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _thermal_config_key():
+    return f"THERMAL_PRINTER_U_{current_user.id}"
+
+
+@preparador_bp.route("/impresora", methods=["GET", "PUT", "DELETE"])
+@preparador_required
+def impresora_preferencia():
+    """Persiste el vínculo lógico de la impresora por operador.
+
+    La autorización Bluetooth continúa en el navegador por seguridad. El
+    servidor solo conserva identificador opaco, nombre y transporte para que
+    ``getDevices()`` seleccione el periférico correcto tras una recarga.
+    """
+    key = _thermal_config_key()
+    if request.method == "GET":
+        raw = SiteConfig.get(key, "") or ""
+        try:
+            value = _json.loads(raw) if raw else None
+        except (TypeError, ValueError):
+            value = None
+        return jsonify({"ok": True, "printer": value})
+    if request.method == "DELETE":
+        entry = SiteConfig.query.filter_by(clave=key).first()
+        if entry:
+            db.session.delete(entry)
+            db.session.commit()
+        g.__dict__.get("_siteconfig_cache", {}).pop(key, None)
+        return jsonify({"ok": True})
+
+    payload = request.get_json(silent=True) or {}
+    transport = str(payload.get("transport") or "").strip().lower()
+    device_id = str(payload.get("device_id") or "").strip()[:180]
+    name = str(payload.get("name") or "Impresora térmica").strip()[:80]
+    if transport not in {"bt", "usb"} or (transport == "bt" and not device_id):
+        return jsonify({"ok": False, "error": "impresora_invalida"}), 400
+    value = {"transport": transport, "device_id": device_id, "name": name}
+    SiteConfig.set(key, _json.dumps(value, ensure_ascii=False), current_user.id,
+                   "Impresora térmica preferida del puesto")
+    db.session.commit()
+    return jsonify({"ok": True, "printer": value})
+
 ESTADOS_ENCARGO_ACTIVOS = ("pendiente", "armando", "listo")
 
 
@@ -220,17 +273,6 @@ def _notificar_proveedores_pendientes(pedido):
             )
     except Exception:
         logger.exception("No se pudo avisar a proveedores del pedido %s", pedido.id)
-
-
-def preparador_required(f):
-    @wraps(f)
-    @login_required
-    def decorated(*args, **kwargs):
-        if current_user.rol not in ROLES_PREPARADOR:
-            flash("Acceso restringido.", "danger")
-            return redirect(url_for("public.index"))
-        return f(*args, **kwargs)
-    return decorated
 
 
 @preparador_bp.route("/toggle-disponible", methods=["POST"])

@@ -45,7 +45,13 @@ service_container() {
 OXIDIAN_DB_CONTAINER="${OXIDIAN_DB_CONTAINER:-$(service_container oxidian-db oxidian-db)}"
 OXIDIAN_DB_USER="${OXIDIAN_DB_USER:-oxidian}"
 OXIDIAN_DB_NAME="${OXIDIAN_DB_NAME:-oxidian}"
-EVOLUTION_DB_CONTAINER="${EVOLUTION_DB_CONTAINER:-$(service_container evolution-db evolution-db)}"
+EVOLUTION_DB_CONTAINER="${EVOLUTION_DB_CONTAINER:-$(compose ps -q evolution-db 2>/dev/null | head -n 1)}"
+# Algunas instalaciones usan Evolution fuera de este Compose. Conservamos el
+# nombre histórico solo si el contenedor existe realmente; su ausencia no debe
+# impedir respaldar el stack Oxidian que sí está activo.
+if [ -z "$EVOLUTION_DB_CONTAINER" ] && docker inspect evolution-db >/dev/null 2>&1; then
+    EVOLUTION_DB_CONTAINER="evolution-db"
+fi
 EVOLUTION_DB_USER="${EVOLUTION_DB_USER:-evolution}"
 EVOLUTION_DB_NAME="${EVOLUTION_DB_NAME:-evolution}"
 
@@ -79,9 +85,13 @@ docker exec "$OXIDIAN_DB_CONTAINER" pg_dump -U "$OXIDIAN_DB_USER" -Fc "$OXIDIAN_
 verify_dump "$DEST/oxidian.dump"
 
 echo "  · pg_dump evolution..."
-docker exec "$EVOLUTION_DB_CONTAINER" pg_dump -U "$EVOLUTION_DB_USER" -Fc "$EVOLUTION_DB_NAME" \
-    > "$DEST/evolution.dump"
-verify_dump "$DEST/evolution.dump"
+if [ -n "$EVOLUTION_DB_CONTAINER" ]; then
+    docker exec "$EVOLUTION_DB_CONTAINER" pg_dump -U "$EVOLUTION_DB_USER" -Fc "$EVOLUTION_DB_NAME" \
+        > "$DEST/evolution.dump"
+    verify_dump "$DEST/evolution.dump"
+else
+    echo "    (omitido: Evolution DB no forma parte de este host)"
+fi
 
 # ── 2. Volúmenes (tar.gz) ──────────────────────────────────────────────────
 # Usamos un contenedor efímero que monta el volumen Docker y devuelve un tar
@@ -103,7 +113,11 @@ tar -tzf "$DEST/chatbot_data.tar.gz" >/dev/null
     echo ""
     echo "Origen:"
     echo "  oxidian DB     ← $OXIDIAN_DB_CONTAINER:$OXIDIAN_DB_NAME"
-    echo "  evolution DB   ← $EVOLUTION_DB_CONTAINER:$EVOLUTION_DB_NAME"
+    if [ -n "$EVOLUTION_DB_CONTAINER" ]; then
+        echo "  evolution DB   ← $EVOLUTION_DB_CONTAINER:$EVOLUTION_DB_NAME"
+    else
+        echo "  evolution DB   ← no presente en este host"
+    fi
     echo "  images         ← volumen $IMAGES_VOLUME"
     echo "  chatbot_data   ← volumen $CHATBOT_VOLUME"
     echo ""

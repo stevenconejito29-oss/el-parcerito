@@ -87,7 +87,9 @@ def cleanup() -> int:
 
 def create() -> int:
     cleanup()
-    preparador = User.query.filter_by(rol="preparacion", activo=True).first()
+    # Los tickets inmediatos deben pertenecer a cocina. Usar aquí el rol de
+    # preparación programada producía capturas engañosas con la cola vacía.
+    preparador = User.query.filter_by(rol="cocina", activo=True).first()
     repartidor = User.query.filter_by(rol="repartidor", activo=True).first()
     product = Product.query.filter_by(activo=True).first()
     reward = Product.query.filter_by(activo=True, canjeable_con_puntos=True).first()
@@ -105,6 +107,7 @@ def create() -> int:
             "last_seen": repartidor.last_seen.isoformat() if repartidor.last_seen else None,
         },
     }
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(state))
     for user in (preparador, repartidor):
         user.en_linea = True

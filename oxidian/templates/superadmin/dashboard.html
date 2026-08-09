@@ -61,6 +61,31 @@
       {% endif %}
     </div>
   </section>
+
+  <section class="oa-section">
+    <h2 class="oa-section__title">Cobro y tipo de catálogo</h2>
+    <p class="oa-section__sub">Solo aparecen al cliente los medios activos. Debe mantenerse al menos uno. El catálogo publica únicamente {{ 'comida' if brand.es_comida else 'ropa y productos retail' }}.</p>
+    <div class="oa-toggle-list" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));display:grid;">
+      {% for slug, nombre, activo, detalle, icono in [
+        ('efectivo', 'Efectivo', brand.efectivo_habilitado, 'Cobro contra entrega o recogida', '💵'),
+        ('tarjeta', 'Tarjeta', brand.tarjeta_habilitada, 'Cobro con datáfono', '💳'),
+        ('bizum', 'Bizum', brand.bizum_habilitado, 'Solo se ofrece si existe un número configurado', '📱')
+      ] %}
+      <form method="POST" action="{{ url_for('superadmin.toggle_modulo', modulo=slug) }}" class="oa-toggle {{ 'oa-toggle--on' if activo else '' }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="enabled" value="{{ '0' if activo else '1' }}">
+        <span style="font-size:1.5rem;flex-shrink:0">{{ icono }}</span>
+        <div class="oa-toggle__meta"><div class="oa-toggle__name">{{ nombre }} <span class="oa-badge oa-badge--{{ 'ok' if activo else 'muted' }}">{{ 'ON' if activo else 'OFF' }}</span></div><p class="oa-toggle__desc">{{ detalle }}</p></div>
+        <button class="oa-btn oa-btn--sm {{ 'oa-btn--ghost' if activo else 'oa-btn--primary' }}" type="submit">{{ 'Desactivar' if activo else 'Activar' }}</button>
+      </form>
+      {% endfor %}
+    </div>
+    <div class="oa-vertical-hint">
+      <strong>{{ brand.vertical_emoji }} Vertical activa: {{ 'Comida / gastronomía' if brand.es_comida else 'Ropa / retail' }}</strong>
+      <span>Los productos de la otra vertical permanecen guardados, pero no aparecen en menú, carrito, canjes ni chatbot.</span>
+      <a href="{{ url_for('superadmin.config') }}">Configurar catálogo</a>
+    </div>
+  </section>
   {% endif %}
 
   {% if vertical_just_changed %}

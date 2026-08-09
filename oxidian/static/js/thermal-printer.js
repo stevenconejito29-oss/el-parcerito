@@ -51,6 +51,7 @@
 
   let device = null;
   let btChar = null;
+  let serverHint = null;
   let _readyResolve = null;
   const readyPromise = new Promise((resolve) => { _readyResolve = resolve; });
 
@@ -69,8 +70,32 @@
   function getPairInfo() {
     try {
       const raw = localStorage.getItem(PAIR_KEY);
-      return raw ? JSON.parse(raw) : null;
+      return raw ? JSON.parse(raw) : serverHint;
     } catch (_) { return null; }
+  }
+
+  async function loadServerHint() {
+    if (!document.body.classList.contains('view-preparador')) return null;
+    try {
+      const resp = await fetch('/preparador/impresora', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      const data = resp.ok ? await resp.json() : null;
+      serverHint = data?.printer || null;
+      if (serverHint) setPaired(serverHint);
+    } catch (_) { /* localStorage sigue siendo fallback offline */ }
+    return serverHint;
+  }
+
+  async function saveServerHint(info) {
+    serverHint = info;
+    if (!document.body.classList.contains('view-preparador')) return;
+    const csrf = document.querySelector('meta[name="ox-csrf-token"]')?.content || '';
+    try {
+      await fetch('/preparador/impresora', {
+        method: 'PUT', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf, Accept: 'application/json' },
+        body: JSON.stringify(info),
+      });
+    } catch (_) { /* el emparejamiento local continúa operativo */ }
   }
   function isPaired() {
     return device !== null;
@@ -93,8 +118,9 @@
     device = dev;
     btChar = writeChar;
     _attachDisconnectListener(dev);
-    const info = { transport: 'bt', name: dev.name || 'BT Printer' };
+    const info = { transport: 'bt', device_id: dev.id, name: dev.name || 'BT Printer' };
     setPaired(info);
+    await saveServerHint(info);
     log('paired:', info.name);
     return info;
   }
@@ -177,6 +203,10 @@
     // Retry corto: en Android el BT puede tardar en despertar tras F5.
     // Con 2 intentos (0 + 700ms) cubrimos el 95% de casos sin añadir
     // demasiada latencia al primer paint de la página.
+    const hint = getPairInfo();
+    if (hint?.device_id) {
+      list.sort((a, b) => Number(b.id === hint.device_id) - Number(a.id === hint.device_id));
+    }
     for (const dev of list) {
       for (const delay of [0, 700]) {
         if (delay) await new Promise(r => setTimeout(r, delay));
@@ -185,7 +215,9 @@
           const writeChar = await _findBTWriteChar(server);
           if (writeChar) {
             device = dev; btChar = writeChar;
-            setPaired({ transport: 'bt', name: dev.name || 'BT Printer' });
+            const info = { transport: 'bt', device_id: dev.id, name: dev.name || 'BT Printer' };
+            setPaired(info);
+            await saveServerHint(info);
             _attachDisconnectListener(dev);
             log('restore OK:', dev.name);
             return;
@@ -205,6 +237,11 @@
     } catch (_) {}
     device = null; btChar = null;
     clearPaired();
+    serverHint = null;
+    if (document.body.classList.contains('view-preparador')) {
+      const csrf = document.querySelector('meta[name="ox-csrf-token"]')?.content || '';
+      fetch('/preparador/impresora', { method: 'DELETE', credentials: 'same-origin', headers: { 'X-CSRFToken': csrf } }).catch(() => {});
+    }
   }
 
   window.ThermalPrinter = {
@@ -216,6 +253,7 @@
   // el navegador soporta getDevices. Sin esto, ready resuelve inmediato y
   // el UI muestra "no paired" (correcto — el operador debe emparejar 1 vez).
   document.addEventListener('DOMContentLoaded', async () => {
+    await loadServerHint();
     const hint = getPairInfo();
     const canRestore = hint && hint.transport === 'bt'
       && 'bluetooth' in navigator

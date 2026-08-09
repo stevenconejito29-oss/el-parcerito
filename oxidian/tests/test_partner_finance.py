@@ -171,10 +171,10 @@ class PartnerSettlementTest(unittest.TestCase):
         self.assertEqual(report["total_ingresos"], Decimal("18.00"))
         self.assertEqual(bucket["total_entregado"], Decimal("14.40"))
         self.assertEqual(bucket["total_extraviado"], Decimal("8.00"))
-        self.assertEqual(bucket["total"], Decimal("22.40"))
+        self.assertEqual(bucket["total"], Decimal("14.40"))
         self.assertEqual(bucket["registrado"], Decimal("6.00"))
-        self.assertEqual(bucket["pendiente_registrar"], Decimal("16.40"))
-        self.assertEqual(bucket["pendiente_pago"], Decimal("22.40"))
+        self.assertEqual(bucket["pendiente_registrar"], Decimal("8.40"))
+        self.assertEqual(bucket["pendiente_pago"], Decimal("14.40"))
         self.assertEqual(report["perdida_extravios"], Decimal("8.00"))
 
 

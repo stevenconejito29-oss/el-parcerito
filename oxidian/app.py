@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urljoin
 
-from flask import Flask, Response, render_template, request, send_from_directory, g
+from flask import Flask, Response, render_template, request, send_from_directory, g, redirect
 from flask_wtf.csrf import generate_csrf
 from sqlalchemy import text
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -304,8 +304,17 @@ def create_app(env="default"):
         # inyecta aquí para que cada despliegue real cree nombres de caché
         # nuevos sin depender de un contador manual dentro del JavaScript.
         worker_path = Path(app.static_folder) / "sw.js"
+        from store_config import get_store_profile
+
+        profile = get_store_profile()
+        brand_icon = profile["app_icon_url"] or (
+            f"/pwa-assets/{app.config['ASSET_VERSION']}/pwa-icon-192.png"
+        )
         worker_source = worker_path.read_text(encoding="utf-8").replace(
-            "__ASSET_VERSION__", app.config["ASSET_VERSION"],
+            "__ASSET_VERSION__", app.config["ASSET_VERSION"]
+        )
+        worker_source = worker_source.replace(
+            "__BRAND_ICON_JSON__", json.dumps(brand_icon, ensure_ascii=False)
         )
         response = app.response_class(worker_source, mimetype="application/javascript")
         response.headers["Service-Worker-Allowed"] = "/"
@@ -405,10 +414,14 @@ def create_app(env="default"):
             "handle_links": "preferred",
         }
         if profile["app_icon_url"]:
-            manifest["icons"].append({
-                "src": profile["app_icon_url"], "sizes": "any", "purpose": "any",
-            })
-        manifest["icons"].extend([
+            # Una marca configurada debe ser la única identidad instalable.
+            # Mezclarla con los iconos genéricos permite que Android/WebAPK
+            # elija un fallback antiguo aunque el primer icono sea el nuevo.
+            manifest["icons"] = [{
+                "src": profile["app_icon_url"], "sizes": "any", "purpose": "any maskable",
+            }]
+        else:
+            manifest["icons"].extend([
                 # La empanada es el sistema visual seguro cuando no hay marca
                 # y también garantiza un recurso maskable válido si la imagen
                 # subida por el comercio no respeta la zona segura.
@@ -455,21 +468,45 @@ def create_app(env="default"):
             "preparacion": "/preparador/pedidos",
             "cocina": "/preparador/pedidos",
             "repartidor": "/repartidor/ruta",
+            "socio_producto": "/proveedor/dashboard",
         }
-        icons = []
+        role_shortcuts = {
+            "cocina": [
+                {"name": "Cola de cocina", "short_name": "Cocina", "url": "/preparador/pedidos"},
+            ],
+            "preparacion": [
+                {"name": "Encargos y preparación", "short_name": "Preparación", "url": "/preparador/pedidos"},
+            ],
+            "repartidor": [
+                {"name": "Mi ruta activa", "short_name": "Mi ruta", "url": "/repartidor/ruta"},
+                {"name": "Mis comisiones", "short_name": "Comisiones", "url": "/repartidor/comisiones"},
+            ],
+            "admin": [
+                {"name": "Operación de pedidos", "short_name": "Pedidos", "url": "/admin/pedidos"},
+                {"name": "Finanzas", "short_name": "Finanzas", "url": "/admin/finanzas"},
+            ],
+            "super_admin": [
+                {"name": "Supervisión", "short_name": "Panel", "url": "/superadmin/dashboard"},
+            ],
+            "socio_producto": [
+                {"name": "Mi operación", "short_name": "Mi negocio", "url": "/proveedor/dashboard"},
+                {"name": "Mis finanzas", "short_name": "Finanzas", "url": "/proveedor/finanzas"},
+            ],
+        }
         if profile["app_icon_url"]:
-            icons.append({"src": profile["app_icon_url"], "sizes": "any", "purpose": "any"})
-        icons.extend([
-            {"src": f"/pwa-assets/{asset_v}/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-            {"src": f"/pwa-assets/{asset_v}/pwa-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-            {"src": f"/pwa-assets/{asset_v}/pwa-icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
-        ])
+            icons = [{"src": profile["app_icon_url"], "sizes": "any", "purpose": "any maskable"}]
+        else:
+            icons = [
+                {"src": f"/pwa-assets/{asset_v}/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                {"src": f"/pwa-assets/{asset_v}/pwa-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                {"src": f"/pwa-assets/{asset_v}/pwa-icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+            ]
         manifest = {
-            "name": f"{profile['nombre']} · Trabajo",
-            "short_name": f"{profile['nombre'][:10]} Staff",
-            "description": "Espacio de trabajo operativo por rol.",
-            "id": f"oxidian-staff-{current_user.rol}",
-            "start_url": starts.get(current_user.rol, "/auth/login"),
+            "name": f"{profile['nombre']} · Equipo",
+            "short_name": f"{profile['nombre'][:11]} Equipo",
+            "description": f"Aplicación de trabajo para {current_user.rol.replace('_', ' ')}.",
+            "id": f"/pwa/equipo/{current_user.rol}",
+            "start_url": starts.get(current_user.rol, "/auth/login") + "?source=staff_pwa",
             "scope": "/",
             "display": "standalone",
             "background_color": "#111827",
@@ -480,6 +517,12 @@ def create_app(env="default"):
             "categories": ["business", "productivity"],
             "prefer_related_applications": False,
             "icons": icons,
+            "shortcuts": [
+                {**shortcut, "icons": [icons[0]]}
+                for shortcut in role_shortcuts.get(current_user.rol, [])
+            ],
+            "launch_handler": {"client_mode": ["navigate-existing", "auto"]},
+            "handle_links": "preferred",
         }
         response = app.response_class(
             json.dumps(manifest, ensure_ascii=False),
@@ -489,6 +532,21 @@ def create_app(env="default"):
         # caché compartida ni reaparecer tras cambiar de cuenta en el dispositivo.
         response.headers["Cache-Control"] = "private, no-store, max-age=0"
         response.headers["Vary"] = "Cookie"
+        return response
+
+    @app.route("/favicon.ico")
+    def favicon():
+        """Publica el favicon vigente sin dejar referencias de marca antiguas."""
+        from models import SiteConfig
+
+        configured = (SiteConfig.get("APP_ICON_URL", "") or "").strip()
+        target = configured or f"/pwa-assets/{app.config['ASSET_VERSION']}/favicon-32.png"
+        # favicon-32 no forma parte del allowlist versionado; el fallback
+        # genérico se sirve desde static con su huella en query string.
+        if not configured:
+            target = f"/static/favicon-32.png?v={app.config['ASSET_VERSION']}"
+        response = redirect(target, code=302)
+        response.headers["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
         return response
 
     @app.route("/health/live")
@@ -949,6 +1007,9 @@ def create_app(env="default"):
                 "recogida": feature_recogida,
                 "pedidos_programados": _to_bool(_c("FEATURE_PEDIDOS_PROGRAMADOS", "1"), True),
                 "puntos": _to_bool(_c("FEATURE_PUNTOS", "1"), True),
+                # El flujo multi-proveedor permanece desactivado en esta edición;
+                # no se deben anunciar pantallas que el negocio no contrató.
+                "proveedores": False,
                 "slogan": slogan,
                 "descripcion": descripcion,
                 "color_primario": color_primario,

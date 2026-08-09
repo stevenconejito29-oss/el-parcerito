@@ -992,6 +992,11 @@ def pagos_pendientes_digital():
     Panel de pedidos Bizum pendientes de verificacion manual.
     Admin puede confirmarlos antes; reparto tambien puede hacerlo al entregar.
     """
+    from store_config import get_store_features
+    if not get_store_features().get("bizum"):
+        flash("El módulo de Bizum está desactivado.", "info")
+        return redirect(url_for("admin.finanzas"))
+
     pendientes = Order.query.filter(
         Order.metodo_pago == "bizum",
         Order.pago_confirmado == False,
@@ -6780,7 +6785,7 @@ def cambiar_precio(producto_id):
 # ─── IA ANALÍTICA (admin/super_admin) ────────────────────────────
 # Asistente de análisis del negocio con acceso ÚNICAMENTE a agregados
 # (nunca datos personales de clientes). Reutiliza el provider AI ya
-# configurado en superadmin/chatbot (BOT_AI_PROVIDER + BOT_AI_API_KEY).
+# configurado de forma independiente al chatbot (COMMERCIAL_AI_*).
 
 def _resumen_negocio_para_ia():
     """Snapshot agregado y seguro para inyectar al modelo.
@@ -6819,10 +6824,13 @@ def _resumen_negocio_para_ia():
 
     # ── Ventas por rango ──────────────────────────────────────────
     def _ventas(desde):
-        pedidos = Order.query.filter(Order.creado_en >= desde).count()
+        estados_venta = ("entregado", "listo", "pagado")
+        pedidos = Order.query.filter(
+            Order.creado_en >= desde, Order.estado.in_(estados_venta)
+        ).count()
         fact = float(db.session.query(func.coalesce(func.sum(Order.total), 0))
                      .filter(Order.creado_en >= desde,
-                             Order.estado.in_(("entregado", "listo", "pagado"))).scalar() or 0)
+                             Order.estado.in_(estados_venta)).scalar() or 0)
         return pedidos, round(fact, 2), round(fact / pedidos, 2) if pedidos else 0
 
     p_7, f_7, t_7 = _ventas(hace_7d)
@@ -6931,6 +6939,25 @@ def _resumen_negocio_para_ia():
     from models import Coupon
     cupones_activos = Coupon.query.filter_by(activo=True).count()
 
+    # Catálogo comercial detallado para que el asesor pueda combinar productos
+    # reales y comprobar margen. No contiene datos personales ni permite
+    # mutaciones. Se limita defensivamente para mantener acotado el prompt.
+    catalogo_detallado = []
+    for producto in (
+        Product.query.filter_by(activo=True, es_combo=False)
+        .order_by(Product.nombre.asc()).limit(150).all()
+    ):
+        catalogo_detallado.append({
+            "id": producto.id,
+            "nombre": producto.nombre,
+            "categoria": producto.categoria.nombre if producto.categoria else "Sin categoría",
+            "precio_eur": float(producto.precio or 0),
+            "coste_eur": float(producto.precio_costo or 0),
+            "stock": int(producto.stock_total or 0),
+            "canjeable_granitos": bool(producto.canjeable_con_puntos),
+            "granitos_para_canje": int(producto.puntos_para_canje or 0),
+        })
+
     return {
         "negocio": {
             "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "") or "",
@@ -6962,6 +6989,7 @@ def _resumen_negocio_para_ia():
                 "ambos_verticales": productos_ambos,
             },
             "stock_critico_top": stock_bajo[:8],
+            "productos": catalogo_detallado,
         },
         "ventas": {
             "ultimos_7_dias": {"pedidos": p_7, "facturacion_eur": f_7, "ticket_medio_eur": t_7},
@@ -6996,18 +7024,19 @@ def _resumen_negocio_para_ia():
 
 
 def _llamar_ia_analisis(pregunta_usuario, contexto_dict):
-    """Llama al provider configurado (openai/groq) con guardrails."""
+    """Enriquece el asesor comercial con un proveedor opcional y aislado."""
     import json as _json
-    provider = (SiteConfig.get("BOT_AI_PROVIDER", "") or "").strip().lower()
-    api_key = SiteConfig.get("BOT_AI_API_KEY", "") or ""
-    modelo = SiteConfig.get("BOT_AI_MODEL", "") or ""
-    if provider not in {"openai", "groq"} or not api_key or not modelo:
-        return None, "IA no configurada. Ve a Superadmin → Chatbot y configura BOT_AI_PROVIDER, BOT_AI_API_KEY y BOT_AI_MODEL."
+    provider = (SiteConfig.get("COMMERCIAL_AI_PROVIDER", "") or "").strip().lower()
+    api_key = SiteConfig.get("COMMERCIAL_AI_API_KEY", "") or ""
+    modelo = SiteConfig.get("COMMERCIAL_AI_MODEL", "") or ""
+    enabled = str(SiteConfig.get("COMMERCIAL_AI_ENABLED", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+    if not enabled or provider not in {"anthropic", "openai", "groq"} or not api_key or not modelo:
+        return None, "external_not_configured"
 
     nombre_negocio = SiteConfig.get("NOMBRE_NEGOCIO", "el negocio") or "el negocio"
     tipo = SiteConfig.get("TIPO_TIENDA", "comida") or "comida"
     modo = SiteConfig.get("MODO_TIENDA", "propia") or "propia"
-    reglas_extra = (SiteConfig.get("BOT_AI_RULES", "") or "").strip()
+    reglas_extra = (SiteConfig.get("COMMERCIAL_AI_RULES", "") or "").strip()
     system = (
         f"Eres un analista de negocio senior de «{nombre_negocio}» "
         f"(tipo_tienda={tipo}, modo={modo}). Tu misión es ayudar al propietario "
@@ -7018,7 +7047,7 @@ def _llamar_ia_analisis(pregunta_usuario, contexto_dict):
         "- Estado del negocio (nombre, horario, tienda cerrada, pedido mínimo, "
         "  fecha y día de la semana actual).\n"
         "- Módulos activos (delivery, recogida, pedidos programados, puntos).\n"
-        "- Catálogo (productos por vertical, canjeables, stock bajo, top).\n"
+        "- Catálogo completo (nombre, categoría, precio, coste, stock y canje).\n"
         "- Ventas de 7/30/90 días con ticket medio y tasa de cancelación.\n"
         "- Operativa (pedidos activos ahora por estado).\n"
         "- Top productos y categorías.\n"
@@ -7037,9 +7066,20 @@ def _llamar_ia_analisis(pregunta_usuario, contexto_dict):
         "   #2 en ventas del mes.'\n"
         "4. Si un dato NO está en el contexto (ej: clientes por nombre, "
         "   direcciones), aclara: 'Ese dato no está disponible por privacidad.'\n"
-        "5. Responde SIEMPRE en español, tono profesional pero cercano, "
-        "   máximo 5-8 líneas + bullets si aplica.\n"
-        "6. NUNCA inventes números — todo dato numérico debe venir del contexto.\n\n"
+        "5. Para combos indica productos exactos, suma individual, precio sugerido, "
+        "   ahorro y margen estimado; nunca propongas precio inferior al coste.\n"
+        "6. Para campañas y cupones define objetivo, segmento, mecánica, duración, "
+        "   métrica de éxito y condición para detener la prueba.\n"
+        "7. Distingue hechos históricos de hipótesis cuando aún no haya ventas.\n"
+        "8. Responde SIEMPRE en español, profesional y accionable.\n"
+        "9. NUNCA inventes números — todo dato numérico debe venir del contexto o "
+        "   ser un cálculo explicado a partir de él.\n"
+        "10. Solo propones: no afirmes haber creado combos, precios o cupones.\n\n"
+
+        "FORMATO INTERNO:\n"
+        "- Esto es un memo para dirección, no texto publicitario para clientes.\n"
+        "- Separa diagnóstico, propuesta, impacto esperado, métrica y riesgo.\n"
+        "- Señala los datos que faltan antes de invertir o cambiar precios.\n\n"
 
         "SEGURIDAD:\n"
         "- NUNCA menciones passwords, API keys, tokens, URLs internas, IPs, "
@@ -7056,28 +7096,52 @@ def _llamar_ia_analisis(pregunta_usuario, contexto_dict):
         f"PREGUNTA:\n{pregunta_usuario}"
     )
 
-    endpoint = "https://api.openai.com/v1/chat/completions" if provider == "openai" \
-               else "https://api.groq.com/openai/v1/chat/completions"
     try:
         import requests as _req
-        resp = _req.post(
-            endpoint,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": modelo,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user_msg},
-                ],
-                "temperature": 0.3,
-                "max_tokens": 600,
-            },
-            timeout=25,
-        )
+        if provider == "anthropic":
+            resp = _req.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": modelo,
+                    "system": system,
+                    "messages": [{"role": "user", "content": user_msg}],
+                    "temperature": 0.3,
+                    "max_tokens": 1200,
+                },
+                timeout=35,
+            )
+        else:
+            endpoint = "https://api.openai.com/v1/chat/completions" if provider == "openai" \
+                       else "https://api.groq.com/openai/v1/chat/completions"
+            resp = _req.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": modelo,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 1200,
+                },
+                timeout=35,
+            )
         if resp.status_code != 200:
-            return None, f"El proveedor respondió {resp.status_code}. Verifica tu API key en Superadmin → Chatbot."
+            return None, f"El proveedor respondió {resp.status_code}. Verifica la credencial del asesor comercial."
         data = resp.json()
-        texto = (data.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+        if provider == "anthropic":
+            texto = "\n".join(
+                block.get("text", "") for block in (data.get("content") or [])
+                if block.get("type") == "text"
+            ).strip()
+        else:
+            texto = (data.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
         return texto or None, None
     except Exception as exc:
         return None, f"Error llamando al proveedor IA: {exc}"
@@ -7095,8 +7159,21 @@ def ia_analisis():
     """
     respuesta = None
     error = None
+    respuesta_fuente = None
     pregunta = ""
     contexto = _resumen_negocio_para_ia()
+    from commercial_insights_service import (
+        answer_commercial_question,
+        build_commercial_diagnostic,
+    )
+    diagnostico_local = build_commercial_diagnostic()
+    commercial_ai = {
+        "enabled": str(SiteConfig.get("COMMERCIAL_AI_ENABLED", "0") or "0").lower()
+                   in {"1", "true", "yes", "on"},
+        "provider": (SiteConfig.get("COMMERCIAL_AI_PROVIDER", "") or "").strip().lower(),
+        "model": SiteConfig.get("COMMERCIAL_AI_MODEL", "") or "",
+        "key_set": bool(SiteConfig.get("COMMERCIAL_AI_API_KEY", "")),
+    }
     if request.method == "POST":
         pregunta = (request.form.get("pregunta") or "").strip()
         if len(pregunta) < 5:
@@ -7104,7 +7181,16 @@ def ia_analisis():
         elif len(pregunta) > 800:
             error = "Pregunta demasiado larga (máx 800 caracteres)."
         else:
-            respuesta, error = _llamar_ia_analisis(pregunta, contexto)
+            respuesta, external_error = _llamar_ia_analisis(pregunta, contexto)
+            if respuesta:
+                respuesta_fuente = "external"
+            else:
+                respuesta = answer_commercial_question(pregunta, diagnostico_local)
+                respuesta_fuente = "local"
+                # Un proveedor caído no inutiliza el asesor. Solo los errores
+                # distintos de "no configurado" se muestran como advertencia.
+                if external_error != "external_not_configured":
+                    error = f"La IA externa no respondió; se usó el análisis local. {external_error}"
             if respuesta:
                 AuditLog.registrar(
                     current_user.id, "ia_consulta", "analisis",
@@ -7120,6 +7206,9 @@ def ia_analisis():
         respuesta=respuesta,
         error=error,
         contexto=contexto,
+        diagnostico_local=diagnostico_local,
+        commercial_ai=commercial_ai,
+        respuesta_fuente=respuesta_fuente,
     )
 
 

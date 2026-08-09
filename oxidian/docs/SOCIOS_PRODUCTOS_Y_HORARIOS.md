@@ -47,6 +47,10 @@ que conserva la tienda. El socio recibe `100 - comision_pct`. Tanto pérdidas y
 ganancias como liquidaciones reconocen la parte del socio como obligación, no
 como margen propio.
 
+Los pedidos entregados generan esa obligación. Un pedido marcado como
+extraviado se conserva en la trazabilidad financiera, pero no genera saldo
+liquidable al socio: el cliente es reembolsado y la venta no se materializó.
+
 ## Flujo administrativo
 
 1. Super Admin crea el socio en **Catálogo → Socios de productos**.

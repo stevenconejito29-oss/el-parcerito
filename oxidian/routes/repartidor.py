@@ -2,10 +2,15 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from functools import wraps
 import logging
+import math
+import os
 
 from sqlalchemy.orm import joinedload
 from extensions import db, get_or_404
-from models import Order, OrderEvent, OrderItem, User, AuditLog, StaffPayment, normalizar_metodo_pago
+from models import (
+    Order, OrderEvent, OrderItem, User, AuditLog, StaffPayment, RiderLocation,
+    normalizar_metodo_pago, utcnow,
+)
 from services import (
     asignar_repartidor_pedido,
     avanzar_estado_pedido,
@@ -125,6 +130,18 @@ def _codigo_enviado_ids(pedidos):
     return {row[0] for row in rows}
 
 
+def _borrar_ubicacion_si_sin_ruta(rider_id):
+    if not rider_id:
+        return
+    activa = Order.query.filter_by(
+        repartidor_id=rider_id,
+        estado="en_ruta",
+        tipo_entrega_cliente="delivery",
+    ).first()
+    if activa is None:
+        RiderLocation.query.filter_by(rider_id=rider_id).delete()
+
+
 @repartidor_bp.route("/toggle-disponible", methods=["POST"])
 @repartidor_required
 def toggle_disponible():
@@ -206,6 +223,145 @@ def ruta():
                            codigo_enviado_ids=_codigo_enviado_ids(en_ruta),
                            companeros=companeros,
                            disponible=disponible)
+
+
+@repartidor_bp.route("/ubicacion", methods=["POST", "DELETE"])
+@repartidor_required
+def actualizar_ubicacion():
+    """Guarda un único punto GPS mientras el repartidor tiene una ruta activa.
+
+    No crea historial y rechaza posiciones de admins, coordenadas inválidas,
+    precisión inútil y tracking sin pedidos propios en ruta.
+    """
+    if current_user.rol != "repartidor":
+        return jsonify({"ok": False, "error": "Solo disponible para repartidores."}), 403
+
+    if request.method == "DELETE":
+        RiderLocation.query.filter_by(rider_id=current_user.id).delete()
+        db.session.commit()
+        return jsonify({"ok": True, "tracking": False})
+
+    tiene_ruta = Order.query.filter_by(
+        repartidor_id=current_user.id,
+        estado="en_ruta",
+        tipo_entrega_cliente="delivery",
+    ).first() is not None
+    if not tiene_ruta:
+        RiderLocation.query.filter_by(rider_id=current_user.id).delete()
+        db.session.commit()
+        return jsonify({"ok": False, "error": "No tienes entregas activas.", "tracking": False}), 409
+
+    data = request.get_json(silent=True) or {}
+    try:
+        lat = float(data.get("lat"))
+        lng = float(data.get("lng"))
+        accuracy = float(data["accuracy_m"]) if data.get("accuracy_m") is not None else None
+        heading = float(data["heading"]) if data.get("heading") is not None else None
+        speed = float(data["speed_mps"]) if data.get("speed_mps") is not None else None
+    except (TypeError, ValueError, OverflowError):
+        return jsonify({"ok": False, "error": "Ubicación inválida."}), 400
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return jsonify({"ok": False, "error": "Coordenadas fuera de rango."}), 400
+    if accuracy is not None and not (0 <= accuracy <= 5000):
+        return jsonify({"ok": False, "error": "Precisión inválida."}), 400
+    if accuracy is not None and accuracy > 250:
+        return jsonify({"ok": False, "error": "Señal GPS demasiado imprecisa."}), 422
+
+    location = db.session.get(RiderLocation, current_user.id)
+    if location is None:
+        location = RiderLocation(rider_id=current_user.id, lat=lat, lng=lng)
+        db.session.add(location)
+    location.lat = lat
+    location.lng = lng
+    location.accuracy_m = accuracy
+    location.heading = heading if heading is not None and 0 <= heading <= 360 else None
+    location.speed_mps = speed if speed is not None and 0 <= speed <= 100 else None
+    location.updated_at = utcnow()
+    current_user.marcar_activo()
+    db.session.commit()
+    return jsonify({"ok": True, "tracking": True, "updated_at": location.updated_at.isoformat() + "Z"})
+
+
+@repartidor_bp.route("/ruta/optimizar", methods=["POST"])
+@repartidor_required
+def optimizar_ruta():
+    """Orden vial real mediante Google Routes, con fallback explícito en UI."""
+    api_key = (os.environ.get("GOOGLE_ROUTES_API_KEY") or "").strip()
+    if not api_key:
+        return jsonify({"ok": False, "error": "Optimización vial no configurada."}), 503
+    data = request.get_json(silent=True) or {}
+    ids = _parse_pedido_ids(data.get("pedido_ids") or [])
+    try:
+        origin = {"lat": float(data["origin"]["lat"]), "lng": float(data["origin"]["lng"])}
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Origen GPS inválido."}), 400
+    if not (-90 <= origin["lat"] <= 90 and -180 <= origin["lng"] <= 180):
+        return jsonify({"ok": False, "error": "Origen GPS fuera de rango."}), 400
+    if not 2 <= len(ids) <= 10:
+        return jsonify({"ok": False, "error": "Selecciona entre 2 y 10 paradas."}), 400
+
+    query = Order.query.filter(
+        Order.id.in_(ids),
+        Order.tipo_entrega_cliente == "delivery",
+        Order.estado.in_(("listo", "en_ruta")),
+    )
+    if not _es_admin_operativo():
+        query = query.filter(Order.repartidor_id == current_user.id)
+    orders = {order.id: order for order in query.all()}
+    if len(orders) != len(ids):
+        return jsonify({"ok": False, "error": "La ruta contiene pedidos no disponibles."}), 403
+    if any(order.direccion_lat is None or order.direccion_lng is None for order in orders.values()):
+        return jsonify({"ok": False, "error": "Faltan coordenadas en una o más entregas."}), 422
+
+    stops = [orders[order_id] for order_id in ids]
+    # Compute Routes optimiza únicamente los puntos intermedios. Fijamos como
+    # destino la parada más alejada del origen para evitar que una selección
+    # arbitraria obligue a terminar en mitad del recorrido.
+    def distance_sq(order):
+        lat_scale = math.cos(math.radians(origin["lat"]))
+        return (
+            (float(order.direccion_lat) - origin["lat"]) ** 2
+            + ((float(order.direccion_lng) - origin["lng"]) * lat_scale) ** 2
+        )
+    destination = max(stops, key=distance_sq)
+    intermediates = [order for order in stops if order.id != destination.id]
+    def waypoint(lat, lng):
+        return {"location": {"latLng": {"latitude": float(lat), "longitude": float(lng)}}}
+    payload = {
+        "origin": waypoint(origin["lat"], origin["lng"]),
+        "destination": waypoint(destination.direccion_lat, destination.direccion_lng),
+        "intermediates": [waypoint(order.direccion_lat, order.direccion_lng) for order in intermediates],
+        "travelMode": "DRIVE",
+        "routingPreference": "TRAFFIC_AWARE",
+        "optimizeWaypointOrder": True,
+        "languageCode": "es-ES",
+        "units": "METRIC",
+    }
+    try:
+        import requests
+        response = requests.post(
+            "https://routes.googleapis.com/directions/v2:computeRoutes",
+            json=payload,
+            headers={
+                "X-Goog-Api-Key": api_key,
+                "X-Goog-FieldMask": "routes.optimizedIntermediateWaypointIndex,routes.duration,routes.distanceMeters",
+            },
+            timeout=6,
+        )
+        response.raise_for_status()
+        route = (response.json().get("routes") or [{}])[0]
+        indexes = route.get("optimizedIntermediateWaypointIndex") or list(range(len(intermediates)))
+        ordered = [intermediates[index].id for index in indexes] + [destination.id]
+        return jsonify({
+            "ok": True,
+            "pedido_ids": ordered,
+            "distance_m": route.get("distanceMeters"),
+            "duration": route.get("duration"),
+            "source": "google_routes",
+        })
+    except Exception:
+        logger.exception("No se pudo optimizar la ruta vial del repartidor %s", current_user.id)
+        return jsonify({"ok": False, "error": "El optimizador vial no está disponible."}), 502
 
 
 @repartidor_bp.route("/pedidos/<int:pedido_id>/tomar", methods=["POST"])
@@ -621,6 +777,7 @@ def confirmar_entrega(pedido_id):
     try:
         enviar_whatsapp_estado(pedido)
         solicitar_resena_pedido(pedido)
+        _borrar_ubicacion_si_sin_ruta(pedido.repartidor_id)
         db.session.commit()
     except Exception as e:
         db.session.rollback()
@@ -676,6 +833,7 @@ def marcar_no_entregado(pedido_id):
             canal="repartidor_no_entregado",
             detalle=f"No entregado: {motivo}",
         )
+        _borrar_ubicacion_si_sin_ruta(pedido.repartidor_id)
         db.session.commit()
     except Exception as e:
         db.session.rollback()

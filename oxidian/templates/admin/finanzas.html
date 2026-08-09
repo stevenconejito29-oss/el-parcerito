@@ -1,60 +1,72 @@
 {% extends "admin_base.html" %}
 {% block title %}Finanzas — {{ brand.nombre or 'El Parcerito' }}{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-finance.css', v=asset_version) }}">
+{% endblock %}
 {% block content %}
+<main class="finance-dashboard" aria-labelledby="finance-dashboard-title">
 
-<header class="prov-page-head prov-detail-head">
+<header class="prov-page-head prov-detail-head finance-hero">
   <div>
     <span class="prov-eyebrow">Contabilidad</span>
-    <h1>Finanzas</h1>
-    <p>Entradas y salidas centralizadas. Todo lo que entra, todo lo que sale, y lo que queda por cerrar.</p>
+    <h1 id="finance-dashboard-title">Finanzas</h1>
+    <p>Qué entró, qué salió y qué necesita atención antes de cerrar.</p>
   </div>
 </header>
 
 {# ── Selector de rango ────────────────────────────────────────────── #}
-<nav class="prov-tabs" style="display:flex; gap:0.5rem; margin:1rem 0; flex-wrap:wrap;">
+<nav class="prov-tabs finance-periods" aria-label="Período del informe">
   <a href="{{ url_for('admin.finanzas', preset='hoy') }}"
      class="prov-btn {{ 'prov-btn-primary' if preset == 'hoy' else 'prov-btn-secondary' }}">Hoy</a>
   <a href="{{ url_for('admin.finanzas', preset='semana') }}"
      class="prov-btn {{ 'prov-btn-primary' if preset == 'semana' else 'prov-btn-secondary' }}">Esta semana</a>
   <a href="{{ url_for('admin.finanzas', preset='mes') }}"
      class="prov-btn {{ 'prov-btn-primary' if preset == 'mes' else 'prov-btn-secondary' }}">Este mes</a>
-  <form method="get" action="{{ url_for('admin.finanzas') }}" style="display:inline-flex; gap:0.25rem; align-items:center;">
+  <form method="get" action="{{ url_for('admin.finanzas') }}" class="finance-period-custom">
     <input type="hidden" name="preset" value="personalizado">
-    <input type="date" name="fecha_ini" value="{{ fecha_ini }}" style="padding:0.35rem;">
-    <input type="date" name="fecha_fin" value="{{ fecha_fin }}" style="padding:0.35rem;">
+    <label><span>Desde</span><input type="date" name="fecha_ini" value="{{ fecha_ini }}"></label>
+    <label><span>Hasta</span><input type="date" name="fecha_fin" value="{{ fecha_fin }}"></label>
     <button type="submit" class="prov-btn {{ 'prov-btn-primary' if preset == 'personalizado' else 'prov-btn-secondary' }}">Aplicar</button>
   </form>
 </nav>
 
 {# ── KPIs principales ──────────────────────────────────────────────── #}
-<div class="prov-kpis prov-kpis-compact">
-  <div>
+<div class="prov-kpis prov-kpis-compact finance-kpis">
+  <div class="finance-kpi finance-kpi--income">
     <span>Ingresos</span>
-    <strong style="color:#0a7f3b;">€{{ "%.2f"|format(ingresos_total|float) }}</strong>
+    <strong>€{{ "%.2f"|format(ingresos_total|float) }}</strong>
     <small>{{ fecha_ini }} → {{ fecha_fin }}</small>
   </div>
-  <div>
+  <div class="finance-kpi finance-kpi--expense">
     <span>Salidas</span>
-    <strong style="color:#b02020;">€{{ "%.2f"|format(egresos_total|float) }}</strong>
+    <strong>€{{ "%.2f"|format(egresos_total|float) }}</strong>
     <small>nóminas + gastos + liquidaciones</small>
   </div>
-  <div>
+  <div class="finance-kpi {{ 'finance-kpi--expense' if saldo_neto|float < 0 else 'finance-kpi--result' }}">
     <span>Resultado</span>
-    <strong class="{{ 'prov-danger' if saldo_neto|float < 0 else '' }}"
-            style="{{ 'color:#0a7f3b;' if saldo_neto|float >= 0 else '' }}">
+    <strong class="{{ 'prov-danger' if saldo_neto|float < 0 else '' }}">
       €{{ "%.2f"|format(saldo_neto|float) }}
     </strong>
     <small>{{ 'Ganancia' if saldo_neto|float >= 0 else 'Pérdida' }} del período</small>
   </div>
-  <div>
+  <div class="finance-kpi finance-kpi--cash">
     <span>Efectivo cobrado</span>
     <strong>€{{ "%.2f"|format(efectivo_cobrado|float) }}</strong>
     <small>debe cuadrar con caja física</small>
   </div>
 </div>
 
+{% set pendientes_total = pendientes_pago_total|float + pagos_staff_pendientes_total|float + liquidaciones_pendientes_total|float %}
+<aside class="finance-attention {{ 'finance-attention--clear' if pendientes_total == 0 else '' }}" aria-live="polite">
+  <div>
+    <strong>{{ 'Todo conciliado en este período' if pendientes_total == 0 else 'Hay €%.2f pendientes de cerrar'|format(pendientes_total) }}</strong>
+    <span>{{ 'No quedan cobros ni pagos operativos pendientes.' if pendientes_total == 0 else 'Revisa cobros digitales, pagos al equipo y liquidaciones antes del cierre.' }}</span>
+  </div>
+  {% if pendientes_total > 0 %}<a href="#pendientes-financieros" class="prov-btn prov-btn-primary">Revisar pendientes</a>{% endif %}
+</aside>
+
 {# ── Entradas: ventas por método de pago ─────────────────────────── #}
-<section class="ox-card" style="margin-top:1.25rem;">
+<section class="ox-card finance-section">
   <div class="partner-form-heading">
     <span>↓</span>
     <div><strong>Ventas por método de pago</strong><small>Solo cobros ya confirmados. Ver "Pendientes" abajo para lo que aún está sin cerrar.</small></div>
@@ -84,7 +96,7 @@
 </section>
 
 {# ── Salidas: agrupadas por concepto contable ───────────────────── #}
-<section class="ox-card" style="margin-top:1.25rem;">
+<section class="ox-card finance-section">
   <div class="partner-form-heading">
     <span>↑</span>
     <div><strong>Salidas del período</strong><small>Agrupadas por concepto contable. Cada grupo enlaza al detalle.</small></div>
@@ -118,7 +130,7 @@
 </section>
 
 {# ── Pendientes: cosas que aún no cierran ──────────────────────── #}
-<section class="ox-card" style="margin-top:1.25rem;">
+<section class="ox-card finance-section" id="pendientes-financieros">
   <div class="partner-form-heading">
     <span>⏳</span>
     <div><strong>Pendientes de cerrar</strong><small>Estas cifras aún no aparecen arriba porque su cobro/pago está sin confirmar.</small></div>
@@ -710,4 +722,5 @@
   {% endif %}
 </section>
 
+</main>
 {% endblock %}

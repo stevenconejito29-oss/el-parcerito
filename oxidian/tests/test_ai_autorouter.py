@@ -1,11 +1,11 @@
-"""Tests del auto-router IA del chatbot (`/api/bot/ai/route`).
+"""Contrato legado del auto-router del chatbot (`/api/bot/ai/route`).
 
 Cubre las 5 reglas críticas del PR #3:
   - MENU → route=menu
   - "cancelar 123" → intent existente (noop)
-  - "¿qué hamburguesas tienen?" → route=ai
+  - Una pregunta libre nunca se envía a IA generativa
   - "hola" (corto) → route=noop
-  - 21ª pregunta en 1h → route=handoff (rate limit hora)
+  - Claves antiguas o force_ai no reactivan respuestas crudas
 """
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -86,10 +86,11 @@ class AiAutoRouterTest(unittest.TestCase):
         r = self._route("cuántos puntos tengo")
         self.assertEqual(r.get_json()["route"], "noop")
 
-    def test_pregunta_natural_route_ai(self):
+    def test_pregunta_natural_stays_in_deterministic_bot(self):
         r = self._route("¿qué hamburguesas tienen?")
         data = r.get_json()
-        self.assertEqual(data["route"], "ai", msg=data)
+        self.assertEqual(data["route"], "noop", msg=data)
+        self.assertEqual(data["reason"], "ai_disabled")
 
     def test_texto_corto_route_noop(self):
         # "xyz" no matchea ningún hard command ni intent conocido y es demasiado
@@ -98,8 +99,7 @@ class AiAutoRouterTest(unittest.TestCase):
         r = self._route("xyz")
         self.assertEqual(r.get_json()["route"], "noop")
 
-    def test_rate_limit_handoff(self):
-        # Insertamos 20 usos previos en la última hora → 21ª pregunta → handoff.
+    def test_legacy_ai_usage_does_not_change_customer_routing(self):
         phone_hash, _ = _ai_phone_hash(self.phone)
         now = _now()
         for _ in range(20):
@@ -112,10 +112,10 @@ class AiAutoRouterTest(unittest.TestCase):
 
         r = self._route("¿tienen pollo asado hoy?")
         data = r.get_json()
-        self.assertEqual(data["route"], "handoff", msg=data)
-        self.assertIn("consulta", data.get("message", "").lower())
+        self.assertEqual(data["route"], "noop", msg=data)
+        self.assertEqual(data["reason"], "ai_disabled")
 
-    def test_force_ai_ignora_rate_limit(self):
+    def test_force_ai_cannot_bypass_customer_ai_block(self):
         phone_hash, _ = _ai_phone_hash(self.phone)
         now = _now()
         for _ in range(25):
@@ -126,7 +126,8 @@ class AiAutoRouterTest(unittest.TestCase):
             ))
         db.session.commit()
         r = self._route("dime lo que sea", force_ai=True)
-        self.assertEqual(r.get_json()["route"], "ai")
+        self.assertEqual(r.get_json()["route"], "noop")
+        self.assertEqual(r.get_json()["reason"], "ai_disabled")
 
     def test_ai_disabled_fallback_message(self):
         SiteConfig.set("BOT_AI_ENABLED", "0")
@@ -142,6 +143,15 @@ class AiAutoRouterTest(unittest.TestCase):
             json={"telefono": self.phone, "mensaje": "hola"},
         )
         self.assertEqual(r.status_code, 401)
+
+    def test_ai_config_never_exposes_legacy_provider_credentials(self):
+        response = self.client.get(
+            "/api/bot/ai/config", headers={"X-Bot-Key": "test-bot-key"}
+        )
+        data = response.get_json()
+        self.assertFalse(data["habilitado"])
+        self.assertEqual(data["proveedor"], "")
+        self.assertEqual(data["api_key"], "")
 
 
 if __name__ == "__main__":

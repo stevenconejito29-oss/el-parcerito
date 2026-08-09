@@ -144,34 +144,6 @@
     .ox-btn-primary { background: linear-gradient(135deg, var(--action-primary), color-mix(in srgb, var(--action-primary) 75%, var(--theme-text))); color:var(--action-on-primary); }
     .ox-btn-cart    { background: linear-gradient(135deg, var(--action-primary), color-mix(in srgb, var(--action-primary) 80%, var(--theme-text))); color:var(--action-on-primary); }
     body.ox-body-public { background:var(--theme-bg); color:var(--theme-text); min-height:var(--app-height,100dvh); }
-    /* SPA navigation — transición fluida entre páginas
-       Fallback para browsers sin View Transitions API (Safari, Firefox).
-       En browsers que sí soportan VT, el navegador hace la transición nativa. */
-    body.ox-body-public main { transition: opacity .18s ease-out, transform .18s ease-out; }
-    body.ox-body-public.spa-fade-out main { opacity: 0; transform: translateY(4px); }
-    body.ox-body-public.spa-fade-in  main { opacity: 1; transform: translateY(0);
-                                            animation: spa-fade-in .18s ease-out; }
-    body.ox-body-public.is-navigating { cursor: progress; }
-    body.ox-body-public.is-navigating .ox-bottom-nav .ox-bnav-item { pointer-events: none; opacity: .7; }
-    @keyframes spa-fade-in {
-      from { opacity: 0; transform: translateY(4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    /* Barra de progreso sutil en el borde superior del bottom nav durante el fetch */
-    body.ox-body-public.is-navigating .ox-bottom-nav::before {
-      content: ''; position: absolute; top: -2px; left: 0; right: 0; height: 2px;
-      background: linear-gradient(90deg, transparent, var(--brand-primary), transparent);
-      animation: spa-progress 1s linear infinite;
-    }
-    @keyframes spa-progress {
-      0%   { transform: translateX(-100%); }
-      100% { transform: translateX(100%); }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      body.ox-body-public main { transition: none; }
-      body.ox-body-public.spa-fade-out main,
-      body.ox-body-public.spa-fade-in main { transform: none; animation: none; }
-    }
     /* Touch UX y accesibilidad GLOBAL en público (menú, carrito, checkout).
        Elimina flash de tap en Android, elimina delay de 300ms en iOS, y
        aplica focus visible con color de marca. */
@@ -619,7 +591,7 @@
   <a href="{{ url_for('public.index') }}#buscar"
      class="ox-bnav-item {{ 'is-active' if 'q' in request.args else '' }}"
      data-bnav="search"
-     aria-label="{{ ui.nav_search }} — abre el buscador">
+     aria-label="{{ ui.nav_search }} — ir al buscador">
     <span class="ox-bnav-svg" aria-hidden="true">
       {{ heritage_icon('buscar') }}
     </span>
@@ -715,7 +687,6 @@ document.addEventListener('error', function(event) {
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/pwa-manager.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/cart-ui.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/header-modern.js', v=asset_version) }}" defer></script>
-<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/spa-nav.js', v=asset_version) }}" defer></script>
 
 <script nonce="{{ csp_nonce() }}">
 /* Prevención universal de doble-submit en formularios del público

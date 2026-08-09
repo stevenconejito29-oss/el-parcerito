@@ -533,7 +533,10 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
         self.assertEqual(order_item.selected_presentation_extra, 2.5)
 
         catalog = product_presentation_catalog_payload(self.product)
-        self.assertEqual({row["tamaño"] for row in catalog}, {"pequeño", "grande"})
+        self.assertEqual(
+            {row["tamaño"] for row in catalog},
+            {"normal", "pequeño", "grande"},
+        )
         pos_group = next(
             group for group in _pos_product_option_config(self.product)["grupos"]
             if group["tipo"] == "presentacion"
@@ -549,7 +552,7 @@ class ProductExtrasWorkflowTest(unittest.TestCase):
         )
         self.assertEqual(
             {row["tamaño"] for row in bot_response.get_json()["producto"]["presentaciones"]},
-            {"pequeño", "grande"},
+            {"normal", "pequeño", "grande"},
         )
 
     def test_presentation_rejects_negative_final_price_without_partial_changes(self):

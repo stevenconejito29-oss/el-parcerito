@@ -1,5 +1,8 @@
 {% extends "admin_base.html" %}
 {% block title %}Consulta IA — {{ brand.nombre }}{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/commercial-insights.css', v=asset_version) }}">
+{% endblock %}
 {% block content %}
 
 {# Ejemplos y placeholder adaptados al nicho: evita hardcoding "combos"/comida
@@ -18,6 +21,74 @@
   de marketing, tendencias del último mes, ideas de {{ _tipo_agrupacion }}, etc. La IA solo ve
   datos agregados (nunca información personal de clientes) y no puede modificar nada.
 </p>
+
+<aside class="commerce-ai-status {{ 'is-connected' if commercial_ai.enabled and commercial_ai.key_set else 'is-local' }}">
+  <div>
+    <span class="commerce-ai-status__dot" aria-hidden="true"></span>
+    <div>
+      <strong>{% if commercial_ai.enabled and commercial_ai.key_set %}Claude/API conectado{% else %}Motor local activo · API opcional no configurada{% endif %}</strong>
+      <small>
+        {% if commercial_ai.enabled and commercial_ai.key_set %}
+          {{ commercial_ai.provider|capitalize }} · {{ commercial_ai.model }} · las respuestas externas usan datos agregados y guardrails comerciales.
+        {% else %}
+          Los cálculos de margen, combos, precios y campañas funcionan sin API. Añade Anthropic · Claude para enriquecer el análisis estratégico.
+        {% endif %}
+      </small>
+    </div>
+  </div>
+  {% if current_user.rol == 'super_admin' %}
+  <a href="{{ url_for('superadmin.chatbot') }}#asesor-comercial" class="ox-btn-ghost text-sm">Configurar Claude</a>
+  {% endif %}
+</aside>
+
+<section class="commerce-insights" aria-labelledby="commerce-insights-title">
+  <div class="commerce-insights__head">
+    <div>
+      <span>Motor local · siempre disponible</span>
+      <h2 id="commerce-insights-title">Oportunidades comerciales</h2>
+    </div>
+    <strong>{{ diagnostico_local.products_analyzed }} productos analizados</strong>
+  </div>
+  <div class="commerce-insights__grid">
+    <article>
+      <span>Margen objetivo</span>
+      <strong>{{ diagnostico_local.target_margin_pct }}%</strong>
+      <small>{{ diagnostico_local.price_alerts|length }} precios requieren revisión</small>
+    </article>
+    <article>
+      <span>Combos viables</span>
+      <strong>{{ diagnostico_local.combo_candidates|length }}</strong>
+      <small>{% if diagnostico_local.has_demand_evidence %}Con evidencia de ventas{% else %}Basados en catálogo; validar demanda{% endif %}</small>
+    </article>
+    <article>
+      <span>Ticket medio</span>
+      <strong>{% if diagnostico_local.delivered_orders %}€{{ '%.2f'|format(diagnostico_local.average_ticket) }}{% else %}Sin datos{% endif %}</strong>
+      <small>{{ diagnostico_local.delivered_orders }} entregas analizadas</small>
+    </article>
+  </div>
+  {% if diagnostico_local.combo_candidates %}
+  <div class="commerce-insights__proposals">
+    {% for combo in diagnostico_local.combo_candidates %}
+    <div>
+      <strong>{{ combo.name }}</strong>
+      <span>Precio sugerido €{{ '%.2f'|format(combo.suggested_price) }} · margen {{ combo.margin_pct }}%</span>
+      <small>{{ combo.evidence|capitalize }}. Propuesta pendiente de revisión.</small>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if diagnostico_local.campaign_candidates %}
+  <div class="commerce-insights__proposals" aria-label="Pruebas comerciales sugeridas">
+    {% for campaign in diagnostico_local.campaign_candidates %}
+    <div>
+      <strong>{{ campaign.name }}</strong>
+      <span>{{ campaign.action }}</span>
+      <small>Medir {{ campaign.metric }}. Regla: {{ campaign.stop_rule }}.</small>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
 
 <form method="POST" class="ox-card p-4 mb-5">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -44,11 +115,12 @@
 <div class="ox-card p-5 mb-5" style="border-color:rgba(94,240,151,.2)">
   <div class="flex items-center gap-2 mb-3">
     <span class="text-2xl">🤖</span>
-    <h2 class="text-sm font-bold" style="color:#5EF097">Respuesta del asistente</h2>
+    <h2 class="text-sm font-bold" style="color:#5EF097">Respuesta del asistente · {{ 'IA externa' if respuesta_fuente == 'external' else 'motor local' }}</h2>
   </div>
   <div class="text-sm whitespace-pre-wrap" style="color:var(--col-text);line-height:1.6">{{ respuesta }}</div>
 </div>
 {% endif %}
+
 
 <details class="ox-card p-4">
   <summary class="text-sm font-bold cursor-pointer" style="color:var(--col-muted)">

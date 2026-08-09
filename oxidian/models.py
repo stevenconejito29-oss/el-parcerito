@@ -4623,6 +4623,94 @@ class PushSubscription(db.Model):
     )
 
 
+class BotLearningSignal(db.Model):
+    """Señal de auto-aprendizaje del chatbot.
+
+    Se registra CADA VEZ que el LLM (aiSmartReply) genera una respuesta
+    para un mensaje que el sistema determinista del bot NO reconoció
+    (FAQs canned, keywords, catálogo). Estas señales muestran qué
+    preguntan realmente los clientes que aún no está cubierto por el
+    diccionario estático — es la materia prima para ampliar keywords
+    y respuestas cacheadas de forma inteligente.
+
+    Diseño:
+      - ``mensaje_hash`` (PK-like con índice único): SHA-256 truncado
+        del mensaje NORMALIZADO (lowercase + sin acentos + sin
+        puntuación + palabras ordenadas alfabéticamente). Preguntas
+        equivalentes caen al mismo hash → contador se incrementa.
+      - ``mensaje_norm``: la forma normalizada legible (para mostrar
+        en el panel admin sin exponer variantes personales del cliente).
+      - ``mensaje_ejemplo``: la última forma cruda que vimos (para
+        que el admin entienda el contexto real del cliente). Se
+        trunca a 200 chars.
+      - ``action_llm`` / ``reply_snippet``: qué respondió el LLM.
+      - ``count``: cuántas veces se ha visto este patrón.
+      - ``telefono_hash``: hash del teléfono con OXIDIAN_KEY (RGPD:
+        agregable pero no identifica individualmente). Solo el hash
+        del ÚLTIMO cliente que hizo la pregunta — no un historial.
+      - ``applied``: bool. El admin lo marca cuando aplica la señal
+        (añade FAQ, keyword, etc.) para no volver a verla en el top.
+      - Retención: purga oportunista de filas viejas (>N días) sin
+        ``applied`` y con count bajo.
+    """
+    __tablename__ = "bot_learning_signals"
+
+    id = db.Column(db.Integer, primary_key=True)
+    mensaje_hash = db.Column(db.String(24), nullable=False, unique=True, index=True)
+    mensaje_norm = db.Column(db.String(400), nullable=False)
+    mensaje_ejemplo = db.Column(db.String(400), nullable=False)
+    action_llm = db.Column(db.String(40))
+    reply_snippet = db.Column(db.String(400))
+    count = db.Column(db.Integer, default=1, nullable=False)
+    telefono_hash = db.Column(db.String(32))
+    intent_matched_before = db.Column(db.Boolean, default=False, nullable=False)
+    applied = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    applied_at = db.Column(db.DateTime)
+    applied_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    first_seen_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    last_seen_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    aplicador = db.relationship("User", foreign_keys=[applied_by])
+
+    __table_args__ = (
+        db.CheckConstraint("count >= 1", name="ck_bot_learning_count_positive"),
+        db.Index("ix_bot_learning_count", "count"),
+        db.Index("ix_bot_learning_last_seen", "last_seen_at"),
+    )
+
+
+class RiderLocation(db.Model):
+    """Última posición consentida de un repartidor durante una ruta activa.
+
+    Solo conservamos un punto por usuario, no un historial. Esto permite
+    seguimiento operativo sin crear un registro permanente de movimientos.
+    """
+    __tablename__ = "rider_locations"
+
+    rider_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    lat = db.Column(db.Float, nullable=False)
+    lng = db.Column(db.Float, nullable=False)
+    accuracy_m = db.Column(db.Float)
+    heading = db.Column(db.Float)
+    speed_mps = db.Column(db.Float)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    rider = db.relationship("User", foreign_keys=[rider_id])
+
+    __table_args__ = (
+        db.CheckConstraint("lat >= -90 AND lat <= 90", name="ck_rider_location_lat"),
+        db.CheckConstraint("lng >= -180 AND lng <= 180", name="ck_rider_location_lng"),
+        db.CheckConstraint(
+            "accuracy_m IS NULL OR (accuracy_m >= 0 AND accuracy_m <= 5000)",
+            name="ck_rider_location_accuracy",
+        ),
+    )
+
+
 # ─────────────────────────────────────────────
 # CHATBOT — BASE DE CONOCIMIENTO DETERMINISTA
 # ─────────────────────────────────────────────

@@ -205,7 +205,7 @@
      azul, si hay hint persistido en localStorage se intenta primero
      `restoreBT()` silencioso; si falla, cae a `pairBT()` con diálogo. */
   function ensureChip() {
-    if (!body.classList.contains('operational-view')) return;
+    if (!body.classList.contains('view-preparador')) return;
     if (!hasBT()) return;
     if (document.querySelector('.thermal-pair-chip')) return;
     const chip = document.createElement('button');
@@ -236,7 +236,7 @@
   }
 
   document.addEventListener('click', async (event) => {
-    const btn = event.target.closest('.thermal-pair-chip');
+    const btn = event.target.closest('.thermal-pair-chip,[data-pair-thermal="bt"]');
     if (!btn) return;
     const tp = window.ThermalPrinter;
     if (!tp) return;
@@ -343,6 +343,9 @@
 
   function initCollapsibleCards(scope) {
     if (!body.classList.contains('operational-view')) return;
+    // En un KDS el ticket completo debe permanecer visible: ocultar items o
+    // notas obliga al cocinero a tocar cada comanda y aumenta errores.
+    if (body.classList.contains('view-preparador')) return;
     const rootScope = scope || document;
     rootScope.querySelectorAll('.work-lane').forEach(ensureLaneToggleAll);
     rootScope.querySelectorAll('.work-card').forEach((card) => {
@@ -366,8 +369,14 @@
       card.appendChild(toggle);
 
       const key = collapseKey(card);
-      let open = false;
-      try { open = sessionStorage.getItem(key) === '1'; } catch (_) {}
+      // En reparto la primera tarjeta de cada carril es el siguiente trabajo:
+      // debe enseñar dirección y CTA sin exigir descubrir un desplegable.
+      // Las siguientes permanecen compactas para no convertir la ruta en una
+      // lista interminable. Una elección explícita del usuario prevalece.
+      let stored = null;
+      try { stored = sessionStorage.getItem(key); } catch (_) {}
+      const isFirstInLane = card === card.closest('.work-lane')?.querySelector('.work-card');
+      const open = stored === null ? isFirstInLane : stored === '1';
       applyCardState(card, toggle, open);
 
       card.addEventListener('click', (event) => {
@@ -410,4 +419,116 @@
     });
     btn.textContent = anyCollapsed ? 'Plegar todo' : 'Expandir todo';
   });
+
+  function initRiderTracking() {
+    const panel = document.querySelector('[data-rider-tracking]');
+    if (!panel || panel.dataset.trackingBound === '1') return;
+    panel.dataset.trackingBound = '1';
+    const button = panel.querySelector('[data-rider-tracking-toggle]');
+    const copy = panel.querySelector('[data-rider-tracking-copy]');
+    const csrf = document.querySelector('meta[name="ox-csrf-token"]')?.content || '';
+    const endpoint = panel.dataset.endpoint;
+    let watchId = null;
+    let lastSentAt = 0;
+    let starting = false;
+
+    const setState = (state, message) => {
+      panel.dataset.state = state;
+      if (copy && message) copy.textContent = message;
+      if (!button) return;
+      const active = state === 'active' || state === 'waiting';
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      button.textContent = state === 'waiting' ? 'Buscando GPS…' : active ? 'Detener GPS' : 'Activar GPS';
+      button.disabled = state === 'waiting' || panel.dataset.hasRoute !== '1';
+    };
+
+    const stop = async (removeServerPoint = true) => {
+      if (watchId !== null && navigator.geolocation) navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+      starting = false;
+      setState('idle', panel.dataset.hasRoute === '1'
+        ? 'Ubicación detenida. Actívala al comenzar la ruta.'
+        : 'Se habilitará cuando salgas con un pedido.');
+      if (removeServerPoint) {
+        try { await fetch(endpoint, { method: 'DELETE', headers: { 'X-CSRFToken': csrf, Accept: 'application/json' } }); } catch (_) {}
+      }
+    };
+
+    const send = async (position) => {
+      const now = Date.now();
+      if (now - lastSentAt < 12000) return;
+      lastSentAt = now;
+      const payload = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        accuracy_m: position.coords.accuracy,
+        heading: Number.isFinite(position.coords.heading) ? position.coords.heading : null,
+        speed_mps: Number.isFinite(position.coords.speed) ? position.coords.speed : null,
+      };
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf, Accept: 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (response.status === 409) return stop(false);
+        if (!response.ok) throw new Error(result.error || 'No se pudo compartir la ubicación.');
+        try { localStorage.setItem('oxidian.rider.tracking', '1'); } catch (_) {}
+        setState('active', `GPS activo · precisión aproximada ${Math.round(position.coords.accuracy)} m · solo con esta pantalla abierta.`);
+      } catch (error) {
+        setState('error', error.message || 'No se pudo actualizar la ubicación.');
+      }
+    };
+
+    const start = () => {
+      if (!navigator.geolocation) return setState('error', 'Este dispositivo no admite geolocalización web.');
+      if (watchId !== null || starting || panel.dataset.hasRoute !== '1') return;
+      starting = true;
+      setState('waiting', 'Solicitando permiso de ubicación…');
+      try {
+        watchId = navigator.geolocation.watchPosition(send, (error) => {
+          const message = error.code === 1
+            ? 'Permiso de ubicación bloqueado. Actívalo en los ajustes de la app.'
+            : 'No hay señal GPS fiable. Comprueba ubicación y conexión.';
+          if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+          watchId = null;
+          starting = false;
+          setState('error', message);
+        }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 });
+        starting = false;
+      } catch (_) {
+        watchId = null;
+        starting = false;
+        setState('error', 'No fue posible iniciar el GPS. Revisa los permisos del navegador.');
+      }
+    };
+
+    button?.addEventListener('click', () => {
+      if (watchId === null) start();
+      else {
+        try { localStorage.removeItem('oxidian.rider.tracking'); } catch (_) {}
+        stop(true);
+      }
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && watchId !== null) {
+        // El navegador web no garantiza GPS en segundo plano; lo declaramos y
+        // conservamos el último punto solo durante su ventana de frescura.
+        setState('active', 'App en segundo plano: se mostrará la última posición reciente.');
+      } else if (!document.hidden && panel.dataset.hasRoute === '1' && watchId === null) {
+        start();
+      }
+    });
+
+    // Una entrega activa debe compartir ubicación sin depender de descubrir
+    // un botón secundario. El navegador conserva siempre la última palabra:
+    // si aún no hay permiso mostrará su diálogo; si fue denegado, la tarjeta
+    // queda en error con instrucciones y nunca se inventa una posición.
+    if (panel.dataset.autoStart === '1') {
+      window.setTimeout(start, 350);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', initRiderTracking);
 })();

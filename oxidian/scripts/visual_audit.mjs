@@ -28,6 +28,9 @@ const ROLE_FILTER = new Set(
     .map((value) => value.trim())
     .filter(Boolean),
 );
+const VISUAL_THEME = ['light', 'dark'].includes(process.env.VISUAL_THEME)
+  ? process.env.VISUAL_THEME
+  : 'light';
 const BROWSER = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
   || '/home/panzeta/.cache/ms-playwright/chromium-1169/chrome-linux/chrome';
 
@@ -94,6 +97,8 @@ try {
       ['admin-real-dashboard', '/admin/dashboard'],
       ['admin-real-cola', '/admin/cola'],
       ['admin-real-pedidos', '/admin/pedidos'],
+      ['admin-finanzas', '/admin/finanzas'],
+      ['admin-asesor-comercial', '/admin/ia-analisis'],
       ['admin-liquidaciones-socios', '/admin/liquidacion-proveedores'],
     ]),
     process.env.VISUAL_ADMIN_TOTP_SECRET || '',
@@ -156,10 +161,21 @@ async function createPage() {
     isMobile: true,
     hasTouch: true,
     locale: 'es-ES',
-    colorScheme: 'light',
+    colorScheme: VISUAL_THEME,
     serviceWorkers: 'allow',
   });
-  return context.newPage();
+  await context.addInitScript((theme) => {
+    localStorage.setItem('oxidian.delivery.theme', theme);
+  }, VISUAL_THEME);
+  const page = await context.newPage();
+  if (process.env.VISUAL_PWA === '1') {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Emulation.setEmulatedMedia', {
+      media: 'screen',
+      features: [{ name: 'display-mode', value: 'standalone' }],
+    });
+  }
+  return page;
 }
 
 async function captureAuthenticatedRole(role, email, password, capture, totpSecret = '') {
@@ -229,6 +245,7 @@ function totp(secret) {
 
 async function capturePublic(page) {
   await snap(page, 'menu-principal', '/', 'vistas');
+  await snap(page, 'club-granitos', '/club', 'vistas');
 
   await snap(page, 'menu-informacion', '/', 'modales', async () => {
     await page.evaluate(() => {
@@ -256,7 +273,7 @@ async function capturePublic(page) {
   });
   await settle(page);
   const productId = await page.evaluate(() => {
-    const entries = Object.entries(EP_DATA || {});
+    const entries = Object.entries(typeof EP_DATA === 'object' && EP_DATA ? EP_DATA : {});
     const first = entries.find(([, value]) => (
       value && value.disponible !== false && value.disponible_directo === true
     )) || entries.find(([, value]) => value && value.disponible !== false) || entries[0];

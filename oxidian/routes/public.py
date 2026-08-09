@@ -3236,7 +3236,11 @@ def pedido_confirmado(pedido_id):
     if not token or token != expected:
         flash("Acceso denegado.", "danger")
         return redirect(url_for("public.index"))
-    return render_template("public/pedido_confirmado.html", pedido=pedido)
+    return render_template(
+        "public/pedido_confirmado.html",
+        pedido=pedido,
+        requiere_confirmacion_whatsapp=(pedido.confirmacion_estado == "pending"),
+    )
 
 
 # ─── CLUB DE CLIENTES ────────────────────────
@@ -3247,13 +3251,14 @@ def club():
     if not _feature_enabled("puntos"):
         flash(f'{get_loyalty_terms()["name"]} no está habilitado en esta tienda.', "info")
         return redirect(url_for("public.index"))
-    # Vitrina de canje: productos solo_canje visibles en el catálogo,
-    # ordenados por puntos ascendentes para mostrar primero lo más accesible.
+    # Vitrina completa: incluye tanto recompensas exclusivas como productos
+    # normales marcados como canjeables. El checkout usa exactamente el mismo
+    # flag, por lo que no ocultamos aquí opciones que sí pueden canjearse.
     # Filtro por nicho activo → un canje retail no aparece en comida y viceversa.
     canjeables = [
         p for p in (
-            Product.query.filter_by(activo=True, solo_canje=True)
-            .filter(Product.puntos_para_canje.isnot(None))
+            Product.query.filter_by(activo=True, canjeable_con_puntos=True)
+            .filter(Product.puntos_para_canje.isnot(None), Product.puntos_para_canje > 0)
             .order_by(Product.puntos_para_canje.asc(), Product.nombre.asc())
             .all()
         )

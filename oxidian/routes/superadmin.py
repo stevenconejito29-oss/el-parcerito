@@ -813,6 +813,9 @@ def toggle_modulo(modulo):
         "recogida": "FEATURE_RECOGIDA",
         "programados": "FEATURE_PEDIDOS_PROGRAMADOS",
         "puntos": "FEATURE_PUNTOS",
+        "efectivo": "EFECTIVO_HABILITADO",
+        "bizum": "BIZUM_HABILITADO",
+        "tarjeta": "TARJETA_HABILITADA",
     }
     clave = claves.get(modulo)
     if not clave:
@@ -826,6 +829,12 @@ def toggle_modulo(modulo):
     ):
         flash("Debe quedar activo al menos delivery o recogida.", "danger")
         return redirect(url_for("superadmin.dashboard"))
+    if not activar and modulo in {"efectivo", "bizum", "tarjeta"}:
+        payment_flags = {name: bool(features.get(name)) for name in ("efectivo", "bizum", "tarjeta")}
+        payment_flags[modulo] = False
+        if not any(payment_flags.values()):
+            flash("Debe quedar activo al menos un método de pago.", "danger")
+            return redirect(url_for("superadmin.dashboard"))
     SiteConfig.set(
         clave,
         "1" if activar else "0",
@@ -953,15 +962,24 @@ def chatbot():
     evolution_instance = SiteConfig.get("EVOLUTION_INSTANCE", "oxidian")
     webhook_secret = SiteConfig.get("WEBHOOK_SECRET", "")
     bot_admin_numbers = SiteConfig.get("BOT_ADMIN_NUMBERS", "")
-    bot_ai_enabled = SiteConfig.get("BOT_AI_ENABLED", "0") or "0"
-    bot_ai_provider = (SiteConfig.get("BOT_AI_PROVIDER", "") or "").strip().lower()
-    bot_ai_model = SiteConfig.get("BOT_AI_MODEL", "") or ""
-    bot_ai_rules = SiteConfig.get("BOT_AI_RULES", "") or ""
+    bot_ai_enabled = SiteConfig.get("COMMERCIAL_AI_ENABLED", "0") or "0"
+    bot_ai_provider = (SiteConfig.get("COMMERCIAL_AI_PROVIDER", "") or "").strip().lower()
+    bot_ai_model = SiteConfig.get("COMMERCIAL_AI_MODEL", "") or ""
+    bot_ai_rules = SiteConfig.get("COMMERCIAL_AI_RULES", "") or ""
     bot_ai_daily_client = SiteConfig.get("BOT_AI_DAILY_CLIENT", "20") or "20"
     bot_ai_daily_global = SiteConfig.get("BOT_AI_DAILY_GLOBAL", "500") or "500"
-    bot_ai_api_key_set = bool(SiteConfig.get("BOT_AI_API_KEY", ""))
+    bot_ai_api_key_set = bool(SiteConfig.get("COMMERCIAL_AI_API_KEY", ""))
     status = _bot_get_status(bot_api_url)
     evolution_status = _evolution_get_status(evolution_api_url, evolution_api_key)
+    admins_sin_telefono = [
+        user for user in User.query.filter(
+            User.activo.is_(True),
+            User.rol.in_(["admin", "super_admin"]),
+        ).all()
+        if not telefono_valido(normalizar_telefono_cliente(
+            user.telefono_normalizado or user.telefono
+        ))
+    ]
     return render_template("superadmin/chatbot.html",
                            bot_api_key=bot_api_key,
                            bot_api_url=bot_api_url,
@@ -980,6 +998,7 @@ def chatbot():
                            bot_ai_daily_client=bot_ai_daily_client,
                            bot_ai_daily_global=bot_ai_daily_global,
                            bot_ai_api_key_set=bot_ai_api_key_set,
+                           admins_sin_telefono=admins_sin_telefono,
                            evolution_status=evolution_status,
                            status=status)
 
@@ -1225,7 +1244,7 @@ def guardar_chatbot():
     # ── Configuración de IA administrativa ──
     ai_enabled = "1" if request.form.get("bot_ai_enabled") == "1" else "0"
     ai_provider = (request.form.get("bot_ai_provider") or "").strip().lower()
-    if ai_provider not in {"", "groq", "openai"}:
+    if ai_provider not in {"", "anthropic", "groq", "openai"}:
         ai_provider = ""
     ai_model = (request.form.get("bot_ai_model") or "").strip()[:80]
     ai_rules = (request.form.get("bot_ai_rules") or "").strip()[:1500]
@@ -1239,25 +1258,27 @@ def guardar_chatbot():
         flash("Límites IA fuera de rango: cliente 1-1000 y global 1-10000.", "danger")
         return redirect(url_for("superadmin.chatbot"))
     ai_api_key_new = (request.form.get("bot_ai_api_key") or "").strip()
-    ai_api_key = ai_api_key_new or SiteConfig.get("BOT_AI_API_KEY", "")
+    ai_api_key = ai_api_key_new or SiteConfig.get("COMMERCIAL_AI_API_KEY", "")
     if ai_enabled == "1" and (not ai_provider or not ai_model or not ai_api_key):
-        flash("Para activar la IA debes indicar proveedor, modelo y API key.", "danger")
-        return redirect(url_for("superadmin.chatbot"))
-    SiteConfig.set("BOT_AI_ENABLED", ai_enabled, user_id=current_user.id,
-                   descripcion="Activa/desactiva la IA administrativa")
-    SiteConfig.set("BOT_AI_PROVIDER", ai_provider, user_id=current_user.id,
-                   descripcion="Proveedor IA (groq | openai)")
-    SiteConfig.set("BOT_AI_MODEL", ai_model, user_id=current_user.id,
-                   descripcion="Modelo IA usado para análisis internos")
-    SiteConfig.set("BOT_AI_RULES", ai_rules, user_id=current_user.id,
+        # El asesor local no necesita credenciales. Dejamos desactivado solo
+        # el enriquecimiento externo y permitimos guardar el resto del panel.
+        ai_enabled = "0"
+        flash("API externa no configurada: el asesor comercial local seguirá disponible.", "info")
+    SiteConfig.set("COMMERCIAL_AI_ENABLED", ai_enabled, user_id=current_user.id,
+                   descripcion="Activa el enriquecimiento externo del asesor comercial")
+    SiteConfig.set("COMMERCIAL_AI_PROVIDER", ai_provider, user_id=current_user.id,
+                   descripcion="Proveedor del asesor comercial (anthropic | groq | openai)")
+    SiteConfig.set("COMMERCIAL_AI_MODEL", ai_model, user_id=current_user.id,
+                   descripcion="Modelo usado por el asesor comercial")
+    SiteConfig.set("COMMERCIAL_AI_RULES", ai_rules, user_id=current_user.id,
                    descripcion="Reglas extra del prompt de análisis interno")
     SiteConfig.set("BOT_AI_DAILY_CLIENT", ai_daily_client, user_id=current_user.id,
                    descripcion="Máximo de consultas IA diarias por usuario admin")
     SiteConfig.set("BOT_AI_DAILY_GLOBAL", ai_daily_global, user_id=current_user.id,
                    descripcion="Máximo de consultas IA diarias globales")
     if ai_api_key_new:
-        SiteConfig.set("BOT_AI_API_KEY", ai_api_key_new, user_id=current_user.id,
-                       descripcion="API key del proveedor IA administrativa")
+        SiteConfig.set("COMMERCIAL_AI_API_KEY", ai_api_key_new, user_id=current_user.id,
+                       descripcion="API key privada del asesor comercial")
 
     AuditLog.registrar(current_user.id, "guardar_chatbot", "site_config",
                        detalle=bot_url, ip=request.remote_addr)
@@ -1293,7 +1314,19 @@ def sincronizar_chatbot_catalogo():
 @superadmin_bp.route("/chatbot/test-ai", methods=["POST"])
 @superadmin_required
 def chatbot_test_ai():
-    ok, msg = _bot_panel_post("/api/ai/test", {}, timeout=20)
+    # El asesor comercial está aislado del chatbot de clientes. Probamos el
+    # proveedor directamente con un contexto agregado mínimo.
+    from routes.admin import _llamar_ia_analisis
+
+    respuesta, error = _llamar_ia_analisis(
+        "Confirma en una frase que puedes analizar el catálogo comercial.",
+        {"prueba": True, "catalogo": {"productos": []}},
+    )
+    ok = bool(respuesta)
+    provider = SiteConfig.get("COMMERCIAL_AI_PROVIDER", "IA externa") or "IA externa"
+    msg = f"{provider.title()} respondió correctamente al asesor comercial." if ok else (
+        "No se pudo conectar con la IA comercial: " + str(error or "respuesta vacía")
+    )
     flash(msg, "success" if ok else "danger")
     return redirect(url_for("superadmin.chatbot"))
 

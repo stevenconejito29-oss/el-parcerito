@@ -18,6 +18,7 @@ from sqlalchemy import inspect, text
 from app import create_app
 from extensions import db
 from models import (
+    BotLearningSignal,
     ComboItem,
     ComboGroup,
     DailyClosure,
@@ -29,6 +30,7 @@ from models import (
     Product,
     ProductVariant,
     PushBroadcast,
+    RiderLocation,
     ExtraCatalogItem,
     ProductExtraGroup,
     ProductExtraOption,
@@ -1613,6 +1615,11 @@ def _migrate_public_professional_first_impression():
 
 MIGRATIONS = [
     {
+        "id": "20260809_01_rider_location",
+        "description": "Crear última ubicación efímera del repartidor para tracking consentido",
+        "tables": [RiderLocation.__table__],
+    },
+    {
         "id": "20260526_01_order_events_notification_outbox",
         "description": "Crear order_events y notification_outbox",
         "tables": [OrderEvent.__table__, NotificationOutbox.__table__],
@@ -2009,6 +2016,23 @@ MIGRATIONS = [
             "sin sobrescribir textos personalizados."
         ),
         "fn": _migrate_public_professional_first_impression,
+    },
+    {
+        "id": "20260808_01_rider_locations",
+        "description": (
+            "Crear tabla rider_locations para tracking GPS en vivo del "
+            "repartidor (última posición por rider, sin historial)."
+        ),
+        "tables": [RiderLocation.__table__],
+    },
+    {
+        "id": "20260810_01_bot_learning_signals",
+        "description": (
+            "Crear tabla bot_learning_signals para auto-aprendizaje "
+            "pasivo del chatbot: agrupa por hash de mensaje normalizado "
+            "las consultas que resolvió el LLM pero no el determinista."
+        ),
+        "tables": [BotLearningSignal.__table__],
     },
 ]
 

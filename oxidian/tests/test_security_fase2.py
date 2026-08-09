@@ -95,6 +95,18 @@ class HmacPhoneTest(unittest.TestCase):
             self.assertEqual(h1, h2)
             self.assertEqual(len(h1), 32)  # sha256 truncado a 32 hex
 
+    def test_hmac_phone_usa_el_mismo_canonico_que_el_jid_de_node(self):
+        import hashlib
+        import hmac
+        from routes.api_bot import _hmac_phone
+
+        key = "shared-bot-key"
+        app = self._with_key(key)
+        with app.app_context():
+            expected = hmac.new(key.encode(), b"34622663874", hashlib.sha256).hexdigest()[:32]
+            self.assertEqual(_hmac_phone("+34 622 663 874"), expected)
+            self.assertEqual(_hmac_phone("0034 622 663 874"), expected)
+
     def test_hmac_phone_distinto_con_key_distinta(self):
         from routes.api_bot import _hmac_phone
         app1 = self._with_key("key-A")
