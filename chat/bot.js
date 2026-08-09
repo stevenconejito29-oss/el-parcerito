@@ -1057,6 +1057,13 @@ const ADMIN_PIN_TTL_MS = parseInt(process.env.ADMIN_PIN_TTL_MIN || '30', 10) * 6
 // siga bloqueado en ese estado ignorando comandos del menú. Cap 60-1800s.
 const AWAITING_PIN_TTL_MS = Math.min(1800, Math.max(60,
   parseInt(process.env.ADMIN_AWAITING_PIN_TTL_SEC || '300', 10))) * 1000;
+// Intentos máximos de PIN antes de expulsar del gate. Sin este cap, un
+// atacante con acceso al WhatsApp del admin podía probar dígitos
+// indefinidamente dentro del TTL. Con 5, el espacio de un PIN de 4
+// dígitos (10000 combinaciones) queda MUY lejos de fuerza bruta.
+// Cap defensivo 3-20.
+const AWAITING_PIN_MAX_ATTEMPTS = Math.min(20, Math.max(3,
+  parseInt(process.env.ADMIN_AWAITING_PIN_MAX_ATTEMPTS || '5', 10)));
 // Ventana máxima que la sesión puede estar en 'admin_confirm' sin recibir
 // SI/NO. Antes: si el admin cambiaba de tema, el próximo `si` casual (p.ej.
 // respondiendo a otro mensaje) ejecutaba una acción ya olvidada. Cap 60-3600s.
@@ -4641,6 +4648,7 @@ async function requireAdminPin(jid, ses, text) {
     const clearPin = { ...pending };
     delete clearPin.awaiting_pin_prev;
     delete clearPin.awaiting_pin_since;
+    delete clearPin.awaiting_pin_attempts;
 
     // Escape explícito: si escribe salir/menu/cancelar, salimos del gate y
     // volvemos al menú correspondiente sin ejecutar la acción original.
@@ -4675,7 +4683,31 @@ async function requireAdminPin(jid, ses, text) {
       // Bar operator flow retirado — ver bloque DEAD CODE REMOVED.
       return false;
     }
-    await sendText(jid, `❌ PIN incorrecto. Inténtalo de nuevo o escribe *salir*.`);
+    // PIN incorrecto: incrementamos contador dentro del mismo `pending`
+    // (sobrevive al round-trip a BD). Al llegar a AWAITING_PIN_MAX_ATTEMPTS
+    // salimos del gate y forzamos re-solicitud desde cero — cualquier
+    // acción admin volverá a pedir PIN, lo que renueva el contador.
+    // Defensa contra fuerza bruta ante WhatsApp comprometido.
+    const attempts = Number(pending.awaiting_pin_attempts || 0) + 1;
+    if (attempts >= AWAITING_PIN_MAX_ATTEMPTS) {
+      log('warn', 'admin_pin_max_attempts',
+        `phone=***${normalizePhone(phoneFromJid(jid)).slice(-3)} tras ${attempts} intentos fallidos`);
+      setSesion(jid, { ...ses, estado: back, pending: clearPin });
+      await sendText(jid,
+        `🚫 Demasiados intentos fallidos. Vuelves al menú.\n\n` +
+        `_Cualquier acción admin volverá a pedir el PIN. Si no lo recuerdas, contacta al super administrador._`
+      );
+      return false;
+    }
+    // Aún hay intentos: mostramos cuántos quedan para que el admin sepa
+    // el estado real del gate (no adivine si funciona o no).
+    const restantes = AWAITING_PIN_MAX_ATTEMPTS - attempts;
+    const nextPending = { ...pending, awaiting_pin_attempts: attempts };
+    setSesion(jid, { ...ses, pending: nextPending });
+    await sendText(jid,
+      `❌ PIN incorrecto. Te quedan ${restantes} intento${restantes === 1 ? '' : 's'}. ` +
+      `Escribe el PIN o *salir* para cancelar.`
+    );
     return false;
   }
 
