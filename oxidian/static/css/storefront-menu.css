@@ -564,9 +564,9 @@ body.ox-body-public .ep-banner-cta {
 
 /* ── Búsqueda ── */
 .ep-search-wrap {
-  position: sticky;
-  top: calc(52px + env(safe-area-inset-top, 0px));
-  z-index: 58;
+  position: relative;
+  top: auto;
+  z-index: 2;
   margin: 0 -.75rem .75rem;
   padding: .5rem .75rem .45rem;
   background: rgba(250,247,242,.96);
@@ -688,8 +688,8 @@ body.ox-body-public .ep-banner-cta {
   /* Romper el padding del <main> para llegar a los bordes de pantalla */
   margin-left: -.75rem;
   margin-right: -.75rem;
-  padding: .5rem .75rem .55rem;
-  margin-bottom: 1rem;
+  padding: .34rem .75rem .38rem;
+  margin-bottom: .7rem;
 }
 .ep-cats-wrapper::before,
 .ep-cats-wrapper::after {
@@ -720,8 +720,8 @@ body.ox-body-public .ep-banner-cta {
 
 /* El inner .ep-cats es solo el scroll row */
 .ep-cats {
-  display: flex; gap: .5rem; overflow-x: auto; scrollbar-width: none;
-  padding: .05rem 1.1rem .15rem;
+  display: flex; gap: .38rem; overflow-x: auto; scrollbar-width: none;
+  padding: .04rem 1.1rem .1rem;
   -webkit-overflow-scrolling: touch;  /* scroll momentum en iOS */
   scroll-padding-inline: 1rem;
   /* sin scroll-snap: la alineación del snap puede causar saltos al scrollear categorías */
@@ -730,13 +730,13 @@ body.ox-body-public .ep-banner-cta {
 
 /* Pill de categoría */
 .ep-cat {
-  display: inline-flex; align-items: center; gap: .42rem;
-  flex: 0 0 auto; padding: .48rem .72rem;
+  display: inline-flex; align-items: center; gap: .32rem;
+  flex: 0 0 auto; padding: .34rem .62rem;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--brand-primary) 18%, transparent); background: rgba(255,255,255,.95);
-  text-decoration: none; font-size: .76rem; font-weight: 850;
+  text-decoration: none; font-size: .7rem; font-weight: 850;
   color: var(--theme-text, #4B382B);
-  min-width: max-content; min-height: 46px;
+  min-width: max-content; min-height: 38px;
   justify-content: center;
   transition: border-color .15s, background .15s, color .15s, box-shadow .15s, transform .15s;
   -webkit-tap-highlight-color: transparent;
@@ -752,7 +752,7 @@ body.ox-body-public .ep-banner-cta {
   color: var(--brand-on-primary, #1B0A00) !important; font-weight: 950 !important;
   box-shadow: 0 8px 22px rgba(214,90,42,.24);
 }
-.ep-cat-icon { font-size: 1rem; line-height: 1; display: block; flex: 0 0 auto; }
+.ep-cat-icon { font-size: .88rem; line-height: 1; display: block; flex: 0 0 auto; }
 .ep-cat-img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; display: block; flex: 0 0 auto; }
 .ep-cat-label {
   display: block;
@@ -1676,7 +1676,7 @@ body.ox-body-public .ep-banner-cta {
     padding: .58rem .65rem;
   }
   .ep-search-wrap {
-    top: calc(50px + env(safe-area-inset-top, 0px));
+    top: auto;
     margin-left: -.75rem;
     margin-right: -.75rem;
   }
@@ -1892,8 +1892,11 @@ body.ox-body-public .ep-banner-cta {
 }
 .ep-hero-photo {
   min-height: 330px;
+  /* Overlay aclarado 2026-08-09: la foto pasa de "casi invisible" a
+     legible detrás del texto. Se conserva el degradado izq→der para
+     que el texto blanco siga contrastando en la mitad izquierda. */
   background-image:
-    linear-gradient(90deg, rgba(15,11,7,.94) 0%, rgba(15,11,7,.78) 46%, rgba(15,11,7,.16) 78%),
+    linear-gradient(90deg, rgba(15,11,7,.72) 0%, rgba(15,11,7,.48) 46%, rgba(15,11,7,.08) 78%),
     var(--ep-hero-image);
   background-size: cover;
   background-position: center;
@@ -2086,8 +2089,11 @@ body.ox-body-public .ep-banner-cta {
 @media(max-width:767px) {
   .ep-hero-photo {
     min-height: 350px;
+    /* Overlay aclarado 2026-08-09: bajo→alto pasa de 96%→18% a 72%→10%.
+       En móvil el texto está apilado en la parte baja, así que la
+       viñeta oscura inferior sigue existiendo pero deja ver la foto. */
     background-image:
-      linear-gradient(0deg, rgba(13,9,5,.96) 0%, rgba(13,9,5,.72) 54%, rgba(13,9,5,.18) 100%),
+      linear-gradient(0deg, rgba(13,9,5,.72) 0%, rgba(13,9,5,.44) 54%, rgba(13,9,5,.10) 100%),
       var(--ep-hero-image);
     background-position: center 35%;
   }
@@ -3147,14 +3153,16 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
    colores ni tamaños hardcoded.
    ═══════════════════════════════════════════════════════════════════════ */
 .ep-hero-photo {
-  /* Overlay más rico: 3 capas → color de marca a la izquierda que se disuelve,
-     viñeta oscura inferior para que el texto respire, la foto respira arriba. */
+  /* Overlay aclarado 2026-08-09: mantiene la firma editorial (viñeta
+     inferior + gradiente diagonal con colores de marca) pero deja que
+     la fotografía se lea claramente. Antes las capas cubrían casi
+     toda la imagen; ahora funcionan como "veladura" no como manta. */
   background-image:
-    linear-gradient(180deg, transparent 0%, transparent 55%, rgba(10,7,4,.62) 100%),
+    linear-gradient(180deg, transparent 0%, transparent 55%, rgba(10,7,4,.38) 100%),
     linear-gradient(96deg,
-      color-mix(in srgb, var(--brand-secondary, #CE1126) 78%, #0a0605) 0%,
-      color-mix(in srgb, var(--brand-secondary, #CE1126) 30%, transparent) 34%,
-      color-mix(in srgb, var(--brand-accent, #003087) 8%, transparent) 62%,
+      color-mix(in srgb, var(--brand-secondary, #CE1126) 48%, #0a0605) 0%,
+      color-mix(in srgb, var(--brand-secondary, #CE1126) 16%, transparent) 34%,
+      color-mix(in srgb, var(--brand-accent, #003087) 4%, transparent) 62%,
       transparent 88%),
     var(--ep-hero-image);
   background-size: cover, cover, cover;
@@ -3181,7 +3189,11 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
 .ep-hero-photo .ep-hero-text {
   position: relative;
   padding: clamp(1rem, 3vw, 1.5rem) clamp(1rem, 3.5vw, 1.65rem);
-  border: 1px solid color-mix(in srgb, var(--brand-primary, #FCD116) 32%, rgba(255,255,255,.18));
+  /* 2026-08-09: quitado el mix con rgba(255,255,255,.18) que añadía
+     un halo blanco alrededor del panel; ahora el borde es puro color
+     de marca con transparencia — se integra con el fondo aclarado
+     sin generar cerco. */
+  border: 1px solid color-mix(in srgb, var(--brand-primary, #FCD116) 45%, transparent);
   border-radius: 22px 22px 22px 6px;
   background:
     linear-gradient(155deg,
@@ -3204,12 +3216,15 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
   width: clamp(58px, 15vw, 84px);
   height: clamp(58px, 15vw, 84px);
   padding: 5px;
-  background: color-mix(in srgb, var(--theme-surface, #fff) 92%, transparent);
-  border: 2px solid color-mix(in srgb, var(--brand-primary, #FCD116) 78%, #fff);
+  /* 2026-08-09: eliminado el fondo blanco 92% y el borde con blanco
+     mezclado. El logo se apoya sobre el hero con un panel de marca
+     translúcido y borde amarillo puro — sin cerco blanco visible. */
+  background: color-mix(in srgb, var(--brand-primary, #FCD116) 12%, rgba(20,14,8,.55));
+  border: 2px solid var(--brand-primary, #FCD116);
   border-radius: 18px;
   box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--brand-primary, #FCD116) 28%, transparent),
-    0 12px 28px color-mix(in srgb, var(--brand-secondary, #CE1126) 42%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--brand-primary, #FCD116) 22%, transparent),
+    0 12px 28px color-mix(in srgb, var(--brand-secondary, #CE1126) 36%, transparent),
     0 4px 10px rgba(0,0,0,.32);
   transform: rotate(-2deg);
   transition: transform .3s ease;
@@ -3245,7 +3260,9 @@ body.ox-body-public .ep-hero-cta { color: #fff; }
   margin-top: 1rem;
   padding: .7rem 1.3rem;
   border-radius: 14px 14px 4px 14px;
-  border: 1.5px solid color-mix(in srgb, var(--brand-primary, #FCD116) 82%, #fff);
+  /* 2026-08-09: borde puro color de marca (antes tenía 18% blanco
+     mezclado que generaba una línea clara alrededor del botón). */
+  border: 1.5px solid var(--brand-primary, #FCD116);
   background: linear-gradient(135deg,
     var(--brand-primary, #FCD116),
     color-mix(in srgb, var(--brand-primary, #FCD116) 82%, #000));
