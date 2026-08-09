@@ -1036,17 +1036,48 @@
     margin-left: 0 !important;
     margin-right: 0 !important;
   }
-  /* El resto de secciones top-level (buscador, banners, secciones de
-     productos, destacados) recuperan un pequeño padding lateral
-     interno para no pegar textos y grids al borde absoluto del
-     viewport. 0.6rem = ~10px, suficiente para lectura sin volver a
-     crear la sensación de "franjas". */
+  /* Secciones top-level pasan a full-width (padding lateral 0) — así
+     los cards y grids alcanzan el borde del viewport y desaparecen
+     las franjas laterales visibles del fondo burlap. El padding
+     interno para que los textos no peguen al borde absoluto se mueve
+     a los HIJOS (heads y grids), aplicado más abajo. */
   body.ox-body-public main > .ep-search-wrap,
   body.ox-body-public main > .ep-banner-section,
   body.ox-body-public main > .ep-section,
   body.ox-body-public main > .ep-mc-destacados-wrap {
-    padding-left: .6rem !important;
-    padding-right: .6rem !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+  /* Cabeceras internas (título de sección + subtítulo/count) recuperan
+     el padding lateral suave — nunca van pegadas al borde absoluto. */
+  body.ox-body-public main .ep-section-head,
+  body.ox-body-public main .ep-banner-head,
+  body.ox-body-public main .ep-mini-head,
+  body.ox-body-public main .ep-cat-title,
+  body.ox-body-public main .ep-search-box {
+    padding-left: .8rem !important;
+    padding-right: .8rem !important;
+  }
+  /* El grid de cards ocupa el ancho completo del viewport y los gaps
+     entre cards son suficiente respiración visual — no necesita
+     padding lateral. Las cards individuales llegan al borde. */
+  body.ox-body-public main .ep-grid,
+  body.ox-body-public main .ep-banners,
+  body.ox-body-public main .ep-mc-destacados {
+    padding-left: .5rem !important;
+    padding-right: .5rem !important;
+  }
+  /* En pantallas >600px devolvemos un poco más de aire lateral al grid
+     para que las cards del borde no toquen el marco del viewport. */
+  @media (min-width: 600px) {
+    body.ox-body-public main .ep-grid,
+    body.ox-body-public main .ep-banners,
+    body.ox-body-public main .ep-mc-destacados {
+      padding-left: 1rem !important;
+      padding-right: 1rem !important;
+    }
   }
 
   /* ── Producto: tarjeta más viva, con relieve táctil ── */

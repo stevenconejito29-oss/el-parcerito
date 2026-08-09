@@ -412,7 +412,11 @@ body.ox-body-public .ep-banner-cta {
 .ep-mc-dest-title {
   font-size: clamp(.6rem, 1.6vw, .7rem);
   font-weight: 850;
-  color: var(--brand-secondary, currentColor);
+  /* 2026-08-10: rojo Colombia puro sobre blanco daba contraste ~4:1
+     (WCAG AA marginal). Oscurezco 18% con negro para llegar a ~7:1
+     (AA+ y AAA para texto grande). Mantiene la identidad de marca —
+     la mezcla es un rojo carmín más profundo, no un color nuevo. */
+  color: color-mix(in srgb, var(--brand-secondary, #CE1126) 82%, #000);
   text-transform: uppercase;
   letter-spacing: .02em;
 }
@@ -425,7 +429,9 @@ body.ox-body-public .ep-banner-cta {
 .ep-mc-dest-price {
   font-size: clamp(.85rem, 2.4vw, 1rem);
   font-weight: 950;
-  color: var(--brand-accent, currentColor);
+  /* Azul Colombia oscurecido 15% — mismo tratamiento que title.
+     Sobre blanco pasa de 4.2:1 a 6.3:1 (AA para todos los tamaños). */
+  color: color-mix(in srgb, var(--brand-accent, #003087) 85%, #000);
 }
 
 /* Tablet (≥ 600px): grid horizontal con más columnas visibles a la vez. */
