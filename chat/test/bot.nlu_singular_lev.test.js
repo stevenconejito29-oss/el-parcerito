@@ -83,6 +83,33 @@ test.describe('detectClientIntent — Levenshtein en 5 chars', () => {
 });
 
 
+test.describe('detectClientIntent — diálogos naturales de incidencia', () => {
+  test('"no me llegó el pedido" → opción 2 (estado)', () => {
+    assert.equal(detectClientIntent('no me llegó el pedido'), '2');
+  });
+
+  test('"el repartidor tarda mucho" → opción 2 (estado)', () => {
+    assert.equal(detectClientIntent('el repartidor tarda mucho'), '2');
+  });
+
+  test('"quiero cambiar la dirección del pedido" → opción 2', () => {
+    assert.equal(detectClientIntent('quiero cambiar la dirección del pedido'), '2');
+  });
+
+  test('"tengo un problema con el cobro" → opción 7 (agente)', () => {
+    assert.equal(detectClientIntent('tengo un problema con el cobro'), '7');
+  });
+
+  test('"necesito ayuda urgente" → opción 7 (agente)', () => {
+    assert.equal(detectClientIntent('necesito ayuda urgente'), '7');
+  });
+
+  test('"me cobraron dos veces" → opción 7 (agente)', () => {
+    assert.equal(detectClientIntent('me cobraron dos veces'), '7');
+  });
+});
+
+
 test.describe('detectClientIntent — no rompe casos existentes', () => {
   test('opción numérica directa', () => {
     assert.equal(detectClientIntent('2'), '2');

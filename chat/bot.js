@@ -4737,6 +4737,48 @@ async function _handleMessage(jid, text, pushName, context = {}) {
   const ownerAsClient = isOwner && isAdminClientMode(jid, ses);
   const requestedMode = isOwner ? detectOperationalModeCommand(text) : null;
 
+  // ── Comando diagnóstico /rol ─────────────────────────────────────────
+  // Cuando un admin dice "el bot no me muestra el menú de admin", el
+  // problema casi siempre es discrepancia entre env (OWNER_NUMBER /
+  // SUPERADMINS) y perfil BD (whatsapp_role_profiles vía /branding).
+  // Este comando devuelve exactamente cómo el bot ve al número que
+  // escribe — sin cambiar nada, solo diagnóstico. Funciona en cualquier
+  // estado y para cualquier rol.
+  if (/^\/?(rol|quiensoy|whoami|diagnostico|diagnóstico)$/i.test(lower)) {
+    const phone = phoneFromJid(jid);
+    const clean = normalizePhone(phone);
+    const profile = whatsappRoleProfile(clean);
+    const envMatched = adminPhones().includes(clean);
+    const rolDb = profile?.rol || '—';
+    const rolEfectivo = isSuperAdminJid(jid) ? 'super_admin'
+      : (isAdminJid(jid) ? 'admin' : 'cliente');
+    const bdCargada = whatsappRoleProfiles().length;
+    const lineas = [
+      '🔎 *Diagnóstico de rol*',
+      '',
+      `• *Rol efectivo:* ${rolEfectivo}`,
+      `• *Perfil BD:* ${profile ? `sí (${rolDb}, ${profile.nombre || 'sin nombre'})` : 'no encontrado'}`,
+      `• *En env (SUPERADMINS/OWNER):* ${envMatched ? 'sí' : 'no'}`,
+      `• *Perfiles BD cargados:* ${bdCargada}`,
+      '',
+    ];
+    if (rolEfectivo === 'cliente' && envMatched) {
+      lineas.push(
+        '⚠️ *Estás en env pero sin perfil BD.*',
+        'Añade tu teléfono como super_admin en el panel para recibir el menú operativo:',
+        '`/admin/usuarios` → Editar → Rol super_admin.',
+      );
+    } else if (rolEfectivo === 'admin' && !profile) {
+      lineas.push(
+        '⚠️ Estás detectado por env como admin pero el perfil BD no coincide.',
+        'Revisa `/admin/usuarios` para completar tu perfil.',
+      );
+    } else {
+      lineas.push('_Todo correcto. Escribe *menú* para el panel._');
+    }
+    return sendText(jid, lineas.join('\n'));
+  }
+
   // ── Contenido no interpretable ─────────────────────────────────────────
   // Media (audio/imagen/sticker sin caption), emoji suelto sin palabras,
   // mensajes solo con puntuación o espacios. Antes: caían al flow normal
@@ -6738,7 +6780,15 @@ const CLIENT_INTENT_KEYWORDS = {
   '2': ['pedido', 'pedidos', 'mi pedido', 'mis pedidos', 'estado', 'orden',
         'donde esta mi pedido', 'donde está mi pedido', 'seguimiento',
         'rastreo', 'cancelar', 'cancela', 'anular', 'anular pedido',
-        'ya llega', 'cuanto falta', 'cuánto falta', 'donde anda'],
+        'ya llega', 'cuanto falta', 'cuánto falta', 'donde anda',
+        // Ampliación 2026-08: frases naturales que antes caían al fallback.
+        // Cliente escribe "no me llegó el pedido" → intent claro de estado.
+        // "repartidor" y "tarda" refuerzan el mismo intent sin ambigüedad.
+        'no me llego', 'no me llegó', 'no llego', 'no llegó', 'sin llegar',
+        'repartidor', 'motorizado', 'domiciliario', 'motero', 'rider',
+        'tarda', 'tardando', 'demora', 'retraso', 'atrasado',
+        'cambiar direccion', 'cambiar dirección', 'cambiar la direccion',
+        'modificar pedido', 'editar pedido'],
   '3': ['puntos', 'club', 'fidelidad', 'canje', 'canjear', 'recompensa',
         'recompensas', 'mis puntos', 'cuantos puntos', 'cuántos puntos',
         'beneficios'],
@@ -6753,7 +6803,14 @@ const CLIENT_INTENT_KEYWORDS = {
         'pago', 'bizum', 'efectivo', 'entrega', 'problema con el codigo'],
   '7': ['agente', 'humano', 'persona', 'ayuda', 'ayudar', 'hablar', 'soporte',
         'asistencia', 'atencion', 'atención', 'reclamo', 'reclamacion',
-        'reclamación', 'queja', 'problema'],
+        'reclamación', 'queja', 'problema',
+        // Ampliación 2026-08: cubre incidencias con lenguaje coloquial y
+        // situaciones que claramente necesitan persona (no bot).
+        'incidencia', 'incidente', 'error', 'fallo', 'fallando',
+        'no funciona', 'no me funciona', 'algo va mal', 'algo esta mal',
+        'urgente', 'ayudenme', 'ayúdenme', 'necesito ayuda',
+        'me cobraron', 'cobro incorrecto', 'cobraron de mas', 'cobraron de más',
+        'no me entiendes', 'quiero hablar', 'atiendame', 'atiéndame'],
 };
 
 // ─── FAST-PATH: SALUDOS Y DESPEDIDAS (sin AI, sin tokens) ───────────────────
