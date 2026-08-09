@@ -367,9 +367,17 @@ body.ox-body-public .ox-header-cart-count {
   right: -8px !important;
   display: grid !important;
   place-items: center !important;
-  min-width: 24px !important;
-  height: 24px !important;
-  padding: 0 6px !important;
+  /* 2026-08-10: pill que crece con el contenido.
+       - height fijo → min-height (permite 2 líneas si hiciera falta,
+         aunque en la práctica line-height:1 evita el wrap)
+       - padding horizontal más generoso para 2-3 dígitos ("12", "99+")
+       - min-width sube a 22px pero el contenedor se expande según texto
+       - white-space:nowrap garantiza que "999+" no se rompa en 2 líneas */
+  min-width: 22px !important;
+  min-height: 22px !important;
+  height: auto !important;
+  padding: 2px 7px !important;
+  white-space: nowrap !important;
   border: 3px solid var(--hdr-ink) !important;
   border-radius: 999px !important;
   background: var(--brand-secondary) !important;
@@ -757,12 +765,21 @@ body.ox-body-public .ox-bnav-v2 .ox-bnav-badge {
   position: absolute;
   top: -4px;
   right: -8px;
+  /* 2026-08-10: mismo fix que .ox-header-cart-count — pill que se
+     expande según contenido. line-height igual al min-height para
+     centrar verticalmente números de 1 dígito, pero sin height fijo
+     que corte 2-3 dígitos ("12", "99+", "999+"). */
   min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+  min-height: 18px;
+  height: auto;
+  padding: 2px 6px;
   font-size: 10px;
   font-weight: 900;
-  line-height: 18px;
+  line-height: 1;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   border-radius: 999px;
   color: var(--theme-header-text);
@@ -960,9 +977,8 @@ body.ox-body-public .ep-cat { scroll-snap-align: start; }
    Nombres únicos para elementos que persisten entre páginas.
    Chrome/Edge/Safari 18+ hacen fade cruzado automático.
    ══════════════════════════════════════════════════════════════ */
-/* Las transiciones se activan únicamente durante el intercambio SPA
-   controlado por `spa-nav.js`. El opt-in cross-document provocaba un segundo
-   crossfade en navegaciones completas y tirones perceptibles en iOS. */
+/* Los enlaces públicos usan navegación nativa. Se mantienen nombres únicos
+   únicamente como contrato visual para navegadores que soporten transiciones. */
 
 @supports (view-transition-name: none) {
   body.ox-body-public .ox-header-public { view-transition-name: ox-header; }
@@ -988,26 +1004,6 @@ body.ox-body-public .ep-cat { scroll-snap-align: start; }
   }
 }
 
-/* Feedback visual mientras carga (durante navegación instant) */
-body.ox-body-public.is-navigating .ox-hdr-progress,
-body.ox-body-public.is-navigating::after {
-  opacity: 1 !important;
-}
-body.ox-body-public.is-navigating::after {
-  content: '';
-  position: fixed;
-  top: 0; left: 0;
-  height: 2px; width: 100%;
-  z-index: 9999;
-  background: linear-gradient(90deg, var(--brand-primary), var(--brand-secondary, #E84545), var(--brand-primary));
-  background-size: 200% 100%;
-  animation: nav-progress .8s linear infinite;
-  pointer-events: none;
-}
-@keyframes nav-progress {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
 
 /* ── Login staff: presencia sutil en el header ──────────────────────
    Feedback usuario: "el botón de login puede ser un poco más sutil".

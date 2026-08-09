@@ -28,6 +28,26 @@
     overflow: visible !important;
     height: auto !important;
     min-height: 100dvh !important;
+    /* 2026-08-10: forzado explícito de background transparent dentro
+       del media PWA para vencer con especificidad al `background-color:
+       #FFFFFF` que oxidian.css:1067 aplica sin media query. Sin esto,
+       cualquier zona lateral no cubierta por una sección se ve BLANCA
+       (el body debajo). En modo PWA queremos que solo el ::before
+       (textura burlap) sea visible detrás del contenido. */
+    background-color: transparent !important;
+    background-image: none !important;
+  }
+  /* HTML raíz también transparent: en algunos WebKit iOS el html
+     puede pintar su propio background si el body es transparent. */
+  html { background: transparent !important; }
+  /* Todos los wrappers top-level del contenido ocupan 100% del
+     viewport en PWA — evita que cualquier "wrap" heredado del layout
+     web con max-width propio deje espacio lateral visible. */
+  body.ox-body-public main > *,
+  body.ox-body-public main > section {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
   }
   /* Aislar la bottom-nav del sistema de layout/paint para que Safari
      no la considere parte del contexto scrolleable del body. */
@@ -1079,6 +1099,22 @@
     padding-left: .8rem !important;
     padding-right: .8rem !important;
   }
+  /* Contraste de títulos de recomendaciones ("Recomendados de la casa",
+     "También te puede gustar", etc.) — sobre el fondo crema del PWA
+     el color base var(--theme-text) daba solo ~4.2:1. Mezclado con
+     puro negro sube a AAA (~14:1). El subtítulo (span) usaba muted
+     que quedaba en ~2.8:1 sobre crema — mezclado con negro sube a
+     AA (~5:1) manteniendo la jerarquía visual. */
+  body.ox-body-public main .ep-mini-head strong,
+  body.ox-body-public main .ep-banner-head span {
+    color: color-mix(in srgb, var(--theme-text, #18120A) 100%, #000) !important;
+    font-weight: 950 !important;
+  }
+  body.ox-body-public main .ep-mini-head span,
+  body.ox-body-public main .ep-banner-head small {
+    color: color-mix(in srgb, var(--theme-text, #18120A) 72%, #000) !important;
+    font-weight: 800 !important;
+  }
   /* El grid de cards ocupa el ancho completo del viewport y los gaps
      entre cards son suficiente respiración visual — no necesita
      padding lateral. Las cards individuales llegan al borde. */
@@ -1527,24 +1563,27 @@ body.ox-body-public::before {
      vignette percibido en los laterales (el contrast .86 antiguo
      hacía que los bordes se percibieran más oscuros que el centro,
      simulando una "curvatura de pantalla" que el usuario reportó). */
-  background-color: #efe4d1;
+  /* Base cambiada a un crema muy claro (antes #efe4d1 = beige oscuro).
+     Con overlay 90% blanco, la textura burlap queda como una veladura
+     casi imperceptible que da PROFUNDIDAD sin oscurecer. */
+  background-color: #f9f4e9;
   background-image:
-    /* 2026-08-10: radial-gradient extra que aclara +22% los bordes
-       y esquinas de la capa fija — cancela el efecto "vignette lateral"
-       que la textura burlap producía sobre los bordes del viewport
-       (el usuario lo describía como "borde que imita curvatura de
-       pantalla"). El centro queda casi transparente para no alterar
-       la lectura de las cards. */
+    /* Radial suave que aclara aún más los bordes (elimina vignette). */
     radial-gradient(ellipse 105% 105% at center,
       transparent 45%,
-      rgba(255, 252, 245, .28) 78%,
-      rgba(255, 252, 245, .38) 100%),
-    linear-gradient(rgba(255, 252, 245, .84), rgba(255, 252, 245, .84)),
+      rgba(255, 253, 248, .38) 78%,
+      rgba(255, 253, 248, .52) 100%),
+    /* Overlay principal subido de .84 a .90 → la textura casi
+       desaparece, quedando solo como sensación de "papel artesanal". */
+    linear-gradient(rgba(255, 253, 248, .90), rgba(255, 253, 248, .90)),
     url("../coffee-burlap-texture-v2.webp");
   background-repeat: no-repeat;
   background-position: center;
   background-size: cover;
-  filter: saturate(.85) contrast(.95) brightness(1.15);
+  /* Filter completamente reformulado: brightness +32% (antes +15%
+     era imperceptible), contrast neutro (antes .95 seguía apagando).
+     Saturación bajada más para que el matiz beige no domine. */
+  filter: saturate(.65) contrast(1) brightness(1.32);
   transform: translateZ(0);
 }
 
