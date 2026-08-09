@@ -1047,32 +1047,24 @@ button:active, .btn:active { transform: scale(.96) !important; }
 
 body.ox-body-public {
   /* Paleta Colombia: amarillo #FCD116, azul #003087, rojo #CE1126.
-     2026-08-10: (a) body pasa de #FFFFFF plano a un crema cálido con
-     brillo — elimina la sensación de "barras laterales blancas" cuando
-     el main centrado (max-w-screen-xl) deja ver los bordes en pantallas
-     anchas. (b) tokens de texto reforzados para contraste WCAG-AA
-     sobre el nuevo fondo (col-muted ~7:1, col-faint ~5:1). */
-  --col-bg:       #FCF3E4;
-  --col-surface:  #FFFFFF;
-  --col-elevated: #FFFDF8;
-  --col-hover:    rgba(252,209,22,.14);
+     Tokens de contraste reforzados el 2026-08-10 (col-muted 4.6:1→7.5:1,
+     col-faint 2.6:1→5:1) — cubre WCAG-AA en textos secundarios del
+     carrito y storefront. El BACKGROUND del body se conserva como
+     estaba (blanco puro) — los ajustes visuales de fondo van solo en
+     el media PWA (pwa-native.css) para no alterar la web. */
+  --col-bg:       #FFFFFF;
+  --col-surface:  #FFF8ED;
+  --col-elevated: #FFFFFF;
+  --col-hover:    rgba(252,209,22,.12);
   --col-text:     #18120A;
   --col-muted:    #4A3D33;
   --col-faint:    #7A6558;
-  --col-border:   rgba(255,194,0,.16);
-  --col-border-2: rgba(255,194,0,.24);
+  --col-border:   rgba(255,194,0,.12);
+  --col-border-2: rgba(255,194,0,.18);
   --shadow-sm:    0 1px 4px rgba(0,0,0,.07);
   --shadow-md:    0 4px 18px rgba(0,0,0,.09), 0 1px 3px rgba(0,0,0,.05);
   --shadow-lg:    0 8px 32px rgba(0,0,0,.11), 0 2px 8px rgba(0,0,0,.06);
-  /* Fondo con brillo cálido: un radial suave amarillo/naranja arriba
-     desvanece hacia crema, sumado a un rojo tenue en la esquina
-     opuesta para dar vida sin dominar. El SVG de ruido definido en
-     línea 128 se conserva encima. */
-  background-color: #FCF3E4;
-  background-image:
-    radial-gradient(ellipse 80% 55% at 15% 0%, rgba(252,209,22,.12), transparent 60%),
-    radial-gradient(ellipse 70% 60% at 100% 15%, rgba(206,17,38,.06), transparent 55%),
-    radial-gradient(ellipse 90% 60% at 50% 100%, rgba(255,255,255,.35), transparent 55%);
+  background-color: #FFFFFF;
   color: var(--theme-text, #18120A);
 }
 

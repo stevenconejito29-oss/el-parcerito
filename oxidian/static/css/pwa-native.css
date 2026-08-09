@@ -1026,15 +1026,26 @@
        en vez de estirar tarjetas. */
     max-width: 100% !important;
   }
-  /* El HERO en modo PWA va edge-to-edge sin border-radius lateral:
-     así ocupa todo el ancho del viewport como un banner de app,
-     igual que Uber Eats o Glovo. Solo redondeo abajo para separar
-     visualmente del contenido siguiente. */
+  /* .ep-hero está `display: none` en PWA (línea 379) — no hace falta
+     tocar border-radius aquí. Se conserva por si en el futuro se
+     re-habilita: sin margen lateral para que quede edge-to-edge. */
   body.ox-body-public main > .ep-hero,
   body.ox-body-public main > .ep-hero-photo {
-    border-radius: 0 0 1rem 1rem !important;
     margin-left: 0 !important;
     margin-right: 0 !important;
+  }
+  /* ── Eliminar curvaturas visibles en los bordes del viewport ──────
+     En modo PWA los cards/banners/recomendaciones llegan al borde
+     del viewport (padding lateral del grid solo .5rem/1rem). Sus
+     border-radius originales (18px, 1.08rem, .95rem) dejan ver el
+     fondo burlap en cada esquina exterior — el usuario lo describe
+     como "bordes que imitan curvatura". Los aplanamos: look "app
+     plana" edge-to-edge sin esquinas visibles contra el borde. */
+  body.ox-body-public .ep-card,
+  body.ox-body-public .ep-banner-slide,
+  body.ox-body-public .ep-mc-dest-card,
+  body.ox-body-public .ep-card-combo {
+    border-radius: 0 !important;
   }
   /* Secciones top-level pasan a full-width (padding lateral 0) — así
      los cards y grids alcanzan el borde del viewport y desaparecen
