@@ -744,6 +744,56 @@ def nlu_resolve():
     return jsonify(out), 200
 
 
+@api_bot_bp.route("/nlu/enrich", methods=["POST"])
+@bot_required
+def nlu_enrich():
+    """Fire-and-forget: enriquece keywords de un entry que el matcher
+    determinista matcheó con score débil. No crea entries nuevas.
+
+    Payload: {"mensaje": str, "entry_id": int, "telefono": str?}
+
+    Respuesta: {ok, action: "enriched"|"skipped", keywords_added?}
+    Nunca 5xx — errores devuelven action="skipped".
+    """
+    payload = request.get_json(silent=True) or {}
+    mensaje = str(payload.get("mensaje") or "").strip()
+    entry_id_raw = payload.get("entry_id")
+    telefono = payload.get("telefono") or None
+
+    try:
+        entry_id = int(entry_id_raw) if entry_id_raw else 0
+    except (TypeError, ValueError):
+        entry_id = 0
+
+    if not mensaje or not entry_id:
+        return jsonify({"ok": False, "action": "skipped", "reason": "bad_input"}), 200
+
+    try:
+        from nlu_service import is_enabled, enrich_matched
+    except Exception:
+        current_app.logger.exception("nlu_enrich: import fail")
+        return jsonify({"ok": False, "action": "skipped", "reason": "import"}), 200
+
+    if not is_enabled():
+        return jsonify({"ok": True, "action": "skipped", "reason": "disabled"}), 200
+
+    try:
+        result = enrich_matched(entry_id, mensaje, telefono=telefono)
+    except Exception:
+        current_app.logger.exception("nlu_enrich: excepción")
+        return jsonify({"ok": False, "action": "skipped", "reason": "exception"}), 200
+
+    if not result:
+        return jsonify({"ok": False, "action": "skipped", "reason": "unavailable"}), 200
+
+    return jsonify({
+        "ok": True,
+        "action": "enriched",
+        "keywords_added": result.get("keywords_added", 0),
+        "entry_id": entry_id,
+    }), 200
+
+
 @api_bot_bp.route("/security/admin-pin-hash")
 @bot_required
 def admin_pin_hash():

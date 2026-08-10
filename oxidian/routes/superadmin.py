@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file, jsonify, current_app
 from flask_login import login_required, current_user
 from functools import wraps
 from datetime import datetime, date, timedelta, timezone
@@ -2836,10 +2836,102 @@ def chatbot_faq_editar(entry_id):
 def chatbot_faq_eliminar(entry_id):
     from models import KnowledgeEntry
     entry = get_or_404(KnowledgeEntry, entry_id)
+    was_pending = (entry.categoria == "autogenerada" and not entry.activo)
     db.session.delete(entry)
     db.session.commit()
     flash("Entrada eliminada.", "success")
+    if was_pending:
+        return redirect(url_for("superadmin.chatbot_nlu_pending"))
     return redirect(url_for("superadmin.chatbot_faq_lista"))
+
+
+@superadmin_bp.route("/chatbot/nlu-pending")
+@superadmin_required
+def chatbot_nlu_pending():
+    """Panel de respuestas autogeneradas por NLU (Groq) pendientes de aprobación.
+
+    Muestra entries con categoria='autogenerada' y activo=False, más métricas
+    de las últimas 24h y últimas señales NLU del BotLearningSignal para
+    diagnóstico rápido.
+    """
+    from models import KnowledgeEntry, BotLearningSignal
+    from nlu_service import NLU_MAX_NEW_ENTRIES_PER_DAY_DEFAULT
+
+    pending = (
+        KnowledgeEntry.query
+        .filter(KnowledgeEntry.categoria == "autogenerada")
+        .filter(KnowledgeEntry.activo.is_(False))
+        .order_by(KnowledgeEntry.creado_en.desc())
+        .all()
+    )
+
+    ayer = datetime.utcnow() - timedelta(hours=24)
+    hoy_inicio = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    try:
+        nlu_signals_24h = (
+            BotLearningSignal.query
+            .filter(BotLearningSignal.action_llm.like("nlu_%"))
+            .filter(BotLearningSignal.last_seen_at >= ayer)
+            .count()
+        )
+        nlu_matches_24h = (
+            BotLearningSignal.query
+            .filter(BotLearningSignal.action_llm.like("nlu_match:%"))
+            .filter(BotLearningSignal.last_seen_at >= ayer)
+            .count()
+        )
+        nlu_new_today = (
+            KnowledgeEntry.query
+            .filter(KnowledgeEntry.categoria == "autogenerada")
+            .filter(KnowledgeEntry.creado_en >= hoy_inicio)
+            .count()
+        )
+        recent_signals = (
+            BotLearningSignal.query
+            .filter(BotLearningSignal.action_llm.like("nlu_%"))
+            .order_by(BotLearningSignal.last_seen_at.desc())
+            .limit(15)
+            .all()
+        )
+    except Exception:
+        current_app.logger.info("chatbot_nlu_pending: stats fail", exc_info=True)
+        nlu_signals_24h = nlu_matches_24h = nlu_new_today = 0
+        recent_signals = []
+
+    try:
+        cap_raw = SiteConfig.get("BOT_NLU_MAX_NEW_ENTRIES_PER_DAY",
+                                 str(NLU_MAX_NEW_ENTRIES_PER_DAY_DEFAULT))
+        nlu_daily_cap = int(cap_raw or NLU_MAX_NEW_ENTRIES_PER_DAY_DEFAULT)
+    except Exception:
+        nlu_daily_cap = NLU_MAX_NEW_ENTRIES_PER_DAY_DEFAULT
+
+    return render_template(
+        "superadmin/chatbot_nlu_pending.html",
+        pending=pending,
+        nlu_signals_24h=nlu_signals_24h,
+        nlu_matches_24h=nlu_matches_24h,
+        nlu_new_today=nlu_new_today,
+        nlu_daily_cap=nlu_daily_cap,
+        recent_signals=recent_signals,
+    )
+
+
+@superadmin_bp.route("/chatbot/nlu-pending/<int:entry_id>/aprobar", methods=["POST"])
+@superadmin_required
+def chatbot_nlu_aprobar(entry_id):
+    """Activa una respuesta autogenerada y la mueve a la categoría general
+    (o la deja en 'autogenerada' si el admin luego la re-clasifica)."""
+    from models import KnowledgeEntry
+    entry = get_or_404(KnowledgeEntry, entry_id)
+    if entry.categoria != "autogenerada":
+        flash("Esta entrada no es autogenerada.", "warning")
+        return redirect(url_for("superadmin.chatbot_nlu_pending"))
+    entry.activo = True
+    entry.actualizado_por = current_user.id
+    db.session.commit()
+    flash(f"Respuesta aprobada y activa: «{entry.pregunta[:60]}»", "success")
+    return redirect(url_for("superadmin.chatbot_nlu_pending"))
 
 
 @superadmin_bp.route("/chatbot/simulador", methods=["GET", "POST"])

@@ -11,6 +11,7 @@
   </div>
   <div class="flex flex-wrap gap-2">
     <a class="ox-btn-ghost text-sm" href="{{ url_for('superadmin.chatbot_faq_lista') }}">📚 Base de conocimiento</a>
+    <a class="ox-btn-ghost text-sm" href="{{ url_for('superadmin.chatbot_nlu_pending') }}">🤖 NLU pendientes</a>
     <a class="ox-btn-ghost text-sm" href="{{ url_for('superadmin.chatbot_simulador') }}">🧪 Simulador</a>
     <form method="POST" action="{{ url_for('superadmin.sincronizar_chatbot') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
