@@ -1089,6 +1089,22 @@
     margin-left: 0 !important;
     margin-right: 0 !important;
   }
+  /* 2026-08-10 FIX DEFINITIVO franjas laterales: `main` hereda de
+     base.html:365 las clases Tailwind `px-3 sm:px-4` (12-16 px de padding
+     lateral) + `max-w-screen-xl mx-auto` (centrado con max-width). En
+     móvil el padding lateral deja un hueco de 12-16 px entre el borde
+     del viewport y las secciones — ese hueco muestra el ::before del
+     burlap (#fdfaf3), que sobre un fondo oscuro parece "barra blanca
+     vertical". Solución: en modo PWA `main` es edge-to-edge sin padding
+     ni max-width. El padding interno lo aportan los CHIPS de cabecera
+     y los grids (regla siguiente). */
+  body.ox-body-public main {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
   /* Cabeceras internas (título de sección + subtítulo/count) recuperan
      el padding lateral suave — nunca van pegadas al borde absoluto. */
   body.ox-body-public main .ep-section-head,
@@ -1105,47 +1121,114 @@
      puro negro sube a AAA (~14:1). El subtítulo (span) usaba muted
      que quedaba en ~2.8:1 sobre crema — mezclado con negro sube a
      AA (~5:1) manteniendo la jerarquía visual. */
-  /* 2026-08-10 v3: en vez de solo colorear el texto (seguía flotando
-     sobre las fibras del burlap sin contraste suficiente), damos a
-     .ep-mini-head un CHIP de fondo crema — mismo patrón que ya usa
-     .ep-cat-title más abajo. Ahora el texto negro cae sobre un fondo
-     sólido claro, no sobre la textura. Solo dentro del @media PWA. */
+  /* ─────────────────────────────────────────────────────────────────
+     2026-08-10 REDISEÑO .ep-mini-head — patrón "editorial section header"
+     inspirado en Apple News / Airbnb section titles / Notion callouts.
+     Estructura visual: chip crema con borde suave + icono en badge
+     circular con acento de marca + título tipográfico + subtítulo
+     desaturado + underline accent con gradient bandera colombiana.
+     Todo dentro del @media PWA para no afectar la web.
+     ───────────────────────────────────────────────────────────────── */
   body.ox-body-public main .ep-mini-head,
   body.ox-body-public main .ep-banner-head {
-    padding: .5rem .7rem !important;
-    margin: .35rem .5rem !important;
-    background: color-mix(in srgb, #fbf7ee 92%, transparent) !important;
-    border: 1px solid rgba(24, 18, 10, .1) !important;
-    border-radius: .85rem !important;
-    box-shadow: 0 4px 14px rgba(24, 18, 10, .08) !important;
-    -webkit-backdrop-filter: blur(6px) saturate(1.05) !important;
-    backdrop-filter: blur(6px) saturate(1.05) !important;
+    position: relative !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: .7rem !important;
+    padding: .7rem .85rem .8rem !important;
+    margin: .5rem .55rem .6rem !important;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 253, 248, .96) 0%,
+      rgba(250, 244, 232, .96) 100%
+    ) !important;
+    border: 1px solid rgba(24, 18, 10, .09) !important;
+    border-radius: 1rem !important;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, .8) inset,
+      0 6px 18px rgba(24, 18, 10, .07),
+      0 1px 3px rgba(24, 18, 10, .05) !important;
+    -webkit-backdrop-filter: blur(8px) saturate(1.1) !important;
+    backdrop-filter: blur(8px) saturate(1.1) !important;
+    overflow: hidden !important;
+  }
+  /* Underline accent (bandera Colombia sutil) en el borde inferior */
+  body.ox-body-public main .ep-mini-head::after,
+  body.ox-body-public main .ep-banner-head::after {
+    content: "" !important;
+    position: absolute !important;
+    left: .85rem !important;
+    right: .85rem !important;
+    bottom: 0 !important;
+    height: 2px !important;
+    background: linear-gradient(
+      90deg,
+      var(--brand-primary, #FCD116) 0%,
+      var(--brand-primary, #FCD116) 45%,
+      var(--brand-accent, #003087) 45%,
+      var(--brand-accent, #003087) 72%,
+      var(--brand-secondary, #CE1126) 72%,
+      var(--brand-secondary, #CE1126) 100%
+    ) !important;
+    opacity: .55 !important;
+    border-radius: 2px !important;
+    pointer-events: none !important;
   }
 
-  /* 2026-08-10 v2: el fix anterior con color-mix no producía negro puro
-     (color-mix con `--theme-text` 100% se resuelve al text base ~#18120A,
-     no #000). Sobre el burlap claro con fibras dispersas el título aún
-     quedaba borroso. Ahora usamos #000 puro + text-shadow suave para
-     asentar el trazo sobre las fibras. También forzamos el SVG del icono
-     (heritage) a `fill: currentColor` a #000 — antes usaba var brand y
-     el icono flotaba invisible sobre el burlap. */
+  /* Título principal: peso editorial, tracking apretado, color puro */
   body.ox-body-public main .ep-mini-head strong,
   body.ox-body-public main .ep-banner-head span {
-    color: #000 !important;
-    font-weight: 950 !important;
-    text-shadow: 0 1px 0 rgba(255, 253, 248, .6);
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: .5rem !important;
+    color: #14100a !important;
+    font-weight: 900 !important;
+    font-size: .96rem !important;
+    letter-spacing: -.01em !important;
+    line-height: 1.15 !important;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
   }
+
+  /* Icono heritage en badge circular con acento de marca. Aumenta
+     legibilidad del SVG (antes flotaba invisible sobre burlap). */
   body.ox-body-public main .ep-mini-head strong .ox-heritage-icon,
   body.ox-body-public main .ep-banner-head span .ox-heritage-icon {
-    fill: #000 !important;
-    color: #000 !important;
+    flex: 0 0 auto !important;
+    width: 1.6em !important;
+    height: 1.6em !important;
+    padding: .28em !important;
+    color: var(--brand-accent, #003087) !important;
+    fill: none !important;
+    stroke: currentColor !important;
+    stroke-width: 2.2 !important;
+    background: radial-gradient(
+      circle at 30% 30%,
+      color-mix(in srgb, var(--brand-primary, #FCD116) 22%, #fff) 0%,
+      color-mix(in srgb, var(--brand-primary, #FCD116) 8%, #fff) 100%
+    ) !important;
+    border: 1px solid color-mix(in srgb, var(--brand-accent, #003087) 18%, transparent) !important;
+    border-radius: 50% !important;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, .9) inset,
+      0 2px 6px rgba(24, 18, 10, .08) !important;
+    vertical-align: middle !important;
     opacity: 1 !important;
   }
-  body.ox-body-public main .ep-mini-head span,
-  body.ox-body-public main .ep-banner-head small {
-    color: #1a1a1a !important;
-    font-weight: 800 !important;
-    text-shadow: 0 1px 0 rgba(255, 253, 248, .55);
+
+  /* Subtítulo/count: color muted pero legible, tipografía más ligera */
+  body.ox-body-public main .ep-mini-head > span,
+  body.ox-body-public main .ep-banner-head > small {
+    flex: 0 0 auto !important;
+    color: #6b5a4e !important;
+    font-weight: 700 !important;
+    font-size: .74rem !important;
+    letter-spacing: .02em !important;
+    text-transform: uppercase !important;
+    padding: .22rem .55rem !important;
+    background: rgba(24, 18, 10, .05) !important;
+    border-radius: 999px !important;
+    white-space: nowrap !important;
   }
   /* El grid de cards ocupa el ancho completo del viewport y los gaps
      entre cards son suficiente respiración visual — no necesita
