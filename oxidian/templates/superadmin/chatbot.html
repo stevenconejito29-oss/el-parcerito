@@ -405,6 +405,88 @@
       <input type="number" name="bot_ai_daily_global" min="1" max="10000" value="{{ bot_ai_daily_global }}" class="chat-input">
       <p class="chat-help">Corte de seguridad para controlar gasto y abuso.</p>
     </div>
+    <div class="lg:col-span-2" style="border-top:1px dashed rgba(255,255,255,.12); padding-top:1.2rem; margin-top:.6rem;">
+      <h3 style="font-size:.95rem; font-weight:800; margin:0 0 .4rem; color:#7bcaff;">🤖 NLU del chatbot WhatsApp</h3>
+      <p class="chat-help" style="margin-bottom:.9rem;">
+        Groq interpreta los mensajes del cliente y los mapea a respuestas
+        <strong>canónicas</strong> de tu base de conocimiento. La IA nunca
+        responde en crudo — solo elige la mejor entry ya escrita, sugiere
+        keywords nuevas para el matcher determinista, y propone entries
+        <em>inactivas</em> para tu revisión en
+        <a href="{{ url_for('superadmin.chatbot_nlu_pending') }}">NLU pendientes</a>.
+        Independiente del asesor comercial de arriba, pero puede
+        <strong>reutilizar la misma API key</strong> si la dejas vacía.
+      </p>
+    </div>
+
+    <div>
+      <label class="chat-label">
+        <input type="checkbox" name="bot_nlu_enabled" value="1"
+               {% if bot_nlu_enabled == '1' %}checked{% endif %}
+               style="margin-right:.4rem; transform:translateY(1px);">
+        Activar NLU del bot
+      </label>
+      <p class="chat-help">Cuando el matcher determinista no reconoce el mensaje, Groq intenta mapearlo a una respuesta existente.</p>
+    </div>
+
+    <div>
+      <label class="chat-label">Proveedor NLU</label>
+      <select name="bot_nlu_provider" class="chat-input">
+        <option value="groq" {% if bot_nlu_provider == 'groq' %}selected{% endif %}>Groq (recomendado)</option>
+        <option value="openai" {% if bot_nlu_provider == 'openai' %}selected{% endif %}>OpenAI</option>
+      </select>
+      <p class="chat-help">Groq es más rápido y barato para clasificación léxica.</p>
+    </div>
+
+    <div>
+      <label class="chat-label">API key NLU</label>
+      <div style="display:flex;gap:.4rem;align-items:stretch;flex-wrap:wrap;">
+        <input type="password" name="bot_nlu_api_key" id="bot-nlu-api-key" value="" class="chat-input"
+               style="flex:1;min-width:220px;"
+               autocomplete="new-password"
+               placeholder="{{ '*** clave guardada ***' if bot_nlu_api_key_set else ('Vacío = reutiliza key del asesor comercial' if bot_ai_api_key_set else 'Pega aquí la API key de Groq') }}">
+        <button type="button" class="ox-btn-ghost text-xs" data-toggle-password="bot-nlu-api-key">👁 Ver</button>
+      </div>
+      <p class="chat-help">
+        {% if bot_nlu_api_key_set %}✓ Clave NLU propia guardada. Déjalo vacío para conservarla.
+        {% elif bot_ai_api_key_set %}⚠ Sin key NLU propia — se reutiliza la del asesor comercial arriba. Escribe otra solo si quieres separar cuentas.
+        {% else %}⚠ No hay ninguna key de Groq configurada. Créala en <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a> (gratis) y pégala aquí.
+        {% endif %}
+      </p>
+    </div>
+
+    <div>
+      <label class="chat-label">Modelo NLU</label>
+      <input name="bot_nlu_model" value="{{ bot_nlu_model }}" class="chat-input" placeholder="llama-3.1-70b-versatile">
+      <p class="chat-help">Default: <code>llama-3.1-70b-versatile</code>. Barato y con JSON estructurado fiable.</p>
+    </div>
+
+    <div>
+      <label class="chat-label">Umbral confianza (0.3–1.0)</label>
+      <input type="number" name="bot_nlu_confidence_min" min="0.3" max="1.0" step="0.05"
+             value="{{ bot_nlu_confidence_min }}" class="chat-input">
+      <p class="chat-help">Debajo de este valor Groq NO responde — el bot cae a fallback estándar. Default 0.75.</p>
+    </div>
+
+    <div>
+      <label class="chat-label">Cap diario entries autogeneradas</label>
+      <input type="number" name="bot_nlu_daily_cap" min="1" max="500"
+             value="{{ bot_nlu_daily_cap }}" class="chat-input">
+      <p class="chat-help">Anti-basura: máx respuestas nuevas que Groq puede crear en un día para tu revisión. Default 10.</p>
+    </div>
+
+    <script nonce="{{ csp_nonce() }}">
+    document.querySelectorAll('[data-toggle-password="bot-nlu-api-key"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const el = document.getElementById('bot-nlu-api-key');
+        if (!el) return;
+        const showing = el.type === 'text';
+        el.type = showing ? 'password' : 'text';
+        btn.textContent = showing ? '👁 Ver' : '🙈 Ocultar';
+      });
+    });
+    </script>
+
     <div class="lg:col-span-2 flex justify-end pt-2">
       <button class="ox-btn-primary text-sm" type="submit">Guardar configuración e IA</button>
     </div>

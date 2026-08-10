@@ -118,8 +118,16 @@ def is_enabled() -> bool:
 
 
 def _get_credentials() -> tuple[str, str, str]:
-    """Devuelve (api_key, modelo, provider). api_key vacío si no configurado."""
+    """Devuelve (api_key, modelo, provider).
+
+    Fallback de key: si `BOT_AI_API_KEY` no está configurada, cae a
+    `COMMERCIAL_AI_API_KEY` (la del asesor comercial admin). Así el
+    super_admin no tiene que meter la misma key de Groq dos veces si
+    ya la usaba para el asesor comercial.
+    """
     api_key = _cfg_str("BOT_AI_API_KEY", "")
+    if not api_key:
+        api_key = _cfg_str("COMMERCIAL_AI_API_KEY", "")
     modelo = _cfg_str("BOT_AI_MODEL", NLU_MODEL_DEFAULT) or NLU_MODEL_DEFAULT
     provider = (_cfg_str("BOT_AI_PROVIDER", NLU_PROVIDER_DEFAULT) or NLU_PROVIDER_DEFAULT).lower()
     if provider not in {"groq", "openai"}:

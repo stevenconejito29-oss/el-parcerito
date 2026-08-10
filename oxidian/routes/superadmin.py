@@ -969,6 +969,13 @@ def chatbot():
     bot_ai_daily_client = SiteConfig.get("BOT_AI_DAILY_CLIENT", "20") or "20"
     bot_ai_daily_global = SiteConfig.get("BOT_AI_DAILY_GLOBAL", "500") or "500"
     bot_ai_api_key_set = bool(SiteConfig.get("COMMERCIAL_AI_API_KEY", ""))
+    # NLU del chatbot WhatsApp — claves separadas del asesor comercial
+    bot_nlu_enabled = SiteConfig.get("BOT_NLU_ENABLED", "0") or "0"
+    bot_nlu_provider = (SiteConfig.get("BOT_AI_PROVIDER", "groq") or "groq").strip().lower()
+    bot_nlu_model = SiteConfig.get("BOT_AI_MODEL", "") or ""
+    bot_nlu_api_key_set = bool(SiteConfig.get("BOT_AI_API_KEY", ""))
+    bot_nlu_confidence_min = SiteConfig.get("BOT_NLU_CONFIDENCE_MIN", "0.75") or "0.75"
+    bot_nlu_daily_cap = SiteConfig.get("BOT_NLU_MAX_NEW_ENTRIES_PER_DAY", "10") or "10"
     status = _bot_get_status(bot_api_url)
     evolution_status = _evolution_get_status(evolution_api_url, evolution_api_key)
     admins_sin_telefono = [
@@ -998,6 +1005,12 @@ def chatbot():
                            bot_ai_daily_client=bot_ai_daily_client,
                            bot_ai_daily_global=bot_ai_daily_global,
                            bot_ai_api_key_set=bot_ai_api_key_set,
+                           bot_nlu_enabled=bot_nlu_enabled,
+                           bot_nlu_provider=bot_nlu_provider,
+                           bot_nlu_model=bot_nlu_model,
+                           bot_nlu_api_key_set=bot_nlu_api_key_set,
+                           bot_nlu_confidence_min=bot_nlu_confidence_min,
+                           bot_nlu_daily_cap=bot_nlu_daily_cap,
                            admins_sin_telefono=admins_sin_telefono,
                            evolution_status=evolution_status,
                            status=status)
@@ -1279,6 +1292,41 @@ def guardar_chatbot():
     if ai_api_key_new:
         SiteConfig.set("COMMERCIAL_AI_API_KEY", ai_api_key_new, user_id=current_user.id,
                        descripcion="API key privada del asesor comercial")
+
+    # ── NLU del chatbot WhatsApp (claves BOT_NLU_* / BOT_AI_*) ──
+    # Separado del asesor comercial arriba. Groq mapea texto libre a
+    # respuestas canónicas de KnowledgeEntry — nunca responde en crudo.
+    nlu_enabled = "1" if request.form.get("bot_nlu_enabled") == "1" else "0"
+    nlu_provider = (request.form.get("bot_nlu_provider") or "groq").strip().lower()
+    if nlu_provider not in {"groq", "openai"}:
+        nlu_provider = "groq"
+    nlu_model = (request.form.get("bot_nlu_model") or "").strip()[:80]
+    nlu_key_new = (request.form.get("bot_nlu_api_key") or "").strip()
+    try:
+        nlu_conf = float(request.form.get("bot_nlu_confidence_min") or 0.75)
+        nlu_conf = max(0.3, min(1.0, nlu_conf))
+    except (TypeError, ValueError):
+        nlu_conf = 0.75
+    try:
+        nlu_cap = int(request.form.get("bot_nlu_daily_cap") or 10)
+        nlu_cap = max(1, min(500, nlu_cap))
+    except (TypeError, ValueError):
+        nlu_cap = 10
+
+    SiteConfig.set("BOT_NLU_ENABLED", nlu_enabled, user_id=current_user.id,
+                   descripcion="Activa el NLU (Groq) del bot WhatsApp — mapea texto libre a respuestas canónicas")
+    SiteConfig.set("BOT_AI_PROVIDER", nlu_provider, user_id=current_user.id,
+                   descripcion="Proveedor NLU del bot (groq | openai)")
+    if nlu_model:
+        SiteConfig.set("BOT_AI_MODEL", nlu_model, user_id=current_user.id,
+                       descripcion="Modelo NLU (ej: llama-3.1-70b-versatile)")
+    if nlu_key_new:
+        SiteConfig.set("BOT_AI_API_KEY", nlu_key_new, user_id=current_user.id,
+                       descripcion="API key del NLU del bot WhatsApp")
+    SiteConfig.set("BOT_NLU_CONFIDENCE_MIN", str(nlu_conf), user_id=current_user.id,
+                   descripcion="Umbral mínimo de confianza para aceptar un match_id de Groq (0.3-1.0)")
+    SiteConfig.set("BOT_NLU_MAX_NEW_ENTRIES_PER_DAY", str(nlu_cap), user_id=current_user.id,
+                   descripcion="Máximo de entries autogeneradas por día (anti-basura)")
 
     AuditLog.registrar(current_user.id, "guardar_chatbot", "site_config",
                        detalle=bot_url, ip=request.remote_addr)
