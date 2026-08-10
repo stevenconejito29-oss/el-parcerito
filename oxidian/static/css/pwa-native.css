@@ -1600,9 +1600,9 @@ body.ox-body-public::before {
      (solo visible en display-mode instalado). Overlay blanco subido
      a .95 y brightness a 1.45 para aclarar la textura burlap, que
      se percibía oscura. Sin radial, el fondo queda uniforme. */
-  background-color: #fbf7ee;
+  background-color: #fdfaf3;
   background-image:
-    linear-gradient(rgba(255, 253, 248, .98), rgba(255, 253, 248, .98)),
+    linear-gradient(rgba(255, 253, 248, .995), rgba(255, 253, 248, .995)),
     url("../coffee-burlap-texture-v2.webp");
   background-repeat: no-repeat;
   background-position: center;
