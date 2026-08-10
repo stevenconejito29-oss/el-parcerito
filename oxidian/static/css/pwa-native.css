@@ -1105,6 +1105,23 @@
      puro negro sube a AAA (~14:1). El subtítulo (span) usaba muted
      que quedaba en ~2.8:1 sobre crema — mezclado con negro sube a
      AA (~5:1) manteniendo la jerarquía visual. */
+  /* 2026-08-10 v3: en vez de solo colorear el texto (seguía flotando
+     sobre las fibras del burlap sin contraste suficiente), damos a
+     .ep-mini-head un CHIP de fondo crema — mismo patrón que ya usa
+     .ep-cat-title más abajo. Ahora el texto negro cae sobre un fondo
+     sólido claro, no sobre la textura. Solo dentro del @media PWA. */
+  body.ox-body-public main .ep-mini-head,
+  body.ox-body-public main .ep-banner-head {
+    padding: .5rem .7rem !important;
+    margin: .35rem .5rem !important;
+    background: color-mix(in srgb, #fbf7ee 92%, transparent) !important;
+    border: 1px solid rgba(24, 18, 10, .1) !important;
+    border-radius: .85rem !important;
+    box-shadow: 0 4px 14px rgba(24, 18, 10, .08) !important;
+    -webkit-backdrop-filter: blur(6px) saturate(1.05) !important;
+    backdrop-filter: blur(6px) saturate(1.05) !important;
+  }
+
   /* 2026-08-10 v2: el fix anterior con color-mix no producía negro puro
      (color-mix con `--theme-text` 100% se resuelve al text base ~#18120A,
      no #000). Sobre el burlap claro con fibras dispersas el título aún
@@ -1585,13 +1602,18 @@ body.ox-body-public::before {
      se percibía oscura. Sin radial, el fondo queda uniforme. */
   background-color: #fbf7ee;
   background-image:
-    linear-gradient(rgba(255, 253, 248, .95), rgba(255, 253, 248, .95)),
+    linear-gradient(rgba(255, 253, 248, .98), rgba(255, 253, 248, .98)),
     url("../coffee-burlap-texture-v2.webp");
   background-repeat: no-repeat;
   background-position: center;
   background-size: cover;
-  filter: saturate(.6) contrast(1) brightness(1.45);
-  transform: translateZ(0);
+  /* 2026-08-10 v3: ELIMINADO `filter: brightness()` — en iOS Safari,
+     un ::before con filter+position:fixed genera un layer separado
+     de compositing cuyos bordes muestran halo lateral (las "líneas
+     blancas verticales" que el usuario ve). El brillo ahora se
+     hornea subiendo el overlay de .95 → .98 (equivalente visual
+     sin filter). También quita `transform: translateZ(0)` por la
+     misma razón. */
 }
 
 body.ox-body-public main {
