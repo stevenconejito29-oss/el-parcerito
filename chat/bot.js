@@ -8689,6 +8689,31 @@ async function handleMainMenu(jid, ses, opcion) {
       // Debe ir ANTES de las escaladas por frustración/loop/intent-fail:
       // así una respuesta útil resetea los contadores y no acumulamos
       // "fails" cuando el bot ha respondido bien vía IA.
+      // ── NLU con Groq: interpreta y mapea a respuesta CANÓNICA de la BD ──
+      // Groq NUNCA responde en crudo al cliente aquí. Solo elige un
+      // KnowledgeEntry existente (respuesta editable por super_admin) y
+      // enriquece keywords para futuras coincidencias deterministas. Si no
+      // encuentra match con confianza suficiente, cae al pipeline normal.
+      // Gated server-side por SiteConfig BOT_NLU_ENABLED.
+      if (textoLibre && textoLibre.length >= 3 && !isAdminJid(jid)) {
+        try {
+          const nlu = await oxidianPost('/nlu/resolve', {
+            mensaje: textoLibre,
+            telefono: phoneFromJid(jid) || undefined,
+          }, { retryOnNetError: false });
+          if (nlu && nlu.ok && nlu.action === 'canned' && nlu.respuesta) {
+            bumpStat('nlu_canned');
+            log('info', 'nlu_canned',
+              `entry=${nlu.entry_id} conf=${(nlu.confidence||0).toFixed(2)} cached=${!!nlu.cached}`);
+            ses._intent_fail_streak = 0;
+            ses._intent_fail_last_ts = 0;
+            return sendText(jid, nlu.respuesta);
+          }
+        } catch (err) {
+          log('warn', 'nlu_resolve_fail', err?.message || String(err));
+        }
+      }
+
       if (textoLibre && textoLibre.length >= 3 && !isAdminJid(jid)) {
         try {
           const ai = await aiSmartReply(jid, ses, textoLibre);

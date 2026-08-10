@@ -640,6 +640,110 @@ def ai_route():
     return jsonify({"ok": True, "route": "ai", "reason": "auto"})
 
 
+# ── NLU con Groq: mapea texto libre a respuestas canónicas de la BD ──────
+# Contrato: Groq NUNCA responde en crudo al cliente. Solo elige un
+# KnowledgeEntry o propone uno nuevo `activo=False` (revisión admin).
+# Ver nlu_service.py para el detalle. Gated por SiteConfig BOT_NLU_ENABLED,
+# separado del bloqueo del chat libre (_client_generative_ai_enabled).
+
+_NLU_CACHE: dict = {}
+_NLU_CACHE_TTL_S = 30 * 60  # 30 min
+_NLU_CACHE_MAX = 500
+
+
+def _nlu_cache_key(mensaje: str) -> str:
+    from bot_learning_service import normalizar_mensaje, hash_mensaje
+    return hash_mensaje(normalizar_mensaje(mensaje))
+
+
+def _nlu_cache_get(key: str):
+    entry = _NLU_CACHE.get(key)
+    if not entry:
+        return None
+    ts, value = entry
+    if (datetime.utcnow() - ts).total_seconds() > _NLU_CACHE_TTL_S:
+        _NLU_CACHE.pop(key, None)
+        return None
+    return value
+
+
+def _nlu_cache_set(key: str, value: dict):
+    if len(_NLU_CACHE) >= _NLU_CACHE_MAX:
+        # Purga simple: elimina el más antiguo
+        oldest = min(_NLU_CACHE.items(), key=lambda kv: kv[1][0])[0]
+        _NLU_CACHE.pop(oldest, None)
+    _NLU_CACHE[key] = (datetime.utcnow(), value)
+
+
+@api_bot_bp.route("/nlu/resolve", methods=["POST"])
+@bot_required
+def nlu_resolve():
+    """Interpreta el mensaje del cliente cuando el matcher determinista
+    no dio hit suficiente. Devuelve una respuesta CANÓNICA de la BD
+    (nunca prosa libre de la IA) o fallback.
+
+    Payload: {"mensaje": str, "telefono": str?}
+
+    Respuesta:
+        - action="canned": {ok, action, respuesta, entry_id, confidence, cached}
+        - action="fallback": {ok, action, confidence, new_pending_id?}
+        - action="disabled": el flag BOT_NLU_ENABLED está apagado
+        - action="unavailable": la IA falló / sin key / sin candidatos
+    """
+    payload = request.get_json(silent=True) or {}
+    mensaje = str(payload.get("mensaje") or "").strip()
+    telefono = payload.get("telefono") or None
+
+    if not mensaje:
+        return jsonify({"ok": False, "action": "unavailable", "error": "mensaje vacío"}), 200
+
+    try:
+        from nlu_service import is_enabled, resolve
+    except Exception:
+        current_app.logger.exception("nlu_resolve: import fail")
+        return jsonify({"ok": False, "action": "unavailable"}), 200
+
+    if not is_enabled():
+        return jsonify({"ok": True, "action": "disabled"}), 200
+
+    # Cache por hash del mensaje normalizado — evita quemar tokens en repetidas.
+    # No cacheamos "fallback" para dar oportunidad de re-evaluar si el catálogo
+    # cambió; sí cacheamos "canned".
+    cache_key = _nlu_cache_key(mensaje)
+    cached = _nlu_cache_get(cache_key) if cache_key else None
+    if cached and cached.get("action") == "canned":
+        out = dict(cached)
+        out["cached"] = True
+        out["ok"] = True
+        # Igual registra la señal de aprendizaje (para contar frecuencia real)
+        try:
+            from bot_learning_service import registrar_signal
+            registrar_signal(
+                mensaje=mensaje,
+                action_llm=f"nlu_cache:{out.get('entry_id')}",
+                telefono=telefono,
+                intent_matched=True,
+            )
+        except Exception:
+            pass
+        return jsonify(out), 200
+
+    try:
+        result = resolve(mensaje, telefono=telefono)
+    except Exception:
+        current_app.logger.exception("nlu_resolve: excepción resolve")
+        return jsonify({"ok": False, "action": "unavailable"}), 200
+
+    if result is None:
+        return jsonify({"ok": False, "action": "unavailable"}), 200
+
+    if result.get("action") == "canned" and cache_key:
+        _nlu_cache_set(cache_key, result)
+
+    out = {"ok": True, "cached": False, **result}
+    return jsonify(out), 200
+
+
 @api_bot_bp.route("/security/admin-pin-hash")
 @bot_required
 def admin_pin_hash():
