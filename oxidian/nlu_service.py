@@ -409,10 +409,18 @@ def _pregunta_ya_existe(pregunta_norm: str) -> bool:
     return False
 
 
+_PUNCT_RE_NORM = re.compile(r"[^\w\s]", flags=re.UNICODE)
+
+
 def _norm_pregunta(text) -> str:
+    """Normaliza pregunta para dedupe: lower + sin acentos + sin puntuación
+    + colapsa espacios. '¿Cuánto CUESTA el envío?' == 'cuanto cuesta el envio'.
+    """
     if not text:
         return ""
-    return " ".join(_strip_accents(str(text).lower()).split())
+    s = _strip_accents(str(text).lower())
+    s = _PUNCT_RE_NORM.sub(" ", s)
+    return " ".join(s.split())
 
 
 def _new_entries_today() -> int:
