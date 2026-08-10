@@ -363,15 +363,31 @@
 
   /* ── Bottom nav: safe-area iOS + siempre presente donde ya lo hay ── */
   body.ox-body-public.ox-has-bottom-nav .ox-bottom-nav {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + .4rem);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + .3rem);
     box-shadow: 0 -10px 24px -12px color-mix(in srgb, var(--theme-text) 24%, transparent);
   }
+  /* 2026-08-10: nav más compacto para aprovechar más viewport. Se reduce
+     el offset lateral (más edge-to-edge), la altura mínima y el padding
+     interno. Íconos y touch targets siguen por encima de 44 px (mínimo
+     WCAG). Antes 66 px min-height + 10 px offset lateral + 8/10 padding →
+     ahora 56 px + 6 px offset + 5/8 padding. Recuperamos ~14 px de
+     alto útil de pantalla. */
+  body.ox-body-public.ox-has-bottom-nav .ox-bottom-nav.ox-bnav-v2 {
+    left: max(6px, env(safe-area-inset-left, 6px)) !important;
+    right: max(6px, env(safe-area-inset-right, 6px)) !important;
+    bottom: max(6px, env(safe-area-inset-bottom, 0px)) !important;
+    min-height: 56px !important;
+    padding: 5px 8px !important;
+    border-radius: 22px !important;
+  }
+  body.ox-body-public.ox-has-bottom-nav .ox-bnav-item {
+    min-height: 46px !important;
+  }
   /* Reserva espacio para que el bottom-nav no tape el último producto.
-     Se ajusta a la altura REAL del bnav (~66px + 8px sombra) + safe-area
-     del home indicator iOS. Antes 88px + safe → dejaba ~200px de aire
-     muerto y sensación de "scroll que no llega al final". */
+     Ajustada a la nueva altura (56 px + ~4 px sombra + safe-area home
+     indicator iOS). */
   body.ox-body-public.ox-has-bottom-nav main {
-    padding-bottom: calc(74px + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   /* ── Carrito con items: pulso sutil para invitar al checkout ── */
@@ -1305,7 +1321,23 @@
     transform: scale(.975);
     box-shadow: 0 1px 1px color-mix(in srgb, var(--theme-text) 6%, transparent);
   }
-  body.ox-body-public .ep-card-img { border-radius: 18px 18px 0 0; overflow: hidden; }
+  /* 2026-08-10: bordes más redondeados en cards de producto — se ajusta
+     al lenguaje de radios usados en el resto del PWA (chips 1rem,
+     mini-heads 1rem, botones .9rem). Antes 1.25rem (20 px) — ahora
+     1.6rem (25.6 px). También la imagen dentro de la card. */
+  body.ox-body-public .ep-card,
+  body.ox-body-public .pc-card,
+  body.ox-body-public article.pc-card,
+  body.ox-body-public .pc-featured-card,
+  body.ox-body-public .pc-novedad-card {
+    border-radius: 1.6rem !important;
+  }
+  body.ox-body-public .ep-card-img { border-radius: 1.45rem 1.45rem 0 0; overflow: hidden; }
+  body.ox-body-public .pc-card-img-wrap,
+  body.ox-body-public .pc-featured-img-wrap {
+    border-radius: 1.45rem 1.45rem 0 0 !important;
+    overflow: hidden !important;
+  }
   body.ox-body-public .ep-card-img img {
     transition: transform .5s cubic-bezier(.2,.8,.2,1);
   }
@@ -1683,13 +1715,49 @@ body.ox-body-public::before {
      (solo visible en display-mode instalado). Overlay blanco subido
      a .95 y brightness a 1.45 para aclarar la textura burlap, que
      se percibía oscura. Sin radial, el fondo queda uniforme. */
+  /* 2026-08-10: fondo creativo con coherencia de nicho (café colombiano).
+     3 capas apiladas (mezcla `screen` para no ensuciar):
+       1. Puntos "granos de café" — dos radial-gradients elípticos con
+          background-size pequeño para tiling repetitivo sutil, en tonos
+          de café tostado (#5c3a20) al 3-4% de opacidad → textura orgánica
+          sin fotografía.
+       2. Bandas diagonales sutiles simulando fibra de costal — evoca el
+          burlap sin repetir la textura fotográfica del jpg.
+       3. Overlay crema y textura burlap real como base plana (fallback
+          visual, se ve solo si las capas superiores fallan).
+     El resultado: contraste visible con las cards blancas + carácter
+     café/artesano + zero decodificación pesada de imagen adicional. */
   background-color: #fdfaf3;
   background-image:
-    linear-gradient(rgba(255, 253, 248, .995), rgba(255, 253, 248, .995)),
+    radial-gradient(ellipse 8px 5px at 20% 20%, rgba(92, 58, 32, .11) 0%, transparent 60%),
+    radial-gradient(ellipse 6px 4px at 65% 55%, rgba(120, 78, 42, .09) 0%, transparent 65%),
+    radial-gradient(ellipse 7px 5px at 85% 80%, rgba(92, 58, 32, .08) 0%, transparent 60%),
+    repeating-linear-gradient(115deg,
+      transparent 0 22px,
+      rgba(120, 78, 42, .025) 22px 23px),
+    linear-gradient(rgba(255, 253, 248, .93), rgba(255, 253, 248, .93)),
     url("../coffee-burlap-texture-v2.webp");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
+  background-size:
+    120px 120px,
+    120px 120px,
+    120px 120px,
+    auto,
+    auto,
+    cover;
+  background-position:
+    0 0,
+    60px 40px,
+    30px 80px,
+    0 0,
+    center,
+    center;
+  background-repeat:
+    repeat,
+    repeat,
+    repeat,
+    repeat,
+    no-repeat,
+    no-repeat;
   /* 2026-08-10 v3: ELIMINADO `filter: brightness()` — en iOS Safari,
      un ::before con filter+position:fixed genera un layer separado
      de compositing cuyos bordes muestran halo lateral (las "líneas
