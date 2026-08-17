@@ -2876,6 +2876,17 @@ def checkout():
                 return redirect(establecimiento["url"])
 
         tipo_entrega_cliente = _fulfillment_from_request(fulfillment_default, fulfillment_options)
+        # Franja horaria opcional (módulo delivery_franjas_activo). Solo aplica
+        # cuando el cliente eligió delivery; recogida y otros modos la ignoran.
+        # La reserva efectiva del cupo se hace tras crear el pedido para poder
+        # asociar pedido.id ↔ slot. Aquí solo capturamos el valor bruto.
+        _slot_id_bruto = (request.form.get("slot_id") or "").strip()
+        slot_id_solicitado: int | None = None
+        if _slot_id_bruto:
+            try:
+                slot_id_solicitado = int(_slot_id_bruto)
+            except (TypeError, ValueError):
+                slot_id_solicitado = None
         if not tipo_entrega_cliente:
             solicitado = (request.form.get("tipo_entrega_cliente") or "").strip().lower()
             blockers = _fulfillment_blockers_for_mode([item["producto"] for item in items], solicitado)
@@ -3275,6 +3286,43 @@ def checkout():
         aplicar_snapshot_zona_pedido(pedido, zona, precio.costo_envio)
         db.session.add(pedido)
         db.session.flush()
+
+        # ── Reserva de franja horaria (módulo delivery_franjas_activo) ──
+        # Solo cuando el cliente eligió delivery + envió slot_id + módulo activo.
+        # La reserva es atómica dentro de la misma transacción del pedido: si
+        # el cupo se agotó entre carga del selector y submit, revertimos el
+        # pedido para no dejar huérfano y devolvemos al cliente al carrito
+        # con mensaje claro para elegir otra franja.
+        if slot_id_solicitado and tipo_entrega_cliente == "delivery":
+            from store_config import get_store_value
+            franjas_activo = str(
+                get_store_value("delivery_franjas_activo", "0")
+            ).strip() in ("1", "true", "True")
+            if franjas_activo:
+                from delivery_slots_service import (
+                    reservar_franja, ResultadoReserva,
+                )
+                _reserva = reservar_franja(slot_id_solicitado, pedido)
+                if _reserva.tipo != ResultadoReserva.RESERVADA:
+                    db.session.rollback()
+                    _mensajes = {
+                        ResultadoReserva.LLENA: (
+                            "La franja horaria que elegiste acaba de llenarse. "
+                            "Elige otra en el checkout."
+                        ),
+                        ResultadoReserva.CERRADA: (
+                            "La franja horaria ya está cerrada para nuevos pedidos. "
+                            "Elige una franja posterior."
+                        ),
+                        ResultadoReserva.INACTIVA: (
+                            "La franja horaria seleccionada ya no está disponible."
+                        ),
+                        ResultadoReserva.NO_EXISTE: (
+                            "La franja horaria seleccionada no existe."
+                        ),
+                    }
+                    flash(_mensajes.get(_reserva.tipo, "No se pudo reservar la franja."), "danger")
+                    return redirect(url_for("public.ver_carrito"))
         registrar_pedido_creado(
             pedido,
             actor_id=cliente.id,
