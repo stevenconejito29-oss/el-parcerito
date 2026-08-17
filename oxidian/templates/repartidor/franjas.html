@@ -44,17 +44,31 @@
         const clases = ["df-slot"];
         if (s.tomada_por_mi) clases.push("df-slot-mia");
         if (s.llena_de_repartidores && !s.tomada_por_mi) clases.push("df-slot-llena");
-        const btn = s.tomada_por_mi
-          ? `<button class="df-btn df-btn-danger" data-act="liberar" data-id="${s.id}">Liberar</button>`
+        const btnRider = s.tomada_por_mi
+          ? `<button class="df-btn df-btn-danger" data-act="liberar" data-id="${s.id}">Liberar franja</button>`
           : (s.llena_de_repartidores
               ? `<button class="df-btn" disabled>Sin cupo repartidor</button>`
-              : `<button class="df-btn df-btn-primary" data-act="tomar" data-id="${s.id}">Tomar</button>`);
+              : `<button class="df-btn df-btn-primary" data-act="tomar" data-id="${s.id}">Tomar franja</button>`);
+        // Batch dispatch: solo tiene sentido si tomé la franja Y hay pedidos listos.
+        const listos = s.pedidos_listos || 0;
+        const total = s.pedidos_total || 0;
+        const batchBtn = (s.tomada_por_mi && listos > 0)
+          ? `<form method="POST" action="/repartidor/franjas/${s.id}/iniciar-reparto" style="display:inline;margin:0"
+                 onsubmit="return confirm('Poner los ${listos} pedidos listos en ruta y salir a repartir?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="df-btn df-btn-primary" type="submit">🚴 Iniciar ruta (${listos})</button>
+            </form>`
+          : "";
+        const conteo = total > 0
+          ? `<div class="df-slot-meta"><strong>${total} pedido${total===1?'':'s'}</strong>${listos>0?` · ${listos} listo${listos===1?'':'s'} para salir`:''}</div>`
+          : `<div class="df-slot-meta" style="color:#999">Sin pedidos aún</div>`;
         return `<div class="${clases.join(' ')}">
           <div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>
           <div class="df-slot-meta">
             Riders ${s.repartidores_activos}/${s.max_repartidores} · Cap ${s.capacidad_max} pedidos
           </div>
-          <div class="df-slot-actions">${btn}</div>
+          ${conteo}
+          <div class="df-slot-actions">${btnRider} ${batchBtn}</div>
         </div>`;
       }).join("");
       return `<div class="df-day">

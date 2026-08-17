@@ -1208,6 +1208,24 @@ def franjas_listar():
         )
         mias_ids = {m.slot_id for m in mias}
     salida = []
+    # Conteos de pedidos por slot en una sola query (evita N+1 en pantalla).
+    conteos_totales: dict[int, int] = {}
+    conteos_listos: dict[int, int] = {}
+    if ids:
+        rows_total = (
+            db.session.query(Order.slot_id, db.func.count(Order.id))
+            .filter(Order.slot_id.in_(ids), Order.estado != "cancelado")
+            .group_by(Order.slot_id).all()
+        )
+        conteos_totales = {slot_id: n for slot_id, n in rows_total}
+        rows_listos = (
+            db.session.query(Order.slot_id, db.func.count(Order.id))
+            .filter(Order.slot_id.in_(ids), Order.estado == "listo",
+                    Order.tipo_entrega_cliente == "delivery")
+            .group_by(Order.slot_id).all()
+        )
+        conteos_listos = {slot_id: n for slot_id, n in rows_listos}
+
     for s in slots:
         if not s.activo:
             continue
@@ -1222,6 +1240,8 @@ def franjas_listar():
             "repartidores_activos": activos,
             "tomada_por_mi": s.id in mias_ids,
             "llena_de_repartidores": activos >= s.max_repartidores and s.id not in mias_ids,
+            "pedidos_total": conteos_totales.get(s.id, 0),
+            "pedidos_listos": conteos_listos.get(s.id, 0),
         })
     return jsonify({"franjas": salida})
 
@@ -1254,6 +1274,129 @@ def franjas_liberar(slot_id):
     liberado = liberar_franja_repartidor(slot_id, current_user.id)
     db.session.commit()
     return jsonify({"liberado": liberado})
+
+
+@repartidor_bp.route("/franjas/<int:slot_id>/pedidos", methods=["GET"])
+@repartidor_required
+def franjas_pedidos(slot_id):
+    """Lista los pedidos asignados a una franja concreta con su estado.
+
+    Base para la operativa de "batch route": el repartidor ve los N
+    pedidos que le tocan en esta franja y puede lanzarlos todos a
+    en_ruta con una sola acción.
+    """
+    if not _franjas_modulo_activo():
+        abort(404)
+    from models import DeliverySlot
+
+    slot = get_or_404(DeliverySlot, slot_id)
+    pedidos = (
+        Order.query
+        .filter(
+            Order.slot_id == slot.id,
+            Order.estado != "cancelado",
+        )
+        .order_by(Order.creado_en)
+        .all()
+    )
+    return jsonify({
+        "slot": {
+            "id": slot.id,
+            "fecha": slot.fecha.isoformat(),
+            "hora_inicio": slot.hora_inicio.strftime("%H:%M"),
+            "hora_fin": slot.hora_fin.strftime("%H:%M"),
+        },
+        "pedidos": [
+            {
+                "id": p.id,
+                "numero_pedido": p.numero_pedido,
+                "estado": p.estado,
+                "cliente": (p.cliente.nombre if p.cliente else ""),
+                "direccion": p.direccion_entrega or "",
+                "zona": p.zona_nombre_aplicada or "",
+                "total": float(p.total or 0),
+                "repartidor_id": p.repartidor_id,
+            }
+            for p in pedidos
+        ],
+    })
+
+
+@repartidor_bp.route("/franjas/<int:slot_id>/iniciar-reparto", methods=["POST"])
+@repartidor_required
+def franjas_iniciar_reparto(slot_id):
+    """Dispatch en lote: mueve TODOS los pedidos listos de la franja a en_ruta
+    y los asigna al repartidor actual (si no tenían ya uno). Devuelve al
+    repartidor a su vista /repartidor/ruta para operar la ruta física.
+
+    Reglas:
+    - Solo pedidos con estado='listo' y tipo_entrega='delivery' entran al lote.
+    - Pedidos ya en_ruta o entregados se ignoran silenciosamente.
+    - Si un pedido ya está asignado a OTRO repartidor, no se roba (se ignora
+      con warning). Solo se despachan los propios o los sin asignar.
+    - Es responsabilidad del admin coordinar que el rider que "toma" la
+      franja sea el mismo que la reparte.
+    """
+    if not _franjas_modulo_activo():
+        abort(404)
+    from models import DeliverySlot
+
+    slot = get_or_404(DeliverySlot, slot_id)
+    pedidos = (
+        Order.query
+        .filter(
+            Order.slot_id == slot.id,
+            Order.estado == "listo",
+            Order.tipo_entrega_cliente == "delivery",
+        )
+        .all()
+    )
+    if not pedidos:
+        flash("No hay pedidos listos para despachar en esta franja.", "info")
+        return redirect(url_for("repartidor.franjas_panel"))
+
+    despachados = 0
+    saltados_ajenos = 0
+    for pedido in pedidos:
+        if pedido.repartidor_id and pedido.repartidor_id != current_user.id and not _es_admin_operativo():
+            saltados_ajenos += 1
+            continue
+        try:
+            if not pedido.repartidor_id:
+                asignar_repartidor_pedido(
+                    pedido, current_user.id,
+                    actor_id=current_user.id, canal="repartidor", aceptado=True,
+                )
+            avanzar_estado_pedido(pedido, actor_id=current_user.id, canal="repartidor")
+            despachados += 1
+        except Exception as exc:
+            logger.exception(
+                "Fallo despachando pedido %s en batch franja %s: %s",
+                pedido.id, slot.id, exc,
+            )
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash("No se pudo despachar la franja completa. Reintenta.", "danger")
+        return redirect(url_for("repartidor.franjas_panel"))
+
+    # Notificaciones best-effort tras commit — no bloquean el flujo.
+    for pedido in pedidos:
+        if pedido.estado == "en_ruta":
+            try:
+                enviar_whatsapp_estado(pedido)
+                from push_service import notify_order_state
+                notify_order_state(pedido)
+            except Exception:
+                logger.exception("Fallo notificación batch para pedido %s", pedido.id)
+
+    mensaje = f"Ruta iniciada: {despachados} pedidos en_ruta."
+    if saltados_ajenos:
+        mensaje += f" ({saltados_ajenos} saltados por estar asignados a otro rider.)"
+    flash(mensaje, "success")
+    return redirect(url_for("repartidor.ruta"))
 
 
 @repartidor_bp.route("/pedido/<int:pedido_id>/en-la-puerta", methods=["POST"])
