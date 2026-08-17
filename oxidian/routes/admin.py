@@ -7888,3 +7888,155 @@ def bot_aprendizaje_reabrir(signal_id):
         db.session.rollback()
         flash("No se pudo reabrir la señal.", "danger")
     return redirect(url_for("admin.bot_aprendizaje"))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Módulo delivery por franjas horarias — CRUD JSON API.
+# Toggle: delivery_franjas_activo. Todos los endpoints devuelven 404
+# limpio cuando el módulo está apagado (evita revelar existencia).
+# La UI (calendario 2 semanas) se añadirá en un commit posterior;
+# por ahora estos endpoints se consumen desde tests, scripts o el
+# panel cuando se despliegue.
+# ═══════════════════════════════════════════════════════════════════
+
+def _delivery_franjas_activo() -> bool:
+    from store_config import get_store_value
+    return str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+
+
+def _abort_si_modulo_apagado():
+    if not _delivery_franjas_activo():
+        abort(404)
+
+
+def _parse_fecha_iso(valor: str) -> date:
+    return datetime.strptime(valor, "%Y-%m-%d").date()
+
+
+def _parse_hora_hhmm(valor: str):
+    from datetime import time as _time
+    hh, mm = valor.split(":", 1)
+    return _time(int(hh), int(mm))
+
+
+def _slot_to_dict(slot) -> dict:
+    return {
+        "id": slot.id,
+        "fecha": slot.fecha.isoformat(),
+        "hora_inicio": slot.hora_inicio.strftime("%H:%M"),
+        "hora_fin": slot.hora_fin.strftime("%H:%M"),
+        "capacidad_max": slot.capacidad_max,
+        "max_repartidores": slot.max_repartidores,
+        "cierre_modo": slot.cierre_modo,
+        "cierre_valor": slot.cierre_valor,
+        "activo": slot.activo,
+        "notas_admin": slot.notas_admin,
+    }
+
+
+@admin_bp.route("/delivery/franjas", methods=["GET"])
+@admin_required
+def delivery_franjas_listar():
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import listar_franjas_admin
+    from store_config import get_store_value
+
+    hoy = date.today()
+    try:
+        horizonte = int(get_store_value("delivery_franjas_horizonte_admin_dias", "14"))
+    except (TypeError, ValueError):
+        horizonte = 14
+    desde_raw = request.args.get("desde")
+    hasta_raw = request.args.get("hasta")
+    desde = _parse_fecha_iso(desde_raw) if desde_raw else hoy
+    hasta = _parse_fecha_iso(hasta_raw) if hasta_raw else hoy + timedelta(days=horizonte - 1)
+    slots = listar_franjas_admin(desde, hasta)
+    return jsonify({"desde": desde.isoformat(), "hasta": hasta.isoformat(),
+                    "franjas": [_slot_to_dict(s) for s in slots]})
+
+
+@admin_bp.route("/delivery/franjas", methods=["POST"])
+@admin_required
+def delivery_franjas_crear():
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import crear_franja
+
+    data = request.get_json(silent=True) or {}
+    try:
+        fecha = _parse_fecha_iso(str(data["fecha"]))
+        hora_inicio = _parse_hora_hhmm(str(data["hora_inicio"]))
+        hora_fin = _parse_hora_hhmm(str(data["hora_fin"]))
+        capacidad_max = int(data["capacidad_max"])
+    except (KeyError, ValueError, TypeError) as exc:
+        return jsonify({"error": f"payload inválido: {exc}"}), 400
+    try:
+        slot = crear_franja(
+            fecha=fecha,
+            hora_inicio=hora_inicio,
+            hora_fin=hora_fin,
+            capacidad_max=capacidad_max,
+            max_repartidores=data.get("max_repartidores"),
+            cierre_modo=data.get("cierre_modo"),
+            cierre_valor=data.get("cierre_valor"),
+            notas_admin=data.get("notas_admin"),
+        )
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "ya existe una franja con esa fecha y horario"}), 409
+    return jsonify(_slot_to_dict(slot)), 201
+
+
+@admin_bp.route("/delivery/franjas/<int:slot_id>", methods=["PATCH"])
+@admin_required
+def delivery_franjas_actualizar(slot_id):
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import actualizar_franja
+    from models import DeliverySlot
+
+    slot = get_or_404(DeliverySlot, slot_id)
+    data = request.get_json(silent=True) or {}
+    try:
+        actualizar_franja(slot, **data)
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(_slot_to_dict(slot))
+
+
+@admin_bp.route("/delivery/franjas/<int:slot_id>", methods=["DELETE"])
+@admin_required
+def delivery_franjas_eliminar(slot_id):
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import eliminar_franja
+    from models import DeliverySlot
+
+    slot = get_or_404(DeliverySlot, slot_id)
+    tipo = eliminar_franja(slot)
+    db.session.commit()
+    return jsonify({"eliminado": tipo})
+
+
+@admin_bp.route("/delivery/franjas/clonar", methods=["POST"])
+@admin_required
+def delivery_franjas_clonar():
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import clonar_semana
+
+    data = request.get_json(silent=True) or {}
+    try:
+        origen = _parse_fecha_iso(str(data["semana_origen"]))
+        destino = _parse_fecha_iso(str(data["semana_destino"]))
+    except (KeyError, ValueError, TypeError) as exc:
+        return jsonify({"error": f"payload inválido: {exc}"}), 400
+    try:
+        creadas = clonar_semana(origen, destino)
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"creadas": creadas})
