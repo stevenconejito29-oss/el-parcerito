@@ -1,11 +1,64 @@
 # Plan: Módulo de Delivery por Franjas Horarias
 
-> **Estado:** Diseño aprobado, pendiente ejecución.
-> **Fecha diseño:** 2026-08-17.
-> **Rama de trabajo:** `feature/delivery-franjas` (aún no creada).
-> **Impacto en producción actual:** cero hasta el toggle final.
+> **Estado:** ✅ **IMPLEMENTADO Y DESPLEGADO EN PRODUCCIÓN** (2026-08-17).
+> Toggle `delivery_franjas_activo=0` — código inerte hasta que el admin lo encienda desde `/superadmin/config`.
+> **Rama:** mergeada a `main` — commits `c9d318c..14cf37f`. Sin rama pendiente.
+> **Server:** `192.168.1.32` — imagen `oxidian:latest` reconstruida, contenedor healthy, migraciones aplicadas.
 
-Documento vivo. Cualquier desviación durante la implementación se refleja aquí antes del commit.
+## Estado de implementación por sección
+
+| Sección plan | Estado | Notas |
+|---|---|---|
+| §5 Modelo de datos + migraciones | ✅ | Migraciones `20260817_01_delivery_slots_tables` y `20260817_02_orders_slot_id` aplicadas en producción. |
+| §6 Servicio `delivery_slots_service.py` | ✅ | 14 funciones públicas + Enums tipados. |
+| §7.1 Endpoints admin (JSON) | ✅ | GET/POST/PATCH/DELETE + clonar semana. |
+| §7.1 Vista HTML admin | ✅ | `/admin/delivery/franjas/panel` + link en sidebar. |
+| §7.2 Endpoint cliente lista franjas | ✅ | `/api/delivery/franjas-disponibles` con `sugerida`. |
+| §7.2 Integración con `POST /checkout` | ✅ | Acepta `slot_id`, reserva atómica, rollback si falla. |
+| §7.3 Endpoints repartidor (JSON) | ✅ | listar/tomar/liberar + en-la-puerta. |
+| §7.3 Vista HTML repartidor + link sidebar | ✅ | `/repartidor/franjas/panel`. |
+| §7.3 Botón "Estoy en la puerta" en `ruta.html` | ✅ | Dentro de cada tarjeta de pedido en_ruta. |
+| §8 Config keys (`SiteConfig`) | ✅ | 8 keys sembradas. |
+| §9 UI cliente (selector en checkout) | ✅ | Widget inline en `templates/public/checkout.html` + página de preview autónoma. |
+| §9 UI admin (calendario) | ✅ | Con formulario crear + clonar semana + toggle activo/borrar. |
+| §9 UI repartidor (self-assign) | ✅ | Con estado tomada_por_mi / libre / sin cupo repartidor. |
+| §10 Docs oficiales | ✅ | `CONFIG_KEYS.md`, `COBERTURA_REPARTO.md`, `ORDER_FLOW.md`. |
+| §11 Tests unitarios | ✅ | `test_delivery_slots_service.py` (9 casos de cierre + contrato enums). |
+| §11 Test integración checkout con slot | ⏸ Pendiente | Requiere entorno con Postgres + app context. Cubierto por smoke script. |
+| §12 Smoke script end-to-end | ✅ | `scripts/smoke_delivery_franjas.py`. |
+| §13 Rollback | ✅ | Toggle OFF apaga el módulo al instante. Backup pg previo al deploy. |
+
+## Mejora paralela: PWA lenta Android
+
+Fuera del alcance original del plan pero aplicada en la misma iteración
+(reportada por el fundador el mismo día). Dos fixes commit `5711c42`:
+
+1. **SW precache por prioridad** — el evento `install` solo espera al
+   subconjunto crítico (tokens, CSS core, header, iconos base). Vendors,
+   motion, storefront JS y texturas se cachean en background sin
+   bloquear `waitUntil()`.
+2. **Sin backdrop-filter en cards multiplicadas** — `.ep-grid .ep-card`
+   y `.ep-mc-dest-card` eliminan `blur(12-13px)` que causaba jank de
+   scroll en Android low-end. Compensado con background más opaco
+   (94%/92% surface).
+
+Sin toggle: activo para todos los clientes desde el deploy.
+
+## Merge con trabajo paralelo
+
+Durante el desarrollo, 9 commits ajenos aterrizaron en `origin/main`
+con trabajo de NLU (Groq) + PWA styling. Se integraron limpiamente
+con 3 conflictos resueltos manualmente (merge commit `897e23c`):
+
+- `chatbot.html`: unión de ambos — 3 links visibles (Conocimiento del
+  chat web + NLU pendientes + Probar chat web).
+- `pwa-native.css` fondo base: se conservó el enfoque simple de
+  producción (v4.webp + overlay) frente al multicapa propuesto por
+  origin/main (referenciaba texture v2 en desuso).
+- `pwa-native.css` dark-mode: se aceptó la eliminación de origin/main
+  (usuario pidió fondo claro siempre).
+
+Documento vivo. Cualquier desviación posterior se refleja aquí antes del commit.
 
 ---
 
