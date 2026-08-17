@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0b0f14">
+<title>Cocina · El Parcerito</title>
+<link rel="icon" href="data:,">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<style>
+  :root {
+    --bg:#0b0f14; --panel:#141a22; --line:#22303c;
+    --ink:#e6edf3; --muted:#8b98a5;
+    --warn:#f59e0b; --hot:#ef4444; --ok:#22c55e; --blue:#3b82f6;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:var(--bg); color:var(--ink);
+    font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-text-size-adjust:100%; overscroll-behavior:none; }
+  header {
+    position:sticky; top:0; z-index:10; background:var(--panel);
+    border-bottom:1px solid var(--line); padding:10px 14px;
+    display:flex; align-items:center; gap:12px;
+  }
+  header h1 { margin:0; font-size:20px; font-weight:700; letter-spacing:.3px; }
+  header .spacer { flex:1; }
+  header .badge {
+    background:#0b1220; border:1px solid var(--line); border-radius:999px;
+    padding:6px 12px; font-size:14px; color:var(--muted);
+  }
+  header .badge.live::before {
+    content:""; display:inline-block; width:8px; height:8px; border-radius:50%;
+    background:var(--ok); margin-right:6px; vertical-align:middle;
+  }
+  header button {
+    background:var(--blue); color:#fff; border:0; border-radius:8px;
+    padding:8px 14px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  #grid {
+    display:grid; gap:10px; padding:10px;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+  .card {
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:12px; display:flex; flex-direction:column; gap:8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  .card.pendiente { border-left:6px solid var(--warn); }
+  .card.armando   { border-left:6px solid var(--blue); }
+  .card.hot       { border-left-color:var(--hot); animation: pulse 1.4s infinite; }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0)} 50%{box-shadow:0 0 0 6px rgba(239,68,68,.15)} }
+  .row { display:flex; align-items:baseline; gap:10px; }
+  .num { font-size:24px; font-weight:800; letter-spacing:.5px; }
+  .time { color:var(--muted); font-size:14px; }
+  .elapsed { margin-left:auto; font-size:14px; padding:2px 8px; border-radius:6px;
+    background:#0b1220; color:var(--muted); border:1px solid var(--line); }
+  .elapsed.warn { color:#fde68a; border-color:#78350f; background:#3f2d10; }
+  .elapsed.hot  { color:#fecaca; border-color:#7f1d1d; background:#3f1414; }
+  .tag {
+    font-size:11px; padding:2px 8px; border-radius:999px; text-transform:uppercase;
+    letter-spacing:.5px; font-weight:700;
+  }
+  .tag.recogida { background:#0b3a2e; color:#6ee7b7; }
+  .tag.entrega, .tag.reparto, .tag.domicilio { background:#1e293b; color:#93c5fd; }
+  .tag.mio    { background:#312e81; color:#c7d2fe; }
+  .items { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+  .items li { display:flex; gap:8px; align-items:baseline;
+    background:#0b1220; padding:8px 10px; border-radius:8px; }
+  .qty { font-weight:800; color:#fde68a; min-width:36px; font-size:18px; }
+  .name { flex:1; font-size:16px; line-height:1.2; }
+  .variant { color:var(--muted); font-size:13px; margin-left:4px; }
+  .note { background:#3f2d10; color:#fde68a; padding:8px 10px; border-radius:8px;
+    border-left:3px solid var(--warn); font-size:14px; }
+  .actions { display:flex; gap:8px; margin-top:4px; }
+  .btn {
+    flex:1; padding:12px; border-radius:10px; border:0; cursor:pointer;
+    font-size:15px; font-weight:700; color:#fff;
+  }
+  .btn.empezar { background:var(--blue); }
+  .btn.listo   { background:var(--ok); }
+  .btn:active  { transform:translateY(1px); filter:brightness(.9); }
+  .empty {
+    grid-column:1/-1; text-align:center; padding:60px 20px; color:var(--muted);
+  }
+  .empty .big { font-size:64px; }
+  .toast {
+    position:fixed; bottom:14px; left:50%; transform:translateX(-50%);
+    background:#1e293b; color:#fff; padding:10px 16px; border-radius:8px;
+    border:1px solid var(--line); font-size:14px; opacity:0; transition:opacity .2s;
+    pointer-events:none;
+  }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🍳 Cocina</h1>
+  <span class="badge live" id="status">conectando…</span>
+  <span class="spacer"></span>
+  <button id="soundBtn" type="button">🔔 Activar sonido</button>
+</header>
+
+<main id="grid"></main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  const REFRESH_MS = {{ refresh_seconds|default(5) }} * 1000;
+  const DATA_URL = "{{ url_for('preparador.kds_data') }}";
+  const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || "";
+  const grid = document.getElementById('grid');
+  const statusEl = document.getElementById('status');
+  const soundBtn = document.getElementById('soundBtn');
+  const toast = document.getElementById('toast');
+  let lastIds = new Set();
+  let audioCtx = null;
+  let soundOn = false;
+
+  soundBtn.addEventListener('click', () => {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      soundOn = true;
+      soundBtn.textContent = '🔔 Sonido ON';
+      soundBtn.style.background = '#22c55e';
+      beep(880, 0.15); setTimeout(()=>beep(1320,0.15),160);
+    } catch(e){ soundBtn.textContent = 'Audio no disponible'; }
+  });
+
+  function beep(freq, dur){
+    if(!soundOn || !audioCtx) return;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.value = 0.001;
+    o.connect(g); g.connect(audioCtx.destination);
+    const t = audioCtx.currentTime;
+    g.gain.exponentialRampToValueAtTime(0.4, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t+dur);
+    o.start(t); o.stop(t+dur+0.05);
+  }
+
+  function alertaPedidoNuevo(){
+    beep(880, 0.18);
+    setTimeout(()=>beep(1320,0.18),200);
+    setTimeout(()=>beep(1760,0.25),420);
+    showToast('🆕 Pedido nuevo');
+  }
+
+  function showToast(msg){
+    toast.textContent = msg; toast.classList.add('show');
+    setTimeout(()=>toast.classList.remove('show'), 2500);
+  }
+
+  function minutosDesde(iso){
+    const dt = new Date(iso.replace('Z','+00:00'));
+    return Math.max(0, Math.floor((Date.now() - dt.getTime())/60000));
+  }
+
+  function elapsedClass(mins){
+    if (mins >= 15) return 'elapsed hot';
+    if (mins >= 8)  return 'elapsed warn';
+    return 'elapsed';
+  }
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>(
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function render(pedidos){
+    if (!pedidos.length){
+      grid.innerHTML = '<div class="empty"><div class="big">✅</div><div>Sin pedidos en cola</div></div>';
+      return;
+    }
+    grid.innerHTML = pedidos.map(p => {
+      const mins = minutosDesde(p.creado);
+      const hot = p.estado === 'pendiente' && mins >= 15;
+      const items = p.items.map(it => {
+        const variante = [it.variante, (it.sabores||[]).join(', ')].filter(Boolean).join(' · ');
+        return `<li><span class="qty">${it.cantidad}×</span>
+          <span class="name">${esc(it.nombre)}${variante?`<span class="variant"> · ${esc(variante)}</span>`:''}</span></li>`;
+      }).join('');
+      const tipo = (p.tipo||'recogida').toLowerCase();
+      const accion = p.estado === 'pendiente'
+        ? `<form method="post" action="/preparador/pedidos/${p.id}/empezar" style="flex:1;display:flex;">
+             ${CSRF?`<input type="hidden" name="csrf_token" value="${CSRF}">`:''}
+             <button class="btn empezar" type="submit">▶ Empezar</button>
+           </form>`
+        : `<form method="post" action="/preparador/pedidos/${p.id}/listo" style="flex:1;display:flex;">
+             ${CSRF?`<input type="hidden" name="csrf_token" value="${CSRF}">`:''}
+             <button class="btn listo" type="submit">✔ Listo</button>
+           </form>`;
+      return `<article class="card ${p.estado} ${hot?'hot':''}">
+        <div class="row">
+          <span class="num">#${esc(p.numero)}</span>
+          <span class="time">${esc(p.creado_hm)}</span>
+          <span class="${elapsedClass(mins)}">${mins} min</span>
+        </div>
+        <div class="row" style="gap:6px;flex-wrap:wrap;">
+          <span class="tag ${tipo}">${esc(tipo)}</span>
+          ${p.mio?'<span class="tag mio">mío</span>':''}
+          ${p.sin_asignar?'<span class="tag" style="background:#3f2d10;color:#fde68a;">sin asignar</span>':''}
+        </div>
+        <ul class="items">${items}</ul>
+        ${p.notas?`<div class="note">📝 ${esc(p.notas)}</div>`:''}
+        <div class="actions">${accion}</div>
+      </article>`;
+    }).join('');
+  }
+
+  async function tick(){
+    try {
+      const r = await fetch(DATA_URL, {cache:'no-store', credentials:'same-origin'});
+      if (r.status === 401 || r.status === 302){ location.href = '/auth/login?next=/preparador/kds'; return; }
+      const j = await r.json();
+      if (!j.ok) throw new Error('bad');
+      const ids = new Set(j.pedidos.map(p=>p.id));
+      const nuevos = [...ids].filter(id => !lastIds.has(id));
+      if (lastIds.size > 0 && nuevos.length > 0) alertaPedidoNuevo();
+      lastIds = ids;
+      render(j.pedidos);
+      statusEl.textContent = `${j.pedidos.length} en cola`;
+      statusEl.classList.add('live');
+    } catch(e){
+      statusEl.textContent = 'sin conexión';
+      statusEl.classList.remove('live');
+    }
+  }
+
+  // Mantener pantalla despierta si el navegador lo soporta
+  if ('wakeLock' in navigator){
+    let wl = null;
+    const req = async () => { try { wl = await navigator.wakeLock.request('screen'); } catch(e){} };
+    req();
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState==='visible') req(); });
+  }
+
+  tick();
+  setInterval(tick, REFRESH_MS);
+})();
+</script>
+</body>
+</html>

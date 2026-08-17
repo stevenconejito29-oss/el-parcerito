@@ -791,7 +791,7 @@
   <div class="work-list">
 
   {% for pedido in pendientes %}
-  <article class="work-card is-warn" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+  <article class="work-card is-warn motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
       <div class="work-order-head">
         <div>
           <span class="work-order-code">{{ pedido.numero_pedido }}</span>
@@ -938,7 +938,7 @@
       <div class="work-list">
       {% for pedido in _grupo %}
   {%- set fecha_ent = pedido.fecha_entrega_programada -%}
-  <article class="work-card is-warn" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+  <article class="work-card is-warn motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}"
            style="border-left:3px solid color-mix(in srgb,var(--prep-programado) 55%,transparent)">
       <div class="work-order-head">
         <div>
@@ -1049,7 +1049,7 @@
   <div class="work-list">
 
   {% for pedido in armando %}
-  <article class="work-card work-card--tight is-info" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+  <article class="work-card work-card--tight is-info motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
       <div class="work-order-head">
         <span class="work-order-code is-info">{{ pedido.numero_pedido }}</span>
         <div class="work-time-stack">

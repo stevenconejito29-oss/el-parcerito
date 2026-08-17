@@ -57,13 +57,20 @@ def status():
 
     user_id = current_user.id if current_user.is_authenticated else session.get("push_cliente_id")
     active_devices = 0
+    this_device_active = False
     if user_id:
         active_devices = PushSubscription.query.filter_by(user_id=user_id, activo=True).count()
+        endpoint = (request.args.get("endpoint") or "").strip()
+        if endpoint:
+            this_device_active = PushSubscription.query.filter_by(
+                user_id=user_id, endpoint=endpoint, activo=True,
+            ).first() is not None
     return jsonify({
         "ok": True,
         "configured": not vapid_configuration_error(),
         "eligible": bool(user_id),
         "active_devices": active_devices,
+        "this_device_active": this_device_active,
     })
 
 

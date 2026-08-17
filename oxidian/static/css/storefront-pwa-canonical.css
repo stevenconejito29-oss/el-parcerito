@@ -1,0 +1,69 @@
+/* Menú instalado: capa final única para búsqueda, carruseles y tarjetas. */
+html.ox-pwa-runtime body.ox-body-public{--sf-glass:color-mix(in srgb,var(--theme-surface) 68%,transparent);--sf-line:color-mix(in srgb,#fff 30%,transparent);--sf-shadow:0 10px 25px rgba(42,23,8,.18)}
+html.ox-pwa-runtime body.ox-body-public main{min-width:0;overflow-x:clip}
+html.ox-pwa-runtime body.ox-body-public .ep-search-wrap{width:auto;max-width:none;display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:.52rem;margin:.55rem;padding:.52rem;border:1px solid color-mix(in srgb,var(--heritage-sun) 35%,transparent);border-radius:.9rem;background:linear-gradient(145deg,color-mix(in srgb,var(--theme-header-bg) 93%,#000),color-mix(in srgb,var(--heritage-coffee) 45%,var(--theme-header-bg)));box-shadow:0 10px 24px rgba(19,19,12,.22),inset 0 1px 0 rgba(255,255,255,.12)}
+.ep-search-heading{min-width:0;display:flex;align-items:center;gap:.45rem;padding-inline:.08rem}.ep-search-bean{width:38px;height:38px;display:grid;place-items:center;flex:0 0 38px;border-radius:.7rem;background:linear-gradient(145deg,var(--heritage-sun),color-mix(in srgb,var(--heritage-sun) 72%,var(--heritage-clay)));color:var(--heritage-coffee);box-shadow:0 5px 12px rgba(0,0,0,.2)}.ep-search-bean .ox-heritage-icon{width:21px;height:21px}.ep-search-heading>span:last-child{min-width:0;display:grid}.ep-search-heading strong{color:var(--theme-header-text);font-size:.7rem;font-weight:950;line-height:1.15}.ep-search-heading small{color:color-mix(in srgb,var(--theme-header-text) 76%,transparent);font-size:.56rem;line-height:1.2}
+html.ox-pwa-runtime body.ox-body-public .ep-search-box{width:100%;min-width:0;min-height:48px;display:grid;grid-template-columns:19px minmax(0,1fr) 44px;align-items:center;gap:.35rem;padding:.2rem .24rem .2rem .58rem;border:1px solid rgba(255,255,255,.48);border-radius:.7rem;background:color-mix(in srgb,var(--theme-surface) 94%,transparent);box-shadow:0 5px 13px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.72);-webkit-backdrop-filter:blur(14px) saturate(1.12);backdrop-filter:blur(14px) saturate(1.12)}
+html.ox-pwa-runtime body.ox-body-public .ep-search-icon{width:20px;height:20px;color:var(--brand-primary)}
+html.ox-pwa-runtime body.ox-body-public .ep-search-input{width:100%;min-width:0;min-height:44px;padding:.45rem 0;border:0;background:transparent;color:var(--theme-text);font-size:16px;font-weight:750;text-overflow:ellipsis}
+html.ox-pwa-runtime body.ox-body-public .ep-search-input::placeholder{color:color-mix(in srgb,var(--theme-muted) 88%,transparent);opacity:1}
+html.ox-pwa-runtime body.ox-body-public .ep-search-state{grid-column:1/-1;margin:0;color:color-mix(in srgb,var(--theme-header-text) 84%,transparent);font-size:.65rem}
+html.ox-pwa-runtime body.ox-body-public .ep-search-submit{width:44px;min-width:44px;min-height:44px;display:grid;place-items:center;padding:0;border:0;border-radius:.62rem;background:linear-gradient(145deg,var(--action-primary),color-mix(in srgb,var(--action-primary) 78%,var(--brand-accent)));color:var(--action-on-primary);font-size:0;box-shadow:0 6px 14px color-mix(in srgb,var(--action-primary) 30%,transparent)}html.ox-pwa-runtime body.ox-body-public .ep-search-submit::after{content:none;display:none}html.ox-pwa-runtime body.ox-body-public .ep-search-submit span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}html.ox-pwa-runtime body.ox-body-public .ep-search-submit b{font-size:1.05rem;font-weight:950}
+
+html.ox-pwa-runtime body.ox-body-public :is(.ep-mini-head,.ep-section-head,.ep-cat-title,.ep-banner-head){margin-inline:.55rem;padding:.58rem .68rem;border:1px solid var(--sf-line);border-radius:.75rem;background:var(--sf-glass);box-shadow:0 7px 18px rgba(42,23,8,.14);-webkit-backdrop-filter:blur(14px) saturate(1.16);backdrop-filter:blur(14px) saturate(1.16)}
+html.ox-pwa-runtime body.ox-body-public .ep-mini-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:.55rem}
+html.ox-pwa-runtime body.ox-body-public .ep-mini-head strong{min-width:0;display:flex;align-items:center;gap:.38rem;color:var(--theme-text);font-size:.86rem;line-height:1.15}html.ox-pwa-runtime body.ox-body-public .ep-mini-head strong .ox-heritage-icon{width:18px;height:18px;flex:0 0 auto;color:var(--heritage-coffee)}
+html.ox-pwa-runtime body.ox-body-public .ep-mini-head span{width:max-content;padding:.28rem .48rem;border-radius:999px;background:color-mix(in srgb,var(--brand-primary) 13%,transparent);color:color-mix(in srgb,var(--brand-primary) 60%,var(--theme-text));font-size:.6rem;font-weight:850;text-align:right}
+
+html.ox-pwa-runtime body.ox-body-public .ep-mc-destacados{width:100%;max-width:100%;display:grid;grid-auto-flow:column;grid-auto-columns:calc(100vw - 54px);gap:.55rem;overflow-x:auto;padding:.25rem .55rem .65rem;scroll-padding-inline:.55rem;scroll-snap-type:x mandatory;overscroll-behavior-inline:contain;scrollbar-width:none}
+html.ox-pwa-runtime body.ox-body-public .ep-mc-destacados::-webkit-scrollbar{display:none}
+html.ox-pwa-runtime body.ox-body-public .ep-mc-dest-card{min-width:0;min-height:88px;display:grid;grid-template-columns:78px minmax(0,1fr);align-items:center;overflow:hidden;border:1px solid var(--sf-line);border-radius:.72rem;background:color-mix(in srgb,var(--theme-surface) 76%,transparent);box-shadow:var(--sf-shadow);scroll-snap-align:start;scroll-snap-stop:always;-webkit-backdrop-filter:blur(13px) saturate(1.15);backdrop-filter:blur(13px) saturate(1.15)}
+html.ox-pwa-runtime body.ox-body-public .ep-mc-dest-img{width:78px;height:88px;border-radius:0;background:color-mix(in srgb,var(--theme-surface) 72%,#fff)}
+html.ox-pwa-runtime body.ox-body-public .ep-mc-dest-img img{width:100%;height:100%;object-fit:contain;padding:.45rem}
+html.ox-pwa-runtime body.ox-body-public .ep-mc-dest-info{min-width:0;padding:.58rem .65rem}
+html.ox-pwa-runtime body.ox-body-public .ep-mc-dest-name{display:-webkit-box;overflow:hidden;color:var(--theme-text);font-size:.82rem;line-height:1.14;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+html.ox-pwa-runtime body.ox-body-public .ep-mc-dest-title{font-size:.58rem}html.ox-pwa-runtime body.ox-body-public .ep-mc-dest-price{font-size:.9rem}
+
+html.ox-pwa-runtime body.ox-body-public .ep-cats-wrapper{position:relative;display:block;width:100%;max-width:100%;margin:.05rem 0 .55rem;padding:.18rem 0;border:0;border-radius:0;background:transparent;box-shadow:none;overflow:hidden;touch-action:pan-y}
+html.ox-pwa-runtime body.ox-body-public .ep-cats-wrapper::before,html.ox-pwa-runtime body.ox-body-public .ep-cats-wrapper::after{content:none}
+html.ox-pwa-runtime body.ox-body-public .ep-cats{max-width:100%;overflow-x:auto;padding:.16rem .55rem .38rem;scroll-padding-inline:.55rem;scroll-snap-type:x proximity;scrollbar-width:none;touch-action:pan-x;overscroll-behavior-inline:contain;overscroll-behavior-block:auto}html.ox-pwa-runtime body.ox-body-public .ep-cats::-webkit-scrollbar{display:none}html.ox-pwa-runtime body.ox-body-public .ep-cats>*{scroll-snap-align:start}
+html.ox-pwa-runtime body.ox-body-public .ep-cat{min-height:42px;padding:.34rem .52rem;border-radius:.68rem;background:color-mix(in srgb,var(--theme-surface) 84%,transparent);box-shadow:0 3px 9px rgba(40,22,8,.12)}html.ox-pwa-runtime body.ox-body-public .ep-cat.ep-cat-on{background:linear-gradient(145deg,color-mix(in srgb,var(--brand-primary) 20%,var(--theme-surface)),color-mix(in srgb,var(--theme-surface) 88%,transparent));box-shadow:0 5px 12px color-mix(in srgb,var(--brand-primary) 20%,transparent)}
+html.ox-pwa-runtime body.ox-body-public .ep-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem;padding-inline:.55rem}
+html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card{min-width:0;overflow:hidden;border:1px solid var(--sf-line);border-radius:.72rem;background:color-mix(in srgb,var(--theme-surface) 84%,transparent);box-shadow:0 9px 22px rgba(40,22,8,.17);-webkit-backdrop-filter:blur(12px) saturate(1.12);backdrop-filter:blur(12px) saturate(1.12)}
+html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card-img{min-height:108px;aspect-ratio:1.18/1;border-radius:0;background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.88),rgba(255,255,255,.2) 58%),color-mix(in srgb,var(--theme-surface-alt) 84%,transparent)}
+html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card-body{padding:.54rem;background:transparent}
+html.ox-pwa-runtime body.ox-body-public .ep-card-name{font-size:.83rem;line-height:1.15;-webkit-line-clamp:2}html.ox-pwa-runtime body.ox-body-public .ep-card-desc{min-height:0;font-size:.64rem;-webkit-line-clamp:1}html.ox-pwa-runtime body.ox-body-public .ep-card-price{font-size:1rem}html.ox-pwa-runtime body.ox-body-public .ep-card-footer{gap:.25rem;padding-top:.44rem}html.ox-pwa-runtime body.ox-body-public :is(.ep-btn-add,.ep-btn-detail){min-width:42px;height:42px;min-height:42px;padding-inline:.58rem;border-radius:.65rem}
+@media(max-width:360px){html.ox-pwa-runtime body.ox-body-public .ep-grid{gap:.4rem;padding-inline:.4rem}html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card-img{min-height:92px}html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card-body{padding:.46rem}html.ox-pwa-runtime body.ox-body-public .ep-mini-head{grid-template-columns:minmax(0,1fr) auto}html.ox-pwa-runtime body.ox-body-public .ep-mini-head span{max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+@media(max-width:430px){html.ox-pwa-runtime body.ox-body-public .ep-search-wrap{grid-template-columns:1fr;gap:.38rem}.ep-search-heading small{display:none}.ep-search-bean{width:30px;height:30px;flex-basis:30px}.ep-search-bean .ox-heritage-icon{width:17px;height:17px}.ep-search-heading strong{font-size:.66rem}}
+
+/* Safari/iOS crea halos claros verticales cuando una capa con
+   backdrop-filter toca el límite de un scroller o del viewport. En el menú
+   instalado usamos superficies translúcidas ya calculadas, sin muestrear el
+   fondo: se conserva profundidad y desaparecen las falsas franjas laterales. */
+html.ox-pwa-runtime body.ox-body-public :is(.ep-search-box,.ep-mini-head,.ep-section-head,.ep-cat-title,.ep-banner-head,.ep-mc-dest-card,.ep-card){
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  filter:none!important;
+}
+html.ox-pwa-runtime body.ox-body-public main{
+  overflow-x:hidden!important;
+  background-color:transparent!important;
+  box-shadow:none!important;
+  filter:none!important;
+}
+html.ox-pwa-runtime body.ox-body-public main::before,
+html.ox-pwa-runtime body.ox-body-public main::after,
+html.ox-pwa-runtime body.ox-body-public main>:is(.ep-section,.ep-banner-section,.ep-mc-destacados-wrap)::before,
+html.ox-pwa-runtime body.ox-body-public main>:is(.ep-section,.ep-banner-section,.ep-mc-destacados-wrap)::after{
+  content:none!important;
+  display:none!important;
+}
+html.ox-pwa-runtime body.ox-body-public main>:is(.ep-section,.ep-banner-section,.ep-mc-destacados-wrap){
+  background:transparent!important;
+  border-inline:0!important;
+  box-shadow:none!important;
+  filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+@media(min-width:700px){html.ox-pwa-runtime body.ox-body-public .ep-mc-destacados{grid-auto-columns:minmax(280px,34vw)}html.ox-pwa-runtime body.ox-body-public .ep-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.8rem}}

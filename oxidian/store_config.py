@@ -158,6 +158,12 @@ STORE_DEFAULTS = {
     "FEATURE_RECOGIDA": "1",
     "FEATURE_PEDIDOS_PROGRAMADOS": "1",
     "FEATURE_PUNTOS": "1",
+    "FEATURE_FAVORES": "1",
+    "CRUCE_PRECIO_MINIMO": "5.00",
+    "CRUCE_PRECIO_POR_KM": "1.25",
+    "CRUCE_PESO_MAX_KG": "8",
+    "CRUCE_VALOR_MAX_EUR": "100",
+    "CRUCE_MAX_ACTIVOS_CLIENTE": "3",
     "SERVICE_COMMISSION_PCT": "0",
     "LOGO_URL": "",
     "APP_ICON_URL": "",
@@ -240,8 +246,10 @@ def get_public_store_url(request_root: str | None = None) -> str:
     request_url = _absolute_http_url(request_root)
     request_is_public = bool(request_url and not _is_private_url(request_url))
     fallback_private = ""
-
+    resolved = []
     for candidate in (
+        os.environ.get("TIENDA_URL", ""),
+        os.environ.get("OXIDIAN_PUBLIC_URL", ""),
         get_store_value("TIENDA_URL", ""),
         get_store_value("OXIDIAN_PUBLIC_URL", ""),
         request_url,
@@ -249,12 +257,16 @@ def get_public_store_url(request_root: str | None = None) -> str:
         url = _absolute_http_url(candidate)
         if not url:
             continue
+        resolved.append(url)
         if _is_private_url(url):
             fallback_private = fallback_private or url
-            if request_is_public:
-                continue
+            continue
+        # Un dominio público siempre gana frente a cualquier valor localhost,
+        # Docker o LAN guardado anteriormente en SiteConfig.
         return url
-    return request_url or fallback_private
+    if request_is_public:
+        return request_url
+    return fallback_private
 
 
 def get_store_bool(key: str, default: str = "0") -> bool:
@@ -277,6 +289,7 @@ def get_store_features() -> dict:
         "recogida": recogida,
         "pedidos_programados": get_store_bool("FEATURE_PEDIDOS_PROGRAMADOS", "1"),
         "puntos": get_store_bool("FEATURE_PUNTOS", "1"),
+        "favores": get_store_bool("FEATURE_FAVORES", "1") and delivery,
         "proveedores": True,
         "efectivo": get_store_bool("EFECTIVO_HABILITADO", "1"),
         "bizum": get_store_bool("BIZUM_HABILITADO", "0"),
@@ -365,7 +378,9 @@ LOCKED_CONFIG_KEYS = frozenset({
     "SERVICE_COMMISSION_PCT",
     # Toggles de features del producto (super_admin decide qué contrata)
     "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
-    "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
+    "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS", "FEATURE_FAVORES",
+    "CRUCE_PRECIO_MINIMO", "CRUCE_PRECIO_POR_KM", "CRUCE_PESO_MAX_KG",
+    "CRUCE_VALOR_MAX_EUR", "CRUCE_MAX_ACTIVOS_CLIENTE",
     "EFECTIVO_HABILITADO", "BIZUM_HABILITADO", "TARJETA_HABILITADA",
     # Integraciones y bot (super_admin gestiona el WhatsApp central)
     "BOT_API_URL", "BOT_OXIDIAN_URL", "BOT_API_KEY", "BOT_PANEL_KEY",
@@ -411,7 +426,9 @@ CLAVES_QUE_REFRESCAN_BOT = frozenset({
     "NOMBRE_NEGOCIO", "TELEFONO_NEGOCIO", "TIENDA_URL", "OXIDIAN_PUBLIC_URL",
     # Toggles de features → controlan qué opciones muestra el menú (3/4).
     "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
-    "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
+    "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS", "FEATURE_FAVORES",
+    "CRUCE_PRECIO_MINIMO", "CRUCE_PRECIO_POR_KM", "CRUCE_PESO_MAX_KG",
+    "CRUCE_VALOR_MAX_EUR", "CRUCE_MAX_ACTIVOS_CLIENTE",
     # Horario y forzado de cierre → el bot debe reflejarlos al instante
     # para no aceptar pedidos fuera de ventana.
     "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON",

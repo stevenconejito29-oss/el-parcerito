@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-product-card.css', v=asset_version) }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-product-modal.css', v=asset_version) }}">
 {% endblock %}
+{% block styles_final %}<link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-pwa-canonical.css', v=asset_version) }}">{% endblock %}
 {% block preload %}
 {# LCP hint: preload de la imagen del hero para que empiece a bajar mientras
    el navegador parsea el CSS. Reduce el TTI perceptible en móvil sin cambiar
@@ -113,13 +114,17 @@
    contenido variable, sin duplicarse en la navegación inferior. #}
 <form method="GET" action="{{ establecimiento.url }}" class="ep-search-wrap" id="buscar">
   {% if categoria_activa %}<input type="hidden" name="categoria" value="{{ categoria_activa }}">{% endif %}
+  <div class="ep-search-heading">
+    <span class="ep-search-bean" aria-hidden="true">{{ heritage_icon('grano') }}</span>
+    <span><strong>Encuentra tu antojo</strong><small>Busca por producto, sabor o combo</small></span>
+  </div>
   <div class="ep-search-box">
     <svg class="ep-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     <input type="search" name="q" value="{{ busqueda or '' }}"
-           placeholder="{{ 'Busca platos, bebidas o combos' if brand.es_comida else 'Busca productos, tallas o packs' }}"
+           placeholder="{{ '¿Qué se te antoja hoy?' if brand.es_comida else '¿Qué estás buscando?' }}"
            class="ep-search-input" autocomplete="off" aria-label="Buscar productos">
     {% if busqueda %}<a href="{{ storefront_url() }}" class="ep-search-clear" aria-label="Limpiar">✕</a>{% endif %}
-    <button type="submit" class="ep-search-submit" aria-label="Buscar productos"><span>Buscar</span></button>
+    <button type="submit" class="ep-search-submit" aria-label="Buscar productos"><span>Buscar</span><b aria-hidden="true">→</b></button>
   </div>
   {% if busqueda %}
   <p class="ep-search-state">Mostrando resultados para <strong>{{ busqueda }}</strong></p>
@@ -484,7 +489,7 @@
     {% if brand.descripcion %}<div class="ep-why-item"><span class="ep-why-icon">✓</span><div><p class="ep-why-title">Nuestra tienda</p><p class="ep-why-desc">{{ brand.descripcion }}</p></div></div>{% endif %}
     {% if brand.delivery %}<div class="ep-why-item"><span class="ep-why-icon">🚴</span><div><p class="ep-why-title">Delivery ~{{ zona_principal.tiempo_estimado_min if zona_principal else 25 }} min</p><p class="ep-why-desc">Rápido y en tu puerta</p></div></div>{% endif %}
     {% if brand.puntos %}<div class="ep-why-item"><span class="ep-why-icon">{{ heritage_icon('grano') }}</span><div><p class="ep-why-title">Suma {{ ui.loyalty_unit_plural }}</p><p class="ep-why-desc">Canjéalos por productos</p></div></div>{% endif %}
-    <div class="ep-why-item"><span class="ep-why-icon">📱</span><div><p class="ep-why-title">WhatsApp</p><p class="ep-why-desc">Consultas y seguimiento</p></div></div>
+    <div class="ep-why-item"><span class="ep-why-icon">💬</span><div><p class="ep-why-title">Chat dentro de la app</p><p class="ep-why-desc">Consultas y atención sin salir del menú</p></div></div>
   </div>
 </section>
 
@@ -1155,11 +1160,13 @@ if (!window._epMenuGlobalsBound) {
 /* ── Auto-scroll al pill activo de categorías ── */
 (function() {
   const active = document.querySelector('.ep-cat-on');
-  const rail = active && active.closest('.ep-cats');
-  if (!active || !rail) return;
+  const rail = document.getElementById('cats-bar');
+  if (!rail) return;
   requestAnimationFrame(() => {
-    const left = active.offsetLeft - ((rail.clientWidth - active.offsetWidth) / 2);
-    rail.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+    if (active) {
+      const left = active.offsetLeft - ((rail.clientWidth - active.offsetWidth) / 2);
+      rail.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+    }
   });
 })();
 

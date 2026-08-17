@@ -3092,7 +3092,7 @@ def responder_confirmacion_pedido():
             "accion": "sin_pendiente",
             "mensaje": (
                 "No tienes ningún pedido pendiente de confirmación ahora mismo. "
-                "Si necesitas algo escribe *MENU*."
+                "Si necesitas ayuda, abre el chat dentro de nuestra app."
             ),
         })
 
@@ -3123,7 +3123,7 @@ def responder_confirmacion_pedido():
             "accion": "sin_pendiente",
             "mensaje": (
                 f"El pedido *{pedido.numero_pedido}* ya entró en preparación. "
-                "Escribe *AGENTE* si necesitas ayuda."
+                "Abre el chat dentro de nuestra app si necesitas ayuda."
             ),
         })
     try:

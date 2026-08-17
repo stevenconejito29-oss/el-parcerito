@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T11:10:50.112Z",
+  "generatedAt": "2026-08-14T11:51:23.965Z",
   "baseUrl": "https://elparcerito.com",
   "views": [
     {
@@ -7,83 +7,107 @@
       "status": 200,
       "consoleErrors": [],
       "failedRequests": [],
-      "title": "El Parcerito — Pide online",
+      "title": "El Parcerito de Carmona — Pide online",
       "horizontalOverflow": false,
       "scrollWidth": 390,
       "viewportWidth": 390,
-      "products": 14,
-      "visibleProducts": 12,
+      "products": 15,
+      "visibleProducts": 15,
       "smallTargets": [
         {
           "tag": "a",
-          "text": "PANZETA",
-          "width": 63,
+          "text": "Empleados",
+          "width": 44,
+          "height": 38
+        },
+        {
+          "tag": "a",
+          "text": "BOM BOM BUM",
+          "width": 108,
           "height": 32
         },
         {
           "tag": "a",
           "text": "GALLETAS FESTIVAL",
-          "width": 137,
+          "width": 134,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "QUIPITOS",
-          "width": 69,
+          "text": "GOMITAS",
+          "width": 64,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "bombombum",
-          "width": 97,
+          "text": "SUPER COCO",
+          "width": 87,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "chocorramo",
-          "width": 86,
+          "text": "AQUARIUS LIMON",
+          "width": 126,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "Hit",
-          "width": 21,
+          "text": "AQUARIUS NARANJA",
+          "width": 143,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "PONY MALTA",
-          "width": 93,
-          "height": 32
-        },
-        {
-          "tag": "a",
-          "text": "POSTOBON",
+          "text": "COCA-COLA",
           "width": 80,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "uva postobon",
-          "width": 97,
+          "text": "FANTA LIMON",
+          "width": 98,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "CHOCOLATE CORONA",
-          "width": 151,
+          "text": "MONSTER MANGO LOCO",
+          "width": 150,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "PANELA",
-          "width": 56,
+          "text": "NESTEA LIMON",
+          "width": 105,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "cafe",
-          "width": 30,
+          "text": "NESTEA MARACUYA",
+          "width": 135,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "PONY MALTA",
+          "width": 91,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "DORITOS CHILLI",
+          "width": 112,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "DORITOS DINAMITA",
+          "width": 139,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "RUFFLES YORK Y QUESO",
+          "width": 150,
           "height": 32
         },
         {
@@ -94,8 +118,8 @@
         },
         {
           "tag": "a",
-          "text": "WhatsApp",
-          "width": 57,
+          "text": "Chat de ayuda",
+          "width": 80,
           "height": 17
         },
         {
@@ -119,84 +143,108 @@
       "status": 200,
       "consoleErrors": [],
       "failedRequests": [],
-      "title": "El Parcerito — Pide online",
+      "title": "El Parcerito de Carmona — Pide online",
       "horizontalOverflow": false,
       "scrollWidth": 393,
       "viewportWidth": 393,
-      "products": 14,
-      "visibleProducts": 12,
+      "products": 15,
+      "visibleProducts": 15,
       "smallTargets": [
         {
           "tag": "a",
-          "text": "PANZETA",
-          "width": 63,
-          "height": 32
+          "text": "Empleados",
+          "width": 44,
+          "height": 38
+        },
+        {
+          "tag": "a",
+          "text": "BOM BOM BUM",
+          "width": 108,
+          "height": 34
         },
         {
           "tag": "a",
           "text": "GALLETAS FESTIVAL",
-          "width": 137,
-          "height": 32
+          "width": 133,
+          "height": 34
         },
         {
           "tag": "a",
-          "text": "QUIPITOS",
-          "width": 69,
-          "height": 32
+          "text": "GOMITAS",
+          "width": 64,
+          "height": 34
         },
         {
           "tag": "a",
-          "text": "bombombum",
+          "text": "SUPER COCO",
+          "width": 87,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "AQUARIUS LIMON",
+          "width": 126,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "AQUARIUS NARANJA",
+          "width": 142,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "COCA-COLA",
+          "width": 80,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "FANTA LIMON",
           "width": 97,
-          "height": 32
+          "height": 34
         },
         {
           "tag": "a",
-          "text": "chocorramo",
-          "width": 86,
-          "height": 32
+          "text": "MONSTER MANGO LOCO",
+          "width": 142,
+          "height": 34
         },
         {
           "tag": "a",
-          "text": "Hit",
-          "width": 21,
-          "height": 32
+          "text": "NESTEA LIMON",
+          "width": 105,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "NESTEA MARACUYA",
+          "width": 134,
+          "height": 34
         },
         {
           "tag": "a",
           "text": "PONY MALTA",
-          "width": 93,
-          "height": 32
+          "width": 91,
+          "height": 34
         },
         {
           "tag": "a",
-          "text": "POSTOBON",
-          "width": 80,
-          "height": 32
+          "text": "DORITOS CHILLI",
+          "width": 112,
+          "height": 34
         },
         {
           "tag": "a",
-          "text": "uva postobon",
-          "width": 97,
-          "height": 32
+          "text": "DORITOS DINAMITA",
+          "width": 138,
+          "height": 34
         },
         {
           "tag": "a",
-          "text": "CHOCOLATE CORONA",
-          "width": 151,
-          "height": 32
-        },
-        {
-          "tag": "a",
-          "text": "PANELA",
-          "width": 56,
-          "height": 32
-        },
-        {
-          "tag": "a",
-          "text": "cafe",
-          "width": 30,
-          "height": 32
+          "text": "RUFFLES YORK Y QUESO",
+          "width": 142,
+          "height": 34
         },
         {
           "tag": "a",
@@ -206,8 +254,8 @@
         },
         {
           "tag": "a",
-          "text": "WhatsApp",
-          "width": 57,
+          "text": "Chat de ayuda",
+          "width": 80,
           "height": 17
         },
         {
@@ -223,7 +271,7 @@
           "height": 18
         }
       ],
-      "serviceWorkerControlled": false,
+      "serviceWorkerControlled": true,
       "standalone": true
     },
     {
@@ -231,17 +279,23 @@
       "status": 200,
       "consoleErrors": [],
       "failedRequests": [],
-      "title": "El Parcerito — Pide online",
+      "title": "El Parcerito de Carmona — Pide online",
       "horizontalOverflow": false,
       "scrollWidth": 1440,
       "viewportWidth": 1440,
-      "products": 14,
-      "visibleProducts": 12,
+      "products": 15,
+      "visibleProducts": 15,
       "smallTargets": [
         {
           "tag": "a",
-          "text": "PANZETA",
-          "width": 1193,
+          "text": "Empleados",
+          "width": 28,
+          "height": 38
+        },
+        {
+          "tag": "a",
+          "text": "BOM BOM BUM",
+          "width": 267,
           "height": 32
         },
         {
@@ -252,25 +306,55 @@
         },
         {
           "tag": "a",
-          "text": "QUIPITOS",
+          "text": "GOMITAS",
           "width": 267,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "bombombum",
+          "text": "SUPER COCO",
           "width": 267,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "chocorramo",
+          "text": "AQUARIUS LIMON",
           "width": 267,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "Hit",
+          "text": "AQUARIUS NARANJA",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "COCA-COLA",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "FANTA LIMON",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "MONSTER MANGO LOCO",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "NESTEA LIMON",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "NESTEA MARACUYA",
           "width": 267,
           "height": 32
         },
@@ -282,31 +366,19 @@
         },
         {
           "tag": "a",
-          "text": "POSTOBON",
-          "width": 267,
-          "height": 32
-        },
-        {
-          "tag": "a",
-          "text": "uva postobon",
-          "width": 267,
-          "height": 32
-        },
-        {
-          "tag": "a",
-          "text": "CHOCOLATE CORONA",
+          "text": "DORITOS CHILLI",
           "width": 371,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "PANELA",
+          "text": "DORITOS DINAMITA",
           "width": 371,
           "height": 32
         },
         {
           "tag": "a",
-          "text": "cafe",
+          "text": "RUFFLES YORK Y QUESO",
           "width": 371,
           "height": 32
         },
@@ -331,7 +403,7 @@
     "status": 200,
     "contentType": "application/manifest+json",
     "data": {
-      "name": "El Parcerito",
+      "name": "El Parcerito de Carmona",
       "short_name": "El Parcerito",
       "description": "Menu online y canasta con entrega a domicilio.",
       "start_url": "/?source=pwa",
@@ -354,34 +426,9 @@
       "id": "/",
       "icons": [
         {
-          "src": "/pwa-assets/05aca016ec09/pwa-icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png",
-          "purpose": "any"
-        },
-        {
-          "src": "/pwa-assets/05aca016ec09/pwa-icon-512.png",
-          "sizes": "512x512",
-          "type": "image/png",
-          "purpose": "any"
-        },
-        {
-          "src": "/pwa-assets/05aca016ec09/pwa-icon-512-maskable.png",
-          "sizes": "512x512",
-          "type": "image/png",
-          "purpose": "maskable"
-        },
-        {
-          "src": "/pwa-assets/05aca016ec09/pwa-icon.svg",
+          "src": "/uploads/icon/icon_94c510f0_1786313624.jpg?v=1786313624",
           "sizes": "any",
-          "type": "image/svg+xml",
-          "purpose": "any"
-        },
-        {
-          "src": "/pwa-assets/05aca016ec09/pwa-icon-monochrome.svg",
-          "sizes": "any",
-          "type": "image/svg+xml",
-          "purpose": "monochrome"
+          "purpose": "any maskable"
         }
       ],
       "shortcuts": [
@@ -392,7 +439,7 @@
           "url": "/",
           "icons": [
             {
-              "src": "/pwa-assets/05aca016ec09/pwa-icon-192.png",
+              "src": "/uploads/icon/icon_94c510f0_1786313624.jpg?v=1786313624",
               "sizes": "any"
             }
           ]
@@ -404,7 +451,7 @@
           "url": "/carrito",
           "icons": [
             {
-              "src": "/pwa-assets/05aca016ec09/pwa-icon-192.png",
+              "src": "/uploads/icon/icon_94c510f0_1786313624.jpg?v=1786313624",
               "sizes": "any"
             }
           ]
@@ -416,7 +463,7 @@
           "url": "/club",
           "icons": [
             {
-              "src": "/pwa-assets/05aca016ec09/pwa-icon-192.png",
+              "src": "/uploads/icon/icon_94c510f0_1786313624.jpg?v=1786313624",
               "sizes": "any"
             }
           ]
@@ -424,18 +471,18 @@
       ],
       "screenshots": [
         {
-          "src": "/pwa-assets/05aca016ec09/pwa-screenshot-mobile.png",
+          "src": "/pwa-assets/c035a3a049d3/pwa-screenshot-mobile.png",
           "sizes": "390x844",
           "type": "image/png",
           "form_factor": "narrow",
-          "label": "El Parcerito — Menu online"
+          "label": "El Parcerito de Carmona — Menu online"
         },
         {
-          "src": "/pwa-assets/05aca016ec09/pwa-screenshot-wide.png",
+          "src": "/pwa-assets/c035a3a049d3/pwa-screenshot-wide.png",
           "sizes": "1280x720",
           "type": "image/png",
           "form_factor": "wide",
-          "label": "El Parcerito — Compra y seguimiento"
+          "label": "El Parcerito de Carmona — Compra y seguimiento"
         }
       ],
       "prefer_related_applications": false,
@@ -451,8 +498,8 @@
   "offline": {
     "error": null,
     "result": {
-      "title": "El Parcerito — Pide online",
-      "bodyText": "DELIVERY\nEl Parcerito\nCalidad colombiana, cerquita de ti\n\nTRADICIÓN COLOMBIANA · SERVICIO DE CONFIANZA\n\nEl sabor que recuerda a casa, con la calidad que esperas.\n\nProductos seleccionados, preparación cuidada y un servicio en el que puedes confiar.\n\n \nVer menú completo\n~25 min\nDelivery\nAbierto\nBuscar",
+      "title": "El Parcerito de Carmona — Pide online",
+      "bodyText": "DELIVERY\nEl Parcerito de Carmona\nCalidad colombiana, cerquita de ti\n\nTRADICIÓN COLOMBIANA · SERVICIO DE CONFIANZA\n\nEl sabor que recuerda a casa, con la calidad que esperas.\n\nProductos seleccionados, preparación cuidada y un servicio en el que puedes confiar.\n\n \nVer menú completo\n~30 min\nGratis +€12\n",
       "controlled": true
     }
   }

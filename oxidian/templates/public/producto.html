@@ -8,7 +8,7 @@
 
 {# ── IMAGEN HERO (full-width mobile) ── #}
 {% set _detail_image_fit = producto.get_atributos().get('image_fit', 'contain') %}
-<div class="pd-hero-img {{ 'pd-hero-img-cover' if _detail_image_fit == 'cover' else 'pd-hero-img-contain' }}" id="pd-hero">
+<div class="pd-hero-img motion-fade-in {{ 'pd-hero-img-cover' if _detail_image_fit == 'cover' else 'pd-hero-img-contain' }}" id="pd-hero" style="view-transition-name: producto-{{ producto.id }}">
   {% if producto.imagen_url %}
     {% set src = producto.imagen_url|upload_url %}
     <img src="{{ src }}" alt="{{ producto.nombre }}" class="pd-hero-img-el"
@@ -732,7 +732,7 @@
     <span class="pd-box-icon">😔</span>
     <div>
       <p class="pd-box-title" style="color:var(--theme-danger)">Agotado momentáneamente</p>
-      <p class="pd-box-sub">Vuelve pronto o consulta por WhatsApp.</p>
+      <p class="pd-box-sub">Vuelve pronto o consúltanos en el chat de la app.</p>
     </div>
   </div>
   {% endif %}

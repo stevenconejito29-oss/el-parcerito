@@ -68,7 +68,7 @@
 
 <div class="space-y-3">
 {% for pedido in pedidos %}
-<div class="ox-card order-card order-{{ pedido.estado }}">
+<div class="ox-card order-card order-{{ pedido.estado }} motion-fade-in" style="view-transition-name: pedido-{{ pedido.id }}">
   <div class="flex items-start justify-between gap-3 flex-wrap">
     <div class="min-w-0">
       <div class="flex items-center gap-2 flex-wrap">

@@ -603,71 +603,6 @@
 
 @media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen) {
 
-  /* Buscador PWA visible y directo: una sola barra, sin modal intermedio. */
-  body.ox-body-public .ep-search-wrap {
-    display: block !important;
-    position: relative !important;
-    top: auto !important;
-    z-index: 2 !important;
-    margin: .35rem 0 1rem !important;
-    padding: 0 !important;
-    background: transparent !important;
-    border: 0 !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-  }
-  body.ox-body-public .ep-search-wrap + :is(.ep-banner-section,.ep-mc-destacados-wrap) {
-    position: relative !important;
-    z-index: 1 !important;
-    clear: both;
-  }
-  @media (max-width: 420px) {
-    body.ox-body-public .ep-search-box { min-height: 50px !important; padding-left: .75rem !important; }
-    body.ox-body-public .ep-search-input { min-height: 42px !important; font-size: 16px !important; }
-    body.ox-body-public .ep-search-submit { min-width: 48px !important; min-height: 42px !important; padding: 0 .72rem !important; }
-    body.ox-body-public .ep-search-submit span { font-size: 0 !important; }
-    body.ox-body-public .ep-search-submit span::after { content: 'Ir'; font-size: .78rem; }
-  }
-  body.ox-body-public .ep-search-box {
-    width: 100% !important;
-    min-width: 0 !important;
-    min-height: 56px !important;
-    gap: .62rem !important;
-    padding: .3rem .34rem .3rem 1rem !important;
-    border: 1px solid color-mix(in srgb, var(--brand-primary) 24%, var(--col-border)) !important;
-    border-radius: 1.15rem !important;
-    background: var(--theme-surface) !important;
-    box-shadow: 0 9px 26px color-mix(in srgb, var(--theme-text) 9%, transparent) !important;
-    overflow: hidden !important;
-  }
-  body.ox-body-public .ep-search-box::after { content: none !important; display: none !important; }
-  body.ox-body-public .ep-search-box:focus-within {
-    border-color: var(--brand-primary) !important;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 16%, transparent) !important;
-  }
-  body.ox-body-public .ep-search-icon { width: 20px !important; height: 20px !important; color: var(--brand-primary) !important; }
-  body.ox-body-public .ep-search-input { width: 100% !important; min-width: 0 !important; min-height: 46px !important; padding: .55rem 0 !important; font-size: 1rem !important; font-weight: 720 !important; }
-  body.ox-body-public .ep-search-submit {
-    width: auto !important;
-    min-width: 88px !important;
-    min-height: 46px !important;
-    padding: 0 1rem !important;
-    clip-path: none !important;
-    border-radius: .86rem !important;
-    color: var(--action-on-primary) !important;
-    font-weight: 900 !important;
-  }
-  body.ox-body-public .ep-search-submit span { display: inline !important; }
-  body.ox-body-public .ep-search-submit::after { content: none !important; display: none !important; }
-  body.ox-body-public .ep-search-clear { min-width: 40px; min-height: 40px; display: grid; place-items: center; }
-  body.ox-body-public .ep-search-state { display: block !important; }
-
-  @media (max-width: 380px) {
-    body.ox-body-public .ep-search-box { padding-left: .78rem !important; gap: .42rem !important; }
-    body.ox-body-public .ep-search-submit { min-width: 48px !important; width: 48px !important; padding: 0 !important; }
-    body.ox-body-public .ep-search-submit span { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip-path: inset(50%) !important; }
-    body.ox-body-public .ep-search-submit::after { content: '→' !important; display: grid !important; place-items: center !important; color: var(--action-on-primary) !important; font-size: 1.2rem !important; }
-  }
   /* ══════════════════════════════════════════════════════════════
      OVERLAY DE BÚSQUEDA — diseño 2025
      · Backdrop con gradiente vertical (no solo negro plano)
@@ -967,32 +902,6 @@
      damos touch-action pan-x (sólo horizontal) — el pan vertical fluye
      al viewport sin conflicto. La barra sigue funcionando y navegando
      categorías, pero deja de bloquear el scroll de la página. */
-  body.ox-body-public .ep-cats-wrapper {
-    position: static !important;
-    top: auto !important;
-    z-index: auto !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    box-shadow: 0 1px 0 color-mix(in srgb, var(--theme-text) 8%, transparent) !important;
-    background: transparent !important;
-    border-bottom: 0 !important;
-    /* El wrap deja pasar el pan vertical al viewport */
-    touch-action: pan-y !important;
-  }
-  /* El scroller horizontal interno sí acepta pan-x, pero contain para
-     no propagar el over-scroll horizontal al viewport. */
-  body.ox-body-public .ep-cats-wrapper .ep-cats {
-    touch-action: pan-x !important;
-    overscroll-behavior-inline: contain !important;
-    overscroll-behavior-block: auto !important;
-  }
-  /* Mientras el usuario scrollea verticalmente, cats no acepta touch
-     — evita cualquier residual de intercepción del scroller horizontal. */
-  body.ox-body-public.is-scrolling .ep-cats-wrapper * {
-    pointer-events: none !important;
-    touch-action: none !important;
-  }
-
   /* ── Ritmo vertical: separación clara entre bloques ── */
   body.ox-body-public main > section,
   body.ox-body-public main > form.ep-search-wrap {
@@ -1075,12 +984,17 @@
   body.ox-body-public .ep-card-combo {
     border-radius: 0 !important;
   }
+  /* Ninguna lámina blanca top-level debe tocar/curvar los laterales. La
+     respiración pertenece a cada bloque interno, mientras el lienzo conserva
+     la textura continua de borde a borde. */
+  body.ox-body-public main > :is(.ep-section,.ep-banner-section,.ep-mc-destacados-wrap) {
+    border-left:0!important;border-right:0!important;border-radius:0!important;box-shadow:none!important;
+  }
   /* Secciones top-level pasan a full-width (padding lateral 0) — así
      los cards y grids alcanzan el borde del viewport y desaparecen
      las franjas laterales visibles del fondo burlap. El padding
      interno para que los textos no peguen al borde absoluto se mueve
      a los HIJOS (heads y grids), aplicado más abajo. */
-  body.ox-body-public main > .ep-search-wrap,
   body.ox-body-public main > .ep-banner-section,
   body.ox-body-public main > .ep-section,
   body.ox-body-public main > .ep-mc-destacados-wrap {
@@ -1094,8 +1008,7 @@
   body.ox-body-public main .ep-section-head,
   body.ox-body-public main .ep-banner-head,
   body.ox-body-public main .ep-mini-head,
-  body.ox-body-public main .ep-cat-title,
-  body.ox-body-public main .ep-search-box {
+  body.ox-body-public main .ep-cat-title {
     padding-left: .8rem !important;
     padding-right: .8rem !important;
   }
@@ -1556,21 +1469,183 @@ body.ox-body-public::before {
   z-index: -1;
   inset: 0;
   pointer-events: none;
-  /* 2026-08-10: eliminado el radial-gradient laterales que producía
-     dos franjas blancas verticales con efecto curvo/reflejo en PWA
-     (solo visible en display-mode instalado). Overlay blanco subido
-     a .95 y brightness a 1.45 para aclarar la textura burlap, que
-     se percibía oscura. Sin radial, el fondo queda uniforme. */
-  background-color: #fbf7ee;
-  background-image:
-    linear-gradient(rgba(255, 253, 248, .95), rgba(255, 253, 248, .95)),
-    url("../coffee-burlap-texture-v2.webp");
+  /* Una sola textura, sin filtros ni gradientes laterales. La capa de color
+     translúcida mantiene contraste sin alterar visualmente la fotografía. */
+  background-color: color-mix(in srgb, var(--theme-bg,#fbf7ee) 86%, transparent);
+  background-image: url("../coffee-burlap-texture-v4.webp");
+  background-blend-mode: soft-light;
   background-repeat: no-repeat;
   background-position: center;
   background-size: cover;
-  filter: saturate(.6) contrast(1) brightness(1.45);
+  filter: none;
   transform: translateZ(0);
 }
+
+/* Esta capa SOLO se activa en una PWA instalada. La web normal conserva su
+   estructura. La textura cuadrada se muestra a tamaño natural y se repite;
+   `cover` la ampliaba hasta perder la trama y simulaba franjas laterales. */
+html.ox-pwa-runtime:has(body.ox-body-public), html.ox-pwa-runtime body.ox-body-public {
+  background-color:#b99a68 !important;
+  background-image:url("../coffee-burlap-texture-v4.webp") !important;
+  background-position:center top !important;
+  background-size:448px 576px !important;
+  background-repeat:repeat !important;
+}
+html.ox-pwa-runtime body.ox-body-public {
+  background-image:url("../coffee-burlap-texture-v4.webp") !important;
+  background-position:center top !important;
+  background-size:448px 576px !important;
+  background-repeat:repeat !important;
+  background-attachment:fixed !important;
+  filter:none !important;
+}
+html.ox-pwa-runtime body.ox-body-public::before { content:none !important; }
+html.ox-pwa-runtime body.ox-body-public > main { width:100%;max-width:none!important;background:transparent!important; }
+
+/* Autoridad final de las tarjetas únicamente dentro de la app instalada. */
+html.ox-pwa-runtime body.ox-body-public .ep-grid {
+  grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+  gap:.72rem !important;
+  padding-inline:.65rem !important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card {
+  min-width:0 !important;
+  overflow:hidden !important;
+  border:1px solid color-mix(in srgb,var(--theme-text) 13%,transparent) !important;
+  border-radius:1.05rem !important;
+  background:var(--theme-surface,#fff) !important;
+  box-shadow:0 8px 22px color-mix(in srgb,var(--theme-text) 14%,transparent) !important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card-img {
+  min-height:132px !important;
+  aspect-ratio:1.12/1 !important;
+  border-radius:0 !important;
+  background:linear-gradient(145deg,var(--theme-surface-alt),color-mix(in srgb,var(--brand-primary) 8%,var(--theme-surface))) !important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card-body { padding:.68rem !important; background:var(--theme-surface) !important; }
+html.ox-pwa-runtime body.ox-body-public .ep-card-name { color:var(--theme-text) !important; font-size:.88rem !important; line-height:1.18 !important; }
+html.ox-pwa-runtime body.ox-body-public .ep-card-desc { color:var(--theme-muted) !important; }
+html.ox-pwa-runtime body.ox-body-public .ep-card-price { color:var(--theme-text) !important; font-size:1.02rem !important; }
+html.ox-pwa-runtime body.ox-body-public .ep-card-kicker { color:color-mix(in srgb,var(--brand-primary) 70%,var(--theme-text)) !important; }
+html.ox-pwa-runtime body.ox-body-public .ep-card-cart-state { background:var(--theme-success) !important; color:#fff !important; border-color:transparent !important; }
+html.ox-pwa-runtime body.ox-body-public .ep-mc-destacados { grid-auto-columns:minmax(72%,280px)!important;max-width:100%;overflow-x:auto!important; }
+html.ox-pwa-runtime body.ox-body-public .ep-mc-dest-card { min-width:0!important;border-radius:1rem!important; }
+
+/* Catálogo PWA: profundidad táctil y jerarquía compacta. Se limita al modo
+   instalado; nombres, precios y estados continúan viniendo del DOM/servidor. */
+html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card {
+  position:relative!important;
+  isolation:isolate!important;
+  background:linear-gradient(165deg,color-mix(in srgb,var(--theme-surface) 97%,#fff),var(--theme-surface))!important;
+  box-shadow:0 2px 3px rgba(35,20,8,.08),0 12px 26px rgba(35,20,8,.19),inset 0 1px 0 color-mix(in srgb,#fff 72%,transparent)!important;
+  transform:translateZ(0);
+  transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card::before {
+  height:3px!important;
+  background:linear-gradient(90deg,var(--brand-primary),var(--brand-accent),color-mix(in srgb,var(--brand-primary) 55%,var(--heritage-river)))!important;
+  opacity:.92!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card:active {
+  transform:translateY(2px) scale(.992)!important;
+  box-shadow:0 3px 9px rgba(35,20,8,.15)!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card-img {
+  overflow:hidden!important;
+  background:radial-gradient(circle at 48% 44%,color-mix(in srgb,#fff 88%,var(--theme-surface)) 0 27%,transparent 66%),linear-gradient(155deg,color-mix(in srgb,var(--brand-primary) 7%,var(--theme-surface-alt)),var(--theme-surface-alt))!important;
+  box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--theme-text) 9%,transparent)!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-card-image-contain .ep-card-img img {
+  padding:clamp(.38rem,2.2vw,.7rem)!important;
+  filter:drop-shadow(0 10px 8px rgba(30,18,8,.22))!important;
+  transform:scale(.96);
+  transition:transform .2s ease!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-card:active .ep-card-img img { transform:scale(.985); }
+html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card-body {
+  display:flex!important;
+  flex-direction:column!important;
+  gap:.3rem!important;
+  min-height:132px!important;
+  padding:.54rem .58rem .6rem!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-card-kicker {
+  overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;
+  font-size:.56rem!important;font-weight:950!important;letter-spacing:.08em!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-card-name {
+  min-height:2.34em!important;
+  font-size:clamp(.84rem,3.65vw,.96rem)!important;
+  line-height:1.17!important;
+  -webkit-line-clamp:2!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-card-desc {
+  min-height:1.3em!important;
+  font-size:.66rem!important;
+  line-height:1.28!important;
+  -webkit-line-clamp:1!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-card-highlights { gap:.22rem!important;max-height:26px!important;overflow:hidden!important; }
+html.ox-pwa-runtime body.ox-body-public .ep-card-highlight { min-height:22px!important;padding:.18rem .36rem!important;font-size:.55rem!important; }
+html.ox-pwa-runtime body.ox-body-public .ep-card-footer {
+  grid-template-columns:minmax(0,1fr) 44px!important;
+  gap:.3rem!important;
+  padding-top:.48rem!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-card-price { font-size:clamp(1rem,4.6vw,1.18rem)!important;line-height:1!important;white-space:nowrap!important; }
+html.ox-pwa-runtime body.ox-body-public .ep-card-footer>:is(.ep-btn-add,.ep-btn-detail,.ep-btn-sold) {
+  width:44px!important;min-width:44px!important;height:44px!important;min-height:44px!important;padding:0!important;border-radius:.78rem!important;
+  box-shadow:0 7px 14px color-mix(in srgb,var(--action-primary) 27%,transparent),inset 0 1px 0 rgba(255,255,255,.32)!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-btn-add-label { display:none!important; }
+html.ox-pwa-runtime body.ox-body-public .ep-card-cart-state { min-height:20px!important;padding:.16rem .34rem!important;font-size:.55rem!important; }
+html.ox-pwa-runtime body.ox-body-public .ep-card-in-cart {
+  border-color:color-mix(in srgb,var(--theme-success) 48%,var(--col-border))!important;
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--theme-success) 13%,transparent),0 12px 26px rgba(35,20,8,.19)!important;
+}
+@media(max-width:370px){
+  html.ox-pwa-runtime body.ox-body-public .ep-grid{gap:.55rem!important;padding-inline:.5rem!important}
+  html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card-img{min-height:96px!important}
+  html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card-body{min-height:124px!important;padding:.5rem!important}
+  html.ox-pwa-runtime body.ox-body-public .ep-card-name{font-size:.82rem!important}
+}
+@media(orientation:landscape) and (max-height:520px){
+  html.ox-pwa-runtime body.ox-body-public .ep-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:.65rem!important}
+  html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card-img{min-height:112px!important;aspect-ratio:1.3/1!important}
+}
+@media(hover:hover) and (pointer:fine){
+  html.ox-pwa-runtime body.ox-body-public .ep-grid .ep-card:hover{transform:translateY(-3px)!important;box-shadow:0 5px 8px rgba(35,20,8,.1),0 18px 34px rgba(35,20,8,.22)!important}
+}
+
+/* La sección informativa no debe crear una segunda "lámina" sobre el costal.
+   Su antigua superficie y los halos de cada fila producían dos franjas claras
+   continuas en los bordes del viewport. Conservamos tarjetas legibles, pero
+   dentro de un contenedor realmente transparente y con sombra corta. */
+html.ox-pwa-runtime body.ox-body-public .ep-why-section {
+  width:100%!important;
+  margin:.55rem 0 1rem!important;
+  padding:.7rem!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  overflow:clip!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-why-grid {
+  margin:0!important;
+  gap:.55rem!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-why-item {
+  width:100%!important;
+  padding:.72rem!important;
+  border-radius:.9rem!important;
+  box-shadow:0 4px 12px rgba(0,0,0,.18)!important;
+}
+html.ox-pwa-runtime body.ox-body-public .ep-why-desc {
+  color:color-mix(in srgb,var(--theme-header-text,#fff8ee) 76%,transparent)!important;
+}
+@media(max-width:350px){html.ox-pwa-runtime body.ox-body-public .ep-grid{grid-template-columns:1fr!important}}
+@media(min-width:700px){html.ox-pwa-runtime body.ox-body-public .ep-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))!important;gap:1rem!important;padding-inline:1rem!important}}
 
 body.ox-body-public main {
   background: transparent !important;
@@ -1594,13 +1669,53 @@ body.ox-body-public .ep-cat-title::after {
 
 @media (prefers-color-scheme: dark) {
   body.ox-body-public::before {
-    background-color: #24170e;
-    background-image:
-      linear-gradient(rgba(18, 12, 8, .72), rgba(18, 12, 8, .72)),
-      url("../coffee-burlap-texture-v2.webp");
-    filter: saturate(.62) contrast(.82) brightness(.78);
+    background-color: color-mix(in srgb, var(--theme-bg,#24170e) 84%, transparent);
+    background-image: url("../coffee-burlap-texture-v4.webp");
+    background-blend-mode: multiply;
+    filter: none;
   }
 }
+
+/* El viewport completo comparte el mismo fondo: evita las bandas del color
+   raíz que algunos navegadores muestran fuera del ancho centrado del main. */
+html { background: var(--theme-bg,#fbf7ee); }
+body.ox-body-public > main { width: 100%; }
+
+/* Texto editorial siempre sobre superficie opaca y con tokens de contraste. */
+body.ox-body-public :is(.ep-catalog-heading,.ep-banner-head,.ep-mini-head,.ep-card-body) {
+  color: var(--theme-text,#18120a);
+}
+body.ox-body-public :is(.ep-catalog-heading p,.ep-banner-head small,.ep-mini-head span,.ep-card-desc) {
+  color: var(--theme-muted,#665548);
+}
+
+/* Los encabezados editoriales descansan sobre la fotografía del costal. Una
+   superficie translúcida real (no un filtro sobre el fondo) garantiza
+   contraste también con temas personalizados y fuera de display-mode:PWA. */
+body.ox-body-public .ep-mini-head {
+  margin-inline: .5rem;
+  padding: .62rem .78rem;
+  border: 1px solid color-mix(in srgb,var(--theme-text,#18120a) 12%,transparent);
+  border-radius: .85rem;
+  background: color-mix(in srgb,var(--theme-surface,#fff) 94%,transparent);
+  box-shadow: 0 5px 16px color-mix(in srgb,var(--theme-text,#18120a) 8%,transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+body.ox-body-public .ep-mini-head strong {
+  color: var(--theme-text,#18120a) !important;
+  text-shadow: none;
+}
+body.ox-body-public .ep-mini-head span {
+  color: color-mix(in srgb,var(--theme-text,#18120a) 78%,var(--theme-surface,#fff)) !important;
+}
+@media (max-width: 380px) {
+  body.ox-body-public .ep-mini-head { align-items:flex-start; flex-direction:column; gap:.16rem; }
+}
+
+/* La web abierta en navegador no recibe textura ni composición PWA. */
+html:not(.ox-pwa-runtime) body.ox-body-public { background:var(--theme-bg)!important;filter:none!important; }
+html:not(.ox-pwa-runtime) body.ox-body-public::before { content:none!important; }
 
 /* ── iOS notch: color de status bar coherente con el header también en
       landscape. Aplica siempre — no interfiere con la versión navegador. */

@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file, jsonify, current_app
 from flask_login import login_required, current_user
 from functools import wraps
 from datetime import datetime, date, timedelta, timezone
@@ -12,7 +12,8 @@ import tempfile
 import uuid
 
 from extensions import db, get_or_404
-from models import (User, Order, Caja, StaffPayment, Product,
+from models import (User, Order, Caja, StaffPayment, Product, FavorRequest,
+                    FavorOffer, FavorEvent,
                     ZonaEntrega, SiteConfig, AuditLog,
                     AdminFeature, ADMIN_FEATURES, PointsLog, utcnow)
 from phone_utils import normalizar_telefono_cliente, telefono_local_ambiguo, telefono_valido
@@ -20,6 +21,83 @@ from store_config import BRAND_COLOR_DEFAULTS, PUBLIC_THEME_DEFAULTS, PUBLIC_UI_
 from config_defaults import DEFAULTS as RUNTIME_DEFAULTS
 
 superadmin_bp = Blueprint("superadmin", __name__)
+
+
+def _require_admin_view():
+    if current_user.rol not in ("super_admin", "admin"):
+        return redirect(url_for("public.index"))
+    return None
+
+
+@superadmin_bp.get("/cruces")
+@login_required
+def cruces():
+    deny = _require_admin_view()
+    if deny: return deny
+    rows = FavorRequest.query.order_by(FavorRequest.created_at.desc()).limit(250).all()
+    stats = {
+        "total": FavorRequest.query.count(),
+        "open": FavorRequest.query.filter_by(status="open").count(),
+        "active": FavorRequest.query.filter(FavorRequest.status.in_(("matched","at_pickup","picked_up","in_transit"))).count(),
+        "delivered": FavorRequest.query.filter_by(status="delivered").count(),
+        "cancelled": FavorRequest.query.filter(FavorRequest.status.in_(("cancelled","expired"))).count(),
+    }
+    riders = User.query.filter_by(rol="repartidor", activo=True).order_by(User.nombre).all()
+    return render_template("superadmin/cruces.html", cruces=rows, stats=stats, riders=riders)
+
+
+@superadmin_bp.get("/cruces/<public_id>")
+@login_required
+def cruce_detalle(public_id):
+    deny = _require_admin_view()
+    if deny: return deny
+    row = FavorRequest.query.filter_by(public_id=public_id).first_or_404()
+    return render_template("superadmin/cruce_detalle.html", cruce=row)
+
+
+@superadmin_bp.post("/cruces/<public_id>/cancelar")
+@login_required
+def cancelar_cruce_admin(public_id):
+    deny = _require_admin_view()
+    if deny: return deny
+    from cruce_policy import _clean_reason, registrar_evento_favor
+    row = FavorRequest.query.filter_by(public_id=public_id).with_for_update().first_or_404()
+    if row.status in ("delivered", "cancelled", "expired"):
+        flash("Este Cruce ya está cerrado.", "warning")
+        return redirect(url_for("superadmin.cruce_detalle", public_id=public_id))
+    reason = _clean_reason(request.form.get("reason"))
+    if not reason:
+        flash("Indica un motivo para cancelar (mínimo 4 caracteres).", "warning")
+        return redirect(url_for("superadmin.cruce_detalle", public_id=public_id))
+    prev_rider_id = row.assigned_rider_id
+    pending_rider_ids = [o.rider_id for o in row.offers if o.status == "pending"]
+    row.status = "cancelled"
+    row.cancelled_at = utcnow()
+    row.cancelled_by = "admin"
+    row.cancellation_reason = reason
+    row.assigned_rider_id = None
+    for offer in row.offers:
+        if offer.status in ("pending", "accepted"):
+            offer.status = "rejected"
+    registrar_evento_favor(row, "admin", "cancelled_by_admin",
+                           actor_id=current_user.id,
+                           actor_label=current_user.nombre,
+                           note=reason)
+    db.session.commit()
+    try:
+        from push_service import notify_user
+        if row.customer_id:
+            notify_user(row.customer_id, "⚠️ Un administrador canceló tu Cruce",
+                        reason, url="/favor", tag=f"cruce-admin-cancel-{row.id}",
+                        require_interaction=True)
+        for rid in set([r for r in (prev_rider_id, *pending_rider_ids) if r]):
+            notify_user(rid, "Cruce cancelado por administración",
+                        reason, url="/repartidor/favores",
+                        tag=f"cruce-admin-cancel-{row.id}-{rid}")
+    except Exception:
+        current_app.logger.exception("No se pudo notificar cancelación admin %s", row.id)
+    flash("Cruce cancelado por administración.", "info")
+    return redirect(url_for("superadmin.cruce_detalle", public_id=public_id))
 
 
 def _telefono_admin_form(raw, user_id=None):

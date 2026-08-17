@@ -89,7 +89,8 @@ def _audience_filter(audiencia: str) -> Iterable[str]:
     return ("cliente", "todos")
 
 
-def _score(entry_keywords: List[str], entry_pregunta: str, tokens: set) -> int:
+def _score(entry_keywords: List[str], entry_pregunta: str, tokens: set,
+           normalized_text: str = "") -> int:
     """Score simple: nº de keywords que aparecen en los tokens del mensaje.
 
     La pregunta también aporta (1 punto por token en común). Devuelve 0 si no
@@ -99,10 +100,10 @@ def _score(entry_keywords: List[str], entry_pregunta: str, tokens: set) -> int:
     if not tokens:
         return 0
     kw_normalized = {normalize(k) for k in entry_keywords if k}
-    score = sum(1 for k in kw_normalized if k and k in " ".join(tokens))
+    score = sum(1 for k in kw_normalized if k and " " not in k and k in tokens)
     # keywords multi-palabra: match por substring del texto normalizado.
-    joined = " ".join(sorted(tokens))
-    score += sum(2 for k in kw_normalized if " " in k and k in joined)
+    joined = normalized_text or " ".join(tokens)
+    score += sum(3 for k in kw_normalized if " " in k and k in joined)
     # Bonus por tokens de la pregunta canonical.
     q_tokens = set(tokenize(entry_pregunta))
     score += len(q_tokens & tokens)
@@ -116,7 +117,8 @@ def match_query(text: str, audiencia: str = "cliente", limit: int = 3) -> List[d
     menú/consejo). Cada dict incluye `id`, `categoria`, `pregunta`,
     `respuesta` (ya con placeholders resueltos), `score`.
     """
-    tokens = set(tokenize(text))
+    normalized_text = normalize(text)
+    tokens = set(tokenize(normalized_text))
     if not tokens:
         return []
     audiences = tuple(_audience_filter(audiencia))
@@ -127,7 +129,7 @@ def match_query(text: str, audiencia: str = "cliente", limit: int = 3) -> List[d
     ctx = _placeholder_context()
     ranked = []
     for e in q:
-        s = _score(e.keyword_list(), e.pregunta, tokens)
+        s = _score(e.keyword_list(), e.pregunta, tokens, normalized_text)
         if s <= 0:
             continue
         ranked.append((s, e))

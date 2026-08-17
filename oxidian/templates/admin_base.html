@@ -25,12 +25,11 @@
   </script>
   {% endif %}
   <link rel="manifest" href="{{ url_for('staff_web_manifest', v=asset_version) }}">
-  <link rel="apple-touch-icon" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
-  {% if _staff_icon %}
-  <link rel="icon" href="{{ _app_icon }}">
-  {% else %}
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
+  {# Favicon del tab: SIEMPRE los estáticos pequeños (1-5 KB) para no descargar 114 KB por navegación. #}
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32.png', v=asset_version) }}">
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='pwa-icon.svg', v=asset_version) }}">
-  {% endif %}
+  <link rel="shortcut icon" href="{{ url_for('static', filename='favicon-32.png', v=asset_version) }}">
   <title>{% block title %}Panel — {{ brand.nombre }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.generated.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css', v=asset_version) }}">
@@ -186,6 +185,9 @@
   {% if current_user.is_authenticated and request.blueprint in ('preparador','repartidor') %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/employee-app.css', v=asset_version) }}">
   {% endif %}
+  {# motion.css + NProgress: micro-animaciones + barra de carga superior. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vendor/nprogress.min.css', v=asset_version) }}">
 </head>
 {% set rol = current_user.rol if current_user.is_authenticated else '' %}
 {% set operational_view = request.blueprint in ('preparador','repartidor','staff','proveedor') %}
@@ -308,6 +310,7 @@
         <a href="{{ url_for('superadmin.admins') }}" class="ox-sb-item"><span class="ox-sb-item-icon">👥</span>Admins y permisos</a>
         <a href="{{ url_for('superadmin.chatbot') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💬</span>WhatsApp del bot</a>
         {% if brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📍</span>Zonas globales</a>{% endif %}
+        {% if brand.favores %}<a href="{{ url_for('superadmin.cruces') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🤝</span>El Cruce</a>{% endif %}
         <a href="{{ url_for('superadmin.pl') }}" class="ox-sb-item"><span class="ox-sb-item-icon">📈</span>P&L y finanzas</a>
         <a href="{{ url_for('superadmin.database_admin') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🗄️</span>Base de datos</a>
         <a href="{{ url_for('superadmin.audit') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🧾</span>Auditoría</a>
@@ -386,7 +389,7 @@
     {% endif %}
     {% endwith %}
 
-    <div class="ox-page">
+    <div class="ox-page motion-fade-in">
       {% block content %}{% endblock %}
     </div>
 
@@ -628,6 +631,10 @@ document.querySelectorAll('form[data-ox-validate]').forEach(form=>{
   .oa-btn { min-height: 44px; }
 }
 </style>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/vendor/htmx.min.js', v=asset_version) }}" defer></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/vendor/alpine.min.js', v=asset_version) }}" defer></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/vendor/nprogress.min.js', v=asset_version) }}" defer></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/motion-boot.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/storefront-toast.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/pwa-manager.js', v=asset_version) }}" defer></script>
 {% if operational_view %}

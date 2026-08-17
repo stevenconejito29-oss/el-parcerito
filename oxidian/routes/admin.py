@@ -7643,7 +7643,7 @@ def cerrar_lote(batch_id):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# CHATS EN VIVO (handoff) — panel web para retomar conversaciones del bot
+# CHATS EN VIVO — conversaciones web en PostgreSQL
 # ─────────────────────────────────────────────────────────────────────────
 # Contrato con el bot Node (chat/bot.js):
 #   GET  /api/bot/handoffs/pending                → lista pendientes
@@ -7685,98 +7685,206 @@ def _current_admin_jid() -> str | None:
 @admin_bp.route("/chats")
 @admin_required
 def chats_index():
-    """Lista de handoffs pendientes + los que tengo asignados."""
-    from services import bot_http_request
-    admin_jid = _current_admin_jid()
-    pending = (bot_http_request("GET", "/api/bot/handoffs/pending") or {}).get("handoffs") or []
-    mine = []
-    if admin_jid:
-        mine = (bot_http_request(
-            "GET", "/api/bot/handoffs/mine", params={"admin_jid": admin_jid}
-        ) or {}).get("handoffs") or []
+    from models import WebChatConversation
+    pending = WebChatConversation.query.filter_by(status="waiting_agent").order_by(
+        WebChatConversation.requested_at.asc()
+    ).all()
+    mine = WebChatConversation.query.filter_by(
+        status="active_agent", assigned_agent_id=current_user.id
+    ).order_by(WebChatConversation.last_activity_at.desc()).all()
     return render_template(
         "admin/chats.html",
         pending=pending,
         mine=mine,
-        admin_jid=admin_jid,
-        has_phone=bool(admin_jid),
+        has_phone=True,
     )
 
 
-@admin_bp.route("/chats/<path:client_jid>")
+@admin_bp.route("/chats/<public_id>")
 @admin_required
-def chats_detalle(client_jid):
-    """Ver conversación de un handoff (pendiente o asignada)."""
-    from services import bot_http_request
-    admin_jid = _current_admin_jid()
-    data = bot_http_request("GET", f"/api/bot/handoffs/{client_jid}/messages") or {}
-    messages = data.get("messages") or []
-    handoff = data.get("handoff") or {}
+def chats_detalle(public_id):
+    from models import WebChatConversation
+    conversation = WebChatConversation.query.filter_by(public_id=public_id).first_or_404()
+    if (
+        conversation.status == "active_agent"
+        and conversation.assigned_agent_id != current_user.id
+    ):
+        abort(403)
     return render_template(
         "admin/chat_detalle.html",
-        client_jid=client_jid,
-        client_phone=client_jid.replace("@s.whatsapp.net", ""),
-        messages=messages,
-        handoff=handoff,
-        admin_jid=admin_jid,
-        is_mine=(admin_jid is not None and handoff.get("admin_jid") == admin_jid),
-        has_phone=bool(admin_jid),
+        conversation=conversation,
+        messages=conversation.messages.limit(200).all(),
+        is_mine=conversation.assigned_agent_id == current_user.id,
+        has_phone=True,
     )
 
 
-@admin_bp.route("/chats/<path:client_jid>/claim", methods=["POST"])
+@admin_bp.route("/chats/<public_id>/messages")
 @admin_required
-def chats_claim(client_jid):
-    from services import bot_http_request
-    admin_jid = _current_admin_jid()
-    if not admin_jid:
-        flash("Configura tu teléfono antes de retomar chats (Perfil).", "warning")
-        return redirect(url_for("admin.chats_index"))
-    resp = bot_http_request(
-        "POST", f"/api/bot/handoffs/{client_jid}/claim",
-        json_body={"admin_jid": admin_jid, "admin_name": current_user.nombre or ""},
-    ) or {}
-    if not resp.get("ok"):
-        flash(resp.get("message") or "No se pudo retomar el chat (conflicto o handoff cerrado).", "warning")
-        return redirect(url_for("admin.chats_index"))
-    return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
+def chats_messages(public_id):
+    """Polling incremental; evita recargar el formulario mientras se escribe."""
+    from models import WebChatConversation, WebChatMessage
+    conversation = WebChatConversation.query.filter_by(public_id=public_id).first_or_404()
+    if conversation.assigned_agent_id != current_user.id:
+        abort(403)
+    try:
+        after = max(0, int(request.args.get("after", 0) or 0))
+    except (TypeError, ValueError):
+        after = 0
+    rows = conversation.messages.filter(WebChatMessage.id > after).limit(100).all()
+    return jsonify({
+        "ok": True,
+        "status": conversation.status,
+        "messages": [
+            {"id": row.id, "sender": row.sender, "body": row.body}
+            for row in rows
+        ],
+    })
 
 
-@admin_bp.route("/chats/<path:client_jid>/reply", methods=["POST"])
+@admin_bp.route("/chats/<public_id>/claim", methods=["POST"])
 @admin_required
-def chats_reply(client_jid):
-    from services import bot_http_request
-    admin_jid = _current_admin_jid()
-    if not admin_jid:
-        flash("Configura tu teléfono antes de responder chats (Perfil).", "warning")
+def chats_claim(public_id):
+    from models import WebChatConversation
+    from web_chat_service import add_message
+    conversation = WebChatConversation.query.filter_by(public_id=public_id).with_for_update().first_or_404()
+    if conversation.status != "waiting_agent":
+        db.session.rollback()
+        flash("Otro agente ya tomó este chat.", "warning")
         return redirect(url_for("admin.chats_index"))
+    conversation.status = "active_agent"
+    conversation.assigned_agent_id = current_user.id
+    conversation.assigned_at = utcnow()
+    add_message(conversation, "system", f"{current_user.nombre} tomó el chat.")
+    db.session.commit()
+    return redirect(url_for("admin.chats_detalle", public_id=public_id))
+
+
+@admin_bp.route("/chats/<public_id>/reply", methods=["POST"])
+@admin_required
+def chats_reply(public_id):
+    from models import WebChatConversation
+    from web_chat_service import add_message
+    conversation = WebChatConversation.query.filter_by(public_id=public_id).with_for_update().first_or_404()
     mensaje = (request.form.get("mensaje") or "").strip()
     if not mensaje:
         flash("El mensaje no puede estar vacío.", "warning")
-        return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
-    resp = bot_http_request(
-        "POST", f"/api/bot/handoffs/{client_jid}/reply",
-        json_body={"admin_jid": admin_jid, "mensaje": mensaje[:1500]},
-    ) or {}
-    if not resp.get("ok"):
-        flash(resp.get("error") or "No se pudo enviar el mensaje.", "danger")
-    return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
+        return redirect(url_for("admin.chats_detalle", public_id=public_id))
+    if conversation.status != "active_agent" or conversation.assigned_agent_id != current_user.id:
+        abort(403)
+    add_message(conversation, "agent", mensaje, agent_id=current_user.id)
+    db.session.commit()
+    if conversation.customer_id:
+        from push_service import notify_user
+        notify_user(
+            conversation.customer_id,
+            "💬 Respondieron tu consulta",
+            f"{current_user.nombre}: {mensaje[:120]}",
+            url="/ayuda", tag=f"web-chat-{conversation.public_id}",
+            require_interaction=True,
+        )
+    return redirect(url_for("admin.chats_detalle", public_id=public_id))
 
 
-@admin_bp.route("/chats/<path:client_jid>/close", methods=["POST"])
+@admin_bp.route("/chats/<public_id>/close", methods=["POST"])
 @admin_required
-def chats_close(client_jid):
-    from services import bot_http_request
-    admin_jid = _current_admin_jid()
-    if not admin_jid:
-        flash("Configura tu teléfono antes de cerrar chats (Perfil).", "warning")
-        return redirect(url_for("admin.chats_index"))
-    resp = bot_http_request(
-        "POST", f"/api/bot/handoffs/{client_jid}/close",
-        json_body={"admin_jid": admin_jid},
-    ) or {}
-    if not resp.get("ok"):
-        flash(resp.get("error") or "No se pudo cerrar el chat.", "warning")
-        return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
-    flash("Chat cerrado — el cliente ha vuelto al menú principal.", "success")
+def chats_close(public_id):
+    from models import WebChatConversation
+    from web_chat_service import add_message
+    conversation = WebChatConversation.query.filter_by(public_id=public_id).with_for_update().first_or_404()
+    if conversation.assigned_agent_id != current_user.id:
+        abort(403)
+    conversation.status = "closed"
+    conversation.closed_at = utcnow()
+    add_message(conversation, "system", "El agente cerró la conversación. Puedes volver al asistente cuando quieras.")
+    db.session.commit()
+    flash("Chat web cerrado.", "success")
     return redirect(url_for("admin.chats_index"))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# BOT: AUTO-APRENDIZAJE (señales del LLM que el determinista no capturó)
+# ═══════════════════════════════════════════════════════════════════════
+
+@admin_bp.route("/bot/aprendizaje")
+@admin_required
+def bot_aprendizaje():
+    """Vista de señales de auto-aprendizaje ordenadas por frecuencia.
+
+    Cada señal representa un patrón de mensaje que el sistema
+    determinista del bot NO reconoció (no matcheó FAQ ni keyword) y
+    que el LLM respondió por su cuenta. El admin puede revisar cuáles
+    son los patrones más recurrentes y decidir promoverlos a keyword
+    permanente o FAQ canned — reduciendo la dependencia futura del LLM.
+    """
+    from models import BotLearningSignal
+
+    solo_pendientes = request.args.get("pendientes", "1") == "1"
+    q = BotLearningSignal.query
+    if solo_pendientes:
+        q = q.filter(BotLearningSignal.applied.is_(False))
+    signals = (
+        q.order_by(
+            BotLearningSignal.count.desc(),
+            BotLearningSignal.last_seen_at.desc(),
+        )
+        .limit(100)
+        .all()
+    )
+
+    total_pendientes = BotLearningSignal.query.filter(
+        BotLearningSignal.applied.is_(False)
+    ).count()
+    total_aplicadas = BotLearningSignal.query.filter(
+        BotLearningSignal.applied.is_(True)
+    ).count()
+
+    return render_template(
+        "admin/bot_aprendizaje.html",
+        signals=signals,
+        solo_pendientes=solo_pendientes,
+        total_pendientes=total_pendientes,
+        total_aplicadas=total_aplicadas,
+        now=utcnow(),
+    )
+
+
+@admin_bp.route("/bot/aprendizaje/<int:signal_id>/aplicar", methods=["POST"])
+@admin_required
+def bot_aprendizaje_aplicar(signal_id):
+    """Marca una señal como 'aplicada' (el admin ya la añadió al KB
+    manualmente). No modifica ni añade keywords automáticamente — solo
+    trackea qué señales ya trabajó el admin para que no vuelvan al top.
+    """
+    from models import BotLearningSignal
+
+    signal = get_or_404(BotLearningSignal, signal_id)
+    signal.applied = True
+    signal.applied_at = utcnow()
+    signal.applied_by = current_user.id
+    try:
+        db.session.commit()
+        flash(f"Señal marcada como aplicada (#{signal_id}).", "success")
+    except Exception:
+        db.session.rollback()
+        flash("No se pudo marcar la señal como aplicada.", "danger")
+    return redirect(url_for("admin.bot_aprendizaje"))
+
+
+@admin_bp.route("/bot/aprendizaje/<int:signal_id>/reabrir", methods=["POST"])
+@admin_required
+def bot_aprendizaje_reabrir(signal_id):
+    """Deshace el 'aplicada' de una señal — vuelve a la lista pendiente."""
+    from models import BotLearningSignal
+
+    signal = get_or_404(BotLearningSignal, signal_id)
+    signal.applied = False
+    signal.applied_at = None
+    signal.applied_by = None
+    try:
+        db.session.commit()
+        flash(f"Señal reabierta (#{signal_id}).", "info")
+    except Exception:
+        db.session.rollback()
+        flash("No se pudo reabrir la señal.", "danger")
+    return redirect(url_for("admin.bot_aprendizaje"))

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}El Cruce{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/favor-marketplace.css', v=asset_version) }}">{% endblock %}
+{% block content %}
+<main class="favor-page" data-favor-signature="{{ favor_signature }}">
+  <header class="favor-hero">
+    <span class="favor-kicker">EL CRUCE · ENTRE PARCEROS</span>
+    <h1>Un colombiano le hace el cruce a otro</h1>
+    <p>Cuéntanos qué necesitas mover de A hasta B, ofrece un precio y acuerda con un rider.</p>
+    <div class="favor-flow" aria-label="Cómo funciona"><b><i>1</i> Publica</b><b><i>2</i> Acuerda</b><b><i>3</i> Sigue</b></div>
+  </header>
+
+  {# Wrapper HTMX: cada 8s pide el fragmento con las cards actualizadas y
+     hace swap parcial. NProgress se dispara solo (motion-boot.js). Cuando
+     el navegador soporta View Transitions API, el swap es fluido gracias
+     al hook en motion-boot.js. Si HTMX no cargó (offline/CSP), el JS
+     legacy en favor-marketplace.js sigue funcionando con location.reload
+     como fallback total. #}
+  <div id="favor-cards"
+       class="hx-animate"
+       hx-get="{{ url_for('public.favor_cards_fragment') }}"
+       hx-trigger="every 8s[!document.hidden], visibilitychange[!document.hidden] from:document"
+       hx-swap="innerHTML settle:200ms">
+  {% include "public/_favor_cards.html" %}
+  </div>
+
+  <form method="post" class="favor-create">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="favor-form-head"><span>🤝</span><div><small>NUEVO CRUCE</small><h2>Venga, cuéntenos el cruce</h2></div></div>
+    <section class="favor-form-step"><header><b>1</b><div><strong>¿De dónde a dónde?</strong><small>Ambos puntos deben estar dentro de nuestra cobertura.</small></div></header>
+      <div class="favor-address-field"><label><span class="route-dot is-a">A</span> Recoger en<input name="pickup_address" maxlength="350" required autocomplete="off" data-address-autocomplete placeholder="Calle, número o lugar"></label><div class="favor-suggestions" role="listbox"></div></div>
+      <div class="favor-address-field"><label><span class="route-dot is-b">B</span> Llevar hasta<input name="dropoff_address" maxlength="350" required autocomplete="off" data-address-autocomplete placeholder="Busque y seleccione la dirección"></label><div class="favor-suggestions" role="listbox"></div></div>
+    </section>
+    <section class="favor-form-step"><header><b>2</b><div><strong>¿Qué hay que recoger?</strong><small>Dé pistas claras para que el rider no dé vueltas.</small></div></header>
+      <label>Tipo de cruce<select name="package_type" required><option value="restaurant">🍽️ Pedido de restaurante</option><option value="package">📦 Bolsa o paquete</option><option value="keys">🔑 Llaves o documentos</option><option value="shopping">🛍️ Compra ya preparada</option><option value="other">Otro bulto permitido</option></select></label>
+      <div class="favor-examples" aria-label="Ejemplos rápidos"><button type="button" data-cruce-example="Recoger un pedido de restaurante a nombre de Juan y traerlo">🍽️ A nombre de Juan</button><button type="button" data-cruce-example="Recoger una bolsa cerrada y llevarla con cuidado">📦 Una bolsa</button><button type="button" data-cruce-example="Recoger unas llaves y entregarlas en mano">🔑 Unas llaves</button></div>
+      <label>Detalles<textarea name="item_description" maxlength="500" required placeholder="Ejemplo: pregunte por Carlos y recoja una bolsa pequeña"></textarea></label>
+      <details class="favor-options"><summary>Agregar referencia, peso y valor</summary><label>Referencia al recoger<input name="pickup_reference" maxlength="160" placeholder="Ejemplo: pedido a nombre de Juan"></label><div class="favor-contact-grid"><label>Peso aproximado<select name="weight_kg" required><option value="1">Hasta 1 kg</option><option value="3">1–3 kg</option><option value="5">3–5 kg</option><option value="8">5–{{ policy.max_weight|int }} kg</option></select></label><label>Valor del contenido (€)<input name="declared_value" type="number" min="0" max="{{ policy.max_value }}" step=".01" value="0" inputmode="decimal"></label></div></details>
+    </section>
+    <section class="favor-form-step"><header><b>3</b><div><strong>Su oferta y contacto</strong><small>El rider puede aceptarla o proponer otro valor.</small></div></header>
+      <div class="favor-contact-grid"><label>Su nombre<input name="customer_name" maxlength="100" required autocomplete="name"></label><label>WhatsApp o teléfono<input name="customer_phone" maxlength="30" required inputmode="tel" autocomplete="tel"></label></div>
+      <label>¿Cuánto ofrece? (€)<input name="offered_amount" type="number" min="{{ policy.minimum }}" max="999" step="0.50" required inputmode="decimal" placeholder="Desde {{ '%.2f'|format(policy.minimum) }} €"></label>
+    </section>
+    <details class="favor-safety"><summary>🛡️ Qué podemos llevar</summary><p>Debe caber en mochila, pesar máximo {{ policy.max_weight|int }} kg y valer hasta {{ policy.max_value|int }} €. No movemos efectivo, personas, animales ni objetos ilegales, inflamables o peligrosos. Ambos puntos deben estar en cobertura.</p></details>
+    <label class="favor-rules-check"><input type="checkbox" name="accept_rules" value="1" required><span>Confirmo que el bulto está cerrado, cabe en una mochila y cumple estas reglas.</span></label>
+    <button class="favor-submit">Necesito que me hagan el cruce</button>
+    <small>El rider puede aceptar o proponer otro importe. Pagas contra entrega.</small>
+  </form>
+</main>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/favor-marketplace.js', v=asset_version) }}" defer></script>{% endblock %}

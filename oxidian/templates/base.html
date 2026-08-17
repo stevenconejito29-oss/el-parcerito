@@ -74,17 +74,16 @@
   {# Icons — usa APP_ICON_URL si está configurado, si no los estáticos #}
   {% set _app_icon_raw = brand.app_icon_url if brand.app_icon_url is defined and brand.app_icon_url else (brand.logo_url if brand.logo_url is defined and brand.logo_url else '') %}
   {% set _app_icon = _app_icon_raw|upload_url if _app_icon_raw else '' %}
-  <link rel="apple-touch-icon" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
+  {# apple-touch-icon: iOS necesita SOLO uno; escala automáticamente al size del home screen.
+     4 variantes idénticas apuntando a la misma URL solo genera peticiones extra. #}
   <link rel="apple-touch-icon" sizes="180x180" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
-  <link rel="apple-touch-icon" sizes="167x167" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
-  <link rel="apple-touch-icon" sizes="152x152" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
-  {% if _app_icon %}
-  <link rel="icon" href="{{ _app_icon|upload_url }}">
-  {% else %}
-  <link rel="icon" type="image/png" sizes="64x64" href="{{ _app_icon or url_for('static', filename='favicon-64.png', v=asset_version) }}">
-  <link rel="icon" type="image/png" sizes="32x32" href="{{ _app_icon or url_for('static', filename='favicon-32.png', v=asset_version) }}">
-  <link rel="icon" type="image/svg+xml" href="{{ _app_icon or url_for('static', filename='pwa-icon.svg', v=asset_version) }}">
-  {% endif %}
+  {# Favicon del tab del navegador: usar SIEMPRE los estáticos pequeños (1-5 KB),
+     nunca el branding icon (~114 KB). El favicon se pide en cada navegación,
+     usar la versión grande derrocha ancho de banda. #}
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32.png', v=asset_version) }}">
+  <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='favicon-64.png', v=asset_version) }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='pwa-icon.svg', v=asset_version) }}">
+  <link rel="shortcut icon" href="{{ url_for('static', filename='favicon-32.png', v=asset_version) }}">
   <link rel="mask-icon" href="{{ url_for('static', filename='pwa-icon-monochrome.svg', v=asset_version) }}" color="{{ brand.color_primario }}">
 
   <link rel="manifest" href="{{ url_for('web_manifest', v=asset_version) }}">
@@ -219,11 +218,18 @@
   {# Overrides "sensación app nativa" — solo tienen efecto en display-mode:
      standalone|minimal-ui|fullscreen. En navegador la web sigue idéntica. #}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/pwa-native.css', v=asset_version) }}">
+  {# motion.css: View Transitions API + skeleton + micro-animaciones.
+     Progressive: si el navegador no soporta @view-transition, la app funciona igual. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vendor/nprogress.min.css', v=asset_version) }}">
+  {# Estilos canónicos de cada vista. Se cargan después de la infraestructura
+     PWA para que el componente no dependa de parches de especificidad. #}
+  {% block styles_final %}{% endblock %}
 </head>
 {# El detalle ya tiene navegación de regreso y una barra de compra fija.
    Apilar además la navegación inferior duplicaba controles y cubría el
    configurador en móviles pequeños. #}
-{% set show_bottom_nav = request.endpoint in ('public.index', 'public.ver_carrito', 'public.club', 'public.whatsapp') %}
+{% set show_bottom_nav = request.endpoint in ('public.index', 'public.chat', 'public.ver_carrito', 'public.club', 'public.favor', 'public.whatsapp') %}
 <body class="ox-body ox-body-public{% if show_bottom_nav %} ox-has-bottom-nav{% endif %} min-h-screen"
       style="--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-on-secondary:{{ brand.on_secundario }};--brand-accent:{{ brand.color_acento }};--brand-on-primary:{{ brand.on_primario }};--brand-on-accent:{{ brand.on_acento }};--col-gold:{{ brand.color_primario }};--theme-bg:{{ brand.theme.fondo_app }};--theme-surface:{{ brand.theme.superficie }};--theme-surface-alt:{{ brand.theme.superficie_alt }};--theme-text:{{ brand.theme.texto }};--theme-muted:{{ brand.theme.texto_suave }};--theme-header-bg:{{ brand.theme.cabecera_fondo }};--theme-header-text:{{ brand.theme.cabecera_texto }};--theme-success:{{ brand.theme.exito }};--theme-danger:{{ brand.theme.alerta }};">
 {% include 'partials/heritage_sprite.html' %}
@@ -334,12 +340,16 @@
         <span>{{ ui.loyalty_name }}</span>
       </a>
       {% endif %}
-      {% if brand.telefono %}
-      <a href="{{ url_for('public.whatsapp') }}" class="ox-header-sub-item" target="_blank" rel="noopener">
-        <span class="ox-header-sub-ico" aria-hidden="true">💬</span>
-        <span>WhatsApp</span>
+      {% if brand.favores %}
+      <a href="{{ url_for('public.favor') }}" class="ox-header-sub-item ox-header-sub-item--favor" aria-current="{{ 'page' if request.endpoint == 'public.favor' else 'false' }}">
+        <span class="ox-header-sub-ico" aria-hidden="true">📦</span>
+        <span>El Cruce</span>
       </a>
       {% endif %}
+      <a href="{{ url_for('public.chat') }}" class="ox-header-sub-item">
+        <span class="ox-header-sub-ico" aria-hidden="true">💬</span>
+        <span>Ayuda</span>
+      </a>
     </div>
   </div>
 </header>
@@ -362,7 +372,7 @@
 </div>
 {% endif %}
 
-<main class="max-w-screen-xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+<main class="max-w-screen-xl mx-auto px-3 sm:px-4 py-4 sm:py-6 motion-fade-in">
   {% block content %}{% endblock %}
 </main>
 
@@ -409,11 +419,7 @@
       {# — Columna contacto — #}
       <div class="ep-footer-support">
         <h4 class="ep-footer-heading">Atención al cliente</h4>
-        {% if brand.telefono %}
-        <a href="{{ url_for('public.whatsapp') }}" class="ep-footer-wa-btn" target="_blank" rel="noopener">
-          <span>💬</span> Escríbenos por WhatsApp
-        </a>
-        {% endif %}
+        <a href="{{ url_for('public.chat') }}" class="ep-footer-wa-btn"><span>💬</span> Abrir chat de ayuda</a>
         <p class="ep-footer-note">Seguimiento de pedidos{% if brand.puntos %}, consulta de {{ ui.loyalty_unit_plural }}{% endif %} y atención en tiempo real.</p>
         <p class="ep-footer-legal">{% if brand.es_comida %}Información sobre alérgenos disponible bajo solicitud.<br>{% endif %}RGPD · LSSI-CE · RDL 1/2007</p>
       </div>
@@ -432,7 +438,7 @@
         </div>
       </div>
       <nav class="ep-footer-mobile-links" aria-label="Ayuda y condiciones">
-        {% if brand.telefono %}<a href="{{ url_for('public.whatsapp') }}" target="_blank" rel="noopener">WhatsApp</a>{% endif %}
+        <a href="{{ url_for('public.chat') }}">Chat de ayuda</a>
         {% if brand.es_comida %}<span>Alérgenos: consúltanos</span>{% endif %}
         <a href="{{ url_for('public.informacion_legal') }}">Información legal</a>
         <button type="button" data-privacy-open>Configurar privacidad</button>
@@ -516,35 +522,33 @@
         {% endif %}
       </div>
 
-      {# WhatsApp actions #}
-      {% if brand.telefono %}
+      {# Atención web: WhatsApp queda reservado a confirmaciones y avisos. #}
       <div class="ox-info-section-title">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        Contactar por WhatsApp
+        Ayuda dentro de la app
       </div>
       <div class="ox-wa-actions">
-        <a href="{{ url_for('public.whatsapp', text='Hola, quiero consultar el estado de mi pedido.') }}" target="_blank" rel="noopener">
+        <a href="{{ url_for('public.chat') }}" data-info-close>
           <span class="ox-wa-action-icon">📦</span>
           <span><strong>Estado de mi pedido</strong><small>Consulta con tu número de pedido</small></span>
           <span class="ox-wa-arrow">›</span>
         </a>
-        {% if brand.puntos %}<a href="{{ url_for('public.whatsapp', text='Hola, quiero consultar mis ' ~ ui.loyalty_unit_plural ~ ' y recompensas.') }}" target="_blank" rel="noopener">
+        {% if brand.puntos %}<a href="{{ url_for('public.chat') }}" data-info-close>
           <span class="ox-wa-action-icon">{{ heritage_icon('grano') }}</span>
           <span><strong>{{ ui.loyalty_name }}</strong><small>Saldo y productos para canje</small></span>
           <span class="ox-wa-arrow">›</span>
         </a>{% endif %}
-        {% if brand.delivery %}<a href="{{ url_for('public.whatsapp', text='Hola, quiero saber zonas de cobertura, precio de envío y horarios.') }}" target="_blank" rel="noopener">
+        {% if brand.delivery %}<a href="{{ url_for('public.chat') }}" data-info-close>
           <span class="ox-wa-action-icon">🛵</span>
           <span><strong>Cobertura y envío</strong><small>Zona, distancia y disponibilidad</small></span>
           <span class="ox-wa-arrow">›</span>
         </a>{% endif %}
-        <a href="{{ url_for('public.whatsapp', text='Hola, necesito ayuda.') }}" target="_blank" rel="noopener">
+        <a href="{{ url_for('public.chat') }}" data-info-close>
           <span class="ox-wa-action-icon">💬</span>
           <span><strong>Otra consulta</strong><small>Habla directamente con el equipo</small></span>
           <span class="ox-wa-arrow">›</span>
         </a>
       </div>
-      {% endif %}
 
       {# Links útiles #}
       <div class="ox-info-links">
@@ -588,14 +592,11 @@
     <span class="ox-bnav-glow" aria-hidden="true"></span>
   </a>
 
-  <a href="{{ url_for('public.index') }}#buscar"
-     class="ox-bnav-item {{ 'is-active' if 'q' in request.args else '' }}"
-     data-bnav="search"
-     aria-label="{{ ui.nav_search }} — ir al buscador">
+  <a href="{{ url_for('public.chat') }}" class="ox-bnav-item {{ 'is-active' if request.endpoint == 'public.chat' else '' }}" data-bnav="chat" aria-label="Abrir chat de ayuda">
     <span class="ox-bnav-svg" aria-hidden="true">
-      {{ heritage_icon('buscar') }}
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 10h8M8 14h5"/></svg>
     </span>
-    <span class="ox-bnav-label">{{ ui.nav_search }}</span>
+    <span class="ox-bnav-label">Chat</span>
     <span class="ox-bnav-glow" aria-hidden="true"></span>
   </a>
 
@@ -633,6 +634,7 @@
   </a>
 </nav>
 {% endif %}
+
 
 <script nonce="{{ csp_nonce() }}">
 const OX_UI = {{ ui|tojson }};
@@ -681,6 +683,10 @@ document.addEventListener('error', function(event) {
 }, true);
 
 </script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/vendor/htmx.min.js', v=asset_version) }}" defer></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/vendor/alpine.min.js', v=asset_version) }}" defer></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/vendor/nprogress.min.js', v=asset_version) }}" defer></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/motion-boot.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/storefront-viewport.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/storefront-toast.js', v=asset_version) }}" defer></script>
 <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/privacy-consent.js', v=asset_version) }}" defer></script>
@@ -732,12 +738,7 @@ document.addEventListener('error', function(event) {
 
 {% block scripts %}{% endblock %}
 <script nonce="{{ csp_nonce() }}">
-/* Bottom-nav — "Inicio" en misma URL: scroll suave al top.
-   Antes: al tocar "Inicio" en /, no pasaba nada visualmente porque el
-   href apuntaba a la URL en la que ya estabas. Ahora si estás en la
-   misma ruta, evitamos la navegación y hacemos scroll suave al inicio
-   de la página. El botón "Buscar" ya tiene su propio comportamiento
-   (#buscar hash → focus del input) que sigue funcionando. */
+/* Bottom-nav — "Inicio" en misma URL: vuelve al inicio sin recargar. */
 (function bindBottomNavHome() {
   const items = document.querySelectorAll('.ox-bottom-nav [data-bnav="home"]');
   if (!items.length) return;
@@ -762,8 +763,7 @@ document.addEventListener('error', function(event) {
           } else {
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }
-          // Si venimos de #buscar, limpiamos el hash para que Buscar no
-          // quede "activado" al scrollear.
+          // Limpia hashes auxiliares (por ejemplo #chat) al volver al inicio.
           if (window.location.hash) {
             history.replaceState(null, '', url.pathname);
             window.dispatchEvent(new Event('hashchange'));

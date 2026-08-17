@@ -29,10 +29,11 @@
 {% set _es_canje = (p.solo_canje or (p.puntos_para_canje and p.puntos_para_canje > 0)) %}
 {% set _card_group = 'canje' if _es_canje else ('combos' if p.es_combo else 'regular') %}
 {% set _image_fit = p.get_atributos().get('image_fit', 'contain') %}
-<div class="ep-card {{ 'ep-card-image-cover' if _image_fit == 'cover' else 'ep-card-image-contain' }} {% if p.es_combo %}ep-card-combo{% endif %} {% if _qty_cart > 0 %}ep-card-in-cart{% endif %}"
+<div class="ep-card motion-fade-in {{ 'ep-card-image-cover' if _image_fit == 'cover' else 'ep-card-image-contain' }} {% if p.es_combo %}ep-card-combo{% endif %} {% if _qty_cart > 0 %}ep-card-in-cart{% endif %}"
      data-product-card="{{ p.id }}"
      data-category-id="{{ p.categoria_id or '' }}"
-     data-card-group="{{ _card_group }}">
+     data-card-group="{{ _card_group }}"
+     style="view-transition-name: producto-{{ p.id }}">
 
   {# ── Imagen ── #}
   <a class="ep-card-img"

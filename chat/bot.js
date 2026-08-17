@@ -343,13 +343,24 @@ function cleanBaseUrl(value, fallback = '') {
   return String(value || fallback || '').trim().replace(/\/$/, '');
 }
 
+function isPublicClientUrl(value) {
+  try {
+    const url = new URL(cleanBaseUrl(value));
+    const host = url.hostname.toLowerCase();
+    return url.protocol === 'https:' && host !== 'localhost' && host !== '127.0.0.1'
+      && host !== '::1' && !/^10\./.test(host) && !/^192\.168\./.test(host)
+      && !/^172\.(1[6-9]|2\d|3[01])\./.test(host) && !host.endsWith('.local');
+  } catch { return false; }
+}
+
 function getOxidianUrl() {
   if (BOT_OXIDIAN_URL) return BOT_OXIDIAN_URL;
   return cleanBaseUrl(cfg('oxidian_url', OXIDIAN_URL), OXIDIAN_URL);
 }
 
 function getTiendaUrl() {
-  return cleanBaseUrl(cfg('tienda_url', TIENDA_URL), TIENDA_URL || getOxidianUrl());
+  const candidates = [cfg('tienda_url', ''), TIENDA_URL, process.env.OXIDIAN_PUBLIC_URL];
+  return cleanBaseUrl(candidates.find(isPublicClientUrl) || 'https://elparcerito.com');
 }
 
 // Modo de la tienda (propia | bar_servicio) — se sincroniza desde /branding
@@ -4897,6 +4908,49 @@ async function _handleMessage(jid, text, pushName, context = {}) {
   const ownerAsClient = isOwner && isAdminClientMode(jid, ses);
   const requestedMode = isOwner ? detectOperationalModeCommand(text) : null;
 
+  // Contrato de canal (producción): WhatsApp no es un segundo asistente.
+  // Resolvemos este límite antes de diagnósticos, menús y handoffs antiguos,
+  // para que palabras como "menú", "agente" o un número nunca reactiven el
+  // árbol conversacional heredado. La única entrada transaccional admitida
+  // para clientes es la confirmación inequívoca del primer pedido; códigos y
+  // estados se envían como avisos salientes y la atención vive en /ayuda.
+  if (!isOwner || ownerAsClient) {
+    const clientState = bareClientState(ses);
+    const confirmationStates = new Set(['idle', 'main_menu', 'pedido_acciones']);
+    if (confirmationStates.has(clientState)
+        && /^(?:si|sí|s|ok|vale|confirmo|confirmar(?: pedido)?|no|n)$/i.test(lower)) {
+      const consumed = await tryHandleConfirmationReply(jid, lower, ses);
+      if (consumed) return true;
+    }
+    bumpStat('client_redirected_to_web_chat');
+    // Una única orientación por ventana evita responder en bucle a saludos o
+    // automatizaciones del cliente y reduce volumen/riesgo de bloqueo.
+    const redirectKey = `web-redirect:${jid}`;
+    const lastRedirect = recentOutboundTexts.get(redirectKey) || 0;
+    if (Date.now() - Number(lastRedirect) < 10 * 60_000) return true;
+    recentOutboundTexts.set(redirectKey, Date.now());
+    return sendText(
+      jid,
+      `💬 Para consultas y atención abre el chat de nuestra app:\n${getTiendaUrl()}/ayuda\n\n` +
+      `Este WhatsApp se reserva para confirmar tu primer pedido y recibir códigos o avisos transaccionales.`,
+      { transactional: true, humanize: false },
+    );
+  }
+
+  // Los agentes reciben por WhatsApp la alerta transaccional de un chat
+  // pendiente, pero lo atienden en el panel web. No mantenemos un segundo
+  // panel administrativo basado en mensajes porque duplica estado y puede
+  // ejecutar acciones fuera del contexto visible del pedido.
+  if (isOwner) {
+    bumpStat('admin_redirected_to_web_chat_panel');
+    return sendText(
+      jid,
+      `🔐 La atención y gestión se realizan en el panel seguro:\n${getTiendaUrl()}/admin/chats\n\n` +
+      `Por WhatsApp recibirás únicamente alertas de chats pendientes y avisos transaccionales.`,
+      { transactional: true, humanize: false },
+    );
+  }
+
   // ── Comando diagnóstico /rol ─────────────────────────────────────────
   // Cuando un admin dice "el bot no me muestra el menú de admin", el
   // problema casi siempre es discrepancia entre env (OWNER_NUMBER /
@@ -5261,7 +5315,11 @@ async function _handleMessage(jid, text, pushName, context = {}) {
   // pedidos pendientes. Las palabras explícitas sí son escape global.
   if ((!isOwner || isAdminClientMode(jid, ses))
       && /^(?:agente|persona|humano|asesor)$|(?:hablar|comunicarme|contactar).*(?:agente|persona|humano|asesor)/i.test(lower)) {
-    return requestHumanSupport(jid, text);
+    return sendText(
+      jid,
+      `💬 La atención humana ahora se realiza dentro de nuestra app. Abre el chat aquí: ${getTiendaUrl()}/ayuda`,
+      { transactional: true, humanize: false },
+    );
   }
 
   // ── Verificación pasiva antifraude ────────────────────────────────
@@ -5281,21 +5339,12 @@ async function _handleMessage(jid, text, pushName, context = {}) {
     // sin pedido pendiente → cae al flujo normal (cancelar, menú, etc.)
   }
 
-  if (clientConversation && /^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i.test(lower)) {
-    const identifier = text.match(/^cancelar(?:\s+pedido)?(?:\s+(.+))?$/i)?.[1] || '';
-    return iniciarCancelacionPedido(jid, ses, identifier);
-  }
-
-  // Consulta determinística de estado con lenguaje natural. Se permite desde
-  // estados de consulta, pero no interrumpe formularios/reporte/cancelación.
-  if (clientConversation && isOrderStatusIntent(lower)
-      && ['idle', 'main_menu', 'espera_numero_pedido', 'pedido_acciones'].includes(clientState)) {
-    return handleEstadoPedido(jid, ses, 'ULTIMO');
-  }
-
-  // El flujo de cliente es deliberadamente determinista. Las respuestas
-  // libres pasan por FAQ, detector de intención, catálogo y fallback guiado;
-  // nunca por un modelo que pueda cambiar de ruta o inventar una operación.
+  // WhatsApp queda como canal transaccional, no como segundo chatbot.
+  // La única conversación entrante de cliente que resolvemos aquí es la
+  // confirmación antifraude del primer pedido (bloque anterior). Consultas,
+  // cambios y atención humana viven en el chat web; así evitamos dos fuentes
+  // de verdad y reducimos sensiblemente el riesgo de bloqueo del número.
+  // Los clientes ya quedaron resueltos por el contrato de canal al inicio.
 
   if (!ses || !ses.estado || ses.estado === 'idle') {
     if (isOwner) {
@@ -11265,10 +11314,20 @@ app.post('/api/bot/reset', async (req, res) => {
 app.post('/api/bot/message', async (req, res) => {
   try {
     if (!requireApiKey(req, res)) return;
-    const { telefono, mensaje, transactional, force } = req.body || {};
+    const { telefono, mensaje, transactional, force, purpose } = req.body || {};
     if (!telefono || !mensaje) return res.status(400).json({ ok: false, error: 'missing fields' });
     if (String(mensaje || '').length > MAX_OUTBOUND_CHARS) {
       return res.status(400).json({ ok: false, error: 'message too long' });
+    }
+    // Contrato explícito entre Oxidian y WhatsApp. Impide que endpoints
+    // genéricos vuelvan a convertir el número en canal de FAQ o marketing.
+    const allowedPurposes = new Set([
+      'order_confirmation', 'delivery_code', 'points_otp', 'canje_codigo',
+      'web_chat_handoff',
+    ]);
+    if (!allowedPurposes.has(String(purpose || ''))) {
+      log('warn', 'api_send_purpose_rejected', String(purpose || 'missing'));
+      return res.status(422).json({ ok: false, error: 'unsupported whatsapp purpose' });
     }
     const jid = `${normalizePhone(telefono)}@s.whatsapp.net`;
     // Oxidian envía notificaciones operativas (estado pedido, código entrega,

@@ -32,18 +32,28 @@ const PRECACHE = [
   "/static/css/storefront-cart.css",
   "/static/css/header-modern.css",
   "/static/css/heritage.css",
+  "/static/css/web-chat-page.css",
   "/static/css/role-shell.css",
   "/static/css/operational-roles.css",
   "/static/css/tailwind.generated.css",
+  "/static/css/motion.css",
+  "/static/css/vendor/nprogress.min.css",
+  "/static/js/vendor/htmx.min.js",
+  "/static/js/vendor/alpine.min.js",
+  "/static/js/vendor/nprogress.min.js",
+  "/static/js/motion-boot.js",
   "/static/js/carrito.js",
   "/static/js/cart-ui.js",
   "/static/js/pwa-manager.js",
   "/static/js/storefront-viewport.js",
   "/static/js/storefront-toast.js",
   "/static/js/header-modern.js",
+  "/static/js/web-chat-page.js",
   "/static/js/operational-roles.js",
   "/static/colombia-pattern.svg",
-  "/static/coffee-burlap-texture-v2.webp",
+  "/static/coffee-burlap-texture-v4.webp",
+  "/static/favicon-32.png",
+  "/static/favicon-64.png",
   `/static/pwa-icon.svg?v=${APP_VERSION}`,
   `/static/pwa-icon-192.png?v=${APP_VERSION}`,
   `/static/pwa-icon-512.png?v=${APP_VERSION}`,
@@ -118,10 +128,16 @@ background:#F4C542;color:#2B2118;font-weight:800;font-size:1rem;text-decoration:
 }
 
 // ── INSTALL ──────────────────────────────────────────────────────────────
-// El worker espera confirmación del usuario antes de sustituir al activo. Esto
-// evita recargar a mitad de un checkout o de una operación de cocina/reparto.
-// pwa-manager muestra la actualización y envía SKIP_WAITING al aceptarla.
+// Auto-skipWaiting: el SW nuevo se activa inmediatamente al instalar.
+// Antes esperábamos que el usuario aceptara un toast en pwa-manager, pero eso
+// dejaba dispositivos con SW viejo sirviendo assets desactualizados durante
+// horas o días si el toast no se veía. La activación agresiva desde `activate`
+// llama a `clients.claim()` que reasigna páginas existentes al SW nuevo sin
+// necesidad de F5. Trade-off aceptable: durante un deploy en medio de un
+// checkout, el asset viejo termina siendo servido por el SW nuevo pero el
+// estado del formulario no se pierde (no hay reload).
 self.addEventListener("install", event => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_STATIC).then(async cache => {
       await Promise.allSettled(
@@ -331,12 +347,16 @@ self.addEventListener("push", event => {
     const windows = await clients.matchAll({ type: "window", includeUncontrolled: true });
     windows.forEach(client => client.postMessage({
       type: "OX_PUSH_RECEIVED",
-      payload: { title: safeTitle, body: safeBody, url: options.data.url },
+      payload: { title: safeTitle, body: safeBody, url: options.data.url, tag: options.tag },
     }));
     if ("setAppBadge" in self.navigator && Number(badgeCount) > 0) {
       await self.navigator.setAppBadge(Number(badgeCount)).catch(() => {});
     }
-    await self.registration.showNotification(safeTitle, options);
+    // Si la app está visible, el aviso contextual dentro del PWA informa sin
+    // duplicar un banner del sistema. En segundo plano se usa la notificación
+    // nativa. Es el patrón recomendado para clientes.matchAll().
+    const focused = windows.some(client => client.focused && client.visibilityState === "visible");
+    if (!focused) await self.registration.showNotification(safeTitle, options);
   })());
 });
 

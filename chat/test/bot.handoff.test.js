@@ -193,6 +193,24 @@ test('el cliente se dirige a la web y no recibe catálogo por WhatsApp', () => {
   assert.doesNotMatch(menu, /precio actualizado/i);
 });
 
+test('admins y superadmins no ejecutan gestión por WhatsApp y reciben el panel seguro', async () => {
+  createHandoffRequest(clientA);
+  saveSesion({
+    jid: adminA, nombre: 'Responsable', role: 'admin', estado: 'admin_menu',
+    carrito: [], pending: {}, zona_id: null, active_client_jid: null,
+  });
+  db.exec('DELETE FROM logs;');
+
+  await _test.handleMessage(adminA, 'TOMAR', 'Responsable');
+
+  assert.equal(getHandoff(clientA).admin_jid, null);
+  const sent = db.prepare(`
+    SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1
+  `).get()?.detalle || '';
+  assert.match(sent, /panel seguro/i);
+  assert.match(sent, /\/admin\/chats/);
+});
+
 test('consulta ULTIMO prioriza activo y cae al último cerrado', () => {
   const cerrado = { numero: 'EP-100', estado: 'entregado' };
   const activo = { numero: 'EP-099', estado: 'armando' };
@@ -646,6 +664,7 @@ test('status usa solo la clave de panel y message solo la clave de Oxidian', asy
       body: JSON.stringify({
         telefono: '34610000009',
         mensaje: 'x'.repeat(4096),
+        purpose: 'delivery_code',
       }),
     });
     assert.equal(response.status, 200);

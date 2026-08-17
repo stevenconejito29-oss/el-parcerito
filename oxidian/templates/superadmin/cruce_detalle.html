@@ -1,0 +1,73 @@
+{% extends "admin_base.html" %}
+{% block title %}Cruce #{{ cruce.public_id[:6]|upper }}{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/cruce-admin.css', v=asset_version) }}">{% endblock %}
+{% block content %}
+{% set role_labels = {'customer':'Cliente','rider':'Rider','admin':'Admin','system':'Sistema'} %}
+{% set action_labels = {
+  'created':'Publicó el Cruce',
+  'offer_matches_price':'Ofreció aceptar el precio',
+  'rider_countered':'Contraofertó',
+  'customer_countered':'Cliente contraofertó',
+  'offer_accepted':'Aceptó la propuesta',
+  'accepted_customer_counter':'Aceptó la contraoferta del cliente',
+  'offer_withdrawn':'Retiró su propuesta',
+  'offer_withdrawn_unavailable':'Propuesta descartada (rider no disponible)',
+  'cancelled':'Canceló antes de asignar',
+  'cancelled_post_match':'Canceló el Cruce en curso',
+  'cancelled_by_rider':'Rider canceló el Cruce',
+  'cancelled_by_admin':'Admin canceló el Cruce',
+  'expired':'Expiró sin propuestas',
+  'status_at_pickup':'Llegó al punto A',
+  'status_picked_up':'Recogió el bulto',
+  'status_in_transit':'En camino al punto B',
+  'status_delivered':'Confirmó la entrega',
+} %}
+<main class="ca-page motion-fade-in" style="view-transition-name: cruce-{{ cruce.public_id[:8] }}">
+  <header class="ca-head">
+    <div><small>CRUCE #{{ cruce.public_id[:6]|upper }} · {{ cruce.status|replace('_',' ') }}</small>
+      <h1>{{ cruce.item_description }}</h1>
+      <p>{{ cruce.pickup_address }} → {{ cruce.dropoff_address }}</p>
+    </div>
+    <a href="{{ url_for('superadmin.cruces') }}">← Volver</a>
+  </header>
+
+  <section class="ca-stats">
+    <article><span>Cliente</span><strong>{{ cruce.customer_name }}</strong><small>{{ cruce.customer_phone }}</small></article>
+    <article><span>Rider asignado</span><strong>{{ cruce.assigned_rider.nombre if cruce.assigned_rider else '—' }}</strong></article>
+    <article><span>Importe</span><strong>{{ '%.2f'|format(cruce.agreed_amount or cruce.offered_amount) }} €</strong><small>{{ '%.1f'|format(cruce.distance_km) }} km</small></article>
+    <article><span>Publicado</span><strong>{{ cruce.created_at.strftime('%d/%m %H:%M') }}</strong>{% if cruce.completed_at %}<small>Entregado {{ cruce.completed_at.strftime('%d/%m %H:%M') }}</small>{% elif cruce.cancelled_at %}<small>Cerrado {{ cruce.cancelled_at.strftime('%d/%m %H:%M') }}</small>{% endif %}</article>
+  </section>
+
+  {% if cruce.cancellation_reason %}
+  <section class="ca-riders"><div><h2>Motivo de cierre</h2><p>Registrado por {{ role_labels.get(cruce.cancelled_by, cruce.cancelled_by or '—') }}.</p></div><p style="padding:1rem">{{ cruce.cancellation_reason }}</p></section>
+  {% endif %}
+
+  {% if cruce.proof_photo_path %}
+  <section class="ca-riders"><div><h2>Prueba de entrega</h2></div><div style="padding:1rem"><img src="{{ cruce.proof_photo_path|upload_url }}" alt="Prueba de entrega" style="max-width:320px;border-radius:12px"></div></section>
+  {% endif %}
+
+  {% if cruce.status not in ('delivered','cancelled','expired') %}
+  <section class="ca-riders">
+    <div><h2>Cancelación administrativa</h2><p>Fuerza el cierre del Cruce en cualquier estado. Se notifica al cliente y a los riders implicados.</p></div>
+    <form method="post" action="{{ url_for('superadmin.cancelar_cruce_admin', public_id=cruce.public_id) }}" style="padding:1rem;display:grid;gap:.5rem">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="reason" required minlength="4" maxlength="240" placeholder="Motivo interno (se envía como aviso al cliente y al rider)"></textarea>
+      <button>Cancelar Cruce por administración</button>
+    </form>
+  </section>
+  {% endif %}
+
+  <section class="ca-table">
+    <header><h2>Timeline auditado</h2><span>{{ cruce.events|length }} eventos</span></header>
+    <div class="ca-list">
+    {% for ev in cruce.events %}
+      <article>
+        <div class="ca-id"><small>{{ ev.created_at.strftime('%d/%m %H:%M') }}</small><strong>{{ role_labels.get(ev.actor_role, ev.actor_role) }}</strong><span>{{ action_labels.get(ev.action, ev.action) }}</span></div>
+        <div class="ca-route"><p><b>Actor</b><span>{{ ev.actor_label or (ev.actor.nombre if ev.actor else '—') }}</span></p>{% if ev.note %}<p><b>Nota</b><span>{{ ev.note }}</span></p>{% endif %}</div>
+        <div class="ca-money">{% if ev.amount %}<small>Importe</small><strong>{{ '%.2f'|format(ev.amount) }} €</strong>{% endif %}</div>
+      </article>
+    {% else %}<p class="ca-empty">Sin eventos registrados.</p>{% endfor %}
+    </div>
+  </section>
+</main>
+{% endblock %}

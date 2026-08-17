@@ -131,6 +131,7 @@ class User(UserMixin, db.Model):
     # Presencia
     last_seen = db.Column(db.DateTime)
     en_linea = db.Column(db.Boolean, default=False)  # toggle manual disponibilidad
+    acepta_cruces = db.Column(db.Boolean, default=True, server_default="true", nullable=False)
 
     # Verificación de puntos por WhatsApp
     cod_puntos = db.Column(db.String(8))           # código de 6 dígitos
@@ -4754,3 +4755,174 @@ class KnowledgeEntry(db.Model):
 
     def keyword_list(self) -> list:
         return [k.strip() for k in (self.keywords or "").split(",") if k.strip()]
+
+
+class WebChatConversation(db.Model):
+    """Conversación del canal web, independiente del transporte WhatsApp."""
+    __tablename__ = "web_chat_conversations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    public_id = db.Column(db.String(36), nullable=False, unique=True, index=True)
+    visitor_token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    # Identidad explícita del cliente propietario de la sesión. Nunca se
+    # infiere por teléfono ni por texto del chat, evitando cruces de push.
+    customer_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    status = db.Column(db.String(20), nullable=False, default="bot", index=True)
+    assigned_agent_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"))
+    requested_at = db.Column(db.DateTime)
+    assigned_at = db.Column(db.DateTime)
+    closed_at = db.Column(db.DateTime)
+    last_activity_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    assigned_agent = db.relationship("User", foreign_keys=[assigned_agent_id])
+    customer = db.relationship("User", foreign_keys=[customer_id])
+    messages = db.relationship(
+        "WebChatMessage", back_populates="conversation", lazy="dynamic",
+        cascade="all, delete-orphan", order_by="WebChatMessage.id",
+    )
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "status IN ('bot','waiting_agent','active_agent','closed')",
+            name="ck_web_chat_conversation_status",
+        ),
+        db.Index("ix_web_chat_status_activity", "status", "last_activity_at"),
+    )
+
+
+class WebChatMessage(db.Model):
+    """Mensaje auditable de un chat web; nunca contiene HTML ejecutable."""
+    __tablename__ = "web_chat_messages"
+
+    id = db.Column(db.Integer, primary_key=True)
+    conversation_id = db.Column(
+        db.Integer, db.ForeignKey("web_chat_conversations.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    sender = db.Column(db.String(20), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    agent_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"))
+    client_nonce = db.Column(db.String(64))
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+
+    conversation = db.relationship("WebChatConversation", back_populates="messages")
+    agent = db.relationship("User", foreign_keys=[agent_id])
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "sender IN ('client','bot','agent','system')",
+            name="ck_web_chat_message_sender",
+        ),
+        db.UniqueConstraint("conversation_id", "client_nonce", name="uq_web_chat_client_nonce"),
+    )
+
+
+class FavorRequest(db.Model):
+    """El Cruce: encargo PWA de punto A a punto B con precio negociable."""
+    __tablename__ = "favor_requests"
+
+    id = db.Column(db.Integer, primary_key=True)
+    public_id = db.Column(db.String(36), nullable=False, unique=True, index=True, default=lambda: str(uuid.uuid4()))
+    visitor_token_hash = db.Column(db.String(64), nullable=False, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    customer_name = db.Column(db.String(100), nullable=False)
+    customer_phone = db.Column(db.String(30), nullable=False)
+    pickup_address = db.Column(db.String(350), nullable=False)
+    dropoff_address = db.Column(db.String(350), nullable=False)
+    pickup_lat = db.Column(db.Float, nullable=False)
+    pickup_lng = db.Column(db.Float, nullable=False)
+    dropoff_lat = db.Column(db.Float, nullable=False)
+    dropoff_lng = db.Column(db.Float, nullable=False)
+    pickup_zone_id = db.Column(db.Integer, db.ForeignKey("zonas_entrega.id", ondelete="RESTRICT"), nullable=False, index=True)
+    dropoff_zone_id = db.Column(db.Integer, db.ForeignKey("zonas_entrega.id", ondelete="RESTRICT"), nullable=False, index=True)
+    item_description = db.Column(db.String(500), nullable=False)
+    package_type = db.Column(db.String(30), nullable=False, default="package")
+    pickup_reference = db.Column(db.String(160))
+    weight_kg = db.Column(db.Numeric(5, 2), nullable=False, default=1)
+    declared_value = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    distance_km = db.Column(db.Numeric(7, 2), nullable=False, default=0)
+    offered_amount = db.Column(db.Numeric(10, 2), nullable=False)
+    agreed_amount = db.Column(db.Numeric(10, 2))
+    status = db.Column(db.String(20), nullable=False, default="open", index=True)
+    assigned_rider_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    matched_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    cancelled_at = db.Column(db.DateTime)
+    cancelled_by = db.Column(db.String(20))
+    cancellation_reason = db.Column(db.String(240))
+    proof_photo_path = db.Column(db.String(300))
+
+    customer = db.relationship("User", foreign_keys=[customer_id])
+    assigned_rider = db.relationship("User", foreign_keys=[assigned_rider_id])
+    pickup_zone = db.relationship("ZonaEntrega", foreign_keys=[pickup_zone_id])
+    dropoff_zone = db.relationship("ZonaEntrega", foreign_keys=[dropoff_zone_id])
+    offers = db.relationship("FavorOffer", back_populates="request", cascade="all, delete-orphan", lazy="selectin")
+    events = db.relationship("FavorEvent", back_populates="request", cascade="all, delete-orphan", lazy="selectin", order_by="FavorEvent.created_at.asc()")
+
+    __table_args__ = (
+        db.CheckConstraint("offered_amount > 0", name="ck_favor_request_offer_positive"),
+        db.CheckConstraint("agreed_amount IS NULL OR agreed_amount > 0", name="ck_favor_request_agreed_positive"),
+        db.CheckConstraint("weight_kg > 0 AND weight_kg <= 20", name="ck_cruce_weight"),
+        db.CheckConstraint("declared_value >= 0", name="ck_cruce_declared_value"),
+        db.CheckConstraint("status IN ('open','matched','at_pickup','picked_up','in_transit','delivered','cancelled','expired')", name="ck_favor_request_status"),
+        db.CheckConstraint("cancelled_by IS NULL OR cancelled_by IN ('customer','rider','admin','system')", name="ck_favor_request_cancelled_by"),
+        db.Index("ix_favor_request_status_created", "status", "created_at"),
+    )
+
+
+class FavorOffer(db.Model):
+    """Aceptación o contraoferta única de un rider para un encargo."""
+    __tablename__ = "favor_offers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    request_id = db.Column(db.Integer, db.ForeignKey("favor_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    rider_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    customer_counter_amount = db.Column(db.Numeric(10, 2))
+    customer_countered_at = db.Column(db.DateTime)
+    eta_minutes = db.Column(db.Integer)
+    note = db.Column(db.String(250))
+    status = db.Column(db.String(16), nullable=False, default="pending", index=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    request = db.relationship("FavorRequest", back_populates="offers")
+    rider = db.relationship("User", foreign_keys=[rider_id])
+
+    __table_args__ = (
+        db.UniqueConstraint("request_id", "rider_id", name="uq_favor_offer_request_rider"),
+        db.CheckConstraint("amount > 0", name="ck_favor_offer_amount_positive"),
+        db.CheckConstraint("customer_counter_amount IS NULL OR customer_counter_amount > 0", name="ck_cruce_customer_counter_positive"),
+        db.CheckConstraint("eta_minutes IS NULL OR (eta_minutes BETWEEN 1 AND 480)", name="ck_favor_offer_eta"),
+        db.CheckConstraint("status IN ('pending','accepted','rejected','withdrawn')", name="ck_favor_offer_status"),
+    )
+
+
+class FavorEvent(db.Model):
+    """Timeline auditado de cambios de estado y negociación de un Cruce."""
+    __tablename__ = "favor_events"
+
+    id = db.Column(db.Integer, primary_key=True)
+    request_id = db.Column(db.Integer, db.ForeignKey("favor_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    actor_role = db.Column(db.String(20), nullable=False)
+    actor_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"))
+    actor_label = db.Column(db.String(80))
+    action = db.Column(db.String(40), nullable=False, index=True)
+    amount = db.Column(db.Numeric(10, 2))
+    note = db.Column(db.String(240))
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+
+    request = db.relationship("FavorRequest", back_populates="events")
+    actor = db.relationship("User", foreign_keys=[actor_id])
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "actor_role IN ('customer','rider','admin','system')",
+            name="ck_favor_event_actor_role",
+        ),
+        db.Index("ix_favor_event_request_created", "request_id", "created_at"),
+    )

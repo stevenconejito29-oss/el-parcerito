@@ -16,6 +16,9 @@
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const isInAppBrowser = /Instagram|FBAN|FBAV|Line\/|TikTok|Twitter/i.test(navigator.userAgent);
   const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  // Clase estable para CSS: Safari iOS puede restaurar una PWA antes de que
+  // todas las media queries de display-mode se recalculen.
+  document.documentElement.classList.toggle('ox-pwa-runtime', isStandalone());
   const installButtons = () => document.querySelectorAll('[data-pwa-install], #ox-staff-install');
   let deferredInstallPrompt = null;
   let reloadForUpdate = false;
@@ -23,6 +26,7 @@
   let audioContext = null;
   let wakeLock = null;
   let offlineNotice = null;
+  const foregroundPushTags = new Map();
 
   function toast(message, type = 'info', action = null, duration = 5200) {
     if (window.OxToast?.show) {
@@ -241,6 +245,7 @@
     }
     localStorage.setItem('oxPushEnabled', '1');
     localStorage.setItem('oxPushSound', '1');
+    localStorage.setItem('oxPushLastSync', String(Date.now()));
     setPushUi('active');
     return subscription;
   }
@@ -462,6 +467,15 @@
       if (pushEligible && Notification.permission === 'granted') {
         await subscribePush(registration).catch(error => setPushUi('error', error.message));
       }
+      // La suscripción del navegador puede sobrevivir mientras el registro del
+      // servidor expiró o cambió de propietario. Una resincronización diaria
+      // mantiene el dispositivo vinculado sin pedir permiso otra vez.
+      const resyncPush = () => {
+        const last = Number(localStorage.getItem('oxPushLastSync') || 0);
+        if (pushEligible && Notification.permission === 'granted' && Date.now() - last > 86400000) {
+          subscribePush(registration).catch(error => setPushUi('error', error.message));
+        }
+      };
       // Update policy: revisa nuevas versiones del SW con más frecuencia para
       // que las mejoras del backend (nuevos precios, ajustes de menú, cambios
       // de config) se propaguen en < 5 min sin perder la sensación de app
@@ -473,7 +487,7 @@
         registration.update().then(() => announceUpdate(registration)).catch(() => {});
       };
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') update();
+        if (document.visibilityState === 'visible') { update(); resyncPush(); }
       });
       // 5 minutos de intervalo (antes 1h) — el navegador skipea si tab no
       // está visible, así que impacto en batería es mínimo.
@@ -509,6 +523,12 @@
     }
     if (event.data?.type !== 'OX_PUSH_RECEIVED') return;
     const payload = event.data.payload || {};
+    const now = Date.now();
+    for (const [tag, seenAt] of foregroundPushTags) {
+      if (now - seenAt > 60000) foregroundPushTags.delete(tag);
+    }
+    if (payload.tag && foregroundPushTags.has(payload.tag)) return;
+    if (payload.tag) foregroundPushTags.set(payload.tag, now);
     toast([payload.title, payload.body].filter(Boolean).join(' · '), 'info', payload.url ? {
       label: 'Ver',
       run: () => { location.href = payload.url; },

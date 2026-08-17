@@ -6,7 +6,7 @@ from flask import Flask
 
 from extensions import db
 from models import NotificationOutbox, PushBroadcast, PushSubscription, User
-from push_service import notify_roles, queue_push_broadcast
+from push_service import notify_roles, queue_push_broadcast, send_push_outbox_payload
 
 
 class PushBroadcastServiceTest(unittest.TestCase):
@@ -122,6 +122,19 @@ class PushBroadcastServiceTest(unittest.TestCase):
         notify_roles(["cocina"], "Pedido", "Hay trabajo")
 
         self.assertEqual(NotificationOutbox.query.count(), 0)
+
+    def test_queued_push_is_discarded_if_endpoint_changes_owner(self):
+        campaign, _ = self._queue(audience="customers")
+        job = NotificationOutbox.query.filter_by(push_broadcast_id=campaign.id).one()
+        payload = json.loads(job.payload_json)
+        subscription = db.session.get(PushSubscription, payload["subscription_id"])
+        subscription.user_id = self.staff.id
+        db.session.commit()
+
+        ok, error = send_push_outbox_payload(payload)
+
+        self.assertTrue(ok)
+        self.assertIsNone(error)
 
 
 if __name__ == "__main__":

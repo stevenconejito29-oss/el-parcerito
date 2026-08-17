@@ -2204,12 +2204,17 @@ def carga_actual_preparadores(user_ids: list[int]) -> dict[int, int]:
 
 
 def carga_actual_repartidores(user_ids: list[int]) -> dict[int, int]:
-    """Devuelve {user_id: pedidos_activos_como_repartidor} en 1 query.
-    Cuenta pedidos en estado listo o en_ruta asignados al repartidor."""
+    """Devuelve {user_id: trabajos_activos} sumando pedidos + Cruces en curso.
+
+    Un rider ocupado con un Cruce (matched/at_pickup/picked_up/in_transit) también
+    consume capacidad; contarlo aquí evita sobreasignar pedidos a riders que
+    ya están moviendo un encargo A→B.
+    """
     if not user_ids:
         return {}
     from sqlalchemy import func
-    rows = (
+    from models import FavorRequest
+    pedidos = (
         db.session.query(Order.repartidor_id, func.count(Order.id))
         .filter(
             Order.repartidor_id.in_(user_ids),
@@ -2219,7 +2224,21 @@ def carga_actual_repartidores(user_ids: list[int]) -> dict[int, int]:
         .group_by(Order.repartidor_id)
         .all()
     )
-    return {uid: 0 for uid in user_ids} | {uid: n for uid, n in rows}
+    cruces = (
+        db.session.query(FavorRequest.assigned_rider_id, func.count(FavorRequest.id))
+        .filter(
+            FavorRequest.assigned_rider_id.in_(user_ids),
+            FavorRequest.status.in_(("matched", "at_pickup", "picked_up", "in_transit")),
+        )
+        .group_by(FavorRequest.assigned_rider_id)
+        .all()
+    )
+    resultado = {uid: 0 for uid in user_ids}
+    for uid, n in pedidos:
+        resultado[uid] = resultado.get(uid, 0) + n
+    for uid, n in cruces:
+        resultado[uid] = resultado.get(uid, 0) + n
+    return resultado
 
 
 def _elegir_menos_cargado(candidatos: list, cargas: dict[int, int],
@@ -4013,17 +4032,13 @@ MENSAJES_ESTADO = {
         "🎉 *¡Pedido recibido!*\n"
         "Tu pedido *{num}* ya está registrado. Total: *€{total}*.\n\n"
         "⏳ Todavía no ha comenzado la preparación. Te avisaremos cuando el equipo empiece.\n\n"
-        "Desde aquí mismo puedes:\n"
-        "• Escribir *ESTADO* para ver cómo va.\n"
-        "• Escribir *CANCELAR* (solo antes de empezar a prepararlo).\n"
-        "• Escribir *AGENTE* si necesitas hablar con una persona.\n\n"
-        "Puedes seguir consultando el estado por este mismo chat."
+        "Para consultar, cambiar o cancelar algo, abre el chat dentro de nuestra app."
     ),
     "armando":    "🔥 *¡Manos a la obra!*\nTu pedido *{num}* está en preparación en este momento.\nEn breve te avisamos cuando esté listo. ✨",
     "listo":      "✅ *¡Tu pedido está listo!*\nEl pedido *{num}* está perfectamente preparado y en breve sale hacia ti. 📦",
     "en_ruta":    "🚀 *¡En camino!*\nTu pedido *{num}* ya va hacia ti.\n\nCuando el repartidor llegue te enviará el código de entrega. No compartas ningún código antes de recibir tu pedido. 🛵",
     "entregado":  "🎊 *¡Pedido entregado!*\n¡Esperamos que te haya encantado! 😍\n¡Gracias por elegirnos! 💛",
-    "cancelado":  "😔 *Pedido cancelado*\nTu pedido *{num}* fue cancelado. Sentimos los inconvenientes.\nSi tienes dudas o quieres más información, escríbenos y lo resolvemos juntos. 💬",
+    "cancelado":  "😔 *Pedido cancelado*\nTu pedido *{num}* fue cancelado. Sentimos los inconvenientes.\nSi necesitas ayuda, abre el chat dentro de nuestra app. 💬",
 }
 
 
@@ -4332,21 +4347,23 @@ def purgar_registros_antiguos(now: datetime | None = None) -> dict:
       - `notification_outbox` acumulaba filas para siempre tras `sent`/`failed`.
       - `idempotency_keys` tenía `purge_expired_idempotency_keys()` pero
         ningún caller — grow-forever.
+      - Los chats web cerrados o abandonados tampoco tenían retención.
 
     Estrategia:
       - Retención configurable via SiteConfig (con env fallback):
         * `NOTIFICATION_OUTBOX_RETENTION_DAYS` (default 30 · min 7)
         * `IDEMPOTENCY_PURGE_ENABLED` (default "1")
+        * `WEB_CHAT_RETENTION_DAYS` (default 30 · min 7)
       - Purga en batches (500 max) para no bloquear la BD.
       - Solo purga `estado in (sent, failed)` — nunca borra pendientes.
 
     Devuelve dict con conteos por tabla.
     """
     from datetime import timedelta as _td
-    from models import NotificationOutbox as _NO, SiteConfig as _SC
+    from models import NotificationOutbox as _NO, SiteConfig as _SC, WebChatConversation as _WC
 
     ahora = now or utcnow()
-    resultado = {"notification_outbox": 0, "idempotency_keys": 0}
+    resultado = {"notification_outbox": 0, "idempotency_keys": 0, "web_chats": 0}
 
     # ── notification_outbox: sent/failed más viejos que retención ─────
     try:
@@ -4380,6 +4397,24 @@ def purgar_registros_antiguos(now: datetime | None = None) -> dict:
         except Exception:
             logger.exception("purgar_registros_antiguos: fallo idempotency purge")
 
+    # Sólo conversaciones no activas. Las que esperan o están asignadas se
+    # conservan aunque sean antiguas para no perder una atención pendiente.
+    try:
+        chat_days = int(_SC.get("WEB_CHAT_RETENTION_DAYS", "30") or 30)
+    except (TypeError, ValueError):
+        chat_days = 30
+    chat_days = max(7, min(chat_days, 365))
+    chat_cutoff = ahora - _td(days=chat_days)
+    chat_ids = [
+        row.id for row in _WC.query.filter(
+            _WC.status.in_(("bot", "closed")),
+            _WC.last_activity_at < chat_cutoff,
+        ).limit(250).all()
+    ]
+    if chat_ids:
+        _WC.query.filter(_WC.id.in_(chat_ids)).delete(synchronize_session=False)
+        resultado["web_chats"] = len(chat_ids)
+
     try:
         db.session.commit()
     except Exception:
@@ -4387,11 +4422,12 @@ def purgar_registros_antiguos(now: datetime | None = None) -> dict:
         logger.exception("purgar_registros_antiguos: commit falló")
         # No re-raise: la purga es best-effort, no debe tumbar el worker.
 
-    if resultado["notification_outbox"] or resultado["idempotency_keys"]:
+    if any(resultado.values()):
         logger.info(
-            "purga: outbox=%d idempotency=%d (retention=%dd)",
+            "purga: outbox=%d idempotency=%d web_chats=%d (retention=%dd)",
             resultado["notification_outbox"],
             resultado["idempotency_keys"],
+            resultado["web_chats"],
             retention_days,
         )
     return resultado
@@ -4427,7 +4463,10 @@ def procesar_notificaciones_pendientes(
     # Prioridad: OTP de canje y códigos de entrega van antes que broadcasts
     # o estados. El cliente los está esperando ahora mismo (en checkout o con
     # el repartidor delante) — retrasarlos rompe el flujo. Sin cambio de schema.
-    EVENTOS_URGENTES = ("delivery_code", "points_otp", "canje_codigo", "pago_confirmado")
+    EVENTOS_URGENTES = (
+        "order_confirmation", "delivery_code", "points_otp",
+        "canje_codigo",
+    )
     prioridad_expr = case(
         (NotificationOutbox.evento.in_(EVENTOS_URGENTES), 0),
         else_=1,
@@ -4455,7 +4494,9 @@ def procesar_notificaciones_pendientes(
         error = None
         try:
             if job.canal == "whatsapp" and payload.get("telefono") and payload.get("mensaje"):
-                ok = _send_whatsapp_message(payload["telefono"], payload["mensaje"])
+                ok = _send_whatsapp_message(
+                    payload["telefono"], payload["mensaje"], purpose=job.evento,
+                )
             elif job.canal == "push":
                 from push_service import send_push_outbox_payload
                 ok, error = send_push_outbox_payload(payload)
@@ -4485,6 +4526,14 @@ def enviar_whatsapp_estado(pedido: Order) -> bool:
     if not pedido.cliente or not pedido.cliente.telefono:
         return False
 
+    # WhatsApp no es un canal de seguimiento. Sólo el primer pedido que
+    # requiere verificación puede iniciar una conversación; el resto de
+    # estados se consulta y atiende dentro del chat web/PWA.
+    if not (
+        pedido.estado == "pendiente"
+        and getattr(pedido, "confirmacion_estado", None) == "pending"
+    ):
+        return False
     mensaje = mensaje_estado_pedido(pedido)
     if not mensaje:
         return False
@@ -4496,10 +4545,10 @@ def enviar_whatsapp_estado(pedido: Order) -> bool:
     }
     return _enviar_con_outbox(
         "whatsapp",
-        "order_state",
+        "order_confirmation",
         pedido.cliente.telefono,
         payload,
-        lambda: _send_whatsapp_message(pedido.cliente.telefono, mensaje),
+        lambda: _send_whatsapp_message(pedido.cliente.telefono, mensaje, purpose="order_confirmation"),
         pedido_id=pedido.id,
         user_id=pedido.cliente_id,
     )
@@ -4521,7 +4570,7 @@ def enviar_whatsapp_codigo_entrega(pedido: Order, actor_id: int | None = None) -
         "delivery_code",
         pedido.cliente.telefono,
         payload,
-        lambda: _send_whatsapp_message(pedido.cliente.telefono, mensaje),
+        lambda: _send_whatsapp_message(pedido.cliente.telefono, mensaje, purpose="delivery_code"),
         pedido_id=pedido.id,
         user_id=pedido.cliente_id,
     )
@@ -4538,7 +4587,7 @@ def enviar_whatsapp_codigo_entrega(pedido: Order, actor_id: int | None = None) -
     return ok
 
 
-def _send_whatsapp_message(telefono: str, mensaje: str) -> bool:
+def _send_whatsapp_message(telefono: str, mensaje: str, *, purpose: str = "") -> bool:
     """Envía un mensaje de WhatsApp a un teléfono. Retorna True si OK."""
     if not telefono or not mensaje:
         return False
@@ -4549,7 +4598,16 @@ def _send_whatsapp_message(telefono: str, mensaje: str) -> bool:
         # Tail-only para no dejar PII completa en logs.
         logger.info("WhatsApp simulado para tel …%s", (telefono or "")[-3:] or "?")
         return True
-    return _bot_http_post("/api/bot/message", {"telefono": telefono, "mensaje": mensaje})
+    return _bot_http_post(
+        "/api/bot/message",
+        {"telefono": telefono, "mensaje": mensaje, "purpose": purpose},
+    )
+
+
+WHATSAPP_TRANSACTIONAL_PURPOSES = frozenset({
+    "order_confirmation", "delivery_code", "points_otp", "canje_codigo",
+    "web_chat_handoff",
+})
 
 
 def enviar_whatsapp_generico(
@@ -4562,13 +4620,16 @@ def enviar_whatsapp_generico(
     """Envía un WhatsApp operativo con trazabilidad en notification_outbox."""
     if not telefono or not mensaje:
         return False
+    if evento not in WHATSAPP_TRANSACTIONAL_PURPOSES:
+        logger.warning("WhatsApp omitido: evento no transaccional (%s)", evento)
+        return False
     payload = {"telefono": telefono, "mensaje": mensaje}
     return _enviar_con_outbox(
         "whatsapp",
         evento,
         telefono,
         payload,
-        lambda: _send_whatsapp_message(telefono, mensaje),
+        lambda: _send_whatsapp_message(telefono, mensaje, purpose=evento),
         pedido_id=pedido_id,
         user_id=user_id,
     )
@@ -4586,6 +4647,9 @@ def encolar_whatsapp_generico(
     """Deja un WhatsApp en outbox para que lo envie el worker tras el commit."""
     if not telefono or not mensaje:
         return None
+    if evento not in WHATSAPP_TRANSACTIONAL_PURPOSES:
+        logger.warning("WhatsApp no encolado: evento no transaccional (%s)", evento)
+        return None
     payload = {"telefono": telefono, "mensaje": mensaje}
     job = _registrar_notificacion(
         "whatsapp",
@@ -4602,28 +4666,9 @@ def encolar_whatsapp_generico(
 
 
 def enviar_whatsapp_pago_confirmado(pedido: Order) -> bool:
-    if not pedido.cliente or not pedido.cliente.telefono:
-        return False
-    mensaje = (
-        f"✅ Pago confirmado para tu pedido {pedido.numero_pedido}.\n"
-        f"Total recibido: €{float(pedido.total):.2f}.\n"
-        "Ya seguimos preparando tu pedido."
-    )
-    payload = {
-        "telefono": pedido.cliente.telefono,
-        "mensaje": mensaje,
-        "numero_pedido": pedido.numero_pedido,
-        "metodo_pago": pedido.metodo_pago,
-    }
-    return _enviar_con_outbox(
-        "whatsapp",
-        "payment_confirmed",
-        pedido.cliente.telefono,
-        payload,
-        lambda: _send_whatsapp_message(pedido.cliente.telefono, mensaje),
-        pedido_id=pedido.id,
-        user_id=pedido.cliente_id,
-    )
+    """Compatibilidad: el pago se refleja en ticket/PWA, no por WhatsApp."""
+    logger.info("WhatsApp pago omitido por contrato de canal pedido=%s", pedido.numero_pedido)
+    return False
 
 
 def solicitar_resena_pedido(pedido: Order) -> bool:

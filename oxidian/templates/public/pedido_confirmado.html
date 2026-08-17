@@ -5,20 +5,25 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/order-confirmation.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
+{% set stage = {'pendiente':1,'armando':2,'listo':3,'en_ruta':4}.get(pedido.estado,1) %}
 
-<div class="max-w-lg mx-auto pt-2 pb-16 order-confirmation">
+<div class="max-w-lg mx-auto pt-2 pb-16 order-confirmation" data-order-state-url="{{ url_for('public.estado_pedido_web', pedido_id=pedido.id, token=pedido_token) }}">
 
   {# ── CONFETTI / ÉXITO ── #}
   <div class="order-success-hero {{ 'order-success-hero--action' if requiere_confirmacion_whatsapp else 'order-success-hero--complete' }}" id="success-top">
     <div class="order-celebration" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
-    <span class="order-success-eyebrow">{{ heritage_icon('mariposa') }} {{ 'Un último paso' if requiere_confirmacion_whatsapp else ui.order_success_eyebrow }}</span>
-    <div class="order-success-symbol" aria-hidden="true">
-      {{ heritage_icon('canasto') }}
-      <span>{{ heritage_icon('grano') }}</span>
+    <div class="order-hero-topline"><span class="order-success-eyebrow">{{ heritage_icon('mariposa') }} {{ 'Falta un último paso' if requiere_confirmacion_whatsapp else 'Pedido recibido' }}</span><span class="order-hero-order">#{{ pedido.numero_pedido }}</span></div>
+    <div class="order-hero-main">
+      <div class="order-success-symbol" aria-hidden="true">{{ heritage_icon('canasto') }}<span>{{ heritage_icon('grano') }}</span></div>
+      <div class="order-hero-copy">
+        <h1>{{ '¡Confírmalo y empezamos!' if requiere_confirmacion_whatsapp else ('¡Tu antojo está viajando!' if pedido.estado == 'en_ruta' else ('¡Ya está listo para ti!' if pedido.estado == 'listo' else ('¡Manos a la obra!' if pedido.estado == 'armando' else '¡Qué alegría cocinar para ti!'))) }}</h1>
+        <p>{{ 'Confirma por WhatsApp tu primera compra para enviarla a cocina.' if requiere_confirmacion_whatsapp else ('El repartidor lleva tu pedido. Ten disponible el código de entrega.' if pedido.estado == 'en_ruta' else ('Terminamos tu pedido y estamos coordinando la entrega.' if pedido.estado == 'listo' else ('Estamos preparando cada producto de tu pedido.' if pedido.estado == 'armando' else 'Tu pedido quedó validado. Te acompañamos y avisamos en cada etapa.'))) }}</p>
+      </div>
     </div>
-    <h1>{{ '¡Tu pedido está casi listo!' if requiere_confirmacion_whatsapp else ui.order_success_title }}</h1>
-    <p>{{ 'Como es tu primera compra, confirma este WhatsApp para que el equipo pueda empezar a prepararlo.' if requiere_confirmacion_whatsapp else ui.order_success_text }}</p>
-    <span class="order-hero-status">{{ 'Esperando tu confirmación' if requiere_confirmacion_whatsapp else 'Recibido por el equipo' }}</span>
+    <div class="order-hero-meta">
+      <span class="order-hero-status" data-order-status>{{ 'Esperando tu confirmación' if requiere_confirmacion_whatsapp else pedido.estado.replace('_',' ')|title }}</span>
+      <div class="order-live-note" aria-live="polite"><i></i><span>Seguimiento en vivo</span><b>Se actualiza solo</b></div>
+    </div>
   </div>
 
   {% if requiere_confirmacion_whatsapp %}
@@ -29,29 +34,43 @@
       <h2 id="verification-title">Confirma el pedido desde tu WhatsApp</h2>
       <p>Te enviamos un mensaje al número usado en el pedido. Responde <strong>SÍ</strong>; hasta entonces el pedido queda protegido y cocina no empezará a prepararlo.</p>
     </div>
-    <a href="{{ url_for('public.whatsapp', text='Hola, quiero confirmar mi primer pedido ' ~ pedido.numero_pedido ~ '.') }}"
-       target="_blank" rel="noopener" class="order-verify-cta">
+    <a href="{{ url_for('public.whatsapp', text='Hola, confirmo mi primer pedido ' ~ pedido.numero_pedido ~ '. Quiero que lo envíen a cocina.') }}"
+       class="order-verify-cta" aria-label="Confirmar el pedido {{ pedido.numero_pedido }} por WhatsApp">
       <span>Abrir WhatsApp y confirmar</span><b aria-hidden="true">→</b>
     </a>
     <p class="order-verification-foot">¿No ves el mensaje? Abre WhatsApp con el botón y escribe el número <strong>{{ pedido.numero_pedido }}</strong>.</p>
   </section>
   {% endif %}
 
-  <div class="order-progress" aria-label="Progreso del pedido">
-    <div class="is-done"><b>✓</b><span><strong>Pedido creado</strong><small>Datos recibidos</small></span></div>
+  <div class="order-progress" aria-label="Progreso del pedido" data-order-progress="{{ stage }}">
+    <div class="is-done"><b>✓</b><span><strong>Recibido</strong><small>Pedido validado</small></span></div>
     <i aria-hidden="true"></i>
-    <div class="{{ 'is-current' if requiere_confirmacion_whatsapp else 'is-done' }}"><b>{{ '2' if requiere_confirmacion_whatsapp else '✓' }}</b><span><strong>{{ 'Confirmar WhatsApp' if requiere_confirmacion_whatsapp else 'Pedido validado' }}</strong><small>{{ 'Responde SÍ' if requiere_confirmacion_whatsapp else 'Listo para cocina' }}</small></span></div>
+    <div class="{{ 'is-done' if stage > 2 else 'is-current' if stage == 2 else '' }}"><b>{{ '✓' if stage > 2 else '2' }}</b><span><strong>Preparación</strong><small>{{ 'En cocina' if stage == 2 else 'Siguiente etapa' }}</small></span></div>
     <i aria-hidden="true"></i>
-    <div><b>3</b><span><strong>Preparación</strong><small>Te avisaremos</small></span></div>
+    <div class="{{ 'is-done' if stage > 3 else 'is-current' if stage == 3 else '' }}"><b>{{ '✓' if stage > 3 else '3' }}</b><span><strong>Listo</strong><small>{{ 'Preparando salida' if stage == 3 else 'Te avisaremos' }}</small></span></div>
+    <i aria-hidden="true"></i>
+    <div class="{{ 'is-current' if stage == 4 else '' }}"><b>4</b><span><strong>En reparto</strong><small>{{ 'Va hacia ti' if stage == 4 else 'Entrega' }}</small></span></div>
   </div>
+
+  <section class="order-next-milestone" aria-label="Próximo paso">
+    <span aria-hidden="true">{{ '🛵' if stage == 4 else ('✨' if stage == 3 else ('🔥' if stage == 2 else '👨‍🍳')) }}</span>
+    <div><small>{{ 'Ahora mismo' if stage > 1 else 'Lo siguiente' }}</small><strong>{{ 'Tu pedido viaja hacia ti' if stage == 4 else ('Listo para salir' if stage == 3 else ('Preparando tu antojo' if stage == 2 else 'Cocina recibirá tu pedido')) }}</strong><p>{{ 'Ten a mano el código de entrega.' if stage == 4 else ('En cuanto salga te avisaremos.' if stage == 3 else ('Te avisaremos apenas esté listo.' if stage == 2 else 'Te avisaremos cuando empiece la preparación.')) }}</p></div>
+  </section>
 
   {# ── NÚMERO DE PEDIDO ── #}
   <div class="ox-card p-5 mb-4 text-center order-number-ticket">
+    <p class="order-ticket-kicker">Ficha técnica · Comprobante de compra</p>
     <p class="order-number-label">Tu número de pedido</p>
     <p class="order-number-value">
       {{ pedido.numero_pedido }}
     </p>
     <p class="order-number-help">{{ ui.order_number_help }}</p>
+    <dl class="order-ticket-meta">
+      <div><dt>Fecha</dt><dd>{{ pedido.creado_en.strftime('%d/%m/%Y · %H:%M') if pedido.creado_en else 'Registrado' }}</dd></div>
+      <div><dt>Modalidad</dt><dd>{{ 'Delivery' if pedido.direccion_entrega else 'Recogida' }}</dd></div>
+      <div><dt>Pago</dt><dd>Contra entrega</dd></div>
+      <div><dt>Estado actual</dt><dd data-order-status>{{ pedido.estado.replace('_',' ')|title }}</dd></div>
+    </dl>
   </div>
 
   {# ── ITEMS DEL PEDIDO ── #}
@@ -202,20 +221,39 @@
   </div>
   {% endif %}
 
+  {# La autorización del navegador exige un gesto explícito. Por eso se
+     explica aquí, en contexto, en vez de depender solo de un banner flotante. #}
+  <section class="order-notify-card" aria-labelledby="order-notify-title">
+    <span class="order-notify-icon" aria-hidden="true">🔔</span>
+    <div>
+      <h2 id="order-notify-title">Sigue el pedido sin estar mirando la pantalla</h2>
+      <p>Activa los avisos para saber cuándo entra en preparación, queda listo, sale con reparto o responde un agente en el chat. Solo recibirás novedades vinculadas a tu cuenta en este dispositivo.</p>
+      <button type="button" data-push-activate>Activar avisos del pedido</button>
+      <small>En iPhone debes abrir la app instalada desde la pantalla de inicio. Puedes desactivarlos cuando quieras.</small>
+    </div>
+  </section>
+
   {# ── ACCIONES ── #}
   <div class="space-y-3">
     <a href="{{ url_for('public.index') }}" class="order-action order-action--primary">
       {{ heritage_icon('canasto') }} Seguir explorando
     </a>
-    {% if brand.telefono and not requiere_confirmacion_whatsapp %}
-    <a href="{{ url_for('public.whatsapp', text='Hola, acabo de hacer el pedido ' ~ pedido.numero_pedido ~ '. Quiero consultar el estado.') }}"
-       target="_blank" rel="noopener"
-       class="order-action order-action--whatsapp">
-      💬 Consultar por WhatsApp
-    </a>
+    {% if not requiere_confirmacion_whatsapp %}
+    <a href="{{ url_for('public.chat') }}" class="order-action order-action--whatsapp">💬 Consultar en el chat</a>
+    {% endif %}
+    {% if puede_cancelar %}
+    <form method="post" action="{{ url_for('public.cancelar_pedido_web', pedido_id=pedido.id) }}"
+          data-confirm="¿Cancelar este pedido? Se liberarán productos, cupones y cafecitos asociados.">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="token" value="{{ pedido_token }}">
+      <button type="submit" class="order-action order-action--cancel">Cancelar pedido</button>
+    </form>
+    {% elif pedido.estado not in ('entregado', 'cancelado') %}
+    <p class="order-cancel-guidance">Este pedido ya está en operación. Para cambios o cancelación, abre el chat y solicita atención del equipo.</p>
     {% endif %}
   </div>
 
 </div>
 
 {% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" src="{{ url_for('static',filename='js/order-status.js',v=asset_version) }}" defer></script>{% endblock %}

@@ -811,7 +811,7 @@ body.ox-body-public.ox-has-bottom-nav :is(a, button, input, select, textarea, [t
 /* En tablet la cabecera ya contiene información, instalación, carrito y acceso.
    Eliminar la segunda navegación libera espacio útil y evita controles tapados. */
 @media (min-width: 761px) {
-  body.ox-body-public .ox-bottom-nav.ox-bnav-v2 { display: none !important; }
+  body.ox-body-public:not(:has(.wcp-page)) .ox-bottom-nav.ox-bnav-v2 { display: none !important; }
   body.ox-body-public.ox-has-bottom-nav {
     padding-bottom: env(safe-area-inset-bottom, 0px) !important;
     scroll-padding-bottom: env(safe-area-inset-bottom, 0px);

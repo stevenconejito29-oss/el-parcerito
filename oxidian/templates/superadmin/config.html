@@ -85,7 +85,7 @@
   <section class="cfg-status-grid">
     <a href="{{ url_for('admin.menu_config') }}"><span>Página pública</span><strong>Banners y contenido</strong><small>Editar inicio, menú y checkout</small></a>
     {% if brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}"><span>Reparto</span><strong>{{ zonas|selectattr('activo')|list|length }} zonas activas</strong><small>Precios, cobertura y tiempos</small></a>{% endif %}
-    <a href="{{ url_for('superadmin.chatbot') }}"><span>WhatsApp</span><strong>Chatbot y Evolution</strong><small>Estado, QR y sincronización</small></a>
+      <a href="{{ url_for('superadmin.chatbot') }}"><span>Atención</span><strong>Chat web y WhatsApp transaccional</strong><small>Conocimiento, códigos y conexión</small></a>
     {% if brand.puntos %}<a href="{{ url_for('marketing.puntos') }}"><span>Fidelización</span><strong>Productos y puntos</strong><small>Canjes y movimientos</small></a>{% endif %}
   </section>
 

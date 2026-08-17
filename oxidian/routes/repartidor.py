@@ -4,12 +4,13 @@ from functools import wraps
 import logging
 import math
 import os
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.orm import joinedload
 from extensions import db, get_or_404
 from models import (
     Order, OrderEvent, OrderItem, User, AuditLog, StaffPayment, RiderLocation,
-    normalizar_metodo_pago, utcnow,
+    normalizar_metodo_pago, utcnow, FavorRequest, FavorOffer,
 )
 from services import (
     asignar_repartidor_pedido,
@@ -138,7 +139,11 @@ def _borrar_ubicacion_si_sin_ruta(rider_id):
         estado="en_ruta",
         tipo_entrega_cliente="delivery",
     ).first()
-    if activa is None:
+    cruce_activo = FavorRequest.query.filter(
+        FavorRequest.assigned_rider_id == rider_id,
+        FavorRequest.status.in_(("matched", "at_pickup", "picked_up", "in_transit")),
+    ).first()
+    if activa is None and cruce_activo is None:
         RiderLocation.query.filter_by(rider_id=rider_id).delete()
 
 
@@ -216,13 +221,292 @@ def ruta():
         User.id != current_user.id
     ).all()
 
+    cruces_activos = FavorRequest.query.filter(
+        FavorRequest.assigned_rider_id == current_user.id,
+        FavorRequest.status.in_(("matched", "at_pickup", "picked_up", "in_transit")),
+    ).count()
+    cruces_abiertos = FavorRequest.query.filter_by(status="open").count() if current_user.acepta_cruces else 0
     return render_template("repartidor/ruta.html",
                            listos_grouped=listos_grouped,
                            listos_count=listos_count,
                            en_ruta=en_ruta,
                            codigo_enviado_ids=_codigo_enviado_ids(en_ruta),
                            companeros=companeros,
-                           disponible=disponible)
+                           disponible=disponible,
+                           cruces_activos=cruces_activos,
+                           cruces_abiertos=cruces_abiertos)
+
+
+def _favor_price(raw):
+    try:
+        value = Decimal(str(raw or "").replace(",", ".")).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError):
+        return None
+    return value if Decimal("1") <= value <= Decimal("999") else None
+
+
+@repartidor_bp.get("/favores")
+@repartidor_required
+def favores():
+    from cruce_policy import get_cruce_policy, recommended_price, expire_stale_open_favors
+    try:
+        expire_stale_open_favors()
+    except Exception:
+        logger.exception("No se pudieron expirar Cruces caducados (repartidor)")
+    abiertos = FavorRequest.query.filter_by(status="open").order_by(FavorRequest.created_at.asc()).all() if current_user.acepta_cruces else []
+    propios = FavorRequest.query.filter(
+        FavorRequest.assigned_rider_id == current_user.id,
+        FavorRequest.status.in_(("matched", "at_pickup", "picked_up", "in_transit")),
+    ).order_by(FavorRequest.matched_at.asc()).all()
+    policy = get_cruce_policy()
+    guide_prices = {row.id: recommended_price(policy, float(row.distance_km or 0)) for row in (*abiertos, *propios)}
+    return render_template("repartidor/favores.html", abiertos=abiertos, propios=propios, disponible=_esta_disponible(), policy=policy, guide_prices=guide_prices)
+
+
+@repartidor_bp.post("/favores/preferencia")
+@repartidor_required
+def preferencia_cruces():
+    current_user.acepta_cruces = request.form.get("acepta_cruces") == "1"
+    db.session.commit()
+    flash("Preferencia de El Cruce actualizada.", "success")
+    return redirect(url_for("repartidor.favores"))
+
+
+@repartidor_bp.post("/favores/<public_id>/aceptar")
+@repartidor_required
+def aceptar_favor(public_id):
+    if not current_user.acepta_cruces:
+        flash("Activa El Cruce antes de aceptar solicitudes.", "warning")
+        return redirect(url_for("repartidor.favores"))
+    if not _requiere_disponible_para_nuevo_trabajo():
+        return redirect(url_for("repartidor.favores"))
+    row = FavorRequest.query.filter_by(public_id=public_id).with_for_update().first_or_404()
+    if row.status != "open":
+        flash("Ese Cruce ya no está disponible.", "warning")
+    else:
+        offer = FavorOffer.query.filter_by(request_id=row.id, rider_id=current_user.id).first()
+        if not offer:
+            offer = FavorOffer(request_id=row.id, rider_id=current_user.id, amount=row.offered_amount)
+            db.session.add(offer)
+        # Aceptar el importe significa que el rider se compromete a hacerlo a
+        # ese precio. El Cruce sigue abierto para que el cliente compare y
+        # elija; no se adjudica al primero que pulse.
+        offer.amount, offer.status = row.offered_amount, "pending"
+        offer.customer_counter_amount = None
+        offer.customer_countered_at = None
+        from cruce_policy import registrar_evento_favor
+        registrar_evento_favor(row, "rider", "offer_matches_price",
+                               actor_id=current_user.id,
+                               actor_label=current_user.nombre,
+                               amount=offer.amount)
+        db.session.commit()
+        try:
+            from push_service import notify_user
+            if row.customer_id:
+                notify_user(row.customer_id, "🛵 Un rider acepta tu precio", f"Puedes elegirlo por {offer.amount:.2f} € o esperar otras propuestas.", url="/favor", tag=f"cruce-offer-{row.id}-{current_user.id}")
+        except Exception:
+            logger.exception("No se pudo notificar propuesta del favor %s", row.id)
+        flash("Disponibilidad enviada. El cliente decidirá entre las propuestas.", "success")
+    return redirect(url_for("repartidor.favores"))
+
+
+@repartidor_bp.post("/favores/<public_id>/contraoferta")
+@repartidor_required
+def contraofertar_favor(public_id):
+    if not current_user.acepta_cruces:
+        flash("Activa El Cruce antes de enviar propuestas.", "warning")
+        return redirect(url_for("repartidor.favores"))
+    if not _requiere_disponible_para_nuevo_trabajo():
+        return redirect(url_for("repartidor.favores"))
+    amount = _favor_price(request.form.get("amount"))
+    try: eta = int(request.form.get("eta_minutes", 0))
+    except (TypeError, ValueError): eta = 0
+    row = FavorRequest.query.filter_by(public_id=public_id).with_for_update().first_or_404()
+    from cruce_policy import get_cruce_policy, recommended_price
+    minimum = recommended_price(get_cruce_policy(), float(row.distance_km or 0))
+    if row.status != "open":
+        flash("Este Cruce ya no admite propuestas.", "warning")
+    elif not amount or amount < minimum or not 1 <= eta <= 480:
+        flash("La contraoferta o el tiempo estimado no son válidos.", "warning")
+    else:
+        offer = FavorOffer.query.filter_by(request_id=row.id, rider_id=current_user.id).first()
+        if not offer:
+            offer = FavorOffer(request_id=row.id, rider_id=current_user.id)
+            db.session.add(offer)
+        offer.amount, offer.eta_minutes = amount, eta
+        offer.note = request.form.get("note", "").strip()[:250]
+        offer.customer_counter_amount = None
+        offer.customer_countered_at = None
+        offer.status = "pending"
+        from cruce_policy import registrar_evento_favor
+        registrar_evento_favor(row, "rider", "rider_countered",
+                               actor_id=current_user.id,
+                               actor_label=current_user.nombre,
+                               amount=amount, note=f"ETA {eta} min")
+        db.session.commit()
+        try:
+            from push_service import notify_user
+            if row.customer_id:
+                notify_user(row.customer_id, "💬 Tienes una propuesta para tu Cruce", f"Contraoferta: {amount:.2f} € · llegada aproximada en {eta} min.", url="/favor", tag=f"cruce-offer-{row.id}-{current_user.id}")
+        except Exception:
+            logger.exception("No se pudo notificar contraoferta del favor %s", row.id)
+        flash("Contraoferta enviada al cliente.", "success")
+    return redirect(url_for("repartidor.favores"))
+
+
+@repartidor_bp.post("/favores/<public_id>/aceptar-contraoferta")
+@repartidor_required
+def aceptar_contraoferta_cliente(public_id):
+    """Cierra de forma atómica la propuesta que el cliente hizo a este rider."""
+    if not _requiere_disponible_para_nuevo_trabajo():
+        return redirect(url_for("repartidor.favores"))
+    row = FavorRequest.query.filter_by(public_id=public_id).with_for_update().first_or_404()
+    offer = FavorOffer.query.filter_by(request_id=row.id, rider_id=current_user.id, status="pending").first()
+    from cruce_policy import rider_can_be_assigned, registrar_evento_favor
+    can_assign, unavailable_reason = rider_can_be_assigned(current_user.id)
+    if row.status != "open" or not offer or offer.customer_counter_amount is None:
+        flash("La propuesta ya no está disponible.", "warning")
+    elif not can_assign:
+        flash(unavailable_reason, "warning")
+    else:
+        agreed = offer.customer_counter_amount
+        row.status, row.assigned_rider_id, row.agreed_amount, row.matched_at = "matched", current_user.id, agreed, utcnow()
+        offer.amount, offer.status = agreed, "accepted"
+        rejected_rider_ids = []
+        for candidate in row.offers:
+            if candidate.id != offer.id:
+                if candidate.status == "pending":
+                    rejected_rider_ids.append(candidate.rider_id)
+                candidate.status = "rejected"
+        registrar_evento_favor(row, "rider", "accepted_customer_counter",
+                               actor_id=current_user.id,
+                               actor_label=current_user.nombre,
+                               amount=agreed)
+        db.session.commit()
+        try:
+            from push_service import notify_user
+            for rider_id in set(rejected_rider_ids):
+                notify_user(rider_id, "Cruce asignado a otro rider",
+                            "El cliente cerró el acuerdo con otra propuesta.",
+                            url="/repartidor/favores",
+                            tag=f"cruce-lost-{row.id}-{rider_id}")
+        except Exception:
+            logger.exception("No se pudo notificar riders descartados %s", row.id)
+        try:
+            from push_service import notify_user
+            if row.customer_id:
+                notify_user(row.customer_id, "✅ Precio acordado", f"El rider aceptó tu propuesta de {agreed:.2f} €.", url="/favor", tag=f"cruce-matched-{row.id}", require_interaction=True)
+        except Exception:
+            logger.exception("No se pudo notificar acuerdo bilateral %s", row.id)
+        flash("Aceptaste la propuesta. Ya puedes iniciar la recogida.", "success")
+    return redirect(url_for("repartidor.favores"))
+
+
+@repartidor_bp.post("/favores/<public_id>/retirar-propuesta")
+@repartidor_required
+def retirar_propuesta_favor(public_id):
+    """El rider conserva la decisión final mientras no exista acuerdo."""
+    row = FavorRequest.query.filter_by(public_id=public_id).with_for_update().first_or_404()
+    offer = FavorOffer.query.filter_by(request_id=row.id, rider_id=current_user.id, status="pending").first()
+    if row.status != "open" or not offer:
+        flash("La propuesta ya no se puede retirar.", "warning")
+    else:
+        offer.status = "withdrawn"
+        offer.customer_counter_amount = None
+        offer.customer_countered_at = None
+        from cruce_policy import registrar_evento_favor
+        registrar_evento_favor(row, "rider", "offer_withdrawn",
+                               actor_id=current_user.id,
+                               actor_label=current_user.nombre,
+                               amount=offer.amount)
+        db.session.commit()
+        try:
+            from push_service import notify_user
+            if row.customer_id:
+                notify_user(row.customer_id, "Propuesta retirada", "Ese rider ya no está disponible; puedes elegir otra propuesta.", url="/favor", tag=f"cruce-offer-withdrawn-{offer.id}")
+        except Exception:
+            logger.exception("No se pudo notificar retirada de propuesta %s", offer.id)
+        flash("Retiraste tu propuesta. El Cruce sigue disponible para otros riders.", "success")
+    return redirect(url_for("repartidor.favores"))
+
+
+@repartidor_bp.post("/favores/<public_id>/cancelar")
+@repartidor_required
+def cancelar_favor_rider(public_id):
+    """Rider abandona un Cruce ya asignado. Requiere motivo y libera al cliente."""
+    from cruce_policy import CANCELLABLE_BY_RIDER, _clean_reason, registrar_evento_favor
+    row = FavorRequest.query.filter_by(
+        public_id=public_id, assigned_rider_id=current_user.id
+    ).with_for_update().first_or_404()
+    if row.status not in CANCELLABLE_BY_RIDER:
+        flash("Este Cruce ya no se puede cancelar desde aquí.", "warning")
+        return redirect(url_for("repartidor.favores"))
+    reason = _clean_reason(request.form.get("reason"))
+    if not reason:
+        flash("Escribe brevemente por qué debes cancelar (mínimo 4 caracteres).", "warning")
+        return redirect(url_for("repartidor.favores"))
+    row.status = "cancelled"
+    row.cancelled_at = utcnow()
+    row.cancelled_by = "rider"
+    row.cancellation_reason = reason
+    for offer in row.offers:
+        if offer.rider_id == current_user.id:
+            offer.status = "rejected"
+    customer_id = row.customer_id
+    registrar_evento_favor(row, "rider", "cancelled_by_rider",
+                           actor_id=current_user.id,
+                           actor_label=current_user.nombre,
+                           note=reason)
+    db.session.commit()
+    try:
+        from push_service import notify_user
+        if customer_id:
+            notify_user(customer_id, "⚠️ El rider canceló tu Cruce",
+                        (reason or "Publícalo de nuevo para conseguir otro rider."),
+                        url="/favor", tag=f"cruce-rider-cancel-{row.id}",
+                        require_interaction=True)
+    except Exception:
+        logger.exception("No se pudo notificar cancelación por rider %s", row.id)
+    flash("Cancelaste el Cruce. El cliente ha sido informado.", "info")
+    return redirect(url_for("repartidor.favores"))
+
+
+@repartidor_bp.post("/favores/<public_id>/estado")
+@repartidor_required
+def avanzar_favor(public_id):
+    row = FavorRequest.query.filter_by(public_id=public_id, assigned_rider_id=current_user.id).with_for_update().first_or_404()
+    transitions = {"matched":"at_pickup", "at_pickup":"picked_up", "picked_up":"in_transit", "in_transit":"delivered"}
+    next_status = transitions.get(row.status)
+    if not next_status:
+        flash("El Cruce no admite otro cambio de estado.", "warning")
+    else:
+        if next_status == "delivered":
+            uploaded = request.files.get("proof_photo")
+            if uploaded and uploaded.filename:
+                try:
+                    from image_service import save_image
+                    row.proof_photo_path = save_image(uploaded, "cruces")
+                except Exception:
+                    logger.exception("No se pudo guardar foto de entrega del Cruce %s", row.id)
+                    flash("La foto no se pudo procesar; guarda una nueva o marca sin foto.", "warning")
+                    return redirect(url_for("repartidor.favores"))
+        row.status = next_status
+        if next_status == "delivered": row.completed_at = utcnow()
+        from cruce_policy import registrar_evento_favor
+        registrar_evento_favor(row, "rider", f"status_{next_status}",
+                               actor_id=current_user.id,
+                               actor_label=current_user.nombre,
+                               note=("Con foto de entrega" if row.proof_photo_path and next_status == "delivered" else None))
+        db.session.commit()
+        try:
+            from push_service import notify_user
+            labels = {"at_pickup":"El rider llegó al punto de recogida", "picked_up":"Tu encargo ya fue recogido", "in_transit":"Tu encargo va en camino", "delivered":"Cruce entregado"}
+            if row.customer_id:
+                notify_user(row.customer_id, f"📦 {labels[next_status]}", "Consulta el seguimiento desde tu app.", url="/favor", tag=f"favor-status-{row.id}")
+        except Exception:
+            logger.exception("No se pudo notificar estado del favor %s", row.id)
+        flash("Estado actualizado.", "success")
+    return redirect(url_for("repartidor.favores"))
 
 
 @repartidor_bp.route("/ubicacion", methods=["POST", "DELETE"])
@@ -245,6 +529,9 @@ def actualizar_ubicacion():
         repartidor_id=current_user.id,
         estado="en_ruta",
         tipo_entrega_cliente="delivery",
+    ).first() is not None or FavorRequest.query.filter(
+        FavorRequest.assigned_rider_id == current_user.id,
+        FavorRequest.status.in_(("matched", "at_pickup", "picked_up", "in_transit")),
     ).first() is not None
     if not tiene_ruta:
         RiderLocation.query.filter_by(rider_id=current_user.id).delete()

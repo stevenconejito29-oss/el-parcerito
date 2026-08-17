@@ -113,6 +113,13 @@ DEFAULTS: dict[str, dict] = {
             "Cap defensivo interno 7-365."
         ),
     },
+    "WEB_CHAT_RETENTION_DAYS": {
+        "default": "30",
+        "type": "int",
+        "min": 7,
+        "max": 365,
+        "desc": "Días de retención de chats web cerrados o inactivos.",
+    },
     "IDEMPOTENCY_PURGE_ENABLED": {
         "default": "1",
         "type": "bool",
@@ -527,6 +534,27 @@ DEFAULTS: dict[str, dict] = {
             "un código de afiliado con comisión en puntos (granos de café). "
             "100 pts ≈ 1€ con la equivalencia estándar. El valor final es "
             "editable por afiliado desde /admin/afiliados."
+        ),
+    },
+
+    # ── Auto-aprendizaje del chatbot ──────────────────────────────────
+    "BOT_LEARNING_ENABLED": {
+        "default": "1",
+        "type": "bool",
+        "desc": (
+            "Registra señales pasivas en bot_learning_signals cada vez "
+            "que el LLM responde una pregunta que el determinista no "
+            "reconoció. El admin las revisa en /admin/bot/aprendizaje "
+            "y decide promoverlas a FAQ/keyword. 0 desactiva el registro."
+        ),
+    },
+    "BOT_LEARNING_RETENTION_DAYS": {
+        "default": "90",
+        "type": "int",
+        "desc": (
+            "Días que conservamos señales con count bajo y no aplicadas. "
+            "Las señales con count >= 2 O marcadas como aplicadas se "
+            "conservan indefinidamente. Cap defensivo 7-365."
         ),
     },
 }

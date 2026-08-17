@@ -46,7 +46,7 @@
       </div>
       <div class="queue-list">
         {% for pedido in sin_asignar %}
-        <article class="queue-order">
+        <article class="queue-order motion-fade-in">
           <div>
             <strong>{{ pedido.numero_pedido }}</strong>
             <p>{{ pedido.cliente.nombre if pedido.cliente else 'Cliente' }} · {{ pedido.creado_en.strftime('%H:%M') }} · €{{ "%.2f"|format(pedido.total) }}</p>
@@ -80,7 +80,7 @@
       </div>
       <div class="queue-list">
         {% for pedido in sin_repartidor %}
-        <article class="queue-order">
+        <article class="queue-order motion-fade-in">
           <div>
             <strong>{{ pedido.numero_pedido }}</strong>
             <p>{{ pedido.cliente.nombre if pedido.cliente else 'Cliente' }}{% if pedido.direccion_entrega %} · {{ pedido.direccion_entrega[:42] }}{% endif %}</p>

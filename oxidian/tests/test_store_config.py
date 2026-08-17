@@ -106,6 +106,14 @@ class StoreConfigTest(unittest.TestCase):
 
         self.assertEqual(url, "https://elparcerito.com")
 
+    def test_public_store_url_never_prefers_private_over_public_config(self):
+        values = {
+            "TIENDA_URL": "http://localhost:5000",
+            "OXIDIAN_PUBLIC_URL": "https://elparcerito.com",
+        }
+        with patch("models.SiteConfig.get", side_effect=lambda key, default="": values.get(key, default)):
+            self.assertEqual(get_public_store_url("http://127.0.0.1:5000/"), "https://elparcerito.com")
+
 
 if __name__ == "__main__":
     unittest.main()

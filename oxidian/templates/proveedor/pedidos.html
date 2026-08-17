@@ -51,7 +51,7 @@
   {%- set mis_items = lineas_proveedor_pedido(pedido, prov_id) -%}
   {% if mis_items %}
   {%- set ns_p.shown = ns_p.shown + 1 -%}
-  <article class="work-card is-warn" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+  <article class="work-card is-warn motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
     <div class="work-order-head">
       <div>
         <span class="work-order-code">{{ pedido.numero_pedido }}</span>
@@ -163,7 +163,7 @@
   {%- set mis_items = lineas_proveedor_pedido(pedido, prov_id) -%}
   {% if mis_items %}
   {%- set ns_a.shown = ns_a.shown + 1 -%}
-  <article class="work-card work-card--tight is-info" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+  <article class="work-card work-card--tight is-info motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
     <div class="work-order-head">
       <span class="work-order-code is-info">{{ pedido.numero_pedido }}</span>
       <div class="work-time-stack">

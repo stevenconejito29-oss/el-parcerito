@@ -40,6 +40,11 @@ from models import (
     ProveedorProducto,
     Stock,
     User,
+    WebChatConversation,
+    WebChatMessage,
+    FavorRequest,
+    FavorOffer,
+    FavorEvent,
 )
 
 
@@ -52,6 +57,138 @@ def _migrate_site_config_valor_text():
         db.session.execute(text("ALTER TABLE site_config ALTER COLUMN valor TYPE TEXT"))
     elif dialect == "mysql":
         db.session.execute(text("ALTER TABLE site_config MODIFY valor TEXT"))
+
+
+def _migrate_web_chat_customer():
+    inspector = inspect(db.engine)
+    if not inspector.has_table("web_chat_conversations"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("web_chat_conversations")}
+    if "customer_id" not in columns:
+        db.session.execute(text(
+            "ALTER TABLE web_chat_conversations ADD COLUMN customer_id INTEGER "
+            "REFERENCES users(id) ON DELETE SET NULL"
+        ))
+    db.session.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_web_chat_conversations_customer_id "
+        "ON web_chat_conversations (customer_id)"
+    ))
+
+
+def _migrate_el_cruce_geo_preferences():
+    inspector = inspect(db.engine)
+    user_columns = {column["name"] for column in inspector.get_columns("users")}
+    if "acepta_cruces" not in user_columns:
+        db.session.execute(text("ALTER TABLE users ADD COLUMN acepta_cruces BOOLEAN NOT NULL DEFAULT TRUE"))
+    if not inspector.has_table("favor_requests"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("favor_requests")}
+    definitions = {
+        "pickup_lat": "DOUBLE PRECISION", "pickup_lng": "DOUBLE PRECISION",
+        "dropoff_lat": "DOUBLE PRECISION", "dropoff_lng": "DOUBLE PRECISION",
+        "pickup_zone_id": "INTEGER REFERENCES zonas_entrega(id) ON DELETE RESTRICT",
+        "dropoff_zone_id": "INTEGER REFERENCES zonas_entrega(id) ON DELETE RESTRICT",
+    }
+    for name, definition in definitions.items():
+        if name not in columns:
+            db.session.execute(text(f"ALTER TABLE favor_requests ADD COLUMN {name} {definition}"))
+    # Las filas previas al lanzamiento nunca tuvieron cobertura verificable;
+    # se cierran para que no compitan con solicitudes validadas.
+    db.session.execute(text(
+        "UPDATE favor_requests SET status='cancelled' WHERE pickup_lat IS NULL OR dropoff_lat IS NULL"
+    ))
+
+
+def _constrain_el_cruce_geo():
+    if db.engine.dialect.name != "postgresql":
+        return
+    db.session.execute(text("""
+        DO $$ BEGIN
+          ALTER TABLE favor_requests ADD CONSTRAINT ck_cruce_active_has_geo CHECK (
+            status = 'cancelled' OR (
+              pickup_lat IS NOT NULL AND pickup_lng IS NOT NULL AND
+              dropoff_lat IS NOT NULL AND dropoff_lng IS NOT NULL AND
+              pickup_zone_id IS NOT NULL AND dropoff_zone_id IS NOT NULL
+            )
+          );
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    """))
+
+
+def _migrate_el_cruce_policy_fields():
+    inspector = inspect(db.engine)
+    if not inspector.has_table("favor_requests"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("favor_requests")}
+    definitions = {
+        "package_type": "VARCHAR(30) NOT NULL DEFAULT 'package'",
+        "pickup_reference": "VARCHAR(160)",
+        "weight_kg": "NUMERIC(5,2) NOT NULL DEFAULT 1",
+        "declared_value": "NUMERIC(10,2) NOT NULL DEFAULT 0",
+        "distance_km": "NUMERIC(7,2) NOT NULL DEFAULT 0",
+    }
+    for name, definition in definitions.items():
+        if name not in columns:
+            db.session.execute(text(f"ALTER TABLE favor_requests ADD COLUMN {name} {definition}"))
+    if db.engine.dialect.name != "postgresql":
+        return
+    db.session.execute(text("""
+        DO $$ BEGIN
+          ALTER TABLE favor_requests ADD CONSTRAINT ck_cruce_coordinates CHECK (
+            (pickup_lat IS NULL OR pickup_lat BETWEEN -90 AND 90) AND
+            (dropoff_lat IS NULL OR dropoff_lat BETWEEN -90 AND 90) AND
+            (pickup_lng IS NULL OR pickup_lng BETWEEN -180 AND 180) AND
+            (dropoff_lng IS NULL OR dropoff_lng BETWEEN -180 AND 180)
+          );
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    """))
+
+
+def _migrate_el_cruce_hardening():
+    """Cancelación bilateral, prueba de entrega, estado 'expired' y auditoría."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("favor_requests"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("favor_requests")}
+    additions = {
+        "cancelled_at": "TIMESTAMP",
+        "cancelled_by": "VARCHAR(20)",
+        "cancellation_reason": "VARCHAR(240)",
+        "proof_photo_path": "VARCHAR(300)",
+    }
+    for name, definition in additions.items():
+        if name not in columns:
+            db.session.execute(text(f"ALTER TABLE favor_requests ADD COLUMN {name} {definition}"))
+    dialect = db.engine.dialect.name
+    if dialect == "postgresql":
+        db.session.execute(text(
+            "ALTER TABLE favor_requests DROP CONSTRAINT IF EXISTS ck_favor_request_status"
+        ))
+        db.session.execute(text(
+            "ALTER TABLE favor_requests ADD CONSTRAINT ck_favor_request_status "
+            "CHECK (status IN ('open','matched','at_pickup','picked_up','in_transit','delivered','cancelled','expired'))"
+        ))
+        db.session.execute(text(
+            "ALTER TABLE favor_requests DROP CONSTRAINT IF EXISTS ck_favor_request_cancelled_by"
+        ))
+        db.session.execute(text(
+            "ALTER TABLE favor_requests ADD CONSTRAINT ck_favor_request_cancelled_by "
+            "CHECK (cancelled_by IS NULL OR cancelled_by IN ('customer','rider','admin','system'))"
+        ))
+
+
+def _migrate_el_cruce_bilateral_negotiation():
+    inspector = inspect(db.engine)
+    if not inspector.has_table("favor_offers"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("favor_offers")}
+    definitions = {
+        "customer_counter_amount": "NUMERIC(10,2)",
+        "customer_countered_at": "TIMESTAMP",
+    }
+    for name, definition in definitions.items():
+        if name not in columns:
+            db.session.execute(text(f"ALTER TABLE favor_offers ADD COLUMN {name} {definition}"))
 
 
 def _migrate_financial_uniqueness():
@@ -1615,6 +1752,41 @@ def _migrate_public_professional_first_impression():
 
 MIGRATIONS = [
     {
+        "id": "20260814_01_favor_marketplace",
+        "description": "Crea solicitudes y contraofertas transaccionales de Rapifavor.",
+        "tables": [FavorRequest.__table__, FavorOffer.__table__],
+    },
+    {
+        "id": "20260814_02_el_cruce_geo_preferences",
+        "description": "Añade preferencia independiente del rider y cobertura A/B a El Cruce.",
+        "fn": _migrate_el_cruce_geo_preferences,
+    },
+    {
+        "id": "20260814_03_el_cruce_geo_constraints",
+        "description": "Impide Cruces activos sin dos zonas y coordenadas válidas.",
+        "fn": _constrain_el_cruce_geo,
+    },
+    {
+        "id": "20260814_04_el_cruce_policy_fields",
+        "description": "Añade capacidad, tipo, referencia, valor y distancia auditables a El Cruce.",
+        "fn": _migrate_el_cruce_policy_fields,
+    },
+    {
+        "id": "20260814_05_el_cruce_bilateral_negotiation",
+        "description": "Permite contraofertas del cliente independientes para cada rider.",
+        "fn": _migrate_el_cruce_bilateral_negotiation,
+    },
+    {
+        "id": "20260815_01_el_cruce_events_table",
+        "description": "Crea la tabla de auditoría de eventos de El Cruce.",
+        "tables": [FavorEvent.__table__],
+    },
+    {
+        "id": "20260815_02_el_cruce_hardening",
+        "description": "Cancelación bilateral, prueba de entrega, estado 'expired' y motivos.",
+        "fn": _migrate_el_cruce_hardening,
+    },
+    {
         "id": "20260809_01_rider_location",
         "description": "Crear última ubicación efímera del repartidor para tracking consentido",
         "tables": [RiderLocation.__table__],
@@ -1963,6 +2135,22 @@ MIGRATIONS = [
         "description": "Crear tabla knowledge_entries y sembrar respuestas base del chatbot.",
         "tables": [KnowledgeEntry.__table__],
         "fn": lambda: _seed_knowledge_entries(),
+    },
+    {
+        "id": "20260813_01_web_chat",
+        "description": "Crea conversaciones y mensajes del canal de atención web.",
+        "tables": [WebChatConversation.__table__, WebChatMessage.__table__],
+    },
+    {
+        "id": "20260813_02_repair_knowledge_seed",
+        "description": "Repara el seed editable del chat cuando la tabla quedó vacía.",
+        "tables": [KnowledgeEntry.__table__],
+        "fn": lambda: _seed_knowledge_entries(),
+    },
+    {
+        "id": "20260813_03_web_chat_customer_push",
+        "description": "Vincula cada conversación web con el cliente destinatario de push.",
+        "fn": lambda: _migrate_web_chat_customer(),
     },
     {
         "id": "20260722_01_combo_item_permite_sabor_cliente",

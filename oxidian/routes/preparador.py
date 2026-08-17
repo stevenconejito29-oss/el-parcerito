@@ -302,6 +302,77 @@ def toggle_vista_compacta():
     return redirect(url_for("preparador.pedidos", **redirect_args))
 
 
+@preparador_bp.route("/kds")
+@preparador_required
+def kds():
+    """Vista ligera para tablet de cocina.
+
+    Sin imágenes, sin menús, solo la cola operable del usuario.
+    Auto-refresh y alerta sonora en el propio HTML.
+    """
+    return render_template(
+        "preparador/kds.html",
+        refresh_seconds=_queue_refresh_s(),
+    )
+
+
+def _kds_cola_del_usuario():
+    """Pedidos pendientes+armando visibles para el usuario, filtrados por rol."""
+    _eager = joinedload(Order.items)
+    if _es_admin_operativo():
+        base = Order.query.options(_eager).filter(
+            Order.estado.in_(("pendiente", "armando"))
+        )
+    else:
+        base = Order.query.options(_eager).filter(
+            Order.estado.in_(("pendiente", "armando")),
+            db.or_(
+                Order.preparador_id == current_user.id,
+                Order.preparador_id.is_(None),
+            ),
+        )
+    pedidos = base.order_by(Order.creado_en.asc()).all()
+    return [p for p in pedidos if _puede_operar_pedido(p)]
+
+
+@preparador_bp.route("/kds/data")
+@preparador_required
+def kds_data():
+    """JSON minimal para la vista KDS. Refresca cada N segundos."""
+    from flask import make_response
+    pedidos = _kds_cola_del_usuario()
+    payload = []
+    for p in pedidos:
+        items = []
+        for it in p.items:
+            items.append({
+                "cantidad": int(it.cantidad or 0),
+                "nombre": it.display_nombre or "",
+                "variante": (it.selected_presentation_label or "").strip(),
+                "sabores": list(it.selected_flavor_names or []),
+            })
+        payload.append({
+            "id": p.id,
+            "numero": p.numero_pedido,
+            "estado": p.estado,
+            "creado": p.creado_en.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "creado_hm": p.creado_en.strftime("%H:%M"),
+            "notas": (p.notas or "").strip(),
+            "tipo": (p.tipo_entrega_cliente or "recogida"),
+            "mio": bool(p.preparador_id == current_user.id),
+            "sin_asignar": p.preparador_id is None,
+            "items": items,
+        })
+    resp = jsonify({
+        "ok": True,
+        "signature": _cola_signature(),
+        "refresh_seconds": _queue_refresh_s(),
+        "pedidos": payload,
+    })
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @preparador_bp.route("/pedidos")
 @preparador_required
 def pedidos():

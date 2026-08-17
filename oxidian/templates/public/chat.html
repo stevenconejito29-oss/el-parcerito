@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Chat de ayuda — {{ brand.nombre }}{% endblock %}
+{% block styles_final %}<link rel="stylesheet" href="{{ url_for('static',filename='css/web-chat-page.css',v=asset_version) }}">{% endblock %}
+{% block content %}
+<section class="wcp-page" aria-labelledby="wcp-title">
+  <header class="wcp-head">
+    <a href="{{ url_for('public.index') }}" aria-label="Volver al menú">←</a>
+    <div class="wcp-head-copy"><span>Ayuda en línea</span><h1 id="wcp-title">Chat El Parcerito</h1><p id="wcp-status" aria-live="polite">Conectando…</p></div>
+    {% if session.get('push_cliente_id') %}<button type="button" class="wcp-notify" data-push-activate aria-label="Activar avisos del chat">🔔<span>Avisos</span></button>{% endif %}
+  </header>
+  <section class="wcp-conversation" aria-label="Conversación">
+    <div class="wcp-messages" id="wcp-messages" role="log" aria-live="polite"></div>
+    <div class="wcp-quick" id="wcp-quick" aria-label="Preguntas rápidas">
+      <button type="button" data-wcp-quick="¿Cuál es el horario?"><span>🕐</span>Horario</button>
+      {% if brand.delivery %}<button type="button" data-wcp-quick="¿Cómo funciona el delivery?"><span>🛵</span>Delivery</button>{% endif %}
+      {% if brand.puntos %}<button type="button" data-wcp-quick="¿Cómo funcionan los cafecitos?"><span>☕</span>Cafecitos</button>{% endif %}
+      <button type="button" data-wcp-quick="¿Qué formas de pago tienen?"><span>💵</span>Pagos</button>
+      <button type="button" data-wcp-quick="¿Cómo hago un pedido paso a paso?"><span>🛍️</span>Cómo comprar</button>
+      <button type="button" data-wcp-quick="¿Cómo sigo mi pedido y veo al repartidor?"><span>📍</span>Mi pedido</button>
+      <button type="button" data-wcp-quick="¿Cómo cancelo un pedido?"><span>↩️</span>Cancelar</button>
+      <button type="button" data-wcp-quick="¿Cómo instalo la app y activo notificaciones?"><span>🔔</span>Instalar app</button>
+    </div>
+    <div class="wcp-orders" id="wcp-orders" aria-label="Pedidos que puedes cancelar" hidden></div>
+    <div class="wcp-handoff"><button type="button" id="wcp-agent">Hablar con una persona</button><button type="button" id="wcp-resume" hidden>Volver al asistente</button></div>
+    <form class="wcp-compose" id="wcp-form" action="{{ url_for('public.chat') }}" method="post" data-no-guard>
+      <label class="sr-only" for="wcp-input">Escribe tu mensaje</label>
+      <textarea id="wcp-input" maxlength="1200" rows="1" placeholder="Escribe tu pregunta…" required></textarea>
+      <button type="submit" aria-label="Enviar mensaje"><span>Enviar</span><b aria-hidden="true">↑</b></button>
+    </form>
+  </section>
+</section>
+{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" src="{{ url_for('static',filename='js/web-chat-page.js',v=asset_version) }}" defer></script>{% endblock %}

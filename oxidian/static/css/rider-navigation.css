@@ -1,0 +1,4 @@
+@media (max-width:620px){
+  .route-board .route-destination>.flex{display:grid;grid-template-columns:1fr 1fr}
+  .route-board .route-destination>.flex>button:first-child{grid-column:1/-1}
+}

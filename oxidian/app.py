@@ -866,7 +866,7 @@ def create_app(env="default"):
                 "PAIS_NEGOCIO", "EMAIL_CONTACTO", "BIZUM_TELEFONO",
                 "BIZUM_HABILITADO", "EFECTIVO_HABILITADO",
                 "MODO_TIENDA", "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
-                "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
+                "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS", "FEATURE_FAVORES",
                 "COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO",
                 *PUBLIC_THEME_DEFAULTS.keys(), *PUBLIC_UI_DEFAULTS.keys(),
                 "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON",
@@ -1007,6 +1007,7 @@ def create_app(env="default"):
                 "recogida": feature_recogida,
                 "pedidos_programados": _to_bool(_c("FEATURE_PEDIDOS_PROGRAMADOS", "1"), True),
                 "puntos": _to_bool(_c("FEATURE_PUNTOS", "1"), True),
+                "favores": _to_bool(_c("FEATURE_FAVORES", "1"), True) and _to_bool(_c("FEATURE_DELIVERY", "1"), True),
                 # El flujo multi-proveedor permanece desactivado en esta edición;
                 # no se deben anunciar pantallas que el negocio no contrató.
                 "proveedores": False,
@@ -1078,6 +1079,7 @@ def create_app(env="default"):
     from routes.staff import staff_bp
     from routes.push import push_bp
     from routes.proveedor import proveedor_bp
+    from routes.web_chat import web_chat_bp
 
     csrf.exempt(api_bot_bp)
     # La API interna usa clave HMAC-safe en cada endpoint, pero no se exime
@@ -1098,6 +1100,7 @@ def create_app(env="default"):
     app.register_blueprint(staff_bp,       url_prefix="/staff")
     app.register_blueprint(push_bp,        url_prefix="/api/push")
     app.register_blueprint(proveedor_bp,   url_prefix="/proveedor")
+    app.register_blueprint(web_chat_bp,    url_prefix="/api/web-chat")
 
     # ── Páginas de error personalizadas ──
     @app.errorhandler(404)
@@ -1357,6 +1360,7 @@ def _seed_admin():
         ("FEATURE_RECOGIDA",                  "1", "Permitir pedidos para recoger"),
         ("FEATURE_PEDIDOS_PROGRAMADOS",       "1", "Permitir productos/pedidos con fecha de entrega"),
         ("FEATURE_PUNTOS",                    "1", "Mostrar saldo y permitir canjes; la acumulación interna continúa siempre"),
+        ("FEATURE_FAVORES",                   "1", "Activar El Cruce: encargos negociables de punto A a punto B en la PWA"),
         ("SERVICE_COMMISSION_PCT",            "0", "Porcentaje ganado por venta en modo servicio"),
         ("CENTRO_LAT",                        _env_default("CENTRO_LAT", ""),      "Latitud del centro de reparto"),
         ("CENTRO_LON",                        _env_default("CENTRO_LON", ""),      "Longitud del centro de reparto"),

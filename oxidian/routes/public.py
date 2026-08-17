@@ -4,7 +4,9 @@ import uuid
 import random
 import re
 import inspect
+import secrets
 import unicodedata
+import hashlib
 
 
 def _strip_accents(s: str) -> str:
@@ -19,7 +21,7 @@ from urllib.parse import quote
 from datetime import datetime, date
 from decimal import Decimal
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, make_response
 from flask_login import current_user
 from flask import current_app
 from sqlalchemy.exc import IntegrityError
@@ -31,11 +33,12 @@ from models import (Product, Categoria, Order, OrderItem, Review, Coupon,
                      ZonaEntrega, MenuConfig, User, Proveedor, normalizar_metodo_pago,
                      AffiliateCode, IdempotencyKey, metadata_componente_combo,
                      metadata_item_pedido, utcnow as _utcnow,
-                     internal_customer_email)
+                     internal_customer_email, FavorRequest, FavorOffer)
 from idempotency import (request_idempotency_key, request_body_hash,
                           IDEMPOTENCY_TTL)
 from services import (buscar_cliente_por_telefono, distribuir_pedido,
                        calcular_puntos_ganados,
+                       cancelar_pedido_operativo,
                        enviar_whatsapp_estado, validar_radio_entrega,
                        asignar_zona_por_direccion,
                        asignar_zona_por_coordenadas,
@@ -75,6 +78,316 @@ from product_presentations_service import (
 )
 
 public_bp = Blueprint("public", __name__)
+
+
+@public_bp.get("/ayuda")
+def chat():
+    """Vista de conversación pública; en PWA funciona como pestaña propia."""
+    return render_template("public/chat.html")
+
+
+def _favor_visitor_hash():
+    token = session.get("favor_visitor_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["favor_visitor_token"] = token
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _favor_amount(raw):
+    try:
+        amount = Decimal(str(raw or "").replace(",", ".")).quantize(Decimal("0.01"))
+    except Exception:
+        return None
+    return amount if Decimal("1.00") <= amount <= Decimal("999.00") else None
+
+
+def _favor_signature(rows):
+    value = "|".join(
+        f"{row.id}:{row.status}:{row.updated_at.isoformat()}:{','.join(f'{offer.id}-{offer.status}-{offer.customer_counter_amount or 0}-{offer.updated_at.isoformat()}' for offer in row.offers)}"
+        for row in rows
+    )
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+@public_bp.route("/favor", methods=["GET", "POST"])
+@limiter.limit("12 per minute")
+def favor():
+    """El Cruce: encargos PWA con ambos extremos dentro de cobertura."""
+    if not get_store_features().get("favores"):
+        flash("El Cruce no está disponible en este momento.", "info")
+        return redirect(url_for("public.index"))
+    from cruce_policy import get_cruce_policy, distance_km, recommended_price
+    policy = get_cruce_policy()
+    visitor_hash = _favor_visitor_hash()
+    if request.method == "POST":
+        amount = _favor_amount(request.form.get("offered_amount"))
+        values = {
+            "customer_name": request.form.get("customer_name", "").strip()[:100],
+            "customer_phone": (normalizar_telefono_cliente(request.form.get("customer_phone", "")) or "")[:30],
+            "pickup_address": request.form.get("pickup_address", "").strip()[:350],
+            "dropoff_address": request.form.get("dropoff_address", "").strip()[:350],
+            "item_description": request.form.get("item_description", "").strip()[:500],
+        }
+        try:
+            weight_kg = Decimal(str(request.form.get("weight_kg", "1")).replace(",", "."))
+            declared_value = Decimal(str(request.form.get("declared_value", "0") or "0").replace(",", "."))
+        except Exception:
+            weight_kg, declared_value = Decimal("0"), Decimal("-1")
+        package_type = request.form.get("package_type", "package")
+        allowed_types = {"restaurant", "package", "keys", "shopping", "other"}
+        active_count = FavorRequest.query.filter_by(visitor_token_hash=visitor_hash).filter(
+            FavorRequest.status.in_(("open", "matched", "at_pickup", "picked_up", "in_transit"))
+        ).count()
+        if active_count >= policy["max_active"]:
+            flash(f"Ya tienes {policy['max_active']} Cruces activos. Finaliza uno antes de publicar otro.", "warning")
+        elif not amount or any(not value for value in values.values()) or not telefono_valido(values["customer_phone"]):
+            flash("Completa origen, destino, encargo, contacto y una oferta válida.", "warning")
+        elif package_type not in allowed_types or weight_kg <= 0 or weight_kg > policy["max_weight"]:
+            flash(f"El encargo debe caber en una mochila y pesar máximo {policy['max_weight']:g} kg.", "warning")
+        elif declared_value < 0 or declared_value > policy["max_value"]:
+            flash(f"El valor declarado no puede superar {policy['max_value']:g} €.", "warning")
+        elif request.form.get("accept_rules") != "1":
+            flash("Confirma que el encargo cumple las reglas de transporte seguro.", "warning")
+        elif values["pickup_address"].casefold() == values["dropoff_address"].casefold():
+            flash("El punto de recogida y el destino deben ser diferentes.", "warning")
+        else:
+            pickup_geo = validar_radio_entrega(values["pickup_address"])
+            dropoff_geo = validar_radio_entrega(values["dropoff_address"])
+            if not pickup_geo.get("ok"):
+                flash(f"Punto A: {pickup_geo.get('mensaje', 'dirección fuera de cobertura')}", "warning")
+                return redirect(url_for("public.favor"))
+            if not dropoff_geo.get("ok"):
+                flash(f"Punto B: {dropoff_geo.get('mensaje', 'dirección fuera de cobertura')}", "warning")
+                return redirect(url_for("public.favor"))
+            kilometers = distance_km(pickup_geo["lat"], pickup_geo["lon"], dropoff_geo["lat"], dropoff_geo["lon"])
+            guide_price = recommended_price(policy, kilometers)
+            if amount < guide_price:
+                flash(f"Para este recorrido la oferta mínima orientativa es {guide_price:.2f} €.", "warning")
+                return redirect(url_for("public.favor"))
+            customer_id = session.get("push_cliente_id")
+            row = FavorRequest(
+                visitor_token_hash=visitor_hash, offered_amount=amount,
+                customer_id=int(customer_id) if customer_id else None, **values,
+                pickup_lat=pickup_geo["lat"], pickup_lng=pickup_geo["lon"],
+                dropoff_lat=dropoff_geo["lat"], dropoff_lng=dropoff_geo["lon"],
+                pickup_zone_id=pickup_geo["zona_id"], dropoff_zone_id=dropoff_geo["zona_id"],
+                package_type=package_type,
+                pickup_reference=request.form.get("pickup_reference", "").strip()[:160] or None,
+                weight_kg=weight_kg, declared_value=declared_value,
+                distance_km=Decimal(str(kilometers)).quantize(Decimal("0.01")),
+            )
+            db.session.add(row)
+            db.session.flush()
+            from cruce_policy import registrar_evento_favor
+            registrar_evento_favor(
+                row, "customer", "created",
+                actor_id=int(customer_id) if customer_id else None,
+                actor_label=values["customer_name"], amount=amount,
+                note=f"{values['pickup_address']} → {values['dropoff_address']}",
+            )
+            db.session.commit()
+            try:
+                from push_service import notify_user
+                riders = User.query.filter_by(rol="repartidor", activo=True, acepta_cruces=True).all()
+                for rider in riders:
+                    notify_user(rider.id, "🤝 Nuevo Cruce disponible", f"{values['item_description'][:70]} · oferta {amount:.2f} €", url="/repartidor/favores", tag=f"cruce-open-{row.id}")
+            except Exception:
+                current_app.logger.exception("No se pudo encolar push del favor %s", row.id)
+            flash("Cruce publicado. Te mostraremos aquí las propuestas de riders.", "success")
+            return redirect(url_for("public.favor"))
+    try:
+        from cruce_policy import expire_stale_open_favors
+        expired = expire_stale_open_favors()
+    except Exception:
+        current_app.logger.exception("No se pudieron expirar Cruces caducados")
+        expired = []
+    if expired:
+        try:
+            from push_service import notify_user
+            for stale in expired:
+                if stale.customer_id:
+                    notify_user(stale.customer_id, "⌛ Tu Cruce expiró sin ofertas",
+                                "Puedes publicarlo de nuevo ajustando el precio o el detalle.",
+                                url="/favor", tag=f"cruce-expired-{stale.id}")
+        except Exception:
+            current_app.logger.exception("No se pudo notificar expiración de Cruces")
+    rows = FavorRequest.query.filter_by(visitor_token_hash=visitor_hash).filter(
+        FavorRequest.status.notin_(("delivered", "cancelled", "expired"))
+    ).order_by(FavorRequest.created_at.desc()).all()
+    guide_prices = {row.id: recommended_price(policy, float(row.distance_km or 0)) for row in rows}
+    return render_template("public/favor.html", favors=rows, favor_signature=_favor_signature(rows), policy=policy, guide_prices=guide_prices)
+
+
+@public_bp.post("/favor/<public_id>/cancelar")
+@limiter.limit("10 per minute")
+def cancel_favor(public_id):
+    from cruce_policy import CANCELLABLE_BY_CUSTOMER, _clean_reason, registrar_evento_favor
+    row = FavorRequest.query.filter_by(public_id=public_id, visitor_token_hash=_favor_visitor_hash()).with_for_update().first_or_404()
+    if row.status not in CANCELLABLE_BY_CUSTOMER:
+        flash("Este Cruce ya no puede cancelarse.", "warning")
+        return redirect(url_for("public.favor"))
+    was_assigned = row.status != "open"
+    reason = _clean_reason(request.form.get("reason"))
+    if was_assigned and not reason:
+        flash("Explica brevemente por qué cancelas el Cruce en curso (mínimo 4 caracteres).", "warning")
+        return redirect(url_for("public.favor"))
+    previous_rider_id = row.assigned_rider_id
+    row.status = "cancelled"
+    row.cancelled_at = _utcnow()
+    row.cancelled_by = "customer"
+    row.cancellation_reason = reason or ("Cancelado antes de asignar" if not was_assigned else None)
+    row.assigned_rider_id = None
+    rider_ids = []
+    for offer in row.offers:
+        if offer.status == "pending":
+            offer.status = "rejected"
+            rider_ids.append(offer.rider_id)
+        elif offer.status == "accepted":
+            offer.status = "rejected"
+    registrar_evento_favor(
+        row, "customer", "cancelled_post_match" if was_assigned else "cancelled",
+        actor_id=row.customer_id, actor_label=row.customer_name,
+        note=row.cancellation_reason,
+    )
+    db.session.commit()
+    try:
+        from push_service import notify_user
+        if was_assigned and previous_rider_id:
+            notify_user(previous_rider_id, "❌ Cruce cancelado por el cliente",
+                        (reason or "El cliente canceló el Cruce en curso."),
+                        url="/repartidor/favores", tag=f"cruce-cancelled-{row.id}",
+                        require_interaction=True)
+        for rider_id in set(rider_ids):
+            if rider_id == previous_rider_id:
+                continue
+            notify_user(rider_id, "Cruce cancelado",
+                        "El cliente retiró la solicitud.",
+                        url="/repartidor/favores", tag=f"cruce-cancelled-{row.id}")
+    except Exception:
+        current_app.logger.exception("No se pudo notificar cancelación del favor %s", row.id)
+    flash("Cruce cancelado.", "success")
+    return redirect(url_for("public.favor"))
+
+
+@public_bp.post("/favor/<public_id>/ofertas/<int:offer_id>/aceptar")
+@limiter.limit("10 per minute")
+def accept_favor_offer(public_id, offer_id):
+    row = FavorRequest.query.filter_by(public_id=public_id, visitor_token_hash=_favor_visitor_hash()).with_for_update().first_or_404()
+    offer = FavorOffer.query.filter_by(id=offer_id, request_id=row.id, status="pending").first_or_404()
+    from cruce_policy import rider_can_be_assigned, registrar_evento_favor
+    can_assign, unavailable_reason = rider_can_be_assigned(offer.rider_id)
+    if row.status != "open":
+        flash("Otro rider ya fue asignado a este favor.", "warning")
+    elif not can_assign:
+        offer.status = "withdrawn"
+        registrar_evento_favor(row, "system", "offer_withdrawn_unavailable",
+                               actor_id=offer.rider_id, amount=offer.amount,
+                               note=unavailable_reason)
+        db.session.commit()
+        flash(f"{unavailable_reason} Elige otra propuesta.", "warning")
+    else:
+        row.status, row.assigned_rider_id, row.agreed_amount, row.matched_at = "matched", offer.rider_id, offer.amount, _utcnow()
+        rejected_rider_ids = []
+        for candidate in row.offers:
+            if candidate.id == offer.id:
+                candidate.status = "accepted"
+            else:
+                if candidate.status == "pending":
+                    rejected_rider_ids.append(candidate.rider_id)
+                candidate.status = "rejected"
+        registrar_evento_favor(row, "customer", "offer_accepted",
+                               actor_id=row.customer_id, actor_label=row.customer_name,
+                               amount=offer.amount,
+                               note=f"Rider #{offer.rider_id}")
+        db.session.commit()
+        try:
+            from push_service import notify_user
+            notify_user(
+                offer.rider_id, "✅ Tu propuesta fue aceptada",
+                f"Cruce por {offer.amount:.2f} €. Ya puedes iniciar la recogida.",
+                url="/repartidor/favores", tag=f"favor-matched-{row.id}", require_interaction=True,
+            )
+            for rider_id in set(rejected_rider_ids):
+                notify_user(rider_id, "Cruce asignado a otro rider",
+                            "El cliente eligió otra propuesta. Sigue disponible para nuevos Cruces.",
+                            url="/repartidor/favores",
+                            tag=f"cruce-lost-{row.id}-{rider_id}")
+        except Exception:
+            current_app.logger.exception("No se pudo notificar al rider del favor %s", row.id)
+        flash("Propuesta aceptada. El rider ya puede iniciar el favor.", "success")
+    return redirect(url_for("public.favor"))
+
+
+@public_bp.post("/favor/<public_id>/ofertas/<int:offer_id>/contraoferta")
+@limiter.limit("12 per minute")
+def counter_favor_offer(public_id, offer_id):
+    """El cliente negocia con un rider sin cerrar las demás propuestas."""
+    from cruce_policy import get_cruce_policy, recommended_price
+    row = FavorRequest.query.filter_by(
+        public_id=public_id, visitor_token_hash=_favor_visitor_hash()
+    ).with_for_update().first_or_404()
+    offer = FavorOffer.query.filter_by(id=offer_id, request_id=row.id, status="pending").first_or_404()
+    amount = _favor_amount(request.form.get("amount"))
+    minimum = recommended_price(get_cruce_policy(), float(row.distance_km or 0))
+    if row.status != "open":
+        flash("Este Cruce ya fue acordado con un rider.", "warning")
+    elif not amount or amount < minimum:
+        flash(f"La propuesta debe ser de al menos {minimum:.2f} € para este recorrido.", "warning")
+    else:
+        offer.customer_counter_amount = amount
+        offer.customer_countered_at = _utcnow()
+        from cruce_policy import registrar_evento_favor
+        registrar_evento_favor(row, "customer", "customer_countered",
+                               actor_id=row.customer_id, actor_label=row.customer_name,
+                               amount=amount, note=f"Rider #{offer.rider_id}")
+        db.session.commit()
+        try:
+            from push_service import notify_user
+            notify_user(offer.rider_id, "💬 El cliente te propone otro precio", f"Nueva propuesta: {amount:.2f} €.", url="/repartidor/favores", tag=f"cruce-customer-counter-{offer.id}", require_interaction=True)
+        except Exception:
+            current_app.logger.exception("No se pudo notificar contraoferta del cliente %s", offer.id)
+        flash("Propuesta enviada. Puedes seguir comparando otros riders.", "success")
+    return redirect(url_for("public.favor"))
+
+
+@public_bp.get("/api/favor/cards")
+@limiter.limit("30 per minute")
+def favor_cards_fragment():
+    """Fragmento HTML de las cards activas del visitante para HTMX polling."""
+    if not get_store_features().get("favores"):
+        return _json_no_store({"ok": False}, 404)
+    from cruce_policy import get_cruce_policy, recommended_price, expire_stale_open_favors
+    try:
+        expire_stale_open_favors()
+    except Exception:
+        current_app.logger.exception("No se pudieron expirar Cruces caducados (fragment)")
+    policy = get_cruce_policy()
+    rows = FavorRequest.query.filter_by(visitor_token_hash=_favor_visitor_hash()).filter(
+        FavorRequest.status.notin_(("delivered", "cancelled", "expired"))
+    ).order_by(FavorRequest.created_at.desc()).all()
+    guide_prices = {row.id: recommended_price(policy, float(row.distance_km or 0)) for row in rows}
+    response = make_response(render_template(
+        "public/_favor_cards.html", favors=rows, policy=policy, guide_prices=guide_prices,
+    ))
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@public_bp.get("/api/favor/state")
+@limiter.limit("30 per minute")
+def favor_state():
+    if not get_store_features().get("favores"):
+        return _json_no_store({"ok": False}, 404)
+    try:
+        from cruce_policy import expire_stale_open_favors
+        expire_stale_open_favors()
+    except Exception:
+        current_app.logger.exception("No se pudieron expirar Cruces caducados (state)")
+    rows = FavorRequest.query.filter_by(visitor_token_hash=_favor_visitor_hash()).filter(
+        FavorRequest.status.notin_(("delivered", "cancelled", "expired"))
+    ).order_by(FavorRequest.updated_at.desc()).all()
+    return _json_no_store({"ok": True, "signature": _favor_signature(rows), "count": len(rows)})
 
 # TTL para el token que autoriza ver /pedido/<id>/confirmado desde la sesión
 # del navegador. Suficiente para que el cliente pinche el link del WhatsApp,
@@ -1615,6 +1928,11 @@ def repetir_pedido():
         flash("Este enlace no coincide con tu cuenta.", "danger")
         return redirect(url_for("public.ver_carrito"))
 
+    return _reconstruir_carrito_desde_pedido(pedido)
+
+
+def _reconstruir_carrito_desde_pedido(pedido):
+    """Añade las líneas simples aún disponibles sin adivinar opciones."""
     # Reconstrucción del carrito — merge con lo que ya haya.
     carrito = session.get("carrito", {}) or {}
     if not isinstance(carrito, dict):
@@ -3215,32 +3533,106 @@ def checkout():
                            producto_canje_seleccionado=session.get("cart_producto_canje_id"))
 
 
-@public_bp.route("/pedido/<int:pedido_id>/confirmado")
-def pedido_confirmado(pedido_id):
-    pedido = get_or_404(Order, pedido_id)
+def _token_pedido_sesion(pedido_id: int) -> str:
+    """Token opaco vigente que autoriza operaciones del pedido en este navegador."""
     guest_tokens = session.get("guest_order_tokens", {})
     slot = guest_tokens.get(str(pedido_id))
-    # Compat: valores antiguos guardaban str; los nuevos guardan dict con TTL.
     if isinstance(slot, dict):
         expected = slot.get("token", "")
         exp = int(slot.get("exp") or 0)
         if exp and exp < int(datetime.utcnow().timestamp()):
-            flash("Este enlace de pedido ya expiró.", "warning")
-            return redirect(url_for("public.index"))
-    else:
-        expected = slot
+            return ""
+        return str(expected or "")
+    # Compatibilidad de lectura para sesiones emitidas antes del TTL.
+    return str(slot or "")
+
+
+def _sesion_autoriza_pedido(pedido_id: int, supplied_token: str = "") -> bool:
+    expected = _token_pedido_sesion(pedido_id)
+    return bool(expected and supplied_token and secrets.compare_digest(expected, supplied_token))
+
+
+@public_bp.route("/pedido/<int:pedido_id>/confirmado")
+def pedido_confirmado(pedido_id):
+    pedido = get_or_404(Order, pedido_id)
+    expected = _token_pedido_sesion(pedido_id)
     # Un push no debe incluir secretos en su URL. Para abrir un pedido anterior
     # del mismo dispositivo recuperamos su token específico de la sesión; antes
     # se usaba siempre el token del último pedido y los avisos antiguos fallaban.
     token = request.args.get("token", "") or expected
-    if not token or token != expected:
+    if not _sesion_autoriza_pedido(pedido_id, token):
         flash("Acceso denegado.", "danger")
+        return redirect(url_for("public.index"))
+    if pedido.estado in {"cancelado", "entregado"}:
+        slots = session.get("guest_order_tokens", {})
+        slots.pop(str(pedido.id), None)
+        session["guest_order_tokens"] = slots
+        session.modified = True
+        flash(
+            "Ese pedido ya fue cancelado." if pedido.estado == "cancelado"
+            else "Ese pedido ya finalizó. Gracias por tu compra.",
+            "info",
+        )
         return redirect(url_for("public.index"))
     return render_template(
         "public/pedido_confirmado.html",
         pedido=pedido,
         requiere_confirmacion_whatsapp=(pedido.confirmacion_estado == "pending"),
+        pedido_token=token,
+        puede_cancelar=(
+            pedido.estado == "pendiente"
+            and not (pedido.metodo_pago == "bizum" and pedido.pago_confirmado)
+        ),
     )
+
+
+@public_bp.get("/pedido/<int:pedido_id>/estado")
+def estado_pedido_web(pedido_id):
+    """Estado mínimo y actual, autorizado para refrescar el ticket digital."""
+    token = str(request.args.get("token") or "")
+    if not _sesion_autoriza_pedido(pedido_id, token):
+        return jsonify({"ok": False}), 403
+    pedido = get_or_404(Order, pedido_id)
+    labels = {
+        "pendiente": "Recibido", "armando": "En preparación", "listo": "Listo",
+        "en_ruta": "En reparto", "entregado": "Finalizado", "cancelado": "Cancelado",
+    }
+    return jsonify({
+        "ok": True, "status": pedido.estado,
+        "status_label": labels.get(pedido.estado, pedido.estado.replace("_", " ").title()),
+        "active": pedido.estado not in {"entregado", "cancelado"},
+        "redirect_url": url_for("public.index"),
+    })
+
+
+@public_bp.post("/pedido/<int:pedido_id>/cancelar")
+def cancelar_pedido_web(pedido_id):
+    """Cancelación autoservicio segura para el navegador que creó el pedido."""
+    token = str(request.form.get("token") or "")
+    if not _sesion_autoriza_pedido(pedido_id, token):
+        flash("No pudimos verificar que este pedido te pertenece.", "danger")
+        return redirect(url_for("public.index"))
+    pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
+    if pedido.estado != "pendiente" or (pedido.metodo_pago == "bizum" and pedido.pago_confirmado):
+        flash("El pedido ya requiere revisión del equipo. Solicítala desde el chat.", "warning")
+        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id, token=token))
+    try:
+        cancelar_pedido_operativo(
+            pedido,
+            actor_id=pedido.cliente_id,
+            canal="chat_web",
+            detalle="cancelación solicitada por el cliente desde el seguimiento web",
+        )
+        db.session.commit()
+        flash(f"El pedido {pedido.numero_pedido} fue cancelado correctamente.", "success")
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "warning")
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("cancelar_pedido_web: fallo pedido=%s", pedido_id)
+        flash("No pudimos cancelar el pedido. Solicita ayuda desde el chat.", "danger")
+    return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id, token=token))
 
 
 # ─── CLUB DE CLIENTES ────────────────────────

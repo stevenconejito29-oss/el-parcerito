@@ -167,6 +167,7 @@ def _dispatch(subscriptions, payload: dict, *, evento: str = "web_push",
     for sub in subscriptions:
         job_payload = {
             "subscription_id": sub.id,
+            "expected_user_id": sub.user_id,
             "payload": payload,
         }
         db.session.add(NotificationOutbox(
@@ -291,12 +292,19 @@ def send_push_outbox_payload(payload: dict) -> tuple[bool, str | None]:
     from models import PushSubscription
 
     subscription_id = payload.get("subscription_id")
+    expected_user_id = payload.get("expected_user_id")
     push_payload = payload.get("payload") or {}
     if not subscription_id or not push_payload:
         return False, "push_payload_invalido"
 
     sub = db.session.get(PushSubscription, int(subscription_id))
     if not sub or not sub.activo:
+        return True, None
+    if expected_user_id is not None and sub.user_id != int(expected_user_id):
+        logger.warning(
+            "Push descartada: suscripción %s cambió de propietario antes del envío",
+            sub.id,
+        )
         return True, None
 
     pub, priv = _get_vapid_keys()
@@ -463,11 +471,11 @@ def notify_order_state(pedido) -> None:
     _prep_emoji = "🍳" if _es_comida else "📦"
     _entregado_extra = "¡Buen provecho!" if _es_comida else "¡Que lo disfrutes!"
     msgs = {
-        "armando":   (f"{_prep_emoji} Preparando tu pedido", f"#{pedido.numero_pedido} está siendo preparado."),
-        "listo":     ("✅ Pedido listo", f"#{pedido.numero_pedido} está listo para salir."),
-        "en_ruta":   ("🚴 En camino", f"Tu pedido #{pedido.numero_pedido} viene de camino."),
-        "entregado": ("🎉 Pedido entregado", f"#{pedido.numero_pedido} ha sido entregado. {_entregado_extra}"),
-        "cancelado": ("❌ Pedido cancelado", f"#{pedido.numero_pedido} ha sido cancelado."),
+        "armando":   (f"{_prep_emoji} Estamos preparando tu pedido", f"#{pedido.numero_pedido} ya está en preparación. Te avisaremos cuando esté listo."),
+        "listo":     ("✅ Tu pedido está listo", f"#{pedido.numero_pedido} terminó su preparación y espera el siguiente paso."),
+        "en_ruta":   ("🛵 Tu pedido va en camino", f"#{pedido.numero_pedido} salió con reparto. Abre el seguimiento para ver la información disponible."),
+        "entregado": ("🎉 Pedido entregado", f"#{pedido.numero_pedido} fue marcado como entregado. {_entregado_extra}"),
+        "cancelado": ("❌ Pedido cancelado", f"#{pedido.numero_pedido} quedó cancelado. Abre el detalle para revisar su estado."),
     }
     entry = msgs.get(pedido.estado)
     if not entry:

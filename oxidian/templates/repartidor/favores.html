@@ -1,0 +1,84 @@
+{% extends "admin_base.html" %}
+{% block title %}El Cruce{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/favor-rider.css', v=asset_version) }}">{% endblock %}
+{% block content %}
+{% set status_labels = {'matched':'Aceptado','at_pickup':'En el punto A','picked_up':'Recogido','in_transit':'En camino'} %}
+{% set next_labels = {'matched':'Ya estoy en el punto A','at_pickup':'Objeto recogido','picked_up':'Iniciar entrega','in_transit':'Confirmar entrega'} %}
+<main class="fr-page">
+  <header class="fr-head">
+    <div><small>ENTRE PARCEROS · PUNTO A → B</small><h1>El Cruce</h1><p>Revisa la ruta, ofrece y espera la elección del cliente.</p></div>
+    <a href="{{ url_for('repartidor.ruta') }}">← Mi ruta</a>
+  </header>
+  <nav class="fr-missions" aria-label="Tipos de trabajo"><a href="{{ url_for('repartidor.ruta') }}">🛍️ <span><b>Pedidos</b><small>Ruta de tienda</small></span></a><a class="is-current" href="{{ url_for('repartidor.favores') }}">🤝 <span><b>El Cruce</b><small>Punto A → B</small></span></a></nav>
+
+  <details class="fr-rules"><summary><span><b>Qué puedo transportar</b><small>Reglas para patinete y mochila</small></span><strong>Ver</strong></summary><div><p>✓ Bultos cerrados de hasta <b>{{ policy.max_weight|int }} kg</b> y valor declarado máximo de <b>{{ policy.max_value|int }} €</b>.</p><p>✓ Pedidos de restaurantes, bolsas, llaves, documentos y compras preparadas.</p><p>× Nunca efectivo, personas, animales, productos ilegales, inflamables o peligrosos.</p><p>La oferta parte de <b>{{ '%.2f'|format(policy.minimum) }} €</b> y aumenta según distancia. Si no cabe con seguridad en la mochila, no lo aceptes.</p></div></details>
+
+  <form method="post" action="{{ url_for('repartidor.preferencia_cruces') }}" class="fr-preference">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div><strong>¿Quieres recibir Cruces?</strong><small>Tu disponibilidad para pedidos normales no cambia.</small></div>
+    <button name="acepta_cruces" value="{{ '0' if current_user.acepta_cruces else '1' }}" class="{{ 'is-on' if current_user.acepta_cruces else '' }}"><i></i>{{ 'Activado' if current_user.acepta_cruces else 'Desactivado' }}</button>
+  </form>
+
+  {% if not disponible %}<div class="fr-alert">Estás offline. Ponte disponible desde Mi ruta para tomar un favor.</div>{% endif %}
+
+  <section class="fr-section">
+    <div class="fr-section-title"><h2>En curso</h2><span>{{ propios|length }}</span></div>
+    <div class="fr-grid is-active">
+    {% for favor in propios %}
+      <article class="fr-card is-mine motion-fade-in">
+        <header><div><small>CRUCE #{{ favor.public_id[:6]|upper }} · {{ '%.1f'|format(favor.distance_km) }} KM</small><strong>{{ favor.item_description }}</strong></div><span>{{ status_labels.get(favor.status) }}</span></header>
+        <ol class="fr-route"><li><small>RECOGER EN{% if favor.pickup_reference %} · {{ favor.pickup_reference }}{% endif %}</small>{{ favor.pickup_address }}</li><li><small>ENTREGAR EN</small>{{ favor.dropoff_address }}</li></ol>
+        {% set active_lat = favor.pickup_lat if favor.status in ('matched','at_pickup') else favor.dropoff_lat %}{% set active_lng = favor.pickup_lng if favor.status in ('matched','at_pickup') else favor.dropoff_lng %}
+        <nav class="fr-navigation" aria-label="Navegación del Cruce"><a href="https://www.google.com/maps/dir/?api=1&destination={{ active_lat }},{{ active_lng }}&travelmode=bicycling" target="_blank" rel="noopener">🗺️ Google Maps</a><a href="https://waze.com/ul?ll={{ active_lat }},{{ active_lng }}&navigate=yes" target="_blank" rel="noopener">🚦 Waze</a></nav>
+        <div class="fr-load"><span>📦 {{ favor.package_type|replace('restaurant','Restaurante')|replace('package','Paquete')|replace('keys','Llaves/documentos')|replace('shopping','Compra')|replace('other','Otro') }}</span><span>{{ '%.1f'|format(favor.weight_kg) }} kg</span><span>Valor {{ '%.2f'|format(favor.declared_value) }} €</span></div>
+        <div class="fr-agreement"><span>Importe acordado</span><strong>{{ '%.2f'|format(favor.agreed_amount) }} €</strong><small>Contra entrega</small></div>
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('repartidor.avanzar_favor', public_id=favor.public_id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if favor.status == 'in_transit' %}
+            <label class="fr-proof"><span>📷 Foto de entrega (opcional pero recomendada)</span><input type="file" name="proof_photo" accept="image/*" capture="environment"></label>
+          {% endif %}
+          <button class="fr-primary">{{ next_labels.get(favor.status, 'Avanzar estado') }}</button>
+        </form>
+        <details class="fr-cancel-active"><summary>No puedo continuar · cancelar este Cruce</summary>
+          <form method="post" action="{{ url_for('repartidor.cancelar_favor_rider', public_id=favor.public_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>Motivo (se envía al cliente)<textarea name="reason" required minlength="4" maxlength="240" placeholder="Ejemplo: avería del vehículo"></textarea></label>
+            <button>Cancelar Cruce</button>
+          </form>
+        </details>
+      </article>
+    {% else %}<div class="fr-empty"><span>🛵</span><b>No tienes Cruces activos</b><p>Las solicitudes disponibles aparecen abajo.</p></div>{% endfor %}
+    </div>
+  </section>
+
+  <section class="fr-section">
+    <div class="fr-section-title"><h2>Disponibles</h2><span>{{ abiertos|length }}</span></div>
+    <div class="fr-grid">
+    {% for favor in abiertos %}
+      {% set own_offer = namespace(value=none) %}{% for proposal in favor.offers if proposal.rider_id == current_user.id and proposal.status == 'pending' %}{% set own_offer.value = proposal %}{% endfor %}
+      <article class="fr-card motion-fade-in">
+        <header><div><small>NUEVA · {{ '%.1f'|format(favor.distance_km) }} KM · {{ '%.1f'|format(favor.weight_kg) }} KG</small><strong>{{ favor.item_description }}</strong></div><span class="is-offer">{{ '%.2f'|format(favor.offered_amount) }} €</span></header>
+        <ol class="fr-route"><li><small>PUNTO A{% if favor.pickup_reference %} · {{ favor.pickup_reference }}{% endif %}</small>{{ favor.pickup_address }}</li><li><small>PUNTO B</small>{{ favor.dropoff_address }}</li></ol>
+        <nav class="fr-navigation" aria-label="Vista previa de navegación"><a href="https://www.google.com/maps/dir/?api=1&origin={{ favor.pickup_lat }},{{ favor.pickup_lng }}&destination={{ favor.dropoff_lat }},{{ favor.dropoff_lng }}&travelmode=bicycling" target="_blank" rel="noopener">🗺️ Ver A → B</a><a href="https://waze.com/ul?ll={{ favor.pickup_lat }},{{ favor.pickup_lng }}&navigate=yes" target="_blank" rel="noopener">🚦 Ir al punto A</a></nav>
+        <div class="fr-load"><span>📦 {{ favor.package_type|replace('restaurant','Restaurante')|replace('package','Paquete')|replace('keys','Llaves/documentos')|replace('shopping','Compra')|replace('other','Otro') }}</span><span>{{ '%.1f'|format(favor.weight_kg) }} kg</span><span>Valor {{ '%.2f'|format(favor.declared_value) }} €</span></div>
+        {% if own_offer.value and own_offer.value.customer_counter_amount %}<div class="fr-customer-counter"><span>El cliente te propone</span><strong>{{ '%.2f'|format(own_offer.value.customer_counter_amount) }} €</strong><form method="post" action="{{ url_for('repartidor.aceptar_contraoferta_cliente', public_id=favor.public_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Aceptar propuesta</button></form></div>{% endif %}
+        {% if own_offer.value %}<form class="fr-withdraw" method="post" action="{{ url_for('repartidor.retirar_propuesta_favor', public_id=favor.public_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Ya no puedo hacerlo · retirar propuesta</button></form>{% endif %}
+        {% if not own_offer.value %}<form method="post" action="{{ url_for('repartidor.aceptar_favor', public_id=favor.public_id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="fr-primary" {% if not disponible %}disabled{% endif %}>Me sirve · ofrecer hacerlo por {{ '%.2f'|format(favor.offered_amount) }} €</button>
+        </form>{% else %}<p class="fr-offer-sent">✓ Propuesta enviada · esperando elección del cliente</p>{% endif %}
+        <details class="fr-counter"><summary>{{ 'Hacer otra propuesta' if own_offer.value else 'Proponer otro importe' }}</summary>
+          <form method="post" action="{{ url_for('repartidor.contraofertar_favor', public_id=favor.public_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>Tu precio<input name="amount" type="number" min="{{ guide_prices.get(favor.id, policy.minimum) }}" max="999" step=".50" inputmode="decimal" required placeholder="Desde {{ '%.2f'|format(guide_prices.get(favor.id, policy.minimum)) }} €"></label>
+            <label>Llegas en<input name="eta_minutes" type="number" min="1" max="480" inputmode="numeric" placeholder="min" required></label>
+            <label class="is-wide">Nota opcional<input name="note" maxlength="250" placeholder="Motivo o detalle útil"></label>
+            <button {% if not disponible %}disabled{% endif %}>Enviar contraoferta</button>
+          </form>
+        </details>
+      </article>
+    {% else %}<div class="fr-empty"><span>✓</span><b>Cola al día</b><p>No hay solicitudes esperando rider.</p></div>{% endfor %}
+    </div>
+  </section>
+</main>
+{% endblock %}
