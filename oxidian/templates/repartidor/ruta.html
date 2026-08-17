@@ -755,6 +755,26 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
       </div>
       {% endif %}
 
+      {# Botón "Estoy en la puerta" — dispara el único WhatsApp del flujo
+         (política anti-baneo Meta). Solo aparece si el cliente aún no
+         recibió esa notificación. Piggybacks en Order.en_punto_encuentro. #}
+      {% if not pedido.en_punto_encuentro %}
+      <form method="POST" action="{{ url_for('repartidor.pedido_en_la_puerta', pedido_id=pedido.id) }}"
+            class="mt-2" onsubmit="this.querySelector('button').disabled=true">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="work-btn work-btn-primary full-width">
+          🛵 Estoy en la puerta — avisar al cliente
+        </button>
+      </form>
+      {% else %}
+      <p class="work-confirm-note" style="margin-top:.5rem">
+        ✅ Cliente notificado "en la puerta"
+        {% if pedido.en_punto_encuentro_en %}
+          — {{ pedido.en_punto_encuentro_en.strftime('%H:%M') }}
+        {% endif %}
+      </p>
+      {% endif %}
+
       <details class="route-finish" {% if pedido.id in codigo_enviado_ids %}open{% endif %}>
         <summary><span><b>Completar entrega</b><small>Código · cobro · cierre</small></span><strong>3 pasos</strong></summary>
       <div class="work-panel route-confirm-block route-operation-step route-operation-step--code mb-3 mt-3">
