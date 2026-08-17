@@ -363,15 +363,31 @@
 
   /* ── Bottom nav: safe-area iOS + siempre presente donde ya lo hay ── */
   body.ox-body-public.ox-has-bottom-nav .ox-bottom-nav {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + .4rem);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + .3rem);
     box-shadow: 0 -10px 24px -12px color-mix(in srgb, var(--theme-text) 24%, transparent);
   }
+  /* 2026-08-10: nav más compacto para aprovechar más viewport. Se reduce
+     el offset lateral (más edge-to-edge), la altura mínima y el padding
+     interno. Íconos y touch targets siguen por encima de 44 px (mínimo
+     WCAG). Antes 66 px min-height + 10 px offset lateral + 8/10 padding →
+     ahora 56 px + 6 px offset + 5/8 padding. Recuperamos ~14 px de
+     alto útil de pantalla. */
+  body.ox-body-public.ox-has-bottom-nav .ox-bottom-nav.ox-bnav-v2 {
+    left: max(6px, env(safe-area-inset-left, 6px)) !important;
+    right: max(6px, env(safe-area-inset-right, 6px)) !important;
+    bottom: max(6px, env(safe-area-inset-bottom, 0px)) !important;
+    min-height: 56px !important;
+    padding: 5px 8px !important;
+    border-radius: 22px !important;
+  }
+  body.ox-body-public.ox-has-bottom-nav .ox-bnav-item {
+    min-height: 46px !important;
+  }
   /* Reserva espacio para que el bottom-nav no tape el último producto.
-     Se ajusta a la altura REAL del bnav (~66px + 8px sombra) + safe-area
-     del home indicator iOS. Antes 88px + safe → dejaba ~200px de aire
-     muerto y sensación de "scroll que no llega al final". */
+     Ajustada a la nueva altura (56 px + ~4 px sombra + safe-area home
+     indicator iOS). */
   body.ox-body-public.ox-has-bottom-nav main {
-    padding-bottom: calc(74px + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   /* ── Carrito con items: pulso sutil para invitar al checkout ── */
@@ -1003,6 +1019,22 @@
     margin-left: 0 !important;
     margin-right: 0 !important;
   }
+  /* 2026-08-10 FIX DEFINITIVO franjas laterales: `main` hereda de
+     base.html:365 las clases Tailwind `px-3 sm:px-4` (12-16 px de padding
+     lateral) + `max-w-screen-xl mx-auto` (centrado con max-width). En
+     móvil el padding lateral deja un hueco de 12-16 px entre el borde
+     del viewport y las secciones — ese hueco muestra el ::before del
+     burlap (#fdfaf3), que sobre un fondo oscuro parece "barra blanca
+     vertical". Solución: en modo PWA `main` es edge-to-edge sin padding
+     ni max-width. El padding interno lo aportan los CHIPS de cabecera
+     y los grids (regla siguiente). */
+  body.ox-body-public main {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
   /* Cabeceras internas (título de sección + subtítulo/count) recuperan
      el padding lateral suave — nunca van pegadas al borde absoluto. */
   body.ox-body-public main .ep-section-head,
@@ -1018,15 +1050,114 @@
      puro negro sube a AAA (~14:1). El subtítulo (span) usaba muted
      que quedaba en ~2.8:1 sobre crema — mezclado con negro sube a
      AA (~5:1) manteniendo la jerarquía visual. */
+  /* ─────────────────────────────────────────────────────────────────
+     2026-08-10 REDISEÑO .ep-mini-head — patrón "editorial section header"
+     inspirado en Apple News / Airbnb section titles / Notion callouts.
+     Estructura visual: chip crema con borde suave + icono en badge
+     circular con acento de marca + título tipográfico + subtítulo
+     desaturado + underline accent con gradient bandera colombiana.
+     Todo dentro del @media PWA para no afectar la web.
+     ───────────────────────────────────────────────────────────────── */
+  body.ox-body-public main .ep-mini-head,
+  body.ox-body-public main .ep-banner-head {
+    position: relative !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: .7rem !important;
+    padding: .7rem .85rem .8rem !important;
+    margin: .5rem .55rem .6rem !important;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 253, 248, .96) 0%,
+      rgba(250, 244, 232, .96) 100%
+    ) !important;
+    border: 1px solid rgba(24, 18, 10, .09) !important;
+    border-radius: 1rem !important;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, .8) inset,
+      0 6px 18px rgba(24, 18, 10, .07),
+      0 1px 3px rgba(24, 18, 10, .05) !important;
+    -webkit-backdrop-filter: blur(8px) saturate(1.1) !important;
+    backdrop-filter: blur(8px) saturate(1.1) !important;
+    overflow: hidden !important;
+  }
+  /* Underline accent (bandera Colombia sutil) en el borde inferior */
+  body.ox-body-public main .ep-mini-head::after,
+  body.ox-body-public main .ep-banner-head::after {
+    content: "" !important;
+    position: absolute !important;
+    left: .85rem !important;
+    right: .85rem !important;
+    bottom: 0 !important;
+    height: 2px !important;
+    background: linear-gradient(
+      90deg,
+      var(--brand-primary, #FCD116) 0%,
+      var(--brand-primary, #FCD116) 45%,
+      var(--brand-accent, #003087) 45%,
+      var(--brand-accent, #003087) 72%,
+      var(--brand-secondary, #CE1126) 72%,
+      var(--brand-secondary, #CE1126) 100%
+    ) !important;
+    opacity: .55 !important;
+    border-radius: 2px !important;
+    pointer-events: none !important;
+  }
+
+  /* Título principal: peso editorial, tracking apretado, color puro */
   body.ox-body-public main .ep-mini-head strong,
   body.ox-body-public main .ep-banner-head span {
-    color: color-mix(in srgb, var(--theme-text, #18120A) 100%, #000) !important;
-    font-weight: 950 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: .5rem !important;
+    color: #14100a !important;
+    font-weight: 900 !important;
+    font-size: .96rem !important;
+    letter-spacing: -.01em !important;
+    line-height: 1.15 !important;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
   }
-  body.ox-body-public main .ep-mini-head span,
-  body.ox-body-public main .ep-banner-head small {
-    color: color-mix(in srgb, var(--theme-text, #18120A) 72%, #000) !important;
-    font-weight: 800 !important;
+
+  /* Icono heritage en badge circular con acento de marca. Aumenta
+     legibilidad del SVG (antes flotaba invisible sobre burlap). */
+  body.ox-body-public main .ep-mini-head strong .ox-heritage-icon,
+  body.ox-body-public main .ep-banner-head span .ox-heritage-icon {
+    flex: 0 0 auto !important;
+    width: 1.6em !important;
+    height: 1.6em !important;
+    padding: .28em !important;
+    color: var(--brand-accent, #003087) !important;
+    fill: none !important;
+    stroke: currentColor !important;
+    stroke-width: 2.2 !important;
+    background: radial-gradient(
+      circle at 30% 30%,
+      color-mix(in srgb, var(--brand-primary, #FCD116) 22%, #fff) 0%,
+      color-mix(in srgb, var(--brand-primary, #FCD116) 8%, #fff) 100%
+    ) !important;
+    border: 1px solid color-mix(in srgb, var(--brand-accent, #003087) 18%, transparent) !important;
+    border-radius: 50% !important;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, .9) inset,
+      0 2px 6px rgba(24, 18, 10, .08) !important;
+    vertical-align: middle !important;
+    opacity: 1 !important;
+  }
+
+  /* Subtítulo/count: color muted pero legible, tipografía más ligera */
+  body.ox-body-public main .ep-mini-head > span,
+  body.ox-body-public main .ep-banner-head > small {
+    flex: 0 0 auto !important;
+    color: #6b5a4e !important;
+    font-weight: 700 !important;
+    font-size: .74rem !important;
+    letter-spacing: .02em !important;
+    text-transform: uppercase !important;
+    padding: .22rem .55rem !important;
+    background: rgba(24, 18, 10, .05) !important;
+    border-radius: 999px !important;
+    white-space: nowrap !important;
   }
   /* El grid de cards ocupa el ancho completo del viewport y los gaps
      entre cards son suficiente respiración visual — no necesita
@@ -1103,7 +1234,23 @@
     transform: scale(.975);
     box-shadow: 0 1px 1px color-mix(in srgb, var(--theme-text) 6%, transparent);
   }
-  body.ox-body-public .ep-card-img { border-radius: 18px 18px 0 0; overflow: hidden; }
+  /* 2026-08-10: bordes más redondeados en cards de producto — se ajusta
+     al lenguaje de radios usados en el resto del PWA (chips 1rem,
+     mini-heads 1rem, botones .9rem). Antes 1.25rem (20 px) — ahora
+     1.6rem (25.6 px). También la imagen dentro de la card. */
+  body.ox-body-public .ep-card,
+  body.ox-body-public .pc-card,
+  body.ox-body-public article.pc-card,
+  body.ox-body-public .pc-featured-card,
+  body.ox-body-public .pc-novedad-card {
+    border-radius: 1.6rem !important;
+  }
+  body.ox-body-public .ep-card-img { border-radius: 1.45rem 1.45rem 0 0; overflow: hidden; }
+  body.ox-body-public .pc-card-img-wrap,
+  body.ox-body-public .pc-featured-img-wrap {
+    border-radius: 1.45rem 1.45rem 0 0 !important;
+    overflow: hidden !important;
+  }
   body.ox-body-public .ep-card-img img {
     transition: transform .5s cubic-bezier(.2,.8,.2,1);
   }
@@ -1460,8 +1607,15 @@ body.ox-body-public #btn-confirmar[disabled] {
 body.ox-body-public {
   position: relative;
   isolation: isolate;
-  background: transparent !important;
+  /* 2026-08-10 (fix líneas blancas laterales): en lugar de `transparent`,
+     usamos el color base del burlap como fallback SÓLIDO. Si por cualquier
+     motivo el ::before no cubre los últimos 1-4 px del viewport (bug de
+     compositing en iOS Safari con `filter: brightness()` + `position:
+     fixed`), lo que se ve por debajo es burlap claro, no blanco. */
+  background: #fbf7ee !important;
 }
+/* Igual para html — segunda línea de defensa contra bleed lateral. */
+html { background-color: #fbf7ee !important; }
 
 body.ox-body-public::before {
   content: "";
@@ -1470,7 +1624,11 @@ body.ox-body-public::before {
   inset: 0;
   pointer-events: none;
   /* Una sola textura, sin filtros ni gradientes laterales. La capa de color
-     translúcida mantiene contraste sin alterar visualmente la fotografía. */
+     translúcida mantiene contraste sin alterar visualmente la fotografía.
+     Resuelto en producción tras iterar con overlays y gradientes multicapa
+     (v2/v3 en git history); esta versión simple es la que verifica el equipo
+     en la PWA instalada — se conserva frente al enfoque de 3 capas propuesto
+     en origin/main (referenciaba coffee-burlap-texture-v2.webp, ya en desuso). */
   background-color: color-mix(in srgb, var(--theme-bg,#fbf7ee) 86%, transparent);
   background-image: url("../coffee-burlap-texture-v4.webp");
   background-blend-mode: soft-light;
@@ -1667,14 +1825,15 @@ body.ox-body-public .ep-cat-title::after {
   background: color-mix(in srgb, var(--theme-text) 18%, transparent);
 }
 
-@media (prefers-color-scheme: dark) {
-  body.ox-body-public::before {
-    background-color: color-mix(in srgb, var(--theme-bg,#24170e) 84%, transparent);
-    background-image: url("../coffee-burlap-texture-v4.webp");
-    background-blend-mode: multiply;
-    filter: none;
-  }
-}
+/* 2026-08-10: se ELIMINA el override oscuro de dark-mode en PWA.
+   El usuario pidió fondo siempre claro (independiente del tema del SO).
+   Antes esta regla oscurecía el burlap a #24170e con overlay .72 negro
+   y brightness .78 — el resultado era demasiado oscuro y hacía que los
+   textos editoriales fuera de tarjetas perdieran legibilidad. Ahora se
+   hereda el burlap claro definido arriba (fbf7ee + overlay .95 blanco).
+   Si en el futuro se quiere dark-mode real, hacerlo con un burlap
+   distinto (menos oscuro que #24170e) — no simplemente aplicando un
+   overlay negro sobre la misma textura. */
 
 /* El viewport completo comparte el mismo fondo: evita las bandas del color
    raíz que algunos navegadores muestran fuera del ancho centrado del main. */

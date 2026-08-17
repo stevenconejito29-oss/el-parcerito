@@ -6,13 +6,13 @@ body.ox-body-public {
   --hdr-muted: var(--theme-muted);
   --hdr-line: color-mix(in srgb, var(--theme-header-text) 13%, transparent);
   scroll-padding-top: calc(84px + env(safe-area-inset-top, 0px));
+  /* 2026-08-10: ELIMINADOS los 2 radial-gradient (izq 12/18% y der 88/72%)
+     + el repeating-linear-gradient diagonal. Producían un efecto de LUZ
+     lateral sutil anclado al fondo que el usuario describe como "líneas /
+     halos blancos" en el PWA. El fondo ahora es color plano, con la
+     textura burlap ::before en PWA como única capa decorativa. */
   background-color: var(--theme-bg) !important;
-  background-image:
-    radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--heritage-sun) 4.5%, transparent), transparent 32%),
-    radial-gradient(circle at 88% 72%, color-mix(in srgb, var(--heritage-river) 3.5%, transparent), transparent 30%),
-    repeating-linear-gradient(8deg,
-      transparent 0 10px,
-      color-mix(in srgb, var(--theme-text) 1.1%, transparent) 10px 11px) !important;
+  background-image: none !important;
   color: var(--theme-text) !important;
 }
 
