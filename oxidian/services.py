@@ -4465,7 +4465,7 @@ def procesar_notificaciones_pendientes(
     # el repartidor delante) — retrasarlos rompe el flujo. Sin cambio de schema.
     EVENTOS_URGENTES = (
         "order_confirmation", "delivery_code", "points_otp",
-        "canje_codigo",
+        "canje_codigo", "delivery_en_puerta",
     )
     prioridad_expr = case(
         (NotificationOutbox.evento.in_(EVENTOS_URGENTES), 0),

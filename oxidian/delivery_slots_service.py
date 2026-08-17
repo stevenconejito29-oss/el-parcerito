@@ -490,14 +490,18 @@ def notificar_en_la_puerta(pedido: Order, actor_id: int | None = None) -> Notifi
         or "Tu repartidor está en la puerta."
     )
 
+    # El procesador WhatsApp (services.procesar_notificaciones_pendientes)
+    # espera payload con las claves 'telefono' y 'mensaje'. Respetamos ese
+    # contrato compartido para que el worker despache sin cambios.
     outbox = NotificationOutbox(
         canal=NOTIF_CANAL,
         evento=NOTIF_EVENTO_EN_PUERTA,
         destinatario=telefono,
         payload_json=json.dumps({
+            "telefono": telefono,
+            "mensaje": plantilla,
             "pedido_id": pedido.id,
             "numero_pedido": pedido.numero_pedido,
-            "texto": plantilla,
         }, ensure_ascii=False),
         pedido_id=pedido.id,
         user_id=pedido.cliente_id,
