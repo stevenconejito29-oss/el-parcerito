@@ -246,6 +246,7 @@
         {% endif %}
         <a href="{{ url_for('admin.chats_index') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💬</span>Chats en vivo</a>
         <a href="{{ url_for('admin.notificaciones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🔔</span>Notificaciones</a>
+        <a href="{{ url_for('admin.delivery_franjas_panel') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🕒</span>Franjas de reparto</a>
       </div>
       <div class="ox-sb-divider"></div>
 
@@ -337,6 +338,7 @@
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">Mi ruta</span>
         <a href="{{ url_for('repartidor.ruta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🚴</span>Pedidos a entregar</a>
+        <a href="{{ url_for('repartidor.franjas_panel') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🕒</span>Franjas horarias</a>
         <a href="{{ url_for('repartidor.mis_comisiones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Mis comisiones</a>
       </div>
 
