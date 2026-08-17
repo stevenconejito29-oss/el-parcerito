@@ -3008,6 +3008,11 @@ class Order(db.Model):
     entregado_en = db.Column(db.DateTime)
 
     zona_id = db.Column(db.Integer, db.ForeignKey("zonas_entrega.id"))
+    # Franja horaria de reparto (módulo `delivery_franjas_activo`). NULL cuando
+    # el pedido va por delivery inmediato o es recogida. Ver DeliverySlot.
+    slot_id = db.Column(
+        db.Integer, db.ForeignKey("delivery_slots.id", ondelete="SET NULL")
+    )
     # Snapshot de la zona aplicada al confirmar. Evita que un cambio futuro de
     # nombre, tarifa o SLA reescriba visualmente el historial del pedido.
     costo_envio_snapshot = db.Column(
@@ -3633,6 +3638,97 @@ class NotificationOutbox(db.Model):
             return json.loads(self.payload_json or "{}")
         except (json.JSONDecodeError, TypeError):
             return {}
+
+
+class DeliverySlot(db.Model):
+    """Franja horaria de reparto con capacidad configurable.
+
+    Módulo opcional (toggle `delivery_franjas_activo`). Un `Order` puede tener
+    `slot_id` NULL (delivery inmediato o recogida) o apuntar a un slot concreto.
+    El cierre efectivo de la franja se calcula combinando `cierre_modo`/
+    `cierre_valor` (override por franja) con los defaults globales en SiteConfig.
+    """
+
+    __tablename__ = "delivery_slots"
+
+    id = db.Column(db.Integer, primary_key=True)
+    fecha = db.Column(db.Date, nullable=False, index=True)
+    hora_inicio = db.Column(db.Time, nullable=False)
+    hora_fin = db.Column(db.Time, nullable=False)
+    capacidad_max = db.Column(db.Integer, nullable=False)
+    max_repartidores = db.Column(
+        db.Integer, nullable=False, default=1, server_default="1"
+    )
+    # cierre_modo ∈ {'al_iniciar_siguiente', 'minutos_antes', 'hora_fija'}
+    # NULL → hereda del default global (SiteConfig.delivery_franjas_cierre_*).
+    cierre_modo = db.Column(db.String(32))
+    cierre_valor = db.Column(db.String(16))
+    activo = db.Column(
+        db.Boolean, nullable=False, default=True, server_default=db.text("true")
+    )
+    notas_admin = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(
+        db.DateTime, nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "fecha", "hora_inicio", "hora_fin", name="uq_delivery_slot_franja"
+        ),
+        db.CheckConstraint("hora_fin > hora_inicio", name="ck_delivery_slot_horas"),
+        db.CheckConstraint("capacidad_max >= 1", name="ck_delivery_slot_capacidad"),
+        db.CheckConstraint(
+            "max_repartidores >= 1", name="ck_delivery_slot_max_repartidores"
+        ),
+        db.Index("ix_delivery_slots_fecha_activo", "fecha", "activo"),
+    )
+
+    repartidores = db.relationship(
+        "SlotRepartidor",
+        backref="slot",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
+    )
+    pedidos = db.relationship("Order", backref="slot", lazy="dynamic")
+
+
+class SlotRepartidor(db.Model):
+    """Asignación (self-service) de un repartidor a una franja.
+
+    Un repartidor "toma" la franja desde su panel. La franja admite hasta
+    `DeliverySlot.max_repartidores` asignaciones activas simultáneas
+    (`liberado_en IS NULL`). Devolver la franja setea `liberado_en` sin borrar
+    el registro, preservando historial operativo.
+    """
+
+    __tablename__ = "slot_repartidores"
+
+    id = db.Column(db.Integer, primary_key=True)
+    slot_id = db.Column(
+        db.Integer,
+        db.ForeignKey("delivery_slots.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    repartidor_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False
+    )
+    tomado_en = db.Column(db.DateTime, nullable=False, default=utcnow)
+    liberado_en = db.Column(db.DateTime)
+
+    __table_args__ = (
+        # Un repartidor no puede estar activo dos veces en la misma franja.
+        db.Index(
+            "uq_slot_repartidor_activo",
+            "slot_id",
+            "repartidor_id",
+            unique=True,
+            postgresql_where=db.text("liberado_en IS NULL"),
+        ),
+        db.Index("ix_slot_repartidor_rider_tomado", "repartidor_id", "tomado_en"),
+    )
+
+    repartidor = db.relationship("User", foreign_keys=[repartidor_id])
 
 
 def _resolver_iva_pct_producto(producto):

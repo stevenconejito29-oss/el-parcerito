@@ -22,6 +22,7 @@ from models import (
     ComboItem,
     ComboGroup,
     DailyClosure,
+    DeliverySlot,
     IdempotencyKey,
     KnowledgeEntry,
     NotificationOutbox,
@@ -38,6 +39,7 @@ from models import (
     product_presentation_flavors,
     Proveedor,
     ProveedorProducto,
+    SlotRepartidor,
     Stock,
     User,
     WebChatConversation,
@@ -1750,6 +1752,31 @@ def _migrate_public_professional_first_impression():
         })
 
 
+def _migrate_orders_add_slot_id():
+    """Añade Order.slot_id (FK opcional a delivery_slots) para módulo franjas.
+
+    Idempotente. Requiere que la tabla delivery_slots ya exista (migración
+    previa en el mismo release). Pedidos existentes quedan con slot_id NULL
+    (comportamiento igual al delivery inmediato actual).
+    """
+    inspector = inspect(db.engine)
+    if not inspector.has_table("orders"):
+        return
+    if not inspector.has_table("delivery_slots"):
+        # La migración anterior aún no corrió: se aplicará en el próximo intento.
+        return
+    existing = {col["name"] for col in inspector.get_columns("orders")}
+    if "slot_id" not in existing:
+        db.session.execute(text(
+            "ALTER TABLE orders ADD COLUMN slot_id INTEGER "
+            "REFERENCES delivery_slots(id) ON DELETE SET NULL"
+        ))
+    db.session.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_orders_slot_id "
+        "ON orders(slot_id) WHERE slot_id IS NOT NULL"
+    ))
+
+
 MIGRATIONS = [
     {
         "id": "20260814_01_favor_marketplace",
@@ -2221,6 +2248,23 @@ MIGRATIONS = [
             "las consultas que resolvió el LLM pero no el determinista."
         ),
         "tables": [BotLearningSignal.__table__],
+    },
+    {
+        "id": "20260817_01_delivery_slots_tables",
+        "description": (
+            "Crea delivery_slots y slot_repartidores para el módulo "
+            "opcional de reparto por franjas horarias con topes de capacidad."
+        ),
+        "tables": [DeliverySlot.__table__, SlotRepartidor.__table__],
+    },
+    {
+        "id": "20260817_02_orders_slot_id",
+        "description": (
+            "Añade orders.slot_id (FK opcional a delivery_slots) para "
+            "asociar pedidos a franjas horarias. Pedidos existentes "
+            "quedan con slot_id NULL (delivery inmediato)."
+        ),
+        "fn": _migrate_orders_add_slot_id,
     },
 ]
 
