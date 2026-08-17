@@ -172,6 +172,15 @@ def render_ticket(pedido, es_reimpresion: bool = False, brand=None, ui=None) -> 
         zona = getattr(pedido, "zona_nombre_aplicada", None)
         if zona:
             p.text(_line_row("Zona", zona, cols) + "\n")
+        slot = getattr(pedido, "slot", None)
+        if slot is not None:
+            franja_txt = (
+                f"{slot.fecha.strftime('%d/%m')} "
+                f"{slot.hora_inicio.strftime('%H:%M')}-{slot.hora_fin.strftime('%H:%M')}"
+            )
+            p.set(bold=True)
+            p.text(_line_row("Franja", franja_txt, cols) + "\n")
+            p.set(bold=False)
         p.text(_sep_dashes(cols) + "\n")
 
     # ── Items ──────────────────────────────────────────────────────────

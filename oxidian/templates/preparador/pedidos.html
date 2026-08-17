@@ -810,6 +810,7 @@
       <p class="work-client">{{ pedido.cliente.nombre }}</p>
       <div class="mt-2 flex flex-wrap gap-2">
         {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
+        {% if pedido.slot %}<span class="work-badge-zone" style="background:color-mix(in srgb, var(--brand-primary,#5a3a1e) 12%, transparent);color:var(--brand-primary,#5a3a1e)">🕒 {{ pedido.slot.fecha.strftime('%d/%m') }} {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</span>{% endif %}
         {% if pedido.preparador_id and pedido.preparador_id != current_user.id %}
           <span class="work-badge-assigned">Asignado a {{ pedido.preparador.nombre }}</span>
         {% endif %}
@@ -969,6 +970,7 @@
           {% else %}{{ _icon_clock() }} Programado{% endif %}
         </span>
         {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
+        {% if pedido.slot %}<span class="work-badge-zone" style="background:color-mix(in srgb, var(--brand-primary,#5a3a1e) 12%, transparent);color:var(--brand-primary,#5a3a1e)">🕒 {{ pedido.slot.fecha.strftime('%d/%m') }} {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</span>{% endif %}
       </div>
       <div class="work-items">
         {% set _prep_items = lineas_preparacion_interna(pedido) %}
@@ -1074,6 +1076,7 @@
           {% else %}{{ _icon_clock() }} Programado{% endif %}
         </span>
         {% if pedido.zona_id %}<span class="work-badge-zone">📍 {{ pedido.zona_nombre_aplicada }}</span>{% endif %}
+        {% if pedido.slot %}<span class="work-badge-zone" style="background:color-mix(in srgb, var(--brand-primary,#5a3a1e) 12%, transparent);color:var(--brand-primary,#5a3a1e)">🕒 {{ pedido.slot.fecha.strftime('%d/%m') }} {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</span>{% endif %}
         {% if pedido.preparador_id and pedido.preparador_id != current_user.id %}
           <span class="work-badge-assigned">Asignado a {{ pedido.preparador.nombre }}</span>
         {% endif %}

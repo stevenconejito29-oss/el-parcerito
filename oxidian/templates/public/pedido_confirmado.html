@@ -68,6 +68,9 @@
     <dl class="order-ticket-meta">
       <div><dt>Fecha</dt><dd>{{ pedido.creado_en.strftime('%d/%m/%Y · %H:%M') if pedido.creado_en else 'Registrado' }}</dd></div>
       <div><dt>Modalidad</dt><dd>{{ 'Delivery' if pedido.direccion_entrega else 'Recogida' }}</dd></div>
+      {% if pedido.slot %}
+      <div><dt>Franja horaria</dt><dd><strong>{{ pedido.slot.fecha.strftime('%A %d/%m') }} · {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</strong></dd></div>
+      {% endif %}
       <div><dt>Pago</dt><dd>Contra entrega</dd></div>
       <div><dt>Estado actual</dt><dd data-order-status>{{ pedido.estado.replace('_',' ')|title }}</dd></div>
     </dl>
