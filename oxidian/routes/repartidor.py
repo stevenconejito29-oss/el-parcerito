@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, abort
 from flask_login import login_required, current_user
 from functools import wraps
 import logging
@@ -1157,3 +1157,109 @@ def mis_comisiones():
     return render_template("repartidor/comisiones.html",
                            comisiones=comisiones,
                            pendiente=pendiente, cobrado=cobrado)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Módulo delivery por franjas horarias — endpoints repartidor.
+# Toggle: delivery_franjas_activo. Devuelve 404 si está OFF.
+# Self-assign: el repartidor "toma" una franja libre y aparece asignado
+# hasta el max_repartidores de la franja. UI dedicada llegará después.
+# ═══════════════════════════════════════════════════════════════════
+
+def _franjas_modulo_activo() -> bool:
+    from store_config import get_store_value
+    return str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+
+
+@repartidor_bp.route("/franjas", methods=["GET"])
+@repartidor_required
+def franjas_listar():
+    if not _franjas_modulo_activo():
+        abort(404)
+    from delivery_slots_service import listar_franjas_admin, _repartidores_activos
+    from models import SlotRepartidor
+    from datetime import date as _date, timedelta as _td
+
+    hoy = _date.today()
+    slots = listar_franjas_admin(hoy, hoy + _td(days=6))
+    # Marca "mías" y "libres" para cada franja.
+    ids = [s.id for s in slots]
+    mias_ids = set()
+    if ids:
+        mias = (
+            SlotRepartidor.query
+            .filter(
+                SlotRepartidor.slot_id.in_(ids),
+                SlotRepartidor.repartidor_id == current_user.id,
+                SlotRepartidor.liberado_en.is_(None),
+            )
+            .all()
+        )
+        mias_ids = {m.slot_id for m in mias}
+    salida = []
+    for s in slots:
+        if not s.activo:
+            continue
+        activos = _repartidores_activos(s.id)
+        salida.append({
+            "id": s.id,
+            "fecha": s.fecha.isoformat(),
+            "hora_inicio": s.hora_inicio.strftime("%H:%M"),
+            "hora_fin": s.hora_fin.strftime("%H:%M"),
+            "capacidad_max": s.capacidad_max,
+            "max_repartidores": s.max_repartidores,
+            "repartidores_activos": activos,
+            "tomada_por_mi": s.id in mias_ids,
+            "llena_de_repartidores": activos >= s.max_repartidores and s.id not in mias_ids,
+        })
+    return jsonify({"franjas": salida})
+
+
+@repartidor_bp.route("/franjas/<int:slot_id>/tomar", methods=["POST"])
+@repartidor_required
+def franjas_tomar(slot_id):
+    if not _franjas_modulo_activo():
+        abort(404)
+    from delivery_slots_service import tomar_franja_repartidor, ResultadoRepartidor
+
+    res = tomar_franja_repartidor(slot_id, current_user.id)
+    if res.tipo == ResultadoRepartidor.NO_EXISTE:
+        return jsonify({"error": "no_existe"}), 404
+    if res.tipo in (ResultadoRepartidor.INACTIVA, ResultadoRepartidor.CERRADA,
+                     ResultadoRepartidor.LLENA_DE_REPARTIDORES):
+        db.session.rollback()
+        return jsonify({"error": res.tipo.value}), 409
+    db.session.commit()
+    return jsonify({"resultado": res.tipo.value})
+
+
+@repartidor_bp.route("/franjas/<int:slot_id>/liberar", methods=["POST"])
+@repartidor_required
+def franjas_liberar(slot_id):
+    if not _franjas_modulo_activo():
+        abort(404)
+    from delivery_slots_service import liberar_franja_repartidor
+
+    liberado = liberar_franja_repartidor(slot_id, current_user.id)
+    db.session.commit()
+    return jsonify({"liberado": liberado})
+
+
+@repartidor_bp.route("/pedido/<int:pedido_id>/en-la-puerta", methods=["POST"])
+@repartidor_required
+def pedido_en_la_puerta(pedido_id):
+    """Notifica al cliente por WhatsApp que el repartidor está en la puerta.
+
+    Único mensaje WhatsApp del flujo de franjas (política anti-baneo Meta).
+    Idempotente: el mismo pedido no genera dos notificaciones.
+    Disponible siempre que exista el pedido y el repartidor sea el asignado
+    o admin; funciona tanto en flujo inmediato como en franjas.
+    """
+    pedido = get_or_404(Order, pedido_id)
+    if pedido.repartidor_id not in (None, current_user.id) and not _es_admin_operativo():
+        abort(403)
+    from delivery_slots_service import notificar_en_la_puerta
+
+    notificar_en_la_puerta(pedido, actor_id=current_user.id)
+    db.session.commit()
+    return jsonify({"notificado": True})
