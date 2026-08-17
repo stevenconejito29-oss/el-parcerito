@@ -557,6 +557,76 @@ DEFAULTS: dict[str, dict] = {
             "conservan indefinidamente. Cap defensivo 7-365."
         ),
     },
+
+    # ── Módulos de reparto (toggleables) ──────────────────────────────
+    "delivery_inmediato_activo": {
+        "default": "1",
+        "type": "bool",
+        "desc": (
+            "Activa el modo de reparto inmediato (flujo histórico). Si se "
+            "desactiva, el checkout solo ofrece franjas horarias (si el "
+            "otro toggle está activo) o solo recogida."
+        ),
+    },
+    "delivery_franjas_activo": {
+        "default": "0",
+        "type": "bool",
+        "desc": (
+            "Activa el módulo de reparto por franjas horarias con tope de "
+            "pedidos por franja. Nace apagado: la infraestructura queda "
+            "inerte hasta que el admin lo encienda desde /superadmin/config."
+        ),
+    },
+    "delivery_franjas_horizonte_admin_dias": {
+        "default": "14",
+        "type": "int",
+        "desc": (
+            "Días vista para editar y clonar franjas desde /admin/delivery/"
+            "franjas. Editable si se quiere ampliar/reducir planificación."
+        ),
+    },
+    "delivery_franjas_horizonte_cliente_dias": {
+        "default": "7",
+        "type": "int",
+        "desc": (
+            "Días vista para que el cliente elija franja en checkout. Debe "
+            "ser <= horizonte_admin para no ofrecer huecos sin planificar."
+        ),
+    },
+    "delivery_franjas_cierre_modo_default": {
+        "default": "al_iniciar_siguiente",
+        "type": "str",
+        "desc": (
+            "Modo de cierre por defecto para franjas sin override: "
+            "'al_iniciar_siguiente' | 'minutos_antes' | 'hora_fija'."
+        ),
+    },
+    "delivery_franjas_cierre_valor_default": {
+        "default": "",
+        "type": "str",
+        "desc": (
+            "Valor asociado al cierre por defecto: entero de minutos "
+            "(modo minutos_antes) o HH:MM (modo hora_fija). Vacío si el "
+            "modo por defecto es al_iniciar_siguiente."
+        ),
+    },
+    "delivery_franjas_max_repartidores_default": {
+        "default": "1",
+        "type": "int",
+        "desc": (
+            "Nº de repartidores que pueden auto-asignarse a una misma "
+            "franja por defecto al crearla. Se puede sobrescribir por franja."
+        ),
+    },
+    "delivery_franjas_notificar_puerta_texto": {
+        "default": "Tu repartidor está en la puerta. 🛵",
+        "type": "str",
+        "desc": (
+            "Plantilla WhatsApp que se envía al cliente cuando el repartidor "
+            "pulsa 'Estoy en la puerta'. Único WhatsApp del flujo de franjas "
+            "(política anti-baneo Meta)."
+        ),
+    },
 }
 
 
