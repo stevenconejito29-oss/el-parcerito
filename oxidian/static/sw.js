@@ -136,12 +136,39 @@ background:#F4C542;color:#2B2118;font-weight:800;font-size:1rem;text-decoration:
 // necesidad de F5. Trade-off aceptable: durante un deploy en medio de un
 // checkout, el asset viejo termina siendo servido por el SW nuevo pero el
 // estado del formulario no se pierde (no hay reload).
+// PRECACHE por prioridad: el install SOLO espera lo crítico para la primera
+// pintura (tokens, CSS core, header, iconos base). Vendors, JS de UI y
+// texturas/imágenes de fondo se cachean en paralelo sin bloquear la
+// finalización del install. En Android low-end esto reduce ~2-4 s el tiempo
+// en el que la PWA queda controlada por el SW y el hilo principal libre.
+const PRECACHE_CRITICAL = new Set([
+  "/static/css/tokens.css",
+  "/static/css/oxidian.css",
+  "/static/css/oxidian-ui.css",
+  "/static/css/header-modern.css",
+  "/static/css/storefront-menu.css",
+  "/static/favicon-32.png",
+  "/static/favicon-64.png",
+  `/static/pwa-icon.svg?v=${APP_VERSION}`,
+]);
+
 self.addEventListener("install", event => {
   self.skipWaiting();
+  const critical = PRECACHE.filter(url => PRECACHE_CRITICAL.has(url));
+  const secundarios = PRECACHE.filter(url => !PRECACHE_CRITICAL.has(url));
   event.waitUntil(
     caches.open(CACHE_STATIC).then(async cache => {
+      // Bloqueante: solo lo crítico para primera pintura.
       await Promise.allSettled(
-        PRECACHE.map(url => cache.add(new Request(url, { cache: "reload" })))
+        critical.map(url => cache.add(new Request(url, { cache: "reload" })))
+      );
+      // No bloqueante: el resto se cachea en background. Si el usuario
+      // cierra la pestaña antes de terminar, el SW recupera al siguiente
+      // fetch bajo la estrategia SWR normal — no se pierde nada.
+      Promise.allSettled(
+        secundarios.map(url =>
+          cache.add(new Request(url, { cache: "reload" })).catch(() => {})
+        )
       );
     })
   );
