@@ -4593,3 +4593,31 @@ def _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion, ni
         if direccion and direccion != invitado.direccion:
             invitado.direccion = direccion
     return invitado
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Módulo delivery por franjas horarias — endpoint público.
+# Toggle: delivery_franjas_activo. Devuelve 404 limpio si está OFF.
+# La reserva efectiva del cupo ocurre en checkout (integración
+# pendiente en commit de UI). Este endpoint es de solo lectura para
+# que el selector del cliente pinte disponibilidad en vivo.
+# ═══════════════════════════════════════════════════════════════════
+
+@public_bp.route("/api/delivery/franjas-disponibles", methods=["GET"])
+def api_delivery_franjas_disponibles():
+    from store_config import get_store_value
+
+    activo = str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+    if not activo:
+        return jsonify({"error": "not_found"}), 404
+
+    from delivery_slots_service import listar_franjas_cliente
+    from datetime import date as _date
+
+    try:
+        horizonte = int(get_store_value("delivery_franjas_horizonte_cliente_dias", "7"))
+    except (TypeError, ValueError):
+        horizonte = 7
+
+    franjas = listar_franjas_cliente(_date.today(), horizonte_dias=horizonte)
+    return jsonify({"horizonte_dias": horizonte, "franjas": franjas})
