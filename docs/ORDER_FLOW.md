@@ -53,3 +53,15 @@ Las vistas operativas separan planificación, trabajo activo y cierre. En móvil
 vertical usan una columna; en móvil horizontal pueden usar dos columnas sin
 ocultar acciones. Direcciones, notas y nombres deben permitir salto de línea, y
 todos los controles operativos conservan un objetivo táctil mínimo de 44 px.
+
+## Franja horaria de entrega (opcional)
+
+Cuando el módulo `delivery_franjas_activo` está encendido, un pedido puede
+tener `slot_id` apuntando a una `DeliverySlot` con hora de entrega
+comprometida y cupo limitado. Los pedidos sin `slot_id` operan igual que
+antes (delivery inmediato o recogida). El `slot_id` no forma parte del
+snapshot congelado del pedido: es una relación operativa que puede cambiar
+excepcionalmente (por ejemplo, si admin reasigna una franja llena a otra).
+
+Detalle completo del módulo en
+[`oxidian/docs/COBERTURA_REPARTO.md`](../oxidian/docs/COBERTURA_REPARTO.md).

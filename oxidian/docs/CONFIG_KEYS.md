@@ -102,6 +102,27 @@ Devuelve CSV con una fila por (pedido × tasa IVA):
 
 Default de rango: primer día del trimestre actual → hoy.
 
+## Delivery por franjas horarias
+
+Módulo opcional (`delivery_slots_service` + tablas `delivery_slots`,
+`slot_repartidores`). Toggle apagado por defecto.
+
+| Clave | Tipo | Default | Qué hace |
+|---|---|---|---|
+| `delivery_inmediato_activo` | bool | `1` | Activa el reparto inmediato (flujo histórico). Si se desactiva, checkout solo ofrece franjas o recogida. |
+| `delivery_franjas_activo` | bool | `0` | Activa el módulo de franjas horarias. Nace apagado; código nuevo queda inerte hasta encenderlo desde `/superadmin/config`. |
+| `delivery_franjas_horizonte_admin_dias` | int | `14` | Días vista en `/admin/delivery/franjas` para planificar y clonar. |
+| `delivery_franjas_horizonte_cliente_dias` | int | `7` | Días vista en checkout cliente. Debe ser `<=` horizonte_admin. |
+| `delivery_franjas_cierre_modo_default` | str | `al_iniciar_siguiente` | Modo de cierre por defecto: `al_iniciar_siguiente` \| `minutos_antes` \| `hora_fija`. Heredado por franjas sin override. |
+| `delivery_franjas_cierre_valor_default` | str | `""` | Valor asociado: entero de minutos (modo `minutos_antes`) o `HH:MM` (modo `hora_fija`). Vacío si el modo por defecto es `al_iniciar_siguiente`. |
+| `delivery_franjas_max_repartidores_default` | int | `1` | Nº de repartidores que pueden auto-asignarse a una misma franja al crearla. Sobrescribible por franja. |
+| `delivery_franjas_notificar_puerta_texto` | str | plantilla base | Mensaje WhatsApp único cuando el repartidor pulsa "en la puerta" (política anti-baneo Meta). |
+
+Cierre por franja: cada `DeliverySlot` puede sobrescribir `cierre_modo` +
+`cierre_valor` directamente en su fila (columnas de la tabla). Si están en
+`NULL`, hereda los defaults globales anteriores. Cambiar la política
+comercial no requiere despliegue de código.
+
 ## Propuestas pendientes (no ejecutadas)
 
 Requieren refactor mayor y se dejan documentadas:
