@@ -1171,6 +1171,17 @@ def _franjas_modulo_activo() -> bool:
     return str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
 
 
+@repartidor_bp.route("/franjas/panel", methods=["GET"])
+@repartidor_required
+def franjas_panel():
+    """Vista HTML del panel repartidor de franjas.
+
+    Datos cargados por JS desde franjas_listar (JSON). Si el módulo está
+    apagado, la fetch devuelve 404 y la UI muestra el aviso correspondiente.
+    """
+    return render_template("repartidor/franjas.html")
+
+
 @repartidor_bp.route("/franjas", methods=["GET"])
 @repartidor_required
 def franjas_listar():

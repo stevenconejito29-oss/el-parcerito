@@ -1,0 +1,133 @@
+/* ═══════════════════════════════════════════════════════════════
+   Módulo delivery por franjas horarias — estilos compartidos.
+   Se usa en 3 vistas: /admin/delivery (calendario admin),
+   /repartidor/franjas (panel repartidor), /delivery/preview
+   (selector cliente en checkout).
+   ═══════════════════════════════════════════════════════════════ */
+
+.df-container { max-width: 1080px; margin: 0 auto; padding: 1rem; }
+.df-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;
+}
+.df-header h1 { margin: 0 0 .3rem; font-size: 1.35rem; font-weight: 800; }
+.df-header p  { margin: 0; color: var(--col-muted, #6b6b6b); font-size: .9rem; }
+
+.df-toolbar {
+  display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.df-btn {
+  min-height: 44px; padding: .55rem 1rem; border-radius: .55rem;
+  border: 1px solid var(--col-line, #d9d3ca); background: #fff;
+  font-size: .9rem; font-weight: 700; cursor: pointer;
+  transition: background .15s;
+}
+.df-btn:hover:not(:disabled) { background: var(--col-hover, #f4efe7); }
+.df-btn:disabled { opacity: .5; cursor: not-allowed; }
+.df-btn-primary {
+  background: var(--brand-primary, #5a3a1e); color: #fff;
+  border-color: var(--brand-primary, #5a3a1e);
+}
+.df-btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--brand-primary, #5a3a1e) 88%, #000);
+}
+.df-btn-danger { border-color: #c25050; color: #c25050; }
+.df-btn-danger:hover:not(:disabled) { background: #fbe9e9; }
+
+.df-day {
+  border: 1px solid var(--col-line, #d9d3ca); border-radius: .7rem;
+  background: #fff; padding: .85rem; margin-bottom: .8rem;
+}
+.df-day-head {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: .5rem; margin-bottom: .5rem;
+}
+.df-day-title { font-weight: 800; font-size: .95rem; }
+.df-day-empty { color: var(--col-muted, #6b6b6b); font-size: .82rem; font-style: italic; }
+
+.df-slot-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: .55rem;
+}
+.df-slot {
+  border: 1px solid var(--col-line, #d9d3ca); border-radius: .55rem;
+  padding: .6rem .7rem; background: #fafafa;
+  display: flex; flex-direction: column; gap: .3rem;
+}
+.df-slot-hora { font-weight: 800; font-size: 1rem; }
+.df-slot-meta { font-size: .78rem; color: var(--col-muted, #6b6b6b); }
+.df-slot-actions {
+  display: flex; gap: .35rem; margin-top: .35rem; flex-wrap: wrap;
+}
+.df-slot-actions .df-btn { min-height: 36px; padding: .35rem .6rem; font-size: .8rem; }
+
+/* Estados visuales del selector cliente */
+.df-slot.df-slot-llena  { opacity: .55; background: #f0e9df; }
+.df-slot.df-slot-cerrada { opacity: .45; background: #efefef; text-decoration: line-through; }
+.df-slot.df-slot-sugerida {
+  border-color: var(--brand-primary, #5a3a1e); border-width: 2px;
+  background: color-mix(in srgb, var(--brand-primary, #5a3a1e) 8%, #fff);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--brand-primary, #5a3a1e) 15%, transparent);
+  position: relative;
+}
+.df-slot.df-slot-sugerida::before {
+  content: "★ Sugerida"; position: absolute; top: -8px; right: 8px;
+  background: var(--brand-primary, #5a3a1e); color: #fff;
+  font-size: .68rem; font-weight: 800; padding: .12rem .5rem;
+  border-radius: 999px;
+}
+.df-slot.df-slot-mia {
+  border-color: #2f8a3f;
+  background: color-mix(in srgb, #2f8a3f 10%, #fff);
+}
+
+.df-slot-selectable { cursor: pointer; }
+.df-slot-selectable:hover:not(.df-slot-llena):not(.df-slot-cerrada) {
+  border-color: var(--brand-primary, #5a3a1e);
+}
+.df-slot.df-slot-selected {
+  outline: 3px solid var(--brand-primary, #5a3a1e);
+  outline-offset: 2px;
+}
+
+.df-form {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: .5rem; margin-bottom: 1rem;
+  padding: .8rem; border: 1px solid var(--col-line, #d9d3ca);
+  border-radius: .6rem; background: #fafafa;
+}
+.df-form label {
+  display: flex; flex-direction: column; gap: .2rem; font-size: .78rem; font-weight: 700;
+}
+.df-form input, .df-form select {
+  min-height: 40px; padding: .4rem .55rem; border-radius: .45rem;
+  border: 1px solid var(--col-line, #d9d3ca); font-size: .9rem;
+}
+.df-form-actions {
+  grid-column: 1 / -1; display: flex; gap: .5rem; justify-content: flex-end;
+}
+
+.df-msg {
+  padding: .55rem .8rem; border-radius: .5rem; margin: .5rem 0;
+  font-size: .88rem;
+}
+.df-msg-ok    { background: #e6f4e6; color: #1c5a25; }
+.df-msg-err   { background: #fbe9e9; color: #8a2a2a; }
+.df-msg-info  { background: #e6efff; color: #1c3a7a; }
+
+/* Respect safe-area para iOS */
+@supports(padding: max(0px)) {
+  .df-container {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* Modo oscuro admin */
+[data-delivery-theme="dark"] .df-day,
+[data-delivery-theme="dark"] .df-form { background: #262626; border-color: #3a3a3a; }
+[data-delivery-theme="dark"] .df-slot { background: #1e1e1e; border-color: #3a3a3a; }
+[data-delivery-theme="dark"] .df-btn  { background: #2a2a2a; color: #eee; border-color: #444; }
+[data-delivery-theme="dark"] .df-btn:hover:not(:disabled) { background: #333; }

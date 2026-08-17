@@ -8021,6 +8021,27 @@ def delivery_franjas_eliminar(slot_id):
     return jsonify({"eliminado": tipo})
 
 
+@admin_bp.route("/delivery/franjas/panel", methods=["GET"])
+@admin_required
+def delivery_franjas_panel():
+    """Vista HTML del calendario admin de franjas.
+
+    No aborta si el módulo está apagado — muestra un aviso para que el
+    admin pueda planificar antes de encender el toggle en /superadmin/config.
+    Los datos se cargan por JS vía el endpoint JSON delivery_franjas_listar.
+    """
+    from store_config import get_store_value
+    try:
+        default_max = int(get_store_value("delivery_franjas_max_repartidores_default", "1"))
+    except (TypeError, ValueError):
+        default_max = 1
+    return render_template(
+        "admin/delivery_franjas.html",
+        modulo_activo=_delivery_franjas_activo(),
+        default_max_repartidores=default_max,
+    )
+
+
 @admin_bp.route("/delivery/franjas/clonar", methods=["POST"])
 @admin_required
 def delivery_franjas_clonar():

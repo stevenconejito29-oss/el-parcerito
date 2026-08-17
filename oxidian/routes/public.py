@@ -4603,6 +4603,21 @@ def _resolve_checkout_customer(nombre_invitado, telefono_invitado, direccion, ni
 # que el selector del cliente pinte disponibilidad en vivo.
 # ═══════════════════════════════════════════════════════════════════
 
+@public_bp.route("/delivery/preview", methods=["GET"])
+def delivery_franjas_preview():
+    """Vista previa del selector de franjas para el cliente.
+
+    Página autónoma (no dentro del checkout) que permite al equipo y al
+    fundador verificar el aspecto y el flujo del selector antes de
+    integrarlo en el checkout real. Si el módulo está apagado la UI
+    muestra un aviso amable en lugar de datos.
+    """
+    from store_config import get_store_value
+    nombre = get_store_value("NOMBRE_NEGOCIO", "El Parcerito") or "El Parcerito"
+    return render_template("public/delivery_franjas_preview.html",
+                           nombre_negocio=nombre)
+
+
 @public_bp.route("/api/delivery/franjas-disponibles", methods=["GET"])
 def api_delivery_franjas_disponibles():
     from store_config import get_store_value

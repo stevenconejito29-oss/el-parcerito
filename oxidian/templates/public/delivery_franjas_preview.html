@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Elegir franja de reparto — {{ nombre_negocio }}{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
+{% endblock %}
+{% block content %}
+<div class="df-container">
+  <div class="df-header">
+    <div>
+      <h1>¿Cuándo quieres recibir tu pedido?</h1>
+      <p>Elige una franja horaria. La sugerida es la más cercana con hueco.
+        Cuando el repartidor esté en tu puerta, te avisaremos por WhatsApp.</p>
+    </div>
+  </div>
+
+  <div id="df-msgs"></div>
+  <div id="df-cal">
+    <p class="df-day-empty">Cargando franjas…</p>
+  </div>
+
+  <div id="df-summary" style="margin-top:1rem;padding:1rem;border:2px dashed var(--brand-primary,#5a3a1e);border-radius:.7rem;display:none;">
+    <strong>Franja elegida:</strong> <span id="df-summary-text"></span>
+    <p style="margin:.3rem 0 0;font-size:.8rem;color:var(--col-muted,#6b6b6b);">
+      Vista previa del selector. La integración con el checkout real llegará en el rediseño de la vista de pago.
+    </p>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/delivery-franjas.js', v=asset_version) }}"></script>
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  const DF = window.DeliveryFranjas;
+  const cal = document.getElementById("df-cal");
+  const summary = document.getElementById("df-summary");
+  const summaryText = document.getElementById("df-summary-text");
+  let seleccionadoId = null;
+
+  async function cargar() {
+    const { ok, status, data } = await DF.apiFetch("{{ url_for('public.api_delivery_franjas_disponibles') }}");
+    if (!ok) {
+      cal.innerHTML = `<p class="df-day-empty">
+        ${status === 404 ? 'El reparto por franjas no está activo en este momento.' : `Error al cargar (HTTP ${status}).`}
+      </p>`;
+      return;
+    }
+    render(data.franjas || []);
+  }
+
+  function render(franjas) {
+    if (!franjas.length) {
+      cal.innerHTML = `<p class="df-day-empty">No hay franjas disponibles por ahora.</p>`;
+      return;
+    }
+    const html = DF.agruparPorFecha(franjas).map(([fecha, slots]) => {
+      const rows = slots.map(s => {
+        const clases = ["df-slot"];
+        if (s.disponible) clases.push("df-slot-selectable");
+        if (s.sugerida) clases.push("df-slot-sugerida");
+        if (s.llena)  clases.push("df-slot-llena");
+        if (s.cerrada) clases.push("df-slot-cerrada");
+        return `<div class="${clases.join(' ')}" data-id="${s.id}" data-selectable="${s.disponible ? '1' : '0'}"
+                     data-label="${DF.fmtFecha(fecha)} ${s.hora_inicio}–${s.hora_fin}">
+          <div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>
+          <div class="df-slot-meta">
+            ${s.cerrada ? 'Cerrada' : (s.llena ? 'Llena' : `${s.capacidad_max - s.ocupados} cupos libres`)}
+          </div>
+        </div>`;
+      }).join("");
+      return `<div class="df-day">
+        <div class="df-day-head"><span class="df-day-title">${DF.fmtFecha(fecha)}</span></div>
+        <div class="df-slot-list">${rows}</div>
+      </div>`;
+    }).join("");
+    cal.innerHTML = html;
+  }
+
+  cal.addEventListener("click", (e) => {
+    const el = e.target.closest(".df-slot");
+    if (!el || el.dataset.selectable !== "1") return;
+    document.querySelectorAll(".df-slot.df-slot-selected").forEach(x => x.classList.remove("df-slot-selected"));
+    el.classList.add("df-slot-selected");
+    seleccionadoId = el.dataset.id;
+    summaryText.textContent = el.dataset.label;
+    summary.style.display = "block";
+  });
+
+  cargar();
+})();
+</script>
+{% endblock %}

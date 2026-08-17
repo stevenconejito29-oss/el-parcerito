@@ -1,0 +1,157 @@
+{% extends "admin_base.html" %}
+{% block title %}Delivery · Franjas horarias — Admin{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
+{% endblock %}
+{% block content %}
+<div class="df-container">
+  <div class="df-header">
+    <div>
+      <h1>Delivery · Franjas horarias</h1>
+      <p>Planifica los cupos de reparto por franja. Módulo
+        <strong>{{ 'ACTIVO' if modulo_activo else 'apagado' }}</strong>
+        — {% if not modulo_activo %}enciéndelo desde <a href="{{ url_for('superadmin.config') }}#delivery">configuración</a> para que el cliente lo vea en checkout.{% else %}Los clientes ya pueden elegir franja en checkout.{% endif %}
+      </p>
+    </div>
+  </div>
+
+  <div id="df-msgs"></div>
+
+  <form id="df-form-crear" class="df-form" novalidate>
+    <label>Fecha
+      <input type="date" name="fecha" required>
+    </label>
+    <label>Hora inicio
+      <input type="time" name="hora_inicio" required>
+    </label>
+    <label>Hora fin
+      <input type="time" name="hora_fin" required>
+    </label>
+    <label>Capacidad (pedidos)
+      <input type="number" name="capacidad_max" min="1" value="8" required>
+    </label>
+    <label>Max repartidores
+      <input type="number" name="max_repartidores" min="1" value="{{ default_max_repartidores }}">
+    </label>
+    <label>Cierre (opcional)
+      <select name="cierre_modo">
+        <option value="">— default global —</option>
+        <option value="al_iniciar_siguiente">Al iniciar franja</option>
+        <option value="minutos_antes">Minutos antes</option>
+        <option value="hora_fija">Hora fija</option>
+      </select>
+    </label>
+    <label>Valor cierre
+      <input type="text" name="cierre_valor" placeholder="ej: 30 o 13:15">
+    </label>
+    <div class="df-form-actions">
+      <button type="submit" class="df-btn df-btn-primary">Crear franja</button>
+      <button type="button" id="df-btn-clonar" class="df-btn">Clonar semana anterior</button>
+    </div>
+  </form>
+
+  <div id="df-calendar">
+    <p class="df-day-empty">Cargando planificación…</p>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/delivery-franjas.js', v=asset_version) }}"></script>
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  const DF = window.DeliveryFranjas;
+  const cal = document.getElementById("df-calendar");
+  const msgs = document.getElementById("df-msgs");
+  const form = document.getElementById("df-form-crear");
+  const btnClonar = document.getElementById("df-btn-clonar");
+
+  async function cargar() {
+    const { ok, status, data } = await DF.apiFetch("{{ url_for('admin.delivery_franjas_listar') }}");
+    if (!ok) {
+      cal.innerHTML = `<p class="df-day-empty">Error al cargar (HTTP ${status}). ¿Módulo apagado?</p>`;
+      return;
+    }
+    render(data.franjas || []);
+  }
+
+  function render(franjas) {
+    if (!franjas.length) {
+      cal.innerHTML = `<p class="df-day-empty">Sin franjas planificadas. Crea la primera arriba.</p>`;
+      return;
+    }
+    const html = DF.agruparPorFecha(franjas).map(([fecha, slots]) => {
+      const rows = slots.map(s => `
+        <div class="df-slot ${s.activo ? '' : 'df-slot-cerrada'}">
+          <div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>
+          <div class="df-slot-meta">
+            Cap ${s.capacidad_max} · Riders ${s.max_repartidores}
+            ${s.cierre_modo ? '· Cierre: ' + s.cierre_modo + (s.cierre_valor ? ' ' + s.cierre_valor : '') : ''}
+          </div>
+          <div class="df-slot-actions">
+            <button class="df-btn" data-act="toggle" data-id="${s.id}" data-activo="${s.activo}">
+              ${s.activo ? 'Desactivar' : 'Reactivar'}
+            </button>
+            <button class="df-btn df-btn-danger" data-act="borrar" data-id="${s.id}">Borrar</button>
+          </div>
+        </div>`).join("");
+      return `<div class="df-day">
+        <div class="df-day-head"><span class="df-day-title">${DF.fmtFecha(fecha)}</span></div>
+        <div class="df-slot-list">${rows}</div>
+      </div>`;
+    }).join("");
+    cal.innerHTML = html;
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const payload = Object.fromEntries(fd.entries());
+    // Filtrar campos vacíos opcionales
+    if (!payload.cierre_modo) { delete payload.cierre_modo; delete payload.cierre_valor; }
+    if (!payload.max_repartidores) delete payload.max_repartidores;
+    payload.capacidad_max = parseInt(payload.capacidad_max, 10);
+    if (payload.max_repartidores) payload.max_repartidores = parseInt(payload.max_repartidores, 10);
+    const { ok, status, data } = await DF.apiFetch(
+      "{{ url_for('admin.delivery_franjas_crear') }}",
+      { method: "POST", body: payload }
+    );
+    if (ok) { DF.msg(msgs, "Franja creada.", "ok"); form.reset(); cargar(); }
+    else DF.msg(msgs, (data && data.error) || `Error HTTP ${status}`, "err");
+  });
+
+  cal.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (btn.dataset.act === "borrar") {
+      if (!confirm("¿Borrar esta franja?")) return;
+      const { ok, data } = await DF.apiFetch(`/admin/delivery/franjas/${id}`, { method: "DELETE" });
+      if (ok) { DF.msg(msgs, `Franja ${data.eliminado === 'soft' ? 'desactivada (tiene pedidos)' : 'borrada'}.`, "ok"); cargar(); }
+      else DF.msg(msgs, "Error al borrar.", "err");
+    }
+    if (btn.dataset.act === "toggle") {
+      const nuevoActivo = btn.dataset.activo !== "true";
+      const { ok } = await DF.apiFetch(`/admin/delivery/franjas/${id}`,
+        { method: "PATCH", body: { activo: nuevoActivo } });
+      if (ok) cargar(); else DF.msg(msgs, "Error al cambiar estado.", "err");
+    }
+  });
+
+  btnClonar.addEventListener("click", async () => {
+    // Semana en curso (lunes) → siguiente semana (lunes)
+    const hoy = new Date();
+    const diaSemana = hoy.getDay(); // 0=dom, 1=lun...
+    const desplazamientoALunes = diaSemana === 0 ? -6 : (1 - diaSemana);
+    const lunesEstaSemana = new Date(hoy); lunesEstaSemana.setDate(hoy.getDate() + desplazamientoALunes);
+    const lunesSiguiente = new Date(lunesEstaSemana); lunesSiguiente.setDate(lunesEstaSemana.getDate() + 7);
+    const iso = d => d.toISOString().slice(0, 10);
+    if (!confirm(`Clonar semana del ${iso(lunesEstaSemana)} → ${iso(lunesSiguiente)}?`)) return;
+    const { ok, data } = await DF.apiFetch("{{ url_for('admin.delivery_franjas_clonar') }}",
+      { method: "POST", body: { semana_origen: iso(lunesEstaSemana), semana_destino: iso(lunesSiguiente) } });
+    if (ok) { DF.msg(msgs, `${data.creadas} franjas nuevas creadas.`, "ok"); cargar(); }
+    else DF.msg(msgs, (data && data.error) || "Error al clonar.", "err");
+  });
+
+  cargar();
+})();
+</script>
+{% endblock %}

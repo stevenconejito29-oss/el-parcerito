@@ -1,0 +1,83 @@
+{% extends "admin_base.html" %}
+{% block title %}Franjas de reparto — Repartidor{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
+{% endblock %}
+{% block content %}
+<div class="df-container">
+  <div class="df-header">
+    <div>
+      <h1>Franjas de reparto</h1>
+      <p>Toma las franjas que quieras cubrir esta semana. El admin ve tu asignación en tiempo real.</p>
+    </div>
+  </div>
+
+  <div id="df-msgs"></div>
+  <div id="df-cal">
+    <p class="df-day-empty">Cargando franjas…</p>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/delivery-franjas.js', v=asset_version) }}"></script>
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  const DF = window.DeliveryFranjas;
+  const cal = document.getElementById("df-cal");
+  const msgs = document.getElementById("df-msgs");
+
+  async function cargar() {
+    const { ok, status, data } = await DF.apiFetch("{{ url_for('repartidor.franjas_listar') }}");
+    if (!ok) {
+      cal.innerHTML = `<p class="df-day-empty">Error al cargar (HTTP ${status}).</p>`;
+      return;
+    }
+    render(data.franjas || []);
+  }
+
+  function render(franjas) {
+    if (!franjas.length) {
+      cal.innerHTML = `<p class="df-day-empty">No hay franjas planificadas para los próximos 7 días.</p>`;
+      return;
+    }
+    const html = DF.agruparPorFecha(franjas).map(([fecha, slots]) => {
+      const rows = slots.map(s => {
+        const clases = ["df-slot"];
+        if (s.tomada_por_mi) clases.push("df-slot-mia");
+        if (s.llena_de_repartidores && !s.tomada_por_mi) clases.push("df-slot-llena");
+        const btn = s.tomada_por_mi
+          ? `<button class="df-btn df-btn-danger" data-act="liberar" data-id="${s.id}">Liberar</button>`
+          : (s.llena_de_repartidores
+              ? `<button class="df-btn" disabled>Sin cupo repartidor</button>`
+              : `<button class="df-btn df-btn-primary" data-act="tomar" data-id="${s.id}">Tomar</button>`);
+        return `<div class="${clases.join(' ')}">
+          <div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>
+          <div class="df-slot-meta">
+            Riders ${s.repartidores_activos}/${s.max_repartidores} · Cap ${s.capacidad_max} pedidos
+          </div>
+          <div class="df-slot-actions">${btn}</div>
+        </div>`;
+      }).join("");
+      return `<div class="df-day">
+        <div class="df-day-head"><span class="df-day-title">${DF.fmtFecha(fecha)}</span></div>
+        <div class="df-slot-list">${rows}</div>
+      </div>`;
+    }).join("");
+    cal.innerHTML = html;
+  }
+
+  cal.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const url = btn.dataset.act === "tomar"
+      ? `/repartidor/franjas/${id}/tomar`
+      : `/repartidor/franjas/${id}/liberar`;
+    const { ok, data } = await DF.apiFetch(url, { method: "POST" });
+    if (ok) { DF.msg(msgs, btn.dataset.act === "tomar" ? "Franja tomada." : "Franja liberada.", "ok"); cargar(); }
+    else DF.msg(msgs, (data && data.error) ? `Error: ${data.error}` : "Error", "err");
+  });
+
+  cargar();
+})();
+</script>
+{% endblock %}
