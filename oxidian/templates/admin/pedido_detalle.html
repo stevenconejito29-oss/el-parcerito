@@ -101,6 +101,9 @@
             {% if pedido.zona_id %}
             <span class="ord-chip">Zona: {{ pedido.zona_nombre_aplicada }}</span>
             {% endif %}
+            {% if pedido.slot %}
+            <span class="ord-chip" style="background:color-mix(in srgb, var(--brand-primary,#5a3a1e) 12%, transparent);color:var(--brand-primary,#5a3a1e);font-weight:800">🕒 Franja {{ pedido.slot.fecha.strftime('%d/%m') }} · {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</span>
+            {% endif %}
           </div>
         </div>
         {% elif pedido.tipo_entrega_cliente == 'recogida' %}
