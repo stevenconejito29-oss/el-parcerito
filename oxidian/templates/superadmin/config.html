@@ -2,6 +2,7 @@
 {% block title %}Centro de configuración{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/superadmin-config.css', v=asset_version) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
 {# is_locked: True si la clave es soberana y el user actual es admin (no SA).
@@ -332,6 +333,9 @@
         {{ cfg_select('FEATURE_DELIVERY', 'Delivery', [('1','Habilitado'),('0','Deshabilitado')], 'Si está apagado, checkout y roles de reparto quedan fuera del flujo público.') }}
         {{ cfg_select('delivery_inmediato_activo', 'Delivery inmediato', [('1','Activo'),('0','Inactivo')], 'Modo histórico: el pedido sale en cuanto la cocina lo tiene listo. Puede coexistir con franjas.') }}
         {{ cfg_select('delivery_franjas_activo', 'Delivery por franjas', [('1','Activo'),('0','Inactivo')], 'El cliente reserva una franja horaria con tope de pedidos. Si ambos están activos, el checkout permite elegir.') }}
+        <div class="df-config-note" role="note">
+          ⚠️ Si desactivas <strong>Delivery inmediato</strong> y <strong>Delivery por franjas</strong> a la vez, la app no permitirá guardar: la tienda debe tener al menos un modo de reparto activo (o recogida en local).
+        </div>
         {{ cfg_select('FEATURE_RECOGIDA', 'Recogida en local', [('1','Habilitada'),('0','Deshabilitada')]) }}
         {{ cfg_select('FEATURE_PEDIDOS_PROGRAMADOS', 'Pedidos por fecha', [('1','Habilitados'),('0','Deshabilitados')], 'Bloquea productos programados si el cliente no tiene ese módulo.') }}
         {{ cfg_select('FEATURE_PUNTOS', 'Canje de puntos', [('1','Habilitado'),('0','Deshabilitado')], 'Oculta y bloquea el club de puntos sin borrar historial.') }}

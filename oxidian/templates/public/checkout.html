@@ -208,6 +208,125 @@
       {% endfor %}
     </div>
     {% endif %}
+
+    {# ── Selector Inmediato vs Programado (solo si el super admin
+       activó los dos modos). Con un solo modo activo, el picker se oculta
+       y el flujo antiguo (inmediato o franjas) se aplica directamente. #}
+    {% if delivery_inmediato_activo and delivery_franjas_activo %}
+    <div id="delivery-mode-picker" class="df-mode-picker" hidden aria-label="Cuándo quieres recibir tu pedido">
+      <label class="df-mode-option">
+        <input type="radio" name="delivery_mode" value="inmediato" checked>
+        <span>
+          <span class="df-mode-option__title">🛵 Cuanto antes</span>
+          <span class="df-mode-option__desc">Sale de cocina en cuanto esté listo.</span>
+        </span>
+      </label>
+      <label class="df-mode-option">
+        <input type="radio" name="delivery_mode" value="programado">
+        <span>
+          <span class="df-mode-option__title">🕒 Elegir franja</span>
+          <span class="df-mode-option__desc">Recíbelo en la franja que reserves.</span>
+        </span>
+      </label>
+    </div>
+    {% endif %}
+
+    {# ── Selector de franja de reparto (módulo delivery_franjas_activo) ──
+       Si el módulo está apagado, /api/delivery/franjas-disponibles devuelve
+       404 y el bloque queda oculto sin romper el layout. Solo se muestra
+       cuando el cliente elige delivery. #}
+    <div id="franjas-slot-block" class="mb-3" hidden>
+      <h3 class="text-sm font-extrabold mb-2 flex items-center gap-2" style="margin-top:.75rem">
+        <span aria-hidden="true">🕒</span>
+        Elige tu franja de reparto
+      </h3>
+      <p class="text-xs mb-2" style="color:var(--col-muted)">
+        Marcamos la sugerida — la más cercana con hueco disponible.
+      </p>
+      <div id="franjas-slot-container" class="df-slot-list"></div>
+      <input type="hidden" name="slot_id" id="franjas-slot-id" value="">
+      <p id="franjas-slot-selected" class="text-xs mt-2" style="color:var(--brand-primary,#5a3a1e);font-weight:700" hidden></p>
+    </div>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
+    <script src="{{ url_for('static', filename='js/delivery-franjas.js', v=asset_version) }}"></script>
+    <script nonce="{{ csp_nonce() }}">
+    (function () {
+      const DF = window.DeliveryFranjas;
+      const block = document.getElementById("franjas-slot-block");
+      const container = document.getElementById("franjas-slot-container");
+      const hidden = document.getElementById("franjas-slot-id");
+      const label = document.getElementById("franjas-slot-selected");
+      const radios = document.querySelectorAll('input[name="tipo_entrega_cliente"]');
+
+      const modePicker = document.getElementById("delivery-mode-picker");
+      function modoElegido() {
+        // Si no hay picker, el "modo" único queda implícito: franjas si el
+        // módulo está activo, si no, inmediato.
+        const r = document.querySelector('input[name="delivery_mode"]:checked');
+        return r ? r.value : (container.dataset.loaded ? "programado" : "inmediato");
+      }
+      function updateVisibility() {
+        const delivery = document.querySelector('input[name="tipo_entrega_cliente"]:checked')?.value === "delivery";
+        // Muestra el picker de modo solo si hay dos modos configurables y
+        // el cliente eligió delivery.
+        if (modePicker) modePicker.hidden = !delivery;
+        // El bloque de franjas requiere: delivery + módulo cargado + modo programado (o único).
+        const mostrarFranjas = delivery && container.dataset.loaded && modoElegido() === "programado";
+        block.hidden = !mostrarFranjas;
+        // Si el cliente eligió "inmediato" en el picker, limpia la reserva.
+        if (delivery && modePicker && modoElegido() === "inmediato") {
+          hidden.value = "";
+          container.querySelectorAll(".df-slot-selected").forEach(x => x.classList.remove("df-slot-selected"));
+          label.hidden = true;
+        }
+      }
+
+      async function cargar() {
+        const { ok, status, data } = await DF.apiFetch("{{ url_for('public.api_delivery_franjas_disponibles') }}");
+        if (!ok) return; // módulo apagado (404) o error — bloque queda oculto
+        const franjas = data.franjas || [];
+        if (!franjas.length) return;
+        const html = DF.agruparPorFecha(franjas).map(([fecha, slots]) => {
+          const rows = slots.map(s => {
+            const cls = ["df-slot"];
+            if (s.disponible) cls.push("df-slot-selectable");
+            if (s.sugerida) cls.push("df-slot-sugerida");
+            if (s.llena) cls.push("df-slot-llena");
+            if (s.cerrada) cls.push("df-slot-cerrada");
+            return `<div class="${cls.join(' ')}" data-id="${s.id}" data-selectable="${s.disponible ? '1' : '0'}"
+              data-label="${DF.fmtFecha(fecha)} ${s.hora_inicio}–${s.hora_fin}">
+              <div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>
+              <div class="df-slot-meta">${s.cerrada ? '🔒 Cerrada' : (s.llena ? '❌ Llena' : DF.cupoChip(s.capacidad_max - s.ocupados, s.capacidad_max))}</div>
+            </div>`;
+          }).join("");
+          return `<div style="margin-bottom:.6rem"><strong style="font-size:.82rem;display:block;margin-bottom:.35rem">${DF.fmtFecha(fecha)}</strong>${rows}</div>`;
+        }).join("");
+        container.innerHTML = html;
+        container.dataset.loaded = "1";
+        updateVisibility();
+        // Preselecciona la sugerida automáticamente (cliente confirma al submit)
+        const sug = container.querySelector(".df-slot-sugerida");
+        if (sug) sug.click();
+      }
+
+      container.addEventListener("click", (e) => {
+        const el = e.target.closest(".df-slot");
+        if (!el || el.dataset.selectable !== "1") return;
+        container.querySelectorAll(".df-slot-selected").forEach(x => x.classList.remove("df-slot-selected"));
+        el.classList.add("df-slot-selected");
+        hidden.value = el.dataset.id;
+        label.hidden = false;
+        label.textContent = "Franja elegida: " + el.dataset.label;
+      });
+
+      radios.forEach(r => r.addEventListener("change", updateVisibility));
+      if (modePicker) {
+        modePicker.querySelectorAll('input[name="delivery_mode"]').forEach(r => r.addEventListener("change", updateVisibility));
+      }
+      cargar();
+    })();
+    </script>
+
     <div id="delivery-address-block">
     <label class="ox-label">Dirección de entrega</label>
     <div class="addr-autocomplete-wrap" style="position:relative">

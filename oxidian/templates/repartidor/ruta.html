@@ -247,24 +247,51 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
 
 {% if delivery_franjas_activo and slot_activo %}
 {# Franja activa del repartidor: arranque (hora_inicio) y vuelta (hora_fin).
-   Se muestra sólo si el módulo está encendido y el rider tomó una franja hoy. #}
-<section class="work-panel" style="margin-top:.75rem;padding:.7rem .9rem;border-radius:10px;background:color-mix(in srgb, var(--brand-primary,#5a3a1e) 8%, transparent);border:1px solid color-mix(in srgb, var(--brand-primary,#5a3a1e) 25%, transparent)">
-  <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
-    <span style="font-size:1.4rem">🕒</span>
-    <div style="flex:1;min-width:0">
-      <strong style="display:block">Franja activa: {{ slot_activo.hora_inicio.strftime('%H:%M') }} – {{ slot_activo.hora_fin.strftime('%H:%M') }}</strong>
-      <small style="color:var(--col-muted)">Arranca reparto a las {{ slot_activo.hora_inicio.strftime('%H:%M') }} y vuelve al local antes de las {{ slot_activo.hora_fin.strftime('%H:%M') }}.</small>
-    </div>
-    <a class="work-btn work-btn-ghost" href="{{ url_for('repartidor.franjas_panel') }}">Ver franjas</a>
+   El data-slot-inicio permite que un pequeño script calcule el tiempo restante
+   para el arranque sin recargar la página. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
+<section class="df-rider-banner" role="status" aria-label="Franja de reparto activa">
+  <span class="df-rider-banner__icon" aria-hidden="true">🕒</span>
+  <div class="df-rider-banner__body">
+    <strong class="df-rider-banner__title">Franja activa: {{ slot_activo.hora_inicio.strftime('%H:%M') }} – {{ slot_activo.hora_fin.strftime('%H:%M') }}</strong>
+    <small class="df-rider-banner__meta">Arranca a las {{ slot_activo.hora_inicio.strftime('%H:%M') }}, vuelve antes de las {{ slot_activo.hora_fin.strftime('%H:%M') }}.</small>
+    <small class="df-rider-banner__eta"
+           data-slot-inicio="{{ slot_activo.fecha.isoformat() }}T{{ slot_activo.hora_inicio.strftime('%H:%M') }}"
+           data-slot-fin="{{ slot_activo.fecha.isoformat() }}T{{ slot_activo.hora_fin.strftime('%H:%M') }}">Calculando…</small>
   </div>
+  <a class="work-btn work-btn-ghost" href="{{ url_for('repartidor.franjas_panel') }}" aria-label="Ver todas mis franjas">Ver mis franjas</a>
 </section>
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  // Actualiza cada 30s el mensaje "arranca en Xm" / "quedan Xm" del banner de franja.
+  const el = document.querySelector('.df-rider-banner__eta[data-slot-inicio]');
+  if (!el) return;
+  const ini = new Date(el.dataset.slotInicio);
+  const fin = new Date(el.dataset.slotFin);
+  function tick() {
+    const ahora = new Date();
+    if (ahora < ini) {
+      const min = Math.max(1, Math.round((ini - ahora) / 60000));
+      el.textContent = min >= 60 ? `⏱️ Arranca en ${Math.floor(min/60)}h ${min%60}m` : `⏱️ Arranca en ${min} min`;
+    } else if (ahora < fin) {
+      const min = Math.max(1, Math.round((fin - ahora) / 60000));
+      el.textContent = `⏱️ Franja en curso · ${min} min restantes`;
+    } else {
+      el.textContent = "⏱️ Franja finalizada";
+    }
+  }
+  tick(); setInterval(tick, 30000);
+})();
+</script>
 {% elif delivery_franjas_activo %}
-<section class="work-panel" style="margin-top:.75rem;padding:.7rem .9rem;border-radius:10px;background:color-mix(in srgb, var(--col-muted, #888) 8%, transparent)">
-  <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
-    <span style="font-size:1.2rem">🕒</span>
-    <span style="flex:1">No has tomado ninguna franja hoy.</span>
-    <a class="work-btn work-btn-info" href="{{ url_for('repartidor.franjas_panel') }}">Elegir franja</a>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
+<section class="df-rider-banner is-empty" role="status" aria-label="Sin franja tomada">
+  <span class="df-rider-banner__icon" aria-hidden="true">🕒</span>
+  <div class="df-rider-banner__body">
+    <strong class="df-rider-banner__title">Todavía no tienes franja</strong>
+    <small class="df-rider-banner__meta">Reserva un turno para empezar a repartir.</small>
   </div>
+  <a class="work-btn work-btn-info" href="{{ url_for('repartidor.franjas_panel') }}" aria-label="Ir al panel para tomar una franja">Tomar una</a>
 </section>
 {% endif %}
 

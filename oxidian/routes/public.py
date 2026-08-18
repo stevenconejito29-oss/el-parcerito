@@ -3310,7 +3310,7 @@ def checkout():
         # pedido para no dejar huérfano y devolvemos al cliente al carrito
         # con mensaje claro para elegir otra franja.
         if slot_id_solicitado and tipo_entrega_cliente == "delivery":
-            from store_config import get_store_value
+            # get_store_value ya está en el scope módulo (línea 61)
             franjas_activo = str(
                 get_store_value("delivery_franjas_activo", "0")
             ).strip() in ("1", "true", "True")
@@ -3578,6 +3578,8 @@ def checkout():
         radio_entrega_km = 5.0
     return render_template("public/checkout.html", items=items, subtotal=subtotal,
                            zonas=zonas,
+                           delivery_inmediato_activo=_inmediato_on,
+                           delivery_franjas_activo=_franjas_on,
                            tiene_encargos=tiene_encargos,
                            canjeables=canjeables,
                            puntos_habilitados=puntos_habilitados,
