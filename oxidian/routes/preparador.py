@@ -302,6 +302,77 @@ def toggle_vista_compacta():
     return redirect(url_for("preparador.pedidos", **redirect_args))
 
 
+@preparador_bp.route("/kds")
+@preparador_required
+def kds():
+    """Vista ligera para tablet de cocina.
+
+    Sin imágenes, sin menús, solo la cola operable del usuario.
+    Auto-refresh y alerta sonora en el propio HTML.
+    """
+    return render_template(
+        "preparador/kds.html",
+        refresh_seconds=_queue_refresh_s(),
+    )
+
+
+def _kds_cola_del_usuario():
+    """Pedidos pendientes+armando visibles para el usuario, filtrados por rol."""
+    _eager = joinedload(Order.items)
+    if _es_admin_operativo():
+        base = Order.query.options(_eager).filter(
+            Order.estado.in_(("pendiente", "armando"))
+        )
+    else:
+        base = Order.query.options(_eager).filter(
+            Order.estado.in_(("pendiente", "armando")),
+            db.or_(
+                Order.preparador_id == current_user.id,
+                Order.preparador_id.is_(None),
+            ),
+        )
+    pedidos = base.order_by(Order.creado_en.asc()).all()
+    return [p for p in pedidos if _puede_operar_pedido(p)]
+
+
+@preparador_bp.route("/kds/data")
+@preparador_required
+def kds_data():
+    """JSON minimal para la vista KDS. Refresca cada N segundos."""
+    from flask import make_response
+    pedidos = _kds_cola_del_usuario()
+    payload = []
+    for p in pedidos:
+        items = []
+        for it in p.items:
+            items.append({
+                "cantidad": int(it.cantidad or 0),
+                "nombre": it.display_nombre or "",
+                "variante": (it.selected_presentation_label or "").strip(),
+                "sabores": list(it.selected_flavor_names or []),
+            })
+        payload.append({
+            "id": p.id,
+            "numero": p.numero_pedido,
+            "estado": p.estado,
+            "creado": p.creado_en.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "creado_hm": p.creado_en.strftime("%H:%M"),
+            "notas": (p.notas or "").strip(),
+            "tipo": (p.tipo_entrega_cliente or "recogida"),
+            "mio": bool(p.preparador_id == current_user.id),
+            "sin_asignar": p.preparador_id is None,
+            "items": items,
+        })
+    resp = jsonify({
+        "ok": True,
+        "signature": _cola_signature(),
+        "refresh_seconds": _queue_refresh_s(),
+        "pedidos": payload,
+    })
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @preparador_bp.route("/pedidos")
 @preparador_required
 def pedidos():
@@ -420,6 +491,31 @@ def pedidos():
         if _agregado:
             totales_lote_por_fecha[_fecha] = _agregado
 
+    # ── Agrupación por franja horaria (módulo delivery_franjas_activo) ──
+    # Cuando el módulo está encendido, la cocina necesita ver qué pedidos
+    # comparten ventana de reparto para saber en qué orden trabajar.
+    # Produce una lista de (slot, pedidos) ordenada por hora_inicio.
+    # Los pedidos sin franja (delivery inmediato / recogida) mantienen la
+    # cola normal — no se duplican ni se mueven.
+    from store_config import get_store_value as _gsv
+    _franjas_on = str(_gsv("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+    pedidos_por_franja: list = []
+    if _franjas_on:
+        from models import DeliverySlot as _DS
+        from collections import OrderedDict as _OD
+        _acc: "_OD[int, list]" = _OD()
+        for _p in list(prep_ahora) + list(armando):
+            _sid = getattr(_p, "slot_id", None)
+            if _sid:
+                _acc.setdefault(_sid, []).append(_p)
+        if _acc:
+            _slots = _DS.query.filter(_DS.id.in_(list(_acc.keys()))).all()
+            _meta = {_s.id: _s for _s in _slots}
+            pedidos_por_franja = sorted(
+                [(_meta[_sid], _peds) for _sid, _peds in _acc.items() if _sid in _meta],
+                key=lambda t: (t[0].fecha, t[0].hora_inicio),
+            )
+
     return render_template("preparador/pedidos.html",
                            pendientes=pendientes_inmediato,
                            pendientes_encargo=pendientes_encargo,
@@ -442,7 +538,10 @@ def pedidos():
                            puede_preparar_encargo=_encargo_disponible_para_preparar,
                            queue_status_url=url_for("preparador.eventos"),
                            queue_refresh_s=_queue_refresh_s(),
-                           tickets_recientes=tickets_recientes)
+                           tickets_recientes=tickets_recientes,
+                           # Delivery por franjas
+                           delivery_franjas_activo=_franjas_on,
+                           pedidos_por_franja=pedidos_por_franja)
 
 
 # ─────────────────────────────────────────────────────────────────────

@@ -217,9 +217,13 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
   .route-board .work-code-input { min-height: 52px; font-size: 1.4rem; }
 }
 </style>
+{# El tema operativo se carga al final: es la única capa que decide color,
+   contraste y composición del rider sobre los estilos compartidos. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/rider-missions.css', v=asset_version) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/rider-navigation.css', v=asset_version) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/rider-console.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
-
 <div class="work-area route-board">
 <section class="work-hero">
   <div>
@@ -235,6 +239,34 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
     </button>
   </div>
 </section>
+
+<nav class="rider-mission-switch" aria-label="Tipos de trabajo">
+  <a class="is-current" href="{{ url_for('repartidor.ruta') }}"><i>🛍️</i><span><b>Pedidos</b><small>{{ en_ruta|length }} en ruta · {{ listos_count }} listos</small></span></a>
+  <a href="{{ url_for('repartidor.favores') }}"><i>🤝</i><span><b>El Cruce</b><small>{{ cruces_activos }} activos · {{ cruces_abiertos }} disponibles</small></span></a>
+</nav>
+
+{% if delivery_franjas_activo and slot_activo %}
+{# Franja activa del repartidor: arranque (hora_inicio) y vuelta (hora_fin).
+   Se muestra sólo si el módulo está encendido y el rider tomó una franja hoy. #}
+<section class="work-panel" style="margin-top:.75rem;padding:.7rem .9rem;border-radius:10px;background:color-mix(in srgb, var(--brand-primary,#5a3a1e) 8%, transparent);border:1px solid color-mix(in srgb, var(--brand-primary,#5a3a1e) 25%, transparent)">
+  <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+    <span style="font-size:1.4rem">🕒</span>
+    <div style="flex:1;min-width:0">
+      <strong style="display:block">Franja activa: {{ slot_activo.hora_inicio.strftime('%H:%M') }} – {{ slot_activo.hora_fin.strftime('%H:%M') }}</strong>
+      <small style="color:var(--col-muted)">Arranca reparto a las {{ slot_activo.hora_inicio.strftime('%H:%M') }} y vuelve al local antes de las {{ slot_activo.hora_fin.strftime('%H:%M') }}.</small>
+    </div>
+    <a class="work-btn work-btn-ghost" href="{{ url_for('repartidor.franjas_panel') }}">Ver franjas</a>
+  </div>
+</section>
+{% elif delivery_franjas_activo %}
+<section class="work-panel" style="margin-top:.75rem;padding:.7rem .9rem;border-radius:10px;background:color-mix(in srgb, var(--col-muted, #888) 8%, transparent)">
+  <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+    <span style="font-size:1.2rem">🕒</span>
+    <span style="flex:1">No has tomado ninguna franja hoy.</span>
+    <a class="work-btn work-btn-info" href="{{ url_for('repartidor.franjas_panel') }}">Elegir franja</a>
+  </div>
+</section>
+{% endif %}
 
 {% if current_user.rol == 'repartidor' %}
 <section class="route-gps" data-rider-tracking
@@ -408,7 +440,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
           {%- set _cp.has_cocina = true -%}
         {%- endif -%}
       {%- endfor -%}
-      <article class="work-card work-card--tight is-success"
+      <article class="work-card work-card--tight is-success motion-fade-in"
                data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}"
                data-pedido-id="{{ pedido.id }}"
                data-lat="{{ pedido.direccion_lat if pedido.direccion_lat is not none else '' }}"
@@ -437,6 +469,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
         </div>
         <div class="mt-2 flex flex-wrap gap-2">
           {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
+          {% if pedido.slot %}<span class="work-badge-zone" style="background:color-mix(in srgb, var(--brand-primary,#5a3a1e) 12%, transparent);color:var(--brand-primary,#5a3a1e)">🕒 {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</span>{% endif %}
           {% if pedido.repartidor_id %}<span class="work-badge-assigned">Asignado</span>{% endif %}
           {% if pedido.es_programado %}<span class="work-chip">📅 {{ pedido.fecha_entrega_programada.strftime('%d/%m/%Y') if pedido.fecha_entrega_programada else 'Fecha por revisar' }}</span>{% endif %}
         </div>
@@ -554,15 +587,16 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
 
       <!-- Botones de acción -->
       <div class="work-action-row work-cta-group mt-3">
+        <p class="rider-next-action"><span>SIGUIENTE</span><b>{{ 'Reserva el pedido' if not pedido.repartidor_id else 'Confirma que sales del local' }}</b></p>
         {% if not pedido.repartidor_id %}
         <form method="POST" action="{{ url_for('repartidor.tomar_pedido', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-ghost full-width">Tomar pedido</button>
+          <button type="submit" class="work-btn work-btn-ghost full-width">1. Reservar este pedido</button>
         </form>
         {% endif %}
         <form method="POST" action="{{ url_for('repartidor.salir_entregar', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-info full-width">Salir a entregar</button>
+          <button type="submit" class="work-btn work-btn-info full-width">{{ '2. ' if not pedido.repartidor_id else '' }}Salir y abrir ruta</button>
         </form>
         {% if current_user.rol in ('admin', 'super_admin') or pedido.repartidor_id == current_user.id %}
           {{ ticket_action(pedido, label='Imprimir ticket 58 mm') }}
@@ -618,7 +652,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
         {%- set _cp2.has_cocina = true -%}
       {%- endif -%}
     {%- endfor -%}
-    <article class="work-card work-card--tight is-info"
+    <article class="work-card work-card--tight is-info motion-fade-in {% if pedido.id in codigo_enviado_ids %}is-arrived{% endif %}"
              data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}"
              data-pedido-id="{{ pedido.id }}"
              data-lat="{{ pedido.direccion_lat if pedido.direccion_lat is not none else '' }}"
@@ -701,7 +735,13 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
                   data-open-maps-route="pedido-{{ pedido.id }}">
             🧭 Abrir mapa aquí
           </button>
+          <a href="https://www.google.com/maps/dir/?api=1&destination={{ destino_mapa|urlencode }}&travelmode=bicycling" target="_blank" rel="noopener" class="work-btn work-btn-ghost flex-1">🗺️ Maps</a>
+          <a href="https://waze.com/ul?q={{ destino_mapa|urlencode }}&navigate=yes" target="_blank" rel="noopener" class="work-btn work-btn-ghost flex-1">🚦 Waze</a>
         </div>
+        <div class="rider-stepper" aria-label="Proceso de esta entrega">
+          <span class="is-active"><i>1</i><b>Navega</b></span><span class="{% if pedido.id in codigo_enviado_ids %}is-active{% endif %}"><i>2</i><b>Verifica</b></span><span><i>3</i><b>Entrega</b></span>
+        </div>
+        <button type="button" class="rider-arrived" data-rider-arrived>Ya llegué · verificar entrega</button>
       </div>
       {% endif %}
 
@@ -739,6 +779,28 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
       </div>
       {% endif %}
 
+      {# Botón "Estoy en la puerta" — dispara el único WhatsApp del flujo
+         (política anti-baneo Meta). Solo aparece si el cliente aún no
+         recibió esa notificación. Piggybacks en Order.en_punto_encuentro. #}
+      {% if not pedido.en_punto_encuentro %}
+      <form method="POST" action="{{ url_for('repartidor.pedido_en_la_puerta', pedido_id=pedido.id) }}"
+            class="mt-2" onsubmit="this.querySelector('button').disabled=true">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="work-btn work-btn-primary full-width">
+          🛵 Estoy en la puerta — avisar al cliente
+        </button>
+      </form>
+      {% else %}
+      <p class="work-confirm-note" style="margin-top:.5rem">
+        ✅ Cliente notificado "en la puerta"
+        {% if pedido.en_punto_encuentro_en %}
+          — {{ pedido.en_punto_encuentro_en.strftime('%H:%M') }}
+        {% endif %}
+      </p>
+      {% endif %}
+
+      <details class="route-finish" {% if pedido.id in codigo_enviado_ids %}open{% endif %}>
+        <summary><span><b>Completar entrega</b><small>Código · cobro · cierre</small></span><strong>3 pasos</strong></summary>
       <div class="work-panel route-confirm-block route-operation-step route-operation-step--code mb-3 mt-3">
         <p class="work-confirm-label">1. Código al llegar</p>
         {% if pedido.id in codigo_enviado_ids %}
@@ -840,6 +902,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
 
         <button type="submit" class="work-btn work-btn-success full-width">Confirmar entrega y cobro</button>
       </form>
+      </details>
 
       {# Escape para casos: cliente no está, no contesta, código bloqueado por
          3 intentos. Restaura stock, cancela y libera el pedido — evita quedar
@@ -902,6 +965,17 @@ document.addEventListener('change', (event) => {
     `[data-route-mirror="${CSS.escape(selector.dataset.routeSelect)}"]`
   );
   if (mirror) mirror.checked = selector.checked;
+});
+document.addEventListener('click', (event) => {
+  const arrived = event.target.closest('[data-rider-arrived]');
+  if (!arrived) return;
+  const card = arrived.closest('.work-card');
+  const finish = card?.querySelector('.route-finish');
+  if (!finish) return;
+  finish.open = true;
+  card.classList.add('is-arrived');
+  finish.scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start'});
+  finish.querySelector('button, input')?.focus({preventScroll:true});
 });
 
 /* ──────────────────────────────────────────────────────────────

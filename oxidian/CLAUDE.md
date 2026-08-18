@@ -211,16 +211,10 @@ bash scripts/backup.sh
 
 URL pública: `http://localhost:5070` (o `http://192.168.1.41:5070`).
 
-## Servicios auxiliares (LAN + subdominios)
+## Servicios auxiliares (LAN)
 
-| Servicio | Uso interno (LAN) | Público (Cloudflare Tunnel) | Notas |
-|---|---|---|---|
-| Shlink | `http://192.168.1.32:8082` | — | Acortador de enlaces internos |
-| Umami | `http://192.168.1.32:3001` | pendiente HTTPS | Analítica web. Ver `docs/OBSERVABILIDAD.md` |
-| Stirling-PDF | LAN interna | `https://pdf.elparcerito.com/` | Herramientas PDF gratis. Enlazado desde `/herramientas` |
-
-## Rutas públicas nuevas
-
-- `/paisanos` — portal en vivo para colombianos en España: cotización COP/EUR y USD/COP, clima en Carmona y Bogotá, noticias de Colombia (El Tiempo, Semana, El Espectador) y actualizaciones de extranjería del BOE. Refresco cada 15 min vía APScheduler + Redis. Ver `docs/PORTAL_PAISANOS.md`.
-- `/herramientas` — landing SEO que redirige a Stirling-PDF para gestionar documentos de NIE, residencia, empadronamiento y homologación. Ver `docs/HERRAMIENTAS_PDF.md`.
+| Servicio | Uso interno (LAN) | Notas |
+|---|---|---|
+| Shlink | `http://192.168.1.32:8082` | Acortador de enlaces internos |
+| Umami | `http://192.168.1.32:3001` | Analítica web self-hosted |
 

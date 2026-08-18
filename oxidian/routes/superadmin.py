@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file, jsonify, current_app
 from flask_login import login_required, current_user
 from functools import wraps
 from datetime import datetime, date, timedelta, timezone
@@ -12,7 +12,8 @@ import tempfile
 import uuid
 
 from extensions import db, get_or_404
-from models import (User, Order, Caja, StaffPayment, Product,
+from models import (User, Order, Caja, StaffPayment, Product, FavorRequest,
+                    FavorOffer, FavorEvent,
                     ZonaEntrega, SiteConfig, AuditLog,
                     AdminFeature, ADMIN_FEATURES, PointsLog, utcnow)
 from phone_utils import normalizar_telefono_cliente, telefono_local_ambiguo, telefono_valido
@@ -20,6 +21,83 @@ from store_config import BRAND_COLOR_DEFAULTS, PUBLIC_THEME_DEFAULTS, PUBLIC_UI_
 from config_defaults import DEFAULTS as RUNTIME_DEFAULTS
 
 superadmin_bp = Blueprint("superadmin", __name__)
+
+
+def _require_admin_view():
+    if current_user.rol not in ("super_admin", "admin"):
+        return redirect(url_for("public.index"))
+    return None
+
+
+@superadmin_bp.get("/cruces")
+@login_required
+def cruces():
+    deny = _require_admin_view()
+    if deny: return deny
+    rows = FavorRequest.query.order_by(FavorRequest.created_at.desc()).limit(250).all()
+    stats = {
+        "total": FavorRequest.query.count(),
+        "open": FavorRequest.query.filter_by(status="open").count(),
+        "active": FavorRequest.query.filter(FavorRequest.status.in_(("matched","at_pickup","picked_up","in_transit"))).count(),
+        "delivered": FavorRequest.query.filter_by(status="delivered").count(),
+        "cancelled": FavorRequest.query.filter(FavorRequest.status.in_(("cancelled","expired"))).count(),
+    }
+    riders = User.query.filter_by(rol="repartidor", activo=True).order_by(User.nombre).all()
+    return render_template("superadmin/cruces.html", cruces=rows, stats=stats, riders=riders)
+
+
+@superadmin_bp.get("/cruces/<public_id>")
+@login_required
+def cruce_detalle(public_id):
+    deny = _require_admin_view()
+    if deny: return deny
+    row = FavorRequest.query.filter_by(public_id=public_id).first_or_404()
+    return render_template("superadmin/cruce_detalle.html", cruce=row)
+
+
+@superadmin_bp.post("/cruces/<public_id>/cancelar")
+@login_required
+def cancelar_cruce_admin(public_id):
+    deny = _require_admin_view()
+    if deny: return deny
+    from cruce_policy import _clean_reason, registrar_evento_favor
+    row = FavorRequest.query.filter_by(public_id=public_id).with_for_update().first_or_404()
+    if row.status in ("delivered", "cancelled", "expired"):
+        flash("Este Cruce ya está cerrado.", "warning")
+        return redirect(url_for("superadmin.cruce_detalle", public_id=public_id))
+    reason = _clean_reason(request.form.get("reason"))
+    if not reason:
+        flash("Indica un motivo para cancelar (mínimo 4 caracteres).", "warning")
+        return redirect(url_for("superadmin.cruce_detalle", public_id=public_id))
+    prev_rider_id = row.assigned_rider_id
+    pending_rider_ids = [o.rider_id for o in row.offers if o.status == "pending"]
+    row.status = "cancelled"
+    row.cancelled_at = utcnow()
+    row.cancelled_by = "admin"
+    row.cancellation_reason = reason
+    row.assigned_rider_id = None
+    for offer in row.offers:
+        if offer.status in ("pending", "accepted"):
+            offer.status = "rejected"
+    registrar_evento_favor(row, "admin", "cancelled_by_admin",
+                           actor_id=current_user.id,
+                           actor_label=current_user.nombre,
+                           note=reason)
+    db.session.commit()
+    try:
+        from push_service import notify_user
+        if row.customer_id:
+            notify_user(row.customer_id, "⚠️ Un administrador canceló tu Cruce",
+                        reason, url="/favor", tag=f"cruce-admin-cancel-{row.id}",
+                        require_interaction=True)
+        for rid in set([r for r in (prev_rider_id, *pending_rider_ids) if r]):
+            notify_user(rid, "Cruce cancelado por administración",
+                        reason, url="/repartidor/favores",
+                        tag=f"cruce-admin-cancel-{row.id}-{rid}")
+    except Exception:
+        current_app.logger.exception("No se pudo notificar cancelación admin %s", row.id)
+    flash("Cruce cancelado por administración.", "info")
+    return redirect(url_for("superadmin.cruce_detalle", public_id=public_id))
 
 
 def _telefono_admin_form(raw, user_id=None):
@@ -264,6 +342,7 @@ CONFIG_SECTION_KEYS = {
     "operacion-modo": {
         "MODO_TIENDA", "TIPO_TIENDA",
         "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
+        "delivery_inmediato_activo", "delivery_franjas_activo",
         "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
         "SERVICE_COMMISSION_PCT",
     },
@@ -969,6 +1048,13 @@ def chatbot():
     bot_ai_daily_client = SiteConfig.get("BOT_AI_DAILY_CLIENT", "20") or "20"
     bot_ai_daily_global = SiteConfig.get("BOT_AI_DAILY_GLOBAL", "500") or "500"
     bot_ai_api_key_set = bool(SiteConfig.get("COMMERCIAL_AI_API_KEY", ""))
+    # NLU del chatbot WhatsApp — claves separadas del asesor comercial
+    bot_nlu_enabled = SiteConfig.get("BOT_NLU_ENABLED", "0") or "0"
+    bot_nlu_provider = (SiteConfig.get("BOT_AI_PROVIDER", "groq") or "groq").strip().lower()
+    bot_nlu_model = SiteConfig.get("BOT_AI_MODEL", "") or ""
+    bot_nlu_api_key_set = bool(SiteConfig.get("BOT_AI_API_KEY", ""))
+    bot_nlu_confidence_min = SiteConfig.get("BOT_NLU_CONFIDENCE_MIN", "0.75") or "0.75"
+    bot_nlu_daily_cap = SiteConfig.get("BOT_NLU_MAX_NEW_ENTRIES_PER_DAY", "10") or "10"
     status = _bot_get_status(bot_api_url)
     evolution_status = _evolution_get_status(evolution_api_url, evolution_api_key)
     admins_sin_telefono = [
@@ -998,6 +1084,12 @@ def chatbot():
                            bot_ai_daily_client=bot_ai_daily_client,
                            bot_ai_daily_global=bot_ai_daily_global,
                            bot_ai_api_key_set=bot_ai_api_key_set,
+                           bot_nlu_enabled=bot_nlu_enabled,
+                           bot_nlu_provider=bot_nlu_provider,
+                           bot_nlu_model=bot_nlu_model,
+                           bot_nlu_api_key_set=bot_nlu_api_key_set,
+                           bot_nlu_confidence_min=bot_nlu_confidence_min,
+                           bot_nlu_daily_cap=bot_nlu_daily_cap,
                            admins_sin_telefono=admins_sin_telefono,
                            evolution_status=evolution_status,
                            status=status)
@@ -1279,6 +1371,41 @@ def guardar_chatbot():
     if ai_api_key_new:
         SiteConfig.set("COMMERCIAL_AI_API_KEY", ai_api_key_new, user_id=current_user.id,
                        descripcion="API key privada del asesor comercial")
+
+    # ── NLU del chatbot WhatsApp (claves BOT_NLU_* / BOT_AI_*) ──
+    # Separado del asesor comercial arriba. Groq mapea texto libre a
+    # respuestas canónicas de KnowledgeEntry — nunca responde en crudo.
+    nlu_enabled = "1" if request.form.get("bot_nlu_enabled") == "1" else "0"
+    nlu_provider = (request.form.get("bot_nlu_provider") or "groq").strip().lower()
+    if nlu_provider not in {"groq", "openai"}:
+        nlu_provider = "groq"
+    nlu_model = (request.form.get("bot_nlu_model") or "").strip()[:80]
+    nlu_key_new = (request.form.get("bot_nlu_api_key") or "").strip()
+    try:
+        nlu_conf = float(request.form.get("bot_nlu_confidence_min") or 0.75)
+        nlu_conf = max(0.3, min(1.0, nlu_conf))
+    except (TypeError, ValueError):
+        nlu_conf = 0.75
+    try:
+        nlu_cap = int(request.form.get("bot_nlu_daily_cap") or 10)
+        nlu_cap = max(1, min(500, nlu_cap))
+    except (TypeError, ValueError):
+        nlu_cap = 10
+
+    SiteConfig.set("BOT_NLU_ENABLED", nlu_enabled, user_id=current_user.id,
+                   descripcion="Activa el NLU (Groq) del bot WhatsApp — mapea texto libre a respuestas canónicas")
+    SiteConfig.set("BOT_AI_PROVIDER", nlu_provider, user_id=current_user.id,
+                   descripcion="Proveedor NLU del bot (groq | openai)")
+    if nlu_model:
+        SiteConfig.set("BOT_AI_MODEL", nlu_model, user_id=current_user.id,
+                       descripcion="Modelo NLU (ej: llama-3.1-70b-versatile)")
+    if nlu_key_new:
+        SiteConfig.set("BOT_AI_API_KEY", nlu_key_new, user_id=current_user.id,
+                       descripcion="API key del NLU del bot WhatsApp")
+    SiteConfig.set("BOT_NLU_CONFIDENCE_MIN", str(nlu_conf), user_id=current_user.id,
+                   descripcion="Umbral mínimo de confianza para aceptar un match_id de Groq (0.3-1.0)")
+    SiteConfig.set("BOT_NLU_MAX_NEW_ENTRIES_PER_DAY", str(nlu_cap), user_id=current_user.id,
+                   descripcion="Máximo de entries autogeneradas por día (anti-basura)")
 
     AuditLog.registrar(current_user.id, "guardar_chatbot", "site_config",
                        detalle=bot_url, ip=request.remote_addr)
@@ -1652,6 +1779,18 @@ def guardar_config():
         if SiteConfig.get(otra, "1") == "0":
             flash("Debe quedar habilitado delivery o recogida.", "danger")
             return redirect(url_for("superadmin.config"))
+    if clave in {"delivery_inmediato_activo", "delivery_franjas_activo"} and valor == "0":
+        otra = (
+            "delivery_franjas_activo"
+            if clave == "delivery_inmediato_activo"
+            else "delivery_inmediato_activo"
+        )
+        if str(SiteConfig.get(otra, "0")).strip() in ("0", "false", "False"):
+            flash(
+                "Debe quedar activo al menos un método de reparto: inmediato o por franjas.",
+                "danger",
+            )
+            return redirect(url_for("superadmin.config"))
     SiteConfig.set(clave, valor, user_id=current_user.id, descripcion=descripcion)
     es_secreto = any(token in clave for token in ("KEY", "SECRET", "PASSWORD", "TOKEN"))
     valor_auditado = "<redacted>" if es_secreto else valor
@@ -1728,6 +1867,17 @@ def guardar_config_seccion():
         and propuestos.get("FEATURE_RECOGIDA", "1") == "0"
     ):
         flash("Debe quedar habilitado delivery o recogida.", "danger")
+        return redirect(url_for("superadmin.config", section=parent_section))
+    if (
+        section == "operacion-modo"
+        and propuestos.get("FEATURE_DELIVERY", "1") == "1"
+        and str(propuestos.get("delivery_inmediato_activo", "1")).strip() in ("0", "false", "False")
+        and str(propuestos.get("delivery_franjas_activo", "0")).strip() in ("0", "false", "False")
+    ):
+        flash(
+            "Debe quedar activo al menos un método de reparto: inmediato o por franjas.",
+            "danger",
+        )
         return redirect(url_for("superadmin.config", section=parent_section))
     if (
         section == "operacion-horario"
@@ -2836,10 +2986,102 @@ def chatbot_faq_editar(entry_id):
 def chatbot_faq_eliminar(entry_id):
     from models import KnowledgeEntry
     entry = get_or_404(KnowledgeEntry, entry_id)
+    was_pending = (entry.categoria == "autogenerada" and not entry.activo)
     db.session.delete(entry)
     db.session.commit()
     flash("Entrada eliminada.", "success")
+    if was_pending:
+        return redirect(url_for("superadmin.chatbot_nlu_pending"))
     return redirect(url_for("superadmin.chatbot_faq_lista"))
+
+
+@superadmin_bp.route("/chatbot/nlu-pending")
+@superadmin_required
+def chatbot_nlu_pending():
+    """Panel de respuestas autogeneradas por NLU (Groq) pendientes de aprobación.
+
+    Muestra entries con categoria='autogenerada' y activo=False, más métricas
+    de las últimas 24h y últimas señales NLU del BotLearningSignal para
+    diagnóstico rápido.
+    """
+    from models import KnowledgeEntry, BotLearningSignal
+    from nlu_service import NLU_MAX_NEW_ENTRIES_PER_DAY_DEFAULT
+
+    pending = (
+        KnowledgeEntry.query
+        .filter(KnowledgeEntry.categoria == "autogenerada")
+        .filter(KnowledgeEntry.activo.is_(False))
+        .order_by(KnowledgeEntry.creado_en.desc())
+        .all()
+    )
+
+    ayer = datetime.utcnow() - timedelta(hours=24)
+    hoy_inicio = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    try:
+        nlu_signals_24h = (
+            BotLearningSignal.query
+            .filter(BotLearningSignal.action_llm.like("nlu_%"))
+            .filter(BotLearningSignal.last_seen_at >= ayer)
+            .count()
+        )
+        nlu_matches_24h = (
+            BotLearningSignal.query
+            .filter(BotLearningSignal.action_llm.like("nlu_match:%"))
+            .filter(BotLearningSignal.last_seen_at >= ayer)
+            .count()
+        )
+        nlu_new_today = (
+            KnowledgeEntry.query
+            .filter(KnowledgeEntry.categoria == "autogenerada")
+            .filter(KnowledgeEntry.creado_en >= hoy_inicio)
+            .count()
+        )
+        recent_signals = (
+            BotLearningSignal.query
+            .filter(BotLearningSignal.action_llm.like("nlu_%"))
+            .order_by(BotLearningSignal.last_seen_at.desc())
+            .limit(15)
+            .all()
+        )
+    except Exception:
+        current_app.logger.info("chatbot_nlu_pending: stats fail", exc_info=True)
+        nlu_signals_24h = nlu_matches_24h = nlu_new_today = 0
+        recent_signals = []
+
+    try:
+        cap_raw = SiteConfig.get("BOT_NLU_MAX_NEW_ENTRIES_PER_DAY",
+                                 str(NLU_MAX_NEW_ENTRIES_PER_DAY_DEFAULT))
+        nlu_daily_cap = int(cap_raw or NLU_MAX_NEW_ENTRIES_PER_DAY_DEFAULT)
+    except Exception:
+        nlu_daily_cap = NLU_MAX_NEW_ENTRIES_PER_DAY_DEFAULT
+
+    return render_template(
+        "superadmin/chatbot_nlu_pending.html",
+        pending=pending,
+        nlu_signals_24h=nlu_signals_24h,
+        nlu_matches_24h=nlu_matches_24h,
+        nlu_new_today=nlu_new_today,
+        nlu_daily_cap=nlu_daily_cap,
+        recent_signals=recent_signals,
+    )
+
+
+@superadmin_bp.route("/chatbot/nlu-pending/<int:entry_id>/aprobar", methods=["POST"])
+@superadmin_required
+def chatbot_nlu_aprobar(entry_id):
+    """Activa una respuesta autogenerada y la mueve a la categoría general
+    (o la deja en 'autogenerada' si el admin luego la re-clasifica)."""
+    from models import KnowledgeEntry
+    entry = get_or_404(KnowledgeEntry, entry_id)
+    if entry.categoria != "autogenerada":
+        flash("Esta entrada no es autogenerada.", "warning")
+        return redirect(url_for("superadmin.chatbot_nlu_pending"))
+    entry.activo = True
+    entry.actualizado_por = current_user.id
+    db.session.commit()
+    flash(f"Respuesta aprobada y activa: «{entry.pregunta[:60]}»", "success")
+    return redirect(url_for("superadmin.chatbot_nlu_pending"))
 
 
 @superadmin_bp.route("/chatbot/simulador", methods=["GET", "POST"])

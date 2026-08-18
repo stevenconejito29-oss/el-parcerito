@@ -7643,7 +7643,7 @@ def cerrar_lote(batch_id):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# CHATS EN VIVO (handoff) — panel web para retomar conversaciones del bot
+# CHATS EN VIVO — conversaciones web en PostgreSQL
 # ─────────────────────────────────────────────────────────────────────────
 # Contrato con el bot Node (chat/bot.js):
 #   GET  /api/bot/handoffs/pending                → lista pendientes
@@ -7685,100 +7685,120 @@ def _current_admin_jid() -> str | None:
 @admin_bp.route("/chats")
 @admin_required
 def chats_index():
-    """Lista de handoffs pendientes + los que tengo asignados."""
-    from services import bot_http_request
-    admin_jid = _current_admin_jid()
-    pending = (bot_http_request("GET", "/api/bot/handoffs/pending") or {}).get("handoffs") or []
-    mine = []
-    if admin_jid:
-        mine = (bot_http_request(
-            "GET", "/api/bot/handoffs/mine", params={"admin_jid": admin_jid}
-        ) or {}).get("handoffs") or []
+    from models import WebChatConversation
+    pending = WebChatConversation.query.filter_by(status="waiting_agent").order_by(
+        WebChatConversation.requested_at.asc()
+    ).all()
+    mine = WebChatConversation.query.filter_by(
+        status="active_agent", assigned_agent_id=current_user.id
+    ).order_by(WebChatConversation.last_activity_at.desc()).all()
     return render_template(
         "admin/chats.html",
         pending=pending,
         mine=mine,
-        admin_jid=admin_jid,
-        has_phone=bool(admin_jid),
+        has_phone=True,
     )
 
 
-@admin_bp.route("/chats/<path:client_jid>")
+@admin_bp.route("/chats/<public_id>")
 @admin_required
-def chats_detalle(client_jid):
-    """Ver conversación de un handoff (pendiente o asignada)."""
-    from services import bot_http_request
-    admin_jid = _current_admin_jid()
-    data = bot_http_request("GET", f"/api/bot/handoffs/{client_jid}/messages") or {}
-    messages = data.get("messages") or []
-    handoff = data.get("handoff") or {}
+def chats_detalle(public_id):
+    from models import WebChatConversation
+    conversation = WebChatConversation.query.filter_by(public_id=public_id).first_or_404()
+    if (
+        conversation.status == "active_agent"
+        and conversation.assigned_agent_id != current_user.id
+    ):
+        abort(403)
     return render_template(
         "admin/chat_detalle.html",
-        client_jid=client_jid,
-        client_phone=client_jid.replace("@s.whatsapp.net", ""),
-        messages=messages,
-        handoff=handoff,
-        admin_jid=admin_jid,
-        is_mine=(admin_jid is not None and handoff.get("admin_jid") == admin_jid),
-        has_phone=bool(admin_jid),
+        conversation=conversation,
+        messages=conversation.messages.limit(200).all(),
+        is_mine=conversation.assigned_agent_id == current_user.id,
+        has_phone=True,
     )
 
 
-@admin_bp.route("/chats/<path:client_jid>/claim", methods=["POST"])
+@admin_bp.route("/chats/<public_id>/messages")
 @admin_required
-def chats_claim(client_jid):
-    from services import bot_http_request
-    admin_jid = _current_admin_jid()
-    if not admin_jid:
-        flash("Configura tu teléfono antes de retomar chats (Perfil).", "warning")
-        return redirect(url_for("admin.chats_index"))
-    resp = bot_http_request(
-        "POST", f"/api/bot/handoffs/{client_jid}/claim",
-        json_body={"admin_jid": admin_jid, "admin_name": current_user.nombre or ""},
-    ) or {}
-    if not resp.get("ok"):
-        flash(resp.get("message") or "No se pudo retomar el chat (conflicto o handoff cerrado).", "warning")
-        return redirect(url_for("admin.chats_index"))
-    return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
+def chats_messages(public_id):
+    """Polling incremental; evita recargar el formulario mientras se escribe."""
+    from models import WebChatConversation, WebChatMessage
+    conversation = WebChatConversation.query.filter_by(public_id=public_id).first_or_404()
+    if conversation.assigned_agent_id != current_user.id:
+        abort(403)
+    try:
+        after = max(0, int(request.args.get("after", 0) or 0))
+    except (TypeError, ValueError):
+        after = 0
+    rows = conversation.messages.filter(WebChatMessage.id > after).limit(100).all()
+    return jsonify({
+        "ok": True,
+        "status": conversation.status,
+        "messages": [
+            {"id": row.id, "sender": row.sender, "body": row.body}
+            for row in rows
+        ],
+    })
 
 
-@admin_bp.route("/chats/<path:client_jid>/reply", methods=["POST"])
+@admin_bp.route("/chats/<public_id>/claim", methods=["POST"])
 @admin_required
-def chats_reply(client_jid):
-    from services import bot_http_request
-    admin_jid = _current_admin_jid()
-    if not admin_jid:
-        flash("Configura tu teléfono antes de responder chats (Perfil).", "warning")
+def chats_claim(public_id):
+    from models import WebChatConversation
+    from web_chat_service import add_message
+    conversation = WebChatConversation.query.filter_by(public_id=public_id).with_for_update().first_or_404()
+    if conversation.status != "waiting_agent":
+        db.session.rollback()
+        flash("Otro agente ya tomó este chat.", "warning")
         return redirect(url_for("admin.chats_index"))
+    conversation.status = "active_agent"
+    conversation.assigned_agent_id = current_user.id
+    conversation.assigned_at = utcnow()
+    add_message(conversation, "system", f"{current_user.nombre} tomó el chat.")
+    db.session.commit()
+    return redirect(url_for("admin.chats_detalle", public_id=public_id))
+
+
+@admin_bp.route("/chats/<public_id>/reply", methods=["POST"])
+@admin_required
+def chats_reply(public_id):
+    from models import WebChatConversation
+    from web_chat_service import add_message
+    conversation = WebChatConversation.query.filter_by(public_id=public_id).with_for_update().first_or_404()
     mensaje = (request.form.get("mensaje") or "").strip()
     if not mensaje:
         flash("El mensaje no puede estar vacío.", "warning")
-        return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
-    resp = bot_http_request(
-        "POST", f"/api/bot/handoffs/{client_jid}/reply",
-        json_body={"admin_jid": admin_jid, "mensaje": mensaje[:1500]},
-    ) or {}
-    if not resp.get("ok"):
-        flash(resp.get("error") or "No se pudo enviar el mensaje.", "danger")
-    return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
+        return redirect(url_for("admin.chats_detalle", public_id=public_id))
+    if conversation.status != "active_agent" or conversation.assigned_agent_id != current_user.id:
+        abort(403)
+    add_message(conversation, "agent", mensaje, agent_id=current_user.id)
+    db.session.commit()
+    if conversation.customer_id:
+        from push_service import notify_user
+        notify_user(
+            conversation.customer_id,
+            "💬 Respondieron tu consulta",
+            f"{current_user.nombre}: {mensaje[:120]}",
+            url="/ayuda", tag=f"web-chat-{conversation.public_id}",
+            require_interaction=True,
+        )
+    return redirect(url_for("admin.chats_detalle", public_id=public_id))
 
 
-@admin_bp.route("/chats/<path:client_jid>/close", methods=["POST"])
+@admin_bp.route("/chats/<public_id>/close", methods=["POST"])
 @admin_required
-def chats_close(client_jid):
-    from services import bot_http_request
-    admin_jid = _current_admin_jid()
-    if not admin_jid:
-        flash("Configura tu teléfono antes de cerrar chats (Perfil).", "warning")
-        return redirect(url_for("admin.chats_index"))
-    resp = bot_http_request(
-        "POST", f"/api/bot/handoffs/{client_jid}/close",
-        json_body={"admin_jid": admin_jid},
-    ) or {}
-    if not resp.get("ok"):
-        flash(resp.get("error") or "No se pudo cerrar el chat.", "warning")
-        return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
-    flash("Chat cerrado — el cliente ha vuelto al menú principal.", "success")
+def chats_close(public_id):
+    from models import WebChatConversation
+    from web_chat_service import add_message
+    conversation = WebChatConversation.query.filter_by(public_id=public_id).with_for_update().first_or_404()
+    if conversation.assigned_agent_id != current_user.id:
+        abort(403)
+    conversation.status = "closed"
+    conversation.closed_at = utcnow()
+    add_message(conversation, "system", "El agente cerró la conversación. Puedes volver al asistente cuando quieras.")
+    db.session.commit()
+    flash("Chat web cerrado.", "success")
     return redirect(url_for("admin.chats_index"))
 
 
@@ -7868,3 +7888,176 @@ def bot_aprendizaje_reabrir(signal_id):
         db.session.rollback()
         flash("No se pudo reabrir la señal.", "danger")
     return redirect(url_for("admin.bot_aprendizaje"))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Módulo delivery por franjas horarias — CRUD JSON API.
+# Toggle: delivery_franjas_activo. Todos los endpoints devuelven 404
+# limpio cuando el módulo está apagado (evita revelar existencia).
+# La UI (calendario 2 semanas) se añadirá en un commit posterior;
+# por ahora estos endpoints se consumen desde tests, scripts o el
+# panel cuando se despliegue.
+# ═══════════════════════════════════════════════════════════════════
+
+def _delivery_franjas_activo() -> bool:
+    from store_config import get_store_value
+    return str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+
+
+def _abort_si_modulo_apagado():
+    if not _delivery_franjas_activo():
+        abort(404)
+
+
+def _parse_fecha_iso(valor: str) -> date:
+    return datetime.strptime(valor, "%Y-%m-%d").date()
+
+
+def _parse_hora_hhmm(valor: str):
+    from datetime import time as _time
+    hh, mm = valor.split(":", 1)
+    return _time(int(hh), int(mm))
+
+
+def _slot_to_dict(slot) -> dict:
+    return {
+        "id": slot.id,
+        "fecha": slot.fecha.isoformat(),
+        "hora_inicio": slot.hora_inicio.strftime("%H:%M"),
+        "hora_fin": slot.hora_fin.strftime("%H:%M"),
+        "capacidad_max": slot.capacidad_max,
+        "max_repartidores": slot.max_repartidores,
+        "cierre_modo": slot.cierre_modo,
+        "cierre_valor": slot.cierre_valor,
+        "activo": slot.activo,
+        "notas_admin": slot.notas_admin,
+    }
+
+
+@admin_bp.route("/delivery/franjas", methods=["GET"])
+@admin_required
+def delivery_franjas_listar():
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import listar_franjas_admin
+    from store_config import get_store_value
+
+    hoy = date.today()
+    try:
+        horizonte = int(get_store_value("delivery_franjas_horizonte_admin_dias", "14"))
+    except (TypeError, ValueError):
+        horizonte = 14
+    desde_raw = request.args.get("desde")
+    hasta_raw = request.args.get("hasta")
+    desde = _parse_fecha_iso(desde_raw) if desde_raw else hoy
+    hasta = _parse_fecha_iso(hasta_raw) if hasta_raw else hoy + timedelta(days=horizonte - 1)
+    slots = listar_franjas_admin(desde, hasta)
+    return jsonify({"desde": desde.isoformat(), "hasta": hasta.isoformat(),
+                    "franjas": [_slot_to_dict(s) for s in slots]})
+
+
+@admin_bp.route("/delivery/franjas", methods=["POST"])
+@admin_required
+def delivery_franjas_crear():
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import crear_franja
+
+    data = request.get_json(silent=True) or {}
+    try:
+        fecha = _parse_fecha_iso(str(data["fecha"]))
+        hora_inicio = _parse_hora_hhmm(str(data["hora_inicio"]))
+        hora_fin = _parse_hora_hhmm(str(data["hora_fin"]))
+        capacidad_max = int(data["capacidad_max"])
+    except (KeyError, ValueError, TypeError) as exc:
+        return jsonify({"error": f"payload inválido: {exc}"}), 400
+    try:
+        slot = crear_franja(
+            fecha=fecha,
+            hora_inicio=hora_inicio,
+            hora_fin=hora_fin,
+            capacidad_max=capacidad_max,
+            max_repartidores=data.get("max_repartidores"),
+            cierre_modo=data.get("cierre_modo"),
+            cierre_valor=data.get("cierre_valor"),
+            notas_admin=data.get("notas_admin"),
+        )
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "ya existe una franja con esa fecha y horario"}), 409
+    return jsonify(_slot_to_dict(slot)), 201
+
+
+@admin_bp.route("/delivery/franjas/<int:slot_id>", methods=["PATCH"])
+@admin_required
+def delivery_franjas_actualizar(slot_id):
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import actualizar_franja
+    from models import DeliverySlot
+
+    slot = get_or_404(DeliverySlot, slot_id)
+    data = request.get_json(silent=True) or {}
+    try:
+        actualizar_franja(slot, **data)
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(_slot_to_dict(slot))
+
+
+@admin_bp.route("/delivery/franjas/<int:slot_id>", methods=["DELETE"])
+@admin_required
+def delivery_franjas_eliminar(slot_id):
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import eliminar_franja
+    from models import DeliverySlot
+
+    slot = get_or_404(DeliverySlot, slot_id)
+    tipo = eliminar_franja(slot)
+    db.session.commit()
+    return jsonify({"eliminado": tipo})
+
+
+@admin_bp.route("/delivery/franjas/panel", methods=["GET"])
+@admin_required
+def delivery_franjas_panel():
+    """Vista HTML del calendario admin de franjas.
+
+    No aborta si el módulo está apagado — muestra un aviso para que el
+    admin pueda planificar antes de encender el toggle en /superadmin/config.
+    Los datos se cargan por JS vía el endpoint JSON delivery_franjas_listar.
+    """
+    from store_config import get_store_value
+    try:
+        default_max = int(get_store_value("delivery_franjas_max_repartidores_default", "1"))
+    except (TypeError, ValueError):
+        default_max = 1
+    return render_template(
+        "admin/delivery_franjas.html",
+        modulo_activo=_delivery_franjas_activo(),
+        default_max_repartidores=default_max,
+    )
+
+
+@admin_bp.route("/delivery/franjas/clonar", methods=["POST"])
+@admin_required
+def delivery_franjas_clonar():
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import clonar_semana
+
+    data = request.get_json(silent=True) or {}
+    try:
+        origen = _parse_fecha_iso(str(data["semana_origen"]))
+        destino = _parse_fecha_iso(str(data["semana_destino"]))
+    except (KeyError, ValueError, TypeError) as exc:
+        return jsonify({"error": f"payload inválido: {exc}"}), 400
+    try:
+        creadas = clonar_semana(origen, destino)
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"creadas": creadas})

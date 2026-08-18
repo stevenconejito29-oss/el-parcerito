@@ -552,6 +552,41 @@
   </div>
 </section>
 
+{% if delivery_franjas_activo and pedidos_por_franja %}
+{# ── Agrupación por franja horaria de reparto ────────────────────
+   Cabecera "prepara antes de HH:MM" para que cocina trabaje en orden.
+   Sólo aparece cuando el módulo delivery_franjas_activo está encendido
+   y hay pedidos con franja asignada. Los pedidos inmediatos se ven
+   abajo en su cola normal. #}
+<section class="work-panel" style="margin:.75rem 0;padding:.6rem .8rem;border-radius:12px;border:1px solid var(--col-line, #d9d9d9);background:color-mix(in srgb, var(--brand-primary,#5a3a1e) 5%, transparent)">
+  <header style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
+    <span aria-hidden="true">🕒</span>
+    <strong>Reparto por franjas</strong>
+    <small style="color:var(--col-muted)">Prepara en orden de despacho.</small>
+  </header>
+  {% for slot, peds in pedidos_por_franja %}
+  <details class="prep-slot-group" open style="margin-bottom:.5rem;border-top:1px dashed var(--col-line,#d9d9d9);padding-top:.4rem">
+    <summary style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+      <strong>{{ slot.fecha.strftime('%d/%m') }} · {{ slot.hora_inicio.strftime('%H:%M') }}–{{ slot.hora_fin.strftime('%H:%M') }}</strong>
+      <span class="work-badge-zone" style="background:color-mix(in srgb, var(--brand-primary,#5a3a1e) 15%, transparent);color:var(--brand-primary,#5a3a1e);padding:.15rem .5rem;border-radius:999px">
+        Prepara antes de {{ slot.hora_inicio.strftime('%H:%M') }}
+      </span>
+      <span style="margin-left:auto;color:var(--col-muted)">{{ peds|length }} pedido{{ 's' if peds|length != 1 else '' }}</span>
+    </summary>
+    <ul style="list-style:none;padding:.4rem 0 0;margin:0;display:flex;flex-direction:column;gap:.25rem">
+      {% for p in peds %}
+      <li style="display:flex;gap:.5rem;align-items:center;padding:.2rem 0">
+        <span style="font-weight:700">#{{ p.id }}</span>
+        <span style="color:var(--col-muted);font-size:.85rem">{{ p.estado }}</span>
+        <span style="margin-left:auto;font-size:.85rem">{{ '%.2f'|format(p.total|float) }} €</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endfor %}
+</section>
+{% endif %}
+
 {# ── Macros SVG inline (heroicons/lucide) — sin CDN ────────────────
    Iconos monocromos que heredan currentColor. Reutilizables en cards. #}
 {% macro _icon_delivery() %}
@@ -791,7 +826,7 @@
   <div class="work-list">
 
   {% for pedido in pendientes %}
-  <article class="work-card is-warn" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+  <article class="work-card is-warn motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
       <div class="work-order-head">
         <div>
           <span class="work-order-code">{{ pedido.numero_pedido }}</span>
@@ -810,6 +845,7 @@
       <p class="work-client">{{ pedido.cliente.nombre }}</p>
       <div class="mt-2 flex flex-wrap gap-2">
         {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
+        {% if pedido.slot %}<span class="work-badge-zone" style="background:color-mix(in srgb, var(--brand-primary,#5a3a1e) 12%, transparent);color:var(--brand-primary,#5a3a1e)">🕒 {{ pedido.slot.fecha.strftime('%d/%m') }} {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</span>{% endif %}
         {% if pedido.preparador_id and pedido.preparador_id != current_user.id %}
           <span class="work-badge-assigned">Asignado a {{ pedido.preparador.nombre }}</span>
         {% endif %}
@@ -938,7 +974,7 @@
       <div class="work-list">
       {% for pedido in _grupo %}
   {%- set fecha_ent = pedido.fecha_entrega_programada -%}
-  <article class="work-card is-warn" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+  <article class="work-card is-warn motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}"
            style="border-left:3px solid color-mix(in srgb,var(--prep-programado) 55%,transparent)">
       <div class="work-order-head">
         <div>
@@ -969,6 +1005,7 @@
           {% else %}{{ _icon_clock() }} Programado{% endif %}
         </span>
         {% if pedido.zona_id %}<span class="work-badge-zone">{{ pedido.zona_nombre_aplicada }}</span>{% endif %}
+        {% if pedido.slot %}<span class="work-badge-zone" style="background:color-mix(in srgb, var(--brand-primary,#5a3a1e) 12%, transparent);color:var(--brand-primary,#5a3a1e)">🕒 {{ pedido.slot.fecha.strftime('%d/%m') }} {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</span>{% endif %}
       </div>
       <div class="work-items">
         {% set _prep_items = lineas_preparacion_interna(pedido) %}
@@ -1049,7 +1086,7 @@
   <div class="work-list">
 
   {% for pedido in armando %}
-  <article class="work-card work-card--tight is-info" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+  <article class="work-card work-card--tight is-info motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
       <div class="work-order-head">
         <span class="work-order-code is-info">{{ pedido.numero_pedido }}</span>
         <div class="work-time-stack">
@@ -1074,6 +1111,7 @@
           {% else %}{{ _icon_clock() }} Programado{% endif %}
         </span>
         {% if pedido.zona_id %}<span class="work-badge-zone">📍 {{ pedido.zona_nombre_aplicada }}</span>{% endif %}
+        {% if pedido.slot %}<span class="work-badge-zone" style="background:color-mix(in srgb, var(--brand-primary,#5a3a1e) 12%, transparent);color:var(--brand-primary,#5a3a1e)">🕒 {{ pedido.slot.fecha.strftime('%d/%m') }} {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</span>{% endif %}
         {% if pedido.preparador_id and pedido.preparador_id != current_user.id %}
           <span class="work-badge-assigned">Asignado a {{ pedido.preparador.nombre }}</span>
         {% endif %}

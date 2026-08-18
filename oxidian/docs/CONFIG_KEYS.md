@@ -123,6 +123,20 @@ Cierre por franja: cada `DeliverySlot` puede sobrescribir `cierre_modo` +
 `NULL`, hereda los defaults globales anteriores. Cambiar la política
 comercial no requiere despliegue de código.
 
+### Matriz de estados de reparto
+
+Los toggles `delivery_inmediato_activo` y `delivery_franjas_activo` se
+combinan con `FEATURE_RECOGIDA` para definir qué modalidades ofrece el
+checkout. `FEATURE_DELIVERY=0` desactiva por completo el reparto (los
+dos toggles quedan inertes aunque estén a `1`).
+
+| `delivery_inmediato_activo` | `delivery_franjas_activo` | UX cliente |
+|---|---|---|
+| `1` | `0` | Solo reparto inmediato. El bloque de franjas queda oculto (API devuelve 404). Comportamiento histórico. |
+| `0` | `1` | Solo franjas: el cliente elige forzosamente franja al pagar. El horario de tienda deja de ser guardia dura. |
+| `1` | `1` | Ambos: el cliente ve el selector de franjas al elegir delivery; puede seleccionar sugerida o dejarlo vacío para envío inmediato. |
+| `0` | `0` | Reparto desactivado. Sin `FEATURE_RECOGIDA=1`, el checkout redirige a portada con aviso "la tienda no acepta pedidos". |
+
 ## Propuestas pendientes (no ejecutadas)
 
 Requieren refactor mayor y se dejan documentadas:

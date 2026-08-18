@@ -719,18 +719,11 @@ def create_app(env="default"):
 
     @app.context_processor
     def inject_constants():
-        from models import ALERGENOS_EU, SiteConfig
-        # Analítica opcional Umami: sólo se inyecta el script si hay ID
-        # configurado. Ver docs/OBSERVABILIDAD.md para el pendiente HTTPS.
-        try:
-            umami_website_id = (SiteConfig.get("UMAMI_WEBSITE_ID", "") or "").strip()
-        except Exception:
-            umami_website_id = ""
+        from models import ALERGENOS_EU
         return {
             "ALERGENOS_EU": ALERGENOS_EU,
             "asset_version": app.config["ASSET_VERSION"],
             "now": datetime.now,
-            "umami_website_id": umami_website_id,
         }
 
     @app.template_filter("time_ago")
@@ -1087,7 +1080,6 @@ def create_app(env="default"):
     from routes.push import push_bp
     from routes.proveedor import proveedor_bp
     from routes.web_chat import web_chat_bp
-    from routes.paisanos import paisanos_bp
 
     csrf.exempt(api_bot_bp)
     # La API interna usa clave HMAC-safe en cada endpoint, pero no se exime
@@ -1109,7 +1101,6 @@ def create_app(env="default"):
     app.register_blueprint(push_bp,        url_prefix="/api/push")
     app.register_blueprint(proveedor_bp,   url_prefix="/proveedor")
     app.register_blueprint(web_chat_bp,    url_prefix="/api/web-chat")
-    app.register_blueprint(paisanos_bp,    url_prefix="/")
 
     # ── Páginas de error personalizadas ──
     @app.errorhandler(404)
@@ -1234,29 +1225,6 @@ def create_app(env="default"):
             _seed_operational_basics()
             _seed_demo_data()
             _seed_vapid_keys(app)
-
-    # ── APScheduler: portal /paisanos ──
-    # Refresco cada 15 min de tasas COP, clima y RSS (noticias + BOE).
-    # Tick síncrono inicial para que Redis nunca esté vacío al primer request.
-    # Se saltan tanto el tick como el scheduler cuando OXIDIAN_SKIP_STARTUP_DB=1
-    # (comandos de mantenimiento, tests) para no molestar en entornos aislados.
-    if not _to_bool(os.environ.get("OXIDIAN_SKIP_STARTUP_DB"), False):
-        try:
-            from apscheduler.schedulers.background import BackgroundScheduler
-            from paisanos_service import refrescar_todo as _paisanos_refrescar
-            try:
-                _paisanos_refrescar()
-            except Exception:
-                app.logger.exception("paisanos: fallo en refresco inicial")
-            _scheduler = BackgroundScheduler(daemon=True, timezone="Europe/Madrid")
-            _scheduler.add_job(
-                _paisanos_refrescar, "interval", minutes=15,
-                id="paisanos_refresh", max_instances=1, coalesce=True,
-            )
-            _scheduler.start()
-            app.extensions["paisanos_scheduler"] = _scheduler
-        except Exception:
-            app.logger.exception("paisanos: no se pudo iniciar APScheduler")
 
     return app
 
@@ -1400,8 +1368,6 @@ def _seed_admin():
         ("VALIDAR_RADIO_ENTREGA",             "1",          "Activar validación de radio de entrega (1/0)"),
         ("BLOQUEAR_DIRECCION_NO_VERIFICADA",  "1",          "Bloquear pedido si no se puede geocodificar la dirección (1/0)"),
         ("DELIVERY_GPS_MAX_ACCURACY_M",        "200",        "Precisión GPS máxima aceptada en metros"),
-        # Analítica web opcional (Umami). Ver docs/OBSERVABILIDAD.md — vacío = sin tracking.
-        ("UMAMI_WEBSITE_ID",                   _env_default("UMAMI_WEBSITE_ID", ""), "ID del site en Umami (analítica web). Vacío = desactivado."),
         ("DELIVERY_ADDRESS_GPS_MAX_DISTANCE_KM", "1",         "Desvío máximo entre la dirección escrita y el GPS"),
     ]
     _defaults.extend(

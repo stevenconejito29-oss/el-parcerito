@@ -2704,6 +2704,16 @@ def checkout():
         flash("Las cuentas internas no compran desde la tienda pública. Usa el módulo POS.", "warning")
         return redirect(url_for("public.index"))
 
+    # Guardia: si ambos métodos de reparto están apagados y no hay recogida
+    # habilitada, no hay flujo válido de compra. Evita pantalla en blanco o
+    # error críptico y explica al cliente que la tienda no acepta pedidos.
+    _inmediato_on = str(get_store_value("delivery_inmediato_activo", "1")).strip() in ("1", "true", "True")
+    _franjas_on = str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+    _recogida_on = str(SiteConfig.get("FEATURE_RECOGIDA", "1")).strip() in ("1", "true", "True")
+    if not _inmediato_on and not _franjas_on and not _recogida_on:
+        flash("La tienda no está aceptando pedidos en este momento.", "warning")
+        return redirect(url_for("public.index"))
+
     carrito = _get_carrito()
     if not carrito:
         flash("Tu carrito está vacío.", "warning")

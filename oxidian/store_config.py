@@ -175,9 +175,6 @@ STORE_DEFAULTS = {
     "HORARIO_APERTURA": "09:00",
     "HORARIO_CIERRE": "22:30",
     "HORARIO_SEMANAL_JSON": "",
-    # Analítica web opcional (Umami self-hosted). Vacío por defecto → el
-    # snippet no se inyecta. Ver docs/OBSERVABILIDAD.md.
-    "UMAMI_WEBSITE_ID": "",
     "TIMEZONE_NEGOCIO": "Europe/Madrid",
     "TIENDA_FORZAR_CERRADA": "0",
     "TIENDA_MENSAJE_CIERRE": "",

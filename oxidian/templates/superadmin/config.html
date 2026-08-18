@@ -85,7 +85,7 @@
   <section class="cfg-status-grid">
     <a href="{{ url_for('admin.menu_config') }}"><span>Página pública</span><strong>Banners y contenido</strong><small>Editar inicio, menú y checkout</small></a>
     {% if brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}"><span>Reparto</span><strong>{{ zonas|selectattr('activo')|list|length }} zonas activas</strong><small>Precios, cobertura y tiempos</small></a>{% endif %}
-    <a href="{{ url_for('superadmin.chatbot') }}"><span>WhatsApp</span><strong>Chatbot y Evolution</strong><small>Estado, QR y sincronización</small></a>
+      <a href="{{ url_for('superadmin.chatbot') }}"><span>Atención</span><strong>Chat web y WhatsApp transaccional</strong><small>Conocimiento, códigos y conexión</small></a>
     {% if brand.puntos %}<a href="{{ url_for('marketing.puntos') }}"><span>Fidelización</span><strong>Productos y puntos</strong><small>Canjes y movimientos</small></a>{% endif %}
   </section>
 
@@ -330,6 +330,8 @@
         {{ cfg_select('MODO_TIENDA', 'Modo de tienda', [('propia','Tienda propia'),('bar_servicio','Servicio para un único bar / comisión')], 'En modo servicio, el admin gestiona esa tienda como su propio negocio y el superadmin controla funciones y comisión.') }}
         {{ cfg_select('TIPO_TIENDA', 'Tipo de catálogo', [('comida','🍽️ Comida / gastronomía'),('producto','🛍️ Retail / nicho general (ropa, zapatos, bisutería…)')], 'Cambia labels visibles ("menú"→"catálogo"), oculta alérgenos, ajusta emojis y tallas. NO borra datos: cambia de un modo al otro sin perder nada.') }}
         {{ cfg_select('FEATURE_DELIVERY', 'Delivery', [('1','Habilitado'),('0','Deshabilitado')], 'Si está apagado, checkout y roles de reparto quedan fuera del flujo público.') }}
+        {{ cfg_select('delivery_inmediato_activo', 'Delivery inmediato', [('1','Activo'),('0','Inactivo')], 'Modo histórico: el pedido sale en cuanto la cocina lo tiene listo. Puede coexistir con franjas.') }}
+        {{ cfg_select('delivery_franjas_activo', 'Delivery por franjas', [('1','Activo'),('0','Inactivo')], 'El cliente reserva una franja horaria con tope de pedidos. Si ambos están activos, el checkout permite elegir.') }}
         {{ cfg_select('FEATURE_RECOGIDA', 'Recogida en local', [('1','Habilitada'),('0','Deshabilitada')]) }}
         {{ cfg_select('FEATURE_PEDIDOS_PROGRAMADOS', 'Pedidos por fecha', [('1','Habilitados'),('0','Deshabilitados')], 'Bloquea productos programados si el cliente no tiene ese módulo.') }}
         {{ cfg_select('FEATURE_PUNTOS', 'Canje de puntos', [('1','Habilitado'),('0','Deshabilitado')], 'Oculta y bloquea el club de puntos sin borrar historial.') }}

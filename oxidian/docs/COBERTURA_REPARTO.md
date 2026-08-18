@@ -169,3 +169,41 @@ Toggle: `delivery_franjas_activo` en SiteConfig (default 0). Convive con
   es una relación operativa, no un dato comercial que necesite congelarse.
 - Zonas y cobertura geo siguen aplicando dentro de la franja seleccionada
   (una franja no cambia si el cliente está en cobertura, solo cuándo llega).
+
+### Integración con cocina / preparador
+
+Cuando `delivery_franjas_activo=1`, la vista `/preparador/pedidos` añade
+un panel superior "Reparto por franjas" que agrupa los pedidos con
+`slot_id` asignado por `DeliverySlot`, ordenados por `hora_inicio`. Cada
+grupo lleva la cabecera **"Prepara antes de HH:MM"** para que la cocina
+sepa el orden real de despacho.
+
+Los pedidos sin franja (delivery inmediato o recogida) siguen apareciendo
+en la cola habitual: no se duplican ni se mueven. El panel de franjas es
+aditivo, no reemplaza el flujo existente. Si el toggle está apagado, el
+panel no se renderiza y la vista queda idéntica a la histórica.
+
+Datos que ve el preparador por franja:
+
+- Fecha + hora de despacho (`hora_inicio` – `hora_fin`).
+- Nº de pedidos en la franja.
+- Lista de pedidos con `#id`, estado y total. Cada pedido conserva el
+  badge `🕒` en su tarjeta detallada para poder localizarlo desde la
+  cola tradicional.
+
+### Integración con repartidor
+
+`/repartidor/ruta` añade un banner con la **franja activa** del rider
+cuando el toggle está encendido. La lógica es una única query sobre
+`SlotRepartidor` con `liberado_en IS NULL` y `DeliverySlot.fecha=hoy`:
+
+- Si el rider tomó una franja: banner con `hora_inicio` (arranca reparto)
+  y `hora_fin` (vuelve al local antes de esa hora).
+- Si no tomó ninguna: banner neutro con CTA a `/repartidor/franjas`.
+- Los pedidos ya listaban su franja como badge en cada tarjeta; aquí solo
+  se añade el resumen operativo de la jornada.
+
+La ordenación de pedidos dentro de la franja sigue usando el criterio
+geográfico existente (`optimizar_ruta`, `zona_id`). No hay una lógica
+nueva de secuenciación por franja: el propio corte temporal ya limita
+el volumen por ventana.
