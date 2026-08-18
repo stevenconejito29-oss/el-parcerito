@@ -806,9 +806,25 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
       </div>
       {% endif %}
 
-      {# Botón "Estoy en la puerta" — dispara el único WhatsApp del flujo
-         (política anti-baneo Meta). Solo aparece si el cliente aún no
-         recibió esa notificación. Piggybacks en Order.en_punto_encuentro. #}
+      {# Botón "Salir a repartir" — notificación "voy en camino" (canal_service).
+         Simétrico a "Estoy en la puerta". Idempotente (Order.en_camino_at). #}
+      {% if not pedido.en_camino_at %}
+      <form method="POST" action="{{ url_for('repartidor.pedido_en_camino', pedido_id=pedido.id) }}"
+            class="mt-2" data-async="en-camino"
+            onsubmit="(function(f){f.querySelector('button').disabled=true;var xhr=new XMLHttpRequest();xhr.open('POST',f.action);xhr.setRequestHeader('X-Requested-With','fetch');var fd=new FormData(f);xhr.send(fd);xhr.onload=function(){if(xhr.status<400){location.reload();}else{f.querySelector('button').disabled=false;alert('No se pudo notificar');}};})(this);return false;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="work-btn work-btn-info full-width">
+          🛵 Salir a repartir — avisar al cliente
+        </button>
+      </form>
+      {% else %}
+      <p class="work-confirm-note" style="margin-top:.5rem;color:#6b7280">
+        ✅ Salió a repartir — {{ pedido.en_camino_at.strftime('%H:%M') }}
+      </p>
+      {% endif %}
+
+      {# Botón "Estoy en la puerta" — segunda notificación al cliente
+         (delivery_en_puerta). Ruta a través de canal_service. #}
       {% if not pedido.en_punto_encuentro %}
       <form method="POST" action="{{ url_for('repartidor.pedido_en_la_puerta', pedido_id=pedido.id) }}"
             class="mt-2" onsubmit="this.querySelector('button').disabled=true">

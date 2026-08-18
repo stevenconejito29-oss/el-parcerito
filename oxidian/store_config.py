@@ -159,6 +159,23 @@ STORE_DEFAULTS = {
     "FEATURE_PEDIDOS_PROGRAMADOS": "1",
     "FEATURE_PUNTOS": "1",
     "FEATURE_FAVORES": "1",
+    # ── Canal de notificaciones al cliente ─────────────────────────
+    # Gate anti-baneo Meta. Ver docs/CANAL_NOTIFICACIONES.md.
+    #   "1" (default) → canal_service prioriza push/web y sólo usa WA
+    #   para eventos transaccionales o dentro de la ventana de 24h.
+    #   "0" → escape hatch legacy: todo va por WhatsApp como antes.
+    "notif_gate_activo": "1",
+    # Ventana Meta de service messages (horas desde el último inbound del
+    # cliente). Después de este umbral WA sólo se usa para eventos
+    # transaccionales (códigos, OTP, handoff).
+    "notif_ventana_wa_horas": "24",
+    # Override JSON por evento. Vacío ⇒ usa la matriz interna de canal_service.
+    # Ejemplo: {"delivery_en_camino": ["push", "web"]}
+    "notif_canales_por_evento": "",
+    # Plantillas configurables por el super_admin (placeholders {nombre},
+    # {codigo}). Si están vacías se usa el default conservador del código.
+    "delivery_notificar_camino_texto": "🛵 {nombre}, tu pedido #{codigo} ya salió de la tienda. Llega en unos minutos. ¡Nos vemos!",
+    "delivery_franjas_notificar_puerta_texto": "🛵 {nombre}, tu repartidor ya está en la puerta con tu pedido #{codigo}.",
     "CRUCE_PRECIO_MINIMO": "5.00",
     "CRUCE_PRECIO_POR_KM": "1.25",
     "CRUCE_PESO_MAX_KG": "8",

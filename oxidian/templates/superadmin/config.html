@@ -432,6 +432,22 @@
     </div>
   </form>
 
+  <form id="notificaciones-cliente" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="notificaciones-cliente">
+    <div class="cfg-section-head"><div><span>6</span><h2>Notificaciones al cliente</h2><p>Gate anti-baneo Meta: prioriza push/web y sólo usa WhatsApp para códigos u OTP. Ver docs/CANAL_NOTIFICACIONES.md.</p></div><button type="submit">Guardar notificaciones</button></div>
+    <div class="cfg-grid">
+      {{ cfg_select('notif_gate_activo', 'Gate de canal activo', [('1','Sí (recomendado)'),('0','No — todo por WhatsApp (legacy)')]) }}
+      {{ cfg_input('notif_ventana_wa_horas', 'Ventana WhatsApp (horas)', type='number', min='1', max='168') }}
+    </div>
+    <div class="cfg-grid">
+      {{ cfg_input('delivery_notificar_camino_texto', 'Plantilla "voy en camino" (placeholders {nombre} {codigo})') }}
+      {{ cfg_input('delivery_franjas_notificar_puerta_texto', 'Plantilla "en la puerta" (placeholders {nombre} {codigo})') }}
+    </div>
+    <div class="cfg-grid">
+      {{ cfg_input('notif_canales_por_evento', 'Override JSON por evento (avanzado). Ej: {"delivery_en_camino":["push","web"]}') }}
+    </div>
+  </form>
+
   <details id="avanzado" class="cfg-section cfg-advanced">
     <summary><span>6</span><div><h2>Configuración avanzada</h2><p>Límites técnicos y edición manual. Úsala solo cuando sea necesario.</p></div></summary>
     <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">

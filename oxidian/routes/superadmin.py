@@ -357,6 +357,13 @@ CONFIG_SECTION_KEYS = {
         "BOT_API_URL", "BOT_OXIDIAN_URL", "EVOLUTION_API_URL",
         "EVOLUTION_INSTANCE",
     },
+    "notificaciones-cliente": {
+        "notif_gate_activo",
+        "notif_ventana_wa_horas",
+        "notif_canales_por_evento",
+        "delivery_notificar_camino_texto",
+        "delivery_franjas_notificar_puerta_texto",
+    },
     "avanzado": {
         "CART_MAX_QTY", "COMBO_MIN_COMPONENTS", "COMBO_MAX_COMPONENTS",
         "COMBO_MAX_QTY_COMPONENT", "COMBO_MAX_SELECTIONS_GROUP",

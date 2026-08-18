@@ -207,3 +207,17 @@ La ordenación de pedidos dentro de la franja sigue usando el criterio
 geográfico existente (`optimizar_ruta`, `zona_id`). No hay una lógica
 nueva de secuenciación por franja: el propio corte temporal ya limita
 el volumen por ventana.
+
+
+## Flujo de notificaciones al cliente
+
+Orden real (delivery) y canal utilizado:
+
+| # | Evento | Canal | Idempotencia | Notas |
+|---|---|---|---|---|
+| 1 | `order_confirmation` | WhatsApp (transactional bypass) | `Order.whatsapp_enviado_confirmacion` | Meta lo considera service message; siempre WA. |
+| 2 | `delivery_en_camino` | canal_service (push preferente) | `Order.en_camino_at` + outbox previo | Endpoint `POST /repartidor/pedido/<id>/en-camino`. |
+| 3 | `delivery_en_puerta` | canal_service (push preferente) | `Order.en_punto_encuentro` + outbox previo | Endpoint `POST /repartidor/pedido/<id>/en-la-puerta`. |
+| 4 | `delivery_code` | WhatsApp (transactional bypass) | `Order.codigo_confirmacion` no reemitido | Código de 6 dígitos, TTL configurable. |
+
+Ver `docs/CANAL_NOTIFICACIONES.md` para la matriz de decisión del gate anti-baneo Meta. Los eventos 2 y 3 se enrutan por push/web/wa+ventana o skip; los eventos 1 y 4 son "transactional always WA".

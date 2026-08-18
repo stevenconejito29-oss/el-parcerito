@@ -585,6 +585,21 @@ def ai_route():
     if not mensaje:
         return jsonify({"ok": True, "route": "noop", "reason": "empty"})
 
+    # Ventana WA (24h) para canal_service: cada mensaje del cliente por
+    # WhatsApp abre/renueva la ventana Meta de service messages. Se hace
+    # aquí porque ai/route se llama para cada inbound del cliente (bot
+    # externo enruta todo por aquí). Idempotente: sólo actualiza cuando
+    # hay un cliente asociable al teléfono.
+    try:
+        cliente_wa, _ = _cliente_por_telefono(telefono_norm)
+        if cliente_wa is not None and hasattr(cliente_wa, "last_wa_inbound_at"):
+            from models import utcnow as _utcnow
+            cliente_wa.last_wa_inbound_at = _utcnow()
+            from extensions import db as _db
+            _db.session.commit()
+    except Exception:
+        current_app.logger.exception("ai/route: no se pudo actualizar last_wa_inbound_at")
+
     # 1. Override manual (equivale a `!ia` de admin): salta rate limit
     #    pero exige IA configurada.
     if force_ai:
@@ -638,6 +653,160 @@ def ai_route():
 
     # 8. Todo OK → IA responde.
     return jsonify({"ok": True, "route": "ai", "reason": "auto"})
+
+
+# ── NLU con Groq: mapea texto libre a respuestas canónicas de la BD ──────
+# Contrato: Groq NUNCA responde en crudo al cliente. Solo elige un
+# KnowledgeEntry o propone uno nuevo `activo=False` (revisión admin).
+# Ver nlu_service.py para el detalle. Gated por SiteConfig BOT_NLU_ENABLED,
+# separado del bloqueo del chat libre (_client_generative_ai_enabled).
+
+_NLU_CACHE: dict = {}
+_NLU_CACHE_TTL_S = 30 * 60  # 30 min
+_NLU_CACHE_MAX = 500
+
+
+def _nlu_cache_key(mensaje: str) -> str:
+    from bot_learning_service import normalizar_mensaje, hash_mensaje
+    return hash_mensaje(normalizar_mensaje(mensaje))
+
+
+def _nlu_cache_get(key: str):
+    entry = _NLU_CACHE.get(key)
+    if not entry:
+        return None
+    ts, value = entry
+    if (datetime.utcnow() - ts).total_seconds() > _NLU_CACHE_TTL_S:
+        _NLU_CACHE.pop(key, None)
+        return None
+    return value
+
+
+def _nlu_cache_set(key: str, value: dict):
+    if len(_NLU_CACHE) >= _NLU_CACHE_MAX:
+        # Purga simple: elimina el más antiguo
+        oldest = min(_NLU_CACHE.items(), key=lambda kv: kv[1][0])[0]
+        _NLU_CACHE.pop(oldest, None)
+    _NLU_CACHE[key] = (datetime.utcnow(), value)
+
+
+@api_bot_bp.route("/nlu/resolve", methods=["POST"])
+@bot_required
+def nlu_resolve():
+    """Interpreta el mensaje del cliente cuando el matcher determinista
+    no dio hit suficiente. Devuelve una respuesta CANÓNICA de la BD
+    (nunca prosa libre de la IA) o fallback.
+
+    Payload: {"mensaje": str, "telefono": str?}
+
+    Respuesta:
+        - action="canned": {ok, action, respuesta, entry_id, confidence, cached}
+        - action="fallback": {ok, action, confidence, new_pending_id?}
+        - action="disabled": el flag BOT_NLU_ENABLED está apagado
+        - action="unavailable": la IA falló / sin key / sin candidatos
+    """
+    payload = request.get_json(silent=True) or {}
+    mensaje = str(payload.get("mensaje") or "").strip()
+    telefono = payload.get("telefono") or None
+
+    if not mensaje:
+        return jsonify({"ok": False, "action": "unavailable", "error": "mensaje vacío"}), 200
+
+    try:
+        from nlu_service import is_enabled, resolve
+    except Exception:
+        current_app.logger.exception("nlu_resolve: import fail")
+        return jsonify({"ok": False, "action": "unavailable"}), 200
+
+    if not is_enabled():
+        return jsonify({"ok": True, "action": "disabled"}), 200
+
+    # Cache por hash del mensaje normalizado — evita quemar tokens en repetidas.
+    # No cacheamos "fallback" para dar oportunidad de re-evaluar si el catálogo
+    # cambió; sí cacheamos "canned".
+    cache_key = _nlu_cache_key(mensaje)
+    cached = _nlu_cache_get(cache_key) if cache_key else None
+    if cached and cached.get("action") == "canned":
+        out = dict(cached)
+        out["cached"] = True
+        out["ok"] = True
+        # Igual registra la señal de aprendizaje (para contar frecuencia real)
+        try:
+            from bot_learning_service import registrar_signal
+            registrar_signal(
+                mensaje=mensaje,
+                action_llm=f"nlu_cache:{out.get('entry_id')}",
+                telefono=telefono,
+                intent_matched=True,
+            )
+        except Exception:
+            pass
+        return jsonify(out), 200
+
+    try:
+        result = resolve(mensaje, telefono=telefono)
+    except Exception:
+        current_app.logger.exception("nlu_resolve: excepción resolve")
+        return jsonify({"ok": False, "action": "unavailable"}), 200
+
+    if result is None:
+        return jsonify({"ok": False, "action": "unavailable"}), 200
+
+    if result.get("action") == "canned" and cache_key:
+        _nlu_cache_set(cache_key, result)
+
+    out = {"ok": True, "cached": False, **result}
+    return jsonify(out), 200
+
+
+@api_bot_bp.route("/nlu/enrich", methods=["POST"])
+@bot_required
+def nlu_enrich():
+    """Fire-and-forget: enriquece keywords de un entry que el matcher
+    determinista matcheó con score débil. No crea entries nuevas.
+
+    Payload: {"mensaje": str, "entry_id": int, "telefono": str?}
+
+    Respuesta: {ok, action: "enriched"|"skipped", keywords_added?}
+    Nunca 5xx — errores devuelven action="skipped".
+    """
+    payload = request.get_json(silent=True) or {}
+    mensaje = str(payload.get("mensaje") or "").strip()
+    entry_id_raw = payload.get("entry_id")
+    telefono = payload.get("telefono") or None
+
+    try:
+        entry_id = int(entry_id_raw) if entry_id_raw else 0
+    except (TypeError, ValueError):
+        entry_id = 0
+
+    if not mensaje or not entry_id:
+        return jsonify({"ok": False, "action": "skipped", "reason": "bad_input"}), 200
+
+    try:
+        from nlu_service import is_enabled, enrich_matched
+    except Exception:
+        current_app.logger.exception("nlu_enrich: import fail")
+        return jsonify({"ok": False, "action": "skipped", "reason": "import"}), 200
+
+    if not is_enabled():
+        return jsonify({"ok": True, "action": "skipped", "reason": "disabled"}), 200
+
+    try:
+        result = enrich_matched(entry_id, mensaje, telefono=telefono)
+    except Exception:
+        current_app.logger.exception("nlu_enrich: excepción")
+        return jsonify({"ok": False, "action": "skipped", "reason": "exception"}), 200
+
+    if not result:
+        return jsonify({"ok": False, "action": "skipped", "reason": "unavailable"}), 200
+
+    return jsonify({
+        "ok": True,
+        "action": "enriched",
+        "keywords_added": result.get("keywords_added", 0),
+        "entry_id": entry_id,
+    }), 200
 
 
 @api_bot_bp.route("/security/admin-pin-hash")
@@ -3092,7 +3261,7 @@ def responder_confirmacion_pedido():
             "accion": "sin_pendiente",
             "mensaje": (
                 "No tienes ningún pedido pendiente de confirmación ahora mismo. "
-                "Si necesitas algo escribe *MENU*."
+                "Si necesitas ayuda, abre el chat dentro de nuestra app."
             ),
         })
 
@@ -3123,7 +3292,7 @@ def responder_confirmacion_pedido():
             "accion": "sin_pendiente",
             "mensaje": (
                 f"El pedido *{pedido.numero_pedido}* ya entró en preparación. "
-                "Escribe *AGENTE* si necesitas ayuda."
+                "Abre el chat dentro de nuestra app si necesitas ayuda."
             ),
         })
     try:

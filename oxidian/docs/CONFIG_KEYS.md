@@ -116,7 +116,11 @@ Módulo opcional (`delivery_slots_service` + tablas `delivery_slots`,
 | `delivery_franjas_cierre_modo_default` | str | `al_iniciar` | Modo de cierre por defecto: `al_iniciar` (cierra al llegar `hora_inicio`; default nuevo) \| `al_iniciar_siguiente` (legacy, equivalente) \| `minutos_antes` \| `hora_fija`. Heredado por franjas sin override. Al crear una franja se valida que `hora_inicio`/`hora_fin` caigan dentro del horario efectivo de tienda del `weekday()` (400 si no). |
 | `delivery_franjas_cierre_valor_default` | str | `""` | Valor asociado: entero de minutos (modo `minutos_antes`) o `HH:MM` (modo `hora_fija`). Vacío si el modo por defecto es `al_iniciar` o `al_iniciar_siguiente`. |
 | `delivery_franjas_max_repartidores_default` | int | `1` | Nº de repartidores que pueden auto-asignarse a una misma franja al crearla. Sobrescribible por franja. |
-| `delivery_franjas_notificar_puerta_texto` | str | plantilla base | Mensaje WhatsApp único cuando el repartidor pulsa "en la puerta" (política anti-baneo Meta). |
+| `delivery_franjas_notificar_puerta_texto` | str | plantilla base | Plantilla notificación "en la puerta". Placeholders `{nombre}` y `{codigo}`. Ruteada por canal_service (ver docs/CANAL_NOTIFICACIONES.md). |
+| `delivery_notificar_camino_texto` | str | plantilla base | Plantilla notificación "voy en camino" (simétrica a la anterior). Mismos placeholders. Ruteada por canal_service. |
+| `notif_gate_activo` | bool | `1` | Gate anti-baneo Meta. `0` desactiva canal_service y envía todo por WhatsApp (legacy). |
+| `notif_ventana_wa_horas` | int | `24` | Ventana Meta de service messages. Fuera de esta ventana canal_service prefiere push/web. |
+| `notif_canales_por_evento` | json | `""` | Override por evento. Ejemplo: `{"delivery_en_camino":["push","web"]}`. Vacío = defaults del código. |
 
 Cierre por franja: cada `DeliverySlot` puede sobrescribir `cierre_modo` +
 `cierre_valor` directamente en su fila (columnas de la tabla). Si están en

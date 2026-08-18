@@ -43,6 +43,7 @@ CIERRE_MODOS = ("al_iniciar", "al_iniciar_siguiente", "minutos_antes", "hora_fij
 _ESTADO_CANCELADO = "cancelado"
 NOTIF_CANAL = "whatsapp"
 NOTIF_EVENTO_EN_PUERTA = "delivery_en_puerta"
+NOTIF_EVENTO_EN_CAMINO = "delivery_en_camino"
 
 
 # ─── Resultado tipado de reserva (evita excepciones para flujos esperados) ─
@@ -502,17 +503,152 @@ def liberar_franja_repartidor(slot_id: int, repartidor_id: int) -> bool:
     return True
 
 
-# ─── Notificación "en la puerta" ──────────────────────────────────────────
+# ─── Notificaciones al cliente (gate anti-baneo Meta) ─────────────────────
+#
+# Las funciones ``notificar_en_camino`` y ``notificar_en_la_puerta`` son
+# simétricas: cada una emite (una sola vez) la notificación al cliente
+# cuando el repartidor pulsa el botón correspondiente en su panel.
+#
+# Idempotencia estricta:
+#   * ``notificar_en_camino``  → chequea ``Order.en_camino_at`` y
+#     ``NotificationOutbox(evento=delivery_en_camino, pedido_id=X)``.
+#   * ``notificar_en_la_puerta`` → chequea ``Order.en_punto_encuentro`` y
+#     ``NotificationOutbox(evento=delivery_en_puerta, pedido_id=X)``.
+#
+# Canal:
+#   Ambas consultan ``canal_service.elegir_canal`` para respetar el gate
+#   anti-baneo Meta. Si el canal es 'wa' se encola en el outbox estándar
+#   (worker WhatsApp). Si es push/web/push+web se despacha inline vía
+#   ``canal_service.enviar_por_canal`` y no se toca la instancia de WA.
+#   Si es 'none' se registra un skip en outbox para métricas.
 
-def notificar_en_la_puerta(pedido: Order, actor_id: int | None = None) -> NotificationOutbox | None:
-    """Emite (una sola vez) la notificación WhatsApp de "repartidor en la puerta".
 
-    Reutiliza la columna existente ``Order.en_punto_encuentro`` + timestamp
-    como marca operativa; encola en NotificationOutbox el mensaje al cliente.
-    Idempotente: si el pedido ya fue marcado, no vuelve a encolar.
+def _plantilla_render(plantilla: str, cliente, pedido) -> str:
+    """Sustituye placeholders {nombre} y {codigo} de forma segura."""
+    if not plantilla:
+        return ""
+    nombre = ""
+    if cliente is not None:
+        raw = str(getattr(cliente, "nombre", "") or "").strip()
+        nombre = raw.split()[0] if raw else ""
+    return (
+        plantilla
+        .replace("{nombre}", nombre)
+        .replace("{codigo}", str(pedido.numero_pedido or pedido.id))
+    )
+
+
+def _encolar_notificacion_cliente(
+    *, pedido, cliente, evento: str, canal_key: str, plantilla_key: str,
+    default_texto: str,
+):
+    """Núcleo común de ``notificar_en_camino`` / ``notificar_en_la_puerta``.
+
+    Devuelve ``(outbox_o_none, canal_efectivo)``. El llamador setea las
+    columnas de tracking (``en_camino_at``, ``en_punto_encuentro*``) al
+    considerar la notificación efectiva (incluye canal='none' para no
+    reintentar en cada click del rider).
     """
     from phone_utils import normalizar_telefono_cliente  # import diferido
+    from store_config import get_store_value
+    from canal_service import elegir_canal, enviar_por_canal, CANAL_WA, CANAL_NONE
 
+    plantilla = (
+        get_store_value(plantilla_key, default_texto) or default_texto
+    )
+    mensaje = _plantilla_render(plantilla, cliente, pedido)
+    telefono = normalizar_telefono_cliente(
+        getattr(cliente, "telefono", "") or ""
+    ) if cliente else ""
+
+    decision = elegir_canal(cliente, evento)
+    if decision.canal == CANAL_WA:
+        if not telefono:
+            # Sin teléfono no hay destino WA; degradamos a skip para
+            # no bloquear el marcaje operativo del rider.
+            from canal_service import registrar_skip, ChannelDecision
+            registrar_skip(
+                cliente, evento,
+                ChannelDecision(CANAL_NONE, "sin_telefono_para_wa", decision.metadata),
+                pedido_id=pedido.id,
+            )
+            return None, CANAL_NONE
+        outbox = NotificationOutbox(
+            canal=NOTIF_CANAL,
+            evento=evento,
+            destinatario=telefono,
+            payload_json=json.dumps({
+                "telefono": telefono,
+                "mensaje": mensaje,
+                "pedido_id": pedido.id,
+                "numero_pedido": pedido.numero_pedido,
+                "canal_decision": decision.razon,
+            }, ensure_ascii=False),
+            pedido_id=pedido.id,
+            user_id=pedido.cliente_id,
+        )
+        db.session.add(outbox)
+        return outbox, CANAL_WA
+    # push / web / push+web / none: despachamos inline y devolvemos None.
+    enviar_por_canal(
+        cliente, decision,
+        evento=evento,
+        titulo="El Parcerito de Carmona",
+        mensaje=mensaje,
+        url="/",
+        pedido_id=pedido.id,
+    )
+    return None, decision.canal
+
+
+def notificar_en_camino(pedido: Order, actor_id: int | None = None):
+    """Emite (una sola vez) la notificación "voy en camino" al cliente.
+
+    Idempotente: si ``Order.en_camino_at`` es no-NULL o ya existe una
+    entrada en ``NotificationOutbox`` con evento ``delivery_en_camino``
+    para este pedido, no reencola nada y devuelve ``(None, "ya_notificado")``.
+
+    Ruteada a través de ``canal_service`` para respetar el gate anti-baneo
+    Meta. Ver ``docs/CANAL_NOTIFICACIONES.md``.
+    """
+    if pedido.en_camino_at is not None:
+        return None, "ya_notificado"
+    ya_encolada = (
+        db.session.query(NotificationOutbox.id)
+        .filter(
+            NotificationOutbox.pedido_id == pedido.id,
+            NotificationOutbox.evento == NOTIF_EVENTO_EN_CAMINO,
+        )
+        .first()
+    )
+    if ya_encolada:
+        pedido.en_camino_at = utcnow()
+        db.session.flush()
+        return None, "ya_notificado"
+
+    cliente = db.session.get(User, pedido.cliente_id)
+    outbox, canal = _encolar_notificacion_cliente(
+        pedido=pedido, cliente=cliente,
+        evento=NOTIF_EVENTO_EN_CAMINO,
+        canal_key=NOTIF_CANAL,
+        plantilla_key="delivery_notificar_camino_texto",
+        default_texto=(
+            "🛵 Tu pedido #{codigo} ya salió de la tienda. "
+            "Llega en unos minutos."
+        ),
+    )
+    pedido.en_camino_at = utcnow()
+    db.session.flush()
+    return outbox, canal
+
+
+def notificar_en_la_puerta(pedido: Order, actor_id: int | None = None) -> NotificationOutbox | None:
+    """Emite (una sola vez) la notificación "repartidor en la puerta".
+
+    Reutiliza la columna existente ``Order.en_punto_encuentro`` + timestamp
+    como marca operativa. Consulta ``canal_service`` para respetar el gate
+    anti-baneo Meta. Idempotente.
+    """
     if pedido.en_punto_encuentro:
         return None
     ya_encolada = (
@@ -524,45 +660,19 @@ def notificar_en_la_puerta(pedido: Order, actor_id: int | None = None) -> Notifi
         .first()
     )
     if ya_encolada:
-        return None
-
-    cliente = db.session.get(User, pedido.cliente_id)
-    telefono = normalizar_telefono_cliente(getattr(cliente, "telefono", "") or "") if cliente else ""
-    if not telefono:
-        # Sin teléfono normalizable no hay destino; se salta silenciosamente
-        # y el subestado igual se marca para consumo interno.
         pedido.en_punto_encuentro = True
         pedido.en_punto_encuentro_en = utcnow()
         db.session.flush()
         return None
 
-    from store_config import get_store_value
-
-    plantilla = (
-        get_store_value(
-            "delivery_franjas_notificar_puerta_texto",
-            "Tu repartidor está en la puerta.",
-        )
-        or "Tu repartidor está en la puerta."
-    )
-
-    # El procesador WhatsApp (services.procesar_notificaciones_pendientes)
-    # espera payload con las claves 'telefono' y 'mensaje'. Respetamos ese
-    # contrato compartido para que el worker despache sin cambios.
-    outbox = NotificationOutbox(
-        canal=NOTIF_CANAL,
+    cliente = db.session.get(User, pedido.cliente_id)
+    outbox, _canal = _encolar_notificacion_cliente(
+        pedido=pedido, cliente=cliente,
         evento=NOTIF_EVENTO_EN_PUERTA,
-        destinatario=telefono,
-        payload_json=json.dumps({
-            "telefono": telefono,
-            "mensaje": plantilla,
-            "pedido_id": pedido.id,
-            "numero_pedido": pedido.numero_pedido,
-        }, ensure_ascii=False),
-        pedido_id=pedido.id,
-        user_id=pedido.cliente_id,
+        canal_key=NOTIF_CANAL,
+        plantilla_key="delivery_franjas_notificar_puerta_texto",
+        default_texto="Tu repartidor está en la puerta con tu pedido #{codigo}.",
     )
-    db.session.add(outbox)
     pedido.en_punto_encuentro = True
     pedido.en_punto_encuentro_en = utcnow()
     db.session.flush()

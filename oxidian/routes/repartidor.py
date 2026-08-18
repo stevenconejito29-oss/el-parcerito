@@ -1427,6 +1427,27 @@ def franjas_iniciar_reparto(slot_id):
     return redirect(url_for("repartidor.ruta"))
 
 
+@repartidor_bp.route("/pedido/<int:pedido_id>/en-camino", methods=["POST"])
+@repartidor_required
+def pedido_en_camino(pedido_id):
+    """Notifica al cliente 'voy en camino' (canal_service anti-baneo Meta).
+
+    Idempotente: si el pedido ya tiene , devuelve
+     sin encolar de nuevo. El canal efectivo lo
+    decide canal_service (push, web, push+web, wa o none).
+    """
+    pedido = get_or_404(Order, pedido_id)
+    if pedido.repartidor_id not in (None, current_user.id) and not _es_admin_operativo():
+        abort(403)
+    from delivery_slots_service import notificar_en_camino
+
+    outbox, canal = notificar_en_camino(pedido, actor_id=current_user.id)
+    db.session.commit()
+    if canal == "ya_notificado":
+        return jsonify({"ok": True, "ya_notificado": True, "canal": None})
+    return jsonify({"ok": True, "ya_notificado": False, "canal": canal})
+
+
 @repartidor_bp.route("/pedido/<int:pedido_id>/en-la-puerta", methods=["POST"])
 @repartidor_required
 def pedido_en_la_puerta(pedido_id):
