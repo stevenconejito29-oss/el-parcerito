@@ -719,11 +719,18 @@ def create_app(env="default"):
 
     @app.context_processor
     def inject_constants():
-        from models import ALERGENOS_EU
+        from models import ALERGENOS_EU, SiteConfig
+        # Analítica opcional Umami: sólo se inyecta el script si hay ID
+        # configurado. Ver docs/OBSERVABILIDAD.md para el pendiente HTTPS.
+        try:
+            umami_website_id = (SiteConfig.get("UMAMI_WEBSITE_ID", "") or "").strip()
+        except Exception:
+            umami_website_id = ""
         return {
             "ALERGENOS_EU": ALERGENOS_EU,
             "asset_version": app.config["ASSET_VERSION"],
             "now": datetime.now,
+            "umami_website_id": umami_website_id,
         }
 
     @app.template_filter("time_ago")
@@ -866,7 +873,7 @@ def create_app(env="default"):
                 "PAIS_NEGOCIO", "EMAIL_CONTACTO", "BIZUM_TELEFONO",
                 "BIZUM_HABILITADO", "EFECTIVO_HABILITADO",
                 "MODO_TIENDA", "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
-                "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
+                "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS", "FEATURE_FAVORES",
                 "COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO",
                 *PUBLIC_THEME_DEFAULTS.keys(), *PUBLIC_UI_DEFAULTS.keys(),
                 "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON",
@@ -1007,6 +1014,7 @@ def create_app(env="default"):
                 "recogida": feature_recogida,
                 "pedidos_programados": _to_bool(_c("FEATURE_PEDIDOS_PROGRAMADOS", "1"), True),
                 "puntos": _to_bool(_c("FEATURE_PUNTOS", "1"), True),
+                "favores": _to_bool(_c("FEATURE_FAVORES", "1"), True) and _to_bool(_c("FEATURE_DELIVERY", "1"), True),
                 # El flujo multi-proveedor permanece desactivado en esta edición;
                 # no se deben anunciar pantallas que el negocio no contrató.
                 "proveedores": False,
@@ -1078,6 +1086,8 @@ def create_app(env="default"):
     from routes.staff import staff_bp
     from routes.push import push_bp
     from routes.proveedor import proveedor_bp
+    from routes.web_chat import web_chat_bp
+    from routes.paisanos import paisanos_bp
 
     csrf.exempt(api_bot_bp)
     # La API interna usa clave HMAC-safe en cada endpoint, pero no se exime
@@ -1098,6 +1108,8 @@ def create_app(env="default"):
     app.register_blueprint(staff_bp,       url_prefix="/staff")
     app.register_blueprint(push_bp,        url_prefix="/api/push")
     app.register_blueprint(proveedor_bp,   url_prefix="/proveedor")
+    app.register_blueprint(web_chat_bp,    url_prefix="/api/web-chat")
+    app.register_blueprint(paisanos_bp,    url_prefix="/")
 
     # ── Páginas de error personalizadas ──
     @app.errorhandler(404)
@@ -1170,7 +1182,7 @@ def create_app(env="default"):
             style_sources,
             "font-src 'self' data: https://fonts.gstatic.com",
             "img-src 'self' data: blob: https:",
-            "connect-src 'self'",
+            "connect-src 'self' https://stats.elparcerito.com",
             "manifest-src 'self'",
             "worker-src 'self' blob:",
         ))
@@ -1222,6 +1234,29 @@ def create_app(env="default"):
             _seed_operational_basics()
             _seed_demo_data()
             _seed_vapid_keys(app)
+
+    # ── APScheduler: portal /paisanos ──
+    # Refresco cada 15 min de tasas COP, clima y RSS (noticias + BOE).
+    # Tick síncrono inicial para que Redis nunca esté vacío al primer request.
+    # Se saltan tanto el tick como el scheduler cuando OXIDIAN_SKIP_STARTUP_DB=1
+    # (comandos de mantenimiento, tests) para no molestar en entornos aislados.
+    if not _to_bool(os.environ.get("OXIDIAN_SKIP_STARTUP_DB"), False):
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            from paisanos_service import refrescar_todo as _paisanos_refrescar
+            try:
+                _paisanos_refrescar()
+            except Exception:
+                app.logger.exception("paisanos: fallo en refresco inicial")
+            _scheduler = BackgroundScheduler(daemon=True, timezone="Europe/Madrid")
+            _scheduler.add_job(
+                _paisanos_refrescar, "interval", minutes=15,
+                id="paisanos_refresh", max_instances=1, coalesce=True,
+            )
+            _scheduler.start()
+            app.extensions["paisanos_scheduler"] = _scheduler
+        except Exception:
+            app.logger.exception("paisanos: no se pudo iniciar APScheduler")
 
     return app
 
@@ -1357,6 +1392,7 @@ def _seed_admin():
         ("FEATURE_RECOGIDA",                  "1", "Permitir pedidos para recoger"),
         ("FEATURE_PEDIDOS_PROGRAMADOS",       "1", "Permitir productos/pedidos con fecha de entrega"),
         ("FEATURE_PUNTOS",                    "1", "Mostrar saldo y permitir canjes; la acumulación interna continúa siempre"),
+        ("FEATURE_FAVORES",                   "1", "Activar El Cruce: encargos negociables de punto A a punto B en la PWA"),
         ("SERVICE_COMMISSION_PCT",            "0", "Porcentaje ganado por venta en modo servicio"),
         ("CENTRO_LAT",                        _env_default("CENTRO_LAT", ""),      "Latitud del centro de reparto"),
         ("CENTRO_LON",                        _env_default("CENTRO_LON", ""),      "Longitud del centro de reparto"),
@@ -1364,6 +1400,8 @@ def _seed_admin():
         ("VALIDAR_RADIO_ENTREGA",             "1",          "Activar validación de radio de entrega (1/0)"),
         ("BLOQUEAR_DIRECCION_NO_VERIFICADA",  "1",          "Bloquear pedido si no se puede geocodificar la dirección (1/0)"),
         ("DELIVERY_GPS_MAX_ACCURACY_M",        "200",        "Precisión GPS máxima aceptada en metros"),
+        # Analítica web opcional (Umami). Ver docs/OBSERVABILIDAD.md — vacío = sin tracking.
+        ("UMAMI_WEBSITE_ID",                   _env_default("UMAMI_WEBSITE_ID", ""), "ID del site en Umami (analítica web). Vacío = desactivado."),
         ("DELIVERY_ADDRESS_GPS_MAX_DISTANCE_KM", "1",         "Desvío máximo entre la dirección escrita y el GPS"),
     ]
     _defaults.extend(

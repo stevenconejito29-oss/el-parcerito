@@ -7780,3 +7780,91 @@ def chats_close(client_jid):
         return redirect(url_for("admin.chats_detalle", client_jid=client_jid))
     flash("Chat cerrado — el cliente ha vuelto al menú principal.", "success")
     return redirect(url_for("admin.chats_index"))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# BOT: AUTO-APRENDIZAJE (señales del LLM que el determinista no capturó)
+# ═══════════════════════════════════════════════════════════════════════
+
+@admin_bp.route("/bot/aprendizaje")
+@admin_required
+def bot_aprendizaje():
+    """Vista de señales de auto-aprendizaje ordenadas por frecuencia.
+
+    Cada señal representa un patrón de mensaje que el sistema
+    determinista del bot NO reconoció (no matcheó FAQ ni keyword) y
+    que el LLM respondió por su cuenta. El admin puede revisar cuáles
+    son los patrones más recurrentes y decidir promoverlos a keyword
+    permanente o FAQ canned — reduciendo la dependencia futura del LLM.
+    """
+    from models import BotLearningSignal
+
+    solo_pendientes = request.args.get("pendientes", "1") == "1"
+    q = BotLearningSignal.query
+    if solo_pendientes:
+        q = q.filter(BotLearningSignal.applied.is_(False))
+    signals = (
+        q.order_by(
+            BotLearningSignal.count.desc(),
+            BotLearningSignal.last_seen_at.desc(),
+        )
+        .limit(100)
+        .all()
+    )
+
+    total_pendientes = BotLearningSignal.query.filter(
+        BotLearningSignal.applied.is_(False)
+    ).count()
+    total_aplicadas = BotLearningSignal.query.filter(
+        BotLearningSignal.applied.is_(True)
+    ).count()
+
+    return render_template(
+        "admin/bot_aprendizaje.html",
+        signals=signals,
+        solo_pendientes=solo_pendientes,
+        total_pendientes=total_pendientes,
+        total_aplicadas=total_aplicadas,
+        now=utcnow(),
+    )
+
+
+@admin_bp.route("/bot/aprendizaje/<int:signal_id>/aplicar", methods=["POST"])
+@admin_required
+def bot_aprendizaje_aplicar(signal_id):
+    """Marca una señal como 'aplicada' (el admin ya la añadió al KB
+    manualmente). No modifica ni añade keywords automáticamente — solo
+    trackea qué señales ya trabajó el admin para que no vuelvan al top.
+    """
+    from models import BotLearningSignal
+
+    signal = get_or_404(BotLearningSignal, signal_id)
+    signal.applied = True
+    signal.applied_at = utcnow()
+    signal.applied_by = current_user.id
+    try:
+        db.session.commit()
+        flash(f"Señal marcada como aplicada (#{signal_id}).", "success")
+    except Exception:
+        db.session.rollback()
+        flash("No se pudo marcar la señal como aplicada.", "danger")
+    return redirect(url_for("admin.bot_aprendizaje"))
+
+
+@admin_bp.route("/bot/aprendizaje/<int:signal_id>/reabrir", methods=["POST"])
+@admin_required
+def bot_aprendizaje_reabrir(signal_id):
+    """Deshace el 'aplicada' de una señal — vuelve a la lista pendiente."""
+    from models import BotLearningSignal
+
+    signal = get_or_404(BotLearningSignal, signal_id)
+    signal.applied = False
+    signal.applied_at = None
+    signal.applied_by = None
+    try:
+        db.session.commit()
+        flash(f"Señal reabierta (#{signal_id}).", "info")
+    except Exception:
+        db.session.rollback()
+        flash("No se pudo reabrir la señal.", "danger")
+    return redirect(url_for("admin.bot_aprendizaje"))

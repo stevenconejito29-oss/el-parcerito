@@ -1,0 +1,109 @@
+{% extends "admin_base.html" %}
+{% block title %}Bot · Aprendizaje — Admin{% endblock %}
+{% block content %}
+<div class="work-area">
+
+<section class="work-hero">
+  <div>
+    <span class="work-eyebrow">Chatbot · Auto-aprendizaje</span>
+    <h1 class="work-title">Señales del LLM</h1>
+    <p class="work-subtitle">
+      Cada fila es un patrón de mensaje que el bot determinista NO
+      reconoció y que el LLM respondió por su cuenta. Cuanto más alto
+      el contador, más común es la pregunta — buena candidata a
+      convertir en FAQ canned o añadir al diccionario de keywords.
+    </p>
+  </div>
+  <div class="work-actions-top">
+    <a class="work-btn {{ 'work-btn-primary' if solo_pendientes else 'work-btn-ghost' }}"
+       href="{{ url_for('admin.bot_aprendizaje', pendientes=1) }}">
+      Pendientes ({{ total_pendientes }})
+    </a>
+    <a class="work-btn {{ 'work-btn-primary' if not solo_pendientes else 'work-btn-ghost' }}"
+       href="{{ url_for('admin.bot_aprendizaje', pendientes=0) }}">
+      Todas ({{ total_pendientes + total_aplicadas }})
+    </a>
+  </div>
+</section>
+
+{% if not signals %}
+<div class="work-card" style="padding:1.2rem;text-align:center;">
+  <p><strong>No hay señales {{ 'pendientes' if solo_pendientes else 'registradas' }}.</strong></p>
+  <p style="margin-top:.5rem;color:var(--col-muted);font-size:.9rem">
+    {% if solo_pendientes %}
+      Si el LLM está activo (BOT_AI_ENABLED=1) y hay clientes usando el bot,
+      irán apareciendo aquí las consultas que el determinista no captura.
+      Revisa todas incluyendo aplicadas si quieres ver el histórico.
+    {% else %}
+      Aún no se ha registrado ninguna señal. Activa el LLM en /superadmin/config
+      (BOT_AI_ENABLED, BOT_AI_PROVIDER, BOT_AI_KEY) para empezar a recolectar.
+    {% endif %}
+  </p>
+</div>
+{% else %}
+
+<div class="work-list" style="display:flex;flex-direction:column;gap:.75rem;margin-top:1rem;">
+  {% for s in signals %}
+  <article class="work-card" style="padding:1rem;{{ 'opacity:.65' if s.applied else '' }}">
+    <header style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;flex-wrap:wrap;">
+      <div style="flex:1;min-width:0;">
+        <strong style="font-size:1.02rem;font-weight:800;">
+          {{ s.count }}× <code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9rem;background:var(--col-hover);padding:.15rem .4rem;border-radius:.35rem;">{{ s.mensaje_ejemplo }}</code>
+        </strong>
+        <div style="margin-top:.35rem;font-size:.82rem;color:var(--col-muted);">
+          <small>Normalizado:</small>
+          <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--col-text);">{{ s.mensaje_norm }}</span>
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0;">
+        {% if s.action_llm %}
+        <span style="display:inline-block;padding:.2rem .55rem;background:color-mix(in srgb, var(--brand-primary) 18%, transparent);border-radius:999px;font-size:.72rem;font-weight:800;">
+          {{ s.action_llm }}
+        </span>
+        {% endif %}
+        <div style="margin-top:.4rem;font-size:.72rem;color:var(--col-muted);">
+          {% set delta = ((now - s.last_seen_at).total_seconds() // 60)|int if s.last_seen_at and now else 0 %}
+          {% if delta < 60 %}hace {{ delta }}m
+          {% elif delta < 1440 %}hace {{ (delta // 60)|int }}h
+          {% else %}hace {{ (delta // 1440)|int }}d{% endif %}
+        </div>
+      </div>
+    </header>
+
+    {% if s.reply_snippet %}
+    <div style="margin-top:.7rem;padding:.55rem .7rem;background:var(--col-elevated);border-left:3px solid var(--brand-accent);border-radius:.4rem;font-size:.85rem;line-height:1.4;">
+      <small style="display:block;color:var(--col-muted);font-weight:700;margin-bottom:.2rem;">RESPUESTA DEL LLM</small>
+      {{ s.reply_snippet }}
+    </div>
+    {% endif %}
+
+    <footer style="display:flex;justify-content:space-between;align-items:center;margin-top:.7rem;gap:.5rem;flex-wrap:wrap;">
+      <small style="color:var(--col-faint);font-size:.72rem;">
+        Primera vez: {{ s.first_seen_at.strftime('%d/%m %H:%M') if s.first_seen_at else '—' }}
+        {% if s.applied %}
+          · <strong style="color:var(--brand-primary)">✅ Aplicada</strong>
+          {% if s.applied_at %}el {{ s.applied_at.strftime('%d/%m') }}{% endif %}
+        {% endif %}
+      </small>
+      <form method="POST" action="{{ url_for('admin.bot_aprendizaje_reabrir' if s.applied else 'admin.bot_aprendizaje_aplicar', signal_id=s.id) }}" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="work-btn {{ 'work-btn-ghost' if s.applied else 'work-btn-primary' }}" style="font-size:.78rem;padding:.4rem .8rem;">
+          {{ 'Reabrir' if s.applied else 'Marcar aplicada' }}
+        </button>
+      </form>
+    </footer>
+  </article>
+  {% endfor %}
+</div>
+
+<p style="margin-top:1.5rem;color:var(--col-muted);font-size:.85rem;">
+  Cómo usar esta vista: cuando un patrón se repite mucho, edita
+  <code>chat/bot.js</code> (CLIENT_INTENT_KEYWORDS o CLIENT_FAQS) para
+  cazarlo sin necesidad del LLM. Luego marca la señal como "aplicada"
+  para sacarla de la lista.
+</p>
+
+{% endif %}
+
+</div>
+{% endblock %}

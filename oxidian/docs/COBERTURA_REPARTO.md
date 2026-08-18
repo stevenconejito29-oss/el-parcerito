@@ -98,3 +98,74 @@ No se eliminan automáticamente para no alterar tarifas o zonas históricas.
 - El `zona_id` se mantiene además como relación operativa para agrupación y
   reparto. El snapshot conserva la evidencia comercial; la relación permite
   trabajar el pedido actual.
+
+## Reparto por franjas horarias (módulo opcional)
+
+Toggle: `delivery_franjas_activo` en SiteConfig (default 0). Convive con
+`delivery_inmediato_activo` (default 1); ambos pueden estar activos.
+
+**Modelo**
+
+- `DeliverySlot`: franja horaria concreta (fecha, hora_inicio, hora_fin) con
+  `capacidad_max` (pedidos), `max_repartidores`, `activo`, y cierre
+  configurable (`cierre_modo` ∈ `al_iniciar` (default) | `al_iniciar_siguiente`
+  (legacy, equivalente) | `minutos_antes` | `hora_fija` + `cierre_valor`). Si
+  el modo es NULL, hereda del default global. El modo `al_iniciar` cierra la
+  franja a nuevos pedidos exactamente cuando llega su `hora_inicio` — es
+  decir, cuando arranca el reparto.
+- **Validación cruzada con horario de tienda:** al crear una franja se
+  rechaza (400) si `hora_inicio`/`hora_fin` caen fuera de la ventana efectiva
+  del día (del `HORARIO_SEMANAL_JSON` para ese `weekday()`, o del par
+  `HORARIO_APERTURA`/`HORARIO_CIERRE` como fallback). Mensaje:
+  `"La franja HH:MM–HH:MM cae fuera del horario de tienda (apertura HH:MM,
+  cierre HH:MM)"`.
+- `SlotRepartidor`: asignación self-service del repartidor a la franja.
+  Índice único parcial evita dos asignaciones activas del mismo rider a la
+  misma franja.
+- `Order.slot_id`: FK opcional. NULL para delivery inmediato o recogida.
+
+**Flujo cliente**
+
+1. En checkout, el cliente ve los próximos `delivery_franjas_horizonte_cliente_dias`
+   días (default 7). La primera franja disponible cronológicamente aparece
+   destacada como "sugerida" / "recomendada" (dos alias del mismo campo en
+   la API); el cliente ve un chip "Recomendada — la próxima disponible" y
+   viene preseleccionada, aunque puede cambiarla antes de enviar.
+2. El cliente puede confirmar pedidos 24/7 mientras `delivery_franjas_activo=1`,
+   independientemente de `HORARIO_APERTURA`/`HORARIO_CIERRE`: el pedido queda
+   anclado a la franja elegida y la tienda lo prepara cuando arranque esa
+   franja.
+2. Al enviar el pedido, `reservar_franja` toma bloqueo (`SELECT ... FOR UPDATE`)
+   sobre la franja y valida capacidad. Si está llena o cerrada, la UI muestra
+   error explícito y destaca la siguiente sugerida disponible.
+3. Cancelar el pedido libera el cupo automáticamente: el conteo activo se
+   calcula en vivo excluyendo `estado='cancelado'`. No hay contador
+   incremental que pueda desincronizarse.
+
+**Flujo repartidor**
+
+- Ve la lista de franjas de la próxima semana en `/repartidor/franjas`.
+- Pulsa "tomar" en una franja libre; queda registrado como responsable hasta
+  el `max_repartidores`. Puede liberarla si su plan cambia.
+- Cuando llega al domicilio del cliente, pulsa "estoy en la puerta" en el
+  pedido. Se dispara **un único WhatsApp** al cliente (política anti-baneo
+  Meta): el resto de eventos van por push PWA. La notificación se apoya en
+  la columna existente `Order.en_punto_encuentro` para trazabilidad.
+
+**Flujo admin**
+
+- CRUD de franjas en `/admin/delivery/franjas` con vista `delivery_franjas_horizonte_admin_dias`
+  días (default 14).
+- Clonar semana completa (respeta UNIQUE(fecha, hora_inicio, hora_fin) para no
+  pisar planificación existente).
+- Encender/apagar toggles del módulo desde `/superadmin/config`.
+
+**Compatibilidad con el resto del sistema**
+
+- El módulo se apaga sin efectos secundarios: todos los endpoints devuelven
+  404 limpio cuando `delivery_franjas_activo=0`, y los pedidos existentes
+  (con `slot_id=NULL`) siguen operando en el flujo inmediato.
+- No modifica el snapshot congelado (`OrderItem.metadata_json`): el `slot_id`
+  es una relación operativa, no un dato comercial que necesite congelarse.
+- Zonas y cobertura geo siguen aplicando dentro de la franja seleccionada
+  (una franja no cambia si el cliente está en cobertura, solo cuándo llega).

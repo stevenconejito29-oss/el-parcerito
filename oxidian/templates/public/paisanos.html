@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Paisanos en España — Cotización, Noticias y Trámites | {{ brand.nombre }}{% endblock %}
+
+{% block preload %}
+<meta name="description" content="Cotización COP/EUR en vivo, noticias de Colombia y actualizaciones de extranjería para colombianos en España.">
+<meta property="og:title" content="Paisanos en España — Cotización, Noticias y Trámites">
+<meta property="og:description" content="Cotización COP/EUR en vivo, noticias de Colombia y actualizaciones de extranjería para colombianos en España.">
+<meta property="og:type" content="website">
+{% set _og_image = brand.hero_image_url or brand.logo_url or url_for('static', filename='pwa-icon-512.png', v=asset_version) %}
+<meta property="og:image" content="{{ _og_image|absolute_url }}">
+{% endblock %}
+
+{% block content %}
+<style nonce="{{ csp_nonce() }}">
+  .pais-hero { background:#0f172a; color:#f8fafc; padding:2.5rem 1rem 1.5rem; border-radius:0 0 24px 24px; }
+  .pais-hero h1 { font-size:1.75rem; font-weight:800; margin:0 0 .35rem; }
+  .pais-hero p { color:#cbd5e1; margin:0; font-size:.95rem; }
+  .pais-hero .pais-flag { display:inline-flex; gap:.35rem; align-items:center; background:rgba(244,197,66,.15); border:1px solid rgba(244,197,66,.4); color:#f4c542; padding:.25rem .6rem; border-radius:999px; font-size:.75rem; font-weight:700; letter-spacing:.03em; margin-bottom:.75rem; }
+  .pais-wrap { max-width:1080px; margin:0 auto; }
+  .pais-grid { display:grid; grid-template-columns:1fr; gap:1rem; margin:-1.25rem 1rem 0; position:relative; }
+  @media (min-width:640px){ .pais-grid { grid-template-columns:repeat(2,1fr); } }
+  @media (min-width:1024px){ .pais-grid { grid-template-columns:repeat(4,1fr); } }
+  .pais-card { background:#0f172a; color:#f8fafc; border:1px solid rgba(244,197,66,.25); border-radius:18px; padding:1.15rem 1rem; box-shadow:0 12px 34px rgba(15,23,42,.25); transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+  .pais-card:hover { transform:translateY(-3px); border-color:rgba(244,197,66,.55); box-shadow:0 18px 40px rgba(15,23,42,.4); }
+  .pais-card .lbl { font-size:.7rem; letter-spacing:.08em; text-transform:uppercase; color:#94a3b8; margin-bottom:.4rem; }
+  .pais-card .val { font-size:1.6rem; font-weight:800; color:#f4c542; line-height:1.1; }
+  .pais-card .sub { font-size:.85rem; color:#cbd5e1; margin-top:.15rem; }
+  .pais-card .stamp { font-size:.68rem; color:#64748b; margin-top:.7rem; }
+  .pais-card.empty .val { color:#64748b; font-size:1rem; }
+  .pais-section { margin:2rem 1rem 3rem; }
+  .pais-section h2 { color:#0f172a; font-size:1.3rem; font-weight:800; margin-bottom:.9rem; display:flex; align-items:center; gap:.5rem; }
+  .pais-section h2::after { content:''; flex:1; height:2px; background:linear-gradient(to right, #f4c542, transparent); }
+  .pais-list { display:grid; grid-template-columns:1fr; gap:.75rem; }
+  @media (min-width:768px){ .pais-list { grid-template-columns:repeat(2,1fr); } }
+  .pais-item { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:1rem; transition:border-color .18s, box-shadow .18s, transform .18s; }
+  .pais-item:hover { border-color:#f4c542; box-shadow:0 6px 18px rgba(15,23,42,.08); transform:translateY(-2px); }
+  .pais-item a { color:#0f172a; font-weight:700; text-decoration:none; display:block; margin-bottom:.35rem; line-height:1.35; }
+  .pais-item a:hover { color:#245A9A; text-decoration:underline; }
+  .pais-item .src { font-size:.72rem; color:#64748b; letter-spacing:.03em; text-transform:uppercase; }
+  .pais-empty { padding:1rem; text-align:center; color:#64748b; background:#f1f5f9; border-radius:12px; }
+  .pais-boe-badge { display:inline-block; background:#245A9A; color:#fff; padding:.15rem .5rem; border-radius:6px; font-size:.65rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; margin-right:.4rem; }
+</style>
+
+<section class="pais-hero">
+  <div class="pais-wrap" style="padding:0 1rem;">
+    <span class="pais-flag">🇨🇴 Paisanos</span>
+    <h1>Tu Colombia en Carmona, siempre a la mano.</h1>
+    <p>Cotización del peso, clima al día y noticias de casa — con avisos de extranjería para que no se te escape nada.</p>
+  </div>
+</section>
+
+<div class="pais-wrap">
+
+  {# ── Widgets ── #}
+  <div class="pais-grid">
+    {# COP/EUR #}
+    {% set t = data.tasas %}
+    <article class="pais-card {% if not t or not t.cop_eur %}empty{% endif %}">
+      <div class="lbl">1 EUR en pesos</div>
+      {% if t and t.cop_eur %}
+        <div class="val">${{ "{:,.0f}".format(t.cop_eur).replace(",", ".") }}</div>
+        <div class="sub">COP por euro</div>
+        <div class="stamp" data-timeago="{{ t.updated_at }}">Actualizado {{ t.updated_at[:16] }}</div>
+      {% else %}
+        <div class="val">Actualizando…</div>
+      {% endif %}
+    </article>
+
+    {# USD/COP #}
+    <article class="pais-card {% if not t or not t.usd_cop %}empty{% endif %}">
+      <div class="lbl">1 USD en pesos</div>
+      {% if t and t.usd_cop %}
+        <div class="val">${{ "{:,.0f}".format(t.usd_cop).replace(",", ".") }}</div>
+        <div class="sub">COP por dólar</div>
+        <div class="stamp" data-timeago="{{ t.updated_at }}">Actualizado {{ t.updated_at[:16] }}</div>
+      {% else %}
+        <div class="val">Actualizando…</div>
+      {% endif %}
+    </article>
+
+    {# Clima Carmona #}
+    {% set c = data.clima %}
+    <article class="pais-card {% if not c or not c.carmona %}empty{% endif %}">
+      <div class="lbl">Clima en Carmona</div>
+      {% if c and c.carmona %}
+        <div class="val">{{ c.carmona.temperatura }}°C</div>
+        <div class="sub">Viento {{ c.carmona.viento }} km/h</div>
+        <div class="stamp" data-timeago="{{ c.updated_at }}">Actualizado {{ c.updated_at[:16] }}</div>
+      {% else %}
+        <div class="val">Actualizando…</div>
+      {% endif %}
+    </article>
+
+    {# Clima Bogotá #}
+    <article class="pais-card {% if not c or not c.bogota %}empty{% endif %}">
+      <div class="lbl">Clima en Bogotá</div>
+      {% if c and c.bogota %}
+        <div class="val">{{ c.bogota.temperatura }}°C</div>
+        <div class="sub">Viento {{ c.bogota.viento }} km/h</div>
+        <div class="stamp" data-timeago="{{ c.updated_at }}">Actualizado {{ c.updated_at[:16] }}</div>
+      {% else %}
+        <div class="val">Actualizando…</div>
+      {% endif %}
+    </article>
+  </div>
+
+  {# ── Noticias Colombia ── #}
+  <section class="pais-section">
+    <h2>📰 Últimas de Colombia</h2>
+    {% set n = data.noticias_co %}
+    {% if n and n['items'] %}
+      <div class="pais-list">
+        {% for it in n['items'] %}
+        <article class="pais-item">
+          <a href="{{ it.enlace }}" target="_blank" rel="noopener nofollow">{{ it.titulo }}</a>
+          <span class="src">{{ it.fuente }}</span>
+        </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="pais-empty">Actualizando titulares… vuelve en unos minutos.</div>
+    {% endif %}
+  </section>
+
+  {# ── Trámites BOE ── #}
+  <section class="pais-section">
+    <h2>📋 Trámites y extranjería (BOE)</h2>
+    {% set b = data.tramites_boe %}
+    {% if b and b['items'] %}
+      <div class="pais-list">
+        {% for it in b['items'] %}
+        <article class="pais-item">
+          <a href="{{ it.enlace }}" target="_blank" rel="noopener nofollow">
+            <span class="pais-boe-badge">BOE</span>{{ it.titulo }}
+          </a>
+          {% if it.publicado %}<span class="src">{{ it.publicado[:16] }}</span>{% endif %}
+        </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="pais-empty">Sin novedades relevantes de extranjería hoy.</div>
+    {% endif %}
+  </section>
+
+</div>
+{% endblock %}
