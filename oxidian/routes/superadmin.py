@@ -1786,18 +1786,28 @@ def guardar_config():
         if SiteConfig.get(otra, "1") == "0":
             flash("Debe quedar habilitado delivery o recogida.", "danger")
             return redirect(url_for("superadmin.config"))
-    if clave in {"delivery_inmediato_activo", "delivery_franjas_activo"} and valor == "0":
+    if clave in {"delivery_inmediato_activo", "delivery_franjas_activo"}:
         otra = (
             "delivery_franjas_activo"
             if clave == "delivery_inmediato_activo"
             else "delivery_inmediato_activo"
         )
-        if str(SiteConfig.get(otra, "0")).strip() in ("0", "false", "False"):
+        otra_actual = str(SiteConfig.get(otra, "0")).strip() in ("1", "true", "True")
+        if valor == "0" and not otra_actual:
             flash(
-                "Debe quedar activo al menos un método de reparto: inmediato o por franjas.",
+                "Debe quedar activo un método de reparto: inmediato o por franjas.",
                 "danger",
             )
             return redirect(url_for("superadmin.config"))
+        # Mutex: al activar uno, el otro se apaga automáticamente. Los dos
+        # métodos NO pueden coexistir — el flujo del cliente sería confuso.
+        if valor == "1" and otra_actual:
+            SiteConfig.set(otra, "0", user_id=current_user.id,
+                          descripcion=f"apagado automático por mutex al activar {clave}")
+            flash(
+                f"Se apagó «{otra}» automáticamente. Solo puede haber un método de reparto activo.",
+                "info",
+            )
     SiteConfig.set(clave, valor, user_id=current_user.id, descripcion=descripcion)
     es_secreto = any(token in clave for token in ("KEY", "SECRET", "PASSWORD", "TOKEN"))
     valor_auditado = "<redacted>" if es_secreto else valor
@@ -1875,17 +1885,18 @@ def guardar_config_seccion():
     ):
         flash("Debe quedar habilitado delivery o recogida.", "danger")
         return redirect(url_for("superadmin.config", section=parent_section))
-    if (
-        section == "operacion-modo"
-        and propuestos.get("FEATURE_DELIVERY", "1") == "1"
-        and str(propuestos.get("delivery_inmediato_activo", "1")).strip() in ("0", "false", "False")
-        and str(propuestos.get("delivery_franjas_activo", "0")).strip() in ("0", "false", "False")
-    ):
-        flash(
-            "Debe quedar activo al menos un método de reparto: inmediato o por franjas.",
-            "danger",
-        )
-        return redirect(url_for("superadmin.config", section=parent_section))
+    if section == "operacion-modo" and propuestos.get("FEATURE_DELIVERY", "1") == "1":
+        _inm = str(propuestos.get("delivery_inmediato_activo", "1")).strip() in ("1", "true", "True")
+        _fra = str(propuestos.get("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+        if not _inm and not _fra:
+            flash("Debe quedar activo un método de reparto: inmediato o por franjas.", "danger")
+            return redirect(url_for("superadmin.config", section=parent_section))
+        if _inm and _fra:
+            flash(
+                "No puedes tener los dos métodos activos a la vez. Elige uno: inmediato o por franjas.",
+                "danger",
+            )
+            return redirect(url_for("superadmin.config", section=parent_section))
     if (
         section == "operacion-horario"
         and not propuestos.get("HORARIO_SEMANAL_JSON")
