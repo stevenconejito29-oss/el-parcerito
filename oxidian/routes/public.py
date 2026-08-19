@@ -4693,12 +4693,46 @@ def api_delivery_franjas_disponibles():
         return jsonify({"error": "not_found"}), 404
 
     from delivery_slots_service import listar_franjas_cliente
-    from datetime import date as _date
+    from datetime import date as _date, datetime as _dt, timedelta as _td
 
     try:
         horizonte = int(get_store_value("delivery_franjas_horizonte_cliente_dias", "7"))
     except (TypeError, ValueError):
         horizonte = 7
 
-    franjas = listar_franjas_cliente(_date.today(), horizonte_dias=horizonte)
-    return jsonify({"horizonte_dias": horizonte, "franjas": franjas})
+    hoy = _date.today()
+    horizonte_max_dia = hoy + _td(days=horizonte - 1)
+
+    # Parámetros opcionales `desde` / `hasta` — permiten al calendario semanal
+    # del cliente navegar por semanas dentro del horizonte permitido. Si vienen
+    # fuera del horizonte, se clampan al rango válido (nunca reveló franjas
+    # más allá de lo configurado).
+    desde_raw = request.args.get("desde")
+    hasta_raw = request.args.get("hasta")
+
+    def _parse(s):
+        try:
+            return _dt.strptime(s, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return None
+
+    desde = _parse(desde_raw) if desde_raw else hoy
+    hasta = _parse(hasta_raw) if hasta_raw else horizonte_max_dia
+
+    # Clamp seguro: nunca antes de hoy ni después del horizonte.
+    if desde < hoy:
+        desde = hoy
+    if hasta > horizonte_max_dia:
+        hasta = horizonte_max_dia
+    if hasta < desde:
+        hasta = desde
+
+    rango_dias = (hasta - desde).days + 1
+    franjas = listar_franjas_cliente(desde, horizonte_dias=rango_dias)
+    return jsonify({
+        "horizonte_dias": horizonte,
+        "horizonte_max_dia": horizonte_max_dia.isoformat(),
+        "desde": desde.isoformat(),
+        "hasta": hasta.isoformat(),
+        "franjas": franjas,
+    })

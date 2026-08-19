@@ -8,50 +8,87 @@
   <div class="df-header">
     <div>
       <h1>Delivery · Franjas horarias</h1>
-      <p>Planifica los cupos de reparto por franja. Módulo
-        <strong>{{ 'ACTIVO' if modulo_activo else 'apagado' }}</strong>
-        — {% if not modulo_activo %}enciéndelo desde <a href="{{ url_for('superadmin.config') }}#delivery">configuración</a> para que el cliente lo vea en checkout.{% else %}Los clientes ya pueden elegir franja en checkout.{% endif %}
-      </p>
+      <p>Planifica los cupos de reparto por franja. Puedes editar aunque el módulo esté apagado.</p>
+    </div>
+    <div class="df-toolbar">
+      <button type="button" id="df-btn-clonar" class="df-btn" aria-label="Clonar la semana en curso a la semana siguiente">Clonar semana</button>
     </div>
   </div>
 
+  {% if not modulo_activo %}
+  <div class="df-cal-warning" role="status">
+    <strong>Módulo apagado</strong> — los clientes no ven todavía estas franjas.
+    Enciéndelo en <a href="{{ url_for('superadmin.config') }}#delivery">/superadmin/config</a> cuando esté listo.
+  </div>
+  {% endif %}
+
   <div id="df-msgs"></div>
 
-  <form id="df-form-crear" class="df-form" novalidate>
-    <label>Fecha
-      <input type="date" name="fecha" required>
-    </label>
-    <label>Hora inicio
-      <input type="time" name="hora_inicio" required>
-    </label>
-    <label>Hora fin
-      <input type="time" name="hora_fin" required>
-    </label>
-    <label>Capacidad (pedidos)
-      <input type="number" name="capacidad_max" min="1" value="8" required>
-    </label>
-    <label>Max repartidores
-      <input type="number" name="max_repartidores" min="1" value="{{ default_max_repartidores }}">
-    </label>
-    <label>Cierre (opcional)
-      <select name="cierre_modo">
-        <option value="">— default global —</option>
-        <option value="al_iniciar_siguiente">Al iniciar franja</option>
-        <option value="minutos_antes">Minutos antes</option>
-        <option value="hora_fija">Hora fija</option>
-      </select>
-    </label>
-    <label>Valor cierre
-      <input type="text" name="cierre_valor" placeholder="ej: 30 o 13:15">
-    </label>
-    <div class="df-form-actions">
-      <button type="submit" class="df-btn df-btn-primary">Crear franja</button>
-      <button type="button" id="df-btn-clonar" class="df-btn">Clonar semana anterior</button>
+  <div class="df-cal-nav" role="navigation" aria-label="Navegación de semanas">
+    <button type="button" class="df-cal-nav__btn" id="df-nav-prev" aria-label="Semana anterior">◄</button>
+    <span class="df-cal-nav__label" id="df-nav-label" aria-live="polite">Cargando…</span>
+    <div style="display:flex;gap:.4rem">
+      <button type="button" class="df-cal-nav__btn" id="df-nav-hoy" aria-label="Volver a la semana de hoy">Hoy</button>
+      <button type="button" class="df-cal-nav__btn" id="df-nav-next" aria-label="Semana siguiente">►</button>
     </div>
-  </form>
+  </div>
 
-  <div id="df-calendar">
+  <div id="df-calendar-container" role="region" aria-label="Calendario de franjas">
     <p class="df-day-empty">Cargando planificación…</p>
+  </div>
+</div>
+
+<div class="df-modal-backdrop" id="df-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="df-modal-title" hidden>
+  <div class="df-modal">
+    <div class="df-modal__header">
+      <h2 class="df-modal__title" id="df-modal-title">Nueva franja</h2>
+      <button type="button" class="df-modal__close" id="df-modal-close" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="df-modal-form" novalidate>
+      <div class="df-modal__body">
+        <div class="df-modal__error" id="df-modal-error" role="alert"></div>
+        <input type="hidden" name="id" id="df-f-id">
+        <input type="hidden" name="fecha" id="df-f-fecha">
+        <div class="df-modal__row">
+          <label>Hora inicio
+            <input type="time" name="hora_inicio" id="df-f-hora-inicio" required step="900">
+          </label>
+          <label>Hora fin
+            <input type="time" name="hora_fin" id="df-f-hora-fin" required step="900">
+          </label>
+        </div>
+        <div class="df-modal__row">
+          <label>Capacidad (pedidos)
+            <input type="number" name="capacidad_max" id="df-f-cap" min="1" value="8" required>
+          </label>
+          <label>Repartidores máx
+            <input type="number" name="max_repartidores" id="df-f-riders" min="1" value="{{ default_max_repartidores }}">
+          </label>
+        </div>
+        <details class="df-modal__advanced">
+          <summary>Cierre avanzado</summary>
+          <label>Modo de cierre
+            <select name="cierre_modo" id="df-f-cierre-modo">
+              <option value="">— default global —</option>
+              <option value="al_iniciar">Al iniciar la franja</option>
+              <option value="al_iniciar_siguiente">Al iniciar la siguiente</option>
+              <option value="minutos_antes">Minutos antes</option>
+              <option value="hora_fija">Hora fija</option>
+            </select>
+          </label>
+          <label>Valor de cierre
+            <input type="text" name="cierre_valor" id="df-f-cierre-valor" placeholder="ej: 30 o 13:15">
+          </label>
+        </details>
+      </div>
+      <div class="df-modal__footer">
+        <button type="button" class="df-btn df-btn-danger" id="df-modal-borrar" hidden>Borrar</button>
+        <div class="df-modal__footer-primary">
+          <button type="button" class="df-btn" id="df-modal-cancel">Cancelar</button>
+          <button type="submit" class="df-btn df-btn-primary" id="df-modal-save">Crear</button>
+        </div>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -59,100 +96,186 @@
 <script nonce="{{ csp_nonce() }}">
 (function () {
   const DF = window.DeliveryFranjas;
-  const cal = document.getElementById("df-calendar");
+  const cal = document.getElementById("df-calendar-container");
   const msgs = document.getElementById("df-msgs");
-  const form = document.getElementById("df-form-crear");
+  const navLabel = document.getElementById("df-nav-label");
+  const btnPrev = document.getElementById("df-nav-prev");
+  const btnNext = document.getElementById("df-nav-next");
+  const btnHoy  = document.getElementById("df-nav-hoy");
   const btnClonar = document.getElementById("df-btn-clonar");
 
+  const modal = document.getElementById("df-modal-backdrop");
+  const modalTitle = document.getElementById("df-modal-title");
+  const modalForm = document.getElementById("df-modal-form");
+  const modalError = document.getElementById("df-modal-error");
+  const modalSave = document.getElementById("df-modal-save");
+  const modalBorrar = document.getElementById("df-modal-borrar");
+  const fId = document.getElementById("df-f-id");
+  const fFecha = document.getElementById("df-f-fecha");
+  const fHi = document.getElementById("df-f-hora-inicio");
+  const fHf = document.getElementById("df-f-hora-fin");
+  const fCap = document.getElementById("df-f-cap");
+  const fRiders = document.getElementById("df-f-riders");
+  const fCierreModo = document.getElementById("df-f-cierre-modo");
+  const fCierreValor = document.getElementById("df-f-cierre-valor");
+
+  const ultimo = { hora_inicio: "13:00", hora_fin: "14:00", capacidad: 8, riders: {{ default_max_repartidores }} };
+
+  const urlSemana = new URL(window.location.href).searchParams.get("semana");
+  let semanaBase = urlSemana ? DF.parseISO(urlSemana) : new Date();
+
+  function actualizarNav() {
+    const [lun, dom] = DF.weekRange(semanaBase);
+    navLabel.textContent = DF.fmtRangoSemana(lun, dom);
+  }
+
   async function cargar() {
-    const { ok, status, data } = await DF.apiFetch("{{ url_for('admin.delivery_franjas_listar') }}");
+    actualizarNav();
+    const [lun, dom] = DF.weekRange(semanaBase);
+    const url = "{{ url_for('admin.delivery_franjas_listar') }}"
+      + "?desde=" + DF.toISO(lun) + "&hasta=" + DF.toISO(dom);
+    const { ok, status, data } = await DF.apiFetch(url);
     if (!ok) {
-      cal.innerHTML = `<p class="df-day-empty">Error al cargar (HTTP ${status}). ¿Módulo apagado?</p>`;
+      cal.innerHTML = `<p class="df-day-empty">Error al cargar (HTTP ${status}).</p>`;
       return;
     }
     render(data.franjas || []);
   }
 
   function render(franjas) {
-    if (!franjas.length) {
-      cal.innerHTML = `<div class="df-day" style="text-align:center;padding:2rem 1rem">
-        <p style="font-size:2rem;margin:0">📅</p>
-        <p class="df-day-empty" style="font-style:normal;font-weight:700;margin:.5rem 0 .2rem">Todavía no has creado franjas</p>
-        <p class="df-day-empty">Usa el formulario de arriba para crear la primera, o clona la semana anterior.</p>
-      </div>`;
-      return;
-    }
-    const html = DF.agruparPorFecha(franjas).map(([fecha, slots]) => {
-      const rows = slots.map(s => `
-        <div class="df-slot ${s.activo ? '' : 'df-slot-cerrada'}">
-          <div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>
-          <div class="df-slot-meta">
-            Cap ${s.capacidad_max} · Riders ${s.max_repartidores}
-            ${s.cierre_modo ? '· Cierre: ' + s.cierre_modo + (s.cierre_valor ? ' ' + s.cierre_valor : '') : ''}
-          </div>
-          <div class="df-slot-actions">
-            <button class="df-btn" data-act="toggle" data-id="${s.id}" data-activo="${s.activo}">
-              ${s.activo ? 'Desactivar' : 'Reactivar'}
-            </button>
-            <button class="df-btn df-btn-danger" data-act="borrar" data-id="${s.id}">Borrar</button>
-          </div>
-        </div>`).join("");
-      return `<div class="df-day">
-        <div class="df-day-head"><span class="df-day-title">${DF.fmtFecha(fecha)}</span></div>
-        <div class="df-slot-list">${rows}</div>
-      </div>`;
-    }).join("");
-    cal.innerHTML = html;
+    DF.renderCalendarioSemanal(cal, franjas, {
+      modo: "admin",
+      semanaInicio: semanaBase,
+      onSlotClick: (el) => abrirModalEditar(el),
+      onEmptyDayClick: (iso) => abrirModalNuevo(iso),
+    });
   }
 
-  form.addEventListener("submit", async (e) => {
+  const DIAS = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+  const MESES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+
+  function abrirModal() {
+    modal.hidden = false;
+    modal.classList.add("is-open");
+    document.body.style.overflow = "hidden";
+    setTimeout(() => fHi.focus(), 30);
+    document.addEventListener("keydown", onEscape);
+  }
+  function cerrarModal() {
+    modal.hidden = true;
+    modal.classList.remove("is-open");
+    document.body.style.overflow = "";
+    modalError.classList.remove("is-visible");
+    modalError.textContent = "";
+    document.removeEventListener("keydown", onEscape);
+  }
+  function onEscape(e) { if (e.key === "Escape") cerrarModal(); }
+
+  function abrirModalNuevo(fechaIso) {
+    fId.value = "";
+    fFecha.value = fechaIso;
+    fHi.value = ultimo.hora_inicio;
+    fHf.value = ultimo.hora_fin;
+    fCap.value = ultimo.capacidad;
+    fRiders.value = ultimo.riders;
+    fCierreModo.value = ""; fCierreValor.value = "";
+    const d = DF.parseISO(fechaIso);
+    modalTitle.textContent = `Nueva franja — ${DIAS[d.getDay()]} ${d.getDate()} ${MESES[d.getMonth()]}`;
+    modalSave.textContent = "Crear";
+    modalBorrar.hidden = true;
+    abrirModal();
+  }
+
+  function abrirModalEditar(el) {
+    fId.value = el.dataset.slotId;
+    fFecha.value = el.dataset.fecha;
+    fHi.value = el.dataset.horaInicio;
+    fHf.value = el.dataset.horaFin;
+    fCap.value = el.dataset.capacidad;
+    fRiders.value = el.dataset.maxRepartidores || "";
+    fCierreModo.value = el.dataset.cierreModo || "";
+    fCierreValor.value = el.dataset.cierreValor || "";
+    const d = DF.parseISO(el.dataset.fecha);
+    modalTitle.textContent = `Editar franja — ${DIAS[d.getDay()]} ${d.getDate()} ${MESES[d.getMonth()]}`;
+    modalSave.textContent = "Guardar";
+    modalBorrar.hidden = false;
+    abrirModal();
+  }
+
+  document.getElementById("df-modal-close").addEventListener("click", cerrarModal);
+  document.getElementById("df-modal-cancel").addEventListener("click", cerrarModal);
+  modal.addEventListener("click", (e) => { if (e.target === modal) cerrarModal(); });
+
+  modalForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const fd = new FormData(form);
-    const payload = Object.fromEntries(fd.entries());
-    // Validación inline: hora fin debe ser posterior a hora inicio (mismo día).
-    if (payload.hora_inicio && payload.hora_fin && payload.hora_fin <= payload.hora_inicio) {
-      DF.msg(msgs, "La hora de fin debe ser posterior a la de inicio.", "err");
+    modalError.classList.remove("is-visible");
+    if (fHf.value <= fHi.value) {
+      modalError.textContent = "La hora de fin debe ser posterior a la de inicio.";
+      modalError.classList.add("is-visible"); return;
+    }
+    if (parseInt(fCap.value, 10) < 1) {
+      modalError.textContent = "La capacidad debe ser al menos 1.";
+      modalError.classList.add("is-visible"); return;
+    }
+    const payload = {
+      fecha: fFecha.value,
+      hora_inicio: fHi.value,
+      hora_fin: fHf.value,
+      capacidad_max: parseInt(fCap.value, 10),
+    };
+    if (fRiders.value) payload.max_repartidores = parseInt(fRiders.value, 10);
+    if (fCierreModo.value) { payload.cierre_modo = fCierreModo.value; payload.cierre_valor = fCierreValor.value || null; }
+
+    const editando = !!fId.value;
+    const url = editando
+      ? `/admin/delivery/franjas/${fId.value}`
+      : "{{ url_for('admin.delivery_franjas_crear') }}";
+    const method = editando ? "PATCH" : "POST";
+    const { ok, status, data } = await DF.apiFetch(url, { method, body: payload });
+    if (!ok) {
+      modalError.textContent = (data && data.error) || `Error HTTP ${status}`;
+      modalError.classList.add("is-visible");
       return;
     }
-    // Filtrar campos vacíos opcionales
-    if (!payload.cierre_modo) { delete payload.cierre_modo; delete payload.cierre_valor; }
-    if (!payload.max_repartidores) delete payload.max_repartidores;
-    payload.capacidad_max = parseInt(payload.capacidad_max, 10);
-    if (payload.max_repartidores) payload.max_repartidores = parseInt(payload.max_repartidores, 10);
-    const { ok, status, data } = await DF.apiFetch(
-      "{{ url_for('admin.delivery_franjas_crear') }}",
-      { method: "POST", body: payload }
-    );
-    if (ok) { DF.msg(msgs, "Franja creada.", "ok"); form.reset(); cargar(); }
-    else DF.msg(msgs, (data && data.error) || `Error HTTP ${status}`, "err");
+    ultimo.hora_inicio = fHi.value;
+    ultimo.hora_fin = fHf.value;
+    ultimo.capacidad = parseInt(fCap.value, 10);
+    if (fRiders.value) ultimo.riders = parseInt(fRiders.value, 10);
+    DF.msg(msgs, editando ? "Franja actualizada." : "Franja creada.", "ok");
+    cerrarModal();
+    cargar();
   });
 
-  cal.addEventListener("click", async (e) => {
-    const btn = e.target.closest("button[data-act]");
-    if (!btn) return;
-    const id = btn.dataset.id;
-    if (btn.dataset.act === "borrar") {
-      if (!confirm("¿Borrar esta franja?")) return;
-      const { ok, data } = await DF.apiFetch(`/admin/delivery/franjas/${id}`, { method: "DELETE" });
-      if (ok) { DF.msg(msgs, `Franja ${data.eliminado === 'soft' ? 'desactivada (tiene pedidos)' : 'borrada'}.`, "ok"); cargar(); }
-      else DF.msg(msgs, "Error al borrar.", "err");
+  modalBorrar.addEventListener("click", async () => {
+    if (!fId.value) return;
+    if (!confirm("¿Borrar esta franja?")) return;
+    const { ok, data } = await DF.apiFetch(`/admin/delivery/franjas/${fId.value}`, { method: "DELETE" });
+    if (ok) {
+      DF.msg(msgs, `Franja ${data.eliminado === 'soft' ? 'desactivada (tiene pedidos)' : 'borrada'}.`, "ok");
+      cerrarModal(); cargar();
+    } else {
+      modalError.textContent = "Error al borrar.";
+      modalError.classList.add("is-visible");
     }
-    if (btn.dataset.act === "toggle") {
-      const nuevoActivo = btn.dataset.activo !== "true";
-      const { ok } = await DF.apiFetch(`/admin/delivery/franjas/${id}`,
-        { method: "PATCH", body: { activo: nuevoActivo } });
-      if (ok) cargar(); else DF.msg(msgs, "Error al cambiar estado.", "err");
-    }
+  });
+
+  btnPrev.addEventListener("click", () => { semanaBase = DF.navegarSemana(-1, semanaBase); cargar(); });
+  btnNext.addEventListener("click", () => { semanaBase = DF.navegarSemana(1, semanaBase); cargar(); });
+  btnHoy.addEventListener("click",  () => { semanaBase = new Date(); DF.navegarSemana(0, semanaBase); cargar(); });
+  document.addEventListener("keydown", (e) => {
+    if (modal.classList.contains("is-open")) return;
+    if (e.target.matches("input, textarea, select")) return;
+    if (e.key === "ArrowLeft")  { semanaBase = DF.navegarSemana(-1, semanaBase); cargar(); }
+    if (e.key === "ArrowRight") { semanaBase = DF.navegarSemana(1, semanaBase); cargar(); }
   });
 
   btnClonar.addEventListener("click", async () => {
-    // Semana en curso (lunes) → siguiente semana (lunes)
     const hoy = new Date();
-    const diaSemana = hoy.getDay(); // 0=dom, 1=lun...
+    const diaSemana = hoy.getDay();
     const desplazamientoALunes = diaSemana === 0 ? -6 : (1 - diaSemana);
     const lunesEstaSemana = new Date(hoy); lunesEstaSemana.setDate(hoy.getDate() + desplazamientoALunes);
     const lunesSiguiente = new Date(lunesEstaSemana); lunesSiguiente.setDate(lunesEstaSemana.getDate() + 7);
-    const iso = d => d.toISOString().slice(0, 10);
+    const iso = d => DF.toISO(d);
     if (!confirm(`Clonar semana del ${iso(lunesEstaSemana)} → ${iso(lunesSiguiente)}?`)) return;
     const { ok, data } = await DF.apiFetch("{{ url_for('admin.delivery_franjas_clonar') }}",
       { method: "POST", body: { semana_origen: iso(lunesEstaSemana), semana_destino: iso(lunesSiguiente) } });

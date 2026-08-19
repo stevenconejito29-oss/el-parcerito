@@ -229,3 +229,348 @@ details[open] > .df-day-toggle::after { transform: rotate(180deg); }
 [data-delivery-theme="dark"] .df-slot { background: #1e1e1e; border-color: #3a3a3a; }
 [data-delivery-theme="dark"] .df-btn  { background: #2a2a2a; color: #eee; border-color: #444; }
 [data-delivery-theme="dark"] .df-btn:hover:not(:disabled) { background: #333; }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   Calendario semanal visual (7 columnas) — admin + cliente.
+   Añadido en sesión ago-19 (rediseño UI franjas). Reutiliza tokens
+   existentes (--brand-primary, --col-line…) y define tonos propios
+   --df-slot-* que casan con la paleta cálida del proyecto.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --df-slot-libre: color-mix(in srgb, #2f8a3f 18%, #fff);
+  --df-slot-libre-border: color-mix(in srgb, #2f8a3f 55%, transparent);
+  --df-slot-libre-ink: #1c5a25;
+  --df-slot-medio: color-mix(in srgb, #d69412 22%, #fff);
+  --df-slot-medio-border: color-mix(in srgb, #d69412 55%, transparent);
+  --df-slot-medio-ink: #7a5b00;
+  --df-slot-lleno: color-mix(in srgb, #c25050 18%, #fff);
+  --df-slot-lleno-border: color-mix(in srgb, #c25050 50%, transparent);
+  --df-slot-lleno-ink: #8a2a2a;
+  --df-slot-cerrada: color-mix(in srgb, #888 12%, #fff);
+  --df-slot-cerrada-border: color-mix(in srgb, #888 35%, transparent);
+  --df-slot-cerrada-ink: #6b6b6b;
+  --df-slot-sugerida-border: var(--brand-primary, #5a3a1e);
+}
+
+/* Cabecera de navegación semanal */
+.df-cal-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .5rem; flex-wrap: wrap; margin-bottom: .8rem;
+  padding: .5rem .75rem; border-radius: .7rem;
+  background: color-mix(in srgb, var(--brand-primary, #5a3a1e) 5%, transparent);
+  border: 1px solid var(--col-line, #d9d3ca);
+}
+.df-cal-nav__label {
+  font-weight: 800; font-size: .95rem; color: var(--brand-primary, #5a3a1e);
+  flex: 1; text-align: center; min-width: 180px;
+}
+.df-cal-nav__btn {
+  min-height: 44px; min-width: 44px; padding: .45rem .8rem;
+  border-radius: .5rem; border: 1px solid var(--col-line, #d9d3ca);
+  background: #fff; font-weight: 700; cursor: pointer; font-size: .9rem;
+}
+.df-cal-nav__btn:hover:not(:disabled) { background: var(--col-hover, #f4efe7); }
+.df-cal-nav__btn:disabled { opacity: .4; cursor: not-allowed; }
+.df-cal-nav__btn:focus-visible {
+  outline: 3px solid var(--brand-primary, #5a3a1e); outline-offset: 2px;
+}
+
+/* Tabs móvil (uno por día) */
+.df-cal-day-tabs {
+  display: none;
+  gap: .4rem; overflow-x: auto; scroll-snap-type: x mandatory;
+  padding: .3rem 0 .5rem; margin-bottom: .5rem;
+  -webkit-overflow-scrolling: touch;
+}
+.df-cal-day-tab {
+  flex: 0 0 auto; scroll-snap-align: start;
+  min-height: 56px; min-width: 62px; padding: .4rem .7rem;
+  border-radius: .55rem; border: 1px solid var(--col-line, #d9d3ca);
+  background: #fff; font-weight: 700; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: .1rem; font-size: .75rem; line-height: 1.1;
+}
+.df-cal-day-tab strong { font-size: 1.05rem; line-height: 1; }
+.df-cal-day-tab.is-active {
+  background: var(--brand-primary, #5a3a1e); color: #fff;
+  border-color: var(--brand-primary, #5a3a1e);
+}
+.df-cal-day-tab.is-today:not(.is-active) {
+  border-color: var(--brand-accent, #d69412);
+  box-shadow: inset 0 -3px 0 0 var(--brand-accent, #d69412);
+}
+.df-cal-day-tab.is-past { opacity: .5; }
+.df-cal-day-tab:focus-visible {
+  outline: 3px solid var(--brand-primary, #5a3a1e); outline-offset: 2px;
+}
+
+/* Grid semanal desktop (≥768px) */
+.df-calendar {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: .4rem;
+}
+
+.df-cal-day {
+  min-height: 200px;
+  background: #fff;
+  border: 1px solid var(--col-line, #d9d3ca);
+  border-radius: 10px;
+  padding: .4rem;
+  display: flex; flex-direction: column; gap: .35rem;
+}
+.df-cal-day.is-today {
+  border: 2px solid var(--brand-accent, #d69412);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-accent, #d69412) 15%, transparent);
+}
+.df-cal-day.is-past {
+  opacity: .4; background: color-mix(in srgb, #888 5%, #fff);
+}
+.df-cal-day.is-past .df-cal-slot,
+.df-cal-day.is-past .df-cal-day-add { pointer-events: none; }
+
+.df-cal-day-header {
+  text-align: center; padding: .3rem .2rem;
+  border-bottom: 1px solid var(--col-line, #d9d3ca);
+  position: sticky; top: 0; background: inherit; z-index: 1;
+}
+.df-cal-day-header__weekday {
+  display: block; font-size: .68rem; font-weight: 800;
+  color: var(--col-muted, #6b6b6b); text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.df-cal-day-header__day {
+  display: block; font-size: 1.15rem; font-weight: 800;
+  color: var(--brand-primary, #5a3a1e); line-height: 1.1;
+}
+.df-cal-day.is-today .df-cal-day-header__day { color: var(--brand-accent, #d69412); }
+.df-cal-day-header__today-badge {
+  display: inline-block; font-size: .6rem; font-weight: 800;
+  padding: .05rem .35rem; border-radius: 999px;
+  background: var(--brand-accent, #d69412); color: #fff; margin-top: .1rem;
+}
+
+.df-cal-day-body {
+  flex: 1; display: flex; flex-direction: column; gap: .3rem;
+  min-height: 40px;
+}
+.df-cal-day-empty {
+  font-size: .7rem; color: var(--col-muted, #6b6b6b);
+  font-style: italic; text-align: center; padding: .4rem .2rem;
+}
+
+/* Bloque franja individual dentro del calendario */
+.df-cal-slot {
+  padding: .35rem .45rem;
+  border-radius: 8px;
+  min-height: 44px;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  display: flex; flex-direction: column; gap: .15rem;
+  position: relative;
+  background: var(--df-slot-libre);
+  border-color: var(--df-slot-libre-border);
+  color: var(--df-slot-libre-ink);
+  font-size: .78rem;
+  transition: transform .12s, box-shadow .12s;
+}
+.df-cal-slot:hover:not(.df-cal-slot--lleno):not(.df-cal-slot--cerrada) {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--brand-primary, #5a3a1e) 18%, transparent);
+}
+.df-cal-slot:focus-visible {
+  outline: 3px solid var(--brand-primary, #5a3a1e);
+  outline-offset: 2px;
+}
+.df-cal-slot__hora { font-weight: 800; font-size: .82rem; line-height: 1.1; }
+.df-cal-slot__chip { font-size: .68rem; font-weight: 700; opacity: .92; }
+
+.df-cal-slot--libre {
+  background: var(--df-slot-libre);
+  border-color: var(--df-slot-libre-border);
+  color: var(--df-slot-libre-ink);
+}
+.df-cal-slot--medio {
+  background: var(--df-slot-medio);
+  border-color: var(--df-slot-medio-border);
+  color: var(--df-slot-medio-ink);
+}
+.df-cal-slot--lleno {
+  background: var(--df-slot-lleno);
+  border-color: var(--df-slot-lleno-border);
+  color: var(--df-slot-lleno-ink);
+  cursor: not-allowed;
+}
+.df-cal-slot--cerrada {
+  background: var(--df-slot-cerrada);
+  border-color: var(--df-slot-cerrada-border);
+  color: var(--df-slot-cerrada-ink);
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+.df-cal-slot--sugerida::after {
+  content: "★ Sugerida";
+  position: absolute; top: -8px; right: 4px;
+  background: var(--brand-primary, #5a3a1e); color: #fff;
+  font-size: .58rem; font-weight: 800; padding: .1rem .4rem;
+  border-radius: 999px; letter-spacing: .02em;
+}
+.df-cal-slot--sugerida {
+  border-color: var(--df-slot-sugerida-border) !important;
+  border-width: 2px !important;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--brand-primary, #5a3a1e) 22%, transparent);
+}
+.df-cal-slot--seleccionada {
+  outline: 3px solid var(--brand-primary, #5a3a1e);
+  outline-offset: 2px;
+  transform: translateY(-1px);
+}
+.df-cal-slot--inactivo { opacity: .55; }
+
+/* Botón "+" para crear franja en día (admin) */
+.df-cal-day-add {
+  min-height: 44px; padding: .4rem;
+  border: 1.5px dashed var(--col-line, #d9d3ca);
+  border-radius: 8px; background: transparent;
+  color: var(--col-muted, #6b6b6b);
+  font-weight: 800; font-size: 1.1rem; cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.df-cal-day-add:hover {
+  background: color-mix(in srgb, var(--brand-primary, #5a3a1e) 8%, transparent);
+  border-color: var(--brand-primary, #5a3a1e);
+  color: var(--brand-primary, #5a3a1e);
+}
+.df-cal-day-add:focus-visible {
+  outline: 3px solid var(--brand-primary, #5a3a1e); outline-offset: 2px;
+}
+
+/* Aviso módulo apagado (admin) */
+.df-cal-warning {
+  padding: .7rem .9rem; margin-bottom: .8rem;
+  border-radius: .55rem;
+  background: #fff3cd; color: #7a5b00;
+  border: 1px solid #f0d770; font-size: .85rem;
+}
+.df-cal-warning a { color: inherit; text-decoration: underline; font-weight: 700; }
+
+/* Empty state grande */
+.df-cal-empty-week {
+  text-align: center; padding: 2.2rem 1rem;
+  border: 2px dashed var(--col-line, #d9d3ca);
+  border-radius: 12px; color: var(--col-muted, #6b6b6b);
+}
+.df-cal-empty-week__icon { font-size: 2.4rem; margin-bottom: .5rem; }
+.df-cal-empty-week__title { font-weight: 800; font-size: 1rem; margin-bottom: .3rem; color: var(--brand-primary, #5a3a1e); }
+
+/* Modal admin — crear/editar franja */
+.df-modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, .55);
+  display: none; align-items: center; justify-content: center;
+  z-index: 9998; padding: 1rem;
+}
+.df-modal-backdrop.is-open { display: flex; }
+.df-modal {
+  background: #fff; border-radius: 14px;
+  width: 100%; max-width: 460px;
+  max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .3);
+  animation: dfModalIn .18s ease-out;
+  display: flex; flex-direction: column;
+}
+@keyframes dfModalIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.df-modal__header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .5rem; padding: .9rem 1.1rem;
+  border-bottom: 1px solid var(--col-line, #d9d3ca);
+}
+.df-modal__title { font-size: 1rem; font-weight: 800; margin: 0; color: var(--brand-primary, #5a3a1e); }
+.df-modal__close {
+  min-height: 44px; min-width: 44px; padding: .3rem .55rem;
+  border-radius: 8px; border: none; background: transparent;
+  font-size: 1.2rem; cursor: pointer; color: var(--col-muted, #6b6b6b);
+}
+.df-modal__close:hover { background: var(--col-hover, #f4efe7); }
+.df-modal__body { padding: 1rem 1.1rem; display: grid; gap: .7rem; }
+.df-modal__body label {
+  display: flex; flex-direction: column; gap: .2rem;
+  font-size: .78rem; font-weight: 700; color: var(--col-muted, #6b6b6b);
+}
+.df-modal__body input,
+.df-modal__body select {
+  min-height: 44px; padding: .45rem .6rem;
+  border: 1px solid var(--col-line, #d9d3ca);
+  border-radius: 8px; font-size: .95rem;
+}
+.df-modal__body input:focus,
+.df-modal__body select:focus {
+  outline: 3px solid color-mix(in srgb, var(--brand-primary, #5a3a1e) 40%, transparent);
+  outline-offset: 1px; border-color: var(--brand-primary, #5a3a1e);
+}
+.df-modal__row { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.df-modal__advanced summary {
+  cursor: pointer; font-size: .78rem; font-weight: 700;
+  color: var(--brand-primary, #5a3a1e);
+  padding: .3rem 0; list-style: none;
+}
+.df-modal__advanced summary::-webkit-details-marker { display: none; }
+.df-modal__advanced summary::before { content: "▸ "; }
+.df-modal__advanced[open] summary::before { content: "▾ "; }
+.df-modal__advanced[open] { display: grid; gap: .6rem; }
+.df-modal__error {
+  color: #8a2a2a; background: #fbe9e9;
+  padding: .5rem .7rem; border-radius: 6px;
+  font-size: .82rem; display: none;
+}
+.df-modal__error.is-visible { display: block; }
+.df-modal__footer {
+  display: flex; gap: .5rem; justify-content: space-between; flex-wrap: wrap;
+  padding: .8rem 1.1rem;
+  border-top: 1px solid var(--col-line, #d9d3ca);
+  background: color-mix(in srgb, var(--brand-primary, #5a3a1e) 3%, #fff);
+  padding-bottom: max(.8rem, env(safe-area-inset-bottom));
+}
+.df-modal__footer .df-modal__footer-primary {
+  margin-left: auto; display: flex; gap: .5rem;
+}
+
+/* Responsive: tablet (768–1023px) — 7 columnas más estrechas con scroll horizontal si hace falta */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .df-calendar {
+    grid-template-columns: repeat(7, minmax(100px, 1fr));
+    overflow-x: auto;
+  }
+  .df-cal-day { min-height: 180px; }
+}
+
+/* Responsive: móvil (<768px) — tabs + una sola columna del día activo */
+@media (max-width: 767px) {
+  .df-cal-day-tabs { display: flex; }
+  .df-calendar {
+    grid-template-columns: 1fr; gap: 0;
+  }
+  .df-cal-day { display: none; min-height: auto; }
+  .df-cal-day.is-active { display: flex; }
+  .df-cal-day-header { position: static; }
+  .df-cal-slot { min-height: 52px; font-size: .88rem; padding: .55rem .7rem; }
+  .df-cal-slot__hora { font-size: .95rem; }
+  .df-cal-slot__chip { font-size: .75rem; }
+  .df-modal {
+    max-width: 100%; max-height: 92vh;
+    border-radius: 14px 14px 0 0;
+    align-self: flex-end;
+    animation: dfModalInMobile .2s ease-out;
+  }
+  @keyframes dfModalInMobile { from { transform: translateY(100%); } to { transform: none; } }
+  .df-modal-backdrop { align-items: flex-end; padding: 0; }
+}
+
+/* Modo oscuro admin — soporta paleta oscura si el usuario tiene tema dark */
+[data-delivery-theme="dark"] .df-cal-day { background: #262626; border-color: #3a3a3a; }
+[data-delivery-theme="dark"] .df-cal-day-header { border-bottom-color: #3a3a3a; }
+[data-delivery-theme="dark"] .df-modal { background: #262626; color: #eee; }
+[data-delivery-theme="dark"] .df-modal__footer { background: #1e1e1e; }
+[data-delivery-theme="dark"] .df-cal-nav { background: #1e1e1e; border-color: #3a3a3a; }
+[data-delivery-theme="dark"] .df-cal-nav__btn { background: #2a2a2a; color: #eee; border-color: #3a3a3a; }

@@ -13,15 +13,23 @@
     </div>
   </div>
 
-  <div id="df-msgs"></div>
-  <div id="df-cal">
+  <div class="df-cal-nav" role="navigation" aria-label="Navegación de semanas">
+    <button type="button" class="df-cal-nav__btn" id="df-nav-prev" aria-label="Semana anterior">◄</button>
+    <span class="df-cal-nav__label" id="df-nav-label" aria-live="polite">Cargando…</span>
+    <div style="display:flex;gap:.4rem">
+      <button type="button" class="df-cal-nav__btn" id="df-nav-hoy" aria-label="Volver a la semana de hoy">Hoy</button>
+      <button type="button" class="df-cal-nav__btn" id="df-nav-next" aria-label="Semana siguiente">►</button>
+    </div>
+  </div>
+
+  <div id="df-cal" role="region" aria-label="Calendario de franjas disponibles">
     <p class="df-day-empty">Cargando franjas…</p>
   </div>
 
   <div id="df-summary" style="margin-top:1rem;padding:1rem;border:2px dashed var(--brand-primary,#5a3a1e);border-radius:.7rem;display:none;">
     <strong>Franja elegida:</strong> <span id="df-summary-text"></span>
     <p style="margin:.3rem 0 0;font-size:.8rem;color:var(--col-muted,#6b6b6b);">
-      Vista previa del selector. La integración con el checkout real llegará en el rediseño de la vista de pago.
+      Vista previa del selector. En checkout la elección se guarda automáticamente.
     </p>
   </div>
 </div>
@@ -33,61 +41,59 @@
   const cal = document.getElementById("df-cal");
   const summary = document.getElementById("df-summary");
   const summaryText = document.getElementById("df-summary-text");
-  let seleccionadoId = null;
+  const navLabel = document.getElementById("df-nav-label");
+  const btnPrev = document.getElementById("df-nav-prev");
+  const btnNext = document.getElementById("df-nav-next");
+  const btnHoy  = document.getElementById("df-nav-hoy");
+
+  const urlSemana = new URL(window.location.href).searchParams.get("semana");
+  let semanaBase = urlSemana ? DF.parseISO(urlSemana) : new Date();
+  let horizonteMaxDia = null; // ISO — más allá deshabilitamos "siguiente"
+
+  function actualizarNav() {
+    const [lun, dom] = DF.weekRange(semanaBase);
+    navLabel.textContent = DF.fmtRangoSemana(lun, dom);
+    const hoy = DF.startOfDay(new Date());
+    btnPrev.disabled = lun <= hoy;
+    if (horizonteMaxDia) {
+      const maxDate = DF.parseISO(horizonteMaxDia);
+      btnNext.disabled = dom >= maxDate;
+    }
+  }
 
   async function cargar() {
-    const { ok, status, data } = await DF.apiFetch("{{ url_for('public.api_delivery_franjas_disponibles') }}");
+    actualizarNav();
+    const [lun, dom] = DF.weekRange(semanaBase);
+    const url = "{{ url_for('public.api_delivery_franjas_disponibles') }}"
+      + "?desde=" + DF.toISO(lun) + "&hasta=" + DF.toISO(dom);
+    const { ok, status, data } = await DF.apiFetch(url);
     if (!ok) {
-      cal.innerHTML = `<p class="df-day-empty">
-        ${status === 404 ? 'El reparto por franjas no está activo en este momento.' : `Error al cargar (HTTP ${status}).`}
-      </p>`;
+      cal.innerHTML = `<p class="df-day-empty">${status === 404
+        ? 'El reparto por franjas no está activo en este momento.'
+        : `Error al cargar (HTTP ${status}).`}</p>`;
       return;
     }
-    render(data.franjas || []);
+    if (data.horizonte_max_dia) horizonteMaxDia = data.horizonte_max_dia;
+    actualizarNav();
+    DF.renderCalendarioSemanal(cal, data.franjas || [], {
+      modo: "cliente",
+      semanaInicio: semanaBase,
+      onSlotClick: (el) => {
+        cal.querySelectorAll(".df-cal-slot--seleccionada").forEach(x => x.classList.remove("df-cal-slot--seleccionada"));
+        el.classList.add("df-cal-slot--seleccionada");
+        summaryText.textContent = el.dataset.label + " (id " + el.dataset.slotId + ")";
+        summary.style.display = "block";
+      }
+    });
   }
 
-  function render(franjas) {
-    if (!franjas.length) {
-      cal.innerHTML = `<div class="df-day" style="text-align:center;padding:1.5rem 1rem">
-        <p style="font-size:2rem;margin:0">📅</p>
-        <p class="df-day-empty" style="font-style:normal;font-weight:700;margin:.5rem 0 .2rem">Sin franjas disponibles ahora mismo</p>
-        <p class="df-day-empty">Inténtalo de nuevo en un rato, o llámanos si es urgente.</p>
-      </div>`;
-      return;
-    }
-    const html = DF.agruparPorFecha(franjas).map(([fecha, slots], idx) => {
-      const rows = slots.map(s => {
-        const clases = ["df-slot"];
-        if (s.disponible) clases.push("df-slot-selectable");
-        if (s.sugerida) clases.push("df-slot-sugerida");
-        if (s.llena)  clases.push("df-slot-llena");
-        if (s.cerrada) clases.push("df-slot-cerrada");
-        return `<div class="${clases.join(' ')}" data-id="${s.id}" data-selectable="${s.disponible ? '1' : '0'}"
-                     data-label="${DF.fmtFecha(fecha)} ${s.hora_inicio}–${s.hora_fin}">
-          <div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>
-          <div class="df-slot-meta">
-            ${s.cerrada ? '🔒 Cerrada' : (s.llena ? '❌ Llena' : DF.cupoChip(s.capacidad_max - s.ocupados, s.capacidad_max))}
-          </div>
-        </div>`;
-      }).join("");
-      // Primer día abierto por defecto; el resto colapsados para no abrumar.
-      const abierto = idx === 0 ? "open" : "";
-      return `<details class="df-day" ${abierto}>
-        <summary class="df-day-toggle"><span class="df-day-title">${DF.fmtFecha(fecha)}</span></summary>
-        <div class="df-slot-list" style="margin-top:.5rem">${rows}</div>
-      </details>`;
-    }).join("");
-    cal.innerHTML = html;
-  }
-
-  cal.addEventListener("click", (e) => {
-    const el = e.target.closest(".df-slot");
-    if (!el || el.dataset.selectable !== "1") return;
-    document.querySelectorAll(".df-slot.df-slot-selected").forEach(x => x.classList.remove("df-slot-selected"));
-    el.classList.add("df-slot-selected");
-    seleccionadoId = el.dataset.id;
-    summaryText.textContent = el.dataset.label;
-    summary.style.display = "block";
+  btnPrev.addEventListener("click", () => { semanaBase = DF.navegarSemana(-1, semanaBase); cargar(); });
+  btnNext.addEventListener("click", () => { semanaBase = DF.navegarSemana(1, semanaBase); cargar(); });
+  btnHoy.addEventListener("click",  () => { semanaBase = new Date(); DF.navegarSemana(0, semanaBase); cargar(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.target.matches("input, textarea, select")) return;
+    if (e.key === "ArrowLeft" && !btnPrev.disabled)  { semanaBase = DF.navegarSemana(-1, semanaBase); cargar(); }
+    if (e.key === "ArrowRight" && !btnNext.disabled) { semanaBase = DF.navegarSemana(1, semanaBase); cargar(); }
   });
 
   cargar();

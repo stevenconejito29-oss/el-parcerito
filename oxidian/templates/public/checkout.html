@@ -243,7 +243,15 @@
       <p class="text-xs mb-2" style="color:var(--col-muted)">
         Marcamos la sugerida — la más cercana con hueco disponible.
       </p>
-      <div id="franjas-slot-container" class="df-slot-list"></div>
+      <div class="df-cal-nav" role="navigation" aria-label="Navegación de semanas" style="margin-bottom:.6rem">
+        <button type="button" class="df-cal-nav__btn" id="ck-nav-prev" aria-label="Semana anterior">◄</button>
+        <span class="df-cal-nav__label" id="ck-nav-label" aria-live="polite">Cargando…</span>
+        <div style="display:flex;gap:.4rem">
+          <button type="button" class="df-cal-nav__btn" id="ck-nav-hoy" aria-label="Volver a la semana de hoy">Hoy</button>
+          <button type="button" class="df-cal-nav__btn" id="ck-nav-next" aria-label="Semana siguiente">►</button>
+        </div>
+      </div>
+      <div id="franjas-slot-list" role="region" aria-label="Franjas disponibles"></div>
       <input type="hidden" name="slot_id" id="franjas-slot-id" value="">
       <p id="franjas-slot-selected" class="text-xs mt-2" style="color:var(--brand-primary,#5a3a1e);font-weight:700" hidden></p>
     </div>
@@ -253,77 +261,87 @@
     (function () {
       const DF = window.DeliveryFranjas;
       const block = document.getElementById("franjas-slot-block");
-      const container = document.getElementById("franjas-slot-container");
+      const container = document.getElementById("franjas-slot-list");
       const hidden = document.getElementById("franjas-slot-id");
       const label = document.getElementById("franjas-slot-selected");
       const radios = document.querySelectorAll('input[name="tipo_entrega_cliente"]');
 
       const modePicker = document.getElementById("delivery-mode-picker");
+      const navLabel = document.getElementById("ck-nav-label");
+      const btnPrev = document.getElementById("ck-nav-prev");
+      const btnNext = document.getElementById("ck-nav-next");
+      const btnHoy  = document.getElementById("ck-nav-hoy");
+
+      let semanaBase = new Date();
+      let horizonteMaxDia = null;
+      let dataLoaded = false;
+
       function modoElegido() {
-        // Si no hay picker, el "modo" único queda implícito: franjas si el
-        // módulo está activo, si no, inmediato.
         const r = document.querySelector('input[name="delivery_mode"]:checked');
-        return r ? r.value : (container.dataset.loaded ? "programado" : "inmediato");
+        return r ? r.value : (dataLoaded ? "programado" : "inmediato");
       }
       function updateVisibility() {
         const delivery = document.querySelector('input[name="tipo_entrega_cliente"]:checked')?.value === "delivery";
-        // Muestra el picker de modo solo si hay dos modos configurables y
-        // el cliente eligió delivery.
         if (modePicker) modePicker.hidden = !delivery;
-        // El bloque de franjas requiere: delivery + módulo cargado + modo programado (o único).
-        const mostrarFranjas = delivery && container.dataset.loaded && modoElegido() === "programado";
+        const mostrarFranjas = delivery && dataLoaded && modoElegido() === "programado";
         block.hidden = !mostrarFranjas;
-        // Si el cliente eligió "inmediato" en el picker, limpia la reserva.
         if (delivery && modePicker && modoElegido() === "inmediato") {
           hidden.value = "";
-          container.querySelectorAll(".df-slot-selected").forEach(x => x.classList.remove("df-slot-selected"));
+          container.querySelectorAll(".df-cal-slot--seleccionada").forEach(x => x.classList.remove("df-cal-slot--seleccionada"));
           label.hidden = true;
         }
       }
 
-      async function cargar() {
-        const { ok, status, data } = await DF.apiFetch("{{ url_for('public.api_delivery_franjas_disponibles') }}");
-        if (!ok) return; // módulo apagado (404) o error — bloque queda oculto
-        const franjas = data.franjas || [];
-        if (!franjas.length) return;
-        const html = DF.agruparPorFecha(franjas).map(([fecha, slots]) => {
-          const rows = slots.map(s => {
-            const cls = ["df-slot"];
-            if (s.disponible) cls.push("df-slot-selectable");
-            if (s.sugerida) cls.push("df-slot-sugerida");
-            if (s.llena) cls.push("df-slot-llena");
-            if (s.cerrada) cls.push("df-slot-cerrada");
-            return `<div class="${cls.join(' ')}" data-id="${s.id}" data-selectable="${s.disponible ? '1' : '0'}"
-              data-label="${DF.fmtFecha(fecha)} ${s.hora_inicio}–${s.hora_fin}">
-              <div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>
-              <div class="df-slot-meta">${s.cerrada ? '🔒 Cerrada' : (s.llena ? '❌ Llena' : DF.cupoChip(s.capacidad_max - s.ocupados, s.capacidad_max))}</div>
-            </div>`;
-          }).join("");
-          return `<div style="margin-bottom:.6rem"><strong style="font-size:.82rem;display:block;margin-bottom:.35rem">${DF.fmtFecha(fecha)}</strong>${rows}</div>`;
-        }).join("");
-        container.innerHTML = html;
-        container.dataset.loaded = "1";
-        updateVisibility();
-        // Preselecciona la sugerida automáticamente (cliente confirma al submit)
-        const sug = container.querySelector(".df-slot-sugerida");
-        if (sug) sug.click();
+      function actualizarNav() {
+        const [lun, dom] = DF.weekRange(semanaBase);
+        navLabel.textContent = DF.fmtRangoSemana(lun, dom);
+        const hoy = DF.startOfDay(new Date());
+        btnPrev.disabled = lun <= hoy;
+        if (horizonteMaxDia) {
+          const maxDate = DF.parseISO(horizonteMaxDia);
+          btnNext.disabled = dom >= maxDate;
+        }
       }
 
-      container.addEventListener("click", (e) => {
-        const el = e.target.closest(".df-slot");
-        if (!el || el.dataset.selectable !== "1") return;
-        container.querySelectorAll(".df-slot-selected").forEach(x => x.classList.remove("df-slot-selected"));
-        el.classList.add("df-slot-selected");
-        hidden.value = el.dataset.id;
+      function onSlotClick(el) {
+        container.querySelectorAll(".df-cal-slot--seleccionada").forEach(x => x.classList.remove("df-cal-slot--seleccionada"));
+        el.classList.add("df-cal-slot--seleccionada");
+        hidden.value = el.dataset.slotId;
         label.hidden = false;
         label.textContent = "Franja elegida: " + el.dataset.label;
-      });
+      }
+
+      async function cargar(preseleccionarSug) {
+        actualizarNav();
+        const [lun, dom] = DF.weekRange(semanaBase);
+        const url = "{{ url_for('public.api_delivery_franjas_disponibles') }}"
+          + "?desde=" + DF.toISO(lun) + "&hasta=" + DF.toISO(dom);
+        const { ok, status, data } = await DF.apiFetch(url);
+        if (!ok) return;
+        dataLoaded = true;
+        if (data.horizonte_max_dia) horizonteMaxDia = data.horizonte_max_dia;
+        actualizarNav();
+        DF.renderCalendarioSemanal(container, data.franjas || [], {
+          modo: "cliente",
+          semanaInicio: semanaBase,
+          onSlotClick,
+        });
+        updateVisibility();
+        if (preseleccionarSug) {
+          const sug = container.querySelector(".df-cal-slot--sugerida");
+          if (sug) sug.click();
+        }
+      }
+
+      btnPrev.addEventListener("click", () => { semanaBase = DF.navegarSemana(-1, semanaBase); cargar(false); });
+      btnNext.addEventListener("click", () => { semanaBase = DF.navegarSemana(1, semanaBase); cargar(false); });
+      btnHoy.addEventListener("click",  () => { semanaBase = new Date(); DF.navegarSemana(0, semanaBase); cargar(false); });
 
       radios.forEach(r => r.addEventListener("change", updateVisibility));
       if (modePicker) {
         modePicker.querySelectorAll('input[name="delivery_mode"]').forEach(r => r.addEventListener("change", updateVisibility));
       }
-      cargar();
+      cargar(true);
     })();
     </script>
 
