@@ -157,7 +157,78 @@ def add_message(conversation, sender: str, body: str, *, agent_id=None, nonce=No
     conversation.last_activity_at = utcnow()
     db.session.add(row)
     db.session.flush()
+    # Push cliente cuando responde el equipo (agent/system) y la conversación
+    # tiene customer_id vinculado. No bloquea el flujo si falla el push.
+    if sender in ("agent", "system") and conversation.customer_id:
+        try:
+            from push_service import notify_user
+            titulo = "Respuesta del equipo" if sender == "agent" else "Aviso del chat"
+            snippet = (clean[:110] + "…") if len(clean) > 110 else clean
+            notify_user(
+                conversation.customer_id, titulo, snippet,
+                url="/chat", tag=f"web_chat_{conversation.id}",
+            )
+        except Exception:
+            current_app.logger.exception("push chat cliente=%s falló", conversation.customer_id)
     return row
+
+
+# ─── Estado de lectura por sesión (sin migración BD) ──────────────────────
+# La marca de "última visita al chat" vive en la cookie de sesión Flask.
+# Perdura entre requests pero es local por dispositivo (cada navegador su
+# propio contador), coherente con el resto del chat visitante.
+
+_SESSION_LAST_READ_KEY = "wc_last_read_at"
+
+
+def _visitor_conversation_ids() -> list[int]:
+    """IDs de conversaciones asociadas al visitante actual (sesión o cuenta)."""
+    from flask_login import current_user
+    from models import WebChatConversation
+    ids: set[int] = set()
+    # Por sesión visitante (siempre)
+    try:
+        conv = conversation_for_visitor(create=False)
+        if conv:
+            ids.add(conv.id)
+    except Exception:
+        pass
+    # Por customer_id si está autenticado (cubre multi-dispositivo)
+    try:
+        if getattr(current_user, "is_authenticated", False) and current_user.id:
+            rows = WebChatConversation.query.filter_by(customer_id=current_user.id).all()
+            ids.update(r.id for r in rows)
+    except Exception:
+        pass
+    return list(ids)
+
+
+def unread_count_for_visitor() -> int:
+    """Cuenta mensajes del staff más recientes que la última lectura."""
+    from models import WebChatMessage
+    ids = _visitor_conversation_ids()
+    if not ids:
+        return 0
+    last_read_raw = session.get(_SESSION_LAST_READ_KEY)
+    try:
+        last_read = datetime.fromisoformat(last_read_raw) if last_read_raw else datetime(1970, 1, 1)
+    except Exception:
+        last_read = datetime(1970, 1, 1)
+    return (
+        WebChatMessage.query
+        .filter(
+            WebChatMessage.conversation_id.in_(ids),
+            WebChatMessage.sender.in_(("agent", "system")),
+            WebChatMessage.created_at > last_read,
+        )
+        .count()
+    )
+
+
+def mark_conversation_read() -> None:
+    """Marca ahora como última lectura del cliente (sesión)."""
+    session[_SESSION_LAST_READ_KEY] = utcnow().isoformat()
+    session.modified = True
 
 
 def _replace_placeholders(answer: str) -> str:

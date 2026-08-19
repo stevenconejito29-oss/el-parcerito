@@ -164,9 +164,22 @@ def toggle_disponible():
     })
 
 
+def _franja_inicio_lazy_tick():
+    """Trigger orgánico: cada visita del rider a /ruta ejecuta el barrido
+    idempotente que notifica a los clientes cuya franja acaba de arrancar.
+    No bloquea la vista si falla.
+    """
+    try:
+        from delivery_slots_service import procesar_franjas_iniciando
+        procesar_franjas_iniciando(ventana_min=3)
+    except Exception:
+        logger.exception("procesar_franjas_iniciando: fallo lazy")
+
+
 @repartidor_bp.route("/ruta")
 @repartidor_required
 def ruta():
+    _franja_inicio_lazy_tick()
     disponible = _esta_disponible()
     _eager_zona = joinedload(Order.zona)
     # Filtro por zona asignada al repartidor (Fase 5). Si el repartidor no tiene

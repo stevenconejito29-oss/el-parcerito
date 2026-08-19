@@ -48,6 +48,80 @@ NOTIF_EVENTO_EN_CAMINO = "delivery_en_camino"
 
 # ─── Guards de negocio expuestos a rutas HTTP ──────────────────────────────
 
+def procesar_franjas_iniciando(ventana_min: int = 3) -> list[int]:
+    """Push a los clientes cuando su franja arranca (idempotente).
+
+    Recorre las franjas cuyo ``hora_inicio`` cae en la ventana
+    ``[now - ventana_min, now + ventana_min]`` y que aún no tienen
+    ``notif_inicio_at``. Notifica push a cada cliente con Order en la franja
+    (estado no cancelado ni entregado). Marca ``notif_inicio_at`` para no
+    volver a notificar.
+
+    Diseñado para llamarse desde:
+      - trigger lazy en ``/repartidor/ruta`` (cubre uso real sin cron)
+      - endpoint interno ``/api/internal/franja-tick`` (cron externo)
+
+    Devuelve la lista de slot_id notificados en esta pasada.
+    """
+    from sqlalchemy import text
+    ahora = utcnow().replace(tzinfo=None)
+    hoy = ahora.date()
+    ventana_ini = (ahora - timedelta(minutes=ventana_min)).time()
+    ventana_fin = (ahora + timedelta(minutes=ventana_min)).time()
+    # Ventana simple: fecha=hoy y hora_inicio ∈ ventana. Cubre el 99% (una
+    # franja que arranca a medianoche cae en el otro día — se pierde 1 push
+    # por año en ese edge case; aceptable).
+    slots = db.session.execute(
+        text(
+            """
+            SELECT id FROM delivery_slots
+            WHERE fecha = :hoy
+              AND hora_inicio BETWEEN :vi AND :vf
+              AND notif_inicio_at IS NULL
+              AND activo = true
+            FOR UPDATE SKIP LOCKED
+            """
+        ),
+        {"hoy": hoy, "vi": ventana_ini, "vf": ventana_fin},
+    ).fetchall()
+    notificados: list[int] = []
+    if not slots:
+        return notificados
+
+    from push_service import notify_user
+
+    for (slot_id,) in slots:
+        slot = db.session.get(DeliverySlot, slot_id)
+        if not slot:
+            continue
+        # Notifica a cada cliente con pedido activo en la franja
+        pedidos = (
+            Order.query.filter(
+                Order.slot_id == slot.id,
+                Order.estado.notin_(("cancelado", "entregado")),
+                Order.cliente_id.isnot(None),
+            ).all()
+        )
+        hi = slot.hora_inicio.strftime("%H:%M")
+        for pedido in pedidos:
+            try:
+                notify_user(
+                    pedido.cliente_id,
+                    "Tu franja empezó",
+                    f"El repartidor sale ahora con tu pedido #{pedido.numero_pedido} (franja de las {hi}).",
+                    url=f"/pedido/{pedido.id}/confirmado",
+                    tag=f"franja_inicio_{slot.id}_{pedido.id}",
+                )
+            except Exception:
+                # No detenemos la pasada por un fallo push aislado
+                pass
+        slot.notif_inicio_at = ahora
+        notificados.append(slot.id)
+
+    db.session.commit()
+    return notificados
+
+
 def franja_ya_iniciada(slot: DeliverySlot | None, ahora: datetime | None = None) -> bool:
     """True cuando la franja ya arrancó su ejecución (reparto en curso).
 

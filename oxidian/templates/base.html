@@ -600,6 +600,7 @@
   <a href="{{ url_for('public.chat') }}" class="ox-bnav-item {{ 'is-active' if request.endpoint == 'public.chat' else '' }}" data-bnav="chat" aria-label="Abrir chat de ayuda">
     <span class="ox-bnav-svg" aria-hidden="true">
       <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 10h8M8 14h5"/></svg>
+      <span id="ox-chat-badge" class="ox-bnav-badge" hidden aria-hidden="true">0</span>
     </span>
     <span class="ox-bnav-label">Chat</span>
     <span class="ox-bnav-glow" aria-hidden="true"></span>
@@ -638,6 +639,45 @@
     <span class="ox-bnav-glow" aria-hidden="true"></span>
   </a>
 </nav>
+<script nonce="{{ csp_nonce() }}">
+// Badge chat: consulta unread cada 30s. Si estamos EN /chat, marca leído
+// al cargar y no muestra badge. Cierra el poll si la pestaña queda oculta
+// (Page Visibility API) para no gastar batería en móvil.
+(function(){
+  const badge = document.getElementById('ox-chat-badge');
+  if (!badge) return;
+  const isChatPage = {{ 'true' if request.endpoint == 'public.chat' else 'false' }};
+  const paint = (n) => {
+    n = Math.max(0, parseInt(n||0, 10));
+    if (!n) { badge.hidden = true; return; }
+    badge.textContent = n > 99 ? '99+' : String(n);
+    badge.hidden = false;
+  };
+  const fetchUnread = async () => {
+    try {
+      const r = await fetch('/api/web-chat/unread', {credentials:'same-origin'});
+      const j = await r.json();
+      if (j && j.ok) paint(j.count);
+    } catch(_) {}
+  };
+  const markRead = async () => {
+    try {
+      await fetch('/api/web-chat/mark-read', {
+        method:'POST', credentials:'same-origin',
+        headers: {'X-CSRFToken': document.querySelector('meta[name=csrf-token]')?.content || ''},
+      });
+      paint(0);
+    } catch(_) {}
+  };
+  if (isChatPage) { markRead(); return; }
+  fetchUnread();
+  let timer = setInterval(fetchUnread, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { clearInterval(timer); timer = null; }
+    else if (!timer) { fetchUnread(); timer = setInterval(fetchUnread, 30000); }
+  });
+})();
+</script>
 {% endif %}
 
 

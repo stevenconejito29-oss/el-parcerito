@@ -3679,6 +3679,9 @@ class DeliverySlot(db.Model):
         db.Boolean, nullable=False, default=True, server_default=db.text("true")
     )
     notas_admin = db.Column(db.Text)
+    # Marca de push "tu franja empezó" enviado al cliente. Idempotente: la
+    # función procesar_franjas_iniciando la escribe una sola vez por slot.
+    notif_inicio_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     updated_at = db.Column(
         db.DateTime, nullable=False, default=utcnow, onupdate=utcnow
