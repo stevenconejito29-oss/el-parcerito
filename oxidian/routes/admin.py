@@ -8042,6 +8042,30 @@ def delivery_franjas_panel():
     )
 
 
+@admin_bp.route("/delivery/franjas/dia/toggle", methods=["POST"])
+@admin_required
+def delivery_franjas_dia_toggle():
+    """Activa/desactiva en bloque todas las franjas de una fecha."""
+    _abort_si_modulo_apagado()
+    from models import DeliverySlot
+
+    data = request.get_json(silent=True) or {}
+    try:
+        fecha = _parse_fecha_iso(str(data["fecha"]))
+    except (KeyError, ValueError, TypeError) as exc:
+        return jsonify({"error": f"fecha inválida: {exc}"}), 400
+    activar = bool(data.get("activar", False))
+    slots = DeliverySlot.query.filter(DeliverySlot.fecha == fecha).all()
+    afectadas = 0
+    for s in slots:
+        if bool(s.activo) != activar:
+            s.activo = activar
+            afectadas += 1
+    if afectadas:
+        db.session.commit()
+    return jsonify({"ok": True, "afectadas": afectadas, "activo": activar})
+
+
 @admin_bp.route("/delivery/franjas/clonar", methods=["POST"])
 @admin_required
 def delivery_franjas_clonar():

@@ -432,7 +432,38 @@ details[open] > .df-day-toggle::after { transform: rotate(180deg); }
   outline-offset: 2px;
   transform: translateY(-1px);
 }
-.df-cal-slot--inactivo { opacity: .55; }
+.df-cal-slot--inactivo { opacity: .55; filter: grayscale(.4); }
+.df-cal-slot--inactivo .df-cal-slot__chip::before { content: "⏸ "; }
+
+/* Botón toggle día (admin) — activar / desactivar día completo */
+.df-cal-day-toggle {
+  display: inline-block; margin-left: auto;
+  padding: .18rem .5rem;
+  font-size: .68rem; font-weight: 700; line-height: 1.1;
+  border: 1px solid var(--col-line, #d9d3ca);
+  border-radius: 6px; background: transparent;
+  color: var(--col-muted, #6b6b6b); cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.df-cal-day-toggle:hover {
+  background: color-mix(in srgb, var(--brand-primary, #5a3a1e) 8%, transparent);
+  border-color: var(--brand-primary, #5a3a1e);
+  color: var(--brand-primary, #5a3a1e);
+}
+.df-cal-day-header { flex-wrap: wrap; }
+
+/* Toggle 'activa' en modal */
+.df-modal__toggle {
+  display: grid; grid-template-columns: auto 1fr; gap: .4rem .6rem;
+  align-items: start;
+  padding: .5rem .6rem;
+  background: var(--col-hover, #f4efe7);
+  border-radius: 6px;
+  font-size: .82rem;
+}
+.df-modal__toggle input[type=checkbox] { margin-top: .2rem; }
+.df-modal__toggle span { font-weight: 700; }
+.df-modal__toggle small { grid-column: 2; color: var(--col-muted, #6b6b6b); font-size: .72rem; }
 
 /* Botón "+" para crear franja en día (admin) */
 .df-cal-day-add {

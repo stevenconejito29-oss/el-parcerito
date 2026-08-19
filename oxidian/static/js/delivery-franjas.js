@@ -229,11 +229,23 @@
         ? `<button type="button" class="df-cal-day-add" data-add-day="${x.iso}"
              aria-label="Añadir franja en ${DIAS_LARGOS[x.d.getDay()]} ${x.d.getDate()}">+ Añadir</button>`
         : "";
+      // Botón toggle día: sólo admin, con al menos una franja. Si todas
+      // están inactivas ofrece "Activar día"; si alguna activa, "Desactivar día".
+      let toggleBtn = "";
+      if (opts.modo === "admin" && x.slots.length > 0) {
+        const algunaActiva = x.slots.some(s => s.activo !== false);
+        const label = algunaActiva ? "⏸ Desactivar día" : "▶ Activar día";
+        const accion = algunaActiva ? "0" : "1";
+        toggleBtn = `<button type="button" class="df-cal-day-toggle"
+             data-toggle-day="${x.iso}" data-activar="${accion}"
+             aria-label="${label} ${DIAS_LARGOS[x.d.getDay()]} ${x.d.getDate()}">${label}</button>`;
+      }
       return `<div class="${clases.join(' ')}" data-day="${x.iso}" role="gridcell">
         <div class="df-cal-day-header">
           <span class="df-cal-day-header__weekday">${DIAS_CORTOS[x.d.getDay()]}</span>
           <span class="df-cal-day-header__day">${x.d.getDate()}</span>
           ${x.esHoy ? '<span class="df-cal-day-header__today-badge">HOY</span>' : ''}
+          ${toggleBtn}
         </div>
         <div class="df-cal-day-body">${slotsHTML}</div>
         ${addBtn}
@@ -269,6 +281,14 @@
     container.querySelectorAll("[data-add-day]").forEach(btn => {
       btn.addEventListener("click", () => {
         if (typeof opts.onEmptyDayClick === "function") opts.onEmptyDayClick(btn.dataset.addDay);
+      });
+    });
+    container.querySelectorAll("[data-toggle-day]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (typeof opts.onDayToggle === "function") {
+          opts.onDayToggle(btn.dataset.toggleDay, btn.dataset.activar === "1");
+        }
       });
     });
   }

@@ -65,6 +65,11 @@
             <input type="number" name="max_repartidores" id="df-f-riders" min="1" value="{{ default_max_repartidores }}">
           </label>
         </div>
+        <label class="df-modal__toggle">
+          <input type="checkbox" id="df-f-activa" name="activo" value="1">
+          <span>Franja activa</span>
+          <small>Desmarca para desactivar sin borrar. Los clientes no la verán.</small>
+        </label>
         <details class="df-modal__advanced">
           <summary>Cierre avanzado</summary>
           <label>Modo de cierre
@@ -118,6 +123,7 @@
   const fRiders = document.getElementById("df-f-riders");
   const fCierreModo = document.getElementById("df-f-cierre-modo");
   const fCierreValor = document.getElementById("df-f-cierre-valor");
+  const fActiva = document.getElementById("df-f-activa");
 
   const ultimo = { hora_inicio: "13:00", hora_fin: "14:00", capacidad: 8, riders: {{ default_max_repartidores }} };
 
@@ -148,7 +154,21 @@
       semanaInicio: semanaBase,
       onSlotClick: (el) => abrirModalEditar(el),
       onEmptyDayClick: (iso) => abrirModalNuevo(iso),
+      onDayToggle: (iso, activar) => toggleDia(iso, activar),
     });
+  }
+
+  async function toggleDia(iso, activar) {
+    const verbo = activar ? "activar" : "desactivar";
+    if (!confirm(`¿${verbo.charAt(0).toUpperCase()+verbo.slice(1)} todas las franjas del ${iso}?`)) return;
+    const { ok, data } = await DF.apiFetch("{{ url_for('admin.delivery_franjas_dia_toggle') }}",
+      { method: "POST", body: { fecha: iso, activar: activar } });
+    if (ok) {
+      DF.msg(msgs, `${data.afectadas} franja(s) ${activar ? 'activadas' : 'desactivadas'}.`, "ok");
+      cargar();
+    } else {
+      DF.msg(msgs, (data && data.error) || "Error al cambiar el día.", "err");
+    }
   }
 
   const DIAS = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
@@ -179,6 +199,7 @@
     fCap.value = ultimo.capacidad;
     fRiders.value = ultimo.riders;
     fCierreModo.value = ""; fCierreValor.value = "";
+    fActiva.checked = true;
     const d = DF.parseISO(fechaIso);
     modalTitle.textContent = `Nueva franja — ${DIAS[d.getDay()]} ${d.getDate()} ${MESES[d.getMonth()]}`;
     modalSave.textContent = "Crear";
@@ -195,6 +216,7 @@
     fRiders.value = el.dataset.maxRepartidores || "";
     fCierreModo.value = el.dataset.cierreModo || "";
     fCierreValor.value = el.dataset.cierreValor || "";
+    fActiva.checked = el.dataset.activo === '1' || el.dataset.activo === 'true';
     const d = DF.parseISO(el.dataset.fecha);
     modalTitle.textContent = `Editar franja — ${DIAS[d.getDay()]} ${d.getDate()} ${MESES[d.getMonth()]}`;
     modalSave.textContent = "Guardar";
@@ -225,6 +247,7 @@
     };
     if (fRiders.value) payload.max_repartidores = parseInt(fRiders.value, 10);
     if (fCierreModo.value) { payload.cierre_modo = fCierreModo.value; payload.cierre_valor = fCierreValor.value || null; }
+    payload.activo = fActiva.checked;
 
     const editando = !!fId.value;
     const url = editando
