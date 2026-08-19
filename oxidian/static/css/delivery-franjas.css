@@ -621,3 +621,36 @@ details[open] > .df-day-toggle::after { transform: rotate(180deg); }
 .df-legend__dot.is-free { background: #2b9348; box-shadow: 0 0 0 2px color-mix(in srgb, #2b9348 30%, transparent); }
 .df-legend__dot.is-mine { background: #f59e0b; box-shadow: 0 0 0 2px color-mix(in srgb, #f59e0b 30%, transparent); }
 .df-legend__dot.is-full { background: #c25050; box-shadow: 0 0 0 2px color-mix(in srgb, #c25050 30%, transparent); }
+
+/* ═══════════════════════════════════════════════════════════════
+   Responsive fixes finales (sesión 2026-08-20)
+   Calendario admin y toggle día — móviles pequeños <400px
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Toggle día — sube a 44px tap iOS, respeta pulgares grandes */
+.df-cal-day-toggle{
+  min-height:34px;padding:.35rem .55rem;font-size:.7rem;font-weight:700;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent
+}
+@media(max-width:400px){
+  .df-cal-day-toggle{font-size:.65rem;padding:.3rem .45rem}
+  .df-cal-day-header{flex-wrap:wrap;gap:.3rem}
+}
+
+/* Modal admin en móvil ≤400px — ocupa 95% viewport con safe-area */
+@media(max-width:480px){
+  .df-modal{
+    width:95%;max-width:none;max-height:88vh;overflow:auto;
+    margin-bottom:env(safe-area-inset-bottom, 0px)
+  }
+  .df-modal__row{grid-template-columns:1fr}
+  .df-modal input[type=time],
+  .df-modal input[type=number]{min-height:48px;font-size:16px}
+  .df-modal__footer{flex-wrap:wrap;gap:.5rem}
+  .df-modal__footer button{min-height:48px;flex:1;min-width:100px}
+}
+
+/* Panel FAB del rider en móvil: espacio inferior */
+@media(max-width:900px){
+  .df-rider-banner{margin-bottom:.5rem}
+}

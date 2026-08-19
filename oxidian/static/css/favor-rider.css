@@ -10,3 +10,7 @@
 .fr-franja-fit{display:flex;align-items:center;gap:.4rem;margin:.3rem 0 0;padding:.5rem .65rem;border-radius:.6rem;font-size:.72rem;font-weight:800;line-height:1.3;min-height:38px}
 .fr-franja-fit.is-ok{background:color-mix(in srgb,var(--theme-success) 14%,transparent);color:var(--theme-success);border:1px solid color-mix(in srgb,var(--theme-success) 42%,transparent)}
 .fr-franja-fit.is-block{background:color-mix(in srgb,var(--theme-danger) 12%,transparent);color:var(--theme-danger);border:1px solid color-mix(in srgb,var(--theme-danger) 42%,transparent)}
+
+/* Touch mínimo 44px iOS/Android — subir el chip cabe/no cabe */
+.fr-franja-fit{min-height:44px;padding:.65rem .75rem;font-size:.75rem}
+@media(max-width:430px){.fr-franja-fit{font-size:.72rem}}
