@@ -191,8 +191,14 @@ details[open] > .df-day-toggle::after { transform: rotate(180deg); }
 .df-kitchen-item { display: flex; gap: .5rem; align-items: center; padding: .2rem 0; font-size: .88rem; }
 .df-kitchen-item strong { font-weight: 700; }
 .df-kitchen-empty {
-  padding: .6rem; text-align: center; color: var(--col-muted, #6b6b6b);
-  font-size: .85rem; font-style: italic;
+  padding: 1.4rem 1rem; text-align: center; color: var(--col-muted, #6b6b6b);
+  font-size: .95rem; font-weight: 700; line-height: 1.45;
+  background: color-mix(in srgb, var(--col-muted, #6b6b6b) 5%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--col-muted, #6b6b6b) 32%, transparent);
+  border-radius: .8rem; margin: .5rem 0;
+}
+.df-kitchen-empty::before {
+  content: "📭"; display: block; font-size: 2rem; margin-bottom: .35rem; opacity: .8;
 }
 
 /* Nota inline en config superadmin */
@@ -574,3 +580,13 @@ details[open] > .df-day-toggle::after { transform: rotate(180deg); }
 [data-delivery-theme="dark"] .df-modal__footer { background: #1e1e1e; }
 [data-delivery-theme="dark"] .df-cal-nav { background: #1e1e1e; border-color: #3a3a3a; }
 [data-delivery-theme="dark"] .df-cal-nav__btn { background: #2a2a2a; color: #eee; border-color: #3a3a3a; }
+
+/* Franjas rider: acciones más grandes (touch en la calle) + leyenda estados. */
+.df-slot-actions .df-btn-primary,
+.df-slot-actions .df-btn-danger { min-height: 52px; font-size: .92rem; font-weight: 800; padding: .55rem .8rem; }
+.df-legend { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0 1rem; padding: .5rem .65rem; border-radius: .7rem; background: color-mix(in srgb, var(--col-text, #1a1a1a) 4%, transparent); border: 1px solid var(--col-border, #e0d8cc); font-size: .78rem; }
+.df-legend__item { display: inline-flex; align-items: center; gap: .35rem; font-weight: 700; color: var(--col-text, #1a1a1a); }
+.df-legend__dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.df-legend__dot.is-free { background: #2b9348; box-shadow: 0 0 0 2px color-mix(in srgb, #2b9348 30%, transparent); }
+.df-legend__dot.is-mine { background: #f59e0b; box-shadow: 0 0 0 2px color-mix(in srgb, #f59e0b 30%, transparent); }
+.df-legend__dot.is-full { background: #c25050; box-shadow: 0 0 0 2px color-mix(in srgb, #c25050 30%, transparent); }

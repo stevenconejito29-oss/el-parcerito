@@ -301,7 +301,17 @@ def favores():
     ).order_by(FavorRequest.matched_at.asc()).all()
     policy = get_cruce_policy()
     guide_prices = {row.id: recommended_price(policy, float(row.distance_km or 0)) for row in (*abiertos, *propios)}
-    return render_template("repartidor/favores.html", abiertos=abiertos, propios=propios, disponible=_esta_disponible(), policy=policy, guide_prices=guide_prices)
+    # Chip "cabe en tu franja / no cabe": la política ya soporta 2º arg.
+    # Informativo — no bloquea la acción, solo pre-avisa al rider.
+    from cruce_policy import rider_can_be_assigned as _rcba
+    franja_fit = {}
+    for _row in abiertos:
+        try:
+            _ok, _reason = _rcba(current_user.id, _row)
+            franja_fit[_row.id] = {"ok": bool(_ok), "reason": _reason or ""}
+        except Exception:
+            franja_fit[_row.id] = None
+    return render_template("repartidor/favores.html", abiertos=abiertos, propios=propios, disponible=_esta_disponible(), policy=policy, guide_prices=guide_prices, franja_fit=franja_fit)
 
 
 @repartidor_bp.post("/favores/preferencia")
