@@ -137,15 +137,39 @@
 
   async function cargar() {
     actualizarNav();
-    const [lun, dom] = DF.weekRange(semanaBase);
-    const url = "{{ url_for('admin.delivery_franjas_listar') }}"
-      + "?desde=" + DF.toISO(lun) + "&hasta=" + DF.toISO(dom);
-    const { ok, status, data } = await DF.apiFetch(url);
-    if (!ok) {
-      cal.innerHTML = `<p class="df-day-empty">Error al cargar (HTTP ${status}).</p>`;
-      return;
+    try {
+      const [lun, dom] = DF.weekRange(semanaBase);
+      const url = "{{ url_for('admin.delivery_franjas_listar') }}"
+        + "?desde=" + DF.toISO(lun) + "&hasta=" + DF.toISO(dom);
+      const { ok, status, data } = await DF.apiFetch(url);
+      if (!ok) {
+        const detalle = status === 302
+          ? "Tu sesión ha caducado. <a href=\"/auth/login?next=/admin/delivery/franjas/panel\">Vuelve a iniciar sesión</a>."
+          : status === 404
+          ? "El módulo de franjas está apagado. Actívalo en <a href=\"/superadmin/config\">/superadmin/config</a>."
+          : `Error HTTP ${status}. Recarga la página con Cmd+Shift+R.`;
+        cal.innerHTML = `<div class="df-cal-warning" role="alert">${detalle}</div>`;
+        return;
+      }
+      const franjas = (data && data.franjas) || [];
+      if (!franjas.length) {
+        cal.innerHTML = `<div class="df-cal-empty-week">
+          <div class="df-cal-empty-week__icon" aria-hidden="true">📅</div>
+          <div class="df-cal-empty-week__title">Sin franjas planificadas esta semana</div>
+          <div>Pulsa <strong>+ Añadir</strong> en un día para crear la primera.</div>
+        </div>`;
+        // Aun así renderizamos el grid vacío para tener los botones "+ Añadir"
+        render([]);
+        return;
+      }
+      render(franjas);
+    } catch (err) {
+      console.error("[franjas] fallo cargar:", err);
+      cal.innerHTML = `<div class="df-cal-warning" role="alert">
+        No pudimos cargar el calendario. Recarga la página con Cmd+Shift+R.
+        <br><small>${(err && err.message) || err}</small>
+      </div>`;
     }
-    render(data.franjas || []);
   }
 
   function render(franjas) {
