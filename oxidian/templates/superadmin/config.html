@@ -333,8 +333,8 @@
         {{ cfg_select('FEATURE_DELIVERY', 'Delivery', [('1','Habilitado'),('0','Deshabilitado')], 'Si está apagado, checkout y roles de reparto quedan fuera del flujo público.') }}
         {# Mutex: los dos métodos NO pueden coexistir. Un radio evita que el
            admin marque los dos a la vez, y el backend refuerza el invariante. #}
-        {% set _dinm = raw.get('delivery_inmediato_activo','1') == '1' %}
-        {% set _dfra = raw.get('delivery_franjas_activo','0') == '1' %}
+        {% set _dinm = config_map.get('delivery_inmediato_activo','1') == '1' %}
+        {% set _dfra = config_map.get('delivery_franjas_activo','0') == '1' %}
         <div class="cfg-field cfg-field-radio">
           <label class="cfg-label">Método de reparto (elige uno)</label>
           <div class="cfg-radio-group" role="radiogroup">
