@@ -3640,15 +3640,15 @@ def pedido_confirmado(pedido_id):
             "info",
         )
         return redirect(url_for("public.index"))
+    from delivery_slots_service import cliente_puede_cancelar
+    _puede, _motivo_no_cancel = cliente_puede_cancelar(pedido)
     return render_template(
         "public/pedido_confirmado.html",
         pedido=pedido,
         requiere_confirmacion_whatsapp=(pedido.confirmacion_estado == "pending"),
         pedido_token=token,
-        puede_cancelar=(
-            pedido.estado == "pendiente"
-            and not (pedido.metodo_pago == "bizum" and pedido.pago_confirmado)
-        ),
+        puede_cancelar=_puede,
+        motivo_no_cancelar=_motivo_no_cancel,
     )
 
 
@@ -3679,8 +3679,10 @@ def cancelar_pedido_web(pedido_id):
         flash("No pudimos verificar que este pedido te pertenece.", "danger")
         return redirect(url_for("public.index"))
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
-    if pedido.estado != "pendiente" or (pedido.metodo_pago == "bizum" and pedido.pago_confirmado):
-        flash("El pedido ya requiere revisión del equipo. Solicítala desde el chat.", "warning")
+    from delivery_slots_service import cliente_puede_cancelar
+    _puede, _motivo = cliente_puede_cancelar(pedido)
+    if not _puede:
+        flash(_motivo or "El pedido ya requiere revisión del equipo. Solicítala desde el chat.", "warning")
         return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id, token=token))
     try:
         cancelar_pedido_operativo(

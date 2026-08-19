@@ -1370,17 +1370,24 @@ def franjas_iniciar_reparto(slot_id):
     from models import DeliverySlot
 
     slot = get_or_404(DeliverySlot, slot_id)
-    pedidos = (
-        Order.query
-        .filter(
-            Order.slot_id == slot.id,
-            Order.estado == "listo",
-            Order.tipo_entrega_cliente == "delivery",
-        )
-        .all()
+    # Subset opcional: si viene 'pedido_ids' en el form, sólo despacha esos
+    # (salida parcial — el rider vuelve por el resto). Sin él, todos.
+    _sel_raw = request.form.getlist("pedido_ids") if request.form else []
+    _sel_ids = {int(x) for x in _sel_raw if str(x).isdigit()}
+    _q = Order.query.filter(
+        Order.slot_id == slot.id,
+        Order.estado == "listo",
+        Order.tipo_entrega_cliente == "delivery",
     )
+    if _sel_ids:
+        _q = _q.filter(Order.id.in_(_sel_ids))
+    pedidos = _q.all()
     if not pedidos:
-        flash("No hay pedidos listos para despachar en esta franja.", "info")
+        flash(
+            "No hay pedidos seleccionados para despachar." if _sel_ids
+            else "No hay pedidos listos para despachar en esta franja.",
+            "info",
+        )
         return redirect(url_for("repartidor.franjas_panel"))
 
     despachados = 0
@@ -1411,14 +1418,22 @@ def franjas_iniciar_reparto(slot_id):
         return redirect(url_for("repartidor.franjas_panel"))
 
     # Notificaciones best-effort tras commit — no bloquean el flujo.
+    # Usa notificar_en_camino (canal_service anti-baneo Meta) en vez de
+    # enviar_whatsapp_estado + notify_order_state directamente: así respeta
+    # el gate de canal preferido del cliente y marca en_camino_at para
+    # idempotencia. Segundo commit al final persiste outbox + timestamps.
+    from delivery_slots_service import notificar_en_camino as _notif_en_camino
     for pedido in pedidos:
         if pedido.estado == "en_ruta":
             try:
-                enviar_whatsapp_estado(pedido)
-                from push_service import notify_order_state
-                notify_order_state(pedido)
+                _notif_en_camino(pedido, actor_id=current_user.id)
             except Exception:
                 logger.exception("Fallo notificación batch para pedido %s", pedido.id)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("Fallo persistiendo notificaciones batch franja %s", slot.id)
 
     mensaje = f"Ruta iniciada: {despachados} pedidos en_ruta."
     if saltados_ajenos:

@@ -373,7 +373,27 @@ def _classify_intent(question: str) -> str | None:
 def _intent_answer(intent: str) -> str | None:
     features = get_store_features()
     public_url = current_app.config.get("PUBLIC_BASE_URL") or url_for("public.index", _external=True)
-    if intent in {"cancel", "tracking"}:
+    if intent in {"cancel", "tracking", "receipt"}:
+        # Si esta sesión reconoce pedidos activos, dales acceso directo al
+        # ticket digital (misma URL firmada que en /pedido/<id>/confirmado).
+        try:
+            ordenes = visitor_orders()
+        except Exception:
+            ordenes = []
+        if ordenes:
+            base = public_url.rstrip("/")
+            lineas = []
+            for o in ordenes[:3]:
+                url = f"{base}{o['tracking_url']}"
+                lineas.append(f"• #{o['number']} · {o['status_label']} → {url}")
+            cabeza = (
+                "Este es tu ticket digital. Puedes consultar estado y cancelar (si aún no llega tu franja):"
+                if intent != "receipt"
+                else "Ficha digital de tus pedidos activos:"
+            )
+            return cabeza + "\n" + "\n".join(lineas)
+        if intent == "receipt":
+            return "Al terminar recibes una ficha con número de pedido, productos, entrega y total. Ese número identifica tu compra; desde «Ver estado» puedes volver a consultarla."
         return INTENT_GUIDANCE["pedido"]
     if intent == "human":
         return "Pulsa «Hablar con alguien» debajo del chat. Un agente continuará la conversación aquí mismo."

@@ -46,6 +46,47 @@ NOTIF_EVENTO_EN_PUERTA = "delivery_en_puerta"
 NOTIF_EVENTO_EN_CAMINO = "delivery_en_camino"
 
 
+# ─── Guards de negocio expuestos a rutas HTTP ──────────────────────────────
+
+def franja_ya_iniciada(slot: DeliverySlot | None, ahora: datetime | None = None) -> bool:
+    """True cuando la franja ya arrancó su ejecución (reparto en curso).
+
+    Un cliente NO puede cancelar su pedido si su franja ya está iniciada
+    porque probablemente el rider ya está preparando la ruta o en camino.
+    """
+    if slot is None:
+        return False
+    if ahora is None:
+        ahora = utcnow().replace(tzinfo=None)
+    inicio_dt = datetime.combine(slot.fecha, slot.hora_inicio)
+    return ahora >= inicio_dt
+
+
+def cliente_puede_cancelar(pedido: Order) -> tuple[bool, str]:
+    """Decide si el cliente puede cancelar el pedido desde chat/ticket web.
+
+    Devuelve ``(puede, motivo)``. ``motivo`` es cadena vacía si puede.
+    Reglas:
+      1. Pedido debe estar en ``estado='pendiente'`` (no en preparación,
+         reparto, entregado o cancelado ya).
+      2. Bizum ya confirmado: bloqueado (requiere revisión del equipo).
+      3. Si el pedido tiene ``slot_id`` (franja), la franja NO puede haber
+         iniciado su reparto — una vez arrancada, la cancelación pasa por
+         el equipo (chat/teléfono).
+    """
+    if pedido.estado != "pendiente":
+        return False, "El pedido ya está en preparación o entregado."
+    if pedido.metodo_pago == "bizum" and pedido.pago_confirmado:
+        return False, "El pago Bizum ya está confirmado — pide ayuda por chat."
+    if pedido.slot_id and franja_ya_iniciada(pedido.slot):
+        hi = pedido.slot.hora_inicio.strftime("%H:%M")
+        return False, (
+            f"Tu franja de las {hi} ya comenzó a repartirse. "
+            "Contáctanos por chat si hay algún problema."
+        )
+    return True, ""
+
+
 # ─── Resultado tipado de reserva (evita excepciones para flujos esperados) ─
 
 class ResultadoReserva(Enum):
