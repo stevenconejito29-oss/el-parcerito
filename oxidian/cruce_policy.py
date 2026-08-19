@@ -124,18 +124,66 @@ def expire_stale_open_favors():
     return expired
 
 
-def rider_can_be_assigned(rider_id):
+def _duracion_estimada_cruce_min(distance_km_value) -> int:
+    """Estima minutos de un Cruce: 5 min recogida + 3 min/km + 5 min entrega.
+
+    Cota mínima 12 min. Cota superior evita edge cases: 180 min (3h).
+    """
+    from decimal import Decimal
+    try:
+        km = float(Decimal(str(distance_km_value or 0)))
+    except Exception:
+        km = 0.0
+    minutos = 10 + int(km * 3) + 5
+    return max(12, min(180, minutos))
+
+
+def _proxima_franja_rider(rider_id):
+    """Devuelve (slot, hora_inicio_datetime) de la próxima franja pendiente
+    del rider hoy que aún no ha arrancado, o (None, None).
+
+    "Pendiente" = SlotRepartidor.liberado_en IS NULL AND slot.hora_inicio > now.
+    """
+    from datetime import date as _date, datetime as _dt
+    from models import SlotRepartidor, DeliverySlot, db
+    hoy = _date.today()
+    ahora = _dt.utcnow()
+    row = (
+        db.session.query(DeliverySlot, SlotRepartidor)
+        .join(SlotRepartidor, SlotRepartidor.slot_id == DeliverySlot.id)
+        .filter(
+            SlotRepartidor.repartidor_id == rider_id,
+            SlotRepartidor.liberado_en.is_(None),
+            DeliverySlot.fecha == hoy,
+        )
+        .all()
+    )
+    proxima = None
+    proxima_inicio = None
+    for slot, _sr in row:
+        inicio_dt = _dt.combine(slot.fecha, slot.hora_inicio)
+        if inicio_dt > ahora and (proxima_inicio is None or inicio_dt < proxima_inicio):
+            proxima = slot
+            proxima_inicio = inicio_dt
+    return proxima, proxima_inicio
+
+
+def rider_can_be_assigned(rider_id, favor_request=None):
     """Comprueba estado y capacidad conjunta de pedidos + Cruces.
 
     ``capacidad_repartidor`` toma el advisory lock de carga de reparto y ya
     incluye Cruces activos en su cuenta (via ``carga_actual_repartidores``),
     por lo que basta con verificar que quede margen > 0.
 
-    Regla adicional (franjas): un rider que ya salió a repartir pedidos de
-    una franja activa NO puede aceptar Cruces hasta terminar esa vuelta.
-    Evita que el reparto programado se retrase por un encargo colateral.
+    Reglas franjas (sinergia sin interrumpir la ruta):
+
+    1. Si el rider tiene una franja activa hoy y ya sacó ≥1 pedido que aún
+       no está entregado, NO puede aceptar Cruces hasta terminar esa vuelta.
+    2. Si se pasa ``favor_request`` y el rider tiene una próxima franja hoy
+       pendiente, el Cruce sólo se acepta si cabe en el hueco antes de que
+       arranque esa franja (duración estimada + colchón 10 min de vuelta).
     """
-    from datetime import date as _date
+    from datetime import date as _date, datetime as _dt, timedelta as _td
     from models import User, Order, SlotRepartidor, db
     from services import capacidad_repartidor
 
@@ -146,16 +194,17 @@ def rider_can_be_assigned(rider_id):
     if capacidad_repartidor(rider_id) <= 0:
         return False, "El rider alcanzó su capacidad de reparto."
 
-    # Guard franja: si el rider tiene una franja hoy activa y ya sacó ≥1
-    # pedido que aún no está entregado, no puede aceptar Cruces.
+    # Regla 1: no interrumpir reparto en curso.
     hoy = _date.today()
+    from models import DeliverySlot
     en_ruta = (
         db.session.query(Order.id)
         .join(SlotRepartidor, SlotRepartidor.slot_id == Order.slot_id)
+        .join(DeliverySlot, DeliverySlot.id == Order.slot_id)
         .filter(
             SlotRepartidor.repartidor_id == rider_id,
             SlotRepartidor.liberado_en.is_(None),
-            SlotRepartidor.fecha == hoy,
+            DeliverySlot.fecha == hoy,
             Order.en_camino_at.isnot(None),
             Order.entregado_en.is_(None),
         )
@@ -163,4 +212,18 @@ def rider_can_be_assigned(rider_id):
     )
     if en_ruta:
         return False, "Estás repartiendo tu franja — termina la vuelta antes de tomar un Cruce."
+
+    # Regla 2: cruce debe caber antes de la próxima franja del día.
+    if favor_request is not None:
+        proxima, proxima_inicio = _proxima_franja_rider(rider_id)
+        if proxima is not None and proxima_inicio is not None:
+            ahora = _dt.utcnow()
+            duracion = _duracion_estimada_cruce_min(getattr(favor_request, "distance_km", 0))
+            fin_estimado = ahora + _td(minutes=duracion + 10)  # +10 min vuelta al punto de origen
+            if fin_estimado > proxima_inicio:
+                hi = proxima.hora_inicio.strftime("%H:%M")
+                return False, (
+                    f"Este Cruce (~{duracion} min) no cabe antes de tu franja de las {hi}. "
+                    "Espera a terminar esa franja o deja que otro rider lo tome."
+                )
     return True, ""

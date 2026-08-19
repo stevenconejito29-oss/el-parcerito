@@ -520,10 +520,22 @@ def _intent_answer(intent: str) -> str | None:
     if intent == "cruce":
         if not features.get("favores"):
             return "El servicio de encargos «Cruce» no está activo ahora. Si te interesa, pulsa «Hablar con alguien» y el equipo te avisa cuando lo abramos."
+        base = public_url.rstrip("/")
         return (
-            f"«El Cruce» es nuestro servicio de recogida y entrega punto A → punto B (documentos, paquete pequeño, un pedido a otro comercio…). "
-            f"Tú publicas el encargo con precio orientativo (mínimo 5 €, +1,25 €/km), un repartidor lo acepta y te avisamos en cada paso. "
-            f"Créalo aquí: {public_url.rstrip('/')}/favor"
+            "«El Cruce» es nuestro servicio de recogida y entrega punto A → punto B. Sirve para cosas como:\n"
+            "• 💊 Recoger medicinas de la farmacia\n"
+            "• 🍽️ Traer un pedido de otro restaurante\n"
+            "• 💼 Recoger algo olvidado en el trabajo\n"
+            "• 📮 Retirar un paquete de Correos\n"
+            "• 🥖 Compra rápida en la panadería\n"
+            "• 📄 Llevar papeles a notaría o ayuntamiento\n"
+            "• 🔑 Llevar unas llaves\n"
+            "• 🛍️ Encargo de otra tienda que no reparte\n\n"
+            "Tú ofreces un precio (mínimo 5 € + 1,25 €/km). El repartidor puede aceptar, "
+            "hacer contraoferta o pasar. Tú también puedes rechazar la contraoferta — es un "
+            "acuerdo entre parceros, nadie está obligado. Los cruces se hacen entre franjas "
+            "de reparto, para no cortar entregas de comida.\n\n"
+            f"Créalo aquí: {base}/favor"
         )
     if intent == "tutorial":
         delivery_step = "Elige delivery o recogida" if features.get("delivery") else "Elige la modalidad disponible"
