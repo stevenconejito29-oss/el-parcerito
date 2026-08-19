@@ -398,6 +398,17 @@ def _valid_url(value, required=False, allow_internal=True):
     return True, value
 
 
+@superadmin_bp.route("/sw-reset")
+def sw_reset():
+    """Página autónoma para desregistrar el service worker + purgar cachés.
+
+    Público (no requiere login) para poder recuperarse cuando el SW viejo
+    bloquea incluso la vista de login. Sin efectos secundarios en el server:
+    todo el trabajo lo hace el navegador con JS.
+    """
+    return render_template("sw_reset.html")
+
+
 @superadmin_bp.route("/combos/nuevo")
 @login_required
 def nuevo_combo():
