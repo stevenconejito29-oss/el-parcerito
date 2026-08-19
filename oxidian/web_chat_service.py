@@ -53,6 +53,8 @@ _INTENT_TERMS = {
     "availability": {"disponible", "disponibilidad", "agotado", "stock", "queda", "quedan"},
     "receipt": {"ticket", "recibo", "factura", "comprobante", "numero"},
     "reorder": {"repetir", "recomprar", "pedirlo", "anterior", "ultima"},
+    "franja": {"franja", "franjas", "reservar", "programado", "programada", "hora", "horaria", "elegir"},
+    "cruce": {"cruce", "cruces", "picap", "encargo", "mandado", "recoger", "recogerme", "llevar", "recojan", "recojas", "recado"},
 }
 
 _INTENT_PHRASES = {
@@ -68,10 +70,12 @@ _INTENT_PHRASES = {
     "availability": ("hay disponibilidad", "queda disponible", "esta agotado"),
     "receipt": ("ticket de compra", "numero de pedido", "comprobante del pedido"),
     "reorder": ("repetir mi ultimo pedido", "comprar lo mismo", "ultima compra"),
+    "franja": ("reservar franja", "elegir franja", "franja horaria", "reparto programado", "pedir para las", "quiero para las", "cambiar franja"),
+    "cruce": ("pueden recogerme", "pueden llevar", "hacen encargos", "hacen mandados", "que es un cruce", "servicio de recogida", "recogen algo", "picap"),
 }
 
 _INTENT_ORDER = (
-    "human", "cancel", "tracking", "payments", "delivery", "pickup", "loyalty",
+    "human", "cancel", "tracking", "cruce", "franja", "payments", "delivery", "pickup", "loyalty",
     "hours", "notifications", "privacy", "allergens", "coupons", "changes",
     "availability", "receipt", "reorder", "tutorial", "catalog", "location", "greeting", "thanks",
 )
@@ -412,6 +416,24 @@ def _intent_answer(intent: str) -> str | None:
         return "Si este dispositivo reconoce una compra anterior entregada, aparecerá debajo «Repetir compra». Añadiremos a la canasta solo los productos que sigan disponibles; sabores, extras o variantes se vuelven a elegir para evitar errores de precio."
     if intent == "catalog":
         return f"Puedes ver productos, precios, disponibilidad y combos actualizados en el Menú: {public_url}"
+    if intent == "franja":
+        franjas_on = str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+        inmediato_on = str(get_store_value("delivery_inmediato_activo", "0")).strip() in ("1", "true", "True")
+        if not franjas_on:
+            return "Ahora mismo el reparto es «cuanto antes»: cuando confirmas, salimos hacia ti apenas esté listo. Si activamos franjas horarias verás la opción al elegir la modalidad de entrega."
+        opcion = "🛵 Cuanto antes o 🕒 Elegir franja" if inmediato_on else "🕒 Elegir franja"
+        return (
+            f"Puedes reservar tu franja de reparto en el checkout. Verás el calendario de la semana con los cupos disponibles y eliges la que te venga bien ({opcion}). "
+            "Tu pedido queda anclado a esa franja: el equipo lo prepara justo antes y el repartidor sale dentro de esa ventana."
+        )
+    if intent == "cruce":
+        if not features.get("favores"):
+            return "El servicio de encargos «Cruce» no está activo ahora. Si te interesa, pulsa «Hablar con alguien» y el equipo te avisa cuando lo abramos."
+        return (
+            f"«El Cruce» es nuestro servicio de recogida y entrega punto A → punto B (documentos, paquete pequeño, un pedido a otro comercio…). "
+            f"Tú publicas el encargo con precio orientativo (mínimo 5 €, +1,25 €/km), un repartidor lo acepta y te avisamos en cada paso. "
+            f"Créalo aquí: {public_url.rstrip('/')}/favor"
+        )
     if intent == "tutorial":
         delivery_step = "Elige delivery o recogida" if features.get("delivery") else "Elige la modalidad disponible"
         return (
@@ -420,7 +442,13 @@ def _intent_answer(intent: str) -> str | None:
             "5) elige el pago y confirma. El total siempre se muestra antes de enviar."
         )
     if intent == "greeting":
-        return f"¡Hola! Soy el asistente de {SiteConfig.get('NOMBRE_NEGOCIO', 'la tienda') or 'la tienda'}. Pregúntame por productos, horario, pagos, delivery, cafecitos o tu pedido."
+        extras = []
+        if str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True"):
+            extras.append("franjas de reparto")
+        if features.get("favores"):
+            extras.append("El Cruce")
+        cola = (", " + ", ".join(extras)) if extras else ""
+        return f"¡Hola! Soy el asistente de {SiteConfig.get('NOMBRE_NEGOCIO', 'la tienda') or 'la tienda'}. Pregúntame por productos, horario, pagos, delivery, cafecitos{cola} o tu pedido."
     if intent == "thanks":
         return "¡Con gusto! Si necesitas algo más, aquí estoy."
     return None

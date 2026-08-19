@@ -2714,6 +2714,18 @@ def _seed_knowledge_entries():
          "elegís tamaño y sabores y pagas con seguridad.",
          "por aqui,por whatsapp,quiero pedir aqui,pedir por chat",
          "cliente"),
+        ("franjas_reparto", "envio", "¿Cómo funcionan las franjas de reparto?",
+         "🕒 Puedes reservar tu franja de reparto en el checkout de {{web_url}}. "
+         "Elige día y hora entre las franjas disponibles y tu pedido queda anclado a esa ventana: "
+         "lo preparamos justo antes y el repartidor sale dentro de esa franja. "
+         "Si no eliges franja, sale «cuanto antes» apenas confirmes.",
+         "franja,franjas,reservar franja,reparto programado,programar entrega,hora de reparto,elegir franja,horaria",
+         "cliente"),
+        ("cruce_encargos", "cruce", "¿Que es El Cruce? ¿Pueden recogerme algo?",
+         "🤝 «El Cruce» es nuestro servicio de recogida y entrega punto A → punto B (documentos, un paquete pequeño, un pedido a otro comercio…). "
+         "Publica el encargo en {{web_url}}/favor con precio orientativo (mínimo 5€, +1,25€/km), un repartidor lo acepta y te avisamos en cada paso.",
+         "cruce,cruces,picap,encargo,mandado,recado,recoger,recogerme,recojan,llevar,traer paquete,favor",
+         "cliente"),
         # Audiencia super_admin/admin: comandos operativos
         ("admin_menu", "meta", "MENU admin",
          "🔧 Comandos operativos:\n"

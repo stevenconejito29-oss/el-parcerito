@@ -524,17 +524,30 @@ def liberar_franja_repartidor(slot_id: int, repartidor_id: int) -> bool:
 
 
 def _plantilla_render(plantilla: str, cliente, pedido) -> str:
-    """Sustituye placeholders {nombre} y {codigo} de forma segura."""
+    """Sustituye placeholders {nombre}, {codigo} y {franja} de forma segura.
+
+    {franja} → ``" en tu franja de las HH:MM"`` si el pedido tiene ``slot``
+    reservado, cadena vacía en caso contrario. El espacio inicial permite
+    concatenar dentro de una frase natural sin dobles espacios.
+    """
     if not plantilla:
         return ""
     nombre = ""
     if cliente is not None:
         raw = str(getattr(cliente, "nombre", "") or "").strip()
         nombre = raw.split()[0] if raw else ""
+    franja_txt = ""
+    slot = getattr(pedido, "slot", None)
+    if slot is not None and getattr(slot, "hora_inicio", None) is not None:
+        try:
+            franja_txt = f" en tu franja de las {slot.hora_inicio.strftime('%H:%M')}"
+        except Exception:
+            franja_txt = ""
     return (
         plantilla
         .replace("{nombre}", nombre)
         .replace("{codigo}", str(pedido.numero_pedido or pedido.id))
+        .replace("{franja}", franja_txt)
     )
 
 

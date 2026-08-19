@@ -174,8 +174,8 @@ STORE_DEFAULTS = {
     "notif_canales_por_evento": "",
     # Plantillas configurables por el super_admin (placeholders {nombre},
     # {codigo}). Si están vacías se usa el default conservador del código.
-    "delivery_notificar_camino_texto": "🛵 {nombre}, tu pedido #{codigo} ya salió de la tienda. Llega en unos minutos. ¡Nos vemos!",
-    "delivery_franjas_notificar_puerta_texto": "🛵 {nombre}, tu repartidor ya está en la puerta con tu pedido #{codigo}.",
+    "delivery_notificar_camino_texto": "🛵 {nombre}, tu pedido #{codigo} ya salió de la tienda{franja}. Llega en unos minutos. ¡Nos vemos!",
+    "delivery_franjas_notificar_puerta_texto": "🛵 {nombre}, tu repartidor ya está en la puerta con tu pedido #{codigo}{franja}.",
     "CRUCE_PRECIO_MINIMO": "5.00",
     "CRUCE_PRECIO_POR_KM": "1.25",
     "CRUCE_PESO_MAX_KG": "8",
