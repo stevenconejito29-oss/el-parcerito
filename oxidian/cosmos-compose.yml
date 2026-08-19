@@ -106,6 +106,7 @@ services:
       RUN_OUTBOX_WORKER: "1"
       OUTBOX_LIMIT: ${OUTBOX_LIMIT:-50}
       OUTBOX_INTERVAL_SECONDS: ${OUTBOX_INTERVAL_SECONDS:-2}
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
       REDIS_URL: redis://oxidian-redis:6379/0
       NODE_ENV: production
       PORT: "3000"

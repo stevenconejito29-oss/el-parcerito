@@ -226,6 +226,10 @@
      PWA para que el componente no dependa de parches de especificidad. #}
   {% block styles_final %}{% endblock %}
 
+  {# Umami analytics (stats.elparcerito.com via Cloudflare Tunnel). #}
+  {% if umami_website_id %}
+  <script nonce="{{ csp_nonce() }}" defer src="https://stats.elparcerito.com/script.js" data-website-id="{{ umami_website_id }}"></script>
+  {% endif %}
 </head>
 {# El detalle ya tiene navegación de regreso y una barra de compra fija.
    Apilar además la navegación inferior duplicaba controles y cubría el

@@ -724,6 +724,7 @@ def create_app(env="default"):
             "ALERGENOS_EU": ALERGENOS_EU,
             "asset_version": app.config["ASSET_VERSION"],
             "now": datetime.now,
+            "umami_website_id": (os.environ.get("UMAMI_WEBSITE_ID") or "").strip(),
         }
 
     @app.template_filter("time_ago")
