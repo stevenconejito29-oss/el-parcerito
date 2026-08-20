@@ -361,6 +361,8 @@ def kds_data():
             "tipo": (p.tipo_entrega_cliente or "recogida"),
             "mio": bool(p.preparador_id == current_user.id),
             "sin_asignar": p.preparador_id is None,
+            "slot_prepara_antes": (p.slot.hora_inicio.strftime("%H:%M") if p.slot else None),
+            "slot_fecha": (p.slot.fecha.strftime("%d/%m") if p.slot else None),
             "items": items,
         })
     resp = jsonify({

@@ -201,6 +201,7 @@
           <span class="tag ${tipo}">${esc(tipo)}</span>
           ${p.mio?'<span class="tag mio">mío</span>':''}
           ${p.sin_asignar?'<span class="tag" style="background:#3f2d10;color:#fde68a;">sin asignar</span>':''}
+          ${p.slot_prepara_antes?`<span class="tag" style="background:#3f1414;color:#fca5a5;font-weight:800" title="Reparto ${esc(p.slot_fecha)}">⏰ prepara antes ${esc(p.slot_prepara_antes)}</span>`:""}
         </div>
         <ul class="items">${items}</ul>
         ${p.notas?`<div class="note">📝 ${esc(p.notas)}</div>`:''}
