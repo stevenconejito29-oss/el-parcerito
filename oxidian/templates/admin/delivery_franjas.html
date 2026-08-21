@@ -1,11 +1,17 @@
 {% extends "admin_base.html" %}
 {% block title %}Delivery · Franjas horarias — Admin{% endblock %}
 {% block styles %}
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
 <div class="df-container">
-  <div class="df-header">
+  <div class="df-version-banner" style="font-size:.7rem;color:#888;text-align:right;padding:.2rem 0;font-family:monospace">
+  v.{{ asset_version[:8] if asset_version else "dev" }} · panel SSR · <a href="{{ url_for("superadmin.sw_reset") }}" style="color:#888">reset PWA</a>
+</div>
+<div class="df-header">
     <div>
       <h1>Delivery · Franjas horarias</h1>
       <p>Planifica los cupos de reparto por franja. Puedes editar aunque el módulo esté apagado.</p>

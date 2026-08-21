@@ -436,13 +436,19 @@ def modo_reparto_switch():
 
 @superadmin_bp.route("/sw-reset")
 def sw_reset():
-    """Página autónoma para desregistrar el service worker + purgar cachés.
+    from flask import make_response
+    resp = make_response(render_template("sw_reset.html"))
+    # Clear-Site-Data instruye al navegador a purgar CACHE + STORAGE + SW
+    # de este origen. Complementa el JS del template — algunos navegadores
+    # ignoran el header pero ejecutan el JS y viceversa.
+    resp.headers["Clear-Site-Data"] = '"cache", "storage", "cookies"'
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
-    Público (no requiere login) para poder recuperarse cuando el SW viejo
-    bloquea incluso la vista de login. Sin efectos secundarios en el server:
-    todo el trabajo lo hace el navegador con JS.
-    """
-    return render_template("sw_reset.html")
+def _sw_reset_LEGACY():
+    """deprecated — reemplazado por sw_reset() arriba con Clear-Site-Data."""
+    return None
 
 
 @superadmin_bp.route("/combos/nuevo")
