@@ -675,9 +675,29 @@ details[open] > .df-day-toggle::after { transform: rotate(180deg); }
    Aparece siempre — no depende de fetch async.
    ═══════════════════════════════════════════════════════════════ */
 
+/* Banner guía colapsable */
+.df-guide{
+  margin:.75rem 0 1rem;padding:.6rem .8rem;
+  background:color-mix(in srgb, var(--brand-primary, #5a3a1e) 5%, var(--col-surface, #fff));
+  border:1px solid color-mix(in srgb, var(--brand-primary, #5a3a1e) 20%, transparent);
+  border-radius:10px;font-size:.85rem;color:var(--col-text)
+}
+.df-guide > summary{cursor:pointer;list-style:none;font-weight:600}
+.df-guide > summary::-webkit-details-marker{display:none}
+.df-guide > summary::before{content:"▸ ";display:inline-block;transition:transform .15s}
+.df-guide[open] > summary::before{content:"▾ "}
+.df-guide__body{margin-top:.5rem}
+.df-guide__body p{margin:.25rem 0 .5rem;line-height:1.4}
+.df-guide__legend{
+  list-style:none;padding:0;margin:.4rem 0 0;
+  display:flex;flex-wrap:wrap;gap:.4rem
+}
+.df-guide__legend li{display:inline-flex;align-items:center;gap:.35rem}
+
+/* Grid semana - responsive */
 .df-calendar-ssr{
   display:grid;
-  grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns:repeat(7, minmax(0, 1fr));
   gap:.6rem;
   margin:1rem 0
 }
@@ -687,14 +707,15 @@ details[open] > .df-day-toggle::after { transform: rotate(180deg); }
   border-radius:10px;
   padding:.6rem;
   display:flex;flex-direction:column;
-  min-height:200px
+  min-height:220px
 }
 .df-cal-day-ssr.is-today{border-color:var(--brand-primary, #5a3a1e);box-shadow:0 0 0 2px color-mix(in srgb, var(--brand-primary, #5a3a1e) 20%, transparent)}
-.df-cal-day-ssr.is-past{opacity:.55}
+.df-cal-day-ssr.is-past{opacity:.6}
 .df-cal-day-ssr__head{
-  display:flex;align-items:baseline;gap:.4rem;
+  display:flex;flex-direction:column;gap:.3rem;
   padding-bottom:.4rem;border-bottom:1px solid var(--col-border, #e5e0d7);margin-bottom:.5rem
 }
+.df-cal-day-ssr__title{display:flex;align-items:baseline;gap:.4rem}
 .df-cal-day-ssr__weekday{font-weight:700;font-size:.75rem;color:var(--col-muted, #6b6b6b);text-transform:uppercase;letter-spacing:.05em}
 .df-cal-day-ssr__day{font-weight:900;font-size:1.4rem;color:var(--col-text)}
 .df-cal-day-ssr__badge{
@@ -702,25 +723,82 @@ details[open] > .df-day-toggle::after { transform: rotate(180deg); }
   padding:.15rem .4rem;border-radius:4px;
   background:var(--brand-primary, #5a3a1e);color:#fff
 }
-.df-cal-day-ssr__body{display:flex;flex-direction:column;gap:.35rem;flex:1}
+.df-cal-day-ssr__meta{
+  display:flex;align-items:center;justify-content:space-between;gap:.4rem;flex-wrap:wrap
+}
+.df-cal-day-ssr__count{
+  font-size:.7rem;font-weight:700;color:var(--col-muted, #6b6b6b);
+  text-transform:uppercase;letter-spacing:.03em
+}
+.df-cal-day-ssr__toggle{
+  font-size:.65rem;font-weight:800;
+  padding:.2rem .45rem;border-radius:5px;cursor:pointer;
+  background:color-mix(in srgb, var(--col-muted, #6b6b6b) 12%, transparent);
+  color:var(--col-text);border:1px solid transparent;
+  touch-action:manipulation
+}
+.df-cal-day-ssr__toggle:hover{background:color-mix(in srgb, var(--col-muted, #6b6b6b) 20%, transparent)}
+.df-cal-day-ssr__toggle.is-off{background:color-mix(in srgb, #2b9348 15%, transparent);color:#1a5c2b}
+
+.df-cal-day-ssr__body{display:flex;flex-direction:column;gap:.4rem;flex:1}
+
 .df-cal-slot-ssr{
-  display:flex;flex-direction:column;gap:.15rem;
-  padding:.55rem .6rem;min-height:56px;
-  background:color-mix(in srgb, var(--brand-primary, #5a3a1e) 6%, var(--col-surface, #fff));
-  border:1px solid color-mix(in srgb, var(--brand-primary, #5a3a1e) 25%, transparent);
+  display:flex;flex-direction:column;gap:.2rem;
+  padding:.55rem .65rem;min-height:60px;
+  background:var(--col-surface, #fff);
+  border:1px solid var(--col-border, #e5e0d7);
+  border-left:3px solid var(--col-border, #e5e0d7);
   border-radius:8px;
   cursor:pointer;text-align:left;
   font-family:inherit;color:var(--col-text);
-  touch-action:manipulation;-webkit-tap-highlight-color:transparent
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+  transition:background .12s, border-color .12s
 }
-.df-cal-slot-ssr:hover{background:color-mix(in srgb, var(--brand-primary, #5a3a1e) 12%, var(--col-surface, #fff))}
-.df-cal-slot-ssr.is-inactive{opacity:.5;background:#f5f5f5;border-style:dashed}
-.df-cal-slot-ssr__hora{font-weight:800;font-size:.95rem;line-height:1.1}
+.df-cal-slot-ssr:hover{background:color-mix(in srgb, var(--brand-primary, #5a3a1e) 6%, var(--col-surface, #fff))}
+.df-cal-slot-ssr:focus-visible{outline:2px solid var(--brand-primary, #5a3a1e);outline-offset:2px}
+
+/* Estado por color de borde izquierdo */
+.df-cal-slot-ssr.is-libre{border-left-color:#2b9348;background:color-mix(in srgb, #2b9348 5%, var(--col-surface, #fff))}
+.df-cal-slot-ssr.is-medio{border-left-color:#f59e0b;background:color-mix(in srgb, #f59e0b 6%, var(--col-surface, #fff))}
+.df-cal-slot-ssr.is-lleno{border-left-color:#c25050;background:color-mix(in srgb, #c25050 6%, var(--col-surface, #fff))}
+.df-cal-slot-ssr.is-inactiva,
+.df-cal-slot-ssr.is-inactive{opacity:.55;background:#f5f5f5;border-style:dashed;border-left-color:#9a9a9a}
+.df-cal-slot-ssr.is-cerrada{opacity:.55;border-left-color:#9a9a9a;background:#f7f5f2}
+.df-cal-slot-ssr.is-en-curso{
+  box-shadow:0 0 0 2px var(--brand-primary, #5a3a1e), 0 2px 6px rgba(0,0,0,.08);
+  border-left-width:4px
+}
+.df-cal-slot-ssr.is-pasada:not(.is-en-curso){opacity:.5}
+
+.df-cal-slot-ssr__row{
+  display:flex;align-items:center;justify-content:space-between;gap:.4rem;
+  flex-wrap:wrap
+}
+.df-cal-slot-ssr__hora{font-weight:800;font-size:.95rem;line-height:1.1;font-variant-numeric:tabular-nums}
 .df-cal-slot-ssr__cap{font-size:.72rem;color:var(--col-muted, #6b6b6b);font-weight:600}
-.df-cal-day-ssr__empty{
-  color:var(--col-muted, #6b6b6b);font-size:.78rem;font-style:italic;
-  text-align:center;margin:.5rem 0;padding:1rem 0
+
+/* Chip de estado, compartido con la leyenda */
+.df-cal-slot-ssr__chip{
+  display:inline-flex;align-items:center;gap:.15rem;
+  font-size:.7rem;font-weight:800;
+  padding:.15rem .4rem;border-radius:999px;
+  background:#eee;color:#333;white-space:nowrap;line-height:1.2
 }
+.df-cal-slot-ssr__chip.is-libre{background:color-mix(in srgb, #2b9348 18%, #fff);color:#155d29}
+.df-cal-slot-ssr__chip.is-medio{background:color-mix(in srgb, #f59e0b 22%, #fff);color:#7a4a04}
+.df-cal-slot-ssr__chip.is-lleno{background:color-mix(in srgb, #c25050 22%, #fff);color:#7a1f1f}
+.df-cal-slot-ssr__chip.is-inactiva{background:#e5e5e5;color:#555}
+.df-cal-slot-ssr__chip.is-cerrada{background:#eae4d9;color:#5a4a30}
+
+.df-cal-day-ssr__empty{
+  color:var(--col-muted, #6b6b6b);
+  text-align:center;margin:.5rem 0;padding:1rem .5rem;
+  display:flex;flex-direction:column;gap:.35rem;align-items:center
+}
+.df-cal-day-ssr__empty-icon{font-size:1.6rem;opacity:.6}
+.df-cal-day-ssr__empty-text{font-size:.82rem;font-weight:700}
+.df-cal-day-ssr__empty-cta{font-size:.72rem;color:var(--brand-primary, #5a3a1e);font-weight:700}
+
 .df-cal-day-ssr__add{
   min-height:44px;margin-top:auto;
   padding:.4rem;border:1.5px dashed var(--brand-primary, #5a3a1e);
@@ -735,11 +813,40 @@ details[open] > .df-day-toggle::after { transform: rotate(180deg); }
   text-align:center;color:var(--col-muted, #6b6b6b);
   font-size:.8rem;margin:.5rem 0
 }
-@media(max-width:480px){
-  .df-calendar-ssr{grid-template-columns:1fr 1fr}
-  .df-cal-day-ssr{min-height:150px;padding:.5rem}
+
+/* Tabs móvil SSR: ocultos por defecto, aparecen <768px */
+.df-cal-day-tabs-ssr{display:none;gap:.3rem;overflow-x:auto;padding:.25rem 0;margin:.5rem 0 .25rem;scrollbar-width:none}
+.df-cal-day-tabs-ssr::-webkit-scrollbar{display:none}
+.df-cal-day-tab-ssr{
+  flex:0 0 auto;min-width:52px;min-height:44px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:.05rem;padding:.3rem .5rem;border-radius:8px;cursor:pointer;
+  background:var(--col-surface, #fff);border:1px solid var(--col-border, #e5e0d7);
+  font-family:inherit;color:var(--col-text);
+  font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;
+  touch-action:manipulation
+}
+.df-cal-day-tab-ssr strong{font-size:1rem;font-weight:900}
+.df-cal-day-tab-ssr.is-active{background:var(--brand-primary, #5a3a1e);color:#fff;border-color:var(--brand-primary, #5a3a1e)}
+.df-cal-day-tab-ssr.is-past{opacity:.55}
+
+/* ══ Breakpoints ══
+   Desktop  ≥1024px : 7 columnas (default)
+   Tablet   768-1023: 4 columnas
+   Móvil    400-767 : 2 columnas + tabs (tabs solo si querés navegar rápido)
+   Móvil    <400    : 1 columna visible, tabs eligen día
+*/
+@media(max-width:1023px){
+  .df-calendar-ssr{grid-template-columns:repeat(4, minmax(0, 1fr))}
+}
+@media(max-width:767px){
+  .df-cal-day-tabs-ssr{display:flex}
+  .df-calendar-ssr{grid-template-columns:repeat(2, minmax(0, 1fr))}
+  .df-cal-day-ssr{min-height:170px;padding:.5rem}
   .df-cal-day-ssr__day{font-size:1.2rem}
 }
-@media(max-width:340px){
+@media(max-width:399px){
   .df-calendar-ssr{grid-template-columns:1fr}
+  .df-cal-day-ssr{display:none}
+  .df-cal-day-ssr.is-active{display:flex}
 }

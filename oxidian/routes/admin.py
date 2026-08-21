@@ -8033,28 +8033,53 @@ def delivery_franjas_panel():
     """
     from store_config import get_store_value
     from delivery_slots_service import listar_franjas_admin
-    from datetime import date, timedelta
+    from datetime import date, datetime, timedelta
     try:
         default_max = int(get_store_value("delivery_franjas_max_repartidores_default", "1"))
     except (TypeError, ValueError):
         default_max = 1
     hoy = date.today()
+    ahora = datetime.now().time()
     lunes = hoy - timedelta(days=hoy.weekday())
     domingo = lunes + timedelta(days=6)
     slots = listar_franjas_admin(lunes, domingo)
+    # Contador de pedidos por franja (excluye cancelados) para chip de ocupación
+    pedidos_por_slot = {}
+    total_pedidos_semana = 0
+    if slots:
+        slot_ids = [s.id for s in slots]
+        try:
+            rows = (
+                db.session.query(Order.slot_id, db.func.count(Order.id))
+                .filter(Order.slot_id.in_(slot_ids))
+                .filter(Order.estado != "cancelado")
+                .group_by(Order.slot_id)
+                .all()
+            )
+            for sid, cnt in rows:
+                pedidos_por_slot[int(sid)] = int(cnt)
+                total_pedidos_semana += int(cnt)
+        except Exception:
+            pedidos_por_slot = {}
     # Agrupar por fecha para el server-side render
     dias = []
+    total_franjas_semana = 0
     for i in range(7):
         d = lunes + timedelta(days=i)
+        franjas_dia = sorted(
+            [s for s in slots if s.fecha == d],
+            key=lambda s: s.hora_inicio,
+        )
+        total_franjas_semana += len(franjas_dia)
+        pedidos_dia = sum(pedidos_por_slot.get(s.id, 0) for s in franjas_dia)
         dias.append({
             "fecha": d,
             "iso": d.isoformat(),
             "es_hoy": d == hoy,
             "es_pasado": d < hoy,
-            "franjas": sorted(
-                [s for s in slots if s.fecha == d],
-                key=lambda s: s.hora_inicio,
-            ),
+            "franjas": franjas_dia,
+            "pedidos_total": pedidos_dia,
+            "alguna_activa": any(s.activo for s in franjas_dia),
         })
     resp = make_response(render_template(
         "admin/delivery_franjas.html",
@@ -8063,6 +8088,10 @@ def delivery_franjas_panel():
         dias_semana=dias,
         semana_lunes=lunes,
         semana_domingo=domingo,
+        pedidos_por_slot=pedidos_por_slot,
+        total_pedidos_semana=total_pedidos_semana,
+        total_franjas_semana=total_franjas_semana,
+        now_time=ahora,
     ))
     # No cachear el panel — el estado de franjas cambia frecuentemente
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
