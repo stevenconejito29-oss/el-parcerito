@@ -850,3 +850,16 @@ details[open] > .df-day-toggle::after { transform: rotate(180deg); }
   .df-cal-day-ssr{display:none}
   .df-cal-day-ssr.is-active{display:flex}
 }
+
+/* ═══ Cocina: aumentar legibilidad del countdown a 1m ═══ */
+.df-kitchen-chip{
+  font-size:.95rem;padding:.32rem .75rem;
+  background:color-mix(in srgb, #c25050 18%, transparent);
+  color:#7a1f1f;border:1px solid color-mix(in srgb, #c25050 30%, transparent)
+}
+.df-kitchen-group > summary strong{font-size:1.05rem;font-weight:900}
+.df-kitchen-count{font-size:.88rem;font-weight:700}
+@media(max-width:520px){
+  .df-kitchen-chip{font-size:.88rem;padding:.28rem .6rem}
+  .df-kitchen-group > summary strong{font-size:.98rem}
+}
