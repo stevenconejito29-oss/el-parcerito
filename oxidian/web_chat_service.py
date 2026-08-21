@@ -16,7 +16,7 @@ from flask import current_app, session, url_for
 from extensions import db
 from models import KnowledgeEntry, Order, SiteConfig, User, WebChatConversation, WebChatMessage, utcnow
 from services import encolar_whatsapp_generico
-from store_config import get_store_features
+from store_config import get_store_features, get_store_value
 
 VALID_STATUSES = {"bot", "waiting_agent", "active_agent", "closed"}
 MAX_MESSAGE = 1200
@@ -55,6 +55,14 @@ _INTENT_TERMS = {
     "reorder": {"repetir", "recomprar", "pedirlo", "anterior", "ultima"},
     "franja": {"franja", "franjas", "reservar", "programado", "programada", "hora", "horaria", "elegir"},
     "cruce": {"cruce", "cruces", "picap", "encargo", "mandado", "recoger", "recogerme", "llevar", "recojan", "recojas", "recado"},
+    "eta": {"tarda", "tardan", "tardaran", "tardara", "tardaría", "tardarian", "demora", "demoran", "rato", "rapido", "rapidos", "pronto"},
+    "shipping_cost": {"tarifa", "cuesta", "coste", "costo", "vale", "valen", "gratis"},
+    "coverage": {"barrio", "zona", "zonas", "cobertura", "reparten", "traen", "llegan", "llega", "cubren", "cubre", "carmona"},
+    "minimum": {"minimo", "mínimo", "minima", "menos"},
+    "scheduled": {"mañana", "manana", "programar", "programado", "programada", "reservar", "adelantar", "adelantado", "semana"},
+    "catering": {"catering", "evento", "eventos", "boda", "cumple", "cumpleanos", "fiesta", "celebracion", "empresa"},
+    "recommend": {"recomiendan", "recomienda", "recomendacion", "recomendaciones", "sugerencia", "sugerencias", "favorito", "favoritos", "top", "mejor", "mejores", "estrella"},
+    "spicy": {"picante", "aji", "ají", "picoso", "picosos", "suave", "suaves"},
 }
 
 _INTENT_PHRASES = {
@@ -72,10 +80,21 @@ _INTENT_PHRASES = {
     "reorder": ("repetir mi ultimo pedido", "comprar lo mismo", "ultima compra"),
     "franja": ("reservar franja", "elegir franja", "franja horaria", "reparto programado", "pedir para las", "quiero para las", "cambiar franja"),
     "cruce": ("pueden recogerme", "pueden llevar", "hacen encargos", "hacen mandados", "que es un cruce", "servicio de recogida", "recogen algo", "picap"),
+    "eta": ("cuanto tarda", "cuanto tardan", "cuando llega", "cuanto demora", "en cuanto llega", "tiempo de entrega", "tiempo estimado", "van rapido"),
+    "shipping_cost": ("cuanto cuesta el envio", "cuanto vale el envio", "precio del envio", "tarifa de envio", "envio gratis", "gastos de envio"),
+    "coverage": ("traen a mi barrio", "llegan a mi barrio", "reparten en", "reparten a", "cual es la cobertura", "cubren mi zona", "hasta donde llegan"),
+    "minimum": ("pedido minimo", "cual es el minimo", "monto minimo", "compra minima", "hay que pedir minimo"),
+    "scheduled": ("puedo pedir para mañana", "puedo pedir para manana", "para la proxima semana", "programar un pedido", "dejar reservado", "para el fin de semana"),
+    "catering": ("hacen catering", "servicio de catering", "para un evento", "para una fiesta", "para un cumple", "para una empresa", "para una boda"),
+    "recommend": ("que recomiendan", "que me recomiendan", "que es lo mejor", "cual es el mas pedido", "que es lo mas rico", "tienen combos"),
+    "spicy": ("es picante", "lleva aji", "sin aji", "sin picante", "picoso", "es fuerte"),
 }
 
 _INTENT_ORDER = (
-    "human", "cancel", "tracking", "cruce", "franja", "payments", "delivery", "pickup", "loyalty",
+    "human", "cancel", "tracking", "cruce", "franja",
+    "catering", "coverage", "shipping_cost", "minimum", "scheduled",
+    "eta", "recommend", "spicy",
+    "payments", "delivery", "pickup", "loyalty",
     "hours", "notifications", "privacy", "allergens", "coupons", "changes",
     "availability", "receipt", "reorder", "tutorial", "catalog", "location", "greeting", "thanks",
 )
@@ -441,6 +460,26 @@ def _classify_intent(question: str) -> str | None:
     return max(_INTENT_ORDER, key=lambda name: (scores.get(name, 0), -_INTENT_ORDER.index(name))) if max(scores.values()) >= 22 else None
 
 
+def _zonas_activas_resumen() -> str:
+    """Resumen corto de zonas de entrega activas (nombre + tarifa)."""
+    try:
+        from models import ZonaEntrega
+        zonas = ZonaEntrega.query.filter_by(activo=True).order_by(
+            ZonaEntrega.orden, ZonaEntrega.nombre,
+        ).limit(6).all()
+    except Exception:
+        return ""
+    piezas: list[str] = []
+    for z in zonas:
+        try:
+            precio = float(z.precio_envio or 0)
+        except Exception:
+            precio = 0.0
+        etiqueta = "gratis" if precio <= 0 else f"{precio:.2f} €".replace(".", ",")
+        piezas.append(f"{z.nombre} ({etiqueta})")
+    return ", ".join(piezas)
+
+
 def _intent_answer(intent: str) -> str | None:
     features = get_store_features()
     public_url = current_app.config.get("PUBLIC_BASE_URL") or url_for("public.index", _external=True)
@@ -536,6 +575,93 @@ def _intent_answer(intent: str) -> str | None:
             "acuerdo entre parceros, nadie está obligado. Los cruces se hacen entre franjas "
             "de reparto, para no cortar entregas de comida.\n\n"
             f"Créalo aquí: {base}/favor"
+        )
+    if intent == "eta":
+        # Tiempo estimado según modo delivery activo (franjas vs inmediato).
+        franjas_on = str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+        inmediato_on = str(get_store_value("delivery_inmediato_activo", "0")).strip() in ("1", "true", "True")
+        if franjas_on and not inmediato_on:
+            return (
+                "Ahora repartimos por franjas horarias: eliges la ventana en el checkout "
+                "y el repartidor sale dentro de esa franja. El total con tiempo estimado "
+                "y franja aparece antes de confirmar."
+            )
+        if franjas_on and inmediato_on:
+            return (
+                "Puedes elegir 🛵 «Cuanto antes» (salimos apenas está listo) o 🕒 «Franja horaria» "
+                "(reservas ventana). El tiempo estimado se calcula con tu dirección en la canasta antes de confirmar."
+            )
+        # Sólo inmediato o sin franjas: tiempo por zona.
+        zonas = _zonas_activas_resumen()
+        cola = f" Tiempo típico por zona: {zonas}." if zonas else ""
+        return (
+            "Salimos hacia ti apenas el pedido está listo. El tiempo depende de tu zona "
+            "y de la cola de cocina; verás el estimado exacto en la canasta antes de confirmar." + cola
+        )
+    if intent == "coverage":
+        radio = str(get_store_value("RADIO_ENTREGA_KM", "5")) or "5"
+        zonas = _zonas_activas_resumen()
+        if zonas:
+            return (
+                f"Repartimos en un radio aproximado de {radio} km. Zonas activas: {zonas}. "
+                "Escribe tu dirección en la canasta y te confirmamos cobertura y tarifa exactas."
+            )
+        return (
+            f"Repartimos en un radio aproximado de {radio} km desde el local. "
+            "Escribe tu dirección en la canasta y te confirmamos si llegamos y cuál sería la tarifa."
+        )
+    if intent == "shipping_cost":
+        zonas = _zonas_activas_resumen()
+        if zonas:
+            return (
+                f"El coste de envío depende de la zona: {zonas}. "
+                "Al añadir tu dirección en la canasta ves el total con envío antes de confirmar."
+            )
+        return (
+            "El coste de envío se calcula por zona y aparece en la canasta al añadir tu dirección, "
+            "antes de confirmar el pedido. Nunca pagas por adelantado."
+        )
+    if intent == "minimum":
+        try:
+            minimo = float(str(get_store_value("PEDIDO_MINIMO_EUR", "0") or "0").replace(",", "."))
+        except Exception:
+            minimo = 0.0
+        if minimo > 0:
+            monto = f"{minimo:.2f} €".replace(".", ",")
+            return f"El pedido mínimo para delivery es {monto}. La canasta te avisa si te falta algo antes de confirmar."
+        return "No hay pedido mínimo: puedes pedir lo que quieras y la canasta muestra siempre el total antes de confirmar."
+    if intent == "scheduled":
+        franjas_on = str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+        programados = str(get_store_value("FEATURE_PEDIDOS_PROGRAMADOS", "0")).strip() in ("1", "true", "True")
+        if franjas_on:
+            return (
+                "Sí: en la canasta eliges una franja horaria del calendario semanal (mientras haya cupo). "
+                "Tu pedido queda anclado a esa ventana y el equipo lo prepara justo antes."
+            )
+        if programados:
+            return (
+                "Sí, puedes programar tu pedido para más tarde desde la canasta antes de confirmar. "
+                "Si necesitas una hora concreta, indícala en la nota."
+            )
+        return (
+            "Ahora los pedidos salen «cuanto antes», no admitimos reservas programadas. "
+            "Si necesitas una hora concreta, pulsa «Hablar con alguien» y lo coordinamos manualmente."
+        )
+    if intent == "catering":
+        return (
+            "Hacemos catering, eventos y encargos grandes bajo coordinación previa. "
+            "Pulsa «Hablar con alguien» y el equipo te pasa opciones, tiempos y presupuesto."
+        )
+    if intent == "recommend":
+        return (
+            f"Los combos y lo más pedido está destacado en el menú, con foto y precio actualizado: {public_url}#catalogo "
+            "Si dudas entre dos, pulsa «Hablar con alguien» y te contamos qué sale más."
+        )
+    if intent == "spicy":
+        return (
+            "La mayoría de nuestros platos son suaves. El ají y las salsas picantes van aparte, "
+            "así cada quien regula. Si tienes alergia o intolerancia, pulsa «Hablar con alguien» "
+            "para verificar ingredientes antes de confirmar."
         )
     if intent == "tutorial":
         delivery_step = "Elige delivery o recogida" if features.get("delivery") else "Elige la modalidad disponible"

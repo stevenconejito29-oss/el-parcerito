@@ -1286,6 +1286,16 @@ body.ox-body-public .ep-banner-cta {
 .ep-empty { text-align:center;padding:3rem 1rem; }
 .ep-empty-icon { font-size:3.5rem;display:block;margin-bottom:.75rem; }
 .ep-empty-title { font-size:1rem;font-weight:800;color:var(--col-muted); }
+/* Empty-state usado por el filtro cliente de categorías: mismo lenguaje visual
+   que .ep-empty pero self-contained (no depende del server render). */
+.ep-empty-state {
+  text-align:center; padding:2.5rem 1rem 3rem;
+  display:flex; flex-direction:column; align-items:center; gap:.5rem;
+}
+.ep-empty-state__icon { font-size:3rem; line-height:1; }
+.ep-empty-state__title { font-size:1.05rem; font-weight:800; color:var(--col-fg, #222); margin:.25rem 0 0; }
+.ep-empty-state__hint { font-size:.9rem; color:var(--col-muted); margin:0 0 .75rem; max-width:34ch; }
+.ep-empty-state__cta { margin-top:.25rem; }
 .ep-btn-primary {
   display: inline-flex; align-items: center; gap: .4rem;
   background: var(--brand-primary, var(--flag-yellow)); color: var(--brand-on-primary, #3D1F00); font-weight:900;
