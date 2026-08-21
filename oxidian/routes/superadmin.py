@@ -3175,3 +3175,114 @@ def chatbot_simulador():
         }
     return render_template("superadmin/chatbot_simulador.html",
                            texto=texto, audiencia=audiencia, resultado=resultado)
+
+
+# ─── FRANJAS EN VIVO (Dashboard superadmin) ──────────────────────────
+# Fundador (2026-08-18): quiere ver el estado de todas las franjas de hoy
+# en una sola pantalla con auto-refresh. Sin JS: <meta refresh> cada 30s.
+# Query única con case()/count() para evitar N+1 por franja.
+# ─────────────────────────────────────────────────────────────────────
+def _es_super_o_admin(user) -> bool:
+    return getattr(user, "rol", None) in ("super_admin", "admin")
+
+
+@superadmin_bp.route("/franjas/live", methods=["GET"])
+@login_required
+def franjas_live():
+    if not _es_super_o_admin(current_user):
+        flash("Acceso restringido a administradores.", "danger")
+        return redirect(url_for("public.index"))
+
+    from sqlalchemy import case as _case
+    from models import DeliverySlot as _DS
+    from datetime import datetime as _dt
+
+    hoy = date.today()
+    subq = (
+        db.session.query(
+            Order.slot_id.label("slot_id"),
+            func.count(_case((Order.estado == "pendiente", 1))).label("pendientes"),
+            func.count(_case((Order.estado == "armando", 1))).label("armando"),
+            func.count(_case((Order.estado == "listo", 1))).label("listos"),
+            func.count(_case((Order.estado == "en_ruta", 1))).label("en_ruta"),
+            func.count(_case((Order.estado == "entregado", 1))).label("entregados"),
+            func.count(Order.id).label("total"),
+        )
+        .filter(Order.slot_id.isnot(None), Order.estado != "cancelado")
+        .group_by(Order.slot_id)
+        .subquery()
+    )
+    rows = (
+        db.session.query(_DS, subq)
+        .outerjoin(subq, _DS.id == subq.c.slot_id)
+        .filter(_DS.fecha == hoy, _DS.activo == True)  # noqa: E712
+        .order_by(_DS.hora_inicio)
+        .all()
+    )
+    ahora = _dt.now()
+    tarjetas = []
+    for r in rows:
+        s = r[0]
+        pendientes = int(r.pendientes or 0)
+        armando = int(r.armando or 0)
+        listos = int(r.listos or 0)
+        en_ruta = int(r.en_ruta or 0)
+        entregados = int(r.entregados or 0)
+        total = int(r.total or 0)
+        pct = int((entregados * 100 / total)) if total else 0
+        inicio_dt = _dt.combine(s.fecha, s.hora_inicio)
+        fin_dt = _dt.combine(s.fecha, s.hora_fin)
+        if ahora < inicio_dt:
+            estado_franja = "proxima"
+            minutos = int((inicio_dt - ahora).total_seconds() // 60)
+        elif ahora <= fin_dt:
+            estado_franja = "en_curso"
+            minutos = int((fin_dt - ahora).total_seconds() // 60)
+        else:
+            estado_franja = "cerrada"
+            minutos = int((ahora - fin_dt).total_seconds() // 60)
+        tarjetas.append({
+            "slot": s,
+            "total": total,
+            "pendientes": pendientes,
+            "armando": armando,
+            "listos": listos,
+            "en_ruta": en_ruta,
+            "entregados": entregados,
+            "pct": pct,
+            "estado_franja": estado_franja,
+            "minutos": minutos,
+        })
+    return render_template(
+        "superadmin/franjas_live.html",
+        tarjetas=tarjetas,
+        hoy=hoy,
+        ahora=ahora,
+    )
+
+
+@superadmin_bp.route("/franjas/live/<int:slot_id>", methods=["GET"])
+@login_required
+def franjas_live_detalle(slot_id):
+    if not _es_super_o_admin(current_user):
+        flash("Acceso restringido a administradores.", "danger")
+        return redirect(url_for("public.index"))
+    from models import DeliverySlot as _DS
+    from sqlalchemy.orm import joinedload as _joinedload
+
+    slot = get_or_404(_DS, slot_id)
+    pedidos = (
+        Order.query
+        .options(
+            _joinedload(Order.cliente),
+            _joinedload(Order.zona),
+        )
+        .filter(Order.slot_id == slot.id, Order.estado != "cancelado")
+        .order_by(Order.creado_en)
+        .all()
+    )
+    return render_template(
+        "superadmin/franjas_live_detalle.html",
+        slot=slot,
+        pedidos=pedidos,
+    )

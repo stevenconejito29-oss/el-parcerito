@@ -297,6 +297,16 @@
   <section class="oa-section">
     <h2 class="oa-section__title">Accesos rápidos</h2>
     <div class="oa-quick-grid">
+      {% if brand.delivery %}
+      <a href="{{ url_for('superadmin.franjas_live') }}" class="oa-quick" style="border-color: var(--brand-accent, #003087);">
+        <span class="oa-quick__icon">🚦</span>
+        <div class="oa-quick__body">
+          <p class="oa-quick__title">Franjas en vivo</p>
+          <p class="oa-quick__desc">Estado de reparto de hoy en tiempo real</p>
+        </div>
+        <span class="oa-quick__arrow">→</span>
+      </a>
+      {% endif %}
       <a href="{{ url_for('superadmin.config') }}" class="oa-quick">
         <span class="oa-quick__icon">🎨</span>
         <div class="oa-quick__body">

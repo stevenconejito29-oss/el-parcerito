@@ -3,124 +3,120 @@
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
 <style>
-.fh-wrap { max-width: 960px; margin: 0 auto; padding: 1rem; }
-.fh-head { display:flex; align-items:baseline; gap:.75rem; margin-bottom:1rem; }
-.fh-head h1 { margin:0; font-size:1.4rem; }
-.fh-head small { color: var(--col-muted, #888); }
-.fh-back { margin-left:auto; text-decoration:none; color: var(--brand-accent, #003087); font-weight:600; }
-.fh-slot { border: 2px solid var(--col-border, #ddd); border-radius: var(--radius-md, 12px);
-           margin-bottom: 1rem; overflow:hidden; background: var(--col-surface, #fff);
-           box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.08)); }
-.fh-slot.is-urgent { border-color: var(--theme-danger, #FF6B6B); animation: fh-pulse 1.4s ease-in-out infinite; }
-@keyframes fh-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,107,107,.4); }
-                     50% { box-shadow: 0 0 0 6px rgba(255,107,107,0); } }
-.fh-slot__head { display:flex; align-items:center; gap:.6rem; padding: .75rem 1rem;
-                 background: var(--col-surface-alt, #f7f7fb); border-bottom: 1px solid var(--col-border, #ddd);
-                 flex-wrap: wrap; }
-.fh-slot__hora { font-size: 1.1rem; font-weight: 700; }
-.fh-slot__countdown { font-weight:600; color: var(--brand-accent, #003087); }
-.fh-slot__countdown.is-urgent { color: var(--theme-danger, #FF6B6B); }
-.fh-slot__stats { margin-left:auto; display:flex; gap:.4rem; flex-wrap:wrap; font-size:.85rem; }
-.fh-chip { padding: .15rem .5rem; border-radius: 999px; background: var(--col-surface, #fff);
-           border: 1px solid var(--col-border, #ddd); }
-.fh-chip.is-ok { background: var(--prep-ok-soft, #d6f5e3); border-color: var(--theme-success, #5EF097); }
-.fh-chip.is-warn { background: var(--prep-warn-soft, #fff3d6); border-color: #ffb400; }
+/* Cocina franja-céntrica — rediseño 2026-08-18.
+   Objetivo: menos texto denso, menos chips, jerarquía por tipografía.
+   El detalle del pedido (items/nota/dirección) vive en <details> colapsable. */
+.fh-wrap { max-width: 900px; margin: 0 auto; padding: 1rem; }
+.fh-head { display:flex; align-items:baseline; gap:.5rem; margin-bottom: 1.25rem; }
+.fh-head h1 { margin:0; font-size:1.15rem; font-weight:600; color: var(--col-muted, #666); }
+.fh-head small { color: var(--col-faint, #aaa); font-size:.85rem; }
+.fh-back { margin-left:auto; text-decoration:none; color: var(--brand-accent,#003087); font-weight:600; font-size:.9rem; }
+.fh-slot { margin-bottom: 1.75rem; }
+.fh-slot__head { display:flex; align-items:baseline; gap:.75rem; padding: .4rem .1rem;
+                 border-bottom: 2px solid var(--col-border, #ddd); margin-bottom: .5rem; }
+.fh-slot.is-urgent .fh-slot__head { border-bottom-color: var(--theme-danger, #FF6B6B); }
+.fh-hora { font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; line-height:1; }
+.fh-slot.is-urgent .fh-hora { color: var(--theme-danger, #FF6B6B); }
+.fh-count { font-size: .95rem; color: var(--col-muted, #666); font-variant-numeric: tabular-nums; }
+.fh-count strong { color: var(--col-text, #222); }
+.fh-countdown { margin-left:auto; font-size:.85rem; color: var(--col-muted, #888); font-weight:600; }
+.fh-slot.is-urgent .fh-countdown { color: var(--theme-danger, #FF6B6B); }
 .fh-list { list-style:none; margin:0; padding:0; }
-.fh-item { display:flex; align-items:flex-start; gap:.75rem; padding: .75rem 1rem;
-           border-bottom: 1px solid var(--col-border-light, #eee); flex-wrap: wrap; }
-.fh-item:last-child { border-bottom:none; }
-.fh-item__meta { flex: 1 1 240px; min-width:0; }
-.fh-item__num { font-weight:700; }
+.fh-item { display:flex; align-items:center; gap:.6rem; padding: .75rem .5rem;
+           border-bottom: 1px solid var(--col-border-light, #eee); }
+.fh-item:last-child { border-bottom: none; }
+.fh-item__emoji { font-size: 1.3rem; width: 1.7rem; text-align:center; flex-shrink:0; }
+.fh-item__num { font-weight: 700; font-size:1.05rem; font-variant-numeric: tabular-nums; }
 .fh-item__cli { color: var(--col-muted, #666); font-size:.9rem; }
-.fh-item__items { display:block; margin-top:.15rem; font-size:.9rem; color: var(--col-text, #222); }
-.fh-item__action { display:flex; gap:.4rem; align-items:center; margin-left:auto; }
-.fh-btn { padding: .65rem 1rem; min-height: 44px; border-radius: var(--radius-sm, 8px); font-weight:600; cursor:pointer;
-          border: 1px solid var(--col-border, #ddd); background: var(--col-surface, #fff); touch-action: manipulation; }
-.fh-btn-primary { background: var(--brand-accent, #003087); color: white; border-color: transparent; }
-.fh-btn-warn { background: #ffb400; color: #222; border-color: transparent; }
-.fh-status-ok { color: var(--theme-success, #2b9c5e); font-weight:600; }
+.fh-item__main { flex: 1; min-width:0; overflow:hidden; }
+.fh-item__details { display:block; margin-top:.15rem; font-size:.82rem; color: var(--col-faint, #999); cursor: pointer; }
+.fh-item__details[open] { color: var(--col-muted, #666); }
+.fh-item__details summary { list-style:none; padding: 0; }
+.fh-item__details summary::-webkit-details-marker { display:none; }
+.fh-item__details p { margin: .35rem 0 0; font-size:.85rem; color: var(--col-text, #222); }
+.fh-item__btn { padding: .7rem 1.1rem; min-height:44px; border-radius: var(--radius-sm,8px); font-weight:700;
+                cursor:pointer; border:none; touch-action: manipulation; font-size:.95rem; }
+.fh-item__btn--start { background: #ffb400; color: #222; }
+.fh-item__btn--ready { background: var(--brand-accent, #003087); color:#fff; }
+.fh-item__done { color: var(--theme-success, #2b9c5e); font-weight:700; font-size:.95rem; padding-right:.5rem; }
 .fh-empty { text-align:center; padding: 3rem 1rem; color: var(--col-muted, #888); }
 .fh-empty p { margin:.4rem 0; }
-@media (max-width: 400px) {
+@media (max-width: 500px) {
   .fh-wrap { padding: .6rem; }
-  .fh-head h1 { font-size: 1.15rem; }
-  .fh-slot__head { padding: .6rem .7rem; gap:.4rem; }
-  .fh-slot__stats { margin-left: 0; width: 100%; }
-  .fh-item { padding: .65rem .7rem; }
-  .fh-item__action { margin-left: 0; width: 100%; }
-  .fh-item__action .fh-btn { width: 100%; }
+  .fh-hora { font-size: 1.35rem; }
+  .fh-item { padding: .7rem .3rem; gap:.5rem; }
+  .fh-item__btn { padding: .65rem .8rem; font-size:.9rem; }
 }
 </style>
 {% endblock %}
 {% block content %}
 <div class="fh-wrap">
   <div class="fh-head">
-    <span aria-hidden="true" style="font-size:1.4rem">📅</span>
-    <h1>Cocina — franjas de hoy</h1>
-    <small>{{ hoy.strftime('%d/%m/%Y') }}</small>
+    <h1>Cocina · franjas</h1>
+    <small>{{ hoy.strftime('%d/%m') }}</small>
     <a class="fh-back" href="{{ url_for('preparador.pedidos') }}">← Cola general</a>
   </div>
 
   {% if not grupos %}
     <div class="fh-empty">
       <p style="font-size:2.4rem">🕒</p>
-      <p><strong>No hay franjas activas para hoy.</strong></p>
-      <p>Aparecerán aquí en cuanto haya slots planificados con pedidos.</p>
+      <p><strong>Sin franjas activas hoy.</strong></p>
     </div>
   {% endif %}
 
   {% for g in grupos %}
     {% set s = g.slot %}
+    {% set hechos = g.listos %}
     <section class="fh-slot{% if g.urgente %} is-urgent{% endif %}" aria-label="Franja {{ s.hora_inicio.strftime('%H:%M') }}">
       <header class="fh-slot__head">
-        <span aria-hidden="true">{% if g.urgente %}🚀{% else %}🕒{% endif %}</span>
-        <span class="fh-slot__hora">{{ s.hora_inicio.strftime('%H:%M') }} → {{ s.hora_fin.strftime('%H:%M') }}</span>
-        <span class="fh-slot__countdown{% if g.urgente %} is-urgent{% endif %}">
-          {% if g.minutos > 0 %}en {{ g.minutos }} min
-          {% elif g.minutos == 0 %}¡empieza ya!
-          {% else %}iniciada hace {{ -g.minutos }} min{% endif %}
+        <span class="fh-hora">{{ s.hora_inicio.strftime('%H:%M') }}</span>
+        <span class="fh-count"><strong>{{ hechos }}</strong>/{{ g.total }} listos</span>
+        <span class="fh-countdown">
+          {% if g.minutos > 0 %}en {{ g.minutos }}′
+          {% elif g.minutos == 0 %}¡ya!
+          {% else %}−{{ -g.minutos }}′{% endif %}
         </span>
-        <div class="fh-slot__stats">
-          <span class="fh-chip">{{ g.total }} pedido{{ 's' if g.total != 1 else '' }}</span>
-          {% if g.listos %}<span class="fh-chip is-ok">✓ {{ g.listos }} listo{{ 's' if g.listos != 1 else '' }}</span>{% endif %}
-          {% if g.armando %}<span class="fh-chip is-warn">🔧 {{ g.armando }} en preparación</span>{% endif %}
-          {% if g.pendientes %}<span class="fh-chip">⏳ {{ g.pendientes }} pendiente{{ 's' if g.pendientes != 1 else '' }}</span>{% endif %}
-        </div>
       </header>
       <ul class="fh-list">
         {% for p in g.pedidos %}
         <li class="fh-item">
-          <div class="fh-item__meta">
+          <span class="fh-item__emoji" aria-hidden="true">
+            {%- if p.estado == 'listo' -%}✓
+            {%- elif p.estado == 'armando' -%}🍳
+            {%- else -%}⏳{%- endif -%}
+          </span>
+          <div class="fh-item__main">
             <span class="fh-item__num">#{{ p.numero_pedido or p.id }}</span>
             <span class="fh-item__cli">·
-              {% if p.cliente and p.cliente.nombre %}{{ p.cliente.nombre }}{% else %}Cliente{% endif %}
-            </span>
-            <span class="fh-item__items">
-              {% set resumen = [] %}
-              {% for it in p.items %}
-                {%- set _ = resumen.append((it.cantidad|int|string) + ' × ' + (it.nombre_producto or 'ítem')) -%}
-              {% endfor %}
-              {{ resumen|join(', ') if resumen else 'Sin ítems visibles' }}
-            </span>
+              {% if p.cliente and p.cliente.nombre %}{{ p.cliente.nombre }}{% else %}Cliente{% endif %}</span>
+            <details class="fh-item__details">
+              <summary>ver items{% if p.nota %} · con nota{% endif %}</summary>
+              <p>
+                {%- set resumen = [] -%}
+                {%- for it in p.items -%}
+                  {%- set _ = resumen.append((it.cantidad|int|string) + '× ' + (it.nombre_producto or 'ítem')) -%}
+                {%- endfor -%}
+                {{ resumen|join(', ') if resumen else '—' }}
+                {% if p.nota %}<br><em style="color:var(--theme-danger,#c0392b)">Nota: {{ p.nota }}</em>{% endif %}
+              </p>
+            </details>
           </div>
-          <div class="fh-item__action">
-            {% if p.estado == 'pendiente' %}
-              <form method="POST" action="{{ url_for('preparador.empezar_armar', pedido_id=p.id) }}" style="margin:0">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="fh-btn fh-btn-warn" type="submit">🔧 Empezar a preparar</button>
-              </form>
-            {% elif p.estado == 'armando' %}
-              <form method="POST" action="{{ url_for('preparador.marcar_listo', pedido_id=p.id) }}" style="margin:0">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="fh-btn fh-btn-primary" type="submit">📦 Marcar listo</button>
-              </form>
-            {% elif p.estado == 'listo' %}
-              <span class="fh-status-ok">✓ Listo</span>
-            {% endif %}
-          </div>
+          {% if p.estado == 'pendiente' %}
+            <form method="POST" action="{{ url_for('preparador.empezar_armar', pedido_id=p.id) }}" style="margin:0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="fh-item__btn fh-item__btn--start" type="submit">Empezar</button>
+            </form>
+          {% elif p.estado == 'armando' %}
+            <form method="POST" action="{{ url_for('preparador.marcar_listo', pedido_id=p.id) }}" style="margin:0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="fh-item__btn fh-item__btn--ready" type="submit">Listo</button>
+            </form>
+          {% else %}
+            <span class="fh-item__done">✓</span>
+          {% endif %}
         </li>
         {% else %}
-        <li class="fh-item"><em style="color:var(--col-muted,#888)">Sin pedidos en esta franja.</em></li>
+        <li class="fh-item"><em style="color:var(--col-muted,#aaa); padding-left:.5rem">Sin pedidos.</em></li>
         {% endfor %}
       </ul>
     </section>
