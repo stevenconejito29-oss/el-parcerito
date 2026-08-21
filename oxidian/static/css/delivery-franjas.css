@@ -958,3 +958,81 @@ details[open] > .df-day-toggle::after { transform: rotate(180deg); }
   .ck-franjas-grid{ grid-template-columns:1fr 1fr }
   .ck-franja-item{ min-height:60px; padding:.6rem }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Checkout — selector compacto tabs de día + franjas del día activo
+   Diseñado para caber en 1a pantalla móvil sin abrumar.
+   ═══════════════════════════════════════════════════════════════ */
+.ck-franjas-picker{
+  margin:.75rem 0;
+  padding:.75rem;
+  background:var(--col-surface);
+  border:1px solid var(--col-border);
+  border-radius:var(--radius-3, 12px);
+  box-shadow:var(--shadow-1, 0 1px 3px rgba(0,0,0,.06))
+}
+.ck-franjas-picker__head{
+  display:flex; align-items:center; gap:.4rem;
+  font-size:.9rem; margin-bottom:.5rem
+}
+.ck-franjas-picker__head strong{ font-weight:800; color:var(--col-text) }
+.ck-franjas-picker__hint{
+  margin-left:auto; font-size:.7rem; color:var(--col-muted); font-weight:600
+}
+.ck-franjas-tabs{
+  display:flex; gap:.3rem;
+  overflow-x:auto; scroll-snap-type:x mandatory;
+  scrollbar-width:none;
+  margin:0 -.25rem .6rem; padding:0 .25rem .1rem;
+  -webkit-overflow-scrolling:touch
+}
+.ck-franjas-tabs::-webkit-scrollbar{ display:none }
+.ck-franjas-tab{
+  flex:0 0 auto; scroll-snap-align:start;
+  min-width:64px; min-height:52px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:.35rem .6rem;
+  background:var(--col-surface); color:var(--col-text);
+  border:1.5px solid var(--col-border); border-radius:10px;
+  cursor:pointer; font-family:inherit;
+  touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+  transition:background var(--motion-fast, .15s) ease-out, border-color var(--motion-fast, .15s) ease-out
+}
+.ck-franjas-tab.is-active{
+  background:var(--brand-primary); color:var(--brand-on-primary,#fff);
+  border-color:var(--brand-primary)
+}
+.ck-franjas-tab.is-full{ opacity:.5 }
+.ck-franjas-tab__dia{ font-weight:800; font-size:.78rem }
+.ck-franjas-tab__cupo{ font-size:.62rem; font-weight:600; opacity:.85; margin-top:.1rem }
+.ck-franjas-panels{ min-height:60px }
+.ck-franjas-panel{ display:none; flex-direction:column; gap:.35rem }
+.ck-franjas-panel.is-active{ display:flex }
+.ck-franja-row{
+  display:flex; align-items:center; gap:.6rem;
+  padding:.65rem .8rem; min-height:48px;
+  background:var(--col-surface); border:1.5px solid var(--col-border);
+  border-radius:10px; cursor:pointer;
+  touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+  transition:border-color var(--motion-fast, .15s) ease-out, background var(--motion-fast, .15s) ease-out
+}
+.ck-franja-row input[type=radio]{ width:20px; height:20px; margin:0; flex-shrink:0; accent-color:var(--brand-primary) }
+.ck-franja-row:has(input:checked){
+  border-color:var(--brand-primary);
+  background:color-mix(in srgb, var(--brand-primary) 8%, transparent);
+  box-shadow:0 0 0 2px color-mix(in srgb, var(--brand-primary) 25%, transparent)
+}
+.ck-franja-row.is-suggested{
+  border-color:color-mix(in srgb, var(--brand-primary) 60%, transparent)
+}
+.ck-franja-row.is-disabled{ opacity:.55; cursor:not-allowed; background:color-mix(in srgb, var(--col-muted) 8%, transparent) }
+.ck-franja-row__hora{ font-weight:800; font-size:.95rem; color:var(--col-text); flex:1 }
+.ck-franja-row__estado{ font-size:.72rem; color:var(--col-muted); font-weight:600; white-space:nowrap }
+@media(max-width:400px){
+  .ck-franjas-picker{ padding:.6rem }
+  .ck-franjas-tab{ min-width:58px; min-height:48px; padding:.3rem .5rem }
+  .ck-franja-row{ padding:.55rem .65rem }
+}
+@media(prefers-reduced-motion:reduce){
+  .ck-franjas-tab, .ck-franja-row{ transition:none }
+}

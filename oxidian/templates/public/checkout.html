@@ -239,28 +239,68 @@
        vienen ya formateados desde delivery_slots_service.listar_franjas_cliente;
        aquí SOLO interpolamos. #}
     {% if delivery_franjas_activo and franjas_ssr %}
-    <div id="franjas-slot-block" class="mb-3" data-delivery-modo="franjas">
-      <h3 class="text-sm font-extrabold mb-2 flex items-center gap-2" style="margin-top:.75rem">
+    {# Selector compacto: tabs de días + franjas del día activo. Diseñado
+       para caber en la primera pantalla móvil sin scroll excesivo. #}
+    {% set franjas_por_dia = {} %}
+    {% for f in franjas_ssr %}
+      {% if franjas_por_dia.update({f.fecha: (franjas_por_dia.get(f.fecha, []) + [f])}) %}{% endif %}
+    {% endfor %}
+    {% set dia_sugerido = (franjas_ssr | selectattr('sugerida') | map(attribute='fecha') | first) or (franjas_ssr[0].fecha) %}
+    <div id="franjas-slot-block" class="ck-franjas-picker" data-delivery-modo="franjas">
+      <div class="ck-franjas-picker__head">
         <span aria-hidden="true">🕒</span>
-        Elige tu franja de reparto
-      </h3>
-      <p class="text-xs mb-2" style="color:var(--col-muted)">
-        Marcamos la sugerida — la más cercana con hueco. Tu pedido llega en esa franja.
-      </p>
-      <div class="ck-franjas-grid" role="radiogroup" aria-label="Franjas disponibles">
-        {% for f in franjas_ssr %}
-          <label class="ck-franja-item{% if f.sugerida %} is-suggested{% endif %}{% if not f.disponible %} is-disabled{% endif %}"
-                 title="{{ f.dia_label }} · {{ f.hora_rango }} · {{ f.estado_label }}">
-            <input type="radio" name="slot_id" value="{{ f.id }}"
-                   {% if f.sugerida %}checked{% endif %}
-                   {% if not f.disponible %}disabled{% endif %}>
-            <span class="ck-franja-dia">{{ f.dia_label }}</span>
-            <span class="ck-franja-hora">{{ f.hora_rango }}</span>
-            <span class="ck-franja-cupo">{{ f.estado_emoji }} {{ f.estado_label }}</span>
-          </label>
+        <strong>Franja de reparto</strong>
+        <span class="ck-franjas-picker__hint">⭐ = sugerida</span>
+      </div>
+
+      <div class="ck-franjas-tabs" role="tablist" aria-label="Días con franjas">
+        {% for fecha_iso, dia_slots in franjas_por_dia.items() %}
+          {% set primer_slot = dia_slots[0] %}
+          {% set es_activo = fecha_iso == dia_sugerido %}
+          {% set libres_dia = dia_slots | selectattr('disponible') | list | length %}
+          <button type="button"
+                  class="ck-franjas-tab{% if es_activo %} is-active{% endif %}{% if libres_dia == 0 %} is-full{% endif %}"
+                  role="tab" aria-selected="{{ 'true' if es_activo else 'false' }}"
+                  data-dia="{{ fecha_iso }}">
+            <span class="ck-franjas-tab__dia">{{ primer_slot.dia_label.split(' · ')[0] if ' · ' in primer_slot.dia_label else primer_slot.dia_label.split(' ')[0] }}</span>
+            <span class="ck-franjas-tab__cupo">{{ libres_dia }} libre{{ '' if libres_dia == 1 else 's' }}</span>
+          </button>
+        {% endfor %}
+      </div>
+
+      <div class="ck-franjas-panels">
+        {% for fecha_iso, dia_slots in franjas_por_dia.items() %}
+          <div class="ck-franjas-panel{% if fecha_iso == dia_sugerido %} is-active{% endif %}"
+               data-dia="{{ fecha_iso }}" role="tabpanel">
+            {% for f in dia_slots %}
+              <label class="ck-franja-row{% if f.sugerida %} is-suggested{% endif %}{% if not f.disponible %} is-disabled{% endif %}">
+                <input type="radio" name="slot_id" value="{{ f.id }}"
+                       {% if f.sugerida %}checked{% endif %}
+                       {% if not f.disponible %}disabled{% endif %}>
+                <span class="ck-franja-row__hora">{{ f.hora_rango }}</span>
+                <span class="ck-franja-row__estado">{{ f.estado_emoji }} {{ f.estado_label }}</span>
+              </label>
+            {% endfor %}
+          </div>
         {% endfor %}
       </div>
     </div>
+    <script nonce="{{ csp_nonce() }}">
+      // Sólo alternar visibilidad — cada día es un panel. Sin fetch, sin state.
+      (function(){
+        const tabs = document.querySelectorAll('.ck-franjas-tab');
+        const panels = document.querySelectorAll('.ck-franjas-panel');
+        tabs.forEach(tab => tab.addEventListener('click', () => {
+          const dia = tab.dataset.dia;
+          tabs.forEach(t => {
+            const on = t === tab;
+            t.classList.toggle('is-active', on);
+            t.setAttribute('aria-selected', on ? 'true' : 'false');
+          });
+          panels.forEach(p => p.classList.toggle('is-active', p.dataset.dia === dia));
+        }));
+      })();
+    </script>
     {% elif delivery_franjas_activo %}
     <div id="franjas-slot-block" class="mb-3">
       <h3 class="text-sm font-extrabold mb-2">🕒 Franjas de reparto</h3>

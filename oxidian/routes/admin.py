@@ -8108,6 +8108,117 @@ def _delivery_franjas_panel_LEGACY_JSON_ONLY():
     )
 
 
+@admin_bp.route("/delivery/franjas/nueva", methods=["GET"])
+@admin_required
+def delivery_franjas_form_nuevo():
+    """Página con form clásico HTML para crear franja — sin depender de JS/modal."""
+    _abort_si_modulo_apagado()
+    from store_config import get_store_value
+    fecha_hint = request.args.get("fecha", "")
+    try:
+        default_max = int(get_store_value("delivery_franjas_max_repartidores_default", "1"))
+    except (TypeError, ValueError):
+        default_max = 1
+    return render_template("admin/delivery_franjas_form.html",
+                           modo="crear", slot=None,
+                           fecha_hint=fecha_hint,
+                           default_max=default_max)
+
+
+@admin_bp.route("/delivery/franjas/<int:slot_id>/editar", methods=["GET"])
+@admin_required
+def delivery_franjas_form_editar(slot_id):
+    """Página con form clásico HTML para editar franja."""
+    _abort_si_modulo_apagado()
+    from models import DeliverySlot
+    slot = get_or_404(DeliverySlot, slot_id)
+    from store_config import get_store_value
+    try:
+        default_max = int(get_store_value("delivery_franjas_max_repartidores_default", "1"))
+    except (TypeError, ValueError):
+        default_max = 1
+    return render_template("admin/delivery_franjas_form.html",
+                           modo="editar", slot=slot,
+                           fecha_hint=slot.fecha.isoformat(),
+                           default_max=default_max)
+
+
+@admin_bp.route("/delivery/franjas/guardar-form", methods=["POST"])
+@admin_required
+def delivery_franjas_guardar_form():
+    """Recibe form-encoded (no JSON) y crea o actualiza según slot_id."""
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import crear_franja, actualizar_franja
+    from models import DeliverySlot
+    slot_id = (request.form.get("slot_id") or "").strip()
+    try:
+        fecha = _parse_fecha_iso(request.form["fecha"])
+        hora_inicio = _parse_hora_hhmm(request.form["hora_inicio"])
+        hora_fin = _parse_hora_hhmm(request.form["hora_fin"])
+        capacidad_max = int(request.form["capacidad_max"])
+    except (KeyError, ValueError, TypeError) as exc:
+        flash(f"Datos inválidos: {exc}", "danger")
+        return redirect(url_for("admin.delivery_franjas_form_nuevo", fecha=request.form.get("fecha", "")))
+    max_riders = request.form.get("max_repartidores") or None
+    if max_riders:
+        try: max_riders = int(max_riders)
+        except ValueError: max_riders = None
+    activo = request.form.get("activo") in ("1", "on", "true")
+    try:
+        if slot_id:
+            slot = get_or_404(DeliverySlot, int(slot_id))
+            actualizar_franja(
+                slot,
+                capacidad_max=capacidad_max,
+                max_repartidores=max_riders,
+                cierre_modo=request.form.get("cierre_modo") or None,
+                cierre_valor=request.form.get("cierre_valor") or None,
+                notas_admin=request.form.get("notas_admin") or None,
+                activo=activo,
+            )
+            db.session.commit()
+            flash(f"Franja del {fecha.isoformat()} {hora_inicio.strftime('%H:%M')} actualizada.", "success")
+        else:
+            crear_franja(
+                fecha=fecha, hora_inicio=hora_inicio, hora_fin=hora_fin,
+                capacidad_max=capacidad_max, max_repartidores=max_riders,
+                cierre_modo=request.form.get("cierre_modo") or None,
+                cierre_valor=request.form.get("cierre_valor") or None,
+                notas_admin=request.form.get("notas_admin") or None,
+            )
+            db.session.commit()
+            flash(f"Franja creada para el {fecha.isoformat()}.", "success")
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+    except IntegrityError:
+        db.session.rollback()
+        flash("Ya existe una franja con esa fecha y horario.", "warning")
+    return redirect(url_for("admin.delivery_franjas_panel"))
+
+
+@admin_bp.route("/delivery/franjas/<int:slot_id>/eliminar-form", methods=["POST"])
+@admin_required
+def delivery_franjas_eliminar_form(slot_id):
+    """Borrado por form clásico HTML (fallback sin JS)."""
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import eliminar_franja
+    from models import DeliverySlot
+    slot = get_or_404(DeliverySlot, slot_id)
+    try:
+        tipo = eliminar_franja(slot)
+        db.session.commit()
+        flash(
+            "Franja borrada." if tipo == "hard"
+            else "Franja desactivada (tiene pedidos asociados).",
+            "success",
+        )
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"No se pudo borrar: {exc}", "danger")
+    return redirect(url_for("admin.delivery_franjas_panel"))
+
+
 @admin_bp.route("/delivery/franjas/dia/toggle", methods=["POST"])
 @admin_required
 def delivery_franjas_dia_toggle():
