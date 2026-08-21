@@ -1504,3 +1504,56 @@ def pedido_en_la_puerta(pedido_id):
     notificar_en_la_puerta(pedido, actor_id=current_user.id)
     db.session.commit()
     return jsonify({"notificado": True})
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Panel HTML de una franja concreta para el repartidor.
+# Complementa el JSON /repartidor/franjas/<slot_id>/pedidos con una
+# vista renderizada que permite multi-select granular y salir en
+# sucesivas tandas (endpoint existente /iniciar-reparto con pedido_ids).
+# Fundador (2026-08-18).
+# ─────────────────────────────────────────────────────────────────────
+@repartidor_bp.route("/franjas/<int:slot_id>/pedidos-panel", methods=["GET"])
+@repartidor_required
+def franjas_slot_panel(slot_id):
+    if not _franjas_modulo_activo():
+        from flask import abort as _abort
+        _abort(404)
+    from models import DeliverySlot, SlotRepartidor
+
+    slot = get_or_404(DeliverySlot, slot_id)
+    pedidos = (
+        Order.query
+        .filter(
+            Order.slot_id == slot.id,
+            Order.estado != "cancelado",
+        )
+        .order_by(Order.creado_en)
+        .all()
+    )
+    # ¿La franja es mía?
+    mia = (
+        db.session.query(SlotRepartidor)
+        .filter(
+            SlotRepartidor.slot_id == slot.id,
+            SlotRepartidor.repartidor_id == current_user.id,
+            SlotRepartidor.liberado_en.is_(None),
+        )
+        .first()
+    ) is not None
+    total = len(pedidos)
+    listos = [p for p in pedidos if p.estado == "listo"]
+    en_ruta = [p for p in pedidos if p.estado == "en_ruta"]
+    entregados = [p for p in pedidos if p.estado == "entregado"]
+    despachados = len(en_ruta) + len(entregados)
+    return render_template(
+        "repartidor/franja_pedidos_panel.html",
+        slot=slot,
+        pedidos=pedidos,
+        listos=listos,
+        en_ruta=en_ruta,
+        entregados=entregados,
+        total=total,
+        despachados=despachados,
+        mia=mia,
+    )

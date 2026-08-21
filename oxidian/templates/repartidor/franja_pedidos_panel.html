@@ -1,0 +1,124 @@
+{% extends "admin_base.html" %}
+{% block title %}Franja {{ slot.hora_inicio.strftime('%H:%M') }} — Repartidor{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
+<style>
+.fp-wrap { max-width: 720px; margin:0 auto; padding: 1rem; }
+.fp-head { display:flex; align-items:baseline; gap:.6rem; margin-bottom: .5rem; flex-wrap:wrap; }
+.fp-head h1 { margin:0; font-size:1.3rem; }
+.fp-back { margin-left:auto; text-decoration:none; color: var(--brand-accent, #003087); font-weight:600; }
+.fp-progress { background: var(--col-surface-alt,#f2f4f8); border-radius: 999px; height: 10px;
+               overflow:hidden; margin: .5rem 0 1rem; }
+.fp-progress__bar { height:100%; background: var(--theme-success, #5EF097); transition: width .3s; }
+.fp-meta { display:flex; gap:.5rem; flex-wrap:wrap; margin: .25rem 0 .75rem; }
+.fp-chip { padding:.15rem .55rem; border-radius:999px; background: var(--col-surface,#fff);
+           border:1px solid var(--col-border,#ddd); font-size:.85rem; }
+.fp-chip.is-ok { background:#d6f5e3; border-color: var(--theme-success, #5EF097); }
+.fp-list { list-style:none; margin:0; padding:0; border:1px solid var(--col-border,#ddd);
+           border-radius: var(--radius-md,12px); background: var(--col-surface,#fff);
+           box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.08)); overflow:hidden; }
+.fp-item { display:flex; align-items:center; gap:.7rem; padding: .7rem 1rem;
+           border-bottom: 1px solid var(--col-border-light, #eee); }
+.fp-item:last-child { border-bottom: none; }
+.fp-item.is-disabled { opacity:.55; }
+.fp-item input[type=checkbox] { width:22px; height:22px; accent-color: var(--brand-accent, #003087); }
+.fp-item__info { flex:1; min-width:0; }
+.fp-item__num { font-weight:700; }
+.fp-item__addr { display:block; color: var(--col-muted, #666); font-size:.85rem; }
+.fp-state { font-size:.8rem; padding:.15rem .5rem; border-radius:999px; }
+.fp-state.listo { background:#d6f5e3; color:#22794a; }
+.fp-state.en_ruta { background:#fff3d6; color:#8a6300; }
+.fp-state.entregado { background:#eee; color:#555; }
+.fp-state.pendiente,.fp-state.armando { background:#f0f0ff; color:#4444aa; }
+.fp-bar { position: sticky; bottom: 0; background: var(--col-surface,#fff);
+          border-top:1px solid var(--col-border,#ddd); padding: .75rem 1rem;
+          display:flex; align-items:center; gap:.6rem; margin-top: 1rem;
+          box-shadow: 0 -2px 8px rgba(0,0,0,.06); border-radius: 0 0 var(--radius-md,12px) var(--radius-md,12px); }
+.fp-counter { font-weight:600; }
+.fp-btn { padding:.6rem 1.1rem; border-radius: var(--radius-sm,8px); font-weight:600; border:none; cursor:pointer;
+          background: var(--brand-accent, #003087); color:white; margin-left:auto; }
+.fp-btn[disabled] { background:#aaa; cursor:not-allowed; }
+.fp-note { color: var(--col-muted, #888); font-size:.9rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="fp-wrap">
+  <div class="fp-head">
+    <span aria-hidden="true" style="font-size:1.4rem">🚴</span>
+    <h1>Franja {{ slot.hora_inicio.strftime('%H:%M') }} → {{ slot.hora_fin.strftime('%H:%M') }}</h1>
+    <a class="fp-back" href="{{ url_for('repartidor.franjas_panel') }}">← Todas las franjas</a>
+  </div>
+
+  <div class="fp-meta">
+    <span class="fp-chip">{{ slot.fecha.strftime('%d/%m/%Y') }}</span>
+    <span class="fp-chip">{{ total }} pedido{{ 's' if total != 1 else '' }}</span>
+    <span class="fp-chip is-ok">✓ {{ listos|length }} listo{{ 's' if listos|length != 1 else '' }} para salir</span>
+    <span class="fp-chip">🚚 {{ despachados }} despachado{{ 's' if despachados != 1 else '' }}</span>
+    {% if mia %}<span class="fp-chip is-ok">🟡 tuya</span>{% endif %}
+  </div>
+
+  {% set pct = (despachados * 100 / total) if total else 0 %}
+  <div class="fp-progress" title="{{ despachados }} de {{ total }} despachados">
+    <div class="fp-progress__bar" style="width: {{ pct|round(0, 'floor') }}%"></div>
+  </div>
+
+  {% if not mia %}
+    <p class="fp-note">Esta franja no es tuya. Ve al panel general para tomarla antes de despachar.</p>
+  {% endif %}
+
+  {% if pedidos %}
+  <form method="POST" action="{{ url_for('repartidor.franjas_iniciar_reparto', slot_id=slot.id) }}" id="fp-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <ul class="fp-list">
+      {% for p in pedidos %}
+      {% set seleccionable = (p.estado == 'listo' and mia) %}
+      <li class="fp-item{% if not seleccionable %} is-disabled{% endif %}">
+        {% if seleccionable %}
+        <input type="checkbox" name="pedido_ids" value="{{ p.id }}" class="fp-check" checked>
+        {% else %}
+        <input type="checkbox" disabled>
+        {% endif %}
+        <div class="fp-item__info">
+          <span class="fp-item__num">#{{ p.numero_pedido or p.id }}</span>
+          <span style="color:var(--col-muted,#666)">·
+            {% if p.cliente and p.cliente.nombre %}{{ p.cliente.nombre }}{% else %}Cliente{% endif %}</span>
+          <span class="fp-item__addr">{{ p.direccion_entrega or (p.zona_nombre_aplicada or '—') }}</span>
+        </div>
+        <span class="fp-state {{ p.estado }}">{{ p.estado }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    <div class="fp-bar">
+      <span class="fp-counter"><span id="fp-count">0</span> seleccionado{{ 's' if listos|length != 1 else '' }} de {{ listos|length }} listos</span>
+      <button type="submit" class="fp-btn" id="fp-btn" {% if not mia or not listos %}disabled{% endif %}>
+        🚀 Salir con seleccionados
+      </button>
+    </div>
+  </form>
+  {% else %}
+  <p class="fp-note">Esta franja aún no tiene pedidos.</p>
+  {% endif %}
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+(function(){
+  var form = document.getElementById('fp-form'); if(!form) return;
+  var checks = form.querySelectorAll('input.fp-check');
+  var out = document.getElementById('fp-count');
+  var btn = document.getElementById('fp-btn');
+  function upd(){
+    var n = 0; checks.forEach(function(c){ if(c.checked) n++; });
+    out.textContent = n;
+    btn.disabled = (n === 0) || btn.hasAttribute('data-forced-off');
+  }
+  {% if not mia %}btn.setAttribute('data-forced-off','1');{% endif %}
+  checks.forEach(function(c){ c.addEventListener('change', upd); });
+  upd();
+  form.addEventListener('submit', function(e){
+    if(btn.disabled){ e.preventDefault(); return; }
+    var n = 0; checks.forEach(function(c){ if(c.checked) n++; });
+    if(!confirm('Salir con ' + n + ' pedido(s) de esta franja?')) e.preventDefault();
+  });
+})();
+</script>
+{% endblock %}

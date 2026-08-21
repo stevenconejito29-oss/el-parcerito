@@ -79,7 +79,7 @@
             ${DF.cupoChip(cupoLibre, s.capacidad_max)}
           </div>
           ${conteo}
-          <div class="df-slot-actions">${btnRider} ${batchBtn}</div>
+          <div class="df-slot-actions">${btnRider} ${batchBtn} ${s.tomada_por_mi ? `<a class="df-btn" href="/repartidor/franjas/${s.id}/pedidos-panel">Ver pedidos</a>` : ""}</div>
         </div>`;
       }).join("");
       return `<div class="df-day">

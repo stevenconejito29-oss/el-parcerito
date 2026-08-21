@@ -994,3 +994,66 @@ def marcar_lote_listo(batch_id):
 
     flash(f"Lote del {batch.fecha_entrega.strftime('%d/%m')} marcado como listo.", "success")
     return redirect(url_for("preparador.pedidos"))
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Vista franja-céntrica para cocina (módulo delivery_franjas_activo).
+# Pide el fundador (2026-08-18): cocina ve las franjas de hoy en orden
+# cronológico con sus pedidos, sirve como panel operativo dedicado.
+# No duplica endpoints: usa /preparador/pedidos/<id>/empezar y /listo.
+# ─────────────────────────────────────────────────────────────────────
+@preparador_bp.route("/franjas/hoy", methods=["GET"])
+@preparador_required
+def franjas_hoy():
+    from store_config import get_store_value as _gsv
+    from business_time import business_today
+    from datetime import datetime as _dt
+    from models import DeliverySlot as _DS
+
+    if str(_gsv("delivery_franjas_activo", "0")).strip() not in ("1", "true", "True"):
+        flash("El módulo de franjas está desactivado.", "info")
+        return redirect(url_for("preparador.pedidos"))
+
+    hoy = business_today()
+    slots = (
+        _DS.query
+        .filter(_DS.fecha == hoy, _DS.activo == True)  # noqa: E712
+        .order_by(_DS.hora_inicio)
+        .all()
+    )
+    ahora = _dt.now()
+    grupos = []
+    for s in slots:
+        peds = (
+            Order.query
+            .options(joinedload(Order.zona))
+            .filter(
+                Order.slot_id == s.id,
+                Order.estado.in_(("pendiente", "armando", "listo")),
+            )
+            .order_by(Order.creado_en)
+            .all()
+        )
+        # Combina fecha del slot + hora_inicio para countdown en minutos.
+        inicio_dt = _dt.combine(s.fecha, s.hora_inicio)
+        minutos = int((inicio_dt - ahora).total_seconds() // 60)
+        listos = sum(1 for p in peds if p.estado == "listo")
+        armando_n = sum(1 for p in peds if p.estado == "armando")
+        pendientes_n = sum(1 for p in peds if p.estado == "pendiente")
+        grupos.append({
+            "slot": s,
+            "pedidos": peds,
+            "minutos": minutos,
+            "listos": listos,
+            "armando": armando_n,
+            "pendientes": pendientes_n,
+            "total": len(peds),
+            "urgente": (0 <= minutos <= 15),
+        })
+
+    return render_template(
+        "preparador/franjas_hoy.html",
+        grupos=grupos,
+        hoy=hoy,
+        agrupar_items_por_producto=agrupar_items_por_producto,
+    )

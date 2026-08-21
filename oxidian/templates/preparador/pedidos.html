@@ -553,6 +553,17 @@
 </section>
 
 {% if delivery_franjas_activo %}
+<div style="margin: .75rem 0; padding: .7rem 1rem; border: 1px solid var(--brand-accent, #003087); border-radius: var(--radius-md, 12px); background: color-mix(in srgb, var(--brand-accent, #003087) 8%, transparent); display:flex; align-items:center; gap:.75rem;">
+  <span aria-hidden="true" style="font-size:1.4rem">📅</span>
+  <div style="flex:1">
+    <strong>Vista franja-céntrica activa</strong>
+    <div style="font-size:.85rem;color:var(--col-muted,#666)">Ordena tus pedidos por hora de despacho y marca listos al vuelo.</div>
+  </div>
+  <a href="{{ url_for('preparador.franjas_hoy') }}" style="padding:.5rem .9rem; background: var(--brand-accent, #003087); color:white; border-radius: var(--radius-sm,8px); text-decoration:none; font-weight:600;">Ver franjas de hoy →</a>
+</div>
+{% endif %}
+
+{% if delivery_franjas_activo %}
 {# ── Agrupación por franja de reparto ────────────────────────────
    Cabecera "prepara antes de HH:MM" para que cocina trabaje en orden.
    Sólo aparece cuando el módulo delivery_franjas_activo está encendido.
