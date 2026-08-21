@@ -8026,15 +8026,52 @@ def delivery_franjas_eliminar(slot_id):
 def delivery_franjas_panel():
     """Vista HTML del calendario admin de franjas.
 
-    No aborta si el módulo está apagado — muestra un aviso para que el
-    admin pueda planificar antes de encender el toggle en /superadmin/config.
-    Los datos se cargan por JS vía el endpoint JSON delivery_franjas_listar.
+    Renderiza las franjas de la semana en curso EN EL SERVIDOR para que
+    aparezcan sin depender de JS async (evita quedar en "cargando" si
+    hay problema de cache/red). El JS sigue disponible para navegar
+    entre semanas y editar/crear vía modal.
     """
     from store_config import get_store_value
+    from delivery_slots_service import listar_franjas_admin
+    from datetime import date, timedelta
     try:
         default_max = int(get_store_value("delivery_franjas_max_repartidores_default", "1"))
     except (TypeError, ValueError):
         default_max = 1
+    hoy = date.today()
+    lunes = hoy - timedelta(days=hoy.weekday())
+    domingo = lunes + timedelta(days=6)
+    slots = listar_franjas_admin(lunes, domingo)
+    # Agrupar por fecha para el server-side render
+    dias = []
+    for i in range(7):
+        d = lunes + timedelta(days=i)
+        dias.append({
+            "fecha": d,
+            "iso": d.isoformat(),
+            "es_hoy": d == hoy,
+            "es_pasado": d < hoy,
+            "franjas": sorted(
+                [s for s in slots if s.fecha == d],
+                key=lambda s: s.hora_inicio,
+            ),
+        })
+    resp = make_response(render_template(
+        "admin/delivery_franjas.html",
+        modulo_activo=_delivery_franjas_activo(),
+        default_max_repartidores=default_max,
+        dias_semana=dias,
+        semana_lunes=lunes,
+        semana_domingo=domingo,
+    ))
+    # No cachear el panel — el estado de franjas cambia frecuentemente
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
+def _delivery_franjas_panel_LEGACY_JSON_ONLY():
+    """No usar. Solo aquí como marcador del cambio de contract."""
     return render_template(
         "admin/delivery_franjas.html",
         modulo_activo=_delivery_franjas_activo(),

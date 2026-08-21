@@ -41,7 +41,59 @@
   </div>
 
   <div id="df-calendar-container" role="region" aria-label="Calendario de franjas">
-    <p class="df-day-empty">Cargando planificación…</p>
+    {# ═══ Render server-side de la semana en curso ═══
+       El calendario aparece INMEDIATAMENTE al cargar el HTML, sin depender
+       de JS async. El JS lo reemplaza al navegar semanas o tras crear/editar. #}
+    <div class="df-calendar-ssr">
+      {% for dia in dias_semana %}
+        {% set weekday_es = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][dia.fecha.weekday()] %}
+        <div class="df-cal-day-ssr{% if dia.es_hoy %} is-today{% endif %}{% if dia.es_pasado %} is-past{% endif %}"
+             data-fecha="{{ dia.iso }}">
+          <header class="df-cal-day-ssr__head">
+            <span class="df-cal-day-ssr__weekday">{{ weekday_es }}</span>
+            <span class="df-cal-day-ssr__day">{{ dia.fecha.day }}</span>
+            {% if dia.es_hoy %}<span class="df-cal-day-ssr__badge">HOY</span>{% endif %}
+          </header>
+          <div class="df-cal-day-ssr__body">
+            {% if dia.franjas %}
+              {% for f in dia.franjas %}
+                <button type="button" class="df-cal-slot-ssr{% if not f.activo %} is-inactive{% endif %}"
+                        data-slot-id="{{ f.id }}"
+                        data-fecha="{{ f.fecha.isoformat() }}"
+                        data-hora-inicio="{{ f.hora_inicio.strftime('%H:%M') }}"
+                        data-hora-fin="{{ f.hora_fin.strftime('%H:%M') }}"
+                        data-capacidad="{{ f.capacidad_max }}"
+                        data-max-repartidores="{{ f.max_repartidores or '' }}"
+                        data-cierre-modo="{{ f.cierre_modo or '' }}"
+                        data-cierre-valor="{{ f.cierre_valor or '' }}"
+                        data-activo="{{ '1' if f.activo else '0' }}"
+                        aria-label="Editar franja {{ f.hora_inicio.strftime('%H:%M') }} a {{ f.hora_fin.strftime('%H:%M') }}, capacidad {{ f.capacidad_max }}">
+                  <span class="df-cal-slot-ssr__hora">
+                    {{ f.hora_inicio.strftime('%H:%M') }} → {{ f.hora_fin.strftime('%H:%M') }}
+                  </span>
+                  <span class="df-cal-slot-ssr__cap">
+                    Capacidad {{ f.capacidad_max }} pedidos
+                    {% if not f.activo %} · <em>desactivada</em>{% endif %}
+                  </span>
+                </button>
+              {% endfor %}
+            {% else %}
+              <p class="df-cal-day-ssr__empty">Sin franjas</p>
+            {% endif %}
+            {% if not dia.es_pasado %}
+              <button type="button" class="df-cal-day-ssr__add" data-add-day="{{ dia.iso }}"
+                      aria-label="Añadir franja el {{ weekday_es }} {{ dia.fecha.day }}">
+                + Añadir franja
+              </button>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+    <p class="df-calendar-ssr-hint">
+      Estás viendo la semana <strong>{{ semana_lunes.strftime('%d/%m') }} – {{ semana_domingo.strftime('%d/%m') }}</strong>.
+      Usa los botones ◄ ► arriba para cambiar de semana.
+    </p>
   </div>
 </div>
 
