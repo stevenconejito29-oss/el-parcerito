@@ -685,7 +685,8 @@ body.ox-body-public .ep-banner-cta {
 */
 .ep-cats-wrapper {
   position: sticky;
-  top: calc(74px + env(safe-area-inset-top, 0px));
+  /* Alinear con altura REAL del header público (inner 80px + padding 26px ≈ 106px desktop). */
+  top: calc(106px + env(safe-area-inset-top, 0px));
   z-index: 60;
   background: rgba(250,247,242,.97);
   backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
@@ -721,6 +722,13 @@ body.ox-body-public .ep-banner-cta {
     margin-right: -1rem;
     padding-left: 1rem;
     padding-right: 1rem;
+  }
+}
+
+@media (max-width: 760px) {
+  .ep-cats-wrapper {
+    /* Header inner móvil = min-height 68px + padding 16px ≈ 84px */
+    top: calc(84px + env(safe-area-inset-top, 0px));
   }
 }
 
