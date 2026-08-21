@@ -235,26 +235,59 @@
        Si el módulo está apagado, /api/delivery/franjas-disponibles devuelve
        404 y el bloque queda oculto sin romper el layout. Solo se muestra
        cuando el cliente elige delivery. #}
-    <div id="franjas-slot-block" class="mb-3" hidden>
+    {# Render server-side de franjas — funciona sin JS. Aparece siempre que
+       delivery_franjas_activo=1 y hay franjas disponibles en el horizonte. #}
+    {% if delivery_franjas_activo and franjas_ssr %}
+    <div id="franjas-slot-block" class="mb-3" data-delivery-modo="franjas">
       <h3 class="text-sm font-extrabold mb-2 flex items-center gap-2" style="margin-top:.75rem">
         <span aria-hidden="true">🕒</span>
         Elige tu franja de reparto
       </h3>
       <p class="text-xs mb-2" style="color:var(--col-muted)">
-        Marcamos la sugerida — la más cercana con hueco disponible.
+        Marcamos la sugerida — la más cercana con hueco. Tu pedido llega en esa franja.
       </p>
-      <div class="df-cal-nav" role="navigation" aria-label="Navegación de semanas" style="margin-bottom:.6rem">
-        <button type="button" class="df-cal-nav__btn" id="ck-nav-prev" aria-label="Semana anterior">◄</button>
-        <span class="df-cal-nav__label" id="ck-nav-label" aria-live="polite">Cargando…</span>
-        <div style="display:flex;gap:.4rem">
-          <button type="button" class="df-cal-nav__btn" id="ck-nav-hoy" aria-label="Volver a la semana de hoy">Hoy</button>
-          <button type="button" class="df-cal-nav__btn" id="ck-nav-next" aria-label="Semana siguiente">►</button>
-        </div>
+      <div class="ck-franjas-grid" role="radiogroup" aria-label="Franjas disponibles">
+        {% set _dias_es = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'] %}
+        {% set _meses_es = ['','ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'] %}
+        {% for f in franjas_ssr %}
+          {% set _fecha = f.fecha if f.fecha.__class__.__name__ == 'date' else f.fecha %}
+          {% set _wd = _dias_es[_fecha.weekday()] if _fecha.__class__.__name__ == 'date' else '' %}
+          <label class="ck-franja-item{% if f.sugerida %} is-suggested{% endif %}{% if not f.disponible %} is-disabled{% endif %}">
+            <input type="radio" name="slot_id" value="{{ f.id }}"
+                   {% if f.sugerida %}checked{% endif %}
+                   {% if not f.disponible %}disabled{% endif %}>
+            <span class="ck-franja-dia">
+              {% if _fecha.__class__.__name__ == 'date' %}
+                {{ _wd }} {{ _fecha.day }} {{ _meses_es[_fecha.month] }}
+              {% else %}
+                {{ f.fecha }}
+              {% endif %}
+            </span>
+            <span class="ck-franja-hora">
+              {% set _hi = f.hora_inicio %}{% set _hf = f.hora_fin %}
+              {{ _hi.strftime('%H:%M') if _hi.__class__.__name__ == 'time' else _hi }}
+              →
+              {{ _hf.strftime('%H:%M') if _hf.__class__.__name__ == 'time' else _hf }}
+            </span>
+            <span class="ck-franja-cupo">
+              {% if not f.disponible and f.cerrada %}🕐 Cerrada
+              {% elif not f.disponible and f.llena %}🔴 Llena
+              {% elif f.sugerida %}⭐ Sugerida
+              {% else %}🟢 {{ f.capacidad_max - f.ocupados }} huecos
+              {% endif %}
+            </span>
+          </label>
+        {% endfor %}
       </div>
-      <div id="franjas-slot-list" role="region" aria-label="Franjas disponibles"></div>
-      <input type="hidden" name="slot_id" id="franjas-slot-id" value="">
-      <p id="franjas-slot-selected" class="text-xs mt-2" style="color:var(--brand-primary,#5a3a1e);font-weight:700" hidden></p>
     </div>
+    {% elif delivery_franjas_activo %}
+    <div id="franjas-slot-block" class="mb-3">
+      <h3 class="text-sm font-extrabold mb-2">🕒 Franjas de reparto</h3>
+      <div class="ck-franjas-empty" role="alert">
+        No hay franjas disponibles en este momento. Contáctanos por chat si necesitas urgente.
+      </div>
+    </div>
+    {% endif %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
     <script src="{{ url_for('static', filename='js/delivery-franjas.js', v=asset_version) }}"></script>
     <script nonce="{{ csp_nonce() }}">

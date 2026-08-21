@@ -3576,10 +3576,25 @@ def checkout():
         radio_entrega_km = max(0.0, float(SiteConfig.get("RADIO_ENTREGA_KM", "5") or 5))
     except (TypeError, ValueError):
         radio_entrega_km = 5.0
+    # Render SSR de franjas para el cliente — no depender de JS async.
+    # Si franjas está OFF o falla la query, franjas_ssr queda [] y el
+    # template no muestra el bloque.
+    franjas_ssr = []
+    if _franjas_on:
+        try:
+            from delivery_slots_service import listar_franjas_cliente
+            from datetime import date as _date
+            _hoy = _date.today()
+            _horizonte = int(str(get_store_value("delivery_franjas_horizonte_cliente_dias", "7")).strip() or 7)
+            franjas_ssr = listar_franjas_cliente(_hoy, horizonte_dias=_horizonte)
+        except Exception:
+            current_app.logger.exception("checkout: no pudimos precargar franjas SSR")
+            franjas_ssr = []
     return render_template("public/checkout.html", items=items, subtotal=subtotal,
                            zonas=zonas,
                            delivery_inmediato_activo=_inmediato_on,
                            delivery_franjas_activo=_franjas_on,
+                           franjas_ssr=franjas_ssr,
                            tiene_encargos=tiene_encargos,
                            canjeables=canjeables,
                            puntos_habilitados=puntos_habilitados,
