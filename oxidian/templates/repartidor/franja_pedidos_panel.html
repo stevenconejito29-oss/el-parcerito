@@ -35,10 +35,19 @@
           display:flex; align-items:center; gap:.6rem; margin-top: 1rem;
           box-shadow: 0 -2px 8px rgba(0,0,0,.06); border-radius: 0 0 var(--radius-md,12px) var(--radius-md,12px); }
 .fp-counter { font-weight:600; }
-.fp-btn { padding:.6rem 1.1rem; border-radius: var(--radius-sm,8px); font-weight:600; border:none; cursor:pointer;
-          background: var(--brand-accent, #003087); color:white; margin-left:auto; }
+.fp-btn { padding:.75rem 1.1rem; min-height: 44px; border-radius: var(--radius-sm,8px); font-weight:600; border:none; cursor:pointer;
+          background: var(--brand-accent, #003087); color:white; margin-left:auto; touch-action: manipulation; }
 .fp-btn[disabled] { background:#aaa; cursor:not-allowed; }
 .fp-note { color: var(--col-muted, #888); font-size:.9rem; }
+@media (max-width: 400px) {
+  .fp-wrap { padding: .6rem; }
+  .fp-head h1 { font-size: 1.1rem; }
+  .fp-item { padding: .65rem .7rem; gap: .55rem; }
+  .fp-item input[type=checkbox] { width: 26px; height: 26px; }
+  .fp-bar { flex-wrap: wrap; padding: .65rem .8rem; }
+  .fp-btn { margin-left: 0; width: 100%; }
+  .fp-counter { flex: 1 1 100%; }
+}
 </style>
 {% endblock %}
 {% block content %}

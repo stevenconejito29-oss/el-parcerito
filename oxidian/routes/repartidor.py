@@ -1341,8 +1341,14 @@ def franjas_pedidos(slot_id):
     from models import DeliverySlot
 
     slot = get_or_404(DeliverySlot, slot_id)
+    # Eager: cliente (nombre) + zona (direccion fallback). Sin esto,
+    # cada pedido dispara SELECTs adicionales al renderizar la lista.
     pedidos = (
         Order.query
+        .options(
+            joinedload(Order.cliente),
+            joinedload(Order.zona),
+        )
         .filter(
             Order.slot_id == slot.id,
             Order.estado != "cancelado",
@@ -1522,8 +1528,14 @@ def franjas_slot_panel(slot_id):
     from models import DeliverySlot, SlotRepartidor
 
     slot = get_or_404(DeliverySlot, slot_id)
+    # Eager: cliente (nombre) + zona (direccion fallback). Sin esto,
+    # cada pedido dispara SELECTs adicionales al renderizar la lista.
     pedidos = (
         Order.query
+        .options(
+            joinedload(Order.cliente),
+            joinedload(Order.zona),
+        )
         .filter(
             Order.slot_id == slot.id,
             Order.estado != "cancelado",

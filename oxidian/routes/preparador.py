@@ -1024,9 +1024,15 @@ def franjas_hoy():
     ahora = _dt.now()
     grupos = []
     for s in slots:
+        # Eager: cliente (nombre en card) + items (resumen) + zona.
+        # Sin esto el template dispara N+1 por pedido en la franja.
         peds = (
             Order.query
-            .options(joinedload(Order.zona))
+            .options(
+                joinedload(Order.cliente),
+                joinedload(Order.zona),
+                joinedload(Order.items),
+            )
             .filter(
                 Order.slot_id == s.id,
                 Order.estado.in_(("pendiente", "armando", "listo")),

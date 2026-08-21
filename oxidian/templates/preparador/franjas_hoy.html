@@ -34,13 +34,22 @@
 .fh-item__cli { color: var(--col-muted, #666); font-size:.9rem; }
 .fh-item__items { display:block; margin-top:.15rem; font-size:.9rem; color: var(--col-text, #222); }
 .fh-item__action { display:flex; gap:.4rem; align-items:center; margin-left:auto; }
-.fh-btn { padding: .5rem .9rem; border-radius: var(--radius-sm, 8px); font-weight:600; cursor:pointer;
-          border: 1px solid var(--col-border, #ddd); background: var(--col-surface, #fff); }
+.fh-btn { padding: .65rem 1rem; min-height: 44px; border-radius: var(--radius-sm, 8px); font-weight:600; cursor:pointer;
+          border: 1px solid var(--col-border, #ddd); background: var(--col-surface, #fff); touch-action: manipulation; }
 .fh-btn-primary { background: var(--brand-accent, #003087); color: white; border-color: transparent; }
 .fh-btn-warn { background: #ffb400; color: #222; border-color: transparent; }
 .fh-status-ok { color: var(--theme-success, #2b9c5e); font-weight:600; }
 .fh-empty { text-align:center; padding: 3rem 1rem; color: var(--col-muted, #888); }
 .fh-empty p { margin:.4rem 0; }
+@media (max-width: 400px) {
+  .fh-wrap { padding: .6rem; }
+  .fh-head h1 { font-size: 1.15rem; }
+  .fh-slot__head { padding: .6rem .7rem; gap:.4rem; }
+  .fh-slot__stats { margin-left: 0; width: 100%; }
+  .fh-item { padding: .65rem .7rem; }
+  .fh-item__action { margin-left: 0; width: 100%; }
+  .fh-item__action .fh-btn { width: 100%; }
+}
 </style>
 {% endblock %}
 {% block content %}
