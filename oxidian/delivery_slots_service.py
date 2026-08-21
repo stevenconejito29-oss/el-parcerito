@@ -318,16 +318,35 @@ def listar_franjas_cliente(
         sugerida = disponible and not sugerida_marcada
         if sugerida:
             sugerida_marcada = True
+        # Enriquecimiento server-side: campos ya formateados para plantillas
+        # que renderizan sin JS. Evita hardcodear días/meses en cada template.
+        libres = max(0, slot.capacidad_max - ocupados)
+        if not disponible and cerrada:
+            estado_label, estado_emoji = "Cerrada", "🕐"
+        elif not disponible and llena:
+            estado_label, estado_emoji = "Llena", "🔴"
+        elif sugerida:
+            estado_label, estado_emoji = "Sugerida", "⭐"
+        elif libres <= max(1, slot.capacidad_max // 3):
+            estado_label, estado_emoji = f"{libres} huecos", "🟡"
+        else:
+            estado_label, estado_emoji = f"{libres} huecos", "🟢"
         resultado.append({
             "id": slot.id,
             "fecha": slot.fecha.isoformat(),
+            "fecha_obj": slot.fecha,  # date real para plantillas con strftime/locale
             "hora_inicio": slot.hora_inicio.strftime("%H:%M"),
             "hora_fin": slot.hora_fin.strftime("%H:%M"),
+            "hora_rango": f"{slot.hora_inicio.strftime('%H:%M')} → {slot.hora_fin.strftime('%H:%M')}",
+            "dia_label": format_fecha_dia_corto(slot.fecha),
             "capacidad_max": slot.capacidad_max,
             "ocupados": ocupados,
+            "libres": libres,
             "cerrada": cerrada,
             "llena": llena,
             "disponible": disponible,
+            "estado_label": estado_label,
+            "estado_emoji": estado_emoji,
             # `sugerida` es el nombre histórico; `recomendada` es el alias
             # documentado en la API pública. Se mantienen ambos para no
             # romper templates existentes.
@@ -335,6 +354,29 @@ def listar_franjas_cliente(
             "recomendada": sugerida,
         })
     return resultado
+
+
+# ─── Formato de fecha en es-ES para plantillas SSR ─────────────────────────
+# Centraliza el mapping "weekday → nombre corto" en un solo lugar. Los
+# templates NO deben hardcodear listas de días — usar format_fecha_dia_corto.
+
+_DIAS_CORTOS_ES = ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
+_MESES_CORTOS_ES = ("ene", "feb", "mar", "abr", "may", "jun", "jul",
+                    "ago", "sep", "oct", "nov", "dic")
+
+
+def format_fecha_dia_corto(fecha: date, referencia: date | None = None) -> str:
+    """Devuelve 'Hoy · 21 ago' / 'Mañana · 22 ago' / 'Vie 23 ago' según proximidad.
+
+    ``referencia`` = date.today() por defecto. Extraído para tests.
+    """
+    ref = referencia or date.today()
+    delta = (fecha - ref).days
+    if delta == 0:
+        return f"Hoy · {fecha.day} {_MESES_CORTOS_ES[fecha.month - 1]}"
+    if delta == 1:
+        return f"Mañana · {fecha.day} {_MESES_CORTOS_ES[fecha.month - 1]}"
+    return f"{_DIAS_CORTOS_ES[fecha.weekday()]} {fecha.day} {_MESES_CORTOS_ES[fecha.month - 1]}"
 
 
 # ─── Validación cruzada con horario de tienda ─────────────────────────────

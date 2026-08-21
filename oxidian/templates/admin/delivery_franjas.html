@@ -66,7 +66,7 @@
     {# Tabs móvil: sólo visibles <768px, seleccionan un día activo #}
     <div class="df-cal-day-tabs-ssr" role="tablist" aria-label="Días de la semana">
       {% for dia in dias_semana %}
-        {% set weekday_es = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][dia.fecha.weekday()] %}
+        {% set weekday_es = dia.fecha|weekday_es_corto %}
         <button type="button"
                 class="df-cal-day-tab-ssr{% if dia.es_hoy %} is-active{% endif %}{% if dia.es_pasado %} is-past{% endif %}"
                 role="tab"
@@ -81,7 +81,7 @@
 
     <div class="df-calendar-ssr">
       {% for dia in dias_semana %}
-        {% set weekday_es = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][dia.fecha.weekday()] %}
+        {% set weekday_es = dia.fecha|weekday_es_corto %}
         <div class="df-cal-day-ssr{% if dia.es_hoy %} is-today is-active{% endif %}{% if dia.es_pasado %} is-past{% endif %}"
              data-fecha="{{ dia.iso }}"
              data-day="{{ dia.iso }}">
