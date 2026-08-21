@@ -37,6 +37,21 @@ from models import (
 )
 
 
+def _ahora_local() -> datetime:
+    """Datetime naive en zona horaria del negocio (TZ del contenedor).
+
+    Las horas de las franjas (hora_inicio/hora_fin) se guardan como HH:MM
+    LOCALES (lo que el admin ve al crearlas). Para comparar contra ellas
+    necesitamos el reloj local, no UTC. `datetime.now()` respeta la TZ
+    configurada en el contenedor (Europe/Madrid en producción).
+
+    Bug histórico: se usaba utcnow() → en verano las franjas se cerraban
+    2h antes de tiempo y las de la tarde parecían abiertas cuando ya
+    habían empezado su reparto.
+    """
+    return datetime.now().replace(tzinfo=None, microsecond=0)
+
+
 # ─── Constantes ───────────────────────────────────────────────────────────
 
 CIERRE_MODOS = ("al_iniciar", "al_iniciar_siguiente", "minutos_antes", "hora_fija")
@@ -64,7 +79,7 @@ def procesar_franjas_iniciando(ventana_min: int = 3) -> list[int]:
     Devuelve la lista de slot_id notificados en esta pasada.
     """
     from sqlalchemy import text
-    ahora = utcnow().replace(tzinfo=None)
+    ahora = _ahora_local()
     hoy = ahora.date()
     ventana_ini = (ahora - timedelta(minutes=ventana_min)).time()
     ventana_fin = (ahora + timedelta(minutes=ventana_min)).time()
@@ -131,7 +146,7 @@ def franja_ya_iniciada(slot: DeliverySlot | None, ahora: datetime | None = None)
     if slot is None:
         return False
     if ahora is None:
-        ahora = utcnow().replace(tzinfo=None)
+        ahora = _ahora_local()
     inicio_dt = datetime.combine(slot.fecha, slot.hora_inicio)
     return ahora >= inicio_dt
 
@@ -287,7 +302,7 @@ def listar_franjas_cliente(
     franja disponible cronológicamente. Excluye inactivas.
     """
     if ahora is None:
-        ahora = utcnow()
+        ahora = _ahora_local()
     hasta = hoy + timedelta(days=horizonte_dias - 1)
     slots = (
         DeliverySlot.query
@@ -550,7 +565,7 @@ def reservar_franja(slot_id: int, pedido: Order, ahora: datetime | None = None) 
     correcta bajo el modelo de bloqueo de SQLite (una escritura a la vez).
     """
     if ahora is None:
-        ahora = utcnow()
+        ahora = _ahora_local()
     slot = (
         db.session.query(DeliverySlot)
         .filter(DeliverySlot.id == slot_id)
@@ -606,7 +621,7 @@ def tomar_franja_repartidor(
     slot_id: int, repartidor_id: int, ahora: datetime | None = None,
 ) -> AsignacionRepartidor:
     if ahora is None:
-        ahora = utcnow()
+        ahora = _ahora_local()
     slot = (
         db.session.query(DeliverySlot)
         .filter(DeliverySlot.id == slot_id)
