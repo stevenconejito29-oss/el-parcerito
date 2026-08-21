@@ -654,3 +654,18 @@ details[open] > .df-day-toggle::after { transform: rotate(180deg); }
 @media(max-width:900px){
   .df-rider-banner{margin-bottom:.5rem}
 }
+
+/* Botón switch modo reparto — visible en cabecera admin */
+.df-btn-switch{
+  background:color-mix(in srgb, var(--brand-accent, #245A9A) 14%, transparent);
+  color:var(--brand-accent, #245A9A);
+  border-color:color-mix(in srgb, var(--brand-accent, #245A9A) 40%, transparent);
+  font-weight:800
+}
+.df-btn-switch:hover{
+  background:color-mix(in srgb, var(--brand-accent, #245A9A) 22%, transparent)
+}
+@media(max-width:520px){
+  .df-toolbar{flex-wrap:wrap;gap:.4rem}
+  .df-toolbar .df-btn{flex:1;min-width:130px;font-size:.85rem}
+}

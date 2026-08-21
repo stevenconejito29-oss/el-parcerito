@@ -398,6 +398,42 @@ def _valid_url(value, required=False, allow_internal=True):
     return True, value
 
 
+@superadmin_bp.route("/modo-reparto/switch", methods=["POST"])
+@login_required
+def modo_reparto_switch():
+    """Intercambia atómicamente entre delivery inmediato ↔ franjas.
+
+    Mutex: al activar uno, el otro queda apagado. Requiere super_admin
+    por ser una clave soberana del modelo comercial.
+    """
+    if current_user.rol not in ("super_admin", "admin"):
+        return "Sin permiso", 403
+    _in = str(SiteConfig.get("delivery_inmediato_activo", "1")).strip() in ("1", "true", "True")
+    if _in:
+        # Actualmente inmediato → cambiar a franjas
+        SiteConfig.set("delivery_inmediato_activo", "0", user_id=current_user.id,
+                       descripcion="switch mutex → franjas")
+        SiteConfig.set("delivery_franjas_activo", "1", user_id=current_user.id,
+                       descripcion="switch mutex ← inmediato")
+        mensaje = "Ahora el reparto va por franjas. Los clientes eligen del calendario."
+    else:
+        SiteConfig.set("delivery_franjas_activo", "0", user_id=current_user.id,
+                       descripcion="switch mutex → inmediato")
+        SiteConfig.set("delivery_inmediato_activo", "1", user_id=current_user.id,
+                       descripcion="switch mutex ← franjas")
+        mensaje = "Ahora el reparto va inmediato. Cada pedido sale cuando esté listo."
+    try:
+        db.session.commit()
+        AuditLog.registrar(current_user.id, "modo_reparto_switch", "site_config",
+                           detalle=mensaje, ip=request.remote_addr)
+        db.session.commit()
+        flash(mensaje, "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Error al cambiar modo: {exc}", "danger")
+    return redirect(request.referrer or url_for("superadmin.config"))
+
+
 @superadmin_bp.route("/sw-reset")
 def sw_reset():
     """Página autónoma para desregistrar el service worker + purgar cachés.

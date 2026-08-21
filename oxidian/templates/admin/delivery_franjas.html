@@ -11,6 +11,13 @@
       <p>Planifica los cupos de reparto por franja. Puedes editar aunque el módulo esté apagado.</p>
     </div>
     <div class="df-toolbar">
+      <form method="POST" action="{{ url_for('superadmin.modo_reparto_switch') }}"
+            style="display:inline"
+            onsubmit="return confirm('¿Cambiar a reparto INMEDIATO? Los clientes dejarán de ver el calendario y sus pedidos saldrán cuanto antes.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="df-btn df-btn-switch"
+                aria-label="Cambiar a delivery inmediato">🔀 Cambiar a inmediato</button>
+      </form>
       <button type="button" id="df-btn-clonar" class="df-btn" aria-label="Clonar la semana en curso a la semana siguiente">Clonar semana</button>
     </div>
   </div>
