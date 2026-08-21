@@ -389,7 +389,20 @@
     else DF.msg(msgs, (data && data.error) || "Error al clonar.", "err");
   });
 
-  cargar();
+  // El calendario ya viene renderizado server-side desde Jinja. El JS solo
+  // toma control al navegar semanas o tras crear/editar/borrar. Enganchamos
+  // handlers a los botones del render SSR con delegación de eventos.
+  cal.addEventListener("click", (e) => {
+    const addBtn = e.target.closest("[data-add-day]");
+    if (addBtn) {
+      abrirModalNuevo(addBtn.dataset.addDay);
+      return;
+    }
+    const slotBtn = e.target.closest(".df-cal-slot-ssr[data-slot-id]");
+    if (slotBtn) {
+      abrirModalEditar(slotBtn);
+    }
+  });
 })();
 </script>
 {% endblock %}
