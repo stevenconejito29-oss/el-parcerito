@@ -73,6 +73,7 @@ from operational_metrics_service import (
     calcular_metricas_operativas,
     filas_tiempos_operativos,
 )
+from security_utils import safe_local_referrer
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -1943,7 +1944,9 @@ def registrar_movimiento():
             f"{tipo}. Elige una del desplegable.",
             "danger",
         )
-        return redirect(request.referrer or url_for("admin.finanzas"))
+        return redirect(safe_local_referrer(
+            url_for("admin.finanzas"), ("/admin/caja", "/admin/finanzas"),
+        ))
 
     if tipo == "ingreso":
         registrar_ingreso(monto, concepto, categoria=categoria,
@@ -1959,10 +1962,9 @@ def registrar_movimiento():
         flash(f"Error al registrar movimiento: {exc}", "danger")
     # Volver a la vista desde la que se envió el form (finanzas o caja); así
     # el operador ve el KPI recalculado sin perder contexto.
-    destino = request.referrer or url_for("admin.finanzas")
-    if "/admin/caja" in destino or "/admin/finanzas" in destino:
-        return redirect(destino)
-    return redirect(url_for("admin.finanzas"))
+    return redirect(safe_local_referrer(
+        url_for("admin.finanzas"), ("/admin/caja", "/admin/finanzas"),
+    ))
 
 
 @admin_bp.route("/caja/exportar")
@@ -6402,12 +6404,9 @@ def editar_menu_config(item_id):
     return redirect(url_for("admin.menu_config"))
 
 
-@admin_bp.route("/menu-config/<int:item_id>/toggle", methods=["GET", "POST"])
+@admin_bp.route("/menu-config/<int:item_id>/toggle", methods=["POST"])
 @marketing_or_admin_required
 def toggle_menu_config(item_id):
-    if request.method == "GET":
-        flash("Esa acción necesita confirmación. Usa el botón del panel.", "info")
-        return redirect(url_for("admin.menu_config"))
     item = get_or_404(MenuConfig, item_id)
     item.activo = not item.activo
     try:

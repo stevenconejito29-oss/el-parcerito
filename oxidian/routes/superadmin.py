@@ -1508,10 +1508,16 @@ def chatbot_test_whatsapp():
 
 # ─── BASE DE DATOS (solo super_admin) ───────────────────────
 
-def _database_tool_url():
-    """URL compatible con pg_dump/pg_restore, sin ocultar password."""
-    url = db.engine.url.render_as_string(hide_password=False)
-    return re.sub(r"^postgresql\+[^:]+://", "postgresql://", url)
+def _database_tool_connection():
+    """Conexión CLI sin publicar la contraseña en la lista de procesos."""
+    engine_url = db.engine.url
+    password = engine_url.password or ""
+    safe_url = engine_url.set(password=None).render_as_string(hide_password=True)
+    safe_url = re.sub(r"^postgresql\+[^:]+://", "postgresql://", safe_url)
+    process_env = os.environ.copy()
+    if password:
+        process_env["PGPASSWORD"] = password
+    return safe_url, process_env
 
 
 def _validar_dump_postgres(path: str, suffix: str) -> tuple[bool, str]:
@@ -1567,10 +1573,10 @@ def _validar_dump_postgres(path: str, suffix: str) -> tuple[bool, str]:
 
 
 def _require_postgres_url():
-    url = _database_tool_url()
+    url, process_env = _database_tool_connection()
     if not url.startswith(("postgresql://", "postgres://")):
         raise RuntimeError("La exportación/restauración desde panel requiere PostgreSQL.")
-    return url
+    return url, process_env
 
 
 @superadmin_bp.route("/database")
@@ -1590,7 +1596,7 @@ def database_admin():
 @superadmin_required
 def database_download():
     try:
-        database_url = _require_postgres_url()
+        database_url, process_env = _require_postgres_url()
         stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         tmp = tempfile.NamedTemporaryFile(prefix=f"oxidian_{stamp}_", suffix=".dump", delete=False)
         tmp.close()
@@ -1602,7 +1608,9 @@ def database_download():
             "--dbname", database_url,
             "--file", tmp.name,
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=180, env=process_env,
+        )
         if result.returncode != 0:
             os.unlink(tmp.name)
             flash(f"No se pudo exportar la base de datos: {result.stderr[-300:]}", "danger")
@@ -1654,7 +1662,7 @@ def database_upload():
     tmp = tempfile.NamedTemporaryFile(prefix="oxidian_restore_", suffix=suffix, delete=False)
     tmp.close()
     try:
-        database_url = _require_postgres_url()
+        database_url, process_env = _require_postgres_url()
         file.save(tmp.name)
         db.session.close()
 
@@ -1692,7 +1700,9 @@ def database_upload():
                 "--dbname", database_url,
                 tmp.name,
             ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=600, env=process_env,
+        )
         if result.returncode != 0:
             flash(f"No se pudo restaurar la base de datos: {result.stderr[-400:]}", "danger")
             return redirect(url_for("superadmin.database_admin"))

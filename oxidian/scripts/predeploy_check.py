@@ -123,6 +123,48 @@ def check_duplicate_route_endpoints():
                 endpoints[node.name] = node.lineno
 
 
+def check_state_changes_are_not_get_routes():
+    """Impide reintroducir mutaciones navegables sin CSRF por método GET."""
+    action_segments = {
+        'toggle', 'eliminar', 'borrar', 'cancelar', 'pagar', 'confirmar',
+        'rechazar', 'devolver', 'reset', 'claim', 'release', 'close',
+    }
+    for route_file in sorted((root / 'routes').glob('*.py')):
+        try:
+            tree = ast.parse(route_file.read_text(encoding='utf-8'), filename=str(route_file))
+        except (OSError, SyntaxError):
+            continue
+        for node in tree.body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for decorator in node.decorator_list:
+                if not (
+                    isinstance(decorator, ast.Call)
+                    and isinstance(decorator.func, ast.Attribute)
+                    and decorator.func.attr in {'route', 'get'}
+                    and decorator.args
+                    and isinstance(decorator.args[0], ast.Constant)
+                ):
+                    continue
+                route = str(decorator.args[0].value).rstrip('/')
+                segment = route.rsplit('/', 1)[-1].lower()
+                if segment not in action_segments:
+                    continue
+                methods = None
+                for keyword in decorator.keywords:
+                    if keyword.arg == 'methods':
+                        try:
+                            methods = {str(value).upper() for value in ast.literal_eval(keyword.value)}
+                        except (TypeError, ValueError, SyntaxError):
+                            methods = set()
+                allows_get = decorator.func.attr == 'get' or methods is None or 'GET' in methods
+                if allows_get:
+                    errors.append(
+                        f'state-changing route allows GET {route_file.relative_to(root)}:'
+                        f'{node.lineno} ({route})'
+                    )
+
+
 # 1. SECRET_KEY
 require_secret('SECRET_KEY', 32)
 
@@ -189,6 +231,7 @@ if 'event.request.mode === "navigate"' not in sw_source:
     errors.append('service worker must keep HTML navigations network-only')
 
 check_duplicate_route_endpoints()
+check_state_changes_are_not_get_routes()
 
 if os.environ.get('SIMULATE_EVO_SEND', '').strip() == '1':
     errors.append('SIMULATE_EVO_SEND=1; WhatsApp sends are simulated, not real')

@@ -77,6 +77,7 @@ from product_presentations_service import (
     product_presentation_catalog_payload,
     validate_product_presentation_selection,
 )
+from security_utils import safe_local_referrer
 
 public_bp = Blueprint("public", __name__)
 
@@ -1503,7 +1504,7 @@ def agregar_carrito(producto_id):
                 payload["issue"] = _cart_issue_payload(issue, action_url, action_label)
             return jsonify(payload), 200
         flash(msg, category)
-        return redirect(request.referrer or url_for("public.index"))
+        return redirect(safe_local_referrer(url_for("public.index")))
 
     producto = get_or_404(Product, producto_id)
     # Bloqueo: productos EXCLUSIVOS de canje con puntos no se pueden comprar.
@@ -1620,11 +1621,11 @@ def agregar_carrito(producto_id):
             if _ajax:
                 return jsonify({"ok": False, "msg": error}), 200
             flash(error, "danger")
-            return redirect(request.referrer or url_for(
+            return redirect(safe_local_referrer(url_for(
                 "public.producto_detalle",
                 producto_id=producto_id,
                 origen=origen_solicitado,
-            ))
+            )))
         combo_seleccion = seleccion
 
     extras, extras_error = _parse_product_extras(producto, request.form, presentation)
@@ -1679,11 +1680,11 @@ def agregar_carrito(producto_id):
             if _ajax:
                 return jsonify({"ok": False, "msg": str(exc)}), 200
             flash(str(exc), "danger")
-            return redirect(request.referrer or url_for(
+            return redirect(safe_local_referrer(url_for(
                 "public.producto_detalle",
                 producto_id=producto_id,
                 origen=origen_solicitado,
-            ))
+            )))
 
     # --- Persistencia: todos los dicts paralelos indexados por line_key ---
     if variant_id:
@@ -1721,7 +1722,7 @@ def agregar_carrito(producto_id):
             "line_key": key,
         }), 200
     flash(f"'{producto.nombre}' añadido a tu {cart_name}.", "success")
-    return redirect(request.referrer or url_for("public.index"))
+    return redirect(safe_local_referrer(url_for("public.index")))
 
 
 @public_bp.route("/carrito/actualizar", methods=["POST"])
