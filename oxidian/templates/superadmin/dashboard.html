@@ -17,6 +17,26 @@
     </div>
   </header>
 
+  <section class="oa-readiness {{ 'is-ready' if readiness.ready else 'has-blockers' }}" aria-labelledby="readiness-title">
+    <div class="oa-readiness__summary">
+      <span class="oa-readiness__icon" aria-hidden="true">{{ '✓' if readiness.ready else '!' }}</span>
+      <div>
+        <p class="oa-page-header__eyebrow">Preparación comercial</p>
+        <h2 id="readiness-title">{{ 'La tienda puede recibir ventas' if readiness.ready else readiness.blockers ~ ' bloqueo(s) antes de vender' }}</h2>
+        <p>{{ readiness.warnings }} aviso(s) no bloqueante(s) · {{ readiness.pending_chats }} chat(s) esperando agente.</p>
+      </div>
+      <a href="{{ url_for('admin.chats_index') }}" class="oa-btn oa-btn--{{ 'primary' if readiness.pending_chats else 'ghost' }}">Atender chats{% if readiness.pending_chats %} · {{ readiness.pending_chats }}{% endif %}</a>
+    </div>
+    <div class="oa-readiness__checks">
+      {% for check in readiness.checks %}
+      <a href="{{ url_for(check.action) if check.action else '#' }}" class="oa-readiness__check {{ 'is-ok' if check.ok else ('is-warning' if check.warning else 'is-error') }}">
+        <span>{{ '✓' if check.ok else ('·' if check.warning else '!') }}</span>
+        <div><strong>{{ check.label }}</strong><small>{{ check.detail }}</small></div>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
   {# ── Modo tienda — banner destacado ─────────────────────── #}
   {% if tienda_modo is defined %}
   <section class="oa-panel" aria-labelledby="modo-title" style="border-color: color-mix(in srgb, var(--brand-primary) 32%, var(--col-border));">
@@ -342,9 +362,14 @@
       <a href="{{ url_for('superadmin.chatbot') }}" class="oa-quick">
         <span class="oa-quick__icon">💬</span>
         <div class="oa-quick__body">
-          <p class="oa-quick__title">Chatbot WhatsApp</p>
-          <p class="oa-quick__desc">Estado, QR y configuración</p>
+          <p class="oa-quick__title">Automatizaciones WhatsApp</p>
+          <p class="oa-quick__desc">Confirmaciones, códigos y estado técnico</p>
         </div>
+        <span class="oa-quick__arrow">→</span>
+      </a>
+      <a href="{{ url_for('admin.chats_index') }}" class="oa-quick">
+        <span class="oa-quick__icon">🗨️</span>
+        <div class="oa-quick__body"><p class="oa-quick__title">Soporte web</p><p class="oa-quick__desc">Conversaciones y agentes</p></div>
         <span class="oa-quick__arrow">→</span>
       </a>
       <a href="{{ url_for('superadmin.audit') }}" class="oa-quick">
@@ -375,7 +400,7 @@
       <div class="oa-panel" style="margin: 0;">
         <div class="oa-panel__header">
           <div>
-            <p class="oa-panel__title">💬 Chatbot WhatsApp
+            <p class="oa-panel__title">📲 Automatizaciones WhatsApp
               <span class="oa-badge oa-badge--{{ 'ok' if bot_status.ok and bot_status.connected else 'err' }}" style="margin-left: var(--oa-space-2);">
                 {{ '● Conectado' if bot_status.ok and bot_status.connected else '● Sin conectar' }}
               </span>

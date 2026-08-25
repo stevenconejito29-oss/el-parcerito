@@ -5,7 +5,7 @@
 <section class="wcp-page" aria-labelledby="wcp-title">
   <header class="wcp-head">
     <a href="{{ url_for('public.index') }}" aria-label="Volver al menú">←</a>
-    <div class="wcp-head-copy"><span>Ayuda en línea</span><h1 id="wcp-title">Chat El Parcerito</h1><p id="wcp-status" aria-live="polite">Conectando…</p></div>
+    <div class="wcp-head-copy"><span>Ayuda en línea</span><h1 id="wcp-title">Chat {{ brand.nombre }}</h1><p id="wcp-status" aria-live="polite">Conectando…</p></div>
     {% if session.get('push_cliente_id') %}<button type="button" class="wcp-notify" data-push-activate aria-label="Activar avisos del chat">🔔<span>Avisos</span></button>{% endif %}
   </header>
   <section class="wcp-conversation" aria-label="Conversación">
@@ -21,6 +21,7 @@
       <button type="button" data-wcp-quick="¿Cómo instalo la app y activo notificaciones?"><span>🔔</span>Instalar app</button>
     </div>
     <div class="wcp-orders" id="wcp-orders" aria-label="Pedidos que puedes cancelar" hidden></div>
+    <div class="wcp-reorder" id="wcp-reorder" hidden></div>
     <div class="wcp-handoff"><button type="button" id="wcp-agent">Hablar con una persona</button><button type="button" id="wcp-resume" hidden>Volver al asistente</button></div>
     <form class="wcp-compose" id="wcp-form" action="{{ url_for('public.chat') }}" method="post" data-no-guard>
       <label class="sr-only" for="wcp-input">Escribe tu mensaje</label>

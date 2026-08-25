@@ -7742,6 +7742,22 @@ def chats_messages(public_id):
     })
 
 
+def _notify_chat_customer(conversation, title, body):
+    """Push auxiliar: nunca invalida una transición de chat ya confirmada."""
+    if not conversation.customer_id:
+        return
+    try:
+        from push_service import notify_user
+        notify_user(
+            conversation.customer_id, title, body, url="/ayuda",
+            tag=f"web-chat-{conversation.public_id}", require_interaction=True,
+        )
+    except Exception:
+        current_app.logger.exception(
+            "No se pudo enviar push del chat %s", conversation.public_id,
+        )
+
+
 @admin_bp.route("/chats/<public_id>/claim", methods=["POST"])
 @admin_required
 def chats_claim(public_id):
@@ -7757,7 +7773,34 @@ def chats_claim(public_id):
     conversation.assigned_at = utcnow()
     add_message(conversation, "system", f"{current_user.nombre} tomó el chat.")
     db.session.commit()
+    _notify_chat_customer(
+        conversation, "💬 Ya te atiende una persona",
+        f"{current_user.nombre} tomó tu consulta.",
+    )
     return redirect(url_for("admin.chats_detalle", public_id=public_id))
+
+
+@admin_bp.route("/chats/<public_id>/release", methods=["POST"])
+@admin_required
+def chats_release(public_id):
+    """Devuelve un chat al equipo sin perder transcript ni identidad."""
+    from models import WebChatConversation
+    from web_chat_service import add_message
+    conversation = WebChatConversation.query.filter_by(public_id=public_id).with_for_update().first_or_404()
+    if conversation.status != "active_agent" or conversation.assigned_agent_id != current_user.id:
+        abort(403)
+    conversation.status = "waiting_agent"
+    conversation.assigned_agent_id = None
+    conversation.assigned_at = None
+    conversation.requested_at = utcnow()
+    add_message(conversation, "system", "La consulta volvió a la cola del equipo. Puedes seguir escribiendo aquí.")
+    db.session.commit()
+    _notify_chat_customer(
+        conversation, "Tu consulta sigue en atención",
+        "El equipo la reasignará; puedes seguir escribiendo en el chat.",
+    )
+    flash("Chat devuelto a la cola de soporte.", "success")
+    return redirect(url_for("admin.chats_index"))
 
 
 @admin_bp.route("/chats/<public_id>/reply", methods=["POST"])
@@ -7774,15 +7817,10 @@ def chats_reply(public_id):
         abort(403)
     add_message(conversation, "agent", mensaje, agent_id=current_user.id)
     db.session.commit()
-    if conversation.customer_id:
-        from push_service import notify_user
-        notify_user(
-            conversation.customer_id,
-            "💬 Respondieron tu consulta",
-            f"{current_user.nombre}: {mensaje[:120]}",
-            url="/ayuda", tag=f"web-chat-{conversation.public_id}",
-            require_interaction=True,
-        )
+    _notify_chat_customer(
+        conversation, "💬 Respondieron tu consulta",
+        f"{current_user.nombre}: {mensaje[:120]}",
+    )
     return redirect(url_for("admin.chats_detalle", public_id=public_id))
 
 
@@ -7798,6 +7836,10 @@ def chats_close(public_id):
     conversation.closed_at = utcnow()
     add_message(conversation, "system", "El agente cerró la conversación. Puedes volver al asistente cuando quieras.")
     db.session.commit()
+    _notify_chat_customer(
+        conversation, "Consulta finalizada",
+        "Puedes volver al asistente cuando quieras.",
+    )
     flash("Chat web cerrado.", "success")
     return redirect(url_for("admin.chats_index"))
 

@@ -760,8 +760,12 @@ def superadmin_required(f):
 @superadmin_required
 def dashboard():
     features = get_store_features()
-    hoy = date.today()
+    from commerce_readiness import commerce_readiness
+    from business_time import business_today, utc_naive_bounds
+    hoy = business_today()
     ayer = hoy - timedelta(days=1)
+    hoy_inicio, hoy_fin = utc_naive_bounds(hoy)
+    ayer_inicio, ayer_fin = utc_naive_bounds(ayer)
 
     total_clientes = User.query.filter_by(rol="cliente", activo=True).count()
     total_staff = User.query.filter(
@@ -771,10 +775,10 @@ def dashboard():
     total_pedidos = Order.query.count()
 
     ventas_hoy = db.session.query(func.sum(Caja.monto)).filter(
-        db.func.date(Caja.fecha) == hoy, Caja.tipo == "ingreso"
+        Caja.fecha >= hoy_inicio, Caja.fecha < hoy_fin, Caja.tipo == "ingreso"
     ).scalar() or 0
     ventas_ayer = db.session.query(func.sum(Caja.monto)).filter(
-        db.func.date(Caja.fecha) == ayer, Caja.tipo == "ingreso"
+        Caja.fecha >= ayer_inicio, Caja.fecha < ayer_fin, Caja.tipo == "ingreso"
     ).scalar() or 0
 
     ingresos_total = db.session.query(func.sum(Caja.monto)).filter(
@@ -844,7 +848,7 @@ def dashboard():
             )
             comision_hoy = float(
                 db.session.query(func.coalesce(func.sum(Order.service_commission_amount), 0))
-                .filter(Order.creado_en >= hoy)
+                .filter(Order.creado_en >= hoy_inicio, Order.creado_en < hoy_fin)
                 .filter(Order.estado.in_(["entregado", "listo", "en_ruta"]))
                 .scalar() or 0
             )
@@ -861,6 +865,7 @@ def dashboard():
         "comision_hoy": comision_hoy,
         "comision_mes": comision_mes,
     }
+    readiness = commerce_readiness()
 
     return render_template("superadmin/dashboard.html",
                            total_clientes=total_clientes,
@@ -879,6 +884,7 @@ def dashboard():
                            bot_status=bot_status,
                            brand_config=brand_config,
                            tienda_modo=tienda_context,
+                           readiness=readiness,
                            vertical_just_changed=session.pop("vertical_just_changed", None))
 
 

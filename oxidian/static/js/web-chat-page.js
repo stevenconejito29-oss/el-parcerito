@@ -7,6 +7,7 @@
   const resume = document.getElementById('wcp-resume');
   const agent = document.getElementById('wcp-agent');
   const orders = document.getElementById('wcp-orders');
+  const reorder = document.getElementById('wcp-reorder');
   const quick = [...document.querySelectorAll('[data-wcp-quick]')];
   if (!log || !form || !input) return;
   const csrf = document.querySelector('meta[name="ox-csrf-token"]')?.content || '';
@@ -67,6 +68,14 @@
       orders.append(card);
     });
   }
+  function renderReorder(row) {
+    if (!reorder) return;
+    reorder.replaceChildren(); reorder.hidden = !row;
+    if (!row) return;
+    const button = document.createElement('button');
+    button.type = 'button'; button.dataset.reorderId = row.id;
+    button.textContent = `↻ ${row.label}`; reorder.append(button);
+  }
   function render(data) {
     for (const message of data.messages || []) {
       if (log.querySelector(`[data-id="${message.id}"]`)) continue;
@@ -77,13 +86,14 @@
       log.append(node); last = Math.max(last, message.id || 0);
     }
     if (data.orders) renderOrders(data.orders);
+    if (Object.prototype.hasOwnProperty.call(data, 'reorder')) renderReorder(data.reorder);
     const state = data.conversation?.status || 'bot';
     const recognised = data.conversation?.customer_recognised;
     status.textContent = ({bot:recognised?'Asistente · pedidos de este dispositivo':'Asistente disponible',waiting_agent:'Esperando a una persona',active_agent:`Te atiende ${data.conversation?.assigned_agent || 'nuestro equipo'}`,closed:'Conversación finalizada'})[state] || 'Conectando…';
     const bot = state === 'bot'; resume.hidden = bot; agent.hidden = !bot;
     quick.forEach(button => { button.disabled = !bot; });
-    input.disabled = state === 'waiting_agent' || state === 'closed';
-    input.placeholder = state === 'waiting_agent' ? 'Puedes volver al asistente cuando quieras…' : 'Escribe tu pregunta…';
+    input.disabled = state === 'closed';
+    input.placeholder = state === 'waiting_agent' ? 'Añade información para el equipo…' : 'Escribe tu pregunta…';
     log.scrollTop = log.scrollHeight;
   }
   async function load() { try { render(await call(`/state?after=${last}`)); } catch (_) { status.textContent = 'Reconectando…'; } }
@@ -116,7 +126,7 @@
   }
   agent.addEventListener('click', () => requireSecondTap(agent, 'Confirmar atención humana', async () => { try { render(await call('/request-agent', {})); } catch (error) { status.textContent=error.message; } }));
   resume.addEventListener('click', () => requireSecondTap(resume, 'Confirmar vuelta al asistente', async () => { try { render(await call('/resume-bot', {})); input.disabled=false; } catch(error){status.textContent=error.message;} }));
-  orders?.addEventListener('click', async event => {
+  async function handleOrderAction(event) {
     const repeat=event.target.closest('[data-reorder-id]');
     if(repeat){repeat.disabled=true;try{const data=await call(`/orders/${repeat.dataset.reorderId}/reorder`,{});window.location.assign(data.redirect_url||'/carrito');}catch(error){status.textContent=error.message;repeat.disabled=false;}return;}
     const button=event.target.closest('[data-order-id]'); if(!button)return;
@@ -124,7 +134,9 @@
     if(!window.confirm(`¿Cancelar definitivamente el pedido ${number}?`))return;
     button.disabled=true;
     try{render(await call(`/orders/${button.dataset.orderId}/cancel`,{confirm:true}));}catch(error){status.textContent=error.message;button.disabled=false;}
-  });
+  }
+  orders?.addEventListener('click', handleOrderAction);
+  reorder?.addEventListener('click', handleOrderAction);
   syncViewport();
   window.visualViewport?.addEventListener('resize', syncViewport, {passive:true});
   window.visualViewport?.addEventListener('scroll', syncViewport, {passive:true});

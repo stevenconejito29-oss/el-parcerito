@@ -35,6 +35,8 @@ _INTENT_TERMS = {
     "cancel": {"cancelar", "cancelo", "anular", "anulo"},
     "tracking": {"estado", "seguimiento", "tracking", "repartidor", "demora", "tarda", "llega"},
     "delivery": {"delivery", "envio", "envios", "domicilio", "domicilios", "cobertura", "zona", "reparto"},
+    "delivery_schedule": {"franja", "franjas", "programar", "programado", "hora", "horas", "fecha"},
+    "favor": {"cruce", "favor", "mandado", "objeto", "paquete"},
     "loyalty": {"cafecito", "cafecitos", "punto", "puntos", "grano", "granitos", "canje", "canjear"},
     "hours": {"horario", "horarios", "abren", "abrir", "cierran", "cerrar", "abierto", "cerrado"},
     "payments": {"pago", "pagos", "pagar", "efectivo", "bizum", "tarjeta", "paypal"},
@@ -59,6 +61,8 @@ _INTENT_PHRASES = {
     "cancel": ("ya no lo quiero", "cancelar pedido", "anular pedido"),
     "tracking": ("donde esta mi pedido", "donde va mi pedido", "donde esta el repartidor", "cuanto falta"),
     "delivery": ("hacen envios", "llega a mi casa", "zona de entrega", "cuanto cuesta el envio"),
+    "delivery_schedule": ("elegir hora de entrega", "programar mi delivery", "entrega por franja", "elegir dia"),
+    "favor": ("hacer un cruce", "recoger algo y llevarlo", "llevar un paquete"),
     "payments": ("como se paga", "puedo pagar", "pago al recibir", "pago contra entrega"),
     "tutorial": ("como hago un pedido", "como usar la pagina", "como funciona la pagina"),
     "pickup": ("recoger en tienda", "recoger en el local", "pasar a buscar"),
@@ -70,7 +74,7 @@ _INTENT_PHRASES = {
 }
 
 _INTENT_ORDER = (
-    "human", "cancel", "tracking", "payments", "delivery", "pickup", "loyalty",
+    "human", "cancel", "tracking", "payments", "delivery_schedule", "favor", "delivery", "pickup", "loyalty",
     "hours", "notifications", "privacy", "allergens", "coupons", "changes",
     "availability", "receipt", "reorder", "tutorial", "catalog", "location", "greeting", "thanks",
 )
@@ -218,10 +222,25 @@ def knowledge_answer(question: str) -> str | None:
     return _replace_placeholders(best[1].respuesta) if best[0] >= 31 and best[1] else None
 
 
+def _visitor_order_tokens() -> dict[int, str]:
+    """Tokens válidos de pedidos asociados a la sesión firmada actual."""
+    raw = session.get("guest_order_tokens", {})
+    result: dict[int, str] = {}
+    if not isinstance(raw, dict):
+        return result
+    for key, slot in raw.items():
+        if not str(key).isdigit():
+            continue
+        token = str(slot.get("token") if isinstance(slot, dict) else slot or "").strip()
+        if token:
+            result[int(key)] = token
+    return result
+
+
 def visitor_orders() -> list[dict]:
     """Pedidos que este mismo navegador puede consultar o cancelar."""
-    slots = session.get("guest_order_tokens", {})
-    ids = [int(key) for key in slots if str(key).isdigit()]
+    tokens = _visitor_order_tokens()
+    ids = list(tokens)
     if not ids:
         return []
     # El chat es una bandeja operativa, no un historial: cancelados y
@@ -232,10 +251,7 @@ def visitor_orders() -> list[dict]:
     ).order_by(Order.creado_en.desc()).limit(10).all()
     result = []
     for order in rows:
-        slot = slots.get(str(order.id))
-        token = str(slot.get("token") if isinstance(slot, dict) else slot or "")
-        if not token:
-            continue
+        token = tokens[order.id]
         result.append({
             "id": order.id,
             "number": order.numero_pedido,
@@ -254,6 +270,19 @@ def visitor_orders() -> list[dict]:
             ),
         })
     return result
+
+
+def last_reorderable_order() -> dict | None:
+    """Última compra entregada autorizada, como CTA; no reabre el historial."""
+    ids = list(_visitor_order_tokens())
+    if not ids:
+        return None
+    order = Order.query.filter(
+        Order.id.in_(ids), Order.estado == "entregado",
+    ).order_by(Order.creado_en.desc()).first()
+    if not order:
+        return None
+    return {"id": order.id, "label": "Volver a pedir mi última compra"}
 
 
 def cancel_visitor_order(order_id: int) -> tuple[bool, str]:
@@ -277,7 +306,8 @@ def cancel_visitor_order(order_id: int) -> tuple[bool, str]:
 
 def reorder_visitor_order(order_id: int):
     """Reconstruye el carrito solo desde un pedido autorizado por esta sesión."""
-    if order_id not in {row["id"] for row in visitor_orders()}:
+    reorderable = last_reorderable_order()
+    if not reorderable or order_id != reorderable["id"]:
         return False, "No pudimos verificar ese pedido en este dispositivo.", None
     order = db.session.get(Order, order_id)
     if not order:
@@ -327,6 +357,18 @@ def _intent_answer(intent: str) -> str | None:
         return "Pulsa «Hablar con alguien» debajo del chat. Un agente continuará la conversación aquí mismo."
     if intent == "delivery":
         return ("Sí tenemos delivery. La cobertura, el coste y el tiempo se calculan con tu dirección en el carrito antes de confirmar; así siempre ves información actualizada." if features.get("delivery") else "El delivery no está disponible en este momento. Revisa en el carrito las modalidades activas.")
+    if intent == "delivery_schedule":
+        if not features.get("delivery"):
+            return "El delivery no está activo ahora mismo. La canasta te mostrará las modalidades realmente disponibles."
+        from delivery_mode_service import modos_delivery_activos
+        modes = modos_delivery_activos()
+        if modes["franjas"] and modes["inmediato"]:
+            return "Al finalizar la compra puedes elegir entrega lo antes posible o reservar un día y una franja con cupo. El resumen muestra tu elección antes de confirmar."
+        if modes["franjas"]:
+            return "El reparto funciona por franjas: en la canasta eliges el día y horario disponible antes de confirmar el pedido."
+        return "El reparto actual es inmediato: cocina prepara el pedido y sale en cuanto esté listo."
+    if intent == "favor":
+        return ("El Cruce sirve para pedir que recojamos algo en un punto A y lo llevemos a un punto B dentro de cobertura. Describes el encargo, propones un valor y eliges una oferta del rider; la app muestra límites y estado antes de confirmar." if features.get("favores") else "El servicio El Cruce no está activo en este momento.")
     if intent == "loyalty":
         return ("Con tus compras entregadas acumulas cafecitos. En la sección Cafecitos puedes consultar las recompensas y ver cuáles puedes canjear; la verificación final se realiza de forma segura al confirmar." if features.get("puntos") else "El programa de cafecitos no está activo en este momento.")
     if intent == "hours":

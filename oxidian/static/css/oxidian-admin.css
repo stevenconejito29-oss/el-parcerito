@@ -47,6 +47,17 @@
   padding: var(--oa-space-6) var(--oa-space-4);
   color: var(--col-text);
 }
+.oa-readiness{display:grid;gap:var(--oa-space-4);padding:var(--oa-space-4);border:1px solid var(--col-border);border-radius:var(--radius-3);background:var(--col-surface);box-shadow:var(--shadow-1)}
+.oa-readiness.is-ready{border-color:color-mix(in srgb,var(--theme-success) 42%,var(--col-border));background:color-mix(in srgb,var(--theme-success) 5%,var(--col-surface))}
+.oa-readiness.has-blockers{border-color:color-mix(in srgb,var(--theme-danger) 45%,var(--col-border));background:color-mix(in srgb,var(--theme-danger) 5%,var(--col-surface))}
+.oa-readiness__summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--oa-space-3)}
+.oa-readiness__summary h2{margin:0;color:var(--col-text);font-size:var(--oa-font-lg);line-height:1.2}.oa-readiness__summary p{margin:.2rem 0 0;color:var(--col-muted);font-size:var(--oa-font-xs)}
+.oa-readiness__icon{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;background:var(--col-elevated);color:var(--col-text);font-size:1.35rem;font-weight:950}
+.oa-readiness__checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--oa-space-2)}
+.oa-readiness__check{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.55rem;align-items:start;padding:.65rem;border:1px solid var(--col-border);border-radius:var(--radius-2);background:var(--col-elevated);color:var(--col-text);text-decoration:none}
+.oa-readiness__check>span{width:24px;height:24px;display:grid;place-items:center;border-radius:50%;font-weight:950}.oa-readiness__check div{display:grid;gap:.12rem}.oa-readiness__check strong{font-size:var(--oa-font-sm)}.oa-readiness__check small{color:var(--col-muted);font-size:var(--oa-font-xs);line-height:1.35}
+.oa-readiness__check.is-ok>span{background:var(--status-ok-soft);color:var(--status-ok-text)}.oa-readiness__check.is-warning>span{background:var(--status-warn-soft);color:var(--status-warn)}.oa-readiness__check.is-error>span{background:var(--status-err-soft);color:var(--status-err)}
+@media(max-width:640px){.oa-readiness__summary{grid-template-columns:auto minmax(0,1fr)}.oa-readiness__summary>.oa-btn{grid-column:1/-1;width:100%}.oa-readiness__checks{grid-template-columns:1fr}}
 @media (max-width: 720px) {
   .oa-page { padding: var(--oa-space-4) var(--oa-space-3); }
 }

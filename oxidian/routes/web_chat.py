@@ -1,12 +1,12 @@
 """API pública del chat web; identidad por token opaco guardado en sesión."""
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy.exc import IntegrityError
 
 from extensions import db, limiter
 from models import WebChatMessage
 from web_chat_service import (
     MAX_MESSAGE, add_message, bot_reply, conversation_for_visitor,
-    cancel_visitor_order, reorder_visitor_order, request_human, resume_bot, serialise_conversation,
+    cancel_visitor_order, last_reorderable_order, reorder_visitor_order, request_human, resume_bot, serialise_conversation,
     serialise_message, visitor_orders,
 )
 
@@ -30,7 +30,10 @@ def state():
         after = int(request.args.get("after", 0) or 0)
     except ValueError:
         after = 0
-    return jsonify({**_payload(conversation, after), "orders": visitor_orders()})
+    return jsonify({
+        **_payload(conversation, after), "orders": visitor_orders(),
+        "reorder": last_reorderable_order(),
+    })
 
 
 @web_chat_bp.post("/messages")
@@ -54,6 +57,7 @@ def send_message():
         resume_bot(conversation)
     try:
         add_message(conversation, "client", body, nonce=nonce)
+        assigned_agent_id = conversation.assigned_agent_id if conversation.status == "active_agent" else None
         learning = None
         if conversation.status == "bot":
             answer, source = bot_reply(body)
@@ -61,6 +65,18 @@ def send_message():
             if source in {"fallback", "groq"}:
                 learning = (source, answer)
         db.session.commit()
+        if assigned_agent_id:
+            try:
+                from push_service import notify_user
+                notify_user(
+                    assigned_agent_id, "💬 Nuevo mensaje del cliente",
+                    body[:120], url=f"/admin/chats/{conversation.public_id}",
+                    tag=f"web-chat-{conversation.public_id}", require_interaction=True,
+                )
+            except Exception:
+                # El mensaje ya está confirmado en BD. Push es un canal auxiliar
+                # y nunca debe hacer fallar ni duplicar la conversación.
+                current_app.logger.exception("No se pudo notificar el mensaje del chat web")
         if learning:
             from bot_learning_service import registrar_signal
             # Aprendizaje aislado: nunca decide ni revierte la conversación.

@@ -172,6 +172,17 @@ class WebChatTest(unittest.TestCase):
         self.assertIn("recogida", "\n".join(m["body"] for m in pickup["messages"]).lower())
         self.assertIn("canasta", "\n".join(m["body"] for m in coupon["messages"]).lower())
 
+    def test_delivery_schedule_and_cruce_are_explained_without_ai(self):
+        client = self.app.test_client()
+        scheduled = client.post("/api/web-chat/messages", json={
+            "message": "¿Puedo elegir una hora o franja de entrega?", "nonce": "slot-help",
+        }).get_json()
+        favor = client.post("/api/web-chat/messages", json={
+            "message": "¿Cómo funciona El Cruce para llevar un paquete?", "nonce": "cruce-help",
+        }).get_json()
+        self.assertIn("franja", "\n".join(m["body"] for m in scheduled["messages"]).lower())
+        self.assertIn("punto a", "\n".join(m["body"] for m in favor["messages"]).lower())
+
     def test_messages_require_json(self):
         response = self.app.test_client().post(
             "/api/web-chat/messages", data="message=hola",
@@ -215,7 +226,22 @@ class WebChatTest(unittest.TestCase):
         client = self.app.test_client()
         with client.session_transaction() as browser:
             browser["guest_order_tokens"] = {str(row.id): {"token": f"token-{row.id}"} for row in orders}
-        self.assertEqual(client.get("/api/web-chat/state").get_json()["orders"], [])
+        payload = client.get("/api/web-chat/state").get_json()
+        self.assertEqual(payload["orders"], [])
+        self.assertEqual(payload["reorder"]["id"], orders[1].id)
+
+    def test_empty_order_token_never_authorises_tracking_or_reorder(self):
+        customer = User(nombre="Cliente sin token", email="empty-token@test.invalid", rol="cliente", activo=True)
+        customer.set_password("irrelevant-test-password")
+        db.session.add(customer); db.session.flush()
+        order = Order(numero_pedido="WEB-EMPTY", cliente_id=customer.id, estado="entregado", subtotal=8, total=8, metodo_pago="efectivo")
+        db.session.add(order); db.session.commit()
+        client = self.app.test_client()
+        with client.session_transaction() as browser:
+            browser["guest_order_tokens"] = {str(order.id): {"token": ""}}
+        payload = client.get("/api/web-chat/state").get_json()
+        self.assertEqual(payload["orders"], [])
+        self.assertIsNone(payload["reorder"])
 
     def test_reorder_rejects_order_from_another_browser(self):
         customer = User(nombre="Cliente aislado", email="isolated@test.invalid", rol="cliente", activo=True)
