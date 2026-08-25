@@ -57,6 +57,7 @@
 }
 .df-slot-hora { font-weight: 800; font-size: 1rem; }
 .df-slot-meta { font-size: .78rem; color: var(--col-muted, #6b6b6b); }
+.df-slot-empty { color: var(--col-faint, var(--col-muted, #6b6b6b)); }
 .df-slot-actions {
   display: flex; gap: .35rem; margin-top: .35rem; flex-wrap: wrap;
 }
@@ -107,6 +108,9 @@
 .df-form-actions {
   grid-column: 1 / -1; display: flex; gap: .5rem; justify-content: flex-end;
 }
+.df-editor-heading { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.df-editor-heading h2 { margin: .1rem 0 0; color: var(--col-text, #24201d); font-size: 1.05rem; }
+.df-field-wide { grid-column: span 2; }
 
 .df-mode-card,
 .df-fee-summary {
@@ -154,6 +158,8 @@
   .df-fee-summary { grid-template-columns: 1fr; }
   .df-fee-summary p { grid-column: auto; }
   .df-form-actions, .df-form-actions .df-btn { width: 100%; }
+  .df-field-wide { grid-column: auto; }
+  .df-editor-heading { align-items: flex-start; }
 }
 
 /* Respect safe-area para iOS */

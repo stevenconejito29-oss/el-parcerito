@@ -47,6 +47,26 @@ NOTIF_CANAL = "whatsapp"
 NOTIF_EVENTO_EN_PUERTA = "delivery_en_puerta"
 
 
+def _validar_cierre(modo: str | None, valor: str | None) -> None:
+    if modo is None:
+        return
+    if modo not in CIERRE_MODOS:
+        raise ValueError(f"cierre_modo inválido: {modo}")
+    if modo == "minutos_antes":
+        try:
+            minutos = int(valor or "")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Indica los minutos de cierre antes de la franja") from exc
+        if not 0 <= minutos <= 24 * 60:
+            raise ValueError("Los minutos de cierre deben estar entre 0 y 1440")
+    if modo == "hora_fija":
+        try:
+            hh, mm = (int(part) for part in str(valor or "").split(":", 1))
+            time(hh, mm)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("La hora fija debe tener formato HH:MM") from exc
+
+
 def ahora_local_negocio() -> datetime:
     from business_time import business_timezone
     return datetime.now(business_timezone()).replace(tzinfo=None)
@@ -287,8 +307,13 @@ def crear_franja(
     cierre_valor: str | None = None,
     notas_admin: str | None = None,
 ) -> DeliverySlot:
+    from business_time import business_today
+    if fecha < business_today():
+        raise ValueError("No puedes crear una franja en una fecha pasada")
     if capacidad_max < 1:
         raise ValueError("capacidad_max debe ser >= 1")
+    if max_repartidores is not None and max_repartidores < 1:
+        raise ValueError("max_repartidores debe ser >= 1")
     if hora_fin <= hora_inicio:
         raise ValueError("hora_fin debe ser > hora_inicio")
     from schedule_service import franja_cabe_en_horario
@@ -306,8 +331,9 @@ def crear_franja(
             f"Ya hay {MAX_SALIDAS_DIARIAS} salidas activas el {fecha.isoformat()}. "
             "Desactiva una franja o ajusta una de las existentes."
         )
-    if cierre_modo is not None and cierre_modo not in CIERRE_MODOS:
-        raise ValueError(f"cierre_modo inválido: {cierre_modo}")
+    _validar_cierre(cierre_modo, cierre_valor)
+    if notas_admin is not None and len(str(notas_admin)) > 500:
+        raise ValueError("La nota interna no puede superar 500 caracteres")
     slot = DeliverySlot(
         fecha=fecha,
         hora_inicio=hora_inicio,
@@ -324,34 +350,56 @@ def crear_franja(
 
 
 def actualizar_franja(slot: DeliverySlot, **campos) -> DeliverySlot:
-    """Actualiza campos permitidos; ignora silenciosamente los desconocidos."""
+    """Actualiza una franja conservando cupos, horario y asignaciones válidas."""
     permitidos = {
-        "capacidad_max", "max_repartidores", "cierre_modo",
+        "fecha", "hora_inicio", "hora_fin", "capacidad_max", "max_repartidores", "cierre_modo",
         "cierre_valor", "activo", "notas_admin",
     }
-    for k, v in campos.items():
-        if k not in permitidos:
-            continue
-        if k == "activo" and v is True and not slot.activo:
-            salidas_activas = (
-                db.session.query(db.func.count(DeliverySlot.id))
-                .filter(
-                    DeliverySlot.fecha == slot.fecha,
-                    DeliverySlot.activo.is_(True),
-                )
-                .scalar()
-                or 0
+    desconocidos = set(campos) - permitidos
+    if desconocidos:
+        raise ValueError(f"campos no permitidos: {', '.join(sorted(desconocidos))}")
+    fecha = campos.get("fecha", slot.fecha)
+    hora_inicio = campos.get("hora_inicio", slot.hora_inicio)
+    hora_fin = campos.get("hora_fin", slot.hora_fin)
+    capacidad = campos.get("capacidad_max", slot.capacidad_max)
+    max_repartidores = campos.get("max_repartidores", slot.max_repartidores)
+    activo = campos.get("activo", slot.activo)
+    from business_time import business_today
+    if fecha < business_today():
+        raise ValueError("No puedes mover una franja a una fecha pasada")
+    if hora_fin <= hora_inicio:
+        raise ValueError("hora_fin debe ser > hora_inicio")
+    if capacidad < 1 or max_repartidores < 1:
+        raise ValueError("La capacidad y los repartidores deben ser mayores que cero")
+    pedidos_asignados = db.session.query(db.func.count(Order.id)).filter(Order.slot_id == slot.id).scalar() or 0
+    if capacidad < pedidos_asignados:
+        raise ValueError(f"La franja ya tiene {pedidos_asignados} pedidos y no puede reducirse por debajo de ese cupo")
+    asignaciones_activas = slot.repartidores.filter_by(liberado_en=None).count()
+    if max_repartidores < asignaciones_activas:
+        raise ValueError(f"La franja ya tiene {asignaciones_activas} riders asignados")
+    cierre_modo = campos.get("cierre_modo", slot.cierre_modo)
+    _validar_cierre(cierre_modo, campos.get("cierre_valor", slot.cierre_valor))
+    if "notas_admin" in campos and campos["notas_admin"] is not None and len(str(campos["notas_admin"])) > 500:
+        raise ValueError("La nota interna no puede superar 500 caracteres")
+    from schedule_service import franja_cabe_en_horario
+    cabe, motivo = franja_cabe_en_horario(fecha, hora_inicio, hora_fin)
+    if not cabe:
+        raise ValueError(motivo)
+    if activo and (not slot.activo or fecha != slot.fecha):
+        salidas_activas = (
+            db.session.query(db.func.count(DeliverySlot.id))
+            .filter(
+                DeliverySlot.id != slot.id,
+                DeliverySlot.fecha == fecha,
+                DeliverySlot.activo.is_(True),
             )
-            if salidas_activas >= MAX_SALIDAS_DIARIAS:
-                raise ValueError(
-                    f"Ya hay {MAX_SALIDAS_DIARIAS} salidas activas el "
-                    f"{slot.fecha.isoformat()}; no se puede reactivar esta franja."
-                )
-        if k == "capacidad_max" and v is not None and v < 1:
-            raise ValueError("capacidad_max debe ser >= 1")
-        if k == "cierre_modo" and v is not None and v not in CIERRE_MODOS:
-            raise ValueError(f"cierre_modo inválido: {v}")
-        setattr(slot, k, v)
+            .scalar()
+            or 0
+        )
+        if salidas_activas >= MAX_SALIDAS_DIARIAS:
+            raise ValueError(f"Ya hay {MAX_SALIDAS_DIARIAS} salidas activas el {fecha.isoformat()}")
+    for key, value in campos.items():
+        setattr(slot, key, value)
     db.session.flush()
     return slot
 

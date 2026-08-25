@@ -55,16 +55,16 @@ def cambiar_modo_delivery(modo: str, *, actor_id: int, ip: str | None = None) ->
     La autorización del actor se valida en la ruta; esta función concentra las
     invariantes compartidas y la auditoría.
     """
-    from datetime import date
     from extensions import db
     from models import AuditLog, DeliverySlot, Order, SiteConfig
+    from business_time import business_today
 
     selected = MODE_CONFIG.get(str(modo or "").strip().lower())
     if selected is None:
         raise ErrorPlanDelivery("Modo de reparto no válido.")
     if selected["franjas"]:
         future_slot = DeliverySlot.query.filter(
-            DeliverySlot.activo.is_(True), DeliverySlot.fecha >= date.today(),
+            DeliverySlot.activo.is_(True), DeliverySlot.fecha >= business_today(),
         ).first()
         if future_slot is None:
             raise ErrorPlanDelivery(

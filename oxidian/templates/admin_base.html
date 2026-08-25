@@ -338,7 +338,7 @@
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">Mi ruta</span>
         <a href="{{ url_for('repartidor.ruta') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🚴</span>Pedidos a entregar</a>
-        <a href="{{ url_for('repartidor.franjas_panel') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🕒</span>Franjas horarias</a>
+        {% if delivery_modes.franjas %}<a href="{{ url_for('repartidor.franjas_panel') }}" class="ox-sb-item"><span class="ox-sb-item-icon">🕒</span>Franjas horarias</a>{% endif %}
         <a href="{{ url_for('repartidor.mis_comisiones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">💰</span>Mis comisiones</a>
       </div>
 

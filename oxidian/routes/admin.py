@@ -8002,6 +8002,7 @@ def delivery_franjas_crear():
         hora_inicio = _parse_hora_hhmm(str(data["hora_inicio"]))
         hora_fin = _parse_hora_hhmm(str(data["hora_fin"]))
         capacidad_max = int(data["capacidad_max"])
+        max_repartidores = int(data.get("max_repartidores") or 1)
     except (KeyError, ValueError, TypeError) as exc:
         return jsonify({"error": f"payload inválido: {exc}"}), 400
     try:
@@ -8010,10 +8011,15 @@ def delivery_franjas_crear():
             hora_inicio=hora_inicio,
             hora_fin=hora_fin,
             capacidad_max=capacidad_max,
-            max_repartidores=data.get("max_repartidores"),
+            max_repartidores=max_repartidores,
             cierre_modo=data.get("cierre_modo"),
             cierre_valor=data.get("cierre_valor"),
             notas_admin=data.get("notas_admin"),
+        )
+        AuditLog.registrar(
+            current_user.id, "crear_franja_delivery", "delivery_slot",
+            recurso_id=slot.id, detalle=f"{fecha.isoformat()} {hora_inicio:%H:%M}-{hora_fin:%H:%M}",
+            ip=request.remote_addr,
         )
         db.session.commit()
     except ValueError as exc:
@@ -8034,11 +8040,30 @@ def delivery_franjas_actualizar(slot_id):
     slot = get_or_404(DeliverySlot, slot_id)
     data = request.get_json(silent=True) or {}
     try:
-        actualizar_franja(slot, **data)
+        normalizado = dict(data)
+        if "fecha" in normalizado:
+            normalizado["fecha"] = _parse_fecha_iso(str(normalizado["fecha"]))
+        if "hora_inicio" in normalizado:
+            normalizado["hora_inicio"] = _parse_hora_hhmm(str(normalizado["hora_inicio"]))
+        if "hora_fin" in normalizado:
+            normalizado["hora_fin"] = _parse_hora_hhmm(str(normalizado["hora_fin"]))
+        for field in ("capacidad_max", "max_repartidores"):
+            if field in normalizado:
+                normalizado[field] = int(normalizado[field])
+        if "activo" in normalizado and not isinstance(normalizado["activo"], bool):
+            raise ValueError("activo debe ser verdadero o falso")
+        actualizar_franja(slot, **normalizado)
+        AuditLog.registrar(
+            current_user.id, "editar_franja_delivery", "delivery_slot",
+            recurso_id=slot.id, detalle=", ".join(sorted(normalizado)), ip=request.remote_addr,
+        )
         db.session.commit()
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         db.session.rollback()
         return jsonify({"error": str(exc)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "ya existe una franja con esa fecha y horario"}), 409
     return jsonify(_slot_to_dict(slot))
 
 
@@ -8049,8 +8074,17 @@ def delivery_franjas_eliminar(slot_id):
     from models import DeliverySlot
 
     slot = get_or_404(DeliverySlot, slot_id)
-    tipo = eliminar_franja(slot)
-    db.session.commit()
+    try:
+        tipo = eliminar_franja(slot)
+        AuditLog.registrar(
+            current_user.id, "eliminar_franja_delivery", "delivery_slot",
+            recurso_id=slot_id, detalle=f"eliminacion={tipo}", ip=request.remote_addr,
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("No se pudo eliminar la franja %s", slot_id)
+        return jsonify({"error": "No se pudo eliminar la franja"}), 500
     return jsonify({"eliminado": tipo})
 
 
@@ -8066,6 +8100,7 @@ def delivery_franjas_panel():
     from store_config import get_store_value
     from schedule_service import configured_schedule, weekly_schedule_text
     from delivery_mode_service import modos_delivery_activos
+    from business_time import business_today
     try:
         default_max = int(get_store_value("delivery_franjas_max_repartidores_default", "1"))
     except (TypeError, ValueError):
@@ -8083,6 +8118,7 @@ def delivery_franjas_panel():
         modos_delivery=modos_delivery_activos(),
         batch_size=batch_size,
         max_weight_kg=max_weight_kg,
+        business_today_iso=business_today().isoformat(),
         can_switch_mode=current_user.rol == "super_admin",
         delivery_zone_count=ZonaEntrega.query.filter_by(activa=True).count(),
         delivery_fee_min=db.session.query(db.func.min(ZonaEntrega.precio_envio)).filter(ZonaEntrega.activa.is_(True)).scalar(),
@@ -8144,6 +8180,11 @@ def delivery_franjas_clonar():
         return jsonify({"error": f"payload inválido: {exc}"}), 400
     try:
         creadas = clonar_semana(origen, destino)
+        AuditLog.registrar(
+            current_user.id, "clonar_franjas_delivery", "delivery_slot",
+            detalle=f"origen={origen.isoformat()}; destino={destino.isoformat()}; creadas={creadas}",
+            ip=request.remote_addr,
+        )
         db.session.commit()
     except ValueError as exc:
         db.session.rollback()

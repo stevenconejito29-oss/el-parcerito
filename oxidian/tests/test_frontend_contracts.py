@@ -7,6 +7,28 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendContractsTest(unittest.TestCase):
+    def test_delivery_slots_have_complete_responsive_crud(self):
+        panel = (ROOT / "templates" / "admin" / "delivery_franjas.html").read_text(encoding="utf-8")
+        service = (ROOT / "delivery_slots_service.py").read_text(encoding="utf-8")
+        routes = (ROOT / "routes" / "admin.py").read_text(encoding="utf-8")
+        styles = (ROOT / "static" / "css" / "delivery-franjas.css").read_text(encoding="utf-8")
+        self.assertIn('data-act="editar"', panel)
+        self.assertIn('editingId ? "PATCH" : "POST"', panel)
+        self.assertIn('data-act="borrar"', panel)
+        self.assertIn('data-act="toggle"', panel)
+        self.assertIn('name="notas_admin"', panel)
+        self.assertIn('"fecha", "hora_inicio", "hora_fin"', service)
+        self.assertIn('"editar_franja_delivery"', routes)
+        self.assertIn("@media(max-width:420px)", styles)
+
+    def test_delivery_mode_is_shared_and_hidden_when_disabled_for_rider(self):
+        app = (ROOT / "app.py").read_text(encoding="utf-8")
+        sidebar = (ROOT / "templates" / "admin_base.html").read_text(encoding="utf-8")
+        rider = (ROOT / "routes" / "repartidor.py").read_text(encoding="utf-8")
+        self.assertIn('"delivery_modes": modos_delivery_activos()', app)
+        self.assertIn("{% if delivery_modes.franjas %}", sidebar)
+        self.assertIn("if not _franjas_modulo_activo():", rider)
+
     def test_staff_pwa_embeds_route_map_and_modules_hide_disabled_surfaces(self):
         route = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
         dashboard = (ROOT / "templates" / "superadmin" / "dashboard.html").read_text(encoding="utf-8")

@@ -17,6 +17,7 @@ from delivery_slots_service import (
     CIERRE_MODOS,
     ResultadoReserva,
     ResultadoRepartidor,
+    _validar_cierre,
     estado_operativo,
     franja_esta_cerrada,
 )
@@ -129,6 +130,26 @@ class EnumsAPITest(unittest.TestCase):
             "CERRADA", "INACTIVA", "NO_EXISTE",
         }
         self.assertEqual({e.name for e in ResultadoRepartidor}, esperados)
+
+
+class ValidacionCierreTest(unittest.TestCase):
+    def test_acepta_valores_validos(self):
+        _validar_cierre(None, None)
+        _validar_cierre("al_iniciar_siguiente", None)
+        _validar_cierre("minutos_antes", "30")
+        _validar_cierre("hora_fija", "13:45")
+
+    def test_rechaza_modo_y_valores_invalidos(self):
+        for modo, valor in (
+            ("desconocido", None),
+            ("minutos_antes", "-1"),
+            ("minutos_antes", "1441"),
+            ("hora_fija", "25:00"),
+            ("hora_fija", "texto"),
+        ):
+            with self.subTest(modo=modo, valor=valor):
+                with self.assertRaises(ValueError):
+                    _validar_cierre(modo, valor)
 
 
 if __name__ == "__main__":

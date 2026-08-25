@@ -12,6 +12,9 @@ from store_config import get_store_features, get_store_value
 def commerce_readiness() -> dict:
     features = get_store_features()
     checks: list[dict] = []
+    vertical = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").strip().lower()
+    if vertical not in {"comida", "producto"}:
+        vertical = "comida"
 
     def add(key, label, ok, detail, action=None, warning=False):
         checks.append({
@@ -23,9 +26,12 @@ def commerce_readiness() -> dict:
     add("brand", "Identidad de la tienda", bool(name),
         "Nombre comercial configurado." if name else "Falta el nombre comercial.", "superadmin.config")
 
-    products = Product.query.filter_by(activo=True).count()
+    products = Product.query.filter(
+        Product.activo.is_(True), Product.vertical.in_((vertical, "ambos")),
+    ).count()
     add("catalog", "Catálogo publicable", products > 0,
-        f"{products} producto(s) activo(s)." if products else "No hay productos activos.", "admin.productos")
+        f"{products} producto(s) activo(s) para el modo actual." if products
+        else "No hay productos activos para el modo actual.", "admin.productos")
 
     fulfillment = bool(features.get("delivery") or features.get("recogida"))
     add("fulfillment", "Forma de entrega", fulfillment,
@@ -45,7 +51,7 @@ def commerce_readiness() -> dict:
         modes = modos_delivery_activos()
         add("delivery_mode", "Modalidad de reparto", any(modes.values()),
             "Instantáneo y franjas apagados." if not any(modes.values()) else "Modalidad operativa configurada.", "admin.delivery_franjas_panel")
-        if modes.get("franjas") and not modes.get("inmediato"):
+        if modes.get("franjas"):
             try:
                 horizon = max(1, int(get_store_value("delivery_franjas_horizonte_cliente_dias", "7") or 7))
             except (TypeError, ValueError):
@@ -56,11 +62,19 @@ def commerce_readiness() -> dict:
                 DeliverySlot.fecha <= today + timedelta(days=horizon - 1),
             ).count()
             add("slots", "Franjas disponibles", slots > 0,
-                f"{slots} franja(s) próximas." if slots else "Solo operas por franjas y no hay salidas próximas.", "admin.delivery_franjas_panel")
+                f"{slots} franja(s) próximas." if slots else (
+                    "Solo operas por franjas y no hay salidas próximas."
+                    if not modes.get("inmediato")
+                    else "El modo mixto sigue vendiendo en inmediato, pero no ofrece franjas próximas."
+                ), "admin.delivery_franjas_panel",
+                warning=bool(modes.get("inmediato")))
 
-    kitchen = User.query.filter(User.rol.in_(("cocina", "preparacion")), User.activo.is_(True)).count()
+    preparation_roles = ("preparacion",) if vertical == "producto" else ("cocina", "preparacion")
+    kitchen = User.query.filter(User.rol.in_(preparation_roles), User.activo.is_(True)).count()
+    preparation_label = "preparación/almacén" if vertical == "producto" else "cocina/preparación"
     add("kitchen", "Equipo de preparación", kitchen > 0,
-        f"{kitchen} usuario(s) operativo(s)." if kitchen else "No hay usuarios activos de cocina/preparación.", "admin.usuarios")
+        f"{kitchen} usuario(s) operativo(s) de {preparation_label}." if kitchen
+        else f"No hay usuarios activos de {preparation_label} para el modo actual.", "admin.usuarios")
 
     support = User.query.filter(User.rol.in_(("admin", "super_admin")), User.activo.is_(True)).count()
     add("support", "Soporte web", support > 0,

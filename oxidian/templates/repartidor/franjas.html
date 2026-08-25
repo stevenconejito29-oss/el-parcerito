@@ -60,7 +60,7 @@
               ? `<span class="df-slot-meta">Disponible al comenzar la franja</span>` : "");
         const conteo = total > 0
           ? `<div class="df-slot-meta"><strong>${total} pedido${total===1?'':'s'}</strong>${listos>0?` · ${listos} listo${listos===1?'':'s'} para salir`:''}</div>`
-          : `<div class="df-slot-meta" style="color:#999">Sin pedidos aún</div>`;
+          : `<div class="df-slot-meta df-slot-empty">Sin pedidos aún</div>`;
         return `<div class="${clases.join(' ')}">
           <div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>
           <div class="df-slot-meta">

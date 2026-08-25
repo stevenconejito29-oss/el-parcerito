@@ -967,7 +967,7 @@ def toggle_vertical_preview():
     ).count()
     a_mostrar = Product.query.filter(
         Product.activo.is_(True),
-        Product.vertical == destino,
+        Product.vertical.in_((destino, "ambos")),
     ).count()
     return jsonify({
         "ok": True,
@@ -996,6 +996,29 @@ def toggle_vertical():
     override = (request.form.get("destino") or "").strip().lower()
     if override in ("comida", "producto"):
         destino = override
+    if destino == actual:
+        flash("La tienda ya está configurada en esa vertical.", "info")
+        return redirect(url_for("superadmin.dashboard"))
+    pedidos_activos = Order.query.filter(
+        Order.estado.in_(("pendiente", "armando", "listo", "en_ruta")),
+    ).count()
+    if pedidos_activos:
+        flash(
+            f"No puedes cambiar la vertical mientras haya {pedidos_activos} pedidos activos. "
+            "Finalízalos o cancélalos primero para no mezclar cocina y retail.",
+            "warning",
+        )
+        return redirect(url_for("superadmin.dashboard"))
+    from models import Product
+    productos_destino = Product.query.filter(
+        Product.activo.is_(True), Product.vertical.in_((destino, "ambos")),
+    ).count()
+    if not productos_destino:
+        flash(
+            "La vertical de destino no tiene productos activos. Publícalos antes de cambiar el modo de tienda.",
+            "warning",
+        )
+        return redirect(url_for("superadmin.dashboard"))
     SiteConfig.set(
         "TIPO_TIENDA", destino,
         user_id=current_user.id,

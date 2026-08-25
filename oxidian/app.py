@@ -1034,6 +1034,7 @@ def create_app(env="default"):
     @app.context_processor
     def inject_admin_feature_access():
         from models import SiteConfig
+        from delivery_mode_service import modos_delivery_activos
         tipo_tienda_context = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").strip().lower()
 
         def has_admin_feature(feature):
@@ -1062,7 +1063,11 @@ def create_app(env="default"):
                 "cliente": "Cliente",
             }
             return labels.get(role, str(role or "").replace("_", " ").title())
-        return {"has_admin_feature": has_admin_feature, "role_label": role_label}
+        return {
+            "has_admin_feature": has_admin_feature,
+            "role_label": role_label,
+            "delivery_modes": modos_delivery_activos(),
+        }
 
     # Blueprints
     from routes.auth import auth_bp

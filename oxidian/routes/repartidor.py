@@ -1179,6 +1179,9 @@ def franjas_panel():
     Datos cargados por JS desde franjas_listar (JSON). Si el módulo está
     apagado, la fetch devuelve 404 y la UI muestra el aviso correspondiente.
     """
+    if not _franjas_modulo_activo():
+        flash("El reparto por franjas no está activo. Tus entregas inmediatas siguen disponibles.", "info")
+        return redirect(url_for("repartidor.ruta"))
     return render_template("repartidor/franjas.html")
 
 
