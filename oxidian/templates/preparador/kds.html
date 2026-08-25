@@ -37,8 +37,18 @@
     padding:8px 14px; font-size:14px; font-weight:600; cursor:pointer;
   }
   #grid {
-    display:grid; gap:10px; padding:10px;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    display:grid; gap:12px; padding:10px;
+  }
+  .slot-group { min-width:0; }
+  .slot-head {
+    position:sticky; top:57px; z-index:5; display:flex; align-items:center;
+    justify-content:space-between; gap:10px; margin:0 0 8px; padding:8px 10px;
+    border:1px solid var(--line); border-radius:10px; background:#0f1720;
+  }
+  .slot-head strong { font-size:15px; }
+  .slot-head span { color:var(--muted); font-size:12px; }
+  .slot-orders {
+    display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));
   }
   .card {
     background:var(--panel); border:1px solid var(--line); border-radius:12px;
@@ -90,6 +100,16 @@
     pointer-events:none;
   }
   .toast.show { opacity:1; }
+  @media (max-width:360px) {
+    header { padding:8px; gap:7px; }
+    header h1 { font-size:17px; }
+    header .badge { padding:5px 8px; font-size:12px; }
+    header button { padding:8px; font-size:0; }
+    header button::first-letter { font-size:16px; }
+    #grid { padding:7px; }
+    .card { padding:10px; }
+    .num { font-size:21px; }
+  }
 </style>
 </head>
 <body>
@@ -172,7 +192,7 @@
       grid.innerHTML = '<div class="empty"><div class="big">✅</div><div>Sin pedidos en cola</div></div>';
       return;
     }
-    grid.innerHTML = pedidos.map(p => {
+    const card = p => {
       const mins = minutosDesde(p.creado);
       const hot = p.estado === 'pendiente' && mins >= 15;
       const items = p.items.map(it => {
@@ -190,7 +210,7 @@
              ${CSRF?`<input type="hidden" name="csrf_token" value="${CSRF}">`:''}
              <button class="btn listo" type="submit">✔ Listo</button>
            </form>`;
-      return `<article class="card ${p.estado} ${hot?'hot':''}">
+      return `<article class="card ${p.estado} ${hot?'hot':''}" data-slot-id="${p.slot ? esc(p.slot.id) : 'immediate'}">
         <div class="row">
           <span class="num">#${esc(p.numero)}</span>
           <span class="time">${esc(p.creado_hm)}</span>
@@ -199,12 +219,26 @@
         <div class="row" style="gap:6px;flex-wrap:wrap;">
           <span class="tag ${tipo}">${esc(tipo)}</span>
           ${p.mio?'<span class="tag mio">mío</span>':''}
-          ${p.sin_asignar?'<span class="tag" style="background:#3f2d10;color:#fde68a;">sin asignar</span>':''}
+          ${p.slot?`<span class="tag mio">${esc(p.slot.hora_inicio)}–${esc(p.slot.hora_fin)}</span>`:''}
+          ${p.sin_asignar?'<span class="tag">sin asignar</span>':''}
         </div>
         <ul class="items">${items}</ul>
         ${p.notas?`<div class="note">📝 ${esc(p.notas)}</div>`:''}
         <div class="actions">${accion}</div>
       </article>`;
+    };
+    const groups = new Map();
+    pedidos.forEach(p => {
+      const key = p.slot ? `${p.slot.fecha}T${p.slot.hora_inicio}` : '0-immediate';
+      if (!groups.has(key)) groups.set(key, {slot:p.slot, pedidos:[]});
+      groups.get(key).pedidos.push(p);
+    });
+    grid.innerHTML = [...groups.entries()].sort(([a],[b]) => a.localeCompare(b)).map(([, group]) => {
+      const title = group.slot
+        ? `Salida ${esc(group.slot.hora_inicio)}–${esc(group.slot.hora_fin)}`
+        : 'Ahora · pedidos inmediatos';
+      const date = group.slot ? esc(group.slot.fecha) : 'Preparar por orden de llegada';
+      return `<section class="slot-group"><header class="slot-head"><strong>${title}</strong><span>${date} · ${group.pedidos.length}</span></header><div class="slot-orders">${group.pedidos.map(card).join('')}</div></section>`;
     }).join('');
   }
 

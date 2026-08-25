@@ -318,13 +318,15 @@ def kds():
 
 def _kds_cola_del_usuario():
     """Pedidos pendientes+armando visibles para el usuario, filtrados por rol."""
-    _eager = joinedload(Order.items)
+    # ``Order.items`` es una relación dynamic y no admite joinedload; el slot
+    # sí se precarga porque KDS lo usa para agrupar cada salida.
+    _eager = (joinedload(Order.slot),)
     if _es_admin_operativo():
-        base = Order.query.options(_eager).filter(
+        base = Order.query.options(*_eager).filter(
             Order.estado.in_(("pendiente", "armando"))
         )
     else:
-        base = Order.query.options(_eager).filter(
+        base = Order.query.options(*_eager).filter(
             Order.estado.in_(("pendiente", "armando")),
             db.or_(
                 Order.preparador_id == current_user.id,
@@ -361,6 +363,12 @@ def kds_data():
             "tipo": (p.tipo_entrega_cliente or "recogida"),
             "mio": bool(p.preparador_id == current_user.id),
             "sin_asignar": p.preparador_id is None,
+            "slot": ({
+                "id": p.slot.id,
+                "fecha": p.slot.fecha.isoformat(),
+                "hora_inicio": p.slot.hora_inicio.strftime("%H:%M"),
+                "hora_fin": p.slot.hora_fin.strftime("%H:%M"),
+            } if p.slot else None),
             "items": items,
         })
     resp = jsonify({
@@ -383,19 +391,21 @@ def pedidos():
         else "programado" if current_user.rol == "preparacion"
         else "completo"
     )
-    _eager = joinedload(Order.zona)
+    _eager = (
+        joinedload(Order.zona), joinedload(Order.slot), joinedload(Order.cliente),
+    )
     if _es_admin_operativo():
-        pendientes = Order.query.options(_eager).filter_by(estado="pendiente").order_by(Order.creado_en).all()
-        armando = Order.query.options(_eager).filter_by(estado="armando").order_by(Order.creado_en).all()
+        pendientes = Order.query.options(*_eager).filter_by(estado="pendiente").order_by(Order.creado_en).all()
+        armando = Order.query.options(*_eager).filter_by(estado="armando").order_by(Order.creado_en).all()
     else:
-        pendientes = Order.query.options(_eager).filter(
+        pendientes = Order.query.options(*_eager).filter(
             Order.estado == "pendiente",
             db.or_(
                 Order.preparador_id == current_user.id,
                 Order.preparador_id.is_(None),
             ),
         ).order_by(Order.creado_en).all()
-        armando = Order.query.options(_eager).filter_by(
+        armando = Order.query.options(*_eager).filter_by(
             estado="armando",
             preparador_id=current_user.id,
         ).order_by(Order.creado_en).all()

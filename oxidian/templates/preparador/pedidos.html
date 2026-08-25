@@ -780,19 +780,28 @@
 
 {% if current_user.rol != 'preparacion' or vista_encargos == 'pedidos' %}
 {% if franjas_cocina %}
-<section aria-labelledby="franjas-cocina-title">
+<section class="prep-slot-planner" aria-labelledby="franjas-cocina-title" data-prep-slot-planner>
   <div class="prep-section-head" data-kind="ahora">
-    <div><h2 id="franjas-cocina-title">Salidas por franja</h2><p class="prep-section-sub">Marcha y empaca cada salida sin mezclar horarios.</p></div>
+    <div><h2 id="franjas-cocina-title">Plan de salidas</h2><p class="prep-section-sub">Elige una salida y trabaja únicamente sus pedidos.</p></div>
     <span class="prep-section-count">{{ franjas_cocina|length }}</span>
   </div>
-  <div class="prep-slot-strip">
+  <div class="prep-slot-strip" role="toolbar" aria-label="Filtrar pedidos por salida">
+    <button type="button" class="prep-slot-card is-active" data-prep-slot-filter="all" aria-pressed="true">
+      <span class="prep-slot-card__time"><span>Todo el turno</span><small>{{ pendientes|length + armando|length }}</small></span>
+      <span class="prep-slot-card__stats">Inmediatos y franjas</span>
+    </button>
+    <button type="button" class="prep-slot-card" data-prep-slot-filter="immediate" aria-pressed="false">
+      <span class="prep-slot-card__time"><span>Ahora</span><small>Sin franja</small></span>
+      <span class="prep-slot-card__stats">Pedidos inmediatos</span>
+    </button>
     {% for resumen in franjas_cocina %}
-    <article class="prep-slot-card">
+    <button type="button" class="prep-slot-card" data-prep-slot-filter="{{ resumen.slot.id }}" aria-pressed="false">
       <div class="prep-slot-card__time"><span>{{ resumen.slot.hora_inicio.strftime('%H:%M') }}–{{ resumen.slot.hora_fin.strftime('%H:%M') }}</span><small>{{ resumen.slot.fecha.strftime('%d/%m') }}</small></div>
-      <div class="prep-slot-card__stats"><b>{{ resumen.pendientes }} por marchar</b><b>{{ resumen.armando }} preparando</b></div>
-    </article>
+      <div class="prep-slot-card__stats"><b>{{ resumen.pendientes }} por iniciar</b><b>{{ resumen.armando }} preparando</b></div>
+    </button>
     {% endfor %}
   </div>
+  <p class="prep-slot-result" data-prep-slot-result aria-live="polite">Mostrando todo el turno.</p>
 </section>
 {% endif %}
 <div class="work-board">
@@ -813,7 +822,7 @@
   <div class="work-list">
 
   {% for pedido in pendientes %}
-  <article class="work-card is-warn motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+  <article class="work-card is-warn motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}" data-prep-slot-id="{{ pedido.slot_id or 'immediate' }}">
       <div class="work-order-head">
         <div>
           <span class="work-order-code">{{ pedido.numero_pedido }}</span>
@@ -961,7 +970,7 @@
       <div class="work-list">
       {% for pedido in _grupo %}
   {%- set fecha_ent = pedido.fecha_entrega_programada -%}
-  <article class="work-card is-warn motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+  <article class="work-card is-warn motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}" data-prep-slot-id="{{ pedido.slot_id or 'immediate' }}"
            style="border-left:3px solid color-mix(in srgb,var(--prep-programado) 55%,transparent)">
       <div class="work-order-head">
         <div>
@@ -1073,7 +1082,7 @@
   <div class="work-list">
 
   {% for pedido in armando %}
-  <article class="work-card work-card--tight is-info motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}">
+  <article class="work-card work-card--tight is-info motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}" data-prep-slot-id="{{ pedido.slot_id or 'immediate' }}">
       <div class="work-order-head">
         <span class="work-order-code is-info">{{ pedido.numero_pedido }}</span>
         <div class="work-time-stack">
@@ -1348,6 +1357,48 @@ document.querySelectorAll('.js-availability-form').forEach(form => {
     }
   });
 });
+
+// Plan de salidas: una misma fuente de pedidos, distintas vistas operativas.
+// El filtro es únicamente de presentación; las autorizaciones y transiciones
+// continúan en el servidor y cada pedido conserva su slot_id real.
+(function initPrepSlotPlanner() {
+  const planner = document.querySelector('[data-prep-slot-planner]');
+  if (!planner) return;
+  const buttons = Array.from(planner.querySelectorAll('[data-prep-slot-filter]'));
+  const cards = Array.from(document.querySelectorAll('[data-prep-slot-id]'));
+  const result = planner.querySelector('[data-prep-slot-result]');
+  const storageKey = 'oxidian:prep-slot-filter';
+
+  function applyFilter(filter) {
+    let visible = 0;
+    cards.forEach(card => {
+      const show = filter === 'all' || card.dataset.prepSlotId === filter;
+      card.hidden = !show;
+      if (show) visible += 1;
+    });
+    document.querySelectorAll('.work-lane').forEach(lane => {
+      const laneCards = Array.from(lane.querySelectorAll('[data-prep-slot-id]'));
+      lane.dataset.filterEmpty = String(Boolean(laneCards.length && laneCards.every(card => card.hidden)));
+    });
+    buttons.forEach(button => {
+      const active = button.dataset.prepSlotFilter === filter;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    const activeButton = buttons.find(button => button.dataset.prepSlotFilter === filter);
+    if (result) result.textContent = `${activeButton?.querySelector('.prep-slot-card__time span')?.textContent || 'Turno'} · ${visible} pedido${visible === 1 ? '' : 's'}.`;
+    try { sessionStorage.setItem(storageKey, filter); } catch (_) {}
+  }
+
+  planner.addEventListener('click', event => {
+    const button = event.target.closest('[data-prep-slot-filter]');
+    if (button) applyFilter(button.dataset.prepSlotFilter);
+  });
+  let initial = 'all';
+  try { initial = sessionStorage.getItem(storageKey) || 'all'; } catch (_) {}
+  if (!buttons.some(button => button.dataset.prepSlotFilter === initial)) initial = 'all';
+  applyFilter(initial);
+})();
 
 // ── Checkboxes por item para tachar mental durante la preparación ──
 document.querySelectorAll('[data-item-check]').forEach(cb => {

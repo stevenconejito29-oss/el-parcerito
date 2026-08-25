@@ -29,6 +29,20 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("{% if delivery_modes.franjas %}", sidebar)
         self.assertIn("if not _franjas_modulo_activo():", rider)
 
+    def test_operational_roles_prioritize_slots_and_small_phone_layout(self):
+        kitchen = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")
+        rider = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
+        styles = (ROOT / "static" / "css" / "operational-roles.css").read_text(encoding="utf-8")
+
+        self.assertIn("data-prep-slot-planner", kitchen)
+        self.assertIn("data-prep-slot-filter", kitchen)
+        self.assertIn("data-prep-slot-id", kitchen)
+        self.assertIn("oxidian:prep-slot-filter", kitchen)
+        self.assertIn("{% if delivery_modes.franjas %}", rider)
+        self.assertIn("repartidor.franjas_panel", rider)
+        self.assertIn(".route-multi-bar__help", styles)
+        self.assertIn("@media (max-width: 360px)", styles)
+
     def test_staff_pwa_embeds_route_map_and_modules_hide_disabled_surfaces(self):
         route = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
         dashboard = (ROOT / "templates" / "superadmin" / "dashboard.html").read_text(encoding="utf-8")
@@ -597,12 +611,19 @@ class FrontendContractsTest(unittest.TestCase):
         template = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(
             encoding="utf-8"
         )
+        kds = (ROOT / "templates" / "preparador" / "kds.html").read_text(encoding="utf-8")
         route = (ROOT / "routes" / "preparador.py").read_text(encoding="utf-8")
 
         self.assertNotIn("new EventSource", template)
         self.assertNotIn("stream_with_context", route)
         self.assertIn("document.visibilityState", template)
         self.assertIn('"signature": _cola_signature()', route)
+        self.assertIn('"slot": ({', route)
+        self.assertNotIn("joinedload(Order.items)", route)
+        self.assertIn("joinedload(Order.slot)", route)
+        self.assertIn(".slot-group", kds)
+        self.assertIn('data-slot-id="${p.slot', kds)
+        self.assertIn("Ahora · pedidos inmediatos", kds)
 
     def test_mobile_navigation_uses_one_configurable_contrast_pair(self):
         tokens = (ROOT / "static" / "css" / "tokens.css").read_text(encoding="utf-8")

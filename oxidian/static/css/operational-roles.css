@@ -137,6 +137,50 @@ body.operational-view .work-kpis {
   grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)) !important;
   gap: .6rem;
 }
+
+/* Selector operativo de salidas: filtra la cola sin duplicar pedidos. */
+.prep-slot-planner { margin-bottom: var(--op-space); }
+.prep-slot-planner .prep-section-head { margin-top: 0; }
+.prep-slot-card {
+  appearance: none;
+  min-height: 76px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  touch-action: manipulation;
+}
+.prep-slot-card:is(:hover,:focus-visible) {
+  border-color: color-mix(in srgb, var(--brand-primary) 62%, var(--op-line));
+  outline: none;
+}
+.prep-slot-card.is-active {
+  border-color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 11%, var(--op-surface));
+  box-shadow: inset 0 0 0 1px var(--brand-primary);
+}
+.prep-slot-result {
+  margin: -.35rem 0 .55rem;
+  color: var(--col-muted);
+  font-size: .75rem;
+  font-weight: 750;
+}
+.work-card[hidden], .work-lane[data-filter-empty="true"] { display: none !important; }
+
+/* Herramientas de lote del rider: una instrucción breve y acciones claras. */
+.route-multi-bar {
+  display: grid;
+  grid-template-columns: auto repeat(3, minmax(0, auto));
+  align-items: center;
+  gap: .5rem;
+  margin: .35rem 0 .75rem;
+  padding: .65rem;
+  border: 1px solid var(--op-line);
+  border-radius: var(--op-radius-sm);
+  background: color-mix(in srgb, var(--brand-primary) 7%, var(--op-surface));
+}
+.route-multi-bar__title { color: var(--col-text); font-size: .82rem; font-weight: 900; }
+.route-multi-bar__help { grid-column: 1 / -1; color: var(--col-muted); font-size: .72rem; }
+.route-multi-bar--active { background: color-mix(in srgb, var(--status-info) 7%, var(--op-surface)); }
 body.operational-view .work-kpi {
   min-height: 94px;
   padding: .75rem .85rem !important;
@@ -358,6 +402,39 @@ html[data-delivery-theme="dark"] body.operational-view .work-hero {
   body.operational-view .work-action-row.work-cta-group {
     grid-template-columns: minmax(0, 1fr) !important;
   }
+}
+
+@media (max-width: 520px) {
+  body.operational-view .work-area { padding-inline: .35rem; }
+  body.operational-view .work-hero {
+    display: flex !important;
+    align-items: center;
+    gap: .55rem;
+    padding: .6rem .7rem !important;
+  }
+  body.operational-view .work-hero .work-subtitle { display: none; }
+  body.operational-view .work-hero .work-title { font-size: 1.05rem !important; }
+  body.operational-view .work-hero .work-eyebrow { font-size: .58rem; }
+  body.operational-view .work-actions-top { margin-left: auto; }
+  body.operational-view .work-actions-top .work-btn { min-height: 42px; padding-inline: .65rem; }
+  body.operational-view .work-kpis { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  body.operational-view .work-kpi { min-height: 72px; padding: .55rem .65rem !important; }
+  body.operational-view .work-kpi strong { font-size: 1.3rem !important; }
+  body.operational-view .work-kpi small { display: none; }
+  .prep-slot-strip { margin-inline: -.35rem; padding-inline: .35rem; }
+  .prep-slot-card { flex-basis: min(210px, 68vw); min-height: 70px; }
+  .route-multi-bar { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .route-multi-bar__title, .route-multi-bar__help { grid-column: 1 / -1; }
+  .route-multi-bar form, .route-multi-bar .work-btn { width: 100%; }
+  .route-multi-bar form .work-btn { width: 100%; }
+}
+
+@media (max-width: 360px) {
+  body.operational-view .work-area { padding-inline: .2rem; }
+  body.operational-view .work-employee-card { grid-template-columns: 34px minmax(0,1fr); }
+  body.operational-view .work-availability-button { grid-column: 1 / -1; width: 100%; min-width: 0; }
+  .route-multi-bar { grid-template-columns: minmax(0,1fr); }
+  .route-multi-bar > * { grid-column: 1 !important; }
 }
 
 @media (max-width: 560px) {

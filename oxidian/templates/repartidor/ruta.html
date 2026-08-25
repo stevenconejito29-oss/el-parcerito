@@ -242,6 +242,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
 
 <nav class="rider-mission-switch" aria-label="Tipos de trabajo">
   <a class="is-current" href="{{ url_for('repartidor.ruta') }}"><i>🛍️</i><span><b>Pedidos</b><small>{{ en_ruta|length }} en ruta · {{ listos_count }} listos</small></span></a>
+  {% if delivery_modes.franjas %}<a href="{{ url_for('repartidor.franjas_panel') }}"><i>🕒</i><span><b>Franjas</b><small>Salidas programadas</small></span></a>{% endif %}
   <a href="{{ url_for('repartidor.favores') }}"><i>🤝</i><span><b>El Cruce</b><small>{{ cruces_activos }} activos · {{ cruces_abiertos }} disponibles</small></span></a>
 </nav>
 
@@ -364,8 +365,8 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
        una única ruta. Los checkboxes de cada card se asocian a este form
        vía el atributo `form=` (HTML5) sin necesidad de anidar formularios. #}
     {% if listos_count and listos_count > 1 %}
-    <div class="route-multi-bar" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.5rem 0;padding:.5rem;border-radius:.5rem;background:color-mix(in srgb,var(--brand-primary) 6%,transparent)">
-      <span style="font-weight:600">🗺️ Ruta múltiple:</span>
+    <div class="route-multi-bar">
+      <span class="route-multi-bar__title">🗺️ Armar una ruta</span>
       <form id="ruta-tomar-form" method="POST"
             action="{{ url_for('repartidor.tomar_multiples') }}" style="display:inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -379,7 +380,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
       <button type="button" class="work-btn work-btn-info" data-open-maps-route="listos">
         🧭 Ver ruta aquí
       </button>
-      <span class="text-sm text-muted" style="margin-left:auto">Marca los pedidos de tu ruta y elige la acción.</span>
+      <span class="route-multi-bar__help">Marca hasta el límite de tu salida y elige una acción.</span>
     </div>
     {% endif %}
     <div class="work-list">
@@ -599,12 +600,12 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
       <span class="work-count">{{ en_ruta|length }}</span>
     </div>
     {% if en_ruta|length > 1 %}
-    <div class="route-multi-bar" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.25rem 0 .75rem;padding:.55rem .7rem;border-radius:.55rem;background:color-mix(in srgb,var(--brand-accent,#003087) 8%,transparent);border:1px solid color-mix(in srgb,var(--brand-accent,#003087) 22%,transparent)">
-      <span style="font-weight:700">🗺️ Ruta múltiple ({{ en_ruta|length }} paradas):</span>
+    <div class="route-multi-bar route-multi-bar--active">
+      <span class="route-multi-bar__title">🗺️ Ruta · {{ en_ruta|length }} paradas</span>
       <button type="button" class="work-btn work-btn-info" data-open-maps-route="en_ruta">
         🧭 Ver ruta completa
       </button>
-      <span class="text-sm text-muted" style="margin-left:auto">Orden vial con tráfico; si el servicio no responde se usa proximidad.</span>
+      <span class="route-multi-bar__help">Orden vial con tráfico; usa proximidad si el servicio no responde.</span>
     </div>
     {% endif %}
     <div class="work-list">
