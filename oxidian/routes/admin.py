@@ -7904,11 +7904,6 @@ def _delivery_franjas_activo() -> bool:
     return str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
 
 
-def _abort_si_modulo_apagado():
-    if not _delivery_franjas_activo():
-        abort(404)
-
-
 def _parse_fecha_iso(valor: str) -> date:
     return datetime.strptime(valor, "%Y-%m-%d").date()
 
@@ -7937,11 +7932,11 @@ def _slot_to_dict(slot) -> dict:
 @admin_bp.route("/delivery/franjas", methods=["GET"])
 @admin_required
 def delivery_franjas_listar():
-    _abort_si_modulo_apagado()
     from delivery_slots_service import listar_franjas_admin
     from store_config import get_store_value
+    from business_time import business_today
 
-    hoy = date.today()
+    hoy = business_today()
     try:
         horizonte = int(get_store_value("delivery_franjas_horizonte_admin_dias", "14"))
     except (TypeError, ValueError):
@@ -7958,7 +7953,6 @@ def delivery_franjas_listar():
 @admin_bp.route("/delivery/franjas", methods=["POST"])
 @admin_required
 def delivery_franjas_crear():
-    _abort_si_modulo_apagado()
     from delivery_slots_service import crear_franja
 
     data = request.get_json(silent=True) or {}
@@ -7993,7 +7987,6 @@ def delivery_franjas_crear():
 @admin_bp.route("/delivery/franjas/<int:slot_id>", methods=["PATCH"])
 @admin_required
 def delivery_franjas_actualizar(slot_id):
-    _abort_si_modulo_apagado()
     from delivery_slots_service import actualizar_franja
     from models import DeliverySlot
 
@@ -8011,7 +8004,6 @@ def delivery_franjas_actualizar(slot_id):
 @admin_bp.route("/delivery/franjas/<int:slot_id>", methods=["DELETE"])
 @admin_required
 def delivery_franjas_eliminar(slot_id):
-    _abort_si_modulo_apagado()
     from delivery_slots_service import eliminar_franja
     from models import DeliverySlot
 
@@ -8037,12 +8029,19 @@ def delivery_franjas_panel():
         default_max = int(get_store_value("delivery_franjas_max_repartidores_default", "1"))
     except (TypeError, ValueError):
         default_max = 1
+    try:
+        batch_size = max(1, min(10, int(get_store_value("delivery_franjas_pedidos_por_salida", "3") or 3)))
+        max_weight_kg = max(1, min(50, float(get_store_value("delivery_franjas_peso_max_salida_kg", "12") or 12)))
+    except (TypeError, ValueError):
+        batch_size, max_weight_kg = 3, 12
     return render_template(
         "admin/delivery_franjas.html",
         modulo_activo=_delivery_franjas_activo(),
         default_max_repartidores=default_max,
         horario_apertura=weekly_schedule_text(configured_schedule()),
         modos_delivery=modos_delivery_activos(),
+        batch_size=batch_size,
+        max_weight_kg=max_weight_kg,
     )
 
 
@@ -8067,10 +8066,29 @@ def delivery_modo_actualizar():
     return redirect(url_for("admin.delivery_franjas_panel"))
 
 
+@admin_bp.route("/delivery/franjas/limites", methods=["POST"])
+@admin_required
+def delivery_franjas_limites():
+    """Configura la mochila sin incrustar límites en las interfaces."""
+    try:
+        cantidad = int(request.form.get("pedidos_por_salida", ""))
+        peso = float(request.form.get("peso_max_kg", ""))
+    except (TypeError, ValueError):
+        flash("Revisa la cantidad y el peso máximo.", "danger")
+        return redirect(url_for("admin.delivery_franjas_panel"))
+    if not 1 <= cantidad <= 10 or not 1 <= peso <= 50:
+        flash("La salida admite 1–10 pedidos y 1–50 kg.", "danger")
+        return redirect(url_for("admin.delivery_franjas_panel"))
+    SiteConfig.set("delivery_franjas_pedidos_por_salida", str(cantidad), current_user.id)
+    SiteConfig.set("delivery_franjas_peso_max_salida_kg", str(peso), current_user.id)
+    db.session.commit()
+    flash("Capacidad operativa actualizada.", "success")
+    return redirect(url_for("admin.delivery_franjas_panel"))
+
+
 @admin_bp.route("/delivery/franjas/clonar", methods=["POST"])
 @admin_required
 def delivery_franjas_clonar():
-    _abort_si_modulo_apagado()
     from delivery_slots_service import clonar_semana
 
     data = request.get_json(silent=True) or {}

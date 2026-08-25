@@ -83,6 +83,12 @@
   background: color-mix(in srgb, var(--col-text) 8%, transparent);
   color: var(--col-text);
 }
+.prep-slot-strip{display:flex;gap:.55rem;overflow-x:auto;scroll-snap-type:x proximity;padding:.2rem .05rem .7rem;margin-bottom:.75rem}
+.prep-slot-card{scroll-snap-align:start;flex:0 0 min(280px,82vw);display:grid;gap:.3rem;padding:.75rem;border-radius:.8rem;background:var(--col-surface);border:1px solid var(--col-border);border-left:4px solid var(--brand-primary);color:var(--col-text)}
+.prep-slot-card__time{display:flex;justify-content:space-between;gap:.7rem;align-items:center;font-weight:900}
+.prep-slot-card__time small{color:var(--col-muted);font-weight:750}
+.prep-slot-card__stats{display:flex;gap:.4rem;flex-wrap:wrap;font-size:.72rem;color:var(--col-muted)}
+.prep-slot-card__stats b{padding:.22rem .45rem;border-radius:999px;background:var(--col-elevated);color:var(--col-text)}
 .prep-section-head[data-kind="ahora"] .prep-section-count {
   background: var(--prep-warning-soft); color: var(--prep-warning);
 }
@@ -773,6 +779,22 @@
 {% endif %}
 
 {% if current_user.rol != 'preparacion' or vista_encargos == 'pedidos' %}
+{% if franjas_cocina %}
+<section aria-labelledby="franjas-cocina-title">
+  <div class="prep-section-head" data-kind="ahora">
+    <div><h2 id="franjas-cocina-title">Salidas por franja</h2><p class="prep-section-sub">Marcha y empaca cada salida sin mezclar horarios.</p></div>
+    <span class="prep-section-count">{{ franjas_cocina|length }}</span>
+  </div>
+  <div class="prep-slot-strip">
+    {% for resumen in franjas_cocina %}
+    <article class="prep-slot-card">
+      <div class="prep-slot-card__time"><span>{{ resumen.slot.hora_inicio.strftime('%H:%M') }}–{{ resumen.slot.hora_fin.strftime('%H:%M') }}</span><small>{{ resumen.slot.fecha.strftime('%d/%m') }}</small></div>
+      <div class="prep-slot-card__stats"><b>{{ resumen.pendientes }} por marchar</b><b>{{ resumen.armando }} preparando</b></div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 <div class="work-board">
 
 {% if current_user.rol != 'preparacion' or pendientes %}

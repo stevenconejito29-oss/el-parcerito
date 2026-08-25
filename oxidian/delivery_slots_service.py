@@ -60,6 +60,43 @@ def pedidos_por_salida() -> int:
         return 3
 
 
+def peso_maximo_salida_gramos() -> int:
+    from store_config import get_store_value
+    try:
+        kg = float(get_store_value("delivery_franjas_peso_max_salida_kg", "12") or 12)
+    except (TypeError, ValueError):
+        kg = 12
+    return int(max(1, min(50, kg)) * 1000)
+
+
+def peso_estimado_pedido_gramos(pedido: Order) -> int:
+    """Peso trazable desde catálogo; usa un default configurable por unidad."""
+    from store_config import get_store_value
+    try:
+        por_defecto = max(1, int(get_store_value(
+            "delivery_producto_peso_default_gramos", "500"
+        ) or 500))
+    except (TypeError, ValueError):
+        por_defecto = 500
+    total = 0
+    for item in pedido.items:
+        peso = getattr(item.producto, "peso_gramos", None) or por_defecto
+        total += int(peso) * int(item.cantidad or 0)
+    return total
+
+
+def validar_tanda_seleccionada(pedidos: list[Order]) -> tuple[bool, str, int]:
+    """Contrato único de cantidad y peso usado por cualquier interfaz rider."""
+    if not pedidos:
+        return False, "Selecciona al menos un pedido.", 0
+    if len(pedidos) > pedidos_por_salida():
+        return False, f"Puedes llevar hasta {pedidos_por_salida()} pedidos por salida.", 0
+    peso = sum(peso_estimado_pedido_gramos(p) for p in pedidos)
+    if peso > peso_maximo_salida_gramos():
+        return False, "La selección supera el peso máximo configurado para la mochila.", peso
+    return True, "", peso
+
+
 def estado_operativo(slot: DeliverySlot, ahora: datetime | None = None) -> dict:
     ahora = ahora or ahora_local_negocio()
     inicio = datetime.combine(slot.fecha, slot.hora_inicio)

@@ -31,6 +31,16 @@
     </label>
     <div class="df-form-actions"><button class="df-btn df-btn-primary" type="submit">Aplicar modalidad</button></div>
   </form>
+  <form method="post" action="{{ url_for('admin.delivery_franjas_limites') }}" class="df-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Pedidos máximos por salida
+      <input type="number" name="pedidos_por_salida" min="1" max="10" value="{{ batch_size }}" required>
+    </label>
+    <label>Peso máximo de mochila (kg)
+      <input type="number" name="peso_max_kg" min="1" max="50" step="0.5" value="{{ max_weight_kg }}" required>
+    </label>
+    <div class="df-form-actions"><button class="df-btn df-btn-primary" type="submit">Guardar capacidad</button></div>
+  </form>
 
   <form id="df-form-crear" class="df-form" novalidate>
     <label>Fecha

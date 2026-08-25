@@ -213,6 +213,15 @@
        Si el módulo está apagado, /api/delivery/franjas-disponibles devuelve
        404 y el bloque queda oculto sin romper el layout. Solo se muestra
        cuando el cliente elige delivery. #}
+    {% if delivery_modes.inmediato and delivery_modes.franjas %}
+    <fieldset id="delivery-plan-choice" class="mb-3" hidden>
+      <legend class="text-sm font-extrabold mb-2">¿Cómo quieres recibirlo?</legend>
+      <div class="df-slot-list">
+        <label class="df-slot df-slot-selectable"><input type="radio" name="delivery_plan_ui" value="inmediato" checked> <strong>⚡ Lo antes posible</strong><small>Sale en cuanto esté preparado</small></label>
+        <label class="df-slot df-slot-selectable"><input type="radio" name="delivery_plan_ui" value="franja"> <strong>🕒 Elegir día y hora</strong><small>Reserva una franja disponible</small></label>
+      </div>
+    </fieldset>
+    {% endif %}
     <div id="franjas-slot-block" class="mb-3" hidden>
       <h3 class="text-sm font-extrabold mb-2 flex items-center gap-2" style="margin-top:.75rem">
         <span aria-hidden="true">🕒</span>
@@ -235,10 +244,26 @@
       const hidden = document.getElementById("franjas-slot-id");
       const label = document.getElementById("franjas-slot-selected");
       const radios = document.querySelectorAll('input[name="tipo_entrega_cliente"]');
+      const planChoice = document.getElementById("delivery-plan-choice");
+      const planRadios = document.querySelectorAll('input[name="delivery_plan_ui"]');
+      const inmediatoActivo = {{ delivery_modes.inmediato|tojson }};
+      const franjasActivo = {{ delivery_modes.franjas|tojson }};
+
+      function planSeleccionado() {
+        return document.querySelector('input[name="delivery_plan_ui"]:checked')?.value
+          || (franjasActivo && !inmediatoActivo ? "franja" : "inmediato");
+      }
 
       function updateVisibility() {
         const delivery = document.querySelector('input[name="tipo_entrega_cliente"]:checked')?.value === "delivery";
-        block.hidden = !delivery || !container.dataset.loaded;
+        if (planChoice) planChoice.hidden = !delivery;
+        const usarFranja = delivery && planSeleccionado() === "franja";
+        block.hidden = !usarFranja || !container.dataset.loaded;
+        if (!usarFranja) {
+          hidden.value = "";
+          label.hidden = true;
+          container.querySelectorAll(".df-slot-selected").forEach(x => x.classList.remove("df-slot-selected"));
+        }
       }
 
       async function cargar() {
@@ -269,9 +294,9 @@
         container.innerHTML = html;
         container.dataset.loaded = "1";
         updateVisibility();
-        // Preselecciona la sugerida automáticamente (cliente confirma al submit)
-        const sug = container.querySelector(".df-slot-sugerida");
-        if (sug) sug.click();
+        // En modo exclusivo por franjas proponemos la primera disponible. En
+        // modo mixto nunca cambiamos silenciosamente una entrega inmediata.
+        if (!inmediatoActivo) container.querySelector(".df-slot-sugerida")?.click();
       }
 
       container.addEventListener("click", (e) => {
@@ -285,10 +310,10 @@
       });
 
       radios.forEach(r => r.addEventListener("change", updateVisibility));
+      planRadios.forEach(r => r.addEventListener("change", updateVisibility));
       document.getElementById("form-checkout")?.addEventListener("submit", (event) => {
         const delivery = document.querySelector('input[name="tipo_entrega_cliente"]:checked')?.value === "delivery";
-        const inmediatoActivo = {{ delivery_modes.inmediato|tojson }};
-        if (delivery && !inmediatoActivo && !hidden.value) {
+        if (delivery && planSeleccionado() === "franja" && !hidden.value) {
           event.preventDefault();
           DF.msg(label, "Elige una franja disponible para continuar.", "err");
           block.hidden = false;

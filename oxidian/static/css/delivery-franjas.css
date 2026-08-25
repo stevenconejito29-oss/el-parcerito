@@ -116,6 +116,22 @@
 .df-msg-err   { background: #fbe9e9; color: #8a2a2a; }
 .df-msg-info  { background: #e6efff; color: #1c3a7a; }
 
+.df-batch-picker{margin-top:.65rem;padding:.7rem;border-radius:.75rem;background:var(--col-surface,#fff);border:1px solid var(--col-line,#d9d3ca)}
+.df-batch-orders{display:grid;gap:.45rem;margin:.6rem 0}
+.df-batch-order{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:.65rem;min-height:54px;padding:.55rem .65rem;border:1px solid var(--col-line,#d9d3ca);border-radius:.65rem;background:var(--col-elevated,#fafafa);cursor:pointer}
+.df-batch-order:has(input:checked){border-color:var(--brand-primary,#5a3a1e);box-shadow:0 0 0 2px color-mix(in srgb,var(--brand-primary,#5a3a1e) 18%,transparent)}
+.df-batch-order input{width:22px;height:22px;accent-color:var(--brand-primary,#5a3a1e)}
+.df-batch-order span{display:grid;min-width:0;color:var(--col-text,#24201d)}
+.df-batch-order small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--col-muted,#6b6b6b)}
+.df-batch-order b{white-space:nowrap;color:var(--col-text,#24201d)}
+.df-batch-summary{margin:.45rem 0;font-size:.78rem;font-weight:800;color:var(--col-text,#24201d)}
+
+@media(max-width:420px){
+  .df-container{padding-inline:.65rem}
+  .df-batch-order{grid-template-columns:auto minmax(0,1fr)}
+  .df-batch-order>b{grid-column:2}
+}
+
 /* Respect safe-area para iOS */
 @supports(padding: max(0px)) {
   .df-container {

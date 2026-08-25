@@ -55,10 +55,7 @@
         const op = s.operativa || {estado:'proxima', segundos:0};
         const tanda = Math.min(listos, s.pedidos_por_salida || 3);
         const batchBtn = (s.tomada_por_mi && listos > 0 && op.estado === 'activa')
-          ? `<form class="js-iniciar-tanda" data-tanda="${tanda}" method="POST" action="/repartidor/franjas/${s.id}/iniciar-reparto" style="display:inline;margin:0">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="df-btn df-btn-primary" type="submit">🚴 Salir con ${tanda}</button>
-            </form>`
+          ? `<button class="df-btn df-btn-primary" data-act="elegir" data-id="${s.id}">🎒 Elegir tanda</button>`
           : (s.tomada_por_mi && op.estado === 'proxima'
               ? `<span class="df-slot-meta">Disponible al comenzar la franja</span>` : "");
         const conteo = total > 0
@@ -72,6 +69,7 @@
           <div class="df-slot-meta"><strong>${op.estado === 'activa' ? 'Franja en curso' : op.estado === 'finalizada' ? 'Franja finalizada' : 'Próxima franja'}</strong>${op.estado === 'activa' ? ` · ${Math.ceil(op.segundos/60)} min restantes` : ''}</div>
           ${conteo}
           <div class="df-slot-actions">${btnRider} ${batchBtn}</div>
+          <div class="df-batch-picker" data-picker="${s.id}" hidden></div>
         </div>`;
       }).join("");
       return `<div class="df-day">
@@ -86,6 +84,10 @@
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const id = btn.dataset.id;
+    if (btn.dataset.act === "elegir") {
+      await cargarPedidos(id, btn);
+      return;
+    }
     const url = btn.dataset.act === "tomar"
       ? `/repartidor/franjas/${id}/tomar`
       : `/repartidor/franjas/${id}/liberar`;
@@ -94,9 +96,55 @@
     else DF.msg(msgs, (data && data.error) ? `Error: ${data.error}` : "Error", "err");
   });
 
+  const esc = value => String(value ?? "").replace(/[&<>'"]/g, ch => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'
+  })[ch]);
+
+  async function cargarPedidos(id, button) {
+    const picker = cal.querySelector(`[data-picker="${id}"]`);
+    if (!picker) return;
+    if (!picker.hidden) { picker.hidden = true; return; }
+    button.disabled = true;
+    const { ok, data } = await DF.apiFetch(`/repartidor/franjas/${id}/pedidos`);
+    button.disabled = false;
+    if (!ok) { DF.msg(msgs, "No se pudieron cargar los pedidos de la franja.", "err"); return; }
+    const disponibles = (data.pedidos || []).filter(p => p.estado === 'listo' && (!p.repartidor_id || p.repartidor_id === {{ current_user.id }}));
+    if (!disponibles.length) { DF.msg(msgs, "Ya no quedan pedidos listos en esta franja.", "err"); cargar(); return; }
+    const limite = data.limites || {pedidos:3, peso_gramos:12000};
+    picker.innerHTML = `<form class="js-iniciar-tanda" data-max-orders="${limite.pedidos}" data-max-weight="${limite.peso_gramos}" method="POST" action="/repartidor/franjas/${id}/iniciar-reparto">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <p class="df-slot-meta"><strong>Arma tu mochila</strong> · máximo ${limite.pedidos} pedidos y ${(limite.peso_gramos/1000).toFixed(1)} kg</p>
+      <div class="df-batch-orders">${disponibles.map(p => `<label class="df-batch-order">
+        <input type="checkbox" name="pedido_ids" value="${p.id}" data-weight="${p.peso_gramos}">
+        <span><strong>${esc(p.numero_pedido)}</strong><small>${esc(p.zona || p.direccion)} · ${p.items} artículo(s)</small></span>
+        <b>${(p.peso_gramos/1000).toFixed(1)} kg</b>
+      </label>`).join('')}</div>
+      <div class="df-batch-summary" aria-live="polite">Selecciona lo que realmente puedes llevar.</div>
+      <button class="df-btn df-btn-primary" type="submit" disabled>Iniciar ruta seleccionada</button>
+    </form>`;
+    picker.hidden = false;
+  }
+
+  cal.addEventListener('change', e => {
+    if (!e.target.matches('.df-batch-order input')) return;
+    const form = e.target.form;
+    const checked = [...form.querySelectorAll('input[name="pedido_ids"]:checked')];
+    const all = [...form.querySelectorAll('input[name="pedido_ids"]')];
+    const maxPedidos = Number(form.dataset.maxOrders);
+    const weight = checked.reduce((sum, input) => sum + Number(input.dataset.weight || 0), 0);
+    const summary = form.querySelector('.df-batch-summary');
+    const submit = form.querySelector('button[type="submit"]');
+    const maxWeight = Number(form.dataset.maxWeight);
+    const valid = checked.length > 0 && checked.length <= maxPedidos && weight <= maxWeight;
+    summary.textContent = `${checked.length} pedido(s) · ${(weight/1000).toFixed(1)} kg${valid ? ' · Lista para salir' : ' · Ajusta la selección'}`;
+    submit.disabled = !valid;
+    all.forEach(input => { if (!input.checked) input.disabled = checked.length >= maxPedidos || weight + Number(input.dataset.weight || 0) > maxWeight; });
+  });
+
   cal.addEventListener("submit", (e) => {
     const form = e.target.closest("form.js-iniciar-tanda");
-    if (form && !window.confirm(`¿Salir con una tanda de hasta ${form.dataset.tanda} pedidos?`)) {
+    const cuantos = form ? form.querySelectorAll('input[name="pedido_ids"]:checked').length : 0;
+    if (form && !window.confirm(`¿Confirmas que sales con ${cuantos} pedido(s)?`)) {
       e.preventDefault();
     }
   });

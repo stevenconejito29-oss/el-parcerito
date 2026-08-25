@@ -456,6 +456,22 @@ def pedidos():
         else:
             prep_programados_planos.append(p)
 
+    # Resumen operacional: cocina planifica salidas sin mezclar pedidos de
+    # distintas franjas. Las acciones siguen siendo por pedido para mantener
+    # trazabilidad de responsable, checklist y ticket.
+    franjas_cocina_map = OrderedDict()
+    for pedido in [*pendientes_inmediato, *armando]:
+        if not pedido.slot:
+            continue
+        item = franjas_cocina_map.setdefault(pedido.slot.id, {
+            "slot": pedido.slot, "pendientes": 0, "armando": 0,
+        })
+        item[pedido.estado] = item.get(pedido.estado, 0) + 1
+    franjas_cocina = sorted(
+        franjas_cocina_map.values(),
+        key=lambda item: (item["slot"].fecha, item["slot"].hora_inicio),
+    )
+
     # El rol de encargos abre en el resumen de producción. La vista de pedidos
     # individuales queda a un toque, pero no se mezclan ambos niveles en la
     # misma pantalla. Admin conserva su cola operativa habitual.
@@ -518,6 +534,7 @@ def pedidos():
                            prep_ahora=prep_ahora,
                            prep_programados=prep_programados_planos,
                            prep_buffer_min=buffer_min,
+                           franjas_cocina=franjas_cocina,
                            puede_preparar_encargo=_encargo_disponible_para_preparar,
                            queue_status_url=url_for("preparador.eventos"),
                            queue_refresh_s=_queue_refresh_s(),

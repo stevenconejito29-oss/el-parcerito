@@ -4660,12 +4660,12 @@ def api_delivery_franjas_disponibles():
         return jsonify({"error": "not_found"}), 404
 
     from delivery_slots_service import listar_franjas_cliente
-    from datetime import date as _date
+    from business_time import business_today
 
     try:
         horizonte = int(get_store_value("delivery_franjas_horizonte_cliente_dias", "7"))
     except (TypeError, ValueError):
         horizonte = 7
 
-    franjas = listar_franjas_cliente(_date.today(), horizonte_dias=horizonte)
+    franjas = listar_franjas_cliente(business_today(), horizonte_dias=horizonte)
     return jsonify({"horizonte_dias": horizonte, "franjas": franjas})

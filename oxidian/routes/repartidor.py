@@ -1296,6 +1296,9 @@ def franjas_pedidos(slot_id):
     if not _franjas_modulo_activo():
         abort(404)
     from models import DeliverySlot, SlotRepartidor
+    from delivery_slots_service import (peso_estimado_pedido_gramos,
+                                        peso_maximo_salida_gramos,
+                                        pedidos_por_salida)
 
     slot = get_or_404(DeliverySlot, slot_id)
     asignada = SlotRepartidor.query.filter_by(
@@ -1329,9 +1332,15 @@ def franjas_pedidos(slot_id):
                 "zona": p.zona_nombre_aplicada or "",
                 "total": float(p.total or 0),
                 "repartidor_id": p.repartidor_id,
+                "items": sum(int(i.cantidad or 0) for i in p.items),
+                "peso_gramos": peso_estimado_pedido_gramos(p),
             }
             for p in pedidos
         ],
+        "limites": {
+            "pedidos": pedidos_por_salida(),
+            "peso_gramos": peso_maximo_salida_gramos(),
+        },
     })
 
 
@@ -1342,7 +1351,8 @@ def franjas_iniciar_reparto(slot_id):
     if not _franjas_modulo_activo():
         abort(404)
     from models import DeliverySlot, SlotRepartidor
-    from delivery_slots_service import estado_operativo, pedidos_por_salida
+    from delivery_slots_service import (estado_operativo, pedidos_por_salida,
+                                        validar_tanda_seleccionada)
 
     slot = get_or_404(DeliverySlot, slot_id)
     asignada = SlotRepartidor.query.filter_by(
@@ -1363,19 +1373,39 @@ def franjas_iniciar_reparto(slot_id):
     if not disponibles:
         flash("Entrega tu tanda actual antes de volver por más pedidos.", "warning")
         return redirect(url_for("repartidor.ruta"))
+    ids_raw = request.form.getlist("pedido_ids")
+    try:
+        ids_seleccionados = {int(value) for value in ids_raw if str(value).strip()}
+    except (TypeError, ValueError):
+        ids_seleccionados = set()
+    if not ids_seleccionados:
+        flash("Selecciona los pedidos que caben en esta salida.", "warning")
+        return redirect(url_for("repartidor.franjas_panel"))
+    if len(ids_seleccionados) > disponibles:
+        flash(f"En esta salida solo tienes capacidad para {disponibles} pedido(s).", "warning")
+        return redirect(url_for("repartidor.franjas_panel"))
     pedidos = (
         Order.query
         .filter(
             Order.slot_id == slot.id,
+            Order.id.in_(ids_seleccionados),
             Order.estado == "listo",
             Order.tipo_entrega_cliente == "delivery",
         )
         .filter(db.or_(Order.repartidor_id.is_(None), Order.repartidor_id == current_user.id))
         .order_by(Order.creado_en)
         .with_for_update(skip_locked=True)
-        .limit(disponibles)
         .all()
     )
+    if len(pedidos) != len(ids_seleccionados):
+        db.session.rollback()
+        flash("Algún pedido cambió de estado o fue tomado por otro rider. Actualiza la franja.", "warning")
+        return redirect(url_for("repartidor.franjas_panel"))
+    valida, motivo, _peso = validar_tanda_seleccionada(pedidos)
+    if not valida:
+        db.session.rollback()
+        flash(motivo, "warning")
+        return redirect(url_for("repartidor.franjas_panel"))
     if not pedidos:
         flash("No hay pedidos listos para despachar en esta franja.", "info")
         return redirect(url_for("repartidor.franjas_panel"))

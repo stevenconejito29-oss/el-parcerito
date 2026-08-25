@@ -623,6 +623,16 @@ DEFAULTS: dict[str, dict] = {
         "type": "int",
         "desc": "Máximo de pedidos por tanda; al entregarlos el rider puede volver por otra tanda.",
     },
+    "delivery_franjas_peso_max_salida_kg": {
+        "default": "12",
+        "type": "float",
+        "desc": "Peso estimado máximo de una tanda para patinete y mochila de reparto.",
+    },
+    "delivery_producto_peso_default_gramos": {
+        "default": "500",
+        "type": "int",
+        "desc": "Peso conservador usado cuando un producto todavía no tiene peso configurado.",
+    },
     "delivery_franjas_notificar_puerta_texto": {
         "default": "Tu repartidor está en la puerta. 🛵",
         "type": "str",
