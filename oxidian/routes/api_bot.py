@@ -59,6 +59,7 @@ from product_presentations_service import (
     validate_product_presentation_selection,
 )
 from schedule_service import configured_schedule_context
+from delivery_mode_service import modos_delivery_activos
 
 api_bot_bp = Blueprint("api_bot", __name__)
 logger = logging.getLogger(__name__)
@@ -879,6 +880,7 @@ def branding():
         "tenant_mode": features["modo_tienda"],
         "suspended": str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).lower() in {"1", "true", "yes", "on"},
         "delivery_enabled": features["delivery"],
+        "delivery_modes": modos_delivery_activos(),
         "pickup_enabled": features["recogida"],
         "scheduled_enabled": features["pedidos_programados"],
         "points_enabled": features["puntos"],
@@ -1833,6 +1835,29 @@ def crear_pedido():
         if not data:
             return jsonify({"ok": False, "error": "JSON body requerido"}), 400
 
+        # Misma política que checkout: WhatsApp no puede crear un pedido
+        # inmediato cuando ese módulo está apagado, ni usar una franja cuando
+        # el módulo no está contratado. El bot puede enviar slot_id al pedir
+        # una franja concreta.
+        from delivery_mode_service import resolver_plan_delivery, ErrorPlanDelivery
+        try:
+            plan_delivery = resolver_plan_delivery(data.get("slot_id"))
+        except ErrorPlanDelivery as exc:
+            respuesta_plan = {
+                "ok": False,
+                "code": "DELIVERY_PLAN_INVALID",
+                "error": str(exc),
+                "delivery_modes": modos_delivery_activos(),
+            }
+            # El cliente WhatsApp puede presentar estas opciones directamente
+            # sin duplicar la consulta ni calcular capacidad por su cuenta.
+            if respuesta_plan["delivery_modes"]["franjas"]:
+                from delivery_slots_service import listar_franjas_cliente
+                respuesta_plan["franjas_disponibles"] = listar_franjas_cliente(
+                    date.today(), horizonte_dias=7,
+                )
+            return jsonify(respuesta_plan), 409
+
         cliente, telefono = _cliente_por_telefono(
             data.get("telefono_cliente") or data.get("telefono")
         )
@@ -2186,6 +2211,7 @@ def crear_pedido():
             puntos_usados=0,
             puntos_ganados=puntos_ganados,
             metodo_pago=metodo_pago,
+            tipo_entrega_cliente="delivery",
             direccion_entrega=direccion,
             notas=notas,
             zona_id=zona.id if zona else None,
@@ -2195,6 +2221,22 @@ def crear_pedido():
         aplicar_snapshot_zona_pedido(pedido, zona, costo_envio)
         db.session.add(pedido)
         db.session.flush()
+        if plan_delivery.slot_id:
+            from delivery_slots_service import reservar_franja, ResultadoReserva
+            reserva = reservar_franja(plan_delivery.slot_id, pedido)
+            if reserva.tipo != ResultadoReserva.RESERVADA:
+                db.session.rollback()
+                mensajes = {
+                    ResultadoReserva.LLENA: "La franja elegida acaba de llenarse.",
+                    ResultadoReserva.CERRADA: "La franja elegida ya está cerrada.",
+                    ResultadoReserva.INACTIVA: "La franja elegida ya no está disponible.",
+                    ResultadoReserva.NO_EXISTE: "La franja elegida no existe.",
+                }
+                return jsonify({
+                    "ok": False,
+                    "code": "DELIVERY_SLOT_UNAVAILABLE",
+                    "error": mensajes.get(reserva.tipo, "No se pudo reservar la franja."),
+                }), 409
         registrar_pedido_creado(
             pedido,
             canal="bot",
@@ -2204,6 +2246,7 @@ def crear_pedido():
                 "zona_id": zona.id if zona else None,
                 "zona_nombre": pedido.zona_nombre_snapshot,
                 "costo_envio": pedido.costo_envio_aplicado,
+                "modo_delivery": plan_delivery.modo.value,
             },
         )
 
@@ -2288,6 +2331,8 @@ def crear_pedido():
             "puntos_ganados": puntos_ganados,
             "estado": pedido.estado,
             "tiempo_estimado_min": tiempo_estimado,
+            "modo_delivery": plan_delivery.modo.value,
+            "slot_id": pedido.slot_id,
             "mensaje_cliente": mensaje_estado_pedido(pedido),
             "confirmacion_whatsapp_enviada": bool(enviado_wa),
         }

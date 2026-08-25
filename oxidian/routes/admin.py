@@ -8031,6 +8031,8 @@ def delivery_franjas_panel():
     Los datos se cargan por JS vía el endpoint JSON delivery_franjas_listar.
     """
     from store_config import get_store_value
+    from schedule_service import configured_schedule, weekly_schedule_text
+    from delivery_mode_service import modos_delivery_activos
     try:
         default_max = int(get_store_value("delivery_franjas_max_repartidores_default", "1"))
     except (TypeError, ValueError):
@@ -8039,7 +8041,30 @@ def delivery_franjas_panel():
         "admin/delivery_franjas.html",
         modulo_activo=_delivery_franjas_activo(),
         default_max_repartidores=default_max,
+        horario_apertura=weekly_schedule_text(configured_schedule()),
+        modos_delivery=modos_delivery_activos(),
     )
+
+
+@admin_bp.route("/delivery/modo", methods=["POST"])
+@admin_required
+def delivery_modo_actualizar():
+    """Cambia ambos toggles como una sola decisión operativa."""
+    modo = (request.form.get("modo") or "").strip().lower()
+    valores = {
+        "inmediato": ("1", "0"),
+        "franjas": ("0", "1"),
+        "mixto": ("1", "1"),
+    }
+    if modo not in valores:
+        flash("Modo de reparto no válido.", "danger")
+        return redirect(url_for("admin.delivery_franjas_panel"))
+    inmediato, franjas = valores[modo]
+    SiteConfig.set("delivery_inmediato_activo", inmediato, current_user.id)
+    SiteConfig.set("delivery_franjas_activo", franjas, current_user.id)
+    db.session.commit()
+    flash("Modo de reparto actualizado.", "success")
+    return redirect(url_for("admin.delivery_franjas_panel"))
 
 
 @admin_bp.route("/delivery/franjas/clonar", methods=["POST"])

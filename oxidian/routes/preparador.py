@@ -422,6 +422,14 @@ def pedidos():
                                       default=None
                                   ) or p.creado_en.date())
     pendientes_inmediato = [p for p in pendientes if not _es_encargo(p)]
+    # Cocina recibe primero lo inmediato y luego las franjas cronológicamente;
+    # dentro de cada franja conserva FIFO. El chip del ticket comunica la salida.
+    pendientes_inmediato.sort(key=lambda p: (
+        0 if p.slot_id is None else 1,
+        p.slot.fecha if p.slot else p.creado_en.date(),
+        p.slot.hora_inicio if p.slot else p.creado_en.time(),
+        p.creado_en,
+    ))
 
     # Agrupar los encargos por fecha de entrega para que preparación vea la
     # planificación del día: cuántos pedidos para hoy, mañana, próximos

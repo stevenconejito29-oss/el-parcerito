@@ -17,6 +17,7 @@ from delivery_slots_service import (
     CIERRE_MODOS,
     ResultadoReserva,
     ResultadoRepartidor,
+    estado_operativo,
     franja_esta_cerrada,
 )
 
@@ -106,6 +107,13 @@ class FranjaEstaCerradaTest(unittest.TestCase):
             set(CIERRE_MODOS),
             {"al_iniciar_siguiente", "minutos_antes", "hora_fija"},
         )
+
+    def test_estado_operativo_respeta_inicio_y_fin(self):
+        slot = self._slot()
+        self.assertEqual(estado_operativo(slot, datetime(2026, 8, 17, 13, 59))["estado"], "proxima")
+        activo = estado_operativo(slot, datetime(2026, 8, 17, 14, 30))
+        self.assertEqual(activo, {"estado": "activa", "segundos": 1800})
+        self.assertEqual(estado_operativo(slot, datetime(2026, 8, 17, 15, 0))["estado"], "finalizada")
 
 
 class EnumsAPITest(unittest.TestCase):

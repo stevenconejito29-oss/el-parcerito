@@ -1863,6 +1863,43 @@ def guardar_config_seccion():
     ):
         flash("La hora de apertura y la de cierre no pueden ser iguales.", "danger")
         return redirect(url_for("superadmin.config", section=parent_section))
+    if section == "operacion-horario" and any(
+        clave in {"HORARIO_SEMANAL_JSON", "HORARIO_APERTURA", "HORARIO_CIERRE"}
+        for clave, _valor in cambios
+    ):
+        # No permitimos que una edición del horario deje una ruta futura
+        # prometida a clientes fuera de la apertura real de la tienda.
+        from models import DeliverySlot
+        from schedule_service import franja_cabe_en_horario, legacy_schedule
+
+        horario_propuesto = propuestos.get("HORARIO_SEMANAL_JSON") or legacy_schedule(
+            propuestos.get("HORARIO_APERTURA", "09:00"),
+            propuestos.get("HORARIO_CIERRE", "22:30"),
+        )
+        franja_incompatible = (
+            DeliverySlot.query
+            .filter(
+                DeliverySlot.fecha >= date.today(),
+                DeliverySlot.activo.is_(True),
+            )
+            .order_by(DeliverySlot.fecha, DeliverySlot.hora_inicio)
+            .all()
+        )
+        for franja in franja_incompatible:
+            cabe, _motivo = franja_cabe_en_horario(
+                franja.fecha, franja.hora_inicio, franja.hora_fin,
+                horario_propuesto,
+            )
+            if not cabe:
+                flash(
+                    "No se guardó el horario: la franja activa "
+                    f"{franja.fecha.isoformat()} "
+                    f"{franja.hora_inicio.strftime('%H:%M')}–"
+                    f"{franja.hora_fin.strftime('%H:%M')} quedaría fuera de apertura. "
+                    "Ajusta o desactiva primero esa franja de reparto.",
+                    "danger",
+                )
+                return redirect(url_for("superadmin.config", section=parent_section))
     if not cambios:
         flash("Esta tarjeta no contenía campos para guardar.", "info")
         return redirect(url_for("superadmin.config", section=parent_section))

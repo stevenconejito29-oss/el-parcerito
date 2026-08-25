@@ -52,13 +52,15 @@
         // Batch dispatch: solo tiene sentido si tomé la franja Y hay pedidos listos.
         const listos = s.pedidos_listos || 0;
         const total = s.pedidos_total || 0;
-        const batchBtn = (s.tomada_por_mi && listos > 0)
-          ? `<form method="POST" action="/repartidor/franjas/${s.id}/iniciar-reparto" style="display:inline;margin:0"
-                 onsubmit="return confirm('Poner los ${listos} pedidos listos en ruta y salir a repartir?')">
+        const op = s.operativa || {estado:'proxima', segundos:0};
+        const tanda = Math.min(listos, s.pedidos_por_salida || 3);
+        const batchBtn = (s.tomada_por_mi && listos > 0 && op.estado === 'activa')
+          ? `<form class="js-iniciar-tanda" data-tanda="${tanda}" method="POST" action="/repartidor/franjas/${s.id}/iniciar-reparto" style="display:inline;margin:0">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="df-btn df-btn-primary" type="submit">🚴 Iniciar ruta (${listos})</button>
+              <button class="df-btn df-btn-primary" type="submit">🚴 Salir con ${tanda}</button>
             </form>`
-          : "";
+          : (s.tomada_por_mi && op.estado === 'proxima'
+              ? `<span class="df-slot-meta">Disponible al comenzar la franja</span>` : "");
         const conteo = total > 0
           ? `<div class="df-slot-meta"><strong>${total} pedido${total===1?'':'s'}</strong>${listos>0?` · ${listos} listo${listos===1?'':'s'} para salir`:''}</div>`
           : `<div class="df-slot-meta" style="color:#999">Sin pedidos aún</div>`;
@@ -67,6 +69,7 @@
           <div class="df-slot-meta">
             Riders ${s.repartidores_activos}/${s.max_repartidores} · Cap ${s.capacidad_max} pedidos
           </div>
+          <div class="df-slot-meta"><strong>${op.estado === 'activa' ? 'Franja en curso' : op.estado === 'finalizada' ? 'Franja finalizada' : 'Próxima franja'}</strong>${op.estado === 'activa' ? ` · ${Math.ceil(op.segundos/60)} min restantes` : ''}</div>
           ${conteo}
           <div class="df-slot-actions">${btnRider} ${batchBtn}</div>
         </div>`;
@@ -89,6 +92,13 @@
     const { ok, data } = await DF.apiFetch(url, { method: "POST" });
     if (ok) { DF.msg(msgs, btn.dataset.act === "tomar" ? "Franja tomada." : "Franja liberada.", "ok"); cargar(); }
     else DF.msg(msgs, (data && data.error) ? `Error: ${data.error}` : "Error", "err");
+  });
+
+  cal.addEventListener("submit", (e) => {
+    const form = e.target.closest("form.js-iniciar-tanda");
+    if (form && !window.confirm(`¿Salir con una tanda de hasta ${form.dataset.tanda} pedidos?`)) {
+      e.preventDefault();
+    }
   });
 
   cargar();

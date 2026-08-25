@@ -15,6 +15,7 @@ Reglas invariantes (verificadas por tests):
 - Un repartidor no puede tener dos asignaciones activas simultáneas a la
   misma franja (índice único parcial).
 - Repartidor no puede tomar franjas cerradas o inactivas.
+- Toda franja planificada debe caber dentro del horario de apertura vigente.
 
 Reglas de negocio en este módulo; las rutas HTTP solo adaptan I/O.
 """
@@ -40,9 +41,34 @@ from models import (
 # ─── Constantes ───────────────────────────────────────────────────────────
 
 CIERRE_MODOS = ("al_iniciar_siguiente", "minutos_antes", "hora_fija")
+MAX_SALIDAS_DIARIAS = 4
 _ESTADO_CANCELADO = "cancelado"
 NOTIF_CANAL = "whatsapp"
 NOTIF_EVENTO_EN_PUERTA = "delivery_en_puerta"
+
+
+def ahora_local_negocio() -> datetime:
+    from business_time import business_timezone
+    return datetime.now(business_timezone()).replace(tzinfo=None)
+
+
+def pedidos_por_salida() -> int:
+    from store_config import get_store_value
+    try:
+        return max(1, min(10, int(get_store_value("delivery_franjas_pedidos_por_salida", "3") or 3)))
+    except (TypeError, ValueError):
+        return 3
+
+
+def estado_operativo(slot: DeliverySlot, ahora: datetime | None = None) -> dict:
+    ahora = ahora or ahora_local_negocio()
+    inicio = datetime.combine(slot.fecha, slot.hora_inicio)
+    fin = datetime.combine(slot.fecha, slot.hora_fin)
+    if ahora < inicio:
+        return {"estado": "proxima", "segundos": int((inicio - ahora).total_seconds())}
+    if ahora >= fin:
+        return {"estado": "finalizada", "segundos": 0}
+    return {"estado": "activa", "segundos": int((fin - ahora).total_seconds())}
 
 
 # ─── Resultado tipado de reserva (evita excepciones para flujos esperados) ─
@@ -166,7 +192,7 @@ def listar_franjas_cliente(
     franja disponible cronológicamente. Excluye inactivas.
     """
     if ahora is None:
-        ahora = utcnow()
+        ahora = ahora_local_negocio()
     hasta = hoy + timedelta(days=horizonte_dias - 1)
     slots = (
         DeliverySlot.query
@@ -228,6 +254,21 @@ def crear_franja(
         raise ValueError("capacidad_max debe ser >= 1")
     if hora_fin <= hora_inicio:
         raise ValueError("hora_fin debe ser > hora_inicio")
+    from schedule_service import franja_cabe_en_horario
+    cabe, motivo = franja_cabe_en_horario(fecha, hora_inicio, hora_fin)
+    if not cabe:
+        raise ValueError(motivo)
+    salidas_activas = (
+        db.session.query(db.func.count(DeliverySlot.id))
+        .filter(DeliverySlot.fecha == fecha, DeliverySlot.activo.is_(True))
+        .scalar()
+        or 0
+    )
+    if salidas_activas >= MAX_SALIDAS_DIARIAS:
+        raise ValueError(
+            f"Ya hay {MAX_SALIDAS_DIARIAS} salidas activas el {fecha.isoformat()}. "
+            "Desactiva una franja o ajusta una de las existentes."
+        )
     if cierre_modo is not None and cierre_modo not in CIERRE_MODOS:
         raise ValueError(f"cierre_modo inválido: {cierre_modo}")
     slot = DeliverySlot(
@@ -254,6 +295,21 @@ def actualizar_franja(slot: DeliverySlot, **campos) -> DeliverySlot:
     for k, v in campos.items():
         if k not in permitidos:
             continue
+        if k == "activo" and v is True and not slot.activo:
+            salidas_activas = (
+                db.session.query(db.func.count(DeliverySlot.id))
+                .filter(
+                    DeliverySlot.fecha == slot.fecha,
+                    DeliverySlot.activo.is_(True),
+                )
+                .scalar()
+                or 0
+            )
+            if salidas_activas >= MAX_SALIDAS_DIARIAS:
+                raise ValueError(
+                    f"Ya hay {MAX_SALIDAS_DIARIAS} salidas activas el "
+                    f"{slot.fecha.isoformat()}; no se puede reactivar esta franja."
+                )
         if k == "capacidad_max" and v is not None and v < 1:
             raise ValueError("capacidad_max debe ser >= 1")
         if k == "cierre_modo" and v is not None and v not in CIERRE_MODOS:
@@ -294,7 +350,22 @@ def clonar_semana(semana_origen_lunes: date, semana_destino_lunes: date) -> int:
                 DeliverySlot.fecha <= origen_fin)
         .all()
     )
-    creadas = 0
+    from schedule_service import franja_cabe_en_horario
+    # Validamos todo antes de insertar para que una semana no quede a medias
+    # si el horario de apertura cambió desde que se creó la semana de origen.
+    for src in fuente:
+        nueva_fecha = src.fecha + delta
+        cabe, motivo = franja_cabe_en_horario(
+            nueva_fecha, src.hora_inicio, src.hora_fin,
+        )
+        if not cabe:
+            raise ValueError(
+                f"No se puede clonar la franja {src.hora_inicio.strftime('%H:%M')}–"
+                f"{src.hora_fin.strftime('%H:%M')} del {nueva_fecha.isoformat()}: {motivo}"
+            )
+    # Una franja es una salida agrupada: el negocio trabaja con un máximo de
+    # cuatro salidas diarias. Contamos solo las que se crearán (no duplicados).
+    candidatas = []
     for src in fuente:
         nueva_fecha = src.fecha + delta
         existe = (
@@ -308,6 +379,27 @@ def clonar_semana(semana_origen_lunes: date, semana_destino_lunes: date) -> int:
         )
         if existe:
             continue
+        candidatas.append((src, nueva_fecha))
+    por_fecha = {}
+    for src, nueva_fecha in candidatas:
+        if not src.activo:
+            continue
+        por_fecha[nueva_fecha] = por_fecha.get(nueva_fecha, 0) + 1
+    for nueva_fecha, nuevas_activas in por_fecha.items():
+        existentes_activas = (
+            db.session.query(db.func.count(DeliverySlot.id))
+            .filter(DeliverySlot.fecha == nueva_fecha, DeliverySlot.activo.is_(True))
+            .scalar()
+            or 0
+        )
+        if existentes_activas + nuevas_activas > MAX_SALIDAS_DIARIAS:
+            raise ValueError(
+                f"El {nueva_fecha.isoformat()} superaría las {MAX_SALIDAS_DIARIAS} "
+                "salidas diarias permitidas."
+            )
+
+    creadas = 0
+    for src, nueva_fecha in candidatas:
         db.session.add(DeliverySlot(
             fecha=nueva_fecha,
             hora_inicio=src.hora_inicio,
@@ -336,7 +428,7 @@ def reservar_franja(slot_id: int, pedido: Order, ahora: datetime | None = None) 
     correcta bajo el modelo de bloqueo de SQLite (una escritura a la vez).
     """
     if ahora is None:
-        ahora = utcnow()
+        ahora = ahora_local_negocio()
     slot = (
         db.session.query(DeliverySlot)
         .filter(DeliverySlot.id == slot_id)
@@ -392,7 +484,7 @@ def tomar_franja_repartidor(
     slot_id: int, repartidor_id: int, ahora: datetime | None = None,
 ) -> AsignacionRepartidor:
     if ahora is None:
-        ahora = utcnow()
+        ahora = ahora_local_negocio()
     slot = (
         db.session.query(DeliverySlot)
         .filter(DeliverySlot.id == slot_id)
@@ -441,6 +533,12 @@ def liberar_franja_repartidor(slot_id: int, repartidor_id: int) -> bool:
     )
     if not activa:
         return False
+    if db.session.query(Order.id).filter(
+        Order.slot_id == slot_id,
+        Order.repartidor_id == repartidor_id,
+        Order.estado.in_(("listo", "en_ruta")),
+    ).first():
+        raise ValueError("La franja tiene pedidos activos a tu cargo.")
     activa.liberado_en = utcnow()
     db.session.flush()
     return True

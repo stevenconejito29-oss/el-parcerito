@@ -1,10 +1,11 @@
 """Contrato del horario semanal usado por web, checkout y chatbot."""
 import json
 import unittest
-from datetime import datetime
+from datetime import date, datetime, time
 
 from schedule_service import (
     day_schedule_text,
+    franja_cabe_en_horario,
     next_opening_text,
     normalize_weekly_schedule,
     schedule_is_open,
@@ -70,6 +71,22 @@ class WeeklyScheduleTest(unittest.TestCase):
             next_opening_text(self.schedule, datetime(2026, 7, 27, 15, 0)),
             "hoy a las 18:00",
         )
+
+    def test_delivery_slot_must_fit_in_opening_window(self):
+        self.assertTrue(franja_cabe_en_horario(
+            date(2026, 7, 27), time(9), time(14), self.schedule,
+        )[0])
+        ok, message = franja_cabe_en_horario(
+            date(2026, 7, 27), time(14), time(18), self.schedule,
+        )
+        self.assertFalse(ok)
+        self.assertIn("fuera del horario", message)
+
+    def test_delivery_slot_can_use_previous_night_opening(self):
+        # Viernes 01:00 pertenece a la apertura nocturna del jueves.
+        self.assertTrue(franja_cabe_en_horario(
+            date(2026, 7, 31), time(1), time(2), self.schedule,
+        )[0])
 
     def test_partner_uses_weekly_schedule_instead_of_fixed_hours(self):
         partner = Proveedor(

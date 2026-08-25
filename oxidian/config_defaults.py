@@ -618,6 +618,11 @@ DEFAULTS: dict[str, dict] = {
             "franja por defecto al crearla. Se puede sobrescribir por franja."
         ),
     },
+    "delivery_franjas_pedidos_por_salida": {
+        "default": "3",
+        "type": "int",
+        "desc": "Máximo de pedidos por tanda; al entregarlos el rider puede volver por otra tanda.",
+    },
     "delivery_franjas_notificar_puerta_texto": {
         "default": "Tu repartidor está en la puerta. 🛵",
         "type": "str",

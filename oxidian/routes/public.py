@@ -54,6 +54,7 @@ from loyalty_service import (
     enviar_saldo_puntos,
     solicitar_codigo,
 )
+from delivery_mode_service import modos_delivery_activos
 from phone_utils import normalizar_telefono_cliente, telefono_local_ambiguo, telefono_valido
 from store_config import (
     get_loyalty_terms,
@@ -2876,17 +2877,16 @@ def checkout():
                 return redirect(establecimiento["url"])
 
         tipo_entrega_cliente = _fulfillment_from_request(fulfillment_default, fulfillment_options)
-        # Franja horaria opcional (módulo delivery_franjas_activo). Solo aplica
-        # cuando el cliente eligió delivery; recogida y otros modos la ignoran.
-        # La reserva efectiva del cupo se hace tras crear el pedido para poder
-        # asociar pedido.id ↔ slot. Aquí solo capturamos el valor bruto.
-        _slot_id_bruto = (request.form.get("slot_id") or "").strip()
-        slot_id_solicitado: int | None = None
-        if _slot_id_bruto:
+        # La modalidad de reparto se resuelve en una única capa compartida
+        # con WhatsApp. Recogida no lleva plan de delivery ni slot.
+        plan_delivery = None
+        if tipo_entrega_cliente == "delivery":
+            from delivery_mode_service import resolver_plan_delivery, ErrorPlanDelivery
             try:
-                slot_id_solicitado = int(_slot_id_bruto)
-            except (TypeError, ValueError):
-                slot_id_solicitado = None
+                plan_delivery = resolver_plan_delivery(request.form.get("slot_id"))
+            except ErrorPlanDelivery as exc:
+                flash(str(exc), "danger")
+                return redirect(url_for("public.checkout"))
         if not tipo_entrega_cliente:
             solicitado = (request.form.get("tipo_entrega_cliente") or "").strip().lower()
             blockers = _fulfillment_blockers_for_mode([item["producto"] for item in items], solicitado)
@@ -3293,36 +3293,19 @@ def checkout():
         # el cupo se agotó entre carga del selector y submit, revertimos el
         # pedido para no dejar huérfano y devolvemos al cliente al carrito
         # con mensaje claro para elegir otra franja.
-        if slot_id_solicitado and tipo_entrega_cliente == "delivery":
-            from store_config import get_store_value
-            franjas_activo = str(
-                get_store_value("delivery_franjas_activo", "0")
-            ).strip() in ("1", "true", "True")
-            if franjas_activo:
-                from delivery_slots_service import (
-                    reservar_franja, ResultadoReserva,
-                )
-                _reserva = reservar_franja(slot_id_solicitado, pedido)
-                if _reserva.tipo != ResultadoReserva.RESERVADA:
-                    db.session.rollback()
-                    _mensajes = {
-                        ResultadoReserva.LLENA: (
-                            "La franja horaria que elegiste acaba de llenarse. "
-                            "Elige otra en el checkout."
-                        ),
-                        ResultadoReserva.CERRADA: (
-                            "La franja horaria ya está cerrada para nuevos pedidos. "
-                            "Elige una franja posterior."
-                        ),
-                        ResultadoReserva.INACTIVA: (
-                            "La franja horaria seleccionada ya no está disponible."
-                        ),
-                        ResultadoReserva.NO_EXISTE: (
-                            "La franja horaria seleccionada no existe."
-                        ),
-                    }
-                    flash(_mensajes.get(_reserva.tipo, "No se pudo reservar la franja."), "danger")
-                    return redirect(url_for("public.ver_carrito"))
+        if plan_delivery and plan_delivery.slot_id:
+            from delivery_slots_service import reservar_franja, ResultadoReserva
+            _reserva = reservar_franja(plan_delivery.slot_id, pedido)
+            if _reserva.tipo != ResultadoReserva.RESERVADA:
+                db.session.rollback()
+                _mensajes = {
+                    ResultadoReserva.LLENA: "La franja horaria que elegiste acaba de llenarse. Elige otra en el checkout.",
+                    ResultadoReserva.CERRADA: "La franja horaria ya está cerrada para nuevos pedidos. Elige una franja posterior.",
+                    ResultadoReserva.INACTIVA: "La franja horaria seleccionada ya no está disponible.",
+                    ResultadoReserva.NO_EXISTE: "La franja horaria seleccionada no existe.",
+                }
+                flash(_mensajes.get(_reserva.tipo, "No se pudo reservar la franja."), "danger")
+                return redirect(url_for("public.checkout"))
         registrar_pedido_creado(
             pedido,
             actor_id=cliente.id,
@@ -3333,6 +3316,7 @@ def checkout():
                 "zona_nombre": pedido.zona_nombre_snapshot,
                 "costo_envio": pedido.costo_envio_aplicado,
                 "tipo_entrega_cliente": tipo_entrega_cliente,
+                "modo_delivery": plan_delivery.modo.value if plan_delivery else None,
                 "condiciones_compra_aceptadas": True,
                 "version_legal": SiteConfig.get("LEGAL_VERSION", "1.0"),
                 "ubicacion_cliente": bool(
@@ -3578,6 +3562,7 @@ def checkout():
                            radio_entrega_km=radio_entrega_km,
                            cobertura_por_zonas=any(z.tiene_geo for z in zonas),
                            puntos_sesion=cart_puntos_sesion,
+                           delivery_modes=modos_delivery_activos(),
                            producto_canje_seleccionado=session.get("cart_producto_canje_id"))
 
 

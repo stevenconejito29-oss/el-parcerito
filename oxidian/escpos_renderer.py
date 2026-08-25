@@ -128,6 +128,9 @@ def render_ticket(pedido, es_reimpresion: bool = False, brand=None, ui=None) -> 
         "recogida": "RECOGIDA",
         "programado": "PROGRAMADO",
     }.get(tipo, tipo.upper())
+    if tipo == "delivery":
+        from delivery_mode_service import etiqueta_plan_delivery
+        tipo_label = etiqueta_plan_delivery(pedido)
     p.set(align="center", bold=True, custom_size=True, width=2, height=2)
     p.text(f"{tipo_label}\n")
     p.set(align="center", custom_size=True, width=1, height=1, bold=False)

@@ -112,6 +112,66 @@ def schedule_json(value) -> str:
     )
 
 
+def franja_cabe_en_horario(fecha, hora_inicio, hora_fin, schedule=None) -> tuple[bool, str]:
+    """Valida que una franja de reparto quepa DENTRO del horario semanal.
+
+    ``fecha`` (date) determina el weekday; ``hora_inicio``/``hora_fin`` (time)
+    definen el intervalo de la franja. ``schedule`` es opcional — si es None
+    se lee de SiteConfig (fuente única).
+
+    Devuelve ``(ok, mensaje)``:
+      - ok=True: la franja está completamente contenida en al menos una
+        ventana del horario del día.
+      - ok=False: mensaje operativo describiendo el conflicto.
+
+    Backward-compat: si no hay horario configurado (ni JSON semanal ni legacy),
+    devuelve ok=True. Esto permite instalaciones aún sin horarios definidos.
+    Cruce de medianoche: si la ventana termina antes de empezar (ej 22:00-02:00)
+    se admite como válida y se comprueba de forma explícita.
+    """
+    if schedule is None:
+        schedule = configured_schedule()
+    normalized = normalize_weekly_schedule(schedule) if schedule else {}
+    if not normalized:
+        return True, "sin horario semanal configurado (validación relajada)"
+
+    weekday = fecha.weekday()
+    inicio_min = hora_inicio.hour * 60 + hora_inicio.minute
+    fin_min = hora_fin.hour * 60 + hora_fin.minute
+
+    # Las franjas de reparto no cruzan medianoche. Una apertura nocturna sí
+    # puede continuar desde el día anterior, por ejemplo una ruta de martes
+    # 00:30–01:30 dentro de la apertura del lunes 20:00–02:00.
+    ventanas_hoy = normalized.get(str(weekday), [])
+    for v_ini, v_fin in ventanas_hoy:
+        vi = _minutes(v_ini)
+        vf = _minutes(v_fin)
+        if vf > vi:
+            # Ventana normal dentro del día.
+            if vi <= inicio_min and fin_min <= vf:
+                return True, "dentro del horario"
+        else:
+            # Ventana que cruza medianoche (ej 22:00-02:00). La franja debe
+            # caber en [vi..24:00] o en [00:00..vf]. No aceptamos franjas
+            # que crucen medianoche (por diseño: franjas son intra-día).
+            if vi <= inicio_min and fin_min <= 24 * 60:
+                return True, "dentro del horario (nocturno)"
+
+    ayer = (weekday - 1) % 7
+    for v_ini, v_fin in normalized.get(str(ayer), []):
+        vi = _minutes(v_ini)
+        vf = _minutes(v_fin)
+        if vf < vi and 0 <= inicio_min and fin_min <= vf:
+            return True, "dentro de la apertura nocturna del día anterior"
+
+    horario_txt = ", ".join(f"{i}-{f}" for i, f in ventanas_hoy) or "cerrado"
+    return False, (
+        f"La franja {hora_inicio.strftime('%H:%M')}–{hora_fin.strftime('%H:%M')} "
+        f"queda fuera del horario del {DAY_NAMES[weekday].lower()} ({horario_txt}). "
+        f"Amplía primero el horario semanal o ajusta la franja."
+    )
+
+
 def schedule_is_open(schedule, when: datetime | None = None) -> bool:
     """Evalúa franjas normales y las que continúan desde el día anterior."""
     normalized = normalize_weekly_schedule(schedule)

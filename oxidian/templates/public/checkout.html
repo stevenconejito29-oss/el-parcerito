@@ -245,7 +245,12 @@
         const { ok, status, data } = await DF.apiFetch("{{ url_for('public.api_delivery_franjas_disponibles') }}");
         if (!ok) return; // módulo apagado (404) o error — bloque queda oculto
         const franjas = data.franjas || [];
-        if (!franjas.length) return;
+        if (!franjas.length) {
+          container.innerHTML = '<p class="df-day-empty">No hay franjas disponibles por ahora.</p>';
+          container.dataset.loaded = "1";
+          updateVisibility();
+          return;
+        }
         const html = DF.agruparPorFecha(franjas).map(([fecha, slots]) => {
           const rows = slots.map(s => {
             const cls = ["df-slot"];
@@ -280,6 +285,15 @@
       });
 
       radios.forEach(r => r.addEventListener("change", updateVisibility));
+      document.getElementById("form-checkout")?.addEventListener("submit", (event) => {
+        const delivery = document.querySelector('input[name="tipo_entrega_cliente"]:checked')?.value === "delivery";
+        const inmediatoActivo = {{ delivery_modes.inmediato|tojson }};
+        if (delivery && !inmediatoActivo && !hidden.value) {
+          event.preventDefault();
+          DF.msg(label, "Elige una franja disponible para continuar.", "err");
+          block.hidden = false;
+        }
+      });
       cargar();
     })();
     </script>

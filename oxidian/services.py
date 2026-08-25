@@ -2526,6 +2526,8 @@ def distribuir_repartidor(pedido: Order) -> User | None:
     global (sin zona o cualquier zona) para no bloquear entregas.
     """
     _serializar_asignacion_workload("reparto")
+    if getattr(pedido, "slot_id", None) is not None:
+        return None
 
     if not get_store_features()["delivery"]:
         return None
@@ -2588,7 +2590,7 @@ def redistribuir_listos_sin_repartidor() -> int:
         estado="listo",
         repartidor_id=None,
         tipo_entrega_cliente="delivery",
-    ).order_by(Order.creado_en).with_for_update(skip_locked=True).all()
+    ).filter(Order.slot_id.is_(None)).order_by(Order.creado_en).with_for_update(skip_locked=True).all()
     asignados = 0
     for pedido in pedidos:
         responsable = distribuir_repartidor(pedido)
@@ -2609,6 +2611,7 @@ def pedidos_delivery_sin_repartidor_query():
         Order.estado == "listo",
         Order.repartidor_id.is_(None),
         Order.tipo_entrega_cliente == "delivery",
+        Order.slot_id.is_(None),
     )
 
 

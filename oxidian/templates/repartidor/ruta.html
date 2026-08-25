@@ -761,7 +761,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
          recibió esa notificación. Piggybacks en Order.en_punto_encuentro. #}
       {% if not pedido.en_punto_encuentro %}
       <form method="POST" action="{{ url_for('repartidor.pedido_en_la_puerta', pedido_id=pedido.id) }}"
-            class="mt-2" onsubmit="this.querySelector('button').disabled=true">
+            class="mt-2 js-single-submit">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="work-btn work-btn-primary full-width">
           🛵 Estoy en la puerta — avisar al cliente
@@ -1249,6 +1249,12 @@ document.querySelectorAll('.js-availability-form').forEach(form => {
     } catch (_) {
       form.submit();
     }
+  });
+});
+document.querySelectorAll('.js-single-submit').forEach(form => {
+  form.addEventListener('submit', () => {
+    const button = form.querySelector('button[type="submit"]');
+    if (button) button.disabled = true;
   });
 });
 </script>

@@ -178,7 +178,7 @@ def ruta():
     if _es_admin_operativo():
         listos_q = Order.query.options(_eager_zona).filter_by(
             estado="listo", tipo_entrega_cliente="delivery"
-        )
+        ).filter(Order.slot_id.is_(None))
         en_ruta_q = Order.query.options(_eager_zona).filter_by(
             estado="en_ruta", tipo_entrega_cliente="delivery"
         )
@@ -188,10 +188,10 @@ def ruta():
         if disponible:
             listos_propios_q = Order.query.options(_eager_zona).filter_by(
                 estado="listo", repartidor_id=current_user.id, tipo_entrega_cliente="delivery"
-            )
+            ).filter(Order.slot_id.is_(None))
             sin_asignar_q = Order.query.options(_eager_zona).filter_by(
                 estado="listo", repartidor_id=None, tipo_entrega_cliente="delivery"
-            )
+            ).filter(Order.slot_id.is_(None))
             if aplicar_filtro_zona:
                 sin_asignar_q = sin_asignar_q.filter(Order.zona_id == zona_asignada_id)
             listos_propios = listos_propios_q.order_by(Order.creado_en).all()
@@ -1187,11 +1187,13 @@ def franjas_panel():
 def franjas_listar():
     if not _franjas_modulo_activo():
         abort(404)
-    from delivery_slots_service import listar_franjas_admin, _repartidores_activos
+    from delivery_slots_service import (listar_franjas_admin, _repartidores_activos,
+                                        estado_operativo, pedidos_por_salida)
     from models import SlotRepartidor
     from datetime import date as _date, timedelta as _td
 
-    hoy = _date.today()
+    from business_time import business_today
+    hoy = business_today()
     slots = listar_franjas_admin(hoy, hoy + _td(days=6))
     # Marca "mías" y "libres" para cada franja.
     ids = [s.id for s in slots]
@@ -1242,6 +1244,8 @@ def franjas_listar():
             "llena_de_repartidores": activos >= s.max_repartidores and s.id not in mias_ids,
             "pedidos_total": conteos_totales.get(s.id, 0),
             "pedidos_listos": conteos_listos.get(s.id, 0),
+            "operativa": estado_operativo(s),
+            "pedidos_por_salida": pedidos_por_salida(),
         })
     return jsonify({"franjas": salida})
 
@@ -1271,7 +1275,11 @@ def franjas_liberar(slot_id):
         abort(404)
     from delivery_slots_service import liberar_franja_repartidor
 
-    liberado = liberar_franja_repartidor(slot_id, current_user.id)
+    try:
+        liberado = liberar_franja_repartidor(slot_id, current_user.id)
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 409
     db.session.commit()
     return jsonify({"liberado": liberado})
 
@@ -1287,9 +1295,14 @@ def franjas_pedidos(slot_id):
     """
     if not _franjas_modulo_activo():
         abort(404)
-    from models import DeliverySlot
+    from models import DeliverySlot, SlotRepartidor
 
     slot = get_or_404(DeliverySlot, slot_id)
+    asignada = SlotRepartidor.query.filter_by(
+        slot_id=slot.id, repartidor_id=current_user.id, liberado_en=None
+    ).first()
+    if not asignada and not _es_admin_operativo():
+        abort(403)
     pedidos = (
         Order.query
         .filter(
@@ -1325,23 +1338,31 @@ def franjas_pedidos(slot_id):
 @repartidor_bp.route("/franjas/<int:slot_id>/iniciar-reparto", methods=["POST"])
 @repartidor_required
 def franjas_iniciar_reparto(slot_id):
-    """Dispatch en lote: mueve TODOS los pedidos listos de la franja a en_ruta
-    y los asigna al repartidor actual (si no tenían ya uno). Devuelve al
-    repartidor a su vista /repartidor/ruta para operar la ruta física.
-
-    Reglas:
-    - Solo pedidos con estado='listo' y tipo_entrega='delivery' entran al lote.
-    - Pedidos ya en_ruta o entregados se ignoran silenciosamente.
-    - Si un pedido ya está asignado a OTRO repartidor, no se roba (se ignora
-      con warning). Solo se despachan los propios o los sin asignar.
-    - Es responsabilidad del admin coordinar que el rider que "toma" la
-      franja sea el mismo que la reparte.
-    """
+    """Saca una tanda atómica y limitada durante la ventana de la franja."""
     if not _franjas_modulo_activo():
         abort(404)
-    from models import DeliverySlot
+    from models import DeliverySlot, SlotRepartidor
+    from delivery_slots_service import estado_operativo, pedidos_por_salida
 
     slot = get_or_404(DeliverySlot, slot_id)
+    asignada = SlotRepartidor.query.filter_by(
+        slot_id=slot.id, repartidor_id=current_user.id, liberado_en=None
+    ).first()
+    if not asignada:
+        abort(403)
+    if not _requiere_disponible_para_nuevo_trabajo():
+        return redirect(url_for("repartidor.franjas_panel"))
+    if estado_operativo(slot)["estado"] != "activa":
+        flash("Solo puedes iniciar una tanda durante el horario de la franja.", "warning")
+        return redirect(url_for("repartidor.franjas_panel"))
+    activos = Order.query.filter_by(
+        repartidor_id=current_user.id, estado="en_ruta",
+        tipo_entrega_cliente="delivery",
+    ).count()
+    disponibles = max(0, pedidos_por_salida() - activos)
+    if not disponibles:
+        flash("Entrega tu tanda actual antes de volver por más pedidos.", "warning")
+        return redirect(url_for("repartidor.ruta"))
     pedidos = (
         Order.query
         .filter(
@@ -1349,6 +1370,10 @@ def franjas_iniciar_reparto(slot_id):
             Order.estado == "listo",
             Order.tipo_entrega_cliente == "delivery",
         )
+        .filter(db.or_(Order.repartidor_id.is_(None), Order.repartidor_id == current_user.id))
+        .order_by(Order.creado_en)
+        .with_for_update(skip_locked=True)
+        .limit(disponibles)
         .all()
     )
     if not pedidos:
@@ -1356,24 +1381,14 @@ def franjas_iniciar_reparto(slot_id):
         return redirect(url_for("repartidor.franjas_panel"))
 
     despachados = 0
-    saltados_ajenos = 0
     for pedido in pedidos:
-        if pedido.repartidor_id and pedido.repartidor_id != current_user.id and not _es_admin_operativo():
-            saltados_ajenos += 1
-            continue
-        try:
-            if not pedido.repartidor_id:
-                asignar_repartidor_pedido(
-                    pedido, current_user.id,
-                    actor_id=current_user.id, canal="repartidor", aceptado=True,
-                )
-            avanzar_estado_pedido(pedido, actor_id=current_user.id, canal="repartidor")
-            despachados += 1
-        except Exception as exc:
-            logger.exception(
-                "Fallo despachando pedido %s en batch franja %s: %s",
-                pedido.id, slot.id, exc,
+        if not pedido.repartidor_id:
+            asignar_repartidor_pedido(
+                pedido, current_user.id,
+                actor_id=current_user.id, canal="franja", aceptado=True,
             )
+        avanzar_estado_pedido(pedido, actor_id=current_user.id, canal="franja")
+        despachados += 1
 
     try:
         db.session.commit()
@@ -1393,8 +1408,6 @@ def franjas_iniciar_reparto(slot_id):
                 logger.exception("Fallo notificación batch para pedido %s", pedido.id)
 
     mensaje = f"Ruta iniciada: {despachados} pedidos en_ruta."
-    if saltados_ajenos:
-        mensaje += f" ({saltados_ajenos} saltados por estar asignados a otro rider.)"
     flash(mensaje, "success")
     return redirect(url_for("repartidor.ruta"))
 

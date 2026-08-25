@@ -21,6 +21,20 @@ Los cierres y aperturas manuales mantienen esta prioridad:
 2. `TIENDA_FORZAR_ABIERTA`
 3. horario semanal
 
+## Franjas de reparto
+
+El horario semanal también es el límite operativo de las rutas. Al crear o
+clonar una franja de reparto, el sistema solo acepta horas completamente
+contenidas en la apertura de esa fecha (incluida la continuación de una
+apertura nocturna). Así, el equipo configura primero cuándo abre el negocio y
+después planifica, por ejemplo, sus cuatro salidas diarias con su capacidad de
+pedidos; no pueden aparecer rutas que prometan entregas cuando la tienda está
+cerrada.
+
+Se permiten como máximo cuatro franjas activas por fecha. Cada franja acumula
+los pedidos de los clientes que la eligieron y el equipo los reparte en bloque
+al comenzar esa salida.
+
 ## Socios de productos
 
 El rol autenticable es `socio_producto`; `proveedor` queda únicamente como

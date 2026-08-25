@@ -8,7 +8,10 @@
   <div class="df-header">
     <div>
       <h1>Delivery · Franjas horarias</h1>
-      <p>Planifica los cupos de reparto por franja. Módulo
+      <p>Planifica hasta cuatro salidas por día. Cada franja debe quedar dentro
+        del horario de apertura: <strong>{{ horario_apertura }}</strong>.
+        Ajusta primero el horario en <a href="{{ url_for('superadmin.config') }}#operacion">Operación de la tienda</a>.
+        Módulo
         <strong>{{ 'ACTIVO' if modulo_activo else 'apagado' }}</strong>
         — {% if not modulo_activo %}enciéndelo desde <a href="{{ url_for('superadmin.config') }}#delivery">configuración</a> para que el cliente lo vea en checkout.{% else %}Los clientes ya pueden elegir franja en checkout.{% endif %}
       </p>
@@ -16,6 +19,18 @@
   </div>
 
   <div id="df-msgs"></div>
+
+  <form method="post" action="{{ url_for('admin.delivery_modo_actualizar') }}" class="df-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Modo de reparto
+      <select name="modo">
+        <option value="inmediato" {% if modos_delivery.inmediato and not modos_delivery.franjas %}selected{% endif %}>Instantáneo</option>
+        <option value="franjas" {% if modos_delivery.franjas and not modos_delivery.inmediato %}selected{% endif %}>Solo por franjas</option>
+        <option value="mixto" {% if modos_delivery.franjas and modos_delivery.inmediato %}selected{% endif %}>Ambos (cliente elige)</option>
+      </select>
+    </label>
+    <div class="df-form-actions"><button class="df-btn df-btn-primary" type="submit">Aplicar modalidad</button></div>
+  </form>
 
   <form id="df-form-crear" class="df-form" novalidate>
     <label>Fecha
