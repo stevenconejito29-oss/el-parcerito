@@ -107,6 +107,11 @@ if ! bash "$DEPLOY_DIR/scripts/backup.sh"; then
 fi
 
 git reset --hard "$target_sha"
+if ! python3 "$DEPLOY_DIR/oxidian/scripts/predeploy_check.py" --env-file "$ENV_FILE" --deployment cosmos; then
+    log "ERROR: $target_sha no supera el control predeploy; se conserva $current_sha."
+    git reset --hard "$current_sha"
+    exit 1
+fi
 if deploy_revision; then
     printf '%s\n' "$target_sha" >"$DEPLOYED_FILE"
     if [ -f "$DEPLOY_DIR/scripts/auto-deploy.sh" ]; then

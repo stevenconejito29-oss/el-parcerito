@@ -50,15 +50,12 @@ presentan estado y envían intenciones al servidor.
 
 ## Validación local
 
-Desde la raíz:
+Desde la raíz, crea el entorno una vez y usa el mismo contrato que CI:
 
 ```bash
-cd oxidian
-python3 -m compileall -q .
-python3 -m unittest discover -s tests -q
-cd ..
-node --check chat/bot.js
-(cd chat && npm test)
+python3 -m venv .venv
+.venv/bin/pip install -r oxidian/requirements.txt
+OXIDIAN_PYTHON=.venv/bin/python bash scripts/test-project.sh
 ```
 
 Estos comandos requieren las dependencias de `oxidian/requirements.txt` en el
@@ -73,9 +70,10 @@ npm run build:css       # sólo si cambió la entrada Tailwind
 npm run visual:audit    # requiere el entorno indicado por el script
 ```
 
-Antes de producción, ejecutar `oxidian/scripts/predeploy_check.py` dentro del
-entorno que contiene las variables reales. No usar valores ficticios para hacer
-pasar el control.
+Antes de producción, ejecutar
+`python3 oxidian/scripts/predeploy_check.py --env-file oxidian/.env.cosmos.local --deployment cosmos`.
+El despliegue automático y el manual ejecutan esta misma barrera con las
+variables reales y se detienen antes de reconstruir si encuentran un bloqueo.
 
 ## Criterio para limpiar código
 

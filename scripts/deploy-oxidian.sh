@@ -33,6 +33,9 @@ echo "[$(date -Is)] pull código..."
 cd "$DEPLOY_DIR"
 git pull --ff-only origin main
 
+echo "[$(date -Is)] validando configuración de producción..."
+python3 "$DEPLOY_DIR/oxidian/scripts/predeploy_check.py" --env-file "$ENV_FILE" --deployment cosmos
+
 echo "[$(date -Is)] rebuild oxidian..."
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build oxidian
 

@@ -8,6 +8,7 @@ Usage:
 import os
 import sys
 import ast
+import argparse
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
@@ -20,6 +21,53 @@ PLACEHOLDER_MARKERS = (
     'dev-key',
     'insecure',
 )
+
+
+def load_env_file(path):
+    """Carga KEY=VALUE sin ejecutar el archivo como código de shell."""
+    env_path = Path(path).expanduser().resolve()
+    if not env_path.is_file():
+        raise FileNotFoundError(f'env file not found: {env_path}')
+    for line_number, raw in enumerate(env_path.read_text(encoding='utf-8').splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith('#'):
+            continue
+        if line.startswith('export '):
+            line = line[7:].lstrip()
+        if '=' not in line:
+            raise ValueError(f'invalid env line {line_number}: expected KEY=VALUE')
+        key, value = line.split('=', 1)
+        key = key.strip()
+        if not key or not key.replace('_', '').isalnum() or key[0].isdigit():
+            raise ValueError(f'invalid env key at line {line_number}')
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'\"', "'"}:
+            value = value[1:-1]
+        os.environ[key] = value
+
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--env-file', help='Configuración real que se validará antes del deploy')
+parser.add_argument('--deployment', choices=('cosmos',), help='Completa variables internas definidas por el stack')
+args = parser.parse_args()
+if args.env_file:
+    try:
+        load_env_file(args.env_file)
+    except (OSError, ValueError) as exc:
+        print(f'Cannot load environment: {exc}', file=sys.stderr)
+        sys.exit(2)
+if args.deployment == 'cosmos':
+    # cosmos-compose.yml construye estas URLs dentro del contenedor; se
+    # reproducen aquí para validar exactamente el contrato efectivo.
+    db_user = os.environ.get('OXIDIAN_DB_USER', 'oxidian')
+    db_password = os.environ.get('OXIDIAN_DB_PASSWORD', '')
+    db_name = os.environ.get('OXIDIAN_DB_NAME', 'oxidian')
+    if db_password:
+        os.environ.setdefault(
+            'DATABASE_URL',
+            f'postgresql://{db_user}:{db_password}@oxidian-db:5432/{db_name}',
+        )
+    os.environ.setdefault('REDIS_URL', 'redis://oxidian-redis:6379/0')
 
 
 def is_placeholder(value):
