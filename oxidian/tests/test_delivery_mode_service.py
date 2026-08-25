@@ -3,6 +3,7 @@ import unittest
 
 from delivery_mode_service import (
     ErrorPlanDelivery,
+    MODE_CONFIG,
     ModoDelivery,
     modos_delivery_activos,
     resolver_plan_delivery,
@@ -10,6 +11,10 @@ from delivery_mode_service import (
 
 
 class DeliveryModeServiceTest(unittest.TestCase):
+    def test_switch_options_never_disable_both_delivery_paths(self):
+        self.assertEqual(set(MODE_CONFIG), {"inmediato", "franjas", "mixto"})
+        self.assertTrue(all(option["inmediato"] or option["franjas"] for option in MODE_CONFIG.values()))
+
     def test_default_is_immediate_only(self):
         modes = modos_delivery_activos(lambda _key, default: default)
         self.assertEqual(modes, {"inmediato": True, "franjas": False})

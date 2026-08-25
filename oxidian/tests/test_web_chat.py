@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 
 from flask import Flask
 
@@ -213,6 +214,33 @@ class WebChatTest(unittest.TestCase):
         self.assertEqual(payload["orders"][0]["status_label"], "Recibido")
         self.assertTrue(payload["orders"][0]["cancelable"])
         self.assertIn("opaque-order-token", payload["orders"][0]["tracking_url"])
+
+    def test_typed_order_number_is_resolved_only_for_own_session(self):
+        customer = User(nombre="Cliente número", email="number@test.invalid", rol="cliente", activo=True)
+        customer.set_password("irrelevant-test-password")
+        db.session.add(customer); db.session.flush()
+        order = Order(numero_pedido="WEB-1004", cliente_id=customer.id, estado="armando", subtotal=12, total=12, metodo_pago="efectivo")
+        db.session.add(order); db.session.commit()
+        owner = self.app.test_client()
+        with owner.session_transaction() as browser:
+            browser["guest_order_tokens"] = {str(order.id): {"token": "owned-token", "exp": int(datetime.utcnow().timestamp()) + 600}}
+        owned = owner.post("/api/web-chat/messages", json={"message": "estado del pedido #1004", "nonce": "owned"}).get_json()
+        foreign = self.app.test_client().post("/api/web-chat/messages", json={"message": "estado del pedido #1004", "nonce": "foreign"}).get_json()
+        self.assertIn("en preparación", "\n".join(m["body"] for m in owned["messages"]).lower())
+        self.assertIn("no pudimos verificar", "\n".join(m["body"] for m in foreign["messages"]).lower())
+
+    def test_expired_order_token_is_not_accepted_by_chat(self):
+        customer = User(nombre="Cliente expirado", email="expired@test.invalid", rol="cliente", activo=True)
+        customer.set_password("irrelevant-test-password")
+        db.session.add(customer); db.session.flush()
+        order = Order(numero_pedido="WEB-1099", cliente_id=customer.id, estado="pendiente", subtotal=12, total=12, metodo_pago="efectivo")
+        db.session.add(order); db.session.commit()
+        client = self.app.test_client()
+        with client.session_transaction() as browser:
+            browser["guest_order_tokens"] = {str(order.id): {"token": "expired-token", "exp": 1}}
+        payload = client.post("/api/web-chat/messages", json={"message": "cancelar pedido 1099", "nonce": "expired"}).get_json()
+        self.assertIn("no pudimos verificar", "\n".join(m["body"] for m in payload["messages"]).lower())
+        self.assertEqual(payload["orders"], [])
 
     def test_closed_orders_do_not_appear_in_chat(self):
         customer = User(nombre="Cliente cerrado", email="closed@test.invalid", rol="cliente", activo=True)

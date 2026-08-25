@@ -13,14 +13,21 @@
         Ajusta primero el horario en <a href="{{ url_for('superadmin.config') }}#operacion">Operación de la tienda</a>.
         Módulo
         <strong>{{ 'ACTIVO' if modulo_activo else 'apagado' }}</strong>
-        — {% if not modulo_activo %}enciéndelo desde <a href="{{ url_for('superadmin.config') }}#delivery">configuración</a> para que el cliente lo vea en checkout.{% else %}Los clientes ya pueden elegir franja en checkout.{% endif %}
+        — {% if not modulo_activo %}el superadministrador puede encenderlo aquí cuando exista planificación futura.{% else %}Los clientes ya pueden elegir franja en checkout.{% endif %}
       </p>
     </div>
   </div>
 
   <div id="df-msgs"></div>
 
-  <form method="post" action="{{ url_for('admin.delivery_modo_actualizar') }}" class="df-form">
+  <section class="df-mode-card" aria-labelledby="df-mode-title">
+    <div>
+      <span class="df-eyebrow">Operación activa</span>
+      <h2 id="df-mode-title">Modalidad de reparto</h2>
+      <p>El checkout, cocina y repartidores leen esta misma configuración. Los pedidos programados activos se protegen antes de permitir un cambio.</p>
+    </div>
+  {% if can_switch_mode %}
+  <form method="post" action="{{ url_for('admin.delivery_modo_actualizar') }}" class="df-form df-mode-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>Modo de reparto
       <select name="modo">
@@ -31,6 +38,15 @@
     </label>
     <div class="df-form-actions"><button class="df-btn df-btn-primary" type="submit">Aplicar modalidad</button></div>
   </form>
+  {% else %}
+    <p class="df-readonly"><strong>Solo lectura:</strong> el superadministrador controla este interruptor.</p>
+  {% endif %}
+  </section>
+  <aside class="df-fee-summary">
+    <div><span class="df-eyebrow">Tarifa por zona</span><strong>{{ delivery_zone_count }} zona{{ '' if delivery_zone_count == 1 else 's' }} activa{{ '' if delivery_zone_count == 1 else 's' }}</strong></div>
+    <p>{% if delivery_fee_min is not none %}Desde {{ '%.2f'|format(delivery_fee_min|float) }} €{% if delivery_fee_max != delivery_fee_min %} hasta {{ '%.2f'|format(delivery_fee_max|float) }} €{% endif %}.{% else %}No hay tarifas activas configuradas.{% endif %} El coste se calcula por la dirección validada, nunca en el navegador.</p>
+    {% if can_switch_mode %}<a class="df-btn" href="{{ url_for('superadmin.zonas') }}">Configurar zonas y tarifas</a>{% endif %}
+  </aside>
   <form method="post" action="{{ url_for('admin.delivery_franjas_limites') }}" class="df-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>Pedidos máximos por salida

@@ -8083,26 +8083,30 @@ def delivery_franjas_panel():
         modos_delivery=modos_delivery_activos(),
         batch_size=batch_size,
         max_weight_kg=max_weight_kg,
+        can_switch_mode=current_user.rol == "super_admin",
+        delivery_zone_count=ZonaEntrega.query.filter_by(activa=True).count(),
+        delivery_fee_min=db.session.query(db.func.min(ZonaEntrega.precio_envio)).filter(ZonaEntrega.activa.is_(True)).scalar(),
+        delivery_fee_max=db.session.query(db.func.max(ZonaEntrega.precio_envio)).filter(ZonaEntrega.activa.is_(True)).scalar(),
     )
 
 
 @admin_bp.route("/delivery/modo", methods=["POST"])
-@admin_required
+@super_admin_required
 def delivery_modo_actualizar():
     """Cambia ambos toggles como una sola decisión operativa."""
     modo = (request.form.get("modo") or "").strip().lower()
-    valores = {
-        "inmediato": ("1", "0"),
-        "franjas": ("0", "1"),
-        "mixto": ("1", "1"),
-    }
-    if modo not in valores:
-        flash("Modo de reparto no válido.", "danger")
+    try:
+        from delivery_mode_service import cambiar_modo_delivery
+        cambiar_modo_delivery(modo, actor_id=current_user.id, ip=request.remote_addr)
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "warning")
         return redirect(url_for("admin.delivery_franjas_panel"))
-    inmediato, franjas = valores[modo]
-    SiteConfig.set("delivery_inmediato_activo", inmediato, current_user.id)
-    SiteConfig.set("delivery_franjas_activo", franjas, current_user.id)
-    db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("No se pudo cambiar el modo de reparto")
+        flash("No se pudo guardar la modalidad. La configuración anterior sigue activa.", "danger")
+        return redirect(url_for("admin.delivery_franjas_panel"))
     flash("Modo de reparto actualizado.", "success")
     return redirect(url_for("admin.delivery_franjas_panel"))
 

@@ -148,8 +148,7 @@ def logout():
                                      (request.form.get("push_endpoint") or "").strip())
     db.session.commit()
     logout_user()
-    session.pop("mfa_v", None)
-    _clear_mfa_pending()
+    session.clear()
     return redirect(url_for("public.index"))
 
 
@@ -255,6 +254,10 @@ def mfa_disable():
 def _complete_login(user):
     if not user.puede_iniciar_sesion:
         raise ValueError("El usuario no pertenece a un rol interno autenticable.")
+    # Elimina identidad pública, carrito y cualquier estado de un login
+    # anterior antes de emitir la sesión interna. Evita fijación y mezcla de
+    # pedidos de clientes en dispositivos compartidos por empleados.
+    session.clear()
     session.permanent = True
     login_user(user, remember=False)
     session["mfa_v"] = int(user.mfa_session_version or 0)

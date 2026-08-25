@@ -108,6 +108,27 @@
   grid-column: 1 / -1; display: flex; gap: .5rem; justify-content: flex-end;
 }
 
+.df-mode-card,
+.df-fee-summary {
+  display: grid;
+  gap: .8rem;
+  margin-bottom: 1rem;
+  padding: clamp(.85rem, 2.5vw, 1.2rem);
+  border: 1px solid var(--col-line, #d9d3ca);
+  border-radius: .85rem;
+  background: var(--col-surface, #fff);
+  color: var(--col-text, #24201d);
+  box-shadow: 0 8px 24px rgb(24 20 16 / .08);
+}
+.df-mode-card h2 { margin: .15rem 0; font-size: clamp(1.05rem, 3vw, 1.35rem); }
+.df-mode-card p, .df-fee-summary p { margin: 0; color: var(--col-muted, #625d56); line-height: 1.45; }
+.df-eyebrow { display: block; color: var(--brand-primary, #5a3a1e); font-size: .7rem; font-weight: 850; letter-spacing: .11em; text-transform: uppercase; }
+.df-mode-form { margin: 0; padding: 0; border: 0; background: transparent; }
+.df-readonly { padding: .7rem; border-radius: .6rem; background: var(--col-elevated, #f4f1ec); }
+.df-fee-summary { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.df-fee-summary > div { display: grid; gap: .2rem; }
+.df-fee-summary p { grid-column: 1 / -1; }
+
 .df-msg {
   padding: .55rem .8rem; border-radius: .5rem; margin: .5rem 0;
   font-size: .88rem;
@@ -130,6 +151,9 @@
   .df-container{padding-inline:.65rem}
   .df-batch-order{grid-template-columns:auto minmax(0,1fr)}
   .df-batch-order>b{grid-column:2}
+  .df-fee-summary { grid-template-columns: 1fr; }
+  .df-fee-summary p { grid-column: auto; }
+  .df-form-actions, .df-form-actions .df-btn { width: 100%; }
 }
 
 /* Respect safe-area para iOS */
@@ -143,7 +167,9 @@
 
 /* Modo oscuro admin */
 [data-delivery-theme="dark"] .df-day,
-[data-delivery-theme="dark"] .df-form { background: #262626; border-color: #3a3a3a; }
+[data-delivery-theme="dark"] .df-form,
+[data-delivery-theme="dark"] .df-mode-card,
+[data-delivery-theme="dark"] .df-fee-summary { background: #262626; border-color: #3a3a3a; color: #f5f2eb; }
 [data-delivery-theme="dark"] .df-slot { background: #1e1e1e; border-color: #3a3a3a; }
 [data-delivery-theme="dark"] .df-btn  { background: #2a2a2a; color: #eee; border-color: #444; }
 [data-delivery-theme="dark"] .df-btn:hover:not(:disabled) { background: #333; }

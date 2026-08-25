@@ -25,6 +25,13 @@ class ErrorPlanDelivery(ValueError):
     """Error presentable al cliente, común a todos los canales."""
 
 
+MODE_CONFIG = {
+    "inmediato": {"inmediato": True, "franjas": False},
+    "franjas": {"inmediato": False, "franjas": True},
+    "mixto": {"inmediato": True, "franjas": True},
+}
+
+
 def _enabled(value) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -38,6 +45,52 @@ def modos_delivery_activos(reader=None) -> dict[str, bool]:
         "inmediato": _enabled(reader("delivery_inmediato_activo", "1")),
         "franjas": _enabled(reader("delivery_franjas_activo", "0")),
     }
+
+
+def cambiar_modo_delivery(modo: str, *, actor_id: int, ip: str | None = None) -> dict[str, bool]:
+    """Cambia la modalidad de forma atómica y protege trabajo en curso.
+
+    Exige planificación futura antes de ofrecer franjas y evita apagar el
+    módulo mientras cocina o reparto aún tienen pedidos programados activos.
+    La autorización del actor se valida en la ruta; esta función concentra las
+    invariantes compartidas y la auditoría.
+    """
+    from datetime import date
+    from extensions import db
+    from models import AuditLog, DeliverySlot, Order, SiteConfig
+
+    selected = MODE_CONFIG.get(str(modo or "").strip().lower())
+    if selected is None:
+        raise ErrorPlanDelivery("Modo de reparto no válido.")
+    if selected["franjas"]:
+        future_slot = DeliverySlot.query.filter(
+            DeliverySlot.activo.is_(True), DeliverySlot.fecha >= date.today(),
+        ).first()
+        if future_slot is None:
+            raise ErrorPlanDelivery(
+                "Crea al menos una franja futura activa antes de habilitar esta modalidad."
+            )
+    if not selected["franjas"]:
+        active_scheduled = Order.query.filter(
+            Order.slot_id.isnot(None),
+            Order.estado.in_(("pendiente", "armando", "listo", "en_ruta")),
+        ).count()
+        if active_scheduled:
+            raise ErrorPlanDelivery(
+                f"No puedes apagar franjas: quedan {active_scheduled} pedidos programados activos."
+            )
+    SiteConfig.set("delivery_inmediato_activo", "1" if selected["inmediato"] else "0", actor_id)
+    SiteConfig.set("delivery_franjas_activo", "1" if selected["franjas"] else "0", actor_id)
+    AuditLog.registrar(
+        actor_id, "cambiar_modo_delivery", "site_config",
+        detalle=(
+            f"modo={modo}; inmediato={int(selected['inmediato'])}; "
+            f"franjas={int(selected['franjas'])}"
+        ),
+        ip=ip,
+    )
+    db.session.commit()
+    return selected.copy()
 
 
 def resolver_plan_delivery(slot_id_raw=None, modos=None) -> PlanDelivery:

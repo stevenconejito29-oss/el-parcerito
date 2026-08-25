@@ -7,6 +7,7 @@ import re
 import secrets
 import unicodedata
 import uuid
+from datetime import datetime
 import requests
 from rapidfuzz import fuzz
 
@@ -231,10 +232,71 @@ def _visitor_order_tokens() -> dict[int, str]:
     for key, slot in raw.items():
         if not str(key).isdigit():
             continue
+        if isinstance(slot, dict):
+            try:
+                expires_at = int(slot.get("exp") or 0)
+            except (TypeError, ValueError):
+                continue
+            if expires_at and expires_at < int(datetime.utcnow().timestamp()):
+                continue
         token = str(slot.get("token") if isinstance(slot, dict) else slot or "").strip()
         if token:
             result[int(key)] = token
     return result
+
+
+_ORDER_REFERENCE_RE = re.compile(
+    r"(?:pedido|orden|ticket|numero|n[uú]mero|#)\s*(?:n[º°o]\.?\s*)?#?\s*([a-z]{0,8}[- ]?\d{2,12}|\d{2,12})",
+    re.IGNORECASE,
+)
+
+
+def _normalise_order_reference(value: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+
+
+def visitor_order_answer(question: str) -> str | None:
+    """Resuelve un número de pedido sin consultar ni revelar pedidos ajenos.
+
+    La lista de candidatos sale primero de los tokens firmados de esta sesión.
+    Un número correcto escrito desde otro navegador obtiene exactamente la
+    misma respuesta que uno inexistente, evitando enumeración de pedidos.
+    """
+    match = _ORDER_REFERENCE_RE.search(str(question or ""))
+    if not match:
+        return None
+    tokens = _visitor_order_tokens()
+    reference = _normalise_order_reference(match.group(1))
+    rows = Order.query.filter(Order.id.in_(list(tokens))).all() if tokens else []
+    order = next(
+        (
+            row for row in rows
+            if reference in {
+                _normalise_order_reference(row.numero_pedido),
+                str(row.id),
+                re.sub(r"\D", "", str(row.numero_pedido or "")),
+            }
+        ),
+        None,
+    )
+    if not order or order.estado in {"cancelado", "entregado"}:
+        return (
+            "No pudimos verificar un pedido activo con ese número en este dispositivo. "
+            "Ábrelo desde el mismo navegador donde hiciste la compra o solicita atención humana."
+        )
+    status = {
+        "pendiente": "recibido", "armando": "en preparación",
+        "listo": "listo para salir", "en_ruta": "en reparto",
+    }.get(order.estado, "en proceso")
+    delivery = "entrega inmediata"
+    if order.slot_id and order.slot:
+        delivery = f"franja del {order.slot.fecha.strftime('%d/%m')} de {order.slot.hora_inicio.strftime('%H:%M')} a {order.slot.hora_fin.strftime('%H:%M')}"
+    action = (
+        "Puedes revisar el seguimiento o cancelar con los botones seguros que aparecen debajo."
+        if order.estado == "pendiente" and not (order.metodo_pago == "bizum" and order.pago_confirmado)
+        else "Puedes abrir «Ver estado» debajo para consultar el detalle actualizado."
+    )
+    return f"Tu pedido {order.numero_pedido} está {status} y tiene {delivery}. {action}"
 
 
 def visitor_orders() -> list[dict]:
@@ -421,6 +483,9 @@ def _intent_answer(intent: str) -> str | None:
 
 
 def bot_reply(question: str) -> tuple[str, str]:
+    order_answer = visitor_order_answer(question)
+    if order_answer:
+        return order_answer, "order:session"
     intent = _classify_intent(question)
     # Las intenciones operativas se resuelven desde configuración/módulos, no
     # desde FAQ antiguas. Así una respuesta editable no puede anunciar pagos,
