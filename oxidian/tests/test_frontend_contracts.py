@@ -73,6 +73,23 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("Usar la próxima semana", admin_ui)
         self.assertIn('resumen_slots[slot.id]["total"] == 0', kitchen_route)
 
+    def test_operational_roles_expose_one_primary_action_per_stage(self):
+        kitchen = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")
+        rider = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
+
+        self.assertNotIn("📌 Reservar", kitchen)
+        self.assertIn("data-ready-button disabled", kitchen)
+        self.assertIn("items.every(item => item.checked)", kitchen)
+        self.assertNotIn("Tomar seleccionados", rider)
+        self.assertNotIn("1. Reservar este pedido", rider)
+        self.assertIn("Tomar pedido y salir", rider)
+        self.assertIn("{% if pedido.en_punto_encuentro %}\n      <details class=\"route-finish\"", rider)
+        self.assertIn("Ya llegué · avisar al cliente y verificar", rider)
+        rider_route = (ROOT / "routes" / "repartidor.py").read_text(encoding="utf-8")
+        arrival = rider_route[rider_route.index("def pedido_en_la_puerta"):]
+        self.assertIn('request.accept_mimetypes["text/html"]', arrival)
+        self.assertIn('redirect(url_for("repartidor.ruta"))', arrival)
+
     def test_delivery_slots_serialize_rider_and_preserve_active_work(self):
         service = (ROOT / "delivery_slots_service.py").read_text(encoding="utf-8")
         rider = (ROOT / "routes" / "repartidor.py").read_text(encoding="utf-8")

@@ -79,20 +79,25 @@
     <label>Max repartidores
       <input type="number" name="max_repartidores" min="1" value="{{ default_max_repartidores }}">
     </label>
-    <label>Cierre (opcional)
-      <select name="cierre_modo">
-        <option value="">— default global —</option>
-        <option value="al_iniciar_siguiente">Al iniciar franja</option>
-        <option value="minutos_antes">Minutos antes</option>
-        <option value="hora_fija">Hora fija</option>
-      </select>
-    </label>
-    <label>Valor cierre
-      <input type="text" name="cierre_valor" placeholder="ej: 30 o 13:15">
-    </label>
-    <label class="df-field-wide">Nota interna
-      <input type="text" name="notas_admin" maxlength="500" placeholder="Ej: salida de mediodía">
-    </label>
+    <details class="df-advanced df-field-wide">
+      <summary>Ajustes avanzados de cierre y nota</summary>
+      <div class="df-advanced-grid">
+        <label>Cierre (opcional)
+          <select name="cierre_modo">
+            <option value="">— configuración global —</option>
+            <option value="al_iniciar_siguiente">Al iniciar franja</option>
+            <option value="minutos_antes">Minutos antes</option>
+            <option value="hora_fija">Hora fija</option>
+          </select>
+        </label>
+        <label>Valor cierre
+          <input type="text" name="cierre_valor" placeholder="ej: 30 o 13:15">
+        </label>
+        <label>Nota interna
+          <input type="text" name="notas_admin" maxlength="500" placeholder="Ej: salida de mediodía">
+        </label>
+      </div>
+    </details>
     <div class="df-form-actions">
       <button type="submit" id="df-btn-guardar" class="df-btn df-btn-primary">Crear franja</button>
       <button type="button" id="df-btn-clonar" class="df-btn">Copiar semana manualmente</button>
@@ -127,6 +132,7 @@
     editorTitle.textContent = "Crear franja";
     btnGuardar.textContent = "Crear franja";
     btnCancelarEdicion.hidden = true;
+    form.querySelector('.df-advanced')?.removeAttribute('open');
   }
 
   async function cargar() {
@@ -218,6 +224,7 @@
       for (const field of ["fecha", "hora_inicio", "hora_fin", "capacidad_max", "max_repartidores", "cierre_modo", "cierre_valor", "notas_admin"]) {
         if (form.elements[field]) form.elements[field].value = slot[field] ?? "";
       }
+      if (slot.cierre_modo || slot.cierre_valor || slot.notas_admin) form.querySelector('.df-advanced')?.setAttribute('open', '');
       if (esPasada) {
         const destino = new Date(slot.fecha + "T00:00:00");
         do { destino.setDate(destino.getDate() + 7); }

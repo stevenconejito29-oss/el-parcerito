@@ -731,6 +731,12 @@ html[data-delivery-theme="light"] body.view-preparador .prep-slot-card__time spa
 html[data-delivery-theme="light"] body.view-preparador .prep-slot-card__stats b { color: #17202a !important; }
 html[data-delivery-theme="light"] body.view-preparador .prep-slot-card :is(small,.prep-slot-card__stats span),
 html[data-delivery-theme="light"] body.view-preparador .prep-slot-result { color: #526170 !important; }
+.prep-device-tools { position:relative; color:#fff; }
+.prep-device-tools > summary { min-height:40px; display:flex; align-items:center; padding:.45rem .7rem; border:1px solid rgba(255,255,255,.22); border-radius:9px; cursor:pointer; font-weight:800; list-style:none; }
+.prep-device-tools > summary::before { content:'🖨️'; margin-right:.4rem; }
+.prep-device-tools > div { position:absolute; right:0; top:calc(100% + 6px); z-index:30; min-width:230px; display:grid; gap:6px; padding:8px; border:1px solid var(--employee-line); border-radius:12px; background:var(--employee-card); box-shadow:0 14px 30px rgba(0,0,0,.25); }
+.prep-device-tools[open] > summary { background:rgba(255,255,255,.1); }
+@media(max-width:620px){.prep-device-tools > div{position:fixed;left:10px;right:10px;top:auto;bottom:max(10px,env(safe-area-inset-bottom));}}
 
 @media (min-width: 901px) {
   body.view-preparador .work-hero { min-height:60px; padding:7px 12px !important; }

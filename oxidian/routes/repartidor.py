@@ -1469,4 +1469,7 @@ def pedido_en_la_puerta(pedido_id):
         pedido, actor_id=None if _es_admin_operativo() else current_user.id,
     )
     db.session.commit()
+    if request.accept_mimetypes["text/html"] > request.accept_mimetypes["application/json"]:
+        flash("Cliente avisado. Verifica el código y el cobro antes de entregar.", "success")
+        return redirect(url_for("repartidor.ruta"))
     return jsonify({"notificado": True})

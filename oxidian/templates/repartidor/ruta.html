@@ -360,20 +360,12 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
     {% if listos_count and listos_count > 1 %}
     <div class="route-multi-bar">
       <span class="route-multi-bar__title">🗺️ Armar una ruta</span>
-      <form id="ruta-tomar-form" method="POST"
-            action="{{ url_for('repartidor.tomar_multiples') }}" style="display:inline">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="work-btn work-btn-ghost">Tomar seleccionados</button>
-      </form>
       <form id="ruta-salir-form" method="POST"
             action="{{ url_for('repartidor.salir_multiples') }}" style="display:inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="work-btn work-btn-info">Salir con seleccionados</button>
       </form>
-      <button type="button" class="work-btn work-btn-info" data-open-maps-route="listos">
-        🧭 Ver ruta aquí
-      </button>
-      <span class="route-multi-bar__help">Marca hasta el límite de tu salida y elige una acción.</span>
+      <span class="route-multi-bar__help">Selecciona lo que cabe en tu mochila y sal. La ruta aparecerá ordenada en el siguiente paso.</span>
     </div>
     {% endif %}
     <div class="work-list">
@@ -549,25 +541,17 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
       {% if listos_count and listos_count > 1 %}
       <label class="route-multi-check" style="display:flex;gap:.4rem;align-items:center;margin:.3rem 0;font-size:.9em">
         <input type="checkbox" name="pedido_ids" value="{{ pedido.id }}"
-               form="ruta-tomar-form" data-route-select="{{ pedido.id }}">
-        <input type="checkbox" name="pedido_ids" value="{{ pedido.id }}"
-               form="ruta-salir-form" data-route-mirror="{{ pedido.id }}" hidden>
+               form="ruta-salir-form" data-route-select="{{ pedido.id }}">
         <span>Incluir en ruta múltiple</span>
       </label>
       {% endif %}
 
       <!-- Botones de acción -->
       <div class="work-action-row work-cta-group mt-3">
-        <p class="rider-next-action"><span>SIGUIENTE</span><b>{{ 'Reserva el pedido' if not pedido.repartidor_id else 'Confirma que sales del local' }}</b></p>
-        {% if not pedido.repartidor_id %}
-        <form method="POST" action="{{ url_for('repartidor.tomar_pedido', pedido_id=pedido.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-ghost full-width">1. Reservar este pedido</button>
-        </form>
-        {% endif %}
+        <p class="rider-next-action"><span>SIGUIENTE</span><b>{{ 'Toma el pedido y comienza la ruta' if not pedido.repartidor_id else 'Confirma que sales del local' }}</b></p>
         <form method="POST" action="{{ url_for('repartidor.salir_entregar', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-info full-width">{{ '2. ' if not pedido.repartidor_id else '' }}Salir y abrir ruta</button>
+          <button type="submit" class="work-btn work-btn-info full-width">Tomar pedido y salir</button>
         </form>
         {% if current_user.rol in ('admin', 'super_admin') or pedido.repartidor_id == current_user.id %}
           {{ ticket_action(pedido, label='Imprimir ticket 58 mm') }}
@@ -623,7 +607,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
         {%- set _cp2.has_cocina = true -%}
       {%- endif -%}
     {%- endfor -%}
-    <article class="work-card work-card--tight is-info motion-fade-in {% if pedido.id in codigo_enviado_ids %}is-arrived{% endif %}"
+    <article class="work-card work-card--tight is-info motion-fade-in {% if pedido.en_punto_encuentro %}is-arrived{% endif %}"
              data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}"
              data-pedido-id="{{ pedido.id }}"
              data-lat="{{ pedido.direccion_lat if pedido.direccion_lat is not none else '' }}"
@@ -712,7 +696,6 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
         <div class="rider-stepper" aria-label="Proceso de esta entrega">
           <span class="is-active"><i>1</i><b>Navega</b></span><span class="{% if pedido.id in codigo_enviado_ids %}is-active{% endif %}"><i>2</i><b>Verifica</b></span><span><i>3</i><b>Entrega</b></span>
         </div>
-        <button type="button" class="rider-arrived" data-rider-arrived>Ya llegué · verificar entrega</button>
       </div>
       {% endif %}
 
@@ -758,7 +741,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
             class="mt-2 js-single-submit">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="work-btn work-btn-primary full-width">
-          🛵 Estoy en la puerta — avisar al cliente
+          Ya llegué · avisar al cliente y verificar
         </button>
       </form>
       {% else %}
@@ -770,6 +753,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
       </p>
       {% endif %}
 
+      {% if pedido.en_punto_encuentro %}
       <details class="route-finish" {% if pedido.id in codigo_enviado_ids %}open{% endif %}>
         <summary><span><b>Completar entrega</b><small>Código · cobro · cierre</small></span><strong>3 pasos</strong></summary>
       <div class="work-panel route-confirm-block route-operation-step route-operation-step--code mb-3 mt-3">
@@ -874,6 +858,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
         <button type="submit" class="work-btn work-btn-success full-width">Confirmar entrega y cobro</button>
       </form>
       </details>
+      {% endif %}
 
       {# Escape para casos: cliente no está, no contesta, código bloqueado por
          3 intentos. Restaura stock, cancela y libera el pedido — evita quedar
@@ -928,25 +913,6 @@ function copiarDireccion(dir) {
 document.addEventListener('click', (event) => {
   const button = event.target.closest('[data-copy-address]');
   if (button) copiarDireccion(button.dataset.copyAddress || '');
-});
-document.addEventListener('change', (event) => {
-  const selector = event.target.closest('[data-route-select]');
-  if (!selector) return;
-  const mirror = document.querySelector(
-    `[data-route-mirror="${CSS.escape(selector.dataset.routeSelect)}"]`
-  );
-  if (mirror) mirror.checked = selector.checked;
-});
-document.addEventListener('click', (event) => {
-  const arrived = event.target.closest('[data-rider-arrived]');
-  if (!arrived) return;
-  const card = arrived.closest('.work-card');
-  const finish = card?.querySelector('.route-finish');
-  if (!finish) return;
-  finish.open = true;
-  card.classList.add('is-arrived');
-  finish.scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start'});
-  finish.querySelector('button, input')?.focus({preventScroll:true});
 });
 
 /* ──────────────────────────────────────────────────────────────

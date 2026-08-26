@@ -282,6 +282,10 @@
   border-radius:16px;
   box-shadow:0 10px 28px rgba(22,36,52,.08);
 }
+.df-advanced { border:1px solid var(--col-line,#d9d3ca); border-radius:10px; background:var(--col-elevated,#f7f8f9); }
+.df-advanced > summary { padding:11px 12px; cursor:pointer; color:var(--col-text,#24201d); font-size:.82rem; font-weight:850; }
+.df-advanced-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:0 12px 12px; }
+@media(max-width:620px){.df-advanced-grid{grid-template-columns:1fr;}}
 
 .df-container--rider .df-rider-guide { margin-top:-4px; }
 .df-container--rider #df-cal { display:grid; gap:12px; }

@@ -544,17 +544,16 @@
        de la oficina donde la impresora va enchufada por USB-OTG (o BT).
        En el PC de casa el ticket se manda por IPP desde el servidor,
        así que estos botones simplemente no se pulsan. #}
-    <button type="button" class="work-btn work-btn-ghost"
-            data-pair-thermal="usb"
-            title="Emparejar impresora térmica conectada por cable USB (OTG)">
-      🖨️ USB
-    </button>
-    <button type="button" class="work-btn work-btn-ghost"
-            data-pair-thermal="bt"
-            title="Emparejar impresora térmica por Bluetooth">
-      📶 BT
-    </button>
-    <small data-thermal-status class="prep-sse-badge">Impresora no emparejada</small>
+    <details class="prep-device-tools">
+      <summary>Impresora</summary>
+      <div>
+        <button type="button" class="work-btn work-btn-ghost" data-pair-thermal="usb"
+                title="Emparejar impresora térmica conectada por cable USB (OTG)">🖨️ USB</button>
+        <button type="button" class="work-btn work-btn-ghost" data-pair-thermal="bt"
+                title="Emparejar impresora térmica por Bluetooth">📶 Bluetooth</button>
+        <small data-thermal-status class="prep-sse-badge">Impresora no emparejada</small>
+      </div>
+    </details>
   </div>
 </section>
 
@@ -889,20 +888,7 @@
 
       <div class="work-action-row work-cta-group">
         {{ ticket_action(pedido, 'work-btn work-btn-ghost work-action-row__ticket', 'Reimprimir') }}
-        {# UX simplificado: "Reservar" solo asigna el pedido (útil si otro
-           preparador lo terminará). "Tomar y empezar" asigna + pasa a
-           "armando" en un click. Si ya está reservado a mí, muestra solo
-           "Empezar a preparar". #}
-        {% if not pedido.preparador_id %}
-        <form method="POST" action="{{ url_for('preparador.tomar_pedido', pedido_id=pedido.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-ghost full-width"
-                  {% if not disponible %}disabled aria-disabled="true"{% endif %}
-                  title="Reservar el pedido sin empezar aún">
-            {{ 'Ponte online para reservar' if not disponible else '📌 Reservar' }}
-          </button>
-        </form>
-        {% endif %}
+        {# Una decisión por etapa: empezar ya asigna el pedido de forma atómica. #}
         <form method="POST" action="{{ url_for('preparador.empezar_armar', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="work-btn work-btn-primary full-width"
@@ -1030,20 +1016,7 @@
       {% if pedido.notas %}<div class="work-note">Nota: {{ pedido.notas }}</div>{% endif %}
       <div class="work-action-row work-cta-group">
         {{ ticket_action(pedido, 'work-btn work-btn-ghost work-action-row__ticket', 'Reimprimir') }}
-        {# UX simplificado: "Reservar" solo asigna el pedido (útil si otro
-           preparador lo terminará). "Tomar y empezar" asigna + pasa a
-           "armando" en un click. Si ya está reservado a mí, muestra solo
-           "Empezar a preparar". #}
-        {% if not pedido.preparador_id %}
-        <form method="POST" action="{{ url_for('preparador.tomar_pedido', pedido_id=pedido.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-ghost full-width"
-                  {% if not disponible %}disabled aria-disabled="true"{% endif %}
-                  title="Reservar el pedido sin empezar aún">
-            {{ 'Ponte online para reservar' if not disponible else '📌 Reservar' }}
-          </button>
-        </form>
-        {% endif %}
+        {# Una decisión por etapa: empezar ya asigna el pedido de forma atómica. #}
         <form method="POST" action="{{ url_for('preparador.empezar_armar', pedido_id=pedido.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="work-btn work-btn-primary full-width"
@@ -1162,8 +1135,8 @@
               data-prep-confirm-ready
               class="work-action-row__primary">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="work-btn work-btn-success full-width">
-            ✓ Listo · Enviar a repartidor
+          <button type="submit" class="work-btn work-btn-success full-width" data-ready-button disabled aria-disabled="true">
+            Marca todos los productos
           </button>
         </form>
         {{ ticket_action(pedido, 'work-btn work-btn-ghost work-action-row__ticket', 'Reimprimir') }}
@@ -1220,7 +1193,19 @@ document.addEventListener('change', ev => {
   else delete state['i' + idx];
   localStorage.setItem(prepStateKey(pid), JSON.stringify(state));
   chk.closest('.work-item')?.classList.toggle('is-checked', chk.checked);
+  updatePrepReadyState(card);
 });
+
+function updatePrepReadyState(card) {
+  if (!card) return;
+  const items = Array.from(card.querySelectorAll('[data-item-check]'));
+  const button = card.querySelector('[data-ready-button]');
+  if (!button) return;
+  const complete = items.length === 0 || items.every(item => item.checked);
+  button.disabled = !complete;
+  button.setAttribute('aria-disabled', String(!complete));
+  button.textContent = complete ? '✓ Pedido comprobado · dejar listo' : `Marca los productos (${items.filter(item => item.checked).length}/${items.length})`;
+}
 
 // ── Confirmación al marcar listo — antes de enviar a repartidor ──
 window.prepConfirmReady = function(form) {
@@ -1228,11 +1213,7 @@ window.prepConfirmReady = function(form) {
   if (!card) return true;
   const total = card.querySelectorAll('[data-item-check]').length;
   const checked = card.querySelectorAll('[data-item-check]:checked').length;
-  if (total > 0 && checked < total) {
-    if (!confirm(`Marcaste ${checked} de ${total} ítems. ¿Aun así enviar a repartidor?`)) {
-      return false;
-    }
-  }
+  if (total > 0 && checked < total) return false;
   // Limpia el estado local — el pedido ya no está en preparación
   const pid = form.dataset.pedidoId;
   if (pid) { try { localStorage.removeItem(prepStateKey(pid)); } catch (_) {} }
@@ -1272,6 +1253,7 @@ function actualizarUrgencia() {
 actualizarUrgencia();
 setInterval(actualizarUrgencia, 60000);
 prepRestoreChecks();
+document.querySelectorAll('.work-card').forEach(updatePrepReadyState);
 
 // ── Sincronización de cola consciente de visibilidad ──────────────
 // Las conexiones SSE persistentes agotaban los threads del servidor cuando
