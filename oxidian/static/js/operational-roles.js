@@ -328,26 +328,9 @@
     return 'oxidian.card.open:' + location.pathname + ':' + (card.dataset.created || '');
   }
 
-  function ensureLaneToggleAll(lane) {
-    if (!lane || lane.dataset.laneToggleInit === '1') return;
-    const head = lane.querySelector('.work-lane-head');
-    if (!head) return;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'work-lane-toggle-all';
-    btn.dataset.cardsToggleAll = '1';
-    btn.textContent = 'Expandir todo';
-    head.appendChild(btn);
-    lane.dataset.laneToggleInit = '1';
-  }
-
   function initCollapsibleCards(scope) {
     if (!body.classList.contains('operational-view')) return;
-    // En un KDS el ticket completo debe permanecer visible: ocultar items o
-    // notas obliga al cocinero a tocar cada comanda y aumenta errores.
-    if (body.classList.contains('view-preparador')) return;
     const rootScope = scope || document;
-    rootScope.querySelectorAll('.work-lane').forEach(ensureLaneToggleAll);
     rootScope.querySelectorAll('.work-card').forEach((card) => {
       if (card.dataset.collapsibleInit === '1') return;
       const detailNodes = Array.from(card.children).filter(
@@ -368,56 +351,58 @@
       toggle.innerHTML = '<span aria-hidden="true">▾</span>';
       card.appendChild(toggle);
 
-      const key = collapseKey(card);
-      // En reparto la primera tarjeta de cada carril es el siguiente trabajo:
-      // debe enseñar dirección y CTA sin exigir descubrir un desplegable.
-      // Las siguientes permanecen compactas para no convertir la ruta en una
-      // lista interminable. Una elección explícita del usuario prevalece.
+      const key = collapseKey(card).replace('oxidian.card.open:', 'oxidian.card.v2.open:');
       let stored = null;
       try { stored = sessionStorage.getItem(key); } catch (_) {}
-      const isFirstInLane = card === card.closest('.work-lane')?.querySelector('.work-card');
-      const open = stored === null ? isFirstInLane : stored === '1';
+      // Nunca abrir comandas por sorpresa después de un polling o recarga.
+      // Solo se restaura una apertura que el propio operador eligió.
+      const open = stored === '1';
       applyCardState(card, toggle, open);
+
+      const setExclusiveState = (nextOpen) => {
+        if (nextOpen) {
+          card.closest('.work-lane')?.querySelectorAll('.work-card:not(.is-collapsed)').forEach((sibling) => {
+            if (sibling === card) return;
+            const siblingToggle = sibling.querySelector('.work-card-toggle');
+            applyCardState(sibling, siblingToggle, false);
+            const siblingKey = collapseKey(sibling).replace('oxidian.card.open:', 'oxidian.card.v2.open:');
+            try { sessionStorage.setItem(siblingKey, '0'); } catch (_) {}
+          });
+        }
+        applyCardState(card, toggle, nextOpen);
+        try { sessionStorage.setItem(key, nextOpen ? '1' : '0'); } catch (_) {}
+      };
 
       card.addEventListener('click', (event) => {
         if (event.target.closest('.work-card-body')) return;
         if (event.target.closest('form, button, a, input, label, select, textarea')) return;
         const nextOpen = card.classList.contains('is-collapsed');
-        applyCardState(card, toggle, nextOpen);
-        try { sessionStorage.setItem(key, nextOpen ? '1' : '0'); } catch (_) {}
+        setExclusiveState(nextOpen);
       });
       toggle.addEventListener('click', (event) => {
         event.stopPropagation();
         const nextOpen = card.classList.contains('is-collapsed');
-        applyCardState(card, toggle, nextOpen);
-        try { sessionStorage.setItem(key, nextOpen ? '1' : '0'); } catch (_) {}
+        setExclusiveState(nextOpen);
+      });
+    });
+    rootScope.querySelectorAll('.work-lane').forEach((lane) => {
+      const abiertas = Array.from(lane.querySelectorAll('.work-card:not(.is-collapsed)'));
+      abiertas.slice(1).forEach((card) => {
+        applyCardState(card, card.querySelector('.work-card-toggle'), false);
+        const key = collapseKey(card).replace('oxidian.card.open:', 'oxidian.card.v2.open:');
+        try { sessionStorage.setItem(key, '0'); } catch (_) {}
       });
     });
   }
 
   function applyCardState(card, toggle, open) {
     card.classList.toggle('is-collapsed', !open);
-    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
   document.addEventListener('DOMContentLoaded', () => initCollapsibleCards());
   document.addEventListener('oxidian:cards-updated', (event) => {
     initCollapsibleCards(event.detail && event.detail.scope);
-  });
-
-  document.addEventListener('click', (event) => {
-    const btn = event.target.closest('[data-cards-toggle-all]');
-    if (!btn) return;
-    const scope = btn.closest('.work-lane') || document;
-    const cards = scope.querySelectorAll('.work-card');
-    const anyCollapsed = Array.from(cards).some((c) => c.classList.contains('is-collapsed'));
-    cards.forEach((card) => {
-      const toggle = card.querySelector('.work-card-toggle');
-      if (!toggle) return;
-      applyCardState(card, toggle, anyCollapsed);
-      try { sessionStorage.setItem(collapseKey(card), anyCollapsed ? '1' : '0'); } catch (_) {}
-    });
-    btn.textContent = anyCollapsed ? 'Plegar todo' : 'Expandir todo';
   });
 
   function initRiderTracking() {

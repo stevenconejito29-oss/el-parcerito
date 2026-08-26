@@ -786,10 +786,6 @@
     <span class="prep-section-count">{{ franjas_cocina|length }}</span>
   </div>
   <div class="prep-slot-strip" role="toolbar" aria-label="Filtrar pedidos por salida">
-    <button type="button" class="prep-slot-card is-active" data-prep-slot-filter="all" aria-pressed="true">
-      <span class="prep-slot-card__time"><span>Vista general</span><small>{{ pendientes|length + armando|length }} activos</small></span>
-      <span class="prep-slot-card__stats">Todas las colas</span>
-    </button>
     <button type="button" class="prep-slot-card" data-prep-slot-filter="immediate" aria-pressed="false">
       <span class="prep-slot-card__time"><span>Inmediatos</span><small>Sin franja</small></span>
       <span class="prep-slot-card__stats">Atender por llegada</span>
@@ -805,7 +801,7 @@
     </button>
     {% endfor %}
   </div>
-  <p class="prep-slot-result" data-prep-slot-result aria-live="polite">Mostrando todo el turno.</p>
+  <p class="prep-slot-result" data-prep-slot-result aria-live="polite">Selecciona una salida para comenzar.</p>
 </section>
 {% endif %}
 <div class="work-board">
@@ -815,7 +811,7 @@
 <section class="work-lane work-lane--pendientes">
   <div class="work-lane-head">
     <div>
-      <h2 class="work-lane-title">Pendientes</h2>
+      <h2 class="work-lane-title">1. Por iniciar</h2>
       <p class="work-lane-sub">
         {% if current_user.rol == 'preparacion' %}Pedidos con fecha que esperan responsable o arranque.
         {% else %}{{ 'Preparación propia inmediata' if brand.es_comida else 'Validación y empaque inmediato' }} que espera responsable o arranque.{% endif %}
@@ -1078,7 +1074,7 @@
 <section class="work-lane work-lane--armando">
   <div class="work-lane-head">
     <div>
-      <h2 class="work-lane-title">Preparando</h2>
+      <h2 class="work-lane-title">2. En preparación</h2>
       <p class="work-lane-sub">Pedidos en producción para marcar como listos.</p>
     </div>
     <span class="work-count">{{ armando|length }}</span>
@@ -1408,9 +1404,9 @@ document.querySelectorAll('.js-availability-form').forEach(form => {
   if (!buttons.some(button => button.dataset.prepSlotFilter === initial)) {
     initial = buttons.find(button => button.dataset.prepSlotComplete === 'false')?.dataset.prepSlotFilter
       || (buttons.find(button => button.dataset.prepSlotFilter === 'immediate')?.dataset.prepSlotFilter)
-      || 'all';
+      || buttons[0]?.dataset.prepSlotFilter;
   }
-  applyFilter(initial);
+  if (initial) applyFilter(initial);
 })();
 
 // ── Checkboxes por item para tachar mental durante la preparación ──

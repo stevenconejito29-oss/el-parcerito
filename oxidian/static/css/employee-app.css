@@ -555,6 +555,183 @@ body.view-preparador .work-item--tap .work-item-check input { pointer-events:non
 body.view-preparador .work-item--tap.is-checked { background:#dcefdc !important; opacity:.68; }
 body.view-preparador .work-item--tap.is-checked :is(.work-item-qty-big,.work-item-name,.work-item-title) { text-decoration:line-through; }
 
+/* ── Flujo operativo v3 ───────────────────────────────────────────────
+   Cocina funciona como una cola KDS por salida y reparto como un
+   manifiesto de ruta. La cabecera resume; el acordeón contiene la tarea. */
+body:is(.view-preparador,.view-repartidor) .work-card {
+  overflow: visible;
+  border-radius: 14px !important;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+body:is(.view-preparador,.view-repartidor) .work-card.is-collapsed {
+  min-height: 68px;
+  box-shadow: none !important;
+}
+body:is(.view-preparador,.view-repartidor) .work-card:not(.is-collapsed) {
+  box-shadow: 0 12px 30px rgba(0,0,0,.16) !important;
+}
+body:is(.view-preparador,.view-repartidor) .work-card-toggle {
+  display: grid !important;
+  place-items: center;
+  top: 12px;
+  right: 12px;
+  width: 42px;
+  height: 42px;
+  border: 1px solid currentColor !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: currentColor !important;
+  opacity: .72;
+}
+body:is(.view-preparador,.view-repartidor) .work-order-head {
+  padding-right: 56px !important;
+  cursor: pointer;
+}
+body.view-preparador .prep-slot-planner {
+  margin: 0 0 10px;
+  padding: 12px;
+  border: 1px solid #3a4652;
+  border-radius: 16px;
+  background: #151c23;
+  box-shadow: 0 10px 24px rgba(0,0,0,.2);
+}
+body.view-preparador .prep-slot-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(190px, 230px);
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+body.view-preparador .prep-slot-card {
+  min-height: 82px;
+  scroll-snap-align: start;
+  border: 1px solid #44515d;
+  border-radius: 12px;
+  background: #202a34;
+  color: #f7fafc;
+  text-align: left;
+  box-shadow: none;
+}
+body.view-preparador .prep-slot-card:is(:hover,:focus-visible) { border-color: #f5c542; }
+body.view-preparador .prep-slot-card.is-active {
+  border-color: #f5c542;
+  background: #332b16;
+  box-shadow: inset 4px 0 #f5c542;
+}
+body.view-preparador .prep-slot-card.is-working { border-color: #4b93df; }
+body.view-preparador .prep-slot-card.is-complete { border-color: #38b978; }
+body.view-preparador .prep-slot-card__time span,
+body.view-preparador .prep-slot-card__stats b { color: #fff !important; }
+body.view-preparador .prep-slot-card :is(small,.prep-slot-card__stats span) { color: #b9c4cf !important; }
+body.view-preparador .prep-slot-result {
+  margin: 4px 2px 0;
+  color: #d9e1e8 !important;
+  font-weight: 750;
+}
+body.view-preparador .work-board {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+  gap: 10px !important;
+}
+body.view-preparador .work-lane {
+  min-height: 180px;
+  padding: 10px !important;
+  border: 1px solid #33404c !important;
+  border-radius: 16px !important;
+  background: #111820 !important;
+}
+body.view-preparador .work-lane-head {
+  position: static;
+  min-height: 58px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-left: 4px solid #f5c542;
+  border-radius: 10px;
+  background: #1d2730;
+}
+body.view-preparador .work-lane--armando .work-lane-head { border-left-color: #4b93df; }
+body.view-preparador .work-lane-title { color: #fff !important; font-size: 14px; }
+body.view-preparador .work-lane-sub { color: #b5c0ca !important; }
+body.view-preparador .work-card {
+  border: 1px solid #d9d4c9 !important;
+  border-left: 5px solid #e9ae16 !important;
+  background: #fffdf8 !important;
+  color: #1b2025 !important;
+}
+body.view-preparador .work-lane--armando .work-card { border-left-color: #2779c8 !important; }
+body.view-preparador .work-order-head {
+  min-height: 64px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+}
+body.view-preparador .work-card-toggle { color: #28333d !important; }
+body.view-preparador .work-card.is-collapsed .work-order-head { border-bottom: 0; }
+body.view-preparador .work-card-body { padding-bottom: 8px; }
+body.view-preparador .work-cta-group {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  padding: 9px !important;
+  border-top: 1px solid #ddd6c9;
+  background: rgba(255,253,248,.96);
+}
+
+body.view-repartidor .work-lane-toggle-all { display: none !important; }
+body.view-repartidor .work-board {
+  grid-template-columns: minmax(260px,.68fr) minmax(360px,1.32fr);
+  align-items: start;
+}
+body.view-repartidor .work-lane {
+  border-radius: 16px !important;
+  background: #e8edf1 !important;
+}
+body.view-repartidor .route-lane--active { background: #dfe8e5 !important; }
+body.view-repartidor .work-card { border-left: 5px solid #64748b !important; }
+body.view-repartidor .route-lane--active .work-card { padding-left: 60px !important; }
+body.view-repartidor .route-lane--active .work-card:first-child { border-left-color: #18a957 !important; }
+body.view-repartidor .work-card-toggle { color: #334155 !important; }
+body.view-repartidor .work-card.is-collapsed :is(.route-stop-marker,.work-order-head) { cursor: pointer; }
+body.view-repartidor .route-operation-step { border-radius: 12px; }
+
+@media (max-width: 700px) {
+  body.view-preparador .ox-page,
+  body.view-repartidor .ox-page { padding: 7px !important; }
+  body.view-preparador .prep-slot-planner { padding: 9px; border-radius: 12px; }
+  body.view-preparador .prep-section-head { margin-bottom: 8px; }
+  body.view-preparador .prep-section-sub { display: none; }
+  body.view-preparador .prep-slot-strip { grid-auto-columns: minmax(164px, 76vw); }
+  body.view-preparador .prep-slot-card { min-height: 72px; padding: 9px; }
+  body.view-preparador .work-board { display: grid !important; grid-template-columns: 1fr !important; overflow: visible; }
+  body.view-preparador .work-lane { min-width: 0; min-height: 100px; scroll-snap-align: none; }
+  body.view-preparador .work-lane-head { position: static; }
+  body:is(.view-preparador,.view-repartidor) .work-card-toggle { width: 40px; height: 40px; }
+  body.view-repartidor .work-board { grid-template-columns: 1fr; }
+  body.view-repartidor .route-lane--active { order: -1; }
+  body.view-repartidor .route-lane--active .work-card { padding-left: 52px !important; }
+  body.view-repartidor .route-stop-marker { left: 8px; top: 12px; width: 36px; height: 42px; }
+  body.view-repartidor .route-contact-actions { grid-template-columns: 1fr 1fr; gap: 6px; }
+}
+
+html[data-delivery-theme="light"] body.view-preparador .prep-slot-planner {
+  border-color: #d5dce2;
+  background: #f1f4f6;
+}
+html[data-delivery-theme="light"] body.view-preparador .prep-slot-card {
+  border-color: #c9d2da;
+  background: #fff;
+  color: #18212a;
+}
+html[data-delivery-theme="light"] body.view-preparador .prep-slot-card.is-active { background: #fff4cf; }
+html[data-delivery-theme="light"] body.view-preparador .prep-slot-card__time span,
+html[data-delivery-theme="light"] body.view-preparador .prep-slot-card__stats b { color: #17202a !important; }
+html[data-delivery-theme="light"] body.view-preparador .prep-slot-card :is(small,.prep-slot-card__stats span),
+html[data-delivery-theme="light"] body.view-preparador .prep-slot-result { color: #526170 !important; }
+
 @media (min-width: 901px) {
   body.view-preparador .work-hero { min-height:60px; padding:7px 12px !important; }
   body.view-preparador .work-employee-card { padding-block:6px; }

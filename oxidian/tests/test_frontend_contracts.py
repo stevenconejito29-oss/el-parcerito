@@ -43,6 +43,21 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn(".route-multi-bar__help", styles)
         self.assertIn("@media (max-width: 360px)", styles)
 
+    def test_operational_cards_do_not_reopen_or_mix_kitchen_slots(self):
+        kitchen = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")
+        behavior = (ROOT / "static" / "js" / "operational-roles.js").read_text(encoding="utf-8")
+        employee_styles = (ROOT / "static" / "css" / "employee-app.css").read_text(encoding="utf-8")
+
+        self.assertNotIn("Vista general", kitchen)
+        self.assertIn("1. Por iniciar", kitchen)
+        self.assertIn("2. En preparación", kitchen)
+        self.assertIn("const open = stored === '1'", behavior)
+        self.assertIn("oxidian.card.v2.open:", behavior)
+        self.assertIn("querySelectorAll('.work-card:not(.is-collapsed)')", behavior)
+        self.assertNotIn("ensureLaneToggleAll", behavior)
+        self.assertIn("body.view-preparador .work-card-toggle", employee_styles)
+        self.assertIn("body.view-repartidor .work-lane-toggle-all { display: none", employee_styles)
+
     def test_delivery_slots_serialize_rider_and_preserve_active_work(self):
         service = (ROOT / "delivery_slots_service.py").read_text(encoding="utf-8")
         rider = (ROOT / "routes" / "repartidor.py").read_text(encoding="utf-8")
