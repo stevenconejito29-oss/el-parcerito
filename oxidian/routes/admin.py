@@ -8081,6 +8081,9 @@ def delivery_franjas_eliminar(slot_id):
             recurso_id=slot_id, detalle=f"eliminacion={tipo}", ip=request.remote_addr,
         )
         db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 409
     except Exception:
         db.session.rollback()
         current_app.logger.exception("No se pudo eliminar la franja %s", slot_id)

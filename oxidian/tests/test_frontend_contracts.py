@@ -43,6 +43,22 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn(".route-multi-bar__help", styles)
         self.assertIn("@media (max-width: 360px)", styles)
 
+    def test_delivery_slots_serialize_rider_and_preserve_active_work(self):
+        service = (ROOT / "delivery_slots_service.py").read_text(encoding="utf-8")
+        rider = (ROOT / "routes" / "repartidor.py").read_text(encoding="utf-8")
+        rider_ui = (ROOT / "templates" / "repartidor" / "franjas.html").read_text(encoding="utf-8")
+
+        self.assertIn("ResultadoRepartidor.CONFLICTO_HORARIO", rider)
+        self.assertIn("DeliverySlot.hora_inicio < slot.hora_fin", service)
+        self.assertIn("DeliverySlot.hora_fin > slot.hora_inicio", service)
+        self.assertGreaterEqual(service.count("with_for_update()"), 5)
+        self.assertIn("No puedes desactivar la franja", service)
+        self.assertIn("No puedes eliminar una franja con pedidos activos", service)
+        self.assertIn('pedido.estado != "en_ruta"', service)
+        self.assertIn("pedido.repartidor_id != actor_id", service)
+        self.assertIn('pedido.repartidor_id != current_user.id', rider)
+        self.assertIn("Preparando ruta…", rider_ui)
+
     def test_staff_pwa_embeds_route_map_and_modules_hide_disabled_surfaces(self):
         route = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
         dashboard = (ROOT / "templates" / "superadmin" / "dashboard.html").read_text(encoding="utf-8")

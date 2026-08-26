@@ -1264,7 +1264,8 @@ def franjas_tomar(slot_id):
     if res.tipo == ResultadoRepartidor.NO_EXISTE:
         return jsonify({"error": "no_existe"}), 404
     if res.tipo in (ResultadoRepartidor.INACTIVA, ResultadoRepartidor.CERRADA,
-                     ResultadoRepartidor.LLENA_DE_REPARTIDORES):
+                     ResultadoRepartidor.LLENA_DE_REPARTIDORES,
+                     ResultadoRepartidor.CONFLICTO_HORARIO):
         db.session.rollback()
         return jsonify({"error": res.tipo.value}), 409
     db.session.commit()
@@ -1357,6 +1358,9 @@ def franjas_iniciar_reparto(slot_id):
     from delivery_slots_service import (estado_operativo, pedidos_por_salida,
                                         validar_tanda_seleccionada)
 
+    # Un único candado por rider protege el límite global de su mochila aunque
+    # envíe dos tandas simultáneas desde pestañas o franjas distintas.
+    db.session.query(User).filter(User.id == current_user.id).with_for_update().one()
     slot = get_or_404(DeliverySlot, slot_id)
     asignada = SlotRepartidor.query.filter_by(
         slot_id=slot.id, repartidor_id=current_user.id, liberado_en=None
@@ -1456,10 +1460,14 @@ def pedido_en_la_puerta(pedido_id):
     o admin; funciona tanto en flujo inmediato como en franjas.
     """
     pedido = get_or_404(Order, pedido_id)
-    if pedido.repartidor_id not in (None, current_user.id) and not _es_admin_operativo():
+    if pedido.estado != "en_ruta" or pedido.tipo_entrega_cliente != "delivery":
+        return jsonify({"error": "pedido_no_esta_en_reparto"}), 409
+    if not _es_admin_operativo() and pedido.repartidor_id != current_user.id:
         abort(403)
     from delivery_slots_service import notificar_en_la_puerta
 
-    notificar_en_la_puerta(pedido, actor_id=current_user.id)
+    notificar_en_la_puerta(
+        pedido, actor_id=None if _es_admin_operativo() else current_user.id,
+    )
     db.session.commit()
     return jsonify({"notificado": True})

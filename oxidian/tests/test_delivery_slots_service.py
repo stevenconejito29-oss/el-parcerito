@@ -127,7 +127,7 @@ class EnumsAPITest(unittest.TestCase):
     def test_resultados_repartidor_expuestos(self):
         esperados = {
             "TOMADA", "YA_TOMADA_POR_TI", "LLENA_DE_REPARTIDORES",
-            "CERRADA", "INACTIVA", "NO_EXISTE",
+            "CONFLICTO_HORARIO", "CERRADA", "INACTIVA", "NO_EXISTE",
         }
         self.assertEqual({e.name for e in ResultadoRepartidor}, esperados)
 

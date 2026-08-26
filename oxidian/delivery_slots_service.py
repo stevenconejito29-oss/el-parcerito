@@ -30,6 +30,7 @@ from typing import Iterable
 from extensions import db
 from models import (
     DeliverySlot,
+    ESTADOS_ACTIVOS,
     NotificationOutbox,
     Order,
     SlotRepartidor,
@@ -351,6 +352,9 @@ def crear_franja(
 
 def actualizar_franja(slot: DeliverySlot, **campos) -> DeliverySlot:
     """Actualiza una franja conservando cupos, horario y asignaciones válidas."""
+    slot = db.session.query(DeliverySlot).filter(
+        DeliverySlot.id == slot.id,
+    ).with_for_update().one()
     permitidos = {
         "fecha", "hora_inicio", "hora_fin", "capacidad_max", "max_repartidores", "cierre_modo",
         "cierre_valor", "activo", "notas_admin",
@@ -371,12 +375,22 @@ def actualizar_franja(slot: DeliverySlot, **campos) -> DeliverySlot:
         raise ValueError("hora_fin debe ser > hora_inicio")
     if capacidad < 1 or max_repartidores < 1:
         raise ValueError("La capacidad y los repartidores deben ser mayores que cero")
-    pedidos_asignados = db.session.query(db.func.count(Order.id)).filter(Order.slot_id == slot.id).scalar() or 0
+    pedidos_asignados = db.session.query(db.func.count(Order.id)).filter(
+        Order.slot_id == slot.id, Order.estado != _ESTADO_CANCELADO,
+    ).scalar() or 0
     if capacidad < pedidos_asignados:
         raise ValueError(f"La franja ya tiene {pedidos_asignados} pedidos y no puede reducirse por debajo de ese cupo")
     asignaciones_activas = slot.repartidores.filter_by(liberado_en=None).count()
     if max_repartidores < asignaciones_activas:
         raise ValueError(f"La franja ya tiene {asignaciones_activas} riders asignados")
+    if slot.activo and activo is False:
+        pedidos_vivos = db.session.query(db.func.count(Order.id)).filter(
+            Order.slot_id == slot.id, Order.estado.in_(ESTADOS_ACTIVOS),
+        ).scalar() or 0
+        if pedidos_vivos:
+            raise ValueError(
+                f"No puedes desactivar la franja: todavía tiene {pedidos_vivos} pedido(s) activos"
+            )
     cierre_modo = campos.get("cierre_modo", slot.cierre_modo)
     _validar_cierre(cierre_modo, campos.get("cierre_valor", slot.cierre_valor))
     if "notas_admin" in campos and campos["notas_admin"] is not None and len(str(campos["notas_admin"])) > 500:
@@ -409,6 +423,14 @@ def eliminar_franja(slot: DeliverySlot) -> str:
 
     Devuelve 'hard' o 'soft' según lo aplicado.
     """
+    slot = db.session.query(DeliverySlot).filter(
+        DeliverySlot.id == slot.id,
+    ).with_for_update().one()
+    pedidos_vivos = db.session.query(Order.id).filter(
+        Order.slot_id == slot.id, Order.estado.in_(ESTADOS_ACTIVOS),
+    ).first()
+    if pedidos_vivos:
+        raise ValueError("No puedes eliminar una franja con pedidos activos")
     tiene_pedidos = db.session.query(Order.id).filter(Order.slot_id == slot.id).first()
     if tiene_pedidos:
         slot.activo = False
@@ -554,6 +576,7 @@ class ResultadoRepartidor(Enum):
     TOMADA = "tomada"
     YA_TOMADA_POR_TI = "ya_tomada"
     LLENA_DE_REPARTIDORES = "llena_repartidores"
+    CONFLICTO_HORARIO = "conflicto_horario"
     CERRADA = "cerrada"
     INACTIVA = "inactiva"
     NO_EXISTE = "no_existe"
@@ -570,6 +593,9 @@ def tomar_franja_repartidor(
 ) -> AsignacionRepartidor:
     if ahora is None:
         ahora = ahora_local_negocio()
+    # Serializa las decisiones del mismo rider: tomar dos franjas desde dos
+    # pestañas no puede saltarse la comprobación de solapamiento.
+    db.session.query(User).filter(User.id == repartidor_id).with_for_update().one()
     slot = (
         db.session.query(DeliverySlot)
         .filter(DeliverySlot.id == slot_id)
@@ -594,6 +620,21 @@ def tomar_franja_repartidor(
     )
     if ya:
         return AsignacionRepartidor(ResultadoRepartidor.YA_TOMADA_POR_TI, asignacion=ya)
+    solapada = (
+        db.session.query(SlotRepartidor.id)
+        .join(DeliverySlot, DeliverySlot.id == SlotRepartidor.slot_id)
+        .filter(
+            SlotRepartidor.repartidor_id == repartidor_id,
+            SlotRepartidor.liberado_en.is_(None),
+            SlotRepartidor.slot_id != slot.id,
+            DeliverySlot.fecha == slot.fecha,
+            DeliverySlot.hora_inicio < slot.hora_fin,
+            DeliverySlot.hora_fin > slot.hora_inicio,
+        )
+        .first()
+    )
+    if solapada:
+        return AsignacionRepartidor(ResultadoRepartidor.CONFLICTO_HORARIO)
     if _repartidores_activos(slot.id) >= slot.max_repartidores:
         return AsignacionRepartidor(ResultadoRepartidor.LLENA_DE_REPARTIDORES)
     asignacion = SlotRepartidor(
@@ -607,6 +648,7 @@ def tomar_franja_repartidor(
 
 def liberar_franja_repartidor(slot_id: int, repartidor_id: int) -> bool:
     """Marca la asignación activa como liberada. Devuelve True si liberó algo."""
+    db.session.query(User).filter(User.id == repartidor_id).with_for_update().one()
     activa = (
         db.session.query(SlotRepartidor)
         .filter(
@@ -614,6 +656,7 @@ def liberar_franja_repartidor(slot_id: int, repartidor_id: int) -> bool:
             SlotRepartidor.repartidor_id == repartidor_id,
             SlotRepartidor.liberado_en.is_(None),
         )
+        .with_for_update()
         .one_or_none()
     )
     if not activa:
@@ -639,6 +682,14 @@ def notificar_en_la_puerta(pedido: Order, actor_id: int | None = None) -> Notifi
     Idempotente: si el pedido ya fue marcado, no vuelve a encolar.
     """
     from phone_utils import normalizar_telefono_cliente  # import diferido
+
+    # Serializa doble toque/reintento y vuelve a leer el estado actual antes
+    # de crear el outbox. Así la idempotencia no depende del navegador.
+    pedido = db.session.query(Order).filter(Order.id == pedido.id).with_for_update().one()
+    if pedido.estado != "en_ruta" or pedido.tipo_entrega_cliente != "delivery":
+        raise ValueError("Solo se puede avisar al llegar durante una entrega activa")
+    if actor_id is not None and pedido.repartidor_id != actor_id:
+        raise PermissionError("El pedido pertenece a otro repartidor")
 
     if pedido.en_punto_encuentro:
         return None

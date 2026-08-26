@@ -7,10 +7,18 @@
 <div class="df-container">
   <div class="df-header">
     <div>
-      <h1>Franjas de reparto</h1>
-      <p>Toma las franjas que quieras cubrir esta semana. El admin ve tu asignación en tiempo real.</p>
+      <span class="df-eyebrow">Plan de turno</span>
+      <h1>Mis franjas</h1>
+      <p>Reserva una salida, espera a que cocina termine y arma la tanda que cabe en tu mochila.</p>
     </div>
+    <a class="df-btn" href="{{ url_for('repartidor.ruta') }}">Ver ruta actual</a>
   </div>
+
+  <ol class="df-rider-guide" aria-label="Flujo de reparto por franjas">
+    <li><b>1</b><span><strong>Reserva</strong><small>Una franja sin cruces de horario</small></span></li>
+    <li><b>2</b><span><strong>Elige</strong><small>Solo pedidos listos que puedas llevar</small></span></li>
+    <li><b>3</b><span><strong>Sal a ruta</strong><small>Durante la ventana de entrega</small></span></li>
+  </ol>
 
   <div id="df-msgs"></div>
   <div id="df-cal">
@@ -24,6 +32,12 @@
   const DF = window.DeliveryFranjas;
   const cal = document.getElementById("df-cal");
   const msgs = document.getElementById("df-msgs");
+  const riderErrors = {
+    conflicto_horario: "Ya cubres otra franja a esa hora. Libérala o elige una salida que no se solape.",
+    llena_repartidores: "Otro rider tomó el último cupo de esta salida.",
+    cerrada: "La franja ya cerró y no admite nuevas asignaciones.",
+    inactiva: "Esta franja fue desactivada por administración.",
+  };
 
   async function cargar() {
     const { ok, status, data } = await DF.apiFetch("{{ url_for('repartidor.franjas_listar') }}");
@@ -93,7 +107,7 @@
       : `/repartidor/franjas/${id}/liberar`;
     const { ok, data } = await DF.apiFetch(url, { method: "POST" });
     if (ok) { DF.msg(msgs, btn.dataset.act === "tomar" ? "Franja tomada." : "Franja liberada.", "ok"); cargar(); }
-    else DF.msg(msgs, (data && data.error) ? `Error: ${data.error}` : "Error", "err");
+    else DF.msg(msgs, riderErrors[data && data.error] || "No se pudo completar la acción. Actualiza e inténtalo otra vez.", "err");
   });
 
   const esc = value => String(value ?? "").replace(/[&<>'"]/g, ch => ({
@@ -146,6 +160,11 @@
     const cuantos = form ? form.querySelectorAll('input[name="pedido_ids"]:checked').length : 0;
     if (form && !window.confirm(`¿Confirmas que sales con ${cuantos} pedido(s)?`)) {
       e.preventDefault();
+      return;
+    }
+    if (form) {
+      const submit = form.querySelector('button[type="submit"]');
+      if (submit) { submit.disabled = true; submit.textContent = "Preparando ruta…"; }
     }
   });
 
