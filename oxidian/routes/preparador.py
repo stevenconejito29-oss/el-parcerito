@@ -488,8 +488,10 @@ def pedidos():
     franjas_cocina = [
         {"slot": slot, **resumen_slots[slot.id]}
         for slot in slots_operativos
-        if resumen_slots[slot.id]["total"] > 0
-        and resumen_slots[slot.id]["entregados"] < resumen_slots[slot.id]["total"]
+        # La planificación también debe ser visible antes de recibir pedidos:
+        # así cocina entiende el turno completo y no descubre una salida tarde.
+        if resumen_slots[slot.id]["total"] == 0
+        or resumen_slots[slot.id]["entregados"] < resumen_slots[slot.id]["total"]
     ]
 
     # El rol de encargos abre en el resumen de producción. La vista de pedidos

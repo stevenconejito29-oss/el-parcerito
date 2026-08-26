@@ -1182,7 +1182,52 @@ def franjas_panel():
     if not _franjas_modulo_activo():
         flash("El reparto por franjas no está activo. Tus entregas inmediatas siguen disponibles.", "info")
         return redirect(url_for("repartidor.ruta"))
-    return render_template("repartidor/franjas.html")
+    return render_template("repartidor/franjas.html", franjas_iniciales=_franjas_repartidor_payload())
+
+
+def _franjas_repartidor_payload() -> list[dict]:
+    """Contrato único de la agenda rider para HTML inicial y API."""
+    from delivery_slots_service import (listar_franjas_admin, _repartidores_activos,
+                                        estado_operativo, pedidos_por_salida,
+                                        resumen_preparacion_franjas)
+    from models import SlotRepartidor
+    from datetime import timedelta as _td
+    from business_time import business_today
+
+    hoy = business_today()
+    slots = [slot for slot in listar_franjas_admin(hoy, hoy + _td(days=6)) if slot.activo]
+    ids = [slot.id for slot in slots]
+    mias_ids = set()
+    if ids:
+        mias_ids = {
+            item.slot_id for item in SlotRepartidor.query.filter(
+                SlotRepartidor.slot_id.in_(ids),
+                SlotRepartidor.repartidor_id == current_user.id,
+                SlotRepartidor.liberado_en.is_(None),
+            ).all()
+        }
+    resumen = resumen_preparacion_franjas(ids)
+    activos_por_slot = {slot.id: _repartidores_activos(slot.id) for slot in slots}
+    return [{
+        "id": slot.id,
+        "fecha": slot.fecha.isoformat(),
+        "hora_inicio": slot.hora_inicio.strftime("%H:%M"),
+        "hora_fin": slot.hora_fin.strftime("%H:%M"),
+        "capacidad_max": slot.capacidad_max,
+        "max_repartidores": slot.max_repartidores,
+        "repartidores_activos": activos_por_slot[slot.id],
+        "tomada_por_mi": slot.id in mias_ids,
+        "llena_de_repartidores": (
+            activos_por_slot[slot.id] >= slot.max_repartidores
+            and slot.id not in mias_ids
+        ),
+        "pedidos_total": resumen[slot.id]["total"],
+        "pedidos_listos": resumen[slot.id]["listos"],
+        "preparacion": resumen[slot.id],
+        "preparacion_completa": resumen[slot.id]["preparacion_completa"],
+        "operativa": estado_operativo(slot),
+        "pedidos_por_salida": pedidos_por_salida(),
+    } for slot in slots]
 
 
 @repartidor_bp.route("/franjas", methods=["GET"])
@@ -1190,55 +1235,7 @@ def franjas_panel():
 def franjas_listar():
     if not _franjas_modulo_activo():
         abort(404)
-    from delivery_slots_service import (listar_franjas_admin, _repartidores_activos,
-                                        estado_operativo, pedidos_por_salida,
-                                        resumen_preparacion_franjas)
-    from models import SlotRepartidor
-    from datetime import timedelta as _td
-
-    from business_time import business_today
-    hoy = business_today()
-    slots = listar_franjas_admin(hoy, hoy + _td(days=6))
-    # Marca "mías" y "libres" para cada franja.
-    ids = [s.id for s in slots]
-    mias_ids = set()
-    if ids:
-        mias = (
-            SlotRepartidor.query
-            .filter(
-                SlotRepartidor.slot_id.in_(ids),
-                SlotRepartidor.repartidor_id == current_user.id,
-                SlotRepartidor.liberado_en.is_(None),
-            )
-            .all()
-        )
-        mias_ids = {m.slot_id for m in mias}
-    salida = []
-    # Conteos de pedidos por slot en una sola query (evita N+1 en pantalla).
-    resumen_por_slot = resumen_preparacion_franjas(ids)
-
-    for s in slots:
-        if not s.activo:
-            continue
-        activos = _repartidores_activos(s.id)
-        salida.append({
-            "id": s.id,
-            "fecha": s.fecha.isoformat(),
-            "hora_inicio": s.hora_inicio.strftime("%H:%M"),
-            "hora_fin": s.hora_fin.strftime("%H:%M"),
-            "capacidad_max": s.capacidad_max,
-            "max_repartidores": s.max_repartidores,
-            "repartidores_activos": activos,
-            "tomada_por_mi": s.id in mias_ids,
-            "llena_de_repartidores": activos >= s.max_repartidores and s.id not in mias_ids,
-            "pedidos_total": resumen_por_slot[s.id]["total"],
-            "pedidos_listos": resumen_por_slot[s.id]["listos"],
-            "preparacion": resumen_por_slot[s.id],
-            "preparacion_completa": resumen_por_slot[s.id]["preparacion_completa"],
-            "operativa": estado_operativo(s),
-            "pedidos_por_salida": pedidos_por_salida(),
-        })
-    return jsonify({"franjas": salida})
+    return jsonify({"franjas": _franjas_repartidor_payload()})
 
 
 @repartidor_bp.route("/franjas/<int:slot_id>/tomar", methods=["POST"])

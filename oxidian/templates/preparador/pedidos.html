@@ -793,9 +793,10 @@
     {% for resumen in franjas_cocina %}
     <button type="button" class="prep-slot-card {% if resumen.preparacion_completa %}is-complete{% elif resumen.armando %}is-working{% endif %}" data-prep-slot-filter="{{ resumen.slot.id }}" data-prep-slot-complete="{{ 'true' if resumen.preparacion_completa else 'false' }}" aria-pressed="false">
       <div class="prep-slot-card__time"><span>{{ resumen.slot.hora_inicio.strftime('%H:%M') }}–{{ resumen.slot.hora_fin.strftime('%H:%M') }}</span><small>{{ resumen.slot.fecha.strftime('%d/%m') }}</small></div>
-      <div class="prep-slot-progress" aria-label="{{ resumen.empacados }} de {{ resumen.total }} pedidos empacados"><i style="--prep-progress:{{ (resumen.empacados * 100 / resumen.total)|round|int }}%"></i></div>
+      <div class="prep-slot-progress" aria-label="{{ resumen.empacados }} de {{ resumen.total }} pedidos empacados"><i style="--prep-progress:{{ ((resumen.empacados * 100 / resumen.total)|round|int) if resumen.total else 0 }}%"></i></div>
       <div class="prep-slot-card__stats">
-        {% if resumen.preparacion_completa %}<b>✓ Franja empacada</b><span>{{ resumen.listos }} esperando rider</span>
+        {% if not resumen.total %}<b>Salida planificada</b><span>Sin pedidos todavía</span>
+        {% elif resumen.preparacion_completa %}<b>✓ Franja empacada</b><span>{{ resumen.listos }} esperando rider</span>
         {% else %}<b>{{ resumen.empacados }}/{{ resumen.total }} empacados</b><span>{{ resumen.pendientes + resumen.armando }} por terminar</span>{% endif %}
       </div>
     </button>

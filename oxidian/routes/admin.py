@@ -8127,6 +8127,7 @@ def delivery_franjas_panel():
     from schedule_service import configured_schedule, weekly_schedule_text
     from delivery_mode_service import modos_delivery_activos
     from business_time import business_today
+    from delivery_slots_service import listar_franjas_admin, resumen_preparacion_franjas
     try:
         default_max = int(get_store_value("delivery_franjas_max_repartidores_default", "1"))
     except (TypeError, ValueError):
@@ -8136,6 +8137,19 @@ def delivery_franjas_panel():
         max_weight_kg = max(1, min(50, float(get_store_value("delivery_franjas_peso_max_salida_kg", "12") or 12)))
     except (TypeError, ValueError):
         batch_size, max_weight_kg = 3, 12
+    hoy = business_today()
+    # El HTML nace con datos utilizables. Fetch queda como sincronización, no
+    # como requisito para que la pantalla abandone «Cargando».
+    futuras = listar_franjas_admin(hoy, hoy + timedelta(days=13))
+    from models import DeliverySlot
+    anteriores = (
+        DeliverySlot.query
+        .filter(DeliverySlot.fecha >= hoy - timedelta(days=7), DeliverySlot.fecha < hoy)
+        .order_by(DeliverySlot.fecha, DeliverySlot.hora_inicio)
+        .all()
+    )
+    slots_iniciales = anteriores + futuras
+    preparacion_inicial = resumen_preparacion_franjas(slot.id for slot in slots_iniciales)
     return render_template(
         "admin/delivery_franjas.html",
         modulo_activo=_delivery_franjas_activo(),
@@ -8145,6 +8159,11 @@ def delivery_franjas_panel():
         batch_size=batch_size,
         max_weight_kg=max_weight_kg,
         business_today_iso=business_today().isoformat(),
+        planning_from_iso=(hoy - timedelta(days=7)).isoformat(),
+        franjas_iniciales=[
+            _slot_to_dict(slot, preparacion_inicial[slot.id])
+            for slot in slots_iniciales
+        ],
         can_switch_mode=current_user.rol == "super_admin",
         delivery_zone_count=ZonaEntrega.query.filter_by(activa=True).count(),
         delivery_fee_min=db.session.query(db.func.min(ZonaEntrega.precio_envio)).filter(ZonaEntrega.activa.is_(True)).scalar(),

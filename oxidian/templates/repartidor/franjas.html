@@ -4,7 +4,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
-<div class="df-container">
+<div class="df-container df-container--rider">
   <div class="df-header">
     <div>
       <span class="df-eyebrow">Tu jornada</span>
@@ -32,6 +32,7 @@
   const DF = window.DeliveryFranjas;
   const cal = document.getElementById("df-cal");
   const msgs = document.getElementById("df-msgs");
+  const initialSlots = {{ franjas_iniciales|tojson }};
   const riderErrors = {
     conflicto_horario: "Ya cubres otra franja a esa hora. Libérala o elige una salida que no se solape.",
     llena_repartidores: "Otro rider tomó el último cupo de esta salida.",
@@ -40,6 +41,10 @@
   };
 
   async function cargar() {
+    if (!DF) {
+      cal.innerHTML = `<p class="df-day-empty">No pudimos actualizar las salidas. Cierra y abre la PWA para cargar la versión reciente.</p>`;
+      return;
+    }
     const { ok, status, data } = await DF.apiFetch("{{ url_for('repartidor.franjas_listar') }}");
     if (!ok) {
       cal.innerHTML = `<p class="df-day-empty">Error al cargar (HTTP ${status}).</p>`;
@@ -177,7 +182,12 @@
     }
   });
 
-  cargar();
+  if (DF) {
+    render(initialSlots);
+    cargar();
+  } else {
+    cal.innerHTML = `<p class="df-day-empty">No pudimos iniciar las franjas. Cierra y abre la PWA para actualizarla.</p>`;
+  }
 })();
 </script>
 {% endblock %}

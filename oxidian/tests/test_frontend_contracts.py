@@ -58,6 +58,21 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("body.view-preparador .work-card-toggle", employee_styles)
         self.assertIn("body.view-repartidor .work-lane-toggle-all { display: none", employee_styles)
 
+    def test_slot_panels_render_server_data_before_background_sync(self):
+        admin_route = (ROOT / "routes" / "admin.py").read_text(encoding="utf-8")
+        rider_route = (ROOT / "routes" / "repartidor.py").read_text(encoding="utf-8")
+        admin_ui = (ROOT / "templates" / "admin" / "delivery_franjas.html").read_text(encoding="utf-8")
+        rider_ui = (ROOT / "templates" / "repartidor" / "franjas.html").read_text(encoding="utf-8")
+        kitchen_route = (ROOT / "routes" / "preparador.py").read_text(encoding="utf-8")
+
+        self.assertIn("franjas_iniciales=[", admin_route)
+        self.assertIn("hoy - timedelta(days=7)", admin_route)
+        self.assertIn("_franjas_repartidor_payload()", rider_route)
+        self.assertIn("const initialSlots = {{ franjas_iniciales|tojson }}", admin_ui)
+        self.assertIn("const initialSlots = {{ franjas_iniciales|tojson }}", rider_ui)
+        self.assertIn("Usar la próxima semana", admin_ui)
+        self.assertIn('resumen_slots[slot.id]["total"] == 0', kitchen_route)
+
     def test_delivery_slots_serialize_rider_and_preserve_active_work(self):
         service = (ROOT / "delivery_slots_service.py").read_text(encoding="utf-8")
         rider = (ROOT / "routes" / "repartidor.py").read_text(encoding="utf-8")
