@@ -63,15 +63,17 @@
         const clases = ["df-slot"];
         if (s.tomada_por_mi) clases.push("df-slot-mia");
         if (s.llena_de_repartidores && !s.tomada_por_mi) clases.push("df-slot-llena");
+        const op = s.operativa || {estado:'proxima', segundos:0};
         const btnRider = s.tomada_por_mi
           ? `<button class="df-btn df-btn-danger" data-act="liberar" data-id="${s.id}">Liberar franja</button>`
-          : (s.llena_de_repartidores
+          : (op.estado === 'finalizada'
+              ? `<button class="df-btn" disabled>Franja finalizada</button>`
+              : s.llena_de_repartidores
               ? `<button class="df-btn" disabled>Sin cupo repartidor</button>`
               : `<button class="df-btn df-btn-primary" data-act="tomar" data-id="${s.id}">Tomar franja</button>`);
         const prep = s.preparacion || {};
         const listos = s.pedidos_listos || 0;
         const total = s.pedidos_total || 0;
-        const op = s.operativa || {estado:'proxima', segundos:0};
         const completa = Boolean(s.preparacion_completa);
         const batchBtn = (s.tomada_por_mi && completa && listos > 0 && op.estado === 'activa')
           ? `<button class="df-btn df-btn-primary df-btn-next" data-act="elegir" data-id="${s.id}">Elegir pedidos para esta vuelta</button>`

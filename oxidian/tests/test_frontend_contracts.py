@@ -71,7 +71,9 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("const initialSlots = {{ franjas_iniciales|tojson }}", admin_ui)
         self.assertIn("const initialSlots = {{ franjas_iniciales|tojson }}", rider_ui)
         self.assertIn("Usar la próxima semana", admin_ui)
-        self.assertIn('resumen_slots[slot.id]["total"] == 0', kitchen_route)
+        self.assertIn('operativa["estado"] == "finalizada" and resumen["total"] == 0', kitchen_route)
+        self.assertIn('planning_to_iso', admin_route)
+        self.assertIn('name="aplicar_futuro"', admin_ui)
 
     def test_operational_roles_expose_one_primary_action_per_stage(self):
         kitchen = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")

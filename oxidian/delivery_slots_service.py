@@ -14,7 +14,9 @@ Reglas invariantes (verificadas por tests):
   ``cierre_modo`` es NULL.
 - Un repartidor no puede tener dos asignaciones activas simultáneas a la
   misma franja (índice único parcial).
-- Repartidor no puede tomar franjas cerradas o inactivas.
+- Repartidor puede incorporarse a una franja próxima o en curso, pero no a
+  una finalizada o inactiva. El cierre comercial del checkout no bloquea la
+  asignación operativa del rider.
 - Toda franja planificada debe caber dentro del horario de apertura vigente.
 
 Reglas de negocio en este módulo; las rutas HTTP solo adaptan I/O.
@@ -555,6 +557,95 @@ def actualizar_franja(slot: DeliverySlot, **campos) -> DeliverySlot:
     return slot
 
 
+def propagar_franja_semanal(
+    slot: DeliverySlot,
+    *,
+    semanas: int = 4,
+    horario_referencia: tuple[time, time] | None = None,
+) -> dict[str, int]:
+    """Replica la configuración de ``slot`` en sus próximas semanas.
+
+    La propagación es deliberadamente conservadora: una ocurrencia que ya
+    tenga pedidos o asignaciones de riders queda intacta. Para una edición,
+    ``horario_referencia`` permite encontrar las copias por el horario que
+    tenían antes del cambio. La transacción y el commit pertenecen al caller.
+    """
+    try:
+        semanas = int(semanas)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("semanas debe ser un número entre 1 y 8") from exc
+    if not 1 <= semanas <= 8:
+        raise ValueError("semanas debe estar entre 1 y 8")
+
+    ref_inicio, ref_fin = horario_referencia or (slot.hora_inicio, slot.hora_fin)
+    resultado = {"creadas": 0, "actualizadas": 0, "protegidas": 0, "omitidas": 0}
+    from schedule_service import franja_cabe_en_horario
+
+    for numero_semana in range(1, semanas + 1):
+        fecha_destino = slot.fecha + timedelta(days=7 * numero_semana)
+        candidatas = (
+            db.session.query(DeliverySlot)
+            .filter(DeliverySlot.fecha == fecha_destino)
+            .order_by(DeliverySlot.hora_inicio)
+            .with_for_update()
+            .all()
+        )
+        destino = next(
+            (item for item in candidatas if (item.hora_inicio, item.hora_fin) == (ref_inicio, ref_fin)),
+            None,
+        )
+        if destino is None:
+            destino = next(
+                (item for item in candidatas if (item.hora_inicio, item.hora_fin) == (slot.hora_inicio, slot.hora_fin)),
+                None,
+            )
+        if destino is not None:
+            pedidos = db.session.query(db.func.count(Order.id)).filter(
+                Order.slot_id == destino.id,
+            ).scalar() or 0
+            riders = destino.repartidores.filter_by(liberado_en=None).count()
+            if pedidos or riders:
+                resultado["protegidas"] += 1
+                continue
+            if any(
+                item.id != destino.id
+                and (item.hora_inicio, item.hora_fin) == (slot.hora_inicio, slot.hora_fin)
+                for item in candidatas
+            ):
+                resultado["omitidas"] += 1
+                continue
+        elif slot.activo and sum(1 for item in candidatas if item.activo) >= MAX_SALIDAS_DIARIAS:
+            resultado["omitidas"] += 1
+            continue
+
+        cabe, _ = franja_cabe_en_horario(fecha_destino, slot.hora_inicio, slot.hora_fin)
+        if not cabe:
+            resultado["omitidas"] += 1
+            continue
+
+        valores = {
+            "hora_inicio": slot.hora_inicio,
+            "hora_fin": slot.hora_fin,
+            "capacidad_max": slot.capacidad_max,
+            "max_repartidores": slot.max_repartidores,
+            "cierre_modo": slot.cierre_modo,
+            "cierre_valor": slot.cierre_valor,
+            "notas_admin": slot.notas_admin,
+            "activo": slot.activo,
+        }
+        if destino is None:
+            destino = DeliverySlot(fecha=fecha_destino, **valores)
+            db.session.add(destino)
+            resultado["creadas"] += 1
+        else:
+            for campo, valor in valores.items():
+                setattr(destino, campo, valor)
+            resultado["actualizadas"] += 1
+
+    db.session.flush()
+    return resultado
+
+
 def eliminar_franja(slot: DeliverySlot) -> str:
     """Archiva la franja para preservar historial y detener su recurrencia.
 
@@ -738,8 +829,10 @@ def tomar_franja_repartidor(
         return AsignacionRepartidor(ResultadoRepartidor.NO_EXISTE)
     if not slot.activo:
         return AsignacionRepartidor(ResultadoRepartidor.INACTIVA)
-    modo_def, valor_def = _cierre_defaults()
-    if franja_esta_cerrada(slot, ahora, cierre_modo_default=modo_def, cierre_valor_default=valor_def):
+    # El cierre comercial evita nuevas reservas de clientes, no que un rider
+    # cubra una salida que ya comenzó. Puede incorporarse mientras la franja
+    # siga operativamente activa.
+    if estado_operativo(slot, ahora)["estado"] == "finalizada":
         return AsignacionRepartidor(ResultadoRepartidor.CERRADA)
     ya = (
         db.session.query(SlotRepartidor)

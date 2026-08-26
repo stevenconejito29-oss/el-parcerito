@@ -790,11 +790,12 @@
       <span class="prep-slot-card__stats">Atender por llegada</span>
     </button>
     {% for resumen in franjas_cocina %}
-    <button type="button" class="prep-slot-card {% if resumen.preparacion_completa %}is-complete{% elif resumen.armando %}is-working{% endif %}" data-prep-slot-filter="{{ resumen.slot.id }}" data-prep-slot-complete="{{ 'true' if resumen.preparacion_completa else 'false' }}" aria-pressed="false">
-      <div class="prep-slot-card__time"><span>{{ resumen.slot.hora_inicio.strftime('%H:%M') }}–{{ resumen.slot.hora_fin.strftime('%H:%M') }}</span><small>{{ resumen.slot.fecha.strftime('%d/%m') }}</small></div>
+    <button type="button" class="prep-slot-card is-{{ resumen.operativa.estado }} {% if resumen.preparacion_completa %}is-complete{% elif resumen.armando %}is-working{% endif %}" data-prep-slot-filter="{{ resumen.slot.id }}" data-prep-slot-state="{{ resumen.operativa.estado }}" data-prep-slot-complete="{{ 'true' if resumen.preparacion_completa else 'false' }}" aria-pressed="false">
+      <div class="prep-slot-card__time"><span>{{ resumen.slot.hora_inicio.strftime('%H:%M') }}–{{ resumen.slot.hora_fin.strftime('%H:%M') }}</span><small>{{ resumen.slot.fecha.strftime('%d/%m') }} · {% if resumen.operativa.estado == 'activa' %}EN CURSO{% elif resumen.operativa.estado == 'finalizada' %}INCIDENCIA{% else %}PRÓXIMA{% endif %}</small></div>
       <div class="prep-slot-progress" aria-label="{{ resumen.empacados }} de {{ resumen.total }} pedidos empacados"><i style="--prep-progress:{{ ((resumen.empacados * 100 / resumen.total)|round|int) if resumen.total else 0 }}%"></i></div>
       <div class="prep-slot-card__stats">
-        {% if not resumen.total %}<b>Salida planificada</b><span>Sin pedidos todavía</span>
+        {% if not resumen.total %}<b>Salida planificada</b><span>Aún no requiere preparación</span>
+        {% elif resumen.operativa.estado == 'finalizada' and not resumen.preparacion_completa %}<b>⚠ Fuera de hora</b><span>{{ resumen.pendientes + resumen.armando }} pedido(s) requieren atención</span>
         {% elif resumen.preparacion_completa %}<b>✓ Franja empacada</b><span>{{ resumen.listos }} esperando rider</span>
         {% else %}<b>{{ resumen.empacados }}/{{ resumen.total }} empacados</b><span>{{ resumen.pendientes + resumen.armando }} por terminar</span>{% endif %}
       </div>
@@ -1385,7 +1386,8 @@ document.querySelectorAll('.js-availability-form').forEach(form => {
   let initial = '';
   try { initial = sessionStorage.getItem(storageKey) || ''; } catch (_) {}
   if (!buttons.some(button => button.dataset.prepSlotFilter === initial)) {
-    initial = buttons.find(button => button.dataset.prepSlotComplete === 'false')?.dataset.prepSlotFilter
+    initial = buttons.find(button => button.dataset.prepSlotState === 'activa' && button.dataset.prepSlotComplete === 'false')?.dataset.prepSlotFilter
+      || buttons.find(button => button.dataset.prepSlotState === 'proxima' && button.dataset.prepSlotComplete === 'false')?.dataset.prepSlotFilter
       || (buttons.find(button => button.dataset.prepSlotFilter === 'immediate')?.dataset.prepSlotFilter)
       || buttons[0]?.dataset.prepSlotFilter;
   }

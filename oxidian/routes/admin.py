@@ -7975,6 +7975,7 @@ def _parse_hora_hhmm(valor: str):
 
 
 def _slot_to_dict(slot, preparacion: dict | None = None) -> dict:
+    from delivery_slots_service import estado_operativo
     data = {
         "id": slot.id,
         "fecha": slot.fecha.isoformat(),
@@ -7986,6 +7987,7 @@ def _slot_to_dict(slot, preparacion: dict | None = None) -> dict:
         "cierre_valor": slot.cierre_valor,
         "activo": slot.activo,
         "notas_admin": slot.notas_admin,
+        "operativa": estado_operativo(slot),
     }
     if preparacion is not None:
         data["preparacion"] = preparacion
@@ -8017,7 +8019,7 @@ def delivery_franjas_listar():
 @admin_bp.route("/delivery/franjas", methods=["POST"])
 @admin_required
 def delivery_franjas_crear():
-    from delivery_slots_service import crear_franja
+    from delivery_slots_service import crear_franja, propagar_franja_semanal
 
     data = request.get_json(silent=True) or {}
     try:
@@ -8029,6 +8031,10 @@ def delivery_franjas_crear():
     except (KeyError, ValueError, TypeError) as exc:
         return jsonify({"error": f"payload inválido: {exc}"}), 400
     try:
+        repetir = data.get("aplicar_futuro", False)
+        if not isinstance(repetir, bool):
+            raise ValueError("aplicar_futuro debe ser verdadero o falso")
+        semanas = int(data.get("semanas") or 4)
         slot = crear_franja(
             fecha=fecha,
             hora_inicio=hora_inicio,
@@ -8039,9 +8045,14 @@ def delivery_franjas_crear():
             cierre_valor=data.get("cierre_valor"),
             notas_admin=data.get("notas_admin"),
         )
+        propagacion = propagar_franja_semanal(slot, semanas=semanas) if repetir else None
         AuditLog.registrar(
             current_user.id, "crear_franja_delivery", "delivery_slot",
-            recurso_id=slot.id, detalle=f"{fecha.isoformat()} {hora_inicio:%H:%M}-{hora_fin:%H:%M}",
+            recurso_id=slot.id,
+            detalle=(
+                f"{fecha.isoformat()} {hora_inicio:%H:%M}-{hora_fin:%H:%M}"
+                + (f"; propagacion={propagacion}" if propagacion is not None else "")
+            ),
             ip=request.remote_addr,
         )
         db.session.commit()
@@ -8051,19 +8062,27 @@ def delivery_franjas_crear():
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "ya existe una franja con esa fecha y horario"}), 409
-    return jsonify(_slot_to_dict(slot)), 201
+    respuesta = _slot_to_dict(slot)
+    if propagacion is not None:
+        respuesta["propagacion"] = propagacion
+    return jsonify(respuesta), 201
 
 
 @admin_bp.route("/delivery/franjas/<int:slot_id>", methods=["PATCH"])
 @admin_required
 def delivery_franjas_actualizar(slot_id):
-    from delivery_slots_service import actualizar_franja
+    from delivery_slots_service import actualizar_franja, propagar_franja_semanal
     from models import DeliverySlot
 
     slot = get_or_404(DeliverySlot, slot_id)
     data = request.get_json(silent=True) or {}
     try:
         normalizado = dict(data)
+        aplicar_futuro = normalizado.pop("aplicar_futuro", False)
+        semanas = int(normalizado.pop("semanas", 4) or 4)
+        if not isinstance(aplicar_futuro, bool):
+            raise ValueError("aplicar_futuro debe ser verdadero o falso")
+        horario_anterior = (slot.hora_inicio, slot.hora_fin)
         if "fecha" in normalizado:
             normalizado["fecha"] = _parse_fecha_iso(str(normalizado["fecha"]))
         if "hora_inicio" in normalizado:
@@ -8076,9 +8095,22 @@ def delivery_franjas_actualizar(slot_id):
         if "activo" in normalizado and not isinstance(normalizado["activo"], bool):
             raise ValueError("activo debe ser verdadero o falso")
         actualizar_franja(slot, **normalizado)
+        propagacion = (
+            propagar_franja_semanal(
+                slot,
+                semanas=semanas,
+                horario_referencia=horario_anterior,
+            )
+            if aplicar_futuro else None
+        )
         AuditLog.registrar(
             current_user.id, "editar_franja_delivery", "delivery_slot",
-            recurso_id=slot.id, detalle=", ".join(sorted(normalizado)), ip=request.remote_addr,
+            recurso_id=slot.id,
+            detalle=(
+                ", ".join(sorted(normalizado))
+                + (f"; propagacion={propagacion}" if propagacion is not None else "")
+            ),
+            ip=request.remote_addr,
         )
         db.session.commit()
     except (ValueError, TypeError) as exc:
@@ -8087,7 +8119,10 @@ def delivery_franjas_actualizar(slot_id):
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "ya existe una franja con esa fecha y horario"}), 409
-    return jsonify(_slot_to_dict(slot))
+    respuesta = _slot_to_dict(slot)
+    if propagacion is not None:
+        respuesta["propagacion"] = propagacion
+    return jsonify(respuesta)
 
 
 @admin_bp.route("/delivery/franjas/<int:slot_id>", methods=["DELETE"])
@@ -8160,6 +8195,7 @@ def delivery_franjas_panel():
         max_weight_kg=max_weight_kg,
         business_today_iso=business_today().isoformat(),
         planning_from_iso=(hoy - timedelta(days=7)).isoformat(),
+        planning_to_iso=(hoy + timedelta(days=13)).isoformat(),
         franjas_iniciales=[
             _slot_to_dict(slot, preparacion_inicial[slot.id])
             for slot in slots_iniciales

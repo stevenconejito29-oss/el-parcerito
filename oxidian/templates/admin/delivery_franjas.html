@@ -79,6 +79,20 @@
     <label>Max repartidores
       <input type="number" name="max_repartidores" min="1" value="{{ default_max_repartidores }}">
     </label>
+    <fieldset class="df-repeat df-field-wide">
+      <label class="df-check">
+        <input type="checkbox" name="aplicar_futuro" checked>
+        <span><strong>Mantener este horario las próximas semanas</strong><small>Actualiza la misma salida semanal sin tocar semanas que ya tengan pedidos o riders.</small></span>
+      </label>
+      <label>Durante
+        <select name="semanas">
+          <option value="2">2 semanas</option>
+          <option value="4" selected>4 semanas</option>
+          <option value="6">6 semanas</option>
+          <option value="8">8 semanas</option>
+        </select>
+      </label>
+    </fieldset>
     <details class="df-advanced df-field-wide">
       <summary>Ajustes avanzados de cierre y nota</summary>
       <div class="df-advanced-grid">
@@ -140,7 +154,7 @@
       cal.innerHTML = `<p class="df-day-empty">No se cargó el módulo de planificación. Recarga la aplicación para actualizar sus archivos.</p>`;
       return;
     }
-    const { ok, status, data } = await DF.apiFetch("{{ url_for('admin.delivery_franjas_listar') }}?desde={{ planning_from_iso }}");
+    const { ok, status, data } = await DF.apiFetch("{{ url_for('admin.delivery_franjas_listar') }}?desde={{ planning_from_iso }}&hasta={{ planning_to_iso }}");
     if (!ok) {
       cal.innerHTML = `<p class="df-day-empty">Error al cargar (HTTP ${status}). ¿Módulo apagado?</p>`;
       return;
@@ -158,6 +172,12 @@
       const rows = slots.map(s => {
         const pasada = s.fecha < businessToday;
         const prep = s.preparacion || {};
+        const op = s.operativa || {estado: 'proxima'};
+        const momento = op.estado === 'activa'
+          ? '<span class="df-status is-live">En curso</span>'
+          : op.estado === 'finalizada'
+            ? '<span class="df-status is-archived">Finalizada</span>'
+            : '<span class="df-status is-empty">Próxima</span>';
         const estado = !s.activo
           ? '<span class="df-status is-archived">Archivada</span>'
           : !prep.total
@@ -167,7 +187,7 @@
             : `<span class="df-status is-packing">Cocina ${prep.empacados || 0}/${prep.total}</span>`;
         return `
         <div class="df-slot ${s.activo ? '' : 'df-slot-cerrada'} ${pasada ? 'is-past' : ''}">
-          <div class="df-slot-top"><div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>${estado}</div>
+          <div class="df-slot-top"><div><div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>${momento}</div>${estado}</div>
           <div class="df-slot-meta">
             Cap ${s.capacidad_max} · Riders ${s.max_repartidores}
             ${s.cierre_modo ? '· Cierre: ' + s.cierre_modo + (s.cierre_valor ? ' ' + s.cierre_valor : '') : ''}
@@ -194,6 +214,8 @@
     e.preventDefault();
     const fd = new FormData(form);
     const payload = Object.fromEntries(fd.entries());
+    payload.aplicar_futuro = fd.has("aplicar_futuro");
+    payload.semanas = parseInt(payload.semanas, 10);
     if (!payload.cierre_modo) { payload.cierre_modo = null; payload.cierre_valor = null; }
     if (!payload.max_repartidores) delete payload.max_repartidores;
     payload.capacidad_max = parseInt(payload.capacidad_max, 10);
@@ -206,7 +228,12 @@
       endpoint,
       { method: editingId ? "PATCH" : "POST", body: payload }
     );
-    if (ok) { DF.msg(msgs, editingId ? "Franja actualizada." : "Franja creada.", "ok"); resetEditor(); cargar(); }
+    if (ok) {
+      const p = data && data.propagacion;
+      const detalle = p ? ` · ${p.creadas + p.actualizadas} semana(s) sincronizadas${p.protegidas ? `; ${p.protegidas} protegida(s) por operación activa` : ''}` : '';
+      DF.msg(msgs, (editingId ? "Franja actualizada" : "Franja creada") + detalle + ".", "ok");
+      resetEditor(); cargar();
+    }
     else DF.msg(msgs, (data && data.error) || `Error HTTP ${status}`, "err");
   });
 

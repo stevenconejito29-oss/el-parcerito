@@ -471,6 +471,7 @@ def pedidos():
     # recogerla; antes desaparecía precisamente al completarse.
     from models import DeliverySlot
     from delivery_slots_service import (asegurar_horizonte_recurrente,
+                                        estado_operativo,
                                         resumen_preparacion_franjas)
     if asegurar_horizonte_recurrente(hoy_date, hoy_date + timedelta(days=6)):
         db.session.commit()
@@ -485,14 +486,17 @@ def pedidos():
         .all()
     )
     resumen_slots = resumen_preparacion_franjas(slot.id for slot in slots_operativos)
-    franjas_cocina = [
-        {"slot": slot, **resumen_slots[slot.id]}
-        for slot in slots_operativos
-        # La planificación también debe ser visible antes de recibir pedidos:
-        # así cocina entiende el turno completo y no descubre una salida tarde.
-        if resumen_slots[slot.id]["total"] == 0
-        or resumen_slots[slot.id]["entregados"] < resumen_slots[slot.id]["total"]
-    ]
+    franjas_cocina = []
+    for slot in slots_operativos:
+        resumen = resumen_slots[slot.id]
+        operativa = estado_operativo(slot)
+        # Una salida finalizada y vacía ya no aporta una acción a cocina. Si
+        # conserva pedidos sin entregar permanece visible como incidencia.
+        if operativa["estado"] == "finalizada" and resumen["total"] == 0:
+            continue
+        if resumen["total"] and resumen["entregados"] >= resumen["total"]:
+            continue
+        franjas_cocina.append({"slot": slot, "operativa": operativa, **resumen})
 
     # El rol de encargos abre en el resumen de producción. La vista de pedidos
     # individuales queda a un toque, pero no se mezclan ambos niveles en la
