@@ -470,7 +470,10 @@ def pedidos():
     # empaca el último pedido para que cocina vea el cierre y rider pueda
     # recogerla; antes desaparecía precisamente al completarse.
     from models import DeliverySlot
-    from delivery_slots_service import resumen_preparacion_franjas
+    from delivery_slots_service import (asegurar_horizonte_recurrente,
+                                        resumen_preparacion_franjas)
+    if asegurar_horizonte_recurrente(hoy_date, hoy_date + timedelta(days=6)):
+        db.session.commit()
     slots_operativos = (
         DeliverySlot.query
         .filter(

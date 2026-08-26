@@ -26,6 +26,7 @@ from datetime import date, datetime, time, timedelta
 from enum import Enum
 import json
 from typing import Iterable
+from sqlalchemy.exc import IntegrityError
 
 from extensions import db
 from models import (
@@ -285,10 +286,84 @@ def _cierre_defaults() -> tuple[str, str]:
     return str(modo), str(valor)
 
 
+def asegurar_horizonte_recurrente(desde: date, hasta: date) -> int:
+    """Materializa días ausentes heredando la planificación de hace 7 días.
+
+    Una semana sigue vigente sin exigir clonación manual. Si administración ya
+    creó, editó o archivó cualquier franja de un día, ese día se considera una
+    excepción explícita y nunca se sobrescribe. También copiamos las inactivas:
+    actúan como marca de archivo para que una salida eliminada no reaparezca.
+    """
+    from business_time import business_today
+    from schedule_service import franja_cabe_en_horario
+
+    inicio = max(desde, business_today())
+    if hasta < inicio:
+        return 0
+    existentes = (
+        DeliverySlot.query
+        .filter(
+            DeliverySlot.fecha >= inicio - timedelta(days=7),
+            DeliverySlot.fecha <= hasta,
+        )
+        .order_by(DeliverySlot.fecha, DeliverySlot.hora_inicio)
+        .all()
+    )
+    por_dia: dict[date, list[DeliverySlot]] = {}
+    for slot in existentes:
+        por_dia.setdefault(slot.fecha, []).append(slot)
+
+    creadas = 0
+    fecha_actual = inicio
+    while fecha_actual <= hasta:
+        if fecha_actual not in por_dia:
+            fuente = por_dia.get(fecha_actual - timedelta(days=7), [])
+            nuevas: list[DeliverySlot] = []
+            for src in fuente:
+                if src.activo:
+                    cabe, _motivo = franja_cabe_en_horario(
+                        fecha_actual, src.hora_inicio, src.hora_fin,
+                    )
+                    if not cabe:
+                        continue
+                nuevas.append(DeliverySlot(
+                    fecha=fecha_actual,
+                    hora_inicio=src.hora_inicio,
+                    hora_fin=src.hora_fin,
+                    capacidad_max=src.capacidad_max,
+                    max_repartidores=src.max_repartidores,
+                    cierre_modo=src.cierre_modo,
+                    cierre_valor=src.cierre_valor,
+                    activo=src.activo,
+                    notas_admin=src.notas_admin,
+                ))
+            if nuevas:
+                # Savepoint: dos peticiones simultáneas pueden intentar crear
+                # el mismo horizonte; la restricción UNIQUE decide sin romper
+                # la transacción exterior.
+                try:
+                    with db.session.begin_nested():
+                        db.session.add_all(nuevas)
+                        db.session.flush()
+                    por_dia[fecha_actual] = nuevas
+                    creadas += len(nuevas)
+                except IntegrityError:
+                    por_dia[fecha_actual] = (
+                        DeliverySlot.query
+                        .filter(DeliverySlot.fecha == fecha_actual)
+                        .order_by(DeliverySlot.hora_inicio)
+                        .all()
+                    )
+        fecha_actual += timedelta(days=1)
+    return creadas
+
+
 # ─── Listado admin y cliente ──────────────────────────────────────────────
 
 def listar_franjas_admin(desde: date, hasta: date) -> list[DeliverySlot]:
     """Franjas dentro del rango, ordenadas por fecha y hora de inicio."""
+    if asegurar_horizonte_recurrente(desde, hasta):
+        db.session.commit()
     return (
         DeliverySlot.query
         .filter(DeliverySlot.fecha >= desde, DeliverySlot.fecha <= hasta)
@@ -312,6 +387,8 @@ def listar_franjas_cliente(
     if ahora is None:
         ahora = ahora_local_negocio()
     hasta = hoy + timedelta(days=horizonte_dias - 1)
+    if asegurar_horizonte_recurrente(hoy, hasta):
+        db.session.commit()
     slots = (
         DeliverySlot.query
         .filter(
@@ -479,7 +556,7 @@ def actualizar_franja(slot: DeliverySlot, **campos) -> DeliverySlot:
 
 
 def eliminar_franja(slot: DeliverySlot) -> str:
-    """Elimina la franja. Si tiene pedidos, hace soft delete (activo=False).
+    """Archiva la franja para preservar historial y detener su recurrencia.
 
     Devuelve 'hard' o 'soft' según lo aplicado.
     """
@@ -491,14 +568,9 @@ def eliminar_franja(slot: DeliverySlot) -> str:
     ).first()
     if pedidos_vivos:
         raise ValueError("No puedes eliminar una franja con pedidos activos")
-    tiene_pedidos = db.session.query(Order.id).filter(Order.slot_id == slot.id).first()
-    if tiene_pedidos:
-        slot.activo = False
-        db.session.flush()
-        return "soft"
-    db.session.delete(slot)
+    slot.activo = False
     db.session.flush()
-    return "hard"
+    return "soft"
 
 
 def clonar_semana(semana_origen_lunes: date, semana_destino_lunes: date) -> int:

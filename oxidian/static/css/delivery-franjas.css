@@ -89,6 +89,7 @@
 .df-status.is-empty { color:var(--col-muted,#6b6b6b); background:color-mix(in srgb,var(--col-text,#24201d) 8%,transparent); }
 .df-status.is-packing { color:var(--status-warn,#875100); background:color-mix(in srgb,var(--status-warn,#d58a00) 16%,var(--col-surface,#fff)); }
 .df-status.is-ready { color:var(--status-ok,#176a38); background:color-mix(in srgb,var(--status-ok,#198754) 16%,var(--col-surface,#fff)); }
+.df-status.is-archived { color:var(--col-muted,#6b6b6b); background:color-mix(in srgb,var(--col-text,#24201d) 12%,var(--col-surface,#fff)); }
 .df-progress { height:7px; overflow:hidden; border-radius:999px; background:color-mix(in srgb,var(--col-text,#24201d) 10%,transparent); }
 .df-progress > i { display:block; width:var(--df-progress,0%); height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--brand-primary,#5a3a1e),var(--status-ok,#198754)); }
 .df-slot-summary { display:grid; gap:.08rem; color:var(--col-text,#24201d); font-size:.78rem; }

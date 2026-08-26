@@ -25,7 +25,7 @@ from models import (ROLES_AUTENTICABLES, TIPOS_STAFF_PAYMENT, TIPOS_STAFF_PAYMEN
                     ProductBatch, ZonaEntrega, Proveedor, ProveedorProducto,
                     CATEGORIAS_CAJA, CATEGORIAS_CAJA_MANUAL_INGRESO,
                     CATEGORIAS_CAJA_MANUAL_EGRESO, caja_categoria_meta,
-                    DailyClosure,
+                    DailyClosure, ESTADOS_ACTIVOS,
                     normalizar_metodo_pago, utcnow)
 from combo_validators import (
     ComboLimits,
@@ -1780,6 +1780,15 @@ def cerrar_dia():
     if fecha_dia > hoy_negocio:
         flash("No se puede cerrar una fecha futura.", "danger")
         return redirect(url_for("admin.finanzas"))
+    if fecha_dia == hoy_negocio:
+        pedidos_abiertos = Order.query.filter(Order.estado.in_(ESTADOS_ACTIVOS)).count()
+        if pedidos_abiertos:
+            flash(
+                f"No puedes cerrar el día: quedan {pedidos_abiertos} pedido(s) activos. "
+                "Termínalos o cancélalos antes de congelar la caja.",
+                "warning",
+            )
+            return redirect(url_for("admin.finanzas"))
 
     existente = DailyClosure.query.filter_by(fecha=fecha_dia).first()
     if existente:
@@ -1881,19 +1890,24 @@ def borrar_cierre(cierre_id):
 @admin_bp.route("/caja")
 @admin_required
 def caja():
-    fecha_ini = request.args.get("fecha_ini", date.today().isoformat())
-    fecha_fin = request.args.get("fecha_fin", date.today().isoformat())
+    from business_time import business_today, utc_naive_bounds
+    hoy_negocio = business_today()
+    fecha_ini = request.args.get("fecha_ini", hoy_negocio.isoformat())
+    fecha_fin = request.args.get("fecha_fin", hoy_negocio.isoformat())
     categoria_f = request.args.get("categoria", "")
 
     try:
-        fi = datetime.fromisoformat(fecha_ini)
-        ff = datetime.fromisoformat(fecha_fin).replace(hour=23, minute=59, second=59)
+        fecha_ini_date = date.fromisoformat(fecha_ini)
+        fecha_fin_date = date.fromisoformat(fecha_fin)
+        if fecha_ini_date > fecha_fin_date:
+            fecha_ini_date, fecha_fin_date = fecha_fin_date, fecha_ini_date
+            fecha_ini, fecha_fin = fecha_ini_date.isoformat(), fecha_fin_date.isoformat()
+        fi, ff = utc_naive_bounds(fecha_ini_date, fecha_fin_date)
     except (ValueError, TypeError):
-        fi = datetime.combine(date.today(), datetime.min.time())
-        ff = datetime.combine(date.today(), datetime.max.time())
-        fecha_ini = fecha_fin = date.today().isoformat()
+        fi, ff = utc_naive_bounds(hoy_negocio, hoy_negocio)
+        fecha_ini = fecha_fin = hoy_negocio.isoformat()
 
-    query = Caja.query.filter(Caja.fecha.between(fi, ff))
+    query = Caja.query.filter(Caja.fecha >= fi, Caja.fecha < ff)
     if categoria_f:
         query = query.filter_by(categoria=categoria_f)
     movimientos = query.order_by(Caja.fecha.desc()).all()
@@ -1970,16 +1984,21 @@ def registrar_movimiento():
 @admin_bp.route("/caja/exportar")
 @admin_required
 def exportar_caja():
-    fecha_ini = request.args.get("fecha_ini", date.today().isoformat())
-    fecha_fin = request.args.get("fecha_fin", date.today().isoformat())
+    from business_time import business_today, utc_naive_bounds
+    hoy_negocio = business_today()
+    fecha_ini = request.args.get("fecha_ini", hoy_negocio.isoformat())
+    fecha_fin = request.args.get("fecha_fin", hoy_negocio.isoformat())
     try:
-        fi = datetime.fromisoformat(fecha_ini)
-        ff = datetime.fromisoformat(fecha_fin).replace(hour=23, minute=59, second=59)
+        fecha_ini_date = date.fromisoformat(fecha_ini)
+        fecha_fin_date = date.fromisoformat(fecha_fin)
+        if fecha_ini_date > fecha_fin_date:
+            fecha_ini_date, fecha_fin_date = fecha_fin_date, fecha_ini_date
+            fecha_ini, fecha_fin = fecha_ini_date.isoformat(), fecha_fin_date.isoformat()
+        fi, ff = utc_naive_bounds(fecha_ini_date, fecha_fin_date)
     except (ValueError, TypeError):
-        fi = datetime.combine(date.today(), datetime.min.time())
-        ff = datetime.combine(date.today(), datetime.max.time())
-        fecha_ini = fecha_fin = date.today().isoformat()
-    movimientos = Caja.query.filter(Caja.fecha.between(fi, ff)).order_by(Caja.fecha).all()
+        fi, ff = utc_naive_bounds(hoy_negocio, hoy_negocio)
+        fecha_ini = fecha_fin = hoy_negocio.isoformat()
+    movimientos = Caja.query.filter(Caja.fecha >= fi, Caja.fecha < ff).order_by(Caja.fecha).all()
 
     output = io.StringIO()
     writer = csv.writer(output)

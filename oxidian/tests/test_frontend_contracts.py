@@ -76,6 +76,31 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("Cocina está terminando el empaque", rider_ui)
         self.assertIn("prep.preparacion_completa", admin_ui)
 
+    def test_delivery_slots_recur_without_overwriting_manual_days(self):
+        service = (ROOT / "delivery_slots_service.py").read_text(encoding="utf-8")
+        admin_ui = (ROOT / "templates" / "admin" / "delivery_franjas.html").read_text(encoding="utf-8")
+
+        self.assertIn("def asegurar_horizonte_recurrente", service)
+        self.assertIn("fecha_actual - timedelta(days=7)", service)
+        self.assertIn("if fecha_actual not in por_dia", service)
+        self.assertIn("actúan como marca de archivo", service)
+        self.assertIn("slot.activo = False", service)
+        self.assertIn("heredarán automáticamente", admin_ui)
+        self.assertIn("Archivar", admin_ui)
+
+    def test_cash_views_and_daily_close_share_business_day_boundaries(self):
+        admin = (ROOT / "routes" / "admin.py").read_text(encoding="utf-8")
+        caja_source = admin[admin.index("def caja():"):admin.index("def registrar_movimiento", admin.index("def caja():"))]
+        export_source = admin[admin.index("def exportar_caja():"):admin.index("# ─── PAGOS AL STAFF", admin.index("def exportar_caja():"))]
+        close_source = admin[admin.index("def cerrar_dia():"):admin.index("def cierres_lista", admin.index("def cerrar_dia():"))]
+
+        self.assertIn("business_today", caja_source)
+        self.assertIn("utc_naive_bounds", caja_source)
+        self.assertIn("Caja.fecha >= fi, Caja.fecha < ff", caja_source)
+        self.assertIn("utc_naive_bounds", export_source)
+        self.assertIn("Caja.fecha >= fi, Caja.fecha < ff", export_source)
+        self.assertIn("Order.estado.in_(ESTADOS_ACTIVOS)", close_source)
+
     def test_staff_pwa_embeds_route_map_and_modules_hide_disabled_surfaces(self):
         route = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
         dashboard = (ROOT / "templates" / "superadmin" / "dashboard.html").read_text(encoding="utf-8")

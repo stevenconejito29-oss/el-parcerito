@@ -7,8 +7,9 @@
 <div class="df-container">
   <div class="df-header">
     <div>
-      <h1>Delivery · Franjas horarias</h1>
-      <p>Planifica hasta cuatro salidas por día. Cada franja debe quedar dentro
+      <span class="df-eyebrow">Centro de planificación</span>
+      <h1>Franjas de reparto</h1>
+      <p>Configura la semana una sola vez: los días que no modifiques heredarán automáticamente la planificación de la semana anterior. Planifica hasta cuatro salidas por día. Cada franja debe quedar dentro
         del horario de apertura: <strong>{{ horario_apertura }}</strong>.
         Ajusta primero el horario en <a href="{{ url_for('superadmin.config') }}#operacion">Operación de la tienda</a>.
         Módulo
@@ -94,7 +95,7 @@
     </label>
     <div class="df-form-actions">
       <button type="submit" id="df-btn-guardar" class="df-btn df-btn-primary">Crear franja</button>
-      <button type="button" id="df-btn-clonar" class="df-btn">Clonar semana anterior</button>
+      <button type="button" id="df-btn-clonar" class="df-btn">Copiar semana manualmente</button>
     </div>
   </form>
 
@@ -144,7 +145,9 @@
     const html = DF.agruparPorFecha(franjas).map(([fecha, slots]) => {
       const rows = slots.map(s => {
         const prep = s.preparacion || {};
-        const estado = !prep.total
+        const estado = !s.activo
+          ? '<span class="df-status is-archived">Archivada</span>'
+          : !prep.total
           ? '<span class="df-status is-empty">Sin pedidos</span>'
           : prep.preparacion_completa
             ? `<span class="df-status is-ready">✓ Empacada · ${prep.listos || 0} por salir</span>`
@@ -162,7 +165,7 @@
             <button class="df-btn" data-act="toggle" data-id="${s.id}" data-activo="${s.activo}">
               ${s.activo ? 'Desactivar' : 'Reactivar'}
             </button>
-            <button class="df-btn df-btn-danger" data-act="borrar" data-id="${s.id}">Borrar</button>
+            ${s.activo ? `<button class="df-btn df-btn-danger" data-act="borrar" data-id="${s.id}">Archivar</button>` : ''}
           </div>
         </div>`;
       }).join("");
@@ -215,9 +218,9 @@
       return;
     }
     if (btn.dataset.act === "borrar") {
-      if (!confirm("¿Borrar esta franja?")) return;
+      if (!confirm("¿Archivar esta franja? Dejará de ofrecerse, conservará su historial y no reaparecerá por recurrencia.")) return;
       const { ok, status, data } = await DF.apiFetch(`/admin/delivery/franjas/${id}`, { method: "DELETE" });
-      if (ok) { DF.msg(msgs, `Franja ${data.eliminado === 'soft' ? 'desactivada (tiene pedidos)' : 'borrada'}.`, "ok"); cargar(); }
+      if (ok) { DF.msg(msgs, "Franja archivada. Conservamos el historial y deja de ofrecerse.", "ok"); cargar(); }
       else DF.msg(msgs, (data && data.error) || `No se pudo borrar (HTTP ${status}).`, "err");
     }
     if (btn.dataset.act === "toggle") {
