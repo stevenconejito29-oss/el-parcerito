@@ -216,6 +216,66 @@ def _repartidores_activos(slot_id: int) -> int:
     )
 
 
+def resumen_preparacion_franjas(slot_ids: Iterable[int]) -> dict[int, dict]:
+    """Resume el avance real de cocina y reparto por franja en una consulta.
+
+    Es la fuente de verdad compartida por cocina, rider y administración. Una
+    franja está ``preparacion_completa`` únicamente cuando tiene pedidos
+    operativos y ninguno permanece pendiente o armándose. Los cancelados no
+    bloquean el despacho ni cuentan como carga.
+    """
+    ids = {int(slot_id) for slot_id in slot_ids if slot_id is not None}
+    if not ids:
+        return {}
+
+    rows = (
+        db.session.query(Order.slot_id, Order.estado, db.func.count(Order.id))
+        .filter(Order.slot_id.in_(ids))
+        .group_by(Order.slot_id, Order.estado)
+        .all()
+    )
+    resumen = {
+        slot_id: {
+            "total": 0,
+            "pendientes": 0,
+            "armando": 0,
+            "listos": 0,
+            "en_ruta": 0,
+            "entregados": 0,
+            "cancelados": 0,
+            "empacados": 0,
+            "restantes": 0,
+            "preparacion_completa": False,
+        }
+        for slot_id in ids
+    }
+    claves = {
+        "pendiente": "pendientes",
+        "armando": "armando",
+        "listo": "listos",
+        "en_ruta": "en_ruta",
+        "entregado": "entregados",
+        "cancelado": "cancelados",
+    }
+    for slot_id, estado, cantidad in rows:
+        if estado in claves:
+            resumen[slot_id][claves[estado]] = int(cantidad or 0)
+
+    for item in resumen.values():
+        item["total"] = (
+            item["pendientes"] + item["armando"] + item["listos"]
+            + item["en_ruta"] + item["entregados"]
+        )
+        item["empacados"] = item["listos"] + item["en_ruta"] + item["entregados"]
+        item["restantes"] = item["pendientes"] + item["armando"] + item["listos"]
+        item["preparacion_completa"] = bool(
+            item["total"] > 0
+            and item["pendientes"] == 0
+            and item["armando"] == 0
+        )
+    return resumen
+
+
 def _cierre_defaults() -> tuple[str, str]:
     """Lee defaults de cierre desde SiteConfig (import diferido evita ciclo)."""
     from store_config import get_store_value  # local, evita import circular

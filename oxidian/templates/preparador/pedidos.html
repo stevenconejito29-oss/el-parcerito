@@ -782,22 +782,26 @@
 {% if franjas_cocina %}
 <section class="prep-slot-planner" aria-labelledby="franjas-cocina-title" data-prep-slot-planner>
   <div class="prep-section-head" data-kind="ahora">
-    <div><h2 id="franjas-cocina-title">Plan de salidas</h2><p class="prep-section-sub">Elige una salida y trabaja únicamente sus pedidos.</p></div>
+      <div><span class="prep-section-kicker">Producción por franja</span><h2 id="franjas-cocina-title">¿Qué salida vas a empacar?</h2><p class="prep-section-sub">Abre una franja, termina sus pedidos y déjala lista para que el rider arme su tanda.</p></div>
     <span class="prep-section-count">{{ franjas_cocina|length }}</span>
   </div>
   <div class="prep-slot-strip" role="toolbar" aria-label="Filtrar pedidos por salida">
     <button type="button" class="prep-slot-card is-active" data-prep-slot-filter="all" aria-pressed="true">
-      <span class="prep-slot-card__time"><span>Todo el turno</span><small>{{ pendientes|length + armando|length }}</small></span>
-      <span class="prep-slot-card__stats">Inmediatos y franjas</span>
+      <span class="prep-slot-card__time"><span>Vista general</span><small>{{ pendientes|length + armando|length }} activos</small></span>
+      <span class="prep-slot-card__stats">Todas las colas</span>
     </button>
     <button type="button" class="prep-slot-card" data-prep-slot-filter="immediate" aria-pressed="false">
-      <span class="prep-slot-card__time"><span>Ahora</span><small>Sin franja</small></span>
-      <span class="prep-slot-card__stats">Pedidos inmediatos</span>
+      <span class="prep-slot-card__time"><span>Inmediatos</span><small>Sin franja</small></span>
+      <span class="prep-slot-card__stats">Atender por llegada</span>
     </button>
     {% for resumen in franjas_cocina %}
-    <button type="button" class="prep-slot-card" data-prep-slot-filter="{{ resumen.slot.id }}" aria-pressed="false">
+    <button type="button" class="prep-slot-card {% if resumen.preparacion_completa %}is-complete{% elif resumen.armando %}is-working{% endif %}" data-prep-slot-filter="{{ resumen.slot.id }}" data-prep-slot-complete="{{ 'true' if resumen.preparacion_completa else 'false' }}" aria-pressed="false">
       <div class="prep-slot-card__time"><span>{{ resumen.slot.hora_inicio.strftime('%H:%M') }}–{{ resumen.slot.hora_fin.strftime('%H:%M') }}</span><small>{{ resumen.slot.fecha.strftime('%d/%m') }}</small></div>
-      <div class="prep-slot-card__stats"><b>{{ resumen.pendientes }} por iniciar</b><b>{{ resumen.armando }} preparando</b></div>
+      <div class="prep-slot-progress" aria-label="{{ resumen.empacados }} de {{ resumen.total }} pedidos empacados"><i style="--prep-progress:{{ (resumen.empacados * 100 / resumen.total)|round|int }}%"></i></div>
+      <div class="prep-slot-card__stats">
+        {% if resumen.preparacion_completa %}<b>✓ Franja empacada</b><span>{{ resumen.listos }} esperando rider</span>
+        {% else %}<b>{{ resumen.empacados }}/{{ resumen.total }} empacados</b><span>{{ resumen.pendientes + resumen.armando }} por terminar</span>{% endif %}
+      </div>
     </button>
     {% endfor %}
   </div>
@@ -1386,7 +1390,12 @@ document.querySelectorAll('.js-availability-form').forEach(form => {
       button.setAttribute('aria-pressed', String(active));
     });
     const activeButton = buttons.find(button => button.dataset.prepSlotFilter === filter);
-    if (result) result.textContent = `${activeButton?.querySelector('.prep-slot-card__time span')?.textContent || 'Turno'} · ${visible} pedido${visible === 1 ? '' : 's'}.`;
+    if (result) {
+      const completed = activeButton?.dataset.prepSlotComplete === 'true';
+      result.textContent = completed && visible === 0
+        ? 'Franja empacada. Ya está disponible para reparto.'
+        : `${activeButton?.querySelector('.prep-slot-card__time span')?.textContent || 'Turno'} · ${visible} pedido${visible === 1 ? '' : 's'} por trabajar.`;
+    }
     try { sessionStorage.setItem(storageKey, filter); } catch (_) {}
   }
 
@@ -1394,9 +1403,13 @@ document.querySelectorAll('.js-availability-form').forEach(form => {
     const button = event.target.closest('[data-prep-slot-filter]');
     if (button) applyFilter(button.dataset.prepSlotFilter);
   });
-  let initial = 'all';
-  try { initial = sessionStorage.getItem(storageKey) || 'all'; } catch (_) {}
-  if (!buttons.some(button => button.dataset.prepSlotFilter === initial)) initial = 'all';
+  let initial = '';
+  try { initial = sessionStorage.getItem(storageKey) || ''; } catch (_) {}
+  if (!buttons.some(button => button.dataset.prepSlotFilter === initial)) {
+    initial = buttons.find(button => button.dataset.prepSlotComplete === 'false')?.dataset.prepSlotFilter
+      || (buttons.find(button => button.dataset.prepSlotFilter === 'immediate')?.dataset.prepSlotFilter)
+      || 'all';
+  }
   applyFilter(initial);
 })();
 

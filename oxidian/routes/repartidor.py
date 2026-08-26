@@ -1191,9 +1191,10 @@ def franjas_listar():
     if not _franjas_modulo_activo():
         abort(404)
     from delivery_slots_service import (listar_franjas_admin, _repartidores_activos,
-                                        estado_operativo, pedidos_por_salida)
+                                        estado_operativo, pedidos_por_salida,
+                                        resumen_preparacion_franjas)
     from models import SlotRepartidor
-    from datetime import date as _date, timedelta as _td
+    from datetime import timedelta as _td
 
     from business_time import business_today
     hoy = business_today()
@@ -1214,22 +1215,7 @@ def franjas_listar():
         mias_ids = {m.slot_id for m in mias}
     salida = []
     # Conteos de pedidos por slot en una sola query (evita N+1 en pantalla).
-    conteos_totales: dict[int, int] = {}
-    conteos_listos: dict[int, int] = {}
-    if ids:
-        rows_total = (
-            db.session.query(Order.slot_id, db.func.count(Order.id))
-            .filter(Order.slot_id.in_(ids), Order.estado != "cancelado")
-            .group_by(Order.slot_id).all()
-        )
-        conteos_totales = {slot_id: n for slot_id, n in rows_total}
-        rows_listos = (
-            db.session.query(Order.slot_id, db.func.count(Order.id))
-            .filter(Order.slot_id.in_(ids), Order.estado == "listo",
-                    Order.tipo_entrega_cliente == "delivery")
-            .group_by(Order.slot_id).all()
-        )
-        conteos_listos = {slot_id: n for slot_id, n in rows_listos}
+    resumen_por_slot = resumen_preparacion_franjas(ids)
 
     for s in slots:
         if not s.activo:
@@ -1245,8 +1231,10 @@ def franjas_listar():
             "repartidores_activos": activos,
             "tomada_por_mi": s.id in mias_ids,
             "llena_de_repartidores": activos >= s.max_repartidores and s.id not in mias_ids,
-            "pedidos_total": conteos_totales.get(s.id, 0),
-            "pedidos_listos": conteos_listos.get(s.id, 0),
+            "pedidos_total": resumen_por_slot[s.id]["total"],
+            "pedidos_listos": resumen_por_slot[s.id]["listos"],
+            "preparacion": resumen_por_slot[s.id],
+            "preparacion_completa": resumen_por_slot[s.id]["preparacion_completa"],
             "operativa": estado_operativo(s),
             "pedidos_por_salida": pedidos_por_salida(),
         })
@@ -1302,7 +1290,8 @@ def franjas_pedidos(slot_id):
     from models import DeliverySlot, SlotRepartidor
     from delivery_slots_service import (peso_estimado_pedido_gramos,
                                         peso_maximo_salida_gramos,
-                                        pedidos_por_salida)
+                                        pedidos_por_salida,
+                                        resumen_preparacion_franjas)
 
     slot = get_or_404(DeliverySlot, slot_id)
     asignada = SlotRepartidor.query.filter_by(
@@ -1310,6 +1299,12 @@ def franjas_pedidos(slot_id):
     ).first()
     if not asignada and not _es_admin_operativo():
         abort(403)
+    preparacion = resumen_preparacion_franjas([slot.id])[slot.id]
+    if not preparacion["preparacion_completa"]:
+        return jsonify({
+            "error": "franja_en_preparacion",
+            "preparacion": preparacion,
+        }), 409
     pedidos = (
         Order.query
         .filter(
@@ -1345,6 +1340,7 @@ def franjas_pedidos(slot_id):
             "pedidos": pedidos_por_salida(),
             "peso_gramos": peso_maximo_salida_gramos(),
         },
+        "preparacion": preparacion,
     })
 
 
@@ -1356,7 +1352,8 @@ def franjas_iniciar_reparto(slot_id):
         abort(404)
     from models import DeliverySlot, SlotRepartidor
     from delivery_slots_service import (estado_operativo, pedidos_por_salida,
-                                        validar_tanda_seleccionada)
+                                        validar_tanda_seleccionada,
+                                        resumen_preparacion_franjas)
 
     # Un único candado por rider protege el límite global de su mochila aunque
     # envíe dos tandas simultáneas desde pestañas o franjas distintas.
@@ -1371,6 +1368,11 @@ def franjas_iniciar_reparto(slot_id):
         return redirect(url_for("repartidor.franjas_panel"))
     if estado_operativo(slot)["estado"] != "activa":
         flash("Solo puedes iniciar una tanda durante el horario de la franja.", "warning")
+        return redirect(url_for("repartidor.franjas_panel"))
+    preparacion = resumen_preparacion_franjas([slot.id])[slot.id]
+    if not preparacion["preparacion_completa"]:
+        db.session.rollback()
+        flash("Cocina todavía está empacando esta franja. Podrás elegir una tanda cuando quede completa.", "warning")
         return redirect(url_for("repartidor.franjas_panel"))
     activos = Order.query.filter_by(
         repartidor_id=current_user.id, estado="en_ruta",

@@ -59,6 +59,23 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn('pedido.repartidor_id != current_user.id', rider)
         self.assertIn("Preparando ruta…", rider_ui)
 
+    def test_slot_dispatch_waits_for_complete_kitchen_batch(self):
+        service = (ROOT / "delivery_slots_service.py").read_text(encoding="utf-8")
+        kitchen = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")
+        rider_route = (ROOT / "routes" / "repartidor.py").read_text(encoding="utf-8")
+        rider_ui = (ROOT / "templates" / "repartidor" / "franjas.html").read_text(encoding="utf-8")
+        admin_ui = (ROOT / "templates" / "admin" / "delivery_franjas.html").read_text(encoding="utf-8")
+
+        self.assertIn("def resumen_preparacion_franjas", service)
+        self.assertIn('item["pendientes"] == 0', service)
+        self.assertIn('item["armando"] == 0', service)
+        self.assertIn('if not preparacion["preparacion_completa"]', rider_route)
+        self.assertIn("data-prep-slot-complete", kitchen)
+        self.assertIn("Franja empacada. Ya está disponible para reparto.", kitchen)
+        self.assertIn("s.preparacion_completa", rider_ui)
+        self.assertIn("Cocina está terminando el empaque", rider_ui)
+        self.assertIn("prep.preparacion_completa", admin_ui)
+
     def test_staff_pwa_embeds_route_map_and_modules_hide_disabled_surfaces(self):
         route = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
         dashboard = (ROOT / "templates" / "superadmin" / "dashboard.html").read_text(encoding="utf-8")

@@ -7,17 +7,17 @@
 <div class="df-container">
   <div class="df-header">
     <div>
-      <span class="df-eyebrow">Plan de turno</span>
-      <h1>Mis franjas</h1>
-      <p>Reserva una salida, espera a que cocina termine y arma la tanda que cabe en tu mochila.</p>
+      <span class="df-eyebrow">Tu jornada</span>
+      <h1>Salidas por franja</h1>
+      <p>Primero reserva una franja. Cuando cocina cierre el empaque, eliges qué pedidos caben en esta vuelta.</p>
     </div>
     <a class="df-btn" href="{{ url_for('repartidor.ruta') }}">Ver ruta actual</a>
   </div>
 
   <ol class="df-rider-guide" aria-label="Flujo de reparto por franjas">
-    <li><b>1</b><span><strong>Reserva</strong><small>Una franja sin cruces de horario</small></span></li>
-    <li><b>2</b><span><strong>Elige</strong><small>Solo pedidos listos que puedas llevar</small></span></li>
-    <li><b>3</b><span><strong>Sal a ruta</strong><small>Durante la ventana de entrega</small></span></li>
+    <li><b>1</b><span><strong>Reserva</strong><small>Confirma la salida que cubrirás</small></span></li>
+    <li><b>2</b><span><strong>Recoge</strong><small>Cocina entrega la franja empacada</small></span></li>
+    <li><b>3</b><span><strong>Haz tandas</strong><small>Vuelve por los restantes hasta terminar</small></span></li>
   </ol>
 
   <div id="df-msgs"></div>
@@ -63,25 +63,34 @@
           : (s.llena_de_repartidores
               ? `<button class="df-btn" disabled>Sin cupo repartidor</button>`
               : `<button class="df-btn df-btn-primary" data-act="tomar" data-id="${s.id}">Tomar franja</button>`);
-        // Batch dispatch: solo tiene sentido si tomé la franja Y hay pedidos listos.
+        const prep = s.preparacion || {};
         const listos = s.pedidos_listos || 0;
         const total = s.pedidos_total || 0;
         const op = s.operativa || {estado:'proxima', segundos:0};
-        const tanda = Math.min(listos, s.pedidos_por_salida || 3);
-        const batchBtn = (s.tomada_por_mi && listos > 0 && op.estado === 'activa')
-          ? `<button class="df-btn df-btn-primary" data-act="elegir" data-id="${s.id}">🎒 Elegir tanda</button>`
+        const completa = Boolean(s.preparacion_completa);
+        const batchBtn = (s.tomada_por_mi && completa && listos > 0 && op.estado === 'activa')
+          ? `<button class="df-btn df-btn-primary df-btn-next" data-act="elegir" data-id="${s.id}">Elegir pedidos para esta vuelta</button>`
           : (s.tomada_por_mi && op.estado === 'proxima'
-              ? `<span class="df-slot-meta">Disponible al comenzar la franja</span>` : "");
-        const conteo = total > 0
-          ? `<div class="df-slot-meta"><strong>${total} pedido${total===1?'':'s'}</strong>${listos>0?` · ${listos} listo${listos===1?'':'s'} para salir`:''}</div>`
-          : `<div class="df-slot-meta df-slot-empty">Sin pedidos aún</div>`;
+              ? `<span class="df-slot-hint">Podrás salir desde las ${s.hora_inicio}</span>`
+              : (s.tomada_por_mi && !completa && total > 0
+                ? `<span class="df-slot-hint">Cocina está terminando el empaque</span>` : ""));
+        const empacados = Number(prep.empacados || 0);
+        const porcentaje = total ? Math.round((empacados / total) * 100) : 0;
+        const estadoPrep = total === 0
+          ? `<span class="df-status is-empty">Sin pedidos reservados</span>`
+          : completa
+            ? `<span class="df-status is-ready">✓ Lista para recoger</span>`
+            : `<span class="df-status is-packing">Cocina · ${empacados}/${total} empacados</span>`;
+        const restante = completa && listos > 0
+          ? `<strong>${listos} pedido${listos===1?'':'s'} esperando salida</strong>`
+          : `${Number(prep.pendientes || 0) + Number(prep.armando || 0)} por terminar`;
         return `<div class="${clases.join(' ')}">
-          <div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>
-          <div class="df-slot-meta">
-            Riders ${s.repartidores_activos}/${s.max_repartidores} · Cap ${s.capacidad_max} pedidos
+          <div class="df-slot-top">
+            <div><span class="df-slot-kicker">${op.estado === 'activa' ? 'En curso' : op.estado === 'finalizada' ? 'Cerrada' : 'Próxima salida'}</span><div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div></div>
+            ${estadoPrep}
           </div>
-          <div class="df-slot-meta"><strong>${op.estado === 'activa' ? 'Franja en curso' : op.estado === 'finalizada' ? 'Franja finalizada' : 'Próxima franja'}</strong>${op.estado === 'activa' ? ` · ${Math.ceil(op.segundos/60)} min restantes` : ''}</div>
-          ${conteo}
+          <div class="df-progress" aria-label="Empaque ${porcentaje}%"><i style="--df-progress:${porcentaje}%"></i></div>
+          <div class="df-slot-summary"><span>${restante}</span><small>${s.repartidores_activos}/${s.max_repartidores} rider · máximo ${s.pedidos_por_salida} por vuelta</small></div>
           <div class="df-slot-actions">${btnRider} ${batchBtn}</div>
           <div class="df-batch-picker" data-picker="${s.id}" hidden></div>
         </div>`;

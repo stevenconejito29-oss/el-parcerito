@@ -142,13 +142,21 @@
       return;
     }
     const html = DF.agruparPorFecha(franjas).map(([fecha, slots]) => {
-      const rows = slots.map(s => `
+      const rows = slots.map(s => {
+        const prep = s.preparacion || {};
+        const estado = !prep.total
+          ? '<span class="df-status is-empty">Sin pedidos</span>'
+          : prep.preparacion_completa
+            ? `<span class="df-status is-ready">✓ Empacada · ${prep.listos || 0} por salir</span>`
+            : `<span class="df-status is-packing">Cocina ${prep.empacados || 0}/${prep.total}</span>`;
+        return `
         <div class="df-slot ${s.activo ? '' : 'df-slot-cerrada'}">
-          <div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>
+          <div class="df-slot-top"><div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>${estado}</div>
           <div class="df-slot-meta">
             Cap ${s.capacidad_max} · Riders ${s.max_repartidores}
             ${s.cierre_modo ? '· Cierre: ' + s.cierre_modo + (s.cierre_valor ? ' ' + s.cierre_valor : '') : ''}
           </div>
+          ${prep.total ? `<div class="df-slot-meta"><strong>${prep.pendientes || 0} pendientes · ${prep.armando || 0} preparando · ${prep.en_ruta || 0} en ruta · ${prep.entregados || 0} entregados</strong></div>` : ''}
           <div class="df-slot-actions">
             <button class="df-btn" data-act="editar" data-id="${s.id}">Editar</button>
             <button class="df-btn" data-act="toggle" data-id="${s.id}" data-activo="${s.activo}">
@@ -156,7 +164,8 @@
             </button>
             <button class="df-btn df-btn-danger" data-act="borrar" data-id="${s.id}">Borrar</button>
           </div>
-        </div>`).join("");
+        </div>`;
+      }).join("");
       return `<div class="df-day">
         <div class="df-day-head"><span class="df-day-title">${DF.fmtFecha(fecha)}</span></div>
         <div class="df-slot-list">${rows}</div>

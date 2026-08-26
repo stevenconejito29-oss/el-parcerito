@@ -7955,8 +7955,8 @@ def _parse_hora_hhmm(valor: str):
     return _time(int(hh), int(mm))
 
 
-def _slot_to_dict(slot) -> dict:
-    return {
+def _slot_to_dict(slot, preparacion: dict | None = None) -> dict:
+    data = {
         "id": slot.id,
         "fecha": slot.fecha.isoformat(),
         "hora_inicio": slot.hora_inicio.strftime("%H:%M"),
@@ -7968,12 +7968,15 @@ def _slot_to_dict(slot) -> dict:
         "activo": slot.activo,
         "notas_admin": slot.notas_admin,
     }
+    if preparacion is not None:
+        data["preparacion"] = preparacion
+    return data
 
 
 @admin_bp.route("/delivery/franjas", methods=["GET"])
 @admin_required
 def delivery_franjas_listar():
-    from delivery_slots_service import listar_franjas_admin
+    from delivery_slots_service import listar_franjas_admin, resumen_preparacion_franjas
     from store_config import get_store_value
     from business_time import business_today
 
@@ -7987,8 +7990,9 @@ def delivery_franjas_listar():
     desde = _parse_fecha_iso(desde_raw) if desde_raw else hoy
     hasta = _parse_fecha_iso(hasta_raw) if hasta_raw else hoy + timedelta(days=horizonte - 1)
     slots = listar_franjas_admin(desde, hasta)
+    resumen = resumen_preparacion_franjas(slot.id for slot in slots)
     return jsonify({"desde": desde.isoformat(), "hasta": hasta.isoformat(),
-                    "franjas": [_slot_to_dict(s) for s in slots]})
+                    "franjas": [_slot_to_dict(s, resumen[s.id]) for s in slots]})
 
 
 @admin_bp.route("/delivery/franjas", methods=["POST"])

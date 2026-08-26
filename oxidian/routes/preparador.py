@@ -466,21 +466,28 @@ def pedidos():
         else:
             prep_programados_planos.append(p)
 
-    # Resumen operacional: cocina planifica salidas sin mezclar pedidos de
-    # distintas franjas. Las acciones siguen siendo por pedido para mantener
-    # trazabilidad de responsable, checklist y ticket.
-    franjas_cocina_map = OrderedDict()
-    for pedido in [*pendientes_inmediato, *armando]:
-        if not pedido.slot:
-            continue
-        item = franjas_cocina_map.setdefault(pedido.slot.id, {
-            "slot": pedido.slot, "pendientes": 0, "armando": 0,
-        })
-        item[pedido.estado] = item.get(pedido.estado, 0) + 1
-    franjas_cocina = sorted(
-        franjas_cocina_map.values(),
-        key=lambda item: (item["slot"].fecha, item["slot"].hora_inicio),
+    # Fuente común cocina/rider/admin. La franja permanece visible cuando se
+    # empaca el último pedido para que cocina vea el cierre y rider pueda
+    # recogerla; antes desaparecía precisamente al completarse.
+    from models import DeliverySlot
+    from delivery_slots_service import resumen_preparacion_franjas
+    slots_operativos = (
+        DeliverySlot.query
+        .filter(
+            DeliverySlot.fecha >= hoy_date,
+            DeliverySlot.fecha <= hoy_date + timedelta(days=6),
+            DeliverySlot.activo.is_(True),
+        )
+        .order_by(DeliverySlot.fecha, DeliverySlot.hora_inicio)
+        .all()
     )
+    resumen_slots = resumen_preparacion_franjas(slot.id for slot in slots_operativos)
+    franjas_cocina = [
+        {"slot": slot, **resumen_slots[slot.id]}
+        for slot in slots_operativos
+        if resumen_slots[slot.id]["total"] > 0
+        and resumen_slots[slot.id]["entregados"] < resumen_slots[slot.id]["total"]
+    ]
 
     # El rol de encargos abre en el resumen de producción. La vista de pedidos
     # individuales queda a un toque, pero no se mezclan ambos niveles en la

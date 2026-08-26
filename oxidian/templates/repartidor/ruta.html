@@ -302,13 +302,6 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
   </button>
 </form>
 
-{% if not disponible and current_user.rol not in ('admin','super_admin') %}
-<div class="work-panel work-status-panel mb-4">
-  <p class="font-bold text-warning">Estás offline para nuevos repartos</p>
-  <p class="text-sm mt-1 text-muted">Puedes cerrar entregas ya asignadas, pero no recibirás ni tomarás pedidos nuevos hasta ponerte online.</p>
-</div>
-{% endif %}
-
 <!-- Compañeros conectados (colapsado para no restar espacio a los pedidos) -->
 {% if companeros %}
 <details class="work-team-details">
