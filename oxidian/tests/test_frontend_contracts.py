@@ -70,14 +70,16 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("_franjas_repartidor_payload()", rider_route)
         self.assertIn("const initialSlots = {{ franjas_iniciales|tojson }}", admin_ui)
         self.assertIn("const initialSlots = {{ franjas_iniciales|tojson }}", rider_ui)
-        self.assertIn("Usar la próxima semana", admin_ui)
+        self.assertIn("Editar próximas semanas", admin_ui)
         self.assertIn('operativa["estado"] == "finalizada" and resumen["total"] == 0', kitchen_route)
         self.assertIn('planning_to_iso', admin_route)
         self.assertIn('name="aplicar_futuro"', admin_ui)
+        self.assertIn('data-rider-view="focus"', rider_ui)
 
     def test_operational_roles_expose_one_primary_action_per_stage(self):
         kitchen = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")
         rider = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
+        employee_styles = (ROOT / "static" / "css" / "employee-app.css").read_text(encoding="utf-8")
 
         self.assertNotIn("📌 Reservar", kitchen)
         self.assertIn("data-ready-button disabled", kitchen)
@@ -85,6 +87,8 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertNotIn("Tomar seleccionados", rider)
         self.assertNotIn("1. Reservar este pedido", rider)
         self.assertIn("Tomar pedido y salir", rider)
+        self.assertIn('[data-prep-slot-id][hidden]', employee_styles)
+        self.assertIn('.work-lane[data-filter-empty="true"]', employee_styles)
         self.assertIn("{% if pedido.en_punto_encuentro %}\n      <details class=\"route-finish\"", rider)
         self.assertIn("Ya llegué · avisar al cliente y verificar", rider)
         rider_route = (ROOT / "routes" / "repartidor.py").read_text(encoding="utf-8")

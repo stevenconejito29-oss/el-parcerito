@@ -95,6 +95,11 @@
 .df-slot-summary { display:grid; gap:.08rem; color:var(--col-text,#24201d); font-size:.78rem; }
 .df-slot-summary small,.df-slot-hint { color:var(--col-muted,#6b6b6b); font-size:.7rem; }
 .df-btn-next { flex:1 1 100%; }
+.df-view-switch { display:flex; gap:.45rem; margin:0 0 .8rem; overflow-x:auto; padding:2px; }
+.df-view-switch .df-btn { flex:0 0 auto; white-space:nowrap; }
+.df-view-switch .df-btn.is-active { background:var(--df-navy,#111d2c); color:#fff; border-color:var(--df-navy,#111d2c); }
+.df-empty-action { display:grid; gap:.3rem; padding:1rem; border:1px dashed var(--col-line,#d9d3ca); border-radius:14px; background:var(--col-surface,#fff); color:var(--col-text,#24201d); }
+.df-empty-action span { color:var(--col-muted,#66717d); font-size:.82rem; line-height:1.4; }
 
 .df-rider-guide {
   display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .55rem;

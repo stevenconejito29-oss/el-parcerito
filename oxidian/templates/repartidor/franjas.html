@@ -21,6 +21,11 @@
   </ol>
 
   <div id="df-msgs"></div>
+  <nav class="df-view-switch" aria-label="Vista de salidas">
+    <button type="button" class="df-btn is-active" data-rider-view="focus">Mi operación</button>
+    <button type="button" class="df-btn" data-rider-view="available">Buscar franja</button>
+    <a class="df-btn" href="{{ url_for('repartidor.favores') }}">El Cruce · separado</a>
+  </nav>
   <div id="df-cal">
     <p class="df-day-empty">Cargando franjas…</p>
   </div>
@@ -33,6 +38,8 @@
   const cal = document.getElementById("df-cal");
   const msgs = document.getElementById("df-msgs");
   const initialSlots = {{ franjas_iniciales|tojson }};
+  let allSlots = initialSlots;
+  let riderView = initialSlots.some(slot => slot.tomada_por_mi) ? "focus" : "available";
   const riderErrors = {
     conflicto_horario: "Ya cubres otra franja a esa hora. Libérala o elige una salida que no se solape.",
     llena_repartidores: "Otro rider tomó el último cupo de esta salida.",
@@ -50,12 +57,28 @@
       cal.innerHTML = `<p class="df-day-empty">Error al cargar (HTTP ${status}).</p>`;
       return;
     }
-    render(data.franjas || []);
+    allSlots = data.franjas || [];
+    renderView();
   }
 
-  function render(franjas) {
+  function renderView() {
+    document.querySelectorAll('[data-rider-view]').forEach(button =>
+      button.classList.toggle('is-active', button.dataset.riderView === riderView)
+    );
+    const visibles = allSlots.filter(slot => {
+      const estado = (slot.operativa || {}).estado;
+      return riderView === 'focus'
+        ? slot.tomada_por_mi
+        : !slot.tomada_por_mi && estado !== 'finalizada';
+    });
+    render(visibles, riderView === 'focus');
+  }
+
+  function render(franjas, esOperacion=false) {
     if (!franjas.length) {
-      cal.innerHTML = `<p class="df-day-empty">No hay franjas planificadas para los próximos 7 días.</p>`;
+      cal.innerHTML = esOperacion
+        ? `<div class="df-empty-action"><strong>No tienes una salida reservada</strong><span>Entra en “Buscar franja”, elige una y vuelve aquí para seguir el paso a paso.</span></div>`
+        : `<p class="df-day-empty">No hay franjas disponibles para los próximos 7 días.</p>`;
       return;
     }
     const html = DF.agruparPorFecha(franjas).map(([fecha, slots]) => {
@@ -122,8 +145,19 @@
       ? `/repartidor/franjas/${id}/tomar`
       : `/repartidor/franjas/${id}/liberar`;
     const { ok, data } = await DF.apiFetch(url, { method: "POST" });
-    if (ok) { DF.msg(msgs, btn.dataset.act === "tomar" ? "Franja tomada." : "Franja liberada.", "ok"); cargar(); }
+    if (ok) {
+      riderView = btn.dataset.act === "tomar" ? "focus" : "available";
+      DF.msg(msgs, btn.dataset.act === "tomar" ? "Franja tomada. Ya puedes seguirla en Mi operación." : "Franja liberada.", "ok");
+      cargar();
+    }
     else DF.msg(msgs, riderErrors[data && data.error] || "No se pudo completar la acción. Actualiza e inténtalo otra vez.", "err");
+  });
+
+  document.querySelector('.df-view-switch')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-rider-view]');
+    if (!button) return;
+    riderView = button.dataset.riderView;
+    renderView();
   });
 
   const esc = value => String(value ?? "").replace(/[&<>'"]/g, ch => ({
@@ -185,7 +219,7 @@
   });
 
   if (DF) {
-    render(initialSlots);
+    renderView();
     cargar();
   } else {
     cal.innerHTML = `<p class="df-day-empty">No pudimos iniciar las franjas. Cierra y abre la PWA para actualizarla.</p>`;

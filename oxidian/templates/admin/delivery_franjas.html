@@ -50,11 +50,25 @@
   </aside>
   <form method="post" action="{{ url_for('admin.delivery_franjas_limites') }}" class="df-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="df-editor-heading"><div><span class="df-eyebrow">Reglas generales</span><h2>Capacidad y reservas</h2></div></div>
     <label>Pedidos máximos por salida
       <input type="number" name="pedidos_por_salida" min="1" max="10" value="{{ batch_size }}" required>
     </label>
     <label>Peso máximo de mochila (kg)
       <input type="number" name="peso_max_kg" min="1" max="50" step="0.5" value="{{ max_weight_kg }}" required>
+    </label>
+    <label>Días visibles en checkout
+      <input type="number" name="horizonte_cliente" min="1" max="30" value="{{ horizonte_cliente }}" required>
+    </label>
+    <label>Cierre predeterminado
+      <select name="cierre_modo_default">
+        <option value="al_iniciar_siguiente" {% if cierre_modo_default == 'al_iniciar_siguiente' %}selected{% endif %}>Al iniciar la franja</option>
+        <option value="minutos_antes" {% if cierre_modo_default == 'minutos_antes' %}selected{% endif %}>Minutos antes</option>
+        <option value="hora_fija" {% if cierre_modo_default == 'hora_fija' %}selected{% endif %}>Hora fija</option>
+      </select>
+    </label>
+    <label>Valor del cierre
+      <input type="text" name="cierre_valor_default" value="{{ cierre_valor_default }}" placeholder="30 o 13:15">
     </label>
     <div class="df-form-actions"><button class="df-btn df-btn-primary" type="submit">Guardar capacidad</button></div>
   </form>
@@ -189,12 +203,12 @@
         <div class="df-slot ${s.activo ? '' : 'df-slot-cerrada'} ${pasada ? 'is-past' : ''}">
           <div class="df-slot-top"><div><div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>${momento}</div>${estado}</div>
           <div class="df-slot-meta">
-            Cap ${s.capacidad_max} · Riders ${s.max_repartidores}
+            <strong>${s.pedidos_ocupados || 0}/${s.capacidad_max} pedidos</strong> · ${s.repartidores_activos || 0}/${s.max_repartidores} riders
             ${s.cierre_modo ? '· Cierre: ' + s.cierre_modo + (s.cierre_valor ? ' ' + s.cierre_valor : '') : ''}
           </div>
           ${prep.total ? `<div class="df-slot-meta"><strong>${prep.pendientes || 0} pendientes · ${prep.armando || 0} preparando · ${prep.en_ruta || 0} en ruta · ${prep.entregados || 0} entregados</strong></div>` : ''}
           <div class="df-slot-actions">
-            <button class="df-btn" data-act="editar" data-id="${s.id}">${pasada ? 'Usar la próxima semana' : 'Editar'}</button>
+            <button class="df-btn" data-act="editar" data-id="${s.id}">${pasada ? 'Editar próximas semanas' : 'Editar'}</button>
             <button class="df-btn" data-act="toggle" data-id="${s.id}" data-activo="${s.activo}">
               ${s.activo ? 'Desactivar' : 'Reactivar'}
             </button>
@@ -247,18 +261,34 @@
       const slot = slotsById.get(id);
       if (!slot) return;
       const esPasada = slot.fecha < businessToday;
-      editingId = esPasada ? null : id;
-      for (const field of ["fecha", "hora_inicio", "hora_fin", "capacidad_max", "max_repartidores", "cierre_modo", "cierre_valor", "notas_admin"]) {
-        if (form.elements[field]) form.elements[field].value = slot[field] ?? "";
-      }
-      if (slot.cierre_modo || slot.cierre_valor || slot.notas_admin) form.querySelector('.df-advanced')?.setAttribute('open', '');
+      let editorSlot = slot;
+      let fechaDestino = slot.fecha;
       if (esPasada) {
         const destino = new Date(slot.fecha + "T00:00:00");
         do { destino.setDate(destino.getDate() + 7); }
         while (`${destino.getFullYear()}-${String(destino.getMonth()+1).padStart(2,'0')}-${String(destino.getDate()).padStart(2,'0')}` < businessToday);
-        form.elements.fecha.value = `${destino.getFullYear()}-${String(destino.getMonth()+1).padStart(2,'0')}-${String(destino.getDate()).padStart(2,'0')}`;
-        editorTitle.textContent = `Nueva salida basada en ${slot.hora_inicio}–${slot.hora_fin}`;
-        btnGuardar.textContent = "Crear para la próxima semana";
+        fechaDestino = `${destino.getFullYear()}-${String(destino.getMonth()+1).padStart(2,'0')}-${String(destino.getDate()).padStart(2,'0')}`;
+        let existente = [...slotsById.values()].find(item =>
+          item.fecha === fechaDestino && item.hora_inicio === slot.hora_inicio && item.hora_fin === slot.hora_fin
+        );
+        if (!existente) {
+          const ordenar = (a,b) => a.hora_inicio.localeCompare(b.hora_inicio);
+          const origenDia = [...slotsById.values()].filter(item => item.fecha === slot.fecha).sort(ordenar);
+          const destinoDia = [...slotsById.values()].filter(item => item.fecha === fechaDestino).sort(ordenar);
+          const posicion = origenDia.findIndex(item => String(item.id) === String(slot.id));
+          if (posicion >= 0 && destinoDia[posicion]) existente = destinoDia[posicion];
+        }
+        if (existente) editorSlot = existente;
+      }
+      editingId = editorSlot.id === slot.id && esPasada ? null : String(editorSlot.id);
+      for (const field of ["fecha", "hora_inicio", "hora_fin", "capacidad_max", "max_repartidores", "cierre_modo", "cierre_valor", "notas_admin"]) {
+        if (form.elements[field]) form.elements[field].value = editorSlot[field] ?? "";
+      }
+      if (editorSlot.cierre_modo || editorSlot.cierre_valor || editorSlot.notas_admin) form.querySelector('.df-advanced')?.setAttribute('open', '');
+      if (esPasada) {
+        form.elements.fecha.value = fechaDestino;
+        editorTitle.textContent = `Editar patrón semanal · ${slot.hora_inicio}–${slot.hora_fin}`;
+        btnGuardar.textContent = editingId ? "Guardar desde la próxima semana" : "Crear desde la próxima semana";
       } else {
         editorTitle.textContent = `Editar franja ${slot.hora_inicio}–${slot.hora_fin}`;
         btnGuardar.textContent = "Guardar cambios";

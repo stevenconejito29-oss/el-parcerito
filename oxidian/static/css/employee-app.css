@@ -631,6 +631,13 @@ body.view-preparador .prep-slot-result {
   color: #d9e1e8 !important;
   font-weight: 750;
 }
+/* El filtro de producción es una frontera operativa, no una preferencia
+   estética. Ninguna regla posterior de .work-card puede revelar pedidos de
+   otra franja. Las columnas vacías también salen del flujo. */
+body.view-preparador [data-prep-slot-id][hidden],
+body.view-preparador .work-lane[data-filter-empty="true"] {
+  display: none !important;
+}
 body.view-preparador .work-board {
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0,1fr)) !important;

@@ -7975,7 +7975,11 @@ def _parse_hora_hhmm(valor: str):
 
 
 def _slot_to_dict(slot, preparacion: dict | None = None) -> dict:
-    from delivery_slots_service import estado_operativo
+    from delivery_slots_service import (
+        _conteo_pedidos_activos,
+        _repartidores_activos,
+        estado_operativo,
+    )
     data = {
         "id": slot.id,
         "fecha": slot.fecha.isoformat(),
@@ -7988,6 +7992,8 @@ def _slot_to_dict(slot, preparacion: dict | None = None) -> dict:
         "activo": slot.activo,
         "notas_admin": slot.notas_admin,
         "operativa": estado_operativo(slot),
+        "pedidos_ocupados": _conteo_pedidos_activos(slot.id),
+        "repartidores_activos": _repartidores_activos(slot.id),
     }
     if preparacion is not None:
         data["preparacion"] = preparacion
@@ -8172,6 +8178,10 @@ def delivery_franjas_panel():
         max_weight_kg = max(1, min(50, float(get_store_value("delivery_franjas_peso_max_salida_kg", "12") or 12)))
     except (TypeError, ValueError):
         batch_size, max_weight_kg = 3, 12
+    try:
+        horizonte_cliente = max(1, min(30, int(get_store_value("delivery_franjas_horizonte_cliente_dias", "7") or 7)))
+    except (TypeError, ValueError):
+        horizonte_cliente = 7
     hoy = business_today()
     # El HTML nace con datos utilizables. Fetch queda como sincronización, no
     # como requisito para que la pantalla abandone «Cargando».
@@ -8193,6 +8203,9 @@ def delivery_franjas_panel():
         modos_delivery=modos_delivery_activos(),
         batch_size=batch_size,
         max_weight_kg=max_weight_kg,
+        cierre_modo_default=str(get_store_value("delivery_franjas_cierre_modo_default", "al_iniciar_siguiente") or "al_iniciar_siguiente"),
+        cierre_valor_default=str(get_store_value("delivery_franjas_cierre_valor_default", "") or ""),
+        horizonte_cliente=horizonte_cliente,
         business_today_iso=business_today().isoformat(),
         planning_from_iso=(hoy - timedelta(days=7)).isoformat(),
         planning_to_iso=(hoy + timedelta(days=13)).isoformat(),
@@ -8235,14 +8248,26 @@ def delivery_franjas_limites():
     try:
         cantidad = int(request.form.get("pedidos_por_salida", ""))
         peso = float(request.form.get("peso_max_kg", ""))
+        horizonte = int(request.form.get("horizonte_cliente", "7"))
     except (TypeError, ValueError):
         flash("Revisa la cantidad y el peso máximo.", "danger")
         return redirect(url_for("admin.delivery_franjas_panel"))
-    if not 1 <= cantidad <= 10 or not 1 <= peso <= 50:
-        flash("La salida admite 1–10 pedidos y 1–50 kg.", "danger")
+    cierre_modo = (request.form.get("cierre_modo_default") or "al_iniciar_siguiente").strip()
+    cierre_valor = (request.form.get("cierre_valor_default") or "").strip()
+    if not 1 <= cantidad <= 10 or not 1 <= peso <= 50 or not 1 <= horizonte <= 30:
+        flash("La salida admite 1–10 pedidos, 1–50 kg y un horizonte de 1–30 días.", "danger")
+        return redirect(url_for("admin.delivery_franjas_panel"))
+    try:
+        from delivery_slots_service import _validar_cierre
+        _validar_cierre(cierre_modo, cierre_valor or None)
+    except ValueError as exc:
+        flash(str(exc), "danger")
         return redirect(url_for("admin.delivery_franjas_panel"))
     SiteConfig.set("delivery_franjas_pedidos_por_salida", str(cantidad), current_user.id)
     SiteConfig.set("delivery_franjas_peso_max_salida_kg", str(peso), current_user.id)
+    SiteConfig.set("delivery_franjas_horizonte_cliente_dias", str(horizonte), current_user.id)
+    SiteConfig.set("delivery_franjas_cierre_modo_default", cierre_modo, current_user.id)
+    SiteConfig.set("delivery_franjas_cierre_valor_default", cierre_valor, current_user.id)
     db.session.commit()
     flash("Capacidad operativa actualizada.", "success")
     return redirect(url_for("admin.delivery_franjas_panel"))
