@@ -321,7 +321,7 @@
       {% elif rol == 'cocina' %}
       <div class="ox-sb-section">
         <span class="ox-sb-section-label">Mi turno</span>
-        <a href="{{ url_for('preparador.pedidos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ '🍳' if brand.es_comida else '📦' }}</span>Cola de {{ role_label('cocina', short=True)|lower }}</a>
+        <a href="{{ url_for('preparador.franjas_operacion') if delivery_modes.franjas else url_for('preparador.pedidos', vista='legacy') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ '🍳' if brand.es_comida else '📦' }}</span>{{ 'Producción por franjas' if delivery_modes.franjas else ('Cola de ' ~ role_label('cocina', short=True)|lower) }}</a>
       </div>
 
       {% elif rol == 'preparacion' %}

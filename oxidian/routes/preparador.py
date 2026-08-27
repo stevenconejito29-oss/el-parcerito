@@ -384,6 +384,13 @@ def kds_data():
 @preparador_bp.route("/pedidos")
 @preparador_required
 def pedidos():
+    if (
+        current_user.rol == "cocina"
+        and request.args.get("vista") != "legacy"
+    ):
+        from delivery_mode_service import modos_delivery_activos
+        if modos_delivery_activos()["franjas"]:
+            return redirect(url_for("preparador.franjas_operacion"))
     disponible = _esta_disponible()
     tickets_recientes = _tickets_recientes_del_operador()
     modo_operativo = (
@@ -565,6 +572,60 @@ def pedidos():
                            queue_status_url=url_for("preparador.eventos"),
                            queue_refresh_s=_queue_refresh_s(),
                            tickets_recientes=tickets_recientes)
+
+
+@preparador_bp.route("/franjas")
+@preparador_required
+def franjas_operacion():
+    """Centro de producción por salidas; reemplaza el tablero mixto en cocina."""
+    if current_user.rol not in {"cocina", "admin", "super_admin"}:
+        return redirect(url_for("preparador.pedidos"))
+    from delivery_mode_service import modos_delivery_activos
+    if not modos_delivery_activos()["franjas"]:
+        return redirect(url_for("preparador.pedidos", vista="legacy"))
+    from business_time import business_today
+    from delivery_slots_service import (
+        asegurar_horizonte_recurrente,
+        estado_operativo,
+        resumen_preparacion_franjas,
+    )
+    from models import DeliverySlot
+
+    hoy = business_today()
+    if asegurar_horizonte_recurrente(hoy, hoy + timedelta(days=6)):
+        db.session.commit()
+    slots = DeliverySlot.query.filter(
+        DeliverySlot.fecha.between(hoy, hoy + timedelta(days=6)),
+        DeliverySlot.activo.is_(True),
+    ).order_by(DeliverySlot.fecha, DeliverySlot.hora_inicio).all()
+    resumen = resumen_preparacion_franjas(slot.id for slot in slots)
+    pedidos_activos = Order.query.options(
+        joinedload(Order.slot), joinedload(Order.cliente),
+    ).filter(
+        Order.estado.in_(("pendiente", "armando", "listo")),
+        db.or_(Order.slot_id.in_([slot.id for slot in slots]), Order.slot_id.is_(None)),
+    ).order_by(Order.creado_en).all()
+    pedidos_activos = [pedido for pedido in pedidos_activos if _puede_operar_pedido(pedido)]
+    por_turno: dict[str, list] = {"immediate": []}
+    for pedido in pedidos_activos:
+        por_turno.setdefault(str(pedido.slot_id or "immediate"), []).append(pedido)
+    agenda = [{
+        "slot": slot,
+        "operativa": estado_operativo(slot),
+        "pedidos": por_turno.get(str(slot.id), []),
+        **resumen[slot.id],
+    } for slot in slots if not (
+        estado_operativo(slot)["estado"] == "finalizada"
+        and resumen[slot.id]["total"] == 0
+    )]
+    return render_template(
+        "preparador/franjas.html",
+        agenda=agenda,
+        inmediatos=por_turno["immediate"],
+        disponible=_esta_disponible(),
+        lineas_preparacion_interna=lineas_preparacion_interna,
+        tickets_recientes=_tickets_recientes_del_operador(),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────

@@ -1,0 +1,63 @@
+{% extends "admin_base.html" %}
+{% block title %}Producción por franjas — Cocina{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/slot-operations.css', v=asset_version) }}">{% endblock %}
+{% block content %}
+<main class="slotops slotops--kitchen" data-slotops>
+  <header class="slotops-hero">
+    <div><span class="slotops-kicker">Centro de producción</span><h1>Una salida a la vez</h1><p>Selecciona el turno, prepara sus pedidos y entrégalos juntos al rider.</p></div>
+    <a class="slotops-secondary" href="{{ url_for('preparador.pedidos', vista='legacy') }}">Ver operación inmediata</a>
+  </header>
+
+  <section class="slotops-layout">
+    <aside class="slotops-agenda" aria-label="Agenda de salidas">
+      <div class="slotops-agenda__head"><strong>Agenda</strong><small>{{ agenda|length }} salidas</small></div>
+      {% if inmediatos %}
+      <button class="slotops-turn" data-turn="immediate" type="button">
+        <span class="slotops-turn__icon">⚡</span><span><b>Ahora</b><small>{{ inmediatos|length }} inmediato(s)</small></span>
+      </button>
+      {% endif %}
+      {% for turno in agenda %}
+      <button class="slotops-turn {% if turno.operativa.estado == 'activa' %}is-live{% elif turno.preparacion_completa %}is-done{% endif %}"
+              data-turn="{{ turno.slot.id }}" data-state="{{ turno.operativa.estado }}" type="button">
+        <span class="slotops-turn__date">{{ turno.slot.fecha.strftime('%d') }}<small>{{ turno.slot.fecha.strftime('%b') }}</small></span>
+        <span><b>{{ turno.slot.hora_inicio.strftime('%H:%M') }}–{{ turno.slot.hora_fin.strftime('%H:%M') }}</b><small>{% if turno.operativa.estado == 'activa' %}En curso{% elif turno.preparacion_completa %}Empacada{% else %}{{ turno.empacados }}/{{ turno.total }} empacados{% endif %}</small></span>
+        <i style="--progress:{{ ((turno.empacados * 100 / turno.total)|round|int) if turno.total else 0 }}%"></i>
+      </button>
+      {% endfor %}
+    </aside>
+
+    <section class="slotops-workspace">
+      <div class="slotops-empty" data-no-turn><span>☝️</span><h2>Elige una salida</h2><p>Aquí aparecerá únicamente el trabajo correspondiente a esa franja.</p></div>
+      {% if inmediatos %}
+      <div class="slotops-panel" data-panel="immediate" hidden>
+        <header><div><span class="slotops-kicker">Sin franja</span><h2>Pedidos inmediatos</h2></div><b>{{ inmediatos|length }}</b></header>
+        <div class="slotops-orders">{% for pedido in inmediatos %}{% include 'preparador/_slot_order.html' %}{% endfor %}</div>
+      </div>
+      {% endif %}
+      {% for turno in agenda %}
+      <div class="slotops-panel" data-panel="{{ turno.slot.id }}" hidden>
+        <header>
+          <div><span class="slotops-kicker">{{ turno.slot.fecha.strftime('%A %d/%m') }}</span><h2>{{ turno.slot.hora_inicio.strftime('%H:%M') }}–{{ turno.slot.hora_fin.strftime('%H:%M') }}</h2></div>
+          <span class="slotops-state is-{{ turno.operativa.estado }}">{% if turno.preparacion_completa %}Lista para rider{% elif turno.operativa.estado == 'activa' %}En curso{% else %}Próxima{% endif %}</span>
+        </header>
+        <div class="slotops-metrics"><span><b>{{ turno.pendientes }}</b> por iniciar</span><span><b>{{ turno.armando }}</b> preparando</span><span><b>{{ turno.listos }}</b> empacados</span></div>
+        {% if turno.pedidos %}<div class="slotops-orders">{% for pedido in turno.pedidos %}{% include 'preparador/_slot_order.html' %}{% endfor %}</div>
+        {% else %}<div class="slotops-empty is-small"><span>✓</span><h3>Sin trabajo pendiente</h3><p>Esta salida todavía no tiene pedidos.</p></div>{% endif %}
+      </div>
+      {% endfor %}
+    </section>
+  </section>
+</main>
+<script nonce="{{ csp_nonce() }}">
+(()=>{
+  const root=document.querySelector('[data-slotops]'); if(!root)return;
+  const turns=[...root.querySelectorAll('[data-turn]')], panels=[...root.querySelectorAll('[data-panel]')], empty=root.querySelector('[data-no-turn]');
+  const select=id=>{turns.forEach(b=>b.classList.toggle('is-selected',b.dataset.turn===id));panels.forEach(p=>p.hidden=p.dataset.panel!==id);if(empty)empty.hidden=panels.some(p=>!p.hidden);try{sessionStorage.setItem('kitchen.active.slot',id)}catch(_){}};
+  root.addEventListener('click',e=>{const turn=e.target.closest('[data-turn]');if(turn)select(turn.dataset.turn);});
+  let saved='';try{saved=sessionStorage.getItem('kitchen.active.slot')||''}catch(_){}
+  const initial=turns.find(b=>b.dataset.turn===saved)||turns.find(b=>b.dataset.state==='activa')||turns[0];if(initial)select(initial.dataset.turn);
+  root.querySelectorAll('[data-pack-check]').forEach(input=>input.addEventListener('change',()=>{const card=input.closest('.slotops-order'),all=[...card.querySelectorAll('[data-pack-check]')],ready=card.querySelector('[data-ready]');if(ready)ready.disabled=!all.length||!all.every(i=>i.checked);card.classList.toggle('is-checked',all.length>0&&all.every(i=>i.checked));}));
+  root.addEventListener('submit',async e=>{const form=e.target.closest('form[data-slot-action]');if(!form)return;e.preventDefault();const button=form.querySelector('button[type=submit]');if(button){button.disabled=true;button.textContent='Guardando…';}try{await fetch(form.action,{method:'POST',body:new FormData(form),credentials:'same-origin'});location.reload();}catch(_){if(button){button.disabled=false;button.textContent='Reintentar';}}});
+})();
+</script>
+{% endblock %}

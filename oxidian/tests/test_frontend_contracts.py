@@ -96,6 +96,19 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn('request.accept_mimetypes["text/html"]', arrival)
         self.assertIn('redirect(url_for("repartidor.ruta"))', arrival)
 
+    def test_kitchen_slots_use_a_dedicated_single_turn_workspace(self):
+        route = (ROOT / "routes" / "preparador.py").read_text(encoding="utf-8")
+        ui = (ROOT / "templates" / "preparador" / "franjas.html").read_text(encoding="utf-8")
+        styles = (ROOT / "static" / "css" / "slot-operations.css").read_text(encoding="utf-8")
+        auth = (ROOT / "routes" / "auth.py").read_text(encoding="utf-8")
+
+        self.assertIn("def franjas_operacion", route)
+        self.assertIn('"cocina":       "preparador.franjas_operacion"', auth)
+        self.assertIn('data-turn=', ui)
+        self.assertIn('data-panel=', ui)
+        self.assertIn("Una salida a la vez", ui)
+        self.assertIn(".slotops-layout", styles)
+
     def test_delivery_slots_serialize_rider_and_preserve_active_work(self):
         service = (ROOT / "delivery_slots_service.py").read_text(encoding="utf-8")
         rider = (ROOT / "routes" / "repartidor.py").read_text(encoding="utf-8")

@@ -1,0 +1,14 @@
+<article class="slotops-order is-{{ pedido.estado }}">
+  <header><div><span class="slotops-order__number">{{ pedido.numero_pedido }}</span><strong>{{ pedido.cliente.nombre if pedido.cliente else 'Cliente' }}</strong></div><span class="slotops-order__state">{{ pedido.estado|replace('_',' ')|capitalize }}</span></header>
+  {% if pedido.notas %}<p class="slotops-note">Nota: {{ pedido.notas }}</p>{% endif %}
+  <div class="slotops-items">
+    {% for item in lineas_preparacion_interna(pedido) %}
+    <label><input type="checkbox" data-pack-check {% if pedido.estado == 'listo' %}checked disabled{% endif %}><span><b>{{ item.cantidad }}×</b> {{ item.display_nombre }}</span></label>
+    {% endfor %}
+  </div>
+  {% if pedido.estado == 'pendiente' %}
+  <form method="post" action="{{ url_for('preparador.empezar_armar', pedido_id=pedido.id) }}" data-slot-action><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" {% if not disponible %}disabled{% endif %}>Tomar y preparar</button></form>
+  {% elif pedido.estado == 'armando' %}
+  <form method="post" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}" data-slot-action><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" data-ready disabled>Confirmar empaque</button></form>
+  {% else %}<div class="slotops-complete">✓ Empacado para la salida</div>{% endif %}
+</article>

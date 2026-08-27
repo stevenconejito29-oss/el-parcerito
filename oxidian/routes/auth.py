@@ -14,7 +14,7 @@ REDIRECT_POR_ROL = {
     "admin":        "admin.dashboard",
     "preparacion":  "preparador.pedidos",
     "repartidor":   "repartidor.ruta",
-    "cocina":       "preparador.pedidos",
+    "cocina":       "preparador.franjas_operacion",
     "socio_producto": "proveedor.dashboard",
     "proveedor":      "proveedor.pedidos",
 }
