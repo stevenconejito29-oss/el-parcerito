@@ -435,7 +435,16 @@ def modo_reparto_switch():
 
 
 @superadmin_bp.route("/sw-reset")
+@login_required
 def sw_reset():
+    # Endpoint destructivo (Clear-Site-Data purga cookies+storage+SW).
+    # Restringido a admin/super_admin: sin guard, cualquier
+    # <img src="/superadmin/sw-reset"> en un correo o página tercera bastaría
+    # para desloguear al visitante y borrar su PWA. Los clientes que necesiten
+    # limpiar caché lo hacen desde el propio prompt del SW.
+    if not _es_super_o_admin(current_user):
+        from flask import abort as _abort
+        _abort(403)
     from flask import make_response
     resp = make_response(render_template("sw_reset.html"))
     # Clear-Site-Data instruye al navegador a purgar CACHE + STORAGE + SW

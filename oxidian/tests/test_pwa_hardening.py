@@ -86,6 +86,8 @@ class PwaArchitectureContractTest(unittest.TestCase):
         self.assertIn('const CACHE_MEDIA = `ox-media-${APP_VERSION}`', worker)
         self.assertIn("trimCache(cache, 80)", worker)
         self.assertIn('type: "OX_PUSH_RECEIVED"', worker)
+        self.assertIn("windows.some(client => client.focused", worker)
+        self.assertIn("if (!focused) await self.registration.showNotification", worker)
         self.assertIn('badge  = `/static/pwa-badge-96.png?v=${APP_VERSION}`', worker)
         self.assertIn('"setAppBadge" in self.navigator', worker)
         self.assertIn('self.navigator.setAppBadge', worker)
@@ -94,7 +96,7 @@ class PwaArchitectureContractTest(unittest.TestCase):
         self.assertIn('"/static/js/cart-ui.js"', worker)
         self.assertNotIn('"/static/js/spa-nav.js"', worker)
         self.assertIn('"/static/css/heritage.css"', worker)
-        self.assertIn('"/static/coffee-burlap-texture-v2.webp"', worker)
+        self.assertIn('"/static/coffee-burlap-texture-v4.webp"', worker)
         self.assertNotIn("self.skipWaiting();\n});\n\n// ── ACTIVATE", worker)
 
     def test_worker_and_manifests_follow_the_real_asset_fingerprint(self):

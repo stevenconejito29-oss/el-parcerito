@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-06-30T15:05:21.711Z",
-  "baseUrl": "http://127.0.0.1:5070",
+  "generatedAt": "2026-08-13T22:25:55.204Z",
+  "baseUrl": "https://www.elparcerito.com",
   "views": [
     {
       "name": "android-menu",
@@ -11,14 +11,128 @@
       "horizontalOverflow": false,
       "scrollWidth": 390,
       "viewportWidth": 390,
-      "products": 1,
-      "visibleProducts": 1,
+      "products": 15,
+      "visibleProducts": 15,
       "smallTargets": [
         {
           "tag": "a",
-          "text": "Tienda principal",
-          "width": 130,
-          "height": 39
+          "text": "Empleados",
+          "width": 44,
+          "height": 38
+        },
+        {
+          "tag": "a",
+          "text": "BOM BOM BUM",
+          "width": 108,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "GALLETAS FESTIVAL",
+          "width": 134,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "GOMITAS",
+          "width": 64,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "SUPER COCO",
+          "width": 87,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "AQUARIUS LIMON",
+          "width": 126,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "AQUARIUS NARANJA",
+          "width": 143,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "COCA-COLA",
+          "width": 80,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "FANTA LIMON",
+          "width": 98,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "MONSTER MANGO LOCO",
+          "width": 150,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "NESTEA LIMON",
+          "width": 105,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "NESTEA MARACUYA",
+          "width": 135,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "PONY MALTA",
+          "width": 91,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "DORITOS CHILLI",
+          "width": 112,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "DORITOS DINAMITA",
+          "width": 139,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "RUFFLES YORK Y QUESO",
+          "width": 150,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "Privacidad y condiciones",
+          "width": 129,
+          "height": 14
+        },
+        {
+          "tag": "a",
+          "text": "Chat de ayuda",
+          "width": 80,
+          "height": 17
+        },
+        {
+          "tag": "a",
+          "text": "Información legal",
+          "width": 99,
+          "height": 17
+        },
+        {
+          "tag": "a",
+          "text": "Más información",
+          "width": 108,
+          "height": 18
         }
       ],
       "serviceWorkerControlled": true,
@@ -33,14 +147,128 @@
       "horizontalOverflow": false,
       "scrollWidth": 393,
       "viewportWidth": 393,
-      "products": 1,
-      "visibleProducts": 1,
+      "products": 15,
+      "visibleProducts": 15,
       "smallTargets": [
         {
           "tag": "a",
-          "text": "Tienda principal",
-          "width": 130,
-          "height": 39
+          "text": "Empleados",
+          "width": 44,
+          "height": 38
+        },
+        {
+          "tag": "a",
+          "text": "BOM BOM BUM",
+          "width": 108,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "GALLETAS FESTIVAL",
+          "width": 133,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "GOMITAS",
+          "width": 64,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "SUPER COCO",
+          "width": 87,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "AQUARIUS LIMON",
+          "width": 126,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "AQUARIUS NARANJA",
+          "width": 138,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "COCA-COLA",
+          "width": 80,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "FANTA LIMON",
+          "width": 97,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "MONSTER MANGO LOCO",
+          "width": 138,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "NESTEA LIMON",
+          "width": 105,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "NESTEA MARACUYA",
+          "width": 134,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "PONY MALTA",
+          "width": 91,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "DORITOS CHILLI",
+          "width": 112,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "DORITOS DINAMITA",
+          "width": 138,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "RUFFLES YORK Y QUESO",
+          "width": 138,
+          "height": 34
+        },
+        {
+          "tag": "a",
+          "text": "Privacidad y condiciones",
+          "width": 129,
+          "height": 14
+        },
+        {
+          "tag": "a",
+          "text": "Chat de ayuda",
+          "width": 80,
+          "height": 17
+        },
+        {
+          "tag": "a",
+          "text": "Información legal",
+          "width": 99,
+          "height": 17
+        },
+        {
+          "tag": "a",
+          "text": "Más información",
+          "width": 108,
+          "height": 18
         }
       ],
       "serviceWorkerControlled": true,
@@ -55,14 +283,116 @@
       "horizontalOverflow": false,
       "scrollWidth": 1440,
       "viewportWidth": 1440,
-      "products": 1,
-      "visibleProducts": 1,
+      "products": 15,
+      "visibleProducts": 15,
       "smallTargets": [
         {
           "tag": "a",
-          "text": "Tienda principal",
-          "width": 130,
-          "height": 39
+          "text": "Empleados",
+          "width": 28,
+          "height": 38
+        },
+        {
+          "tag": "a",
+          "text": "BOM BOM BUM",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "GALLETAS FESTIVAL",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "GOMITAS",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "SUPER COCO",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "AQUARIUS LIMON",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "AQUARIUS NARANJA",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "COCA-COLA",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "FANTA LIMON",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "MONSTER MANGO LOCO",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "NESTEA LIMON",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "NESTEA MARACUYA",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "PONY MALTA",
+          "width": 267,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "DORITOS CHILLI",
+          "width": 371,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "DORITOS DINAMITA",
+          "width": 371,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "RUFFLES YORK Y QUESO",
+          "width": 371,
+          "height": 32
+        },
+        {
+          "tag": "a",
+          "text": "Privacidad y condiciones",
+          "width": 129,
+          "height": 14
+        },
+        {
+          "tag": "a",
+          "text": "Más información",
+          "width": 108,
+          "height": 18
         }
       ],
       "serviceWorkerControlled": true,
@@ -75,49 +405,30 @@
     "data": {
       "name": "El Parcerito de Carmona",
       "short_name": "El Parcerito",
-      "description": "Menu online y carrito con entrega a domicilio, recogida en local, pedidos por fecha.",
+      "description": "Menu online y canasta con entrega a domicilio.",
       "start_url": "/?source=pwa",
       "scope": "/",
       "display": "standalone",
       "display_override": [
         "standalone",
-        "minimal-ui",
-        "browser"
+        "minimal-ui"
       ],
-      "background_color": "#FFFDF8",
-      "theme_color": "#7C6DE8",
-      "orientation": "portrait-primary",
+      "background_color": "#FFF9E8",
+      "theme_color": "#F4C542",
+      "orientation": "any",
       "lang": "es",
       "dir": "ltr",
       "categories": [
         "food",
-        "shopping"
+        "shopping",
+        "lifestyle"
       ],
-      "id": "oxidian-menu",
+      "id": "/",
       "icons": [
         {
-          "src": "/static/pwa-icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png",
-          "purpose": "any"
-        },
-        {
-          "src": "/static/pwa-icon-512.png",
-          "sizes": "512x512",
-          "type": "image/png",
-          "purpose": "any"
-        },
-        {
-          "src": "/static/pwa-icon-512-maskable.png",
-          "sizes": "512x512",
-          "type": "image/png",
-          "purpose": "maskable"
-        },
-        {
-          "src": "/static/pwa-icon.svg",
+          "src": "/uploads/icon/icon_94c510f0_1786313624.jpg?v=1786313624",
           "sizes": "any",
-          "type": "image/svg+xml",
-          "purpose": "any"
+          "purpose": "any maskable"
         }
       ],
       "shortcuts": [
@@ -128,20 +439,20 @@
           "url": "/",
           "icons": [
             {
-              "src": "/static/pwa-icon-192.png",
-              "sizes": "192x192"
+              "src": "/uploads/icon/icon_94c510f0_1786313624.jpg?v=1786313624",
+              "sizes": "any"
             }
           ]
         },
         {
-          "name": "Mi carrito",
-          "short_name": "Carrito",
+          "name": "Mi canasta",
+          "short_name": "Canasta",
           "description": "Ver pedido actual",
           "url": "/carrito",
           "icons": [
             {
-              "src": "/static/pwa-icon-192.png",
-              "sizes": "192x192"
+              "src": "/uploads/icon/icon_94c510f0_1786313624.jpg?v=1786313624",
+              "sizes": "any"
             }
           ]
         },
@@ -152,39 +463,43 @@
           "url": "/club",
           "icons": [
             {
-              "src": "/static/pwa-icon-192.png",
-              "sizes": "192x192"
+              "src": "/uploads/icon/icon_94c510f0_1786313624.jpg?v=1786313624",
+              "sizes": "any"
             }
           ]
         }
       ],
       "screenshots": [
         {
-          "src": "/static/pwa-screenshot-mobile.png",
+          "src": "/pwa-assets/20c3e3f8e750/pwa-screenshot-mobile.png",
           "sizes": "390x844",
           "type": "image/png",
           "form_factor": "narrow",
           "label": "El Parcerito de Carmona — Menu online"
         },
         {
-          "src": "/static/pwa-screenshot-wide.png",
+          "src": "/pwa-assets/20c3e3f8e750/pwa-screenshot-wide.png",
           "sizes": "1280x720",
           "type": "image/png",
           "form_factor": "wide",
-          "label": "El Parcerito de Carmona — Pedidos y seguimiento"
+          "label": "El Parcerito de Carmona — Compra y seguimiento"
         }
       ],
       "prefer_related_applications": false,
-      "edge_side_panel": {
-        "preferred_width": 400
-      }
+      "launch_handler": {
+        "client_mode": [
+          "navigate-existing",
+          "auto"
+        ]
+      },
+      "handle_links": "preferred"
     }
   },
   "offline": {
     "error": null,
     "result": {
       "title": "El Parcerito de Carmona — Pide online",
-      "bodyText": "🥟\n\nEl Parcerito de Carmona\n\n📍 Carmona, Sevilla\n\n🛒\n↗\nESTÁS VIENDO\nEl Parcerito de Carmona\nAbierto ahora\nTienda principal\nEl Parcerito de Carmona\n\nCarmona\n\nVer menú completo\n🥟\n~25 min\nDelivery o recogida\nAbierto\nBuscar\n🌎\nTodo\n🍽️ Nuestro menú\n1 productos\n🥟\nDISPONIBLE\n\nQA Hamburguesa extras\n\nProd",
+      "bodyText": "DELIVERY\nEl Parcerito de Carmona\nCalidad colombiana, cerquita de ti\n\nTRADICIÓN COLOMBIANA · SERVICIO DE CONFIANZA\n\nEl sabor que recuerda a casa, con la calidad que esperas.\n\nProductos seleccionados, preparación cuidada y un servicio en el que puedes confiar.\n\n \nVer menú completo\n~30 min\nGratis +€12\n",
       "controlled": true
     }
   }

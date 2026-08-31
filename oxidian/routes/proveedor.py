@@ -492,6 +492,18 @@ def marcar_preparado(pedido_id):
                 "Admin debe asignarlo manualmente.",
                 "warning",
             )
+            try:
+                from push_service import notify_roles
+                notify_roles(
+                    ["admin", "super_admin"],
+                    "⚠️ Pedido listo sin repartidor",
+                    f"#{pedido.numero_pedido} necesita asignación manual.",
+                    url="/admin/pedidos",
+                    tag=f"pedido-sin-rider-{pedido.id}",
+                    require_interaction=True,
+                )
+            except Exception:
+                logger.exception("No se pudo notificar sin-rider al admin (pedido %s)", pedido.id)
         else:
             flash(f"Pedido {pedido.numero_pedido} marcado como preparado.", "success")
     except Exception as exc:

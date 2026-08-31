@@ -1,0 +1,13 @@
+{% extends "admin_base.html" %}
+{% block title %}El Cruce — Operación{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/cruce-admin.css', v=asset_version) }}">{% endblock %}
+{% block content %}
+<main class="ca-page">
+  <header class="ca-head"><div><small>OPERACIÓN Y TRAZABILIDAD</small><h1>🤝 El Cruce</h1><p>Cuando un colombiano le hace un favor a otro.</p></div><a href="{{ url_for('superadmin.zonas') }}">Ver cobertura</a></header>
+  <section class="ca-stats"><article><span>Total</span><strong>{{ stats.total }}</strong></article><article><span>Buscando rider</span><strong>{{ stats.open }}</strong></article><article><span>En curso</span><strong>{{ stats.active }}</strong></article><article><span>Entregados</span><strong>{{ stats.delivered }}</strong></article><article><span>Cancelados / Expirados</span><strong>{{ stats.cancelled }}</strong></article></section>
+  <section class="ca-riders"><div><h2>Riders habilitados</h2><p>Estar online y aceptar Cruces son decisiones independientes.</p></div><div>{% for rider in riders %}<span class="{{ 'is-on' if rider.acepta_cruces else '' }}"><i></i>{{ rider.nombre }} · {{ 'acepta Cruces' if rider.acepta_cruces else 'solo pedidos' }}</span>{% else %}<span>Sin riders activos</span>{% endfor %}</div></section>
+  <section class="ca-table"><header><h2>Registro reciente</h2><span>Últimos 250</span></header><div class="ca-list">
+  {% for cruce in cruces %}<article class="motion-fade-in" style="view-transition-name: cruce-{{ cruce.public_id[:8] }}"><div class="ca-id"><small>CRUCE</small><strong><a href="{{ url_for('superadmin.cruce_detalle', public_id=cruce.public_id) }}">#{{ cruce.public_id[:6]|upper }}</a></strong><span>{{ cruce.status|replace('_',' ') }}</span></div><div class="ca-route"><p><b>A</b><span>{{ cruce.pickup_address }}</span><small>{{ cruce.pickup_zone.nombre if cruce.pickup_zone else 'Sin zona histórica' }}</small></p><p><b>B</b><span>{{ cruce.dropoff_address }}</span><small>{{ cruce.dropoff_zone.nombre if cruce.dropoff_zone else 'Sin zona histórica' }}</small></p></div><div class="ca-money"><small>Oferta</small><strong>{{ '%.2f'|format(cruce.agreed_amount or cruce.offered_amount) }} €</strong><span>{{ cruce.assigned_rider.nombre if cruce.assigned_rider else 'Sin asignar' }}</span>{% if cruce.status not in ('delivered','cancelled','expired') %}<a class="ca-cancel" href="{{ url_for('superadmin.cruce_detalle', public_id=cruce.public_id) }}">Gestionar</a>{% endif %}</div></article>{% else %}<p class="ca-empty">Todavía no se ha publicado ningún Cruce.</p>{% endfor %}
+  </div></section>
+</main>
+{% endblock %}

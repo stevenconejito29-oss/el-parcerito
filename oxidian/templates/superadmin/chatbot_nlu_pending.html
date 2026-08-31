@@ -1,0 +1,111 @@
+{% extends "admin_base.html" %}
+{% block title %}NLU Pending — Super Admin{% endblock %}
+{% block content %}
+<div class="oa-page">
+
+  <header class="oa-page-header">
+    <div class="oa-page-header__meta">
+      <p class="oa-page-header__eyebrow">Chatbot · NLU (Groq)</p>
+      <h1 class="oa-page-header__title">Respuestas autogeneradas pendientes</h1>
+      <p class="oa-page-header__subtitle">
+        Groq propuso estas respuestas cuando el matcher determinista no encontró
+        nada aplicable al mensaje del cliente. Están <strong>inactivas</strong> —
+        el cliente nunca las ve hasta que las apruebes. Revisa, edita si hace
+        falta, y aprueba para incorporarlas a la base de conocimiento.
+      </p>
+    </div>
+    <div class="oa-page-header__actions">
+      <a href="{{ url_for('superadmin.chatbot_faq_lista') }}" class="oa-btn">← FAQ manual</a>
+      <a href="{{ url_for('superadmin.chatbot_simulador') }}" class="oa-btn">🧪 Simulador</a>
+    </div>
+  </header>
+
+  <div class="oa-panel" style="margin-bottom:var(--oa-space-4);">
+    <div class="oa-panel__body">
+      <div style="display:flex; gap:2rem; flex-wrap:wrap; font-size:.85rem;">
+        <div><strong style="color:#7bcaff;">{{ pending|length }}</strong> respuestas pendientes</div>
+        <div><strong style="color:#7bcaff;">{{ nlu_signals_24h }}</strong> señales NLU últimas 24h</div>
+        <div><strong style="color:#7bcaff;">{{ nlu_matches_24h }}</strong> matches OK últimas 24h</div>
+        <div><strong style="color:#ffb84d;">{{ nlu_new_today }}</strong> autogeneradas hoy (cap {{ nlu_daily_cap }})</div>
+      </div>
+    </div>
+  </div>
+
+  {% if pending %}
+  <div style="display:grid; gap:var(--oa-space-3);">
+    {% for e in pending %}
+    <div class="oa-panel" style="margin:0;">
+      <div class="oa-panel__body">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap;">
+          <div style="flex:1; min-width:260px;">
+            <div style="display:flex; gap:.5rem; align-items:center; margin-bottom:.35rem; flex-wrap:wrap;">
+              <span style="font-size:.7rem; padding:.15rem .5rem; border-radius:.4rem; background:rgba(255,184,77,.15); color:#ffb84d;">🤖 autogenerada</span>
+              <span style="font-size:.7rem; padding:.15rem .5rem; border-radius:.4rem; background:rgba(255,255,255,.08);">{{ e.audiencia }}</span>
+              <span style="font-size:.7rem; opacity:.6;">creada {{ e.creado_en.strftime('%Y-%m-%d %H:%M') }} UTC</span>
+            </div>
+            <p style="font-weight:700; margin:0 0 .25rem;">{{ e.pregunta }}</p>
+            <p style="white-space:pre-wrap; font-size:.85rem; opacity:.85; margin:0 0 .35rem;">{{ e.respuesta }}</p>
+            {% if e.keywords %}
+            <p style="font-size:.72rem; opacity:.6; margin:0;">🔑 {{ e.keywords }}</p>
+            {% endif %}
+          </div>
+          <div style="display:flex; gap:.4rem; align-items:flex-start; flex-wrap:wrap;">
+            <form method="POST" action="{{ url_for('superadmin.chatbot_nlu_aprobar', entry_id=e.id) }}"
+                  data-confirm="¿Aprobar y activar esta respuesta?" style="margin:0;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="oa-btn oa-btn--sm oa-btn--primary">✓ Aprobar</button>
+            </form>
+            <a href="{{ url_for('superadmin.chatbot_faq_editar', entry_id=e.id) }}" class="oa-btn oa-btn--sm">Editar</a>
+            <form method="POST" action="{{ url_for('superadmin.chatbot_faq_eliminar', entry_id=e.id) }}"
+                  data-confirm="¿Descartar esta propuesta?" style="margin:0;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="oa-btn oa-btn--sm oa-btn--danger">Descartar</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="oa-panel"><div class="oa-panel__body">
+    <p>No hay respuestas pendientes de aprobación. Cuando Groq detecte un
+    hueco en la base de conocimiento, aparecerá aquí para tu revisión.</p>
+    {% if nlu_signals_24h == 0 %}
+    <p style="opacity:.7; font-size:.85rem; margin-top:.5rem;">
+      Tampoco hay señales NLU en las últimas 24h. Verifica que
+      <code>BOT_NLU_ENABLED=1</code> y <code>BOT_AI_API_KEY</code> están
+      configurados en <a href="{{ url_for('superadmin.chatbot') }}">Chatbot config</a>.
+    </p>
+    {% endif %}
+  </div></div>
+  {% endif %}
+
+  {% if recent_signals %}
+  <h2 style="margin-top:var(--oa-space-5); font-size:1.05rem; opacity:.85;">Últimas señales NLU</h2>
+  <div class="oa-panel" style="margin-top:var(--oa-space-2);"><div class="oa-panel__body">
+    <table style="width:100%; font-size:.82rem; border-collapse:collapse;">
+      <thead>
+        <tr style="text-align:left; opacity:.7;">
+          <th style="padding:.35rem 0;">Cuándo</th>
+          <th>Acción NLU</th>
+          <th>Mensaje (ejemplo)</th>
+          <th style="text-align:right;">Veces</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in recent_signals %}
+        <tr style="border-top:1px solid rgba(255,255,255,.05);">
+          <td style="padding:.35rem 0; opacity:.7;">{{ s.last_seen_at.strftime('%m-%d %H:%M') }}</td>
+          <td><code style="font-size:.75rem;">{{ s.action_llm or '—' }}</code></td>
+          <td style="opacity:.85;">{{ s.mensaje_ejemplo[:80] }}</td>
+          <td style="text-align:right; font-weight:700;">{{ s.count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+  {% endif %}
+
+</div>
+{% endblock %}

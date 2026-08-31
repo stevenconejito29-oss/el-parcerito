@@ -1,14 +1,14 @@
 {% extends "admin_base.html" %}
-{% block title %}Simulador Chatbot — Super Admin{% endblock %}
+{% block title %}Simulador del chat web — Super Admin{% endblock %}
 {% block content %}
 <div class="oa-page">
 
   <header class="oa-page-header">
     <div class="oa-page-header__meta">
-      <p class="oa-page-header__eyebrow">Chatbot · pruebas</p>
-      <h1 class="oa-page-header__title">Simulador de mensajes</h1>
-      <p class="oa-page-header__subtitle">Escribe lo que un cliente diría en WhatsApp para ver qué respondería el bot.
-        Sin llamar a WhatsApp real ni consumir créditos.</p>
+      <p class="oa-page-header__eyebrow">Chat web · pruebas seguras</p>
+      <h1 class="oa-page-header__title">Simulador de respuestas</h1>
+      <p class="oa-page-header__subtitle">Escribe una consulta como la haría un cliente en la PWA.
+        No envía WhatsApp ni consume créditos de IA.</p>
     </div>
     <div class="oa-page-header__actions">
       <a href="{{ url_for('superadmin.chatbot_faq_lista') }}" class="oa-btn">📚 FAQ</a>

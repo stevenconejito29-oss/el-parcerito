@@ -32,9 +32,9 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertNotIn('target="_blank" rel="noopener"\n             class="work-btn work-btn-info flex-1">\n            🧭 Navegar ahora', route)
 
     def test_pwa_search_does_not_float_over_recommendations(self):
-        css = (ROOT / "static" / "css" / "pwa-native.css").read_text(encoding="utf-8")
-        self.assertIn("position: relative !important", css)
-        self.assertIn(".ep-search-wrap + :is(.ep-banner-section,.ep-mc-destacados-wrap)", css)
+        css = (ROOT / "static" / "css" / "storefront-pwa-canonical.css").read_text(encoding="utf-8")
+        self.assertIn(".ep-search-wrap{width:auto", css)
+        self.assertNotIn("position:fixed", css.split(".ep-search-wrap", 1)[1].split("}", 1)[0])
 
     def test_kitchen_printer_uses_server_hint_and_browser_permission(self):
         thermal = (ROOT / "static" / "js" / "thermal-printer.js").read_text(encoding="utf-8")
@@ -66,18 +66,24 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("Confirma el pedido desde tu WhatsApp", template)
         self.assertIn("hasta entonces el pedido queda protegido", template)
         self.assertIn("order-verify-cta", template)
+        self.assertIn("Hola, confirmo mi primer pedido", template)
+        self.assertIn("Quiero que lo envíen a cocina", template)
+        self.assertNotIn('target="_blank" rel="noopener" class="order-verify-cta"', template)
         self.assertIn("@media(max-width:420px)", styles)
         self.assertIn("@media(prefers-reduced-motion:reduce)", styles)
 
-    def test_pwa_search_is_visible_and_bottom_action_focuses_it(self):
+    def test_pwa_search_is_visible_and_bottom_action_navigates_to_chat(self):
         native = (ROOT / "static" / "css" / "pwa-native.css").read_text(encoding="utf-8")
         template = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
         menu = (ROOT / "templates" / "public" / "index.html").read_text(encoding="utf-8")
 
-        self.assertIn("display: block !important", native)
-        self.assertIn("min-height: 56px !important", native)
-        self.assertIn("clip-path: none !important", native)
-        self.assertIn('data-bnav="search"', template)
+        canonical = (ROOT / "static" / "css" / "storefront-pwa-canonical.css").read_text(encoding="utf-8")
+        self.assertIn(".ep-search-input{width:100%", canonical)
+        self.assertIn("font-size:16px", canonical)
+        self.assertIn("min-height:44px", canonical)
+        self.assertIn('data-bnav="chat"', template)
+        self.assertIn("url_for('public.chat')", template)
+        self.assertNotIn('data-web-chat-open', template)
         self.assertIn('class="ep-search-wrap" id="buscar"', menu)
 
     def test_pwa_logo_is_only_the_image_without_frame_decoration(self):
@@ -368,22 +374,23 @@ class FrontendContractsTest(unittest.TestCase):
 
     def test_public_pwa_uses_the_optimized_coffee_burlap_texture(self):
         styles = (ROOT / "static" / "css" / "pwa-native.css").read_text(encoding="utf-8")
-        texture = ROOT / "static" / "coffee-burlap-texture-v2.webp"
+        texture = ROOT / "static" / "coffee-burlap-texture-v4.webp"
 
         self.assertTrue(texture.is_file())
         self.assertLess(texture.stat().st_size, 400_000)
-        self.assertIn('url("../coffee-burlap-texture-v2.webp")', styles)
+        self.assertIn('url("../coffee-burlap-texture-v4.webp")', styles)
         self.assertIn("body.ox-body-public main::before { display: none !important; }", styles)
 
-    def test_mobile_menu_and_search_use_native_navigation(self):
+    def test_mobile_menu_and_chat_use_native_navigation(self):
         template = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
         manager = (ROOT / "static" / "js" / "pwa-manager.js").read_text(encoding="utf-8")
         worker = (ROOT / "static" / "sw.js").read_text(encoding="utf-8")
         viewport = (ROOT / "static" / "js" / "storefront-viewport.js").read_text(encoding="utf-8")
 
         self.assertIn("data-bnav=\"home\"", template)
-        self.assertIn("data-bnav=\"search\"", template)
-        self.assertIn("url_for('public.index') }}#buscar", template)
+        self.assertIn("data-bnav=\"chat\"", template)
+        self.assertIn("url_for('public.chat')", template)
+        self.assertNotIn("data-web-chat-open", template)
         self.assertNotIn("spa-nav.js", template)
         self.assertNotIn('"/static/js/spa-nav.js"', worker)
         self.assertNotIn("pwaSearch", manager)
@@ -397,6 +404,55 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("display: grid !important", styles)
         self.assertIn("classList.toggle('ox-keyboard-open', keyboardOpen)", viewport)
         self.assertNotIn("var(--brand-secondary, #FF3B30)", styles)
+
+    def test_web_chat_is_a_page_with_safe_order_actions(self):
+        page = (ROOT / "templates" / "public" / "chat.html").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "js" / "web-chat-page.js").read_text(encoding="utf-8")
+        service = (ROOT / "web_chat_service.py").read_text(encoding="utf-8")
+        self.assertIn('id="wcp-orders"', page)
+        self.assertIn("url_for('public.chat')", page)
+        self.assertNotIn("url_for('web_chat.page')", page)
+        self.assertIn("/orders/${button.dataset.orderId}/cancel", script)
+        self.assertIn("window.confirm", script)
+        self.assertIn("with_for_update", service)
+        self.assertIn("guest_order_tokens", service)
+        bot_path = ROOT.parent / "chat" / "bot.js"
+        if not bot_path.exists():
+            bot_path = ROOT / "chat" / "bot.js"
+        self.assertNotIn("#chat", bot_path.read_text(encoding="utf-8"))
+
+    def test_public_view_styles_load_after_pwa_infrastructure(self):
+        base = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
+        menu = (ROOT / "templates" / "public" / "index.html").read_text(encoding="utf-8")
+        chat = (ROOT / "templates" / "public" / "chat.html").read_text(encoding="utf-8")
+        points = (ROOT / "templates" / "public" / "puntos_consulta.html").read_text(encoding="utf-8")
+        chat_css = (ROOT / "static" / "css" / "web-chat-page.css").read_text(encoding="utf-8")
+        menu_css = (ROOT / "static" / "css" / "storefront-pwa-canonical.css").read_text(encoding="utf-8")
+        points_css = (ROOT / "static" / "css" / "loyalty-showcase.css").read_text(encoding="utf-8")
+
+        self.assertGreater(base.index("block styles_final"), base.index("css/pwa-native.css"))
+        self.assertIn("block styles_final", menu)
+        self.assertIn("css/storefront-pwa-canonical.css", menu)
+        self.assertIn("block styles_final", chat)
+        self.assertIn("block styles_final", points)
+        self.assertEqual(chat_css.count("html.ox-pwa-runtime .wcp-page{position:relative"), 1)
+        self.assertNotIn("body:has(.wcp-page) .ox-bottom-nav.ox-bnav-v2", chat_css)
+        self.assertIn("body:has(.wcp-page) .ox-header-public", chat_css)
+        self.assertIn(".wcp-handoff button[hidden]{display:none!important}", chat_css)
+        self.assertIn('.wcp-notify::before{content:"🔔"', chat_css)
+        self.assertIn("grid-template-columns:19px minmax(0,1fr) 44px", menu_css)
+        self.assertNotIn('data-cats-scroll=', menu)
+        self.assertNotIn("ep-cats-head", menu)
+        self.assertIn("scroll-snap-type:x proximity", menu_css)
+        self.assertIn("Safari/iOS crea halos claros verticales", menu_css)
+        self.assertIn("-webkit-backdrop-filter:none!important", menu_css)
+        self.assertIn("main::after", menu_css)
+        self.assertIn("grid-auto-columns:calc(100vw - 54px)", menu_css)
+        self.assertIn("color:#fff!important", points_css)
+        self.assertIn(".pc-hero-brand", points_css)
+        self.assertIn("body:has(.wcp-page)>main{position:relative", chat_css)
+        self.assertIn("window.addEventListener('pageshow'", (ROOT / "static" / "js" / "web-chat-page.js").read_text(encoding="utf-8"))
+        self.assertIn("#points-lookup-form input::placeholder", points_css)
 
     def test_view_transition_names_are_unique_for_both_cart_links(self):
         styles = (ROOT / "static" / "css" / "header-modern.css").read_text(encoding="utf-8")

@@ -1,0 +1,34 @@
+{# Fragmento reutilizable: cards de El Cruce activas del visitante.
+   Renderizado tanto por la vista completa /favor como por el endpoint
+   /api/favor/cards que HTMX pollea para refrescar sin recargar la página. #}
+{% set status_labels = {'open':'Buscando rider','matched':'Rider asignado','at_pickup':'En el punto A','picked_up':'Objeto recogido','in_transit':'En camino'} %}
+{% for favor in favors %}
+<article class="favor-card motion-fade-in" style="view-transition-name: favor-{{ favor.public_id[:8] }}">
+  <div class="favor-card-head"><div><small>CRUCE #{{ favor.public_id[:6]|upper }}</small><strong>{{ favor.item_description }}</strong></div><span>{{ status_labels.get(favor.status, favor.status|replace('_',' ')) }}</span></div>
+  <ol class="favor-route"><li><small>Recoger en</small>{{ favor.pickup_address }}</li><li><small>Entregar en</small>{{ favor.dropoff_address }}</li></ol>
+  <p class="favor-price">Tu oferta <strong>{{ '%.2f'|format(favor.offered_amount) }} €</strong>{% if favor.agreed_amount %} · Acordado <strong>{{ '%.2f'|format(favor.agreed_amount) }} €</strong>{% endif %}</p>
+  {% if favor.status == 'open' %}
+    <div class="favor-offers">
+    {% for offer in favor.offers if offer.status == 'pending' %}
+      <div class="favor-offer">
+        <div><span><b>{{ '%.2f'|format(offer.amount) }} €</b>{% if offer.eta_minutes %} · llega en ~{{ offer.eta_minutes }} min{% endif %}</span><small>{{ offer.rider.nombre.split()[0] if offer.rider and offer.rider.nombre else 'Rider disponible' }}{% if offer.note %} · {{ offer.note }}{% endif %}</small>{% if offer.customer_counter_amount %}<small>Tu propuesta: {{ '%.2f'|format(offer.customer_counter_amount) }} € · esperando rider</small>{% endif %}</div>
+        <form method="post" action="{{ url_for('public.accept_favor_offer', public_id=favor.public_id, offer_id=offer.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Aceptar</button></form>
+        <details><summary>Proponer otro precio</summary><form method="post" action="{{ url_for('public.counter_favor_offer', public_id=favor.public_id, offer_id=offer.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="amount" type="number" min="{{ guide_prices.get(favor.id, policy.minimum) }}" max="999" step=".50" inputmode="decimal" required placeholder="Desde {{ '%.2f'|format(guide_prices.get(favor.id, policy.minimum)) }} €"><button>Enviar</button></form></details>
+      </div>
+    {% else %}<p>Buscando riders disponibles…</p>{% endfor %}
+    </div>
+    <form method="post" action="{{ url_for('public.cancel_favor', public_id=favor.public_id) }}" class="favor-cancel"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Cancelar solicitud</button></form>
+  {% else %}
+    {% set progress = {'matched':1,'at_pickup':2,'picked_up':3,'in_transit':4}.get(favor.status,1) %}
+    <div class="favor-progress" aria-label="Progreso del favor"><i class="is-done">✓</i><span class="{{ 'is-done' if progress >= 2 else '' }}">A</span><span class="{{ 'is-done' if progress >= 3 else '' }}">📦</span><span class="{{ 'is-done' if progress >= 4 else '' }}">B</span></div>
+    <p class="favor-assigned">{{ status_labels.get(favor.status) }} · el pago acordado es contra entrega.</p>
+    <details class="favor-cancel"><summary>Necesito cancelar este Cruce</summary>
+      <form method="post" action="{{ url_for('public.cancel_favor', public_id=favor.public_id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Motivo (visible al rider)<textarea name="reason" required minlength="4" maxlength="240" placeholder="Cuéntanos qué pasó"></textarea></label>
+        <button>Cancelar Cruce en curso</button>
+      </form>
+    </details>
+  {% endif %}
+</article>
+{% endfor %}

@@ -1,0 +1,67 @@
+[
+  {
+    "name": "iphone16-cruce",
+    "status": 200,
+    "url": "http://192.168.1.32/favor",
+    "errors": [],
+    "metrics": {
+      "scrollWidth": 393,
+      "clientWidth": 393,
+      "small": 6,
+      "body": "rgb(185, 154, 104)",
+      "title": "El Cruce"
+    }
+  },
+  {
+    "name": "iphone16-chat",
+    "status": 200,
+    "url": "http://192.168.1.32/ayuda",
+    "errors": [],
+    "metrics": {
+      "scrollWidth": 393,
+      "clientWidth": 393,
+      "small": 1,
+      "body": "rgb(185, 154, 104)",
+      "title": "Chat de ayuda — El Parcerito"
+    }
+  },
+  {
+    "name": "android-cruce",
+    "status": 200,
+    "url": "http://192.168.1.32/favor",
+    "errors": [],
+    "metrics": {
+      "scrollWidth": 412,
+      "clientWidth": 412,
+      "small": 10,
+      "body": "rgb(185, 154, 104)",
+      "title": "El Cruce"
+    }
+  },
+  {
+    "name": "rider-cruce",
+    "status": 200,
+    "url": "http://192.168.1.32/auth/login?next=%2Frepartidor%2Ffavores",
+    "errors": [],
+    "metrics": {
+      "scrollWidth": 393,
+      "clientWidth": 393,
+      "small": 5,
+      "body": "rgb(185, 154, 104)",
+      "title": "Acceso empleados — El Parcerito"
+    }
+  },
+  {
+    "name": "desktop-cruce",
+    "status": 200,
+    "url": "http://192.168.1.32/favor",
+    "errors": [],
+    "metrics": {
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "small": 7,
+      "body": "rgb(185, 154, 104)",
+      "title": "El Cruce"
+    }
+  }
+]

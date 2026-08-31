@@ -1,20 +1,25 @@
 {% extends "base.html" %}
 {% from 'partials/heritage_icons.html' import heritage_icon %}
 {% block title %}{{ ui.loyalty_name }} — {{ brand.nombre }}{% endblock %}
-{% block styles %}
+{% block styles_final %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/loyalty-showcase.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
 <section class="points-lookup">
   <a href="{{ url_for('public.index') }}" class="points-lookup-back">← Volver al menú</a>
   <div class="points-lookup-hero">
-    <span class="pc-beans-flag points-hero-beans" aria-hidden="true"><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i></span>
-    <div>
-      <p class="points-lookup-kicker">Club de recompensas · {{ brand.nombre }}</p>
+    <div class="pc-bean-field" aria-hidden="true">
+      {% for _ in range(12) %}<i>{{ heritage_icon('grano') }}</i>{% endfor %}
+    </div>
+    <div class="pc-hero-brand">
+      <span class="pc-beans-flag points-hero-beans" aria-hidden="true"><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i></span>
+      <p class="points-lookup-kicker">Club {{ ui.loyalty_name }}</p>
+    </div>
+    <div class="pc-hero-copy">
       <h1>Tus compras se convierten en antojos</h1>
       <p>Consulta tus {{ ui.loyalty_unit_plural }}, descubre cuánto te falta y desbloquea tu próximo regalo.</p>
       <div class="pc-hero-benefits" aria-label="Beneficios del club">
-        <span>✓ Saldo protegido</span><span>✓ Canje en checkout</span><span>✓ Regalos reales</span>
+        <span><b>✓</b> Saldo protegido</span><span><b>✓</b> Canje fácil</span><span><b>✓</b> Regalos reales</span>
       </div>
     </div>
   </div>
@@ -46,9 +51,9 @@
   </div>
 
   <div class="pc-steps" aria-label="Cómo canjear tus granitos">
-    <div><b>1</b><span><strong>Elige tu pedido</strong><small>Añade al menos un producto</small></span></div>
-    <div><b>2</b><span><strong>Verifica tu WhatsApp</strong><small>Protegemos tu saldo con código</small></span></div>
-    <div><b>3</b><span><strong>Escoge tu regalo</strong><small>Se añade gratis al pedido</small></span></div>
+    <div><b>{{ heritage_icon('grano') }}</b><span><strong>Elige tu pedido</strong><small>Añade al menos un producto</small></span></div>
+    <div><b>{{ heritage_icon('grano') }}</b><span><strong>Verifica tu WhatsApp</strong><small>Protegemos tu saldo con código</small></span></div>
+    <div><b>{{ heritage_icon('grano') }}</b><span><strong>Escoge tu regalo</strong><small>Se añade gratis al pedido</small></span></div>
   </div>
 
   {# ── Vitrina de canje: productos solo_canje ── #}

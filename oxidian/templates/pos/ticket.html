@@ -175,6 +175,7 @@
   <div class="row"><span class="muted">Entrega</span><span class="flex-1 right">{{ pedido.direccion_entrega }}</span></div>
   {% endif %}
   {% if pedido.zona_id %}<div class="row"><span class="muted">Zona</span><span>{{ pedido.zona_nombre_aplicada }}</span></div>{% endif %}
+  {% if pedido.slot %}<div class="row"><span class="muted">Franja</span><span class="bold">{{ pedido.slot.fecha.strftime('%d/%m') }} · {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</span></div>{% endif %}
 </div>
 <div class="dashed"></div>
 {% endif %}

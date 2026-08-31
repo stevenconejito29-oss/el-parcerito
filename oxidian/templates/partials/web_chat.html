@@ -1,0 +1,16 @@
+<div class="wc-shell" id="web-chat" hidden>
+  <button class="wc-backdrop" type="button" data-web-chat-close aria-label="Cerrar chat"></button>
+  <section class="wc-panel" role="dialog" aria-modal="true" aria-labelledby="wc-title" tabindex="-1">
+    <header class="wc-head"><div class="wc-avatar" aria-hidden="true">💬</div><div><strong id="wc-title">Ayuda en línea</strong><span id="wc-status">Asistente disponible</span></div><button type="button" data-web-chat-close aria-label="Cerrar">×</button></header>
+    <div class="wc-messages" id="wc-messages" role="log" aria-live="polite"></div>
+    <div class="wc-actions" id="wc-actions" aria-label="Preguntas rápidas">
+      <button type="button" data-wc-quick="¿Cuál es el horario?">Horario</button>
+      {% if brand.delivery %}<button type="button" data-wc-quick="¿Cómo funciona el delivery?">Delivery</button>{% endif %}
+      {% if brand.puntos %}<button type="button" data-wc-quick="¿Cómo funcionan los cafecitos?">Cafecitos</button>{% endif %}
+      <button type="button" data-wc-quick="Quiero consultar o cancelar mi pedido">Mi pedido</button>
+      <button type="button" data-wc-agent>Hablar con alguien</button>
+    </div>
+    <button class="wc-resume" id="wc-resume" type="button" hidden>Volver al asistente</button>
+    <form class="wc-compose" id="wc-form" method="dialog" action="javascript:void(0)" data-no-guard><label class="sr-only" for="wc-input">Tu mensaje</label><textarea id="wc-input" maxlength="1200" rows="1" placeholder="Escribe tu pregunta…" required></textarea><button type="submit" aria-label="Enviar mensaje"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 18-8-8 18-2-8-8-2Z"/></svg></button></form>
+  </section>
+</div>
