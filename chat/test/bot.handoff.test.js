@@ -42,6 +42,7 @@ const {
   adminCan,
   isAdminJid,
   isSuperAdminJid,
+  enforceRecipientLinkBoundary,
   setCfg,
   seleccionarPedidoConsulta,
   contextoPedidoConsulta,
@@ -162,6 +163,16 @@ test('identifica admin y super_admin por HMAC sin recibir teléfonos en claro', 
   assert.equal(adminCan('34600000022@s.whatsapp.net', 'store'), false);
   assert.equal(isAdminJid('34600000023@s.whatsapp.net'), false);
   setCfg('whatsapp_role_profiles', '[]');
+});
+
+test('falla cerrado si el número está en env pero no tiene perfil BD', () => {
+  setCfg('whatsapp_role_profiles', '[]');
+  assert.equal(isAdminJid(adminA), false);
+  assert.equal(isSuperAdminJid(adminA), false);
+  assert.equal(
+    enforceRecipientLinkBoundary(clientA, 'Panel: https://elparcerito.com/superadmin/config'),
+    'Panel: https://elparcerito.com/ayuda',
+  );
 });
 
 test('un número adicional sin cuenta queda limitado a atención humana', () => {

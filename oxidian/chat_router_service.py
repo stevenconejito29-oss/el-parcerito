@@ -17,7 +17,7 @@ import unicodedata
 from typing import Iterable, List, Optional
 
 from models import KnowledgeEntry
-from store_config import get_store_value
+from store_config import get_public_store_url, get_store_value
 
 
 AUDIENCIAS_VALIDAS = ("cliente", "admin", "super_admin", "todos")
@@ -59,7 +59,7 @@ def _placeholder_context() -> dict:
         "telefono": get_store_value("TELEFONO_NEGOCIO", "") or "nuestro WhatsApp",
         "direccion": get_store_value("DIRECCION_NEGOCIO", "") or "consulta en la web",
         "nombre_negocio": get_store_value("NOMBRE_NEGOCIO", "") or "",
-        "web_url": get_store_value("OXIDIAN_PUBLIC_URL", "") or get_store_value("TIENDA_URL", "") or "",
+        "web_url": get_public_store_url(),
     }
 
 

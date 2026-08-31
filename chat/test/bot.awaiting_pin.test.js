@@ -78,7 +78,7 @@ test('primera entrada al gate marca awaiting_pin_since', async () => {
   assert.ok(Date.now() - since < 5000);
 });
 
-test('el router entrega el PIN al estado awaiting_pin y permite continuar', async () => {
+test('el router no ejecuta flujos administrativos por WhatsApp', async () => {
   const jid = '34600000002@s.whatsapp.net';
   setCfg('admin_pin_hash', PIN_HASH);
   setCfg('whatsapp_role_profiles', JSON.stringify([{
@@ -87,13 +87,9 @@ test('el router entrega el PIN al estado awaiting_pin y permite continuar', asyn
   setSesion(jid, { jid, role: 'admin', estado: 'admin_menu', pending: {} });
 
   await handleMessage(jid, '2', 'Super Admin');
-  assert.equal(getSesion(jid).estado, 'awaiting_pin');
-
-  await handleMessage(jid, '1234', 'Super Admin');
   assert.equal(getSesion(jid).estado, 'admin_menu');
-
-  await handleMessage(jid, '2', 'Super Admin');
-  assert.equal(getSesion(jid).estado, 'admin_store_menu');
+  const sent = db.prepare(`SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1`).get();
+  assert.match(sent.detalle, /panel seguro/i);
 });
 
 test('un comando web-only no ejecuta escritura ni abre un flujo de PIN inútil', async () => {
@@ -118,10 +114,10 @@ test('un comando web-only no ejecuta escritura ni abre un flujo de PIN inútil',
   assert.equal(getSesion(jid).estado, 'admin_menu');
   assert.equal(backendCalls, 0);
   const sent = db.prepare(`SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1`).get();
-  assert.match(sent.detalle, /panel web/i);
+  assert.match(sent.detalle, /panel seguro/i);
 });
 
-test('una confirmación antigua vuelve a exigir PIN antes de ejecutar', async () => {
+test('una confirmación antigua no se ejecuta por WhatsApp', async () => {
   const jid = '34600000006@s.whatsapp.net';
   setCfg('admin_pin_hash', PIN_HASH);
   setCfg('whatsapp_role_profiles', JSON.stringify([{
@@ -133,10 +129,6 @@ test('una confirmación antigua vuelve a exigir PIN antes de ejecutar', async ()
   });
 
   await handleMessage(jid, 'SI', 'Admin');
-  assert.equal(getSesion(jid).estado, 'awaiting_pin');
-  assert.equal(getSesion(jid).pending.action, 'close_store');
-
-  await handleMessage(jid, '1234', 'Admin');
   assert.equal(getSesion(jid).estado, 'admin_confirm');
   assert.equal(getSesion(jid).pending.action, 'close_store');
 });

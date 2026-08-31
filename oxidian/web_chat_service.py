@@ -16,7 +16,7 @@ from flask import current_app, session, url_for
 from extensions import db
 from models import KnowledgeEntry, Order, SiteConfig, User, WebChatConversation, WebChatMessage, utcnow
 from services import encolar_whatsapp_generico
-from store_config import get_store_features
+from store_config import get_public_store_url, get_store_features
 
 VALID_STATUSES = {"bot", "waiting_agent", "active_agent", "closed"}
 MAX_MESSAGE = 1200
@@ -161,7 +161,8 @@ def add_message(conversation, sender: str, body: str, *, agent_id=None, nonce=No
 
 
 def _replace_placeholders(answer: str) -> str:
-    public_url = current_app.config.get("PUBLIC_BASE_URL") or url_for("public.index", _external=True)
+    request_url = current_app.config.get("PUBLIC_BASE_URL") or url_for("public.index", _external=True)
+    public_url = get_public_store_url(request_url)
     values = {
         "nombre": SiteConfig.get("NOMBRE_NEGOCIO", "la tienda"),
         "negocio": SiteConfig.get("NOMBRE_NEGOCIO", "la tienda"),
@@ -412,7 +413,8 @@ def _classify_intent(question: str) -> str | None:
 
 def _intent_answer(intent: str) -> str | None:
     features = get_store_features()
-    public_url = current_app.config.get("PUBLIC_BASE_URL") or url_for("public.index", _external=True)
+    request_url = current_app.config.get("PUBLIC_BASE_URL") or url_for("public.index", _external=True)
+    public_url = get_public_store_url(request_url)
     if intent in {"cancel", "tracking"}:
         return INTENT_GUIDANCE["pedido"]
     if intent == "human":
@@ -559,7 +561,11 @@ def request_human(conversation: WebChatConversation) -> bool:
     conversation.assigned_at = None
     conversation.closed_at = None
     add_message(conversation, "system", "Solicitaste atención humana. Te avisaremos aquí cuando un agente tome el chat.")
-    admin_url = url_for("admin.chats_index", _external=True)
+    # El aviso es exclusivo del personal, pero aun así debe usar el dominio
+    # público configurado: nunca enviar localhost, IP Docker o una URL de la
+    # petición interna del proxy a WhatsApp.
+    request_url = current_app.config.get("PUBLIC_BASE_URL") or url_for("public.index", _external=True)
+    admin_url = f'{get_public_store_url(request_url).rstrip("/")}/admin/chats'
     text = f"💬 Nuevo chat web pendiente. Entra al panel para atenderlo: {admin_url}"
     for user in User.query.filter(User.activo.is_(True), User.rol.in_(("admin", "super_admin"))).all():
         if user.telefono_normalizado or user.telefono:

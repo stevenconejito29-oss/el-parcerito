@@ -363,6 +363,18 @@ function getTiendaUrl() {
   return cleanBaseUrl(candidates.find(isPublicClientUrl) || 'https://elparcerito.com');
 }
 
+function enforceRecipientLinkBoundary(jid, value) {
+  const text = String(value || '');
+  if (isAdminJid(jid)) return text;
+  const safeHelp = `${getTiendaUrl()}/ayuda`;
+  // Última barrera de salida: aunque una plantilla, FAQ o estado antiguo
+  // contenga un enlace interno, un destinatario sin perfil DB de personal no
+  // puede recibir rutas administrativas.
+  return text
+    .replace(/https?:\/\/[^\s]+\/(?:superadmin|admin)(?:\/[^\s]*)?/gi, safeHelp)
+    .replace(/(^|[\s(])\/(?:superadmin|admin)(?:\/[^\s)]*)?/gi, `$1${safeHelp}`);
+}
+
 // Modo de la tienda (propia | bar_servicio) — se sincroniza desde /branding
 // en syncCatalogo(). Cache local para decidir comandos avanzados en el bot.
 function getModoTienda() {
@@ -1020,11 +1032,11 @@ function adminBody(jid, body = {}) {
 }
 
 // Modo estricto: si `BOT_STRICT_DB_ROLE=1` (default), un teléfono solo se
-// considera admin si tiene perfil en BD (whatsappRoleProfile). El env
-// (OWNER_NUMBER / SUPERADMINS) se degrada a whitelist de arranque
-// bootstrap — cuando la BD aún no está seedeada — pero no otorga acceso
-// admin en runtime normal. Antes: un phone borrado de BD pero que seguía
-// en env conservaba capacidad de handoff (podía leer chats de clientes).
+// considera admin si tiene perfil activo sincronizado desde BD
+// (whatsappRoleProfile). OWNER_NUMBER/SUPERADMINS sirven para diagnóstico y
+// alertas, pero nunca elevan permisos por sí solos. Esto debe fallar cerrado
+// incluso durante el arranque: una caída del backend no puede convertir una
+// variable de entorno antigua o equivocada en acceso al panel interno.
 //
 // Set a 0 solo si estás migrando y necesitas retrocompatibilidad temporal.
 const STRICT_DB_ROLE = String(process.env.BOT_STRICT_DB_ROLE || '1').trim() !== '0';
@@ -1035,14 +1047,8 @@ function isAdminPhone(phone) {
   const dbProfile = isProfileAdminPhone(clean);
   const envMatched = adminPhones().includes(clean);
   if (STRICT_DB_ROLE) {
-    // Bootstrap safety: si el cache de perfiles BD está VACÍO, todavía
-    // no corrió `syncBranding` con éxito o el backend está caído. En ese
-    // caso caemos a env para no dejar al super_admin fuera durante el
-    // primer arranque del contenedor. Una vez que el sync trae al menos
-    // 1 perfil, entramos en modo estricto real.
-    const bdCargada = whatsappRoleProfiles().length > 0;
-    if (!bdCargada) return envMatched;
-    // Modo estricto real: solo BD otorga rol admin. Divergencia logueada.
+    // Solo BD otorga rol admin. La ausencia total de perfiles también es un
+    // estado no verificado, no una autorización de bootstrap.
     if (envMatched && !dbProfile && !_strictDbRoleWarned) {
       log('warn', 'admin_env_without_db_profile',
           `phone=***${clean.slice(-3)} en env pero sin perfil BD — ignorado (STRICT_DB_ROLE=1)`);
@@ -3069,7 +3075,7 @@ _initWarmup();
 // cuentas que envían mensajes en frío fuera de ventana.
 async function sendText(jid, text, opts = {}) {
   const target = normalizePhone(phoneFromJid(jid));
-  const safeText = sanitizeOutgoingText(text);
+  const safeText = sanitizeOutgoingText(enforceRecipientLinkBoundary(jid, text));
   if (!safeText) return false;
   log('info', 'send_attempt', `to ${target}: ${safeText.slice(0,100)}`);
   if (SIMULATE_EVO_SEND) {
@@ -11815,6 +11821,7 @@ module.exports = {
     adminCan,
     isAdminJid,
     isSuperAdminJid,
+    enforceRecipientLinkBoundary,
     setCfg,
     setAdminState,
     setAdminAvailability,

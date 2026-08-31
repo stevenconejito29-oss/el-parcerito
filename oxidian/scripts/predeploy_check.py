@@ -9,7 +9,9 @@ import os
 import sys
 import ast
 import argparse
+import ipaddress
 from pathlib import Path
+from urllib.parse import urlparse
 
 root = Path(__file__).resolve().parents[1]
 errors = []
@@ -89,6 +91,24 @@ def require_file(relative_path):
     path = root / relative_path
     if not path.is_file() or path.stat().st_size == 0:
         errors.append(f'{relative_path} is missing or empty')
+
+
+def is_public_https_url(value):
+    """Rechaza hosts locales/privados que terminarían filtrándose al cliente."""
+    try:
+        parsed = urlparse((value or '').strip())
+        if parsed.scheme != 'https' or not parsed.hostname:
+            return False
+        host = parsed.hostname.lower().rstrip('.')
+        if host in {'localhost', '127.0.0.1', '::1'} or host.endswith('.local'):
+            return False
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            return True
+        return not (address.is_private or address.is_loopback or address.is_reserved)
+    except (TypeError, ValueError):
+        return False
 
 
 def check_duplicate_route_endpoints():
@@ -189,6 +209,7 @@ require_secret('OXIDIAN_DB_PASSWORD', 16)
 require_secret('EVOLUTION_DB_PASSWORD', 16)
 
 public_url = (os.environ.get('OXIDIAN_PUBLIC_URL') or '').strip()
+store_url = (os.environ.get('TIENDA_URL') or '').strip()
 cookie_secure = os.environ.get('SESSION_COOKIE_SECURE', '1').strip().lower() not in {
     '0', 'false', 'no', 'off',
 }
@@ -203,6 +224,16 @@ elif not public_url.startswith(('http://', 'https://')):
 
 if not public_url.startswith('https://'):
     errors.append('Production PWA, push and HSTS require a final HTTPS public URL')
+elif not is_public_https_url(public_url):
+    errors.append('OXIDIAN_PUBLIC_URL must use a public host; localhost/LAN URLs leak into customer messages')
+
+if not store_url:
+    errors.append('TIENDA_URL not set')
+elif not is_public_https_url(store_url):
+    errors.append('TIENDA_URL must be a public HTTPS URL; customer links cannot use localhost or LAN IPs')
+
+if os.environ.get('BOT_STRICT_DB_ROLE', '1').strip() == '0':
+    errors.append('BOT_STRICT_DB_ROLE=0 would let environment numbers bypass the database role check')
 
 redis_url = (os.environ.get('REDIS_URL') or '').strip()
 if not redis_url.startswith(('redis://', 'rediss://')):

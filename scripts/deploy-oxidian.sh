@@ -44,9 +44,9 @@ docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d oxidian-redis oxi
 
 echo "[$(date -Is)] esperando health..."
 for i in {1..15}; do
-    if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T oxidian curl -fsS http://localhost:5000/health >/dev/null 2>&1; then
-        echo "[$(date -Is)] ✅ health OK tras ${i}s"
-        exit 0
+    if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T oxidian curl -fsS http://localhost:5000/health/ready >/dev/null 2>&1; then
+        echo "[$(date -Is)] ✅ readiness OK tras ${i}s"
+        break
     fi
     sleep 1
     # Si a los 5s seguimos en 502, restart del gateway suele repararlo
@@ -54,13 +54,30 @@ for i in {1..15}; do
     if [[ "$i" == "5" ]]; then
         if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps oxidian --format json 2>/dev/null | grep -q '"Health":"healthy"'; then
             echo "[$(date -Is)] ✅ servicio reporta healthy"
-            exit 0
+            break
         fi
         echo "[$(date -Is)] 502/health pendiente → restart gateway..."
         docker restart oxidian-gateway || true
     fi
 done
 
-echo "[$(date -Is)] ❌ health check falló: servicio no respondió en http://localhost:5000/health" >&2
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs oxidian --tail 20 >&2 || true
-exit 1
+if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T oxidian curl -fsS http://localhost:5000/health/ready >/dev/null 2>&1; then
+    echo "[$(date -Is)] ❌ readiness falló: app o base de datos no están disponibles" >&2
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs oxidian --tail 40 >&2 || true
+    exit 1
+fi
+
+echo "[$(date -Is)] verificando PWA y enlaces públicos..."
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T oxidian \
+    curl -fsS http://localhost:5000/health/live >/dev/null
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T oxidian \
+    curl -fsS http://localhost:5000/sw.js >/dev/null
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T oxidian \
+    curl -fsS http://localhost:5000/manifest.webmanifest >/dev/null
+
+echo "[$(date -Is)] estado de integraciones (bot/WhatsApp puede figurar degraded si la sesión no está conectada):"
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T oxidian \
+    curl -fsS http://localhost:5000/health/integrations || true
+echo
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps
+echo "[$(date -Is)] ✅ deploy verificado"
