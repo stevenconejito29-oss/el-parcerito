@@ -262,6 +262,9 @@
     <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="operacion-horario">
       <h3>Horario y cierre</h3>
+    <div class="cfg-grid">
+      {{ cfg_select('HORARIO_MODO', 'Modo de apertura', [('semanal','Usar malla semanal'),('24h','Abierto 24 horas')], 'El modo 24 horas conserva la malla para recuperarla al volver a semanal.') }}
+    </div>
     <input type="hidden" name="config_key" value="HORARIO_SEMANAL_JSON">
     <input type="hidden" name="HORARIO_SEMANAL_JSON" id="cfg-weekly-schedule-value"
            value="{{ config_map.get('HORARIO_SEMANAL_JSON', '')|e }}">

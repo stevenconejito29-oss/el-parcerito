@@ -157,6 +157,7 @@ CLAVES_DEFAULT = [
     ("HORARIO_APERTURA",       "09:00", "Hora de apertura (HH:MM)"),
     ("HORARIO_CIERRE",         "22:30", "Hora de cierre (HH:MM)"),
     ("HORARIO_SEMANAL_JSON",    "",      "Franjas semanales por día en JSON"),
+    ("HORARIO_MODO",            "semanal", "Modo de apertura: semanal o 24h"),
     ("TIENDA_MENSAJE_CIERRE",  "",      "Mensaje que se muestra cuando la tienda está cerrada"),
     ("VALIDAR_RADIO_ENTREGA",  "1",     "Activar validación de distancia para checkout"),
     ("BLOQUEAR_DIRECCION_NO_VERIFICADA", "1", "Bloquear checkout si la dirección no se puede geocodificar"),
@@ -334,7 +335,7 @@ CONFIG_SECTION_KEYS = {
     "tienda-tema": set(PUBLIC_THEME_DEFAULTS),
     "tienda-textos": set(PUBLIC_UI_DEFAULTS),
     "operacion-horario": {
-        "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON",
+        "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON", "HORARIO_MODO",
         "TIENDA_FORZAR_CERRADA",
         "TIENDA_MENSAJE_CIERRE", "PREAPERTURA_ACTIVA",
         "PREAPERTURA_TITULO", "PREAPERTURA_MENSAJE",
@@ -461,6 +462,11 @@ def _validar_config_value(clave, valor):
     if clave == "MODO_TIENDA":
         if valor not in {"propia", "bar_servicio"}:
             return False, clave, valor, "Modo de tienda no válido."
+        return True, clave, valor, None
+
+    if clave == "HORARIO_MODO":
+        if valor not in {"semanal", "24h"}:
+            return False, clave, valor, "Modo de horario no válido."
         return True, clave, valor, None
 
     if clave in {

@@ -256,6 +256,8 @@ def legacy_schedule(apertura: str, cierre: str) -> dict[str, list[list[str]]]:
 def configured_schedule() -> dict[str, list[list[str]]]:
     """Lee una sola fuente de verdad y conserva instalaciones sin migrar."""
     from models import SiteConfig
+    if str(SiteConfig.get("HORARIO_MODO", "semanal") or "semanal").lower() == "24h":
+        return {str(day): [["00:00", "23:59"]] for day in range(7)}
     raw = SiteConfig.get("HORARIO_SEMANAL_JSON", "")
     if raw:
         try:
@@ -271,9 +273,11 @@ def configured_schedule() -> dict[str, list[list[str]]]:
 
 
 def configured_schedule_context(when: datetime | None = None) -> dict:
+    from models import SiteConfig
     schedule = configured_schedule()
     when = when or datetime.now()
     return {
+        "mode": "24h" if str(SiteConfig.get("HORARIO_MODO", "semanal") or "semanal").lower() == "24h" else "semanal",
         "schedule": schedule,
         "is_open": schedule_is_open(schedule, when),
         "today": day_schedule_text(schedule, when.weekday()),

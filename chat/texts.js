@@ -220,7 +220,9 @@ const ADMIN_SUB_MENUS = {
     `🏪 *Gestión de tienda*\n\n` +
     `1️⃣  Ver estado actual\n` +
     `2️⃣  Cerrar tienda (con mensaje)\n` +
-    `3️⃣  Abrir tienda\n\n` +
+    `3️⃣  Abrir tienda\n` +
+    `4️⃣  Mantener abierta 24 horas\n` +
+    `5️⃣  Volver a la malla semanal\n\n` +
     `_0 · volver al menú principal_`
   ),
   products: (

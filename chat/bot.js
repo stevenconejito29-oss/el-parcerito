@@ -10115,6 +10115,10 @@ async function handleAdminStoreMenu(jid, ses, opcion) {
       return sendText(jid, 'Escribe el mensaje de cierre para los clientes. Si no quieres mensaje, escribe *sin mensaje*.');
     case '3':
       return askAdminConfirm(jid, ses, { action: 'open_store' }, 'Vas a abrir la tienda para pedidos web.');
+    case '4':
+      return askAdminConfirm(jid, ses, { action: 'schedule_mode', mode: '24h' }, 'Vas a mantener la tienda abierta 24 horas. La malla semanal se conservará.');
+    case '5':
+      return askAdminConfirm(jid, ses, { action: 'schedule_mode', mode: 'semanal' }, 'Vas a volver a usar la malla semanal configurada.');
     default:
       return sendText(jid, adminStoreMenu());
   }
@@ -10559,7 +10563,7 @@ async function handleAdminConfirm(jid, ses, text) {
     return sendText(jid, `⌛ La confirmación anterior expiró. Repite la acción si aún la quieres.\n\n${adminMenu(jid)}`);
   }
   const requiredCapability = {
-    close_store: 'store', open_store: 'store',
+    close_store: 'store', open_store: 'store', schedule_mode: 'store',
     emergency_on: 'emergency', emergency_off: 'emergency',
     mute_client: 'security', product_price: 'products', product_active: 'products',
     points_adjust: 'points', admin_add: 'admins', admin_remove: 'admins',
@@ -10645,6 +10649,15 @@ async function handleAdminConfirm(jid, ses, text) {
       });
       setAdminState(ses, 'admin_menu');
       return sendText(jid, `✅ *Tienda ${cerrada ? 'cerrada' : 'abierta'}.*\nEstado actual: *${data.estado}*\n\n${adminMenu(jid)}`);
+    }
+
+    if (pending.action === 'schedule_mode') {
+      const data = await oxidianPost('/admin/horario-modo', {
+        modo: pending.mode,
+        actor_telefono: phoneFromJid(jid),
+      });
+      setAdminState(ses, 'admin_menu');
+      return sendText(jid, `✅ Modo horario: *${data.modo === '24h' ? '24 horas' : 'malla semanal'}*.\n\n${adminMenu(jid)}`);
     }
 
     if (pending.action === 'emergency_on') {

@@ -176,6 +176,7 @@ STORE_DEFAULTS = {
     "HORARIO_APERTURA": "09:00",
     "HORARIO_CIERRE": "22:30",
     "HORARIO_SEMANAL_JSON": "",
+    "HORARIO_MODO": "semanal",
     "TIMEZONE_NEGOCIO": "Europe/Madrid",
     "TIENDA_FORZAR_CERRADA": "0",
     "TIENDA_MENSAJE_CIERRE": "",
@@ -438,7 +439,7 @@ CLAVES_QUE_REFRESCAN_BOT = frozenset({
     "CRUCE_VALOR_MAX_EUR", "CRUCE_MAX_ACTIVOS_CLIENTE",
     # Horario y forzado de cierre → el bot debe reflejarlos al instante
     # para no aceptar pedidos fuera de ventana.
-    "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON",
+    "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON", "HORARIO_MODO",
     "TIENDA_FORZAR_CERRADA", "MENSAJE_CIERRE",
     # Números administrativos y IA → cambios raros pero críticos.
     "BOT_ADMIN_NUMBERS",

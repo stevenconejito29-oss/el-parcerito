@@ -4772,20 +4772,17 @@ def bot_admin_tienda():
                 return _bot_actor_forbidden()
             cerrada  = str(SiteConfig.get("TIENDA_FORZAR_CERRADA", "0")).strip().lower() in {"1", "true", "yes", "on"}
             abierta  = str(SiteConfig.get("TIENDA_FORZAR_ABIERTA", "0")).strip().lower() in {"1", "true", "yes", "on"}
-            apertura = SiteConfig.get("HORARIO_APERTURA", "09:00")
-            cierre_h = SiteConfig.get("HORARIO_CIERRE", "22:30")
-            ahora_s  = datetime.now().strftime("%H:%M")
-            is_open  = tienda_abierta_en_horario(
-                apertura, cierre_h, ahora=ahora_s,
-                forzada_cerrada=cerrada, forzada_abierta=abierta,
-            )
+            from schedule_service import configured_schedule_context
+            schedule = configured_schedule_context()
+            is_open = not cerrada and (abierta or schedule["is_open"])
             return jsonify({
                 "ok": True,
                 "forzar_cerrada": cerrada,
                 "forzar_abierta": abierta,
                 "estado": "cerrada" if not is_open else "abierta",
-                "dentro_horario": tienda_abierta_en_horario(apertura, cierre_h, ahora=ahora_s),
+                "dentro_horario": schedule["is_open"],
                 "mensaje_cierre": SiteConfig.get("TIENDA_MENSAJE_CIERRE", ""),
+                "horario_modo": SiteConfig.get("HORARIO_MODO", "semanal"),
             })
 
         data = request.get_json(silent=True) or {}
@@ -4840,6 +4837,23 @@ def bot_admin_tienda():
         db.session.rollback()
         current_app.logger.exception("api_bot 500")
         return jsonify({"ok": False, "error": "Error interno del servidor"}), 500
+
+
+@api_bot_bp.route("/admin/horario-modo", methods=["POST"])
+@bot_required
+def bot_admin_horario_modo():
+    """Alterna 24h/malla sin borrar la programación semanal existente."""
+    data = request.get_json(silent=True) or {}
+    if not _bot_admin_actor_allowed(data, "store_write"):
+        return _bot_actor_forbidden("store_write")
+    mode = str(data.get("modo") or "").strip().lower()
+    if mode not in {"24h", "semanal"}:
+        return jsonify({"ok": False, "error": "modo inválido"}), 400
+    SiteConfig.set("HORARIO_MODO", mode, descripcion="Modo horario desde bot admin")
+    SiteConfig.set("TIENDA_FORZAR_ABIERTA", "0", descripcion="Reset al cambiar modo horario")
+    SiteConfig.set("TIENDA_FORZAR_CERRADA", "0", descripcion="Reset al cambiar modo horario")
+    db.session.commit()
+    return jsonify({"ok": True, "modo": mode})
 
 
 @api_bot_bp.route("/admin/resumen-hoy")

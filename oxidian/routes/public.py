@@ -708,7 +708,7 @@ def _establecimiento_abierto_checkout(origen, proveedor=None):
             "El establecimiento de este pedido está cerrado o ya no está activo."
         )
     cfg = {r.clave: r.valor for r in SiteConfig.query.filter(
-        SiteConfig.clave.in_(["HORARIO_APERTURA", "HORARIO_CIERRE",
+        SiteConfig.clave.in_(["HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_MODO",
                               "TIENDA_FORZAR_CERRADA", "TIENDA_FORZAR_ABIERTA",
                               "TIENDA_MENSAJE_CIERRE"])
     ).all()}
@@ -716,12 +716,11 @@ def _establecimiento_abierto_checkout(origen, proveedor=None):
     cierre = cfg.get("HORARIO_CIERRE", "22:30")
     forzada = str(cfg.get("TIENDA_FORZAR_CERRADA", "0")).lower() in ("1", "true", "yes", "on")
     forzada_ab = str(cfg.get("TIENDA_FORZAR_ABIERTA", "0")).lower() in ("1", "true", "yes", "on")
-    ahora = datetime.now().strftime("%H:%M")
-    if tienda_abierta_en_horario(apertura, cierre, ahora, forzada, forzada_ab):
-        return True, ""
-    mensaje = (cfg.get("TIENDA_MENSAJE_CIERRE") or "").strip()
     from schedule_service import configured_schedule_context
     schedule = configured_schedule_context()
+    if not forzada and (forzada_ab or schedule["is_open"]):
+        return True, ""
+    mensaje = (cfg.get("TIENDA_MENSAJE_CIERRE") or "").strip()
     fallback = f"La tienda está cerrada ahora. {schedule['today']}."
     if schedule["next_opening"]:
         fallback += f" Próxima apertura: {schedule['next_opening']}."

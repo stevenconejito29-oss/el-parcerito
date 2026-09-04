@@ -869,7 +869,7 @@ def create_app(env="default"):
                 "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS", "FEATURE_FAVORES",
                 "COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO",
                 *PUBLIC_THEME_DEFAULTS.keys(), *PUBLIC_UI_DEFAULTS.keys(),
-                "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON",
+                "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON", "HORARIO_MODO",
                 "TIENDA_FORZAR_CERRADA",
                 "TIENDA_MENSAJE_CIERRE",
                 "APP_ICON_URL", "HERO_IMAGE_URL",
@@ -1347,6 +1347,7 @@ def _seed_admin():
         ("HORARIO_APERTURA",      _env_default("HORARIO_APERTURA", "09:00"), "Hora de apertura tienda (HH:MM)"),
         ("HORARIO_CIERRE",        _env_default("HORARIO_CIERRE", "22:30"),   "Hora de cierre tienda (HH:MM)"),
         ("HORARIO_SEMANAL_JSON",  "", "Franjas de apertura semanales por día"),
+        ("HORARIO_MODO",          "semanal", "Modo de apertura: semanal o 24h"),
         ("TIENDA_FORZAR_CERRADA", "0",                        "Forzar tienda cerrada (1/0). Prevalece sobre horario y FORZAR_ABIERTA."),
         ("TIENDA_FORZAR_ABIERTA", "0",                        "Forzar tienda abierta (1/0), ignorando horario. Útil para servicios fuera de franja horaria."),
         # Geo-validación de radio de entrega
