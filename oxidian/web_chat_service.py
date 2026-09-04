@@ -14,7 +14,7 @@ from rapidfuzz import fuzz
 from flask import current_app, session, url_for
 
 from extensions import db
-from models import KnowledgeEntry, Order, SiteConfig, User, WebChatConversation, WebChatMessage, utcnow
+from models import AdminFeature, KnowledgeEntry, Order, SiteConfig, User, WebChatConversation, WebChatMessage, utcnow
 from services import encolar_whatsapp_generico
 from store_config import get_public_store_url, get_store_features
 
@@ -418,7 +418,7 @@ def _intent_answer(intent: str) -> str | None:
     if intent in {"cancel", "tracking"}:
         return INTENT_GUIDANCE["pedido"]
     if intent == "human":
-        return "Pulsa «Hablar con alguien» debajo del chat. Un agente continuará la conversación aquí mismo."
+        return "Puedo avisar al equipo para que continúe esta conversación aquí mismo. Confírmalo con la opción que acaba de aparecer debajo."
     if intent == "delivery":
         return ("Sí tenemos delivery. La cobertura, el coste y el tiempo se calculan con tu dirección en el carrito antes de confirmar; así siempre ves información actualizada." if features.get("delivery") else "El delivery no está disponible en este momento. Revisa en el carrito las modalidades activas.")
     if intent == "delivery_schedule":
@@ -567,7 +567,15 @@ def request_human(conversation: WebChatConversation) -> bool:
     request_url = current_app.config.get("PUBLIC_BASE_URL") or url_for("public.index", _external=True)
     admin_url = f'{get_public_store_url(request_url).rstrip("/")}/admin/chats'
     text = f"💬 Nuevo chat web pendiente. Entra al panel para atenderlo: {admin_url}"
-    for user in User.query.filter(User.activo.is_(True), User.rol.in_(("admin", "super_admin"))).all():
+    staff = User.query.filter(User.activo.is_(True), User.rol.in_(("admin", "super_admin"))).all()
+    allowed_admin_ids = {
+        row.user_id for row in AdminFeature.query.filter_by(feature="whatsapp", activo=True).all()
+    }
+    for user in staff:
+        # Superadmin conserva la alerta operativa. Un admin solo la recibe si
+        # el CRUD de empleados le concedió explícitamente atención/WhatsApp.
+        if user.rol != "super_admin" and user.id not in allowed_admin_ids:
+            continue
         if user.telefono_normalizado or user.telefono:
             encolar_whatsapp_generico(
                 user.telefono_normalizado or user.telefono, text,
@@ -575,13 +583,16 @@ def request_human(conversation: WebChatConversation) -> bool:
             )
     # Push y WhatsApp son avisos redundantes dirigidos exclusivamente al
     # equipo. El cliente continúa siempre dentro del chat web.
-    from push_service import notify_roles
-    notify_roles(
-        ["admin", "super_admin"], "💬 Chat web pendiente",
-        "Un cliente solicita atención. Abre la bandeja para responder.",
-        url="/admin/chats", tag=f"web-chat-{conversation.public_id}",
-        require_interaction=True,
-    )
+    from push_service import notify_user
+    for user in staff:
+        if user.rol != "super_admin" and user.id not in allowed_admin_ids:
+            continue
+        notify_user(
+            user.id, "💬 Chat web pendiente",
+            "Un cliente solicita atención. Abre la bandeja para responder.",
+            url="/admin/chats", tag=f"web-chat-{conversation.public_id}",
+            require_interaction=True,
+        )
     db.session.commit()
     return True
 

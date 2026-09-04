@@ -4,7 +4,7 @@ from datetime import datetime
 from flask import Flask
 
 from extensions import db
-from models import KnowledgeEntry, Order, User, WebChatConversation, WebChatMessage
+from models import AdminFeature, KnowledgeEntry, Order, User, WebChatConversation, WebChatMessage
 from routes.web_chat import web_chat_bp
 
 
@@ -76,6 +76,38 @@ class WebChatTest(unittest.TestCase):
         self.assertEqual(
             WebChatMessage.query.filter_by(sender="system").count(), 1,
         )
+
+    def test_human_button_is_offered_only_after_typed_intent(self):
+        client = self.app.test_client()
+        normal = client.post("/api/web-chat/messages", json={
+            "message": "¿Cuál es el horario?", "nonce": "normal-help",
+        }).get_json()
+        human = client.post("/api/web-chat/messages", json={
+            "message": "Necesito hablar con una persona", "nonce": "human-help",
+        }).get_json()
+        self.assertFalse(normal["offer_human"])
+        self.assertTrue(human["offer_human"])
+        self.assertEqual(human["conversation"]["status"], "bot")
+
+    def test_whatsapp_handoff_alert_respects_employee_permission(self):
+        from unittest.mock import patch
+        superadmin = User(nombre="SA", email="sa@test.invalid", rol="super_admin", activo=True, telefono="+34600000001")
+        allowed = User(nombre="Con permiso", email="yes@test.invalid", rol="admin", activo=True, telefono="+34600000002")
+        denied = User(nombre="Sin permiso", email="no@test.invalid", rol="admin", activo=True, telefono="+34600000003")
+        for user in (superadmin, allowed, denied):
+            user.set_password("irrelevant-test-password")
+            db.session.add(user)
+        db.session.flush()
+        db.session.add(AdminFeature(user_id=allowed.id, feature="whatsapp", activo=True))
+        db.session.commit()
+        with patch("web_chat_service.encolar_whatsapp_generico") as enqueue, \
+             patch("push_service.notify_user"):
+            response = self.app.test_client().post("/api/web-chat/request-agent", json={})
+        self.assertEqual(response.status_code, 200)
+        recipients = {str(call.args[0]) for call in enqueue.call_args_list}
+        self.assertIn(superadmin.telefono, recipients)
+        self.assertIn(allowed.telefono, recipients)
+        self.assertNotIn(denied.telefono, recipients)
 
     def test_answer_preserves_readable_lines(self):
         entry = KnowledgeEntry.query.first()

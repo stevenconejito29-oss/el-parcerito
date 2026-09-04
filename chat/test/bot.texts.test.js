@@ -225,7 +225,7 @@ function ctxAdmin(overrides = {}) {
       { n: '1️⃣', label: 'Resumen operativo' },
       { n: '2️⃣', label: 'Abrir / cerrar tienda' },
       { n: '3️⃣', label: 'Pedidos en riesgo' },
-      { n: '4️⃣', label: 'Atención humana' },
+      { n: '4️⃣', label: 'Activar / desactivar productos' },
       { n: '5️⃣', label: 'Pasar a modo cliente' },
     ],
     can: { status: true, store: true, handoff: true },
@@ -245,11 +245,12 @@ test('adminMenu muestra modo operativo seguro', () => {
   assert.match(out, /acciones inmediatas y seguras/);
 });
 
-test('adminMenu limita los atajos a atención humana', () => {
+test('adminMenu deriva la atención humana al panel web', () => {
   const out = texts.adminMenu(ctxAdmin());
-  assert.match(out, /💬 \*Atajos de atención\*/);
-  assert.match(out, /\*TOMAR\*/);
-  assert.match(out, /\*COLA\*/);
+  assert.match(out, /Chats de clientes/);
+  assert.match(out, /panel web/);
+  assert.doesNotMatch(out, /\*TOMAR\*/);
+  assert.doesNotMatch(out, /\*COLA\*/);
   assert.doesNotMatch(out, /!take|!release|<numero>/);
   assert.doesNotMatch(out, /!send|!puntos|!precio|!config|!ia/);
 });

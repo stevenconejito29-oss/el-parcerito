@@ -172,6 +172,7 @@ _FEATURE_URL_MAP = {
     "/admin/afiliados":    "marketing",
     "/admin/menu-config":  "marketing",
     "/admin/resenas":      "marketing",
+    "/admin/chats":        "whatsapp",
 }
 
 

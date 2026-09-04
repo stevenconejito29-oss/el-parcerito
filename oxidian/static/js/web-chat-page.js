@@ -6,6 +6,7 @@
   const status = document.getElementById('wcp-status');
   const resume = document.getElementById('wcp-resume');
   const agent = document.getElementById('wcp-agent');
+  const handoff = document.getElementById('wcp-handoff');
   const orders = document.getElementById('wcp-orders');
   const reorder = document.getElementById('wcp-reorder');
   const quick = [...document.querySelectorAll('[data-wcp-quick]')];
@@ -90,7 +91,14 @@
     const state = data.conversation?.status || 'bot';
     const recognised = data.conversation?.customer_recognised;
     status.textContent = ({bot:recognised?'Asistente · pedidos de este dispositivo':'Asistente disponible',waiting_agent:'Esperando a una persona',active_agent:`Te atiende ${data.conversation?.assigned_agent || 'nuestro equipo'}`,closed:'Conversación finalizada'})[state] || 'Conectando…';
-    const bot = state === 'bot'; resume.hidden = bot; agent.hidden = !bot;
+    const bot = state === 'bot';
+    resume.hidden = bot;
+    agent.hidden = !bot;
+    if (handoff) {
+      if (state !== 'bot') handoff.hidden = false;
+      else if (data.offer_human === true) handoff.hidden = false;
+      else if (data.offer_human === false) handoff.hidden = true;
+    }
     quick.forEach(button => { button.disabled = !bot; });
     input.disabled = state === 'closed';
     input.placeholder = state === 'waiting_agent' ? 'Añade información para el equipo…' : 'Escribe tu pregunta…';
@@ -124,7 +132,7 @@
     button.classList.remove('is-confirming');
     action();
   }
-  agent.addEventListener('click', () => requireSecondTap(agent, 'Confirmar atención humana', async () => { try { render(await call('/request-agent', {})); } catch (error) { status.textContent=error.message; } }));
+  agent.addEventListener('click', () => requireSecondTap(agent, 'Toca otra vez para confirmar', async () => { try { render(await call('/request-agent', {})); } catch (error) { status.textContent=error.message; } }));
   resume.addEventListener('click', () => requireSecondTap(resume, 'Confirmar vuelta al asistente', async () => { try { render(await call('/resume-bot', {})); input.disabled=false; } catch(error){status.textContent=error.message;} }));
   async function handleOrderAction(event) {
     const repeat=event.target.closest('[data-reorder-id]');

@@ -55,10 +55,12 @@ def send_message():
             return jsonify(_payload(conversation, 0))
     if conversation.status == "closed":
         resume_bot(conversation)
+    source = None
+    learning = None
+    assigned_agent_id = None
     try:
         add_message(conversation, "client", body, nonce=nonce)
         assigned_agent_id = conversation.assigned_agent_id if conversation.status == "active_agent" else None
-        learning = None
         if conversation.status == "bot":
             answer, source = bot_reply(body)
             add_message(conversation, "bot", answer)
@@ -83,7 +85,9 @@ def send_message():
             registrar_signal(body, action_llm=f"web_{learning[0]}", reply_snippet=learning[1])
     except IntegrityError:
         db.session.rollback()
-    return jsonify(_payload(conversation_for_visitor(), 0))
+    payload = _payload(conversation_for_visitor(), 0)
+    payload["offer_human"] = bool(conversation.status == "bot" and source == "intent:human")
+    return jsonify(payload)
 
 
 @web_chat_bp.post("/request-agent")

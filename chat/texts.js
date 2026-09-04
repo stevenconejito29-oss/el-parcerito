@@ -202,14 +202,8 @@ function adminMenu(ctx) {
 
   const parts = [header];
   if (sectionsBlock) parts.push(sectionsBlock);
-  if (ctx.can.handoff) {
-    parts.push(
-      `💬 *Atajos de atención*\n` +
-      `Escribe *TOMAR* para atender al primero\n` +
-      `Escribe *COLA* para elegir un cliente`,
-    );
-  }
   parts.push(
+    `💬 *Chats de clientes:* abre la alerta recibida o entra al panel web.\n` +
     `🔁 */offline* — comprar como cliente\n` +
     `🌐 _Productos, clientes, puntos, roles, finanzas y configuración: panel web._`,
   );

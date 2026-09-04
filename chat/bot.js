@@ -4514,7 +4514,7 @@ function adminMenu(jid) {
     adminCan(jid, 'status')      ? { n: '1️⃣', label: 'Resumen operativo' } : null,
     adminCan(jid, 'store')       ? { n: '2️⃣', label: 'Abrir / cerrar tienda' } : null,
     adminCan(jid, 'risks')       ? { n: '3️⃣', label: 'Pedidos en riesgo' } : null,
-    adminCan(jid, 'handoff')     ? { n: '4️⃣', label: 'Atención humana' } : null,
+    adminCan(jid, 'products')    ? { n: '4️⃣', label: 'Activar / desactivar productos' } : null,
     adminCan(jid, 'client_mode') ? { n: '5️⃣', label: 'Pasar a modo cliente' } : null,
   ].filter(Boolean);
 
@@ -4536,7 +4536,7 @@ function adminMenu(jid) {
     can: {
       status:   adminCan(jid, 'status'),
       store:    adminCan(jid, 'store'),
-      handoff:  adminCan(jid, 'handoff'),
+      handoff:  false,
     },
   });
 }
@@ -4943,19 +4943,9 @@ async function _handleMessage(jid, text, pushName, context = {}) {
     );
   }
 
-  // Los agentes reciben por WhatsApp la alerta transaccional de un chat
-  // pendiente, pero lo atienden en el panel web. No mantenemos un segundo
-  // panel administrativo basado en mensajes porque duplica estado y puede
-  // ejecutar acciones fuera del contexto visible del pedido.
-  if (isOwner) {
-    bumpStat('admin_redirected_to_web_chat_panel');
-    return sendText(
-      jid,
-      `🔐 La atención y gestión se realizan en el panel seguro:\n${getTiendaUrl()}/admin/chats\n\n` +
-      `Por WhatsApp recibirás únicamente alertas de chats pendientes y avisos transaccionales.`,
-      { transactional: true, humanize: false },
-    );
-  }
+  // El personal sí puede continuar al router administrativo, limitado por
+  // capabilities y confirmaciones. La conversación de soporte nunca se
+  // contesta aquí: las alertas conducen a /admin/chats, única fuente de verdad.
 
   // ── Comando diagnóstico /rol ─────────────────────────────────────────
   // Cuando un admin dice "el bot no me muestra el menú de admin", el
@@ -9957,7 +9947,7 @@ async function handleAdminMenu(jid, ses, opcion) {
     return sendText(jid, `No tienes permiso para atender chats.\n\n${adminMenu(jid)}`);
   }
   const requiredCapability = {
-    '1': 'status', '2': 'store', '3': 'risks', '4': 'handoff',
+    '1': 'status', '2': 'store', '3': 'risks', '4': 'products',
     '5': 'client_mode',
   }[lower];
   if (requiredCapability && !adminCan(jid, requiredCapability)) {
@@ -9991,8 +9981,8 @@ async function handleAdminMenu(jid, ses, opcion) {
     case '3':
       return handleAdminRiskOrders(jid, ses);
     case '4':
-      setAdminState(ses, 'admin_handoff_menu');
-      return sendText(jid, adminHandoffMenu());
+      setAdminState(ses, 'admin_products_menu');
+      return sendText(jid, adminProductsMenu());
     case '5':
       return _handleMessage(jid, '/offline', ses.nombre);
     default:
