@@ -4943,6 +4943,22 @@ async function _handleMessage(jid, text, pushName, context = {}) {
     );
   }
 
+  // Migra cualquier sesión heredada de atención por WhatsApp a la bandeja
+  // web. Aunque un agente hubiera quedado en `admin_chat` antes del deploy,
+  // ningún texto posterior puede terminar enviado al cliente por este canal.
+  const legacyWhatsappSupportStates = new Set([
+    'admin_handoff_menu', 'admin_take_wait', 'admin_transfer_wait', 'admin_chat',
+  ]);
+  if (isOwner && legacyWhatsappSupportStates.has(ses.estado)) {
+    clearAdminChatForClient(jid);
+    setAdminState(ses, 'admin_menu');
+    return sendText(
+      jid,
+      `💬 La atención continúa únicamente en la bandeja web:\n${getTiendaUrl()}/admin/chats`,
+      { transactional: true, humanize: false },
+    );
+  }
+
   // El personal sí puede continuar al router administrativo, limitado por
   // capabilities y confirmaciones. La conversación de soporte nunca se
   // contesta aquí: las alertas conducen a /admin/chats, única fuente de verdad.
