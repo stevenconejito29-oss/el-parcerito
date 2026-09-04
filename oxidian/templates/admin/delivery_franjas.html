@@ -132,6 +132,12 @@
     </div>
   </form>
 
+  <nav class="df-week-nav" aria-label="Semana que quieres configurar">
+    <button type="button" class="df-btn" id="df-week-prev">← Semana anterior</button>
+    <label>Semana<input type="week" id="df-week-picker" aria-label="Seleccionar semana"></label>
+    <button type="button" class="df-btn" id="df-week-next">Semana siguiente →</button>
+  </nav>
+
   <div id="df-calendar">
     <p class="df-day-empty">Cargando planificación…</p>
   </div>
@@ -148,10 +154,19 @@
   const btnCancelarEdicion = document.getElementById("df-btn-cancelar-edicion");
   const btnGuardar = document.getElementById("df-btn-guardar");
   const editorTitle = document.getElementById("df-editor-title");
+  const weekPicker = document.getElementById("df-week-picker");
+  const weekPrev = document.getElementById("df-week-prev");
+  const weekNext = document.getElementById("df-week-next");
   const initialSlots = {{ franjas_iniciales|tojson }};
   const businessToday = "{{ business_today_iso }}";
   let editingId = null;
   let slotsById = new Map();
+  let selectedMonday = mondayOf(new Date(businessToday + "T12:00:00"));
+
+  function iso(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`; }
+  function mondayOf(value) { const d=new Date(value); const day=d.getDay()||7; d.setHours(12,0,0,0); d.setDate(d.getDate()-day+1); return d; }
+  function isoWeekValue(monday) { const th=new Date(monday); th.setDate(monday.getDate()+3); const first=mondayOf(new Date(th.getFullYear(),0,4,12)); return `${th.getFullYear()}-W${String(1+Math.round((monday-first)/604800000)).padStart(2,"0")}`; }
+  function mondayFromWeek(value) { const m=/^(\d{4})-W(\d{2})$/.exec(value||""); if(!m)return selectedMonday; const first=mondayOf(new Date(Number(m[1]),0,4,12)); first.setDate(first.getDate()+(Number(m[2])-1)*7); return first; }
 
   function resetEditor() {
     editingId = null;
@@ -168,7 +183,8 @@
       cal.innerHTML = `<p class="df-day-empty">No se cargó el módulo de planificación. Recarga la aplicación para actualizar sus archivos.</p>`;
       return;
     }
-    const { ok, status, data } = await DF.apiFetch("{{ url_for('admin.delivery_franjas_listar') }}?desde={{ planning_from_iso }}&hasta={{ planning_to_iso }}");
+    const sunday=new Date(selectedMonday); sunday.setDate(sunday.getDate()+6);
+    const { ok, status, data } = await DF.apiFetch(`{{ url_for('admin.delivery_franjas_listar') }}?desde=${iso(selectedMonday)}&hasta=${iso(sunday)}`);
     if (!ok) {
       cal.innerHTML = `<p class="df-day-empty">Error al cargar (HTTP ${status}). ¿Módulo apagado?</p>`;
       return;
@@ -178,11 +194,10 @@
 
   function render(franjas) {
     slotsById = new Map(franjas.map(slot => [String(slot.id), slot]));
-    if (!franjas.length) {
-      cal.innerHTML = `<p class="df-day-empty">Sin franjas planificadas. Crea la primera arriba.</p>`;
-      return;
-    }
-    const html = DF.agruparPorFecha(franjas).map(([fecha, slots]) => {
+    const byDate=new Map(DF.agruparPorFecha(franjas));
+    const days=Array.from({length:7},(_,offset)=>{const d=new Date(selectedMonday);d.setDate(d.getDate()+offset);return iso(d);});
+    const html = days.map(fecha => {
+      const slots=byDate.get(fecha)||[];
       const rows = slots.map(s => {
         const pasada = s.fecha < businessToday;
         const prep = s.preparacion || {};
@@ -216,9 +231,10 @@
           </div>
         </div>`;
       }).join("");
+      const editableDate=fecha<businessToday?(()=>{const d=new Date(fecha+'T12:00:00');do{d.setDate(d.getDate()+7)}while(iso(d)<businessToday);return iso(d)})():fecha;
       return `<div class="df-day">
-        <div class="df-day-head"><span class="df-day-title">${DF.fmtFecha(fecha)}</span></div>
-        <div class="df-slot-list">${rows}</div>
+        <div class="df-day-head"><span class="df-day-title">${DF.fmtFecha(fecha)}</span><button type="button" class="df-btn" data-act="crear-dia" data-fecha="${editableDate}">${fecha<businessToday?'Planificar próxima':'+ Añadir franja'}</button></div>
+        <div class="df-slot-list">${rows||'<p class="df-day-empty">Día sin salidas configuradas.</p>'}</div>
       </div>`;
     }).join("");
     cal.innerHTML = html;
@@ -257,6 +273,12 @@
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const id = btn.dataset.id;
+    if (btn.dataset.act === "crear-dia") {
+      resetEditor(); form.elements.fecha.value=btn.dataset.fecha;
+      editorTitle.textContent=`Nueva franja · ${DF.fmtFecha(btn.dataset.fecha)}`;
+      btnCancelarEdicion.hidden=false; form.scrollIntoView({behavior:"smooth",block:"start"});
+      form.elements.hora_inicio.focus({preventScroll:true}); return;
+    }
     if (btn.dataset.act === "editar") {
       const slot = slotsById.get(id);
       if (!slot) return;
@@ -268,13 +290,15 @@
         do { destino.setDate(destino.getDate() + 7); }
         while (`${destino.getFullYear()}-${String(destino.getMonth()+1).padStart(2,'0')}-${String(destino.getDate()).padStart(2,'0')}` < businessToday);
         fechaDestino = `${destino.getFullYear()}-${String(destino.getMonth()+1).padStart(2,'0')}-${String(destino.getDate()).padStart(2,'0')}`;
-        let existente = [...slotsById.values()].find(item =>
+        const futureResult = await DF.apiFetch(`{{ url_for('admin.delivery_franjas_listar') }}?desde=${fechaDestino}&hasta=${fechaDestino}`);
+        const futureSlots = futureResult.ok ? (futureResult.data.franjas || []) : [];
+        let existente = futureSlots.find(item =>
           item.fecha === fechaDestino && item.hora_inicio === slot.hora_inicio && item.hora_fin === slot.hora_fin
         );
         if (!existente) {
           const ordenar = (a,b) => a.hora_inicio.localeCompare(b.hora_inicio);
           const origenDia = [...slotsById.values()].filter(item => item.fecha === slot.fecha).sort(ordenar);
-          const destinoDia = [...slotsById.values()].filter(item => item.fecha === fechaDestino).sort(ordenar);
+          const destinoDia = futureSlots.filter(item => item.fecha === fechaDestino).sort(ordenar);
           const posicion = origenDia.findIndex(item => String(item.id) === String(slot.id));
           if (posicion >= 0 && destinoDia[posicion]) existente = destinoDia[posicion];
         }
@@ -313,12 +337,9 @@
   });
 
   btnClonar.addEventListener("click", async () => {
-    // Semana en curso (lunes) → siguiente semana (lunes)
-    const hoy = new Date();
-    const diaSemana = hoy.getDay(); // 0=dom, 1=lun...
-    const desplazamientoALunes = diaSemana === 0 ? -6 : (1 - diaSemana);
-    const lunesEstaSemana = new Date(hoy); lunesEstaSemana.setDate(hoy.getDate() + desplazamientoALunes);
-    const lunesSiguiente = new Date(lunesEstaSemana); lunesSiguiente.setDate(lunesEstaSemana.getDate() + 7);
+    // La semana visible es siempre la fuente; evita clonar otra semana por error.
+    const lunesEstaSemana = new Date(selectedMonday);
+    const lunesSiguiente = new Date(selectedMonday); lunesSiguiente.setDate(selectedMonday.getDate() + 7);
     const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
     if (!confirm(`Clonar semana del ${iso(lunesEstaSemana)} → ${iso(lunesSiguiente)}?`)) return;
     const { ok, data } = await DF.apiFetch("{{ url_for('admin.delivery_franjas_clonar') }}",
@@ -326,6 +347,11 @@
     if (ok) { DF.msg(msgs, `${data.creadas} franjas nuevas creadas.`, "ok"); cargar(); }
     else DF.msg(msgs, (data && data.error) || "Error al clonar.", "err");
   });
+
+  weekPicker.value=isoWeekValue(selectedMonday);
+  weekPicker.addEventListener("change",()=>{selectedMonday=mondayFromWeek(weekPicker.value);cargar()});
+  weekPrev.addEventListener("click",()=>{selectedMonday.setDate(selectedMonday.getDate()-7);weekPicker.value=isoWeekValue(selectedMonday);cargar()});
+  weekNext.addEventListener("click",()=>{selectedMonday.setDate(selectedMonday.getDate()+7);weekPicker.value=isoWeekValue(selectedMonday);cargar()});
 
   if (window.DeliveryFranjas) {
     render(initialSlots);

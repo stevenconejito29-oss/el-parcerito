@@ -173,6 +173,7 @@ _FEATURE_URL_MAP = {
     "/admin/menu-config":  "marketing",
     "/admin/resenas":      "marketing",
     "/admin/chats":        "whatsapp",
+    "/admin/delivery/":    "zonas",
 }
 
 
@@ -8015,8 +8016,13 @@ def delivery_franjas_listar():
         horizonte = 14
     desde_raw = request.args.get("desde")
     hasta_raw = request.args.get("hasta")
-    desde = _parse_fecha_iso(desde_raw) if desde_raw else hoy
-    hasta = _parse_fecha_iso(hasta_raw) if hasta_raw else hoy + timedelta(days=horizonte - 1)
+    try:
+        desde = _parse_fecha_iso(desde_raw) if desde_raw else hoy
+        hasta = _parse_fecha_iso(hasta_raw) if hasta_raw else hoy + timedelta(days=horizonte - 1)
+    except ValueError:
+        return jsonify({"error": "Rango de fechas inválido"}), 400
+    if hasta < desde or (hasta - desde).days > 62:
+        return jsonify({"error": "El rango debe contener entre 1 y 63 días"}), 400
     slots = listar_franjas_admin(desde, hasta)
     resumen = resumen_preparacion_franjas(slot.id for slot in slots)
     return jsonify({"desde": desde.isoformat(), "hasta": hasta.isoformat(),

@@ -285,6 +285,8 @@
 .df-container--admin .df-slot-hora { font-variant-numeric:tabular-nums; font-size:1.04rem; }
 .df-container--admin .df-slot-actions { display:grid; grid-template-columns:1fr; }
 .df-container--admin .df-slot-actions .df-btn { width:100%; }
+.df-week-nav{display:grid;grid-template-columns:auto minmax(180px,1fr) auto;align-items:end;gap:8px;margin:12px 0;padding:10px;border:1px solid var(--col-line,#d7dfe7);border-radius:13px;background:var(--col-surface,#fff)}
+.df-week-nav label{display:grid;gap:4px;color:var(--col-muted,#66717d);font-size:.7rem;font-weight:850}.df-week-nav input{min-height:42px;padding:7px 9px;border:1px solid var(--col-line,#d7dfe7);border-radius:9px;background:var(--col-surface,#fff);color:var(--col-text,#17202a);font:inherit}.df-day-head{gap:8px}.df-day-head .df-btn{min-height:34px;padding:.3rem .55rem;font-size:.7rem}
 .df-repeat {
   display:grid;
   grid-template-columns:minmax(240px,2fr) minmax(130px,1fr);
@@ -340,6 +342,7 @@
 .df-container--rider .df-btn-next { background:var(--df-green); border-color:var(--df-green); }
 
 @media(max-width:760px){
+  .df-week-nav{grid-template-columns:1fr 1fr}.df-week-nav label{grid-column:1/-1;grid-row:1}.df-week-nav .df-btn{width:100%}
   .df-container--admin,
   .df-container--rider { padding:7px; }
   .df-container--admin .df-header,
