@@ -890,6 +890,7 @@ def branding():
         "horario_apertura": SiteConfig.get("HORARIO_APERTURA", ""),
         "horario_cierre": SiteConfig.get("HORARIO_CIERRE", ""),
         "horario_semanal_json": SiteConfig.get("HORARIO_SEMANAL_JSON", ""),
+        "staff_alerts_enabled": _config_bool("BOT_STAFF_ALERTS_ENABLED", "1"),
         # Límites operativos del bot admin. Antes hardcoded en bot.js
         # (1000, 9999, 10000); ahora ida-vuelta desde SiteConfig para que
         # los ajustes en /superadmin/config surtan efecto sin redeploy
@@ -4854,6 +4855,24 @@ def bot_admin_horario_modo():
     SiteConfig.set("TIENDA_FORZAR_CERRADA", "0", descripcion="Reset al cambiar modo horario")
     db.session.commit()
     return jsonify({"ok": True, "modo": mode})
+
+
+@api_bot_bp.route("/admin/alertas-equipo", methods=["POST"])
+@bot_required
+def bot_admin_alertas_equipo():
+    """Pausa solo alertas internas; nunca códigos ni avisos del pedido."""
+    data = request.get_json(silent=True) or {}
+    if not _bot_admin_actor_allowed(data, "whatsapp"):
+        return _bot_actor_forbidden("whatsapp")
+    if "enabled" not in data:
+        return jsonify({"ok": False, "error": "enabled requerido"}), 400
+    enabled = _json_bool(data.get("enabled"))
+    SiteConfig.set(
+        "BOT_STAFF_ALERTS_ENABLED", "1" if enabled else "0",
+        descripcion="Alertas internas de chat controladas desde bot admin",
+    )
+    db.session.commit()
+    return jsonify({"ok": True, "enabled": enabled})
 
 
 @api_bot_bp.route("/admin/resumen-hoy")

@@ -4139,6 +4139,7 @@ async function syncBranding() {
     setCfg('cash_enabled',      !!data.cash_enabled      ? '1' : '0');
     setCfg('horario_apertura', data.horario_apertura || '');
     setCfg('horario_cierre', data.horario_cierre || '');
+    setCfg('staff_alerts_enabled', data.staff_alerts_enabled === false ? '0' : '1');
     // Límites operativos configurables (BOT_MAX_PRICE_EUR, BOT_MAX_POINTS_ADJUST)
     // — persistidos aquí para que `botMaxPrice()` y `botMaxPointsAdjust()`
     // reflejen cambios del panel sin reiniciar el contenedor chat.
@@ -4516,6 +4517,7 @@ function adminMenu(jid) {
     adminCan(jid, 'risks')       ? { n: '3️⃣', label: 'Pedidos en riesgo' } : null,
     adminCan(jid, 'products')    ? { n: '4️⃣', label: 'Activar / desactivar productos' } : null,
     adminCan(jid, 'client_mode') ? { n: '5️⃣', label: 'Pasar a modo cliente' } : null,
+    adminCan(jid, 'handoff')     ? { n: '6️⃣', label: 'Activar / pausar alertas de chats' } : null,
   ].filter(Boolean);
 
   // Nombre real del admin desde perfil BD. Cuando hay varios super_admin
@@ -9964,7 +9966,7 @@ async function handleAdminMenu(jid, ses, opcion) {
   }
   const requiredCapability = {
     '1': 'status', '2': 'store', '3': 'risks', '4': 'products',
-    '5': 'client_mode',
+    '5': 'client_mode', '6': 'handoff',
   }[lower];
   if (requiredCapability && !adminCan(jid, requiredCapability)) {
     return sendText(jid, `No tienes permiso para esa función.\n\n${adminMenu(jid)}`);
@@ -10001,6 +10003,13 @@ async function handleAdminMenu(jid, ses, opcion) {
       return sendText(jid, adminProductsMenu());
     case '5':
       return _handleMessage(jid, '/offline', ses.nombre);
+    case '6': {
+      const enabled = String(cfg('staff_alerts_enabled', '1')) === '1';
+      return askAdminConfirm(
+        jid, ses, { action: 'staff_alerts', enabled: !enabled },
+        `Vas a ${enabled ? 'pausar' : 'activar'} las alertas internas de nuevos chats. Los códigos y estados de pedidos seguirán funcionando.`,
+      );
+    }
     default:
       // El panel operativo también es determinista: una frase ambigua no
       // ejecuta ni propone cambios administrativos.
@@ -10567,6 +10576,7 @@ async function handleAdminConfirm(jid, ses, text) {
     emergency_on: 'emergency', emergency_off: 'emergency',
     mute_client: 'security', product_price: 'products', product_active: 'products',
     points_adjust: 'points', admin_add: 'admins', admin_remove: 'admins',
+    staff_alerts: 'handoff',
   }[pending.action];
   if (!requiredCapability || !adminCan(jid, requiredCapability)) {
     setAdminState(ses, 'admin_menu');
@@ -10658,6 +10668,16 @@ async function handleAdminConfirm(jid, ses, text) {
       });
       setAdminState(ses, 'admin_menu');
       return sendText(jid, `✅ Modo horario: *${data.modo === '24h' ? '24 horas' : 'malla semanal'}*.\n\n${adminMenu(jid)}`);
+    }
+
+    if (pending.action === 'staff_alerts') {
+      const data = await oxidianPost('/admin/alertas-equipo', {
+        enabled: !!pending.enabled,
+        actor_telefono: phoneFromJid(jid),
+      });
+      setCfg('staff_alerts_enabled', data.enabled ? '1' : '0');
+      setAdminState(ses, 'admin_menu');
+      return sendText(jid, `✅ Alertas internas *${data.enabled ? 'activadas' : 'pausadas'}*.\n\n${adminMenu(jid)}`);
     }
 
     if (pending.action === 'emergency_on') {

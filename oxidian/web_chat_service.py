@@ -571,7 +571,8 @@ def request_human(conversation: WebChatConversation) -> bool:
     allowed_admin_ids = {
         row.user_id for row in AdminFeature.query.filter_by(feature="whatsapp", activo=True).all()
     }
-    for user in staff:
+    staff_alerts_enabled = str(SiteConfig.get("BOT_STAFF_ALERTS_ENABLED", "1") or "1").lower() in {"1", "true", "yes", "on"}
+    for user in staff if staff_alerts_enabled else []:
         # Superadmin conserva la alerta operativa. Un admin solo la recibe si
         # el CRUD de empleados le concedió explícitamente atención/WhatsApp.
         if user.rol != "super_admin" and user.id not in allowed_admin_ids:
@@ -584,7 +585,7 @@ def request_human(conversation: WebChatConversation) -> bool:
     # Push y WhatsApp son avisos redundantes dirigidos exclusivamente al
     # equipo. El cliente continúa siempre dentro del chat web.
     from push_service import notify_user
-    for user in staff:
+    for user in staff if staff_alerts_enabled else []:
         if user.rol != "super_admin" and user.id not in allowed_admin_ids:
             continue
         notify_user(
