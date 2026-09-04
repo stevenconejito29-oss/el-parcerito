@@ -4,8 +4,8 @@
 {% block content %}
 <main class="slotops slotops--kitchen" data-slotops>
   <header class="slotops-hero">
-    <div><span class="slotops-kicker">Centro de producción</span><h1>Una salida a la vez</h1><p>Selecciona el turno, prepara sus pedidos y entrégalos juntos al rider.</p></div>
-    <a class="slotops-secondary" href="{{ url_for('preparador.pedidos', vista='legacy') }}">Ver operación inmediata</a>
+    <div><span class="slotops-kicker">{{ 'Cocina' if brand.es_comida else 'Centro de preparación' }} · {{ delivery_operation.etiqueta }}</span><h1>Una salida a la vez</h1><p>{% if delivery_operation.acepta_nuevo_trabajo %}Selecciona el turno, prepara sus pedidos y entrégalos juntos al rider.{% else %}La recepción está pausada. Termina solamente los pedidos que ya están en cola.{% endif %}</p></div>
+    {% if delivery_operation.inmediato or inmediatos %}<a class="slotops-secondary" href="{{ url_for('preparador.pedidos', vista='legacy') }}">{{ 'Ver pedidos inmediatos' if delivery_operation.inmediato else 'Cerrar pendientes sin franja' }}</a>{% endif %}
   </header>
 
   <section class="slotops-layout">

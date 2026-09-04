@@ -5,6 +5,7 @@ from delivery_mode_service import (
     ErrorPlanDelivery,
     MODE_CONFIG,
     ModoDelivery,
+    contexto_operativo_delivery,
     modos_delivery_activos,
     resolver_plan_delivery,
 )
@@ -30,6 +31,33 @@ class DeliveryModeServiceTest(unittest.TestCase):
     def test_rejects_slot_when_slots_module_is_off(self):
         with self.assertRaisesRegex(ErrorPlanDelivery, "franjas no está disponible"):
             resolver_plan_delivery("9", modos={"inmediato": True, "franjas": False})
+
+    def test_operation_context_distinguishes_new_work_from_pending_work(self):
+        config = {"delivery_inmediato_activo": "1", "delivery_franjas_activo": "1"}
+        operation = contexto_operativo_delivery(
+            config_reader=lambda key, default: config.get(key, default),
+            feature_reader=lambda: {"delivery": False},
+        )
+        self.assertEqual(operation["modo"], "pausado")
+        self.assertFalse(operation["acepta_nuevo_trabajo"])
+        self.assertTrue(operation["inmediato"])
+        self.assertTrue(operation["franjas"])
+
+    def test_operation_context_reports_each_enabled_mode(self):
+        for immediate, slots, expected in (
+            (True, False, "inmediato"),
+            (False, True, "franjas"),
+            (True, True, "mixto"),
+        ):
+            operation = contexto_operativo_delivery(
+                config_reader=lambda key, _default, values={
+                    "delivery_inmediato_activo": "1" if immediate else "0",
+                    "delivery_franjas_activo": "1" if slots else "0",
+                }: values[key],
+                feature_reader=lambda: {"delivery": True},
+            )
+            self.assertEqual(operation["modo"], expected)
+            self.assertTrue(operation["acepta_nuevo_trabajo"])
 
 
 if __name__ == "__main__":

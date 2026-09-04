@@ -864,7 +864,7 @@ def create_app(env="default"):
                 "NOMBRE_NEGOCIO", "LOGO_URL", "TELEFONO_NEGOCIO",
                 "DIRECCION_NEGOCIO", "CIUDAD_NEGOCIO", "PROVINCIA_NEGOCIO",
                 "PAIS_NEGOCIO", "EMAIL_CONTACTO", "BIZUM_TELEFONO",
-                "BIZUM_HABILITADO", "EFECTIVO_HABILITADO",
+                "BIZUM_HABILITADO", "EFECTIVO_HABILITADO", "TARJETA_HABILITADA",
                 "MODO_TIENDA", "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
                 "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS", "FEATURE_FAVORES",
                 "COLOR_PRIMARIO", "COLOR_SECUNDARIO", "COLOR_ACENTO",
@@ -1034,7 +1034,7 @@ def create_app(env="default"):
     @app.context_processor
     def inject_admin_feature_access():
         from models import SiteConfig
-        from delivery_mode_service import modos_delivery_activos
+        from delivery_mode_service import contexto_operativo_delivery, modos_delivery_activos
         tipo_tienda_context = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").strip().lower()
 
         def has_admin_feature(feature):
@@ -1067,6 +1067,7 @@ def create_app(env="default"):
             "has_admin_feature": has_admin_feature,
             "role_label": role_label,
             "delivery_modes": modos_delivery_activos(),
+            "delivery_operation": contexto_operativo_delivery(),
         }
 
     # Blueprints

@@ -14,6 +14,11 @@
     <a class="df-btn" href="{{ url_for('repartidor.ruta') }}">Ver ruta actual</a>
   </div>
 
+  <div class="df-operation is-{{ operacion.modo }}" role="status">
+    <span class="df-operation__dot" aria-hidden="true"></span>
+    <div><strong>{{ operacion.etiqueta }}</strong><small>{% if operacion.acepta_nuevo_trabajo %}Puedes reservar nuevas salidas.{% else %}No entran salidas nuevas; termina únicamente las que ya asumiste.{% endif %}</small></div>
+  </div>
+
   <ol class="df-rider-guide" aria-label="Flujo de reparto por franjas">
     <li><b>1</b><span><strong>Reserva</strong><small>Confirma la salida que cubrirás</small></span></li>
     <li><b>2</b><span><strong>Recoge</strong><small>Cocina entrega la franja empacada</small></span></li>
@@ -23,8 +28,8 @@
   <div id="df-msgs"></div>
   <nav class="df-view-switch" aria-label="Vista de salidas">
     <button type="button" class="df-btn is-active" data-rider-view="focus">Mi operación</button>
-    <button type="button" class="df-btn" data-rider-view="available">Buscar franja</button>
-    <a class="df-btn" href="{{ url_for('repartidor.favores') }}">El Cruce · separado</a>
+    {% if operacion.acepta_nuevo_trabajo %}<button type="button" class="df-btn" data-rider-view="available">Buscar franja</button>{% endif %}
+    {% if brand.favores %}<a class="df-btn" href="{{ url_for('repartidor.favores') }}">El Cruce · separado</a>{% endif %}
   </nav>
   <div id="df-cal">
     <p class="df-day-empty">Cargando franjas…</p>
@@ -38,13 +43,15 @@
   const cal = document.getElementById("df-cal");
   const msgs = document.getElementById("df-msgs");
   const initialSlots = {{ franjas_iniciales|tojson }};
+  let operation = {{ operacion|tojson }};
   let allSlots = initialSlots;
-  let riderView = initialSlots.some(slot => slot.tomada_por_mi) ? "focus" : "available";
+  let riderView = initialSlots.some(slot => slot.tomada_por_mi) || !operation.acepta_nuevo_trabajo ? "focus" : "available";
   const riderErrors = {
     conflicto_horario: "Ya cubres otra franja a esa hora. Libérala o elige una salida que no se solape.",
     llena_repartidores: "Otro rider tomó el último cupo de esta salida.",
     cerrada: "La franja ya cerró y no admite nuevas asignaciones.",
     inactiva: "Esta franja fue desactivada por administración.",
+    delivery_pausado: "El delivery está pausado. Puedes terminar tus salidas asumidas, pero no reservar nuevas.",
   };
 
   async function cargar() {
@@ -58,6 +65,7 @@
       return;
     }
     allSlots = data.franjas || [];
+    operation = data.operacion || operation;
     renderView();
   }
 
@@ -93,7 +101,9 @@
               ? `<button class="df-btn" disabled>Franja finalizada</button>`
               : s.llena_de_repartidores
               ? `<button class="df-btn" disabled>Sin cupo repartidor</button>`
-              : `<button class="df-btn df-btn-primary" data-act="tomar" data-id="${s.id}">Tomar franja</button>`);
+              : operation.acepta_nuevo_trabajo
+                ? `<button class="df-btn df-btn-primary" data-act="tomar" data-id="${s.id}">Tomar franja</button>`
+                : `<button class="df-btn" disabled>Operación pausada</button>`);
         const prep = s.preparacion || {};
         const listos = s.pedidos_listos || 0;
         const total = s.pedidos_total || 0;

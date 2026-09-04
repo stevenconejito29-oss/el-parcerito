@@ -227,8 +227,8 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
 <div class="work-area route-board">
 <section class="work-hero">
   <div>
-    <span class="work-eyebrow">Reparto activo</span>
-    <h1 class="work-title">Mi Ruta</h1>
+    <span class="work-eyebrow">{{ delivery_operation.etiqueta }}</span>
+    <h1 class="work-title">{% if not delivery_operation.acepta_nuevo_trabajo %}Cerrar pendientes{% elif delivery_operation.modo == 'franjas' %}Mis salidas{% elif delivery_operation.modo == 'mixto' %}Mi operación{% else %}Mi ruta{% endif %}</h1>
     <p class="work-subtitle">Recoge, navega y confirma entregas con cobro verificado.</p>
   </div>
   <div class="work-actions-top">
@@ -243,7 +243,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
 <nav class="rider-mission-switch" aria-label="Tipos de trabajo">
   <a class="is-current" href="{{ url_for('repartidor.ruta') }}"><i>🛍️</i><span><b>Pedidos</b><small>{{ en_ruta|length }} en ruta · {{ listos_count }} listos</small></span></a>
   {% if delivery_modes.franjas %}<a href="{{ url_for('repartidor.franjas_panel') }}"><i>🕒</i><span><b>Franjas</b><small>Salidas programadas</small></span></a>{% endif %}
-  <a href="{{ url_for('repartidor.favores') }}"><i>🤝</i><span><b>El Cruce</b><small>{{ cruces_activos }} activos · {{ cruces_abiertos }} disponibles</small></span></a>
+  {% if brand.favores %}<a href="{{ url_for('repartidor.favores') }}"><i>🤝</i><span><b>El Cruce</b><small>{{ cruces_activos }} activos · {{ cruces_abiertos }} disponibles</small></span></a>{% endif %}
 </nav>
 
 {% if current_user.rol == 'repartidor' %}

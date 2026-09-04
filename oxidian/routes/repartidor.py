@@ -65,6 +65,11 @@ def _requiere_disponible_para_nuevo_trabajo():
     return True
 
 
+def _delivery_acepta_nuevo_trabajo() -> bool:
+    from delivery_mode_service import contexto_operativo_delivery
+    return contexto_operativo_delivery()["acepta_nuevo_trabajo"]
+
+
 def repartidor_required(f):
     @wraps(f)
     @login_required
@@ -1182,7 +1187,12 @@ def franjas_panel():
     if not _franjas_modulo_activo():
         flash("El reparto por franjas no está activo. Tus entregas inmediatas siguen disponibles.", "info")
         return redirect(url_for("repartidor.ruta"))
-    return render_template("repartidor/franjas.html", franjas_iniciales=_franjas_repartidor_payload())
+    from delivery_mode_service import contexto_operativo_delivery
+    return render_template(
+        "repartidor/franjas.html",
+        franjas_iniciales=_franjas_repartidor_payload(),
+        operacion=contexto_operativo_delivery(),
+    )
 
 
 def _franjas_repartidor_payload() -> list[dict]:
@@ -1235,7 +1245,11 @@ def _franjas_repartidor_payload() -> list[dict]:
 def franjas_listar():
     if not _franjas_modulo_activo():
         abort(404)
-    return jsonify({"franjas": _franjas_repartidor_payload()})
+    from delivery_mode_service import contexto_operativo_delivery
+    return jsonify({
+        "franjas": _franjas_repartidor_payload(),
+        "operacion": contexto_operativo_delivery(),
+    })
 
 
 @repartidor_bp.route("/franjas/<int:slot_id>/tomar", methods=["POST"])
@@ -1243,6 +1257,8 @@ def franjas_listar():
 def franjas_tomar(slot_id):
     if not _franjas_modulo_activo():
         abort(404)
+    if not _delivery_acepta_nuevo_trabajo():
+        return jsonify({"error": "delivery_pausado"}), 409
     from delivery_slots_service import tomar_franja_repartidor, ResultadoRepartidor
 
     res = tomar_franja_repartidor(slot_id, current_user.id)

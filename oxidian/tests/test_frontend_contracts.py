@@ -28,6 +28,21 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn('"delivery_modes": modos_delivery_activos()', app)
         self.assertIn("{% if delivery_modes.franjas %}", sidebar)
         self.assertIn("if not _franjas_modulo_activo():", rider)
+        self.assertIn("contexto_operativo_delivery()", app)
+        self.assertIn('"error": "delivery_pausado"', rider)
+
+    def test_operational_views_follow_modular_delivery_state(self):
+        kitchen = (ROOT / "templates" / "preparador" / "franjas.html").read_text(encoding="utf-8")
+        rider = (ROOT / "templates" / "repartidor" / "franjas.html").read_text(encoding="utf-8")
+        route = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
+        app = (ROOT / "app.py").read_text(encoding="utf-8")
+
+        self.assertIn("delivery_operation.etiqueta", kitchen)
+        self.assertIn("delivery_operation.inmediato or inmediatos", kitchen)
+        self.assertIn("operacion.acepta_nuevo_trabajo", rider)
+        self.assertIn("operation.acepta_nuevo_trabajo", rider)
+        self.assertIn("{% if brand.favores %}", route)
+        self.assertIn('"TARJETA_HABILITADA"', app)
 
     def test_operational_roles_prioritize_slots_and_small_phone_layout(self):
         kitchen = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")

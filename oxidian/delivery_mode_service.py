@@ -47,6 +47,45 @@ def modos_delivery_activos(reader=None) -> dict[str, bool]:
     }
 
 
+def contexto_operativo_delivery(*, config_reader=None, feature_reader=None) -> dict:
+    """Describe la operación visible sin alterar trabajo que ya está en curso.
+
+    Los toggles de modalidad indican *cómo* entra trabajo nuevo. El toggle
+    general de delivery indica si puede entrar. Mantener ambos conceptos
+    separados permite pausar ventas y, aun así, dejar que cocina y reparto
+    terminen pedidos previamente aceptados.
+    """
+    if feature_reader is None:
+        from store_config import get_store_features
+        feature_reader = get_store_features
+    features = feature_reader()
+    modes = modos_delivery_activos(config_reader)
+    enabled = bool(features.get("delivery"))
+    if not enabled:
+        key = "pausado"
+        label = "Delivery pausado"
+    elif modes["inmediato"] and modes["franjas"]:
+        key = "mixto"
+        label = "Inmediato + franjas"
+    elif modes["franjas"]:
+        key = "franjas"
+        label = "Reparto por franjas"
+    elif modes["inmediato"]:
+        key = "inmediato"
+        label = "Reparto inmediato"
+    else:
+        key = "pausado"
+        label = "Delivery sin modalidad"
+    return {
+        "modo": key,
+        "etiqueta": label,
+        "delivery_habilitado": enabled,
+        "acepta_nuevo_trabajo": enabled and any(modes.values()),
+        "inmediato": modes["inmediato"],
+        "franjas": modes["franjas"],
+    }
+
+
 def cambiar_modo_delivery(modo: str, *, actor_id: int, ip: str | None = None) -> dict[str, bool]:
     """Cambia la modalidad de forma atómica y protege trabajo en curso.
 
