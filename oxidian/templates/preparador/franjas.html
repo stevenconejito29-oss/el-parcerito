@@ -63,7 +63,7 @@
   let saved='';try{saved=sessionStorage.getItem('kitchen.active.slot')||''}catch(_){}
   const initial=turns.find(b=>b.dataset.turn===saved)||turns.find(b=>b.dataset.state==='activa')||turns[0];if(initial)select(initial.dataset.turn);
   root.querySelectorAll('[data-pack-check]').forEach(input=>input.addEventListener('change',()=>{const card=input.closest('.slotops-order'),all=[...card.querySelectorAll('[data-pack-check]')],ready=card.querySelector('[data-ready]');if(ready)ready.disabled=!all.length||!all.every(i=>i.checked);card.classList.toggle('is-checked',all.length>0&&all.every(i=>i.checked));}));
-  root.addEventListener('submit',async e=>{const form=e.target.closest('form[data-slot-action]');if(!form)return;e.preventDefault();const button=form.querySelector('button[type=submit]');if(button){button.disabled=true;button.textContent='Guardando…';}try{await fetch(form.action,{method:'POST',body:new FormData(form),credentials:'same-origin'});location.reload();}catch(_){if(button){button.disabled=false;button.textContent='Reintentar';}}});
+  root.addEventListener('submit',async e=>{const form=e.target.closest('form[data-slot-action]');if(!form)return;e.preventDefault();const button=form.querySelector('button[type=submit]');if(button){button.disabled=true;button.textContent='Guardando…';}try{const response=await fetch(form.action,{method:'POST',body:new FormData(form),credentials:'same-origin'});if(!response.ok)throw new Error(`HTTP ${response.status}`);location.reload();}catch(_){if(button){button.disabled=false;button.textContent='Reintentar';}}});
 })();
 </script>
 {% endblock %}

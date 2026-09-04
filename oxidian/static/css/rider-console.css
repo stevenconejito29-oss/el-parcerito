@@ -24,14 +24,13 @@ body.view-repartidor .route-board .work-code-input{border:2px solid var(--rc-blu
    compiten con una entrega que ya está en curso. */
 .rider-now{display:flex;align-items:center;gap:.65rem;padding:.72rem .8rem;border:1px solid var(--rc-line);border-radius:.85rem;background:var(--rc-card);color:var(--rc-text);box-shadow:0 7px 18px rgba(7,30,50,.08)}
 .rider-now>span{padding:.25rem .42rem;border-radius:.4rem;background:var(--rc-blue);color:#fff;font-size:.58rem;font-weight:950;letter-spacing:.08em}.rider-now>div{display:grid;gap:.08rem}.rider-now strong{font-size:.86rem}.rider-now small{color:var(--rc-muted);font-size:.68rem;line-height:1.3}
+.route-board.has-active-route .route-lane--ready{display:none!important}.route-board.is-awaiting-pickup .route-lane--active{display:none!important}
 @media(max-width:620px){
   .route-board .work-hero{display:none!important}
   .route-board .rider-mission-switch{position:static}
   .route-board .rider-now{position:sticky;top:.35rem;z-index:31;padding:.58rem .62rem}
   .route-board .rider-now small{display:none}
   .route-board.has-active-route>form.work-employee-card,.route-board.has-active-route>.work-team-details,.route-board.has-active-route>.work-kpis{display:none!important}
-  .route-board.has-active-route .route-lane--ready{display:none!important}
-  .route-board.is-awaiting-pickup .route-lane--active{display:none!important}
   .route-board .route-gps{order:4}
   .route-board .work-board{order:5}
   .route-board .work-employee-card{order:6}

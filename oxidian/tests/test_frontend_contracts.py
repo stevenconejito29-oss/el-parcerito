@@ -56,6 +56,20 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn('class="rider-now"', route)
         self.assertIn("scroll-snap-type:x mandatory", kitchen_css)
         self.assertIn(".route-board.has-active-route .route-lane--ready{display:none", rider_css)
+        self.assertIn("if(!response.ok)throw new Error", kitchen)
+
+    def test_loyalty_configuration_is_grouped_with_the_reward_catalog(self):
+        config = (ROOT / "templates" / "superadmin" / "config.html").read_text(encoding="utf-8")
+        marketing = (ROOT / "templates" / "marketing" / "puntos.html").read_text(encoding="utf-8")
+        route = (ROOT / "routes" / "superadmin.py").read_text(encoding="utf-8")
+        service = (ROOT / "services.py").read_text(encoding="utf-8")
+
+        for key in ("UI_LOYALTY_NAME", "UI_LOYALTY_UNIT", "UI_LOYALTY_UNIT_PLURAL", "PUNTOS_MIN_COMPRA_EUR"):
+            self.assertIn(key, config)
+            self.assertIn(key, route)
+        self.assertIn("productos canjeables", config)
+        self.assertIn("Automático · al entregar", marketing)
+        self.assertIn('config["compra_minima"]', service)
 
     def test_operational_roles_prioritize_slots_and_small_phone_layout(self):
         kitchen = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")

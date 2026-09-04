@@ -119,6 +119,7 @@ def _eget(key, fallback=""):
 
 CLAVES_DEFAULT = [
     ("PUNTOS_POR_EURO",        "1",    "Puntos que gana el cliente por cada euro gastado"),
+    ("PUNTOS_MIN_COMPRA_EUR",  "0",    "Compra mínima para acumular puntos; cero significa sin mínimo"),
     ("ALERTA_CADUCIDAD_DIAS",  "7",    "Días antes de caducidad para mostrar alerta de stock"),
     ("NOMBRE_NEGOCIO",         _eget("NOMBRE_NEGOCIO"),            "Nombre del negocio"),
     ("SLOGAN_NEGOCIO",         "",                                  "Eslogan o tagline del negocio"),
@@ -351,7 +352,11 @@ CONFIG_SECTION_KEYS = {
         "DELIVERY_ADDRESS_GPS_MAX_DISTANCE_KM",
         "PEDIDO_MINIMO_EUR",
     },
-    "puntos": {"PUNTOS_POR_EURO"},
+    "puntos": {
+        "PUNTOS_POR_EURO", "PUNTOS_MIN_COMPRA_EUR",
+        "UI_LOYALTY_NAME", "UI_LOYALTY_NAV_LABEL",
+        "UI_LOYALTY_UNIT", "UI_LOYALTY_UNIT_PLURAL", "UI_LOYALTY_TAGLINE",
+    },
     "integraciones": {
         "BOT_API_URL", "BOT_OXIDIAN_URL", "EVOLUTION_API_URL",
         "EVOLUTION_INSTANCE",
@@ -491,6 +496,15 @@ def _validar_config_value(clave, valor):
         if numero < min_val or numero > max_val:
             return False, clave, valor, f"El número debe estar entre {min_val} y {max_val}."
         return True, clave, str(numero), None
+
+    if clave == "PUNTOS_MIN_COMPRA_EUR":
+        try:
+            numero = float(valor)
+        except (TypeError, ValueError):
+            return False, clave, valor, "La compra mínima debe ser un número."
+        if numero < 0 or numero > 100000:
+            return False, clave, valor, "La compra mínima debe estar entre 0 y 100.000 €."
+        return True, clave, f"{numero:.2f}", None
 
     if clave in {"COMBO_MAX_DISCOUNT_PCT", "SERVICE_COMMISSION_PCT"}:
         try:

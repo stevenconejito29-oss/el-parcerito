@@ -403,12 +403,18 @@
 
   {% if brand.puntos %}<form id="puntos" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="puntos">
-    <div class="cfg-section-head"><div><span>4</span><h2>Club de puntos</h2><p>Reglas globales. Los productos canjeables se gestionan en Marketing.</p></div><button type="submit">Guardar puntos</button></div>
+    <div class="cfg-section-head"><div><span>4</span><h2>Club de fidelidad</h2><p>Nombre público, acumulación y acceso al catálogo de recompensas.</p></div><button type="submit">Guardar club</button></div>
     <div class="cfg-grid">
-      {{ cfg_input('PUNTOS_POR_EURO', 'Puntos ganados por euro', type='number', min='1', max='100000') }}
+      {{ cfg_input('UI_LOYALTY_NAME', 'Nombre del programa', placeholder='Granitos de café', help='Título visible para clientes.') }}
+      {{ cfg_input('UI_LOYALTY_NAV_LABEL', 'Nombre corto', placeholder='Granitos', help='Texto de la navegación móvil.') }}
+      {{ cfg_input('UI_LOYALTY_UNIT', 'Unidad en singular', placeholder='granito de café') }}
+      {{ cfg_input('UI_LOYALTY_UNIT_PLURAL', 'Unidad en plural', placeholder='granitos de café') }}
+      {{ cfg_input('PUNTOS_POR_EURO', 'Unidades ganadas por euro', type='number', min='1', max='100000', help='Se calculan sobre el total confirmado del pedido.') }}
+      {{ cfg_input('PUNTOS_MIN_COMPRA_EUR', 'Compra mínima para acumular', type='number', min='0', max='100000', step='0.01', help='0 € permite acumular desde cualquier importe.') }}
+      {{ cfg_textarea('UI_LOYALTY_TAGLINE', 'Mensaje para el cliente', placeholder='Cada pedido te acerca a tu próximo antojo.', rows=2) }}
     </div>
-    <p class="cfg-help">Los puntos se canjean exclusivamente por productos; nunca reducen el importe en euros.</p>
-    <a href="{{ url_for('marketing.puntos') }}" class="cfg-inline-link">Configurar productos canjeables</a>
+    <p class="cfg-help">Se acreditan una sola vez cuando el pedido queda entregado. Si se cancela, el sistema revierte automáticamente el movimiento. Se canjean por productos y no reducen importes en euros.</p>
+    <a href="{{ url_for('marketing.puntos') }}#catalogo-canje" class="cfg-inline-link">Elegir productos canjeables y su coste</a>
   </form>{% endif %}
 
   <form id="integraciones" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">

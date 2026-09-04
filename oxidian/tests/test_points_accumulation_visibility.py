@@ -102,6 +102,13 @@ class PointsAccumulationVisibilityTest(unittest.TestCase):
         self.assertEqual(calcular_puntos_ganados(-5), 0)
         self.assertEqual(calcular_puntos_ganados("no-es-un-total"), 0)
 
+    def test_minimum_purchase_controls_when_points_start_accumulating(self):
+        self._set("PUNTOS_POR_EURO", "2")
+        self._set("PUNTOS_MIN_COMPRA_EUR", "10.00")
+
+        self.assertEqual(calcular_puntos_ganados("9.99"), 0)
+        self.assertEqual(calcular_puntos_ganados("10.00"), 20)
+
 
 if __name__ == "__main__":
     unittest.main()

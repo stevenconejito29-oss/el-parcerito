@@ -1346,8 +1346,17 @@ def get_puntos_config() -> dict:
         except (TypeError, ValueError):
             logger.warning("Config de puntos inválida para %s=%r; usando %s", clave, raw, default)
             return default
+    def _decimal_config(clave, default):
+        raw = SiteConfig.get(clave, default)
+        try:
+            value = Decimal(str(raw))
+            return value if value.is_finite() else Decimal(str(default))
+        except (TypeError, ValueError, ArithmeticError):
+            logger.warning("Config de puntos inválida para %s=%r; usando %s", clave, raw, default)
+            return Decimal(str(default))
     return {
         "por_euro": max(0, _int_config("PUNTOS_POR_EURO", 1)),
+        "compra_minima": max(Decimal("0"), _decimal_config("PUNTOS_MIN_COMPRA_EUR", "0")),
     }
 
 
@@ -1365,7 +1374,10 @@ def calcular_puntos_ganados(total) -> int:
         return 0
     if not importe.is_finite() or importe <= 0:
         return 0
-    return max(0, int(importe * Decimal(get_puntos_config()["por_euro"])))
+    config = get_puntos_config()
+    if importe < config["compra_minima"]:
+        return 0
+    return max(0, int(importe * Decimal(config["por_euro"])))
 
 
 def get_pedido_minimo() -> float:

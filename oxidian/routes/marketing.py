@@ -13,7 +13,8 @@ from sqlalchemy import func
 from extensions import db, get_or_404
 from models import (User, Order, Coupon, PointsLog, AffiliateCode,
                     AuditLog, CampanaMarketing, ZonaEntrega, Product, utcnow)
-from services import encolar_whatsapp_generico
+from services import encolar_whatsapp_generico, get_puntos_config
+from store_config import get_loyalty_terms
 
 marketing_bp = Blueprint("marketing", __name__)
 
@@ -96,6 +97,8 @@ def dashboard():
 @marketing_bp.route("/puntos")
 @marketing_required
 def puntos():
+    loyalty_terms = get_loyalty_terms()
+    puntos_config = get_puntos_config()
     puntos_emitidos = db.session.query(func.sum(PointsLog.cantidad)).filter(
         PointsLog.tipo == "ganado"
     ).scalar() or 0
@@ -123,7 +126,9 @@ def puntos():
                            ultimos_movs=ultimos_movs,
                            clientes=clientes,
                            productos=productos,
-                           productos_canjeables=productos_canjeables)
+                           productos_canjeables=productos_canjeables,
+                           loyalty_terms=loyalty_terms,
+                           puntos_config=puntos_config)
 
 
 @marketing_bp.route("/puntos/productos/<int:producto_id>", methods=["POST"])
