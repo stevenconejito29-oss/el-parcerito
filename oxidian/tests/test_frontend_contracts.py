@@ -44,6 +44,19 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("{% if brand.favores %}", route)
         self.assertIn('"TARJETA_HABILITADA"', app)
 
+    def test_operational_mobile_views_show_only_the_current_decision(self):
+        kitchen = (ROOT / "templates" / "preparador" / "franjas.html").read_text(encoding="utf-8")
+        route = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
+        kitchen_css = (ROOT / "static" / "css" / "slot-operations.css").read_text(encoding="utf-8")
+        rider_css = (ROOT / "static" / "css" / "rider-console.css").read_text(encoding="utf-8")
+
+        self.assertIn('class="slotops-flow"', kitchen)
+        self.assertIn("Elige salida", kitchen)
+        self.assertIn("has-active-route", route)
+        self.assertIn('class="rider-now"', route)
+        self.assertIn("scroll-snap-type:x mandatory", kitchen_css)
+        self.assertIn(".route-board.has-active-route .route-lane--ready{display:none", rider_css)
+
     def test_operational_roles_prioritize_slots_and_small_phone_layout(self):
         kitchen = (ROOT / "templates" / "preparador" / "pedidos.html").read_text(encoding="utf-8")
         rider = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")

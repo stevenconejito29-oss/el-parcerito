@@ -224,7 +224,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
 <link rel="stylesheet" href="{{ url_for('static', filename='css/rider-console.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
-<div class="work-area route-board">
+<div class="work-area route-board {% if en_ruta %}has-active-route{% else %}is-awaiting-pickup{% endif %}">
 <section class="work-hero">
   <div>
     <span class="work-eyebrow">{{ delivery_operation.etiqueta }}</span>
@@ -245,6 +245,14 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
   {% if delivery_modes.franjas %}<a href="{{ url_for('repartidor.franjas_panel') }}"><i>🕒</i><span><b>Franjas</b><small>Salidas programadas</small></span></a>{% endif %}
   {% if brand.favores %}<a href="{{ url_for('repartidor.favores') }}"><i>🤝</i><span><b>El Cruce</b><small>{{ cruces_activos }} activos · {{ cruces_abiertos }} disponibles</small></span></a>{% endif %}
 </nav>
+
+<section class="rider-now" aria-live="polite">
+  <span>{{ 'EN CURSO' if en_ruta else 'SIGUIENTE' }}</span>
+  <div>
+    <strong>{% if en_ruta %}Completa {{ en_ruta|length }} entrega{{ 's' if en_ruta|length != 1 else '' }}{% elif listos_count %}Elige qué pedido llevar{% else %}Espera un pedido listo{% endif %}</strong>
+    <small>{% if en_ruta %}Navega, verifica y cobra. No tomes otra ruta todavía.{% elif listos_count %}Revisa dirección y carga antes de confirmar la salida.{% else %}Puedes dejar esta pantalla abierta; se actualizará automáticamente.{% endif %}</small>
+  </div>
+</section>
 
 {% if current_user.rol == 'repartidor' %}
 <section class="route-gps" data-rider-tracking

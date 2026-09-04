@@ -8,6 +8,12 @@
     {% if delivery_operation.inmediato or inmediatos %}<a class="slotops-secondary" href="{{ url_for('preparador.pedidos', vista='legacy') }}">{{ 'Ver pedidos inmediatos' if delivery_operation.inmediato else 'Cerrar pendientes sin franja' }}</a>{% endif %}
   </header>
 
+  <ol class="slotops-flow" aria-label="Pasos de cocina">
+    <li><b>1</b><span><strong>Elige salida</strong>Trabaja una franja</span></li>
+    <li><b>2</b><span><strong>Prepara</strong>Marca cada artículo</span></li>
+    <li><b>3</b><span><strong>Entrega</strong>Déjala lista al rider</span></li>
+  </ol>
+
   <section class="slotops-layout">
     <aside class="slotops-agenda" aria-label="Agenda de salidas">
       <div class="slotops-agenda__head"><strong>Agenda</strong><small>{{ agenda|length }} salidas</small></div>

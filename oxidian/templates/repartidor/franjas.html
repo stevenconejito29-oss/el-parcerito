@@ -20,9 +20,9 @@
   </div>
 
   <ol class="df-rider-guide" aria-label="Flujo de reparto por franjas">
-    <li><b>1</b><span><strong>Reserva</strong><small>Confirma la salida que cubrirás</small></span></li>
-    <li><b>2</b><span><strong>Recoge</strong><small>Cocina entrega la franja empacada</small></span></li>
-    <li><b>3</b><span><strong>Haz tandas</strong><small>Vuelve por los restantes hasta terminar</small></span></li>
+    <li><b>1</b><span><strong>Elige</strong><small>Reserva una salida</small></span></li>
+    <li><b>2</b><span><strong>Carga</strong><small>Solo cuando esté empacada</small></span></li>
+    <li><b>3</b><span><strong>Reparte</strong><small>Hasta cerrar la franja</small></span></li>
   </ol>
 
   <div id="df-msgs"></div>
@@ -130,7 +130,7 @@
             ${estadoPrep}
           </div>
           <div class="df-progress" aria-label="Empaque ${porcentaje}%"><i style="--df-progress:${porcentaje}%"></i></div>
-          <div class="df-slot-summary"><span>${restante}</span><small>${s.repartidores_activos}/${s.max_repartidores} rider · máximo ${s.pedidos_por_salida} por vuelta</small></div>
+          <div class="df-slot-summary"><span>${restante}</span><small>${s.repartidores_activos}/${s.max_repartidores} rider · ${s.pedidos_por_salida} por vuelta</small></div>
           <div class="df-slot-actions">${btnRider} ${batchBtn}</div>
           <div class="df-batch-picker" data-picker="${s.id}" hidden></div>
         </div>`;
