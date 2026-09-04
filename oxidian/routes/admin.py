@@ -1140,7 +1140,7 @@ def finanzas():
     `/admin/caja`.
     """
     # ── Rango de fechas: hoy por defecto, con presets ─────────────────
-    from business_time import business_today, utc_naive_bounds
+    from business_time import business_date_for_utc_naive, business_today, utc_naive_bounds
 
     preset = (request.args.get("preset") or "hoy").strip().lower()
     hoy = business_today()
@@ -1206,6 +1206,41 @@ def finanzas():
         metodos[metodo] += Decimal(str(mov.monto or 0))
     ventas_por_metodo = dict(metodos)
     efectivo_cobrado = ventas_por_metodo.get("efectivo", Decimal("0"))
+
+    # Evolución diaria del libro mayor. Se calcula sobre los movimientos ya
+    # cargados para mantener una única fuente y funcionar igual en SQLite y
+    # PostgreSQL, sin expresiones de fecha específicas de cada motor.
+    flujo_diario = {}
+    for mov in movimientos:
+        dia = business_date_for_utc_naive(mov.fecha).isoformat()
+        bucket = flujo_diario.setdefault(
+            dia, {"fecha": dia, "ingresos": Decimal("0"), "egresos": Decimal("0")}
+        )
+        bucket["ingresos" if mov.tipo == "ingreso" else "egresos"] += Decimal(str(mov.monto or 0))
+    flujo_diario = [flujo_diario[k] for k in sorted(flujo_diario)]
+    escala_flujo = max(
+        [float(max(row["ingresos"], row["egresos"])) for row in flujo_diario] or [1.0]
+    ) or 1.0
+
+    # Qué zonas están generando los cobros. Se usan exclusivamente pedidos
+    # presentes en Caja, por lo que un pedido creado pero no cobrado no infla
+    # este análisis. Los nombres/precios son snapshots del pedido.
+    rendimiento_zonas = defaultdict(lambda: {
+        "pedidos": 0, "ingresos": Decimal("0"), "envios": Decimal("0")
+    })
+    for mov in movimientos:
+        if mov.tipo != "ingreso" or not mov.pedido:
+            continue
+        pedido = mov.pedido
+        zona = pedido.zona_nombre_aplicada or "Recogida / sin zona"
+        row = rendimiento_zonas[zona]
+        row["pedidos"] += 1
+        row["ingresos"] += Decimal(str(mov.monto or 0))
+        row["envios"] += Decimal(str(pedido.costo_envio_snapshot or 0))
+    rendimiento_zonas = sorted(
+        ({"zona": zona, **values} for zona, values in rendimiento_zonas.items()),
+        key=lambda row: row["ingresos"], reverse=True,
+    )
 
     # ── Pendientes de confirmar cobro (Bizum/tarjeta sin `pago_confirmado`) ─
     # Solo estados vivos: un pedido `entregado` con `pago_confirmado=False` es
@@ -1296,6 +1331,9 @@ def finanzas():
         por_categoria=dict(por_categoria),
         ventas_por_metodo=ventas_por_metodo,
         efectivo_cobrado=efectivo_cobrado,
+        flujo_diario=flujo_diario,
+        escala_flujo=escala_flujo,
+        rendimiento_zonas=rendimiento_zonas,
         pendientes_pago=pendientes_pago_qs,
         pendientes_pago_total=pendientes_pago_total,
         pagos_staff_pendientes=pagos_staff_pendientes_qs,
@@ -1460,7 +1498,7 @@ def _margen_real_periodo(fi, ff):
     ventas YA cobradas y descuenta uno a uno los conceptos que erosionan
     el margen:
 
-        Ventas brutas (SUM Order.subtotal, no cancelados)
+        Ventas brutas (SUM Order.subtotal con ingreso en Caja)
         - Descuentos aplicados (SUM Order.descuento)
         - Canje de puntos (SUM Order.puntos_usados × valor_por_punto)
         = Ventas netas cobradas (= SUM Order.total)
@@ -1470,9 +1508,9 @@ def _margen_real_periodo(fi, ff):
         - Liquidaciones a socios del período
         = Margen operativo
 
-    Excluye pedidos cancelados: no se cobraron, no aportan ni cuestan.
-    Los pedidos aún no entregados PERO ya cobrados (bizum confirmado)
-    sí cuentan como ventas del período para no subestimar el flujo.
+    El período se atribuye a la fecha del cobro en Caja, no a la creación del
+    pedido. Así un pedido pendiente no infla el margen y un cobro confirmado
+    posteriormente cae en el día contable correcto.
 
     Devuelve dict con todas las cifras + desglose por concepto.
     """
@@ -1482,10 +1520,11 @@ def _margen_real_periodo(fi, ff):
     # días = 1500 queries) sigue rindiendo bajo un segundo. Si crece,
     # migrar a una query agregada SQL explícita.
     pedidos = (
-        Order.query
+        Order.query.join(Caja, Caja.pedido_id == Order.id)
         .filter(
-            Order.creado_en >= fi,
-            Order.creado_en < ff,
+            Caja.tipo == "ingreso",
+            Caja.fecha >= fi,
+            Caja.fecha < ff,
             Order.estado != "cancelado",
         )
         .all()
@@ -1601,7 +1640,8 @@ def _analisis_cupones_y_combos(fi, ff):
        ventas netas totales, ticket medio. Ayuda a saber si los combos
        aumentan volumen (ticket medio superior) o queman margen.
 
-    Excluye cancelados en ambos análisis para no ensuciar la señal.
+    Incluye únicamente pedidos con cobro registrado en Caja durante el rango;
+    los pendientes y cancelados no contaminan la señal comercial.
     """
     from collections import defaultdict as _dd
     from models import Coupon as _Coupon
@@ -1612,10 +1652,11 @@ def _analisis_cupones_y_combos(fi, ff):
     # días = 1500 queries) sigue rindiendo bajo un segundo. Si crece,
     # migrar a una query agregada SQL explícita.
     pedidos = (
-        Order.query
+        Order.query.join(Caja, Caja.pedido_id == Order.id)
         .filter(
-            Order.creado_en >= fi,
-            Order.creado_en < ff,
+            Caja.tipo == "ingreso",
+            Caja.fecha >= fi,
+            Caja.fecha < ff,
             Order.estado != "cancelado",
         )
         .all()

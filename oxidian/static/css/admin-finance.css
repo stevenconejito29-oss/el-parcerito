@@ -55,3 +55,20 @@
   .finance-attention { align-items: stretch; flex-direction: column; }
   .finance-attention .prov-btn { justify-content: center; }
 }
+.finance-chart{display:flex;align-items:stretch;gap:.65rem;min-height:13rem;margin-top:1rem;padding:.75rem .25rem .25rem;overflow-x:auto;scroll-snap-type:x proximity}
+.finance-chart__day{flex:1 0 4.25rem;display:grid;grid-template-rows:9rem auto auto;gap:.25rem;text-align:center;scroll-snap-align:start}
+.finance-chart__bars{display:flex;align-items:flex-end;justify-content:center;gap:.3rem;border-bottom:1px solid var(--col-border);height:9rem}
+.finance-chart__bar{display:block;width:1rem;height:max(.2rem,var(--bar-size));border-radius:.45rem .45rem .1rem .1rem;transition:height .25s ease}
+.finance-chart__bar--income{background:linear-gradient(180deg,#43d39e,#15805f)}
+.finance-chart__bar--expense{background:linear-gradient(180deg,#ff8578,#c33f36)}
+.finance-chart__day>strong{font-size:.78rem;color:var(--col-text)}
+.finance-chart__day>small{font-size:.65rem;white-space:nowrap;color:var(--col-muted)}
+.finance-chart__legend{display:flex;gap:1rem;flex-wrap:wrap;margin-top:.75rem;color:var(--col-muted);font-size:.78rem}
+.finance-chart__legend span{display:flex;align-items:center;gap:.35rem}
+.finance-chart__legend i{width:.65rem;height:.65rem;border-radius:50%}
+.finance-chart__legend .income{background:#24a978}.finance-chart__legend .expense{background:#db5147}
+.finance-zone-list{display:grid;gap:.55rem;margin-top:.9rem}
+.finance-zone-list article{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.8rem 1rem;border:1px solid var(--col-border);border-radius:.9rem;background:color-mix(in srgb,var(--col-surface) 92%,transparent)}
+.finance-zone-list article>div:last-child{text-align:right}
+.finance-zone-list strong,.finance-zone-list small{display:block}.finance-zone-list small,.finance-empty{color:var(--col-muted)}
+@media(max-width:520px){.finance-chart{margin-inline:-.5rem}.finance-zone-list article{padding:.7rem .75rem}.finance-zone-list small{font-size:.7rem}}

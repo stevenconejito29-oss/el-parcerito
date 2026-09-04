@@ -6284,7 +6284,7 @@ async function handleAdminCmd(jid, text) {
         `Pedidos: ${r.pedidos_hoy}\n` +
         `  ✅ Entregados: ${r.entregados}\n` +
         `  ❌ Cancelados: ${r.cancelados}\n` +
-        `Ventas: ${r.ventas_hoy.toLocaleString('es-ES', {style:'currency', currency:'EUR'})}\n` +
+        `Ingresos cobrados: ${r.ventas_hoy.toLocaleString('es-ES', {style:'currency', currency:'EUR'})}\n` +
         `Activos ahora: ${r.activos}\n\n` +
         (r.total_sin_stock > 0
           ? `⚠️ *Sin stock* (${r.total_sin_stock}):\n${agot}${cola}`

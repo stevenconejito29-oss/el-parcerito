@@ -56,6 +56,53 @@
   </div>
 </div>
 
+{# Gráfico nativo, sin librería ni datos paralelos: representa Caja. #}
+<section class="ox-card finance-section finance-flow" aria-labelledby="finance-flow-title">
+  <div class="partner-form-heading">
+    <span>↕</span>
+    <div>
+      <strong id="finance-flow-title">Flujo de dinero</strong>
+      <small>Entradas cobradas y salidas registradas por día. No incluye pedidos pendientes.</small>
+    </div>
+  </div>
+  {% if flujo_diario %}
+  <div class="finance-chart" role="img" aria-label="Comparación diaria de ingresos y salidas">
+    {% for dia in flujo_diario %}
+    <div class="finance-chart__day">
+      <div class="finance-chart__bars">
+        <span class="finance-chart__bar finance-chart__bar--income" style="--bar-size:{{ ((dia.ingresos|float / escala_flujo) * 100)|round(1) }}%" title="Ingresos €{{ '%.2f'|format(dia.ingresos|float) }}"></span>
+        <span class="finance-chart__bar finance-chart__bar--expense" style="--bar-size:{{ ((dia.egresos|float / escala_flujo) * 100)|round(1) }}%" title="Salidas €{{ '%.2f'|format(dia.egresos|float) }}"></span>
+      </div>
+      <strong>{{ dia.fecha[8:10] }}/{{ dia.fecha[5:7] }}</strong>
+      <small>+€{{ '%.0f'|format(dia.ingresos|float) }} · −€{{ '%.0f'|format(dia.egresos|float) }}</small>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="finance-chart__legend"><span><i class="income"></i>Ingresos cobrados</span><span><i class="expense"></i>Salidas</span></div>
+  {% else %}
+  <p class="finance-empty">Todavía no hay movimientos en este período.</p>
+  {% endif %}
+</section>
+
+<section class="ox-card finance-section" aria-labelledby="finance-zone-title">
+  <div class="partner-form-heading">
+    <span>⌖</span>
+    <div><strong id="finance-zone-title">Rendimiento por zona</strong><small>Pedidos cobrados, facturación y envío aplicado según la tarifa congelada al comprar.</small></div>
+  </div>
+  {% if rendimiento_zonas %}
+  <div class="finance-zone-list">
+    {% for row in rendimiento_zonas %}
+    <article>
+      <div><strong>{{ row.zona }}</strong><small>{{ row.pedidos }} pedido{{ '' if row.pedidos == 1 else 's' }} cobrado{{ '' if row.pedidos == 1 else 's' }}</small></div>
+      <div><strong>€{{ '%.2f'|format(row.ingresos|float) }}</strong><small>envíos €{{ '%.2f'|format(row.envios|float) }}</small></div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="finance-empty">No hay pedidos cobrados con zona en este período.</p>
+  {% endif %}
+</section>
+
 {% set pendientes_total = pendientes_pago_total|float + pagos_staff_pendientes_total|float + liquidaciones_pendientes_total|float %}
 <aside class="finance-attention {{ 'finance-attention--clear' if pendientes_total == 0 else '' }}" aria-live="polite">
   <div>

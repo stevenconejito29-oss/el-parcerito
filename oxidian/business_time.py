@@ -39,6 +39,13 @@ def business_today(now: datetime | None = None) -> date:
     return current.astimezone(business_timezone()).date()
 
 
+def business_date_for_utc_naive(value: datetime) -> date:
+    """Convierte un timestamp UTC-naive persistido a fecha civil del negocio."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(business_timezone()).date()
+
+
 def utc_naive_bounds(start_date: date, end_date: date | None = None) -> tuple[datetime, datetime]:
     """Devuelve ``[inicio, fin)`` UTC-naive para días civiles del negocio."""
     final_date = end_date or start_date

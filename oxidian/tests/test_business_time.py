@@ -1,8 +1,8 @@
 """Conversión de días comerciales a timestamps UTC persistidos."""
 import unittest
-from datetime import date
+from datetime import date, datetime
 
-from business_time import utc_naive_bounds
+from business_time import business_date_for_utc_naive, utc_naive_bounds
 
 
 class BusinessTimeTest(unittest.TestCase):
@@ -15,6 +15,12 @@ class BusinessTimeTest(unittest.TestCase):
         start, end = utc_naive_bounds(date(2026, 8, 3))
         self.assertEqual(start.isoformat(), "2026-08-02T22:00:00")
         self.assertEqual(end.isoformat(), "2026-08-03T22:00:00")
+
+    def test_movimiento_utc_se_agrupa_en_el_dia_civil_del_negocio(self):
+        self.assertEqual(
+            business_date_for_utc_naive(datetime(2026, 8, 2, 22, 30)),
+            date(2026, 8, 3),
+        )
 
 
 if __name__ == "__main__":

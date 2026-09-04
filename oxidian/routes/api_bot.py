@@ -24,7 +24,7 @@ from models import (User, Product, Categoria, Order, OrderItem, OrderProviderSta
                     ESTADOS_ACTIVOS, ESTADOS_EN_PREPARACION, ESTADOS_EN_REPARTO,
                     PointsLog, SiteConfig, IdempotencyKey, normalizar_metodo_pago,
                     BotAiUsage, BotAiMessage, AdminFeature,
-                    PriceHistory, metadata_componente_combo,
+                    PriceHistory, Caja, metadata_componente_combo,
                     metadata_item_pedido, utcnow as _utcnow,
                     AuditLog, internal_customer_email)
 from idempotency import request_idempotency_key, request_body_hash, IDEMPOTENCY_TTL
@@ -4878,25 +4878,27 @@ def bot_admin_alertas_equipo():
 @api_bot_bp.route("/admin/resumen-hoy")
 @bot_required
 def bot_admin_resumen_hoy():
-    """Resumen operativo del día: pedidos, ventas, activos, productos sin stock."""
+    """Resumen operativo del día sin confundir pedidos con dinero cobrado."""
     if not _bot_admin_request_allowed("store"):
         return _bot_actor_forbidden()
     try:
-        from datetime import datetime, time as dtime
         from sqlalchemy import func
-        hoy = datetime.now().date()
-        inicio = datetime.combine(hoy, dtime.min)
-        fin = datetime.combine(hoy, dtime.max)
+        from business_time import business_today, utc_naive_bounds
+
+        hoy = business_today()
+        inicio, fin = utc_naive_bounds(hoy)
         pedidos_hoy_q = Order.query.filter(
-            Order.creado_en >= inicio, Order.creado_en <= fin
+            Order.creado_en >= inicio, Order.creado_en < fin
         )
         pedidos_hoy = pedidos_hoy_q.count()
         entregados = pedidos_hoy_q.filter(Order.estado == "entregado").count()
         cancelados = pedidos_hoy_q.filter(Order.estado == "cancelado").count()
-        ventas_hoy = float(db.session.query(func.coalesce(func.sum(Order.total), 0))
-                           .filter(Order.creado_en >= inicio,
-                                   Order.creado_en <= fin,
-                                   Order.estado != "cancelado").scalar() or 0)
+        # Caja es el libro mayor autoritativo: un pedido pendiente no es una
+        # venta cobrada. Así el bot y /admin/finanzas muestran la misma cifra.
+        ventas_hoy = float(db.session.query(func.coalesce(func.sum(Caja.monto), 0))
+                           .filter(Caja.fecha >= inicio,
+                                   Caja.fecha < fin,
+                                   Caja.tipo == "ingreso").scalar() or 0)
         activos = Order.query.filter(
             Order.estado.in_(ESTADOS_ACTIVOS)
         ).count()
@@ -4914,6 +4916,7 @@ def bot_admin_resumen_hoy():
             "entregados": entregados,
             "cancelados": cancelados,
             "ventas_hoy": round(ventas_hoy, 2),
+            "ventas_hoy_etiqueta": "ingresos cobrados",
             "activos": activos,
             "productos_sin_stock": [
                 {"id": p.id, "nombre": p.nombre} for p in agotados[:20]
