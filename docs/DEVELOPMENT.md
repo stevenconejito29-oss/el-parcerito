@@ -75,6 +75,25 @@ Antes de producción, ejecutar
 El despliegue automático y el manual ejecutan esta misma barrera con las
 variables reales y se detienen antes de reconstruir si encuentran un bloqueo.
 
+## Prueba masiva de clientes y finanzas
+
+La carga sintética de volumen vive en `oxidian/scripts/seed_finance_stress.py`.
+Solo admite bases cuyo URL contenga `test` y además exige la confirmación
+explícita `ALLOW_QA_MASS_SEED=1`; nunca debe apuntarse a producción.
+
+```bash
+cd oxidian
+ALLOW_QA_MASS_SEED=1 python3 scripts/seed_finance_stress.py seed
+ALLOW_QA_MASS_SEED=1 python3 scripts/seed_finance_stress.py verify
+ALLOW_QA_MASS_SEED=1 python3 scripts/seed_finance_stress.py cleanup
+```
+
+El escenario crea 5 empleados, 100 clientes y un historial determinista de
+pedidos, zonas, cobros, salarios, comisiones e insumos. `verify` comprueba que
+los importes cobrados cuadren con pedidos entregados, que no existan dobles
+ingresos ni cancelados cobrados, que las comisiones sean únicas y que cada
+pedido conserve el snapshot de su zona.
+
 ## Criterio para limpiar código
 
 Un archivo sólo se elimina cuando:
