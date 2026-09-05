@@ -27,10 +27,11 @@
 
   <div id="df-msgs"></div>
   <nav class="df-view-switch" aria-label="Vista de salidas">
-    <button type="button" class="df-btn is-active" data-rider-view="focus">Mi operación</button>
-    {% if operacion.acepta_nuevo_trabajo %}<button type="button" class="df-btn" data-rider-view="available">Buscar franja</button>{% endif %}
+    <button type="button" class="df-btn is-active" data-rider-view="focus">Mi próxima salida</button>
+    {% if operacion.acepta_nuevo_trabajo %}<button type="button" class="df-btn" data-rider-view="available">Franjas disponibles</button>{% endif %}
     {% if brand.favores %}<a class="df-btn" href="{{ url_for('repartidor.favores') }}">El Cruce · separado</a>{% endif %}
   </nav>
+  <div class="df-rider-context" data-rider-context role="status"></div>
   <div id="df-cal">
     <p class="df-day-empty">Cargando franjas…</p>
   </div>
@@ -45,6 +46,7 @@
   const initialSlots = {{ franjas_iniciales|tojson }};
   let operation = {{ operacion|tojson }};
   let allSlots = initialSlots;
+  const riderContext = document.querySelector('[data-rider-context]');
   let riderView = initialSlots.some(slot => slot.tomada_por_mi) || !operation.acepta_nuevo_trabajo ? "focus" : "available";
   const riderErrors = {
     conflicto_horario: "Ya cubres otra franja a esa hora. Libérala o elige una salida que no se solape.",
@@ -79,6 +81,9 @@
         ? slot.tomada_por_mi
         : !slot.tomada_por_mi && estado !== 'finalizada';
     });
+    if (riderContext) riderContext.innerHTML = riderView === 'focus'
+      ? '<b>Tu trabajo reservado</b><span>Abre solamente la salida que vas a ejecutar. Cuando cocina termine, arma una tanda que quepa en tu mochila.</span>'
+      : '<b>Elige tu disponibilidad</b><span>Reserva una franja libre. Todavía no estás tomando pedidos ni iniciando una ruta.</span>';
     render(visibles, riderView === 'focus');
   }
 
@@ -131,7 +136,7 @@
           </div>
           <div class="df-progress" aria-label="Empaque ${porcentaje}%"><i style="--df-progress:${porcentaje}%"></i></div>
           <div class="df-slot-summary"><span>${restante}</span><small>${s.repartidores_activos}/${s.max_repartidores} rider · ${s.pedidos_por_salida} por vuelta</small></div>
-          <div class="df-slot-actions">${btnRider} ${batchBtn}</div>
+          <div class="df-slot-actions">${batchBtn} ${btnRider}</div>
           <div class="df-batch-picker" data-picker="${s.id}" hidden></div>
         </div>`;
       }).join("");

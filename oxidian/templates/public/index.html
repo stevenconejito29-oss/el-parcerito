@@ -293,7 +293,7 @@
 {# ══════════════════════════════════════════
    CATEGORÍAS — STICKY
 ══════════════════════════════════════════ #}
-<div class="ep-cats-wrapper" id="cats-wrapper">
+<section class="ep-cats-wrapper" id="cats-wrapper" aria-label="Explorar por categoría">
   <div class="ep-cats" id="cats-bar" role="navigation" aria-label="Categorías">
     <a href="{{ storefront_url(q=busqueda or None) }}"
        data-category="" class="ep-cat {% if not categoria_activa %}ep-cat-on{% endif %}">
@@ -329,7 +329,7 @@
     </a>
     {% endfor %}
   </div>
-</div>
+</section>
 
 {# ══════════════════════════════════════════
    CATÁLOGO — GRID DE TARJETAS

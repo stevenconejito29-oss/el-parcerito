@@ -3,7 +3,7 @@
   {% if pedido.notas %}<p class="slotops-note">Nota: {{ pedido.notas }}</p>{% endif %}
   <div class="slotops-items">
     {% for item in lineas_preparacion_interna(pedido) %}
-    <label><input type="checkbox" data-pack-check {% if pedido.estado == 'listo' %}checked disabled{% endif %}><span><b>{{ item.cantidad }}×</b> {{ item.display_nombre }}</span></label>
+    <label><input type="checkbox" data-pack-check {% if pedido.estado != 'armando' %}disabled{% endif %} {% if pedido.estado == 'listo' %}checked{% endif %}><span><b>{{ item.cantidad }}×</b> {{ item.display_nombre }}</span></label>
     {% endfor %}
   </div>
   {% if pedido.estado == 'pendiente' %}

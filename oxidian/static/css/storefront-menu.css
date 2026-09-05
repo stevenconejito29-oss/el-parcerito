@@ -684,52 +684,23 @@ body.ox-body-public .ep-banner-cta {
    Sin IntersectionObserver — más fiable en iOS/Android.
 */
 .ep-cats-wrapper {
-  position: sticky;
-  top: calc(74px + env(safe-area-inset-top, 0px));
-  z-index: 60;
-  background: rgba(250,247,242,.97);
-  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(52,37,22,.1);
-  box-shadow: 0 5px 18px rgba(52,37,22,.1);
-  /* Romper el padding del <main> para llegar a los bordes de pantalla */
-  margin-left: -.75rem;
-  margin-right: -.75rem;
-  padding: .34rem .75rem .38rem;
-  margin-bottom: .7rem;
+  position: relative; z-index: 1; width: 100%; min-width: 0;
+  margin: .85rem 0 1rem; padding: .7rem 0 .3rem; overflow: hidden;
+  border: 1px solid color-mix(in srgb,var(--brand-primary) 14%,var(--col-border));
+  border-radius: 1rem; background: color-mix(in srgb,var(--col-surface) 88%,transparent);
+  box-shadow: 0 8px 22px rgba(52,37,22,.09);
 }
 .ep-cats-wrapper::before,
 .ep-cats-wrapper::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 22px;
-  pointer-events: none;
-  z-index: 2;
-}
-.ep-cats-wrapper::before {
-  left: 0;
-  background: linear-gradient(90deg, rgba(250,247,242,.98), rgba(250,247,242,0));
-}
-.ep-cats-wrapper::after {
-  right: 0;
-  background: linear-gradient(270deg, rgba(250,247,242,.98), rgba(250,247,242,0));
-}
-@media(min-width:640px) {
-  .ep-cats-wrapper {
-    margin-left: -1rem;
-    margin-right: -1rem;
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
+  content: none;
 }
 
 /* El inner .ep-cats es solo el scroll row */
 .ep-cats {
   display: flex; gap: .38rem; overflow-x: auto; scrollbar-width: none;
-  padding: .04rem 1.1rem .1rem;
+  padding: .04rem .8rem .35rem;
   -webkit-overflow-scrolling: touch;  /* scroll momentum en iOS */
-  scroll-padding-inline: 1rem;
+  scroll-padding-inline: .8rem;
   /* sin scroll-snap: la alineación del snap puede causar saltos al scrollear categorías */
 }
 .ep-cats::-webkit-scrollbar { display: none; }

@@ -14,6 +14,10 @@
     <li><b>3</b><span><strong>Entrega</strong>Déjala lista al rider</span></li>
   </ol>
 
+  <div class="slotops-focusbar" data-focusbar role="status">
+    <span aria-hidden="true">☝️</span><div><strong>Primero elige una salida</strong><small>Verás únicamente sus pedidos y la acción que corresponde ahora.</small></div>
+  </div>
+
   <section class="slotops-layout">
     <aside class="slotops-agenda" aria-label="Agenda de salidas">
       <div class="slotops-agenda__head"><strong>Agenda</strong><small>{{ agenda|length }} salidas</small></div>
@@ -24,7 +28,7 @@
       {% endif %}
       {% for turno in agenda %}
       <button class="slotops-turn {% if turno.operativa.estado == 'activa' %}is-live{% elif turno.preparacion_completa %}is-done{% endif %}"
-              data-turn="{{ turno.slot.id }}" data-state="{{ turno.operativa.estado }}" type="button">
+              data-turn="{{ turno.slot.id }}" data-state="{{ turno.operativa.estado }}" data-ready="{{ turno.listos }}" data-pending="{{ turno.pendientes + turno.armando }}" type="button">
         <span class="slotops-turn__date">{{ turno.slot.fecha.strftime('%d') }}<small>{{ turno.slot.fecha.strftime('%b') }}</small></span>
         <span><b>{{ turno.slot.hora_inicio.strftime('%H:%M') }}–{{ turno.slot.hora_fin.strftime('%H:%M') }}</b><small>{% if turno.operativa.estado == 'activa' %}En curso{% elif turno.preparacion_completa %}Empacada{% else %}{{ turno.empacados }}/{{ turno.total }} empacados{% endif %}</small></span>
         <i style="--progress:{{ ((turno.empacados * 100 / turno.total)|round|int) if turno.total else 0 }}%"></i>
@@ -57,8 +61,8 @@
 <script nonce="{{ csp_nonce() }}">
 (()=>{
   const root=document.querySelector('[data-slotops]'); if(!root)return;
-  const turns=[...root.querySelectorAll('[data-turn]')], panels=[...root.querySelectorAll('[data-panel]')], empty=root.querySelector('[data-no-turn]');
-  const select=id=>{turns.forEach(b=>b.classList.toggle('is-selected',b.dataset.turn===id));panels.forEach(p=>p.hidden=p.dataset.panel!==id);if(empty)empty.hidden=panels.some(p=>!p.hidden);try{sessionStorage.setItem('kitchen.active.slot',id)}catch(_){}};
+  const turns=[...root.querySelectorAll('[data-turn]')], panels=[...root.querySelectorAll('[data-panel]')], empty=root.querySelector('[data-no-turn]'),focus=root.querySelector('[data-focusbar]');
+  const select=id=>{const active=turns.find(b=>b.dataset.turn===id);turns.forEach(b=>b.classList.toggle('is-selected',b===active));panels.forEach(p=>p.hidden=p.dataset.panel!==id);if(empty)empty.hidden=panels.some(p=>!p.hidden);if(focus&&active){const immediate=id==='immediate',pending=Number(active.dataset.pending||0),ready=Number(active.dataset.ready||0);focus.innerHTML=immediate?'<span>⚡</span><div><strong>Cola inmediata</strong><small>Atiéndela por orden de llegada.</small></div>':pending?`<span>👨‍🍳</span><div><strong>Prepara esta salida</strong><small>Quedan ${pending} pedido(s). Toma uno, verifica sus artículos y confirma el empaque.</small></div>`:`<span>✅</span><div><strong>Salida preparada</strong><small>${ready} pedido(s) listos para entregar al rider.</small></div>`;}try{sessionStorage.setItem('kitchen.active.slot',id)}catch(_){}};
   root.addEventListener('click',e=>{const turn=e.target.closest('[data-turn]');if(turn)select(turn.dataset.turn);});
   let saved='';try{saved=sessionStorage.getItem('kitchen.active.slot')||''}catch(_){}
   const initial=turns.find(b=>b.dataset.turn===saved)||turns.find(b=>b.dataset.state==='activa')||turns[0];if(initial)select(initial.dataset.turn);

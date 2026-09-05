@@ -101,6 +101,8 @@
 .df-view-switch .df-btn.is-active { background:var(--df-navy,#111d2c); color:#fff; border-color:var(--df-navy,#111d2c); }
 .df-empty-action { display:grid; gap:.3rem; padding:1rem; border:1px dashed var(--col-line,#d9d3ca); border-radius:14px; background:var(--col-surface,#fff); color:var(--col-text,#24201d); }
 .df-empty-action span { color:var(--col-muted,#66717d); font-size:.82rem; line-height:1.4; }
+.df-rider-context{display:grid;gap:.14rem;margin:0 0 .75rem;padding:.65rem .78rem;border-left:4px solid var(--df-blue,#1769d2);border-radius:.6rem;background:color-mix(in srgb,var(--df-blue,#1769d2) 7%,var(--col-surface,#fff));color:var(--col-text,#24201d)}
+.df-rider-context b{font-size:.8rem}.df-rider-context span{color:var(--col-muted,#66717d);font-size:.7rem;line-height:1.35}
 
 .df-rider-guide {
   display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .55rem;
