@@ -86,6 +86,36 @@ def contexto_operativo_delivery(*, config_reader=None, feature_reader=None) -> d
     }
 
 
+def permite_nuevo_pedido_inmediato(*, config_reader=None, feature_reader=None) -> bool:
+    """Indica si puede asumirse trabajo nuevo sin franja.
+
+    Centralizar esta decisión evita que una ruta antigua del panel rider eluda
+    el modo seleccionado por administración. Los pedidos que ya están en ruta
+    no usan esta función: siempre se pueden terminar aunque cambie el modo.
+    """
+    operation = contexto_operativo_delivery(
+        config_reader=config_reader,
+        feature_reader=feature_reader,
+    )
+    return bool(operation["acepta_nuevo_trabajo"] and operation["inmediato"])
+
+
+def panel_operativo_por_rol(rol: str, *, modes=None) -> str:
+    """Devuelve la superficie principal para el modo configurado.
+
+    En modo mixto se prioriza el centro por franjas, que ya separa las salidas
+    programadas de la cola inmediata. En modo inmediato se conserva la cola
+    clásica. Es una función pura para compartir la regla y poder probarla.
+    """
+    modes = modes or modos_delivery_activos()
+    usa_franjas = bool(modes.get("franjas"))
+    if rol in {"cocina", "preparacion"}:
+        return "preparador.franjas_operacion" if usa_franjas else "preparador.pedidos"
+    if rol == "repartidor":
+        return "repartidor.franjas_panel" if usa_franjas else "repartidor.ruta"
+    raise ValueError("Rol operativo no compatible")
+
+
 def cambiar_modo_delivery(modo: str, *, actor_id: int, ip: str | None = None) -> dict[str, bool]:
     """Cambia la modalidad de forma atómica y protege trabajo en curso.
 

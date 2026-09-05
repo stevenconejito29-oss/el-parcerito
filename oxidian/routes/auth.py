@@ -348,6 +348,11 @@ def _qr_svg_inline(data):
 
 def _redirect_rol(rol):
     destino = REDIRECT_POR_ROL.get(rol)
+    if rol in {"cocina", "preparacion", "repartidor"}:
+        # El inicio del trabajador también sigue la modalidad vigente; no
+        # depende de que recuerde abrir manualmente otro apartado.
+        from delivery_mode_service import panel_operativo_por_rol
+        destino = panel_operativo_por_rol(rol)
     if not destino:
         # Rol legacy o corrupto (p.ej. "staff" antiguo). Fuerza logout limpio
         # y da feedback al usuario en lugar de un loop silencioso hacia login.

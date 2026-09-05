@@ -158,7 +158,8 @@ def toggle_disponible():
     current_user.toggle_disponible()
     db.session.commit()
     pedidos_asignados = 0
-    if current_user.en_linea:
+    from delivery_mode_service import permite_nuevo_pedido_inmediato
+    if current_user.en_linea and permite_nuevo_pedido_inmediato():
         pedidos_asignados = redistribuir_listos_sin_repartidor()
         if pedidos_asignados:
             db.session.commit()
@@ -172,6 +173,20 @@ def toggle_disponible():
 @repartidor_bp.route("/ruta")
 @repartidor_required
 def ruta():
+    from delivery_mode_service import contexto_operativo_delivery
+    operacion_delivery = contexto_operativo_delivery()
+    # En solo-franjas esta pantalla queda reservada a tandas que el rider ya
+    # inició. Sin una ruta activa, la entrada natural es el tablero de franjas.
+    # Así el cambio de modo tiene efecto real sin ocultar trabajo en curso.
+    if operacion_delivery["franjas"] and not operacion_delivery["inmediato"]:
+        filtros_activos = [
+            Order.estado == "en_ruta",
+            Order.tipo_entrega_cliente == "delivery",
+        ]
+        if not _es_admin_operativo():
+            filtros_activos.append(Order.repartidor_id == current_user.id)
+        if not Order.query.filter(*filtros_activos).first():
+            return redirect(url_for("repartidor.franjas_panel"))
     disponible = _esta_disponible()
     _eager_zona = joinedload(Order.zona)
     # Filtro por zona asignada al repartidor (Fase 5). Si el repartidor no tiene
@@ -659,6 +674,10 @@ def optimizar_ruta():
 @repartidor_bp.route("/pedidos/<int:pedido_id>/tomar", methods=["POST"])
 @repartidor_required
 def tomar_pedido(pedido_id):
+    from delivery_mode_service import permite_nuevo_pedido_inmediato
+    if not permite_nuevo_pedido_inmediato():
+        flash("La operación está configurada por franjas. Elige una salida desde el panel de franjas.", "warning")
+        return redirect(url_for("repartidor.franjas_panel"))
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
     if _es_admin_operativo():
         flash("Asigna el pedido a un repartidor desde la cola administrativa.", "warning")
@@ -718,6 +737,10 @@ def tomar_multiples():
         * Admin operativo no puede usarlo (debe asignar desde admin).
     Cuenta éxitos/omitidos y devuelve mensaje agregado.
     """
+    from delivery_mode_service import permite_nuevo_pedido_inmediato
+    if not permite_nuevo_pedido_inmediato():
+        flash("La operación está configurada por franjas. Arma la tanda desde su franja.", "warning")
+        return redirect(url_for("repartidor.franjas_panel"))
     if _es_admin_operativo():
         flash("Asigna los pedidos desde la cola administrativa.", "warning")
         return redirect(url_for("repartidor.ruta"))
@@ -1188,10 +1211,17 @@ def franjas_panel():
         flash("El reparto por franjas no está activo. Tus entregas inmediatas siguen disponibles.", "info")
         return redirect(url_for("repartidor.ruta"))
     from delivery_mode_service import contexto_operativo_delivery
+    filtros_ruta = [
+        Order.estado == "en_ruta",
+        Order.tipo_entrega_cliente == "delivery",
+    ]
+    if not _es_admin_operativo():
+        filtros_ruta.append(Order.repartidor_id == current_user.id)
     return render_template(
         "repartidor/franjas.html",
         franjas_iniciales=_franjas_repartidor_payload(),
         operacion=contexto_operativo_delivery(),
+        pedidos_en_ruta=Order.query.filter(*filtros_ruta).count(),
     )
 
 

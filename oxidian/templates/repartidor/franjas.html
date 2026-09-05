@@ -11,7 +11,7 @@
       <h1>Salidas por franja</h1>
       <p>Primero reserva una franja. Cuando cocina cierre el empaque, eliges qué pedidos caben en esta vuelta.</p>
     </div>
-    <a class="df-btn" href="{{ url_for('repartidor.ruta') }}">Ver ruta actual</a>
+    {% if pedidos_en_ruta %}<a class="df-btn df-btn-primary" href="{{ url_for('repartidor.ruta') }}">Ruta actual · {{ pedidos_en_ruta }}</a>{% endif %}
   </div>
 
   <div class="df-operation is-{{ operacion.modo }}" role="status">

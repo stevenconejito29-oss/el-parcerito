@@ -43,6 +43,13 @@
     <p class="df-readonly"><strong>Solo lectura:</strong> el superadministrador controla este interruptor.</p>
   {% endif %}
   </section>
+  <div class="df-operation is-{{ 'mixto' if modos_delivery.inmediato and modos_delivery.franjas else ('franjas' if modos_delivery.franjas else 'inmediato') }}" role="status">
+    <span class="df-operation__dot" aria-hidden="true"></span>
+    <div>
+      <strong>{% if modos_delivery.inmediato and modos_delivery.franjas %}Flujo mixto activo{% elif modos_delivery.franjas %}Solo franjas activo{% else %}Solo inmediato activo{% endif %}</strong>
+      <small>{% if modos_delivery.inmediato and modos_delivery.franjas %}El cliente elige; cocina separa la cola inmediata de cada salida y reparto muestra ambos accesos.{% elif modos_delivery.franjas %}Checkout exige una franja, cocina agrupa por salida y el rider arma tandas únicamente desde la agenda.{% else %}Checkout no pide horario y cocina/reparto trabajan por orden de llegada. Puedes planificar abajo antes de volver a activar franjas.{% endif %}</small>
+    </div>
+  </div>
   <aside class="df-fee-summary">
     <div><span class="df-eyebrow">Tarifa por zona</span><strong>{{ delivery_zone_count }} zona{{ '' if delivery_zone_count == 1 else 's' }} activa{{ '' if delivery_zone_count == 1 else 's' }}</strong></div>
     <p>{% if delivery_fee_min is not none %}Desde {{ '%.2f'|format(delivery_fee_min|float) }} €{% if delivery_fee_max != delivery_fee_min %} hasta {{ '%.2f'|format(delivery_fee_max|float) }} €{% endif %}.{% else %}No hay tarifas activas configuradas.{% endif %} El coste se calcula por la dirección validada, nunca en el navegador.</p>
@@ -73,9 +80,9 @@
     <div class="df-form-actions"><button class="df-btn df-btn-primary" type="submit">Guardar capacidad</button></div>
   </form>
 
-  <form id="df-form-crear" class="df-form df-slot-editor" novalidate>
+  <form id="df-form-crear" class="df-form df-slot-editor{% if not modos_delivery.franjas %} is-planning-inactive{% endif %}" novalidate>
     <div class="df-editor-heading">
-      <div><span class="df-eyebrow">Planificación</span><h2 id="df-editor-title">Crear franja</h2></div>
+      <div><span class="df-eyebrow">Plantilla semanal reutilizable</span><h2 id="df-editor-title">Crear franja</h2><small>Editar una fecha futura y marcar “Mantener este horario” actualiza las siguientes semanas. Los días pasados se conservan como historial y el botón crea su próxima ocurrencia editable.</small></div>
       <button type="button" id="df-btn-cancelar-edicion" class="df-btn" hidden>Cancelar edición</button>
     </div>
     <label>Fecha
@@ -224,10 +231,10 @@
           ${prep.total ? `<div class="df-slot-meta"><strong>${prep.pendientes || 0} pendientes · ${prep.armando || 0} preparando · ${prep.en_ruta || 0} en ruta · ${prep.entregados || 0} entregados</strong></div>` : ''}
           <div class="df-slot-actions">
             <button class="df-btn" data-act="editar" data-id="${s.id}">${pasada ? 'Editar próximas semanas' : 'Editar'}</button>
-            <button class="df-btn" data-act="toggle" data-id="${s.id}" data-activo="${s.activo}">
+            ${pasada ? '<span class="df-history-label">Historial protegido</span>' : `<button class="df-btn" data-act="toggle" data-id="${s.id}" data-activo="${s.activo}">
               ${s.activo ? 'Desactivar' : 'Reactivar'}
-            </button>
-            ${s.activo ? `<button class="df-btn df-btn-danger" data-act="borrar" data-id="${s.id}">Archivar</button>` : ''}
+            </button>`}
+            ${!pasada && s.activo ? `<button class="df-btn df-btn-danger" data-act="borrar" data-id="${s.id}">Archivar</button>` : ''}
           </div>
         </div>`;
       }).join("");

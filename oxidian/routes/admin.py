@@ -8285,7 +8285,12 @@ def delivery_modo_actualizar():
         current_app.logger.exception("No se pudo cambiar el modo de reparto")
         flash("No se pudo guardar la modalidad. La configuración anterior sigue activa.", "danger")
         return redirect(url_for("admin.delivery_franjas_panel"))
-    flash("Modo de reparto actualizado.", "success")
+    etiquetas = {
+        "inmediato": "Reparto inmediato",
+        "franjas": "Reparto solo por franjas",
+        "mixto": "Reparto mixto",
+    }
+    flash(f"Modalidad aplicada: {etiquetas[modo]}. Cocina, checkout y reparto ya usan este flujo.", "success")
     return redirect(url_for("admin.delivery_franjas_panel"))
 
 

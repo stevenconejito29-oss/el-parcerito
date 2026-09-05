@@ -7,6 +7,8 @@ from delivery_mode_service import (
     ModoDelivery,
     contexto_operativo_delivery,
     modos_delivery_activos,
+    panel_operativo_por_rol,
+    permite_nuevo_pedido_inmediato,
     resolver_plan_delivery,
 )
 
@@ -58,6 +60,22 @@ class DeliveryModeServiceTest(unittest.TestCase):
             )
             self.assertEqual(operation["modo"], expected)
             self.assertTrue(operation["acepta_nuevo_trabajo"])
+
+    def test_operational_panels_change_with_delivery_mode(self):
+        immediate = {"inmediato": True, "franjas": False}
+        slots = {"inmediato": False, "franjas": True}
+        mixed = {"inmediato": True, "franjas": True}
+        self.assertEqual(panel_operativo_por_rol("repartidor", modes=immediate), "repartidor.ruta")
+        self.assertEqual(panel_operativo_por_rol("repartidor", modes=slots), "repartidor.franjas_panel")
+        self.assertEqual(panel_operativo_por_rol("cocina", modes=slots), "preparador.franjas_operacion")
+        self.assertEqual(panel_operativo_por_rol("cocina", modes=mixed), "preparador.franjas_operacion")
+
+    def test_immediate_work_is_closed_when_only_slots_are_enabled(self):
+        config = {"delivery_inmediato_activo": "0", "delivery_franjas_activo": "1"}
+        self.assertFalse(permite_nuevo_pedido_inmediato(
+            config_reader=lambda key, default: config.get(key, default),
+            feature_reader=lambda: {"delivery": True},
+        ))
 
 
 if __name__ == "__main__":
