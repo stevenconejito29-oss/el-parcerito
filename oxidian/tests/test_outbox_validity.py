@@ -133,3 +133,41 @@ class OutboxValidityTest(unittest.TestCase):
         self.assertEqual(purgar_registros_antiguos()['notification_outbox'], 1)
         self.assertIsNone(db.session.get(NotificationOutbox, old_id))
         self.assertIsNotNone(db.session.get(NotificationOutbox, pending_id))
+
+    @patch('services._send_whatsapp_message', return_value=True)
+    def test_slot_arrival_uses_allowed_code_outbox_once(self, send):
+        from delivery_slots_service import notificar_en_la_puerta
+        self.order.estado = 'en_ruta'
+        db.session.commit()
+        job = notificar_en_la_puerta(self.order)
+        db.session.commit()
+        self.assertEqual(job.evento, 'delivery_code')
+        self.assertTrue(self.order.codigo_confirmacion)
+        self.assertIsNone(notificar_en_la_puerta(self.order))
+        self.assertEqual(procesar_notificaciones_pendientes()['enviadas'], 1)
+        procesar_notificaciones_pendientes()
+        send.assert_called_once()
+
+    @patch('services._send_whatsapp_message', return_value=True)
+    def test_slot_arrival_cancelled_before_worker_is_discarded(self, send):
+        from delivery_slots_service import notificar_en_la_puerta
+        self.order.estado = 'en_ruta'
+        db.session.commit()
+        notificar_en_la_puerta(self.order)
+        db.session.commit()
+        self.order.estado = 'cancelado'
+        db.session.commit()
+        self.assertEqual(procesar_notificaciones_pendientes()['saltadas'], 1)
+        send.assert_not_called()
+
+    @patch('push_service.notify_user')
+    def test_departure_is_idempotent_and_never_queues_whatsapp(self, notify):
+        from delivery_slots_service import notificar_en_camino
+        self.order.estado = 'en_ruta'
+        db.session.commit()
+        self.assertEqual(notificar_en_camino(self.order)[1], 'push_web')
+        db.session.commit()
+        self.assertEqual(notificar_en_camino(self.order)[1], 'ya_notificado')
+        notify.assert_called_once()
+        self.assertFalse(notify.call_args.kwargs['commit'])
+        self.assertEqual(NotificationOutbox.query.count(), 0)

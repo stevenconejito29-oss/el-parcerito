@@ -1,0 +1,159 @@
+{% extends "admin_base.html" %}
+{% block title %}Franja {{ slot.hora_inicio.strftime('%H:%M') }} — Repartidor{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
+<style>
+/* Rider panel — rediseño 2026-08-18.
+   FAB inferior fijo con contador prominente. Filas más limpias. */
+.fp-wrap { max-width: 720px; margin:0 auto; padding: 1rem 1rem 6rem; }
+.fp-head { display:flex; align-items:baseline; gap:.5rem; margin-bottom: .75rem; }
+.fp-head h1 { margin:0; font-size:1.5rem; font-weight:800; letter-spacing: -.02em; }
+.fp-head small { color: var(--col-muted, #888); font-size:.85rem; }
+.fp-back { margin-left:auto; text-decoration:none; color: var(--brand-accent,#003087); font-weight:600; font-size:.9rem; }
+.fp-progress { background: var(--col-surface-alt,#f2f4f8); border-radius: 999px; height: 8px;
+               overflow:hidden; margin: .5rem 0 .75rem; }
+.fp-progress__bar { height:100%; background: var(--theme-success, #5EF097); transition: width .3s; }
+.fp-summary { display:flex; align-items:baseline; gap:.6rem; font-size:.9rem;
+              color: var(--col-muted, #666); margin-bottom: 1rem; }
+.fp-summary strong { color: var(--col-text, #222); font-variant-numeric: tabular-nums; }
+.fp-summary .fp-mine { color: var(--theme-success, #2b9c5e); font-weight:700; }
+.fp-list { list-style:none; margin:0; padding:0; border:1px solid var(--col-border,#ddd);
+           border-radius: var(--radius-md,12px); background: var(--col-surface,#fff);
+           box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.08)); overflow:hidden; }
+.fp-item { display:flex; align-items:center; gap:.75rem; padding: .85rem 1rem;
+           border-bottom: 1px solid var(--col-border-light, #eee); }
+.fp-item:last-child { border-bottom: none; }
+.fp-item.is-disabled { opacity:.5; }
+.fp-item.is-checked { background: color-mix(in srgb, var(--brand-accent, #003087) 6%, transparent); }
+.fp-item label { display:flex; align-items:center; gap:.75rem; flex:1; min-width:0; cursor:pointer; }
+.fp-item input[type=checkbox] { width:28px; height:28px; accent-color: var(--brand-accent, #003087);
+                                cursor:pointer; touch-action: manipulation; flex-shrink:0; }
+.fp-item__info { flex:1; min-width:0; }
+.fp-item__preview { display:block; font-size:.95rem; line-height:1.3;
+                    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.fp-item__num { font-weight:700; }
+.fp-item__cli { color: var(--col-muted, #666); }
+.fp-item__addr { display:block; color: var(--col-faint, #999); font-size:.8rem; margin-top:.15rem;
+                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.fp-state { font-size:.72rem; padding:.2rem .55rem; border-radius:999px; text-transform:uppercase; letter-spacing:.03em; flex-shrink:0; }
+.fp-state.listo { background: var(--prep-ok-soft,#d6f5e3); color:#22794a; }
+.fp-state.en_ruta { background:#fff3d6; color:#8a6300; }
+.fp-state.entregado { background:#eee; color:#555; }
+.fp-state.pendiente,.fp-state.armando { background:#f0f0ff; color:#4444aa; }
+.fp-note { color: var(--col-muted, #888); font-size:.9rem; margin-top:.5rem;
+           padding: .6rem .8rem; background: #fff3d6; border-radius: var(--radius-sm,8px); }
+/* FAB inferior fijo — sale con seleccionados */
+.fp-fab { position: fixed; left: 0; right: 0; bottom: 0; background: var(--col-surface,#fff);
+          border-top: 1px solid var(--col-border,#ddd); padding: .75rem 1rem;
+          display:flex; align-items:center; gap:.75rem; z-index: 40;
+          box-shadow: 0 -4px 12px rgba(0,0,0,.08); }
+.fp-fab__count { flex:1; font-weight:600; }
+.fp-fab__count strong { color: var(--brand-accent, #003087); font-size:1.15rem; font-variant-numeric: tabular-nums; }
+.fp-fab__btn { padding:.85rem 1.3rem; min-height: 48px; border-radius: var(--radius-sm,8px);
+               font-weight:700; border:none; cursor:pointer; touch-action: manipulation;
+               background: var(--brand-accent, #003087); color:#fff; font-size:1rem; }
+.fp-fab__btn[disabled] { background:#ccc; cursor:not-allowed; }
+@media (max-width: 400px) {
+  .fp-wrap { padding: .6rem .6rem 6rem; }
+  .fp-head h1 { font-size: 1.25rem; }
+  .fp-item { padding: .75rem .7rem; gap:.6rem; }
+  .fp-item input[type=checkbox] { width: 30px; height: 30px; }
+  .fp-fab { padding: .6rem .8rem; }
+  .fp-fab__btn { padding: .7rem 1rem; font-size:.95rem; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="fp-wrap">
+  <div class="fp-head">
+    <h1>{{ slot.hora_inicio.strftime('%H:%M') }} → {{ slot.hora_fin.strftime('%H:%M') }}</h1>
+    <small>{{ slot.fecha.strftime('%d/%m') }}</small>
+    <a class="fp-back" href="{{ url_for('repartidor.franjas_panel') }}">← Franjas</a>
+  </div>
+
+  {% set pct = (despachados * 100 / total) if total else 0 %}
+  <div class="fp-progress" title="{{ despachados }} de {{ total }} despachados">
+    <div class="fp-progress__bar" style="width: {{ pct|round(0, 'floor') }}%"></div>
+  </div>
+
+  <div class="fp-summary">
+    <span><strong>{{ total }}</strong> pedidos</span>
+    <span>·</span>
+    <span>✓ <strong>{{ listos|length }}</strong> listos</span>
+    <span>·</span>
+    <span>🚚 <strong>{{ despachados }}</strong> despachados</span>
+    {% if mia %}<span class="fp-mine">· 🟡 tuya</span>{% endif %}
+  </div>
+
+  {% if not mia %}
+    <p class="fp-note">Toma la franja en el panel general para poder despachar.</p>
+  {% endif %}
+
+  {% if pedidos %}
+  <form method="POST" action="{{ url_for('repartidor.franjas_iniciar_reparto', slot_id=slot.id) }}" id="fp-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <ul class="fp-list">
+      {% for p in pedidos %}
+      {% set seleccionable = (p.estado == 'listo' and mia) %}
+      <li class="fp-item{% if not seleccionable %} is-disabled{% endif %}{% if seleccionable %} is-checked{% endif %}">
+        <label>
+          {% if seleccionable %}
+          <input type="checkbox" name="pedido_ids" value="{{ p.id }}" class="fp-check" checked>
+          {% else %}
+          <input type="checkbox" disabled>
+          {% endif %}
+          <div class="fp-item__info">
+            <span class="fp-item__preview">
+              <span class="fp-item__num">#{{ p.numero_pedido or p.id }}</span>
+              <span class="fp-item__cli">·
+                {% if p.cliente and p.cliente.nombre %}{{ p.cliente.nombre }}{% else %}Cliente{% endif %}</span>
+            </span>
+            <span class="fp-item__addr">📍 {{ p.direccion_entrega or (p.zona_nombre_aplicada or '—') }}</span>
+          </div>
+        </label>
+        <span class="fp-state {{ p.estado }}">{{ p.estado }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <div class="fp-fab" role="region" aria-label="Salir con pedidos seleccionados">
+      <div class="fp-fab__count"><strong id="fp-count">0</strong> seleccionados</div>
+      <button type="submit" class="fp-fab__btn" id="fp-btn" {% if not mia or not listos %}disabled{% endif %}>
+        🚀 Salir con <span id="fp-btn-n">0</span>
+      </button>
+    </div>
+  </form>
+  {% else %}
+  <p class="fp-note">Esta franja aún no tiene pedidos.</p>
+  {% endif %}
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+(function(){
+  var form = document.getElementById('fp-form'); if(!form) return;
+  var checks = form.querySelectorAll('input.fp-check');
+  var out = document.getElementById('fp-count');
+  var outBtn = document.getElementById('fp-btn-n');
+  var btn = document.getElementById('fp-btn');
+  var forced = {% if not mia %}true{% else %}false{% endif %};
+  function upd(){
+    var n = 0;
+    checks.forEach(function(c){
+      if(c.checked) n++;
+      var li = c.closest('li');
+      if(li) li.classList.toggle('is-checked', c.checked);
+    });
+    out.textContent = n;
+    outBtn.textContent = n;
+    btn.disabled = forced || (n === 0);
+  }
+  checks.forEach(function(c){ c.addEventListener('change', upd); });
+  upd();
+  form.addEventListener('submit', function(e){
+    if(btn.disabled){ e.preventDefault(); return; }
+    var n = 0; checks.forEach(function(c){ if(c.checked) n++; });
+    if(!confirm('Salir con ' + n + ' pedido(s)?')) e.preventDefault();
+  });
+})();
+</script>
+{% endblock %}

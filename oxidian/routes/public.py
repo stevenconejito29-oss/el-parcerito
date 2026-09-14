@@ -2170,35 +2170,35 @@ def buscar_cliente_publico():
 @public_bp.route("/puntos/consultar-saldo", methods=["POST"])
 @limiter.limit("3 per minute") if limiter else (lambda f: f)
 def consultar_saldo_puntos():
-    """Envía el saldo al número consultado sin revelarlo en el navegador.
-
-    Diseño: respuesta neutra (no revela si el número existe). Sí revela si el
-    canal de mensajería está caído, para que el usuario reintente más tarde
-    en vez de creer que llegará y no llegue nunca."""
-    if not _feature_enabled("puntos"):
-        return _json_no_store({"ok": False, "msg": f'{get_loyalty_terms()["name"]} no está habilitado'}, 403)
-    from loyalty_service import messaging_service_available
-    if not messaging_service_available():
-        return _json_no_store({
-            "ok": False,
-            "service_available": False,
-            "msg": "El servicio de WhatsApp no está disponible ahora mismo. Reintenta en unos minutos.",
-        }, 503)
-    data = request.get_json(silent=True) or {}
-    cliente, _ = buscar_cliente_por_telefono(data.get("telefono", ""))
-    if cliente:
-        try:
-            enviar_saldo_puntos(cliente)
-        except Exception:
-            current_app.logger.exception("No se pudo enviar el saldo de puntos")
+    """Ruta antigua conservada sin enviar consultas de saldo por WhatsApp."""
     return _json_no_store({
-        "ok": True,
-        "service_available": True,
-        "msg": f'Si el número tiene {get_loyalty_terms()["plural"]}, recibirá el saldo por WhatsApp.',
-    })
+        "ok": False, "msg": "Consulta tu saldo en el Club y verifica tu teléfono con un código.",
+        "url": url_for("public.club"),
+    }, 410)
 
 
-# ─── CHECK DIRECCIÓN EN TIEMPO REAL (AJAX) ────────────────────
+@public_bp.route("/puntos/verificar-saldo", methods=["POST"])
+@limiter.limit("10 per minute") if limiter else (lambda f: f)
+def verificar_saldo_puntos():
+    if not _feature_enabled("puntos"):
+        return _json_no_store({"ok": False, "msg": "El club no está disponible."}, 403)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _json_no_store({"ok": False, "msg": "Revisa el teléfono y el código."}, 400)
+    phone, code = data.get("telefono"), data.get("codigo")
+    if not isinstance(phone, str) or not isinstance(code, str):
+        return _json_no_store({"ok": False, "msg": "Revisa el teléfono y el código."}, 400)
+    cliente, _ = buscar_cliente_por_telefono(phone.strip())
+    if not cliente:
+        return _json_no_store({"ok": False, "msg": "No se pudo verificar el código."}, 400)
+    cliente = bloquear_cliente_puntos(cliente)
+    if not cliente.verificar_cod_puntos(code.strip(), consumir=True):
+        db.session.commit()
+        return _json_no_store({"ok": False, "msg": "No se pudo verificar el código."}, 400)
+    saldo = max(0, int(cliente.puntos or 0))
+    db.session.commit()
+    return _json_no_store({"ok": True, "puntos": saldo})
+
 
 @public_bp.route("/api/check-address", methods=["POST"])
 @csrf.exempt
@@ -2724,6 +2724,16 @@ def checkout():
         flash("Las cuentas internas no compran desde la tienda pública. Usa el módulo POS.", "warning")
         return redirect(url_for("public.index"))
 
+    # Guardia: si ambos métodos de reparto están apagados y no hay recogida
+    # habilitada, no hay flujo válido de compra. Evita pantalla en blanco o
+    # error críptico y explica al cliente que la tienda no acepta pedidos.
+    _inmediato_on = str(get_store_value("delivery_inmediato_activo", "1")).strip() in ("1", "true", "True")
+    _franjas_on = str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+    _recogida_on = str(SiteConfig.get("FEATURE_RECOGIDA", "1")).strip() in ("1", "true", "True")
+    if not _inmediato_on and not _franjas_on and not _recogida_on:
+        flash("La tienda no está aceptando pedidos en este momento.", "warning")
+        return redirect(url_for("public.index"))
+
     carrito = _get_carrito()
     if not carrito:
         flash("Tu carrito está vacío.", "warning")
@@ -2886,7 +2896,13 @@ def checkout():
             "SKIP_DELIVERY_VALIDATION", False
         ))
         abierto, msg_cierre = _establecimiento_abierto_checkout(origen, proveedor)
-        if not _skip_val and not abierto:
+        # Si el módulo de franjas está activo, el cliente puede pedir 24/7 y
+        # su pedido queda anclado a la franja elegida; el horario de tienda
+        # deja de ser guardia dura del checkout.
+        _franjas_bypass = str(
+            get_store_value("delivery_franjas_activo", "0")
+        ).strip() in ("1", "true", "True")
+        if not _skip_val and not abierto and not _franjas_bypass:
             flash(msg_cierre, "warning")
             return redirect(url_for("public.checkout"))
         if proveedor_id:
@@ -3563,8 +3579,25 @@ def checkout():
         radio_entrega_km = max(0.0, float(SiteConfig.get("RADIO_ENTREGA_KM", "5") or 5))
     except (TypeError, ValueError):
         radio_entrega_km = 5.0
+    # Render SSR de franjas para el cliente — no depender de JS async.
+    # Si franjas está OFF o falla la query, franjas_ssr queda [] y el
+    # template no muestra el bloque.
+    franjas_ssr = []
+    if _franjas_on:
+        try:
+            from delivery_slots_service import listar_franjas_cliente
+            from datetime import date as _date
+            _hoy = _date.today()
+            _horizonte = int(str(get_store_value("delivery_franjas_horizonte_cliente_dias", "7")).strip() or 7)
+            franjas_ssr = listar_franjas_cliente(_hoy, horizonte_dias=_horizonte)
+        except Exception:
+            current_app.logger.exception("checkout: no pudimos precargar franjas SSR")
+            franjas_ssr = []
     return render_template("public/checkout.html", items=items, subtotal=subtotal,
                            zonas=zonas,
+                           delivery_inmediato_activo=_inmediato_on,
+                           delivery_franjas_activo=_franjas_on,
+                           franjas_ssr=franjas_ssr,
                            tiene_encargos=tiene_encargos,
                            canjeables=canjeables,
                            puntos_habilitados=puntos_habilitados,

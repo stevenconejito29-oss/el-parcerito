@@ -44,11 +44,11 @@ from models import (
 
 # ─── Constantes ───────────────────────────────────────────────────────────
 
-CIERRE_MODOS = ("al_iniciar_siguiente", "minutos_antes", "hora_fija")
+CIERRE_MODOS = ("al_iniciar", "al_iniciar_siguiente", "minutos_antes", "hora_fija")
 MAX_SALIDAS_DIARIAS = 4
 _ESTADO_CANCELADO = "cancelado"
 NOTIF_CANAL = "whatsapp"
-NOTIF_EVENTO_EN_PUERTA = "delivery_en_puerta"
+NOTIF_EVENTO_EN_PUERTA = "delivery_code"
 
 
 def _validar_cierre(modo: str | None, valor: str | None) -> None:
@@ -176,7 +176,7 @@ def franja_esta_cerrada(
     modo = slot.cierre_modo or cierre_modo_default
     valor = (slot.cierre_valor if slot.cierre_modo else cierre_valor_default) or ""
 
-    if modo == "al_iniciar_siguiente":
+    if modo in {"al_iniciar", "al_iniciar_siguiente"}:
         return False  # sigue abierta hasta que llegue hora_inicio
     if modo == "minutos_antes":
         try:
@@ -914,7 +914,7 @@ def notificar_en_la_puerta(pedido: Order, actor_id: int | None = None) -> Notifi
 
     # Serializa doble toque/reintento y vuelve a leer el estado actual antes
     # de crear el outbox. Así la idempotencia no depende del navegador.
-    pedido = db.session.query(Order).filter(Order.id == pedido.id).with_for_update().one()
+    pedido = db.session.query(Order).filter(Order.id == pedido.id).populate_existing().with_for_update().one()
     if pedido.estado != "en_ruta" or pedido.tipo_entrega_cliente != "delivery":
         raise ValueError("Solo se puede avisar al llegar durante una entrega activa")
     if actor_id is not None and pedido.repartidor_id != actor_id:
@@ -943,15 +943,8 @@ def notificar_en_la_puerta(pedido: Order, actor_id: int | None = None) -> Notifi
         db.session.flush()
         return None
 
-    from store_config import get_store_value
-
-    plantilla = (
-        get_store_value(
-            "delivery_franjas_notificar_puerta_texto",
-            "Tu repartidor está en la puerta.",
-        )
-        or "Tu repartidor está en la puerta."
-    )
+    from services import mensaje_codigo_entrega
+    plantilla = mensaje_codigo_entrega(pedido)
 
     # El procesador WhatsApp (services.procesar_notificaciones_pendientes)
     # espera payload con las claves 'telefono' y 'mensaje'. Respetamos ese
@@ -963,6 +956,7 @@ def notificar_en_la_puerta(pedido: Order, actor_id: int | None = None) -> Notifi
         payload_json=json.dumps({
             "telefono": telefono,
             "mensaje": plantilla,
+            "delivery_code": pedido.codigo_confirmacion,
             "pedido_id": pedido.id,
             "numero_pedido": pedido.numero_pedido,
         }, ensure_ascii=False),
@@ -974,3 +968,42 @@ def notificar_en_la_puerta(pedido: Order, actor_id: int | None = None) -> Notifi
     pedido.en_punto_encuentro_en = utcnow()
     db.session.flush()
     return outbox
+
+
+def format_fecha_dia_corto(fecha: date, referencia: date | None = None) -> str:
+    """Devuelve 'Hoy · 21 ago' / 'Mañana · 22 ago' / 'Vie 23 ago' según proximidad.
+
+    ``referencia`` = date.today() por defecto. Extraído para tests.
+    """
+    from business_time import business_today
+    ref = referencia or business_today()
+    delta = (fecha - ref).days
+    if delta == 0:
+        return f"Hoy · {fecha.day} {_MESES_CORTOS_ES[fecha.month - 1]}"
+    if delta == 1:
+        return f"Mañana · {fecha.day} {_MESES_CORTOS_ES[fecha.month - 1]}"
+    return f"{_DIAS_CORTOS_ES[fecha.weekday()]} {fecha.day} {_MESES_CORTOS_ES[fecha.month - 1]}"
+
+_DIAS_CORTOS_ES = ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
+_MESES_CORTOS_ES = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+
+
+def notificar_en_camino(pedido: Order, actor_id: int | None = None):
+    """Aviso de salida compatible con la ruta anterior: solo push/chat web."""
+    from models import WebChatConversation
+    from push_service import notify_user
+    from web_chat_service import add_message
+    pedido = Order.query.filter_by(id=pedido.id).populate_existing().with_for_update().one()
+    if pedido.estado != "en_ruta" or not pedido.requiere_reparto:
+        raise ValueError("Solo se puede avisar durante un reparto activo")
+    if actor_id is not None and pedido.repartidor_id != actor_id:
+        raise PermissionError("El pedido pertenece a otro repartidor")
+    if pedido.en_camino_at:
+        return None, "ya_notificado"
+    mensaje = f"Tu pedido #{pedido.numero_pedido} está en reparto. Consulta su estado en el seguimiento."
+    notify_user(pedido.cliente_id, "Pedido en reparto", mensaje,
+                url=f"/pedido/{pedido.id}/confirmado", tag=f"en-camino-{pedido.id}", commit=False)
+    for conversation in WebChatConversation.query.filter_by(customer_id=pedido.cliente_id).all():
+        add_message(conversation, "system", mensaje)
+    pedido.en_camino_at = utcnow()
+    return None, "push_web"

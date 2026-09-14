@@ -130,6 +130,11 @@ class User(UserMixin, db.Model):
 
     # Presencia
     last_seen = db.Column(db.DateTime)
+    # Último mensaje entrante del cliente por WhatsApp (ventana Meta de
+    # 24h de service messages). Se actualiza desde /api/bot/ai/route.
+    # Consumido por canal_service para decidir si aún estamos dentro de la
+    # ventana WA y podemos usarla como fallback de push+web.
+    last_wa_inbound_at = db.Column(db.DateTime)
     en_linea = db.Column(db.Boolean, default=False)  # toggle manual disponibilidad
     acepta_cruces = db.Column(db.Boolean, default=True, server_default="true", nullable=False)
 
@@ -2996,6 +3001,13 @@ class Order(db.Model):
     en_punto_encuentro = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
     en_punto_encuentro_en = db.Column(db.DateTime)
 
+    # Subestado del reparto: el repartidor pulsó "salir a repartir" y el
+    # cliente recibió la notificación "voy en camino". Simétrico a
+    # en_punto_encuentro: idempotente (una sola notificación por pedido).
+    # NULL = aún no salió o no se notificó. El timestamp es la marca
+    # operativa Y la señal de idempotencia (combinada con outbox previo).
+    en_camino_at = db.Column(db.DateTime)
+
     # ── Señal del bar (proveedor) ────────────────────────────────────
     # No cambia la máquina de estados; es un flag informativo.
     proveedor_preparado = db.Column(db.Boolean, default=False, nullable=False)
@@ -3682,6 +3694,9 @@ class DeliverySlot(db.Model):
         db.Boolean, nullable=False, default=True, server_default=db.text("true")
     )
     notas_admin = db.Column(db.Text)
+    # Marca de push "tu franja empezó" enviado al cliente. Idempotente: la
+    # función procesar_franjas_iniciando la escribe una sola vez por slot.
+    notif_inicio_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     updated_at = db.Column(
         db.DateTime, nullable=False, default=utcnow, onupdate=utcnow

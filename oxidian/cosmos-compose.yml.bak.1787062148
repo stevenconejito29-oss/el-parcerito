@@ -106,7 +106,6 @@ services:
       RUN_OUTBOX_WORKER: "1"
       OUTBOX_LIMIT: ${OUTBOX_LIMIT:-50}
       OUTBOX_INTERVAL_SECONDS: ${OUTBOX_INTERVAL_SECONDS:-2}
-      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
       REDIS_URL: redis://oxidian-redis:6379/0
       NODE_ENV: production
       PORT: "3000"
@@ -248,7 +247,7 @@ services:
         condition: service_healthy
     volumes:
       - ./nginx.single-domain.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx.services.conf:/etc/nginx/conf.d/services.conf:ro
+      - ./nginx.media-lan.conf:/etc/nginx/conf.d/media-lan.conf:ro
     ports:
       - "${PUBLIC_PORT:-8088}:80"
     healthcheck:
@@ -258,6 +257,8 @@ services:
       retries: 5
     networks:
       - default
+      - media_navidrome
+      - media_immich
     labels:
       cosmos-force-network-secured: "true"
       cosmos-service-name: "oxidian"
@@ -325,3 +326,9 @@ volumes:
   evolution_db_data:
   evolution_redis_data:
   chatbot_data:
+
+networks:
+  media_navidrome:
+    external: true
+  media_immich:
+    external: true

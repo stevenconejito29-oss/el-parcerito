@@ -361,14 +361,14 @@ def notify_roles(roles: list[str], title: str, body: str, url: str = "/",
 def notify_user(user_id: int, title: str, body: str, url: str = "/",
                 icon: Optional[str] = None, badge: Optional[str] = None,
                 *, tag: Optional[str] = None,
-                require_interaction: bool = False) -> None:
+                require_interaction: bool = False, commit: bool = True) -> None:
     """Envía notificación push a todas las suscripciones activas de un usuario."""
     from models import PushSubscription
     subs = PushSubscription.query.filter_by(user_id=user_id, activo=True).all()
     if not subs:
         return
     payload = _build_payload(title, body, url, icon, badge, tag, require_interaction)
-    _dispatch(subs, payload)
+    _dispatch(subs, payload, commit=commit)
 
 
 def notify_delivery_ready(pedido) -> None:

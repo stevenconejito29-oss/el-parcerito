@@ -1,6 +1,14 @@
+# Estado de integración — 14 de septiembre de 2026
+
+La divergencia descrita abajo se ha conciliado en `/tmp/parcerito-release-20260914`:
+se conserva la historia del servidor, los campos y migraciones existentes y las
+mejoras locales. Los 51 conflictos iniciales están resueltos. El Compose conserva
+las redes y el gateway reales del servidor. La publicación se registra por separado
+en `PRODUCTION_READINESS_REVIEW.md`; el diagnóstico siguiente es histórico.
+
 # Revisión de versiones, roles e impresión — 14 de septiembre de 2026
 
-## Por qué no se ven todas las mejoras
+## Diagnóstico previo de versiones
 
 La copia local parte de `2c115a6`; el checkout del servidor en
 `/opt/oxidian-workspace` está limpio y parte de `53feb33`. Comparten el ancestro
@@ -13,7 +21,7 @@ bot, aplicación, controladores de cocina/reparto/admin/identidad, personalizaci
 impresora, estilos de empleados y service worker. Ninguno coincide. Por tanto,
 las pruebas de la versión local no acreditan que esas mejoras estén publicadas.
 
-La simulación de integración, con copia de los cambios locales pendientes,
+La primera simulación de integración, con copia de los cambios locales pendientes,
 produce conflictos en 51 archivos. Incluyen modelos, migraciones, finanzas y
 pedidos, franjas, WhatsApp, chat web y plantillas. Está aislada en
 `/tmp/parcerito-deploy-review-20260914`; **no es una versión publicable**.

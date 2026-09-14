@@ -637,6 +637,45 @@
     <span class="ox-bnav-glow" aria-hidden="true"></span>
   </a>
 </nav>
+<script nonce="{{ csp_nonce() }}">
+// Badge chat: consulta unread cada 30s. Si estamos EN /chat, marca leído
+// al cargar y no muestra badge. Cierra el poll si la pestaña queda oculta
+// (Page Visibility API) para no gastar batería en móvil.
+(function(){
+  const badge = document.getElementById('ox-chat-badge');
+  if (!badge) return;
+  const isChatPage = {{ 'true' if request.endpoint == 'public.chat' else 'false' }};
+  const paint = (n) => {
+    n = Math.max(0, parseInt(n||0, 10));
+    if (!n) { badge.hidden = true; return; }
+    badge.textContent = n > 99 ? '99+' : String(n);
+    badge.hidden = false;
+  };
+  const fetchUnread = async () => {
+    try {
+      const r = await fetch('/api/web-chat/unread', {credentials:'same-origin'});
+      const j = await r.json();
+      if (j && j.ok) paint(j.count);
+    } catch(_) {}
+  };
+  const markRead = async () => {
+    try {
+      await fetch('/api/web-chat/mark-read', {
+        method:'POST', credentials:'same-origin',
+        headers: {'X-CSRFToken': document.querySelector('meta[name=csrf-token]')?.content || ''},
+      });
+      paint(0);
+    } catch(_) {}
+  };
+  if (isChatPage) { markRead(); return; }
+  fetchUnread();
+  let timer = setInterval(fetchUnread, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { clearInterval(timer); timer = null; }
+    else if (!timer) { fetchUnread(); timer = setInterval(fetchUnread, 30000); }
+  });
+})();
+</script>
 {% endif %}
 
 

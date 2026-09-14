@@ -586,6 +586,21 @@ def ai_route():
     if not mensaje:
         return jsonify({"ok": True, "route": "noop", "reason": "empty"})
 
+    # Ventana WA (24h) para canal_service: cada mensaje del cliente por
+    # WhatsApp abre/renueva la ventana Meta de service messages. Se hace
+    # aquí porque ai/route se llama para cada inbound del cliente (bot
+    # externo enruta todo por aquí). Idempotente: sólo actualiza cuando
+    # hay un cliente asociable al teléfono.
+    try:
+        cliente_wa, _ = _cliente_por_telefono(telefono_norm)
+        if cliente_wa is not None and hasattr(cliente_wa, "last_wa_inbound_at"):
+            from models import utcnow as _utcnow
+            cliente_wa.last_wa_inbound_at = _utcnow()
+            from extensions import db as _db
+            _db.session.commit()
+    except Exception:
+        current_app.logger.exception("ai/route: no se pudo actualizar last_wa_inbound_at")
+
     # 1. Override manual (equivale a `!ia` de admin): salta rate limit
     #    pero exige IA configurada.
     if force_ai:

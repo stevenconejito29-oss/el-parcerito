@@ -560,6 +560,54 @@
   </div>
 </section>
 
+{% if delivery_franjas_activo %}
+<div style="margin: .75rem 0; padding: .7rem 1rem; border: 1px solid var(--brand-accent, #003087); border-radius: var(--radius-md, 12px); background: color-mix(in srgb, var(--brand-accent, #003087) 8%, transparent); display:flex; align-items:center; gap:.75rem;">
+  <span aria-hidden="true" style="font-size:1.4rem">📅</span>
+  <div style="flex:1">
+    <strong>Vista franja-céntrica activa</strong>
+    <div style="font-size:.85rem;color:var(--col-muted,#666)">Ordena tus pedidos por hora de despacho y marca listos al vuelo.</div>
+  </div>
+  <a href="{{ url_for('preparador.franjas_hoy') }}" style="padding:.5rem .9rem; background: var(--brand-accent, #003087); color:white; border-radius: var(--radius-sm,8px); text-decoration:none; font-weight:600;">Ver franjas de hoy →</a>
+</div>
+{% endif %}
+
+{% if delivery_franjas_activo %}
+{# ── Agrupación por franja de reparto ────────────────────────────
+   Cabecera "prepara antes de HH:MM" para que cocina trabaje en orden.
+   Sólo aparece cuando el módulo delivery_franjas_activo está encendido.
+   Los pedidos inmediatos siguen en su cola normal más abajo. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
+<section class="df-kitchen-panel" aria-label="Pedidos agrupados por franja de reparto">
+  <header class="df-kitchen-panel__head">
+    <span aria-hidden="true">🕒</span>
+    <span>Reparto por franjas</span>
+    <small class="df-kitchen-panel__hint">Prepara en orden de despacho.</small>
+  </header>
+  {% if pedidos_por_franja %}
+    {% for slot, peds in pedidos_por_franja %}
+    <details class="df-kitchen-group" open>
+      <summary>
+        <strong>{{ slot.fecha.strftime('%d/%m') }} · {{ slot.hora_inicio.strftime('%H:%M') }}–{{ slot.hora_fin.strftime('%H:%M') }}</strong>
+        <span class="df-kitchen-chip">Prepara antes de {{ slot.hora_inicio.strftime('%H:%M') }}</span>
+        <span class="df-kitchen-count">{{ peds|length }} pedido{{ 's' if peds|length != 1 else '' }}</span>
+      </summary>
+      <ul class="df-kitchen-list">
+        {% for p in peds %}
+        <li class="df-kitchen-item">
+          <strong>#{{ p.id }}</strong>
+          <span style="color:var(--col-muted)">{{ p.estado }}</span>
+          <span style="margin-left:auto">{{ '%.2f'|format(p.total|float) }} €</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endfor %}
+  {% else %}
+    <p class="df-kitchen-empty">Todavía no hay pedidos con franja para hoy.<br><small style="font-weight:500">Aparecerán aquí en cuanto un cliente reserve un slot.</small></p>
+  {% endif %}
+</section>
+{% endif %}
+
 {# ── Macros SVG inline (heroicons/lucide) — sin CDN ────────────────
    Iconos monocromos que heredan currentColor. Reutilizables en cards. #}
 {% macro _icon_delivery() %}

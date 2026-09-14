@@ -1,0 +1,88 @@
+{% extends "admin_base.html" %}
+{% block title %}Franjas en vivo — Super admin{% endblock %}
+{% block styles %}
+<meta http-equiv="refresh" content="30">
+<style>
+.fl-wrap { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+.fl-head { display:flex; align-items:baseline; gap:.75rem; margin-bottom: 1rem; flex-wrap:wrap; }
+.fl-head h1 { margin:0; font-size:1.3rem; }
+.fl-head small { color: var(--col-muted, #888); }
+.fl-refresh { margin-left:auto; padding:.4rem .8rem; border-radius: var(--radius-sm,8px);
+              background: var(--col-surface,#fff); border:1px solid var(--col-border,#ddd);
+              text-decoration:none; color: var(--brand-accent,#003087); font-weight:600; }
+.fl-grid { display:grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.fl-card { border:1px solid var(--col-border, #ddd); border-radius: var(--radius-md,12px);
+           background: var(--col-surface,#fff); box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.08));
+           overflow:hidden; display:flex; flex-direction:column; }
+.fl-card.is-en_curso { border-color: var(--theme-success, #5EF097); }
+.fl-card.is-proxima { border-color: var(--brand-accent, #003087); }
+.fl-card.is-cerrada { opacity: .75; }
+.fl-card__head { padding: .75rem 1rem; background: var(--col-surface-alt, #f7f7fb);
+                 border-bottom: 1px solid var(--col-border,#ddd); }
+.fl-hora { font-size: 1.25rem; font-weight: 700; letter-spacing: -.02em; }
+.fl-sub { display:block; font-size:.85rem; color: var(--col-muted, #666); margin-top:.15rem; }
+.fl-sub.is-en_curso { color: var(--theme-success, #2b9c5e); font-weight:600; }
+.fl-sub.is-proxima { color: var(--brand-accent, #003087); font-weight:600; }
+.fl-progress { height: 6px; background: var(--col-surface-alt, #eee); overflow:hidden; }
+.fl-progress__bar { height:100%; background: var(--theme-success, #5EF097); transition: width .3s; }
+.fl-body { padding: .6rem 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: .3rem .8rem;
+           font-size: .9rem; }
+.fl-row { display:flex; justify-content:space-between; align-items:baseline; gap:.4rem; }
+.fl-row strong { font-size: 1rem; }
+.fl-row.is-dim { color: var(--col-muted, #888); }
+.fl-foot { margin-top:auto; padding: .5rem 1rem .75rem; text-align:right; }
+.fl-foot a { color: var(--brand-accent,#003087); font-weight:600; text-decoration:none; font-size:.9rem; }
+.fl-empty { text-align:center; padding: 3rem 1rem; color: var(--col-muted, #888);
+            border:2px dashed var(--col-border, #ddd); border-radius: var(--radius-md,12px); background: var(--col-surface,#fff); }
+.fl-empty p { margin:.4rem 0; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="fl-wrap">
+  <div class="fl-head">
+    <span aria-hidden="true" style="font-size:1.4rem">🚦</span>
+    <h1>Franjas de hoy</h1>
+    <small>{{ hoy.strftime('%d/%m/%Y') }} · actualiza cada 30s · {{ ahora.strftime('%H:%M:%S') }}</small>
+    <a class="fl-refresh" href="{{ url_for('superadmin.franjas_live') }}">↻ Actualizar</a>
+  </div>
+
+  {% if not tarjetas %}
+    <div class="fl-empty">
+      <p style="font-size:2.4rem">🕒</p>
+      <p><strong>No hay franjas activas para hoy.</strong></p>
+      <p>Cuando el admin planifique slots, aparecerán aquí en vivo.</p>
+    </div>
+  {% else %}
+  <div class="fl-grid">
+    {% for t in tarjetas %}
+      {% set s = t.slot %}
+      <article class="fl-card is-{{ t.estado_franja }}" aria-label="Franja {{ s.hora_inicio.strftime('%H:%M') }}">
+        <header class="fl-card__head">
+          <span class="fl-hora">{{ s.hora_inicio.strftime('%H:%M') }} → {{ s.hora_fin.strftime('%H:%M') }}</span>
+          <span class="fl-sub is-{{ t.estado_franja }}">
+            {% if t.estado_franja == 'en_curso' %}en curso · {{ t.minutos }} min restantes
+            {% elif t.estado_franja == 'proxima' %}empieza en {{ t.minutos }} min
+            {% else %}cerrada hace {{ t.minutos }} min{% endif %}
+            · {{ t.total }} pedido{{ 's' if t.total != 1 else '' }}
+          </span>
+        </header>
+        <div class="fl-progress" title="{{ t.pct }}% entregado">
+          <div class="fl-progress__bar" style="width: {{ t.pct }}%"></div>
+        </div>
+        <div class="fl-body">
+          <div class="fl-row"><span>✓ entregados</span><strong>{{ t.entregados }}</strong></div>
+          <div class="fl-row"><span>🛵 en ruta</span><strong>{{ t.en_ruta }}</strong></div>
+          <div class="fl-row"><span>📦 listos</span><strong>{{ t.listos }}</strong></div>
+          <div class="fl-row"><span>🍳 preparando</span><strong>{{ t.armando }}</strong></div>
+          <div class="fl-row is-dim"><span>⏳ pendientes</span><strong>{{ t.pendientes }}</strong></div>
+          <div class="fl-row is-dim"><span>Progreso</span><strong>{{ t.pct }}%</strong></div>
+        </div>
+        <div class="fl-foot">
+          <a href="{{ url_for('superadmin.franjas_live_detalle', slot_id=s.id) }}">Ver detalle →</a>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

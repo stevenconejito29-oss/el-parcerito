@@ -724,6 +724,7 @@ def create_app(env="default"):
             "ALERGENOS_EU": ALERGENOS_EU,
             "asset_version": app.config["ASSET_VERSION"],
             "now": datetime.now,
+            "umami_website_id": (os.environ.get("UMAMI_WEBSITE_ID") or "").strip(),
         }
 
     @app.template_filter("time_ago")
@@ -750,6 +751,32 @@ def create_app(env="default"):
             return dias[value.weekday()]
         except (IndexError, TypeError, ValueError):
             return ""
+
+    @app.template_filter("weekday_es_corto")
+    def weekday_es_corto_filter(value):
+        """Nombre corto del día: Lun/Mar/Mié/Jue/Vie/Sáb/Dom.
+
+        Usado en calendarios y cabeceras compactas. Reusa la fuente única
+        en delivery_slots_service para no duplicar arrays.
+        """
+        if value is None or not hasattr(value, "weekday"):
+            return ""
+        try:
+            from delivery_slots_service import _DIAS_CORTOS_ES
+            return _DIAS_CORTOS_ES[value.weekday()]
+        except (IndexError, TypeError, ValueError, ImportError):
+            return ""
+
+    @app.template_filter("fecha_es_corta")
+    def fecha_es_corta_filter(value):
+        """Formato relativo/corto: 'Hoy · 21 ago' / 'Mañana · 22 ago' / 'Vie 23 ago'."""
+        if value is None:
+            return ""
+        try:
+            from delivery_slots_service import format_fecha_dia_corto
+            return format_fecha_dia_corto(value)
+        except Exception:
+            return str(value)
 
     @app.template_filter("from_json")
     def from_json_filter(value):
@@ -1181,7 +1208,7 @@ def create_app(env="default"):
             style_sources,
             "font-src 'self' data: https://fonts.gstatic.com",
             "img-src 'self' data: blob: https:",
-            "connect-src 'self'",
+            "connect-src 'self' https://stats.elparcerito.com",
             "manifest-src 'self'",
             "worker-src 'self' blob:",
         ))

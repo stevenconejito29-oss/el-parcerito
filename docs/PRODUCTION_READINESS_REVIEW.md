@@ -1,3 +1,23 @@
+# Integración para publicación — 14 de septiembre de 2026
+
+Estado actual: versión integrada; comprobaciones finales y publicación en curso.
+Las secciones posteriores documentan revisiones anteriores y sus resultados históricos.
+
+- Conciliadas las líneas local y del servidor sin eliminar columnas ni migraciones.
+- Copia de PostgreSQL de producción restaurada en una base aislada: no faltan
+  tablas/columnas y no requiere nuevas migraciones. Configuración comercial sin
+  bloqueos para su modo actual: inmediato, efectivo, 16 productos, una zona.
+- WhatsApp conectado; identidad de dos superadmins y dos clientes comprobada.
+  No existe perfil admin en producción. Sin envíos de prueba a personas.
+- Llegada a domicilio usa delivery_code aceptado por el bot; salida de reparto
+  solo usa push/chat web. Se descartan avisos de pedidos terminados.
+- Club consulta el saldo en el PWA tras OTP; no envía balances por WhatsApp.
+- Formularios heredados de franjas respetan pedidos activos y permisos.
+- Backups verificados en el servidor: PostgreSQL, bot SQLite e imágenes;
+  imagen anterior etiquetada `oxidian:rollback-20260914`.
+- Pendiente de validación física: impresora y dispositivos reales. Las pruebas de
+  USB/BLE simulan hardware; iPhone utiliza impresión del sistema/red compatible.
+
 # Comprobación de apertura — 13 de septiembre de 2026
 
 ## Resultado

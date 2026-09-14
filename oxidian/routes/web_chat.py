@@ -7,7 +7,7 @@ from models import WebChatMessage
 from web_chat_service import (
     MAX_MESSAGE, add_message, bot_reply, conversation_for_visitor,
     cancel_visitor_order, last_reorderable_order, reorder_visitor_order, request_human, resume_bot, serialise_conversation,
-    serialise_message, visitor_orders,
+    serialise_message, visitor_orders, unread_count_for_visitor, mark_conversation_read,
 )
 
 web_chat_bp = Blueprint("web_chat", __name__)
@@ -157,3 +157,24 @@ def cancel_order(order_id):
 def reorder_order(order_id):
     ok, message, redirect_url = reorder_visitor_order(order_id)
     return jsonify({"ok": ok, "message": message, "redirect_url": redirect_url}), (200 if ok else 403)
+
+
+@web_chat_bp.get("/unread")
+@(limiter.limit("120 per minute") if limiter else (lambda f: f))
+def unread():
+    """Nº mensajes no leídos del staff (sender in agent|system) para el
+    visitante actual desde su última visita al /chat. La sesión guarda el
+    timestamp de la última lectura (no requiere migración BD).
+    """
+    try:
+        n = unread_count_for_visitor()
+    except Exception:
+        n = 0
+    return jsonify({"ok": True, "count": int(n)})
+
+@web_chat_bp.post("/mark-read")
+@(limiter.limit("60 per minute") if limiter else (lambda f: f))
+def mark_read():
+    """Marca el chat como leído para esta sesión (llamar al abrir /chat)."""
+    mark_conversation_read()
+    return jsonify({"ok": True})

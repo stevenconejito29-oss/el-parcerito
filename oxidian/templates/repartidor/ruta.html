@@ -199,6 +199,35 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
   .route-board .route-contents summary { min-height: 42px; padding: .48rem .58rem; font-size: .7rem; }
 }
 
+/* Barra de acción flotante para móvil: aparece cuando el rider tiene UN
+   pedido en ruta (caso común: 1 entrega activa en la calle). No duplica
+   formularios — hace scroll+focus al botón principal del pedido activo. */
+.route-fab-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  display: flex; gap: .5rem; padding: .55rem .7rem;
+  padding-bottom: calc(.55rem + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--col-surface, #fff) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--col-border, #e0d8cc);
+  box-shadow: 0 -6px 18px rgba(0,0,0,.12);
+}
+.route-fab-bar .route-fab-btn {
+  flex: 1; min-height: 56px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: .8rem; font-weight: 900; font-size: 1rem; text-decoration: none;
+  background: var(--brand-primary, #5a3a1e); color: var(--brand-on-primary, #fff);
+  border: 0; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.route-fab-bar .route-fab-btn.is-secondary {
+  background: color-mix(in srgb, var(--col-text, #1a1a1a) 8%, transparent);
+  color: var(--col-text, #1a1a1a);
+  border: 1px solid var(--col-border, #e0d8cc);
+  flex: 0 0 auto; min-width: 56px;
+}
+@media (min-width: 900px) { .route-fab-bar { display: none; } }
+.route-board.has-fab { padding-bottom: 82px; }
+.route-board.has-fab { padding-bottom: calc(82px + env(safe-area-inset-bottom, 0px)); }
+
 /* Landscape (menos común pero soportado): compactar hero y avatar, y
    permitir 2 columnas de pedidos si hay ancho suficiente. Nunca ocultar
    info crítica (dirección, código, botones). */
@@ -697,6 +726,10 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
         <div class="rider-stepper" aria-label="Proceso de esta entrega">
           <span class="is-active"><i>1</i><b>Navega</b></span><span class="{% if pedido.id in codigo_enviado_ids %}is-active{% endif %}"><i>2</i><b>Verifica</b></span><span><i>3</i><b>Entrega</b></span>
         </div>
+        <div class="rider-stepper" aria-label="Proceso de esta entrega">
+          <span class="is-active"><i>1</i><b>Navega</b></span><span class="{% if pedido.id in codigo_enviado_ids %}is-active{% endif %}"><i>2</i><b>Verifica</b></span><span><i>3</i><b>Entrega</b></span>
+        </div>
+        <button type="button" class="rider-arrived" data-rider-arrived>Ya llegué · verificar entrega</button>
       </div>
       {% endif %}
 
@@ -894,6 +927,32 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
   </section>
 
 </div>
+{# Barra de acción flotante — solo móvil (CSS oculta ≥900px) y si hay 1
+   pedido en ruta activo. Los botones apuntan al principal del pedido; el
+   click hace scroll+focus al form correspondiente (declarativo, sin JS
+   pesado). Un solo pedido = decisión clara en la calle. #}
+{% if en_ruta and en_ruta|length == 1 %}
+{% set _p = en_ruta[0] %}
+<nav class="route-fab-bar" aria-label="Acciones rápidas del pedido en curso">
+  {% if _p.cliente.telefono %}
+  <a class="route-fab-btn is-secondary" href="tel:{{ _p.cliente.telefono }}" aria-label="Llamar al cliente">📞</a>
+  {% endif %}
+  {% if not _p.en_camino_at %}
+  <a class="route-fab-btn" href="#pedido-{{ _p.id }}-acciones" data-fab-scroll="pedido-{{ _p.id }}">🛵 Salir a repartir</a>
+  {% elif not _p.en_punto_encuentro %}
+  <a class="route-fab-btn" href="#pedido-{{ _p.id }}-acciones" data-fab-scroll="pedido-{{ _p.id }}">🚪 En la puerta</a>
+  {% else %}
+  <a class="route-fab-btn" href="#pedido-{{ _p.id }}-acciones" data-fab-scroll="pedido-{{ _p.id }}">✅ Confirmar entrega</a>
+  {% endif %}
+</nav>
+<script nonce="{{ csp_nonce() }}">
+  document.querySelector('.route-board')?.classList.add('has-fab');
+  document.querySelectorAll('[data-fab-scroll]').forEach(a => a.addEventListener('click', ev => {
+    const card = document.querySelector('[data-pedido-id="' + a.dataset.fabScroll + '"]');
+    if (card) { ev.preventDefault(); card.scrollIntoView({behavior:'smooth', block:'center'}); }
+  }));
+</script>
+{% endif %}
 </div>
 {% endblock %}
 
