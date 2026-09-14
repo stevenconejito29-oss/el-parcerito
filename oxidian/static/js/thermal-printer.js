@@ -232,6 +232,9 @@
     const url = `/pos/ticket/${pedidoId}/escpos?reprint=${reprint}`;
     const resp = await fetch(url, { credentials: 'same-origin' });
     if (!resp.ok) throw new Error(`El servidor devolvió ${resp.status}`);
+    if (resp.redirected || !(resp.headers.get('content-type') || '').includes('application/vnd.escpos')) {
+      throw new Error('No se recibió un ticket válido. Revisa tu sesión antes de imprimir.');
+    }
     const buf = new Uint8Array(await resp.arrayBuffer());
     // Auto-restore lazy: si no hay device pero hay hint persistido y
     // getDevices está disponible, reconecta antes de escribir.

@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {chromium} from 'playwright-core';
+import {chromium,webkit} from 'playwright-core';
 const root=process.cwd(), out=process.env.ROLE_REVIEW_OUTPUT || '/tmp/parcerito-role-review';
 const views=JSON.parse(fs.readFileSync(path.join(out,'manifest.json')));
-const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,headless:true,args:['--no-sandbox']});
+const engine = process.env.REVIEW_BROWSER === 'webkit' ? webkit : chromium;
+const browser=await engine.launch({...(engine === chromium ? {executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,args:['--no-sandbox']} : {}),headless:true});
 const results=[];
 try {
   for(const view of views) for(const [mode,width,height,theme] of [['small',320,740,'light'],['mobile',375,812,'light'],['landscape',852,393,'light'],['desktop',1280,900,'light'],['dark',375,812,'dark']]) {

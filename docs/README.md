@@ -23,6 +23,7 @@ separar claramente la operación actual de notas históricas y capturas generada
 | [Comprobación de apertura](PRODUCTION_READINESS_REVIEW.md) | Cobro al recibir, pruebas de personalización/tienda y estado de la verificación del servidor. |
 | [Identidad visual colombiana](VISUAL_IDENTITY.md) | Tokens, componentes y criterios culturales del escaparate. |
 | [Desarrollo seguro](DEVELOPMENT.md) | Dónde implementar cada cambio, convenciones y pruebas. |
+| [Versiones publicadas e impresión](DEPLOYMENT_PRINTER_REVIEW.md) | Divergencia local/servidor, identidad real de WhatsApp y compatibilidad de impresión USB/BLE/AirPrint. |
 | [Operación y despliegue](OPERATIONS.md) | Entornos, despliegue, salud, rollback y datos sensibles. |
 | [Claves configurables](../oxidian/docs/CONFIG_KEYS.md) | Catálogo de claves editables en `SiteConfig`. |
 | [QA de lanzamiento](../oxidian/docs/QA_LANZAMIENTO.md) | Controles funcionales y visuales previos a producción. |

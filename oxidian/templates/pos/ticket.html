@@ -307,6 +307,7 @@
 </button>
 
 <script nonce="{{ csp_nonce() }}">
+  document.querySelector('[data-print]')?.addEventListener('click', () => window.print());
   // Auto-print: acepta tanto ?autoprint=1 como ?auto_print=1 (cualquier canal).
   if (/[?&](autoprint|auto_print)=1/.test(window.location.search)) {
     setTimeout(() => window.print(), 400);

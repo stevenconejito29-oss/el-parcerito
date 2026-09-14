@@ -74,3 +74,11 @@ for name,role,route in views:
     manifest.append({'name':name,'role':role,'route':route})
     print(name,response.status_code,flush=True)
 (out/'manifest.json').write_text(json.dumps(manifest))
+
+# Ticket independiente: no hereda los listeners del layout de roles.
+with client.session_transaction() as session:
+    session['_user_id'] = str(users['cocina'])
+    session['_fresh'] = True
+ticket = client.get('/pos/ticket/1')
+assert ticket.status_code == 200
+(out/'ticket.html').write_bytes(ticket.data)
