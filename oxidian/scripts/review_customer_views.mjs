@@ -26,10 +26,12 @@ try {
       const filename=path.join(root,url.pathname);
       if(fs.existsSync(filename)&&fs.statSync(filename).isFile())return route.fulfill({path:filename});
     }
+    if(url.pathname==='/pedido/1/estado')return route.fulfill({json:{ok:true,active:true,status:'pendiente'}});
+    if(route.request().headers()['hx-request'])return route.fulfill({status:204});
     if(url.pathname==='/api/web-chat/state')return route.fulfill({json:{ok:true,conversation:{status:'bot'},messages:[{id:1,sender:'bot',body:'Hola. Puedo ayudarte con tu compra, entrega o pago.'}],orders:[]}});
     return route.fulfill({json:{ok:true}});
    });
-   await page.goto('http://pwa.test'+({menu:'/',carrito:'/carrito',chat:'/ayuda',checkout:'/checkout',producto:'/producto/1',club:'/club',legal:'/informacion-legal',seguimiento:'/pedido/1/confirmado',franjas:'/delivery/preview'}[name]));
+   await page.goto('http://pwa.test'+({menu:'/',carrito:'/carrito',chat:'/ayuda',checkout:'/checkout',producto:'/producto/1',club:'/club',legal:'/informacion-legal',seguimiento:'/pedido/1/confirmado',franjas:'/delivery/preview'}[name]), {waitUntil:'domcontentloaded'});
    const privacy=page.locator('#ox-privacy-banner [data-privacy-reject]');
    if(await privacy.isVisible())await privacy.click();
    await page.waitForTimeout(250);
@@ -62,13 +64,14 @@ try {
    }
    const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);
    report.push({name,mode,overflow,errors});
+   console.log(name,mode,overflow,errors);
    if(name==='chat'){
     assert.equal(await page.locator('.wcp-help').getAttribute('open'),null);
     const form=await page.locator('#wcp-form').boundingBox();const nav=await page.locator('.ox-bottom-nav').boundingBox();
     assert.ok(form.height>=44);
     if(nav&&width<768)assert.ok(form.y+form.height<=nav.y+1,`Chat composer overlaps navigation: ${mode}`);
    }
-   await page.screenshot({path:`${out}/${name}-${mode}.png`,fullPage:true});
+   if(['mobile','desktop'].includes(mode) && ['menu','carrito','chat','checkout','club'].includes(name)) await page.screenshot({animations:'disabled',timeout:10000,path:`${out}/${name}-${mode}.png`,fullPage:true});
    await context.close();
   }
  }

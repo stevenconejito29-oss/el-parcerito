@@ -32,7 +32,7 @@ try {
     }) : false;
     const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);
     const offenders=overflow?await page.evaluate(()=>[...document.querySelectorAll('main *')].filter(el=>{const r=el.getBoundingClientRect();return r.width&&r.right>innerWidth+1;}).slice(0,6).map(el=>({tag:el.tagName,cls:el.className,text:el.textContent.trim().slice(0,70)}))):[];
-    if(['mobile','desktop'].includes(mode)) await page.screenshot({path:path.join(out,`${view.name}-${mode}.png`),fullPage:true});
+    if(['mobile','desktop'].includes(mode)) await page.screenshot({animations:'disabled',timeout:10000,path:path.join(out,`${view.name}-${mode}.png`),fullPage:true});
     // Los detalles de incidencia deben abrirse sin habilitar una cancelación accidental.
     const incident=page.locator('summary').filter({hasText:'Resolver una incidencia'}).first();
     let incidentOverflow=false;
