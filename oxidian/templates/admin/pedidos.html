@@ -22,49 +22,52 @@
 <div class="work-kpis">
   <div class="work-panel work-kpi"><span>Resultados</span><strong>{{ pagination.total }}</strong><small>{{ pedidos|length }} en esta página</small></div>
   <div class="work-panel work-kpi"><span>Activos visibles</span><strong style="color:var(--work-info)">{{ activos|length }}</strong><small>En esta página</small></div>
-  <div class="work-panel work-kpi"><span>Bizum por cobrar</span><strong>{{ pendientes_pago|length }}</strong><small>No bloquea preparación</small></div>
+  <div class="work-panel work-kpi"><span>Bizum por cobrar</span><strong>{{ pendientes_pago|length }}</strong><small>En esta página · no bloquea preparación</small></div>
   <a href="{{ url_for('admin.pedidos', confirmacion='pending') }}" class="work-panel work-kpi" style="text-decoration:none;color:inherit" title="Filtrar por pedidos sin verificar">
     <span>Sin verificar</span>
     <strong style="color:{{ 'var(--work-warn,#c0850a)' if sin_verificar else 'inherit' }}">{{ sin_verificar|length }}</strong>
-    <small>Verificación WhatsApp pendiente</small>
+    <small>En esta página · WhatsApp pendiente</small>
   </a>
   <div class="work-panel work-kpi"><span>Importe visible</span><strong>€{{ "%.2f"|format(pedidos|sum(attribute='total')) }}</strong><small>En esta página</small></div>
 </div>
 
-<div class="ox-card p-3 mb-4">
-  <div class="flex items-center justify-between gap-3 flex-wrap">
-  <div class="flex gap-2 flex-wrap text-xs">
-    <a href="{{ url_for('admin.pedidos') }}" class="ord-filter {{ 'active' if not request.args.get('estado') and not request.args.get('origen') and not request.args.get('epicentro') and not request.args.get('confirmacion') else '' }}">Todos</a>
-    {% for estado in ['pendiente','armando','listo','en_ruta','entregado','cancelado'] %}
-    <a href="{{ url_for('admin.pedidos', estado=estado) }}" class="ord-filter {{ 'active' if request.args.get('estado') == estado else '' }}">{{ estado }}</a>
-    {% endfor %}
-    <span class="w-px self-stretch" style="background:var(--col-border)"></span>
-    <a href="{{ url_for('admin.pedidos', origen='online') }}" class="ord-filter {{ 'active' if request.args.get('origen') == 'online' else '' }}">Web</a>
-    <a href="{{ url_for('admin.pedidos', origen='whatsapp') }}" class="ord-filter {{ 'active' if request.args.get('origen') == 'whatsapp' else '' }}">WhatsApp</a>
-    <a href="{{ url_for('admin.pedidos', origen='presencial') }}" class="ord-filter {{ 'active' if request.args.get('origen') == 'presencial' else '' }}">POS</a>
-    <a href="{{ url_for('admin.pedidos', epicentro='1') }}" class="ord-filter {{ 'active' if request.args.get('epicentro') == '1' else '' }}">Epicentro</a>
-    <a href="{{ url_for('admin.pedidos', epicentro='0') }}" class="ord-filter {{ 'active' if request.args.get('epicentro') == '0' else '' }}">Fuera</a>
-    <span class="w-px self-stretch" style="background:var(--col-border)"></span>
-    <a href="{{ url_for('admin.pedidos', confirmacion='pending') }}" class="ord-filter {{ 'active' if request.args.get('confirmacion') == 'pending' else '' }}">Sin verificar</a>
-    <a href="{{ url_for('admin.pedidos', confirmacion='confirmed') }}" class="ord-filter {{ 'active' if request.args.get('confirmacion') == 'confirmed' else '' }}">Verificados</a>
+<form method="GET" action="{{ url_for('admin.pedidos') }}" class="ox-card order-filters">
+  <div class="order-filters-main">
+    <label>Estado
+      <select name="estado" class="ord-input">
+        <option value="">Todos los estados</option>
+        {% for value, label in [('pendiente','Por preparar'),('armando','En preparación'),('listo','Listo para salir'),('en_ruta','En reparto'),('entregado','Entregado'),('cancelado','Cancelado')] %}
+        <option value="{{ value }}" {% if request.args.get('estado') == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Cliente o teléfono
+      <input type="text" name="cliente" value="{{ request.args.get('cliente','') }}" class="ord-input" placeholder="Buscar cliente">
+    </label>
+    <button type="submit" class="work-btn work-btn-primary">Buscar</button>
+    {% if request.args %}<a href="{{ url_for('admin.pedidos') }}" class="work-btn work-btn-ghost">Limpiar filtros</a>{% endif %}
   </div>
-  <form method="GET" action="{{ url_for('admin.pedidos') }}" class="ord-search">
-    {# Preservamos filtros de estado/origen que ya trae la URL. #}
-    {% if request.args.get('estado') %}<input type="hidden" name="estado" value="{{ request.args.get('estado') }}">{% endif %}
-    {% if request.args.get('origen') %}<input type="hidden" name="origen" value="{{ request.args.get('origen') }}">{% endif %}
-    {% if request.args.get('epicentro') %}<input type="hidden" name="epicentro" value="{{ request.args.get('epicentro') }}">{% endif %}
-    {% if request.args.get('confirmacion') %}<input type="hidden" name="confirmacion" value="{{ request.args.get('confirmacion') }}">{% endif %}
-    <input type="number" name="id" placeholder="ID pedido" value="{{ request.args.get('id','') }}" class="ord-input">
-    <input type="text"   name="cliente" placeholder="Cliente o tel." value="{{ request.args.get('cliente','') }}" class="ord-input">
-    <input type="date"   name="desde" title="Desde" value="{{ request.args.get('desde','') }}" class="ord-input">
-    <input type="date"   name="hasta" title="Hasta" value="{{ request.args.get('hasta','') }}" class="ord-input">
-    <button type="submit">Buscar</button>
-    {% if request.args.get('id') or request.args.get('cliente') or request.args.get('desde') or request.args.get('hasta') %}
-    <a href="{{ url_for('admin.pedidos') }}" class="ord-clear" title="Limpiar filtros">✕</a>
-    {% endif %}
-  </form>
-  </div>
-</div>
+  <details class="order-filters-extra" {% if request.args.get('origen') or request.args.get('epicentro') or request.args.get('confirmacion') or request.args.get('id') or request.args.get('desde') or request.args.get('hasta') %}open{% endif %}>
+    <summary>Más filtros · número, fechas, canal y verificación</summary>
+    <div class="order-filters-main">
+      <label>Número de pedido<input type="number" name="id" value="{{ request.args.get('id','') }}" class="ord-input"></label>
+      <label>Desde<input type="date" name="desde" value="{{ request.args.get('desde','') }}" class="ord-input"></label>
+      <label>Hasta<input type="date" name="hasta" value="{{ request.args.get('hasta','') }}" class="ord-input"></label>
+      {% for name, title, options in [
+        ('origen','Canal',[('online','Web'),('whatsapp','WhatsApp'),('presencial','POS')]),
+        ('epicentro','Zona',[('1','Epicentro'),('0','Fuera del epicentro')]),
+        ('confirmacion','Verificación',[('pending','Sin verificar'),('confirmed','Verificados')])
+      ] %}
+      <label>{{ title }}
+        <select name="{{ name }}" class="ord-input">
+          <option value="">Todos</option>
+          {% for value, label in options %}<option value="{{ value }}" {% if request.args.get(name) == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endfor %}
+    </div>
+  </details>
+</form>
 
 <div class="space-y-3">
 {% for pedido in pedidos %}

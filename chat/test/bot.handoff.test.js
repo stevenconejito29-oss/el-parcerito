@@ -54,6 +54,12 @@ const clientA = '34610000001@s.whatsapp.net';
 const clientB = '34610000002@s.whatsapp.net';
 
 function clearState() {
+  // Perfiles de BD explícitos: las variables de entorno ya no conceden roles.
+  setCfg('whatsapp_role_profiles', JSON.stringify([
+    {telefono:'34600000001', rol:'super_admin', capabilities:['handoff']},
+    {telefono:'34600000002', rol:'admin', capabilities:['handoff']},
+    {telefono:'34600000003', rol:'admin', capabilities:['handoff']},
+  ]));
   db.exec(`
     DELETE FROM handoff_messages;
     DELETE FROM handoffs;
@@ -139,7 +145,7 @@ test('el menú administrativo respeta rol y módulos sincronizados', () => {
   const menu = adminMenu(normalAdmin);
   assert.match(menu, /Panel Admin/);
   assert.match(menu, /Pedidos en riesgo/);
-  assert.match(menu, /Atención humana/);
+  assert.match(menu, /alertas de chats/);
   assert.doesNotMatch(menu, /Administradores WhatsApp/);
   assert.doesNotMatch(menu, /Modo emergencia/);
   assert.equal(adminCan(normalAdmin, 'products'), true);
@@ -175,12 +181,11 @@ test('falla cerrado si el número está en env pero no tiene perfil BD', () => {
   );
 });
 
-test('un número adicional sin cuenta queda limitado a atención humana', () => {
-  const support = '34600000010@s.whatsapp.net';
-  const menu = adminMenu(support);
-  assert.match(menu, /Agente de atención/);
-  assert.match(menu, /Atención humana/);
-  assert.doesNotMatch(menu, /Productos y precios|Abrir \/ cerrar tienda|Modo emergencia/);
+test('un número sin cuenta no recibe capacidades ni menú interno', () => {
+  const jid='34600000010@s.whatsapp.net';
+  assert.equal(isAdminJid(jid),false);
+  assert.equal(adminCan(jid,'handoff'),false);
+  assert.doesNotMatch(adminMenu(jid),/Panel Admin|Abrir \/ cerrar tienda|alertas de chats/);
 });
 
 test('el menú del cliente oculta puntos y delivery cuando están desactivados', () => {
@@ -362,80 +367,46 @@ test('la seleccion numerica usa el snapshot mostrado al administrador', async ()
   assert.equal(getHandoff(clientB).admin_jid, adminA);
 });
 
-test('TOMAR reclama el primer cliente sin copiar teléfonos', async () => {
+test('TOMAR abre la bandeja web sin asignar ni exponer clientes', async () => {
   createHandoffRequest(clientA);
-  saveSesion({
-    jid: adminA, nombre: 'Responsable', role: 'admin', estado: 'admin_menu',
-    carrito: [], pending: {}, zona_id: null, active_client_jid: null,
-  });
-
-  await _test.handleMessage(adminA, 'TOMAR', 'Responsable');
-
-  assert.equal(getHandoff(clientA).admin_jid, adminA);
-  assert.equal(getSesion(adminA).estado, 'admin_chat');
+  saveSesion({jid:adminA,nombre:'Responsable',role:'admin',estado:'admin_menu',pending:{}});
+  await _test.handleMessage(adminA,'TOMAR','Responsable');
+  assert.equal(getSesion(adminA).estado,'admin_menu');
+  assert.equal(getHandoff(clientA).admin_jid,null);
+  const sent=db.prepare("SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1").get().detalle;
+  assert.match(sent,/panel seguro/i);
+  assert.doesNotMatch(sent,/34610000001/);
 });
 
-test('COLA muestra identidad de base y conserva un snapshot numérico', async () => {
+test('COLA abre la bandeja web sin asignar ni exponer clientes', async () => {
   createHandoffRequest(clientA);
-  saveSesion({
-    jid: clientA, nombre: 'Danna Cliente', role: 'client', estado: 'main_menu',
-    carrito: [], pending: {}, zona_id: null, active_client_jid: null,
-  });
-  saveSesion({
-    jid: adminA, nombre: 'Responsable', role: 'admin', estado: 'admin_menu',
-    carrito: [], pending: {}, zona_id: null, active_client_jid: null,
-  });
-  db.exec('DELETE FROM logs;');
-
-  await _test.handleMessage(adminA, 'COLA', 'Responsable');
-
-  const session = getSesion(adminA);
-  assert.equal(session.estado, 'admin_take_wait');
-  assert.deepEqual(session.pending.handoff_client_jids, [clientA]);
-  const sent = db.prepare(`
-    SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1
-  `).get()?.detalle || '';
-  assert.match(sent, /Danna Cliente/);
-  assert.match(sent, /•••• 0001/);
-  assert.doesNotMatch(sent, /34610000001/);
+  saveSesion({jid:adminA,nombre:'Responsable',role:'admin',estado:'admin_menu',pending:{}});
+  await _test.handleMessage(adminA,'COLA','Responsable');
+  assert.equal(getSesion(adminA).estado,'admin_menu');
+  assert.equal(getHandoff(clientA).admin_jid,null);
+  const sent=db.prepare("SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1").get().detalle;
+  assert.match(sent,/panel seguro/i);
+  assert.doesNotMatch(sent,/34610000001/);
 });
 
-test('/fin cierra sólo el chat actual y nunca toma el siguiente automáticamente', async () => {
-  createHandoffRequest(clientA);
-  createHandoffRequest(clientB);
-  assert.equal(assignHandoff(clientA, adminA).changes, 1);
-  saveSesion({
-    jid: adminA, nombre: 'Responsable', role: 'admin', estado: 'admin_chat',
-    carrito: [], pending: {}, zona_id: null, active_client_jid: clientA,
-  });
-
-  await _test.handleMessage(adminA, '/fin', 'Responsable');
-
-  assert.equal(getHandoff(clientA), null);
-  assert.equal(getHandoff(clientB).admin_jid, null);
-  assert.equal(getSesion(adminA).estado, 'admin_menu');
+test('/fin migra una sesión antigua a la bandeja sin tomar otro cliente', async () => {
+  createHandoffRequest(clientA); createHandoffRequest(clientB);
+  assignHandoff(clientA,adminA);
+  saveSesion({jid:adminA,nombre:'Responsable',role:'admin',estado:'admin_chat',active_client_jid:clientA,pending:{}});
+  await _test.handleMessage(adminA,'/fin','Responsable');
+  assert.equal(getSesion(adminA).estado,'admin_menu');
+  assert.equal(getHandoff(clientA).admin_jid,null);
+  assert.equal(getHandoff(clientB).admin_jid,null);
 });
 
-test('/transferir elige agente por nombre y crea su sesión de chat', async () => {
-  setCfg('whatsapp_role_profiles', JSON.stringify([
-    { telefono: '34600000001', nombre: 'Ana', rol: 'super_admin', capabilities: ['handoff'] },
-    { telefono: '34600000002', nombre: 'Bruno', rol: 'admin', capabilities: ['handoff'] },
-  ]));
-  createHandoffRequest(clientA);
-  assert.equal(assignHandoff(clientA, adminA).changes, 1);
-  saveSesion({
-    jid: adminA, nombre: 'Ana', role: 'admin', estado: 'admin_chat',
-    carrito: [], pending: {}, zona_id: null, active_client_jid: clientA,
-  });
-
-  await _test.handleMessage(adminA, '/transferir', 'Ana');
-  assert.equal(getSesion(adminA).estado, 'admin_transfer_wait');
-  await _test.handleMessage(adminA, '1', 'Ana');
-
-  assert.equal(getHandoff(clientA).admin_jid, adminB);
-  assert.equal(getSesion(adminB).estado, 'admin_chat');
-  assert.equal(getSesion(adminB).active_client_jid, clientA);
-  setCfg('whatsapp_role_profiles', '[]');
+test('/transferir dirige a la bandeja y conserva el historial sin enviar al cliente', async () => {
+  createHandoffRequest(clientA); assignHandoff(clientA,adminA);
+  queueHandoffMessage(clientA,'client','Mensaje pendiente');
+  saveSesion({jid:adminA,nombre:'Responsable',role:'admin',estado:'admin_chat',active_client_jid:clientA,pending:{}});
+  await _test.handleMessage(adminA,'/transferir','Responsable');
+  assert.equal(getSesion(adminA).estado,'admin_menu');
+  assert.equal(getHandoff(clientA).admin_jid,null);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM handoff_messages WHERE client_jid=?').get(clientA).c,1);
 });
 
 test('eventos inbound repetidos se persisten una sola vez', () => {
@@ -722,6 +693,7 @@ test('la configuracion runtime de admins reencola chats al retirar un numero', a
     let payload = await response.json();
     assert.deepEqual(payload.admins.runtime, [runtimePhone]);
 
+    setCfg('whatsapp_role_profiles', JSON.stringify([{telefono:runtimePhone,rol:'admin',capabilities:['handoff']}]));
     createHandoffRequest(clientA);
     assert.equal(assignHandoff(clientA, runtimeJid).changes, 1);
     db.prepare(`
@@ -749,5 +721,34 @@ test('la configuracion runtime de admins reencola chats al retirar un numero', a
     server.close();
     db.prepare(`DELETE FROM config WHERE key='runtime_admins'`).run();
     clearState();
+  }
+});
+
+test('el canal de cliente rechaza campañas, reseñas y avisos internos', async () => {
+  clearState();
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (route, body) => fetch(`${base}${route}`, {
+    method: 'POST', headers: {'Content-Type':'application/json', 'X-API-Key':process.env.OXIDIAN_KEY},
+    body: JSON.stringify(body),
+  });
+  try {
+    for (const route of ['/api/bot/broadcast', '/api/bot/review-request']) {
+      const response = await post(route, {telefono:'34610000001', pedido_id:1,
+        mensajes:[{telefono:'34610000001', mensaje:'promo', transactional:true}]});
+      assert.equal(response.status, 410);
+    }
+    for (const purpose of ['', 'manual', 'points_balance', 'marketing', 'review_request']) {
+      assert.equal((await post('/api/bot/message', {telefono:'34610000001', mensaje:'QA', purpose})).status, 422);
+    }
+    assert.equal((await post('/api/bot/message', {telefono:'34610000001', mensaje:'QA', purpose:'web_chat_handoff'})).status, 403);
+    assert.equal(db.prepare("SELECT COUNT(*) c FROM logs WHERE evento='send_attempt'").get().c, 0);
+    for (const purpose of ['order_confirmation', 'delivery_code', 'points_otp', 'canje_codigo']) {
+      assert.equal((await post('/api/bot/message', {telefono:'34610000001', mensaje:'QA', purpose})).status, 200);
+    }
+    assert.equal((await post('/api/bot/message', {telefono:'34600000001', mensaje:'QA', purpose:'web_chat_handoff'})).status, 200);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
   }
 });

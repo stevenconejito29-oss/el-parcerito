@@ -9,18 +9,27 @@
     {% if session.get('push_cliente_id') %}<button type="button" class="wcp-notify" data-push-activate aria-label="Activar avisos del chat">🔔<span>Avisos</span></button>{% endif %}
   </header>
   <section class="wcp-conversation" aria-label="Conversación">
-    <div class="wcp-messages" id="wcp-messages" role="log" aria-live="polite"></div>
+    <div class="wcp-message-tools">
+      <button type="button" id="wcp-history" hidden>Ver mensajes anteriores</button>
+      <button type="button" id="wcp-latest" hidden>Ir a mensajes nuevos ↓</button>
+      <button type="button" id="wcp-retry" hidden>Reintentar envío pendiente</button>
+    </div>
+    <div class="wcp-messages" id="wcp-messages" role="log" aria-label="Mensajes de la conversación" aria-live="polite" aria-relevant="additions"></div>
+    <details class="wcp-help">
+    <summary>Preguntas frecuentes y ayuda</summary>
     <div class="wcp-quick" id="wcp-quick" aria-label="Preguntas rápidas">
       <button type="button" data-wcp-quick="¿Cuál es el horario?"><span>🕐</span>Horario</button>
       {% if brand.delivery %}<button type="button" data-wcp-quick="¿Cómo funciona el delivery?"><span>🛵</span>Delivery</button>{% endif %}
-      {% if brand.puntos %}<button type="button" data-wcp-quick="¿Cómo funcionan los cafecitos?"><span>☕</span>Cafecitos</button>{% endif %}
+      {% if brand.puntos %}<button type="button" data-wcp-quick="¿Cómo funcionan los puntos y sus recompensas?"><span aria-hidden="true">☕</span>{{ ui.loyalty_name }}</button>{% endif %}
       <button type="button" data-wcp-quick="¿Qué formas de pago tienen?"><span>💵</span>Pagos</button>
       <button type="button" data-wcp-quick="¿Cómo hago un pedido paso a paso?"><span>🛍️</span>Cómo comprar</button>
       <button type="button" data-wcp-quick="¿Cómo sigo mi pedido y veo al repartidor?"><span>📍</span>Mi pedido</button>
       <button type="button" data-wcp-quick="¿Cómo cancelo un pedido?"><span>↩️</span>Cancelar</button>
       <button type="button" data-wcp-quick="¿Cómo instalo la app y activo notificaciones?"><span>🔔</span>Instalar app</button>
+      <button type="button" data-wcp-quick="Quiero hablar con una persona"><span>💬</span>Hablar con el equipo</button>
     </div>
-    <div class="wcp-orders" id="wcp-orders" aria-label="Pedidos que puedes cancelar" hidden></div>
+    </details>
+    <div class="wcp-orders" id="wcp-orders" aria-label="Tus pedidos y acciones disponibles" hidden></div>
     <div class="wcp-reorder" id="wcp-reorder" hidden></div>
     <div class="wcp-handoff" id="wcp-handoff" hidden>
       <p id="wcp-handoff-copy">¿Quieres que una persona del equipo continúe este chat?</p>

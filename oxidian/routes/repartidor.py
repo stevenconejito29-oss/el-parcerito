@@ -679,6 +679,9 @@ def tomar_pedido(pedido_id):
         flash("La operación está configurada por franjas. Elige una salida desde el panel de franjas.", "warning")
         return redirect(url_for("repartidor.franjas_panel"))
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
+    if pedido.slot_id is not None:
+        flash("Este pedido pertenece a una franja. Recógelo desde su salida programada.", "warning")
+        return redirect(url_for("repartidor.franjas_panel"))
     if _es_admin_operativo():
         flash("Asigna el pedido a un repartidor desde la cola administrativa.", "warning")
         return redirect(url_for("repartidor.ruta"))
@@ -754,7 +757,7 @@ def tomar_multiples():
     capacidad = capacidad_repartidor(current_user.id)
     for pid in ids:
         pedido = Order.query.filter_by(id=pid).with_for_update().first()
-        if pedido is None or pedido.estado != "listo" or not pedido.requiere_reparto:
+        if pedido is None or pedido.slot_id is not None or pedido.estado != "listo" or not pedido.requiere_reparto:
             omitidos += 1
             continue
         if pedido.repartidor_id not in (None, current_user.id):
@@ -805,7 +808,7 @@ def salir_multiples():
     capacidad = None if _es_admin_operativo() else capacidad_repartidor(current_user.id)
     for pid in ids:
         pedido = Order.query.filter_by(id=pid).with_for_update().first()
-        if pedido is None or pedido.estado != "listo" or not pedido.requiere_reparto:
+        if pedido is None or pedido.slot_id is not None or pedido.estado != "listo" or not pedido.requiere_reparto:
             fallidos.append(str(pid))
             continue
         if not _es_admin_operativo() and pedido.repartidor_id not in (None, current_user.id):
@@ -862,6 +865,9 @@ def salir_multiples():
 @repartidor_required
 def salir_entregar(pedido_id):
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
+    if pedido.slot_id is not None:
+        flash("Este pedido sale con su franja. Selecciónalo desde la agenda de reparto.", "warning")
+        return redirect(url_for("repartidor.franjas_panel"))
     if pedido.estado != "listo":
         flash("El pedido no está listo para despachar.", "warning")
         return redirect(url_for("repartidor.ruta"))

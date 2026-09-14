@@ -1,5 +1,6 @@
 {% extends "admin_base.html" %}
 {% from "_order_ticket_action.html" import ticket_action %}
+{% from 'partials/ui_icons.html' import ui_icon %}
 {% block title %}
   {% if current_user.rol == 'cocina' %}{{ role_label('cocina', short=True) }}
   {% elif current_user.rol == 'preparacion' %}{{ role_label('preparacion', short=True) }}
@@ -515,6 +516,7 @@
       {% else %}Operación de pedidos{% endif %}
     </span>
     <h1 class="work-title">
+      {{ ui_icon('package') }}
       {% if current_user.rol == 'cocina' %}{{ role_label('cocina', short=True) }}
       {% elif current_user.rol == 'preparacion' %}{{ role_label('preparacion', short=True) }}
       {% else %}Cola de Pedidos{% endif %}
@@ -552,6 +554,7 @@
         <button type="button" class="work-btn work-btn-ghost" data-pair-thermal="bt"
                 title="Emparejar impresora térmica por Bluetooth">📶 Bluetooth</button>
         <small data-thermal-status class="prep-sse-badge">Impresora no emparejada</small>
+        <small data-thermal-help class="prep-printer-help">Conecta por USB o Bluetooth BLE en un navegador compatible. Los tickets también ofrecen impresión del sistema.</small>
       </div>
     </details>
   </div>
@@ -899,6 +902,7 @@
             {% else %}{{ '🍳' if brand.es_comida else '📦' }} Tomar y empezar{% endif %}</button>
         </form>
       </div>
+      {% include "preparador/_cancel_order.html" %}
   </article>
   {% else %}
   <div class="work-empty">
@@ -1028,6 +1032,7 @@
             {% else %}🍳 Tomar y empezar{% endif %}</button>
         </form>
       </div>
+      {% include "preparador/_cancel_order.html" %}
   </article>
   {% endfor %}
       </div>{# work-list del grupo #}
@@ -1101,7 +1106,7 @@
         <label class="work-item work-item--tap" title="Toca toda la fila para marcar {{ item.display_nombre }} como preparado">
           {# Checkbox mental para tachar el ítem cuando se prepara #}
           <span class="work-item-check">
-            <input type="checkbox" data-item-check aria-label="Marcar {{ item.display_nombre }} como preparado">
+            <input type="checkbox" data-item-check data-item-key="{{ item.id }}:{{ item.cantidad }}" aria-label="Marcar {{ item.display_nombre }} como preparado">
             <span aria-hidden="true"></span>
           </span>
           <span class="work-item-thumb" aria-hidden="true">
@@ -1142,6 +1147,7 @@
         </form>
         {{ ticket_action(pedido, 'work-btn work-btn-ghost work-action-row__ticket', 'Reimprimir') }}
       </div>
+      {% include "preparador/_cancel_order.html" %}
   </article>
   {% else %}
   <div class="work-empty">
@@ -1157,74 +1163,8 @@
 {% endblock %}
 
 {% block scripts %}
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/preparation-checklist.js', v=asset_version) }}"></script>
 <script nonce="{{ csp_nonce() }}">
-// ── Persistencia local de checkboxes item-a-item ──
-// Cada item marcado como preparado se guarda en localStorage con clave
-// prep_pedido_<id>. Sobrevive a los reloads automáticos cada 30s → el
-// cocinero no pierde el trabajo mental. Se limpia al marcar el pedido listo.
-function prepStateKey(pedidoId) { return `prep_pedido_${pedidoId}`; }
-function prepRestoreChecks() {
-  document.querySelectorAll('[data-pedido-id]').forEach(form => {
-    const pid = form.dataset.pedidoId;
-    if (!pid) return;
-    let state = {};
-    try { state = JSON.parse(localStorage.getItem(prepStateKey(pid)) || '{}') || {}; } catch (_) {}
-    const card = form.closest('.work-card');
-    if (!card) return;
-    card.querySelectorAll('[data-item-check]').forEach((chk, idx) => {
-      if (state['i' + idx]) {
-        chk.checked = true;
-        chk.closest('.work-item')?.classList.add('is-checked');
-      }
-    });
-  });
-}
-document.addEventListener('change', ev => {
-  const chk = ev.target.closest('[data-item-check]');
-  if (!chk) return;
-  const form = chk.closest('.work-card')?.querySelector('[data-pedido-id]');
-  if (!form) return;
-  const pid = form.dataset.pedidoId;
-  const card = form.closest('.work-card');
-  const items = Array.from(card.querySelectorAll('[data-item-check]'));
-  const idx = items.indexOf(chk);
-  let state = {};
-  try { state = JSON.parse(localStorage.getItem(prepStateKey(pid)) || '{}') || {}; } catch (_) {}
-  if (chk.checked) state['i' + idx] = 1;
-  else delete state['i' + idx];
-  localStorage.setItem(prepStateKey(pid), JSON.stringify(state));
-  chk.closest('.work-item')?.classList.toggle('is-checked', chk.checked);
-  updatePrepReadyState(card);
-});
-
-function updatePrepReadyState(card) {
-  if (!card) return;
-  const items = Array.from(card.querySelectorAll('[data-item-check]'));
-  const button = card.querySelector('[data-ready-button]');
-  if (!button) return;
-  const complete = items.length === 0 || items.every(item => item.checked);
-  button.disabled = !complete;
-  button.setAttribute('aria-disabled', String(!complete));
-  button.textContent = complete ? '✓ Pedido comprobado · dejar listo' : `Marca los productos (${items.filter(item => item.checked).length}/${items.length})`;
-}
-
-// ── Confirmación al marcar listo — antes de enviar a repartidor ──
-window.prepConfirmReady = function(form) {
-  const card = form.closest('.work-card');
-  if (!card) return true;
-  const total = card.querySelectorAll('[data-item-check]').length;
-  const checked = card.querySelectorAll('[data-item-check]:checked').length;
-  if (total > 0 && checked < total) return false;
-  // Limpia el estado local — el pedido ya no está en preparación
-  const pid = form.dataset.pedidoId;
-  if (pid) { try { localStorage.removeItem(prepStateKey(pid)); } catch (_) {} }
-  return true;
-};
-document.addEventListener('submit', (event) => {
-  const form = event.target.closest('form[data-prep-confirm-ready]');
-  if (form && !window.prepConfirmReady(form)) event.preventDefault();
-});
-
 // Urgencia por tiempo transcurrido
 function actualizarUrgencia() {
   document.querySelectorAll('[data-created]').forEach(card => {
@@ -1253,8 +1193,7 @@ function actualizarUrgencia() {
 }
 actualizarUrgencia();
 setInterval(actualizarUrgencia, 60000);
-prepRestoreChecks();
-document.querySelectorAll('.work-card').forEach(updatePrepReadyState);
+
 
 // ── Sincronización de cola consciente de visibilidad ──────────────
 // Las conexiones SSE persistentes agotaban los threads del servidor cuando
@@ -1394,28 +1333,19 @@ document.querySelectorAll('.js-availability-form').forEach(form => {
   if (initial) applyFilter(initial);
 })();
 
-// ── Checkboxes por item para tachar mental durante la preparación ──
-document.querySelectorAll('[data-item-check]').forEach(cb => {
-  cb.addEventListener('change', () => {
-    const item = cb.closest('.work-item');
-    if (item) item.classList.toggle('is-checked', cb.checked);
-    // Vibración corta como feedback táctil (Android)
-    if (cb.checked && navigator.vibrate) navigator.vibrate(15);
-  });
-});
-
 // ── Flujo "siguiente pedido" — al marcar listo, redirige + auto-scroll al siguiente ──
 document.querySelectorAll('form[data-mark-ready]').forEach(form => {
   form.addEventListener('submit', async (ev) => {
+    if (ev.defaultPrevented) return;
     // Encuentra el siguiente article ANTES del submit para saber dónde saltar
     const card = form.closest('article.work-card');
-    const nextCard = card ? card.nextElementSibling : null;
+    const nextCard = card ? Array.from(card.parentElement.querySelectorAll('article.work-card')).find(candidate => candidate !== card && !candidate.hidden && (card.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_FOLLOWING)) : null;
     // Guarda en sessionStorage el id del siguiente pedido para hacer scroll tras reload
     if (nextCard && nextCard.classList.contains('work-card')) {
       const nextCode = nextCard.querySelector('.work-order-code')?.textContent?.trim();
-      if (nextCode) sessionStorage.setItem('nextPedido', nextCode);
+      if (nextCode) { try { sessionStorage.setItem('nextPedido', nextCode); } catch (_) {} }
     } else {
-      sessionStorage.removeItem('nextPedido');
+      try { sessionStorage.removeItem('nextPedido'); } catch (_) {}
     }
     // Deja que el form haga POST normal (server hace redirect)
   });
@@ -1423,13 +1353,13 @@ document.querySelectorAll('form[data-mark-ready]').forEach(form => {
 
 // Al cargar la página, scroll al pedido siguiente si estaba marcado
 (() => {
-  const next = sessionStorage.getItem('nextPedido');
+  let next;
+  try { next = sessionStorage.getItem('nextPedido'); sessionStorage.removeItem('nextPedido'); } catch (_) {}
   if (!next) return;
-  sessionStorage.removeItem('nextPedido');
   // Busca la card cuyo código coincide
   const target = Array.from(document.querySelectorAll('article.work-card'))
     .find(c => c.querySelector('.work-order-code')?.textContent?.trim() === next);
-  if (!target) return;
+  if (!target || target.hidden) return;
   target.scrollIntoView({ behavior: 'smooth', block: 'center' });
   target.classList.add('is-next-focus');
   setTimeout(() => target.classList.remove('is-next-focus'), 3000);

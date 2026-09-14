@@ -128,7 +128,9 @@
             : `<span class="df-status is-packing">Cocina · ${empacados}/${total} empacados</span>`;
         const restante = completa && listos > 0
           ? `<strong>${listos} pedido${listos===1?'':'s'} esperando salida</strong>`
-          : `${Number(prep.pendientes || 0) + Number(prep.armando || 0)} por terminar`;
+          : Number(prep.sin_confirmar || 0)
+            ? `${Number(prep.sin_confirmar)} pendiente(s) de confirmar por el cliente · avisar a administración`
+            : `${Number(prep.pendientes || 0) + Number(prep.armando || 0)} por terminar`;
         return `<div class="${clases.join(' ')}">
           <div class="df-slot-top">
             <div><span class="df-slot-kicker">${op.estado === 'activa' ? 'En curso' : op.estado === 'finalizada' ? 'Cerrada' : 'Próxima salida'}</span><div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div></div>

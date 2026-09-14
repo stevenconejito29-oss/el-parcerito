@@ -69,6 +69,8 @@ class DeliveryModeServiceTest(unittest.TestCase):
         self.assertEqual(panel_operativo_por_rol("repartidor", modes=slots), "repartidor.franjas_panel")
         self.assertEqual(panel_operativo_por_rol("cocina", modes=slots), "preparador.franjas_operacion")
         self.assertEqual(panel_operativo_por_rol("cocina", modes=mixed), "preparador.franjas_operacion")
+        for modes in (immediate, slots, mixed):
+            self.assertEqual(panel_operativo_por_rol("preparacion", modes=modes), "preparador.pedidos")
 
     def test_immediate_work_is_closed_when_only_slots_are_enabled(self):
         config = {"delivery_inmediato_activo": "0", "delivery_franjas_activo": "1"}

@@ -1,14 +1,18 @@
-<article class="slotops-order is-{{ pedido.estado }}">
+<article class="slotops-order work-card is-{{ pedido.estado }}">
   <header><div><span class="slotops-order__number">{{ pedido.numero_pedido }}</span><strong>{{ pedido.cliente.nombre if pedido.cliente else 'Cliente' }}</strong></div><span class="slotops-order__state">{{ pedido.estado|replace('_',' ')|capitalize }}</span></header>
   {% if pedido.notas %}<p class="slotops-note">Nota: {{ pedido.notas }}</p>{% endif %}
   <div class="slotops-items">
     {% for item in lineas_preparacion_interna(pedido) %}
-    <label><input type="checkbox" data-pack-check {% if pedido.estado != 'armando' %}disabled{% endif %} {% if pedido.estado == 'listo' %}checked{% endif %}><span><b>{{ item.cantidad }}×</b> {{ item.display_nombre }}</span></label>
+    <div class="work-item slotops-item">
+      <label class="slotops-item-check"><input type="checkbox" data-item-check data-item-key="{{ item.id }}:{{ item.cantidad }}" aria-label="Comprobar {{ item.cantidad }} de {{ item.display_nombre }}" {% if pedido.estado != 'armando' %}disabled{% endif %} {% if pedido.estado == 'listo' %}checked{% endif %}><span>Comprobar artículo</span></label>
+      <div>{% include '_order_item_combo.html' %}</div>
+    </div>
     {% endfor %}
   </div>
   {% if pedido.estado == 'pendiente' %}
   <form method="post" action="{{ url_for('preparador.empezar_armar', pedido_id=pedido.id) }}" data-slot-action><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" {% if not disponible %}disabled{% endif %}>Tomar y preparar</button></form>
   {% elif pedido.estado == 'armando' %}
-  <form method="post" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}" data-slot-action><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" data-ready disabled>Confirmar empaque</button></form>
+  <form method="post" action="{{ url_for('preparador.marcar_listo', pedido_id=pedido.id) }}" data-prep-confirm-ready data-pedido-id="{{ pedido.id }}" data-slot-action><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" data-ready-button disabled>Confirmar empaque</button></form>
   {% else %}<div class="slotops-complete">✓ Empacado para la salida</div>{% endif %}
+  {% include 'preparador/_cancel_order.html' %}
 </article>

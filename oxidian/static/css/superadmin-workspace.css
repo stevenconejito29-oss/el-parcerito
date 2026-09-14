@@ -1,0 +1,22 @@
+.sa-category-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}
+.sa-category{min-width:0;padding:1rem;border:1px solid var(--col-border);border-radius:var(--radius-3,12px);background:var(--col-surface)}
+.sa-category h3{margin:0 0 .4rem;font-size:1rem;color:var(--col-text)}
+.sa-category p{margin:0 0 .6rem;font-size:.85rem;color:var(--col-muted);line-height:1.5}
+.sa-category ul{list-style:none;margin:0;padding:0}
+.sa-category a{display:flex;justify-content:space-between;gap:.6rem;align-items:center;min-height:44px;padding:.4rem 0;color:var(--col-text);overflow-wrap:anywhere;border-bottom:1px solid var(--col-border);font-size:.9rem}
+.sa-category a:hover{color:var(--brand-primary)}
+.sa-disclosure{margin:1.2rem 0;border:1px solid var(--col-border);border-radius:var(--radius-3,12px);background:var(--col-surface)}
+.sa-disclosure>summary,.sa-readiness-details>summary{cursor:pointer;min-height:44px;padding:1rem;color:var(--col-text)}
+.sa-disclosure>summary span{display:block;margin-top:.3rem;font-size:.85rem;color:var(--col-muted)}
+.sa-disclosure-body{padding:1rem;min-width:0}
+.sa-disclosure-body .oa-section{margin-bottom:1.5rem}
+@media(max-width:1050px){.sa-category-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.sa-category-grid{grid-template-columns:1fr}.sa-disclosure-body{padding:.6rem}.sa-disclosure-body [style*="min-width:280px"]{min-width:0!important}}
+
+/* Tarjetas de gestión: icono, descripción y accesos en una jerarquía estable. */
+.sa-category { position: relative; display: flex; flex-direction: column; gap: .15rem; }
+.sa-category-icon { width: 42px; height: 42px; display: grid; place-items: center; margin-bottom: .75rem; border: 1px solid var(--col-border); border-radius: .85rem; background: color-mix(in srgb, var(--brand-primary) 10%, var(--col-surface)); color: var(--brand-text, var(--col-text)); }
+.sa-category > ul { margin-top: .55rem; }
+.sa-category a { padding-inline: .35rem; border-radius: .4rem; }
+.sa-category a:hover { background: var(--col-elevated); }
+.sa-category a > span { color: var(--col-muted); }

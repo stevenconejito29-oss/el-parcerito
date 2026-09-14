@@ -52,6 +52,7 @@ from loyalty_service import (
     aplicar_canje_en_pedido,
     bloquear_cliente_puntos,
     enviar_saldo_puntos,
+    otp_resend_seconds,
     solicitar_codigo,
 )
 from delivery_mode_service import modos_delivery_activos
@@ -62,6 +63,7 @@ from store_config import (
     get_store_value,
     get_store_features,
     get_service_commission,
+    get_pickup_details,
     is_service_mode,
 )
 from catalog_projection import build_catalog_projection
@@ -1731,6 +1733,7 @@ def actualizar_carrito():
     selecciones_combo = session.get("combo_selecciones", {})
     notas_combo = session.get("notas_combo", {})
     cart_max_qty = _cart_max_qty()
+    needs_review = False
 
     def _cleanup_key(k):
         """Elimina TODAS las selecciones paralelas de un producto retirado
@@ -1747,10 +1750,17 @@ def actualizar_carrito():
                 session[_s] = _map
 
     for key in list(carrito.keys()):
+        raw_quantity = request.form.get(f"cantidad_{key}")
+        if raw_quantity is None:
+            continue
         try:
-            nueva_cantidad = max(0, min(cart_max_qty, int(request.form.get(f"cantidad_{key}", 0))))
+            nueva_cantidad = int(raw_quantity)
+            if not 0 <= nueva_cantidad <= cart_max_qty:
+                raise ValueError("cantidad fuera de rango")
         except (ValueError, TypeError):
-            nueva_cantidad = 0
+            needs_review = True
+            flash("Revisa la cantidad: debe ser un número entero dentro del límite indicado.", "warning")
+            continue
         if nueva_cantidad <= 0:
             del carrito[key]
             _cleanup_key(key)
@@ -1759,8 +1769,10 @@ def actualizar_carrito():
             producto = db.session.get(Product, pid) if pid is not None else None
             origen_item = _origen_inventario_producto(producto)
             if not _producto_disponible_en_origen(producto, origen_item):
+                needs_review = True
                 del carrito[key]
                 _cleanup_key(key)
+                flash("Un producto ya no está disponible. Revisa tu carrito antes de continuar.", "warning")
                 continue
             try:
                 if producto.es_combo:
@@ -1772,6 +1784,7 @@ def actualizar_carrito():
                 elif not producto.disponible_para_venta_en_origen(origen_item, nueva_cantidad):
                     raise ValueError(f"No hay stock suficiente para {producto.nombre}.")
             except ValueError as exc:
+                needs_review = True
                 flash(str(exc), "warning")
                 continue
             carrito[key] = nueva_cantidad
@@ -1779,6 +1792,8 @@ def actualizar_carrito():
     session["combo_selecciones"] = selecciones_combo
     session["notas_combo"] = notas_combo
     session.modified = True
+    if request.form.get("continuar") == "checkout" and carrito and not needs_review:
+        return redirect(url_for("public.checkout"))
     return redirect(url_for("public.ver_carrito"))
 
 
@@ -2580,16 +2595,18 @@ def solicitar_codigo_puntos():
     if not _feature_enabled("puntos"):
         return jsonify({"ok": False, "msg": f'{get_loyalty_terms()["name"]} no está habilitado'}), 403
     data = request.get_json(silent=True) or {}
-    telefono = data.get("telefono", "").strip()
+    telefono = data.get("telefono") if isinstance(data, dict) else None
+    telefono = telefono.strip() if isinstance(telefono, str) else ""
     if not telefono:
         return jsonify({"ok": False, "msg": "Indica tu número de teléfono"})
     cliente, _ = buscar_cliente_por_telefono(telefono)
     respuesta_neutra = "Si el número está registrado, recibirá un código por WhatsApp."
     if not cliente or not cliente.telefono:
-        return _json_no_store({"ok": True, "msg": respuesta_neutra})
+        return _json_no_store({"ok": True, "msg": respuesta_neutra, "resend_seconds": otp_resend_seconds()})
 
     resultado = solicitar_codigo(cliente, permitir_sin_puntos=True)
-    return jsonify({
+    return _json_no_store({
+        "resend_seconds": otp_resend_seconds(),
         "ok": bool(resultado.get("ok")),
         "msg": respuesta_neutra,
     })
@@ -2603,8 +2620,10 @@ def verificar_codigo_puntos():
         return jsonify({"ok": False, "msg": f'{get_loyalty_terms()["name"]} no está habilitado'}), 403
     msg_invalido = "No se pudo verificar el código. Revisa el WhatsApp y el código recibido."
     data = request.get_json(silent=True) or {}
-    telefono = data.get("telefono", "").strip()
-    codigo = data.get("codigo", "").strip()
+    telefono = data.get("telefono") if isinstance(data, dict) else None
+    codigo = data.get("codigo") if isinstance(data, dict) else None
+    telefono = telefono.strip() if isinstance(telefono, str) else ""
+    codigo = codigo.strip() if isinstance(codigo, str) else ""
     if telefono:
         cliente, _ = buscar_cliente_por_telefono(telefono)
     else:
@@ -3587,6 +3606,7 @@ def _sesion_autoriza_pedido(pedido_id: int, supplied_token: str = "") -> bool:
 
 @public_bp.route("/pedido/<int:pedido_id>/confirmado")
 def pedido_confirmado(pedido_id):
+    from order_presentation import order_presentation
     pedido = get_or_404(Order, pedido_id)
     expected = _token_pedido_sesion(pedido_id)
     # Un push no debe incluir secretos en su URL. Para abrir un pedido anterior
@@ -3612,9 +3632,11 @@ def pedido_confirmado(pedido_id):
         pedido=pedido,
         requiere_confirmacion_whatsapp=(pedido.confirmacion_estado == "pending"),
         pedido_token=token,
+        presentation=order_presentation(pedido),
+        pickup=get_pickup_details(),
         puede_cancelar=(
             pedido.estado == "pendiente"
-            and not (pedido.metodo_pago == "bizum" and pedido.pago_confirmado)
+            and not pedido.pago_confirmado
         ),
     )
 
@@ -3626,13 +3648,12 @@ def estado_pedido_web(pedido_id):
     if not _sesion_autoriza_pedido(pedido_id, token):
         return jsonify({"ok": False}), 403
     pedido = get_or_404(Order, pedido_id)
-    labels = {
-        "pendiente": "Recibido", "armando": "En preparación", "listo": "Listo",
-        "en_ruta": "En reparto", "entregado": "Finalizado", "cancelado": "Cancelado",
-    }
+    from order_presentation import order_presentation
+    presentation = order_presentation(pedido)
     return jsonify({
         "ok": True, "status": pedido.estado,
-        "status_label": labels.get(pedido.estado, pedido.estado.replace("_", " ").title()),
+        "status_label": presentation["status_label"],
+        "presentation": presentation,
         "active": pedido.estado not in {"entregado", "cancelado"},
         "redirect_url": url_for("public.index"),
     })
@@ -3645,8 +3666,8 @@ def cancelar_pedido_web(pedido_id):
     if not _sesion_autoriza_pedido(pedido_id, token):
         flash("No pudimos verificar que este pedido te pertenece.", "danger")
         return redirect(url_for("public.index"))
-    pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
-    if pedido.estado != "pendiente" or (pedido.metodo_pago == "bizum" and pedido.pago_confirmado):
+    pedido = Order.query.filter_by(id=pedido_id).populate_existing().with_for_update().first_or_404()
+    if pedido.estado != "pendiente" or pedido.pago_confirmado:
         flash("El pedido ya requiere revisión del equipo. Solicítala desde el chat.", "warning")
         return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id, token=token))
     try:

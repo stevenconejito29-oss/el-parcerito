@@ -152,6 +152,7 @@ def _telefono_interno_requerido(raw, rol, user_id=None):
 # super_admin siempre pasa; admin se verifica según el mapa de features.
 _FEATURE_URL_MAP = {
     "/admin/caja":         "caja",
+    "/admin/finanzas":     "caja",
     "/admin/pagos-pendientes": "caja",
     "/admin/stock":        "stock",
     "/admin/pagos-staff":  "staff_pagos",
@@ -1979,7 +1980,7 @@ def registrar_movimiento():
     concepto = request.form.get("concepto", "").strip()
     categoria = (request.form.get("categoria") or "otro").strip()
     try:
-        monto = float(request.form.get("monto", 0) or 0)
+        monto = _parse_decimal_no_negativo(request.form.get("monto"), "Importe")
     except (ValueError, TypeError):
         monto = 0.0
 
@@ -3394,9 +3395,12 @@ def _parsear_campos_producto(form):
     solo_canje = politica_canje["solo_canje"]
     puntos_para_canje = politica_canje["puntos_para_canje"]
 
-    precio_costo = form.get("precio_costo", type=float)
-    if precio_costo is not None and precio_costo < 0:
-        return None, "El precio de costo no puede ser negativo."
+    try:
+        precio_costo = _parse_decimal_no_negativo(
+            form.get("precio_costo"), "El precio de costo", opcional=True,
+        )
+    except ValueError as exc:
+        return None, str(exc)
 
     nombre = form.get("nombre", "").strip()
     if not nombre:
@@ -3623,7 +3627,13 @@ def _disponibilidad_productos_por_origen(proveedor_id=None):
 
 
 def _money(value):
-    return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    try:
+        amount = Decimal(str(value or 0))
+        if not amount.is_finite():
+            raise ValueError("El importe debe ser un número finito.")
+        return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError("El importe debe ser un número válido.")
 
 
 def _calcular_base_precio_combo(componentes):
@@ -4914,9 +4924,12 @@ def agregar_componente_combo(producto_id):
     es_seleccionable = bool(request.form.get("es_seleccionable"))
     grupo_seleccion = request.form.get("grupo_seleccion", "").strip() or None
     max_selecciones = request.form.get("max_selecciones", 1, type=int) or 1
-    precio_extra = _money(request.form.get("precio_extra") or 0)
-    if precio_extra < 0:
-        flash("El suplemento no puede ser negativo.", "danger")
+    try:
+        precio_extra = _money(_parse_decimal_no_negativo(
+            request.form.get("precio_extra") or 0, "El suplemento",
+        ))
+    except ValueError as exc:
+        flash(str(exc), "danger")
         return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
     es_predeterminado = bool(request.form.get("es_predeterminado"))
     notas_preparacion = (request.form.get("notas_preparacion") or "").strip()[:300] or None
@@ -6812,10 +6825,16 @@ def historial_precios(producto_id):
 @admin_required
 def cambiar_precio(producto_id):
     producto = get_or_404(Product, producto_id)
-    nuevo_precio = request.form.get("precio", type=float)
+    try:
+        nuevo_precio = _parse_decimal_no_negativo(request.form.get("precio"), "Precio")
+    except ValueError:
+        nuevo_precio = None
     motivo = request.form.get("motivo", "").strip()[:200]
     if nuevo_precio is None or nuevo_precio <= 0:
         flash("Precio inválido.", "danger")
+        return redirect(url_for("admin.productos"))
+    if producto.solo_canje:
+        flash("Un producto exclusivo de canje mantiene su precio en 0 €. Edita su modalidad desde el producto.", "warning")
         return redirect(url_for("admin.productos"))
     hist = PriceHistory(
         producto_id=producto.id,
@@ -8262,9 +8281,9 @@ def delivery_franjas_panel():
             for slot in slots_iniciales
         ],
         can_switch_mode=current_user.rol == "super_admin",
-        delivery_zone_count=ZonaEntrega.query.filter_by(activa=True).count(),
-        delivery_fee_min=db.session.query(db.func.min(ZonaEntrega.precio_envio)).filter(ZonaEntrega.activa.is_(True)).scalar(),
-        delivery_fee_max=db.session.query(db.func.max(ZonaEntrega.precio_envio)).filter(ZonaEntrega.activa.is_(True)).scalar(),
+        delivery_zone_count=ZonaEntrega.query.filter_by(activo=True).count(),
+        delivery_fee_min=db.session.query(db.func.min(ZonaEntrega.precio_envio)).filter(ZonaEntrega.activo.is_(True)).scalar(),
+        delivery_fee_max=db.session.query(db.func.max(ZonaEntrega.precio_envio)).filter(ZonaEntrega.activo.is_(True)).scalar(),
     )
 
 

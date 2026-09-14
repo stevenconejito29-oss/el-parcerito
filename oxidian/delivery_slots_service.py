@@ -232,15 +232,16 @@ def resumen_preparacion_franjas(slot_ids: Iterable[int]) -> dict[int, dict]:
         return {}
 
     rows = (
-        db.session.query(Order.slot_id, Order.estado, db.func.count(Order.id))
+        db.session.query(Order.slot_id, Order.estado, Order.confirmacion_estado, db.func.count(Order.id))
         .filter(Order.slot_id.in_(ids))
-        .group_by(Order.slot_id, Order.estado)
+        .group_by(Order.slot_id, Order.estado, Order.confirmacion_estado)
         .all()
     )
     resumen = {
         slot_id: {
             "total": 0,
             "pendientes": 0,
+            "sin_confirmar": 0,
             "armando": 0,
             "listos": 0,
             "en_ruta": 0,
@@ -260,9 +261,11 @@ def resumen_preparacion_franjas(slot_ids: Iterable[int]) -> dict[int, dict]:
         "entregado": "entregados",
         "cancelado": "cancelados",
     }
-    for slot_id, estado, cantidad in rows:
+    for slot_id, estado, confirmacion, cantidad in rows:
         if estado in claves:
-            resumen[slot_id][claves[estado]] = int(cantidad or 0)
+            resumen[slot_id][claves[estado]] += int(cantidad or 0)
+        if estado == "pendiente" and confirmacion == "pending":
+            resumen[slot_id]["sin_confirmar"] += int(cantidad or 0)
 
     for item in resumen.values():
         item["total"] = (
@@ -378,6 +381,7 @@ def listar_franjas_cliente(
     hoy: date,
     horizonte_dias: int = 7,
     ahora: datetime | None = None,
+    *, materializar_recurrencia: bool = True,
 ) -> list[dict]:
     """Franjas visibles para el cliente en checkout.
 
@@ -389,7 +393,7 @@ def listar_franjas_cliente(
     if ahora is None:
         ahora = ahora_local_negocio()
     hasta = hoy + timedelta(days=horizonte_dias - 1)
-    if asegurar_horizonte_recurrente(hoy, hasta):
+    if materializar_recurrencia and asegurar_horizonte_recurrente(hoy, hasta):
         db.session.commit()
     slots = (
         DeliverySlot.query

@@ -109,7 +109,10 @@ def panel_operativo_por_rol(rol: str, *, modes=None) -> str:
     """
     modes = modes or modos_delivery_activos()
     usa_franjas = bool(modes.get("franjas"))
-    if rol in {"cocina", "preparacion"}:
+    # Preparación gestiona encargos por fecha, no la agenda de reparto de cocina.
+    if rol == "preparacion":
+        return "preparador.pedidos"
+    if rol == "cocina":
         return "preparador.franjas_operacion" if usa_franjas else "preparador.pedidos"
     if rol == "repartidor":
         return "repartidor.franjas_panel" if usa_franjas else "repartidor.ruta"
@@ -147,6 +150,16 @@ def cambiar_modo_delivery(modo: str, *, actor_id: int, ip: str | None = None) ->
         if active_scheduled:
             raise ErrorPlanDelivery(
                 f"No puedes apagar franjas: quedan {active_scheduled} pedidos programados activos."
+            )
+    if not selected["inmediato"]:
+        active_immediate = Order.query.filter(
+            Order.slot_id.is_(None),
+            Order.tipo_entrega_cliente == "delivery",
+            Order.estado.in_(("pendiente", "armando", "listo", "en_ruta")),
+        ).count()
+        if active_immediate:
+            raise ErrorPlanDelivery(
+                f"No puedes apagar inmediato: quedan {active_immediate} pedidos de reparto inmediato activos."
             )
     SiteConfig.set("delivery_inmediato_activo", "1" if selected["inmediato"] else "0", actor_id)
     SiteConfig.set("delivery_franjas_activo", "1" if selected["franjas"] else "0", actor_id)

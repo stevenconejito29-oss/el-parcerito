@@ -339,7 +339,7 @@ body.operational-view .work-btn-ghost {
 .route-gps strong, .route-gps small { display: block; }
 .route-gps small { margin-top: .12rem; color: var(--col-muted); font-size: .74rem; }
 .route-gps[data-state="active"] { border-color: color-mix(in srgb, var(--op-success) 38%, var(--op-line)); background: color-mix(in srgb, var(--op-success) 5%, var(--op-surface)); }
-.route-gps[data-state="active"] .route-gps__signal { background: var(--op-success); animation: prep-sse-live 2s ease-out infinite; }
+.route-gps[data-state="active"] .route-gps__signal { background: var(--op-success); }
 .route-gps[data-state="error"] .route-gps__signal { background: var(--op-danger); }
 @media (max-width: 520px) {
   .route-gps { grid-template-columns: auto minmax(0, 1fr); }
@@ -1367,3 +1367,12 @@ html[data-delivery-theme="dark"] body.operational-view .work-chip.is-web {
   border-color: color-mix(in srgb, var(--op-success, #16a34a) 40%, var(--col-border, rgba(0,0,0,.2)));
 }
 .thermal-pair-chip:hover { transform: translateY(-1px); }
+/* Etapas operativas: una cola visible y controles accesibles en móvil. */
+.work-item-check:focus-within { outline: 3px solid var(--brand-primary); outline-offset: 3px; }
+.work-focus-switch { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: 1rem; }
+.work-focus-switch[hidden], [data-work-focus-panel][hidden] { display: none !important; }
+.route-board.work-focus-enabled [data-work-focus-panel]:not([hidden]) { display: block !important; }
+.work-focus-switch button { flex: 1 1 auto; min-height: 44px; padding: .65rem 1rem; border: 1px solid var(--col-border); border-radius: .8rem; background: var(--col-surface); color: var(--col-text); font: inherit; cursor: pointer; }
+.work-focus-switch button[aria-pressed="true"] { border-color: var(--brand-primary); background: color-mix(in srgb, var(--brand-primary) 16%, var(--col-surface)); font-weight: 800; }
+.work-focus-switch button:focus-visible { outline: 3px solid var(--brand-primary); outline-offset: 3px; }
+body.operational-view .work-focus-single .work-board { grid-template-columns: minmax(0, 1fr); }

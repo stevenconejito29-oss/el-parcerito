@@ -56,7 +56,8 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn('class="rider-now"', route)
         self.assertIn("scroll-snap-type:x mandatory", kitchen_css)
         self.assertIn(".route-board.has-active-route .route-lane--ready{display:none", rider_css)
-        self.assertIn("if(!response.ok)throw new Error", kitchen)
+        self.assertIn("js/preparation-slots.js", kitchen)
+        self.assertIn("js/preparation-checklist.js", kitchen)
 
     def test_loyalty_configuration_is_grouped_with_the_reward_catalog(self):
         config = (ROOT / "templates" / "superadmin" / "config.html").read_text(encoding="utf-8")
@@ -125,7 +126,7 @@ class FrontendContractsTest(unittest.TestCase):
 
         self.assertNotIn("📌 Reservar", kitchen)
         self.assertIn("data-ready-button disabled", kitchen)
-        self.assertIn("items.every(item => item.checked)", kitchen)
+        self.assertIn("js/preparation-checklist.js", kitchen)
         self.assertNotIn("Tomar seleccionados", rider)
         self.assertNotIn("1. Reservar este pedido", rider)
         self.assertIn("Tomar pedido y salir", rider)
@@ -244,7 +245,7 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("/preparador/impresora", thermal)
         self.assertIn("device_id: dev.id", thermal)
         self.assertIn("navigator.bluetooth.getDevices", thermal)
-        self.assertIn("[data-pair-thermal=\"bt\"]", roles)
+        self.assertIn("[data-pair-thermal]", roles)
 
     def test_operational_themes_and_rider_tracking_are_real_modes(self):
         styles = (ROOT / "static" / "css" / "employee-app.css").read_text(encoding="utf-8")
@@ -574,7 +575,7 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
         self.assertNotIn("countdown", card.lower())
 
-    def test_public_pwa_uses_the_optimized_coffee_burlap_texture(self):
+    def test_legacy_texture_remains_available_for_compatibility(self):
         styles = (ROOT / "static" / "css" / "pwa-native.css").read_text(encoding="utf-8")
         texture = ROOT / "static" / "coffee-burlap-texture-v4.webp"
 

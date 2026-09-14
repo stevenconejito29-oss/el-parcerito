@@ -4,7 +4,7 @@
 {% block content %}
 <div class="checkout-head flex items-center gap-3 mb-5">
   <a href="{{ url_for('public.ver_carrito') }}"
-     class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition"
+     aria-label="Volver al carrito" class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition"
      style="background:var(--col-surface);border:1px solid var(--col-border);color:var(--col-muted)">←</a>
   <div class="checkout-head-copy">
     <span class="checkout-eyebrow">{{ heritage_icon('mariposa') }} {{ ui.checkout_eyebrow }}</span>
@@ -639,9 +639,9 @@
     <div class="checkout-payment-help" data-payment-info="efectivo" role="note">
       <p class="checkout-pay-help-title">💵 Efectivo al recibir</p>
       <ul class="checkout-pay-help-list">
-        <li>Prepara el importe exacto si puedes — ayuda mucho al repartidor.</li>
+        <li>Prepara el importe exacto para pagar al recibir o recoger.</li>
         <li>Si necesitas cambio grande, indícalo en las notas para que lo prepare.</li>
-        <li>El repartidor te pedirá el código de entrega antes de darte el pedido.</li>
+        <li>Si pediste a domicilio, comparte el código de entrega con el repartidor cuando tengas el pedido delante.</li>
       </ul>
     </div>
     {% endif %}
@@ -650,8 +650,8 @@
       <p class="checkout-pay-help-title">📱 Bizum al recibir</p>
       <ol class="checkout-pay-help-list">
         <li>Tu pedido se prepara sin pago por adelantado.</li>
-        <li>Cuando llegue el repartidor, envía el importe exacto al número <strong data-bizum-numero>cargando…</strong>.</li>
-        <li>El repartidor verifica el Bizum y luego te pide el código de entrega.</li>
+        <li>Al recibir a domicilio o recoger en el negocio, envía el importe exacto al número <strong data-bizum-numero>cargando…</strong>.</li>
+        <li>El equipo verificará el Bizum al entregarte el pedido.</li>
       </ol>
       <p class="checkout-pay-help-note">No compartas el código de entrega hasta tener el pedido delante.</p>
     </div>
@@ -660,9 +660,9 @@
     <div class="checkout-payment-help" data-payment-info="tarjeta" role="note">
       <p class="checkout-pay-help-title">💳 Tarjeta al recibir</p>
       <ul class="checkout-pay-help-list">
-        <li>El repartidor lleva un datáfono; puedes pagar contactless o insertando la tarjeta.</li>
+        <li>Paga en el datáfono al recibir a domicilio o recoger en el negocio.</li>
         <li>Aceptamos débito y crédito.</li>
-        <li>Antes de entregar el pedido, el repartidor te pedirá el código de entrega.</li>
+        <li>El código de reparto solo se utiliza en las entregas a domicilio.</li>
       </ul>
     </div>
     {% endif %}
@@ -746,6 +746,7 @@
           <p class="checkout-reward-empty">Aún no hay recompensas disponibles con este saldo.</p>
           {% endfor %}
         </div>
+        <p id="reward-picker-message" class="checkout-reward-message" role="status"></p>
         <button type="button" class="checkout-reward-remove" data-reward-remove {% if not checkout_canje %}hidden{% endif %}>Quitar recompensa</button>
       </div>
     </div>
@@ -1162,11 +1163,36 @@ function checkoutJsonPost(url, body) {
   });
 }
 
+async function rewardJsonPost(url, body) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(url, {
+      method: 'POST', signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CHECKOUT_CSRF },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await response.json();
+    return { response, data };
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('La conexión tarda demasiado. Revisa tu conexión antes de reintentar.');
+    throw new Error('No pudimos conectar. Inténtalo de nuevo.');
+  } finally { clearTimeout(timeout); }
+}
+
 /* Canje de recompensas: la consulta de saldo vive en Club; durante la compra
    solo se abre este flujo cuando el cliente decide usar puntos. El teléfono
    del checkout es la identidad y cualquier cambio invalida la verificación. */
 let verifiedRewardPhone = normalizarTelefono({{ (puntos_sesion.get('telefono', '') if puntos_sesion else '') | tojson }});
 let rewardCodeSentAt = 0;
+let rewardResendMs = 0;
+let rewardBusy = false;
+let rewardPhoneRevision = 0;
+function setRewardBusy(busy) {
+  rewardBusy = busy;
+  window._checkoutRefreshSubmit?.();
+  document.querySelectorAll('[data-reward-request], [data-reward-resend], [data-reward-verify], [data-reward-id], [data-reward-remove]').forEach(button => { button.disabled = busy; });
+}
 
 function rewardMessage(id, text, kind = '') {
   const element = document.getElementById(id);
@@ -1231,57 +1257,67 @@ function renderRewardOptions(rewards) {
 }
 
 async function requestRewardCode(isResend = false) {
+  if (rewardBusy) return;
+  const revision = rewardPhoneRevision;
   const phone = checkoutPhone();
   if (phone.replace(/\D/g, '').length < 7) {
     rewardMessage('reward-request-message', 'Escribe primero un número de teléfono válido arriba.', 'error');
     document.getElementById('tel_input')?.focus();
     return;
   }
-  if (isResend && Date.now() - rewardCodeSentAt < 30000) {
-    const seconds = Math.ceil((30000 - (Date.now() - rewardCodeSentAt)) / 1000);
+  if (isResend && Date.now() - rewardCodeSentAt < rewardResendMs) {
+    const seconds = Math.ceil((rewardResendMs - (Date.now() - rewardCodeSentAt)) / 1000);
     rewardMessage('reward-code-message', `Espera ${seconds}s antes de reenviar.`);
     return;
   }
-  rewardMessage(isResend ? 'reward-code-message' : 'reward-request-message', 'Enviando código…');
+  setRewardBusy(true);
+  rewardMessage(isResend ? 'reward-code-message' : 'reward-request-message', 'Solicitando código…');
   try {
-    const response = await checkoutJsonPost('{{ url_for("public.solicitar_codigo_puntos") }}', { telefono: phone });
-    const data = await response.json();
-    if (!data.ok) throw new Error(data.msg || 'No pudimos enviar el código.');
+    const { response, data } = await rewardJsonPost('{{ url_for("public.solicitar_codigo_puntos") }}', { telefono: phone });
+    if (revision !== rewardPhoneRevision || phone !== checkoutPhone()) return;
+    if (Number.isFinite(data.resend_seconds) && data.resend_seconds > 0) rewardResendMs = data.resend_seconds * 1000;
+    if (!response.ok || !data.ok) throw new Error(data.msg || 'No pudimos enviar el código.');
     rewardCodeSentAt = Date.now();
     document.getElementById('reward-request-step')?.setAttribute('hidden', '');
     const codeStep = document.getElementById('reward-code-step');
     if (codeStep) codeStep.hidden = false;
-    rewardMessage('reward-code-message', 'Código enviado. Revisa tu WhatsApp.', 'success');
+    rewardMessage('reward-code-message', data.msg || 'Si el número está registrado, recibirá un código por WhatsApp.');
     document.getElementById('reward-code')?.focus();
   } catch (error) {
-    rewardMessage(isResend ? 'reward-code-message' : 'reward-request-message', error.message || 'No pudimos conectar. Inténtalo de nuevo.', 'error');
-  }
+    if (revision === rewardPhoneRevision) rewardMessage(isResend ? 'reward-code-message' : 'reward-request-message', error.message || 'No pudimos conectar. Inténtalo de nuevo.', 'error');
+  } finally { setRewardBusy(false); }
 }
 
 async function verifyRewardCode() {
+  if (rewardBusy) return;
+  const revision = rewardPhoneRevision;
   const phone = checkoutPhone();
   const code = document.getElementById('reward-code')?.value.trim() || '';
   if (!code) { rewardMessage('reward-code-message', 'Escribe el código recibido.', 'error'); return; }
+  setRewardBusy(true);
   rewardMessage('reward-code-message', 'Verificando…');
   try {
-    const response = await checkoutJsonPost('{{ url_for("public.verificar_codigo_puntos") }}', { telefono: phone, codigo: code, puntos: 0 });
-    const data = await response.json();
-    if (!data.ok) throw new Error(data.msg || 'El código no es válido.');
+    const { response, data } = await rewardJsonPost('{{ url_for("public.verificar_codigo_puntos") }}', { telefono: phone, codigo: code, puntos: 0 });
+    if (revision !== rewardPhoneRevision || phone !== checkoutPhone()) return;
+    if (!response.ok || !data.ok) throw new Error(data.msg || 'El código no es válido.');
     verifiedRewardPhone = phone;
     rewardMessage('reward-code-message', 'Número verificado correctamente.', 'success');
     showRewardPicker(data);
   } catch (error) {
-    rewardMessage('reward-code-message', error.message || 'No pudimos verificar el código.', 'error');
-  }
+    if (revision === rewardPhoneRevision) rewardMessage('reward-code-message', error.message || 'No pudimos verificar el código.', 'error');
+  } finally { setRewardBusy(false); }
 }
 
 async function chooseReward(button) {
+  if (rewardBusy) return;
+  const revision = rewardPhoneRevision;
   const rewardId = Number(button.dataset.rewardId || 0);
   if (!rewardId) return;
+  setRewardBusy(true);
   try {
-    const response = await checkoutJsonPost('{{ url_for("public.set_producto_canje") }}', { producto_id: rewardId });
-    const data = await response.json();
-    if (!data.ok) throw new Error(data.msg || 'No pudimos seleccionar la recompensa.');
+    const { response, data } = await rewardJsonPost('{{ url_for("public.set_producto_canje") }}', { producto_id: rewardId });
+    if (revision !== rewardPhoneRevision) return;
+    if (!response.ok || !data.ok) throw new Error(data.msg || 'No pudimos seleccionar la recompensa.');
     document.getElementById('canje_hidden').value = String(rewardId);
     document.querySelectorAll('.checkout-reward-option').forEach(option => {
       const selected = option === button;
@@ -1293,10 +1329,10 @@ async function chooseReward(button) {
     if (remove) remove.hidden = false;
     document.getElementById('reward-toggle-title').textContent = `${button.dataset.rewardName} seleccionado`;
     document.getElementById('reward-toggle-subtitle').textContent = 'Puedes cambiarlo o quitarlo antes de confirmar';
-    window.OxToast?.show('Recompensa añadida al pedido', 'success');
+    rewardMessage('reward-picker-message', 'Recompensa añadida al pedido.', 'success');
   } catch (error) {
-    window.OxToast?.show(error.message || 'No pudimos seleccionar la recompensa', 'danger');
-  }
+    if (revision === rewardPhoneRevision) rewardMessage('reward-picker-message', error.message || 'No pudimos seleccionar la recompensa.', 'error');
+  } finally { setRewardBusy(false); }
 }
 
 async function removeReward(clearVerification = false) {
@@ -1632,6 +1668,7 @@ function updatePaymentInfo(metodo) {
 function toggleBizumInfo(show) { if (show) updatePaymentInfo('bizum'); }
 
 document.getElementById('form-checkout')?.addEventListener('submit', e => {
+  if (rewardBusy) { e.preventDefault(); return; }
   const btn = document.getElementById('btn-confirmar');
   const originalText = btn ? btn.textContent : '';
   const restoreButton = () => {
@@ -1704,13 +1741,15 @@ document.querySelectorAll('input[name="metodo_pago"]').forEach(inp => {
     if (!btnConfirmar) return;
     // Solo bloquear en modo delivery cuando sabemos que está fuera.
     const storeClosed = btnConfirmar.dataset.storeOpen !== '1';
-    const bloquear = storeClosed || (fulfillmentMode === 'delivery' && _addressValid === false);
+    const bloquear = rewardBusy || storeClosed || (fulfillmentMode === 'delivery' && _addressValid === false);
     btnConfirmar.disabled = !!bloquear;
     btnConfirmar.classList.toggle('opacity-50', !!bloquear);
     btnConfirmar.classList.toggle('cursor-not-allowed', !!bloquear);
     btnConfirmar.setAttribute('aria-disabled', bloquear ? 'true' : 'false');
     if (storeClosed) {
       btnConfirmar.title = 'El establecimiento está cerrado ahora';
+    } else if (rewardBusy) {
+      btnConfirmar.title = 'Espera a que termine la actualización de tu recompensa';
     } else if (bloquear) {
       btnConfirmar.title = 'La dirección está fuera del radio de reparto';
     } else {
@@ -1810,6 +1849,7 @@ document.querySelectorAll('input[name="metodo_pago"]').forEach(inp => {
   };
 })();
 document.querySelector('[data-customer-phone]')?.addEventListener('input', event => {
+  rewardPhoneRevision += 1;
   buscarClientePorTelefono(event.currentTarget.value);
   const currentPhone = normalizarTelefono(event.currentTarget.value);
   if (verifiedRewardPhone && currentPhone.replace(/\D/g, '').length >= 7 && currentPhone !== verifiedRewardPhone) {

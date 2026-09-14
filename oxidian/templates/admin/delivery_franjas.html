@@ -1,5 +1,5 @@
 {% extends "admin_base.html" %}
-{% block title %}Delivery · Franjas horarias — Admin{% endblock %}
+{% block title %}Reparto · Modalidades y franjas — Admin{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
 {% endblock %}
@@ -7,8 +7,8 @@
 <div class="df-container df-container--admin">
   <div class="df-header">
     <div>
-      <span class="df-eyebrow">Centro de planificación</span>
-      <h1>Franjas de reparto</h1>
+      <span class="df-eyebrow">Gestión del reparto</span>
+      <h1>Modalidades y franjas</h1>
       <p>Configura la semana una sola vez: los días que no modifiques heredarán automáticamente la planificación de la semana anterior. Planifica hasta cuatro salidas por día. Cada franja debe quedar dentro
         del horario de apertura: <strong>{{ horario_apertura }}</strong>.
         Ajusta primero el horario en <a href="{{ url_for('superadmin.config') }}#operacion">Operación de la tienda</a>.
@@ -25,14 +25,14 @@
     <div>
       <span class="df-eyebrow">Operación activa</span>
       <h2 id="df-mode-title">Modalidad de reparto</h2>
-      <p>El checkout, cocina y repartidores leen esta misma configuración. Los pedidos programados activos se protegen antes de permitir un cambio.</p>
+      <p>Inmediato funciona sin reservar horario. Franjas usa agenda, cupos y salidas programadas. Puedes habilitar cualquiera o ambos. No se apaga una modalidad con pedidos activos.</p>
     </div>
   {% if can_switch_mode %}
   <form method="post" action="{{ url_for('admin.delivery_modo_actualizar') }}" class="df-form df-mode-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>Modo de reparto
       <select name="modo">
-        <option value="inmediato" {% if modos_delivery.inmediato and not modos_delivery.franjas %}selected{% endif %}>Instantáneo</option>
+        <option value="inmediato" {% if modos_delivery.inmediato and not modos_delivery.franjas %}selected{% endif %}>Solo inmediato · sin reservar horario</option>
         <option value="franjas" {% if modos_delivery.franjas and not modos_delivery.inmediato %}selected{% endif %}>Solo por franjas</option>
         <option value="mixto" {% if modos_delivery.franjas and modos_delivery.inmediato %}selected{% endif %}>Ambos (cliente elige)</option>
       </select>
@@ -218,6 +218,8 @@
           ? '<span class="df-status is-archived">Archivada</span>'
           : !prep.total
           ? '<span class="df-status is-empty">Sin pedidos</span>'
+          : Number(prep.sin_confirmar || 0)
+            ? `<span class="df-status is-packing">Verificar ${Number(prep.sin_confirmar)} pedido(s) con el cliente</span>`
           : prep.preparacion_completa
             ? `<span class="df-status is-ready">✓ Empacada · ${prep.listos || 0} por salir</span>`
             : `<span class="df-status is-packing">Cocina ${prep.empacados || 0}/${prep.total}</span>`;

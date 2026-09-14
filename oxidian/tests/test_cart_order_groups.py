@@ -71,6 +71,34 @@ class CartOrderGroupTest(unittest.TestCase):
         with self.client.session_transaction() as session:
             self.assertEqual(session["carrito"], {str(meal.id): 1, str(drink.id): 1})
 
+    def test_checkout_continuation_saves_quantity_first(self):
+        product = self._product('Compra', 'cocina')
+        self._add(product)
+        response = self.client.post('/carrito/actualizar', data={f'cantidad_{product.id}':'2', 'continuar':'checkout'})
+        self.assertTrue(response.location.endswith('/checkout'))
+        with self.client.session_transaction() as session:
+            self.assertEqual(session['carrito'][str(product.id)], 2)
+
+    def test_invalid_or_missing_quantity_does_not_delete_a_cart_line(self):
+        product = self._product('Conservar', 'cocina')
+        self._add(product)
+        for value in ('abc', '-1', '1.5', '999999'):
+            response = self.client.post('/carrito/actualizar', data={f'cantidad_{product.id}':value, 'continuar':'checkout'})
+            self.assertTrue(response.location.endswith('/carrito'))
+            with self.client.session_transaction() as session:
+                self.assertEqual(session['carrito'][str(product.id)], 1)
+        self.client.post('/carrito/actualizar', data={})
+        with self.client.session_transaction() as session:
+            self.assertEqual(session['carrito'][str(product.id)], 1)
+
+    def test_unavailable_product_stays_on_review_instead_of_checkout(self):
+        product = self._product('Sin disponibilidad', 'cocina')
+        self._add(product)
+        product.activo = False
+        db.session.commit()
+        response = self.client.post('/carrito/actualizar', data={f'cantidad_{product.id}':'2', 'continuar':'checkout'})
+        self.assertTrue(response.location.endswith('/carrito'))
+
     def test_different_configured_groups_require_separate_orders(self):
         cold = self._product("Postre frío", "almacen", "Cadena de frío")
         hot = self._product("Plato caliente", "cocina", "Entrega caliente")

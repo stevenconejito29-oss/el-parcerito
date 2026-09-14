@@ -121,7 +121,10 @@ def impresora_preferencia():
             value = _json.loads(raw) if raw else None
         except (TypeError, ValueError):
             value = None
-        return jsonify({"ok": True, "printer": value})
+        from routes.pos import _thermal_printer_targets
+        response = jsonify({"ok": True, "printer": value, "network_available": bool(_thermal_printer_targets())})
+        response.headers["Cache-Control"] = "no-store"
+        return response
     if request.method == "DELETE":
         entry = SiteConfig.query.filter_by(clave=key).first()
         if entry:
@@ -131,6 +134,8 @@ def impresora_preferencia():
         return jsonify({"ok": True})
 
     payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "impresora_invalida"}), 400
     transport = str(payload.get("transport") or "").strip().lower()
     device_id = str(payload.get("device_id") or "").strip()[:180]
     name = str(payload.get("name") or "Impresora térmica").strip()[:80]
@@ -734,6 +739,40 @@ def empezar_armar(pedido_id):
     # el armado. Evita tickets prematuros que se descartan si el pedido
     # cambia o se cancela mientras se prepara.
     flash(f"Armando {pedido.numero_pedido}.", "info")
+    return redirect(url_for("preparador.pedidos"))
+
+
+@preparador_bp.route("/pedidos/<int:pedido_id>/cancelar", methods=["POST"])
+@preparador_required
+def cancelar_pedido(pedido_id):
+    pedido = Order.query.filter_by(id=pedido_id).populate_existing().with_for_update().first_or_404()
+    if not _puede_operar_pedido(pedido):
+        return "No puedes operar este pedido.", 403
+    if pedido.estado not in {"pendiente", "armando"}:
+        flash("Solo puedes cancelar pedidos pendientes o en preparación.", "warning")
+        return redirect(url_for("preparador.pedidos"))
+    if pedido.pago_confirmado:
+        flash("El pedido ya está pagado. Administración debe gestionar la cancelación y devolución.", "warning")
+        return redirect(url_for("preparador.pedidos"))
+    motivo = (request.form.get("motivo") or "").strip()
+    if request.form.get("confirmar") != "1" or not 5 <= len(motivo) <= 300:
+        flash("Confirma la cancelación e indica un motivo de entre 5 y 300 caracteres.", "warning")
+        return redirect(url_for("preparador.pedidos"))
+    try:
+        from services import cancelar_pedido_operativo
+        cancelar_pedido_operativo(pedido, actor_id=current_user.id, canal="preparador", detalle=motivo)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("Error al cancelar el pedido %s desde preparación", pedido_id)
+        flash("No se pudo cancelar el pedido. Revisa su estado e inténtalo de nuevo.", "danger")
+        return redirect(url_for("preparador.pedidos"))
+    try:
+        from push_service import notify_order_state
+        notify_order_state(pedido)
+    except Exception:
+        logger.exception("No se pudo notificar la cancelación %s", pedido_id)
+    flash(f"Pedido {pedido.numero_pedido} cancelado.", "success")
     return redirect(url_for("preparador.pedidos"))
 
 

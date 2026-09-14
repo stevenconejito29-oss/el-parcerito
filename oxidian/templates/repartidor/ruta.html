@@ -1,5 +1,6 @@
 {% extends "admin_base.html" %}
 {% from "_order_ticket_action.html" import ticket_action %}
+{% from 'partials/ui_icons.html' import ui_icon %}
 {% block title %}Mi Ruta — Repartidor{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css', v=asset_version) }}">
@@ -228,7 +229,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
 <section class="work-hero">
   <div>
     <span class="work-eyebrow">{{ delivery_operation.etiqueta }}</span>
-    <h1 class="work-title">{% if not delivery_operation.acepta_nuevo_trabajo %}Cerrar pendientes{% elif delivery_operation.modo == 'franjas' %}Mis salidas{% elif delivery_operation.modo == 'mixto' %}Mi operación{% else %}Mi ruta{% endif %}</h1>
+    <h1 class="work-title">{{ ui_icon('truck') }}{% if not delivery_operation.acepta_nuevo_trabajo %}Cerrar pendientes{% elif delivery_operation.modo == 'franjas' %}Mis salidas{% elif delivery_operation.modo == 'mixto' %}Mi operación{% else %}Mi ruta{% endif %}</h1>
     <p class="work-subtitle">Recoge, navega y confirma entregas con cobro verificado.</p>
   </div>
   <div class="work-actions-top">
@@ -337,24 +338,16 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
 </details>
 {% endif %}
 
-<!-- Contadores rápidos -->
-<div class="work-kpis">
-  <div class="work-panel work-kpi">
-    <span>Listos para recoger</span>
-    <strong>{{ listos_count }}</strong>
-    <small>Pedidos listos para salir</small>
-  </div>
-  <div class="work-panel work-kpi">
-    <span>En ruta ahora</span>
-    <strong>{{ en_ruta|length }}</strong>
-    <small>Pedidos en viaje</small>
-  </div>
-</div>
+<nav class="work-focus-switch" data-work-focus data-default-focus="{{ 'active' if en_ruta else 'ready' }}" aria-label="Etapa del reparto" hidden>
+  <button type="button" data-work-focus-button="active" aria-controls="route-active">Entregar · {{ en_ruta|length }}</button>
+  <button type="button" data-work-focus-button="ready" aria-controls="route-ready">Recoger · {{ listos_count }}</button>
+  <button type="button" data-work-focus-button="all" aria-controls="route-active route-ready">Ver todo</button>
+</nav>
 
 <div class="work-board">
 
   <!-- ── LISTOS PARA RECOGER ──────────────── -->
-  <section class="work-lane route-lane--ready">
+  <section class="work-lane route-lane--ready" id="route-ready" data-work-focus-panel="ready">
     <div class="work-lane-head">
       <div>
         <h2 class="work-lane-title">Listos para salir</h2>
@@ -576,7 +569,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
   </section>
 
   <!-- ── EN RUTA ────────────────────────────── -->
-  <section class="work-lane route-lane--active">
+  <section class="work-lane route-lane--active" id="route-active" data-work-focus-panel="active">
     <div class="work-lane-head">
       <div>
         <h2 class="work-lane-title">En ruta</h2>

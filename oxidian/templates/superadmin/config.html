@@ -208,7 +208,22 @@
         {% endfor %}
       </div>
       <button type="submit" class="cfg-save-bottom">Guardar colores de marca</button>
+      <button type="reset" class="cfg-save-bottom">Restaurar lo guardado</button>
     </form>
+
+    <section aria-label="Vista previa de personalización" data-theme-preview class="cfg-section">
+      <h3>Vista previa de tu tienda</h3>
+      <p data-theme-preview-note role="status">Los cambios se aplican a la tienda cuando guardas cada sección.</p>
+      <div data-theme-preview-header class="cfg-section"><strong data-theme-preview-name>{{ config_map.get('NOMBRE_NEGOCIO', '') }}</strong></div>
+      <div data-theme-preview-card class="cfg-section">
+        <h4>Tu pedido, a tu manera</h4>
+        <span data-theme-preview-secondary>Novedades de la tienda</span>
+        <p data-theme-preview-price>Precio y detalles de marca</p>
+        <p data-theme-preview-text>Productos, entrega a domicilio y recogida con una identidad visual coherente.</p>
+        <span data-theme-preview-button class="cfg-save-bottom">Continuar con mi pedido</span>
+      </div>
+      <p data-theme-contrast role="status"></p>
+    </section>
 
     <details class="cfg-subform" open style="border:1px solid var(--col-border); border-radius:.65rem; padding:.75rem 1rem; background:var(--col-elevated);">
       <summary style="cursor:pointer; font-weight:800; font-size:.88rem; color:var(--col-text);">
@@ -235,6 +250,7 @@
           {% endfor %}
         </div>
         <button type="submit" class="cfg-save-bottom">Guardar paleta visual</button>
+        <button type="reset" class="cfg-save-bottom">Restaurar lo guardado</button>
       </form>
     </details>
 
@@ -460,6 +476,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/theme-preview.js') }}"></script>
 <script nonce="{{ csp_nonce() }}">
 (() => {
   const root = document.querySelector('[data-weekly-schedule]');

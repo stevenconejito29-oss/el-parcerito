@@ -6579,7 +6579,7 @@ body.ox-body-admin :is(input,select,textarea,button,a,summary):focus-visible {
     width: 100%;
   }
 
-  body.ox-body-admin .work-actions-top > * {
+  body.ox-body-admin:not(.operational-view) .work-actions-top > * {
     width: 100%;
   }
 

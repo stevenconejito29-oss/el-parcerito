@@ -6,10 +6,24 @@ Parcerito. La documentación vigente comienza en [`docs/README.md`](docs/README.
 ## Límites y fuentes de verdad
 
 - `oxidian/models.py` define datos, estados y roles.
+- En pedidos confirmados, los valores del snapshot prevalecen sobre el
+  catálogo actual, incluidos los vacíos explícitos. El fallback legacy solo
+  corresponde cuando falta la clave; las vistas deben seguir la misma regla.
 - `oxidian/services.py` contiene reglas de negocio compartidas.
 - `oxidian/routes/` adapta HTTP a esas reglas; no debe duplicarlas.
 - `chat/bot.js` orquesta la conversación, pero precios, stock, clientes y
   pedidos se consultan mediante `oxidian/routes/api_bot.py`.
+- WhatsApp se limita a verificaciones y confirmaciones para clientes, además
+  de los menús de admin y superadmin. El teléfono registrado en el perfil
+  activo determina el rol; las listas del entorno no conceden acceso.
+  Consultas, catálogo, carrito y atención humana pertenecen a la PWA/chat web.
+  No ampliar WhatsApp a un asistente público sin una nueva instrucción expresa.
+- Reparto inmediato y por franjas son modalidades separadas, con opción mixta.
+  No mezclar asignación inmediata con reservas de franja ni apagar una
+  modalidad dejando pedidos activos sin su flujo operativo.
+- La tienda cobra al recibir o recoger, también en Bizum y tarjeta con
+  datáfono. No introducir pagos anticipados ni bloquear la preparación por
+  falta de cobro. La confirmación del primer pedido verifica identidad, no pago.
 - `oxidian/store_config.py` y `oxidian/config_defaults.py` concentran la
   configuración editable. No introducir nombres, teléfonos, URLs, precios o
   reglas comerciales directamente en vistas o controladores.

@@ -1,30 +1,9 @@
-/* Cliente de impresión térmica BLE (WebBluetooth) desde el navegador.
- *
- * Uso operativo: la POS58 / ZJ-58 / similar tiene un radio BLE con
- * característica escribible. El navegador (Chrome/Chromium en Android o
- * desktop) empuja los bytes ESC/POS generados por /pos/ticket/<id>/escpos
- * directamente al periférico, sin CUPS ni servidor de impresión.
- *
- * Limitaciones intrínsecas de plataforma (no arreglables desde código):
- *   - iOS Safari / Chrome iOS: WebBluetooth = 0. `navigator.bluetooth`
- *     no existe. Fallback = pedir Pi print-server en LAN.
- *   - Chrome Android < 122: sin `navigator.bluetooth.getDevices()`.
- *     No hay auto-reconexión posible tras F5; el operador debe pulsar
- *     el modal manual "Seleccionar impresora e imprimir" cada sesión.
- *   - Chrome Android ≥ 122 con flag `enable-web-bluetooth-new-permissions-
- *     backend`: auto-reconexión silenciosa tras F5 vía `_restoreBT()`.
- *   - WebBluetooth solo soporta BLE, no BT Classic (SPP). Si tu impresora
- *     es SPP-only (ej. PAS58 pura, HC-05 directo), esta ruta no funciona
- *     — hace falta app Android puente o print-server en la LAN.
- *
- * API expuesta en `window.ThermalPrinter`:
- *   pairBT()               → Promise<{transport,name}> — abre diálogo BT
- *   printTicket(id, opts)  → Promise — descarga ESC/POS y escribe al device
- *   isPaired()             → boolean — device conectado en memoria
- *   getPairInfo()          → {transport,name}|null — hint persistido
- *   restoreBT()            → Promise — intento silencioso tras F5
- *   forget()               → limpia estado y localStorage
- *   ready                  → Promise que resuelve al terminar restore inicial
+/* Impresión ESC/POS por USB o Bluetooth BLE desde un contexto HTTPS.
+ * La compatibilidad se comprueba mediante capacidades del navegador.
+ * Bluetooth clásico requiere un puente; Safari/iPhone puede imprimir por
+ * el diálogo del sistema/AirPrint o por la impresora de red del negocio.
+ * El permiso del periférico es local al navegador: el perfil solo guarda
+ * una preferencia. Nunca se restaura otra impresora distinta por fallback.
  */
 (function () {
   'use strict';
@@ -51,7 +30,11 @@
 
   let device = null;
   let btChar = null;
+  let usbDevice = null;
+  let usbEndpoint = null;
+  let printing = false;
   let serverHint = null;
+  let networkAvailable = false;
   let _readyResolve = null;
   const readyPromise = new Promise((resolve) => { _readyResolve = resolve; });
 
@@ -76,11 +59,13 @@
 
   async function loadServerHint() {
     if (!document.body.classList.contains('view-preparador')) return null;
+    const localHint = getPairInfo();
     try {
       const resp = await fetch('/preparador/impresora', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
       const data = resp.ok ? await resp.json() : null;
       serverHint = data?.printer || null;
-      if (serverHint) setPaired(serverHint);
+      networkAvailable = Boolean(data?.network_available);
+      if (serverHint && !localHint) setPaired(serverHint);
     } catch (_) { /* localStorage sigue siendo fallback offline */ }
     return serverHint;
   }
@@ -98,11 +83,69 @@
     } catch (_) { /* el emparejamiento local continúa operativo */ }
   }
   function isPaired() {
-    return device !== null;
+    return Boolean(usbDevice?.opened || device?.gatt?.connected);
+  }
+
+  function capabilities() {
+    return {
+      secure: window.isSecureContext,
+      usb: window.isSecureContext && typeof navigator.usb?.requestDevice === 'function',
+      bt: window.isSecureContext && typeof navigator.bluetooth?.requestDevice === 'function',
+    };
+  }
+
+  const usbId = dev => `${dev.vendorId}:${dev.productId}:${dev.serialNumber || ''}`;
+
+  async function connectUSB(dev) {
+    try {
+      if (!dev.opened) await dev.open();
+      if (!dev.configuration) await dev.selectConfiguration(dev.configurations[0]?.configurationValue || 1);
+      let selected;
+      for (const iface of dev.configuration.interfaces) {
+        for (const alternate of iface.alternates) {
+          if (![7, 255].includes(alternate.interfaceClass)) continue;
+          const endpoint = alternate.endpoints.find(item => item.direction === 'out' && item.type === 'bulk');
+          if (endpoint) { selected = { iface, alternate, endpoint }; break; }
+        }
+        if (selected) break;
+      }
+      if (!selected) throw new Error('Esta impresora no expone una conexión USB compatible con ESC/POS. Usa impresión del sistema o por red.');
+      await dev.claimInterface(selected.iface.interfaceNumber);
+      if (selected.iface.alternate.alternateSetting !== selected.alternate.alternateSetting) {
+        await dev.selectAlternateInterface(selected.iface.interfaceNumber, selected.alternate.alternateSetting);
+      }
+      if (device?.gatt?.connected) device.gatt.disconnect();
+      if (usbDevice && usbDevice !== dev && usbDevice.opened) await usbDevice.close();
+      device = null; btChar = null;
+      usbDevice = dev; usbEndpoint = selected.endpoint.endpointNumber;
+      const info = { transport: 'usb', device_id: usbId(dev), name: dev.productName || 'Impresora USB' };
+      setPaired(info);
+      await saveServerHint(info);
+      return info;
+    } catch (error) {
+      try { if (dev.opened) await dev.close(); } catch (_) {}
+      throw error;
+    }
+  }
+
+  async function pairUSB() {
+    if (!capabilities().usb) throw new Error('USB directo requiere HTTPS y un navegador compatible. Puedes usar impresión del sistema o por red.');
+    if (printing) throw new Error('Espera a que termine el ticket actual.');
+    const dev = await navigator.usb.requestDevice({ filters: [{ classCode: 7 }, { classCode: 255 }] });
+    return connectUSB(dev);
+  }
+
+  async function restoreUSB() {
+    const hint = getPairInfo();
+    if (hint?.transport !== 'usb' || !capabilities().usb || !navigator.usb.getDevices) return;
+    const matches = (await navigator.usb.getDevices()).filter(dev => usbId(dev) === hint.device_id);
+    // Dos impresoras sin número de serie requieren selección explícita.
+    if (matches.length === 1) await connectUSB(matches[0]);
   }
 
   async function pairBT() {
-    if (!('bluetooth' in navigator)) {
+    if (printing) throw new Error('Espera a que termine el ticket actual.');
+    if (!capabilities().bt) {
       throw new Error('Este navegador no soporta Bluetooth. Usa Chrome/Chromium en Android o Desktop.');
     }
     const dev = await navigator.bluetooth.requestDevice({
@@ -115,6 +158,9 @@
       try { server.disconnect(); } catch (_) {}
       throw new Error('La impresora BT no expone característica de escritura. Prueba a apagar/encender la impresora, o dime el modelo para añadir su servicio.');
     }
+    if (usbDevice?.opened) await usbDevice.close();
+    usbDevice = null; usbEndpoint = null;
+    if (device && device !== dev && device.gatt?.connected) device.gatt.disconnect();
     device = dev;
     btChar = writeChar;
     _attachDisconnectListener(dev);
@@ -156,16 +202,31 @@
   }
 
   async function _writeBytes(bytes) {
+    if (usbDevice?.opened && usbEndpoint !== null) {
+      for (let offset = 0; offset < bytes.length; offset += 4096) {
+        const chunk = bytes.slice(offset, offset + 4096);
+        const result = await usbDevice.transferOut(usbEndpoint, chunk);
+        if (result.status !== 'ok' || result.bytesWritten !== chunk.length) {
+          throw new Error('La impresora recibió un ticket incompleto. Comprueba el papel antes de reimprimir.');
+        }
+      }
+      return;
+    }
     if (!device || !btChar) throw new Error('Impresora no emparejada.');
-    // BLE MTU típico 20-512 bytes. 100 bytes es seguro y compatible con todos
-    // los chips baratos.
-    const CHUNK = 100;
+    // Bloques conservadores para dispositivos con MTU BLE mínimo.
+    const CHUNK = 20;
     for (let i = 0; i < bytes.length; i += CHUNK) {
-      await btChar.writeValue(bytes.slice(i, i + CHUNK));
+      const chunk = bytes.slice(i, i + CHUNK);
+      if (btChar.properties.write && btChar.writeValueWithResponse) await btChar.writeValueWithResponse(chunk);
+      else if (btChar.properties.writeWithoutResponse && btChar.writeValueWithoutResponse) await btChar.writeValueWithoutResponse(chunk);
+      else await btChar.writeValue(chunk);
     }
   }
 
   async function printTicket(pedidoId, options) {
+    if (printing) throw new Error('Ya hay un ticket enviándose. Espera antes de reimprimir.');
+    printing = true;
+    try {
     options = options || {};
     const reprint = options.reprint ? '1' : '0';
     const url = `/pos/ticket/${pedidoId}/escpos?reprint=${reprint}`;
@@ -174,8 +235,8 @@
     const buf = new Uint8Array(await resp.arrayBuffer());
     // Auto-restore lazy: si no hay device pero hay hint persistido y
     // getDevices está disponible, reconecta antes de escribir.
-    if (!device) {
-      try { await _restoreBT(); } catch (_) {}
+    if (!isPaired()) {
+      try { await restore(); } catch (_) {}
     }
     // Si el GATT se cayó entre requests, reconecta.
     if (device && device.gatt && !device.gatt.connected) {
@@ -186,6 +247,22 @@
     }
     await _writeBytes(buf);
     return { bytes: buf.length };
+    } finally { printing = false; }
+  }
+
+  async function restore() {
+    if (getPairInfo()?.transport === 'usb') return restoreUSB();
+    return _restoreBT();
+  }
+
+  async function printNetwork(pedidoId, options = {}) {
+    const csrf = document.querySelector('meta[name="ox-csrf-token"]')?.content || '';
+    const response = await fetch(`/pos/ticket/${pedidoId}/imprimir?reprint=${options.reprint ? '1' : '0'}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'X-CSRFToken': csrf, Accept: 'application/json' },
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error('No pudimos enviar el ticket a la impresora del negocio. Revisa su conexión y configuración.');
+    return data;
   }
 
   async function _restoreBT() {
@@ -204,9 +281,8 @@
     // Con 2 intentos (0 + 700ms) cubrimos el 95% de casos sin añadir
     // demasiada latencia al primer paint de la página.
     const hint = getPairInfo();
-    if (hint?.device_id) {
-      list.sort((a, b) => Number(b.id === hint.device_id) - Number(a.id === hint.device_id));
-    }
+    if (!hint?.device_id || hint.transport !== 'bt') return;
+    list = list.filter(dev => dev.id === hint.device_id);
     for (const dev of list) {
       for (const delay of [0, 700]) {
         if (delay) await new Promise(r => setTimeout(r, delay));
@@ -232,6 +308,9 @@
   }
 
   function forget() {
+    if (printing) return;
+    if (usbDevice?.opened) usbDevice.close().catch(() => {});
+    usbDevice = null; usbEndpoint = null;
     try {
       if (device && device.gatt && device.gatt.connected) device.gatt.disconnect();
     } catch (_) {}
@@ -245,7 +324,9 @@
   }
 
   window.ThermalPrinter = {
-    pairBT, isPaired, getPairInfo, printTicket, restoreBT: _restoreBT, forget,
+    pairBT, pairUSB, capabilities, isPaired, getPairInfo, printTicket,
+    printNetwork, canPrintNetwork: () => networkAvailable,
+    restore, restoreUSB, restoreBT: _restoreBT, forget,
     ready: readyPromise,
   };
 
@@ -255,13 +336,8 @@
   document.addEventListener('DOMContentLoaded', async () => {
     await loadServerHint();
     const hint = getPairInfo();
-    const canRestore = hint && hint.transport === 'bt'
-      && 'bluetooth' in navigator
-      && typeof navigator.bluetooth.getDevices === 'function';
-    if (canRestore) {
-      try { await _restoreBT(); } catch (_) {}
-    }
-    _readyResolve({ paired: device !== null });
+    if (hint) { try { await restore(); } catch (_) {} }
+    _readyResolve({ paired: isPaired() });
   });
 
   // NO desconectamos BT en pagehide: al dejar el GATT abierto damos

@@ -1158,8 +1158,10 @@ def create_app(env="default"):
             "/superadmin/zona",
         ))
         geolocation = "(self)" if geolocation_allowed else "()"
+        printer_access = "(self)" if request.path.startswith(("/preparador/", "/pos/")) else "()"
         response.headers["Permissions-Policy"] = (
-            f"camera=(), geolocation={geolocation}, microphone=(), payment=(), usb=()"
+            f"camera=(), geolocation={geolocation}, microphone=(), payment=(), "
+            f"usb={printer_access}, bluetooth={printer_access}"
         )
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Origin-Agent-Cluster"] = "?1"

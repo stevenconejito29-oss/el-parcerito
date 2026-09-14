@@ -23,6 +23,8 @@ class SafeLocalReferrerTest(unittest.TestCase):
         for referrer in (
             "https://evil.test/admin/finanzas",
             "javascript:alert(1)",
+            "https://example.test/\\evil.test",
+            "/\\evil.test",
             "https://example.test/superadmin/config",
         ):
             with self.app.test_request_context(

@@ -518,7 +518,7 @@ def _validar_config_value(clave, valor):
         except (TypeError, ValueError):
             label = "La comisión" if clave == "SERVICE_COMMISSION_PCT" else "El descuento máximo"
             return False, clave, valor, f"{label} debe ser numérico."
-        if numero < 0 or numero > 100:
+        if not 0 <= numero <= 100:
             label = "La comisión" if clave == "SERVICE_COMMISSION_PCT" else "El descuento máximo"
             return False, clave, valor, f"{label} debe estar entre 0 y 100."
         return True, clave, f"{numero:g}", None
@@ -2633,7 +2633,8 @@ def toggle_zona(zona_id):
 @superadmin_bp.route("/pl")
 @superadmin_required
 def pl():
-    hoy = date.today()
+    from business_time import business_today
+    hoy = business_today()
     primer_dia = hoy.replace(day=1)
     ultimo_dia = hoy.replace(day=monthrange(hoy.year, hoy.month)[1])
 

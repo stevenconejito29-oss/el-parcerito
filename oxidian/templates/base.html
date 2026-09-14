@@ -225,6 +225,8 @@
   {# Estilos canónicos de cada vista. Se cargan después de la infraestructura
      PWA para que el componente no dependa de parches de especificidad. #}
   {% block styles_final %}{% endblock %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-polish.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/system-foundation.css', v=asset_version) }}">
 </head>
 {# El detalle ya tiene navegación de regreso y una barra de compra fija.
    Apilar además la navegación inferior duplicaba controles y cubría el
@@ -233,6 +235,7 @@
 <body class="ox-body ox-body-public{% if show_bottom_nav %} ox-has-bottom-nav{% endif %} min-h-screen"
       style="--brand-primary:{{ brand.color_primario }};--brand-secondary:{{ brand.color_secundario }};--brand-on-secondary:{{ brand.on_secundario }};--brand-accent:{{ brand.color_acento }};--brand-on-primary:{{ brand.on_primario }};--brand-on-accent:{{ brand.on_acento }};--col-gold:{{ brand.color_primario }};--theme-bg:{{ brand.theme.fondo_app }};--theme-surface:{{ brand.theme.superficie }};--theme-surface-alt:{{ brand.theme.superficie_alt }};--theme-text:{{ brand.theme.texto }};--theme-muted:{{ brand.theme.texto_suave }};--theme-header-bg:{{ brand.theme.cabecera_fondo }};--theme-header-text:{{ brand.theme.cabecera_texto }};--theme-success:{{ brand.theme.exito }};--theme-danger:{{ brand.theme.alerta }};">
 {% include 'partials/heritage_sprite.html' %}
+{% include 'partials/ui_sprite.html' %}
 
 {# ── HEADER PÚBLICO ── #}
 <header class="ox-header-public">
@@ -584,6 +587,7 @@
   <a href="{{ url_for('public.index') }}"
      class="ox-bnav-item {{ 'is-active' if request.endpoint == 'public.index' and 'q' not in request.args else '' }}"
      data-bnav="home"
+     {% if request.endpoint == 'public.index' %}aria-current="page"{% endif %}
      aria-label="{{ 'Volver al menú' if brand.es_comida else 'Volver al catálogo' }}">
     <span class="ox-bnav-svg" aria-hidden="true">
       {{ heritage_icon('casita') }}
@@ -592,7 +596,7 @@
     <span class="ox-bnav-glow" aria-hidden="true"></span>
   </a>
 
-  <a href="{{ url_for('public.chat') }}" class="ox-bnav-item {{ 'is-active' if request.endpoint == 'public.chat' else '' }}" data-bnav="chat" aria-label="Abrir chat de ayuda">
+  <a href="{{ url_for('public.chat') }}" class="ox-bnav-item {{ 'is-active' if request.endpoint == 'public.chat' else '' }}" data-bnav="chat" aria-label="Abrir chat de ayuda" {% if request.endpoint == 'public.chat' %}aria-current="page"{% endif %}>
     <span class="ox-bnav-svg" aria-hidden="true">
       <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 10h8M8 14h5"/></svg>
     </span>
@@ -603,7 +607,7 @@
   {% if brand.puntos %}
   <a href="{{ url_for('public.club') }}"
      class="ox-bnav-item {{ 'is-active' if request.endpoint == 'public.club' else '' }}"
-     data-bnav="puntos">
+     data-bnav="puntos" {% if request.endpoint == 'public.club' %}aria-current="page"{% endif %}>
     <span class="ox-bnav-svg" aria-hidden="true">
       {{ heritage_icon('grano') }}
     </span>
@@ -623,7 +627,7 @@
 
   <a href="{{ url_for('public.ver_carrito') }}"
      class="ox-bnav-item ox-bnav-cart{% if session.get('carrito', {}) %} has-items{% endif %} {{ 'is-active' if request.endpoint == 'public.ver_carrito' else '' }}"
-     data-bnav="cart">
+     data-bnav="cart" {% if request.endpoint == 'public.ver_carrito' %}aria-current="page"{% endif %}>
     <span class="ox-bnav-svg" aria-hidden="true">
       {{ heritage_icon('canasto') }}
       {% set n = session.get('carrito', {})|length %}

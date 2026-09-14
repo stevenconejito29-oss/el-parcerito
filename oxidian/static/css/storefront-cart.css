@@ -1397,3 +1397,7 @@ body.ox-body-public .cr-summary-title { color: var(--theme-header-text) !importa
   gap: .3rem;
   flex-wrap: wrap;
 }
+.cr-update-row:not([hidden]) { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; }
+.cr-update-row[hidden] { display: none !important; }
+.cr-update-row [role="status"] { flex: 1 1 180px; color: var(--theme-text); font-size: .85rem; }
+.cr-qty-input:invalid { outline: 2px solid var(--theme-danger); outline-offset: 2px; }

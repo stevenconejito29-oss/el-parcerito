@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from ipaddress import ip_address
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 
 
 BRAND_COLOR_DEFAULTS = {
@@ -305,6 +305,26 @@ def is_service_mode() -> bool:
     return get_store_features()["modo_tienda"] == "bar_servicio"
 
 
+def get_pickup_details() -> dict:
+    """Ubicación de recogida a partir de la dirección pública del negocio.
+
+    El centro de cobertura de reparto no necesariamente es el local, por eso
+    no se reutilizan sus coordenadas como destino de recogida.
+    """
+    address = (get_store_value("DIRECCION_NEGOCIO") or "").strip()
+    location = ", ".join(value for value in (
+        address,
+        (get_store_value("CIUDAD_NEGOCIO") or "").strip(),
+        (get_store_value("PAIS_NEGOCIO") or "").strip(),
+    ) if value)
+    return {
+        "address": location if address else "",
+        "maps_url": "https://www.google.com/maps/dir/?" + urlencode({
+            "api": "1", "destination": location,
+        }) if address else "",
+    }
+
+
 def is_provider_flow_enabled() -> bool:
     """El flujo multi-proveedor/bar externo queda desactivado por diseño."""
     return False
@@ -318,6 +338,8 @@ def get_service_commission(total) -> dict:
     try:
         pct = Decimal(get_store_value("SERVICE_COMMISSION_PCT", "0"))
     except (InvalidOperation, TypeError):
+        pct = Decimal("0")
+    if not pct.is_finite():
         pct = Decimal("0")
     pct = min(Decimal("100"), max(Decimal("0"), pct)).quantize(Decimal("0.01"))
     commission = (amount * pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

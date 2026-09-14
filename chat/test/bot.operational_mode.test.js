@@ -14,6 +14,8 @@ process.env.SIMULATE_EVO_SEND = 'true';
 process.env.OXIDIAN_KEY = 'test-key-value';
 process.env.BOT_PANEL_KEY = 'test-panel-key';
 process.env.OWNER_NUMBER = '34600000991';
+// Ni siquiera la antigua opción de compatibilidad debe conceder permisos.
+process.env.BOT_STRICT_DB_ROLE = '0';
 
 const { _test } = require('../bot');
 const {
@@ -23,13 +25,17 @@ const {
   getSesion,
   handleMessage,
   isAdminAvailable,
+  isAdminJid,
+  isSuperAdminJid,
   resetOperationalPresenceForStartup,
   setAdminAvailability,
   setSesion,
+  setCfg,
 } = _test;
 const jid = '34600000991@s.whatsapp.net';
 
 test.beforeEach(() => {
+  setCfg('whatsapp_role_profiles', JSON.stringify([{telefono:'34600000991',rol:'super_admin',capabilities:['store','handoff','client_mode']}]));
   db.exec('DELETE FROM handoffs; DELETE FROM sessions; DELETE FROM admin_availability;');
   setSesion(jid, { jid, nombre: 'Responsable', role: 'admin', estado: 'admin_menu' });
 });
@@ -37,6 +43,20 @@ test.beforeEach(() => {
 test.after(() => {
   db.close();
   fs.rmSync(dbDir, { recursive: true, force: true });
+});
+
+test('el teléfono del perfil determina admin y superadmin, nunca el entorno', () => {
+  setCfg('whatsapp_role_profiles', '[]');
+  assert.equal(isAdminJid(jid), false);
+  assert.equal(isSuperAdminJid(jid), false);
+  setCfg('whatsapp_role_profiles', JSON.stringify([{telefono:'34600000991',rol:'cocina'}]));
+  assert.equal(isAdminJid(jid), false);
+  setCfg('whatsapp_role_profiles', JSON.stringify([{telefono:'34600000991',rol:'admin'}]));
+  assert.equal(isAdminJid(jid), true);
+  assert.equal(isSuperAdminJid(jid), false);
+  setCfg('whatsapp_role_profiles', JSON.stringify([{telefono:'34600000992',rol:'super_admin'}]));
+  assert.equal(isAdminJid(jid), false);
+  assert.equal(isSuperAdminJid('34600000992@s.whatsapp.net'), true);
 });
 
 test('/offline desactiva atención y conserva flujo cliente para el mismo teléfono', async () => {
@@ -117,7 +137,7 @@ test('/offline no se reenvía al cliente durante un chat activo', async () => {
     active_client_jid: clientJid,
   });
   await handleMessage(jid, '/offline', 'Responsable');
-  assert.equal(getSesion(jid).estado, 'admin_chat');
+  assert.equal(getSesion(jid).estado, 'admin_menu');
   assert.equal(db.prepare(`SELECT COUNT(*) c FROM handoff_messages WHERE client_jid=? AND body='/offline'`).get(clientJid).c, 0);
 });
 
@@ -165,8 +185,7 @@ test('admin offline puede pedir ayuda sin notificarse ni tomarse su propio chat'
   await handleMessage(jid, 'agente', 'Responsable');
 
   const handoff = getHandoff(jid);
-  assert.ok(handoff);
-  assert.equal(handoff.admin_jid, null);
+  assert.equal(handoff, null);
   const selfTakeAlerts = db.prepare(`
     SELECT COUNT(*) c FROM logs
     WHERE evento='send_attempt'
@@ -176,10 +195,10 @@ test('admin offline puede pedir ayuda sin notificarse ni tomarse su propio chat'
   assert.equal(selfTakeAlerts, 0);
 });
 
-test('0 cierra el soporte pendiente y vuelve al menú cliente offline', async () => {
+test('0 vuelve al menú cliente offline sin crear soporte paralelo', async () => {
   await handleMessage(jid, '/offline', 'Responsable');
   await handleMessage(jid, 'agente', 'Responsable');
-  assert.ok(getHandoff(jid));
+  assert.equal(getHandoff(jid), null);
 
   await handleMessage(jid, '0', 'Responsable');
 
@@ -213,14 +232,14 @@ test('0 muestra el menú aunque el superadmin offline tenga un pedido activo', a
 
   assert.equal(getSesion(jid).estado, 'client_main_menu');
   const last = db.prepare(`SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1`).get();
-  assert.match(last.detalle, /Modo cliente activo|Elige una opción|Qué necesitas/i);
+  assert.match(last.detalle, /verificaciones y confirmaciones/i);
   assert.doesNotMatch(last.detalle, /pedido .*preparación/i);
 });
 
-test('/online elimina la solicitud propia sin mostrar conflictos de agentes', async () => {
+test('/online vuelve al trabajo sin autoasignaciones ni conflictos', async () => {
   await handleMessage(jid, '/offline', 'Responsable');
   await handleMessage(jid, 'agente', 'Responsable');
-  assert.ok(getHandoff(jid));
+  assert.equal(getHandoff(jid), null);
   db.exec('DELETE FROM logs;');
 
   await handleMessage(jid, '/online', 'Responsable');

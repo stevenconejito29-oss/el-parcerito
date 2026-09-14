@@ -1,0 +1,16 @@
+{% if pedido.estado in ['pendiente', 'armando'] and pedido.confirmacion_estado != 'pending' and (current_user.rol in ['admin', 'super_admin'] or not pedido.preparador_id or pedido.preparador_id == current_user.id) %}
+<details class="work-note">
+  <summary>Resolver una incidencia</summary>
+  {% if pedido.pago_confirmado %}
+  <p>Este pedido ya está pagado. Contacta con administración para cancelar y gestionar la devolución.</p>
+  {% else %}
+  <form method="POST" action="{{ url_for('preparador.cancelar_pedido', pedido_id=pedido.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="cancel-reason-{{ pedido.id }}">Motivo de cancelación</label>
+    <textarea id="cancel-reason-{{ pedido.id }}" name="motivo" required minlength="5" maxlength="300" rows="2" class="w-full" placeholder="Explica qué impide preparar este pedido"></textarea>
+    <label><input type="checkbox" name="confirmar" value="1" required> Confirmo cancelar este pedido y liberar sus reservas.</label>
+    <button type="submit" class="work-btn work-btn-ghost">Cancelar pedido</button>
+  </form>
+  {% endif %}
+</details>
+{% endif %}

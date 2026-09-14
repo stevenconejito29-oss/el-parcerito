@@ -478,6 +478,16 @@ def notify_order_state(pedido) -> None:
         "cancelado": ("❌ Pedido cancelado", f"#{pedido.numero_pedido} quedó cancelado. Abre el detalle para revisar su estado."),
     }
     entry = msgs.get(pedido.estado)
+    if pedido.estado == "listo" and pedido.tipo_entrega_cliente == "recogida":
+        from store_config import get_pickup_details
+        pickup = get_pickup_details()
+        entry = (
+            "✅ Ya puedes recoger tu pedido",
+            f"#{pedido.numero_pedido} está preparado. " + (
+                f"Te esperamos en {pickup['address']}. Abre el pedido para ver la ruta en Maps."
+                if pickup["address"] else "Abre el pedido y consulta el punto de recogida con el equipo."
+            ),
+        )
     if not entry:
         return
     title, body = entry

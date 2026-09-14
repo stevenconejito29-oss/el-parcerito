@@ -2,6 +2,7 @@
 {% block title %}Información legal y privacidad — {{ brand.nombre }}{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/legal-public.css', v=asset_version) }}">{% endblock %}
 {% block content %}
+{% include 'public/_customer_navigation.html' %}
 <article class="legal-page">
   <header class="legal-hero">
     <p>Información transparente</p>

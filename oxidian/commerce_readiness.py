@@ -1,9 +1,7 @@
 """Diagnóstico de venta basado en las fuentes reales de configuración y datos."""
 from __future__ import annotations
 
-from datetime import timedelta
-
-from models import DeliverySlot, KnowledgeEntry, Product, SiteConfig, User, WebChatConversation, ZonaEntrega
+from models import KnowledgeEntry, Product, SiteConfig, User, WebChatConversation, ZonaEntrega
 from business_time import business_today
 from delivery_mode_service import modos_delivery_activos
 from store_config import get_store_features, get_store_value
@@ -37,9 +35,19 @@ def commerce_readiness() -> dict:
     add("fulfillment", "Forma de entrega", fulfillment,
         "Hay al menos una modalidad activa." if fulfillment else "Activa delivery o recogida.", "superadmin.dashboard")
 
-    payments = [key for key in ("efectivo", "bizum", "tarjeta") if features.get(key)]
+    payments = [key for key in ("efectivo", "bizum", "tarjeta") if features.get(key)
+                and (key != "bizum" or (get_store_value("BIZUM_TELEFONO") or "").strip())]
     add("payments", "Cobro al cliente", bool(payments),
-        "Métodos activos: " + ", ".join(payments) if payments else "No existe ningún método de pago activo.", "superadmin.dashboard")
+        "Cobro al recibir o recoger: " + ", ".join(payments) if payments else "No existe ningún método de cobro configurado para recibir o recoger.", "superadmin.dashboard")
+
+    if features.get("bizum"):
+        add("bizum_phone", "Destino de Bizum", bool((get_store_value("BIZUM_TELEFONO") or "").strip()),
+            "Revisa el número que recibirá el cobro al entregar." if (get_store_value("BIZUM_TELEFONO") or "").strip()
+            else "Bizum está habilitado pero falta su teléfono de cobro.", "superadmin.config")
+    if features.get("recogida"):
+        address = (get_store_value("DIRECCION_NEGOCIO") or "").strip()
+        add("pickup_address", "Dirección de recogida", bool(address),
+            "Dirección configurada para recogida y Maps." if address else "Configura la dirección del negocio antes de aceptar recogidas.", "superadmin.config")
 
     if features.get("delivery"):
         zones = ZonaEntrega.query.filter_by(activo=True).count()
@@ -57,15 +65,16 @@ def commerce_readiness() -> dict:
             except (TypeError, ValueError):
                 horizon = 7
             today = business_today()
-            slots = DeliverySlot.query.filter(
-                DeliverySlot.activo.is_(True), DeliverySlot.fecha >= today,
-                DeliverySlot.fecha <= today + timedelta(days=horizon - 1),
-            ).count()
+            from delivery_slots_service import listar_franjas_cliente
+            visible_slots = listar_franjas_cliente(
+                today, min(30, horizon), materializar_recurrencia=False,
+            )
+            slots = sum(1 for slot in visible_slots if slot["disponible"])
             add("slots", "Franjas disponibles", slots > 0,
-                f"{slots} franja(s) próximas." if slots else (
-                    "Solo operas por franjas y no hay salidas próximas."
+                f"{slots} franja(s) abiertas con cupo para reservar." if slots else (
+                    "Solo operas por franjas y no hay salidas abiertas con cupo."
                     if not modes.get("inmediato")
-                    else "El modo mixto sigue vendiendo en inmediato, pero no ofrece franjas próximas."
+                    else "El inmediato sigue habilitado, pero no hay franjas abiertas con cupo."
                 ), "admin.delivery_franjas_panel",
                 warning=bool(modes.get("inmediato")))
 

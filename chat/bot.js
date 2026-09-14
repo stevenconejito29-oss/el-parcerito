@@ -629,11 +629,12 @@ function whatsappRoleProfiles() {
       telefono: normalizePhone(row?.telefono),
       phone_hash: String(row?.phone_hash || '').trim().toLowerCase(),
       nombre: String(row?.nombre || '').trim(),
-      rol: row?.rol === 'super_admin' ? 'super_admin' : 'admin',
+      rol: row?.rol,
       capabilities: Array.isArray(row?.capabilities)
         ? [...new Set(row.capabilities.map(String))]
         : [],
-    })).filter(row => row.telefono || /^[a-f0-9]{32}$/.test(row.phone_hash));
+    })).filter(row => ['admin', 'super_admin'].includes(row.rol)
+      && (row.telefono || /^[a-f0-9]{32}$/.test(row.phone_hash)));
   } catch {
     return [];
   }
@@ -730,8 +731,8 @@ function isOwnerJid(jid) {
 }
 
 // Fuente autoritativa del rol super_admin: el perfil DB-derivado que llega
-// vía /branding. El env (OWNER_NUMBER / SUPERADMINS) sigue siendo whitelist
-// de acceso (staticAdminPhones), pero NO otorga rol.
+// vía /branding. El env (OWNER_NUMBER / SUPERADMINS) sirve para diagnóstico
+// y alertas; no concede acceso ni otorga rol.
 // Si env y BD divergen, log de advertencia — el fix va en la BD, no en el bot.
 let _superAdminMismatchLogged = false;
 function isSuperAdminJid(jid) {
@@ -753,8 +754,8 @@ function adminCan(jid, capability) {
   if (isSuperAdminJid(jid)) return true;
   const profile = whatsappRoleProfile(phoneFromJid(jid));
   if (profile) return profile.capabilities.includes(capability);
-  // Números adicionales sin cuenta solo sirven como agentes de conversación.
-  return capability === 'handoff';
+  // Un número sin perfil verificado no recibe capacidades por pertenecer al env.
+  return false;
 }
 
 /**
@@ -1031,33 +1032,10 @@ function adminBody(jid, body = {}) {
   return { ...body, actor_telefono: adminActorPhone(jid) };
 }
 
-// Modo estricto: si `BOT_STRICT_DB_ROLE=1` (default), un teléfono solo se
-// considera admin si tiene perfil activo sincronizado desde BD
-// (whatsappRoleProfile). OWNER_NUMBER/SUPERADMINS sirven para diagnóstico y
-// alertas, pero nunca elevan permisos por sí solos. Esto debe fallar cerrado
-// incluso durante el arranque: una caída del backend no puede convertir una
-// variable de entorno antigua o equivocada en acceso al panel interno.
-//
-// Set a 0 solo si estás migrando y necesitas retrocompatibilidad temporal.
-const STRICT_DB_ROLE = String(process.env.BOT_STRICT_DB_ROLE || '1').trim() !== '0';
-let _strictDbRoleWarned = false;
-
+// El teléfono registrado en un perfil activo es la única fuente de acceso.
+// Las listas del entorno sirven para diagnóstico, nunca para conceder un rol.
 function isAdminPhone(phone) {
-  const clean = normalizePhone(phone);
-  const dbProfile = isProfileAdminPhone(clean);
-  const envMatched = adminPhones().includes(clean);
-  if (STRICT_DB_ROLE) {
-    // Solo BD otorga rol admin. La ausencia total de perfiles también es un
-    // estado no verificado, no una autorización de bootstrap.
-    if (envMatched && !dbProfile && !_strictDbRoleWarned) {
-      log('warn', 'admin_env_without_db_profile',
-          `phone=***${clean.slice(-3)} en env pero sin perfil BD — ignorado (STRICT_DB_ROLE=1)`);
-      _strictDbRoleWarned = true;
-    }
-    return dbProfile;
-  }
-  // Modo legacy: cualquiera de las dos fuentes concede acceso.
-  return envMatched || dbProfile;
+  return isProfileAdminPhone(normalizePhone(phone));
 }
 
 function isAdminJid(jid) {
@@ -4511,6 +4489,7 @@ function clientCapabilityText() {
 // el rendering agrupado por dominios. Aquí solo resolvemos las capabilities
 // y armamos el ctx para no acoplar el renderizado con el runtime.
 function adminMenu(jid) {
+  if (!isAdminJid(jid)) return texts.customerChannelNotice(getTiendaUrl());
   const sections = [
     adminCan(jid, 'status')      ? { n: '1️⃣', label: 'Resumen operativo' } : null,
     adminCan(jid, 'store')       ? { n: '2️⃣', label: 'Abrir / cerrar tienda' } : null,
@@ -4889,40 +4868,14 @@ async function _handleMessage(jid, text, pushName, context = {}) {
     }
   }
 
-  // ── Enriquecer sesión con datos del cliente registrado (memoria) ──
-  // Lo hacemos una vez por sesión (cuando aún no tenemos cliente_id) y solo
-  // si parece un mensaje real, no un evento de sistema. Sin AI; consulta
-  // directa a la BD via /ai/cliente-context que ya existe.
-  if (!ses.cliente_enriched && text && ses.role !== 'admin' && ses.role !== 'bar') {
-    try {
-      const phone = phoneFromJid(jid);
-      const ctx = await oxidianGet(`/ai/cliente-context?telefono=${encodeURIComponent(phone)}`);
-      if (ctx && ctx.ok && ctx.cliente) {
-        // Preferir el nombre registrado en BD frente al pushName de WhatsApp
-        if (ctx.cliente.nombre) ses.nombre = ctx.cliente.nombre;
-        ses.cliente_puntos = ctx.cliente.puntos || 0;
-        ses.cliente_pedidos_recientes = (ctx.cliente.pedidos_recientes || []).length;
-      }
-      ses.cliente_enriched = true;
-      saveSesion(ses);
-    } catch (err) {
-      // No bloqueante; seguimos sin enriquecer.
-      ses.cliente_enriched = true;
-    }
-  }
-
   const lower = text.toLowerCase().trim();
   const isOwner = isAdminJid(jid);
   const ownerAsClient = isOwner && isAdminClientMode(jid, ses);
   const requestedMode = isOwner ? detectOperationalModeCommand(text) : null;
 
-  // Contrato de canal (producción): WhatsApp no es un segundo asistente.
-  // Resolvemos este límite antes de diagnósticos, menús y handoffs antiguos,
-  // para que palabras como "menú", "agente" o un número nunca reactiven el
-  // árbol conversacional heredado. La única entrada transaccional admitida
-  // para clientes es la confirmación inequívoca del primer pedido; códigos y
-  // estados se envían como avisos salientes y la atención vive en /ayuda.
-  if (!isOwner || ownerAsClient) {
+  // Canal del cliente: únicamente verificaciones y confirmaciones.
+  // La compra y las consultas se atienden en la app.
+  if ((!isOwner || ownerAsClient) && !requestedMode) {
     const clientState = bareClientState(ses);
     const confirmationStates = new Set(['idle', 'main_menu', 'pedido_acciones']);
     if (confirmationStates.has(clientState)
@@ -4930,19 +4883,18 @@ async function _handleMessage(jid, text, pushName, context = {}) {
       const consumed = await tryHandleConfirmationReply(jid, lower, ses);
       if (consumed) return true;
     }
-    bumpStat('client_redirected_to_web_chat');
-    // Una única orientación por ventana evita responder en bucle a saludos o
-    // automatizaciones del cliente y reduce volumen/riesgo de bloqueo.
+    // Una pantalla antigua de cancelación o compra no puede quedar armada
+    // tras migrar el canal a ayuda pública. No modifica el carrito ni pedidos.
+    setSesion(jid, { ...ses, estado: clientStateFor(jid, 'main_menu'), pending: {} });
+    if (ownerAsClient && (lower.startsWith('!') || lower === '/modo')) {
+      return sendText(jid, 'Estás en modo cliente (offline). Escribe /online para volver a las herramientas de trabajo.');
+    }
+    // La orientación no abre un segundo asistente ni consulta datos comerciales.
     const redirectKey = `web-redirect:${jid}`;
     const lastRedirect = recentOutboundTexts.get(redirectKey) || 0;
-    if (Date.now() - Number(lastRedirect) < 10 * 60_000) return true;
+    if (!ownerAsClient && Date.now() - Number(lastRedirect) < 10 * 60_000) return true;
     recentOutboundTexts.set(redirectKey, Date.now());
-    return sendText(
-      jid,
-      `💬 Para consultas y atención abre el chat de nuestra app:\n${getTiendaUrl()}/ayuda\n\n` +
-      `Este WhatsApp se reserva para confirmar tu primer pedido y recibir códigos o avisos transaccionales.`,
-      { transactional: true, humanize: false },
-    );
+    return sendText(jid, texts.customerChannelNotice(getTiendaUrl()), { humanize: false });
   }
 
   // Migra cualquier sesión heredada de atención por WhatsApp a la bandeja
@@ -4951,12 +4903,20 @@ async function _handleMessage(jid, text, pushName, context = {}) {
   const legacyWhatsappSupportStates = new Set([
     'admin_handoff_menu', 'admin_take_wait', 'admin_transfer_wait', 'admin_chat',
   ]);
-  if (isOwner && legacyWhatsappSupportStates.has(ses.estado)) {
-    clearAdminChatForClient(jid);
-    setAdminState(ses, 'admin_menu');
+  const supportCommand = /^(?:[!/]?(?:tomar|atender|cola|transferir|soltar|fin|release|take|list)(?:\s|$)|\/(?:cerrar|cerrarchat)(?:\s|$))/.test(lower);
+  if (isOwner && (legacyWhatsappSupportStates.has(ses.estado) || supportCommand)) {
+    if (legacyWhatsappSupportStates.has(ses.estado)) {
+      const assigned = db.prepare('SELECT client_jid FROM handoffs WHERE admin_jid = ?').all(jid);
+      db.transaction(() => {
+        for (const row of assigned) clearAdminChatForClient(row.client_jid);
+        db.prepare('UPDATE handoffs SET admin_jid = NULL, assigned_at = NULL WHERE admin_jid = ?').run(jid);
+      })();
+      ses.active_client_jid = null;
+      setAdminState(ses, 'admin_menu');
+    }
     return sendText(
       jid,
-      `💬 La atención continúa únicamente en la bandeja web:\n${getTiendaUrl()}/admin/chats`,
+      `💬 Atención humana en el panel seguro:\n${getTiendaUrl()}/admin/chats`,
       { transactional: true, humanize: false },
     );
   }
@@ -5199,9 +5159,9 @@ async function _handleMessage(jid, text, pushName, context = {}) {
     log('info', 'operational_mode_changed', `${phoneFromJid(jid)} -> offline/client`);
     return sendText(jid,
       `⏸️ *Modo cliente activado.*\n\n` +
-      `Quedaste offline para atención y ahora puedes comprar o consultar pedidos como cualquier cliente.\n` +
+      `Las herramientas administrativas están pausadas. Las compras y consultas se realizan en la app.\n` +
       `Escribe */online* cuando quieras volver al panel operativo.\n\n` +
-      `${menuPrincipal(next)}`
+      `${texts.customerChannelNotice(getTiendaUrl())}`
     );
   }
 
@@ -5263,7 +5223,7 @@ async function _handleMessage(jid, text, pushName, context = {}) {
   // Un teléfono operativo conserva su identidad y permisos, pero puede
   // alternar explícitamente el contexto de conversación. Offline significa
   // "no recibir chats de trabajo" y, desde ese momento, el flujo normal es
-  // exactamente el de cualquier cliente (pedidos, puntos, cobertura, etc.).
+  // el de cualquier cliente: verificaciones y confirmaciones, con ayuda en la app.
   if (['cliente', 'modo cliente', 'modo-cliente', 'client'].includes(lower)) {
     deleteHandoff(jid);
     clearAdminChatForClient(jid);
@@ -5271,7 +5231,7 @@ async function _handleMessage(jid, text, pushName, context = {}) {
     const aviso = isOwner
       ? `🛒 *Modo cliente activado.*\nNo recibirás chats mientras estés offline. Escribe */online* para volver al panel.\n\n`
       : '';
-    await sendText(jid, aviso + menuPrincipal());
+    await sendText(jid, aviso + texts.customerChannelNotice(getTiendaUrl()));
     const next = { jid, nombre: ses.nombre, role: 'client', estado: clientStateFor(jid, 'main_menu'), carrito: [], pending: {}, zona_id: null, active_client_jid: null };
     saveSesion(next);
     return true;
@@ -6745,8 +6705,8 @@ async function handleAdminCmd(jid, text) {
     return sendText(
       jid,
       `⏸️ *Modo cliente activado.*\n\n` +
-      `Quedaste offline para atención y puedes comprar o consultar pedidos. ` +
-      `Escribe */online* para volver al panel.\n\n${menuPrincipal(ses)}`,
+      `Las herramientas administrativas están pausadas. ` +
+      `Escribe */online* para volver al panel.\n\n${texts.customerChannelNotice(getTiendaUrl())}`,
     );
   }
 
@@ -11400,6 +11360,9 @@ app.post('/api/bot/message', async (req, res) => {
       return res.status(422).json({ ok: false, error: 'unsupported whatsapp purpose' });
     }
     const jid = `${normalizePhone(telefono)}@s.whatsapp.net`;
+    if (purpose === 'web_chat_handoff' && (!isAdminJid(jid) || !adminCan(jid, 'handoff'))) {
+      return res.status(403).json({ ok: false, error: 'staff notification requires an authorized profile' });
+    }
     // Oxidian envía notificaciones operativas (estado pedido, código entrega,
     // pago confirmado). Estos mensajes son "transaccionales" — el cliente
     // los espera — y pasan el gate de ventana 24h. `force` solo si lo
@@ -11416,63 +11379,13 @@ app.post('/api/bot/message', async (req, res) => {
   }
 });
 
-app.post('/api/bot/broadcast', async (req, res) => {
-  try {
+// Rutas legacy conservadas con rechazo explícito: el cliente usa la PWA.
+for (const route of ['/api/bot/broadcast', '/api/bot/review-request']) {
+  app.post(route, (req, res) => {
     if (!requireApiKey(req, res)) return;
-    const mensajes = Array.isArray(req.body?.mensajes) ? req.body.mensajes : [];
-    const validos = mensajes.filter(m => normalizePhone(m.telefono) && String(m.mensaje || '').trim());
-    if (!validos.length) return res.status(400).json({ ok: false, error: 'mensajes[] requerido' });
-    if (validos.length > MAX_BROADCAST_MESSAGES) {
-      log('warn', 'broadcast_rejected', `${validos.length} mensajes excede ${MAX_BROADCAST_MESSAGES}`);
-      return res.status(413).json({
-        ok: false,
-        error: `broadcast limit exceeded (${MAX_BROADCAST_MESSAGES})`,
-      });
-    }
-    // Broadcast: el cliente NO está esperando esto. Solo enviamos a quienes
-    // hayan interactuado con el bot en las últimas 24h (gate de sendText).
-    // Si quien dispara está seguro de que es transaccional, debe marcarlo
-    // mensaje a mensaje con `transactional=true`. Nunca aceptamos force.
-    let enviados = 0;
-    let rechazados_fria = 0;
-    for (const msg of validos) {
-      const opts = { transactional: !!msg.transactional };
-      const ok = await sendText(`${normalizePhone(msg.telefono)}@s.whatsapp.net`, String(msg.mensaje).trim(), opts);
-      if (ok) enviados++; else rechazados_fria++;
-    }
-    return res.json({
-      ok: true,
-      total: validos.length,
-      enviados,
-      rechazados_fria,
-      nota: rechazados_fria > 0
-        ? 'Algunos destinatarios fueron rechazados por estar fuera de la ventana 24h (anti-baneo).'
-        : undefined,
-    });
-  } catch (e) {
-    log('error', 'api_broadcast', String(e));
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-
-app.post('/api/bot/review-request', async (req, res) => {
-  try {
-    if (!requireApiKey(req, res)) return;
-    const { telefono, pedido_id, numero_pedido } = req.body || {};
-    const phone = normalizePhone(telefono);
-    if (!phone || !pedido_id) return res.status(400).json({ ok: false, error: 'telefono y pedido_id requeridos' });
-    const texto =
-      `⭐ *¿Cómo estuvo tu pedido ${numero_pedido || pedido_id}?*\n\n` +
-      `¡Tu opinión nos importa mucho! 😊\n` +
-      `Responde con una nota del *1 al 5* y, si quieres, cuéntanos cómo fue.\n\n` +
-      `Tu feedback nos ayuda a seguir mejorando. ¡Gracias! 💛`;
-    const sent = await sendText(`${phone}@s.whatsapp.net`, texto);
-    return res.json({ ok: !!sent });
-  } catch (e) {
-    log('error', 'api_review_request', String(e));
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
-});
+    return res.status(410).json({ ok: false, error: 'customer messaging belongs in the web app' });
+  });
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // HANDOFF WEB API — permite al panel Flask retomar chats de handoff

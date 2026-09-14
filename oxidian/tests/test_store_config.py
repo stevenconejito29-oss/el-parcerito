@@ -10,6 +10,16 @@ from store_config import (
 
 
 class StoreConfigTest(unittest.TestCase):
+    def test_nonfinite_commission_is_rejected_by_editor_and_legacy_value_is_safe(self):
+        from routes.superadmin import _validar_config_value
+        for value in ("NaN", "Infinity", "-Infinity"):
+            self.assertFalse(_validar_config_value("SERVICE_COMMISSION_PCT", value)[0])
+            values = {"MODO_TIENDA": "bar_servicio", "SERVICE_COMMISSION_PCT": value}
+            with patch("models.SiteConfig.get", side_effect=lambda key, default="": values.get(key, default)):
+                result = get_service_commission("80")
+            self.assertEqual(result["amount"], 0)
+            self.assertEqual(result["merchant_net"], 80)
+
     def test_profile_uses_site_config_as_authority(self):
         values = {
             "NOMBRE_NEGOCIO": "Tienda configurable",

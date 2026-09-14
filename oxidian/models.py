@@ -183,6 +183,10 @@ class User(UserMixin, db.Model):
 
     # ── Contraseña ──
     def set_password(self, password):
+        # Los cambios de credenciales deben revocar sesiones desde cualquier
+        # ruta de gestión. La primera contraseña no tiene sesiones que revocar.
+        if self.password_hash:
+            self.mfa_session_version = (self.mfa_session_version or 0) + 1
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
@@ -3350,14 +3354,16 @@ class OrderItem(db.Model):
         if not self.metadata_json:
             return {}
         try:
-            return json.loads(self.metadata_json)
+            data = json.loads(self.metadata_json)
+            return data if isinstance(data, dict) else {}
         except (json.JSONDecodeError, TypeError):
             return {}
 
     @property
     def producto_snapshot(self):
-        """Datos del producto congelados en el momento de crear el pedido."""
-        return (self.get_metadata().get("producto") or {})
+        """Datos congelados; un valor vacío explícito no hereda el catálogo actual."""
+        data = self.get_metadata().get("producto")
+        return data if isinstance(data, dict) else {}
 
     @property
     def selected_flavors(self):
@@ -3415,9 +3421,10 @@ class OrderItem(db.Model):
 
     @property
     def display_imagen_url(self):
-        return self.producto_snapshot.get("imagen_url") or (
-            self.producto.imagen_url if self.producto else None
-        )
+        snapshot = self.producto_snapshot
+        if "imagen_url" in snapshot:
+            return snapshot["imagen_url"]
+        return self.producto.imagen_url if self.producto else None
 
     @property
     def display_es_combo(self):
@@ -3439,38 +3446,46 @@ class OrderItem(db.Model):
 
     @property
     def display_fecha_entrega(self):
-        raw = (
-            self.get_metadata().get("entrega_programada")
-            or self.producto_snapshot.get("fecha_llegada")
-        )
+        metadata = self.get_metadata()
+        snapshot = self.producto_snapshot
+        if "entrega_programada" in metadata:
+            raw = metadata["entrega_programada"]
+        elif "fecha_llegada" in snapshot:
+            raw = snapshot["fecha_llegada"]
+        else:
+            return self.producto.fecha_llegada if self.producto else None
         if raw:
             try:
                 return date.fromisoformat(str(raw))
             except (TypeError, ValueError):
                 pass
-        return self.producto.fecha_llegada if self.producto else None
+        return None
 
     @property
     def display_categoria(self):
-        return self.producto_snapshot.get("categoria_nombre") or (
-            self.producto.categoria.nombre if self.producto and self.producto.categoria else None
-        )
+        snapshot = self.producto_snapshot
+        if "categoria_nombre" in snapshot:
+            return snapshot["categoria_nombre"]
+        return self.producto.categoria.nombre if self.producto and self.producto.categoria else None
 
     @property
     def display_origen_pais(self):
-        return self.producto_snapshot.get("origen_pais") or (
-            self.producto.origen_pais if self.producto else None
-        )
+        snapshot = self.producto_snapshot
+        if "origen_pais" in snapshot:
+            return snapshot["origen_pais"]
+        return self.producto.origen_pais if self.producto else None
 
     @property
     def display_alergenos(self):
-        raw = self.producto_snapshot.get("alergenos_json")
-        if raw:
-            try:
-                return json.loads(raw) if isinstance(raw, str) else list(raw)
-            except (json.JSONDecodeError, TypeError, ValueError):
-                return []
-        return self.producto.alergenos_lista if self.producto else []
+        snapshot = self.producto_snapshot
+        if "alergenos_json" not in snapshot:
+            return self.producto.alergenos_lista if self.producto else []
+        raw = snapshot["alergenos_json"]
+        try:
+            value = json.loads(raw) if isinstance(raw, str) and raw else raw
+            return value if isinstance(value, list) else []
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return []
 
     @property
     def reward_metadata(self):

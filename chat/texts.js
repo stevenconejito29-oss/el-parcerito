@@ -578,6 +578,7 @@ function errorTransitorio(opts = {}) {
 }
 
 module.exports = {
+  customerChannelNotice: url => `Este WhatsApp se utiliza para verificaciones y confirmaciones: tu primera compra, códigos de entrega y verificación de canjes.\n\nPara comprar, entra en nuestra tienda:\n${url}\n\nSi tienes una duda o necesitas ayuda, escríbenos en el chat web:\n${url.replace(/\/$/, '')}/ayuda`,
   ESCAPE_HINT,
   FALLBACK_HINT,
   HANDOFF_QUEUED,

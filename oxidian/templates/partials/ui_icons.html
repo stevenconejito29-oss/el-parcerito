@@ -1,0 +1,4 @@
+{# Iconografía local compartida; ui_sprite.html se incluye una vez en cada shell. #}
+{% macro ui_icon(name) -%}
+<svg class="ox-ui-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#ui-icon-{{ name }}"></use></svg>
+{%- endmacro %}

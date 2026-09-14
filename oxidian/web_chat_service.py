@@ -289,15 +289,17 @@ def visitor_order_answer(question: str) -> str | None:
         "pendiente": "recibido", "armando": "en preparación",
         "listo": "listo para salir", "en_ruta": "en reparto",
     }.get(order.estado, "en proceso")
-    delivery = "entrega inmediata"
+    delivery = "reparto inmediato" if order.requiere_reparto else "recogida en el local"
+    if order.fecha_entrega_programada:
+        delivery += f" para el {order.fecha_entrega_programada.strftime('%d/%m')}"
     if order.slot_id and order.slot:
         delivery = f"franja del {order.slot.fecha.strftime('%d/%m')} de {order.slot.hora_inicio.strftime('%H:%M')} a {order.slot.hora_fin.strftime('%H:%M')}"
     action = (
         "Puedes revisar el seguimiento o cancelar con los botones seguros que aparecen debajo."
-        if order.estado == "pendiente" and not (order.metodo_pago == "bizum" and order.pago_confirmado)
+        if order.estado == "pendiente" and not order.pago_confirmado
         else "Puedes abrir «Ver estado» debajo para consultar el detalle actualizado."
     )
-    return f"Tu pedido {order.numero_pedido} está {status} y tiene {delivery}. {action}"
+    return f"Tu pedido {order.numero_pedido} está {status}. Modalidad: {delivery}. {action}"
 
 
 def visitor_orders() -> list[dict]:
@@ -328,9 +330,7 @@ def visitor_orders() -> list[dict]:
             "tracking_url": url_for(
                 "public.pedido_confirmado", pedido_id=order.id, token=token,
             ),
-            "cancelable": order.estado == "pendiente" and not (
-                order.metodo_pago == "bizum" and order.pago_confirmado
-            ),
+            "cancelable": order.estado == "pendiente" and not order.pago_confirmado,
         })
     return result
 
@@ -353,17 +353,16 @@ def cancel_visitor_order(order_id: int) -> tuple[bool, str]:
     allowed = {row["id"]: row for row in visitor_orders()}
     if order_id not in allowed:
         return False, "No pudimos verificar ese pedido en este dispositivo."
-    order = Order.query.filter_by(id=order_id).with_for_update().first()
+    order = Order.query.filter_by(id=order_id).populate_existing().with_for_update().first()
     if not order or order.estado != "pendiente":
         return False, "Ese pedido ya no admite cancelación automática."
-    if order.metodo_pago == "bizum" and order.pago_confirmado:
+    if order.pago_confirmado:
         return False, "El pago ya fue confirmado; solicita atención humana para revisar la devolución."
     from services import cancelar_pedido_operativo
     cancelar_pedido_operativo(
         order, actor_id=order.cliente_id, canal="chat_web",
         detalle="cancelación confirmada desde el chat web",
     )
-    db.session.commit()
     return True, f"El pedido {order.numero_pedido} quedó cancelado correctamente."
 
 

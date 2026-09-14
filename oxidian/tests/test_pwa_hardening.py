@@ -96,7 +96,8 @@ class PwaArchitectureContractTest(unittest.TestCase):
         self.assertIn('"/static/js/cart-ui.js"', worker)
         self.assertNotIn('"/static/js/spa-nav.js"', worker)
         self.assertIn('"/static/css/heritage.css"', worker)
-        self.assertIn('"/static/coffee-burlap-texture-v4.webp"', worker)
+        self.assertIn('"/static/css/storefront-polish.css"', worker)
+        self.assertNotIn('"/static/coffee-burlap-texture-v4.webp"', worker)
         self.assertNotIn("self.skipWaiting();\n});\n\n// ── ACTIVATE", worker)
 
     def test_worker_and_manifests_follow_the_real_asset_fingerprint(self):
