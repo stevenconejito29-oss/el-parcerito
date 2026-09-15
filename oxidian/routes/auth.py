@@ -163,9 +163,8 @@ def _desactivar_push_del_dispositivo(user_id: int, endpoint: str) -> None:
     El front envía `push_endpoint` con la suscripción de ESTE navegador para
     que solo se apague el dispositivo que hace logout — así un empleado con
     dos móviles no pierde avisos en el otro. Si no llega endpoint (JS
-    desactivado, navegador viejo, request programático), fail-safe: apagamos
-    TODAS las suscripciones del user. Mejor no notificar un rato que enviar
-    un push a un navegador que ya no controla el usuario.
+    desactivado o navegador antiguo), se utiliza la identidad de la sesión.
+    Una sesión legacy solo desactiva suscripciones aún sin dispositivo.
 
     `notify_user` y `notify_roles` filtran por `activo=True`, con lo que la
     fuente queda cortada sin necesidad de tocar el service worker. Al volver
@@ -174,8 +173,14 @@ def _desactivar_push_del_dispositivo(user_id: int, endpoint: str) -> None:
     from models import PushSubscription
     try:
         q = PushSubscription.query.filter_by(user_id=user_id)
+        from device_identity import browser_device_hash
+        device_hash = browser_device_hash()
         if endpoint:
             q = q.filter_by(endpoint=endpoint)
+        elif device_hash:
+            q = q.filter_by(device_hash=device_hash)
+        else:
+            q = q.filter(PushSubscription.device_hash.is_(None))
         q.update({"activo": False}, synchronize_session=False)
     except Exception:
         current_app.logger.exception("logout: desactivando push suscripciones")

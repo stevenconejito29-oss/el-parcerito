@@ -20,6 +20,8 @@
   let last = 0, busy = false, timer = null, loading = false, failures = 0;
   let pendingSend = null;
   let requests = Promise.resolve();
+  let ordersSignature = null;
+  let unfocusedHeight = window.visualViewport?.height || window.innerHeight;
 
   // iOS no siempre actualiza 100dvh al abrir el teclado. Publicamos la altura
   // visual real para que el compositor permanezca visible sin convertir esta
@@ -28,13 +30,15 @@
     const viewport = window.visualViewport;
     const height = Math.round(viewport?.height || window.innerHeight);
     const covered = Math.max(0, Math.round(window.innerHeight - height - (viewport?.offsetTop || 0)));
-    const keyboardOpen = document.activeElement === input && covered > 120;
+    if (document.activeElement !== input) unfocusedHeight = height;
+    const keyboardOpen = document.activeElement === input && (covered > 120 || unfocusedHeight - height > 120);
     document.documentElement.style.setProperty('--app-height', `${height}px`);
     document.documentElement.style.setProperty('--keyboard-offset', `${Math.max(0, Math.round(viewport?.offsetTop || 0))}px`);
     document.body.classList.toggle('ox-keyboard-open', keyboardOpen);
-    if (document.documentElement.classList.contains('ox-pwa-runtime') && window.scrollY) {
-      window.scrollTo({top:0, left:0, behavior:'instant'});
-    }
+    const nav = document.querySelector('.ox-bottom-nav');
+    const reserve = !keyboardOpen && nav && getComputedStyle(nav).display !== 'none' ? Math.max(0, window.innerHeight - nav.getBoundingClientRect().top) : 0;
+    document.documentElement.style.setProperty('--chat-nav-reserve', `${Math.ceil(reserve)}px`);
+
   }
 
   function call(path, body) {
@@ -58,17 +62,21 @@
   }
   function renderOrders(rows = []) {
     if (!orders) return;
+    const signature = JSON.stringify(rows);
+    if (signature === ordersSignature) return;
+    ordersSignature = signature;
+    const scrollLeft = orders.scrollLeft;
     orders.replaceChildren();
     orders.hidden = rows.length === 0;
     rows.forEach(row => {
       const card = document.createElement('div'); card.className = 'wcp-order-card';
       const copy = document.createElement('div'); copy.className = 'wcp-order-copy';
       const strong = document.createElement('strong'); strong.textContent = row.number;
-      const small = document.createElement('small'); small.textContent = row.status_label || row.status;
+      const small = document.createElement('small'); small.textContent = [row.fulfillment_label, row.status_label || row.status].filter(Boolean).join(' · ');
       copy.append(strong, small); card.append(copy);
       if (row.tracking_url) {
         const link = document.createElement('a'); link.className = 'wcp-order-track';
-        link.href = row.tracking_url; link.textContent = 'Ver estado'; card.append(link);
+        link.href = row.tracking_url; link.textContent = 'Ver pedido y ticket'; card.append(link);
       }
       if (row.cancelable) {
       const button = document.createElement('button');
@@ -84,6 +92,7 @@
       }
       orders.append(card);
     });
+    orders.scrollLeft = scrollLeft;
   }
   function renderReorder(row) {
     if (!reorder) return;
@@ -97,12 +106,14 @@
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
     const oldHeight = log.scrollHeight;
     const oldTop = log.scrollTop;
+    const anchor = [...log.children].find(node => node.offsetTop + node.offsetHeight > log.scrollTop);
+    const anchorTop = anchor?.getBoundingClientRect().top;
     let added = false;
     for (const message of data.messages || []) {
       if (log.querySelector(`[data-id="${message.id}"]`)) continue;
       const node = document.createElement('div');
       // motion-fade-in: mensaje nuevo entra con fade suave (definido en motion.css).
-      node.className = `wcp-message is-${message.sender} motion-fade-in`;
+      node.className = `wcp-message is-${message.sender}${older ? '' : ' motion-fade-in'}`;
       node.dataset.id = message.id;
       const meta = document.createElement('div'); meta.className = 'wcp-message-meta';
       const author = document.createElement('span');
@@ -153,8 +164,11 @@
     quick.forEach(button => { button.disabled = !bot || busy || Boolean(pendingSend); });
     input.disabled = state === 'closed';
     input.placeholder = state === 'waiting_agent' ? 'Añade información para el equipo…' : 'Escribe tu pregunta…';
-    if (added && (atBottom || follow)) log.scrollTop = log.scrollHeight;
-    else if (added && latest) latest.hidden = false;
+    if (atBottom || follow) log.scrollTop = log.scrollHeight;
+    else {
+      if (anchor && anchor.isConnected) log.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+      if (added && latest) latest.hidden = false;
+    }
   }
   function schedule(delay = 3000) {
     clearTimeout(timer);
@@ -239,6 +253,7 @@
   window.visualViewport?.addEventListener('resize', syncViewport, {passive:true});
   window.visualViewport?.addEventListener('scroll', syncViewport, {passive:true});
   window.addEventListener('orientationchange', syncViewport, {passive:true});
+  window.addEventListener('resize', syncViewport, {passive:true});
   input.addEventListener('focus', () => {
     // Safari publica la altura final del teclado en varios fotogramas.
     // Recalcular evita que el compositor quede anclado al viewport de layout.

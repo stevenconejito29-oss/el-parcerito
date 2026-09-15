@@ -550,7 +550,10 @@
     </p>
     </div>
     <div id="pickup-info-block" class="p-3 rounded-xl text-sm {% if fulfillment_default != 'recogida' %}hidden{% endif %}" style="background:color-mix(in srgb,var(--theme-success) 8%,transparent);border:1px solid color-mix(in srgb,var(--theme-success) 25%,transparent);color:var(--theme-success)">
-      Recoge tu pedido en <strong>{{ establecimiento.nombre }}</strong>{% if brand.direccion %}, {{ brand.direccion }}{% endif %}. Te avisaremos por WhatsApp cuando esté listo.
+      <strong>Recoge y paga en el negocio · Sin coste de reparto</strong>
+      <p>Primero preparamos tu pedido. Espera el aviso de «Listo para recoger» y muestra tu número al llegar.</p>
+      {% if pickup and pickup.address %}<p>{{ pickup.address }}</p><a href="{{ pickup.maps_url }}" target="_blank" rel="noopener noreferrer">Ver cómo llegar</a>{% else %}<p>Consulta el punto de recogida con el equipo desde el chat web.</p>{% endif %}
+      <p>Consulta el estado en el PWA o chat web. Activa sus notificaciones para recibir el aviso.</p>
     </div>
   </div>
 
@@ -779,6 +782,7 @@
 {% endblock %}
 
 {% block scripts %}
+
 <style>
 .checkout-head {
   background: var(--theme-surface);

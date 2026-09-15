@@ -1376,3 +1376,10 @@ html[data-delivery-theme="dark"] body.operational-view .work-chip.is-web {
 .work-focus-switch button[aria-pressed="true"] { border-color: var(--brand-primary); background: color-mix(in srgb, var(--brand-primary) 16%, var(--col-surface)); font-weight: 800; }
 .work-focus-switch button:focus-visible { outline: 3px solid var(--brand-primary); outline-offset: 3px; }
 body.operational-view .work-focus-single .work-board { grid-template-columns: minmax(0, 1fr); }
+
+.work-pickup-handoff { min-width:0; border:1px solid var(--col-border,#ccd4db); border-radius:12px; padding:12px; }
+.work-pickup-handoff summary { cursor:pointer; font-weight:700; min-height:44px; display:flex; align-items:center; }
+.work-pickup-handoff form { display:grid; gap:12px; padding-top:12px; }
+.work-pickup-handoff label { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.work-pickup-handoff input:not([type=checkbox]):not([type=hidden]) { width:100%; min-height:44px; }
+.work-pickup-confirm input { flex:none; width:22px; height:22px; }

@@ -917,7 +917,7 @@ def avanzar_pedido_admin(pedido_id):
         )
         flash(mensaje, "warning")
         return redirect(url_for("admin.pedido_detalle", pedido_id=pedido.id))
-    if pedido.estado == "en_ruta":
+    if pedido.estado == "en_ruta" and pedido.requiere_reparto:
         flash(
             "La entrega debe cerrarse desde el panel de reparto para validar código y cobro.",
             "warning",
@@ -925,31 +925,11 @@ def avanzar_pedido_admin(pedido_id):
         return redirect(url_for("admin.pedidos"))
     try:
         pedir_resena = False
-        if pedido.estado == "listo" and not pedido.requiere_reparto:
-            if pedido.metodo_pago == "bizum" and not pedido.pago_confirmado:
-                raise ValueError("Confirma primero el Bizum antes de entregar el pedido para recoger.")
-            estado_anterior = pedido.estado
-            pedido.estado = "entregado"
-            pedido.entregado_en = utcnow()
-            registrar_evento_pedido(
-                pedido,
-                "recogida_entregada",
-                actor_id=current_user.id,
-                estado_anterior=estado_anterior,
-                estado_nuevo="entregado",
-                canal="admin_recogida",
-                detalle="Pedido entregado en el local",
-            )
-            if not pedido.pago_confirmado:
-                registrar_pago_pedido(
-                    pedido,
-                    actor_id=current_user.id,
-                    canal="admin_recogida",
-                    detalle="Cobro confirmado al recoger",
-                )
-            registrar_ingreso_pedido(pedido, registrado_por=current_user.id)
-            award_points_on_delivery(pedido)
-            pedir_resena = True
+        if pedido.estado in {"listo", "en_ruta"} and pedido.tipo_entrega_cliente == "recogida":
+            from services import completar_recogida
+            completar_recogida(pedido, current_user.id,
+                cobro_recibido=request.form.get("cobro_recibido") == "1",
+                referencia=request.form.get("referencia", ""), canal="admin_recogida")
         else:
             avanzar_estado_pedido(
                 pedido,
@@ -7783,6 +7763,7 @@ def chats_index():
 @admin_bp.route("/chats/<public_id>")
 @admin_required
 def chats_detalle(public_id):
+    from web_chat_service import serialise_message
     from models import WebChatConversation
     conversation = WebChatConversation.query.filter_by(public_id=public_id).first_or_404()
     if (
@@ -7793,7 +7774,7 @@ def chats_detalle(public_id):
     return render_template(
         "admin/chat_detalle.html",
         conversation=conversation,
-        messages=conversation.messages.limit(200).all(),
+        messages=[serialise_message(row) for row in conversation.messages.limit(200).all()],
         is_mine=conversation.assigned_agent_id == current_user.id,
         has_phone=True,
     )
@@ -7803,6 +7784,7 @@ def chats_detalle(public_id):
 @admin_required
 def chats_messages(public_id):
     """Polling incremental; evita recargar el formulario mientras se escribe."""
+    from web_chat_service import serialise_message
     from models import WebChatConversation, WebChatMessage
     conversation = WebChatConversation.query.filter_by(public_id=public_id).first_or_404()
     if conversation.assigned_agent_id != current_user.id:
@@ -7816,7 +7798,7 @@ def chats_messages(public_id):
         "ok": True,
         "status": conversation.status,
         "messages": [
-            {"id": row.id, "sender": row.sender, "body": row.body}
+            serialise_message(row)
             for row in rows
         ],
     })
@@ -7824,13 +7806,13 @@ def chats_messages(public_id):
 
 def _notify_chat_customer(conversation, title, body):
     """Push auxiliar: nunca invalida una transición de chat ya confirmada."""
-    if not conversation.customer_id:
+    if not conversation.customer_id or not conversation.device_hash:
         return
     try:
         from push_service import notify_user
         notify_user(
             conversation.customer_id, title, body, url="/ayuda",
-            tag=f"web-chat-{conversation.public_id}", require_interaction=True,
+            tag=f"web-chat-{conversation.public_id}", require_interaction=True, device_hash=conversation.device_hash,
         )
     except Exception:
         current_app.logger.exception(

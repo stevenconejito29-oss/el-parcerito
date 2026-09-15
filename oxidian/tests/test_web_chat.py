@@ -1,5 +1,6 @@
 import unittest
-from datetime import datetime
+from unittest.mock import patch
+from datetime import datetime, timezone
 
 from flask import Flask
 
@@ -319,7 +320,8 @@ class WebChatTest(unittest.TestCase):
         self.assertEqual(len(payload["orders"]), 1)
         self.assertEqual(payload["orders"][0]["status_label"], "Recibido")
         self.assertTrue(payload["orders"][0]["cancelable"])
-        self.assertIn("opaque-order-token", payload["orders"][0]["tracking_url"])
+        self.assertNotIn("opaque-order-token", str(payload))
+        self.assertNotIn("?", payload["orders"][0]["tracking_url"])
 
     def test_typed_order_number_is_resolved_only_for_own_session(self):
         customer = User(nombre="Cliente número", email="number@test.invalid", rol="cliente", activo=True)
@@ -329,11 +331,11 @@ class WebChatTest(unittest.TestCase):
         db.session.add(order); db.session.commit()
         owner = self.app.test_client()
         with owner.session_transaction() as browser:
-            browser["guest_order_tokens"] = {str(order.id): {"token": "owned-token", "exp": int(datetime.utcnow().timestamp()) + 600}}
+            browser["guest_order_tokens"] = {str(order.id): {"token": "owned-token", "exp": int(datetime.now(timezone.utc).timestamp()) + 600}}
         owned = owner.post("/api/web-chat/messages", json={"message": "estado del pedido #1004", "nonce": "owned"}).get_json()
         foreign = self.app.test_client().post("/api/web-chat/messages", json={"message": "estado del pedido #1004", "nonce": "foreign"}).get_json()
         self.assertIn("en preparación", "\n".join(m["body"] for m in owned["messages"]).lower())
-        self.assertIn("recogida en el local", "\n".join(m["body"] for m in owned["messages"]).lower())
+        self.assertIn("recogida en el negocio", "\n".join(m["body"] for m in owned["messages"]).lower())
         self.assertNotIn("reparto inmediato", "\n".join(m["body"] for m in owned["messages"]).lower())
         self.assertIn("no pudimos verificar", "\n".join(m["body"] for m in foreign["messages"]).lower())
 
@@ -426,6 +428,24 @@ class WebChatTest(unittest.TestCase):
         self.assertEqual(WebChatConversation.query.count(), 2)
         current = WebChatConversation.query.filter_by(customer_id=second.id).one()
         self.assertFalse(current.messages.filter_by(sender="client").count())
+
+    def test_public_history_redacts_legacy_access_credentials(self):
+        client = self.app.test_client()
+        state = client.get('/api/web-chat/state').get_json()
+        conversation = WebChatConversation.query.filter_by(public_id=state['conversation']['id']).one()
+        db.session.add(WebChatMessage(conversation_id=conversation.id, sender='bot', body='Ver /pedido/42/confirmado?token=legacy-secret-123&lang=es; access_token=api-secret-456'))
+        db.session.commit()
+        body = str(client.get('/api/web-chat/state').get_json())
+        self.assertNotIn('legacy-secret-123', body)
+        self.assertNotIn('api-secret-456', body)
+
+    def test_pasted_access_token_is_not_sent_to_bot_or_persisted(self):
+        client = self.app.test_client()
+        with patch('routes.web_chat.bot_reply', return_value=('Abre Ver estado.', 'intent:tracking')) as reply:
+            result = client.post('/api/web-chat/messages', json={'message':'Mi pedido: /pedido/42/confirmado?token=pasted-secret-789'})
+        self.assertEqual(result.status_code, 200)
+        self.assertNotIn('pasted-secret-789', str(reply.call_args))
+        self.assertFalse(WebChatMessage.query.filter(WebChatMessage.body.contains('pasted-secret-789')).first())
 
 
 if __name__ == "__main__":

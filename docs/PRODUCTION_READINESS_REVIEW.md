@@ -1,110 +1,71 @@
-# Integración para publicación — 14 de septiembre de 2026
+# Verificación de entrega — 15 de septiembre de 2026
 
-Estado actual: versión integrada; comprobaciones finales y publicación en curso.
-Las secciones posteriores documentan revisiones anteriores y sus resultados históricos.
+## Estado
 
-- Conciliadas las líneas local y del servidor sin eliminar columnas ni migraciones.
-- Copia de PostgreSQL de producción restaurada en una base aislada: no faltan
-  tablas/columnas y no requiere nuevas migraciones. Configuración comercial sin
-  bloqueos para su modo actual: inmediato, efectivo, 16 productos, una zona.
-- WhatsApp conectado; identidad de dos superadmins y dos clientes comprobada.
-  No existe perfil admin en producción. Sin envíos de prueba a personas.
-- Llegada a domicilio usa delivery_code aceptado por el bot; salida de reparto
-  solo usa push/chat web. Se descartan avisos de pedidos terminados.
-- Club consulta el saldo en el PWA tras OTP; no envía balances por WhatsApp.
-- Formularios heredados de franjas respetan pedidos activos y permisos.
-- Backups verificados en el servidor: PostgreSQL, bot SQLite e imágenes;
-  imagen anterior etiquetada `oxidian:rollback-20260914`.
-- Pendiente de validación física: impresora y dispositivos reales. Las pruebas de
-  USB/BLE simulan hardware; iPhone utiliza impresión del sistema/red compatible.
+Candidato integrado y validado; publicación pendiente de comprobación posterior.
+Se conciliaron los cambios locales con la historia del servidor. No se reemplazó
+la configuración comercial ni se eliminaron columnas existentes.
 
-# Comprobación de apertura — 13 de septiembre de 2026
+## Flujos corregidos
 
-## Resultado
+- WhatsApp mantiene verificaciones del primer pedido, código de entrega y OTP de
+  puntos. Consultas y seguimiento pertenecen al chat web/PWA; los menús internos
+  requieren el teléfono de un perfil activo autorizado.
+- El chat web muestra pedidos de la sesión y acceso limpio al ticket. Los tokens
+  no aparecen en URLs, mensajes serializados ni respuestas al asistente. Un enlace
+  copiado a otro navegador no autoriza el pedido. El ticket persiste al terminar.
+- Recogida tiene preparación, listo para recoger y entrega en mostrador, con Maps.
+  No utiliza dirección del cliente, franja, repartidor ni código de entrega.
+  Cocina/admin confirman cobro y recogida con bloqueo transaccional; reintentos no
+  duplican caja ni puntos. Se sigue pagando al recibir o recoger.
+- Pedidos, conversaciones y suscripciones guardan una identidad privada de
+  navegador. Los avisos del cliente se filtran por ese dispositivo. No se deduce
+  autorización por teléfono. Un pedido antiguo solo se vincula con prueba de su
+  sesión. Cerrar sesión no desactiva otros dispositivos identificados.
+- El chat conserva su scroll al recibir mensajes/cargar historial. El compositor
+  se adapta al teclado y a la navegación inferior en web y PWA.
 
-Validación local aprobada. **Publicación y recorrido real en producción pendientes**.
-En una comprobación anterior no había conexión. En la última revisión del
-13 de septiembre, la IP LAN respondió HTTP 200 y SSH permitió consultar el
-estado: aplicación, PostgreSQL y Evolution aparecen saludables en Docker.
-Esto no acredita el recorrido de compra ni la recepción real de WhatsApp.
-El checkout del servidor corresponde a una revisión distinta; los cambios
-locales de esta ronda no se han publicado.
+## Datos reales y reparación ensayada
 
-## Modelo de cobro confirmado
+Backup del 15/09 restaurado en PostgreSQL aislado. Se encontraron 19 enlaces
+huérfanos: 8 en combo_item_allowed_flavors y 11 en product_presentation_flavors.
+La restauración inicial fallaba al crear cuatro claves foráneas por esos datos.
 
-Se paga al recibir a domicilio o recoger en el negocio. Efectivo, Bizum y
-tarjeta con datáfono son opciones de cobro al entregar, no pagos anticipados.
-La confirmación de WhatsApp del primer pedido verifica el teléfono.
+`oxidian/scripts/audit_data_integrity.py` es de solo lectura por defecto. Su opción
+`--repair-catalog-links` archiva las filas originales en catalog_link_quarantine,
+retira solo enlaces a padres inexistentes y restaura restricciones ausentes, en
+una transacción con bloqueos y FKs activas. No elimina pedidos, productos ni
+clientes, y no reinicia secuencias. En la copia: cero referencias huérfanas,
+segunda ejecución sin cambios y backup completo restaurado sin errores.
 
-Se corrigieron instrucciones del checkout que hablaban de repartidor también
-para recogida. El seguimiento ahora indica expresamente que el Bizum se envía
-cuando se recibe o recoge y que no se paga por adelantado. Chat y seguimiento
-mantienen criterios coherentes de cancelación y recarga de estado bajo bloqueo.
+La entrada antigua prep_produccion_datos.py ya rechaza escrituras: desactivaba
+FKs y omitía tablas relacionadas. No se ha ejecutado esa limpieza.
 
-Una regresión HTTP prueba las seis combinaciones de modalidad y pago: cocina
-empieza la preparación, `pago_confirmado` sigue falso y no se crea un ingreso
-en caja. Se conservan las defensas sobre un cobro que realmente figure
-registrado; no se fabrican cobros ni se reclasifican datos históricos.
+No se detectaron duplicados de número de pedido, ingreso por pedido ni endpoint
+push, ni pedidos/items sin padre. Los avisos activos de clientes no tenían
+propietarios inexistentes/inactivos. Los mensajes históricos con parámetros de
+acceso se ocultan también en las vistas del equipo.
 
-## Personalización y publicación
+Configuración observada: recogida activa; puntos y pedidos programados
+inactivos. Cocina y reparto carecen de suscripciones push activas: el personal
+necesita abrir su sesión y activar avisos en cada dispositivo.
 
-La vista previa de paleta, contraste, cambios pendientes y restauración pasó
-la prueba en Chromium. El diagnóstico comercial ahora detecta recogida sin
-dirección y Bizum sin teléfono; este último no cuenta como medio disponible.
-El diagnóstico no sustituye probar la operativa real con el personal.
+## Validación
 
-## Evidencias locales
+- 929 pruebas Python y 228 del bot aprobadas.
+- Recogida: checkout real con campos de reparto falsificados, permisos, ticket,
+  confirmación del primer pedido, cobro y reintento del cierre.
+- Seis pruebas de aislamiento de dispositivos y suscripciones repetidas.
+- Chat real: 12 escenarios Chromium/WebKit, web/PWA, 320/375/852 px; lectura,
+  historial, teclado, enlaces y ausencia de desbordamiento horizontal.
+- Recorridos de recogida y roles en Chromium/WebKit; carrito, canje y consulta OTP
+  verificados con red simulada. Vistas de roles revisadas con copia de config real.
+- Migración de tres columnas opcionales aplicada en copia; compatible con el
+  código anterior. Ninguna prueba envía WhatsApp/push a clientes reales.
 
-- `scripts/test-project.sh`: **891 pruebas Python y 228 del bot aprobadas**.
-- Nueve pruebas finales de cancelación y cobro al recibir aprobadas después
-  de incorporar el caso de las seis combinaciones.
-- Menú, carrito, chat y checkout: **28 escenarios** en 320/375/768/1280 px,
-  horizontal, navegador y modo oscuro; sin desbordamientos ni errores JS.
-- Renderizado de producto, club, información legal, seguimiento y vista de
-  franjas con respuestas HTTP 200 en la aplicación aislada.
-- `predeploy_check.py --env-file oxidian/.env.cosmos.local --deployment cosmos`:
-  sin errores bloqueantes. Valida la configuración local, no el runtime remoto.
-- `git diff --check` aprobado; bases temporales retiradas al finalizar.
+## Límites
 
-## Pendiente en el servidor
-
-Verificar conectividad HTTPS, `/health/live` y `/health/ready`, base de datos,
-Redis y conexión de WhatsApp. Comprobar configuración real, horarios, productos
-vendibles, stock, personal, zonas/franjas y dirección de recogida. Después,
-realizar un recorrido controlado de compra, primera confirmación, preparación
-y entrega/recogida, registrando el cobro únicamente al recibir.
-
-No se desplegó, abrió la tienda, envió WhatsApp ni creó pedidos en producción.
-
-## Continuación: canje, chats y pantallas de trabajo
-
-- Reenvío de OTP sincronizado con `OTP_MIN_RESEND_SECONDS`; respuesta sin caché
-  y mensaje neutral para números desconocidos. JSON malformado no provoca 500.
-- Solicitud, verificación y selección de recompensa bloquean dobles pulsaciones.
-  Se descartan respuestas al cambiar el teléfono. La compra espera a que termine
-  la operación de canje; errores de conexión permiten reintentar y no borran la
-  última selección confirmada. El canje tiene mensajes visibles y timeout.
-- Cocina/preparación: controles agrupados en móvil y textos de tema/impresora
-  con contraste en modo claro. Se mantiene el acceso a los dispositivos.
-- Chat web: pruebas de historial, borrador concurrente, reintento con el mismo
-  identificador y carrito. WhatsApp conserva las restricciones de canal previas.
-
-Validación: 894 pruebas Python y 228 del bot aprobadas; 50 escenarios de roles
-sin desbordamientos ni errores JS, incluyendo contraste de los controles de
-cocina; 28 escenarios públicos de menú, carrito, chat y checkout aprobados.
-Pruebas de interacción de canje y de operación con teclado aprobadas.
-El predeploy de la configuración local no detecta bloqueos; es una simulación.
-No se han enviado mensajes reales ni creado pedidos en producción.
-
-Para repetir las comprobaciones nuevas desde `oxidian/` (entorno `.venv` y
-Chromium instalado; definir `PLAYWRIGHT_CHROMIUM_EXECUTABLE`):
-
-```bash
-../.venv/bin/python scripts/review_customer_views.py
-node scripts/test_checkout_rewards.mjs
-../.venv/bin/python scripts/review_role_views.py
-node scripts/review_role_views.mjs
-```
-
-Los renderizadores usan SQLite aislado y datos ficticios. Capturas e informes
-quedan en `/tmp/parcerito-role-review` y `/tmp/parcerito-customer-pages`.
+Las pruebas de navegador no sustituyen la recepción push en teléfonos físicos
+ni el emparejamiento de una impresora. En iPhone los avisos requieren la PWA
+instalada; USB/BLE dependen del navegador y hardware. No se promete compatibilidad
+universal de impresión. La salud posterior al despliegue se registrará aquí.

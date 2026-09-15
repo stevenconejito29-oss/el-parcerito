@@ -2964,6 +2964,7 @@ class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     numero_pedido = db.Column(db.String(20), unique=True, nullable=False)
     cliente_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    customer_device_hash = db.Column(db.String(64), nullable=True, index=True)
     estado = db.Column(db.String(30), default="pendiente", nullable=False)
     origen = db.Column(db.String(20), default="online")   # online / presencial
 
@@ -3330,7 +3331,7 @@ class Order(db.Model):
         if self.estado in ("entregado", "cancelado"):
             raise ValueError(f"No se puede avanzar un pedido en estado '{self.estado}'")
         idx = ESTADOS_PEDIDO.index(self.estado)
-        self.estado = ESTADOS_PEDIDO[idx + 1]
+        self.estado = "entregado" if self.estado == "listo" and self.tipo_entrega_cliente == "recogida" else ESTADOS_PEDIDO[idx + 1]
         ahora = utcnow()
         if self.estado == "listo" and self.preparado_en is None:
             self.preparado_en = ahora
@@ -4733,6 +4734,7 @@ class PushSubscription(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    device_hash = db.Column(db.String(64), nullable=True, index=True)
     endpoint = db.Column(db.Text, nullable=False, unique=True)
     p256dh = db.Column(db.Text, nullable=False)   # clave pública del cliente
     auth = db.Column(db.String(100), nullable=False)  # secreto de auth
@@ -4893,6 +4895,7 @@ class WebChatConversation(db.Model):
     # Identidad explícita del cliente propietario de la sesión. Nunca se
     # infiere por teléfono ni por texto del chat, evitando cruces de push.
     customer_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    device_hash = db.Column(db.String(64), nullable=True, index=True)
     status = db.Column(db.String(20), nullable=False, default="bot", index=True)
     assigned_agent_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"))
     requested_at = db.Column(db.DateTime)

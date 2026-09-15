@@ -1208,6 +1208,23 @@
 </div>
 {% endif %}
 </div>
+{% if recogidas_listas %}
+<section class="work-lane" id="recogidas-listas">
+  <div class="work-lane-head"><div><h2 class="work-lane-title">Listos para recoger</h2><p class="work-lane-sub">Esperan al cliente en el negocio. Confirma la entrega y el cobro en mostrador.</p></div><span class="work-count">{{ recogidas_listas|length }}</span></div>
+  <div class="work-grid">
+  {% for pedido in recogidas_listas %}
+  <article class="work-card">
+    <h3>{{ pedido.numero_pedido }} · {{ pedido.cliente.nombre }}</h3>
+    <p>Recogida{% if pedido.fecha_entrega_programada %} · {{ pedido.fecha_entrega_programada.strftime('%d/%m/%Y') }}{% endif %}</p>
+    <ul>{% for item in pedido.items %}<li>{{ item.cantidad }}× {{ item.display_nombre }}</li>{% endfor %}</ul>
+    {% if pedido.notas %}<p class="work-note">{{ pedido.notas }}</p>{% endif %}
+    {% include 'preparador/_pickup_handoff.html' %}
+    {{ ticket_action(pedido, 'work-btn work-btn-ghost', 'Reimprimir') }}
+  </article>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

@@ -741,6 +741,8 @@ def avanzar_estado_pedido(
             "El primer pedido aún no fue confirmado por WhatsApp. "
             "El cliente debe responder SI antes de iniciar la preparación."
         )
+    if pedido.estado == "listo" and pedido.tipo_entrega_cliente == "recogida":
+        raise ValueError("Confirma la entrega y el cobro desde Recogida en mostrador.")
     if validar_operativa:
         validar_avance_operativo(pedido)
     estado_anterior = pedido.estado
@@ -4850,3 +4852,40 @@ def cerrar_dia_automatico(fecha_dia=None):
             "ok": False, "skipped": False, "fecha": fecha_dia.isoformat(),
             "mensaje": f"Error: {exc}",
         }
+
+
+def completar_recogida(pedido, actor_id, *, cobro_recibido=False, referencia="", canal="recogida"):
+    """Entrega física y cobro en mostrador, atómicos e idempotentes; sin reparto."""
+    pedido = Order.query.filter_by(id=pedido.id).populate_existing().with_for_update().one()
+    actor = db.session.get(User, actor_id)
+    if not actor or not actor.activo or actor.rol not in {"super_admin", "admin", "cocina", "preparacion"}:
+        raise ValueError("No tienes permiso para entregar recogidas.")
+    if actor.rol not in {"admin", "super_admin"} and pedido.preparador_id != actor_id:
+        raise ValueError("Este pedido pertenece a otro responsable de preparación.")
+    if pedido.tipo_entrega_cliente != "recogida":
+        raise ValueError("Esta operación solo admite recogida en el negocio.")
+    if pedido.estado == "entregado":
+        return False
+    # Compatibilidad: una recogida antigua en_ruta se cierra en mostrador.
+    if pedido.estado not in {"listo", "en_ruta"} or pedido.confirmacion_estado == "pending":
+        raise ValueError("El pedido debe estar preparado antes de entregarlo.")
+    if cobro_recibido is not True:
+        raise ValueError("Comprueba la entrega al cliente y el cobro en mostrador.")
+    metodo = normalizar_metodo_pago(pedido.metodo_pago)
+    if not metodo:
+        raise ValueError("Revisa el método de pago antes de entregar.")
+    referencia = str(referencia or "").strip()[:80]
+    if metodo == "bizum" and not pedido.pago_confirmado and len(referencia) < 3:
+        raise ValueError("Añade una referencia del Bizum recibido (mínimo 3 caracteres).")
+    if not pedido.pago_confirmado:
+        registrar_pago_pedido(pedido, actor_id=actor_id, canal=canal,
+                              detalle=f"Cobro en mostrador: {metodo}" + (f" ({referencia})" if referencia else ""))
+    anterior = pedido.estado
+    pedido.estado = "entregado"
+    pedido.entregado_en = utcnow()
+    registrar_evento_pedido(pedido, "recogida_entregada", actor_id=actor_id,
+                           estado_anterior=anterior, estado_nuevo="entregado", canal=canal,
+                           detalle="El cliente recogió su pedido en el negocio")
+    registrar_ingreso_pedido(pedido, registrado_por=actor_id)
+    award_points_on_delivery(pedido)
+    return True

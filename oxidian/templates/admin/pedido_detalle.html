@@ -23,6 +23,9 @@
       {{ ticket_action(pedido, 'ord-btn', 'Reimprimir ticket') }}
       {% set programado_bloqueado = pedido.estado == 'pendiente' and pedido.es_programado and not puede_preparar_programado(pedido) %}
       {% if pedido.estado not in ('entregado','cancelado') %}
+      {% if pedido.tipo_entrega_cliente == 'recogida' and pedido.estado in ('listo', 'en_ruta') %}
+      {% with pickup_complete_url=url_for('admin.avanzar_pedido_admin', pedido_id=pedido.id) %}{% include 'preparador/_pickup_handoff.html' %}{% endwith %}
+      {% else %}
       <form method="POST" action="{{ url_for('admin.avanzar_pedido_admin', pedido_id=pedido.id) }}" style="display:inline;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="ord-btn success" {% if programado_bloqueado %}disabled title="Aún no está en su ventana de preparación"{% endif %}>
@@ -30,6 +33,7 @@
           {% elif pedido.estado == 'listo' and not pedido.requiere_reparto %}Marcar entregado{% else %}▶ Avanzar estado{% endif %}
         </button>
       </form>
+      {% endif %}
       <form method="POST" action="{{ url_for('admin.cancelar_pedido', pedido_id=pedido.id) }}" style="display:inline;"
             data-confirm="¿Cancelar pedido {{ pedido.numero_pedido }}?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

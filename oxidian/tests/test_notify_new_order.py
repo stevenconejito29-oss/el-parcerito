@@ -148,6 +148,7 @@ class NotifyNewOrderTest(unittest.TestCase):
         import push_service
         pedido = self._mk_pedido()
         pedido.estado = "armando"
+        pedido.customer_device_hash = "qa-device"
         db.session.commit()
 
         with patch.object(push_service, "notify_user") as user:

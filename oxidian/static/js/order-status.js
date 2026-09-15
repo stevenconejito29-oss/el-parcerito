@@ -64,10 +64,18 @@
         if (typeof view.payment_label === 'string') root.querySelectorAll('[data-order-payment-label]').forEach(node => { node.textContent = view.payment_label; });
         if (typeof view.payment_status === 'string') root.querySelectorAll('[data-order-payment-status]').forEach(node => { node.textContent = view.payment_status; });
         const paymentInstructions = root.querySelector('[data-order-payment-instructions]');
-        if (paymentInstructions && typeof view.payment_confirmed === 'boolean') paymentInstructions.hidden = view.payment_confirmed;
+        if (paymentInstructions && typeof view.payment_confirmed === 'boolean') paymentInstructions.hidden = view.payment_confirmed || state.active === false;
       }
-      if (!state.active) { finished = true; window.location.replace(state.redirect_url || '/'); return; }
-      const nextStage = STAGES[state.status];
+      const pickup = root.querySelector('[data-pickup-instruction]');
+      if (pickup && state.presentation) pickup.textContent = state.presentation.pickup_ready ? 'Ya puedes venir. Muestra tu número de pedido al equipo.' : state.presentation.description;
+      const cancelForm = root.querySelector('.order-action--cancel')?.closest('form');
+      if (cancelForm) cancelForm.hidden = state.status !== 'pendiente' || Boolean(state.presentation?.payment_confirmed);
+      finished = state.active === false;
+      const nextStage = state.presentation?.stage ?? STAGES[state.status];
+      const progress = root.querySelector("[data-order-progress]");
+      if (progress) progress.hidden = nextStage === 0;
+      const loyalty = root.querySelector(".order-loyalty-card");
+      if (loyalty && state.active === false) loyalty.hidden = true;
       if (nextStage) updateProgress(nextStage);
     } catch (_) {
       const connection = root.querySelector('[data-order-connection]');

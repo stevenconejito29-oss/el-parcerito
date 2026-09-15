@@ -18,7 +18,7 @@ def _strip_accents(s: str) -> str:
         return ""
     return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
 from urllib.parse import quote
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, make_response
@@ -1898,7 +1898,7 @@ def repetir_pedido():
         return redirect(url_for("public.ver_carrito"))
 
     # Expiry: si el link tiene >5min, el bot debe generar uno nuevo.
-    now_ts = int(datetime.utcnow().timestamp())
+    now_ts = int(datetime.now(timezone.utc).timestamp())
     if now_ts > expiry_ts:
         flash("El enlace expiró (dura 5 min). Escribe *repetir* de nuevo en WhatsApp.", "warning")
         return redirect(url_for("public.ver_carrito"))
@@ -2067,6 +2067,7 @@ def ver_carrito():
                            tiempo_hasta=tiempo_hasta,
                            radio_entrega_km=radio_entrega_km,
                            fulfillment_options=fulfillment_options,
+                           pickup=get_pickup_details(),
                            fulfillment_unavailable=fulfillment_unavailable,
                            fulfillment_badge=_product_fulfillment_badge,
                            fulfillment_mode_label=_fulfillment_mode_label,
@@ -2878,7 +2879,7 @@ def checkout():
                     guest_tokens = session.get("guest_order_tokens", {})
                     guest_tokens[str(prev.order_id)] = {
                         "token": token,
-                        "exp": int(datetime.utcnow().timestamp()) + GUEST_ORDER_TOKEN_TTL_S,
+                        "exp": int(datetime.now(timezone.utc).timestamp()) + GUEST_ORDER_TOKEN_TTL_S,
                     }
                     session["guest_order_tokens"] = guest_tokens
                     session["last_guest_order_id"] = prev.order_id
@@ -2886,8 +2887,6 @@ def checkout():
                     session.modified = True
                 flash("Este pedido ya se había procesado. Te lo mostramos aquí.", "info")
                 confirm_args = {"pedido_id": prev.order_id}
-                if token:
-                    confirm_args["token"] = token
                 return redirect(url_for("public.pedido_confirmado", **confirm_args))
 
         # Atajo exclusivo de pruebas automatizadas. Una variable accidental en
@@ -3284,7 +3283,9 @@ def checkout():
         if direccion and direccion_detalles:
             direccion_entrega_final = f"{direccion}, {direccion_detalles}"
 
+        from device_identity import browser_device_hash
         pedido = Order(
+            customer_device_hash=browser_device_hash(create=True),
             numero_pedido=Order.generar_numero("online"),
             cliente_id=cliente.id,
             estado="pendiente",
@@ -3525,7 +3526,7 @@ def checkout():
         # sesión del navegador (protege info sensible del pedido).
         guest_tokens[str(pedido.id)] = {
             "token": token,
-            "exp": int(datetime.utcnow().timestamp()) + GUEST_ORDER_TOKEN_TTL_S,
+            "exp": int(datetime.now(timezone.utc).timestamp()) + GUEST_ORDER_TOKEN_TTL_S,
         }
         session["guest_order_tokens"] = guest_tokens
         session["last_guest_order_id"] = pedido.id
@@ -3570,7 +3571,7 @@ def checkout():
         except Exception:
             current_app.logger.exception("No se pudo enviar push de nuevo pedido web %s", pedido.id)
 
-        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id, token=token))
+        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id))
 
     precio_preview = calcular_precio(items, subtotal)
     checkout_items = MenuConfig.query.filter_by(pagina="checkout", activo=True)\
@@ -3602,6 +3603,7 @@ def checkout():
                            canjeables=canjeables,
                            puntos_habilitados=puntos_habilitados,
                            fulfillment_options=fulfillment_options,
+                           pickup=get_pickup_details(),
                            fulfillment_unavailable=fulfillment_unavailable,
                            fulfillment_mode_label=_fulfillment_mode_label,
                            fulfillment_default=fulfillment_default,
@@ -3619,52 +3621,29 @@ def checkout():
 
 
 def _token_pedido_sesion(pedido_id: int) -> str:
-    """Token opaco vigente que autoriza operaciones del pedido en este navegador."""
-    guest_tokens = session.get("guest_order_tokens", {})
-    slot = guest_tokens.get(str(pedido_id))
-    if isinstance(slot, dict):
-        expected = slot.get("token", "")
-        exp = int(slot.get("exp") or 0)
-        if exp and exp < int(datetime.utcnow().timestamp()):
-            return ""
-        return str(expected or "")
-    # Compatibilidad de lectura para sesiones emitidas antes del TTL.
-    return str(slot or "")
+    from order_access import visitor_order_tokens
+    return visitor_order_tokens().get(pedido_id, "")
 
 
 def _sesion_autoriza_pedido(pedido_id: int, supplied_token: str = "") -> bool:
-    expected = _token_pedido_sesion(pedido_id)
-    return bool(expected and supplied_token and secrets.compare_digest(expected, supplied_token))
+    from order_access import session_authorizes_order
+    return session_authorizes_order(pedido_id, supplied_token)
 
 
 @public_bp.route("/pedido/<int:pedido_id>/confirmado")
 def pedido_confirmado(pedido_id):
     from order_presentation import order_presentation
-    pedido = get_or_404(Order, pedido_id)
-    expected = _token_pedido_sesion(pedido_id)
-    # Un push no debe incluir secretos en su URL. Para abrir un pedido anterior
-    # del mismo dispositivo recuperamos su token específico de la sesión; antes
-    # se usaba siempre el token del último pedido y los avisos antiguos fallaban.
-    token = request.args.get("token", "") or expected
+    token = request.args.get("token", "")
     if not _sesion_autoriza_pedido(pedido_id, token):
-        flash("Acceso denegado.", "danger")
+        flash("No pudimos verificar el pedido en este dispositivo.", "warning")
         return redirect(url_for("public.index"))
-    if pedido.estado in {"cancelado", "entregado"}:
-        slots = session.get("guest_order_tokens", {})
-        slots.pop(str(pedido.id), None)
-        session["guest_order_tokens"] = slots
-        session.modified = True
-        flash(
-            "Ese pedido ya fue cancelado." if pedido.estado == "cancelado"
-            else "Ese pedido ya finalizó. Gracias por tu compra.",
-            "info",
-        )
-        return redirect(url_for("public.index"))
+    if token:
+        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido_id))
+    pedido = get_or_404(Order, pedido_id)
     return render_template(
         "public/pedido_confirmado.html",
         pedido=pedido,
-        requiere_confirmacion_whatsapp=(pedido.confirmacion_estado == "pending"),
-        pedido_token=token,
+        requiere_confirmacion_whatsapp=order_presentation(pedido)["confirmation_pending"],
         presentation=order_presentation(pedido),
         pickup=get_pickup_details(),
         puede_cancelar=(
@@ -3702,7 +3681,7 @@ def cancelar_pedido_web(pedido_id):
     pedido = Order.query.filter_by(id=pedido_id).populate_existing().with_for_update().first_or_404()
     if pedido.estado != "pendiente" or pedido.pago_confirmado:
         flash("El pedido ya requiere revisión del equipo. Solicítala desde el chat.", "warning")
-        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id, token=token))
+        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id))
     try:
         cancelar_pedido_operativo(
             pedido,
@@ -3719,7 +3698,7 @@ def cancelar_pedido_web(pedido_id):
         db.session.rollback()
         current_app.logger.exception("cancelar_pedido_web: fallo pedido=%s", pedido_id)
         flash("No pudimos cancelar el pedido. Solicita ayuda desde el chat.", "danger")
-    return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id, token=token))
+    return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id))
 
 
 # ─── CLUB DE CLIENTES ────────────────────────

@@ -264,7 +264,7 @@ class FrontendContractsTest(unittest.TestCase):
         template = (ROOT / "templates" / "public" / "pedido_confirmado.html").read_text(encoding="utf-8")
         styles = (ROOT / "static" / "css" / "order-confirmation.css").read_text(encoding="utf-8")
 
-        self.assertIn('requiere_confirmacion_whatsapp=(pedido.confirmacion_estado == "pending")', route)
+        self.assertIn('requiere_confirmacion_whatsapp=order_presentation(pedido)["confirmation_pending"]', route)
         self.assertIn("{% if requiere_confirmacion_whatsapp %}", template)
         self.assertIn("Confirma el pedido desde tu WhatsApp", template)
         self.assertIn("hasta entonces el pedido queda protegido", template)
@@ -618,7 +618,8 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("/orders/${button.dataset.orderId}/cancel", script)
         self.assertIn("window.confirm", script)
         self.assertIn("with_for_update", service)
-        self.assertIn("guest_order_tokens", service)
+        self.assertIn("from order_access import visitor_order_tokens", service)
+        self.assertIn("guest_order_tokens", (ROOT / "order_access.py").read_text(encoding="utf-8"))
         bot_path = ROOT.parent / "chat" / "bot.js"
         if not bot_path.exists():
             bot_path = ROOT / "chat" / "bot.js"

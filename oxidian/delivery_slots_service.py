@@ -1001,9 +1001,10 @@ def notificar_en_camino(pedido: Order, actor_id: int | None = None):
     if pedido.en_camino_at:
         return None, "ya_notificado"
     mensaje = f"Tu pedido #{pedido.numero_pedido} está en reparto. Consulta su estado en el seguimiento."
-    notify_user(pedido.cliente_id, "Pedido en reparto", mensaje,
-                url=f"/pedido/{pedido.id}/confirmado", tag=f"en-camino-{pedido.id}", commit=False)
-    for conversation in WebChatConversation.query.filter_by(customer_id=pedido.cliente_id).all():
+    if pedido.customer_device_hash:
+        notify_user(pedido.cliente_id, "Pedido en reparto", mensaje,
+                    url=f"/pedido/{pedido.id}/confirmado", tag=f"en-camino-{pedido.id}", commit=False, device_hash=pedido.customer_device_hash)
+    for conversation in WebChatConversation.query.filter_by(customer_id=pedido.cliente_id, device_hash=pedido.customer_device_hash).all() if pedido.customer_device_hash else []:
         add_message(conversation, "system", mensaje)
     pedido.en_camino_at = utcnow()
     return None, "push_web"

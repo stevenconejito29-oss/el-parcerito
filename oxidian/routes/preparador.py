@@ -422,6 +422,14 @@ def pedidos():
             preparador_id=current_user.id,
         ).order_by(Order.creado_en).all()
 
+    recogidas_query = Order.query.options(*_eager).filter(
+        Order.tipo_entrega_cliente == "recogida",
+        Order.estado.in_(("listo", "en_ruta")),
+    )
+    if not _es_admin_operativo():
+        recogidas_query = recogidas_query.filter(Order.preparador_id == current_user.id)
+    recogidas_listas = recogidas_query.order_by(Order.preparado_en, Order.id).all()
+
     companeros = User.query.filter(
         User.rol.in_(["cocina", "preparacion", "admin"]),
         User.activo == True,
@@ -585,6 +593,7 @@ def pedidos():
                            totales_lote_por_fecha=totales_lote_por_fecha,
                            hoy_date=hoy_date,
                            armando=armando,
+                           recogidas_listas=recogidas_listas,
                            companeros=companeros,
                            disponible=disponible,
                            modo_operativo=modo_operativo,
@@ -827,7 +836,7 @@ def marcar_listo(pedido_id):
             canal="preparador",
             validar_operativa=True,
         )
-        repartidor = distribuir_repartidor(pedido)
+        repartidor = distribuir_repartidor(pedido) if pedido.requiere_reparto else None
         from services import enviar_whatsapp_estado
         enviar_whatsapp_estado(pedido)
         db.session.commit()
@@ -1212,3 +1221,32 @@ def franjas_hoy():
         hoy=hoy,
         agrupar_items_por_producto=agrupar_items_por_producto,
     )
+
+
+@preparador_bp.post("/pedidos/<int:pedido_id>/recoger")
+@preparador_required
+def entregar_recogida(pedido_id):
+    from services import completar_recogida
+    pedido = get_or_404(Order, pedido_id)
+    try:
+        cambiado = completar_recogida(pedido, current_user.id,
+            cobro_recibido=request.form.get("cobro_recibido") == "1",
+            referencia=request.form.get("referencia", ""), canal="preparador_recogida")
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "warning")
+        return redirect(url_for("preparador.pedidos"))
+    except Exception:
+        db.session.rollback()
+        logger.exception("No se pudo cerrar recogida %s", pedido_id)
+        flash("No se pudo confirmar la recogida. Revisa el pedido antes de reintentar.", "danger")
+        return redirect(url_for("preparador.pedidos"))
+    if cambiado:
+        try:
+            from push_service import notify_order_state
+            notify_order_state(pedido)
+        except Exception:
+            logger.exception("No se pudo notificar recogida %s", pedido_id)
+    flash("Recogida y cobro registrados." if cambiado else "Este pedido ya fue recogido.", "success")
+    return redirect(url_for("preparador.pedidos"))

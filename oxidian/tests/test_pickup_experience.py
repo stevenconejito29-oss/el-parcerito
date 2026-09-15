@@ -22,7 +22,7 @@ class PickupExperienceTest(unittest.TestCase):
             self.assertEqual(get_pickup_details(), {'address': '', 'maps_url': ''})
 
     def test_pickup_push_confirms_collection_and_opens_protected_order(self):
-        order = SimpleNamespace(id=12, cliente_id=3, numero_pedido='QA-12', estado='listo', tipo_entrega_cliente='recogida')
+        order = SimpleNamespace(id=12, cliente_id=3, numero_pedido='QA-12', estado='listo', tipo_entrega_cliente='recogida', customer_device_hash='device-qa')
         with Flask(__name__).app_context(), patch('models.SiteConfig.get', return_value='comida'), patch('store_config.get_pickup_details', return_value={'address':'Calle QA 12'}), patch('push_service.notify_user') as send:
             notify_order_state(order)
         self.assertIn('Ya puedes recoger', send.call_args.args[1])
@@ -31,7 +31,7 @@ class PickupExperienceTest(unittest.TestCase):
         self.assertEqual(send.call_args.kwargs['url'], '/pedido/12/confirmado')
 
     def test_delivery_never_invites_customer_to_collect(self):
-        order = SimpleNamespace(id=12, cliente_id=3, numero_pedido='QA-12', estado='listo', tipo_entrega_cliente='delivery')
+        order = SimpleNamespace(id=12, cliente_id=3, numero_pedido='QA-12', estado='listo', tipo_entrega_cliente='delivery', customer_device_hash='device-qa')
         with Flask(__name__).app_context(), patch('models.SiteConfig.get', return_value='comida'), patch('push_service.notify_user') as send:
             notify_order_state(order)
         self.assertNotIn('recoger', send.call_args.args[1])

@@ -62,4 +62,7 @@ class OrderPresentationEndpointTest(unittest.TestCase):
             response = client.get('/pedido/1/estado?token=tracking-test-token')
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json['presentation'], order_presentation(order))
-            self.assertEqual(response.json['status_label'], 'Listo')
+            self.assertEqual(response.json['status_label'], 'Listo para recoger')
+            self.assertEqual(client.get('/pedido/1/estado').status_code, 200)
+            self.assertEqual(client.get('/pedido/1/estado?token=wrong').status_code, 403)
+            self.assertEqual(app.test_client().get('/pedido/1/estado?token=tracking-test-token').status_code, 403)

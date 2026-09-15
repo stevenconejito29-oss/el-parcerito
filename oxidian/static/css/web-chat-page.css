@@ -46,3 +46,14 @@ html.ox-pwa-runtime body.ox-keyboard-open .wcp-conversation{height:100%;grid-tem
 .wcp-compose button:disabled { opacity: .5; cursor: wait; }
 .wcp-page :is(button, summary, a):focus-visible { outline: 3px solid var(--brand-primary); outline-offset: 2px; }
 html.ox-pwa-runtime body.ox-keyboard-open .wcp-help { display: none; }
+
+/* Un viewport y una zona de mensajes desplazable, también fuera de instalación. */
+body:has(.wcp-page) { height:var(--app-height,100dvh) !important; min-height:0 !important; overflow:hidden !important; }
+body:has(.wcp-page)>main { height:calc(var(--app-height,100dvh) - var(--chat-nav-reserve,80px)) !important; min-height:0 !important; padding:0 !important; margin:0; overflow:hidden; }
+body .wcp-page { height:100% !important; min-height:0 !important; max-height:100%; padding:.4rem; }
+.wcp-messages { position:relative; overflow-anchor:none; -webkit-overflow-scrolling:touch; }
+.wcp-message { flex-shrink:0; }
+body.ox-keyboard-open:has(.wcp-page)>main { position:fixed; inset:var(--keyboard-offset,0px) 0 auto; width:100%; height:var(--app-height,100dvh) !important; z-index:95; }
+body.ox-keyboard-open .wcp-page { grid-template-rows:minmax(0,1fr); grid-template-columns:minmax(0,1fr); }
+body.ox-keyboard-open :is(.wcp-head,.wcp-help,.wcp-orders,.wcp-reorder,.wcp-handoff,.ox-bottom-nav) { display:none !important; }
+@media(orientation:landscape) and (max-height:560px) { body .wcp-page { grid-template-columns:150px minmax(0,1fr); grid-template-rows:minmax(0,1fr); } }

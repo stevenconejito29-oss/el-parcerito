@@ -11,16 +11,19 @@ DevelopmentConfig.TESTING = True
 DevelopmentConfig.WTF_CSRF_ENABLED = False
 from app import create_app
 from extensions import db
-from models import User, Categoria, Product, Order, OrderItem, SiteConfig, utcnow
+from models import User, Categoria, Product, Order, OrderItem, SiteConfig, ZonaEntrega, utcnow
 app = create_app('development')
 app.config['SESSION_PROTECTION'] = None
 with app.app_context():
     db.create_all()
     SiteConfig.set('NOMBRE_NEGOCIO', 'El Parcerito · QA', descripcion='QA')
     SiteConfig.set('FEATURE_DELIVERY', '1', descripcion='QA')
+    SiteConfig.set('FEATURE_RECOGIDA', '1', descripcion='QA')
+    SiteConfig.set('DIRECCION_NEGOCIO', 'Calle de prueba 12', descripcion='QA')
     SiteConfig.set('TIENDA_FORZAR_ABIERTA', '1', descripcion='QA')
     SiteConfig.set('TIENDA_FORZAR_CERRADA', '0', descripcion='QA')
     SiteConfig.set('DELIVERY_MODO', 'inmediato', descripcion='QA')
+    db.session.add(ZonaEntrega(nombre='Zona QA', precio_envio=2, activo=True))
     users = {}
     for role in ['admin','cocina','preparacion','repartidor','cliente']:
         u = User(nombre='QA '+role, email=role+'@test.invalid', rol=role, activo=True, en_linea=True, last_seen=utcnow())
@@ -63,3 +66,19 @@ with client.session_transaction() as session:
     session['carrito']={}
 response=client.get('/carrito')
 (out/'vacio.html').write_bytes(response.data)
+
+# Seguimiento específico de recogida, sin campos heredados del reparto.
+with app.app_context():
+    order = db.session.get(Order, 2)
+    order.tipo_entrega_cliente = 'recogida'
+    order.estado = 'armando'
+    order.confirmacion_estado = 'confirmed'
+    order.direccion_entrega = None
+    order.repartidor_id = None
+    db.session.commit()
+with client.session_transaction() as session:
+    session['guest_order_tokens'] = {'2': 'qa-pickup-private-token'}
+response = client.get('/pedido/2/confirmado')
+assert response.status_code == 200
+assert b'qa-pickup-private-token' not in response.data
+(out/'recogida.html').write_bytes(response.data)

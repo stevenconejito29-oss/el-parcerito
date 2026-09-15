@@ -40,6 +40,9 @@ with app.app_context():
         order = Order(numero_pedido=f'QA-{index}', cliente_id=users['cliente'], estado=state, total=10, subtotal=10, metodo_pago='efectivo', tipo_entrega_cliente='delivery', direccion_entrega='Dirección de prueba', preparador_id=users['cocina'], repartidor_id=users['repartidor'] if state=='en_ruta' else None)
         db.session.add(order); db.session.flush()
         db.session.add(OrderItem(pedido_id=order.id, producto_id=product.id, cantidad=2, precio_unit=5, subtotal=10))
+    pickup_order = Order(numero_pedido='QA-REC', cliente_id=users['cliente'], estado='listo', total=10, subtotal=10, metodo_pago='efectivo', tipo_entrega_cliente='recogida', preparador_id=users['cocina'])
+    db.session.add(pickup_order); db.session.flush()
+    db.session.add(OrderItem(pedido_id=pickup_order.id, producto_id=product.id, cantidad=2, precio_unit=5, subtotal=10))
     product_id = product.id
     db.session.commit()
 
@@ -48,7 +51,7 @@ with app.app_context():
     scheduled = Product(nombre='Encargo de prueba para preparar y recoger', precio=10, activo=True,
                         tipo_entrega='programado', fecha_llegada=business_today())
     db.session.add(scheduled); db.session.flush()
-    for index,state in enumerate(['pendiente','armando'], 10):
+    for index,state in enumerate(['pendiente','armando','listo'], 10):
         order=Order(numero_pedido=f'QA-{index}',cliente_id=users['cliente'],estado=state,
                     total=10,subtotal=10,metodo_pago='efectivo',tipo_entrega_cliente='recogida',
                     preparador_id=users['preparacion'])

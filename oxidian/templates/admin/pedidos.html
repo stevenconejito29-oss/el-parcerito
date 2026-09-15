@@ -172,6 +172,9 @@
     <div class="flex gap-2 flex-wrap">
       {{ ticket_action(pedido, 'ord-btn', 'Reimprimir ticket') }}
       {% if pedido.estado not in ('entregado','cancelado') %}
+      {% if pedido.tipo_entrega_cliente == 'recogida' and pedido.estado in ('listo', 'en_ruta') %}
+      {% with pickup_complete_url=url_for('admin.avanzar_pedido_admin', pedido_id=pedido.id) %}{% include 'preparador/_pickup_handoff.html' %}{% endwith %}
+      {% else %}
       <form method="POST" action="{{ url_for('admin.avanzar_pedido_admin', pedido_id=pedido.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% set programado_bloqueado = pedido.estado == 'pendiente' and pedido.es_programado and not puede_preparar_programado(pedido) %}
@@ -180,6 +183,7 @@
           {% elif pedido.estado == 'listo' and not pedido.requiere_reparto %}Entregar recogida{% else %}Avanzar{% endif %}
         </button>
       </form>
+      {% endif %}
       {% if pedido.estado == 'en_ruta' and pedido.intentos_codigo >= 3 %}
       <form method="POST" action="{{ url_for('admin.reset_codigo_confirmacion', pedido_id=pedido.id) }}" title="Regenerar código de entrega (agotó 3 intentos)">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

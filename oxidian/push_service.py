@@ -168,6 +168,8 @@ def _dispatch(subscriptions, payload: dict, *, evento: str = "web_push",
         job_payload = {
             "subscription_id": sub.id,
             "expected_user_id": sub.user_id,
+            "expected_device_hash": sub.device_hash,
+            "expected_role": sub.usuario.rol if sub.usuario else None,
             "payload": payload,
         }
         db.session.add(NotificationOutbox(
@@ -293,6 +295,8 @@ def send_push_outbox_payload(payload: dict) -> tuple[bool, str | None]:
 
     subscription_id = payload.get("subscription_id")
     expected_user_id = payload.get("expected_user_id")
+    expected_device_hash = payload.get("expected_device_hash")
+    expected_role = payload.get("expected_role")
     push_payload = payload.get("payload") or {}
     if not subscription_id or not push_payload:
         return False, "push_payload_invalido"
@@ -305,6 +309,13 @@ def send_push_outbox_payload(payload: dict) -> tuple[bool, str | None]:
             "Push descartada: suscripción %s cambió de propietario antes del envío",
             sub.id,
         )
+        return True, None
+
+    if not sub.usuario or not sub.usuario.activo:
+        return True, None
+    if expected_device_hash and sub.device_hash != expected_device_hash:
+        return True, None
+    if expected_role and sub.usuario.rol != expected_role:
         return True, None
 
     pub, priv = _get_vapid_keys()
@@ -361,10 +372,13 @@ def notify_roles(roles: list[str], title: str, body: str, url: str = "/",
 def notify_user(user_id: int, title: str, body: str, url: str = "/",
                 icon: Optional[str] = None, badge: Optional[str] = None,
                 *, tag: Optional[str] = None,
-                require_interaction: bool = False, commit: bool = True) -> None:
+                require_interaction: bool = False, commit: bool = True, device_hash: str | None = None) -> None:
     """Envía notificación push a todas las suscripciones activas de un usuario."""
     from models import PushSubscription
-    subs = PushSubscription.query.filter_by(user_id=user_id, activo=True).all()
+    query = PushSubscription.query.filter_by(user_id=user_id, activo=True)
+    if device_hash is not None:
+        query = query.filter_by(device_hash=device_hash)
+    subs = query.all()
     if not subs:
         return
     payload = _build_payload(title, body, url, icon, badge, tag, require_interaction)
@@ -463,7 +477,7 @@ def notify_new_order(pedido) -> None:
 
 def notify_order_state(pedido) -> None:
     """Notifica al cliente del cambio de estado de su pedido."""
-    if not pedido.cliente_id:
+    if not pedido.cliente_id or not getattr(pedido, "customer_device_hash", None):
         return
     from models import SiteConfig
     _tt = (SiteConfig.get("TIPO_TIENDA", "comida") or "comida").lower()
@@ -494,7 +508,7 @@ def notify_order_state(pedido) -> None:
     notify_user(
         pedido.cliente_id, title, body,
         url=f"/pedido/{pedido.id}/confirmado",
-        tag=f"pedido-{pedido.id}",
+        tag=f"pedido-{pedido.id}", device_hash=pedido.customer_device_hash,
     )
 
 

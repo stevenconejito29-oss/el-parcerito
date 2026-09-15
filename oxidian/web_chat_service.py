@@ -11,7 +11,7 @@ from datetime import datetime
 import requests
 from rapidfuzz import fuzz
 
-from flask import current_app, session, url_for
+from flask import current_app, session, url_for, has_request_context
 
 from extensions import db
 from models import AdminFeature, KnowledgeEntry, Order, SiteConfig, User, WebChatConversation, WebChatMessage, utcnow
@@ -95,12 +95,17 @@ def _visitor_hash(create: bool = True) -> str | None:
 
 
 def conversation_for_visitor(create: bool = True) -> WebChatConversation | None:
+    from device_identity import browser_device_hash
+    device_hash = browser_device_hash(create=create)
     token_hash = _visitor_hash(create=create)
     if not token_hash:
         return None
     row = WebChatConversation.query.filter_by(visitor_token_hash=token_hash).first()
     session_customer_id = session.get("push_cliente_id")
     if row:
+        if device_hash and not row.device_hash:
+            row.device_hash = device_hash
+            db.session.commit()
         # El vínculo solo puede provenir de la identidad establecida por el
         # checkout. En un dispositivo compartido, un cliente distinto recibe
         # una conversación nueva: nunca heredamos historial ni destinatario.
@@ -109,7 +114,7 @@ def conversation_for_visitor(create: bool = True) -> WebChatConversation | None:
             session["web_chat_token"] = token
             token_hash = hashlib.sha256(token.encode()).hexdigest()
             row = WebChatConversation(
-                public_id=str(uuid.uuid4()), visitor_token_hash=token_hash,
+                public_id=str(uuid.uuid4()), visitor_token_hash=token_hash, device_hash=device_hash,
                 customer_id=int(session_customer_id),
             )
             db.session.add(row); db.session.flush()
@@ -122,7 +127,7 @@ def conversation_for_visitor(create: bool = True) -> WebChatConversation | None:
     if not create:
         return row
     row = WebChatConversation(
-        public_id=str(uuid.uuid4()), visitor_token_hash=token_hash,
+        public_id=str(uuid.uuid4()), visitor_token_hash=token_hash, device_hash=device_hash,
         customer_id=int(session_customer_id) if session_customer_id else None,
     )
     db.session.add(row)
@@ -144,6 +149,7 @@ def welcome_message() -> str:
 
 
 def add_message(conversation, sender: str, body: str, *, agent_id=None, nonce=None):
+    body = redact_chat_credentials(body)
     # Conserva párrafos y listas, pero normaliza espacios y líneas vacías.
     lines = [" ".join(line.split()) for line in str(body or "").replace("\x00", "").splitlines()]
     clean = "\n".join(lines).strip()
@@ -225,25 +231,8 @@ def knowledge_answer(question: str) -> str | None:
 
 
 def _visitor_order_tokens() -> dict[int, str]:
-    """Tokens válidos de pedidos asociados a la sesión firmada actual."""
-    raw = session.get("guest_order_tokens", {})
-    result: dict[int, str] = {}
-    if not isinstance(raw, dict):
-        return result
-    for key, slot in raw.items():
-        if not str(key).isdigit():
-            continue
-        if isinstance(slot, dict):
-            try:
-                expires_at = int(slot.get("exp") or 0)
-            except (TypeError, ValueError):
-                continue
-            if expires_at and expires_at < int(datetime.utcnow().timestamp()):
-                continue
-        token = str(slot.get("token") if isinstance(slot, dict) else slot or "").strip()
-        if token:
-            result[int(key)] = token
-    return result
+    from order_access import visitor_order_tokens
+    return visitor_order_tokens()
 
 
 _ORDER_REFERENCE_RE = re.compile(
@@ -285,21 +274,20 @@ def visitor_order_answer(question: str) -> str | None:
             "No pudimos verificar un pedido activo con ese número en este dispositivo. "
             "Ábrelo desde el mismo navegador donde hiciste la compra o solicita atención humana."
         )
-    status = {
-        "pendiente": "recibido", "armando": "en preparación",
-        "listo": "listo para salir", "en_ruta": "en reparto",
-    }.get(order.estado, "en proceso")
-    delivery = "reparto inmediato" if order.requiere_reparto else "recogida en el local"
+    from order_presentation import order_presentation
+    view = order_presentation(order)
+    status = view["status_label"].lower()
+    delivery = view["fulfillment_label"]
     if order.fecha_entrega_programada:
         delivery += f" para el {order.fecha_entrega_programada.strftime('%d/%m')}"
-    if order.slot_id and order.slot:
-        delivery = f"franja del {order.slot.fecha.strftime('%d/%m')} de {order.slot.hora_inicio.strftime('%H:%M')} a {order.slot.hora_fin.strftime('%H:%M')}"
+    if order.requiere_reparto and order.slot_id and order.slot:
+        delivery = f"reparto en franja del {order.slot.fecha.strftime('%d/%m')} de {order.slot.hora_inicio.strftime('%H:%M')} a {order.slot.hora_fin.strftime('%H:%M')}"
     action = (
         "Puedes revisar el seguimiento o cancelar con los botones seguros que aparecen debajo."
         if order.estado == "pendiente" and not order.pago_confirmado
         else "Puedes abrir «Ver estado» debajo para consultar el detalle actualizado."
     )
-    return f"Tu pedido {order.numero_pedido} está {status}. Modalidad: {delivery}. {action}"
+    return f"Tu pedido {order.numero_pedido} está {status}. Modalidad: {delivery}. {view['description']} {action}"
 
 
 def visitor_orders() -> list[dict]:
@@ -315,20 +303,18 @@ def visitor_orders() -> list[dict]:
         Order.estado.in_(("pendiente", "armando", "listo", "en_ruta")),
     ).order_by(Order.creado_en.desc()).limit(10).all()
     result = []
+    from order_presentation import order_presentation
     for order in rows:
-        token = tokens[order.id]
+        view = order_presentation(order)
         result.append({
             "id": order.id,
             "number": order.numero_pedido,
             "status": order.estado,
-            "status_label": {
-                "pendiente": "Recibido", "armando": "En preparación",
-                "listo": "Listo", "en_ruta": "En reparto",
-                "entregado": "Entregado",
-                "cancelado": "Cancelado",
-            }.get(order.estado, str(order.estado or "En proceso").replace("_", " ").title()),
+            "status_label": view["status_label"],
+            "fulfillment_label": view["fulfillment_label"],
+            "instruction": view["description"],
             "tracking_url": url_for(
-                "public.pedido_confirmado", pedido_id=order.id, token=token,
+                "public.pedido_confirmado", pedido_id=order.id,
             ),
             "cancelable": order.estado == "pendiente" and not order.pago_confirmado,
         })
@@ -607,9 +593,19 @@ def resume_bot(conversation: WebChatConversation):
     db.session.commit()
 
 
+def redact_chat_credentials(body):
+    """Limpia mensajes históricos que contengan parámetros o tokens de acceso."""
+    text = str(body or "")
+    text = re.sub(r"(?i)([?&](?:token|access_token|auth_token|api_key|key|secret)=)[^\s&#<>\"']+", r"\1[oculto]", text)
+    text = re.sub(r"(?i)(\b(?:token|access_token|auth_token|api_key|secret)\s*[:=]\s*)[^\s,;<>]+", r"\1[oculto]", text)
+    for token in (_visitor_order_tokens().values() if has_request_context() else []):
+        text = text.replace(token, "[oculto]")
+    return text
+
+
 def serialise_message(row):
     return {
-        "id": row.id, "sender": row.sender, "body": row.body,
+        "id": row.id, "sender": row.sender, "body": redact_chat_credentials(row.body),
         "created_at": row.created_at.isoformat() + "Z" if row.created_at else None,
     }
 

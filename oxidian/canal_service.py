@@ -301,10 +301,18 @@ def enviar_por_canal(cliente, decision: ChannelDecision, *,
     plantillas WA son especificas del evento.
     """
     canal = decision.canal
+    device_hash = None
+    if canal in (CANAL_PUSH, CANAL_PUSH_WEB, CANAL_WEB) and getattr(cliente, "rol", "cliente") == "cliente":
+        from extensions import db
+        from models import Order
+        order = db.session.get(Order, pedido_id) if pedido_id else None
+        if not order or order.cliente_id != cliente.id or not order.customer_device_hash:
+            return False, CANAL_NONE
+        device_hash = order.customer_device_hash
     if canal in (CANAL_PUSH, CANAL_PUSH_WEB):
         try:
             from push_service import notify_user
-            notify_user(cliente.id, titulo, mensaje, url=url, tag=evento)
+            notify_user(cliente.id, titulo, mensaje, url=url, tag=evento, device_hash=device_hash)
             logger.info(
                 "canal_service: push enviado evento=%s cliente_id=%s",
                 evento, cliente.id,
@@ -321,6 +329,7 @@ def enviar_por_canal(cliente, decision: ChannelDecision, *,
                 WebChatConversation.query
                 .filter(
                     WebChatConversation.customer_id == cliente.id,
+                    WebChatConversation.device_hash == device_hash,
                     WebChatConversation.status.in_(["bot", "waiting_agent", "active_agent"]),
                 )
                 .order_by(WebChatConversation.last_activity_at.desc())

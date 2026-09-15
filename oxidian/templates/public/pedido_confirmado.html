@@ -6,9 +6,9 @@
 {% endblock %}
 {% block content %}
 {% include 'public/_customer_navigation.html' %}
-{% set stage = {'pendiente':1,'armando':2,'listo':3,'en_ruta':4}.get(pedido.estado,1) %}
+{% set stage = presentation.stage %}
 
-<div class="max-w-lg mx-auto pt-2 pb-16 order-confirmation" data-order-state-url="{{ url_for('public.estado_pedido_web', pedido_id=pedido.id, token=pedido_token) }}">
+<div class="max-w-lg mx-auto pt-2 pb-16 order-confirmation" data-order-state-url="{{ url_for('public.estado_pedido_web', pedido_id=pedido.id) }}">
 
   {# ── CONFETTI / ÉXITO ── #}
   <div class="order-success-hero {{ 'order-success-hero--action' if requiere_confirmacion_whatsapp else 'order-success-hero--complete' }}" id="success-top">
@@ -43,21 +43,21 @@
   </section>
   {% endif %}
 
-  <div class="order-progress" aria-label="Progreso del pedido" data-order-progress="{{ stage }}">
-    <div class="is-done"><b>✓</b><span><strong>Recibido</strong><small data-order-validation>{{ "Pendiente de confirmar" if requiere_confirmacion_whatsapp else "Pedido validado" }}</small></span></div>
+  <div class="order-progress" aria-label="Progreso del pedido" data-order-progress="{{ stage }}" {% if not stage %}hidden{% endif %}>
+    <div class="{{ 'is-done' if stage > 1 else 'is-current' }}"><b>{{ '✓' if stage > 1 else '1' }}</b><span><strong>Recibido</strong><small data-order-validation>{{ "Pendiente de confirmar" if requiere_confirmacion_whatsapp else "Pedido validado" }}</small></span></div>
     <i aria-hidden="true"></i>
     <div class="{{ 'is-done' if stage > 2 else 'is-current' if stage == 2 else '' }}"><b>{{ '✓' if stage > 2 else '2' }}</b><span><strong>Preparación</strong><small>Preparación del pedido</small></span></div>
     <i aria-hidden="true"></i>
-    <div class="{{ 'is-done' if stage > 3 else 'is-current' if stage == 3 else '' }}"><b>{{ '✓' if stage > 3 else '3' }}</b><span><strong>Listo</strong><small>Preparación terminada</small></span></div>
+    <div class="{{ 'is-done' if stage > 3 else 'is-current' if stage == 3 else '' }}"><b>{{ '✓' if stage > 3 else '3' }}</b><span><strong>{{ "Listo" if presentation.requires_delivery else "Listo para recoger" }}</strong><small>{{ "Preparación terminada" if presentation.requires_delivery else "Ya puedes venir al negocio" }}</small></span></div>
     <i aria-hidden="true"></i>
-    <div class="{{ 'is-current' if stage == 4 else '' }}"><b>4</b><span><strong>{{ "En reparto" if pedido.tipo_entrega_cliente == "delivery" else "Recogida" }}</strong><small>{{ "Entrega a domicilio" if pedido.tipo_entrega_cliente == "delivery" else "En el punto de recogida" }}</small></span></div>
+    <div class="{{ 'is-done' if stage > 4 else 'is-current' if stage == 4 else '' }}"><b>{{ '✓' if stage > 4 else '4' }}</b><span><strong>{{ "En reparto" if presentation.requires_delivery else "Recogido" }}</strong><small>{{ "Entrega a domicilio" if presentation.requires_delivery else "Entrega y pago en mostrador" }}</small></span></div>
   </div>
 
 
 
   {# ── NÚMERO DE PEDIDO ── #}
   <div class="ox-card p-5 mb-4 text-center order-number-ticket">
-    <p class="order-ticket-kicker">Ficha técnica · Comprobante de compra</p>
+    <p class="order-ticket-kicker">Resumen de tu pedido</p>
     <p class="order-number-label">Tu número de pedido</p>
     <p class="order-number-value">
       {{ pedido.numero_pedido }}
@@ -122,11 +122,11 @@
         <span>Descuento</span><span>-€{{ "%.2f"|format(pedido.descuento) }}</span>
       </div>
       {% endif %}
-      {% if pedido.zona_id and pedido.costo_envio_aplicado > 0 %}
+      {% if presentation.requires_delivery and pedido.zona_id and pedido.costo_envio_aplicado > 0 %}
       <div class="flex justify-between" style="color:var(--col-muted)">
         <span>Envío{% if pedido.zona_nombre_aplicada %} ({{ pedido.zona_nombre_aplicada }}){% endif %}</span><span>€{{ "%.2f"|format(pedido.costo_envio_aplicado) }}</span>
       </div>
-      {% elif pedido.zona_id and pedido.zona_precio_envio_snapshot and pedido.zona_precio_envio_snapshot > 0 %}
+      {% elif presentation.requires_delivery and pedido.zona_id and pedido.zona_precio_envio_snapshot and pedido.zona_precio_envio_snapshot > 0 %}
       <div class="flex justify-between" style="color:var(--theme-success)"><span>Envío</span><span>Gratis</span></div>
       {% endif %}
       <div class="flex justify-between font-black text-base pt-1" style="border-top:1px solid var(--col-border);color:var(--col-text)">
@@ -171,7 +171,8 @@
       </div>
       {% if pedido.tipo_entrega_cliente == 'recogida' %}
       <div class="space-y-2">
-        <p class="font-semibold">Punto de recogida</p>
+        <p class="font-semibold">Recogida en el negocio</p>
+        <p data-pickup-instruction>{{ "Ya puedes venir. Muestra tu número de pedido al equipo." if presentation.pickup_ready else "Espera el aviso de pedido listo antes de desplazarte." if pedido.estado not in ('entregado', 'cancelado') else presentation.description }}</p>
         {% if pickup and pickup.address %}
         <p>{{ pickup.address }}</p>
         <a href="{{ pickup.maps_url }}" target="_blank" rel="noopener noreferrer" class="ox-btn ox-btn-primary">Cómo llegar con Maps</a>
@@ -189,7 +190,7 @@
         </div>
       </div>
       {% endif %}
-      {% if pedido.zona_id %}
+      {% if presentation.requires_delivery and pedido.zona_id %}
       <div class="flex items-start gap-2">
         <span class="flex-shrink-0">🚴</span>
         <div>
@@ -211,19 +212,19 @@
   </div>
 
   {# ── PUNTOS GANADOS ── #}
-  {% if brand.puntos and pedido.puntos_ganados and pedido.puntos_ganados > 0 %}
+  {% if pedido.estado != "cancelado" and brand.puntos and pedido.puntos_ganados and pedido.puntos_ganados > 0 %}
   <div class="ox-card p-4 mb-4 flex items-center gap-3 order-loyalty-card">
     <span class="text-3xl">{{ heritage_icon('grano') }}</span>
     <div>
-      <p class="font-black order-loyalty-earned">+{{ pedido.puntos_ganados }} {{ ui.loyalty_unit_plural }} al completar el pedido</p>
-      <p class="text-xs" style="color:var(--col-muted)">Se añadirán a tu saldo cuando el equipo marque el pedido como entregado.</p>
+      <p class="font-black order-loyalty-earned">+{{ pedido.puntos_ganados }} {{ ui.loyalty_unit_plural }} {{ "ganados" if pedido.estado == "entregado" else "al completar el pedido" }}</p>
+      <p class="text-xs" style="color:var(--col-muted)">{{ "El pedido está finalizado." if pedido.estado == "entregado" else "Se añadirán a tu saldo cuando el equipo marque el pedido como entregado." }}</p>
     </div>
   </div>
   {% endif %}
 
   {# ── BIZUM: instrucciones si aplica ── #}
   {% if pedido.metodo_pago == 'bizum' %}
-  <div class="ox-card p-4 mb-4 order-payment-card" data-order-payment-instructions {% if presentation.payment_confirmed %}hidden{% endif %}>
+  <div class="ox-card p-4 mb-4 order-payment-card" data-order-payment-instructions {% if presentation.payment_confirmed or pedido.estado in ("cancelado", "entregado") %}hidden{% endif %}>
     <p class="font-black mb-2 order-payment-title">📱 Pago con Bizum</p>
     <p class="text-sm" style="color:var(--col-muted)">
       {{ 'El repartidor verificará el pago al entregar tu pedido.' if pedido.tipo_entrega_cliente == 'delivery' else 'El equipo verificará el pago en la recogida.' }}
@@ -238,7 +239,7 @@
     <span class="order-notify-icon" aria-hidden="true">🔔</span>
     <div>
       <h2 id="order-notify-title">Sigue el pedido sin estar mirando la pantalla</h2>
-      <p>Activa los avisos para saber cuándo entra en preparación, queda listo, sale con reparto o responde un agente en el chat. Solo recibirás novedades vinculadas a tu cuenta en este dispositivo.</p>
+      <p>Activa los avisos para saber cuándo entra en preparación, {{ "queda listo o sale con reparto" if presentation.requires_delivery else "ya puedes recogerlo en el negocio" }} o responde un agente en el chat. Solo recibirás novedades vinculadas a tu cuenta en este dispositivo.</p>
       <button type="button" data-push-activate>Activar avisos del pedido</button>
       <small>En iPhone debes abrir la app instalada desde la pantalla de inicio. Puedes desactivarlos cuando quieras.</small>
     </div>
@@ -256,7 +257,6 @@
     <form method="post" action="{{ url_for('public.cancelar_pedido_web', pedido_id=pedido.id) }}"
           data-confirm="¿Cancelar este pedido? Se liberarán productos, cupones y cafecitos asociados.">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="token" value="{{ pedido_token }}">
       <button type="submit" class="order-action order-action--cancel">Cancelar pedido</button>
     </form>
     {% elif pedido.estado not in ('entregado', 'cancelado') %}

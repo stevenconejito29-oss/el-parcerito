@@ -164,6 +164,7 @@ class OutboxValidityTest(unittest.TestCase):
     def test_departure_is_idempotent_and_never_queues_whatsapp(self, notify):
         from delivery_slots_service import notificar_en_camino
         self.order.estado = 'en_ruta'
+        self.order.customer_device_hash = 'qa-device'
         db.session.commit()
         self.assertEqual(notificar_en_camino(self.order)[1], 'push_web')
         db.session.commit()

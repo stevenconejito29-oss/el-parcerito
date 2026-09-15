@@ -137,6 +137,9 @@ def create_app(env="default"):
         user = db.session.get(User, ident)
         return user if user and user.puede_iniciar_sesion else None
 
+    from device_identity import initialise_browser_session
+    app.before_request(initialise_browser_session)
+
     @app.before_request
     def log_request_start():
         g.start_time = time.time()

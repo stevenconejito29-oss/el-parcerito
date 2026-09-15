@@ -1812,6 +1812,17 @@ def _migrate_orders_add_slot_id():
     ))
 
 
+def _migrate_browser_notification_targeting():
+    # Ampliación compatible: no elimina datos ni deduce dispositivos por teléfono.
+    for table,column in (("orders","customer_device_hash"),("push_subscriptions","device_hash"),("web_chat_conversations","device_hash")):
+        inspector=inspect(db.engine)
+        if not inspector.has_table(table):
+            continue
+        if column not in {c["name"] for c in inspector.get_columns(table)}:
+            db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} VARCHAR(64)"))
+        db.session.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_{column} ON {table} ({column})"))
+
+
 MIGRATIONS = [
     {
         "id": "20260814_01_favor_marketplace",
@@ -2311,6 +2322,7 @@ MIGRATIONS = [
         "description": "Añade User.last_wa_inbound_at (ventana Meta 24h) para canal_service.",
         "fn": _migrate_user_last_wa_inbound_at,
     },
+    {"id": "20260915_01_browser_notification_targeting", "description": "Vincular pedidos y conversaciones al dispositivo autorizado", "fn": _migrate_browser_notification_targeting},
 ]
 
 

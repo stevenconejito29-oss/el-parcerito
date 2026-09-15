@@ -7,7 +7,7 @@ from models import WebChatMessage
 from web_chat_service import (
     MAX_MESSAGE, add_message, bot_reply, conversation_for_visitor,
     cancel_visitor_order, last_reorderable_order, reorder_visitor_order, request_human, resume_bot, serialise_conversation,
-    serialise_message, visitor_orders, unread_count_for_visitor, mark_conversation_read,
+    serialise_message, visitor_orders, unread_count_for_visitor, mark_conversation_read, redact_chat_credentials,
 )
 
 web_chat_bp = Blueprint("web_chat", __name__)
@@ -66,6 +66,7 @@ def send_message():
         return jsonify({"ok": False, "error": "Mensaje inválido."}), 400
     if not body or len(body) > MAX_MESSAGE:
         return jsonify({"ok": False, "error": "Mensaje inválido."}), 400
+    body = redact_chat_credentials(body)
     conversation = conversation_for_visitor()
     if nonce:
         existing = WebChatMessage.query.filter_by(
