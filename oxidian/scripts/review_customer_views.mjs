@@ -8,7 +8,7 @@ const browser=await engine.launch({headless:true,...(engine===chromium ? {execut
 const report=[];
 try {
  for(const [mode,width,height] of [['mobile',375,812],['small',320,740],['desktop',1280,900],['tablet',768,1024],['landscape',852,393],['browser',375,812],['dark',375,812]]) {
-  for(const name of ['menu','carrito','chat','checkout','producto','club','legal','seguimiento','franjas']) {
+  for(const name of ['menu','carrito','chat','checkout','producto','club','legal','seguimiento','franjas','combo','combo_carrito'].filter(name=>!process.env.REVIEW_VIEWS || process.env.REVIEW_VIEWS.split(',').includes(name))) {
    const context=await browser.newContext({viewport:{width,height},serviceWorkers:'block',colorScheme:mode==='dark'?'dark':'light'});
    if(mode!=='browser') await context.addInitScript(()=>{
     const original=window.matchMedia;
@@ -31,10 +31,23 @@ try {
     if(url.pathname==='/api/web-chat/state')return route.fulfill({json:{ok:true,conversation:{status:'bot'},messages:[{id:1,sender:'bot',body:'Hola. Puedo ayudarte con tu compra, entrega o pago.'}],orders:[]}});
     return route.fulfill({json:{ok:true}});
    });
-   await page.goto('http://pwa.test'+({menu:'/',carrito:'/carrito',chat:'/ayuda',checkout:'/checkout',producto:'/producto/1',club:'/club',legal:'/informacion-legal',seguimiento:'/pedido/1/confirmado',franjas:'/delivery/preview'}[name]), {waitUntil:'domcontentloaded'});
+   await page.goto('http://pwa.test'+({menu:'/',carrito:'/carrito',chat:'/ayuda',checkout:'/checkout',producto:'/producto/1',club:'/club',legal:'/informacion-legal',seguimiento:'/pedido/1/confirmado',franjas:'/delivery/preview',combo:'/producto/7',combo_carrito:'/carrito'}[name]), {waitUntil:'domcontentloaded'});
    const privacy=page.locator('#ox-privacy-banner [data-privacy-reject]');
    if(await privacy.isVisible())await privacy.click();
    await page.waitForTimeout(250);
+   if(name==='combo') {
+    const selection=page.locator('.combo-sel-qty:not(:disabled)').first();
+    await selection.fill('2'); await selection.dispatchEvent('input');
+    assert.equal(await page.evaluate(()=>pdComboState().find(s=>s.key!=='_fija').complete),false,'Respeta el mínimo de tres');
+    await selection.fill('3'); await selection.dispatchEvent('input');
+    const state=await page.evaluate(()=>{const s=pdComboState().find(s=>s.key!=='_fija');return {complete:s.complete,selectionText:s.selectionText};});
+    assert.equal(state.complete,true);
+    assert.match(state.selectionText,/Bebida de prueba/,'El resumen conserva el nombre de la opción');
+   }
+   if(name==='combo_carrito') {
+    assert.equal(await page.locator('.cr-combo[open]').count(),1);
+    assert.match(await page.locator('.cr-combo').innerText(),/3×/);
+   }
    if(name==='carrito') {
     const readable=await page.locator('.cr-total-val').evaluate(el=>{
       const rgb=getComputedStyle(el).color.match(/[\d.]+/g).slice(0,3).map(Number);
@@ -71,7 +84,7 @@ try {
     assert.ok(form.height>=44);
     if(nav&&width<768)assert.ok(form.y+form.height<=nav.y+1,`Chat composer overlaps navigation: ${mode}`);
    }
-   if(['mobile','desktop'].includes(mode) && ['menu','carrito','chat','checkout','club'].includes(name)) await page.screenshot({animations:'disabled',timeout:10000,path:`${out}/${name}-${mode}.png`,fullPage:true});
+   if(['mobile','desktop'].includes(mode) && ['menu','carrito','chat','checkout','club','combo','combo_carrito'].includes(name)) await page.screenshot({animations:'disabled',timeout:10000,path:`${out}/${name}-${mode}.png`,fullPage:true});
    await context.close();
   }
  }

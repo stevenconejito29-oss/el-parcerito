@@ -109,26 +109,34 @@ def puntos():
         rol="cliente", activo=True
     ).scalar() or 0
 
-    top_clientes = User.query.filter_by(rol="cliente", activo=True)\
-                             .order_by(User.puntos.desc()).limit(10).all()
-    ultimos_movs = PointsLog.query.order_by(PointsLog.creado_en.desc()).limit(50).all()
-    clientes = User.query.filter_by(rol="cliente", activo=True)\
-                         .order_by(User.nombre).all()
-    productos = Product.query.filter_by(activo=True)\
-        .order_by(Product.canjeable_con_puntos.desc(), Product.nombre).all()
-    productos_canjeables = [p for p in productos if p.canjeable_con_puntos]
-
-    return render_template("marketing/puntos.html",
-                           puntos_emitidos=int(puntos_emitidos),
-                           puntos_canjeados=int(puntos_canjeados),
-                           puntos_circulacion=int(puntos_circulacion),
-                           top_clientes=top_clientes,
-                           ultimos_movs=ultimos_movs,
-                           clientes=clientes,
-                           productos=productos,
-                           productos_canjeables=productos_canjeables,
-                           loyalty_terms=loyalty_terms,
-                           puntos_config=puntos_config)
+    tab = request.args.get('tab', 'clientes')
+    if tab not in {'clientes', 'recompensas', 'historial'}:
+        tab = 'clientes'
+    search = request.args.get('q', '').strip()[:80]
+    page = max(1, request.args.get('page', 1, type=int) or 1)
+    from sqlalchemy import or_
+    if tab == 'clientes':
+        query = User.query.filter_by(rol='cliente', activo=True)
+        if search:
+            query = query.filter(or_(User.nombre.ilike(f'%{search}%'), User.telefono.ilike(f'%{search}%')))
+        query = query.order_by(User.nombre, User.id)
+    elif tab == 'recompensas':
+        query = Product.query.filter_by(activo=True)
+        if search:
+            query = query.filter(Product.nombre.ilike(f'%{search}%'))
+        query = query.order_by(Product.canjeable_con_puntos.desc(), Product.nombre, Product.id)
+    else:
+        query = PointsLog.query.join(User, User.id == PointsLog.cliente_id)
+        if search:
+            query = query.filter(or_(User.nombre.ilike(f'%{search}%'), PointsLog.descripcion.ilike(f'%{search}%')))
+        query = query.order_by(PointsLog.creado_en.desc(), PointsLog.id.desc())
+    import uuid
+    adjustment_key = str(uuid.uuid4())
+    pagination = query.paginate(page=page, per_page=30, error_out=False)
+    return render_template('marketing/puntos.html', tab=tab, search=search, pagination=pagination,
+                           puntos_emitidos=int(puntos_emitidos), puntos_canjeados=int(puntos_canjeados),
+                           puntos_circulacion=int(puntos_circulacion), loyalty_terms=loyalty_terms,
+                           puntos_config=puntos_config, adjustment_key=adjustment_key)
 
 
 @marketing_bp.route("/puntos/productos/<int:producto_id>", methods=["POST"])
@@ -146,10 +154,10 @@ def configurar_producto_puntos(producto_id):
             "edítalo primero y asigna un precio mayor que cero.",
             "warning",
         )
-        return redirect(url_for("marketing.puntos"))
+        return redirect(url_for("marketing.puntos", tab="recompensas"))
     if activar and producto.es_combo and producto.combo_items.filter_by(es_seleccionable=True).count():
         flash("Un combo con opciones seleccionables no puede ser canje directo.", "danger")
-        return redirect(url_for("marketing.puntos"))
+        return redirect(url_for("marketing.puntos", tab="recompensas"))
     try:
         configuracion = Product.normalizar_configuracion_canje(
             canjeable=activar,
@@ -159,7 +167,7 @@ def configurar_producto_puntos(producto_id):
         )
     except ValueError as exc:
         flash(str(exc), "danger")
-        return redirect(url_for("marketing.puntos"))
+        return redirect(url_for("marketing.puntos", tab="recompensas"))
     producto.canjeable_con_puntos = configuracion["canjeable_con_puntos"]
     producto.solo_canje = configuracion["solo_canje"]
     producto.puntos_para_canje = configuracion["puntos_para_canje"]
@@ -173,7 +181,7 @@ def configurar_producto_puntos(producto_id):
     except Exception as exc:
         db.session.rollback()
         flash(f"No se pudo guardar el canje: {exc}", "danger")
-    return redirect(url_for("marketing.puntos"))
+    return redirect(url_for("marketing.puntos", tab="recompensas"))
 
 
 @marketing_bp.route("/puntos/ajustar", methods=["POST"])
@@ -191,22 +199,25 @@ def ajustar_puntos():
         flash("La cantidad debe ser distinta de 0.", "warning")
         return redirect(url_for("marketing.puntos"))
 
-    cliente = get_or_404(User, cliente_id)
-    if cantidad > 0:
-        cliente.sumar_puntos(cantidad, descripcion=descripcion)
-    elif cantidad < 0:
-        try:
-            cliente.canjear_puntos(abs(cantidad))
-        except ValueError as e:
-            flash(str(e), "danger")
-            return redirect(url_for("marketing.puntos"))
-
-    AuditLog.registrar(current_user.id, "ajuste_puntos", "user",
-                       cliente_id, detalle=f"{cantidad} — {descripcion}",
-                       ip=request.remote_addr)
-    db.session.commit()
-    flash(f"Puntos ajustados para {cliente.nombre}: {cantidad:+d}", "success")
-    return redirect(url_for("marketing.puntos"))
+    from loyalty_service import ajustar_saldo_cliente
+    from idempotency import with_idempotency
+    import hashlib, json, uuid
+    try:
+        key = str(uuid.UUID(request.form.get('adjustment_key', '')))
+        payload_hash = hashlib.sha256(json.dumps([cliente_id, cantidad, descripcion]).encode()).hexdigest()
+        def apply():
+            cliente = ajustar_saldo_cliente(cliente_id, cantidad, descripcion, actor=current_user)
+            return 200, {'nombre': cliente.nombre}, None
+        status, result, replayed = with_idempotency(f'points_adjust:{current_user.id}', key, payload_hash, apply, user_id=current_user.id)
+        if status != 200:
+            raise ValueError('Este formulario ya se usó. Actualiza la página antes de otro ajuste.')
+        db.session.commit()
+    except (ValueError, AttributeError) as exc:
+        db.session.rollback()
+        flash(str(exc) or 'Actualiza el formulario antes de ajustar.', 'danger')
+        return redirect(url_for('marketing.puntos'))
+    flash('El ajuste ya estaba guardado.' if replayed else f'Saldo actualizado: {cantidad:+d}.', 'success')
+    return redirect(url_for('marketing.puntos'))
 
 
 # ─── CAMPAÑAS WhatsApp ───────────────────────────────────────────────────────

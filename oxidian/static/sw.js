@@ -162,14 +162,14 @@ self.addEventListener("install", event => {
     caches.open(CACHE_STATIC).then(async cache => {
       // Bloqueante: solo lo crítico para primera pintura.
       await Promise.allSettled(
-        critical.map(url => cache.add(new Request(url, { cache: "reload" })))
+        critical.map(url => cache.add(new Request(url.includes("?") ? url : `${url}?v=${APP_VERSION}`, { cache: "reload" })))
       );
       // No bloqueante: el resto se cachea en background. Si el usuario
       // cierra la pestaña antes de terminar, el SW recupera al siguiente
       // fetch bajo la estrategia SWR normal — no se pierde nada.
       Promise.allSettled(
         secundarios.map(url =>
-          cache.add(new Request(url, { cache: "reload" })).catch(() => {})
+          cache.add(new Request(url.includes("?") ? url : `${url}?v=${APP_VERSION}`, { cache: "reload" })).catch(() => {})
         )
       );
     })
@@ -232,24 +232,12 @@ function withTimeout(promise, ms) {
 }
 
 async function networkFirstHtml(request) {
+  // El acceso puede cambiar a privado en cualquier momento. No reutilizar HTML
+  // del menú sin validar la sesión en el servidor, tampoco sin conexión.
   const cache = await caches.open(CACHE_HTML);
-  try {
-    const response = await withTimeout(
-      fetch(request, { cache: "no-store" }),
-      NETWORK_TIMEOUT_MS,
-    );
-    if (canStore(response) && !response.redirected) {
-      try { await cache.put(request, response.clone()); } catch (_) {}
-      trimCache(cache, 30).catch(() => {});
-    } else {
-      // Retirar cualquier catálogo guardado antes de activar el acceso privado.
-      await cache.delete(request);
-    }
-    return response;
-  } catch (_) {
-    const cached = await cache.match(request);
-    return cached || offlineResponse();
-  }
+  await cache.delete(request);
+  try { return await fetch(request, { cache: "no-store" }); }
+  catch (_) { return offlineResponse(); }
 }
 
 /* Uploads: network-first sin timeout artificial. Si hay red, se descarga la

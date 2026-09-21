@@ -1,6 +1,6 @@
 {% from 'partials/ui_icons.html' import ui_icon %}
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-delivery-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -18,13 +18,6 @@
   <meta name="ox-asset-version" content="{{ asset_version }}">
   {% set _staff_icon = brand.app_icon_url or brand.logo_url %}
   {% set _app_icon = _staff_icon|upload_url if _staff_icon else '' %}
-  {% if current_user.is_authenticated and request.blueprint in ('preparador', 'repartidor') %}
-  <script nonce="{{ csp_nonce() }}">
-    /* Aplicar el tema antes del primer pintado evita el destello blanco al
-       abrir delivery de noche. La interacción vive en operational-roles.js. */
-    (()=>{try{const k='oxidian.delivery.theme',s=localStorage.getItem(k);document.documentElement.dataset.deliveryTheme=(s==='dark'||s==='light')?s:(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');}catch(_){document.documentElement.dataset.deliveryTheme='light';}})();
-  </script>
-  {% endif %}
   <link rel="manifest" href="{{ url_for('staff_web_manifest', v=asset_version) }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ _app_icon or url_for('static', filename='apple-touch-icon.png', v=asset_version) }}">
   {# Favicon del tab: SIEMPRE los estáticos pequeños (1-5 KB) para no descargar 114 KB por navegación. #}
@@ -193,6 +186,7 @@
   {% if current_user.is_authenticated and current_user.rol in ('admin', 'super_admin') %}
   <script defer src="{{ url_for('static', filename='js/admin-tool-search.js', v=asset_version) }}"></script>
   {% endif %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/flow-refinements.css', v=asset_version) }}">
 </head>
 {% set rol = current_user.rol if current_user.is_authenticated else '' %}
 {% set operational_view = request.blueprint in ('preparador','repartidor','staff','proveedor') %}
@@ -295,6 +289,9 @@
       </details>
       <div class="ox-sb-divider"></div>
 
+      {% if brand.puntos and has_admin_feature('marketing') %}
+      <div class="ox-sb-section"><a href="{{ url_for('marketing.puntos') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ ui_icon('users') }}</span>Puntos y recompensas</a></div>
+      {% endif %}
       <details class="ox-sb-section ox-sb-category" open><summary class="ox-sb-section-label">Promoción y contenido</summary>
         {% if has_admin_feature('cupones') or has_admin_feature('marketing') %}<a href="{{ url_for('admin.cupones') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ ui_icon('package') }}</span>Cupones</a>{% endif %}
         {% if has_admin_feature('marketing') %}<a href="{{ url_for('admin.afiliados') }}" class="ox-sb-item"><span class="ox-sb-item-icon">{{ ui_icon('users') }}</span>Afiliados</a>{% endif %}

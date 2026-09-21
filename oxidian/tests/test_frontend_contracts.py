@@ -69,7 +69,9 @@ class FrontendContractsTest(unittest.TestCase):
             self.assertIn(key, config)
             self.assertIn(key, route)
         self.assertIn("productos canjeables", config)
-        self.assertIn("Automático · al entregar", marketing)
+        self.assertIn("por euro al entregar", marketing)
+        self.assertIn("Saldos de clientes", marketing)
+        self.assertIn("Productos de canje", marketing)
         self.assertIn('config["compra_minima"]', service)
 
     def test_operational_roles_prioritize_slots_and_small_phone_layout(self):
@@ -247,14 +249,15 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("navigator.bluetooth.getDevices", thermal)
         self.assertIn("[data-pair-thermal]", roles)
 
-    def test_operational_themes_and_rider_tracking_are_real_modes(self):
+    def test_operational_palette_is_fixed_and_rider_tracking_is_preserved(self):
         styles = (ROOT / "static" / "css" / "employee-app.css").read_text(encoding="utf-8")
         script = (ROOT / "static" / "js" / "operational-roles.js").read_text(encoding="utf-8")
         route = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
 
         self.assertIn('html[data-delivery-theme="light"] body.view-preparador', styles)
         self.assertIn('html[data-delivery-theme="dark"] body.view-repartidor', styles)
-        self.assertIn('background: #080d13 !important', styles)
+        self.assertIn("root.dataset.deliveryTheme = 'light'", script)
+        self.assertNotIn("prefers-color-scheme", script)
         self.assertIn('data-auto-start="{{ \'1\' if en_ruta else \'0\' }}"', route)
         self.assertIn("window.setTimeout(start, 350)", script)
         self.assertIn("navigator.geolocation.watchPosition", script)
@@ -454,7 +457,7 @@ class FrontendContractsTest(unittest.TestCase):
         template = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")
 
         self.assertNotIn("url_for('repartidor.mis_comisiones')", template)
-        self.assertIn("data-delivery-theme-toggle", template)
+        self.assertNotIn("data-delivery-theme-toggle", template)
 
     def test_delivery_route_uses_server_optimizer_with_fallback_and_guards_limits(self):
         template = (ROOT / "templates" / "repartidor" / "ruta.html").read_text(encoding="utf-8")

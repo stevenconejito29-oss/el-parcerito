@@ -279,7 +279,7 @@
     <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="operacion-horario">
       <h3>Acceso de clientes</h3>
-      {{ cfg_select('ACCESO_CLIENTES_REGISTRADOS', 'Quién puede acceder a la tienda', [('0','Todos los visitantes'),('1','Solo clientes registrados y verificados')], 'En modo privado, solo los clientes autorizados expresamente por superadmin pueden entrar con un código por WhatsApp. Cada número queda vinculado a un dispositivo. No afecta al acceso del equipo.') }}
+      {{ cfg_select('ACCESO_CLIENTES_REGISTRADOS', 'Quién puede acceder a la tienda', [('0','Página pública — acceso libre'),('1','Página privada — autorización y código WhatsApp')], 'En modo privado, solo los clientes autorizados expresamente por superadmin pueden entrar con un código por WhatsApp. Cada número queda vinculado a un dispositivo. No afecta al acceso del equipo.') }}
       <a href="{{ url_for('admin.clientes') }}">Gestionar clientes registrados</a>
       <h3>Horario y cierre</h3>
     <div class="cfg-grid">

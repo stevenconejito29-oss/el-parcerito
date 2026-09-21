@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {chromium,webkit} from 'playwright-core';
@@ -21,7 +22,7 @@ try {
       return route.fulfill({json:{ok:true,signature:'qa'}});
     });
     await page.goto('http://review.test'+view.route);
-    await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;document.documentElement.dataset.deliveryTheme=theme;},theme);
+    if (['cocina','preparacion','repartidor'].includes(view.name)) assert.equal(await page.locator('html').getAttribute('data-delivery-theme'), 'light');
     await page.waitForTimeout(150);
     const lowContrast = ['cocina','preparacion'].includes(view.name) && theme === 'light' ? await page.evaluate(() => {
       const luminance = color => color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);

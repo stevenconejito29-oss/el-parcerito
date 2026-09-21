@@ -32,6 +32,7 @@
   let btChar = null;
   let usbDevice = null;
   let usbEndpoint = null;
+  let serialPort = null;
   let printing = false;
   let serverHint = null;
   let networkAvailable = false;
@@ -83,12 +84,13 @@
     } catch (_) { /* el emparejamiento local continúa operativo */ }
   }
   function isPaired() {
-    return Boolean(usbDevice?.opened || device?.gatt?.connected);
+    return Boolean(serialPort?.writable || usbDevice?.opened || device?.gatt?.connected);
   }
 
   function capabilities() {
     return {
       secure: window.isSecureContext,
+      serial: window.isSecureContext && typeof navigator.serial?.requestPort === 'function',
       usb: window.isSecureContext && typeof navigator.usb?.requestDevice === 'function',
       bt: window.isSecureContext && typeof navigator.bluetooth?.requestDevice === 'function',
     };
@@ -116,6 +118,7 @@
       }
       if (device?.gatt?.connected) device.gatt.disconnect();
       if (usbDevice && usbDevice !== dev && usbDevice.opened) await usbDevice.close();
+      await closeSerial();
       device = null; btChar = null;
       usbDevice = dev; usbEndpoint = selected.endpoint.endpointNumber;
       const info = { transport: 'usb', device_id: usbId(dev), name: dev.productName || 'Impresora USB' };
@@ -143,6 +146,28 @@
     if (matches.length === 1) await connectUSB(matches[0]);
   }
 
+  async function closeSerial() {
+    if (serialPort) { try { await serialPort.close(); } catch (_) {} }
+    serialPort = null;
+  }
+
+  async function pairSerial() {
+    if (printing) throw new Error('Espera a que termine el ticket actual.');
+    if (!capabilities().serial) throw new Error('Este navegador no admite puertos serie. Usa la impresión del sistema.');
+    // Bluetooth Classic SPP debe estar vinculado antes en los ajustes del equipo.
+    const port = await navigator.serial.requestPort();
+    if (port !== serialPort) await closeSerial();
+    if (!port.writable) await port.open({baudRate: 9600});
+    if (usbDevice?.opened) await usbDevice.close();
+    if (device?.gatt?.connected) device.gatt.disconnect();
+    usbDevice = null; usbEndpoint = null; device = null; btChar = null;
+    serialPort = port;
+    const info = {transport:'serial', device_id:'selected-port', name:'Impresora Bluetooth clásico / serie'};
+    setPaired(info);
+    await saveServerHint(info);
+    return info;
+  }
+
   async function pairBT() {
     if (printing) throw new Error('Espera a que termine el ticket actual.');
     if (!capabilities().bt) {
@@ -152,6 +177,7 @@
       acceptAllDevices: true,
       optionalServices: BT_SERVICES,
     });
+    await closeSerial();
     const server = await dev.gatt.connect();
     const writeChar = await _findBTWriteChar(server);
     if (!writeChar) {
@@ -202,6 +228,13 @@
   }
 
   async function _writeBytes(bytes) {
+    if (serialPort?.writable) {
+      const writer = serialPort.writable.getWriter();
+      try {
+        for (let offset = 0; offset < bytes.length; offset += 1024) await writer.write(bytes.slice(offset, offset + 1024));
+      } finally { writer.releaseLock(); }
+      return;
+    }
     if (usbDevice?.opened && usbEndpoint !== null) {
       for (let offset = 0; offset < bytes.length; offset += 4096) {
         const chunk = bytes.slice(offset, offset + 4096);
@@ -254,6 +287,9 @@
   }
 
   async function restore() {
+    // Web Serial no identifica unívocamente dos puertos del mismo modelo.
+    // Tras recargar se pide selección explícita para no imprimir en otro equipo.
+    if (getPairInfo()?.transport === 'serial') return;
     if (getPairInfo()?.transport === 'usb') return restoreUSB();
     return _restoreBT();
   }
@@ -312,6 +348,7 @@
 
   function forget() {
     if (printing) return;
+    closeSerial();
     if (usbDevice?.opened) usbDevice.close().catch(() => {});
     usbDevice = null; usbEndpoint = null;
     try {
@@ -327,7 +364,7 @@
   }
 
   window.ThermalPrinter = {
-    pairBT, pairUSB, capabilities, isPaired, getPairInfo, printTicket,
+    pairBT, pairUSB, pairSerial, capabilities, isPaired, getPairInfo, printTicket,
     printNetwork, canPrintNetwork: () => networkAvailable,
     restore, restoreUSB, restoreBT: _restoreBT, forget,
     ready: readyPromise,

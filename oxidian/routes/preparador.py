@@ -139,7 +139,7 @@ def impresora_preferencia():
     transport = str(payload.get("transport") or "").strip().lower()
     device_id = str(payload.get("device_id") or "").strip()[:180]
     name = str(payload.get("name") or "Impresora térmica").strip()[:80]
-    if transport not in {"bt", "usb"} or (transport == "bt" and not device_id):
+    if transport not in {"bt", "usb", "serial"} or (transport == "bt" and not device_id):
         return jsonify({"ok": False, "error": "impresora_invalida"}), 400
     value = {"transport": transport, "device_id": device_id, "name": name}
     SiteConfig.set(key, _json.dumps(value, ensure_ascii=False), current_user.id,

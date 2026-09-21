@@ -136,19 +136,19 @@
             {% if item.producto.es_combo and item.combo_display_items %}
             {% set fijos = item.combo_display_items|selectattr('seleccionado','equalto',False)|list %}
             {% set sels  = item.combo_display_items|selectattr('seleccionado')|list %}
-            <details class="cr-combo">
+            <details class="cr-combo" open>
               <summary class="cr-combo-toggle">
                 🎁 {{ ui.cart_combo_view }}
                 <span class="cr-combo-pill">{{ fijos|length + sels|length }} {{ ui.cart_combo_items }}</span>
                 <svg class="cr-combo-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
               </summary>
-              <div class="cr-combo-rows">
+              <div class="cr-combo-rows"><p class="cr-combo-scope">Contenido por combo · {{ item.cantidad }} combo{{ "s" if item.cantidad != 1 else "" }} en tu carrito</p>
                 {% if fijos %}
                 <div class="cr-combo-section cr-combo-section--fixed">📌 {{ ui.cart_combo_base }}</div>
                 {% for d in fijos %}{% set ci = d.item %}
                 <div class="cr-combo-row">
                   {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="" loading="lazy" decoding="async">{% endif %}
-                  <span class="cr-combo-row-qty">{{ ci.cantidad }}×</span>
+                  <span class="cr-combo-row-qty">{{ d.cantidad }}×</span>
                   <span class="cr-combo-row-name">{{ ci.componente.nombre }}</span>
                   {% if d.unidades_cliente %}{% for unit in d.unidades_cliente %}
                   <span class="cr-combo-tag cr-combo-tag--pres">#{{ unit.get('unidad', loop.index) }}{% if unit.get('presentacion') %} · {{ unit.get('presentacion').get('label') }}{% endif %}{% if unit.get('sabor') %} · {{ unit.get('sabor').get('nombre') }}{% endif %}</span>
@@ -165,7 +165,7 @@
                 {% for d in grp_items %}{% set ci = d.item %}
                 <div class="cr-combo-row">
                   {% if ci.componente.imagen_url %}<img src="{{ ci.componente.imagen_url|upload_url }}" class="cr-combo-row-img" alt="" loading="lazy" decoding="async">{% endif %}
-                  <span class="cr-combo-row-qty">{{ ci.cantidad }}×</span>
+                  <span class="cr-combo-row-qty">{{ d.cantidad }}×</span>
                   <span class="cr-combo-row-name">{{ ci.componente.nombre }}</span>
                   {% if d.unidades_cliente %}{% for unit in d.unidades_cliente %}
                   <span class="cr-combo-tag cr-combo-tag--pres">#{{ unit.get('unidad', loop.index) }}{% if unit.get('presentacion') %} · {{ unit.get('presentacion').get('label') }}{% endif %}{% if unit.get('sabor') %} · {{ unit.get('sabor').get('nombre') }}{% endif %}</span>

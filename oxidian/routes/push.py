@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 from flask import Blueprint, jsonify, request, session
 from flask_login import current_user, login_required
-from extensions import db
+from extensions import db, limiter
 from models import PushSubscription, utcnow
 
 push_bp = Blueprint("push", __name__)
@@ -42,8 +42,12 @@ def _validate_subscription(endpoint: str, p256dh: str, auth_key: str) -> str | N
 
 def _push_user():
     from models import User
-    if current_user.is_authenticated:
+    from customer_access import verified_customer, private_store_enabled
+    if current_user.is_authenticated and (current_user.rol != "cliente" or not private_store_enabled()):
         return current_user if current_user.activo else None
+    customer = verified_customer()
+    if customer or private_store_enabled():
+        return customer
     user = db.session.get(User, session.get("push_cliente_id")) if session.get("push_cliente_id") else None
     return user if user and user.activo and user.rol == "cliente" else None
 
@@ -160,3 +164,27 @@ def test_push():
         url="/admin/dashboard",
     )
     return jsonify({"ok": True, "msg": "Notificación de prueba enviada"})
+
+
+@push_bp.post('/self-test')
+@limiter.limit('3 per minute') if limiter else (lambda f: f)
+def self_test():
+    """Prueba servidor → dispositivo propio; no envía a otros navegadores."""
+    from device_identity import browser_device_hash
+    from push_service import vapid_configuration_error, _build_payload, _dispatch
+    user = _push_user()
+    device = browser_device_hash()
+    if not user or not device:
+        return jsonify(ok=False, error='Verifica tu acceso y activa los avisos.'), 403
+    if vapid_configuration_error():
+        return jsonify(ok=False, error='El servidor no tiene notificaciones configuradas.'), 503
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict) or not isinstance(data.get('endpoint'), str):
+        return jsonify(ok=False, error='Falta la suscripción de este dispositivo.'), 400
+    sub = PushSubscription.query.filter_by(user_id=user.id, device_hash=device,
+                                          endpoint=data['endpoint'], activo=True).first()
+    if not sub:
+        return jsonify(ok=False, error='Vuelve a activar los avisos en este dispositivo.'), 409
+    count = _dispatch([sub], _build_payload('Prueba de notificaciones',
+        'Este aviso llegó desde el servidor a tu dispositivo.', '/', None, None, 'ox-server-test', False))
+    return jsonify(ok=bool(count), queued=count)

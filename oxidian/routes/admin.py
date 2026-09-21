@@ -6786,10 +6786,10 @@ def registrar_cliente():
 @admin_bp.route("/clientes/<int:user_id>/acceso", methods=["POST"])
 @super_admin_required
 def cambiar_acceso_cliente(user_id):
-    customer = get_or_404(User, user_id)
+    customer = User.query.filter_by(id=user_id).populate_existing().with_for_update().first_or_404()
     if customer.rol != "cliente":
         abort(403)
-    from models import CustomerAccessGrant
+    from models import CustomerAccessGrant, PushSubscription
     grant = db.session.get(CustomerAccessGrant, customer.id)
     enabled = request.form.get("activo") == "1"
     if grant is None and enabled:
@@ -6799,6 +6799,7 @@ def cambiar_acceso_cliente(user_id):
         grant.activo = enabled
         grant.approved_by = current_user.id
         grant.device_hash = None
+    PushSubscription.query.filter_by(user_id=customer.id).update({"activo": False}, synchronize_session=False)
     customer.activo = enabled
     customer.mfa_session_version = (customer.mfa_session_version or 0) + 1
     # Cambiar el estado invalida códigos pendientes, sin tocar pedidos ni puntos.
@@ -6819,7 +6820,7 @@ def editar_cliente(user_id):
     Valida: nombre 2..80 chars; teléfono con validador estándar; deduplicado
     por `telefono_normalizado` UNIQUE (rechaza si otro user ya lo tiene).
     """
-    cli = get_or_404(User, user_id)
+    cli = User.query.filter_by(id=user_id).populate_existing().with_for_update().first_or_404()
     if cli.rol != "cliente":
         flash("Solo se permite editar clientes desde este panel.", "danger")
         return redirect(url_for("admin.clientes"))
@@ -6850,7 +6851,10 @@ def editar_cliente(user_id):
             return redirect(url_for("admin.clientes"))
         if cli.telefono_normalizado != tn:
             cli.mfa_session_version = (cli.mfa_session_version or 0) + 1
-            from models import CustomerAccessGrant
+            from models import CustomerAccessGrant, PushSubscription
+            PushSubscription.query.filter_by(user_id=cli.id).update({"activo": False}, synchronize_session=False)
+            cli.cod_puntos = None
+            cli.cod_puntos_expira = None
             grant = db.session.get(CustomerAccessGrant, cli.id)
             if grant:
                 grant.device_hash = None

@@ -436,21 +436,16 @@
     try {
       unlockAudio();
       const reg = registration || await navigator.serviceWorker.ready;
-      await subscribePush(reg);
-      const icon = document.querySelector('link[rel="apple-touch-icon"]')?.href ||
-        `/static/pwa-icon-192.png?v=${encodeURIComponent(assetVersion)}`;
-      await reg.showNotification(document.title.split('—')[0].trim() || 'Mi tienda', {
-        body: 'Avisos activos en este dispositivo.',
-        icon,
-        badge: `/static/pwa-badge-96.png?v=${encodeURIComponent(assetVersion)}`,
-        tag: 'ox-push-self-test',
-        renotify: true,
-        silent: false,
-        vibrate: [120, 60, 120],
-        data: { url: location.pathname || '/' },
+      const subscription = await subscribePush(reg);
+      const response = await fetch('/api/push/self-test', {
+        method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+        body: JSON.stringify({endpoint: subscription.endpoint}),
       });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo enviar la prueba.');
       chime();
-      toast('Prueba enviada. El sonido externo depende del volumen y ajustes del sistema.', 'success', null, 8000);
+      toast('Prueba enviada desde el servidor. Espera el aviso del sistema; el sonido depende de sus ajustes.', 'success', null, 9000);
     } catch (error) {
       toast(error.message || 'No se pudo completar la prueba.', 'danger');
     } finally {

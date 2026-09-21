@@ -2,7 +2,6 @@
 (function () {
   'use strict';
 
-  const DELIVERY_THEME_KEY = 'oxidian.delivery.theme';
   const root = document.documentElement;
   const body = document.body;
 
@@ -28,44 +27,7 @@
     switcher.hidden = false;
   });
 
-  function preferredDeliveryTheme() {
-    try {
-      const saved = localStorage.getItem(DELIVERY_THEME_KEY);
-      if (saved === 'dark' || saved === 'light') return saved;
-    } catch (_) {}
-    return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  }
-
-  function setDeliveryTheme(theme, persist) {
-    const next = theme === 'dark' ? 'dark' : 'light';
-    root.dataset.deliveryTheme = next;
-    if (persist) {
-      try { localStorage.setItem(DELIVERY_THEME_KEY, next); } catch (_) {}
-    }
-    document.querySelectorAll('[data-delivery-theme-toggle]').forEach((button) => {
-      const dark = next === 'dark';
-      button.setAttribute('aria-pressed', dark ? 'true' : 'false');
-      button.setAttribute('aria-label', dark ? 'Cambiar a modo día' : 'Cambiar a modo noche');
-      const icon = button.querySelector('[data-theme-icon]');
-      const label = button.querySelector('[data-theme-label]');
-      if (icon) icon.textContent = dark ? '☀️' : '🌙';
-      if (label) label.textContent = dark ? 'Modo día' : 'Modo noche';
-    });
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta && body.classList.contains('operational-view')) {
-      meta.content = next === 'dark' ? '#0b1016' : getComputedStyle(body).getPropertyValue('--brand-primary').trim();
-    }
-  }
-
-  // Aplica a cualquier rol operativo (repartidor, preparación, cocina, staff).
-  if (body.classList.contains('operational-view')) {
-    setDeliveryTheme(preferredDeliveryTheme(), false);
-    document.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-delivery-theme-toggle]');
-      if (!button) return;
-      setDeliveryTheme(root.dataset.deliveryTheme === 'dark' ? 'light' : 'dark', true);
-    });
-  }
+  root.dataset.deliveryTheme = 'light';
 
   /* ────────────────────────────────────────────────────────────────
      IMPRESIÓN DE TICKETS
@@ -118,11 +80,12 @@
         <p>Elige cómo enviar este ticket. Si hubo un error, comprueba el papel antes de reimprimir.</p>
         <div class="print-after-actions">
           ${caps.usb ? '<button type="button" class="print-after-btn" data-thermal-print="usb">USB directo</button>' : ''}
+          ${caps.serial ? '<button type="button" class="print-after-btn" data-thermal-print="serial">Bluetooth clásico / puerto serie</button>' : ''}
           ${caps.bt ? '<button type="button" class="print-after-btn" data-thermal-print="bt">Bluetooth BLE</button>' : ''}
           ${tp?.canPrintNetwork?.() ? '<button type="button" class="print-after-btn" data-thermal-print="network">Impresora del negocio</button>' : ''}
           <a class="print-after-btn" href="/pos/ticket/${Number(pedidoId)}?autoprint=1&reprint=${reprint ? '1' : '0'}" target="_blank" rel="noopener">Impresión del sistema / AirPrint</a>
         </div>
-        <p>En iPhone usa una impresora compatible con AirPrint o la impresora de red configurada por el negocio. Bluetooth directo requiere BLE; Bluetooth clásico necesita un puente de impresión.</p>
+        <p>En iPhone usa una impresora compatible con AirPrint o la impresora de red configurada por el negocio. Bluetooth directo requiere BLE; Para Bluetooth clásico vincula primero la impresora ESC/POS en el sistema y usa puerto serie si aparece disponible. En otros equipos usa la impresión del sistema o un puente.</p>
         <p id="thermal-status" role="status"></p>
         <button type="button" class="print-after-btn" data-thermal-close>Cerrar</button>
       </div>`;
@@ -165,7 +128,8 @@
           if (transport === 'network') await tp.printNetwork(pedidoId, { reprint });
           else {
             if (!tp.isPaired() || tp.getPairInfo()?.transport !== transport) {
-              if (transport === 'usb') await tp.pairUSB();
+              if (transport === 'serial') await tp.pairSerial();
+              else if (transport === 'usb') await tp.pairUSB();
               else await tp.pairBT();
             }
             status.textContent = 'Enviando ticket…';
@@ -339,7 +303,8 @@
     try {
       // El selector requiere el gesto del usuario: no hacer awaits de red antes.
       btn.textContent = 'Emparejando…';
-      if (transport === 'usb') await tp.pairUSB();
+      if (transport === 'serial') await tp.pairSerial();
+              else if (transport === 'usb') await tp.pairUSB();
       else await tp.pairBT();
       refreshChip();
     } catch (err) {

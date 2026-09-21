@@ -62,7 +62,7 @@ RUN chmod +x /entrypoint.sh
 EXPOSE 5000 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=5 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/config-publica', timeout=4)"
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health/ready', timeout=4)"
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["gunicorn"]

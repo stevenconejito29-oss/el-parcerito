@@ -72,6 +72,7 @@
 {# ── Desglose del combo: secciones estructuradas ── #}
 {% if item.display_es_combo and (fijos_meta or sels_meta) %}
 <div class="work-combo-breakdown">
+<p class="work-combo-scope">Contenido por combo · preparar {{ item.cantidad }} combo{{ "s" if item.cantidad != 1 else "" }}</p>
 
   {# BASE FIJA: siempre preparar #}
   {% if fijos_meta %}

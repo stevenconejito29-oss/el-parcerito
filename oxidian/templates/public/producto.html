@@ -579,13 +579,14 @@
     {% for grupo in grupos %}
     {% set opts = seleccionables|selectattr('grupo_display','equalto',grupo)|list %}
     {% set max_sel = opts[0].max_selecciones if opts else 1 %}
+    {% set min_sel = [1, (opts[0].grupo.min_selecciones if opts and opts[0].grupo else 1)]|max %}
     {% set group_key = (grupo or 'Seleccion').replace(' ', '_') %}
-    <div class="pd-cstep pd-cstep-s pd-combo-grupo" data-max-sel="{{ max_sel }}" data-grupo-nombre="{{ grupo or 'Seleccion' }}" data-cstep-key="{{ group_key }}" data-cstep-title="{{ grupo or 'Elige una opción' }}">
+    <div class="pd-cstep pd-cstep-s pd-combo-grupo" data-max-sel="{{ max_sel }}" data-min-sel="{{ min_sel }}" data-grupo-nombre="{{ grupo or 'Seleccion' }}" data-cstep-key="{{ group_key }}" data-cstep-title="{{ grupo or 'Elige una opción' }}">
       <div class="pd-cstep-hd">
         <span class="pd-cstep-num pd-cstep-num-s">{{ loop.index }}</span>
         <div class="pd-cstep-meta">
           <p class="pd-cstep-ttl">Paso {{ loop.index + (1 if fijos else 0) }} · {{ grupo or 'Elige una opción' }}</p>
-          <p class="pd-cstep-sub">{% if max_sel == 1 %}Elige 1 opción{% else %}Elige hasta {{ max_sel }} de {{ opts|length }}{% endif %}</p>
+          <p class="pd-cstep-sub">{% if max_sel == 1 %}Elige 1 opción{% else %}{% if min_sel == max_sel %}Elige {{ max_sel }} en total{% else %}Elige entre {{ min_sel }} y {{ max_sel }}{% endif %}{% endif %}</p>
         </div>
         <span class="pd-cstep-badge pd-cstep-pending" id="pdst-{{ group_key }}">Pendiente</span>
       </div>
@@ -593,7 +594,7 @@
          Reemplaza el `pd-combo-group-note` estático anterior, que repetía la
          info ya presente en la subtítulo y no reflejaba el estado real. #}
       <p class="pd-cstep-progress" data-cstep-progress="{{ group_key }}">
-        {% if max_sel == 1 %}↓ Elige tu opción{% else %}↓ Elige {{ max_sel }} en total{% endif %}
+        {% if max_sel == 1 %}↓ Elige tu opción{% else %}↓ Elige al menos {{ min_sel }} en total{% endif %}
       </p>
       <div class="pd-cstep-body">
         {% for item in opts %}
@@ -2387,6 +2388,7 @@ function pdComboState() {
     const key = group.dataset.cstepKey
       || (group.dataset.grupoNombre || '').replace(/ /g, '_');
     const maxSel = parseInt(group.dataset.maxSel || '1', 10);
+    const minSel = parseInt(group.dataset.minSel || '1', 10);
     const radios = group.querySelectorAll('.combo-sel-radio');
     const qtyInputs = group.querySelectorAll('.combo-sel-qty');
     let current = 0;
@@ -2421,7 +2423,7 @@ function pdComboState() {
       const checked = group.querySelector('.combo-sel-radio:checked');
       current = checked ? 1 : 0;
       if (checked) {
-        const label = namePlusFlavor(checked.closest('label'));
+        const label = namePlusFlavor(checked.closest('.pd-combo-opcion'));
         if (label) parts.push(label);
       }
     } else {
@@ -2429,7 +2431,7 @@ function pdComboState() {
         const q = parseInt(el.value) || 0;
         if (q > 0) {
           current += q;
-          const label = namePlusFlavor(el.closest('label'));
+          const label = namePlusFlavor(el.closest('.pd-combo-opcion'));
           if (label) parts.push(q > 1 ? `${label} ×${q}` : label);
         }
       });
@@ -2440,10 +2442,10 @@ function pdComboState() {
     let flavorPending = false;
     const activeOpts = radios.length
       ? Array.from(group.querySelectorAll('.combo-sel-radio:checked'))
-          .map(r => r.closest('label'))
+          .map(r => r.closest('.pd-combo-opcion'))
       : Array.from(group.querySelectorAll('.combo-sel-qty'))
           .filter(inp => (parseInt(inp.value) || 0) > 0)
-          .map(inp => inp.closest('label'));
+          .map(inp => inp.closest('.pd-combo-opcion'));
     activeOpts.filter(Boolean).forEach(lbl => {
       lbl.querySelectorAll('.pd-combo-flavor').forEach(fg => {
         const occurrences = parseInt(
@@ -2457,12 +2459,13 @@ function pdComboState() {
         if (selectedUnits !== required) flavorPending = true;
       });
     });
-    const structureOk = current >= maxSel && current <= maxSel;
+    const structureOk = current >= minSel && current <= maxSel;
     sections.push({
       key,
       title: group.dataset.cstepTitle || group.dataset.grupoNombre || 'Sección',
       current,
       max: maxSel,
+      min: minSel,
       complete: structureOk && !flavorPending,
       overflow: current > maxSel,
       flavorPending: structureOk && flavorPending,
@@ -2637,7 +2640,7 @@ function pdComboUpdateBadges() {
           : '✓ Listo';
         hint.classList.add('is-ready');
       } else if (sec.current > 0 && sec.max > 1) {
-        hint.textContent = `↓ Elige ${sec.max - sec.current} más`;
+        hint.textContent = `↓ Elige ${sec.min - sec.current} más`;
       } else if (sec.key === '_fija') {
         hint.textContent = wasReached
           ? '↓ Vuelve a elegir los sabores de tu base'
@@ -2648,8 +2651,8 @@ function pdComboUpdateBadges() {
           : '↓ Elige tu opción';
       } else {
         hint.textContent = wasReached
-          ? `↓ Vuelve a elegir tus ${sec.max} opciones`
-          : `↓ Elige ${sec.max} opcion${sec.max === 1 ? '' : 'es'}`;
+          ? `↓ Vuelve a elegir al menos ${sec.min} opciones`
+          : `↓ Elige ${sec.min} opcion${sec.min === 1 ? '' : 'es'}`;
       }
     }
   });
@@ -2825,6 +2828,7 @@ function pdComboGroupTotalsValid() {
   let valid = true;
   document.querySelectorAll('.pd-combo-grupo').forEach(group => {
     const max = parseInt(group.dataset.maxSel || '1', 10);
+    const min = parseInt(group.dataset.minSel || '1', 10);
     const qtyInputs = group.querySelectorAll('.combo-sel-qty');
     const radioInputs = group.querySelectorAll('.combo-sel-radio');
 
@@ -2842,7 +2846,7 @@ function pdComboGroupTotalsValid() {
     if (!qtyInputs.length) return;
     const total = Array.from(qtyInputs).reduce((sum, input) => sum + (parseInt(input.value) || 0), 0);
     const hasOptions = qtyInputs.length > 0;
-    const groupInvalid = (hasOptions && total === 0) || total > max;
+    const groupInvalid = (hasOptions && total < min) || total > max;
     group.classList.toggle('pd-combo-group-invalid', groupInvalid);
     if (groupInvalid) valid = false;
   });
@@ -2972,7 +2976,7 @@ void document.getElementById('pd-add-form')?.addEventListener('submit', function
   // Radios (max_sel == 1)
   document.querySelectorAll('.combo-item-choice:checked').forEach(input => {
     const grupo = input.closest('.pd-combo-grupo')?.dataset.grupoNombre || '';
-    const label = input.closest('label')?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
+    const label = input.closest('.pd-combo-opcion')?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
     if (label) sels.push(`${grupo}: ${label}`);
   });
   // Qty (max_sel > 1)
@@ -2980,7 +2984,7 @@ void document.getElementById('pd-add-form')?.addEventListener('submit', function
     const qty = parseInt(input.value) || 0;
     if (qty <= 0) return;
     const grupo = input.closest('.pd-combo-grupo')?.dataset.grupoNombre || '';
-    const label = input.closest('label')?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
+    const label = input.closest('.pd-combo-opcion')?.querySelector('.pd-combo-opt-name')?.textContent?.trim();
     if (label) sels.push(`${grupo}: ${label}${qty > 1 ? ` ×${qty}` : ''}`);
   });
   notasEl.value = sels.join(' | ');

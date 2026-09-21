@@ -3826,6 +3826,9 @@ def _parse_combo_selection(producto, form, cantidad=1, origen=None):
             if total_selecciones > max_sel:
                 return {}, f"No puedes elegir más de {max_sel} opción(es) de «{grupo}» para el combo."
             seleccion[grupo] = qty_map
+        minimum = max(1, int(opciones[0].grupo.min_selecciones or 1)) if opciones[0].grupo else 1
+        if sum(seleccion[grupo].values()) < minimum:
+            return {}, f"Debes elegir al menos {minimum} opción(es) de «{grupo}» para el combo."
 
     def _component_units(item):
         if not item.es_seleccionable:
@@ -4393,6 +4396,7 @@ def _combo_selection_payload(producto, seleccion_guardada):
 def _combo_display_items(combo_items, metadata):
     combo_meta = (metadata or {}).get("combo", {})
     selected_ids = set()
+    quantity_by_item = {}
     flavor_by_item = {}
     presentation_by_item = {}
     units_by_item = {}
@@ -4403,10 +4407,11 @@ def _combo_display_items(combo_items, metadata):
             except (TypeError, ValueError):
                 continue
             selected_ids.add(cid)
+            quantity_by_item[cid] = option.get("cantidad", option.get("qty", 1))
             if option.get("sabor_cliente"):
                 flavor_by_item[cid] = option.get("sabor_cliente")
-            if option.get("presentation_cliente"):
-                presentation_by_item[cid] = option.get("presentation_cliente")
+            if "presentacion" in option or "presentation_cliente" in option:
+                presentation_by_item[cid] = option.get("presentacion", option.get("presentation_cliente"))
             if option.get("unidades_cliente"):
                 units_by_item[cid] = option.get("unidades_cliente")
     for comp in combo_meta.get("componentes", []):
@@ -4416,21 +4421,22 @@ def _combo_display_items(combo_items, metadata):
             continue
         if comp.get("sabor_cliente"):
             flavor_by_item[cid] = comp.get("sabor_cliente")
-        if comp.get("presentation_cliente"):
-            presentation_by_item[cid] = comp.get("presentation_cliente")
+        if "presentacion" in comp or "presentation_cliente" in comp:
+            presentation_by_item[cid] = comp.get("presentacion", comp.get("presentation_cliente"))
         if comp.get("unidades_cliente"):
             units_by_item[cid] = comp.get("unidades_cliente")
 
     rows = []
     for item in combo_items:
         if not item.es_seleccionable:
-            rows.append({"item": item, "tipo": "Fijo", "seleccionado": False,
+            rows.append({"item": item, "cantidad": item.cantidad, "tipo": "Fijo", "seleccionado": False,
                          "sabor_cliente": flavor_by_item.get(item.id),
                          "presentation_cliente": presentation_by_item.get(item.id),
                          "unidades_cliente": units_by_item.get(item.id)})
         elif item.id in selected_ids:
             rows.append({
                 "item": item,
+                "cantidad": quantity_by_item[item.id],
                 "tipo": item.grupo.nombre_publico if item.grupo else (item.grupo_seleccion or "Selección"),
                 "seleccionado": True,
                 "sabor_cliente": flavor_by_item.get(item.id),

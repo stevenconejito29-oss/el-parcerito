@@ -45,6 +45,15 @@ try {
  await page.evaluate(()=>ThermalPrinter.printTicket(1));
  assert.equal(await page.evaluate(()=>window.btWrites.reduce((a,b)=>a+b,0)),5000);
  assert.equal(await page.evaluate(()=>Math.max(...window.btWrites)),20);
+ await page.evaluate(async()=>{
+  ThermalPrinter.forget(); window.serialWrites=[]; window.writerReleased=false;
+  const port={writable:null,async open(){this.writable={getWriter:()=>({write:async bytes=>window.serialWrites.push(bytes.length),releaseLock:()=>{window.writerReleased=true;}})};},async close(){this.writable=null;}};
+  Object.defineProperty(navigator,'serial',{configurable:true,value:{requestPort:async()=>port}});
+  await ThermalPrinter.pairSerial(); await ThermalPrinter.printTicket(1);
+ });
+ assert.equal(await page.evaluate(()=>window.serialWrites.reduce((a,b)=>a+b,0)),5000);
+ assert.equal(await page.evaluate(()=>window.writerReleased),true);
+ await page.evaluate(()=>{ThermalPrinter.forget();Object.defineProperty(navigator,'serial',{value:undefined});});
  await page.evaluate(()=>{ThermalPrinter.forget();Object.defineProperty(navigator,'usb',{value:undefined});Object.defineProperty(navigator,'bluetooth',{value:undefined});document.body.insertAdjacentHTML('beforeend','<form class="ticket-print-form" action="/pos/ticket/1/imprimir"><button type="submit">Ticket</button></form>');});
  await page.addScriptTag({path:'static/js/operational-roles.js'});
  await page.locator('.ticket-print-form button').click();

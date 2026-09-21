@@ -20,7 +20,7 @@
   <meta name="msapplication-TileColor" content="{{ brand.color_primario }}">
   <meta name="msapplication-navbutton-color" content="{{ brand.color_primario }}">
   <meta name="ox-pwa-mode" content="public">
-  <meta name="ox-push-eligible" content="{{ '1' if session.get('push_cliente_id') else '0' }}">
+  <meta name="ox-push-eligible" content="{{ '1' if (private_customer or session.get('push_cliente_id')) else '0' }}">
   <meta name="ox-cart-count" content="{{ session.get('carrito', {})|length }}">
   <meta name="ox-csrf-token" content="{{ csrf_token() }}">
   <meta name="ox-asset-version" content="{{ asset_version }}">
@@ -227,6 +227,7 @@
   {% block styles_final %}{% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-polish.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/system-foundation.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/flow-refinements.css', v=asset_version) }}">
 </head>
 {# El detalle ya tiene navegación de regreso y una barra de compra fija.
    Apilar además la navegación inferior duplicaba controles y cubría el
@@ -366,7 +367,7 @@
 
 {% include 'partials/pwa_install_sheet.html' %}
 
-{% if session.get('push_cliente_id') %}
+{% if (private_customer or session.get('push_cliente_id')) %}
 <div class="ox-push-prompt" id="ox-push-prompt" hidden>
   <span class="ox-push-prompt-icon" aria-hidden="true">🔔</span>
   <div class="ox-push-prompt-copy"><strong>{{ ui.pwa_push_title }}</strong><small>{{ ui.pwa_push_text }}</small></div>
@@ -570,9 +571,9 @@
         <div class="ox-app-tools-actions">
           <button type="button" data-pwa-install><span class="ox-install-text">{{ ui.pwa_install }}</span></button>
           <button type="button" data-storage-prepare>{{ ui.pwa_offline }}</button>
-          {% if session.get('push_cliente_id') %}<button type="button" data-push-activate>{{ ui.pwa_notifications }}</button>{% endif %}
+          {% if (private_customer or session.get('push_cliente_id')) %}<button type="button" data-push-activate>{{ ui.pwa_notifications }}</button>{% endif %}
           <button type="button" data-pwa-check-update>Buscar actualización</button>
-          {% if session.get('push_cliente_id') %}<button type="button" data-push-sound-test>Probar aviso y sonido</button>{% endif %}
+          {% if (private_customer or session.get('push_cliente_id')) %}<button type="button" data-push-sound-test>Probar aviso y sonido</button>{% endif %}
         </div>
         <p id="ox-app-tools-status" aria-live="polite"></p>
       </div>

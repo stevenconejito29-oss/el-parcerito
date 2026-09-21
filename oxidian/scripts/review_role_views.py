@@ -93,6 +93,16 @@ with app.app_context():
     SiteConfig.set('ACCESO_CLIENTES_REGISTRADOS', '1')
     db.session.commit()
 access_client = app.test_client()
+# La gestión de puntos tiene tres pantallas independientes.
+with client.session_transaction() as session:
+    session['_user_id'] = str(users['super_admin']); session['_fresh'] = True
+for tab in ('clientes', 'recompensas', 'historial'):
+    response = client.get('/marketing/puntos?tab=' + tab)
+    assert response.status_code == 200, response.status_code
+    name = 'puntos_' + tab
+    (out/(name+'.html')).write_bytes(response.data)
+    manifest.append({'name':name, 'role':'super_admin', 'route':'/marketing/puntos?tab='+tab})
+
 for name, code_step in [('acceso', False), ('acceso_codigo', True)]:
     with access_client.session_transaction() as session:
         session['customer_access_code_step'] = code_step

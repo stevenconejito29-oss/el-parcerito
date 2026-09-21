@@ -533,15 +533,7 @@
       <span class="prep-sse-dot" aria-hidden="true"></span>
       <span id="prep-sse-label">Conectando…</span>
     </span>
-    {# Toggle modo noche — antes solo en repartidor. Añadido aquí para que
-       cocina y preparación (pantallas fijas, tablets nocturnas) puedan
-       cambiar sin salir a otra vista. Comparte estado (localStorage). #}
-    <button type="button" class="work-btn work-btn-ghost delivery-theme-toggle"
-            data-delivery-theme-toggle aria-pressed="false"
-            aria-label="Cambiar a modo noche">
-      <span class="delivery-theme-toggle__icon" data-theme-icon aria-hidden="true">🌙</span>
-      <span data-theme-label>Modo noche</span>
-    </button>
+
     {# Emparejar impresora térmica local — solo hace falta en la tablet
        de la oficina donde la impresora va enchufada por USB-OTG (o BT).
        En el PC de casa el ticket se manda por IPP desde el servidor,
@@ -551,6 +543,7 @@
       <div>
         <button type="button" class="work-btn work-btn-ghost" data-pair-thermal="usb"
                 title="Emparejar impresora térmica conectada por cable USB (OTG)">🖨️ USB</button>
+      <button type="button" class="work-btn work-btn-ghost" data-pair-thermal="serial">Bluetooth clásico / serie</button>
         <button type="button" class="work-btn work-btn-ghost" data-pair-thermal="bt"
                 title="Emparejar impresora térmica por Bluetooth">📶 Bluetooth</button>
         <small data-thermal-status class="prep-sse-badge">Impresora no emparejada</small>
@@ -875,6 +868,7 @@
 
   {% for pedido in pendientes %}
   <article class="work-card is-warn motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}" data-prep-slot-id="{{ pedido.slot_id or 'immediate' }}">
+      <ul class="work-order-preview" aria-label="Productos del pedido">{% for item in pedido.items %}<li><strong>{{ item.cantidad }}×</strong> {{ item.display_nombre }}{% if item.display_es_combo %} · Combo{% endif %}</li>{% endfor %}</ul>
       <div class="work-order-head">
         <div>
           <span class="work-order-code">{{ pedido.numero_pedido }}</span>
@@ -1012,6 +1006,7 @@
   {%- set fecha_ent = pedido.fecha_entrega_programada -%}
   <article class="work-card is-warn motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}" data-prep-slot-id="{{ pedido.slot_id or 'immediate' }}"
            style="border-left:3px solid color-mix(in srgb,var(--prep-programado) 55%,transparent)">
+      <ul class="work-order-preview" aria-label="Productos del pedido">{% for item in pedido.items %}<li><strong>{{ item.cantidad }}×</strong> {{ item.display_nombre }}{% if item.display_es_combo %} · Combo{% endif %}</li>{% endfor %}</ul>
       <div class="work-order-head">
         <div>
           <span class="work-order-code">{{ pedido.numero_pedido }}</span>
@@ -1111,6 +1106,7 @@
 
   {% for pedido in armando %}
   <article class="work-card work-card--tight is-info motion-fade-in" data-created="{{ pedido.creado_en.strftime('%Y-%m-%dT%H:%M:%SZ') }}" data-prep-slot-id="{{ pedido.slot_id or 'immediate' }}">
+      <ul class="work-order-preview" aria-label="Productos del pedido">{% for item in pedido.items %}<li><strong>{{ item.cantidad }}×</strong> {{ item.display_nombre }}{% if item.display_es_combo %} · Combo{% endif %}</li>{% endfor %}</ul>
       <div class="work-order-head">
         <span class="work-order-code is-info">{{ pedido.numero_pedido }}</span>
         <div class="work-time-stack">

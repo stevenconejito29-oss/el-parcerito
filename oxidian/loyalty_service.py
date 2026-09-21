@@ -448,3 +448,28 @@ def reset_periodico_si_toca():
             db.session.commit()
         except Exception:
             db.session.rollback()
+
+
+def ajustar_saldo_cliente(cliente_id, cantidad, descripcion, *, actor):
+    """Ajuste auditado bajo lock; jamás altera el saldo de roles internos."""
+    from extensions import db
+    from models import User, PointsLog, AuditLog
+    from permissions import allow, ACTIONS, actor_from_user
+    if not allow(actor_from_user(actor), ACTIONS.POINTS_WRITE):
+        raise ValueError('No tienes permiso para ajustar saldos.')
+    if not isinstance(cantidad, int) or isinstance(cantidad, bool) or not 0 < abs(cantidad) <= 100000:
+        raise ValueError('Introduce una cantidad distinta de cero, entre -100000 y 100000.')
+    descripcion = (descripcion or '').strip()
+    if not descripcion or len(descripcion) > 200:
+        raise ValueError('Indica un motivo de hasta 200 caracteres.')
+    cliente = User.query.filter_by(id=cliente_id, rol='cliente', activo=True).populate_existing().with_for_update().first()
+    if not cliente:
+        raise ValueError('Selecciona un cliente activo.')
+    before = cliente.puntos or 0
+    if before + cantidad < 0:
+        raise ValueError('El ajuste no puede dejar un saldo negativo.')
+    cliente.puntos = before + cantidad
+    db.session.add(PointsLog(cliente_id=cliente.id, cantidad=cantidad, tipo='ajuste', descripcion=descripcion))
+    AuditLog.registrar(actor.id, 'ajuste_puntos', 'user', cliente.id,
+                       detalle=f'{before} → {cliente.puntos} ({cantidad:+d}): {descripcion}')
+    return cliente

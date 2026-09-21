@@ -82,3 +82,28 @@ response = client.get('/pedido/2/confirmado')
 assert response.status_code == 200
 assert b'qa-pickup-private-token' not in response.data
 (out/'recogida.html').write_bytes(response.data)
+
+# Combo con selección múltiple: comprueba menú, cantidades y desglose del carrito.
+with app.app_context():
+    from models import ComboItem, ComboGroup, Stock
+    base = db.session.get(Product, product_id)
+    combo = Product(nombre='Combo para compartir', precio=16, categoria_id=base.categoria_id, activo=True, es_combo=True)
+    drink = Product(nombre='Bebida de prueba', precio=2, categoria_id=base.categoria_id, activo=True)
+    db.session.add_all([combo, drink]); db.session.flush()
+    db.session.add_all([Stock(producto_id=base.id,cantidad=100),Stock(producto_id=drink.id,cantidad=100)])
+    fixed = ComboGroup(combo_id=combo.id,nombre='Incluido',tipo='fijo')
+    choice = ComboGroup(combo_id=combo.id,nombre='Bebidas',tipo='seleccion',min_selecciones=3,max_selecciones=3)
+    db.session.add_all([fixed,choice]);db.session.flush()
+    a=ComboItem(combo_id=combo.id,producto_id=base.id,combo_group_id=fixed.id,cantidad=2,activo=True,es_seleccionable=False)
+    b=ComboItem(combo_id=combo.id,producto_id=drink.id,combo_group_id=choice.id,cantidad=1,activo=True,es_seleccionable=True,grupo_seleccion='Bebidas',max_selecciones=3)
+    db.session.add_all([a,b]);db.session.commit()
+    combo_id,choice_id=combo.id,b.id
+response=client.get(f'/producto/{combo_id}')
+assert response.status_code == 200
+(out/'combo.html').write_bytes(response.data)
+response=client.post(f'/carrito/agregar/{combo_id}', data={'cantidad':'2',f'combo_item_qty_{choice_id}':'3'})
+assert response.status_code in (302,303), response.status_code
+response=client.get('/carrito')
+assert response.status_code == 200
+assert 'Combo para compartir' in response.text and '3×' in response.text, 'Se perdió la selección del combo'
+(out/'combo_carrito.html').write_bytes(response.data)
