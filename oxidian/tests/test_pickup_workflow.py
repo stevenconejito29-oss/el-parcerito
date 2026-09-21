@@ -96,3 +96,20 @@ class PickupWorkflowTest(unittest.TestCase):
         client.post(url,data={'cobro_recibido':'1'});self.assertEqual(self.order.estado,'entregado')
         client.post(url,data={'cobro_recibido':'1'});notify.assert_called_once()
         self.assertEqual(Caja.query.count(),1)
+
+    @patch('push_service.notify_delivery_ready')
+    @patch('push_service.notify_order_state')
+    def test_ready_json_prints_only_after_successful_transition(self, notify, ready):
+        client = self.app.test_client()
+        with client.session_transaction() as session:
+            session.update(_user_id=str(self.users['cocina'].id), _fresh=True)
+        url = f'/preparador/pedidos/{self.order.id}/listo'
+        response = client.post(url, headers={'Accept': 'application/json'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json['print_order_id'], self.order.id)
+        self.assertEqual(self.order.estado, 'listo')
+        repeated = client.post(url, headers={'Accept': 'application/json'})
+        self.assertEqual(repeated.status_code, 302)
+        self.assertIsNone(repeated.json)
+        notify.assert_called_once()
+        ready.assert_called_once()

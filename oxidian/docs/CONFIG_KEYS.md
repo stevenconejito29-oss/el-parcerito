@@ -141,7 +141,8 @@ Requieren refactor mayor y se dejan documentadas:
 ### Acceso privado de clientes
 
 `ACCESO_CLIENTES_REGISTRADOS` (`0` por defecto; `0`/`1`, solo superadmin):
-restringe la tienda a clientes activos registrados que verifiquen su teléfono
-mediante OTP de WhatsApp. No crea clientes desde el acceso. Se administra en
+restringe la tienda a clientes activos autorizados explícitamente por superadmin que verifiquen su teléfono
+mediante OTP de WhatsApp. Vincula un navegador por cliente; superadmin puede
+restablecer el dispositivo. No crea clientes desde el acceso. Se administra en
 Configuración → Operación y usa el panel de Clientes para altas y bloqueos.
 Los pedidos existentes conservan su autorización de seguimiento independiente.

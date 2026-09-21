@@ -17,3 +17,5 @@
 **/*.sqlite
 **/*.sqlite3
 **/*.log
+**/*.bak
+**/*.bak.*

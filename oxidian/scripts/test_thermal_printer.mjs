@@ -56,6 +56,32 @@ try {
  assert.equal(networkRequests,1,'La alternativa de red usa el endpoint autorizado');
  await page.keyboard.press('Escape');
  assert.equal(await page.locator('#thermal-modal').count(),0);
+ // La confirmación guarda el estado antes de imprimir y conserva la conexión.
+ const readyPage = await browser.newPage();
+ const sequence = [];
+ let rejected = true;
+ await readyPage.exposeFunction('recordPrint', () => sequence.push('print'));
+ await readyPage.route('https://ready.test/**', async route => {
+  const req = route.request();
+  if (req.method() === 'POST') {
+   sequence.push('confirmed');
+   return route.fulfill({status: rejected ? 409 : 200, json: {ok:!rejected, print_order_id:1, next_url:'/done'}});
+  }
+  if (req.url().endsWith('/done')) sequence.push('navigate');
+  return route.fulfill({contentType:'text/html', body:'<form action="/preparador/pedidos/1/listo" method="post"><button type="submit">Listo</button></form>'});
+ });
+ await readyPage.goto('https://ready.test/');
+ await readyPage.evaluate(() => {window.ThermalPrinter={isPaired:()=>true,ready:Promise.resolve(),printTicket:async()=>window.recordPrint()};});
+ await readyPage.addScriptTag({path:'static/js/operational-roles.js'});
+ await readyPage.locator('button').click();
+ await readyPage.waitForSelector('[data-print-status]');
+ assert.deepEqual(sequence, ['confirmed'], 'Una transición rechazada no imprime');
+ sequence.length = 0;
+ rejected = false;
+ await readyPage.locator('button').click();
+ await readyPage.waitForURL('https://ready.test/done');
+ assert.deepEqual(sequence, ['confirmed','print','navigate'], 'Imprime antes de perder la conexión al navegar');
+ await readyPage.close();
  await page.route('https://ticket.test/**', route=>route.fulfill({contentType:'text/html',body:fs.readFileSync('/tmp/parcerito-role-review/ticket.html')}));
  await page.addInitScript(()=>{window.printCalls=0;window.print=()=>{window.printCalls++;};});
  await page.goto('https://ticket.test/pos/ticket/1');

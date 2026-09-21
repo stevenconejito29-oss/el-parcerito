@@ -102,7 +102,7 @@
     }
   }
 
-  function openPrintModal(pedidoId, reprint) {
+  function openPrintModal(pedidoId, reprint, onClose) {
     document.getElementById('thermal-modal')?.remove();
     const tp = window.ThermalPrinter;
     const caps = tp?.capabilities?.() || {};
@@ -135,6 +135,7 @@
       document.removeEventListener('keydown', onKey);
       modal.remove();
       previousFocus?.focus?.();
+      if (onClose) onClose();
       try {
         const u = new URL(window.location.href);
         u.searchParams.delete('print_after');
@@ -204,6 +205,48 @@
       openPrintModal(pedidoId, reprint);
     } finally {
       if (btn && btn.innerHTML !== '✅ Impreso') { btn.innerHTML = orig; btn.disabled = false; }
+    }
+  });
+
+  // Mantiene la conexión física durante el POST de Listo. Recargar antes de
+  // enviar perdía el objeto BLE en navegadores sin restauración getDevices().
+  let readySubmitting = false;
+  document.addEventListener('submit', async event => {
+    const form = event.target.closest('form[action]');
+    if (!form || event.defaultPrevented || !window.ThermalPrinter?.isPaired()) return;
+    const action = new URL(form.action, window.location.href);
+    const match = action.pathname.match(/^\/preparador\/pedidos\/(\d+)\/listo$/);
+    if (!match || action.origin !== location.origin) return;
+    event.preventDefault();
+    if (readySubmitting) return;
+    readySubmitting = true;
+    const button = event.submitter || form.querySelector('button[type="submit"]');
+    const original = button?.textContent;
+    if (button) { button.disabled = true; button.textContent = 'Confirmando pedido…'; }
+    try {
+      const response = await fetch(action.href, {
+        method: 'POST', credentials: 'same-origin', body: new FormData(form),
+        headers: { Accept: 'application/json' },
+      });
+      if (!response.ok || response.redirected || !(response.headers.get('content-type') || '').includes('application/json')) {
+        if (response.redirected) location.assign(response.url);
+        else throw new Error('No se pudo confirmar. Actualiza los pedidos antes de reintentar.');
+        return;
+      }
+      const data = await response.json();
+      if (!data.ok || Number(data.print_order_id) !== Number(match[1])) throw new Error('No se confirmó el pedido. Actualiza la lista.');
+      const next = new URL(data.next_url || '/preparador/pedidos', location.origin);
+      const goBack = () => location.assign(next.origin === location.origin ? next.href : '/preparador/pedidos');
+      if (button) button.textContent = 'Listo · enviando ticket…';
+      if (await tryPrintSilent(Number(match[1]), false)) goBack();
+      else openPrintModal(Number(match[1]), false, goBack);
+    } catch (error) {
+      let status = form.querySelector('[data-print-status]');
+      if (!status) { status = document.createElement('p'); status.dataset.printStatus = ''; status.setAttribute('role', 'alert'); form.append(status); }
+      status.textContent = error.message;
+    } finally {
+      readySubmitting = false;
+      if (button) { button.disabled = false; button.textContent = original; }
     }
   });
 

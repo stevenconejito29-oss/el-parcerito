@@ -869,10 +869,10 @@ def marcar_listo(pedido_id):
         flash(f"Pedido {pedido.numero_pedido} listo. Repartidor asignado automáticamente.", "success")
     else:
         flash(f"Pedido {pedido.numero_pedido} listo, pendiente de repartidor disponible.", "warning")
-    # Fallback manual: abre el diálogo nativo de impresión del navegador
-    # al volver a la lista. Complementa el auto-print server-side (CUPS)
-    # cuando la impresora está en un dispositivo distinto (BT en tablet,
-    # OTG, etc.) o cuando CUPS falló.
+    # El cliente conectado imprime antes de navegar para conservar BLE/USB.
+    # Sin conexión previa, la lista ofrece vinculación y alternativas manuales.
+    if request.accept_mimetypes.best == "application/json":
+        return jsonify(ok=True, print_order_id=pedido.id, next_url=url_for("preparador.pedidos"))
     return redirect(url_for("preparador.pedidos", print_after=pedido.id))
 
 

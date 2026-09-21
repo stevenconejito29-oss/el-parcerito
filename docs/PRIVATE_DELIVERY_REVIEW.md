@@ -4,20 +4,17 @@ Fecha: 20 de septiembre de 2026.
 
 ## Alcance y límites de esta revisión
 
-Se conserva el trabajo anterior del repositorio. Esta iteración modifica código
-local y utiliza datos sintéticos aislados. No publica, activa restricciones ni
-modifica clientes, combos, pedidos o imágenes de producción.
-
-No se ha consultado la composición del combo actualmente guardado en producción.
-Su reparación concreta necesita esa lectura: no se deben inventar productos,
-cantidades, precios ni opciones para rellenar relaciones faltantes. La ficha del
-combo incorpora ahora un diagnóstico que facilita esa revisión con datos reales.
+La revisión utiliza pruebas aisladas y una auditoría de lectura del catálogo real.
+El combo Mixxxx tiene nueve componentes y dos grupos; sus relaciones son válidas,
+pero anuncia recogida aunque algunos componentes solo permiten delivery. La
+corrección operativa limita la modalidad del combo a delivery, sin cambiar precios
+ni snapshots de pedidos. El respaldo previo está verificado en el servidor.
 
 ## Recorrido del cliente
 
 1. Superadmin registra clientes en **Clientes registrados**, con nombre y teléfono
-   internacional, o revisa los clientes existentes. Todos los clientes activos ya
-   registrados cumplen la condición de pertenencia; no existe otra lista paralela.
+   internacional, o autoriza explícitamente los existentes. Estar registrado por
+   una compra anterior no concede acceso privado.
 2. En **Configuración → Operación → Acceso de clientes**, activa
    `ACCESO_CLIENTES_REGISTRADOS`. Su valor inicial es `0`. Admin no puede cambiarlo.
 3. El visitante ve una pantalla con un único campo: teléfono. La solicitud nunca
@@ -27,7 +24,9 @@ combo incorpora ahora un diagnóstico que facilita esa revisión con datos reale
    intentos, caducidad y espera entre reenvíos, también si los puntos están apagados.
 5. Después de verificar puede consultar catálogo, añadir productos e instalar la
    PWA. El checkout muestra el teléfono verificado y rechaza sustituirlo por otro.
-6. El cliente puede cerrar su acceso. Superadmin puede bloquearlo; la versión de
+6. El primer acceso verificado vincula el teléfono a ese navegador. Otro
+   dispositivo requiere que superadmin use **Restablecer dispositivo** y una
+   nueva verificación. El cliente puede cerrar su acceso. Superadmin puede bloquearlo; la versión de
    sesión impide que una cookie anterior vuelva a servir después de reactivarlo.
 7. Apagar la opción recupera el acceso público. Los paneles internos conservan sus
    permisos. El seguimiento y cancelación de pedidos existentes conservan su
@@ -95,21 +94,18 @@ Los puntos se canjean por productos, no por descuentos monetarios. Los combos
 con selección no admiten canje directo, para evitar recompensas sin configuración
 completa. Estas restricciones no se han eliminado.
 
-## Validación y trabajo pendiente en el entorno real
+## Tickets y validación
 
-Resultado final: 951 pruebas Python y 228 pruebas Node aprobadas; 70 escenarios
-visuales sin fallos. Después del ajuste de botones se comprobaron otros cuatro
-anchos con el formulario de alta desplegado, sin desbordamientos ni texto cortado.
-Toda la validación utiliza datos aislados.
-El comando estándar de pruebas detectó siete errores de arranque preexistentes:
-pruebas que importan configuración sin PostgreSQL o con SQLite rechazado. Para
-validar sin tocar configuración productiva se usó el mismo patrón que el script
-de revisión visual: URI sintáctica de pruebas y `DevelopmentConfig` sobre SQLite
-en memoria antes de crear la aplicación. Esto no sustituye la comprobación de
-migraciones, concurrencia y restricciones en PostgreSQL real.
+Los tickets HTML y ESC/POS usan los datos guardados al comprar, con tamaños,
+sabores, cantidades, composición, estado del cobro y nombre configurable de puntos.
+La impresión USB/BLE se inicia al marcar Listo y conserva la conexión durante la
+confirmación. Un reintento de la transición no vuelve a solicitar impresión.
+La vinculación inicial requiere intervención del operador; Bluetooth debe ser
+compatible con BLE y el navegador debe ofrecer la API correspondiente.
 
-Antes de publicar: revisar el combo real y sus tablas relacionadas, recorrer un
-pedido inmediato y otro por franja con los roles reales, probar entrega y recogida,
-comprobar recepción del OTP en un dispositivo autorizado y verificar instalación
-y reapertura de la PWA. Revisar los clientes activos antes de encender el bloqueo.
-Seguir `OPERATIONS.md` para backup, despliegue y comprobaciones de salud.
+La suite estándar con PostgreSQL de pruebas ha aprobado 955 pruebas Python y
+228 Node antes del último test de impresión al marcar Listo. También pasan las
+simulaciones USB/BLE y se revisaron 70 escenarios visuales. La prueba física de
+impresora, la recepción real del OTP y la instalación en el teléfono del cliente
+requieren sus dispositivos. El modo privado no se activa automáticamente durante
+el despliegue; superadmin debe autorizar clientes y habilitar la opción.
