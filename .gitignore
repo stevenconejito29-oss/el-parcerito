@@ -47,3 +47,9 @@ oxidian/docs/auditoria_pwa/
 # Local exports
 *.zip
 texto arrastrado.txt
+
+# Local backup copies and accidental shell output
+**/*.bak
+**/*.bak.*
+/h origin main
+/tatus --short --branch
