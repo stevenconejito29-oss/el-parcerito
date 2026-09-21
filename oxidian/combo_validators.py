@@ -3,6 +3,7 @@
 # ════════════════════════════════════════════════════════════════════════════════
 
 import os
+import math
 from typing import Tuple, Optional, Dict, List, Set
 
 try:
@@ -290,7 +291,7 @@ def validate_combo_pricing(
     Returns:
         (is_valid, error_message)
     """
-    if not isinstance(precio, (int, float)) or precio <= 0:
+    if not isinstance(precio, (int, float)) or not math.isfinite(precio) or precio <= 0:
         return False, f"{error_prefix}: debe ser un número mayor a 0"
 
     max_precio = ComboLimits.max_price_eur()
@@ -302,7 +303,7 @@ def validate_combo_pricing(
     if descuento_porcentaje is not None:
         try:
             desc = float(descuento_porcentaje)
-            if desc < 0 or desc > ComboLimits.max_discount_percentage():
+            if not math.isfinite(desc) or desc < 0 or desc > ComboLimits.max_discount_percentage():
                 return False, f"Descuento: debe estar entre 0% y {ComboLimits.max_discount_percentage()}%"
         except (ValueError, TypeError):
             return False, "Descuento: debe ser un número válido"

@@ -197,3 +197,6 @@ html.ox-pwa-runtime #points-lookup-form input{border:1px solid color-mix(in srgb
 html.ox-pwa-runtime #points-lookup-form input::placeholder{color:color-mix(in srgb,var(--theme-text) 52%,var(--theme-surface));opacity:1}
 html.ox-pwa-runtime #points-lookup-status{min-height:1.2em;color:var(--theme-text)!important}
 @media(max-width:390px){html.ox-pwa-runtime .points-lookup-hero{padding:.85rem}.pc-hero-benefits{display:grid;grid-template-columns:1fr}.pc-hero-benefits span{text-align:left}.pc-bean-field .ox-heritage-icon{width:1.05rem;height:1.05rem}}
+
+/* Los pasos de verificación respetan hidden aunque el saldo use flex. */
+.points-lookup [hidden] { display: none !important; }

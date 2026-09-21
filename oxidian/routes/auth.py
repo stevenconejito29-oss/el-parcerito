@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from flask_login import login_user, logout_user, login_required, current_user
 from extensions import limiter, db
 from models import ROLES_AUTENTICABLES, User
+from security_utils import is_safe_local_path
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -99,8 +100,12 @@ def mfa_challenge():
     if not pending_id:
         return redirect(url_for("auth.login"))
     # TTL: si el usuario tardó > MFA_PENDING_TTL_SECONDS, abortar y forzar login.
-    started_at = int(session.get("mfa_pending_at") or 0)
-    if started_at and (int(time.time()) - started_at) > MFA_PENDING_TTL_SECONDS:
+    try:
+        started_at = int(session.get("mfa_pending_at") or 0)
+    except (TypeError, ValueError):
+        started_at = 0
+    age = int(time.time()) - started_at
+    if started_at <= 0 or not 0 <= age <= MFA_PENDING_TTL_SECONDS:
         _clear_mfa_pending()
         flash("El tiempo para introducir el código de verificación expiró. Inicia sesión de nuevo.", "warning")
         return redirect(url_for("auth.login"))
@@ -114,7 +119,7 @@ def mfa_challenge():
     import hmac
     expected_hash = session.get("mfa_pending_pw_hash") or ""
     current_hash = user.password_hash or ""
-    if expected_hash and not hmac.compare_digest(expected_hash, current_hash):
+    if not isinstance(expected_hash, str) or not expected_hash or not hmac.compare_digest(expected_hash, current_hash):
         _clear_mfa_pending()
         flash("Tu contraseña cambió. Inicia sesión de nuevo.", "warning")
         return redirect(url_for("auth.login"))
@@ -158,9 +163,8 @@ def _desactivar_push_del_dispositivo(user_id: int, endpoint: str) -> None:
     El front envía `push_endpoint` con la suscripción de ESTE navegador para
     que solo se apague el dispositivo que hace logout — así un empleado con
     dos móviles no pierde avisos en el otro. Si no llega endpoint (JS
-    desactivado, navegador viejo, request programático), fail-safe: apagamos
-    TODAS las suscripciones del user. Mejor no notificar un rato que enviar
-    un push a un navegador que ya no controla el usuario.
+    desactivado o navegador antiguo), se utiliza la identidad de la sesión.
+    Una sesión legacy solo desactiva suscripciones aún sin dispositivo.
 
     `notify_user` y `notify_roles` filtran por `activo=True`, con lo que la
     fuente queda cortada sin necesidad de tocar el service worker. Al volver
@@ -169,8 +173,14 @@ def _desactivar_push_del_dispositivo(user_id: int, endpoint: str) -> None:
     from models import PushSubscription
     try:
         q = PushSubscription.query.filter_by(user_id=user_id)
+        from device_identity import browser_device_hash
+        device_hash = browser_device_hash()
         if endpoint:
             q = q.filter_by(endpoint=endpoint)
+        elif device_hash:
+            q = q.filter_by(device_hash=device_hash)
+        else:
+            q = q.filter(PushSubscription.device_hash.is_(None))
         q.update({"activo": False}, synchronize_session=False)
     except Exception:
         current_app.logger.exception("logout: desactivando push suscripciones")
@@ -179,12 +189,14 @@ def _desactivar_push_del_dispositivo(user_id: int, endpoint: str) -> None:
 # ── MFA SETUP / DISABLE ─────────────────────────────────────────────────────
 
 @auth_bp.route("/perfil/mfa", methods=["GET", "POST"])
+@limiter.limit("10 per minute", methods=["POST"]) if limiter else (lambda f: f)
 @login_required
 def mfa_setup():
     """Genera un secreto TOTP, muestra el QR y exige verificación para activar."""
     import pyotp
 
-    if request.method == "GET" and current_user.mfa_enabled:
+    if current_user.mfa_enabled:
+        session.pop("mfa_setup_secret", None)
         return render_template("auth/mfa_setup.html", already_enabled=True)
 
     if request.method == "GET":
@@ -225,6 +237,7 @@ def mfa_setup():
 
 
 @auth_bp.route("/perfil/mfa/disable", methods=["POST"])
+@limiter.limit("10 per minute") if limiter else (lambda f: f)
 @login_required
 def mfa_disable():
     """Desactivar MFA exige el password actual + un código TOTP válido."""
@@ -369,7 +382,7 @@ def _redirect_rol(rol):
 
 
 def _next_is_safe_get(next_page):
-    if not next_page:
+    if not is_safe_local_path(next_page):
         return False
     parsed = urlparse(next_page)
     if parsed.scheme or parsed.netloc:

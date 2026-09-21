@@ -15,6 +15,10 @@ inserta las claves que aún no existen en SiteConfig. Es idempotente.
 from __future__ import annotations
 
 DEFAULTS: dict[str, dict] = {
+    "ACCESO_CLIENTES_REGISTRADOS": {
+        "default": "0", "type": "bool",
+        "desc": "Exige teléfono de cliente activo y verificación para acceder a la tienda.",
+    },
     # ── Lanzamiento público ───────────────────────────────────────────
     "PREAPERTURA_ACTIVA": {
         "default": "0",

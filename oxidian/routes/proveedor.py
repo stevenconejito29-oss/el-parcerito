@@ -1201,6 +1201,8 @@ def registrar_combo(combo_id=None, _proveedor=None):
                     parent_vertical=combo.vertical,
                     combo_id=combo.id,
                     enforce_owner_id=proveedor.id,
+                    parent_delivery_type=combo.tipo_entrega,
+                    parent_delivery_mode=combo.modalidad_entrega,
                 )
             except ComboParseError as exc:
                 raise ValueError(str(exc))

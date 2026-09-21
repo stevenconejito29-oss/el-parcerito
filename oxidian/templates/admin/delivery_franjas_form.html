@@ -1,0 +1,141 @@
+{% extends "admin_base.html" %}
+{% block title %}{% if modo == 'editar' %}Editar franja{% else %}Nueva franja{% endif %} · Admin{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
+{% endblock %}
+{% block content %}
+<div class="df-container">
+  <div class="df-header">
+    <div>
+      <h1>{% if modo == 'editar' %}Editar franja{% else %}Nueva franja{% endif %}</h1>
+      <p>
+        {% if modo == 'editar' %}
+          {{ slot.fecha|fecha_es_corta }} · {{ slot.hora_inicio.strftime('%H:%M') }} → {{ slot.hora_fin.strftime('%H:%M') }}
+        {% else %}
+          Rellena los datos. Puedes crear varias franjas en el mismo día.
+        {% endif %}
+      </p>
+    </div>
+    <div class="df-toolbar">
+      <a href="{{ url_for('admin.delivery_franjas_panel') }}" class="df-btn">← Volver al calendario</a>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="df-msg df-msg-{{ 'err' if cat in ('danger','warning') else 'ok' }}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <form method="POST" action="{{ url_for('admin.delivery_franjas_guardar_form') }}" class="df-form-page">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if modo == 'editar' %}<input type="hidden" name="slot_id" value="{{ slot.id }}">{% endif %}
+
+    <div class="df-form-row">
+      <label>Fecha
+        <input type="date" name="fecha" required
+               value="{% if slot %}{{ slot.fecha.isoformat() }}{% else %}{{ fecha_hint }}{% endif %}"
+               {% if modo == 'editar' %}readonly{% endif %}>
+      </label>
+    </div>
+
+    <div class="df-form-row df-form-row--split">
+      <label>Hora inicio
+        <input type="time" name="hora_inicio" required step="900"
+               value="{% if slot %}{{ slot.hora_inicio.strftime('%H:%M') }}{% else %}13:00{% endif %}"
+               {% if modo == 'editar' %}readonly{% endif %}>
+      </label>
+      <label>Hora fin
+        <input type="time" name="hora_fin" required step="900"
+               value="{% if slot %}{{ slot.hora_fin.strftime('%H:%M') }}{% else %}14:00{% endif %}"
+               {% if modo == 'editar' %}readonly{% endif %}>
+      </label>
+    </div>
+
+    <div class="df-form-row df-form-row--split">
+      <label>Capacidad (pedidos)
+        <input type="number" name="capacidad_max" required min="1" max="99"
+               value="{% if slot %}{{ slot.capacidad_max }}{% else %}8{% endif %}">
+      </label>
+      <label>Repartidores máx
+        <input type="number" name="max_repartidores" min="1" max="10"
+               value="{% if slot %}{{ slot.max_repartidores }}{% else %}{{ default_max }}{% endif %}">
+      </label>
+    </div>
+
+    {% if modo == 'editar' %}
+    <label class="df-form-toggle">
+      <input type="checkbox" name="activo" value="1" {% if slot.activo %}checked{% endif %}>
+      <span>Franja activa</span>
+      <small>Desmárcala para desactivar sin borrar. Los clientes no la verán en checkout.</small>
+    </label>
+    {% endif %}
+
+    <details class="df-form-advanced">
+      <summary>Cierre avanzado (opcional)</summary>
+      <label>Modo de cierre
+        <select name="cierre_modo">
+          <option value="">— usar default global —</option>
+          <option value="al_iniciar" {% if slot and slot.cierre_modo == 'al_iniciar' %}selected{% endif %}>Al iniciar la franja</option>
+          <option value="al_iniciar_siguiente" {% if slot and slot.cierre_modo == 'al_iniciar_siguiente' %}selected{% endif %}>Al iniciar la siguiente</option>
+          <option value="minutos_antes" {% if slot and slot.cierre_modo == 'minutos_antes' %}selected{% endif %}>Minutos antes</option>
+          <option value="hora_fija" {% if slot and slot.cierre_modo == 'hora_fija' %}selected{% endif %}>Hora fija</option>
+        </select>
+      </label>
+      <label>Valor
+        <input type="text" name="cierre_valor" placeholder="ej: 30 (min) o 13:15"
+               value="{% if slot %}{{ slot.cierre_valor or '' }}{% endif %}">
+      </label>
+      <label>Notas admin
+        <textarea name="notas_admin" rows="2" placeholder="ej: día festivo, evento…">{% if slot %}{{ slot.notas_admin or '' }}{% endif %}</textarea>
+      </label>
+    </details>
+
+    <div class="df-form-actions">
+      <button type="submit" class="df-btn df-btn-primary">
+        {% if modo == 'editar' %}💾 Guardar cambios{% else %}➕ Crear franja{% endif %}
+      </button>
+      <a href="{{ url_for('admin.delivery_franjas_panel') }}" class="df-btn">Cancelar</a>
+    </div>
+  </form>
+
+  {% if modo == 'editar' %}
+  <form method="POST" action="{{ url_for('admin.delivery_franjas_eliminar_form', slot_id=slot.id) }}"
+        class="df-form-delete"
+        data-confirm="¿Borrar esta franja? No se pueden eliminar salidas con pedidos activos.">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="df-btn df-btn-danger">🗑 Borrar franja</button>
+  </form>
+  {% endif %}
+</div>
+
+<style nonce="{{ csp_nonce() }}">
+.df-form-page{display:flex;flex-direction:column;gap:1rem;max-width:520px;margin:0 auto;padding:1rem 0}
+.df-form-row{display:flex;flex-direction:column;gap:.4rem}
+.df-form-row--split{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
+.df-form-row label,.df-form-page > label{display:flex;flex-direction:column;gap:.35rem;font-weight:700;font-size:.85rem;color:var(--col-text)}
+.df-form-page input[type=date],
+.df-form-page input[type=time],
+.df-form-page input[type=number],
+.df-form-page input[type=text],
+.df-form-page textarea,
+.df-form-page select{min-height:48px;padding:.55rem .75rem;font-size:16px;border:1.5px solid var(--col-border);border-radius:8px;background:var(--col-surface);color:var(--col-text);font-family:inherit}
+.df-form-page input:focus,.df-form-page select:focus,.df-form-page textarea:focus{outline:2px solid var(--brand-primary);outline-offset:1px;border-color:var(--brand-primary)}
+.df-form-toggle{display:grid;grid-template-columns:auto 1fr;gap:.4rem .6rem;align-items:start;padding:.7rem;border:1.5px solid var(--col-border);border-radius:8px;background:color-mix(in srgb,var(--brand-primary) 5%,transparent)}
+.df-form-toggle input[type=checkbox]{width:22px;height:22px;margin-top:.15rem;cursor:pointer}
+.df-form-toggle span{font-weight:800}
+.df-form-toggle small{grid-column:2;color:var(--col-muted);font-size:.75rem}
+.df-form-advanced{border:1px dashed var(--col-border);border-radius:8px;padding:.6rem .8rem}
+.df-form-advanced summary{cursor:pointer;font-weight:700;font-size:.9rem;color:var(--col-muted)}
+.df-form-advanced label{margin-top:.6rem;display:flex;flex-direction:column;gap:.3rem}
+.df-form-actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.5rem}
+.df-form-actions .df-btn{flex:1;min-height:52px;font-size:1rem;font-weight:800}
+.df-form-actions .df-btn-primary{background:var(--brand-primary);color:var(--brand-on-primary,#fff);border:none}
+.df-form-delete{margin-top:2rem;padding-top:1rem;border-top:1px dashed var(--col-border);max-width:520px;margin-left:auto;margin-right:auto}
+.df-form-delete .df-btn-danger{width:100%;min-height:48px;background:transparent;color:var(--theme-danger);border:1.5px solid var(--theme-danger);font-weight:800}
+@media(max-width:400px){
+  .df-form-row--split{grid-template-columns:1fr}
+  .df-form-page{padding:.5rem}
+}
+</style>
+{% endblock %}

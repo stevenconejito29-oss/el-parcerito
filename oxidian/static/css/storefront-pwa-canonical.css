@@ -67,3 +67,18 @@ html.ox-pwa-runtime body.ox-body-public main>:is(.ep-section,.ep-banner-section,
   backdrop-filter:none!important;
 }
 @media(min-width:700px){html.ox-pwa-runtime body.ox-body-public .ep-mc-destacados{grid-auto-columns:minmax(280px,34vw)}html.ox-pwa-runtime body.ox-body-public .ep-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.8rem}}
+/* Búsqueda legible en pantalla estrecha: texto y campo no compiten. */
+@media (max-width: 620px) {
+  html.ox-pwa-runtime body.ox-body-public .ep-search-wrap { grid-template-columns: minmax(0, 1fr); }
+  .ep-search-heading small { display: none; }
+  .ep-search-heading strong { font-size: .85rem; }
+  html.ox-pwa-runtime body.ox-body-public .ep-search-box:has(.ep-search-clear) { grid-template-columns: 19px minmax(0, 1fr) 36px 44px; }
+}
+.ep-cats .ep-cat:focus-visible { outline: 3px solid var(--brand-primary); outline-offset: -3px; }
+body.ox-body-public .ep-hero .ep-hero-cta { background: var(--action-primary); color: var(--action-on-primary); }
+@media (max-width: 620px) {
+  body.ox-body-public .ep-hero { padding-block: 1rem; }
+  .ep-hero-eyebrow { display: none; }
+  .ep-hero-title { font-size: clamp(1.4rem, 6vw, 1.8rem); }
+  .ep-hero-sub { font-size: .85rem; line-height: 1.4; }
+}

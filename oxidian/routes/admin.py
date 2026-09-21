@@ -152,6 +152,7 @@ def _telefono_interno_requerido(raw, rol, user_id=None):
 # super_admin siempre pasa; admin se verifica según el mapa de features.
 _FEATURE_URL_MAP = {
     "/admin/caja":         "caja",
+    "/admin/finanzas":     "caja",
     "/admin/pagos-pendientes": "caja",
     "/admin/stock":        "stock",
     "/admin/pagos-staff":  "staff_pagos",
@@ -916,7 +917,7 @@ def avanzar_pedido_admin(pedido_id):
         )
         flash(mensaje, "warning")
         return redirect(url_for("admin.pedido_detalle", pedido_id=pedido.id))
-    if pedido.estado == "en_ruta":
+    if pedido.estado == "en_ruta" and pedido.requiere_reparto:
         flash(
             "La entrega debe cerrarse desde el panel de reparto para validar código y cobro.",
             "warning",
@@ -924,31 +925,11 @@ def avanzar_pedido_admin(pedido_id):
         return redirect(url_for("admin.pedidos"))
     try:
         pedir_resena = False
-        if pedido.estado == "listo" and not pedido.requiere_reparto:
-            if pedido.metodo_pago == "bizum" and not pedido.pago_confirmado:
-                raise ValueError("Confirma primero el Bizum antes de entregar el pedido para recoger.")
-            estado_anterior = pedido.estado
-            pedido.estado = "entregado"
-            pedido.entregado_en = utcnow()
-            registrar_evento_pedido(
-                pedido,
-                "recogida_entregada",
-                actor_id=current_user.id,
-                estado_anterior=estado_anterior,
-                estado_nuevo="entregado",
-                canal="admin_recogida",
-                detalle="Pedido entregado en el local",
-            )
-            if not pedido.pago_confirmado:
-                registrar_pago_pedido(
-                    pedido,
-                    actor_id=current_user.id,
-                    canal="admin_recogida",
-                    detalle="Cobro confirmado al recoger",
-                )
-            registrar_ingreso_pedido(pedido, registrado_por=current_user.id)
-            award_points_on_delivery(pedido)
-            pedir_resena = True
+        if pedido.estado in {"listo", "en_ruta"} and pedido.tipo_entrega_cliente == "recogida":
+            from services import completar_recogida
+            completar_recogida(pedido, current_user.id,
+                cobro_recibido=request.form.get("cobro_recibido") == "1",
+                referencia=request.form.get("referencia", ""), canal="admin_recogida")
         else:
             avanzar_estado_pedido(
                 pedido,
@@ -1979,7 +1960,7 @@ def registrar_movimiento():
     concepto = request.form.get("concepto", "").strip()
     categoria = (request.form.get("categoria") or "otro").strip()
     try:
-        monto = float(request.form.get("monto", 0) or 0)
+        monto = _parse_decimal_no_negativo(request.form.get("monto"), "Importe")
     except (ValueError, TypeError):
         monto = 0.0
 
@@ -3394,9 +3375,12 @@ def _parsear_campos_producto(form):
     solo_canje = politica_canje["solo_canje"]
     puntos_para_canje = politica_canje["puntos_para_canje"]
 
-    precio_costo = form.get("precio_costo", type=float)
-    if precio_costo is not None and precio_costo < 0:
-        return None, "El precio de costo no puede ser negativo."
+    try:
+        precio_costo = _parse_decimal_no_negativo(
+            form.get("precio_costo"), "El precio de costo", opcional=True,
+        )
+    except ValueError as exc:
+        return None, str(exc)
 
     nombre = form.get("nombre", "").strip()
     if not nombre:
@@ -3623,7 +3607,13 @@ def _disponibilidad_productos_por_origen(proveedor_id=None):
 
 
 def _money(value):
-    return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    try:
+        amount = Decimal(str(value or 0))
+        if not amount.is_finite():
+            raise ValueError("El importe debe ser un número finito.")
+        return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError("El importe debe ser un número válido.")
 
 
 def _calcular_base_precio_combo(componentes):
@@ -4492,6 +4482,8 @@ def nuevo_combo(combo_id=None):
             parent_vertical=(combo.vertical if combo else None),
             combo_id=combo.id,
             enforce_owner_id=combo.proveedor_despachador_id,
+            parent_delivery_type=combo.tipo_entrega,
+            parent_delivery_mode=combo.modalidad_entrega,
         )
     except ComboParseError as exc:
         db.session.rollback()
@@ -4880,7 +4872,9 @@ def gestionar_combo(producto_id):
 
     combo_limits = _combo_limits_payload()
 
+    from combo_audit import audit_combo
     return render_template("admin/combo_detalle.html",
+                           combo_issues=audit_combo(combo, componentes, combo_groups),
                            combo=combo,
                            componentes=componentes,
                            combo_groups=combo_groups,
@@ -4914,9 +4908,12 @@ def agregar_componente_combo(producto_id):
     es_seleccionable = bool(request.form.get("es_seleccionable"))
     grupo_seleccion = request.form.get("grupo_seleccion", "").strip() or None
     max_selecciones = request.form.get("max_selecciones", 1, type=int) or 1
-    precio_extra = _money(request.form.get("precio_extra") or 0)
-    if precio_extra < 0:
-        flash("El suplemento no puede ser negativo.", "danger")
+    try:
+        precio_extra = _money(_parse_decimal_no_negativo(
+            request.form.get("precio_extra") or 0, "El suplemento",
+        ))
+    except ValueError as exc:
+        flash(str(exc), "danger")
         return redirect(url_for("admin.gestionar_combo", producto_id=producto_id))
     es_predeterminado = bool(request.form.get("es_predeterminado"))
     notas_preparacion = (request.form.get("notas_preparacion") or "").strip()[:300] or None
@@ -6326,6 +6323,18 @@ def _validar_menu_config_form(form):
     }, None
 
 
+def _delete_unused_banner_image(path):
+    # Nunca borrar una imagen externa o compartida; una limpieza fallida no
+    # debe revertir en apariencia un cambio que ya se confirmó en la BD.
+    if not path or not path.startswith("banners/"):
+        return
+    try:
+        if not MenuConfig.query.filter_by(imagen_url=path).first() and not Product.query.filter_by(imagen_url=path).first():
+            delete_image(path)
+    except Exception:
+        current_app.logger.exception("No se pudo limpiar una imagen de banner sin uso")
+
+
 def _validar_contenido_menu_config(tipo, titulo, contenido, imagen_url):
     if len(titulo) > 160 or len(contenido) > 1000:
         return "El título o contenido supera la longitud permitida."
@@ -6359,10 +6368,15 @@ def crear_menu_config():
         flash(error, "danger")
         return redirect(url_for("admin.menu_config"))
     imagen_url = _normalizar_imagen_url(request.form.get("imagen_url"))
+    uploaded_image = None
     img_file = request.files.get("imagen_archivo")
     if img_file and getattr(img_file, "filename", None):
         ruta = save_image(img_file, "banners", f"banner_{uuid.uuid4().hex[:10]}.jpg")
+        if not ruta:
+            flash("No se pudo guardar la imagen. Elige un archivo de imagen válido.", "danger")
+            return redirect(url_for("admin.menu_config"))
         if ruta:
+            uploaded_image = ruta
             imagen_url = ruta
     titulo = request.form.get("titulo", "").strip()
     contenido = request.form.get("contenido", "").strip()
@@ -6371,13 +6385,13 @@ def crear_menu_config():
         campos_tipo["tipo"], titulo, contenido, imagen_url
     )
     if error:
-        if img_file and imagen_url:
-            delete_image(imagen_url)
+        if uploaded_image:
+            delete_image(uploaded_image)
         flash(error, "danger")
         return redirect(url_for("admin.menu_config"))
     if enlace_url and not enlace_url.startswith(("/", "http://", "https://", "#")):
-        if img_file and imagen_url:
-            delete_image(imagen_url)
+        if uploaded_image:
+            delete_image(uploaded_image)
         flash("El enlace debe ser una ruta interna, ancla o URL http(s).", "danger")
         return redirect(url_for("admin.menu_config"))
     item = MenuConfig(
@@ -6398,8 +6412,8 @@ def crear_menu_config():
         flash("Item de menú creado.", "success")
     except Exception as exc:
         db.session.rollback()
-        if img_file and imagen_url:
-            delete_image(imagen_url)
+        if uploaded_image:
+            delete_image(uploaded_image)
         flash(f"Error al crear item: {exc}", "danger")
     return redirect(url_for("admin.menu_config"))
 
@@ -6425,23 +6439,31 @@ def editar_menu_config(item_id):
         flash("El enlace debe ser una ruta interna, ancla o URL http(s).", "danger")
         return redirect(url_for("admin.menu_config"))
     img_url = _normalizar_imagen_url(request.form.get("imagen_url"))
+    uploaded_image = None
     img_file = request.files.get("imagen_archivo")
     imagen_anterior = item.imagen_url
     imagen_nueva = item.imagen_url
     if img_file and getattr(img_file, "filename", None):
         ruta = save_image(img_file, "banners", f"banner_{uuid.uuid4().hex[:10]}.jpg")
+        if not ruta:
+            flash("No se pudo guardar la imagen. Elige un archivo de imagen válido.", "danger")
+            return redirect(url_for("admin.menu_config"))
         if ruta:
+            uploaded_image = ruta
             imagen_nueva = ruta
     elif img_url:
         imagen_nueva = img_url
     if campos_tipo["tipo"] != "banner":
+        if uploaded_image:
+            delete_image(uploaded_image)
+            uploaded_image = None
         imagen_nueva = None
     error = _validar_contenido_menu_config(
         campos_tipo["tipo"], titulo, contenido, imagen_nueva
     )
     if error:
-        if imagen_nueva and imagen_nueva != imagen_anterior:
-            delete_image(imagen_nueva)
+        if uploaded_image:
+            delete_image(uploaded_image)
         flash(error, "danger")
         return redirect(url_for("admin.menu_config"))
     item.tipo = campos_tipo["tipo"]
@@ -6455,13 +6477,13 @@ def editar_menu_config(item_id):
     item.producto_id = campos_tipo["producto_id"]
     try:
         db.session.commit()
-        if imagen_anterior and imagen_anterior != imagen_nueva:
-            delete_image(imagen_anterior)
+        if imagen_anterior != imagen_nueva:
+            _delete_unused_banner_image(imagen_anterior)
         flash("Banner actualizado.", "success")
     except Exception as exc:
         db.session.rollback()
-        if imagen_nueva and imagen_nueva != imagen_anterior:
-            delete_image(imagen_nueva)
+        if uploaded_image:
+            delete_image(uploaded_image)
         flash(f"Error al actualizar banner: {exc}", "danger")
     return redirect(url_for("admin.menu_config"))
 
@@ -6487,8 +6509,7 @@ def eliminar_menu_config(item_id):
     db.session.delete(item)
     try:
         db.session.commit()
-        if imagen_url:
-            delete_image(imagen_url)
+        _delete_unused_banner_image(imagen_url)
         flash("Item eliminado.", "warning")
     except Exception as exc:
         db.session.rollback()
@@ -6714,8 +6735,13 @@ def clientes():
         .group_by(Order.cliente_id).all()
     )
 
+    from models import CustomerAccessGrant
+    access_grants = {grant.user_id: grant for grant in CustomerAccessGrant.query.filter(
+        CustomerAccessGrant.user_id.in_(ids), CustomerAccessGrant.activo.is_(True)
+    ).all()}
     return render_template(
         "admin/clientes.html",
+        access_grants=access_grants,
         clientes=clientes_pag,
         total_visible=total,
         total_registrados=total_base,
@@ -6726,6 +6752,63 @@ def clientes():
         estado=solo_activos,
         puede_editar=(getattr(current_user, "rol", None) == "super_admin"),
     )
+
+
+@admin_bp.route("/clientes/registrar", methods=["POST"])
+@super_admin_required
+def registrar_cliente():
+    from models import internal_customer_email, CustomerAccessGrant
+    phone = normalizar_telefono_cliente(request.form.get("telefono", ""))
+    name = request.form.get("nombre", "").strip()
+    if not telefono_valido(phone) or telefono_local_ambiguo(request.form.get("telefono", "")) or not 2 <= len(name) <= 80:
+        flash("Indica un nombre de 2 a 80 caracteres y un teléfono con prefijo de país.", "danger")
+        return redirect(url_for("admin.clientes"))
+    from services import buscar_cliente_por_telefono
+    existing, _ = buscar_cliente_por_telefono(phone)
+    if existing or User.query.filter_by(telefono_normalizado=phone).first():
+        flash("El teléfono ya está registrado. Gestiona su acceso desde la lista.", "warning")
+        return redirect(url_for("admin.clientes"))
+    customer = User(nombre=name, telefono=phone, telefono_normalizado=phone,
+                    email=internal_customer_email(phone), password_hash="!", rol="cliente", activo=True)
+    db.session.add(customer)
+    try:
+        db.session.flush()
+        db.session.add(CustomerAccessGrant(user_id=customer.id, approved_by=current_user.id, activo=True))
+        AuditLog.registrar(current_user.id, "registrar_cliente", "user", customer.id, ip=request.remote_addr)
+        db.session.commit()
+        flash("Cliente registrado. Ya puede solicitar su código de acceso.", "success")
+    except Exception:
+        db.session.rollback()
+        flash("No se pudo registrar. Comprueba si el teléfono ya existe.", "danger")
+    return redirect(url_for("admin.clientes"))
+
+
+@admin_bp.route("/clientes/<int:user_id>/acceso", methods=["POST"])
+@super_admin_required
+def cambiar_acceso_cliente(user_id):
+    customer = get_or_404(User, user_id)
+    if customer.rol != "cliente":
+        abort(403)
+    from models import CustomerAccessGrant
+    grant = db.session.get(CustomerAccessGrant, customer.id)
+    enabled = request.form.get("activo") == "1"
+    if grant is None and enabled:
+        grant = CustomerAccessGrant(user_id=customer.id, approved_by=current_user.id)
+        db.session.add(grant)
+    if grant:
+        grant.activo = enabled
+        grant.approved_by = current_user.id
+        grant.device_hash = None
+    customer.activo = enabled
+    customer.mfa_session_version = (customer.mfa_session_version or 0) + 1
+    # Cambiar el estado invalida códigos pendientes, sin tocar pedidos ni puntos.
+    customer.cod_puntos = None
+    customer.cod_puntos_expira = None
+    AuditLog.registrar(current_user.id, "acceso_cliente", "user", customer.id,
+                       detalle="activo=" + str(customer.activo), ip=request.remote_addr)
+    db.session.commit()
+    flash("Acceso del cliente actualizado.", "success")
+    return redirect(url_for("admin.clientes"))
 
 
 @admin_bp.route("/clientes/<int:user_id>/editar", methods=["POST"])
@@ -6765,6 +6848,12 @@ def editar_cliente(user_id):
                 "danger",
             )
             return redirect(url_for("admin.clientes"))
+        if cli.telefono_normalizado != tn:
+            cli.mfa_session_version = (cli.mfa_session_version or 0) + 1
+            from models import CustomerAccessGrant
+            grant = db.session.get(CustomerAccessGrant, cli.id)
+            if grant:
+                grant.device_hash = None
         cli.telefono = tn
         cli.telefono_normalizado = tn
 
@@ -6812,10 +6901,16 @@ def historial_precios(producto_id):
 @admin_required
 def cambiar_precio(producto_id):
     producto = get_or_404(Product, producto_id)
-    nuevo_precio = request.form.get("precio", type=float)
+    try:
+        nuevo_precio = _parse_decimal_no_negativo(request.form.get("precio"), "Precio")
+    except ValueError:
+        nuevo_precio = None
     motivo = request.form.get("motivo", "").strip()[:200]
     if nuevo_precio is None or nuevo_precio <= 0:
         flash("Precio inválido.", "danger")
+        return redirect(url_for("admin.productos"))
+    if producto.solo_canje:
+        flash("Un producto exclusivo de canje mantiene su precio en 0 €. Edita su modalidad desde el producto.", "warning")
         return redirect(url_for("admin.productos"))
     hist = PriceHistory(
         producto_id=producto.id,
@@ -7764,6 +7859,7 @@ def chats_index():
 @admin_bp.route("/chats/<public_id>")
 @admin_required
 def chats_detalle(public_id):
+    from web_chat_service import serialise_message
     from models import WebChatConversation
     conversation = WebChatConversation.query.filter_by(public_id=public_id).first_or_404()
     if (
@@ -7774,7 +7870,7 @@ def chats_detalle(public_id):
     return render_template(
         "admin/chat_detalle.html",
         conversation=conversation,
-        messages=conversation.messages.limit(200).all(),
+        messages=[serialise_message(row) for row in conversation.messages.limit(200).all()],
         is_mine=conversation.assigned_agent_id == current_user.id,
         has_phone=True,
     )
@@ -7784,6 +7880,7 @@ def chats_detalle(public_id):
 @admin_required
 def chats_messages(public_id):
     """Polling incremental; evita recargar el formulario mientras se escribe."""
+    from web_chat_service import serialise_message
     from models import WebChatConversation, WebChatMessage
     conversation = WebChatConversation.query.filter_by(public_id=public_id).first_or_404()
     if conversation.assigned_agent_id != current_user.id:
@@ -7797,7 +7894,7 @@ def chats_messages(public_id):
         "ok": True,
         "status": conversation.status,
         "messages": [
-            {"id": row.id, "sender": row.sender, "body": row.body}
+            serialise_message(row)
             for row in rows
         ],
     })
@@ -7805,13 +7902,13 @@ def chats_messages(public_id):
 
 def _notify_chat_customer(conversation, title, body):
     """Push auxiliar: nunca invalida una transición de chat ya confirmada."""
-    if not conversation.customer_id:
+    if not conversation.customer_id or not conversation.device_hash:
         return
     try:
         from push_service import notify_user
         notify_user(
             conversation.customer_id, title, body, url="/ayuda",
-            tag=f"web-chat-{conversation.public_id}", require_interaction=True,
+            tag=f"web-chat-{conversation.public_id}", require_interaction=True, device_hash=conversation.device_hash,
         )
     except Exception:
         current_app.logger.exception(
@@ -8262,9 +8359,9 @@ def delivery_franjas_panel():
             for slot in slots_iniciales
         ],
         can_switch_mode=current_user.rol == "super_admin",
-        delivery_zone_count=ZonaEntrega.query.filter_by(activa=True).count(),
-        delivery_fee_min=db.session.query(db.func.min(ZonaEntrega.precio_envio)).filter(ZonaEntrega.activa.is_(True)).scalar(),
-        delivery_fee_max=db.session.query(db.func.max(ZonaEntrega.precio_envio)).filter(ZonaEntrega.activa.is_(True)).scalar(),
+        delivery_zone_count=ZonaEntrega.query.filter_by(activo=True).count(),
+        delivery_fee_min=db.session.query(db.func.min(ZonaEntrega.precio_envio)).filter(ZonaEntrega.activo.is_(True)).scalar(),
+        delivery_fee_max=db.session.query(db.func.max(ZonaEntrega.precio_envio)).filter(ZonaEntrega.activo.is_(True)).scalar(),
     )
 
 
@@ -8349,3 +8446,145 @@ def delivery_franjas_clonar():
         db.session.rollback()
         return jsonify({"error": str(exc)}), 400
     return jsonify({"creadas": creadas})
+
+
+def _abort_si_modulo_apagado():
+    if not _delivery_franjas_activo():
+        abort(404)
+
+@admin_bp.route("/delivery/franjas/nueva", methods=["GET"])
+@admin_required
+def delivery_franjas_form_nuevo():
+    """Página con form clásico HTML para crear franja — sin depender de JS/modal."""
+    _abort_si_modulo_apagado()
+    from store_config import get_store_value
+    fecha_hint = request.args.get("fecha", "")
+    try:
+        default_max = int(get_store_value("delivery_franjas_max_repartidores_default", "1"))
+    except (TypeError, ValueError):
+        default_max = 1
+    return render_template("admin/delivery_franjas_form.html",
+                           modo="crear", slot=None,
+                           fecha_hint=fecha_hint,
+                           default_max=default_max)
+
+@admin_bp.route("/delivery/franjas/<int:slot_id>/editar", methods=["GET"])
+@admin_required
+def delivery_franjas_form_editar(slot_id):
+    """Página con form clásico HTML para editar franja."""
+    _abort_si_modulo_apagado()
+    from models import DeliverySlot
+    slot = get_or_404(DeliverySlot, slot_id)
+    from store_config import get_store_value
+    try:
+        default_max = int(get_store_value("delivery_franjas_max_repartidores_default", "1"))
+    except (TypeError, ValueError):
+        default_max = 1
+    return render_template("admin/delivery_franjas_form.html",
+                           modo="editar", slot=slot,
+                           fecha_hint=slot.fecha.isoformat(),
+                           default_max=default_max)
+
+@admin_bp.route("/delivery/franjas/guardar-form", methods=["POST"])
+@admin_required
+def delivery_franjas_guardar_form():
+    """Recibe form-encoded (no JSON) y crea o actualiza según slot_id."""
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import crear_franja, actualizar_franja
+    from models import DeliverySlot
+    slot_id = (request.form.get("slot_id") or "").strip()
+    try:
+        fecha = _parse_fecha_iso(request.form["fecha"])
+        hora_inicio = _parse_hora_hhmm(request.form["hora_inicio"])
+        hora_fin = _parse_hora_hhmm(request.form["hora_fin"])
+        capacidad_max = int(request.form["capacidad_max"])
+    except (KeyError, ValueError, TypeError) as exc:
+        flash(f"Datos inválidos: {exc}", "danger")
+        return redirect(url_for("admin.delivery_franjas_form_nuevo", fecha=request.form.get("fecha", "")))
+    max_riders = request.form.get("max_repartidores") or None
+    if max_riders:
+        try: max_riders = int(max_riders)
+        except ValueError: max_riders = None
+    activo = request.form.get("activo") in ("1", "on", "true")
+    try:
+        if slot_id:
+            slot = get_or_404(DeliverySlot, int(slot_id))
+            actualizar_franja(
+                slot, fecha=fecha, hora_inicio=hora_inicio, hora_fin=hora_fin,
+                capacidad_max=capacidad_max,
+                max_repartidores=max_riders if max_riders is not None else slot.max_repartidores,
+                cierre_modo=request.form.get("cierre_modo") or None,
+                cierre_valor=request.form.get("cierre_valor") or None,
+                notas_admin=request.form.get("notas_admin") or None,
+                activo=activo,
+            )
+            db.session.commit()
+            flash(f"Franja del {fecha.isoformat()} {hora_inicio.strftime('%H:%M')} actualizada.", "success")
+        else:
+            crear_franja(
+                fecha=fecha, hora_inicio=hora_inicio, hora_fin=hora_fin,
+                capacidad_max=capacidad_max, max_repartidores=max_riders,
+                cierre_modo=request.form.get("cierre_modo") or None,
+                cierre_valor=request.form.get("cierre_valor") or None,
+                notas_admin=request.form.get("notas_admin") or None,
+            )
+            db.session.commit()
+            flash(f"Franja creada para el {fecha.isoformat()}.", "success")
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+    except IntegrityError:
+        db.session.rollback()
+        flash("Ya existe una franja con esa fecha y horario.", "warning")
+    return redirect(url_for("admin.delivery_franjas_panel"))
+
+@admin_bp.route("/delivery/franjas/<int:slot_id>/eliminar-form", methods=["POST"])
+@admin_required
+def delivery_franjas_eliminar_form(slot_id):
+    """Borrado por form clásico HTML (fallback sin JS)."""
+    _abort_si_modulo_apagado()
+    from delivery_slots_service import eliminar_franja
+    from models import DeliverySlot
+    slot = get_or_404(DeliverySlot, slot_id)
+    try:
+        tipo = eliminar_franja(slot)
+        db.session.commit()
+        flash(
+            "Franja borrada." if tipo == "hard"
+            else "Franja desactivada (tiene pedidos asociados).",
+            "success",
+        )
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"No se pudo borrar: {exc}", "danger")
+    return redirect(url_for("admin.delivery_franjas_panel"))
+
+@admin_bp.route("/delivery/franjas/dia/toggle", methods=["POST"])
+@admin_required
+def delivery_franjas_dia_toggle():
+    """Activa/desactiva en bloque todas las franjas de una fecha."""
+    _abort_si_modulo_apagado()
+    from models import DeliverySlot
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("activar"), bool):
+        return jsonify({"ok": False, "error": "activar debe ser un booleano"}), 400
+    try:
+        fecha = _parse_fecha_iso(str(data["fecha"]))
+    except (KeyError, ValueError, TypeError) as exc:
+        return jsonify({"error": f"fecha inválida: {exc}"}), 400
+    activar = bool(data.get("activar", False))
+    slots = DeliverySlot.query.filter(DeliverySlot.fecha == fecha).all()
+    afectadas = 0
+    for s in slots:
+        if bool(s.activo) != activar:
+            from delivery_slots_service import actualizar_franja
+            try:
+                actualizar_franja(s, activo=activar)
+            except ValueError as exc:
+                db.session.rollback()
+                return jsonify({"ok": False, "error": str(exc)}), 409
+            afectadas += 1
+    if afectadas:
+        db.session.commit()
+    return jsonify({"ok": True, "afectadas": afectadas, "activo": activar})

@@ -10,6 +10,16 @@ from store_config import (
 
 
 class StoreConfigTest(unittest.TestCase):
+    def test_nonfinite_commission_is_rejected_by_editor_and_legacy_value_is_safe(self):
+        from routes.superadmin import _validar_config_value
+        for value in ("NaN", "Infinity", "-Infinity"):
+            self.assertFalse(_validar_config_value("SERVICE_COMMISSION_PCT", value)[0])
+            values = {"MODO_TIENDA": "bar_servicio", "SERVICE_COMMISSION_PCT": value}
+            with patch("models.SiteConfig.get", side_effect=lambda key, default="": values.get(key, default)):
+                result = get_service_commission("80")
+            self.assertEqual(result["amount"], 0)
+            self.assertEqual(result["merchant_net"], 80)
+
     def test_profile_uses_site_config_as_authority(self):
         values = {
             "NOMBRE_NEGOCIO": "Tienda configurable",
@@ -57,17 +67,30 @@ class StoreConfigTest(unittest.TestCase):
     def test_loyalty_terms_are_customer_facing_and_configurable(self):
         values = {
             "UI_LOYALTY_NAME": "Círculo del Cafetal",
+            "UI_LOYALTY_NAV_LABEL": "Círculo",
             "UI_LOYALTY_UNIT": "grano",
             "UI_LOYALTY_UNIT_PLURAL": "granos",
+            "UI_LOYALTY_TAGLINE": "Suma granos y canjéa productos.",
+            "UI_LOYALTY_ICON": "estrella",
+            "UI_LOYALTY_EMOJI": "⭐",
         }
         with patch("models.SiteConfig.get", side_effect=lambda key, default="": values.get(key, default)):
             terms = get_loyalty_terms()
 
-        self.assertEqual(terms, {
-            "name": "Círculo del Cafetal",
-            "singular": "grano",
-            "plural": "granos",
-        })
+        self.assertEqual(terms["name"], "Círculo del Cafetal")
+        self.assertEqual(terms["nav_label"], "Círculo")
+        self.assertEqual(terms["singular"], "grano")
+        self.assertEqual(terms["plural"], "granos")
+        self.assertEqual(terms["tagline"], "Suma granos y canjéa productos.")
+        self.assertEqual(terms["icon"], "estrella")
+        self.assertEqual(terms["emoji"], "⭐")
+
+    def test_loyalty_icon_falls_back_when_unknown(self):
+        from store_config import normalize_loyalty_icon, normalize_loyalty_emoji
+        self.assertEqual(normalize_loyalty_icon("inventado"), "grano")
+        self.assertEqual(normalize_loyalty_icon("MEDALLA"), "medalla")
+        self.assertEqual(normalize_loyalty_emoji(""), "☕")
+        self.assertEqual(normalize_loyalty_emoji("🌟🌟🌟🌟🌟🌟🌟🌟🌟"), "🌟🌟🌟🌟🌟🌟🌟🌟")
 
     def test_service_commission_only_applies_in_service_mode(self):
         values = {

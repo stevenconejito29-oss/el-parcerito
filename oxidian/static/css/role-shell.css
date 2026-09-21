@@ -185,8 +185,7 @@ body.ox-body-admin #ox-push-banner.is-inline > button:first-of-type {
 }
 
 .ox-sb-toggle-btn[disabled] { opacity: .62; cursor: wait; }
-.ox-sb-toggle-btn[aria-pressed="true"] .ox-sb-toggle-dot { animation: role-online-pulse 2.2s ease-in-out infinite; }
-@keyframes role-online-pulse { 50% { box-shadow: 0 0 0 7px rgba(74,222,128,.12); } }
+/* El color y el texto ya comunican disponibilidad; no requieren un pulso continuo. */
 
 /* Disponibilidad operativa: control real, no texto que aparenta ser botón. */
 body.ox-body-admin .work-employee-toggle { cursor: default; }
@@ -343,6 +342,26 @@ body.ox-body-admin .is-offline .work-availability-button small {
   body.ox-body-admin .ox-page { padding-bottom: 2rem !important; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ox-sb-toggle-btn[aria-pressed="true"] .ox-sb-toggle-dot { animation: none; }
+/* Categorías del menú administrativo: se abre la sección de la página actual. */
+.ox-sb-category>summary.ox-sb-section-label{display:list-item;cursor:pointer;min-height:44px;align-content:center;margin:0;padding-block:.7rem}
+.ox-sb-category>summary:focus-visible{outline:2px solid var(--brand-primary);outline-offset:-2px}
+.ox-sb-category:not([open])>.ox-sb-item{display:none}
+
+/* Contenido largo y controles cómodos sin cambiar el orden operativo. */
+body.ox-body-admin :is(.ox-admin-content, .oa-table-wrap, .ox-table-wrap, .sa-category-grid) { min-width: 0; }
+body.ox-body-admin :is(.ox-page-title, .work-client, .work-item-main, .sa-category h3) { overflow-wrap: anywhere; }
+body.ox-body-admin :is(.oa-table-wrap, .ox-table-wrap) { max-width: 100%; overscroll-behavior-inline: contain; }
+body.ox-body-admin .ox-sb-item { min-height: 44px; }
+body.ox-body-admin .ox-sidebar { box-shadow: 4px 0 18px rgba(0,0,0,.12) !important; }
+body.ox-body-admin :is(.sa-category, .sa-disclosure) { box-shadow: 0 2px 8px color-mix(in srgb, var(--col-text) 4%, transparent); }
+body.ox-body-admin .sa-category a:hover { color: var(--brand-text); }
+body.ox-body-admin .sa-category a:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; border-radius: .35rem; }
+@media (max-width: 767px) {
+  body.ox-body-admin .ox-page :is(input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=range]):not([type=color]), select, textarea) {
+    max-width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+  body.ox-body-admin .cfg-nav { overflow-x: auto; max-width: 100%; }
+  body.ox-body-admin .cfg-nav a { min-height: 44px; align-content: center; }
 }

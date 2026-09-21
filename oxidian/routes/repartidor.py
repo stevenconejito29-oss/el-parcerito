@@ -679,6 +679,9 @@ def tomar_pedido(pedido_id):
         flash("La operación está configurada por franjas. Elige una salida desde el panel de franjas.", "warning")
         return redirect(url_for("repartidor.franjas_panel"))
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
+    if pedido.slot_id is not None:
+        flash("Este pedido pertenece a una franja. Recógelo desde su salida programada.", "warning")
+        return redirect(url_for("repartidor.franjas_panel"))
     if _es_admin_operativo():
         flash("Asigna el pedido a un repartidor desde la cola administrativa.", "warning")
         return redirect(url_for("repartidor.ruta"))
@@ -754,7 +757,7 @@ def tomar_multiples():
     capacidad = capacidad_repartidor(current_user.id)
     for pid in ids:
         pedido = Order.query.filter_by(id=pid).with_for_update().first()
-        if pedido is None or pedido.estado != "listo" or not pedido.requiere_reparto:
+        if pedido is None or pedido.slot_id is not None or pedido.estado != "listo" or not pedido.requiere_reparto:
             omitidos += 1
             continue
         if pedido.repartidor_id not in (None, current_user.id):
@@ -805,7 +808,7 @@ def salir_multiples():
     capacidad = None if _es_admin_operativo() else capacidad_repartidor(current_user.id)
     for pid in ids:
         pedido = Order.query.filter_by(id=pid).with_for_update().first()
-        if pedido is None or pedido.estado != "listo" or not pedido.requiere_reparto:
+        if pedido is None or pedido.slot_id is not None or pedido.estado != "listo" or not pedido.requiere_reparto:
             fallidos.append(str(pid))
             continue
         if not _es_admin_operativo() and pedido.repartidor_id not in (None, current_user.id):
@@ -862,6 +865,9 @@ def salir_multiples():
 @repartidor_required
 def salir_entregar(pedido_id):
     pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
+    if pedido.slot_id is not None:
+        flash("Este pedido sale con su franja. Selecciónalo desde la agenda de reparto.", "warning")
+        return redirect(url_for("repartidor.franjas_panel"))
     if pedido.estado != "listo":
         flash("El pedido no está listo para despachar.", "warning")
         return redirect(url_for("repartidor.ruta"))
@@ -904,7 +910,6 @@ def salir_entregar(pedido_id):
 
     try:
         avanzar_estado_pedido(pedido, actor_id=current_user.id, canal="repartidor")
-        enviar_whatsapp_estado(pedido)
         db.session.commit()
     except (ValueError, Exception) as e:
         db.session.rollback()
@@ -918,7 +923,7 @@ def salir_entregar(pedido_id):
         logger.exception("No se pudo enviar push al despachar pedido %s", pedido.id)
     flash(
         f"Pedido {pedido.numero_pedido} en ruta. "
-        "El cliente recibió el aviso de salida. Envía el código cuando llegues.",
+        "Avisamos al cliente por la app. Envía el código de entrega cuando llegues.",
         "info",
     )
     return redirect(url_for("repartidor.ruta"))
@@ -1519,3 +1524,76 @@ def pedido_en_la_puerta(pedido_id):
         flash("Cliente avisado. Verifica el código y el cobro antes de entregar.", "success")
         return redirect(url_for("repartidor.ruta"))
     return jsonify({"notificado": True})
+
+
+@repartidor_bp.route("/franjas/<int:slot_id>/pedidos-panel", methods=["GET"])
+@repartidor_required
+def franjas_slot_panel(slot_id):
+    if not _franjas_modulo_activo():
+        from flask import abort as _abort
+        _abort(404)
+    from models import DeliverySlot, SlotRepartidor
+
+    slot = get_or_404(DeliverySlot, slot_id)
+    # ¿La franja es mía?
+    mia = (
+        db.session.query(SlotRepartidor)
+        .filter(
+            SlotRepartidor.slot_id == slot.id,
+            SlotRepartidor.repartidor_id == current_user.id,
+            SlotRepartidor.liberado_en.is_(None),
+        )
+        .first()
+    ) is not None
+    if not mia and current_user.rol not in {"admin", "super_admin"}:
+        abort(403)
+    # Eager: cliente (nombre) + zona (direccion fallback). Sin esto,
+    # cada pedido dispara SELECTs adicionales al renderizar la lista.
+    pedidos = (
+        Order.query
+        .options(
+            joinedload(Order.cliente),
+            joinedload(Order.zona),
+        )
+        .filter(
+            Order.slot_id == slot.id,
+            Order.estado != "cancelado",
+        )
+        .order_by(Order.creado_en)
+        .all()
+    )
+    total = len(pedidos)
+    listos = [p for p in pedidos if p.estado == "listo"]
+    en_ruta = [p for p in pedidos if p.estado == "en_ruta"]
+    entregados = [p for p in pedidos if p.estado == "entregado"]
+    despachados = len(en_ruta) + len(entregados)
+    return render_template(
+        "repartidor/franja_pedidos_panel.html",
+        slot=slot,
+        pedidos=pedidos,
+        listos=listos,
+        en_ruta=en_ruta,
+        entregados=entregados,
+        total=total,
+        despachados=despachados,
+        mia=mia,
+    )
+
+
+@repartidor_bp.route("/pedido/<int:pedido_id>/en-camino", methods=["POST"])
+@repartidor_required
+def pedido_en_camino(pedido_id):
+    from delivery_slots_service import notificar_en_camino
+    pedido = get_or_404(Order, pedido_id)
+    if not _es_admin_operativo() and pedido.repartidor_id != current_user.id:
+        abort(403)
+    try:
+        _, canal = notificar_en_camino(pedido, actor_id=None if _es_admin_operativo() else current_user.id)
+        db.session.commit()
+    except PermissionError:
+        db.session.rollback()
+        abort(403)
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(exc)}), 409
+    return jsonify({"ok": True, "ya_notificado": canal == "ya_notificado", "canal": canal})

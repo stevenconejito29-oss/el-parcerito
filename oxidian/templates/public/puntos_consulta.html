@@ -1,18 +1,19 @@
 {% extends "base.html" %}
-{% from 'partials/heritage_icons.html' import heritage_icon %}
+{% from 'partials/heritage_icons.html' import heritage_icon, loyalty_icon %}
 {% block title %}{{ ui.loyalty_name }} — {{ brand.nombre }}{% endblock %}
 {% block styles_final %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/loyalty-showcase.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
+{% include 'public/_customer_navigation.html' %}
 <section class="points-lookup">
   <a href="{{ url_for('public.index') }}" class="points-lookup-back">← Volver al menú</a>
   <div class="points-lookup-hero">
     <div class="pc-bean-field" aria-hidden="true">
-      {% for _ in range(12) %}<i>{{ heritage_icon('grano') }}</i>{% endfor %}
+      {% for _ in range(12) %}<i>{{ loyalty_icon() }}</i>{% endfor %}
     </div>
     <div class="pc-hero-brand">
-      <span class="pc-beans-flag points-hero-beans" aria-hidden="true"><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i></span>
+      <span class="pc-beans-flag points-hero-beans" aria-hidden="true"><i>{{ loyalty_icon() }}</i><i>{{ loyalty_icon() }}</i><i>{{ loyalty_icon() }}</i></span>
       <p class="points-lookup-kicker">Club {{ ui.loyalty_name }}</p>
     </div>
     <div class="pc-hero-copy">
@@ -30,7 +31,7 @@
   {% if saldo_cliente is not none %}
   <div class="points-lookup-card points-lookup-mine">
     <p class="pc-saldo-label">Tu saldo actual</p>
-    <p class="pc-saldo-num"><span class="pc-beans-flag pc-beans-flag--mini" aria-hidden="true"><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i></span> {{ saldo_cliente }} <small>{{ ui.loyalty_unit_plural }}</small></p>
+    <p class="pc-saldo-num"><span class="pc-beans-flag pc-beans-flag--mini" aria-hidden="true"><i>{{ loyalty_icon() }}</i><i>{{ loyalty_icon() }}</i><i>{{ loyalty_icon() }}</i></span> {{ saldo_cliente }} <small>{{ ui.loyalty_unit_plural }}</small></p>
     <p class="pc-saldo-hint">En el checkout podrás verificar tu teléfono y elegir tu regalo.</p>
   </div>
   {% else %}
@@ -39,7 +40,14 @@
     <label for="points-phone">Número de WhatsApp</label>
     <input id="points-phone" type="tel" inputmode="tel" autocomplete="tel"
            placeholder="+34 6XX XXX XXX" required>
-    <button type="submit">Enviar mi saldo por WhatsApp</button>
+    <button type="submit" data-points-request>Recibir código de verificación</button>
+    <div data-points-code-step hidden>
+      <label for="points-code">Código recibido por WhatsApp</label>
+      <input id="points-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+      <button type="button" data-points-verify>Ver mi saldo</button>
+      <button type="button" data-points-resend>Reenviar código</button>
+    </div>
+    <p data-points-balance hidden class="pc-saldo-num"><span data-points-value></span> <small>{{ ui.loyalty_unit_plural }}</small></p>
     <p id="points-lookup-status" role="status"></p>
   </form>
   {% endif %}
@@ -50,10 +58,10 @@
     <a href="{{ url_for('public.index') }}">Ver productos</a>
   </div>
 
-  <div class="pc-steps" aria-label="Cómo canjear tus granitos">
-    <div><b>{{ heritage_icon('grano') }}</b><span><strong>Elige tu pedido</strong><small>Añade al menos un producto</small></span></div>
-    <div><b>{{ heritage_icon('grano') }}</b><span><strong>Verifica tu WhatsApp</strong><small>Protegemos tu saldo con código</small></span></div>
-    <div><b>{{ heritage_icon('grano') }}</b><span><strong>Escoge tu regalo</strong><small>Se añade gratis al pedido</small></span></div>
+  <div class="pc-steps" aria-label="Cómo canjear tus {{ ui.loyalty_unit_plural }}">
+    <div><b>{{ loyalty_icon() }}</b><span><strong>Elige tu pedido</strong><small>Añade al menos un producto</small></span></div>
+    <div><b>{{ loyalty_icon() }}</b><span><strong>Verifica tu WhatsApp</strong><small>Protegemos tu saldo con código</small></span></div>
+    <div><b>{{ loyalty_icon() }}</b><span><strong>Escoge tu regalo</strong><small>Se añade gratis al pedido</small></span></div>
   </div>
 
   {# ── Vitrina de canje: productos solo_canje ── #}
@@ -79,7 +87,7 @@
         <div class="pc-vitrina-body">
           <h3>{{ p.nombre }}</h3>
           {% if p.descripcion %}<p class="pc-vitrina-desc">{{ p.descripcion[:80] }}</p>{% endif %}
-          <p class="pc-vitrina-pts"><span class="pc-beans-flag pc-beans-flag--mini" aria-hidden="true"><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i><i>{{ heritage_icon('grano') }}</i></span> {{ p.puntos_para_canje }} {{ ui.loyalty_unit_plural }}</p>
+          <p class="pc-vitrina-pts"><span class="pc-beans-flag pc-beans-flag--mini" aria-hidden="true"><i>{{ loyalty_icon() }}</i><i>{{ loyalty_icon() }}</i><i>{{ loyalty_icon() }}</i></span> {{ p.puntos_para_canje }} {{ ui.loyalty_unit_plural }}</p>
           {# Badge de disponibilidad relativo al saldo del cliente. Solo
              aparece si el cliente está logueado (saldo conocido). Para
              visitantes anónimos mostramos el precio en puntos y nada más. #}
@@ -105,28 +113,5 @@
 </section>
 {% endblock %}
 {% block scripts %}
-<script nonce="{{ csp_nonce() }}">
-document.getElementById('points-lookup-form')?.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const phone = document.getElementById('points-phone').value.trim();
-  const status = document.getElementById('points-lookup-status');
-  const csrf = event.currentTarget.querySelector('[name=csrf_token]').value;
-  status.textContent = 'Enviando consulta...';
-  try {
-    const response = await fetch('/puntos/consultar-saldo', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json','X-CSRFToken':csrf},
-      body: JSON.stringify({telefono: phone}),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (response.status === 503 || data.service_available === false) {
-      status.textContent = data.msg || 'Servicio de WhatsApp no disponible ahora mismo. Reintenta en unos minutos.';
-      return;
-    }
-    status.textContent = data.msg || 'Revisa tu WhatsApp.';
-  } catch (_error) {
-    status.textContent = 'No pudimos enviar la consulta. Inténtalo de nuevo.';
-  }
-});
-</script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/points-lookup.js', v=asset_version) }}" defer></script>
 {% endblock %}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from 'partials/heritage_icons.html' import heritage_icon %}
+{% from 'partials/heritage_icons.html' import heritage_icon, loyalty_icon %}
 {% block title %}{{ producto.nombre }} — {{ brand.nombre }}{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-product-detail.css', v=asset_version) }}">
@@ -49,7 +49,7 @@
     </span>
     {% endif %}
     {% if producto.canjeable_con_puntos %}
-    <span class="pd-badge pd-badge-puntos">{{ heritage_icon('grano') }} Canjeable</span>
+    <span class="pd-badge pd-badge-puntos">{{ loyalty_icon() }} Canjeable</span>
     {% endif %}
     {% if producto.origen_pais %}
     <span class="pd-badge pd-badge-origin">
@@ -310,7 +310,7 @@
   {# ── Puntos canjeables ── #}
   {% if producto.canjeable_con_puntos and producto.puntos_para_canje %}
   <div class="pd-info-box pd-box-puntos">
-    <span class="pd-box-icon">{{ heritage_icon('grano') }}</span>
+    <span class="pd-box-icon">{{ loyalty_icon() }}</span>
     <div>
       <p class="pd-box-title">{{ producto.puntos_para_canje }} {{ ui.loyalty_unit_plural }} para canjear</p>
       <p class="pd-box-sub">Puedes desbloquearlo desde tu {{ ui.cart_name }} si tienes suficientes {{ ui.loyalty_unit_plural }}</p>

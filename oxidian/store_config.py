@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from ipaddress import ip_address
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 
 
 BRAND_COLOR_DEFAULTS = {
@@ -107,6 +107,9 @@ PUBLIC_UI_DEFAULTS = {
     "UI_LOYALTY_UNIT": "granito de café",
     "UI_LOYALTY_UNIT_PLURAL": "granitos de café",
     "UI_LOYALTY_TAGLINE": "Cada pedido suma un granito de nuestra tierra y te acerca a tu próximo antojo.",
+    # Icono SVG del sprite heritage (`ox-hi-*`) + emoji para WhatsApp/texto plano.
+    "UI_LOYALTY_ICON": "grano",
+    "UI_LOYALTY_EMOJI": "☕",
     "UI_PWA_DESCRIPTION": "Añade la tienda a tu pantalla de inicio para acceder sin abrir el navegador.",
     "UI_PWA_IOS_INSTRUCTION": "En Safari, toca Compartir y luego Añadir a pantalla de inicio.",
     "UI_PWA_INSTALL": "Instalar",
@@ -160,6 +163,23 @@ STORE_DEFAULTS = {
     "FEATURE_PUNTOS": "1",
     "PUNTOS_MIN_COMPRA_EUR": "0",
     "FEATURE_FAVORES": "1",
+    # ── Canal de notificaciones al cliente ─────────────────────────
+    # Gate anti-baneo Meta. Ver docs/CANAL_NOTIFICACIONES.md.
+    #   "1" (default) → canal_service prioriza push/web y sólo usa WA
+    #   para eventos transaccionales o dentro de la ventana de 24h.
+    #   "0" → escape hatch legacy: todo va por WhatsApp como antes.
+    "notif_gate_activo": "1",
+    # Ventana Meta de service messages (horas desde el último inbound del
+    # cliente). Después de este umbral WA sólo se usa para eventos
+    # transaccionales (códigos, OTP, handoff).
+    "notif_ventana_wa_horas": "24",
+    # Override JSON por evento. Vacío ⇒ usa la matriz interna de canal_service.
+    # Ejemplo: {"delivery_en_camino": ["push", "web"]}
+    "notif_canales_por_evento": "",
+    # Plantillas configurables por el super_admin (placeholders {nombre},
+    # {codigo}). Si están vacías se usa el default conservador del código.
+    "delivery_notificar_camino_texto": "🛵 {nombre}, tu pedido #{codigo} ya salió de la tienda{franja}. Llega en unos minutos. ¡Nos vemos!",
+    "delivery_franjas_notificar_puerta_texto": "🛵 {nombre}, tu repartidor ya está en la puerta con tu pedido #{codigo}{franja}.",
     "CRUCE_PRECIO_MINIMO": "5.00",
     "CRUCE_PRECIO_POR_KM": "1.25",
     "CRUCE_PESO_MAX_KG": "8",
@@ -195,16 +215,59 @@ def get_store_value(key: str, default: str | None = None) -> str:
     return SiteConfig.get(key, env_value) or fallback
 
 
+# Iconos del sprite `heritage_sprite.html` admitidos como marca del club.
+# Cualquier valor desconocido cae a `grano` para no romper el SVG.
+LOYALTY_ICON_CHOICES = (
+    ("grano", "Grano de café"),
+    ("estrella", "Estrella"),
+    ("corazon", "Corazón"),
+    ("monedas", "Monedas"),
+    ("sello", "Sello / stamp"),
+    ("medalla", "Medalla"),
+)
+LOYALTY_ICON_KEYS = frozenset(key for key, _ in LOYALTY_ICON_CHOICES)
+
+
+def normalize_loyalty_icon(value: str | None) -> str:
+    key = str(value or "").strip().lower()
+    return key if key in LOYALTY_ICON_KEYS else "grano"
+
+
+def normalize_loyalty_emoji(value: str | None) -> str:
+    """Un emoji corto para canales de texto (bot, WhatsApp, admin)."""
+    emoji = str(value or "").strip()
+    if not emoji:
+        return "☕"
+    # Evita pegar frases enteras en el campo pensado para un símbolo.
+    return emoji[:8]
+
+
 def get_loyalty_terms() -> dict[str, str]:
-    """Vocabulario público del programa sin cambiar su modelo técnico.
+    """Vocabulario e iconografía pública del programa de fidelidad.
 
     Las columnas y contratos internos siguen llamándose `puntos`; solo los
-    mensajes dirigidos al cliente usan estas etiquetas configurables.
+    mensajes y la UI dirigidos al cliente usan estas etiquetas configurables.
     """
     singular = str(get_store_value("UI_LOYALTY_UNIT", "granito de café") or "granito de café").strip()
     plural = str(get_store_value("UI_LOYALTY_UNIT_PLURAL", "granitos de café") or "granitos de café").strip()
     name = str(get_store_value("UI_LOYALTY_NAME", "Granitos de café") or "Granitos de café").strip()
-    return {"name": name, "singular": singular, "plural": plural}
+    nav = str(get_store_value("UI_LOYALTY_NAV_LABEL", "Granitos") or "Granitos").strip()
+    tagline = str(
+        get_store_value(
+            "UI_LOYALTY_TAGLINE",
+            "Cada pedido suma un granito de nuestra tierra y te acerca a tu próximo antojo.",
+        )
+        or ""
+    ).strip()
+    return {
+        "name": name,
+        "nav_label": nav or name,
+        "singular": singular,
+        "plural": plural,
+        "tagline": tagline,
+        "icon": normalize_loyalty_icon(get_store_value("UI_LOYALTY_ICON", "grano")),
+        "emoji": normalize_loyalty_emoji(get_store_value("UI_LOYALTY_EMOJI", "☕")),
+    }
 
 
 def _absolute_http_url(value: str | None) -> str:
@@ -305,6 +368,26 @@ def is_service_mode() -> bool:
     return get_store_features()["modo_tienda"] == "bar_servicio"
 
 
+def get_pickup_details() -> dict:
+    """Ubicación de recogida a partir de la dirección pública del negocio.
+
+    El centro de cobertura de reparto no necesariamente es el local, por eso
+    no se reutilizan sus coordenadas como destino de recogida.
+    """
+    address = (get_store_value("DIRECCION_NEGOCIO") or "").strip()
+    location = ", ".join(value for value in (
+        address,
+        (get_store_value("CIUDAD_NEGOCIO") or "").strip(),
+        (get_store_value("PAIS_NEGOCIO") or "").strip(),
+    ) if value)
+    return {
+        "address": location if address else "",
+        "maps_url": "https://www.google.com/maps/dir/?" + urlencode({
+            "api": "1", "destination": location,
+        }) if address else "",
+    }
+
+
 def is_provider_flow_enabled() -> bool:
     """El flujo multi-proveedor/bar externo queda desactivado por diseño."""
     return False
@@ -318,6 +401,8 @@ def get_service_commission(total) -> dict:
     try:
         pct = Decimal(get_store_value("SERVICE_COMMISSION_PCT", "0"))
     except (InvalidOperation, TypeError):
+        pct = Decimal("0")
+    if not pct.is_finite():
         pct = Decimal("0")
     pct = min(Decimal("100"), max(Decimal("0"), pct)).quantize(Decimal("0.01"))
     commission = (amount * pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -362,6 +447,11 @@ def get_store_profile() -> dict:
         key.removeprefix("UI_").lower(): get_store_value(key, default)
         for key, default in PUBLIC_UI_DEFAULTS.items()
     }
+    # Normaliza iconografía del club para que plantillas y JS nunca rompan el sprite.
+    loyalty = get_loyalty_terms()
+    profile["ui"]["loyalty_icon"] = loyalty["icon"]
+    profile["ui"]["loyalty_emoji"] = loyalty["emoji"]
+    profile["loyalty"] = loyalty
     return profile
 
 
@@ -375,6 +465,7 @@ def get_store_profile() -> dict:
 # ofrezca cambiar SiteConfig debe consultar este set antes de aceptar el
 # cambio bajo un rol admin.
 LOCKED_CONFIG_KEYS = frozenset({
+    "ACCESO_CLIENTES_REGISTRADOS",
     # Modo comercial y comisiones
     "MODO_TIENDA",
     "SERVICE_COMMISSION_PCT",
@@ -384,6 +475,7 @@ LOCKED_CONFIG_KEYS = frozenset({
     "PUNTOS_POR_EURO", "PUNTOS_MIN_COMPRA_EUR",
     "UI_LOYALTY_NAME", "UI_LOYALTY_NAV_LABEL",
     "UI_LOYALTY_UNIT", "UI_LOYALTY_UNIT_PLURAL", "UI_LOYALTY_TAGLINE",
+    "UI_LOYALTY_ICON", "UI_LOYALTY_EMOJI",
     "CRUCE_PRECIO_MINIMO", "CRUCE_PRECIO_POR_KM", "CRUCE_PESO_MAX_KG",
     "CRUCE_VALOR_MAX_EUR", "CRUCE_MAX_ACTIVOS_CLIENTE",
     "EFECTIVO_HABILITADO", "BIZUM_HABILITADO", "TARJETA_HABILITADA",
@@ -435,6 +527,7 @@ CLAVES_QUE_REFRESCAN_BOT = frozenset({
     "PUNTOS_POR_EURO", "PUNTOS_MIN_COMPRA_EUR",
     "UI_LOYALTY_NAME", "UI_LOYALTY_NAV_LABEL",
     "UI_LOYALTY_UNIT", "UI_LOYALTY_UNIT_PLURAL", "UI_LOYALTY_TAGLINE",
+    "UI_LOYALTY_ICON", "UI_LOYALTY_EMOJI",
     "CRUCE_PRECIO_MINIMO", "CRUCE_PRECIO_POR_KM", "CRUCE_PESO_MAX_KG",
     "CRUCE_VALOR_MAX_EUR", "CRUCE_MAX_ACTIVOS_CLIENTE",
     # Horario y forzado de cierre → el bot debe reflejarlos al instante

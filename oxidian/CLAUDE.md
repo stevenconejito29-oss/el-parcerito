@@ -210,3 +210,10 @@ bash scripts/backup.sh
 ```
 
 URL pública: `http://localhost:5070` (o `http://192.168.1.41:5070`).
+
+## Servicios auxiliares (LAN)
+
+| Servicio | Uso interno (LAN) | Notas |
+|---|---|---|
+| Shlink | `http://192.168.1.32:8082` | Acortador de enlaces internos |
+| Umami | `http://192.168.1.32:3001` | Analítica web self-hosted |

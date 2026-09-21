@@ -680,7 +680,7 @@
   font-size: var(--oa-font-sm); font-weight: 700;
   color: var(--col-muted); text-decoration: none; white-space: nowrap;
   border-radius: var(--radius-pill); background: var(--col-elevated);
-  border: 1px solid var(--col-border); transition: all .15s;
+  border: 1px solid var(--col-border); transition: color .15s, background-color .15s, border-color .15s;
 }
 .cfg-nav a:hover { color: var(--col-text); background: var(--col-hover); }
 
@@ -890,3 +890,10 @@
   font-size: 1.4rem; line-height: 1; cursor: pointer;
 }
 .oa-dialog__close:hover { background: var(--col-hover); color: var(--col-text); }
+
+/* Búsqueda de pedidos con filtros secundarios desplegables. */
+.order-filters { padding: 1rem; margin-bottom: 1rem; }
+.order-filters-main { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; }
+.order-filters-main label { display: grid; gap: .35rem; flex: 1 1 180px; min-width: 0; color: var(--col-text); font-size: .875rem; }
+.order-filters-main .ord-input { width: 100%; min-width: 0; min-height: 44px; box-sizing: border-box; padding: .6rem; border: 1px solid var(--col-border); border-radius: .6rem; background: var(--col-surface); color: var(--col-text); font: inherit; }
+.order-filters-extra summary { cursor: pointer; padding-block: .8rem; color: var(--col-muted); }

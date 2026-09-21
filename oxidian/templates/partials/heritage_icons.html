@@ -3,3 +3,8 @@
   <use href="#ox-hi-{{ name }}"></use>
 </svg>
 {%- endmacro %}
+
+{# Icono del club de fidelidad según UI_LOYALTY_ICON (normalizado en store_config). #}
+{% macro loyalty_icon(class_name='') -%}
+{{ heritage_icon((ui.loyalty_icon if ui is defined and ui.loyalty_icon else 'grano'), class_name) }}
+{%- endmacro %}

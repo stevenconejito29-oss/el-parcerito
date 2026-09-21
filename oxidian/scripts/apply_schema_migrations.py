@@ -18,6 +18,7 @@ from sqlalchemy import inspect, text
 from app import create_app
 from extensions import db
 from models import (
+    CustomerAccessGrant,
     BotLearningSignal,
     ComboItem,
     ComboGroup,
@@ -590,6 +591,41 @@ def _migrate_order_en_punto_encuentro():
     for col, ddl in stmts.items():
         if col not in existing:
             db.session.execute(text(ddl))
+
+
+def _migrate_order_en_camino_at():
+    """Añade Order.en_camino_at (subestado "voy en camino" al cliente).
+
+    Simétrico a Order.en_punto_encuentro_en: timestamp único de la
+    notificación "salió a repartir". Idempotencia se apoya en (campo IS NOT
+    NULL) + búsqueda en notification_outbox por evento.
+    """
+    inspector = inspect(db.engine)
+    if not inspector.has_table("orders"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("orders")}
+    if "en_camino_at" not in existing:
+        db.session.execute(text("ALTER TABLE orders ADD COLUMN en_camino_at TIMESTAMP"))
+
+
+def _migrate_user_last_wa_inbound_at():
+    """Añade User.last_wa_inbound_at (ventana Meta de service messages).
+
+    Se actualiza cada vez que /api/bot/ai/route recibe un mensaje del
+    cliente por WhatsApp. Consumido por canal_service para decidir si
+    aún estamos dentro de la ventana de 24h y podemos usar WA como
+    fallback cuando push/web-chat no están disponibles.
+    """
+    inspector = inspect(db.engine)
+    if not inspector.has_table("users"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("users")}
+    if "last_wa_inbound_at" not in existing:
+        db.session.execute(text("ALTER TABLE users ADD COLUMN last_wa_inbound_at TIMESTAMP"))
+    db.session.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_users_last_wa_inbound_at "
+        "ON users (last_wa_inbound_at) WHERE last_wa_inbound_at IS NOT NULL"
+    ))
 
 
 def _migrate_combo_item_activo_not_null():
@@ -1777,7 +1813,19 @@ def _migrate_orders_add_slot_id():
     ))
 
 
+def _migrate_browser_notification_targeting():
+    # Ampliación compatible: no elimina datos ni deduce dispositivos por teléfono.
+    for table,column in (("orders","customer_device_hash"),("push_subscriptions","device_hash"),("web_chat_conversations","device_hash")):
+        inspector=inspect(db.engine)
+        if not inspector.has_table(table):
+            continue
+        if column not in {c["name"] for c in inspector.get_columns(table)}:
+            db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} VARCHAR(64)"))
+        db.session.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_{column} ON {table} ({column})"))
+
+
 MIGRATIONS = [
+    {"id": "20260920_customer_access_grants", "description": "Invitaciones de superadmin y dispositivo autorizado", "tables": [CustomerAccessGrant.__table__]},
     {
         "id": "20260814_01_favor_marketplace",
         "description": "Crea solicitudes y contraofertas transaccionales de Rapifavor.",
@@ -2266,6 +2314,17 @@ MIGRATIONS = [
         ),
         "fn": _migrate_orders_add_slot_id,
     },
+    {
+        "id": "20260818_01_order_en_camino_at",
+        "description": "Añade Order.en_camino_at para notificación 'voy en camino'.",
+        "fn": _migrate_order_en_camino_at,
+    },
+    {
+        "id": "20260818_02_user_last_wa_inbound_at",
+        "description": "Añade User.last_wa_inbound_at (ventana Meta 24h) para canal_service.",
+        "fn": _migrate_user_last_wa_inbound_at,
+    },
+    {"id": "20260915_01_browser_notification_targeting", "description": "Vincular pedidos y conversaciones al dispositivo autorizado", "fn": _migrate_browser_notification_targeting},
 ]
 
 
@@ -2668,6 +2727,18 @@ def _seed_knowledge_entries():
          "Todos los pedidos se hacen en {{web_url}} donde ves menú completo, "
          "elegís tamaño y sabores y pagas con seguridad.",
          "por aqui,por whatsapp,quiero pedir aqui,pedir por chat",
+         "cliente"),
+        ("franjas_reparto", "envio", "¿Cómo funcionan las franjas de reparto?",
+         "🕒 Puedes reservar tu franja de reparto en el checkout de {{web_url}}. "
+         "Elige día y hora entre las franjas disponibles y tu pedido queda anclado a esa ventana: "
+         "lo preparamos justo antes y el repartidor sale dentro de esa franja. "
+         "Si no eliges franja, sale «cuanto antes» apenas confirmes.",
+         "franja,franjas,reservar franja,reparto programado,programar entrega,hora de reparto,elegir franja,horaria",
+         "cliente"),
+        ("cruce_encargos", "cruce", "¿Que es El Cruce? ¿Pueden recogerme algo?",
+         "🤝 «El Cruce» es nuestro servicio de recogida y entrega punto A → punto B (documentos, un paquete pequeño, un pedido a otro comercio…). "
+         "Publica el encargo en {{web_url}}/favor con precio orientativo (mínimo 5€, +1,25€/km), un repartidor lo acepta y te avisamos en cada paso.",
+         "cruce,cruces,picap,encargo,mandado,recado,recoger,recogerme,recojan,llevar,traer paquete,favor",
          "cliente"),
         # Audiencia super_admin/admin: comandos operativos
         ("admin_menu", "meta", "MENU admin",

@@ -1,37 +1,7 @@
 {% extends "admin_base.html" %}
 {% block title %}Clientes registrados{% endblock %}
 {% block styles %}
-<style>
-@media (max-width: 600px) {
-  .customer-table-wrap { overflow: visible; }
-  .customer-table, .customer-table tbody { display: block; width: 100%; }
-  .customer-table thead { display: none; }
-  .customer-table tr {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: .7rem;
-    padding: .9rem;
-    border-bottom: 1px solid var(--col-border);
-  }
-  .customer-table td { display: block; min-width: 0; padding: 0 !important; text-align: left !important; overflow-wrap: anywhere; }
-  .customer-table td::before {
-    content: attr(data-label);
-    display: block;
-    margin-bottom: .18rem;
-    color: var(--col-muted);
-    font-size: .64rem;
-    font-weight: 850;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-  }
-  .customer-table .customer-name,
-  .customer-table .customer-contact,
-  .customer-table .customer-actions { grid-column: 1 / -1; }
-  .customer-table .customer-name { font-size: 1rem; }
-  .customer-table .customer-actions { display: flex; gap: .5rem; }
-  .customer-table .customer-actions :is(a,button) { flex: 1; min-height: 44px; margin: 0 !important; }
-}
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customer-management.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
 
@@ -44,6 +14,19 @@
     </p>
   </div>
 </div>
+
+{% if puede_editar %}
+<details class="ox-card p-3 mb-4">
+  <summary>Registrar un cliente</summary>
+  <p>Su teléfono le permitirá solicitar acceso cuando la tienda esté en modo privado.</p>
+  <form method="post" class="customer-register" action="{{ url_for('admin.registrar_cliente') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Nombre <input name="nombre" minlength="2" maxlength="80" required></label>
+    <label>Teléfono con prefijo <input name="telefono" type="tel" maxlength="40" required></label>
+    <button class="ox-btn-primary">Registrar cliente</button>
+  </form>
+</details>
+{% endif %}
 
 {# ── Buscador + filtros ─────────────────────────────────────── #}
 <form method="GET" action="{{ url_for('admin.clientes') }}"
@@ -127,6 +110,21 @@
                   data-id="{{ c.id }}"
                   data-nombre="{{ c.nombre|e }}"
                   data-telefono="{{ (c.telefono_normalizado or c.telefono)|e }}">Editar</button>
+          <form method="post" action="{{ url_for('admin.cambiar_acceso_cliente', user_id=c.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="activo" value="{{ '0' if c.activo and c.id in access_grants else '1' }}">
+            <button class="ox-btn-secondary">{{ 'Bloquear acceso' if c.activo and c.id in access_grants else 'Autorizar acceso' }}</button>
+          </form>
+          {% if c.id in access_grants and access_grants[c.id].device_hash %}
+          <details><summary>Dispositivo vinculado</summary>
+            <p>Restablecer cierra el acceso anterior y permite verificar un dispositivo nuevo.</p>
+            <form method="post" action="{{ url_for('admin.cambiar_acceso_cliente', user_id=c.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="activo" value="1">
+              <button class="ox-btn-secondary">Restablecer dispositivo</button>
+            </form>
+          </details>
+          {% endif %}
           {% endif %}
         </td>
       </tr>

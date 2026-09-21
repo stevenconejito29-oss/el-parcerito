@@ -4,15 +4,15 @@
 {% set fijos_meta = combo_meta.get('componentes') or [] %}
 {% set sels_meta  = combo_meta.get('selecciones')  or [] %}
 {% set extras_meta = (item_meta.get('extras') or {}).get('opciones') or [] %}
-{# Origen real del item (modelo nuevo): proveedor_despachador del producto vivo,
-   con fallback al snapshot por si fue editado después. #}
+{# El origen congelado manda, también cuando es propio (null). Solo los
+   pedidos históricos sin esa clave consultan el catálogo actual. #}
 {% set root_proveedor_id = prod_meta.get('proveedor_despachador_id') if prod_meta else none %}
-{% if root_proveedor_id is none and item.producto %}
+{% if 'proveedor_despachador_id' not in prod_meta and item.producto %}
   {% set root_proveedor_id = item.producto.proveedor_despachador_id %}
 {% endif %}
 
 {% set root_proveedor_nombre = prod_meta.get('proveedor_despachador_nombre') %}
-{% if not root_proveedor_nombre and item.producto and item.producto.proveedor_despachador %}
+{% if 'proveedor_despachador_nombre' not in prod_meta and 'proveedor_despachador_id' not in prod_meta and item.producto and item.producto.proveedor_despachador %}
   {% set root_proveedor_nombre = item.producto.proveedor_despachador.nombre %}
 {% endif %}
 {% set root_canal = item.display_canal_preparacion or 'cocina' %}

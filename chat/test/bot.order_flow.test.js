@@ -57,6 +57,7 @@ test.beforeEach(() => {
     if (route === '/identity/verify') return jsonResponse({
       ok: true, rol: 'admin', nombre: 'Admin', capabilities: ['store'],
     });
+    if (route === '/ayuda') return jsonResponse({ok:true, answer:'Consulta tu pedido en la app.', url:'https://shop.invalid/ayuda'});
     if (route === '/pedidos') return jsonResponse({ ok: true, pedidos: orders });
     if (route === '/cobertura') {
       return jsonResponse({
@@ -85,60 +86,44 @@ test.after(() => {
   fs.rmSync(dbDir, { recursive: true, force: true });
 });
 
-test('SI dentro de confirmar cancelación cancela y no confirma antifraude', async () => {
-  orders = [{ id: 42, numero: '#1006', estado: 'pendiente', total: 103, metodo_pago: 'efectivo', pago_confirmado: false }];
-  saveSesion({ jid: clientJid, nombre: 'Danna', role: 'client', estado: 'main_menu', pending: {} });
-  await handleMessage(clientJid, 'Cancelar', 'Danna');
-  assert.equal(getSesion(clientJid).estado, 'confirmar_cancelacion');
-  await handleMessage(clientJid, 'SI', 'Danna');
+test('una confirmación legacy no cancela ni confirma otro pedido', async () => {
+  saveSesion({jid:clientJid,nombre:'Cliente',role:'client',estado:'confirmar_cancelacion',pending:{pedido_id:42}});
+  await handleMessage(clientJid, 'SI', 'Cliente');
   assert.equal(getSesion(clientJid).estado, 'main_menu');
-  assert.equal(calls.some(c => c.route === '/confirmacion/responder'), false);
-  assert.equal(calls.some(c => c.route === '/pedido/42/cancelar' && c.method === 'POST'), true);
+  assert.deepEqual(getSesion(clientJid).pending, {});
+  assert.equal(calls.some(c => c.route === '/ayuda'), false);
+  assert.equal(calls.some(c => c.route.endsWith('/cancelar') || c.route === '/confirmacion/responder' || c.route === '/pedidos' || c.route === '/cobertura'), false);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM handoffs').get().c, 0);
 });
 
-test('una ubicación compartida desde el menú consulta cobertura sin atascar la sesión', async () => {
-  setCfg('delivery_enabled', '1');
-  saveSesion({
-    jid: clientJid,
-    nombre: 'Danna',
-    role: 'client',
-    estado: 'main_menu',
-    pending: {},
-  });
-  await handleMessage(clientJid, '[Adjunto recibido: ubicacion]', 'Danna', {
-    location: { latitude: 37.4736, longitude: -5.6438, accuracy: 25 },
-  });
-  const request = calls.find(call => call.route === '/cobertura');
-  assert.ok(request);
-  assert.equal(request.query.lat, '37.4736');
-  assert.equal(request.query.lon, '-5.6438');
-  assert.equal(request.query.accuracy, '25');
+test('la ubicación recibida orienta a cobertura de la app sin guardar coordenadas', async () => {
+  saveSesion({jid:clientJid,nombre:'Cliente',role:'client',estado:'main_menu',pending:{pedido_id:42}});
+  await handleMessage(clientJid, '[Adjunto recibido: ubicacion]', 'Cliente');
   assert.equal(getSesion(clientJid).estado, 'main_menu');
+  assert.deepEqual(getSesion(clientJid).pending, {});
+  assert.equal(calls.some(c => c.route === '/ayuda'), false);
+  assert.equal(calls.some(c => c.route.endsWith('/cancelar') || c.route === '/confirmacion/responder' || c.route === '/pedidos' || c.route === '/cobertura'), false);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM handoffs').get().c, 0);
 });
 
-test('entrada inesperada no rompe ni abandona la confirmación de cancelación', async () => {
-  saveSesion({
-    jid: clientJid, nombre: 'Danna', role: 'client', estado: 'confirmar_cancelacion',
-    pending: { pedido_id: 42, numero: '#1006' },
-  });
-  await handleMessage(clientJid, 'hola, no sé qué poner', 'Danna');
-  assert.equal(getSesion(clientJid).estado, 'confirmar_cancelacion');
-  assert.equal(calls.some(c => c.route === '/pedido/42/cancelar'), false);
+test('una sesión antigua de cancelación vuelve a ayuda sin ejecutar cambios', async () => {
+  saveSesion({jid:clientJid,nombre:'Cliente',role:'client',estado:'confirmar_cancelacion',pending:{pedido_id:42}});
+  await handleMessage(clientJid, 'hola, no sé qué poner', 'Cliente');
+  assert.equal(getSesion(clientJid).estado, 'main_menu');
+  assert.deepEqual(getSesion(clientJid).pending, {});
+  assert.equal(calls.some(c => c.route === '/ayuda'), false);
+  assert.equal(calls.some(c => c.route.endsWith('/cancelar') || c.route === '/confirmacion/responder' || c.route === '/pedidos' || c.route === '/cobertura'), false);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM handoffs').get().c, 0);
 });
 
-test('ATRÁS vuelve de la cancelación al pedido sin ejecutar cambios', async () => {
-  const backJid = '34632907710@s.whatsapp.net';
-  orders = [{
-    id: 42, numero: '#1006', estado: 'pendiente', estado_label: 'Pendiente',
-    total: 103, metodo_pago: 'efectivo', pago_confirmado: false,
-  }];
-  saveSesion({
-    jid: backJid, nombre: 'Danna', role: 'client', estado: 'confirmar_cancelacion',
-    pending: { pedido_id: 42, numero: '#1006' },
-  });
-  await handleMessage(backJid, 'atrás', 'Danna');
-  assert.equal(getSesion(backJid).estado, 'pedido_acciones');
-  assert.equal(calls.some(c => c.route.endsWith('/cancelar')), false);
+test('ATRÁS desarma la cancelación antigua y conserva los pedidos', async () => {
+  saveSesion({jid:clientJid,nombre:'Cliente',role:'client',estado:'confirmar_cancelacion',pending:{pedido_id:42}});
+  await handleMessage(clientJid, 'atrás', 'Cliente');
+  assert.equal(getSesion(clientJid).estado, 'main_menu');
+  assert.deepEqual(getSesion(clientJid).pending, {});
+  assert.equal(calls.some(c => c.route === '/ayuda'), false);
+  assert.equal(calls.some(c => c.route.endsWith('/cancelar') || c.route === '/confirmacion/responder' || c.route === '/pedidos' || c.route === '/cobertura'), false);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM handoffs').get().c, 0);
 });
 
 test('MENU sigue siendo escape al inicio y no se confunde con ATRÁS', async () => {
@@ -150,40 +135,23 @@ test('MENU sigue siendo escape al inicio y no se confunde con ATRÁS', async () 
   assert.equal(getSesion(menuJid).estado, 'main_menu');
 });
 
-test('varios pendientes exigen elegir uno y nunca usan coincidencia parcial', async () => {
-  orders = [
-    { id: 51, numero: '#1001', estado: 'pendiente', total: 20, metodo_pago: 'efectivo', pago_confirmado: false },
-    { id: 52, numero: '#1011', estado: 'pendiente', total: 30, metodo_pago: 'efectivo', pago_confirmado: false },
-  ];
-  saveSesion({ jid: clientJid, nombre: 'Danna', role: 'client', estado: 'main_menu', pending: {} });
-  await handleMessage(clientJid, 'Cancelar', 'Danna');
-  assert.equal(getSesion(clientJid).estado, 'seleccionar_cancelacion');
-
-  await handleMessage(clientJid, '2', 'Danna');
-  assert.equal(getSesion(clientJid).estado, 'confirmar_cancelacion');
-  assert.equal(getSesion(clientJid).pending.pedido_id, 52);
-  assert.equal(calls.some(c => c.route.endsWith('/cancelar')), false);
-
-  await handleMessage(clientJid, 'SI', 'Danna');
-  assert.equal(calls.some(c => c.route === '/pedido/52/cancelar'), true);
-  assert.equal(calls.some(c => c.route === '/pedido/51/cancelar'), false);
+test('la ayuda sobre cancelación no consulta ni elige pedidos por el cliente', async () => {
+  saveSesion({jid:clientJid,nombre:'Cliente',role:'client',estado:'main_menu',pending:{pedido_id:42}});
+  await handleMessage(clientJid, 'Cancelar', 'Cliente');
+  assert.equal(getSesion(clientJid).estado, 'main_menu');
+  assert.deepEqual(getSesion(clientJid).pending, {});
+  assert.equal(calls.some(c => c.route === '/ayuda'), false);
+  assert.equal(calls.some(c => c.route.endsWith('/cancelar') || c.route === '/confirmacion/responder' || c.route === '/pedidos' || c.route === '/cobertura'), false);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM handoffs').get().c, 0);
 });
 
-test('la opción 7 en selección de cancelación no abre atención humana', async () => {
-  orders = Array.from({ length: 8 }, (_, index) => ({
-    id: 60 + index,
-    numero: `#20${index + 1}`,
-    estado: 'pendiente',
-    total: 10 + index,
-    metodo_pago: 'efectivo',
-    pago_confirmado: false,
-  }));
-  saveSesion({ jid: clientJid, nombre: 'Danna', role: 'client', estado: 'main_menu', pending: {} });
-  await handleMessage(clientJid, 'Cancelar', 'Danna');
-  await handleMessage(clientJid, '7', 'Danna');
-  const ses = getSesion(clientJid);
-  assert.equal(ses.estado, 'confirmar_cancelacion');
-  assert.equal(ses.pending.pedido_id, 66);
+test('una selección antigua no abre un handoff ni cancela una compra', async () => {
+  saveSesion({jid:clientJid,nombre:'Cliente',role:'client',estado:'seleccionar_cancelacion',pending:{pedido_id:42}});
+  await handleMessage(clientJid, '7', 'Cliente');
+  assert.equal(getSesion(clientJid).estado, 'main_menu');
+  assert.deepEqual(getSesion(clientJid).pending, {});
+  assert.equal(calls.some(c => c.route === '/ayuda'), false);
+  assert.equal(calls.some(c => c.route.endsWith('/cancelar') || c.route === '/confirmacion/responder' || c.route === '/pedidos' || c.route === '/cobertura'), false);
   assert.equal(db.prepare('SELECT COUNT(*) c FROM handoffs').get().c, 0);
 });
 
@@ -204,7 +172,7 @@ test('NO dentro de un reporte no cancela la verificación pendiente', async () =
     pending: { pedido_id: 42, numero: '#1006' },
   });
   await handleMessage(clientJid, 'NO', 'Danna');
-  assert.equal(getSesion(clientJid).estado, 'espera_reporte_pedido');
+  assert.equal(getSesion(clientJid).estado, 'main_menu');
   assert.equal(calls.some(c => c.route === '/confirmacion/responder'), false);
   assert.equal(calls.some(c => c.route.endsWith('/cancelar')), false);
 });
@@ -272,18 +240,14 @@ test('STOP y ALTA gestionan consentimiento sin dejar al cliente atrapado', async
   assert.equal(db.prepare('SELECT 1 FROM muted_clients WHERE phone = ?').get('34632907788'), undefined);
 });
 
-test('sin activos muestra el último pedido cerrado y conserva acciones guiadas', async () => {
-  orders = [{
-    id: 41, numero: '#1005', estado: 'entregado', estado_label: 'Entregado',
-    total: 28.5, pago_confirmado: true, creado_en: new Date().toISOString(), items: [],
-  }];
-  saveSesion({ jid: clientJid, nombre: 'Danna', role: 'client', estado: 'main_menu', pending: {} });
-  await handleMessage(clientJid, 'Dónde está mi pedido', 'Danna');
-  const ses = getSesion(clientJid);
-  assert.equal(ses.estado, 'pedido_acciones');
-  assert.equal(ses.pending.numero, '#1005');
-  const sent = db.prepare(`SELECT detalle FROM logs WHERE evento='send_attempt' ORDER BY id DESC LIMIT 1`).get();
-  assert.match(sent.detalle, /No tienes pedidos activos/i);
+test('el seguimiento orienta al dispositivo autorizado sin enumerar pedidos', async () => {
+  saveSesion({jid:clientJid,nombre:'Cliente',role:'client',estado:'main_menu',pending:{pedido_id:42}});
+  await handleMessage(clientJid, 'Dónde está mi pedido', 'Cliente');
+  assert.equal(getSesion(clientJid).estado, 'main_menu');
+  assert.deepEqual(getSesion(clientJid).pending, {});
+  assert.equal(calls.some(c => c.route === '/ayuda'), false);
+  assert.equal(calls.some(c => c.route.endsWith('/cancelar') || c.route === '/confirmacion/responder' || c.route === '/pedidos' || c.route === '/cobertura'), false);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM handoffs').get().c, 0);
 });
 
 test('el estado del pedido conserva tamaño y sabor en el resumen al cliente', async () => {
@@ -308,24 +272,14 @@ test('el estado del pedido conserva tamaño y sabor en el resumen al cliente', a
   assert.match(mixed, /Sabores: Mango ×2 · Lulo ×3/);
 });
 
-test('tres números de pedido inválidos cierran la espera y vuelven al menú', async () => {
-  orders = [{
-    id: 91, numero: '#CORRECTO-91', estado: 'entregado', estado_label: 'Entregado',
-    total: 12, pago_confirmado: true, items: [],
-  }];
-  saveSesion({
-    jid: clientJid, nombre: 'Danna', role: 'client',
-    estado: 'espera_numero_pedido', pending: {},
-  });
-
-  await handleMessage(clientJid, '1111', 'Danna');
-  assert.equal(getSesion(clientJid).pending._attempts_estado_pedido, 1);
-  await handleMessage(clientJid, '2222', 'Danna');
-  assert.equal(getSesion(clientJid).pending._attempts_estado_pedido, 2);
-  await handleMessage(clientJid, '3333', 'Danna');
-
+test('un número escrito en una espera antigua no revela datos del pedido', async () => {
+  saveSesion({jid:clientJid,nombre:'Cliente',role:'client',estado:'espera_numero_pedido',pending:{pedido_id:42}});
+  await handleMessage(clientJid, '1111', 'Cliente');
   assert.equal(getSesion(clientJid).estado, 'main_menu');
-  assert.equal(getSesion(clientJid).pending._attempts_estado_pedido, undefined);
+  assert.deepEqual(getSesion(clientJid).pending, {});
+  assert.equal(calls.some(c => c.route === '/ayuda'), false);
+  assert.equal(calls.some(c => c.route.endsWith('/cancelar') || c.route === '/confirmacion/responder' || c.route === '/pedidos' || c.route === '/cobertura'), false);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM handoffs').get().c, 0);
 });
 
 test('/abrir inicia confirmación y un admin puede ejecutar la apertura', async () => {
@@ -348,4 +302,19 @@ test('cerrar sin slash dentro de formulario de producto no cierra la tienda', as
   await handleMessage(adminJid, 'cerrar', 'Admin');
   assert.equal(getSesion(adminJid).estado, 'admin_product_toggle_wait');
   assert.equal(calls.some(c => c.route === '/admin/tienda'), false);
+});
+
+test('las dudas se redirigen al chat web sin consultar datos comerciales', async () => {
+  for (const [index, question] of ['horario', 'quiero comprar', 'cuántos granitos tengo', 'necesito un agente', '123456'].entries()) {
+    const jid = `3461999900${index}@s.whatsapp.net`;
+    calls = [];
+    await handleMessage(jid, question, 'Cliente');
+    assert.deepEqual(calls, [], question);
+    assert.equal(getSesion(jid).estado, 'main_menu');
+    assert.equal(db.prepare('SELECT COUNT(*) c FROM handoffs WHERE client_jid=?').get(jid).c, 0);
+  }
+  const text = require('../texts').customerChannelNotice('https://shop.invalid/');
+  assert.match(text, /chat web/);
+  assert.match(text, /https:\/\/shop.invalid\/ayuda/);
+  assert.doesNotMatch(text, /invalid\/\/ayuda/);
 });

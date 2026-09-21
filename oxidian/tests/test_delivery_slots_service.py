@@ -106,7 +106,7 @@ class FranjaEstaCerradaTest(unittest.TestCase):
     def test_modos_declarados_son_los_esperados(self):
         self.assertEqual(
             set(CIERRE_MODOS),
-            {"al_iniciar_siguiente", "minutos_antes", "hora_fija"},
+            {"al_iniciar", "al_iniciar_siguiente", "minutos_antes", "hora_fija"},
         )
 
     def test_estado_operativo_respeta_inicio_y_fin(self):

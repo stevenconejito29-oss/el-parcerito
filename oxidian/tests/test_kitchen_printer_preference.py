@@ -56,6 +56,19 @@ class KitchenPrinterPreferenceTest(unittest.TestCase):
         self.assertEqual(self.client.delete("/preparador/impresora").status_code, 200)
         self.assertIsNone(self.client.get("/preparador/impresora").get_json()["printer"])
 
+    def test_usb_hint_and_network_availability(self):
+        SiteConfig.set("THERMAL_PRINTER_TARGETS", "printer.test:631/Ticket")
+        response = self.client.put("/preparador/impresora", json={"transport": "usb", "device_id": "1:2:qa", "name": "USB QA"})
+        self.assertEqual(response.status_code, 200)
+        loaded = self.client.get("/preparador/impresora")
+        self.assertTrue(loaded.get_json()["network_available"])
+        self.assertEqual(loaded.get_json()["printer"]["transport"], "usb")
+        self.assertEqual(loaded.headers["Cache-Control"], "no-store")
+
+    def test_rejects_non_object_payload(self):
+        response = self.client.put("/preparador/impresora", json=["usb"])
+        self.assertEqual(response.status_code, 400)
+
     def test_rejects_bluetooth_without_opaque_device_id(self):
         response = self.client.put("/preparador/impresora", json={"transport": "bt", "name": "POS58"})
         self.assertEqual(response.status_code, 400)

@@ -37,16 +37,7 @@
         evt.detail.headers["X-CSRFToken"] = token;
       }
     });
-    // Sincronizar swap con View Transitions API cuando esté disponible
-    document.addEventListener("htmx:beforeSwap", function (evt) {
-      if (document.startViewTransition && evt.detail.shouldSwap) {
-        var target = evt.detail.target;
-        var swap = evt.detail.serverResponse;
-        evt.detail.shouldSwap = false;
-        document.startViewTransition(function () {
-          htmx.swap(target, swap, evt.detail.swapSpec);
-        });
-      }
-    });
+    // HTMX conserva su ciclo de actualización. El polling de pedidos no debe
+    // crear transiciones globales superpuestas ni sustituir manualmente el DOM.
   }
 })();

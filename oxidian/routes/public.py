@@ -18,7 +18,7 @@ def _strip_accents(s: str) -> str:
         return ""
     return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn").lower()
 from urllib.parse import quote
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, make_response
@@ -52,6 +52,7 @@ from loyalty_service import (
     aplicar_canje_en_pedido,
     bloquear_cliente_puntos,
     enviar_saldo_puntos,
+    otp_resend_seconds,
     solicitar_codigo,
 )
 from delivery_mode_service import modos_delivery_activos
@@ -62,6 +63,7 @@ from store_config import (
     get_store_value,
     get_store_features,
     get_service_commission,
+    get_pickup_details,
     is_service_mode,
 )
 from catalog_projection import build_catalog_projection
@@ -1731,6 +1733,7 @@ def actualizar_carrito():
     selecciones_combo = session.get("combo_selecciones", {})
     notas_combo = session.get("notas_combo", {})
     cart_max_qty = _cart_max_qty()
+    needs_review = False
 
     def _cleanup_key(k):
         """Elimina TODAS las selecciones paralelas de un producto retirado
@@ -1747,10 +1750,17 @@ def actualizar_carrito():
                 session[_s] = _map
 
     for key in list(carrito.keys()):
+        raw_quantity = request.form.get(f"cantidad_{key}")
+        if raw_quantity is None:
+            continue
         try:
-            nueva_cantidad = max(0, min(cart_max_qty, int(request.form.get(f"cantidad_{key}", 0))))
+            nueva_cantidad = int(raw_quantity)
+            if not 0 <= nueva_cantidad <= cart_max_qty:
+                raise ValueError("cantidad fuera de rango")
         except (ValueError, TypeError):
-            nueva_cantidad = 0
+            needs_review = True
+            flash("Revisa la cantidad: debe ser un número entero dentro del límite indicado.", "warning")
+            continue
         if nueva_cantidad <= 0:
             del carrito[key]
             _cleanup_key(key)
@@ -1759,8 +1769,10 @@ def actualizar_carrito():
             producto = db.session.get(Product, pid) if pid is not None else None
             origen_item = _origen_inventario_producto(producto)
             if not _producto_disponible_en_origen(producto, origen_item):
+                needs_review = True
                 del carrito[key]
                 _cleanup_key(key)
+                flash("Un producto ya no está disponible. Revisa tu carrito antes de continuar.", "warning")
                 continue
             try:
                 if producto.es_combo:
@@ -1772,6 +1784,7 @@ def actualizar_carrito():
                 elif not producto.disponible_para_venta_en_origen(origen_item, nueva_cantidad):
                     raise ValueError(f"No hay stock suficiente para {producto.nombre}.")
             except ValueError as exc:
+                needs_review = True
                 flash(str(exc), "warning")
                 continue
             carrito[key] = nueva_cantidad
@@ -1779,6 +1792,8 @@ def actualizar_carrito():
     session["combo_selecciones"] = selecciones_combo
     session["notas_combo"] = notas_combo
     session.modified = True
+    if request.form.get("continuar") == "checkout" and carrito and not needs_review:
+        return redirect(url_for("public.checkout"))
     return redirect(url_for("public.ver_carrito"))
 
 
@@ -1883,7 +1898,7 @@ def repetir_pedido():
         return redirect(url_for("public.ver_carrito"))
 
     # Expiry: si el link tiene >5min, el bot debe generar uno nuevo.
-    now_ts = int(datetime.utcnow().timestamp())
+    now_ts = int(datetime.now(timezone.utc).timestamp())
     if now_ts > expiry_ts:
         flash("El enlace expiró (dura 5 min). Escribe *repetir* de nuevo en WhatsApp.", "warning")
         return redirect(url_for("public.ver_carrito"))
@@ -2052,6 +2067,7 @@ def ver_carrito():
                            tiempo_hasta=tiempo_hasta,
                            radio_entrega_km=radio_entrega_km,
                            fulfillment_options=fulfillment_options,
+                           pickup=get_pickup_details(),
                            fulfillment_unavailable=fulfillment_unavailable,
                            fulfillment_badge=_product_fulfillment_badge,
                            fulfillment_mode_label=_fulfillment_mode_label,
@@ -2155,35 +2171,35 @@ def buscar_cliente_publico():
 @public_bp.route("/puntos/consultar-saldo", methods=["POST"])
 @limiter.limit("3 per minute") if limiter else (lambda f: f)
 def consultar_saldo_puntos():
-    """Envía el saldo al número consultado sin revelarlo en el navegador.
-
-    Diseño: respuesta neutra (no revela si el número existe). Sí revela si el
-    canal de mensajería está caído, para que el usuario reintente más tarde
-    en vez de creer que llegará y no llegue nunca."""
-    if not _feature_enabled("puntos"):
-        return _json_no_store({"ok": False, "msg": f'{get_loyalty_terms()["name"]} no está habilitado'}, 403)
-    from loyalty_service import messaging_service_available
-    if not messaging_service_available():
-        return _json_no_store({
-            "ok": False,
-            "service_available": False,
-            "msg": "El servicio de WhatsApp no está disponible ahora mismo. Reintenta en unos minutos.",
-        }, 503)
-    data = request.get_json(silent=True) or {}
-    cliente, _ = buscar_cliente_por_telefono(data.get("telefono", ""))
-    if cliente:
-        try:
-            enviar_saldo_puntos(cliente)
-        except Exception:
-            current_app.logger.exception("No se pudo enviar el saldo de puntos")
+    """Ruta antigua conservada sin enviar consultas de saldo por WhatsApp."""
     return _json_no_store({
-        "ok": True,
-        "service_available": True,
-        "msg": f'Si el número tiene {get_loyalty_terms()["plural"]}, recibirá el saldo por WhatsApp.',
-    })
+        "ok": False, "msg": "Consulta tu saldo en el Club y verifica tu teléfono con un código.",
+        "url": url_for("public.club"),
+    }, 410)
 
 
-# ─── CHECK DIRECCIÓN EN TIEMPO REAL (AJAX) ────────────────────
+@public_bp.route("/puntos/verificar-saldo", methods=["POST"])
+@limiter.limit("10 per minute") if limiter else (lambda f: f)
+def verificar_saldo_puntos():
+    if not _feature_enabled("puntos"):
+        return _json_no_store({"ok": False, "msg": "El club no está disponible."}, 403)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _json_no_store({"ok": False, "msg": "Revisa el teléfono y el código."}, 400)
+    phone, code = data.get("telefono"), data.get("codigo")
+    if not isinstance(phone, str) or not isinstance(code, str):
+        return _json_no_store({"ok": False, "msg": "Revisa el teléfono y el código."}, 400)
+    cliente, _ = buscar_cliente_por_telefono(phone.strip())
+    if not cliente:
+        return _json_no_store({"ok": False, "msg": "No se pudo verificar el código."}, 400)
+    cliente = bloquear_cliente_puntos(cliente)
+    if not cliente.verificar_cod_puntos(code.strip(), consumir=True):
+        db.session.commit()
+        return _json_no_store({"ok": False, "msg": "No se pudo verificar el código."}, 400)
+    saldo = max(0, int(cliente.puntos or 0))
+    db.session.commit()
+    return _json_no_store({"ok": True, "puntos": saldo})
+
 
 @public_bp.route("/api/check-address", methods=["POST"])
 @csrf.exempt
@@ -2580,16 +2596,18 @@ def solicitar_codigo_puntos():
     if not _feature_enabled("puntos"):
         return jsonify({"ok": False, "msg": f'{get_loyalty_terms()["name"]} no está habilitado'}), 403
     data = request.get_json(silent=True) or {}
-    telefono = data.get("telefono", "").strip()
+    telefono = data.get("telefono") if isinstance(data, dict) else None
+    telefono = telefono.strip() if isinstance(telefono, str) else ""
     if not telefono:
         return jsonify({"ok": False, "msg": "Indica tu número de teléfono"})
     cliente, _ = buscar_cliente_por_telefono(telefono)
     respuesta_neutra = "Si el número está registrado, recibirá un código por WhatsApp."
     if not cliente or not cliente.telefono:
-        return _json_no_store({"ok": True, "msg": respuesta_neutra})
+        return _json_no_store({"ok": True, "msg": respuesta_neutra, "resend_seconds": otp_resend_seconds()})
 
     resultado = solicitar_codigo(cliente, permitir_sin_puntos=True)
-    return jsonify({
+    return _json_no_store({
+        "resend_seconds": otp_resend_seconds(),
         "ok": bool(resultado.get("ok")),
         "msg": respuesta_neutra,
     })
@@ -2603,8 +2621,10 @@ def verificar_codigo_puntos():
         return jsonify({"ok": False, "msg": f'{get_loyalty_terms()["name"]} no está habilitado'}), 403
     msg_invalido = "No se pudo verificar el código. Revisa el WhatsApp y el código recibido."
     data = request.get_json(silent=True) or {}
-    telefono = data.get("telefono", "").strip()
-    codigo = data.get("codigo", "").strip()
+    telefono = data.get("telefono") if isinstance(data, dict) else None
+    codigo = data.get("codigo") if isinstance(data, dict) else None
+    telefono = telefono.strip() if isinstance(telefono, str) else ""
+    codigo = codigo.strip() if isinstance(codigo, str) else ""
     if telefono:
         cliente, _ = buscar_cliente_por_telefono(telefono)
     else:
@@ -2703,6 +2723,16 @@ def verificar_codigo_puntos():
 def checkout():
     if current_user.is_authenticated:
         flash("Las cuentas internas no compran desde la tienda pública. Usa el módulo POS.", "warning")
+        return redirect(url_for("public.index"))
+
+    # Guardia: si ambos métodos de reparto están apagados y no hay recogida
+    # habilitada, no hay flujo válido de compra. Evita pantalla en blanco o
+    # error críptico y explica al cliente que la tienda no acepta pedidos.
+    _inmediato_on = str(get_store_value("delivery_inmediato_activo", "1")).strip() in ("1", "true", "True")
+    _franjas_on = str(get_store_value("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+    _recogida_on = str(SiteConfig.get("FEATURE_RECOGIDA", "1")).strip() in ("1", "true", "True")
+    if not _inmediato_on and not _franjas_on and not _recogida_on:
+        flash("La tienda no está aceptando pedidos en este momento.", "warning")
         return redirect(url_for("public.index"))
 
     carrito = _get_carrito()
@@ -2849,7 +2879,7 @@ def checkout():
                     guest_tokens = session.get("guest_order_tokens", {})
                     guest_tokens[str(prev.order_id)] = {
                         "token": token,
-                        "exp": int(datetime.utcnow().timestamp()) + GUEST_ORDER_TOKEN_TTL_S,
+                        "exp": int(datetime.now(timezone.utc).timestamp()) + GUEST_ORDER_TOKEN_TTL_S,
                     }
                     session["guest_order_tokens"] = guest_tokens
                     session["last_guest_order_id"] = prev.order_id
@@ -2857,8 +2887,6 @@ def checkout():
                     session.modified = True
                 flash("Este pedido ya se había procesado. Te lo mostramos aquí.", "info")
                 confirm_args = {"pedido_id": prev.order_id}
-                if token:
-                    confirm_args["token"] = token
                 return redirect(url_for("public.pedido_confirmado", **confirm_args))
 
         # Atajo exclusivo de pruebas automatizadas. Una variable accidental en
@@ -2867,7 +2895,13 @@ def checkout():
             "SKIP_DELIVERY_VALIDATION", False
         ))
         abierto, msg_cierre = _establecimiento_abierto_checkout(origen, proveedor)
-        if not _skip_val and not abierto:
+        # Si el módulo de franjas está activo, el cliente puede pedir 24/7 y
+        # su pedido queda anclado a la franja elegida; el horario de tienda
+        # deja de ser guardia dura del checkout.
+        _franjas_bypass = str(
+            get_store_value("delivery_franjas_activo", "0")
+        ).strip() in ("1", "true", "True")
+        if not _skip_val and not abierto and not _franjas_bypass:
             flash(msg_cierre, "warning")
             return redirect(url_for("public.checkout"))
         if proveedor_id:
@@ -2975,6 +3009,12 @@ def checkout():
             )
             return redirect(url_for("public.checkout"))
         telefono_invitado = _normalize_phone(telefono_invitado_raw)
+        from customer_access import private_store_enabled, verified_customer
+        if private_store_enabled():
+            customer = verified_customer()
+            if not customer or telefono_invitado != normalizar_telefono_cliente(customer.telefono):
+                flash("Usa el teléfono verificado para realizar tu pedido.", "danger")
+                return redirect(url_for("public.checkout"))
         codigo_afiliado_str = request.form.get("codigo_afiliado", "").strip().upper()
         # Fallback a la sesión (igual que cupón) ante recarga del checkout.
         if not codigo_afiliado_str:
@@ -3249,7 +3289,9 @@ def checkout():
         if direccion and direccion_detalles:
             direccion_entrega_final = f"{direccion}, {direccion_detalles}"
 
+        from device_identity import browser_device_hash
         pedido = Order(
+            customer_device_hash=browser_device_hash(create=True),
             numero_pedido=Order.generar_numero("online"),
             cliente_id=cliente.id,
             estado="pendiente",
@@ -3490,7 +3532,7 @@ def checkout():
         # sesión del navegador (protege info sensible del pedido).
         guest_tokens[str(pedido.id)] = {
             "token": token,
-            "exp": int(datetime.utcnow().timestamp()) + GUEST_ORDER_TOKEN_TTL_S,
+            "exp": int(datetime.now(timezone.utc).timestamp()) + GUEST_ORDER_TOKEN_TTL_S,
         }
         session["guest_order_tokens"] = guest_tokens
         session["last_guest_order_id"] = pedido.id
@@ -3535,7 +3577,7 @@ def checkout():
         except Exception:
             current_app.logger.exception("No se pudo enviar push de nuevo pedido web %s", pedido.id)
 
-        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id, token=token))
+        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id))
 
     precio_preview = calcular_precio(items, subtotal)
     checkout_items = MenuConfig.query.filter_by(pagina="checkout", activo=True)\
@@ -3544,12 +3586,30 @@ def checkout():
         radio_entrega_km = max(0.0, float(SiteConfig.get("RADIO_ENTREGA_KM", "5") or 5))
     except (TypeError, ValueError):
         radio_entrega_km = 5.0
+    # Render SSR de franjas para el cliente — no depender de JS async.
+    # Si franjas está OFF o falla la query, franjas_ssr queda [] y el
+    # template no muestra el bloque.
+    franjas_ssr = []
+    if _franjas_on:
+        try:
+            from delivery_slots_service import listar_franjas_cliente
+            from datetime import date as _date
+            _hoy = _date.today()
+            _horizonte = int(str(get_store_value("delivery_franjas_horizonte_cliente_dias", "7")).strip() or 7)
+            franjas_ssr = listar_franjas_cliente(_hoy, horizonte_dias=_horizonte)
+        except Exception:
+            current_app.logger.exception("checkout: no pudimos precargar franjas SSR")
+            franjas_ssr = []
     return render_template("public/checkout.html", items=items, subtotal=subtotal,
                            zonas=zonas,
+                           delivery_inmediato_activo=_inmediato_on,
+                           delivery_franjas_activo=_franjas_on,
+                           franjas_ssr=franjas_ssr,
                            tiene_encargos=tiene_encargos,
                            canjeables=canjeables,
                            puntos_habilitados=puntos_habilitados,
                            fulfillment_options=fulfillment_options,
+                           pickup=get_pickup_details(),
                            fulfillment_unavailable=fulfillment_unavailable,
                            fulfillment_mode_label=_fulfillment_mode_label,
                            fulfillment_default=fulfillment_default,
@@ -3567,54 +3627,34 @@ def checkout():
 
 
 def _token_pedido_sesion(pedido_id: int) -> str:
-    """Token opaco vigente que autoriza operaciones del pedido en este navegador."""
-    guest_tokens = session.get("guest_order_tokens", {})
-    slot = guest_tokens.get(str(pedido_id))
-    if isinstance(slot, dict):
-        expected = slot.get("token", "")
-        exp = int(slot.get("exp") or 0)
-        if exp and exp < int(datetime.utcnow().timestamp()):
-            return ""
-        return str(expected or "")
-    # Compatibilidad de lectura para sesiones emitidas antes del TTL.
-    return str(slot or "")
+    from order_access import visitor_order_tokens
+    return visitor_order_tokens().get(pedido_id, "")
 
 
 def _sesion_autoriza_pedido(pedido_id: int, supplied_token: str = "") -> bool:
-    expected = _token_pedido_sesion(pedido_id)
-    return bool(expected and supplied_token and secrets.compare_digest(expected, supplied_token))
+    from order_access import session_authorizes_order
+    return session_authorizes_order(pedido_id, supplied_token)
 
 
 @public_bp.route("/pedido/<int:pedido_id>/confirmado")
 def pedido_confirmado(pedido_id):
-    pedido = get_or_404(Order, pedido_id)
-    expected = _token_pedido_sesion(pedido_id)
-    # Un push no debe incluir secretos en su URL. Para abrir un pedido anterior
-    # del mismo dispositivo recuperamos su token específico de la sesión; antes
-    # se usaba siempre el token del último pedido y los avisos antiguos fallaban.
-    token = request.args.get("token", "") or expected
+    from order_presentation import order_presentation
+    token = request.args.get("token", "")
     if not _sesion_autoriza_pedido(pedido_id, token):
-        flash("Acceso denegado.", "danger")
+        flash("No pudimos verificar el pedido en este dispositivo.", "warning")
         return redirect(url_for("public.index"))
-    if pedido.estado in {"cancelado", "entregado"}:
-        slots = session.get("guest_order_tokens", {})
-        slots.pop(str(pedido.id), None)
-        session["guest_order_tokens"] = slots
-        session.modified = True
-        flash(
-            "Ese pedido ya fue cancelado." if pedido.estado == "cancelado"
-            else "Ese pedido ya finalizó. Gracias por tu compra.",
-            "info",
-        )
-        return redirect(url_for("public.index"))
+    if token:
+        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido_id))
+    pedido = get_or_404(Order, pedido_id)
     return render_template(
         "public/pedido_confirmado.html",
         pedido=pedido,
-        requiere_confirmacion_whatsapp=(pedido.confirmacion_estado == "pending"),
-        pedido_token=token,
+        requiere_confirmacion_whatsapp=order_presentation(pedido)["confirmation_pending"],
+        presentation=order_presentation(pedido),
+        pickup=get_pickup_details(),
         puede_cancelar=(
             pedido.estado == "pendiente"
-            and not (pedido.metodo_pago == "bizum" and pedido.pago_confirmado)
+            and not pedido.pago_confirmado
         ),
     )
 
@@ -3626,13 +3666,12 @@ def estado_pedido_web(pedido_id):
     if not _sesion_autoriza_pedido(pedido_id, token):
         return jsonify({"ok": False}), 403
     pedido = get_or_404(Order, pedido_id)
-    labels = {
-        "pendiente": "Recibido", "armando": "En preparación", "listo": "Listo",
-        "en_ruta": "En reparto", "entregado": "Finalizado", "cancelado": "Cancelado",
-    }
+    from order_presentation import order_presentation
+    presentation = order_presentation(pedido)
     return jsonify({
         "ok": True, "status": pedido.estado,
-        "status_label": labels.get(pedido.estado, pedido.estado.replace("_", " ").title()),
+        "status_label": presentation["status_label"],
+        "presentation": presentation,
         "active": pedido.estado not in {"entregado", "cancelado"},
         "redirect_url": url_for("public.index"),
     })
@@ -3645,10 +3684,10 @@ def cancelar_pedido_web(pedido_id):
     if not _sesion_autoriza_pedido(pedido_id, token):
         flash("No pudimos verificar que este pedido te pertenece.", "danger")
         return redirect(url_for("public.index"))
-    pedido = Order.query.filter_by(id=pedido_id).with_for_update().first_or_404()
-    if pedido.estado != "pendiente" or (pedido.metodo_pago == "bizum" and pedido.pago_confirmado):
+    pedido = Order.query.filter_by(id=pedido_id).populate_existing().with_for_update().first_or_404()
+    if pedido.estado != "pendiente" or pedido.pago_confirmado:
         flash("El pedido ya requiere revisión del equipo. Solicítala desde el chat.", "warning")
-        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id, token=token))
+        return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id))
     try:
         cancelar_pedido_operativo(
             pedido,
@@ -3665,7 +3704,7 @@ def cancelar_pedido_web(pedido_id):
         db.session.rollback()
         current_app.logger.exception("cancelar_pedido_web: fallo pedido=%s", pedido_id)
         flash("No pudimos cancelar el pedido. Solicita ayuda desde el chat.", "danger")
-    return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id, token=token))
+    return redirect(url_for("public.pedido_confirmado", pedido_id=pedido.id))
 
 
 # ─── CLUB DE CLIENTES ────────────────────────

@@ -44,6 +44,7 @@ from phone_utils import (
     telefono_valido,
 )
 from store_config import (
+    get_loyalty_terms,
     get_public_store_url,
     get_service_commission,
     get_store_features,
@@ -586,6 +587,21 @@ def ai_route():
     if not mensaje:
         return jsonify({"ok": True, "route": "noop", "reason": "empty"})
 
+    # Ventana WA (24h) para canal_service: cada mensaje del cliente por
+    # WhatsApp abre/renueva la ventana Meta de service messages. Se hace
+    # aquí porque ai/route se llama para cada inbound del cliente (bot
+    # externo enruta todo por aquí). Idempotente: sólo actualiza cuando
+    # hay un cliente asociable al teléfono.
+    try:
+        cliente_wa, _ = _cliente_por_telefono(telefono_norm)
+        if cliente_wa is not None and hasattr(cliente_wa, "last_wa_inbound_at"):
+            from models import utcnow as _utcnow
+            cliente_wa.last_wa_inbound_at = _utcnow()
+            from extensions import db as _db
+            _db.session.commit()
+    except Exception:
+        current_app.logger.exception("ai/route: no se pudo actualizar last_wa_inbound_at")
+
     # 1. Override manual (equivale a `!ia` de admin): salta rate limit
     #    pero exige IA configurada.
     if force_ai:
@@ -885,6 +901,7 @@ def branding():
         "scheduled_enabled": features["pedidos_programados"],
         "points_enabled": features["puntos"],
         "points_per_euro": get_puntos_config()["por_euro"],
+        "loyalty": get_loyalty_terms(),
         "bizum_enabled": _config_bool("BIZUM_HABILITADO", "1"),
         "cash_enabled": _config_bool("EFECTIVO_HABILITADO", "1"),
         "horario_apertura": SiteConfig.get("HORARIO_APERTURA", ""),
@@ -1649,11 +1666,13 @@ def registrar_cliente():
 def consultar_puntos():
     try:
         if not get_store_features().get("puntos", True):
+            terms = get_loyalty_terms()
             return jsonify({
                 "ok": False,
-                "error": "El club de puntos no está habilitado.",
+                "error": f"El club de {terms['plural']} no está habilitado.",
                 "code": "FEATURE_DISABLED",
                 "puntos": 0,
+                "loyalty": terms,
             }), 403
         cliente, _telefono = _cliente_por_telefono(request.args.get("telefono", ""))
         if not cliente:
@@ -1661,6 +1680,7 @@ def consultar_puntos():
                 "ok": True,
                 "existe": False,
                 "puntos": 0,
+                "loyalty": get_loyalty_terms(),
             })
         # Consultar el saldo es una operación de lectura. El OTP se emite
         # exclusivamente al iniciar un canje desde checkout y nunca se
@@ -1670,6 +1690,7 @@ def consultar_puntos():
             "existe": True,
             "nombre": cliente.nombre or "",
             "puntos": cliente.puntos,
+            "loyalty": get_loyalty_terms(),
         })
     except Exception as e:
         # Log el error real con traceback para debugging server-side,

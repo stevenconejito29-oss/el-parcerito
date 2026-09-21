@@ -1,28 +1,29 @@
 {% extends "base.html" %}
-{% from 'partials/heritage_icons.html' import heritage_icon %}
+{% from 'partials/heritage_icons.html' import heritage_icon, loyalty_icon %}
 {% block title %}{{ 'Confirma tu pedido' if requiere_confirmacion_whatsapp else '¡Pedido recibido!' }} — {{ brand.nombre }}{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/order-confirmation.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
-{% set stage = {'pendiente':1,'armando':2,'listo':3,'en_ruta':4}.get(pedido.estado,1) %}
+{% include 'public/_customer_navigation.html' %}
+{% set stage = presentation.stage %}
 
-<div class="max-w-lg mx-auto pt-2 pb-16 order-confirmation" data-order-state-url="{{ url_for('public.estado_pedido_web', pedido_id=pedido.id, token=pedido_token) }}">
+<div class="max-w-lg mx-auto pt-2 pb-16 order-confirmation" data-order-state-url="{{ url_for('public.estado_pedido_web', pedido_id=pedido.id) }}">
 
   {# ── CONFETTI / ÉXITO ── #}
   <div class="order-success-hero {{ 'order-success-hero--action' if requiere_confirmacion_whatsapp else 'order-success-hero--complete' }}" id="success-top">
     <div class="order-celebration" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
-    <div class="order-hero-topline"><span class="order-success-eyebrow">{{ heritage_icon('mariposa') }} {{ 'Falta un último paso' if requiere_confirmacion_whatsapp else 'Pedido recibido' }}</span><span class="order-hero-order">#{{ pedido.numero_pedido }}</span></div>
+    <div class="order-hero-topline"><span class="order-success-eyebrow" data-order-eyebrow>{{ heritage_icon('mariposa') }} {{ 'Falta un último paso' if requiere_confirmacion_whatsapp else 'Pedido recibido' }}</span><span class="order-hero-order">#{{ pedido.numero_pedido }}</span></div>
     <div class="order-hero-main">
-      <div class="order-success-symbol" aria-hidden="true">{{ heritage_icon('canasto') }}<span>{{ heritage_icon('grano') }}</span></div>
+      <div class="order-success-symbol" aria-hidden="true">{{ heritage_icon('canasto') }}<span>{{ loyalty_icon() }}</span></div>
       <div class="order-hero-copy">
-        <h1>{{ '¡Confírmalo y empezamos!' if requiere_confirmacion_whatsapp else ('¡Tu antojo está viajando!' if pedido.estado == 'en_ruta' else ('¡Ya está listo para ti!' if pedido.estado == 'listo' else ('¡Manos a la obra!' if pedido.estado == 'armando' else '¡Qué alegría cocinar para ti!'))) }}</h1>
-        <p>{{ 'Confirma por WhatsApp tu primera compra para enviarla a cocina.' if requiere_confirmacion_whatsapp else ('El repartidor lleva tu pedido. Ten disponible el código de entrega.' if pedido.estado == 'en_ruta' else ('Terminamos tu pedido y estamos coordinando la entrega.' if pedido.estado == 'listo' else ('Estamos preparando cada producto de tu pedido.' if pedido.estado == 'armando' else 'Tu pedido quedó validado. Te acompañamos y avisamos en cada etapa.'))) }}</p>
+        <h1 data-order-title>{{ presentation.title }}</h1>
+        <p data-order-description>{{ presentation.description }}</p>
       </div>
     </div>
     <div class="order-hero-meta">
-      <span class="order-hero-status" data-order-status>{{ 'Esperando tu confirmación' if requiere_confirmacion_whatsapp else pedido.estado.replace('_',' ')|title }}</span>
-      <div class="order-live-note" aria-live="polite"><i></i><span>Seguimiento en vivo</span><b>Se actualiza solo</b></div>
+      <span class="order-hero-status" data-order-status>{{ presentation.status_label }}</span>
+      <div class="order-live-note" aria-live="polite"><i></i><span data-order-connection>Conectando con la tienda…</span></div>
     </div>
   </div>
 
@@ -42,24 +43,21 @@
   </section>
   {% endif %}
 
-  <div class="order-progress" aria-label="Progreso del pedido" data-order-progress="{{ stage }}">
-    <div class="is-done"><b>✓</b><span><strong>Recibido</strong><small>Pedido validado</small></span></div>
+  <div class="order-progress" aria-label="Progreso del pedido" data-order-progress="{{ stage }}" {% if not stage %}hidden{% endif %}>
+    <div class="{{ 'is-done' if stage > 1 else 'is-current' }}"><b>{{ '✓' if stage > 1 else '1' }}</b><span><strong>Recibido</strong><small data-order-validation>{{ "Pendiente de confirmar" if requiere_confirmacion_whatsapp else "Pedido validado" }}</small></span></div>
     <i aria-hidden="true"></i>
-    <div class="{{ 'is-done' if stage > 2 else 'is-current' if stage == 2 else '' }}"><b>{{ '✓' if stage > 2 else '2' }}</b><span><strong>Preparación</strong><small>{{ 'En cocina' if stage == 2 else 'Siguiente etapa' }}</small></span></div>
+    <div class="{{ 'is-done' if stage > 2 else 'is-current' if stage == 2 else '' }}"><b>{{ '✓' if stage > 2 else '2' }}</b><span><strong>Preparación</strong><small>Preparación del pedido</small></span></div>
     <i aria-hidden="true"></i>
-    <div class="{{ 'is-done' if stage > 3 else 'is-current' if stage == 3 else '' }}"><b>{{ '✓' if stage > 3 else '3' }}</b><span><strong>Listo</strong><small>{{ 'Preparando salida' if stage == 3 else 'Te avisaremos' }}</small></span></div>
+    <div class="{{ 'is-done' if stage > 3 else 'is-current' if stage == 3 else '' }}"><b>{{ '✓' if stage > 3 else '3' }}</b><span><strong>{{ "Listo" if presentation.requires_delivery else "Listo para recoger" }}</strong><small>{{ "Preparación terminada" if presentation.requires_delivery else "Ya puedes venir al negocio" }}</small></span></div>
     <i aria-hidden="true"></i>
-    <div class="{{ 'is-current' if stage == 4 else '' }}"><b>4</b><span><strong>En reparto</strong><small>{{ 'Va hacia ti' if stage == 4 else 'Entrega' }}</small></span></div>
+    <div class="{{ 'is-done' if stage > 4 else 'is-current' if stage == 4 else '' }}"><b>{{ '✓' if stage > 4 else '4' }}</b><span><strong>{{ "En reparto" if presentation.requires_delivery else "Recogido" }}</strong><small>{{ "Entrega a domicilio" if presentation.requires_delivery else "Entrega y pago en mostrador" }}</small></span></div>
   </div>
 
-  <section class="order-next-milestone" aria-label="Próximo paso">
-    <span aria-hidden="true">{{ '🛵' if stage == 4 else ('✨' if stage == 3 else ('🔥' if stage == 2 else '👨‍🍳')) }}</span>
-    <div><small>{{ 'Ahora mismo' if stage > 1 else 'Lo siguiente' }}</small><strong>{{ 'Tu pedido viaja hacia ti' if stage == 4 else ('Listo para salir' if stage == 3 else ('Preparando tu antojo' if stage == 2 else 'Cocina recibirá tu pedido')) }}</strong><p>{{ 'Ten a mano el código de entrega.' if stage == 4 else ('En cuanto salga te avisaremos.' if stage == 3 else ('Te avisaremos apenas esté listo.' if stage == 2 else 'Te avisaremos cuando empiece la preparación.')) }}</p></div>
-  </section>
+
 
   {# ── NÚMERO DE PEDIDO ── #}
   <div class="ox-card p-5 mb-4 text-center order-number-ticket">
-    <p class="order-ticket-kicker">Ficha técnica · Comprobante de compra</p>
+    <p class="order-ticket-kicker">Resumen de tu pedido</p>
     <p class="order-number-label">Tu número de pedido</p>
     <p class="order-number-value">
       {{ pedido.numero_pedido }}
@@ -67,12 +65,12 @@
     <p class="order-number-help">{{ ui.order_number_help }}</p>
     <dl class="order-ticket-meta">
       <div><dt>Fecha</dt><dd>{{ pedido.creado_en.strftime('%d/%m/%Y · %H:%M') if pedido.creado_en else 'Registrado' }}</dd></div>
-      <div><dt>Modalidad</dt><dd>{{ 'Delivery' if pedido.direccion_entrega else 'Recogida' }}</dd></div>
+      <div><dt>Modalidad</dt><dd>{{ presentation.fulfillment_label }}</dd></div>
       {% if pedido.slot %}
       <div><dt>Franja horaria</dt><dd><strong>{{ pedido.slot.fecha.strftime('%A %d/%m') }} · {{ pedido.slot.hora_inicio.strftime('%H:%M') }}–{{ pedido.slot.hora_fin.strftime('%H:%M') }}</strong></dd></div>
       {% endif %}
-      <div><dt>Pago</dt><dd>Contra entrega</dd></div>
-      <div><dt>Estado actual</dt><dd data-order-status>{{ pedido.estado.replace('_',' ')|title }}</dd></div>
+      <div><dt>Pago</dt><dd data-order-payment-label>{{ presentation.payment_label }}</dd></div>
+      <div><dt>Estado actual</dt><dd data-order-status>{{ presentation.status_label }}</dd></div>
     </dl>
   </div>
 
@@ -107,7 +105,7 @@
             {% endif %}
           </div>
         </div>
-        <span class="font-black text-sm flex-shrink-0" style="color:var(--brand-primary)">
+        <span class="font-black text-sm flex-shrink-0 order-amount">
           {% if item.es_canje_puntos %}Gratis{% else %}€{{ "%.2f"|format(item.subtotal) }}{% endif %}
         </span>
       </div>
@@ -124,15 +122,15 @@
         <span>Descuento</span><span>-€{{ "%.2f"|format(pedido.descuento) }}</span>
       </div>
       {% endif %}
-      {% if pedido.zona_id and pedido.costo_envio_aplicado > 0 %}
+      {% if presentation.requires_delivery and pedido.zona_id and pedido.costo_envio_aplicado > 0 %}
       <div class="flex justify-between" style="color:var(--col-muted)">
         <span>Envío{% if pedido.zona_nombre_aplicada %} ({{ pedido.zona_nombre_aplicada }}){% endif %}</span><span>€{{ "%.2f"|format(pedido.costo_envio_aplicado) }}</span>
       </div>
-      {% elif pedido.zona_id and pedido.zona_precio_envio_snapshot and pedido.zona_precio_envio_snapshot > 0 %}
+      {% elif presentation.requires_delivery and pedido.zona_id and pedido.zona_precio_envio_snapshot and pedido.zona_precio_envio_snapshot > 0 %}
       <div class="flex justify-between" style="color:var(--theme-success)"><span>Envío</span><span>Gratis</span></div>
       {% endif %}
       <div class="flex justify-between font-black text-base pt-1" style="border-top:1px solid var(--col-border);color:var(--col-text)">
-        <span>Total</span><span style="color:var(--brand-primary)">€{{ "%.2f"|format(pedido.total) }}</span>
+        <span>Total</span><span class="order-amount">€{{ "%.2f"|format(pedido.total) }}</span>
       </div>
     </div>
   </div>
@@ -145,7 +143,7 @@
     {% endif %}
   {% endfor %}
   <div class="ox-card p-4 mb-4 order-points-used">
-    <span class="text-3xl">{{ heritage_icon('grano') }}</span>
+    <span class="text-3xl">{{ loyalty_icon() }}</span>
     <div>
       <p class="font-black">{{ pedido.puntos_usados }} {{ ui.loyalty_unit_plural }} utilizados</p>
       <p class="text-xs">
@@ -167,12 +165,23 @@
         <span class="flex-shrink-0">💳</span>
         <div>
           <span class="font-semibold" style="color:var(--col-text)">Pago:</span>
-          <span style="color:var(--col-muted)">
-            {{ 'Efectivo al recibir' if pedido.metodo_pago == 'efectivo' else ('Bizum al recibir' if pedido.metodo_pago == 'bizum' else pedido.metodo_pago) }}
-          </span>
+          <span style="color:var(--col-muted)" data-order-payment-label>{{ presentation.payment_label }}</span>
+          <p data-order-payment-status>{{ presentation.payment_status }}</p>
         </div>
       </div>
-      {% if pedido.direccion_entrega %}
+      {% if pedido.tipo_entrega_cliente == 'recogida' %}
+      <div class="space-y-2">
+        <p class="font-semibold">Recogida en el negocio</p>
+        <p data-pickup-instruction>{{ "Ya puedes venir. Muestra tu número de pedido al equipo." if presentation.pickup_ready else "Espera el aviso de pedido listo antes de desplazarte." if pedido.estado not in ('entregado', 'cancelado') else presentation.description }}</p>
+        {% if pickup and pickup.address %}
+        <p>{{ pickup.address }}</p>
+        <a href="{{ pickup.maps_url }}" target="_blank" rel="noopener noreferrer" class="ox-btn ox-btn-primary">Cómo llegar con Maps</a>
+        {% else %}
+        <p>Consulta con el equipo el punto de recogida antes de desplazarte.</p>
+        <a href="{{ url_for('public.chat') }}">Consultar en el chat web</a>
+        {% endif %}
+      </div>
+      {% elif pedido.direccion_entrega %}
       <div class="flex items-start gap-2">
         <span class="flex-shrink-0">📍</span>
         <div>
@@ -181,7 +190,7 @@
         </div>
       </div>
       {% endif %}
-      {% if pedido.zona_id %}
+      {% if presentation.requires_delivery and pedido.zona_id %}
       <div class="flex items-start gap-2">
         <span class="flex-shrink-0">🚴</span>
         <div>
@@ -203,23 +212,23 @@
   </div>
 
   {# ── PUNTOS GANADOS ── #}
-  {% if brand.puntos and pedido.puntos_ganados and pedido.puntos_ganados > 0 %}
+  {% if pedido.estado != "cancelado" and brand.puntos and pedido.puntos_ganados and pedido.puntos_ganados > 0 %}
   <div class="ox-card p-4 mb-4 flex items-center gap-3 order-loyalty-card">
-    <span class="text-3xl">{{ heritage_icon('grano') }}</span>
+    <span class="text-3xl">{{ loyalty_icon() }}</span>
     <div>
-      <p class="font-black order-loyalty-earned">+{{ pedido.puntos_ganados }} {{ ui.loyalty_unit_plural }} al completar el pedido</p>
-      <p class="text-xs" style="color:var(--col-muted)">Se añadirán a tu saldo cuando el equipo marque el pedido como entregado.</p>
+      <p class="font-black order-loyalty-earned">+{{ pedido.puntos_ganados }} {{ ui.loyalty_unit_plural }} {{ "ganados" if pedido.estado == "entregado" else "al completar el pedido" }}</p>
+      <p class="text-xs" style="color:var(--col-muted)">{{ "El pedido está finalizado." if pedido.estado == "entregado" else "Se añadirán a tu saldo cuando el equipo marque el pedido como entregado." }}</p>
     </div>
   </div>
   {% endif %}
 
   {# ── BIZUM: instrucciones si aplica ── #}
   {% if pedido.metodo_pago == 'bizum' %}
-  <div class="ox-card p-4 mb-4 order-payment-card">
+  <div class="ox-card p-4 mb-4 order-payment-card" data-order-payment-instructions {% if presentation.payment_confirmed or pedido.estado in ("cancelado", "entregado") %}hidden{% endif %}>
     <p class="font-black mb-2 order-payment-title">📱 Pago con Bizum</p>
     <p class="text-sm" style="color:var(--col-muted)">
-      El repartidor confirmará el pago al entregar tu pedido y después te pedirá el código de entrega.
-      {% if brand.bizum_telefono %}Envía el Bizum a <strong style="color:var(--col-text)">{{ brand.bizum_telefono }}</strong>.{% endif %}
+      {{ 'El repartidor verificará el pago al entregar tu pedido.' if pedido.tipo_entrega_cliente == 'delivery' else 'El equipo verificará el pago en la recogida.' }}
+      {% if brand.bizum_telefono %}Cuando recibas o recojas el pedido, envía el Bizum a <strong style="color:var(--col-text)">{{ brand.bizum_telefono }}</strong>. No pagues por adelantado.{% endif %}
     </p>
   </div>
   {% endif %}
@@ -230,7 +239,7 @@
     <span class="order-notify-icon" aria-hidden="true">🔔</span>
     <div>
       <h2 id="order-notify-title">Sigue el pedido sin estar mirando la pantalla</h2>
-      <p>Activa los avisos para saber cuándo entra en preparación, queda listo, sale con reparto o responde un agente en el chat. Solo recibirás novedades vinculadas a tu cuenta en este dispositivo.</p>
+      <p>Activa los avisos para saber cuándo entra en preparación, {{ "queda listo o sale con reparto" if presentation.requires_delivery else "ya puedes recogerlo en el negocio" }} o responde un agente en el chat. Solo recibirás novedades vinculadas a tu cuenta en este dispositivo.</p>
       <button type="button" data-push-activate>Activar avisos del pedido</button>
       <small>En iPhone debes abrir la app instalada desde la pantalla de inicio. Puedes desactivarlos cuando quieras.</small>
     </div>
@@ -248,7 +257,6 @@
     <form method="post" action="{{ url_for('public.cancelar_pedido_web', pedido_id=pedido.id) }}"
           data-confirm="¿Cancelar este pedido? Se liberarán productos, cupones y cafecitos asociados.">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="token" value="{{ pedido_token }}">
       <button type="submit" class="order-action order-action--cancel">Cancelar pedido</button>
     </form>
     {% elif pedido.estado not in ('entregado', 'cancelado') %}

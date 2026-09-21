@@ -5,7 +5,7 @@
 <div class="flex items-center justify-between gap-3 mb-6 flex-wrap">
   <a href="{{ url_for('marketing.dashboard') }}" class="ox-btn-ghost text-sm">← Volver</a>
   <div class="flex-1">
-    <h1 class="text-xl font-extrabold" style="color:var(--col-text)">☕ {{ loyalty_terms.name }}</h1>
+    <h1 class="text-xl font-extrabold" style="color:var(--col-text)">{{ loyalty_terms.emoji }} {{ loyalty_terms.name }}</h1>
     <p class="text-xs mt-0.5" style="color:var(--col-muted)">Configura recompensas y controla los movimientos del programa.</p>
   </div>
   <a href="{{ url_for('superadmin.config') }}#puntos" class="ox-btn-secondary text-sm">⚙️ Configurar reglas y nombre</a>

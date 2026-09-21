@@ -42,6 +42,50 @@ class CanjeSoloCanjeTest(unittest.TestCase):
         db.drop_all()
         self.ctx.pop()
 
+    def test_otp_rejects_malformed_json_without_server_error(self):
+        with patch("routes.public._feature_enabled", return_value=True):
+            for payload in (["invalid"], {"telefono": 123}, {"telefono": None}):
+                for endpoint in ("solicitar-codigo", "verificar-codigo"):
+                    with self.subTest(payload=payload, endpoint=endpoint):
+                        response = self.client.post("/puntos/" + endpoint, json=payload)
+                        self.assertLess(response.status_code, 500)
+                        self.assertFalse(response.get_json()["ok"])
+
+    def test_otp_resend_interval_comes_from_configuration(self):
+        from models import SiteConfig
+        SiteConfig.set("OTP_MIN_RESEND_SECONDS", "95")
+        with patch("routes.public._feature_enabled", return_value=True), patch(
+            "routes.public.buscar_cliente_por_telefono", return_value=(None, None)
+        ):
+            response = self.client.post("/puntos/solicitar-codigo", json={"telefono": "+34900000000"})
+        self.assertEqual(response.get_json()["resend_seconds"], 95)
+        self.assertIn("no-store", response.headers["Cache-Control"])
+
+    def test_balance_verified_on_web_without_cart_or_whatsapp_balance(self):
+        from models import utcnow
+        customer = User(nombre="Cliente QA", email="balance@example.test", rol="cliente", telefono="+34900000000", puntos=150)
+        customer.set_password("qa-only")
+        db.session.add(customer)
+        code = customer.generar_cod_puntos()
+        db.session.commit()
+        with patch("routes.public._feature_enabled", return_value=True):
+            response = self.client.post("/puntos/verificar-saldo", json={"telefono": customer.telefono, "codigo": code})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.get_json()["puntos"], 150)
+            self.assertIn("no-store", response.headers["Cache-Control"])
+            second = self.client.post("/puntos/verificar-saldo", json={"telefono": customer.telefono, "codigo": code})
+            self.assertEqual(second.status_code, 400)
+        self.assertEqual(customer.puntos, 150)
+        with self.client.session_transaction() as session:
+            self.assertNotIn("cart_producto_canje_id", session)
+
+    def test_legacy_balance_route_does_not_promise_whatsapp_message(self):
+        with patch("routes.public.enviar_saldo_puntos") as send:
+            response = self.client.post("/puntos/consultar-saldo", json={"telefono": "+34900000000"})
+        self.assertEqual(response.status_code, 410)
+        self.assertEqual(response.get_json()["url"], "/club")
+        send.assert_not_called()
+
     def _producto_solo_canje(self, puntos=200):
         # solo_canje IMPLICA precio=0 y canjeable_con_puntos=True.
         # Simulamos la salida esperada de _parse_producto_form (admin.py:2002-2004).

@@ -136,3 +136,12 @@ Requieren refactor mayor y se dejan documentadas:
   ventana de 30s de idempotency), fuera del alcance de SiteConfig por diseño.
 - **Cap `1..168h` de `DELIVERY_CODE_TTL_HOURS`**: sigue duro en código; podría
   moverse a dos claves `MIN`/`MAX` pero no aporta valor operativo.
+
+
+### Acceso privado de clientes
+
+`ACCESO_CLIENTES_REGISTRADOS` (`0` por defecto; `0`/`1`, solo superadmin):
+restringe la tienda a clientes activos registrados que verifiquen su teléfono
+mediante OTP de WhatsApp. No crea clientes desde el acceso. Se administra en
+Configuración → Operación y usa el panel de Clientes para altas y bloqueos.
+Los pedidos existentes conservan su autorización de seguimiento independiente.

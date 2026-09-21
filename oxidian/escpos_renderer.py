@@ -19,7 +19,9 @@ sencilla por palabras.
 """
 from __future__ import annotations
 
+import re
 from decimal import Decimal
+from ticket_presentation import combo_ticket_lines
 from typing import Iterable
 
 from escpos.printer import Dummy
@@ -79,7 +81,12 @@ def _sep_dashes(cols: int = COLS_FONT_A) -> str:
 def render_ticket(pedido, es_reimpresion: bool = False, brand=None, ui=None) -> bytes:
     """Devuelve los bytes ESC/POS listos para enviar al puerto OUT de la
     impresora térmica. No abre ningún dispositivo — es ``Dummy`` puro."""
-    p = Dummy()
+    class TicketPrinter(Dummy):
+        def text(self, txt):
+            # Las notas del cliente no pueden convertirse en comandos ESC/POS.
+            return super().text(re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", str(txt)))
+
+    p = TicketPrinter()
     cols = COLS_FONT_A
 
     # ── Inicialización + charset latino ────────────────────────────────
@@ -104,13 +111,13 @@ def render_ticket(pedido, es_reimpresion: bool = False, brand=None, ui=None) -> 
     p.set(align="center", bold=True, width=1, height=1)
     nombre_marca = (
         (brand.get("nombre") if isinstance(brand, dict) else None)
-        or "EL PARCERITO"
+        or "Tienda"
     )
     p.text(f"{nombre_marca}\n")
     p.set(bold=False)
     ciudad = (
         (brand.get("ciudad") if isinstance(brand, dict) else None)
-        or "Carmona, Sevilla"
+        or ""
     )
     if ciudad:
         p.text(f"{ciudad}\n")
@@ -144,7 +151,8 @@ def render_ticket(pedido, es_reimpresion: bool = False, brand=None, ui=None) -> 
     # (Font A base = 3 mm). Para números tipo "#1006" (5 chars a 60 dots
     # cada uno = 300 dots) cabe holgadamente en los 384 dots útiles del
     # cabezal ZJ-58 (48 mm).
-    p.set(align="center", bold=True, custom_size=True, width=5, height=5)
+    number_width = max(1, min(5, cols // max(1, len(str(pedido.numero_pedido)))))
+    p.set(align="center", bold=True, custom_size=True, width=number_width, height=3)
     p.text(f"{pedido.numero_pedido}\n")
     p.set(align="center", custom_size=True, width=1, height=1, bold=False)
     try:
@@ -189,7 +197,9 @@ def render_ticket(pedido, es_reimpresion: bool = False, brand=None, ui=None) -> 
     # ── Items ──────────────────────────────────────────────────────────
     p.set(align="left")
     for item in getattr(pedido, "items", []) or []:
-        nombre = getattr(getattr(item, "producto", None), "nombre", "?") or "?"
+        nombre = getattr(item, "display_nombre", None)
+        if nombre is None:
+            nombre = getattr(getattr(item, "producto", None), "nombre", "?") or "?"
         cantidad = int(getattr(item, "cantidad", 1) or 1)
         subtotal = _fmt_money(getattr(item, "subtotal", 0))
         precio_unit = _fmt_money(getattr(item, "precio_unit", 0))
@@ -230,6 +240,17 @@ def render_ticket(pedido, es_reimpresion: bool = False, brand=None, ui=None) -> 
             )
             for linea in _wrap(f"  Extras: {nombres}", cols):
                 p.text(linea + "\n")
+        combo_lines = combo_ticket_lines(item)
+        if combo_lines:
+            p.text("  Composición por combo:\n")
+            for detail in combo_lines:
+                for line in _wrap(detail, cols):
+                    p.text(line + "\n")
+        allergens = getattr(item, "display_alergenos", []) or []
+        if allergens:
+            labels = [str(a.get('label') or a.get('code') or '') if isinstance(a, dict) else str(a) for a in allergens]
+            for line in _wrap('ALERGENOS: ' + ', '.join(labels), cols):
+                p.text(line + "\n")
         if getattr(item, "notas", None):
             for linea in _wrap(f"  Nota: {item.notas}", cols):
                 p.set(bold=True)
@@ -261,7 +282,7 @@ def render_ticket(pedido, es_reimpresion: bool = False, brand=None, ui=None) -> 
     p.set(align="left", bold=True, custom_size=True, width=1, height=2)
     p.text(_line_row("PAGO", metodo, cols) + "\n")
     p.set(align="left", custom_size=True, width=1, height=1, bold=False)
-    if metodo == "BIZUM":
+    if metodo:
         confirmado = bool(getattr(pedido, "pago_confirmado", False))
         p.text(
             "Estado: "
@@ -272,12 +293,18 @@ def render_ticket(pedido, es_reimpresion: bool = False, brand=None, ui=None) -> 
 
     # ── Puntos ganados ─────────────────────────────────────────────────
     puntos_g = getattr(pedido, "puntos_ganados", 0) or 0
-    if brand and (brand.get("puntos") if isinstance(brand, dict) else False) and puntos_g > 0:
+    if brand and (brand.get("puntos") if isinstance(brand, dict) else False) and puntos_g > 0 and pedido.estado != "cancelado":
         p.set(align="center", bold=True)
         unit = (ui.get("loyalty_unit_plural") if isinstance(ui, dict) else None) or "puntos"
-        p.text(f"+{puntos_g} {unit} Club\n")
+        status = "Acumulados" if pedido.estado == "entregado" else "Al entregar"
+        p.text(f"{status}: {puntos_g} {unit}\n")
         p.set(bold=False)
         p.text(_sep_dashes(cols) + "\n")
+
+    used = getattr(pedido, "puntos_usados", 0) or 0
+    if used:
+        unit = (ui.get("loyalty_unit_plural") if isinstance(ui, dict) else None) or "puntos"
+        p.text(f"Canje: {used} {unit}\n")
 
     # ── Notas del pedido ───────────────────────────────────────────────
     if getattr(pedido, "notas", None):

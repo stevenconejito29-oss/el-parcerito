@@ -30,6 +30,8 @@ const PRECACHE = [
   "/static/css/pwa-native.css",
   "/static/css/storefront-menu.css",
   "/static/css/storefront-cart.css",
+  "/static/css/storefront-polish.css",
+  "/static/css/system-foundation.css",
   "/static/css/header-modern.css",
   "/static/css/heritage.css",
   "/static/css/web-chat-page.css",
@@ -51,7 +53,6 @@ const PRECACHE = [
   "/static/js/web-chat-page.js",
   "/static/js/operational-roles.js",
   "/static/colombia-pattern.svg",
-  "/static/coffee-burlap-texture-v4.webp",
   "/static/favicon-32.png",
   "/static/favicon-64.png",
   `/static/pwa-icon.svg?v=${APP_VERSION}`,
@@ -72,6 +73,7 @@ function isNetworkOnly(pathname) {
     pathname.startsWith("/staff") ||
     pathname.startsWith("/pos") ||
     pathname.startsWith("/auth") ||
+    pathname.startsWith("/acceso") ||
     pathname.startsWith("/marketing") ||
     pathname.startsWith("/carrito") ||
     pathname.startsWith("/checkout") ||
@@ -236,9 +238,12 @@ async function networkFirstHtml(request) {
       fetch(request, { cache: "no-store" }),
       NETWORK_TIMEOUT_MS,
     );
-    if (response && response.ok && response.type === "basic") {
+    if (canStore(response) && !response.redirected) {
       try { await cache.put(request, response.clone()); } catch (_) {}
       trimCache(cache, 30).catch(() => {});
+    } else {
+      // Retirar cualquier catálogo guardado antes de activar el acceso privado.
+      await cache.delete(request);
     }
     return response;
   } catch (_) {

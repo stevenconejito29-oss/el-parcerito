@@ -56,7 +56,8 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn('class="rider-now"', route)
         self.assertIn("scroll-snap-type:x mandatory", kitchen_css)
         self.assertIn(".route-board.has-active-route .route-lane--ready{display:none", rider_css)
-        self.assertIn("if(!response.ok)throw new Error", kitchen)
+        self.assertIn("js/preparation-slots.js", kitchen)
+        self.assertIn("js/preparation-checklist.js", kitchen)
 
     def test_loyalty_configuration_is_grouped_with_the_reward_catalog(self):
         config = (ROOT / "templates" / "superadmin" / "config.html").read_text(encoding="utf-8")
@@ -64,7 +65,7 @@ class FrontendContractsTest(unittest.TestCase):
         route = (ROOT / "routes" / "superadmin.py").read_text(encoding="utf-8")
         service = (ROOT / "services.py").read_text(encoding="utf-8")
 
-        for key in ("UI_LOYALTY_NAME", "UI_LOYALTY_UNIT", "UI_LOYALTY_UNIT_PLURAL", "PUNTOS_MIN_COMPRA_EUR"):
+        for key in ("UI_LOYALTY_NAME", "UI_LOYALTY_UNIT", "UI_LOYALTY_UNIT_PLURAL", "UI_LOYALTY_ICON", "UI_LOYALTY_EMOJI", "PUNTOS_MIN_COMPRA_EUR"):
             self.assertIn(key, config)
             self.assertIn(key, route)
         self.assertIn("productos canjeables", config)
@@ -125,7 +126,7 @@ class FrontendContractsTest(unittest.TestCase):
 
         self.assertNotIn("📌 Reservar", kitchen)
         self.assertIn("data-ready-button disabled", kitchen)
-        self.assertIn("items.every(item => item.checked)", kitchen)
+        self.assertIn("js/preparation-checklist.js", kitchen)
         self.assertNotIn("Tomar seleccionados", rider)
         self.assertNotIn("1. Reservar este pedido", rider)
         self.assertIn("Tomar pedido y salir", rider)
@@ -244,7 +245,7 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("/preparador/impresora", thermal)
         self.assertIn("device_id: dev.id", thermal)
         self.assertIn("navigator.bluetooth.getDevices", thermal)
-        self.assertIn("[data-pair-thermal=\"bt\"]", roles)
+        self.assertIn("[data-pair-thermal]", roles)
 
     def test_operational_themes_and_rider_tracking_are_real_modes(self):
         styles = (ROOT / "static" / "css" / "employee-app.css").read_text(encoding="utf-8")
@@ -263,7 +264,7 @@ class FrontendContractsTest(unittest.TestCase):
         template = (ROOT / "templates" / "public" / "pedido_confirmado.html").read_text(encoding="utf-8")
         styles = (ROOT / "static" / "css" / "order-confirmation.css").read_text(encoding="utf-8")
 
-        self.assertIn('requiere_confirmacion_whatsapp=(pedido.confirmacion_estado == "pending")', route)
+        self.assertIn('requiere_confirmacion_whatsapp=order_presentation(pedido)["confirmation_pending"]', route)
         self.assertIn("{% if requiere_confirmacion_whatsapp %}", template)
         self.assertIn("Confirma el pedido desde tu WhatsApp", template)
         self.assertIn("hasta entonces el pedido queda protegido", template)
@@ -574,7 +575,7 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
         self.assertNotIn("countdown", card.lower())
 
-    def test_public_pwa_uses_the_optimized_coffee_burlap_texture(self):
+    def test_legacy_texture_remains_available_for_compatibility(self):
         styles = (ROOT / "static" / "css" / "pwa-native.css").read_text(encoding="utf-8")
         texture = ROOT / "static" / "coffee-burlap-texture-v4.webp"
 
@@ -617,7 +618,8 @@ class FrontendContractsTest(unittest.TestCase):
         self.assertIn("/orders/${button.dataset.orderId}/cancel", script)
         self.assertIn("window.confirm", script)
         self.assertIn("with_for_update", service)
-        self.assertIn("guest_order_tokens", service)
+        self.assertIn("from order_access import visitor_order_tokens", service)
+        self.assertIn("guest_order_tokens", (ROOT / "order_access.py").read_text(encoding="utf-8"))
         bot_path = ROOT.parent / "chat" / "bot.js"
         if not bot_path.exists():
             bot_path = ROOT / "chat" / "bot.js"

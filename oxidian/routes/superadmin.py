@@ -264,6 +264,8 @@ PUBLIC_UI_FIELDS = [
     ("UI_LOYALTY_UNIT", "Fidelidad · unidad singular"),
     ("UI_LOYALTY_UNIT_PLURAL", "Fidelidad · unidad plural"),
     ("UI_LOYALTY_TAGLINE", "Fidelidad · mensaje emocional"),
+    ("UI_LOYALTY_ICON", "Fidelidad · icono (grano/estrella/corazon/monedas/sello/medalla)"),
+    ("UI_LOYALTY_EMOJI", "Fidelidad · emoji para WhatsApp y textos"),
     ("UI_PWA_DESCRIPTION", "PWA · descripción de instalación"),
     ("UI_PWA_IOS_INSTRUCTION", "PWA · instrucción para iOS"),
     ("UI_PWA_INSTALL", "PWA · instalar"),
@@ -337,13 +339,14 @@ CONFIG_SECTION_KEYS = {
     "operacion-horario": {
         "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON", "HORARIO_MODO",
         "TIENDA_FORZAR_CERRADA",
-        "TIENDA_MENSAJE_CIERRE", "PREAPERTURA_ACTIVA",
+        "TIENDA_MENSAJE_CIERRE", "PREAPERTURA_ACTIVA", "ACCESO_CLIENTES_REGISTRADOS",
         "PREAPERTURA_TITULO", "PREAPERTURA_MENSAJE",
     },
     "operacion-pagos": {"EFECTIVO_HABILITADO", "BIZUM_HABILITADO", "TARJETA_HABILITADA"},
     "operacion-modo": {
         "MODO_TIENDA", "TIPO_TIENDA",
         "FEATURE_DELIVERY", "FEATURE_RECOGIDA",
+        "delivery_inmediato_activo", "delivery_franjas_activo",
         "FEATURE_PEDIDOS_PROGRAMADOS", "FEATURE_PUNTOS",
         "SERVICE_COMMISSION_PCT",
     },
@@ -357,10 +360,18 @@ CONFIG_SECTION_KEYS = {
         "PUNTOS_POR_EURO", "PUNTOS_MIN_COMPRA_EUR",
         "UI_LOYALTY_NAME", "UI_LOYALTY_NAV_LABEL",
         "UI_LOYALTY_UNIT", "UI_LOYALTY_UNIT_PLURAL", "UI_LOYALTY_TAGLINE",
+        "UI_LOYALTY_ICON", "UI_LOYALTY_EMOJI",
     },
     "integraciones": {
         "BOT_API_URL", "BOT_OXIDIAN_URL", "EVOLUTION_API_URL",
         "EVOLUTION_INSTANCE",
+    },
+    "notificaciones-cliente": {
+        "notif_gate_activo",
+        "notif_ventana_wa_horas",
+        "notif_canales_por_evento",
+        "delivery_notificar_camino_texto",
+        "delivery_franjas_notificar_puerta_texto",
     },
     "avanzado": {
         "CART_MAX_QTY", "COMBO_MIN_COMPONENTS", "COMBO_MAX_COMPONENTS",
@@ -394,6 +405,68 @@ def _valid_url(value, required=False, allow_internal=True):
     if not allow_internal and "." not in hostname and hostname not in ("localhost",):
         return False, value
     return True, value
+
+
+@superadmin_bp.route("/modo-reparto/switch", methods=["POST"])
+@login_required
+def modo_reparto_switch():
+    """Intercambia atómicamente entre delivery inmediato ↔ franjas.
+
+    Mutex: al activar uno, el otro queda apagado. Requiere super_admin
+    por ser una clave soberana del modelo comercial.
+    """
+    if current_user.rol not in ("super_admin", "admin"):
+        return "Sin permiso", 403
+    _in = str(SiteConfig.get("delivery_inmediato_activo", "1")).strip() in ("1", "true", "True")
+    if _in:
+        # Actualmente inmediato → cambiar a franjas
+        SiteConfig.set("delivery_inmediato_activo", "0", user_id=current_user.id,
+                       descripcion="switch mutex → franjas")
+        SiteConfig.set("delivery_franjas_activo", "1", user_id=current_user.id,
+                       descripcion="switch mutex ← inmediato")
+        mensaje = "Ahora el reparto va por franjas. Los clientes eligen del calendario."
+    else:
+        SiteConfig.set("delivery_franjas_activo", "0", user_id=current_user.id,
+                       descripcion="switch mutex → inmediato")
+        SiteConfig.set("delivery_inmediato_activo", "1", user_id=current_user.id,
+                       descripcion="switch mutex ← franjas")
+        mensaje = "Ahora el reparto va inmediato. Cada pedido sale cuando esté listo."
+    try:
+        db.session.commit()
+        AuditLog.registrar(current_user.id, "modo_reparto_switch", "site_config",
+                           detalle=mensaje, ip=request.remote_addr)
+        db.session.commit()
+        flash(mensaje, "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Error al cambiar modo: {exc}", "danger")
+    return redirect(request.referrer or url_for("superadmin.config"))
+
+
+@superadmin_bp.route("/sw-reset")
+@login_required
+def sw_reset():
+    # Endpoint destructivo (Clear-Site-Data purga cookies+storage+SW).
+    # Restringido a admin/super_admin: sin guard, cualquier
+    # <img src="/superadmin/sw-reset"> en un correo o página tercera bastaría
+    # para desloguear al visitante y borrar su PWA. Los clientes que necesiten
+    # limpiar caché lo hacen desde el propio prompt del SW.
+    if not _es_super_o_admin(current_user):
+        from flask import abort as _abort
+        _abort(403)
+    from flask import make_response
+    resp = make_response(render_template("sw_reset.html"))
+    # Clear-Site-Data instruye al navegador a purgar CACHE + STORAGE + SW
+    # de este origen. Complementa el JS del template — algunos navegadores
+    # ignoran el header pero ejecutan el JS y viceversa.
+    resp.headers["Clear-Site-Data"] = '"cache", "storage", "cookies"'
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+def _sw_reset_LEGACY():
+    """deprecated — reemplazado por sw_reset() arriba con Clear-Site-Data."""
+    return None
 
 
 @superadmin_bp.route("/combos/nuevo")
@@ -451,7 +524,7 @@ def _validar_config_value(clave, valor):
     if clave in {
         "VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA",
         "TIENDA_FORZAR_CERRADA", "BIZUM_HABILITADO", "EFECTIVO_HABILITADO", "TARJETA_HABILITADA",
-        "PREAPERTURA_ACTIVA",
+        "PREAPERTURA_ACTIVA", "ACCESO_CLIENTES_REGISTRADOS",
         "FEATURE_DELIVERY", "FEATURE_RECOGIDA", "FEATURE_PEDIDOS_PROGRAMADOS",
         "FEATURE_PUNTOS",
     }:
@@ -463,6 +536,16 @@ def _validar_config_value(clave, valor):
         if valor not in {"propia", "bar_servicio"}:
             return False, clave, valor, "Modo de tienda no válido."
         return True, clave, valor, None
+
+    if clave == "UI_LOYALTY_ICON":
+        from store_config import LOYALTY_ICON_KEYS, normalize_loyalty_icon
+        if valor and valor not in LOYALTY_ICON_KEYS:
+            return False, clave, valor, "Icono de fidelidad no válido."
+        return True, clave, normalize_loyalty_icon(valor or "grano"), None
+
+    if clave == "UI_LOYALTY_EMOJI":
+        from store_config import normalize_loyalty_emoji
+        return True, clave, normalize_loyalty_emoji(valor), None
 
     if clave == "HORARIO_MODO":
         if valor not in {"semanal", "24h"}:
@@ -518,7 +601,7 @@ def _validar_config_value(clave, valor):
         except (TypeError, ValueError):
             label = "La comisión" if clave == "SERVICE_COMMISSION_PCT" else "El descuento máximo"
             return False, clave, valor, f"{label} debe ser numérico."
-        if numero < 0 or numero > 100:
+        if not 0 <= numero <= 100:
             label = "La comisión" if clave == "SERVICE_COMMISSION_PCT" else "El descuento máximo"
             return False, clave, valor, f"{label} debe estar entre 0 y 100."
         return True, clave, f"{numero:g}", None
@@ -1837,6 +1920,28 @@ def guardar_config():
         if SiteConfig.get(otra, "1") == "0":
             flash("Debe quedar habilitado delivery o recogida.", "danger")
             return redirect(url_for("superadmin.config"))
+    if clave in {"delivery_inmediato_activo", "delivery_franjas_activo"}:
+        otra = (
+            "delivery_franjas_activo"
+            if clave == "delivery_inmediato_activo"
+            else "delivery_inmediato_activo"
+        )
+        otra_actual = str(SiteConfig.get(otra, "0")).strip() in ("1", "true", "True")
+        if valor == "0" and not otra_actual:
+            flash(
+                "Debe quedar activo un método de reparto: inmediato o por franjas.",
+                "danger",
+            )
+            return redirect(url_for("superadmin.config"))
+        # Mutex: al activar uno, el otro se apaga automáticamente. Los dos
+        # métodos NO pueden coexistir — el flujo del cliente sería confuso.
+        if valor == "1" and otra_actual:
+            SiteConfig.set(otra, "0", user_id=current_user.id,
+                          descripcion=f"apagado automático por mutex al activar {clave}")
+            flash(
+                f"Se apagó «{otra}» automáticamente. Solo puede haber un método de reparto activo.",
+                "info",
+            )
     SiteConfig.set(clave, valor, user_id=current_user.id, descripcion=descripcion)
     es_secreto = any(token in clave for token in ("KEY", "SECRET", "PASSWORD", "TOKEN"))
     valor_auditado = "<redacted>" if es_secreto else valor
@@ -1914,6 +2019,18 @@ def guardar_config_seccion():
     ):
         flash("Debe quedar habilitado delivery o recogida.", "danger")
         return redirect(url_for("superadmin.config", section=parent_section))
+    if section == "operacion-modo" and propuestos.get("FEATURE_DELIVERY", "1") == "1":
+        _inm = str(propuestos.get("delivery_inmediato_activo", "1")).strip() in ("1", "true", "True")
+        _fra = str(propuestos.get("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+        if not _inm and not _fra:
+            flash("Debe quedar activo un método de reparto: inmediato o por franjas.", "danger")
+            return redirect(url_for("superadmin.config", section=parent_section))
+        if _inm and _fra:
+            flash(
+                "No puedes tener los dos métodos activos a la vez. Elige uno: inmediato o por franjas.",
+                "danger",
+            )
+            return redirect(url_for("superadmin.config", section=parent_section))
     if (
         section == "operacion-horario"
         and not propuestos.get("HORARIO_SEMANAL_JSON")
@@ -2633,7 +2750,8 @@ def toggle_zona(zona_id):
 @superadmin_bp.route("/pl")
 @superadmin_required
 def pl():
-    hoy = date.today()
+    from business_time import business_today
+    hoy = business_today()
     primer_dia = hoy.replace(day=1)
     ultimo_dia = hoy.replace(day=monthrange(hoy.year, hoy.month)[1])
 
@@ -3176,3 +3294,114 @@ def chatbot_simulador():
         }
     return render_template("superadmin/chatbot_simulador.html",
                            texto=texto, audiencia=audiencia, resultado=resultado)
+
+
+# ─── FRANJAS EN VIVO (Dashboard superadmin) ──────────────────────────
+# Fundador (2026-08-18): quiere ver el estado de todas las franjas de hoy
+# en una sola pantalla con auto-refresh. Sin JS: <meta refresh> cada 30s.
+# Query única con case()/count() para evitar N+1 por franja.
+# ─────────────────────────────────────────────────────────────────────
+def _es_super_o_admin(user) -> bool:
+    return getattr(user, "rol", None) in ("super_admin", "admin")
+
+
+@superadmin_bp.route("/franjas/live", methods=["GET"])
+@login_required
+def franjas_live():
+    if not _es_super_o_admin(current_user):
+        flash("Acceso restringido a administradores.", "danger")
+        return redirect(url_for("public.index"))
+
+    from sqlalchemy import case as _case
+    from models import DeliverySlot as _DS
+    from datetime import datetime as _dt
+
+    hoy = date.today()
+    subq = (
+        db.session.query(
+            Order.slot_id.label("slot_id"),
+            func.count(_case((Order.estado == "pendiente", 1))).label("pendientes"),
+            func.count(_case((Order.estado == "armando", 1))).label("armando"),
+            func.count(_case((Order.estado == "listo", 1))).label("listos"),
+            func.count(_case((Order.estado == "en_ruta", 1))).label("en_ruta"),
+            func.count(_case((Order.estado == "entregado", 1))).label("entregados"),
+            func.count(Order.id).label("total"),
+        )
+        .filter(Order.slot_id.isnot(None), Order.estado != "cancelado")
+        .group_by(Order.slot_id)
+        .subquery()
+    )
+    rows = (
+        db.session.query(_DS, subq)
+        .outerjoin(subq, _DS.id == subq.c.slot_id)
+        .filter(_DS.fecha == hoy, _DS.activo == True)  # noqa: E712
+        .order_by(_DS.hora_inicio)
+        .all()
+    )
+    ahora = _dt.now()
+    tarjetas = []
+    for r in rows:
+        s = r[0]
+        pendientes = int(r.pendientes or 0)
+        armando = int(r.armando or 0)
+        listos = int(r.listos or 0)
+        en_ruta = int(r.en_ruta or 0)
+        entregados = int(r.entregados or 0)
+        total = int(r.total or 0)
+        pct = int((entregados * 100 / total)) if total else 0
+        inicio_dt = _dt.combine(s.fecha, s.hora_inicio)
+        fin_dt = _dt.combine(s.fecha, s.hora_fin)
+        if ahora < inicio_dt:
+            estado_franja = "proxima"
+            minutos = int((inicio_dt - ahora).total_seconds() // 60)
+        elif ahora <= fin_dt:
+            estado_franja = "en_curso"
+            minutos = int((fin_dt - ahora).total_seconds() // 60)
+        else:
+            estado_franja = "cerrada"
+            minutos = int((ahora - fin_dt).total_seconds() // 60)
+        tarjetas.append({
+            "slot": s,
+            "total": total,
+            "pendientes": pendientes,
+            "armando": armando,
+            "listos": listos,
+            "en_ruta": en_ruta,
+            "entregados": entregados,
+            "pct": pct,
+            "estado_franja": estado_franja,
+            "minutos": minutos,
+        })
+    return render_template(
+        "superadmin/franjas_live.html",
+        tarjetas=tarjetas,
+        hoy=hoy,
+        ahora=ahora,
+    )
+
+
+@superadmin_bp.route("/franjas/live/<int:slot_id>", methods=["GET"])
+@login_required
+def franjas_live_detalle(slot_id):
+    if not _es_super_o_admin(current_user):
+        flash("Acceso restringido a administradores.", "danger")
+        return redirect(url_for("public.index"))
+    from models import DeliverySlot as _DS
+    from sqlalchemy.orm import joinedload as _joinedload
+
+    slot = get_or_404(_DS, slot_id)
+    pedidos = (
+        Order.query
+        .options(
+            _joinedload(Order.cliente),
+            _joinedload(Order.zona),
+        )
+        .filter(Order.slot_id == slot.id, Order.estado != "cancelado")
+        .order_by(Order.creado_en)
+        .all()
+    )
+    return render_template(
+        "superadmin/franjas_live_detalle.html",
+        slot=slot,
+        pedidos=pedidos,
+    )

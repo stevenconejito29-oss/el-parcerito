@@ -39,6 +39,17 @@ class SuperadminConfigTest(unittest.TestCase):
         self.assertEqual(response.get_data(as_text=True), "database-page")
         _render.assert_called_once()
 
+    @patch("routes.superadmin.render_template", return_value="finance-page")
+    @patch("services.calcular_pl", return_value={})
+    @patch("business_time.business_today")
+    def test_financial_default_period_uses_business_date(self, today, calculate, render):
+        from datetime import date
+        today.return_value = date(2026, 2, 1)
+        response = self.client.get("/superadmin/pl")
+        self.assertEqual(response.status_code, 200)
+        calculate.assert_called_once_with(date(2026, 2, 1), date(2026, 2, 28))
+        self.assertEqual(render.call_args.kwargs["hoy_iso"], "2026-02-01")
+
     def test_section_parser_only_accepts_declared_present_fields(self):
         form = MultiDict([
             ("section", "tienda-colores"),

@@ -1,0 +1,221 @@
+/* Acabado público compartido: misma jerarquía en navegador y PWA.
+   Los !important neutralizan los acabados legacy de pwa-native, sin alterar
+   display, posición ni estados de los controles. Colores editables de tienda. */
+html:has(body.ox-body-public) {
+  background: var(--theme-bg, #fbf7ee) !important;
+}
+html body.ox-body-public {
+  --store-line: color-mix(in srgb, var(--theme-text) 14%, var(--theme-surface));
+  --store-shadow: 0 3px 12px color-mix(in srgb, var(--theme-text) 7%, transparent);
+  background: var(--theme-bg) !important;
+}
+html body.ox-body-public::before { content: none; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public {
+  background-image: none !important;
+  background-color: var(--theme-bg) !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.ep-hero, .ep-search-wrap, .ep-cats-wrapper, .ep-grid .ep-card, .ep-mc-dest-card, .cr-item, .cr-summary, .wcp-conversation, .checkout-layout .ox-card) {
+  border-radius: 1rem !important;
+  box-shadow: var(--store-shadow) !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.ep-grid .ep-card, .ep-mc-dest-card, .cr-item, .cr-summary, .wcp-conversation, .checkout-layout .ox-card) {
+  background: var(--theme-surface) !important;
+  border: 1px solid var(--store-line) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-hero:not(.ep-hero-photo) {
+  background: var(--theme-header-bg) !important;
+  padding-block: 1.25rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-cats-wrapper {
+  position: relative;
+  top: auto;
+  touch-action: auto;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-cats { touch-action: auto; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-hero:not(.ep-hero-photo) .ep-hero-inner { min-height: 0; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-search-wrap {
+  background: var(--theme-surface) !important;
+  border: 1px solid var(--store-line);
+  padding: .75rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.ep-search-heading strong, .ep-search-state) { color: var(--theme-text); }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-search-heading small { color: var(--theme-muted); }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-search-box {
+  background: var(--theme-bg) !important;
+  border: 1px solid var(--store-line);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-search-submit {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-search-submit span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-search-submit b { font-size: 1.05rem; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-search-submit::after { content: none; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.ep-mini-head, .ep-section-head, .ep-cat-title, .ep-banner-head, .ep-cats-wrapper) {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-cat {
+  min-height: 44px;
+  border: 1px solid var(--store-line);
+  background: var(--theme-surface);
+  box-shadow: none !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-cat.ep-cat-on {
+  background: color-mix(in srgb, var(--brand-primary) 16%, var(--theme-surface));
+  border-color: var(--brand-primary);
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-img {
+  background: var(--theme-surface-alt) !important;
+  aspect-ratio: 1.25;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-body { padding: .75rem !important; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-card-name { font-size: .95rem !important; line-height: 1.35 !important; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-card-desc { font-size: .8rem !important; line-height: 1.45; -webkit-line-clamp: 2; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.ep-btn-add, .ep-btn-detail, .cr-qty-btn, .cr-back) { min-width: 44px; min-height: 44px; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.ep-btn-add, .ep-btn-detail, .ep-search-submit, .cr-cta:not(.cr-cta--disabled)) {
+  background: var(--action-primary) !important;
+  color: var(--action-on-primary) !important;
+  border-radius: .75rem !important;
+  box-shadow: none !important;
+  clip-path: none;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .cr-colombia-shell::before { opacity: .035; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.cr-header, .cr-steps) {
+  background: var(--theme-surface);
+  border-radius: 1rem;
+  box-shadow: none;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.cr-total-label, .cr-total-val) {
+  color: var(--theme-text) !important;
+  -webkit-text-fill-color: var(--theme-text) !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.cr-memory-note, .checkout-memory) {
+  background: color-mix(in srgb, var(--brand-primary) 7%, var(--theme-surface));
+  box-shadow: none;
+  line-height: 1.5;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ox-bottom-nav.ox-bnav-v2 {
+  background: var(--navigation-bg, var(--theme-header-bg)) !important;
+  box-shadow: 0 4px 18px color-mix(in srgb, var(--theme-text) 14%, transparent) !important;
+  border: 1px solid var(--store-line) !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ox-bottom-nav.ox-bnav-v2::before { opacity: 0; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ox-bnav-v2 .ox-bnav-item {
+  box-shadow: none !important;
+  border-radius: .85rem !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ox-bnav-v2 .ox-bnav-item.is-active {
+  background: var(--navigation-active) !important;
+  transform: none;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.wcp-head, .wcp-message) { box-shadow: none; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .wcp-messages { background: var(--theme-bg); }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .wcp-message { font-size: .9375rem; line-height: 1.5; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .wcp-message.is-client { background: var(--brand-primary); color: var(--brand-on-primary); }
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.wcp-head > a, .wcp-notify) { width: 44px; height: 44px; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .wcp-head { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .checkout-layout :is(input:not([type=checkbox]):not([type=radio]):not([type=hidden]), select, textarea) { font-size: 16px; }
+@media (min-width: 700px) {
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) !important;
+    gap: 1rem !important;
+  }
+}
+@media (min-width: 361px) and (max-width: 699px) {
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+@media (max-width: 360px) {
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card-body { padding: .55rem !important; }
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .ep-card-footer { flex-wrap: wrap; }
+}
+@media (orientation: landscape) and (max-height: 560px) {
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .wcp-head {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+  }
+  :is(html, html.ox-pwa-runtime) body.ox-body-public .wcp-head h1 {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: .9rem;
+    line-height: 1.35;
+  }
+}
+
+/* Información de servicio en tarjetas discretas; la compra conserva el foco. */
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-why-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: .75rem;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-why-item {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--store-line);
+  border-radius: 1rem;
+  background: var(--theme-surface) !important;
+  box-shadow: none !important;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-why-title { color: var(--theme-text) !important; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-why-desc { color: var(--theme-muted) !important; line-height: 1.5; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-why-icon {
+  background: color-mix(in srgb, var(--brand-primary) 12%, var(--theme-surface));
+  color: var(--theme-text);
+  border: 1px solid var(--store-line);
+  box-shadow: none;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-mc-dest-name { font-size: .95rem; line-height: 1.35; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.ep-search-box, .cr-qty-wrap):focus-within {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .ep-grid .ep-card:focus-within {
+  border-color: var(--brand-primary) !important;
+}
+
+/* Recorrido del cliente: detalle, fidelización, legal y seguimiento. */
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.legal-card, .club-how, .club-next, .club-canje-card, .order-confirmation .ox-card, .pd-section) {
+  border: 1px solid var(--store-line);
+  border-radius: var(--system-radius, 14px);
+  background: var(--theme-surface);
+  box-shadow: var(--store-shadow);
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.legal-page, .club-wrap, .order-confirmation) { min-width: 0; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.legal-card, .pd-section) { overflow-wrap: anywhere; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.legal-hero, .club-hero, .order-success-hero) {
+  border-radius: var(--system-radius, 14px); box-shadow: none; overflow: hidden;
+}
+:is(html, html.ox-pwa-runtime) body.ox-body-public .order-celebration { display: none; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .order-live-note i { animation: none; box-shadow: none; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .order-live-note:not([data-connection="updated"]) i { background: currentColor; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .order-verification-alert[hidden] { display: none !important; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public [data-order-payment-instructions][hidden] { display: none !important; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .order-amount { color: var(--theme-text) !important; font-variant-numeric: tabular-nums; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.pd-back-btn, .pd-qty-btn, .checkout-head > a) { min-width: 44px; min-height: 44px; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public :is(.pd-add-btn, .pd-qty-ctrl) { border-radius: var(--system-control-radius, 10px); }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .wcp-message { white-space: normal; }
+.wcp-message-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.wcp-message-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 1.25rem; margin-bottom: .3rem; font-size: .7rem; line-height: 1.4; font-weight: 700; }
+.wcp-message-meta time { font-size: .65rem; font-weight: 400; white-space: nowrap; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .wcp-head p { white-space: normal; font-size: .75rem; line-height: 1.4; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .wcp-message.is-system { font-size: .8rem; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .wcp-message.is-system .wcp-message-meta { justify-content: center; }
+:is(html, html.ox-pwa-runtime) body.ox-body-public .cr-empty { max-width: 520px; margin: 1rem auto; padding: 1.5rem; border: 1px solid var(--store-line); border-radius: var(--system-radius, 14px); background: var(--theme-surface); }

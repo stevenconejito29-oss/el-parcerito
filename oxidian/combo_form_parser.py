@@ -118,6 +118,8 @@ def parse_componentes(
     parent_vertical: Optional[str] = None,
     combo_id: Optional[int] = None,
     enforce_owner_id=_UNSET,
+    parent_delivery_type=None,
+    parent_delivery_mode=None,
 ) -> list:
     """Convierte los arrays del form en ``ComponenteInput`` validados.
 
@@ -191,7 +193,7 @@ def parse_componentes(
     for i, raw_id in enumerate(prod_ids):
         prod_id = _to_int(raw_id)
         if prod_id is None:
-            continue
+            raise ComboParseError(f"Componente {i + 1}: selecciona un producto válido.")
         if prod_id not in productos_permitidos:
             raise ComboParseError(
                 f"Componente {i + 1}: el producto seleccionado no está permitido."
@@ -210,8 +212,17 @@ def parse_componentes(
                     "mismo propietario de inventario que el combo."
                 )
 
+        if parent_delivery_type and (getattr(producto, "tipo_entrega", None) or "inmediato") != parent_delivery_type:
+            raise ComboParseError(f"Componente {i + 1}: debe compartir el tipo de entrega del combo.")
+        component_mode = getattr(producto, "modalidad_entrega", None) or "ambas"
+        if parent_delivery_mode and component_mode != "ambas" and component_mode != parent_delivery_mode:
+            raise ComboParseError(f"Componente {i + 1}: no admite todas las modalidades de entrega del combo.")
+
         # ── cantidad ──
-        cant = _to_int(cantidades[i] if i < len(cantidades) else "", default=1) or 1
+        quantity_raw = cantidades[i] if i < len(cantidades) else ""
+        cant = _to_int(quantity_raw) if quantity_raw else 1
+        if cant is None:
+            raise ComboParseError(f"Componente {i + 1}: indica una cantidad entera válida.")
 
         # ── tipo / grupo / uid ──
         tipo = tipos[i] if i < len(tipos) else "fijo"
@@ -221,6 +232,8 @@ def parse_componentes(
         )
         grupo_raw = (grupos[i].strip() if i < len(grupos) and grupos[i] else "") or None
         group_def = group_defs.get(group_uid) if group_uid else None
+        if group_uid and not group_def:
+            raise ComboParseError(f"Componente {i + 1}: el grupo ya no existe. Revisa la composición.")
         if group_def:
             es_sel = group_def["tipo"] == "seleccion"
             grupo_raw = group_def["nombre"] if es_sel else None
@@ -482,6 +495,15 @@ def parse_componentes(
                 precio_unit=precio_unit,
             )
         )
+
+    selection_groups = {}
+    for component in result:
+        if component.es_seleccionable:
+            name = (component.grupo or "").strip().casefold()
+            uid = component.group_uid or name
+            if name in selection_groups and selection_groups[name] != uid:
+                raise ComboParseError("Los grupos de elección necesitan nombres distintos para no mezclar sus opciones.")
+            selection_groups[name] = uid
 
     n_comp = len(result)
     if n_comp < limits.min_components():

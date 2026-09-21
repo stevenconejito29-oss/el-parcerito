@@ -1,0 +1,38 @@
+
+@media (max-width: 600px) {
+  .customer-table-wrap { overflow: visible; }
+  .customer-table, .customer-table tbody { display: block; width: 100%; }
+  .customer-table thead { display: none; }
+  .customer-table tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .7rem;
+    padding: .9rem;
+    border-bottom: 1px solid var(--col-border);
+  }
+  .customer-table td { display: block; min-width: 0; padding: 0 !important; text-align: left !important; overflow-wrap: anywhere; }
+  .customer-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: .18rem;
+    color: var(--col-muted);
+    font-size: .64rem;
+    font-weight: 850;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .customer-table .customer-name,
+  .customer-table .customer-contact,
+  .customer-table .customer-actions { grid-column: 1 / -1; }
+  .customer-table .customer-name { font-size: 1rem; }
+  .customer-table .customer-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .customer-table .customer-actions > * { flex: 1 1 7rem; min-width: 0; }
+  .customer-table .customer-actions form button { width: 100%; }
+  .customer-table .customer-actions::before { flex-basis: 100%; }
+  .customer-table .customer-actions :is(a,button) { flex: 1 1 7rem; min-height: 44px; margin: 0 !important; white-space: nowrap; }
+}
+
+.customer-register { display: grid; gap: .8rem; margin-top: 1rem; max-width: 32rem; }
+.customer-register label { display: grid; gap: .4rem; }
+.customer-register input { width: 100%; min-height: 44px; }
+.customer-register button { min-height: 44px; }

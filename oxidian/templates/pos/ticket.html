@@ -187,7 +187,7 @@
   {% set combo_meta = (item_meta.get('combo') or {}) if item_meta else {} %}
   <div class="row-item">
     <div class="item-name">
-      {{ item.producto.nombre }}{% if item.display_es_combo %} <span style="font-size:9px;opacity:.6">COMBO</span>{% endif %}
+      {{ item.display_nombre }}{% if item.display_es_combo %} <span style="font-size:9px;opacity:.6">COMBO</span>{% endif %}
     </div>
     <div class="item-qty">×{{ item.cantidad }}</div>
     <div class="item-price">€{{ "%.2f"|format(item.subtotal) }}</div>
@@ -213,14 +213,11 @@
     {%- endfor %}
   </div>
   {% endif %}
-  {% if item.display_es_combo and (combo_meta.get('componentes') or combo_meta.get('selecciones')) %}
-  <div style="font-size:10px;color:#555;padding:1px 0 5px 6px;line-height:1.7">
-    {% if combo_meta.get('componentes') %}
-    <div>Incl: {% for comp in combo_meta.get('componentes') %}{{ comp.get('cantidad',1) }}× {{ comp.get('nombre','?') }}{% if comp.get('presentacion') %} ({{ comp.get('presentacion').get('label') or comp.get('presentacion').get('tamaño') }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>
-    {% endif %}
-    {% for grupo in combo_meta.get('selecciones') or [] %}
-    <div>{{ grupo.get('grupo','?') }}: {% for op in grupo.get('opciones') or [] %}{{ op.get('cantidad', op.get('qty',1)) }}× {{ op.get('nombre','?') }}{% if op.get('presentacion') %} ({{ op.get('presentacion').get('label') or op.get('presentacion').get('tamaño') }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>
-    {% endfor %}
+  {% set combo_lines = item.ticket_combo_lines %}
+  {% if combo_lines %}
+  <div class="small" style="padding:2px 0 5px 6px">
+    <strong>Composición por combo</strong>
+    {% for line in combo_lines %}<div>{{ line }}</div>{% endfor %}
   </div>
   {% endif %}
   {% endfor %}
@@ -258,7 +255,7 @@
     <span class="pay-label">Método de pago</span>
     <span class="pay-value">{{ pedido.metodo_pago | capitalize }}</span>
   </div>
-  {% if pedido.metodo_pago == 'bizum' %}
+  {% if pedido.metodo_pago %}
   <div class="row small">
     <span class="muted">Estado pago</span>
     <span class="bold">
@@ -269,11 +266,11 @@
 </div>
 
 <!-- PUNTOS GANADOS -->
-{% if brand.puntos and pedido.puntos_ganados and pedido.puntos_ganados > 0 %}
+{% if brand.puntos and pedido.puntos_ganados and pedido.puntos_ganados > 0 and pedido.estado != 'cancelado' %}
 <div class="dashed"></div>
 <div class="points-block">
-  <div class="bold">⭐ +{{ pedido.puntos_ganados }} puntos Club</div>
-  <div class="small muted">Acumulados en tu cuenta</div>
+  <div class="bold">{{ pedido.puntos_ganados }} {{ ui.loyalty_unit_plural or 'puntos' }}</div>
+  <div class="small muted">{{ 'Acumulados en tu cuenta' if pedido.estado == 'entregado' else 'Se acumulan al entregar el pedido' }}</div>
 </div>
 {% endif %}
 
@@ -307,6 +304,7 @@
 </button>
 
 <script nonce="{{ csp_nonce() }}">
+  document.querySelector('[data-print]')?.addEventListener('click', () => window.print());
   // Auto-print: acepta tanto ?autoprint=1 como ?auto_print=1 (cualquier canal).
   if (/[?&](autoprint|auto_print)=1/.test(window.location.search)) {
     setTimeout(() => window.print(), 400);

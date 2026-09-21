@@ -28,8 +28,8 @@
   function syncAppBadge(count) {
     if (!('setAppBadge' in navigator)) return;
     try {
-      if (count) navigator.setAppBadge(count);
-      else navigator.clearAppBadge();
+      const result = count ? navigator.setAppBadge(count) : navigator.clearAppBadge?.();
+      result?.catch(() => {});
     } catch (_) { /* API opcional: nunca debe afectar la compra. */ }
   }
 

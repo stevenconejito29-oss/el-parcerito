@@ -17,3 +17,22 @@
 .slotops-focusbar>span{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;border-radius:9px;background:var(--so-navy);color:#fff}
 .slotops-focusbar>div{display:grid;min-width:0}.slotops-focusbar strong{font-size:.8rem}.slotops-focusbar small{margin-top:1px;color:var(--so-muted);font-size:.68rem;line-height:1.3}
 .slotops-items input:disabled:not(:checked){opacity:.28}.slotops-order.is-pendiente .slotops-items label{color:var(--so-muted)}
+/* Datos de la compra siempre visibles en la comprobación del empaque. */
+.slotops-panel[hidden],.slotops-empty[hidden]{display:none!important}
+.slotops-item{display:grid;gap:.4rem;padding:.75rem 0;border-bottom:1px solid var(--col-border);min-width:0;overflow-wrap:anywhere}
+.slotops-item-check{min-height:44px;cursor:pointer}
+.slotops-item-check input{width:22px;height:22px}
+.slotops-item .work-item-main{display:flex;justify-content:space-between;gap:.5rem;font-weight:700}
+.slotops-item .work-qty{white-space:nowrap}
+.slotops-item .work-alergen,.slotops-item .work-note{margin:.5rem 0;padding:.6rem;border:1px solid var(--theme-warning);border-radius:.5rem}
+.slotops-item .work-origin-badge,.slotops-item .work-combo-badge{display:inline-block;margin:.2rem;font-size:.8rem;font-style:normal}
+.slotops-item .work-sec-items{display:grid;gap:.3rem}
+.slotops-item .work-combo-sec{margin-top:.6rem}
+.slotops-item .work-sec-hd{display:flex;gap:.4rem;flex-wrap:wrap;font-size:.85rem}
+.slotops-item.is-checked{background:color-mix(in srgb,var(--theme-success) 8%,transparent)}
+/* La acción sigue siendo comprensible en móvil, sin pasos reducidos a números. */
+body.ox-body-admin .slotops-hero h1{color:#fff!important}
+body.ox-body-admin .slotops .order-flavor-summary__copy small,
+body.ox-body-admin .slotops .work-origin-badge,
+body.ox-body-admin .slotops .work-sec-item{color:var(--so-ink)!important}
+@media(max-width:760px){.slotops-flow li{flex-direction:column;gap:4px}.slotops-flow li span{display:block;font-size:0;text-align:center}.slotops-flow li strong{font-size:.72rem}.slotops-hero p{display:block}}

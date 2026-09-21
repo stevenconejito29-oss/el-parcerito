@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Acceso — {{ brand.nombre }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/oxidian.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/customer-access.css', v=asset_version) }}">
+</head>
+<body class="ox-body-public" style="--brand-primary:{{ brand.color_primario }};--brand-on-primary:{{ brand.on_primario }}">
+<main class="customer-access">
+  <p>{{ brand.nombre }}</p>
+  <h1>{{ 'Revisa tu WhatsApp' if code_step else 'Tu tienda de confianza' }}</h1>
+  <p>{{ 'Introduce el código que te hemos enviado.' if code_step else 'Accede con tu teléfono registrado para ver la carta, hacer pedidos e instalar la aplicación.' }}</p>
+  {% for category, message in get_flashed_messages(with_categories=true) %}<p role="status">{{ message }}</p>{% endfor %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="{{ 'verify' if code_step else 'request' }}">
+    {% if code_step %}
+    <label for="codigo">Código de verificación</label>
+    <input id="codigo" name="codigo" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus>
+    {% else %}
+    <label for="telefono">Tu teléfono, con prefijo de país</label>
+    <input id="telefono" name="telefono" type="tel" autocomplete="tel" maxlength="40" required>
+    {% endif %}
+    <button type="submit">{{ 'Entrar' if code_step else 'Recibir código' }}</button>
+  </form>
+  {% if code_step %}<form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button name="action" value="restart" class="secondary">Cambiar teléfono o pedir otro código</button>
+  </form>{% endif %}
+  <p>El acceso está disponible para clientes registrados. Si aún no tienes acceso, contacta con la tienda.</p>
+  {% if brand.telefono %}<a href="tel:{{ brand.telefono }}">Llamar a la tienda</a>{% endif %}
+  <footer><a href="{{ url_for('public.informacion_legal') }}">Privacidad y condiciones</a><a href="{{ url_for('auth.login') }}">Acceso del equipo</a></footer>
+</main>
+</body>
+</html>

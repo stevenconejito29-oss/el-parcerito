@@ -142,12 +142,15 @@ class NotifyNewOrderTest(unittest.TestCase):
 
         user.assert_called_once()
         self.assertEqual(user.call_args.args[0], driver.id)
+        self.assertIn("repartir", user.call_args.args[1].lower())
+        self.assertNotIn("recoger", user.call_args.args[1].lower())
         roles.assert_not_called()
 
     def test_customer_state_push_opens_the_matching_order(self):
         import push_service
         pedido = self._mk_pedido()
         pedido.estado = "armando"
+        pedido.customer_device_hash = "qa-device"
         db.session.commit()
 
         with patch.object(push_service, "notify_user") as user:

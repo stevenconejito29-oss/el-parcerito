@@ -121,7 +121,10 @@ def impresora_preferencia():
             value = _json.loads(raw) if raw else None
         except (TypeError, ValueError):
             value = None
-        return jsonify({"ok": True, "printer": value})
+        from routes.pos import _thermal_printer_targets
+        response = jsonify({"ok": True, "printer": value, "network_available": bool(_thermal_printer_targets())})
+        response.headers["Cache-Control"] = "no-store"
+        return response
     if request.method == "DELETE":
         entry = SiteConfig.query.filter_by(clave=key).first()
         if entry:
@@ -131,6 +134,8 @@ def impresora_preferencia():
         return jsonify({"ok": True})
 
     payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "impresora_invalida"}), 400
     transport = str(payload.get("transport") or "").strip().lower()
     device_id = str(payload.get("device_id") or "").strip()[:180]
     name = str(payload.get("name") or "Impresora térmica").strip()[:80]
@@ -417,6 +422,14 @@ def pedidos():
             preparador_id=current_user.id,
         ).order_by(Order.creado_en).all()
 
+    recogidas_query = Order.query.options(*_eager).filter(
+        Order.tipo_entrega_cliente == "recogida",
+        Order.estado.in_(("listo", "en_ruta")),
+    )
+    if not _es_admin_operativo():
+        recogidas_query = recogidas_query.filter(Order.preparador_id == current_user.id)
+    recogidas_listas = recogidas_query.order_by(Order.preparado_en, Order.id).all()
+
     companeros = User.query.filter(
         User.rol.in_(["cocina", "preparacion", "admin"]),
         User.activo == True,
@@ -548,6 +561,31 @@ def pedidos():
         if _agregado:
             totales_lote_por_fecha[_fecha] = _agregado
 
+    # ── Agrupación por franja horaria (módulo delivery_franjas_activo) ──
+    # Cuando el módulo está encendido, la cocina necesita ver qué pedidos
+    # comparten ventana de reparto para saber en qué orden trabajar.
+    # Produce una lista de (slot, pedidos) ordenada por hora_inicio.
+    # Los pedidos sin franja (delivery inmediato / recogida) mantienen la
+    # cola normal — no se duplican ni se mueven.
+    from store_config import get_store_value as _gsv
+    _franjas_on = str(_gsv("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
+    pedidos_por_franja: list = []
+    if _franjas_on:
+        from models import DeliverySlot as _DS
+        from collections import OrderedDict as _OD
+        _acc: "_OD[int, list]" = _OD()
+        for _p in list(prep_ahora) + list(armando):
+            _sid = getattr(_p, "slot_id", None)
+            if _sid:
+                _acc.setdefault(_sid, []).append(_p)
+        if _acc:
+            _slots = _DS.query.filter(_DS.id.in_(list(_acc.keys()))).all()
+            _meta = {_s.id: _s for _s in _slots}
+            pedidos_por_franja = sorted(
+                [(_meta[_sid], _peds) for _sid, _peds in _acc.items() if _sid in _meta],
+                key=lambda t: (t[0].fecha, t[0].hora_inicio),
+            )
+
     return render_template("preparador/pedidos.html",
                            pendientes=pendientes_inmediato,
                            pendientes_encargo=pendientes_encargo,
@@ -555,6 +593,7 @@ def pedidos():
                            totales_lote_por_fecha=totales_lote_por_fecha,
                            hoy_date=hoy_date,
                            armando=armando,
+                           recogidas_listas=recogidas_listas,
                            companeros=companeros,
                            disponible=disponible,
                            modo_operativo=modo_operativo,
@@ -571,7 +610,10 @@ def pedidos():
                            puede_preparar_encargo=_encargo_disponible_para_preparar,
                            queue_status_url=url_for("preparador.eventos"),
                            queue_refresh_s=_queue_refresh_s(),
-                           tickets_recientes=tickets_recientes)
+                           tickets_recientes=tickets_recientes,
+                           # Delivery por franjas
+                           delivery_franjas_activo=_franjas_on,
+                           pedidos_por_franja=pedidos_por_franja)
 
 
 @preparador_bp.route("/franjas")
@@ -737,6 +779,40 @@ def empezar_armar(pedido_id):
     return redirect(url_for("preparador.pedidos"))
 
 
+@preparador_bp.route("/pedidos/<int:pedido_id>/cancelar", methods=["POST"])
+@preparador_required
+def cancelar_pedido(pedido_id):
+    pedido = Order.query.filter_by(id=pedido_id).populate_existing().with_for_update().first_or_404()
+    if not _puede_operar_pedido(pedido):
+        return "No puedes operar este pedido.", 403
+    if pedido.estado not in {"pendiente", "armando"}:
+        flash("Solo puedes cancelar pedidos pendientes o en preparación.", "warning")
+        return redirect(url_for("preparador.pedidos"))
+    if pedido.pago_confirmado:
+        flash("El pedido ya está pagado. Administración debe gestionar la cancelación y devolución.", "warning")
+        return redirect(url_for("preparador.pedidos"))
+    motivo = (request.form.get("motivo") or "").strip()
+    if request.form.get("confirmar") != "1" or not 5 <= len(motivo) <= 300:
+        flash("Confirma la cancelación e indica un motivo de entre 5 y 300 caracteres.", "warning")
+        return redirect(url_for("preparador.pedidos"))
+    try:
+        from services import cancelar_pedido_operativo
+        cancelar_pedido_operativo(pedido, actor_id=current_user.id, canal="preparador", detalle=motivo)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("Error al cancelar el pedido %s desde preparación", pedido_id)
+        flash("No se pudo cancelar el pedido. Revisa su estado e inténtalo de nuevo.", "danger")
+        return redirect(url_for("preparador.pedidos"))
+    try:
+        from push_service import notify_order_state
+        notify_order_state(pedido)
+    except Exception:
+        logger.exception("No se pudo notificar la cancelación %s", pedido_id)
+    flash(f"Pedido {pedido.numero_pedido} cancelado.", "success")
+    return redirect(url_for("preparador.pedidos"))
+
+
 @preparador_bp.route("/pedidos/<int:pedido_id>/listo", methods=["POST"])
 @preparador_required
 def marcar_listo(pedido_id):
@@ -760,14 +836,10 @@ def marcar_listo(pedido_id):
             canal="preparador",
             validar_operativa=True,
         )
-        repartidor = distribuir_repartidor(pedido)
-        from services import enviar_whatsapp_estado
-        enviar_whatsapp_estado(pedido)
+        repartidor = distribuir_repartidor(pedido) if pedido.requiere_reparto else None
         db.session.commit()
-        # Auto-print vive en `empezar_armar` (transición pendiente→armando)
-        # para que el preparador tenga el ticket DURANTE el armado. Aquí
-        # (armando→listo) ya no imprimimos para evitar duplicados. Si el
-        # ticket se perdió, el POS tiene botón "Reimprimir".
+        # La impresión local se solicita al volver a la lista, una vez listo.
+        # El navegador utiliza la conexión USB/BLE autorizada del operador.
     except ValueError as e:
         # Errores de negocio con mensaje intencional (proveedor pendiente,
         # responsable no asignado, etc.) → se muestra al usuario tal cual.
@@ -1075,4 +1147,102 @@ def marcar_lote_listo(batch_id):
         logger.exception("Fallo notificando lote listo batch=%s", batch.id)
 
     flash(f"Lote del {batch.fecha_entrega.strftime('%d/%m')} marcado como listo.", "success")
+    return redirect(url_for("preparador.pedidos"))
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Vista franja-céntrica para cocina (módulo delivery_franjas_activo).
+# Pide el fundador (2026-08-18): cocina ve las franjas de hoy en orden
+# cronológico con sus pedidos, sirve como panel operativo dedicado.
+# No duplica endpoints: usa /preparador/pedidos/<id>/empezar y /listo.
+# ─────────────────────────────────────────────────────────────────────
+@preparador_bp.route("/franjas/hoy", methods=["GET"])
+@preparador_required
+def franjas_hoy():
+    from store_config import get_store_value as _gsv
+    from business_time import business_today
+    from datetime import datetime as _dt
+    from models import DeliverySlot as _DS
+
+    if str(_gsv("delivery_franjas_activo", "0")).strip() not in ("1", "true", "True"):
+        flash("El módulo de franjas está desactivado.", "info")
+        return redirect(url_for("preparador.pedidos"))
+
+    hoy = business_today()
+    slots = (
+        _DS.query
+        .filter(_DS.fecha == hoy, _DS.activo == True)  # noqa: E712
+        .order_by(_DS.hora_inicio)
+        .all()
+    )
+    from delivery_slots_service import ahora_local_negocio
+    ahora = ahora_local_negocio()
+    grupos = []
+    for s in slots:
+        # Eager: cliente (nombre en card) + items (resumen) + zona.
+        # Sin esto el template dispara N+1 por pedido en la franja.
+        peds = (
+            Order.query
+            .options(
+                joinedload(Order.cliente),
+                joinedload(Order.zona),
+            )
+            .filter(
+                Order.slot_id == s.id,
+                Order.estado.in_(("pendiente", "armando", "listo")),
+            )
+            .order_by(Order.creado_en)
+            .all()
+        )
+        # Combina fecha del slot + hora_inicio para countdown en minutos.
+        inicio_dt = _dt.combine(s.fecha, s.hora_inicio)
+        minutos = int((inicio_dt - ahora).total_seconds() // 60)
+        listos = sum(1 for p in peds if p.estado == "listo")
+        armando_n = sum(1 for p in peds if p.estado == "armando")
+        pendientes_n = sum(1 for p in peds if p.estado == "pendiente")
+        grupos.append({
+            "slot": s,
+            "pedidos": peds,
+            "minutos": minutos,
+            "listos": listos,
+            "armando": armando_n,
+            "pendientes": pendientes_n,
+            "total": len(peds),
+            "urgente": (0 <= minutos <= 15),
+        })
+
+    return render_template(
+        "preparador/franjas_hoy.html",
+        grupos=grupos,
+        hoy=hoy,
+        agrupar_items_por_producto=agrupar_items_por_producto,
+    )
+
+
+@preparador_bp.post("/pedidos/<int:pedido_id>/recoger")
+@preparador_required
+def entregar_recogida(pedido_id):
+    from services import completar_recogida
+    pedido = get_or_404(Order, pedido_id)
+    try:
+        cambiado = completar_recogida(pedido, current_user.id,
+            cobro_recibido=request.form.get("cobro_recibido") == "1",
+            referencia=request.form.get("referencia", ""), canal="preparador_recogida")
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "warning")
+        return redirect(url_for("preparador.pedidos"))
+    except Exception:
+        db.session.rollback()
+        logger.exception("No se pudo cerrar recogida %s", pedido_id)
+        flash("No se pudo confirmar la recogida. Revisa el pedido antes de reintentar.", "danger")
+        return redirect(url_for("preparador.pedidos"))
+    if cambiado:
+        try:
+            from push_service import notify_order_state
+            notify_order_state(pedido)
+        except Exception:
+            logger.exception("No se pudo notificar recogida %s", pedido_id)
+    flash("Recogida y cobro registrados." if cambiado else "Este pedido ya fue recogido.", "success")
     return redirect(url_for("preparador.pedidos"))

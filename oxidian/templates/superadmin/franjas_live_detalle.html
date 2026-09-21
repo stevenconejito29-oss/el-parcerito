@@ -1,0 +1,52 @@
+{% extends "admin_base.html" %}
+{% block title %}Franja {{ slot.hora_inicio.strftime('%H:%M') }} — Detalle live{% endblock %}
+{% block styles %}
+<style>
+.fld-wrap { max-width: 900px; margin: 0 auto; padding: 1rem; }
+.fld-head { display:flex; align-items:baseline; gap:.6rem; margin-bottom: 1rem; flex-wrap:wrap; }
+.fld-head h1 { margin:0; font-size:1.25rem; }
+.fld-back { margin-left:auto; text-decoration:none; color: var(--brand-accent,#003087); font-weight:600; }
+.fld-list { list-style:none; margin:0; padding:0; border:1px solid var(--col-border,#ddd);
+            border-radius: var(--radius-md,12px); background: var(--col-surface,#fff);
+            box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.08)); overflow:hidden; }
+.fld-item { display:flex; align-items:center; gap:.8rem; padding: .7rem 1rem;
+            border-bottom: 1px solid var(--col-border-light, #eee); }
+.fld-item:last-child { border-bottom: none; }
+.fld-num { font-weight:700; }
+.fld-cli { color: var(--col-muted, #666); font-size:.9rem; }
+.fld-addr { display:block; color: var(--col-muted, #666); font-size:.82rem; }
+.fld-info { flex:1; min-width:0; }
+.fld-state { font-size:.78rem; padding:.15rem .55rem; border-radius:999px; text-transform:uppercase; letter-spacing:.03em; }
+.fld-state.listo { background:#d6f5e3; color:#22794a; }
+.fld-state.en_ruta { background:#fff3d6; color:#8a6300; }
+.fld-state.entregado { background:#eee; color:#555; }
+.fld-state.pendiente,.fld-state.armando { background:#f0f0ff; color:#4444aa; }
+.fld-empty { text-align:center; padding: 2rem 1rem; color: var(--col-muted, #888); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="fld-wrap">
+  <div class="fld-head">
+    <span aria-hidden="true" style="font-size:1.4rem">🚦</span>
+    <h1>Franja {{ slot.hora_inicio.strftime('%H:%M') }} → {{ slot.hora_fin.strftime('%H:%M') }}</h1>
+    <a class="fld-back" href="{{ url_for('superadmin.franjas_live') }}">← Todas las franjas</a>
+  </div>
+  {% if pedidos %}
+  <ul class="fld-list">
+    {% for p in pedidos %}
+    <li class="fld-item">
+      <div class="fld-info">
+        <span class="fld-num">#{{ p.numero_pedido or p.id }}</span>
+        <span class="fld-cli">·
+          {% if p.cliente and p.cliente.nombre %}{{ p.cliente.nombre }}{% else %}Cliente{% endif %}</span>
+        <span class="fld-addr">{{ p.direccion_entrega or (p.zona_nombre_aplicada or '—') }}</span>
+      </div>
+      <span class="fld-state {{ p.estado }}">{{ p.estado }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="fld-empty">Esta franja aún no tiene pedidos.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -2,6 +2,7 @@
 {% block title %}Centro de configuración{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/superadmin-config.css', v=asset_version) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
 {% endblock %}
 {% block content %}
 {# is_locked: True si la clave es soberana y el user actual es admin (no SA).
@@ -208,7 +209,22 @@
         {% endfor %}
       </div>
       <button type="submit" class="cfg-save-bottom">Guardar colores de marca</button>
+      <button type="reset" class="cfg-save-bottom">Restaurar lo guardado</button>
     </form>
+
+    <section aria-label="Vista previa de personalización" data-theme-preview class="cfg-section">
+      <h3>Vista previa de tu tienda</h3>
+      <p data-theme-preview-note role="status">Los cambios se aplican a la tienda cuando guardas cada sección.</p>
+      <div data-theme-preview-header class="cfg-section"><strong data-theme-preview-name>{{ config_map.get('NOMBRE_NEGOCIO', '') }}</strong></div>
+      <div data-theme-preview-card class="cfg-section">
+        <h4>Tu pedido, a tu manera</h4>
+        <span data-theme-preview-secondary>Novedades de la tienda</span>
+        <p data-theme-preview-price>Precio y detalles de marca</p>
+        <p data-theme-preview-text>Productos, entrega a domicilio y recogida con una identidad visual coherente.</p>
+        <span data-theme-preview-button class="cfg-save-bottom">Continuar con mi pedido</span>
+      </div>
+      <p data-theme-contrast role="status"></p>
+    </section>
 
     <details class="cfg-subform" open style="border:1px solid var(--col-border); border-radius:.65rem; padding:.75rem 1rem; background:var(--col-elevated);">
       <summary style="cursor:pointer; font-weight:800; font-size:.88rem; color:var(--col-text);">
@@ -235,6 +251,7 @@
           {% endfor %}
         </div>
         <button type="submit" class="cfg-save-bottom">Guardar paleta visual</button>
+        <button type="reset" class="cfg-save-bottom">Restaurar lo guardado</button>
       </form>
     </details>
 
@@ -261,6 +278,9 @@
     <div class="cfg-section-head"><div><span>2</span><h2>Operación de la tienda</h2><p>Horario, cierre manual y métodos de pago.</p></div></div>
     <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="operacion-horario">
+      <h3>Acceso de clientes</h3>
+      {{ cfg_select('ACCESO_CLIENTES_REGISTRADOS', 'Quién puede acceder a la tienda', [('0','Todos los visitantes'),('1','Solo clientes registrados y verificados')], 'En modo privado, solo los clientes autorizados expresamente por superadmin pueden entrar con un código por WhatsApp. Cada número queda vinculado a un dispositivo. No afecta al acceso del equipo.') }}
+      <a href="{{ url_for('admin.clientes') }}">Gestionar clientes registrados</a>
       <h3>Horario y cierre</h3>
     <div class="cfg-grid">
       {{ cfg_select('HORARIO_MODO', 'Modo de apertura', [('semanal','Usar malla semanal'),('24h','Abierto 24 horas')], 'El modo 24 horas conserva la malla para recuperarla al volver a semanal.') }}
@@ -333,6 +353,45 @@
         {{ cfg_select('MODO_TIENDA', 'Modo de tienda', [('propia','Tienda propia'),('bar_servicio','Servicio para un único bar / comisión')], 'En modo servicio, el admin gestiona esa tienda como su propio negocio y el superadmin controla funciones y comisión.') }}
         {{ cfg_select('TIPO_TIENDA', 'Tipo de catálogo', [('comida','🍽️ Comida / gastronomía'),('producto','🛍️ Retail / nicho general (ropa, zapatos, bisutería…)')], 'Cambia labels visibles ("menú"→"catálogo"), oculta alérgenos, ajusta emojis y tallas. NO borra datos: cambia de un modo al otro sin perder nada.') }}
         {{ cfg_select('FEATURE_DELIVERY', 'Delivery', [('1','Habilitado'),('0','Deshabilitado')], 'Si está apagado, checkout y roles de reparto quedan fuera del flujo público.') }}
+        {# Mutex: los dos métodos NO pueden coexistir. Un radio evita que el
+           admin marque los dos a la vez, y el backend refuerza el invariante. #}
+        {% set _dinm = config_map.get('delivery_inmediato_activo','1') == '1' %}
+        {% set _dfra = config_map.get('delivery_franjas_activo','0') == '1' %}
+        <div class="cfg-field cfg-field-radio">
+          <label class="cfg-label">Método de reparto (elige uno)</label>
+          <div class="cfg-radio-group" role="radiogroup">
+            <label class="cfg-radio-option {% if _dinm %}is-active{% endif %}">
+              <input type="radio" name="_metodo_reparto" value="inmediato" {% if _dinm %}checked{% endif %}>
+              <span>⚡ Inmediato</span>
+              <small>Sale de cocina cuanto antes</small>
+            </label>
+            <label class="cfg-radio-option {% if _dfra %}is-active{% endif %}">
+              <input type="radio" name="_metodo_reparto" value="franjas" {% if _dfra %}checked{% endif %}>
+              <span>📅 Por franjas</span>
+              <small>Cliente elige horario del calendario</small>
+            </label>
+          </div>
+          <p class="cfg-help">
+            No pueden estar los dos activos a la vez. El backend fuerza la exclusividad.
+          </p>
+        </div>
+        {# Hidden inputs derivados del radio: mantienen la clave real de SiteConfig
+           sin cambiar la infraestructura de guardado por sección. #}
+        <input type="hidden" name="delivery_inmediato_activo" value="{{ '1' if _dinm else '0' }}" data-mutex-target="inmediato">
+        <input type="hidden" name="delivery_franjas_activo" value="{{ '1' if _dfra else '0' }}" data-mutex-target="franjas">
+        <script nonce="{{ csp_nonce() }}">
+          (function(){
+            const radios = document.querySelectorAll('input[name="_metodo_reparto"]');
+            const inm = document.querySelector('input[data-mutex-target="inmediato"]');
+            const fra = document.querySelector('input[data-mutex-target="franjas"]');
+            radios.forEach(r => r.addEventListener('change', () => {
+              inm.value = (r.value === 'inmediato' && r.checked) ? '1' : (r.value === 'franjas' && r.checked ? '0' : inm.value);
+              fra.value = (r.value === 'franjas' && r.checked) ? '1' : (r.value === 'inmediato' && r.checked ? '0' : fra.value);
+              document.querySelectorAll('.cfg-radio-option').forEach(o => o.classList.remove('is-active'));
+              r.closest('.cfg-radio-option').classList.add('is-active');
+            }));
+          })();
+        </script>
         {{ cfg_select('FEATURE_RECOGIDA', 'Recogida en local', [('1','Habilitada'),('0','Deshabilitada')]) }}
         {{ cfg_select('FEATURE_PEDIDOS_PROGRAMADOS', 'Pedidos por fecha', [('1','Habilitados'),('0','Deshabilitados')], 'Bloquea productos programados si el cliente no tiene ese módulo.') }}
         {{ cfg_select('FEATURE_PUNTOS', 'Canje de puntos', [('1','Habilitado'),('0','Deshabilitado')], 'Oculta y bloquea el club de puntos sin borrar historial.') }}
@@ -412,11 +471,20 @@
       {{ cfg_input('UI_LOYALTY_NAV_LABEL', 'Nombre corto', placeholder='Granitos', help='Texto de la navegación móvil.') }}
       {{ cfg_input('UI_LOYALTY_UNIT', 'Unidad en singular', placeholder='granito de café') }}
       {{ cfg_input('UI_LOYALTY_UNIT_PLURAL', 'Unidad en plural', placeholder='granitos de café') }}
+      {{ cfg_select('UI_LOYALTY_ICON', 'Icono del club', [
+        ('grano','Grano de café'),
+        ('estrella','Estrella'),
+        ('corazon','Corazón'),
+        ('monedas','Monedas'),
+        ('sello','Sello / stamp'),
+        ('medalla','Medalla'),
+      ], 'Se muestra en navegación, club, catálogo y canje.') }}
+      {{ cfg_input('UI_LOYALTY_EMOJI', 'Emoji (WhatsApp / textos)', placeholder='☕', help='Símbolo corto para bot, balance por WhatsApp y paneles de texto.') }}
       {{ cfg_input('PUNTOS_POR_EURO', 'Unidades ganadas por euro', type='number', min='1', max='100000', help='Se calculan sobre el total confirmado del pedido.') }}
       {{ cfg_input('PUNTOS_MIN_COMPRA_EUR', 'Compra mínima para acumular', type='number', min='0', max='100000', step='0.01', help='0 € permite acumular desde cualquier importe.') }}
       {{ cfg_textarea('UI_LOYALTY_TAGLINE', 'Mensaje para el cliente', placeholder='Cada pedido te acerca a tu próximo antojo.', rows=2) }}
     </div>
-    <p class="cfg-help">Se acreditan una sola vez cuando el pedido queda entregado. Si se cancela, el sistema revierte automáticamente el movimiento. Se canjean por productos y no reducen importes en euros.</p>
+    <p class="cfg-help">Personaliza el nombre y el icono para cualquier vertical (café, retail, restaurante…). Internamente el saldo sigue siendo «puntos». Se acreditan una sola vez al entregar; si se cancela, se revierten. Solo se canjean por productos, nunca rebajan euros.</p>
     <a href="{{ url_for('marketing.puntos') }}#catalogo-canje" class="cfg-inline-link">Elegir productos canjeables y su coste</a>
   </form>{% endif %}
 
@@ -432,6 +500,22 @@
     <div class="cfg-secret-row">
       <div><span>API key del bot</span><code>{{ ('••••••••' ~ config_map.get('BOT_API_KEY','')[-4:]) if config_map.get('BOT_API_KEY') else 'No configurada' }}</code></div>
       <button type="submit" formaction="{{ url_for('superadmin.regenerar_api_key') }}">Regenerar clave</button>
+    </div>
+  </form>
+
+  <form id="notificaciones-cliente" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="notificaciones-cliente">
+    <div class="cfg-section-head"><div><span>6</span><h2>Notificaciones al cliente</h2><p>Gate anti-baneo Meta: prioriza push/web y sólo usa WhatsApp para códigos u OTP. Ver docs/CANAL_NOTIFICACIONES.md.</p></div><button type="submit">Guardar notificaciones</button></div>
+    <div class="cfg-grid">
+      {{ cfg_select('notif_gate_activo', 'Gate de canal activo', [('1','Sí (recomendado)'),('0','No — todo por WhatsApp (legacy)')]) }}
+      {{ cfg_input('notif_ventana_wa_horas', 'Ventana WhatsApp (horas)', type='number', min='1', max='168') }}
+    </div>
+    <div class="cfg-grid">
+      {{ cfg_input('delivery_notificar_camino_texto', 'Plantilla "voy en camino" (placeholders {nombre} {codigo})') }}
+      {{ cfg_input('delivery_franjas_notificar_puerta_texto', 'Plantilla "en la puerta" (placeholders {nombre} {codigo})') }}
+    </div>
+    <div class="cfg-grid">
+      {{ cfg_input('notif_canales_por_evento', 'Override JSON por evento (avanzado). Ej: {"delivery_en_camino":["push","web"]}') }}
     </div>
   </form>
 
@@ -460,6 +544,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/theme-preview.js') }}"></script>
 <script nonce="{{ csp_nonce() }}">
 (() => {
   const root = document.querySelector('[data-weekly-schedule]');

@@ -130,6 +130,11 @@ class User(UserMixin, db.Model):
 
     # Presencia
     last_seen = db.Column(db.DateTime)
+    # Último mensaje entrante del cliente por WhatsApp (ventana Meta de
+    # 24h de service messages). Se actualiza desde /api/bot/ai/route.
+    # Consumido por canal_service para decidir si aún estamos dentro de la
+    # ventana WA y podemos usarla como fallback de push+web.
+    last_wa_inbound_at = db.Column(db.DateTime)
     en_linea = db.Column(db.Boolean, default=False)  # toggle manual disponibilidad
     acepta_cruces = db.Column(db.Boolean, default=True, server_default="true", nullable=False)
 
@@ -183,6 +188,10 @@ class User(UserMixin, db.Model):
 
     # ── Contraseña ──
     def set_password(self, password):
+        # Los cambios de credenciales deben revocar sesiones desde cualquier
+        # ruta de gestión. La primera contraseña no tiene sesiones que revocar.
+        if self.password_hash:
+            self.mfa_session_version = (self.mfa_session_version or 0) + 1
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
@@ -318,6 +327,17 @@ class User(UserMixin, db.Model):
 
     def __repr__(self):
         return f"<User {self.email} [{self.rol}]>"
+
+
+class CustomerAccessGrant(db.Model):
+    """Invitación explícita de superadmin, vinculada a un navegador verificado."""
+    __tablename__ = "customer_access_grants"
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    activo = db.Column(db.Boolean, nullable=False, default=True)
+    device_hash = db.Column(db.String(64))
+    creado_en = db.Column(db.DateTime, nullable=False, default=utcnow)
+    actualizado_en = db.Column(db.DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
 
 def normalizar_metodo_pago(val):
@@ -2955,6 +2975,7 @@ class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     numero_pedido = db.Column(db.String(20), unique=True, nullable=False)
     cliente_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    customer_device_hash = db.Column(db.String(64), nullable=True, index=True)
     estado = db.Column(db.String(30), default="pendiente", nullable=False)
     origen = db.Column(db.String(20), default="online")   # online / presencial
 
@@ -2991,6 +3012,13 @@ class Order(db.Model):
     # (portal/recepción del cliente). El bot muestra label distinto al usuario.
     en_punto_encuentro = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
     en_punto_encuentro_en = db.Column(db.DateTime)
+
+    # Subestado del reparto: el repartidor pulsó "salir a repartir" y el
+    # cliente recibió la notificación "voy en camino". Simétrico a
+    # en_punto_encuentro: idempotente (una sola notificación por pedido).
+    # NULL = aún no salió o no se notificó. El timestamp es la marca
+    # operativa Y la señal de idempotencia (combinada con outbox previo).
+    en_camino_at = db.Column(db.DateTime)
 
     # ── Señal del bar (proveedor) ────────────────────────────────────
     # No cambia la máquina de estados; es un flag informativo.
@@ -3313,6 +3341,12 @@ class Order(db.Model):
             raise ValueError(f"Estado de pedido desconocido: {self.estado!r}")
         if self.estado in ("entregado", "cancelado"):
             raise ValueError(f"No se puede avanzar un pedido en estado '{self.estado}'")
+        # Recogida no pasa por en_ruta: el cierre con cobro es completar_recogida.
+        if self.estado == "listo" and self.tipo_entrega_cliente == "recogida":
+            raise ValueError(
+                "La recogida se cierra en mostrador con cobro confirmado; "
+                "no se avanza a entregado desde la máquina de estados."
+            )
         idx = ESTADOS_PEDIDO.index(self.estado)
         self.estado = ESTADOS_PEDIDO[idx + 1]
         ahora = utcnow()
@@ -3350,14 +3384,16 @@ class OrderItem(db.Model):
         if not self.metadata_json:
             return {}
         try:
-            return json.loads(self.metadata_json)
+            data = json.loads(self.metadata_json)
+            return data if isinstance(data, dict) else {}
         except (json.JSONDecodeError, TypeError):
             return {}
 
     @property
     def producto_snapshot(self):
-        """Datos del producto congelados en el momento de crear el pedido."""
-        return (self.get_metadata().get("producto") or {})
+        """Datos congelados; un valor vacío explícito no hereda el catálogo actual."""
+        data = self.get_metadata().get("producto")
+        return data if isinstance(data, dict) else {}
 
     @property
     def selected_flavors(self):
@@ -3406,6 +3442,11 @@ class OrderItem(db.Model):
         return bool(self.producto and self.producto.flavors_required)
 
     @property
+    def ticket_combo_lines(self):
+        from ticket_presentation import combo_ticket_lines
+        return combo_ticket_lines(self)
+
+    @property
     def display_nombre(self):
         return (
             self.producto_snapshot.get("nombre")
@@ -3415,9 +3456,10 @@ class OrderItem(db.Model):
 
     @property
     def display_imagen_url(self):
-        return self.producto_snapshot.get("imagen_url") or (
-            self.producto.imagen_url if self.producto else None
-        )
+        snapshot = self.producto_snapshot
+        if "imagen_url" in snapshot:
+            return snapshot["imagen_url"]
+        return self.producto.imagen_url if self.producto else None
 
     @property
     def display_es_combo(self):
@@ -3439,38 +3481,46 @@ class OrderItem(db.Model):
 
     @property
     def display_fecha_entrega(self):
-        raw = (
-            self.get_metadata().get("entrega_programada")
-            or self.producto_snapshot.get("fecha_llegada")
-        )
+        metadata = self.get_metadata()
+        snapshot = self.producto_snapshot
+        if "entrega_programada" in metadata:
+            raw = metadata["entrega_programada"]
+        elif "fecha_llegada" in snapshot:
+            raw = snapshot["fecha_llegada"]
+        else:
+            return self.producto.fecha_llegada if self.producto else None
         if raw:
             try:
                 return date.fromisoformat(str(raw))
             except (TypeError, ValueError):
                 pass
-        return self.producto.fecha_llegada if self.producto else None
+        return None
 
     @property
     def display_categoria(self):
-        return self.producto_snapshot.get("categoria_nombre") or (
-            self.producto.categoria.nombre if self.producto and self.producto.categoria else None
-        )
+        snapshot = self.producto_snapshot
+        if "categoria_nombre" in snapshot:
+            return snapshot["categoria_nombre"]
+        return self.producto.categoria.nombre if self.producto and self.producto.categoria else None
 
     @property
     def display_origen_pais(self):
-        return self.producto_snapshot.get("origen_pais") or (
-            self.producto.origen_pais if self.producto else None
-        )
+        snapshot = self.producto_snapshot
+        if "origen_pais" in snapshot:
+            return snapshot["origen_pais"]
+        return self.producto.origen_pais if self.producto else None
 
     @property
     def display_alergenos(self):
-        raw = self.producto_snapshot.get("alergenos_json")
-        if raw:
-            try:
-                return json.loads(raw) if isinstance(raw, str) else list(raw)
-            except (json.JSONDecodeError, TypeError, ValueError):
-                return []
-        return self.producto.alergenos_lista if self.producto else []
+        snapshot = self.producto_snapshot
+        if "alergenos_json" not in snapshot:
+            return self.producto.alergenos_lista if self.producto else []
+        raw = snapshot["alergenos_json"]
+        try:
+            value = json.loads(raw) if isinstance(raw, str) and raw else raw
+            return value if isinstance(value, list) else []
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return []
 
     @property
     def reward_metadata(self):
@@ -3667,6 +3717,9 @@ class DeliverySlot(db.Model):
         db.Boolean, nullable=False, default=True, server_default=db.text("true")
     )
     notas_admin = db.Column(db.Text)
+    # Marca de push "tu franja empezó" enviado al cliente. Idempotente: la
+    # función procesar_franjas_iniciando la escribe una sola vez por slot.
+    notif_inicio_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     updated_at = db.Column(
         db.DateTime, nullable=False, default=utcnow, onupdate=utcnow
@@ -4703,6 +4756,7 @@ class PushSubscription(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    device_hash = db.Column(db.String(64), nullable=True, index=True)
     endpoint = db.Column(db.Text, nullable=False, unique=True)
     p256dh = db.Column(db.Text, nullable=False)   # clave pública del cliente
     auth = db.Column(db.String(100), nullable=False)  # secreto de auth
@@ -4863,6 +4917,7 @@ class WebChatConversation(db.Model):
     # Identidad explícita del cliente propietario de la sesión. Nunca se
     # infiere por teléfono ni por texto del chat, evitando cruces de push.
     customer_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    device_hash = db.Column(db.String(64), nullable=True, index=True)
     status = db.Column(db.String(20), nullable=False, default="bot", index=True)
     assigned_agent_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"))
     requested_at = db.Column(db.DateTime)

@@ -208,7 +208,14 @@
     return a.length === b.length && a.every((value, index) => value === b[index]);
   }
 
-  async function subscribePush(reg) {
+  let pushSubscriptionPending = null;
+  function subscribePush(reg) {
+    if (!pushSubscriptionPending) {
+      pushSubscriptionPending = performPushSubscription(reg).finally(() => { pushSubscriptionPending = null; });
+    }
+    return pushSubscriptionPending;
+  }
+  async function performPushSubscription(reg) {
     const keyResponse = await fetch('/api/push/vapid-key', {
       credentials: 'same-origin',
       cache: 'no-store',

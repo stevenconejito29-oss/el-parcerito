@@ -741,6 +741,8 @@ def avanzar_estado_pedido(
             "El primer pedido aún no fue confirmado por WhatsApp. "
             "El cliente debe responder SI antes de iniciar la preparación."
         )
+    if pedido.estado == "listo" and pedido.tipo_entrega_cliente == "recogida":
+        raise ValueError("Confirma la entrega y el cobro desde Recogida en mostrador.")
     if validar_operativa:
         validar_avance_operativo(pedido)
     estado_anterior = pedido.estado
@@ -4185,8 +4187,8 @@ def mensaje_estado_pedido(pedido: Order) -> str:
     ):
         loyalty_terms = get_loyalty_terms()
         base += (
-            f'\nTu compra sumó *{int(pedido.puntos_ganados)} {loyalty_terms["plural"]}* ☕ '
-            "para tu próximo canje."
+            f'\nTu compra sumó *{int(pedido.puntos_ganados)} {loyalty_terms["plural"]}* '
+            f'{loyalty_terms["emoji"]} para tu próximo canje.'
         )
     # Verificación pasiva antifraude: cuando el pedido acaba de crearse y
     # el motor de riesgo lo marcó como `pending`, invitamos al cliente a
@@ -4300,6 +4302,19 @@ def _registrar_notificacion(
 ) -> NotificationOutbox | None:
     if not destinatario:
         return None
+    if canal == "whatsapp" and pedido_id and evento in {"order_confirmation", "delivery_code"}:
+        # Serializa solicitudes del mismo pedido, también desde distintos roles.
+        db.session.query(Order.id).filter_by(id=pedido_id).with_for_update().first()
+        existing = NotificationOutbox.query.filter_by(
+            canal=canal, evento=evento, pedido_id=pedido_id, destinatario=destinatario,
+        ).filter(NotificationOutbox.estado.in_(("pending", "processing"))).all()
+        for queued in existing:
+            if queued.get_payload() == payload:
+                return queued
+    if canal == "whatsapp" and evento == "points_otp" and user_id:
+        cliente = db.session.get(User, user_id)
+        if cliente and cliente.cod_puntos_expira:
+            payload = {**payload, "verification_expires_at": cliente.cod_puntos_expira.isoformat()}
     job = NotificationOutbox(
         canal=canal,
         evento=evento,
@@ -4392,8 +4407,7 @@ def purgar_registros_antiguos(now: datetime | None = None) -> dict:
     ids_borrar = [
         row.id for row in _NO.query.filter(
             _NO.estado.in_(("sent", "failed")),
-            _NO.enviado_en.isnot(None),
-            _NO.enviado_en < corte,
+            db.func.coalesce(_NO.enviado_en, _NO.creado_en) < corte,
         ).limit(500).all()
     ]
     if ids_borrar:
@@ -4446,6 +4460,36 @@ def purgar_registros_antiguos(now: datetime | None = None) -> dict:
             retention_days,
         )
     return resultado
+
+
+def _whatsapp_obsoleto(job, payload):
+    """Revalida la intención en el momento de envío, incluidos los reintentos."""
+    from phone_utils import normalizar_telefono_cliente
+    if job.evento not in WHATSAPP_TRANSACTIONAL_PURPOSES:
+        return "purpose_not_allowed"
+    if job.evento in {"order_confirmation", "delivery_code"}:
+        pedido = db.session.get(Order, job.pedido_id) if job.pedido_id else None
+        if not pedido or not pedido.cliente:
+            return "order_missing"
+        if normalizar_telefono_cliente(payload.get("telefono")) != normalizar_telefono_cliente(pedido.cliente.telefono):
+            return "recipient_changed"
+        if job.evento == "order_confirmation":
+            if pedido.estado != "pendiente" or pedido.confirmacion_estado != "pending":
+                return "confirmation_no_longer_pending"
+        elif pedido.estado != "en_ruta" or not pedido.requiere_reparto:
+            return "delivery_no_longer_active"
+        elif payload.get("delivery_code") != pedido.codigo_confirmacion:
+            return "delivery_code_replaced_or_legacy"
+    if job.evento == "points_otp":
+        cliente = db.session.get(User, job.user_id) if job.user_id else None
+        if not cliente or not cliente.cod_puntos or not cliente.cod_puntos_expira or cliente.cod_puntos_expira <= utcnow():
+            return "otp_expired_or_consumed"
+        if normalizar_telefono_cliente(payload.get("telefono")) != normalizar_telefono_cliente(cliente.telefono):
+            return "recipient_changed"
+        # La fecha identifica la emisión actual sin duplicar el secreto en metadatos.
+        if payload.get("verification_expires_at") != cliente.cod_puntos_expira.isoformat():
+            return "otp_replaced_or_legacy"
+    return None
 
 
 def procesar_notificaciones_pendientes(
@@ -4509,6 +4553,14 @@ def procesar_notificaciones_pendientes(
         error = None
         try:
             if job.canal == "whatsapp" and payload.get("telefono") and payload.get("mensaje"):
+                reason = _whatsapp_obsoleto(job, payload)
+                if reason:
+                    job.estado = "failed"
+                    job.ultimo_error = f"discarded:{reason}"
+                    job.siguiente_intento_en = None
+                    resultado["saltadas"] += 1
+                    db.session.commit()
+                    continue
                 ok = _send_whatsapp_message(
                     payload["telefono"], payload["mensaje"], purpose=job.evento,
                 )
@@ -4577,6 +4629,7 @@ def enviar_whatsapp_codigo_entrega(pedido: Order, actor_id: int | None = None) -
     payload = {
         "telefono": pedido.cliente.telefono,
         "mensaje": mensaje,
+        "delivery_code": pedido.codigo_confirmacion,
         "numero_pedido": pedido.numero_pedido,
         "estado": pedido.estado,
     }
@@ -4605,6 +4658,10 @@ def enviar_whatsapp_codigo_entrega(pedido: Order, actor_id: int | None = None) -
 def _send_whatsapp_message(telefono: str, mensaje: str, *, purpose: str = "") -> bool:
     """Envía un mensaje de WhatsApp a un teléfono. Retorna True si OK."""
     if not telefono or not mensaje:
+        return False
+    # También protege reintentos de mensajes antiguos que ya estaban en outbox.
+    if purpose not in WHATSAPP_TRANSACTIONAL_PURPOSES:
+        logger.warning("WhatsApp omitido: propósito no permitido (%s)", purpose)
         return False
     from models import SiteConfig
     if str(SiteConfig.get("WHATSAPP_SIMULATE_SEND", "0") or "0").strip().lower() in {
@@ -4795,3 +4852,48 @@ def cerrar_dia_automatico(fecha_dia=None):
             "ok": False, "skipped": False, "fecha": fecha_dia.isoformat(),
             "mensaje": f"Error: {exc}",
         }
+
+
+def completar_recogida(pedido, actor_id, *, cobro_recibido=False, referencia="", canal="recogida"):
+    """Entrega física y cobro en mostrador, atómicos e idempotentes; sin reparto."""
+    pedido = Order.query.filter_by(id=pedido.id).populate_existing().with_for_update().one()
+    actor = db.session.get(User, actor_id)
+    if not actor or not actor.activo or actor.rol not in {"super_admin", "admin", "cocina", "preparacion"}:
+        raise ValueError("No tienes permiso para entregar recogidas.")
+    if actor.rol not in {"admin", "super_admin"} and pedido.preparador_id != actor_id:
+        raise ValueError("Este pedido pertenece a otro responsable de preparación.")
+    if pedido.tipo_entrega_cliente != "recogida":
+        raise ValueError("Esta operación solo admite recogida en el negocio.")
+    if pedido.estado == "entregado":
+        return False
+    # Compatibilidad: una recogida antigua en_ruta se cierra en mostrador
+    # y se limpia el código de delivery que no aplica a este flujo.
+    if pedido.estado not in {"listo", "en_ruta"} or pedido.confirmacion_estado == "pending":
+        raise ValueError("El pedido debe estar preparado antes de entregarlo.")
+    if cobro_recibido is not True:
+        raise ValueError("Comprueba la entrega al cliente y el cobro en mostrador.")
+    metodo = normalizar_metodo_pago(pedido.metodo_pago)
+    if not metodo:
+        raise ValueError("Revisa el método de pago antes de entregar.")
+    referencia = str(referencia or "").strip()[:80]
+    if metodo == "bizum" and not pedido.pago_confirmado and len(referencia) < 3:
+        raise ValueError("Añade una referencia del Bizum recibido (mínimo 3 caracteres).")
+    if not pedido.pago_confirmado:
+        registrar_pago_pedido(pedido, actor_id=actor_id, canal=canal,
+                              detalle=f"Cobro en mostrador: {metodo}" + (f" ({referencia})" if referencia else ""))
+    anterior = pedido.estado
+    pedido.estado = "entregado"
+    pedido.entregado_en = utcnow()
+    # Una recogida no debe conservar artefacto de delivery (código / en_ruta).
+    if anterior == "en_ruta":
+        pedido.en_ruta_en = None
+    if getattr(pedido, "codigo_confirmacion", None) or getattr(pedido, "codigo_confirmacion_expira_en", None):
+        pedido.codigo_confirmacion = None
+        pedido.codigo_confirmacion_expira_en = None
+        pedido.intentos_codigo = 0
+    registrar_evento_pedido(pedido, "recogida_entregada", actor_id=actor_id,
+                           estado_anterior=anterior, estado_nuevo="entregado", canal=canal,
+                           detalle="El cliente recogió su pedido en el negocio")
+    registrar_ingreso_pedido(pedido, registrado_por=actor_id)
+    award_points_on_delivery(pedido)
+    return True

@@ -1,0 +1,13 @@
+<details class="work-pickup-handoff">
+  <summary>Entregar en mostrador · €{{ '%.2f'|format(pedido.total) }}</summary>
+  <form method="POST" action="{{ pickup_complete_url|default(url_for('preparador.entregar_recogida', pedido_id=pedido.id)) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <p>Comprueba el número <strong>{{ pedido.numero_pedido }}</strong> con el cliente y entrega los productos.</p>
+    <p>{{ 'Pago ya confirmado' if pedido.pago_confirmado else 'A cobrar al recoger' }}: <strong>€{{ '%.2f'|format(pedido.total) }} · {{ pedido.metodo_pago }}</strong></p>
+    {% if pedido.metodo_pago in ('bizum', 'transferencia') and not pedido.pago_confirmado %}
+    <label>Referencia del Bizum recibido<input name="referencia" minlength="3" maxlength="80" required autocomplete="off"></label>
+    {% endif %}
+    <label class="work-pickup-confirm"><input type="checkbox" name="cobro_recibido" value="1" required> He entregado el pedido al cliente y comprobado el cobro.</label>
+    <button type="submit" class="work-btn work-btn-success">Confirmar recogida</button>
+  </form>
+</details>

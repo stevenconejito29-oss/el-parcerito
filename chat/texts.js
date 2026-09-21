@@ -81,11 +81,13 @@ function menuPrincipal(ctx) {
  */
 function clientMenuLines(ctx) {
   const catalogo = String(ctx.verticalLabel || "Menú").toLowerCase();
+  const loyaltyName = String(ctx.loyaltyName || "puntos");
+  const loyaltyEmoji = String(ctx.loyaltyEmoji || "⭐");
   const lines = [
     `*1* — 🛒 Ver el ${catalogo} en la web`,
     `*2* — 📦 Estado de mi pedido`,
   ];
-  if (ctx.loyaltyEnabled) lines.push("*3* — ⭐ Mis puntos");
+  if (ctx.loyaltyEnabled) lines.push(`*3* — ${loyaltyEmoji} Mis ${loyaltyName}`);
   if (ctx.deliveryEnabled) lines.push("*4* — 📍 Zona de entrega");
   lines.push("*6* — 📖 Información y ayuda");
   // Opción 7 ("Hablar con una persona") oculta del menú principal.
@@ -104,7 +106,7 @@ function clientMenuLines(ctx) {
  */
 function clientCapabilityText(ctx) {
   const caps = ["estado de pedidos", "información general"];
-  if (ctx.loyaltyEnabled) caps.push("puntos");
+  if (ctx.loyaltyEnabled) caps.push(String(ctx.loyaltyPlural || "puntos"));
   if (ctx.deliveryEnabled) caps.push("cobertura");
   if (ctx.scheduledEnabled) caps.push("pedidos programados");
   caps.push("horario");
@@ -578,6 +580,7 @@ function errorTransitorio(opts = {}) {
 }
 
 module.exports = {
+  customerChannelNotice: url => `Este WhatsApp se utiliza para verificaciones y confirmaciones: tu primera compra, códigos de entrega y verificación de canjes.\n\nPara comprar, entra en nuestra tienda:\n${url}\n\nSi tienes una duda o necesitas ayuda, escríbenos en el chat web:\n${url.replace(/\/$/, '')}/ayuda`,
   ESCAPE_HINT,
   FALLBACK_HINT,
   HANDOFF_QUEUED,

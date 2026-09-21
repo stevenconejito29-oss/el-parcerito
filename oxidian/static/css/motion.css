@@ -154,3 +154,30 @@ details > summary {
   border-top-color: var(--color-accent, #ff6a00);
   border-left-color: var(--color-accent, #ff6a00);
 }
+
+/* UI compartida: SVG locales y respuesta táctil, sin motor adicional. */
+.ox-ui-icon { width: 1.5rem; height: 1.5rem; display: inline-block; flex-shrink: 0; vertical-align: -.2em; }
+.work-title > .ox-ui-icon { margin-inline-end: .4rem; width: 1.15em; height: 1.15em; }
+@media (prefers-reduced-motion: no-preference) {
+  body :is(.ep-grid .ep-card, .sa-category) {
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+  body :is(.ep-btn-add, .ep-btn-detail, .cr-qty-btn, .work-btn) {
+    transition: transform 140ms ease, background-color 140ms ease;
+  }
+  body :is(.ep-btn-add, .ep-btn-detail, .cr-qty-btn, .work-btn):active:not(:disabled):not([aria-disabled="true"]) {
+    transform: scale(.97);
+  }
+  .sa-disclosure[open] > .sa-disclosure-body { animation: motion-fade 160ms ease; }
+}
+@media (hover: hover) and (pointer: fine) {
+  body :is(.ep-grid .ep-card, .sa-category):hover { border-color: var(--brand-primary) !important; }
+}
+/* Las reglas de reducción van al final: también cubren skeletons y HTMX. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton, .motion-fade-in, .motion-slide-up, .motion-pulse,
+  .hx-animate.htmx-added, .hx-animate.htmx-settling,
+  details[class^="favor-"][open] > *:not(summary),
+  details[class^="fr-"][open] > *:not(summary) { animation: none !important; }
+  .hx-animate.htmx-swapping { transition: none; }
+}

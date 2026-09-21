@@ -1,0 +1,35 @@
+{% from 'partials/ui_icons.html' import ui_icon %}
+<section class="oa-section" aria-labelledby="sa-management-title">
+  <h2 class="oa-section__title" id="sa-management-title">Gestionar por categoría</h2>
+  <p class="oa-section__sub">Cada acceso abre el listado o la herramienta correspondiente para consultar y modificar sus datos.</p>
+  <div class="sa-category-grid">
+    {% for title, description, links in [
+      ('Operación y reparto', 'Pedidos, atención y planificación de entregas.', [
+        ('admin.pedidos', 'Pedidos'), ('admin.chats_index', 'Chat web'),
+        ('admin.delivery_franjas_panel', 'Modalidades y franjas')]),
+      ('Catálogo e inventario', 'Productos, clasificación y existencias.', [
+        ('admin.productos', 'Productos'), ('admin.categorias', 'Categorías'),
+        ('admin.stock', 'Stock')]),
+      ('Personas y accesos', 'Perfiles, teléfonos registrados y permisos.', [
+        ('superadmin.admins', 'Administradores y permisos'), ('admin.usuarios', 'Equipo'),
+        ('admin.clientes', 'Clientes')]),
+      ('Finanzas', 'Rentabilidad, movimientos y obligaciones pendientes.', [
+        ('superadmin.pl', 'Ganancias y costes'), ('admin.caja', 'Caja'),
+        ('admin.cierres_lista', 'Cierres'), ('admin.pagos_staff', 'Pagos al equipo')]),
+      ('Tienda y canales', 'Marca, contenido, módulos y automatizaciones.', [
+        ('superadmin.config', 'Configuración'), ('admin.menu_config', 'Contenido de la PWA'),
+        ('superadmin.chatbot', 'WhatsApp y conocimiento del chat web')]),
+      ('Datos y mantenimiento', 'Trazabilidad y recuperación del sistema.', [
+        ('superadmin.audit', 'Auditoría'), ('superadmin.database_admin', 'Respaldos y restauración')])
+    ] %}
+    <article class="sa-category">
+      <span class="sa-category-icon">{{ ui_icon(['truck', 'package', 'users', 'wallet', 'settings-2', 'database'][loop.index0]) }}</span>
+      <h3>{{ title }}</h3><p>{{ description }}</p>
+      <ul>{% for endpoint, label in links %}<li><a href="{{ url_for(endpoint) }}">{{ label }} <span aria-hidden="true">→</span></a></li>{% endfor %}</ul>
+      {% if title == 'Operación y reparto' and brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}">Zonas y tarifas →</a>{% endif %}
+      {% if title == 'Finanzas' and brand.proveedores %}<a href="{{ url_for('admin.liquidacion_proveedores') }}">Liquidaciones de socios →</a>{% endif %}
+      {% if title == 'Tienda y canales' %}<a href="#modulos">Módulos y modelo de tienda ↓</a>{% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>

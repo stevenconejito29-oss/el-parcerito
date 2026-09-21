@@ -89,14 +89,24 @@ class SecurityHeadersTest(unittest.TestCase):
         # Sin HTTPS ni SESSION_COOKIE_SECURE activo → no HSTS.
         self.assertNotIn("Strict-Transport-Security", r.headers)
 
+    def test_hardware_solo_en_rutas_de_impresion_operativa(self):
+        for route in ("/preparador/pedidos", "/pos/ticket/1"):
+            policy = self._get(route).headers.get("Permissions-Policy", "")
+            self.assertIn("usb=(self)", policy)
+            self.assertIn("bluetooth=(self)", policy)
+        policy = self._get("/checkout").headers.get("Permissions-Policy", "")
+        self.assertIn("usb=()", policy)
+        self.assertIn("bluetooth=()", policy)
+
     def test_hsts_se_emite_con_forwarded_proto_https_y_cookie_secure(self):
-        with self.app.test_request_context():
-            self.app.config["SESSION_COOKIE_SECURE"] = True
-        r = self._get("/health", **{"X-Forwarded-Proto": "https"})
-        # En este test el config global no persiste entre requests del
-        # test client — verificamos solo que el header no explota.
-        # Cubierto por manual test / staging.
-        self.assertIn(r.status_code, (200, 302, 404))
+        previous = self.app.config.get("SESSION_COOKIE_SECURE")
+        self.app.config["SESSION_COOKIE_SECURE"] = True
+        try:
+            r = self._get("/health/live", **{"X-Forwarded-Proto": "https"})
+            self.assertEqual(r.status_code, 200)
+            self.assertIn("max-age=31536000", r.headers["Strict-Transport-Security"])
+        finally:
+            self.app.config["SESSION_COOKIE_SECURE"] = previous
 
     def test_public_identity_exposes_sitemap_and_absolute_urls(self):
         sitemap = self.client.get(

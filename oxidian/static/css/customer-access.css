@@ -1,0 +1,10 @@
+.customer-access { max-width: 28rem; margin: 5vh auto; padding: 1.5rem; color: var(--col-text, #242424); }
+.customer-access h1 { font-size: 1.8rem; line-height: 1.2; }
+.customer-access p { line-height: 1.6; margin: 1rem 0; }
+.customer-access label { display: block; margin-bottom: .5rem; }
+.customer-access input, .customer-access button { width: 100%; min-height: 3rem; border-radius: .6rem; padding: .7rem; font: inherit; }
+.customer-access input { color: inherit; background: var(--col-surface, #fff); border: 1px solid var(--col-border, #888); }
+.customer-access button { margin-top: 1rem; background: var(--brand-primary, #7d2020); color: var(--brand-on-primary, #fff); border: 0; cursor: pointer; }
+.customer-access .secondary { background: transparent; color: inherit; border: 1px solid currentColor; }
+.customer-access footer { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 2rem; }
+.customer-access a { color: inherit; text-decoration: underline; }

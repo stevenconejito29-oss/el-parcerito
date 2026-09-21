@@ -8,13 +8,26 @@ distribución viven en `oxidian/services.py`.
 
 | Estado | Responsable principal | Vista | Acción siguiente |
 |---|---|---|---|
-| `pendiente` inmediato | `cocina` | `/preparador/pedidos` | Tomar e iniciar preparación. |
-| `pendiente` programado | `preparacion` | `/preparador/pedidos` | Planificar por fecha; iniciar dentro de la ventana. |
+| `pendiente` inmediato | cocina / preparación | `/preparador/pedidos` | Tomar e iniciar preparación. |
+| `pendiente` programado | preparación | `/preparador/pedidos` | Planificar por fecha; iniciar dentro de la ventana. |
 | `armando` | Preparador asignado | `/preparador/pedidos` | Completar y marcar listo. |
-| `listo` con delivery | `repartidor` | `/repartidor/ruta` | Tomar ruta y salir. |
-| `listo` para recoger | `admin` | `/admin/pedidos` | Confirmar cobro y entrega local. |
-| `en_ruta` | Repartidor asignado | `/repartidor/ruta` | Validar código, cobro y entrega. |
+| `listo` con delivery | repartidor | `/repartidor/ruta` | Tomar ruta y salir (`listo` → `en_ruta`). |
+| `listo` para recoger | preparador / mostrador | `/preparador/pedidos` | Confirmar cobro y entrega local (`completar_recogida`). |
+| `en_ruta` | Repartidor asignado | `/repartidor/ruta` | Validar código, cobro y entrega (`en_ruta` → `entregado`). |
 | `entregado` / `cancelado` | Administración | `/admin/pedidos` | Consulta, ticket y auditoría. |
+
+### Divergencia recogida vs delivery
+
+Ambos flujos comparten `pendiente → armando → listo`. A partir de ahí:
+
+- **Delivery** (`tipo_entrega_cliente=delivery`): se asigna repartidor, pasa a
+  `en_ruta` (genera código de entrega) y se cierra en la puerta con código + cobro.
+- **Recogida** (`tipo_entrega_cliente=recogida`): no entra en reparto ni genera
+  código. El cierre es atómico en mostrador (`services.completar_recogida`) con
+  cobro explícito → `entregado` + puntos + caja.
+
+La máquina de estados **no** permite avanzar una recogida `listo` a `entregado`
+con `avanzar_estado`; hay que usar el handoff de mostrador.
 
 `admin` y `super_admin` supervisan todos los estados y pueden resolver
 asignaciones, pero las barreras del servidor siguen aplicando: confirmación del
@@ -32,6 +45,16 @@ de entrega no se omiten por ocultar o mostrar un botón.
   consultas agregadas, evitando una consulta por empleado dentro de cada tarjeta.
 - El correlativo visible se reserva bajo un bloqueo transaccional de PostgreSQL,
   evitando números repetidos cuando entran pedidos concurrentes.
+
+## Avisos al cliente
+
+- El seguimiento de estados (`armando`, `listo`, `en_ruta`, `entregado`) va por
+  **PWA / chat web** (`push_service.notify_order_state`).
+- WhatsApp transaccional se reserva a confirmación del primer pedido, OTP de
+  canje y código de entrega en puerta.
+- En recogida, al marcar `listo` el cliente recibe «Ya puedes recoger…» con
+  dirección del local. En delivery, al marcar `listo` se avisa al pool de
+  repartidores; al salir a ruta, el cliente recibe «va en camino».
 
 ## Hitos y métricas operativas
 

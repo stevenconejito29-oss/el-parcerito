@@ -137,6 +137,17 @@ def create_app(env="default"):
         user = db.session.get(User, ident)
         return user if user and user.puede_iniciar_sesion else None
 
+    from device_identity import initialise_browser_session
+    app.before_request(initialise_browser_session)
+    from customer_access import enforce_customer_access, private_access_headers
+    app.before_request(enforce_customer_access)
+    app.after_request(private_access_headers)
+
+    @app.context_processor
+    def inject_private_customer():
+        from customer_access import verified_customer
+        return {"private_customer": verified_customer() if getattr(g, "private_customer_access", False) else None}
+
     @app.before_request
     def log_request_start():
         g.start_time = time.time()
@@ -724,6 +735,7 @@ def create_app(env="default"):
             "ALERGENOS_EU": ALERGENOS_EU,
             "asset_version": app.config["ASSET_VERSION"],
             "now": datetime.now,
+            "umami_website_id": (os.environ.get("UMAMI_WEBSITE_ID") or "").strip(),
         }
 
     @app.template_filter("time_ago")
@@ -750,6 +762,32 @@ def create_app(env="default"):
             return dias[value.weekday()]
         except (IndexError, TypeError, ValueError):
             return ""
+
+    @app.template_filter("weekday_es_corto")
+    def weekday_es_corto_filter(value):
+        """Nombre corto del día: Lun/Mar/Mié/Jue/Vie/Sáb/Dom.
+
+        Usado en calendarios y cabeceras compactas. Reusa la fuente única
+        en delivery_slots_service para no duplicar arrays.
+        """
+        if value is None or not hasattr(value, "weekday"):
+            return ""
+        try:
+            from delivery_slots_service import _DIAS_CORTOS_ES
+            return _DIAS_CORTOS_ES[value.weekday()]
+        except (IndexError, TypeError, ValueError, ImportError):
+            return ""
+
+    @app.template_filter("fecha_es_corta")
+    def fecha_es_corta_filter(value):
+        """Formato relativo/corto: 'Hoy · 21 ago' / 'Mañana · 22 ago' / 'Vie 23 ago'."""
+        if value is None:
+            return ""
+        try:
+            from delivery_slots_service import format_fecha_dia_corto
+            return format_fecha_dia_corto(value)
+        except Exception:
+            return str(value)
 
     @app.template_filter("from_json")
     def from_json_filter(value):
@@ -1093,6 +1131,8 @@ def create_app(env="default"):
     # frente a loops del bot o abuso si una credencial llegara a filtrarse.
 
     app.register_blueprint(auth_bp,        url_prefix="/auth")
+    from routes.customer_access import customer_access_bp
+    app.register_blueprint(customer_access_bp)
     app.register_blueprint(public_bp,      url_prefix="/")
     app.register_blueprint(admin_bp,       url_prefix="/admin")
     app.register_blueprint(preparador_bp,  url_prefix="/preparador")
@@ -1158,8 +1198,10 @@ def create_app(env="default"):
             "/superadmin/zona",
         ))
         geolocation = "(self)" if geolocation_allowed else "()"
+        printer_access = "(self)" if request.path.startswith(("/preparador/", "/pos/")) else "()"
         response.headers["Permissions-Policy"] = (
-            f"camera=(), geolocation={geolocation}, microphone=(), payment=(), usb=()"
+            f"camera=(), geolocation={geolocation}, microphone=(), payment=(), "
+            f"usb={printer_access}, bluetooth={printer_access}"
         )
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Origin-Agent-Cluster"] = "?1"
@@ -1179,7 +1221,7 @@ def create_app(env="default"):
             style_sources,
             "font-src 'self' data: https://fonts.gstatic.com",
             "img-src 'self' data: blob: https:",
-            "connect-src 'self'",
+            "connect-src 'self' https://stats.elparcerito.com",
             "manifest-src 'self'",
             "worker-src 'self' blob:",
         ))

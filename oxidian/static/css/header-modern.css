@@ -1034,3 +1034,6 @@ body.ox-body-public .ox-employee-login:focus-visible {
   border-color: color-mix(in srgb, var(--brand-primary) 42%, transparent) !important;
   transform: translateY(-1px);
 }
+/* El destino actual se distingue también por forma. */
+.ox-bottom-nav .ox-bnav-item[aria-current="page"] .ox-bnav-label { text-decoration: underline; text-underline-offset: .3em; text-decoration-thickness: 2px; }
+.ox-bottom-nav .ox-bnav-item:focus-visible { outline: 3px solid var(--brand-primary); outline-offset: -3px; border-radius: .65rem; }

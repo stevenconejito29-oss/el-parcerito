@@ -40,6 +40,14 @@ def _validate_subscription(endpoint: str, p256dh: str, auth_key: str) -> str | N
     return None
 
 
+def _push_user():
+    from models import User
+    if current_user.is_authenticated:
+        return current_user if current_user.activo else None
+    user = db.session.get(User, session.get("push_cliente_id")) if session.get("push_cliente_id") else None
+    return user if user and user.activo and user.rol == "cliente" else None
+
+
 @push_bp.route("/vapid-key")
 def vapid_key():
     """Clave pública VAPID para que el frontend suscriba al usuario."""
@@ -55,7 +63,10 @@ def status():
     """Diagnóstico seguro: nunca expone endpoints ni claves del dispositivo."""
     from push_service import vapid_configuration_error
 
-    user_id = current_user.id if current_user.is_authenticated else session.get("push_cliente_id")
+    user = _push_user()
+    user_id = user.id if user else None
+    from device_identity import browser_device_hash
+    device_hash = browser_device_hash()
     active_devices = 0
     this_device_active = False
     if user_id:
@@ -63,7 +74,7 @@ def status():
         endpoint = (request.args.get("endpoint") or "").strip()
         if endpoint:
             this_device_active = PushSubscription.query.filter_by(
-                user_id=user_id, endpoint=endpoint, activo=True,
+                user_id=user_id, endpoint=endpoint, activo=True, device_hash=device_hash,
             ).first() is not None
     return jsonify({
         "ok": True,
@@ -77,77 +88,56 @@ def status():
 @push_bp.route("/subscribe", methods=["POST"])
 def subscribe():
     """Registra o actualiza la suscripción push del usuario actual."""
-    data = request.get_json(silent=True) or {}
-    endpoint = data.get("endpoint", "").strip()
-    p256dh   = (data.get("keys") or {}).get("p256dh", "").strip()
-    auth_key = (data.get("keys") or {}).get("auth", "").strip()
-
-    if not endpoint or not p256dh or not auth_key:
+    from device_identity import browser_device_hash
+    from order_access import visitor_order_tokens
+    from models import Order
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("keys"), dict):
+        return jsonify({"ok": False, "error": "Suscripción inválida"}), 400
+    values = [data.get("endpoint"), data["keys"].get("p256dh"), data["keys"].get("auth")]
+    if any(not isinstance(value,str) or not value.strip() for value in values):
         return jsonify({"ok": False, "error": "Suscripción incompleta"}), 400
-    validation_error = _validate_subscription(endpoint, p256dh, auth_key)
-    if validation_error:
-        return jsonify({"ok": False, "error": validation_error}), 400
-
-    user_id = current_user.id if current_user.is_authenticated else session.get("push_cliente_id")
-    if not user_id:
+    endpoint,p256dh,auth_key = (value.strip() for value in values)
+    try:
+        error = _validate_subscription(endpoint,p256dh,auth_key)
+    except ValueError:
+        error = "Endpoint push inválido"
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+    user = _push_user()
+    if not user:
         return jsonify({"ok": False, "error": "Completa un pedido antes de activar avisos"}), 403
-    ua = request.headers.get("User-Agent", "")[:300]
-    # Rol snapshot: si estamos autenticados, el rol real del usuario. Si
-    # no (guest checkout), miramos el rol REAL del user_id en BD — antes
-    # asumíamos "cliente" a ciegas, y si el user_id de sesión resultaba
-    # ser un admin (caso: admin checkoutea como guest en su iPhone),
-    # quedaba `sub_rol='cliente'` mientras User.rol='super_admin'. Ese
-    # snapshot inconsistente confundía diagnóstico. `notify_roles` usa
-    # User.rol real (JOIN) así que el bug funcional no existía, pero
-    # ensuciaba la señal para debug.
-    if current_user.is_authenticated:
-        rol = current_user.rol
+    device_hash = browser_device_hash(create=True)
+    values = dict(user_id=user.id, device_hash=device_hash, endpoint=endpoint,
+                  p256dh=p256dh, auth=auth_key, rol=user.rol, activo=True,
+                  user_agent=request.headers.get("User-Agent", "")[:300], ultimo_uso=utcnow())
+    # Una sola operación con la clave única del proveedor; dos pestañas no
+    # pueden crear registros duplicados ni provocar un 500 por la carrera.
+    if db.engine.dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
     else:
-        from models import User as _User
-        _u = db.session.get(_User, user_id)
-        rol = _u.rol if _u else "cliente"
-
-    # Upsert por endpoint. Web Push spec: un browser/origen = un endpoint.
-    # Si dos usuarios usan el mismo browser (tablet compartida) reasignamos
-    # el endpoint al user actual — pero logueamos WARNING para poder
-    # diagnosticar por qué un admin "perdió" sus notifs. En dispositivos
-    # dedicados (uno por operario) este warning nunca aparece.
-    sub = PushSubscription.query.filter_by(endpoint=endpoint).first()
-    from flask import current_app
-    if sub:
-        if sub.user_id and sub.user_id != user_id:
-            current_app.logger.warning(
-                "push.subscribe: endpoint reasignado de user %s → user %s "
-                "(rol previo=%r, nuevo=%r) — típico en tablet compartida",
-                sub.user_id, user_id, sub.rol, rol,
-            )
-        sub.user_id  = user_id
-        sub.p256dh   = p256dh
-        sub.auth     = auth_key
-        sub.rol      = rol
-        sub.activo   = True
-        sub.ultimo_uso = utcnow()
-    else:
-        sub = PushSubscription(
-            user_id=user_id,
-            endpoint=endpoint,
-            p256dh=p256dh,
-            auth=auth_key,
-            rol=rol,
-            user_agent=ua,
-        )
-        db.session.add(sub)
-
+        from sqlalchemy.dialects.sqlite import insert
+    statement=insert(PushSubscription).values(**values)
+    db.session.execute(statement.on_conflict_do_update(index_elements=["endpoint"],set_={k:v for k,v in values.items() if k != "endpoint"}))
+    # Los pedidos anteriores solo se vinculan si ESTA sesión conserva su
+    # autorización. Nunca se deduce el dispositivo por teléfono o user_id.
+    ids=list(visitor_order_tokens())
+    if ids:
+        Order.query.filter(Order.id.in_(ids),Order.cliente_id==user.id,Order.customer_device_hash.is_(None)).update(
+            {Order.customer_device_hash:device_hash},synchronize_session=False)
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "this_device_active": True})
 
 
 @push_bp.route("/unsubscribe", methods=["POST"])
 def unsubscribe():
     """Elimina la suscripción del endpoint enviado."""
-    data = request.get_json(silent=True) or {}
-    endpoint = data.get("endpoint", "").strip()
-    user_id = current_user.id if current_user.is_authenticated else session.get("push_cliente_id")
+    data = request.get_json(silent=True)
+    if not isinstance(data,dict) or not isinstance(data.get("endpoint"),str):
+        return jsonify({"ok":False,"error":"Suscripción inválida"}),400
+    endpoint = data["endpoint"].strip()
+    user = _push_user()
+    user_id = user.id if user else None
     if endpoint and user_id:
         PushSubscription.query.filter_by(
             endpoint=endpoint, user_id=user_id

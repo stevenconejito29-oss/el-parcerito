@@ -22,6 +22,15 @@ from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 
+def otp_resend_seconds() -> int:
+    """Intervalo compartido entre la protección anti-flood y la interfaz."""
+    from models import SiteConfig
+    try:
+        return max(1, int(SiteConfig.get("OTP_MIN_RESEND_SECONDS", "60") or 60))
+    except (TypeError, ValueError):
+        return 60
+
+
 def _loyalty_terms() -> dict[str, str]:
     from store_config import get_loyalty_terms
     return get_loyalty_terms()
@@ -68,6 +77,7 @@ def solicitar_codigo(
     producto=None,
     commit: bool = True,
     permitir_sin_puntos: bool = False,
+    identidad: bool = False,
 ) -> dict:
     """
     Genera y envía código OTP por WhatsApp para verificar canje de puntos.
@@ -104,14 +114,12 @@ def solicitar_codigo(
     # Se deduce el instante de emisión a partir de `cod_puntos_expira - TTL`.
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
     from models import SiteConfig
-    try:
-        min_gap = int(SiteConfig.get("OTP_MIN_RESEND_SECONDS", "60") or 60)
-    except (TypeError, ValueError):
-        min_gap = 60
+    min_gap = otp_resend_seconds()
     try:
         ttl_min = int(SiteConfig.get("COD_PUNTOS_TTL_MINUTOS", "10") or 10)
     except (TypeError, ValueError):
         ttl_min = 10
+    ttl_min = max(1, min(ttl_min, 60))
     if cliente.cod_puntos_expira and cliente.cod_puntos:
         ahora = _dt.now(_tz.utc).replace(tzinfo=None)
         try:
@@ -137,8 +145,17 @@ def solicitar_codigo(
         f"🔐 *Código de verificación — {nombre_negocio}*\n\n"
         f'Tu código para canjear {terms["plural"]} por *{producto_txt}* es:\n\n'
         f"*{codigo}*\n\n"
-        f"⏰ Válido 10 minutos. No lo compartas."
+        f"⏰ Válido {ttl_min} minutos. No lo compartas.\n\n"
+        "Introduce el código en la página donde solicitaste el canje. "
+        "No necesitas responder a este WhatsApp."
     )
+    if identidad:
+        mensaje = (
+            f"🔐 *Acceso a {nombre_negocio}*\n\n"
+            f"Tu código para entrar en la tienda es: *{codigo}*\n\n"
+            f"Válido {ttl_min} minutos. No lo compartas. "
+            "Introdúcelo en la página donde solicitaste el acceso."
+        )
     encolado = enviar_whatsapp_generico(
         cliente.telefono,
         mensaje,
@@ -350,7 +367,7 @@ def enviar_saldo_puntos(cliente, commit: bool = True) -> bool:
     nombre_negocio = SiteConfig.get("NOMBRE_NEGOCIO", "Oxidian")
     terms = _loyalty_terms()
     mensaje = (
-        f'☕ *Tus {terms["plural"]} en {nombre_negocio}*\n\n'
+        f'{terms["emoji"]} *Tus {terms["plural"]} en {nombre_negocio}*\n\n'
         f'Tienes *{puntos} {terms["plural"]}* disponibles.\n'
         "Puedes cambiarlos por los productos de recompensa disponibles.\n\n"
         "Para canjearlos, arma tu pedido en la web y verifica este mismo WhatsApp "

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% from 'partials/heritage_icons.html' import heritage_icon %}
+{% from 'partials/heritage_icons.html' import heritage_icon, loyalty_icon %}
+{% from 'partials/ui_icons.html' import ui_icon %}
 {% block title %}{{ brand.nombre }} — Pide online{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-menu.css', v=asset_version) }}">
@@ -113,10 +114,10 @@
 {# La búsqueda es una acción primaria y única: permanece visible antes del
    contenido variable, sin duplicarse en la navegación inferior. #}
 <form method="GET" action="{{ establecimiento.url }}" class="ep-search-wrap" id="buscar">
-  {% if categoria_activa %}<input type="hidden" name="categoria" value="{{ categoria_activa }}">{% endif %}
+  <input type="hidden" name="categoria" value="{{ categoria_activa or '' }}" data-search-category>
   <div class="ep-search-heading">
     <span class="ep-search-bean" aria-hidden="true">{{ heritage_icon('grano') }}</span>
-    <span><strong>Encuentra tu antojo</strong><small>Busca por producto, sabor o combo</small></span>
+    <span><strong>{{ 'Encuentra tu antojo' if brand.es_comida else 'Encuentra tu producto' }}</strong><small>{{ 'Busca por producto, sabor o combo' if brand.es_comida else 'Busca por nombre o categoría' }}</small></span>
   </div>
   <div class="ep-search-box">
     <svg class="ep-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -130,6 +131,165 @@
   <p class="ep-search-state">Mostrando resultados para <strong>{{ busqueda }}</strong></p>
   {% endif %}
 </form>
+
+{# Compra primero: categorías y productos antes de recomendaciones. #}
+<section class="ep-cats-wrapper" id="cats-wrapper" aria-label="Explorar por categoría">
+  <div class="ep-cats" id="cats-bar" role="navigation" aria-label="Categorías">
+    <a href="{{ storefront_url(q=busqueda or None) }}"
+       data-category="" class="ep-cat {% if not categoria_activa %}ep-cat-on{% endif %}">
+      <span class="ep-cat-icon ep-cat-icon--colombia" aria-hidden="true"><i></i><i></i><i></i></span><span>Todo</span>
+    </a>
+    {# Chip especial: Combos — al mismo nivel que las categorías reales. #}
+    {% set _combos_count = productos|selectattr('es_combo')|rejectattr('solo_canje')|rejectattr('puntos_para_canje')|list|length %}
+    {% if _combos_count > 0 %}
+    <a href="#combos" data-category="_combos" class="ep-cat ep-cat-combos">
+      <span class="ep-cat-icon">🎁</span><span class="ep-cat-label">Combos</span>
+      <span class="ep-cat-count">{{ _combos_count }}</span>
+    </a>
+    {% endif %}
+    {# Chip especial: Canje con puntos — solo si módulo puntos activo. Al
+       hacer clic filtra a los productos canjeables (que están OCULTOS de la
+       vista Todo por diseño). #}
+    {% if brand.puntos %}
+    <a href="#canje" data-category="_canje" class="ep-cat ep-cat-canje">
+      <span class="ep-cat-icon">{{ loyalty_icon() }}</span><span class="ep-cat-label">Canje</span>
+    </a>
+    {% endif %}
+    {% for cat in categorias %}
+    {% set cat_count = categoria_counts.get(cat.id, 0) if categoria_counts is defined else productos|selectattr('categoria_id','equalto',cat.id)|list|length %}
+    <a href="{{ storefront_url(cat.id, busqueda or None) }}"
+       data-category="{{ cat.id }}" class="ep-cat {% if categoria_activa == cat.id %}ep-cat-on{% endif %}">
+      {% if cat.imagen_url %}
+        <img src="{{ img_url(cat.imagen_url) }}" alt="{{ cat.nombre }}" class="ep-cat-img" loading="lazy">
+      {% else %}
+        <span class="ep-cat-icon">{{ cat_emoji(cat.nombre) }}</span>
+      {% endif %}
+      <span class="ep-cat-label">{{ cat.nombre }}</span>
+      {% if cat_count > 0 %}<span class="ep-cat-count">{{ cat_count }}</span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+{# ══════════════════════════════════════════
+   CATÁLOGO — GRID DE TARJETAS
+══════════════════════════════════════════ #}
+<section id="catalogo" class="ep-section">
+  <div class="ep-empty-state" data-storefront-empty hidden>
+    <span class="ep-empty-state__icon">🔍</span>
+    <p>No hay productos en esta categoría.</p>
+  </div>
+  {% if not busqueda and not categoria_activa %}
+  <div class="ep-section-head">
+    <div class="ep-catalog-heading">
+      <span class="ep-catalog-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div>
+        <h2 class="ep-section-title" data-storefront-title data-default-title="{{ ui.menu_catalog_title }}">{{ ui.menu_catalog_title }}</h2>
+        <p>{{ ui.menu_catalog_subtitle }}</p>
+      </div>
+    </div>
+    <span class="ep-pill-count" data-storefront-count>{{ productos|length }} productos</span>
+  </div>
+  {% elif busqueda %}
+  <div class="ep-section-head">
+    <h2 class="ep-section-title">Resultados para "{{ busqueda }}"</h2>
+    <span class="ep-pill-count" data-storefront-count>{{ productos|length }} productos</span>
+    <a href="{{ storefront_url() }}" class="ep-pill-count ep-link-reset">✕ Limpiar</a>
+  </div>
+  {% elif categoria_activa %}
+  {% set categoria_seleccionada = categorias|selectattr('id','equalto',categoria_activa)|first %}
+  <div class="ep-section-head">
+    <h2 class="ep-section-title" data-storefront-title data-default-title="{{ brand.vertical_emoji }} Nuestro {{ brand.vertical_label|lower }}">{{ cat_emoji(categoria_seleccionada.nombre) if categoria_seleccionada else brand.vertical_emoji }} {{ categoria_seleccionada.nombre if categoria_seleccionada else 'Productos' }}</h2>
+    <span class="ep-pill-count" data-storefront-count>{{ productos|length }} productos</span>
+  </div>
+  {% endif %}
+
+  {% if productos %}
+
+  {% if categoria_activa or busqueda %}
+    {# Vista filtrada: un solo grid con todos los resultados #}
+    <div class="ep-cat-section">
+      <div class="ep-grid">
+        {% for p in productos %}{% include "public/_product_card.html" %}{% endfor %}
+      </div>
+    </div>
+
+  {% else %}
+    {# Sección "Canje con puntos" — TODO producto/combo con puntos_para_canje>0
+       o solo_canje. Solo aparece si el módulo puntos está activo
+       (brand.puntos ⇐ FEATURE_PUNTOS).
+       Regla estricta: los productos canjeables NUNCA aparecen en el catálogo
+       de venta normal. Solo salen aquí. Si el módulo está OFF, se ocultan por
+       completo del front. #}
+    {# ── SEPARACIÓN DE PRODUCTOS EN 3 GRUPOS EXCLUYENTES:
+       1. Canjeables: puntos_para_canje>0 O solo_canje. Solo si brand.puntos.
+       2. Combos: es_combo=True Y no canjeables. Siempre en su bloque propio.
+       3. Venta normal: el resto, agrupados por categoría.
+       Cada producto aparece EXACTAMENTE en UN grupo — nunca duplicados. #}
+    {% set canje_ids = productos|selectattr('puntos_para_canje')|map(attribute='id')|list
+                     + productos|selectattr('solo_canje')|map(attribute='id')|list %}
+    {% if brand.puntos %}
+      {% set productos_canjeables = productos|selectattr('id', 'in', canje_ids)|list %}
+    {% else %}
+      {% set productos_canjeables = [] %}
+    {% endif %}
+    {% set productos_venta = productos|rejectattr('id', 'in', canje_ids)|list %}
+    {% set combos_venta = productos_venta|selectattr('es_combo')|list %}
+    {% set productos_regulares = productos_venta|rejectattr('es_combo')|list %}
+
+    {# ── 1. Sección Canje con puntos ── #}
+    {% if productos_canjeables %}
+    <div class="ep-cat-section ep-cat-section-puntos" data-section-cat="_canje" data-palette="promo">
+      <h3 class="ep-cat-title ep-cat-title-puntos">{{ loyalty_icon() }} Canje con {{ ui.loyalty_unit_plural }}</h3>
+      <div class="ep-grid">
+        {% for p in productos_canjeables %}{% include "public/_product_card.html" %}{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── 2. Sección Combos — SIEMPRE su bloque propio, no mezclados con categorías ── #}
+    {% if combos_venta %}
+    <div class="ep-cat-section ep-cat-section-combos" data-section-cat="_combos" data-palette="info">
+      <h3 class="ep-cat-title">🎁 Combos</h3>
+      <div class="ep-grid">
+        {% for p in combos_venta %}{% include "public/_product_card.html" %}{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── 3. Productos regulares por categoría ── #}
+    {% for cat in categorias %}
+    {% set productos_categoria = productos_regulares|selectattr('categoria_id','equalto',cat.id)|list %}
+    {% if productos_categoria %}
+    <div class="ep-cat-section" data-section-cat="{{ cat.id }}" data-palette="{{ loop.index0 % 5 }}">
+      <h3 class="ep-cat-title">{{ cat_emoji(cat.nombre) }} {{ cat.nombre }}</h3>
+      <div class="ep-grid">
+        {% for p in productos_categoria %}{% include "public/_product_card.html" %}{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% set sin_categoria = productos_regulares|rejectattr('categoria_id')|list %}
+    {% if sin_categoria %}
+    <div class="ep-cat-section" data-palette="warning">
+      <h3 class="ep-cat-title">🍽️ Otros productos</h3>
+      <div class="ep-grid">
+        {% for p in sin_categoria %}{% include "public/_product_card.html" %}{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  {% endif %}
+
+  {% else %}
+  <div class="ep-empty">
+    <span class="ep-empty-icon">{% if busqueda %}🔍{% else %}🍽️{% endif %}</span>
+    <p class="ep-empty-title">{% if busqueda %}Sin resultados para "{{ busqueda }}"{% else %}No hay productos disponibles{% endif %}</p>
+    {% if busqueda %}
+    <a href="{{ storefront_url() }}" class="ep-btn-primary ep-empty-action">← Ver todo el menú</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
 
 {# ══════════════════════════════════════════
    BANNERS (MenuConfig tipo=banner)
@@ -220,7 +380,7 @@
       {% endif %}
       <span class="ep-mc-dest-name">{{ p.nombre }}</span>
       <span class="ep-mc-dest-price">
-        {% if p.solo_canje %}{{ heritage_icon('grano') }} {{ p.puntos_para_canje or 0 }} {{ ui.loyalty_unit_plural }}
+        {% if p.solo_canje %}{{ loyalty_icon() }} {{ p.puntos_para_canje or 0 }} {{ ui.loyalty_unit_plural }}
         {% else %}€{{ "%.2f"|format(p.precio_final) }}{% endif %}
       </span>
     </span>
@@ -293,163 +453,7 @@
 {# ══════════════════════════════════════════
    CATEGORÍAS — STICKY
 ══════════════════════════════════════════ #}
-<section class="ep-cats-wrapper" id="cats-wrapper" aria-label="Explorar por categoría">
-  <div class="ep-cats" id="cats-bar" role="navigation" aria-label="Categorías">
-    <a href="{{ storefront_url(q=busqueda or None) }}"
-       data-category="" class="ep-cat {% if not categoria_activa %}ep-cat-on{% endif %}">
-      <span class="ep-cat-icon ep-cat-icon--colombia" aria-hidden="true"><i></i><i></i><i></i></span><span>Todo</span>
-    </a>
-    {# Chip especial: Combos — al mismo nivel que las categorías reales. #}
-    {% set _combos_count = productos|selectattr('es_combo')|rejectattr('solo_canje')|rejectattr('puntos_para_canje')|list|length %}
-    {% if _combos_count > 0 %}
-    <a href="#combos" data-category="_combos" class="ep-cat ep-cat-combos">
-      <span class="ep-cat-icon">🎁</span><span class="ep-cat-label">Combos</span>
-      <span class="ep-cat-count">{{ _combos_count }}</span>
-    </a>
-    {% endif %}
-    {# Chip especial: Canje con puntos — solo si módulo puntos activo. Al
-       hacer clic filtra a los productos canjeables (que están OCULTOS de la
-       vista Todo por diseño). #}
-    {% if brand.puntos %}
-    <a href="#canje" data-category="_canje" class="ep-cat ep-cat-canje">
-      <span class="ep-cat-icon">{{ heritage_icon('grano') }}</span><span class="ep-cat-label">Canje</span>
-    </a>
-    {% endif %}
-    {% for cat in categorias %}
-    {% set cat_count = categoria_counts.get(cat.id, 0) if categoria_counts is defined else productos|selectattr('categoria_id','equalto',cat.id)|list|length %}
-    <a href="{{ storefront_url(cat.id, busqueda or None) }}"
-       data-category="{{ cat.id }}" class="ep-cat {% if categoria_activa == cat.id %}ep-cat-on{% endif %}">
-      {% if cat.imagen_url %}
-        <img src="{{ img_url(cat.imagen_url) }}" alt="{{ cat.nombre }}" class="ep-cat-img" loading="lazy">
-      {% else %}
-        <span class="ep-cat-icon">{{ cat_emoji(cat.nombre) }}</span>
-      {% endif %}
-      <span class="ep-cat-label">{{ cat.nombre }}</span>
-      {% if cat_count > 0 %}<span class="ep-cat-count">{{ cat_count }}</span>{% endif %}
-    </a>
-    {% endfor %}
-  </div>
-</section>
 
-{# ══════════════════════════════════════════
-   CATÁLOGO — GRID DE TARJETAS
-══════════════════════════════════════════ #}
-<section id="catalogo" class="ep-section">
-  <div class="ep-empty-state" data-storefront-empty hidden>
-    <span class="ep-empty-state__icon">🔍</span>
-    <p>No hay productos en esta categoría.</p>
-  </div>
-  {% if not busqueda and not categoria_activa %}
-  <div class="ep-section-head">
-    <div class="ep-catalog-heading">
-      <span class="ep-catalog-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-      <div>
-        <h2 class="ep-section-title" data-storefront-title data-default-title="{{ ui.menu_catalog_title }}">{{ ui.menu_catalog_title }}</h2>
-        <p>{{ ui.menu_catalog_subtitle }}</p>
-      </div>
-    </div>
-    <span class="ep-pill-count" data-storefront-count>{{ productos|length }} productos</span>
-  </div>
-  {% elif busqueda %}
-  <div class="ep-section-head">
-    <h2 class="ep-section-title">Resultados para "{{ busqueda }}"</h2>
-    <span class="ep-pill-count" data-storefront-count>{{ productos|length }} productos</span>
-    <a href="{{ storefront_url() }}" class="ep-pill-count ep-link-reset">✕ Limpiar</a>
-  </div>
-  {% elif categoria_activa %}
-  {% set categoria_seleccionada = categorias|selectattr('id','equalto',categoria_activa)|first %}
-  <div class="ep-section-head">
-    <h2 class="ep-section-title" data-storefront-title data-default-title="{{ brand.vertical_emoji }} Nuestro {{ brand.vertical_label|lower }}">{{ cat_emoji(categoria_seleccionada.nombre) if categoria_seleccionada else brand.vertical_emoji }} {{ categoria_seleccionada.nombre if categoria_seleccionada else 'Productos' }}</h2>
-    <span class="ep-pill-count" data-storefront-count>{{ productos|length }} productos</span>
-  </div>
-  {% endif %}
-
-  {% if productos %}
-
-  {% if categoria_activa or busqueda %}
-    {# Vista filtrada: un solo grid con todos los resultados #}
-    <div class="ep-cat-section">
-      <div class="ep-grid">
-        {% for p in productos %}{% include "public/_product_card.html" %}{% endfor %}
-      </div>
-    </div>
-
-  {% else %}
-    {# Sección "Canje con puntos" — TODO producto/combo con puntos_para_canje>0
-       o solo_canje. Solo aparece si el módulo puntos está activo
-       (brand.puntos ⇐ FEATURE_PUNTOS).
-       Regla estricta: los productos canjeables NUNCA aparecen en el catálogo
-       de venta normal. Solo salen aquí. Si el módulo está OFF, se ocultan por
-       completo del front. #}
-    {# ── SEPARACIÓN DE PRODUCTOS EN 3 GRUPOS EXCLUYENTES:
-       1. Canjeables: puntos_para_canje>0 O solo_canje. Solo si brand.puntos.
-       2. Combos: es_combo=True Y no canjeables. Siempre en su bloque propio.
-       3. Venta normal: el resto, agrupados por categoría.
-       Cada producto aparece EXACTAMENTE en UN grupo — nunca duplicados. #}
-    {% set canje_ids = productos|selectattr('puntos_para_canje')|map(attribute='id')|list
-                     + productos|selectattr('solo_canje')|map(attribute='id')|list %}
-    {% if brand.puntos %}
-      {% set productos_canjeables = productos|selectattr('id', 'in', canje_ids)|list %}
-    {% else %}
-      {% set productos_canjeables = [] %}
-    {% endif %}
-    {% set productos_venta = productos|rejectattr('id', 'in', canje_ids)|list %}
-    {% set combos_venta = productos_venta|selectattr('es_combo')|list %}
-    {% set productos_regulares = productos_venta|rejectattr('es_combo')|list %}
-
-    {# ── 1. Sección Canje con puntos ── #}
-    {% if productos_canjeables %}
-    <div class="ep-cat-section ep-cat-section-puntos" data-section-cat="_canje" data-palette="promo">
-      <h3 class="ep-cat-title ep-cat-title-puntos">{{ heritage_icon('grano') }} Canje con {{ ui.loyalty_unit_plural }}</h3>
-      <div class="ep-grid">
-        {% for p in productos_canjeables %}{% include "public/_product_card.html" %}{% endfor %}
-      </div>
-    </div>
-    {% endif %}
-
-    {# ── 2. Sección Combos — SIEMPRE su bloque propio, no mezclados con categorías ── #}
-    {% if combos_venta %}
-    <div class="ep-cat-section ep-cat-section-combos" data-section-cat="_combos" data-palette="info">
-      <h3 class="ep-cat-title">🎁 Combos</h3>
-      <div class="ep-grid">
-        {% for p in combos_venta %}{% include "public/_product_card.html" %}{% endfor %}
-      </div>
-    </div>
-    {% endif %}
-
-    {# ── 3. Productos regulares por categoría ── #}
-    {% for cat in categorias %}
-    {% set productos_categoria = productos_regulares|selectattr('categoria_id','equalto',cat.id)|list %}
-    {% if productos_categoria %}
-    <div class="ep-cat-section" data-section-cat="{{ cat.id }}" data-palette="{{ loop.index0 % 5 }}">
-      <h3 class="ep-cat-title">{{ cat_emoji(cat.nombre) }} {{ cat.nombre }}</h3>
-      <div class="ep-grid">
-        {% for p in productos_categoria %}{% include "public/_product_card.html" %}{% endfor %}
-      </div>
-    </div>
-    {% endif %}
-    {% endfor %}
-    {% set sin_categoria = productos_regulares|rejectattr('categoria_id')|list %}
-    {% if sin_categoria %}
-    <div class="ep-cat-section" data-palette="warning">
-      <h3 class="ep-cat-title">🍽️ Otros productos</h3>
-      <div class="ep-grid">
-        {% for p in sin_categoria %}{% include "public/_product_card.html" %}{% endfor %}
-      </div>
-    </div>
-    {% endif %}
-  {% endif %}
-
-  {% else %}
-  <div class="ep-empty">
-    <span class="ep-empty-icon">{% if busqueda %}🔍{% else %}🍽️{% endif %}</span>
-    <p class="ep-empty-title">{% if busqueda %}Sin resultados para "{{ busqueda }}"{% else %}No hay productos disponibles{% endif %}</p>
-    {% if busqueda %}
-    <a href="{{ storefront_url() }}" class="ep-btn-primary ep-empty-action">← Ver todo el menú</a>
-    {% endif %}
-  </div>
-  {% endif %}
-</section>
 
 {# ══════════════════════════════════════════
    RESEÑAS
@@ -486,10 +490,10 @@
 ══════════════════════════════════════════ #}
 <section class="ep-section ep-why-section">
   <div class="ep-why-grid">
-    {% if brand.descripcion %}<div class="ep-why-item"><span class="ep-why-icon">✓</span><div><p class="ep-why-title">Nuestra tienda</p><p class="ep-why-desc">{{ brand.descripcion }}</p></div></div>{% endif %}
-    {% if brand.delivery %}<div class="ep-why-item"><span class="ep-why-icon">🚴</span><div><p class="ep-why-title">Delivery ~{{ zona_principal.tiempo_estimado_min if zona_principal else 25 }} min</p><p class="ep-why-desc">Rápido y en tu puerta</p></div></div>{% endif %}
-    {% if brand.puntos %}<div class="ep-why-item"><span class="ep-why-icon">{{ heritage_icon('grano') }}</span><div><p class="ep-why-title">Suma {{ ui.loyalty_unit_plural }}</p><p class="ep-why-desc">Canjéalos por productos</p></div></div>{% endif %}
-    <div class="ep-why-item"><span class="ep-why-icon">💬</span><div><p class="ep-why-title">Chat dentro de la app</p><p class="ep-why-desc">Consultas y atención sin salir del menú</p></div></div>
+    {% if brand.descripcion %}<div class="ep-why-item"><span class="ep-why-icon">{{ ui_icon('shield-check') }}</span><div><p class="ep-why-title">Nuestra tienda</p><p class="ep-why-desc">{{ brand.descripcion }}</p></div></div>{% endif %}
+    {% if brand.delivery %}<div class="ep-why-item"><span class="ep-why-icon">{{ ui_icon('truck') }}</span><div><p class="ep-why-title">Delivery ~{{ zona_principal.tiempo_estimado_min if zona_principal else 25 }} min</p><p class="ep-why-desc">Rápido y en tu puerta</p></div></div>{% endif %}
+    {% if brand.puntos %}<div class="ep-why-item"><span class="ep-why-icon">{{ loyalty_icon() }}</span><div><p class="ep-why-title">Suma {{ ui.loyalty_unit_plural }}</p><p class="ep-why-desc">Canjéalos por productos</p></div></div>{% endif %}
+    <div class="ep-why-item"><span class="ep-why-icon">{{ ui_icon('messages-square') }}</span><div><p class="ep-why-title">Chat dentro de la app</p><p class="ep-why-desc">Consultas y atención sin salir del menú</p></div></div>
   </div>
 </section>
 
@@ -673,6 +677,8 @@ function epCollectFilterables() {
 function epFilterCategory(categoryId, updateUrl = true) {
   epCollectFilterables();
   const value = String(categoryId || '');
+  const searchCategory = document.querySelector('[data-search-category]');
+  if (searchCategory) searchCategory.value = /^\d+$/.test(value) ? value : '';
   let visible = 0;
   const sectionHasVisible = Object.create(null);
   // Chips especiales: "_canje" solo muestra canje. "_combos" solo combos.
@@ -704,7 +710,12 @@ function epFilterCategory(categoryId, updateUrl = true) {
       if (sec) sectionHasVisible[sec.dataset.sectionCat || '_'] = true;
     }
   }
-  for (const chip of EP_CHIPS_CACHE) chip.classList.toggle('ep-cat-on', chip.dataset.category === value);
+  for (const chip of EP_CHIPS_CACHE) {
+    const active = chip.dataset.category === value;
+    chip.classList.toggle('ep-cat-on', active);
+    if (active) chip.setAttribute('aria-current', 'true');
+    else chip.removeAttribute('aria-current');
+  }
   for (const sec of EP_SECTIONS_CACHE) {
     const key = sec.dataset.sectionCat || '_';
     sec.hidden = !sectionHasVisible[key];
@@ -736,7 +747,7 @@ if (!window._epMenuBound) {
   window._epMenuBound = true;
   document.addEventListener('click', event => {
     const link = event.target.closest('.ep-cat[data-category]');
-    if (!link) return;
+    if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
     event.preventDefault();
     window._epMenuFilterActive?.epFilterCategory(link.dataset.category);
     document.getElementById('catalogo')?.scrollIntoView({behavior:'auto', block:'start'});
@@ -935,9 +946,9 @@ function openModal(id) {
     loyaltyIcon.setAttribute('viewBox', '0 0 24 24');
     loyaltyIcon.setAttribute('aria-hidden', 'true');
     const loyaltyUse = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    loyaltyUse.setAttribute('href', '#ox-hi-grano');
+    loyaltyUse.setAttribute('href', `#ox-hi-${(OX_UI.loyalty_icon || 'grano')}`);
     loyaltyIcon.appendChild(loyaltyUse);
-    _priceEl.append(loyaltyIcon, document.createTextNode(` ${d.puntos_para_canje || 0} ${OX_UI.loyalty_unit_plural || 'granitos de café'}`));
+    _priceEl.append(loyaltyIcon, document.createTextNode(` ${d.puntos_para_canje || 0} ${OX_UI.loyalty_unit_plural || 'puntos'}`));
     _priceEl.classList.add('ep-modal-price--points');
   } else {
     _priceEl.textContent = `€${precioFinal.toFixed(2)}`;

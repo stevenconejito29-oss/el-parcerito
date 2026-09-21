@@ -1,16 +1,17 @@
 {% extends "base.html" %}
-{% from 'partials/heritage_icons.html' import heritage_icon %}
+{% from 'partials/heritage_icons.html' import heritage_icon, loyalty_icon %}
 {% block title %}{{ ui.loyalty_name }} — {{ brand.nombre }}{% endblock %}
 {% block content %}
+{% include 'public/_customer_navigation.html' %}
 
 <div class="club-wrap">
 
   {# ── TARJETA SALDO ── #}
   <div class="club-hero">
     <div class="club-hero-bg"></div>
-    <div class="club-hero-mark" aria-hidden="true">{{ heritage_icon('grano') }}</div>
+    <div class="club-hero-mark" aria-hidden="true">{{ loyalty_icon() }}</div>
     <div class="club-hero-inner">
-      <div class="club-hero-icon">{{ heritage_icon('grano') }}</div>
+      <div class="club-hero-icon">{{ loyalty_icon() }}</div>
       <div>
         <p class="club-hero-label">{{ ui.loyalty_name }}</p>
         <p class="club-hero-pts">{{ puntos }}</p>
@@ -20,7 +21,7 @@
     </div>
     <div class="club-hero-stats">
       <div class="club-stat">
-        <span class="club-stat-v">{{ heritage_icon('grano') }}</span>
+        <span class="club-stat-v">{{ loyalty_icon() }}</span>
         <span class="club-stat-l">sin conversión a dinero</span>
       </div>
       <div class="club-stat-sep"></div>
@@ -101,7 +102,7 @@
           {% else %}<span>🥟</span>{% endif %}
         </div>
         <p class="club-canje-name">{{ p.nombre }}</p>
-        <span class="club-canje-pts">{{ heritage_icon('grano') }} {{ p.puntos_para_canje }} {{ ui.loyalty_unit_plural }}</span>
+        <span class="club-canje-pts">{{ loyalty_icon() }} {{ p.puntos_para_canje }} {{ ui.loyalty_unit_plural }}</span>
       </a>
       {% endfor %}
     </div>
@@ -112,7 +113,7 @@
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32"
          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
          stroke-linejoin="round" style="color:var(--col-accent);margin:0 auto .5rem">
-      <use href="#ox-hi-grano"/>
+      <use href="#ox-hi-{{ ui.loyalty_icon }}"/>
     </svg>
     <p class="font-bold" style="color:var(--col-text)">Sigue sumando {{ ui.loyalty_unit_plural }}</p>
     <p class="text-sm mt-1" style="color:var(--col-muted)">Haz más pedidos y canjea productos gratis.</p>

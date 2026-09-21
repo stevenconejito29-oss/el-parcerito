@@ -53,13 +53,21 @@ def build_combo(
     group_defs = group_defs or {}
 
     # ── Limpieza idempotente de composición previa ──
-    ComboItem.query.filter_by(combo_id=combo.id).delete(synchronize_session=False)
-    ComboGroup.query.filter_by(combo_id=combo.id).delete(synchronize_session=False)
+    # ORM mantiene las tablas de opciones y presentaciones también cuando el
+    # motor no ejecuta ON DELETE CASCADE. El bulk delete dejaba enlaces vivos.
+    for item in ComboItem.query.filter_by(combo_id=combo.id).all():
+        db.session.delete(item)
+    db.session.flush()
+    for group in ComboGroup.query.filter_by(combo_id=combo.id).all():
+        db.session.delete(group)
     db.session.flush()
 
     # ── Crear grupos declarados por uid (si el UI los envió) ──
     groups_by_uid: dict = {}
+    used_uids = {comp.group_uid for comp in componentes if comp.group_uid}
     for uid, data in group_defs.items():
+        if uid not in used_uids:
+            continue
         tipo = data.get("tipo") or "fijo"
         tipo = "seleccion" if tipo in ("sel", "seleccion", "choice") else "fijo"
         nombre = _combo_group_name(tipo, data.get("nombre"))

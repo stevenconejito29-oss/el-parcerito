@@ -27,6 +27,15 @@
   <a href="{{ url_for('admin.nuevo_combo', combo_id=combo.id) }}" class="cd-edit-link">✏ Editar combo completo</a>
 </div>
 
+{% if combo_issues %}
+<section class="oa-alert oa-alert--warning" aria-label="Revisión de la composición">
+  <div><strong>Revisa este combo antes de ofrecerlo</strong>
+    <ul>{% for issue in combo_issues %}<li>{{ issue }}</li>{% endfor %}</ul>
+    <a href="{{ url_for('admin.nuevo_combo', combo_id=combo.id) }}">Corregir la composición</a>
+  </div>
+</section>
+{% endif %}
+
 <div class="cd-layout">
 
   {# ══ COLUMNA PRINCIPAL ══ #}

@@ -1,5 +1,5 @@
 {# ── Tarjeta editorial de producto ── #}
-{% from 'partials/heritage_icons.html' import heritage_icon %}
+{% from 'partials/heritage_icons.html' import heritage_icon, loyalty_icon %}
 {# Variable esperada: p (Product) #}
 {% set _product_origin = product_origins.get(p.id, origen_actual) if product_origins is defined else origen_actual %}
 {# Suma cantidades en canasta para este producto: hay que agregar la clave
@@ -80,7 +80,7 @@
       {% if p.solo_canje %}
         <span class="ep-cbadge ep-cbadge-puntos ep-cbadge-puntos--exclusive">{{ heritage_icon('canasto') }} SOLO CANJE</span>
       {% elif p.canjeable_con_puntos %}
-        <span class="ep-cbadge ep-cbadge-puntos">{{ heritage_icon('grano') }} Canjeable</span>
+        <span class="ep-cbadge ep-cbadge-puntos">{{ loyalty_icon() }} Canjeable</span>
       {% endif %}
       {% set stock_origen = _card.stock %}
       {% if p.stock_mostrar_en_web and stock_origen <= 5 and stock_origen > 0 %}
@@ -195,7 +195,7 @@
         {% if p.solo_canje %}
           {# Exclusivo canje: NO tiene precio en euros, solo puntos. #}
           <span class="ep-card-price ep-card-price--points">
-            {{ heritage_icon('grano') }} {{ p.puntos_para_canje or 0 }} {{ ui.loyalty_unit_plural }}
+            {{ loyalty_icon() }} {{ p.puntos_para_canje or 0 }} {{ ui.loyalty_unit_plural }}
           </span>
           <span class="ep-card-price-note">Solo canje</span>
         {% else %}

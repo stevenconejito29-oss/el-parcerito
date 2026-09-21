@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Resetear PWA — El Parcerito</title>
+<style>
+body{background:#0f172a;color:#e2e8f0;font-family:-apple-system,sans-serif;padding:2rem;text-align:center;min-height:100vh;margin:0}
+.card{max-width:400px;margin:auto;background:#1e293b;padding:2rem;border-radius:16px;margin-top:20vh}
+h1{color:#f4c542;font-size:1.4rem;margin:0 0 1rem}
+p{color:#94a3b8;font-size:0.95rem;line-height:1.5}
+.status{margin:1.5rem 0;padding:1rem;background:#0f172a;border-radius:8px;font-family:monospace;font-size:0.85rem;text-align:left;min-height:80px}
+button{background:#f4c542;color:#0f172a;border:none;padding:14px 28px;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;width:100%;margin-top:1rem}
+.done{color:#22c55e}
+.error{color:#ef4444}
+</style></head><body>
+<div class="card">
+<h1>🔄 Resetear PWA</h1>
+<p>Limpia el service worker y toda la caché de esta PWA en este dispositivo. Úsalo si ves contenido viejo tras una actualización.</p>
+<div class="status" id="log">Pulsa el botón para empezar.</div>
+<button id="btn">Limpiar PWA ahora</button>
+<p style="margin-top:1rem"><a href="/admin/delivery/franjas/panel" style="color:#f4c542">← Volver al panel de franjas</a></p>
+</div>
+<script>
+const log=document.getElementById('log');const btn=document.getElementById('btn');
+const line=(t,cls)=>{const d=document.createElement('div');if(cls)d.className=cls;d.textContent=t;log.appendChild(d);};
+btn.onclick=async()=>{btn.disabled=true;log.innerHTML='';
+try{
+  if('serviceWorker' in navigator){
+    const regs=await navigator.serviceWorker.getRegistrations();
+    line('SW registrados: '+regs.length);
+    for(const r of regs){await r.unregister();line('✓ Unregister: '+r.scope,'done');}
+  }else{line('SW no soportado');}
+  if('caches' in window){
+    const keys=await caches.keys();
+    line('Cachés: '+keys.length);
+    for(const k of keys){await caches.delete(k);line('✓ Borrada: '+k,'done');}
+  }
+  line('','done');line('LISTO. Recargando en 2s…','done');
+  setTimeout(()=>{location.href='/admin/delivery/franjas/panel?fresh='+Date.now();},2000);
+}catch(e){line('✗ Error: '+e.message,'error');btn.disabled=false;}
+};
+</script>
+</body></html>
