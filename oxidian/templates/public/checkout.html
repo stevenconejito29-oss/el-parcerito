@@ -222,106 +222,26 @@
       </div>
     </fieldset>
     {% endif %}
-    <div id="franjas-slot-block" class="mb-3" hidden>
+    <div id="franjas-slot-block" class="mb-3" data-url="{{ url_for('public.api_delivery_franjas_disponibles') }}" data-active="{{ '1' if delivery_modes.franjas else '0' }}" data-immediate="{{ '1' if delivery_modes.inmediato else '0' }}" hidden>
       <h3 class="text-sm font-extrabold mb-2 flex items-center gap-2" style="margin-top:.75rem">
         <span aria-hidden="true">🕒</span>
         ¿Cuándo quieres recibirlo?
       </h3>
       <p class="text-xs mb-2" style="color:var(--col-muted)">
-        Elige una franja horaria. La sugerida es la más cercana con hueco.
+        Selecciona el día y después el horario en el que quieres recibir tu pedido.
       </p>
-      <div id="franjas-slot-container" class="df-slot-list"></div>
+      <label class="df-day-picker" for="franjas-day">Día de entrega
+        <select id="franjas-day"><option value="">Cargando días disponibles…</option></select>
+      </label>
+      <div id="franjas-slot-container" class="df-slot-list" role="radiogroup" aria-label="Horario de entrega"></div>
+      <p id="franjas-slot-error" role="alert" hidden></p>
+      <button id="franjas-slot-retry" class="ox-btn-secondary" type="button" hidden>Volver a cargar horarios</button>
       <input type="hidden" name="slot_id" id="franjas-slot-id" value="">
       <p id="franjas-slot-selected" class="text-xs mt-2" style="color:var(--brand-primary,#5a3a1e);font-weight:700" hidden></p>
     </div>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/delivery-franjas.css', v=asset_version) }}">
-    <script src="{{ url_for('static', filename='js/delivery-franjas.js', v=asset_version) }}"></script>
-    <script nonce="{{ csp_nonce() }}">
-    (function () {
-      const DF = window.DeliveryFranjas;
-      const block = document.getElementById("franjas-slot-block");
-      const container = document.getElementById("franjas-slot-container");
-      const hidden = document.getElementById("franjas-slot-id");
-      const label = document.getElementById("franjas-slot-selected");
-      const radios = document.querySelectorAll('input[name="tipo_entrega_cliente"]');
-      const planChoice = document.getElementById("delivery-plan-choice");
-      const planRadios = document.querySelectorAll('input[name="delivery_plan_ui"]');
-      const inmediatoActivo = {{ delivery_modes.inmediato|tojson }};
-      const franjasActivo = {{ delivery_modes.franjas|tojson }};
-
-      function planSeleccionado() {
-        return document.querySelector('input[name="delivery_plan_ui"]:checked')?.value
-          || (franjasActivo && !inmediatoActivo ? "franja" : "inmediato");
-      }
-
-      function updateVisibility() {
-        const delivery = document.querySelector('input[name="tipo_entrega_cliente"]:checked')?.value === "delivery";
-        if (planChoice) planChoice.hidden = !delivery;
-        const usarFranja = delivery && planSeleccionado() === "franja";
-        block.hidden = !usarFranja || !container.dataset.loaded;
-        if (!usarFranja) {
-          hidden.value = "";
-          label.hidden = true;
-          container.querySelectorAll(".df-slot-selected").forEach(x => x.classList.remove("df-slot-selected"));
-        }
-      }
-
-      async function cargar() {
-        const { ok, status, data } = await DF.apiFetch("{{ url_for('public.api_delivery_franjas_disponibles') }}");
-        if (!ok) return; // módulo apagado (404) o error — bloque queda oculto
-        const franjas = data.franjas || [];
-        if (!franjas.length) {
-          container.innerHTML = '<p class="df-day-empty">No hay franjas disponibles por ahora.</p>';
-          container.dataset.loaded = "1";
-          updateVisibility();
-          return;
-        }
-        const html = DF.agruparPorFecha(franjas).map(([fecha, slots]) => {
-          const rows = slots.map(s => {
-            const cls = ["df-slot"];
-            if (s.disponible) cls.push("df-slot-selectable");
-            if (s.sugerida) cls.push("df-slot-sugerida");
-            if (s.llena) cls.push("df-slot-llena");
-            if (s.cerrada) cls.push("df-slot-cerrada");
-            return `<div class="${cls.join(' ')}" data-id="${s.id}" data-selectable="${s.disponible ? '1' : '0'}"
-              data-label="${DF.fmtFecha(fecha)} ${s.hora_inicio}–${s.hora_fin}">
-              <div class="df-slot-hora">${s.hora_inicio}–${s.hora_fin}</div>
-              <div class="df-slot-meta">${s.cerrada ? 'Cerrada' : (s.llena ? 'Llena' : `${s.capacidad_max - s.ocupados} cupos libres`)}</div>
-            </div>`;
-          }).join("");
-          return `<div style="margin-bottom:.6rem"><strong style="font-size:.82rem;display:block;margin-bottom:.35rem">${DF.fmtFecha(fecha)}</strong>${rows}</div>`;
-        }).join("");
-        container.innerHTML = html;
-        container.dataset.loaded = "1";
-        updateVisibility();
-        // En modo exclusivo por franjas proponemos la primera disponible. En
-        // modo mixto nunca cambiamos silenciosamente una entrega inmediata.
-        if (!inmediatoActivo) container.querySelector(".df-slot-sugerida")?.click();
-      }
-
-      container.addEventListener("click", (e) => {
-        const el = e.target.closest(".df-slot");
-        if (!el || el.dataset.selectable !== "1") return;
-        container.querySelectorAll(".df-slot-selected").forEach(x => x.classList.remove("df-slot-selected"));
-        el.classList.add("df-slot-selected");
-        hidden.value = el.dataset.id;
-        label.hidden = false;
-        label.textContent = "Franja elegida: " + el.dataset.label;
-      });
-
-      radios.forEach(r => r.addEventListener("change", updateVisibility));
-      planRadios.forEach(r => r.addEventListener("change", updateVisibility));
-      document.getElementById("form-checkout")?.addEventListener("submit", (event) => {
-        const delivery = document.querySelector('input[name="tipo_entrega_cliente"]:checked')?.value === "delivery";
-        if (delivery && planSeleccionado() === "franja" && !hidden.value) {
-          event.preventDefault();
-          DF.msg(label, "Elige una franja disponible para continuar.", "err");
-          block.hidden = false;
-        }
-      });
-      cargar();
-    })();
-    </script>
+    <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/delivery-franjas.js', v=asset_version) }}"></script>
+    <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/checkout-slots.js', v=asset_version) }}" defer></script>
 
     <div id="delivery-address-block">
     <label class="ox-label">Dirección de entrega</label>
@@ -1672,6 +1592,7 @@ function updatePaymentInfo(metodo) {
 function toggleBizumInfo(show) { if (show) updatePaymentInfo('bizum'); }
 
 document.getElementById('form-checkout')?.addEventListener('submit', e => {
+  if (e.defaultPrevented) return;
   if (rewardBusy) { e.preventDefault(); return; }
   const btn = document.getElementById('btn-confirmar');
   const originalText = btn ? btn.textContent : '';

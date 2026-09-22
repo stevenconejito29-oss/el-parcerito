@@ -379,3 +379,9 @@
 /* Contraste del encabezado y las acciones sobre la marca en paneles internos. */
 body.ox-body-admin .df-container .df-header h1{color:#fff!important}
 body.ox-body-admin .df-slot-actions .df-btn-primary{color:var(--brand-on-primary,#17202a)!important}
+
+.df-day-picker { display:grid; gap:.4rem; margin:.75rem 0; font-weight:700; }
+.df-day-picker select { width:100%; max-width:100%; min-height:48px; padding:.6rem; background:var(--col-surface); color:var(--col-text); border:1px solid var(--col-border); border-radius:8px; }
+#franjas-slot-container label { display:flex; align-items:center; gap:.7rem; min-height:48px; }
+#franjas-slot-container input { width:22px; height:22px; flex-shrink:0; }
+#franjas-slot-error { color:#9f2424; background:#fff1f1; padding:.75rem; border-radius:8px; overflow-wrap:anywhere; }

@@ -18,7 +18,7 @@ button{background:#f4c542;color:#0f172a;border:none;padding:14px 28px;border-rad
 <button id="btn">Limpiar PWA ahora</button>
 <p style="margin-top:1rem"><a href="/admin/delivery/franjas/panel" style="color:#f4c542">← Volver al panel de franjas</a></p>
 </div>
-<script>
+<script nonce="{{ csp_nonce() }}">
 const log=document.getElementById('log');const btn=document.getElementById('btn');
 const line=(t,cls)=>{const d=document.createElement('div');if(cls)d.className=cls;d.textContent=t;log.appendChild(d);};
 btn.onclick=async()=>{btn.disabled=true;log.innerHTML='';

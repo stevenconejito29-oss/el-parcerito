@@ -77,6 +77,25 @@ class DeliveryAdminPanelTest(unittest.TestCase):
         self.assertFalse(context["modulo_activo"])
         self.assertTrue(context["can_switch_mode"])
 
+    @patch("routes.admin.render_template", return_value="form")
+    def test_classic_form_can_plan_before_enabling_slots(self, render):
+        from datetime import timedelta
+        from business_time import business_today
+        from models import DeliverySlot, SiteConfig
+        SiteConfig.set("delivery_franjas_activo", "0")
+        SiteConfig.set("HORARIO_MODO", "24h")
+        db.session.commit()
+        self.assertEqual(self.client.get("/admin/delivery/franjas/nueva").status_code, 200)
+        response = self.client.post("/admin/delivery/franjas/guardar-form", data={
+            "fecha": (business_today() + timedelta(days=2)).isoformat(),
+            "hora_inicio": "13:00", "hora_fin": "14:00", "capacidad_max": "8",
+            "max_repartidores": "1",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(DeliverySlot.query.count(), 1)
+        self.assertEqual(SiteConfig.get("delivery_franjas_activo"), "0")
+        self.assertEqual(self.client.get(f"/admin/delivery/franjas/{DeliverySlot.query.first().id}/editar").status_code, 200)
+
     def test_readiness_uses_bookable_slots_and_distinguishes_mixed_mode(self):
         from datetime import datetime, time, timedelta
         from business_time import business_today

@@ -35,6 +35,18 @@ class SecurityHeadersTest(unittest.TestCase):
     def _get(self, path, **headers):
         return self.client.get(path, headers=headers)
 
+    def test_background_response_does_not_overwrite_newer_identity_cookie(self):
+        client = self.app.test_client()
+        with client.session_transaction() as session:
+            session.permanent = True
+            session["customer_access_code_step"] = True
+        # Una respuesta estática con una sesión anterior puede llegar después
+        # del POST que verificó el código. No debe renovar esa cookie antigua.
+        response = client.get("/static/js/delivery-franjas.js")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Set-Cookie", response.headers)
+        self.assertNotIn("Set-Cookie", client.get("/health/live").headers)
+
     def test_csp_contiene_nonce_por_request(self):
         r = self._get("/health")
         csp = r.headers.get("Content-Security-Policy", "")

@@ -37,7 +37,7 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/delivery-franjas.js', v=asset_version) }}"></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/delivery-franjas.js', v=asset_version) }}"></script>
 <script nonce="{{ csp_nonce() }}">
 (function () {
   const DF = window.DeliveryFranjas;

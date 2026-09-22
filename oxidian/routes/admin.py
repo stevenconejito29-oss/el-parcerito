@@ -8460,7 +8460,7 @@ def _abort_si_modulo_apagado():
 @admin_required
 def delivery_franjas_form_nuevo():
     """Página con form clásico HTML para crear franja — sin depender de JS/modal."""
-    _abort_si_modulo_apagado()
+    # El equipo puede planificar y corregir franjas antes de activar su venta.
     from store_config import get_store_value
     fecha_hint = request.args.get("fecha", "")
     try:
@@ -8476,7 +8476,7 @@ def delivery_franjas_form_nuevo():
 @admin_required
 def delivery_franjas_form_editar(slot_id):
     """Página con form clásico HTML para editar franja."""
-    _abort_si_modulo_apagado()
+    # El equipo puede planificar y corregir franjas antes de activar su venta.
     from models import DeliverySlot
     slot = get_or_404(DeliverySlot, slot_id)
     from store_config import get_store_value
@@ -8493,7 +8493,7 @@ def delivery_franjas_form_editar(slot_id):
 @admin_required
 def delivery_franjas_guardar_form():
     """Recibe form-encoded (no JSON) y crea o actualiza según slot_id."""
-    _abort_si_modulo_apagado()
+    # El equipo puede planificar y corregir franjas antes de activar su venta.
     from delivery_slots_service import crear_franja, actualizar_franja
     from models import DeliverySlot
     slot_id = (request.form.get("slot_id") or "").strip()
@@ -8546,7 +8546,7 @@ def delivery_franjas_guardar_form():
 @admin_required
 def delivery_franjas_eliminar_form(slot_id):
     """Borrado por form clásico HTML (fallback sin JS)."""
-    _abort_si_modulo_apagado()
+    # El equipo puede planificar y corregir franjas antes de activar su venta.
     from delivery_slots_service import eliminar_franja
     from models import DeliverySlot
     slot = get_or_404(DeliverySlot, slot_id)
@@ -8567,7 +8567,7 @@ def delivery_franjas_eliminar_form(slot_id):
 @admin_required
 def delivery_franjas_dia_toggle():
     """Activa/desactiva en bloque todas las franjas de una fecha."""
-    _abort_si_modulo_apagado()
+    # El equipo puede planificar y corregir franjas antes de activar su venta.
     from models import DeliverySlot
 
     data = request.get_json(silent=True)

@@ -63,3 +63,30 @@ body.ox-body-public .cr-cta--disabled { white-space:normal; height:auto; line-he
   body.ox-body-public .cr-summary:has(.cr-store-closed) { position:static; display:flex; flex-direction:column; align-items:stretch; width:100%; max-height:none; margin-top:16px; }
   body.ox-body-public .cr-summary:has(.cr-store-closed) .cr-total-row { width:100%; }
 }
+
+/* La salida por franja mantiene dirección, cobro y contenido legibles. */
+body .fp-item { flex-wrap:wrap; }
+body .fp-item > label { flex:1 1 200px; }
+body .fp-item.is-disabled { opacity:1; }
+body :is(.fp-head,.fp-summary) { flex-wrap:wrap; }
+body :is(.fp-item__addr,.fp-item__preview) { white-space:normal; overflow:visible; overflow-wrap:anywhere; }
+body .fp-item__addr { color:var(--col-text); line-height:1.5; }
+.fp-order-money { flex:1 1 100%; display:flex; flex-wrap:wrap; gap:.5rem; color:var(--col-text); }
+.fp-order-content { flex:1 1 100%; min-width:0; }
+.fp-order-content summary { min-height:44px; padding:.65rem 0; cursor:pointer; }
+.fp-order-line { padding:.75rem 0; border-top:1px solid var(--col-border); }
+body .fp-fab { bottom:calc(70px + env(safe-area-inset-bottom,0px)); flex-wrap:wrap; }
+body .fp-wrap { padding-bottom:12rem; }
+
+body .thermal-pair-chip.is-inline { position:static; inset:auto; width:fit-content; max-width:100%; min-height:44px; white-space:normal; box-shadow:none; }
+@media(max-width:480px) {
+  body .df-container--rider .df-view-switch { display:grid; grid-template-columns:1fr; overflow:visible; }
+  body .df-container--rider .df-view-switch .df-btn { white-space:normal; }
+  body .slotops-agenda { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); overflow:visible; }
+  body .slotops-turn { grid-template-columns:1fr; text-align:center; min-width:0; }
+  body .slotops-turn :is(b,small) { white-space:normal; overflow-wrap:anywhere; }
+}
+body.ox-body-admin #ox-push-banner.is-inline { background:#f1f5f9 !important; color:#172b3a !important; opacity:1; box-shadow:none !important; }
+body.ox-body-admin #ox-push-banner.is-inline .ox-push-prompt__copy :is(p,small) { color:#172b3a !important; }
+body.ox-body-admin #ox-push-banner.is-inline > button:first-of-type { background:#175582 !important; color:#fff !important; }
+body.ox-body-admin #ox-push-banner.is-inline [data-push-dismiss] { min-width:44px; min-height:44px; color:#172b3a; }

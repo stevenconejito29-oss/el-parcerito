@@ -38,7 +38,7 @@
 {% include "partials/order_item_flavors.html" %}
 {% include "partials/order_item_presentation.html" %}
 {% if extras_meta %}
-<div class="work-combo-sec work-sec-choice" style="margin-top:.35rem"><div class="work-sec-hd"><strong>Ingredientes extra</strong><span class="work-sec-sub">preparar con el producto</span></div><div class="work-sec-items">{% for extra in extras_meta %}<span class="work-sec-item work-item-choice"><span class="work-item-qty">{{ extra.get('cantidad',1) }}×</span>{{ extra.get('nombre','Extra') }}</span>{% endfor %}</div></div>
+<div class="work-combo-sec work-sec-choice" style="margin-top:.35rem"><div class="work-sec-hd"><strong>Ingredientes extra</strong><span class="work-sec-sub">cantidades por unidad · preparar {{ item.cantidad }} unidad{{ "es" if item.cantidad != 1 else "" }}</span></div><div class="work-sec-items">{% for extra in extras_meta %}<span class="work-sec-item work-item-choice"><span class="work-item-qty">{{ extra.get('cantidad',1) }}×</span>{{ extra.get('nombre','Extra') }}</span>{% endfor %}</div></div>
 {% endif %}
 
 {% if item.es_canje_puntos %}

@@ -972,6 +972,11 @@ def dashboard():
         "comision_mes": comision_mes,
     }
     readiness = commerce_readiness()
+    from customer_access import private_store_enabled
+    from models import CustomerAccessGrant
+    authorised_customers = CustomerAccessGrant.query.join(User, User.id == CustomerAccessGrant.user_id).filter(
+        CustomerAccessGrant.activo.is_(True), User.activo.is_(True), User.rol == "cliente",
+    ).count()
 
     return render_template("superadmin/dashboard.html",
                            total_clientes=total_clientes,
@@ -991,6 +996,8 @@ def dashboard():
                            brand_config=brand_config,
                            tienda_modo=tienda_context,
                            readiness=readiness,
+                           private_store=private_store_enabled(),
+                           authorised_customers=authorised_customers,
                            vertical_just_changed=session.pop("vertical_just_changed", None))
 
 
@@ -2022,7 +2029,8 @@ def guardar_config_seccion():
     ):
         flash("Debe quedar habilitado delivery o recogida.", "danger")
         return redirect(url_for("superadmin.config", section=parent_section))
-    if section == "operacion-modo" and propuestos.get("FEATURE_DELIVERY", "1") == "1":
+    if (section == "operacion-modo" and propuestos.get("FEATURE_DELIVERY", "1") == "1"
+            and any(key in {"delivery_inmediato_activo", "delivery_franjas_activo"} for key, _ in cambios)):
         _inm = str(propuestos.get("delivery_inmediato_activo", "1")).strip() in ("1", "true", "True")
         _fra = str(propuestos.get("delivery_franjas_activo", "0")).strip() in ("1", "true", "True")
         if not _inm and not _fra:

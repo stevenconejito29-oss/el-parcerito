@@ -111,7 +111,12 @@
             <span class="fp-item__addr">📍 {{ p.direccion_entrega or (p.zona_nombre_aplicada or '—') }}</span>
           </div>
         </label>
-        <span class="fp-state {{ p.estado }}">{{ p.estado }}</span>
+        <span class="fp-state {{ p.estado }}">{{ p.estado|replace('_', ' ') }}</span>
+        <div class="fp-order-money"><strong>{{ 'Cobrado' if p.pago_confirmado else 'Cobrar al entregar' }}: €{{ '%.2f'|format(p.total) }}</strong><span>{{ p.metodo_pago|capitalize }}</span></div>
+        <details class="fp-order-content"><summary>Revisar productos y desglose</summary>
+          {% for item in p.items %}<div class="fp-order-line">{% include '_order_item_combo.html' %}</div>{% endfor %}
+          <p>Total del pedido: €{{ '%.2f'|format(p.total) }} · incluye el reparto aplicado.</p>
+        </details>
       </li>
       {% endfor %}
     </ul>

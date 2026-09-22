@@ -558,7 +558,6 @@
     const root = document.getElementById(mode === 'staff' ? 'ox-push-banner' : 'ox-push-prompt');
     if (!root) return;
     if (Notification.permission === 'granted') return;
-    if (Notification.permission === 'denied') return setPushUi('denied');
     if (mode === 'staff' && sessionStorage.getItem('ox.pushPromptDismissed') === '1') return;
     const dismissed = Number.parseInt(localStorage.getItem('oxPushDismissedAt') || '0', 10);
     if (dismissed && Date.now() - dismissed < 7 * 86400 * 1000) return;
@@ -567,8 +566,12 @@
       if (page && root.parentElement !== page) page.prepend(root);
       root.classList.add('is-inline');
       root.hidden = false;
+      if (Notification.permission === 'denied') return setPushUi('denied');
     } else {
-      setTimeout(() => { root.hidden = false; }, 6000);
+      setTimeout(() => {
+        if (Notification.permission === 'denied') setPushUi('denied');
+        else root.hidden = false;
+      }, 6000);
     }
   }
 

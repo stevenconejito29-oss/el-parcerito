@@ -184,7 +184,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/vendor/nprogress.min.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/system-foundation.css', v=asset_version) }}">
   {% if current_user.is_authenticated and current_user.rol in ('admin', 'super_admin') %}
-  <script defer src="{{ url_for('static', filename='js/admin-tool-search.js', v=asset_version) }}"></script>
+  <script nonce="{{ csp_nonce() }}" defer src="{{ url_for('static', filename='js/admin-tool-search.js', v=asset_version) }}"></script>
   {% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/flow-refinements.css', v=asset_version) }}">
 </head>

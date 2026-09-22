@@ -126,7 +126,7 @@
 
 <div class="toast" id="toast"></div>
 
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function(){
   const REFRESH_MS = {{ refresh_seconds|default(5) }} * 1000;
   const DATA_URL = "{{ url_for('preparador.kds_data') }}";

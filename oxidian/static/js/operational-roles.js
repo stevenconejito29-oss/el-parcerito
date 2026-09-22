@@ -264,7 +264,11 @@
     chip.setAttribute('data-thermal-status', '');
     chip.setAttribute('aria-label', 'Estado de la impresora Bluetooth');
     chip.textContent = '🔵 Emparejar impresora';
-    document.body.appendChild(chip);
+    const toolbar = document.querySelector('.slotops-hero');
+    if (toolbar) {
+      chip.classList.add('is-inline');
+      toolbar.appendChild(chip);
+    } else document.body.appendChild(chip);
   }
 
   function refreshChip() {

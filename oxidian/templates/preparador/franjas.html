@@ -61,7 +61,7 @@
 </main>
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/preparation-checklist.js', v=asset_version) }}" defer></script>
-<script src="{{ url_for('static', filename='js/preparation-slots.js', v=asset_version) }}" defer></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/preparation-checklist.js', v=asset_version) }}" defer></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/preparation-slots.js', v=asset_version) }}" defer></script>
 
 {% endblock %}

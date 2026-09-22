@@ -23,6 +23,23 @@
     </div>
   </header>
 
+  <section class="sa-access-card" aria-labelledby="store-access-title">
+    <div>
+      <h2 id="store-access-title">Tienda {{ 'privada' if private_store else 'pública' }}</h2>
+      <p>{{ 'Solo entran los teléfonos autorizados y verificados por WhatsApp.' if private_store else 'Cualquier visitante puede consultar el menú y hacer pedidos.' }}</p>
+      <p>{{ authorised_customers }} clientes autorizados.{% if not authorised_customers %} Autoriza al menos un teléfono en Clientes antes de probar el acceso privado.{% endif %}</p>
+    </div>
+    <form method="post" action="{{ url_for('superadmin.guardar_config_seccion') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="section" value="acceso-clientes">
+      <input type="hidden" name="config_key" value="ACCESO_CLIENTES_REGISTRADOS">
+      <input type="hidden" name="ACCESO_CLIENTES_REGISTRADOS" value="{{ '0' if private_store else '1' }}">
+      <button class="oa-btn oa-btn--primary" type="submit">{{ 'Hacer pública' if private_store else 'Activar tienda privada' }}</button>
+      <a class="oa-btn oa-btn--ghost" href="{{ url_for('admin.clientes') }}">Autorizar clientes</a>
+      <a href="{{ url_for('superadmin.config', section='acceso') }}">Ajustes de acceso</a>
+    </form>
+  </section>
+
   <section class="oa-readiness {{ 'is-ready' if readiness.ready else 'has-blockers' }}" aria-labelledby="readiness-title">
     <div class="oa-readiness__summary">
       <span class="oa-readiness__icon" aria-hidden="true">{{ '✓' if readiness.ready else '!' }}</span>

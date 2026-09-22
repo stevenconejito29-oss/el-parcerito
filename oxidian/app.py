@@ -137,8 +137,9 @@ def create_app(env="default"):
         user = db.session.get(User, ident)
         return user if user and user.puede_iniciar_sesion else None
 
-    from device_identity import initialise_browser_session
+    from device_identity import initialise_browser_session, persist_browser_device
     app.before_request(initialise_browser_session)
+    app.after_request(persist_browser_device)
     from customer_access import enforce_customer_access, private_access_headers
     app.before_request(enforce_customer_access)
     app.after_request(private_access_headers)
@@ -164,6 +165,8 @@ def create_app(env="default"):
         from flask_login import logout_user as _logout
         from routes.auth import ROLES_MFA_OBLIGATORIO
 
+        if request.endpoint == 'static' or request.path.startswith('/health') or request.path in {'/sw.js', '/favicon.ico'}:
+            return None
         if not current_user.is_authenticated:
             return None
         cookie_version = int(_sess.get("mfa_v", 0) or 0)
@@ -199,9 +202,12 @@ def create_app(env="default"):
     # Se throttlea a 1 write/minuto por usuario para no saturar la BD bajo carga.
     @app.before_request
     def actualizar_presencia():
+        if request.endpoint == 'static' or request.path.startswith('/health') or request.path in {'/sw.js', '/favicon.ico'}:
+            return None
         if current_user.is_authenticated:
             from flask import session as _sess
-            _sess.permanent = True
+            if not _sess.permanent:
+                _sess.permanent = True
             last = current_user.last_seen
             now  = datetime.now(timezone.utc).replace(tzinfo=None)
             if last is None or (now - last).total_seconds() >= 60:
@@ -215,12 +221,12 @@ def create_app(env="default"):
     @app.before_request
     def aplicar_cortina_preapertura():
         """Oculta el storefront sin interferir con operación ni integraciones."""
-        if current_user.is_authenticated:
-            return None
         from models import SiteConfig
         from prelaunch import es_ruta_exenta_preapertura
 
         if es_ruta_exenta_preapertura(request.path):
+            return None
+        if current_user.is_authenticated:
             return None
         try:
             activa = _to_bool(SiteConfig.get("PREAPERTURA_ACTIVA", "0"), False)

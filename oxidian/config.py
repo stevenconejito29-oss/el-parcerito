@@ -35,6 +35,9 @@ class Config:
     # Seguridad de sesión
     PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
     SESSION_COOKIE_NAME = "oxidian_session"
+    # Los assets y peticiones de fondo no deben reemitir una cookie antigua
+    # después de un login o de verificar un OTP en otra petición concurrente.
+    SESSION_REFRESH_EACH_REQUEST = False
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_PATH = "/"

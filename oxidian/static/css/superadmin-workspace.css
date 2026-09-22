@@ -20,3 +20,10 @@
 .sa-category a { padding-inline: .35rem; border-radius: .4rem; }
 .sa-category a:hover { background: var(--col-elevated); }
 .sa-category a > span { color: var(--col-muted); }
+
+.sa-access-card { display:flex; flex-wrap:wrap; gap:1rem; justify-content:space-between; padding:1rem; margin-bottom:1rem; border:1px solid var(--col-border); border-radius:12px; background:var(--col-surface); color:var(--col-text); }
+.sa-access-card > div { flex:1 1 22rem; min-width:0; }
+.sa-access-card h2 { font-size:1.2rem; margin:0; }
+.sa-access-card p { margin:.4rem 0; line-height:1.5; overflow-wrap:anywhere; }
+.sa-access-card form { display:flex; flex-wrap:wrap; align-items:center; gap:.65rem; }
+.sa-access-card button, .sa-access-card a { min-height:44px; white-space:normal; }

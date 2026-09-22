@@ -48,4 +48,4 @@
   </form>
 </main>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='js/favor-marketplace.js', v=asset_version) }}" defer></script>{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/favor-marketplace.js', v=asset_version) }}" defer></script>{% endblock %}

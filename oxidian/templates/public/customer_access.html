@@ -12,7 +12,7 @@
 <main class="customer-access">
   <p>{{ brand.nombre }}</p>
   <h1>{{ 'Revisa tu WhatsApp' if code_step else 'Tu tienda de confianza' }}</h1>
-  <p>{{ 'Introduce el código que te hemos enviado.' if code_step else 'Accede con tu teléfono registrado para ver la carta, hacer pedidos e instalar la aplicación.' }}</p>
+  <p>{{ 'Si has recibido el código de acceso, introdúcelo aquí.' if code_step else 'Accede con tu teléfono registrado para ver la carta, hacer pedidos e instalar la aplicación.' }}</p>
   {% for category, message in get_flashed_messages(with_categories=true) %}<p role="status">{{ message }}</p>{% endfor %}
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

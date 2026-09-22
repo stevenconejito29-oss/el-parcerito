@@ -351,7 +351,7 @@
   {% set supplement_groups = extra_groups|rejectattr('tipo','equalto','sabor')|list %}
   <section class="pd-extras" aria-labelledby="pd-extras-title">
     <h2 id="pd-extras-title">{% if flavor_groups and not supplement_groups %}Elige tu sabor{% else %}Personaliza tu pedido{% endif %}</h2>
-    <p>{% if flavor_groups %}Toca <strong>+</strong> en cada sabor que quieras. Puedes combinar varios.{% endif %}{% if supplement_groups %} Los extras se suman por cada unidad.{% endif %}</p>
+    <p>{% if flavor_groups %}Toca el nombre para añadir un sabor y el signo − para quitarlo.{% endif %}{% if supplement_groups %} Los extras se suman por cada unidad.{% endif %}</p>
     {% for group in extra_groups %}
     <fieldset class="pd-extra-group {% if group.tipo == 'sabor' %}pd-flavor-group{% endif %}" data-option-type="{{ group.tipo }}" data-min="{{ group.min_selecciones }}" data-max="{{ group.max_selecciones }}">
       <legend>
