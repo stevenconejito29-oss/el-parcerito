@@ -209,3 +209,16 @@ body::before {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+/* Un nombre, horario o aviso extenso debe caber incluso con texto ampliado. */
+.launch-shell, .launch-card, .launch-brand, .launch-copy, .launch-contact, .launch-footer { min-width:0; }
+.launch-card :is(h1,p,a,button,small) { max-width:100%; overflow-wrap:anywhere; white-space:normal; }
+.launch-copy h1 { font-size:clamp(1.5rem,6vw,2.7rem); line-height:1.2; }
+.launch-copy p { line-height:1.6; }
+.launch-name { line-height:1.35; }
+.launch-footer { color:#cbd5e1; font-size:.8rem; }
+.launch-footer a { color:#e2e8f0; flex-shrink:1; }
+.launch-install { min-height:44px; height:auto; line-height:1.4; }
+@media (orientation:landscape) and (max-height:620px) { .launch-card { grid-template-columns:minmax(0,.65fr) minmax(0,1.35fr); } }
+
+.launch-page, .launch-page .launch-copy h1 { color:#fffaf0; }
+.launch-page .launch-footer { background:transparent; color:#cbd5e1; }

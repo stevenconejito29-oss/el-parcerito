@@ -50,3 +50,16 @@ body.operational-view .work-sec-item { display:flex; flex-wrap:wrap; gap:5px; li
 body .ox-staff-install { background:#f8fafc !important; color:#172b3a !important; border:1px solid #64748b !important; }
 .work-order-preview { order:2; margin:8px 0; padding:8px 10px; list-style:none; background:#f1f5f9; border-radius:8px; color:#172b3a; font-size:.88rem; line-height:1.5; }
 .work-order-preview li { overflow-wrap:anywhere; }
+/* Textos largos y cierre: sin recortes ni barras que oculten el aviso. */
+body.ox-body-public .ep-card-name { display:block; -webkit-line-clamp:unset; overflow:visible; line-height:1.3; }
+body.ox-body-public :is(.ep-card-body,.ep-card-combo-line,.ep-card-combo-overview,.ep-card-combo-copy) { min-width:0; }
+body.ox-body-public :is(.ep-card-combo-count,.ep-card-combo-copy,.ep-cbadge,.ep-card-btn) { white-space:normal; overflow-wrap:anywhere; line-height:1.4; }
+body.ox-body-public .ep-card-combo-overview { flex-wrap:wrap; gap:8px; }
+body.ox-body-public :is(.pd-store-closed,.cr-store-closed) { min-width:0; max-width:100%; overflow-wrap:anywhere; line-height:1.5; }
+body.ox-body-public .cr-store-closed { grid-column:1/-1; display:grid; gap:6px; padding:12px; }
+body.ox-body-public .cr-cta--disabled { white-space:normal; height:auto; line-height:1.4; }
+@media(max-width:767px) {
+  body.ox-body-public .cr-panel:has(.cr-store-closed) { position:static; inset:auto; pointer-events:auto; padding:0; }
+  body.ox-body-public .cr-summary:has(.cr-store-closed) { position:static; display:flex; flex-direction:column; align-items:stretch; width:100%; max-height:none; margin-top:16px; }
+  body.ox-body-public .cr-summary:has(.cr-store-closed) .cr-total-row { width:100%; }
+}

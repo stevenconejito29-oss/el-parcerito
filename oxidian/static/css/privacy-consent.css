@@ -80,3 +80,7 @@
   .ox-privacy-banner { max-height: calc(100dvh - 20px); overflow: auto; grid-template-columns: minmax(0, 1fr) minmax(15rem, .65fr); padding: .75rem; }
   .ox-privacy-dialog { max-height: calc(100dvh - 20px); }
 }
+
+@media (max-width:360px) {
+  .ox-privacy-actions { grid-template-columns:minmax(0,1fr); }
+}

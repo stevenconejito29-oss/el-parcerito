@@ -136,7 +136,7 @@
           {% endfor %}
           {% if preview|length > 4 %}<span class="ep-card-combo-more">+{{ preview|length - 4 }}</span>{% endif %}
         </div>
-        <span class="ep-card-combo-count">{{ preview|sum(attribute='cantidad') }} productos</span>
+        <span class="ep-card-combo-count">{% if fijos_p %}{{ fijos_p|sum(attribute='cantidad') }} incluidos{% endif %}{% if fijos_p and gs %} · {% endif %}{% if gs %}{{ gs|length }} elección{{ 'es' if gs|length != 1 else '' }}{% endif %}</span>
       </div>
       {% if fijos_p %}
       <div class="ep-card-combo-line">

@@ -107,3 +107,48 @@ response=client.get('/carrito')
 assert response.status_code == 200
 assert 'Combo para compartir' in response.text and '3×' in response.text, 'Se perdió la selección del combo'
 (out/'combo_carrito.html').write_bytes(response.data)
+
+# Cierre, preapertura y acceso privado con textos extensos, solo datos QA.
+with app.app_context():
+    SiteConfig.set('TIENDA_FORZAR_CERRADA','1')
+    SiteConfig.set('TIENDA_FORZAR_ABIERTA','0')
+    SiteConfig.set('TIENDA_MENSAJE_CIERRE', 'Hoy estamos cerrados por mantenimiento. Volvemos con nuestro horario habitual; tu selección quedará guardada para continuar cuando abramos. ' * 3)
+    db.session.get(Product,combo_id).nombre='Combo familiar con empanadas, bebidas y opciones para compartir en una ocasión especial'
+    db.session.commit()
+for name,route in [('cerrado_menu','/'),('cerrado_producto',f'/producto/{product_id}'),('cerrado_combo',f'/producto/{combo_id}'),('cerrado_carrito','/carrito'),('cerrado_checkout','/checkout')]:
+    response=client.get(route, follow_redirects=True)
+    assert response.status_code==200
+    (out/(name+'.html')).write_bytes(response.data)
+with app.app_context():
+    SiteConfig.set('PREAPERTURA_ACTIVA','1')
+    SiteConfig.set('PREAPERTURA_TITULO','Estamos preparando una nueva experiencia para compartir contigo y toda tu familia')
+    SiteConfig.set('PREAPERTURA_MENSAJE','Pronto volveremos a recibir tus pedidos. Consulta nuestros horarios y novedades; gracias por acompañarnos. ' * 4)
+    db.session.commit()
+response=client.get('/')
+assert 'launch-card' in response.text
+(out/'preapertura.html').write_bytes(response.data)
+with app.app_context():
+    from models import CustomerAccessGrant
+    owner=User(nombre='Owner QA',email='private-owner@qa.invalid',password_hash='!',rol='super_admin',activo=True)
+    db.session.add(owner);db.session.flush()
+    customer=db.session.get(User,users['cliente'])
+    customer.telefono='+34600000000';customer.telefono_normalizado=customer.telefono
+    db.session.add(CustomerAccessGrant(user_id=customer.id,approved_by=owner.id,activo=True))
+    code=customer.generar_cod_puntos()
+    SiteConfig.set('ACCESO_CLIENTES_REGISTRADOS','1');db.session.commit()
+    identity_id=customer.id
+private_client=app.test_client()
+response=private_client.get('/acceso')
+assert response.status_code==200 and 'name="telefono"' in response.text, 'La preapertura intercepta el acceso'
+assert 'rel="manifest"' not in response.text
+assert private_client.get('/manifest.webmanifest').status_code==403
+with private_client.session_transaction() as session:
+    import time
+    session['customer_access_pending']={'id':identity_id,'phone':'+34600000000','at':time.time()}
+response=private_client.post('/acceso',data={'action':'verify','codigo':code})
+assert response.status_code==303 and response.location=='/'
+assert private_client.get('/manifest.webmanifest').status_code==200
+with app.app_context():
+    SiteConfig.set('PREAPERTURA_ACTIVA','0');db.session.commit()
+assert 'name="ox-push-eligible" content="1"' in private_client.get('/').text
+print('Acceso privado + preapertura + OTP + manifiesto PWA: OK')

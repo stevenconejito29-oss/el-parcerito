@@ -371,9 +371,9 @@
       <button type="button" class="cr-cta cr-cta--disabled" disabled>{{ ui.cart_incompatible }}</button>
       {% elif not establecimiento_abierto %}
       <button type="button" class="cr-cta cr-cta--disabled" disabled aria-describedby="cart-store-closed">
-        Establecimiento cerrado · tu {{ ui.cart_name }} queda guardada
+        Tienda cerrada
       </button>
-      <div id="cart-store-closed" class="cr-store-closed" role="status"><strong>Ahora no podemos recibir el pedido</strong><span>{{ mensaje_cierre }}</span></div>
+      <div id="cart-store-closed" class="cr-store-closed" role="status"><strong>Tu {{ ui.cart_name }} queda guardada</strong><span>{{ mensaje_cierre }}</span></div>
       {% else %}
       <a href="{{ url_for('public.checkout') }}" class="cr-cta" id="btn-checkout">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>

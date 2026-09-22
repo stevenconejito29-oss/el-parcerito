@@ -7,7 +7,7 @@
       ('Operación y reparto', 'Pedidos, atención y planificación de entregas.', [
         ('admin.pedidos', 'Pedidos'), ('admin.chats_index', 'Chat web'),
         ('admin.delivery_franjas_panel', 'Modalidades y franjas')]),
-      ('Catálogo e inventario', 'Productos, clasificación y existencias.', [
+      ('Catálogo e inventario', 'Productos, combos, clasificación y existencias.', [
         ('admin.productos', 'Productos'), ('admin.categorias', 'Categorías'),
         ('admin.stock', 'Stock')]),
       ('Personas y accesos', 'Perfiles, teléfonos registrados y permisos.', [
@@ -28,6 +28,8 @@
       <ul>{% for endpoint, label in links %}<li><a href="{{ url_for(endpoint) }}">{{ label }} <span aria-hidden="true">→</span></a></li>{% endfor %}</ul>
       {% if title == 'Operación y reparto' and brand.delivery %}<a href="{{ url_for('superadmin.zonas') }}">Zonas y tarifas →</a>{% endif %}
       {% if title == 'Finanzas' and brand.proveedores %}<a href="{{ url_for('admin.liquidacion_proveedores') }}">Liquidaciones de socios →</a>{% endif %}
+      {% if title == 'Personas y accesos' %}<a href="{{ url_for('superadmin.config') }}#acceso">Página pública o privada →</a>{% endif %}
+      {% if title == 'Catálogo e inventario' and brand.puntos %}<a href="{{ url_for('marketing.puntos') }}">Puntos y recompensas →</a>{% endif %}
       {% if title == 'Tienda y canales' %}<a href="#modulos">Módulos y modelo de tienda ↓</a>{% endif %}
     </article>
     {% endfor %}

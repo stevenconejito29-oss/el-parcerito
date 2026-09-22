@@ -336,6 +336,7 @@ CONFIG_SECTION_KEYS = {
     },
     "tienda-tema": set(PUBLIC_THEME_DEFAULTS),
     "tienda-textos": set(PUBLIC_UI_DEFAULTS),
+    "acceso-clientes": {"ACCESO_CLIENTES_REGISTRADOS"},
     "operacion-horario": {
         "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON", "HORARIO_MODO",
         "TIENDA_FORZAR_CERRADA",
@@ -384,6 +385,8 @@ CONFIG_SECTION_PARENT = {
     section: section.split("-", 1)[0]
     for section in CONFIG_SECTION_KEYS
 }
+
+CONFIG_SECTION_PARENT["notificaciones-cliente"] = "notificaciones-cliente"
 
 
 def _valid_url(value, required=False, allow_internal=True):

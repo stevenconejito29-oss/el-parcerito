@@ -8,3 +8,7 @@
 .customer-access .secondary { background: transparent; color: inherit; border: 1px solid currentColor; }
 .customer-access footer { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 2rem; }
 .customer-access a { color: inherit; text-decoration: underline; }
+.customer-access { min-width:0; }
+.customer-access :is(h1,p,a,button,label) { overflow-wrap:anywhere; white-space:normal; line-height:1.5; }
+.customer-access :is(input,button) { min-width:0; max-width:100%; min-height:44px; }
+.customer-access footer { flex-wrap:wrap; gap:12px; }

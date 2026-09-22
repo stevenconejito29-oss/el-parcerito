@@ -76,10 +76,12 @@
 
   <nav class="cfg-nav" aria-label="Secciones de configuración">
     <a href="#tienda">Tienda</a>
-    <a href="#operacion">Operación</a>
+    <a href="#acceso">Acceso de clientes</a>
+    <a href="#operacion">Horarios y pedidos</a>
     {% if brand.delivery %}<a href="#entregas">Entregas</a>{% endif %}
     {% if brand.puntos %}<a href="#puntos">Puntos</a>{% endif %}
-    <a href="#integraciones">Integraciones</a>
+    <a href="#integraciones">Conexiones</a>
+    <a href="#notificaciones-cliente">Notificaciones</a>
     <a href="#avanzado">Avanzado</a>
   </nav>
 
@@ -274,13 +276,21 @@
     </form>
   </section>
 
-  <section id="operacion" class="cfg-section">
-    <div class="cfg-section-head"><div><span>2</span><h2>Operación de la tienda</h2><p>Horario, cierre manual y métodos de pago.</p></div></div>
-    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="operacion-horario">
-      <h3>Acceso de clientes</h3>
+  <form id="acceso" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="acceso-clientes">
+    <div class="cfg-section-head"><div><span>2</span><h2>Acceso de clientes</h2><p>Decide quién puede ver el menú, instalar la PWA y pedir. El horario se configura por separado.</p></div></div>
       {{ cfg_select('ACCESO_CLIENTES_REGISTRADOS', 'Quién puede acceder a la tienda', [('0','Página pública — acceso libre'),('1','Página privada — autorización y código WhatsApp')], 'En modo privado, solo los clientes autorizados expresamente por superadmin pueden entrar con un código por WhatsApp. Cada número queda vinculado a un dispositivo. No afecta al acceso del equipo.') }}
       <a href="{{ url_for('admin.clientes') }}">Gestionar clientes registrados</a>
+
+    <ol class="cfg-access-steps"><li>Autoriza el teléfono desde Clientes.</li><li>Activa la página privada y guarda.</li><li>El cliente verifica el código de WhatsApp en su dispositivo.</li></ol>
+    <p class="cfg-form-note">Para cambiar de dispositivo, restablece su acceso desde Clientes. Volver a página pública permite consultar el menú sin verificación.</p>
+    <button type="submit" class="cfg-save-bottom">Guardar acceso</button>
+  </form>
+
+  <section id="operacion" class="cfg-section">
+    <div class="cfg-section-head"><div><span>3</span><h2>Operación de la tienda</h2><p>Horario, cierre manual y métodos de pago.</p></div></div>
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="operacion-horario">
       <h3>Horario y cierre</h3>
     <div class="cfg-grid">
       {{ cfg_select('HORARIO_MODO', 'Modo de apertura', [('semanal','Usar malla semanal'),('24h','Abierto 24 horas')], 'El modo 24 horas conserva la malla para recuperarla al volver a semanal.') }}
@@ -402,7 +412,7 @@
   </section>
 
   {% if brand.delivery %}<section id="entregas" class="cfg-section">
-    <div class="cfg-section-head"><div><span>3</span><h2>Entregas y cobertura</h2><p>El precio de cada zona aparece en carrito y genera la liquidación del repartidor.</p></div><a href="{{ url_for('superadmin.zonas') }}">Gestionar zonas</a></div>
+    <div class="cfg-section-head"><div><span>4</span><h2>Entregas y cobertura</h2><p>El precio de cada zona aparece en carrito y genera la liquidación del repartidor.</p></div><a href="{{ url_for('superadmin.zonas') }}">Gestionar zonas</a></div>
     <div class="cfg-zone-list">
       {% for zona in zonas %}
       <a href="{{ url_for('superadmin.editar_zona', zona_id=zona.id) }}">
@@ -465,7 +475,7 @@
 
   {% if brand.puntos %}<form id="puntos" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="puntos">
-    <div class="cfg-section-head"><div><span>4</span><h2>Club de fidelidad</h2><p>Nombre público, acumulación y acceso al catálogo de recompensas.</p></div><button type="submit">Guardar club</button></div>
+    <div class="cfg-section-head"><div><span>5</span><h2>Club de fidelidad</h2><p>Nombre público, acumulación y acceso al catálogo de recompensas.</p></div><button type="submit">Guardar club</button></div>
     <div class="cfg-grid">
       {{ cfg_input('UI_LOYALTY_NAME', 'Nombre del programa', placeholder='Granitos de café', help='Título visible para clientes.') }}
       {{ cfg_input('UI_LOYALTY_NAV_LABEL', 'Nombre corto', placeholder='Granitos', help='Texto de la navegación móvil.') }}
@@ -490,7 +500,7 @@
 
   <form id="integraciones" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="integraciones">
-    <div class="cfg-section-head"><div><span>5</span><h2>Conexiones internas</h2><p>Direcciones usadas entre Oxidian, chatbot y Evolution.</p></div><button type="submit">Guardar conexiones</button></div>
+    <div class="cfg-section-head"><div><span>6</span><h2>Conexiones internas</h2><p>Direcciones usadas entre Oxidian, chatbot y Evolution.</p></div><button type="submit">Guardar conexiones</button></div>
     <div class="cfg-grid">
       {{ cfg_input('BOT_API_URL', 'URL interna del chatbot', type='url') }}
       {{ cfg_input('BOT_OXIDIAN_URL', 'Oxidian visto desde el bot', type='url') }}
@@ -505,7 +515,7 @@
 
   <form id="notificaciones-cliente" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="notificaciones-cliente">
-    <div class="cfg-section-head"><div><span>6</span><h2>Notificaciones al cliente</h2><p>Gate anti-baneo Meta: prioriza push/web y sólo usa WhatsApp para códigos u OTP. Ver docs/CANAL_NOTIFICACIONES.md.</p></div><button type="submit">Guardar notificaciones</button></div>
+    <div class="cfg-section-head"><div><span>7</span><h2>Notificaciones al cliente</h2><p>Avisos de pedidos en la PWA y mensajes de verificación por WhatsApp.</p></div><button type="submit">Guardar notificaciones</button></div>
     <div class="cfg-grid">
       {{ cfg_select('notif_gate_activo', 'Gate de canal activo', [('1','Sí (recomendado)'),('0','No — todo por WhatsApp (legacy)')]) }}
       {{ cfg_input('notif_ventana_wa_horas', 'Ventana WhatsApp (horas)', type='number', min='1', max='168') }}
@@ -520,7 +530,7 @@
   </form>
 
   <details id="avanzado" class="cfg-section cfg-advanced">
-    <summary><span>6</span><div><h2>Configuración avanzada</h2><p>Límites técnicos y edición manual. Úsala solo cuando sea necesario.</p></div></summary>
+    <summary><span>8</span><div><h2>Configuración avanzada</h2><p>Límites técnicos y edición manual. Úsala solo cuando sea necesario.</p></div></summary>
     <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-subform">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="avanzado">
       <div class="cfg-grid">
@@ -544,7 +554,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/theme-preview.js') }}"></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/theme-preview.js', v=asset_version) }}"></script>
 <script nonce="{{ csp_nonce() }}">
 (() => {
   const root = document.querySelector('[data-weekly-schedule]');
@@ -689,9 +699,18 @@ async function clearBrand(type){
   }
 }
 function cfgShowMobileSection(id){
-  if(!window.matchMedia('(max-width:760px)').matches)return;
-  document.querySelectorAll('.cfg-section').forEach(section=>section.classList.toggle('cfg-active',section.id===id));
-  document.querySelectorAll('.cfg-nav a').forEach(link=>link.classList.toggle('active',link.getAttribute('href')==='#'+id));
+  const sections = [...document.querySelectorAll('.cfg-section[id]')];
+  const active = sections.find(section => section.id === id) || sections[0];
+  if (!active) return;
+  sections.forEach(section => section.classList.toggle('cfg-active', section === active));
+  document.querySelectorAll('.cfg-nav a').forEach(link => {
+    const selected = link.hash === '#' + active.id;
+    link.classList.toggle('active', selected);
+    if (selected) link.setAttribute('aria-current', 'location');
+    else link.removeAttribute('aria-current');
+  });
+  document.documentElement.classList.add('cfg-ready');
+  if (active.tagName === 'DETAILS') active.open = true;
 }
 document.addEventListener('change', (event) => {
   const input = event.target.closest('[data-brand-upload]');
@@ -701,13 +720,10 @@ document.addEventListener('click', (event) => {
   const button = event.target.closest('[data-brand-clear]');
   if (button) clearBrand(button.dataset.brandClear);
 });
-document.querySelectorAll('.cfg-nav a').forEach(link=>link.addEventListener('click',event=>{
-  if(!window.matchMedia('(max-width:760px)').matches)return;
-  event.preventDefault();cfgShowMobileSection(link.getAttribute('href').slice(1));window.scrollTo({top:document.querySelector('.cfg-nav').offsetTop-55,behavior:'smooth'});
-}));
-if(window.matchMedia('(max-width:760px)').matches){
-  cfgShowMobileSection(new URLSearchParams(location.search).get('section')||location.hash.slice(1)||'tienda');
-}
+document.querySelectorAll('.cfg-nav a').forEach(link => link.addEventListener('click', () => cfgShowMobileSection(link.hash.slice(1))));
+window.addEventListener('hashchange', () => cfgShowMobileSection(location.hash.slice(1)));
+cfgShowMobileSection(location.hash.slice(1) || new URLSearchParams(location.search).get('section') || 'tienda');
+
 </script>
 <style>
 /* Landscape móvil en superadmin config: colapsa el header, reduce padding

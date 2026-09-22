@@ -7,6 +7,7 @@ equipo pueda terminar la puesta a punto sin exponer el catálogo.
 
 OPERATIONAL_PREFIXES = (
     "/auth/",
+    "/acceso/",
     "/admin/",
     "/superadmin/",
     "/preparador/",
@@ -29,6 +30,7 @@ OPERATIONAL_PREFIXES = (
 
 PUBLIC_INFRASTRUCTURE_PATHS = frozenset({
     "/favicon.ico",
+    "/informacion-legal",
     "/manifest.webmanifest",
     "/robots.txt",
     "/sitemap.xml",

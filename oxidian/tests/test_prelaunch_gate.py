@@ -33,5 +33,13 @@ class PrelaunchRoutingTest(unittest.TestCase):
                 self.assertTrue(es_ruta_exenta_preapertura(path))
 
 
+class PrivatePrelaunchRoutingTest(unittest.TestCase):
+    def test_private_verification_and_legal_remain_available(self):
+        for path in ('/acceso', '/acceso/salir', '/informacion-legal'):
+            self.assertTrue(es_ruta_exenta_preapertura(path))
+        self.assertFalse(es_ruta_exenta_preapertura('/acceso-ajeno'))
+        self.assertFalse(es_ruta_exenta_preapertura('/producto/22'))
+
+
 if __name__ == "__main__":
     unittest.main()

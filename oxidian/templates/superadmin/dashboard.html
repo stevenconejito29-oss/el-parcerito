@@ -4,7 +4,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/superadmin-workspace.css', v=asset_version) }}">
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/superadmin-workspace.js', v=asset_version) }}" defer></script>
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/superadmin-workspace.js', v=asset_version) }}" defer></script>
 {% endblock %}
 {% block content %}
 

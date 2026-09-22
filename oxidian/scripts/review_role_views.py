@@ -111,3 +111,19 @@ for name, code_step in [('acceso', False), ('acceso_codigo', True)]:
     (out/(name+'.html')).write_bytes(response.data)
     manifest.append({'name':name, 'role':'cliente', 'route':'/acceso'})
 (out/'manifest.json').write_text(json.dumps(manifest))
+
+# El acceso se guarda sin modificar horarios y solo superadmin puede cambiarlo.
+for role, value, expected in [('super_admin', '0', '0'), ('admin', '1', '0'), ('super_admin', '1', '1')]:
+    with client.session_transaction() as session:
+        session['_user_id'] = str(users[role]); session['_fresh'] = True
+    response = client.post('/superadmin/config/guardar-seccion', data={
+        'section': 'acceso-clientes', 'config_key': 'ACCESO_CLIENTES_REGISTRADOS',
+        'ACCESO_CLIENTES_REGISTRADOS': value,
+    })
+    assert response.status_code == 302
+    assert 'section=acceso' in response.location
+    with app.app_context():
+        assert SiteConfig.get('ACCESO_CLIENTES_REGISTRADOS') == expected
+        assert SiteConfig.get('TIENDA_FORZAR_ABIERTA') == '1'
+        assert SiteConfig.get('TIENDA_FORZAR_CERRADA') == '0'
+print('Acceso independiente y permisos de superadmin: OK', flush=True)
