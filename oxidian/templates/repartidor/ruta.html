@@ -728,7 +728,10 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
       </div>
       {% endif %}
 
-      <details class="route-contents mt-2" open>
+      {# Abierto mientras el rider está en camino (necesita ver extras/sabores
+         para confirmar). Al marcar "ya llegué", se colapsa: el foco pasa al
+         código y cobro, y esta lista solo genera ruido en pantalla. #}
+      <details class="route-contents mt-2" {% if not pedido.en_punto_encuentro %}open{% endif %}>
         <summary>
           <span>Contenido del pedido</span>
           <strong>{{ pedido.items|sum(attribute='cantidad') }} unidad(es)</strong>
@@ -783,7 +786,10 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
       {% endif %}
 
       {% if pedido.en_punto_encuentro %}
-      <details class="route-finish" {% if pedido.id in codigo_enviado_ids %}open{% endif %}>
+      {# Abierto siempre que el rider ya marcó "en el punto": aquí vive el
+         input del código y el form de cobro, mantenerlo colapsado le
+         hace pensar que "no hay espacio para escribir". #}
+      <details class="route-finish" open>
         <summary><span><b>Completar entrega</b><small>Código · cobro · cierre</small></span><strong>3 pasos</strong></summary>
       <div class="work-panel route-confirm-block route-operation-step route-operation-step--code mb-3 mt-3">
         <p class="work-confirm-label">1. Código al llegar</p>
