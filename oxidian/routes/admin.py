@@ -5189,9 +5189,11 @@ def crear_categoria():
         flash("El nombre es obligatorio.", "danger")
         return redirect(url_for("admin.categorias"))
     descripcion = request.form.get("descripcion", "").strip()
+    emoji = (request.form.get("emoji", "") or "").strip()[:16] or None
     c = Categoria(
         nombre=nombre,
         descripcion=descripcion or None,
+        emoji=emoji,
         activo=bool(request.form.get("activo", "1")),
         orden=request.form.get("orden", 0, type=int),
     )
@@ -5234,6 +5236,7 @@ def editar_categoria(cat_id):
     if nombre_nuevo:
         cat.nombre = nombre_nuevo
     cat.descripcion = request.form.get("descripcion", "").strip() or None
+    cat.emoji = ((request.form.get("emoji", "") or "").strip()[:16]) or None
     cat.activo = bool(request.form.get("activo"))
     cat.orden = request.form.get("orden", cat.orden or 0, type=int)
     img_url = _normalizar_imagen_url(request.form.get("imagen_url"))

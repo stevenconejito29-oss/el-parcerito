@@ -735,6 +735,10 @@ class Categoria(db.Model):
     nombre = db.Column(db.String(80), nullable=False)
     descripcion = db.Column(db.Text)
     imagen_url = db.Column(db.Text)
+    # Emoji/icono opcional para tarjetas cuando no hay `imagen_url`. Se
+    # elige desde el admin y evita el keyword-matching hardcodeado del
+    # template (que solo funcionaba con nombres de categoría en español).
+    emoji = db.Column(db.String(16))
     activo = db.Column(db.Boolean, default=True)
     orden = db.Column(db.Integer, default=0)
 

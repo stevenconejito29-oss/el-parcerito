@@ -29,6 +29,10 @@
         <input type="text" name="descripcion" placeholder="Breve descripción opcional" class="cat-input">
       </div>
       <div>
+        <label class="cat-label">Emoji / icono <span style="color:var(--col-muted);font-weight:400">(opcional)</span></label>
+        <input type="text" name="emoji" maxlength="16" class="cat-input" placeholder="🍕 · 👕 · 👟 · 🥤 …" style="font-size:1.25rem">
+      </div>
+      <div>
         <label class="cat-label">Posición en el menú (0 = primera)</label>
         <input type="number" name="orden" value="0" class="cat-input" placeholder="0">
         <p class="text-xs mt-1" style="color:var(--col-faint)">Número menor = aparece antes en la tienda</p>
@@ -103,6 +107,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="text" name="nombre" value="{{ cat.nombre }}" required class="cat-input">
         <input type="text" name="descripcion" value="{{ cat.descripcion or '' }}" placeholder="Descripción" class="cat-input">
+        <input type="text" name="emoji" value="{{ cat.emoji or '' }}" maxlength="16" placeholder="Emoji (opcional)" class="cat-input" style="font-size:1.15rem">
         <input type="number" name="orden" value="{{ cat.orden or 0 }}" class="cat-input" placeholder="Orden">
         <label class="cat-check"><input type="checkbox" name="activo" value="1" {% if cat.activo %}checked{% endif %}> Visible en menú</label>
         <label class="flex items-center gap-2 cursor-pointer rounded-lg px-2 py-1.5 text-xs"

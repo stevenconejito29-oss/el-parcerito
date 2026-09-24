@@ -21,6 +21,10 @@
       <label class="ox-label">Descripción</label>
       <input type="text" name="descripcion" value="{{ cat.descripcion or '' }}" class="ox-input">
     </div>
+    <div class="ox-field">
+      <label class="ox-label">Emoji / icono <span style="font-weight:400;color:var(--col-muted);font-size:.8em">(opcional — se muestra si no hay imagen)</span></label>
+      <input type="text" name="emoji" value="{{ cat.emoji or '' }}" maxlength="16" class="ox-input" placeholder="🍕 · 👕 · 👟 · 🥤 …" style="font-size:1.25rem">
+    </div>
     <div class="ox-field md:col-span-2">
       <label class="ox-label">Imagen</label>
       {% if cat.imagen_url %}

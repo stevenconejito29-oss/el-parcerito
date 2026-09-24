@@ -40,17 +40,19 @@
      href="{{ url_for('public.producto_detalle', producto_id=p.id, origen=_product_origin) }}"
      {% if establecimiento.abierto and p.tipo_entrega == 'inmediato' and not p.es_combo and not _has_extras and _card.available %}data-modal-open="{{ p.id }}"{% endif %}
      tabindex="-1" aria-hidden="true">
+    {# Cadena de fallback del icono (genérica multi-tienda):
+       1. `p.categoria.emoji` configurado desde el admin (por categoría).
+       2. `🎁` para combos (mantiene contexto sin depender del nicho).
+       3. `brand.vertical_emoji` / `brand.fallback_emoji` (comida vs retail).
+    #}
+    {%- set _card_emoji = (p.categoria.emoji if p.categoria and p.categoria.emoji else ('🎁' if p.es_combo else (brand.fallback_emoji or brand.vertical_emoji or ('🍽️' if brand.es_comida else '🛍️')))) -%}
     {% if p.imagen_url %}
       {% set _src = p.imagen_url|upload_url %}
       <img src="{{ _src }}" alt="{{ p.nombre }}" loading="lazy" decoding="async"
            data-image-fallback="next">
-      <div class="ep-card-img-emoji" style="display:none">
-        {%- if p.es_combo %}🎁{%- elif p.categoria and 'beb' in p.categoria.nombre|lower %}🥤{%- elif p.categoria and ('dulce' in p.categoria.nombre|lower or 'postre' in p.categoria.nombre|lower) %}🍮{%- elif p.categoria and 'pizza' in p.categoria.nombre|lower %}🍕{%- elif p.categoria and 'ensalada' in p.categoria.nombre|lower %}🥗{%- else %}{{ brand.fallback_emoji or '🍽️' }}{%- endif %}
-      </div>
+      <div class="ep-card-img-emoji" style="display:none">{{ _card_emoji }}</div>
     {% else %}
-      <div class="ep-card-img-emoji">
-        {%- if p.es_combo %}🎁{%- elif p.categoria and 'beb' in p.categoria.nombre|lower %}🥤{%- elif p.categoria and ('dulce' in p.categoria.nombre|lower or 'postre' in p.categoria.nombre|lower) %}🍮{%- elif p.categoria and 'pizza' in p.categoria.nombre|lower %}🍕{%- elif p.categoria and 'ensalada' in p.categoria.nombre|lower %}🥗{%- else %}{{ brand.fallback_emoji or '🍽️' }}{%- endif %}
-      </div>
+      <div class="ep-card-img-emoji">{{ _card_emoji }}</div>
     {% endif %}
 
     {# Badges sobre imagen #}
@@ -97,7 +99,7 @@
   <div class="ep-card-body">
     <div class="ep-card-kicker-row">
       <span class="ep-card-kicker">
-        {% if p.es_combo %}Combo personalizable
+        {% if p.es_combo %}Combo
         {% elif p.tipo_entrega in ('programado','encargo') %}Entrega con fecha fija
         {% elif p.categoria %}{{ p.categoria.nombre }}
         {% else %}Disponible{% endif %}
@@ -123,44 +125,22 @@
     {% set sels_p  = preview|selectattr('es_seleccionable')|list %}
     {% set gs = sels_p|map(attribute='grupo_display')|unique|list %}
     <div class="ep-card-combo-panel">
-      <div class="ep-card-combo-overview">
-        <div class="ep-card-combo-thumbs" aria-hidden="true">
-          {% for ci in preview[:4] %}
-          <span class="ep-card-combo-thumb">
-            {% if ci.componente.imagen_url %}
-            <img src="{{ ci.componente.imagen_url|upload_url }}" alt="" loading="lazy" decoding="async">
-            {% else %}
-            <span>🎁</span>
-            {% endif %}
-          </span>
-          {% endfor %}
-          {% if preview|length > 4 %}<span class="ep-card-combo-more">+{{ preview|length - 4 }}</span>{% endif %}
-        </div>
-        <span class="ep-card-combo-count">{% if fijos_p %}{{ fijos_p|sum(attribute='cantidad') }} incluidos{% endif %}{% if fijos_p and gs %} · {% endif %}{% if gs %}{{ gs|length }} elección{{ 'es' if gs|length != 1 else '' }}{% endif %}</span>
-      </div>
       {% if fijos_p %}
       <div class="ep-card-combo-line">
-        <span class="ep-card-combo-label">Incluye</span>
-        <span class="ep-card-combo-copy">
-          {{ fijos_p[:3]|map(attribute='componente')|map(attribute='nombre')|join(' + ') }}{% if fijos_p|length > 3 %} +{{ fijos_p|length - 3 }}{% endif %}
-        </span>
+        <span class="ep-card-combo-label">Ya incluido</span>
+        <ul class="combo-included-list">
+          {% for ci in fijos_p[:3] %}<li><strong>{{ ci.cantidad }}×</strong> {{ ci.componente.nombre }}</li>{% endfor %}
+          {% if fijos_p|length > 3 %}<li>Y {{ fijos_p|length - 3 }} producto{{ 's' if fijos_p|length - 3 != 1 else '' }} más</li>{% endif %}
+        </ul>
       </div>
       {% endif %}
       {% if sels_p %}
       <div class="ep-card-combo-line">
-        <span class="ep-card-combo-label">Elige</span>
-        <span class="ep-card-combo-copy">{{ gs[:3]|join(' · ') }}{% if gs|length > 3 %} +{{ gs|length - 3 }}{% endif %}</span>
+        <span class="ep-card-combo-label">A tu gusto</span>
+        <span class="ep-card-combo-copy">{{ gs|join(' · ') }}</span>
       </div>
-      {% endif %}
-      <div class="ep-card-combo-actions">
-        {% if p.tipo_entrega == 'inmediato' %}
-        {% set combo_stock = _card.stock %}
-        {% if not combo_stock|stock_is_unlimited %}
-        <span class="ep-card-combo-stock {% if combo_stock <= 0 %}ep-card-combo-stock-out{% endif %}">{{ combo_stock|stock_display(singular='combo', plural='combos') }}</span>
-        {% endif %}
-        {% endif %}
-        {% if sels_p %}<span class="ep-card-combo-build">Personalizable</span>{% endif %}
-      </div>
+      <p class="combo-choice-hint">{{ gs|length }} sección{{ 'es' if gs|length != 1 else '' }} para elegir al abrir el combo</p>
+      {% else %}<p class="combo-choice-hint">Revisa el contenido y añádelo a tu pedido</p>{% endif %}
     </div>
     {% else %}
     <div class="ep-card-combo-panel ep-card-combo-panel-warn">
