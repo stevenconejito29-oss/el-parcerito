@@ -22,25 +22,31 @@
 {% macro img_url(url) -%}
   {{- url|upload_url -}}
 {%- endmacro %}
-{% macro cat_emoji(n) -%}
-  {#- Iconos por categoría — palabras neutras (sin nombres de plato concretos).
-      El emoji de fallback de marca (brand.fallback_emoji) se usa como default
-      genérico → el super_admin lo cambia desde /superadmin/config si quiere
-      otro icono base para su tienda. -#}
-  {%- set nl = n|lower -%}
-  {%- if 'bebida' in nl or 'refresco' in nl or 'jugo' in nl or 'agua' in nl or 'cerveza' in nl -%}🥤
-  {%- elif 'dulce' in nl or 'postre' in nl or 'torta' in nl or 'helado' in nl -%}🍮
-  {%- elif 'combo' in nl or 'pack' in nl or 'menu' in nl or 'menú' in nl -%}🎁
-  {%- elif 'sopa' in nl or 'caldo' in nl -%}🍲
-  {%- elif 'empanada' in nl or 'arepa' in nl -%}🫓
-  {%- elif 'café' in nl or 'cafe' in nl or 'tinto' in nl -%}☕
-  {%- elif 'pan' in nl or 'buñuelo' in nl or 'pandebono' in nl -%}🥖
-  {%- elif 'tamal' in nl -%}🌿
-  {%- elif 'pizza' in nl -%}🍕
-  {%- elif 'burger' in nl or 'hambur' in nl -%}🍔
-  {%- elif 'ensalada' in nl -%}🥗
-  {%- elif 'entrada' in nl or 'aperitivo' in nl or 'tapa' in nl or 'snack' in nl -%}🍢
-  {%- else -%}🍽️{%- endif -%}
+{% macro cat_emoji(cat) -%}
+  {#- Cadena de fallback genérica multi-tienda:
+      1. `cat.emoji` configurado desde el admin (categoría) — sirve para
+         cualquier vertical (comida, ropa, calzado, retail).
+      2. Keyword matching en español — solo activo si vertical es comida y
+         el admin no ha puesto emoji. Legacy compatible con tiendas de comida.
+      3. `brand.fallback_emoji` / `brand.vertical_emoji` — default de la marca.
+      4. 🍽️ / 🛍️ según vertical, último recurso. -#}
+  {%- if cat and cat.emoji -%}{{ cat.emoji }}
+  {%- else -%}
+    {%- set nl = (cat.nombre if cat else '')|lower -%}
+    {%- if 'combo' in nl or 'pack' in nl or 'menu' in nl or 'menú' in nl -%}🎁
+    {%- elif brand.es_comida and ('bebida' in nl or 'refresco' in nl or 'jugo' in nl or 'agua' in nl or 'cerveza' in nl) -%}🥤
+    {%- elif brand.es_comida and ('dulce' in nl or 'postre' in nl or 'torta' in nl or 'helado' in nl) -%}🍮
+    {%- elif brand.es_comida and ('sopa' in nl or 'caldo' in nl) -%}🍲
+    {%- elif brand.es_comida and ('empanada' in nl or 'arepa' in nl) -%}🫓
+    {%- elif brand.es_comida and ('café' in nl or 'cafe' in nl or 'tinto' in nl) -%}☕
+    {%- elif brand.es_comida and ('pan' in nl or 'buñuelo' in nl or 'pandebono' in nl) -%}🥖
+    {%- elif brand.es_comida and 'tamal' in nl -%}🌿
+    {%- elif brand.es_comida and 'pizza' in nl -%}🍕
+    {%- elif brand.es_comida and ('burger' in nl or 'hambur' in nl) -%}🍔
+    {%- elif brand.es_comida and 'ensalada' in nl -%}🥗
+    {%- elif brand.es_comida and ('entrada' in nl or 'aperitivo' in nl or 'tapa' in nl or 'snack' in nl) -%}🍢
+    {%- else -%}{{ brand.fallback_emoji or brand.vertical_emoji or ('🍽️' if brand.es_comida else '🛍️') }}{%- endif -%}
+  {%- endif -%}
 {%- endmacro %}
 {% macro storefront_url(categoria=None, q=None) -%}
   {{- url_for('public.index', categoria=categoria, q=q) -}}
@@ -162,7 +168,7 @@
       {% if cat.imagen_url %}
         <img src="{{ img_url(cat.imagen_url) }}" alt="{{ cat.nombre }}" class="ep-cat-img" loading="lazy">
       {% else %}
-        <span class="ep-cat-icon">{{ cat_emoji(cat.nombre) }}</span>
+        <span class="ep-cat-icon">{{ cat_emoji(cat) }}</span>
       {% endif %}
       <span class="ep-cat-label">{{ cat.nombre }}</span>
       {% if cat_count > 0 %}<span class="ep-cat-count">{{ cat_count }}</span>{% endif %}
@@ -199,7 +205,7 @@
   {% elif categoria_activa %}
   {% set categoria_seleccionada = categorias|selectattr('id','equalto',categoria_activa)|first %}
   <div class="ep-section-head">
-    <h2 class="ep-section-title" data-storefront-title data-default-title="{{ brand.vertical_emoji }} Nuestro {{ brand.vertical_label|lower }}">{{ cat_emoji(categoria_seleccionada.nombre) if categoria_seleccionada else brand.vertical_emoji }} {{ categoria_seleccionada.nombre if categoria_seleccionada else 'Productos' }}</h2>
+    <h2 class="ep-section-title" data-storefront-title data-default-title="{{ brand.vertical_emoji }} Nuestro {{ brand.vertical_label|lower }}">{{ cat_emoji(categoria_seleccionada) if categoria_seleccionada else brand.vertical_emoji }} {{ categoria_seleccionada.nombre if categoria_seleccionada else 'Productos' }}</h2>
     <span class="ep-pill-count" data-storefront-count>{{ productos|length }} productos</span>
   </div>
   {% endif %}
@@ -262,7 +268,7 @@
     {% set productos_categoria = productos_regulares|selectattr('categoria_id','equalto',cat.id)|list %}
     {% if productos_categoria %}
     <div class="ep-cat-section" data-section-cat="{{ cat.id }}" data-palette="{{ loop.index0 % 5 }}">
-      <h3 class="ep-cat-title">{{ cat_emoji(cat.nombre) }} {{ cat.nombre }}</h3>
+      <h3 class="ep-cat-title">{{ cat_emoji(cat) }} {{ cat.nombre }}</h3>
       <div class="ep-grid">
         {% for p in productos_categoria %}{% include "public/_product_card.html" %}{% endfor %}
       </div>
