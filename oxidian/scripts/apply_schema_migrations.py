@@ -1824,6 +1824,19 @@ def _migrate_browser_notification_targeting():
         db.session.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_{column} ON {table} ({column})"))
 
 
+def _migrate_categoria_emoji():
+    """Añade `categorias.emoji` (nullable VARCHAR) para poder configurar
+    un icono por categoría desde el admin. Sustituye el keyword-matching
+    del template `_product_card.html` y hace el sistema reutilizable en
+    tiendas de cualquier vertical (ropa, calzado, retail, comida)."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table("categorias"):
+        return
+    existing = {col["name"] for col in inspector.get_columns("categorias")}
+    if "emoji" not in existing:
+        db.session.execute(text("ALTER TABLE categorias ADD COLUMN emoji VARCHAR(16)"))
+
+
 MIGRATIONS = [
     {"id": "20260920_customer_access_grants", "description": "Invitaciones de superadmin y dispositivo autorizado", "tables": [CustomerAccessGrant.__table__]},
     {
@@ -2327,19 +2340,6 @@ MIGRATIONS = [
     {"id": "20260915_01_browser_notification_targeting", "description": "Vincular pedidos y conversaciones al dispositivo autorizado", "fn": _migrate_browser_notification_targeting},
     {"id": "20260924_01_categoria_emoji", "description": "Emoji/icono configurable por categoría (fallback genérico multi-tienda)", "fn": _migrate_categoria_emoji},
 ]
-
-
-def _migrate_categoria_emoji():
-    """Añade `categorias.emoji` (nullable VARCHAR) para poder configurar
-    un icono por categoría desde el admin. Sustituye el keyword-matching
-    del template `_product_card.html` y hace el sistema reutilizable en
-    tiendas de cualquier vertical (ropa, calzado, retail, comida)."""
-    inspector = inspect(db.engine)
-    if not inspector.has_table("categorias"):
-        return
-    existing = {col["name"] for col in inspector.get_columns("categorias")}
-    if "emoji" not in existing:
-        db.session.execute(text("ALTER TABLE categorias ADD COLUMN emoji VARCHAR(16)"))
 
 
 def _migrate_create_product_batches():
