@@ -3355,7 +3355,11 @@ class Order(db.Model):
         if self.estado == "en_ruta":
             if self.en_ruta_en is None:
                 self.en_ruta_en = ahora
-            self.generar_codigo_confirmacion()
+            # Solo generar código si no existe: `mensaje_codigo_entrega` puede
+            # haberlo generado antes de la transición y regenerarlo aquí
+            # dejaría huérfano el código que ya recibió el cliente por WhatsApp.
+            if not self.codigo_confirmacion:
+                self.generar_codigo_confirmacion()
         if self.estado == "entregado":
             self.entregado_en = ahora
 

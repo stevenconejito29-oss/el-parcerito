@@ -728,7 +728,7 @@ html[data-delivery-theme="dark"] .route-map-panel { border-color:#334154;backgro
       </div>
       {% endif %}
 
-      <details class="route-contents mt-2">
+      <details class="route-contents mt-2" open>
         <summary>
           <span>Contenido del pedido</span>
           <strong>{{ pedido.items|sum(attribute='cantidad') }} unidad(es)</strong>
