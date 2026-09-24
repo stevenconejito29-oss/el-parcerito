@@ -348,6 +348,11 @@
       </form>
       {% endfor %}
     </div>
+    {% if brand.delivery %}
+    <p class="oa-section__sub" style="margin-top:.6rem">
+      <a href="{{ url_for('superadmin.franjas_live') }}">Ver franjas de reparto en vivo →</a>
+    </p>
+    {% endif %}
   </section>
 
     </div>
