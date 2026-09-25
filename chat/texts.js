@@ -61,10 +61,16 @@ function menuPrincipal(ctx) {
   const scheduledHint = ctx.scheduledEnabled
     ? "\n📅 Consulta en la tienda los productos disponibles con fecha de entrega."
     : "";
+  // Nudge suave para instalar la Mini App (una línea, sin ser invasivo).
+  // Objetivo: llevar pedidos al canal web/PWA (menos fricción, menos riesgo
+  // Meta). No se repite: sólo aparece en el menú, no en cada respuesta.
+  const appHint = ctx.miniappEnabled
+    ? "\n\n💡 *Pide más fácil desde la Mini App*: instálala en tu móvil y accede al catálogo con un toque, sin abrir WhatsApp cada vez."
+    : "";
   return (
     `🤝 *Asistente de ${ctx.nombreNegocio}*\n\n` +
     `Elige una opción respondiendo con su número:\n\n` +
-    `${lines}${scheduledHint}\n\n` +
+    `${lines}${scheduledHint}${appHint}\n\n` +
     `_También puedes escribir tu pregunta con tus palabras._`
   );
 }

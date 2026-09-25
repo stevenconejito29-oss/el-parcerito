@@ -49,7 +49,8 @@ const _adminProbeLastLogAt = new Map();
 let lastOutboundAt = 0;
 const MIN_INBOUND_MS = parseInt(process.env.BOT_MIN_INBOUND_MS || '900', 10);
 const MIN_ADMIN_ACTION_MS = parseInt(process.env.BOT_MIN_ADMIN_ACTION_MS || '2500', 10);
-const MIN_OUTBOUND_MS = parseInt(process.env.BOT_MIN_OUTBOUND_MS || '850', 10);
+const messagePacing = require('./utils/messagePacing').createPacing();
+const MIN_OUTBOUND_MS = messagePacing.outboundMin;
 const MAX_MESSAGE_CHARS = 4096;
 const MAX_OUTBOUND_CHARS = MAX_MESSAGE_CHARS;
 const INBOUND_WINDOW_MS = parseInt(process.env.BOT_INBOUND_WINDOW_MS || '60000', 10);
@@ -2497,8 +2498,8 @@ async function paceOutbound() {
  * (que es el escenario real de este proyecto), múltiples sendText
  * paralelos leen el mismo `lastOutboundAt` viejo, calculan `wait=0`
  * y disparan simultáneamente — destruyendo el pacing y elevando
- * el riesgo de baneo. Una cuenta WhatsApp humana envía SERIAL por
- * naturaleza: replicamos ese comportamiento en el bot.
+ * la carga sobre el proveedor. Serializamos los envíos para
+ * respetar el intervalo global también con clientes concurrentes.
  *
  * Implementación: promise-chain estilo `messageQueues` pero global.
  * Cada llamada a `withSendMutex(fn)` encola `fn` para ejecutarse en
@@ -2514,25 +2515,14 @@ function withSendMutex(fn) {
   return runNext;
 }
 
-/* ── Simulación de escritura humana ────────────────────────────────────
- * Antes de enviar la respuesta al cliente, emitimos presencia "composing"
- * a través de Evolution y esperamos un tiempo proporcional a la longitud
- * del texto (velocidad tecleo ~200 cpm ≈ 300ms/palabra). Cap 4.5s para
- * no cansar al usuario. Esto reduce la señal "bot que contesta al instante"
- * que dispara anti-spam/anti-bot de WhatsApp.
- * Configurable por env; se desactiva con BOT_HUMANIZE=0. */
+/* Pausa de respuesta y presencia opcional. Regula el ritmo; no evita baneos.
+ * Los mensajes transaccionales no esperan esta pausa. */
 const HUMANIZE_ENABLED = process.env.BOT_HUMANIZE !== '0';
-const HUMANIZE_BASE_MS = parseInt(process.env.BOT_HUMANIZE_BASE_MS || '450', 10);
-const HUMANIZE_PER_CHAR_MS = parseInt(process.env.BOT_HUMANIZE_PER_CHAR_MS || '22', 10);
-const HUMANIZE_MAX_MS = parseInt(process.env.BOT_HUMANIZE_MAX_MS || '4500', 10);
 
 async function humanizedTypingDelay(target, text, evolutionUrl, evolutionInstance, evolutionKey) {
   if (!HUMANIZE_ENABLED) return;
   const length = String(text || '').length;
-  // Delay proporcional a longitud + jitter humano (±15%) + base cognitiva
-  const raw = HUMANIZE_BASE_MS + length * HUMANIZE_PER_CHAR_MS;
-  const jitterFactor = 0.85 + Math.random() * 0.30; // 0.85–1.15
-  const totalMs = Math.min(HUMANIZE_MAX_MS, Math.floor(raw * jitterFactor));
+  const totalMs = messagePacing.replyDelay(text);
   if (totalMs <= 0) return;
 
   const presenceUrl = `${evolutionUrl}/chat/sendPresence/${evolutionInstance}`;
@@ -2547,14 +2537,12 @@ async function humanizedTypingDelay(target, text, evolutionUrl, evolutionInstanc
     } catch (_) { /* silent */ }
   };
 
-  // Para mensajes largos (>150 chars): typing en dos bursts con pausa
-  // de 400-900ms en medio. Humanos escribimos, paramos a leer/pensar,
-  // seguimos. El typing continuo de 4s ya empieza a parecer bot.
+  // Mensajes largos: intercalar una pausa sin superar el máximo configurado.
   const BURST_THRESHOLD = 150;
   if (length > BURST_THRESHOLD && totalMs > 1500) {
     const firstMs = Math.floor(totalMs * (0.4 + Math.random() * 0.2)); // 40-60%
     const pauseMs = 400 + Math.floor(Math.random() * 500); // 400-900ms
-    const secondMs = Math.max(300, totalMs - firstMs - pauseMs);
+    const secondMs = Math.max(0, totalMs - firstMs - pauseMs);
     sendPresence('composing', firstMs);
     await sleep(firstMs);
     sendPresence('paused', pauseMs);
@@ -2568,26 +2556,9 @@ async function humanizedTypingDelay(target, text, evolutionUrl, evolutionInstanc
   await sleep(totalMs);
 }
 
-// ─── ANTI-BAN: LECTURA DE MENSAJES (SEEN) + READING DELAY + FIRST TOUCH ─────
-//
-// (E) READ RECEIPTS: envía "seen" al mensaje entrante después de un pequeño
-//     delay (200-800ms). Un bot que NUNCA marca leído es más sospechoso que
-//     un humano típico que abre el chat y ve el mensaje.
-//
-// (F) READING DELAY: antes de contestar, esperamos ms proporcional al
-//     texto del cliente (base 300 + 15/char, cap 4s). Simula que "leemos"
-//     antes de responder.
-//
-// (G) FIRST-TOUCH DELAY: la primera respuesta a un cliente en una sesión
-//     lleva 800-2500ms extra. Los humanos tardan más en el "hola" inicial
-//     (revisan quién es, contexto) que en respuestas ya en flujo.
+// Lectura y primera respuesta: pausas acotadas y configurables.
 const READ_RECEIPT_ENABLED = String(process.env.BOT_READ_RECEIPT || '1') !== '0';
 const READING_DELAY_ENABLED = String(process.env.BOT_READING_DELAY || '1') !== '0';
-const READING_BASE_MS = parseInt(process.env.BOT_READING_BASE_MS || '300', 10);
-const READING_PER_CHAR_MS = parseInt(process.env.BOT_READING_PER_CHAR_MS || '15', 10);
-const READING_MAX_MS = parseInt(process.env.BOT_READING_MAX_MS || '4000', 10);
-const FIRST_TOUCH_MIN_MS = parseInt(process.env.BOT_FIRST_TOUCH_MIN_MS || '800', 10);
-const FIRST_TOUCH_MAX_MS = parseInt(process.env.BOT_FIRST_TOUCH_MAX_MS || '2500', 10);
 
 const _lastBotReplyAt = new Map(); // jid → timestamp last bot reply
 
@@ -2597,9 +2568,7 @@ async function markInboundRead(jid, messageId) {
   const evolutionUrl = getEvolutionUrl();
   const evolutionInstance = getEvolutionInstance();
   if (!evolutionKey || !messageId) return;
-  // Delay 200-800ms antes de marcar leído — humano abre chat, tarda un
-  // momento en verlo. `read` inmediato o siempre igual = señal de bot.
-  const delayMs = 200 + Math.floor(Math.random() * 600);
+  const delayMs = messagePacing.receiptDelay();
   setTimeout(() => {
     try {
       const url = `${evolutionUrl}/chat/markMessageAsRead/${evolutionInstance}`;
@@ -2608,7 +2577,9 @@ async function markInboundRead(jid, messageId) {
         headers: { 'Content-Type': 'application/json', apikey: evolutionKey },
         body: JSON.stringify({ readMessages: [{ id: messageId, remoteJid: jid, fromMe: false }] }),
         signal: AbortSignal.timeout(3000),
-      }).catch((e) => log('info', 'read_receipt_fail', String(e).slice(0, 100)));
+      }).then(response => {
+        if (!response.ok) log('info', 'read_receipt_fail', `HTTP ${response.status}`);
+      }).catch(() => log('info', 'read_receipt_fail', 'network_or_timeout'));
     } catch (_) { /* silent */ }
   }, delayMs);
 }
@@ -2617,9 +2588,7 @@ async function simulateReadingDelay(inboundText) {
   if (!READING_DELAY_ENABLED) return;
   const len = String(inboundText || '').length;
   if (len === 0) return;
-  const raw = READING_BASE_MS + len * READING_PER_CHAR_MS;
-  const jitter = 0.85 + Math.random() * 0.30;
-  const ms = Math.min(READING_MAX_MS, Math.floor(raw * jitter));
+  const ms = messagePacing.readingDelay(inboundText);
   if (ms > 0) await sleep(ms);
 }
 
@@ -2633,8 +2602,7 @@ function _isFirstTouchIn(jid, sessionWindowMs = 10 * 60 * 1000) {
 
 async function maybeFirstTouchDelay(jid) {
   if (!_isFirstTouchIn(jid)) return;
-  const extra = FIRST_TOUCH_MIN_MS +
-    Math.floor(Math.random() * Math.max(1, FIRST_TOUCH_MAX_MS - FIRST_TOUCH_MIN_MS));
+  const extra = messagePacing.firstDelay();
   await sleep(extra);
 }
 
@@ -3118,15 +3086,14 @@ async function sendText(jid, text, opts = {}) {
   const url = `${evolutionUrl}/message/sendText/${evolutionInstance}`;
   const payload = { number: target, text: safeText };
 
-  // Simulación humana: presencia "escribiendo" + delay proporcional al texto.
-  // Reduce señal-bot y respeta cadencia de conversación real.
+  // Presencia "escribiendo" y pausa proporcional al texto.
+  // Regula la cadencia de respuestas no transaccionales.
   // Se desactiva con opts.humanize=false o opts.transactional=true.
   const humanize = opts.humanize !== false && !opts.transactional && !opts.force;
   if (humanize) {
     // First-touch delay: si es una conversación nueva (sin respuesta del
     // bot en 10min), agregamos 800-2500ms extra ANTES del typing indicator.
-    // Los humanos tardan más en el "hola" inicial (contexto, quién es)
-    // que en respuestas ya en flujo conversacional.
+    // Esta pausa es independiente del intervalo global entre envíos.
     await maybeFirstTouchDelay(jid);
     await humanizedTypingDelay(target, safeText, evolutionUrl, evolutionInstance, evolutionKey);
   }
@@ -3141,7 +3108,9 @@ async function sendText(jid, text, opts = {}) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const result = await withSendMutex(async () => {
       try {
+        if (_providerPausedUntil > Date.now()) return { done: true, ok: false };
         await paceOutbound();
+        if (_providerPausedUntil > Date.now()) return { done: true, ok: false };
         const r = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', apikey: evolutionKey },
@@ -4485,6 +4454,7 @@ function menuPrincipal(_ses = {}) {
     loyaltyPlural: loyaltyLabel('plural'),
     deliveryEnabled: String(cfg('delivery_enabled', '1')) === '1',
     scheduledEnabled: String(cfg('scheduled_enabled', '0')) === '1',
+    miniappEnabled: String(cfg('miniapp_enabled', '0')) === '1',
   });
 }
 
