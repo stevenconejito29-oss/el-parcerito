@@ -56,19 +56,25 @@ function withEscapeHint(body) {
  *   scheduledEnabled?: boolean,
  * }} ctx
  */
-function menuPrincipal(ctx) {
+const MINIAPP_VARIANTS = [
+  "💡 *Instala la Mini App*: catálogo con un toque, sin abrir WhatsApp cada vez.",
+  "📱 *Ahorra tiempo con la Mini App* — se instala en tu móvil como una app normal.",
+  "⚡ *Pide más rápido*: instala la Mini App en tu móvil y entras al catálogo directo.",
+  "🚀 Tip: si vas a pedir seguido, *instala la Mini App*. Un toque y ya estás dentro.",
+];
+
+function menuPrincipal(ctx, random) {
+  const rnd = typeof random === "function" ? random : Math.random;
   const lines = clientMenuLines(ctx);
   const scheduledHint = ctx.scheduledEnabled
     ? "\n📅 Consulta en la tienda los productos disponibles con fecha de entrega."
     : "";
-  // Nudge para llevar el pedido al canal web/PWA. Objetivo: menos fricción,
-  // menos riesgo Meta (chatbot invasivo → baneo), mejor UX (catálogo con
-  // fotos, cupones aplicables, combos con descuento). No es invasivo: sólo
-  // aparece en el menú principal, no se repite en cada respuesta.
-  const appHint = ctx.miniappEnabled
-    ? "\n\n💡 *Pide más fácil desde la Mini App*: instálala en tu móvil y accede al catálogo con un toque, sin abrir WhatsApp cada vez."
+  // App hint: probabilístico (45%) + variantes rotativas → evita patrón
+  // repetitivo que Meta pueda flaggear como spam automático.
+  const appHint = (ctx.miniappEnabled && rnd() < 0.45)
+    ? `\n\n${_pick(MINIAPP_VARIANTS, rnd)}`
     : "";
-  const benefits = benefitsHint(ctx);
+  const benefits = benefitsHint(ctx, rnd);
   return (
     `🤝 *Asistente de ${ctx.nombreNegocio}*\n\n` +
     `Elige una opción respondiendo con su número:\n\n` +
@@ -78,36 +84,67 @@ function menuPrincipal(ctx) {
 }
 
 /**
- * Beneficios de pedir por la web/PWA — persuasion suave sin ser invasiva.
- * Rota entre variantes por hora del día para no ser repetitiva.
+ * Beneficios de pedir por la web/PWA — persuasion delicada anti-repetitiva.
  *
- * Sólo muestra beneficios que están realmente disponibles en esta tienda
- * (loyalty/combos/cupones activos según SiteConfig). Si nada aplica,
- * devuelve string vacío.
+ * Filosofía:
+ *  · WhatsApp = canal de REDIRECCIÓN a la web/PWA, no una enciclopedia.
+ *  · Web chat = canal de INFORMACIÓN. Aquí evitamos ser exhaustivos.
+ *  · Anti-Meta-ban: mensaje NUNCA idéntico → variantes rotativas.
+ *  · No siempre aparece: 55% de las veces se muestra, 45% se omite,
+ *    para que el bot no envíe el mismo bloque tras cada respuesta y
+ *    Meta no marque el patrón como spam automático.
+ *
+ * Sólo cita beneficios REALMENTE activos en la tienda (loyalty/combos/
+ * cupones vía SiteConfig). Si nada aplica, string vacío.
  */
-function benefitsHint(ctx) {
-  const bits = [];
+const BENEFIT_INTROS = [
+  "📌 *Pedir por la web tiene ventajas:*",
+  "💡 *Un dato útil:*",
+  "🤔 *¿Sabías que...*",
+  "✨ *Pequeño tip:*",
+  "🎯 *Vale la pena saber:*",
+];
+
+const LOYALTY_VARIANTS = (name, emoji) => [
+  `${emoji} acumulas *${name}* con cada pedido y los canjeas después`,
+  `${emoji} cada compra suma *${name}* que después descuentan tu pedido`,
+  `${emoji} pidiendo por la web te llevas *${name}* — se acumulan y luego se canjean`,
+];
+const COMBOS_VARIANTS = [
+  "🎁 los *combos* salen con descuento sobre el precio suelto",
+  "🎁 armar un *combo* sale más barato que pedir los productos por separado",
+  "🎁 hay *combos* pensados para pedir menos y ahorrar más",
+];
+const COUPONS_VARIANTS = [
+  "🎟️ aplicas *cupones* directamente al finalizar el pedido",
+  "🎟️ si tienes un *cupón*, lo pones en el resumen del pedido y listo",
+  "🎟️ los *cupones* se aplican al confirmar — sin llamar a nadie",
+];
+
+function _pick(arr, random) {
+  const r = typeof random === "function" ? random() : Math.random();
+  return arr[Math.floor(r * arr.length) % arr.length];
+}
+
+function benefitsHint(ctx, random) {
+  const rnd = typeof random === "function" ? random : Math.random;
+  // 55% de las veces se muestra, 45% se omite (anti-patrón repetitivo).
+  if (rnd() > 0.55) return "";
+
+  const pool = [];
   if (ctx.loyaltyEnabled) {
     const name = String(ctx.loyaltyPlural || ctx.loyaltyName || "puntos");
     const emoji = String(ctx.loyaltyEmoji || "⭐");
-    bits.push(`${emoji} acumulas *${name}* con cada pedido y los canjeas después`);
+    pool.push(_pick(LOYALTY_VARIANTS(name, emoji), rnd));
   }
-  if (ctx.combosEnabled) {
-    bits.push("🎁 los *combos* llevan descuento sobre el precio suelto");
-  }
-  if (ctx.couponsEnabled) {
-    bits.push("🎟️ aplicas *cupones* directamente al finalizar");
-  }
-  if (!bits.length) return "";
-  // Rotación por hora del día → cliente que consulta en mañana/tarde/noche
-  // ve un beneficio diferente. Sin state por conversación (que rompería
-  // cache), pero tampoco idéntico cada vez.
-  const now = new Date();
-  const idx = (now.getHours() + now.getDate()) % bits.length;
-  const primary = bits[idx];
-  const others = bits.filter((_, i) => i !== idx).length;
-  const extra = others > 0 ? ` _y ${others} ventaja${others === 1 ? '' : 's'} más_` : "";
-  return `\n\n📌 *Pedir por la web tiene ventajas:*\n• ${primary}.${extra}`;
+  if (ctx.combosEnabled) pool.push(_pick(COMBOS_VARIANTS, rnd));
+  if (ctx.couponsEnabled) pool.push(_pick(COUPONS_VARIANTS, rnd));
+  if (!pool.length) return "";
+
+  // Elige 1 beneficio al azar (nunca los 3 a la vez — evita bloque largo).
+  const primary = _pick(pool, rnd);
+  const intro = _pick(BENEFIT_INTROS, rnd);
+  return `\n\n${intro}\n• ${primary}.`;
 }
 
 /**
