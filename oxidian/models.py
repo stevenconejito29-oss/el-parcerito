@@ -1873,6 +1873,20 @@ class Product(db.Model):
         ).with_for_update().first()
         if fila:
             fila.stock = int(fila.stock or 0) + max(1, int(cantidad or 1))
+            return
+        # Defensa: si el proveedor fue borrado o nunca tuvo este producto
+        # (metadata apuntando a una fila fantasma), no perdemos el stock.
+        # Lo devolvemos al inventario propio y dejamos rastro para auditoría.
+        try:
+            from flask import current_app as _capp
+            _capp.logger.warning(
+                "restaurar_stock: ProveedorProducto(prov=%s,prod=%s) no existe; "
+                "cantidad %s va al stock propio (auditar por si el proveedor fue borrado)",
+                proveedor_id, self.id, cantidad,
+            )
+        except Exception:
+            pass
+        self._restaurar_stock_propio(int(cantidad or 1))
 
     def _restaurar_stock_propio(self, cantidad):
         lotes = Stock.query.filter_by(producto_id=self.id)\
