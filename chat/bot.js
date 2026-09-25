@@ -7820,7 +7820,13 @@ const MANUAL_SECTIONS = [
       }
       pasos.push(`4️⃣ Paga con la forma que prefieras.`);
       pasos.push(`5️⃣ Sigue el estado del pedido escribiendo *estado* por aquí.`);
-      return `🛒 *Cómo hacer un pedido*\n\n${pasos.join('\n')}`;
+      // Redirect suave al chat web para info detallada (formas de pago,
+      // alérgenos, política de cancelación, etc.). Sólo en ~40% de las
+      // veces + siempre que el chat web exista → anti-repetición Meta.
+      const chatHint = (Math.random() < 0.4 && ctx.tiendaUrl)
+        ? `\n\n💬 _¿Dudas más específicas? Chat web: ${ctx.tiendaUrl}/chat_`
+        : '';
+      return `🛒 *Cómo hacer un pedido*\n\n${pasos.join('\n')}${chatHint}`;
     },
   },
   {
@@ -8507,9 +8513,18 @@ async function handleMainMenu(jid, ses, opcion) {
   //     una frase de FRUSTRACION_RE, ahí sí escala.
   if (esCuriosidadBot(textoLibre)) {
     bumpStat('curiosidad_bot');
+    // Deja claro qué canal es cada uno — evita que el cliente espere info
+    // muy detallada por WhatsApp (donde Meta puede penalizar respuestas
+    // largas y repetitivas) y le abre el chat web para eso.
+    const tiendaUrl = getTiendaUrl();
+    const chatLine = tiendaUrl
+      ? `\n💬 Si necesitas info detallada (alérgenos, políticas, formas de pago…) → *chat web*: ${tiendaUrl}/chat`
+      : '';
     return sendText(jid,
-      `Soy el asistente automático de *${getNegocioNombre()}* 🤖 — pero puedo ayudarte con casi todo: hacer pedidos, ver el estado, cobertura, horarios, pago y cualquier duda que tengas.\n\n` +
-      `¿Qué necesitas? Cuéntamelo con tus palabras y te lo resuelvo.`
+      `Soy el asistente automático de *${getNegocioNombre()}* 🤖\n\n` +
+      `Aquí te ayudo rápido con: pedidos, estado, cobertura, horarios y dudas comunes.` +
+      `${chatLine}\n\n` +
+      `¿Qué necesitas? Cuéntamelo con tus palabras.`
     );
   }
 
