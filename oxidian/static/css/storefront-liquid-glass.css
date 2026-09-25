@@ -397,12 +397,192 @@ body.ox-body-public .ep-modal-overlay {
   body.ox-body-public .pd-add-btn { font-size: .88rem !important; }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   9. CARRITO (cart) — items, resumen, CTA checkout
+   ═══════════════════════════════════════════════════════════════════ */
+
+body.ox-body-public .cr-header {
+  border-radius: var(--lg-radius-md) !important;
+  background: var(--lg-glass-bg) !important;
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid var(--lg-glass-border);
+  box-shadow: var(--lg-shadow-sm);
+}
+
+body.ox-body-public .cr-items {
+  background: var(--lg-glass-bg-strong) !important;
+  backdrop-filter: blur(16px) saturate(170%);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  border: 1px solid var(--lg-glass-border-strong) !important;
+  border-radius: var(--lg-radius-lg) !important;
+  box-shadow: var(--lg-shadow-md), var(--lg-glow) !important;
+  overflow: hidden;
+}
+
+body.ox-body-public .cr-item {
+  padding: 14px 16px !important;
+  border-bottom: 1px solid var(--lg-glass-border) !important;
+  transition: background .18s;
+}
+body.ox-body-public .cr-item:hover {
+  background: color-mix(in srgb, var(--brand-primary) 5%, transparent) !important;
+}
+body.ox-body-public .cr-item:last-child { border-bottom: none !important; }
+
+body.ox-body-public .cr-summary {
+  background: var(--lg-glass-bg-strong) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--lg-glass-border-strong) !important;
+  border-radius: var(--lg-radius-lg) !important;
+  box-shadow: var(--lg-shadow-md), var(--lg-glow) !important;
+  padding: 1.1rem !important;
+}
+
+body.ox-body-public .cr-cta {
+  border-radius: var(--lg-radius-md) !important;
+  min-height: 52px !important;
+  background: linear-gradient(135deg,
+    var(--brand-primary),
+    color-mix(in srgb, var(--brand-primary) 78%, #000)) !important;
+  color: var(--brand-on-primary, #1B0A00) !important;
+  font-weight: 900 !important;
+  box-shadow:
+    0 10px 26px color-mix(in srgb, var(--brand-primary) 40%, transparent),
+    var(--lg-glow) !important;
+  transition: transform .15s, filter .15s;
+}
+body.ox-body-public .cr-cta:not(.cr-cta--disabled):hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+body.ox-body-public .cr-cta:not(.cr-cta--disabled):active { transform: scale(.98); }
+
+/* Botones de cantidad ± dentro de cada item del carrito */
+body.ox-body-public .cr-item .cr-qty-btn {
+  min-width: 40px; min-height: 40px;
+  border-radius: 999px !important;
+  border: 1px solid var(--lg-glass-border-strong);
+  background: var(--theme-surface);
+  color: var(--brand-primary);
+  transition: transform .1s, background .14s;
+}
+body.ox-body-public .cr-item .cr-qty-btn:hover { background: color-mix(in srgb, var(--brand-primary) 14%, var(--theme-surface)); }
+body.ox-body-public .cr-item .cr-qty-btn:active { transform: scale(.9); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   10. CHECKOUT — layout, steps, summary sidebar
+   ═══════════════════════════════════════════════════════════════════ */
+
+body.ox-body-public .checkout-content,
+body.ox-body-public .checkout-content-list > * {
+  background: var(--lg-glass-bg) !important;
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid var(--lg-glass-border);
+  border-radius: var(--lg-radius-md) !important;
+}
+
+body.ox-body-public .checkout-summary {
+  background: var(--lg-glass-bg-strong) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--lg-glass-border-strong) !important;
+  border-radius: var(--lg-radius-lg) !important;
+  box-shadow: var(--lg-shadow-md), var(--lg-glow) !important;
+}
+
+body.ox-body-public .checkout-step-number {
+  background: linear-gradient(135deg,
+    var(--brand-primary),
+    color-mix(in srgb, var(--brand-primary) 80%, #000)) !important;
+  color: var(--brand-on-primary, #1B0A00) !important;
+  border-radius: 999px !important;
+  min-width: 32px; min-height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 900;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--brand-primary) 35%, transparent);
+}
+
+/* Inputs del formulario de checkout — glass con focus brand */
+body.ox-body-public .checkout-content input[type="text"],
+body.ox-body-public .checkout-content input[type="tel"],
+body.ox-body-public .checkout-content input[type="email"],
+body.ox-body-public .checkout-content textarea,
+body.ox-body-public .checkout-content select {
+  min-height: 48px !important;
+  border-radius: var(--lg-radius-sm) !important;
+  border: 1.5px solid var(--lg-glass-border-strong) !important;
+  background: color-mix(in srgb, var(--theme-surface) 92%, transparent) !important;
+  padding: 12px 14px !important;
+  font-size: 16px !important; /* Evita zoom iOS */
+  transition: border-color .18s, box-shadow .18s;
+}
+body.ox-body-public .checkout-content input:focus,
+body.ox-body-public .checkout-content textarea:focus,
+body.ox-body-public .checkout-content select:focus {
+  outline: none;
+  border-color: var(--brand-primary) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 22%, transparent) !important;
+}
+
+/* Botón principal "Confirmar pedido" del checkout */
+body.ox-body-public #btn-confirmar {
+  border-radius: var(--lg-radius-md) !important;
+  min-height: 54px !important;
+  font-weight: 900;
+  background: linear-gradient(135deg,
+    var(--brand-primary),
+    color-mix(in srgb, var(--brand-primary) 78%, #000)) !important;
+  box-shadow:
+    0 12px 30px color-mix(in srgb, var(--brand-primary) 42%, transparent),
+    var(--lg-glow) !important;
+  transition: transform .15s, filter .15s;
+}
+body.ox-body-public #btn-confirmar:not(:disabled):hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+/* Radio/checkbox options del checkout — pill grande táctil */
+body.ox-body-public .checkout-content label:has(input[type="radio"]),
+body.ox-body-public .checkout-content label:has(input[type="checkbox"]) {
+  min-height: 48px;
+  padding: 10px 14px;
+  border-radius: var(--lg-radius-sm);
+  border: 1px solid transparent;
+  transition: background .16s, border-color .16s;
+  -webkit-tap-highlight-color: transparent;
+}
+body.ox-body-public .checkout-content label:has(input[type="radio"]:checked),
+body.ox-body-public .checkout-content label:has(input[type="checkbox"]:checked) {
+  background: color-mix(in srgb, var(--brand-primary) 10%, transparent) !important;
+  border-color: color-mix(in srgb, var(--brand-primary) 35%, transparent) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   11. NAV INFERIOR (bottom nav) — glass con blur fuerte
+   ═══════════════════════════════════════════════════════════════════ */
+
+body.ox-body-public .ox-bottom-nav {
+  background: color-mix(in srgb, var(--theme-header-bg, var(--theme-surface)) 78%, transparent) !important;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-top: 1px solid color-mix(in srgb, var(--theme-header-text, var(--theme-text)) 10%, transparent);
+  box-shadow: 0 -6px 22px color-mix(in srgb, var(--theme-text) 12%, transparent);
+}
+
 /* Android: force GPU acceleration en backdrop-filter (evita jank) */
 @supports (backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px)) {
   body.ox-body-public .ep-modal-panel,
   body.ox-body-public .pd-card,
   body.ox-body-public .pd-add-bar,
-  body.ox-body-public .pd-combo-guide {
+  body.ox-body-public .pd-combo-guide,
+  body.ox-body-public .cr-items,
+  body.ox-body-public .cr-summary,
+  body.ox-body-public .checkout-summary,
+  body.ox-body-public .ox-bottom-nav {
     transform: translateZ(0);
     -webkit-transform: translateZ(0);
   }
@@ -414,7 +594,11 @@ body.ox-body-public .ep-modal-overlay {
   body.ox-body-public .pd-card,
   body.ox-body-public .pd-extras,
   body.ox-body-public .pd-add-bar,
-  body.ox-body-public .pd-combo-guide {
+  body.ox-body-public .pd-combo-guide,
+  body.ox-body-public .cr-items,
+  body.ox-body-public .cr-summary,
+  body.ox-body-public .checkout-summary,
+  body.ox-body-public .ox-bottom-nav {
     background: var(--theme-surface) !important;
   }
 }
