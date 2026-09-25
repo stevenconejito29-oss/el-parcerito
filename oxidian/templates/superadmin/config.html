@@ -286,28 +286,24 @@
       <button type="submit" class="cfg-save-bottom">Guardar acceso</button>
     </form>
 
-    {# Registro directo de número autorizado — antes había que ir a /admin/clientes
-       (mezclado con empleados y admins). Aquí sólo se dan de alta clientes con
-       CustomerAccessGrant activo listo para recibir el código por WhatsApp. #}
+    {# Autorización de número (no registra al cliente). Sólo abre el permiso
+       para que el sistema envíe el código por WhatsApp. El cliente completa
+       su nombre y dirección al hacer su primer pedido. #}
     <div class="cfg-subform" style="margin-top:1.25rem;padding-top:1rem;border-top:1px dashed var(--col-border)">
-      <h3 style="margin:0 0 .35rem 0;font-size:1rem">Autorizar cliente por número</h3>
+      <h3 style="margin:0 0 .35rem 0;font-size:1rem">Autorizar número para tienda privada</h3>
       <p class="cfg-form-note" style="margin:0 0 .6rem 0">
-        Alta rápida de un cliente para tienda privada. Se crea con rol <code>cliente</code> y su acceso queda activo. El cliente instala la PWA, pide su código por WhatsApp y entra.
+        Añade un teléfono a la lista que puede recibir el código por WhatsApp. <strong>No registra al cliente</strong> — su nombre y datos se capturan al hacer el primer pedido. Ideal para dar acceso rápido antes de que la persona compre.
       </p>
-      <form method="POST" action="{{ url_for('admin.registrar_cliente') }}" style="display:grid;gap:.5rem;grid-template-columns:1fr 1fr auto;align-items:end">
+      <form method="POST" action="{{ url_for('superadmin.autorizar_numero_cliente') }}" style="display:grid;gap:.5rem;grid-template-columns:1fr auto;align-items:end">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label style="display:block">
-          <span style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.15rem">Nombre</span>
-          <input type="text" name="nombre" required minlength="2" maxlength="80" class="ox-input" style="width:100%" placeholder="Ej.: María López">
-        </label>
-        <label style="display:block">
-          <span style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.15rem">Teléfono (con prefijo)</span>
+          <span style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.15rem">Teléfono (con prefijo de país)</span>
           <input type="tel" name="telefono" required class="ox-input" style="width:100%" placeholder="+34 600 000 000" pattern="\+?\d[\d\s]{7,20}">
         </label>
         <button type="submit" class="cfg-save-bottom" style="margin:0">Autorizar</button>
       </form>
       <p class="cfg-form-note" style="margin-top:.5rem">
-        Para editar, revocar acceso o cambiar dispositivo → <a href="{{ url_for('admin.clientes') }}">gestión completa de clientes</a>.
+        Para revocar acceso, cambiar dispositivo o ver la lista completa de clientes registrados → <a href="{{ url_for('admin.clientes') }}">gestión de clientes</a>.
       </p>
     </div>
 

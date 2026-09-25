@@ -336,11 +336,11 @@ CONFIG_SECTION_KEYS = {
     },
     "tienda-tema": set(PUBLIC_THEME_DEFAULTS),
     "tienda-textos": set(PUBLIC_UI_DEFAULTS),
-    "acceso-clientes": {"ACCESO_CLIENTES_REGISTRADOS"},
+    "acceso-clientes": {"ACCESO_CLIENTES_REGISTRADOS", "ACCESO_REQUIERE_PWA"},
     "operacion-horario": {
         "HORARIO_APERTURA", "HORARIO_CIERRE", "HORARIO_SEMANAL_JSON", "HORARIO_MODO",
         "TIENDA_FORZAR_CERRADA",
-        "TIENDA_MENSAJE_CIERRE", "PREAPERTURA_ACTIVA", "ACCESO_CLIENTES_REGISTRADOS",
+        "TIENDA_MENSAJE_CIERRE", "PREAPERTURA_ACTIVA", "ACCESO_CLIENTES_REGISTRADOS", "ACCESO_REQUIERE_PWA",
         "PREAPERTURA_TITULO", "PREAPERTURA_MENSAJE",
     },
     "operacion-pagos": {"EFECTIVO_HABILITADO", "BIZUM_HABILITADO", "TARJETA_HABILITADA"},
@@ -527,7 +527,7 @@ def _validar_config_value(clave, valor):
     if clave in {
         "VALIDAR_RADIO_ENTREGA", "BLOQUEAR_DIRECCION_NO_VERIFICADA",
         "TIENDA_FORZAR_CERRADA", "BIZUM_HABILITADO", "EFECTIVO_HABILITADO", "TARJETA_HABILITADA",
-        "PREAPERTURA_ACTIVA", "ACCESO_CLIENTES_REGISTRADOS",
+        "PREAPERTURA_ACTIVA", "ACCESO_CLIENTES_REGISTRADOS", "ACCESO_REQUIERE_PWA",
         "FEATURE_DELIVERY", "FEATURE_RECOGIDA", "FEATURE_PEDIDOS_PROGRAMADOS",
         "FEATURE_PUNTOS",
     }:
@@ -2121,6 +2121,85 @@ def guardar_config_seccion():
         db.session.rollback()
         flash(f"No se pudo guardar esta tarjeta: {exc}", "danger")
     return redirect(url_for("superadmin.config", section=parent_section))
+
+
+@superadmin_bp.route("/config/autorizar-numero", methods=["POST"])
+@superadmin_required
+def autorizar_numero_cliente():
+    """Alta ligera de un número autorizado para tienda privada.
+
+    A diferencia de `/admin/clientes/registrar` (que registra al cliente
+    completo con nombre), aquí sólo hace falta el teléfono. El sistema
+    crea un placeholder de usuario ("Cliente XXXX") y su
+    `CustomerAccessGrant` activo, para que el sistema pueda enviar el
+    código por WhatsApp cuando la persona lo solicite.
+
+    El nombre real se captura en el primer pedido: `_resolve_checkout_customer`
+    reemplaza automáticamente el placeholder "Cliente ..." por el nombre
+    que introduce el cliente al hacer checkout.
+    """
+    from models import internal_customer_email, CustomerAccessGrant, AuditLog
+    raw = (request.form.get("telefono") or "").strip()
+    phone = normalizar_telefono_cliente(raw)
+    if not telefono_valido(phone) or telefono_local_ambiguo(raw):
+        flash("Introduce un teléfono válido con prefijo de país (ej. +34 600 000 000).", "danger")
+        return redirect(url_for("superadmin.config", section="acceso-clientes") + "#acceso")
+
+    existing = User.query.filter_by(telefono_normalizado=phone).first()
+    if existing:
+        # Si ya existe con rol no-cliente (empleado/admin), no lo modificamos.
+        if existing.rol != "cliente":
+            flash(
+                f"El número {phone} ya está en uso por un usuario de rol {existing.rol}. "
+                "No se puede autorizar como cliente.",
+                "warning",
+            )
+            return redirect(url_for("superadmin.config", section="acceso-clientes") + "#acceso")
+        # Ya es cliente: reactivamos su grant si existe, si no lo creamos.
+        grant = db.session.get(CustomerAccessGrant, existing.id)
+        if grant and grant.activo:
+            flash(f"El número {phone} ya estaba autorizado.", "info")
+        else:
+            if grant is None:
+                db.session.add(CustomerAccessGrant(user_id=existing.id, approved_by=current_user.id, activo=True))
+            else:
+                grant.activo = True
+                grant.approved_by = current_user.id
+            existing.activo = True
+            AuditLog.registrar(current_user.id, "autorizar_numero_cliente", "user", existing.id, ip=request.remote_addr)
+            try:
+                db.session.commit()
+                flash(f"Acceso reactivado para {phone}. Ya puede solicitar su código.", "success")
+            except Exception as exc:
+                db.session.rollback()
+                flash(f"No se pudo autorizar: {exc}", "danger")
+        return redirect(url_for("superadmin.config", section="acceso-clientes") + "#acceso")
+
+    # Nuevo: creamos placeholder + grant. El nombre real llega en el primer pedido.
+    placeholder_nombre = f"Cliente {phone[-4:]}" if len(phone) >= 4 else "Cliente"
+    email = internal_customer_email(phone)
+    if User.query.filter_by(email=email).first():
+        email = internal_customer_email(phone, uuid.uuid4().hex[:4])
+    customer = User(
+        nombre=placeholder_nombre,
+        email=email,
+        rol="cliente",
+        telefono=phone,
+        telefono_normalizado=phone,
+        password_hash="!",
+        activo=True,
+    )
+    db.session.add(customer)
+    try:
+        db.session.flush()
+        db.session.add(CustomerAccessGrant(user_id=customer.id, approved_by=current_user.id, activo=True))
+        AuditLog.registrar(current_user.id, "autorizar_numero_cliente", "user", customer.id, ip=request.remote_addr)
+        db.session.commit()
+        flash(f"Número {phone} autorizado. Recibirá su código cuando lo solicite.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"No se pudo autorizar el número: {exc}", "danger")
+    return redirect(url_for("superadmin.config", section="acceso-clientes") + "#acceso")
 
 
 @superadmin_bp.route("/config/seed", methods=["POST"])
