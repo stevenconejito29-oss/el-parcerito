@@ -110,10 +110,20 @@ body.ox-body-public .pd-flavor-chips {
 }
 
 body.ox-body-public .pd-flavor-chip {
-  min-height: 40px;
-  padding: .45rem .72rem;
+  /* 44px = mínimo iOS/Apple para touch targets confortables sin
+     mistaps al elegir sabor con el pulgar en móvil. */
+  min-height: 44px;
+  padding: .55rem .78rem;
   border-width: 1.5px;
-  font-size: .8rem;
+  font-size: .82rem;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s ease, box-shadow .12s ease, background .15s ease;
+}
+body.ox-body-public .pd-flavor-chip:active { transform: scale(.96); }
+/* Estado seleccionado más claro: aria-pressed=true + clase --selected. */
+body.ox-body-public .pd-flavor-chip[aria-pressed="true"],
+body.ox-body-public .pd-flavor-chip.is-selected {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-primary) 55%, transparent);
 }
 
 body.ox-body-public .pd-combo-guide {

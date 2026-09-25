@@ -564,16 +564,22 @@ select, textarea {
 .pd-extra-group__list { display: grid; gap: 6px; }
 .pd-extra-item {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px;
+  /* 44px min-height = touch target confortable en móvil. Antes 8px de
+     padding vertical dejaba el bloque en ~35px, fácil de fallar al tap. */
+  min-height: 44px;
+  padding: 10px 12px;
   border-radius: var(--radius-1);
   border: 1px solid transparent;
   cursor: pointer;
-  transition: background .15s, border-color .15s;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .15s ease, border-color .15s ease, transform .12s ease;
 }
 .pd-extra-item:hover { background: var(--col-hover); }
+.pd-extra-item:active { transform: scale(.98); }
 .pd-extra-item--checked {
   background: var(--brand-primary-soft);
   border-color: color-mix(in srgb, var(--brand-primary) 40%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-primary) 22%, transparent);
 }
 .pd-extra-item--disabled {
   opacity: 0.42; cursor: not-allowed;
