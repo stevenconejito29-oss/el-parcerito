@@ -381,7 +381,7 @@
                data-max="{{ group.max_selecciones }}">
       </button>
       {% else %}
-      <label class="pd-extra-option"><span><strong>{{ option.nombre }}</strong>{% if option.precio_float %}<small>+€{{ '%.2f'|format(option.precio_float) }}</small>{% else %}<small>Sin coste</small>{% endif %}</span><input form="pd-add-form" class="pd-extra-qty" data-extra="{{ option.precio_float }}" type="number" inputmode="numeric" name="extra_qty_{{ option.id }}" value="0" min="0" max="{{ option.max_cantidad }}" aria-label="Cantidad de {{ option.nombre }}"></label>
+      <label class="pd-extra-option"><span><strong>{{ option.nombre }}</strong>{% if option.precio_float %}<small>+€{{ '%.2f'|format(option.precio_float) }}</small>{% else %}<small>Sin coste</small>{% endif %}</span><span class="pd-extra-stepper" data-max="{{ option.max_cantidad }}"><button type="button" class="pd-extra-stepper__btn" data-extra-step="-1" aria-label="Restar {{ option.nombre }}">−</button><input form="pd-add-form" class="pd-extra-qty" data-extra="{{ option.precio_float }}" type="number" inputmode="numeric" name="extra_qty_{{ option.id }}" value="0" min="0" max="{{ option.max_cantidad }}" aria-label="Cantidad de {{ option.nombre }}"><button type="button" class="pd-extra-stepper__btn" data-extra-step="+1" aria-label="Sumar {{ option.nombre }}">+</button></span></label>
       {% endif %}
       {% endfor %}
       {% if group.tipo == 'sabor' %}</div>{# /pd-flavor-chips #}{% endif %}
@@ -457,7 +457,10 @@
               {% set comp_src = item.componente.imagen_url|upload_url %}
               <img src="{{ comp_src }}" alt="{{ item.componente.nombre }}">
             {% else %}
-              <span>{% if item.componente.categoria and 'beb' in item.componente.categoria.nombre|lower %}🥤{% elif item.componente.categoria and 'dulce' in item.componente.categoria.nombre|lower %}🍮{% elif item.componente.categoria and 'pizza' in item.componente.categoria.nombre|lower %}🍕{% elif item.componente.categoria and 'ensalada' in item.componente.categoria.nombre|lower %}🥗{% else %}{{ brand.fallback_emoji or '🍽️' }}{% endif %}</span>
+              {# Fallback multi-tienda: categoria.emoji configurable primero,
+                 luego fallback por vertical (comida/retail). Sin keyword-match
+                 hardcodeado (no funciona en tiendas no-comida). #}
+              <span>{% if item.componente.categoria and item.componente.categoria.emoji %}{{ item.componente.categoria.emoji }}{% else %}{{ brand.fallback_emoji or brand.vertical_emoji or ('🍽️' if brand.es_comida else '🛍️') }}{% endif %}</span>
             {% endif %}
           </div>
           <span class="pd-combo-qty">{{ item.cantidad }}×</span>
@@ -628,7 +631,10 @@
               {% set opt_src = item.componente.imagen_url|upload_url %}
               <img src="{{ opt_src }}" alt="{{ item.componente.nombre }}">
             {% else %}
-              <span>{% if item.componente.categoria and 'beb' in item.componente.categoria.nombre|lower %}🥤{% elif item.componente.categoria and 'dulce' in item.componente.categoria.nombre|lower %}🍮{% elif item.componente.categoria and 'pizza' in item.componente.categoria.nombre|lower %}🍕{% elif item.componente.categoria and 'ensalada' in item.componente.categoria.nombre|lower %}🥗{% else %}{{ brand.fallback_emoji or '🍽️' }}{% endif %}</span>
+              {# Fallback multi-tienda: categoria.emoji configurable primero,
+                 luego fallback por vertical (comida/retail). Sin keyword-match
+                 hardcodeado (no funciona en tiendas no-comida). #}
+              <span>{% if item.componente.categoria and item.componente.categoria.emoji %}{{ item.componente.categoria.emoji }}{% else %}{{ brand.fallback_emoji or brand.vertical_emoji or ('🍽️' if brand.es_comida else '🛍️') }}{% endif %}</span>
             {% endif %}
           </span>
           <span class="pd-combo-opt-body">
@@ -1096,18 +1102,53 @@
   overflow-wrap:break-word; word-break:break-word;
   line-height:1.25;
 }
-/* Input numérico ≥ 16px evita el zoom automático de iOS Safari en focus.
-   `flex-shrink:0` garantiza que el stepper nunca se comprime. */
+/* Stepper táctil ±: reemplaza el spinner nativo por dos botones grandes
+   con el input al centro. Cada botón es 44×44 (mín. iOS/Apple) y el
+   input central 46px de ancho. En móvil pequeño (≤360px) sigue cabiendo
+   por row-gap del label padre. */
+.pd-extra-stepper {
+  display: inline-flex; align-items: stretch;
+  flex-shrink: 0;
+  border-radius: .65rem;
+  overflow: hidden;
+  border: 1px solid var(--col-border-2);
+  background: var(--col-surface);
+}
+.pd-extra-stepper__btn {
+  min-width: 44px; min-height: 44px;
+  padding: 0;
+  background: transparent;
+  color: var(--col-text);
+  border: none;
+  font-size: 1.35rem; font-weight: 900; line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background .14s, transform .1s;
+}
+.pd-extra-stepper__btn:hover { background: color-mix(in srgb, var(--brand-primary) 12%, transparent); }
+.pd-extra-stepper__btn:active { transform: scale(.92); background: color-mix(in srgb, var(--brand-primary) 20%, transparent); }
+.pd-extra-stepper__btn:disabled { opacity: .35; cursor: not-allowed; }
+/* Input numérico central del stepper — sigue siendo la fuente de verdad
+   para el JS ya existente (change/input events, dataset.extra, etc.). */
 .pd-extra-option input {
-  width:56px; min-height:44px; text-align:center;
-  border:1px solid var(--col-border-2); border-radius:.65rem;
-  background:var(--col-surface); color:var(--col-text);
-  font-weight:900; font-size:16px;
-  flex-shrink:0;
+  width: 46px; min-height: 44px; text-align: center;
+  border: none;
+  border-left: 1px solid var(--col-border-2);
+  border-right: 1px solid var(--col-border-2);
+  border-radius: 0;
+  background: transparent; color: var(--col-text);
+  font-weight: 900; font-size: 16px;
+  flex-shrink: 0;
+  -moz-appearance: textfield;
 }
 .pd-extra-option input::-webkit-inner-spin-button,
 .pd-extra-option input::-webkit-outer-spin-button {
-  display:none; -webkit-appearance:none; margin:0;
+  display: none; -webkit-appearance: none; margin: 0;
+}
+.pd-extra-option input:focus {
+  outline: 2px solid color-mix(in srgb, var(--brand-primary) 55%, transparent);
+  outline-offset: -2px;
 }
 /* Sabor con stepper (3 botones): el label + stepper compiten por ancho.
    En móvil estrecho el stepper baja a la siguiente línea para no comprimir
@@ -1901,6 +1942,64 @@ main { padding-top: 0 !important; }
     font-size: .8rem;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Responsividad del combo modal (armador) — pantallas estrechas.
+   Objetivos: sin deformidad de la caja pd-combo-opt, sin textos que
+   se salgan, chips de sabor/tamaño que envuelvan sin recortar.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+  /* La caja de opción del combo: grid 42px thumb + auto qty + rest.
+     Sub-elementos (nombre, descripción, chips) no deben desbordar. */
+  .pd-combo-opt-name,
+  .pd-combo-opt-desc,
+  .pd-combo-item-name,
+  .pd-combo-item-desc {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
+  }
+  /* Chips de tamaño/sabor dentro del combo: envuelven a nueva línea
+     antes que recortar (ellipsis afeaba nombres como "Aquarius Limón"). */
+  .pd-combo-flavor-chips,
+  .pd-combo-presentation .pd-combo-flavor-chips {
+    flex-wrap: wrap;
+    gap: .35rem .4rem;
+  }
+  .pd-combo-flavor-chips .pd-flavor-chip {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+  .pd-combo-flavor-chips .pd-flavor-chip .pd-flavor-chip__name {
+    white-space: normal;
+    text-overflow: clip;
+    overflow: visible;
+    line-height: 1.2;
+  }
+  /* Título del paso ("Paso 1 · Base incluida") + chip estado
+     ("Falta sabor") — que si el nombre del paso es largo bajen a
+     nueva línea en vez de amontonarse encima del icono. */
+  .pd-cstep-hd { flex-wrap: wrap; row-gap: .3rem; }
+  /* La tarjeta "Configura cada unidad" — evita colapso lateral. */
+  .pd-combo-flavor,
+  .pd-combo-presentation {
+    padding: .55rem;
+    margin-top: .55rem;
+  }
+  /* Botón "Continuar →" al final de cada paso: ancho completo en móvil
+     para no dejar espacio muerto a la derecha y ser táctil. */
+  .pd-cstep-next {
+    width: 100%;
+    min-height: 46px;
+    justify-content: center;
+  }
+}
+@media (max-width: 360px) {
+  /* Extra-stepper (±) del combo con productos-extra: en pantallas muy
+     estrechas los botones podrían apretarse — mantenemos ancho mínimo. */
+  .pd-extra-stepper__btn { min-width: 40px; font-size: 1.2rem; }
+  .pd-extra-option input { width: 40px; }
+}
 </style>
 
 <script nonce="{{ csp_nonce() }}">
@@ -2019,6 +2118,34 @@ document.querySelectorAll('.pd-extra-qty').forEach(input => {
     input.value = Math.min(Number.parseInt(input.value || '0', 10), Math.max(0, groupMax - others));
     pdExtraGroupsValid();
     pdRenderPrice();
+    pdSyncExtraStepperBtns(input);
+  });
+});
+/* Stepper táctil ±: cada botón mueve el input contiguo (input event
+   dispara toda la lógica de validación por grupo + render de precio
+   ya existente). Sin duplicar lógica ni tocar el flujo actual. */
+function pdSyncExtraStepperBtns(input) {
+  const stepper = input.closest('.pd-extra-stepper');
+  if (!stepper) return;
+  const value = Number.parseInt(input.value || '0', 10) || 0;
+  const ownMax = Number.parseInt(input.max || '99', 10);
+  const minus = stepper.querySelector('[data-extra-step="-1"]');
+  const plus = stepper.querySelector('[data-extra-step="+1"]');
+  if (minus) minus.disabled = value <= 0;
+  if (plus) plus.disabled = value >= ownMax;
+}
+document.querySelectorAll('.pd-extra-stepper').forEach(stepper => {
+  const input = stepper.querySelector('.pd-extra-qty');
+  if (!input) return;
+  pdSyncExtraStepperBtns(input);
+  stepper.querySelectorAll('[data-extra-step]').forEach(btn => {
+    btn.addEventListener('click', event => {
+      event.preventDefault();
+      const step = Number.parseInt(btn.dataset.extraStep || '0', 10) || 0;
+      const current = Number.parseInt(input.value || '0', 10) || 0;
+      input.value = String(current + step);
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+    });
   });
 });
 function pdSelectedFlavorPolicy() {
