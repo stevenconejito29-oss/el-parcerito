@@ -11,6 +11,10 @@
    • API / Admin: Network-only (nunca cachear dinámico)
    • Push Notifications: Muestra notificaciones + abre URL al click
    • v59: HTML y /uploads/ pasaron a network-first + fallback cache.
+   • v60 (2026-09-25): Liquid Glass — bump forzado para purgar caches viejos
+     tras rediseño de tarjetas + modales. Los clientes con la PWA instalada
+     verán la nueva versión al reabrir la app (nuevo SW se instala, activa,
+     y vacía todos los caches `ox-*` del hash anterior).
    La versión no se mantiene a mano: Flask sustituye __ASSET_VERSION__ por la
    huella real de CSS, JS, iconos y capturas. Así cualquier cambio genera un
    worker/cache distinto y no depende de recordar incrementar un número.

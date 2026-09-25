@@ -4455,6 +4455,10 @@ function menuPrincipal(_ses = {}) {
     deliveryEnabled: String(cfg('delivery_enabled', '1')) === '1',
     scheduledEnabled: String(cfg('scheduled_enabled', '0')) === '1',
     miniappEnabled: String(cfg('miniapp_enabled', '0')) === '1',
+    // Persuasion soft para redirigir a la web: solo muestran ventajas
+    // reales disponibles en la tienda (nunca vender humo).
+    combosEnabled: String(cfg('combos_enabled', '1')) === '1',
+    couponsEnabled: String(cfg('coupons_enabled', '1')) === '1',
   });
 }
 

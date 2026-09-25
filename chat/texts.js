@@ -61,18 +61,53 @@ function menuPrincipal(ctx) {
   const scheduledHint = ctx.scheduledEnabled
     ? "\n📅 Consulta en la tienda los productos disponibles con fecha de entrega."
     : "";
-  // Nudge suave para instalar la Mini App (una línea, sin ser invasivo).
-  // Objetivo: llevar pedidos al canal web/PWA (menos fricción, menos riesgo
-  // Meta). No se repite: sólo aparece en el menú, no en cada respuesta.
+  // Nudge para llevar el pedido al canal web/PWA. Objetivo: menos fricción,
+  // menos riesgo Meta (chatbot invasivo → baneo), mejor UX (catálogo con
+  // fotos, cupones aplicables, combos con descuento). No es invasivo: sólo
+  // aparece en el menú principal, no se repite en cada respuesta.
   const appHint = ctx.miniappEnabled
     ? "\n\n💡 *Pide más fácil desde la Mini App*: instálala en tu móvil y accede al catálogo con un toque, sin abrir WhatsApp cada vez."
     : "";
+  const benefits = benefitsHint(ctx);
   return (
     `🤝 *Asistente de ${ctx.nombreNegocio}*\n\n` +
     `Elige una opción respondiendo con su número:\n\n` +
-    `${lines}${scheduledHint}${appHint}\n\n` +
+    `${lines}${scheduledHint}${appHint}${benefits}\n\n` +
     `_También puedes escribir tu pregunta con tus palabras._`
   );
+}
+
+/**
+ * Beneficios de pedir por la web/PWA — persuasion suave sin ser invasiva.
+ * Rota entre variantes por hora del día para no ser repetitiva.
+ *
+ * Sólo muestra beneficios que están realmente disponibles en esta tienda
+ * (loyalty/combos/cupones activos según SiteConfig). Si nada aplica,
+ * devuelve string vacío.
+ */
+function benefitsHint(ctx) {
+  const bits = [];
+  if (ctx.loyaltyEnabled) {
+    const name = String(ctx.loyaltyPlural || ctx.loyaltyName || "puntos");
+    const emoji = String(ctx.loyaltyEmoji || "⭐");
+    bits.push(`${emoji} acumulas *${name}* con cada pedido y los canjeas después`);
+  }
+  if (ctx.combosEnabled) {
+    bits.push("🎁 los *combos* llevan descuento sobre el precio suelto");
+  }
+  if (ctx.couponsEnabled) {
+    bits.push("🎟️ aplicas *cupones* directamente al finalizar");
+  }
+  if (!bits.length) return "";
+  // Rotación por hora del día → cliente que consulta en mañana/tarde/noche
+  // ve un beneficio diferente. Sin state por conversación (que rompería
+  // cache), pero tampoco idéntico cada vez.
+  const now = new Date();
+  const idx = (now.getHours() + now.getDate()) % bits.length;
+  const primary = bits[idx];
+  const others = bits.filter((_, i) => i !== idx).length;
+  const extra = others > 0 ? ` _y ${others} ventaja${others === 1 ? '' : 's'} más_` : "";
+  return `\n\n📌 *Pedir por la web tiene ventajas:*\n• ${primary}.${extra}`;
 }
 
 /**
