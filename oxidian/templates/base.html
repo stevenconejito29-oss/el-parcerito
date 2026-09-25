@@ -2,6 +2,10 @@
 {% from 'partials/heritage_icons.html' import heritage_icon, loyalty_icon %}
 <html lang="es">
 <head>
+  {% if private_app_required %}
+  <style id="private-app-veil">html { visibility:hidden !important; }</style>
+  <script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/private-app-guard.js', v=asset_version) }}"></script>
+  {% endif %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
@@ -228,6 +232,12 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-polish.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/system-foundation.css', v=asset_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/flow-refinements.css', v=asset_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/combo-storefront.css', v=asset_version) }}">
+  {# Liquid Glass — última capa visual (2026-09-25). Rediseño moderno con
+     vidrio esmerilado, sombras suaves, radios grandes. Gana la cascada
+     sobre el resto de CSS de la vista pública. Sólo estilos: no toca
+     estructura HTML ni JS ni lógica. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront-liquid-glass.css', v=asset_version) }}">
 </head>
 {# El detalle ya tiene navegación de regreso y una barra de compra fija.
    Apilar además la navegación inferior duplicaba controles y cubría el

@@ -1,0 +1,420 @@
+/* ═══════════════════════════════════════════════════════════════════
+   LIQUID GLASS UI — 2026-09-25
+   Rediseño moderno con vidrio esmerilado, sombras suaves y curvas
+   generosas. Aplicable a: tarjeta de producto (ep-card), modal quick-add
+   (ep-modal), ficha detalle (pd-*), extras/sabores/combo builder.
+
+   Este archivo se carga DESPUÉS del resto → gana la cascada.
+   Solo estilos — cero cambios de estructura HTML o JS.
+
+   Filosofía:
+     · Fondos semi-transparentes con backdrop-filter (frosted glass).
+     · Bordes finos con alpha (1px rgba blanco/negro).
+     · Sombras multi-capa (soft-shadow + accent-glow).
+     · Radios 14-20px consistentes.
+     · Motion sutil (transform: scale, opacity).
+     · Táctil: min 44×44, active feedback.
+     · iOS-safe (safe-area-inset), Android-safe (touch-action).
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Variables de vidrio (respetan --theme-* de la marca) ────────── */
+:root {
+  --lg-glass-bg: color-mix(in srgb, var(--theme-surface, #fff) 82%, transparent);
+  --lg-glass-bg-strong: color-mix(in srgb, var(--theme-surface, #fff) 92%, transparent);
+  --lg-glass-border: color-mix(in srgb, var(--theme-text, #111) 9%, transparent);
+  --lg-glass-border-strong: color-mix(in srgb, var(--theme-text, #111) 14%, transparent);
+  --lg-shadow-sm: 0 2px 8px color-mix(in srgb, var(--theme-text, #111) 8%, transparent);
+  --lg-shadow-md: 0 6px 24px color-mix(in srgb, var(--theme-text, #111) 12%, transparent);
+  --lg-shadow-lg: 0 18px 50px color-mix(in srgb, var(--theme-text, #111) 22%, transparent);
+  --lg-glow: 0 0 0 1px color-mix(in srgb, #fff 60%, transparent) inset;
+  --lg-radius-sm: .75rem;
+  --lg-radius-md: 1rem;
+  --lg-radius-lg: 1.4rem;
+  --lg-blur: 22px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   1. MODAL QUICK-ADD (ep-modal)
+   ═══════════════════════════════════════════════════════════════════ */
+
+body.ox-body-public .ep-modal-overlay {
+  background: color-mix(in srgb, var(--theme-text, #111) 55%, transparent) !important;
+  backdrop-filter: blur(12px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(140%) !important;
+  animation: lgFadeIn .22s ease-out;
+}
+
+body.ox-body-public .ep-modal-panel {
+  background: var(--lg-glass-bg-strong) !important;
+  backdrop-filter: blur(var(--lg-blur)) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(180%) !important;
+  border: 1px solid var(--lg-glass-border-strong) !important;
+  border-radius: var(--lg-radius-lg) !important;
+  box-shadow: var(--lg-shadow-lg), var(--lg-glow) !important;
+  animation: lgScaleIn .28s cubic-bezier(.2, .8, .3, 1);
+}
+
+body.ox-body-public .ep-modal-close {
+  background: color-mix(in srgb, var(--theme-text, #111) 55%, transparent) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff !important;
+  border: 1px solid color-mix(in srgb, #fff 30%, transparent) !important;
+  min-width: 36px; min-height: 36px;
+  border-radius: 999px !important;
+  transition: transform .16s, background .16s;
+}
+body.ox-body-public .ep-modal-close:hover { transform: scale(1.06); background: color-mix(in srgb, var(--theme-text) 70%, transparent) !important; }
+body.ox-body-public .ep-modal-close:active { transform: scale(.92); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   2. TARJETA DE PRODUCTO (ep-card) — glass sutil + hover elevado
+   ═══════════════════════════════════════════════════════════════════ */
+
+body.ox-body-public .ep-card {
+  background: var(--lg-glass-bg) !important;
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  border: 1px solid var(--lg-glass-border) !important;
+  border-radius: var(--lg-radius-md) !important;
+  box-shadow: var(--lg-shadow-sm);
+  transition: transform .18s ease-out, box-shadow .18s ease-out, border-color .18s;
+  overflow: hidden;
+  will-change: transform;
+}
+body.ox-body-public .ep-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--lg-shadow-md);
+  border-color: color-mix(in srgb, var(--brand-primary) 40%, var(--lg-glass-border));
+}
+body.ox-body-public .ep-card:active { transform: translateY(0) scale(.995); }
+
+/* ep-btn-add flotante ganó peso con la nueva sombra suave */
+body.ox-body-public .ep-btn-add {
+  box-shadow:
+    0 8px 22px color-mix(in srgb, var(--action-primary) 32%, transparent),
+    0 0 0 3px var(--theme-surface),
+    0 0 0 5px color-mix(in srgb, var(--brand-primary) 30%, transparent) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   3. FICHA DE PRODUCTO (producto.html) — glass en secciones clave
+   ═══════════════════════════════════════════════════════════════════ */
+
+body.ox-body-public .pd-card {
+  background: var(--lg-glass-bg-strong) !important;
+  backdrop-filter: blur(16px) saturate(170%);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  border: 1px solid var(--lg-glass-border-strong);
+  border-radius: var(--lg-radius-lg) !important;
+  box-shadow: var(--lg-shadow-md), var(--lg-glow);
+}
+
+body.ox-body-public .pd-extras {
+  background: var(--lg-glass-bg) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--lg-glass-border) !important;
+  border-radius: var(--lg-radius-md) !important;
+  box-shadow: var(--lg-shadow-sm) !important;
+}
+
+body.ox-body-public .pd-extra-group {
+  background: color-mix(in srgb, var(--theme-surface) 78%, transparent) !important;
+  border: 1px solid var(--lg-glass-border) !important;
+  border-radius: var(--lg-radius-sm) !important;
+}
+body.ox-body-public .pd-extra-group.pd-flavor-group {
+  background: color-mix(in srgb, var(--brand-primary) 6%, var(--theme-surface)) !important;
+  border-color: color-mix(in srgb, var(--brand-primary) 30%, var(--lg-glass-border)) !important;
+}
+
+/* ── Extras: opción individual + stepper ± ── */
+body.ox-body-public .pd-extra-option {
+  padding: 12px 14px !important;
+  border-radius: var(--lg-radius-sm) !important;
+  transition: background .16s, border-color .16s;
+  background: color-mix(in srgb, var(--theme-surface) 60%, transparent);
+  border: 1px solid transparent;
+}
+body.ox-body-public .pd-extra-option:hover {
+  background: color-mix(in srgb, var(--brand-primary) 5%, var(--theme-surface)) !important;
+  border-color: color-mix(in srgb, var(--brand-primary) 20%, transparent);
+}
+body.ox-body-public .pd-extra-stepper {
+  border-radius: var(--lg-radius-sm) !important;
+  overflow: hidden;
+  border: 1px solid var(--lg-glass-border-strong) !important;
+  background: var(--theme-surface) !important;
+  box-shadow: var(--lg-shadow-sm);
+}
+body.ox-body-public .pd-extra-stepper__btn {
+  min-width: 46px; min-height: 46px;
+  font-size: 1.4rem !important;
+  color: var(--brand-primary) !important;
+  transition: background .12s, transform .1s;
+}
+body.ox-body-public .pd-extra-stepper__btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--brand-primary) 18%, transparent) !important;
+}
+body.ox-body-public .pd-extra-stepper__btn:not(:disabled):active {
+  transform: scale(.9);
+  background: color-mix(in srgb, var(--brand-primary) 28%, transparent) !important;
+}
+body.ox-body-public .pd-extra-option input.pd-extra-qty {
+  width: 50px !important;
+  font-size: 17px !important;
+  border-left: 1px solid var(--lg-glass-border-strong) !important;
+  border-right: 1px solid var(--lg-glass-border-strong) !important;
+}
+
+/* ── Sabores: chip pill grande + accent gradiente al seleccionar ── */
+body.ox-body-public .pd-flavor-chip {
+  min-height: 46px !important;
+  padding: .6rem 1rem !important;
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--theme-surface) 88%, transparent) !important;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1.5px solid var(--lg-glass-border-strong) !important;
+  font-weight: 800 !important;
+  transition: transform .15s, background .18s, border-color .18s, box-shadow .18s !important;
+  box-shadow: var(--lg-shadow-sm);
+}
+body.ox-body-public .pd-flavor-chip:hover {
+  border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--lg-glass-border-strong)) !important;
+  transform: translateY(-1px);
+}
+body.ox-body-public .pd-flavor-chip.is-selected {
+  background: linear-gradient(135deg,
+    var(--brand-primary),
+    color-mix(in srgb, var(--brand-primary) 82%, #000)) !important;
+  border-color: var(--brand-primary) !important;
+  color: var(--brand-on-primary, #1B0A00) !important;
+  box-shadow:
+    0 6px 18px color-mix(in srgb, var(--brand-primary) 42%, transparent),
+    var(--lg-glow) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   4. COMBO BUILDER — pasos, opciones, thumb
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Barra de progreso "TU RECORRIDO" — glass + curva grande */
+body.ox-body-public .pd-combo-guide {
+  background: var(--lg-glass-bg-strong) !important;
+  backdrop-filter: blur(18px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
+  border: 1px solid var(--lg-glass-border-strong) !important;
+  border-radius: var(--lg-radius-md) !important;
+  box-shadow: var(--lg-shadow-md), var(--lg-glow) !important;
+}
+
+/* Cada paso del combo (Paso 1, Paso 2...) */
+body.ox-body-public .pd-cstep {
+  background: color-mix(in srgb, var(--theme-surface) 85%, transparent) !important;
+  border: 1px solid var(--lg-glass-border) !important;
+  border-radius: var(--lg-radius-md) !important;
+  padding: 1rem;
+  box-shadow: var(--lg-shadow-sm);
+  transition: border-color .2s, box-shadow .2s;
+}
+body.ox-body-public .pd-cstep.is-active {
+  border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--lg-glass-border-strong)) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--brand-primary) 12%, transparent),
+    var(--lg-shadow-md) !important;
+}
+body.ox-body-public .pd-cstep.is-done {
+  background: color-mix(in srgb, var(--theme-success, #22c55e) 6%, var(--theme-surface)) !important;
+  border-color: color-mix(in srgb, var(--theme-success, #22c55e) 30%, var(--lg-glass-border)) !important;
+}
+
+/* Cada opción del combo (radio + thumb + nombre) */
+body.ox-body-public .pd-combo-opcion,
+body.ox-body-public .pd-combo-opt {
+  padding: 12px !important;
+  border-radius: var(--lg-radius-sm) !important;
+  background: color-mix(in srgb, var(--theme-surface) 70%, transparent) !important;
+  border: 1.5px solid var(--lg-glass-border) !important;
+  transition: background .16s, border-color .16s, transform .1s;
+  cursor: pointer;
+}
+body.ox-body-public .pd-combo-opcion:hover,
+body.ox-body-public .pd-combo-opt:hover {
+  background: color-mix(in srgb, var(--brand-primary) 5%, var(--theme-surface)) !important;
+  border-color: color-mix(in srgb, var(--brand-primary) 32%, transparent) !important;
+}
+body.ox-body-public .pd-combo-opcion.is-selected,
+body.ox-body-public .pd-combo-opcion:has(input:checked),
+body.ox-body-public .pd-combo-opt.is-selected {
+  background: color-mix(in srgb, var(--brand-primary) 12%, var(--theme-surface)) !important;
+  border-color: var(--brand-primary) !important;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--brand-primary) 22%, transparent),
+    var(--lg-shadow-sm) !important;
+}
+body.ox-body-public .pd-combo-opt-thumb {
+  border-radius: var(--lg-radius-sm) !important;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--theme-surface-alt, var(--theme-surface)) 60%, transparent);
+  box-shadow: var(--lg-shadow-sm);
+}
+
+/* Botón "Continuar →" de cada paso */
+body.ox-body-public .pd-cstep-next {
+  border-radius: var(--lg-radius-md) !important;
+  min-height: 50px;
+  font-weight: 900;
+  background: linear-gradient(135deg,
+    var(--brand-primary),
+    color-mix(in srgb, var(--brand-primary) 82%, #000)) !important;
+  color: var(--brand-on-primary, #1B0A00) !important;
+  border: none;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--brand-primary) 38%, transparent);
+  transition: transform .15s, filter .15s, box-shadow .15s;
+}
+body.ox-body-public .pd-cstep-next:hover { filter: brightness(1.06); transform: translateY(-1px); }
+body.ox-body-public .pd-cstep-next:active { transform: scale(.98); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   5. BARRA STICKY DE COMPRA (pd-add-bar)
+   ═══════════════════════════════════════════════════════════════════ */
+
+body.ox-body-public .pd-add-bar {
+  background: color-mix(in srgb, var(--theme-surface) 78%, transparent) !important;
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  border-top: 1px solid var(--lg-glass-border-strong) !important;
+  box-shadow: 0 -8px 28px color-mix(in srgb, var(--theme-text) 12%, transparent);
+}
+
+body.ox-body-public .pd-add-btn {
+  border-radius: var(--lg-radius-md) !important;
+  min-height: 50px !important;
+  font-weight: 900;
+  background: linear-gradient(135deg,
+    var(--brand-primary),
+    color-mix(in srgb, var(--brand-primary) 82%, #000)) !important;
+  color: var(--brand-on-primary, #1B0A00) !important;
+  box-shadow:
+    0 10px 26px color-mix(in srgb, var(--brand-primary) 40%, transparent),
+    var(--lg-glow) !important;
+  transition: transform .15s, filter .15s, box-shadow .15s;
+}
+body.ox-body-public .pd-add-btn:not(:disabled):not(.is-incomplete):hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--brand-primary) 48%, transparent), var(--lg-glow) !important;
+}
+body.ox-body-public .pd-add-btn:not(:disabled):not(.is-incomplete):active { transform: scale(.97); }
+
+/* Quantity stepper de la barra sticky (− 1 +) */
+body.ox-body-public .pd-qty-btn {
+  min-width: 44px !important; min-height: 46px !important;
+  border-radius: var(--lg-radius-sm) !important;
+  border: 1px solid var(--lg-glass-border-strong);
+  background: var(--theme-surface);
+  color: var(--brand-primary);
+  font-size: 1.3rem; font-weight: 900;
+  transition: transform .1s, background .14s;
+}
+body.ox-body-public .pd-qty-btn:hover { background: color-mix(in srgb, var(--brand-primary) 12%, var(--theme-surface)); }
+body.ox-body-public .pd-qty-btn:active { transform: scale(.9); }
+body.ox-body-public .pd-qty-input {
+  border-radius: var(--lg-radius-sm) !important;
+  border: 1px solid var(--lg-glass-border-strong);
+  font-size: 17px; font-weight: 900; text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   6. TARJETA COMBO PREVIEW (en tarjeta de la home)
+   ═══════════════════════════════════════════════════════════════════ */
+
+body.ox-body-public .ep-card-combo-panel {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--brand-primary) 9%, var(--theme-surface)),
+    color-mix(in srgb, var(--brand-primary) 4%, var(--theme-surface))) !important;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 30%, transparent) !important;
+  border-radius: var(--lg-radius-sm) !important;
+  box-shadow: var(--lg-shadow-sm), var(--lg-glow) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   7. ANIMACIONES (respetan prefers-reduced-motion)
+   ═══════════════════════════════════════════════════════════════════ */
+
+@keyframes lgFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes lgScaleIn {
+  from { opacity: 0; transform: translateY(8px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.ox-body-public .ep-modal-overlay,
+  body.ox-body-public .ep-modal-panel { animation: none !important; }
+  body.ox-body-public * { transition-duration: .01ms !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   8. RESPONSIVIDAD iOS/Android
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Safe areas iOS + Android edge-to-edge */
+body.ox-body-public .pd-add-bar {
+  padding-bottom: calc(.6rem + env(safe-area-inset-bottom, 0px)) !important;
+}
+body.ox-body-public .ep-modal-overlay {
+  padding-top: max(.5rem, env(safe-area-inset-top, 0px)) !important;
+  padding-bottom: max(.5rem, env(safe-area-inset-bottom, 0px)) !important;
+}
+
+/* Móviles medianos (≤ 480px) */
+@media (max-width: 480px) {
+  body.ox-body-public .ep-modal-panel {
+    border-radius: var(--lg-radius-md) !important;
+  }
+  body.ox-body-public .pd-card {
+    border-radius: var(--lg-radius-md) !important;
+  }
+  body.ox-body-public .pd-cstep { padding: .85rem; }
+  body.ox-body-public .pd-extras { padding: .8rem !important; }
+  body.ox-body-public .pd-extra-option { padding: 10px 12px !important; }
+  body.ox-body-public .pd-flavor-chip { padding: .55rem .85rem !important; font-size: .85rem !important; }
+}
+
+/* Móviles pequeños (≤ 360px: iPhone SE, Galaxy A14) */
+@media (max-width: 360px) {
+  body.ox-body-public .ep-modal-panel {
+    max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  }
+  body.ox-body-public .pd-flavor-chip { padding: .5rem .7rem !important; min-height: 44px !important; font-size: .8rem !important; }
+  body.ox-body-public .pd-extra-stepper__btn { min-width: 42px !important; }
+  body.ox-body-public .pd-extra-option input.pd-extra-qty { width: 44px !important; }
+  body.ox-body-public .pd-qty-btn { min-width: 40px !important; }
+  body.ox-body-public .pd-add-btn { font-size: .88rem !important; }
+}
+
+/* Android: force GPU acceleration en backdrop-filter (evita jank) */
+@supports (backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px)) {
+  body.ox-body-public .ep-modal-panel,
+  body.ox-body-public .pd-card,
+  body.ox-body-public .pd-add-bar,
+  body.ox-body-public .pd-combo-guide {
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+  }
+}
+
+/* Fallback si no hay backdrop-filter (Chrome antiguo, algunos Android) */
+@supports not ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))) {
+  body.ox-body-public .ep-modal-panel,
+  body.ox-body-public .pd-card,
+  body.ox-body-public .pd-extras,
+  body.ox-body-public .pd-add-bar,
+  body.ox-body-public .pd-combo-guide {
+    background: var(--theme-surface) !important;
+  }
+}
