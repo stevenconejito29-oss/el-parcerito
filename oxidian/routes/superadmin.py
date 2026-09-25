@@ -2126,17 +2126,19 @@ def guardar_config_seccion():
 @superadmin_bp.route("/config/autorizar-numero", methods=["POST"])
 @superadmin_required
 def autorizar_numero_cliente():
-    """Alta ligera de un número autorizado para tienda privada.
+    """Autoriza un teléfono a recibir código y entrar a la tienda.
 
-    A diferencia de `/admin/clientes/registrar` (que registra al cliente
-    completo con nombre), aquí sólo hace falta el teléfono. El sistema
-    crea un placeholder de usuario ("Cliente XXXX") y su
-    `CustomerAccessGrant` activo, para que el sistema pueda enviar el
-    código por WhatsApp cuando la persona lo solicite.
+    Semántica clarificada por el negocio: cualquier número en la lista
+    puede verificarse y usar la tienda, independientemente del rol del
+    usuario asociado. Un empleado, admin o super_admin también puede
+    "actuar como cliente" desde la sesión de customer_access — se les
+    concede un grant sin modificar su rol.
 
-    El nombre real se captura en el primer pedido: `_resolve_checkout_customer`
-    reemplaza automáticamente el placeholder "Cliente ..." por el nombre
-    que introduce el cliente al hacer checkout.
+    Si el número no existe todavía en `users`, se crea un placeholder
+    con rol=cliente. Su nombre real se captura en el primer pedido:
+    `_resolve_checkout_customer` (public.py:4638) reemplaza el
+    placeholder "Cliente XXXX" por el nombre que introduce al hacer
+    checkout, así que la placeholder no se ve nunca en producción.
     """
     from models import internal_customer_email, CustomerAccessGrant, AuditLog
     raw = (request.form.get("telefono") or "").strip()
@@ -2147,35 +2149,31 @@ def autorizar_numero_cliente():
 
     existing = User.query.filter_by(telefono_normalizado=phone).first()
     if existing:
-        # Si ya existe con rol no-cliente (empleado/admin), no lo modificamos.
-        if existing.rol != "cliente":
-            flash(
-                f"El número {phone} ya está en uso por un usuario de rol {existing.rol}. "
-                "No se puede autorizar como cliente.",
-                "warning",
-            )
-            return redirect(url_for("superadmin.config", section="acceso-clientes") + "#acceso")
-        # Ya es cliente: reactivamos su grant si existe, si no lo creamos.
+        # Sea del rol que sea (cliente, empleado, admin, super_admin): abrimos
+        # su grant de tienda. NO tocamos su rol ni su nombre — sólo el permiso
+        # de shopping session.
         grant = db.session.get(CustomerAccessGrant, existing.id)
         if grant and grant.activo:
-            flash(f"El número {phone} ya estaba autorizado.", "info")
+            flash(f"El número {phone} ya estaba autorizado (rol: {existing.rol}).", "info")
         else:
             if grant is None:
                 db.session.add(CustomerAccessGrant(user_id=existing.id, approved_by=current_user.id, activo=True))
             else:
                 grant.activo = True
                 grant.approved_by = current_user.id
-            existing.activo = True
-            AuditLog.registrar(current_user.id, "autorizar_numero_cliente", "user", existing.id, ip=request.remote_addr)
+            AuditLog.registrar(
+                current_user.id, "autorizar_numero_cliente", "user", existing.id,
+                detalle=f"rol={existing.rol}", ip=request.remote_addr,
+            )
             try:
                 db.session.commit()
-                flash(f"Acceso reactivado para {phone}. Ya puede solicitar su código.", "success")
+                flash(f"Acceso a tienda concedido a {phone} (rol: {existing.rol}).", "success")
             except Exception as exc:
                 db.session.rollback()
                 flash(f"No se pudo autorizar: {exc}", "danger")
         return redirect(url_for("superadmin.config", section="acceso-clientes") + "#acceso")
 
-    # Nuevo: creamos placeholder + grant. El nombre real llega en el primer pedido.
+    # Número nuevo: creamos placeholder cliente + grant. Nombre real llega en el primer pedido.
     placeholder_nombre = f"Cliente {phone[-4:]}" if len(phone) >= 4 else "Cliente"
     email = internal_customer_email(phone)
     if User.query.filter_by(email=email).first():

@@ -11,6 +11,10 @@ def private_store_enabled():
     return SiteConfig.get('ACCESO_CLIENTES_REGISTRADOS', '0') == '1'
 
 
+def private_pwa_required():
+    return private_store_enabled() and SiteConfig.get('ACCESO_REQUIERE_PWA', '0') == '1'
+
+
 def customer_grant(customer, lock=False):
     if not customer or customer.rol != 'cliente' or not customer.activo:
         return None
@@ -33,7 +37,10 @@ def verified_customer():
         customer = db.session.get(User, int(identity['id'])) if valid else None
     except (KeyError, ValueError, TypeError, OverflowError):
         customer = None
-    if (customer and customer.rol == 'cliente' and customer.activo
+    # El rol no importa para la sesión de tienda: si el número está en la
+    # lista de autorizados (CustomerAccessGrant activo + dispositivo válido),
+    # cualquier usuario (cliente, empleado, admin, super_admin) puede comprar.
+    if (customer and customer.activo
             and normalizar_telefono_cliente(customer.telefono) == identity.get('phone')
             and (customer.mfa_session_version or 0) == identity.get('version', 0)
             and grant_matches_device(customer_grant(customer))):
@@ -51,7 +58,7 @@ def enforce_customer_access():
     if not protected or request.endpoint in exempt or not private_store_enabled():
         return None
     g.private_customer_access = True
-    if verified_customer():
+    if verified_customer() and (not private_pwa_required() or session.get("customer_pwa_ready")):
         return None
     message = 'Verifica tu teléfono para acceder a la tienda.'
     if request.is_json or request.path.startswith('/api/') or request.endpoint == 'web_manifest':

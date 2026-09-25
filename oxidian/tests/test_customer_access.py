@@ -96,13 +96,22 @@ class CustomerAccessTest(unittest.TestCase):
         send.assert_not_called()
         self.assertEqual(User.query.count(), 2)
 
-    def test_expired_and_wrong_role_sessions_rejected(self):
+    def test_expired_session_rejected(self):
+        """La sesión de tienda expira a los 30 días (at antiguo → 303)."""
         self.authorise()
         with self.client.session_transaction() as s:
             value = s['customer_access']; value['at'] = 0; s['customer_access'] = value
         self.assertEqual(self.client.get('/').status_code, 303)
-        self.authorise(); self.customer.rol = 'admin'; db.session.commit()
-        self.assertEqual(self.client.get('/').status_code, 303)
+
+    def test_any_role_with_grant_can_shop(self):
+        """Regla: cualquier usuario con CustomerAccessGrant activo puede
+        comprar, sin importar su rol. Antes bloqueaba a admin/empleados;
+        ahora se les permite tener sesión de tienda paralela a su rol."""
+        self.authorise()
+        # Cambiar rol a admin no debe revocar la sesión de shopping
+        self.customer.rol = 'admin'
+        db.session.commit()
+        self.assertEqual(self.client.get('/').status_code, 200)
 
     def test_version_change_revokes_old_access_even_when_active(self):
         self.authorise()
@@ -150,3 +159,50 @@ class CustomerAccessTest(unittest.TestCase):
         self.assertEqual(other.post('/acceso', data={'action':'verify','codigo':code}).location, '/acceso')
         self.assertEqual(other.get('/').status_code, 303)
         self.assertEqual(self.client.get('/').status_code, 200)
+
+    @patch('routes.customer_access.solicitar_codigo')
+    def test_app_signal_never_bypasses_phone_authorisation(self, send):
+        SiteConfig.set('ACCESO_REQUIERE_PWA', '1'); db.session.commit()
+        self.client.post('/acceso', data={'action':'request', 'telefono':self.customer.telefono})
+        send.assert_not_called()
+        self.assertEqual(self.client.post('/acceso/app', json={'standalone':False}).status_code, 400)
+        self.assertEqual(self.client.post('/acceso/app', json={'standalone':True}).status_code, 200)
+        self.assertEqual(self.client.get('/').status_code, 303)
+        self.assertEqual(self.client.get('/manifest.webmanifest').status_code, 403)
+        db.session.delete(self.grant); db.session.commit()
+        self.client.post('/acceso', data={'action':'request', 'telefono':self.customer.telefono})
+        send.assert_not_called()
+
+    def test_app_required_also_checks_existing_verified_session(self):
+        self.authorise()
+        SiteConfig.set('ACCESO_REQUIERE_PWA', '1'); db.session.commit()
+        self.assertEqual(self.client.get('/').status_code, 303)
+        self.client.post('/acceso/app', json={'standalone':True})
+        self.assertEqual(self.client.get('/').status_code, 200)
+        self.client.post('/acceso/salir')
+        self.assertEqual(self.client.get('/').status_code, 303)
+
+    @patch('store_config.get_store_profile', return_value={'nombre':'QA shop', 'app_icon_url':None})
+    def test_install_manifest_does_not_disclose_catalogue(self, profile):
+        self.app.config['ASSET_VERSION'] = 'test-assets'
+        response=self.client.get('/acceso/manifest.webmanifest')
+        self.assertEqual(response.status_code, 200)
+        data=response.get_json()
+        self.assertEqual(data['id'], '/')
+        self.assertEqual(data['start_url'], '/acceso?source=pwa')
+        self.assertNotIn('screenshots', data)
+        self.assertNotIn('shortcuts', data)
+        self.assertIn('no-store', response.headers['Cache-Control'])
+        self.assertEqual(self.client.get('/manifest.webmanifest').status_code, 403)
+
+    def test_app_requirement_setting_is_superadmin_only(self):
+        from types import SimpleNamespace
+        from store_config import user_puede_modificar_clave
+        from routes.superadmin import _config_section_submission
+        from werkzeug.datastructures import MultiDict
+        key='ACCESO_REQUIERE_PWA'
+        self.assertFalse(user_puede_modificar_clave(SimpleNamespace(rol='admin'), key))
+        self.assertTrue(user_puede_modificar_clave(SimpleNamespace(rol='super_admin'), key))
+        _, changes, errors = _config_section_submission(MultiDict({'section':'acceso-clientes','config_key':key,key:'1'}))
+        self.assertEqual(errors, [])
+        self.assertIn((key,'1'), changes)
