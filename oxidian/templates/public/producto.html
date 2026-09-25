@@ -402,7 +402,7 @@
     <div class="pd-combo-head">
       <div>
         <p class="pd-box-title">Arma tu combo</p>
-        <p class="pd-box-sub">Elige paso a paso. Lo incluido siempre sale; para cada sección elige tu opción y tu pedido llegará exactamente como lo pides.</p>
+        <p class="pd-box-sub">Revisa lo incluido, elige tus opciones y comprueba el total antes de añadir.</p>
       </div>
       {% if producto.tipo_entrega == 'inmediato' %}
       {% set combo_stock = stock_en_origen(producto, origen_actual) %}
@@ -417,6 +417,7 @@
     {% set grupos = seleccionables|map(attribute='grupo_display')|unique|list %}
     {% set _combo_steps_total = (1 if fijos else 0) + (grupos|length) %}
 
+    {% if fijos %}<div class="combo-base-preview"><strong>Ya incluido en tu combo</strong><ul class="combo-included-list">{% for ci in fijos %}<li><strong>{{ ci.cantidad }}×</strong> {{ ci.componente.nombre }}</li>{% endfor %}</ul></div>{% endif %}
     <div class="pd-combo-guide" id="pd-combo-guide" aria-label="Progreso del combo">
       <div class="pd-combo-guide-copy">
         <span class="pd-combo-guide-eyebrow">Tu recorrido</span>
@@ -1475,9 +1476,17 @@ main { padding-top: 0 !important; }
    punteado suave insinúa que aún no está completo. Al pulsarlo, el submit
    handler hace scroll al primer bloque incompleto. */
 .pd-add-btn.is-incomplete {
-  filter: saturate(.72);
-  outline: 2px dashed color-mix(in srgb, #ce1126 42%, transparent);
-  outline-offset: -6px;
+  /* Estado incompleto: silenciamos visualmente el botón para que la
+     alerta sticky de arriba ("Falta …") sea la señal primaria. Antes
+     el botón se veía como error crítico (rojo tachado) que competía
+     con la barra sticky y saturaba la vista. Ahora: color apagado y
+     borde suave, todo el peso visual lo lleva la barra sticky. */
+  background: color-mix(in srgb, var(--col-border) 55%, var(--col-elevated)) !important;
+  color: color-mix(in srgb, var(--col-text) 62%, transparent) !important;
+  box-shadow: none !important;
+  outline: 1px dashed color-mix(in srgb, var(--col-border) 90%, transparent);
+  outline-offset: -4px;
+  filter: none;
 }
 /* Botón "Ir a lo que falta" dentro del resumen del combo — solo aparece
    cuando el JS decide que hay algo por completar. Salto visualmente claro. */
@@ -2535,7 +2544,7 @@ function pdComboRenderWizard(state) {
       nav.appendChild(button);
     }
     if (button) {
-      button.textContent = section.complete && !section.overflow ? '✓' : String(index + 1);
+      button.textContent = `${section.complete && !section.overflow ? '✓' : index + 1} · ${section.title}`;
       button.classList.toggle('is-complete', section.complete && !section.overflow);
       button.setAttribute('aria-label', `${index + 1}. ${section.title}${section.complete ? ', listo' : ', pendiente'}`);
     }
@@ -2543,9 +2552,9 @@ function pdComboRenderWizard(state) {
     if (next) {
       const isLast = index === total - 1;
       next.classList.toggle('is-finish', isLast && section.complete);
-      next.innerHTML = isLast
-        ? (section.complete ? 'Revisar y añadir <span aria-hidden="true">↓</span>' : 'Completa este paso')
-        : `Continuar a ${state[index + 1].title} <span aria-hidden="true">→</span>`;
+      next.textContent = isLast
+        ? (section.complete ? 'Revisar y añadir ↓' : 'Completa este paso')
+        : `Continuar a ${state[index + 1].title} →`;
       next.dataset.comboSection = section.key;
     }
   });

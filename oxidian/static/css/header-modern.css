@@ -439,7 +439,14 @@ body.ox-body-public .ox-header-public.is-scrolled {
       0 2px 6px rgba(0,0,0,.22);
   }
   body.ox-body-public .ox-public-meta { gap: 7px; }
-  body.ox-body-public .ox-header-public .ox-public-kicker { font-size: .5rem !important; letter-spacing: .12em !important; }
+  /* Kicker "DELIVERY · RECOGIDA": el letter-spacing .12em en móvil
+     hacía que el texto no cupiera y se ellipse'aba a "…RECOGID".
+     Reducido + padding más compacto → cabe entero sin perder legibilidad. */
+  body.ox-body-public .ox-header-public .ox-public-kicker {
+    font-size: .5rem !important;
+    letter-spacing: .04em !important;
+    padding: 2px 6px !important;
+  }
   body.ox-body-public .ox-public-status { font-size: .52rem; }
   body.ox-body-public .ox-header-public .ox-public-brand { font-size: 1.02rem !important; }
   body.ox-body-public .ox-header-public .ox-public-address { max-width: 190px; font-size: .57rem !important; }
