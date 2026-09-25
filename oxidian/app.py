@@ -35,11 +35,17 @@ def _seed_password():
 
 
 def _asset_version(app):
-    """Huella de todos los CSS/JS para invalidar cachés en cada cambio real.
+    """Huella de todos los CSS/JS/HTML para invalidar cachés en cada cambio real.
 
     La lista no se mantiene a mano: cualquier componente nuevo dentro de
-    ``static/css`` o ``static/js`` participa automáticamente en la versión.
-    Incluir la ruta evita colisiones entre concatenaciones de archivos.
+    ``static/css``, ``static/js`` o ``templates/`` participa automáticamente
+    en la versión. Incluir la ruta evita colisiones entre concatenaciones
+    de archivos.
+
+    Al incluir ``templates/`` en la huella, cualquier cambio de plantilla
+    invalida el Service Worker y su caché — evita que la PWA muestre HTML
+    viejo tras un deploy sólo de plantillas (fix real del "no veo los
+    cambios" reportado en producción).
     """
     digest = hashlib.sha256()
     static_root = Path(app.static_folder)
@@ -47,6 +53,12 @@ def _asset_version(app):
     for directory, suffix in (("css", ".css"), ("js", ".js")):
         assets.extend((static_root / directory).rglob(f"*{suffix}"))
     assets.append(static_root / "sw.js")
+    # Templates: un solo hash sobre todos los .html invalida SW en cada
+    # cambio de plantilla. Path relativo al static_root vía anclaje al
+    # root del proyecto para poder recalcular más abajo.
+    templates_root = Path(app.root_path) / "templates"
+    if templates_root.exists():
+        assets.extend(templates_root.rglob("*.html"))
     assets.extend(static_root / name for name in (
         "pwa-icon.svg",
         "pwa-icon-192.png",
@@ -59,8 +71,15 @@ def _asset_version(app):
         "pwa-screenshot-wide.png",
     ))
 
+    project_root = Path(app.root_path)
     for path in sorted(assets, key=lambda item: item.as_posix()):
-        relative_path = path.relative_to(static_root).as_posix()
+        # Ancla al root del proyecto: static/ y templates/ conviven ahí,
+        # así el path relativo es único e independiente de qué directorio
+        # provenga la entrada.
+        try:
+            relative_path = path.relative_to(project_root).as_posix()
+        except ValueError:
+            relative_path = path.as_posix()
         digest.update(relative_path.encode("utf-8"))
         digest.update(b"\0")
         try:
@@ -146,8 +165,10 @@ def create_app(env="default"):
 
     @app.context_processor
     def inject_private_customer():
-        from customer_access import verified_customer
-        return {"private_customer": verified_customer() if getattr(g, "private_customer_access", False) else None}
+        from customer_access import verified_customer, private_pwa_required
+        protected = getattr(g, "private_customer_access", False)
+        return {"private_customer": verified_customer() if protected else None,
+                "private_app_required": protected and private_pwa_required()}
 
     @app.before_request
     def log_request_start():

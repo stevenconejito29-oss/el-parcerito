@@ -276,16 +276,44 @@
     </form>
   </section>
 
-  <form id="acceso" method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}" class="cfg-section">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="acceso-clientes">
+  <div id="acceso" class="cfg-section">
     <div class="cfg-section-head"><div><span>2</span><h2>Acceso de clientes</h2><p>Decide quién puede ver el menú, instalar la PWA y pedir. El horario se configura por separado.</p></div></div>
-      {{ cfg_select('ACCESO_CLIENTES_REGISTRADOS', 'Quién puede acceder a la tienda', [('0','Página pública — acceso libre'),('1','Página privada — autorización y código WhatsApp')], 'En modo privado, solo los clientes autorizados expresamente por superadmin pueden entrar con un código por WhatsApp. Cada número queda vinculado a un dispositivo. No afecta al acceso del equipo.') }}
-      <a href="{{ url_for('admin.clientes') }}">Gestionar clientes registrados</a>
 
-    <ol class="cfg-access-steps"><li>Autoriza el teléfono desde Clientes.</li><li>Activa la página privada y guarda.</li><li>El cliente verifica el código de WhatsApp en su dispositivo.</li></ol>
+    <form method="POST" action="{{ url_for('superadmin.guardar_config_seccion') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="section" value="acceso-clientes">
+      {{ cfg_select('ACCESO_CLIENTES_REGISTRADOS', 'Quién puede acceder a la tienda', [('0','Página pública — acceso libre'),('1','Página privada — autorización y código WhatsApp')], 'En modo privado, solo los clientes autorizados expresamente por superadmin pueden entrar con un código por WhatsApp. Cada número queda vinculado a un dispositivo. No afecta al acceso del equipo.') }}
+      {{ cfg_select('ACCESO_REQUIERE_PWA', 'Entrada de clientes en modo privado', [('0','Permitir navegador y app verificados'),('1','Instalar y abrir la app antes de verificar')], 'La instalación muestra solo la pantalla de acceso. El menú exige autorización y código WhatsApp.') }}
+      <button type="submit" class="cfg-save-bottom">Guardar acceso</button>
+    </form>
+
+    {# Registro directo de número autorizado — antes había que ir a /admin/clientes
+       (mezclado con empleados y admins). Aquí sólo se dan de alta clientes con
+       CustomerAccessGrant activo listo para recibir el código por WhatsApp. #}
+    <div class="cfg-subform" style="margin-top:1.25rem;padding-top:1rem;border-top:1px dashed var(--col-border)">
+      <h3 style="margin:0 0 .35rem 0;font-size:1rem">Autorizar cliente por número</h3>
+      <p class="cfg-form-note" style="margin:0 0 .6rem 0">
+        Alta rápida de un cliente para tienda privada. Se crea con rol <code>cliente</code> y su acceso queda activo. El cliente instala la PWA, pide su código por WhatsApp y entra.
+      </p>
+      <form method="POST" action="{{ url_for('admin.registrar_cliente') }}" style="display:grid;gap:.5rem;grid-template-columns:1fr 1fr auto;align-items:end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label style="display:block">
+          <span style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.15rem">Nombre</span>
+          <input type="text" name="nombre" required minlength="2" maxlength="80" class="ox-input" style="width:100%" placeholder="Ej.: María López">
+        </label>
+        <label style="display:block">
+          <span style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.15rem">Teléfono (con prefijo)</span>
+          <input type="tel" name="telefono" required class="ox-input" style="width:100%" placeholder="+34 600 000 000" pattern="\+?\d[\d\s]{7,20}">
+        </label>
+        <button type="submit" class="cfg-save-bottom" style="margin:0">Autorizar</button>
+      </form>
+      <p class="cfg-form-note" style="margin-top:.5rem">
+        Para editar, revocar acceso o cambiar dispositivo → <a href="{{ url_for('admin.clientes') }}">gestión completa de clientes</a>.
+      </p>
+    </div>
+
+    <ol class="cfg-access-steps"><li>Autoriza el teléfono aquí arriba (o desde Clientes).</li><li>Activa la página privada y guarda.</li><li>Si exiges la app, el cliente la instala y la abre desde su icono.</li><li>Verifica el código de WhatsApp para desbloquear el menú y los pedidos.</li></ol>
     <p class="cfg-form-note">Para cambiar de dispositivo, restablece su acceso desde Clientes. Volver a página pública permite consultar el menú sin verificación.</p>
-    <button type="submit" class="cfg-save-bottom">Guardar acceso</button>
-  </form>
+  </div>
 
   <section id="operacion" class="cfg-section">
     <div class="cfg-section-head"><div><span>3</span><h2>Operación de la tienda</h2><p>Horario, cierre manual y métodos de pago.</p></div></div>
