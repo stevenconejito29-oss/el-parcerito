@@ -7824,7 +7824,7 @@ const MANUAL_SECTIONS = [
       // alérgenos, política de cancelación, etc.). Sólo en ~40% de las
       // veces + siempre que el chat web exista → anti-repetición Meta.
       const chatHint = (Math.random() < 0.4 && ctx.tiendaUrl)
-        ? `\n\n💬 _¿Dudas más específicas? Chat web: ${ctx.tiendaUrl}/chat_`
+        ? `\n\n💬 _¿Dudas más específicas? Chat web: ${ctx.tiendaUrl}/ayuda_`
         : '';
       return `🛒 *Cómo hacer un pedido*\n\n${pasos.join('\n')}${chatHint}`;
     },
@@ -8518,7 +8518,7 @@ async function handleMainMenu(jid, ses, opcion) {
     // largas y repetitivas) y le abre el chat web para eso.
     const tiendaUrl = getTiendaUrl();
     const chatLine = tiendaUrl
-      ? `\n💬 Si necesitas info detallada (alérgenos, políticas, formas de pago…) → *chat web*: ${tiendaUrl}/chat`
+      ? `\n💬 Si necesitas info detallada (alérgenos, políticas, formas de pago…) → *chat web*: ${tiendaUrl}/ayuda`
       : '';
     return sendText(jid,
       `Soy el asistente automático de *${getNegocioNombre()}* 🤖\n\n` +
