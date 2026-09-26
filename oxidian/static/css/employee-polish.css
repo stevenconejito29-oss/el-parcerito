@@ -1,0 +1,223 @@
+/* ═══════════════════════════════════════════════════════════════════
+   EMPLOYEE POLISH — 2026-09-26
+   Pulido para roles operativos (super_admin, admin, cocina/preparacion,
+   repartidor). Filosofía OPUESTA al storefront público:
+
+   · Cliente PWA = liquid glass vistoso, wow-factor.
+   · Empleado = SNAPPY, alta densidad de info, sin distracciones.
+
+   Sólo mejora lo justo:
+     · Consistencia de radios y sombras (todo card = mismo lenguaje).
+     · Touch targets ≥44px en TODAS las acciones (los repartidores
+       operan con guantes / bajo lluvia).
+     · Focus visible para navegación por teclado (admin oficina).
+     · Estados critical (nuevo, urgente, error) más leíbles.
+     · Sticky headers de lista sin transparencia agresiva (empleado
+       necesita claridad, no efecto).
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Focus visible unificado — clave para admin oficina con teclado ── */
+body.ox-body-admin :is(button, a, [role="button"], select, input, textarea):focus-visible {
+  outline: 3px solid var(--brand-primary) !important;
+  outline-offset: 2px !important;
+  border-radius: .35rem;
+}
+
+/* ── Cards operativas: mismo lenguaje visual en todos los roles ── */
+body.ox-body-admin :is(.oa-panel, .oa-card, .work-card, .work-panel, .ox-card) {
+  border-radius: 14px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .06), 0 0 0 1px rgba(0, 0, 0, .04);
+  transition: box-shadow .15s ease, transform .12s ease;
+}
+body.ox-body-admin :is(.oa-card, .work-card):hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .1), 0 0 0 1px rgba(0, 0, 0, .05);
+}
+/* Cocina/repartidor: cards con acción → cursor pointer + feedback */
+body.view-preparador .work-card,
+body.view-repartidor .work-card { cursor: default; }
+body.view-preparador .work-card:active,
+body.view-repartidor .work-card:active { transform: scale(.998); }
+
+/* ── Botones operativos: TODOS ≥44px alto, feedback claro ── */
+body.ox-body-admin :is(.work-btn, .oa-btn, button.ox-btn-primary, button.ox-btn-secondary) {
+  min-height: 44px !important;
+  border-radius: 10px !important;
+  font-weight: 800 !important;
+  transition: transform .1s ease, background .14s ease, box-shadow .14s ease !important;
+  -webkit-tap-highlight-color: transparent;
+}
+body.ox-body-admin :is(.work-btn, .oa-btn):active { transform: scale(.97); }
+
+/* Botones PRIMARIOS (confirmar entrega, marcar listo, etc.) — con más peso */
+body.ox-body-admin :is(.work-btn-success, .work-btn-info, .oa-btn--primary) {
+  box-shadow: 0 4px 14px color-mix(in srgb, currentColor 22%, transparent);
+}
+body.ox-body-admin :is(.work-btn-success, .work-btn-info, .oa-btn--primary):hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 6px 18px color-mix(in srgb, currentColor 28%, transparent);
+}
+
+/* ── Estados críticos (nuevo, urgente, error) más visibles ── */
+body.ox-body-admin :is(.work-badge-urgent, .work-badge-new, .oa-badge--err, .badge-urgent) {
+  animation: employeePulse 2s ease-in-out infinite;
+  font-weight: 900 !important;
+}
+@keyframes employeePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .78; transform: scale(1.02); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.ox-body-admin :is(.work-badge-urgent, .work-badge-new, .oa-badge--err) {
+    animation: none;
+  }
+}
+
+/* ── Chips de estado (pendiente, armando, listo, en_ruta, entregado) ── */
+body.ox-body-admin :is(.work-chip, .oa-chip, .estado-pill) {
+  min-height: 28px;
+  padding: 4px 10px !important;
+  border-radius: 999px !important;
+  font-size: .72rem !important;
+  font-weight: 800 !important;
+  letter-spacing: .02em !important;
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+}
+
+/* ── Inputs operativos: bien padding, focus brand ── */
+body.ox-body-admin :is(input[type="text"], input[type="tel"], input[type="email"],
+                     input[type="number"], input[type="search"], textarea, select):not(.work-code-input) {
+  min-height: 42px;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+  border: 1.5px solid color-mix(in srgb, var(--col-text, #111) 12%, transparent) !important;
+  background: var(--col-surface, #fff);
+  color: var(--col-text, #111);
+  font-size: 15px;
+  transition: border-color .16s, box-shadow .16s;
+}
+body.ox-body-admin :is(input, textarea, select):not(.work-code-input):focus {
+  outline: none;
+  border-color: var(--brand-primary) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 22%, transparent) !important;
+}
+
+/* ── Sidebar (menú lateral admin) — más peso al item activo ── */
+body.ox-body-admin .ox-sb-item {
+  min-height: 42px;
+  border-radius: 10px !important;
+  transition: background .14s;
+}
+body.ox-body-admin .ox-sb-item.is-active {
+  background: color-mix(in srgb, var(--brand-primary) 12%, transparent) !important;
+  color: var(--brand-primary) !important;
+  font-weight: 800;
+  box-shadow: inset 3px 0 0 0 var(--brand-primary);
+}
+body.ox-body-admin .ox-sb-item:hover:not(.is-active) {
+  background: color-mix(in srgb, var(--col-text, #111) 5%, transparent) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   REPARTIDOR — mejoras específicas (rider-console.css ya define tema)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Input del código de verificación: EL más importante en la vista rider */
+body.view-repartidor .work-code-input {
+  min-height: 64px !important;
+  font-size: 28px !important;
+  font-weight: 900 !important;
+  letter-spacing: .22em !important;
+  border-radius: 12px !important;
+  border-width: 2.5px !important;
+  text-align: center;
+  padding: 12px !important;
+}
+body.view-repartidor .work-code-input:focus {
+  border-color: var(--rc-blue, #075eb8) !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--rc-blue, #075eb8) 22%, transparent) !important;
+}
+
+/* Botones grandes de acción rider (confirmar entrega, salir a entregar) */
+body.view-repartidor :is(.work-btn-success, .work-btn-info).full-width {
+  min-height: 54px !important;
+  font-size: 1.02rem !important;
+  border-radius: 12px !important;
+}
+
+/* Total del pedido: alta visibilidad — el rider necesita cobrar bien */
+body.view-repartidor :is(.work-money, .work-payment-total, .work-confirm-amount) {
+  font-weight: 950 !important;
+  letter-spacing: -.01em;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   COCINA / PREPARACION — mejoras específicas (KDS operativo)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Título del pedido (nº) — muy visible para llamar en voz alta */
+body.view-preparador :is(.work-order-code, .oa-order-code) {
+  font-weight: 950 !important;
+  font-size: 1.35rem !important;
+  letter-spacing: -.01em;
+}
+
+/* Botón "Listo" — el más común, muy táctil */
+body.view-preparador .work-btn-success {
+  min-height: 50px !important;
+  font-size: 1rem !important;
+  font-weight: 900 !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SUPER ADMIN + ADMIN — dashboards y config
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Tiles del dashboard (super admin): border-radius grande, hover lift */
+body.role-super-admin .oa-toggle,
+body.role-admin .oa-toggle {
+  border-radius: 14px !important;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s;
+}
+body.role-super-admin .oa-toggle:hover,
+body.role-admin .oa-toggle:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .1);
+}
+
+/* Toggle ON: acento brand a la izquierda como indicador visual */
+body.ox-body-admin .oa-toggle.oa-toggle--on {
+  box-shadow: inset 4px 0 0 0 var(--theme-success, #22c55e), 0 2px 8px rgba(0, 0, 0, .05);
+  border-color: color-mix(in srgb, var(--theme-success, #22c55e) 30%, var(--col-border, #ddd)) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MOTION + REDUCED MOTION
+   ═══════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  body.ox-body-admin * { transition-duration: .01ms !important; animation: none !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RESPONSIVIDAD MÓVIL (empleados operan mucho desde el móvil)
+   ═══════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+  /* Cards se estrechan un poco menos abruptas */
+  body.ox-body-admin :is(.oa-panel, .oa-card, .work-card) {
+    border-radius: 12px !important;
+  }
+  /* Botones full-width en móvil para no fallar el tap */
+  body.ox-body-admin .work-action-row .work-btn:not(.work-btn-ghost) {
+    min-height: 48px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  body.view-repartidor .work-code-input {
+    font-size: 24px !important;
+    letter-spacing: .16em !important;
+  }
+}

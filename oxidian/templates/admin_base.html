@@ -187,6 +187,11 @@
   <script nonce="{{ csp_nonce() }}" defer src="{{ url_for('static', filename='js/admin-tool-search.js', v=asset_version) }}"></script>
   {% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/flow-refinements.css', v=asset_version) }}">
+  {# Employee polish — snappy operational UI para todos los roles internos
+     (super_admin, admin, cocina, preparacion, repartidor). Filosofía OPUESTA
+     al liquid glass del PWA público: aquí prima densidad de info y touch
+     confortable, no wow-factor. Se carga última para ganar en cascada. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/employee-polish.css', v=asset_version) }}">
 </head>
 {% set rol = current_user.rol if current_user.is_authenticated else '' %}
 {% set operational_view = request.blueprint in ('preparador','repartidor','staff','proveedor') %}
